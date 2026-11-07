@@ -25,7 +25,7 @@ const { buildFingerprint, buildInjectionScript } = require('../fingerprint');
 const { writeOpenBrowserKernelInit } = require('../kernel-init-sync');
 const { OS_FONTS, fontsForOs, exclusiveFontsForOtherOs } = require('../device-personas');
 
-const appRoot = path.join(__dirname, '..');
+const appRoot = path.join(__dirname, '..', '..');
 const kernelRoot = path.join(appRoot, 'kernels', 'macos-x64');
 const launcher = path.join(kernelRoot, 'launch_openbrowser.sh');
 const subsetIndexPath = path.join(appRoot, 'assets', 'font-subsets', 'index.json');

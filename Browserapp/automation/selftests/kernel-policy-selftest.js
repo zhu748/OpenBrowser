@@ -204,7 +204,7 @@ async function main() {
     console.log('  PASS  Windows system-browser choices include Chrome and Edge install locations');
 
     // Source-tree discovery: Browserapp/kernels/macos-x64 (or compat openbrowser/)
-    const appRoot = path.join(__dirname, '..');
+    const appRoot = path.join(__dirname, '..', '..');
     const repoKernel = findOpenBrowserKernelBinary(path.join(root, 'kernels'), [appRoot, path.join(appRoot, 'kernels')]);
     if (!isOpenBrowser148SupportedHost()) {
       assert.strictEqual(repoKernel, null);
@@ -259,7 +259,7 @@ async function main() {
       console.log('  PASS  engine prefers source OpenBrowser 148 on mac x64');
     } else {
       assert.notStrictEqual(chosen.source, SOURCE_OPENBROWSER);
-      const appRoot = path.join(__dirname, '..');
+      const appRoot = path.join(__dirname, '..', '..');
       const integrated = findBundledWayfernKernel([appRoot, path.join(appRoot, 'kernels')]);
       const integratedStable = findBundledChromeStable([appRoot, path.join(appRoot, 'kernels')]);
       const integratedCft = findBundledChromeForTesting([appRoot, path.join(appRoot, 'kernels')]);

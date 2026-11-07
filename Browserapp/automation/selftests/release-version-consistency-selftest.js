@@ -20,7 +20,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 
-const appRoot = path.join(__dirname, '..');
+const appRoot = path.join(__dirname, '..', '..');
 const repoRoot = path.join(appRoot, '..');
 
 const pkg = JSON.parse(fs.readFileSync(path.join(appRoot, 'package.json'), 'utf8'));

@@ -212,12 +212,12 @@
     "selftest:socks5complete": "node socks5-auth-complete-selftest.js",
     "selftest:socks5reset": "node socks5-reset-selftest.js",
     "selftest:socks5retry": "node socks5-retry-selftest.js",
-    "regression:final": "node automation/selftests/final-release-regression-runner.js",
+    "regression:final": "node automation/final-release-regression-runner.js",
     "audit:issueclosure": "node automation/selftests/issue-closure-audit-selftest.js",
-    "audit:adversarial": "node automation/selftests/adversarial-detection-audit.js",
-    "audit:adversarial2": "node automation/selftests/adversarial-detection-audit-round2.js",
-    "audit:brandtrace": "node automation/selftests/page-visible-brand-trace-audit.js",
-    "audit:mobilepersona": "node automation/selftests/mobile-persona-consistency-audit.js"
+    "audit:adversarial": "node automation/adversarial-detection-audit.js",
+    "audit:adversarial2": "node automation/adversarial-detection-audit-round2.js",
+    "audit:brandtrace": "node automation/page-visible-brand-trace-audit.js",
+    "audit:mobilepersona": "node automation/mobile-persona-consistency-audit.js"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
