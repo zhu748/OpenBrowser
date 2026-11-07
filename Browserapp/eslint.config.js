@@ -30,6 +30,13 @@ module.exports = [
     // across those files must be declared here. Adding a NEW cross-file global
     // means extending this list — that friction is intentional: the shared
     // namespace should not grow silently.
+    //
+    // Since the ui-proxy.js extraction the boundary is: ui/ui-proxy.js owns the
+    // proxy-domain functions (parse/format/merge, proxies view, proxy dialog,
+    // batch check/apply, live re-parse handlers, batch network-mode apply);
+    // renderer.js keeps the generic UI helpers (t/tx/element/toast/$, editor
+    // glue, view cache) and the load-time event wiring. The names below are
+    // exactly that two-way surface.
     files: ['renderer.js', 'environment-audit.js', 'i18n.js', 'ui/*.js'],
     languageOptions: {
       globals: {
@@ -66,6 +73,51 @@ module.exports = [
         refreshApiMcpPage: 'writable',
         setLocalApiStatus: 'writable',
         showRpaPanel: 'writable',
+        // proxy-domain functions owned by ui/ui-proxy.js, called from renderer.js
+        parseProxyInputForUi: 'writable',
+        applyProxyLibrarySelection: 'writable',
+        proxyHasCredentials: 'writable',
+        mergeRemoteProxy: 'writable',
+        proxyAuthActionForUpdate: 'writable',
+        openProxyDialog: 'writable',
+        readProxyForm: 'writable',
+        runProxyBatchCheck: 'writable',
+        openProxyApplyDialog: 'writable',
+        handleProxyRawChange: 'writable',
+        handleProxyHostChange: 'writable',
+        applySelectedNetworkMode: 'writable',
+        // generic renderer helpers used inside ui/ui-proxy.js
+        t: 'writable',
+        tx: 'writable',
+        log: 'writable',
+        save: 'writable',
+        toast: 'writable',
+        element: 'writable',
+        buildSquareMark: 'writable',
+        UI_MARK_SIZE: 'writable',
+        displayProfileNumber: 'writable',
+        afterUiRender: 'writable',
+        syncThemedSelect: 'writable',
+        syncThemedSelects: 'writable',
+        loadedViews: 'writable',
+        invalidateViewCache: 'writable',
+        editingProxyRecord: 'writable',
+        selectedProxies: 'writable',
+        parseEditorProxy: 'writable',
+        decodeProxyPartForUi: 'writable',
+        proxyHostForUi: 'writable',
+        normalizeProxyProtocolForUi: 'writable',
+        buildProxyUiValue: 'writable',
+        splitProxyRemarkForUi: 'writable',
+        proxyLibraryLabel: 'writable',
+        proxyLibraryItem: 'writable',
+        renderProxyLibrarySelectors: 'writable',
+        verifyProxyAssignments: 'writable',
+        iconActionButton: 'writable',
+        runPool: 'writable',
+        refreshSessions: 'writable',
+        profileEngine: 'writable',
+        profileProxyId: 'writable',
       },
     },
   },

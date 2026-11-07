@@ -13,6 +13,11 @@ const editorProxyStart = source.indexOf('function parseEditorProxy');
 const editorProxyEnd = source.indexOf('function editorSet', editorProxyStart);
 assert(editorProxyStart >= 0 && editorProxyEnd > editorProxyStart);
 vm.runInNewContext(source.slice(editorProxyStart, editorProxyEnd), context);
+// parseProxyInputForUi / mergeRemoteProxy / proxyAuthActionForUpdate moved to
+// the ui/ui-proxy.js domain module; load it into the same context so
+// normalizeProxy (which calls parseProxyInputForUi) resolves them.
+const proxyUiSource = fs.readFileSync(require.resolve('./ui/ui-proxy.js'), 'utf8');
+vm.runInNewContext(proxyUiSource, context);
 assert.strictEqual(context.normalizeProxy('192.0.2.10:6099:user:pass', 'socks5'), 'socks5://user:pass@192.0.2.10:6099');
 assert.strictEqual(context.normalizeProxy('192.0.2.10:6099:user:pass', 'http'), 'http://user:pass@192.0.2.10:6099');
 assert.strictEqual(context.normalizeProxy('192.0.2.10:6099:user:pass', 'https'), 'https://user:pass@192.0.2.10:6099');

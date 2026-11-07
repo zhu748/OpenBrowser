@@ -13,6 +13,8 @@ const path = require('path');
 
 const root = path.resolve(__dirname, '..', '..');
 const rendererSource = fs.readFileSync(path.join(root, 'renderer.js'), 'utf8');
+// renderProxies moved to the ui/ui-proxy.js domain module
+const proxyUiSource = fs.readFileSync(path.join(root, 'ui', 'ui-proxy.js'), 'utf8');
 
 const tests = [];
 function test(name, fn) {
@@ -46,7 +48,7 @@ test('A1: renderGroupsPage uses new DocumentFragment() for batch mounting', () =
 });
 
 test('A2: renderProxies uses new DocumentFragment() for batch mounting', () => {
-  const funcMatch = rendererSource.match(/function renderProxies\(\)\s*\{([\s\S]*?)\n\}/);
+  const funcMatch = proxyUiSource.match(/function renderProxies\(\)\s*\{([\s\S]*?)\n\}/);
   assert.ok(funcMatch, 'renderProxies function declaration found');
   const body = funcMatch[1];
   assert.ok(body.includes('new DocumentFragment()'), 'must construct new DocumentFragment()');
@@ -87,7 +89,8 @@ test('B3: switchView preserves and restores scroll position across view switches
 });
 
 test('B4: loadedViews marks views as loaded upon successful render/pull', () => {
-  assert.match(rendererSource, /loadedViews\.add\('proxies'\);/, 'proxies added to loadedViews');
+  // renderProxies moved to the ui/ui-proxy.js domain module
+  assert.match(proxyUiSource, /loadedViews\.add\('proxies'\);/, 'proxies added to loadedViews');
   assert.match(rendererSource, /loadedViews\.add\('extensions'\);/, 'extensions added to loadedViews');
   assert.match(rendererSource, /loadedViews\.add\('sync'\);/, 'sync added to loadedViews');
   assert.match(rendererSource, /loadedViews\.add\('groups'\);/, 'groups added to loadedViews');

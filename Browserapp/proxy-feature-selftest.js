@@ -364,14 +364,16 @@ async function main() {
   assert.strictEqual((renderer.match(/\$\('#editor-refresh-proxy'\)\?\.addEventListener\('click', refreshEditorProxy\);/g) || []).length, 1);
   // table headers vs cells: latency + type
   assert.ok(html.includes('<th>延迟</th>') && html.includes('<th>类型</th>'));
-  assert.ok(renderer.includes("element('td', '', latency)") && renderer.includes("element('td', '', netType)"));
+  // renderProxies moved to the ui/ui-proxy.js domain module (loaded before renderer.js)
+  const proxyUiSrc = fs.readFileSync(path.join(__dirname, 'ui', 'ui-proxy.js'), 'utf8');
+  assert.ok(proxyUiSrc.includes("element('td', '', latency)") && proxyUiSrc.includes("element('td', '', netType)"));
   assert.ok(preload.includes("profiles:refresh-proxy"));
   assert.ok(preload.includes("profiles:apply-proxy-fingerprint"));
   assert.ok(preload.includes("proxy:check-many"));
   assert.ok(main.includes("registerTrustedIpc('profiles:refresh-proxy'"));
   assert.ok(main.includes("registerTrustedIpc('profiles:apply-proxy-fingerprint'"));
   assert.ok(main.includes("registerTrustedIpc('proxy:check-many'"));
-  assert.ok(renderer.includes('批量检测失败'), 'batch check should surface errors');
+  assert.ok(proxyUiSrc.includes('批量检测失败'), 'batch check should surface errors');
   assert.ok(renderer.includes('result.extractError'), 'refresh UI should surface extract warnings');
   assert.ok(renderer.includes('exitLatencyMs'), 'profile check should keep latency');
   assert.strictEqual(classifyProxyError(new Error('username or password')), 'auth');

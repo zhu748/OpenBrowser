@@ -22,6 +22,8 @@ const scripts = [...index.matchAll(/<script\s+src="([^"]+)"/g)].map((match) => m
 const rendererIndex = scripts.indexOf('renderer.js');
 
 assert.ok(rendererIndex >= 0, 'index.html loads renderer.js');
+assert.strictEqual(scripts[rendererIndex - 1], 'ui/ui-proxy.js',
+  'the proxy UI domain module loads immediately before renderer.js');
 assert.deepStrictEqual(scripts.slice(rendererIndex + 1, rendererIndex + 1 + expectedModules.length), expectedModules,
   'UI modules load immediately after renderer.js in dependency order');
 
@@ -81,6 +83,12 @@ context.window = context;
 context.ops = new Proxy({ onEvent: noop }, {
   get(target, key) { return key in target ? target[key] : async () => ({}); },
 });
+
+// The proxy UI domain module loads before renderer.js in the real page; run it
+// first here too, so a top-level redeclaration of a renderer-owned name fails
+// in this test instead of leaving a white Electron window.
+const proxyUiSource = fs.readFileSync(path.join(root, 'ui/ui-proxy.js'), 'utf8');
+new vm.Script(proxyUiSource, { filename: 'ui/ui-proxy.js' }).runInContext(context);
 
 // These bindings mirror the names owned by renderer.js. The extracted files must
 // not redeclare any of them in the shared top-level script scope.
