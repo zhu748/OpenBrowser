@@ -1266,8 +1266,22 @@ h1{margin:0 0 12px;font-size:20px}p{margin:8px 0;color:#b7becc}code{color:#93c5f
     // Welcome page posts live navigator/WebGL samples here so we can diagnose
     // inject failures from disk without copying UI text.
     if (pathname === '/api/fingerprint-report' && (req.method === 'POST' || req.method === 'PUT')) {
-      let body = '';
-      for await (const chunk of req) body += chunk;
+      // Same cap as the Local API. Oversized bodies are drained but discarded:
+      // breaking out of the loop would destroy the socket before the 413 can
+      // be delivered, so we keep reading without accumulating.
+      const MAX_REPORT_BYTES = 1024 * 1024;
+      const chunks = [];
+      let received = 0;
+      let tooLarge = false;
+      for await (const chunk of req) {
+        received += chunk.length;
+        if (received > MAX_REPORT_BYTES) tooLarge = true;
+        if (!tooLarge) chunks.push(chunk);
+      }
+      if (tooLarge) {
+        return this.#json(res, 413, { ok: false, msg: 'payload too large' });
+      }
+      const body = chunks.join('');
       let report = {};
       try { report = body ? JSON.parse(body) : {}; } catch (_) { report = { raw: String(body).slice(0, 2000) }; }
       const expected = session?.expectedFingerprint || {};

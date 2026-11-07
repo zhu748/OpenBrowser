@@ -315,11 +315,12 @@ async function main() {
     xApiKey: 'mcp-selftest-key',
   });
   record('local-api accepts correct x-api-key after wrong api-key', alternateHeaderFallback.status === 200);
-  const queryFallback = await request('GET', '/api/v1/user/list?api_key=mcp-selftest-key', undefined, {
+  const queryOnly = await request('GET', '/api/v1/user/list?api_key=mcp-selftest-key', undefined, {
     apiKey: 'wrong-key',
     authorization: 'Bearer also-wrong',
   });
-  record('local-api accepts correct query key after wrong headers', queryFallback.status === 200);
+  record('local-api rejects query-string credentials (headers only)', queryOnly.status === 401
+    && queryOnly.headers['www-authenticate'] === 'Bearer');
   const allCredentialsWrong = await request('GET', '/api/v1/user/list?key=query-wrong', undefined, {
     apiKey: 'header-wrong',
     xApiKey: 'alternate-wrong',
@@ -501,6 +502,18 @@ async function main() {
 
   const whitelist = await spawnMcp({ OPENBROWSER_MCP_MODE: 'admin', OPENBROWSER_MCP_TOOL_WHITELIST: JSON.stringify(['mcp_policy', 'list_profiles']) });
   record('mcp whitelist restricts tools', (whitelist.get(2)?.result?.tools || []).map((tool) => tool.name).sort().join(',') === 'list_profiles,mcp_policy');
+
+  // 401 flood backoff: after the lockout threshold of consecutive failures the
+  // server must answer 429 even for a request carrying the correct key.
+  let lockoutSeen = false;
+  for (let attempt = 0; attempt < 30 && !lockoutSeen; attempt += 1) {
+    const attemptRes = await request('GET', '/api/v1/user/list', undefined, 'wrong-key');
+    if (attemptRes.status === 429) lockoutSeen = true;
+  }
+  const lockedOut = await request('GET', '/api/v1/user/list', undefined, 'mcp-selftest-key');
+  record('local-api 401 flood triggers 429 lockout', lockoutSeen && lockedOut.status === 429);
+  const retryAfter = Number(lockedOut.headers['retry-after'] || 0);
+  record('local-api lockout advertises retry-after', retryAfter >= 1 && retryAfter <= 60);
 
   const fail = checks.filter((item) => !item.ok);
   for (const check of checks) console.log((check.ok ? 'PASS' : 'FAIL') + '  ' + check.name);

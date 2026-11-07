@@ -1,4 +1,7 @@
-const { contextBridge, ipcRenderer } = require(Buffer.from('ZWxlY3Ryb24=', 'base64').toString('utf8'));
+// Plain-text require: the host runtime is the only allowed module source in
+// this sandboxed, context-isolated preload. Obfuscating the module name
+// (base64 etc.) adds nothing for an open-source app and only hurts auditability.
+const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('ops', Object.freeze({
   getInfo: () => ipcRenderer.invoke('system:info'),

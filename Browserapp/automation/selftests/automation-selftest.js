@@ -461,6 +461,18 @@ async function main() {
   const staleNetworkResponse = await httpJson(startPage.port, 'GET', '/api/network?pid=stale-link&refresh=1');
   assert.strictEqual(staleNetworkResponse.status, 401);
   assert.strictEqual(directLookups, 2, 'stale start links cannot invoke a network lookup');
+  // Oversized welcome-page diagnostics reports are drained and rejected with
+  // 413 instead of accumulating unbounded main-process memory.
+  {
+    const oversizedReport = await httpJson(startPage.port, 'POST', '/api/fingerprint-report?pid=direct', {
+      phase: 'page', pad: 'x'.repeat(1024 * 1024 + 4096),
+    }, startHeaders(directToken));
+    assert.strictEqual(oversizedReport.status, 413);
+    const normalReport = await httpJson(startPage.port, 'POST', '/api/fingerprint-report?pid=direct', {
+      phase: 'page', live: { userAgent: 'selftest' },
+    }, startHeaders(directToken));
+    assert.strictEqual(normalReport.status, 200);
+  }
   // Browser-shaped 401 (HTML path): pid comes from the URL query, so a
   // hostile pid must arrive HTML-escaped and the error page must carry the
   // same response hardening as the authorized start page.

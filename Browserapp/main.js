@@ -61,6 +61,26 @@ if (!gotSingleInstanceLock) {
 const defaultProfileDataRoot = path.join(app.getPath('userData'), 'browser-profiles-v2');
 const localSettingsFile = path.join(app.getPath('userData'), 'openbrowser-local-settings.json');
 
+// Global async-failure safety net: without these handlers a rejected promise
+// that escapes its call chain crashes the main process (Node treats unhandled
+// rejections as fatal) and an uncaught exception ends the session with no
+// diagnostics on disk. Log both to the console and to a file under userData,
+// then keep serving — the desktop shell should not die from a background task.
+function logGlobalFailure(kind, error) {
+  try {
+    const line = error && error.stack ? error.stack : String(error);
+    console.error(`[OpenBrowser] ${kind}: ${line}`);
+    try {
+      const logsDir = path.join(app.getPath('userData'), 'logs');
+      fs.mkdirSync(logsDir, { recursive: true });
+      fs.appendFileSync(path.join(logsDir, 'main-exceptions.log'),
+        `${new Date().toISOString()} ${kind} ${line}\n`);
+    } catch (_) {}
+  } catch (_) {}
+}
+process.on('unhandledRejection', (reason) => logGlobalFailure('unhandledRejection', reason));
+process.on('uncaughtException', (error) => logGlobalFailure('uncaughtException', error));
+
 const UPDATE_REPOSITORY = 'zhu748/OpenBrowser';
 const UPDATE_API_URL = `https://api.github.com/repos/${UPDATE_REPOSITORY}/releases/latest`;
 const UPDATE_LATEST_HTML = `https://github.com/${UPDATE_REPOSITORY}/releases/latest`;
@@ -405,7 +425,26 @@ async function checkAppUpdate() {
   };
 }
 
+// The Ed25519 trust root in automation/update-trust.js is still a placeholder
+// until the release pipeline publishes SHA256SUMS.txt.sig assets. Verification
+// code is fail-closed already; this warning keeps the deployment gap visible
+// in the field log instead of letting it live only in the source comment.
+let updateTrustRootWarned = false;
+function warnIfUpdateTrustRootUndeployed() {
+  if (updateTrustRootWarned) return;
+  updateTrustRootWarned = true;
+  try {
+    const { trustedPublicKeys } = require('./automation/update-trust');
+    if (!trustedPublicKeys().length) {
+      console.warn('[OpenBrowser] updater trust root is not deployed (placeholder key in automation/update-trust.js):'
+        + ' manifest signatures cannot be verified, releases are trusted only via SHA256SUMS from the same GitHub account.'
+        + ' Generate the real pair with update-trust-tool.js, sign each release manifest, and embed the public key.');
+    }
+  } catch (_) {}
+}
+
 async function downloadAppUpdate() {
+  warnIfUpdateTrustRootUndeployed();
   const result = await checkAppUpdate();
   if (!result.canDownload || !result.asset?.name) throw new Error('This platform has no published OpenBrowser installer package');
   if (result.upToDate) return { success: false, upToDate: true, version: result.currentVersion, assetName: result.asset.name };
@@ -714,13 +753,17 @@ async function writeLocalSettingsFile() {
   const serialized = JSON.stringify({ version: 2, ...localSettingsCache }, null, 2);
   const payload = credentialCrypto.encryptCredential(serialized);
 
-  // Preserve backup of existing file before atomic rewrite
+  // Preserve backup of existing file before atomic rewrite. Only encrypted
+  // content may land in the .bak: a legacy plaintext file must not gain a
+  // long-lived plaintext twin. All artifacts stay owner-only (0600).
   try {
     const existing = await fsp.readFile(localSettingsFile);
-    await fsp.writeFile(localSettingsFile + '.bak', existing);
+    if (credentialCrypto.isEncrypted(existing)) {
+      await fsp.writeFile(localSettingsFile + '.bak', existing, { mode: 0o600 });
+    }
   } catch (_) {}
 
-  await fsp.writeFile(temporary, payload);
+  await fsp.writeFile(temporary, payload, { mode: 0o600 });
   await fsp.rm(localSettingsFile, { force: true });
   await fsp.rename(temporary, localSettingsFile);
   persistedSettingsSnapshot = JSON.parse(JSON.stringify(localSettingsCache));

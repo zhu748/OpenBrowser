@@ -9,6 +9,9 @@ const { resolveAvailablePort } = require('./port-utils');
 
 const MAX_BODY_BYTES = 1024 * 1024;
 const DEFAULT_API_PORT = 50325;
+const AUTH_FAILURE_LOCKOUT_THRESHOLD = 25;
+const AUTH_LOCKOUT_BASE_MS = 1000;
+const AUTH_LOCKOUT_MAX_MS = 60 * 1000;
 
 function responseHeaders(origin = '', extra = {}) {
   const headers = {
@@ -479,37 +482,44 @@ class LocalApiServer {
     this.getVersion = options.getVersion || (() => '1.0.0');
     this.server = null;
     this.startedAt = null;
+    // 401 flood backoff: any local process may keep guessing credentials, so
+    // consecutive failures escalate into a temporary lockout (max 60s).
+    this.authFailureCount = 0;
+    this.authLockoutUntil = 0;
   }
 
-  authOk(req, url = null) {
+  registerAuthFailure() {
+    this.authFailureCount += 1;
+    if (this.authFailureCount >= AUTH_FAILURE_LOCKOUT_THRESHOLD) {
+      const over = this.authFailureCount - AUTH_FAILURE_LOCKOUT_THRESHOLD;
+      this.authLockoutUntil = Date.now() + Math.min(AUTH_LOCKOUT_MAX_MS, AUTH_LOCKOUT_BASE_MS * (2 ** over));
+    }
+  }
+
+  registerAuthSuccess() {
+    this.authFailureCount = 0;
+    this.authLockoutUntil = 0;
+  }
+
+  authLockedOut() {
+    return Boolean(this.authLockoutUntil && Date.now() < this.authLockoutUntil);
+  }
+
+  authOk(req) {
     if (!this.apiKey) return true;
     const auth = String(req.headers.authorization || '');
     const bearer = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7).trim() : '';
+    // Header-only credential channel: query strings leak into proxy logs and
+    // shell history, so api_key/api_token/key URL parameters are not accepted.
     const candidates = [
       req.headers['api-key'],
       req.headers['x-api-key'],
       bearer,
-      url?.searchParams?.get('api_key'),
-      url?.searchParams?.get('api_token'),
-      url?.searchParams?.get('key'),
     ];
     const cleanedCandidates = candidates
       .map((candidate) => cleanApiKey(candidate))
       .filter((k) => k && !isApiKeyPlaceholder(k));
-    if (cleanedCandidates.some((candidate) => timingSafeStringEqual(candidate, this.apiKey))) {
-      return true;
-    }
-    try {
-      const diskKey = resolveApiKey({ userDataPath: this.userDataPath || '', ignoreEnv: true })?.key
-        || resolveApiKey({ userDataPath: this.userDataPath || '' })?.key;
-      if (diskKey && !timingSafeStringEqual(this.apiKey, diskKey)) {
-        if (cleanedCandidates.some((candidate) => timingSafeStringEqual(candidate, diskKey))) {
-          this.apiKey = diskKey;
-          return true;
-        }
-      }
-    } catch (_) {}
-    return false;
+    return cleanedCandidates.some((candidate) => timingSafeStringEqual(candidate, this.apiKey));
   }
 
   setApiKey(newKey) {
@@ -628,9 +638,15 @@ class LocalApiServer {
       const url = new URL(req.url || '/', `http://${this.host}:${this.port}`);
       const pathname = url.pathname.replace(/\/+$/, '') || '/';
 
-      if (!this.authOk(req, url)) {
+      if (this.authLockedOut()) {
+        const retryAfterSec = Math.max(1, Math.ceil((this.authLockoutUntil - Date.now()) / 1000));
+        return sendJson(res, 429, fail('too many failed attempts, retry later', 429), origin, { 'Retry-After': String(retryAfterSec) });
+      }
+      if (!this.authOk(req)) {
+        this.registerAuthFailure();
         return sendJson(res, 401, fail('unauthorized', 401), origin, { 'WWW-Authenticate': 'Bearer' });
       }
+      this.registerAuthSuccess();
 
       const method = String(req.method || 'GET').toUpperCase();
       const allowedMethods = allowedMethodsForPath(pathname);

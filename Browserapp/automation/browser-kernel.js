@@ -1750,8 +1750,19 @@ class BrowserKernelManager {
     await fsp.mkdir(this.kernelsRoot, { recursive: true });
     const archivePath = path.join(this.kernelsRoot, `google-chrome-stable-${donutPlatformKey()}.${kind}`);
 
+    const expectedSha256 = await pinnedArchiveSha256(this.kernelsRoot, url);
     this.onProgress({ phase: 'download', message: '下载 Google Chrome Stable 正式包…', version: 'stable', url });
-    const download = await downloadFile(url, archivePath, (p) => this.onProgress({ phase: 'download', ...p, version: 'stable' }));
+    if (!expectedSha256) {
+      // First download of this URL has no known-good digest to enforce; the
+      // host allow-list and TLS are the only guards. Surface that instead of
+      // letting the progress UI imply a verified download. (The URL is
+      // version-less, so a pin is only enforced once a versioned URL exists.)
+      this.onProgress({ phase: 'download', message: '首次下载未附带摘要校验（仅 HTTPS 与官方域名白名单保护）', version: 'stable' });
+      console.warn('[kernel] Chrome Stable download has no pinned SHA-256; trusting TLS + host allow-list only:', url);
+    }
+    const download = await downloadFile(url, archivePath, (p) => this.onProgress({ phase: 'download', ...p, version: 'stable' }), {
+      expectedSha256: expectedSha256 || '',
+    });
 
     this.onProgress({ phase: 'extract', message: '解压 Google Chrome Stable…', version: 'stable' });
     await fsp.rm(work, { recursive: true, force: true });

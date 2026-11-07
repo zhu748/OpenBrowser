@@ -72,10 +72,9 @@ function apiKeyFileCandidates({ env = process.env, userDataPath = '' } = {}) {
     candidates.push(path.join(base, 'mcp-key.json'));
     candidates.push(path.join(base, 'local-api-key.txt'));
   }
-  candidates.push(path.join(process.cwd(), 'mcp-key.json'));
-  candidates.push(path.join(process.cwd(), 'local-api-key.txt'));
-  candidates.push(path.join(__dirname, '..', 'mcp-key.json'));
-  candidates.push(path.join(__dirname, '..', 'local-api-key.txt'));
+  // Deliberately no cwd / app-dir candidates: a key file planted by a local
+  // low-privilege process into a user-writable working directory must never
+  // become an accepted credential. The key lives in userData or nowhere.
   return [...new Set(candidates.map((value) => String(value || '').trim()).filter(Boolean))];
 }
 
