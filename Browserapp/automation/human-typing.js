@@ -177,7 +177,16 @@ function countConsecutiveEligible(chars, start) {
  * @param {(ms:number)=>Promise<void>} [options.sleep]
  * @param {(ch:string)=>string} [options.pickWrongChar]  Override slip generation (testing).
  * @param {(event:object)=>void} [options.onEvent]  Observation hook for slips/corrections.
+ * @param {()=>boolean} [options.shouldAbort]  Polled between keystrokes so a
+ *   cancelled RPA task can interrupt a long humanized typing step.
  */
+class TypingAbortedError extends Error {
+  constructor(message = 'typing aborted') {
+    super(message);
+    this.name = 'TypingAbortedError';
+  }
+}
+
 function createTypingEngine(driver, options = {}) {
   if (!driver || typeof driver.typeChar !== 'function' || typeof driver.pressKey !== 'function') {
     throw new TypeError('driver with typeChar and pressKey is required');
@@ -190,6 +199,11 @@ function createTypingEngine(driver, options = {}) {
     ? options.sleep
     : (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const onEvent = typeof options.onEvent === 'function' ? options.onEvent : null;
+  const shouldAbort = typeof options.shouldAbort === 'function' ? options.shouldAbort : null;
+
+  function checkAborted() {
+    if (shouldAbort && shouldAbort()) throw new TypingAbortedError();
+  }
 
   const flush = typeof driver.flush === 'function'
     ? () => driver.flush()
@@ -318,6 +332,7 @@ function createTypingEngine(driver, options = {}) {
     const range = normalizeDelayRange(delayRange);
     const chars = Array.from(normalizeText(text));
     for (let i = 0; i < chars.length; i += 1) {
+      checkAborted();
       await typeChar(chars[i], i === 0 ? [0, 0] : range);
     }
     return chars.length;
@@ -332,6 +347,7 @@ function createTypingEngine(driver, options = {}) {
     let index = 0;
 
     while (index < chars.length) {
+      checkAborted();
       const ch = chars[index];
       if (!shouldSlip(ch, config)) {
         await typeChar(ch, index === 0 ? [0, 0] : range);
@@ -358,6 +374,7 @@ function createTypingEngine(driver, options = {}) {
 
 module.exports = {
   createTypingEngine,
+  TypingAbortedError,
   simulateType: (driver, text, delayRange, typoConfig, options) =>
     createTypingEngine(driver, options).simulateType(text, delayRange, typoConfig),
   typeText: (driver, text, delayRange, options) =>

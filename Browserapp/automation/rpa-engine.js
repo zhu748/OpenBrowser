@@ -3,6 +3,7 @@
 const cdp = require('../cdp');
 const { applyTrustedChange } = require('./trusted-input');
 const humanInput = require('./human-input');
+const { TypingAbortedError } = require('./human-typing');
 const {
   getDownloadFileName,
   getFileNameFromContentDisposition,
@@ -254,6 +255,23 @@ class BreakLoopSignal extends Error {
   }
 }
 
+/**
+ * Whole-task time budget. 0 (default) means unlimited and preserves the
+ * historical behaviour; operators can bound runaway tasks globally via
+ * OPENBROWSER_RPA_TASK_TIMEOUT_MS or per run via options.timeout_ms.
+ */
+function resolveTaskTimeoutMs(options = {}) {
+  const fromOptions = Number(options?.timeout_ms ?? options?.timeoutMs);
+  if (Number.isFinite(fromOptions) && fromOptions > 0) {
+    return Math.min(24 * 60 * 60 * 1000, Math.floor(fromOptions));
+  }
+  const fromEnv = Number(process.env.OPENBROWSER_RPA_TASK_TIMEOUT_MS);
+  if (Number.isFinite(fromEnv) && fromEnv > 0) {
+    return Math.min(24 * 60 * 60 * 1000, Math.floor(fromEnv));
+  }
+  return 0;
+}
+
 function resolveSerial(params = {}) {
   if (params.serialType === 'randomInterval' || params.serialType === 'random') {
     const min = Number(params.serialMin) || 1;
@@ -363,14 +381,16 @@ class RpaEngine {
   }
 
   async stop(taskId) {
+    // Honest cancel semantics: we only REQUEST cancellation here. The task
+    // stays in `running` until its step loop / long-step polls observe the
+    // flag and the runTask finally block performs the actual cleanup, so
+    // getStatus() never under-reports work that is still executing.
     if (taskId) {
       this.cancelled.add(taskId);
-      this.running.delete(taskId);
-      return { success: true, taskId };
+      return { success: true, taskId, state: this.running.has(taskId) ? 'cancelling' : 'not-running' };
     }
     for (const id of [...this.running.keys()]) this.cancelled.add(id);
-    this.running.clear();
-    return { success: true, stoppedAll: true };
+    return { success: true, stoppedAll: true, count: this.running.size };
   }
 
   async runPlan(planId, options = {}) {
@@ -453,9 +473,20 @@ class RpaEngine {
         remarks: [],
         port,
         activeProfileId: task.profile_id,
+        isCancelled: () => this.cancelled.has(taskId),
+      };
+      // Optional task-level budget: OPENBROWSER_RPA_TASK_TIMEOUT_MS (or a
+      // per-run options.timeout_ms) bounds the whole task; 0 disables it.
+      const taskTimeoutMs = resolveTaskTimeoutMs(options);
+      const taskDeadline = taskTimeoutMs > 0 ? Date.now() + taskTimeoutMs : 0;
+      const ensureTaskAlive = () => {
+        if (this.cancelled.has(taskId)) throw new Error('cancelled');
+        if (taskDeadline && Date.now() > taskDeadline) {
+          throw new Error(`task timeout exceeded: over ${Math.round(taskTimeoutMs / 1000)}s (OPENBROWSER_RPA_TASK_TIMEOUT_MS / options.timeout_ms)`);
+        }
       };
       for (let index = 0; index < steps.length; index += 1) {
-        if (this.cancelled.has(taskId)) throw new Error('cancelled');
+        ensureTaskAlive();
         const step = steps[index] || {};
         const type = String(step.type || step.action || '').toLowerCase();
         await log(`step ${index + 1}/${steps.length}: ${type}`);
@@ -563,7 +594,7 @@ class RpaEngine {
     try {
       await this.executeStepInternal(port, step, ctx);
     } catch (error) {
-      if (error instanceof BreakLoopSignal) {
+      if (error instanceof BreakLoopSignal || error instanceof TypingAbortedError) {
         throw error;
       }
       const errorChildren = Array.isArray(step.errorChildren)
@@ -660,6 +691,7 @@ class RpaEngine {
               human: humanTyping,
               delayRange: inputDelayRange(params, humanTyping),
               typoConfig: params.typoConfig,
+              shouldAbort: () => Boolean(ctx?.isCancelled?.()),
             });
           });
         } catch (error) {
@@ -677,6 +709,7 @@ class RpaEngine {
           human: humanTyping,
           delayRange: inputDelayRange(params, humanTyping),
           typoConfig: params.typoConfig,
+          shouldAbort: () => Boolean(ctx?.isCancelled?.()),
         });
       }
       return;
@@ -783,7 +816,7 @@ class RpaEngine {
       const deadline = Date.now() + timeout;
       let success = false;
       while (Date.now() < deadline) {
-        if (this.cancelled.has?.(null)) break;
+        if (ctx?.isCancelled?.()) throw new Error('cancelled');
         const found = await this.withPage(port, async (ws) => {
           try {
             await this.focusSelector(ws, selector, target.selectorRadio, target.serial);
@@ -1236,7 +1269,9 @@ class RpaEngine {
       if (type === 'stoplinsten') return;
       const matcher = text(params.url || '');
       const timeout = Math.max(0, Math.min(120000, Number(params.timeout) || 30000));
-      const resource = await this.findNetworkResource(port, matcher, timeout);
+      const resource = await this.findNetworkResource(port, matcher, timeout, {
+        shouldAbort: () => Boolean(ctx?.isCancelled?.()),
+      });
       if (type === 'waitforresponse') return;
       if (type === 'getrequest') {
         const requestUrl = resource.name;
@@ -1686,9 +1721,10 @@ class RpaEngine {
     return Array.isArray(list) ? list : [];
   }
 
-  async findNetworkResource(port, matcher, timeout) {
+  async findNetworkResource(port, matcher, timeout, { shouldAbort } = {}) {
     const deadline = Date.now() + timeout;
     do {
+      if (shouldAbort && shouldAbort()) throw new Error('cancelled');
       const resources = await this.withPage(port, async (ws) => {
         const result = await cdp.call(ws, 'Runtime.evaluate', {
           expression: 'performance.getEntriesByType("resource").map((entry) => ({ name: entry.name, initiatorType: entry.initiatorType }))',
