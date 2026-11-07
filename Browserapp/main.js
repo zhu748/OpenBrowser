@@ -410,6 +410,12 @@ async function downloadAppUpdate() {
     } finally {
       await file.close();
     }
+    // A server that hangs up early ends the body stream cleanly; without this
+    // gate a truncated installer could reach the SHA-256 step (or, for a
+    // release without a manifest, the desktop) as a "complete" download.
+    if (contentLength && received < contentLength) {
+      throw new Error(`Update download was truncated: received ${received} of ${contentLength} announced bytes`);
+    }
     emit({ type: 'app-update-progress', received, total: contentLength || result.asset.size || received, percent: 100, version: result.remoteVersion });
     // Integrity gate: when the release publishes SHA256SUMS.txt the downloaded
     // installer MUST match before it is handed to the OS (fail closed on

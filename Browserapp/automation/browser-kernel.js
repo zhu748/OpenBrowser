@@ -66,6 +66,98 @@ function trustedKernelUrl(value) {
   return parsed;
 }
 
+// ---------------------------------------------------------------------------
+// Archive digest pinning.
+//
+// Google publishes no checksums inside the Chrome-for-Testing metadata and the
+// Wayfern feed has none today either, so a first download can only be trusted
+// as far as TLS + the host allow-list go. What CAN be hardened is every
+// download after the first: the digest of a known-good archive is recorded
+// locally and any later fetch of the same versioned URL must reproduce it
+// byte for byte. A compromised mirror (or a feed entry quietly repointed at
+// different bytes) then fails closed instead of installing silently.
+// Rolling "current" URLs (dl.google.com .../google-chrome-stable_current_...)
+// legitimately change content under a fixed URL, so they are never pinned.
+// ---------------------------------------------------------------------------
+
+const ARCHIVE_DIGESTS_FILE = 'archive-digests.json';
+const MAX_ARCHIVE_DIGEST_PINS = 32;
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+
+function archiveDigestsPath(kernelsRoot) {
+  return path.join(kernelsRoot, ARCHIVE_DIGESTS_FILE);
+}
+
+/** A URL is pinnable only when it embeds a concrete version string. */
+function isVersionedArchiveUrl(url, version) {
+  const text = String(url || '');
+  const ver = String(version || '');
+  return Boolean(ver) && /^\d/.test(ver) && text.includes(ver);
+}
+
+async function loadArchiveDigests(kernelsRoot) {
+  try {
+    const raw = JSON.parse(await fsp.readFile(archiveDigestsPath(kernelsRoot), 'utf8'));
+    const pins = raw && typeof raw === 'object' && raw.pins && typeof raw.pins === 'object' ? raw.pins : null;
+    return pins ? { pins } : { pins: {} };
+  } catch (_) {
+    return { pins: {} };
+  }
+}
+
+/** Digest previously recorded for this exact URL, or null. */
+async function pinnedArchiveSha256(kernelsRoot, url) {
+  if (!url) return null;
+  const { pins } = await loadArchiveDigests(kernelsRoot);
+  const entry = pins[url];
+  const sha256 = entry && typeof entry === 'object' ? entry.sha256 : entry;
+  const value = String(sha256 || '').toLowerCase();
+  return SHA256_HEX.test(value) ? value : null;
+}
+
+/** Record the digest of a known-good archive; keeps the newest N pins. */
+async function pinArchiveSha256(kernelsRoot, url, sha256) {
+  const value = String(sha256 || '').toLowerCase();
+  if (!url || !SHA256_HEX.test(value)) return false;
+  try {
+    const { pins } = await loadArchiveDigests(kernelsRoot);
+    delete pins[url];
+    pins[url] = { sha256: value, pinnedAt: new Date().toISOString() };
+    const keys = Object.keys(pins);
+    for (const stale of keys.slice(0, Math.max(0, keys.length - MAX_ARCHIVE_DIGEST_PINS))) {
+      delete pins[stale];
+    }
+    await fsp.mkdir(kernelsRoot, { recursive: true });
+    await fsp.writeFile(
+      archiveDigestsPath(kernelsRoot),
+      JSON.stringify({ version: 1, pins }, null, 2) + '\n',
+      'utf8'
+    );
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * Pull an optional digest out of a kernel feed document. Accepts the shapes a
+ * feed is likely to grow (`sha256`, `sha256Hex`, per-platform `checksums`),
+ * validates the hex, and returns {} when nothing trustworthy is published.
+ */
+function extractFeedDigest(feed, platform) {
+  const out = {};
+  if (!feed || typeof feed !== 'object') return out;
+  const direct = [feed.sha256, feed.sha256Hex];
+  const checksums = feed.checksums && typeof feed.checksums === 'object' ? feed.checksums : {};
+  const fromMap = checksums[platform] || checksums[String(platform || '').replace(/\s+/g, '')];
+  const nested = fromMap && typeof fromMap === 'object' ? fromMap.sha256 : fromMap;
+  const sha256 = String(direct.find(Boolean) || nested || '').trim().toLowerCase();
+  if (SHA256_HEX.test(sha256)) out.sha256 = sha256;
+  const md5 = String(feed.md5 || (fromMap && typeof fromMap === 'object' ? fromMap.md5 : '') || '').trim().toLowerCase();
+  if (/^[0-9a-f]{32}$/.test(md5)) out.md5 = md5;
+  return out;
+}
+
 function validateArchiveMemberName(value) {
   const name = String(value || '').replace(/\\/g, '/');
   if (!name || name.includes('\0') || name.startsWith('/') || /^[A-Za-z]:\//.test(name)) {
@@ -556,14 +648,20 @@ function fetchJson(url, redirects = 0) {
  *   - the archive lands in a sibling partial file and is only moved into place
  *     once it is complete, so an interrupted run never leaves a truncated file
  *     where the extractor expects a whole one;
+ *   - a response that announces more bytes than it delivers is rejected as
+ *     truncated, and a supplied SHA-256/MD5 digest is enforced before the file
+ *     is promoted (fail closed);
  *   - the byte ceiling is enforced on the announced length *and* while the
  *     body streams, because a chunked response announces nothing;
  *   - `trustedKernelUrl` vets every hop, not just the first, so a redirect
  *     cannot move the transfer off the allowed hosts.
  *
- * @returns {Promise<{path:string, bytes:number}>}
+ * @param {{expectedSha256?:string, expectedMd5?:string}} [options] Digests to
+ *   enforce; the SHA-256 of the transfer is always computed and returned so the
+ *   caller can pin it for later downloads.
+ * @returns {Promise<{path:string, bytes:number, sha256:string|null}>}
  */
-function downloadFile(url, dest, onProgress) {
+function downloadFile(url, dest, onProgress, options = {}) {
   const downloader = new Downloader(url, {
     destPath: dest,
     resume: true,
@@ -572,6 +670,9 @@ function downloadFile(url, dest, onProgress) {
     headers: { 'User-Agent': 'OpenBrowser/1.0 (kernel)' },
     maxBytes: MAX_KERNEL_BYTES,
     validateUrl: (target) => { trustedKernelUrl(target); },
+    expectedSha256: options.expectedSha256 || '',
+    expectedMd5: options.expectedMd5 || '',
+    computeSha256: true,
   });
 
   if (typeof onProgress === 'function') {
@@ -581,7 +682,11 @@ function downloadFile(url, dest, onProgress) {
     });
   }
 
-  return downloader.start().then((result) => ({ path: result.path, bytes: result.bytes }));
+  return downloader.start().then((result) => ({
+    path: result.path,
+    bytes: result.bytes,
+    sha256: result.sha256 || null,
+  }));
 }
 
 
@@ -1401,7 +1506,10 @@ class BrowserKernelManager {
     const url = downloads[platform] || null;
 
     if (url) {
-      return { version, url, platform, source: SOURCE_WAYFERN, raw: data };
+      // Enforce a digest when the feed publishes one; today it does not, but
+      // the moment it does every install becomes verifiable end to end.
+      const digest = extractFeedDigest(data, platform);
+      return { version, url, platform, source: SOURCE_WAYFERN, raw: data, ...digest };
     }
 
     // Platform missing (e.g. macos-x64 null) → Chrome for Testing fallback
@@ -1546,13 +1654,23 @@ class BrowserKernelManager {
     const ext = kind === 'dmg' ? 'dmg' : kind === 'tar.xz' ? 'tar.xz' : kind === 'tar.gz' ? 'tar.gz' : 'zip';
     const archivePath = path.join(this.kernelsRoot, `wayfern-${version}-${platform}.${ext}`);
 
+    // A previously pinned digest for this exact URL turns a re-download into
+    // a byte-exact comparison; the feed digest (when published) takes
+    // precedence because it is the fresher statement from the source.
+    const pinned = isVersionedArchiveUrl(url, version) ? await pinnedArchiveSha256(this.kernelsRoot, url) : null;
+    const expectedSha256 = release.sha256 || pinned || '';
+    const expectedMd5 = release.md5 || '';
+
     this.onProgress({
       phase: 'download',
-      message: `下载独立内核 ${version}…`,
+      message: `下载独立内核 ${version}${expectedSha256 ? '（校验摘要）' : ''}…`,
       version,
       url,
     });
-    await downloadFile(url, archivePath, (p) => this.onProgress({ phase: 'download', ...p, version }));
+    const download = await downloadFile(url, archivePath, (p) => this.onProgress({ phase: 'download', ...p, version }), {
+      expectedSha256,
+      expectedMd5,
+    });
 
     this.onProgress({ phase: 'extract', message: '解压独立内核…', version });
     await fsp.rm(work, { recursive: true, force: true });
@@ -1587,9 +1705,15 @@ class BrowserKernelManager {
     this.meta.source = SOURCE_WAYFERN;
     this.meta.downloadUrl = url;
     this.meta.remoteVersion = version;
+    this.meta.archiveSha256 = download.sha256 || null;
     await this.saveMeta();
 
     await this.recordInstallBaseline(work);
+    // The archive passed extraction, the escape-proof path check and the launch
+    // probe — pin its digest so the next download of this URL must match.
+    if (isVersionedArchiveUrl(url, version) && download.sha256) {
+      await pinArchiveSha256(this.kernelsRoot, url, download.sha256);
+    }
 
     await fsp.rm(archivePath, { force: true }).catch(() => {});
 
@@ -1604,7 +1728,7 @@ class BrowserKernelManager {
     const archivePath = path.join(this.kernelsRoot, `google-chrome-stable-${donutPlatformKey()}.${kind}`);
 
     this.onProgress({ phase: 'download', message: '下载 Google Chrome Stable 正式包…', version: 'stable', url });
-    await downloadFile(url, archivePath, (p) => this.onProgress({ phase: 'download', ...p, version: 'stable' }));
+    const download = await downloadFile(url, archivePath, (p) => this.onProgress({ phase: 'download', ...p, version: 'stable' }));
 
     this.onProgress({ phase: 'extract', message: '解压 Google Chrome Stable…', version: 'stable' });
     await fsp.rm(work, { recursive: true, force: true });
@@ -1646,7 +1770,10 @@ class BrowserKernelManager {
     this.meta.source = SOURCE_CHROME_STABLE;
     this.meta.downloadUrl = url;
     this.meta.remoteVersion = version;
+    this.meta.archiveSha256 = download.sha256 || null;
     await this.saveMeta();
+    // Rolling "current" URL: content legitimately changes, so the digest is
+    // recorded for provenance but deliberately not pinned.
     await fsp.rm(archivePath, { force: true }).catch(() => {});
     await this.recordInstallBaseline(work);
 
@@ -1663,8 +1790,14 @@ class BrowserKernelManager {
     await fsp.mkdir(this.kernelsRoot, { recursive: true });
     const zipPath = path.join(this.kernelsRoot, `chrome-${version}-${plat}.zip`);
 
-    this.onProgress({ phase: 'download', message: '下载 Chrome for Testing ' + version, version, url });
-    await downloadFile(url, zipPath, (p) => this.onProgress({ phase: 'download', ...p, version }));
+    // CfT URLs embed the exact version, so a pinned digest is a strict
+    // byte-exact guarantee on every re-download of the same version.
+    const pinned = isVersionedArchiveUrl(url, version) ? await pinnedArchiveSha256(this.kernelsRoot, url) : null;
+
+    this.onProgress({ phase: 'download', message: `下载 Chrome for Testing ${version}${pinned ? '（校验摘要）' : ''}`, version, url });
+    const download = await downloadFile(url, zipPath, (p) => this.onProgress({ phase: 'download', ...p, version }), {
+      expectedSha256: pinned || '',
+    });
 
     this.onProgress({ phase: 'extract', message: '解压内核…', version });
     await fsp.rm(work, { recursive: true, force: true });
@@ -1694,8 +1827,12 @@ class BrowserKernelManager {
     this.meta.source = SOURCE_CFT;
     this.meta.downloadUrl = url;
     this.meta.remoteVersion = version;
+    this.meta.archiveSha256 = download.sha256 || null;
     await this.saveMeta();
     await this.recordInstallBaseline(work);
+    if (isVersionedArchiveUrl(url, version) && download.sha256) {
+      await pinArchiveSha256(this.kernelsRoot, url, download.sha256);
+    }
 
     await fsp.rm(zipPath, { force: true }).catch(() => {});
 
@@ -1840,6 +1977,10 @@ module.exports = {
   compareVersions,
   validateArchiveMemberName,
   safeInstalledBinary,
+  isVersionedArchiveUrl,
+  extractFeedDigest,
+  pinnedArchiveSha256,
+  pinArchiveSha256,
   findWayfernKernelBinary,
   findBundledWayfernKernel,
   findBundledChromeForTesting,

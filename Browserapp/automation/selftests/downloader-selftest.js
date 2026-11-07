@@ -25,6 +25,7 @@ async function checkAsync(name, fn) {
 }
 
 const md5 = (buf) => crypto.createHash('md5').update(buf).digest('hex');
+const sha256 = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
 
 async function makeTempDir() {
   return await fsp.mkdtemp(path.join(os.tmpdir(), 'dl-selftest-'));
@@ -193,9 +194,132 @@ function startServer(handler) {
         destPath: path.join(dir, 'bad.bin'),
         expectedMd5: md5(Buffer.from('right')),
       });
-      await assert.rejects(() => dl.start(), /digest mismatch/);
+      await assert.rejects(() => dl.start(), /md5 mismatch/);
       assert.strictEqual(dl.status, STATUS.FAILED);
       assert.strictEqual(await Downloader.fileExists(path.join(dir, 'bad.bin')), false, 'nothing promoted');
+    } finally {
+      await server.close();
+    }
+  });
+
+  await checkAsync('verifies a sha256 digest and reports the transfer digest', async () => {
+    const payload = Buffer.from('sha256-verified-payload'.repeat(64));
+    const server = await startServer((req, res) => {
+      res.writeHead(200, { 'content-length': payload.length });
+      res.end(payload);
+    });
+    const dir = await makeTempDir();
+    try {
+      const dl = new Downloader(server.url('/s.zip'), {
+        destPath: path.join(dir, 's.zip'),
+        expectedSha256: sha256(payload),
+      });
+      const result = await dl.start();
+      assert.strictEqual(result.sha256, sha256(payload));
+      assert.strictEqual(result.md5, md5(payload), 'md5 still reported for callers that want it');
+    } finally {
+      await server.close();
+    }
+  });
+
+  await checkAsync('rejects a sha256 mismatch before promotion', async () => {
+    const payload = Buffer.from('evil!');
+    const server = await startServer((req, res) => {
+      res.writeHead(200, { 'content-length': payload.length });
+      res.end(payload);
+    });
+    const dir = await makeTempDir();
+    try {
+      const dl = new Downloader(server.url('/evil.zip'), {
+        destPath: path.join(dir, 'evil.zip'),
+        expectedSha256: sha256(Buffer.from('good!')),
+      });
+      await assert.rejects(() => dl.start(), /sha256 mismatch/);
+      assert.strictEqual(await Downloader.fileExists(path.join(dir, 'evil.zip')), false);
+    } finally {
+      await server.close();
+    }
+  });
+
+  check('a malformed expected digest is refused at construction', () => {
+    assert.throws(() => new Downloader('https://x.test/w.bin', { expectedSha256: 'not-hex-at-all' }), /64-character hex/);
+    assert.throws(() => new Downloader('https://x.test/w.bin', { expectedSha256: 'deadbeef' }), /64-character hex/);
+    assert.throws(() => new Downloader('https://x.test/w.bin', { expectedMd5: 'deadbeef' }), /32-character hex/);
+    // Empty stays "no check wanted" so optional digests keep working.
+    assert.doesNotThrow(() => new Downloader('https://x.test/w.bin', { expectedSha256: '' }));
+  });
+
+  await checkAsync('computeSha256 reports the digest without enforcing one', async () => {
+    const payload = Buffer.from('pin-me-for-later'.repeat(40));
+    const server = await startServer((req, res) => {
+      res.writeHead(200, { 'content-length': payload.length });
+      res.end(payload);
+    });
+    const dir = await makeTempDir();
+    try {
+      const dl = new Downloader(server.url('/pin.bin'), {
+        destPath: path.join(dir, 'pin.bin'),
+        computeSha256: true,
+      });
+      const result = await dl.start();
+      assert.strictEqual(result.sha256, sha256(payload));
+      assert.ok(result.bytes > 0);
+    } finally {
+      await server.close();
+    }
+  });
+
+  await checkAsync('a truncated response is rejected even without a digest', async () => {
+    const server = await startServer((req, res) => {
+      // Announce more bytes than the socket will deliver. Node's HTTP parser
+      // flags the premature close as 'aborted'; the downloader's own
+      // short-body gate is the second line of defence for the cases the
+      // parser lets through.
+      res.writeHead(200, { 'content-length': 4096 });
+      res.end(Buffer.alloc(1024));
+    });
+    const dir = await makeTempDir();
+    try {
+      const dl = new Downloader(server.url('/cut.bin'), {
+        destPath: path.join(dir, 'cut.bin'),
+        retries: 0,
+      });
+      await assert.rejects(() => dl.start(), /truncated response|aborted/);
+      assert.strictEqual(await Downloader.fileExists(path.join(dir, 'cut.bin')), false, 'nothing promoted');
+    } finally {
+      await server.close();
+    }
+  });
+
+  await checkAsync('a resumed transfer covers the sha256 of the whole payload', async () => {
+    const payload = Buffer.from('0123456789abcdef'.repeat(128));
+    const splitAt = 512;
+    const server = await startServer((req, res) => {
+      const range = req.headers.range;
+      if (range) {
+        const start = Number(/bytes=(\d+)-/.exec(range)[1]);
+        const slice = payload.slice(start);
+        res.writeHead(206, {
+          'content-range': `bytes ${start}-${payload.length - 1}/${payload.length}`,
+          'content-length': slice.length,
+        });
+        res.end(slice);
+        return;
+      }
+      res.writeHead(200, { 'content-length': payload.length });
+      res.end(payload);
+    });
+    const dir = await makeTempDir();
+    const destPath = path.join(dir, 'resume-pin.bin');
+    try {
+      await fsp.writeFile(`${destPath}.partial`, payload.slice(0, splitAt));
+      const dl = new Downloader(server.url('/rp.bin'), {
+        destPath,
+        expectedSha256: sha256(payload),
+      });
+      const result = await dl.start();
+      assert.strictEqual(result.sha256, sha256(payload), 'sha256 covers prior bytes plus new ones');
+      assert.deepStrictEqual(await fsp.readFile(destPath), payload);
     } finally {
       await server.close();
     }

@@ -9,9 +9,14 @@
  * trip. Supports HTTP range resumption when a partial temp file is present.
  *
  * Usage:
- *   const dl = new Downloader(url, { destPath, expectedMd5 });
+ *   const dl = new Downloader(url, { destPath, expectedMd5, expectedSha256 });
  *   dl.on('progress', ({ received, total }) => ...);
  *   const result = await dl.start();
+ *
+ * Two integrity guarantees are independent of any expected digest:
+ *   - a response that announces Content-Length but delivers fewer bytes is
+ *     rejected as truncated instead of being promoted silently;
+ *   - the body only lands in its final name after verification passes.
  */
 
 const EventEmitter = require('events');
@@ -34,6 +39,20 @@ const STATUS = {
 const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_REDIRECTS = 5;
 const PROGRESS_EMIT_INTERVAL_MS = 100;
+
+/**
+ * A caller that asks for digest verification with a malformed digest must not
+ * be silently downgraded to no verification: that is exactly the kind of
+ * quiet failure an attacker would hope for. Empty means "no check wanted".
+ */
+function requireHexDigest(value, name, length) {
+  if (value === undefined || value === null || value === '') return '';
+  const text = String(value).trim().toLowerCase();
+  if (!new RegExp(`^[0-9a-f]{${length}}$`).test(text)) {
+    throw new TypeError(`${name} must be a ${length}-character hex digest`);
+  }
+  return text;
+}
 
 /** Extract a filename from a URL path, falling back to a timestamp. */
 function fileNameFromUrl(rawUrl) {
@@ -116,6 +135,11 @@ class Downloader extends EventEmitter {
    * @param {string} [options.dir] Destination directory when destPath is omitted.
    * @param {string} [options.fileName] Override the filename inferred from the url.
    * @param {string} [options.expectedMd5] Lowercase hex digest to verify.
+   * @param {string} [options.expectedSha256] Lowercase hex SHA-256 digest to
+   *   verify; preferred over expectedMd5 when both are known.
+   * @param {boolean} [options.computeSha256] Compute (and report) the SHA-256
+   *   of the transfer even when no digest is expected, so callers can pin it
+   *   after a first successful download.
    * @param {number} [options.retries] Extra attempts after the first failure.
    * @param {number} [options.timeoutMs] Per-request timeout.
    * @param {object} [options.headers] Extra request headers.
@@ -131,7 +155,9 @@ class Downloader extends EventEmitter {
     this.options = options;
     this.retries = Number.isInteger(options.retries) && options.retries > 0 ? options.retries : 0;
     this.timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : DEFAULT_TIMEOUT_MS;
-    this.expectedMd5 = options.expectedMd5 ? String(options.expectedMd5).toLowerCase() : '';
+    this.expectedMd5 = requireHexDigest(options.expectedMd5, 'expectedMd5', 32);
+    this.expectedSha256 = requireHexDigest(options.expectedSha256, 'expectedSha256', 64);
+    this.computeSha256 = Boolean(options.computeSha256) || Boolean(this.expectedSha256);
     this.allowResume = options.resume !== false;
 
     this.fileName = options.fileName || fileNameFromUrl(url);
@@ -197,7 +223,7 @@ class Downloader extends EventEmitter {
 
   /**
    * Download once (no retry logic). Resolves with the temp file path.
-   * @returns {Promise<{path:string, md5:string, bytes:number, resumed:boolean}>}
+   * @returns {Promise<{path:string, md5:string, sha256:string|null, bytes:number, resumed:boolean}>}
    */
   async downloadOnce() {
     let startOffset = 0;
@@ -230,12 +256,20 @@ class Downloader extends EventEmitter {
     this.setProgress(startOffset, this.total || startOffset);
 
     const hash = crypto.createHash('md5');
+    // SHA-256 is only maintained when the caller expects it or wants it
+    // reported for pinning; hashing a multi-hundred-megabyte archive twice
+    // otherwise costs a second of CPU for nothing.
+    const sha256Hash = this.computeSha256 ? crypto.createHash('sha256') : null;
+    const updateHashes = (chunk) => {
+      hash.update(chunk);
+      if (sha256Hash) sha256Hash.update(chunk);
+    };
     if (resumed) {
       // Re-read the partial file so the digest covers the whole payload.
       await new Promise((resolve, reject) => {
         const prior = fs.createReadStream(this.tmpPath);
         prior.on('error', reject);
-        prior.on('data', (chunk) => hash.update(chunk));
+        prior.on('data', (chunk) => updateHashes(chunk));
         prior.on('end', resolve);
       });
     }
@@ -251,7 +285,7 @@ class Downloader extends EventEmitter {
       res.on('error', fail);
       out.on('error', fail);
       res.on('data', (chunk) => {
-        hash.update(chunk);
+        updateHashes(chunk);
         this.received += chunk.length;
         // A missing or understated Content-Length must not let the transfer
         // grow past the ceiling either.
@@ -266,37 +300,60 @@ class Downloader extends EventEmitter {
       res.pipe(out);
     });
 
+    // A server that hangs up after sending fewer bytes than it announced
+    // still ends the response stream cleanly, so the pipe above resolves. No
+    // digest can make a truncated archive whole; refuse it here regardless of
+    // whether one was supplied.
+    if (this.total > 0 && this.received < this.total) {
+      throw new Error(`truncated response: received ${this.received} of ${this.total} announced bytes`);
+    }
+
     return {
       path: this.tmpPath,
       md5: hash.digest('hex'),
+      sha256: sha256Hash ? sha256Hash.digest('hex') : null,
       bytes: this.received,
       resumed,
     };
   }
 
-  /** Verify the digest when one was supplied. */
-  verify(md5) {
-    if (!this.expectedMd5) return true;
-    return md5 === this.expectedMd5;
+  /** Verify every supplied digest; a mismatch message names the algorithm. */
+  verify(md5, sha256) {
+    if (this.expectedSha256) {
+      return sha256 === this.expectedSha256 ? true : 'sha256 mismatch';
+    }
+    if (this.expectedMd5) {
+      return md5 === this.expectedMd5 ? true : 'md5 mismatch';
+    }
+    return true;
   }
 
   /**
    * Run the download, retrying on failure and verifying integrity before the
    * temp file is promoted to its final name.
    *
-   * @returns {Promise<{path:string, md5:string, bytes:number, skipped:boolean, attempts:number}>}
+   * @returns {Promise<{path:string, md5:string, sha256:string|null, bytes:number, skipped:boolean, attempts:number}>}
    */
   async start() {
     try {
       await this.ensureWritable();
 
       // Reuse a destination that already matches the expected digest.
-      if (this.expectedMd5 && await Downloader.fileExists(this.destPath)) {
-        const existing = await Downloader.digestFile(this.destPath);
-        if (existing === this.expectedMd5) {
+      const expectedNow = this.expectedSha256 || this.expectedMd5;
+      if (expectedNow && await Downloader.fileExists(this.destPath)) {
+        const algorithm = this.expectedSha256 ? 'sha256' : 'md5';
+        const existing = await Downloader.digestFile(this.destPath, algorithm);
+        if (existing === expectedNow) {
           this.progress = 1;
           this.setStatus(STATUS.COMPLETED);
-          return { path: this.destPath, md5: existing, bytes: 0, skipped: true, attempts: 0 };
+          return {
+            path: this.destPath,
+            md5: algorithm === 'md5' ? existing : null,
+            sha256: algorithm === 'sha256' ? existing : null,
+            bytes: 0,
+            skipped: true,
+            attempts: 0,
+          };
         }
       }
 
@@ -310,10 +367,11 @@ class Downloader extends EventEmitter {
           const result = await this.downloadOnce();
 
           this.setStatus(STATUS.VERIFYING);
-          if (!this.verify(result.md5)) {
+          const verdict = this.verify(result.md5, result.sha256);
+          if (verdict !== true) {
             // A bad digest means the partial file is not trustworthy.
             await fsp.rm(this.tmpPath, { force: true });
-            throw new Error(`digest mismatch: got ${result.md5}, expected ${this.expectedMd5}`);
+            throw new Error(`${verdict}: got ${verdict.startsWith('sha256') ? result.sha256 : result.md5}, expected ${this.expectedSha256 || this.expectedMd5}`);
           }
 
           await fsp.mkdir(path.dirname(this.destPath), { recursive: true });
@@ -322,10 +380,11 @@ class Downloader extends EventEmitter {
 
           this.progress = 1;
           this.setStatus(STATUS.COMPLETED);
-          this.emit('complete', { path: this.destPath, md5: result.md5, bytes: result.bytes });
+          this.emit('complete', { path: this.destPath, md5: result.md5, sha256: result.sha256, bytes: result.bytes });
           return {
             path: this.destPath,
             md5: result.md5,
+            sha256: result.sha256,
             bytes: result.bytes,
             skipped: false,
             attempts: attempt,
