@@ -4,7 +4,7 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const { pathToFileURL } = require('url');
 const { spawn, execFile } = require('child_process');
-const { randomUUID } = require('crypto');
+const { randomUUID, createHash, timingSafeEqual } = require('crypto');
 const cdp = require('./cdp');
 const { BrowserEngine } = require('./engine');
 const { LiveSyncController } = require('./live-sync-v5');
@@ -29,7 +29,7 @@ const { deepEqual } = require('./automation/object-utils');
 const { startAutomation } = require('./automation');
 const cloudSync = require('./automation/cloud-sync');
 const credentialCrypto = require('./credential-crypto');
-const { validateDataRootIsolationSecure, ensureDataRootIsolationSecure, assertProfileId } = require('./automation/isolation');
+const { validateDataRootIsolationSecure, ensureDataRootIsolationSecure, assertProfileId, terminateProcessesUsingProfile } = require('./automation/isolation');
 const { createCrashHandler, buildHelperProcessGoneReport } = require('./automation/crash-report');
 const { writeBrowserStartupDiagnostic } = require('./engine/diagnostics');
 
@@ -74,6 +74,64 @@ const UPDATE_ASSETS = Object.freeze({
 const UPDATE_MAX_BYTES = 1024 * 1024 * 1024;
 const UPDATE_TIMEOUT_MS = 20000;
 const UPDATE_ALLOWED_HOSTS = new Set(['github.com', 'objects.githubusercontent.com', 'release-assets.githubusercontent.com']);
+const UPDATE_CHECKSUM_ASSET = 'SHA256SUMS.txt';
+
+/** Parse a `sha256sum`-style manifest into a Map(assetName -> sha256 hex). */
+function parseChecksumManifest(text) {
+  const map = new Map();
+  for (const line of String(text || '').split(/\r?\n/)) {
+    const match = line.match(/^([0-9a-fA-F]{64})\s+\*?(.+?)\s*$/);
+    if (match) map.set(match[2], match[1].toLowerCase());
+  }
+  return map;
+}
+
+/**
+ * Fetch the release's SHA256SUMS.txt manifest (direct asset URL first).
+ * Returns a Map, or null when this release publishes no manifest (older
+ * releases) — callers must treat null as "cannot verify", never as "valid".
+ */
+async function resolveReleaseChecksums(remoteVersion) {
+  if (!remoteVersion) return null;
+  const manifestUrl = `https://github.com/${UPDATE_REPOSITORY}/releases/download/v${remoteVersion}/${UPDATE_CHECKSUM_ASSET}`;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), UPDATE_TIMEOUT_MS);
+    try {
+      const response = await fetch(manifestUrl, {
+        redirect: 'follow',
+        headers: { 'User-Agent': updateUserAgent(), Accept: 'text/plain,*/*' },
+        signal: controller.signal,
+      });
+      if (response.ok) {
+        const text = await response.text();
+        if (text && text.length <= 65536) {
+          const map = parseChecksumManifest(text);
+          if (map.size) return map;
+        }
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch (_) { /* manifest unavailable on this release */ }
+  return null;
+}
+
+/** SHA-256 a file with constant-memory streaming and timing-safe hex compare. */
+async function verifyFileSha256(filePath, expectedHex) {
+  const expected = String(expectedHex || '').toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(expected)) return false;
+  const actual = await new Promise((resolve, reject) => {
+    const hash = createHash('sha256');
+    const stream = fs.createReadStream(filePath);
+    stream.on('data', (chunk) => hash.update(chunk));
+    stream.on('end', () => resolve(hash.digest('hex')));
+    stream.on('error', reject);
+  });
+  const a = Buffer.from(actual, 'utf8');
+  const b = Buffer.from(expected, 'utf8');
+  return a.length === b.length && timingSafeEqual(a, b);
+}
 
 function updatePlatformKey() {
   return `${process.platform}:${process.arch}`;
@@ -353,9 +411,22 @@ async function downloadAppUpdate() {
       await file.close();
     }
     emit({ type: 'app-update-progress', received, total: contentLength || result.asset.size || received, percent: 100, version: result.remoteVersion });
+    // Integrity gate: when the release publishes SHA256SUMS.txt the downloaded
+    // installer MUST match before it is handed to the OS (fail closed on
+    // mismatch). Releases without a manifest only get a loud warning so the
+    // updater keeps working against historical releases.
+    const checksums = await resolveReleaseChecksums(result.remoteVersion);
+    const expectedHex = (checksums && (checksums.get(result.asset.name)
+      || checksums.get(path.basename(result.asset.name)))) || null;
+    if (expectedHex) {
+      const valid = await verifyFileSha256(temporaryPath, expectedHex);
+      if (!valid) throw new Error('Update package failed SHA-256 integrity verification — the download is corrupted or was tampered with');
+    } else {
+      console.warn(`[OpenBrowser] release v${result.remoteVersion} publishes no ${UPDATE_CHECKSUM_ASSET} — proceeding without integrity verification`);
+    }
     const openError = await shell.openPath(temporaryPath);
     if (openError) shell.showItemInFolder(temporaryPath);
-    return { success: true, path: temporaryPath, version: result.remoteVersion, assetName: result.asset.name };
+    return { success: true, path: temporaryPath, version: result.remoteVersion, assetName: result.asset.name, verified: Boolean(expectedHex) };
   } catch (error) {
     await fsp.rm(temporaryPath, { force: true }).catch(() => {});
     throw error;
@@ -2411,7 +2482,9 @@ async function stopAllForQuit() {
         } catch (_) {}
       }
       if (item?.root) {
-        isolation.terminateProcessesUsingProfile?.(item.root, { force: true }).catch(() => {});
+        // terminateProcessesUsingProfile is synchronous and returns a scan
+        // report (not a promise) — never chain .catch on it.
+        try { terminateProcessesUsingProfile(item.root); } catch (_) {}
       }
     }
   }
