@@ -3,3 +3,10 @@ members = [
     "crates/openbrowser-core",
 ]
 resolver = "2"
+
+# The Rust core binary is bundled into every platform installer: thin LTO and
+# symbol stripping keep the shipped artifact small without measurable build
+# time cost.
+[profile.release]
+lto = "thin"
+strip = "symbols"

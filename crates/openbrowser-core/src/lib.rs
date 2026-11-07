@@ -7,7 +7,7 @@ pub mod tls;
 pub use error::{CoreError, Result};
 pub use process::{FileLock, ProcessGuardian, ProcessLock, ProcessSupervisor};
 pub use proxy::{
-    copy_bidirectional, BridgeInfo, ConcurrencyLimiter, FailClosedPolicy, HttpConnectTarget,
+    copy_bidirectional, reply_code_name, ConcurrencyLimiter, FailClosedPolicy, HttpConnectTarget,
     LocalProxyBridge, ProxyConfig, ProxyForwarder, ProxyProtocol, Socks5UdpAssociate,
     Socks5UdpPacket, SocksAddress, StreamStats, UpstreamTunnelPool,
 };

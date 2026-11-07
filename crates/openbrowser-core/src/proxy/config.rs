@@ -39,11 +39,17 @@ impl std::fmt::Debug for ProxyConfig {
             .field("port", &self.port)
             .field(
                 "username",
-                &self.username.as_deref().map(|u| if u.is_empty() { "" } else { "[redacted]" }),
+                &self
+                    .username
+                    .as_deref()
+                    .map(|u| if u.is_empty() { "" } else { "[redacted]" }),
             )
             .field(
                 "password",
-                &self.password.as_deref().map(|p| if p.is_empty() { "" } else { "[redacted]" }),
+                &self
+                    .password
+                    .as_deref()
+                    .map(|p| if p.is_empty() { "" } else { "[redacted]" }),
             )
             .field("remark", &self.remark)
             .field("name", &self.name)

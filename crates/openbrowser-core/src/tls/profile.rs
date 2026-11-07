@@ -4,21 +4,17 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 pub enum TlsProfilePreset {
     Chrome,
-    ChromeLegacy,
-    Node,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TlsProfile {
     pub preset: TlsProfilePreset,
-    pub min_version: u16,
     pub max_version: u16,
     pub ciphers: Vec<u16>,
     pub extensions: Vec<u16>,
     pub supported_groups: Vec<u16>,
     pub alpn: Vec<String>,
     pub enable_grease: bool,
-    pub permute_extensions: bool,
 }
 
 impl Default for TlsProfile {
@@ -33,10 +29,14 @@ impl TlsProfile {
     /// server_name -> extended_master_secret -> renegotiation_info -> supported_groups ->
     /// ec_point_formats -> session_ticket -> alpn -> status_request -> key_share ->
     /// psk_key_exchange_modes -> supported_versions -> compress_certificate -> application_settings
+    ///
+    /// `min_version` and `permute_extensions` were removed: both were
+    /// write-only (never read by the builder, which always emits TLS 1.2+ in
+    /// fixed Chromium order), as were the never-constructed `ChromeLegacy` /
+    /// `Node` presets. Re-add them together with real behavior if needed.
     pub fn chrome() -> Self {
         Self {
             preset: TlsProfilePreset::Chrome,
-            min_version: 0x0303, // TLS 1.2
             max_version: 0x0304, // TLS 1.3
             ciphers: vec![
                 0x1301, // TLS_AES_128_GCM_SHA256
@@ -77,7 +77,6 @@ impl TlsProfile {
             ],
             alpn: vec!["h2".to_string(), "http/1.1".to_string()],
             enable_grease: true,
-            permute_extensions: false,
         }
     }
 }

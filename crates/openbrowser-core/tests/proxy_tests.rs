@@ -257,9 +257,18 @@ fn proxy_config_debug_never_leaks_credentials() {
         name: Some("name".to_string()),
     };
     let rendered = format!("{:?}", config);
-    assert!(rendered.contains("ProxyConfig"), "Debug struct name present");
-    assert!(!rendered.contains("proxy-user"), "username must be redacted");
+    assert!(
+        rendered.contains("ProxyConfig"),
+        "Debug struct name present"
+    );
+    assert!(
+        !rendered.contains("proxy-user"),
+        "username must be redacted"
+    );
     assert!(!rendered.contains("hunter2"), "password must be redacted");
     assert!(rendered.contains("[redacted]"), "redaction marker present");
-    assert!(rendered.contains("203.0.113.7"), "host stays visible for ops");
+    assert!(
+        rendered.contains("203.0.113.7"),
+        "host stays visible for ops"
+    );
 }

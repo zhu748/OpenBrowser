@@ -1,5 +1,7 @@
 use bytes::BytesMut;
-use openbrowser_core::{CoreError, LocalProxyBridge, ProxyConfig, ProxyProtocol, SocksAddress};
+use openbrowser_core::{
+    reply_code_name, CoreError, LocalProxyBridge, ProxyConfig, ProxyProtocol, SocksAddress,
+};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
@@ -233,7 +235,14 @@ async fn test_fuzz_socks5_upstream_rep_error_codes() {
         assert!(res.is_err(), "REP code 0x{:02x} must be rejected", rep);
         match res.unwrap_err() {
             CoreError::Socks5(msg) => {
-                assert!(msg.contains(&format!("code {}", rep)), "Msg: {}", msg);
+                // The message names the failure and carries the raw code, so a
+                // log reader can map it back to RFC 1928 without a lookup.
+                assert!(msg.contains(&format!("code {:#04x}", rep)), "Msg: {}", msg);
+                assert!(
+                    msg.contains(reply_code_name(rep)),
+                    "Msg should name the reply code: {}",
+                    msg
+                );
             }
             other => panic!("Unexpected error for rep 0x{:02x}: {:?}", rep, other),
         }

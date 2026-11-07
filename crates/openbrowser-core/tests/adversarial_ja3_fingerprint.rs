@@ -598,7 +598,7 @@ fn test_adversarial_per_extension_structural_integrity() {
         match *ext_type {
             // RFC 8879 compress_certificate: 1 byte algorithm count + 2 bytes per algorithm.
             0x001B => {
-                assert!(body.len() >= 1, "compress_certificate body too short");
+                assert!(!body.is_empty(), "compress_certificate body too short");
                 let count = body[0] as usize;
                 assert_eq!(
                     body.len(),
@@ -607,7 +607,10 @@ fn test_adversarial_per_extension_structural_integrity() {
                     body.len(),
                     count
                 );
-                assert!(count >= 1, "Chrome advertises at least one compression algorithm");
+                assert!(
+                    count >= 1,
+                    "Chrome advertises at least one compression algorithm"
+                );
                 for i in 0..count {
                     let algo = ((body[1 + i * 2] as u16) << 8) | body[2 + i * 2] as u16;
                     assert!(
@@ -637,13 +640,22 @@ fn test_adversarial_per_extension_structural_integrity() {
                     body.len(),
                     list_len
                 );
-                assert_eq!(list_len % 2, 0, "supported_versions list length must be even");
+                assert_eq!(
+                    list_len % 2,
+                    0,
+                    "supported_versions list length must be even"
+                );
             }
             // RFC 6961 status_request (OCSP): fixed layout, body declares its own lengths.
             0x0005 => {
                 assert!(body.len() >= 5, "status_request body too short");
-                let responder_len = ((body[2] as usize) << 8) | body[3] as usize;
-                let ext_len = ((body[4] as usize) << 8) | body[5] as usize;
+                // Layout: status_type(1) || responder_id_list_len(2) ||
+                // request_extensions_len(2). The old check read the length
+                // fields from offsets 2..5, which ran one byte past a minimal
+                // 5-byte body (the exact shape the ClientHello builder emits)
+                // and panicked with index out of bounds.
+                let responder_len = ((body[1] as usize) << 8) | body[2] as usize;
+                let ext_len = ((body[3] as usize) << 8) | body[4] as usize;
                 assert_eq!(
                     body.len(),
                     5 + responder_len + ext_len,

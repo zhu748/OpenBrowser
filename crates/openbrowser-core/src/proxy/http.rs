@@ -149,6 +149,16 @@ impl HttpConnectTarget {
                 )));
             }
             if let Some((host_part, port_str)) = auth.rsplit_once(':') {
+                // A host part that still contains ':' is a bare IPv6 address
+                // like "::1": rsplit_once would happily split it into host ":"
+                // and port 1, routing the session to a garbage target. IPv6
+                // must arrive bracketed.
+                if host_part.contains(':') {
+                    return Err(CoreError::Http(format!(
+                        "Bare IPv6 authority must use brackets: {}",
+                        auth
+                    )));
+                }
                 let port = port_str.parse::<u16>().map_err(|_| {
                     CoreError::Http(format!("Invalid port in authority: {}", port_str))
                 })?;
@@ -393,6 +403,19 @@ mod tests {
         // Port 0 rejected
         assert!(HttpConnectTarget::parse_authority("example.com:0", 80).is_err());
         assert!(HttpConnectTarget::parse_authority("[::1]:0", 80).is_err());
+
+        // Bare IPv6 must be bracketed: rsplit_once(':') would otherwise accept
+        // "::1" as host ":" with port 1 and route the session to a garbage target.
+        assert!(HttpConnectTarget::parse_authority("::1", 80).is_err());
+        assert!(HttpConnectTarget::parse_authority("::1:8080", 80).is_err());
+        assert!(HttpConnectTarget::parse_authority("2001:db8::1", 80).is_err());
+        // Bracketed forms still parse.
+        let v6 = HttpConnectTarget::parse_authority("[::1]", 80).unwrap();
+        assert_eq!(v6.host, "::1");
+        assert_eq!(v6.port, 80);
+        let v6p = HttpConnectTarget::parse_authority("[2001:db8::1]:8080", 80).unwrap();
+        assert_eq!(v6p.host, "2001:db8::1");
+        assert_eq!(v6p.port, 8080);
 
         // Empty host rejected
         assert!(HttpConnectTarget::parse_authority(":80", 80).is_err());

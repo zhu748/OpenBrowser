@@ -1,14 +1,15 @@
 use crate::error::Result;
-use crate::proxy::config::ProxyConfig;
 use crate::proxy::fail_closed::FailClosedPolicy;
 use crate::proxy::stream::StreamStats;
-use async_trait::async_trait;
 use std::net::SocketAddr;
 
-#[async_trait]
+/// Native async-in-trait (Rust 1.75+): this trait is only used as a generic
+/// bound, never as a `dyn` object, so no `async_trait` boxing is needed. The
+/// `impl Future + Send` form (instead of `async fn`) states the Send bound
+/// explicitly, which is what callers spanning the tokio runtime require.
 pub trait ProxyForwarder: Send + Sync {
     /// Start listening on local loopback and forward connections to upstream proxy
-    async fn start(&self) -> Result<SocketAddr>;
+    fn start(&self) -> impl std::future::Future<Output = Result<SocketAddr>> + Send;
 
     /// Retrieve local listening address
     fn local_addr(&self) -> Option<SocketAddr>;
@@ -17,15 +18,8 @@ pub trait ProxyForwarder: Send + Sync {
     fn fail_closed_policy(&self) -> &FailClosedPolicy;
 
     /// Terminate listener and abort all active connections
-    async fn stop(&self) -> Result<()>;
+    fn stop(&self) -> impl std::future::Future<Output = Result<()>> + Send;
 
     /// Retrieve cumulative streaming stats
     fn stats(&self) -> StreamStats;
-}
-
-#[derive(Debug, Clone)]
-pub struct BridgeInfo {
-    pub local_addr: SocketAddr,
-    pub config: ProxyConfig,
-    pub fail_closed: FailClosedPolicy,
 }

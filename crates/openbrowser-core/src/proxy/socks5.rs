@@ -28,6 +28,23 @@ pub const REP_TTL_EXPIRED: u8 = 0x06;
 pub const REP_COMMAND_NOT_SUPPORTED: u8 = 0x07;
 pub const REP_ADDRESS_TYPE_NOT_SUPPORTED: u8 = 0x08;
 
+/// Human-readable name for a SOCKS5 reply code, so upstream failures log as
+/// "connection refused (0x05)" instead of a bare number.
+pub fn reply_code_name(code: u8) -> &'static str {
+    match code {
+        REP_SUCCEEDED => "succeeded",
+        REP_GENERAL_FAILURE => "general SOCKS server failure",
+        REP_CONNECTION_NOT_ALLOWED => "connection not allowed by ruleset",
+        REP_NETWORK_UNREACHABLE => "network unreachable",
+        REP_HOST_UNREACHABLE => "host unreachable",
+        REP_CONNECTION_REFUSED => "connection refused",
+        REP_TTL_EXPIRED => "ttl expired",
+        REP_COMMAND_NOT_SUPPORTED => "command not supported",
+        REP_ADDRESS_TYPE_NOT_SUPPORTED => "address type not supported",
+        _ => "unassigned",
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SocksAddress {
     Ipv4(Ipv4Addr),

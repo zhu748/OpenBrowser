@@ -3,6 +3,7 @@ const { spawn, execFile, execFileSync } = require('node:child_process');
 const { promisify } = require('node:util');
 const path = require('node:path');
 const fs = require('node:fs');
+const os = require('node:os');
 const { StringDecoder } = require('node:string_decoder');
 const execFileAsync = promisify(execFile);
 const CONTROL_PROTOCOL = 1;
@@ -26,6 +27,60 @@ function binary() {
   const found = findRustCoreBinary();
   if (!found) throw new Error('Rust core binary is unavailable; retain the existing JS backend');
   return found;
+}
+
+// Rust-core stderr used to be discarded entirely, which made the fail-closed
+// verdicts and upstream errors invisible in the field. Lines now land in a
+// size-capped local log (same convention as fingerprint-inject.log). The text
+// is untrusted — upstream hostnames may appear — so it never reaches the
+// console or onStatus observers unless OPENBROWSER_RUST_CORE_DEBUG=1 asks for
+// an interactive mirror. Credentials never appear here: they travel over the
+// private stdin pipe and the Rust core does not print them.
+const RUST_CORE_LOG_SIZE_LIMIT = 512 * 1024;
+let rustCoreLogPathCache = null;
+let rustCoreLogBytes = -1;
+
+function rustCoreLogPath() {
+  if (rustCoreLogPathCache) return rustCoreLogPathCache;
+  let file;
+  if (process.env.OPENBROWSER_RUST_CORE_LOG) {
+    file = process.env.OPENBROWSER_RUST_CORE_LOG;
+  } else {
+    const home = os.homedir();
+    let base;
+    if (process.platform === 'darwin') {
+      base = path.join(home, 'Library', 'Application Support', 'openbrowser', 'logs');
+    } else if (process.platform === 'win32') {
+      base = path.join(process.env.APPDATA || path.join(home, 'AppData', 'Roaming'), 'openbrowser', 'logs');
+    } else {
+      base = process.env.XDG_CONFIG_HOME
+        ? path.join(process.env.XDG_CONFIG_HOME, 'openbrowser', 'logs')
+        : path.join(home, '.config', 'openbrowser', 'logs');
+    }
+    file = path.join(base, 'rust-core.log');
+  }
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    rustCoreLogPathCache = file;
+  } catch (_) {
+    rustCoreLogPathCache = path.join(os.tmpdir(), 'openbrowser-rust-core.log');
+  }
+  return rustCoreLogPathCache;
+}
+
+function appendRustCoreLog(line) {
+  try {
+    const file = rustCoreLogPath();
+    if (rustCoreLogBytes < 0) {
+      try { rustCoreLogBytes = fs.statSync(file).size; } catch (_) { rustCoreLogBytes = 0; }
+    }
+    if (rustCoreLogBytes > RUST_CORE_LOG_SIZE_LIMIT) {
+      try { fs.renameSync(file, file + '.1'); rustCoreLogBytes = 0; } catch (_) { return; }
+    }
+    const data = `${new Date().toISOString()} ${line}\n`;
+    fs.appendFileSync(file, data);
+    rustCoreLogBytes += Buffer.byteLength(data);
+  } catch (_) { /* Diagnostics must never break the data path. */ }
 }
 
 function query(command, args = []) {
@@ -120,7 +175,22 @@ async function startRustProxyBridge(proxyConfig = {}, onStatus = () => {}, signa
   signal?.addEventListener('abort', abort, { once: true });
   child.once('error', fail);
   child.stdin.on('error', error => { if (!closing) fail(error); });
-  child.stderr.on('data', () => {}); // Drain diagnostics without forwarding credentials or untrusted text.
+  const debugMirror = process.env.OPENBROWSER_RUST_CORE_DEBUG === '1';
+  const stderrDecoder = new StringDecoder('utf8');
+  let stderrLine = '';
+  child.stderr.on('data', chunk => {
+    stderrLine += stderrDecoder.write(chunk);
+    let idx;
+    while ((idx = stderrLine.indexOf('\n')) >= 0) {
+      const line = stderrLine.slice(0, idx).trim();
+      stderrLine = stderrLine.slice(idx + 1);
+      if (!line) continue;
+      appendRustCoreLog(line);
+      if (debugMirror) {
+        try { console.error('[rust-core]', line); } catch (_) {}
+      }
+    }
+  });
   const decoder = new StringDecoder('utf8');
   let pending = '';
   let listening = false;

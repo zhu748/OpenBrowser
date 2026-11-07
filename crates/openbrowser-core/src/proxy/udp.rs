@@ -1,8 +1,9 @@
 use crate::error::{CoreError, Result};
 use crate::proxy::config::ProxyConfig;
 use crate::proxy::socks5::{
-    SocksAddress, ATYP_DOMAIN, ATYP_IPV4, ATYP_IPV6, AUTH_METHOD_NONE, AUTH_METHOD_USER_PASS,
-    CMD_UDP_ASSOCIATE, REP_SUCCEEDED, SOCKS5_AUTH_SUBNEGOTIATION_VERSION, SOCKS5_VERSION,
+    reply_code_name, SocksAddress, ATYP_DOMAIN, ATYP_IPV4, ATYP_IPV6, AUTH_METHOD_NONE,
+    AUTH_METHOD_USER_PASS, CMD_UDP_ASSOCIATE, REP_SUCCEEDED, SOCKS5_AUTH_SUBNEGOTIATION_VERSION,
+    SOCKS5_VERSION,
 };
 use bytes::{BufMut, BytesMut};
 use std::net::{IpAddr, SocketAddr};
@@ -209,7 +210,8 @@ impl Socks5UdpAssociate {
         }
         if head[1] != REP_SUCCEEDED {
             return Err(CoreError::Socks5(format!(
-                "SOCKS5 UDP ASSOCIATE failed with code {}",
+                "SOCKS5 UDP ASSOCIATE failed: {} (code {:#04x})",
+                reply_code_name(head[1]),
                 head[1]
             )));
         }
@@ -322,14 +324,6 @@ impl Socks5UdpAssociate {
 
     pub fn relay_addr(&self) -> SocketAddr {
         self.relay_addr
-    }
-
-    pub fn local_udp_addr(&self) -> Result<SocketAddr> {
-        self.udp_socket.local_addr().map_err(Into::into)
-    }
-
-    pub fn tcp_control(&self) -> &TcpStream {
-        &self.tcp_control
     }
 
     /// Check if the TCP control connection is still alive.

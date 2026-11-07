@@ -2,18 +2,29 @@
 name = "openbrowser-core"
 version = "1.0.27"
 edition = "2021"
+rust-version = "1.88"
 authors = ["OpenBrowser Team"]
 description = "High-performance Rust core engine for OpenBrowser"
 
 [dependencies]
-tokio = { version = "1", features = ["full"] }
+# Features kept to what the crate actually uses (net / io-util / sync / time /
+# rt-multi-thread / macros) instead of "full": the binary ships inside every
+# installer, and the trimmed feature set cuts compile time and binary size.
+tokio = { version = "1", features = [
+    "net",
+    "io-util",
+    "sync",
+    "time",
+    "rt",
+    "rt-multi-thread",
+    "macros",
+] }
 bytes = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-async-trait = "0.1"
 sha2 = "0.10"
 md-5 = "0.10"
 rand = "0.8"
@@ -32,6 +43,3 @@ windows-sys = { version = "0.59", features = [
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Input_KeyboardAndMouse",
 ] }
-
-[dev-dependencies]
-tokio-test = "0.4"

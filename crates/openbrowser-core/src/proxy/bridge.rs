@@ -7,11 +7,10 @@ use crate::proxy::http::{
 };
 use crate::proxy::pool::{ConcurrencyLimiter, UpstreamTunnelPool};
 use crate::proxy::socks5::{
-    ATYP_DOMAIN, ATYP_IPV4, ATYP_IPV6, AUTH_METHOD_NONE, AUTH_METHOD_USER_PASS, CMD_CONNECT,
-    REP_SUCCEEDED, SOCKS5_AUTH_SUBNEGOTIATION_VERSION, SOCKS5_VERSION,
+    reply_code_name, ATYP_DOMAIN, ATYP_IPV4, ATYP_IPV6, AUTH_METHOD_NONE, AUTH_METHOD_USER_PASS,
+    CMD_CONNECT, REP_SUCCEEDED, SOCKS5_AUTH_SUBNEGOTIATION_VERSION, SOCKS5_VERSION,
 };
 use crate::proxy::stream::{copy_bidirectional, StreamStats};
-use async_trait::async_trait;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -38,6 +37,31 @@ struct BridgeRunning {
     addr: SocketAddr,
     shutdown_tx: watch::Sender<bool>,
     server_handle: tokio::task::JoinHandle<()>,
+}
+
+/// Resets the bridge's observable state when the server task goes away.
+///
+/// The task can end two ways: the shutdown signal breaks the accept loop
+/// (clean path), or `Drop for BridgeRunning` aborts the task mid-await. An
+/// abort skips code after the last await point, so the state resets must live
+/// in a destructor owned by the task future — abort drops the future, which
+/// always drops this guard. Without it, an aborted task left `is_running`
+/// true and `local_addr` set forever.
+struct ServerStateGuard {
+    is_running: Arc<AtomicBool>,
+    local_addr: Arc<std::sync::RwLock<Option<SocketAddr>>>,
+}
+
+impl Drop for ServerStateGuard {
+    fn drop(&mut self) {
+        self.is_running.store(false, Ordering::SeqCst);
+        match self.local_addr.write() {
+            Ok(mut addr) => *addr = None,
+            // A poisoned lock only means another thread panicked while holding
+            // it; the data is still intact and must be reset, not propagated.
+            Err(poisoned) => *poisoned.into_inner() = None,
+        }
+    }
 }
 
 impl Drop for BridgeRunning {
@@ -117,10 +141,6 @@ impl LocalProxyBridge {
 
     pub fn limiter(&self) -> &ConcurrencyLimiter {
         &self.limiter
-    }
-
-    pub fn config(&self) -> &ProxyConfig {
-        &self.config
     }
 
     /// Connect to upstream SOCKS5 proxy with default 8s timeout
@@ -279,7 +299,8 @@ impl LocalProxyBridge {
         }
         if head[1] != REP_SUCCEEDED {
             return Err(CoreError::Socks5(format!(
-                "SOCKS5 upstream connection failed with code {}",
+                "SOCKS5 upstream connection failed: {} (code {:#04x})",
+                reply_code_name(head[1]),
                 head[1]
             )));
         }
@@ -834,7 +855,6 @@ fn find_header_end(buf: &[u8]) -> Option<usize> {
     None
 }
 
-#[async_trait]
 impl ProxyForwarder for LocalProxyBridge {
     async fn start(&self) -> Result<SocketAddr> {
         self.config.validate()?;
@@ -861,6 +881,12 @@ impl ProxyForwarder for LocalProxyBridge {
         let local_addr = self.local_addr.clone();
 
         let server_task = tokio::spawn(async move {
+            // Dropped when this task future is dropped — on clean shutdown AND
+            // on abort — so the bridge never reports stale running state.
+            let _state_guard = ServerStateGuard {
+                is_running: is_running.clone(),
+                local_addr: local_addr.clone(),
+            };
             info!("LocalProxyBridge listening on {}", addr);
             let mut join_set = tokio::task::JoinSet::new();
 
@@ -906,13 +932,14 @@ impl ProxyForwarder for LocalProxyBridge {
             while join_set.join_next().await.is_some() {}
 
             ctx.tunnel_pool.clear().await;
-            is_running.store(false, Ordering::SeqCst);
-            *local_addr.write().unwrap() = None;
             info!("LocalProxyBridge stopped and all active sessions reaped");
         });
 
         self.is_running.store(true, Ordering::SeqCst);
-        *self.local_addr.write().unwrap() = Some(addr);
+        match self.local_addr.write() {
+            Ok(mut slot) => *slot = Some(addr),
+            Err(poisoned) => *poisoned.into_inner() = Some(addr),
+        }
         *guard = Some(BridgeRunning {
             addr,
             shutdown_tx,
@@ -923,7 +950,10 @@ impl ProxyForwarder for LocalProxyBridge {
     }
 
     fn local_addr(&self) -> Option<SocketAddr> {
-        *self.local_addr.read().unwrap()
+        match self.local_addr.read() {
+            Ok(slot) => *slot,
+            Err(poisoned) => *poisoned.into_inner(),
+        }
     }
 
     fn fail_closed_policy(&self) -> &FailClosedPolicy {
@@ -942,9 +972,10 @@ impl ProxyForwarder for LocalProxyBridge {
         if let Some(mut running) = taken {
             let _ = running.shutdown_tx.send(true);
             let _ = (&mut running.server_handle).await;
+            // The ServerStateGuard inside the task has already reset
+            // is_running / local_addr (its Drop runs whether the task exited
+            // cleanly or was aborted); the pool clear is the only extra work.
             self.tunnel_pool.clear().await;
-            self.is_running.store(false, Ordering::SeqCst);
-            *self.local_addr.write().unwrap() = None;
         }
         Ok(())
     }
@@ -953,6 +984,72 @@ impl ProxyForwarder for LocalProxyBridge {
         StreamStats {
             client_to_server_bytes: self.total_c2s.load(Ordering::Relaxed),
             server_to_client_bytes: self.total_s2c.load(Ordering::Relaxed),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The ServerStateGuard must reset the shared state when the server task
+    /// is aborted mid-await. Before the guard existed, `Drop for
+    /// BridgeRunning` aborted the task at whatever await point it sat on, so
+    /// the tail-of-task cleanup (is_running = false, local_addr = None) never
+    /// ran and the bridge reported stale running state forever.
+    #[tokio::test]
+    async fn server_state_guard_resets_on_abort() {
+        let is_running = Arc::new(AtomicBool::new(true));
+        let local_addr: Arc<std::sync::RwLock<Option<SocketAddr>>> =
+            Arc::new(std::sync::RwLock::new(Some("127.0.0.1:1".parse().unwrap())));
+        let task_is_running = is_running.clone();
+        let task_local_addr = local_addr.clone();
+        let handle = tokio::spawn(async move {
+            let _state_guard = ServerStateGuard {
+                is_running: task_is_running,
+                local_addr: task_local_addr,
+            };
+            std::future::pending::<()>().await;
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(is_running.load(Ordering::SeqCst));
+        assert!(local_addr.read().unwrap().is_some());
+
+        handle.abort();
+        let _ = handle.await;
+
+        assert!(!is_running.load(Ordering::SeqCst));
+        assert!(local_addr.read().unwrap().is_none());
+    }
+
+    /// Dropping a running bridge must release the listen port: the abort drops
+    /// the task future, which drops the guard and the listener.
+    #[tokio::test]
+    async fn drop_while_running_releases_port() {
+        let config = ProxyConfig {
+            protocol: ProxyProtocol::Socks5,
+            host: "127.0.0.1".into(),
+            port: 1, // never dialed: no client connects in this test
+            username: None,
+            password: None,
+            remark: Some("drop-cleanup-test".into()),
+            name: None,
+        };
+        let bridge = LocalProxyBridge::new(config, FailClosedPolicy::default());
+        let addr = bridge.start().await.expect("bridge should start");
+        assert!(bridge.is_running());
+        drop(bridge);
+
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+        loop {
+            if TcpListener::bind(addr).await.is_ok() {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "listen port was not released after dropping the bridge"
+            );
+            tokio::time::sleep(Duration::from_millis(25)).await;
         }
     }
 }
