@@ -36,6 +36,28 @@ async function main() {
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }
+
+  // Unencrypted backups must refuse to carry credentials (fail closed).
+  const optedIn = (profile) => ({ advanced: { cloudBackup: true }, ...profile, });
+  await assert.rejects(
+    () => cloud.buildBackupPackage({ profiles: [optedIn({ id: 'env-1', platform: { password: 'hunter2' } })], passphrase: '' }),
+    /备份口令/,
+  );
+  await assert.rejects(
+    () => cloud.buildBackupPackage({ profiles: [optedIn({ id: 'env-2', cookies: 'session=abc' })], passphrase: '' }),
+    /备份口令/,
+  );
+  await assert.rejects(
+    () => cloud.buildBackupPackage({ profiles: [], proxies: [{ raw: 'socks5://user:pass@1.2.3.4:1080' }], passphrase: '' }),
+    /备份口令/,
+  );
+  // The same content with a passphrase must succeed and encrypt.
+  const encrypted = await cloud.buildBackupPackage({ profiles: [optedIn({ id: 'env-1', platform: { password: 'hunter2' } })], passphrase: 'correct horse' });
+  assert.strictEqual(encrypted.meta.encrypted, true);
+  // Credential-free backups stay allowed without a passphrase.
+  const plain = await cloud.buildBackupPackage({ profiles: [optedIn({ id: 'env-3', platform: {} })], passphrase: '' });
+  assert.strictEqual(plain.meta.encrypted, false);
+  console.log('  PASS  unencrypted credential backup rejected (fail closed)');
 }
 
 main().catch((error) => {

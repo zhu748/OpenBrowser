@@ -367,6 +367,35 @@ function validatedGitHubConfig(config, remoteName) {
   return { owner, repo, token, branch, filePath };
 }
 
+function proxyUrlEmbedsCredentials(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return false;
+  try {
+    const u = new URL(raw);
+    return Boolean(u.username || u.password);
+  } catch (_) {
+    return true; // not a parseable URL — treat conservatively as sensitive
+  }
+}
+
+/** True when a packed profile carries account credentials or browser data. */
+function packedProfileContainsSecrets(profile) {
+  if (!profile || typeof profile !== 'object') return false;
+  const platform = profile.platform || {};
+  if (String(profile.cookies || '').trim()) return true;
+  if (String(platform.password || '').trim()) return true;
+  if (String(platform.totpSecret || platform.otp || '').trim()) return true;
+  if (proxyUrlEmbedsCredentials(profile.proxy) || proxyUrlEmbedsCredentials(platform.proxy)) return true;
+  if (profile._dataFiles && Object.keys(profile._dataFiles).length) return true;
+  return false;
+}
+
+function proxyRecordContainsSecrets(record) {
+  if (!record || typeof record !== 'object') return false;
+  if (String(record.username || record.user || '').trim() && String(record.password || record.pass || '').trim()) return true;
+  return proxyUrlEmbedsCredentials(record.raw) || proxyUrlEmbedsCredentials(record.proxy);
+}
+
 async function buildBackupPackage({
   profiles = [],
   groups = [],
@@ -416,6 +445,17 @@ async function buildBackupPackage({
   };
   const json = Buffer.from(JSON.stringify(body), 'utf8');
   if (json.length > MAX_BACKUP_JSON_BYTES) throw new Error('备份内容超过 120 MB 安全限制');
+  // Security gate: refuse to ship an UNENCRYPTED backup that carries account
+  // credentials (cookies / passwords / TOTP / proxy logins / browser data).
+  // Cloud destinations (WebDAV / GitHub / netdisk) must never hold plaintext
+  // secrets — the user has to set a backup passphrase instead.
+  if (!passphrase) {
+    const carriesSecrets = packedProfiles.some(packedProfileContainsSecrets)
+      || (Array.isArray(proxies) && proxies.some(proxyRecordContainsSecrets));
+    if (carriesSecrets) {
+      throw new Error('备份包含账号凭据（Cookie / 密码 / 2FA / 代理登录信息或浏览器数据），必须先设置备份口令加密后再上传');
+    }
+  }
   const gz = zlib.gzipSync(json, { level: 9 });
   const { encrypted, data } = encryptPayload(gz, passphrase);
   return {

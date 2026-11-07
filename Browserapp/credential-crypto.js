@@ -108,12 +108,18 @@ function getLocalMasterKey() {
     _cachedMasterKey = generated;
     return _cachedMasterKey;
   } catch (writeErr) {
-    // If the filesystem is read-only (e.g. strict container sandbox), derive deterministically
-    // from system/user identity seed so the offline startup never crashes.
-    const user = (typeof os.userInfo === 'function') ? (os.userInfo().username || 'user') : 'user';
-    const fallbackSeed = `openbrowser-offline-seed:${os.hostname()}:${user}:${os.homedir()}`;
-    const derived = crypto.createHash('sha256').update(fallbackSeed).digest('hex');
-    _cachedMasterKey = derived;
+    // SECURITY: never derive the key from guessable system identity (hostname /
+    // username / homedir). A predictable key silently converts "at rest"
+    // encryption into plaintext for anyone who can read those values. Instead
+    // fall back to a random in-memory session key: the process keeps working,
+    // but anything encrypted now will not be readable after restart (on a
+    // read-only filesystem it could not be persisted anyway).
+    _cachedMasterKey = crypto.randomBytes(32).toString('hex');
+    console.warn(
+      `[OpenBrowser] cannot persist master key at ${keyPath} (${writeErr.message}); ` +
+      'using a random in-memory session key — encrypted credentials will NOT survive an app restart. ' +
+      'Fix filesystem permissions or set OPENBROWSER_MASTER_KEY_FILE to a writable path.',
+    );
     return _cachedMasterKey;
   }
 }
