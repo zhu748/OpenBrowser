@@ -13,6 +13,13 @@ const {
 } = require('./proxy-forwarder');
 const { ProxyStore } = require('./automation/proxy-store');
 
+// This suite drives loopback fixture servers for the API-extract / refresh
+// tests. CI exports OPENBROWSER_ALLOW_PRIVATE_OUTBOUND=0, which would block
+// those loopback calls; the private-outbound BLOCK behavior itself is pinned
+// by security-hardening and template-sync-ssrf under the hardened env (and
+// cloud metadata stays blocked regardless), so relax it for the fixtures here.
+process.env.OPENBROWSER_ALLOW_PRIVATE_OUTBOUND = '1';
+
 function makeEngineStub() {
   // Lightweight stub around real methods by requiring engine and monkeypatching heavy deps is hard.
   // Instead re-implement prepare flow checks via public helpers + a minimal harness of BrowserEngine methods.
