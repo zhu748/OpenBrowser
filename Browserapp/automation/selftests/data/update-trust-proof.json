@@ -1,0 +1,6 @@
+{
+  "description": "Deployment proof for the OpenBrowser Ed25519 update trust root: this signature can only be produced with the private half of the public key embedded in automation/update-trust.js. Verified by update-checksum-selftest on every CI run.",
+  "generatedAt": "2026-11-07",
+  "manifest": "OpenBrowser update trust-root deployment proof\nrepository: zhu748/OpenBrowser\npublic-key: MCowBQYDK2VwAyEAnSISpERX6lMiPF2De4D7RBjf0PmqP7COy6xF/t3li/A=\ngenerated: 2026-11-07\n",
+  "signatureBase64": "90eKxXXx/q2ZWE8XhNebbb844A5RsnsMgLW8EfeW2QrTj9K3eLgdFMaBolriImiAdPEzBy9UFuyu0XM0fVi7Dg=="
+}

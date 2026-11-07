@@ -17,15 +17,15 @@
  *       Check a manifest signature against the keys embedded in update-trust.js.
  *
  *   node update-trust-tool.js selftest
- *       Round-trip: generate an ephemeral keypair, sign a sample manifest,
- *       verify via the same code path the updater uses (key injected).
+ *       Round-trip: sign a sample manifest with an ephemeral keypair and
+ *       check the shipped verification path rejects it, plus deployment
+ *       sanity of the embedded trust root.
  */
 
 const crypto = require('crypto');
 const fs = require('fs');
-const path = require('path');
 
-const { verifyManifestSignature, parsePemOrBase64 } = require('./update-trust');
+const { trustedPublicKeys, verifyManifestSignature, parsePemOrBase64 } = require('./update-trust');
 
 function loadPrivateKey(source) {
   const raw = String(source || '').trim();
@@ -99,15 +99,20 @@ function cmdSelftest() {
   const okTampered = crypto.verify(null, tampered, keyObj, goodSig);
   const okWrongKey = crypto.verify(null, manifest, crypto.generateKeyPairSync('ed25519').publicKey, goodSig);
 
-  // And the shipped module must correctly report "no real key embedded" while
-  // the placeholder is in place (honest refusal, not false pass).
-  const refusal = verifyManifestSignature(manifest, goodSig);
+  // And the shipped module must exercise the real trust root: the deployed
+  // key rejects a signature made with any other key (honest mismatch, not a
+  // false pass), and at least one parseable key is actually embedded.
+  const rejection = verifyManifestSignature(manifest, goodSig);
+  const embeddedKeys = trustedPublicKeys();
 
   const checks = [
     ['valid signature verifies', okGood === true],
     ['tampered manifest rejected', okTampered === false],
     ['wrong public key rejected', okWrongKey === false],
-    ['placeholder trust root refuses to verify', refusal.ok === false && refusal.reason === 'no-trusted-key-embedded'],
+    ['non-embedded signing key rejected by shipped path',
+      rejection.ok === false && rejection.reason === 'signature-mismatch'],
+    ['trust root is deployed (real key embedded)',
+      embeddedKeys.length >= 1 && embeddedKeys.every((k) => parsePemOrBase64(k) !== null && !k.includes('PLACEHOLDER'))],
   ];
   let failed = 0;
   for (const [name, pass] of checks) {
@@ -120,7 +125,11 @@ function cmdSelftest() {
 const [,, command, ...rest] = process.argv;
 const keyFileIdx = rest.indexOf('--key');
 const keyFile = keyFileIdx >= 0 ? rest[keyFileIdx + 1] : null;
-const positional = rest.filter((_, i) => i !== keyFileIdx && i !== keyFileIdx + 1);
+// Drop the --key pair only when it is actually present: with keyFileIdx -1 the
+// old filter also dropped index 0, silently discarding the manifest path.
+const positional = keyFileIdx >= 0
+  ? rest.filter((_, i) => i !== keyFileIdx && i !== keyFileIdx + 1)
+  : rest;
 
 switch (command) {
   case 'genkey': cmdGenkey(); break;

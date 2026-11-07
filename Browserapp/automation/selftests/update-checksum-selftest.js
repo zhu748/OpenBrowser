@@ -23,6 +23,7 @@ const path = require('path');
 const appUpdate = require('../app-update');
 const updateTrust = require('../update-trust');
 const APPUPDATE_SRC = fs.readFileSync(path.join(__dirname, '..', 'app-update.js'), 'utf8');
+const TRUST_PROOF = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'update-trust-proof.json'), 'utf8'));
 
 async function main() {
   // --- parseChecksumManifest: real function, real input shapes ---
@@ -110,11 +111,31 @@ async function main() {
     const goodSig = crypto.sign(null, manifest, privateKey);
     const tampered = Buffer.from(manifest.toString('utf8').replace('x86_64', 'arm64'), 'utf8');
 
-    // Placeholder trust root must refuse honestly rather than pass.
-    const refusal = updateTrust.verifyManifestSignature(manifest, goodSig);
-    assert.strictEqual(refusal.ok, false, 'placeholder trust root never verifies');
-    assert.strictEqual(refusal.reason, 'no-trusted-key-embedded', 'refusal names the cause');
-    assert.deepStrictEqual(updateTrust.trustedPublicKeys(), [], 'no placeholder keys are trusted');
+    // Deployed trust root: at least one real, parseable key — never a placeholder.
+    const keys = updateTrust.trustedPublicKeys();
+    assert.ok(keys.length >= 1, 'a real trust-root key is embedded');
+    assert.ok(keys.every((k) => !k.includes('PLACEHOLDER')), 'no placeholder keys are trusted');
+    assert.ok(keys.every((k) => updateTrust.parsePemOrBase64(k) !== null), 'every embedded key parses');
+
+    // A signature from a key that is NOT embedded is rejected through the
+    // shipped verification path (honest mismatch, never a false pass).
+    const rejection = updateTrust.verifyManifestSignature(manifest, goodSig);
+    assert.strictEqual(rejection.ok, false, 'non-embedded signing key never verifies');
+    assert.strictEqual(rejection.reason, 'signature-mismatch', 'rejection names the cause');
+
+    // Deployment proof: the committed signature can only have been produced
+    // with the private half of the embedded trust root — the app and the
+    // offline signer provably share the same key pair.
+    const proofOk = updateTrust.verifyManifestSignature(
+      Buffer.from(TRUST_PROOF.manifest, 'utf8'),
+      Buffer.from(TRUST_PROOF.signatureBase64, 'base64'),
+    );
+    assert.ok(proofOk.ok, `trust-root deployment proof verifies (${proofOk.reason})`);
+    const proofTampered = updateTrust.verifyManifestSignature(
+      Buffer.from(TRUST_PROOF.manifest + 'x', 'utf8'),
+      Buffer.from(TRUST_PROOF.signatureBase64, 'base64'),
+    );
+    assert.strictEqual(proofTampered.ok, false, 'proof signature does not verify over tampered bytes');
 
     // Malformed inputs are rejected, not thrown.
     assert.strictEqual(updateTrust.verifyManifestSignature(null, goodSig).ok, false);
@@ -131,7 +152,7 @@ async function main() {
     assert.strictEqual(crypto.verify(null, tampered, parsedKey, goodSig), false,
       'tampered manifest fails signature verification');
   }
-  console.log('  PASS  Ed25519 trust root (binding signature, honest refusal, malformed inputs)');
+  console.log('  PASS  Ed25519 trust root (deployed key, binding signature, deployment proof)');
 
   console.log('UPDATE_CHECKSUM_SELFTEST OK');
 }

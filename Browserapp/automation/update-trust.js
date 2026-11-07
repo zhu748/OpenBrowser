@@ -9,25 +9,31 @@
  * private key that never touches the release account breaks that coupling:
  * the manifest is signed offline, the public key is embedded in the app.
  *
- * Key lifecycle: the shipped public key lives in update-trust.json. Until
- * the release pipeline publishes SHA256SUMS.txt.sig assets, verification
- * stays permissive-but-honest: unsigned releases keep the (already
- * fail-closed) digest-only path; once a .sig asset exists, an invalid or
- * untrusted signature is fatal and no env var can downgrade it — replacing
- * the release account must not become a path to code execution.
+ * Key lifecycle: the shipped public keys live in TRUSTED_KEYS below. The
+ * first real key was generated and embedded 2026-11-07; releases from that
+ * point on should publish SHA256SUMS.txt.sig assets alongside the manifest.
+ * Until a given release carries a .sig, verification stays
+ * permissive-but-honest: unsigned releases keep the (already fail-closed)
+ * digest-only path; once a .sig asset exists, an invalid or untrusted
+ * signature is fatal and no env var can downgrade it — replacing the release
+ * account must not become a path to code execution. The deployment proof in
+ * selftests/data/update-trust-proof.json ties the embedded key to the
+ * offline private half and is checked by update-checksum-selftest on every
+ * CI run.
  *
- * Rotation: append the new key to update-trust.json's `keys` array; releases
- * signed with any listed key verify. Remove a retired key only after every
- * supported app version knows the new one.
+ * Rotation: append the new key to TRUSTED_KEYS; releases signed with any
+ * listed key verify. Remove a retired key only after every supported app
+ * version knows the new one.
  */
 
 const crypto = require('crypto');
 
 const TRUSTED_KEYS = [
-  // Placeholder key. Generate the real pair with `node update-trust-tool.js genkey`,
-  // sign each release manifest with `node update-trust-tool.js sign SHA256SUMS.txt`,
-  // and paste the public half here before publishing the first signed release.
-  'OPENBROWSER_UPDATE_PUBKEY_PLACEHOLDER',
+  // Key 1 — generated 2026-11-07 with `node update-trust-tool.js genkey`, first
+  // deployed trust root. Sign each release manifest offline with
+  // `node update-trust-tool.js sign SHA256SUMS.txt` before publishing; the
+  // public half below is the only part that may ever be committed.
+  'MCowBQYDK2VwAyEAnSISpERX6lMiPF2De4D7RBjf0PmqP7COy6xF/t3li/A=',
 ];
 
 function trustedPublicKeys() {
