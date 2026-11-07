@@ -115,3 +115,22 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: cargo test
         run: cargo test --workspace --locked
+
+  # ~200 lines of Windows FFI (process/lock.rs, guardian.rs) compile to nothing
+  # on Linux: cargo skips cfg(windows) blocks entirely, so per-push CI never
+  # saw them and Windows-only regressions surfaced only in manual release
+  # builds (see rust-core-decision.md: v1.0.27 fixed a string of Windows-only
+  # bugs). This job compiles and tests the Windows target on every push.
+  rust-windows:
+    name: Rust core (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master; toolchain: stable
+        with:
+          components: clippy
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: cargo test
+        run: cargo test --workspace --locked
