@@ -1,0 +1,30 @@
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /Browserapp
+    schedule:
+      interval: weekly
+    # Electron carries the Chromium runtime of a fingerprint browser: minor
+    # upgrades change fingerprint surfaces. Review those PRs deliberately.
+    ignore:
+      - dependency-name: electron
+        update-types:
+          - version-update:semver-major
+          - version-update:semver-minor
+    commit-message:
+      prefix: 'chore(deps)'
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    # Actions are pinned by commit SHA in the workflows; Dependabot updates
+    # the pinned comment annotations through these PRs.
+    commit-message:
+      prefix: 'chore(ci)'
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: 'chore(cargo)'

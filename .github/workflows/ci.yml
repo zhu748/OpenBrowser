@@ -1,0 +1,108 @@
+name: CI
+
+# Continuous integration gate for every push and pull request:
+# - lint: ESLint correctness rules (zero-error baseline, see eslint.config.js)
+# - smoke: dependency-free Node selftests (no Electron binary, no kernels)
+# - rust: fmt + clippy + tests for the openbrowser-core workspace
+# Full installer builds remain in build-installers.yml (manual dispatch).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Keep every selftest deterministic in CI: no ambient config, no updates.
+  OPENBROWSER_ALLOW_PRIVATE_OUTBOUND: '0'
+  OPENBROWSER_RPA_TASK_TIMEOUT_MS: '0'
+
+jobs:
+  lint:
+    name: Lint (ESLint)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: Browserapp
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Browserapp/package-lock.json
+      # Selftests run under plain Node — skip the Electron binary download.
+      - run: npm ci --include=dev --ignore-scripts
+      - run: npm run lint
+
+  smoke:
+    name: Node selftests (smoke)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: Browserapp
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # Selftests in this job need no kernels; exclude the whole LFS tree.
+          lfs: true
+          sparse-checkout: |
+            /*
+            !/Browserapp/kernels/
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Browserapp/package-lock.json
+      - run: npm ci --include=dev --ignore-scripts
+      - name: Security & protocol selftests (dependency-free)
+        run: |
+          npm run selftest:hardening
+          npm run selftest:credentials
+          npm run selftest:cloud
+          npm run selftest:apikey
+          npm run selftest:isolation
+          npm run selftest:i18n
+          npm run selftest:templates
+          npm run selftest:typing
+      - name: Core engine & RPA selftests
+        run: |
+          npm run selftest:sched
+          npm run selftest:queue
+          npm run selftest:logsan
+          npm run selftest:objutils
+          npm run selftest:validation
+          npm run selftest:version
+      - name: Proxy selftests (loopback sockets)
+        run: |
+          npm run selftest:proxyauth
+          npm run selftest:socks5complete
+          npm run selftest:socks5reset
+          npm run selftest:socks5retry
+          npm run selftest:dnsleakclassify
+          npm run selftest:proxyconcurrency
+
+  rust:
+    name: Rust core (fmt + clippy + tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master; toolchain: stable
+        with:
+          components: rustfmt, clippy
+      - name: cargo fmt
+        run: cargo fmt --all -- --check
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: cargo test
+        run: cargo test --workspace --locked
