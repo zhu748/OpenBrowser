@@ -379,9 +379,12 @@ async function main() {
 
   // forced proxy option must bypass resolveProfileProxyConfig
   const engineSrc = fs.readFileSync(path.join(__dirname, 'engine.js'), 'utf8');
-  assert.ok(engineSrc.includes('options.proxy || options.forcedProxy'), 'testProxy must accept forced proxy option');
-  assert.ok(engineSrc.includes("proxySource: index === 0 ? 'primary' : 'backup'"), 'prepare must force-test each candidate');
-  assert.ok(engineSrc.includes('extractError: extractError ? String(extractError.message || extractError) : null'), 'refresh must surface extract errors');
+  // testProxy / prepareProfileProxyForStart / refreshProfileProxy moved to the
+  // engine/profile-proxy.js mixin; their source markers read the mixin.
+  const profileProxySrc = fs.readFileSync(path.join(__dirname, 'engine', 'profile-proxy.js'), 'utf8');
+  assert.ok(profileProxySrc.includes('options.proxy || options.forcedProxy'), 'testProxy must accept forced proxy option');
+  assert.ok(profileProxySrc.includes("proxySource: index === 0 ? 'primary' : 'backup'"), 'prepare must force-test each candidate');
+  assert.ok(profileProxySrc.includes('extractError: extractError ? String(extractError.message || extractError) : null'), 'refresh must surface extract errors');
   assert.ok(!engineSrc.includes("apiExtractUrl: String(proxyMetaValue.apiExtractUrl || proxyMetaValue.refreshUrl || '')"), 'sanitize must not bleed refreshUrl into apiExtractUrl');
 
   const engine4 = makeEngineStub();

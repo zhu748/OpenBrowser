@@ -121,15 +121,17 @@ function main() {
   const fpInjectSrc = fs.readFileSync(path.join(__dirname, 'engine', 'fingerprint-injection.js'), 'utf8');
   assert.ok(fpInjectSrc.includes('applyFingerprintToSession'), 'page attach must inject before resume');
   assert.ok(fpInjectSrc.includes('Critical: inject fingerprint BEFORE resuming'), 'comment anchors attach fix');
-  // refresh before extract in prepareProfileProxyForStart
-  const prepareIdx = engineSrc.indexOf('async prepareProfileProxyForStart');
-  const prepareBody = engineSrc.slice(prepareIdx, prepareIdx + 2500);
+  // refresh before extract in prepareProfileProxyForStart (moved to the
+  // engine/profile-proxy.js mixin; the marker checks read the mixin source)
+  const profileProxySrc = fs.readFileSync(path.join(__dirname, 'engine', 'profile-proxy.js'), 'utf8');
+  const prepareIdx = profileProxySrc.indexOf('async prepareProfileProxyForStart');
+  const prepareBody = profileProxySrc.slice(prepareIdx, prepareIdx + 2500);
   const refreshPos = prepareBody.indexOf('meta.refreshOnStart');
   const extractPos = prepareBody.indexOf('if (extractUrl)');
   assert.ok(refreshPos >= 0 && extractPos >= 0 && refreshPos < extractPos, 'refresh must run before extract on start');
-  assert.ok(engineSrc.includes("code: 'extract-error'"), 'extract failure must warn');
+  assert.ok(profileProxySrc.includes("code: 'extract-error'"), 'extract failure must warn');
   assert.ok(engineSrc.includes("profiles: [...this.profiles.values()]"), 'engine must persist profiles with secrets');
-  assert.ok(!engineSrc.includes('const url = refreshUrl || extractUrl'), 'refresh must not fall back extractUrl as refresh target');
+  assert.ok(!profileProxySrc.includes('const url = refreshUrl || extractUrl'), 'refresh must not fall back extractUrl as refresh target');
 
   // --- renderer: secrets redaction ---
   const renderer = fs.readFileSync(path.join(__dirname, 'renderer.js'), 'utf8');

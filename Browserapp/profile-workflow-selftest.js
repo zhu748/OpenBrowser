@@ -66,7 +66,8 @@ async function main() {
     assert.ok(renderer.includes('assignedExtensions || []'), 'copied profiles must inherit source extension assignments');
     assert.ok(renderer.includes("platform: { type: 'other', startUrl }"), 'create flow must persist startup URL');
     assert.ok(main.includes("engine.checkProxy(profile, { persist: true })"), 'manual exit checks must persist in engine state');
-    assert.ok(fs.readFileSync(path.join(__dirname, 'engine.js'), 'utf8').includes('if (options.persist) await this.persist()'), 'manual exit check must await durable persistence');
+    // checkProxy moved to the engine/profile-proxy.js mixin; its persist gate reads the mixin.
+    assert.ok(fs.readFileSync(path.join(__dirname, 'engine', 'profile-proxy.js'), 'utf8').includes('if (options.persist) await this.persist()'), 'manual exit check must await durable persistence');
     // A phone profile pins the layout viewport to the device panel; a desktop profile must never,
     // because a fixed override leaves the renderer at its initial size after a resize.
     const tabInject = fingerprintTab.slice(fingerprintTab.indexOf('async function applyFingerprintToTab'));
