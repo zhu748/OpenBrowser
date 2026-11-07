@@ -143,7 +143,7 @@ OpenBrowser/
 └── README_CN.md           # 中文说明
 ```
 
-仓库只包含源码与文档，不包含 Profile、Cookie、代理凭据、打包用内核二进制或安装包。官方 Windows x64 和 macOS arm64 构建会在 CI 打包时集成对应 Wayfern 内核；macOS x86_64 构建使用 OpenBrowser 148 内核；Ubuntu x86_64 构建会在 CI 打包时显式获取 Chrome for Testing。
+仓库包含源码与文档，不含 Profile、Cookie、代理凭据或安装包；Windows x64 与 macOS arm64 的平台内核种子通过 [Git LFS](https://git-lfs.com/) 存放在 `Browserapp/kernels/` 下，macOS x86_64 的 OpenBrowser 148 运行时以常规文件入库，Ubuntu x86_64 构建会在 CI 打包时显式获取 Chrome Stable。克隆时请先 `git lfs install` 再 `git clone`，否则内核种子只会是指针文件。
 
 ## 数据与安全
 
@@ -152,6 +152,8 @@ OpenBrowser/
 - 浏览器启动失败会追加写入用户 OpenBrowser 数据目录下的本地 `browser-startup.log`。在 `Browserapp/` 执行 `npm run log:startup` 可直接读取；日志已被 Git 忽略。
 - 第三方组件声明见 [`THIRD-PARTY-NOTICES.md`](./Browserapp/THIRD-PARTY-NOTICES.md)。
 - 云备份集成只有在用户显式配置后才会主动联网。
+- **包含账号凭据（Cookie / 密码 / 2FA / 代理登录信息 / 浏览器数据）的备份必须设置备份口令加密后才会上传**，未加密的凭据上传会被直接拒绝。
+- 应用内更新器从上游发布仓库（`sheying2013/OpenBrowser`）下载安装包，并在启动安装器前校验 release 发布的 `SHA256SUMS.txt` 清单；缺失清单的旧版本仅给出警告。
 
 ## 文档
 
@@ -168,7 +170,7 @@ OpenBrowser/
 
 独立内核来自 [Donut Browser](https://github.com/zhom/donutbrowser) / [Wayfern](https://wayfern.com/)（作者 [zhom](https://github.com/zhom)）。更新源：[wayfern.json](https://donutbrowser.com/wayfern.json)。条款：[Wayfern ToS](https://wayfern.com/tos)。
 
-仓库不保存内核二进制。官方平台包会在 CI 打包时从官方源获取对应 Wayfern 内核；macOS x86_64 包使用已纳入源码的 OpenBrowser 148 运行时。
+Windows x64 与 macOS arm64 的内核种子以 Git LFS 形式存放在本仓库 `Browserapp/kernels/` 下，供 CI 打包消费；macOS x86_64 包使用已纳入源码的 OpenBrowser 148 运行时；Ubuntu x86_64 包在 CI 时从 Google 获取 Chrome Stable。运行时的内核更新仍跟随官方源。
 
 </details>
 

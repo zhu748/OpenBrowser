@@ -145,7 +145,7 @@ OpenBrowser/
 └── README_CN.md           # Chinese documentation
 ```
 
-This repository contains source code and documentation only. It does not include profiles, cookies, proxy credentials, bundled kernel binaries, or installers. Official Windows x64 and macOS arm64 builds use the matching Wayfern kernel during CI packaging; macOS x86_64 builds use the OpenBrowser 148 kernel; Ubuntu x86_64 builds explicitly fetch Chrome for Testing during CI packaging.
+This repository contains source code, documentation, and — via [Git LFS](https://git-lfs.com/) — the platform kernel seeds used for packaging: the Windows x64 and macOS arm64 kernels are checked in under `Browserapp/kernels/` (LFS), the macOS x86_64 OpenBrowser 148 runtime is checked in as regular files, and Ubuntu x86_64 builds fetch Chrome Stable explicitly during CI packaging. It never includes profiles, cookies, proxy credentials, or installers. Clone with `git lfs install && git clone …` to receive the kernel seeds.
 
 ## Data and security
 
@@ -154,6 +154,8 @@ This repository contains source code and documentation only. It does not include
 - Browser startup failures are appended to the local-only `browser-startup.log` under the user's OpenBrowser data directory. Inspect it with `npm run log:startup` from `Browserapp/`; logs are ignored by Git.
 - Third-party notices are documented in [`THIRD-PARTY-NOTICES.md`](./Browserapp/THIRD-PARTY-NOTICES.md).
 - Cloud backup integrations only connect outward after explicit user configuration.
+- **Backups that contain account credentials (cookies / passwords / 2FA / proxy logins / browser data) are only uploaded when a backup passphrase is set** — unencrypted credential uploads are rejected.
+- The in-app updater downloads installers from the upstream release repository (`sheying2013/OpenBrowser`) and verifies every download against the release's `SHA256SUMS.txt` manifest before launching it; releases without a manifest produce a visible warning.
 
 ## Documentation
 
@@ -170,7 +172,7 @@ This repository contains source code and documentation only. It does not include
 
 The independent kernel comes from [Donut Browser](https://github.com/zhom/donutbrowser) / [Wayfern](https://wayfern.com/) by [zhom](https://github.com/zhom). Update feed: [wayfern.json](https://donutbrowser.com/wayfern.json). Terms: [Wayfern ToS](https://wayfern.com/tos).
 
-The repository does not store kernel binaries. Official platform packages obtain the matching Wayfern kernel from the official feed during CI packaging; macOS x86_64 packages use the checked-in OpenBrowser 148 runtime.
+Kernel seeds for Windows x64 and macOS arm64 are stored in this repository through Git LFS under `Browserapp/kernels/` and are consumed by CI packaging; macOS x86_64 packages use the checked-in OpenBrowser 148 runtime; Ubuntu x86_64 packages fetch Chrome Stable from Google during CI. Runtime kernel updates still follow the official feed.
 
 </details>
 
