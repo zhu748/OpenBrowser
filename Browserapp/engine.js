@@ -170,6 +170,17 @@ function sanitizeInjectionScript(source) {
   return out;
 }
 
+/**
+ * Documents that will be replaced by a real navigation before any page content runs
+ * (the initial about:blank tab at startup). The fingerprint evaluated into them does
+ * not need the multi-megabyte font payload: the document-start registration covers
+ * every later navigation with the full source.
+ */
+function isEphemeralDocumentUrl(url) {
+  const text = String(url || '').trim().toLowerCase();
+  return text === '' || text === 'about:blank';
+}
+
 if (!cdp.__scriptSanitized) {
   cdp.__scriptSanitized = true;
   const origCdpCall = cdp.call;
@@ -1942,7 +1953,9 @@ class BrowserEngine {
             });
           } catch (_) {}
         }
-        await applyFingerprintToTab(cdp.call, tab.webSocketDebuggerUrl, fp, enriched);
+        await applyFingerprintToTab(cdp.call, tab.webSocketDebuggerUrl, fp, enriched, {
+          livePatchDocument: isEphemeralDocumentUrl(tab.url),
+        });
         let live = null;
         try {
           const probe = await cdp.call(tab.webSocketDebuggerUrl, 'Runtime.evaluate', {
@@ -1982,7 +1995,10 @@ class BrowserEngine {
             mismatch,
           });
           try {
-            await applyFingerprintToTab(cdp.call, tab.webSocketDebuggerUrl, fp, enriched, { force: true });
+            await applyFingerprintToTab(cdp.call, tab.webSocketDebuggerUrl, fp, enriched, {
+              force: true,
+              livePatchDocument: isEphemeralDocumentUrl(tab.url),
+            });
             const probe2 = await cdp.call(tab.webSocketDebuggerUrl, 'Runtime.evaluate', {
               expression: LIVE_PROBE_EXPRESSION,
               returnByValue: true,
@@ -2099,6 +2115,7 @@ class BrowserEngine {
       applyKey: `session:${targetInfo?.targetId || sessionId}`,
       targetType: targetInfo?.type,
       isSubframe,
+      livePatchDocument: isEphemeralDocumentUrl(targetInfo?.url),
     });
     // Synchronize Blink physical layout scaling with target devicePixelRatio for desktop personas.
     // Without setDeviceMetricsOverride, Blink computes CSS @media (resolution) at host 1dppx,

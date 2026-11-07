@@ -2202,12 +2202,19 @@ function fingerprintConsistencyIssues(fp) {
 /**
  * Document-start injection implementing noise/block modes.
  */
-function buildInjectionScript(fp) {
+function buildInjectionScript(fp, options = {}) {
   // A pure function of the declared configuration, so every call for one profile — cold or warm,
-  // main world or worker — agrees with the token the host later validates and with the value this
+  // main or worker — agrees with the token the host later validates and with the value this
   // function stores back on fp.fontBlobBridge. See canonicalBridgeToken.
   const bridgeToken = canonicalBridgeToken(fp);
-  const injectionCacheKey = bridgeToken + '|' + String((fp && fp.bridgeChannel) || '');
+  // livePatch builds the source used to patch an ALREADY-OPEN document that the caller
+  // knows is ephemeral (about:blank before the first real navigation). It drops the
+  // multi-megabyte font payload: the Page.addScriptToEvaluateOnNewDocument registration
+  // made for the same target carries the full bytes and runs on every later navigation,
+  // so transmitting the payload a second time for the throwaway document only doubles
+  // the CDP transfer and the renderer parse cost on the startup critical path.
+  const livePatch = options.livePatch === true;
+  const injectionCacheKey = bridgeToken + '|' + String((fp && fp.bridgeChannel) || '') + (livePatch ? '|live' : '');
   if (injectionCacheKey) {
     const cached = injectionScriptCache.get(injectionCacheKey);
     if (typeof cached === 'string') {
@@ -7498,8 +7505,10 @@ function buildInjectionScript(fp) {
     const platformKey = mapPlatformToSubsetKey(fp.platform);
     // Load the platform payload once: both the document.fonts seeding layer and the dynamic
     // local() gate consume the same bytes, and serialising it twice used to bloat every
-    // document-start script to ~6 MB.
-    const sharedFontPayload = platformKey ? loadFontSubsetPayload(platformKey) : [];
+    // document-start script to ~6 MB. In livePatch mode the payload is skipped entirely:
+    // an about:blank document has no content to measure fonts against, and the registered
+    // document-start script delivers the full payload on the real navigation.
+    const sharedFontPayload = livePatch ? [] : (platformKey ? loadFontSubsetPayload(platformKey) : []);
     const sharedPayloadVar = sharedFontPayload.length ? SHARED_FONT_PAYLOAD_VAR : null;
     if (sharedPayloadVar) sharedFontPayloadForOutput = sharedFontPayload;
     if (platformKey) {
@@ -7532,19 +7541,32 @@ function buildInjectionScript(fp) {
         payloadVar: sharedPayloadVar,
         platform: platKey,
         hostPlatform: typeof process !== 'undefined' ? process.platform : '',
+        // livePatch carries no subset bytes, so the gate must not fall back to loading and
+        // embedding them itself. An empty subset map degrades exactly like a same-platform
+        // persona host: local() resolution for missing families lands on the blocked
+        // placeholder instead of host bytes.
+        injectSubsets: livePatch ? false : undefined,
       });
     } catch (_) {}
     // Local Font Access exposes a binary blob after user activation. Its returned FontData
     // records have already been re-labelled above, so their blob() method must not remain bound
     // to the host record and disclose a different platform's font bytes.
-    const lazyFontPayload = fp.lazyFontPayload !== false && fp.lazyPayload !== false && (fp.lazyPayload === true || platKey === 'windows');
+    const lazyFontPayload = livePatch
+      || (fp.lazyFontPayload !== false && fp.lazyPayload !== false && (fp.lazyPayload === true || platKey === 'windows'));
     const fontBridgeChannel = String(fp.bridgeChannel || fp.fontBlobBridge?.channelName || ('_' + String(bridgeToken).slice(0, 16)));
-    fp.fontBlobBridge = lazyFontPayload ? {
-      channelName: fontBridgeChannel,
-      token: String(bridgeToken),
-      platform: platKey,
-      wanted: null,
-    } : null;
+    // The fontBlobBridge side effect is authoritative only for the FULL build: the livePatch
+    // variant forces the lazy gate for its stripped source, and letting it write here would
+    // leave a lazy bridge object behind even when the full script (and the engine's binding
+    // registration) follows the non-lazy policy — especially when the full build is a cache
+    // hit and never re-runs this block.
+    if (!livePatch) {
+      fp.fontBlobBridge = lazyFontPayload ? {
+        channelName: fontBridgeChannel,
+        token: String(bridgeToken),
+        platform: platKey,
+        wanted: null,
+      } : null;
+    }
     try {
       queryLocalFontBlobGateScript = buildQueryLocalFontBlobGateSource({
         ...fp,
@@ -9281,6 +9303,14 @@ async function applyFingerprintToTab(cdpCall, webSocketDebuggerUrl, fp, profile 
     return cdpCall(webSocketDebuggerUrl, method, params);
   };
 
+  // The evaluated copy for an ephemeral document drops the font payload (see
+  // buildInjectionScript livePatch). It is built BEFORE the full source so the
+  // fp.fontBlobBridge side effect ends up matching the full script's laziness
+  // policy — the binding registration the engine makes from that value must
+  // agree with the document-start script that actually runs on later navigations.
+  const livePatchSource = options.livePatchDocument === true
+    ? buildInjectionScript(fp, { livePatch: true })
+    : null;
   const source = buildInjectionScript(fp);
   const fpKey = injectSourceKeyCached(injectionCacheKeyFor(fp), source);
   const injectTargetKey = typeof options.applyKey === 'string' && options.applyKey
@@ -9420,7 +9450,7 @@ async function applyFingerprintToTab(cdpCall, webSocketDebuggerUrl, fp, profile 
   if (!options.skipEvaluate && !options.isWaiting) {
     try {
       const evaluated = await invoke('Runtime.evaluate', {
-      expression: source,
+      expression: livePatchSource || source,
       returnByValue: false,
       awaitPromise: false,
     });
