@@ -53,7 +53,7 @@ function resolveHostBinary() {
 
   if (process.platform === 'win32') {
     try {
-      const binary = require('desktop-shell');
+      const binary = require('electron') || require('desktop-shell');
       if (typeof binary === 'string' && fs.existsSync(binary)) return binary;
     } catch (_) { /* fall through */ }
     const distRoot = resolveHostDist(appRoot);
@@ -63,7 +63,7 @@ function resolveHostBinary() {
 
   if (process.platform === 'linux') {
     try {
-      const binary = require('desktop-shell');
+      const binary = require('electron') || require('desktop-shell');
       if (typeof binary === 'string' && fs.existsSync(binary)) return binary;
     } catch (_) { /* fall through */ }
     const distRoot = resolveHostDist(appRoot);
