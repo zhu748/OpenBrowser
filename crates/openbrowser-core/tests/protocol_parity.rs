@@ -626,7 +626,9 @@ async fn test_stop_aborts_active_tunnels() -> Result<()> {
         clients.push(client);
     }
 
-    assert_eq!(bridge.limiter().available_permits(), 27); // 32 - 5 = 27
+    // The limiter paces handshakes, not whole tunnels: permits are released
+    // once the CONNECT handshake finishes, so all 32 are free here.
+    assert_eq!(bridge.limiter().available_permits(), 32);
 
     // Actively stop bridge while tunnels are alive
     let stop_start = std::time::Instant::now();

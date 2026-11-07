@@ -59,7 +59,14 @@ function fileNameFromUrl(rawUrl) {
   try {
     const parsed = new URL(rawUrl);
     const last = parsed.pathname.split('/').filter(Boolean).pop();
-    return last ? decodeURIComponent(last) : `${Date.now()}`;
+    if (!last) return `${Date.now()}`;
+    // Decode first, then basename: `files%2F..%2F..%2Fx.exe` decoded to a
+    // path with separators and escaped the download directory.
+    // A malformed escape falls back to the raw segment instead of throwing.
+    let decoded = last;
+    try { decoded = decodeURIComponent(last); } catch (_) {}
+    const safe = path.basename(decoded).trim();
+    return safe && safe !== '.' && safe !== '..' ? safe : `${Date.now()}`;
   } catch (_) {
     return `${Date.now()}`;
   }

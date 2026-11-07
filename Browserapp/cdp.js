@@ -5,7 +5,10 @@ function request(url, method = 'GET') {
     const req = http.request(url, { method, timeout: 5000 }, (res) => {
       let body = '';
       res.setEncoding('utf8');
-      res.on('data', (chunk) => { body += chunk; });
+      res.on('data', (chunk) => {
+        body += chunk;
+        if (body.length > 32 * 1024 * 1024) req.destroy(new Error('CDP HTTP response too large'));
+      });
       res.on('end', () => {
         if (res.statusCode >= 400) return reject(new Error(`CDP HTTP ${res.statusCode}: ${body.slice(0, 200)}`));
         resolve(body);

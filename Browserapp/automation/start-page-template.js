@@ -179,7 +179,7 @@ function buildStartPageHtml(data = {}) {
   </main>
   <div class="toast" id="toast"></div>
   <script>
-  window.__OPENBROWSER_START__=${JSON.stringify(boot)};
+  window.__OPENBROWSER_START__=${JSON.stringify(boot).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029')};
   (function(){
     'use strict';
     var BOOT=window.__OPENBROWSER_START__||{};

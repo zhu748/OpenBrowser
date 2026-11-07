@@ -1013,6 +1013,9 @@ class StartPageServer {
     const server = this.server;
     this.server = null;
     this.port = null;
+    // Keep-alive sockets (progress polling) would otherwise hold close() open;
+    // local-api-server.stop() already did this.
+    server.closeAllConnections?.();
     await new Promise((resolve) => server.close(() => resolve()));
   }
 

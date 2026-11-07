@@ -19,7 +19,7 @@ async function main() {
     try {
       const raw = await fs.readFile(path.join(root, name, 'DevToolsActivePort'), 'utf8');
       const port = Number(raw.split(/\r?\n/)[0]);
-      const version = await (await fetch(`http://127.0.0.1:${port}/json/version`)).json();
+      const version = await (await fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(3000) })).json();
       await cdp.call(version.webSocketDebuggerUrl, 'Browser.close');
       closed += 1;
     } catch (_) {}

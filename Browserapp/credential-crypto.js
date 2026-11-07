@@ -164,10 +164,41 @@ function getFormat(bufferOrString) {
  * Encrypt buffer using AES-256-GCM in OBE1 format.
  * Exactly compatible with cloud-sync.js encryptPayload format.
  */
+// scryptSync costs ~30-45ms of synchronous main-thread time per call, and
+// persist() re-encrypts every profile on every run. The master key is a
+// 256-bit random hex string, so the KDF is defence in depth rather than the
+// main strength; pay it once per (passphrase, salt) instead of once per record.
+const __derivedKeyCache = new Map();
+const DERIVED_KEY_CACHE_MAX = 256;
+
+function deriveAesKey(passphrase, salt) {
+  const cacheKey = salt.toString('hex') + '|' + passphrase;
+  const cached = __derivedKeyCache.get(cacheKey);
+  if (cached) return cached;
+  const key = crypto.scryptSync(passphrase, salt, KEY_LENGTH);
+  if (__derivedKeyCache.size >= DERIVED_KEY_CACHE_MAX) __derivedKeyCache.clear();
+  __derivedKeyCache.set(cacheKey, key);
+  return key;
+}
+
+// Reuse one salt per passphrase for encryption so the KDF cost is paid once
+// per process. AES-GCM only requires IV uniqueness per key; the IV stays random.
+const __encryptSaltCache = new Map();
+
+function encryptSaltFor(passphrase) {
+  let salt = __encryptSaltCache.get(passphrase);
+  if (!salt) {
+    if (__encryptSaltCache.size >= 32) __encryptSaltCache.clear();
+    salt = crypto.randomBytes(SALT_LENGTH);
+    __encryptSaltCache.set(passphrase, salt);
+  }
+  return salt;
+}
+
 function encryptAesGcm(plainBuf, passphraseOrKey) {
   const passphrase = String(passphraseOrKey || getLocalMasterKey());
-  const salt = crypto.randomBytes(SALT_LENGTH);
-  const key = crypto.scryptSync(passphrase, salt, KEY_LENGTH);
+  const salt = encryptSaltFor(passphrase);
+  const key = deriveAesKey(passphrase, salt);
   const iv = crypto.randomBytes(IV_LENGTH);
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
   const enc = Buffer.concat([cipher.update(plainBuf), cipher.final()]);
@@ -199,7 +230,7 @@ function decryptAesGcm(buf, passphraseOrKey) {
   const tag = buf.subarray(HEADER_LENGTH + SALT_LENGTH + IV_LENGTH, HEADER_LENGTH + SALT_LENGTH + IV_LENGTH + TAG_LENGTH);
   const enc = buf.subarray(HEADER_LENGTH + SALT_LENGTH + IV_LENGTH + TAG_LENGTH);
 
-  const key = crypto.scryptSync(passphrase, salt, KEY_LENGTH);
+  const key = deriveAesKey(passphrase, salt);
   const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
   decipher.setAuthTag(tag);
   return Buffer.concat([decipher.update(enc), decipher.final()]);

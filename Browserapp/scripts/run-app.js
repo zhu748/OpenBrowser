@@ -87,3 +87,8 @@ child.on('exit', (code, signal) => {
   if (signal) process.kill(process.pid, signal);
   process.exit(code == null ? 1 : code);
 });
+// Forward termination signals: without this, killing the wrapper left the
+// Electron child running as an orphan.
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+  process.on(signal, () => { try { child.kill(signal); } catch (_) {} });
+}

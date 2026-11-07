@@ -58,6 +58,8 @@ function defaultUserDataPaths() {
   return paths;
 }
 
+const credentialCrypto = require('../credential-crypto');
+
 function apiKeyFileCandidates({ env = process.env, userDataPath = '' } = {}) {
   const candidates = [
     env.OPENBROWSER_API_KEY_FILE,
@@ -88,7 +90,16 @@ function resolveApiKey({ configured = '', env = process.env, userDataPath = '', 
 
   for (const filePath of apiKeyFileCandidates({ env, userDataPath })) {
     try {
-      const raw = fs.readFileSync(filePath, 'utf8');
+      const rawBuffer = fs.readFileSync(filePath);
+      let raw = rawBuffer.toString('utf8');
+      // ApiKeyStore.save() encrypts mcp-key.json by default (safeStorage or the
+      // local master key fallback). Decrypt before parsing, otherwise the
+      // JSON.parse below always fails and the standalone MCP server can never
+      // authenticate with the stored key.
+      const header = rawBuffer.subarray(0, 4).toString('ascii');
+      if (header === 'OBE1' || header === 'OBS1') {
+        raw = credentialCrypto.decryptCredential(rawBuffer).toString('utf8');
+      }
       let key = cleanApiKey(raw);
       if (key.startsWith('{')) {
         try {

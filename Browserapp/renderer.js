@@ -438,13 +438,27 @@ try {
 
 let activeGroupFilter = 'all'; // 'all' | 'ungrouped' | groupId
 
+let __groupListCache = null; // [groupsRef, sortedArray]
+let __groupMapCache = null; // [groupsRef, Map<id, group>]
 function listGroups() {
-  return [...(ui.groups || [])].sort((a, b) => (a.sort - b.sort) || a.name.localeCompare(b.name, 'zh'));
+  const groups = ui.groups || [];
+  if (!__groupListCache || __groupListCache[0] !== groups) {
+    __groupListCache = [groups, [...groups].sort((a, b) => (a.sort - b.sort) || a.name.localeCompare(b.name, 'zh'))];
+  }
+  return __groupListCache[1];
+}
+
+function groupMap() {
+  const groups = ui.groups || [];
+  if (!__groupMapCache || __groupMapCache[0] !== groups) {
+    __groupMapCache = [groups, new Map(groups.map((g) => [g.id, g]))];
+  }
+  return __groupMapCache[1];
 }
 
 function findGroup(id) {
   if (!id) return null;
-  return listGroups().find((g) => g.id === id) || null;
+  return groupMap().get(id) || null;
 }
 
 function localizeSystemLabel(name) {
@@ -1021,6 +1035,8 @@ function trimProfileForUiStorage(profile) {
 
 const save = () => {
   if (!Array.isArray(ui.groups)) ui.groups = defaultGroups();
+  __groupListCache = null;
+  __groupMapCache = null;
   const safe = {
     ...ui,
     profiles: (ui.profiles || []).map((item) => redactProfileForStorage(item)),
@@ -1609,7 +1625,16 @@ async function confirmAction(options) {
   }
   return confirmUi(options);
 }
-function log(module, message) { ui.logs.unshift({ time: new Date().toLocaleTimeString('zh-CN', { hour12: false }), module, message }); ui.logs = ui.logs.slice(0, 200); save(); renderLogs(); }
+let __logPersistTimer = 0;
+function log(module, message) {
+  ui.logs.unshift({ time: new Date().toLocaleTimeString('zh-CN', { hour12: false }), module, message });
+  ui.logs = ui.logs.slice(0, 200);
+  // save() serializes every profile into localStorage; a burst of log lines
+  // (batch start/stop, sync events) used to pay that once per line.
+  clearTimeout(__logPersistTimer);
+  __logPersistTimer = setTimeout(() => { __logPersistTimer = 0; save(); }, 500);
+  renderLogs();
+}
 function initials(name) { return name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase(); }
 function isDirectProxy(value) {
   return !value || /^(direct|offline|none)$/i.test(String(value).trim());
@@ -1965,6 +1990,7 @@ function viewMetaFor(view) {
     extensions: ['view.extensions', 'view.extensions.sub'],
     sync: ['view.sync', 'view.sync.sub'],
     rpa: ['view.rpa', 'view.rpa.sub'],
+    'rpa-guide': ['view.rpa.guide', 'view.rpa.guide.sub'],
     'api-mcp': ['view.api-mcp', 'view.api-mcp.sub'],
     logs: ['view.logs', 'view.logs.sub'],
     system: ['view.system', 'view.system.sub'],
@@ -2723,20 +2749,22 @@ async function startProfile(id) {
     group_name: groupNameRaw(profile) || '',
   };
   setStartingProgress(id, { phase: 'prepare', percent: 6, message: t('status.starting') });
-  renderProfiles();
+  scheduleRenderProfiles();
   try {
     const result = await window.ops.startProfile(payload);
     setStartingProgress(id, { phase: 'ready', percent: 100, message: t('status.startPhase.ready') });
     log('Browser', `${displayProfileNumber(profile)} 已启动 · ${result.browser} · CDP ${result.port || 'pending'}`);
     toast(tx(`${displayProfileNumber(profile)} 已启动`));
-    await refreshStatus();
-    await refreshSessions();
+    invalidateViewCache(['sync', 'profiles']);
+    scheduleStatusRefresh();
+    scheduleSessionRefresh();
   } catch (error) {
     log('Error', error.message);
     toast(tx(`启动失败：${error.message}`));
   } finally {
     clearStartingProgress(id);
-    await refreshStatus();
+    invalidateViewCache(['sync', 'profiles']);
+    scheduleStatusRefresh();
   }
 }
 
@@ -2760,7 +2788,7 @@ async function runPool(items, worker, concurrency = 3) {
 
 async function stopProfile(id) {
   invalidateViewCache(['sync', 'profiles']);
-  try { await window.ops.stopProfile(id); const profile = ui.profiles.find((item) => item.id === id); log('Browser', `${profile?.name || id} 已停止`); await refreshStatus(); await refreshSessions(); }
+  try { await window.ops.stopProfile(id); const profile = ui.profiles.find((item) => item.id === id); log('Browser', `${profile?.name || id} 已停止`); scheduleStatusRefresh(); scheduleSessionRefresh(); }
   catch (error) { log('Error', error.message); toast(tx(`停止失败：${error.message}`)); }
 }
 
@@ -3008,12 +3036,12 @@ function orderedSelectedSessionIds() {
 function populateSyncGroups() {
   const select = $('#sync-group'); const current = select.value || 'all'; const groups = [...new Set(sessions.map((item) => String(item.profile?.tag || '未分组')))].sort();
   select.replaceChildren(); const all = document.createElement('option'); all.value = 'all'; all.textContent = tx('全部分组'); select.append(all);
-  for (const group of groups) { const option = document.createElement('option'); option.value = group; option.textContent = group; select.append(option); }
+  for (const group of groups) { const option = document.createElement('option'); option.value = group; option.textContent = localizeSystemLabel(group); select.append(option); }
   select.value = [...select.options].some((option) => option.value === current) ? current : 'all';
 }
 
 function renderSessions() {
-  populateSyncGroups(); const group = $('#sync-group').value || 'all'; const visible = group === 'all' ? sessions : sessions.filter((item) => String(item.profile?.tag || t('groups.ungrouped')) === group);
+  populateSyncGroups(); const group = $('#sync-group').value || 'all'; const visible = group === 'all' ? sessions : sessions.filter((item) => String(item.profile?.tag || '未分组') === group);
   const table = $('#session-table'); table.replaceChildren();
   for (const value of visible) {
     const selected = selectedSessions.has(value.id);
@@ -4108,7 +4136,10 @@ $('#stop-selected').addEventListener('click', async () => { if (!selectedProfile
 $('#copy-selected')?.addEventListener('click', async () => {
   const sources = ui.profiles.filter((profile) => selectedProfiles.has(profile.id));
   if (!sources.length) return toast(tx('请先选择环境'));
-  const previousNext = ui.nextProfileNumber;
+  // nextProfileNumber() recomputes from the live list: ui.nextProfileNumber
+  // goes stale after initialize() appends engine-only profiles or a cloud
+  // restore replaces the list, which produced duplicate environment numbers.
+  const previousNext = nextProfileNumber();
   const used = new Set(ui.profiles.map((item) => item.id));
   const created = sources.map((local, index) => {
     const engineProfile = engineProfiles.find((item) => item.id === local.id);

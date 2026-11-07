@@ -1289,6 +1289,35 @@ app.whenReady().then(async () => {
   registerTrustedIpc('profiles:test-proxy', (_event, profile) => engine.testProxy(profile));
   registerTrustedIpc('profiles:check-proxy', (_event, profile) => engine.checkProxy(profile, { persist: true }));
 
+  // Batch stop+restart for the extension install / global-toggle flows. This
+  // used to be two serial for-loops: one failing stop aborted the whole batch
+  // and left the remaining environments stopped-but-not-restarted, and every
+  // step waited for the previous one.
+  async function restartRunningProfiles(profileIds) {
+    const stopIds = [...profileIds];
+    const stopOk = new Set();
+    await Promise.all(Array.from({ length: Math.min(4, stopIds.length) }, async () => {
+      while (stopIds.length) {
+        const id = stopIds.shift();
+        try { await engine.stop(id); stopOk.add(id); } catch (error) {
+          console.warn('OpenBrowser batch stop failed for', id, error?.message || error);
+        }
+      }
+    }));
+    const restartIds = [...stopOk];
+    let restarted = 0;
+    await Promise.all(Array.from({ length: Math.min(3, restartIds.length) }, async () => {
+      while (restartIds.length) {
+        const id = restartIds.shift();
+        const profile = engine.profiles.get(id);
+        if (!profile) continue;
+        try { await engine.start(profile); restarted += 1; } catch (error) {
+          console.warn('OpenBrowser batch restart failed for', id, error?.message || error);
+        }
+      }
+    }));
+    return { restarted };
+  }
   registerTrustedIpc('extensions:list', () => engine.listExtensions());
   registerTrustedIpc('extensions:add-folder', async () => {
     const result = await dialog.showOpenDialog({ title: '选择已解压的 Chrome 扩展目录', properties: ['openDirectory'] });
@@ -1296,9 +1325,8 @@ app.whenReady().then(async () => {
     const extension = await engine.addExtension(result.filePaths[0]);
     const ids = [...engine.profiles.keys()]; const running = ids.filter((id) => engine.running.has(id));
     if (ids.length) await engine.assignExtension(extension.id, ids, true);
-    for (const id of running) await engine.stop(id);
-    for (const id of running) { const profile = engine.profiles.get(id); if (profile) await engine.start(profile); }
-    return { canceled: false, extension, assigned: ids.length, restarted: running.length };
+    const restart = await restartRunningProfiles(running);
+    return { canceled: false, extension, assigned: ids.length, ...restart };
   });
   registerTrustedIpc('extensions:add-store', async (_event, payload) => {
     const ids = sanitizeIds(payload.profileIds || []);
@@ -1310,20 +1338,17 @@ app.whenReady().then(async () => {
     }
     const running = new Set(engine.status().filter((item) => item.running && ids.includes(item.id)).map((item) => item.id));
     if (ids.length) await engine.assignExtension(extension.id, ids, true);
-    if (payload.restart) {
-      for (const id of running) await engine.stop(id);
-      for (const id of running) { const profile = engine.profiles.get(id); if (profile) await engine.start(profile); }
-    }
-    return { extension, assigned: ids.length, restarted: payload.restart ? running.size : 0 };
+    let restarted = 0;
+    if (payload.restart) restarted = (await restartRunningProfiles([...running])).restarted;
+    return { extension, assigned: ids.length, restarted };
   });
   registerTrustedIpc('extensions:assign', (_event, payload) => engine.assignExtension(String(payload.extensionId), sanitizeIds(payload.profileIds), Boolean(payload.enabled)));
   registerTrustedIpc('extensions:toggle-all', async (_event, payload) => {
     const extensionId = String(payload.extensionId || ''); const enabled = Boolean(payload.enabled);
     const ids = [...engine.profiles.keys()]; const running = ids.filter((id) => engine.running.has(id));
     await engine.assignExtension(extensionId, ids, enabled);
-    for (const id of running) await engine.stop(id);
-    for (const id of running) { const profile = engine.profiles.get(id); if (profile) await engine.start(profile); }
-    return { success: true, enabled, affected: ids.length, restarted: running.length };
+    const restart = await restartRunningProfiles(running);
+    return { success: true, enabled, affected: ids.length, ...restart };
   });
   registerTrustedIpc('extensions:reload', async (_event, id) => {
     if (!id || id === 'all') return await engine.reloadAllExtensions();
@@ -1450,7 +1475,7 @@ app.whenReady().then(async () => {
     if (!id) throw new Error('id required');
     return proxyStore().update(id, payload || {});
   });
-  registerTrustedIpc('proxy:delete', (_event, ids) => proxyStore().remove(ids));
+  registerTrustedIpc('proxy:delete', (_event, ids) => proxyStore().remove(sanitizeIds(Array.isArray(ids) ? ids : [ids])));
   registerTrustedIpc('proxy:check', async (_event, payload) => {
     const store = proxyStore();
     const id = String(payload?.id || payload?.proxy_id || '');
@@ -1688,7 +1713,15 @@ app.whenReady().then(async () => {
   // createWindow() has either resolved or thrown, and awaiting it again is free.
   await windowPromise;
   appUpdate.startAppUpdateWatcher();
-});
+})
+  .catch((error) => {
+    // A failed init (data-root isolation, engine/SQLite construction) used to
+    // be swallowed by the global rejection logger: the window stayed up while
+    // every engine-backed IPC handler threw. Fail loudly instead.
+    console.error('OpenBrowser startup failed:', error?.message || error);
+    try { dialog.showErrorBox('OpenBrowser', `启动失败：${error?.message || error}\n\n程序即将退出。`); } catch (_) {}
+    app.exit(1);
+  });
 
 async function stopAllForQuit() {
   if (!engine) return { stopped: true, remaining: [], errors: [] };
@@ -1815,7 +1848,10 @@ app.on('child-process-gone', (event, details) => {
 });
 
 app.on('before-quit', (event) => {
-  if (quitting) return;
+  // A second quit request during cleanup must not bypass the awaited shutdown
+  // chain (stopAll, persistence flush, quit backup): that orphans the external
+  // browser kernels and drops pending state changes.
+  if (quitting) { event.preventDefault(); return; }
   event.preventDefault();
   beginQuitCleanup();
 });

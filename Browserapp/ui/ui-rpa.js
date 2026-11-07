@@ -232,6 +232,8 @@ function appendRpaLog(line) {
   msgEl.textContent = message;
   row.append(timeEl, levelEl, msgEl);
   box.prepend(row);
+  // Bound the live log: a long-running task otherwise grows the DOM forever.
+  while (box.children.length > 500) box.lastElementChild?.remove();
   // Keep the newest line visible without forcing the whole page to jump.
   try { box.scrollTop = 0; } catch (_) {}
 }
@@ -720,8 +722,14 @@ document.getElementById('rpa-task-delete-checked')?.addEventListener('click', as
 });
 document.getElementById('rpa-run-refresh')?.addEventListener('click', refreshRpaRuns);
 document.getElementById('rpa-flow-search')?.addEventListener('input', renderRpaPlans);
-document.getElementById('rpa-task-search')?.addEventListener('input', refreshRpaTasks);
-document.getElementById('rpa-run-search')?.addEventListener('input', refreshRpaRuns);
+document.getElementById('rpa-task-search')?.addEventListener('input', () => {
+  clearTimeout(window.__rpaTaskSearchTimer);
+  window.__rpaTaskSearchTimer = setTimeout(() => refreshRpaTasks().catch(() => {}), 280);
+});
+document.getElementById('rpa-run-search')?.addEventListener('input', () => {
+  clearTimeout(window.__rpaRunSearchTimer);
+  window.__rpaRunSearchTimer = setTimeout(() => refreshRpaRuns().catch(() => {}), 280);
+});
 document.getElementById('rpa-run-filter')?.addEventListener('change', refreshRpaRuns);
 document.getElementById('rpa-store-search')?.addEventListener('input', () => {
   // debounce refetch with filters

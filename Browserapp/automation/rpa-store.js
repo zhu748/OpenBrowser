@@ -68,6 +68,20 @@ class RpaStore {
       this.data = { version: 4, plans: [], tasks: [], templates: [], config: {} };
     }
     this.migrateLegacyTemplates();
+    // A crash or force-quit leaves tasks stuck at 'running'/'pending': those
+    // count as ACTIVE for pruneTasks/enforceStoreBudget, so they never rotate
+    // out and the UI keeps showing a phantom running state. Mark them failed.
+    const interruptedAt = new Date().toISOString();
+    let interrupted = 0;
+    for (const task of this.data.tasks) {
+      if (task && (task.status === 'running' || task.status === 'pending')) {
+        task.status = 'failed';
+        task.error = task.error || 'interrupted by app restart';
+        task.finishedAt = task.finishedAt || interruptedAt;
+        interrupted += 1;
+      }
+    }
+    if (interrupted) await this.save();
     this.pruneTasks();
     await this.ensureBuiltinTemplates();
     await this.ensureLocalCatalogTemplates();

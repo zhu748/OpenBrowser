@@ -243,14 +243,30 @@ function renderProxies() {
    * the same association (profile.proxyId, or the raw endpoint for a manually pasted proxy), so
    * the badge and the blocking rule always describe the same set of windows.
    */
+  // Usage used to rescan every profile (each hitting the linear
+  // engineProfiles.find) per proxy row: O(proxies x profiles x engineStates)
+  // per render. Bucket once per render instead.
+  const runningByProfile = new Map(engineProfiles.map((item) => [item.id, Boolean(item.running)]));
+  const boundByProxyId = new Map();
+  const boundByRawEndpoint = new Map();
+  for (const profile of (ui.profiles || [])) {
+    const linked = profileProxyId(profile);
+    if (linked) {
+      const list = boundByProxyId.get(linked) || [];
+      list.push(profile); boundByProxyId.set(linked, list);
+      continue;
+    }
+    const rawEndpoint = String(profile.proxy || '').trim();
+    if (profile.networkMode === 'proxy' && rawEndpoint) {
+      const list = boundByRawEndpoint.get(rawEndpoint) || [];
+      list.push(profile); boundByRawEndpoint.set(rawEndpoint, list);
+    }
+  }
   const proxyUsage = (item) => {
     const raw = String(item.raw || '').trim();
-    const bound = (ui.profiles || []).filter((profile) => {
-      const linked = profileProxyId(profile);
-      if (linked) return linked === item.id;
-      return profile.networkMode === 'proxy' && raw && String(profile.proxy || '').trim() === raw;
-    });
-    const running = bound.filter((profile) => profileEngine(profile.id).running);
+    const bound = boundByProxyId.get(item.id)
+      || (raw ? boundByRawEndpoint.get(raw) : undefined) || [];
+    const running = bound.filter((profile) => runningByProfile.get(profile.id));
     return { bound, running, limit: Number(item.maxConcurrency) || 0 };
   };
 

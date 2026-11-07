@@ -14,6 +14,16 @@ class PipeConnection {
 
   onData(chunk) {
     this.buffer = Buffer.concat([this.buffer, chunk]);
+    // A hung or corrupted installer streaming bytes without a NUL separator
+    // would otherwise grow this buffer without bound.
+    if (this.buffer.length > 16 * 1024 * 1024) {
+      const error = new Error('Chrome extension installer frame too large');
+      for (const item of this.pending.values()) { clearTimeout(item.timer); item.reject(error); }
+      this.pending.clear();
+      this.buffer = Buffer.alloc(0);
+      try { this.child.kill(); } catch (_) {}
+      return;
+    }
     for (;;) {
       const end = this.buffer.indexOf(0); if (end < 0) break;
       const raw = this.buffer.subarray(0, end).toString('utf8'); this.buffer = this.buffer.subarray(end + 1);
@@ -102,6 +112,11 @@ async function portConnection(port) {
   return {
     command(method, params = {}, timeout = 15000) {
       return cdp.call(socket, method, params, timeout);
+    },
+    // Lifecycle cleanup calls cdpConnection?.close?.(); without this method the
+    // pooled socket only ever went away via the 30s idle reaper.
+    close() {
+      cdp.closePooledSocket(socket);
     },
   };
 }

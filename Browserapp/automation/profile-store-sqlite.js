@@ -227,6 +227,7 @@ class ProfileStoreSqlite {
           failed_at = excluded.failed_at;
       `),
       countDecodeFailures: this.db.prepare('SELECT count(*) as count FROM profile_decode_failures'),
+      pruneDecodeFailures: this.db.prepare('DELETE FROM profile_decode_failures WHERE failed_at < ?'),
       listDecodeFailures: this.db.prepare('SELECT id, error, context, failed_at FROM profile_decode_failures ORDER BY failed_at DESC'),
 
       // Group statements
@@ -502,6 +503,12 @@ class ProfileStoreSqlite {
         ? Buffer.from(row.data)
         : Buffer.from(String(row.data), 'utf8');
       this._statements.upsertDecodeFailure.run(id, raw, error, String(context || ''), new Date().toISOString());
+      // Bounded retention: without a prune, one key-rotation incident copied
+      // every profile's raw (credential-bearing) bytes into this table forever.
+      try {
+        const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+        this._statements.pruneDecodeFailures.run(cutoff);
+      } catch (_) { /* pruning must never break decoding */ }
     } catch (_) {}
     console.warn(`[profile-store] profile ${id} failed to decode (${context}); row quarantined for recovery: ${error}`);
     return null;

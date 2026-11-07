@@ -229,13 +229,15 @@ pub fn extract_origin_path(uri: &str) -> String {
         } else {
             &trimmed[7..]
         };
-        if let Some(slash_idx) = after_scheme.find('/') {
-            return after_scheme[slash_idx..].to_string();
+        // Whichever of '/' or '?' comes first terminates the authority: the
+        // old '/'-first scan mis-parsed `http://host?next=/a` into "/a".
+        match after_scheme.find(['/', '?']) {
+            Some(idx) if after_scheme.as_bytes()[idx] == b'/' => {
+                return after_scheme[idx..].to_string();
+            }
+            Some(idx) => return format!("/{}", &after_scheme[idx..]),
+            None => return "/".to_string(),
         }
-        if let Some(q_idx) = after_scheme.find('?') {
-            return format!("/{}", &after_scheme[q_idx..]);
-        }
-        return "/".to_string();
     }
     if trimmed == "*" {
         return "*".to_string();
@@ -250,7 +252,8 @@ pub fn extract_origin_path(uri: &str) -> String {
 /// Rewrite client HTTP request header into standard origin-form for sending to origin server:
 /// 1. Request line is converted from `GET http://example.com/path HTTP/1.1` to `GET /path HTTP/1.1`.
 /// 2. Proxy-specific headers (Proxy-Authorization, Proxy-Connection, Proxy-Authenticate) are stripped.
-/// 3. Hop-by-hop headers (Keep-Alive, Upgrade) are stripped.
+/// 3. Proxy-specific and Keep-Alive headers are stripped; Upgrade is kept so
+///    WebSocket handshakes survive the origin-form rewrite.
 pub fn format_origin_request(header_slice: &[u8], uri_or_target: &str) -> Vec<u8> {
     let header_str = String::from_utf8_lossy(header_slice);
     let mut lines: Vec<&str> = header_str.lines().collect();
@@ -284,11 +287,13 @@ pub fn format_origin_request(header_slice: &[u8], uri_or_target: &str) -> Vec<u8
             continue;
         }
         let lower = trimmed.to_ascii_lowercase();
+        // Upgrade stays: the tunnel endpoint is the origin server, and
+        // stripping Upgrade while keeping `Connection: Upgrade` broke every
+        // ws:// WebSocket handshake over a SOCKS5 upstream.
         if lower.starts_with("proxy-authorization:")
             || lower.starts_with("proxy-connection:")
             || lower.starts_with("proxy-authenticate:")
             || lower.starts_with("keep-alive:")
-            || lower.starts_with("upgrade:")
         {
             continue;
         }

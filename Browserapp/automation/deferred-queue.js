@@ -109,7 +109,12 @@ class DeferredQueue {
    * @returns {Promise<number>} how many items were processed.
    */
   async flush() {
-    if (this.running) return 0;
+    // A flush that overlaps a running one must wait for it to finish and then
+    // run once more: returning 0 here used to make exit-path flushNow() a
+    // no-op exactly when a write was in flight, silently dropping state.
+    while (this.running) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
     const batch = this.items;
     if (!batch.length) return 0;
 
@@ -123,8 +128,11 @@ class DeferredQueue {
       this.processedCount += batch.length;
       return batch.length;
     } catch (err) {
-      // Requeue so a transient failure does not silently drop work.
+      // Requeue so a transient failure does not silently drop work, and re-arm
+      // the timer: without a new start() the requeued batch stayed parked
+      // forever when the failure came from the timer's own flush().
       this.items = batch.concat(this.items);
+      this.start(this.delayMs);
       if (this.onError) {
         try { this.onError(err, batch); } catch (_) { /* observer */ }
       }
@@ -134,10 +142,24 @@ class DeferredQueue {
     }
   }
 
-  /** Wait until no run is in flight. */
+  /** Wait until no run is in flight and nothing is left queued. */
   async idle() {
-    while (this.running) {
-      await new Promise((resolve) => setTimeout(resolve, 5));
+    let stalls = 0;
+    while (this.running || this.items.length) {
+      if (this.running) {
+        stalls = 0;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      } else {
+        const processed = await this.flush();
+        if (processed === 0 && this.items.length) {
+          // A persistently failing handler must not turn idle() into an
+          // infinite retry loop on the quit path.
+          stalls += 1;
+          if (stalls >= 3) break;
+        } else {
+          stalls = 0;
+        }
+      }
     }
   }
 

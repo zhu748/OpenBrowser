@@ -35,8 +35,13 @@ function loadPrivateKey(source) {
     return crypto.createPrivateKey({ key: Buffer.from(raw, 'base64'), format: 'der', type: 'pkcs8' });
   } catch (_) {
     try {
-      // raw 32-byte ed25519 seed
-      return crypto.createPrivateKey({ key: Buffer.from(raw, 'base64'), format: 'jwk' });
+      // Raw 32-byte Ed25519 seed: wrap it in an RFC 8410 PKCS8 DER prefix.
+      // (format:'jwk' requires a JWK object, so passing a Buffer always threw
+      // here and the documented raw-seed path never worked.)
+      const seed = Buffer.from(raw, 'base64');
+      if (seed.length !== 32) return null;
+      const der = Buffer.concat([Buffer.from('302e020100300506032b657004220420', 'hex'), seed]);
+      return crypto.createPrivateKey({ key: der, format: 'der', type: 'pkcs8' });
     } catch (_) {
       return null;
     }

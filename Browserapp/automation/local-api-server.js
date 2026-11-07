@@ -179,9 +179,11 @@ function firstString(input, keys, fallback = '') {
 }
 
 function timingSafeStringEqual(left, right) {
-  const leftBuffer = Buffer.from(String(left));
-  const rightBuffer = Buffer.from(String(right));
-  return leftBuffer.length === rightBuffer.length && crypto.timingSafeEqual(leftBuffer, rightBuffer);
+  // Hash both sides first: timingSafeEqual requires equal-length buffers, and
+  // the early return on length mismatch leaked the key length to an observer.
+  const leftDigest = crypto.createHash('sha256').update(String(left)).digest();
+  const rightDigest = crypto.createHash('sha256').update(String(right)).digest();
+  return crypto.timingSafeEqual(leftDigest, rightDigest);
 }
 
 async function readBody(req) {

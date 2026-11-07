@@ -132,6 +132,20 @@ impl Socks5UdpAssociate {
             ));
         }
 
+        // RFC 1928: the server must pick a method from the offered set (see
+        // bridge.rs for the rationale).
+        let offered_auth_method = if config.is_authenticated() {
+            AUTH_METHOD_USER_PASS
+        } else {
+            AUTH_METHOD_NONE
+        };
+        if greeting_resp[1] != offered_auth_method {
+            return Err(CoreError::Socks5(format!(
+                "Upstream rejected authentication method (selected {} which was not offered)",
+                greeting_resp[1]
+            )));
+        }
+
         // 2. Authentication if required
         if greeting_resp[1] == AUTH_METHOD_USER_PASS {
             let user = config.username.as_deref().unwrap_or("");
@@ -240,7 +254,7 @@ impl Socks5UdpAssociate {
                 stream.read_exact(&mut domain_bytes).await?;
                 let domain = String::from_utf8(domain_bytes)
                     .map_err(|_| CoreError::Socks5("Relay domain is not valid UTF-8".into()))?;
-                let resolved = tokio::net::lookup_host(format!("{}:0", domain))
+                let candidates = tokio::net::lookup_host(format!("{}:0", domain))
                     .await
                     .map_err(|e| {
                         CoreError::Socks5(format!(
@@ -248,7 +262,19 @@ impl Socks5UdpAssociate {
                             domain, e
                         ))
                     })?
-                    .next()
+                    .collect::<Vec<_>>();
+                // Prefer an address on the same family as the TCP control
+                // connection: the UDP socket is bound per-family above, so a
+                // mismatched choice would fail on send.
+                let peer_is_ipv4 = stream
+                    .peer_addr()
+                    .map(|addr| addr.is_ipv4())
+                    .unwrap_or(true);
+                let resolved = candidates
+                    .iter()
+                    .find(|addr| addr.is_ipv4() == peer_is_ipv4)
+                    .or_else(|| candidates.first())
+                    .copied()
                     .ok_or_else(|| {
                         CoreError::Socks5(format!("Relay domain {} resolved to no IP", domain))
                     })?;
@@ -277,8 +303,16 @@ impl Socks5UdpAssociate {
         let relay_port = u16::from_be_bytes(port_bytes);
         let relay_addr = SocketAddr::new(relay_ip, relay_port);
 
-        // Bind local UDP socket for relaying
-        let udp_socket = UdpSocket::bind("127.0.0.1:0").await?;
+        // Bind local UDP socket for relaying. The old 127.0.0.1 bind made the
+        // relay unusable against any remote SOCKS5 upstream: a loopback source
+        // address is invalid off-host, and the IPv4-only socket could not even
+        // send to an IPv6 relay.
+        let udp_bind: &str = if relay_addr.is_ipv4() {
+            "0.0.0.0:0"
+        } else {
+            "[::]:0"
+        };
+        let udp_socket = UdpSocket::bind(udp_bind).await?;
 
         Ok(Self {
             tcp_control: stream,

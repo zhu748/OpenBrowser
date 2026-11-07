@@ -219,6 +219,21 @@ impl LocalProxyBridge {
             ));
         }
 
+        // RFC 1928: the server must pick a method from the offered set. A
+        // server answering 0x00 (no auth) after we offered only user/pass
+        // would otherwise silently bypass the configured credentials.
+        let offered_auth_method = if config.is_authenticated() {
+            AUTH_METHOD_USER_PASS
+        } else {
+            AUTH_METHOD_NONE
+        };
+        if greeting_resp[1] != offered_auth_method {
+            return Err(CoreError::Socks5(format!(
+                "Upstream rejected authentication method (selected {} which was not offered)",
+                greeting_resp[1]
+            )));
+        }
+
         // 2. Authentication if required
         if greeting_resp[1] == AUTH_METHOD_USER_PASS {
             let user = config.username.as_deref().unwrap_or("");
@@ -800,12 +815,16 @@ impl LocalProxyBridge {
                 }
             }
 
-            Ok(Some((dialed.stream, permit)))
+            // The limiter paces connection handshakes, not whole tunnels:
+            // holding the permit for the tunnel's lifetime turned the
+            // 128-slot semaphore into a hard cap on concurrent tunnels.
+            drop(permit);
+            Ok(Some(dialed.stream))
         })
         .await;
 
-        let (upstream, _permit) = match handshake_res {
-            Ok(Ok(Some(pair))) => pair,
+        let upstream = match handshake_res {
+            Ok(Ok(Some(stream))) => stream,
             Ok(Ok(None)) => return Ok(()),
             Ok(Err(err)) => {
                 Self::send_proxy_error(&mut client, &err, ctx.status_sender.as_ref()).await;
