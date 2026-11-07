@@ -66,6 +66,8 @@ const SUITE = [
   ['selftest:lifecycle', 'lifecycle-selftest.js'],
   ['selftest:proxyformat', 'proxy-format-selftest.js'],
   ['selftest:proxypersist', 'proxy-persistence-selftest.js'],
+  ['selftest:startupbarrier', 'automation/selftests/startup-consistency-and-barrier-selftest.js'],
+  ['selftest:fpstability', 'automation/selftests/fingerprint-stability-selftest.js'],
   ['selftest:updatetrust', 'automation/update-trust-tool.js'],
   ['selftest:updatechecksum', 'automation/selftests/update-checksum-selftest.js'],
   ['selftest:automation', 'automation/selftests/automation-selftest.js'],

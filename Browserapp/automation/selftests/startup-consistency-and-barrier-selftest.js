@@ -79,99 +79,100 @@ async function check(name, fn) {
   });
 
   // -------------------------------------------------------------------------
-  // B. Proxy Fail-Closed & Opt-In Fallback
+  // B. Proxy Fail-Closed startup gate (current contract; the full policy
+  //    matrix — old notReadyPolicy values can no longer authorize a direct
+  //    fallback — lives in automation/selftests/proxy-fail-closed-selftest.js)
   // -------------------------------------------------------------------------
-  await check('B.1: notReadyPolicy=direct without allowDirectFallback throws error and blocks launch', async () => {
+  const makeGateEngine = () => {
     const engine = Object.create(BrowserEngine.prototype);
     engine.profiles = new Map();
     engine.networkInfo = new Map();
-    const events = [];
-    engine.emit = (e) => events.push(e);
+    engine.running = new Set();
+    engine.events = [];
+    engine.emit = (e) => engine.events.push(e);
     engine.sanitizeProfile = BrowserEngine.prototype.sanitizeProfile.bind(engine);
     engine.resolveStoredProxyProfile = (p) => p;
+    return engine;
+  };
+
+  await check('B.1: dead proxy blocks launch fail-closed and never falls back to direct', async () => {
+    const engine = makeGateEngine();
     engine.testProxy = async () => {
       throw Object.assign(new Error('proxy unreachable'), { errorClass: 'unreachable' });
     };
 
-    let threw = false;
+    let threw = null;
     try {
       await engine.prepareProfileProxyForStart({
         id: 'prof_fail_closed',
         name: 'fail-closed',
         networkMode: 'proxy',
         proxy: 'socks5://127.0.0.1:9999',
-        proxyMeta: { checkOnStart: true, notReadyPolicy: 'direct', requireReady: true },
+        proxyMeta: { checkOnStart: true },
         privacy: {},
       });
     } catch (err) {
-      threw = true;
-      assert.ok(err.message.includes('代理未就绪'));
-      assert.ok(err.message.includes('allowDirectFallback'));
+      threw = err;
     }
-    assert.strictEqual(threw, true, 'Must throw when allowDirectFallback is not explicitly set to true');
-    assert.ok(events.some((e) => e.type === 'proxy-error' && e.code === 'proxy-direct-fallback-blocked'));
-    assert.ok(!events.some((e) => e.type === 'proxy-fallback'));
+    assert.ok(threw, 'dead proxy must block launch');
+    assert.ok(threw.message.includes('代理连接失败'), 'must stop startup with the fail-closed message');
+    assert.strictEqual(threw.code, 'proxy-not-ready');
+    const blocked = engine.events.find((e) => e.type === 'proxy-error' && e.code === 'proxy-not-ready');
+    assert.ok(blocked, 'must emit proxy-error proxy-not-ready');
+    assert.strictEqual(blocked.policy, 'block');
+    assert.ok(!engine.events.some((e) => e.type === 'proxy-fallback'), 'no silent direct fallback may exist');
   });
 
-  await check('B.2: notReadyPolicy=direct with explicit allowDirectFallback=true permits fallback with danger warning', async () => {
-    const engine = Object.create(BrowserEngine.prototype);
-    engine.profiles = new Map();
-    engine.networkInfo = new Map();
-    const events = [];
-    engine.emit = (e) => events.push(e);
-    engine.sanitizeProfile = BrowserEngine.prototype.sanitizeProfile.bind(engine);
-    engine.resolveStoredProxyProfile = (p) => p;
-    engine.testProxy = async () => {
-      throw Object.assign(new Error('proxy unreachable'), { errorClass: 'unreachable' });
+  await check('B.2: backup proxy candidate is force-tested and promoted when the primary is dead', async () => {
+    const engine = makeGateEngine();
+    const probed = [];
+    engine.testProxy = async (_profile, options) => {
+      probed.push(options.proxy);
+      if (options.proxySource === 'primary') {
+        throw Object.assign(new Error('primary dead'), { errorClass: 'unreachable' });
+      }
+      return { proxyRaw: options.proxy, ip: '2.2.2.2', country: 'DE', countryCode: 'DE' };
     };
 
-    const direct = await engine.prepareProfileProxyForStart({
-      id: 'prof_opt_in',
-      name: 'opt-in-fallback',
+    const working = await engine.prepareProfileProxyForStart({
+      id: 'prof_backup_promote',
+      name: 'backup-promote',
       networkMode: 'proxy',
-      proxy: 'socks5://127.0.0.1:9999',
-      proxyMeta: { checkOnStart: true, notReadyPolicy: 'direct', allowDirectFallback: true, requireReady: true },
+      proxy: 'socks5://primary:1080',
+      proxyMeta: { checkOnStart: true, backupProxies: ['socks5://backup:1080'] },
       privacy: {},
     });
-
-    assert.strictEqual(direct.networkMode, 'direct');
-    assert.ok(/direct/i.test(direct.proxy));
-    const fallbackEvent = events.find((e) => e.type === 'proxy-fallback');
-    assert.ok(fallbackEvent, 'Must emit proxy-fallback');
-    assert.strictEqual(fallbackEvent.danger, true);
+    assert.deepStrictEqual(probed, ['socks5://primary:1080', 'socks5://backup:1080'], 'both candidates must be force-tested in order');
+    assert.ok(String(working.proxy).includes('backup:1080'), 'working profile must carry the promoted backup');
   });
 
-  await check('B.3: notReadyPolicy=continue preserves existing continue behavior', async () => {
-    const engine = Object.create(BrowserEngine.prototype);
-    engine.profiles = new Map();
-    engine.networkInfo = new Map();
-    const events = [];
-    engine.emit = (e) => events.push(e);
-    engine.sanitizeProfile = BrowserEngine.prototype.sanitizeProfile.bind(engine);
-    engine.resolveStoredProxyProfile = (p) => p;
+  await check('B.3: direct networkMode bypasses the proxy gate entirely', async () => {
+    const engine = makeGateEngine();
+    let probes = 0;
     engine.testProxy = async () => {
-      throw Object.assign(new Error('dead proxy'), { errorClass: 'unreachable' });
+      probes += 1;
+      throw new Error('must not be called');
     };
 
-    const continued = await engine.prepareProfileProxyForStart({
-      id: 'prof_continue',
-      name: 'continue-policy',
-      networkMode: 'proxy',
-      proxy: 'socks5://127.0.0.1:8888',
-      proxyMeta: { checkOnStart: true, notReadyPolicy: 'continue', requireReady: false },
+    const working = await engine.prepareProfileProxyForStart({
+      id: 'prof_direct_bypass',
+      name: 'direct-bypass',
+      networkMode: 'direct',
+      proxy: '',
+      proxyMeta: {},
       privacy: {},
     });
-
-    assert.ok(String(continued.proxy).includes('127.0.0.1:8888'));
-    assert.ok(events.some((e) => e.type === 'proxy-warn'));
+    assert.strictEqual(probes, 0, 'direct mode must not probe any proxy');
+    assert.strictEqual(working.id, 'prof_direct_bypass');
   });
 
   // -------------------------------------------------------------------------
   // C. Launch Injection Barrier Fail-Closed & Retries
   // -------------------------------------------------------------------------
-  await check('C.1: engine.js source integrity confirms bounded retries and fail-closed barrier', async () => {
+  await check('C.1: engine/start.js source integrity confirms bounded retries and fail-closed barrier', async () => {
     const fs = require('fs');
-    const engineCode = fs.readFileSync(path.join(__dirname, '../engine.js'), 'utf8');
+    // the _start routine moved from engine.js to the engine/start.js mixin
+    const engineCode = fs.readFileSync(path.join(__dirname, '../../engine/start.js'), 'utf8');
     assert.ok(engineCode.includes('start.pre-inject-fail-attempt'), 'Must log retry attempts');
     assert.ok(engineCode.includes('injectionFailed'), 'Must define injection barrier failure check');
     assert.ok(engineCode.includes('start.navigate-barrier-errorpage'), 'Must log navigation to local error page on barrier failure');

@@ -29,7 +29,7 @@ const {
   TLS_PROFILE_PRESETS,
 } = require('../../proxy-forwarder');
 
-function main() {
+async function main() {
   // --- host matching ---
   const auto = resolveStabilityPolicy({ stabilityMode: 'auto' }, { host: 'www.amazon.com' });
   assert.strictEqual(auto.active, true, 'amazon should activate stability');
@@ -236,106 +236,50 @@ function main() {
   assert.strictEqual(sanitized.proxyMeta.tlsProfile, 'chrome');
   assert.strictEqual(sanitized.proxyMeta.tlsChromeMajor, 131);
 
-  // proxy not-ready: block
-  const engineBlock = Object.create(BrowserEngine.prototype);
-  engineBlock.profiles = new Map();
-  engineBlock.networkInfo = new Map();
-  engineBlock.emit = () => {};
-  engineBlock.sanitizeProfile = BrowserEngine.prototype.sanitizeProfile.bind(engineBlock);
-  engineBlock.prepareProfileProxyForStart = BrowserEngine.prototype.prepareProfileProxyForStart.bind(engineBlock);
-  engineBlock.applyNetworkToProfile = () => {};
-  engineBlock.testProxy = async () => {
-    const err = new Error('dead proxy');
-    err.errorClass = 'unreachable';
-    throw err;
+  // proxy gate: fingerprint stability depends on the proxy exit. The start gate is
+  // fail-closed now, so no legacy notReadyPolicy value (continue/direct, even with
+  // an explicit allowDirectFallback) can degrade a proxy-bound profile to a direct
+  // exit that would leak the host timezone/language identity.
+  // (Full policy matrix: automation/selftests/proxy-fail-closed-selftest.js)
+  const makeGateEngine = () => {
+    const eng = Object.create(BrowserEngine.prototype);
+    eng.profiles = new Map();
+    eng.networkInfo = new Map();
+    eng.events = [];
+    eng.emit = (e) => eng.events.push(e);
+    eng.sanitizeProfile = BrowserEngine.prototype.sanitizeProfile.bind(eng);
+    eng.testProxy = async () => {
+      throw Object.assign(new Error('dead proxy'), { errorClass: 'unreachable' });
+    };
+    return eng;
   };
-
-  return runProxyPolicies(engineBlock, BrowserEngine);
-}
-
-async function runProxyPolicies(engineBlock, BrowserEngine) {
-  let blockedErr = null;
-  try {
-    await engineBlock.prepareProfileProxyForStart({
-      id: 'prof_stability_4',
-      name: 'block',
-      networkMode: 'proxy',
-      proxy: 'socks5://127.0.0.1:1',
-      proxyMeta: { checkOnStart: true, notReadyPolicy: 'block', requireReady: true },
-      privacy: {},
-    });
-  } catch (error) {
-    blockedErr = error;
+  for (const policy of [
+    { notReadyPolicy: 'block', requireReady: true },
+    { notReadyPolicy: 'continue', requireReady: false },
+    { notReadyPolicy: 'direct', requireReady: true },
+    { notReadyPolicy: 'direct', allowDirectFallback: true, requireReady: true },
+  ]) {
+    const eng = makeGateEngine();
+    let blockedErr = null;
+    try {
+      await eng.prepareProfileProxyForStart({
+        id: 'prof_stability_4',
+        name: 'block',
+        networkMode: 'proxy',
+        proxy: 'socks5://127.0.0.1:1',
+        proxyMeta: { checkOnStart: true, ...policy },
+        privacy: {},
+      });
+    } catch (error) {
+      blockedErr = error;
+    }
+    assert.ok(blockedErr, 'dead proxy must block launch for policy ' + JSON.stringify(policy));
+    assert.strictEqual(blockedErr.code, 'proxy-not-ready');
+    assert.ok(
+      !eng.events.some((e) => e.type === 'proxy-fallback'),
+      'no silent direct fallback may run for ' + JSON.stringify(policy)
+    );
   }
-  assert.ok(blockedErr, 'block policy must throw');
-  assert.ok(String(blockedErr.message).includes('未就绪') || String(blockedErr.message).includes('检测失败') || String(blockedErr.message).includes('dead'));
-
-  // continue policy
-  const engineCont = Object.create(BrowserEngine.prototype);
-  engineCont.profiles = new Map();
-  engineCont.networkInfo = new Map();
-  const events = [];
-  engineCont.emit = (e) => events.push(e);
-  engineCont.sanitizeProfile = BrowserEngine.prototype.sanitizeProfile.bind(engineCont);
-  engineCont.prepareProfileProxyForStart = BrowserEngine.prototype.prepareProfileProxyForStart.bind(engineCont);
-  engineCont.applyNetworkToProfile = () => {};
-  engineCont.testProxy = async () => {
-    throw Object.assign(new Error('dead'), { errorClass: 'unreachable' });
-  };
-  const continued = await engineCont.prepareProfileProxyForStart({
-    id: 'prof_stability_5',
-    name: 'continue',
-    networkMode: 'proxy',
-    proxy: 'socks5://127.0.0.1:1',
-    proxyMeta: { checkOnStart: true, notReadyPolicy: 'continue', requireReady: false },
-    privacy: {},
-  });
-  assert.ok(String(continued.proxy).includes('127.0.0.1:1'));
-  assert.ok(events.some((e) => e.type === 'proxy-warn' || e.type === 'proxy-error'));
-
-  // direct fallback
-  const engineDirect = Object.create(BrowserEngine.prototype);
-  engineDirect.profiles = new Map();
-  engineDirect.networkInfo = new Map();
-  const events2 = [];
-  engineDirect.emit = (e) => events2.push(e);
-  engineDirect.sanitizeProfile = BrowserEngine.prototype.sanitizeProfile.bind(engineDirect);
-  engineDirect.prepareProfileProxyForStart = BrowserEngine.prototype.prepareProfileProxyForStart.bind(engineDirect);
-  engineDirect.applyNetworkToProfile = () => {};
-  engineDirect.testProxy = async () => {
-    throw Object.assign(new Error('dead'), { errorClass: 'unreachable' });
-  };
-  // Fail-closed: notReadyPolicy 'direct' WITHOUT explicit allowDirectFallback must BLOCK.
-  let blockedError = null;
-  try {
-    await engineDirect.prepareProfileProxyForStart({
-      id: 'prof_stability_6',
-      name: 'direct-fallback-blocked',
-      networkMode: 'proxy',
-      proxy: 'socks5://127.0.0.1:1',
-      proxyMeta: { checkOnStart: true, notReadyPolicy: 'direct', requireReady: true },
-      privacy: {},
-    });
-  } catch (error) {
-    blockedError = error;
-  }
-  assert.ok(blockedError, 'implicit direct fallback must be blocked by default');
-  assert.ok(events2.some((e) => e.type === 'proxy-error' && e.code === 'proxy-direct-fallback-blocked'));
-  assert.ok(!events2.some((e) => e.type === 'proxy-fallback'), 'no silent direct fallback event may be emitted');
-
-  // Explicit opt-in: allowDirectFallback: true keeps the (deliberate, high-risk) fallback ability.
-  events2.length = 0;
-  const direct = await engineDirect.prepareProfileProxyForStart({
-    id: 'prof_stability_6b',
-    name: 'direct-fallback-opted-in',
-    networkMode: 'proxy',
-    proxy: 'socks5://127.0.0.1:1',
-    proxyMeta: { checkOnStart: true, notReadyPolicy: 'direct', allowDirectFallback: true, requireReady: true },
-    privacy: {},
-  });
-  assert.strictEqual(direct.networkMode, 'direct');
-  assert.ok(/direct/i.test(direct.proxy));
-  assert.ok(events2.some((e) => e.type === 'proxy-fallback'));
 
   // source integrity: banned external product names must not appear
   // The former fingerprint.js monolith is now the automation/fingerprint/ package;
@@ -347,11 +291,18 @@ async function runProxyPolicies(engineBlock, BrowserEngine) {
   for (const banned of ['AdsPower', 'Hubstudio', 'HubStudio', '逆向', '复刻', 'SunBrowser']) {
     assert.ok(!fpSrc.includes(banned), 'fingerprint package must not contain ' + banned);
   }
-  const engSrc = fs.readFileSync(path.join(__dirname, '../engine.js'), 'utf8');
+  // The engine decomposed into engine.js plus engine/* mixins; the banned-name
+  // scan covers every module that now carries engine logic.
+  const engSrc = [
+    fs.readFileSync(path.join(__dirname, '../../engine.js'), 'utf8'),
+    ...fs.readdirSync(path.join(__dirname, '../../engine'))
+      .filter((f) => f.endsWith('.js'))
+      .map((f) => fs.readFileSync(path.join(__dirname, '../../engine', f), 'utf8')),
+  ].join('\n');
   for (const banned of ['AdsPower', 'Hubstudio', 'HubStudio', '逆向', '复刻']) {
-    assert.ok(!engSrc.includes(banned), 'engine.js must not contain ' + banned);
+    assert.ok(!engSrc.includes(banned), 'engine sources must not contain ' + banned);
   }
-  const proxySrc = fs.readFileSync(path.join(__dirname, '../proxy-forwarder.js'), 'utf8');
+  const proxySrc = fs.readFileSync(path.join(__dirname, '../../proxy-forwarder.js'), 'utf8');
   for (const banned of ['AdsPower', 'Hubstudio', 'HubStudio', '逆向', '复刻', 'envkit']) {
     assert.ok(!proxySrc.includes(banned), 'proxy-forwarder.js must not contain ' + banned);
   }
@@ -359,8 +310,11 @@ async function runProxyPolicies(engineBlock, BrowserEngine) {
   assert.ok(fpSrc.includes('hammingDistance'));
   assert.ok(fpSrc.includes('applyStableCanvasNoise'));
   assert.ok(fpSrc.includes('metaMode'));
-  assert.ok(engSrc.includes("stabilityMode === 'off'"), 'refresh seed must yield to stability');
-  assert.ok(engSrc.includes('fingerprint?.uaProfile?.chromeMajor'), 'tls major should follow built fingerprint');
+  // The seed-refresh gate and the TLS major follow the built fingerprint inside
+  // the _start routine, which moved to the engine/start.js mixin.
+  const startSrc = fs.readFileSync(path.join(__dirname, '../../engine/start.js'), 'utf8');
+  assert.ok(startSrc.includes("stabilityMode === 'off'"), 'refresh seed must yield to stability');
+  assert.ok(startSrc.includes('fingerprint?.uaProfile?.chromeMajor'), 'tls major should follow built fingerprint');
   // webglMeta real skips vendor spoof
   const metaReal = buildFingerprint({
     id: 'prof_webgl_meta_real',
@@ -378,8 +332,8 @@ async function runProxyPolicies(engineBlock, BrowserEngine) {
   assert.ok(fpSrc.includes('createBatteryFromSeed'));
 
   // frontend ↔ backend field wiring (editor collect / fill / normalize)
-  const rendererSrc = fs.readFileSync(path.join(__dirname, '../renderer.js'), 'utf8');
-  const htmlSrc = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+  const rendererSrc = fs.readFileSync(path.join(__dirname, '../../renderer.js'), 'utf8');
+  const htmlSrc = fs.readFileSync(path.join(__dirname, '../../index.html'), 'utf8');
   for (const id of [
     'editor-stability-mode',
     'editor-stability-hamming',
@@ -405,18 +359,21 @@ async function runProxyPolicies(engineBlock, BrowserEngine) {
     "stabilityMode: $('#editor-stability-mode')",
     "battery: $('#editor-battery')",
     "mediaDevices: ($('#editor-media-devices')",
-    "requireReady: $('#editor-proxy-require-ready')",
-    "notReadyPolicy: $('#editor-proxy-not-ready-policy')",
+    // The notReadyPolicy collect wiring is gone with the fail-closed proxy
+    // gate: the two controls stay in the editor as one-way disabled displays.
     "tlsProfile: $('#editor-proxy-tls-profile')",
     "editorSet('#editor-stability-mode'",
     "editorSet('#editor-battery'",
     "editorCheck('#editor-proxy-require-ready'",
+    "editorSet('#editor-proxy-not-ready-policy'",
     "stabilityMode: ['off', 'auto', 'force']",
     "requireReady: proxyMeta.requireReady !== false",
     "apiExtractUrl: String(proxyMeta.apiExtractUrl || '')",
   ]) {
     assert.ok(rendererSrc.includes(needle), 'renderer wiring missing: ' + needle);
   }
+  assert.ok(htmlSrc.includes('id="editor-proxy-require-ready" type="checkbox" checked disabled'), 'require-ready control must render as locked-on (fail-closed)');
+  assert.ok(htmlSrc.includes('id="editor-proxy-not-ready-policy" disabled'), 'not-ready-policy control must render as disabled (fail-closed)');
   assert.ok(!rendererSrc.includes("apiExtractUrl: String(proxyMeta.apiExtractUrl || proxyMeta.refreshUrl || '')"), 'renderer must not bleed refreshUrl into apiExtractUrl');
 
   console.log('FINGERPRINT_STABILITY_SELFTEST_OK host=1 schema=1 inject=1 proxy-policy=1 hamming=1 tls=1 scrub=1 fe-be=1');
