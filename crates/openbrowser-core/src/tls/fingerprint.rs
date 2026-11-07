@@ -2,6 +2,18 @@ use crate::tls::client_hello::is_grease;
 use md5::{Digest, Md5};
 use sha2::Sha256;
 
+// digest 0.11 replaced generic-array with hybrid-array, whose output type no
+// longer implements LowerHex — format the digest bytes ourselves. Produces the
+// same lowercase hex string the old `format!("{:x}", …)` did.
+fn hex_lower(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        use std::fmt::Write as _;
+        let _ = write!(out, "{:02x}", byte);
+    }
+    out
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ja3Fingerprint {
     pub raw: String,
@@ -56,7 +68,7 @@ pub fn compute_ja3(
 
     let mut hasher = Md5::new();
     hasher.update(raw.as_bytes());
-    let hash = format!("{:x}", hasher.finalize());
+    let hash = hex_lower(&hasher.finalize());
 
     Ja3Fingerprint { raw, hash }
 }
@@ -149,10 +161,7 @@ pub fn compute_ja4_with_signatures(
             .join(",");
         let mut hasher_b = Sha256::new();
         hasher_b.update(c_str.as_bytes());
-        (
-            format!("{:x}", hasher_b.finalize())[..12].to_string(),
-            c_str,
-        )
+        (hex_lower(&hasher_b.finalize())[..12].to_string(), c_str)
     };
 
     // Part c: SHA256 of sorted extensions truncated to 12 hex chars (or 12 zeros if empty)
@@ -189,10 +198,7 @@ pub fn compute_ja4_with_signatures(
 
         let mut hasher_c = Sha256::new();
         hasher_c.update(hash_input.as_bytes());
-        (
-            format!("{:x}", hasher_c.finalize())[..12].to_string(),
-            ext_str,
-        )
+        (hex_lower(&hasher_c.finalize())[..12].to_string(), ext_str)
     };
 
     let formatted = format!("{}_{}_{}", part_a, part_b, part_c);

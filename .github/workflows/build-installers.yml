@@ -51,8 +51,8 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
       - name: Verify release tag matches packaged application version
@@ -123,7 +123,7 @@ jobs:
           } catch {
             Write-Host "LongPathsEnabled registry write skipped: $_"
           }
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: true
           sparse-checkout: |
@@ -134,7 +134,7 @@ jobs:
           sparse-checkout-cone-mode: false
       - name: Prune foreign kernels
         run: rm -rf kernels/macos-x64 kernels/macos-arm64 kernels/openbrowser kernels/wayfern/macos-arm64 kernels/wayfern/macos-x64 || true
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
@@ -223,7 +223,7 @@ jobs:
       OPENBROWSER_PACKAGE_VARIANT: with-kernel
       OPENBROWSER_BUNDLE_KERNEL: 'true'
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: true
           sparse-checkout: |
@@ -238,7 +238,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes unzip xvfb libatk-bridge2.0-0 libatk1.0-0 libatspi2.0-0 libcups2 libdrm2 libgbm1 libglib2.0-0 libgtk-3-0 libnspr4 libnss3 libxcomposite1 libxdamage1 libxfixes3 libxkbcommon0 libxrandr2
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
@@ -339,7 +339,7 @@ jobs:
       OPENBROWSER_BUNDLE_KERNEL: 'true'
       OPENBROWSER_MAC_DMG_FORMAT: ULMO
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: true
           sparse-checkout: |
@@ -350,7 +350,7 @@ jobs:
           sparse-checkout-cone-mode: false
       - name: Prune foreign kernels
         run: rm -rf kernels/windows-x64 kernels/macos-arm64 kernels/wayfern || true
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
@@ -449,7 +449,7 @@ jobs:
       OPENBROWSER_BUNDLE_KERNEL: 'true'
       OPENBROWSER_MAC_DMG_FORMAT: ULMO
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           lfs: true
           sparse-checkout: |
@@ -460,7 +460,7 @@ jobs:
           sparse-checkout-cone-mode: false
       - name: Prune foreign kernels
         run: rm -rf kernels/macos-x64 kernels/windows-x64 kernels/openbrowser || true
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm

@@ -43,7 +43,7 @@ fn test_chromium_extension_order_strict() {
 
 #[test]
 fn test_grease_symmetric_injection() {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     for _ in 0..10 {
         let grease = get_random_grease(&mut rng);
         assert!(GREASE_TABLE.contains(&grease));

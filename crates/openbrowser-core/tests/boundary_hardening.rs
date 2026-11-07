@@ -8,7 +8,7 @@ use openbrowser_core::sync::{
 use openbrowser_core::tls::{
     compute_ja4, compute_ja4_with_signatures, ClientHelloBuilder, TlsProfile,
 };
-use rand::Rng;
+use rand::RngExt;
 use std::io::{Read, Write};
 
 #[test]
@@ -65,9 +65,9 @@ fn test_client_hello_parser_zero_panic_boundary() {
     assert!(ClientHelloBuilder::parse_client_hello(&truncated_ext).is_err());
 
     // 7. Fuzzing 10,000 random pathological byte slices
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     for _ in 0..10_000 {
-        let len = rng.gen_range(0..256);
+        let len = rng.random_range(0..256);
         let mut bytes = vec![0u8; len];
         rng.fill(&mut bytes[..]);
         let _ = ClientHelloBuilder::parse_client_hello(&bytes);

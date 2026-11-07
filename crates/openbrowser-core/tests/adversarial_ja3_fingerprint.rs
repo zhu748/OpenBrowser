@@ -165,7 +165,12 @@ fn redteam_independent_ja3(
 
     let mut hasher = Md5::new();
     hasher.update(raw.as_bytes());
-    let hash = format!("{:x}", hasher.finalize());
+    // digest 0.11 output no longer implements LowerHex; format the bytes manually
+    let hash = hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<String>();
 
     (raw, hash)
 }

@@ -2,7 +2,7 @@ use crate::error::{CoreError, Result};
 use crate::tls::fingerprint::{compute_ja3, compute_ja4, Ja3Fingerprint, Ja4Fingerprint};
 use crate::tls::profile::TlsProfile;
 use bytes::{BufMut, BytesMut};
-use rand::Rng;
+use rand::{Rng, RngExt};
 
 pub const GREASE_TABLE: [u16; 16] = [
     0x0A0A, 0x1A1A, 0x2A2A, 0x3A3A, 0x4A4A, 0x5A5A, 0x6A6A, 0x7A7A, 0x8A8A, 0x9A9A, 0xAAAA, 0xBABA,
@@ -10,7 +10,7 @@ pub const GREASE_TABLE: [u16; 16] = [
 ];
 
 pub fn get_random_grease<R: Rng>(rng: &mut R) -> u16 {
-    let idx = rng.gen_range(0..GREASE_TABLE.len());
+    let idx = rng.random_range(0..GREASE_TABLE.len());
     GREASE_TABLE[idx]
 }
 
@@ -84,7 +84,7 @@ impl ClientHelloBuilder {
                 "Offline ClientHello field exceeds its encoding bounds".into(),
             ));
         }
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut buf = BytesMut::with_capacity(512);
 
         // Handshake type: ClientHello (1)

@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
@@ -38,8 +38,8 @@ impl JitterEngine {
             return Duration::from_millis(min);
         }
 
-        let mut rng = rand::thread_rng();
-        let millis = rng.gen_range(min..=max);
+        let mut rng = rand::rng();
+        let millis = rng.random_range(min..=max);
         Duration::from_millis(millis)
     }
 
@@ -75,11 +75,11 @@ impl JitterEngine {
             return (safe_x, safe_y);
         }
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         // Box-Muller transform for pseudo-Gaussian jitter distribution
-        let u1: f64 = rng.gen_range(1e-7..1.0);
-        let u2: f64 = rng.gen_range(0.0..1.0);
+        let u1: f64 = rng.random_range(1e-7..1.0);
+        let u2: f64 = rng.random_range(0.0..1.0);
         let radius = (-2.0 * u1.ln()).sqrt();
         let theta = 2.0 * std::f64::consts::PI * u2;
 
