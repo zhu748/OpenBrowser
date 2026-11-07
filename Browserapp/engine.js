@@ -203,9 +203,18 @@ if (!cdp.__serviceWorkerHardened) {
   const origConnect = cdp.connect;
   cdp.connect = async function (webSocketUrl, options = {}) {
     const originalOnEvent = options.onEvent;
+    // Per-connection persona: the caller (startWorkerFingerprintInjection) pins
+    // the exact fingerprint that belongs to THIS browser connection. When the
+    // option is absent we skip injection entirely — we must NEVER fall back to
+    // a process-global "latest" fingerprint: two profiles starting concurrently
+    // would otherwise cross-inject each other's identity into service workers.
+    const serviceWorkerFingerprint = options.serviceWorkerFingerprint || null;
+    const serviceWorkerLogContext = options.serviceWorkerLogContext || null;
     const attachedWorkerTargets = new Set();
     const sessionToTargetId = new Map();
     const wrappedOptions = { ...options };
+    delete wrappedOptions.serviceWorkerFingerprint;
+    delete wrappedOptions.serviceWorkerLogContext;
     wrappedOptions.onEvent = async (event, conn) => {
       if (event?.method === 'Target.attachedToTarget') {
         const { sessionId, targetInfo = {}, waitingForDebugger } = event.params || {};
@@ -219,35 +228,28 @@ if (!cdp.__serviceWorkerHardened) {
             return;
           }
           if (targetId) attachedWorkerTargets.add(targetId);
-          const fp = RequestHeaderRewriter.latestFingerprint;
+          const fp = serviceWorkerFingerprint;
           if (fp) {
-            try {
-              const source = buildWorkerInjectionScript(fp);
-              await conn.command('Runtime.evaluate', { expression: source }, { sessionId, timeout: 2000 }).catch((evalErr) => {
-                const rewriter = RequestHeaderRewriter.latestInstance;
-                if (rewriter?.logger) {
-                  rewriter.logger({
-                    type: 'fingerprint-injection-failed',
-                    id: RequestHeaderRewriter.latestProfile?.id,
-                    targetType: 'service_worker',
-                    stage: 'worker-inject',
-                    operation: 'sw-evaluate',
-                    message: evalErr?.message || String(evalErr),
-                  });
-                }
-              });
-            } catch (err) {
-              const rewriter = RequestHeaderRewriter.latestInstance;
-              if (rewriter?.logger) {
-                rewriter.logger({
+            const logFailure = (err) => {
+              const logger = serviceWorkerLogContext?.logger;
+              if (typeof logger === 'function') {
+                logger({
                   type: 'fingerprint-injection-failed',
-                  id: RequestHeaderRewriter.latestProfile?.id,
+                  id: serviceWorkerLogContext?.profile?.id,
                   targetType: 'service_worker',
                   stage: 'worker-inject',
                   operation: 'sw-evaluate',
                   message: err?.message || String(err),
                 });
               }
+            };
+            try {
+              const source = buildWorkerInjectionScript(fp);
+              await conn.command('Runtime.evaluate', { expression: source }, { sessionId, timeout: 2000 }).catch((evalErr) => {
+                logFailure(evalErr);
+              });
+            } catch (err) {
+              logFailure(err);
             }
           }
         }
@@ -348,23 +350,10 @@ class RequestHeaderRewriter {
     this.inFlightBySession = new Map();
     this.profile = options.profile || {};
     this.fingerprint = options.fingerprint || null;
-    RequestHeaderRewriter.latestInstance = this;
-    if (options.fingerprint && Object.keys(options.fingerprint).length > 0) {
-      RequestHeaderRewriter.latestFingerprint = options.fingerprint;
-    }
-    if (options.profile && Object.keys(options.profile).length > 0) {
-      RequestHeaderRewriter.latestProfile = options.profile;
-    }
     this.setPersona(options.profile, options.fingerprint);
   }
 
   setPersona(profile = {}, fingerprint = {}) {
-    if (fingerprint && Object.keys(fingerprint).length > 0) {
-      RequestHeaderRewriter.latestFingerprint = fingerprint;
-    }
-    if (profile && Object.keys(profile).length > 0) {
-      RequestHeaderRewriter.latestProfile = profile;
-    }
     const fp = fingerprint || {};
     const prof = profile || {};
     const ua = fp.userAgent || prof.userAgent || "";
@@ -2131,12 +2120,9 @@ class BrowserEngine {
   }
 
   async startWorkerFingerprintInjection(item, fingerprint) {
-    if (fingerprint && Object.keys(fingerprint).length > 0) {
-      RequestHeaderRewriter.latestFingerprint = fingerprint;
-    }
-    if (item?.profile && Object.keys(item.profile).length > 0) {
-      RequestHeaderRewriter.latestProfile = item.profile;
-    }
+    // NOTE: the fingerprint used for service-worker injection is pinned per
+    // connection (see the cdp.connect wrapper and the connect call below) —
+    // no process-global state is updated here on purpose.
     const workerPrivacy = (item.profile && item.profile.privacy) || {};
     const portScanSource = workerPrivacy.portScanProtect
       ? '\n' + buildPortScanProtectionScript(workerPrivacy.portScanAllow)
@@ -2163,7 +2149,7 @@ class BrowserEngine {
           if (/Can only get response body|No resource with given identifier/i.test(errMsg)) {
             return;
           }
-          console.log("[FONT_REWRITER LOG]", details);
+          console.warn('[OpenBrowser] css font response rewriter error:', details?.error || details);
           item.cssFontResponseRewriteError = String(details.error || 'response rewrite error');
         }
       },
@@ -2465,6 +2451,18 @@ class BrowserEngine {
 
     const connection = await cdp.connect(browserWs, {
       onEvent: onAttached,
+      // Pin this browser's own persona for service-worker injection (see the
+      // cdp.connect wrapper): prevents cross-profile fingerprint bleed when
+      // several environments start concurrently.
+      serviceWorkerFingerprint: fingerprint,
+      serviceWorkerLogContext: {
+        profile: item.profile,
+        logger: (details) => {
+          if (details?.type === 'fingerprint-injection-failed') {
+            item.workerFingerprintError = String(details?.message || '');
+          }
+        },
+      },
       onDisconnect: (error) => {
         try { requestHeaderRewriter.destroy(); } catch (_) {}
         try { fontResponseRewriter.destroy?.(); } catch (_) {}
