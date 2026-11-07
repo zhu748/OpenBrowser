@@ -19,6 +19,8 @@ const { findUnsupportedSteps } = require('./rpa-engine');
  */
 const TASK_HISTORY_LIMIT = Math.max(1, Number(process.env.OPENBROWSER_RPA_TASK_HISTORY) || 100);
 
+const TRANSIENT_WRITE_ERRORS = new Set(['ENOENT', 'EEXIST', 'EINVAL', 'EBUSY', 'EAGAIN']);
+
 function parseStoreSizeLimit() {
   const mb = Number(process.env.OPENBROWSER_RPA_STORE_LIMIT_MB);
   const value = Number.isFinite(mb) && mb > 0 ? mb : 50;
@@ -30,9 +32,13 @@ class RpaStore {
     this.data = { version: 4, plans: [], tasks: [], templates: [], config: {} };
     this.saveQueue = Promise.resolve();
     this.sizeLimitBytes = parseStoreSizeLimit();
+    // Set by load() when the on-disk store had to be quarantined, so callers
+    // (UI, diagnostics) can tell the user instead of plans silently vanishing.
+    this.loadReport = { quarantined: false, quarantineFile: '', error: '' };
   }
 
   async load() {
+    this.loadReport = { quarantined: false, quarantineFile: '', error: '' };
     try {
       const raw = await fsp.readFile(this.filePath, 'utf8');
       const parsed = JSON.parse(raw);
@@ -47,13 +53,17 @@ class RpaStore {
       // A corrupt store resets to empty; keep the broken file aside so plans and
       // task history can be recovered by hand instead of vanishing silently.
       if (error && error.code !== 'ENOENT') {
+        const quarantineFile = this.filePath + '.corrupt-' + Date.now();
+        this.loadReport = { quarantined: true, quarantineFile, error: String(error?.message || error) };
         try {
-          await fsp.rename(this.filePath, this.filePath + '.corrupt-' + Date.now());
+          await fsp.rename(this.filePath, quarantineFile);
         } catch (renameError) {
           if (renameError && renameError.code !== 'ENOENT') {
             console.warn('[rpa-store] corrupt store could not be quarantined:', renameError.message);
           }
         }
+        console.warn('[rpa-store] corrupt store quarantined to', quarantineFile,
+          '— plans and task history were reset and need manual recovery');
       }
       this.data = { version: 4, plans: [], tasks: [], templates: [], config: {} };
     }
@@ -401,9 +411,37 @@ class RpaStore {
     const write = async () => {
       await fsp.mkdir(path.dirname(this.filePath), { recursive: true });
       this.enforceStoreBudget();
-      const temporary = this.filePath + '.tmp';
-      await fsp.writeFile(temporary, JSON.stringify(this.data, null, 2), 'utf8');
-      await fsp.rename(temporary, this.filePath);
+      // Same atomic-write discipline as engine/state-storage: unique exclusive
+      // temp file (0600), fsync before rename, fsync of the directory after,
+      // and bounded retries on transient filesystem errors. The previous
+      // fixed-name .tmp write could interleave with a second writer, skip the
+      // fsync entirely, or hand back a partially flushed file after a crash.
+      let lastError = null;
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        const temporary = `${this.filePath}.tmp-${process.pid}-${crypto.randomBytes(8).toString('hex')}`;
+        let handle = null;
+        try {
+          handle = await fsp.open(temporary, 'wx', 0o600);
+          await handle.writeFile(JSON.stringify(this.data, null, 2), 'utf8');
+          await handle.sync();
+          await handle.close();
+          handle = null;
+          await fsp.rename(temporary, this.filePath);
+          try {
+            const directoryHandle = await fsp.open(path.dirname(this.filePath), 'r');
+            await directoryHandle.sync();
+            await directoryHandle.close();
+          } catch (_) {}
+          return;
+        } catch (error) {
+          lastError = error;
+          if (handle) await handle.close().catch(() => {});
+          await fsp.rm(temporary, { force: true }).catch(() => {});
+          if (!TRANSIENT_WRITE_ERRORS.has(error?.code) || attempt === 3) throw error;
+          await new Promise((resolve) => setTimeout(resolve, 5 * (attempt + 1)));
+        }
+      }
+      throw lastError || new Error('rpa-store atomic write failed');
     };
     const pending = this.saveQueue.then(write, write);
     // Keep subsequent writes usable after an individual filesystem failure.

@@ -18,16 +18,22 @@ function encodeProfileData(profile) {
   }
 }
 
-function decodeProfileData(text) {
+/**
+ * Decode with error detail. A row that fails to decrypt or parse used to
+ * return null and vanish silently from every list; callers now get the reason
+ * so they can quarantine the row and surface the loss to diagnostics.
+ */
+function tryDecodeProfileData(text) {
   try {
     // node:sqlite 对 BLOB 读回 Uint8Array（非 Buffer），必须归一后才能识别加密头
     const raw = (text instanceof Uint8Array && !Buffer.isBuffer(text)) ? Buffer.from(text) : text;
     if (credentialCrypto.isEncrypted(raw)) {
-      return JSON.parse(credentialCrypto.decryptCredential(raw));
+      return { profile: JSON.parse(credentialCrypto.decryptCredential(raw)), error: '' };
     }
-    return typeof raw === 'string' ? JSON.parse(raw) : JSON.parse(Buffer.from(raw).toString('utf8'));
-  } catch (_) {
-    return null;
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : JSON.parse(Buffer.from(raw).toString('utf8'));
+    return { profile: parsed, error: '' };
+  } catch (error) {
+    return { profile: null, error: String(error?.message || error) };
   }
 }
 
@@ -174,6 +180,14 @@ class ProfileStoreSqlite {
 
       CREATE INDEX IF NOT EXISTS idx_ext_assign_profile ON extension_assignments(profile_id);
       CREATE INDEX IF NOT EXISTS idx_ext_assign_ext ON extension_assignments(extension_id);
+
+      CREATE TABLE IF NOT EXISTS profile_decode_failures (
+        id TEXT PRIMARY KEY,
+        raw_data BLOB,
+        error TEXT,
+        context TEXT,
+        failed_at TEXT
+      );
     `);
   }
 
@@ -193,14 +207,27 @@ class ProfileStoreSqlite {
           updated_at = excluded.updated_at,
           data = excluded.data;
       `),
-      getProfile: this.db.prepare('SELECT data FROM profiles WHERE id = ?'),
-      getAllProfiles: this.db.prepare('SELECT data FROM profiles ORDER BY number ASC, id ASC'),
+      getProfile: this.db.prepare('SELECT id, data FROM profiles WHERE id = ?'),
+      getAllProfiles: this.db.prepare('SELECT id, data FROM profiles ORDER BY number ASC, id ASC'),
       getProfileCount: this.db.prepare('SELECT count(*) as count FROM profiles'),
       deleteProfile: this.db.prepare('DELETE FROM profiles WHERE id = ?'),
       updateProfileTrash: this.db.prepare(`
         UPDATE profiles SET trashed = ?, trashed_at = ?, updated_at = ?, data = ? WHERE id = ?
       `),
       getTrashedProfileIds: this.db.prepare('SELECT id FROM profiles WHERE trashed = 1'),
+
+      // Decode-failure quarantine: broken rows keep their raw bytes for manual
+      // recovery instead of disappearing from every profile list silently.
+      upsertDecodeFailure: this.db.prepare(`
+        INSERT INTO profile_decode_failures (id, raw_data, error, context, failed_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          error = excluded.error,
+          context = excluded.context,
+          failed_at = excluded.failed_at;
+      `),
+      countDecodeFailures: this.db.prepare('SELECT count(*) as count FROM profile_decode_failures'),
+      listDecodeFailures: this.db.prepare('SELECT id, error, context, failed_at FROM profile_decode_failures ORDER BY failed_at DESC'),
 
       // Group statements
       upsertGroup: this.db.prepare(`
@@ -460,17 +487,50 @@ class ProfileStoreSqlite {
     }
   }
 
+  /**
+   * Decode one profile row. Undecodable rows are quarantined into
+   * profile_decode_failures (raw bytes preserved for manual recovery) and
+   * reported to the console, so a single corrupt profile can no longer
+   * disappear from the UI without a trace.
+   */
+  _decodeProfileRow(row, context) {
+    const { profile, error } = tryDecodeProfileData(row?.data);
+    if (profile || !row) return profile;
+    const id = String(row.id || 'unknown');
+    try {
+      const raw = Buffer.isBuffer(row.data) || row.data instanceof Uint8Array
+        ? Buffer.from(row.data)
+        : Buffer.from(String(row.data), 'utf8');
+      this._statements.upsertDecodeFailure.run(id, raw, error, String(context || ''), new Date().toISOString());
+    } catch (_) {}
+    console.warn(`[profile-store] profile ${id} failed to decode (${context}); row quarantined for recovery: ${error}`);
+    return null;
+  }
+
+  /**
+   * Report rows quarantined by _decodeProfileRow, for diagnostics and UI.
+   */
+  decodeFailureReport() {
+    try {
+      const count = Number(this._statements.countDecodeFailures.get()?.count || 0);
+      const samples = count ? this._statements.listDecodeFailures.all().slice(0, 10) : [];
+      return { count, samples };
+    } catch (_) {
+      return { count: 0, samples: [] };
+    }
+  }
+
   getProfile(id) {
     const row = this._statements.getProfile.get(String(id));
     if (!row || !row.data) return null;
-    return decodeProfileData(row.data);
+    return this._decodeProfileRow(row, 'getProfile');
   }
 
   getAllProfiles() {
     const rows = this._statements.getAllProfiles.all();
     const result = [];
     for (const row of rows) {
-      const decoded = decodeProfileData(row.data);
+      const decoded = this._decodeProfileRow(row, 'getAllProfiles');
       if (decoded) result.push(decoded);
     }
     return result;
@@ -490,7 +550,7 @@ class ProfileStoreSqlite {
       for (const id of ids) {
         const row = this._statements.getProfile.get(String(id));
         if (!row || !row.data) continue;
-        const profile = decodeProfileData(row.data);
+        const profile = this._decodeProfileRow(row, 'trashProfiles');
         if (!profile) continue;
         profile.trashed = true;
         profile.trashedAt = nowIso;
@@ -522,7 +582,7 @@ class ProfileStoreSqlite {
       for (const id of ids) {
         const row = this._statements.getProfile.get(String(id));
         if (!row || !row.data) continue;
-        const profile = decodeProfileData(row.data);
+        const profile = this._decodeProfileRow(row, 'restoreProfiles');
         if (!profile) continue;
         profile.trashed = false;
         profile.trashedAt = null;

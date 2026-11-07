@@ -234,10 +234,19 @@ function decodeStoredData(raw, wasEncrypted = true) {
     throw proxyStoreCorruption('代理库文件格式无效');
   }
   const sourceItems = Array.isArray(parsed) ? parsed : parsed.items;
-  const items = sourceItems.map((item) => {
+  const badRecords = [];
+  const items = sourceItems.map((item, index) => {
     try {
       return { ...item, ...normalizeProxyRecord(item, item) };
-    } catch (_) {
+    } catch (error) {
+      // Keep the raw record (user data is never destroyed on load) but record
+      // it: previously a broken row passed through unchanged and unnoticed, so
+      // it could never be repaired and never reported.
+      badRecords.push({
+        index,
+        id: String(item?.id ?? item?.host ?? `#${index}`),
+        error: String(error?.message || error),
+      });
       return item;
     }
   });
@@ -247,6 +256,7 @@ function decodeStoredData(raw, wasEncrypted = true) {
       || Array.isArray(parsed)
       || Number(parsed.version) !== 2
       || JSON.stringify(sourceItems) !== JSON.stringify(items),
+    badRecords,
   };
 }
 
@@ -255,12 +265,26 @@ class ProxyStore {
     this.filePath = filePath;
     this.options = options || {};
     this.data = { version: 2, items: [] };
+    this.loadReport = { badRecordCount: 0, badRecords: [] };
     this._mutationQueue = Promise.resolve();
   }
 
   _shouldEncrypt() {
     return this.options?.encrypted !== false
       && path.basename(process.argv?.[1] || '') !== 'proxy-persistence-selftest.js';
+  }
+
+  /**
+   * Surface records that failed normalization during load. They are kept
+   * verbatim, but the user (and the log) deserves to know which rows are
+   * broken instead of them passing through silently forever.
+   */
+  _reportBadRecords(badRecords) {
+    this.loadReport = { badRecordCount: badRecords?.length || 0, badRecords: badRecords || [] };
+    if (badRecords?.length) {
+      const ids = badRecords.map((item) => item.id).join(', ');
+      console.warn(`[proxy-store] ${badRecords.length} record(s) failed normalization and were kept as-is: ${ids}`);
+    }
   }
 
   _enqueueMutation(operation) {
@@ -434,6 +458,7 @@ class ProxyStore {
       if (main) {
         if (main.migrated) await this._persistData(main.data);
         this.data = main.data;
+        this._reportBadRecords(main.badRecords);
         await this._cleanupRecoveryTemps();
         return cloneData(this.data);
       }
@@ -442,6 +467,7 @@ class ProxyStore {
       if (recovered) {
         await this._persistData(recovered.data, { allowCorruptReplace: mainFailure?.kind === 'corrupt' });
         this.data = recovered.data;
+        this._reportBadRecords(recovered.badRecords);
         await this._cleanupRecoveryTemps();
         return cloneData(this.data);
       }
