@@ -334,6 +334,8 @@ async function main() {
 
   // --- renderer wiring integrity ---
   const renderer = fs.readFileSync(path.join(__dirname, 'renderer.js'), 'utf8');
+  // normalizeProfileSettings moved to the ui/ui-editor.js domain module
+  const editorUi = fs.readFileSync(path.join(__dirname, 'ui', 'ui-editor.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
   const preload = fs.readFileSync(path.join(__dirname, 'preload.js'), 'utf8');
   const main = fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8');
@@ -354,14 +356,16 @@ async function main() {
     assert.ok(html.includes(`id="${id}"`), 'missing html id ' + id);
   }
   assert.ok(html.includes('value="ifconfig-me"'), 'ifconfig.me must be selectable as an IP query channel');
-  assert.ok(renderer.includes('requireReady: true'), 'editor must require a ready proxy');
-  assert.ok(renderer.includes("notReadyPolicy: 'block'"), 'editor must enforce fail-closed policy');
+  assert.ok(editorUi.includes('requireReady: true'), 'editor must require a ready proxy');
+  assert.ok(editorUi.includes("notReadyPolicy: 'block'"), 'editor must enforce fail-closed policy');
   assert.ok(!html.includes('value="direct">回退直连'), 'direct fallback must not be selectable');
-  assert.ok(renderer.includes("tlsProfile: $('#editor-proxy-tls-profile')"), 'editor draft must collect tlsProfile');
-  assert.ok(renderer.includes("apiExtractUrl: String(proxyMeta.apiExtractUrl || '')"), 'normalize must not bleed refreshUrl into apiExtractUrl');
-  assert.strictEqual((renderer.match(/\$\('#editor-test-proxy'\)\?\.addEventListener\('click', testEditorProxy\);/g) || []).length, 1, 'test proxy listener should be single');
-  assert.strictEqual((renderer.match(/\$\('#editor-apply-proxy-fp'\)\?\.addEventListener\('click', applyEditorProxyFingerprint\);/g) || []).length, 1);
-  assert.strictEqual((renderer.match(/\$\('#editor-refresh-proxy'\)\?\.addEventListener\('click', refreshEditorProxy\);/g) || []).length, 1);
+  assert.ok(editorUi.includes("tlsProfile: $('#editor-proxy-tls-profile')"), 'editor draft must collect tlsProfile');
+  assert.ok(editorUi.includes("apiExtractUrl: String(proxyMeta.apiExtractUrl || '')"), 'normalize must not bleed refreshUrl into apiExtractUrl');
+  // The proxy editor test/apply/refresh listener wiring moved to ui/ui-proxy-wiring.js
+  const proxyWiringSrc = fs.readFileSync(path.join(__dirname, 'ui', 'ui-proxy-wiring.js'), 'utf8');
+  assert.strictEqual((proxyWiringSrc.match(/\$\('#editor-test-proxy'\)\?\.addEventListener\('click', testEditorProxy\);/g) || []).length, 1, 'test proxy listener should be single');
+  assert.strictEqual((proxyWiringSrc.match(/\$\('#editor-apply-proxy-fp'\)\?\.addEventListener\('click', applyEditorProxyFingerprint\);/g) || []).length, 1);
+  assert.strictEqual((proxyWiringSrc.match(/\$\('#editor-refresh-proxy'\)\?\.addEventListener\('click', refreshEditorProxy\);/g) || []).length, 1);
   // table headers vs cells: latency + type
   assert.ok(html.includes('<th>延迟</th>') && html.includes('<th>类型</th>'));
   // renderProxies moved to the ui/ui-proxy.js domain module (loaded before renderer.js)

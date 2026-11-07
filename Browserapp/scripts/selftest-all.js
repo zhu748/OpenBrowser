@@ -53,6 +53,7 @@ const SUITE = [
   ['selftest:crash', 'automation/selftests/crash-report-selftest.js'],
   ['selftest:machineid', 'automation/selftests/machine-id-selftest.js'],
   ['selftest:proxyauth', 'proxy-forwarder-selftest.js'],
+  ['selftest:proxyfeature', 'proxy-feature-selftest.js'],
   ['selftest:socks5complete', 'socks5-auth-complete-selftest.js'],
   ['selftest:socks5reset', 'socks5-reset-selftest.js'],
   ['selftest:socks5retry', 'socks5-retry-selftest.js'],

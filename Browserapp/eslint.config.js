@@ -31,16 +31,20 @@ module.exports = [
     // means extending this list — that friction is intentional: the shared
     // namespace should not grow silently.
     //
-    // Since the ui-proxy.js extraction the boundary is: ui/ui-proxy.js owns the
-    // proxy-domain functions (parse/format/merge, proxies view, proxy dialog,
-    // batch check/apply, live re-parse handlers, batch network-mode apply);
-    // renderer.js keeps the generic UI helpers (t/tx/element/toast/$, editor
-    // glue, view cache) and the load-time event wiring. The names below are
-    // exactly that two-way surface.
+    // Since the ui-proxy.js / ui-editor.js extractions the boundary is:
+    // ui/ui-proxy.js owns the proxy-domain functions (parse/format/merge, the
+    // proxies view, the proxy dialog, batch check/apply, live re-parse
+    // handlers, batch network-mode apply); ui/ui-editor.js owns the
+    // profile-editor domain (normalize/editorDraft/summary/openProfileEditor/
+    // UA preview/create dialog/platform presets); renderer.js keeps the
+    // generic UI helpers (t/tx/element/toast/$, editor glue, view cache) and
+    // the load-time event wiring. The names below are exactly that two-way
+    // surface.
     files: ['renderer.js', 'environment-audit.js', 'i18n.js', 'ui/*.js'],
     languageOptions: {
       globals: {
         $: 'writable',
+        $$: 'writable',
         ui: 'writable',
         editorSet: 'writable',
         editorDraft: 'writable',
@@ -86,6 +90,60 @@ module.exports = [
         handleProxyRawChange: 'writable',
         handleProxyHostChange: 'writable',
         applySelectedNetworkMode: 'writable',
+        // editor-domain functions owned by ui/ui-editor.js, called from renderer.js
+        renderEditorSummary: 'writable',
+        refreshUaMetaPreview: 'writable',
+        openCreateProfileDialog: 'writable',
+        setupPlatformPresets: 'writable',
+        // generic renderer helpers used inside ui/ui-editor.js
+        UNGROUPED_ID: 'writable',
+        countryName: 'writable',
+        editingProfileId: 'writable',
+        editorCheck: 'writable',
+        editorCookies: 'writable',
+        editorOsToUaKey: 'writable',
+        editorResolution: 'writable',
+        editorSelectedNetwork: 'writable',
+        fillGroupSelect: 'writable',
+        groupNameOf: 'writable',
+        isDirectProxy: 'writable',
+        listGroups: 'writable',
+        maskProxy: 'writable',
+        nextProfileNumber: 'writable',
+        normalizeProxyAssociationForUi: 'writable',
+        positiveProfileNumber: 'writable',
+        renderProxyLibrarySelect: 'writable',
+        serializeEditorProxy: 'writable',
+        showUaMetaPreview: 'writable',
+        updateEditorVisibility: 'writable',
+        // renderer-owned names used by ui/ui-proxy-wiring.js (loaded after renderer.js)
+        applyColorMode: 'writable',
+        applyEditorProxyFingerprint: 'writable',
+        applyUiTheme: 'writable',
+        checkProfileProxy: 'writable',
+        cloneProfile: 'writable',
+        closeSelectMenu: 'writable',
+        confirmAction: 'writable',
+        handleQuickPasteToInput: 'writable',
+        installProxyTypeControl: 'writable',
+        openAssign: 'writable',
+        openSelectMenu: 'writable',
+        preferredMasterId: 'writable',
+        purgeProfile: 'writable',
+        pushSyncSelection: 'writable',
+        refreshEditorProxy: 'writable',
+        refreshExtensions: 'writable',
+        renderSessions: 'writable',
+        restoreProfile: 'writable',
+        runSyncAction: 'writable',
+        scheduleProxySearchRender: 'writable',
+        selectedSessionIds: 'writable',
+        selectedSessions: 'writable',
+        setThemePopoverOpen: 'writable',
+        startProfile: 'writable',
+        stopProfile: 'writable',
+        syncState: 'writable',
+        updateProfileSelectionUi: 'writable',
         // generic renderer helpers used inside ui/ui-proxy.js
         t: 'writable',
         tx: 'writable',

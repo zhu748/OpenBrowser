@@ -12,6 +12,7 @@ const vm = require('vm');
 const root = __dirname;
 const index = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const expectedModules = [
+  'ui/ui-proxy-wiring.js',
   'ui/ui-dialogs.js',
   'ui/ui-rpa.js',
   'ui/ui-api-mcp.js',
@@ -22,8 +23,8 @@ const scripts = [...index.matchAll(/<script\s+src="([^"]+)"/g)].map((match) => m
 const rendererIndex = scripts.indexOf('renderer.js');
 
 assert.ok(rendererIndex >= 0, 'index.html loads renderer.js');
-assert.strictEqual(scripts[rendererIndex - 1], 'ui/ui-proxy.js',
-  'the proxy UI domain module loads immediately before renderer.js');
+assert.deepStrictEqual(scripts.slice(rendererIndex - 2, rendererIndex), ['ui/ui-proxy.js', 'ui/ui-editor.js'],
+  'the proxy and editor domain modules load immediately before renderer.js');
 assert.deepStrictEqual(scripts.slice(rendererIndex + 1, rendererIndex + 1 + expectedModules.length), expectedModules,
   'UI modules load immediately after renderer.js in dependency order');
 
@@ -89,6 +90,8 @@ context.ops = new Proxy({ onEvent: noop }, {
 // in this test instead of leaving a white Electron window.
 const proxyUiSource = fs.readFileSync(path.join(root, 'ui/ui-proxy.js'), 'utf8');
 new vm.Script(proxyUiSource, { filename: 'ui/ui-proxy.js' }).runInContext(context);
+const editorSource = fs.readFileSync(path.join(root, 'ui/ui-editor.js'), 'utf8');
+new vm.Script(editorSource, { filename: 'ui/ui-editor.js' }).runInContext(context);
 
 // These bindings mirror the names owned by renderer.js. The extracted files must
 // not redeclare any of them in the shared top-level script scope.
@@ -110,6 +113,8 @@ new vm.Script(`
   function editorDraft() { return {}; }
   function openProfileEditor() {}
   function renderProfiles() {}
+  // called at evaluation time by ui/ui-proxy-wiring.js top-level statements
+  function installProxyTypeControl() {}
   window.OpenBrowserApp = {
     get ui() { return ui; },
     get engineProfiles() { return engineProfiles; },

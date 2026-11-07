@@ -210,6 +210,7 @@
     "selftest:webglcompat": "node automation/selftests/webgl-capability-compatibility-e2e-selftest.js",
     "selftest:canvasaudiorects": "node automation/selftests/canvas-audio-clientrects-cross-surface-e2e-selftest.js",
     "selftest:proxyauth": "node proxy-forwarder-selftest.js",
+    "selftest:proxyfeature": "node proxy-feature-selftest.js",
     "selftest:socks5complete": "node socks5-auth-complete-selftest.js",
     "selftest:socks5reset": "node socks5-reset-selftest.js",
     "selftest:socks5retry": "node socks5-retry-selftest.js",

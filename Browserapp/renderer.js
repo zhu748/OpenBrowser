@@ -279,195 +279,6 @@ function positiveProfileNumber(value) {
   return Number.isInteger(number) && number > 0 ? number : 0;
 }
 
-function normalizeProfileSettings(profile) {
-  const value = profile && typeof profile === 'object' ? profile : {};
-  const privacy = value.privacy && typeof value.privacy === 'object' ? value.privacy : {};
-  const advanced = value.advanced && typeof value.advanced === 'object' ? value.advanced : {};
-  const proxyMeta = value.proxyMeta && typeof value.proxyMeta === 'object' ? value.proxyMeta : {};
-  const platform = value.platform && typeof value.platform === 'object' ? value.platform : {};
-  const number = positiveProfileNumber(value.number);
-  const rawProxy = String(value.proxy || '').trim();
-  const legacyDemoProxy = value.networkMode == null && value.id === 'env-004' && rawProxy === '127.0.0.1:7890';
-  const networkMode = value.networkMode === 'proxy' ? 'proxy'
-    : value.networkMode === 'direct' || legacyDemoProxy || !rawProxy || /^(direct|offline|none)$/i.test(rawProxy) ? 'direct' : 'proxy';
-  const profileAssociationKeys = ['proxyId', 'proxy_id', 'proxyLibraryId', 'proxy_library_id'];
-  const metaAssociationKeys = ['proxyId', 'proxy_id', 'proxyLibraryId', 'proxy_library_id'];
-  const profileAssociation = profileAssociationKeys.find((key) => Object.prototype.hasOwnProperty.call(value, key));
-  const metaAssociation = metaAssociationKeys.find((key) => Object.prototype.hasOwnProperty.call(proxyMeta, key));
-  const proxyIdValue = networkMode === 'direct'
-    ? null
-    : (profileAssociation ? value[profileAssociation] : (metaAssociation ? proxyMeta[metaAssociation] : undefined));
-  const proxyId = proxyIdValue == null || String(proxyIdValue).trim() === '' ? null : String(proxyIdValue).trim();
-  return {
-    ...value,
-    number,
-    name: number ? String(number) : String(value.name || ''),
-    title: String(value.title || value.displayName || ''),
-    browser: 'Google Chrome',
-    os: String(value.os || 'Windows'),
-    language: String(value.language || 'en-US'),
-    networkMode,
-    proxy: networkMode === 'direct' ? 'Direct' : rawProxy,
-    proxyId,
-    userAgent: String(value.userAgent || ''),
-    cookies: String(value.cookies || ''),
-    note: String(value.note || ''),
-    tag: String(value.tag || ''),
-    groupId: value.groupId == null || value.groupId === undefined ? UNGROUPED_ID : String(value.groupId || ''),
-    width: Number(value.width) >= 640 ? Number(value.width) : 1280,
-    height: Number(value.height) >= 480 ? Number(value.height) : 820,
-    platform: {
-      type: String(platform.type || 'other'),
-      startUrl: String(platform.startUrl || value.startUrl || ''),
-      username: String(platform.username || ''),
-      password: String(platform.password || ''),
-      totpSecret: String(platform.totpSecret || platform.otp || ''),
-    },
-    proxyMeta: {
-      proxyId,
-      ipChannel: String(proxyMeta.ipChannel ?? proxyMeta.ip_channel ?? 'ip-api'),
-      refreshUrl: String(proxyMeta.refreshUrl ?? proxyMeta.refresh_url ?? ''),
-      checkOnStart: Boolean(proxyMeta.checkOnStart),
-      refreshOnStart: Boolean(proxyMeta.refreshOnStart),
-      systemProxy: String(proxyMeta.systemProxy || 'global'),
-      directBypass: Boolean(proxyMeta.directBypass),
-      bypassList: String(proxyMeta.bypassList || ''),
-      apiExtractUrl: String(proxyMeta.apiExtractUrl || ''),
-      backupProxies: Array.isArray(proxyMeta.backupProxies)
-        ? proxyMeta.backupProxies.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 8)
-        : String(proxyMeta.backupProxies || '').split(/[\r\n,;]+/).map((s) => s.trim()).filter(Boolean).slice(0, 8),
-      fillFingerprint: proxyMeta.fillFingerprint !== false,
-      requireReady: proxyMeta.requireReady !== false,
-      notReadyPolicy: 'block',
-      allowDirectFallback: false,
-      tlsProfile: ['auto', 'chrome', 'chrome_legacy', 'node', 'off'].includes(String(proxyMeta.tlsProfile || ''))
-        ? String(proxyMeta.tlsProfile)
-        : 'auto',
-      tlsChromeMajor: (() => {
-        const n = Number(proxyMeta.tlsChromeMajor);
-        return Number.isFinite(n) && n >= 80 && n <= 200 ? Math.floor(n) : null;
-      })(),
-    },
-    privacy: {
-      webrtc: String(privacy.webrtc || 'proxy'),
-      timezoneMode: String(privacy.timezoneMode || 'ip'),
-      timezone: String(privacy.timezone || ''),
-      geoMode: String(privacy.geoMode || 'ip'),
-      latitude: privacy.latitude ?? '',
-      longitude: privacy.longitude ?? '',
-      accuracy: Number(privacy.accuracy) || 100,
-      uiLanguage: String(privacy.uiLanguage || 'profile'),
-      languageMode: String(privacy.languageMode || (privacy.langFromIp !== false ? 'ip' : (privacy.uiLanguage && privacy.uiLanguage !== 'profile' ? privacy.uiLanguage : 'ip'))),
-      langFromIp: privacy.langFromIp !== false,
-      timezoneFromIp: privacy.timezoneFromIp !== false,
-      geoFromIp: privacy.geoFromIp !== false,
-      fontMode: String(privacy.fontMode || 'default'),
-      fontSize: Number(privacy.fontSize) || 16,
-      // Absent means off: an existing profile must never have its hardware identity
-      // re-rolled underneath it. New profiles opt in at creation time instead.
-      deviceProfile: String(privacy.deviceProfile || 'default'),
-      canvas: String(privacy.canvas || 'noise'),
-      webgl: String(privacy.webgl || 'noise'),
-      webglMeta: String(privacy.webglMeta || 'noise'),
-      webgpu: String(privacy.webgpu || 'webgl'),
-      audio: String(privacy.audio || 'noise'),
-      media: String(privacy.media || 'noise'),
-      mediaDevices: String(privacy.mediaDevices || ''),
-      mediaLabels: privacy.mediaLabels && typeof privacy.mediaLabels === 'object' ? {
-        audioinput: String(privacy.mediaLabels.audioinput || privacy.mediaLabels.input || '').slice(0, 200),
-        videoinput: String(privacy.mediaLabels.videoinput || privacy.mediaLabels.video || '').slice(0, 200),
-        audiooutput: String(privacy.mediaLabels.audiooutput || privacy.mediaLabels.output || '').slice(0, 200),
-      } : { audioinput: '', videoinput: '', audiooutput: '' },
-      battery: String(privacy.battery || 'noise'),
-      bluetooth: ['real', 'blocked'].includes(String(privacy.bluetooth || '')) ? String(privacy.bluetooth) : 'real',
-      clientRects: String(privacy.clientRects || 'noise'),
-      speech: String(privacy.speech || 'noise'),
-      deviceNameMode: String(privacy.deviceNameMode || 'noise'),
-      deviceName: String(privacy.deviceName || ''),
-      dnt: Boolean(privacy.dnt),
-      dntMode: String(privacy.dntMode || (privacy.dnt ? 'on' : 'default')),
-      portScanProtect: Boolean(privacy.portScanProtect),
-      portScanAllow: String(privacy.portScanAllow || ''),
-      cfOptimize: privacy.cfOptimize !== false,
-      refreshFingerprintOnStart: Boolean(privacy.refreshFingerprintOnStart),
-      stabilityMode: ['off', 'auto', 'force'].includes(String(privacy.stabilityMode || ''))
-        ? String(privacy.stabilityMode)
-        : 'auto',
-      stabilityHamming: Math.min(64, Math.max(1, Number(privacy.stabilityHamming) || 12)),
-      stabilityMaxWidth: Math.min(4096, Math.max(64, Number(privacy.stabilityMaxWidth) || 600)),
-      stabilityMaxHeight: Math.min(4096, Math.max(64, Number(privacy.stabilityMaxHeight) || 600)),
-      stabilitySquare: Math.min(64, Math.max(2, Number(privacy.stabilitySquare) || 8)),
-      stabilityHosts: Array.isArray(privacy.stabilityHosts)
-        ? privacy.stabilityHosts.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 800)
-        : String(privacy.stabilityHosts || '').split(/[\r\n,;\s]+/).map((s) => s.trim()).filter(Boolean).slice(0, 800),
-      stabilitySkipHosts: Array.isArray(privacy.stabilitySkipHosts)
-        ? privacy.stabilitySkipHosts.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 200)
-        : String(privacy.stabilitySkipHosts || '').split(/[\r\n,;\s]+/).map((s) => s.trim()).filter(Boolean).slice(0, 200),
-      // Preserve 0 (= 真实). Empty = 自动. Never use `||` which turns 0 into 自动.
-      cores: (() => {
-        const raw = privacy.cores ?? privacy.fingerprint?.cores;
-        if (raw === '' || raw === null || raw === undefined) return '';
-        const n = Number(raw);
-        return Number.isFinite(n) ? n : '';
-      })(),
-      memory: (() => {
-        const raw = privacy.memory ?? privacy.fingerprint?.memory;
-        if (raw === '' || raw === null || raw === undefined) return '';
-        const n = Number(raw);
-        return Number.isFinite(n) ? n : '';
-      })(),
-      fingerprint: privacy.fingerprint && typeof privacy.fingerprint === 'object' ? {
-        ...privacy.fingerprint,
-        cores: (() => {
-          const raw = privacy.cores ?? privacy.fingerprint?.cores;
-          if (raw === '' || raw === null || raw === undefined) return privacy.fingerprint.cores ?? null;
-          const n = Number(raw);
-          return Number.isFinite(n) ? n : (privacy.fingerprint.cores ?? null);
-        })(),
-        memory: (() => {
-          const raw = privacy.memory ?? privacy.fingerprint?.memory;
-          if (raw === '' || raw === null || raw === undefined) return privacy.fingerprint.memory ?? null;
-          const n = Number(raw);
-          return Number.isFinite(n) ? n : (privacy.fingerprint.memory ?? null);
-        })(),
-      } : {},
-    },
-    advanced: {
-      saveCookies: advanced.saveCookies !== false,
-      savePasswords: Boolean(advanced.savePasswords),
-      saveBookmarks: advanced.saveBookmarks !== false,
-      saveLocalStorage: advanced.saveLocalStorage !== false,
-      saveIndexedDB: advanced.saveIndexedDB !== false,
-      saveHistory: advanced.saveHistory !== false,
-      allowSignin: Boolean(advanced.allowSignin),
-      restoreSession: Boolean(advanced.restoreSession) || advanced.tabMode === 'restore',
-      blockVideo: Boolean(advanced.blockVideo),
-      blockImages: Boolean(advanced.blockImages),
-      clearCacheOnStart: Boolean(advanced.clearCacheOnStart),
-      cloudBackup: Boolean(advanced.cloudBackup),
-      syncCookiesOnClose: advanced.syncCookiesOnClose !== false,
-      syncIndexedDB: Boolean(advanced.syncIndexedDB),
-      syncLocalStorage: Boolean(advanced.syncLocalStorage),
-      syncPasswords: Boolean(advanced.syncPasswords),
-      syncExtensionData: Boolean(advanced.syncExtensionData),
-      multiOpen: Boolean(advanced.multiOpen),
-      tabMode: String(advanced.tabMode || (advanced.restoreSession ? 'restore' : 'fixed')),
-      startUrls: String(advanced.startUrls || ''),
-      blockUrls: String(advanced.blockUrls || ''),
-      blockSound: Boolean(advanced.blockSound),
-      blockPasswordPrompt: Boolean(advanced.blockPasswordPrompt),
-      blockRestoreDialog: advanced.blockRestoreDialog !== false,
-      blockNotifications: advanced.blockNotifications !== false,
-      blockPopups: Boolean(advanced.blockPopups),
-      jsHeapMax: Boolean(advanced.jsHeapMax),
-      showInfoPage: advanced.showInfoPage !== false,
-      showPasswordOnInfo: Boolean(advanced.showPasswordOnInfo),
-      loadGlobalBookmarks: Boolean(advanced.loadGlobalBookmarks),
-      showBookmarkBar: Boolean(advanced.showBookmarkBar),
-      uploadBookmarks: Boolean(advanced.uploadBookmarks),
-    },
-  };
-}
 
 function normalizeOptionalWebUrl(value) {
   const raw = String(value || '').trim();
@@ -1920,274 +1731,6 @@ function editorCookies() {
   return JSON.stringify(values);
 }
 
-function editorDraft(strict = true) {
-  const current = ui.profiles.find((item) => item.id === editingProfileId) || {};
-  let resolution = { width: Number($('#editor-width')?.value) || current.width || 1280, height: Number($('#editor-height')?.value) || current.height || 820 };
-  if (strict) resolution = editorResolution();
-  else if ($('#editor-resolution')?.value && $('#editor-resolution').value !== 'custom') {
-    const values = $('#editor-resolution').value.split('x').map(Number);
-    resolution = { width: values[0], height: values[1] };
-  }
-  const tabMode = document.querySelector('input[name="editor-tab-mode"]:checked')?.value || 'fixed';
-  const dntMode = $('#editor-dnt-mode')?.value || 'default';
-  const privacy = {
-    webrtc: $('#editor-webrtc')?.value || 'proxy',
-    timezoneMode: $('#editor-timezone-mode')?.value || 'ip',
-    timezone: ($('#editor-timezone')?.value || '').trim(),
-    geoMode: $('#editor-geo-mode')?.value || 'ip',
-    latitude: $('#editor-latitude')?.value,
-    longitude: $('#editor-longitude')?.value,
-    accuracy: Number($('#editor-accuracy')?.value) || 100,
-    languageMode: $('#editor-language-mode')?.value || 'ip',
-    uiLanguage: (() => {
-      const mode = $('#editor-language-mode')?.value || 'ip';
-      if (mode === 'ip' || mode === 'system') return 'profile';
-      return mode;
-    })(),
-    langFromIp: ($('#editor-language-mode')?.value || 'ip') === 'ip',
-    timezoneFromIp: true,
-    geoFromIp: $('#editor-geo-from-ip')?.checked !== false,
-    fontMode: $('#editor-font-mode')?.value || 'default',
-    fontSize: Number($('#editor-font-size')?.value) || 16,
-    deviceProfile: $('#editor-device-profile')?.value || 'default',
-    canvas: $('#editor-canvas')?.value || 'noise',
-    webgl: $('#editor-webgl')?.value || 'noise',
-    webglMeta: $('#editor-webgl-meta')?.value || 'noise',
-    webgpu: $('#editor-webgpu')?.value || 'webgl',
-    audio: $('#editor-audio')?.value || 'noise',
-    media: $('#editor-media')?.value || 'noise',
-    mediaDevices: ($('#editor-media-devices')?.value || '').trim(),
-    mediaLabels: {
-      audioinput: ($('#editor-media-label-audio')?.value || '').trim().slice(0, 200),
-      videoinput: ($('#editor-media-label-video')?.value || '').trim().slice(0, 200),
-      audiooutput: ($('#editor-media-label-output')?.value || '').trim().slice(0, 200),
-    },
-    battery: $('#editor-battery')?.value || 'noise',
-    bluetooth: $('#editor-bluetooth')?.value || 'real',
-    clientRects: $('#editor-client-rects')?.value || 'noise',
-    speech: $('#editor-speech')?.value || 'noise',
-    deviceNameMode: $('#editor-device-name-mode')?.value || 'noise',
-    deviceName: ($('#editor-device-name')?.value || '').trim(),
-    dnt: dntMode === 'on' || ($('#editor-dnt')?.checked === true),
-    dntMode,
-    portScanProtect: Boolean($('#editor-port-scan')?.checked),
-    portScanAllow: ($('#editor-port-scan-allow')?.value || '').trim(),
-    cfOptimize: $('#editor-cf-optimize')?.checked !== false,
-    refreshFingerprintOnStart: Boolean($('#editor-refresh-fingerprint')?.checked),
-    stabilityMode: $('#editor-stability-mode')?.value || 'auto',
-    stabilityHamming: Number($('#editor-stability-hamming')?.value) || 12,
-    stabilityMaxWidth: Number($('#editor-stability-max-width')?.value) || 600,
-    stabilityMaxHeight: Number($('#editor-stability-max-height')?.value) || 600,
-    stabilitySquare: Number($('#editor-stability-square')?.value) || 8,
-    stabilityHosts: ($('#editor-stability-hosts')?.value || '').split(/[\r\n,;\s]+/).map((s) => s.trim()).filter(Boolean).slice(0, 800),
-    stabilitySkipHosts: ($('#editor-stability-skip-hosts')?.value || '').split(/[\r\n,;\s]+/).map((s) => s.trim()).filter(Boolean).slice(0, 200),
-    cores: (() => {
-      const v = $('#editor-cores')?.value;
-      if (v === '' || v == null) return '';
-      const n = Number(v);
-      return Number.isFinite(n) ? n : '';
-    })(),
-    memory: (() => {
-      const v = $('#editor-memory')?.value;
-      if (v === '' || v == null) return '';
-      const n = Number(v);
-      return Number.isFinite(n) ? n : '';
-    })(),
-    fingerprint: {
-      ...(current.privacy?.fingerprint || {}),
-      cores: (() => {
-        const v = $('#editor-cores')?.value;
-        if (v === '' || v == null) return undefined;
-        const n = Number(v);
-        return Number.isFinite(n) ? n : undefined;
-      })(),
-      memory: (() => {
-        const v = $('#editor-memory')?.value;
-        if (v === '' || v == null) return undefined;
-        const n = Number(v);
-        return Number.isFinite(n) ? n : undefined;
-      })(),
-    },
-  };
-  if (strict && privacy.timezoneMode === 'custom' && privacy.timezone) {
-    try { new Intl.DateTimeFormat('en-US', { timeZone: privacy.timezone }).format(); }
-    catch (_) { throw new Error(tx('自定义时区无效，请使用 Asia/Shanghai 这类 IANA 时区名称')); }
-  }
-  if (strict && privacy.geoMode === 'custom') {
-    const latitude = Number(privacy.latitude); const longitude = Number(privacy.longitude);
-    if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
-      throw new Error(tx('自定义地理位置经纬度无效'));
-    }
-    privacy.latitude = latitude; privacy.longitude = longitude;
-  }
-  const selectedNetwork = editorSelectedNetwork();
-  const selectedProxyValue = String($('#editor-proxy-library')?.value || '').trim();
-  const selectedProxyId = selectedNetwork === 'direct' ? null : (proxyLibraryItem(selectedProxyValue)?.id || null);
-  let proxy = serializeEditorProxy(strict);
-  if (selectedNetwork !== 'direct' && isDirectProxy(proxy)) {
-    if (strict && !String($('#editor-api-extract-url')?.value || '').trim()) {
-      throw new Error(tx('请填写代理地址，或明确选择本地直连'));
-    }
-    proxy = '';
-  }
-  // Plain HTTP proxies carry Basic credentials on the wire in cleartext — that is
-  // the protocol, not a bug we can fix client-side, but the user deserves to know
-  // before their residential proxy password rides an unencrypted hop.
-  if (typeof toast === 'function' && /^http:\/\//i.test(String(proxy)) && /:[^:@/]+@/.test(String(proxy))) {
-    try { toast(tx('注意：HTTP 代理的账号密码将以明文经由代理链路传输，建议改用 HTTPS 或 SOCKS5 代理'), { tone: 'warning' }); } catch (_) {}
-  }
-  const currentProxyParsed = parseEditorProxy(current.proxy);
-  const nextProxyParsed = parseEditorProxy(proxy);
-  const sameEndpoint = currentProxyParsed.mode === 'custom'
-    && nextProxyParsed.mode === 'custom'
-    && currentProxyParsed.type === nextProxyParsed.type
-    && currentProxyParsed.host === nextProxyParsed.host
-    && String(currentProxyParsed.port || '') === String(nextProxyParsed.port || '');
-  if (!window.__editorProxyAuthTouched && !nextProxyParsed.username && !nextProxyParsed.password) {
-    if (sameEndpoint && (currentProxyParsed.username || currentProxyParsed.password)) {
-      proxy = current.proxy;
-    } else {
-      const eng = engineProfiles.find((item) => item.id === editingProfileId);
-      if (eng?.proxy) {
-        const engParsed = parseEditorProxy(eng.proxy);
-        if (engParsed.mode === 'custom' && engParsed.host === nextProxyParsed.host && String(engParsed.port) === String(nextProxyParsed.port) && (engParsed.username || engParsed.password)) {
-          proxy = buildProxyUiValue({
-            protocol: nextProxyParsed.type || engParsed.type,
-            host: nextProxyParsed.host,
-            port: nextProxyParsed.port,
-            username: engParsed.username,
-            password: engParsed.password,
-          });
-        }
-      }
-      if (!proxyHasCredentials(proxy) && selectedProxyId) {
-        const libItem = proxyLibraryItem(selectedProxyId);
-        if (libItem?.username || libItem?.password) {
-          proxy = buildProxyUiValue({
-            protocol: nextProxyParsed.type || libItem.protocol || 'socks5',
-            host: nextProxyParsed.host || libItem.host,
-            port: nextProxyParsed.port || libItem.port,
-            username: libItem.username || '',
-            password: libItem.password || '',
-          });
-        }
-      }
-    }
-  }
-  if (!proxyHasCredentials(proxy) && selectedProxyId) {
-    const libItem = proxyLibraryItem(selectedProxyId);
-    if (libItem && (libItem.username || libItem.password)) {
-      const curParsed = parseEditorProxy(proxy);
-      proxy = buildProxyUiValue({
-        protocol: curParsed.type || libItem.protocol || 'socks5',
-        host: curParsed.host || libItem.host,
-        port: curParsed.port || libItem.port,
-        username: libItem.username || '',
-        password: libItem.password || '',
-      });
-    }
-  }
-  const proxyAuthAction = proxyAuthActionForUpdate(current.proxy, proxy, selectedNetwork);
-  const draftBase = normalizeProxyAssociationForUi(current, selectedProxyId);
-  return normalizeProfileSettings({
-    ...draftBase,
-    ...(editorNetworkResult ? {
-      exitIp: editorNetworkResult.ip,
-      exitCountryCode: editorNetworkResult.countryCode,
-      exitTimezone: editorNetworkResult.timezone || '',
-      exitLatitude: editorNetworkResult.latitude,
-      exitLongitude: editorNetworkResult.longitude,
-      exitCheckedAt: editorNetworkResult.checkedAt,
-    } : {}),
-    id: editingProfileId,
-    number: current.number,
-    name: displayProfileNumber(current),
-    title: ($('#editor-title')?.value || '').trim(),
-    browser: 'Google Chrome',
-    os: $('#editor-os')?.value || current.os || 'Windows',
-    userAgent: ($('#editor-user-agent')?.value || '').trim(),
-    cookies: strict ? editorCookies() : ($('#editor-cookies')?.value || '').trim(),
-    language: window.OpenBrowserLocale.resolveProfileLanguage({
-      language: $('#editor-language')?.value || current.language || 'en-US',
-      exitCountryCode: current.exitCountryCode,
-      privacy: { languageMode: $('#editor-language-mode')?.value || 'ip' },
-    }, editorNetworkResult || {}),
-    tag: ($('#editor-tag')?.value || '').trim(),
-    groupId: $('#editor-group')?.value || UNGROUPED_ID,
-    note: ($('#editor-note')?.value || '').trim(),
-    networkMode: selectedNetwork === 'direct' ? 'direct' : 'proxy',
-    proxy,
-    proxyId: selectedProxyId,
-    ...(proxyAuthAction ? { proxyAuthAction } : {}),
-    width: resolution.width,
-    height: resolution.height,
-    platform: {
-      type: $('#editor-platform-type')?.value || 'other',
-      startUrl: ($('#editor-start-url')?.value || '').trim(),
-      username: ($('#editor-platform-user')?.value || '').trim(),
-      password: $('#editor-platform-pass')?.value || '',
-      totpSecret: ($('#editor-platform-2fa')?.value || '').trim(),
-    },
-    proxyMeta: {
-      proxyId: selectedProxyId,
-      ipChannel: $('#editor-ip-channel')?.value || 'ip-api',
-      refreshUrl: ($('#editor-refresh-url')?.value || '').trim(),
-      checkOnStart: Boolean($('#editor-proxy-check-start')?.checked),
-      refreshOnStart: Boolean($('#editor-proxy-refresh-start')?.checked),
-      systemProxy: $('#editor-system-proxy')?.value || 'global',
-      directBypass: Boolean($('#editor-direct-bypass')?.checked),
-      bypassList: ($('#editor-bypass-list')?.value || '').trim(),
-      apiExtractUrl: ($('#editor-api-extract-url')?.value || '').trim(),
-      backupProxies: ($('#editor-backup-proxies')?.value || '').split(/[\r\n,;]+/).map((s) => s.trim()).filter(Boolean).slice(0, 8),
-      fillFingerprint: $('#editor-proxy-fill-fingerprint')?.checked !== false,
-      requireReady: true,
-      notReadyPolicy: 'block',
-      allowDirectFallback: false,
-      tlsProfile: $('#editor-proxy-tls-profile')?.value || 'auto',
-      tlsChromeMajor: (() => {
-        const raw = ($('#editor-proxy-tls-chrome-major')?.value || '').trim();
-        if (!raw) return null;
-        const n = Number(raw);
-        return Number.isFinite(n) && n >= 80 && n <= 200 ? Math.floor(n) : null;
-      })(),
-    },
-    privacy,
-    advanced: {
-      saveCookies: $('#editor-save-cookies')?.checked !== false,
-      savePasswords: Boolean($('#editor-save-passwords')?.checked),
-      saveBookmarks: $('#editor-save-bookmarks')?.checked !== false,
-      saveLocalStorage: $('#editor-save-local-storage')?.checked !== false,
-      saveIndexedDB: $('#editor-save-indexeddb')?.checked !== false,
-      saveHistory: $('#editor-save-history')?.checked !== false,
-      allowSignin: Boolean($('#editor-allow-signin')?.checked),
-      restoreSession: tabMode === 'restore' || Boolean($('#editor-restore-session')?.checked),
-      blockVideo: Boolean($('#editor-block-video')?.checked),
-      blockImages: Boolean($('#editor-block-images')?.checked),
-      clearCacheOnStart: Boolean($('#editor-clear-cache')?.checked),
-      cloudBackup: Boolean($('#editor-cloud-backup')?.checked),
-      syncCookiesOnClose: $('#editor-sync-cookies-close')?.checked !== false,
-      syncIndexedDB: Boolean($('#editor-sync-idb')?.checked),
-      syncLocalStorage: Boolean($('#editor-sync-ls')?.checked),
-      syncPasswords: Boolean($('#editor-sync-passwords')?.checked),
-      syncExtensionData: Boolean($('#editor-sync-ext')?.checked),
-      multiOpen: Boolean($('#editor-multi-open')?.checked),
-      tabMode,
-      startUrls: ($('#editor-start-urls')?.value || '').trim(),
-      blockUrls: ($('#editor-block-urls')?.value || '').trim(),
-      blockSound: Boolean($('#editor-block-sound')?.checked),
-      blockPasswordPrompt: Boolean($('#editor-block-password-prompt')?.checked),
-      blockRestoreDialog: $('#editor-block-restore-dialog')?.checked !== false,
-      blockNotifications: $('#editor-block-notifications')?.checked !== false,
-      blockPopups: Boolean($('#editor-block-popups')?.checked),
-      jsHeapMax: Boolean($('#editor-js-heap-max')?.checked),
-      showInfoPage: $('#editor-show-info-page')?.checked !== false,
-      showPasswordOnInfo: Boolean($('#editor-show-password-info')?.checked),
-      loadGlobalBookmarks: Boolean($('#editor-load-global-bookmarks')?.checked),
-      showBookmarkBar: Boolean($('#editor-show-bookmark-bar')?.checked),
-      uploadBookmarks: Boolean($('#editor-upload-bookmarks')?.checked),
-    },
-  });
-}
 
 function updateEditorVisibility() {
   const direct = editorSelectedNetwork() === 'direct';
@@ -2202,61 +1745,6 @@ function updateEditorVisibility() {
   $('#editor-font-size').hidden = $('#editor-font-mode').value !== 'custom';
 }
 
-function renderEditorSummary() {
-  if (!editingProfileId) return;
-  const draft = editorDraft(false); const privacy = draft.privacy; const summary = $('#editor-summary'); summary.replaceChildren();
-  const labels = {
-    webrtc: { proxy: tx('仅代理连接'), disabled: tx('禁用非代理 UDP'), real: tx('真实网络') }, timezoneMode: { ip: '基于出口 IP', real: '系统真实', custom: privacy.timezone || '自定义' },
-    geoMode: { ip: '基于出口 IP', disabled: '禁止访问', custom: '自定义坐标' }, canvas: { real: '真实', blocked: '禁止读取' }, webgl: { real: '真实', blocked: '禁用' },
-    audio: { real: '真实', muted: '静音输出' }, media: { real: '按网站询问', blocked: '禁止访问' }, speech: { real: '真实', blocked: '禁用' }, bluetooth: { real: '真实', blocked: '关闭' }
-  };
-  const values = [
-    [tx('浏览器'), 'Google Chrome'], [tx('分组'), groupNameOf(draft)], ['User-Agent', draft.userAgent || 'Chrome 默认'], [tx('网络'), maskProxy(draft.proxy)], ['WebRTC', labels.webrtc[privacy.webrtc]],
-    [tx('时区'), labels.timezoneMode[privacy.timezoneMode]], [tx('地理位置'), labels.geoMode[privacy.geoMode]], [tx('语言'), draft.language], [tx('界面语言'), privacy.uiLanguage === 'profile' ? '跟随语言' : privacy.uiLanguage],
-    [tx('分辨率'), draft.width + ' × ' + draft.height], [tx('字体'), privacy.fontMode === 'custom' ? privacy.fontSize + 'px' : '默认'], ['Canvas', labels.canvas[privacy.canvas]],
-    ['WebGL', labels.webgl[privacy.webgl]], ['WebGPU', privacy.webgpu === 'blocked' ? '禁用' : (privacy.webgpu === 'webgl' ? '基于 WebGL' : '真实')], ['AudioContext', labels.audio[privacy.audio]], [tx('媒体设备'), labels.media[privacy.media]],
-    [tx('电池'), privacy.battery === 'blocked' ? '关闭' : (privacy.battery === 'real' ? '真实' : '随机')],
-    [tx('蓝牙'), labels.bluetooth[privacy.bluetooth || 'real']],
-    [tx('站点稳定性'), privacy.stabilityMode === 'force' ? '强制' : (privacy.stabilityMode === 'off' ? '关闭' : '自动')],
-    [tx('代理未就绪'), draft.proxyMeta?.notReadyPolicy === 'direct' ? '回退直连' : (draft.proxyMeta?.notReadyPolicy === 'continue' ? '继续' : '阻断')],
-    [tx('TLS 配置'), draft.proxyMeta?.tlsProfile || 'auto'],
-    ['ClientRects', privacy.clientRects === 'real' ? '真实' : '随机'],
-    ['SpeechVoices', labels.speech[privacy.speech]],
-    // Must read the profile editor value — never the host Electron navigator.
-    ['CPU', (() => {
-      const raw = privacy.cores ?? privacy.fingerprint?.cores;
-      if (raw === '' || raw === null || raw === undefined) return tx('自动');
-      const n = Number(raw);
-      if (!Number.isFinite(n)) return tx('自动');
-      if (n === 0) return tx('真实');
-      return `${n} 核`;
-    })()],
-    ['RAM', (() => {
-      const raw = privacy.memory ?? privacy.fingerprint?.memory;
-      if (raw === '' || raw === null || raw === undefined) return tx('自动');
-      const n = Number(raw);
-      if (!Number.isFinite(n)) return tx('自动');
-      if (n === 0) return tx('真实');
-      return `${n} GB`;
-    })()],
-    ['Do Not Track', privacy.dnt ? '启用' : '默认'],
-    [tx('每次打开刷新指纹'), privacy.refreshFingerprintOnStart ? '开启' : '关闭']
-  ];
-  for (const [name, value] of values) { const row = document.createElement('div'); row.append(element('dt', '', name), element('dd', '', value || '默认')); summary.append(row); }
-  const auditTarget = $('#editor-audit');
-  if (auditTarget && window.EnvironmentAudit) {
-    const report = window.EnvironmentAudit.build(draft, { systemTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone });
-    auditTarget.replaceChildren();
-    const head = element('div', 'audit-head');
-    head.append(element('strong', '', tx('环境一致性检查')), element('span', report.status, report.warnings ? `${report.warnings} 项需确认` : '配置一致'));
-    auditTarget.append(head);
-    for (const check of report.checks) {
-      const row = element('div', `audit-row ${check.state}`);
-      const body = element('div'); body.append(element('strong', '', check.label), element('small', '', check.detail));
-      row.append(element('i', '', ''), body); auditTarget.append(row);
-    }
-  }
-}
 
 function setEditorTab(tab, focus = false) {
   const tabs = $$('[data-editor-tab]');
@@ -2273,211 +1761,6 @@ function setEditorTab(tab, focus = false) {
   $$('[data-editor-panel]').forEach((panel) => panel.classList.toggle('active', panel.dataset.editorPanel === tab));
 }
 
-function openProfileEditor(id) {
-  const profile = normalizeProfileSettings(ui.profiles.find((item) => item.id === id)); if (!profile?.id) return;
-  editorNetworkResult = profile.exitIp ? { ip: profile.exitIp, countryCode: profile.exitCountryCode, timezone: profile.exitTimezone, latitude: profile.exitLatitude, longitude: profile.exitLongitude, checkedAt: profile.exitCheckedAt } : null;
-  editingProfileId = profile.id;
-  editorSet('#editor-id', profile.id);
-  $('#editor-profile-id').textContent = displayProfileNumber(profile);
-  editorSet('#editor-name', displayProfileNumber(profile));
-  editorSet('#editor-title', profile.title || '');
-  editorSet('#editor-browser', 'Google Chrome');
-  editorSet('#editor-os', profile.os);
-  editorSet('#editor-user-agent', profile.userAgent);
-  editorSet('#editor-cookies', (() => {
-    if (!profile.cookies) return '';
-    try { return JSON.stringify(JSON.parse(profile.cookies), null, 2); } catch (_) { return profile.cookies; }
-  })());
-  editorSet('#editor-language', profile.language);
-  editorSet('#editor-tag', profile.tag);
-  editorSet('#editor-note', profile.note);
-  editorSet('#editor-platform-type', profile.platform?.type || 'other');
-  editorSet('#editor-start-url', profile.platform?.startUrl || '');
-  // if type is blank, keep URL empty
-  if ((profile.platform?.type || '') === 'blank') editorSet('#editor-start-url', '');
-  editorSet('#editor-platform-user', profile.platform?.username || '');
-  editorSet('#editor-platform-pass', profile.platform?.password || '');
-  editorSet('#editor-platform-2fa', profile.platform?.totpSecret || '');
-  fillGroupSelect($('#editor-group'), profile.groupId || UNGROUPED_ID, { includeUngrouped: true });
-  const linkedProxyId = profileProxyId(profile);
-  renderProxyLibrarySelect($('#editor-proxy-library'), linkedProxyId);
-  const linkedProxy = proxyLibraryItem(linkedProxyId);
-  const proxyLibraryStatus = $('#editor-proxy-library-status');
-  if (proxyLibraryStatus) proxyLibraryStatus.textContent = linkedProxy
-    ? `已关联代理库：${proxyLibraryLabel(linkedProxy)}`
-    : (linkedProxyId ? `代理节点已失效：${linkedProxyId}` : '未关联代理库节点');
-  let proxy = parseEditorProxy(profile.proxy);
-  if (linkedProxy) {
-    if (proxy.mode !== 'custom' || !proxy.host) {
-      const libParsed = parseEditorProxy(linkedProxy.raw || buildProxyUiValue(linkedProxy));
-      proxy.mode = 'custom';
-      proxy.type = libParsed.type || linkedProxy.protocol || 'socks5';
-      proxy.host = libParsed.host || linkedProxy.host || '';
-      proxy.port = libParsed.port || linkedProxy.port || '';
-      proxy.username = libParsed.username || linkedProxy.username || '';
-      proxy.password = libParsed.password || linkedProxy.password || '';
-    } else if (!proxy.username || !proxy.password) {
-      const libParsed = parseEditorProxy(linkedProxy.raw || buildProxyUiValue(linkedProxy));
-      if (libParsed && (!proxy.host || (libParsed.host === proxy.host && String(libParsed.port) === String(proxy.port)))) {
-        if (!proxy.username && libParsed.username) proxy.username = libParsed.username;
-        if (!proxy.password && libParsed.password) proxy.password = libParsed.password;
-        if (!proxy.type && libParsed.type) proxy.type = libParsed.type;
-      }
-    }
-  }
-  if (proxy.mode === 'custom') {
-    if (!proxy.username || !proxy.password) {
-      const eng = engineProfiles.find((item) => item.id === profile.id);
-      if (eng?.proxy) {
-        const engParsed = parseEditorProxy(eng.proxy);
-        if (engParsed && engParsed.host === proxy.host && String(engParsed.port) === String(proxy.port)) {
-          if (!proxy.username && engParsed.username) proxy.username = engParsed.username;
-          if (!proxy.password && engParsed.password) proxy.password = engParsed.password;
-        }
-      }
-    }
-  }
-  const mode = document.querySelector('input[name="editor-network"][value="' + proxy.mode + '"]');
-  if (mode) mode.checked = true;
-  editorSet('#editor-proxy-type', ['http', 'https', 'socks5'].includes(proxy.type) ? proxy.type : 'socks5');
-  editorSet('#editor-proxy-host', proxy.host);
-  editorSet('#editor-proxy-port', proxy.port);
-  editorSet('#editor-proxy-user', proxy.username);
-  editorSet('#editor-proxy-password', proxy.password);
-  const editorRawInput = $('#editor-proxy-raw');
-  if (editorRawInput) {
-    editorRawInput.value = proxy.mode === 'custom' && proxy.host
-      ? buildProxyUiValue({ protocol: proxy.type, host: proxy.host, port: proxy.port, username: proxy.username, password: proxy.password })
-      : '';
-  }
-  window.__editorProxyAuthTouched = false;
-  editorSet('#editor-ip-channel', profile.proxyMeta.ipChannel);
-  editorSet('#editor-refresh-url', profile.proxyMeta.refreshUrl);
-  editorSet('#editor-api-extract-url', profile.proxyMeta.apiExtractUrl || '');
-  editorSet('#editor-backup-proxies', Array.isArray(profile.proxyMeta.backupProxies) ? profile.proxyMeta.backupProxies.join('\n') : '');
-  editorCheck('#editor-proxy-check-start', profile.proxyMeta.checkOnStart);
-  editorCheck('#editor-proxy-refresh-start', profile.proxyMeta.refreshOnStart);
-  editorCheck('#editor-proxy-fill-fingerprint', profile.proxyMeta.fillFingerprint !== false);
-  editorCheck('#editor-proxy-require-ready', profile.proxyMeta.requireReady !== false);
-  editorSet('#editor-proxy-not-ready-policy', profile.proxyMeta.notReadyPolicy || (profile.proxyMeta.requireReady === false ? 'continue' : 'block'));
-  editorSet('#editor-proxy-tls-profile', profile.proxyMeta.tlsProfile || 'auto');
-  editorSet('#editor-proxy-tls-chrome-major', profile.proxyMeta.tlsChromeMajor == null ? '' : profile.proxyMeta.tlsChromeMajor);
-  editorSet('#editor-system-proxy', profile.proxyMeta.systemProxy || 'global');
-  editorCheck('#editor-direct-bypass', profile.proxyMeta.directBypass);
-  editorSet('#editor-bypass-list', profile.proxyMeta.bypassList || '');
-  if ($('#editor-proxy-result')) {
-    $('#editor-proxy-result').className = 'proxy-test-result';
-    $('#editor-proxy-result').textContent = profile.exitIp ? tx('上次出口：') + profile.exitIp + ' · ' + countryName(profile.exitCountryCode) : tx('尚未检测');
-  }
-  const privacy = profile.privacy;
-  editorSet('#editor-webrtc', privacy.webrtc);
-  editorSet('#editor-timezone-mode', privacy.timezoneMode);
-  editorSet('#editor-timezone', privacy.timezone);
-  editorSet('#editor-geo-mode', privacy.geoMode);
-  editorSet('#editor-latitude', privacy.latitude);
-  editorSet('#editor-longitude', privacy.longitude);
-  editorSet('#editor-accuracy', privacy.accuracy);
-  {
-    const mode = privacy.languageMode
-      || (privacy.langFromIp !== false && (!privacy.uiLanguage || privacy.uiLanguage === 'profile') ? 'ip' : null)
-      || (privacy.uiLanguage && privacy.uiLanguage !== 'profile' ? privacy.uiLanguage : null)
-      || 'ip';
-    editorSet('#editor-language-mode', mode);
-    editorSet('#editor-ui-language', mode === 'ip' || mode === 'system' ? 'profile' : mode);
-    editorCheck('#editor-lang-from-ip', mode === 'ip');
-  }
-  editorCheck('#editor-geo-from-ip', privacy.geoFromIp !== false);
-  const resolutionKey = profile.width + 'x' + profile.height;
-  const resolution = ['1280x820', '1366x768', '1440x900', '1920x1080'].includes(resolutionKey) ? resolutionKey : 'custom';
-  editorSet('#editor-resolution', resolution);
-  editorSet('#editor-width', profile.width);
-  editorSet('#editor-height', profile.height);
-  editorSet('#editor-font-mode', privacy.fontMode);
-  editorSet('#editor-font-size', privacy.fontSize);
-  editorSet('#editor-device-profile', privacy.deviceProfile || 'default');
-  editorSet('#editor-canvas', privacy.canvas);
-  editorSet('#editor-webgl', privacy.webgl);
-  editorSet('#editor-webgl-meta', privacy.webglMeta || 'noise');
-  editorSet('#editor-webgpu', privacy.webgpu);
-  editorSet('#editor-audio', privacy.audio);
-  editorSet('#editor-media', privacy.media);
-  editorSet('#editor-media-devices', privacy.mediaDevices || '');
-  editorSet('#editor-battery', privacy.battery || 'noise');
-  editorSet('#editor-bluetooth', privacy.bluetooth || 'real');
-  editorSet('#editor-media-label-audio', privacy.mediaLabels?.audioinput || privacy.mediaLabels?.input || '');
-  editorSet('#editor-media-label-video', privacy.mediaLabels?.videoinput || privacy.mediaLabels?.video || '');
-  editorSet('#editor-media-label-output', privacy.mediaLabels?.audiooutput || privacy.mediaLabels?.output || '');
-  editorSet('#editor-client-rects', privacy.clientRects || 'noise');
-  editorSet('#editor-speech', privacy.speech);
-  // Select values are strings; 0 must stay "0" (真实), never fall through to "" (自动).
-  editorSet('#editor-cores', (() => {
-    const raw = privacy.cores ?? privacy.fingerprint?.cores;
-    if (raw === '' || raw === null || raw === undefined) return '';
-    return String(raw);
-  })());
-  editorSet('#editor-memory', (() => {
-    const raw = privacy.memory ?? privacy.fingerprint?.memory;
-    if (raw === '' || raw === null || raw === undefined) return '';
-    return String(raw);
-  })());
-  editorSet('#editor-device-name-mode', privacy.deviceNameMode || 'noise');
-  editorSet('#editor-device-name', privacy.deviceName || '');
-  editorSet('#editor-dnt-mode', privacy.dntMode || (privacy.dnt ? 'on' : 'default'));
-  editorCheck('#editor-dnt', privacy.dnt);
-  editorCheck('#editor-port-scan', privacy.portScanProtect);
-  editorSet('#editor-port-scan-allow', privacy.portScanAllow || '');
-  editorCheck('#editor-cf-optimize', privacy.cfOptimize !== false);
-  editorCheck('#editor-refresh-fingerprint', privacy.refreshFingerprintOnStart);
-  editorSet('#editor-stability-mode', privacy.stabilityMode || 'auto');
-  editorSet('#editor-stability-hamming', privacy.stabilityHamming || 12);
-  editorSet('#editor-stability-max-width', privacy.stabilityMaxWidth || 600);
-  editorSet('#editor-stability-max-height', privacy.stabilityMaxHeight || 600);
-  editorSet('#editor-stability-square', privacy.stabilitySquare || 8);
-  editorSet('#editor-stability-hosts', Array.isArray(privacy.stabilityHosts) ? privacy.stabilityHosts.join('\n') : (privacy.stabilityHosts || ''));
-  editorSet('#editor-stability-skip-hosts', Array.isArray(privacy.stabilitySkipHosts) ? privacy.stabilitySkipHosts.join('\n') : (privacy.stabilitySkipHosts || ''));
-  const advanced = profile.advanced;
-  for (const [sel, value] of [
-    ['#editor-save-cookies', advanced.saveCookies],
-    ['#editor-save-passwords', advanced.savePasswords],
-    ['#editor-save-bookmarks', advanced.saveBookmarks],
-    ['#editor-save-local-storage', advanced.saveLocalStorage],
-    ['#editor-save-indexeddb', advanced.saveIndexedDB],
-    ['#editor-save-history', advanced.saveHistory],
-    ['#editor-allow-signin', advanced.allowSignin],
-    ['#editor-restore-session', advanced.restoreSession],
-    ['#editor-block-video', advanced.blockVideo],
-    ['#editor-block-images', advanced.blockImages],
-    ['#editor-clear-cache', advanced.clearCacheOnStart],
-    ['#editor-cloud-backup', advanced.cloudBackup],
-    ['#editor-sync-cookies-close', advanced.syncCookiesOnClose !== false],
-    ['#editor-sync-idb', advanced.syncIndexedDB],
-    ['#editor-sync-ls', advanced.syncLocalStorage],
-    ['#editor-sync-passwords', advanced.syncPasswords],
-    ['#editor-sync-ext', advanced.syncExtensionData],
-    ['#editor-multi-open', advanced.multiOpen],
-    ['#editor-block-sound', advanced.blockSound],
-    ['#editor-block-password-prompt', advanced.blockPasswordPrompt],
-    ['#editor-block-restore-dialog', advanced.blockRestoreDialog],
-    ['#editor-block-notifications', advanced.blockNotifications],
-    ['#editor-block-popups', advanced.blockPopups],
-    ['#editor-js-heap-max', advanced.jsHeapMax],
-    ['#editor-show-info-page', advanced.showInfoPage],
-    ['#editor-show-password-info', advanced.showPasswordOnInfo],
-    ['#editor-load-global-bookmarks', advanced.loadGlobalBookmarks],
-    ['#editor-show-bookmark-bar', advanced.showBookmarkBar],
-    ['#editor-upload-bookmarks', advanced.uploadBookmarks],
-  ]) editorCheck(sel, value);
-  const tabMode = advanced.tabMode === 'restore' ? 'restore' : 'fixed';
-  const tabRadio = document.querySelector('input[name="editor-tab-mode"][value="' + tabMode + '"]');
-  if (tabRadio) tabRadio.checked = true;
-  editorSet('#editor-start-urls', advanced.startUrls || '');
-  editorSet('#editor-block-urls', advanced.blockUrls || '');
-  setEditorTab('basic');
-  updateEditorVisibility();
-  if (typeof syncThemedSelects === 'function') syncThemedSelects($('#view-profile-editor'));
-  renderEditorSummary();
-  switchView('profile-editor');
-}
 
 function formatProxyCheckResult(result = {}) {
   const parts = [
@@ -2640,25 +1923,6 @@ async function showUaMetaPreview(ua) {
   ].join('\n');
 }
 
-async function refreshUaMetaPreview() {
-  const raw = document.getElementById('editor-user-agent')?.value?.trim() || '';
-  if (!raw) {
-    const el = document.getElementById('editor-ua-meta');
-    if (el) {
-      el.hidden = false;
-      el.textContent = tx('留空：启动时按环境 ID 自动生成 UA + Client Hints（各环境互不相同）');
-    }
-    return;
-  }
-  try {
-    const ua = await window.ops.buildUa({
-      userAgent: raw,
-      os: editorOsToUaKey($('#editor-os')?.value),
-      chromeMajor: Number($('#editor-ua-chrome-major')?.value) || undefined,
-    });
-    await showUaMetaPreview(ua);
-  } catch (_) {}
-}
 
 document.getElementById('editor-ua-generate')?.addEventListener('click', async () => {
   try {
@@ -2995,12 +2259,6 @@ async function assignSelectedToGroup(groupId) {
 }
 
 // allow nav buttons to pass rpa tab via dataset
-document.addEventListener('click', (event) => {
-  const nav = event.target.closest('[data-view="rpa"][data-rpa-tab]');
-  if (!nav) return;
-  // switchView will be called by existing nav handler; stash tab
-  currentRpaTab = nav.dataset.rpaTab || 'flows';
-}, true);
 
 
 function renderGroupFilterChips() {
@@ -3960,8 +3218,6 @@ function installProxyTypeControl(textareaId, selectId) {
   const note = element('p', 'store-note', '\u53ef\u76f4\u63a5\u8f93\u5165 IP:\u7aef\u53e3:\u7528\u6237\u540d:\u5bc6\u7801\uff1b\u68c0\u6d4b\u6210\u529f\u540e\u624d\u4f1a\u5199\u5165\u73af\u5883\u3002'); note.dataset.proxyFor = textarea.id;
   const field = textarea.closest('label') || textarea; field.before(label, note);
 }
-installProxyTypeControl('#batch-add-proxies', 'batch-add-proxy-type');
-installProxyTypeControl('#batch-proxy-list', 'batch-update-proxy-type');
 function installBatchUpdateNetworkMode() {
   const form = $('#batch-update-form');
   const hidden = $('#batch-update-network-mode');
@@ -4006,24 +3262,6 @@ function installCreateNetworkMode() {
 }
 installCreateNetworkMode();
 
-$('#create-proxy-library')?.addEventListener('change', (event) => {
-  const id = String(event.target.value || '').trim();
-  if (id) applyProxyLibrarySelection('create', id);
-});
-$('#editor-proxy-library')?.addEventListener('change', (event) => {
-  const id = String(event.target.value || '').trim();
-  if (id) applyProxyLibrarySelection('editor', id);
-  else {
-    const status = $('#editor-proxy-library-status');
-    if (status) status.textContent = '未关联代理库节点';
-  }
-});
-$('#batch-add-proxy-library')?.addEventListener('change', (event) => {
-  const id = String(event.target.value || '').trim();
-  const item = proxyLibraryItem(id);
-  const textarea = $('#batch-add-proxies');
-  if (item && textarea) textarea.value = parseProxyInputForUi(item, item.protocol || 'socks5')?.raw || item.raw || `${item.host}:${item.port}`;
-});
 
 function installBatchAddNetworkMode() {
   const fields = $('#batch-add-proxy-fields');
@@ -4184,68 +3422,6 @@ try {
   window.visualViewport?.addEventListener('scroll', () => positionThemePopover());
 } catch (_) {}
 
-document.addEventListener('click', async (event) => {
-  const cancelButton = event.target.closest('dialog button[value="cancel"]');
-  if (cancelButton) {
-    const dialog = cancelButton.closest('dialog');
-    if (dialog?.open) {
-      event.preventDefault();
-      dialog.close('cancel');
-      return;
-    }
-  }
-  const selectOption = event.target.closest('.themed-select-option');
-  if (selectOption && openSelectMenu) {
-    const { select } = openSelectMenu;
-    select.selectedIndex = Number(selectOption.dataset.optionIndex);
-    select.dispatchEvent(new Event('change', { bubbles: true }));
-    syncThemedSelect(select);
-    closeSelectMenu({ restoreFocus: true });
-    return;
-  }
-  if (!event.target.closest('.themed-select-menu, .themed-select')) closeSelectMenu();
-  const colorModeBtn = event.target.closest('[data-color-mode]');
-  if (colorModeBtn && colorModeBtn.closest('#theme-appearance')) {
-    event.stopPropagation();
-    applyColorMode(colorModeBtn.dataset.colorMode);
-    return;
-  }
-  const themeOption = event.target.closest('[data-ui-theme-option]');
-  if (themeOption) {
-    applyUiTheme(themeOption.dataset.uiThemeOption);
-    // Keep popover open so user can switch light/dark for 系统原生
-    if (themeOption.dataset.uiThemeOption !== 'element-admin') setThemePopoverOpen(false);
-  } else if (!event.target.closest('#theme-picker') && !event.target.closest('#theme-popover')) {
-    setThemePopoverOpen(false);
-  }
-  const nav = event.target.closest('[data-view]'); if (nav) switchView(nav.dataset.view);
-  const action = event.target.closest('[data-action]');
-  if (action?.dataset.action === 'start') startProfile(action.dataset.id);
-  if (action?.dataset.action === 'stop') stopProfile(action.dataset.id);
-  if (action?.dataset.action === 'edit') openProfileEditor(action.dataset.id);
-  if (action?.dataset.action === 'clone') cloneProfile(action.dataset.id);
-  if (action?.dataset.action === 'restore') restoreProfile(action.dataset.id);
-  if (action?.dataset.action === 'purge') purgeProfile(action.dataset.id);
-  if (action?.dataset.action === 'select-sync') { selectedSessions.add(action.dataset.id); pushSyncSelection(); switchView('sync'); }
-
-  const assign = event.target.closest('[data-extension-assign]'); if (assign) openAssign(assign.dataset.extensionAssign);
-  const reload = event.target.closest('[data-extension-reload]'); if (reload) { try { const updated = await window.ops.reloadExtension(reload.dataset.extensionReload); toast(tx('扩展已重新加载：') + (updated?.name || '') + ' v' + (updated?.version || '')); invalidateViewCache('extensions'); await refreshExtensions(); } catch (error) { toast(tx('重新加载失败：') + error.message); } }
-  const remove = event.target.closest('[data-extension-remove]'); if (remove) { try { await window.ops.removeExtension(remove.dataset.extensionRemove); invalidateViewCache(['extensions', 'profiles', 'sync']); await refreshExtensions(); } catch (error) { toast(error.message); } }
-  const windowButton = event.target.closest('[data-window]');
-  if (windowButton) {
-    const action = windowButton.dataset.window;
-    const buttons = $$('[data-window]');
-    const previous = buttons.find((button) => button.classList.contains('active')) || null;
-    buttons.forEach((button) => { button.disabled = true; });
-    const result = await runSyncAction('窗口操作', () => window.ops.windowAction(selectedSessionIds(), action));
-    buttons.forEach((button) => { button.disabled = false; });
-    buttons.forEach((button) => button.classList.toggle('active', result ? button === windowButton : button === previous));
-  }
-  const masterSelect = event.target.closest('[data-master-select]'); if (masterSelect && !syncState.active && selectedSessions.has(masterSelect.dataset.masterSelect)) { preferredMasterId = masterSelect.dataset.masterSelect; pushSyncSelection(); renderSessions(); }
-  const showWindow = event.target.closest('[data-show-window]'); if (showWindow) runSyncAction('\u663e\u793a\u7a97\u53e3', () => window.ops.windowAction([showWindow.dataset.showWindow], 'normal'));
-  const proxyCheck = event.target.closest('[data-proxy-check]'); if (proxyCheck) checkProfileProxy(proxyCheck.dataset.proxyCheck);
-  const consoleButton = event.target.closest('[data-console]'); if (consoleButton) { $$('.console-tabs button').forEach((button) => button.classList.toggle('active', button === consoleButton)); $$('.console-panel').forEach((panel) => panel.classList.toggle('active', panel.id === `console-${consoleButton.dataset.console}`)); }
-});
 
 document.addEventListener('focusin', (event) => {
   if (!openSelectMenu || openSelectMenu.settling) return;
@@ -4350,15 +3526,6 @@ document.addEventListener('close', (event) => {
   if (event.target instanceof HTMLDialogElement && openSelectMenu?.select.closest('dialog') === event.target) closeSelectMenu();
 }, true);
 
-document.addEventListener('change', async (event) => {
-  if (event.target.dataset.extensionToggle) {
-    const input = event.target; input.disabled = true;
-    try { toast(input.checked ? '正在批量启用扩展并重启运行环境...' : '正在批量停用扩展并重启运行环境...'); const result = await window.ops.toggleExtensionAll(input.dataset.extensionToggle, input.checked); invalidateViewCache(['extensions', 'profiles', 'sync']); await refreshExtensions(); await refreshStatus(); await refreshSessions(); toast(tx(`已${input.checked ? '启用' : '停用'}，影响 ${result.affected} 个环境，重启 ${result.restarted} 个`)); }
-    catch (error) { input.checked = !input.checked; toast(error.message); } finally { input.disabled = false; }
-  }
-  if (event.target.dataset.profileSelect) { event.target.checked ? selectedProfiles.add(event.target.dataset.profileSelect) : selectedProfiles.delete(event.target.dataset.profileSelect); updateProfileSelectionUi(); }
-  if (event.target.dataset.sessionSelect && !syncState.active) { event.target.checked ? selectedSessions.add(event.target.dataset.sessionSelect) : selectedSessions.delete(event.target.dataset.sessionSelect); if (!selectedSessions.has(preferredMasterId)) preferredMasterId = [...selectedSessions][0] || null; pushSyncSelection(); renderSessions(); }
-});
 
 $('#select-all-profiles').addEventListener('change', (event) => { for (const id of visibleProfilePageIds()) event.target.checked ? selectedProfiles.add(id) : selectedProfiles.delete(id); renderProfiles(); });
 $('#select-all-sessions').addEventListener('change', (event) => { if (syncState.active) return; const group = $('#sync-group').value || 'all'; const visible = group === 'all' ? sessions : sessions.filter((item) => String(item.profile?.tag || '未分组') === group); for (const item of visible) event.target.checked ? selectedSessions.add(item.id) : selectedSessions.delete(item.id); if (!selectedSessions.has(preferredMasterId)) preferredMasterId = [...selectedSessions][0] || null; pushSyncSelection(); renderSessions(); });
@@ -4386,47 +3553,6 @@ $('#profile-page-size').addEventListener('change', (event) => { const value = Nu
 $('#profile-prev').addEventListener('click', () => { profilePage = Math.max(1, profilePage - 1); renderProfiles(); });
 $('#profile-next').addEventListener('click', () => { profilePage += 1; renderProfiles(); });
 $('#profile-page').addEventListener('change', (event) => { profilePage = Math.max(1, Number.parseInt(event.target.value, 10) || 1); renderProfiles(); });
-function openCreateProfileDialog() {
-  fillGroupSelect($('#profile-create-group'), listGroups()[0]?.id || UNGROUPED_ID);
-  const directRadio = document.querySelector('input[name="create-network"][value="direct"]');
-  if (directRadio) directRadio.checked = true;
-  const proxyInput = $('#create-proxy-input');
-  if (proxyInput) proxyInput.value = '';
-  renderProxyLibrarySelect($('#create-proxy-library'), '');
-  renderProxyLibrarySelect($('#batch-add-proxy-library'), '');
-  const fields = $('#create-proxy-fields');
-  if (fields) fields.hidden = true;
-  const number = nextProfileNumber();
-  const form = $('#profile-form');
-  if (form?.elements?.name) {
-    form.elements.name.value = String(number);
-    form.elements.name.readOnly = true;
-  }
-  if (form?.elements?.startUrl) form.elements.startUrl.value = '';
-  const templateSelect = $('#profile-create-template');
-  if (templateSelect) {
-    templateSelect.replaceChildren();
-    const defaultOpt = document.createElement('option');
-    defaultOpt.value = '';
-    defaultOpt.textContent = tx('使用新环境默认偏好');
-    templateSelect.appendChild(defaultOpt);
-    for (const p of ui.profiles) {
-      const opt = document.createElement('option');
-      opt.value = p.id;
-      opt.textContent = `${displayProfileNumber(p)} - ${p.name || '环境'}${p.startUrl ? ' (' + p.startUrl + ')' : ''}`;
-      templateSelect.appendChild(opt);
-    }
-  }
-  const createProxyRaw = $('#create-proxy-raw');
-  if (createProxyRaw) createProxyRaw.value = '';
-  const createPlatform = $('#profile-create-platform');
-  if (createPlatform) createPlatform.value = 'other';
-  document.querySelectorAll('#profile-create-platform-chips .mini-chip').forEach((c) => c.classList.remove('active'));
-  const createSaveToLib = $('#create-proxy-save-to-library');
-  if (createSaveToLib) createSaveToLib.checked = false;
-  syncThemedSelects($('#profile-dialog'));
-  $('#profile-dialog')?.showModal();
-}
 $('#create-profile').addEventListener('click', openCreateProfileDialog); $('#quick-create').addEventListener('click', openCreateProfileDialog);
 
 // group filter chips
@@ -4598,9 +3724,6 @@ $$('[data-editor-tab]').forEach((button) => {
 setEditorTab('basic');
 $('#editor-back').addEventListener('click', () => { editingProfileId = null; editorNetworkResult = null; switchView('profiles'); });
 $('#editor-cancel').addEventListener('click', () => { editingProfileId = null; editorNetworkResult = null; switchView('profiles'); });
-$('#editor-test-proxy')?.addEventListener('click', testEditorProxy);
-$('#editor-apply-proxy-fp')?.addEventListener('click', applyEditorProxyFingerprint);
-$('#editor-refresh-proxy')?.addEventListener('click', refreshEditorProxy);
 $('#editor-system-defaults').addEventListener('click', useSystemEditorDefaults);
 const editorProxyFieldsSelector = '#editor-proxy-host,#editor-proxy-port,#editor-proxy-user,#editor-proxy-password,#editor-proxy-raw';
 const editorProxyGeneralSelector = '#editor-proxy-type,input[name="editor-network"],' + editorProxyFieldsSelector;
@@ -4652,47 +3775,6 @@ document.getElementById('editor-platform-type')?.addEventListener('change', () =
   renderEditorSummary?.();
 });
 
-function setupPlatformPresets(selectId, chipsId, inputId) {
-  const select = document.getElementById(selectId);
-  const chips = document.getElementById(chipsId);
-  const input = document.getElementById(inputId);
-  if (!select || !input) return;
-
-  const updateActiveChip = (platform) => {
-    if (!chips) return;
-    chips.querySelectorAll('.mini-chip').forEach((chip) => {
-      chip.classList.toggle('active', chip.dataset.platform === platform);
-    });
-  };
-
-  select.addEventListener('change', () => {
-    const opt = select.selectedOptions?.[0];
-    const url = opt?.getAttribute('data-url') ?? '';
-    const platform = select.value;
-    if (platform === 'blank') {
-      input.value = '';
-      input.placeholder = tx('空白页 (about:blank)');
-    } else if (url) {
-      input.value = url;
-    }
-    updateActiveChip(platform);
-  });
-
-  chips?.addEventListener('click', (e) => {
-    const chip = e.target.closest('.mini-chip');
-    if (!chip) return;
-    const url = chip.dataset.url ?? '';
-    const platform = chip.dataset.platform || 'other';
-    select.value = platform;
-    if (platform === 'blank') {
-      input.value = '';
-      input.placeholder = tx('空白页 (about:blank)');
-    } else if (url) {
-      input.value = url;
-    }
-    updateActiveChip(platform);
-  });
-}
 setupPlatformPresets('profile-create-platform', 'profile-create-platform-chips', 'profile-create-start-url');
 setupPlatformPresets('batch-add-platform', 'batch-add-platform-chips', 'batch-add-start-url');
 
@@ -5122,220 +4204,7 @@ $('#app-center-tabs')?.addEventListener('click', (event) => {
 });
 
 // ---- proxy library ----
-$('#proxy-create')?.addEventListener('click', () => openProxyDialog(null));
-$('#proxy-refresh')?.addEventListener('click', refreshProxies);
-$('#proxy-search')?.addEventListener('input', scheduleProxySearchRender);
-$('#proxy-select-all')?.addEventListener('change', (event) => {
-  const checked = event.target.checked;
-  const q = ($('#proxy-search')?.value || '').trim().toLowerCase();
-  const list = proxyLibrary.filter((item) => !q || [item.name, item.host, item.protocol, item.remark, item.lastIp, String(item.port)].join(' ').toLowerCase().includes(q));
-  for (const item of list) {
-    if (checked) selectedProxies.add(item.id); else selectedProxies.delete(item.id);
-  }
-  renderProxies();
-});
-$('#proxy-delete-selected')?.addEventListener('click', async () => {
-  const ids = [...selectedProxies];
-  if (!ids.length) return toast(tx('请先勾选代理'));
-  if (!await confirmAction({
-    title: tx('删除代理'),
-    message: tx(`确定删除选中的 ${ids.length} 条代理？`),
-    confirmLabel: tx('确认删除'),
-    tone: 'danger',
-  })) return;
-  try {
-    await window.ops.proxyDelete(ids);
-    ids.forEach((id) => selectedProxies.delete(id));
-    invalidateViewCache(['proxies', 'profiles']);
-    await refreshProxies();
-    toast('已删除 ' + ids.length + ' 条代理');
-    log('Proxy', '删除 ' + ids.length + ' 条');
-  } catch (error) { toast(error.message); }
-});
-$('#proxy-check-selected')?.addEventListener('click', async () => {
-  await runProxyBatchCheck([...selectedProxies]);
-});
-$('#proxy-check-all')?.addEventListener('click', async () => {
-  const ids = (proxyLibrary || []).map((item) => item.id);
-  if (!ids.length) return toast(tx('代理库为空'));
-  await runProxyBatchCheck(ids);
-});
-document.addEventListener('change', (event) => {
-  const box = event.target.closest('[data-proxy-select]');
-  if (!box) return;
-  if (box.checked) selectedProxies.add(box.dataset.proxySelect);
-  else selectedProxies.delete(box.dataset.proxySelect);
-});
-document.addEventListener('click', async (event) => {
-  const edit = event.target.closest('[data-proxy-edit]');
-  if (edit) {
-    const item = proxyLibrary.find((p) => p.id === edit.dataset.proxyEdit);
-    if (item) openProxyDialog(item);
-    return;
-  }
-  const del = event.target.closest('[data-proxy-delete]');
-  if (del) {
-    const id = del.dataset.proxyDelete;
-    if (!await confirmAction({
-      title: tx('删除代理'),
-      message: tx('确定删除该代理？'),
-      confirmLabel: tx('确认删除'),
-      tone: 'danger',
-    })) return;
-    try {
-      await window.ops.proxyDelete([id]);
-      selectedProxies.delete(id);
-      invalidateViewCache(['proxies', 'profiles']);
-      await refreshProxies();
-      toast(tx('已删除'));
-    } catch (error) { toast(error.message); }
-    return;
-  }
-  const test = event.target.closest('[data-proxy-test]');
-  if (test) {
-    const id = test.dataset.proxyTest;
-    try {
-      toast(tx('检测中…'));
-      const result = await window.ops.proxyCheck({ id });
-      invalidateViewCache('proxies');
-      await refreshProxies();
-      toast('连接成功 · ' + result.ip + (result.countryCode ? ' · ' + result.countryCode : ''));
-      log('Proxy', '检测 ' + id + ' → ' + result.ip);
-    } catch (error) { toast('检测失败：' + error.message); }
-    return;
-  }
-  const applyBtn = event.target.closest('[data-proxy-apply]');
-  if (applyBtn) {
-    const item = proxyLibrary.find((p) => p.id === applyBtn.dataset.proxyApply);
-    if (item) openProxyApplyDialog(item);
-    return;
-  }
-  const use = event.target.closest('[data-proxy-use]');
-  if (use) {
-    const item = proxyLibrary.find((p) => p.id === use.dataset.proxyUse);
-    if (!item) return;
-    openCreateProfileDialog();
-    renderProxyLibrarySelect($('#create-proxy-library'), item.id);
-    const librarySelect = $('#create-proxy-library');
-    if (librarySelect) librarySelect.value = item.id;
-    const proxyRadio = document.querySelector('input[name="create-network"][value="proxy"]');
-    if (proxyRadio) {
-      proxyRadio.checked = true;
-      proxyRadio.dispatchEvent(new Event('change', { bubbles: true }));
-    }
-    const type = $('#create-proxy-type');
-    if (type && item.protocol) type.value = item.protocol;
-    const input = $('#create-proxy-input') || document.querySelector('#profile-form input[name="proxy"]');
-    if (input) input.value = item.raw || `${item.host}:${item.port}`;
-    const fields = $('#create-proxy-fields');
-    if (fields) fields.hidden = false;
-    toast(tx('已切换为代理模式并关联代理库节点'));
-  }
-});
 
-$('#proxy-apply-select-all')?.addEventListener('change', (e) => {
-  const checked = e.target.checked;
-  const boxes = document.querySelectorAll('#proxy-apply-list input[type="checkbox"]');
-  boxes.forEach((b) => { b.checked = checked; });
-  const countEl = $('#proxy-apply-count');
-  if (countEl) countEl.textContent = `已选择 ${checked ? boxes.length : 0} 个环境`;
-});
-
-$('#proxy-apply-form')?.addEventListener('submit', async (event) => {
-  event.preventDefault();
-  if (event.submitter?.value === 'cancel') return $('#proxy-apply-dialog').close();
-  const proxyId = $('#proxy-apply-id')?.value;
-  const item = proxyLibraryItem(proxyId);
-  if (!item) return $('#proxy-apply-dialog').close();
-  const checkedIds = Array.from(document.querySelectorAll('#proxy-apply-list input[type="checkbox"]:checked')).map((el) => el.value);
-  if (!checkedIds.length) {
-    toast(tx('未选择任何环境'));
-    return $('#proxy-apply-dialog').close();
-  }
-  const proxyVal = item.raw || `${item.protocol || 'socks5'}://${item.username ? encodeURIComponent(item.username) + ':' + encodeURIComponent(item.password || '') + '@' : ''}${item.host}:${item.port}`;
-  let modified = 0;
-  for (const pid of checkedIds) {
-    const idx = ui.profiles.findIndex((p) => p.id === pid);
-    if (idx >= 0) {
-      ui.profiles[idx].networkMode = 'proxy';
-      ui.profiles[idx].proxy = proxyVal;
-      ui.profiles[idx].proxyId = item.id;
-      ui.profiles[idx].proxyMeta = { ...(ui.profiles[idx].proxyMeta || {}), proxyId: item.id };
-      modified++;
-    }
-  }
-  save();
-  invalidateViewCache(['proxies', 'profiles']);
-  try {
-    engineProfiles = await window.ops.syncProfiles(ui.profiles);
-    renderProfiles();
-    $('#proxy-apply-dialog').close();
-    toast(`已成功应用代理到 ${modified} 个环境`);
-    log('Proxy', `应用代理 ${item.name || item.host} 到 ${modified} 个环境`);
-  } catch (err) {
-    toast('应用失败：' + err.message);
-  }
-});
-
-$('#proxy-dialog-test')?.addEventListener('click', async () => {
-  const output = $('#proxy-dialog-result');
-  try {
-    const draft = readProxyForm();
-    output.className = 'proxy-test-result';
-    output.textContent = tx('正在检测…');
-    let proxyValue = draft.raw;
-    if (!proxyValue && draft.host && Number.isInteger(draft.port) && draft.port > 0 && draft.port <= 65535) {
-      const auth = draft.username ? `${encodeURIComponent(draft.username)}:${encodeURIComponent(draft.password || '')}@` : '';
-      proxyValue = `${draft.protocol || 'socks5'}://${auth}${draft.host}:${draft.port}`;
-    }
-    if (!proxyValue) throw new Error(tx('请先填写主机和端口'));
-    const result = await window.ops.proxyCheck(draft.id ? { id: draft.id } : { proxy: proxyValue, ...draft });
-    output.className = 'proxy-test-result success';
-    output.textContent = tx('连接成功 · ') + result.ip + (result.countryCode ? ' · ' + result.countryCode : '');
-    if (draft.id) await refreshProxies();
-  } catch (error) {
-    output.className = 'proxy-test-result error';
-    output.textContent = tx('检测失败 · ') + error.message;
-  }
-});
-$('#proxy-user')?.addEventListener('input', () => { window.__proxyAuthFieldsTouched = true; });
-$('#proxy-password')?.addEventListener('input', () => { window.__proxyAuthFieldsTouched = true; });
-
-['input', 'change'].forEach((evt) => {
-  $('#proxy-raw')?.addEventListener(evt, handleProxyRawChange);
-});
-$('#proxy-raw')?.addEventListener('paste', () => {
-  setTimeout(handleProxyRawChange, 0);
-});
-
-$('#proxy-name')?.addEventListener('input', () => { delete $('#proxy-name').dataset.autoProxyName; });
-
-
-['input', 'change'].forEach((evt) => {
-  $('#proxy-host')?.addEventListener(evt, handleProxyHostChange);
-});
-$('#proxy-host')?.addEventListener('paste', () => {
-  setTimeout(handleProxyHostChange, 0);
-});
-$('#proxy-form')?.addEventListener('submit', async (event) => {
-  event.preventDefault();
-  const submitter = event.submitter;
-  if (submitter?.value === 'cancel') return $('#proxy-dialog').close('cancel');
-  if (submitter && submitter.id !== 'proxy-dialog-save' && submitter.value !== 'default') return;
-  try {
-    const draft = readProxyForm();
-    if (draft.id) await window.ops.proxyUpdate(draft);
-    else await window.ops.proxyCreate(draft);
-    $('#proxy-dialog').close();
-    invalidateViewCache(['proxies', 'profiles']);
-    await refreshProxies();
-    toast(draft.id ? '代理已更新' : '代理已创建');
-    log('Proxy', (draft.id ? '更新 ' : '新建 ') + (draft.name || draft.host));
-  } catch (error) {
-    toast('保存失败：' + error.message);
-  }
-});
-$('#proxy-dialog')?.addEventListener('close', () => { editingProxyRecord = null; });
 
 $('#profile-create-template')?.addEventListener('change', (event) => {
   const selectedId = event.target.value;
@@ -5472,93 +4341,6 @@ $('#batch-add-template')?.addEventListener('change', (event) => {
   toast(tx('已沿用所选环境偏好设置'));
 });
 
-$('#create-proxy-raw')?.addEventListener('input', () => {
-  const raw = $('#create-proxy-raw').value.trim();
-  if (!raw) return;
-  try {
-    const parsed = parseProxyInputForUi(raw, $('#create-proxy-type')?.value || 'socks5');
-    if (!parsed) return;
-    if ($('#create-proxy-type')) $('#create-proxy-type').value = parsed.protocol;
-    if ($('#create-proxy-host')) $('#create-proxy-host').value = parsed.host;
-    if ($('#create-proxy-port')) $('#create-proxy-port').value = parsed.port;
-    if ($('#create-proxy-user')) $('#create-proxy-user').value = parsed.username;
-    if ($('#create-proxy-password')) $('#create-proxy-password').value = parsed.password;
-    const input = $('#create-proxy-input') || document.querySelector('#profile-form input[name="proxy"]');
-    if (input) input.value = parsed.raw;
-    const library = $('#create-proxy-library');
-    if (library) library.value = '';
-    syncThemedSelects($('#profile-dialog'));
-  } catch (_) {}
-});
-
-$('#create-proxy-host')?.addEventListener('input', () => {
-  const value = $('#create-proxy-host').value.trim();
-  if (!value || (!value.includes(':') && !value.includes('@') && !value.includes('/'))) return;
-  try {
-    const parsed = parseProxyInputForUi(value, $('#create-proxy-type')?.value || 'socks5');
-    if (!parsed) return;
-    if ($('#create-proxy-type')) $('#create-proxy-type').value = parsed.protocol;
-    $('#create-proxy-host').value = parsed.host;
-    if (parsed.port && $('#create-proxy-port')) $('#create-proxy-port').value = parsed.port;
-    if (parsed.username && $('#create-proxy-user')) $('#create-proxy-user').value = parsed.username;
-    if (parsed.password && $('#create-proxy-password')) $('#create-proxy-password').value = parsed.password;
-    if ($('#create-proxy-raw')) $('#create-proxy-raw').value = parsed.raw;
-    const input = $('#create-proxy-input') || document.querySelector('#profile-form input[name="proxy"]');
-    if (input) input.value = parsed.raw;
-    const library = $('#create-proxy-library');
-    if (library) library.value = '';
-    syncThemedSelects($('#profile-dialog'));
-  } catch (_) {}
-});
-
-$('#editor-proxy-raw')?.addEventListener('input', () => {
-  const raw = $('#editor-proxy-raw').value.trim();
-  if (!raw) return;
-  try {
-    const parsed = parseProxyInputForUi(raw, $('#editor-proxy-type')?.value || 'socks5');
-    if (!parsed) return;
-    if ($('#editor-proxy-type')) $('#editor-proxy-type').value = parsed.protocol;
-    if ($('#editor-proxy-host')) $('#editor-proxy-host').value = parsed.host;
-    if ($('#editor-proxy-port')) $('#editor-proxy-port').value = parsed.port;
-    if ($('#editor-proxy-user')) $('#editor-proxy-user').value = parsed.username;
-    if ($('#editor-proxy-password')) $('#editor-proxy-password').value = parsed.password;
-    const library = $('#editor-proxy-library');
-    if (library) library.value = '';
-    const status = $('#editor-proxy-library-status');
-    if (status) status.textContent = '未关联代理库节点（使用快捷粘贴代理）';
-    window.__editorProxyAuthTouched = true;
-    syncThemedSelects($('#editor-proxy-fields'));
-  } catch (_) {}
-});
-
-$('#editor-proxy-host')?.addEventListener('input', () => {
-  const value = $('#editor-proxy-host').value.trim();
-  if (!value || (!value.includes(':') && !value.includes('@') && !value.includes('/'))) return;
-  try {
-    const parsed = parseProxyInputForUi(value, $('#editor-proxy-type')?.value || 'socks5');
-    if (!parsed) return;
-    if ($('#editor-proxy-type')) $('#editor-proxy-type').value = parsed.protocol;
-    $('#editor-proxy-host').value = parsed.host;
-    if (parsed.port && $('#editor-proxy-port')) $('#editor-proxy-port').value = parsed.port;
-    if (parsed.username && $('#editor-proxy-user')) {
-      $('#editor-proxy-user').value = parsed.username;
-      window.__editorProxyAuthTouched = true;
-    }
-    if (parsed.password && $('#editor-proxy-password')) {
-      $('#editor-proxy-password').value = parsed.password;
-      window.__editorProxyAuthTouched = true;
-    }
-    if ($('#editor-proxy-raw')) $('#editor-proxy-raw').value = parsed.raw;
-    const library = $('#editor-proxy-library');
-    if (library) library.value = '';
-    const status = $('#editor-proxy-library-status');
-    if (status) status.textContent = '未关联代理库节点（使用快捷粘贴代理）';
-    syncThemedSelects($('#editor-proxy-fields'));
-  } catch (_) {}
-});
-
-$('#editor-proxy-user')?.addEventListener('input', () => { window.__editorProxyAuthTouched = true; });
-$('#editor-proxy-password')?.addEventListener('input', () => { window.__editorProxyAuthTouched = true; });
 
 async function handleQuickPasteToInput(targetInputSelector) {
   try {
@@ -5585,143 +4367,7 @@ async function handleQuickPasteToInput(targetInputSelector) {
   }
 }
 
-$('#proxy-raw-paste-btn')?.addEventListener('click', () => handleQuickPasteToInput('#proxy-raw'));
-$('#create-proxy-raw-paste-btn')?.addEventListener('click', () => handleQuickPasteToInput('#create-proxy-raw'));
-$('#editor-proxy-raw-paste-btn')?.addEventListener('click', () => handleQuickPasteToInput('#editor-proxy-raw'));
-$('#editor-proxy-import-and-bind-btn')?.addEventListener('click', async () => {
-  const rawInput = ($('#editor-proxy-raw')?.value || '').trim();
-  const formProtocol = $('#editor-proxy-type')?.value || 'socks5';
-  const formHost = ($('#editor-proxy-host')?.value || '').trim();
-  const formPort = ($('#editor-proxy-port')?.value || '').trim();
-  const formUser = $('#editor-proxy-user')?.value || '';
-  const formPass = $('#editor-proxy-password')?.value || '';
 
-  const fallbackRaw = formHost && formPort
-    ? buildProxyUiValue({ protocol: formProtocol, host: formHost, port: formPort, username: formUser, password: formPass })
-    : '';
-  const targetRaw = rawInput || fallbackRaw;
-  if (!targetRaw) return toast(tx('请先输入或快捷粘贴代理信息'));
-
-  const parsed = parseProxyInputForUi(targetRaw, formProtocol);
-  if (!parsed || !parsed.host || !parsed.port) return toast(tx('代理格式不正确，缺少主机或端口'));
-
-  try {
-    const current = ui.profiles.find((p) => p.id === editingProfileId) || {};
-    const profNumber = displayProfileNumber(current) || '';
-    const name = parsed.name || (profNumber ? `环境${profNumber}-代理` : `代理-${parsed.host}:${parsed.port}`);
-    const created = await window.ops.proxyCreate({
-      name,
-      protocol: parsed.protocol || 'socks5',
-      host: parsed.host,
-      port: Number(parsed.port),
-      username: parsed.username || '',
-      password: parsed.password || '',
-      raw: parsed.raw || targetRaw,
-      remark: parsed.remark || (profNumber ? `由环境${profNumber}入库并绑定` : '快捷入库'),
-      ipChannel: $('#editor-ip-channel')?.value || 'ip-api',
-    });
-
-    invalidateViewCache(['proxies', 'profiles']);
-    await refreshProxies();
-    if (created?.id) {
-      applyProxyLibrarySelection('editor', created.id);
-      if (editingProfileId) {
-        const idx = ui.profiles.findIndex((p) => p.id === editingProfileId);
-        if (idx >= 0) {
-          ui.profiles[idx] = normalizeProxyAssociationForUi(ui.profiles[idx], created.id);
-          save();
-        }
-      }
-      toast(tx('代理已存入代理库并绑定当前环境'));
-    }
-  } catch (error) {
-    toast(tx('入库并绑定失败：') + error.message);
-  }
-});
-
-$('#create-proxy-input')?.addEventListener('input', () => {
-  const val = $('#create-proxy-input').value.trim();
-  if (!val) return;
-  try {
-    const parsed = parseProxyInputForUi(val, $('#create-proxy-type')?.value || 'socks5');
-    if (!parsed) return;
-    if ($('#create-proxy-type')) $('#create-proxy-type').value = parsed.protocol;
-    if ($('#create-proxy-host')) $('#create-proxy-host').value = parsed.host;
-    if ($('#create-proxy-port')) $('#create-proxy-port').value = parsed.port;
-    if ($('#create-proxy-user')) $('#create-proxy-user').value = parsed.username;
-    if ($('#create-proxy-password')) $('#create-proxy-password').value = parsed.password;
-    if ($('#create-proxy-raw')) $('#create-proxy-raw').value = parsed.raw;
-    syncThemedSelects($('#profile-dialog'));
-  } catch (_) {}
-});
-
-$('#proxy-batch-import-btn')?.addEventListener('click', () => {
-  $('#proxy-batch-import-text').value = '';
-  syncThemedSelects($('#proxy-batch-import-dialog'));
-  $('#proxy-batch-import-dialog')?.showModal();
-});
-
-$('#proxy-batch-import-form')?.addEventListener('submit', async (event) => {
-  event.preventDefault();
-  if (event.submitter?.value === 'cancel') return $('#proxy-batch-import-dialog').close('cancel');
-  const text = $('#proxy-batch-import-text')?.value || '';
-  const lines = text.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('//') && !l.startsWith('#'));
-  if (!lines.length) return toast(tx('请输入要导入的代理'));
-  const defaultProtocol = $('#proxy-batch-default-protocol')?.value || 'socks5';
-  const ipChannel = $('#proxy-batch-ip-channel')?.value || 'ip-api';
-  let successCount = 0;
-  let failCount = 0;
-  for (const line of lines) {
-    try {
-      const parsed = parseProxyInputForUi(line, defaultProtocol);
-      if (!parsed || !parsed.host || !parsed.port) {
-        failCount++;
-        continue;
-      }
-      const draft = {
-        name: parsed.name || `${parsed.protocol.toUpperCase()} ${parsed.host}:${parsed.port}`,
-        protocol: parsed.protocol,
-        ipChannel,
-        host: parsed.host,
-        port: Number(parsed.port),
-        username: parsed.username || '',
-        password: parsed.password || '',
-        raw: parsed.raw,
-        remark: parsed.remark || '',
-      };
-      await window.ops.proxyCreate(draft);
-      successCount++;
-    } catch (_) {
-      failCount++;
-    }
-  }
-  $('#proxy-batch-import-dialog').close();
-  invalidateViewCache(['proxies', 'profiles']);
-  await refreshProxies();
-  toast(tx(`批量导入完成：成功 ${successCount} 个` + (failCount ? `，失败 ${failCount} 个` : '')));
-  log('Proxy', `批量导入代理完成：${successCount} 成功，${failCount} 失败`);
-});
-
-document.addEventListener('click', async (event) => {
-  const install = event.target.closest('[data-store-install]');
-  if (!install) return;
-  const url = install.dataset.storeInstall;
-  if (!url) return;
-  try {
-    toast(tx('正在从 Chrome 应用商店安装…'));
-    const ids = ui.profiles.map((item) => item.id);
-    const result = await window.ops.addExtensionStore(url.includes('://') ? url : `https://chromewebstore.google.com/detail/${url}`, ids, true);
-    invalidateViewCache(['extensions', 'profiles', 'sync']);
-    await refreshExtensions();
-    await refreshStatus();
-    await refreshSessions();
-    toast(tx(`已安装 ${result.extension?.name || '扩展'}`));
-    log('Extension', `推荐安装 ${result.extension?.name || url}`);
-  } catch (error) {
-    toast('安装失败：' + error.message);
-    log('Error', error.message);
-  }
-});
 $('#assign-extension').addEventListener('click', (event) => { event.preventDefault(); applyAssignment(true); }); $('#unassign-extension').addEventListener('click', (event) => { event.preventDefault(); applyAssignment(false); });
 $('#refresh-sessions').addEventListener('click', refreshSessions);
 $('#start-sync').addEventListener('click', () => { invalidateViewCache('sync'); return runSyncAction('\u542f\u52a8\u540c\u6b65', () => window.ops.startSync(selectedSessionIds(2))); });
@@ -6069,17 +4715,6 @@ $('#batch-import-file').addEventListener('change', async (event) => {
 });
 
 
-$('#batch-set-direct')?.addEventListener('click', async () => {
-  if (!selectedProfiles.size) return toast(tx('请先选择环境'));
-  try {
-    const result = await applySelectedNetworkMode('direct', { restart: true });
-    log('Batch', '批量设为本地直连 · ' + result.count);
-    toast('已将 ' + result.count + ' 个环境设为本地直连');
-  } catch (error) {
-    toast(error.message);
-  }
-});
-
 $('#batch-update').addEventListener('click', () => {
   if (!selectedProfiles.size) return toast(tx('请先选择环境'));
   const proxyRadio = document.querySelector('input[name="batch-update-network"][value="proxy"]');
@@ -6155,6 +4790,31 @@ window.displayProfileNumber = displayProfileNumber;
 window.updateEngineBadge = updateEngineBadge;
 window.afterUiRender = afterUiRender;
 window.syncThemedSelects = syncThemedSelects;
+// Editor/proxy glue whose only remaining callers live in ui/ui-editor.js and
+// ui/ui-proxy.js; exported here explicitly so the cross-file contract stays
+// visible (they are already script globals via their declarations).
+window.parseEditorProxy = parseEditorProxy;
+window.splitProxyRemarkForUi = splitProxyRemarkForUi;
+window.editorCheck = editorCheck;
+window.serializeEditorProxy = serializeEditorProxy;
+window.editorResolution = editorResolution;
+window.editorCookies = editorCookies;
+window.renderProxyLibrarySelectors = renderProxyLibrarySelectors;
+window.normalizedProxyType = normalizedProxyType;
+// Proxy/session actions whose only remaining callers are the event handlers in
+// ui/ui-proxy-wiring.js (and the editor domain module); exported explicitly so
+// the cross-file contract stays visible.
+window.testEditorProxy = testEditorProxy;
+window.applyEditorProxyFingerprint = applyEditorProxyFingerprint;
+window.refreshEditorProxy = refreshEditorProxy;
+window.checkProfileProxy = checkProfileProxy;
+window.handleQuickPasteToInput = handleQuickPasteToInput;
+window.installProxyTypeControl = installProxyTypeControl;
+window.normalizeProxyAssociationForUi = normalizeProxyAssociationForUi;
+window.openAssign = openAssign;
+window.purgeProfile = purgeProfile;
+window.restoreProfile = restoreProfile;
+window.cloneProfile = cloneProfile;
 
 // Submodules extracted to ui/:
 // - ui/ui-rpa.js (RPA flow execution & template catalog)

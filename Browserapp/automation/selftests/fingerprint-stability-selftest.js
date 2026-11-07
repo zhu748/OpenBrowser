@@ -332,7 +332,9 @@ async function main() {
   assert.ok(fpSrc.includes('createBatteryFromSeed'));
 
   // frontend ↔ backend field wiring (editor collect / fill / normalize)
-  const rendererSrc = fs.readFileSync(path.join(__dirname, '../../renderer.js'), 'utf8');
+  // The editor domain functions (editorDraft / openProfileEditor / normalize…) moved
+  // to the ui/ui-editor.js module loaded before renderer.js.
+  const editorSrc = fs.readFileSync(path.join(__dirname, '../../ui/ui-editor.js'), 'utf8');
   const htmlSrc = fs.readFileSync(path.join(__dirname, '../../index.html'), 'utf8');
   for (const id of [
     'editor-stability-mode',
@@ -370,11 +372,11 @@ async function main() {
     "requireReady: proxyMeta.requireReady !== false",
     "apiExtractUrl: String(proxyMeta.apiExtractUrl || '')",
   ]) {
-    assert.ok(rendererSrc.includes(needle), 'renderer wiring missing: ' + needle);
+    assert.ok(editorSrc.includes(needle), 'editor wiring missing: ' + needle);
   }
   assert.ok(htmlSrc.includes('id="editor-proxy-require-ready" type="checkbox" checked disabled'), 'require-ready control must render as locked-on (fail-closed)');
   assert.ok(htmlSrc.includes('id="editor-proxy-not-ready-policy" disabled'), 'not-ready-policy control must render as disabled (fail-closed)');
-  assert.ok(!rendererSrc.includes("apiExtractUrl: String(proxyMeta.apiExtractUrl || proxyMeta.refreshUrl || '')"), 'renderer must not bleed refreshUrl into apiExtractUrl');
+  assert.ok(!editorSrc.includes("apiExtractUrl: String(proxyMeta.apiExtractUrl || proxyMeta.refreshUrl || '')"), 'editor must not bleed refreshUrl into apiExtractUrl');
 
   console.log('FINGERPRINT_STABILITY_SELFTEST_OK host=1 schema=1 inject=1 proxy-policy=1 hamming=1 tls=1 scrub=1 fe-be=1');
 }
