@@ -89,8 +89,10 @@ function main() {
   assert.ok(serverSrc.includes('webglVendor'), 'expectedFingerprint should include webglVendor');
 
   // --- buildStartPageUrl passes expectedFingerprint from buildFingerprint ---
-  assert.ok(engineSrc.includes('expectedFingerprint:'), 'engine buildStartPageUrl must pass expectedFingerprint');
-  assert.ok(engineSrc.includes('webglVendor:'), 'engine expected includes webgl vendor');
+  // buildStartPageUrl moved to the engine/start-page.js mixin; the markers read the mixin.
+  const startPageSrc = fs.readFileSync(path.join(__dirname, 'engine', 'start-page.js'), 'utf8');
+  assert.ok(startPageSrc.includes('expectedFingerprint:'), 'engine buildStartPageUrl must pass expectedFingerprint');
+  assert.ok(startPageSrc.includes('webglVendor:'), 'engine expected includes webgl vendor');
 
   // --- 148 native inject: pixel noise off, meta spoof on ---
   const fp = buildFingerprint({

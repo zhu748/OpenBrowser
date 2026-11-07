@@ -71,7 +71,9 @@ function main() {
   assert.ok(!/killProcessTree\([^)]*expectedExecutable:\s*(item\.browser|browser)\.path/.test(killSources), 'must not pass only browser.path as expectedExecutable');
   assert.ok(startSrc.includes('isOpenBrowser148(browser)'), 'Dock shell only for openbrowser-148');
   assert.ok(candidatesSrc.includes('ipc-stub\\\\.py') || candidatesSrc.includes('ipc-stub\\.py'), 'pkill pattern must be anchored');
-  assert.ok(engineSrc.includes('preferredId'), 'keepDefaultTab must retain navigated tab id');
+  // keepDefaultTab moved to the engine/start-page.js mixin; the marker reads the mixin.
+  const startPageSrc = fs.readFileSync(path.join(__dirname, 'engine', 'start-page.js'), 'utf8');
+  assert.ok(startPageSrc.includes('preferredId'), 'keepDefaultTab must retain navigated tab id');
 
   // --- env-icon: xml escape + no loose pkill ---
   assert.ok(envIcon.includes('xmlEscape'), 'Info.plist patch must XML-escape display name');

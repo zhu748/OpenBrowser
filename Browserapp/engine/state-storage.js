@@ -8,6 +8,11 @@ const credentialCrypto = require("../credential-crypto");
 
 const TRANSIENT_WRITE_ERRORS = new Set(["ENOENT", "EEXIST", "EINVAL", "EBUSY", "EAGAIN"]);
 
+// Engine state / lockfile policy version. Bumping invalidates persisted engine
+// state and stored lock metadata written by older policies (compared on init
+// and on proxy-store hydration in engine.js / engine/init.js).
+const KERNEL_POLICY_VERSION = 4;
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -107,6 +112,7 @@ async function preserveCorruptEngineState(filePath) {
 }
 
 module.exports = {
+  KERNEL_POLICY_VERSION,
   writeRawAtomically,
   writeJsonAtomically,
   readEngineStateCandidate,

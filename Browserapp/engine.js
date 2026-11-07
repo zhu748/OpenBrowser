@@ -3,7 +3,6 @@ const fsp = require('fs/promises');
 const path = require('path');
 const crypto = require('crypto');
 const os = require('os');
-const { ProfileStoreSqlite } = require('./automation/profile-store-sqlite');
 const { pathToFileURL } = require('url');
 const { spawn } = require('child_process');
 const cdp = require('./cdp');
@@ -16,24 +15,17 @@ try {
 }
 const {
   parseProxy = (v) => ({ protocol: 'direct', host: '', port: 0 }),
-  lookupDirectCountry = async () => ({ ip: '', country: '', countryCode: '' }),
 } = proxyForwarderModule;
-const { resolveProfileLanguage, resolveProfileTimezone, localeFromCountryCode } = require('./automation/locale-from-country');
 const { applyLanguagePreferences, verifyLanguagePreferences, syncProfileLocalState } = require('./automation/profile-file-consistency');
-const { toFileUrl, killProcessTree } = require('./automation/protocol/cross-platform');
 const { platformPreflight } = require('./automation/platform-preflight');
-const { buildFingerprint, buildWorkerInjectionScript, applyFingerprintToTab } = require('./automation/fingerprint');
+const { buildWorkerInjectionScript } = require('./automation/fingerprint');
+const { ensureStartPageServer } = require('./automation/start-page-server');
+const { killProcessTree } = require('./automation/protocol/cross-platform');
 const isolation = require('./automation/isolation');
 const { lockPath, releaseProfileLock, scanProcessesUsingProfile, isPidAlive, auditIsolation, isSystemBrowserExecutable, isPathInsideOrEqual, validateDataRootIsolationSecure, assertProfileId, assertSafeProfileChild } = isolation;
 const { BrowserKernelManager } = require('./automation/browser-kernel');
-const { ensureStartPageServer, getStartPageServer } = require('./automation/start-page-server');
 const {
 } = require('./automation/kernel-init-sync');
-const { fpLog, summarizeFp, LIVE_PROBE_EXPRESSION, logPath: fingerprintLogPath } = require('./automation/fingerprint-debug-log');
-const { buildPortScanProtectionScript } = require('./automation/port-scan-protection');
-const { buildWorkerFontPresenceSource } = require('./automation/worker-font-presence-fallback');
-const { createCssFontResponseRewriter } = require('./automation/css-font-response-rewrite');
-const { deriveFontPlaceholder } = require('./automation/font-placeholder');
 const userAgentModule = require('./automation/user-agent');
 if (!userAgentModule.__navigatorProtoHardened) {
   userAgentModule.__navigatorProtoHardened = true;
@@ -54,26 +46,17 @@ if (!userAgentModule.__navigatorProtoHardened) {
     };
   }
 }
-const { buildUaProfile, cdpUserAgentOverride, buildAcceptLanguageHeader } = require('./automation/user-agent');
-const { sanitizeUrlForLog } = require('./automation/log-sanitizer');
-const { getPlatformFontPayload } = require('./automation/query-local-font-blob-gate');
 
 
-const { fingerprintConfigHash, isEphemeralDocumentUrl } = require('./engine/fingerprint-injection');
 
-const KERNEL_POLICY_VERSION = 4;
 const STOP_ALL_ITEM_TIMEOUT_MS = process.platform === 'win32' ? 22000 : 12000;
 
 const {
   isChildExited,
   removeSingletonFiles,
   lifecycleTimeout,
-  parsedProxy,
   proxyHasCredentials,
-  hasExplicitScheme,
   sameProxyEndpoint,
-  sameProxyIdentity,
-  ownAliasValue,
   profileProxyAssociation,
   normalizedProxyAssociationId,
   managedBrowserKillOptions,
@@ -82,11 +65,9 @@ const {
   formatBrowserStartupError,
   writeBrowserStartupDiagnostic,
   stopIpcStubForWindow,
+  KERNEL_POLICY_VERSION,
   writeRawAtomically,
   writeJsonAtomically,
-  readEngineStateCandidate,
-  engineStateRecoveryCandidates,
-  preserveCorruptEngineState,
   assertExtensionTreeSafe,
   sanitizeProfile: sanitizeProfileData,
 } = require("./engine/index");
@@ -245,148 +226,6 @@ class BrowserEngine {
 
   systemBrowserCandidates() {
     return systemBrowserCandidatesForPlatform();
-  }
-
-  async init(bundledExtensionPath) {
-    await this.kernelManager.loadMeta();
-    let migrateKernelPolicy = false;
-    let recoveredState = false;
-
-    if (ProfileStoreSqlite.isSupported()) {
-      try {
-        const sqlite = new ProfileStoreSqlite({
-          dbPath: this.dbFile,
-          legacyJsonPath: this.stateFile,
-          wal: true,
-          backupOldJson: true,
-        });
-        const initRes = await sqlite.init();
-        this.sqliteStore = sqlite;
-        this.usingSqlite = true;
-        if (initRes.migrated) {
-          this.emit({ type: 'storage-migrated', engine: 'sqlite' });
-        }
-      } catch (err) {
-        console.warn(`[BrowserEngine] SQLite initialization failed, falling back to legacy JSON: ${err.message}`);
-        this.sqliteStore = null;
-        this.usingSqlite = false;
-      }
-    }
-
-    if (this.usingSqlite && this.sqliteStore) {
-      const extensions = this.sqliteStore.listExtensions();
-      for (const extension of extensions) {
-        if (fs.existsSync(extension.path)) {
-          try {
-            const refreshed = await this.readExtension(extension.path, Boolean(extension.builtIn));
-            refreshed.addedAt = extension.addedAt || refreshed.addedAt;
-            this.extensions.set(refreshed.id, refreshed);
-          } catch (_) {
-            this.extensions.set(extension.id, extension);
-          }
-        }
-      }
-      const assignments = this.sqliteStore.getAssignments();
-      for (const [profileId, ids] of assignments.entries()) {
-        this.assignments.set(profileId, ids);
-      }
-      const loadedProfiles = this.sqliteStore.getAllProfiles();
-      for (const raw of loadedProfiles.slice(0, 1000)) {
-        try {
-          const profile = this.sanitizeProfile(raw);
-          this.profiles.set(profile.id, profile);
-        } catch (_) {}
-      }
-      const meta = this.sqliteStore.getAllMeta();
-      if (typeof meta.preferIndependentKernel === 'boolean') {
-        this.preferIndependentKernel = meta.preferIndependentKernel;
-      }
-      if (meta.kernelPolicyVersion !== KERNEL_POLICY_VERSION) {
-        this.allowSystemBrowserFallback = false;
-        this.systemBrowserPath = null;
-        migrateKernelPolicy = true;
-      } else if (typeof meta.allowSystemBrowserFallback === 'boolean') {
-        this.allowSystemBrowserFallback = meta.allowSystemBrowserFallback;
-        if (typeof meta.systemBrowserPath === 'string') {
-          this.systemBrowserPath = meta.systemBrowserPath;
-        }
-      }
-    } else {
-      let state = null;
-      let primaryStateError = null;
-      try {
-        state = await readEngineStateCandidate(this.stateFile);
-      } catch (error) {
-        primaryStateError = error;
-      }
-      if (!state) {
-        const recovery = await engineStateRecoveryCandidates(this.stateFile);
-        if (recovery.length) {
-          state = recovery[0];
-          recoveredState = true;
-          if (primaryStateError && primaryStateError.code !== 'ENOENT') {
-            await preserveCorruptEngineState(this.stateFile);
-          }
-        }
-      }
-      if (!state && primaryStateError && primaryStateError.code !== 'ENOENT') {
-        throw new Error(`引擎状态文件损坏且没有可用备份: ${primaryStateError.message || primaryStateError}`);
-      }
-      if (state) {
-        const saved = state.saved;
-        for (const extension of saved.extensions || []) {
-          if (fs.existsSync(extension.path)) {
-            try {
-              const refreshed = await this.readExtension(extension.path, Boolean(extension.builtIn));
-              refreshed.addedAt = extension.addedAt || refreshed.addedAt;
-              this.extensions.set(refreshed.id, refreshed);
-            } catch (_) {
-              this.extensions.set(extension.id, extension);
-            }
-          }
-        }
-        for (const [profileId, ids] of Object.entries(saved.assignments || {})) this.assignments.set(profileId, new Set(ids));
-        // Profiles (incl. cookies / proxy auth / platform secrets) live in main-process state,
-        // not renderer localStorage, so XSS cannot dump them from the UI store.
-        if (Array.isArray(saved.profiles)) {
-          for (const raw of saved.profiles.slice(0, 1000)) {
-            try {
-              const profile = this.sanitizeProfile(raw);
-              this.profiles.set(profile.id, profile);
-            } catch (_) {}
-          }
-        }
-        if (typeof saved.preferIndependentKernel === 'boolean') this.preferIndependentKernel = saved.preferIndependentKernel;
-        if (saved.kernelPolicyVersion !== KERNEL_POLICY_VERSION) {
-          // Prior releases could select a system browser implicitly. Migrate to
-          // the explicit-selection policy and keep fallback disabled by default.
-          this.allowSystemBrowserFallback = false;
-          this.systemBrowserPath = null;
-          migrateKernelPolicy = true;
-        } else if (typeof saved.allowSystemBrowserFallback === 'boolean') {
-          this.allowSystemBrowserFallback = saved.allowSystemBrowserFallback;
-          if (typeof saved.systemBrowserPath === 'string') this.systemBrowserPath = saved.systemBrowserPath;
-        }
-      }
-    }
-    if (bundledExtensionPath && fs.existsSync(path.join(bundledExtensionPath, 'manifest.json'))) {
-      const builtIn = await this.readExtension(bundledExtensionPath, true);
-      const obsoleteBuiltInIds = [...this.extensions.values()]
-        .filter((extension) => extension.builtIn && path.basename(extension.path) === 'bundled-extension' && extension.id !== builtIn.id)
-        .map((extension) => extension.id);
-
-      if (obsoleteBuiltInIds.length) {
-        for (const assigned of this.assignments.values()) {
-          const hadOldMarker = obsoleteBuiltInIds.some((id) => assigned.has(id));
-          for (const id of obsoleteBuiltInIds) assigned.delete(id);
-          if (hadOldMarker) assigned.add(builtIn.id);
-        }
-        for (const id of obsoleteBuiltInIds) this.extensions.delete(id);
-      }
-      this.extensions.set(builtIn.id, builtIn);
-      await this.persist();
-    }
-    if (migrateKernelPolicy || recoveredState) await this.persist();
   }
 
   resolveStoredProxyProfile(incoming) {
@@ -889,203 +728,6 @@ class BrowserEngine {
     return urls.slice(0, 20);
   }
 
-  async applyRuntimeSettings(port, profile, fingerprint = null, options = {}) {
-    const phase = String(options.phase || 'applyRuntimeSettings');
-    const tabs = await cdp.tabs(port);
-    const network = this.networkInfo.get(profile.id) || {};
-    // merge IP-detected geo/tz into profile for fingerprint apply
-    const enriched = {
-      ...profile,
-      exitTimezone: profile.exitTimezone || network.timezone || '',
-      exitLatitude: profile.exitLatitude ?? network.latitude,
-      exitLongitude: profile.exitLongitude ?? network.longitude,
-    };
-    const fp = fingerprint || buildFingerprint(enriched);
-    const fpHash = fingerprintConfigHash(fp);
-    // Track which CDP page targets already received inject (new tabs must not skip FP)
-    const applied = options.appliedTargetIds instanceof Set ? options.appliedTargetIds : new Set();
-    // Only a recorded hash may invalidate the cache: callers that never tracked one keep the
-    // previous behaviour, while a real config change forces every live tab to be re-applied.
-    const configChanged = Boolean(options.appliedFingerprintHash)
-      && options.appliedFingerprintHash !== fpHash;
-    if (configChanged) applied.clear();
-    const blocked = [];
-    if (profile.advanced.blockVideo) blocked.push('*.mp4', '*.webm', '*.m3u8', '*.mov', '*.avi');
-    const customBlock = String(profile.advanced.blockUrls || '')
-      .split(/[\n,]+/)
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .slice(0, 200);
-    for (const u of customBlock) if (!blocked.includes(u)) blocked.push(u);
-    // Port scan protection: block common localhost probe ports unless allow-listed
-    // Speech voices: fingerprint injection (speech.mode blocked/noise/real)
-    let portScanScript = null;
-    if (profile.privacy.portScanProtect) {
-      portScanScript = buildPortScanProtectionScript(profile.privacy.portScanAllow);
-    }
-
-    // Re-injecting a document that already carries this exact config stacks a second layer of
-    // noise on the readers, which moves canvas / clientRects while the profile is already in use,
-    // so a pass only covers tabs that are unmarked or that carry a different config. Recovery of
-    // a single suspect tab goes through applyFingerprintToTab directly instead.
-    const force = configChanged;
-    // Steady state: the watch loop calls this every ~2.4s per running profile. When every
-    // live tab already carries the inject there is nothing to do, and logging begin/skip/end
-    // each time would burn disk and append tab URLs to the diagnostic log forever.
-    // Prune closed targets, keep the tracked state fresh, and return quietly.
-    if (!force && tabs.every((tab) => applied.has(tab.id))) {
-      const liveIds = new Set(tabs.map((tab) => tab.id));
-      for (const id of [...applied]) {
-        if (!liveIds.has(id)) applied.delete(id);
-      }
-      if (options.trackOn) {
-        options.trackOn.fpAppliedTargets = applied;
-        options.trackOn.fpAppliedHash = fpHash;
-        options.trackOn.fingerprint = fp;
-      }
-      return fp;
-    }
-
-    await fpLog('inject.begin', {
-      phase,
-      profileId: profile.id,
-      port,
-      tabCount: tabs.length,
-      tabUrls: tabs.map((t) => ({ id: t.id, url: String(t.url || '').slice(0, 200) })),
-      intended: summarizeFp(fp),
-      logFile: fingerprintLogPath(),
-    });
-
-    for (const tab of tabs) {
-      if (!force && applied.has(tab.id)) {
-        await fpLog('inject.skip-tab', { phase, profileId: profile.id, tabId: tab.id, url: tab.url, reason: 'already-applied' });
-        continue;
-      }
-      try {
-        const fontBlobBridge = fp?.fontBlobBridge || options?.trackOn?.fontBlobBridge || options?.trackOn?.fingerprint?.fontBlobBridge;
-        if (fontBlobBridge?.channelName && tab.webSocketDebuggerUrl) {
-          if (options?.trackOn) { options.trackOn.fontBlobBridge = fontBlobBridge; options.trackOn.fingerprint = fp; }
-          try {
-            await cdp.call(tab.webSocketDebuggerUrl, 'Runtime.enable', {}).catch(() => {});
-            await cdp.call(tab.webSocketDebuggerUrl, 'Runtime.addBinding', { name: fontBlobBridge.channelName }).catch((err) => {
-              const msg = String(err?.message || err);
-              if (!/already exists/i.test(msg)) {}
-            });
-          } catch (_) {}
-        }
-        await applyFingerprintToTab(cdp.call, tab.webSocketDebuggerUrl, fp, enriched, {
-          livePatchDocument: isEphemeralDocumentUrl(tab.url),
-        });
-        let live = null;
-        try {
-          const probe = await cdp.call(tab.webSocketDebuggerUrl, 'Runtime.evaluate', {
-            expression: LIVE_PROBE_EXPRESSION,
-            returnByValue: true,
-          }, 8000);
-          live = probe?.result?.value || probe?.value || null;
-        } catch (probeError) {
-          live = { probeError: String(probeError.message || probeError) };
-        }
-        const mismatch = live && !live.probeError ? {
-          ua: Boolean(fp.userAgent && live.userAgent && fp.userAgent !== live.userAgent),
-          platform: Boolean(fp.platform && live.platform && fp.platform !== live.platform),
-          cores: fp.hardwareConcurrency != null && live.hardwareConcurrency != null
-            && Number(fp.hardwareConcurrency) !== Number(live.hardwareConcurrency),
-          memory: fp.deviceMemory != null && live.deviceMemory != null
-            && Number(fp.deviceMemory) !== Number(live.deviceMemory),
-          webglRenderer: Boolean(fp.webgl?.renderer && live.webglRenderer
-            && String(live.webglRenderer) !== String(fp.webgl.renderer)
-            && !String(live.webglRenderer).includes(String(fp.webgl.renderer).slice(0, 24))),
-        } : null;
-        await fpLog('inject.tab-ok', {
-          phase,
-          profileId: profile.id,
-          tabId: tab.id,
-          url: sanitizeUrlForLog(tab.url).slice(0, 240),
-          intended: summarizeFp(fp),
-          live,
-          mismatch,
-        });
-        // If probe still shows host hardware, re-evaluate inject once more immediately.
-        if (mismatch && (mismatch.cores || mismatch.webglRenderer || mismatch.memory)) {
-          await fpLog('inject.tab-ineffective', {
-            phase,
-            profileId: profile.id,
-            tabId: tab.id,
-            mismatch,
-          });
-          try {
-            await applyFingerprintToTab(cdp.call, tab.webSocketDebuggerUrl, fp, enriched, {
-              force: true,
-              livePatchDocument: isEphemeralDocumentUrl(tab.url),
-            });
-            const probe2 = await cdp.call(tab.webSocketDebuggerUrl, 'Runtime.evaluate', {
-              expression: LIVE_PROBE_EXPRESSION,
-              returnByValue: true,
-            }, 8000);
-            const live2 = probe2?.result?.value || probe2?.value || null;
-            await fpLog('inject.tab-retry', {
-              phase,
-              profileId: profile.id,
-              tabId: tab.id,
-              live: live2,
-            });
-            const coresOk = !(fp.hardwareConcurrency != null && live2?.hardwareConcurrency != null
-              && Number(fp.hardwareConcurrency) !== Number(live2.hardwareConcurrency));
-            const webglOk = !(fp.webgl?.renderer && live2?.webglRenderer
-              && String(live2.webglRenderer) !== String(fp.webgl.renderer)
-              && /Radeon|GeForce|W6800|GTX |RTX /i.test(String(live2.webglRenderer)));
-            if (coresOk && webglOk) applied.add(tab.id);
-            // else leave unmarked so force/post-startpage can try again
-          } catch (retryError) {
-            await fpLog('inject.tab-retry-fail', {
-              phase,
-              profileId: profile.id,
-              tabId: tab.id,
-              error: String(retryError.message || retryError),
-            });
-          }
-        } else {
-          applied.add(tab.id);
-        }
-      } catch (error) {
-        await fpLog('inject.tab-fail', {
-          phase,
-          profileId: profile.id,
-          tabId: tab.id,
-          url: sanitizeUrlForLog(tab.url).slice(0, 240),
-          error: String(error.message || error),
-        });
-        // Soft-fail per tab: keep trying other tabs / later phases instead of aborting start.
-        const msg = String(error.message || error || '');
-        if (!/Uncaught|already in effect|cannot be overridden|softInject/i.test(msg)) {
-          throw error;
-        }
-      }
-      if (blocked.length) {
-        await cdp.call(tab.webSocketDebuggerUrl, 'Network.enable');
-        await cdp.call(tab.webSocketDebuggerUrl, 'Network.setBlockedURLs', { urls: blocked });
-      }
-      if (portScanScript) {
-        await cdp.call(tab.webSocketDebuggerUrl, 'Page.addScriptToEvaluateOnNewDocument', { source: portScanScript });
-        await cdp.call(tab.webSocketDebuggerUrl, 'Runtime.evaluate', { expression: portScanScript });
-      }
-      // applied.add only when probe matched (see above)
-    }
-    // Drop closed targets so Set does not grow forever
-    const liveIds = new Set(tabs.map((t) => t.id));
-    for (const id of [...applied]) {
-      if (!liveIds.has(id)) applied.delete(id);
-    }
-    if (options.trackOn) {
-      options.trackOn.fpAppliedTargets = applied;
-      options.trackOn.fpAppliedHash = fpHash;
-      options.trackOn.fingerprint = fp;
-    }
-    await fpLog('inject.end', { phase, profileId: profile.id, applied: applied.size, port });
-    return fp;
-  }
-
   isolationAudit() {
     const running = [...this.running.entries()].map(([id, item]) => ({
       id,
@@ -1094,322 +736,6 @@ class BrowserEngine {
       pid: item.pid,
     }));
     return auditIsolation(running);
-  }
-
-  async suppressStartupExtensionPages(connection, installed, durationMs = 7000) {
-    const popupPaths = new Map();
-    for (const extension of installed || []) {
-      const chromeId = String(extension.chromeExtensionId || '').toLowerCase();
-      if (!chromeId) continue;
-      let popup = '';
-      try {
-        const manifest = JSON.parse(await fsp.readFile(path.join(extension.path, 'manifest.json'), 'utf8'));
-        popup = String(manifest.action?.default_popup || manifest.browser_action?.default_popup || '').replace(/^\/+/, '').toLowerCase();
-      } catch (_) {}
-      popupPaths.set(chromeId, popup);
-    }
-    if (!popupPaths.size) return { closed: 0 };
-
-    const blockedOpeners = new Set(); const closedTargets = new Set(); const started = Date.now();
-    while (Date.now() - started < durationMs) {
-      let values;
-      try { values = (await connection.command('Target.getTargets', {}, 3000)).targetInfos || []; }
-      catch (_) { break; }
-
-      for (const target of values) {
-        if (target.type !== 'page' || closedTargets.has(target.targetId)) continue;
-        let shouldClose = blockedOpeners.has(String(target.openerId || ''));
-        if (!shouldClose) {
-          try {
-            const url = new URL(String(target.url || ''));
-            if (url.protocol === 'chrome-extension:' || url.protocol === 'edge-extension:') {
-              const popup = popupPaths.get(url.hostname.toLowerCase());
-              if (popup !== undefined) {
-                const currentPath = decodeURIComponent(url.pathname).replace(/^\/+/, '').toLowerCase();
-                const isToolbarPopup = Boolean(popup) && currentPath === popup;
-                shouldClose = !isToolbarPopup;
-              }
-            }
-          } catch (_) {}
-        }
-        if (!shouldClose) continue;
-        blockedOpeners.add(target.targetId); closedTargets.add(target.targetId);
-        await connection.command('Target.closeTarget', { targetId: target.targetId }, 3000).catch(() => {});
-      }
-      await new Promise((resolve) => { const timer = setTimeout(resolve, 120); timer.unref?.(); });
-    }
-    if (closedTargets.size) this.emit({ type: 'startup-extension-pages-suppressed', count: closedTargets.size });
-    return { closed: closedTargets.size };
-  }
-  isStartPageUrl(url) {
-    if (this.startPageServer?.isStartPageUrl?.(url)) return true;
-    const s = String(url || '').toLowerCase();
-    // 仅识别 OpenBrowser 原生启动页端口 / 本地文件回退，不绑定其它软件端口
-    return s.includes('openbrowser-start.html')
-      || s.includes('openbrowser-start')
-      || s.includes('openbrowser-native')
-      || /https?:\/\/127\.0\.0\.1:5032[6-9]\/?/.test(s);
-  }
-
-  envWindowTitle(profile) {
-    const number = profile.number || profile.name || profile.id || '';
-    const title = profile.title && String(profile.title).trim() && String(profile.title) !== String(number)
-      ? String(profile.title).trim()
-      : '';
-    return title ? `环境 ${number} · ${title}` : `环境 ${number}`;
-  }
-
-  needsExitNetworkForLocale(profile) {
-    const privacy = profile.privacy || {};
-    const langMode = privacy.languageMode || (privacy.langFromIp !== false ? 'ip' : '');
-    const tzMode = privacy.timezoneMode || 'ip';
-    const geoMode = privacy.geoMode || 'ip';
-    return langMode === 'ip' || tzMode === 'ip' || geoMode === 'ip' || geoMode === 'allow';
-  }
-
-  async ensureExitNetworkForLocale(profile) {
-    if (!this.needsExitNetworkForLocale(profile)) return null;
-    let network = this.networkInfo.get(profile.id);
-    if (network?.countryCode || network?.ip) return network;
-    const proxyRaw = String(profile.proxy || '');
-    const isDirect = profile.networkMode === 'direct' || !proxyRaw || /^(direct|offline|none)$/i.test(proxyRaw);
-    try {
-      if (!isDirect) {
-        network = await this.checkProxy(profile, { allowExtract: false });
-      } else {
-        // Local direct exit: geo lookup is best-effort for language/timezone only.
-        network = await lookupDirectCountry();
-        this.networkInfo.set(profile.id, network);
-        this.emit({ type: 'status', id: profile.id, running: this.running.has(profile.id), network });
-      }
-      if (network) {
-        profile.exitIp = network.ip || profile.exitIp;
-        profile.exitCountryCode = network.countryCode || profile.exitCountryCode;
-        profile.exitTimezone = network.timezone || profile.exitTimezone;
-        profile.exitLatitude = network.latitude ?? profile.exitLatitude;
-        profile.exitLongitude = network.longitude ?? profile.exitLongitude;
-        profile.exitCheckedAt = network.checkedAt || profile.exitCheckedAt;
-        profile.exitLatencyMs = network.latencyMs ?? profile.exitLatencyMs;
-        profile.exitNetworkType = network.networkType || profile.exitNetworkType;
-        this.profiles.set(profile.id, this.sanitizeProfile(profile));
-        await this.persist();
-      }
-      return network;
-    } catch (error) {
-      // Direct start succeeded without proxy; geo API failure must not surface as proxy error.
-      if (!isDirect) {
-        this.emit({ type: 'proxy-error', id: profile.id, message: '出口信息检测失败（语言/时区可能回退）：' + error.message });
-      }
-      return this.networkInfo.get(profile.id) || null;
-    }
-  }
-
-  applyResolvedLocale(profile) {
-    const network = this.networkInfo.get(profile.id) || {
-      countryCode: profile.exitCountryCode,
-      timezone: profile.exitTimezone,
-      latitude: profile.exitLatitude,
-      longitude: profile.exitLongitude,
-      ip: profile.exitIp,
-    };
-    const privacy = { ...(profile.privacy || {}) };
-    const language = resolveProfileLanguage(profile, network);
-    const resolvedTimezone = resolveProfileTimezone(profile, network);
-    const tzMode = String(privacy.timezoneMode || 'ip').trim().toLowerCase();
-    const next = {
-      ...profile,
-      language,
-      privacy: {
-        ...privacy,
-        languageMode: privacy.languageMode || (privacy.langFromIp !== false ? 'ip' : (privacy.uiLanguage || 'profile')),
-        langFromIp: (privacy.languageMode || 'ip') === 'ip' || privacy.langFromIp !== false,
-      },
-      exitIp: network.ip || profile.exitIp || '',
-      exitCountryCode: network.countryCode || profile.exitCountryCode || '',
-      exitTimezone: tzMode === 'real' ? '' : (resolvedTimezone || network.timezone || profile.exitTimezone || ''),
-      exitLatitude: network.latitude ?? profile.exitLatitude,
-      exitLongitude: network.longitude ?? profile.exitLongitude,
-    };
-    if ((tzMode === 'ip' || tzMode === 'custom') && resolvedTimezone) {
-      next.privacy = { ...next.privacy, timezone: resolvedTimezone };
-    }
-    if ((privacy.geoMode === 'ip' || privacy.geoMode === 'allow' || !privacy.geoMode)
-      && Number.isFinite(Number(network.latitude))
-      && Number.isFinite(Number(network.longitude))) {
-      next.exitLatitude = Number(network.latitude);
-      next.exitLongitude = Number(network.longitude);
-    }
-    return next;
-  }
-
-  async applyEnvWindowTitle(port, profile) {
-    if (!port) return;
-    const title = this.envWindowTitle(profile);
-    const tabs = await cdp.tabs(port).catch(() => []);
-    for (const tab of tabs) {
-      if (!tab.webSocketDebuggerUrl) continue;
-      const url = String(tab.url || '');
-      // Only apply to our own internal start page; never overwrite user pages or about:blank document.title
-      if (!this.isStartPageUrl(url)) continue;
-      await cdp.call(tab.webSocketDebuggerUrl, 'Runtime.evaluate', {
-        expression: `(() => { try { document.title = ${JSON.stringify(title)}; } catch (_) {} })()`,
-      }).catch(() => {});
-    }
-  }
-
-  async keepDefaultTab(port, startUrl) {
-    const values = await cdp.tabs(port); if (!values.length) return;
-    const expected = String(startUrl || '').trim();
-    let keep = values.find((tab) => this.isStartPageUrl(tab.url)) || values[0];
-    const preferredId = keep?.id;
-    // Always force-navigate to OpenBrowser start page when provided (148 kernel may open NTP/about:blank).
-    if (expected && keep?.webSocketDebuggerUrl) {
-      try {
-        await cdp.call(keep.webSocketDebuggerUrl, 'Page.enable', {}).catch(() => {});
-        const href = String(keep.url || '');
-        // about:blank launch or wrong page → navigate; already on start page → reload so
-        // document-start fingerprint scripts registered after first paint still run.
-        if (this.isStartPageUrl(href) && href.includes(expected.split('?')[0])) {
-          await cdp.call(keep.webSocketDebuggerUrl, 'Page.reload', { ignoreCache: true }).catch(async () => {
-            await cdp.call(keep.webSocketDebuggerUrl, 'Page.navigate', { url: expected });
-          });
-        } else {
-          await cdp.call(keep.webSocketDebuggerUrl, 'Page.navigate', { url: expected });
-        }
-        await new Promise((resolve) => { const t = setTimeout(resolve, 400); t.unref?.(); });
-      } catch (_) {
-        try { await cdp.call(keep.webSocketDebuggerUrl, 'Page.navigate', { url: expected }); } catch (__) {}
-      }
-    }
-    const after = await cdp.tabs(port).catch(() => values);
-    // Prefer: current start-page URL → same target we navigated → first tab.
-    keep = after.find((tab) => this.isStartPageUrl(tab.url))
-      || after.find((tab) => preferredId && tab.id === preferredId)
-      || after[0]
-      || keep;
-    for (const tab of after) if (tab.id !== keep.id) await cdp.closeTab(port, tab.id).catch(() => {});
-    await cdp.activateTab(port, keep.id).catch(() => {});
-  }
-
-  /**
-   * OpenBrowser 原生启动页 URL：http://127.0.0.1:50326/?pid=...&id=...&name=...
-   * 会话与网络信息由本引擎写入启动页服务，不依赖其它指纹浏览器。
-   */
-  async buildStartPageUrl(profile, root, browserName, extensionCount) {
-    let pageNetwork = this.networkInfo.get(profile.id) || null;
-    // 启动前尽量补全出口信息，启动页打开即可显示 IP（直连/代理同理）
-    const hasProxy = profile.proxy && !/^(direct|offline|none)$/i.test(String(profile.proxy));
-    if (!pageNetwork?.ip) {
-      try {
-        if (hasProxy) {
-          pageNetwork = await this.checkProxy(profile);
-        } else {
-          pageNetwork = await lookupDirectCountry();
-          if (pageNetwork) {
-            pageNetwork = { ...pageNetwork, protocol: 'direct' };
-            this.networkInfo.set(profile.id, pageNetwork);
-          }
-        }
-      } catch (_) {
-        pageNetwork = this.networkInfo.get(profile.id) || null;
-      }
-    }
-    const timezone = profile.exitTimezone
-      || pageNetwork?.timezone
-      || (profile.privacy?.timezoneMode === 'custom' ? profile.privacy.timezone : '')
-      || '';
-    const fpForStart = (() => {
-      try {
-        return buildFingerprint({
-          ...profile,
-          kernelVersion: this.kernelStatus()?.kernel?.version || profile.kernelVersion,
-          exitTimezone: timezone,
-          exitLatitude: pageNetwork?.latitude ?? profile.exitLatitude,
-          exitLongitude: pageNetwork?.longitude ?? profile.exitLongitude,
-        });
-      } catch (_) {
-        return null;
-      }
-    })();
-    const uaFromFp = fpForStart?.userAgent || profile.userAgent || '';
-    try {
-      const server = await this.ensureStartPage();
-      const url = server.registerSession({
-        ...profile,
-        exitTimezone: timezone,
-        exitIp: pageNetwork?.ip || profile.exitIp || '',
-        exitCountryCode: pageNetwork?.countryCode || profile.exitCountryCode || '',
-        userAgent: profile.userAgent || uaFromFp,
-        group_name: profile.group_name || profile.groupName || '',
-        privacy: {
-          ...(profile.privacy || {}),
-          // Prefer resolved fingerprint surfaces for welcome-page expected checks
-          fingerprint: {
-            ...(profile.privacy?.fingerprint || {}),
-            hardwareConcurrency: fpForStart?.hardwareConcurrency ?? profile.privacy?.fingerprint?.hardwareConcurrency,
-            deviceMemory: fpForStart?.deviceMemory ?? profile.privacy?.fingerprint?.deviceMemory,
-          },
-        },
-      }, {
-        timezone,
-        network: pageNetwork,
-        userAgent: profile.userAgent || uaFromFp,
-        group_name: profile.group_name || profile.groupName || '',
-        browserName,
-        extensionCount,
-        time: Math.floor(Date.now() / 1000),
-        expectedFingerprint: fpForStart ? {
-          language: (fpForStart.languages && fpForStart.languages[0]) || profile.language || '',
-          userAgent: fpForStart.userAgent || uaFromFp,
-          platform: fpForStart.platform || '',
-          timezone,
-          screenWidth: fpForStart.screen?.width || Number(profile.width) || null,
-          screenHeight: fpForStart.screen?.height || Number(profile.height) || null,
-          webrtc: String(profile.privacy?.webrtc || ''),
-          canvas: String(fpForStart.canvas?.mode || profile.privacy?.canvas || ''),
-          webgl: String(fpForStart.webgl?.mode || profile.privacy?.webgl || ''),
-          webglVendor: fpForStart.webgl?.vendor || '',
-          webglRenderer: fpForStart.webgl?.renderer || '',
-          audio: String(fpForStart.audio?.mode || profile.privacy?.audio || ''),
-          hardwareConcurrency: fpForStart.hardwareConcurrency,
-          deviceMemory: fpForStart.deviceMemory,
-        } : undefined,
-      });
-      await fsp.writeFile(
-        path.join(root, 'openbrowser-start.url.txt'),
-        url + '\n# OpenBrowser 原生启动页（非其它软件）\n',
-        'utf8'
-      ).catch(() => {});
-      return url;
-    } catch (error) {
-      // 最后回退：写本地 HTML，仍标 OpenBrowser 原生
-      const escape = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
-      const number = escape(profile.number || profile.name || profile.id);
-      const name = escape(profile.name || number);
-      const ip = escape(pageNetwork?.ip || profile.exitIp || '未检测');
-      const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="openbrowser-native" content="1"><title>环境 ${number}</title>
-<style>body{margin:0;font-family:system-ui,sans-serif;background:#12141a;color:#e8eaf0;display:grid;place-items:center;min-height:100vh}
-.card{width:min(720px,94vw);background:#1c1f28;border-radius:14px;overflow:hidden;border:1px solid #2a3040;box-shadow:0 20px 50px rgba(0,0,0,.35)}
-.brand{display:flex;align-items:center;gap:14px;padding:22px 22px 8px}
-.badge{width:52px;height:52px;border-radius:14px;display:grid;place-items:center;font-size:22px;font-weight:800;color:#fff;background:linear-gradient(145deg,#2563eb,#1d4ed8)}
-.head{background:linear-gradient(90deg,#1e3a5f,#243b55);color:#fff;text-align:center;padding:28px 16px;font-size:28px;font-weight:600;letter-spacing:.02em}
-.body{padding:18px 22px 24px;line-height:1.8}.k{color:#8b93a7;display:inline-block;width:88px;text-align:right;margin-right:12px}</style></head>
-<body><div class="card">
-<div class="brand"><div class="badge">${number}</div><div><div style="font-size:18px;font-weight:700">环境 ${number}</div><div style="color:#8b93a7;font-size:12px">OpenBrowser · 本地环境标识</div></div></div>
-<div class="head">${ip}</div><div class="body">
-<div><span class="k">环境</span>环境 ${number}</div>
-<div><span class="k">窗口名称</span>${name}</div>
-<div><span class="k">说明</span>启动页服务异常：${escape(error.message)}（仍为 OpenBrowser 本地页）</div>
-</div></div></body></html>`;
-      const file = path.join(root, 'openbrowser-start.html');
-      await fsp.writeFile(file, html, 'utf8');
-      return toFileUrl(file);
-    }
-  }
-
-  assignedExtensions(profileId) {
-    const ids = this.assignments.get(profileId) || new Set();
-    return [...ids].map((id) => this.extensions.get(id)).filter((item) => item && fs.existsSync(item.path));
   }
 
   async markProfileCleanExit(root) {
@@ -2082,6 +1408,12 @@ class BrowserEngine {
   }
   async sessions() { const result = []; for (const { id, item } of this.runningWithCdp([...this.running.keys()])) { try { result.push({ id, profile: this.profiles.get(id), port: item.port, browser: item.browser.name, tabs: await cdp.tabs(item.port) }); } catch (error) { result.push({ id, profile: this.profiles.get(id), port: item.port, browser: item.browser.name, tabs: [], error: error.message }); } } return result; }
 }
+
+// Runtime settings application, the startup-page/locale environment cluster
+// and the constructor-time init routine are prototype mixins:
+Object.assign(BrowserEngine.prototype, require('./engine/runtime-settings'));
+Object.assign(BrowserEngine.prototype, require('./engine/start-page'));
+Object.assign(BrowserEngine.prototype, require('./engine/init'));
 
 // The profile-proxy runtime group (resolve/apply/test/check/refresh/prepare)
 // is a prototype mixin in engine/profile-proxy.js; engine/start.js calls
