@@ -4,7 +4,6 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const { pathToFileURL } = require('url');
 const { spawn, execFile } = require('child_process');
-const { randomUUID, createHash, timingSafeEqual } = require('crypto');
 const cdp = require('./cdp');
 const { BrowserEngine } = require('./engine');
 const { LiveSyncController } = require('./live-sync-v5');
@@ -20,18 +19,18 @@ try {
   }
 } catch (_) {}
 
-const { compareVersions } = require('./automation/version-compare');
 const { planGridFor, minHeightFor } = require('./automation/window-arrangement');
 const { attachShellNavigationGuard } = require('./automation/shell-guard');
 const { fetchStoreEntries } = require('./automation/store-fetch');
-const { createCoalescedWriter } = require('./automation/coalesced-writer');
-const { deepEqual } = require('./automation/object-utils');
 const { startAutomation } = require('./automation');
 const cloudSync = require('./automation/cloud-sync');
 const credentialCrypto = require('./credential-crypto');
-const { validateDataRootIsolationSecure, ensureDataRootIsolationSecure, assertProfileId, terminateProcessesUsingProfile } = require('./automation/isolation');
+const { ensureDataRootIsolationSecure, terminateProcessesUsingProfile, sanitizeIds } = require('./automation/isolation');
 const { createCrashHandler, buildHelperProcessGoneReport } = require('./automation/crash-report');
 const { writeBrowserStartupDiagnostic } = require('./engine/diagnostics');
+const appUpdate = require('./automation/app-update');
+const settingsStore = require('./automation/local-settings');
+const cloudOps = require('./automation/cloud-ops');
 
 const appDataRoot = app.getPath('appData');
 const userDataRoot = path.join(appDataRoot, 'openbrowser');
@@ -81,926 +80,31 @@ function logGlobalFailure(kind, error) {
 process.on('unhandledRejection', (reason) => logGlobalFailure('unhandledRejection', reason));
 process.on('uncaughtException', (error) => logGlobalFailure('uncaughtException', error));
 
-const UPDATE_REPOSITORY = 'zhu748/OpenBrowser';
-const UPDATE_API_URL = `https://api.github.com/repos/${UPDATE_REPOSITORY}/releases/latest`;
-const UPDATE_LATEST_HTML = `https://github.com/${UPDATE_REPOSITORY}/releases/latest`;
-const UPDATE_RELEASES_ATOM = `https://github.com/${UPDATE_REPOSITORY}/releases.atom`;
-const UPDATE_ASSETS = Object.freeze({
-  'darwin:x64': 'OpenBrowser-macOS-x86_64.dmg',
-  'darwin:arm64': 'OpenBrowser-macOS-arm64-with-kernel.dmg',
-  'win32:x64': 'OpenBrowser-Windows-x86_64-with-kernel.exe',
-  'linux:x64': 'OpenBrowser-Linux-x86_64-with-kernel.tar.gz',
+// --- Updater, settings, and cloud operations live in automation/ ---
+// app-update.js: release checks, fail-closed signed downloads, status watcher.
+// local-settings.js: encrypted settings cache + coalesced disk writer.
+// cloud-ops.js: backup / restore / per-profile push-pull pipelines.
+settingsStore.initLocalSettings({ file: localSettingsFile, defaultProfileDataRoot });
+appUpdate.configureAppUpdateBroadcast(emit);
+cloudOps.initCloudOps({
+  getEngine: () => engine,
+  getAutomation: () => automation,
+  emit,
+  getSettings: settingsStore.getLocalSettings,
+  saveSettings: settingsStore.saveLocalSettings,
 });
-const UPDATE_MAX_BYTES = 1024 * 1024 * 1024;
-const UPDATE_TIMEOUT_MS = 20000;
-const UPDATE_ALLOWED_HOSTS = new Set(['github.com', 'objects.githubusercontent.com', 'release-assets.githubusercontent.com']);
-const UPDATE_CHECKSUM_ASSET = 'SHA256SUMS.txt';
-
-/** Parse a `sha256sum`-style manifest into a Map(assetName -> sha256 hex). */
-function parseChecksumManifest(text) {
-  const map = new Map();
-  for (const line of String(text || '').split(/\r?\n/)) {
-    const match = line.match(/^([0-9a-fA-F]{64})\s+\*?(.+?)\s*$/);
-    if (match) map.set(match[2], match[1].toLowerCase());
-  }
-  return map;
-}
-
-/**
- * Fetch the release's SHA256SUMS.txt manifest (direct asset URL first).
- * Returns { map, manifestBuffer, signature } — or null when this release
- * publishes no manifest (older releases). Callers must treat a null map as
- * "cannot verify", never as "valid". `signature` is null when the release
- * carries no detached Ed25519 .sig asset yet.
- */
-async function resolveReleaseChecksums(remoteVersion) {
-  if (!remoteVersion) return null;
-  const manifestUrl = `https://github.com/${UPDATE_REPOSITORY}/releases/download/v${remoteVersion}/${UPDATE_CHECKSUM_ASSET}`;
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), UPDATE_TIMEOUT_MS);
-    try {
-      const response = await fetch(manifestUrl, {
-        redirect: 'follow',
-        headers: { 'User-Agent': updateUserAgent(), Accept: 'text/plain,*/*' },
-        signal: controller.signal,
-      });
-      if (response.ok) {
-        const manifestBuffer = Buffer.from(await response.arrayBuffer());
-        if (manifestBuffer.length && manifestBuffer.length <= 65536) {
-          const map = parseChecksumManifest(manifestBuffer.toString('utf8'));
-          if (map.size) {
-            const signature = await fetchReleaseSignature(remoteVersion, controller.signal);
-            return { map, manifestBuffer, signature };
-          }
-        }
-      }
-    } finally {
-      clearTimeout(timer);
-    }
-  } catch (_) { /* manifest unavailable on this release */ }
-  return null;
-}
-
-/** Fetch the detached Ed25519 signature asset for the checksum manifest, if published. */
-async function fetchReleaseSignature(remoteVersion, parentSignal) {
-  const { verifyManifestSignature } = require('./automation/update-trust');
-  const sigUrl = `https://github.com/${UPDATE_REPOSITORY}/releases/download/v${remoteVersion}/${UPDATE_CHECKSUM_ASSET}.sig`;
-  const controller = new AbortController();
-  const onAbort = () => controller.abort();
-  parentSignal?.addEventListener?.('abort', onAbort, { once: true });
-  const timer = setTimeout(() => controller.abort(), UPDATE_TIMEOUT_MS);
-  try {
-    const response = await fetch(sigUrl, {
-      redirect: 'follow',
-      headers: { 'User-Agent': updateUserAgent(), Accept: 'application/octet-stream' },
-      signal: controller.signal,
-    });
-    if (!response.ok) return null;
-    const signature = Buffer.from(await response.arrayBuffer());
-    if (!signature.length || signature.length > 4096) return null;
-    return signature;
-  } catch (_) {
-    return null;
-  } finally {
-    clearTimeout(timer);
-    parentSignal?.removeEventListener?.('abort', onAbort);
-  }
-}
-
-/** SHA-256 a file with constant-memory streaming and timing-safe hex compare. */
-async function verifyFileSha256(filePath, expectedHex) {
-  const expected = String(expectedHex || '').toLowerCase();
-  if (!/^[0-9a-f]{64}$/.test(expected)) return false;
-  const actual = await new Promise((resolve, reject) => {
-    const hash = createHash('sha256');
-    const stream = fs.createReadStream(filePath);
-    stream.on('data', (chunk) => hash.update(chunk));
-    stream.on('end', () => resolve(hash.digest('hex')));
-    stream.on('error', reject);
-  });
-  const a = Buffer.from(actual, 'utf8');
-  const b = Buffer.from(expected, 'utf8');
-  return a.length === b.length && timingSafeEqual(a, b);
-}
-
-function updatePlatformKey() {
-  return `${process.platform}:${process.arch}`;
-}
-
-function updateAssetName() {
-  return UPDATE_ASSETS[updatePlatformKey()] || null;
-}
-
-function updateUrlIsAllowed(value, assetName) {
-  try {
-    const url = new URL(String(value || ''));
-    if (url.protocol !== 'https:') return false;
-    const pathName = decodeURIComponent(url.pathname);
-    const endsWithAsset = pathName.endsWith('/' + assetName) || pathName.endsWith(assetName);
-    if (!endsWithAsset) return false;
-    return UPDATE_ALLOWED_HOSTS.has(url.hostname)
-      || (url.hostname === 'github.com' && pathName.includes('/releases/download/'));
-  } catch (_) {
-    return false;
-  }
-}
-
-function updateUserAgent() {
-  return `OpenBrowser/${app.getVersion()} (+https://github.com/${UPDATE_REPOSITORY})`;
-}
-
-function normalizeRemoteTag(value) {
-  return String(value || '').trim().replace(/^v/i, '');
-}
-
-function metaFromTag(tag, source, releaseUrl) {
-  const remoteVersion = normalizeRemoteTag(tag);
-  if (!remoteVersion) return null;
-  return {
-    remoteVersion,
-    releaseName: remoteVersion,
-    releaseUrl: releaseUrl || `https://github.com/${UPDATE_REPOSITORY}/releases/tag/v${remoteVersion}`,
-    source,
-  };
-}
-
-/**
- * Resolve latest release tag without relying solely on GitHub API
- * (unauthenticated REST hits rate limits → false "unknown/yellow" light).
- * Priority: Atom feed → HTML follow/redirect → REST API.
- */
-async function resolveLatestReleaseMeta() {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), UPDATE_TIMEOUT_MS);
-  const htmlHeaders = { 'User-Agent': updateUserAgent(), Accept: 'text/html,application/xhtml+xml,*/*' };
-  try {
-    // 1) Atom feed — no API quota, works in Electron without redirect:manual quirks
-    try {
-      const response = await fetch(UPDATE_RELEASES_ATOM, {
-        headers: { 'User-Agent': updateUserAgent(), Accept: 'application/atom+xml,application/xml,text/xml,*/*' },
-        signal: controller.signal,
-      });
-      if (response.ok) {
-        const atom = await response.text();
-        // Prefer entry-level ids/links (first entry is newest)
-        const entry = atom.match(/<entry\b[\s\S]*?<\/entry>/i)?.[0] || atom;
-        const fromAtom = entry.match(/\/releases\/tag\/([^<"'\s]+)/i)
-          || entry.match(/<id>tag:github\.com,\d+:Repository\/\d+\/([^<]+)<\/id>/i)
-          || atom.match(/\/releases\/tag\/([^<"'\s]+)/i);
-        const meta = fromAtom ? metaFromTag(decodeURIComponent(fromAtom[1]), 'atom') : null;
-        if (meta) return meta;
-      }
-    } catch (_) { /* try next */ }
-
-    // 2) /releases/latest — follow redirects; final URL or body contains /releases/tag/vX.Y.Z
-    //    (prefer follow over manual: Electron Chromium often hides Location on opaqueredirect)
-    try {
-      const response = await fetch(UPDATE_LATEST_HTML, {
-        method: 'GET',
-        redirect: 'follow',
-        headers: htmlHeaders,
-        signal: controller.signal,
-      });
-      const finalUrl = String(response.url || '');
-      const fromUrl = finalUrl.match(/\/releases\/tag\/([^/?#]+)/i);
-      if (fromUrl) {
-        const meta = metaFromTag(decodeURIComponent(fromUrl[1]), 'html-url', finalUrl);
-        if (meta) return meta;
-      }
-      if (response.ok) {
-        const html = await response.text();
-        const fromHtml = html.match(/\/releases\/tag\/(v?[\w.-]+)/i);
-        const meta = fromHtml ? metaFromTag(fromHtml[1], 'html') : null;
-        if (meta) return meta;
-      }
-    } catch (_) { /* try next */ }
-
-    // 2b) manual redirect Location (Node undici / some hosts)
-    try {
-      const response = await fetch(UPDATE_LATEST_HTML, {
-        method: 'GET',
-        redirect: 'manual',
-        headers: htmlHeaders,
-        signal: controller.signal,
-      });
-      const location = response.headers.get('location') || response.headers.get('Location') || '';
-      const fromLoc = location.match(/\/releases\/tag\/([^/?#]+)/i);
-      if (fromLoc) {
-        const abs = location.startsWith('http') ? location : `https://github.com${location}`;
-        const meta = metaFromTag(decodeURIComponent(fromLoc[1]), 'redirect', abs);
-        if (meta) return meta;
-      }
-    } catch (_) { /* try next */ }
-
-    // 3) REST API (last resort; unauthenticated often 403 rate-limit)
-    const response = await fetch(UPDATE_API_URL, {
-      headers: {
-        Accept: 'application/vnd.github+json',
-        'User-Agent': updateUserAgent(),
-      },
-      signal: controller.signal,
-    });
-    if (!response.ok) throw new Error(`GitHub Releases request failed (${response.status})`);
-    const release = await response.json();
-    const tag = normalizeRemoteTag(release.tag_name || release.name || '');
-    if (!tag) throw new Error('GitHub Release has no version tag');
-    return {
-      remoteVersion: tag,
-      releaseName: String(release.name || release.tag_name || tag),
-      releaseUrl: String(release.html_url || `https://github.com/${UPDATE_REPOSITORY}/releases/tag/v${tag}`),
-      source: 'api',
-      apiRelease: release,
-    };
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function resolveReleaseAsset(remoteVersion, assetName) {
-  if (!assetName || !remoteVersion) return null;
-  const directUrl = `https://github.com/${UPDATE_REPOSITORY}/releases/download/v${remoteVersion}/${assetName}`;
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), UPDATE_TIMEOUT_MS);
-    try {
-      const response = await fetch(directUrl, {
-        method: 'HEAD',
-        redirect: 'follow',
-        headers: { 'User-Agent': updateUserAgent() },
-        signal: controller.signal,
-      });
-      if (response.ok) {
-        return {
-          name: assetName,
-          size: Number(response.headers.get('content-length')) || 0,
-          browser_download_url: directUrl,
-        };
-      }
-    } finally {
-      clearTimeout(timer);
-    }
-  } catch (_) { /* optional */ }
-
-  // HEAD can be blocked or redirected differently by GitHub's edge. Resolve
-  // the exact tagged release through the API before declaring the asset absent.
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), UPDATE_TIMEOUT_MS);
-    try {
-      const apiUrl = `${UPDATE_API_URL.replace(/\/latest$/, '')}/tags/v${encodeURIComponent(remoteVersion)}`;
-      const response = await fetch(apiUrl, {
-        headers: { Accept: 'application/vnd.github+json', 'User-Agent': updateUserAgent() },
-        signal: controller.signal,
-      });
-      if (response.ok) {
-        const release = await response.json();
-        const asset = Array.isArray(release.assets)
-          ? release.assets.find((item) => item?.name === assetName)
-          : null;
-        if (asset?.browser_download_url && updateUrlIsAllowed(asset.browser_download_url, assetName)) {
-          return {
-            name: asset.name,
-            size: Number(asset.size) || 0,
-            browser_download_url: asset.browser_download_url,
-          };
-        }
-      }
-    } finally {
-      clearTimeout(timer);
-    }
-  } catch (_) { /* unavailable release metadata */ }
-  return null;
-}
-
-/** @deprecated use resolveLatestReleaseMeta — kept for download path compatibility */
-async function fetchUpdateRelease() {
-  const meta = await resolveLatestReleaseMeta();
-  if (meta.apiRelease) return meta.apiRelease;
-  return {
-    tag_name: `v${meta.remoteVersion}`,
-    name: meta.releaseName,
-    html_url: meta.releaseUrl,
-    assets: [],
-  };
-}
-
-/**
- * Version traffic light only needs remote tag vs app.getVersion().
- * Download package availability is optional (canDownload).
- * green = up to date; red = remote is newer.
- */
-async function checkAppUpdate() {
-  const assetName = updateAssetName();
-  const currentVersion = app.getVersion();
-  const meta = await resolveLatestReleaseMeta();
-  const remoteVersion = meta.remoteVersion;
-  if (!remoteVersion) throw new Error('GitHub Release has no version tag');
-  const upToDate = compareVersions(remoteVersion, currentVersion) <= 0;
-  let asset = null;
-  if (assetName) {
-    asset = await resolveReleaseAsset(remoteVersion, assetName);
-    // Prefer API asset URL if present
-    if (meta.apiRelease && Array.isArray(meta.apiRelease.assets)) {
-      const fromApi = meta.apiRelease.assets.find((item) => item?.name === assetName);
-      if (fromApi?.browser_download_url && updateUrlIsAllowed(fromApi.browser_download_url, assetName)) {
-        asset = { name: fromApi.name, size: Number(fromApi.size) || 0, browser_download_url: fromApi.browser_download_url };
-      }
-    }
-  }
-  return {
-    // supported = can show green/red for this build (always when we resolved a remote tag)
-    supported: true,
-    canDownload: Boolean(assetName && asset?.browser_download_url),
-    repository: UPDATE_REPOSITORY,
-    currentVersion,
-    remoteVersion,
-    upToDate,
-    releaseName: meta.releaseName || remoteVersion,
-    releaseUrl: meta.releaseUrl || `https://github.com/${UPDATE_REPOSITORY}/releases`,
-    platform: process.platform,
-    arch: process.arch,
-    source: meta.source || 'unknown',
-    asset: asset ? { name: asset.name, size: asset.size || 0, browser_download_url: asset.browser_download_url } : null,
-  };
-}
-
-// The Ed25519 trust root in automation/update-trust.js is still a placeholder
-// until the release pipeline publishes SHA256SUMS.txt.sig assets. Verification
-// code is fail-closed already; this warning keeps the deployment gap visible
-// in the field log instead of letting it live only in the source comment.
-let updateTrustRootWarned = false;
-function warnIfUpdateTrustRootUndeployed() {
-  if (updateTrustRootWarned) return;
-  updateTrustRootWarned = true;
-  try {
-    const { trustedPublicKeys } = require('./automation/update-trust');
-    if (!trustedPublicKeys().length) {
-      console.warn('[OpenBrowser] updater trust root is not deployed (placeholder key in automation/update-trust.js):'
-        + ' manifest signatures cannot be verified, releases are trusted only via SHA256SUMS from the same GitHub account.'
-        + ' Generate the real pair with update-trust-tool.js, sign each release manifest, and embed the public key.');
-    }
-  } catch (_) {}
-}
-
-async function downloadAppUpdate() {
-  warnIfUpdateTrustRootUndeployed();
-  const result = await checkAppUpdate();
-  if (!result.canDownload || !result.asset?.name) throw new Error('This platform has no published OpenBrowser installer package');
-  if (result.upToDate) return { success: false, upToDate: true, version: result.currentVersion, assetName: result.asset.name };
-  const downloadUrl = result.asset.browser_download_url
-    || `https://github.com/${UPDATE_REPOSITORY}/releases/download/v${result.remoteVersion}/${result.asset.name}`;
-  if (!updateUrlIsAllowed(downloadUrl, result.asset.name)) throw new Error('The selected update package URL is not trusted');
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 120000);
-  const extension = path.extname(result.asset.name).toLowerCase();
-  const baseName = path.basename(result.asset.name, extension);
-  const temporaryPath = path.join(app.getPath('downloads'), `${baseName}-${randomUUID()}${extension}`);
-  let received = 0;
-  try {
-    const response = await fetch(downloadUrl, {
-      headers: { Accept: 'application/octet-stream', 'User-Agent': `OpenBrowser/${app.getVersion()}` },
-      signal: controller.signal,
-    });
-    if (!response.ok || !response.body) throw new Error(`Update download failed (${response.status})`);
-    const contentLength = Number(response.headers.get('content-length')) || 0;
-    if (contentLength > UPDATE_MAX_BYTES) throw new Error('Update package is too large');
-    await fsp.mkdir(path.dirname(temporaryPath), { recursive: true });
-    const file = await fsp.open(temporaryPath, 'w');
-    try {
-      const reader = response.body.getReader();
-      while (true) {
-        const chunk = await reader.read();
-        if (chunk.done) break;
-        received += chunk.value.byteLength;
-        if (received > UPDATE_MAX_BYTES) throw new Error('Update package is too large');
-        await file.write(Buffer.from(chunk.value));
-        emit({ type: 'app-update-progress', received, total: contentLength || result.asset.size || 0, percent: contentLength ? Math.min(100, Math.round(received / contentLength * 100)) : null, version: result.remoteVersion });
-      }
-    } finally {
-      await file.close();
-    }
-    // A server that hangs up early ends the body stream cleanly; without this
-    // gate a truncated installer could reach the SHA-256 step (or, for a
-    // release without a manifest, the desktop) as a "complete" download.
-    if (contentLength && received < contentLength) {
-      throw new Error(`Update download was truncated: received ${received} of ${contentLength} announced bytes`);
-    }
-    emit({ type: 'app-update-progress', received, total: contentLength || result.asset.size || received, percent: 100, version: result.remoteVersion });
-    // Integrity gate: when the release publishes SHA256SUMS.txt the downloaded
-    // installer MUST match before it is handed to the OS (fail closed on
-    // mismatch). Releases without a manifest fail closed by default too — the
-    // manifest lives in the same account as the installer, but requiring it at
-    // least blocks the "replaced both files" and "quietly dropped the manifest"
-    // downgrade paths. OPENBROWSER_ALLOW_UNSIGNED_UPDATE=1 restores the old
-    // warn-and-proceed behavior for historical releases, explicitly opt-in.
-    const checksums = await resolveReleaseChecksums(result.remoteVersion);
-    const expectedHex = (checksums?.map && (checksums.map.get(result.asset.name)
-      || checksums.map.get(path.basename(result.asset.name)))) || null;
-    // Detached Ed25519 signature over the manifest bytes. A published .sig is
-    // binding: an invalid or untrusted signature is fatal, and NO env var
-    // downgrades it — the point of the trust root is that replacing the
-    // release account must not become a path to code execution.
-    if (checksums?.signature) {
-      const { verifyManifestSignature } = require('./automation/update-trust');
-      const verdict = verifyManifestSignature(checksums.manifestBuffer, checksums.signature);
-      if (!verdict.ok) {
-        throw new Error(`Release v${result.remoteVersion} manifest signature is not trusted (${verdict.reason}) — refusing to run the installer`);
-      }
-    }
-    if (expectedHex) {
-      const valid = await verifyFileSha256(temporaryPath, expectedHex);
-      if (!valid) throw new Error('Update package failed SHA-256 integrity verification — the download is corrupted or was tampered with');
-    } else if (process.env.OPENBROWSER_ALLOW_UNSIGNED_UPDATE === '1') {
-      console.warn(`[OpenBrowser] release v${result.remoteVersion} publishes no ${UPDATE_CHECKSUM_ASSET} — proceeding without integrity verification (OPENBROWSER_ALLOW_UNSIGNED_UPDATE=1)`);
-    } else {
-      throw new Error(`Release v${result.remoteVersion} publishes no ${UPDATE_CHECKSUM_ASSET} — refusing to run an unverifiable installer (set OPENBROWSER_ALLOW_UNSIGNED_UPDATE=1 to override)`);
-    }
-    const openError = await shell.openPath(temporaryPath);
-    if (openError) shell.showItemInFolder(temporaryPath);
-    return { success: true, path: temporaryPath, version: result.remoteVersion, assetName: result.asset.name, verified: Boolean(expectedHex), signed: Boolean(checksums?.signature) };
-  } catch (error) {
-    await fsp.rm(temporaryPath, { force: true }).catch(() => {});
-    throw error;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-
-/** Last GitHub Releases check; pushed to UI as traffic-light status. */
-let lastAppUpdateStatus = null;
-let appUpdateWatchTimer = null;
-const APP_UPDATE_POLL_MS = 6 * 60 * 60 * 1000;
-const APP_UPDATE_STARTUP_DELAY_MS = 2500;
-const APP_UPDATE_CACHE_FILE = path.join(app.getPath('userData'), 'openbrowser-update-status.json');
-
-function appUpdateLightFromResult(result) {
-  // Product rule: green = latest, red = update available.
-  // Never use yellow for "I am latest". Failed checks without cache → gray "unknown".
-  if (!result) return 'unknown';
-  if (result.remoteVersion != null && result.currentVersion != null && result.upToDate != null) {
-    return result.upToDate ? 'green' : 'red';
-  }
-  return 'unknown';
-}
-
-async function loadCachedAppUpdateStatus() {
-  try {
-    const raw = JSON.parse(await fsp.readFile(APP_UPDATE_CACHE_FILE, 'utf8'));
-    if (!raw || typeof raw !== 'object') return null;
-    if (raw.remoteVersion == null || raw.upToDate == null) return null;
-    // Cache only useful if it was for this same local version
-    if (raw.currentVersion && String(raw.currentVersion) !== String(app.getVersion())) return null;
-    lastAppUpdateStatus = {
-      supported: true,
-      canDownload: Boolean(raw.canDownload),
-      repository: UPDATE_REPOSITORY,
-      currentVersion: String(raw.currentVersion || app.getVersion()),
-      remoteVersion: String(raw.remoteVersion),
-      upToDate: Boolean(raw.upToDate),
-      releaseName: raw.releaseName || raw.remoteVersion,
-      releaseUrl: raw.releaseUrl || `https://github.com/${UPDATE_REPOSITORY}/releases`,
-      platform: process.platform,
-      arch: process.arch,
-      source: raw.source || 'cache',
-      asset: raw.asset || null,
-      cachedAt: raw.checkedAt || null,
-    };
-    return lastAppUpdateStatus;
-  } catch (_) {
-    return null;
-  }
-}
-
-async function saveCachedAppUpdateStatus(result) {
-  if (!result || result.remoteVersion == null || result.upToDate == null) return;
-  try {
-    await fsp.mkdir(path.dirname(APP_UPDATE_CACHE_FILE), { recursive: true });
-    const payload = {
-      currentVersion: result.currentVersion,
-      remoteVersion: result.remoteVersion,
-      upToDate: result.upToDate,
-      canDownload: result.canDownload,
-      releaseName: result.releaseName,
-      releaseUrl: result.releaseUrl,
-      source: result.source,
-      asset: result.asset || null,
-      checkedAt: new Date().toISOString(),
-    };
-    const temporary = APP_UPDATE_CACHE_FILE + '.tmp';
-    await fsp.writeFile(temporary, JSON.stringify(payload, null, 2), 'utf8');
-    await fsp.rm(APP_UPDATE_CACHE_FILE, { force: true });
-    await fsp.rename(temporary, APP_UPDATE_CACHE_FILE);
-  } catch (_) { /* non-fatal */ }
-}
-
-/**
- * Check GitHub latest release and push status to all windows (traffic light).
- * green = up to date; red = newer release available; unknown = check failed (gray).
- */
-async function pushAppUpdateStatus({ check = true } = {}) {
-  try {
-    const result = check ? await checkAppUpdate() : lastAppUpdateStatus;
-    if (!result) {
-      const cached = lastAppUpdateStatus;
-      if (cached?.remoteVersion != null && cached.upToDate != null) {
-        const payload = {
-          type: 'app-update-status',
-          light: cached.upToDate ? 'green' : 'red',
-          checkedAt: new Date().toISOString(),
-          ...cached,
-          stale: true,
-        };
-        emit(payload);
-        return payload;
-      }
-      const payload = {
-        type: 'app-update-status',
-        light: 'unknown',
-        currentVersion: app.getVersion(),
-        checkedAt: new Date().toISOString(),
-      };
-      emit(payload);
-      return payload;
-    }
-    lastAppUpdateStatus = { ...result, error: null };
-    await saveCachedAppUpdateStatus(lastAppUpdateStatus);
-    const payload = {
-      type: 'app-update-status',
-      light: appUpdateLightFromResult(result),
-      checkedAt: new Date().toISOString(),
-      ...result,
-    };
-    emit(payload);
-    return payload;
-  } catch (error) {
-    // Prefer last successful green/red over a confusing amber "error" light
-    if (lastAppUpdateStatus?.remoteVersion != null && lastAppUpdateStatus.upToDate != null) {
-      const payload = {
-        type: 'app-update-status',
-        light: lastAppUpdateStatus.upToDate ? 'green' : 'red',
-        checkedAt: new Date().toISOString(),
-        ...lastAppUpdateStatus,
-        stale: true,
-        warning: String(error && error.message || error),
-      };
-      emit(payload);
-      return payload;
-    }
-    const payload = {
-      type: 'app-update-status',
-      light: 'unknown',
-      currentVersion: app.getVersion(),
-      error: String(error && error.message || error),
-      checkedAt: new Date().toISOString(),
-    };
-    emit(payload);
-    return payload;
-  }
-}
-
-function startAppUpdateWatcher() {
-  // Paint cached green/red immediately so UI never sticks on yellow/checking
-  loadCachedAppUpdateStatus().then((cached) => {
-    if (cached) {
-      emit({
-        type: 'app-update-status',
-        light: appUpdateLightFromResult(cached),
-        checkedAt: new Date().toISOString(),
-        ...cached,
-        stale: true,
-      });
-    }
-  }).catch(() => {});
-
-  const run = () => {
-    pushAppUpdateStatus({ check: true }).catch((error) => {
-      console.warn('OpenBrowser update check failed:', error.message || error);
-    });
-  };
-  setTimeout(run, APP_UPDATE_STARTUP_DELAY_MS);
-  if (appUpdateWatchTimer) clearInterval(appUpdateWatchTimer);
-  appUpdateWatchTimer = setInterval(run, APP_UPDATE_POLL_MS);
-  if (typeof appUpdateWatchTimer.unref === 'function') appUpdateWatchTimer.unref();
-}
-
-function normalizeProfileDataRoot(value) {
-  const raw = String(value || '').trim();
-  const candidate = path.resolve(raw || defaultProfileDataRoot);
-  const check = validateDataRootIsolationSecure(candidate);
-  if (!check.ok) throw new Error(check.message);
-  return check.root;
-}
-
-const CLOSE_ACTION_VALUES = ['ask', 'tray', 'exit'];
-function normalizeCloseAction(value) {
-  return CLOSE_ACTION_VALUES.includes(value) ? value : 'ask';
-}
-
-let localSettingsCache = {
-  profileDataRoot: defaultProfileDataRoot,
-  cloud: cloudSync.defaultCloudConfig(),
-  uiGroups: [],
-  closeAction: 'ask',
-};
-
-async function loadLocalSettings() {
-  try {
-    const raw = await fsp.readFile(localSettingsFile);
-    let jsonStr;
-    let needsMigration = false;
-    if (credentialCrypto.isEncrypted(raw)) {
-      jsonStr = credentialCrypto.decryptCredential(raw);
-    } else {
-      jsonStr = raw.toString('utf8');
-      needsMigration = true;
-    }
-    const saved = JSON.parse(jsonStr);
-    localSettingsCache = {
-      profileDataRoot: normalizeProfileDataRoot(saved.profileDataRoot),
-      cloud: { ...cloudSync.defaultCloudConfig(), ...(saved.cloud || {}) },
-      uiGroups: Array.isArray(saved.uiGroups) ? saved.uiGroups : [],
-      closeAction: normalizeCloseAction(saved.closeAction),
-    };
-    if (needsMigration) {
-      try {
-        await writeLocalSettingsFile();
-      } catch (migrateError) {
-        console.warn('OpenBrowser settings encryption migration warning:', migrateError.message);
-      }
-    }
-    return localSettingsCache;
-  } catch (_) {
-    localSettingsCache = {
-      profileDataRoot: defaultProfileDataRoot,
-      cloud: cloudSync.defaultCloudConfig(),
-      uiGroups: [],
-      closeAction: 'ask',
-    };
-    return localSettingsCache;
-  }
-}
-
-// Snapshot of what the file currently holds, so an unchanged cache does not
-// rewrite it. Cloned rather than referenced: later edits mutate nested objects.
-let persistedSettingsSnapshot = null;
-
-/** Write the settings file from the in-memory cache. */
-async function writeLocalSettingsFile() {
-  await fsp.mkdir(path.dirname(localSettingsFile), { recursive: true });
-  const temporary = localSettingsFile + '.tmp';
-  const serialized = JSON.stringify({ version: 2, ...localSettingsCache }, null, 2);
-  const payload = credentialCrypto.encryptCredential(serialized);
-
-  // Preserve backup of existing file before atomic rewrite. Only encrypted
-  // content may land in the .bak: a legacy plaintext file must not gain a
-  // long-lived plaintext twin. All artifacts stay owner-only (0600).
-  try {
-    const existing = await fsp.readFile(localSettingsFile);
-    if (credentialCrypto.isEncrypted(existing)) {
-      await fsp.writeFile(localSettingsFile + '.bak', existing, { mode: 0o600 });
-    }
-  } catch (_) {}
-
-  await fsp.writeFile(temporary, payload, { mode: 0o600 });
-  await fsp.rm(localSettingsFile, { force: true });
-  await fsp.rename(temporary, localSettingsFile);
-  persistedSettingsSnapshot = JSON.parse(JSON.stringify(localSettingsCache));
-}
-
-// The cache holds the whole settings object, so a burst of changes only needs
-// the last one on disk. Going through one writer also stops concurrent callers
-// from racing on the same temporary file.
-const localSettingsWriter = createCoalescedWriter({
-  write: writeLocalSettingsFile,
-  // Saving the same settings twice is common (panel switches, repeated toggles)
-  // and the disk already holds that state, so skip the write entirely.
-  shouldWrite: () => persistedSettingsSnapshot === null
-    || !deepEqual(localSettingsCache, persistedSettingsSnapshot),
-  onError: (error) => console.warn('OpenBrowser settings write failed:', error.message),
-});
-
-async function saveLocalSettings(value) {
-  localSettingsCache = {
-    profileDataRoot: normalizeProfileDataRoot(value.profileDataRoot || localSettingsCache.profileDataRoot),
-    cloud: value.cloud || localSettingsCache.cloud || cloudSync.defaultCloudConfig(),
-    uiGroups: Array.isArray(value.uiGroups) ? value.uiGroups : (localSettingsCache.uiGroups || []),
-    closeAction: normalizeCloseAction(value.closeAction || localSettingsCache.closeAction),
-  };
-  return localSettingsWriter.request();
-}
 
 async function updateProfileDataRoot(value) {
   if (!engine) throw new Error('Browser engine is not ready');
   if (engine.running.size) throw new Error('\u8bf7\u5148\u505c\u6b62\u6240\u6709\u73af\u5883\uff0c\u518d\u4fee\u6539\u6570\u636e\u4fdd\u5b58\u4f4d\u7f6e');
-  const profileDataRoot = normalizeProfileDataRoot(value);
+  const profileDataRoot = settingsStore.normalizeProfileDataRoot(value);
   const secureCheck = await ensureDataRootIsolationSecure(profileDataRoot);
   if (!secureCheck.ok) throw new Error(secureCheck.message);
   engine.setProfileDataRoot(profileDataRoot);
-  await saveLocalSettings({ ...localSettingsCache, profileDataRoot });
+  await settingsStore.saveLocalSettings({ ...settingsStore.getLocalSettings(), profileDataRoot });
   emit({ type: 'storage-settings', profileRoot: profileDataRoot });
   return { success: true, profileRoot: profileDataRoot, defaultProfileRoot: defaultProfileDataRoot };
 }
-
-function providerConfigFromCloud(cloud) {
-  const provider = String(cloud.provider || 'local').toLowerCase();
-  if (provider === 'webdav') return cloud.webdav || {};
-  if (provider === 'github') return cloud.github || {};
-  if (provider === 'gdrive' || provider === 'google' || provider === 'gcs') return cloud.gdrive || {};
-  if (provider === 'onedrive' || provider === 'microsoft' || provider === 'mscloud') return cloud.onedrive || cloud.webdav || {};
-  if (provider === 'quark' || provider === 'kuake') return cloud.quark || cloud.webdav || {};
-  if (provider === 'baidu' || provider === 'baiduyun' || provider === 'pan') return cloud.baidu || cloud.webdav || {};
-  if (cloudSync.isWebDavBridgeProvider?.(provider)) {
-    return cloud[provider] || cloud.webdav || {};
-  }
-  return cloud.local || {};
-}
-
-async function runCloudBackup(payload = {}) {
-  const cloud = { ...localSettingsCache.cloud, ...(payload.cloud || {}) };
-  const allProfiles = Array.isArray(payload.profiles)
-    ? payload.profiles
-    : [...(engine?.profiles?.values?.() || [])];
-  const profileIds = Array.isArray(payload.profileIds) ? payload.profileIds.map(String) : null;
-  const groups = Array.isArray(payload.groups) ? payload.groups : (localSettingsCache.uiGroups || []);
-  let proxies = [];
-  try { proxies = automation?.proxyStore?.list?.({}) || []; } catch (_) {}
-  const { buffer, meta } = await cloudSync.buildBackupPackage({
-    profiles: allProfiles,
-    groups,
-    proxies,
-    settings: { cloud: { ...cloud, passphrase: cloud.passphrase ? '***' : '' } },
-    profileDataRoot: engine?.getProfileDataRoot?.() || localSettingsCache.profileDataRoot,
-    includeBrowserData: cloud.includeBrowserData !== false,
-    passphrase: cloud.passphrase || '',
-    profileIds,
-  });
-  const remoteName = payload.remoteName || cloudSync.REMOTE_NAME;
-  const result = await cloudSync.upload(cloud.provider, providerConfigFromCloud(cloud), buffer, remoteName);
-  cloud.lastSyncAt = new Date().toISOString();
-  cloud.lastError = '';
-  await saveLocalSettings({ ...localSettingsCache, cloud });
-  emit({ type: 'cloud-sync', action: 'backup', ...meta, ...result });
-  return { success: true, meta, result, cloud };
-}
-
-async function applyBackupBody(body, { mode = 'merge', localProfiles = null, localGroups = null } = {}) {
-  const profileRoot = engine?.getProfileDataRoot?.() || localSettingsCache.profileDataRoot;
-  const remoteProfiles = (body.profiles || []).map((p) => {
-    const copy = { ...p };
-    return copy;
-  });
-  let restoredFiles = 0;
-  const dataById = new Map();
-  for (const profile of remoteProfiles) {
-    assertProfileId(profile?.id);
-    if (profile._dataFiles && profile.id) {
-      dataById.set(profile.id, profile._dataFiles);
-      delete profile._dataFiles;
-    }
-  }
-
-  const localList = Array.isArray(localProfiles)
-    ? localProfiles
-    : [...(engine?.profiles?.values?.() || [])];
-  const localGroupList = Array.isArray(localGroups) ? localGroups : (localSettingsCache.uiGroups || []);
-
-  const merged = cloudSync.mergeProfiles(localList, remoteProfiles, mode);
-  const groups = cloudSync.mergeGroups(localGroupList, body.groups || [], mode);
-
-  // restore browser data files for profiles that came from remote package
-  for (const profile of merged.profiles) {
-    const files = dataById.get(profile.id);
-    if (files) {
-      restoredFiles += await cloudSync.restoreProfileDataFiles(path.join(profileRoot, profile.id), files);
-    }
-  }
-
-  let proxies = body.proxies || [];
-  if (Array.isArray(proxies) && proxies.length) {
-    let localProxies = [];
-    try { localProxies = automation?.proxyStore?.list?.({}) || []; } catch (_) {}
-    proxies = cloudSync.mergeProxies(localProxies, proxies, mode);
-    if (automation?.proxyStore?.replaceAll) {
-      await automation.proxyStore.replaceAll(proxies).catch(() => {});
-    } else if (automation?.proxyStore) {
-      for (const item of proxies) {
-        try { await automation.proxyStore.create(item); } catch (_) {}
-      }
-    }
-  }
-
-  await saveLocalSettings({ ...localSettingsCache, uiGroups: groups });
-  if (engine) await engine.syncProfiles(merged.profiles);
-
-  return {
-    profiles: merged.profiles,
-    groups,
-    proxies,
-    restoredFiles,
-    mergeStats: merged.stats,
-    createdAt: body.createdAt,
-  };
-}
-
-async function runCloudRestore(payload = {}) {
-  const cloud = { ...localSettingsCache.cloud, ...(payload.cloud || {}) };
-  const mode = String(payload.mode || cloud.restoreMode || 'merge');
-  const remoteName = payload.remoteName || cloudSync.REMOTE_NAME;
-  const buffer = await cloudSync.download(cloud.provider, providerConfigFromCloud(cloud), remoteName);
-  const body = await cloudSync.parseBackupPackage(buffer, cloud.passphrase || payload.passphrase || '');
-
-  // optional: only restore subset of profile ids from the pack
-  if (Array.isArray(payload.profileIds) && payload.profileIds.length) {
-    const allow = new Set(payload.profileIds.map(String));
-    body.profiles = (body.profiles || []).filter((p) => allow.has(String(p.id)));
-  }
-
-  const applied = await applyBackupBody(body, {
-    mode,
-    localProfiles: payload.localProfiles,
-    localGroups: payload.localGroups,
-  });
-
-  cloud.lastSyncAt = new Date().toISOString();
-  cloud.lastError = '';
-  cloud.restoreMode = mode;
-  await saveLocalSettings({ ...localSettingsCache, cloud, uiGroups: applied.groups });
-  emit({
-    type: 'cloud-sync',
-    action: 'restore',
-    mode,
-    profileCount: applied.profiles.length,
-    restoredFiles: applied.restoredFiles,
-    mergeStats: applied.mergeStats,
-  });
-  return { success: true, mode, ...applied, cloud };
-}
-
-/** Push one or more environments as individual remote packs + refresh full pack optional */
-async function runCloudProfilePush(payload = {}) {
-  const cloud = { ...localSettingsCache.cloud, ...(payload.cloud || {}) };
-  const ids = sanitizeIds(payload.profileIds || (payload.profileId ? [payload.profileId] : []));
-  if (!ids.length) throw new Error('请指定要同步的环境');
-  const allProfiles = Array.isArray(payload.profiles)
-    ? payload.profiles
-    : [...(engine?.profiles?.values?.() || [])];
-  const results = [];
-  for (const id of ids) {
-    const profile = allProfiles.find((p) => p.id === id);
-    if (!profile) throw new Error('环境不存在：' + id);
-    const { buffer, meta } = await cloudSync.buildBackupPackage({
-      profiles: [{ ...profile, updatedAt: profile.updatedAt || new Date().toISOString() }],
-      groups: Array.isArray(payload.groups) ? payload.groups : (localSettingsCache.uiGroups || []),
-      proxies: [],
-      settings: { kind: 'profile', profileId: id },
-      profileDataRoot: engine?.getProfileDataRoot?.() || localSettingsCache.profileDataRoot,
-      includeBrowserData: cloud.includeBrowserData !== false,
-      passphrase: cloud.passphrase || '',
-      profileIds: [id],
-    });
-    const remoteName = cloudSync.profileRemoteName(id);
-    const result = await cloudSync.upload(cloud.provider, providerConfigFromCloud(cloud), buffer, remoteName);
-    results.push({ id, meta, result, remoteName });
-  }
-  cloud.lastSyncAt = new Date().toISOString();
-  cloud.lastError = '';
-  await saveLocalSettings({ ...localSettingsCache, cloud });
-  emit({ type: 'cloud-sync', action: 'profile-push', count: results.length, ids });
-  return { success: true, results, cloud };
-}
-
-async function runCloudProfilePull(payload = {}) {
-  const cloud = { ...localSettingsCache.cloud, ...(payload.cloud || {}) };
-  const mode = String(payload.mode || cloud.restoreMode || 'merge');
-  const ids = sanitizeIds(payload.profileIds || (payload.profileId ? [payload.profileId] : []));
-  if (!ids.length) throw new Error('请指定要拉取的环境');
-  const localProfiles = Array.isArray(payload.localProfiles)
-    ? payload.localProfiles
-    : [...(engine?.profiles?.values?.() || [])];
-  let combinedRemote = [];
-  let restoredFiles = 0;
-  const per = [];
-  for (const id of ids) {
-    const remoteName = cloudSync.profileRemoteName(id);
-    const buffer = await cloudSync.download(cloud.provider, providerConfigFromCloud(cloud), remoteName);
-    const body = await cloudSync.parseBackupPackage(buffer, cloud.passphrase || payload.passphrase || '');
-    combinedRemote = combinedRemote.concat(body.profiles || []);
-    per.push({ id, remoteName, count: (body.profiles || []).length, createdAt: body.createdAt });
-  }
-  const applied = await applyBackupBody(
-    { profiles: combinedRemote, groups: payload.groups || localSettingsCache.uiGroups || [], proxies: [] },
-    { mode, localProfiles, localGroups: payload.localGroups }
-  );
-  restoredFiles = applied.restoredFiles;
-  cloud.lastSyncAt = new Date().toISOString();
-  cloud.lastError = '';
-  await saveLocalSettings({ ...localSettingsCache, cloud, uiGroups: applied.groups });
-  emit({ type: 'cloud-sync', action: 'profile-pull', count: ids.length, mode, mergeStats: applied.mergeStats });
-  return { success: true, mode, ...applied, per, restoredFiles, cloud };
-}
-
 let engine;
 let liveSync;
 let automation = null;
@@ -1080,11 +184,6 @@ let shortcutFallbackRegistered = false;
 let shortcutActionInFlight = false;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-function sanitizeIds(value) {
-  if (!Array.isArray(value) || value.length > 200) throw new Error('Invalid profile selection');
-  return [...new Set(value.map(assertProfileId))];
-}
 
 function emit(value) {
   for (const win of windows) if (!win.isDestroyed()) win.webContents.send('engine:event', value);
@@ -1850,7 +949,7 @@ async function createWindow() {
     // macOS keeps the standard close-to-Dock convention; quitting paths bypass this.
     if (quitting || process.platform === 'darwin') return;
     if (forceCloseWindowIds.has(win.id)) { forceCloseWindowIds.delete(win.id); return; }
-    const pref = normalizeCloseAction(localSettingsCache.closeAction);
+    const pref = settingsStore.normalizeCloseAction(settingsStore.getLocalSettings().closeAction);
     if (pref === 'exit') return;
     event.preventDefault();
     if (pref === 'tray') {
@@ -1860,8 +959,8 @@ async function createWindow() {
     askCloseAction(win)
       .then(({ mode, remember }) => {
         if (remember) {
-          localSettingsCache.closeAction = mode;
-          saveLocalSettings(localSettingsCache).catch(() => {});
+          settingsStore.getLocalSettings().closeAction = mode;
+          settingsStore.saveLocalSettings(settingsStore.getLocalSettings()).catch(() => {});
         }
         if (win.isDestroyed()) return;
         if (mode === 'tray') hideMainWindowToTray(win);
@@ -1934,7 +1033,7 @@ app.whenReady().then(async () => {
   // with settings loading so the first frame is not behind disk I/O. Engine init
   // stays sequential — every later IPC handler (system:info et al.) dereferences
   // the engine, so the window must not start firing invokes before it exists.
-  const localSettingsPromise = loadLocalSettings();
+  const localSettingsPromise = settingsStore.loadLocalSettings();
   const windowPromise = createWindow().catch((error) => {
     console.error('OpenBrowser window creation failed:', error.message);
     throw error;
@@ -1959,12 +1058,12 @@ app.whenReady().then(async () => {
     emit(value);
     // Hub/ix style: when an opted-in profile closes, auto-push that env to cloud
     if (value?.type === 'profile-closed' && value.cloudBackup && value.profile?.id) {
-      const cloud = localSettingsCache?.cloud || {};
+      const cloud = settingsStore.getLocalSettings()?.cloud || {};
       if (cloud.enabled) {
-        runCloudProfilePush({
+        cloudOps.runCloudProfilePush({
           profileIds: [value.profile.id],
           profiles: [value.profile],
-          groups: localSettingsCache.uiGroups || [],
+          groups: settingsStore.getLocalSettings().uiGroups || [],
           cloud,
         }).catch((error) => {
           console.warn('OpenBrowser auto cloud push failed:', error.message);
@@ -2022,30 +1121,30 @@ app.whenReady().then(async () => {
     systemBrowserPath: engine.systemBrowserPath,
     titleBarIntegrated: process.platform === 'darwin' || process.platform === 'win32',
     platform: process.platform,
-    closeAction: normalizeCloseAction(localSettingsCache.closeAction),
+    closeAction: settingsStore.normalizeCloseAction(settingsStore.getLocalSettings().closeAction),
   }));
   registerTrustedIpc('system:read-clipboard', () => {
     try { return clipboard.readText(); } catch (_) { return ''; }
   });
   registerTrustedIpc('system:set-close-action', async (_event, mode) => {
-    const value = normalizeCloseAction(mode);
-    localSettingsCache.closeAction = value;
-    await saveLocalSettings(localSettingsCache);
+    const value = settingsStore.normalizeCloseAction(mode);
+    settingsStore.getLocalSettings().closeAction = value;
+    await settingsStore.saveLocalSettings(settingsStore.getLocalSettings());
     // A remembered "exit" means the user no longer wants background running.
     if (value === 'exit') destroyTray();
     return { success: true, closeAction: value };
   });
   registerTrustedIpc('app:update-check', async () => {
-    const payload = await pushAppUpdateStatus({ check: true });
+    const payload = await appUpdate.pushAppUpdateStatus({ check: true });
     if (payload?.error && !payload?.remoteVersion) throw new Error(payload.error);
     // Return check fields (without event envelope noise for renderer helpers)
     const { type, light, checkedAt, error, ...rest } = payload || {};
     if (error && !rest.supported) throw new Error(error);
-    return rest.currentVersion != null ? { ...rest, light, checkedAt } : await checkAppUpdate();
+    return rest.currentVersion != null ? { ...rest, light, checkedAt } : await appUpdate.checkAppUpdate();
   });
-  registerTrustedIpc('app:update-download', () => downloadAppUpdate());
+  registerTrustedIpc('app:update-download', () => appUpdate.downloadAppUpdate());
   registerTrustedIpc('app:open-github', async () => {
-    const url = `https://github.com/${UPDATE_REPOSITORY}`;
+    const url = `https://github.com/${appUpdate.UPDATE_REPOSITORY}`;
     await shell.openExternal(url);
     return { success: true, url };
   });
@@ -2088,13 +1187,13 @@ app.whenReady().then(async () => {
     return { success: true, profileRoot };
   });
   registerTrustedIpc('cloud:get-config', async () => {
-    await loadLocalSettings();
-    return localSettingsCache.cloud || cloudSync.defaultCloudConfig();
+    await settingsStore.loadLocalSettings();
+    return settingsStore.getLocalSettings().cloud || cloudSync.defaultCloudConfig();
   });
   registerTrustedIpc('cloud:set-config', async (_event, cloud) => {
-    await loadLocalSettings();
-    const next = { ...cloudSync.defaultCloudConfig(), ...(localSettingsCache.cloud || {}), ...(cloud || {}) };
-    await saveLocalSettings({ ...localSettingsCache, cloud: next });
+    await settingsStore.loadLocalSettings();
+    const next = { ...cloudSync.defaultCloudConfig(), ...(settingsStore.getLocalSettings().cloud || {}), ...(cloud || {}) };
+    await settingsStore.saveLocalSettings({ ...settingsStore.getLocalSettings(), cloud: next });
     return next;
   });
   registerTrustedIpc('cloud:choose-dir', async () => {
@@ -2105,14 +1204,14 @@ app.whenReady().then(async () => {
     if (result.canceled || !result.filePaths[0]) return { canceled: true };
     return { canceled: false, dir: result.filePaths[0] };
   });
-  registerTrustedIpc('cloud:backup', async (_event, payload) => runCloudBackup(payload || {}));
-  registerTrustedIpc('cloud:restore', async (_event, payload) => runCloudRestore(payload || {}));
-  registerTrustedIpc('cloud:profile-push', async (_event, payload) => runCloudProfilePush(payload || {}));
-  registerTrustedIpc('cloud:profile-pull', async (_event, payload) => runCloudProfilePull(payload || {}));
+  registerTrustedIpc('cloud:backup', async (_event, payload) => cloudOps.runCloudBackup(payload || {}));
+  registerTrustedIpc('cloud:restore', async (_event, payload) => cloudOps.runCloudRestore(payload || {}));
+  registerTrustedIpc('cloud:profile-push', async (_event, payload) => cloudOps.runCloudProfilePush(payload || {}));
+  registerTrustedIpc('cloud:profile-pull', async (_event, payload) => cloudOps.runCloudProfilePull(payload || {}));
   registerTrustedIpc('cloud:export-file', async (_event, payload) => {
-    const cloud = { ...localSettingsCache.cloud, ...(payload?.cloud || {}) };
+    const cloud = { ...settingsStore.getLocalSettings().cloud, ...(payload?.cloud || {}) };
     const profiles = Array.isArray(payload?.profiles) ? payload.profiles : [...(engine?.profiles?.values?.() || [])];
-    const groups = Array.isArray(payload?.groups) ? payload.groups : (localSettingsCache.uiGroups || []);
+    const groups = Array.isArray(payload?.groups) ? payload.groups : (settingsStore.getLocalSettings().uiGroups || []);
     let proxies = [];
     try { proxies = automation?.proxyStore?.list?.({}) || []; } catch (_) {}
     const { buffer, meta } = await cloudSync.buildBackupPackage({
@@ -2120,7 +1219,7 @@ app.whenReady().then(async () => {
       groups,
       proxies,
       settings: {},
-      profileDataRoot: engine?.getProfileDataRoot?.() || localSettingsCache.profileDataRoot,
+      profileDataRoot: engine?.getProfileDataRoot?.() || settingsStore.getLocalSettings().profileDataRoot,
       includeBrowserData: cloud.includeBrowserData !== false,
       passphrase: cloud.passphrase || '',
       profileIds: payload?.profileIds || null,
@@ -2142,9 +1241,9 @@ app.whenReady().then(async () => {
     });
     if (result.canceled || !result.filePaths[0]) return { canceled: true };
     const buffer = await fsp.readFile(result.filePaths[0]);
-    const body = await cloudSync.parseBackupPackage(buffer, payload?.passphrase || localSettingsCache.cloud?.passphrase || '');
-    const mode = String(payload?.mode || localSettingsCache.cloud?.restoreMode || 'merge');
-    const applied = await applyBackupBody(body, {
+    const body = await cloudSync.parseBackupPackage(buffer, payload?.passphrase || settingsStore.getLocalSettings().cloud?.passphrase || '');
+    const mode = String(payload?.mode || settingsStore.getLocalSettings().cloud?.restoreMode || 'merge');
+    const applied = await cloudOps.applyBackupBody(body, {
       mode,
       localProfiles: payload?.localProfiles,
       localGroups: payload?.localGroups,
@@ -2588,7 +1687,7 @@ app.whenReady().then(async () => {
   // The window was created in parallel with settings loading above; by this point
   // createWindow() has either resolved or thrown, and awaiting it again is free.
   await windowPromise;
-  startAppUpdateWatcher();
+  appUpdate.startAppUpdateWatcher();
 });
 
 async function stopAllForQuit() {
@@ -2643,14 +1742,14 @@ function beginQuitCleanup() {
   if (quitCleanupPromise) return quitCleanupPromise;
   quitting = true;
   destroyTray();
-  const cloud = localSettingsCache?.cloud || {};
+  const cloud = settingsStore.getLocalSettings()?.cloud || {};
   let stopResult = { stopped: true, remaining: [], errors: [] };
   quitCleanupPromise = Promise.resolve()
     .then(async () => { stopResult = await stopAllForQuit(); })
     .then(() => engine?.flushPersistence?.())
     // A settings change made moments before quitting may still be inside the
     // quiet period; write it out before the process goes away.
-    .then(() => localSettingsWriter.flushNow())
+    .then(() => settingsStore.flushSettingsWriter())
     .then(() => {
       try { liveSync?.stop?.(); } catch (error) {
         console.warn('OpenBrowser quit live-sync cleanup failed:', error?.message || error);
@@ -2667,16 +1766,17 @@ function beginQuitCleanup() {
       if (stopResult.remaining.length) return;
       if (!cloud.enabled || !cloud.autoSyncOnQuit) return;
       try {
-        await runCloudBackup({
+        await cloudOps.runCloudBackup({
           profiles: [...(engine?.profiles?.values?.() || [])],
-          groups: localSettingsCache.uiGroups || [],
+          groups: settingsStore.getLocalSettings().uiGroups || [],
           cloud,
         });
       } catch (error) {
         console.warn('OpenBrowser quit auto-backup failed:', error.message);
         try {
-          localSettingsCache.cloud = { ...cloud, lastError: error.message };
-          await saveLocalSettings(localSettingsCache);
+          const failedSettings = settingsStore.getLocalSettings();
+          failedSettings.cloud = { ...cloud, lastError: error.message };
+          await settingsStore.saveLocalSettings(failedSettings);
         } catch (_) {}
       }
     })

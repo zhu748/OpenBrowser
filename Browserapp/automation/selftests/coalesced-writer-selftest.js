@@ -201,10 +201,13 @@ const keepAlive = setInterval(() => {}, 250);
   });
 
   // ---- host wiring ----
+  // The settings store moved from main.js into automation/local-settings.js:
+  // the writer wiring is asserted there, the quit-chain flush in main.js.
   {
-    const source = fs.readFileSync(path.join(__dirname, '..', '../main.js'), 'utf8');
+    const source = fs.readFileSync(path.join(__dirname, '..', 'local-settings.js'), 'utf8');
+    const mainSource = fs.readFileSync(path.join(__dirname, '..', '../main.js'), 'utf8');
     check('settings go through the coalescing writer', () => {
-      assert.ok(/require\('\.\/automation\/coalesced-writer'\)/.test(source), 'writer is not required');
+      assert.ok(/require\('\.\/coalesced-writer'\)/.test(source), 'writer is not required');
       assert.ok(/const localSettingsWriter = createCoalescedWriter\(/.test(source), 'writer is not created');
       assert.ok(/return localSettingsWriter\.request\(\);/.test(source), 'saveLocalSettings does not use it');
     });
@@ -215,10 +218,12 @@ const keepAlive = setInterval(() => {}, 250);
       assert.ok(!/fsp\.writeFile/.test(body[0]), 'the write body is still inlined');
     });
     check('quitting flushes any pending settings write', () => {
-      assert.ok(/localSettingsWriter\.flushNow\(\)/.test(source), 'the quit chain does not flush');
+      assert.ok(/settingsStore\.flushSettingsWriter\(\)/.test(mainSource), 'the quit chain does not flush');
+      assert.ok(/function flushSettingsWriter\(\) \{[\s\S]{0,120}localSettingsWriter\.flushNow\(\)/.test(source),
+        'the flush is not wired to the writer');
     });
     check('an unchanged cache is not rewritten', () => {
-      assert.ok(/require\('\.\/automation\/object-utils'\)/.test(source), 'deepEqual is not imported');
+      assert.ok(/require\('\.\/object-utils'\)/.test(source), 'deepEqual is not imported');
       assert.ok(/shouldWrite: \(\) => persistedSettingsSnapshot === null/.test(source), 'the skip predicate is missing');
       assert.ok(/deepEqual\(localSettingsCache, persistedSettingsSnapshot\)/.test(source), 'the predicate does not compare the cache');
       assert.ok(/persistedSettingsSnapshot = JSON\.parse\(JSON\.stringify\(localSettingsCache\)\)/.test(source),
@@ -228,8 +233,8 @@ const keepAlive = setInterval(() => {}, 250);
     });
 
     check('the file write itself is unchanged in substance', () => {
-      assert.ok(/const temporary = localSettingsFile \+ '\.tmp';/.test(source), 'temp-file write is gone');
-      assert.ok(/await fsp\.rename\(temporary, localSettingsFile\);/.test(source), 'atomic rename is gone');
+      assert.ok(/const temporary = settingsFile \+ '\.tmp';/.test(source), 'temp-file write is gone');
+      assert.ok(/await fsp\.rename\(temporary, settingsFile\);/.test(source), 'atomic rename is gone');
     });
   }
 

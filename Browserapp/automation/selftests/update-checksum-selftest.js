@@ -5,9 +5,10 @@
  *
  * The updater hands downloaded installers to the OS, so every release MUST be
  * verified against the release's SHA256SUMS.txt manifest before
- * shell.openPath(). main.js cannot be required outside Electron, so the two
- * pure verification helpers are extracted from its real source and evaluated
- * here, and the surrounding fail-closed gates are pinned by source assertions.
+ * shell.openPath(). The updater lives in automation/app-update.js; the two
+ * pure verification helpers are required directly here (the module loads in
+ * plain Node — Electron is resolved lazily), and the surrounding fail-closed
+ * gates are pinned by source assertions over the module.
  *
  *   node automation/selftests/update-checksum-selftest.js
  */
@@ -19,30 +20,14 @@ const fsp = require('fs/promises');
 const os = require('os');
 const path = require('path');
 
-const MAIN_SRC = fs.readFileSync(path.join(__dirname, '..', '..', 'main.js'), 'utf8');
-
-/** Extract a top-level function's text from source by brace counting. */
-function extractFunction(src, name) {
-  const start = src.indexOf(`function ${name}(`);
-  assert.ok(start >= 0, `main.js must define ${name}`);
-  // include a preceding `async ` modifier so extracted bodies keep their await
-  const declStart = src.slice(Math.max(0, start - 6), start).trim() === 'async' ? start - 6 : start;
-  const openBrace = src.indexOf('{', start);
-  assert.ok(openBrace > start, `${name} has a body`);
-  let depth = 0;
-  for (let i = openBrace; i < src.length; i += 1) {
-    if (src[i] === '{') depth += 1;
-    else if (src[i] === '}') {
-      depth -= 1;
-      if (depth === 0) return src.slice(declStart, i + 1);
-    }
-  }
-  return assert.fail(`unbalanced braces while extracting ${name}`);
-}
+const appUpdate = require('../app-update');
+const updateTrust = require('../update-trust');
+const APPUPDATE_SRC = fs.readFileSync(path.join(__dirname, '..', 'app-update.js'), 'utf8');
 
 async function main() {
   // --- parseChecksumManifest: real function, real input shapes ---
-  const parseManifest = new Function(`return (${extractFunction(MAIN_SRC, 'parseChecksumManifest')});`)();
+  const parseManifest = appUpdate.parseChecksumManifest;
+  assert.strictEqual(typeof parseManifest, 'function', 'app-update exports parseChecksumManifest');
   const goodUpper = 'ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789';
   const goodLower = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
   const manifestText = [
@@ -62,12 +47,9 @@ async function main() {
   console.log('  PASS  SHA256SUMS manifest parser (CRLF, binary marker, malformed lines)');
 
   // --- verifyFileSha256: streaming hash + timing-safe compare ---
-  const fnText = extractFunction(MAIN_SRC, 'verifyFileSha256');
-  assert.ok(fnText.includes('timingSafeEqual'), 'comparison must be timing-safe');
-  assert.ok(fnText.includes('createReadStream'), 'hash must stream the file');
-  const verifyFileSha256 = new Function('createHash', 'fs', 'timingSafeEqual', `return (${fnText});`)(
-    crypto.createHash, fs, crypto.timingSafeEqual
-  );
+  assert.ok(APPUPDATE_SRC.includes('timingSafeEqual'), 'comparison must be timing-safe');
+  assert.ok(APPUPDATE_SRC.includes('createReadStream'), 'hash must stream the file');
+  const verifyFileSha256 = appUpdate.verifyFileSha256;
   const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'openbrowser-update-'));
   try {
     const payload = Buffer.from('OpenBrowser update package fixture\n'.repeat(64));
@@ -87,41 +69,40 @@ async function main() {
   }
 
   // --- fail-closed gates pinned in the real download flow ---
-  assert.ok(MAIN_SRC.includes("const UPDATE_CHECKSUM_ASSET = 'SHA256SUMS.txt';"), 'release manifest asset is fixed');
-  assert.ok(MAIN_SRC.includes('Callers must treat a null map as\n * "cannot verify", never as "valid"'), 'manifest absence is never validity');
-  assert.ok(MAIN_SRC.includes("return null;"), 'unavailable manifest resolves to null');
-  assert.ok(MAIN_SRC.includes('manifestBuffer.length <= 65536'), 'manifest body is size-capped');
-  assert.ok(MAIN_SRC.includes('throw new Error(\'Update package failed SHA-256 integrity verification'), 'mismatch aborts before openPath');
-  assert.ok(MAIN_SRC.includes('verified: Boolean(expectedHex)'), 'result reports whether the digest was verified');
-  assert.ok(MAIN_SRC.includes('received < contentLength'), 'truncated transfer is detected');
-  assert.ok(MAIN_SRC.includes('Update download was truncated'), 'truncated transfer is rejected');
-  assert.ok(MAIN_SRC.includes('proceeding without integrity verification'), 'manifest-less release logs a loud warning when explicitly overridden');
-  assert.ok(MAIN_SRC.includes('OPENBROWSER_ALLOW_UNSIGNED_UPDATE'), 'manifest-less release requires an explicit env override');
-  assert.ok(MAIN_SRC.includes('refusing to run an unverifiable installer'), 'manifest-less release fails closed by default');
-  assert.ok(MAIN_SRC.includes('updateUrlIsAllowed(downloadUrl'), 'download URL passes the host allow-list');
-  assert.ok(MAIN_SRC.includes('new Set([\'github.com\', \'objects.githubusercontent.com\', \'release-assets.githubusercontent.com\'])'), 'update hosts are allow-listed');
-  assert.ok(MAIN_SRC.includes('Update package is too large'), 'download size ceiling enforced');
-  assert.ok(MAIN_SRC.includes('fsp.rm(temporaryPath, { force: true })'), 'failed downloads do not leave the installer on disk');
+  assert.ok(APPUPDATE_SRC.includes("const UPDATE_CHECKSUM_ASSET = 'SHA256SUMS.txt';"), 'release manifest asset is fixed');
+  assert.ok(APPUPDATE_SRC.includes('Callers must treat a null map as\n * "cannot verify", never as "valid"'), 'manifest absence is never validity');
+  assert.ok(APPUPDATE_SRC.includes('return null;'), 'unavailable manifest resolves to null');
+  assert.ok(APPUPDATE_SRC.includes('manifestBuffer.length <= 65536'), 'manifest body is size-capped');
+  assert.ok(APPUPDATE_SRC.includes('throw new Error(\'Update package failed SHA-256 integrity verification'), 'mismatch aborts before openPath');
+  assert.ok(APPUPDATE_SRC.includes('verified: Boolean(expectedHex)'), 'result reports whether the digest was verified');
+  assert.ok(APPUPDATE_SRC.includes('received < contentLength'), 'truncated transfer is detected');
+  assert.ok(APPUPDATE_SRC.includes('Update download was truncated'), 'truncated transfer is rejected');
+  assert.ok(APPUPDATE_SRC.includes('proceeding without integrity verification'), 'manifest-less release logs a loud warning when explicitly overridden');
+  assert.ok(APPUPDATE_SRC.includes('OPENBROWSER_ALLOW_UNSIGNED_UPDATE'), 'manifest-less release requires an explicit env override');
+  assert.ok(APPUPDATE_SRC.includes('refusing to run an unverifiable installer'), 'manifest-less release fails closed by default');
+  assert.ok(APPUPDATE_SRC.includes('updateUrlIsAllowed(downloadUrl'), 'download URL passes the host allow-list');
+  assert.ok(APPUPDATE_SRC.includes('new Set([\'github.com\', \'objects.githubusercontent.com\', \'release-assets.githubusercontent.com\'])'), 'update hosts are allow-listed');
+  assert.ok(APPUPDATE_SRC.includes('Update package is too large'), 'download size ceiling enforced');
+  assert.ok(APPUPDATE_SRC.includes('fsp.rm(temporaryPath, { force: true })'), 'failed downloads do not leave the installer on disk');
   console.log('  PASS  update flow integrity gates (fail-closed, truncation, allow-list, cleanup)');
 
   // --- Ed25519 trust root: published signatures are binding, no env downgrade ---
-  assert.ok(MAIN_SRC.includes('verifyManifestSignature(checksums.manifestBuffer, checksums.signature)'),
+  assert.ok(APPUPDATE_SRC.includes('verifyManifestSignature(checksums.manifestBuffer, checksums.signature)'),
     'download gate verifies a published manifest signature');
-  assert.ok(MAIN_SRC.includes('manifest signature is not trusted'),
+  assert.ok(APPUPDATE_SRC.includes('manifest signature is not trusted'),
     'untrusted signature aborts before openPath');
-  assert.ok(MAIN_SRC.includes('signed: Boolean(checksums?.signature)'),
+  assert.ok(APPUPDATE_SRC.includes('signed: Boolean(checksums?.signature)'),
     'result reports whether the manifest was signed');
-  assert.ok(MAIN_SRC.includes('fetchReleaseSignature'),
+  assert.ok(APPUPDATE_SRC.includes('fetchReleaseSignature'),
     'release signature asset is fetched alongside the manifest');
   // The signature gate must sit BEFORE the OPENBROWSER_ALLOW_UNSIGNED_UPDATE
   // branch: an env var may relax the digest requirement, never the trust root.
-  const sigGatePos = MAIN_SRC.indexOf('manifest signature is not trusted');
-  const unsignedBranchPos = MAIN_SRC.indexOf('OPENBROWSER_ALLOW_UNSIGNED_UPDATE === \'1\'');
+  const sigGatePos = APPUPDATE_SRC.indexOf('manifest signature is not trusted');
+  const unsignedBranchPos = APPUPDATE_SRC.indexOf('OPENBROWSER_ALLOW_UNSIGNED_UPDATE === \'1\'');
   assert.ok(sigGatePos > 0 && unsignedBranchPos > sigGatePos,
     'signature gate precedes the unsigned-release escape hatch');
 
-  // Behavioral: update-trust module primitives (real module, real keys).
-  const updateTrust = require('../update-trust');
+  // Behavioral: update-trust module primitives against the deployed root.
   {
     const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
     const pubBase64 = publicKey.export({ format: 'der', type: 'spki' }).toString('base64');

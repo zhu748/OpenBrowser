@@ -511,6 +511,17 @@ function assertProfileId(value) {
   return value;
 }
 
+/**
+ * Validate a renderer-supplied profile-id selection: an array of well-formed
+ * ids, deduplicated, hard-capped at 200 entries. Shared by the trusted IPC
+ * surface (main.js) and cloud-ops so both reject malformed selections the
+ * same way.
+ */
+function sanitizeIds(value) {
+  if (!Array.isArray(value) || value.length > 200) throw new Error('Invalid profile selection');
+  return [...new Set(value.map(assertProfileId))];
+}
+
 function realPathOrResolved(value) {
   const resolved = path.resolve(String(value || ''));
   try { return fs.realpathSync.native(resolved); } catch (_) { return resolved; }
@@ -764,6 +775,7 @@ module.exports = {
   isPidAlive,
   isValidProfileId,
   assertProfileId,
+  sanitizeIds,
   isPathInsideOrEqual,
   auditIsolation,
   systemBrowserDataRoots,
