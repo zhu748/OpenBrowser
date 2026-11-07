@@ -126,7 +126,11 @@ fn test_adversarial_jitter_statistical_entropy_audit() {
     };
     let jitter = JitterEngine::new(config);
 
-    let n_samples = 1000;
+    // 5000 samples: the lag-1 autocorrelation estimator of i.i.d. draws has a
+    // standard error of ~1/sqrt(n); at n=1000 the 0.1 threshold was only ~3.2
+    // standard deviations out, which flaked CI about once per ~600 runs on an
+    // unseeded thread_rng. n=5000 puts the same threshold at ~7 sigma.
+    let n_samples = 5000;
     let mut delays = Vec::with_capacity(n_samples);
     let mut offsets_x = Vec::with_capacity(n_samples);
     let mut offsets_y = Vec::with_capacity(n_samples);
