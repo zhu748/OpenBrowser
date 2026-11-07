@@ -127,7 +127,9 @@ function normalTabs(values) {
     if (!tab || !tab.url) return false;
     if (/^(devtools|chrome-extension|edge-extension):/i.test(tab.url)) return false;
     if (/^(chrome|edge):/i.test(tab.url)) {
-const ALLOWED_INTERNAL_PAGES = new RegExp("^" + "(chrome|edge)://(newtab|new-tab-page|extensions|settings|downloads|history|flags|version|bookmarks|about)", "i");
+      // Only sync-friendly internal pages belong in the tab list; everything
+      // else under chrome:// (e.g. web store, component pages) is dropped.
+      if (!ALLOWED_INTERNAL_PAGES.test(tab.url)) return false;
     }
     return true;
   });

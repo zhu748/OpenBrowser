@@ -15,6 +15,8 @@ struct ParsedClientHello {
     supported_groups: Vec<u16>,
     ec_point_formats: Vec<u8>,
     alpn_protocols: Vec<String>,
+    /// (ext_type, ext_body) pairs kept raw for per-extension structural checks.
+    ext_bodies: Vec<(u16, Vec<u8>)>,
 }
 
 fn redteam_parse_client_hello(buf: &[u8]) -> ParsedClientHello {
@@ -56,6 +58,7 @@ fn redteam_parse_client_hello(buf: &[u8]) -> ParsedClientHello {
     let mut supported_groups = Vec::new();
     let mut ec_point_formats = Vec::new();
     let mut alpn_protocols = Vec::new();
+    let mut ext_bodies: Vec<(u16, Vec<u8>)> = Vec::new();
 
     if pos < buf.len() {
         let ext_total_len = ((buf[pos] as usize) << 8) | (buf[pos + 1] as usize);
@@ -69,6 +72,7 @@ fn redteam_parse_client_hello(buf: &[u8]) -> ParsedClientHello {
             extensions.push(ext_type);
 
             let ext_data = &buf[pos..pos + ext_len];
+            ext_bodies.push((ext_type, ext_data.to_vec()));
 
             // 0x000A: Supported Groups
             if ext_type == 0x000A && ext_len >= 2 {
@@ -118,6 +122,7 @@ fn redteam_parse_client_hello(buf: &[u8]) -> ParsedClientHello {
         supported_groups,
         ec_point_formats,
         alpn_protocols,
+        ext_bodies,
     }
 }
 
@@ -572,4 +577,80 @@ fn test_adversarial_100_runs_grease_invariance() {
         1,
         "JA4 hash MUST have exactly 1 unique value across 100 runs"
     );
+}
+
+#[test]
+fn test_adversarial_per_extension_structural_integrity() {
+    // JA3/JA4 hash extension TYPES only; a structurally malformed extension body
+    // (length field vs actual content) stays invisible to them. This test walks
+    // every extension body and checks its internal length accounting, the way a
+    // strict TLS stack (or a fingerprinting middlebox) would.
+    let builder = ClientHelloBuilder::new(TlsProfile::chrome()).server_name("api.openbrowser.test");
+    let packet = builder.build().expect("ClientHello build should succeed");
+    let parsed = redteam_parse_client_hello(&packet);
+
+    assert!(
+        parsed.ext_bodies.iter().any(|(t, _)| *t == 0x001B),
+        "compress_certificate (0x001B) must be present"
+    );
+
+    for (ext_type, body) in &parsed.ext_bodies {
+        match *ext_type {
+            // RFC 8879 compress_certificate: 1 byte algorithm count + 2 bytes per algorithm.
+            0x001B => {
+                assert!(body.len() >= 1, "compress_certificate body too short");
+                let count = body[0] as usize;
+                assert_eq!(
+                    body.len(),
+                    1 + count * 2,
+                    "compress_certificate body length must equal 1 + count*2 (got body_len={}, count={})",
+                    body.len(),
+                    count
+                );
+                assert!(count >= 1, "Chrome advertises at least one compression algorithm");
+                for i in 0..count {
+                    let algo = ((body[1 + i * 2] as u16) << 8) | body[2 + i * 2] as u16;
+                    assert!(
+                        algo == 0x0001 || algo == 0x0002,
+                        "compression algorithm must be zlib(0x0001) or brotli(0x0002), got {:#06x}",
+                        algo
+                    );
+                }
+            }
+            // RFC 8446 psk_key_exchange_modes: 1 byte list length + 1 byte per mode.
+            0x002D => {
+                assert!(!body.is_empty(), "psk_key_exchange_modes body empty");
+                assert_eq!(
+                    body.len(),
+                    1 + body[0] as usize,
+                    "psk_key_exchange_modes body length mismatch"
+                );
+            }
+            // RFC 8446 supported_versions (ClientHello): 1 byte list length + 2 bytes per version.
+            0x002B => {
+                assert!(!body.is_empty(), "supported_versions body empty");
+                let list_len = body[0] as usize;
+                assert_eq!(
+                    body.len(),
+                    1 + list_len,
+                    "supported_versions body length mismatch (body_len={}, list_len={})",
+                    body.len(),
+                    list_len
+                );
+                assert_eq!(list_len % 2, 0, "supported_versions list length must be even");
+            }
+            // RFC 6961 status_request (OCSP): fixed layout, body declares its own lengths.
+            0x0005 => {
+                assert!(body.len() >= 5, "status_request body too short");
+                let responder_len = ((body[2] as usize) << 8) | body[3] as usize;
+                let ext_len = ((body[4] as usize) << 8) | body[5] as usize;
+                assert_eq!(
+                    body.len(),
+                    5 + responder_len + ext_len,
+                    "status_request body length mismatch"
+                );
+            }
+            _ => {}
+        }
+    }
 }

@@ -61,7 +61,7 @@ if (!gotSingleInstanceLock) {
 const defaultProfileDataRoot = path.join(app.getPath('userData'), 'browser-profiles-v2');
 const localSettingsFile = path.join(app.getPath('userData'), 'openbrowser-local-settings.json');
 
-const UPDATE_REPOSITORY = 'sheying2013/OpenBrowser';
+const UPDATE_REPOSITORY = 'zhu748/OpenBrowser';
 const UPDATE_API_URL = `https://api.github.com/repos/${UPDATE_REPOSITORY}/releases/latest`;
 const UPDATE_LATEST_HTML = `https://github.com/${UPDATE_REPOSITORY}/releases/latest`;
 const UPDATE_RELEASES_ATOM = `https://github.com/${UPDATE_REPOSITORY}/releases.atom`;
@@ -88,8 +88,10 @@ function parseChecksumManifest(text) {
 
 /**
  * Fetch the release's SHA256SUMS.txt manifest (direct asset URL first).
- * Returns a Map, or null when this release publishes no manifest (older
- * releases) — callers must treat null as "cannot verify", never as "valid".
+ * Returns { map, manifestBuffer, signature } — or null when this release
+ * publishes no manifest (older releases). Callers must treat a null map as
+ * "cannot verify", never as "valid". `signature` is null when the release
+ * carries no detached Ed25519 .sig asset yet.
  */
 async function resolveReleaseChecksums(remoteVersion) {
   if (!remoteVersion) return null;
@@ -104,10 +106,13 @@ async function resolveReleaseChecksums(remoteVersion) {
         signal: controller.signal,
       });
       if (response.ok) {
-        const text = await response.text();
-        if (text && text.length <= 65536) {
-          const map = parseChecksumManifest(text);
-          if (map.size) return map;
+        const manifestBuffer = Buffer.from(await response.arrayBuffer());
+        if (manifestBuffer.length && manifestBuffer.length <= 65536) {
+          const map = parseChecksumManifest(manifestBuffer.toString('utf8'));
+          if (map.size) {
+            const signature = await fetchReleaseSignature(remoteVersion, controller.signal);
+            return { map, manifestBuffer, signature };
+          }
         }
       }
     } finally {
@@ -115,6 +120,32 @@ async function resolveReleaseChecksums(remoteVersion) {
     }
   } catch (_) { /* manifest unavailable on this release */ }
   return null;
+}
+
+/** Fetch the detached Ed25519 signature asset for the checksum manifest, if published. */
+async function fetchReleaseSignature(remoteVersion, parentSignal) {
+  const { verifyManifestSignature } = require('./automation/update-trust');
+  const sigUrl = `https://github.com/${UPDATE_REPOSITORY}/releases/download/v${remoteVersion}/${UPDATE_CHECKSUM_ASSET}.sig`;
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  parentSignal?.addEventListener?.('abort', onAbort, { once: true });
+  const timer = setTimeout(() => controller.abort(), UPDATE_TIMEOUT_MS);
+  try {
+    const response = await fetch(sigUrl, {
+      redirect: 'follow',
+      headers: { 'User-Agent': updateUserAgent(), Accept: 'application/octet-stream' },
+      signal: controller.signal,
+    });
+    if (!response.ok) return null;
+    const signature = Buffer.from(await response.arrayBuffer());
+    if (!signature.length || signature.length > 4096) return null;
+    return signature;
+  } catch (_) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+    parentSignal?.removeEventListener?.('abort', onAbort);
+  }
 }
 
 /** SHA-256 a file with constant-memory streaming and timing-safe hex compare. */
@@ -419,20 +450,36 @@ async function downloadAppUpdate() {
     emit({ type: 'app-update-progress', received, total: contentLength || result.asset.size || received, percent: 100, version: result.remoteVersion });
     // Integrity gate: when the release publishes SHA256SUMS.txt the downloaded
     // installer MUST match before it is handed to the OS (fail closed on
-    // mismatch). Releases without a manifest only get a loud warning so the
-    // updater keeps working against historical releases.
+    // mismatch). Releases without a manifest fail closed by default too — the
+    // manifest lives in the same account as the installer, but requiring it at
+    // least blocks the "replaced both files" and "quietly dropped the manifest"
+    // downgrade paths. OPENBROWSER_ALLOW_UNSIGNED_UPDATE=1 restores the old
+    // warn-and-proceed behavior for historical releases, explicitly opt-in.
     const checksums = await resolveReleaseChecksums(result.remoteVersion);
-    const expectedHex = (checksums && (checksums.get(result.asset.name)
-      || checksums.get(path.basename(result.asset.name)))) || null;
+    const expectedHex = (checksums?.map && (checksums.map.get(result.asset.name)
+      || checksums.map.get(path.basename(result.asset.name)))) || null;
+    // Detached Ed25519 signature over the manifest bytes. A published .sig is
+    // binding: an invalid or untrusted signature is fatal, and NO env var
+    // downgrades it — the point of the trust root is that replacing the
+    // release account must not become a path to code execution.
+    if (checksums?.signature) {
+      const { verifyManifestSignature } = require('./automation/update-trust');
+      const verdict = verifyManifestSignature(checksums.manifestBuffer, checksums.signature);
+      if (!verdict.ok) {
+        throw new Error(`Release v${result.remoteVersion} manifest signature is not trusted (${verdict.reason}) — refusing to run the installer`);
+      }
+    }
     if (expectedHex) {
       const valid = await verifyFileSha256(temporaryPath, expectedHex);
       if (!valid) throw new Error('Update package failed SHA-256 integrity verification — the download is corrupted or was tampered with');
+    } else if (process.env.OPENBROWSER_ALLOW_UNSIGNED_UPDATE === '1') {
+      console.warn(`[OpenBrowser] release v${result.remoteVersion} publishes no ${UPDATE_CHECKSUM_ASSET} — proceeding without integrity verification (OPENBROWSER_ALLOW_UNSIGNED_UPDATE=1)`);
     } else {
-      console.warn(`[OpenBrowser] release v${result.remoteVersion} publishes no ${UPDATE_CHECKSUM_ASSET} — proceeding without integrity verification`);
+      throw new Error(`Release v${result.remoteVersion} publishes no ${UPDATE_CHECKSUM_ASSET} — refusing to run an unverifiable installer (set OPENBROWSER_ALLOW_UNSIGNED_UPDATE=1 to override)`);
     }
     const openError = await shell.openPath(temporaryPath);
     if (openError) shell.showItemInFolder(temporaryPath);
-    return { success: true, path: temporaryPath, version: result.remoteVersion, assetName: result.asset.name, verified: Boolean(expectedHex) };
+    return { success: true, path: temporaryPath, version: result.remoteVersion, assetName: result.asset.name, verified: Boolean(expectedHex), signed: Boolean(checksums?.signature) };
   } catch (error) {
     await fsp.rm(temporaryPath, { force: true }).catch(() => {});
     throw error;
@@ -954,6 +1001,37 @@ function registerTrustedIpc(channel, handler) {
     return handler(event, ...args);
   });
 }
+
+/**
+ * Navigation confinement for every Electron webContents.
+ *
+ * The window's preload exposes the full `ops` IPC surface, so nothing but the
+ * app's own index.html may ever run inside this app. Two layers already exist
+ * (the webRequest URL filter blocks remote http(s), assertTrustedIpcSender
+ * rejects IPC from any other document), but the webRequest filter lets every
+ * file: and data: URL through, and popup windows were entirely unguarded: a
+ * window.open would create a child window with the preload attached and no
+ * origin restrictions of its own. Closing both: navigation is only allowed to
+ * the trusted app index (devtools: URLs keep working), and popups are denied
+ * outright — the renderer has no window.open usage, so deny-all breaks
+ * nothing while removing an uncontrolled window surface.
+ */
+function confineWebContents(contents) {
+  try {
+    contents.on('will-navigate', (event, url) => {
+      const target = String(url || '');
+      if (target.startsWith('devtools:')) return;
+      if (!isTrustedAppIndexUrl(target)) {
+        event.preventDefault();
+        console.warn('[OpenBrowser] blocked navigation to untrusted URL:', target);
+      }
+    });
+    contents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  } catch (error) {
+    console.warn('OpenBrowser webContents confinement setup failed:', error.message);
+  }
+}
+app.on('web-contents-created', (_event, contents) => confineWebContents(contents));
 let shortcutBridge = null;
 let shortcutFallbackRegistered = false;
 let shortcutActionInFlight = false;
@@ -1799,7 +1877,26 @@ app.whenReady().then(async () => {
       || /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//i.test(url);
     callback({ cancel: !allowed });
   });
-  const localSettings = await loadLocalSettings();
+  // The app UI is a local document that needs no web permissions at all;
+  // everything (geolocation, camera, mic, notifications, MIDI, clipboard
+  // reads) is denied by default. Clipboard copy/paste in the UI goes through
+  // the system:read-clipboard IPC, not navigator.clipboard, so nothing the
+  // app actually uses is affected.
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+    console.warn('[OpenBrowser] denied permission request:', permission);
+    callback(false);
+  });
+  session.defaultSession.setPermissionCheckHandler(() => false);
+  // Window creation only needs Electron readiness, not engine state: overlap it
+  // with settings loading so the first frame is not behind disk I/O. Engine init
+  // stays sequential — every later IPC handler (system:info et al.) dereferences
+  // the engine, so the window must not start firing invokes before it exists.
+  const localSettingsPromise = loadLocalSettings();
+  const windowPromise = createWindow().catch((error) => {
+    console.error('OpenBrowser window creation failed:', error.message);
+    throw error;
+  });
+  const localSettings = await localSettingsPromise;
   const initialRootCheck = await ensureDataRootIsolationSecure(localSettings.profileDataRoot);
   if (!initialRootCheck.ok) throw new Error(initialRootCheck.message);
   engine = new BrowserEngine(app, {
@@ -2445,7 +2542,9 @@ app.whenReady().then(async () => {
     localApi: automation?.info || null,
   }));
 
-  await createWindow();
+  // The window was created in parallel with settings loading above; by this point
+  // createWindow() has either resolved or thrown, and awaiting it again is free.
+  await windowPromise;
   startAppUpdateWatcher();
 });
 

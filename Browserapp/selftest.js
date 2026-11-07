@@ -58,6 +58,10 @@ async function main() {
     const afterTabs = (await cdp.tabs(started[1].port)).length;
     results = { started, extensionMarkers, textValues, tabManagement: { before: beforeTabs, after: afterTabs }, windowManagement: true, success: Object.values(textValues).every((value) => value === 'SYNC_TEST') && afterTabs === beforeTabs + 1 };
     process.stdout.write(JSON.stringify(results, null, 2));
+    if (!results.success) {
+      process.stderr.write('selftest: FAILED (sync text propagation or tab management mismatch)\n');
+      process.exitCode = 1;
+    }
   } finally {
     await engine.stopAll().catch(() => {});
     await new Promise((resolve) => {

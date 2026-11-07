@@ -26,6 +26,7 @@ const zlib = require('zlib');
 const { parseProcessContent } = require('./protocol/rpa-registry');
 
 const TEMPLATE_SYNC_MAX_RESPONSE_BYTES = 20 * 1024 * 1024; // process packs are small JSON.gz
+const MAX_PACK_OUTPUT_BYTES = 64 * 1024 * 1024; // decompressed pack ceiling (zip-bomb guard)
 
 function isCloudMetadataHostname(hostname) {
   const host = String(hostname || '').trim().toLowerCase().replace(/^\[|\]$/g, '');
@@ -180,8 +181,13 @@ async function fetchProcessPack(uri, templateId) {
   const { buffer } = await requestRaw(uri, { timeout: 45000 });
   let text;
   try {
-    text = zlib.gunzipSync(buffer).toString('utf8');
-  } catch (_) {
+    // Cap decompressed size: a 20 MiB compressed body could otherwise expand into an
+    // OOM in the main process (zip bomb from a compromised marketplace).
+    text = zlib.gunzipSync(buffer, { maxOutputLength: MAX_PACK_OUTPUT_BYTES }).toString('utf8');
+  } catch (error) {
+    if (error && /window size|output size|too large/i.test(String(error.message || ''))) {
+      throw new Error(`模板包解压超限（> ${MAX_PACK_OUTPUT_BYTES} 字节）`);
+    }
     text = buffer.toString('utf8');
   }
   const pack = JSON.parse(text);

@@ -931,8 +931,15 @@ impl ProxyForwarder for LocalProxyBridge {
     }
 
     async fn stop(&self) -> Result<()> {
-        let mut guard = self.running.lock().await;
-        if let Some(mut running) = guard.take() {
+        // Take the running handle out under the lock, then drain OUTSIDE it:
+        // holding `running` across session drain (which awaits every tunnel)
+        // would block a concurrent start() for the whole drain window and make
+        // bridge restarts serialize behind the slowest live session.
+        let taken = {
+            let mut guard = self.running.lock().await;
+            guard.take()
+        };
+        if let Some(mut running) = taken {
             let _ = running.shutdown_tx.send(true);
             let _ = (&mut running.server_handle).await;
             self.tunnel_pool.clear().await;

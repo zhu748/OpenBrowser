@@ -242,3 +242,24 @@ async fn test_proxy_bridge_header_too_large() -> Result<()> {
     bridge.stop().await?;
     Ok(())
 }
+
+#[test]
+fn proxy_config_debug_never_leaks_credentials() {
+    // Debug is the hand-off point to any log line or error report; it must
+    // render credentials as [redacted], never verbatim.
+    let config = ProxyConfig {
+        protocol: ProxyProtocol::Socks5,
+        host: "203.0.113.7".to_string(),
+        port: 1080,
+        username: Some("proxy-user".to_string()),
+        password: Some("hunter2".to_string()),
+        remark: Some("remark".to_string()),
+        name: Some("name".to_string()),
+    };
+    let rendered = format!("{:?}", config);
+    assert!(rendered.contains("ProxyConfig"), "Debug struct name present");
+    assert!(!rendered.contains("proxy-user"), "username must be redacted");
+    assert!(!rendered.contains("hunter2"), "password must be redacted");
+    assert!(rendered.contains("[redacted]"), "redaction marker present");
+    assert!(rendered.contains("203.0.113.7"), "host stays visible for ops");
+}

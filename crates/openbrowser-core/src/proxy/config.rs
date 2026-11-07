@@ -29,7 +29,29 @@ impl std::str::FromStr for ProxyProtocol {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Manual Debug impl: ProxyConfig carries upstream credentials, and a derived
+/// Debug would print them verbatim into any `{:?}` log line or error report.
+impl std::fmt::Debug for ProxyConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProxyConfig")
+            .field("protocol", &self.protocol)
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field(
+                "username",
+                &self.username.as_deref().map(|u| if u.is_empty() { "" } else { "[redacted]" }),
+            )
+            .field(
+                "password",
+                &self.password.as_deref().map(|p| if p.is_empty() { "" } else { "[redacted]" }),
+            )
+            .field("remark", &self.remark)
+            .field("name", &self.name)
+            .finish()
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProxyConfig {
     pub protocol: ProxyProtocol,
     pub host: String,

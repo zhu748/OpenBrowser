@@ -265,7 +265,10 @@ function decryptCredential(bufferOrString, options = {}) {
     return plainBuf.toString('utf8');
   }
 
-  // Plaintext legacy fallback
+  // Plaintext legacy fallback. A ciphertext that was swapped for plaintext (or a
+  // never-encrypted store) lands here silently; log it so an encryption downgrade
+  // is at least observable instead of invisible.
+  console.warn('[credential-crypto] decrypting legacy plaintext payload (no OBS1/AES-GCM magic header)');
   return buf.toString('utf8');
 }
 

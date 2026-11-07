@@ -8,7 +8,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/lyu0805/OpenBrowser.git"
+    "url": "https://github.com/zhu748/OpenBrowser.git"
   },
   "engines": {
     "node": ">=22.12.0"
@@ -183,6 +183,7 @@
     "selftest:workerfontwiring": "node automation/selftests/worker-font-presence-wiring-selftest.js",
     "selftest:cssfontgate": "node automation/selftests/css-font-local-gate-e2e-selftest.js",
     "selftest:cssfontrewrite": "node automation/selftests/css-font-response-rewrite-e2e-selftest.js",
+    "selftest:all": "node scripts/selftest-all.js",
     "selftest:cssfontwiring": "node automation/selftests/css-font-response-wiring-selftest.js",
     "selftest:fontblob": "node automation/selftests/query-local-font-blob-e2e-selftest.js",
     "selftest:fontblobassets": "node automation/selftests/query-local-font-blob-real-assets-selftest.js",

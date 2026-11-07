@@ -29,7 +29,7 @@ const { PERSONAS_BY_OS, pickPersona, isCoherent, personasForOs } = require('./au
 // Correcting such a reading is worth the one-time move.
 const GOLDEN = {
   "legacy-a": {
-    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
     "platform": "Linux x86_64",
     "hardwareConcurrency": 8,
     "deviceMemory": 8,
@@ -49,12 +49,13 @@ const GOLDEN = {
     "webglVendor": "Google Inc. (NVIDIA)",
     "webglRenderer": "ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 SUPER/PCIe/SSE2, OpenGL 4.6)",
     "languages": [
-      "en-US"
+      "en-US",
+      "en"
     ],
     "seed": "655c53155857aae2"
   },
   "legacy-b": {
-    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
     "platform": "Win32",
     "hardwareConcurrency": 6,
     "deviceMemory": 8,
@@ -74,12 +75,13 @@ const GOLDEN = {
     "webglVendor": "Google Inc. (NVIDIA)",
     "webglRenderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 3080 Direct3D11 vs_5_0 ps_5_0, D3D11)",
     "languages": [
-      "en-US"
+      "en-US",
+      "en"
     ],
     "seed": "a9b8e4570504b1b3"
   },
   "legacy-c": {
-    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
     "platform": "Win32",
     "hardwareConcurrency": 12,
     "deviceMemory": 8,
@@ -92,14 +94,15 @@ const GOLDEN = {
       "availTop": 0,
       "screenX": 0,
       "screenY": 0,
-      "colorDepth": 30,
-      "pixelDepth": 30,
+      "colorDepth": 24,
+      "pixelDepth": 24,
       "devicePixelRatio": 1
     },
     "webglVendor": "Google Inc. (Intel)",
     "webglRenderer": "ANGLE (Intel, Intel(R) Arc(TM) A770 Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)",
     "languages": [
-      "en-US"
+      "en-US",
+      "en"
     ],
     "seed": "7a8c56e4a3295772"
   },
@@ -124,7 +127,8 @@ const GOLDEN = {
     "webglVendor": "Google Inc. (Intel)",
     "webglRenderer": "ANGLE (Intel, Intel(R) UHD Graphics 770 Direct3D11 vs_5_0 ps_5_0, D3D11)",
     "languages": [
-      "en-US"
+      "en-US",
+      "en"
     ],
     "seed": "a56d1b6fe308960e"
   },
@@ -142,14 +146,15 @@ const GOLDEN = {
       "availTop": 0,
       "screenX": 0,
       "screenY": 0,
-      "colorDepth": 30,
-      "pixelDepth": 30,
+      "colorDepth": 24,
+      "pixelDepth": 24,
       "devicePixelRatio": 1.5
     },
     "webglVendor": "Google Inc. (Apple)",
     "webglRenderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)",
     "languages": [
-      "en-US"
+      "en-US",
+      "en"
     ],
     "seed": "5187a2af003d3f3b"
   }

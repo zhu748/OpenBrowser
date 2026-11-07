@@ -4,6 +4,7 @@ const http = require('http');
 const crypto = require('crypto');
 const { URL } = require('url');
 const { cleanApiKey, isApiKeyPlaceholder, resolveApiKey } = require('./api-key');
+const { redactProxyCredentials } = require('./proxy-redact');
 const { resolveAvailablePort } = require('./port-utils');
 
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -49,6 +50,7 @@ function registerRouteMethods(methods, paths) {
 registerRouteMethods(['GET'], [
   '/', '/status', '/api/getVersion', '/api/v1/version',
   '/api/v1/user/list', '/api/v2/browser-profile/list', '/api/profiles',
+  '/api/v1/user/detail', '/api/v2/browser-profile/detail', '/api/profiles/get', '/api/profile',
   '/api/v1/browser/active', '/api/v2/browser-profile/active', '/api/browser/active',
   '/api/v2/proxy-list/list', '/api/proxy/list',
   '/api/fingerprint', '/api/v1/fingerprint', '/api/isolation/audit', '/api/v1/isolation/audit',
@@ -65,6 +67,8 @@ registerRouteMethods(['POST'], [
   '/api/v1/browser/start', '/api/v2/browser-profile/start', '/api/browser/start',
   '/api/v1/browser/stop', '/api/v2/browser-profile/stop', '/api/browser/stop',
   '/api/v1/browser/stop-all', '/api/v2/browser-profile/stop-all', '/api/browser/stop-all',
+  '/api/v1/browser/open-url', '/api/browser/open-url',
+  '/api/v1/browser/screenshot', '/api/browser/screenshot',
   '/api/v2/proxy-list/create', '/api/proxy/create',
   '/api/v2/proxy-list/update', '/api/proxy/update',
   '/api/v2/proxy-list/delete', '/api/proxy/delete',
@@ -116,6 +120,30 @@ function redactProxyRecord(item) {
     endpoint,
     credentials_redacted: hasCredentials,
   };
+}
+
+/**
+ * Strip secrets from a profile before it crosses the local API boundary.
+ * API clients are automation tools, not secret vaults: proxy credentials,
+ * account passwords, TOTP seeds and cookie jars never belong in responses.
+ */
+function redactProfileForApi(profile) {
+  if (!profile || typeof profile !== 'object') return profile;
+  const safe = { ...profile };
+  if (typeof safe.proxy === 'string' && safe.proxy) safe.proxy = redactProxyCredentials(safe.proxy);
+  if (typeof safe.cookies === 'string') safe.cookies = '';
+  if (typeof safe.username === 'string') safe.username = '';
+  if (typeof safe.password === 'string') safe.password = '';
+  if (typeof safe.totpSecret === 'string') safe.totpSecret = '';
+  if (typeof safe.otp === 'string') safe.otp = '';
+  if (safe.platform && typeof safe.platform === 'object') {
+    safe.platform = { ...safe.platform };
+    if (typeof safe.platform.username === 'string') safe.platform.username = '';
+    if (typeof safe.platform.password === 'string') safe.platform.password = '';
+    if (typeof safe.platform.totpSecret === 'string') safe.platform.totpSecret = '';
+    if (typeof safe.platform.otp === 'string') safe.platform.otp = '';
+  }
+  return safe;
 }
 
 function booleanValue(value, fallback = false) {
@@ -628,6 +656,13 @@ class LocalApiServer {
 
       const result = await this.route(method, pathname, input, req);
       if (result === undefined) return sendJson(res, 404, fail('not found', 404), origin);
+      // Route-level failures carry an HTTP status as their code (all fail() call sites
+      // use 3-digit codes): reflect it in the real HTTP status instead of always 200,
+      // so clients and tests can distinguish success from failure without body parsing.
+      const resultCode = Number(result && result.code);
+      if (Number.isInteger(resultCode) && resultCode >= 400 && resultCode <= 599) {
+        return sendJson(res, resultCode, result, origin);
+      }
       return sendJson(res, 200, result, origin);
     } catch (error) {
       const status = Number(error.statusCode) || 500;
@@ -721,7 +756,7 @@ class LocalApiServer {
       }
       if (typeof this.engine.persist === 'function') await this.engine.persist();
       created = this.engine.profiles.get(id) || created;
-      return ok({ user_id: id, profile_id: id, id, ...proxySummary(created, this.proxyStore), profile: created });
+      return ok({ user_id: id, profile_id: id, id, ...proxySummary(created, this.proxyStore), profile: redactProfileForApi(created) });
     }
 
     if (pathname === '/api/v2/browser-profile/update' || pathname === '/api/profiles/update') {
@@ -818,7 +853,7 @@ class LocalApiServer {
       return ok({
         profile_id: id,
         ...proxySummary(profile, this.proxyStore, association.present ? association.value : undefined),
-        profile,
+        profile: redactProfileForApi(profile),
       });
     }
 
@@ -872,7 +907,7 @@ class LocalApiServer {
       });
       await this.engine.syncProfiles([next]);
       if (typeof this.engine.persist === 'function') await this.engine.persist();
-      return ok({ profile_id: id, profile: this.engine.profiles.get(id) || next });
+      return ok({ profile_id: id, profile: redactProfileForApi(this.engine.profiles.get(id) || next) });
     }
 
     if (pathname === '/api/v1/user/delete' || pathname === '/api/v2/browser-profile/delete' || pathname === '/api/profiles/delete') {
@@ -950,7 +985,7 @@ class LocalApiServer {
         status: running ? 'Active' : 'Inactive',
         debug_port: running?.port || null,
         ws: running?.port ? { puppeteer: await resolveWebSocketDebuggerUrl(running.port, id), selenium: '127.0.0.1:' + running.port } : null,
-        profile,
+        profile: redactProfileForApi(profile),
         ...proxySummary(profile, this.proxyStore),
       });
     }

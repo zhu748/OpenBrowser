@@ -199,6 +199,13 @@ function buildFingerprint(profile = {}) {
     : (privacy.clientHints && typeof privacy.clientHints === 'object' ? privacy.clientHints
       : (profile.clientHints && typeof profile.clientHints === 'object' ? profile.clientHints : {}));
   const kernelMajor = Number(String(profile.kernelVersion || '').match(/^\d+/)?.[0]) || 0;
+  // The UA major must track the actual browser kernel: an engine advertising
+  // Chrome 128-137 while running a 148 kernel is a one-shot CSS/API
+  // feature-detection tell. When the profile doesn't pin a kernel version,
+  // derive the pool from the bundled kernel's major version.
+  const { OPENBROWSER_KERNEL_VERSION } = require('./browser-kernel');
+  const defaultKernelMajor = Number(String(OPENBROWSER_KERNEL_VERSION || '').match(/^\d+/)?.[0]) || 0;
+  const uaMajorPool = kernelMajor ? [kernelMajor] : (defaultKernelMajor ? [defaultKernelMajor] : undefined);
   let uaProfile;
   if (uaOverride) {
     const osFromUa = parseOsFromUa(uaOverride);
@@ -239,7 +246,7 @@ function buildFingerprint(profile = {}) {
       })
       .find((value) => value === "windows" || value === "macos" || value === "macos_arm" || value === "linux");
     uaProfile = randomUaForSeed(u32(seed, 44), {
-      majors: kernelMajor ? [kernelMajor] : undefined,
+      majors: uaMajorPool,
       // The UA is the source of truth for every OS-facing fingerprint surface.
       // macos_arm goes through as-is: OS_PRESETS.macos_arm emits the same MacIntel UA token
       // but pins Client Hints architecture=arm, which downstream persona/WebGL pools key on.

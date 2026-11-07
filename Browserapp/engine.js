@@ -4413,7 +4413,24 @@ class BrowserEngine {
     return { success: true, deleted: deleted.length, stopped, dataDeleted: Boolean(deleteData), ids: deleted };
   }
 
-  status() { return [...this.profiles.values()].map((profile) => ({ ...profile, ...this.publicRunning(profile.id), network: this.networkInfo.get(profile.id) || null, assignedExtensions: [...(this.assignments.get(profile.id) || [])] })); }
+  // Public status view. Cookie jars (up to 500 KB per profile) and platform
+  // account secrets do not belong in a poll payload that the renderer requests
+  // every ~120 ms: the editor reads them from local state, and the cloud-backup
+  // flow receives the full profile through the 'profile-closed' event instead.
+  // Proxy strings keep their credentials — the renderer merges them back into
+  // local state (mergeEngineExitState) and localStorage already strips them.
+  status() {
+    return [...this.profiles.values()].map((profile) => {
+      const view = { ...profile, ...this.publicRunning(profile.id), network: this.networkInfo.get(profile.id) || null, assignedExtensions: [...(this.assignments.get(profile.id) || [])] };
+      if ('cookies' in view) view.cookies = '';
+      if (view.platform && typeof view.platform === 'object') {
+        view.platform = { ...view.platform };
+        if ('password' in view.platform) view.platform.password = '';
+        if ('totpSecret' in view.platform) view.platform.totpSecret = '';
+      }
+      return view;
+    });
+  }
 
   async resolveProfileProxyConfig(profile, { allowExtract = true } = {}) {
     const working = this.resolveStoredProxyProfile(this.sanitizeProfile(profile));

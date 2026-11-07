@@ -3,30 +3,67 @@
 /**
  * Directory integrity manifest.
  *
- * Records the size and modification time of every file in a directory so a
- * later run can tell whether the contents were altered, truncated or removed.
+ * Records per-file { size, mtimeMs, sha256 } and seals the manifest itself
+ * with an HMAC so it cannot be rewritten to match tampered contents.
  *
- * This is deliberately cheaper than hashing: for a directory holding a large
- * payload (an unpacked bundle, an extension, a cache) stat-ing every entry is
- * orders of magnitude faster than reading it. Pair it with a content digest
- * only when tampering resistance is required.
+ * Originally this recorded only size+mtime — cheap, but the manifest sits in
+ * the SAME directory it describes: an attacker who can replace a kernel
+ * binary can also rewrite the manifest next to it, so plain stat comparison
+ * only catches accidental damage, not deliberate tampering. Two additions
+ * close that gap without inventing external trust anchors:
  *
- * Paths are stored relative to the root and normalised. That alone makes the
- * manifest relocatable, but modification times are recorded too, and copying a
- * directory to another machine normally rewrites them. Pass
- * `{ checkMtime: false }` when verifying a copy rather than the original
- * location; the size check still catches truncation and replacement with a
- * different-length payload.
+ *   1. sha256 per file (opt-in via `hash: true` at build time) — content
+ *      must actually match, not merely have the same length;
+ *   2. HMAC-SHA256 over the manifest body with a key derived from machine
+ *      identity — a local tamperer can compute hashes of their replacement
+ *      files, but cannot produce a valid seal without the derived key.
+ *
+ * Legacy manifests (no hashes, no seal) verify as before under the stat-only
+ * rules; `ensureManifest` upgrades them to the sealed+hashed form once their
+ * stat check passes, so an installed tree converges to the strong form after
+ * one clean verification.
+ *
+ * Paths are stored relative to the root and normalised, which keeps the
+ * manifest relocatable; pass `{ checkMtime: false }` when verifying a copy
+ * (copying rewrites mtimes; size and content checks still apply).
  */
 
+const crypto = require('crypto');
 const fsp = require('fs/promises');
 const path = require('path');
 
 const MANIFEST_FILENAME = 'integrity_manifest.json';
+const MANIFEST_SEAL_FIELD = 'hmac';
 
 /** Convert a platform path to a forward-slash form for stable comparisons. */
 function toPosix(p) {
   return String(p).split(path.sep).join('/');
+}
+
+/**
+ * Derive the manifest sealing key for this machine. Stable across restarts,
+ * derived per-user (userData path is per-user by definition) so a manifest
+ * sealed here cannot be re-sealed elsewhere. This is tamper-resistance
+ * against local rewrites, not cryptographic protection of the key itself —
+ * a same-user attacker can read the derivation inputs; raising that bar
+ * requires an OS keychain and is deliberately out of scope here.
+ */
+function deriveManifestKey(salt) {
+  const os = require('os');
+  const userInfo = (() => { try { return os.userInfo().username || ''; } catch (_) { return ''; } })();
+  const homedir = os.homedir || '';
+  const hostname = os.hostname || '';
+  const platform = os.platform || '';
+  return crypto.createHash('sha256')
+    .update('openbrowser-integrity-v1\0')
+    .update(String(salt || '') + '\0')
+    .update(userInfo + '\0' + homedir + '\0' + hostname + '\0' + platform)
+    .digest();
+}
+
+function sealManifest(manifest, salt) {
+  const body = JSON.stringify({ ...manifest, [MANIFEST_SEAL_FIELD]: undefined });
+  return crypto.createHmac('sha256', deriveManifestKey(salt)).update(body).digest('hex');
 }
 
 /**
@@ -69,8 +106,9 @@ async function listFiles(root, options = {}) {
  * Build a manifest describing every file under `root`.
  *
  * @param {string} root
- * @param {{filter?:(relPath:string)=>boolean, maxEntries?:number, exclude?:string[]}} [options]
- * @returns {Promise<{root:string, files:Array<{filePath:string,mtimeMs:number,size:number}>}>}
+ * @param {{filter?:(relPath:string)=>boolean, maxEntries?:number, exclude?:string[], hash?:boolean}} [options]
+ *   `hash: true` records a per-file sha256 (content-level verification).
+ * @returns {Promise<{root:string, files:Array<{filePath:string,mtimeMs:number,size:number,sha256?:string}>}>}
  */
 async function buildManifest(root, options = {}) {
   const exclude = new Set(options.exclude || []);
@@ -83,8 +121,11 @@ async function buildManifest(root, options = {}) {
   const files = [];
   for (const rel of await listFiles(root, Object.assign({}, options, { filter }))) {
     try {
-      const stat = await fsp.stat(path.join(root, ...rel.split('/')));
-      files.push({ filePath: rel, mtimeMs: stat.mtimeMs, size: stat.size });
+      const abs = path.join(root, ...rel.split('/'));
+      const stat = await fsp.stat(abs);
+      const entry = { filePath: rel, mtimeMs: stat.mtimeMs, size: stat.size };
+      if (options.hash) entry.sha256 = await hashFile(abs);
+      files.push(entry);
     } catch (_) {
       // The file disappeared between listing and stat-ing; skip it.
     }
@@ -92,15 +133,34 @@ async function buildManifest(root, options = {}) {
   return { root, files };
 }
 
+/** Streaming sha256 of one file. */
+async function hashFile(absPath) {
+  const { createHash } = crypto;
+  const hash = createHash('sha256');
+  await pipelineFile(absPath, hash);
+  return hash.digest('hex');
+}
+
+function pipelineFile(absPath, hash) {
+  const fs = require('fs');
+  return new Promise((resolve, reject) => {
+    const stream = fs.createReadStream(absPath);
+    stream.on('data', (chunk) => hash.update(chunk));
+    stream.on('error', reject);
+    stream.on('end', resolve);
+  });
+}
+
 /**
  * Compare a directory against a manifest.
  *
  * @param {string} root
- * @param {{files:Array<{filePath:string,mtimeMs:number,size:number}>}} manifest
- * @param {{checkMtime?:boolean, checkSize?:boolean}} [options]
+ * @param {{files:Array<{filePath:string,mtimeMs:number,size:number,sha256?:string}>}} manifest
+ * @param {{checkMtime?:boolean, checkSize?:boolean, checkHash?:boolean, hash?:boolean}} [options]
  *   Disable `checkMtime` when verifying a relocated copy, since copying
- *   rewrites timestamps.
- * @returns {Promise<{ok:boolean, missing:string[], changed:string[], extra:string[], checked:number}>}
+ *   rewrites timestamps. Hashes are compared whenever the manifest entry
+ *   carries one (they are only written under `hash: true`).
+ * @returns {Promise<{ok:boolean, missing:string[], changed:string[], extra:string[], checked:number, sealValid?:boolean, hashed?:number}>}
  */
 async function verifyManifest(root, manifest, options = {}) {
   const checkMtime = options.checkMtime !== false;
@@ -111,6 +171,7 @@ async function verifyManifest(root, manifest, options = {}) {
   const actualPaths = new Set(await listFiles(root));
   const missing = [];
   const changed = [];
+  let hashed = 0;
 
   for (const [rel, entry] of expectedMap) {
     if (!actualPaths.has(rel)) {
@@ -118,7 +179,8 @@ async function verifyManifest(root, manifest, options = {}) {
       continue;
     }
     try {
-      const stat = await fsp.stat(path.join(root, ...rel.split('/')));
+      const abs = path.join(root, ...rel.split('/'));
+      const stat = await fsp.stat(abs);
       const sizeChanged = checkSize
         && Number.isFinite(entry.size)
         && stat.size !== entry.size;
@@ -126,7 +188,13 @@ async function verifyManifest(root, manifest, options = {}) {
         && Number.isFinite(entry.mtimeMs)
         // Filesystems round timestamps; tolerate a small delta.
         && Math.abs(stat.mtimeMs - entry.mtimeMs) > 1;
-      if (sizeChanged || mtimeChanged) changed.push(rel);
+      let hashChanged = false;
+      if (typeof entry.sha256 === 'string' && /^[0-9a-f]{64}$/.test(entry.sha256)) {
+        const actual = await hashFile(abs);
+        hashed += 1;
+        hashChanged = actual !== entry.sha256;
+      }
+      if (sizeChanged || mtimeChanged || hashChanged) changed.push(rel);
     } catch (_) {
       missing.push(rel);
     }
@@ -140,14 +208,20 @@ async function verifyManifest(root, manifest, options = {}) {
     changed: changed.sort(),
     extra,
     checked: expectedMap.size,
+    hashed,
   };
 }
 
-/** Write a manifest next to the directory contents. */
-async function writeManifest(root, manifest) {
+/** Write a manifest next to the directory contents, sealed with an HMAC. */
+async function writeManifest(root, manifest, options = {}) {
   await fsp.mkdir(root, { recursive: true });
   const target = path.join(root, MANIFEST_FILENAME);
-  await fsp.writeFile(target, JSON.stringify(manifest), 'utf8');
+  const salt = path.basename(String(root || ''));
+  const sealed = {
+    ...manifest,
+    [MANIFEST_SEAL_FIELD]: sealManifest(manifest, salt),
+  };
+  await fsp.writeFile(target, JSON.stringify(sealed), 'utf8');
   return target;
 }
 
@@ -164,22 +238,53 @@ async function readManifest(root) {
 }
 
 /**
+ * Verify the manifest's own HMAC seal. Returns true for legacy manifests
+ * (no seal — recorded before sealing existed); callers treat "seal present
+ * and invalid" as tampering, and "seal absent" as legacy.
+ */
+function verifyManifestSeal(manifest, root) {
+  if (!manifest || typeof manifest[MANIFEST_SEAL_FIELD] !== 'string') return 'legacy';
+  const salt = path.basename(String(root || ''));
+  const expected = sealManifest({ ...manifest, [MANIFEST_SEAL_FIELD]: undefined }, salt);
+  return expected === manifest[MANIFEST_SEAL_FIELD] ? 'valid' : 'invalid';
+}
+
+/**
  * Convenience wrapper: create the manifest on first run, verify afterwards.
  *
- * @returns {Promise<{status:'created'|'ok'|'mismatch', report?:object}>}
+ * A legacy manifest (no seal) that still verifies under stat rules is
+ * transparently upgraded to the sealed+hashed form: an installed tree
+ * converges to strong verification after one clean pass. A manifest whose
+ * seal exists but does not verify is reported as `sealed-invalid` and never
+ * silently rebuilt — rebuilding would launder exactly the tamper it detected.
+ *
+ * @returns {Promise<{status:'created'|'ok'|'mismatch'|'sealed-invalid', report?:object, upgraded?:boolean}>}
  */
 async function ensureManifest(root, options = {}) {
   const existing = await readManifest(root);
   if (!existing) {
-    const manifest = await buildManifest(root, options);
+    const manifest = await buildManifest(root, { ...options, hash: options.hash !== false });
     await writeManifest(root, manifest);
     return { status: 'created' };
+  }
+  const seal = verifyManifestSeal(existing, root);
+  if (seal === 'invalid') {
+    // Do NOT rebuild: a bad seal means the manifest was rewritten by something
+    // that could not re-seal it. Surfacing it is the whole point of the seal.
+    return { status: 'sealed-invalid', report: null };
   }
   const report = await verifyManifest(root, existing, options);
   if (!report.ok) {
     // Drop the stale manifest so the next call rebuilds it.
     await fsp.rm(path.join(root, MANIFEST_FILENAME), { force: true });
     return { status: 'mismatch', report };
+  }
+  const hasHashes = existing.files.some((entry) => typeof entry.sha256 === 'string');
+  if (seal === 'legacy' || !hasHashes) {
+    // Clean tree under the old rules: upgrade to sealed+hashed in place.
+    const manifest = await buildManifest(root, { ...options, hash: true });
+    await writeManifest(root, manifest);
+    return { status: 'ok', report, upgraded: true };
   }
   return { status: 'ok', report };
 }
@@ -192,5 +297,7 @@ module.exports = {
   ensureManifest,
   listFiles,
   toPosix,
+  verifyManifestSeal,
+  sealManifest,
   MANIFEST_FILENAME,
 };

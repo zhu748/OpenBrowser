@@ -25,6 +25,7 @@
 const fs = require('fs');
 const path = require('path');
 const { deriveFontPlaceholder, deriveBridgeToken } = require('./font-placeholder');
+const { mapPlatformToSubsetKey } = require('./font-metrics');
 
 function resolveFontSubsetRoot() {
   const candidates = [
@@ -50,9 +51,10 @@ function loadSubsetsForGate(platformOrSubsets) {
   if (!fs.existsSync(indexPath)) return [];
   try {
     const index = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
-    const platformKey = typeof platformOrSubsets === 'string' && platformOrSubsets.toLowerCase().includes('mac')
-      ? 'macos'
-      : 'windows';
+    // Reuse the canonical platform mapping: a linux/android persona must get its
+    // own subset, not silently fall through to the Windows one (the Windows
+    // fallback stays only for genuinely unknown platform strings).
+    const platformKey = mapPlatformToSubsetKey(String(platformOrSubsets || '')) || 'windows';
     const pData = index.platforms?.[platformKey] || index.platforms?.windows || {};
     const list = [];
     for (const [family, entry] of Object.entries(pData)) {

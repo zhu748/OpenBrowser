@@ -133,6 +133,47 @@ function main() {
   assert.ok(renderer.includes('redactProfileForStorage'), 'renderer must redact secrets');
   assert.ok(renderer.includes('cookies: \'\''), 'redact clears cookies');
   assert.ok(renderer.includes('totpSecret: \'\''), 'redact clears totp');
+  assert.ok(renderer.includes('proxy: redactProxyForStorage(value.proxy)'),
+    'redact must strip proxy credentials before localStorage persistence');
+  {
+    const fnSrc = renderer.match(/function redactProfileForStorage\(profile\) \{[\s\S]*?\n\}/);
+    assert.ok(fnSrc, 'redactProfileForStorage must exist as a standalone function');
+    assert.ok(fnSrc[0].includes('redactProxyForStorage('),
+      'redactProfileForStorage body must pass proxy through redactProxyForStorage');
+  }
+
+  // Behavioral check: redactProxyForStorage semantics (extracted from renderer source).
+  {
+    const fnMatch = renderer.match(/function redactProxyForStorage\(proxy\) \{[\s\S]*?\n\}/);
+    assert.ok(fnMatch, 'redactProxyForStorage must exist as a standalone function');
+    // eslint-disable-next-line no-new-func
+    const redactProxyForStorage = new Function(`${fnMatch[0]}\nreturn redactProxyForStorage;`)();
+    assert.strictEqual(redactProxyForStorage('socks5://user:secret@1.2.3.4:1080'), 'socks5://1.2.3.4:1080');
+    assert.strictEqual(redactProxyForStorage('1.2.3.4:1080:user:secret'), '1.2.3.4:1080');
+    assert.strictEqual(redactProxyForStorage('1.2.3.4:1080'), '1.2.3.4:1080');
+    assert.strictEqual(redactProxyForStorage('direct'), 'direct');
+    assert.strictEqual(redactProxyForStorage(''), 'Direct');
+    // The renderer copy and the shared canonical module must agree on every
+    // shape — this is the lock that keeps the two from drifting apart.
+    const { redactProxyCredentials } = require('./automation/proxy-redact');
+    const cases = [
+      'socks5://user:secret@1.2.3.4:1080',
+      'socks5://u:p@127.0.0.1:1080#MCP%20proxy',
+      'http://user:pass@example.com:8080/path?q=1',
+      'https://[2001:db8::1]:8443',
+      '1.2.3.4:1080:user:secret',
+      '1.2.3.4:1080',
+      'direct', 'Direct', 'OFFLINE', 'none',
+      '', '   ', null, undefined,
+    ];
+    for (const input of cases) {
+      assert.strictEqual(
+        redactProxyForStorage(input),
+        redactProxyCredentials(input),
+        `renderer redactProxyForStorage must match shared redactProxyCredentials for ${JSON.stringify(input)}`,
+      );
+    }
+  }
 
   // --- IPC sender trust: exact app index.html path, not any file:…/index.html ---
   const mainSrc = fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8');
@@ -142,6 +183,43 @@ function main() {
   assert.ok(!/senderUrl\.startsWith\('file:'\)\s*\|\|\s*!senderUrl\.endsWith\('\/index\.html'\)/.test(mainSrc)
     && !/!senderUrl\.startsWith\('file:'\)\s*\|\|\s*!senderUrl\.endsWith\('\/index\.html'\)/.test(mainSrc),
     'must not accept any file:…/index.html');
+
+  // --- Electron shell confinement: navigation + popups + permissions ---
+  // The preload exposes the full ops IPC surface, so only the app's own
+  // index.html may run inside this app. will-navigate must gate on the SAME
+  // isTrustedAppIndexUrl predicate (devtools: stays allowed for debugging),
+  // popups are denied outright, and session permissions are denied by default.
+  assert.ok(mainSrc.includes("contents.on('will-navigate'"), 'webContents navigation is intercepted');
+  assert.ok(/will-navigate[\s\S]{0,400}isTrustedAppIndexUrl\(target\)/.test(mainSrc),
+    'navigation gate reuses the trusted-index predicate');
+  assert.ok(/event\.preventDefault\(\);[\s\S]{0,200}blocked navigation to untrusted URL/.test(mainSrc),
+    'untrusted navigation is prevented, not just logged');
+  assert.ok(mainSrc.includes("target.startsWith('devtools:')"),
+    'devtools: navigation stays allowed for the app workflow');
+  assert.ok(mainSrc.includes('setWindowOpenHandler(() => ({ action: \'deny\' }))'),
+    'popup windows are denied (uncontrolled preload surface)');
+  assert.ok(mainSrc.includes("app.on('web-contents-created'"),
+    'confinement applies to every webContents, not only the main window');
+  assert.ok(mainSrc.includes('setPermissionRequestHandler'),
+    'permission requests are handled (deny by default)');
+  assert.ok(/setPermissionCheckHandler\(\(\) => false\)/.test(mainSrc),
+    'permission checks deny without exceptions');
+  // No handler may leak an allow-list into the deny-all permission policy.
+  assert.ok(!/setPermissionRequestHandler\([\s\S]{0,300}(geolocation|notifications|camera|media)\s*:\s*true/.test(mainSrc),
+    'no permission is silently re-enabled');
+
+  // --- start-page-server 401 page: escaped reflection + response headers ---
+  const startPageSrc = fs.readFileSync(path.join(__dirname, 'automation', 'start-page-server.js'), 'utf8');
+  assert.ok(/pid=\$\{pidText\}/.test(startPageSrc) || /pidText\s*\}/.test(startPageSrc),
+    'unauthorized page interpolates the escaped pid, not the raw one');
+  assert.ok(!/pid=\$\{String\(pid \|\| '-'\)\}/.test(startPageSrc),
+    'raw pid reflection is gone from the unauthorized page');
+  {
+    const unauthorizedBlock = startPageSrc.slice(startPageSrc.indexOf("'X-Start-Page': 'unauthorized'") - 900, startPageSrc.indexOf("'X-Start-Page': 'unauthorized'") + 100);
+    assert.ok(/frame-ancestors 'none'/.test(unauthorizedBlock), 'unauthorized page CSP has frame-ancestors none');
+    assert.ok(/'X-Frame-Options': 'DENY'/.test(unauthorizedBlock), 'unauthorized page denies framing');
+    assert.ok(/'X-Content-Type-Options': 'nosniff'/.test(unauthorizedBlock), 'unauthorized page sets nosniff');
+  }
 
   // Runtime: drive-letter case must not break trusted check (Windows)
   const { pathToFileURL } = require('url');

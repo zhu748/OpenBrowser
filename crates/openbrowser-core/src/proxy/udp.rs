@@ -302,15 +302,15 @@ impl Socks5UdpAssociate {
     pub async fn recv_from(&self, buf: &mut [u8]) -> Result<(usize, SocksAddress, u16)> {
         let mut raw_buf = [0u8; 65536];
         let (n, from_addr) = self.udp_socket.recv_from(&mut raw_buf).await?;
-        if from_addr != self.relay_addr && from_addr.port() != self.relay_addr.port() {
-            // Note: some SOCKS5 servers send from a different ephemeral port on the same host,
-            // but the host IP should match.
-            if from_addr.ip() != self.relay_addr.ip() {
-                return Err(CoreError::Socks5(format!(
-                    "Received UDP packet from unexpected address: expected {}, got {}",
-                    self.relay_addr, from_addr
-                )));
-            }
+        // Source validation: the sender IP must be the SOCKS5 relay we contacted.
+        // Some relays reply from a different ephemeral port on the same host, so the
+        // port is NOT part of the check. (The previous condition let a spoofed packet
+        // from any IP that merely matched the relay port bypass validation entirely.)
+        if from_addr.ip() != self.relay_addr.ip() {
+            return Err(CoreError::Socks5(format!(
+                "Received UDP packet from unexpected address: expected {}, got {}",
+                self.relay_addr, from_addr
+            )));
         }
 
         let packet = Socks5UdpPacket::decode(&raw_buf[..n])?;

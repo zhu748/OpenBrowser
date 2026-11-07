@@ -43,7 +43,18 @@ class RpaStore {
         templates: Array.isArray(parsed.templates) ? parsed.templates : [],
         config: parsed.config && typeof parsed.config === 'object' ? parsed.config : {},
       };
-    } catch (_) {
+    } catch (error) {
+      // A corrupt store resets to empty; keep the broken file aside so plans and
+      // task history can be recovered by hand instead of vanishing silently.
+      if (error && error.code !== 'ENOENT') {
+        try {
+          await fsp.rename(this.filePath, this.filePath + '.corrupt-' + Date.now());
+        } catch (renameError) {
+          if (renameError && renameError.code !== 'ENOENT') {
+            console.warn('[rpa-store] corrupt store could not be quarantined:', renameError.message);
+          }
+        }
+      }
       this.data = { version: 4, plans: [], tasks: [], templates: [], config: {} };
     }
     this.migrateLegacyTemplates();

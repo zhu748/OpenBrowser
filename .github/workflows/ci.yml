@@ -45,7 +45,7 @@ jobs:
   smoke:
     name: Node selftests (smoke)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     defaults:
       run:
         working-directory: Browserapp
@@ -64,33 +64,41 @@ jobs:
           cache: npm
           cache-dependency-path: Browserapp/package-lock.json
       - run: npm ci --include=dev --ignore-scripts
-      - name: Security & protocol selftests (dependency-free)
+      # Aggregate gate: scripts/selftest-all.js runs every dependency-free
+      # selftest (53 today) in one shot — a new selftest added to package.json's
+      # suite list runs here automatically instead of waiting for someone to
+      # paste another line into this workflow.
+      - name: Full selftest aggregate (kernel-free suite)
+        run: npm run selftest:all
+
+  smoke-windows:
+    name: Node selftests (Windows smoke)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: Browserapp
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          lfs: true
+          sparse-checkout: |
+            /*
+            !/Browserapp/kernels/
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Browserapp/package-lock.json
+      - run: npm ci --include=dev --ignore-scripts
+      # Windows-only code paths (path handling, drive letters, updater) get a
+      # small per-push signal; the full smoke matrix stays on ubuntu for cost.
+      - name: Windows-relevant selftests
         run: |
           npm run selftest:hardening
-          npm run selftest:credentials
-          npm run selftest:cloud
-          npm run selftest:apikey
-          npm run selftest:isolation
-          npm run selftest:i18n
-          npm run selftest:templates
-          npm run selftest:typing
-      - name: Core engine & RPA selftests
-        run: |
-          npm run selftest:sched
-          npm run selftest:queue
-          npm run selftest:logsan
-          npm run selftest:objutils
-          npm run selftest:cdppool
-          npm run selftest:validation
+          npm run selftest:port
           npm run selftest:version
-      - name: Proxy selftests (loopback sockets)
-        run: |
-          npm run selftest:proxyauth
-          npm run selftest:socks5complete
-          npm run selftest:socks5reset
-          npm run selftest:socks5retry
-          npm run selftest:dnsleakclassify
-          npm run selftest:proxyconcurrency
 
   rust:
     name: Rust core (fmt + clippy + tests)

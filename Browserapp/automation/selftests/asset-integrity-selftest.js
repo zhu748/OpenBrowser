@@ -17,6 +17,7 @@ const {
   ensureManifest,
   listFiles,
   toPosix,
+  verifyManifestSeal,
   MANIFEST_FILENAME,
 } = require('../asset-integrity');
 
@@ -253,6 +254,75 @@ const flush = () => new Promise((r) => setTimeout(r, 20));
     const report = await verifyManifest(target, manifest, { checkMtime: false });
     assert.strictEqual(report.ok, false, 'truncation and replacement remain detectable');
     assert.deepStrictEqual(report.changed, ['a.txt']);
+  });
+
+  // ---- sealed + hashed manifests (kernel supply-chain hardening) ----
+  await checkAsync('hashed manifest detects same-size content swap', async () => {
+    const root = await makeDir({ 'bin': 'AAAA' });
+    const manifest = await buildManifest(root, { hash: true });
+    assert.ok(manifest.files[0].sha256, 'hash recorded');
+    // Same length, different bytes: invisible to size+mtime comparison.
+    await fsp.writeFile(path.join(root, 'bin'), 'BBBB');
+    const report = await verifyManifest(root, manifest, { checkMtime: false });
+    assert.strictEqual(report.ok, false, 'content swap with identical size is caught by sha256');
+    assert.deepStrictEqual(report.changed, ['bin']);
+    assert.strictEqual(report.hashed, 1, 'hash check actually ran');
+  });
+
+  await checkAsync('written manifest carries a valid seal', async () => {
+    const root = await makeDir({ 'a.txt': 'a', 'sub/b.txt': 'b' });
+    const manifest = await buildManifest(root, { hash: true });
+    await writeManifest(root, manifest);
+    const stored = await readManifest(root);
+    assert.strictEqual(verifyManifestSeal(stored, root), 'valid', 'seal verifies on this machine');
+    assert.strictEqual(verifyManifestSeal(stored, root + '-other'), 'invalid', 'seal is salted by root name');
+  });
+
+  await checkAsync('rewritten manifest fails the seal and is never auto-rebuilt', async () => {
+    const root = await makeDir({ 'kernel.bin': 'payload' });
+    await ensureManifest(root, { hash: true });
+    // Tamper: replace the payload AND hand-craft a matching manifest without a
+    // valid seal — exactly what a local attacker without the derived key can do.
+    await fsp.writeFile(path.join(root, 'kernel.bin'), 'evil-payload-');
+    const stored = await readManifest(root);
+    const forged = {
+      ...stored,
+      files: stored.files.map((f) => ({ ...f, size: 'evil-payload-'.length, sha256: '0'.repeat(64) })),
+    };
+    delete forged.hmac;
+    await fsp.writeFile(path.join(root, MANIFEST_FILENAME), JSON.stringify(forged));
+    const verdict = verifyManifestSeal(await readManifest(root), root);
+    assert.strictEqual(verdict, 'legacy', 'unsealed rewrite looks legacy');
+    // ensureManifest upgrades legacy ONLY when the tree verifies; here the
+    // forged stats disagree with nothing (sizes match), but the forged file
+    // hashes do not exist — so the hash-of-actual content check must fail
+    // before any upgrade, surfacing 'mismatch'.
+    const outcome = await ensureManifest(root);
+    assert.strictEqual(outcome.status, 'mismatch', 'tampered tree is surfaced, not laundered');
+  });
+
+  await checkAsync('legacy clean tree upgrades to sealed+hashed form', async () => {
+    const root = await makeDir({ 'a.txt': 'a' });
+    const legacy = await buildManifest(root); // stat-only, no hash
+    await fsp.writeFile(path.join(root, MANIFEST_FILENAME), JSON.stringify(legacy));
+    const outcome = await ensureManifest(root);
+    assert.strictEqual(outcome.status, 'ok', 'clean legacy tree verifies');
+    assert.strictEqual(outcome.upgraded, true, 'and is upgraded in place');
+    const stored = await readManifest(root);
+    assert.strictEqual(verifyManifestSeal(stored, root), 'valid', 'upgraded manifest is sealed');
+    assert.ok(stored.files.every((f) => typeof f.sha256 === 'string'), 'upgraded manifest is hashed');
+  });
+
+  await checkAsync('sealed manifest with invalid hmac is rejected without rebuild', async () => {
+    const root = await makeDir({ 'a.txt': 'a' });
+    const manifest = await buildManifest(root, { hash: true });
+    await writeManifest(root, manifest);
+    const stored = await readManifest(root);
+    const tampered = { ...stored, hmac: 'f'.repeat(64) };
+    await fsp.writeFile(path.join(root, MANIFEST_FILENAME), JSON.stringify(tampered));
+    assert.strictEqual(verifyManifestSeal(await readManifest(root), root), 'invalid', 'bad seal detected');
+    const outcome = await ensureManifest(root);
+    assert.strictEqual(outcome.status, 'sealed-invalid', 'never silently rebuilt');
   });
 
   // ---- report ----

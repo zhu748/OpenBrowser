@@ -1139,9 +1139,14 @@ function iconActionButton(icon, label, className = 'mini') {
   }
   return button;
 }
+// Keep behaviorally identical to automation/proxy-redact.js (redactProxyCredentials):
+// the hardening selftest locks the two together case by case, so a fix applied to
+// one must be mirrored here — there is exactly one canonical implementation to reason
+// about, and this copy exists only because the renderer has no require().
 function redactProxyForStorage(proxy) {
-  const raw = String(proxy || '').trim();
-  if (!raw || /^(direct|offline|none)$/i.test(raw)) return raw || 'Direct';
+  const raw = String(proxy ?? '').trim();
+  if (!raw) return 'Direct';
+  if (/^(direct|offline|none)$/i.test(raw)) return raw;
   try {
     if (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) {
       const parsed = new URL(raw);
@@ -1161,7 +1166,7 @@ function redactProfileForStorage(profile) {
   return {
     ...value,
     cookies: '',
-    proxy: value.proxy,
+    proxy: redactProxyForStorage(value.proxy),
     platform: {
       ...(value.platform || {}),
       password: '',
@@ -2237,6 +2242,12 @@ function editorDraft(strict = true) {
       throw new Error(tx('请填写代理地址，或明确选择本地直连'));
     }
     proxy = '';
+  }
+  // Plain HTTP proxies carry Basic credentials on the wire in cleartext — that is
+  // the protocol, not a bug we can fix client-side, but the user deserves to know
+  // before their residential proxy password rides an unencrypted hop.
+  if (typeof toast === 'function' && /^http:\/\//i.test(String(proxy)) && /:[^:@/]+@/.test(String(proxy))) {
+    try { toast(tx('注意：HTTP 代理的账号密码将以明文经由代理链路传输，建议改用 HTTPS 或 SOCKS5 代理'), { tone: 'warning' }); } catch (_) {}
   }
   const currentProxyParsed = parseEditorProxy(current.proxy);
   const nextProxyParsed = parseEditorProxy(proxy);
@@ -3904,6 +3915,24 @@ async function startProfile(id) {
   }
 }
 
+/**
+ * Run a batch task with bounded concurrency. Batch start/stop of N environments
+ * used to await each profile in sequence; every start includes proxy probing and
+ * kernel preparation, so the total wait grew linearly with N. Concurrency stays
+ * modest (2-3): each launch is itself disk- and CPU-heavy, and a stampede would
+ * only move the queue into the main process.
+ */
+async function runPool(items, worker, concurrency = 3) {
+  const queue = [...items];
+  const workers = Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
+    while (queue.length) {
+      const item = queue.shift();
+      await worker(item);
+    }
+  });
+  await Promise.all(workers);
+}
+
 async function stopProfile(id) {
   invalidateViewCache(['sync', 'profiles']);
   try { await window.ops.stopProfile(id); const profile = ui.profiles.find((item) => item.id === id); log('Browser', `${profile?.name || id} 已停止`); await refreshStatus(); await refreshSessions(); }
@@ -4332,12 +4361,27 @@ function normalizeProxy(value, selectedType = 'socks5') {
 function proxyLines(textareaId, typeId) { return $(textareaId).value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean).map((item) => normalizeProxy(item, $(typeId).value)); }
 async function verifyProxyAssignments(profiles, proxies) {
   if (profiles.length !== proxies.length) throw new Error('\u4ee3\u7406\u6570\u91cf\u5fc5\u987b\u4e0e\u73af\u5883\u6570\u91cf\u4e00\u81f4\uff0c\u786e\u4fdd\u6bcf\u4e2a\u73af\u5883\u7ed1\u5b9a\u81ea\u5df1\u7684\u4ee3\u7406');
-  const results = [];
-  for (let index = 0; index < profiles.length; index += 1) {
-    const profile = profiles[index]; toast('\u6b63\u5728\u68c0\u6d4b\u4ee3\u7406 ' + (index + 1) + '/' + profiles.length + '\uff08\u73af\u5883 ' + displayProfileNumber(profile) + '\uff09...');
-    try { results.push(await window.ops.testProfileProxy({ ...profile, proxy: proxies[index] })); }
-    catch (error) { throw new Error('\u73af\u5883 ' + displayProfileNumber(profile) + ' \u4ee3\u7406\u4e0d\u53ef\u7528\uff1a' + error.message); }
-  }
+  // Probe proxies with bounded concurrency (each probe is a network round-trip of
+  // its own; serialising them made an N-environment batch take N x probe-time).
+  // Results stay index-aligned for the caller; failures abort remaining work.
+  const results = new Array(profiles.length);
+  let done = 0;
+  let failure = null;
+  const queue = profiles.map((profile, index) => ({ profile, index }));
+  const workerCount = Math.min(3, queue.length);
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (queue.length && !failure) {
+      const { profile, index } = queue.shift();
+      toast('\u6b63\u5728\u68c0\u6d4b\u4ee3\u7406 ' + (done + 1) + '/' + profiles.length + '\uff08\u73af\u5883 ' + displayProfileNumber(profile) + '\uff09...');
+      try { results[index] = await window.ops.testProfileProxy({ ...profile, proxy: proxies[index] }); done += 1; }
+      catch (error) {
+        failure = new Error('\u73af\u5883 ' + displayProfileNumber(profile) + ' \u4ee3\u7406\u4e0d\u53ef\u7528\uff1a' + error.message);
+        return;
+      }
+    }
+  });
+  await Promise.all(workers);
+  if (failure) throw failure;
   return results;
 }
 function installProxyTypeControl(textareaId, selectId) {
@@ -5410,8 +5454,8 @@ $('#empty-trash-btn')?.addEventListener('click', async () => {
     toast(t('trash.emptyFailed') + ': ' + err.message);
   }
 });
-$('#start-selected').addEventListener('click', async () => { if (!selectedProfiles.size) return toast(tx('请先选择环境')); for (const id of selectedProfiles) await startProfile(id); });
-$('#stop-selected').addEventListener('click', async () => { if (!selectedProfiles.size) return toast(tx('请先选择环境')); for (const id of selectedProfiles) await stopProfile(id); });
+$('#start-selected').addEventListener('click', async () => { if (!selectedProfiles.size) return toast(tx('请先选择环境')); await runPool([...selectedProfiles], (id) => startProfile(id)); });
+$('#stop-selected').addEventListener('click', async () => { if (!selectedProfiles.size) return toast(tx('请先选择环境')); await runPool([...selectedProfiles], (id) => stopProfile(id)); });
 $('#copy-selected')?.addEventListener('click', async () => {
   const sources = ui.profiles.filter((profile) => selectedProfiles.has(profile.id));
   if (!sources.length) return toast(tx('请先选择环境'));
@@ -6606,10 +6650,10 @@ async function applySelectedNetworkMode(mode, { proxies = null, restart = true }
   save();
   invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies']);
   engineProfiles = await window.ops.syncProfiles(ui.profiles);
-  if (restart) for (const id of runningBefore) {
+  if (restart) await runPool(runningBefore, async (id) => {
     const profile = ui.profiles.find((item) => item.id === id);
     if (profile) await window.ops.startProfile(profile);
-  }
+  });
   await refreshStatus(); await refreshSessions(); renderProfiles();
   return { count: ids.length, direct };
 }

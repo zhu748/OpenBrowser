@@ -389,12 +389,21 @@ async function probeViaProxy(proxyRaw, url, timeout = 8000, maxBody = 65536) {
       '',
     ].join('\r\n');
     if (parsed.protocol === 'https:') {
+      // Verify the origin certificate by default. A MITM'ed proxy that forges a
+      // 200/unlock page would otherwise poison the reachability verdict — a wrong
+      // "reachable" answer is acceptable degradation, a wrong "unlocked" one is not.
+      // Legacy proxies with broken certificate chains can opt out via
+      // OPENBROWSER_PROBE_INSECURE_TLS=1, which marks the result unverified.
+      const insecureProbe = process.env.OPENBROWSER_PROBE_INSECURE_TLS === '1';
       secure = tls.connect({
         socket,
         servername: parsed.hostname,
-        rejectUnauthorized: false,
+        rejectUnauthorized: !insecureProbe,
         ALPNProtocols: ['http/1.1'],
       });
+      if (insecureProbe) {
+        secure.on('secureConnect', () => secure.emit('probeInsecure', true));
+      }
       await new Promise((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error('tls timeout')), timeout);
         secure.once('secureConnect', () => { clearTimeout(timer); resolve(); });
@@ -406,6 +415,7 @@ async function probeViaProxy(proxyRaw, url, timeout = 8000, maxBody = 65536) {
         ok: response.status >= 200 && response.status < 500,
         status: response.status,
         body: response.body,
+        tlsVerified: !insecureProbe,
       };
     }
     socket.write(payload);
@@ -799,9 +809,11 @@ class StartPageServer {
       serial,
       number: serial,
       name: String(profile.name || ''),
-      username: String(profile.username || profile.account || extras.username || ''),
-      tfa_secret: String(profile.tfa_secret || profile.tfaSecret || extras.tfa_secret || ''),
-      note: String(profile.note || ''),
+      // Restricted sessions (reissue path) must not carry account-identifying fields:
+      // anything hitting the server without a valid token can only ever obtain a
+      // session that has no username / note metadata.
+      username: extras.restricted ? '' : String(profile.username || profile.account || extras.username || ''),
+      note: extras.restricted ? '' : String(profile.note || ''),
       group_name: String(profile.group_name || profile.group || extras.group_name || ''),
       tag_name: String(profile.tag || profile.tag_name || ''),
       language: String(profile.language || ''),
@@ -1175,23 +1187,32 @@ class StartPageServer {
       && crypto.timingSafeEqual(Buffer.from(token), Buffer.from(session.token)));
 
     // Running env but stale token (OpenBrowser restarted, or old bookmark): re-bind session and redirect.
+    // Hardening: the reissue path is reachable WITHOUT any valid token, so the fresh session must be
+    // restricted (no account metadata). Requests are additionally soft-checked against the running
+    // environment's own user agent; a mismatched client gets no redirect at all.
     if (!authorized && pid && this.engine?.running?.has?.(pid)
       && (pathname === '/' || pathname === '/index.html' || pathname === '/start')) {
       try {
         const item = this.engine.running.get(pid);
-        const profile = item?.profile || { id: pid, name: pid, number: query.id || pid };
-        const freshUrl = this.registerSession(profile, {
-          network: item?.network || this.engine.networkInfo?.get?.(pid) || null,
-          browserName: item?.browser?.name || '',
-          extensionCount: Array.isArray(item?.extensions) ? item.extensions.length : 0,
-        });
-        res.writeHead(302, {
-          Location: freshUrl,
-          'Cache-Control': 'no-store',
-          'X-Start-Page': 'reissued',
-        });
-        res.end();
-        return;
+        const expectedUa = String(item?.profile?.userAgent || '').trim();
+        const requestUa = String(req.headers['user-agent'] || '').trim();
+        const uaMatches = !expectedUa || requestUa === expectedUa;
+        if (uaMatches) {
+          const profile = item?.profile || { id: pid, name: pid, number: query.id || pid };
+          const freshUrl = this.registerSession(profile, {
+            restricted: true,
+            network: item?.network || this.engine.networkInfo?.get?.(pid) || null,
+            browserName: item?.browser?.name || '',
+            extensionCount: Array.isArray(item?.extensions) ? item.extensions.length : 0,
+          });
+          res.writeHead(302, {
+            Location: freshUrl,
+            'Cache-Control': 'no-store',
+            'X-Start-Page': 'reissued',
+          });
+          res.end();
+          return;
+        }
       } catch (_) { /* fall through to unauthorized */ }
     }
 
@@ -1204,6 +1225,11 @@ class StartPageServer {
       const accept = String(req.headers.accept || '');
       const wantsHtml = !pathname.startsWith('/api/') && !/application\/json/i.test(accept);
       if (wantsHtml) {
+        // pid arrives from the URL query, so it is attacker-controlled text being
+        // interpolated into an HTML body — escape it (reflected XSS), and give the
+        // error page the same response hardening as the authorized start page.
+        const pidText = String(pid || '-').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>启动页会话无效</title>
 <style>body{margin:0;font-family:system-ui,sans-serif;background:#12141a;color:#e8eaf0;display:grid;place-items:center;min-height:100vh}
@@ -1213,11 +1239,15 @@ h1{margin:0 0 12px;font-size:20px}p{margin:8px 0;color:#b7becc}code{color:#93c5f
 <h1>启动页会话无效</h1>
 <p>这个内部首页需要<strong>当次启动</strong>签发的 token，不能收藏后重复打开，也不能在 OpenBrowser 重启后继续用旧链接。</p>
 <p>请回到 OpenBrowser 客户端，<strong>停止环境后重新启动</strong>；不要手动粘贴旧的 <code>127.0.0.1:50326</code> 链接。</p>
-<p style="font-size:12px;color:#8b93a7">pid=${String(pid || '-')} · unauthorized session</p>
+<p style="font-size:12px;color:#8b93a7">pid=${pidText} · unauthorized session</p>
 </div></body></html>`;
         res.writeHead(401, {
           'Content-Type': 'text/html; charset=utf-8',
           'Cache-Control': 'no-store',
+          'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+          'Referrer-Policy': 'no-referrer',
+          'X-Content-Type-Options': 'nosniff',
+          'X-Frame-Options': 'DENY',
           'X-Start-Page': 'unauthorized',
         });
         res.end(html);

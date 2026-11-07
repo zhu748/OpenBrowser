@@ -61,12 +61,18 @@ class ApiKeyStore {
       if (cleanSaved && !isApiKeyPlaceholder(cleanSaved)) {
         this.apiKey = cleanSaved;
         if (!isEnc && this.shouldEncrypt()) {
-          // One-time migration: backup plaintext file before rewriting encrypted
+          // One-time migration: keep a permission-restricted plaintext backup only until the
+          // encrypted write has succeeded, then remove it — no permanent plaintext residue.
+          const backupPath = this.filePath + '.bak';
           try {
-            await fsp.writeFile(this.filePath + '.bak', raw);
+            await fsp.writeFile(backupPath, raw, { mode: 0o600 });
             await this.save();
+            await fsp.rm(backupPath, { force: true }).catch(() => {});
             await fsp.rm(this.txtPath, { force: true }).catch(() => {});
-          } catch (_) {}
+          } catch (_) {
+            // Encrypted write failed: leave the 0600 backup for data preservation, but
+            // never fall back to writing the key in plaintext elsewhere.
+          }
         } else if (!this.shouldEncrypt()) {
           try {
             await fsp.writeFile(this.txtPath, `${this.apiKey}\n`, { encoding: 'utf8', mode: 0o600 });

@@ -2,8 +2,8 @@
 
 <img src="./assets/openbrowser-title.svg" alt="OpenBrowser" width="820">
 
-[![Version](https://img.shields.io/badge/version-1.0.27-blue)](https://github.com/sheying2013/OpenBrowser)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Ubuntu-lightgrey)](https://github.com/sheying2013/OpenBrowser)
+[![Version](https://img.shields.io/badge/version-1.0.27-blue)](https://github.com/zhu748/OpenBrowser)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Ubuntu-lightgrey)](https://github.com/zhu748/OpenBrowser)
 [![License](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 [![Node](https://img.shields.io/badge/Node.js-LTS-339933.svg)](https://nodejs.org/)
 
@@ -155,7 +155,7 @@ This repository contains source code, documentation, and — via [Git LFS](https
 - Third-party notices are documented in [`THIRD-PARTY-NOTICES.md`](./Browserapp/THIRD-PARTY-NOTICES.md).
 - Cloud backup integrations only connect outward after explicit user configuration.
 - **Backups that contain account credentials (cookies / passwords / 2FA / proxy logins / browser data) are only uploaded when a backup passphrase is set** — unencrypted credential uploads are rejected.
-- The in-app updater downloads installers from the upstream release repository (`sheying2013/OpenBrowser`) and verifies every download against the release's `SHA256SUMS.txt` manifest before launching it; releases without a manifest produce a visible warning.
+- The in-app updater downloads installers from the upstream release repository (`zhu748/OpenBrowser`) and verifies every download against the release's `SHA256SUMS.txt` manifest before launching it; releases without a manifest produce a visible warning.
 
 ## Documentation
 

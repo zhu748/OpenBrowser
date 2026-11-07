@@ -59,6 +59,16 @@ fn emit(value: serde_json::Value) -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Initialize tracing so bridge warnings / fail-closed errors are actually visible.
+    // stdout carries the newline-delimited JSON control protocol, so logs go to stderr;
+    // RUST_LOG (via env-filter) controls verbosity, defaulting to info.
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .init();
     let args: Vec<String> = std::env::args().skip(1).collect();
     let (command, options) = args
         .split_first()

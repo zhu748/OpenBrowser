@@ -2,8 +2,8 @@
 
 <img src="./assets/openbrowser-title.svg" alt="OpenBrowser" width="820">
 
-[![Version](https://img.shields.io/badge/version-1.0.27-blue)](https://github.com/sheying2013/OpenBrowser)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Ubuntu-lightgrey)](https://github.com/sheying2013/OpenBrowser)
+[![Version](https://img.shields.io/badge/version-1.0.27-blue)](https://github.com/zhu748/OpenBrowser)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Ubuntu-lightgrey)](https://github.com/zhu748/OpenBrowser)
 [![License](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 [![Node](https://img.shields.io/badge/Node.js-LTS-339933.svg)](https://nodejs.org/)
 
@@ -153,7 +153,7 @@ OpenBrowser/
 - 第三方组件声明见 [`THIRD-PARTY-NOTICES.md`](./Browserapp/THIRD-PARTY-NOTICES.md)。
 - 云备份集成只有在用户显式配置后才会主动联网。
 - **包含账号凭据（Cookie / 密码 / 2FA / 代理登录信息 / 浏览器数据）的备份必须设置备份口令加密后才会上传**，未加密的凭据上传会被直接拒绝。
-- 应用内更新器从上游发布仓库（`sheying2013/OpenBrowser`）下载安装包，并在启动安装器前校验 release 发布的 `SHA256SUMS.txt` 清单；缺失清单的旧版本仅给出警告。
+- 应用内更新器从上游发布仓库（`zhu748/OpenBrowser`）下载安装包，并在启动安装器前校验 release 发布的 `SHA256SUMS.txt` 清单；缺失清单的旧版本仅给出警告。
 
 ## 文档
 

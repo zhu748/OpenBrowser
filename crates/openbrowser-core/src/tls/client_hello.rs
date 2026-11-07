@@ -257,11 +257,16 @@ impl ClientHelloBuilder {
             ext_buf.put_u16(v);
         }
 
-        // 12. compress_certificate (0x001B)
+        // 12. compress_certificate (0x001B) — RFC 8879.
+        // Chrome advertises two algorithms (brotli + zlib): 1 byte count + 2 bytes per
+        // algorithm = 5 bytes of extension body. The previous encoding wrote
+        // body_len=3 with count=2, which is a malformed ClientHello a strict
+        // parser can single out.
         ext_buf.put_u16(0x001B);
-        ext_buf.put_u16(3);
+        ext_buf.put_u16(5);
         ext_buf.put_u8(2); // length of algorithms
         ext_buf.put_u16(0x0002); // brotli
+        ext_buf.put_u16(0x0001); // zlib
 
         // 13. application_settings (0x4469 - ALPS)
         ext_buf.put_u16(0x4469);

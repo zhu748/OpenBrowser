@@ -673,7 +673,14 @@ async function startHttpToSocks5Bridge(config, onStatus) {
     let pending = Buffer.alloc(0);
     const receiveHeader = (chunk) => {
       pending = Buffer.concat([pending, chunk]);
-      if (pending.length > 65536) { client.end('HTTP/1.1 431 Request Header Fields Too Large\r\nConnection: close\r\n\r\n'); return; }
+      if (pending.length > 65536) {
+        // Detach the listener and destroy, not just end: with the listener still
+        // attached, a half-closing client keeps streaming into `pending`
+        // (Buffer.concat with no cap) and exhausts memory.
+        client.off('data', receiveHeader);
+        client.destroy();
+        return;
+      }
       const marker = pending.indexOf('\r\n\r\n'); if (marker < 0) return;
       client.off('data', receiveHeader); client.pause();
       const header = pending.subarray(0, marker + 4).toString('latin1'); const body = pending.subarray(marker + 4);
@@ -785,7 +792,14 @@ async function startHttpBridge(config, onStatus) {
     let pending = Buffer.alloc(0);
     const receiveHeader = (chunk) => {
       pending = Buffer.concat([pending, chunk]);
-      if (pending.length > 65536) { client.end('HTTP/1.1 431 Request Header Fields Too Large\r\nConnection: close\r\n\r\n'); return; }
+      if (pending.length > 65536) {
+        // Detach the listener and destroy, not just end: with the listener still
+        // attached, a half-closing client keeps streaming into `pending`
+        // (Buffer.concat with no cap) and exhausts memory.
+        client.off('data', receiveHeader);
+        client.destroy();
+        return;
+      }
       const marker = pending.indexOf('\r\n\r\n'); if (marker < 0) return;
       client.removeListener('data', receiveHeader); client.pause();
       const header = pending.subarray(0, marker + 4).toString('latin1'); const remainder = pending.subarray(marker + 4);

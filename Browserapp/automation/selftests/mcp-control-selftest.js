@@ -234,7 +234,12 @@ async function main() {
     profile_id: 'mcp-linked', name: 'MCP Linked', proxy_id: proxyLibraryId,
   });
   const linkedProfile = linkedCreate.body.data?.profile;
-  record('local-api create links proxy library entry', linkedCreate.status === 200 && linkedProfile?.proxyId === proxyLibraryId && linkedProfile?.proxy === 'socks5://proxy-user:proxy-pass@127.0.0.1:1080#MCP%20proxy');
+  record('local-api create links proxy library entry', linkedCreate.status === 200
+    && linkedProfile?.proxyId === proxyLibraryId
+    // API responses are redacted: credentials never cross the local API boundary.
+    && linkedProfile?.proxy === 'socks5://127.0.0.1:1080#MCP%20proxy'
+    // The engine-side profile still carries the full credential for the dialer.
+    && engine.profiles.get('mcp-linked')?.proxy === 'socks5://proxy-user:proxy-pass@127.0.0.1:1080#MCP%20proxy');
   const unlink = await request('POST', '/api/v2/browser-profile/update', {
     profile_id: 'mcp-linked',
     proxy: 'Direct',

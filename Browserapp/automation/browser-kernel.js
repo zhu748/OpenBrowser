@@ -20,7 +20,7 @@ const { execFile, spawn } = require('child_process');
 const { promisify } = require('util');
 const execFileAsync = promisify(execFile);
 const { isSystemBrowserExecutable } = require('./isolation');
-const { ensureManifest, readManifest, verifyManifest, MANIFEST_FILENAME } = require('./asset-integrity');
+const { ensureManifest, readManifest, verifyManifest, verifyManifestSeal, MANIFEST_FILENAME } = require('./asset-integrity');
 
 /** Optional remote kernel feed URL (unused when integrated seeds are present). */
 const WAYFERN_META = 'https://donutbrowser.com/wayfern.json';
@@ -1203,6 +1203,27 @@ class BrowserKernelManager {
       this.integritySummary = { status: 'unbaselined', root, checkedAt };
       return this.integritySummary;
     }
+    // Seal gate: the manifest sits beside the files it describes, so it must
+    // carry a valid HMAC to be trusted at all. An invalid seal means someone
+    // rewrote it without the machine-derived key — treat as tampered, never
+    // silently rebuild. Legacy (unsealed) manifests keep the stat-only rules;
+    // recordInstallBaseline upgrades them to the sealed+hashed form.
+    const seal = verifyManifestSeal(manifest, root);
+    if (seal === 'invalid') {
+      this.integritySummary = {
+        status: 'mismatch',
+        reason: 'manifest-seal-invalid',
+        root,
+        checkedAt,
+      };
+      this.onProgress({
+        phase: 'integrity',
+        code: 'KERNEL_INTEGRITY_MANIFEST_TAMPERED',
+        level: 'warning',
+        message: '内核完整性清单校验失败：清单被重写且无法重新封签，内核文件可能被篡改。建议重新安装内核。',
+      });
+      return this.integritySummary;
+    }
     let report;
     try {
       report = await verifyManifest(root, manifest, { checkMtime: false, maxEntries: MAX_INTEGRITY_ENTRIES });
@@ -1218,6 +1239,8 @@ class BrowserKernelManager {
       changed: report.changed.length,
       missingPaths: report.missing.slice(0, 5),
       changedPaths: report.changed.slice(0, 5),
+      hashed: report.hashed || 0,
+      sealed: seal === 'valid',
       checkedAt,
     };
     if (!report.ok) {

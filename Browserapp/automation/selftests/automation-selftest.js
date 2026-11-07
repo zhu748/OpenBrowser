@@ -120,6 +120,27 @@ async function httpJson(port, method, urlPath, body, headers = {}) {
   });
 }
 
+/** Raw HTTP response (status + headers + text body) for non-JSON assertions. */
+async function httpText(port, method, urlPath, headers = {}) {
+  return new Promise((resolve, reject) => {
+    const req = http.request({
+      host: '127.0.0.1',
+      port,
+      path: urlPath,
+      method,
+      headers,
+      timeout: 5000,
+    }, (res) => {
+      let data = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: data }));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
 async function main() {
   console.log('OpenBrowser automation selftest\n');
 
@@ -440,6 +461,22 @@ async function main() {
   const staleNetworkResponse = await httpJson(startPage.port, 'GET', '/api/network?pid=stale-link&refresh=1');
   assert.strictEqual(staleNetworkResponse.status, 401);
   assert.strictEqual(directLookups, 2, 'stale start links cannot invoke a network lookup');
+  // Browser-shaped 401 (HTML path): pid comes from the URL query, so a
+  // hostile pid must arrive HTML-escaped and the error page must carry the
+  // same response hardening as the authorized start page.
+  {
+    const hostilePid = '<img src=x onerror=alert(1)>';
+    const res = await httpText(startPage.port, 'GET', `/?pid=${encodeURIComponent(hostilePid)}`, {
+      Accept: 'text/html,application/xhtml+xml',
+    });
+    assert.strictEqual(res.status, 401);
+    assert.ok(!res.body.includes('<img src=x'), 'reflected pid is HTML-escaped');
+    assert.ok(res.body.includes('&lt;img src=x'), 'escaped form present in body');
+    assert.ok(/frame-ancestors 'none'/.test(res.headers['content-security-policy'] || ''), '401 page has CSP with frame-ancestors');
+    assert.strictEqual(res.headers['x-frame-options'], 'DENY', '401 page denies framing');
+    assert.strictEqual(res.headers['x-content-type-options'], 'nosniff', '401 page sets nosniff');
+    assert.strictEqual(res.headers['cache-control'], 'no-store', '401 page is not cacheable');
+  }
   startPageEngine.checkProxy = async () => { throw new Error('connection refused'); };
   startPage.updateNetwork('proxy', null);
   startPage.getSession('proxy').network = null;
