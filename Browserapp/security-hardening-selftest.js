@@ -116,8 +116,11 @@ function main() {
 
   // --- engine: attach inject + refresh order + extract warn ---
   const engineSrc = fs.readFileSync(path.join(__dirname, 'engine.js'), 'utf8');
-  assert.ok(engineSrc.includes('applyFingerprintToSession'), 'page attach must inject before resume');
-  assert.ok(engineSrc.includes('Critical: inject fingerprint BEFORE resuming'), 'comment anchors attach fix');
+  // applyFingerprintToSession moved to the engine/fingerprint-injection.js mixin; its
+  // call sites (the _start attach handler) stay in engine.js.
+  const fpInjectSrc = fs.readFileSync(path.join(__dirname, 'engine', 'fingerprint-injection.js'), 'utf8');
+  assert.ok(fpInjectSrc.includes('applyFingerprintToSession'), 'page attach must inject before resume');
+  assert.ok(fpInjectSrc.includes('Critical: inject fingerprint BEFORE resuming'), 'comment anchors attach fix');
   // refresh before extract in prepareProfileProxyForStart
   const prepareIdx = engineSrc.indexOf('async prepareProfileProxyForStart');
   const prepareBody = engineSrc.slice(prepareIdx, prepareIdx + 2500);

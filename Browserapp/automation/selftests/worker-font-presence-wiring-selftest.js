@@ -30,8 +30,12 @@ const { buildWorkerFontPresenceSource } = require('../worker-font-presence-fallb
 const { writeOpenBrowserKernelInit } = require('../kernel-init-sync');
 const cdp = require('../../cdp');
 
-const appRoot = path.join(__dirname, '..');
-const enginePath = path.join(appRoot, 'engine.js');
+// appRoot must reach the Browserapp root: this file lives in automation/selftests/,
+// so '..' alone resolves to automation/ and every derived path (engine module,
+// kernels) silently pointed at nonexistent files.
+const appRoot = path.join(__dirname, '..', '..');
+// startWorkerFingerprintInjection moved to the engine/fingerprint-injection.js mixin.
+const enginePath = path.join(appRoot, 'engine', 'fingerprint-injection.js');
 const kernelRoot = path.join(appRoot, 'kernels', 'macos-x64');
 const launcher = path.join(kernelRoot, 'launch_openbrowser.sh');
 
@@ -311,13 +315,15 @@ async function runBrowserIntegration(serverPort, fingerprint, profile) {
     assert.ok(sample.includes('[native code]'), 'must disguise toString outputs');
   });
 
-  // Check 2: Production engine.js imports buildWorkerFontPresenceSource
-  check('engine.js imports buildWorkerFontPresenceSource from fallback module', () => {
-    const importRegex = /require\(\s*['"]\.\/automation\/worker-font-presence-fallback['"]\s*\)/;
-    assert.ok(importRegex.test(engineSource), 'engine.js must require ./automation/worker-font-presence-fallback');
+  // Check 2: the fingerprint-injection mixin imports buildWorkerFontPresenceSource
+  // (startWorkerFingerprintInjection moved from engine.js to engine/fingerprint-injection.js,
+  // so the require path is ../automation/... from the engine/ directory)
+  check('fingerprint-injection mixin imports buildWorkerFontPresenceSource from fallback module', () => {
+    const importRegex = /require\(\s*['"]\.\.?\/automation\/worker-font-presence-fallback['"]\s*\)/;
+    assert.ok(importRegex.test(engineSource), 'the mixin must require the worker-font-presence-fallback module');
 
-    const namedImportRegex = /const\s*\{[^}]*buildWorkerFontPresenceSource[^}]*\}\s*=\s*require\(\s*['"]\.\/automation\/worker-font-presence-fallback['"]\s*\)/;
-    assert.ok(namedImportRegex.test(engineSource), 'engine.js must destructure buildWorkerFontPresenceSource');
+    const namedImportRegex = /const\s*\{[^}]*buildWorkerFontPresenceSource[^}]*\}\s*=\s*require\(\s*['"]\.\.?\/automation\/worker-font-presence-fallback['"]\s*\)/;
+    assert.ok(namedImportRegex.test(engineSource), 'the mixin must destructure buildWorkerFontPresenceSource');
   });
 
   // Check 3: Source composition incorporates font presence helper
@@ -384,7 +390,10 @@ async function runBrowserIntegration(serverPort, fingerprint, profile) {
     const composed = baseScript + portScript + fontScript;
 
     const basePos = composed.indexOf('WorkerNavigator');
-    const portPos = composed.indexOf('local port probe blocked');
+    // 'const allow = new Set(' is the port-scan module's signature opening (the
+    // allowed-ports set); the old 'local port probe blocked' phrase left its output
+    // while this selftest was unreachable (appRoot bug from the automation/selftests move).
+    const portPos = composed.indexOf('const allow = new Set(');
     const fontPos = composed.indexOf('const NativeFontFace');
 
     assert.ok(basePos !== -1 && portPos !== -1 && fontPos !== -1, 'all three modules must appear in composed source');
@@ -414,7 +423,9 @@ async function runBrowserIntegration(serverPort, fingerprint, profile) {
 
   // Check 6: Worker target evaluation precedes runIfWaitingForDebugger
   check('worker target evaluate is dispatched before runIfWaitingForDebugger', () => {
-    const evalWorkerRegex = /connection\.command\(\s*['"]Runtime\.evaluate['"]\s*,\s*\{\s*expression:\s*source\s*\}/;
+    // The call passes the composed source object as a multi-line argument with a
+    // trailing comma before the command options.
+    const evalWorkerRegex = /connection\.command\(\s*['"]Runtime\.evaluate['"]\s*,\s*\{\s*expression:\s*source\s*,?\s*\}/;
     assert.ok(evalWorkerRegex.test(methodSource), 'must call Runtime.evaluate with expression: source');
 
     const evalIdx = methodSource.indexOf("Runtime.evaluate");
@@ -423,9 +434,13 @@ async function runBrowserIntegration(serverPort, fingerprint, profile) {
     assert.ok(runIdx !== -1, 'Runtime.runIfWaitingForDebugger must be present in method');
     assert.ok(evalIdx < runIdx, 'Runtime.evaluate must appear before Runtime.runIfWaitingForDebugger');
 
-    const finallyIdx = methodSource.lastIndexOf('finally');
+    // The method has more than one resume call site (worker targets resume early);
+    // the check is that a runIfWaitingForDebugger call is housed INSIDE the finally
+    // block that releases the paused-target latch.
+    const finallyIdx = methodSource.lastIndexOf('} finally {');
     assert.ok(finallyIdx !== -1, 'startWorkerFingerprintInjection must have a finally block for unpausing');
-    assert.ok(runIdx > finallyIdx, 'Runtime.runIfWaitingForDebugger must be safely housed in finally block');
+    const runInFinally = methodSource.indexOf('Runtime.runIfWaitingForDebugger', finallyIdx);
+    assert.ok(runInFinally !== -1, 'Runtime.runIfWaitingForDebugger must be safely housed in finally block');
   });
 
   // Check 7: Integration dispatch harness (verifies production composition dispatch)

@@ -48,9 +48,12 @@ function main() {
   ), 'Runtime.evaluate must not swallow inject errors');
 
   // --- late-created page targets resume before response rewriting is armed ---
-  const latchIdx = engineSrc.indexOf('pausedTargetNeedsResume');
+  // The attach handler moved with startWorkerFingerprintInjection into the
+  // engine/fingerprint-injection.js mixin.
+  const fpInjectSrc = fs.readFileSync(path.join(__dirname, 'engine', 'fingerprint-injection.js'), 'utf8');
+  const latchIdx = fpInjectSrc.indexOf('pausedTargetNeedsResume');
   assert.ok(latchIdx > 0, 'attach handler must keep a single resume latch');
-  const attachBlock = engineSrc.slice(latchIdx, latchIdx + 8000);
+  const attachBlock = fpInjectSrc.slice(latchIdx, latchIdx + 8000);
   const initialIdx = attachBlock.indexOf('if (isInitial) {');
   const lateIdx = attachBlock.indexOf('Late-created target');
   const resumeIdx = attachBlock.indexOf('await resumeTarget();');
