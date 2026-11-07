@@ -10,16 +10,16 @@
 | `window-sync-bridge.js` | 窗口同步控制面 → `live-sync-v5` |
 | `app-center.js` | 应用中心（团队 / 推荐 / 本地） |
 | `mcp-server.js` | stdio MCP（给 Cursor/Claude） |
-| `automation-selftest.js` | 自动化模块自测 |
-| `mcp-control-selftest.js` | MCP 权限 / 指纹控制 / Local API 控制面自测 |
 | `index.js` | 主进程挂载入口 |
+
+自测脚本全部位于 `selftests/` 子目录（如 `selftests/automation-selftest.js`、`selftests/mcp-control-selftest.js`），与本目录的生产模块隔离；`package.json` 中 `selftest:*` 脚本已指向新位置。
 
 ## 验证
 
 ```bash
 npm run selftest:automation
 # 或
-node automation/automation-selftest.js
+node automation/selftests/automation-selftest.js
 
 # MCP 完整控制面（环境、指纹、代理、扩展、同步、RPA、权限策略）
 npm run selftest:mcp

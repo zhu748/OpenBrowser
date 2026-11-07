@@ -72,7 +72,7 @@ module.exports = [
   {
     // Selftest that drives the live page: run()/cli() callbacks execute in the
     // renderer's global scope, so page globals are legitimate here.
-    files: ['automation/secondary-ui-runtime-selftest.js'],
+    files: ['automation/selftests/secondary-ui-runtime-selftest.js'],
     languageOptions: {
       globals: {
         $: 'writable',

@@ -57,7 +57,7 @@ const ROUND3_SUITES = [
   {
     key: 'selftest:round3',
     title: 'Round 3 Unified Adversarial Acceptance Gate (22 Assertions)',
-    file: 'automation/fingerprint-adversarial-round3-selftest.js',
+    file: 'automation/selftests/fingerprint-adversarial-round3-selftest.js',
     type: 'CORE_GATE',
     required: true,
   },
