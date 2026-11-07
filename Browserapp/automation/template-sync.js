@@ -25,9 +25,67 @@ const crypto = require('crypto');
 const zlib = require('zlib');
 const { parseProcessContent } = require('./protocol/rpa-registry');
 
+const TEMPLATE_SYNC_MAX_RESPONSE_BYTES = 20 * 1024 * 1024; // process packs are small JSON.gz
+
+function isCloudMetadataHostname(hostname) {
+  const host = String(hostname || '').trim().toLowerCase().replace(/^\[|\]$/g, '');
+  if (!host) return true;
+  if (host === 'metadata' || host === 'metadata.google.internal') return true;
+  if (host.endsWith('.metadata.google.internal')) return true;
+  if (host === '169.254.169.254' || host === '169.254.170.2') return true;
+  return false;
+}
+
+function isPrivateOrLocalHostname(hostname) {
+  const host = String(hostname || '').trim().toLowerCase().replace(/^\[|\]$/g, '');
+  if (!host) return true;
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) return true;
+  if (host === '0.0.0.0' || host === '::' || host === '::1') return true;
+  const m = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (m) {
+    const parts = m.slice(1).map((n) => Number(n));
+    if (parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return true;
+    const [a, b] = parts;
+    if (a === 10 || a === 127 || a === 0) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 100 && b >= 64 && b <= 127) return true;
+    if (a === 198 && (b === 18 || b === 19)) return true;
+  }
+  if (host.includes(':')) {
+    if (host === '::1' || host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80')) return true;
+  }
+  return false;
+}
+
+/**
+ * SSRF guard for every outbound request this module makes (base + process-pack
+ * URIs). Template marketplaces are public internet endpoints and requests
+ * carry the user's cookies/tokens, so private/loopback/link-local and cloud
+ * metadata targets are rejected outright. Set OPENBROWSER_ALLOW_PRIVATE_TEMPLATE_SYNC=1
+ * only for local development against a self-hosted store.
+ */
+function assertSafeTemplateSyncUrl(url) {
+  const target = String(url || '').trim();
+  if (!/^https?:\/\//i.test(target)) throw new Error('模版同步 URL 必须以 http:// 或 https:// 开头');
+  let parsed;
+  try { parsed = new URL(target); } catch (_) { throw new Error('模版同步 URL 无效'); }
+  if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('模版同步仅允许 http/https URL');
+  if (parsed.username || parsed.password) throw new Error('模版同步 URL 不允许内嵌账号密码');
+  if (isCloudMetadataHostname(parsed.hostname)) {
+    throw new Error('模版同步禁止访问云 metadata 地址（防 SSRF）');
+  }
+  const allowPrivate = String(process.env.OPENBROWSER_ALLOW_PRIVATE_TEMPLATE_SYNC || '').trim() === '1';
+  if (!allowPrivate && isPrivateOrLocalHostname(parsed.hostname)) {
+    throw new Error('模版同步禁止访问本机/内网地址（防 SSRF；如需本地调试设置 OPENBROWSER_ALLOW_PRIVATE_TEMPLATE_SYNC=1）');
+  }
+  return parsed;
+}
+
 function requestRaw(url, { method = 'GET', headers = {}, body = null, timeout = 30000 } = {}) {
   return new Promise((resolve, reject) => {
-    const u = new URL(url);
+    const u = assertSafeTemplateSyncUrl(url);
     const lib = u.protocol === 'https:' ? https : http;
     const req = lib.request({
       protocol: u.protocol,
@@ -43,7 +101,15 @@ function requestRaw(url, { method = 'GET', headers = {}, body = null, timeout = 
       timeout,
     }, (res) => {
       const chunks = [];
-      res.on('data', (c) => chunks.push(c));
+      let size = 0;
+      res.on('data', (c) => {
+        size += c.length;
+        if (size > TEMPLATE_SYNC_MAX_RESPONSE_BYTES) {
+          req.destroy(new Error('模版同步响应体过大'));
+          return;
+        }
+        chunks.push(c);
+      });
       res.on('end', () => resolve({ status: res.statusCode, buffer: Buffer.concat(chunks), headers: res.headers }));
     });
     req.on('error', reject);
@@ -330,4 +396,5 @@ module.exports = {
   graphToProcessContent,
   decryptProcessCipher,
   loadBundledCatalogDump,
+  assertSafeTemplateSyncUrl,
 };
