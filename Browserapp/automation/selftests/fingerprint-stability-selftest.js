@@ -338,9 +338,14 @@ async function runProxyPolicies(engineBlock, BrowserEngine) {
   assert.ok(events2.some((e) => e.type === 'proxy-fallback'));
 
   // source integrity: banned external product names must not appear
-  const fpSrc = fs.readFileSync(path.join(__dirname, '../fingerprint.js'), 'utf8');
+  // The former fingerprint.js monolith is now the automation/fingerprint/ package;
+  // scan every module of it.
+  const fpSrc = fs.readdirSync(path.join(__dirname, '../fingerprint'))
+    .filter((f) => f.endsWith('.js'))
+    .map((f) => fs.readFileSync(path.join(__dirname, '../fingerprint', f), 'utf8'))
+    .join('\n');
   for (const banned of ['AdsPower', 'Hubstudio', 'HubStudio', '逆向', '复刻', 'SunBrowser']) {
-    assert.ok(!fpSrc.includes(banned), 'fingerprint.js must not contain ' + banned);
+    assert.ok(!fpSrc.includes(banned), 'fingerprint package must not contain ' + banned);
   }
   const engSrc = fs.readFileSync(path.join(__dirname, '../engine.js'), 'utf8');
   for (const banned of ['AdsPower', 'Hubstudio', 'HubStudio', '逆向', '复刻']) {

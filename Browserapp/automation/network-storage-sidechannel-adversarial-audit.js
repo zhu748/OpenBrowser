@@ -1293,7 +1293,7 @@ async function main() {
     `Host baseline quota: ${bEst.quota} bytes (${bEst.quotaMB} MB)`,
     'Raw host temporary container quota',
     `Windows: ${wEst.quota} bytes, Android: ${aEst.quota} bytes`,
-    'Browserapp/automation/fingerprint.js: navigator.storage',
+    'Browserapp/automation/fingerprint/injection-script.js: navigator.storage',
     'Consider adding a persona-aware quota scaler in StorageManager.prototype.estimate to differentiate desktop vs mobile profiles if anti-bot systems correlate quota with deviceProfile.'
   );
 
@@ -1336,7 +1336,7 @@ async function main() {
       'Standard clean web origin or anonymous URL in report',
       'N/A',
       `Leaked source-file: ${cspSourceFile}`,
-      'Browserapp/automation/fingerprint.js',
+      'Browserapp/automation/fingerprint/injection-script.js',
       'Ensure injected code is evaluated as inline script without disclosing sourceURL directives that trigger CSP leaks.'
     );
   } else {
@@ -1393,7 +1393,7 @@ async function main() {
       'Win32 (Windows Persona)',
       'MacIntel in unpatched child realms',
       JSON.stringify(leaksMacIntel),
-      'Browserapp/automation/fingerprint.js: realm injection & prototype patching',
+      'Browserapp/automation/fingerprint/injection-script.js: realm injection & prototype patching',
       'Ensure Navigator.prototype.platform getter override is attached to every newly created realm.'
     );
   } else {

@@ -1058,7 +1058,7 @@ function generateMarkdownReport(baseline, injected, profile) {
     \`Object.getOwnPropertyDescriptor(WorkerNavigator.prototype, 'userAgent').get.call({})\`
     -> **不抛出任何异常，直接返回 \`"Mozilla/5.0 (Windows NT 10.0; Win64; x64)..."\`！**
 - **精确代码定位**：
-  - 文件：\`Browserapp/automation/fingerprint.js:7349\`
+  - 文件：\`Browserapp/automation/fingerprint/worker-injection.js:1129\`
   - 源码片段：
     \`\`\`javascript
     for (const [key, value] of Object.entries(navValues)) {
@@ -1101,9 +1101,9 @@ function generateMarkdownReport(baseline, injected, profile) {
     \`isChildTypeError: false\`
     \`isParentTypeError: true\`
 - **精确代码定位**：
-  - 文件：\`Browserapp/automation/fingerprint.js:2327\`、\`Browserapp/automation/fingerprint.js:2525\`
+  - 文件：\`Browserapp/automation/fingerprint/injection-script.js:1510\`、\`Browserapp/automation/fingerprint/injection-script.js:1532\`
 - **根因分析**：
-  \`fingerprint.js\` 在主页面原型方法或 getter 校验失败抛错时，直接使用了顶层闭包的 \`new TypeError('Illegal invocation')\`，未根据当前 receiver 或调用栈的所属 Realm 动态解析 \`TypeError\` 构造器。
+  \`fingerprint/injection-script.js\` 在主页面原型方法或 getter 校验失败抛错时，直接使用了顶层闭包的 \`new TypeError('Illegal invocation')\`，未根据当前 receiver 或调用栈的所属 Realm 动态解析 \`TypeError\` 构造器。
 
 ---
 

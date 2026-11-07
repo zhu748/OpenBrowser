@@ -513,7 +513,7 @@ check("root .gitignore exists and covers all required exclusion rules", () => {
   // Verify critical deliverables are NOT ignored
   assert.strictEqual(isPathGitIgnored("Browserapp/main.js", repoRoot), false, "main.js must not be ignored");
   assert.strictEqual(isPathGitIgnored("Browserapp/engine.js", repoRoot), false, "engine.js must not be ignored");
-  assert.strictEqual(isPathGitIgnored("Browserapp/automation/fingerprint.js", repoRoot), false, "fingerprint.js must not be ignored");
+  assert.strictEqual(isPathGitIgnored("Browserapp/automation/fingerprint/index.js", repoRoot), false, "fingerprint package must not be ignored");
   assert.strictEqual(isPathGitIgnored("Browserapp/assets/font-subsets/index.json", repoRoot), false, "index.json must not be ignored");
   assert.strictEqual(isPathGitIgnored("Browserapp/assets/font-subsets/windows/arial.woff2", repoRoot), false, "arial.woff2 must not be ignored");
   assert.strictEqual(isPathGitIgnored("Browserapp/assets/font-subsets/macos/pingfang-sc.woff2", repoRoot), false, "pingfang-sc.woff2 must not be ignored");
@@ -590,7 +590,7 @@ check("portable packager preserves all required source files, font subsets, and 
     "engine.js",
     "renderer.js",
     "package.json",
-    "fingerprint.js",
+    "fingerprint/index.js",
     "index.json",
     "arial.woff2",
     "pingfang-sc.woff2",

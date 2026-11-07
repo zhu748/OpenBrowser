@@ -380,7 +380,7 @@ if (hasSfntMagic || hasWoff2Magic) {
 console.log('\n--- SECTION 3: Auditing Issue #19 Implementation & Gaps ---');
 
 // 3.1: Window scale factor
-const fpCode = fs.readFileSync(path.join(appRoot, 'automation', 'fingerprint.js'), 'utf8');
+const fpCode = fs.readFileSync(path.join(appRoot, 'automation', 'fingerprint', 'chrome-args.js'), 'utf8');
 if (fpCode.includes("process.platform === 'win32'") && fpCode.includes('--force-device-scale-factor=')) {
   recordAudit({
     category: 'ISSUE-19-SCALE',
@@ -393,7 +393,7 @@ if (fpCode.includes("process.platform === 'win32'") && fpCode.includes('--force-
     category: 'ISSUE-19-SCALE',
     status: 'LEAK/GAP',
     title: 'force-device-scale-factor missing',
-    detail: 'Flag not found in fingerprint.js chromeArgs.',
+    detail: 'Flag not found in fingerprint/chrome-args.js.',
   });
 }
 

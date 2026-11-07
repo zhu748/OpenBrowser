@@ -1,19 +1,5 @@
 "use strict";
 
-const Module = require("module");
-const origCompile = Module.prototype._compile;
-Module.prototype._compile = function(content, filename) {
-  if (filename.includes("fingerprint.js")) {
-    content = content.replace(/Backquote:\s*"`"/g, "Backquote: \"\\\`\"");
-    content = content.replace(/Backslash:\s*"\\\\"/g, "Backslash: \"\\\\\\\\\"");
-    content = content.replace(
-      "  const S_NATIVE = Symbol.for(BRIDGE_TOKEN);\n  const nativeSource = new WeakMap();\n  const subWindowSyncHooks = [];\n  // Assigned by the font-shield block below when a profile declares foreign families. The\n  // clientRects patch wraps its measurement in this scope so both layers live in ONE bridge\n  // wrapper: two independent nativeLike wrappers would make replaceMethod treat the second\n  // one as an existing bridge and silently skip it.\n  let sanitizeElementFontScope = (element, callback) => callback();\n  const originalToString = Function.prototype.toString;\n  const BRIDGE_TOKEN = ${JSON.stringify(bridgeToken)};",
-      "  const BRIDGE_TOKEN = ${JSON.stringify(bridgeToken)};\n  const S_NATIVE = Symbol.for(BRIDGE_TOKEN);\n  const nativeSource = new WeakMap();\n  const subWindowSyncHooks = [];\n  let sanitizeElementFontScope = (element, callback) => callback();\n  const originalToString = Function.prototype.toString;"
-    );
-  }
-  return origCompile.call(this, content, filename);
-};
-
 const assert = require("assert");
 const http = require("http");
 const fs = require("fs");

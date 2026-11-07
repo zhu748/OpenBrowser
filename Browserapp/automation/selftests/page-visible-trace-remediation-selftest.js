@@ -4,7 +4,7 @@
 /**
  * Page-Visible Brand Trace Remediation Selftest.
  *
- * Verifies that all 7 brand trace / leakage flaws outside fingerprint.js / engine.js
+ * Verifies that all 7 brand trace / leakage flaws outside the fingerprint package / engine.js
  * are completely eliminated, with zero observable DOM markers, zero custom error text,
  * zero own properties on document, and zero plaintext brand names in local services,
  * while 100% preserving multi-window sync, extension icons, font fallback, and port scan defense.

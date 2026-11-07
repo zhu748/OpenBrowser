@@ -327,7 +327,7 @@ async function runSession({ serverPort, mutate, headed }) {
     await cdp.send('Page.enable', {}, sessionId);
     await cdp.send('Runtime.enable', {}, sessionId);
 
-    // Injected scripts: always inject fingerprint.js baseline
+    // Injected scripts: always inject the fingerprint package baseline
     await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
       source: buildInjectionScript(fp),
     }, sessionId);

@@ -41,7 +41,7 @@ function main() {
   assert.ok(block.includes('start-page re-inject') || block.includes('appliedTargetIds: new Set()'), 're-inject after start page navigate');
 
   // applyFingerprintToTab enables Page domain
-  const fpSrc = fs.readFileSync(path.join(__dirname, 'automation/fingerprint.js'), 'utf8');
+  const fpSrc = fs.readFileSync(path.join(__dirname, 'automation', 'fingerprint', 'tab-apply.js'), 'utf8');
   assert.ok(fpSrc.includes("invoke('Page.enable'") || fpSrc.includes('Page.enable'), 'Page.enable required before addScript');
   assert.ok(!/Runtime\.evaluate[\s\S]{0,80}\.catch\(\(\) => \{\}\)/.test(
     fpSrc.slice(fpSrc.indexOf('async function applyFingerprintToTab'))
