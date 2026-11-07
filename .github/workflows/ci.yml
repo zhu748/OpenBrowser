@@ -80,6 +80,7 @@ jobs:
           npm run selftest:queue
           npm run selftest:logsan
           npm run selftest:objutils
+          npm run selftest:cdppool
           npm run selftest:validation
           npm run selftest:version
       - name: Proxy selftests (loopback sockets)

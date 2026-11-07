@@ -21,7 +21,9 @@ async function json(url, method = 'GET') {
   return JSON.parse(await request(url, method));
 }
 
-function call(webSocketUrl, method, params = {}, timeout = 6000) {
+// One-shot transport: opens a dedicated socket per command and closes it on settle.
+// Kept as the fallback for pool overflow and as a reference for behaviour parity.
+function callDedicated(webSocketUrl, method, params = {}, timeout = 6000) {
   return new Promise((resolve, reject) => {
     if (typeof WebSocket !== 'function') return reject(new Error('WebSocket API is unavailable in this host runtime'));
     const id = Math.floor(Math.random() * 1_000_000_000);
@@ -51,6 +53,146 @@ function call(webSocketUrl, method, params = {}, timeout = 6000) {
     // the full timeout elapses instead of failing fast.
     socket.addEventListener('close', () => finish(reject, new Error(`CDP socket closed before response: ${method}`)));
   });
+}
+
+// --- Command connection pool -------------------------------------------------
+// Every cdp.call() used to pay a full WebSocket+TCP handshake per command. RPA human
+// typing alone dispatches 2-3 connections per keystroke, and engine injection fans out
+// over every open tab. The pool keeps one PersistentConnection per webSocketDebuggerUrl,
+// multiplexes concurrent commands over it (id-keyed, see PersistentConnection), evicts on
+// disconnect, and reaps idle sockets so tab teardowns do not leak.
+const POOL_MAX = 16;
+let POOL_IDLE_MS = 30_000;
+const callPool = new Map(); // webSocketUrl -> entry { conn, openPromise, inFlight, dead, diedAt, lastUsed, idleTimer }
+
+function poolEvict(url, entry) {
+  const current = callPool.get(url);
+  if (entry && current !== entry) return; // stale entry; someone else owns the slot
+  callPool.delete(url);
+  if (entry?.idleTimer) {
+    clearTimeout(entry.idleTimer);
+    entry.idleTimer = null;
+  }
+}
+
+function poolEntryDead(url, entry, error) {
+  if (entry.dead) return;
+  entry.dead = true;
+  entry.diedAt = Date.now();
+  entry.error = error;
+  poolEvict(url, entry);
+}
+
+function armIdleTimer(url, entry) {
+  if (entry.idleTimer) clearTimeout(entry.idleTimer);
+  entry.idleTimer = setTimeout(() => {
+    entry.idleTimer = null;
+    if (entry.inFlight > 0) {
+      armIdleTimer(url, entry); // busy again; re-check later
+      return;
+    }
+    poolEvict(url, entry);
+    try { entry.conn?.close(); } catch (_) {}
+  }, POOL_IDLE_MS);
+  // Never let a reaper hold the host process open (Electron main / plain Node).
+  if (typeof entry.idleTimer.unref === 'function') entry.idleTimer.unref();
+}
+
+function poolAcquire(webSocketUrl, timeout) {
+  const existing = callPool.get(webSocketUrl);
+  if (existing && !existing.dead && !existing.conn?.closed) {
+    // LRU refresh: Map preserves insertion order, re-insert to become newest.
+    callPool.delete(webSocketUrl);
+    callPool.set(webSocketUrl, existing);
+    return existing;
+  }
+  // Stale entry (disconnected or externally closed without eviction): drop it.
+  if (existing) poolEntryDead(webSocketUrl, existing, existing.error || new Error('CDP pooled connection stale'));
+
+  // Hard cap: drop dead weight, then the oldest idle entry; if everything is busy,
+  // signal overflow so the caller falls back to a dedicated one-shot connection
+  // (the exact pre-pool cost) instead of blocking or evicting in-flight sockets.
+  for (const [url, entry] of [...callPool]) {
+    if (entry.dead) poolEvict(url, entry);
+  }
+  if (callPool.size >= POOL_MAX) {
+    let victim = null;
+    for (const [url, entry] of callPool) {
+      if (entry.inFlight === 0) { victim = [url, entry]; break; }
+    }
+    if (victim) {
+      poolEvict(victim[0], victim[1]);
+      try { victim[1].conn?.close(); } catch (_) {}
+    } else {
+      return null; // overflow: all pooled sockets are in flight
+    }
+  }
+
+  const entry = {
+    conn: null,
+    openPromise: null,
+    inFlight: 0,
+    dead: false,
+    diedAt: 0,
+    lastUsed: Date.now(),
+    idleTimer: null,
+  };
+  const conn = new PersistentConnection(webSocketUrl, {
+    onDisconnect: (error) => poolEntryDead(webSocketUrl, entry, error),
+  });
+  entry.conn = conn;
+  entry.openPromise = conn.open(Number(timeout) || 6000).catch((error) => {
+    poolEntryDead(webSocketUrl, entry, error);
+    throw error;
+  });
+  callPool.set(webSocketUrl, entry);
+  return entry;
+}
+
+async function call(webSocketUrl, method, params = {}, timeout = 6000, __retried = false) {
+  if (typeof WebSocket !== 'function') {
+    return Promise.reject(new Error('WebSocket API is unavailable in this host runtime'));
+  }
+  const startedAt = Date.now();
+  const entry = poolAcquire(webSocketUrl, timeout);
+  if (!entry) return callDedicated(webSocketUrl, method, params, timeout);
+
+  // Counts the open phase too: an entry mid-handshake must not look idle to the
+  // LRU overflow path below (evicting it would strand the waiter on a 6s timeout).
+  entry.inFlight += 1;
+  let conn;
+  try {
+    conn = await entry.openPromise;
+  } catch (error) {
+    entry.inFlight -= 1;
+    return Promise.reject(error);
+  }
+  if (entry.dead && !__retried) {
+    // Raced with a disconnect between open and command: the command never left this
+    // host, so a single fresh retry is safe even for non-idempotent input dispatches.
+    entry.inFlight -= 1;
+    poolEvict(webSocketUrl, entry);
+    return call(webSocketUrl, method, params, timeout, true);
+  }
+
+  entry.lastUsed = Date.now();
+  try {
+    return await conn.command(method, params, { timeout });
+  } catch (error) {
+    // Retry only the pre-send rejection: the entry died BEFORE this call began, so the
+    // message was never written to a socket. Mid-flight failures (timeout, socket closed
+    // after send) propagate untouched — retrying those could double-execute input events.
+    const diedBeforeThisCall = entry.diedAt && entry.diedAt <= startedAt && entry.conn === conn;
+    if (diedBeforeThisCall && !__retried) {
+      poolEvict(webSocketUrl, entry);
+      return call(webSocketUrl, method, params, timeout, true);
+    }
+    throw error;
+  } finally {
+    entry.inFlight -= 1;
+    entry.lastUsed = Date.now();
+    if (!entry.dead) armIdleTimer(webSocketUrl, entry);
+  }
 }
 
 class PersistentConnection {
@@ -190,6 +332,22 @@ class PersistentConnection {
 
 async function connect(webSocketUrl, options = {}) {
   return new PersistentConnection(webSocketUrl, options).open(options.timeout);
+}
+
+// Explicit teardown for hosts that know a browser is going away (Browser.close flows);
+// disconnects also self-evict, so this is a courtesy for clean shutdown paths and tests.
+function closePooledSocket(webSocketUrl) {
+  const entry = callPool.get(webSocketUrl);
+  if (!entry) return;
+  poolEvict(webSocketUrl, entry);
+  try { entry.conn?.close(); } catch (_) {}
+}
+
+function closeAllPooledSockets() {
+  for (const [url, entry] of [...callPool]) {
+    poolEvict(url, entry);
+    try { entry.conn?.close(); } catch (_) {}
+  }
 }
 
 async function targets(port) {
@@ -458,4 +616,4 @@ async function setWindowBounds(port, bounds, options = {}) {
   return { windowId: value.windowId, bounds: next };
 }
 
-module.exports = { json, call, connect, PersistentConnection, targets, tabs, browserSocket, newTab, closeTab, activateTab, firstTab, focusedEditableTab, insertText, clearFocused, navigate, reload, windowForTarget, windowForPort, setWindowState, setWindowBounds, __test: { focusedEditableExpression, chooseFocusedEditable, textWasInserted, waitForWindowState } };
+module.exports = { json, call, connect, PersistentConnection, closePooledSocket, closeAllPooledSockets, targets, tabs, browserSocket, newTab, closeTab, activateTab, firstTab, focusedEditableTab, insertText, clearFocused, navigate, reload, windowForTarget, windowForPort, setWindowState, setWindowBounds, __test: { focusedEditableExpression, chooseFocusedEditable, textWasInserted, waitForWindowState, callDedicated, pool: { callPool, POOL_MAX, setIdleMs: (ms) => { POOL_IDLE_MS = Number(ms) || 30_000; }, get idleMs() { return POOL_IDLE_MS; } } } };

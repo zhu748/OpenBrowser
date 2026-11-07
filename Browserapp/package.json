@@ -123,6 +123,7 @@
     "selftest:winbus": "node automation/window-command-bus-selftest.js",
     "selftest:flags": "node automation/command-line-flags-selftest.js",
     "selftest:objutils": "node automation/object-utils-selftest.js",
+    "selftest:cdppool": "node automation/cdp-connection-pool-selftest.js",
     "selftest:machineid": "node automation/machine-id-selftest.js",
     "selftest:sched": "node automation/task-scheduler-selftest.js",
     "selftest:integrity": "node automation/asset-integrity-selftest.js",
