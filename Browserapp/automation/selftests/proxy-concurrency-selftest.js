@@ -196,7 +196,8 @@ async function main() {
   });
 
   check('the launch path enforces the cap before any resource is created', () => {
-    const source = fs.readFileSync(path.join(__dirname, '..', '../engine.js'), 'utf8');
+    // _start moved to the engine/start.js mixin (startup routine).
+    const source = fs.readFileSync(path.join(__dirname, '..', '../engine/start.js'), 'utf8');
     const resolved = source.indexOf('let profile = this.resolveStoredProxyProfile(this.sanitizeProfile(raw));');
     const guarded = source.indexOf('this.assertProxyConcurrencyAvailable(profile);');
     const lock = source.indexOf('await acquireProfileLock(');

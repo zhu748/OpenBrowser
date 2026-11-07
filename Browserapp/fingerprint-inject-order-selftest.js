@@ -21,13 +21,16 @@ const {
 function main() {
   // --- engine start order: inject before keepDefaultTab ---
   const engineSrc = fs.readFileSync(path.join(__dirname, 'engine.js'), 'utf8');
-  const startIdx = engineSrc.indexOf('item.startupExtensionGuard');
+  // _start moved to the engine/start.js mixin (startup routine); the start-order
+  // assertions read the mixin source.
+  const startSrc = fs.readFileSync(path.join(__dirname, 'engine', 'start.js'), 'utf8');
+  const startIdx = startSrc.indexOf('item.startupExtensionGuard');
   assert.ok(startIdx > 0, 'startup block present');
   // Bound the start tail by the next top-level member definition rather than a magic char count:
   // unrelated growth inside the routine used to push keepDefaultTab past the window and fail this
   // assertion even though applyRuntimeSettings still ran first.
-  const nextMember = engineSrc.slice(startIdx).search(/\n  (?:async\s+)?[A-Za-z_$][\w$]*\s*\(/);
-  const block = engineSrc.slice(startIdx, nextMember > 0 ? startIdx + nextMember : startIdx + 20000);
+  const nextMember = startSrc.slice(startIdx).search(/\n  (?:async\s+)?[A-Za-z_$][\w$]*\s*\(/);
+  const block = startSrc.slice(startIdx, nextMember > 0 ? startIdx + nextMember : startIdx + 20000);
   // Match call sites only (not comments mentioning keepDefaultTab before inject).
   const injectPos = block.indexOf('await this.applyRuntimeSettings');
   const keepPos = block.indexOf('await this.keepDefaultTab');
@@ -35,8 +38,8 @@ function main() {
   assert.ok(injectPos < keepPos, 'applyRuntimeSettings must run before keepDefaultTab (welcome page race)');
   assert.ok(block.includes('Fingerprint inject BEFORE'), 'order comment present');
   // CLI must not open start page before CDP inject
-  assert.ok(engineSrc.includes("args.push('about:blank')"), 'spawn must use about:blank instead of startUrl on CLI');
-  assert.ok(engineSrc.includes('do NOT put the OpenBrowser start page') || engineSrc.includes('Do NOT put the OpenBrowser start page'), 'CLI startUrl deferral comment');
+  assert.ok(startSrc.includes("args.push('about:blank')"), 'spawn must use about:blank instead of startUrl on CLI');
+  assert.ok(startSrc.includes('do NOT put the OpenBrowser start page') || startSrc.includes('Do NOT put the OpenBrowser start page'), 'CLI startUrl deferral comment');
   // re-inject after navigate
   assert.ok(block.includes('start-page re-inject') || block.includes('appliedTargetIds: new Set()'), 're-inject after start page navigate');
 

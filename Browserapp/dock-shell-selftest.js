@@ -57,13 +57,20 @@ function main() {
 
   // --- engine records launchBinary + kills with multi executables + stops ipc stub ---
   const engineSrc = fs.readFileSync(path.join(__dirname, 'engine.js'), 'utf8');
+  // The startup routine (_start) lives in engine/start.js, and the browser
+  // candidate / kill-option helpers in engine/browser-candidates.js; each
+  // assertion reads the module that owns the marker now.
+  const startSrc = fs.readFileSync(path.join(__dirname, 'engine', 'start.js'), 'utf8');
+  const candidatesSrc = fs.readFileSync(path.join(__dirname, 'engine', 'browser-candidates.js'), 'utf8');
+  const lifecycleSrc = fs.readFileSync(path.join(__dirname, 'engine', 'lifecycle-cleanup.js'), 'utf8');
   assert.ok(engineSrc.includes('managedBrowserKillOptions'), 'engine must use managed kill options');
   assert.ok(engineSrc.includes('launchBinary'), 'item must record launchBinary');
   assert.ok(engineSrc.includes('stopIpcStubForWindow'), 'engine must stop ipc-stub on stop/cleanup');
-  assert.ok(engineSrc.includes('expectedExecutables'), 'kill options must use multi executables');
-  assert.ok(!/killProcessTree\([^)]*expectedExecutable:\s*(item\.browser|browser)\.path/.test(engineSrc), 'must not pass only browser.path as expectedExecutable');
-  assert.ok(engineSrc.includes('isOpenBrowser148(browser)'), 'Dock shell only for openbrowser-148');
-  assert.ok(engineSrc.includes('ipc-stub\\\\.py') || engineSrc.includes('ipc-stub\\.py'), 'pkill pattern must be anchored');
+  assert.ok(candidatesSrc.includes('expectedExecutables'), 'kill options must use multi executables');
+  const killSources = engineSrc + startSrc + candidatesSrc + lifecycleSrc;
+  assert.ok(!/killProcessTree\([^)]*expectedExecutable:\s*(item\.browser|browser)\.path/.test(killSources), 'must not pass only browser.path as expectedExecutable');
+  assert.ok(startSrc.includes('isOpenBrowser148(browser)'), 'Dock shell only for openbrowser-148');
+  assert.ok(candidatesSrc.includes('ipc-stub\\\\.py') || candidatesSrc.includes('ipc-stub\\.py'), 'pkill pattern must be anchored');
   assert.ok(engineSrc.includes('preferredId'), 'keepDefaultTab must retain navigated tab id');
 
   // --- env-icon: xml escape + no loose pkill ---
