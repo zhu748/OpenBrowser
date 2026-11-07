@@ -106,8 +106,19 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master; toolchain: stable
         with:
+          # Cargo needs no kernels; excluding the LFS tree also keeps the
+          # checkout small (the kernel bundle is 5k+ files).
+          lfs: true
+          sparse-checkout: |
+            /*
+            !/Browserapp/kernels/
+          sparse-checkout-cone-mode: false
+      # toolchain is a required input at this SHA — without it the job dies
+      # at "Process completed with exit code 1" before fmt/clippy ever run.
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
           components: rustfmt, clippy
       - name: cargo fmt
         run: cargo fmt --all -- --check
@@ -127,8 +138,19 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master; toolchain: stable
         with:
+          # The committed macOS kernel bundle has paths up to 235 chars; with
+          # the runner's workspace prefix they exceed Windows MAX_PATH and
+          # checkout dies with "Filename too long". Cargo never reads kernels,
+          # so exclude the tree — same block the smoke jobs already use.
+          lfs: true
+          sparse-checkout: |
+            /*
+            !/Browserapp/kernels/
+          sparse-checkout-cone-mode: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
           components: clippy
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
