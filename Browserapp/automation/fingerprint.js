@@ -2226,7 +2226,6 @@ function buildInjectionScript(fp) {
     hardwareConcurrency: fp.hardwareConcurrency,
     deviceMemory: Math.min(8, Math.max(1, Number(fp.deviceMemory) || 8)),
     screen: fp.screen,
-    os: fp.uaProfile?.os || (fp.mobile ? 'android' : 'windows'),
     webgl: {
       mode: fp.webgl?.mode,
       metaMode: fp.webgl?.metaMode || 'noise',
@@ -9207,21 +9206,52 @@ const SHARED_FONT_PAYLOAD_VAR = '__obPlatformFontPayload';
 
 // Composing a document-start script serialises the font payload, so repeating it for every
 // iframe/worker of one profile costs tens of milliseconds of main-process CPU and a fresh
-// multi-megabyte string. Profiles are few and short-lived relative to the injected targets, so a
-// tiny bounded cache removes that cost without retaining unbounded heap.
-const INJECTION_SCRIPT_CACHE_LIMIT = 4;
+// multi-megabyte string. The cache keeps at least the previous 4 entries and additionally a
+// 64 MB byte budget, so font-heavy personas keep their behaviour while light personas stop
+// thrashing the moment more than 4 profiles are alternately active.
+const INJECTION_SCRIPT_CACHE_MIN_ENTRIES = 4;
+const INJECTION_SCRIPT_CACHE_BUDGET_BYTES = 64 * 1024 * 1024;
 const injectionScriptCache = new Map();
+const injectionScriptCacheBytes = { total: 0 };
 const rememberInjectionScript = (key, value) => {
   if (!key) return value;
-  if (injectionScriptCache.has(key)) injectionScriptCache.delete(key);
+  const size = typeof value === 'string' ? value.length : 0;
+  if (injectionScriptCache.has(key)) {
+    const prev = injectionScriptCache.get(key);
+    injectionScriptCacheBytes.total -= typeof prev === 'string' ? prev.length : 0;
+    injectionScriptCache.delete(key);
+  }
   injectionScriptCache.set(key, value);
-  while (injectionScriptCache.size > INJECTION_SCRIPT_CACHE_LIMIT) {
-    injectionScriptCache.delete(injectionScriptCache.keys().next().value);
+  injectionScriptCacheBytes.total += size;
+  while (injectionScriptCache.size > INJECTION_SCRIPT_CACHE_MIN_ENTRIES
+      && injectionScriptCacheBytes.total > INJECTION_SCRIPT_CACHE_BUDGET_BYTES) {
+    const oldest = injectionScriptCache.keys().next().value;
+    const prev = injectionScriptCache.get(oldest);
+    injectionScriptCacheBytes.total -= typeof prev === 'string' ? prev.length : 0;
+    injectionScriptCache.delete(oldest);
   }
   return value;
 };
 
 const injectSourceKey = (source) => crypto.createHash('sha1').update(source).digest('hex').slice(0, 16);
+
+// applyFingerprintToTab runs on every tab, watch sweep and reload recovery, and hashing the
+// multi-megabyte source each time is pure waste: the script is already cached per
+// injectionCacheKey, so the derived key is cached alongside it.
+const injectionSourceKeyCache = new Map();
+const injectionSourceKeyCacheLimit = 256;
+const injectSourceKeyCached = (injectionCacheKey, source) => {
+  if (!injectionCacheKey) return injectSourceKey(source);
+  const hit = injectionSourceKeyCache.get(injectionCacheKey);
+  if (hit) return hit;
+  const key = injectSourceKey(source);
+  if (injectionSourceKeyCache.size >= injectionSourceKeyCacheLimit) {
+    injectionSourceKeyCache.delete(injectionSourceKeyCache.keys().next().value);
+  }
+  injectionSourceKeyCache.set(injectionCacheKey, key);
+  return key;
+};
+const injectionCacheKeyFor = (fp) => canonicalBridgeToken(fp) + '|' + String((fp && fp.bridgeChannel) || '');
 
 async function applyFingerprintToTab(cdpCall, webSocketDebuggerUrl, fp, profile = {}, options = {}) {
   const privacy = profile.privacy || {};
@@ -9252,7 +9282,7 @@ async function applyFingerprintToTab(cdpCall, webSocketDebuggerUrl, fp, profile 
   };
 
   const source = buildInjectionScript(fp);
-  const fpKey = injectSourceKey(source);
+  const fpKey = injectSourceKeyCached(injectionCacheKeyFor(fp), source);
   const injectTargetKey = typeof options.applyKey === 'string' && options.applyKey
     ? options.applyKey
     : (typeof webSocketDebuggerUrl === 'string' && webSocketDebuggerUrl ? webSocketDebuggerUrl : '');
