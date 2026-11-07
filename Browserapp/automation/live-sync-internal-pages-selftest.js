@@ -166,7 +166,7 @@ async function run() {
     const mockEngine = {
       running: new Map([
         ['m1', { port: 9222, profile: { number: 1 }, item: { port: 9222 } }],
-        ['s1', { port: 9223, profile: { number: 2 }, port: 9223 }],
+        ['s1', { port: 9223, profile: { number: 2 } }],
       ]),
       on: () => () => {},
     };

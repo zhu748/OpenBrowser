@@ -65,7 +65,6 @@ function parseXdotoolGeometry(stdout) {
 function loadFfiBinding() {
   for (const name of ['koffi', '@lwahonen/ffi-napi']) {
     try {
-      // eslint-disable-next-line global-require, import/no-dynamic-require
       return { name, mod: require(name) };
     } catch (_) {
       /* binding not installed; try the next candidate */

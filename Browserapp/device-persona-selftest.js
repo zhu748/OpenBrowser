@@ -336,7 +336,9 @@ const MAC_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.
 
 // --- 7. pickPersona is deterministic and bounded ---
 {
-  ok('pickPersona is stable for the same index', pickPersona('windows', 7) === pickPersona('windows', 7));
+  const stableA = pickPersona('windows', 7);
+  const stableB = pickPersona('windows', 7);
+  ok('pickPersona is stable for the same index', stableA === stableB);
   ok('pickPersona wraps out-of-range indexes', Boolean(pickPersona('windows', 999999)));
   ok('unknown OS still yields a persona', Boolean(pickPersona('plan9', 3)));
 }

@@ -415,7 +415,6 @@ async function runMultiTierIframeTest(profile, inject = true) {
     cores: 8,
     memory: 8,
     canvas: 'noise',
-    webgl: 'noise',
     audio: 'noise',
     clientRects: 'noise',
     languages: ['zh-CN', 'zh'],

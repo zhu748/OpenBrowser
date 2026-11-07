@@ -367,7 +367,7 @@ async function runSession({ serverPort, mutate, headed, customPersonaList }) {
     }
 
     if (!probe) {
-      console.error('DIAGNOSTIC FAILURE in ' + path.basename(file_path) + ':');
+      console.error('DIAGNOSTIC FAILURE in ' + path.basename(__filename) + ':');
       console.error('  window.__clicked:', clicked);
       console.error('  window.__res:', probe);
       console.error('  page errors:', pageErrors);
