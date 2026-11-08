@@ -672,6 +672,14 @@ class LocalApiServer {
         const retryAfterSec = Math.max(1, Math.ceil(((entry?.until || 0) - Date.now()) / 1000));
         return sendJson(res, 429, fail('too many failed attempts, retry later', 429), origin, { 'Retry-After': String(retryAfterSec) });
       }
+      // Unauthenticated /status and / reveal only the product name and version.
+      // The previous body (port fallback state, key flag, running counts) told
+      // any local process how the port fallback landed and whether a key is
+      // configured — probe value with no client need behind it (audited as
+      // finding 7-2). Legitimate key holders still receive the full body.
+      if ((pathname === '/' || pathname === '/status') && !this.authOk(req)) {
+        return sendJson(res, 200, ok({ name: 'openbrowser-local-api', version: this.getVersion() }));
+      }
       if (!this.authOk(req)) {
         this.registerAuthFailure(req);
         return sendJson(res, 401, fail('unauthorized', 401), origin, { 'WWW-Authenticate': 'Bearer' });
@@ -734,6 +742,12 @@ class LocalApiServer {
     }
 
     // ---- profiles (v1-style) ----
+    // debug_port / ws in this listing hand out every running profile's CDP port.
+    // The CDP endpoint itself carries no authentication, so the whole surface
+    // leans on the premise that debug ports are only ever bound to 127.0.0.1
+    // (engine start: --remote-debugging-address=127.0.0.1). Keep that binding
+    // intact when touching the launch flags, or this route becomes a full
+    // control-plane disclosure for any process holding the API key.
     if (pathname === '/api/v1/user/list' || pathname === '/api/v2/browser-profile/list' || pathname === '/api/profiles') {
       const list = this.engine.status().map((item) => ({
         id: item.id,

@@ -659,7 +659,7 @@ class BrowserEngine {
 
   async resetZoom(root) {
     const file = path.join(root, 'Default', 'Preferences');
-    try { const prefs = JSON.parse(await fsp.readFile(file, 'utf8')); if (prefs.partition) prefs.partition.per_host_zoom_levels = {}; if (prefs.browser && 'default_zoom_level' in prefs.browser) prefs.browser.default_zoom_level = 0; await fsp.writeFile(file, JSON.stringify(prefs), 'utf8'); } catch (_) {}
+    try { const prefs = JSON.parse(await fsp.readFile(file, 'utf8')); if (prefs.partition) prefs.partition.per_host_zoom_levels = {}; if (prefs.browser && 'default_zoom_level' in prefs.browser) prefs.browser.default_zoom_level = 0; await writeRawAtomically(file, JSON.stringify(prefs), 0o600); } catch (_) {}
   }
 
   async resetTabs(root) {
@@ -828,7 +828,14 @@ class BrowserEngine {
     try {
       const prefs = JSON.parse(await fsp.readFile(file, 'utf8')); prefs.profile ||= {};
       prefs.profile.exit_type = 'Normal'; prefs.profile.exited_cleanly = true;
-      await fsp.writeFile(file, JSON.stringify(prefs), 'utf8');
+      await writeRawAtomically(file, JSON.stringify(prefs), 0o600);
+      // 写后回读校验：rename 原子性只保证"旧或新"，写设备异常时也可能整档丢失；
+      // 回读失败则不吞异常，让 lifecycle-cleanup 记录到 sync-error，而非留下
+      // 可能被 Chromium 视为崩溃现场的 Preferences。
+      const persisted = JSON.parse(await fsp.readFile(file, 'utf8'));
+      if (persisted?.profile?.exit_type !== 'Normal' || persisted?.profile?.exited_cleanly !== true) {
+        throw new Error('clean-exit 标记写入后回读不一致');
+      }
     } catch (_) {}
   }
 
@@ -1204,6 +1211,23 @@ class BrowserEngine {
         profileDirectory: item.root,
       };
     }
+    const capabilities = item.engine === 'firefox'
+      ? {
+        engine: 'firefox',
+        cdp: false,
+        // Firefox has no CDP: a fingerprint expectation cannot be injected or
+        // verified. Downstream (RPA planning, start-page expected checks, local
+        // API) must treat fingerprint values as intent, never as a delivery
+        // promise — declared here instead of relying on every consumer
+        // checking the engine string.
+        fingerprintDelivery: false,
+        fingerprintVerification: false,
+        runtimeInjection: false,
+        extensionHotLoad: false,
+        zoomReconcile: false,
+        ...(item.capabilities || {}),
+      }
+      : null;
     return {
       id, running: true, starting: false, stopping: false, pid: item.pid, port: item.port,
       engine: item.engine || 'chromium',
@@ -1214,6 +1238,7 @@ class BrowserEngine {
       cdpError: item.cdpError || null,
       verificationBlocked: Boolean(item.verificationBlocked),
       fingerprintVerificationError: item.fingerprintVerificationError || null,
+      ...(capabilities ? { capabilities } : {}),
       fingerprint: item.fingerprint ? {
         platform: item.fingerprint.platform,
         hardwareConcurrency: item.fingerprint.hardwareConcurrency,
@@ -1221,6 +1246,7 @@ class BrowserEngine {
         canvas: item.fingerprint.canvas?.mode,
         webgl: item.fingerprint.webgl?.mode,
         webrtc: item.fingerprint.webrtc,
+        ...(item.engine === 'firefox' ? { delivery: 'intent-only' } : {}),
       } : null,
     };
   }

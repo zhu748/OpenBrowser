@@ -355,20 +355,31 @@ impl LocalProxyBridge {
             )));
         }
 
-        // Drain bind address and port
+        // Drain bind address and port. A peer that answers REP=0 and then
+        // FINs mid-address must surface as a SOCKS5 semantic error, not a
+        // bare io::Error that a future refactor could mistake for a
+        // transport hiccup worth retrying into a half-open tunnel.
         match head[3] {
             ATYP_IPV4 => {
                 let mut discard = [0u8; 4 + 2];
-                stream.read_exact(&mut discard).await?;
+                stream.read_exact(&mut discard).await.map_err(|e| {
+                    CoreError::Socks5(format!("truncated bind address (IPv4): {e}"))
+                })?;
             }
             ATYP_DOMAIN => {
-                let len = stream.read_u8().await? as usize;
+                let len = stream.read_u8().await.map_err(|e| {
+                    CoreError::Socks5(format!("truncated bind address (domain length): {e}"))
+                })? as usize;
                 let mut discard = vec![0u8; len + 2];
-                stream.read_exact(&mut discard).await?;
+                stream.read_exact(&mut discard).await.map_err(|e| {
+                    CoreError::Socks5(format!("truncated bind address (domain): {e}"))
+                })?;
             }
             ATYP_IPV6 => {
                 let mut discard = [0u8; 16 + 2];
-                stream.read_exact(&mut discard).await?;
+                stream.read_exact(&mut discard).await.map_err(|e| {
+                    CoreError::Socks5(format!("truncated bind address (IPv6): {e}"))
+                })?;
             }
             other => {
                 return Err(CoreError::Socks5(format!(
@@ -885,14 +896,14 @@ impl LocalProxyBridge {
                 };
 
                 dialed.stream.write_all(&outgoing_header).await?;
-                ctx.total_c2s
-                    .fetch_add(outgoing_header.len() as u64, Ordering::Relaxed);
-
                 if !client_remainder.is_empty() {
                     dialed.stream.write_all(&client_remainder).await?;
-                    ctx.total_c2s
-                        .fetch_add(client_remainder.len() as u64, Ordering::Relaxed);
                 }
+                // One relaxed fetch_add for the whole plain-HTTP request: the
+                // counter is only read by the low-frequency stats() poll, so
+                // per-segment atomics bought nothing (audit: 4-segment split).
+                let c2s_delta = (outgoing_header.len() + client_remainder.len()) as u64;
+                ctx.total_c2s.fetch_add(c2s_delta, Ordering::Relaxed);
             }
 
             // The limiter paces connection handshakes, not whole tunnels:

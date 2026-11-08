@@ -365,6 +365,7 @@ class DohResolver {
     this.fetchImpl = options.fetchImpl || null;
     this.onError = typeof options.onError === 'function' ? options.onError : null;
     this.controllers = new Set();
+    this._warnedEndpoints = new Set();
     this._fetchPromise = null;
   }
 
@@ -402,6 +403,13 @@ class DohResolver {
     if (this.onError) {
       try { this.onError(endpoint, err); } catch (_) { /* listener must not break resolution */ }
     }
+  }
+
+  /** An unreachable endpoint is a chronic condition: warn once per endpoint, not once per dial. */
+  _warnEndpointOnce(endpoint, err) {
+    if (this._warnedEndpoints.has(endpoint)) return;
+    this._warnedEndpoints.add(endpoint);
+    console.warn(`[doh-resolver] DoH endpoint unreachable (warned once per endpoint): ${endpoint} — ${err?.message || err}`);
   }
 
   buildUrl(endpoint, hostname, typeName) {
@@ -451,6 +459,7 @@ class DohResolver {
         lastError = err;
         if (controller.signal.aborted) cancelled = true;
         this._note(endpoint, err);
+        this._warnEndpointOnce(endpoint, err);
       } finally {
         clearTimeout(timer);
         this.controllers.delete(controller);
@@ -471,6 +480,21 @@ class DohResolver {
     const hit = cache.get(key);
     if (hit) return hit;
 
+    // Concurrent first queries for the same hostname+type share one in-flight
+    // request instead of each dialling every DoH endpoint.
+    this._inFlight ||= new Map();
+    const pending = this._inFlight.get(key);
+    if (pending) return pending;
+    const task = this._resolveTypedUncached(hostname, typeName, cache, key);
+    this._inFlight.set(key, task);
+    try {
+      return await task;
+    } finally {
+      this._inFlight.delete(key);
+    }
+  }
+
+  async _resolveTypedUncached(hostname, typeName, cache, key) {
     const response = await this.query(hostname, typeName);
     if (response.rcode !== 0) {
       const err = new Error(`dns rcode ${response.rcode} for ${hostname}`);
@@ -568,16 +592,29 @@ function createDohLookup(resolver, options = {}) {
 
     const lookupFamily = (target) => (family === 6 ? resolver.resolve6(target) : resolver.resolve4(target));
 
+    // resolve4 ENODATA on an IPv6-only host must not leak straight to the
+    // system resolver (plaintext ISP DNS): try AAAA through DoH first.
+    const resolveWithV6Fallback = (target) => lookupFamily(target).catch((error) => {
+      if (family === 6 || !error || (error.code !== 'ENODATA' && error.code !== 'ENOTFOUND')) throw error;
+      if (typeof resolver.resolve6 !== 'function') throw error;
+      return resolver.resolve6(target).then((addresses) => {
+        const list = (Array.isArray(addresses) ? addresses : [addresses]).filter(Boolean);
+        if (!list.length) throw error;
+        return list;
+      });
+    });
+
     Promise.resolve()
-      .then(() => lookupFamily(hostname))
+      .then(() => resolveWithV6Fallback(hostname))
       .then((addresses) => {
         const list = (Array.isArray(addresses) ? addresses : [addresses]).filter(Boolean);
         if (list.length === 0) throw Object.assign(new Error(`No record for ${hostname}`), { code: 'ENODATA' });
+        const resolvedFamily = family === 6 ? 6 : (net.isIP(String(list[0])) === 6 ? 6 : 4);
         if (wantsAll) {
-          done(null, list.map((address) => ({ address, family: family === 6 ? 6 : 4 })));
+          done(null, list.map((address) => ({ address, family: resolvedFamily })));
           return;
         }
-        done(null, list[0], family === 6 ? 6 : 4);
+        done(null, list[0], resolvedFamily);
       })
       .catch((error) => {
         // Only a missing record is worth retrying through the system

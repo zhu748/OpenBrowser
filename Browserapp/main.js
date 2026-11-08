@@ -405,10 +405,14 @@ async function tile(ids, cascade = false) {
 
 function isEnvironmentStartUrl(value) {
   const s = String(value || '');
-  if (/openbrowser-start\.html/i.test(s)) return true;
-  if (/openbrowser-start|openbrowser-native/i.test(s)) return true;
-  if (/https?:\/\/127\.0\.0\.1:5032[6-9]\/?/i.test(s)) return true;
-  return Boolean(engine?.isStartPageUrl?.(s));
+  // Session-exact judgement first: the start-page server matches its own port
+  // and its registered sessions (mixin fallback covers the boot window).
+  // The previous loose `openbrowser-start|openbrowser-native` substring rule
+  // let any third-party URL containing those words be treated as an internal
+  // start page (reload/mirror-sync hazard); the substring match now only
+  // recognises the exact file name we generate for the file:// fallback.
+  if (Boolean(engine?.isStartPageUrl?.(s))) return true;
+  return /^file:\/\//i.test(s) && /openbrowser-start\.html/i.test(s);
 }
 
 function environmentStartUrl(entry) {
@@ -719,6 +723,61 @@ function isChromeStoreIconHost(hostname) {
   return host === 'chromewebstore.google.com' || host.endsWith('.googleusercontent.com') || host.endsWith('.gstatic.com') || host.endsWith('.ggpht.com');
 }
 
+// In-flight and recently-fetched store detail pages. The metadata path (og:tags)
+// and the icon path (og:image) used to each download the same page separately;
+// one fetch now serves both within a short window.
+const chromeStorePageRequests = new Map();
+const CHROME_STORE_PAGE_TTL_MS = 30_000;
+const chromeStorePageCache = new Map(); // safeId -> { html, fetchedAt }
+
+async function fetchChromeStorePageHtml(safeId, timeoutMs = 25000) {
+  const now = Date.now();
+  const cachedPage = chromeStorePageCache.get(safeId);
+  if (cachedPage && now - cachedPage.fetchedAt < CHROME_STORE_PAGE_TTL_MS) return cachedPage.html;
+  const pending = chromeStorePageRequests.get(safeId);
+  if (pending) return pending;
+  const request = (async () => {
+    const storeSession = session.fromPartition('persist:openbrowser-extension-store');
+    const pageUrl = `https://chromewebstore.google.com/detail/${safeId}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    let response;
+    try {
+      response = await storeSession.fetch(pageUrl, {
+        redirect: 'follow',
+        signal: controller.signal,
+        headers: {
+          'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          'accept-language': 'en-US,en;q=0.9',
+        },
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+    if (!response.ok) return null;
+    const html = await response.text();
+    if (html && html.length <= 4 * 1024 * 1024) {
+      chromeStorePageCache.set(safeId, { html, fetchedAt: Date.now() });
+    }
+    return html || null;
+  })().catch(() => null).finally(() => chromeStorePageRequests.delete(safeId));
+  chromeStorePageRequests.set(safeId, request);
+  return request;
+}
+
+// og:title / og:description / og:image out of a store detail page. The page
+// markup keeps these meta tags near the head, so a lazy slice is enough and
+// avoids regex-scanning megabytes of script bodies.
+function chromeStoreTextMeta(html) {
+  const text = String(html || '').slice(0, 512 * 1024);
+  const read = (prop) => {
+    const match = text.match(new RegExp(`<meta[^>]+(?:property|name)=["']${prop}["'][^>]+content=["']([^"']+)["']`, 'i'))
+      || text.match(new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${prop}["']`, 'i'));
+    return match ? String(match[1]).replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"') : '';
+  };
+  return { title: read('og:title'), description: read('og:description') };
+}
+
 function bufferToDataUrl(buffer, contentType = '') {
   const type = String(contentType || '').toLowerCase().split(';')[0].trim();
   let mime = type.startsWith('image/') ? type : '';
@@ -785,32 +844,48 @@ async function fetchChromeStoreMetadata(storeId) {
   } catch (_) {}
 
   let metadata = { name: '', description: '', icon_url: null };
+  // Cold-cache fast path: the store detail page (og:title / og:description)
+  // answers the metadata question in one small HTML fetch. The CRX route below
+  // downloads the entire package just to read manifest.json — fine as an
+  // install prerequisite, but as a metadata query it made every uncached
+  // entry pay a full package download (up to the 180s budget when proxies
+  // are unreachable). The page runs first; the package is only fetched for
+  // whatever the page could not express.
+  const pageHtml = await fetchChromeStorePageHtml(safeId);
+  if (pageHtml) {
+    const pageMeta = chromeStoreTextMeta(pageHtml);
+    if (pageMeta.title) metadata.name = pageMeta.title;
+    if (pageMeta.description) metadata.description = pageMeta.description;
+    const pageIcon = chromeStoreImageUrl(pageHtml);
+    if (pageIcon) metadata.icon_url = await fetchChromeStoreIcon(safeId);
+  }
+  // Page answered both fields: skip the package download entirely.
+  const skipPackage = Boolean(metadata.name && metadata.description);
   try {
-    const query = new URLSearchParams({ response: 'redirect', prodversion: '150.0.0.0', acceptformat: 'crx2,crx3', x: `id=${safeId}&installsource=ondemand&uc` });
-    const buffer = await fetchStorePackage(`https://clients2.google.com/service/update2/crx?${query}`);
-    const { parseCrx, readManifest, readFile } = require('./automation/crx-reader');
-    const parsed = parseCrx(buffer);
-    // The signing key decides the extension id. A package whose signed id does
-    // not match the entry we asked for must not supply this entry's metadata.
-    if (parsed.extensionId && parsed.extensionId !== safeId) {
-      throw new Error(`CRX 签名 ID ${parsed.extensionId} 与商店 ID ${safeId} 不一致`);
-    }
-    // Read straight out of the package: no temp archive on disk, and no
-    // dependency on an external unpacker being installed.
-    const manifest = readManifest(parsed.zipBuffer);
-    metadata = {
-      name: typeof manifest.name === 'string' ? manifest.name : '',
-      description: typeof manifest.description === 'string' ? manifest.description : '',
-      icon_url: null,
-    };
-    const iconPath = extensionIconSource(manifest)?.replace(/^[/\\]+/, '');
-    if (iconPath && !iconPath.split('/').includes('..')) {
-      let image = null;
-      try { image = readFile(parsed.zipBuffer, iconPath); } catch (_) { image = null; }
-      if (image && image.length && image.length <= 2 * 1024 * 1024) {
-        await fsp.mkdir(cacheDir, { recursive: true });
-        await fsp.writeFile(cacheFile, image);
-        metadata.icon_url = bufferToDataUrl(image);
+    if (!skipPackage) {
+      const query = new URLSearchParams({ response: 'redirect', prodversion: '150.0.0.0', acceptformat: 'crx2,crx3', x: `id=${safeId}&installsource=ondemand&uc` });
+      const buffer = await fetchStorePackage(`https://clients2.google.com/service/update2/crx?${query}`);
+      const { parseCrx, readManifest, readFile } = require('./automation/crx-reader');
+      const parsed = parseCrx(buffer);
+      // The signing key decides the extension id. A package whose signed id does
+      // not match the entry we asked for must not supply this entry's metadata.
+      if (parsed.extensionId && parsed.extensionId !== safeId) {
+        throw new Error(`CRX 签名 ID ${parsed.extensionId} 与商店 ID ${safeId} 不一致`);
+      }
+      // Read straight out of the package: no temp archive on disk, and no
+      // dependency on an external unpacker being installed.
+      const manifest = readManifest(parsed.zipBuffer);
+      if (!metadata.name) metadata.name = typeof manifest.name === 'string' ? manifest.name : '';
+      if (!metadata.description) metadata.description = typeof manifest.description === 'string' ? manifest.description : '';
+      const iconPath = extensionIconSource(manifest)?.replace(/^[/\\]+/, '');
+      if (iconPath && !iconPath.split('/').includes('..')) {
+        let image = null;
+        try { image = readFile(parsed.zipBuffer, iconPath); } catch (_) { image = null; }
+        if (image && image.length && image.length <= 2 * 1024 * 1024) {
+          await fsp.mkdir(cacheDir, { recursive: true });
+          await fsp.writeFile(cacheFile, image);
+          metadata.icon_url = bufferToDataUrl(image);
+        }
       }
     }
   } catch (_) {
@@ -843,24 +918,11 @@ async function fetchChromeStoreIcon(storeId) {
   if (chromeStoreIconRequests.has(safeId)) return chromeStoreIconRequests.get(safeId);
   const request = (async () => {
     const storeSession = session.fromPartition('persist:openbrowser-extension-store');
-    const pageUrl = `https://chromewebstore.google.com/detail/${safeId}`;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 25000);
-    let response;
-    try {
-      response = await storeSession.fetch(pageUrl, {
-        redirect: 'follow',
-        signal: controller.signal,
-        headers: {
-          'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-          'accept-language': 'en-US,en;q=0.9',
-        },
-      });
-    } finally {
-      clearTimeout(timeout);
-    }
-    if (!response.ok) return null;
-    const imageUrl = chromeStoreImageUrl(await response.text());
+    // Shared page fetch: the metadata path already downloaded the detail page
+    // in most cases, so the icon only pays for the image download itself.
+    const pageHtml = await fetchChromeStorePageHtml(safeId);
+    if (!pageHtml) return null;
+    const imageUrl = chromeStoreImageUrl(pageHtml);
     if (!imageUrl) return null;
     const parsed = new URL(imageUrl);
     if (parsed.protocol !== 'https:' || !isChromeStoreIconHost(parsed.hostname)) return null;
@@ -1381,6 +1443,11 @@ app.whenReady().then(async () => {
         const id = restartIds.shift();
         const profile = engine.profiles.get(id);
         if (!profile) continue;
+        // engine.start is idempotent for concurrent starts of the same id, but
+        // a user-initiated start racing this batch used to layer a second
+        // progress stream and one extra generation bump on top of it. Skip the
+        // display-level restart when a start is already in flight.
+        if (engine.starting.has(id)) continue;
         try { await engine.start(profile); restarted += 1; } catch (error) {
           console.warn('OpenBrowser batch restart failed for', id, error?.message || error);
         }

@@ -1640,8 +1640,12 @@ class RpaEngine {
 
   /**
    * Resolve spreadsheet paths for useExcel.
-   * Allows RPA output dir plus common user folders (Desktop/Documents/Downloads/home),
+   * Allows the RPA output dir plus the named user folders
+   * (Desktop/Documents/Downloads and their OneDrive variants),
    * because catalog templates expect user-picked absolute paths.
+   * The home/userProfile directory itself is deliberately NOT an allowed
+   * root: isPathInsideRoot treats every path under it as inside, so allowing
+   * the bare home would let useExcel read any file there (~/.ssh/id_rsa).
    * On Windows also accepts OneDrive-redirected Desktop/Documents and realpath-resolved trees.
    */
   async resolveSpreadsheetPath(filePath) {
@@ -1652,8 +1656,10 @@ class RpaEngine {
     const home = os.homedir();
     const userProfile = process.env.USERPROFILE || home;
     const folderNames = ['Desktop', 'Documents', 'Downloads'];
+    // Only the named subfolders are allowed roots. The bare base directory is
+    // intentionally excluded (see doc comment above).
     const expandFolderRoots = (base) => {
-      const roots = [base];
+      const roots = [];
       for (const name of folderNames) {
         roots.push(path.join(base, name));
         // OneDrive Known Folder Move: Desktop may live under OneDrive\Desktop
@@ -1711,7 +1717,7 @@ class RpaEngine {
       }
       const okRoot = resolvedAllowed.some((root) => isPathInsideRoot(candidate, root) || isPathInsideRoot(realCandidate, root));
       if (!okRoot) {
-        lastError = new Error('useExcel path is outside allowed folders (home/Desktop/Documents/Downloads/rpa-output)');
+        lastError = new Error('useExcel path is outside allowed folders (Desktop/Documents/Downloads/rpa-output)');
         continue;
       }
       try {
@@ -1884,16 +1890,21 @@ class RpaEngine {
 
   async findNetworkResource(port, matcher, timeout, { shouldAbort, ctx = null } = {}) {
     const deadline = Date.now() + timeout;
+    // Filter inside the page: previously every poll serialized the FULL
+    // performance entry list back through CDP (thousands of entries on heavy
+    // pages, ~120 round-trips inside the 30s step window) and matched here.
+    // Now the matcher crosses the boundary instead; the wire payload is the
+    // hits themselves.
+    const expression = `(() => { const matcher = ${JSON.stringify(String(matcher || ''))}; const all = performance.getEntriesByType("resource"); for (let i = all.length - 1; i >= 0; i--) { const entry = all[i]; if (!matcher || String(entry.name).includes(matcher)) return { name: entry.name, initiatorType: entry.initiatorType }; } return null; })()`;
     do {
       if (shouldAbort && shouldAbort()) throw new Error('cancelled');
-      const resources = await this.withPage(port, async (ws) => {
+      const resource = await this.withPage(port, async (ws) => {
         const result = await cdp.call(ws, 'Runtime.evaluate', {
-          expression: 'performance.getEntriesByType("resource").map((entry) => ({ name: entry.name, initiatorType: entry.initiatorType }))',
+          expression,
           returnByValue: true,
         });
-        return result.result?.value || [];
+        return result.result?.value || null;
       }, ctx);
-      const resource = resources.slice().reverse().find((entry) => !matcher || String(entry.name).includes(matcher));
       if (resource) return resource;
       if (!timeout) break;
       await sleep(250);

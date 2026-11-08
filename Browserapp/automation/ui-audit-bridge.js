@@ -7,6 +7,11 @@ window.addEventListener('unhandledrejection', (event) => window.__uiAuditErrors.
 const bridge = {
   onEvent: () => {},
   getInfo: async () => ({ platform: 'darwin', appVersion: '1.0.24', browsers: [], profileRoot: 'UI-AUDIT-FIXTURE' }),
+  // The kernel manager view calls these on entry; without stubs the Proxy
+  // swallows them into __uiAuditCalls as "unexpected" and the failed promise
+  // lands in ui.logs as an Error row, tripping the clean-audit check.
+  kernelListVersions: async () => ({ versions: [], latest: '' }),
+  kernelListInstalled: async () => [],
   getSyncState: async () => ({ active: false, selected: [] }),
   setSyncSettings: async () => ({}),
   proxyList: async () => [],

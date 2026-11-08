@@ -33,8 +33,10 @@ const { buildFingerprint } = require('../fingerprint');
 const { writeOpenBrowserKernelInit } = require('../kernel-init-sync');
 const cdp = require('../../cdp');
 
-const appRoot = path.join(__dirname, '..');
-const enginePath = path.join(appRoot, 'engine.js');
+const appRoot = path.join(__dirname, '..', '..'); // Browserapp/ — selftests moved one level deeper in 30dbbea
+// The barrier lives in engine/fingerprint-injection.js since the engine was
+// decomposed; the legacy engine.js shell no longer carries it.
+const enginePath = path.join(appRoot, 'engine', 'fingerprint-injection.js');
 const kernelRoot = path.join(appRoot, 'kernels', 'macos-x64');
 const launcher = path.join(kernelRoot, 'launch_openbrowser.sh');
 

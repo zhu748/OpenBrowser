@@ -42,7 +42,16 @@ function buildInjectionScript(fp, options = {}) {
     languages: fp.languages,
     timezone: fp.timezone || fp.dynamicConfig?.timezone || null,
     hardwareConcurrency: fp.hardwareConcurrency,
-    deviceMemory: Math.min(8, Math.max(1, Number(fp.deviceMemory) || 8)),
+    deviceMemory: (() => {
+      // persona.js quantises to DEVICE_MEMORY_STEPS (0.25/0.5/1/2/4/8); Math.max(1, ...) rewrote
+      // the legal 0.25/0.5 tiers to 1, contradicting the CDP/main record. Pass legal values
+      // through; snap anything illegal to the nearest step (capped at 8, as the spec does).
+      const STEPS = [0.25, 0.5, 1, 2, 4, 8];
+      const raw = Number(fp.deviceMemory);
+      if (!Number.isFinite(raw) || raw <= 0) return 8;
+      if (STEPS.includes(raw)) return Math.min(8, raw);
+      return STEPS.reduce((best, s) => (Math.abs(s - raw) < Math.abs(best - raw) ? s : best), 1);
+    })(),
     screen: fp.screen,
     webgl: {
       mode: fp.webgl?.mode,
@@ -1086,7 +1095,9 @@ function buildInjectionScript(fp, options = {}) {
           hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
         }).formatToParts(date);
         const get = (type) => parts.find((p) => p.type === type)?.value || '';
-        const year = /BC/i.test(get('era')) ? 1 - parseInt(get('year'), 10) : numbered;
+        // Self-contained year read: the old branch referenced an undeclared identifier, so any
+        // Date at the domain edge threw a ReferenceError through to the page (mirrors the worker fix).
+        const year = /BC/i.test(get('era')) ? 1 - parseInt(get('year'), 10) : parseInt(get('year'), 10);
         const month = parseInt(get('month'), 10) - 1;
         const day = parseInt(get('day'), 10);
         const hour = parseInt(get('hour'), 10) % 24;
@@ -5362,8 +5373,17 @@ function buildInjectionScript(fp, options = {}) {
     // Local Font Access exposes a binary blob after user activation. Its returned FontData
     // records have already been re-labelled above, so their blob() method must not remain bound
     // to the host record and disclose a different platform's font bytes.
+    // Laziness follows the lazy-bridge rule from persona.js (its own lazyFontPayload gate is
+    // platform-independent): every persona that carries a font payload takes the lazy font
+    // bridge. The old `platKey === 'windows'` gate was the historical first platform the
+    // bridge shipped for; it kept macos/linux/android personas on fully inlined payloads
+    // (a macos persona script was ~10.8 MB against ~3.5 MB on the bridge, and a 64 MB cache
+    // held only ~19 scripts). The bridge delivers the bytes through the engine's
+    // Runtime.addBinding channel instead, so the page still sees the same FontData list and
+    // blob bytes — only the delivery changes. platKey is always one of the four canonical
+    // keys (it defaults to 'windows'), so every persona with a fonts list now goes lazy.
     const lazyFontPayload = livePatch
-      || (fp.lazyFontPayload !== false && fp.lazyPayload !== false && (fp.lazyPayload === true || platKey === 'windows'));
+      || (fp.lazyFontPayload !== false && fp.lazyPayload !== false);
     const fontBridgeChannel = String(fp.bridgeChannel || fp.fontBlobBridge?.channelName || ('_' + String(bridgeToken).slice(0, 16)));
     // The fontBlobBridge side effect is authoritative only for the FULL build: the livePatch
     // variant forces the lazy gate for its stripped source, and letting it write here would
@@ -5391,9 +5411,14 @@ function buildInjectionScript(fp, options = {}) {
   let webrtcFallbackScript = '';
   if (fp && fp.webrtc !== 'disabled') {
     try {
+      // Per-profile values only, no shared-constant fallback: the host candidate carries the
+      // persona's seeded webrtcLocalIp, and the srflx side only appears when an exit address is
+      // actually known (explicit webrtcAddress / exit IP). Neither known -> no fallback source at
+      // all, which is preferred over a cross-environment shared constant candidate.
+      const exitAddress = String(fp.webrtcAddress || (fp.network && fp.network.exitIp) || '').trim();
       webrtcFallbackScript = createWebRtcFallbackSource({
-        publicIp: fp.webrtcAddress || (fp.network && fp.network.exitIp) || '203.0.113.9',
-        localIp: fp.webrtcLocalAddress || (fp.webrtc && fp.webrtc.localIp) || '192.168.1.100',
+        publicIp: exitAddress || null,
+        localIp: fp.webrtcLocalIp || (fp.webrtc && fp.webrtc.localIp) || null,
         bridgeToken,
       });
     } catch (_) {}

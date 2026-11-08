@@ -56,6 +56,80 @@ function collectAcceptLanguages(fingerprint, profile) {
   return (fromFp || fromProfile || single || ['en-US']).join(',');
 }
 
+/**
+ * Firefox-side retention cleanup, run before every launch (parity with the
+ * Chromium enforceDataRetention in engine.js). Firefox keeps its data files
+ * directly in the profile root, so the Chromium Default/-relative targets do
+ * not exist here and never fire. Deletion is best-effort per file, same as the
+ * Chromium version: a stuck file must not abort the launch.
+ */
+const FIREFOX_RETENTION_TARGETS = {
+  cookies: ['cookies.sqlite', 'cookies.sqlite-wal', 'cookies.sqlite-shm'],
+  passwords: ['logins.json', 'key4.db', 'logins-backup.json'],
+  bookmarks: ['bookmarks.json', 'places.sqlite', 'places.sqlite-wal', 'places.sqlite-shm'],
+  history: ['places.sqlite', 'places.sqlite-wal', 'places.sqlite-shm', 'history.sqlite'],
+  local_storage: ['webappsstore.sqlite', 'webappsstore.sqlite-wal', 'webappsstore.sqlite-shm'],
+};
+
+async function enforceDataRetentionFirefox(root, profile) {
+  const advanced = profile?.advanced || {};
+  const targets = new Set();
+  const add = (names) => { for (const name of names) targets.add(name); };
+  if (advanced.saveCookies === false) add(FIREFOX_RETENTION_TARGETS.cookies);
+  if (advanced.savePasswords === false) add(FIREFOX_RETENTION_TARGETS.passwords);
+  // bookmarks and history share places.sqlite in Firefox: dropping either
+  // loses both. Keep parity with the UI intent by removing the shared store
+  // when either switch is off — partial retention is not expressible.
+  if (advanced.saveBookmarks === false || advanced.saveHistory === false) {
+    add(FIREFOX_RETENTION_TARGETS.bookmarks);
+    add(FIREFOX_RETENTION_TARGETS.history);
+  }
+  if (advanced.saveLocalStorage === false) add(FIREFOX_RETENTION_TARGETS.local_storage);
+  const fsp = require('fs/promises');
+  for (const name of targets) {
+    await fsp.rm(path.join(root, name), { force: true }).catch(() => {});
+  }
+}
+
+/**
+ * Map the profile's advanced/privacy toggles onto Firefox prefs we can
+ * actually express in user.js. Only toggles with a real Firefox pref are
+ * mapped; anything else stays a declared gap (see the capability declaration
+ * event) instead of silently pretending to work.
+ */
+function firefoxExtraUserPrefs(profile) {
+  const advanced = profile?.advanced || {};
+  const privacy = profile?.privacy || {};
+  const prefs = [];
+  // --- advanced switches that DO have a Firefox pref ---
+  if (advanced.blockImages) prefs.push(['permissions.default.image', 2]);
+  else prefs.push(['permissions.default.image', 1]);
+  if (advanced.blockNotifications) prefs.push(['permissions.default.desktop-notification', 2]);
+  if (privacy.media === 'blocked') {
+    prefs.push(['permissions.default.microphone', 2]);
+    prefs.push(['permissions.default.camera', 2]);
+  }
+  if (privacy.geoMode === 'disabled') prefs.push(['permissions.default.geo', 2]);
+  else if (privacy.geoMode === 'prompt') prefs.push(['permissions.default.geo', 0]);
+  // Popups: Firefox blocks by default; "完全禁用弹窗拦截" opens them.
+  if (advanced.blockPopups) prefs.push(['dom.disable_open_during_load', false]);
+  else prefs.push(['dom.disable_open_during_load', true]);
+  // Passwords manager mirrors applyProfilePreferences' credentials switch.
+  const allowPasswords = Boolean(advanced.savePasswords) && !advanced.blockPasswordPrompt;
+  prefs.push(['signon.rememberSignons', allowPasswords]);
+  prefs.push(['signon.autofillForms', allowPasswords]);
+  // Telemetry off in the base user.js already; tighten the report uploads.
+  prefs.push(['toolkit.telemetry.unified', false]);
+  prefs.push(['browser.discovery.enabled', false]);
+  prefs.push(['browser.newtabpage.activity-stream.feeds.telemetry', false]);
+  prefs.push(['browser.newtabpage.activity-stream.telemetry', false]);
+  // Custom font size maps onto the minimum font size pref.
+  if (privacy.fontMode === 'custom' && Number(privacy.fontSize) > 0) {
+    prefs.push(['font.minimum-size.x-western', Math.min(32, Math.round(Number(privacy.fontSize)))]);
+  }
+  return prefs;
+}
+
 module.exports = {
   /**
    * Launch a Firefox kernel for a profile. Mirrors _start's contract:
@@ -122,6 +196,11 @@ module.exports = {
       await removeSingletonFiles(root, { attempts: 6, delayMs: 40 });
       await fspMkdir(root, { recursive: true });
 
+      // Retention parity with the Chromium pipeline (engine.js
+      // enforceDataRetention): the UI switches must not silently no-op just
+      // because this profile runs under a Firefox kernel.
+      await enforceDataRetentionFirefox(root, profile);
+
       const pageNetwork = this.networkInfo.get(profile.id) || {};
       const customStartUrls = this.resolveStartupUrls(profile);
       const infoStartUrl = profile.advanced.showInfoPage !== false
@@ -133,6 +212,10 @@ module.exports = {
         )
         : null;
       const startUrl = customStartUrls[0] || infoStartUrl || 'about:blank';
+      // Chromium opens advanced.startUrls 2..N as extra CLI tabs; Firefox used
+      // to drop them (only the first URL survived). Pass the rest as extra
+      // positional args so multi-URL profiles behave the same on both engines.
+      const extraStartUrls = customStartUrls.slice(1);
 
       const proxyConfig = this.proxyConfig(profile.proxy);
       let proxy = null;
@@ -166,6 +249,7 @@ module.exports = {
         locale,
         proxyEndpoint: proxy && proxy !== 'direct://' ? proxy : '',
         noProxyHosts: 'localhost, 127.0.0.1',
+        extraPrefs: firefoxExtraUserPrefs(profile),
       });
       // user.js wins over prefs.js at every startup, then Firefox copies it to
       // prefs.js. Writing it fresh each launch keeps the proxy/UA/prefs current.
@@ -174,7 +258,7 @@ module.exports = {
       currentStage = 'spawn'; this.emitStartProgress(profile.id, 'spawn', 62, '正在启动 Firefox…');
       this.assertStartGenerationActive(profile.id, lifecycleGeneration);
       const headless = /^(1|true|new)$/i.test(String(process.env.OPENBROWSER_HEADLESS || '').trim());
-      const args = firefoxStartupArgs({ root, startUrl, headless });
+      const args = firefoxStartupArgs({ root, startUrl, extraUrls: extraStartUrls, headless });
       const spawnEnv = { ...process.env };
       const child = spawn(browser.path, args, {
         detached: process.platform !== 'win32',
@@ -307,6 +391,37 @@ module.exports = {
 
       currentStage = 'ready'; this.emitStartProgress(profile.id, 'ready', 100, 'Firefox 启动完成');
       this.startRunningWatch(item);
+      // Capability declaration (audit finding: the Firefox path skipped every
+      // profile-prep capability without telling anyone). Downstream consumers
+      // (renderer badges, RPA planning, local API) get one authoritative event
+      // per launch instead of having to infer the gaps from the engine field.
+      // Fingerprint expectations are undeliverable here: there is no CDP in
+      // Firefox, so nothing can inject or verify the persona. main.js's
+      // automation:fingerprint answers a buildFingerprint for Firefox profiles
+      // too — the declaration marks it as intent-only, not a delivery promise.
+      item.capabilities = {
+        engine: 'firefox',
+        cdp: false,
+        fingerprintDelivery: false,
+        fingerprintVerification: false,
+        runtimeInjection: false,
+        extensionHotLoad: false,
+        zoomReconcile: false,
+        retention: true,
+        startUrls: true,
+      };
+      this.emit({
+        type: 'capability-declaration',
+        id: profile.id,
+        engine: 'firefox',
+        running: true,
+        capabilities: item.capabilities,
+        undeliverable: {
+          fingerprint: 'Firefox 无 CDP：指纹期望值无法注入或验证，automation:fingerprint 返回的仅为配置意图。',
+          extensions: '扩展热装/同步依赖 CDP Extensions 域，Firefox 下不可用。',
+          zoomReconcile: 'Preferences 缩放重置依赖 Chromium Preferences 结构，Firefox 无此文件。',
+        },
+      });
       this.emit({ type: 'status', id: profile.id, running: true, engine: 'firefox', ...this.publicRunning(profile.id) });
       return this.publicRunning(profile.id);
     } catch (error) {
@@ -375,3 +490,7 @@ module.exports.isChildExited = isChildExited;
 module.exports.firefoxOsName = firefoxOsName;
 module.exports.collectAcceptLanguages = collectAcceptLanguages;
 module.exports.firefoxPlatformDir = firefoxPlatformDir;
+// Wave-2 audit remediation helpers (retention parity + advanced mapping):
+// exported for selftests; the launch path calls them directly above.
+module.exports.enforceDataRetentionFirefox = enforceDataRetentionFirefox;
+module.exports.firefoxExtraUserPrefs = firefoxExtraUserPrefs;

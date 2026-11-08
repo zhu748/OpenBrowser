@@ -29,7 +29,9 @@ const assert = require('assert');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
-const appRoot = path.join(__dirname, '..');
+// One level short of Browserapp/ after 30dbbea moved selftests deeper: the
+// parity script lives at Browserapp/scripts/font-metrics-parity-check.py.
+const appRoot = path.join(__dirname, '..', '..');
 const checkScript = path.join(appRoot, 'scripts', 'font-metrics-parity-check.py');
 
 const isFast = process.argv.includes('--fast');

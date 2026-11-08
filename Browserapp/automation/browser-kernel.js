@@ -1223,8 +1223,19 @@ class BrowserKernelManager {
     this.metaFile = path.join(this.kernelsRoot, 'kernel-meta.json');
     this.onProgress = options.onProgress || (() => {});
     this.installPromise = null;
+    // Single-flight guards for per-version installs. The integrated installer
+    // already had this shape (this.installPromise); the per-version methods
+    // lacked it, so two concurrent installs of the same version wrote the same
+    // archive/partial file and raced on the same install tree.
+    this.versionInstalls = new Map();
     // Result of the most recent install-tree check; surfaced through status().
     this.integritySummary = null;
+    // Process-local cache for listInstalledKernels(). Keyed on the mtimeMs of
+    // the two version roots and kernelsRoot itself: installing/removing a
+    // per-version tree rewrites the parent directory entry, which busts the
+    // cache; an unchanged tree reuses the last scan instead of walking every
+    // kernel.json + binary again on each status()/resolveInstalled() call.
+    this.installedListCache = null;
     // Optional extra roots (e.g. process.resourcesPath) for bundled mac x64 kernel seed
     this.resourceRoots = Array.isArray(options.resourceRoots)
       ? options.resourceRoots.filter(Boolean)
@@ -1855,10 +1866,37 @@ class BrowserKernelManager {
     return { ...payload, versions: this.decorateFirefoxInstalled(versions) };
   }
 
+  /**
+   * Single-flight wrappers for per-version installs.
+   *
+   * Two concurrent installs of the same version would both derive the same
+   * archivePath (URL/version-derived, no random component), so one Downloader
+   * could truncate the partial file the other is resuming, and the failure
+   * path of one call would rm the install tree the other is extracting into.
+   * The second caller now joins the first in-flight promise instead.
+   */
+  _withVersionInstallGuard(key, run) {
+    const existing = this.versionInstalls.get(key);
+    if (existing) return existing;
+    const created = (async () => {
+      try {
+        return await run();
+      } finally {
+        this.versionInstalls.delete(key);
+      }
+    })();
+    this.versionInstalls.set(key, created);
+    return created;
+  }
+
   /** Download a specific Chrome for Testing version into kernels/chromium-versions/<version>. */
-  async installChromiumVersion(version) {
+  installChromiumVersion(version) {
     const wanted = String(version || '').trim();
     if (!/^\d+(?:\.\d+){0,3}$/.test(wanted)) throw new Error('无效的 Chromium 版本号: ' + wanted);
+    return this._withVersionInstallGuard(`chromium:${wanted}`, () => this.installChromiumVersionInternal(wanted));
+  }
+
+  async installChromiumVersionInternal(wanted) {
     const plat = cftPlatformKey();
     await fsp.mkdir(this.kernelsRoot, { recursive: true });
     const work = path.join(this.kernelsRoot, 'chromium-versions', wanted);
@@ -1924,8 +1962,13 @@ class BrowserKernelManager {
   }
 
   /** Download a Firefox release into kernels/firefox/<version> (esr suffix kept). */
-  async installFirefoxVersion(version) {
+  installFirefoxVersion(version) {
     const wanted = String(version || '').trim();
+    if (!/^\d+(?:\.\d+){0,3}(?:esr)?$/.test(wanted)) throw new Error('无效的 Firefox 版本号: ' + wanted);
+    return this._withVersionInstallGuard(`firefox:${wanted}`, () => this.installFirefoxVersionInternal(wanted));
+  }
+
+  async installFirefoxVersionInternal(wanted) {
     if (!/^\d+(?:\.\d+){0,3}(?:esr)?$/.test(wanted)) throw new Error('无效的 Firefox 版本号: ' + wanted);
     const platformDir = firefoxPlatformDir();
     if (!platformDir) throw new Error(`当前平台无可用 Firefox 包：${process.platform}/${process.arch}`);
@@ -2102,6 +2145,37 @@ class BrowserKernelManager {
 
   /** All per-version installs across both engines, newest first within each. */
   listInstalledKernels() {
+    const fingerprint = this.installedListFingerprint();
+    if (this.installedListCache && this.installedListCache.fingerprint === fingerprint) {
+      return this.installedListCache.list;
+    }
+    const list = this.listInstalledKernelsUncached();
+    this.installedListCache = { fingerprint, list };
+    return list;
+  }
+
+  /**
+   * Cheap invalidation key for the installed-list cache: the mtimeMs of the
+   * version roots plus kernelsRoot. Any install/uninstall under a version
+   * root updates that root's directory mtime; touches deeper inside one tree
+   * (e.g. a patched binary) do NOT, but callers that mutate trees go through
+   * this manager, whose installs always rewrite the parent entry. External
+   * edits inside an existing tree are outside this cache's contract — the
+   * integrity check is the layer that notices those.
+   */
+  installedListFingerprint() {
+    const parts = [];
+    for (const dir of [
+      this.kernelsRoot,
+      path.join(this.kernelsRoot, 'chromium-versions'),
+      path.join(this.kernelsRoot, 'firefox'),
+    ]) {
+      try { parts.push(String(fs.statSync(dir).mtimeMs)); } catch (_) { parts.push('x'); }
+    }
+    return parts.join('|');
+  }
+
+  listInstalledKernelsUncached() {
     const readTree = (base, engine) => {
       const out = [];
       let entries = [];

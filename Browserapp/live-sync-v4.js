@@ -476,8 +476,15 @@ class LiveSyncController {
             tag: String(payload.tag || ''), name: String(payload.name || ''), placeholder: String(payload.placeholder || ''),
           });
           if (this.inputMirror.size > 256) this.inputMirror.delete(this.inputMirror.keys().next().value);
-        } else if (this.emit) {
-          this.emit({ type: 'sync-input-skipped', tabId, reason: result.reason || 'native-input-failed' });
+        } else {
+          // A failed resync used to leave the stale mirror in place: the next
+          // event was prefix-matched against a value the slave never held, the
+          // probe rejected, and the segment was silently dropped (finding 7-4).
+          // Drop the mirror so the next event is forced through a full sync.
+          this.inputMirror.delete(mirrorKey);
+          if (this.emit) {
+            this.emit({ type: 'sync-input-skipped', tabId, reason: result.reason || 'native-input-failed' });
+          }
         }
       });
     } else if (payload.type === 'change') {

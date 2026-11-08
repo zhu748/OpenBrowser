@@ -22,9 +22,18 @@ function isOpenBrowser148(browser = {}) {
   return /openbrowser_148|kernels[/\\](macos-x64|openbrowser)[/\\]/i.test(p);
 }
 
-/** Stable ipc / --browser_id window name (SB + 9 digits). */
+/**
+ * Stable ipc / --browser_id window name (SB + 9 digits).
+ * The derivation mixes the OS uid into the hash: default profileIds are
+ * global sequences (env-001…), so two users on one machine derived the SAME
+ * window name and their init.json ipc sections pointed at the same /tmp
+ * socket — the second user's bind was refused. The uid keeps the name stable
+ * per user while making it distinct across users; on Windows (no getuid as
+ * a usable value) the behavior stays as before.
+ */
 function stableBrowserWindowName(profileId) {
-  const h = crypto.createHash('sha1').update(String(profileId || 'default')).digest('hex');
+  const uid = (typeof process.getuid === 'function' && process.getuid()) || 0;
+  const h = crypto.createHash('sha1').update(`${uid}:${String(profileId || 'default')}`).digest('hex');
   const n = parseInt(h.slice(0, 8), 16) % 1000000000;
   return `SB${String(n).padStart(9, '0')}`;
 }

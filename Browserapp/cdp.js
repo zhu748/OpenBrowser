@@ -351,9 +351,34 @@ async function connect(webSocketUrl, options = {}) {
 
 // Explicit teardown for hosts that know a browser is going away (Browser.close flows);
 // disconnects also self-evict, so this is a courtesy for clean shutdown paths and tests.
+// Pool semantics: if commands are still in flight on this socket, defer the close
+// until they drain (bounded 200ms re-checks) instead of hard-failing them — a plain
+// disconnect would have evicted + retried; the explicit close must not be worse.
 function closePooledSocket(webSocketUrl) {
   const entry = callPool.get(webSocketUrl);
   if (!entry) return;
+  if (entry.inFlight > 0) {
+    if (entry.closePending) return;
+    entry.closePending = true;
+    const recheck = () => {
+      const current = callPool.get(webSocketUrl);
+      if (current !== entry) { // evicted/replaced meanwhile; nothing to close
+        entry.closePending = false;
+        return;
+      }
+      if (entry.inFlight > 0) {
+        const timer = setTimeout(recheck, 200);
+        if (typeof timer.unref === 'function') timer.unref();
+        return;
+      }
+      entry.closePending = false;
+      poolEvict(webSocketUrl, entry);
+      try { entry.conn?.close(); } catch (_) {}
+    };
+    const first = setTimeout(recheck, 200);
+    if (typeof first.unref === 'function') first.unref();
+    return;
+  }
   poolEvict(webSocketUrl, entry);
   try { entry.conn?.close(); } catch (_) {}
 }

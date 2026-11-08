@@ -48,8 +48,8 @@
       closeBtn.value = 'cancel';
       closeBtn.id = 'app-confirm-close';
       closeBtn.textContent = '×';
-      closeBtn.setAttribute('aria-label', translate('关闭'));
-      closeBtn.setAttribute('data-i18n-aria', '关闭');
+      closeBtn.setAttribute('aria-label', translate('common.close'));
+      closeBtn.setAttribute('data-i18n-aria', 'common.close');
 
       head.append(headTextWrap, closeBtn);
 
@@ -360,8 +360,8 @@
     const closeButtons = root.querySelectorAll('dialog .dialog-head button');
     closeButtons.forEach((btn) => {
       if (!btn.getAttribute('aria-label') && /^[×\u00d7&times;]+$/.test(btn.textContent.trim())) {
-        btn.setAttribute('aria-label', translate('关闭'));
-        btn.setAttribute('data-i18n-aria', '关闭');
+        btn.setAttribute('aria-label', translate('common.close'));
+        btn.setAttribute('data-i18n-aria', 'common.close');
       }
     });
   }

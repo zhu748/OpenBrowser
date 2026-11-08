@@ -101,15 +101,31 @@ check('X push notifications retain Chromium background networking when allowed',
 
 check('every editor control the renderer reaches for exists in the page', () => {
   // A renamed or deleted control makes the setting silently fall back to its default: the profile
-  // saves something the user never chose, and nothing errors. Both directions are checked here.
-  const renderer = read('renderer.js');
-  const html = read('index.html');
-  const referenced = new Set(
-    [...renderer.matchAll(/['"]#(editor-[a-z0-9-]+)['"]/gi)].map((match) => match[1])
-  );
+  // saves something the user never chose, and nothing errors. Behavioural anchor: instead of
+  // grepping renderer.js only (a module rewrite silently shrank this check — it was the
+  // "device-profile wiring" grep-anchor test debt), the reachability is now measured across
+  // every module that can drive the editor (renderer.js + ui/*.js) and cross-checked both
+  // ways against the real index.html: every referenced id must exist, and the count of
+  // distinct references must cover the editor surface (renderer alone used to look large
+  // while ui modules carried the rest).
+  const fs = require('fs');
+  const readDir = (dir) => fs.readdirSync(path.join(root, dir))
+    .filter((f) => f.endsWith('.js'))
+    .map((f) => path.join(root, dir, f));
+  const modules = [path.join(root, 'renderer.js'), ...readDir('ui')];
+  const referenced = new Set();
+  for (const file of modules) {
+    const src = fs.readFileSync(file, 'utf8');
+    for (const match of src.matchAll(/['"]#(editor-[a-z0-9-]+)['"]/gi)) referenced.add(match[1]);
+  }
   assert.ok(referenced.size >= 100, `expected the editor to drive many controls (found ${referenced.size})`);
+  const html = read('index.html');
   const missing = [...referenced].filter((id) => !html.includes(`id="${id}"`));
-  assert.deepStrictEqual(missing, [], `renderer references controls that do not exist: ${missing.join(', ')}`);
+  assert.deepStrictEqual(missing, [], `editor modules reference controls that do not exist: ${missing.join(', ')}`);
+  // The editor surface itself must keep being a first-class DOM surface: count the ids the
+  // page actually renders so a deleted <label>+<select> block cannot hide behind a stale count.
+  const rendered = [...html.matchAll(/id="(editor-[a-z0-9-]+)"/gi)].map((match) => match[1]);
+  assert.ok(rendered.length >= 100, `index.html must render a full editor surface (found ${rendered.length})`);
 });
 
 const failed = results.filter((item) => !item.ok);

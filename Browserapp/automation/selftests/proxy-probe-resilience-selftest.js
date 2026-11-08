@@ -248,32 +248,41 @@ async function run() {
     const mockPort = await listen(mockProxyServer);
     const proxyConfig = parseProxy(`http://testuser:testpass@127.0.0.1:${mockPort}`);
 
-    // Call 1: cold cache -> performs network probe
+    // Call 1: cold cache -> performs network probe.
+    // Since d2c1154 the probes in one cycle run concurrently, so a bypassed
+    // cycle reaches the mock through 3 plaintext GET channels (ip-api.com,
+    // ipwhois.app, freeipapi.com); the HTTPS channels fail their TLS handshake
+    // against this plain mock and never complete a request. Assert per-cycle
+    // deltas instead of cumulative counts.
+    const beforeFirst = probeRequestsCount;
     const result1 = await lookupProxyCountry(proxyConfig, { ttlMs: 60000 });
     assert.strictEqual(result1.ip, '198.51.100.42');
     assert.strictEqual(result1.countryCode, 'JP');
     assert.strictEqual(result1.fromCache, undefined);
-    assert.strictEqual(probeRequestsCount, 1, 'First call must hit network probe');
+    assert.strictEqual(probeRequestsCount - beforeFirst, 3, 'First call must probe the network');
 
     // Call 2: repeated call -> hits memory TTL cache
+    const beforeSecond = probeRequestsCount;
     const result2 = await lookupProxyCountry(proxyConfig);
     assert.strictEqual(result2.ip, '198.51.100.42');
     assert.strictEqual(result2.countryCode, 'JP');
     assert.strictEqual(result2.cached, true, 'Second call must have cached: true');
     assert.strictEqual(result2.fromCache, true, 'Second call must have fromCache: true');
-    assert.strictEqual(probeRequestsCount, 1, 'Cache hit must NOT perform any network probe');
+    assert.strictEqual(probeRequestsCount - beforeSecond, 0, 'Cache hit must NOT perform any network probe');
 
     // Call 3: bypass cache using force: true
+    const beforeForce = probeRequestsCount;
     const result3 = await lookupProxyCountry(proxyConfig, { force: true });
     assert.strictEqual(result3.ip, '198.51.100.42');
     assert.strictEqual(result3.fromCache, undefined);
-    assert.strictEqual(probeRequestsCount, 2, 'force: true must bypass cache and hit network');
+    assert.strictEqual(probeRequestsCount - beforeForce, 3, 'force: true must bypass cache and hit network');
 
     // Call 4: bypass cache using refresh: true
+    const beforeRefresh = probeRequestsCount;
     const result4 = await lookupProxyCountry(proxyConfig, { refresh: true });
     assert.strictEqual(result4.ip, '198.51.100.42');
     assert.strictEqual(result4.fromCache, undefined);
-    assert.strictEqual(probeRequestsCount, 3, 'refresh: true must bypass cache and hit network');
+    assert.strictEqual(probeRequestsCount - beforeRefresh, 3, 'refresh: true must bypass cache and hit network');
 
     await new Promise((resolve) => mockProxyServer.close(resolve));
     console.log('  PASS  lookupProxyCountry memory cache hit and force/refresh bypass verified');
@@ -471,7 +480,231 @@ async function run() {
     console.log('  PASS  True proxy link failure (ECONNREFUSED) drives Fail-Closed and is NOT suppressed');
   }
 
-  console.log('\nPROXY_PROBE_RESILIENCE_SELFTEST_OK 10/10 tests passed!\n');
+  // =========================================================================
+  // Test 11: 429 from the probe source must NOT count as tunnel verification
+  // =========================================================================
+  {
+    clearProbeCache();
+    const always429Server = net.createServer((client) => {
+      let buffer = Buffer.alloc(0);
+      const onData = (chunk) => {
+        buffer = Buffer.concat([buffer, chunk]);
+        const marker = buffer.indexOf('\r\n\r\n');
+        if (marker < 0) return;
+        client.removeListener('data', onData);
+        const header = buffer.subarray(0, marker + 4).toString('latin1');
+        if (/^CONNECT/i.test(header)) {
+          client.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+          client.destroy();
+        } else {
+          const body = JSON.stringify({ status: 'fail', message: 'rate limited' });
+          client.end(`HTTP/1.1 429 Too Many Requests\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n${body}`);
+        }
+      };
+      client.on('data', onData);
+    });
+    const port429 = await listen(always429Server);
+    const proxyConfig = parseProxy(`http://127.0.0.1:${port429}`);
+
+    // (a) completely unknown -> probe-unavailable error carrying NO verification
+    let caught = null;
+    try {
+      await lookupProxyCountry(proxyConfig);
+    } catch (err) {
+      caught = err;
+    }
+    assert.ok(caught, 'Must throw when nothing is known');
+    assert.strictEqual(caught.code, 'probe-unavailable');
+    assert.notStrictEqual(caught.transportVerified, true, 'a 429 is NOT tunnel verification');
+    assert.strictEqual(caught.transportVerifiedAt, undefined);
+
+    // (b) prior exit info exists but was never verified -> degraded reuse, still NOT verified
+    clearProbeCache();
+    const fallback = await lookupProxyCountry(proxyConfig, {
+      previousResult: { ip: '198.51.100.55', countryCode: 'FR', latencyMs: 120 },
+    });
+    assert.strictEqual(fallback.ip, '198.51.100.55');
+    assert.strictEqual(fallback.fallback, true);
+    assert.strictEqual(fallback.probeUnavailable, true);
+    assert.notStrictEqual(fallback.transportVerified, true, 'reuse must never upgrade verification');
+    assert.strictEqual(fallback.transportVerifiedAt, null, 'no timestamp is manufactured on reuse');
+
+    await new Promise((resolve) => always429Server.close(resolve));
+    console.log('  PASS  429 (probe unavailable) never counts as tunnel verification');
+  }
+
+  // =========================================================================
+  // Test 12: real 2xx round trip through the tunnel -> transportVerified true
+  // =========================================================================
+  {
+    clearProbeCache();
+    const okServer = net.createServer((client) => {
+      let buffer = Buffer.alloc(0);
+      const onData = (chunk) => {
+        buffer = Buffer.concat([buffer, chunk]);
+        const marker = buffer.indexOf('\r\n\r\n');
+        if (marker < 0) return;
+        client.removeListener('data', onData);
+        const header = buffer.subarray(0, marker + 4).toString('latin1');
+        if (/^CONNECT/i.test(header)) {
+          client.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+          client.destroy();
+          return;
+        }
+        const body = JSON.stringify({
+          status: 'success',
+          query: '198.51.100.42',
+          countryCode: 'JP',
+          country: 'Japan',
+          regionName: 'Tokyo',
+          city: 'Tokyo',
+          timezone: 'Asia/Tokyo',
+          isp: 'MockISP',
+        });
+        client.end(`HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(body)}\r\nConnection: close\r\n\r\n${body}`);
+      };
+      client.on('data', onData);
+    });
+    const okPort = await listen(okServer);
+    const proxyConfig = parseProxy(`http://probeuser:probepass@127.0.0.1:${okPort}`);
+
+    const result = await lookupProxyCountry(proxyConfig, { ttlMs: 60000 });
+    assert.strictEqual(result.ip, '198.51.100.42');
+    assert.strictEqual(result.transportVerified, true, 'a real 2xx round trip through the tunnel verifies the transport');
+    assert.ok(
+      /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(result.transportVerifiedAt || ''),
+      'verification must carry an ISO timestamp',
+    );
+
+    // Cache reuse keeps the stored verification state verbatim
+    const cached = await lookupProxyCountry(proxyConfig);
+    assert.strictEqual(cached.cached, true);
+    assert.strictEqual(cached.transportVerified, true);
+    assert.strictEqual(cached.transportVerifiedAt, result.transportVerifiedAt, 'reuse reports the stored timestamp');
+
+    await new Promise((resolve) => okServer.close(resolve));
+    console.log('  PASS  real 2xx through the tunnel sets transportVerified=true with ISO timestamp');
+  }
+
+  // =========================================================================
+  // Test 13: startup gate - previously verified + probe failing now -> lenient pass
+  // =========================================================================
+  {
+    clearProbeCache();
+    let mode = 'ok';
+    const gateServer = net.createServer((client) => {
+      let buffer = Buffer.alloc(0);
+      const onData = (chunk) => {
+        buffer = Buffer.concat([buffer, chunk]);
+        const marker = buffer.indexOf('\r\n\r\n');
+        if (marker < 0) return;
+        client.removeListener('data', onData);
+        const header = buffer.subarray(0, marker + 4).toString('latin1');
+        if (/^CONNECT/i.test(header)) {
+          client.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+          client.destroy();
+          return;
+        }
+        if (mode === '429') {
+          const body = JSON.stringify({ status: 'fail', message: 'rate limited' });
+          client.end(`HTTP/1.1 429 Too Many Requests\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n${body}`);
+          return;
+        }
+        const body = JSON.stringify({
+          status: 'success',
+          query: '203.0.113.21',
+          countryCode: 'JP',
+          country: 'Japan',
+          timezone: 'Asia/Tokyo',
+        });
+        client.end(`HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(body)}\r\nConnection: close\r\n\r\n${body}`);
+      };
+      client.on('data', onData);
+    });
+    const gatePort = await listen(gateServer);
+    const proxyUrl = `http://127.0.0.1:${gatePort}`;
+
+    const events = [];
+    const host = {};
+    Object.assign(host, require('../../engine/profile-proxy'), {
+      profiles: new Map(),
+      networkInfo: new Map(),
+      running: new Set(),
+      emit(event) { events.push(event); },
+      invalidateStatusCache() {},
+      sanitizeProfile(profile) { return profile; },
+      resolveStoredProxyProfile(profile) { return profile; },
+      restoreStoredProxyCredentials(profile) { return profile; },
+      fingerprintPatchFromNetwork() { return {}; },
+      persist() { return Promise.resolve(); },
+    });
+    const baseProfile = (id) => ({
+      id,
+      name: 'gate-' + id,
+      networkMode: 'proxy',
+      proxy: proxyUrl,
+      exitCountryCode: 'JP',
+      privacy: { timezone: 'Asia/Tokyo' },
+    });
+
+    // (a) a genuine 2xx round trip produces a verified network record
+    mode = 'ok';
+    const okProfile = baseProfile('gate-verified');
+    host.profiles.set(okProfile.id, okProfile);
+    const network = await host.checkProxy(okProfile);
+    assert.strictEqual(network.ip, '203.0.113.21');
+    assert.strictEqual(network.transportVerified, true, '2xx through the tunnel verifies');
+    assert.strictEqual(host.networkInfo.get(okProfile.id).transportVerified, true);
+
+    // (b) probe failing now: with a previously verified tunnel the gate passes leniently.
+    // The lenient branch reads the verification flag off the prior state; a prior
+    // state that still carries a resolvable exit ip is served earlier by the
+    // fallback-result path, so shape the prior state with the flag but no ip.
+    mode = '429';
+    clearProbeCache();
+    const verifiedProfile = baseProfile('gate-lenient');
+    host.profiles.set(verifiedProfile.id, verifiedProfile);
+    host.networkInfo.set(verifiedProfile.id, {
+      transportVerified: true,
+      transportVerifiedAt: '2026-11-08T00:00:00.000Z',
+      ip: '',
+      countryCode: 'JP',
+    });
+    const passed = await host.prepareProfileProxyForStart(verifiedProfile);
+    assert.strictEqual(passed.id, 'gate-lenient', 'lenient branch returns the working profile');
+    assert.ok(passed.proxy && passed.proxy.length > 0, 'lenient branch keeps the proxy configured');
+    assert.ok(
+      events.some((e) => e.type === 'proxy-warn' && e.code === 'probe-unavailable'),
+      'lenient pass must emit the probe-unavailable warning',
+    );
+
+    // (c) never verified + probe failing now -> startup is blocked (no real evidence)
+    clearProbeCache();
+    const unverifiedProfile = baseProfile('gate-blocked');
+    host.profiles.set(unverifiedProfile.id, unverifiedProfile);
+    host.networkInfo.set(unverifiedProfile.id, {
+      transportVerified: false,
+      ip: '',
+      countryCode: 'JP',
+    });
+    let blocked = null;
+    try {
+      await host.prepareProfileProxyForStart(unverifiedProfile);
+    } catch (error) {
+      blocked = error;
+    }
+    assert.ok(blocked, 'an unverified tunnel must block startup');
+    assert.strictEqual(blocked.code, 'probe-unavailable');
+    assert.ok(
+      events.some((e) => e.type === 'proxy-error' && e.code === 'probe-unavailable' && e.policy === 'block'),
+      'block must be reported as proxy-error with policy block',
+    );
+
+    await new Promise((resolve) => gateServer.close(resolve));
+    console.log('  PASS  startup gate: verified-before + probe-failing-now passes leniently, unverified blocks');
+  }
+
+  console.log('\nPROXY_PROBE_RESILIENCE_SELFTEST_OK 13/13 tests passed!\n');
 }
 
 run().then(() => {

@@ -167,7 +167,12 @@ check('buildFirefoxUserJs: proxy bridge http endpoint', () => {
   assert.ok(js.includes('user_pref("network.proxy.type", 1);'));
   assert.ok(js.includes('user_pref("network.proxy.http", "127.0.0.1");'));
   assert.ok(js.includes('user_pref("network.proxy.http_port", 51837);'));
-  assert.ok(js.includes('user_pref("network.proxy.share", "127.0.0.1");'));
+  assert.ok(js.includes('user_pref("network.proxy.ssl", "127.0.0.1");'));
+  assert.ok(js.includes('user_pref("network.proxy.ssl_port", 51837);'));
+  // Firefox has no network.proxy.share pref — it is a Chrome-ism and writing it
+  // is inert (see buildFirefoxUserJs). The bridge is one local forwarder, so
+  // http+ssl must both point at it, and the inert pref must not appear at all.
+  assert.ok(!js.includes('network.proxy.share'));
   assert.ok(js.includes('user_pref("network.proxy.no_proxies_for", "localhost, 127.0.0.1");'));
   assert.ok(js.includes('user_pref("general.useragent.override",'));
   assert.ok(js.includes('user_pref("app.update.enabled", false);'));

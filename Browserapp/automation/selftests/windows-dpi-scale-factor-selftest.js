@@ -96,8 +96,8 @@ function withPlatform(targetPlatform, fn) {
  * modules with complete require.cache invalidation under a mocked platform context.
  */
 function withIsolatedFingerprint(mockPlatform, fn) {
-  const fpModulePath = require.resolve('./fingerprint');
-  const flagsModulePath = require.resolve('./command-line-flags');
+  const fpModulePath = require.resolve('../fingerprint'); // fingerprint/ package lives at automation/, one up from selftests/
+  const flagsModulePath = require.resolve('../command-line-flags'); // command-line-flags.js lives at automation/, one up from selftests/
   const origPlatform = process.platform;
   const origDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
 

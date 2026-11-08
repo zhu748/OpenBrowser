@@ -589,6 +589,42 @@ function writeArtifactStamp(stampPath, key) {
 }
 
 /**
+ * Write an artifact file via a same-directory temp file + rename so two
+ * concurrent rebuilds of the same env never expose a half-written icon (the
+ * worst case before was a reader catching a truncated PNG, or a 16px icon
+ * from one run mixed with a 128px icon from the other).
+ */
+function writeArtifactAtomic(file, data) {
+  const tmp = `${file}.tmp-${process.pid}-${Math.floor(Math.random() * 0x10000).toString(16)}`;
+  try {
+    fs.writeFileSync(tmp, data);
+    fs.renameSync(tmp, file);
+  } catch (_) {
+    try { fs.rmSync(tmp, { force: true }); } catch (__) {}
+    throw _;
+  }
+}
+
+/**
+ * Stamp key extended with the outputs' own mtime fingerprints: after a crash
+ * mid-rebuild the stamp could match while the icons on disk are partial, so
+ * freshness now also requires that every output was written in THIS stamp
+ * generation (mtime not older than the stamp we are about to compare against
+ * is too weak; instead the key embeds each file's mtimeMs and size, making
+ * any later external rewrite of an icon bust the stamp).
+ */
+function artifactOutputFingerprint(outputs) {
+  return outputs.map((file) => {
+    try {
+      const st = fs.statSync(file);
+      return `${st.mtimeMs}:${st.size}`;
+    } catch (_) {
+      return 'x';
+    }
+  }).join(',');
+}
+
+/**
  * Per-profile marker extension: toolbar icon = logo-native + number.
  * In-page floating badge also shows the number (extension content script).
  */
@@ -598,11 +634,16 @@ async function prepareMarkerExtension({ profileId, envNumber, userDataPath, temp
   await fsp.mkdir(dest, { recursive: true });
 
   // Icons are a pure function of the label; regenerating them costs four python3 spawns.
+  // Freshness = stamp match AND every output was produced by the stamped run
+  // (mtime+size fingerprint embedded in the key), so a half-finished rebuild
+  // left by a crash or a concurrent run can never pass as fresh.
   const stampPath = path.join(dest, '.artifact-stamp');
-  const stampKey = JSON.stringify({ v: ARTIFACT_STAMP_VERSION, label });
-  const expected = [16, 32, 48, 128].map((size) => path.join(dest, `icon-${size}.png`))
+  const iconOutputs = [16, 32, 48, 128].map((size) => path.join(dest, `icon-${size}.png`));
+  const expected = iconOutputs
     .concat([path.join(dest, 'manifest.json'), path.join(dest, 'marker.js')]);
-  if (artifactIsFresh(stampPath, stampKey, expected)) return dest;
+  const stampKey = JSON.stringify({ v: ARTIFACT_STAMP_VERSION, label });
+  const stampKeyWithOutputs = JSON.stringify({ v: ARTIFACT_STAMP_VERSION, label, outputs: artifactOutputFingerprint(expected) });
+  if (artifactIsFresh(stampPath, stampKeyWithOutputs, expected)) return dest;
 
   const sizes = [16, 32, 48, 128];
   for (const size of sizes) {
@@ -643,11 +684,11 @@ async function prepareMarkerExtension({ profileId, envNumber, userDataPath, temp
   // In-page DOM injection omitted to avoid page-visible fingerprinting.
   const markerJs = `// Environment marker content script\n`;
   await fsp.writeFile(path.join(dest, 'marker.js'), markerJs, 'utf8');
-
   if (templateDir) {
     await fsp.writeFile(path.join(dest, '.source-template'), String(templateDir), 'utf8').catch(() => {});
   }
-  writeArtifactStamp(stampPath, stampKey);
+  // Stamp only after all outputs exist; write via tmp+rename (see above).
+  writeArtifactStamp(stampPath, JSON.stringify({ v: ARTIFACT_STAMP_VERSION, label, outputs: artifactOutputFingerprint(expected) }));
   return dest;
 }
 

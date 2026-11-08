@@ -259,6 +259,8 @@ $('#proxy-apply-form')?.addEventListener('submit', async (event) => {
     return $('#proxy-apply-dialog').close();
   }
   const proxyVal = item.raw || `${item.protocol || 'socks5'}://${item.username ? encodeURIComponent(item.username) + ':' + encodeURIComponent(item.password || '') + '@' : ''}${item.host}:${item.port}`;
+  const submitter = event.submitter;
+  if (submitter && submitter.value !== 'cancel') submitter.disabled = true;
   let modified = 0;
   for (const pid of checkedIds) {
     const idx = ui.profiles.findIndex((p) => p.id === pid);
@@ -280,7 +282,7 @@ $('#proxy-apply-form')?.addEventListener('submit', async (event) => {
     log('Proxy', `应用代理 ${item.name || item.host} 到 ${modified} 个环境`);
   } catch (err) {
     toast('应用失败：' + err.message);
-  }
+  } finally { if (submitter) submitter.disabled = false; }
 });
 
 $('#proxy-dialog-test')?.addEventListener('click', async () => {
@@ -332,6 +334,7 @@ $('#proxy-form')?.addEventListener('submit', async (event) => {
   const submitter = event.submitter;
   if (submitter?.value === 'cancel') return $('#proxy-dialog').close('cancel');
   if (submitter && submitter.id !== 'proxy-dialog-save' && submitter.value !== 'default') return;
+  if (submitter) submitter.disabled = true;
   try {
     const draft = readProxyForm();
     if (draft.id) await window.ops.proxyUpdate(draft);
@@ -343,7 +346,7 @@ $('#proxy-form')?.addEventListener('submit', async (event) => {
     log('Proxy', (draft.id ? '更新 ' : '新建 ') + (draft.name || draft.host));
   } catch (error) {
     toast('保存失败：' + error.message);
-  }
+  } finally { if (submitter) submitter.disabled = false; }
 });
 
 $('#proxy-dialog')?.addEventListener('close', () => { editingProxyRecord = null; });

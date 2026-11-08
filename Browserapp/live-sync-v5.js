@@ -582,8 +582,13 @@ function environmentMarker(id, master) {
 
 function isEnvironmentStartUrl(value) {
   const s = String(value || '');
+  // Exact generated filenames only. The previous bare
+  // `openbrowser-start` / `openbrowser-native` alternation matched any
+  // third-party URL containing those words; both markers exist solely as
+  // meta-tag names in page templates and never in generated URLs — same
+  // hazard class as the engine-side fallback (already tightened).
   if (/openbrowser-start\.html/i.test(s)) return true;
-  if (/openbrowser-start|openbrowser-native/i.test(s)) return true;
+  if (/openbrowser-start-page\.html/i.test(s)) return true;
   if (/https?:\/\/127\.0\.0\.1:5032[6-9]\/?/i.test(s)) return true;
   return false;
 }
@@ -1675,9 +1680,12 @@ class LiveSyncController extends LiveSyncV4 {
     const masterTab = this.masterTabs.find((tab) => tab.id === masterTabId);
     const isStartPage = (v) => {
       const s = String(v || '').toLowerCase();
+      // Exact filenames only — the bare openbrowser-start /
+      // openbrowser-native substrings only ever matched third-party URLs
+      // (they are meta-tag names, not generated URLs); see
+      // isEnvironmentStartUrl above for the shared rationale.
       return s.includes('openbrowser-start.html')
-        || s.includes('openbrowser-start')
-        || s.includes('openbrowser-native')
+        || s.includes('openbrowser-start-page.html')
         || /https?:\/\/127\.0\.0\.1:5032[6-9]\/?/.test(s);
     };
     const equivalentUrl = (a, b) => {

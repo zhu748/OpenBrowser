@@ -38,8 +38,13 @@ const { buildFingerprint } = require('../fingerprint');
 const { writeOpenBrowserKernelInit } = require('../kernel-init-sync');
 const cdp = require('../../cdp');
 
-const appRoot = path.join(__dirname, '..');
-const enginePath = path.join(appRoot, 'engine.js');
+// One level short of Browserapp/ after 30dbbea moved selftests deeper: this
+// used to be automation/, now it must be the app root that owns engine.js.
+const appRoot = path.join(__dirname, '..', '..');
+// startWorkerFingerprintInjection and the CSS font rewrite wiring moved into
+// the engine/ split module when the engine was decomposed; engine.js is a
+// shell now and no longer carries them.
+const enginePath = path.join(appRoot, 'engine', 'fingerprint-injection.js');
 const kernelRoot = path.join(appRoot, 'kernels', 'macos-x64');
 const launcher = path.join(kernelRoot, 'launch_openbrowser.sh');
 const fontPath = path.join(appRoot, 'assets', 'font-subsets', 'windows', 'segoe-ui.woff2');
@@ -574,9 +579,9 @@ async function runLiveEngineIntegration(serverPort, mutate) {
   const methodSource = extractMethodSource(engineSource, 'startWorkerFingerprintInjection');
 
   // Check 1: Engine imports createCssFontResponseRewriter from correct automation path
-  check('engine.js statically imports createCssFontResponseRewriter from automation module', () => {
-    const importRegex = /const\s*\{\s*createCssFontResponseRewriter\s*\}\s*=\s*require\(\s*['"]\.\/automation\/css-font-response-rewrite['"]\s*\)/;
-    assert.ok(importRegex.test(engineSource), 'engine.js must import createCssFontResponseRewriter from ./automation/css-font-response-rewrite');
+  check('fingerprint-injection module statically imports createCssFontResponseRewriter from automation module', () => {
+    const importRegex = /const\s*\{\s*createCssFontResponseRewriter\s*\}\s*=\s*require\(\s*['"]\.\.?\/automation\/css-font-response-rewrite['"]\s*\)/;
+    assert.ok(importRegex.test(engineSource), 'fingerprint-injection must import createCssFontResponseRewriter from the automation css-font-response-rewrite module');
   });
 
   // Check 2: startWorkerFingerprintInjection instantiates rewriter with persona fonts and logger
@@ -598,11 +603,21 @@ async function runLiveEngineIntegration(serverPort, mutate) {
   // Check 4: fontResponseRewriter.enable is awaited for page/iframe sessions before unpause
   check('fontResponseRewriter.enable is called on page and iframe sessions before runIfWaitingForDebugger', () => {
     assert.ok(methodSource.includes("fontResponseRewriter.enable(connection, { sessionId"), 'enable must be called with sessionId');
-    const enableIdx = methodSource.indexOf('fontResponseRewriter.enable');
-    const runIdx = methodSource.indexOf('Runtime.runIfWaitingForDebugger');
-    assert.ok(enableIdx !== -1, 'fontResponseRewriter.enable must be present');
-    assert.ok(runIdx !== -1, 'Runtime.runIfWaitingForDebugger must be present');
-    assert.ok(enableIdx < runIdx, 'fontResponseRewriter.enable must precede Runtime.runIfWaitingForDebugger');
+    // Execution order, not text order: resumeTarget() is *defined* early (its
+    // closure sits above the enable call in the file), so comparing indexOf
+    // positions misreads the intent. On the initial-target path the sequence is
+    // applyFingerprintToSession -> armResponseRewriting(enable) -> resumeTarget
+    // (runIfWaitingForDebugger). Assert the initial branch: armResponseRewriting
+    // call precedes the resumeTarget() call.
+    const armCallIdx = methodSource.indexOf('await armResponseRewriting(8000)');
+    const resumeCallIdx = methodSource.indexOf('await resumeTarget()');
+    assert.ok(armCallIdx !== -1, 'initial-target path must arm response rewriting (armResponseRewriting)');
+    assert.ok(resumeCallIdx !== -1, 'initial-target path must resume via resumeTarget()');
+    assert.ok(armCallIdx !== -1 && armCallIdx < resumeCallIdx, 'fontResponseRewriter.enable must precede Runtime.runIfWaitingForDebugger on the initial-target path');
+    // Late-created targets intentionally resume first and arm rewriting in the
+    // background (documented in the module): a tab just opened has no document
+    // worth sanitizing yet. Record that path too, without ordering it.
+    assert.ok(methodSource.includes('if (!isInitial) armResponseRewriting(2500)'), 'late-target path arms rewriting after resume by design');
   });
 
   // Check 5: Browser connection configures Target.setAutoAttach with flatten: true

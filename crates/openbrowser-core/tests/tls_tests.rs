@@ -113,6 +113,17 @@ fn test_ja4_fingerprint_format_and_export() {
     assert!(parts[0].ends_with("h2"));
     assert_eq!(parts[1].len(), 12);
     assert_eq!(parts[2].len(), 12);
+
+    // Non-ASCII ALPN: the Part A code is derived from the raw UTF-8 BYTES
+    // (FoxIO byte semantics). "\u{ab}" encodes as C2 AB: the first byte 0xC2
+    // is not alphanumeric, so the hex path takes its high nibble ("c") and
+    // the low nibble of the last byte 0xAB ("b") -> "cb". Likewise
+    // "\u{abcd}" (EA AF 8D) -> "ed".
+    let non_ascii = openbrowser_core::tls::compute_ja4('t', 0x0303, true, &[], &[], Some("\u{ab}"));
+    assert!(non_ascii.formatted.split('_').next().unwrap().ends_with("cb"));
+    let non_ascii2 =
+        openbrowser_core::tls::compute_ja4('t', 0x0303, true, &[], &[], Some("\u{abcd}"));
+    assert!(non_ascii2.formatted.split('_').next().unwrap().ends_with("ed"));
 }
 
 #[test]

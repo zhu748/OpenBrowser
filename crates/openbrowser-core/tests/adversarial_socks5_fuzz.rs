@@ -320,3 +320,44 @@ async fn test_fuzz_socks5_upstream_giant_garbage_flood() {
     assert!(res.is_err(), "Garbage flood must return error safely");
     assert!(matches!(res.unwrap_err(), CoreError::Socks5(_)));
 }
+
+#[tokio::test]
+async fn test_fuzz_socks5_upstream_rep0_then_fin_truncated_bind() {
+    // REP=0 head with ATYP_IPV4, then immediate FIN: the bind-address drain
+    // must surface as a SOCKS5 semantic error (truncated bind address), not
+    // a bare io::Error that a future refactor could turn into a "successful"
+    // half-open tunnel.
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        if let Ok((mut socket, _)) = listener.accept().await {
+            let mut buf = [0u8; 16];
+            let _ = socket.read(&mut buf).await;
+            // Greeting: no auth
+            let _ = socket.write_all(&[0x05, 0x00]).await;
+            let mut req = [0u8; 128];
+            let _ = socket.read(&mut req).await;
+            // REP=0, ATYP_IPV4, then close before the 4+2 address bytes.
+            let _ = socket.write_all(&[0x05, 0x00, 0x00, 0x01]).await;
+            drop(socket);
+        }
+    });
+
+    let config = ProxyConfig {
+        protocol: ProxyProtocol::Socks5,
+        host: addr.ip().to_string(),
+        port: addr.port(),
+        username: None,
+        password: None,
+        remark: None,
+        name: None,
+    };
+
+    let res = LocalProxyBridge::connect_socks5_upstream(&config, "example.com", 443).await;
+    assert!(res.is_err(), "truncated bind address must fail, not half-open");
+    match res.unwrap_err() {
+        CoreError::Socks5(msg) => assert!(msg.contains("truncated bind address"), "Msg: {}", msg),
+        other => panic!("Unexpected error: {:?}", other),
+    }
+}

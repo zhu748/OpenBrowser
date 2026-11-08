@@ -274,8 +274,12 @@ function userPref(key, value) {
  * Build the user.js body applied before every launch.
  * Manual-empty proxy (type 1, no hosts) is used for Direct so Firefox can
  * never fall back to the host's system proxy (type 0 would).
+ *
+ * extraPrefs: optional ordered [key, value] pairs appended verbatim by the
+ * launch pipeline (retention/advanced mapping). Later pairs win over earlier
+ * ones and over any pref set above.
  */
-function buildFirefoxUserJs({ userAgent, acceptLanguages, locale, proxyEndpoint, noProxyHosts }) {
+function buildFirefoxUserJs({ userAgent, acceptLanguages, locale, proxyEndpoint, noProxyHosts, extraPrefs }) {
   const lines = [];
   if (userAgent) lines.push(userPref('general.useragent.override', userAgent));
   if (acceptLanguages) lines.push(userPref('intl.accept_languages', acceptLanguages));
@@ -289,7 +293,10 @@ function buildFirefoxUserJs({ userAgent, acceptLanguages, locale, proxyEndpoint,
       lines.push(userPref('network.proxy.socks_version', proxy.scheme === 'socks4' ? 4 : 5));
       lines.push(userPref('network.proxy.socks_remote_dns', true));
     } else {
-      for (const key of ['http', 'ssl', 'share']) {
+      // Firefox has no network.proxy.share pref (that is a Chrome-ism read from
+      // about:config in Chromium-based browsers); writing it is inert. The
+      // bridge endpoint is a single local forwarder, so http+ssl suffice.
+      for (const key of ['http', 'ssl']) {
         lines.push(userPref(`network.proxy.${key}`, proxy.host));
         lines.push(userPref(`network.proxy.${key}_port`, proxy.port));
       }
@@ -304,17 +311,27 @@ function buildFirefoxUserJs({ userAgent, acceptLanguages, locale, proxyEndpoint,
   lines.push(userPref('browser.shell.checkDefaultBrowser', false));
   lines.push(userPref('browser.aboutConfig.showWarning', false));
   lines.push(userPref('datareporting.healthreport.uploadEnabled', false));
+  lines.push(userPref('datareporting.policy.dataSubmissionPolicyBypassNotification', false));
   lines.push(userPref('datareporting.policy.dataSubmissionEnabled', false));
   lines.push(userPref('toolkit.telemetry.enabled', false));
+  for (const [key, value] of Array.isArray(extraPrefs) ? extraPrefs : []) {
+    if (!key) continue;
+    lines.push(userPref(key, value));
+  }
   return lines.join('\n') + '\n';
 }
 
-/** Firefox CLI for a launch: -profile <root>, --no-remote, optional -headless, URL. */
-function firefoxStartupArgs({ root, startUrl, headless }) {
+/** Firefox CLI for a launch: -profile <root>, --no-remote, optional -headless, URL(s). */
+function firefoxStartupArgs({ root, startUrl, extraUrls, headless }) {
   const args = ['-profile', String(root)];
   args.push('--no-remote');
   if (headless) args.push('-headless');
-  args.push(String(startUrl || 'about:blank'));
+  const first = String(startUrl || 'about:blank');
+  const rest = (Array.isArray(extraUrls) ? extraUrls : [])
+    .map((url) => String(url || '').trim())
+    .filter(Boolean);
+  args.push(first);
+  for (const url of rest) args.push(url);
   return args;
 }
 

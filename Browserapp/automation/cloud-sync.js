@@ -37,21 +37,36 @@ function sha256(buf) {
   return crypto.createHash('sha256').update(buf).digest('hex');
 }
 
-// scryptSync costs ~30-45ms of synchronous main-thread time per call and a
+// scrypt costs ~40-50ms of synchronous main-thread time per call and a
 // backup run calls it once per payload. Reuse one salt per passphrase (the
 // KDF cost is then paid once per process; AES-GCM only needs IV uniqueness)
 // and cache the derived key. Wire format OBE1 is unchanged.
+// N=2^17 / r=8 / p=1 per OWASP 2023+ password storage guidance; Node's
+// historical default (N=16384) was below that bar for the single most
+// sensitive at-rest/at-cloud payload. Packages encrypted under the old cost
+// still decrypt (decryptPayload falls back to the legacy derivation), and
+// the next backup written after an upgrade uses the stronger cost.
+const SCRYPT_PARAMS_CURRENT = { N: 131072, r: 8, p: 1, maxmem: 256 * 1024 * 1024 };
+const SCRYPT_PARAMS_LEGACY = { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
 const __cloudKeyCache = new Map();
 const __cloudSaltCache = new Map();
 
-function cloudDerivedKey(passphrase, salt) {
-  const cacheKey = salt.toString('hex') + '|' + passphrase;
+function cloudDerivedKeyWith(passphrase, salt, params) {
+  const cacheKey = `${salt.toString('hex')}|${params.N}|${String(passphrase)}`;
   const cached = __cloudKeyCache.get(cacheKey);
   if (cached) return cached;
-  const key = crypto.scryptSync(passphrase, salt, 32);
+  const key = crypto.scryptSync(String(passphrase), salt, 32, params);
   if (__cloudKeyCache.size >= 16) __cloudKeyCache.clear();
   __cloudKeyCache.set(cacheKey, key);
   return key;
+}
+
+function cloudDerivedKey(passphrase, salt) {
+  return cloudDerivedKeyWith(passphrase, salt, SCRYPT_PARAMS_CURRENT);
+}
+
+function cloudDerivedKeyLegacy(passphrase, salt) {
+  return cloudDerivedKeyWith(passphrase, salt, SCRYPT_PARAMS_LEGACY);
 }
 
 function cloudEncryptSaltFor(passphrase) {
@@ -84,6 +99,12 @@ function encryptPayload(plainBuf, passphrase) {
   };
 }
 
+function decryptObe1(salt, iv, tag, enc, passphrase, key) {
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(enc), decipher.final()]);
+}
+
 function decryptPayload(buf, passphrase) {
   if (buf.length >= 4 && buf.subarray(0, 4).toString() === 'OBE1') {
     if (!passphrase) throw new Error('备份已加密，请填写恢复密码');
@@ -91,10 +112,18 @@ function decryptPayload(buf, passphrase) {
     const iv = buf.subarray(20, 32);
     const tag = buf.subarray(32, 48);
     const enc = buf.subarray(48);
-    const key = cloudDerivedKey(String(passphrase), salt);
-    const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
-    decipher.setAuthTag(tag);
-    return Buffer.concat([decipher.update(enc), decipher.final()]);
+    // Try the current cost first, then the pre-upgrade cost: GCM auth covers
+    // both, so a wrong guess fails the tag and we fall through. This keeps
+    // every package written before the KDF upgrade restorable.
+    try {
+      return decryptObe1(salt, iv, tag, enc, String(passphrase), cloudDerivedKey(String(passphrase), salt));
+    } catch (error) {
+      try {
+        return decryptObe1(salt, iv, tag, enc, String(passphrase), cloudDerivedKeyLegacy(String(passphrase), salt));
+      } catch (_) {
+        throw error;
+      }
+    }
   }
   return buf;
 }
@@ -425,6 +454,41 @@ function proxyRecordContainsSecrets(record) {
   return proxyUrlEmbedsCredentials(record.raw) || proxyUrlEmbedsCredentials(record.proxy);
 }
 
+/**
+ * True when the `settings` block of a backup package carries provider
+ * credentials (any WebDAV-style bridge account, a GitHub token, or an
+ * unmasked passphrase). runCloudBackup used to pack the whole cloud config
+ * with only the passphrase star-masked, so WebDAV passwords and GitHub
+ * tokens could ride into an unencrypted package — the same plaintext
+ * exposure the profiles/proxies gates exist to prevent.
+ */
+const CLOUD_SETTINGS_SECRET_FIELDS = new Set([
+  'password', 'pass', 'token', 'secret', 'apiKey', 'apikey', 'credential', 'credentials', 'cookie',
+]);
+
+function cloudSettingsCarrySecrets(settings) {
+  if (!settings || typeof settings !== 'object') return false;
+  const cloud = settings.cloud && typeof settings.cloud === 'object' ? settings.cloud : null;
+  if (!cloud) return false;
+  if (String(cloud.passphrase || '').trim()) return true;
+  // Any non-empty credential-looking field on any provider block counts.
+  // Provider blocks also carry harmless keys (url/dir/owner/repo/branch);
+  // only fields whose name marks them as secrets are considered.
+  const stack = [cloud];
+  while (stack.length) {
+    const node = stack.pop();
+    if (!node || typeof node !== 'object') continue;
+    for (const [key, value] of Object.entries(node)) {
+      if (value && typeof value === 'object') { stack.push(value); continue; }
+      const name = String(key);
+      const looksSecret = CLOUD_SETTINGS_SECRET_FIELDS.has(name)
+        || /passphrase|password|token|secret/i.test(name);
+      if (looksSecret && String(value || '').trim() && String(value).trim() !== '***') return true;
+    }
+  }
+  return false;
+}
+
 async function buildBackupPackage({
   profiles = [],
   groups = [],
@@ -477,12 +541,16 @@ async function buildBackupPackage({
   // Security gate: refuse to ship an UNENCRYPTED backup that carries account
   // credentials (cookies / passwords / TOTP / proxy logins / browser data).
   // Cloud destinations (WebDAV / GitHub / netdisk) must never hold plaintext
-  // secrets — the user has to set a backup passphrase instead.
+  // secrets — the user has to set a backup passphrase instead. The gate
+  // covers packed profiles, the proxy library snapshot AND settings.cloud:
+  // a WebDAV password or GitHub token in the cloud config is just as much
+  // a plaintext credential as a proxy login in a profile.
   if (!passphrase) {
     const carriesSecrets = packedProfiles.some(packedProfileContainsSecrets)
-      || (Array.isArray(proxies) && proxies.some(proxyRecordContainsSecrets));
+      || (Array.isArray(proxies) && proxies.some(proxyRecordContainsSecrets))
+      || cloudSettingsCarrySecrets(settings);
     if (carriesSecrets) {
-      throw new Error('备份包含账号凭据（Cookie / 密码 / 2FA / 代理登录信息或浏览器数据），必须先设置备份口令加密后再上传');
+      throw new Error('备份包含账号凭据（Cookie / 密码 / 2FA / 代理登录信息 / 云盘账号令牌或浏览器数据），必须先设置备份口令加密后再上传');
     }
   }
   const gz = await gzipAsync(json, { level: 9 });
@@ -614,7 +682,14 @@ async function uploadWebDav(config, buffer, remoteName = REMOTE_NAME) {
   if (!base || base === '/') throw new Error('请填写 WebDAV 地址');
   const parent = rel.includes('/') ? rel.replace(/\/[^/]+$/, '') : '';
   if (parent) await ensureWebDavDir(base, user, pass, parent);
-  const res = await request(target, {
+  // Upload via a partial name first, then MOVE to the final name: a network
+  // drop mid-PUT must not leave a half package at the canonical remote path
+  // (the only backup a restore would see). WebDAV MOVE is part of RFC 4918;
+  // servers that reject MOVE with 405/501 fall back to a direct PUT, which
+  // keeps the old behavior on such deployments instead of failing uploads.
+  const partialRel = `${rel}.partial-${crypto.randomBytes(4).toString('hex')}`;
+  const partialTarget = webDavTarget(config, partialRel).target;
+  const putRes = await request(partialTarget, {
     method: 'PUT',
     headers: {
       Authorization: basicAuth(user, pass),
@@ -622,10 +697,49 @@ async function uploadWebDav(config, buffer, remoteName = REMOTE_NAME) {
       'Content-Length': buffer.length,
     },
   }, buffer);
-  if (res.status < 200 || res.status >= 300) {
-    throw new Error(`WebDAV 上传失败 (${res.status})`);
+  if (putRes.status < 200 || putRes.status >= 300) {
+    await request(partialTarget, {
+      method: 'DELETE',
+      headers: { Authorization: basicAuth(user, pass) },
+    }).catch(() => {});
+    throw new Error(`WebDAV 上传失败 (${putRes.status})`);
   }
-  return { provider: 'webdav', url: target, bytes: buffer.length, remoteName };
+  const moveRes = await request(target, {
+    method: 'MOVE',
+    headers: {
+      Authorization: basicAuth(user, pass),
+      Destination: partialTarget,
+      Overwrite: 'T',
+    },
+  });
+  if (moveRes.status >= 200 && moveRes.status < 300) {
+    return { provider: 'webdav', url: target, bytes: buffer.length, remoteName };
+  }
+  if (moveRes.status === 405 || moveRes.status === 501) {
+    // Server without MOVE support: fall back to a direct PUT of the full
+    // package (this is the pre-partial behavior, no worse than before).
+    const directRes = await request(target, {
+      method: 'PUT',
+      headers: {
+        Authorization: basicAuth(user, pass),
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': buffer.length,
+      },
+    }, buffer);
+    await request(partialTarget, {
+      method: 'DELETE',
+      headers: { Authorization: basicAuth(user, pass) },
+    }).catch(() => {});
+    if (directRes.status < 200 || directRes.status >= 300) {
+      throw new Error(`WebDAV 上传失败 (${directRes.status})`);
+    }
+    return { provider: 'webdav', url: target, bytes: buffer.length, remoteName };
+  }
+  await request(partialTarget, {
+    method: 'DELETE',
+    headers: { Authorization: basicAuth(user, pass) },
+  }).catch(() => {});
+  throw new Error(`WebDAV MOVE 失败 (${moveRes.status})`);
 }
 
 async function downloadWebDav(config, remoteName = REMOTE_NAME) {
@@ -730,12 +844,44 @@ async function uploadLocal(config, buffer, remoteName = REMOTE_NAME) {
   await assertSafeLocalTarget(base, file);
   await fsp.mkdir(path.dirname(file), { recursive: true });
   await assertSafeLocalTarget(base, file);
-  await fsp.writeFile(file, buffer, { mode: 0o600 });
+  // Write the package via a temp file in the same directory + rename, so a
+  // crash mid-write cannot leave a truncated file at the canonical path.
+  const tmpFile = `${file}.tmp-${crypto.randomBytes(4).toString('hex')}`;
+  await fsp.writeFile(tmpFile, buffer, { mode: 0o600 });
+  await fsp.rename(tmpFile, file);
   if (rel === REMOTE_NAME || !rel.includes('/')) {
     const stamp = nowIso().replace(/[:.]/g, '-');
     await fsp.writeFile(path.join(base, `openbrowser-backup-${stamp}.obpack`), buffer, { mode: 0o600 }).catch(() => {});
+    await rotateLocalTimestampBackups(base).catch(() => {});
   }
   return { provider: 'local', path: file, bytes: buffer.length, remoteName: rel };
+}
+
+/**
+ * Keep only the newest N timestamped copies (openbrowser-backup-<stamp>.obpack)
+ * in a local backup root. Without rotation every full backup added another
+ * stale copy forever; they have no restore entry point, so beyond a handful
+ * they are pure disk waste. Newest-first lexical order = ISO stamp order.
+ */
+const LOCAL_TIMESTAMP_BACKUP_KEEP = 5;
+
+async function rotateLocalTimestampBackups(base) {
+  const keep = Number.isFinite(LOCAL_TIMESTAMP_BACKUP_KEEP) ? LOCAL_TIMESTAMP_BACKUP_KEEP : 5;
+  if (keep < 0) return 0;
+  let entries = [];
+  try { entries = await fsp.readdir(base); } catch (_) { return 0; }
+  const stamped = entries
+    .filter((name) => /^openbrowser-backup-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.obpack$/.test(name))
+    .sort()
+    .reverse();
+  let removed = 0;
+  for (const name of stamped.slice(keep)) {
+    try {
+      await fsp.rm(path.join(base, name), { force: true });
+      removed += 1;
+    } catch (_) {}
+  }
+  return removed;
 }
 
 async function downloadLocal(config, remoteName = REMOTE_NAME) {
@@ -862,4 +1008,6 @@ module.exports = {
   safeLocalTarget,
   webDavTarget,
   validatedGitHubConfig,
+  cloudSettingsCarrySecrets,
+  rotateLocalTimestampBackups,
 };

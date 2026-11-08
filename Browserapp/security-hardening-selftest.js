@@ -41,6 +41,16 @@ function main() {
   assert.doesNotThrow(() => assertSafeOutboundUrl('http://127.0.0.1:8080/ip', { allowPrivate: true }));
   assert.throws(() => assertSafeOutboundUrl('http://127.0.0.1:8080/ip', { allowPrivate: false }), /内网|private|本机/i);
 
+  // SSRF: IPv4-mapped IPv6 forms of cloud metadata must be rejected.
+  // WHATWG URL canonicalizes the bracketed host to ::ffff:a9fe:a9fe, so the
+  // guard must normalize it back to dotted IPv4 before matching.
+  assert.throws(() => assertSafeOutboundUrl('http://[::ffff:169.254.169.254]/'), /metadata|SSRF/i);
+  assert.throws(() => assertSafeOutboundUrl('http://[::ffff:a9fe:a9fe]/latest/meta-data/'), /metadata|SSRF/i);
+  assert.strictEqual(isCloudMetadataHostname('::ffff:169.254.169.254'), true);
+  assert.strictEqual(isCloudMetadataHostname('::ffff:a9fe:a9fe'), true);
+  assert.strictEqual(isPrivateOrLocalHostname('::ffff:127.0.0.1'), true);
+  assert.strictEqual(isPrivateOrLocalHostname('::ffff:10.0.0.5'), true);
+
   // --- Worker injection carries host lists + dynamic stability ---
   const fp = buildFingerprint({
     id: 'sec-fp-1',

@@ -48,24 +48,90 @@ async function stopChild(child, dir) {
   try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {}
 }
 
-// 1. Static code invariants
-check('static: createLucideIconElement sets class attribute and aria-hidden on rendered SVG', () => {
+// 1. Behavioural checks on real rendered SVG output. Formerly these were source greps of
+//    renderer.js (icon-literal test debt): any rename of a path constant broke the suite
+//    with no behaviour change. Now the real functions execute against a minimal DOM and the
+//    assertions target observable output: generated SVG markup, class, aria-hidden, viewBox
+//    and path bounds.
+check('behavioural: createLucideIconElement sets class and aria-hidden on the rendered SVG', () => {
   const source = read('renderer.js');
-  assert.ok(source.includes('window.lucide?.createElement'), 'must use lucide createElement');
-  assert.ok(source.includes('svg.setAttribute(\'class\', `lucide lucide-${iconName}`)') ||
-            source.includes('svg.setAttribute("class", `lucide lucide-${iconName}`)'),
-    'must explicitly set class attribute on SVG');
-  assert.ok(source.includes('svg.setAttribute(\'aria-hidden\', \'true\')') ||
-            source.includes('svg.setAttribute("aria-hidden", "true")'),
-    'must set aria-hidden on SVG');
+  const start = source.indexOf('function createLucideIconElement');
+  const end = source.indexOf('\nfunction ', start + 10);
+  const vm = require('vm');
+  const sandbox = {
+    window: { lucide: { createElement: (name) => name } },
+    document: {
+      createElementNS(ns, tag) {
+        const attrs = {}; const children = [];
+        return {
+          tagName: tag.toUpperCase(), attrs, children, innerHTML: '',
+          setAttribute(k, v) { attrs[k] = String(v); },
+          getAttribute(k) { return attrs[k]; },
+          append(c) { children.push(c); },
+        };
+      },
+    },
+  };
+  vm.createContext(sandbox);
+  // ACTION_ICON_SVGS is a module-level const declared above createLucideIconElement; carry the
+  // whole block from the const declaration through the helper into the VM.
+  const svgsStart = source.indexOf('const ACTION_ICON_SVGS = {');
+  vm.runInContext(source.slice(svgsStart > -1 && svgsStart < start ? svgsStart : start, end > start ? end : start + 4000)
+    + '\nthis.__fn = createLucideIconElement;', sandbox);
+  const fn = sandbox.__fn;
+  assert.ok(typeof fn === 'function', 'helper must be executable');
+  for (const name of ['play', 'square', 'pencil', 'copy']) {
+    const svg = fn(name, 24);
+    assert.ok(svg && svg.tagName === 'SVG', `${name}: must return an SVG node`);
+    assert.strictEqual(svg.attrs.class, `lucide lucide-${name}`, `${name}: class must be lucide lucide-${name}`);
+    assert.strictEqual(svg.attrs['aria-hidden'], 'true', `${name}: aria-hidden must be set`);
+    assert.strictEqual(svg.attrs.viewBox, '0 0 24 24', `${name}: viewBox must be 0 0 24 24`);
+    assert.ok(typeof svg.innerHTML === 'string' && svg.innerHTML.length >= 20, `${name}: inner SVG markup must be generated`);
+  }
 });
 
-check('static: buildBrowserEngineIcon contains complete vector paths without missing arcs', () => {
+check('behavioural: buildBrowserEngineIcon emits in-bounds vector paths', () => {
   const source = read('renderer.js');
-  // Old broken green path jumped from 3.6, 22.3 directly to 10, 11.3, cutting out the left arc
-  assert.ok(!source.includes('3.6 22.3L10 11.3'), 'green path must not have truncated shortcut');
-  // Edge icon coordinates must stay positive within viewBox
-  assert.ok(!source.includes('10.5 -1.2'), 'Edge icon path must not have negative out-of-bounds coordinates');
+  const start = source.indexOf('function buildBrowserEngineIcon');
+  const end = source.indexOf('\nfunction ', start + 10);
+  const vm = require('vm');
+  const sandbox = {
+    document: {
+      createElementNS(ns, tag) {
+        const attrs = {}; const children = [];
+        return {
+          tagName: tag.toUpperCase(), attrs, children, innerHTML: '',
+          setAttribute(k, v) { attrs[k] = String(v); },
+          getAttribute(k) { return attrs[k]; },
+          append(c) { children.push(c); },
+        };
+      },
+    },
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(source.slice(start, end > start ? end : start + 3000)
+    + '\nthis.__engineIcon = buildBrowserEngineIcon;', sandbox);
+  const fn = sandbox.__engineIcon;
+  assert.ok(typeof fn === 'function', 'buildBrowserEngineIcon must be executable');
+  // The helper returns an SVG markup string (it is consumed through innerHTML by callers);
+  // assert on the returned markup itself.
+  for (const engine of ['Chrome', 'Edge', 'Firefox', 'Chromium', 'Unknown']) {
+    const out = fn(engine, 26);
+    assert.ok(typeof out === 'string' && out.startsWith('<svg'), `${engine}: must produce SVG markup`);
+    const viewBox = (out.match(/viewBox="([^"]+)"/) || [])[1];
+    assert.ok(viewBox, `${engine}: markup must carry a viewBox`);
+    const vb = viewBox.split(' ').map(Number);
+    assert.strictEqual(vb.length, 4, `${engine}: viewBox must be four numbers`);
+    assert.ok(vb.every((n) => Number.isFinite(n)), `${engine}: viewBox must be numeric`);
+    let pathData = '';
+    for (const m of out.matchAll(/<path[^>]*\sd="([^"]+)"/g)) pathData += m[1];
+    assert.ok(pathData.length > 50, `${engine}: must emit real path data`);
+    for (const c of pathData.matchAll(/([A-Za-z])(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/g)) {
+      const x = Number(c[2]); const y = Number(c[3]);
+      assert.ok(x >= vb[0] - 0.5 && x <= vb[2] + 0.5, `${engine}: x=${x} escapes the viewBox`);
+      assert.ok(y >= vb[1] - 0.5 && y <= vb[3] + 0.5, `${engine}: y=${y} escapes the viewBox`);
+    }
+  }
 });
 
 check('static: ui-shell css enforces zero padding and explicit sizing for action icons and engine badges', () => {

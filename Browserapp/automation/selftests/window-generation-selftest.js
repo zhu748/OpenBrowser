@@ -150,6 +150,12 @@ check('live-sync v5 drops a stale event before synchronization side effects', ()
   fake.bindWindowKey = LiveSyncController.prototype.bindWindowKey;
   fake.acceptWindowEvent = LiveSyncController.prototype.acceptWindowEvent;
   fake.enqueueForward = LiveSyncController.prototype.enqueueForward;
+  // enqueueForward gates on the master tab URL before the generation check:
+  // with no master tabs registered the gate must pass through (no tab found),
+  // so this fake mirrors the v5 lookup the real controller would run.
+  fake.masterTabById = LiveSyncController.prototype.masterTabById;
+  fake.masterTabs = [];
+  fake.masterTabsById = null;
   const generation = fake.bindWindowKey('tab-2', 'tab:tab-2');
   assert.strictEqual(fake.acceptWindowEvent('tab-2', { windowNumber: 9, windowGeneration: generation }).accept, true);
   fake.enqueueForward('tab-2', { type: 'click', windowNumber: 9, windowGeneration: generation + 1 });

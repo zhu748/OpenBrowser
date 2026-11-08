@@ -54,7 +54,7 @@ impl HttpConnectTarget {
         // Case 2: Relative path starting with '/'
         if uri.starts_with('/') {
             if let Some(host_val) = find_host_header(raw_headers) {
-                return Self::parse_authority(host_val, 80);
+                return Self::parse_authority(host_val.as_str(), 80);
             }
             return Err(CoreError::Http(format!(
                 "Relative request '{}' lacks a valid Host header",
@@ -69,7 +69,7 @@ impl HttpConnectTarget {
 
         // Case 4: Search Host header as fallback
         if let Some(host_val) = find_host_header(raw_headers) {
-            return Self::parse_authority(host_val, 80);
+            return Self::parse_authority(host_val.as_str(), 80);
         }
 
         // Case 5: Bare hostname without slash
@@ -182,9 +182,33 @@ impl HttpConnectTarget {
 
 /// Single-pass Host header lookup over raw header lines: returns the trimmed
 /// value of the first non-empty Host header, without allocating a lowercase
-/// copy of every line.
-fn find_host_header(raw_headers: &str) -> Option<&str> {
+/// copy of every line. RFC 9112 §5.2 obs-fold continuations (physical lines
+/// starting with SP/HTAB) are unfolded into the preceding header's value, so
+/// a folded Host is found instead of having its tail silently dropped.
+fn find_host_header(raw_headers: &str) -> Option<String> {
+    // Header currently being folded: Some((is_host, value)). A continuation
+    // line extends it; a non-continuation line closes it.
+    let mut open: Option<(bool, String)> = None;
     for line in raw_headers.lines() {
+        let is_cont = line.starts_with(' ') || line.starts_with('\t');
+        if is_cont {
+            if let Some((_, acc)) = open.as_mut() {
+                let cont = line.trim();
+                if !cont.is_empty() {
+                    if !acc.is_empty() {
+                        acc.push(' ');
+                    }
+                    acc.push_str(cont);
+                }
+                continue;
+            }
+            continue; // continuation with no preceding header line
+        }
+        if let Some((is_host, acc)) = open.take() {
+            if is_host && !acc.is_empty() {
+                return Some(acc);
+            }
+        }
         let trimmed = line.trim();
         // Header names are case-insensitive (RFC 9110 §5.1); a match on the
         // 5 ASCII bytes proves index 5 is a char boundary, so [5..] is safe.
@@ -194,12 +218,44 @@ fn find_host_header(raw_headers: &str) -> Option<&str> {
             .is_some_and(|name| name.eq_ignore_ascii_case(b"Host:"))
         {
             let value = trimmed[5..].trim();
-            if !value.is_empty() {
-                return Some(value);
-            }
+            open = Some((true, value.to_string()));
+        } else if !trimmed.is_empty() {
+            // Track non-Host headers too, so their continuations are never
+            // misread as content of an earlier Host value.
+            open = Some((false, String::new()));
+        } else {
+            open = None;
+        }
+    }
+    if let Some((is_host, acc)) = open {
+        if is_host && !acc.is_empty() {
+            return Some(acc);
         }
     }
     None
+}
+
+/// Bracket a bare IPv6 Host value ("::1" -> "[::1]") before splicing it into
+/// an absolute-form request target: unbracketed colons read as host/port
+/// separators to the upstream and tear the request line. Values that carry a
+/// port (a single colon: "example.com:8080", "1.2.3.4:80"), are already
+/// bracketed, or contain non-hex characters pass through unchanged.
+fn bracket_bare_ipv6_host(host: &str) -> String {
+    if host.starts_with('[') {
+        return host.to_string();
+    }
+    let colon_count = host.chars().filter(|&c| c == ':').count();
+    if colon_count < 2 {
+        return host.to_string();
+    }
+    let bare_ipv6 = host
+        .chars()
+        .all(|c| c.is_ascii_hexdigit() || c == ':' || c == '.');
+    if bare_ipv6 {
+        format!("[{}]", host)
+    } else {
+        host.to_string()
+    }
 }
 
 /// Helper to generate Basic Proxy-Authorization header
@@ -369,27 +425,22 @@ pub fn format_forwarded_proxy_request(header_slice: &[u8], auth_header: Option<&
         };
 
         if uri.starts_with('/') {
-            // Find Host header to build absolute-form request target
-            let host_header = lines.iter().find_map(|line| {
-                let trimmed = line.trim();
-                let is_host = trimmed.len() >= 5
-                    && trimmed.as_bytes()[..5].eq_ignore_ascii_case(b"host:");
-                if is_host {
-                    let val = trimmed[5..].trim();
-                    if !val.is_empty() {
-                        Some(val)
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            });
+            // Host lookup shares the obs-fold unfolding of find_host_header:
+            // the old inline scan dropped folded continuations. A value that
+            // still carries whitespace after unfolding must NOT be spliced
+            // into the absolute-form target (it would tear the request line);
+            // forward the original request line untouched instead.
+            let joined = lines.join("\r\n");
+            let host_header =
+                find_host_header(&joined).filter(|h| !h.chars().any(|c| c.is_whitespace()));
 
             if let Some(host) = host_header {
+                // Bare IPv6 Host values are bracketed before splicing
+                // (upstream_socket_addr semantics, narrowed to this shape).
+                let target_host = bracket_bare_ipv6_host(&host);
                 out.push_str(&format!(
                     "{} http://{}{} {}\r\n",
-                    method, host, uri, version
+                    method, target_host, uri, version
                 ));
             } else {
                 out.push_str(first_line.trim());
@@ -614,5 +665,54 @@ mod tests {
         assert!(formatted_str.contains("Proxy-Connection: close\r\n"));
         assert!(formatted_str.contains("Connection: close\r\n"));
         assert!(formatted_str.ends_with("\r\n\r\n"));
+    }
+
+    #[test]
+    fn test_folded_host_obs_fold_unfolded() {
+        // RFC 9112 obs-fold: the continuation merges into the Host value.
+        // A merged value carrying whitespace is a spec error on the parse
+        // path (previously the continuation was silently dropped and the
+        // request routed to the truncated host).
+        let folded = "GET /x HTTP/1.1\r\nHost: example.com\r\n tail\r\nAccept: */*";
+        assert!(HttpConnectTarget::parse_http_target("/x", folded).is_err());
+
+        // Empty first line + continuation unfolds to a usable Host.
+        let folded_empty = "GET /y HTTP/1.1\r\nHost:\r\n example.com\r\n";
+        let t = HttpConnectTarget::parse_http_target("/y", folded_empty).unwrap();
+        assert_eq!(t.host, "example.com");
+        assert_eq!(t.port, 80);
+
+        // Single-line Host still behaves exactly as before.
+        let plain = "GET /z HTTP/1.1\r\nHost: example.com:8080\r\n";
+        let t2 = HttpConnectTarget::parse_http_target("/z", plain).unwrap();
+        assert_eq!(t2.host, "example.com");
+        assert_eq!(t2.port, 8080);
+    }
+
+    #[test]
+    fn test_forwarded_absolute_form_ipv6_and_folds() {
+        // Bare IPv6 Host is bracketed in the absolute-form target.
+        let raw = b"GET /p HTTP/1.1\r\nHost: ::1\r\nUser-Agent: t\r\n\r\n";
+        let out = String::from_utf8(format_forwarded_proxy_request(raw, None)).unwrap();
+        assert!(out.starts_with("GET http://[::1]/p HTTP/1.1\r\n"), "{out}");
+
+        // host:port (single colon) and already-bracketed values pass through.
+        for (host, want) in [
+            ("[::1]:8080", "http://[::1]:8080"),
+            ("example.com:8080", "http://example.com:8080"),
+            ("1.2.3.4:80", "http://1.2.3.4:80"),
+            ("::ffff:10.0.0.5", "http://[::ffff:10.0.0.5]"),
+        ] {
+            let raw = format!("GET /p HTTP/1.1\r\nHost: {host}\r\n\r\n").into_bytes();
+            let out = String::from_utf8(format_forwarded_proxy_request(&raw, None)).unwrap();
+            assert!(out.starts_with(&format!("GET {want}/p HTTP/1.1\r\n")), "{out}");
+        }
+
+        // A folded Host whose merged value carries whitespace must not be
+        // spliced into the request line: the original line is forwarded as-is.
+        let raw = b"GET /p HTTP/1.1\r\nHost: example.com\r\n tail\r\n\r\n";
+        let out = String::from_utf8(format_forwarded_proxy_request(raw, None)).unwrap();
+        assert!(out.starts_with("GET /p HTTP/1.1\r\n"), "{out}");
+        assert!(!out.contains("http://example.com tail"), "{out}");
     }
 }

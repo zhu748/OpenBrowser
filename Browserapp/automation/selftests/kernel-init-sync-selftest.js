@@ -165,7 +165,7 @@ async function main() {
 
   const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'ob-kernel-init-'));
   try {
-    const template = path.join(__dirname, '../kernels/macos-x64/init_template.json');
+    const template = path.join(__dirname, '../../kernels/macos-x64/init_template.json');
     const written = await writeOpenBrowserKernelInit(tmp, {
       fingerprint: fp,
       profile,
@@ -233,7 +233,7 @@ async function main() {
 
   // The shipped template itself must be free of those inherited values, not just the written result.
   {
-    const templatePath = path.join(__dirname, '../kernels/macos-x64/init_template.json');
+    const templatePath = path.join(__dirname, '../../kernels/macos-x64/init_template.json');
     if (fs.existsSync(templatePath)) {
       const template = loadInitObject(await fsp.readFile(templatePath));
       assert.ok(template, 'bundled init template must parse');

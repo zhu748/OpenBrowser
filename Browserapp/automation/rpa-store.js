@@ -652,6 +652,49 @@ class RpaStore {
   }
 
   // ---------- templates (script store) ----------
+  /**
+   * Sensitive step census for template transparency (finding 7-5).
+   * Imported templates run with the user's own page privileges: evaluate
+   * executes arbitrary JS on target pages, getOpenAI ships params.prompt to
+   * api.openai.com, downloadFile writes to disk. The UI and API responses
+   * surface these counts so "install template" is visibly "run template code".
+   */
+  static countSensitiveSteps(steps = []) {
+    const walk = (list, depth = 0) => {
+      let evaluate = 0; let openai = 0; let download = 0;
+      if (depth > 8 || !Array.isArray(list)) return { evaluate, openai, download };
+      for (const step of list) {
+        if (!step || typeof step !== 'object') continue;
+        const type = String(step.type || '').toLowerCase();
+        if (type === 'evaluate' || type === 'script' || type === 'js' || type === 'javascript') evaluate += 1;
+        if (type === 'getopenai') openai += 1;
+        if (type === 'downloadfile') download += 1;
+        for (const key of ['children', 'steps', 'nodes', 'branches']) {
+          if (Array.isArray(step[key])) {
+            const nested = RpaStore.countSensitiveSteps(step[key], depth + 1) || RpaStore.walkForSensitiveSteps(step[key], depth + 1);
+            evaluate += nested.evaluate; openai += nested.openai; download += nested.download;
+          }
+        }
+      }
+      return { evaluate, openai, download };
+    };
+    return walk(steps);
+  }
+
+  // Alias kept for internal recursion clarity above.
+  static walkForSensitiveSteps(steps, depth) {
+    return RpaStore.countSensitiveSteps(steps, depth);
+  }
+
+  /** Human-readable capability summary for toast/API surfaces. */
+  static sensitiveStepsSummary(counts = {}) {
+    const parts = [];
+    if (Number(counts.evaluate) > 0) parts.push(`evaluate×${counts.evaluate}`);
+    if (Number(counts.openai) > 0) parts.push(`getOpenAI×${counts.openai}`);
+    if (Number(counts.download) > 0) parts.push(`downloadFile×${counts.download}`);
+    return parts.join('、');
+  }
+
   listTemplates(filter = {}) {
     let items = [...this.data.templates];
     const q = String(filter.q || filter.keyword || '').trim().toLowerCase();
@@ -683,6 +726,7 @@ class RpaStore {
     const evaluated = items.map((template) => {
       this.applyFreeTemplateInPlace(template);
       const unsupported = findUnsupportedSteps(template.steps || []);
+      const sensitive = RpaStore.countSensitiveSteps(template.steps || []);
       return {
         ...template,
         pay_type: 1,
@@ -690,6 +734,8 @@ class RpaStore {
         tags: Array.isArray(template.tags) ? [...template.tags] : [],
         runnable: unsupported.length === 0 && Array.isArray(template.steps) && template.steps.length > 0,
         unsupported_steps: unsupported,
+        sensitive_steps: sensitive,
+        sensitive_summary: RpaStore.sensitiveStepsSummary(sensitive),
       };
     });
     return evaluated;
@@ -836,7 +882,14 @@ class RpaStore {
     stored.uses = (Number(stored.uses) || 0) + 1;
     stored.update_time = new Date().toISOString();
     await this.save();
-    return { plan, template: this.forceFreeTemplate(stored) };
+    const sensitive = RpaStore.countSensitiveSteps(steps);
+    return {
+      plan,
+      template: this.forceFreeTemplate(stored),
+      // Template = code: disclose the privileged/outbound step census on install.
+      sensitive_steps: sensitive,
+      sensitive_summary: RpaStore.sensitiveStepsSummary(sensitive),
+    };
   }
 
   /**

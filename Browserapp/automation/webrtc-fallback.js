@@ -13,9 +13,15 @@ const { deriveBridgeToken } = require('./font-placeholder');
 
 function createWebRtcFallbackSource(options) {
   const opts = options || {};
-  const publicIp = String(opts.publicIp || opts.webrtcAddress || '203.0.113.9');
-  const localIp = String(opts.localIp || '192.168.1.100');
-  const bridgeToken = String(opts.bridgeToken || deriveBridgeToken({ publicIp, localIp }));
+  // Per-profile values only: no shared-constant fallback. A constant IP makes every environment
+  // emit the identical synthetic candidate (a cross-environment correlation) and contradicts the
+  // proxy exit identity; when a side has no value, its source is simply not injected.
+  const hasPublicIp = opts.publicIp != null && String(opts.publicIp).trim() !== '';
+  const hasLocalIp = opts.localIp != null && String(opts.localIp).trim() !== '';
+  const publicIp = hasPublicIp ? String(opts.publicIp).trim() : null;
+  const localIp = hasLocalIp ? String(opts.localIp).trim() : null;
+  if (!publicIp && !localIp) return '';
+  const bridgeToken = String(opts.bridgeToken || deriveBridgeToken({ publicIp: publicIp || '', localIp: localIp || '' }));
 
   return `(() => {
   'use strict';
@@ -39,8 +45,18 @@ function createWebRtcFallbackSource(options) {
     return;
   }
 
+  const hasPublic = ${JSON.stringify(hasPublicIp)};
+  const hasLocal = ${JSON.stringify(hasLocalIp)};
   const PUBLIC_IP = ${JSON.stringify(publicIp)};
   const LOCAL_IP = ${JSON.stringify(localIp)};
+  // A side with no value contributes no source: its candidate/stat entries are skipped so no
+  // shared-constant placeholder leaks into the synthetic surface.
+  const hostCandidate = () => hasLocal
+    ? 'candidate:1 1 udp 2113937151 ' + LOCAL_IP + ' 55555 typ host generation 0 ufrag ' + 'abcd' + ' network-cost 999'
+    : null;
+  const srflxCandidate = () => hasPublic
+    ? 'candidate:2 1 udp 1685987071 ' + PUBLIC_IP + ' 55558 typ srflx raddr 0.0.0.0 rport 0 generation 0 ufrag ' + 'abcd' + ' network-cost 999'
+    : null;
 
   const nativeSource = new WeakMap();
   const originalFunctionToString = Function.prototype.toString;
@@ -229,15 +245,14 @@ function createWebRtcFallbackSource(options) {
     setTimeout(() => {
       if (state.closed) return;
       const ufrag = 'abcd';
-      const cand1Line = 'candidate:1 1 udp 2113937151 ' + LOCAL_IP + ' 55555 typ host generation 0 ufrag ' + ufrag + ' network-cost 999';
-      const cand1 = createIceCandidateInstance(cand1Line, '0', 0, ufrag);
-      dispatchFallbackEvent(pc, createIceEvent(cand1));
+      // Only the sides that carry a per-profile value contribute a candidate.
+      const cand1Line = hostCandidate();
+      if (cand1Line) dispatchFallbackEvent(pc, createIceEvent(createIceCandidateInstance(cand1Line, '0', 0, ufrag)));
 
       setTimeout(() => {
         if (state.closed) return;
-        const cand2Line = 'candidate:2 1 udp 1685987071 ' + PUBLIC_IP + ' 55558 typ srflx raddr 0.0.0.0 rport 0 generation 0 ufrag ' + ufrag + ' network-cost 999';
-        const cand2 = createIceCandidateInstance(cand2Line, '0', 0, ufrag);
-        dispatchFallbackEvent(pc, createIceEvent(cand2));
+        const cand2Line = srflxCandidate();
+        if (cand2Line) dispatchFallbackEvent(pc, createIceEvent(createIceCandidateInstance(cand2Line, '0', 0, ufrag)));
 
         setTimeout(() => {
           if (state.closed) return;
@@ -246,13 +261,12 @@ function createWebRtcFallbackSource(options) {
 
           if (state.localDescription && state.localDescription.sdp) {
             const crlf = String.fromCharCode(13, 10);
-            const candidateLines = [
-              'a=' + cand1Line,
-              'a=' + cand2Line,
-              'a=end-of-candidates',
-            ].join(crlf) + crlf;
-            if (!state.localDescription.sdp.includes('candidate:')) {
-              state.localDescription = createDescriptionInstance(state.localDescription.type, state.localDescription.sdp + candidateLines);
+            const candidateLines = [cand1Line, cand2Line]
+              .filter(Boolean)
+              .map((line) => 'a=' + line);
+            if (candidateLines.length) candidateLines.push('a=end-of-candidates');
+            if (candidateLines.length && !state.localDescription.sdp.includes('candidate:')) {
+              state.localDescription = createDescriptionInstance(state.localDescription.type, state.localDescription.sdp + candidateLines.join(crlf) + crlf);
             }
           }
 
@@ -304,7 +318,9 @@ function createWebRtcFallbackSource(options) {
     const remoteCandId = 'RTCIceCandidate_remote_0';
     const pairId = 'RTCIceCandidatePair_0';
 
-    const localCand = {
+    // Stats entries follow the candidate gating: a side with no per-profile value reports no
+    // address rather than a shared constant.
+    const localCand = hasLocal ? {
       id: localCandId,
       timestamp: now,
       type: 'local-candidate',
@@ -315,8 +331,8 @@ function createWebRtcFallbackSource(options) {
       candidateType: 'host',
       priority: 2113937151,
       networkType: 'lan',
-    };
-    const remoteCand = {
+    } : null;
+    const remoteCand = hasPublic ? {
       id: remoteCandId,
       timestamp: now,
       type: 'remote-candidate',
@@ -326,20 +342,20 @@ function createWebRtcFallbackSource(options) {
       protocol: 'udp',
       candidateType: 'srflx',
       priority: 1685987071,
-    };
-    const pair = {
+    } : null;
+    const pair = (localCand || remoteCand) ? {
       id: pairId,
       timestamp: now,
       type: 'candidate-pair',
-      localCandidateId: localCandId,
-      remoteCandidateId: remoteCandId,
+      localCandidateId: localCand ? localCandId : undefined,
+      remoteCandidateId: remoteCand ? remoteCandId : undefined,
       state: 'succeeded',
       nominated: true,
-    };
+    } : null;
 
-    map.set(localCandId, localCand);
-    map.set(remoteCandId, remoteCand);
-    map.set(pairId, pair);
+    if (localCand) map.set(localCandId, localCand);
+    if (remoteCand) map.set(remoteCandId, remoteCand);
+    if (pair) map.set(pairId, pair);
     syntheticReports.set(report, map);
     return report;
   };
@@ -861,6 +877,12 @@ function createWebRtcFallbackSource(options) {
     }
   } catch (_) {}
 
+  // The patched constructor runs native first; a native failure falls back to the
+  // synthetic instance. The former opt-out keyed on document.title === 'surface probe' let any
+  // page A/B the fallback layer (and the kernel state behind the native error message) by
+  // setting its own title before constructing a PC: a fully page-controlled low-privilege
+  // property used as an injection-surface escape. The branch is removed outright; the
+  // selftest now verifies the same behaviour through a one-shot random nonce hidden frame.
   const PatchedRTCPeerConnection = function RTCPeerConnection(...args) {
     if (!new.target) {
       return OrigRTCPeerConnection.apply(this, args);
@@ -868,9 +890,6 @@ function createWebRtcFallbackSource(options) {
     try {
       return Reflect.construct(OrigRTCPeerConnection, args, new.target);
     } catch (nativeErr) {
-      if (typeof document !== 'undefined' && document.title === 'surface probe') {
-        throw nativeErr;
-      }
       return createFallbackInstance(args, new.target);
     }
   };

@@ -1707,9 +1707,19 @@ function networkModeBadge(proxy) {
   return wrap;
 }
 function countryFlag(code) { const value = String(code || '').toUpperCase(); return /^[A-Z]{2}$/.test(value) ? String.fromCodePoint(...[...value].map((char) => 127397 + char.charCodeAt(0))) : '🌐'; }
+// Intl.DisplayNames construction is not cheap and countryName runs per row and
+// per detection paste; cache one instance per resolved locale.
+const countryDisplayNames = new Map();
 function countryName(code) {
   const locale = window.OpenBrowserI18n?.getLocale?.() === 'zh-CN' ? 'zh-CN' : (window.OpenBrowserI18n?.getLocale?.() || 'en');
-  try { return new Intl.DisplayNames([locale], { type: 'region' }).of(String(code || '').toUpperCase()) || code; } catch (_) { return code || ''; }
+  let displayNames = countryDisplayNames.get(locale);
+  if (!displayNames) {
+    try {
+      displayNames = new Intl.DisplayNames([locale], { type: 'region' });
+      countryDisplayNames.set(locale, displayNames);
+    } catch (_) { return code || ''; }
+  }
+  try { return displayNames.of(String(code || '').toUpperCase()) || code; } catch (_) { return code || ''; }
 }
 function parseEditorProxy(value) {
   const parsed = parseProxyInputForUi(value, 'socks5');
@@ -2960,10 +2970,19 @@ async function runPool(items, worker, concurrency = 3) {
   await Promise.all(workers);
 }
 
+// In-flight guard for stop: without it, rapid double-clicks queued duplicate
+// stop IPC calls for the same profile during the window before the throttled
+// status event flipped the badge (mirrors the starting guard in startProfile).
+const stoppingProfiles = new Set();
+
 async function stopProfile(id) {
-  invalidateViewCache(['sync', 'profiles']);
-  try { await window.ops.stopProfile(id); const profile = ui.profiles.find((item) => item.id === id); log('Browser', `${profile?.name || id} 已停止`); scheduleStatusRefresh(); scheduleSessionRefresh(); }
-  catch (error) { log('Error', error.message); toast(tx(`停止失败：${error.message}`)); }
+  if (stoppingProfiles.has(id)) return;
+  stoppingProfiles.add(id);
+  try {
+    invalidateViewCache(['sync', 'profiles']);
+    await window.ops.stopProfile(id); const profile = ui.profiles.find((item) => item.id === id); log('Browser', `${profile?.name || id} 已停止`); scheduleStatusRefresh(); scheduleSessionRefresh();
+  } catch (error) { log('Error', error.message); toast(tx(`停止失败：${error.message}`)); }
+  finally { stoppingProfiles.delete(id); }
 }
 
 async function checkProfileProxy(id) {
@@ -4767,6 +4786,12 @@ window.ops.onEvent(async (value) => {
   }
   if (value.type === 'sync-recovering') { syncHealth.recovering = true; renderSyncState(); log('Sync', `输入桥自动恢复，第 ${value.attempt} 次`); }
   if (value.type === 'native-input' && value.active) { syncHealth.recovering = false; renderSyncState(); }
+  // Skipped-segment events from live-sync: the mirror was dropped, so the
+  // next event forces a full sync. Surfacing them here keeps the Sync log
+  // honest about silent degradations instead of a no-op in the UI.
+  if (value.type === 'sync-input-skipped') { log('Sync', `输入段跳过（${value.reason || 'native-input-failed'}），镜像已丢弃，下段将全量同步`); }
+  if (value.type === 'sync-change-skipped') { log('Sync', `变更段跳过（${value.reason || 'native-change-failed'}）`); }
+  if (value.type === 'sync-change-fallback') { log('Sync', `变更段以合成回退完成（${value.reason || 'native-change-failed'}）`); }
   if (value.type === 'sync-error') { toast(value.message); log('Error', value.message); }
   if (value.type === 'sync-disconnected') { toast(value.message); log('Sync', value.message); }
 });

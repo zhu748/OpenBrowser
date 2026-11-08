@@ -45,12 +45,21 @@ fn encoded_credentials_preserve_legacy_bytes_without_header_injection() {
 
 #[test]
 fn offline_encoding_and_alpn_edges_are_bounded() {
+    // (" a", "21") and ("a ", "60") are the two FoxIO non-alphanumeric ALPN
+    // vectors expressible through the &str API; the remaining byte-level
+    // vectors (0xAB, 0xCD, ...) are not valid UTF-8 and cannot cross a &str
+    // parameter — the byte semantics they pin are covered by the two below
+    // plus the multi-byte UTF-8 case in tls_tests.
     for (alpn, expected) in [
         ("h2", "h2"),
         ("http/1.1", "h1"),
         ("a", "aa"),
         (" a", "21"),
         ("a ", "60"),
+        // FoxIO: non-alphanumeric first/last take the high nibble of the
+        // first byte and the low nibble of the last byte.
+        ("\u{ab}", "cb"), // UTF-8 C2 AB: c = 0xC2>>4, b = 0xAB&0x0f
+        ("\u{abcd}", "ed"), // UTF-8 EA AF 8D: e = 0xEA>>4, d = 0x8D&0x0f
     ] {
         let actual = compute_ja4('t', 0x0304, false, &[], &[], Some(alpn));
         assert!(

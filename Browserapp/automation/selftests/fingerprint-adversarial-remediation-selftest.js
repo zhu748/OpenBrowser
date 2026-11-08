@@ -228,7 +228,10 @@ function check(name, fn) {
     const foreignTarget = hostNorm === "macos" ? "windows" : "macos";
     const fpForeign = buildFingerprint({ id: "font-test-foreign", os: foreignTarget });
     assert.ok(fpForeign.fonts, "fp.fonts must not be null when foreign OS claimed on host");
-    assert.strictEqual(fpForeign.fonts.os, foreignTarget);
+    // The persona may resolve to an arch variant (macos_arm / windows_arm).
+    // The claimed-OS contract is at the subset-key level — the same mapping
+    // every font consumer (list selection, bridge tokens) applies.
+    assert.strictEqual(mapPlatformToSubsetKey(fpForeign.fonts.os), foreignTarget);
     assert.ok(Array.isArray(fpForeign.fonts.foreign) && fpForeign.fonts.foreign.length > 0);
 
     const fpSame = buildFingerprint({ id: "font-test-same", os: hostNorm });

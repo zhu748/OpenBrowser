@@ -62,7 +62,10 @@ const { execSync, execFileSync } = require("child_process");
 
 const isMutateMode = process.argv.includes("--mutate") || process.env.MUTATE === "1";
 
-const appRoot = path.join(__dirname, "..");
+// Same off-by-one as fingerprint-release-coverage: appRoot must be Browserapp/
+// (where package.json and the automation/ tree live), so repoRoot resolves to
+// the OpenBrowser repo root as its name promises.
+const appRoot = path.join(__dirname, "..", "..");
 const repoRoot = path.join(appRoot, "..");
 
 const pkg = JSON.parse(fs.readFileSync(path.join(appRoot, "package.json"), "utf8"));
@@ -75,71 +78,71 @@ assert.ok(
 
 const CORE_SCRIPTS = [
   { key: "selftest", script: "node environment-audit-selftest.js", file: "environment-audit-selftest.js" },
-  { key: "selftest:automation", script: "node automation/automation-selftest.js", file: "automation/automation-selftest.js" },
+  { key: "selftest:automation", script: "node automation/selftests/automation-selftest.js", file: "automation/selftests/automation-selftest.js" },
   { key: "selftest:protocol", script: "node automation/protocol/protocol-selftest.js", file: "automation/protocol/protocol-selftest.js" },
-  { key: "selftest:isolation", script: "node automation/isolation-fingerprint-selftest.js", file: "automation/isolation-fingerprint-selftest.js" },
-  { key: "selftest:kernel", script: "node automation/kernel-policy-selftest.js", file: "automation/kernel-policy-selftest.js" },
-  { key: "selftest:profileui", script: "node automation/profile-ui-layout-selftest.js", file: "automation/profile-ui-layout-selftest.js" },
-  { key: "selftest:kernelinit", script: "node automation/kernel-init-sync-selftest.js", file: "automation/kernel-init-sync-selftest.js" },
-  { key: "selftest:fpcoverage", script: "node automation/fingerprint-coverage-selftest.js", file: "automation/fingerprint-coverage-selftest.js" },
-  { key: "selftest:fontnative", script: "node automation/font-native-layer-selftest.js", file: "automation/font-native-layer-selftest.js" },
+  { key: "selftest:isolation", script: "node automation/selftests/isolation-fingerprint-selftest.js", file: "automation/selftests/isolation-fingerprint-selftest.js" },
+  { key: "selftest:kernel", script: "node automation/selftests/kernel-policy-selftest.js", file: "automation/selftests/kernel-policy-selftest.js" },
+  { key: "selftest:profileui", script: "node automation/selftests/profile-ui-layout-selftest.js", file: "automation/selftests/profile-ui-layout-selftest.js" },
+  { key: "selftest:kernelinit", script: "node automation/selftests/kernel-init-sync-selftest.js", file: "automation/selftests/kernel-init-sync-selftest.js" },
+  { key: "selftest:fpcoverage", script: "node automation/selftests/fingerprint-coverage-selftest.js", file: "automation/selftests/fingerprint-coverage-selftest.js" },
+  { key: "selftest:fontnative", script: "node automation/selftests/font-native-layer-selftest.js", file: "automation/selftests/font-native-layer-selftest.js" },
   { key: "selftest:stealth", script: "node fingerprint-stealth-selftest.js", file: "fingerprint-stealth-selftest.js" },
-  { key: "selftest:webglparams", script: "node automation/webgl-params-e2e-selftest.js", file: "automation/webgl-params-e2e-selftest.js" },
-  { key: "selftest:surfacediff", script: "node automation/surface-integrity-e2e-selftest.js", file: "automation/surface-integrity-e2e-selftest.js" },
-  { key: "selftest:mediae2e", script: "node automation/media-devices-e2e-selftest.js", file: "automation/media-devices-e2e-selftest.js" },
-  { key: "selftest:popupe2e", script: "node automation/popup-target-injection-e2e-selftest.js", file: "automation/popup-target-injection-e2e-selftest.js" },
-  { key: "selftest:doclifecycle", script: "node automation/document-lifecycle-fingerprint-e2e-selftest.js", file: "automation/document-lifecycle-fingerprint-e2e-selftest.js" },
-  { key: "selftest:workerfp", script: "node automation/worker-fingerprint-e2e-selftest.js", file: "automation/worker-fingerprint-e2e-selftest.js" },
-  { key: "selftest:workerscope", script: "node automation/worker-scope-family-e2e-selftest.js", file: "automation/worker-scope-family-e2e-selftest.js" },
-  { key: "selftest:bluetooth", script: "node automation/bluetooth-adapter-e2e-selftest.js", file: "automation/bluetooth-adapter-e2e-selftest.js" },
-  { key: "selftest:fontpresence", script: "node automation/font-presence-local-e2e-selftest.js", file: "automation/font-presence-local-e2e-selftest.js" },
-  { key: "selftest:workerfontpresence", script: "node automation/worker-font-presence-e2e-selftest.js", file: "automation/worker-font-presence-e2e-selftest.js" },
-  { key: "selftest:workerfontwiring", script: "node automation/worker-font-presence-wiring-selftest.js", file: "automation/worker-font-presence-wiring-selftest.js" },
-  { key: "selftest:cssfontgate", script: "node automation/css-font-local-gate-e2e-selftest.js", file: "automation/css-font-local-gate-e2e-selftest.js" },
-  { key: "selftest:cssfontrewrite", script: "node automation/css-font-response-rewrite-e2e-selftest.js", file: "automation/css-font-response-rewrite-e2e-selftest.js" },
-  { key: "selftest:cssfontwiring", script: "node automation/css-font-response-wiring-selftest.js", file: "automation/css-font-response-wiring-selftest.js" },
-  { key: "selftest:cssfontbypass", script: "node automation/css-local-font-bypass-e2e-selftest.js", file: "automation/css-local-font-bypass-e2e-selftest.js" },
-  { key: "selftest:fontblob", script: "node automation/query-local-font-blob-e2e-selftest.js", file: "automation/query-local-font-blob-e2e-selftest.js" },
-  { key: "selftest:fontblobassets", script: "node automation/query-local-font-blob-real-assets-selftest.js", file: "automation/query-local-font-blob-real-assets-selftest.js" },
-  { key: "selftest:winfontsubsets", script: "node automation/windows-missing-font-subsets-e2e-selftest.js", file: "automation/windows-missing-font-subsets-e2e-selftest.js" },
-  { key: "selftest:macosfontsubsets", script: "node automation/macos-missing-font-subsets-e2e-selftest.js", file: "automation/macos-missing-font-subsets-e2e-selftest.js" },
-  { key: "selftest:fontdeepmeta", script: "node automation/font-deep-metadata-e2e-selftest.js", file: "automation/font-deep-metadata-e2e-selftest.js" },
-  { key: "selftest:fontnametable", script: "node automation/font-asset-name-table-e2e-selftest.js", file: "automation/font-asset-name-table-e2e-selftest.js" },
-  { key: "selftest:fontcjkprobe", script: "node automation/font-cjk-probe-e2e-selftest.js", file: "automation/font-cjk-probe-e2e-selftest.js" },
-  { key: "selftest:fontconsistency", script: "node automation/font-persona-consistency-e2e-selftest.js", file: "automation/font-persona-consistency-e2e-selftest.js" },
-  { key: "selftest:initialpageguard", script: "node automation/initial-page-css-guard-barrier-selftest.js", file: "automation/initial-page-css-guard-barrier-selftest.js" },
-  { key: "selftest:webglarchnorm", script: "node automation/webgl-architecture-normalization-e2e-selftest.js", file: "automation/webgl-architecture-normalization-e2e-selftest.js" },
-  { key: "selftest:webglextprofile", script: "node automation/webgl-extensions-profile-e2e-selftest.js", file: "automation/webgl-extensions-profile-e2e-selftest.js" },
-  { key: "selftest:webglcompat", script: "node automation/webgl-capability-compatibility-e2e-selftest.js", file: "automation/webgl-capability-compatibility-e2e-selftest.js" },
-  { key: "selftest:workerwebgpu", script: "node automation/worker-webgpu-fingerprint-e2e-selftest.js", file: "automation/worker-webgpu-fingerprint-e2e-selftest.js" },
-  { key: "selftest:crosssurface", script: "node automation/fingerprint-cross-surface-audit-selftest.js", file: "automation/fingerprint-cross-surface-audit-selftest.js" },
-  { key: "selftest:canvasaudiorects", script: "node automation/canvas-audio-clientrects-cross-surface-e2e-selftest.js", file: "automation/canvas-audio-clientrects-cross-surface-e2e-selftest.js" },
-  { key: "selftest:reqheaders", script: "node automation/request-headers-e2e-selftest.js", file: "automation/request-headers-e2e-selftest.js" },
-  { key: "selftest:mobilepersona", script: "node automation/mobile-personas-selftest.js", file: "automation/mobile-personas-selftest.js" },
-  { key: "selftest:mobilefp", script: "node automation/mobile-fingerprint-e2e-selftest.js", file: "automation/mobile-fingerprint-e2e-selftest.js" },
-  { key: "selftest:tzcountry", script: "node automation/timezone-country-fallback-selftest.js", file: "automation/timezone-country-fallback-selftest.js" },
-  { key: "selftest:wintzkernel", script: "node automation/windows-timezone-kernel-e2e-selftest.js", file: "automation/windows-timezone-kernel-e2e-selftest.js" },
+  { key: "selftest:webglparams", script: "node automation/selftests/webgl-params-e2e-selftest.js", file: "automation/selftests/webgl-params-e2e-selftest.js" },
+  { key: "selftest:surfacediff", script: "node automation/selftests/surface-integrity-e2e-selftest.js", file: "automation/selftests/surface-integrity-e2e-selftest.js" },
+  { key: "selftest:mediae2e", script: "node automation/selftests/media-devices-e2e-selftest.js", file: "automation/selftests/media-devices-e2e-selftest.js" },
+  { key: "selftest:popupe2e", script: "node automation/selftests/popup-target-injection-e2e-selftest.js", file: "automation/selftests/popup-target-injection-e2e-selftest.js" },
+  { key: "selftest:doclifecycle", script: "node automation/selftests/document-lifecycle-fingerprint-e2e-selftest.js", file: "automation/selftests/document-lifecycle-fingerprint-e2e-selftest.js" },
+  { key: "selftest:workerfp", script: "node automation/selftests/worker-fingerprint-e2e-selftest.js", file: "automation/selftests/worker-fingerprint-e2e-selftest.js" },
+  { key: "selftest:workerscope", script: "node automation/selftests/worker-scope-family-e2e-selftest.js", file: "automation/selftests/worker-scope-family-e2e-selftest.js" },
+  { key: "selftest:bluetooth", script: "node automation/selftests/bluetooth-adapter-e2e-selftest.js", file: "automation/selftests/bluetooth-adapter-e2e-selftest.js" },
+  { key: "selftest:fontpresence", script: "node automation/selftests/font-presence-local-e2e-selftest.js", file: "automation/selftests/font-presence-local-e2e-selftest.js" },
+  { key: "selftest:workerfontpresence", script: "node automation/selftests/worker-font-presence-e2e-selftest.js", file: "automation/selftests/worker-font-presence-e2e-selftest.js" },
+  { key: "selftest:workerfontwiring", script: "node automation/selftests/worker-font-presence-wiring-selftest.js", file: "automation/selftests/worker-font-presence-wiring-selftest.js" },
+  { key: "selftest:cssfontgate", script: "node automation/selftests/css-font-local-gate-e2e-selftest.js", file: "automation/selftests/css-font-local-gate-e2e-selftest.js" },
+  { key: "selftest:cssfontrewrite", script: "node automation/selftests/css-font-response-rewrite-e2e-selftest.js", file: "automation/selftests/css-font-response-rewrite-e2e-selftest.js" },
+  { key: "selftest:cssfontwiring", script: "node automation/selftests/css-font-response-wiring-selftest.js", file: "automation/selftests/css-font-response-wiring-selftest.js" },
+  { key: "selftest:cssfontbypass", script: "node automation/selftests/css-local-font-bypass-e2e-selftest.js", file: "automation/selftests/css-local-font-bypass-e2e-selftest.js" },
+  { key: "selftest:fontblob", script: "node automation/selftests/query-local-font-blob-e2e-selftest.js", file: "automation/selftests/query-local-font-blob-e2e-selftest.js" },
+  { key: "selftest:fontblobassets", script: "node automation/selftests/query-local-font-blob-real-assets-selftest.js", file: "automation/selftests/query-local-font-blob-real-assets-selftest.js" },
+  { key: "selftest:winfontsubsets", script: "node automation/selftests/windows-missing-font-subsets-e2e-selftest.js", file: "automation/selftests/windows-missing-font-subsets-e2e-selftest.js" },
+  { key: "selftest:macosfontsubsets", script: "node automation/selftests/macos-missing-font-subsets-e2e-selftest.js", file: "automation/selftests/macos-missing-font-subsets-e2e-selftest.js" },
+  { key: "selftest:fontdeepmeta", script: "node automation/selftests/font-deep-metadata-e2e-selftest.js", file: "automation/selftests/font-deep-metadata-e2e-selftest.js" },
+  { key: "selftest:fontnametable", script: "node automation/selftests/font-asset-name-table-e2e-selftest.js", file: "automation/selftests/font-asset-name-table-e2e-selftest.js" },
+  { key: "selftest:fontcjkprobe", script: "node automation/selftests/font-cjk-probe-e2e-selftest.js", file: "automation/selftests/font-cjk-probe-e2e-selftest.js" },
+  { key: "selftest:fontconsistency", script: "node automation/selftests/font-persona-consistency-e2e-selftest.js", file: "automation/selftests/font-persona-consistency-e2e-selftest.js" },
+  { key: "selftest:initialpageguard", script: "node automation/selftests/initial-page-css-guard-barrier-selftest.js", file: "automation/selftests/initial-page-css-guard-barrier-selftest.js" },
+  { key: "selftest:webglarchnorm", script: "node automation/selftests/webgl-architecture-normalization-e2e-selftest.js", file: "automation/selftests/webgl-architecture-normalization-e2e-selftest.js" },
+  { key: "selftest:webglextprofile", script: "node automation/selftests/webgl-extensions-profile-e2e-selftest.js", file: "automation/selftests/webgl-extensions-profile-e2e-selftest.js" },
+  { key: "selftest:webglcompat", script: "node automation/selftests/webgl-capability-compatibility-e2e-selftest.js", file: "automation/selftests/webgl-capability-compatibility-e2e-selftest.js" },
+  { key: "selftest:workerwebgpu", script: "node automation/selftests/worker-webgpu-fingerprint-e2e-selftest.js", file: "automation/selftests/worker-webgpu-fingerprint-e2e-selftest.js" },
+  { key: "selftest:crosssurface", script: "node automation/selftests/fingerprint-cross-surface-audit-selftest.js", file: "automation/selftests/fingerprint-cross-surface-audit-selftest.js" },
+  { key: "selftest:canvasaudiorects", script: "node automation/selftests/canvas-audio-clientrects-cross-surface-e2e-selftest.js", file: "automation/selftests/canvas-audio-clientrects-cross-surface-e2e-selftest.js" },
+  { key: "selftest:reqheaders", script: "node automation/selftests/request-headers-e2e-selftest.js", file: "automation/selftests/request-headers-e2e-selftest.js" },
+  { key: "selftest:mobilepersona", script: "node automation/selftests/mobile-personas-selftest.js", file: "automation/selftests/mobile-personas-selftest.js" },
+  { key: "selftest:mobilefp", script: "node automation/selftests/mobile-fingerprint-e2e-selftest.js", file: "automation/selftests/mobile-fingerprint-e2e-selftest.js" },
+  { key: "selftest:tzcountry", script: "node automation/selftests/timezone-country-fallback-selftest.js", file: "automation/selftests/timezone-country-fallback-selftest.js" },
+  { key: "selftest:wintzkernel", script: "node automation/selftests/windows-timezone-kernel-e2e-selftest.js", file: "automation/selftests/windows-timezone-kernel-e2e-selftest.js" },
   { key: "selftest:uiactions", script: "node profile-action-buttons-ui-selftest.js", file: "profile-action-buttons-ui-selftest.js" },
-  { key: "selftest:internalpagesync", script: "node automation/internal-pages-tab-sync-selftest.js", file: "automation/internal-pages-tab-sync-selftest.js" },
-  { key: "selftest:windpi", script: "node automation/windows-dpi-scale-factor-selftest.js", file: "automation/windows-dpi-scale-factor-selftest.js" },
-  { key: "selftest:wincascade", script: "node automation/window-sync-cascade-bounds-selftest.js", file: "automation/window-sync-cascade-bounds-selftest.js" },
+  { key: "selftest:internalpagesync", script: "node automation/selftests/internal-pages-tab-sync-selftest.js", file: "automation/selftests/internal-pages-tab-sync-selftest.js" },
+  { key: "selftest:windpi", script: "node automation/selftests/windows-dpi-scale-factor-selftest.js", file: "automation/selftests/windows-dpi-scale-factor-selftest.js" },
+  { key: "selftest:wincascade", script: "node automation/selftests/window-sync-cascade-bounds-selftest.js", file: "automation/selftests/window-sync-cascade-bounds-selftest.js" },
   { key: "selftest:proxyauth", script: "node proxy-forwarder-selftest.js", file: "proxy-forwarder-selftest.js" },
   { key: "selftest:socks5complete", script: "node socks5-auth-complete-selftest.js", file: "socks5-auth-complete-selftest.js" },
   { key: "selftest:socks5reset", script: "node socks5-reset-selftest.js", file: "socks5-reset-selftest.js" },
   { key: "selftest:socks5retry", script: "node socks5-retry-selftest.js", file: "socks5-retry-selftest.js" },
-  { key: "selftest:releasecoverage", script: "node automation/fingerprint-release-coverage-selftest.js", file: "automation/fingerprint-release-coverage-selftest.js" },
-  { key: "selftest:fpreleasegate", script: "node automation/fingerprint-release-gate-selftest.js", file: "automation/fingerprint-release-gate-selftest.js" },
+  { key: "selftest:releasecoverage", script: "node automation/selftests/fingerprint-release-coverage-selftest.js", file: "automation/selftests/fingerprint-release-coverage-selftest.js" },
+  { key: "selftest:fpreleasegate", script: "node automation/selftests/fingerprint-release-gate-selftest.js", file: "automation/selftests/fingerprint-release-gate-selftest.js" },
 ];
 
 const DIAGNOSTIC_AUDIT_SCRIPTS = [
-  { key: "audit:issueclosure", script: "node automation/issue-closure-audit-selftest.js", file: "automation/issue-closure-audit-selftest.js" },
+  { key: "audit:issueclosure", script: "node automation/selftests/issue-closure-audit-selftest.js", file: "automation/selftests/issue-closure-audit-selftest.js" },
 ];
 
 const EXPLICIT_KNOWN_DEFECTS_AND_AUDIT_EXCEPTIONS = [
   {
     id: "ISSUE-CLOSURE-AUDIT-EXCLUSION",
     name: "Issue Closure Audit (Issue #19, #21, #22)",
-    file: "automation/issue-closure-audit-selftest.js",
+    file: "automation/selftests/issue-closure-audit-selftest.js",
     status: "EXCLUDED_FROM_RELEASE_GATE",
     reasons: [
       "Diagnostic exploratory nature: automation/issue-closure-audit-selftest.js was constructed as an adversarial audit tool to assess whether GitHub issues #19, #21, #22 can be formally closed on GitHub, not as a binary pass/fail release regression suite.",
@@ -674,7 +677,7 @@ check("mutation sensitivity: missing script file on disk fails validation", () =
 
 check("mutation sensitivity: script with syntax error fails runnable check", () => {
   const mutatedDefinitions = [
-    { key: "selftest:fontpresence", script: "node automation/font-presence-local-e2e-selftest.js", file: "automation/font-presence-local-e2e-selftest.js" },
+    { key: "selftest:fontpresence", script: "node automation/selftests/font-presence-local-e2e-selftest.js", file: "automation/selftests/font-presence-local-e2e-selftest.js" },
   ];
   const issues = checkScriptsSyntax(mutatedDefinitions, appRoot, () => {
     throw new Error("SyntaxError: Unexpected token ILLEGAL");

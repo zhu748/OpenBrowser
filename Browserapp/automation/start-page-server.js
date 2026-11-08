@@ -29,6 +29,11 @@ const dnsPromises = dns.promises;
 const DEFAULT_PORT = Number(process.env.OPENBROWSER_START_PAGE_PORT || 50326);
 const PORT_CANDIDATES = [DEFAULT_PORT, 50327, 50328, 50329, 0];
 const BROWSER_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+// Start-page session tokens used to live forever: a bookmarked URL stayed
+// valid for the whole process lifetime because nothing ever expired or
+// rotated an entry (finding 7-3). Bound them with a 24h TTL; the per-profile
+// revocation in registerSession() is the other half of the fix.
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
 /** 访问能力探测目标：连通 + 出口地区 + best-effort 可用性信号 */
 const REACHABILITY_TARGETS = {
@@ -778,8 +783,15 @@ class StartPageServer {
   isStartPageUrl(url) {
     const s = String(url || '').toLowerCase();
     if (!s) return false;
+    // Only the exact generated filenames and this server's own origin qualify.
+    // The previous bare `openbrowser-start-page` / `openbrowser-native`
+    // substrings exist solely as meta-tag names in the page template
+    // (start-page-template.js / the engine native page) and never appear in
+    // generated URLs, so they only ever produced false positives on
+    // third-party URLs — same hazard class as the engine-side fallback that
+    // was already tightened (engine/start-page.js). Kept in lockstep with it.
     if (s.includes('openbrowser-start.html')) return true;
-    if (s.includes('openbrowser-start-page') || s.includes('openbrowser-native')) return true;
+    if (s.includes('openbrowser-start-page.html')) return true;
     if (this.port) {
       return s.startsWith(`http://127.0.0.1:${this.port}/`)
         || s.startsWith(`http://localhost:${this.port}/`);
@@ -908,7 +920,19 @@ class StartPageServer {
       at: Date.now(),
     };
 
-    if (profileId) this.sessions.set(profileId, session);
+    // Rotate-on-register: the previous token for this profile must die with
+    // this launch. Without this, a re-launch left two valid URLs (old + new)
+    // for the same profile alive simultaneously; the old bookmark kept
+    // working for the whole process lifetime (finding 7-3).
+    if (profileId) {
+      const previous = this.sessions.get(profileId);
+      if (previous) {
+        for (const [key, value] of this.sessions) {
+          if (value === previous) this.sessions.delete(key);
+        }
+      }
+      this.sessions.set(profileId, session);
+    }
     // also index by serial for query-only access
     if (serial && serial !== profileId) this.sessions.set('serial:' + serial, session);
     // Bounded retention: every launch creates a session entry, and crashed or
@@ -933,9 +957,36 @@ class StartPageServer {
   getSession(pid) {
     if (!pid) return null;
     const key = String(pid);
-    return this.sessions.get(key)
+    const session = this.sessions.get(key)
       || this.sessions.get('serial:' + key)
       || null;
+    if (session && !this.sessionAlive(session)) {
+      // Expired on lookup: drop every index row pointing at this session so
+      // the TTL is enforced even between the throttled sweeps.
+      for (const [rowKey, value] of this.sessions) {
+        if (value === session) this.sessions.delete(rowKey);
+      }
+      return null;
+    }
+    return session;
+  }
+
+  sessionAlive(session, now = Date.now()) {
+    if (!session) return false;
+    const age = now - Number(session.at || 0);
+    return Number.isFinite(age) && age <= SESSION_TTL_MS;
+  }
+
+  // Lazy sweep for expired sessions. A full scan on every request is wasted
+  // work (the inline lookup check already enforces the TTL), so throttle the
+  // sweep to at most one per 30s.
+  pruneExpiredSessions(now = Date.now()) {
+    if (!this.sessions.size) return;
+    if (now - (this.lastSessionPruneAt || 0) < 30000) return;
+    this.lastSessionPruneAt = now;
+    for (const [key, session] of this.sessions) {
+      if (!this.sessionAlive(session, now)) this.sessions.delete(key);
+    }
   }
 
   updateNetwork(pid, network) {
@@ -1178,6 +1229,9 @@ class StartPageServer {
   }
 
   async #handle(req, res) {
+    // Lazy TTL sweep rides the request path; the inline check in getSession()
+    // already rejects expired sessions between sweeps.
+    this.pruneExpiredSessions();
     const { pathname, query } = this.#parse(req.url || '/');
     const expectedOrigin = `http://127.0.0.1:${this.port}`;
     const origin = String(req.headers.origin || '');

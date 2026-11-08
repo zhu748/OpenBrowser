@@ -130,12 +130,57 @@ const SURFACE_PROBE = `(() => {
     ['webgl', () => document.createElement('canvas').getContext('webgl')],
     ['audioContext', () => new (window.AudioContext || window.webkitAudioContext)()],
     ['audioAnalyser', () => new (window.AudioContext || window.webkitAudioContext)().createAnalyser()],
-    ['rtcPeerConnection', () => new RTCPeerConnection()],
+    // rtcPeerConnection moved out of this strict-equality list: the webrtc fallback layer
+    // intentionally replaces a throwing constructor with a working synthetic instance, so the
+    // stock and injected runs legitimately differ here. Its shape and title-agnosticism are
+    // asserted by the dedicated out.rtc probe below instead.
     ['storage', () => localStorage],
     ['plugins', () => navigator.plugins],
     ['mimeTypes', () => navigator.mimeTypes],
   ]) {
     try { snapInstance(label, getter()); } catch (_) {}
+  }
+  // One-shot random nonce hidden frame: the selftest's own verification context for the
+  // webrtc fallback layer. The frame is created and removed within this probe only, and the
+  // nonce is random per run — no page can pre-guess it, and no production code keys off it.
+  // The former production branch keyed on document.title === 'surface probe' let any page
+  // A/B the fallback layer (and the kernel state behind the native error message) by setting
+  // its own title before constructing a PC; the layer must now behave identically for every
+  // title value, including the retired magic string.
+  try {
+    const pcShape = (pc) => ({
+      own: Object.getOwnPropertyNames(pc).sort(),
+      tag: Object.prototype.toString.call(pc),
+    });
+    const frame = document.createElement('iframe');
+    frame.setAttribute('aria-hidden', 'true');
+    frame.style.display = 'none';
+    document.body.appendChild(frame);
+    const nonce = 'ob-' + Math.random().toString(36).slice(2) + '-' + Date.now().toString(36);
+    const fdoc = frame.contentDocument;
+    const record = (title) => {
+      try { fdoc.title = title; } catch (_) {}
+      try {
+        const pc = new frame.contentWindow.RTCPeerConnection();
+        return { ok: true, shape: pcShape(pc) };
+      } catch (e) {
+        return { ok: false, err: e && e.name };
+      }
+    };
+    out.rtc = {
+      top: (() => {
+        try { return { ok: true, shape: pcShape(new RTCPeerConnection()) }; }
+        catch (e) { return { ok: false, err: e && e.name }; }
+      })(),
+      frame: {
+        magic: record('surface probe'),
+        nonce: record(nonce),
+        empty: record(''),
+      },
+    };
+    frame.remove();
+  } catch (e) {
+    out.rtc = { error: String(e && e.message || e) };
   }
   try {
     const ua = {};
@@ -368,8 +413,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const startLoopbackServer = () => new Promise((res) => {
   const s = http.createServer((rq, rs) => {
+    // The title is inert: nothing in the production layer reads document.title any more.
+    // The former 'surface probe' opt-out keyed on it (a page-controlled switch that let any
+    // site A/B the webrtc fallback layer); the fallback branch is removed and the layer is
+    // verified behaviourally instead — see the one-shot nonce hidden frame in SURFACE_PROBE.
     rs.writeHead(200, { 'Content-Type': 'text/html' });
-    rs.end('<!doctype html><title>surface probe</title><body>probe</body>');
+    rs.end('<!doctype html><title>probe</title><body>probe</body>');
   });
   s.listen(0, '127.0.0.1', () => res(s));
 });
@@ -585,6 +634,40 @@ const check = (name, fn) => {
     }
     assert.deepStrictEqual(drift, [],
       `instances gained or lost own members versus the same build without injection: ${drift.join('; ')}`);
+  });
+
+  check('the webrtc fallback layer is document.title-agnostic and keeps the native instance shape', () => {
+    const a = baseline.rtc || {};
+    const b = injected.rtc || {};
+    assert.ok(!a.error && !b.error, `rtc probe failed: ${a.error || b.error}`);
+    // No title value — the retired magic string, a one-shot random nonce, or empty — may
+    // change the construction outcome. A divergence would mean the layer is A/B-able again.
+    for (const [run, label] of [[a, 'baseline'], [b, 'injected']]) {
+      assert.ok(run.frame && Object.keys(run.frame).length >= 3, `${label}: hidden-frame matrix missing`);
+      const distinct = new Set(Object.values(run.frame).map((v) => JSON.stringify(v)));
+      assert.strictEqual(distinct.size, 1,
+        `${label}: document.title changed the RTC construction outcome — the fallback layer is A/B-able`);
+    }
+    // When both builds construct, the instance shape must match the stock build; when only the
+    // injected run constructs (native constructor threw), the synthetic instance must keep the
+    // native own-property discipline: no own members leaked onto the instance.
+    if (a.top && a.top.ok && b.top && b.top.ok) {
+      assert.deepStrictEqual(b.top.shape, a.top.shape,
+        'the constructed instance shape must match the same build without the injected layer');
+    }
+    if (b.top && b.top.ok) {
+      assert.deepStrictEqual(b.top.shape.own, [],
+        'a synthetic instance must not gain own members a native one does not have');
+      assert.strictEqual(b.top.shape.tag, '[object RTCPeerConnection]',
+        'the synthetic instance must keep the native toString tag');
+    }
+    for (const [run, label] of [[a, 'baseline'], [b, 'injected']]) {
+      for (const [name, value] of Object.entries(run.frame || {})) {
+        if (value && value.ok) {
+          assert.deepStrictEqual(value.shape.own, [], `${label}: frame(${name}) instance must not gain own members`);
+        }
+      }
+    }
   });
 
   check('synthetic browser objects keep the native own-property and prototype shape', () => {

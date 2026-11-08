@@ -14,6 +14,12 @@ function buildWorkerInjectionScript(fp) {
   const stability = fp.stability || fp.canvas?.stability || resolveStabilityPolicy({}, {});
   const json = JSON.stringify({
     platform: fp.platform,
+    // Mirrors the main-world CFG (injection-script.js): os/mobile/mobileDevice feed the worker's
+    // platform guards (isIosPersona / isAndroidPersona / the UAData page-side replacement path).
+    // Missing keys made those guards read undefined and silently skip the patches they gate.
+    os: fp.uaProfile?.os || (fp.mobile ? 'android' : 'windows'),
+    mobile: Boolean(fp.mobile),
+    mobileDevice: fp.mobileDevice || null,
     userAgent: fp.userAgent,
     appVersion: fp.uaProfile?.appVersion || String(fp.userAgent || '').replace(/^Mozilla\//, ''),
     vendor: fp.vendor || fp.uaProfile?.vendor || 'Google Inc.',
@@ -21,7 +27,15 @@ function buildWorkerInjectionScript(fp) {
     languages: fp.languages,
     timezone: fp.timezone || fp.dynamicConfig?.timezone || null,
     hardwareConcurrency: fp.hardwareConcurrency,
-    deviceMemory: Math.min(8, Math.max(1, Number(fp.deviceMemory) || 8)),
+    deviceMemory: (() => {
+      // Pass persona's legal quantised tiers (0.25/0.5) through; snap illegal values to the
+      // nearest step — same policy as the main-world script (injection-script.js).
+      const STEPS = [0.25, 0.5, 1, 2, 4, 8];
+      const raw = Number(fp.deviceMemory);
+      if (!Number.isFinite(raw) || raw <= 0) return 8;
+      if (STEPS.includes(raw)) return Math.min(8, raw);
+      return STEPS.reduce((best, s) => (Math.abs(s - raw) < Math.abs(best - raw) ? s : best), 1);
+    })(),
     webgl: {
       mode: fp.webgl?.mode,
       metaMode: fp.webgl?.metaMode || 'noise',
@@ -54,6 +68,14 @@ function buildWorkerInjectionScript(fp) {
   });
   return `(() => {
   const CFG = ${json};
+
+  // Phone identity flags mirroring the main-world script: declared once at IIFE top level so
+  // every guard below (UAData replacement, StorageManager quota) sees them. Previously each flag
+  // was referenced from a block whose declaring try had already exited, so evaluating the guard
+  // threw a ReferenceError that the outer try swallowed and the gated patch silently never ran.
+  const MOBILE = Boolean(CFG.mobile);
+  const isIosPersona = Boolean(CFG.os === "ios" || CFG.platform === "iPhone" || CFG.mobileDevice?.os === "ios" || (CFG.platform && /iphone|ipad|ipod/i.test(CFG.platform)));
+  const isAndroidPersona = Boolean(CFG.os === "android" || CFG.mobileDevice?.os === "android" || (CFG.platform && /android/i.test(CFG.platform)));
 
   const seedNum = parseInt(String(CFG.seed || '1').slice(0, 8), 16) || 1;
   const noise = (n) => { const x = Math.sin((n + 1) * seedNum) * 10000; return x - Math.floor(x); };
@@ -343,7 +365,10 @@ function buildWorkerInjectionScript(fp) {
           });
         } catch (_) {}
       }
-      const isIosPersona = CFG.os === "ios" || CFG.platform === "iPhone" || CFG.mobileDevice?.os === "ios";
+      // Self-contained judgement: the flags now come from the IIFE-top declarations, so this
+      // read can no longer throw and swallow the whole estimate patch.
+      const isIosPersona = CFG.os === "ios" || CFG.platform === "iPhone" || CFG.mobileDevice?.os === "ios" || (CFG.platform && /iphone|ipad|ipod/i.test(CFG.platform));
+      const isAndroidPersona = CFG.os === "android" || CFG.mobileDevice?.os === "android" || (CFG.platform && /android/i.test(CFG.platform));
       if (isIosPersona) {
         try {
           if (typeof WorkerNavigator !== "undefined" && WorkerNavigator.prototype) {
@@ -560,7 +585,9 @@ function buildWorkerInjectionScript(fp) {
           hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
         }).formatToParts(date);
         const get = (type) => parts.find((p) => p.type === type)?.value || '';
-        const year = /BC/i.test(get('era')) ? 1 - parseInt(get('year'), 10) : numbered;
+        // Self-contained year read: the old branch referenced an undeclared identifier (numbered),
+        // so any Date at the domain edge threw a ReferenceError through to the page here.
+        const year = /BC/i.test(get('era')) ? 1 - parseInt(get('year'), 10) : parseInt(get('year'), 10);
         const month = parseInt(get('month'), 10) - 1;
         const day = parseInt(get('day'), 10);
         const hour = parseInt(get('hour'), 10) % 24;
@@ -1524,6 +1551,8 @@ function buildWorkerInjectionScript(fp) {
     } catch (_) {}
   }
   if (typeof StorageManager !== 'undefined' && StorageManager.prototype && StorageManager.prototype.estimate) {
+    // Quota must match the main-world patch (injection-script.js) across realms: reading the
+    // flags from the IIFE-top declarations keeps worker and page on the same personaQuota.
     try {
       const origEstimate = StorageManager.prototype.estimate;
       const isMob = Boolean(CFG.mobile || isIosPersona || isAndroidPersona);

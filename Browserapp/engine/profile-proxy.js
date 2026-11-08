@@ -123,6 +123,10 @@ module.exports = {
         // Cold cache + a rate-limited probe service: the profile's last known exit is a valid
         // degradation source, otherwise a 429 would look like a dead proxy.
         profile,
+        // Last applied network (kept by applyNetworkToProfile). Used only to
+        // carry legacy verification evidence through degraded results/errors;
+        // it never manufactures a verification.
+        previousResult: this.networkInfo?.get?.(profile.id) || undefined,
         exitIp: profile.exitIp,
         exitCountryCode: profile.exitCountryCode,
         exitTimezone: profile.exitTimezone,
@@ -140,6 +144,11 @@ module.exports = {
       err.code = error.code;
       err.probeUnavailable = error.probeUnavailable === true;
       err.errorClass = error.errorClass || classifyProxyError(error);
+      // Keep verification evidence across the rebuild: the startup gate's
+      // "previously verified, probe failing now" branch reads this field, so
+      // dropping it here made that branch unreachable.
+      if (error.transportVerified !== undefined) err.transportVerified = error.transportVerified === true;
+      if (error.transportVerifiedAt !== undefined) err.transportVerifiedAt = error.transportVerifiedAt || null;
       err.latencyMs = error.latencyMs;
       throw err;
     }

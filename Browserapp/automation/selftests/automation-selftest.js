@@ -374,6 +374,55 @@ async function main() {
   assert.ok(peakRuns >= 2, 'rpa tasks run concurrently across environments');
   ok('rpa-engine parallel multi-environment plan');
 
+  // useExcel path sandbox: only named user folders plus rpa-output are allowed
+  // roots. The home directory itself must NOT be an allowed root — otherwise
+  // isPathInsideRoot(candidate, home) lets ~/.ssh/id_rsa and any other home
+  // path through the sandbox.
+  {
+    const home = os.homedir();
+    const expectOutside = async (p) => {
+      await assert.rejects(
+        () => rpa.resolveSpreadsheetPath(p),
+        (err) => /outside allowed folders/.test(String(err.message)),
+        `useExcel must reject ${p} as outside the sandbox`,
+      );
+    };
+    const expectAllowedButMissing = async (p) => {
+      // A sandboxed path that does not exist fails as not-found, never as
+      // outside — that is how a path inside an allowed root classifies.
+      await assert.rejects(
+        () => rpa.resolveSpreadsheetPath(p),
+        (err) => /useExcel file not found/.test(String(err.message)),
+        `useExcel must classify ${p} as inside the sandbox`,
+      );
+    };
+    await expectOutside(path.join(home, '.ssh', 'id_rsa'));
+    await expectOutside(path.join(home, '.ssh', 'id_ed25519'));
+    await expectOutside(path.join(home, 'secret.txt'));
+    await expectOutside(path.join(home, '.bashrc'));
+    await expectOutside('/etc/passwd');
+    await expectAllowedButMissing(path.join(home, 'Desktop', 'selftest-missing.csv'));
+    await expectAllowedButMissing(path.join(home, 'Documents', 'selftest-missing.json'));
+    await expectAllowedButMissing(path.join(home, 'Downloads', 'selftest-missing.csv'));
+    // rpa-output: an existing file round-trips through both the relative and
+    // the absolute form.
+    const outDir = path.join(process.cwd(), 'rpa-output');
+    const outName = `useexcel-sandbox-${process.pid}-${Date.now()}.csv`;
+    const outFile = path.join(outDir, outName);
+    fs.mkdirSync(outDir, { recursive: true });
+    fs.writeFileSync(outFile, 'a,b\n1,2\n');
+    try {
+      const viaRelative = await rpa.resolveSpreadsheetPath(outName);
+      assert.strictEqual(viaRelative, path.resolve(outFile));
+      const viaAbsolute = await rpa.resolveSpreadsheetPath(outFile);
+      assert.strictEqual(viaAbsolute, path.resolve(outFile));
+    } finally {
+      fs.rmSync(outFile, { force: true });
+      try { fs.rmdirSync(outDir); } catch (_) { /* keep shared dir if other files exist */ }
+    }
+    ok('rpa useExcel path sandbox (bare home root removed)');
+  }
+
   const proxyStore = new ProxyStore(path.join(os.tmpdir(), `openbrowser-automation-selftest-proxies-${process.pid}.json`));
   await proxyStore.load();
   const proxyCountBeforeImport = proxyStore.list().length;

@@ -181,6 +181,24 @@ function deriveAesKey(passphrase, salt) {
   return key;
 }
 
+// cloud-sync.js upgraded its OBE1 scrypt cost (N=2^17) while keeping a
+// legacy-cost fallback for pre-upgrade packages; Node's default (N=16384)
+// equals that legacy cost. OBE1 is a shared wire format between the two
+// modules, so a package written by cloud backup must decrypt here too. The
+// local format keeps the default cost; the upgraded cost is only used on
+// decrypt, after the default derivation fails GCM authentication.
+const CLOUD_SCRYPT_COST = { N: 131072, r: 8, p: 1, maxmem: 256 * 1024 * 1024 };
+
+function deriveAesKeyAtCloudCost(passphrase, salt) {
+  const cacheKey = 'cloud-cost|' + salt.toString('hex') + '|' + passphrase;
+  const cached = __derivedKeyCache.get(cacheKey);
+  if (cached) return cached;
+  const key = crypto.scryptSync(passphrase, salt, KEY_LENGTH, CLOUD_SCRYPT_COST);
+  if (__derivedKeyCache.size >= DERIVED_KEY_CACHE_MAX) __derivedKeyCache.clear();
+  __derivedKeyCache.set(cacheKey, key);
+  return key;
+}
+
 // Reuse one salt per passphrase for encryption so the KDF cost is paid once
 // per process. AES-GCM only requires IV uniqueness per key; the IV stays random.
 const __encryptSaltCache = new Map();
@@ -231,9 +249,20 @@ function decryptAesGcm(buf, passphraseOrKey) {
   const enc = buf.subarray(HEADER_LENGTH + SALT_LENGTH + IV_LENGTH + TAG_LENGTH);
 
   const key = deriveAesKey(passphrase, salt);
-  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
-  decipher.setAuthTag(tag);
-  return Buffer.concat([decipher.update(enc), decipher.final()]);
+  const openWith = (k) => {
+    const decipher = crypto.createDecipheriv('aes-256-gcm', k, iv);
+    decipher.setAuthTag(tag);
+    return Buffer.concat([decipher.update(enc), decipher.final()]);
+  };
+  try {
+    return openWith(key);
+  } catch (error) {
+    try {
+      return openWith(deriveAesKeyAtCloudCost(passphrase, salt));
+    } catch (_) {
+      throw error;
+    }
+  }
 }
 
 /**

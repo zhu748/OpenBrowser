@@ -360,7 +360,10 @@ function renderProxies() {
   }
   table.append(fragment);
   if (empty) empty.hidden = list.length !== 0;
-  if (countEl) countEl.textContent = t('rpa.store.count', { n: proxyLibrary.length }).replace('templates', tx('条')) + (q ? ` · ${t('profiles.search').split('/')[0].trim()} ${list.length}` : '');
+  if (countEl) {
+    const filtered = q ? ` · ${t('proxies.countFiltered', { n: list.length })}` : '';
+    countEl.textContent = t('proxies.count', { n: proxyLibrary.length }) + filtered;
+  }
   const selectAll = $('#proxy-select-all');
   if (selectAll) {
     const ids = list.map((i) => i.id);

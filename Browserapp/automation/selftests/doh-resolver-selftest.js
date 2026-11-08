@@ -14,6 +14,7 @@ const {
   TtlCache,
   base64UrlEncode,
   createDohLookup,
+  TYPE_BY_NAME,
 } = require('../doh-resolver');
 
 const results = [];
@@ -338,7 +339,13 @@ function stubFetch(responseBuf, { status = 200, onUrl } = {}) {
       resolve4: (hostname) => (hostname === 'known.test'
         ? Promise.resolve(['203.0.113.7', '203.0.113.8'])
         : Promise.reject(Object.assign(new Error('no record'), { code: 'ENODATA' }))),
-      resolve6: () => Promise.resolve(['2001:db8::1']),
+      // Mirror resolve4's miss semantics: a name that has no record must miss
+      // on AAAA too, otherwise the createDohLookup v6 fallback would answer an
+      // unknown host from this stub and the system-resolver path would never
+      // be exercised. known.test keeps an AAAA answer so the family tests pass.
+      resolve6: (hostname) => (hostname === 'known.test'
+        ? Promise.resolve(['2001:db8::1'])
+        : Promise.reject(Object.assign(new Error('no record'), { code: 'ENODATA' }))),
     };
   }
 
@@ -419,6 +426,106 @@ function stubFetch(responseBuf, { status = 200, onUrl } = {}) {
   await checkAsync('a callback that rejects the contract is reported clearly', async () => {
     const lookup = createDohLookup(fakeResolver(), { systemLookup: () => {} });
     assert.throws(() => lookup('known.test', {}), /callback required/);
+  });
+
+  await checkAsync('an IPv6-only host is answered via the DoH AAAA fallback before the system resolver', async () => {
+    // resolve4 ENODATA on an IPv6-only host: the scoped lookup must try AAAA
+    // through DoH first. A hit there answers the request without consulting
+    // the system resolver (plaintext ISP DNS), and the family resolves to 6.
+    const resolver = {
+      resolve4: () => Promise.reject(Object.assign(new Error('no record'), { code: 'ENODATA' })),
+      resolve6: () => Promise.resolve(['2001:db8::53']),
+    };
+    let systemAsked = false;
+    const lookup = createDohLookup(resolver, { systemLookup: () => { systemAsked = true; } });
+    const result = await callLookup(lookup, 'v6only.test', {});
+    assert.strictEqual(result.address, '2001:db8::53');
+    assert.strictEqual(result.family, 6);
+    assert.strictEqual(systemAsked, false, 'a v6-only host must not leak to the system resolver');
+  });
+
+  await checkAsync('an empty AAAA fallback is not treated as a hit', async () => {
+    // resolve6 resolves to an empty list: that is still a miss, so the
+    // original ENODATA must surface (and reach the system resolver), never a
+    // fabricated empty answer.
+    const resolver = {
+      resolve4: () => Promise.reject(Object.assign(new Error('no record'), { code: 'ENODATA' })),
+      resolve6: () => Promise.resolve([]),
+    };
+    let asked = null;
+    const systemLookup = (hostname, options, callback) => {
+      asked = hostname;
+      callback(null, '198.51.100.10', 4);
+    };
+    const lookup = createDohLookup(resolver, { systemLookup });
+    const result = await callLookup(lookup, 'v6empty.test', {});
+    assert.strictEqual(asked, 'v6empty.test');
+    assert.strictEqual(result.address, '198.51.100.10');
+  });
+
+  await checkAsync('concurrent first queries for the same host and type share one in-flight request', async () => {
+    const buf = buildResponse({
+      questions: [{ name: 'merge.test', type: 1 }],
+      answers: [{ owner: null, type: 1, ttl: 60, rdata: Buffer.from([198, 51, 100, 77]) }],
+    });
+    let calls = 0;
+    const resolver = new DohResolver({
+      endpoints: ['https://doh.test/dns-query'],
+      fetchImpl: stubFetch(buf, { onUrl: () => { calls += 1; } }),
+    });
+    const both = await Promise.all([resolver.resolve4('merge.test'), resolver.resolve4('merge.test')]);
+    assert.deepStrictEqual(both[0], ['198.51.100.77']);
+    assert.deepStrictEqual(both[1], ['198.51.100.77']);
+    assert.strictEqual(calls, 1, 'two concurrent first queries must dial the endpoint once');
+    assert.strictEqual(resolver._inFlight?.size ?? 0, 0, 'the in-flight entry is released after settling');
+  });
+
+  await checkAsync('in-flight merging never crosses hostname or type boundaries', async () => {
+    // Route by the decoded wire query: each (hostname, type) pair gets its own
+    // response, so the test can prove merging is keyed per hostname AND type.
+    const router = async (url) => {
+      const token = url.split('dns=')[1];
+      // Re-decode the query to learn which name/type is being asked.
+      const packet = Buffer.from(token, 'base64');
+      const q = decodeResponse(packet);
+      const name = q.questions[0].name;
+      // decodeResponse normalises qtype to the name form ('A', 'TXT', ...);
+      // buildResponse wants the numeric form back.
+      const type = TYPE_BY_NAME[q.questions[0].type] || q.questions[0].type;
+      const rdataByName = {
+        'a.merge.test': Buffer.from([198, 51, 100, 1]),
+        'b.merge.test': Buffer.from([198, 51, 100, 2]),
+      };
+      const rdata = type === 1
+        ? rdataByName[name]
+        : Buffer.concat([Buffer.from([4]), Buffer.from('spfm', 'utf8')]);
+      const buf = buildResponse({
+        questions: [{ name, type }],
+        answers: [{ owner: null, type, ttl: 60, rdata }],
+      });
+      return {
+        status: 200,
+        arrayBuffer: async () => buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength),
+      };
+    };
+    let calls = 0;
+    const counting = async (url) => {
+      calls += 1;
+      return router(url);
+    };
+    const resolver = new DohResolver({
+      endpoints: ['https://doh.test/dns-query'],
+      fetchImpl: counting,
+    });
+    const [a, b, txt] = await Promise.all([
+      resolver.resolve4('a.merge.test'),
+      resolver.resolve4('b.merge.test'),
+      resolver.resolveTxt('a.merge.test'),
+    ]);
+    assert.deepStrictEqual(a, ['198.51.100.1']);
+    assert.deepStrictEqual(b, ['198.51.100.2']);
+    assert.deepStrictEqual(txt, [['spfm']]);
+    assert.strictEqual(calls, 3, 'each distinct hostname/type pair dials separately');
   });
 
   // ---- report ----

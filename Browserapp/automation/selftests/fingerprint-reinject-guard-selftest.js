@@ -25,7 +25,7 @@ const ok = (name, cond) => { assert.ok(cond, name); console.log('  PASS  ' + nam
 
   // Swap the injector for a spy before the engine captures its imports, so counting "did the
   // runtime decide to inject" never needs a live browser.
-  const fpPath = require.resolve('./fingerprint');
+  const fpPath = require.resolve('../fingerprint');
   const realFingerprint = require(fpPath);
   const injectCalls = [];
   require.cache[fpPath] = {

@@ -860,7 +860,17 @@ module.exports = {
       ? (this.profiles.get(profileOrId) || this.running.get(profileOrId)?.profile)
       : profileOrId;
     if (!profile) throw new Error('profile not found');
-    return buildFingerprint(profile);
+    const fingerprint = buildFingerprint(profile);
+    // Firefox has no CDP, so nothing can inject or verify this expectation.
+    // Mark it intent-only at the source (parity with publicRunning's
+    // capabilities) so downstream consumers cannot mistake it for a
+    // delivery promise. Keep the shape: existing readers of the fields still
+    // work, they just see the extra marker.
+    if (this.profilePrefersFirefox?.(profile)) {
+      fingerprint.delivery = 'intent-only';
+      fingerprint.undeliverable = 'Firefox 无 CDP：该指纹期望无法注入或验证，仅为配置意图。';
+    }
+    return fingerprint;
   },
 
 fingerprintConfigHash,

@@ -76,10 +76,17 @@ module.exports = {
   isStartPageUrl(url) {
     if (this.startPageServer?.isStartPageUrl?.(url)) return true;
     const s = String(url || '').toLowerCase();
-    // 仅识别 OpenBrowser 原生启动页端口 / 本地文件回退，不绑定其它软件端口
+    // Fallback while the session server is not up (unit harnesses, headless
+    // selftests, first paint before ensureStartPage). Only exact page filenames
+    // and the start-server port range qualify: the previous loose
+    // `openbrowser-start` / `openbrowser-native` substring matches let
+    // third-party URLs containing those words be treated as internal start
+    // pages (audited as a reload/mirror hazard). The bare
+    // `openbrowser-start-page` marker was tightened to the full filename for
+    // the same reason: it is a meta-tag name in the page template, never a
+    // generated URL, so `evil.test/openbrowser-start-page-scam` must not match.
     return s.includes('openbrowser-start.html')
-      || s.includes('openbrowser-start')
-      || s.includes('openbrowser-native')
+      || s.includes('openbrowser-start-page.html')
       || /https?:\/\/127\.0\.0\.1:5032[6-9]\/?/.test(s);
   },
   envWindowTitle(profile) {

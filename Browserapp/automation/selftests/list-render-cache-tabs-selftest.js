@@ -104,9 +104,16 @@ test('B5: Cache invalidation points cover all data mutations', () => {
   // Groups
   assert.ok(rendererSource.includes("invalidateViewCache(['groups', 'profiles'])"),
     'group ops invalidate groups & profiles views');
-  // Proxies
-  assert.ok(rendererSource.includes("invalidateViewCache(['proxies', 'profiles'])"),
-    'proxy ops invalidate proxies & profiles views');
+  // Proxies — mutation call sites moved to ui/ui-proxy-wiring.js (renderProxies
+  // itself lives in ui/ui-proxy.js). Assert against the real call sites instead
+  // of a renderer.js literal that no longer exists there.
+  const proxyWiringSource = fs.readFileSync(path.join(root, 'ui', 'ui-proxy-wiring.js'), 'utf8');
+  const proxyMutationSites = proxyWiringSource.match(/window\.ops\.proxy(Create|Update|Delete)\(/g) || [];
+  const proxyInvalidations = proxyWiringSource.match(/invalidateViewCache\(\['proxies', 'profiles'\]\)/g) || [];
+  assert.ok(proxyMutationSites.length >= 3,
+    'proxy mutation ops are wired (create/update/delete), got ' + proxyMutationSites.length);
+  assert.ok(proxyInvalidations.length >= 3,
+    'every proxy mutation path (dialog save / row delete / batch delete) invalidates proxies & profiles views, got ' + proxyInvalidations.length);
   // Extensions
   assert.ok(rendererSource.includes("invalidateViewCache(['extensions', 'profiles', 'sync'])"),
     'extension ops invalidate extensions, profiles & sync views');

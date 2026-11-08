@@ -593,7 +593,11 @@ async function installRpaTemplate(id) {
   showRpaPanel('flows');
   await refreshRpaPage();
   loadRpaPlanToEditor(plan);
-  toast(`${t('rpa.store.createFlow')}：${plan.plan_name || plan.id}（${t('rpa.store.steps', { n: plan.steps?.length || 0 })}）`);
+  // Template = code (finding 7-5): installing a template grants it the page's
+  // own privileges. Disclose the sensitive step census on every install.
+  const sensitiveSummary = String(result?.sensitive_summary || '').trim();
+  const sensitiveToast = sensitiveSummary ? ` · ${tx('含特权步骤')}：${sensitiveSummary}` : '';
+  toast(`${t('rpa.store.createFlow')}：${plan.plan_name || plan.id}（${t('rpa.store.steps', { n: plan.steps?.length || 0 })}）${sensitiveToast}`);
   const rpaView = document.getElementById('view-rpa');
   rpaApplyLocalUi(rpaView);
   return plan;

@@ -182,9 +182,9 @@ if (!isMutateMode) {
     canvas: "noise", webgl: "noise", privacy: {},
   });
   ok("an iOS profile becomes a mobile phone identity", mobileIos.mobile === true && Boolean(mobileIos.mobileDevice));
-  ok("iOS built platform is iPhone and renderer is Apple GPU", mobileIos.platform === "iPhone"
-    && mobileIos.webgl.renderer === "Apple GPU"
-    && mobileIos.webgl.vendor === "Apple Inc.");
+  ok("iOS built platform is iPhone with ANGLE Apple GPU identity", mobileIos.platform === "iPhone"
+    && mobileIos.webgl.renderer === "ANGLE (Apple Inc., Apple GPU, OpenGL ES 3.2)"
+    && mobileIos.webgl.vendor === "Google Inc. (Apple Inc.)");
   ok("iOS built profile exposes touch points and passes consistency", mobileIos.maxTouchPoints === 5
     && mobileIos.touch === true
     && mobileIos.consistency.ok === true);

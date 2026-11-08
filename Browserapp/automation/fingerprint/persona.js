@@ -224,11 +224,28 @@ function buildFingerprint(profile = {}) {
     if (!hasMemoryOverride) memory = mobileDevice.deviceMemory;
     colorDepth = isHdrRequested ? (mobileDevice.colorDepth || 30) : 24;
     devicePixelRatio = mobileDevice.dpr;
+    // Mobile WebGL identity is synthesised through the same ANGLE template the desktop pool
+    // uses (fingerprint-generators.js android table): `ANGLE (<vendor>, <renderer>, OpenGL ES 3.2)`.
+    // The old path copied the pool's raw gpuVendor/gpuRenderer ("Qualcomm"/"Adreno 540"), which
+    // a one-line regex flags as synthetic; gpu.architecture was an empty string, pushing
+    // webglParameterOverrides to its most conservative fallback.
+    const mobileAngleRenderer = (dev) => `ANGLE (${dev.gpu.vendor}, ${dev.gpu.renderer}, OpenGL ES 3.2)`;
+    // Architecture from the repo's existing mobile family mapping only (see normalizeGpuArchitecture
+    // in fingerprint-generators.js): qualcomm->adreno-700, arm->valhall, samsung->rdna-2,
+    // imagination->rogue. No invented values.
+    const mobileGpuArch = (family) => {
+      const f = String(family || '').toLowerCase();
+      if (f === 'qualcomm') return 'adreno-700';
+      if (f === 'arm') return 'valhall';
+      if (f === 'samsung') return 'rdna-2';
+      if (f === 'imagination') return 'rogue';
+      return '';
+    };
     webglPreset = {
       ...webglPreset,
-      vendor: mobileDevice.gpu.vendor,
-      renderer: mobileDevice.gpu.renderer,
-      gpu: mobileDevice.gpu.family ? { vendor: mobileDevice.gpu.family, architecture: '' } : webglPreset.gpu,
+      vendor: `Google Inc. (${mobileDevice.gpu.vendor})`,
+      renderer: mobileAngleRenderer(mobileDevice),
+      gpu: mobileDevice.gpu.family ? { vendor: mobileDevice.gpu.family, architecture: mobileGpuArch(mobileDevice.gpu.family) } : webglPreset.gpu,
     };
     // A pinned UA still wins, but the rest of the phone identity follows the sampled device.
     if (!uaOverride) uaProfile = mobileDevice.uaProfile;
@@ -279,6 +296,11 @@ function buildFingerprint(profile = {}) {
       countryCode: profile.exitCountryCode,
     }) || languagePrimary;
   } catch (_) {}
+  // Single languages chain: privacy.languages first, then privacy.fingerprint.languages, then
+  // profile.languages, then the locale-derived default. navigator.languages, Emulation locale and
+  // Accept-Language all read this one resolution, so the three surfaces cannot disagree. (The UI
+  // has a single language intent: editor-language-mode + editor-language fallback; neither
+  // privacy.languages nor privacy.fingerprint.languages has a UI entry.)
   const candidateLangs = (Array.isArray(privacy.languages) && privacy.languages.length)
     ? privacy.languages
     : (Array.isArray(fpIn.languages) && fpIn.languages.length)
@@ -336,7 +358,7 @@ function buildFingerprint(profile = {}) {
       : createBatteryFromSeed(stableIdentity + ':battery:' + seed.toString('hex').slice(0, 8), fpIn.battery || privacy.batterySnapshot || null));
   const speechVoices = createSpeechVoicesFromSeed(
     stableIdentity + ':speech:' + seed.toString('hex').slice(0, 8),
-    Array.isArray(fpIn.languages) ? fpIn.languages : languages,
+    languages, // single resolved chain: same source as navigator.languages / Accept-Language
     speechMode,
     // Narrow the table to the claimed OS for every profile, not just persona ones. Mixing
     // families is not a cosmetic difference: a macOS answer containing "Microsoft David - English
@@ -396,9 +418,9 @@ function buildFingerprint(profile = {}) {
   const rLow = String(webglRenderer || '').toLowerCase();
   let resolvedVendor = fpIn.webglVendor || webglPreset.vendor;
   if (!fpIn.webglVendor && mobileDevice) {
-    // Adreno / Mali / PowerVR renderers carry no desktop keyword, so the pool vendor is the only
-    // truthful answer here.
-    resolvedVendor = mobileDevice.gpu.vendor;
+    // Adreno / Mali / PowerVR renderers carry no desktop keyword; the ANGLE-synthesised pool
+    // vendor (Google Inc. (<chip vendor>)) is the only truthful answer, same as the ANGLE table.
+    resolvedVendor = `Google Inc. (${mobileDevice.gpu.vendor})`;
   } else if (!fpIn.webglVendor && webglRenderer) {
     if (rLow.includes('nvidia') || rLow.includes('geforce')) resolvedVendor = 'Google Inc. (NVIDIA)';
     else if (rLow.includes('intel') || rLow.includes('arc') || rLow.includes('iris') || rLow.includes('uhd')) resolvedVendor = 'Google Inc. (Intel)';
@@ -483,7 +505,9 @@ function buildFingerprint(profile = {}) {
     uaProfile,
     clientHints: uaProfile.clientHints,
     userAgentMetadata: uaProfile.metadata,
-    languages: Array.isArray(fpIn.languages) ? fpIn.languages : languages,
+    // Single chain: fpIn.languages only participates upstream in candidateLangs, so all three
+    // surfaces (JS navigator.languages, Emulation locale, Accept-Language) read one value.
+    languages,
     hardwareConcurrency: useRealCores ? null : (Number(fpIn.hardwareConcurrency) > 0 ? Number(fpIn.hardwareConcurrency) : cores),
     deviceMemory: useRealMemory ? null : (Number(fpIn.deviceMemory) > 0 ? Number(fpIn.deviceMemory) : memory),
     screen: {
@@ -585,7 +609,7 @@ function buildFingerprint(profile = {}) {
       hardwareConcurrency: useRealCores ? null : (Number(fpIn.hardwareConcurrency) > 0 ? Number(fpIn.hardwareConcurrency) : cores),
       deviceMemory: useRealMemory ? null : (Number(fpIn.deviceMemory) > 0 ? Number(fpIn.deviceMemory) : memory),
       platform: fpIn.platform || uaProfile.platform || OS_PRESETS[uaOs].platformNav,
-      langs: Array.isArray(fpIn.languages) ? fpIn.languages : languages,
+      langs: languages,
       canvasMark: Number.isFinite(Number(fpIn.canvasId)) ? Number(fpIn.canvasId) : canvasId,
       webglMark: Number.isFinite(Number(fpIn.webglId)) ? Number(fpIn.webglId) : webglId,
       audioFp: Number.isFinite(Number(fpIn.audioId)) ? Number(fpIn.audioId) : audioId,

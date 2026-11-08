@@ -591,33 +591,58 @@ class ProxyStore {
     });
   }
 
-  async markCheck(id, result = {}) {
-    return this._commitMutation((draft) => {
-      const item = draft.items.find((entry) => entry.id === id);
-      if (!item) throw new Error('代理不存在: ' + id);
-      item.lastCheck = new Date().toISOString();
-      item.lastIp = String(result.ip || '');
-      item.lastCountryCode = String(result.countryCode || result.country_code || '');
-      item.lastLatencyMs = Number.isFinite(Number(result.latencyMs)) ? Number(result.latencyMs) : null;
-      item.lastNetworkType = String(result.networkType || '');
-      item.lastErrorClass = result.errorClass ? String(result.errorClass) : '';
-      item.lastCheckOk = !result.errorClass && Boolean(result.ip);
-      item.update_time = item.lastCheck;
-      return item;
+  /**
+   * Coalesce check writes: multiple markCheck/markCheckError calls landing in
+   * the same event-loop turn are applied as ONE mutation — one clone, one
+   * normalize pass, one .bak write, one main-file write. The external API
+   * (names, arguments, resolved record) is unchanged; each caller still gets
+   * its own record back (or its own rejection for a missing id).
+   */
+  _appendCheckEntry(entry) {
+    this._checkEntries ||= [];
+    this._checkFlush ||= setImmediate(() => {
+      this._checkFlush = null;
+      const entries = this._checkEntries;
+      this._checkEntries = [];
+      this._commitMutation((draft) => entries.map((pending) => {
+        const item = draft.items.find((candidate) => candidate.id === pending.id);
+        if (!item) return { missing: pending.id };
+        item.lastCheck = new Date().toISOString();
+        if (pending.kind === 'error') {
+          item.lastLatencyMs = Number.isFinite(Number(pending.error?.latencyMs)) ? Number(pending.error.latencyMs) : null;
+          item.lastErrorClass = String(pending.error?.errorClass || pending.error?.code || 'unknown');
+          item.lastCheckOk = false;
+        } else {
+          item.lastIp = String(pending.result?.ip || '');
+          item.lastCountryCode = String(pending.result?.countryCode || pending.result?.country_code || '');
+          item.lastLatencyMs = Number.isFinite(Number(pending.result?.latencyMs)) ? Number(pending.result.latencyMs) : null;
+          item.lastNetworkType = String(pending.result?.networkType || '');
+          item.lastErrorClass = pending.result?.errorClass ? String(pending.result.errorClass) : '';
+          item.lastCheckOk = !pending.result?.errorClass && Boolean(pending.result?.ip);
+        }
+        item.update_time = item.lastCheck;
+        return { item };
+      })).then((outcomes) => {
+        entries.forEach((pending, index) => {
+          const outcome = outcomes[index];
+          if (outcome.missing) pending.reject(new Error('代理不存在: ' + outcome.missing));
+          else pending.resolve(outcome.item);
+        });
+      }, (failure) => {
+        for (const pending of entries) pending.reject(failure);
+      });
+    });
+    return new Promise((resolve, reject) => {
+      this._checkEntries.push({ ...entry, resolve, reject });
     });
   }
 
-  async markCheckError(id, error = {}) {
-    return this._commitMutation((draft) => {
-      const item = draft.items.find((entry) => entry.id === id);
-      if (!item) throw new Error('代理不存在: ' + id);
-      item.lastCheck = new Date().toISOString();
-      item.lastLatencyMs = Number.isFinite(Number(error.latencyMs)) ? Number(error.latencyMs) : null;
-      item.lastErrorClass = String(error.errorClass || error.code || 'unknown');
-      item.lastCheckOk = false;
-      item.update_time = item.lastCheck;
-      return item;
-    });
+  markCheck(id, result = {}) {
+    return this._appendCheckEntry({ kind: 'check', id, result });
+  }
+
+  markCheckError(id, error = {}) {
+    return this._appendCheckEntry({ kind: 'error', id, error });
   }
 
   toChromeString(id) {

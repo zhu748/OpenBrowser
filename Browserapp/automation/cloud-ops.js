@@ -16,6 +16,35 @@ const { assertProfileId, sanitizeIds } = require('./isolation');
 
 let deps = null;
 
+/**
+ * Cloud sync operations are mutually exclusive: a backup pack being built
+ * while a restore lands its merge results would upload the pre-restore
+ * state and silently roll the restore back, and both tails overwrite
+ * saveSettings wholesale so the last writer clobbers the other's
+ * lastSyncAt. Every entry point below funnels through this single
+ * in-flight chain, serializing backup / restore / profile push / pull.
+ */
+let chain = Promise.resolve();
+
+function enqueueCloudOp(run) {
+  const next = chain.then(run, run);
+  chain = next.catch(() => {});
+  return next;
+}
+
+/**
+ * Merge a new cloud block into the settings being saved without clobbering
+ * unrelated keys that another concurrent flow may have written between the
+ * caller's read and write. Fields explicitly carried by `cloud` win; keys
+ * absent from it keep the current value (so a writer that only computed
+ * lastSyncAt does not wipe provider credentials, and vice versa).
+ */
+function mergeCloudIntoSettings(currentSettings, cloud) {
+  if (!cloud || typeof cloud !== 'object') return currentSettings;
+  const existing = (currentSettings && typeof currentSettings.cloud === 'object' && currentSettings.cloud) || {};
+  return { ...currentSettings, cloud: { ...existing, ...cloud } };
+}
+
 function initCloudOps({ getEngine, getAutomation, emit, getSettings, saveSettings }) {
   deps = {
     getEngine: getEngine || (() => null),
@@ -45,7 +74,38 @@ function providerConfigFromCloud(cloud) {
   return cloud.local || {};
 }
 
+/**
+ * Star-mask every credential-shaped field in a cloud config before it is
+ * serialized into a backup package. Nested provider blocks are walked; a
+ * masked value is always the fixed '***' so the round-trip never leaves a
+ * usable secret in the pack. Fields that merely name things (url, dir,
+ * owner, repo, branch, provider, enabled, restoreMode…) pass through.
+ */
+const CLOUD_SECRET_KEYS = /passphrase|password|pass|token|secret|apikey|credential|cookie/i;
+
+function maskCloudNode(node, out) {
+  if (!node || typeof node !== 'object') return out;
+  for (const [key, value] of Object.entries(node)) {
+    if (value && typeof value === 'object') {
+      out[key] = Array.isArray(value) ? value : maskCloudNode(value, {});
+      continue;
+    }
+    out[key] = (typeof value === 'string' && value && CLOUD_SECRET_KEYS.test(key)) ? '***' : value;
+  }
+  return out;
+}
+
+function sanitizeCloudForBackup(cloud) {
+  const masked = maskCloudNode({ ...cloud }, {});
+  masked.passphrase = cloud?.passphrase ? '***' : '';
+  return masked;
+}
+
 async function runCloudBackup(payload = {}) {
+  return enqueueCloudOp(() => runCloudBackupExclusive(payload));
+}
+
+async function runCloudBackupExclusive(payload = {}) {
   const { getEngine, getAutomation, emit, getSettings, saveSettings } = requireDeps();
   const engine = getEngine();
   const automation = getAutomation();
@@ -62,7 +122,12 @@ async function runCloudBackup(payload = {}) {
     profiles: allProfiles,
     groups,
     proxies,
-    settings: { cloud: { ...cloud, passphrase: cloud.passphrase ? '***' : '' } },
+    // Only the non-secret cloud sync state (provider choice, dir, lastSyncAt…)
+    // is packed; the passphrase is star-masked like before, and the rest of
+    // the credentials (webdav.username/password, github.token, bridge
+    // passwords) never ride along in plaintext — an encrypted package keeps
+    // working, an unencrypted one is rejected by the plaintext gate.
+    settings: { cloud: sanitizeCloudForBackup(cloud) },
     profileDataRoot: engine?.getProfileDataRoot?.() || localSettingsCache.profileDataRoot,
     includeBrowserData: cloud.includeBrowserData !== false,
     passphrase: cloud.passphrase || '',
@@ -72,7 +137,7 @@ async function runCloudBackup(payload = {}) {
   const result = await cloudSync.upload(cloud.provider, providerConfigFromCloud(cloud), buffer, remoteName);
   cloud.lastSyncAt = new Date().toISOString();
   cloud.lastError = '';
-  await saveSettings({ ...getSettings(), cloud });
+  await saveSettings(mergeCloudIntoSettings(getSettings(), cloud));
   emit({ type: 'cloud-sync', action: 'backup', ...meta, ...result });
   return { success: true, meta, result, cloud };
 }
@@ -141,6 +206,10 @@ async function applyBackupBody(body, { mode = 'merge', localProfiles = null, loc
 }
 
 async function runCloudRestore(payload = {}) {
+  return enqueueCloudOp(() => runCloudRestoreExclusive(payload));
+}
+
+async function runCloudRestoreExclusive(payload = {}) {
   const { emit, getSettings, saveSettings } = requireDeps();
   const localSettingsCache = getSettings();
   const cloud = { ...localSettingsCache.cloud, ...(payload.cloud || {}) };
@@ -164,7 +233,7 @@ async function runCloudRestore(payload = {}) {
   cloud.lastSyncAt = new Date().toISOString();
   cloud.lastError = '';
   cloud.restoreMode = mode;
-  await saveSettings({ ...getSettings(), cloud, uiGroups: applied.groups });
+  await saveSettings({ ...mergeCloudIntoSettings(getSettings(), cloud), uiGroups: applied.groups });
   emit({
     type: 'cloud-sync',
     action: 'restore',
@@ -178,6 +247,10 @@ async function runCloudRestore(payload = {}) {
 
 /** Push one or more environments as individual remote packs + refresh full pack optional */
 async function runCloudProfilePush(payload = {}) {
+  return enqueueCloudOp(() => runCloudProfilePushExclusive(payload));
+}
+
+async function runCloudProfilePushExclusive(payload = {}) {
   const { getEngine, emit, getSettings, saveSettings } = requireDeps();
   const engine = getEngine();
   const localSettingsCache = getSettings();
@@ -207,12 +280,16 @@ async function runCloudProfilePush(payload = {}) {
   }
   cloud.lastSyncAt = new Date().toISOString();
   cloud.lastError = '';
-  await saveSettings({ ...getSettings(), cloud });
+  await saveSettings(mergeCloudIntoSettings(getSettings(), cloud));
   emit({ type: 'cloud-sync', action: 'profile-push', count: results.length, ids });
   return { success: true, results, cloud };
 }
 
 async function runCloudProfilePull(payload = {}) {
+  return enqueueCloudOp(() => runCloudProfilePullExclusive(payload));
+}
+
+async function runCloudProfilePullExclusive(payload = {}) {
   const { getEngine, emit, getSettings, saveSettings } = requireDeps();
   const engine = getEngine();
   const localSettingsCache = getSettings();
@@ -240,7 +317,7 @@ async function runCloudProfilePull(payload = {}) {
   restoredFiles = applied.restoredFiles;
   cloud.lastSyncAt = new Date().toISOString();
   cloud.lastError = '';
-  await saveSettings({ ...getSettings(), cloud, uiGroups: applied.groups });
+  await saveSettings({ ...mergeCloudIntoSettings(getSettings(), cloud), uiGroups: applied.groups });
   emit({ type: 'cloud-sync', action: 'profile-pull', count: ids.length, mode, mergeStats: applied.mergeStats });
   return { success: true, mode, ...applied, per, restoredFiles, cloud };
 }
@@ -248,6 +325,8 @@ async function runCloudProfilePull(payload = {}) {
 module.exports = {
   initCloudOps,
   providerConfigFromCloud,
+  sanitizeCloudForBackup,
+  mergeCloudIntoSettings,
   runCloudBackup,
   applyBackupBody,
   runCloudRestore,

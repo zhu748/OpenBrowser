@@ -400,9 +400,12 @@ async function check(name, fn) {
     assert.strictEqual(r5.blocked, false);
   });
 
-  await check("5.3: engine.js 源码完整性 - 启动屏障确保交付失败时 emit 事件且不导航到目标站点", async () => {
+  await check("5.3: 启动屏障源码完整性 - 交付失败时 emit 事件且不导航到目标站点", async () => {
     const fs = require("fs");
-    const engineCode = fs.readFileSync(path.join(__dirname, "../engine.js"), "utf8");
+    // The barrier lives in the engine/ split module since the engine was
+    // decomposed; verifyStartupFingerprintDelivery and the barrier tokens are
+    // implemented there, not in the legacy engine.js shell.
+    const engineCode = fs.readFileSync(path.join(__dirname, "../../engine/start.js"), "utf8");
 
     assert.ok(engineCode.includes("verifyStartupFingerprintDelivery"), "Must implement verifyStartupFingerprintDelivery");
     assert.ok(engineCode.includes("fingerprint-verification-failed"), "Must emit fingerprint-verification-failed");

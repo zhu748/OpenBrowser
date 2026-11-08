@@ -852,7 +852,7 @@ async function startHttpBridge(config, onStatus) {
           const receiveResponse = (data) => {
             response = Buffer.concat([response, data]); if (response.length > 65536) { upstream.destroy(); fail('Proxy response header was too large'); return; }
             const responseMarker = response.indexOf('\r\n\r\n'); if (responseMarker < 0) return;
-            upstream.removeListener('data', receiveResponse);
+            if (receiveResponse.cleanup) receiveResponse.cleanup();
             const responseHeader = response.subarray(0, responseMarker + 4); const responseRemainder = response.subarray(responseMarker + 4);
             const match = responseHeader.toString('latin1').split('\r\n', 1)[0].match(/\s(\d{3})(?:\s|$)/); const status = Number(match?.[1] || 0);
             if (status !== 200) {
@@ -865,6 +865,16 @@ async function startHttpBridge(config, onStatus) {
             if (remainder.length) upstream.write(remainder); client.pipe(upstream); upstream.pipe(client); client.resume();
           };
           upstream.on('data', receiveResponse);
+          // A CONNECT waits for the upstream response header. An upstream that
+          // dies mid-handshake without an error (clean FIN — accept-then-close
+          // proxies, or a reset connection where the kernel delivers EOF first)
+          // never fires 'error', so without this the client would hang until
+          // its own timeout with no 502 and no diagnostics.
+          const handshakeDeadline = setTimeout(() => { if (!client.destroyed) fail('Proxy CONNECT handshake timed out'); upstream.destroy(); }, 8000);
+          const onUpstreamGone = () => { clearTimeout(handshakeDeadline); if (!client.destroyed) fail('Proxy closed the connection during CONNECT handshake'); upstream.removeListener('end', onUpstreamGone); upstream.removeListener('close', onUpstreamGone); };
+          upstream.once('end', onUpstreamGone);
+          upstream.once('close', onUpstreamGone);
+          receiveResponse.cleanup = () => { clearTimeout(handshakeDeadline); upstream.removeListener('end', onUpstreamGone); upstream.removeListener('close', onUpstreamGone); upstream.removeListener('data', receiveResponse); };
         });
       } catch (error) { fail(error.message); return; }
       sockets.add(upstream); upstream.once('close', () => sockets.delete(upstream));
@@ -1003,6 +1013,10 @@ function decodeChunked(buffer) {
   return Buffer.concat(chunks);
 }
 
+// Aligned with fetchUrlText's 2 MiB response cap: a probe channel must never
+// accumulate an unbounded body while only the 15s timeout holds the line.
+const PROBE_RESPONSE_LIMIT_BYTES = 2 * 1024 * 1024;
+
 async function requestProxyHttp(config, hostname, pathname) {
   const bridge = await startAuthenticatedProxy(config); let socket;
   try {
@@ -1018,7 +1032,20 @@ async function requestProxyHttp(config, hostname, pathname) {
         timeoutErr.probeUnavailable = true;
         reject(timeoutErr);
       }, 15000);
-      socket.on('data', (chunk) => values.push(chunk));
+      let received = 0;
+      socket.on('data', (chunk) => {
+        received += chunk.length;
+        if (received > PROBE_RESPONSE_LIMIT_BYTES) {
+          clearTimeout(timer);
+          socket.destroy();
+          const sizeErr = new Error('Proxy exit lookup response body too large');
+          sizeErr.code = 'probe-unavailable';
+          sizeErr.probeUnavailable = true;
+          reject(sizeErr);
+          return;
+        }
+        values.push(chunk);
+      });
       socket.once('end', () => { clearTimeout(timer); resolve(values); });
       socket.once('error', (error) => { clearTimeout(timer); reject(error); });
       socket.once('close', () => { clearTimeout(timer); reject(new Error('Proxy probe connection closed')); });
@@ -1070,10 +1097,23 @@ async function requestProxyHttps(config, hostname, pathname) {
         reject(timeoutErr);
       }, 15000);
       const cleanup = () => clearTimeout(timer);
+      let received = 0;
       secure.once('secureConnect', () => {
         secure.write('GET ' + pathname + ' HTTP/1.1\r\nHost: ' + hostname + '\r\nAccept: application/json\r\nAccept-Encoding: identity\r\nConnection: close\r\nUser-Agent: OpenBrowser/2.0\r\n\r\n');
       });
-      secure.on('data', (chunk) => chunks.push(chunk));
+      secure.on('data', (chunk) => {
+        received += chunk.length;
+        if (received > PROBE_RESPONSE_LIMIT_BYTES) {
+          cleanup();
+          secure.destroy();
+          const sizeErr = new Error('HTTPS proxy probe response body too large');
+          sizeErr.code = 'probe-unavailable';
+          sizeErr.probeUnavailable = true;
+          reject(sizeErr);
+          return;
+        }
+        chunks.push(chunk);
+      });
       secure.once('end', () => { cleanup(); resolve(Buffer.concat(chunks)); });
       secure.once('error', (error) => { cleanup(); reject(error); });
       secure.once('close', () => { cleanup(); reject(new Error('Proxy probe connection closed')); });
@@ -1506,8 +1546,21 @@ function networkTypeFromLookup(result = {}) {
   return 'broadband';
 }
 
+// WHATWG URL canonicalizes http://[::ffff:169.254.169.254]/ to the host
+// [::ffff:a9fe:a9fe]; without expanding IPv4-mapped IPv6 back to IPv4 the
+// segment matchers below never fire and the guards are bypassed.
+function normalizeIpv4MappedIpv6Host(host) {
+  const m = host.match(/^::ffff:((?:\d{1,3}\.){3}\d{1,3}|[0-9a-f]{1,4}:[0-9a-f]{1,4})$/);
+  if (!m) return host;
+  if (/^\d/.test(m[1])) return m[1];
+  const words = m[1].split(':').map((group) => Number.parseInt(group, 16));
+  if (words.length !== 2 || words.some((word) => !Number.isInteger(word))) return host;
+  return `${(words[0] >> 8) & 255}.${words[0] & 255}.${(words[1] >> 8) & 255}.${words[1] & 255}`;
+}
+
 function isCloudMetadataHostname(hostname) {
-  const host = String(hostname || '').trim().toLowerCase().replace(/^\[|\]$/g, '');
+  let host = String(hostname || '').trim().toLowerCase().replace(/^\[|\]$/g, '');
+  host = normalizeIpv4MappedIpv6Host(host);
   if (!host) return true;
   if (host === 'metadata' || host === 'metadata.google.internal') return true;
   if (host.endsWith('.metadata.google.internal')) return true;
@@ -1517,7 +1570,8 @@ function isCloudMetadataHostname(hostname) {
 }
 
 function isPrivateOrLocalHostname(hostname) {
-  const host = String(hostname || '').trim().toLowerCase().replace(/^\[|\]$/g, '');
+  let host = String(hostname || '').trim().toLowerCase().replace(/^\[|\]$/g, '');
+  host = normalizeIpv4MappedIpv6Host(host);
   if (!host) return true;
   if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) return true;
   if (host === '0.0.0.0' || host === '::' || host === '::1') return true;
@@ -1916,13 +1970,15 @@ async function lookupProxyCountry(config, options = {}) {
         throw err;
       }
 
-      // No proxy link errors detected: all failures were probe service issues (429, timeouts, 5xx, parse errors)
-      // Check for previously successful results to reuse:
-      // 1. Check in-memory cache for prior/stale result for this proxy
-      const tunnelVerified = parts.errors?.some((error) => error.httpStatus >= 400 && error.httpStatus !== 407);
-      if (!tunnelVerified) {
-        throw Object.assign(new Error('代理出口检测超时或无响应'), { code: 'proxy-unverified', errorClass: 'unreachable' });
-      }
+      // No proxy link errors detected: all failures were probe service issues (429, timeouts, 5xx, parse errors).
+      // A 4xx/5xx from a probe service — 429 included — is at most evidence that
+      // the service is unhealthy; it is NOT evidence that the tunnel works. The
+      // old gate here (any httpStatus >= 400 => "tunnel verified") is gone: only
+      // a completed successful round trip through the tunnel in this cycle
+      // counts as verification, and in this branch there is none (parts is
+      // empty). Reuse of prior data is still allowed below, but it now carries
+      // the verification state recorded when that data was last genuinely
+      // verified — reuse never upgrades it.
       const staleCached = probeMemoryCache.get(cacheKey, { allowStale: true });
       if (staleCached && staleCached.value && staleCached.value.ip) {
         const reused = cloneLookupResult(staleCached.value);
@@ -1930,7 +1986,10 @@ async function lookupProxyCountry(config, options = {}) {
         reused.stale = true;
         reused.fromCache = true;
         reused.probeUnavailable = true;
-        reused.transportVerified = true;
+        // Keep the verification state stored with the entry (a real round trip
+        // at probe time); stale reuse must not manufacture a fresh one.
+        reused.transportVerified = staleCached.value.transportVerified === true;
+        reused.transportVerifiedAt = staleCached.value.transportVerifiedAt || null;
         reused.probeWarning = '探测服务不可用（限频/超时），复用此前缓存的探测结果';
         reused.latencyMs = Date.now() - started;
         return reused;
@@ -1984,7 +2043,13 @@ async function lookupProxyCountry(config, options = {}) {
           networkType: 'proxy',
           fallback: true,
           probeUnavailable: true,
-          transportVerified: true,
+          // Built from stored profile fields with no evidence from this cycle:
+          // no probe completed through the tunnel, so this is NOT a fresh
+          // verification. If the caller supplied the previously applied network
+          // and that was genuinely verified, carry the legacy state through —
+          // reuse reports what was true before, it never upgrades.
+          transportVerified: options.previousResult?.transportVerified === true,
+          transportVerifiedAt: options.previousResult?.transportVerifiedAt || null,
           probeWarning: '探测服务不可用（限频/超时），复用既有配置的出口信息',
         };
         probeMemoryCache.set(cacheKey, fallbackResult, ttlMs);
@@ -1998,6 +2063,14 @@ async function lookupProxyCountry(config, options = {}) {
       err.probeUnavailable = true;
       err.latencyMs = Date.now() - started;
       err.probeErrors = parts.errors?.map((e) => e.message || String(e)) || [];
+      // The startup gate may still continue on legacy exit info when the tunnel
+      // was genuinely verified in a previous cycle and only the probe service
+      // is failing now. Carry that evidence on the error; the catch chains
+      // (here and in _testProxy) preserve it up to the caller.
+      if (options.previousResult?.transportVerified === true) {
+        err.transportVerified = true;
+        err.transportVerifiedAt = options.previousResult.transportVerifiedAt || null;
+      }
       throw err;
     }
 
@@ -2008,6 +2081,10 @@ async function lookupProxyCountry(config, options = {}) {
       ipChannel,
       latencyMs,
       networkType: networkTypeFromLookup(result),
+      // At least one provider completed a full 2xx round trip through the
+      // tunnel in this cycle — the only event that proves the transport.
+      transportVerified: true,
+      transportVerifiedAt: new Date().toISOString(),
     };
     if (options.includeRisk === true) enriched = await enrichWithIpPure(enriched, () => lookupIpPureProxy(config));
 
@@ -2019,6 +2096,12 @@ async function lookupProxyCountry(config, options = {}) {
     err.errorClass = error.errorClass || classifyProxyError(error);
     if (error.probeUnavailable) err.probeUnavailable = true;
     if (error.probeErrors) err.probeErrors = error.probeErrors;
+    // Preserve verification evidence across the rebuild: a probe-unavailable
+    // failure whose transport was verified in an earlier cycle keeps that
+    // fact so the startup gate can decide on legacy exit info. Omitting these
+    // fields made the "verified before, probe failing now" branch unreachable.
+    if (error.transportVerified !== undefined) err.transportVerified = error.transportVerified === true;
+    if (error.transportVerifiedAt !== undefined) err.transportVerifiedAt = error.transportVerifiedAt || null;
     err.latencyMs = error.latencyMs ?? (Date.now() - started);
     throw err;
   }

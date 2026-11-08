@@ -472,42 +472,43 @@ function editorDraft(strict = true) {
 function renderEditorSummary() {
   if (!editingProfileId) return;
   const draft = editorDraft(false); const privacy = draft.privacy; const summary = $('#editor-summary'); summary.replaceChildren();
+  // Summary values go through t() keys (editor.summary.*) plus existing
+  // editor.* keys; bare zh literals here used to rely on the runtime phrase
+  // table and leaked Chinese on locales it did not cover.
   const labels = {
-    webrtc: { proxy: tx('仅代理连接'), disabled: tx('禁用非代理 UDP'), real: tx('真实网络') }, timezoneMode: { ip: '基于出口 IP', real: '系统真实', custom: privacy.timezone || '自定义' },
-    geoMode: { ip: '基于出口 IP', disabled: '禁止访问', custom: '自定义坐标' }, canvas: { real: '真实', blocked: '禁止读取' }, webgl: { real: '真实', blocked: '禁用' },
-    audio: { real: '真实', muted: '静音输出' }, media: { real: '按网站询问', blocked: '禁止访问' }, speech: { real: '真实', blocked: '禁用' }, bluetooth: { real: '真实', blocked: '关闭' }
+    webrtc: { proxy: t('editor.summary.webrtcProxy'), disabled: t('editor.summary.webrtcBlockUdp'), real: t('editor.summary.realNetwork') }, timezoneMode: { ip: t('editor.basedOnIp'), real: t('editor.systemReal'), custom: privacy.timezone || t('editor.custom') },
+    geoMode: { ip: t('editor.basedOnIp'), disabled: t('editor.summary.geoBlocked'), custom: t('editor.summary.customGeo') }, canvas: { real: t('editor.summary.real'), blocked: t('editor.summary.blockedRead') }, webgl: { real: t('editor.summary.real'), blocked: t('editor.summary.disabled') },
+    audio: { real: t('editor.summary.real'), muted: t('editor.summary.muted') }, media: { real: t('editor.summary.askSite'), blocked: t('editor.summary.geoBlocked') }, speech: { real: t('editor.summary.real'), blocked: t('editor.summary.disabled') }, bluetooth: { real: t('editor.summary.real'), blocked: t('editor.summary.off') }
   };
   const values = [
-    [tx('浏览器'), 'Google Chrome'], [tx('分组'), groupNameOf(draft)], ['User-Agent', draft.userAgent || 'Chrome 默认'], [tx('网络'), maskProxy(draft.proxy)], ['WebRTC', labels.webrtc[privacy.webrtc]],
-    [tx('时区'), labels.timezoneMode[privacy.timezoneMode]], [tx('地理位置'), labels.geoMode[privacy.geoMode]], [tx('语言'), draft.language], [tx('界面语言'), privacy.uiLanguage === 'profile' ? '跟随语言' : privacy.uiLanguage],
-    [tx('分辨率'), draft.width + ' × ' + draft.height], [tx('字体'), privacy.fontMode === 'custom' ? privacy.fontSize + 'px' : '默认'], ['Canvas', labels.canvas[privacy.canvas]],
-    ['WebGL', labels.webgl[privacy.webgl]], ['WebGPU', privacy.webgpu === 'blocked' ? '禁用' : (privacy.webgpu === 'webgl' ? '基于 WebGL' : '真实')], ['AudioContext', labels.audio[privacy.audio]], [tx('媒体设备'), labels.media[privacy.media]],
-    [tx('电池'), privacy.battery === 'blocked' ? '关闭' : (privacy.battery === 'real' ? '真实' : '随机')],
+    [tx('浏览器'), 'Google Chrome'], [tx('分组'), groupNameOf(draft)], ['User-Agent', draft.userAgent || t('editor.summary.defaultUA')], [tx('网络'), maskProxy(draft.proxy)], ['WebRTC', labels.webrtc[privacy.webrtc]],
+    [tx('时区'), labels.timezoneMode[privacy.timezoneMode]], [tx('地理位置'), labels.geoMode[privacy.geoMode]], [tx('语言'), draft.language], [tx('界面语言'), privacy.uiLanguage === 'profile' ? t('editor.summary.followLanguage') : privacy.uiLanguage],
+    [tx('分辨率'), draft.width + ' × ' + draft.height], [tx('字体'), privacy.fontMode === 'custom' ? privacy.fontSize + 'px' : t('editor.summary.default')], ['Canvas', labels.canvas[privacy.canvas]],
+    ['WebGL', labels.webgl[privacy.webgl]], ['WebGPU', privacy.webgpu === 'blocked' ? t('editor.summary.disabled') : (privacy.webgpu === 'webgl' ? t('editor.summary.basedOnWebgl') : t('editor.summary.real'))], ['AudioContext', labels.audio[privacy.audio]], [tx('媒体设备'), labels.media[privacy.media]],
+    [tx('电池'), privacy.battery === 'blocked' ? t('editor.summary.off') : (privacy.battery === 'real' ? t('editor.summary.real') : t('editor.summary.random'))],
     [tx('蓝牙'), labels.bluetooth[privacy.bluetooth || 'real']],
-    [tx('站点稳定性'), privacy.stabilityMode === 'force' ? '强制' : (privacy.stabilityMode === 'off' ? '关闭' : '自动')],
-    [tx('代理未就绪'), draft.proxyMeta?.notReadyPolicy === 'direct' ? '回退直连' : (draft.proxyMeta?.notReadyPolicy === 'continue' ? '继续' : '阻断')],
+    [tx('站点稳定性'), privacy.stabilityMode === 'force' ? t('editor.summary.force') : (privacy.stabilityMode === 'off' ? t('editor.summary.off') : t('editor.summary.auto'))],
+    [tx('代理未就绪'), draft.proxyMeta?.notReadyPolicy === 'direct' ? t('editor.summary.fallbackDirect') : (draft.proxyMeta?.notReadyPolicy === 'continue' ? t('editor.summary.continue') : t('editor.summary.notReadyBlock'))],
     [tx('TLS 配置'), draft.proxyMeta?.tlsProfile || 'auto'],
-    ['ClientRects', privacy.clientRects === 'real' ? '真实' : '随机'],
+    ['ClientRects', privacy.clientRects === 'real' ? t('editor.summary.real') : t('editor.summary.random')],
     ['SpeechVoices', labels.speech[privacy.speech]],
     // Must read the profile editor value — never the host Electron navigator.
     ['CPU', (() => {
       const raw = privacy.cores ?? privacy.fingerprint?.cores;
-      if (raw === '' || raw === null || raw === undefined) return tx('自动');
       const n = Number(raw);
-      if (!Number.isFinite(n)) return tx('自动');
-      if (n === 0) return tx('真实');
-      return `${n} 核`;
+      if (raw === '' || raw === null || raw === undefined || !Number.isFinite(n)) return t('editor.summary.auto');
+      if (n === 0) return t('editor.summary.real');
+      return t('editor.summary.cores', { n });
     })()],
     ['RAM', (() => {
       const raw = privacy.memory ?? privacy.fingerprint?.memory;
-      if (raw === '' || raw === null || raw === undefined) return tx('自动');
       const n = Number(raw);
-      if (!Number.isFinite(n)) return tx('自动');
-      if (n === 0) return tx('真实');
-      return `${n} GB`;
+      if (raw === '' || raw === null || raw === undefined || !Number.isFinite(n)) return t('editor.summary.auto');
+      if (n === 0) return t('editor.summary.real');
+      return t('editor.summary.gb', { n });
     })()],
-    ['Do Not Track', privacy.dnt ? '启用' : '默认'],
-    [tx('每次打开刷新指纹'), privacy.refreshFingerprintOnStart ? '开启' : '关闭']
+    ['Do Not Track', privacy.dnt ? t('editor.summary.enabled') : t('editor.summary.default')],
+    [tx('每次打开刷新指纹'), privacy.refreshFingerprintOnStart ? t('editor.summary.on') : t('editor.summary.off')]
   ];
   for (const [name, value] of values) { const row = document.createElement('div'); row.append(element('dt', '', name), element('dd', '', value || '默认')); summary.append(row); }
   const auditTarget = $('#editor-audit');

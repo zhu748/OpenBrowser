@@ -30,7 +30,8 @@ const { spawn, execSync } = require('child_process');
 const { writeOpenBrowserKernelInit } = require('../kernel-init-sync');
 const { buildFingerprint } = require('../fingerprint');
 
-const appRoot = path.join(__dirname, '..');
+// One level short of Browserapp/ after 30dbbea moved selftests deeper.
+const appRoot = path.join(__dirname, '..', '..');
 const kernelRoot = path.join(appRoot, 'kernels', 'macos-x64');
 const innerLauncher = path.join(kernelRoot, 'chrome_148', 'openbrowser_148', 'OpenBrowser.app', 'Contents', 'MacOS', 'OpenBrowser');
 const helperLauncher = path.join(kernelRoot, 'launch_openbrowser.sh');
@@ -127,15 +128,22 @@ async function main() {
   // resolves through the host's own system proxy, so a profile that displayed "SOCKS5 … · Auth"
   // still left through the machine's real route.
   {
-    const engineSrc = fs.readFileSync(path.join(appRoot, 'engine.js'), 'utf8');
+    // The launch path now lives in the engine/ split modules; the endpoint
+    // derivation is in start.js (Chromium) and start-firefox.js (Firefox).
+    // The legacy engine.js shell no longer builds the command line.
+    const launchSrc = [
+      'engine/start.js',
+      'engine/start-firefox.js',
+      'engine.js',
+    ].map((p) => fs.readFileSync(path.join(appRoot, p), 'utf8')).join('\n');
     check('launch path derives --proxy-server from the parser, not a raw-string regex', () => {
       assert.ok(
-        /chromeProxyEndpoint\(profile\.proxy\)/.test(engineSrc),
-        'engine.js must build the proxy endpoint through chromeProxyEndpoint(profile.proxy)'
+        /chromeProxyEndpoint\(profile\.proxy\)/.test(launchSrc),
+        'the launch path (engine/start.js, engine/start-firefox.js) must build the endpoint through chromeProxyEndpoint(profile.proxy)'
       );
       assert.ok(
-        !/proxyArg\(/.test(engineSrc),
-        'engine.js must not carry the raw-string proxyArg() matcher any more'
+        !/proxyArg\(/.test(launchSrc),
+        'no launch-path module may carry the raw-string proxyArg() matcher any more'
       );
       return 'endpoint comes from proxy-forwarder.chromeProxyEndpoint';
     });
