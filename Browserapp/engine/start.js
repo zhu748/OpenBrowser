@@ -80,7 +80,6 @@ module.exports = {
     this.profiles.set(profile.id, profile);
     this.assertStartGenerationActive(profile.id, lifecycleGeneration);
     if (this.running.has(profile.id)) {
-      if (!profile.advanced.multiOpen) return this.publicRunning(profile.id);
       return this.publicRunning(profile.id);
     }
     this.assertProxyConcurrencyAvailable(profile);
@@ -318,9 +317,13 @@ module.exports = {
     // Startup URLs: do NOT put the OpenBrowser start page (or first custom URL) on the
     // CLI. The process would paint and run collectFingerprint before CDP inject.
     // Spawn on about:blank, inject via CDP, then keepDefaultTab navigates to startUrl.
+    // Startup URLs: do NOT put the OpenBrowser start page (or first custom URL) on the
+    // CLI. The process would paint and run collectFingerprint before CDP inject.
+    // Spawn on about:blank, inject via CDP, then keepDefaultTab navigates to startUrl.
     if (!restoreSession) {
-      if (startUrl) args.push('about:blank');
-      else if (customStartUrls.length) args.push('about:blank');
+      // about:blank only when there is something to navigate to afterwards;
+      // with no start page and no custom URLs the browser must open its NTP.
+      if (startUrl || customStartUrls.length) args.push('about:blank');
       for (const extra of customStartUrls.slice(1)) args.push(extra);
     }
     // Cross-platform process overhead reducers (safe for multi-profile fleets).
@@ -768,7 +771,7 @@ module.exports = {
         } else if (!restoreSession && startUrl) {
           await fpLog('start.navigate-startpage', { profileId: profile.id, startUrl });
           try {
-            await this.keepDefaultTab(item.port, startUrl);
+            await this.keepDefaultTab(item.port, startUrl, { keepUrls: customStartUrls });
           } catch (navError) {
             await fpLog('start.navigate-fail', { profileId: profile.id, error: String(navError.message || navError) });
           }
@@ -797,7 +800,7 @@ module.exports = {
       // Last chance: still try to open start page so UI is not stuck on about:blank.
       if (item && !restoreSession && startUrl && item.port && !item.verificationBlocked && !injectionFailed) {
         try {
-          await this.keepDefaultTab(item.port, startUrl);
+          await this.keepDefaultTab(item.port, startUrl, { keepUrls: customStartUrls });
           await fpLog('start.navigate-after-fail', { profileId: profile.id, startUrl });
         } catch (_) {}
       }

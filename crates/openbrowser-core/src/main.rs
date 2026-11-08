@@ -9,6 +9,9 @@ use tokio::sync::mpsc;
 use tokio::time::{timeout, Duration};
 
 const CONTROL_PROTOCOL: u32 = 1;
+// Kept separate from proxy::MAX_HEADER_BYTES on purpose: control frames are a
+// different protocol (newline-delimited JSON on stdin), and coupling the two
+// limits would let a proxy-side bound change silently resize control frames.
 const MAX_CONTROL_LINE: usize = 65_536;
 
 fn invalid(message: &str) -> CoreError {

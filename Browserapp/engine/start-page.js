@@ -183,7 +183,36 @@ module.exports = {
       }).catch(() => {});
     }
   },
-  async keepDefaultTab(port, startUrl) {
+  async keepDefaultTab(port, startUrl, options = {}) {
+    // Tabs whose URLs the engine opened as real start tabs (CLI positional args
+    // for advanced.startUrls 2..N). keepDefaultTab closes every non-kept page;
+    // without this list it tore down the extra start tabs seconds after the
+    // engine opened them (multi-URL profiles from local API / RPA / cloud
+    // import lost every start URL except the first).
+    const keepUrls = (Array.isArray(options.keepUrls) ? options.keepUrls : [])
+      .map((url) => String(url || '').trim())
+      .filter(Boolean);
+    const isKeptUrl = (url) => {
+      const value = String(url || '').trim();
+      if (!value) return false;
+      if (keepUrls.includes(value)) return true;
+      // The keep-list holds the raw CLI arguments; the tab URL may have been
+      // canonicalized by the time keepDefaultTab runs (http→https upgrade,
+      // trailing slash, host casing). Compare on trimmed host+path so a
+      // redirected extra start tab still survives the sweep.
+      try {
+        const u = new URL(value);
+        for (const keep of keepUrls) {
+          try {
+            const k = new URL(keep);
+            if (u.protocol.replace(':', '') === k.protocol.replace(':', '') || u.host === k.host) {
+              if (u.host === k.host && u.pathname.replace(/\/+$/, '') === k.pathname.replace(/\/+$/, '') && u.search === k.search) return true;
+            }
+          } catch (_) {}
+        }
+      } catch (_) {}
+      return false;
+    };
     const values = await cdp.tabs(port); if (!values.length) return;
     const expected = String(startUrl || '').trim();
     let keep = values.find((tab) => this.isStartPageUrl(tab.url)) || values[0];
@@ -211,9 +240,14 @@ module.exports = {
     // Prefer: current start-page URL → same target we navigated → first tab.
     keep = after.find((tab) => this.isStartPageUrl(tab.url))
       || after.find((tab) => preferredId && tab.id === preferredId)
+      || after.find((tab) => isKeptUrl(tab.url)) // keep the first extra start tab too
       || after[0]
       || keep;
-    for (const tab of after) if (tab.id !== keep.id) await cdp.closeTab(port, tab.id).catch(() => {});
+    for (const tab of after) {
+      if (tab.id === keep.id) continue;
+      if (isKeptUrl(tab.url)) continue; // a start-URL tab the engine opened on purpose
+      await cdp.closeTab(port, tab.id).catch(() => {});
+    }
     await cdp.activateTab(port, keep.id).catch(() => {});
   },
   /**

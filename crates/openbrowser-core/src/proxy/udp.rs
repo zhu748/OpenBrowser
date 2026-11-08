@@ -7,8 +7,10 @@ use crate::proxy::socks5::{
 };
 use bytes::{BufMut, BytesMut};
 use std::net::{IpAddr, SocketAddr};
+use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpStream, UdpSocket};
+use tokio::time::timeout;
 
 /// SOCKS5 UDP request/response packet per RFC 1928 Section 7.
 ///
@@ -37,13 +39,17 @@ impl Socks5UdpPacket {
         }
     }
 
+    /// Append the full datagram (header + payload) to `buf` without
+    /// allocating an intermediate Vec.
+    pub fn encode_into(&self, buf: &mut BytesMut) -> Result<()> {
+        append_udp_header(buf, self.frag, &self.address, self.port)?;
+        buf.put_slice(&self.data);
+        Ok(())
+    }
+
     pub fn encode(&self) -> Result<Vec<u8>> {
         let mut buf = BytesMut::with_capacity(32 + self.data.len());
-        buf.put_u16(0x0000); // RSV
-        buf.put_u8(self.frag);
-        self.address.encode(&mut buf)?;
-        buf.put_u16(self.port);
-        buf.put_slice(&self.data);
+        self.encode_into(&mut buf)?;
         Ok(buf.to_vec())
     }
 
@@ -92,6 +98,22 @@ impl Socks5UdpPacket {
     }
 }
 
+/// Append the SOCKS5 UDP header (RSV, frag, address, port) to `buf`.
+/// Private send-path primitive: the send site hardcodes frag=0 because the
+/// relay rejects fragmented datagrams on decode anyway.
+fn append_udp_header(
+    buf: &mut BytesMut,
+    frag: u8,
+    address: &SocksAddress,
+    port: u16,
+) -> Result<()> {
+    buf.put_u16(0x0000); // RSV
+    buf.put_u8(frag);
+    address.encode(buf)?;
+    buf.put_u16(port);
+    Ok(())
+}
+
 /// Active SOCKS5 UDP ASSOCIATE session managing the TCP control stream and UDP relay socket.
 ///
 /// Per RFC 1928 §7: "A UDP association terminates when the TCP connection that the
@@ -104,11 +126,33 @@ pub struct Socks5UdpAssociate {
 
 impl Socks5UdpAssociate {
     /// Establish a UDP ASSOCIATE session with the upstream SOCKS5 proxy.
+    /// Bounded to 8s like the bridge dialers; a wedged upstream cannot pin
+    /// the caller forever.
     pub async fn associate(
         config: &ProxyConfig,
         client_bnd_addr: Option<SocketAddr>,
     ) -> Result<Self> {
         config.validate()?;
+        let upstream_addr = format!("{}:{}", config.host, config.port);
+        timeout(
+            Duration::from_secs(8),
+            Self::associate_raw(config, client_bnd_addr),
+        )
+        .await
+        .map_err(|_| {
+            CoreError::Proxy(format!(
+                "Timed out during SOCKS5 UDP ASSOCIATE with upstream {}",
+                upstream_addr
+            ))
+        })?
+    }
+
+    /// Raw UDP ASSOCIATE handshake without local timeout (timeout handled by
+    /// the associate wrapper's deadline).
+    async fn associate_raw(
+        config: &ProxyConfig,
+        client_bnd_addr: Option<SocketAddr>,
+    ) -> Result<Self> {
         let upstream_addr = format!("{}:{}", config.host, config.port);
         let mut stream = TcpStream::connect(&upstream_addr).await.map_err(|e| {
             CoreError::Proxy(format!(
@@ -331,22 +375,29 @@ impl Socks5UdpAssociate {
     }
 
     /// Send a UDP datagram to target via the upstream SOCKS5 relay.
+    /// One buffer holds header + payload for a single send_to; the send path
+    /// bypasses Socks5UdpPacket entirely, so no target clone and no payload
+    /// Vec copy happen per datagram.
     pub async fn send_to(
         &self,
         data: &[u8],
         target_addr: &SocksAddress,
         target_port: u16,
     ) -> Result<usize> {
-        let packet = Socks5UdpPacket::new(target_addr.clone(), target_port, data.to_vec());
-        let encoded = packet.encode()?;
-        let sent = self.udp_socket.send_to(&encoded, self.relay_addr).await?;
+        let mut buf = BytesMut::with_capacity(32 + data.len());
+        append_udp_header(&mut buf, 0, target_addr, target_port)?;
+        buf.put_slice(data);
+        let sent = self.udp_socket.send_to(&buf, self.relay_addr).await?;
         Ok(sent)
     }
 
     /// Receive a forwarded UDP datagram from the upstream SOCKS5 relay.
+    /// The datagram is recv'd straight into the caller's buffer, the header is
+    /// decoded in place, and the payload is slid to the front, so the receive
+    /// path allocates nothing per datagram (IPv4/IPv6 addresses are Copy; a
+    /// Domain relay address still builds its String).
     pub async fn recv_from(&self, buf: &mut [u8]) -> Result<(usize, SocksAddress, u16)> {
-        let mut raw_buf = [0u8; 65536];
-        let (n, from_addr) = self.udp_socket.recv_from(&mut raw_buf).await?;
+        let (n, from_addr) = self.udp_socket.recv_from(buf).await?;
         // Source validation: the sender IP must be the SOCKS5 relay we contacted.
         // Some relays reply from a different ephemeral port on the same host, so the
         // port is NOT part of the check. (The previous condition let a spoofed packet
@@ -358,11 +409,49 @@ impl Socks5UdpAssociate {
             )));
         }
 
-        let packet = Socks5UdpPacket::decode(&raw_buf[..n])?;
-        let copy_len = packet.data.len().min(buf.len());
-        buf[..copy_len].copy_from_slice(&packet.data[..copy_len]);
+        // In-place header validation over buf[..n], the same rules
+        // Socks5UdpPacket::decode applies, minus the payload copy.
+        if n < 4 {
+            return Err(CoreError::Socks5(
+                "UDP packet too short for SOCKS5 header (< 4 bytes)".into(),
+            ));
+        }
+        let rsv = u16::from_be_bytes([buf[0], buf[1]]);
+        if rsv != 0 {
+            return Err(CoreError::Socks5(format!(
+                "Invalid reserved field in SOCKS5 UDP header: 0x{:04x}",
+                rsv
+            )));
+        }
+        let frag = buf[2];
+        if frag != 0 {
+            // RFC 1928: fragmentation is at the IP layer; a SOCKS5 UDP relay
+            // cannot reassemble fragments, so they must be dropped, not
+            // forwarded as if they were complete datagrams.
+            return Err(CoreError::Socks5(format!(
+                "Fragmented SOCKS5 UDP datagrams are not supported (frag={})",
+                frag
+            )));
+        }
 
-        Ok((copy_len, packet.address, packet.port))
+        let mut cursor = std::io::Cursor::new(&buf[..n]);
+        cursor.set_position(3);
+        let address = SocksAddress::decode(&mut cursor)?;
+        let header_len = cursor.position() as usize;
+
+        if n < header_len + 2 {
+            return Err(CoreError::Socks5(
+                "UDP packet truncated before destination port".into(),
+            ));
+        }
+        let port = u16::from_be_bytes([buf[header_len], buf[header_len + 1]]);
+
+        // Slide the payload to the front of the caller's buffer; copy_within
+        // tolerates source and destination overlapping.
+        let payload_len = n - header_len - 2;
+        buf.copy_within(header_len + 2..n, 0);
+
+        Ok((payload_len, address, port))
     }
 
     pub fn relay_addr(&self) -> SocketAddr {

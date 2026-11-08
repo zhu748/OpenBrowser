@@ -306,14 +306,26 @@ module.exports = {
           processAlive = Boolean(error && (error.code === 'EPERM' || error.code === 'EACCES'));
         }
       }
-      try {
-        // /json/version proves browser process still exposes CDP
-        await cdp.json(`http://127.0.0.1:${item.port}/json/version`);
+      // Firefox runs without CDP: item.port is null for the whole session, so
+      // the CDP probe below must not run for it. http.request on
+      // "http://127.0.0.1:null/json/version" throws "Invalid URL" every tick;
+      // cdpAlive came back false and, after two dead ticks, the watch
+      // force-killed a perfectly healthy Firefox ~7s after launch. Firefox
+      // liveness is the process check above plus the child exit/error
+      // listeners installed by _startFirefox.
+      const cdpCapable = Boolean(item.port) && item.engine !== 'firefox';
+      if (cdpCapable) {
+        try {
+          // /json/version proves browser process still exposes CDP
+          await cdp.json(`http://127.0.0.1:${item.port}/json/version`);
+          cdpAlive = true;
+          const pages = await cdp.tabs(item.port).catch(() => []);
+          pageCount = Array.isArray(pages) ? pages.length : 0;
+        } catch (_) {
+          cdpAlive = false;
+        }
+      } else {
         cdpAlive = true;
-        const pages = await cdp.tabs(item.port).catch(() => []);
-        pageCount = Array.isArray(pages) ? pages.length : 0;
-      } catch (_) {
-        cdpAlive = false;
       }
 
       // Stop may have started while the CDP probes were in flight. Never let a
@@ -333,8 +345,10 @@ module.exports = {
         }
       } else {
         item.watchDeadTicks = 0;
-        // All windows closed (X on last window): no page targets remain
-        if (pageCount === 0) {
+        // All windows closed (X on last window): no page targets remain.
+        // Firefox has no CDP page targets at all, so an empty reading carries
+        // no information there — never auto-stop a live Firefox from it.
+        if (pageCount === 0 && cdpCapable) {
           item.watchEmptyTicks = (item.watchEmptyTicks || 0) + 1;
           if (item.watchEmptyTicks >= 2) {
             // Gracefully stop environment so UI matches closed browser

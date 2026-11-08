@@ -194,13 +194,22 @@ impl SyncCoordinator {
                             continue;
                         }
                     };
+                    let (jx, jy) = self.jitter.apply_spatial_jitter(mx, my, slave.viewport);
                     SyncEvent::MouseWheel {
-                        x: mx,
-                        y: my,
+                        x: jx,
+                        y: jy,
                         // Scale wheel deltas by the viewport ratio: an unscaled
                         // master scroll over-scrolls a smaller slave window.
-                        delta_x: delta_x * (slave.viewport.0 as f64 / master.viewport.0 as f64),
-                        delta_y: delta_y * (slave.viewport.1 as f64 / master.viewport.1 as f64),
+                        // clamp_wheel_delta caps the scaled result so a huge
+                        // master delta (or a large slave/master ratio) cannot
+                        // push a synthetic CDP wheel event into the
+                        // tens-of-thousands range.
+                        delta_x: clamp_wheel_delta(
+                            delta_x * (slave.viewport.0 as f64 / master.viewport.0 as f64),
+                        ),
+                        delta_y: clamp_wheel_delta(
+                            delta_y * (slave.viewport.1 as f64 / master.viewport.1 as f64),
+                        ),
                     }
                 }
                 // Keyboard events do not require coordinate mapping
@@ -215,5 +224,16 @@ impl SyncCoordinator {
         }
 
         Ok(plans)
+    }
+}
+
+/// Keep a scaled wheel delta within roughly one screen of travel (~±400 px
+/// per event, Chrome's own wheel events stay well below this). NaN maps to
+/// 0.0 so a malformed master event cannot poison the slave dispatch.
+fn clamp_wheel_delta(delta: f64) -> f64 {
+    if delta.is_finite() {
+        delta.clamp(-400.0, 400.0)
+    } else {
+        0.0
     }
 }

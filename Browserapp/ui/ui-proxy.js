@@ -187,7 +187,7 @@ function applyProxyLibrarySelection(kind, id) {
     syncThemedSelects(`#${prefix}-proxy-library, #${prefix}-proxy-type`);
     if (editor) {
       const status = $('#editor-proxy-library-status');
-      if (status) status.textContent = `已关联代理库：${proxyLibraryLabel(item)}`;
+      if (status) status.textContent = tx('已关联代理库：') + proxyLibraryLabel(item);
       window.__editorProxyAuthTouched = false;
     }
   } finally {
@@ -405,7 +405,7 @@ function openProxyDialog(item = null) {
   $('#proxy-max-concurrency').value = item?.maxConcurrency ? String(item.maxConcurrency) : '';
   const result = $('#proxy-dialog-result');
   result.className = 'proxy-test-result';
-  result.textContent = item?.lastIp ? tx(`上次出口：${item.lastIp}`) : tx('保存前可先检测');
+  result.textContent = item?.lastIp ? (tx('上次出口：') + item.lastIp) : tx('保存前可先检测');
   syncThemedSelects($('#proxy-dialog'));
   $('#proxy-dialog').showModal();
 }

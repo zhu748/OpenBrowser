@@ -50,7 +50,6 @@
       closeBtn.textContent = '×';
       closeBtn.setAttribute('aria-label', translate('关闭'));
       closeBtn.setAttribute('data-i18n-aria', '关闭');
-      closeBtn.setAttribute('data-i18n-aria-label', '关闭');
 
       head.append(headTextWrap, closeBtn);
 
@@ -363,7 +362,6 @@
       if (!btn.getAttribute('aria-label') && /^[×\u00d7&times;]+$/.test(btn.textContent.trim())) {
         btn.setAttribute('aria-label', translate('关闭'));
         btn.setAttribute('data-i18n-aria', '关闭');
-        btn.setAttribute('data-i18n-aria-label', '关闭');
       }
     });
   }

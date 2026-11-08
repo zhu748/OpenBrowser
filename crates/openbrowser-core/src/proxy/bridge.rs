@@ -11,6 +11,7 @@ use crate::proxy::socks5::{
     CMD_CONNECT, REP_SUCCEEDED, SOCKS5_AUTH_SUBNEGOTIATION_VERSION, SOCKS5_VERSION,
 };
 use crate::proxy::stream::{copy_bidirectional, StreamStats};
+use crate::proxy::MAX_HEADER_BYTES;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -451,6 +452,9 @@ impl LocalProxyBridge {
 
         let mut buf = [0u8; 1024];
         let mut response = Vec::new();
+        // Bytes already proven terminator-free; find_header_end resumes here
+        // instead of rescanning the whole buffer after every read.
+        let mut scanned = 0usize;
 
         let header_end = loop {
             let n = stream.read(&mut buf).await?;
@@ -460,19 +464,20 @@ impl LocalProxyBridge {
                 ));
             }
             response.extend_from_slice(&buf[..n]);
-            if let Some(pos) = find_header_end(&response) {
-                if pos > 65536 {
-                    return Err(CoreError::Http(
-                        "HTTP proxy response header too large (>64KB)".into(),
-                    ));
-                }
-                break pos;
-            }
-            if response.len() > 65536 {
+            // The size bound runs before the terminator search: any block that
+            // crossed MAX_HEADER_BYTES is rejected here, which makes a second
+            // per-position size check redundant.
+            if response.len() > MAX_HEADER_BYTES {
                 return Err(CoreError::Http(
                     "HTTP proxy response header too large (>64KB)".into(),
                 ));
             }
+            if let Some(pos) = find_header_end(&response, scanned) {
+                break pos;
+            }
+            // A "\r\n\r\n" can start up to 3 bytes before the buffer end and
+            // only complete with the next read.
+            scanned = response.len().saturating_sub(3);
         };
 
         let header_part = &response[..header_end];
@@ -642,6 +647,9 @@ impl LocalProxyBridge {
     async fn read_client_headers(client: &mut TcpStream) -> Result<(Vec<u8>, Vec<u8>)> {
         let mut header_buf = Vec::new();
         let mut temp = [0u8; 1024];
+        // Bytes already proven terminator-free; find_header_end resumes here
+        // instead of rescanning the whole buffer after every read.
+        let mut scanned = 0usize;
 
         loop {
             let n = client.read(&mut temp).await?;
@@ -651,17 +659,23 @@ impl LocalProxyBridge {
                 ));
             }
             header_buf.extend_from_slice(&temp[..n]);
-            if let Some(pos) = find_header_end(&header_buf) {
-                if pos > 65536 {
-                    return Err(CoreError::HeaderTooLarge);
-                }
+            // Size bound before the terminator search (see the CONNECT loop for
+            // why this makes a per-position check redundant).
+            if header_buf.len() > MAX_HEADER_BYTES {
+                return Err(CoreError::HeaderTooLarge);
+            }
+            if let Some(pos) = find_header_end(&header_buf, scanned) {
+                // Deferred (8c): the header/remainder split still allocates
+                // two Vecs here and a lossy String in handle_client; folding
+                // that into one allocation means threading borrows through
+                // the deadline block, which is not worth it at 64 KiB peak.
                 let header_slice = header_buf[..pos].to_vec();
                 let client_remainder = header_buf[pos..].to_vec();
                 return Ok((header_slice, client_remainder));
             }
-            if header_buf.len() > 65536 {
-                return Err(CoreError::HeaderTooLarge);
-            }
+            // A "\r\n\r\n" can start up to 3 bytes before the buffer end and
+            // only complete with the next read.
+            scanned = header_buf.len().saturating_sub(3);
         }
     }
 
@@ -756,52 +770,70 @@ impl LocalProxyBridge {
                 // The 200 reply and buffered remainders are written after the
                 // deadline block (see the match on handshake_res below).
 
-                // Speculatively prewarm an idle standby tunnel for this target for HTTP upstream if capacity permits
+                // Speculatively prewarm one standby tunnel for this target.
+                // Gates before the spawn: HTTP upstream (the only protocol
+                // with a pooled CONNECT tier), should_prewarm (recent real
+                // traffic on this target AND pool capacity), then one slot
+                // from the dedicated prewarm semaphore — its try_acquire skips
+                // this round silently when the cap is busy, so speculative
+                // dials never queue ahead of real handshakes.
                 if ctx.config.protocol == ProxyProtocol::Http
                     && ctx.tunnel_pool.is_prewarm_enabled()
-                    && ctx.limiter.available_permits() > 4
                     && ctx
                         .tunnel_pool
                         .should_prewarm(&target.host, target.port)
                         .await
                 {
-                    let pool_clone = ctx.tunnel_pool.clone();
-                    let config_clone = ctx.config.clone();
-                    let target_host = target.host.clone();
-                    let target_port = target.port;
-                    tokio::spawn(async move {
-                        let prewarm_timeout = Duration::from_secs(5);
-                        let res = tokio::time::timeout(prewarm_timeout, async {
-                            LocalProxyBridge::connect_http_upstream_raw(
-                                &config_clone,
-                                &target_host,
-                                target_port,
-                            )
-                            .await
-                        })
-                        .await;
-                        if let Ok(Ok((stream, remainder))) = res {
-                            pool_clone
-                                .put_tunnel(target_host, target_port, stream, remainder)
-                                .await;
-                        }
-                        // Also keep the raw-TCP tier warm: put_upstream_tcp had
-                        // no caller, so take_upstream_tcp never found anything
-                        // and the "save one TCP handshake RTT" tier was dead.
-                        let raw_res = tokio::time::timeout(prewarm_timeout, async {
-                            tokio::net::TcpStream::connect((
-                                config_clone.host.as_str(),
-                                config_clone.port,
-                            ))
-                            .await
-                        })
-                        .await;
-                        if let Ok(Ok(raw)) = raw_res {
-                            let _ = raw.set_nodelay(true);
-                            pool_clone.put_upstream_tcp(raw).await;
-                        }
-                    });
+                    if let Some(slot) = ctx.tunnel_pool.try_acquire_prewarm_slot() {
+                        let pool_clone = ctx.tunnel_pool.clone();
+                        let config_clone = ctx.config.clone();
+                        let target_host = target.host.clone();
+                        let target_port = target.port;
+                        tokio::spawn(async move {
+                            // Holds the prewarm slot until both dials finish;
+                            // dropped here at task end, which releases it.
+                            let _prewarm_slot = slot;
+                            let prewarm_timeout = Duration::from_secs(5);
+                            // Both dials run concurrently: sequential dials
+                            // doubled the window before both tiers were warm.
+                            let (tunnel_res, raw_res) = tokio::join!(
+                                tokio::time::timeout(prewarm_timeout, async {
+                                    LocalProxyBridge::connect_http_upstream_raw(
+                                        &config_clone,
+                                        &target_host,
+                                        target_port,
+                                    )
+                                    .await
+                                }),
+                                tokio::time::timeout(prewarm_timeout, async {
+                                    tokio::net::TcpStream::connect((
+                                        config_clone.host.as_str(),
+                                        config_clone.port,
+                                    ))
+                                    .await
+                                })
+                            );
+                            if let Ok(Ok((stream, remainder))) = tunnel_res {
+                                pool_clone
+                                    .put_tunnel(target_host, target_port, stream, remainder)
+                                    .await;
+                            }
+                            // Also keep the raw-TCP tier warm: put_upstream_tcp had
+                            // no caller, so take_upstream_tcp never found anything
+                            // and the "save one TCP handshake RTT" tier was dead.
+                            if let Ok(Ok(raw)) = raw_res {
+                                let _ = raw.set_nodelay(true);
+                                pool_clone.put_upstream_tcp(raw).await;
+                            }
+                        });
+                    }
                 }
+
+                // Recency signal for the NEXT request's prewarm decision.
+                // Recorded after the prewarm decision so a first request can
+                // never prewarm its own target: only a target already served
+                // by an earlier request is worth a standby dial.
+                ctx.tunnel_pool.record_dial(&target.host, target.port).await;
             } else {
                 let outgoing_header = if ctx.config.protocol == ProxyProtocol::Http {
                     let auth = if ctx.config.is_authenticated() {
@@ -911,18 +943,23 @@ impl LocalProxyBridge {
 }
 
 fn is_background_spam(host: &str) -> bool {
-    let lower = host.to_ascii_lowercase();
-    lower == "mtalk.google.com"
-        || lower == "android.clients.google.com"
-        || lower == "update.googleapis.com"
+    // eq_ignore_ascii_case: no lowercase String allocation per request on the
+    // hot path.
+    host.eq_ignore_ascii_case("mtalk.google.com")
+        || host.eq_ignore_ascii_case("android.clients.google.com")
+        || host.eq_ignore_ascii_case("update.googleapis.com")
 }
 
-fn find_header_end(buf: &[u8]) -> Option<usize> {
-    for i in 0..buf.len() {
-        if i + 4 <= buf.len() && &buf[i..i + 4] == b"\r\n\r\n" {
+/// Find the end of the HTTP header block: the first "\r\n\r\n" or "\n\n".
+/// `scanned` is the number of leading bytes already proven terminator-free by
+/// earlier calls, so the search resumes there instead of rescanning the whole
+/// buffer after every read.
+fn find_header_end(buf: &[u8], scanned: usize) -> Option<usize> {
+    for i in scanned..buf.len() {
+        if buf.len() - i >= 4 && &buf[i..i + 4] == b"\r\n\r\n" {
             return Some(i + 4);
         }
-        if i + 2 <= buf.len() && &buf[i..i + 2] == b"\n\n" {
+        if buf.len() - i >= 2 && &buf[i..i + 2] == b"\n\n" {
             return Some(i + 2);
         }
     }
@@ -936,6 +973,11 @@ impl ProxyForwarder for LocalProxyBridge {
         if let Some(ref r) = *guard {
             return Ok(r.addr);
         }
+
+        // A pool shared across bridge runs survives stop() with stopped=true;
+        // without the rearm, a restart on the same pool would refuse every
+        // put and prewarm forever.
+        self.tunnel_pool.rearm();
 
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let addr = listener.local_addr()?;

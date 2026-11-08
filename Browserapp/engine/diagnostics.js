@@ -26,17 +26,37 @@ function formatBrowserStartupError(error, child, diagnostic = {}) {
   return details.length ? `${base} [${details.join("; ")}]` : base;
 }
 
+// Serialized appends/rotations: concurrent profile starts can fail at the same
+// moment, and the old unsynchronized read-modify-write truncation silently
+// dropped records appended between the read and the write (and could cut a
+// JSON line mid-UTF8-sequence).
+let diagnosticWriteChain = Promise.resolve();
+
+async function appendStartupDiagnosticLocked(file, line) {
+  await fsp.appendFile(file, line, "utf8");
+  const stat = await fsp.stat(file);
+  if (stat.size > 512 * 1024) {
+    // Rotate by rename, not in-place truncation: readers and concurrent
+    // appenders keep a consistent view, and no torn JSON lines are produced.
+    await fsp.rename(file, `${file}.1`).catch(() => {});
+    await fsp.writeFile(file, "", "utf8").catch(() => {});
+  }
+}
+
 async function writeBrowserStartupDiagnostic(userDataPath, record) {
   try {
     const logDir = path.join(userDataPath, "logs");
     await fsp.mkdir(logDir, { recursive: true });
     const file = path.join(logDir, "browser-startup.log");
     const line = JSON.stringify({ at: new Date().toISOString(), ...record }) + "\n";
-    await fsp.appendFile(file, line, "utf8");
-    const stat = await fsp.stat(file);
-    if (stat.size > 512 * 1024) {
-      const content = await fsp.readFile(file, "utf8");
-      await fsp.writeFile(file, content.slice(-256 * 1024), "utf8");
+    const previous = diagnosticWriteChain;
+    let release;
+    diagnosticWriteChain = new Promise((resolve) => { release = resolve; });
+    try {
+      await previous;
+      await appendStartupDiagnosticLocked(file, line);
+    } finally {
+      release();
     }
   } catch (_) {}
 }

@@ -289,22 +289,6 @@ impl ClientHelloBuilder {
         Ok(buf.to_vec())
     }
 
-    /// Build complete TLS Record packet containing the ClientHello handshake.
-    /// Prefixes the standard 5-byte TLS record header:
-    /// [0x16 (Handshake), 0x03, 0x01 (TLS 1.0 record legacy version), Length (2 bytes)]
-    pub fn build_record(&self) -> Result<Vec<u8>> {
-        let handshake = self.build()?;
-        let mut record = Vec::with_capacity(5 + handshake.len());
-        record.push(0x16); // ContentType: Handshake (22)
-        record.push(0x03); // Legacy record version 0x0301 (TLS 1.0)
-        record.push(0x01);
-        let len = handshake.len() as u16;
-        record.push((len >> 8) as u8);
-        record.push((len & 0xFF) as u8);
-        record.extend_from_slice(&handshake);
-        Ok(record)
-    }
-
     /// Parse raw ClientHello payload into constituent fields (for verification/auditing).
     /// Fully bounded and zero-panic on any malformed, truncated, or malicious input.
     pub fn parse_client_hello(raw: &[u8]) -> Result<ParsedClientHello> {
@@ -371,7 +355,8 @@ impl ClientHelloBuilder {
         offset += comp_len;
 
         let mut extensions = Vec::new();
-        if offset + 2 <= body.len() {
+        let remaining = body.len() - offset;
+        if remaining >= 2 {
             let ext_len = u16::from_be_bytes([body[offset], body[offset + 1]]) as usize;
             offset += 2;
 
@@ -391,6 +376,10 @@ impl ClientHelloBuilder {
                 extensions.push(ext_type);
                 offset += ext_data_len;
             }
+        } else if remaining > 0 {
+            // 0 < remaining < 2: a dangling byte cannot hold the 2-byte
+            // extensions length, so the block is truncated, not empty.
+            return Err(CoreError::Tls("Truncated extensions length".into()));
         }
 
         Ok(ParsedClientHello {

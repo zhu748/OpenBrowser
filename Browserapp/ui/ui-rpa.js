@@ -246,14 +246,16 @@ async function refreshRpaStatusBadge() {
   } catch (_) {}
 }
 
-async function refreshRpaTasks() {
+// preloaded: share one rpaTasks IPC fetch between both tables (the rpa-task
+// event handler used to issue two identical calls per progress event).
+async function refreshRpaTasks(preloaded) {
   const table = document.getElementById('rpa-task-table');
   const empty = document.getElementById('rpa-task-empty');
   const selectAll = document.getElementById('rpa-task-select-all');
   const deleteCheckedBtn = document.getElementById('rpa-task-delete-checked');
   if (!table) return;
   let tasks = [];
-  try { tasks = await window.ops.rpaTasks({}); } catch (_) { tasks = []; }
+  try { tasks = preloaded ?? await window.ops.rpaTasks({}); } catch (_) { tasks = []; }
   const q = (document.getElementById('rpa-task-search')?.value || '').trim().toLowerCase();
   table.replaceChildren();
   if (selectAll) selectAll.checked = false;
@@ -336,12 +338,12 @@ async function refreshRpaTasks() {
   rpaApplyLocalUi(table);
 }
 
-async function refreshRpaRuns() {
+async function refreshRpaRuns(preloaded) {
   const table = document.getElementById('rpa-run-table');
   const empty = document.getElementById('rpa-run-empty');
   if (!table) return;
   let tasks = [];
-  try { tasks = await window.ops.rpaTasks({}); } catch (_) { tasks = []; }
+  try { tasks = preloaded ?? await window.ops.rpaTasks({}); } catch (_) { tasks = []; }
   const filter = document.getElementById('rpa-run-filter')?.value || 'all';
   const q = (document.getElementById('rpa-run-search')?.value || '').trim().toLowerCase();
   table.replaceChildren();
@@ -917,7 +919,6 @@ document.getElementById('rpa-store-chips')?.addEventListener('click', (event) =>
 });
 
 // fix nav: when clicking rpa child, switch view with tab
-const _origNavHandler = null;
 document.addEventListener('click', (event) => {
   const nav = event.target.closest('.nav[data-view]');
   if (!nav) return;

@@ -88,8 +88,18 @@ impl TileGridLayout {
             let col = (i % cols) as u32;
             let row = (i / cols) as u32;
 
-            let x = margin.saturating_add(col.saturating_mul(cell_w.saturating_add(gap))) as i32;
-            let y = margin.saturating_add(row.saturating_mul(cell_h.saturating_add(gap))) as i32;
+            // i32::try_from(...).unwrap_or(i32::MAX): saturating rather than
+            // wrapping keeps absurd margin/gap inputs from producing negative
+            // window origins (a wrapped negative would be placed off-screen
+            // by the OS window manager).
+            let x = i32::try_from(
+                margin.saturating_add(col.saturating_mul(cell_w.saturating_add(gap))),
+            )
+            .unwrap_or(i32::MAX);
+            let y = i32::try_from(
+                margin.saturating_add(row.saturating_mul(cell_h.saturating_add(gap))),
+            )
+            .unwrap_or(i32::MAX);
 
             rects.push(WindowRect {
                 x,
@@ -126,11 +136,18 @@ impl CascadeLayout {
         let count = window_count.min(10_000);
         let mut rects = Vec::with_capacity(count);
 
-        let max_x = (screen.width.saturating_sub(window_width)) as i32;
-        let max_y = (screen
-            .height
-            .saturating_sub(screen.taskbar_height)
-            .saturating_sub(window_height)) as i32;
+        // i32::try_from(...).unwrap_or(i32::MAX): saturating rather than
+        // wrapping keeps an oversized window from producing a wrapped negative
+        // max bound (which would compare as smaller than any start and disable
+        // the wrap-around reset entirely).
+        let max_x = i32::try_from(screen.width.saturating_sub(window_width)).unwrap_or(i32::MAX);
+        let max_y = i32::try_from(
+            screen
+                .height
+                .saturating_sub(screen.taskbar_height)
+                .saturating_sub(window_height),
+        )
+        .unwrap_or(i32::MAX);
 
         let mut current_x = start_x;
         let mut current_y = start_y;

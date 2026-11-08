@@ -112,6 +112,34 @@ function archiveDigestsPath(kernelsRoot) {
   return path.join(kernelsRoot, ARCHIVE_DIGESTS_FILE);
 }
 
+/**
+ * Atomic write for the kernels/ bookkeeping files: unique temp file + fsync +
+ * rename + directory fsync, so a crash never leaves a torn JSON file behind
+ * (a torn archive-digests.json would silently disable digest verification).
+ */
+async function writeFileAtomic(targetPath, contents) {
+  const directory = path.dirname(targetPath);
+  await fsp.mkdir(directory, { recursive: true });
+  const temporary = `${targetPath}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  let handle = null;
+  try {
+    handle = await fsp.open(temporary, 'wx', 0o600);
+    await handle.writeFile(contents);
+    await handle.sync();
+    await handle.close();
+    handle = null;
+    await fsp.rename(temporary, targetPath);
+    try {
+      const directoryHandle = await fsp.open(directory, 'r');
+      await directoryHandle.sync();
+      await directoryHandle.close();
+    } catch (_) {}
+  } finally {
+    if (handle) await handle.close().catch(() => {});
+    await fsp.rm(temporary, { force: true }).catch(() => {});
+  }
+}
+
 /** A URL is pinnable only when it embeds a concrete version string. */
 function isVersionedArchiveUrl(url, version) {
   const text = String(url || '');
@@ -120,23 +148,43 @@ function isVersionedArchiveUrl(url, version) {
 }
 
 async function loadArchiveDigests(kernelsRoot) {
+  let raw;
   try {
-    const raw = JSON.parse(await fsp.readFile(archiveDigestsPath(kernelsRoot), 'utf8'));
-    const pins = raw && typeof raw === 'object' && raw.pins && typeof raw.pins === 'object' ? raw.pins : null;
+    raw = await fsp.readFile(archiveDigestsPath(kernelsRoot), 'utf8');
+  } catch (error) {
+    if (error.code === 'ENOENT') return { pins: {} };
+    // Exists but unreadable: the pins on disk are unknown, so this must never
+    // be treated as "no pins yet" (that would silently disable verification).
+    console.error(`[kernel] archive digest store unreadable (${ARCHIVE_DIGESTS_FILE}): ${error.message}`);
+    return { pins: {}, corrupt: true };
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    const pins = parsed && typeof parsed === 'object' && parsed.pins && typeof parsed.pins === 'object' ? parsed.pins : null;
     return pins ? { pins } : { pins: {} };
-  } catch (_) {
-    return { pins: {} };
+  } catch (error) {
+    // A corrupt file used to be indistinguishable from "nothing pinned yet",
+    // which fails open exactly where the design promises fail-closed.
+    console.error(`[kernel] archive digest store corrupt (${ARCHIVE_DIGESTS_FILE}): ${error.message}; previously verified URLs will download unverified`);
+    return { pins: {}, corrupt: true };
   }
 }
 
 /** Digest previously recorded for this exact URL, or null. */
 async function pinnedArchiveSha256(kernelsRoot, url) {
   if (!url) return null;
-  const { pins } = await loadArchiveDigests(kernelsRoot);
+  const { pins, corrupt } = await loadArchiveDigests(kernelsRoot);
   const entry = pins[url];
   const sha256 = entry && typeof entry === 'object' ? entry.sha256 : entry;
   const value = String(sha256 || '').toLowerCase();
-  return SHA256_HEX.test(value) ? value : null;
+  if (SHA256_HEX.test(value)) return value;
+  // No usable pin is normally just "not pinned yet"; with a corrupt store it
+  // means a previously verified URL is about to download unverified. The
+  // download still proceeds (refusing would break users), but not silently.
+  if (corrupt) {
+    console.warn('[kernel] archive digest store corrupt; download will proceed unverified:', url);
+  }
+  return null;
 }
 
 /** Record the digest of a known-good archive; keeps the newest N pins. */
@@ -151,11 +199,9 @@ async function pinArchiveSha256(kernelsRoot, url, sha256) {
     for (const stale of keys.slice(0, Math.max(0, keys.length - MAX_ARCHIVE_DIGEST_PINS))) {
       delete pins[stale];
     }
-    await fsp.mkdir(kernelsRoot, { recursive: true });
-    await fsp.writeFile(
+    await writeFileAtomic(
       archiveDigestsPath(kernelsRoot),
-      JSON.stringify({ version: 1, pins }, null, 2) + '\n',
-      'utf8'
+      JSON.stringify({ version: 1, pins }, null, 2) + '\n'
     );
     return true;
   } catch (_) {
@@ -1197,7 +1243,13 @@ class BrowserKernelManager {
   async loadMeta() {
     try {
       this.meta = { ...this.meta, ...JSON.parse(await fsp.readFile(this.metaFile, 'utf8')) };
-    } catch (_) {}
+    } catch (error) {
+      // A missing file is the normal first run; anything else means the pin
+      // or install root recorded in it may be silently lost.
+      if (error.code !== 'ENOENT') {
+        console.warn('[kernel] kernel-meta.json unreadable, continuing with defaults:', error.message);
+      }
+    }
     // Reconcile the metadata with a kernel discovered in the current data root.
     const installed = this.resolveInstalled();
     if (installed && (this.meta.binary !== installed.path || this.meta.source !== installed.source)) {
@@ -1211,8 +1263,7 @@ class BrowserKernelManager {
   }
 
   async saveMeta() {
-    await fsp.mkdir(this.kernelsRoot, { recursive: true });
-    await fsp.writeFile(this.metaFile, JSON.stringify(this.meta, null, 2), 'utf8');
+    await writeFileAtomic(this.metaFile, JSON.stringify(this.meta, null, 2));
   }
 
   /**

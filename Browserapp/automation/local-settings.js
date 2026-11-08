@@ -90,7 +90,17 @@ async function loadLocalSettings() {
       }
     }
     return localSettingsCache;
-  } catch (_) {
+  } catch (error) {
+    // A torn settings file used to be silently reset to factory defaults and
+    // then overwritten by the next write. Keep the corrupt copy aside so it
+    // can still be recovered by hand; booting on defaults is unchanged.
+    if (error.code !== 'ENOENT') {
+      try {
+        const aside = `${settingsFile}.corrupt-${Date.now()}`;
+        await fsp.rename(settingsFile, aside);
+        console.warn(`OpenBrowser: local settings corrupt (${error.message}); reset to defaults, original kept at ${aside}`);
+      } catch (_) {}
+    }
     localSettingsCache = defaultCache();
     return localSettingsCache;
   }

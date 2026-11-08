@@ -91,7 +91,11 @@ module.exports = {
       },
     });
     item.requestHeaderRewriter = requestHeaderRewriter;
-    const workerTypes = new Set(['worker', 'shared_worker', 'service_worker']);
+    // service_worker is owned by cdp-hardening's connect wrapper (it injects
+    // buildWorkerInjectionScript on SW attach). Duplicating it here cost one
+    // redundant Runtime.evaluate round trip per SW attach; the second copy was
+    // rejected by the bridge-token guard in the worker script anyway.
+    const workerTypes = new Set(['worker', 'shared_worker']);
     const internalUrl = /^(chrome|chrome-extension|edge|edge-extension|devtools):/i;
     const report = (error, targetInfo = {}) => {
       item.workerFingerprintError = error.message;

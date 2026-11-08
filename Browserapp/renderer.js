@@ -324,6 +324,15 @@ function cloneProfilePreferences(profile) {
   };
 }
 
+// save() re-normalizes every profile through redactProfileForStorage; paying
+// that per status burst stalled the UI during batch start/stop. Coalesce the
+// exit-field persist into one trailing save (same pattern as log()).
+let __exitStatePersistTimer = 0;
+function scheduleEngineExitStateSave() {
+  clearTimeout(__exitStatePersistTimer);
+  __exitStatePersistTimer = setTimeout(() => { __exitStatePersistTimer = 0; save(); }, 500);
+}
+
 function mergeEngineExitState(values) {
   if (!Array.isArray(values) || !values.length) return false;
   const byId = new Map(values.map((item) => [item.id, item]));
@@ -360,7 +369,7 @@ function mergeEngineExitState(values) {
     }
     return next;
   });
-  if (changed) save();
+  if (changed) scheduleEngineExitStateSave();
   return changed;
 }
 
@@ -1583,10 +1592,11 @@ try {
     applyUiTheme(document.documentElement.dataset.uiTheme || 'pixel-workstation', false);
     const activeView = document.querySelector('.view.active')?.id?.replace(/^view-/, '') || 'profiles';
     if (typeof switchView === 'function') switchView(activeView);
-    if (typeof renderProfiles === 'function') renderProfiles();
-    if (typeof renderGroupsPage === 'function') renderGroupsPage();
+    // invalidateViewCache() above cleared loadedViews, so switchView re-renders
+    // the active view; the other views rebuild lazily on their next switch.
+    // Drop the unconditional rebuilds (the sessions table used to rebuild even
+    // when the sync view was never opened).
     if (typeof renderRpaStore === 'function') renderRpaStore();
-    if (typeof renderSessions === 'function') renderSessions();
     if (activeView === 'rpa' && typeof refreshRpaPage === 'function') refreshRpaPage().catch(() => {});
     if (activeView === 'api-mcp' && typeof refreshApiMcpPage === 'function') refreshApiMcpPage();
     if (typeof fillGroupSelect === 'function') {
@@ -1640,6 +1650,7 @@ async function confirmAction(options) {
   return confirmUi(options);
 }
 let __logPersistTimer = 0;
+let logsDirty = false;
 function log(module, message) {
   ui.logs.unshift({ time: new Date().toLocaleTimeString('zh-CN', { hour12: false }), module, message });
   ui.logs = ui.logs.slice(0, 200);
@@ -1647,7 +1658,11 @@ function log(module, message) {
   // (batch start/stop, sync events) used to pay that once per line.
   clearTimeout(__logPersistTimer);
   __logPersistTimer = setTimeout(() => { __logPersistTimer = 0; save(); }, 500);
-  renderLogs();
+  // #view-logs is hidden most of the time; rebuilding up to 200 rows per log
+  // line is wasted work. Render now only while the view is active, else mark
+  // dirty and render when the logs view is switched to.
+  if (document.querySelector('#view-logs.view.active')) renderLogs();
+  else logsDirty = true;
 }
 function initials(name) { return name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase(); }
 function isDirectProxy(value) {
@@ -1993,7 +2008,18 @@ document.getElementById('editor-user-agent')?.addEventListener('input', () => {
 });
 document.getElementById('editor-os')?.addEventListener('change', () => refreshUaMetaPreview().catch(() => {}));
 
-function profileEngine(id) { return engineProfiles.find((item) => item.id === id) || { running: false, assignedExtensions: [] }; }
+// engineProfiles is reassigned at many call sites, so the id index is rebuilt
+// lazily whenever the array identity changes: one Map per burst instead of a
+// linear scan over all engine states per rendered row.
+let __engineProfilesById = new Map();
+let __engineProfilesIndexedFor = null;
+function profileEngine(id) {
+  if (engineProfiles !== __engineProfilesIndexedFor) {
+    __engineProfilesIndexedFor = engineProfiles;
+    __engineProfilesById = new Map(engineProfiles.map((item) => [item.id, item]));
+  }
+  return __engineProfilesById.get(id) || { running: false, assignedExtensions: [] };
+}
 
 function viewMetaFor(view) {
   const map = {
@@ -2060,7 +2086,7 @@ function renderProxyLibrarySelect(select, selectedId = '', { includeManual = tru
     select.append(new Option(proxyLibraryLabel(item), String(item.id)));
   }
   if (includeMissing && value && !proxyLibraryItem(value)) {
-    const missing = new Option(`代理节点已失效 · ${value}`, value);
+    const missing = new Option(tx('代理节点已失效 · ') + value, value);
     missing.dataset.missing = 'true';
     select.append(missing);
   }
@@ -2140,6 +2166,10 @@ function switchView(view) {
       refreshApiMcpPage();
       loadedViews.add('api-mcp');
     }
+  }
+  if (view === 'logs' && logsDirty) {
+    logsDirty = false;
+    renderLogs();
   }
 
   try {
@@ -2269,7 +2299,7 @@ async function deleteGroup(id) {
   const n = countProfilesInGroup(id);
   if (!await confirmAction({
     title: tx('删除分组'),
-    message: tx(`删除分组「${g.name}」？\n其中 ${n} 个环境将变为「未分组」。`),
+    message: tx('删除分组「') + g.name + tx('」？\n其中 ') + n + tx(' 个环境将变为「未分组」。'),
     confirmLabel: tx('删除分组'),
     tone: 'danger',
   })) return;
@@ -2484,8 +2514,6 @@ async function restoreProfile(id) {
     save();
     invalidateViewCache(['profiles', 'groups', 'sync']);
     engineProfiles = await window.ops.syncProfiles(ui.profiles);
-    renderGroupFilterChips();
-    updateProfileSelectionUi();
     renderProfiles();
     toast(t('trash.restored'));
   } catch (error) {
@@ -2496,7 +2524,12 @@ async function restoreProfile(id) {
 async function purgeProfile(id) {
   const target = ui.profiles.find((item) => item.id === id);
   const name = target ? (target.title || target.name || id) : id;
-  if (!confirm(t('trash.confirmPurgeSingle'))) return;
+  if (!await confirmAction({
+    title: t('trash.purge'),
+    message: t('trash.confirmPurgeSingle'),
+    confirmLabel: t('trash.purge'),
+    tone: 'danger',
+  })) return;
   try {
     await window.ops.purgeProfiles([id], true);
     ui.profiles = ui.profiles.filter((item) => item.id !== id);
@@ -2505,8 +2538,6 @@ async function purgeProfile(id) {
     save();
     invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies']);
     engineProfiles = await window.ops.syncProfiles(ui.profiles);
-    renderGroupFilterChips();
-    updateProfileSelectionUi();
     renderProfiles();
     toast(t('trash.purged'));
   } catch (error) {
@@ -2721,13 +2752,21 @@ function scheduleProfileSearchRender() {
     renderProfiles();
   }, 90);
 }
+let __proxySearchTimer = 0;
 let __proxySearchFrame = 0;
+// Typing used to re-render the whole proxy table once per animation frame;
+// debounce like the other search inputs (profiles 90ms, extensions 250ms) and
+// keep a rAF only for the final paint.
 function scheduleProxySearchRender() {
-  if (__proxySearchFrame) cancelAnimationFrame(__proxySearchFrame);
-  __proxySearchFrame = requestAnimationFrame(() => {
-    __proxySearchFrame = 0;
-    renderProxies();
-  });
+  clearTimeout(__proxySearchTimer);
+  __proxySearchTimer = setTimeout(() => {
+    __proxySearchTimer = 0;
+    if (__proxySearchFrame) cancelAnimationFrame(__proxySearchFrame);
+    __proxySearchFrame = requestAnimationFrame(() => {
+      __proxySearchFrame = 0;
+      renderProxies();
+    });
+  }, 120);
 }
 // Leading-guard throttle: fetch at most once per window during a burst (keeps progress
 // visible) instead of once per event; the trailing fetch captures the settled state.
@@ -2817,7 +2856,7 @@ async function checkProfileProxy(id) {
     if (result.appliedFingerprint?.language) profile.language = result.appliedFingerprint.language;
     if (result.appliedFingerprint?.privacy) profile.privacy = { ...(profile.privacy || {}), ...result.appliedFingerprint.privacy };
     save();
-    const number = displayProfileNumber(profile); await refreshStatus(); renderProfiles();
+    const number = displayProfileNumber(profile); await refreshStatus();
     const detail = formatProxyCheckResult(result);
     log('Proxy', '环境 ' + number + ' 出口检测成功 · ' + detail);
     toast('环境 ' + number + ' 出口：' + detail);
@@ -3034,11 +3073,16 @@ function openAssign(id) {
   $('#assign-dialog').showModal();
 }
 
+let assignmentInFlight = false;
 async function applyAssignment(enabled) {
+  if (assignmentInFlight) return;
   const ids = $$('#assign-profile-list input:checked').map((input) => input.value); if (!ids.length) return toast(tx('请先选择环境'));
-  const result = await window.ops.assignExtension(currentExtension.id, ids, enabled); $('#assign-dialog').close(); invalidateViewCache(['extensions', 'profiles', 'sync']); await refreshExtensions(); await refreshStatus();
-  log('Extension', `${currentExtension.name} ${enabled ? '添加到' : '移出'} ${ids.length} 个环境`);
-  toast(result.restartRequired?.length ? `已保存；${result.restartRequired.length} 个运行环境需重启` : '批量分配已生效');
+  assignmentInFlight = true;
+  try {
+    const result = await window.ops.assignExtension(currentExtension.id, ids, enabled); $('#assign-dialog').close(); invalidateViewCache(['extensions', 'profiles', 'sync']); await refreshExtensions(); await refreshStatus();
+    log('Extension', `${currentExtension.name} ${enabled ? '添加到' : '移出'} ${ids.length} 个环境`);
+    toast(result.restartRequired?.length ? `已保存；${result.restartRequired.length} 个运行环境需重启` : '批量分配已生效');
+  } finally { assignmentInFlight = false; }
 }
 
 function orderedSelectedSessionIds() {
@@ -3608,8 +3652,6 @@ document.getElementById('profile-group-chips')?.addEventListener('click', (event
   activeGroupFilter = btn.dataset.groupFilter || 'all';
   selectedProfiles.clear();
   profilePage = 1;
-  renderGroupFilterChips();
-  updateProfileSelectionUi();
   renderProfiles();
 });
 
@@ -3710,6 +3752,7 @@ $('#profile-form').addEventListener('submit', async (event) => {
     proxyMeta: { proxyId: isDirectProxy(proxy) ? null : (proxyLibraryId || null) },
   };
   const shouldSaveToLib = Boolean($('#create-proxy-save-to-library')?.checked);
+  const submitter = event.submitter; if (submitter && submitter.value !== 'cancel') submitter.disabled = true;
   ui.profiles.push(profile); ui.nextProfileNumber = number + 1; save();
   invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies']);
   try {
@@ -3746,7 +3789,7 @@ $('#profile-form').addEventListener('submit', async (event) => {
     toast(isDirectProxy(proxy) && networkMode === 'proxy' ? '未填写代理，已自动切换为本地直连' : (isDirectProxy(proxy) ? '已创建（本地直连）' : '已创建（代理模式）'));
   } catch (error) {
     ui.profiles = ui.profiles.filter((item) => item.id !== profile.id); ui.nextProfileNumber = previousNext; save(); toast('创建失败：' + error.message);
-  }
+  } finally { if (submitter) submitter.disabled = false; }
 });
 
 $$('[data-editor-tab]').forEach((button) => {
@@ -3999,6 +4042,7 @@ $('#batch-add-form').addEventListener('submit', async (event) => {
   const clearCache = Boolean($('#batch-add-clear-cache')?.checked);
   const multiOpen = Boolean($('#batch-add-multi-open')?.checked);
 
+  const submitter = event.submitter; if (submitter && submitter.value !== 'cancel') submitter.disabled = true;
   const used = new Set(ui.profiles.map((item) => item.id)); const created = [];
   while (created.length < count) {
     const number = start + created.length; const id = createInternalProfileId(number, used); used.add(id);
@@ -4043,12 +4087,12 @@ $('#batch-add-form').addEventListener('submit', async (event) => {
     });
     ui.profiles.push(...created); ui.nextProfileNumber = start + created.length; save(); invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies']); engineProfiles = await window.ops.syncProfiles(ui.profiles);
     selectedProfiles = new Set(created.map((item) => item.id)); $('#select-all-profiles').checked = false; $('#batch-add-dialog').close(); $('#batch-add-proxies').value = '';
-    await refreshStatus(); await refreshExtensions(); renderProfiles();
+    await refreshStatus(); await refreshExtensions();
     log('Batch', '批量新增 ' + created.length + ' 个环境 · ' + (networkMode === 'direct' ? '本地直连' : '代理'));
     toast('已批量创建 ' + created.length + ' 个环境（' + (networkMode === 'direct' ? '本地直连' : '代理模式') + '）');
   } catch (error) {
     ui.profiles = ui.profiles.filter((item) => !created.some((createdItem) => createdItem.id === item.id)); ui.nextProfileNumber = previousNext; save(); toast('批量新增失败：' + error.message);
-  }
+  } finally { if (submitter) submitter.disabled = false; }
 });
 $('#delete-selected').addEventListener('click', async () => {
   pendingDeleteProfiles = ui.profiles.filter((item) => selectedProfiles.has(item.id)).map((item) => item.id);
@@ -4102,8 +4146,6 @@ $('#batch-delete-form').addEventListener('submit', async (event) => {
     invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies']);
     await refreshStatus(); await refreshSessions(); await refreshExtensions();
     engineProfiles = await window.ops.syncProfiles(ui.profiles);
-    renderGroupFilterChips();
-    updateProfileSelectionUi();
     renderProfiles();
     if (inTrash || deleteData) {
       log('Batch', '彻底删除 ' + result.deleted + ' 个环境');
@@ -4143,7 +4185,12 @@ $('#restore-selected')?.addEventListener('click', async () => {
 $('#empty-trash-btn')?.addEventListener('click', async () => {
   const trashedCount = ui.profiles.filter((p) => p.trashed).length;
   if (!trashedCount) return toast(t('trash.emptyTitle'));
-  if (!confirm(t('trash.confirmEmpty'))) return;
+  if (!await confirmAction({
+    title: t('trash.empty'),
+    message: t('trash.confirmEmpty'),
+    confirmLabel: t('trash.empty'),
+    tone: 'danger',
+  })) return;
   try {
     await window.ops.emptyTrash(true);
     ui.profiles = ui.profiles.filter((p) => !p.trashed);
@@ -4153,8 +4200,6 @@ $('#empty-trash-btn')?.addEventListener('click', async () => {
     save();
     invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies']);
     engineProfiles = await window.ops.syncProfiles(ui.profiles);
-    renderGroupFilterChips();
-    updateProfileSelectionUi();
     renderProfiles();
     toast(t('trash.emptied'));
   } catch (err) {
@@ -4243,9 +4288,10 @@ $('#choose-extension-folder').addEventListener('click', async () => {
     if (!result.canceled) { invalidateViewCache(['extensions', 'profiles', 'sync']); await refreshExtensions(); await refreshStatus(); await refreshSessions(); $('#add-app-dialog').close(); log('Extension', `添加 ${result.extension.name}，默认分配 ${result.assigned || 0} 个环境，重启 ${result.restarted || 0} 个`); toast(tx(`已添加 ${result.extension.name}，默认启用 ${result.assigned || 0}/${ui.profiles.length}`)); }
   } catch (error) { toast(error.message); }
 });
-$('#add-store-submit').addEventListener('click', async () => {
+$('#add-store-submit').addEventListener('click', async (event) => {
   const url = $('#chrome-store-url').value.trim();
   if (!url) return toast(tx('请输入 Chrome 应用商店 URL'));
+  const submitter = event.currentTarget; if (submitter) submitter.disabled = true;
   const all = $('#store-assign-all').checked; const ids = all ? ui.profiles.map((item) => item.id) : [];
   try {
     toast(tx('正在从 Chrome 应用商店获取扩展...'));
@@ -4254,7 +4300,7 @@ $('#add-store-submit').addEventListener('click', async () => {
     $('#add-app-dialog').close(); $('#chrome-store-url').value = '';
     log('Extension', '商店添加 ' + result.extension.name + ', 分配 ' + result.assigned + ', 重启 ' + result.restarted);
     toast('已添加 ' + result.extension.name + '，分配 ' + result.assigned + ' 个环境');
-  } catch (error) { toast('商店添加失败：' + error.message); }
+  } catch (error) { toast('商店添加失败：' + error.message); } finally { if (submitter) submitter.disabled = false; }
 });
 $('#refresh-extensions').addEventListener('click', refreshExtensions);
 $('#app-center-tabs')?.addEventListener('click', (event) => {
@@ -4788,6 +4834,7 @@ $('#batch-update').addEventListener('click', () => {
 $('#batch-update-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   if (event.submitter?.value === 'cancel') return $('#batch-update-dialog').close();
+  const submitter = event.submitter; if (submitter && submitter.value !== 'cancel') submitter.disabled = true;
   const mode = document.querySelector('input[name="batch-update-network"]:checked')?.value
     || $('#batch-update-network-mode')?.value
     || 'proxy';
@@ -4807,7 +4854,7 @@ $('#batch-update-form').addEventListener('submit', async (event) => {
   } catch (error) {
     log('Proxy', '批量更新失败 · ' + error.message);
     toast(error.message);
-  }
+  } finally { if (submitter) submitter.disabled = false; }
 });
 
 

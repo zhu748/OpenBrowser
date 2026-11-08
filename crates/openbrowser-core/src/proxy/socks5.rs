@@ -6,12 +6,9 @@ pub const SOCKS5_VERSION: u8 = 0x05;
 pub const SOCKS5_AUTH_SUBNEGOTIATION_VERSION: u8 = 0x01;
 
 pub const AUTH_METHOD_NONE: u8 = 0x00;
-pub const AUTH_METHOD_GSSAPI: u8 = 0x01;
 pub const AUTH_METHOD_USER_PASS: u8 = 0x02;
-pub const AUTH_METHOD_NO_ACCEPTABLE: u8 = 0xFF;
 
 pub const CMD_CONNECT: u8 = 0x01;
-pub const CMD_BIND: u8 = 0x02;
 pub const CMD_UDP_ASSOCIATE: u8 = 0x03;
 
 pub const ATYP_IPV4: u8 = 0x01;

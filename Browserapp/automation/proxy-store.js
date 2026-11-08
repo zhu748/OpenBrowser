@@ -326,6 +326,9 @@ class ProxyStore {
     const payload = shouldEncrypt
       ? credentialCrypto.encryptCredential(jsonString)
       : jsonString;
+    // An unchanged payload means the main file and its .bak already hold
+    // exactly this state; skip the whole read-validate-rewrite cycle.
+    if (payload === this._lastPersistedPayload) return;
     let current = { kind: 'missing', raw: null };
     try {
       const rawBuf = await fsp.readFile(this.filePath);
@@ -372,6 +375,7 @@ class ProxyStore {
 
     if (current.kind === 'valid') await this._writeAtomic(this.filePath + '.bak', current.raw);
     await this._writeAtomic(this.filePath, payload);
+    this._lastPersistedPayload = payload;
     if (current.kind !== 'valid') {
       try {
         await fsp.access(this.filePath + '.bak');
@@ -505,7 +509,9 @@ class ProxyStore {
   }
 
   list(filter = {}) {
-    let items = cloneData(this.data.items);
+    // Records are flat and read-only downstream; a per-record shallow copy is
+    // enough to protect the store without deep-cloning the whole library per call.
+    let items = this.data.items.map((item) => ({ ...item }));
     const q = String(filter.q || filter.keyword || '').trim().toLowerCase();
     if (q) {
       items = items.filter((item) => [item.name, item.host, item.protocol, item.remark, item.lastIp, String(item.port)]

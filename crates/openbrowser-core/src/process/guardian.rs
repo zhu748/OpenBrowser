@@ -138,10 +138,15 @@ impl ProcessGuardian for ProcessSupervisor {
                 }
             }
 
-            if let Ok(mut pids) = self.child_pids.lock() {
-                if !pids.contains(&pid) {
-                    pids.push(pid);
-                }
+            // Recover a poisoned lock: the PID list is plain data that a panic
+            // elsewhere leaves intact, and skipping the push on poison would
+            // let a live child escape termination tracking.
+            let mut pids = self
+                .child_pids
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if !pids.contains(&pid) {
+                pids.push(pid);
             }
             info!("Registered child process PID into JobObject: {}", pid);
             Ok(())
@@ -164,14 +169,36 @@ impl ProcessGuardian for ProcessSupervisor {
         #[cfg(windows)]
         {
             use windows_sys::Win32::System::JobObjects::TerminateJobObject;
-            if let Some(ref job) = self.job {
-                unsafe {
-                    TerminateJobObject(job.0, 1);
+            match self.job {
+                Some(ref job) => {
+                    let res = unsafe { TerminateJobObject(job.0, 1) };
+                    if res == 0 {
+                        // Clearing the tracked list here would mark the
+                        // children as gone while they may still be running,
+                        // and a retry could no longer target them; keep the
+                        // list so a later attempt can re-terminate.
+                        return Err(CoreError::Process(format!(
+                            "TerminateJobObject failed: {}",
+                            std::io::Error::last_os_error()
+                        )));
+                    }
+                }
+                None => {
+                    // No JobObject handle: termination cannot be proven, so
+                    // the tracking list survives too (it is only cleared
+                    // after a proven-successful termination).
+                    return Err(CoreError::Process(
+                        "TerminateJobObject skipped: no JobObject handle held".into(),
+                    ));
                 }
             }
-            if let Ok(mut pids) = self.child_pids.lock() {
-                pids.clear();
-            }
+            // Only reached after proven termination. Recover a poisoned lock
+            // the same way as register_child: a panic elsewhere must not
+            // leave stale PIDs tracked forever.
+            self.child_pids
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clear();
             Ok(())
         }
 

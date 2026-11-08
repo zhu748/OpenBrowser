@@ -1501,7 +1501,7 @@ class BrowserEngine {
     return ids.map((id) => ({ id, item: this.running.get(id) }))
       .filter((entry) => entry.item?.port && !entry.item.cleanedUp && !entry.item.stopping);
   }
-  async sessions() { const result = []; for (const { id, item } of this.runningWithCdp([...this.running.keys()])) { try { result.push({ id, profile: this.profiles.get(id), port: item.port, browser: item.browser.name, tabs: await cdp.tabs(item.port) }); } catch (error) { result.push({ id, profile: this.profiles.get(id), port: item.port, browser: item.browser.name, tabs: [], error: error.message }); } } return result; }
+  async sessions() { const entries = this.runningWithCdp([...this.running.keys()]); const result = await Promise.all(entries.map(async ({ id, item }) => { try { return { id, profile: this.profiles.get(id), port: item.port, browser: item.browser.name, tabs: await cdp.tabs(item.port) }; } catch (error) { return { id, profile: this.profiles.get(id), port: item.port, browser: item.browser.name, tabs: [], error: error.message }; } })); return result; }
 }
 
 // Runtime settings application, the startup-page/locale environment cluster

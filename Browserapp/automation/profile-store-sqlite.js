@@ -13,7 +13,10 @@ const credentialCrypto = require('../credential-crypto');
 function encodeProfileData(profile) {
   try {
     return credentialCrypto.encryptCredential(JSON.stringify(profile));
-  } catch (_) {
+  } catch (error) {
+    // The plaintext fallback keeps the row readable, but it is an at-rest
+    // security downgrade: make it visible instead of storing silently in the clear.
+    console.error('profile-store-sqlite: encryptCredential failed, storing profile row as plaintext:', error.message);
     return JSON.stringify(profile);
   }
 }

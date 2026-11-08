@@ -522,6 +522,7 @@ $('#proxy-batch-import-form')?.addEventListener('submit', async (event) => {
   const text = $('#proxy-batch-import-text')?.value || '';
   const lines = text.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('//') && !l.startsWith('#'));
   if (!lines.length) return toast(tx('请输入要导入的代理'));
+  const submitter = event.submitter; if (submitter && submitter.value !== 'cancel') submitter.disabled = true;
   const defaultProtocol = $('#proxy-batch-default-protocol')?.value || 'socks5';
   const ipChannel = $('#proxy-batch-ip-channel')?.value || 'ip-api';
   let successCount = 0;
@@ -550,11 +551,13 @@ $('#proxy-batch-import-form')?.addEventListener('submit', async (event) => {
       failCount++;
     }
   }
-  $('#proxy-batch-import-dialog').close();
-  invalidateViewCache(['proxies', 'profiles']);
-  await refreshProxies();
-  toast(tx(`批量导入完成：成功 ${successCount} 个` + (failCount ? `，失败 ${failCount} 个` : '')));
-  log('Proxy', `批量导入代理完成：${successCount} 成功，${failCount} 失败`);
+  try {
+    $('#proxy-batch-import-dialog').close();
+    invalidateViewCache(['proxies', 'profiles']);
+    await refreshProxies();
+    toast(tx(`批量导入完成：成功 ${successCount} 个` + (failCount ? `，失败 ${failCount} 个` : '')));
+    log('Proxy', `批量导入代理完成：${successCount} 成功，${failCount} 失败`);
+  } finally { if (submitter) submitter.disabled = false; }
 });
 
 document.addEventListener('click', async (event) => {

@@ -34,6 +34,10 @@ impl HttpConnectTarget {
         }
 
         // Case 1: Absolute URI starting with http:// or https://
+        // Deferred (8c): scheme detection still allocates a lowered copy of
+        // the URI; replacing it with a byte-level prefix compare is possible
+        // but would duplicate the [8..]/[7..] slice logic below, so it stays
+        // as-is until a profiling need appears.
         let lower_uri = uri.to_ascii_lowercase();
         if lower_uri.starts_with("http://") || lower_uri.starts_with("https://") {
             let is_https = lower_uri.starts_with("https://");
@@ -47,15 +51,8 @@ impl HttpConnectTarget {
 
         // Case 2: Relative path starting with '/'
         if uri.starts_with('/') {
-            for line in raw_headers.lines() {
-                let trimmed = line.trim();
-                let lower = trimmed.to_ascii_lowercase();
-                if lower.starts_with("host:") {
-                    let host_val = trimmed[5..].trim();
-                    if !host_val.is_empty() {
-                        return Self::parse_authority(host_val, 80);
-                    }
-                }
+            if let Some(host_val) = find_host_header(raw_headers) {
+                return Self::parse_authority(host_val, 80);
             }
             return Err(CoreError::Http(format!(
                 "Relative request '{}' lacks a valid Host header",
@@ -69,15 +66,8 @@ impl HttpConnectTarget {
         }
 
         // Case 4: Search Host header as fallback
-        for line in raw_headers.lines() {
-            let trimmed = line.trim();
-            let lower = trimmed.to_ascii_lowercase();
-            if lower.starts_with("host:") {
-                let host_val = trimmed[5..].trim();
-                if !host_val.is_empty() {
-                    return Self::parse_authority(host_val, 80);
-                }
-            }
+        if let Some(host_val) = find_host_header(raw_headers) {
+            return Self::parse_authority(host_val, 80);
         }
 
         // Case 5: Bare hostname without slash
@@ -186,6 +176,28 @@ impl HttpConnectTarget {
 
         Ok(Self { host, port })
     }
+}
+
+/// Single-pass Host header lookup over raw header lines: returns the trimmed
+/// value of the first non-empty Host header, without allocating a lowercase
+/// copy of every line.
+fn find_host_header(raw_headers: &str) -> Option<&str> {
+    for line in raw_headers.lines() {
+        let trimmed = line.trim();
+        // Header names are case-insensitive (RFC 9110 §5.1); a match on the
+        // 5 ASCII bytes proves index 5 is a char boundary, so [5..] is safe.
+        if trimmed
+            .as_bytes()
+            .get(..5)
+            .is_some_and(|name| name.eq_ignore_ascii_case(b"Host:"))
+        {
+            let value = trimmed[5..].trim();
+            if !value.is_empty() {
+                return Some(value);
+            }
+        }
+    }
+    None
 }
 
 /// Helper to generate Basic Proxy-Authorization header

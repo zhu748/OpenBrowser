@@ -951,7 +951,11 @@ function decodeChunked(buffer) {
   while (offset < buffer.length) {
     const line = buffer.indexOf('\r\n', offset); if (line < 0) throw new Error('Invalid chunked response');
     const size = Number.parseInt(buffer.subarray(offset, line).toString('ascii').split(';')[0], 16); if (!Number.isFinite(size)) throw new Error('Invalid chunk size');
-    offset = line + 2; if (size === 0) break; chunks.push(buffer.subarray(offset, offset + size)); offset += size + 2;
+    offset = line + 2; if (size === 0) break;
+    // A truncated final chunk would decode into a silently short body; the
+    // trailing CRLF after the chunk must be present too.
+    if (offset + size + 2 > buffer.length) throw new Error('Invalid chunked response');
+    chunks.push(buffer.subarray(offset, offset + size)); offset += size + 2;
   }
   return Buffer.concat(chunks);
 }

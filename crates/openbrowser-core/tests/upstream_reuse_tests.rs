@@ -122,12 +122,15 @@ async fn test_upstream_reuse_benchmark_comparative() {
         name: None,
     };
 
-    // 1. Test WITH connection reuse / prewarming enabled
+    // 1. Test WITH connection reuse / prewarming enabled.
+    //    Three-request shape: the recency gate means a first-request target
+    //    never prewarms (no signal yet), so request 2 is the round that
+    //    spawns the prewarm, and reuse only lands on request 3.
     let bridge = LocalProxyBridge::new(config.clone(), FailClosedPolicy::default());
     let bridge_addr = bridge.start().await.expect("bridge starts");
     let target = "api.stripe.com:443";
 
-    // First request (Cold: must dial upstream + wait for 20ms proxy handshake)
+    // Request 1 (Cold: must dial upstream + wait for 20ms proxy handshake)
     let (t1, ok1) = perform_client_connect(bridge_addr.port(), target).await;
     assert!(ok1, "First handshake must succeed");
     assert!(
@@ -136,31 +139,43 @@ async fn test_upstream_reuse_benchmark_comparative() {
         t1
     );
 
-    // Give background prewarm task 60ms to complete pre-establishing standby tunnel
-    tokio::time::sleep(Duration::from_millis(60)).await;
-
-    // Second request (Reused: hits prewarmed tunnel in pool)
+    // Request 2 (Prewarm round): the pool is still empty — nothing prewarmed
+    // after request 1 — so this dials fresh while spawning the prewarm.
     let (t2, ok2) = perform_client_connect(bridge_addr.port(), target).await;
     assert!(ok2, "Second handshake must succeed");
+    assert!(
+        t2 >= Duration::from_millis(20),
+        "Second handshake must still pay the fresh dial; reuse lands on the third request (got {:?})",
+        t2
+    );
+
+    // Give the prewarm task 60ms to complete pre-establishing standby tunnel
+    tokio::time::sleep(Duration::from_millis(60)).await;
+
+    // Request 3 (Reused: hits the prewarmed tunnel in pool)
+    let (t3, ok3) = perform_client_connect(bridge_addr.port(), target).await;
+    assert!(ok3, "Third handshake must succeed");
 
     println!(
         "\n================ [P0-a BENCHMARK RESULTS] ================\n\
-         Cold (First) Handshake Latency:   {:>8.2} ms\n\
-         Reused (Second) Handshake Latency: {:>8.2} ms\n\
-         Handshake Latency Saved:          {:>8.2} ms (-{:.1}%)\n\
-         Speedup Factor:                   {:>8.1}x\n\
+         Cold (First) Handshake Latency:    {:>8.2} ms\n\
+         Prewarm Round (Second) Latency:    {:>8.2} ms\n\
+         Reused (Third) Handshake Latency:  {:>8.2} ms\n\
+         Handshake Latency Saved:           {:>8.2} ms (-{:.1}%)\n\
+         Speedup Factor:                    {:>8.1}x\n\
          ==========================================================",
         t1.as_secs_f64() * 1000.0,
         t2.as_secs_f64() * 1000.0,
-        (t1.saturating_sub(t2)).as_secs_f64() * 1000.0,
-        (1.0 - (t2.as_secs_f64() / t1.as_secs_f64())) * 100.0,
-        t1.as_secs_f64() / t2.as_secs_f64(),
+        t3.as_secs_f64() * 1000.0,
+        (t1.saturating_sub(t3)).as_secs_f64() * 1000.0,
+        (1.0 - (t3.as_secs_f64() / t1.as_secs_f64())) * 100.0,
+        t1.as_secs_f64() / t3.as_secs_f64(),
     );
 
     assert!(
-        t2 < Duration::from_millis(10),
+        t3 < Duration::from_millis(10),
         "Reused handshake must be significantly faster than cold (got {:?})",
-        t2
+        t3
     );
 
     bridge.stop().await.expect("bridge stop");
@@ -231,8 +246,13 @@ async fn test_tunnel_pool_stop_lifecycle_clears_all_sockets() {
     let bridge = LocalProxyBridge::new(config, FailClosedPolicy::default());
     let bridge_addr = bridge.start().await.expect("bridge starts");
 
+    // Two requests: the recency gate means the pool only fills from request
+    // 2's prewarm, so a single CONNECT would leave the pool empty and this
+    // test would assert nothing.
     let (_t1, ok1) = perform_client_connect(bridge_addr.port(), "test.domain:443").await;
     assert!(ok1);
+    let (_t2, ok2) = perform_client_connect(bridge_addr.port(), "test.domain:443").await;
+    assert!(ok2);
 
     tokio::time::sleep(Duration::from_millis(40)).await;
 
@@ -256,6 +276,52 @@ async fn test_tunnel_pool_stop_lifecycle_clears_all_sockets() {
         pool.raw_tcp_count().await,
         0,
         "Stopping bridge must clear raw TCP pool"
+    );
+
+    // The stopped flag must hold: a late prewarm task (or any other putter)
+    // must not be able to re-populate the drained pool.
+    let late_tunnel = tokio::net::TcpStream::connect(("127.0.0.1", proxy.addr.port()))
+        .await
+        .expect("dial for late-put check");
+    assert!(
+        !pool
+            .put_tunnel("test.domain".into(), 443, late_tunnel, Vec::new(),)
+            .await,
+        "put_tunnel must refuse while the pool is stopped"
+    );
+    let late_raw = tokio::net::TcpStream::connect(("127.0.0.1", proxy.addr.port()))
+        .await
+        .expect("dial for late-raw-put check");
+    assert!(
+        !pool.put_upstream_tcp(late_raw).await,
+        "put_upstream_tcp must refuse while the pool is stopped"
+    );
+    assert!(
+        !pool.should_prewarm("test.domain", 443).await,
+        "should_prewarm must answer false while the pool is stopped"
+    );
+
+    // A shared pool must become usable again on restart: rearm + fresh put.
+    pool.rearm();
+    let restart_tunnel = tokio::net::TcpStream::connect(("127.0.0.1", proxy.addr.port()))
+        .await
+        .expect("dial after rearm");
+    assert!(
+        pool.put_tunnel("test.domain".into(), 443, restart_tunnel, Vec::new())
+            .await,
+        "put_tunnel must accept after rearm"
+    );
+    assert_eq!(pool.active_tunnel_count().await, 1);
+
+    // And should_prewarm answers false again for a target with no recent dial.
+    assert!(
+        !pool.should_prewarm("never-dialed.test", 443).await,
+        "A first-request target must not prewarm (no recency signal)"
+    );
+    pool.record_dial("never-dialed.test", 443).await;
+    assert!(
+        pool.should_prewarm("never-dialed.test", 443).await,
+        "After a real dial, the same target becomes prewarm-eligible"
     );
 
     proxy.stop();

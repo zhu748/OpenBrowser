@@ -593,44 +593,6 @@ function createDohLookup(resolver, options = {}) {
   };
 }
 
-function installLookupPatch(resolver, originalLookup = dns.lookup) {
-  if (!resolver || typeof resolver.resolve4 !== 'function') {
-    throw new TypeError('resolver required');
-  }
-  dns.lookup = function patchedLookup(hostname, options, callback) {
-    let opts = options;
-    let cb = callback;
-    if (typeof opts === 'function') {
-      cb = opts;
-      opts = {};
-    }
-    const family = opts && opts.family;
-    if (family === 6) {
-      resolver.resolve6(hostname).then(
-        (addrs) => cb(null, addrs[0], 6),
-        (err) => {
-          if (err && (err.code === 'ENODATA' || err.code === 'ENOTFOUND')) {
-            return originalLookup(hostname, opts, cb);
-          }
-          cb(err);
-        }
-      );
-      return undefined;
-    }
-    resolver.resolve4(hostname).then(
-      (addrs) => cb(null, addrs[0], 4),
-      (err) => {
-        if (err && (err.code === 'ENODATA' || err.code === 'ENOTFOUND')) {
-          return originalLookup(hostname, opts, cb);
-        }
-        cb(err);
-      }
-    );
-    return undefined;
-  };
-  return () => { dns.lookup = originalLookup; };
-}
-
 module.exports = {
   DohResolver,
   encodeQuery,
@@ -638,7 +600,6 @@ module.exports = {
   readName,
   TtlCache,
   base64UrlEncode,
-  installLookupPatch,
   createDohLookup,
   getIpFromAnswer,
   buildFullPath,

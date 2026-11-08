@@ -455,8 +455,12 @@ async function syncTabsFromMaster(ids) {
   const masterTabs = (await cdp.tabs(masterEntry.item.port)).filter((tab) => canMirrorTabUrl(tab?.url));
   const urls = masterTabs.map((tab) => tab.url).filter(Boolean).slice(0, MAX_SYNC_TABS);
 
-  const slaveSummaries = [];
-  for (const slave of slaveEntries) {
+  // Slaves are independent of each other: mirror them in parallel and keep
+  // each slave's tab order sequential inside its own loop (the existing[index]
+  // mapping needs that order). The serial version cost one CDP round trip per
+  // slave × tab — 10 slaves × 20 tabs was ~200 serial waits (10-30s) on the
+  // begin-sync path the user watches.
+  const slaveSummaries = await Promise.all(slaveEntries.map(async (slave) => {
     const summary = { id: slave.id, mirrored: 0, failed: 0, errors: [] };
     try {
       const existing = (await cdp.tabs(slave.item.port)).filter((tab) => canMirrorTabUrl(tab?.url));
@@ -481,8 +485,8 @@ async function syncTabsFromMaster(ids) {
     } catch (slaveError) {
       summary.errors.push({ url: null, error: String(slaveError?.message || slaveError) });
     }
-    slaveSummaries.push(summary);
-  }
+    return summary;
+  }));
 
   const liveSyncEligibleUrls = urls.filter(canDomLiveSyncTabUrl);
   const internalMirrorOnlyUrls = urls.filter(isNavigableInternalUrl);
@@ -735,7 +739,11 @@ async function fetchChromeStoreMetadata(storeId) {
           return next;
         }
       }
-      if (cached.icon_url || cached.description) return cached;
+      // 'file-cache' is an internal marker meaning "bytes live in the .img
+      // cache" — never hand it to the renderer as an image URL (it renders a
+      // broken image); fall back to the placeholder instead.
+      if (cached.description) return { ...cached, icon_url: null };
+      return cached.icon_url && String(cached.icon_url).startsWith('data:') ? cached : null;
     }
   } catch (_) {}
 
@@ -1030,9 +1038,33 @@ app.whenReady().then(async () => {
   });
   session.defaultSession.setPermissionCheckHandler(() => false);
   // Window creation only needs Electron readiness, not engine state: overlap it
-  // with settings loading so the first frame is not behind disk I/O. Engine init
-  // stays sequential — every later IPC handler (system:info et al.) dereferences
-  // the engine, so the window must not start firing invokes before it exists.
+  // with settings loading so the first frame is not behind disk I/O. The
+  // renderer's initialize() invokes system:info as soon as index.html loads,
+  // so that handler (and only it) must be registered BEFORE createWindow();
+  // awaiting it earlier in the chain left a window where the first invoke
+  // rejected with "No handler registered" and the profile list never rendered.
+  registerTrustedIpc('system:info', () => ({
+    appVersion: app.getVersion(),
+    chrome: process.versions.chrome,
+    browsers: engine?.candidates?.() ?? [],
+    profileRoot: engine?.getProfileDataRoot?.() ?? '',
+    defaultProfileRoot: defaultProfileDataRoot,
+    localApi: automation?.info || null,
+    startPage: engine?.startPageServer?.info?.() || null,
+    kernel: engine?.kernelStatus?.() ?? { installed: false },
+    kernelSelection: engine?.browserSelection?.() ?? [],
+    systemBrowsers: engine?.systemBrowserCandidates?.().filter((item) => fs.existsSync(item.path)) ?? [],
+    preferIndependentKernel: engine?.preferIndependentKernel ?? true,
+    allowSystemBrowserFallback: engine?.allowSystemBrowserFallback ?? false,
+    systemBrowserPath: engine?.systemBrowserPath ?? '',
+    titleBarIntegrated: process.platform === 'darwin' || process.platform === 'win32',
+    platform: process.platform,
+    closeAction: settingsStore.normalizeCloseAction(settingsStore.getLocalSettings().closeAction),
+  }));
+  // The renderer's initialize() also invokes sync:state right after getInfo —
+  // same early-registration requirement, or the bare await in initialize()
+  // rejects and the profile list never renders (verified in round 2).
+  registerTrustedIpc('sync:state', () => syncSnapshot());
   const localSettingsPromise = settingsStore.loadLocalSettings();
   const windowPromise = createWindow().catch((error) => {
     console.error('OpenBrowser window creation failed:', error.message);
@@ -1105,24 +1137,6 @@ app.whenReady().then(async () => {
     console.error('Local API failed to start:', error.message);
   }
 
-  registerTrustedIpc('system:info', () => ({
-    appVersion: app.getVersion(),
-    chrome: process.versions.chrome,
-    browsers: engine.candidates(),
-    profileRoot: engine.getProfileDataRoot(),
-    defaultProfileRoot: defaultProfileDataRoot,
-    localApi: automation?.info || null,
-    startPage: engine.startPageServer?.info?.() || null,
-    kernel: engine.kernelStatus(),
-    kernelSelection: engine.browserSelection(),
-    systemBrowsers: engine.systemBrowserCandidates().filter((item) => fs.existsSync(item.path)),
-    preferIndependentKernel: engine.preferIndependentKernel,
-    allowSystemBrowserFallback: engine.allowSystemBrowserFallback,
-    systemBrowserPath: engine.systemBrowserPath,
-    titleBarIntegrated: process.platform === 'darwin' || process.platform === 'win32',
-    platform: process.platform,
-    closeAction: settingsStore.normalizeCloseAction(settingsStore.getLocalSettings().closeAction),
-  }));
   registerTrustedIpc('system:read-clipboard', () => {
     try { return clipboard.readText(); } catch (_) { return ''; }
   });
@@ -1374,7 +1388,6 @@ app.whenReady().then(async () => {
 
   registerTrustedIpc('sync:sessions', () => engine.sessions());
   registerTrustedIpc('sync:selection', (_event, ids) => { syncSelection = sanitizeIds(ids); syncState.selected = [...syncSelection]; emit({ type: 'sync-state', ...syncSnapshot() }); return syncSnapshot(); });
-  registerTrustedIpc('sync:state', () => syncSnapshot());
   registerTrustedIpc('sync:settings:get', () => liveSync.getSettings());
   registerTrustedIpc('sync:settings:set', (_event, value) => liveSync.updateSettings(value));
   registerTrustedIpc('sync:start', (_event, ids) => beginSync(ids));
@@ -1525,36 +1538,50 @@ app.whenReady().then(async () => {
     const store = proxyStore();
     const ids = Array.isArray(payload?.ids) ? payload.ids.map(String) : [];
     if (!ids.length) throw new Error('ids required');
+    // Serial execution made "check all" run minutes inside one invoke (100 ×
+    // 6.5s budget worst case). engine.testProxy already dedups identical
+    // in-flight probes, so a bounded pool is safe; same shape as
+    // restartRunningProfiles above.
+    const queue = ids.slice(0, 100);
     const results = [];
+    const resultsById = new Map();
+    await Promise.all(Array.from({ length: Math.min(8, queue.length) }, async () => {
+      while (queue.length) {
+        const id = queue.shift();
+        const item = store.get(id);
+        if (!item) {
+          resultsById.set(id, { id, ok: false, error: 'not found' });
+          continue;
+        }
+        try {
+          const result = await engine.testProxy({
+            id: 'proxy-check',
+            name: item.name || 'proxy-check',
+            proxy: item.raw,
+            proxyMeta: { ipChannel: item.ipChannel || 'ip-api', refreshUrl: item.refreshUrl || '', apiExtractUrl: item.refreshUrl || '' },
+          });
+          await store.markCheck(item.id, result);
+          resultsById.set(id, { id, ok: true, ...result, proxy: store.get(item.id) });
+        } catch (error) {
+          await store.markCheckError(item.id, {
+            errorClass: error.errorClass || 'unknown',
+            latencyMs: error.latencyMs,
+          });
+          resultsById.set(id, {
+            id,
+            ok: false,
+            error: error.message || String(error),
+            errorClass: error.errorClass || 'unknown',
+            latencyMs: error.latencyMs || null,
+            proxy: store.get(item.id),
+          });
+        }
+      }
+    }));
+    // Preserve the caller's id order; the pool completes them out of order.
     for (const id of ids.slice(0, 100)) {
-      const item = store.get(id);
-      if (!item) {
-        results.push({ id, ok: false, error: 'not found' });
-        continue;
-      }
-      try {
-        const result = await engine.testProxy({
-          id: 'proxy-check',
-          name: item.name || 'proxy-check',
-          proxy: item.raw,
-          proxyMeta: { ipChannel: item.ipChannel || 'ip-api', refreshUrl: item.refreshUrl || '', apiExtractUrl: item.refreshUrl || '' },
-        });
-        await store.markCheck(item.id, result);
-        results.push({ id, ok: true, ...result, proxy: store.get(item.id) });
-      } catch (error) {
-        await store.markCheckError(item.id, {
-          errorClass: error.errorClass || 'unknown',
-          latencyMs: error.latencyMs,
-        });
-        results.push({
-          id,
-          ok: false,
-          error: error.message || String(error),
-          errorClass: error.errorClass || 'unknown',
-          latencyMs: error.latencyMs || null,
-          proxy: store.get(item.id),
-        });
-      }
+      const entry = resultsById.get(id);
+      if (entry) results.push(entry);
     }
     return { results, ok: results.filter((r) => r.ok).length, fail: results.filter((r) => !r.ok).length };
   });

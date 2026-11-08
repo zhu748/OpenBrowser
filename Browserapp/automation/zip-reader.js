@@ -21,6 +21,8 @@ const METHOD_DEFLATE = 8;
 const EOCD_MIN_SIZE = 22;
 const MAX_COMMENT_SIZE = 0xffff;
 const ZIP64_SENTINEL = 0xffffffff;
+/** Declared entry sizes above this are rejected up front (zip-bomb guard). */
+const MAX_UNCOMPRESSED_SIZE = 64 * 1024 * 1024;
 
 /** Locate the End Of Central Directory record, scanning back over any comment. */
 function findEndOfCentralDirectory(buf) {
@@ -83,6 +85,9 @@ function readEntries(buf) {
     if (flags & 0x0001) {
       throw new Error('encrypted zip entries are not supported');
     }
+    if (uncompressedSize > MAX_UNCOMPRESSED_SIZE) {
+      throw new Error(`entry ${name} declares ${uncompressedSize} bytes, above the ${MAX_UNCOMPRESSED_SIZE} limit`);
+    }
 
     entries.push({
       name,
@@ -113,9 +118,16 @@ function readEntry(buf, entry) {
   }
 
   const raw = buf.slice(dataStart, dataEnd);
-  if (entry.method === METHOD_STORE) return Buffer.from(raw);
-  if (entry.method === METHOD_DEFLATE) return zlib.inflateRawSync(raw);
-  throw new Error(`unsupported compression method ${entry.method} for ${entry.name}`);
+  let out;
+  if (entry.method === METHOD_STORE) out = Buffer.from(raw);
+  else if (entry.method === METHOD_DEFLATE) out = zlib.inflateRawSync(raw);
+  else throw new Error(`unsupported compression method ${entry.method} for ${entry.name}`);
+  // The declared size is the contract: a mismatch means a torn or crafted
+  // archive, and the extracted bytes must not be trusted.
+  if (out.length !== entry.uncompressedSize) {
+    throw new Error(`corrupt entry: ${entry.name} (declared ${entry.uncompressedSize} bytes, got ${out.length})`);
+  }
+  return out;
 }
 
 /** Open an archive: exposes entry listing plus name-based lookup. */

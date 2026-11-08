@@ -104,6 +104,37 @@ function isMissingElementError(error) {
   return /Element not found|Selector not found|selectElement failed|No page tab for CDP|useExcel file not found|file path required/i.test(message);
 }
 
+/**
+ * Split one CSV line honoring double-quoted fields: a quoted field may contain
+ * commas, and "" inside it is a literal quote (standard spreadsheet export).
+ * A plain split(',') would shift every column after the first quoted comma.
+ */
+function splitCsvLine(line) {
+  const fields = [];
+  let field = '';
+  let quoted = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const ch = line[index];
+    if (quoted) {
+      if (ch === '"') {
+        if (line[index + 1] === '"') { field += '"'; index += 1; }
+        else quoted = false;
+      } else {
+        field += ch;
+      }
+    } else if (ch === '"' && field === '') {
+      quoted = true;
+    } else if (ch === ',') {
+      fields.push(field);
+      field = '';
+    } else {
+      field += ch;
+    }
+  }
+  fields.push(field);
+  return fields;
+}
+
 function isPathInsideRoot(candidate, root) {
   const child = path.resolve(candidate);
   const base = path.resolve(root);
@@ -483,6 +514,9 @@ class RpaEngine {
       // per-run options.timeout_ms) bounds the whole task; 0 disables it.
       const taskTimeoutMs = resolveTaskTimeoutMs(options);
       const taskDeadline = taskTimeoutMs > 0 ? Date.now() + taskTimeoutMs : 0;
+      // Expose the deadline on the context so a long single step (getOpenAI)
+      // can bound itself with the same task budget.
+      context.taskDeadline = taskDeadline;
       const ensureTaskAlive = () => {
         if (this.cancelled.has(taskId)) throw new Error('cancelled');
         if (taskDeadline && Date.now() > taskDeadline) {
@@ -713,7 +747,7 @@ class RpaEngine {
               typoConfig: params.typoConfig,
               shouldAbort: () => Boolean(ctx?.isCancelled?.()),
             });
-          });
+          }, ctx);
         } catch (error) {
           if (optional && isMissingElementError(error)) {
             if (ctx?.log) await ctx.log('optional input skipped (not found): ' + selector);
@@ -765,7 +799,7 @@ class RpaEngine {
         } else {
           throw new Error('click requires selector or x/y');
         }
-      });
+      }, ctx);
       return;
     }
 
@@ -791,7 +825,7 @@ class RpaEngine {
         const x = box.x + box.width / 2;
         const y = box.y + box.height / 2;
         await cdp.call(ws, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
-      });
+      }, ctx);
       return;
     }
 
@@ -816,7 +850,7 @@ class RpaEngine {
             selectedIndex: Number.isInteger(params.selectedIndex) ? params.selectedIndex : undefined,
           });
           if (!result.ok) throw new Error('selectElement failed: ' + selector + ' (' + (result.reason || 'unknown') + ')');
-        });
+        }, ctx);
       } catch (error) {
         if (optional && isMissingElementError(error)) {
           if (ctx?.log) await ctx.log('optional selectElement skipped (not found): ' + selector);
@@ -842,7 +876,7 @@ class RpaEngine {
             await this.focusSelector(ws, selector, target.selectorRadio, target.serial);
             return true;
           } catch (_) { return false; }
-        });
+        }, ctx);
         if (isShow ? found : !found) {
           success = true;
           break;
@@ -937,7 +971,7 @@ class RpaEngine {
         throw new Error('focusElement requires selector or a stored element');
       }
       try {
-        await this.withPage(port, (ws) => this.focusSelector(ws, target.selector, target.selectorRadio, target.serial));
+        await this.withPage(port, (ws) => this.focusSelector(ws, target.selector, target.selectorRadio, target.serial), ctx);
       } catch (error) {
         if (optional && isMissingElementError(error)) {
           if (ctx?.log) await ctx.log('optional focus skipped: ' + target.selector);
@@ -959,7 +993,7 @@ class RpaEngine {
         }
         throw new Error('getElement requires selector or a stored element');
       }
-      const result = await this.withPage(port, async (ws) => this.readElement(ws, target.selector, params, target.serial));
+      const result = await this.withPage(port, async (ws) => this.readElement(ws, target.selector, params, target.serial), ctx);
       if (result == null) {
         if (optional) {
           if (ctx?.log) await ctx.log('optional getElement skipped (not found): ' + target.selector);
@@ -976,7 +1010,7 @@ class RpaEngine {
       const target = resolveElementTarget(params, variables);
       const selector = target.selector;
       if (!selector) throw new Error('forElements requires selector');
-      const elements = await this.withPage(port, (ws) => this.listElements(ws, selector, params));
+      const elements = await this.withPage(port, (ws) => this.listElements(ws, selector, params), ctx);
       const children = Array.isArray(step.children) ? step.children : (Array.isArray(params.children) ? params.children : []);
       try {
         for (let index = 0; index < elements.length; index += 1) {
@@ -1138,16 +1172,27 @@ class RpaEngine {
 
       let records;
       if (extension === '.json') {
-        records = JSON.parse(raw);
+        try {
+          records = JSON.parse(raw);
+        } catch (error) {
+          // Same class of bad input as an unreadable file: skip when allowed
+          // rather than failing the whole task with a raw SyntaxError.
+          if (skippable) {
+            variables[targetVar] = [];
+            if (ctx?.log) await ctx.log('useExcel skipped: cannot parse JSON ' + safePath + ' (' + error.message + ')');
+            return;
+          }
+          throw new Error('useExcel cannot parse JSON: ' + error.message);
+        }
       } else {
         const lines = raw.split(/\r?\n/).filter((line) => line.length > 0);
         if (!lines.length) {
           variables[targetVar] = [];
           return;
         }
-        const headers = lines[0].split(',').map((item) => item.trim());
+        const headers = splitCsvLine(lines[0]).map((item) => item.trim());
         records = lines.slice(1).map((row) => Object.fromEntries(
-          row.split(',').map((item, index) => [headers[index] || ('col' + index), item.trim()])
+          splitCsvLine(row).map((item, index) => [headers[index] || ('col' + index), item.trim()])
         ));
       }
       if (!Array.isArray(records)) throw new Error('useExcel JSON content must be an array');
@@ -1197,7 +1242,7 @@ class RpaEngine {
     }
 
     if (type === 'getcookies') {
-      const cookies = await this.withPage(port, (ws) => cdp.call(ws, 'Network.getCookies', {}));
+      const cookies = await this.withPage(port, (ws) => cdp.call(ws, 'Network.getCookies', {}), ctx);
       variables[params.variable || 'cookies'] = cookies?.cookies || cookies || [];
       return;
     }
@@ -1215,7 +1260,7 @@ class RpaEngine {
     if (type === 'goback') {
       await this.withPage(port, (ws) => cdp.call(ws, 'Runtime.evaluate', {
         expression: 'history.back(); true', returnByValue: true,
-      }));
+      }, ctx));
       await sleep(Math.max(0, Math.min(30000, Number(params.timeout) || 500)));
       return;
     }
@@ -1248,7 +1293,7 @@ class RpaEngine {
         const node = await cdp.call(ws, 'DOM.querySelector', { nodeId: document.root.nodeId, selector });
         if (!node.nodeId) throw new Error('uploadAttachment selector not found: ' + selector);
         await cdp.call(ws, 'DOM.setFileInputFiles', { nodeId: node.nodeId, files: [safePath] });
-      });
+      }, ctx);
       return;
     }
 
@@ -1263,7 +1308,7 @@ class RpaEngine {
         const result = await cdp.call(ws, 'Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }, 60000);
         if (result.exceptionDetails) throw new Error(result.exceptionDetails.text || 'downloadFile failed');
         return result.result?.value;
-      });
+      }, ctx);
       const body = payload && typeof payload === 'object' ? payload.body : payload;
       const disposition = payload && typeof payload === 'object' ? payload.disposition : '';
       let urlExtension = '.bin';
@@ -1292,6 +1337,7 @@ class RpaEngine {
       const timeout = Math.max(0, Math.min(120000, Number(params.timeout) || 30000));
       const resource = await this.findNetworkResource(port, matcher, timeout, {
         shouldAbort: () => Boolean(ctx?.isCancelled?.()),
+        ctx,
       });
       if (type === 'waitforresponse') return;
       if (type === 'getrequest') {
@@ -1307,7 +1353,7 @@ class RpaEngine {
         const result = await cdp.call(ws, 'Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }, 30000);
         if (result.exceptionDetails) throw new Error(result.exceptionDetails.text || 'getResponse failed');
         return result.result?.value || '';
-      });
+      }, ctx);
       if (params.variable) variables[params.variable] = body;
       return;
     }
@@ -1315,14 +1361,48 @@ class RpaEngine {
     if (type === 'getopenai') {
       const apiKey = text(params.apiKey);
       if (!apiKey) throw new Error('getOpenAI requires an apiKey variable');
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: text(params.type || 'gpt-4o-mini'), messages: [{ role: 'user', content: text(params.prompt) }], max_tokens: Number(params.token) || 4096 }),
-      });
-      if (!response.ok) throw new Error(`getOpenAI request failed: HTTP ${response.status}`);
-      const responseBody = await response.json();
-      if (params.variable) variables[params.variable] = responseBody.choices?.[0]?.message?.content || '';
+      // Native fetch has no default timeout, so a hung request would stall the
+      // task until it returns. Abort on the task deadline (default 60s) and on
+      // cancellation; the cancelled flag is otherwise only observed between steps.
+      const deadlineAt = Number(ctx?.taskDeadline) > Date.now()
+        ? Number(ctx.taskDeadline)
+        : Date.now() + 60000;
+      const controller = new AbortController();
+      let abortReason = null;
+      const timeoutTimer = setTimeout(() => {
+        abortReason = 'timeout';
+        controller.abort();
+      }, Math.max(0, deadlineAt - Date.now()));
+      const cancelPoll = setInterval(() => {
+        if (ctx?.isCancelled?.()) {
+          abortReason = 'cancelled';
+          controller.abort();
+        }
+      }, 500);
+      try {
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: text(params.type || 'gpt-4o-mini'), messages: [{ role: 'user', content: text(params.prompt) }], max_tokens: Number(params.token) || 4096 }),
+          signal: controller.signal,
+        });
+        // Budget check after the fetch: a response that landed after the task
+        // was cancelled or overran the deadline must not continue the flow.
+        if (ctx?.isCancelled?.()) throw new Error('cancelled');
+        if (Number(ctx?.taskDeadline) > 0 && Date.now() >= Number(ctx.taskDeadline)) {
+          throw new Error('getOpenAI request timed out');
+        }
+        if (!response.ok) throw new Error(`getOpenAI request failed: HTTP ${response.status}`);
+        const responseBody = await response.json();
+        if (params.variable) variables[params.variable] = responseBody.choices?.[0]?.message?.content || '';
+      } catch (error) {
+        if (abortReason === 'timeout') throw new Error('getOpenAI request timed out');
+        if (abortReason === 'cancelled') throw new Error('cancelled');
+        throw error;
+      } finally {
+        clearTimeout(timeoutTimer);
+        clearInterval(cancelPoll);
+      }
       return;
     }
 
@@ -1356,7 +1436,7 @@ class RpaEngine {
             deltaY: distance || 100,
           }).catch(() => {});
         }
-      });
+      }, ctx);
       return;
     }
 
@@ -1380,13 +1460,13 @@ class RpaEngine {
         const resultValue = result.result?.value;
         if (params.variable) variables[params.variable] = resultValue;
         if (ctx?.log) await ctx.log('evaluate result: ' + JSON.stringify(resultValue));
-      });
+      }, ctx);
       return;
     }
 
     if (type === 'screenshotpage' || type === 'screenshot') {
       const shot = await this.withPage(port, (ws) =>
-        cdp.call(ws, 'Page.captureScreenshot', { format: String(params.format || 'png') }, 15000));
+        cdp.call(ws, 'Page.captureScreenshot', { format: String(params.format || 'png') }, 15000), ctx);
       if (!shot?.data) throw new Error('screenshot failed: no image data returned');
       const format = String(params.format || 'png').toLowerCase();
       const extension = format === 'jpeg' || format === 'jpg' ? '.jpg' : format === 'webp' ? '.webp' : '.png';
@@ -1404,7 +1484,7 @@ class RpaEngine {
         const result = await cdp.call(ws, 'Runtime.evaluate', { expression: 'location.href', returnByValue: true });
         if (params.variable) variables[params.variable] = result.result?.value || '';
         if (ctx?.log) await ctx.log('getUrl=' + result.result?.value);
-      });
+      }, ctx);
       return;
     }
 
@@ -1412,7 +1492,7 @@ class RpaEngine {
       await this.withPage(port, async (ws) => {
         await cdp.call(ws, 'Network.enable', {});
         await cdp.call(ws, 'Network.clearBrowserCookies', {});
-      });
+      }, ctx);
       return;
     }
 
@@ -1467,7 +1547,7 @@ class RpaEngine {
         const key = text(params.key || params.type || 'Enter');
         await cdp.call(ws, 'Input.dispatchKeyEvent', { type: 'keyDown', key });
         await cdp.call(ws, 'Input.dispatchKeyEvent', { type: 'keyUp', key });
-      });
+      }, ctx);
       return;
     }
 
@@ -1742,7 +1822,7 @@ class RpaEngine {
     return Array.isArray(list) ? list : [];
   }
 
-  async findNetworkResource(port, matcher, timeout, { shouldAbort } = {}) {
+  async findNetworkResource(port, matcher, timeout, { shouldAbort, ctx = null } = {}) {
     const deadline = Date.now() + timeout;
     do {
       if (shouldAbort && shouldAbort()) throw new Error('cancelled');
@@ -1752,7 +1832,7 @@ class RpaEngine {
           returnByValue: true,
         });
         return result.result?.value || [];
-      });
+      }, ctx);
       const resource = resources.slice().reverse().find((entry) => !matcher || String(entry.name).includes(matcher));
       if (resource) return resource;
       if (!timeout) break;

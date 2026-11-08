@@ -13,7 +13,6 @@ const {
   readName,
   TtlCache,
   base64UrlEncode,
-  installLookupPatch,
   createDohLookup,
 } = require('../doh-resolver');
 
@@ -329,19 +328,6 @@ function stubFetch(responseBuf, { status = 200, onUrl } = {}) {
     resolver.setEndpoints(['https://custom.test/q']);
     await resolver.resolve4('example.com');
     assert.ok(seen.startsWith('https://custom.test/q'), 'custom endpoint used');
-  });
-
-  check('installLookupPatch swaps and restores dns.lookup', () => {
-    const dnsMod = require('dns');
-    const original = dnsMod.lookup;
-    const fake = {
-      resolve4: async () => ['5.6.7.8'],
-      resolve6: async () => ['::1'],
-    };
-    const restore = installLookupPatch(fake, original);
-    assert.notStrictEqual(dnsMod.lookup, original, 'lookup replaced');
-    restore();
-    assert.strictEqual(dnsMod.lookup, original, 'lookup restored');
   });
 
   // ---- request-scoped lookup ----

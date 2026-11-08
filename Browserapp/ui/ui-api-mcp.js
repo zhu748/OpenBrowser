@@ -176,13 +176,17 @@ document.getElementById('mcp-config-tabs')?.addEventListener('click', (event) =>
   if (mcpTa) mcpTa.textContent = JSON.stringify(tab === 'platform' ? window.__mcpConfigPlatform : window.__mcpConfigCommon, null, 2);
 });
 
-window.ops.onEvent((value) => {
+window.ops.onEvent(async (value) => {
   if (value?.type === 'rpa-log') window.appendRpaLog?.((value.level || 'info') + ': ' + value.message);
   if (value?.type === 'rpa-task') {
     window.appendRpaLog?.('task ' + value.taskId + ' → ' + value.status + (value.message ? ' · ' + value.message : ''));
     window.refreshRpaStatusBadge?.();
-    window.refreshRpaTasks?.();
-    window.refreshRpaRuns?.();
+    // One IPC fetch feeds both tables; each refresh used to issue its own call.
+    try {
+      const tasks = await window.ops.rpaTasks({});
+      window.refreshRpaTasks?.(tasks);
+      window.refreshRpaRuns?.(tasks);
+    } catch (_) {}
   }
   if (value?.type === 'local-api') {
     setLocalApiStatus(true);

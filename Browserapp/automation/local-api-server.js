@@ -748,7 +748,7 @@ class LocalApiServer {
     }
 
     if (pathname === '/api/v1/user/create' || pathname === '/api/v2/browser-profile/create' || pathname === '/api/profiles/create') {
-      if (!this.engine) return fail('profile engine unavailable');
+      if (!this.engine) return fail('profile engine unavailable', 503);
       let body = normalizeProfileInput(input && typeof input.profile === 'object' ? { ...input, ...input.profile } : input);
       const association = this.resolveProxyAssociation(input, body);
       const hasManualProxyConfiguration = !association.present && [
@@ -760,8 +760,8 @@ class LocalApiServer {
       if (!id) {
         do { id = 'ob-' + Date.now().toString(36) + '-' + crypto.randomBytes(5).toString('hex'); } while (existingIds.has(id));
       }
-      if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) return fail('invalid profile id');
-      if (existingIds.has(id)) return fail('profile already exists');
+      if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) return fail('invalid profile id', 400);
+      if (existingIds.has(id)) return fail('profile already exists', 409);
       const numbers = this.engine.profiles ? [...this.engine.profiles.values()].map((item) => Number(item.number)).filter((n) => Number.isInteger(n) && n > 0) : [];
       const number = Number.isInteger(Number(body.number)) && Number(body.number) > 0 ? Number(body.number) : ((Math.max(0, ...numbers) || 0) + 1);
       const rawProxy = String(body.proxy || '').trim();
@@ -803,11 +803,11 @@ class LocalApiServer {
     }
 
     if (pathname === '/api/v2/browser-profile/update' || pathname === '/api/profiles/update') {
-      if (!this.engine) return fail('profile engine unavailable');
+      if (!this.engine) return fail('profile engine unavailable', 503);
       const id = firstString(input, ['profile_id', 'profileId', 'user_id', 'userId', 'id']);
-      if (!id) return fail('profile id required');
+      if (!id) return fail('profile id required', 400);
       const current = this.engine.profiles.get(id);
-      if (!current) return fail('profile not found');
+      if (!current) return fail('profile not found', 404);
       const clearFingerprint = Boolean(input.__clearFingerprint) || input.fingerprint === null || input.privacy?.fingerprint === null;
       let body = normalizeProfileInput(input);
       const association = this.resolveProxyAssociation(input, current);
@@ -901,7 +901,7 @@ class LocalApiServer {
     }
 
     if (pathname === '/api/v2/browser-profile/duplicate' || pathname === '/api/profiles/duplicate') {
-      if (!this.engine) return fail('profile engine unavailable');
+      if (!this.engine) return fail('profile engine unavailable', 503);
       const duplicateInput = normalizeProfileInput(input);
       const sourceId = firstString(duplicateInput, ['source_profile_id', 'sourceProfileId', 'profile_id', 'profileId', 'user_id', 'userId', 'id']).trim();
       if (!sourceId) return fail('source profile id required', 400);
@@ -954,11 +954,11 @@ class LocalApiServer {
     }
 
     if (pathname === '/api/v1/user/delete' || pathname === '/api/v2/browser-profile/delete' || pathname === '/api/profiles/delete') {
-      if (!this.engine) return fail('profile engine unavailable');
+      if (!this.engine) return fail('profile engine unavailable', 503);
       const rawIds = firstArray(input, ['user_ids', 'userIds', 'profile_ids', 'profileIds', 'ids'])
         || [firstDefined(input, ['user_id', 'userId', 'profile_id', 'profileId', 'id'])];
       const ids = rawIds.map((value) => String(value || '').trim()).filter(Boolean);
-      if (!ids.length) return fail('profile id required');
+      if (!ids.length) return fail('profile id required', 400);
       let result;
       try {
         const deleteData = input.delete_data !== undefined
@@ -976,7 +976,7 @@ class LocalApiServer {
     if (pathname === '/api/v1/browser/start' || pathname === '/api/v2/browser-profile/start' || pathname === '/api/browser/start') {
       const id = firstString(input, ['user_id', 'userId', 'profile_id', 'profileId', 'id']);
       const profile = this.engine.profiles.get(id);
-      if (!profile) return fail('profile not found');
+      if (!profile) return fail('profile not found', 404);
       const started = await this.engine.start(profile);
       const port = started?.port || this.engine.running?.get(id)?.port || null;
       const puppeteerWs = port ? await resolveWebSocketDebuggerUrl(port, id) : null;
@@ -991,7 +991,7 @@ class LocalApiServer {
     }
 
     if (pathname === '/api/v1/browser/stop' || pathname === '/api/v2/browser-profile/stop' || pathname === '/api/browser/stop') {
-      if (!this.engine) return fail('profile engine unavailable');
+      if (!this.engine) return fail('profile engine unavailable', 503);
       const id = firstString(input, ['user_id', 'userId', 'profile_id', 'profileId', 'id']).trim();
       if (!id) return fail('profile id required', 400);
       if (!this.engine.profiles?.has(id)) return fail('profile not found', 404);
@@ -1014,9 +1014,9 @@ class LocalApiServer {
     }
 
     if (pathname === '/api/v1/user/detail' || pathname === '/api/v2/browser-profile/detail' || pathname === '/api/profiles/get' || pathname === '/api/profile') {
-      if (!this.engine) return fail('profile engine unavailable');
+      if (!this.engine) return fail('profile engine unavailable', 503);
       const id = firstString(input, ['profile_id', 'profileId', 'user_id', 'userId', 'id']);
-      if (!id) return fail('profile id required');
+      if (!id) return fail('profile id required', 400);
       const profile = this.engine.profiles?.get(id);
       if (!profile) return fail('profile not found', 404);
       const running = this.engine.running?.get(id);
@@ -1034,11 +1034,11 @@ class LocalApiServer {
     }
 
     if (pathname === '/api/v1/browser/open-url' || pathname === '/api/browser/open-url') {
-      if (!this.engine) return fail('browser engine unavailable');
+      if (!this.engine) return fail('browser engine unavailable', 503);
       const id = firstString(input, ['profile_id', 'profileId', 'user_id', 'userId', 'id']);
       const rawUrl = firstString(input, ['url', 'target_url', 'targetUrl', 'start_url', 'startUrl']);
-      if (!id) return fail('profile id required');
-      if (!rawUrl) return fail('url required');
+      if (!id) return fail('profile id required', 400);
+      if (!rawUrl) return fail('url required', 400);
       let targetUrl = rawUrl.trim();
       if (!/^https?:\/\//i.test(targetUrl) && !/^about:/i.test(targetUrl)) {
         targetUrl = 'https://' + targetUrl;
@@ -1068,9 +1068,9 @@ class LocalApiServer {
     }
 
     if (pathname === '/api/v1/browser/screenshot' || pathname === '/api/browser/screenshot') {
-      if (!this.engine) return fail('browser engine unavailable');
+      if (!this.engine) return fail('browser engine unavailable', 503);
       const id = firstString(input, ['profile_id', 'profileId', 'user_id', 'userId', 'id']);
-      if (!id) return fail('profile id required');
+      if (!id) return fail('profile id required', 400);
       const runningItem = this.engine.running?.get(id);
       if (!runningItem?.port) return fail('profile is not running', 400);
       const cdp = require('../cdp');
@@ -1092,12 +1092,12 @@ class LocalApiServer {
 
     // ---- proxy library ----
     if (pathname === '/api/v2/proxy-list/list' || pathname === '/api/proxy/list') {
-      if (!this.proxyStore) return fail('proxy store unavailable');
+      if (!this.proxyStore) return fail('proxy store unavailable', 503);
       const list = this.proxyStore.list(input).map(redactProxyRecord);
       return ok({ list, page: 1, page_size: list.length });
     }
     if (pathname === '/api/v2/proxy-list/create' || pathname === '/api/proxy/create') {
-      if (!this.proxyStore) return fail('proxy store unavailable');
+      if (!this.proxyStore) return fail('proxy store unavailable', 503);
       if (Array.isArray(input) || Array.isArray(input.data)) {
         const body = Array.isArray(input) ? input : input.data;
         return ok({ list: await this.proxyStore.createMany(body.map(normalizeProxyInput)) });
@@ -1105,19 +1105,19 @@ class LocalApiServer {
       return ok(await this.proxyStore.create(normalizeProxyInput(input)));
     }
     if (pathname === '/api/v2/proxy-list/update' || pathname === '/api/proxy/update') {
-      if (!this.proxyStore) return fail('proxy store unavailable');
+      if (!this.proxyStore) return fail('proxy store unavailable', 503);
       const id = String(input.proxy_id || input.proxy_library_id || input.proxyId || input.proxyLibraryId || input.id || '');
-      if (!id) return fail('id required');
+      if (!id) return fail('id required', 400);
       return ok(await this.proxyStore.update(id, normalizeProxyInput(input)));
     }
     if (pathname === '/api/v2/proxy-list/delete' || pathname === '/api/proxy/delete') {
-      if (!this.proxyStore) return fail('proxy store unavailable');
+      if (!this.proxyStore) return fail('proxy store unavailable', 503);
       const ids = firstArray(input, ['proxy_ids', 'proxyIds', 'proxy_library_ids', 'proxyLibraryIds', 'proxy_id', 'proxyId', 'ids'])
         || [firstDefined(input, ['id', 'proxy_id', 'proxyId', 'proxy_library_id', 'proxyLibraryId'])];
       return ok(await this.proxyStore.remove(ids.filter(Boolean)));
     }
     if (pathname === '/api/proxy/check' || pathname === '/api/checkProxy') {
-      if (!this.proxyStore || !this.engine) return fail('proxy check unavailable');
+      if (!this.proxyStore || !this.engine) return fail('proxy check unavailable', 503);
       const id = String(input.proxy_id || input.proxy_library_id || input.proxyId || input.proxyLibraryId || input.id || '');
       const item = id ? this.proxyStore.get(id) : null;
       const raw = item?.raw || input.proxy || input.raw;
@@ -1132,7 +1132,7 @@ class LocalApiServer {
       }
     }
     if (pathname === '/api/proxy/check-profile') {
-      if (!this.engine) return fail('profile engine unavailable');
+      if (!this.engine) return fail('profile engine unavailable', 503);
       const id = firstString(input, ['profile_id', 'profileId', 'user_id', 'userId', 'id']);
       if (!id) return fail('profile id required', 400);
       const profile = this.engine.profiles.get(id);
@@ -1148,11 +1148,11 @@ class LocalApiServer {
     // ---- fingerprint / isolation ----
     if (pathname === '/api/fingerprint' || pathname === '/api/v1/fingerprint') {
       const id = firstString(input, ['user_id', 'userId', 'profile_id', 'profileId', 'id']);
-      if (!id) return fail('profile_id required');
+      if (!id) return fail('profile_id required', 400);
       try {
         return ok(this.engine.fingerprintFor(id));
       } catch (error) {
-        return fail(error.message);
+        return fail(error.message, 400);
       }
     }
     if (pathname === '/api/isolation/audit' || pathname === '/api/v1/isolation/audit') {
@@ -1161,11 +1161,11 @@ class LocalApiServer {
 
     // ---- application center ----
     if (pathname === '/api/v1/application/list' || pathname === '/api/application/list' || pathname === '/api/apps') {
-      if (!this.appCenter) return fail('app center unavailable');
+      if (!this.appCenter) return fail('app center unavailable', 503);
       return ok(this.appCenter.list(input));
     }
     if (pathname === '/api/application/recommended' || pathname === '/api/apps/recommended') {
-      if (!this.appCenter) return fail('app center unavailable');
+      if (!this.appCenter) return fail('app center unavailable', 503);
       return ok({ list: this.appCenter.recommended() });
     }
     if (pathname === '/api/extension/list' || pathname === '/api/extensions') {
@@ -1175,7 +1175,7 @@ class LocalApiServer {
       const extensionId = firstString(input, ['extension_id', 'extensionId', 'id']);
       const ids = this.parseIds(input);
       const enabled = booleanValue(input.enabled, true);
-      if (!extensionId || !ids.length) return fail('extension_id and profile_ids required');
+      if (!extensionId || !ids.length) return fail('extension_id and profile_ids required', 400);
       await this.engine.assignExtension(extensionId, ids, enabled);
       return ok({ extension_id: extensionId, profile_ids: ids, enabled });
     }
@@ -1188,7 +1188,7 @@ class LocalApiServer {
       return ok(this.syncBridge.status());
     }
     if (pathname === '/api/sync/start' || pathname === '/api/window-sync/start') {
-      if (!this.syncBridge) return fail('sync bridge unavailable');
+      if (!this.syncBridge) return fail('sync bridge unavailable', 503);
       if (Object.prototype.hasOwnProperty.call(input || {}, 'settings')) {
         return fail('sync settings must be updated through /api/sync/settings', 400);
       }
@@ -1210,7 +1210,7 @@ class LocalApiServer {
       }
     }
     if (pathname === '/api/sync/stop' || pathname === '/api/window-sync/stop') {
-      if (!this.syncBridge) return fail('sync bridge unavailable');
+      if (!this.syncBridge) return fail('sync bridge unavailable', 503);
       try {
         return ok(this.syncBridge.stop());
       } catch (err) {
@@ -1218,7 +1218,7 @@ class LocalApiServer {
       }
     }
     if (pathname === '/api/sync/restart' || pathname === '/api/window-sync/restart') {
-      if (!this.syncBridge) return fail('sync bridge unavailable');
+      if (!this.syncBridge) return fail('sync bridge unavailable', 503);
       try {
         return ok(await this.syncBridge.restart());
       } catch (err) {
@@ -1226,7 +1226,7 @@ class LocalApiServer {
       }
     }
     if (pathname === '/api/sync/arrange' || pathname === '/api/window-sync/arrange') {
-      if (!this.syncBridge) return fail('sync bridge unavailable');
+      if (!this.syncBridge) return fail('sync bridge unavailable', 503);
       let ids;
       try {
         ids = this.parseIds(input);
@@ -1269,7 +1269,7 @@ class LocalApiServer {
     if (pathname.startsWith('/api/rpa/tasks/') && method === 'GET') {
       const id = decodePathId(pathname.slice('/api/rpa/tasks/'.length), 'RPA task');
       const task = this.rpaStore.getTask(id);
-      if (!task) return fail('task not found: ' + id);
+      if (!task) return fail('task not found: ' + id, 404);
       return ok({ task });
     }
     if (pathname.startsWith('/api/rpa/tasks/') && method === 'DELETE') {
@@ -1314,7 +1314,7 @@ class LocalApiServer {
         }
         return ok(await this.rpaEngine.runTask(task.id, rpaInput));
       }
-      return fail('plan_id, task_id or steps required');
+      return fail('plan_id, task_id or steps required', 400);
     }
     if (pathname === '/api/getRpaStatus' || pathname === '/api/rpa/status') {
       return ok({
@@ -1323,7 +1323,7 @@ class LocalApiServer {
       });
     }
     if (pathname === '/api/stopRpa' || pathname === '/api/rpa/stop') {
-      if (!this.rpaEngine) return fail('rpa engine unavailable');
+      if (!this.rpaEngine) return fail('rpa engine unavailable', 503);
       const taskId = rpaInput.task_id || null;
       if (taskId && this.rpaStore) {
         const task = this.rpaStore.getTask(taskId);
@@ -1361,7 +1361,7 @@ class LocalApiServer {
     if (pathname.startsWith('/api/rpa/templates/') && method === 'GET') {
       const id = decodePathId(pathname.slice('/api/rpa/templates/'.length), 'RPA template');
       const tpl = this.rpaStore.getTemplate(id);
-      if (!tpl) return fail('template not found');
+      if (!tpl) return fail('template not found', 404);
       return ok(tpl);
     }
     if (pathname.startsWith('/api/rpa/templates/') && method === 'DELETE') {
