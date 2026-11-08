@@ -604,7 +604,14 @@ async function applySelectedNetworkMode(mode, { proxies = null, restart = true }
   const status = await window.ops.profileStatus();
   const runningBefore = new Set(status.filter((item) => item.running && ids.includes(item.id)).map((item) => item.id));
   if (restart) for (const id of runningBefore) await window.ops.stopProfile(id);
-  profiles.forEach((profile, index) => {
+  // Snapshot so a failure in syncProfiles/restart leaves the renderer state
+  // as it was instead of half-applied (proxy fields set, engine unchanged).
+  const snapshot = profiles.map((profile) => ({
+    id: profile.id, proxy: profile.proxy, exitIp: profile.exitIp, exitCountryCode: profile.exitCountryCode,
+    exitTimezone: profile.exitTimezone, exitLatitude: profile.exitLatitude, exitLongitude: profile.exitLongitude,
+    exitCheckedAt: profile.exitCheckedAt,
+  }));
+  const applyAt = (profile, index) => {
     profile.proxy = list[index];
     const result = verified[index];
     if (result) {
@@ -614,10 +621,22 @@ async function applySelectedNetworkMode(mode, { proxies = null, restart = true }
       delete profile.exitIp; delete profile.exitCountryCode; delete profile.exitTimezone;
       delete profile.exitLatitude; delete profile.exitLongitude; delete profile.exitCheckedAt;
     }
-  });
-  save();
-  invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies']);
-  engineProfiles = await window.ops.syncProfiles(ui.profiles);
+  };
+  profiles.forEach(applyAt);
+  try {
+    save();
+    invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies']);
+    engineProfiles = await window.ops.syncProfiles(ui.profiles);
+  } catch (error) {
+    for (const snap of snapshot) {
+      const profile = ui.profiles.find((item) => item.id === snap.id);
+      if (!profile) continue;
+      ['exitIp', 'exitCountryCode', 'exitTimezone', 'exitLatitude', 'exitLongitude', 'exitCheckedAt'].forEach((key) => { delete profile[key]; });
+      Object.assign(profile, snap);
+    }
+    save();
+    throw error;
+  }
   if (restart) await runPool(runningBefore, async (id) => {
     const profile = ui.profiles.find((item) => item.id === id);
     if (profile) await window.ops.startProfile(profile);

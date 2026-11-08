@@ -61,6 +61,15 @@ impl Socks5UdpPacket {
             )));
         }
         let frag = buf[2];
+        if frag != 0 {
+            // RFC 1928: fragmentation is at the IP layer; a SOCKS5 UDP relay
+            // cannot reassemble fragments, so they must be dropped, not
+            // forwarded as if they were complete datagrams.
+            return Err(CoreError::Socks5(format!(
+                "Fragmented SOCKS5 UDP datagrams are not supported (frag={})",
+                frag
+            )));
+        }
 
         let mut cursor = std::io::Cursor::new(&buf[3..]);
         let address = SocksAddress::decode(&mut cursor)?;

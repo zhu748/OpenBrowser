@@ -291,6 +291,26 @@ class BrowserEngine {
   }
 
   persist() {
+    // Coalesce bursts (syncProfiles, batch start/stop, extension assigns)
+    // into one queued write: each persist() re-serializes the whole state and
+    // (for the SQLite path) re-encrypts every profile.
+    if (this._persistDebounceTimer) {
+      clearTimeout(this._persistDebounceTimer);
+    } else {
+      this._persistDebouncePending = new Promise((resolve, reject) => {
+        this._persistDebounceResolve = resolve;
+        this._persistDebounceReject = reject;
+      });
+    }
+    this._persistDebounceTimer = setTimeout(() => {
+      this._persistDebounceTimer = null;
+      this._persistNow().then(this._persistDebounceResolve, this._persistDebounceReject);
+    }, 50);
+    this._persistDebounceTimer.unref?.();
+    return this._persistDebouncePending;
+  }
+
+  _persistNow() {
     if (this.usingSqlite && this.sqliteStore) {
       const write = async () => {
         this.sqliteStore.setMeta('kernelPolicyVersion', KERNEL_POLICY_VERSION);
@@ -328,7 +348,16 @@ class BrowserEngine {
   }
 
   flushPersistence() {
-    return this._persistQueue || Promise.resolve();
+    // The quit path must wait for a pending debounced write, not just the
+    // already-started one.
+    const pending = this._persistDebounceTimer
+      ? Promise.resolve().then(() => {
+          clearTimeout(this._persistDebounceTimer);
+          this._persistDebounceTimer = null;
+          return this._persistNow();
+        }).then(this._persistDebounceResolve, this._persistDebounceReject)
+      : null;
+    return pending || this._persistQueue || Promise.resolve();
   }
 
   dumpToJson(indent = 2) {

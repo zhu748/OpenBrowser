@@ -128,14 +128,22 @@ impl SyncCoordinator {
                     button,
                     click_type,
                 } => {
-                    let (mx, my) = CoordinateMapper::map_coordinate(
+                    let (mx, my) = match CoordinateMapper::map_coordinate(
                         *x,
                         *y,
                         master.viewport,
                         slave.viewport,
                         master.dpi,
                         slave.dpi,
-                    )?;
+                    ) {
+                        Ok(coords) => coords,
+                        // One mis-configured slave viewport must not abort the
+                        // whole fan-out: skip that slave and keep the rest in sync.
+                        Err(err) => {
+                            tracing::warn!("sync: skipping slave {}: {}", id, err);
+                            continue;
+                        }
+                    };
                     let (jx, jy) = self.jitter.apply_spatial_jitter(mx, my, slave.viewport);
                     SyncEvent::MouseClick {
                         x: jx,
@@ -145,14 +153,22 @@ impl SyncCoordinator {
                     }
                 }
                 SyncEvent::MouseMove { x, y } => {
-                    let (mx, my) = CoordinateMapper::map_coordinate(
+                    let (mx, my) = match CoordinateMapper::map_coordinate(
                         *x,
                         *y,
                         master.viewport,
                         slave.viewport,
                         master.dpi,
                         slave.dpi,
-                    )?;
+                    ) {
+                        Ok(coords) => coords,
+                        // One mis-configured slave viewport must not abort the
+                        // whole fan-out: skip that slave and keep the rest in sync.
+                        Err(err) => {
+                            tracing::warn!("sync: skipping slave {}: {}", id, err);
+                            continue;
+                        }
+                    };
                     let (jx, jy) = self.jitter.apply_spatial_jitter(mx, my, slave.viewport);
                     SyncEvent::MouseMove { x: jx, y: jy }
                 }
@@ -162,19 +178,29 @@ impl SyncCoordinator {
                     delta_x,
                     delta_y,
                 } => {
-                    let (mx, my) = CoordinateMapper::map_coordinate(
+                    let (mx, my) = match CoordinateMapper::map_coordinate(
                         *x,
                         *y,
                         master.viewport,
                         slave.viewport,
                         master.dpi,
                         slave.dpi,
-                    )?;
+                    ) {
+                        Ok(coords) => coords,
+                        // One mis-configured slave viewport must not abort the
+                        // whole fan-out: skip that slave and keep the rest in sync.
+                        Err(err) => {
+                            tracing::warn!("sync: skipping slave {}: {}", id, err);
+                            continue;
+                        }
+                    };
                     SyncEvent::MouseWheel {
                         x: mx,
                         y: my,
-                        delta_x: *delta_x,
-                        delta_y: *delta_y,
+                        // Scale wheel deltas by the viewport ratio: an unscaled
+                        // master scroll over-scrolls a smaller slave window.
+                        delta_x: delta_x * (slave.viewport.0 as f64 / master.viewport.0 as f64),
+                        delta_y: delta_y * (slave.viewport.1 as f64 / master.viewport.1 as f64),
                     }
                 }
                 // Keyboard events do not require coordinate mapping

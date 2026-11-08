@@ -473,6 +473,10 @@ class RpaEngine {
         remarks: [],
         port,
         activeProfileId: task.profile_id,
+        // Steps that target "the page" must operate on the tab the flow is
+        // actually on: withPage used firstTab unconditionally, so after a
+        // newtab/switchpage every later click/read hit the original tab.
+        activeTabId: null,
         isCancelled: () => this.cancelled.has(taskId),
       };
       // Optional task-level budget: OPENBROWSER_RPA_TASK_TIMEOUT_MS (or a
@@ -643,13 +647,20 @@ class RpaEngine {
     }
 
     if (type === 'newtab' || type === 'new_tab' || type === 'newpage') {
-      await cdp.newTab(port, text(params.url || 'about:blank'));
+      const created = await cdp.newTab(port, text(params.url || 'about:blank'));
+      if (created?.id) ctx.activeTabId = created.id;
       return;
     }
 
     if (type === 'closetab' || type === 'close_tab' || type === 'closepage') {
-      const tab = await cdp.firstTab(port);
-      if (tab) await cdp.closeTab(port, tab.id);
+      // Close the tab the flow is on, not whatever firstTab happens to
+      // return; fall back to firstTab for flows that never opened one.
+      const tab = (ctx.activeTabId && (await cdp.tabs(port)).find((item) => item.id === ctx.activeTabId))
+        || await cdp.firstTab(port);
+      if (tab) {
+        await cdp.closeTab(port, tab.id);
+        if (ctx.activeTabId === tab.id) ctx.activeTabId = null;
+      }
       return;
     }
 
@@ -1210,6 +1221,7 @@ class RpaEngine {
       });
       if (!tab) throw new Error('switchPage target not found: ' + expected);
       await cdp.activateTab(port, tab.id);
+      ctx.activeTabId = tab.id;
       return;
     }
 
@@ -1740,8 +1752,16 @@ class RpaEngine {
     throw new Error('network resource not found: ' + matcher);
   }
 
-  async withPage(port, fn) {
-    const tab = await cdp.firstTab(port);
+  async withPage(port, fn, ctx = null) {
+    let tab = null;
+    if (ctx?.activeTabId) {
+      const list = await cdp.tabs(port);
+      tab = list.find((item) => item.id === ctx.activeTabId) || null;
+      // The pinned tab can vanish (user closed it, closetab step): fall back
+      // to firstTab rather than failing the whole flow.
+      if (!tab) ctx.activeTabId = null;
+    }
+    if (!tab) tab = await cdp.firstTab(port);
     if (!tab?.webSocketDebuggerUrl) throw new Error('No page tab for CDP port ' + port);
     return fn(tab.webSocketDebuggerUrl);
   }

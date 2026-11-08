@@ -469,21 +469,31 @@ class RpaStore {
    * and templates are never touched; pending/running tasks are never dropped.
    */
   enforceStoreBudget() {
-    const over = () => Buffer.byteLength(JSON.stringify(this.data), 'utf8') > this.sizeLimitBytes;
-    if (!over()) return;
+    // Track sizes per task instead of re-serializing the whole store after
+    // every single eviction (O(n^2) stringify on a large store).
+    const taskSize = (task) => {
+      try { return Buffer.byteLength(JSON.stringify(task) || 'null', 'utf8'); }
+      catch (_) { return 0; }
+    };
+    let total;
+    try { total = Buffer.byteLength(JSON.stringify(this.data), 'utf8'); }
+    catch (_) { return; }
+    if (total <= this.sizeLimitBytes) return;
+    const overhead = Math.max(0, total - this.data.tasks.reduce((sum, task) => sum + taskSize(task), 0));
+    const fits = () => overhead + this.data.tasks.reduce((sum, task) => sum + taskSize(task), 0) <= this.sizeLimitBytes;
     const ACTIVE = new Set(['pending', 'running']);
-    for (let i = this.data.tasks.length - 1; i >= 1 && over(); i -= 1) {
+    for (let i = this.data.tasks.length - 1; i >= 1 && !fits(); i -= 1) {
       if (!ACTIVE.has(String(this.data.tasks[i]?.status || ''))) {
         this.data.tasks.splice(i, 1);
       }
     }
-    if (!over()) return;
+    if (fits()) return;
     for (const task of [...this.data.tasks].reverse()) {
-      if (!over()) return;
+      if (fits()) return;
       if (Array.isArray(task.process_logs) && task.process_logs.length) task.process_logs = [];
     }
     for (const task of [...this.data.tasks].reverse()) {
-      if (!over()) return;
+      if (fits()) return;
       if (task.process_result && typeof task.process_result === 'object') {
         delete task.process_result.variables;
         delete task.process_result.exports;

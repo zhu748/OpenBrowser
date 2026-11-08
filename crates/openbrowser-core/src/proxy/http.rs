@@ -281,6 +281,7 @@ pub fn format_origin_request(header_slice: &[u8], uri_or_target: &str) -> Vec<u8
     out.push_str(version);
     out.push_str("\r\n");
 
+    let mut kept_upgrade_connection = false;
     for line in lines {
         let trimmed = line.trim();
         if trimmed.is_empty() {
@@ -297,8 +298,22 @@ pub fn format_origin_request(header_slice: &[u8], uri_or_target: &str) -> Vec<u8
         {
             continue;
         }
+        // Same rationale as the forwarded rewrite: only the first request on a
+        // client connection is rewritten to origin-form, so the connection
+        // must not be reused past the first response.
+        if lower.starts_with("connection:") {
+            if lower.contains("upgrade") {
+                kept_upgrade_connection = true;
+                out.push_str(trimmed);
+                out.push_str("\r\n");
+            }
+            continue;
+        }
         out.push_str(trimmed);
         out.push_str("\r\n");
+    }
+    if !kept_upgrade_connection {
+        out.push_str("Connection: close\r\n");
     }
     out.push_str("\r\n");
     out.into_bytes()
@@ -307,7 +322,8 @@ pub fn format_origin_request(header_slice: &[u8], uri_or_target: &str) -> Vec<u8
 /// Rewrite client HTTP request header for forwarding through an upstream HTTP proxy:
 /// 1. Keeps absolute-form request line if present (or formats absolute URI from Host if relative).
 /// 2. Replaces any existing Proxy-Authorization with our configured upstream Proxy-Authorization.
-/// 3. Injects `Proxy-Connection: Keep-Alive`.
+/// 3. Forces `Proxy-Connection: close` / `Connection: close` (an upgrade
+///    handshake keeps its `Connection: Upgrade` header).
 pub fn format_forwarded_proxy_request(header_slice: &[u8], auth_header: Option<&str>) -> Vec<u8> {
     let header_str = String::from_utf8_lossy(header_slice);
     let mut lines: Vec<&str> = header_str.lines().collect();
@@ -361,6 +377,7 @@ pub fn format_forwarded_proxy_request(header_slice: &[u8], auth_header: Option<&
         out.push_str("\r\n");
     }
 
+    let mut kept_upgrade_connection = false;
     for line in lines {
         let trimmed = line.trim();
         if trimmed.is_empty() {
@@ -370,6 +387,19 @@ pub fn format_forwarded_proxy_request(header_slice: &[u8], auth_header: Option<&
         if lower.starts_with("proxy-authorization:") || lower.starts_with("proxy-connection:") {
             continue;
         }
+        // Rewrite client keep-alive into close: the bridge only rewrites the
+        // first request of a client connection, so a reused connection would
+        // bypass the Proxy-Authorization injection above and the second
+        // request would fail with 407. A WebSocket upgrade
+        // (`Connection: Upgrade`) must keep its original header.
+        if lower.starts_with("connection:") {
+            if lower.contains("upgrade") {
+                kept_upgrade_connection = true;
+                out.push_str(trimmed);
+                out.push_str("\r\n");
+            }
+            continue;
+        }
         out.push_str(trimmed);
         out.push_str("\r\n");
     }
@@ -377,7 +407,10 @@ pub fn format_forwarded_proxy_request(header_slice: &[u8], auth_header: Option<&
     if let Some(auth) = auth_header {
         out.push_str(&format!("Proxy-Authorization: {}\r\n", auth));
     }
-    out.push_str("Proxy-Connection: Keep-Alive\r\n\r\n");
+    if !kept_upgrade_connection {
+        out.push_str("Connection: close\r\n");
+    }
+    out.push_str("Proxy-Connection: close\r\n\r\n");
     out.into_bytes()
 }
 
@@ -503,7 +536,8 @@ mod tests {
         assert!(formatted_str.starts_with("GET http://example.com/index.html HTTP/1.1\r\n"));
         assert!(!formatted_str.contains("old_creds"));
         assert!(formatted_str.contains("Proxy-Authorization: Basic new_creds\r\n"));
-        assert!(formatted_str.contains("Proxy-Connection: Keep-Alive\r\n"));
+        assert!(formatted_str.contains("Proxy-Connection: close\r\n"));
+        assert!(formatted_str.contains("Connection: close\r\n"));
         assert!(formatted_str.ends_with("\r\n\r\n"));
     }
 
@@ -517,7 +551,8 @@ mod tests {
             "GET http://myapp.internal:8080/api/v1/search?q=openbrowser HTTP/1.1\r\n"
         ));
         assert!(formatted_str.contains("Host: myapp.internal:8080\r\n"));
-        assert!(formatted_str.contains("Proxy-Connection: Keep-Alive\r\n"));
+        assert!(formatted_str.contains("Proxy-Connection: close\r\n"));
+        assert!(formatted_str.contains("Connection: close\r\n"));
         assert!(formatted_str.ends_with("\r\n\r\n"));
     }
 }

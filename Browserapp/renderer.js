@@ -235,7 +235,7 @@ function applyPlatformClass() {
   document.documentElement.classList.toggle('titlebar-integrated', integrated);
 }
 
-function refreshIcons() {
+function refreshIcons(root = document) {
   if (!window.lucide?.createIcons) return;
   try {
     const icons = window.lucide.icons || window.lucide;
@@ -243,8 +243,15 @@ function refreshIcons() {
       console.warn('Lucide icons map is empty');
       return;
     }
+    // Lucide replaces <i data-lucide="..."> elements with SVGs, so re-running
+    // it over the whole document re-parses every already-converted node.
+    // Scope to elements that still carry the marker attribute.
+    const rootEl = root && root.querySelectorAll ? root : document;
+    if (rootEl !== document && !rootEl.querySelector('[data-lucide]')) return;
+    if (rootEl === document && !document.querySelector('[data-lucide]')) return;
     window.lucide.createIcons({
       icons,
+      nameAttr: 'data-lucide',
       attrs: {
         'aria-hidden': 'true',
         'stroke-width': '1.75',
@@ -3576,7 +3583,11 @@ $('#profile-clear-filters').addEventListener('click', () => {
   $('#profile-search').focus();
 });
 $('#profile-empty-create').addEventListener('click', () => $('#create-profile').click());
-$('#extension-search').addEventListener('input', renderExtensions);
+let __extensionSearchTimer = 0;
+$('#extension-search').addEventListener('input', () => {
+  clearTimeout(__extensionSearchTimer);
+  __extensionSearchTimer = setTimeout(() => { __extensionSearchTimer = 0; renderExtensions(); }, 250);
+});
 $('#profile-page-size').addEventListener('change', (event) => { const value = Number(event.target.value); profilePageSize = PROFILE_PAGE_SIZES.includes(value) ? value : 10; profilePage = 1; try { localStorage.setItem(PROFILE_PAGE_SIZE_KEY, String(profilePageSize)); } catch (_) {} renderProfiles(); });
 $('#profile-prev').addEventListener('click', () => { profilePage = Math.max(1, profilePage - 1); renderProfiles(); });
 $('#profile-next').addEventListener('click', () => { profilePage += 1; renderProfiles(); });
@@ -3770,10 +3781,22 @@ const onEditorFormChange = (event) => {
     $('#editor-proxy-result').className = 'proxy-test-result';
     $('#editor-proxy-result').textContent = editorSelectedNetwork() === 'direct' ? tx('本地直连') : tx('设置已更改，请重新检测');
   }
-  updateEditorVisibility(); renderEditorSummary();
+  updateEditorVisibility(); scheduleEditorSummaryRender();
 };
+let __editorSummaryTimer = 0;
+// renderEditorSummary walks the whole form and rebuilds its DOM; on 'input'
+// (every keystroke) that is wasted work. Debounce it, keep 'change' immediate.
+function scheduleEditorSummaryRender() {
+  clearTimeout(__editorSummaryTimer);
+  __editorSummaryTimer = setTimeout(() => { __editorSummaryTimer = 0; renderEditorSummary(); }, 250);
+  __editorSummaryTimer.unref?.();
+}
 $('#profile-editor-form').addEventListener('input', onEditorFormChange);
-$('#profile-editor-form').addEventListener('change', onEditorFormChange);
+$('#profile-editor-form').addEventListener('change', (event) => {
+  clearTimeout(__editorSummaryTimer);
+  __editorSummaryTimer = 0;
+  onEditorFormChange(event);
+});
 
 // Platform preset → fill 指定地址
 function applyPlatformPresetToStartUrl() {

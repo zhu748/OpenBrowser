@@ -486,25 +486,49 @@ class LocalApiServer {
     this.startedAt = null;
     // 401 flood backoff: any local process may keep guessing credentials, so
     // consecutive failures escalate into a temporary lockout (max 60s).
-    this.authFailureCount = 0;
-    this.authLockoutUntil = 0;
+    // Accounting is per client address: a single misconfigured client must
+    // not lock everyone else out, and the map is pruned so it cannot grow.
+    this.authFailuresByPeer = new Map(); // peer -> { count, until }
   }
 
-  registerAuthFailure() {
-    this.authFailureCount += 1;
-    if (this.authFailureCount >= AUTH_FAILURE_LOCKOUT_THRESHOLD) {
-      const over = this.authFailureCount - AUTH_FAILURE_LOCKOUT_THRESHOLD;
-      this.authLockoutUntil = Date.now() + Math.min(AUTH_LOCKOUT_MAX_MS, AUTH_LOCKOUT_BASE_MS * (2 ** over));
+  static PEER_LIMIT() { return 512; }
+
+  peerOf(req) {
+    return req?.socket?.remoteAddress || 'unknown';
+  }
+
+  pruneAuthPeers(now = Date.now()) {
+    if (this.authFailuresByPeer.size <= LocalApiServer.PEER_LIMIT()) return;
+    for (const [peer, entry] of this.authFailuresByPeer) {
+      if (entry.until < now && entry.count === 0) this.authFailuresByPeer.delete(peer);
+    }
+    while (this.authFailuresByPeer.size > LocalApiServer.PEER_LIMIT()) {
+      const oldest = [...this.authFailuresByPeer.entries()]
+        .sort((a, b) => (a[1].until || 0) - (b[1].until || 0))[0];
+      if (!oldest) break;
+      this.authFailuresByPeer.delete(oldest[0]);
     }
   }
 
-  registerAuthSuccess() {
-    this.authFailureCount = 0;
-    this.authLockoutUntil = 0;
+  registerAuthFailure(req) {
+    const peer = this.peerOf(req);
+    const entry = this.authFailuresByPeer.get(peer) || { count: 0, until: 0 };
+    entry.count += 1;
+    if (entry.count >= AUTH_FAILURE_LOCKOUT_THRESHOLD) {
+      const over = entry.count - AUTH_FAILURE_LOCKOUT_THRESHOLD;
+      entry.until = Date.now() + Math.min(AUTH_LOCKOUT_MAX_MS, AUTH_LOCKOUT_BASE_MS * (2 ** over));
+    }
+    this.authFailuresByPeer.set(peer, entry);
+    this.pruneAuthPeers();
   }
 
-  authLockedOut() {
-    return Boolean(this.authLockoutUntil && Date.now() < this.authLockoutUntil);
+  registerAuthSuccess(req) {
+    this.authFailuresByPeer.delete(this.peerOf(req));
+  }
+
+  authLockedOut(req) {
+    const entry = this.authFailuresByPeer.get(this.peerOf(req));
+    return Boolean(entry?.until && Date.now() < entry.until);
   }
 
   authOk(req) {
@@ -640,15 +664,16 @@ class LocalApiServer {
       const url = new URL(req.url || '/', `http://${this.host}:${this.port}`);
       const pathname = url.pathname.replace(/\/+$/, '') || '/';
 
-      if (this.authLockedOut()) {
-        const retryAfterSec = Math.max(1, Math.ceil((this.authLockoutUntil - Date.now()) / 1000));
+      if (this.authLockedOut(req)) {
+        const entry = this.authFailuresByPeer.get(this.peerOf(req));
+        const retryAfterSec = Math.max(1, Math.ceil(((entry?.until || 0) - Date.now()) / 1000));
         return sendJson(res, 429, fail('too many failed attempts, retry later', 429), origin, { 'Retry-After': String(retryAfterSec) });
       }
       if (!this.authOk(req)) {
-        this.registerAuthFailure();
+        this.registerAuthFailure(req);
         return sendJson(res, 401, fail('unauthorized', 401), origin, { 'WWW-Authenticate': 'Bearer' });
       }
-      this.registerAuthSuccess();
+      this.registerAuthSuccess(req);
 
       const method = String(req.method || 'GET').toUpperCase();
       const allowedMethods = allowedMethodsForPath(pathname);

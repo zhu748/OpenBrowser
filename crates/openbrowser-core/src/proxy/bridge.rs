@@ -671,6 +671,19 @@ impl LocalProxyBridge {
 
         let deadline = tokio::time::Instant::now() + ctx.handshake_timeout;
 
+        /// Post-handshake work split out of the deadline block: the CONNECT
+        /// reply and buffered remainders are written to the client only after
+        /// the upstream tunnel exists, so a timeout can never emit a bogus 408
+        /// into an already-200'd connection.
+        enum HandshakeFlow {
+            Connect {
+                stream: TcpStream,
+                client_remainder: Vec<u8>,
+                upstream_remainder: Vec<u8>,
+            },
+            Plain(TcpStream),
+        }
+
         let handshake_res = tokio::time::timeout_at(deadline, async {
             // 1. Fail-closed check
             ctx.fail_closed.verify_route(true)?;
@@ -740,23 +753,8 @@ impl LocalProxyBridge {
 
             // 6. Complete handshake
             if is_connect {
-                client
-                    .write_all(
-                        b"HTTP/1.1 200 Connection Established\r\nProxy-Agent: OpenBrowser\r\n\r\n",
-                    )
-                    .await?;
-
-                if !client_remainder.is_empty() {
-                    dialed.stream.write_all(&client_remainder).await?;
-                    ctx.total_c2s
-                        .fetch_add(client_remainder.len() as u64, Ordering::Relaxed);
-                }
-
-                if !dialed.upstream_remainder.is_empty() {
-                    client.write_all(&dialed.upstream_remainder).await?;
-                    ctx.total_s2c
-                        .fetch_add(dialed.upstream_remainder.len() as u64, Ordering::Relaxed);
-                }
+                // The 200 reply and buffered remainders are written after the
+                // deadline block (see the match on handshake_res below).
 
                 // Speculatively prewarm an idle standby tunnel for this target for HTTP upstream if capacity permits
                 if ctx.config.protocol == ProxyProtocol::Http
@@ -786,6 +784,21 @@ impl LocalProxyBridge {
                             pool_clone
                                 .put_tunnel(target_host, target_port, stream, remainder)
                                 .await;
+                        }
+                        // Also keep the raw-TCP tier warm: put_upstream_tcp had
+                        // no caller, so take_upstream_tcp never found anything
+                        // and the "save one TCP handshake RTT" tier was dead.
+                        let raw_res = tokio::time::timeout(prewarm_timeout, async {
+                            tokio::net::TcpStream::connect((
+                                config_clone.host.as_str(),
+                                config_clone.port,
+                            ))
+                            .await
+                        })
+                        .await;
+                        if let Ok(Ok(raw)) = raw_res {
+                            let _ = raw.set_nodelay(true);
+                            pool_clone.put_upstream_tcp(raw).await;
                         }
                     });
                 }
@@ -819,14 +832,56 @@ impl LocalProxyBridge {
             // holding the permit for the tunnel's lifetime turned the
             // 128-slot semaphore into a hard cap on concurrent tunnels.
             drop(permit);
-            Ok(Some(dialed.stream))
+            if is_connect {
+                Ok(Some(HandshakeFlow::Connect {
+                    stream: dialed.stream,
+                    client_remainder,
+                    upstream_remainder: dialed.upstream_remainder,
+                }))
+            } else {
+                Ok(Some(HandshakeFlow::Plain(dialed.stream)))
+            }
         })
         .await;
 
         let upstream = match handshake_res {
-            Ok(Ok(Some(stream))) => stream,
+            Ok(Ok(Some(HandshakeFlow::Connect {
+                mut stream,
+                client_remainder,
+                upstream_remainder,
+            }))) => {
+                client
+                    .write_all(
+                        b"HTTP/1.1 200 Connection Established\r\nProxy-Agent: OpenBrowser\r\n\r\n",
+                    )
+                    .await?;
+                if !client_remainder.is_empty() {
+                    stream.write_all(&client_remainder).await?;
+                    ctx.total_c2s
+                        .fetch_add(client_remainder.len() as u64, Ordering::Relaxed);
+                }
+                if !upstream_remainder.is_empty() {
+                    client.write_all(&upstream_remainder).await?;
+                    ctx.total_s2c
+                        .fetch_add(upstream_remainder.len() as u64, Ordering::Relaxed);
+                }
+                // A tunnel that reaches streaming is the health signal that
+                // resets the fail-closed breaker.
+                ctx.fail_closed.reset();
+                stream
+            }
+            Ok(Ok(Some(HandshakeFlow::Plain(stream)))) => {
+                ctx.fail_closed.reset();
+                stream
+            }
             Ok(Ok(None)) => return Ok(()),
             Ok(Err(err)) => {
+                // Credentials rejected by the upstream means the route cannot
+                // be trusted: trip the breaker so subsequent requests fail
+                // fast instead of redialing with the same broken credentials.
+                if matches!(err, CoreError::AuthFailed(_)) {
+                    ctx.fail_closed.trip("upstream rejected proxy credentials");
+                }
                 Self::send_proxy_error(&mut client, &err, ctx.status_sender.as_ref()).await;
                 return Err(err);
             }
