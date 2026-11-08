@@ -1,0 +1,1032 @@
+/**
+ * 默认界面（modern）— 界面重构后的唯一主题
+ * 浅色工作台风格：
+ * - 品牌蓝 #11a3fd
+ * - 中性灰板 #fff → #050505
+ * - 白底浅分隔、圆角胶囊分段控件、浅蓝高亮侧栏、概要侧栏
+ * 功能与数据流不变。
+ * 语义挂在 html[data-ui-theme="modern"] 上。
+ */
+
+html[data-ui-theme="modern"] {
+  color-scheme: light;
+
+  /* 设计基元（设计规范实测值） */
+  --modern-blue-25: #f5fbff;
+  --modern-blue-50: #def3ff;
+  --modern-blue-100: #c8ebfe;
+  --modern-blue-200: #9adbfe;
+  --modern-blue-300: #6cc9fe;
+  --modern-blue-400: #3fb6fd;
+  --modern-blue-500: #11a3fd;
+  --modern-blue-600: #0282d4;
+  --modern-blue-700: #025f9c;
+  --modern-neutral-0: #fff;
+  --modern-neutral-25: #fafafa;
+  --modern-neutral-50: #f1f5f8;
+  --modern-neutral-100: #e2e9ee;
+  --modern-neutral-200: #c7d1d6;
+  --modern-neutral-300: #afb7bb;
+  --modern-neutral-400: #989ca0;
+  --modern-neutral-500: #7d8387;
+  --modern-neutral-600: #575d60;
+  --modern-neutral-700: #34393d;
+  --modern-neutral-800: #2c2e30;
+  --modern-neutral-900: #111213;
+  --modern-neutral-950: #050505;
+  --modern-red-500: #f53838;
+  --modern-red-50: #fee9e7;
+  --modern-green-500: #1dc94d;
+  --modern-green-50: #e9fceb;
+  --modern-yellow-500: #fd9f12;
+  --modern-yellow-50: #fff4e1;
+
+  /* ui-shell token 桥 */
+  --ui-sidebar-width: 216px;
+  --ui-sidebar: var(--modern-neutral-0);
+  --ui-header: var(--modern-neutral-0);
+  --ui-surface: var(--modern-neutral-0);
+  --ui-surface-muted: var(--modern-neutral-50);
+  --ui-border: var(--modern-neutral-100);
+  --ui-border-strong: var(--modern-neutral-200);
+  --ui-text: var(--modern-neutral-900);
+  --ui-muted: var(--modern-neutral-500);
+  --ui-accent: var(--modern-blue-500);
+  --ui-accent-soft: rgba(17, 163, 253, 0.1);
+  --ui-danger: var(--modern-red-500);
+  --ui-radius: 10px;
+  --ui-radius-sm: 8px;
+  --ui-control-height: 34px;
+  --ui-shadow: 0 6px 18px rgba(17, 163, 253, 0.08), 0 1px 2px rgba(5, 5, 5, 0.04);
+
+  /* themes.css token 桥 */
+  --blue: var(--modern-blue-500);
+  --blue2: var(--modern-blue-50);
+  --border: var(--modern-neutral-100);
+  --muted: var(--modern-neutral-500);
+  --green: var(--modern-green-500);
+  --theme-bg: var(--modern-blue-25);
+  --theme-surface: var(--modern-neutral-0);
+  --theme-surface-alt: var(--modern-neutral-50);
+  --theme-active: var(--modern-blue-50);
+  --theme-soft: var(--modern-neutral-50);
+  --theme-text: var(--modern-neutral-900);
+  --theme-muted: var(--modern-neutral-500);
+  --theme-accent-strong: var(--modern-blue-600);
+  --theme-shadow: rgba(5, 5, 5, 0.06);
+  --theme-glow: none;
+  --theme-input: var(--modern-neutral-0);
+  --theme-table-line: var(--modern-neutral-100);
+  --theme-sidebar-status-bg: var(--modern-green-50);
+  --theme-sidebar-status-border: rgba(29, 201, 77, 0.35);
+  --theme-sidebar-status-text: #17a143;
+  --theme-code-bg: var(--modern-neutral-800);
+  --theme-code-fg: var(--modern-neutral-0);
+
+  /* 控件层 token */
+  --surface-raised: var(--modern-neutral-0);
+  --control-bg: var(--modern-neutral-0);
+  --control-border: var(--modern-neutral-200);
+  --focus-ring: rgba(17, 163, 253, 0.32);
+  --table-hover: var(--modern-blue-25);
+  --dialog-shadow: 0 18px 48px rgba(5, 5, 5, 0.16), 0 0 0 1px var(--modern-neutral-100);
+
+  /* 字体：Inter 优先，中文回退苹方/雅黑 */
+  --modern-font: "Inter", "Inter var", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+}
+
+html[data-ui-theme="modern"] body {
+  font-family: var(--modern-font);
+  background: var(--modern-blue-25);
+  color: var(--modern-neutral-900);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+html[data-ui-theme="modern"] ::selection { background: rgba(17, 163, 253, 0.22); }
+
+html[data-ui-theme="modern"] ::-webkit-scrollbar { width: 8px; height: 8px; }
+html[data-ui-theme="modern"] ::-webkit-scrollbar-thumb {
+  background: var(--modern-neutral-200);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+html[data-ui-theme="modern"] ::-webkit-scrollbar-thumb:hover { background: var(--modern-neutral-300); background-clip: padding-box; }
+html[data-ui-theme="modern"] ::-webkit-scrollbar-track { background: transparent; }
+
+/* ========== 侧栏 ========== */
+html[data-ui-theme="modern"] .app-shell { background: var(--modern-blue-25); }
+html[data-ui-theme="modern"] .sidebar {
+  background: var(--modern-neutral-0);
+  border-right: 1px solid var(--modern-neutral-100);
+}
+html[data-ui-theme="modern"] .brand { padding: 18px 16px 14px; }
+html[data-ui-theme="modern"] .brand .logo,
+html[data-ui-theme="modern"] .brand .logo img {
+  border-radius: 10px;
+  box-shadow: none;
+  background: transparent;
+}
+html[data-ui-theme="modern"] .brand strong { color: var(--modern-neutral-900); font-size: 15px; letter-spacing: 0.01em; }
+html[data-ui-theme="modern"] .brand small { color: var(--modern-neutral-400); font-size: 9px; letter-spacing: 0.14em; }
+
+html[data-ui-theme="modern"] .new-browser {
+  margin: 2px 14px 14px;
+  min-height: 36px;
+  border-radius: 8px;
+  background: var(--modern-blue-500);
+  border: 1px solid var(--modern-blue-600);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: 0 2px 6px rgba(17, 163, 253, 0.24);
+}
+html[data-ui-theme="modern"] .new-browser:hover { background: var(--modern-blue-600); }
+html[data-ui-theme="modern"] .new-browser:active { background: var(--modern-blue-700); }
+
+html[data-ui-theme="modern"] .sidebar nav { padding: 2px 10px; }
+html[data-ui-theme="modern"] .sidebar .nav {
+  margin: 1px 0;
+  border-radius: 8px;
+  color: var(--modern-neutral-600);
+  font-size: 13px;
+  font-weight: 400;
+  background: transparent;
+}
+html[data-ui-theme="modern"] .sidebar .nav > svg { color: var(--modern-neutral-500); }
+html[data-ui-theme="modern"] .sidebar .nav:hover { background: var(--modern-neutral-50); color: var(--modern-neutral-800); }
+html[data-ui-theme="modern"] .sidebar .nav.active {
+  background: var(--modern-blue-50);
+  color: var(--modern-blue-600);
+  font-weight: 600;
+  box-shadow: none;
+}
+html[data-ui-theme="modern"] .sidebar .nav.active > svg { color: var(--modern-blue-500); }
+html[data-ui-theme="modern"] .sidebar .nav-label {
+  color: var(--modern-neutral-400);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: none;
+}
+html[data-ui-theme="modern"] .sidebar .nav-child { color: var(--modern-neutral-500); border-left-color: var(--modern-neutral-100); }
+html[data-ui-theme="modern"] .sidebar .nav-child.active { background: var(--modern-blue-50); color: var(--modern-blue-600); }
+html[data-ui-theme="modern"] .sidebar-footer { border-top: 1px solid var(--modern-neutral-100); color: var(--modern-neutral-500); }
+html[data-ui-theme="modern"] .sidebar-footer a { color: var(--modern-neutral-500); }
+html[data-ui-theme="modern"] .sidebar-footer a:hover { color: var(--modern-blue-600); }
+html[data-ui-theme="modern"] .app-version { color: var(--modern-neutral-500); }
+
+/* ========== 顶栏 ========== */
+html[data-ui-theme="modern"] .content > header {
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid var(--modern-neutral-100);
+}
+html[data-ui-theme="modern"] .content > header h1 { color: var(--modern-neutral-900); font-size: 17px; font-weight: 600; }
+html[data-ui-theme="modern"] .content > header h1::before { display: none; }
+html[data-ui-theme="modern"] .content > header p { color: var(--modern-neutral-500); }
+
+html[data-ui-theme="modern"] .engine-badge {
+  background: var(--modern-neutral-50);
+  border: 1px solid var(--modern-neutral-100);
+  border-radius: 999px;
+  color: var(--modern-neutral-600);
+}
+html[data-ui-theme="modern"] .engine-badge-ok { color: #17a143; background: var(--modern-green-50); border-color: rgba(29, 201, 77, 0.3); }
+html[data-ui-theme="modern"] .engine-badge-missing { color: var(--modern-red-500); background: var(--modern-red-50); border-color: rgba(245, 56, 56, 0.3); }
+html[data-ui-theme="modern"] .engine-badge-dot { background: currentColor; }
+
+html[data-ui-theme="modern"] .theme-trigger {
+  border: 1px solid var(--modern-neutral-200);
+  border-radius: 8px;
+  background: var(--modern-neutral-0);
+  color: var(--modern-neutral-600);
+}
+html[data-ui-theme="modern"] .theme-trigger:hover { border-color: var(--modern-blue-400); color: var(--modern-blue-600); }
+html[data-ui-theme="modern"] .theme-trigger-dot { background: var(--modern-blue-500); }
+html[data-ui-theme="modern"] .theme-popover {
+  background: var(--modern-neutral-0);
+  border: 1px solid var(--modern-neutral-100);
+  border-radius: 12px;
+  box-shadow: var(--dialog-shadow);
+}
+html[data-ui-theme="modern"] .theme-popover-head strong { color: var(--modern-neutral-900); }
+html[data-ui-theme="modern"] .theme-option {
+  border: 1px solid var(--modern-neutral-100);
+  border-radius: 10px;
+  background: var(--modern-neutral-0);
+}
+html[data-ui-theme="modern"] .theme-option strong { color: var(--modern-neutral-800); font-size: 12px; }
+html[data-ui-theme="modern"] .theme-option small { color: var(--modern-neutral-400); }
+html[data-ui-theme="modern"] .theme-option:hover { border-color: var(--modern-blue-300); background: var(--modern-blue-25); }
+html[data-ui-theme="modern"] .theme-option.active,
+html[data-ui-theme="modern"] .theme-option[aria-pressed="true"] {
+  border-color: var(--modern-blue-500);
+  background: var(--modern-blue-25);
+  box-shadow: 0 0 0 1px var(--modern-blue-500) inset;
+}
+html[data-ui-theme="modern"] .theme-option i { background: var(--modern-neutral-100); border-radius: 6px; }
+html[data-ui-theme="modern"] .theme-option.active i { background: var(--modern-blue-500); }
+html[data-ui-theme="modern"] .theme-appearance-seg { border: 1px solid var(--modern-neutral-100); border-radius: 8px; background: var(--modern-neutral-50); }
+html[data-ui-theme="modern"] .theme-appearance-seg button { color: var(--modern-neutral-500); border-radius: 6px; }
+html[data-ui-theme="modern"] .theme-appearance-seg button.on { background: var(--modern-neutral-0); color: var(--modern-blue-600); box-shadow: 0 1px 3px rgba(5, 5, 5, 0.1); }
+
+/* ========== 按钮 ========== */
+html[data-ui-theme="modern"] .primary {
+  background: var(--modern-blue-500);
+  border: 1px solid var(--modern-blue-600);
+  color: #fff;
+  border-radius: 8px;
+  font-weight: 500;
+}
+html[data-ui-theme="modern"] .primary:hover { background: var(--modern-blue-600); border-color: var(--modern-blue-700); }
+html[data-ui-theme="modern"] .primary:active { background: var(--modern-blue-700); }
+html[data-ui-theme="modern"] .primary:disabled,
+html[data-ui-theme="modern"] .primary.is-busy { background: var(--modern-blue-300); border-color: var(--modern-blue-400); }
+
+html[data-ui-theme="modern"] .outline,
+html[data-ui-theme="modern"] .mini,
+html[data-ui-theme="modern"] .action-grid button,
+html[data-ui-theme="modern"] .row-actions button {
+  background: var(--modern-neutral-0);
+  border: 1px solid var(--modern-neutral-200);
+  color: var(--modern-neutral-700);
+  border-radius: 8px;
+  font-weight: 400;
+}
+html[data-ui-theme="modern"] .outline:hover,
+html[data-ui-theme="modern"] .mini:hover,
+html[data-ui-theme="modern"] .action-grid button:hover,
+html[data-ui-theme="modern"] .row-actions button:hover {
+  border-color: var(--modern-blue-400);
+  color: var(--modern-blue-600);
+  background: var(--modern-blue-25);
+}
+html[data-ui-theme="modern"] .outline.danger,
+html[data-ui-theme="modern"] .mini.danger { color: var(--modern-red-500); }
+html[data-ui-theme="modern"] .outline.danger:hover { background: var(--modern-red-50); border-color: var(--modern-red-500); color: var(--modern-red-500); }
+html[data-ui-theme="modern"] .danger {
+  background: var(--modern-red-500);
+  border: 1px solid #e90c10;
+  color: #fff;
+  border-radius: 8px;
+}
+html[data-ui-theme="modern"] .danger:hover { background: #e90c10; }
+html[data-ui-theme="modern"] button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+html[data-ui-theme="modern"] .toolbar .outline { background: var(--modern-neutral-0); }
+
+/* ========== 输入控件 ========== */
+html[data-ui-theme="modern"] input,
+html[data-ui-theme="modern"] select,
+html[data-ui-theme="modern"] textarea {
+  background: var(--modern-neutral-0);
+  border: 1px solid var(--modern-neutral-200);
+  border-radius: 8px;
+  color: var(--modern-neutral-900);
+}
+html[data-ui-theme="modern"] input::placeholder,
+html[data-ui-theme="modern"] textarea::placeholder { color: var(--modern-neutral-400); }
+html[data-ui-theme="modern"] input:hover,
+html[data-ui-theme="modern"] select:hover,
+html[data-ui-theme="modern"] textarea:hover { border-color: var(--modern-neutral-300); }
+html[data-ui-theme="modern"] input:focus,
+html[data-ui-theme="modern"] select:focus,
+html[data-ui-theme="modern"] textarea:focus {
+  border-color: var(--modern-blue-500);
+  box-shadow: 0 0 0 3px rgba(17, 163, 253, 0.14);
+  outline: none;
+}
+html[data-ui-theme="modern"] input:disabled,
+html[data-ui-theme="modern"] select:disabled,
+html[data-ui-theme="modern"] textarea:disabled {
+  background: var(--modern-neutral-50);
+  border-color: var(--modern-neutral-100);
+  color: var(--modern-neutral-400);
+}
+html[data-ui-theme="modern"] input[type="checkbox"],
+html[data-ui-theme="modern"] input[type="radio"] { accent-color: var(--modern-blue-500); }
+html[data-ui-theme="modern"] input[type="range"] { accent-color: var(--modern-blue-500); }
+
+html[data-ui-theme="modern"] .themed-select .select-menu,
+html[data-ui-theme="modern"] .select-menu {
+  background: var(--modern-neutral-0);
+  border: 1px solid var(--modern-neutral-100);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(5, 5, 5, 0.12);
+}
+html[data-ui-theme="modern"] .select-menu button { color: var(--modern-neutral-700); border-radius: 6px; }
+html[data-ui-theme="modern"] .select-menu button:hover { background: var(--modern-neutral-50); color: var(--modern-neutral-900); }
+html[data-ui-theme="modern"] .select-menu button.selected,
+html[data-ui-theme="modern"] .select-menu button.active { background: var(--modern-blue-50); color: var(--modern-blue-600); }
+
+/* ========== 分段选择（胶囊 pill） ========== */
+html[data-ui-theme="modern"] .segmented {
+  width: max-content;
+  gap: 6px;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+html[data-ui-theme="modern"] .segmented label {
+  margin: 0;
+  padding: 6px 13px;
+  border-radius: 8px;
+  border: 1px solid var(--modern-neutral-200);
+  background: var(--modern-neutral-0);
+  color: var(--modern-neutral-600);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.3;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
+}
+html[data-ui-theme="modern"] .segmented label:hover { border-color: var(--modern-blue-400); color: var(--modern-blue-600); }
+html[data-ui-theme="modern"] .segmented label:has(input:checked) {
+  background: var(--modern-blue-50);
+  border-color: var(--modern-blue-400);
+  color: var(--modern-blue-600);
+  font-weight: 500;
+  box-shadow: none;
+}
+html[data-ui-theme="modern"] .segmented label:has(input:disabled) {
+  background: var(--modern-neutral-50);
+  border-color: var(--modern-neutral-100);
+  color: var(--modern-neutral-400);
+  cursor: not-allowed;
+}
+html[data-ui-theme="modern"] .segmented.themed-pill button {
+  border-radius: 8px;
+  border: 1px solid var(--modern-neutral-200);
+  background: var(--modern-neutral-0);
+  color: var(--modern-neutral-600);
+}
+html[data-ui-theme="modern"] .segmented.themed-pill button.active,
+html[data-ui-theme="modern"] .segmented.themed-pill button[aria-pressed="true"] {
+  background: var(--modern-blue-50);
+  border-color: var(--modern-blue-400);
+  color: var(--modern-blue-600);
+}
+
+/* ========== 工具栏 / 搜索 ========== */
+html[data-ui-theme="modern"] .toolbar { background: transparent; }
+html[data-ui-theme="modern"] .toolbar .search {
+  background: var(--modern-neutral-0);
+  border: 1px solid var(--modern-neutral-200);
+  border-radius: 8px;
+}
+html[data-ui-theme="modern"] .toolbar .search:focus-within {
+  border-color: var(--modern-blue-500);
+  box-shadow: 0 0 0 3px rgba(17, 163, 253, 0.14);
+}
+html[data-ui-theme="modern"] .toolbar .search input { border: 0; box-shadow: none; background: transparent; }
+html[data-ui-theme="modern"] .toolbar .search:focus-within input { box-shadow: none; }
+html[data-ui-theme="modern"] .toolbar .search svg { color: var(--modern-neutral-400); }
+
+html[data-ui-theme="modern"] .group-chip {
+  background: var(--modern-neutral-0);
+  border: 1px solid var(--modern-neutral-100);
+  border-radius: 999px;
+  color: var(--modern-neutral-600);
+}
+html[data-ui-theme="modern"] .group-chip:hover { border-color: var(--modern-blue-300); color: var(--modern-blue-600); }
+html[data-ui-theme="modern"] .group-chip.active {
+  background: var(--modern-blue-50);
+  border-color: var(--modern-blue-500);
+  color: var(--modern-blue-600);
+}
+html[data-ui-theme="modern"] .profile-selection-bar {
+  background: var(--modern-blue-25);
+  border: 1px solid var(--modern-blue-200);
+  border-radius: 10px;
+  color: var(--modern-neutral-800);
+}
+html[data-ui-theme="modern"] .batch-group-assign select { border-radius: 8px; }
+
+/* ========== 表格 ========== */
+html[data-ui-theme="modern"] .table-card {
+  background: var(--modern-neutral-0);
+  border: 1px solid var(--modern-neutral-100);
+  border-radius: 12px;
+  box-shadow: none;
+  overflow: hidden;
+}
+html[data-ui-theme="modern"] .table-card table { border-collapse: separate; border-spacing: 0; }
+html[data-ui-theme="modern"] .table-card thead th {
+  background: var(--modern-neutral-50);
+  color: var(--modern-neutral-500);
+  font-size: 12px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--modern-neutral-100);
+  letter-spacing: 0.02em;
+}
+html[data-ui-theme="modern"] .table-card tbody td {
+  color: var(--modern-neutral-800);
+  border-bottom: 1px solid var(--modern-neutral-50);
+}
+html[data-ui-theme="modern"] .table-card tbody tr { transition: background 100ms ease; }
+html[data-ui-theme="modern"] .table-card tbody tr:hover { background: var(--modern-blue-25); }
+html[data-ui-theme="modern"] .table-card tbody tr.is-selected,
+html[data-ui-theme="modern"] .table-card tbody tr.selected { background: var(--modern-blue-25); }
+html[data-ui-theme="modern"] .table-card tbody tr.is-running,
+html[data-ui-theme="modern"] .table-card tbody tr.running { background: var(--modern-green-50); }
+html[data-ui-theme="modern"] .profile-table-compact .status-badge,
+html[data-ui-theme="modern"] .status-badge,
+html[data-ui-theme="modern"] .proxy-mark {
+  border-radius: 999px;
+  font-weight: 500;
+}
+html[data-ui-theme="modern"] .table-card .row-actions button { min-height: 28px; border-radius: 999px; padding: 3px 12px; font-size: 12px; }
+html[data-ui-theme="modern"] .table-card .row-actions button.primary { background: var(--modern-blue-500); border-color: var(--modern-blue-600); color: #fff; }
+html[data-ui-theme="modern"] .table-card .row-actions button.primary:hover { background: var(--modern-blue-600); }
+
+html[data-ui-theme="modern"] .empty { color: var(--modern-neutral-400); }
+html[data-ui-theme="modern"] .profile-pagination { color: var(--modern-neutral-500); }
+html[data-ui-theme="modern"] .profile-pagination button {
+  background: var(--modern-neutral-0);
+  border: 1px solid var(--modern-neutral-200);
+  border-radius: 8px;
+  color: var(--modern-neutral-600);
+}
+html[data-ui-theme="modern"] .profile-pagination button:hover { border-color: var(--modern-blue-400); color: var(--modern-blue-600); }
+html[data-ui-theme="modern"] .profile-pagination input { border-radius: 8px; }
+
+/* ========== 环境编辑器 ========== */
+html[data-ui-theme="modern"] #view-profile-editor { background: transparent; }
+html[data-ui-theme="modern"] .profile-editor-head { background: transparent; padding: 18px 26px 10px; }
+html[data-ui-theme="modern"] .profile-editor-head h2 { color: var(--modern-neutral-900); font-size: 18px; font-weight: 600; }
+html[data-ui-theme="modern"] .profile-editor-head h2 span {
+  background: var(--modern-blue-50);
+  color: var(--modern-blue-600);
+  border-radius: 6px;
+  font-size: 12px;
+  padding: 3px 8px;
+}
+html[data-ui-theme="modern"] .profile-editor-head p { color: var(--modern-neutral-500); font-size: 12px; }
+html[data-ui-theme="modern"] .editor-back {
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--modern-neutral-500);
+  font-size: 13px;
+  padding: 5px 10px;
+}
+html[data-ui-theme="modern"] .editor-back:hover {
+  background: var(--modern-neutral-50);
+  color: var(--modern-neutral-800);
+}
+
+html[data-ui-theme="modern"] #view-profile-editor .editor-tabs {
+  gap: 6px;
+  padding: 4px 26px 14px;
+  background: transparent;
+  border-bottom: 1px solid var(--modern-neutral-100);
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-tabs button {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  padding: 7px 16px;
+  color: var(--modern-neutral-500);
+  font-size: 13px;
+  font-weight: 500;
+  border-bottom: 1px solid transparent;
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-tabs button:hover { color: var(--modern-neutral-800); background: var(--modern-neutral-50); }
+html[data-ui-theme="modern"] #view-profile-editor .editor-tabs button.active {
+  background: var(--modern-blue-50);
+  color: var(--modern-blue-600);
+  border-color: var(--modern-blue-200);
+  border-bottom: 1px solid var(--modern-blue-200);
+  font-weight: 600;
+}
+
+html[data-ui-theme="modern"] #view-profile-editor .environment-editor {
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 16px;
+  padding: 16px 26px 80px;
+  align-items: start;
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-panel { max-width: 900px; }
+
+html[data-ui-theme="modern"] #view-profile-editor .editor-section-card {
+  background: var(--modern-neutral-0);
+  border: 1px solid var(--modern-neutral-100);
+  border-radius: 12px;
+  padding: 18px 20px;
+  margin-bottom: 14px;
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-section-card:hover { border-color: var(--modern-neutral-200); }
+html[data-ui-theme="modern"] #view-profile-editor .editor-card-header {
+  margin-bottom: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--modern-neutral-50);
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-card-title {
+  color: var(--modern-neutral-900);
+  font-size: 14px;
+  font-weight: 600;
+  gap: 8px;
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-card-title::before {
+  display: inline-block;
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--modern-blue-500);
+  flex: 0 0 auto;
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-card-desc { color: var(--modern-neutral-400); font-size: 12px; }
+
+html[data-ui-theme="modern"] #view-profile-editor .editor-form {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  border-radius: 0;
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-form label {
+  color: var(--modern-neutral-700);
+  font-size: 12px;
+  font-weight: 500;
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-form input,
+html[data-ui-theme="modern"] #view-profile-editor .editor-form select,
+html[data-ui-theme="modern"] #view-profile-editor .editor-form textarea {
+  min-height: 34px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-form label small { color: var(--modern-neutral-400); font-size: 11px; }
+html[data-ui-theme="modern"] #view-profile-editor .editor-panel h3 { color: var(--modern-neutral-900); }
+html[data-ui-theme="modern"] .network-mode-hint { color: var(--modern-neutral-400); font-size: 11px; }
+
+html[data-ui-theme="modern"] #view-profile-editor .privacy-grid {
+  background: var(--modern-neutral-25);
+  border: 1px solid var(--modern-neutral-100);
+  border-radius: 10px;
+}
+html[data-ui-theme="modern"] #view-profile-editor .privacy-grid label { color: var(--modern-neutral-700); }
+html[data-ui-theme="modern"] #view-profile-editor .advanced-card {
+  background: var(--modern-neutral-25);
+  border: 1px solid var(--modern-neutral-100);
+  border-radius: 10px;
+}
+html[data-ui-theme="modern"] .check-row { color: var(--modern-neutral-700); }
+html[data-ui-theme="modern"] .proxy-test-result {
+  background: var(--modern-neutral-50);
+  border: 1px solid var(--modern-neutral-100);
+  border-radius: 8px;
+  color: var(--modern-neutral-600);
+}
+html[data-ui-theme="modern"] .proxy-test-result.success { background: var(--modern-green-50); border-color: rgba(29, 201, 77, 0.3); color: #17a143; }
+html[data-ui-theme="modern"] .proxy-test-result.error { background: var(--modern-red-50); border-color: rgba(245, 56, 56, 0.3); color: var(--modern-red-500); }
+html[data-ui-theme="modern"] .mini.edit { color: #7c5cf0; border-color: #d9ccff; background: #faf8ff; }
+html[data-ui-theme="modern"] .mini.edit:hover { border-color: #b29aff; }
+
+html[data-ui-theme="modern"] #view-profile-editor .editor-random-toolbar {
+  background: var(--modern-neutral-0);
+  border: 1px solid var(--modern-neutral-100);
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin-bottom: 14px;
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-random-toolbar .outline {
+  border-color: var(--modern-blue-500);
+  color: var(--modern-blue-600);
+  font-weight: 500;
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-random-toolbar .outline:hover { background: var(--modern-blue-25); }
+
+html[data-ui-theme="modern"] .editor-actions {
+  border-top: 1px solid var(--modern-neutral-100);
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(6px);
+  margin: 12px 0 0;
+  padding: 12px 16px;
+  border-radius: 0 0 12px 12px;
+}
+
+/* ========== 概要侧栏 ========== */
+html[data-ui-theme="modern"] #view-profile-editor .profile-summary {
+  background: var(--modern-neutral-0);
+  border: 1px solid var(--modern-neutral-100);
+  border-radius: 12px;
+  padding: 16px;
+}
+html[data-ui-theme="modern"] .summary-head strong { color: var(--modern-neutral-900); font-size: 13px; }
+html[data-ui-theme="modern"] .summary-head button { color: var(--modern-blue-600); font-size: 11px; }
+html[data-ui-theme="modern"] .profile-summary dl > div { border-bottom: 1px dashed var(--modern-neutral-100); padding: 7px 0; }
+html[data-ui-theme="modern"] .profile-summary dt { color: var(--modern-neutral-400); font-size: 11px; }
+html[data-ui-theme="modern"] .profile-summary dd { color: var(--modern-neutral-900); font-size: 11px; font-weight: 500; }
+html[data-ui-theme="modern"] .profile-summary > p { color: var(--modern-neutral-400); }
+
+/* ========== 弹窗 / 菜单 / 提示 ========== */
+html[data-ui-theme="modern"] dialog {
+  background: var(--modern-neutral-0);
+  border: 0;
+  border-radius: 14px;
+  box-shadow: var(--dialog-shadow);
+  color: var(--modern-neutral-900);
+}
+html[data-ui-theme="modern"] dialog::backdrop { background: rgba(5, 5, 5, 0.35); }
+html[data-ui-theme="modern"] .dialog-head { border-bottom: 1px solid var(--modern-neutral-100); }
+html[data-ui-theme="modern"] .dialog-head h2,
+html[data-ui-theme="modern"] .dialog-head h3 { color: var(--modern-neutral-900); }
+html[data-ui-theme="modern"] .dialog-head p { color: var(--modern-neutral-500); }
+html[data-ui-theme="modern"] .dialog-actions { border-top: 1px solid var(--modern-neutral-100); background: var(--modern-neutral-25); }
+html[data-ui-theme="modern"] dialog[open] label { color: var(--modern-neutral-700); }
+
+html[data-ui-theme="modern"] .toast,
+html[data-ui-theme="modern"] .toast-item {
+  background: var(--modern-neutral-900);
+  color: #fff;
+  border-radius: 10px;
+  border: 0;
+  box-shadow: 0 10px 30px rgba(5, 5, 5, 0.22);
+}
+html[data-ui-theme="modern"] .toast.success { background: #17a143; }
+html[data-ui-theme="modern"] .toast.error { background: var(--modern-red-500); }
+html[data-ui-theme="modern"] .delete-warning { background: var(--modern-red-50); border: 1px solid rgba(245, 56, 56, 0.3); color: var(--modern-red-500); border-radius: 10px; }
+
+html[data-ui-theme="modern"] .context-menu,
+html[data-ui-theme="modern"] .popup-menu {
+  background: var(--modern-neutral-0);
+  border: 1px solid var(--modern-neutral-100);
+  border-radius: 10px;
+  box-shadow: 0 14px 36px rgba(5, 5, 5, 0.14);
+}
+html[data-ui-theme="modern"] .context-menu button,
+html[data-ui-theme="modern"] .popup-menu button { color: var(--modern-neutral-700); border-radius: 6px; }
+html[data-ui-theme="modern"] .context-menu button:hover,
+html[data-ui-theme="modern"] .popup-menu button:hover { background: var(--modern-neutral-50); color: var(--modern-neutral-900); }
+html[data-ui-theme="modern"] .context-menu button.danger { color: var(--modern-red-500); }
+
+/* ========== 其余视图卡片 ========== */
+html[data-ui-theme="modern"] .extension-card,
+html[data-ui-theme="modern"] .log-card,
+html[data-ui-theme="modern"] .local-status-card,
+html[data-ui-theme="modern"] .card {
+  background: var(--modern-neutral-0);
+  border: 1px solid var(--modern-neutral-100);
+  border-radius: 12px;
+  box-shadow: none;
+}
+html[data-ui-theme="modern"] .extension-icon { border-radius: 10px; background: var(--modern-neutral-50); }
+html[data-ui-theme="modern"] .log-row { border-radius: 8px; }
+html[data-ui-theme="modern"] .log-row:hover { background: var(--modern-neutral-50); }
+html[data-ui-theme="modern"] .log-row span { color: var(--modern-neutral-600); }
+html[data-ui-theme="modern"] .rpa-card,
+html[data-ui-theme="modern"] .rpa-h2 { color: var(--modern-neutral-900); }
+html[data-ui-theme="modern"] .console-tabs button { color: var(--modern-neutral-500); border-radius: 999px; }
+html[data-ui-theme="modern"] .console-tabs button.active { background: var(--modern-blue-50); color: var(--modern-blue-600); }
+html[data-ui-theme="modern"] .action-grid button { border-radius: 10px; }
+html[data-ui-theme="modern"] #view-sync .action-grid button[data-window].active {
+  border-color: var(--modern-blue-500);
+  background: var(--modern-blue-25);
+  color: var(--modern-blue-600);
+}
+html[data-ui-theme="modern"] code,
+html[data-ui-theme="modern"] pre,
+html[data-ui-theme="modern"] .rpa-code-inline {
+  background: var(--modern-neutral-50);
+  border: 1px solid var(--modern-neutral-100);
+  color: var(--modern-neutral-800);
+  border-radius: 8px;
+}
+html[data-ui-theme="modern"] .switch,
+html[data-ui-theme="modern"] .toggle-switch { accent-color: var(--modern-blue-500); }
+
+/* ========== 行式表单（label 在左、控件在右） ========== */
+html[data-ui-theme="modern"] #view-profile-editor .editor-form label {
+  display: grid;
+  grid-template-columns: 136px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px 12px;
+  margin-bottom: 10px;
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-form label > input,
+html[data-ui-theme="modern"] #view-profile-editor .editor-form label > select,
+html[data-ui-theme="modern"] #view-profile-editor .editor-form label > textarea,
+html[data-ui-theme="modern"] #view-profile-editor .editor-form label > div,
+html[data-ui-theme="modern"] #view-profile-editor .editor-form label > .field-inline-group { grid-column: 2; min-width: 0; }
+html[data-ui-theme="modern"] #view-profile-editor .editor-form label:has(> textarea) { align-items: start; }
+html[data-ui-theme="modern"] #view-profile-editor .editor-form label:has(> textarea)::first-line { line-height: inherit; }
+html[data-ui-theme="modern"] #view-profile-editor .editor-form label small { grid-column: 2; line-height: 1.5; }
+html[data-ui-theme="modern"] #view-profile-editor .editor-form label:has(> textarea) small { margin-top: 6px; }
+html[data-ui-theme="modern"] #view-profile-editor .editor-form .check-row { grid-template-columns: auto 1fr; }
+html[data-ui-theme="modern"] #view-profile-editor .storage-actions { margin-left: 148px; }
+html[data-ui-theme="modern"] #view-profile-editor .editor-form > label[style*="margin-top:10px"] { margin-top: 4px; }
+/* 分组卡内的行距收紧，贴近目标密度 */
+html[data-ui-theme="modern"] #view-profile-editor .editor-section-card .form-two,
+html[data-ui-theme="modern"] #view-profile-editor .editor-section-card .form-three { gap: 8px 12px; }
+html[data-ui-theme="modern"] #view-profile-editor .settings-row > span { color: var(--modern-neutral-700); }
+
+/* ============================================================
+   内核管理页（Kernel manager）— 对齐参考内核管理页：
+   徽标状态、横幅、已安装列表（检测/设为默认/删除）、
+   可用版本双行、进度条（百分比+速度+阶段）、自动更新开关
+   ============================================================ */
+html[data-ui-theme="modern"] .kernel-card { grid-column: 1 / -1; }
+html[data-ui-theme="modern"] .kernel-badge { font-size: 10px; font-weight: 750; }
+html[data-ui-theme="modern"] .kernel-badge[data-state="ok"] { color: #17a143; background: var(--modern-green-50); border-color: rgba(29, 201, 77, 0.3); }
+html[data-ui-theme="modern"] .kernel-badge[data-state="warn"] { color: #b45309; background: #fff4e0; border-color: rgba(180, 83, 9, 0.25); }
+html[data-ui-theme="modern"] .kernel-badge[data-state="fail"] { color: var(--modern-red-500); background: var(--modern-red-50); border-color: rgba(245, 56, 56, 0.3); }
+
+html[data-ui-theme="modern"] .kernel-sync-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 4px;
+  padding: 12px 14px;
+  border: 1px solid rgba(17, 163, 253, 0.22);
+  border-radius: 10px;
+  background: linear-gradient(90deg, var(--modern-blue-25), #fff 65%);
+  color: var(--modern-neutral-700);
+  font-size: 11px;
+  line-height: 1.6;
+}
+html[data-ui-theme="modern"] .kernel-sync-banner svg,
+html[data-ui-theme="modern"] .kernel-sync-banner i { color: var(--modern-blue-500); flex: none; }
+
+html[data-ui-theme="modern"] .kernel-auto-update { margin-top: 12px; }
+html[data-ui-theme="modern"] .kernel-auto-update .field-hint { margin-left: 2px; }
+
+html[data-ui-theme="modern"] .kernel-section-title {
+  margin: 18px 0 8px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--modern-neutral-600);
+  text-transform: none;
+}
+
+html[data-ui-theme="modern"] .kernel-installed-list { display: grid; gap: 8px; }
+html[data-ui-theme="modern"] .kernel-installed-list > small { color: var(--modern-neutral-500); }
+html[data-ui-theme="modern"] .kernel-installed-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 11px 13px;
+  border: 1px solid var(--modern-neutral-100);
+  border-radius: 10px;
+  background: #fff;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+html[data-ui-theme="modern"] .kernel-installed-item:hover {
+  border-color: rgba(17, 163, 253, 0.35);
+  box-shadow: 0 2px 10px rgba(17, 163, 253, 0.08);
+}
+html[data-ui-theme="modern"] .kernel-installed-main { display: flex; align-items: center; gap: 8px; min-width: 220px; }
+html[data-ui-theme="modern"] .kernel-installed-main strong { font-size: 12px; color: var(--modern-neutral-900); white-space: nowrap; }
+html[data-ui-theme="modern"] .kernel-installed-badges { display: inline-flex; gap: 5px; }
+html[data-ui-theme="modern"] .kernel-badge-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+html[data-ui-theme="modern"] .kernel-badge-default { color: #0282d4; background: var(--modern-blue-50); }
+html[data-ui-theme="modern"] .kernel-badge-use { color: #17a143; background: var(--modern-green-50); }
+html[data-ui-theme="modern"] .kernel-badge-idle { color: var(--modern-neutral-500); background: var(--modern-neutral-50); }
+html[data-ui-theme="modern"] .kernel-badge-downloading { color: #b45309; background: #fff4e0; }
+html[data-ui-theme="modern"] .kernel-badge-update { color: #9333ea; background: #f6ecfe; }
+html[data-ui-theme="modern"] .kernel-installed-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--modern-neutral-500);
+  font-size: 10.5px;
+}
+html[data-ui-theme="modern"] .kernel-installed-actions { display: flex; gap: 7px; flex: none; }
+html[data-ui-theme="modern"] .kernel-installed-actions button { padding: 6px 11px; font-size: 11px; }
+html[data-ui-theme="modern"] .kernel-installed-actions button.danger {
+  color: var(--modern-red-500);
+  border-color: rgba(245, 56, 56, 0.35);
+  background: #fff;
+}
+html[data-ui-theme="modern"] .kernel-installed-actions button.danger:hover {
+  background: var(--modern-red-50);
+  border-color: var(--modern-red-500);
+}
+html[data-ui-theme="modern"] .kernel-installed-item .spacer { flex: 0 0 4px; }
+
+html[data-ui-theme="modern"] .kernel-version-block { margin-top: 4px; }
+html[data-ui-theme="modern"] .kernel-version-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+html[data-ui-theme="modern"] .kernel-engine-label {
+  flex: none;
+  min-width: 132px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--modern-neutral-700);
+}
+html[data-ui-theme="modern"] .kernel-version-row select { min-width: 230px; }
+html[data-ui-theme="modern"] .kernel-version-row button { padding: 8px 12px; font-size: 11px; }
+
+html[data-ui-theme="modern"] .kernel-progress-wrap {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid rgba(17, 163, 253, 0.25);
+  border-radius: 10px;
+  background: var(--modern-blue-25);
+}
+html[data-ui-theme="modern"] .kernel-progress-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 11px;
+  color: var(--modern-neutral-700);
+}
+html[data-ui-theme="modern"] .kernel-progress-meta { display: inline-flex; gap: 10px; color: var(--modern-neutral-500); font-variant-numeric: tabular-nums; }
+html[data-ui-theme="modern"] .kernel-progress-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--modern-neutral-100);
+  overflow: hidden;
+}
+html[data-ui-theme="modern"] .kernel-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--modern-blue-400), var(--modern-blue-500));
+  transition: width .25s ease;
+  position: relative;
+}
+html[data-ui-theme="modern"] .kernel-progress-fill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.45) 50%, transparent 70%);
+  animation: kernel-progress-shimmer 1.4s linear infinite;
+}
+@keyframes kernel-progress-shimmer {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+
+/* ============================================================
+   通用缺失组件补齐（按钮反馈 / 提示 / 列表细节）
+   ============================================================ */
+html[data-ui-theme="modern"] .field-hint { color: var(--modern-neutral-500); font-size: 10px; line-height: 1.55; }
+html[data-ui-theme="modern"] .editor-field-group {
+  margin: 12px 0;
+  padding: 12px 14px;
+  border: 1px dashed var(--modern-neutral-200);
+  border-radius: 10px;
+  background: var(--modern-neutral-25);
+}
+html[data-ui-theme="modern"] .cloud-presets { display: flex; flex-wrap: wrap; gap: 8px; }
+html[data-ui-theme="modern"] .cloud-provider-fields { display: grid; gap: 10px; margin-top: 10px; }
+html[data-ui-theme="modern"] .proxy-type-field { color: var(--modern-neutral-500); font-size: 10px; }
+html[data-ui-theme="modern"] .language-mode-select { min-width: 200px; }
+html[data-ui-theme="modern"] .trash-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 10px;
+  color: var(--modern-red-500);
+  background: var(--modern-red-50);
+  border: 1px solid rgba(245, 56, 56, 0.25);
+}
+html[data-ui-theme="modern"] .rpa-task-checkbox { width: 14px; height: 14px; accent-color: var(--modern-blue-500); }
+html[data-ui-theme="modern"] .disabled-row { opacity: 0.55; }
+html[data-ui-theme="modern"] label.disabled-row select,
+html[data-ui-theme="modern"] label.disabled-row textarea { pointer-events: none; }
+html[data-ui-theme="modern"] .icon-apply svg { color: var(--modern-green-500); }
+html[data-ui-theme="modern"] .spacer { flex: 1 1 auto; }
+
+/* 表格选中行高亮（与参考页一致的品牌蓝浅底） */
+html[data-ui-theme="modern"] tr.selected-row { background: var(--modern-blue-25); }
+html[data-ui-theme="modern"] .sync-selected { outline: 2px solid rgba(17, 163, 253, 0.45); outline-offset: -2px; border-radius: 8px; }
+
+/* 确认弹窗：危险操作态 */
+html[data-ui-theme="modern"] dialog.confirm-danger { border-color: rgba(245, 56, 56, 0.4); }
+html[data-ui-theme="modern"] dialog.confirm-danger .dialog-head h2 { color: var(--modern-red-500); }
+html[data-ui-theme="modern"] dialog.confirm-danger .app-confirm-warning {
+  color: var(--modern-red-500);
+  background: var(--modern-red-50);
+  border-color: rgba(245, 56, 56, 0.3);
+}
+
+/* Toast 语义变体（success / error / warning） */
+html[data-ui-theme="modern"] .toast.toast-success { background: #17a143; }
+html[data-ui-theme="modern"] .toast.toast-error { background: var(--modern-red-500); }
+html[data-ui-theme="modern"] .toast.toast-warning { background: #d97706; }
+html[data-ui-theme="modern"] .toast[data-tone="success"] { background: #17a143; }
+html[data-ui-theme="modern"] .toast[data-tone="error"] { background: var(--modern-red-500); }
+html[data-ui-theme="modern"] .toast[data-tone="warning"] { background: #d97706; }
+
+/* 按钮交互反馈细节：按下微缩、禁用降透明、焦点环 */
+html[data-ui-theme="modern"] button.primary:active,
+html[data-ui-theme="modern"] button.outline:active,
+html[data-ui-theme="modern"] button.danger:active { transform: translateY(1px); }
+html[data-ui-theme="modern"] button.primary:disabled,
+html[data-ui-theme="modern"] button.outline:disabled,
+html[data-ui-theme="modern"] button.danger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+html[data-ui-theme="modern"] button.primary:focus-visible,
+html[data-ui-theme="modern"] button.outline:focus-visible,
+html[data-ui-theme="modern"] button.danger:focus-visible {
+  outline: 2px solid rgba(17, 163, 253, 0.5);
+  outline-offset: 2px;
+}
+
+/* ============================================================
+   对比度与交互细节修正（secondary-ui-runtime 自测对齐）
+   —— 现代 palette 下所有文本 ≥4.5:1、焦点环可见、开关状态三态
+   ============================================================ */
+html[data-ui-theme="modern"] .sync-health.healthy { color: #116b4e; }
+html[data-ui-theme="modern"] .sync-health.warning { color: #8a5a00; }
+html[data-ui-theme="modern"] .status.running { color: #117451; }
+html[data-ui-theme="modern"] .status.running:before { background: #17a143; }
+html[data-ui-theme="modern"] .editor-tabs button.active { color: var(--modern-blue-700); }
+html[data-ui-theme="modern"] #view-profile-editor .profile-summary button { color: var(--modern-blue-700); }
+html[data-ui-theme="modern"] #view-profile-editor .editor-back { color: var(--modern-neutral-600); }
+html[data-ui-theme="modern"] #view-profile-editor .editor-back:hover { color: var(--modern-neutral-800); }
+html[data-ui-theme="modern"] #github-link span { color: var(--modern-neutral-600); }
+html[data-ui-theme="modern"] .app-version { color: var(--modern-neutral-800); }
+html[data-ui-theme="modern"] .log-empty { color: var(--modern-neutral-600); }
+
+/* 环境列表：行内字号与工具栏按钮可触达高度 */
+html[data-ui-theme="modern"] #profile-table td { font-size: 12px; }
+html[data-ui-theme="modern"] .profile-primary-toolbar button { min-height: 32px; }
+
+/* 选中行：反馈落在单元格上（与未选中行可区分） */
+html[data-ui-theme="modern"] tr.selected-row td { background: var(--modern-blue-25); }
+html[data-ui-theme="modern"] tr.selected-row td:first-child { box-shadow: inset 3px 0 0 var(--modern-blue-500); }
+
+/* 日志列头与行网格对齐（时间 / 模块 / 记录 三列 100px 100px 1fr） */
+html[data-ui-theme="modern"] .retro-log-columns {
+  display: grid;
+  grid-template-columns: 100px 100px 1fr;
+  gap: 12px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--modern-neutral-100);
+  color: var(--modern-neutral-500);
+  font-size: 10px;
+  font-weight: 700;
+}
+html[data-ui-theme="modern"] .retro-log-columns span { margin: 0; }
+/* 短窗口下日志卡内部滚动，而不是把页面撑高 */
+html[data-ui-theme="modern"] #view-logs .log-card {
+  min-height: 0;
+  max-height: calc(100vh - 250px);
+  overflow-y: auto;
+}
+html[data-ui-theme="modern"] #view-logs .log-empty { padding: 56px 20px; }
+
+/* 扩展开关：modern 三态 + 键盘焦点环 */
+html[data-ui-theme="modern"] .extension-toggle input:checked + .extension-toggle-slider { background: var(--modern-blue-500); }
+html[data-ui-theme="modern"] .extension-toggle input:indeterminate + .extension-toggle-slider { background: #d97706; }
+html[data-ui-theme="modern"] .extension-toggle input:focus-visible + .extension-toggle-slider {
+  outline: 2px solid var(--modern-blue-400);
+  outline-offset: 2px;
+}
+
+/* 搜索框：焦点落在包裹层，输入框不再叠一层边框 */
+html[data-ui-theme="modern"] .search:focus-within {
+  outline: 2px solid var(--modern-blue-400);
+  outline-offset: 1px;
+  border-color: var(--modern-blue-300);
+}
+html[data-ui-theme="modern"] .search input:focus { outline: none; }
+
+/* 去掉嵌套 label：组标题块替代外层 label，保持左标题右控件的行式网格 */
+html[data-ui-theme="modern"] #view-profile-editor .editor-form .labeled-block {
+  display: grid;
+  grid-template-columns: 136px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px 12px;
+  margin-bottom: 10px;
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-form .labeled-block-title { color: var(--modern-neutral-700); font-size: 12px; }
+
+/* ui-shell 的 ID+!important 压缩规则需要同权重覆盖 */
+html[data-ui-theme="modern"] #view-profiles .table-card th,
+html[data-ui-theme="modern"] #view-profiles .table-card td { font-size: 12px !important; }
+html[data-ui-theme="modern"] #view-profiles .profile-primary-toolbar button { min-height: 32px !important; }
+html[data-ui-theme="modern"] #view-profile-editor .editor-tabs button.active { color: var(--modern-blue-700) !important; }
+html[data-ui-theme="modern"] .sidebar-footer .app-version { opacity: 1; }
+html[data-ui-theme="modern"] .retro-log-columns { color: var(--modern-neutral-600); }
+/* 扩展图例圆点与开关三态同色 */
+html[data-ui-theme="modern"] .extension-state-legend i.all { background: var(--modern-blue-500); }
+html[data-ui-theme="modern"] .extension-state-legend i { background: var(--modern-neutral-200); }
+html[data-ui-theme="modern"] .extension-state-legend i.partial { background: #d97706; }

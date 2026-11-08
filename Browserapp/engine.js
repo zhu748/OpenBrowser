@@ -481,15 +481,30 @@ class BrowserEngine {
     return this.kernelManager.checkUpdate();
   }
 
+  async kernelDelete(engineFamily, version) {
+    const result = await this.kernelManager.deleteKernel({ engine: engineFamily, version });
+    this.emit({ type: 'kernel-progress', phase: 'done', message: `已删除 ${result.name}` });
+    return result;
+  }
+
+  async kernelCheck(engineFamily, version) {
+    return this.kernelManager.checkKernel({ engine: engineFamily, version });
+  }
+
+  async kernelCancelDownload() {
+    return this.kernelManager.cancelKernelDownload();
+  }
+
   async setCustomKernel(binaryPath) {
     const kernel = await this.kernelManager.setCustomBinary(binaryPath);
     this.emit({ type: 'kernel-ready', kernel });
     return kernel;
   }
 
-  async setKernelPolicy({ preferIndependentKernel, allowSystemBrowserFallback, systemBrowserPath } = {}) {
+  async setKernelPolicy({ preferIndependentKernel, allowSystemBrowserFallback, systemBrowserPath, autoUpdateKernel } = {}) {
     if (typeof preferIndependentKernel === 'boolean') this.preferIndependentKernel = preferIndependentKernel;
     if (typeof allowSystemBrowserFallback === 'boolean') this.allowSystemBrowserFallback = allowSystemBrowserFallback;
+    if (typeof autoUpdateKernel === 'boolean') await this.kernelManager.setAutoUpdateKernel(autoUpdateKernel);
     if (systemBrowserPath !== undefined) {
       const candidate = String(systemBrowserPath || '').trim();
       if (candidate && !this.systemBrowserCandidates().some((item) => item.path === candidate)) {
@@ -502,6 +517,7 @@ class BrowserEngine {
       preferIndependentKernel: this.preferIndependentKernel,
       allowSystemBrowserFallback: this.allowSystemBrowserFallback,
       systemBrowserPath: this.systemBrowserPath,
+      autoUpdateKernel: this.kernelManager.meta.autoUpdateKernel !== false,
       status: this.kernelStatus(),
     };
   }

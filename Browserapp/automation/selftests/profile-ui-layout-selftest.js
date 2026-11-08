@@ -30,13 +30,9 @@ check('profile engine label keeps the full version in the tooltip only', () => {
 
 check('profile table cannot be shrunk below the readable column budget', () => {
   const shell = read('ui-shell.css');
-  const pixel = read('pixel-workstation.css');
-  const nes = read('nes-light.css');
+  const modern = read('modern.css');
   assert.ok(shell.includes('min-width: 980px !important'), 'base profile table minimum width must stay readable');
-  assert.ok(pixel.includes('min-width: 980px !important'), 'pixel theme must not override the profile table minimum width');
-  assert.ok(nes.includes('min-width: 980px !important'), 'nes-light theme must not override the profile table minimum width');
-  assert.ok(!pixel.includes('min-width: 0 !important'), 'pixel theme must not collapse the profile table');
-  assert.ok(!nes.includes('min-width: 0 !important'), 'nes-light theme must not collapse the profile table');
+  assert.ok(!modern.includes('min-width: 0 !important'), 'modern theme must not collapse the profile table');
 });
 
 check('action buttons create real SVG nodes synchronously', () => {
@@ -60,26 +56,26 @@ check('the system defaults action keeps WebGPU on the product default', () => {
     'an explicit real WebGPU default contradicts the profile WebGL identity');
 });
 
-check('Merge Gateway keeps the selected profile-editor segmented option legible', () => {
-  const css = read('xai-console.css');
-  const rule = 'html[data-ui-theme="merge-gateway"] #view-profile-editor .editor-form .segmented label:has(input:checked)';
+check('default UI keeps the selected profile-editor segmented option legible', () => {
+  const css = read('modern.css');
+  const rule = 'html[data-ui-theme="modern"] .segmented label:has(input:checked)';
   const ruleIndex = css.lastIndexOf(rule);
   assert.notStrictEqual(ruleIndex, -1, 'selected segmented labels need an editor-specific override');
   const bodyStart = css.indexOf('{', ruleIndex);
   const bodyEnd = css.indexOf('}', bodyStart);
   const body = css.slice(bodyStart + 1, bodyEnd);
-  assert.match(body, /color:\s*var\(--xai-inverse\)/,
-    'selected label text must contrast with the ink-console background');
-  assert.ok(ruleIndex > css.lastIndexOf('#view-profile-editor .editor-form label:not(.check-row)'),
-    'the segmented override must follow the broader editor label color rule');
-  assert.match(css, /#view-profile-editor \.editor-form \.segmented input\[type="radio"\][\s\S]*?accent-color:\s*var\(--xai-ink-console\)/,
-    'the selected radio control should use the theme accent color');
+  assert.match(body, /color:\s*var\(--modern-blue-600\)/,
+    'selected label text must contrast with the light pill background');
+  assert.match(body, /background:\s*var\(--modern-blue-50\)/,
+    'selected pill must carry the tinted background');
+  assert.match(css, /html\[data-ui-theme="modern"\] \.segmented label:has\(input:checked\)[\s\S]*?font-weight/,
+    'the selected pill should be visually emphasized');
 });
 
-check('Merge Gateway resets checkbox geometry inside editor check rows', () => {
-  const css = read('xai-console.css');
-  assert.match(css, /#view-profile-editor \.editor-form \.check-row input\[type="checkbox"\][\s\S]*?padding:\s*0;/,
-    'editor checkboxes must not inherit text-input padding');
+check('default UI keeps editor checkbox geometry intact', () => {
+  const css = read('modern.css');
+  assert.match(css, /html\[data-ui-theme="modern"\] input\[type="checkbox"\][\s\S]*?accent-color:\s*var\(--modern-blue-500\)/,
+    'editor checkboxes must keep native geometry and use the theme accent');
 });
 
 

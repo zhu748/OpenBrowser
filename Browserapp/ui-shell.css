@@ -1466,6 +1466,29 @@ html.reduce-transparency .sidebar, html.reduce-transparency .content > header, h
   border-radius: 5px;
 }
 
+#view-proxies .toolbar .toolbar-right {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+#view-proxies .toolbar .proxy-filter {
+  height: 28px;
+  min-height: 28px;
+  padding: 0 6px;
+  border-radius: 5px;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+#view-proxies .toolbar .proxy-selected-chip {
+  color: var(--theme-accent-strong, var(--ui-accent, #245cff));
+  font-weight: 600;
+}
+
 #view-proxies .toolbar .search svg,
 #view-extensions .toolbar .search svg,
 #view-proxies .toolbar .search i[data-lucide],

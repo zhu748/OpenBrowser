@@ -5,7 +5,7 @@
  * End-to-end regression test for:
  * 1. Profile action column buttons (Start/Stop, Sync, Edit, Clone) icon rendering and fallback.
  * 2. Kernel column browser engine vector icon completeness and geometry without clipping.
- * 3. Multi-theme layout consistency (merge-gateway, pixel-workstation, element-admin).
+ * 3. Default UI ("modern") layout consistency after the UI refactor.
  */
 
 const assert = require('assert');
@@ -52,7 +52,8 @@ check('static: buildBrowserEngineIcon contains full 256x256 multi-color Chromium
   assert.ok(source.includes('fill="url(#cr-green)"'), 'must contain green gradient blade');
   assert.ok(source.includes('fill="url(#cr-yellow)"'), 'must contain yellow gradient blade');
   assert.ok(source.includes('fill="url(#cr-red)"'), 'must contain red gradient blade');
-  assert.ok(source.includes('fill="#1a73e8"'), 'must contain blue center circle');
+  // The center dot is theme-able via CSS variable; the Chrome blue stays as fallback.
+  assert.ok(source.includes('fill="var(--engine-cr-center-dot, #1a73e8)"'), 'must contain blue center circle (CSS-variable themed)');
 });
 
 check('static: standalone fallback icons defined for all table action buttons', () => {
@@ -198,8 +199,8 @@ check('static: action buttons have synchronized aria-label and title', () => {
     assert.deepStrictEqual(consoleWarnings, [], 'page must not produce missing icon warnings');
   });
 
-  // Evaluate across both merge-gateway and pixel-workstation themes
-  for (const theme of ['merge-gateway', 'pixel-workstation', 'element-admin']) {
+  // Evaluate across the refactored default UI (stale ids fall back to it)
+  for (const theme of ['modern']) {
     const evalRes = await send('Runtime.evaluate', {
       expression: `(async () => {
         if (typeof applyUiTheme === "function") {

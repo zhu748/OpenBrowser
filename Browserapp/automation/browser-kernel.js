@@ -786,10 +786,12 @@ function downloadFile(url, dest, onProgress, options = {}) {
     computeSha256: true,
   });
 
+  if (typeof options.register === 'function') options.register(downloader);
+
   if (typeof onProgress === 'function') {
-    downloader.on('progress', ({ received, total }) => {
+    downloader.on('progress', ({ received, total, speed }) => {
       if (!total) return;
-      onProgress({ received, total, percent: Math.floor((received / total) * 100) });
+      onProgress({ received, total, percent: Math.floor((received / total) * 100), speed });
     });
   }
 
@@ -1240,6 +1242,9 @@ class BrowserKernelManager {
     this.resourceRoots = Array.isArray(options.resourceRoots)
       ? options.resourceRoots.filter(Boolean)
       : (options.resourceRoot ? [options.resourceRoot] : []);
+    // Active per-version download (registered from downloadFile) so the UI can
+    // cancel it; mirrors Roxy's "已取消内核下载" flow.
+    this.activeDownload = null;
     this.meta = {
       version: null,
       platform: donutPlatformKey(),
@@ -1248,6 +1253,7 @@ class BrowserKernelManager {
       source: null,
       remoteVersion: null,
       downloadUrl: null,
+      autoUpdateKernel: true,
     };
   }
 
@@ -1661,6 +1667,10 @@ class BrowserKernelManager {
       meta: this.meta,
       integrity: this.integritySummary,
       autoDownload: true,
+      autoUpdateKernel: this.meta.autoUpdateKernel !== false,
+      downloading: this.activeDownload
+        ? { engine: this.activeDownload.engine, version: this.activeDownload.version, phase: this.activeDownload.phase }
+        : null,
       channel: openBrowserDefault
         ? {
           name: 'OpenBrowser 148（macOS x86 内置）',
@@ -1912,10 +1922,22 @@ class BrowserKernelManager {
 
     const archivePath = path.join(this.kernelsRoot, `chromium-${wanted}-${plat}.zip`);
     const pinned = await pinnedArchiveSha256(this.kernelsRoot, url);
+    this.activeDownload = { engine: 'chromium', version: wanted, phase: 'download', downloader: null };
     this.onProgress({ phase: 'download', message: `下载 Chrome for Testing ${wanted}${pinned ? '（校验摘要）' : ''}…`, version: wanted, url });
-    const download = await downloadFile(url, archivePath, (p) => this.onProgress({ phase: 'download', ...p, version: wanted }), {
-      expectedSha256: pinned || '',
-    });
+    let download;
+    try {
+      download = await downloadFile(url, archivePath, (p) => {
+        if (this.activeDownload) this.activeDownload.phase = 'download';
+        this.onProgress({ phase: 'download', ...p, version: wanted });
+      }, {
+        expectedSha256: pinned || '',
+        register: (d) => { if (this.activeDownload) this.activeDownload.downloader = d; },
+      });
+    } catch (error) {
+      throw error;
+    } finally {
+      this.activeDownload = null;
+    }
 
     this.onProgress({ phase: 'extract', message: `解压 Chrome for Testing ${wanted}…`, version: wanted });
     await fsp.rm(work, { recursive: true, force: true });
@@ -1991,10 +2013,20 @@ class BrowserKernelManager {
     // only matters when the feed digest is somehow missing.
     const pinned = await pinnedArchiveSha256(this.kernelsRoot, url);
     const expectedSha256 = artifact.sha256 || pinned || '';
+    this.activeDownload = { engine: 'firefox', version: wanted, phase: 'download', downloader: null };
     this.onProgress({ phase: 'download', message: `下载 Firefox ${wanted}（校验摘要）…`, version: wanted, url });
-    const download = await downloadFile(url, archivePath, (p) => this.onProgress({ phase: 'download', ...p, version: wanted }), {
-      expectedSha256,
-    });
+    let download;
+    try {
+      download = await downloadFile(url, archivePath, (p) => {
+        if (this.activeDownload) this.activeDownload.phase = 'download';
+        this.onProgress({ phase: 'download', ...p, version: wanted });
+      }, {
+        expectedSha256,
+        register: (d) => { if (this.activeDownload) this.activeDownload.downloader = d; },
+      });
+    } finally {
+      this.activeDownload = null;
+    }
 
     this.onProgress({ phase: 'extract', message: `解压 Firefox ${wanted}…`, version: wanted });
     await fsp.rm(work, { recursive: true, force: true });
@@ -2240,6 +2272,85 @@ class BrowserKernelManager {
     this.meta.updatedAt = new Date().toISOString();
     await this.saveMeta();
     return this.resolveInstalled();
+  }
+
+  /**
+   * Cancel the in-flight per-version download. Rejects quietly when nothing is
+   * downloading; the UI only surfaces the canceled error thrown by the install
+   * promise ("已取消内核下载").
+   */
+  cancelKernelDownload() {
+    const active = this.activeDownload;
+    if (!active) return { canceled: false };
+    active.downloader?.cancel();
+    this.onProgress({ phase: 'canceled', message: '已取消内核下载', version: active.version, engine: active.engine });
+    return { canceled: true, engine: active.engine, version: active.version };
+  }
+
+  /** True when the given installed kernel is the one currently resolved for launch. */
+  isKernelInUse(engine, version) {
+    const resolved = this.resolveInstalled();
+    if (!resolved) return false;
+    return resolved.engine === engine && String(resolved.version) === String(version);
+  }
+
+  /** Delete an installed per-version kernel tree (Roxy: 确定删除该内核吗？). */
+  async deleteKernel({ engine, version } = {}) {
+    await this.loadMeta();
+    const wantedEngine = engine === 'firefox' ? 'firefox' : 'chromium';
+    const wantedVersion = String(version || '').trim();
+    const key = `${wantedEngine}:${wantedVersion}`;
+    if (this.versionInstalls.has(key)) throw new Error('该内核正在下载中，无法删除');
+    const list = this.listInstalledKernels();
+    const hit = list.find((k) => k.engine === wantedEngine && k.version === wantedVersion);
+    if (!hit) throw new Error(`未找到已安装的 ${wantedEngine === 'firefox' ? 'Firefox' : 'Chromium'} ${wantedVersion} 内核`);
+    // Bundled/integrated kernels (stable/wayfern/openbrowser/custom) are not per-version trees.
+    if (hit.source && hit.source !== SOURCE_CFT && hit.source !== SOURCE_MOZILLA) {
+      throw new Error('内置内核不支持在此删除；点击「下载 Chrome Stable」可切换内核');
+    }
+    if (this.isKernelInUse(wantedEngine, wantedVersion)) {
+      throw new Error('当前内核正在使用中，无法删除');
+    }
+    const treeRoot = path.resolve(hit.tree);
+    const roots = [path.resolve(this.kernelsRoot)];
+    if (!roots.some((root) => treeRoot === root || treeRoot.startsWith(root + path.sep))) {
+      throw new Error('内核目录异常，拒绝删除');
+    }
+    await fsp.rm(treeRoot, { recursive: true, force: true });
+    if (this.meta.pin && this.meta.pin.engine === wantedEngine && this.meta.pin.version === wantedVersion) {
+      this.meta.pin = null;
+    }
+    this.meta.updatedAt = new Date().toISOString();
+    await this.saveMeta();
+    this.installedListCache = null;
+    this.onProgress({ phase: 'deleted', message: `已删除 ${hit.name}`, engine: wantedEngine, version: wantedVersion });
+    return { deleted: true, name: hit.name };
+  }
+
+  /** Run the binary's --version probe on demand (Roxy: 检测内核). */
+  async checkKernel({ engine, version } = {}) {
+    const wantedEngine = engine === 'firefox' ? 'firefox' : 'chromium';
+    const list = this.listInstalledKernels();
+    const hit = list.find((k) => k.engine === wantedEngine && (!version || k.version === String(version)));
+    if (!hit || !hit.binaryExists) {
+      throw new Error(`未找到已安装的 ${wantedEngine === 'firefox' ? 'Firefox' : 'Chromium'} ${version || ''} 内核`);
+    }
+    this.onProgress({ phase: 'check', message: `正在检测 ${hit.name}…`, engine: wantedEngine, version: hit.version });
+    if (wantedEngine === 'firefox') {
+      const probe = await this.probeFirefoxBinary(hit.path);
+      return { name: hit.name, version: probe.version || hit.version, path: hit.path, ok: true };
+    }
+    await this.probeBrowserBinary(hit.path);
+    return { name: hit.name, version: hit.version, path: hit.path, ok: true };
+  }
+
+  /** Roxy: 已下载的内核在未使用时将会自动更新 (default on, persisted in meta). */
+  async setAutoUpdateKernel(enabled) {
+    await this.loadMeta();
+    this.meta.autoUpdateKernel = Boolean(enabled);
+    this.meta.updatedAt = new Date().toISOString();
+    await this.saveMeta();
+    return this.meta.autoUpdateKernel;
   }
 
   /** Resolve an integrated kernel, or download the official Chrome Stable package. */

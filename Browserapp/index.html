@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN" data-ui-theme="oceanic-fingerprint" data-color-mode="light">
+<html lang="zh-CN" data-ui-theme="modern" data-color-mode="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -11,14 +11,9 @@
   <link rel="stylesheet" href="assets/fonts/pixelify-sans.css?v=20260720-ark">
   <link rel="stylesheet" href="styles.css?v=20260720-pixelfont">
   <link rel="stylesheet" href="themes.css?v=20260720-start-progress">
-  <link rel="stylesheet" href="retro-desktop.css?v=20260720-aqua">
   <link rel="stylesheet" href="environment-audit.css?v=20260719-readable-scale">
   <link rel="stylesheet" href="ui-shell.css?v=20260720-start-progress">
-  <link rel="stylesheet" href="pixel-workstation.css?v=20260720-headerfix">
-  <link rel="stylesheet" href="nes-light.css?v=20260720-kraft-desat33">
-  <link rel="stylesheet" href="element-admin.css?v=20260720-start-progress">
-  <link rel="stylesheet" href="xai-console.css?v=20260824-interaction-perf">
-  <link rel="stylesheet" href="oceanic-fingerprint.css?v=20261002-oceanic">
+  <link rel="stylesheet" href="modern.css?v=20261108-refactor">
 </head>
 <body>
   <div class="app-shell">
@@ -42,6 +37,7 @@
         </div>
                 <button class="nav" data-view="api-mcp"><i data-lucide="braces"></i><span data-i18n="nav.api">API & MCP</span></button>
         <button class="nav" data-view="logs"><i data-lucide="scroll-text"></i><span data-i18n="nav.logs">操作日志</span></button>
+        <button class="nav" data-view="kernels"><i data-lucide="hard-drive-download"></i><span data-i18n="nav.kernels">内核管理</span></button>
         <button class="nav" data-view="system"><i data-lucide="settings-2"></i><span data-i18n="nav.system">本地设置</span></button>
       </nav>
       <div class="sidebar-footer">
@@ -64,28 +60,6 @@
             <i class="engine-badge-dot" aria-hidden="true"></i>
             <span class="engine-badge-text" data-i18n="header.detecting">检测中</span>
           </span>
-          <div class="theme-picker" id="theme-picker">
-            <button class="theme-trigger" id="theme-trigger" type="button" aria-expanded="false" style="min-height: 28px;"><i class="theme-trigger-dot"></i><span data-i18n="header.theme">主题</span></button>
-            <div class="theme-popover" id="theme-popover" hidden>
-              <div class="theme-popover-head"><strong data-i18n="theme.title">界面皮肤</strong><span id="theme-current" data-i18n="theme.pixel.name">像素工作站</span></div>
-              <div class="theme-grid" id="theme-options">
-                <button class="theme-option" type="button" data-ui-theme-option="oceanic-fingerprint" aria-pressed="false"><i></i><span><strong data-i18n="theme.oceanic">深海指纹</strong><small data-i18n="theme.oceanic.desc">防关联生物电光蓝</small></span></button>
-                <button class="theme-option" type="button" data-ui-theme-option="merge-gateway" aria-pressed="false"><i></i><span><strong data-i18n="theme.mergeGateway">Merge Gateway</strong><small data-i18n="theme.mergeGateway.desc">xAI Console</small></span></button>
-                <button class="theme-option active" type="button" data-ui-theme-option="pixel-workstation" aria-pressed="true"><i></i><span><strong data-i18n="theme.pixel">像素工作站</strong><small data-i18n="theme.pixel.desc">深色像素界面</small></span></button>
-                <button class="theme-option" type="button" data-ui-theme-option="nes-light" aria-pressed="false"><i></i><span><strong data-i18n="theme.nes">浅色像素风</strong><small data-i18n="theme.nes.desc">浅色像素界面</small></span></button>
-                <button class="theme-option" type="button" data-ui-theme-option="retro-desktop" aria-pressed="false"><i></i><span><strong data-i18n="theme.retro">复古桌面</strong><small data-i18n="theme.retro.desc">经典系统界面</small></span></button>
-                <button class="theme-option" type="button" data-ui-theme-option="element-admin" aria-pressed="false"><i></i><span><strong data-i18n="theme.native">系统原生</strong><small data-i18n="theme.native.desc">macOS HIG · Windows Fluent</small></span></button>
-              </div>
-              <div class="theme-appearance" id="theme-appearance" hidden>
-                <span data-i18n="theme.appearance">外观</span>
-                <div class="theme-appearance-seg" role="group" aria-label="系统原生外观">
-                  <button type="button" data-color-mode="auto" data-i18n="theme.auto">跟随系统</button>
-                  <button type="button" data-color-mode="light" data-i18n="theme.light">浅色</button>
-                  <button type="button" data-color-mode="dark" data-i18n="theme.dark">深色</button>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       </header>
 
@@ -93,12 +67,12 @@
         <section class="view active" id="view-profiles">
           <div class="group-chip-row" id="profile-group-chips"></div>
           <div class="toolbar profile-primary-toolbar">
-            <div class="toolbar-left"><button class="primary" id="create-profile"><i data-lucide="plus"></i><span data-i18n="profiles.create">新建环境</span></button><button class="outline" id="batch-add"><i data-lucide="copy-plus"></i><span data-i18n="profiles.batchAdd">批量新增</span></button><button class="outline" id="batch-import"><i data-lucide="file-down"></i><span data-i18n="profiles.batchImport">批量导入</span></button><input id="batch-import-file" type="file" accept=".csv,.json" hidden><button class="outline" id="renumber-profiles" type="button" title="将所有环境按列表顺序重新编号为 1..N"><i data-lucide="hash"></i><span data-i18n="profiles.renumber">重排编号</span></button><button class="outline danger" id="empty-trash-btn" type="button" hidden><i data-lucide="trash"></i><span data-i18n="trash.empty">清空回收站</span></button></div>
+            <div class="toolbar-left"><button class="primary" id="create-profile"><i data-lucide="plus"></i><span data-i18n="profiles.create">新建环境</span></button><button class="outline" id="batch-add"><i data-lucide="copy-plus"></i><span data-i18n="profiles.batchAdd">批量新增</span></button><button class="outline" id="batch-import"><i data-lucide="file-down"></i><span data-i18n="profiles.batchImport">批量导入</span></button><input id="batch-import-file" type="file" accept=".csv,.json" hidden><button class="outline" id="renumber-profiles" type="button" title="将所有环境按列表顺序重新编号为 1..N" data-i18n-title="profiles.renumberTitle"><i data-lucide="hash"></i><span data-i18n="profiles.renumber">重排编号</span></button><button class="outline danger" id="empty-trash-btn" type="button" hidden><i data-lucide="trash"></i><span data-i18n="trash.empty">清空回收站</span></button></div>
             <label class="search"><i data-lucide="search"></i><input id="profile-search" placeholder="搜索环境 / 分组 / 标签" data-i18n-placeholder="profiles.search"></label>
           </div>
           <div class="profile-selection-bar" id="profile-selection-bar" hidden>
             <strong id="profile-selection-count">已选择 0 个环境</strong>
-            <div class="selection-actions"><button class="outline" id="start-selected"><i data-lucide="play"></i><span data-i18n="profiles.startSelected">启动选中</span></button><button class="outline" id="stop-selected"><i data-lucide="square"></i><span data-i18n="profiles.stopSelected">停止选中</span></button><button class="outline" id="copy-selected" type="button" title="复制选中环境的配置，不复制 Cookie 和账号密码"><i data-lucide="copy"></i><span>复制环境</span></button><button class="outline" id="batch-edit-preferences" type="button" title="批量修改选中环境的启动页、系统和高级偏好"><i data-lucide="sliders-horizontal"></i><span>批量偏好</span></button><button class="outline" id="batch-update"><i data-lucide="refresh-cw"></i><span data-i18n="profiles.batchNetwork">切换网络/IP</span></button><button class="outline" id="batch-set-direct" type="button" title="将选中环境改为本地直连"><i data-lucide="wifi"></i><span data-i18n="profiles.direct">本地直连</span></button>
+            <div class="selection-actions"><button class="outline" id="start-selected"><i data-lucide="play"></i><span data-i18n="profiles.startSelected">启动选中</span></button><button class="outline" id="stop-selected"><i data-lucide="square"></i><span data-i18n="profiles.stopSelected">停止选中</span></button><button class="outline" id="copy-selected" type="button" title="复制选中环境的配置，不复制 Cookie 和账号密码" data-i18n-title="profiles.copyTitle"><i data-lucide="copy"></i><span>复制环境</span></button><button class="outline" id="batch-edit-preferences" type="button" title="批量修改选中环境的启动页、系统和高级偏好" data-i18n-title="profiles.batchPrefTitle"><i data-lucide="sliders-horizontal"></i><span>批量偏好</span></button><button class="outline" id="batch-update"><i data-lucide="refresh-cw"></i><span data-i18n="profiles.batchNetwork">切换网络/IP</span></button><button class="outline" id="batch-set-direct" type="button" title="将选中环境改为本地直连" data-i18n-title="profiles.directTitle"><i data-lucide="wifi"></i><span data-i18n="profiles.direct">本地直连</span></button>
               <label class="batch-group-assign"><span data-i18n="profiles.moveGroup">移到分组</span>
                 <select id="batch-assign-group"></select>
               </label>
@@ -316,6 +290,10 @@
                 </div>
               </section>
               <section class="editor-panel" data-editor-panel="privacy">
+                <div class="editor-random-toolbar">
+                  <button type="button" class="outline" id="editor-random-fp">一键随机指纹</button>
+                  <span class="network-mode-hint">把 Canvas / WebGL / 音频 / 字体等全部切到随机档并清除手填标识，点「立即保存」后生效。</span>
+                </div>
                 <div class="editor-section-card">
                   <div class="editor-card-header">
                     <div class="editor-card-title">操作系统与浏览器</div>
@@ -346,6 +324,7 @@
                     <button type="button" class="outline" id="editor-ua-random">随机 UA</button>
                     <button type="button" class="outline" id="editor-ua-clear">跟随自动</button>
                     <label class="ua-ver">Chrome 主版本 <input id="editor-ua-chrome-major" type="number" min="100" max="200" value="131" style="width:72px"></label>
+                    <label class="check-row" style="margin:0" title="强制 UA 的 Chrome 主版本与所选内核一致，避免版本特征被网站探测"><input id="editor-ua-strict" type="checkbox"> UA 严格模式</label>
                   </div>
                   <pre class="ua-meta-preview" id="editor-ua-meta" hidden></pre>
                 </div>
@@ -436,17 +415,30 @@
                   <div class="form-two">
                     <label>视口分辨率
                       <div class="field-inline-group">
-                        <select id="editor-resolution"><option value="1280x820">1280 × 820</option><option value="1366x768">1366 × 768</option><option value="1440x900">1440 × 900</option><option value="1920x1080">1920 × 1080</option><option value="custom">自定义</option></select>
+                        <select id="editor-resolution"><option value="real">跟随系统</option><option value="1280x820">1280 × 820</option><option value="1366x768">1366 × 768</option><option value="1440x900">1440 × 900</option><option value="1920x1080">1920 × 1080</option><option value="custom">自定义</option></select>
                         <input id="editor-width" type="number" min="640" max="7680" placeholder="宽" style="max-width:80px">
                         <input id="editor-height" type="number" min="480" max="4320" placeholder="高" style="max-width:80px">
                       </div>
                     </label>
-                    <label>字体基线
+                    <label>字体指纹
                       <div class="field-inline-group">
+                        <select id="editor-font-list-mode"><option value="">默认（自动）</option><option value="real">跟随系统</option><option value="noise">随机列表</option><option value="custom">自定义列表</option></select>
                         <select id="editor-font-mode"><option value="default">系统默认</option><option value="custom">自定义字号</option></select>
                         <input id="editor-font-size" type="number" min="9" max="36" value="16" style="max-width:80px">
                       </div>
                     </label>
+                  </div>
+                  <label>自定义字体列表（选「自定义列表」时生效；逗号/换行分隔）
+                    <textarea id="editor-font-list" rows="2" placeholder="例如：Microsoft YaHei, SimSun, Arial"></textarea>
+                  </label>
+                  <div class="form-two" style="margin-top:12px">
+                    <div class="labeled-block" role="group" aria-label="窗口启动方式">
+                      <span class="labeled-block-title">窗口启动方式</span>
+                      <div class="field-inline-group">
+                        <label class="check-row" style="margin:0"><input id="editor-fullscreen" type="checkbox"> 全屏启动</label>
+                        <select id="editor-window-pos" style="max-width:130px"><option value="">默认位置</option><option value="tl">左上</option><option value="tm">上中</option><option value="tr">右上</option><option value="ml">左中</option><option value="mm">屏幕居中</option><option value="mr">右中</option><option value="bl">左下</option><option value="bm">下中</option><option value="br">右下</option></select>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -459,21 +451,83 @@
                     <label title="真实机型：CPU 核数、内存、GPU、屏幕与像素比取自同一台真实机器，避免出现现实中不存在的硬件组合">设备档案<select id="editor-device-profile"><option value="persona">真实机型</option><option value="default">独立随机</option></select></label>
                     <label>Canvas 噪声<select id="editor-canvas"><option value="noise">随机混淆</option><option value="real">真实直通</option><option value="blocked">阻断关闭</option></select></label>
                     <label>WebGL 图像<select id="editor-webgl"><option value="noise">随机混淆</option><option value="real">真实直通</option><option value="blocked">阻断关闭</option></select></label>
-                    <label>WebGL 元数据<select id="editor-webgl-meta"><option value="noise">随机混淆</option><option value="real">真实直通</option><option value="blocked">阻断关闭</option></select></label>
+                    <label>WebGL 元数据<select id="editor-webgl-meta"><option value="noise">随机混淆</option><option value="real">真实直通</option><option value="custom">自定义</option><option value="blocked">阻断关闭</option></select></label>
                     <label>WebGPU 拓扑<select id="editor-webgpu"><option value="webgl">基于 WebGL</option><option value="real">真实直通</option><option value="blocked">禁用</option></select></label>
                     <label>AudioContext<select id="editor-audio"><option value="noise">随机混淆</option><option value="real">真实直通</option><option value="muted">静音阻断</option></select></label>
                     <label>媒体设备<select id="editor-media"><option value="noise">随机模拟</option><option value="real">真实直通</option><option value="blocked">阻断关闭</option></select></label>
                     <label>设备枚举<select id="editor-media-devices"><option value="">跟随媒体设备</option><option value="noise">随机模拟</option><option value="real">真实直通</option><option value="empty">空设备列表</option></select></label>
                     <label>电池状态<select id="editor-battery"><option value="noise">随机模拟</option><option value="real">真实直通</option><option value="blocked">阻断关闭</option></select></label>
+                    <label>电池电量（0–1）<input id="editor-battery-level" type="number" min="0" max="1" step="0.05" placeholder="留空=随机"></label>
                     <label>蓝牙适配器<select id="editor-bluetooth"><option value="real">真实直通</option><option value="blocked">阻断关闭</option></select></label>
                     <label>ClientRects<select id="editor-client-rects"><option value="noise">随机微扰</option><option value="real">真实直通</option></select></label>
                     <label>SpeechVoices<select id="editor-speech"><option value="noise">随机模拟</option><option value="real">真实直通</option><option value="blocked">阻断关闭</option></select></label>
-                    <label>CPU 核心数<select id="editor-cores"><option value="">自动</option><option value="0">真实</option><option value="2">2 核心</option><option value="4">4 核心</option><option value="6">6 核心</option><option value="8">8 核心</option><option value="10">10 核心</option><option value="12">12 核心</option><option value="16">16 核心</option></select></label>
+                    <label>CPU 核心数<select id="editor-cores"><option value="">自动</option><option value="0">真实</option><option value="2">2 核心</option><option value="4">4 核心</option><option value="6">6 核心</option><option value="8">8 核心</option><option value="10">10 核心</option><option value="12">12 核心</option><option value="16">16 核心</option><option value="20">20 核心</option><option value="24">24 核心</option></select></label>
                     <label>内存规格<select id="editor-memory"><option value="">自动</option><option value="0">真实</option><option value="2">2 GB</option><option value="4">4 GB</option><option value="6">6 GB</option><option value="8">8 GB</option></select></label>
                     <label>设备名称模式<select id="editor-device-name-mode"><option value="noise">随机生成</option><option value="custom">自定义输入</option><option value="real">系统真实</option></select></label>
                     <label>自定义设备名<input id="editor-device-name" placeholder="自定义设备名"></label>
+                    <label>MAC 地址模式<select id="editor-mac-mode"><option value="real">真实</option><option value="custom">自定义</option></select></label>
+                    <label>MAC 地址
+                      <div class="field-inline-group">
+                        <input id="editor-mac" placeholder="例如 1E-2E-7D-74-2B-87" maxlength="17">
+                        <button type="button" class="outline" id="editor-mac-shuffle" style="max-width:64px">随机</button>
+                      </div>
+                    </label>
                     <label>Do Not Track<select id="editor-dnt-mode"><option value="default">默认未设置</option><option value="on">开启 (1)</option><option value="off">关闭 (0)</option></select></label>
+                    <label>Canvas 噪声种子<input id="editor-canvas-seed" type="number" placeholder="留空=按环境种子"></label>
+                    <label>ClientRects 种子<input id="editor-crects-seed" type="number" placeholder="留空=按环境种子"></label>
+                    <label>Audio 噪声种子<input id="editor-audio-seed" type="number" placeholder="留空=按环境种子"></label>
                   </div>
+                </div>
+                <div class="editor-section-card" id="editor-webgl-custom-fields" hidden>
+                  <div class="editor-card-header">
+                    <div class="editor-card-title">WebGL 自定义标识</div>
+                    <div class="editor-card-desc">「WebGL 元数据 = 自定义」时生效；留空的项继续按环境种子随机</div>
+                  </div>
+                  <div class="form-two">
+                    <label>WebGL 厂商
+                      <div class="field-inline-group">
+                        <input id="editor-webgl-vendor" placeholder="例如 Google Inc. (NVIDIA)">
+                        <button type="button" class="outline" id="editor-webgl-vendor-shuffle" style="max-width:64px">随机</button>
+                      </div>
+                    </label>
+                    <label>WebGL 渲染器
+                      <div class="field-inline-group">
+                        <input id="editor-webgl-renderer" placeholder="例如 ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)">
+                        <button type="button" class="outline" id="editor-webgl-renderer-shuffle" style="max-width:64px">随机</button>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+                <div class="editor-section-card">
+                  <div class="editor-card-header">
+                    <div class="editor-card-title">启动行为</div>
+                    <div class="editor-card-desc">硬件加速、沙盒、默认搜索引擎与自定义启动参数</div>
+                  </div>
+                  <div class="form-two">
+                    <label>硬件加速模式
+                      <select id="editor-gpu-mode"><option value="on">开启（使用宿主 GPU）</option><option value="off">关闭（软件渲染）</option></select>
+                    </label>
+                    <label>默认搜索引擎
+                      <select id="editor-search-engine"><option value="">默认（Google）</option><option value="google">Google</option><option value="bing">Microsoft Bing</option><option value="yahoo">Yahoo</option><option value="yandex">Yandex</option><option value="duckduckgo">DuckDuckGo</option></select>
+                    </label>
+                  </div>
+                  <label class="check-row" style="margin-top:12px"><input id="editor-no-sandbox" type="checkbox"> 禁用沙盒 — 容器/无特权 Linux 环境需要；会降低隔离强度</label>
+                  <label style="margin-top:12px">自定义启动参数（高级，分号分隔）<input id="editor-custom-args" placeholder="例如 --mute；--disable-features=Translate"></label>
+                </div>
+                <div class="editor-section-card" style="margin-top:4px">
+                  <div class="editor-card-header">
+                    <div class="editor-card-title">SSL 指纹设置</div>
+                    <div class="editor-card-desc">禁用指定 TLS 最低版本与密码套件（对应 Chromium 原生 ssl 开关）</div>
+                  </div>
+                  <div class="form-two">
+                    <label>TLS 最低版本
+                      <select id="editor-ssl-min"><option value="">默认（内核内置）</option><option value="tls1.2">禁用 TLS 1.0 / 1.1（≥ TLS 1.2）</option><option value="tls1.3">仅 TLS 1.3</option></select>
+                    </label>
+                    <label>密码套件黑名单（16 进制，逗号分隔）
+                      <input id="editor-ssl-blacklist" placeholder="例如 0x0004,0x0005,0x000a">
+                    </label>
+                  </div>
+                  <p class="network-mode-hint">0x0004 / 0x0005 = RC4，0x000a = 3DES；现代内核默认已禁 RC4 / 3DES，此处用于满足更严格的目标站点要求。</p>
                 </div>
                 <div class="advanced-card" style="margin-top:4px">
                   <strong>站点稳定性</strong>
@@ -576,6 +630,19 @@
                   <label class="check-row"><input id="editor-allow-signin" type="checkbox"> 允许登录 Chrome</label>
                   <label class="check-row"><input id="editor-restore-session" type="checkbox"> 恢复会话（与标签管理联动）</label>
                   <label class="check-row"><input id="editor-clear-cache" type="checkbox"> 启动时清除缓存</label>
+                  <label class="check-row"><input id="editor-clear-cookies" type="checkbox"> 启动时清除 Cookies</label>
+                  <label class="check-row"><input id="editor-clear-localstorage" type="checkbox"> 启动时清除 Local Storage / IndexedDB</label>
+                </div>
+                <div class="advanced-card">
+                  <strong>出口网络守护</strong>
+                  <p class="network-mode-hint">出口 IP 与上次记录不一致时的处理方式；「停止打开」在启动阶段直接阻断，避免环境串号。</p>
+                  <label>IP 变化策略
+                    <select id="editor-ip-change-policy">
+                      <option value="patch">自动对齐指纹（默认）</option>
+                      <option value="notify">仅提醒，不阻断</option>
+                      <option value="stop">停止打开该环境</option>
+                    </select>
+                  </label>
                 </div>
               </section>
               <div class="editor-actions"><button class="outline" id="editor-cancel" type="button">取消</button><button class="primary" type="submit">立即保存</button></div>
@@ -597,10 +664,22 @@
               <button class="outline" id="proxy-refresh" type="button"><i data-lucide="refresh-cw"></i>刷新</button>
               <button class="outline" id="proxy-check-selected" type="button"><i data-lucide="activity"></i>检测选中</button>
               <button class="outline" id="proxy-check-all" type="button"><i data-lucide="list-checks"></i>检测全部</button>
+              <button class="outline" id="proxy-export-selected" type="button"><i data-lucide="download"></i>导出选中</button>
+              <button class="outline" id="proxy-delete-failed" type="button"><i data-lucide="shield-x"></i>删除失败代理</button>
               <button class="danger" id="proxy-delete-selected" type="button"><i data-lucide="trash-2"></i>删除选中</button>
+              <button class="danger" id="proxy-clear-all" type="button"><i data-lucide="eraser"></i>清空代理</button>
               <span class="extension-counts" id="proxy-count"></span>
+              <span class="extension-counts proxy-selected-chip" id="proxy-selected-count" hidden></span>
             </div>
-            <label class="search"><i data-lucide="search"></i><input id="proxy-search" placeholder="名称 / 主机 / 备注"></label>
+            <div class="toolbar-right">
+              <label class="search"><i data-lucide="search"></i><input id="proxy-search" placeholder="名称 / 主机 / 备注"></label>
+              <select id="proxy-filter" class="proxy-filter" aria-label="筛选代理" data-i18n-aria="proxies.filterAria">
+                <option value="all" data-i18n="proxies.filterAll">全部代理</option>
+                <option value="ok" data-i18n="proxies.filterOk">仅可用</option>
+                <option value="fail" data-i18n="proxies.filterFail">仅失败</option>
+                <option value="unchecked" data-i18n="proxies.filterUnchecked">未检测</option>
+              </select>
+            </div>
           </div>
           <div class="extension-note">
             <strong>本地代理库</strong>
@@ -616,9 +695,10 @@
                   <th>主机:端口</th>
                   <th>认证</th>
                   <th>出口 IP</th>
+                  <th data-i18n="proxies.checkTime">检测时间</th>
                   <th>延迟</th>
                   <th>类型</th>
-                  <th>使用情况</th>
+                  <th data-i18n="proxies.usage">使用情况</th>
                   <th>并发上限</th>
                   <th>备注</th>
                   <th>操作</th>
@@ -752,7 +832,7 @@
             </div>
             <div class="rpa-toolbar">
               <button class="primary" type="button" id="rpa-create-task"><i data-lucide="plus"></i>创建任务</button>
-              <button type="button" class="danger outline" id="rpa-task-delete-checked" title="批量删除勾选任务" style="display:none"><i data-lucide="trash-2"></i>批量删除</button>
+              <button type="button" class="danger outline" id="rpa-task-delete-checked" title="批量删除勾选任务" data-i18n-title="rpa.batchDeleteTitle" style="display:none"><i data-lucide="trash-2"></i>批量删除</button>
               <label class="rpa-search"><input id="rpa-task-search" placeholder="可输入任务名称进行搜索"></label>
               <button type="button" class="outline" id="rpa-task-refresh"><i data-lucide="refresh-cw"></i></button>
             </div>
@@ -934,15 +1014,15 @@
               <div class="rpa-row">
                 <span class="rpa-label">API Key</span>
                 <input class="rpa-input" id="api-key-display" readonly value="" placeholder="未设置（可选环境变量 OPENBROWSER_API_KEY）">
-                <button type="button" class="outline" id="api-key-rotate" title="重新生成 API Key 并更新本地配置文件"><i data-lucide="refresh-cw"></i>重新生成</button>
+                <button type="button" class="outline" id="api-key-rotate" title="重新生成 API Key 并更新本地配置文件" data-i18n-title="api.rotateTitle"><i data-lucide="refresh-cw"></i>重新生成</button>
               </div>
-              <pre class="rpa-code-block" id="api-test-output">点击「测试」请求 /api/getVersion</pre>
+              <pre class="rpa-code-block" id="api-test-output" data-i18n="api.testHint">点击「测试」请求 /api/getVersion</pre>
             </div>
 
             <div class="rpa-section table-card">
               <h2 class="rpa-h2">MCP</h2>
               <p class="rpa-desc">可选：让 Claude / Cursor 等 AI 通过对话操作本机浏览器（启动、停止、同步、自动脚本）。不用 AI 编程的话可忽略。</p>
-              <p class="rpa-muted">权限等级：<code>admin</code>（全部）/ <code>manage</code>（环境、代理、RPA 配置）/ <code>run</code>（启动、同步、执行）/ <code>read</code>（只读）。启动 MCP 时可通过 <code>OPENBROWSER_MCP_MODE</code>、<code>OPENBROWSER_MCP_TOOL_BLACKLIST</code>、<code>OPENBROWSER_MCP_TOOL_WHITELIST</code> 环境变量限制工具范围。</p>
+              <p class="rpa-muted" data-i18n-mode="html" data-i18n="api.permissionLevels">权限等级：<code>admin</code>（全部）/ <code>manage</code>（环境、代理、RPA 配置）/ <code>run</code>（启动、同步、执行）/ <code>read</code>（只读）。启动 MCP 时可通过 <code>OPENBROWSER_MCP_MODE</code>、<code>OPENBROWSER_MCP_TOOL_BLACKLIST</code>、<code>OPENBROWSER_MCP_TOOL_WHITELIST</code> 环境变量限制工具范围。</p>
               <div class="rpa-row">
                 <span class="rpa-label">配置类型</span>
                 <div class="rpa-seg" id="mcp-config-tabs">
@@ -998,6 +1078,52 @@
             <div class="log-card" id="log-list"></div>
           </div>
         </section>
+        <section class="view" id="view-kernels"><div class="settings-grid">
+<article class="storage-settings-card kernel-card" id="kernel-settings-card">
+  <div class="storage-settings-head"><div><h3 data-i18n="system.kernel.title">内核管理</h3><p data-i18n="system.kernel.desc">独立浏览器内核下载与管理。每个大版本只提供最新构建（Chrome for Testing 各版本、Firefox 各代），每个环境可单独选择内核；已安装版本可设为所有环境的默认内核。</p></div><span id="kernel-status-badge" class="kernel-badge">检测中</span></div>
+  <div class="kernel-sync-banner" id="kernel-sync-banner"><i data-lucide="shield-check" aria-hidden="true"></i><span id="kernel-sync-note">内核始终与谷歌官方保持一致，安全性领先同行。</span></div>
+  <label class="check-row kernel-auto-update" style="display:flex;gap:8px;align-items:center"><input id="kernel-auto-update" type="checkbox" checked> <span data-i18n="system.kernel.autoUpdate">自动更新内核</span><small class="field-hint" data-i18n="system.kernel.autoUpdateHint">已下载的内核在未使用时将会自动更新</small></label>
+  <h4 class="kernel-section-title" data-i18n="system.kernel.installedTitle">已安装内核</h4>
+  <div id="kernel-installed-list" class="kernel-installed-list"><small data-i18n="system.kernel.installedLoading">正在扫描已安装内核…</small></div>
+  <h4 class="kernel-section-title" data-i18n="system.kernel.availableTitle">可用内核版本</h4>
+  <div class="kernel-version-block">
+    <div class="kernel-version-row">
+      <span class="kernel-engine-label" data-i18n="system.kernel.chromium">Chromium</span>
+      <select id="kernel-chromium-version"><option value="" data-i18n="system.kernel.loading">加载中…</option></select>
+      <button class="outline" id="kernel-chromium-install" type="button" data-i18n="system.kernel.install">下载所选版本</button>
+      <button class="outline" id="kernel-chromium-refresh" type="button" data-i18n="system.kernel.refreshList">刷新列表</button>
+    </div>
+    <div class="kernel-version-row" style="margin-top:8px">
+      <span class="kernel-engine-label" data-i18n="system.kernel.firefox">Firefox</span>
+      <select id="kernel-firefox-version"><option value="" data-i18n="system.kernel.loading">加载中…</option></select>
+      <button class="outline" id="kernel-firefox-install" type="button" data-i18n="system.kernel.install">下载所选版本</button>
+      <button class="outline" id="kernel-firefox-refresh" type="button" data-i18n="system.kernel.refreshList">刷新列表</button>
+    </div>
+  </div>
+  <div class="kernel-progress-wrap" id="kernel-progress-wrap" hidden>
+    <div class="kernel-progress-head"><span id="kernel-progress-label">下载内核</span><span class="kernel-progress-meta"><span id="kernel-progress-percent">0%</span><span id="kernel-progress-speed">0 MB/s</span></span></div>
+    <div class="kernel-progress-track"><div class="kernel-progress-fill" id="kernel-progress-fill" style="width:0%"></div></div>
+  </div>
+  <p class="storage-warning" id="kernel-progress" hidden></p>
+  <div class="storage-actions" style="margin-top:12px">
+    <button class="primary" id="kernel-download" type="button" data-i18n="system.kernel.downloadStable">下载 Chrome Stable</button>
+    <button class="outline" id="kernel-cancel-download" type="button" hidden data-i18n="system.kernel.cancel">取消下载</button>
+    <button class="outline" id="kernel-check-update" type="button" data-i18n="system.kernel.checkStable">检查 Stable 版本</button>
+    <button class="outline" id="kernel-choose" type="button" data-i18n="system.kernel.chooseCustom">选择自定义内核</button>
+    <button class="outline" id="kernel-refresh" type="button" data-i18n="system.kernel.refreshStatus">刷新状态</button>
+  </div>
+  <h4 class="kernel-section-title" data-i18n="system.kernel.detailTitle">内核详情</h4>
+  <div class="storage-path-box"><small data-i18n="system.kernel.path">内核路径</small><code id="kernel-path">—</code></div>
+  <div class="storage-path-box" style="margin-top:8px"><small data-i18n="system.kernel.versionSource">版本 / 来源</small><code id="kernel-version">—</code></div>
+  <div class="storage-path-box" style="margin-top:8px"><small data-i18n="system.kernel.activePath">下次启动实际使用</small><code id="kernel-active-path">—</code></div>
+  <div class="storage-path-box" style="margin-top:8px"><small data-i18n="system.kernel.launchMode">启动策略</small><code id="kernel-launch-mode">—</code></div>
+  <div class="storage-path-box" style="margin-top:8px"><small data-i18n="system.kernel.channel">内核通道</small><code id="kernel-channel">Google Chrome Stable</code></div>
+  <label class="check-row" style="margin-top:12px;display:flex;gap:8px;align-items:center"><input id="kernel-prefer-independent" type="checkbox" checked> <span data-i18n="system.kernel.preferIndependent">优先使用独立内核（推荐）</span></label>
+  <label class="check-row" style="margin-top:6px;display:flex;gap:8px;align-items:center"><input id="kernel-allow-system" type="checkbox"> <span data-i18n="system.kernel.allowSystem">允许手动回退到本机浏览器（默认关闭）</span></label>
+  <label class="check-row" style="margin-top:6px;display:flex;gap:8px;align-items:center"><span data-i18n="system.kernel.systemBrowser">手动选择回退浏览器（Windows 可选 Chrome 或 Edge）</span><select id="kernel-system-browser"><option value="" data-i18n="system.kernel.none">未选择</option></select></label>
+  <p class="storage-warning" data-i18n="system.kernel.hint">点击下载会获取 Google Chrome Stable 正式包并校验，不使用 Chrome for Testing 包。默认不会自动回退到本机浏览器。</p>
+</article>
+</div></section>
         <section class="view" id="view-system"><div class="settings-grid">
 <article class="storage-settings-card" id="ui-locale-card">
   <div class="storage-settings-head">
@@ -1153,40 +1279,6 @@
   </div>
   <p class="storage-warning" id="cloud-sync-status">尚未同步。单环境是否同步请在「编辑环境 → 偏好设置 → 云备份」中开关，主列表不放同步开关。</p>
 </article>
-<article class="storage-settings-card" id="kernel-settings-card">
-  <div class="storage-settings-head"><div><h3>独立浏览器内核</h3><p>优先使用安装包内置内核；点击下载时使用 <strong>Google Chrome Stable</strong> 正式包。平台目录：<code>kernels/macos-x64</code> · <code>kernels/windows-x64</code> · <code>kernels/macos-arm64</code> · <code>kernels/chrome-stable</code>。支持多版本 <strong>Chrome for Testing</strong> 与 <strong>Firefox</strong> 内核直接下载，每个环境可单独选择内核。</p></div><span id="kernel-status-badge">检测中</span></div>
-  <div class="storage-path-box"><small>内核路径</small><code id="kernel-path">—</code></div>
-  <div class="storage-path-box" style="margin-top:8px"><small>版本 / 来源</small><code id="kernel-version">—</code></div>
-  <div class="storage-path-box" style="margin-top:8px"><small>下次启动实际使用</small><code id="kernel-active-path">—</code></div>
-  <div class="storage-path-box" style="margin-top:8px"><small>启动策略</small><code id="kernel-launch-mode">—</code></div>
-  <div class="storage-path-box" style="margin-top:8px"><small>内核通道</small><code id="kernel-channel">Google Chrome Stable</code></div>
-  <div class="storage-actions" style="margin-top:12px">
-    <button class="primary" id="kernel-download" type="button">下载 Chrome Stable</button>
-    <button class="outline" id="kernel-check-update" type="button">检查 Stable 版本</button>
-    <button class="outline" id="kernel-choose" type="button">选择自定义内核</button>
-    <button class="outline" id="kernel-refresh" type="button">刷新状态</button>
-  </div>
-  <label class="check-row" style="margin-top:12px;display:flex;gap:8px;align-items:center"><input id="kernel-prefer-independent" type="checkbox" checked> 优先使用独立内核（推荐）</label>
-  <label class="check-row" style="margin-top:6px;display:flex;gap:8px;align-items:center"><input id="kernel-allow-system" type="checkbox"> 允许手动回退到本机浏览器（默认关闭）</label>
-  <label class="check-row" style="margin-top:6px;display:flex;gap:8px;align-items:center">手动选择回退浏览器（Windows 可选 Chrome 或 Edge）<select id="kernel-system-browser"><option value="">未选择</option></select></label>
-  <p class="storage-warning" id="kernel-progress">点击下载会获取 Google Chrome Stable 正式包并校验，不使用 Chrome for Testing 包。默认不会自动回退到本机浏览器。</p>
-  <div class="storage-path-box" style="margin-top:14px"><small data-i18n="system.kernel.versions">多版本内核（Chrome for Testing / Firefox）</small><code id="kernel-versions-hint" data-i18n="system.kernel.versionsHint">每个大版本只提供最新构建（如 Chrome 145/146/147…、Firefox 各代），选择后直接下载；已安装版本可设为所有环境的默认内核。</code></div>
-  <div class="kernel-version-block">
-    <div class="kernel-version-row">
-      <span class="kernel-engine-label" data-i18n="system.kernel.chromium">Chromium</span>
-      <select id="kernel-chromium-version"><option value="" data-i18n="system.kernel.loading">加载中…</option></select>
-      <button class="outline" id="kernel-chromium-install" type="button" data-i18n="system.kernel.install">下载所选版本</button>
-      <button class="outline" id="kernel-chromium-refresh" type="button" data-i18n="system.kernel.refreshList">刷新列表</button>
-    </div>
-    <div class="kernel-version-row" style="margin-top:8px">
-      <span class="kernel-engine-label" data-i18n="system.kernel.firefox">Firefox</span>
-      <select id="kernel-firefox-version"><option value="" data-i18n="system.kernel.loading">加载中…</option></select>
-      <button class="outline" id="kernel-firefox-install" type="button" data-i18n="system.kernel.install">下载所选版本</button>
-      <button class="outline" id="kernel-firefox-refresh" type="button" data-i18n="system.kernel.refreshList">刷新列表</button>
-    </div>
-    <div id="kernel-installed-list" class="kernel-installed-list" style="margin-top:10px"><small data-i18n="system.kernel.installedNone">暂无。从上方列表选择版本下载。</small></div>
-  </div>
-</article>
 <article><h3>运行时</h3><dl id="runtime-info"></dl></article><article><h3>能力状态</h3><dl><div><dt>真实浏览器进程</dt><dd class="ok">已启用</dd></div><div><dt>独立用户目录</dt><dd class="ok">已启用</dd></div><div><dt>扩展批量加载</dt><dd class="ok">已启用</dd></div><div><dt>Chrome DevTools Protocol</dt><dd class="ok">已启用</dd></div><div><dt>运行模式</dt><dd class="ok">纯本地</dd></div><div><dt>本机接口</dt><dd class="ok">127.0.0.1:50325</dd></div></dl></article>
 <article class="storage-settings-card" id="close-action-card"><div class="storage-settings-head"><div><h3 data-i18n="system.close.title">关闭窗口行为</h3><p data-i18n="system.close.desc">控制点击主窗口右上角关闭按钮时，是将程序最小化到系统托盘继续运行后台代理，还是完全退出程序。</p></div><span data-i18n="system.close.label">托盘常驻</span></div><div class="form-row" style="margin-top:12px;display:flex;gap:16px;align-items:center;flex-wrap:wrap;"><label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="radio" name="close-action-radio" value="ask"> <span data-i18n="system.close.ask">每次询问</span></label><label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="radio" name="close-action-radio" value="tray" checked> <span data-i18n="system.close.tray">最小化到系统托盘（保持浏览器与代理运行）</span></label><label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="radio" name="close-action-radio" value="exit"> <span data-i18n="system.close.exit">退出程序（停止所有运行中的环境）</span></label></div><p class="storage-warning" style="margin-top:10px;" data-i18n="system.close.hint">保持后台运行可保证各个浏览器环境的代理链路不中断。如需完全退出，可在系统托盘图标右键选择「彻底退出」。</p></article>
 <article class="storage-settings-card"><div class="storage-settings-head"><div><h3>环境缓存与数据位置</h3><p>各环境的 Chrome 用户目录、Cookie、缓存、本地存储、IndexedDB 和会话数据都会保存在这里。</p></div><span>本地保存</span></div><div class="storage-path-box"><small>当前目录</small><code id="profile-storage-path">正在读取...</code></div><div class="storage-actions"><button class="primary" id="choose-profile-storage" type="button">选择新目录</button><button class="outline" id="open-profile-storage" type="button">打开目录</button><button class="outline" id="reset-profile-storage" type="button">恢复默认位置</button></div><p class="storage-warning">修改前请先停止所有环境。新位置在环境下次启动时生效；旧目录中的数据不会自动移动或删除。</p></article></div></section>
@@ -1231,6 +1323,8 @@
         <label>账号<input id="proxy-user" autocomplete="off" placeholder="可选"></label>
         <label>密码<input id="proxy-password" type="password" autocomplete="new-password" placeholder="可选"></label>
       </div>
+      <label>动态代理刷新 URL<input id="proxy-refresh-url" placeholder="可选；服务商未提供则无需填写"></label>
+      <small class="field-hint" style="margin-top:-4px;margin-bottom:8px;display:block;">动态代理专用：填写后可在环境编辑里一键更换出口 IP；静态代理无需填写。</small>
       <label>并发窗口上限<input id="proxy-max-concurrency" type="number" min="0" max="1000" step="1" placeholder="留空或 0 表示不限制"></label>
       <small class="field-hint" style="margin-top:-4px;margin-bottom:8px;display:block;">同一代理最多允许几个窗口同时运行；达到上限后再启动会被拦截并提示占用窗口，避免上游代理并发通道耗尽后整批环境一起失效。</small>
       <label>备注<textarea id="proxy-remark" rows="2" placeholder="用途说明"></textarea></label>
@@ -1252,9 +1346,10 @@
         </div>
         <button value="cancel" type="submit" aria-label="关闭" data-i18n-aria="common.close">×</button>
       </div>
-      <label>代理列表（每行一条）
+      <label>代理列表（每行一条，一次最多添加 500 条）
         <textarea id="proxy-batch-import-text" rows="8" placeholder="例如：&#10;socks5://user:pass@127.0.0.1:1080#美东01&#10;192.168.1.1:7890:admin:secret&#10;http://10.0.0.1:8080" required></textarea>
       </label>
+      <small class="field-hint" style="margin-top:-4px;margin-bottom:8px;display:block;">支持智能识别（动态/静态代理）：socks5://user:pass@host:port#备注、host:port:user:pass、user:pass@host:port 等格式；重复代理会自动过滤。</small>
       <div class="form-two">
         <label>默认协议
           <select id="proxy-batch-default-protocol">
@@ -1546,7 +1641,7 @@
   <script src="automation/locale-from-country.js"></script>
   <script src="ui/ui-proxy.js?v=20260720-proxy"></script>
   <script src="ui/ui-editor.js?v=20260720-editor"></script>
-  <script src="renderer.js?v=20260720-nes-light"></script>
+  <script src="renderer.js?v=20261108-refactor"></script>
   <script src="ui/ui-proxy-wiring.js?v=20260720-proxy"></script>
   <script src="ui/ui-dialogs.js"></script>
   <script src="ui/ui-rpa.js"></script>

@@ -329,6 +329,9 @@ html[data-theme-mode="dark"] .rpa-store-card:hover{
 .ua-tools .ua-ver{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--theme-muted)}
 .ua-tools .ua-ver input{border:1px solid var(--border);border-radius:8px;padding:6px 8px;font:inherit;background:var(--theme-surface);color:var(--theme-text)}
 .ua-hint{display:block;margin:4px 0 8px;color:var(--theme-muted);font-size:11px;line-height:1.45}
+/* One-click randomize toolbar at the top of the privacy panel */
+.editor-random-toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:0 0 12px}
+.editor-random-toolbar .outline{font-size:12px;padding:6px 12px}
 .ua-meta-preview{
   margin:0 0 10px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;
   background:var(--theme-surface-alt);color:var(--theme-text);font:11px/1.45 ui-monospace,Menlo,monospace;
@@ -391,13 +394,9 @@ html[data-theme-mode="dark"] .rpa-store-card:hover{
   transform: translateY(-1px) scale(1.03);
   filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.38));
 }
-html[data-ui-theme="retro-desktop"] .env-window-svg,
-html[data-ui-theme="nes-light"] .env-window-svg,
 html[data-color-mode="light"] .env-window-svg {
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.08));
 }
-html[data-ui-theme="retro-desktop"] .env-identity:hover .env-window-svg,
-html[data-ui-theme="nes-light"] .env-identity:hover .env-window-svg,
 html[data-color-mode="light"] .env-identity:hover .env-window-svg {
   filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.15));
 }

@@ -160,10 +160,7 @@ check('static: ui-shell css enforces zero padding and explicit sizing for action
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/environment-audit.css">
   <link rel="stylesheet" href="/ui-shell.css">
-  <link rel="stylesheet" href="/pixel-workstation.css">
-  <link rel="stylesheet" href="/nes-light.css">
-  <link rel="stylesheet" href="/element-admin.css">
-  <link rel="stylesheet" href="/xai-console.css">
+  <link rel="stylesheet" href="/modern.css">
 </head>
 <body>
   <div id="view-profiles" class="view active" style="width:1100px">

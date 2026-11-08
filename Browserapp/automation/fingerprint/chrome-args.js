@@ -48,6 +48,24 @@ function chromeArgsForFingerprint(fp, profile = {}, options = {}) {
   }
   if (fp.audio?.mode === 'muted' || profile.privacy?.audio === 'muted') args.push('--mute-audio');
   if (fp.doNotTrack === '1' || profile.privacy?.dnt || profile.privacy?.dntMode === 'on') args.push('--do-not-track');
+  // 硬件加速模式：关闭时整体走软件渲染。WebGL 仍需可用（blocked 时上面已单独禁掉），
+  // 所以补上 SwiftShader 组合，避免「关硬件加速」把 WebGL 一起弄挂。
+  if (profile.privacy?.hardwareAcceleration === 'off' && fp.webgl?.mode !== 'blocked') {
+    for (const flag of ['--disable-gpu', '--disable-gpu-compositing', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader']) {
+      if (!args.includes(flag)) args.push(flag);
+    }
+  }
+  // 禁用沙盒：每个环境独立 opt-in。多开容器/无特权 Linux 环境常见需求，但会降低隔离强度。
+  if (profile.privacy?.noSandbox) args.push('--no-sandbox');
+  // SSL 指纹设置：真实 Chromium 开关（ssl-version-min / cipher-suite-black-list），
+  // 由编辑器「SSL 指纹设置」写入 privacy.fingerprint。黑名单只接受 0xHHHH 套件号。
+  const sslMin = String(profile.privacy?.fingerprint?.sslVersionMin || '').trim();
+  if (sslMin === 'tls1.2' || sslMin === 'tls1.3') args.push(`--ssl-version-min=${sslMin}`);
+  const sslBlacklist = String(profile.privacy?.fingerprint?.sslBlacklist || '')
+    .split(/[\s,;，；]+/)
+    .map((s) => s.trim())
+    .filter((s) => /^0x[0-9a-fA-F]{4}$/.test(s));
+  if (sslBlacklist.length) args.push(`--cipher-suite-black-list=${sslBlacklist.join(',')}`);
   // Use full BCP47 when present (ja-JP / zh-CN); Chrome accepts --lang=ja-JP
   const lang = (fp.languages && fp.languages[0]) || profile.language;
   if (lang) {

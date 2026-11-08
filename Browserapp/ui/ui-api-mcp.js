@@ -50,7 +50,7 @@ async function refreshApiMcpPage() {
     if (keyEl) keyEl.value = apiKey;
     if (keyEl && !apiKey) keyEl.placeholder = tx('未设置（可选环境变量 OPENBROWSER_API_KEY）');
     const mcpScript = paths?.mcpScript || '';
-    const keyPlaceholder = apiKey || '<从上方 API Key 框复制>';
+    const keyPlaceholder = apiKey || tx('<从上方 API Key 框复制>');
     // Do not put a placeholder in OPENBROWSER_API_KEY when a key file exists:
     // the MCP process treats any non-empty env key as authoritative and would
     // ignore the valid file, producing a misleading 401.
@@ -59,10 +59,10 @@ async function refreshApiMcpPage() {
       : (apiKeyFile ? { OPENBROWSER_API_KEY_FILE: apiKeyFile } : {});
     if (keyNote) {
       keyNote.textContent = apiKey
-        ? '配置已写入当前 API Key。如要限制 AI 权限，请在 MCP 环境变量中追加 OPENBROWSER_MCP_MODE=manage|run|read（可选黑/白名单）。'
+        ? tx('配置已写入当前 API Key。如要限制 AI 权限，请在 MCP 环境变量中追加 OPENBROWSER_MCP_MODE=manage|run|read（可选黑/白名单）。')
         : (apiKeyFile
-          ? 'MCP 配置会从本机 key 文件读取鉴权；如迁移到另一台电脑，请同时迁移该文件或改填 API Key。'
-          : '未取到 API Key：请先从上方 API Key 框复制，再手动填入下方配置；否则 MCP 会返回 401。');
+          ? tx('MCP 配置会从本机 key 文件读取鉴权；如迁移到另一台电脑，请同时迁移该文件或改填 API Key。')
+          : tx('未取到 API Key：请先从上方 API Key 框复制，再手动填入下方配置；否则 MCP 会返回 401。'));
     }
     // A busy default port makes the API move; say so instead of letting the
     // user wonder why the generated config no longer mentions the default.

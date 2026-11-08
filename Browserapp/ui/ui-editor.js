@@ -9,6 +9,16 @@
 //   editorDraft / renderEditorSummary — draft collection and summary rendering
 //   openProfileEditor / refreshUaMetaPreview — editor dialog + UA meta preview
 //   openCreateProfileDialog / setupPlatformPresets — create flow + platform presets
+// Blank-tolerant numeric seed parse: '' / null / NaN → undefined (drop the override).
+function numberOrUndefined(value) {
+  if (value === '' || value == null) return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
+// Render an override number for an input; '' when absent so the field reads "auto".
+function fpSeedText(value) {
+  return (value === '' || value == null || !Number.isFinite(Number(value))) ? '' : String(value);
+}
 function normalizeProfileSettings(profile) {
   const value = profile && typeof profile === 'object' ? profile : {};
   const privacy = value.privacy && typeof value.privacy === 'object' ? value.privacy : {};
@@ -120,6 +130,17 @@ function normalizeProfileSettings(profile) {
       portScanAllow: String(privacy.portScanAllow || ''),
       cfOptimize: privacy.cfOptimize !== false,
       refreshFingerprintOnStart: Boolean(privacy.refreshFingerprintOnStart),
+      // 对齐扩展字段（详见 profile-sanitizer.js privacy 白名单）
+      resolutionMode: privacy.resolutionMode === 'real' ? 'real' : '',
+      fontListMode: ['real', 'noise'].includes(String(privacy.fontListMode || '')) ? String(privacy.fontListMode) : '',
+      macMode: privacy.macMode === 'custom' ? 'custom' : 'real',
+      mac: String(privacy.mac || ''),
+      hardwareAcceleration: privacy.hardwareAcceleration === 'off' ? 'off' : 'on',
+      noSandbox: Boolean(privacy.noSandbox),
+      customArgs: String(privacy.customArgs || ''),
+      fullscreen: Boolean(privacy.fullscreen),
+      windowPos: ['tl', 'tm', 'tr', 'ml', 'mm', 'mr', 'bl', 'bm', 'br'].includes(String(privacy.windowPos || '')) ? String(privacy.windowPos) : '',
+      searchEngine: ['google', 'bing', 'yahoo', 'yandex', 'duckduckgo'].includes(String(privacy.searchEngine || '')) ? String(privacy.searchEngine) : '',
       stabilityMode: ['off', 'auto', 'force'].includes(String(privacy.stabilityMode || ''))
         ? String(privacy.stabilityMode)
         : 'auto',
@@ -174,6 +195,9 @@ function normalizeProfileSettings(profile) {
       blockVideo: Boolean(advanced.blockVideo),
       blockImages: Boolean(advanced.blockImages),
       clearCacheOnStart: Boolean(advanced.clearCacheOnStart),
+      clearCookiesOnStart: Boolean(advanced.clearCookiesOnStart),
+      clearLocalStorageOnStart: Boolean(advanced.clearLocalStorageOnStart),
+      ipChangePolicy: ['patch', 'notify', 'stop'].includes(String(advanced.ipChangePolicy || '')) ? String(advanced.ipChangePolicy) : 'patch',
       cloudBackup: Boolean(advanced.cloudBackup),
       syncCookiesOnClose: advanced.syncCookiesOnClose !== false,
       syncIndexedDB: Boolean(advanced.syncIndexedDB),
@@ -253,6 +277,16 @@ function editorDraft(strict = true) {
     portScanAllow: ($('#editor-port-scan-allow')?.value || '').trim(),
     cfOptimize: $('#editor-cf-optimize')?.checked !== false,
     refreshFingerprintOnStart: Boolean($('#editor-refresh-fingerprint')?.checked),
+    resolutionMode: ($('#editor-resolution')?.value || '') === 'real' ? 'real' : '',
+    fontListMode: $('#editor-font-list-mode')?.value || '',
+    macMode: $('#editor-mac-mode')?.value === 'custom' ? 'custom' : 'real',
+    mac: (($('#editor-mac')?.value || '').trim().toUpperCase().replace(/-/g, ':')),
+    hardwareAcceleration: $('#editor-gpu-mode')?.value === 'off' ? 'off' : 'on',
+    noSandbox: Boolean($('#editor-no-sandbox')?.checked),
+    customArgs: ($('#editor-custom-args')?.value || '').trim(),
+    fullscreen: Boolean($('#editor-fullscreen')?.checked),
+    windowPos: $('#editor-window-pos')?.value || '',
+    searchEngine: $('#editor-search-engine')?.value || '',
     stabilityMode: $('#editor-stability-mode')?.value || 'auto',
     stabilityHamming: Number($('#editor-stability-hamming')?.value) || 12,
     stabilityMaxWidth: Number($('#editor-stability-max-width')?.value) || 600,
@@ -274,6 +308,8 @@ function editorDraft(strict = true) {
     })(),
     fingerprint: {
       ...(current.privacy?.fingerprint || {}),
+      webglVendor: (($('#editor-webgl-vendor')?.value || '').trim()).slice(0, 200),
+      webglRenderer: (($('#editor-webgl-renderer')?.value || '').trim()).slice(0, 400),
       cores: (() => {
         const v = $('#editor-cores')?.value;
         if (v === '' || v == null) return undefined;
@@ -286,6 +322,25 @@ function editorDraft(strict = true) {
         const n = Number(v);
         return Number.isFinite(n) ? n : undefined;
       })(),
+      // 噪声种子：留空 = 按环境种子自动生成（undefined 会在 JSON 序列化时丢弃，清除旧值）
+      canvasId: numberOrUndefined($('#editor-canvas-seed')?.value),
+      clientRectsId: numberOrUndefined($('#editor-crects-seed')?.value),
+      audioId: numberOrUndefined($('#editor-audio-seed')?.value),
+      // 电池电量（0–1）：填了就走固定电池，留空回随机
+      battery: (() => {
+        const v = $('#editor-battery-level')?.value;
+        if (v === '' || v == null) return undefined;
+        const n = Number(v);
+        return Number.isFinite(n) ? { charging: true, level: Math.min(1, Math.max(0, n)) } : undefined;
+      })(),
+      uaStrict: Boolean($('#editor-ua-strict')?.checked),
+      fonts: (() => {
+        if (($('#editor-font-list-mode')?.value || '') !== 'custom') return undefined;
+        const list = ($('#editor-font-list')?.value || '').split(/[\n,，;；]+/).map((s) => s.trim()).filter(Boolean);
+        return list.length ? list.slice(0, 400) : undefined;
+      })(),
+      sslVersionMin: (($('#editor-ssl-min')?.value || '').trim() || undefined),
+      sslBlacklist: (($('#editor-ssl-blacklist')?.value || '').trim() || undefined),
     },
   };
   if (strict && privacy.timezoneMode === 'custom' && privacy.timezone) {
@@ -444,6 +499,9 @@ function editorDraft(strict = true) {
       blockVideo: Boolean($('#editor-block-video')?.checked),
       blockImages: Boolean($('#editor-block-images')?.checked),
       clearCacheOnStart: Boolean($('#editor-clear-cache')?.checked),
+      clearCookiesOnStart: Boolean($('#editor-clear-cookies')?.checked),
+      clearLocalStorageOnStart: Boolean($('#editor-clear-localstorage')?.checked),
+      ipChangePolicy: $('#editor-ip-change-policy')?.value || 'patch',
       cloudBackup: Boolean($('#editor-cloud-backup')?.checked),
       syncCookiesOnClose: $('#editor-sync-cookies-close')?.checked !== false,
       syncIndexedDB: Boolean($('#editor-sync-idb')?.checked),
@@ -483,7 +541,7 @@ function renderEditorSummary() {
   const values = [
     [tx('浏览器'), 'Google Chrome'], [tx('分组'), groupNameOf(draft)], ['User-Agent', draft.userAgent || t('editor.summary.defaultUA')], [tx('网络'), maskProxy(draft.proxy)], ['WebRTC', labels.webrtc[privacy.webrtc]],
     [tx('时区'), labels.timezoneMode[privacy.timezoneMode]], [tx('地理位置'), labels.geoMode[privacy.geoMode]], [tx('语言'), draft.language], [tx('界面语言'), privacy.uiLanguage === 'profile' ? t('editor.summary.followLanguage') : privacy.uiLanguage],
-    [tx('分辨率'), draft.width + ' × ' + draft.height], [tx('字体'), privacy.fontMode === 'custom' ? privacy.fontSize + 'px' : t('editor.summary.default')], ['Canvas', labels.canvas[privacy.canvas]],
+    [tx('分辨率'), privacy.resolutionMode === 'real' ? t('editor.summary.followSystem') : (draft.width + ' × ' + draft.height)], [tx('字体'), privacy.fontMode === 'custom' ? privacy.fontSize + 'px' : t('editor.summary.default')], ['Canvas', labels.canvas[privacy.canvas]],
     ['WebGL', labels.webgl[privacy.webgl]], ['WebGPU', privacy.webgpu === 'blocked' ? t('editor.summary.disabled') : (privacy.webgpu === 'webgl' ? t('editor.summary.basedOnWebgl') : t('editor.summary.real'))], ['AudioContext', labels.audio[privacy.audio]], [tx('媒体设备'), labels.media[privacy.media]],
     [tx('电池'), privacy.battery === 'blocked' ? t('editor.summary.off') : (privacy.battery === 'real' ? t('editor.summary.real') : t('editor.summary.random'))],
     [tx('蓝牙'), labels.bluetooth[privacy.bluetooth || 'real']],
@@ -508,6 +566,16 @@ function renderEditorSummary() {
       return t('editor.summary.gb', { n });
     })()],
     ['Do Not Track', privacy.dnt ? t('editor.summary.enabled') : t('editor.summary.default')],
+    [tx('字体指纹'), privacy.fontListMode === 'real' ? t('editor.summary.followSystem') : (privacy.fontListMode === 'noise' ? t('editor.summary.random') : t('editor.summary.auto'))],
+    ['MAC', privacy.macMode === 'custom' ? (privacy.mac || t('editor.summary.auto')) : t('editor.summary.real')],
+    [tx('硬件加速'), privacy.hardwareAcceleration === 'off' ? t('editor.summary.off') : t('editor.summary.on')],
+    [tx('禁用沙盒'), privacy.noSandbox ? t('editor.summary.on') : t('editor.summary.off')],
+    [tx('全屏启动'), privacy.fullscreen ? t('editor.summary.on') : t('editor.summary.off')],
+    [tx('窗口位置'), privacy.windowPos ? { tl: '左上', tm: '上', tr: '右上', ml: '左', mm: '居中', mr: '右', bl: '左下', bm: '下', br: '右下' }[privacy.windowPos] : t('editor.summary.auto')],
+    [tx('搜索引擎'), privacy.searchEngine ? ({ google: 'Google', bing: 'Microsoft Bing', yahoo: 'Yahoo', yandex: 'Yandex', duckduckgo: 'DuckDuckGo' }[privacy.searchEngine]) : t('editor.summary.default')],
+    [tx('自定义启动参数'), privacy.customArgs || '—'],
+    [tx('IP 变化策略'), { patch: t('editor.summary.ipPatch'), notify: t('editor.summary.ipNotify'), stop: t('editor.summary.ipStop') }[draft.advanced?.ipChangePolicy || 'patch']],
+    [tx('启动前清理'), [draft.advanced?.clearCacheOnStart && '缓存', draft.advanced?.clearCookiesOnStart && 'Cookies', draft.advanced?.clearLocalStorageOnStart && 'Local Storage'].filter(Boolean).join(' / ') || '—'],
     [tx('每次打开刷新指纹'), privacy.refreshFingerprintOnStart ? t('editor.summary.on') : t('editor.summary.off')]
   ];
   for (const [name, value] of values) { const row = document.createElement('div'); row.append(element('dt', '', name), element('dd', '', value || '默认')); summary.append(row); }
@@ -524,6 +592,53 @@ function renderEditorSummary() {
       row.append(element('i', '', ''), body); auditTarget.append(row);
     }
   }
+}
+
+// 一键随机指纹：把所有可伪造面全部切到随机/噪声档，并清掉手填的固定标识。
+// 只改模式与输入框，不直接改任何 profile —— 用户仍需点「保存」才会生效；
+// 也不会给设备档案强行重掷（deviceProfile 只切到「独立随机」，种子仍由环境 ID 派生）。
+function randomizeFingerprintDraft() {
+  const noiseTargets = [
+    ['#editor-canvas', 'noise'], ['#editor-webgl', 'noise'], ['#editor-webgl-meta', 'noise'],
+    ['#editor-webgpu', 'webgl'], ['#editor-audio', 'noise'], ['#editor-media', 'noise'],
+    ['#editor-media-devices', 'noise'], ['#editor-battery', 'noise'], ['#editor-client-rects', 'noise'],
+    ['#editor-speech', 'noise'],
+  ];
+  for (const [sel, value] of noiseTargets) {
+    const el = $(sel);
+    if (el) el.value = value;
+  }
+  const deviceProfile = $('#editor-device-profile');
+  if (deviceProfile) deviceProfile.value = 'default';
+  const ua = $('#editor-user-agent');
+  if (ua) ua.value = '';
+  const deviceName = $('#editor-device-name');
+  if (deviceName) deviceName.value = '';
+  const deviceNameMode = $('#editor-device-name-mode');
+  if (deviceNameMode) deviceNameMode.value = 'noise';
+  const mac = $('#editor-mac');
+  if (mac) mac.value = '';
+  const macMode = $('#editor-mac-mode');
+  if (macMode) macMode.value = 'real';
+  const webglVendor = $('#editor-webgl-vendor');
+  if (webglVendor) webglVendor.value = '';
+  const webglRenderer = $('#editor-webgl-renderer');
+  if (webglRenderer) webglRenderer.value = '';
+  const dntMode = $('#editor-dnt-mode');
+  if (dntMode) dntMode.value = 'default';
+  const dnt = $('#editor-dnt');
+  if (dnt) dnt.checked = false;
+  const fontListMode = $('#editor-font-list-mode');
+  if (fontListMode) fontListMode.value = 'noise';
+  // 清掉手填的固定标识：种子、电量、字体列表、SSL 黑名单全部回到自动档
+  for (const sel of ['#editor-canvas-seed', '#editor-crects-seed', '#editor-audio-seed', '#editor-battery-level', '#editor-font-list', '#editor-ssl-min', '#editor-ssl-blacklist']) {
+    const el = $(sel);
+    if (el) el.value = '';
+  }
+  const uaStrict = $('#editor-ua-strict');
+  if (uaStrict) uaStrict.checked = false;
+  if (typeof updateEditorVisibility === 'function') updateEditorVisibility();
+  renderEditorSummary();
 }
 
 function openProfileEditor(id) {
@@ -642,7 +757,9 @@ function openProfileEditor(id) {
   }
   editorCheck('#editor-geo-from-ip', privacy.geoFromIp !== false);
   const resolutionKey = profile.width + 'x' + profile.height;
-  const resolution = ['1280x820', '1366x768', '1440x900', '1920x1080'].includes(resolutionKey) ? resolutionKey : 'custom';
+  const resolution = privacy.resolutionMode === 'real'
+    ? 'real'
+    : (['1280x820', '1366x768', '1440x900', '1920x1080'].includes(resolutionKey) ? resolutionKey : 'custom');
   editorSet('#editor-resolution', resolution);
   editorSet('#editor-width', profile.width);
   editorSet('#editor-height', profile.height);
@@ -676,6 +793,25 @@ function openProfileEditor(id) {
   })());
   editorSet('#editor-device-name-mode', privacy.deviceNameMode || 'noise');
   editorSet('#editor-device-name', privacy.deviceName || '');
+  editorSet('#editor-webgl-vendor', privacy.fingerprint?.webglVendor || '');
+  editorSet('#editor-webgl-renderer', privacy.fingerprint?.webglRenderer || '');
+  editorSet('#editor-canvas-seed', fpSeedText(privacy.fingerprint?.canvasId));
+  editorSet('#editor-crects-seed', fpSeedText(privacy.fingerprint?.clientRectsId));
+  editorSet('#editor-audio-seed', fpSeedText(privacy.fingerprint?.audioId));
+  editorSet('#editor-battery-level', fpSeedText(privacy.fingerprint?.battery && Number.isFinite(Number(privacy.fingerprint.battery.level)) ? privacy.fingerprint.battery.level : ''));
+  editorCheck('#editor-ua-strict', Boolean(privacy.fingerprint?.uaStrict));
+  editorSet('#editor-font-list', Array.isArray(privacy.fingerprint?.fonts) ? privacy.fingerprint.fonts.join(', ') : (privacy.fingerprint?.fonts || ''));
+  editorSet('#editor-ssl-min', privacy.fingerprint?.sslVersionMin || '');
+  editorSet('#editor-ssl-blacklist', privacy.fingerprint?.sslBlacklist || '');
+  editorSet('#editor-mac-mode', privacy.macMode || 'real');
+  editorSet('#editor-mac', privacy.mac || '');
+  editorSet('#editor-gpu-mode', privacy.hardwareAcceleration || 'on');
+  editorCheck('#editor-no-sandbox', privacy.noSandbox);
+  editorSet('#editor-custom-args', privacy.customArgs || '');
+  editorSet('#editor-font-list-mode', privacy.fontListMode || '');
+  editorCheck('#editor-fullscreen', privacy.fullscreen);
+  editorSet('#editor-window-pos', privacy.windowPos || '');
+  editorSet('#editor-search-engine', privacy.searchEngine || '');
   editorSet('#editor-dnt-mode', privacy.dntMode || (privacy.dnt ? 'on' : 'default'));
   editorCheck('#editor-dnt', privacy.dnt);
   editorCheck('#editor-port-scan', privacy.portScanProtect);
@@ -702,6 +838,8 @@ function openProfileEditor(id) {
     ['#editor-block-video', advanced.blockVideo],
     ['#editor-block-images', advanced.blockImages],
     ['#editor-clear-cache', advanced.clearCacheOnStart],
+    ['#editor-clear-cookies', advanced.clearCookiesOnStart],
+    ['#editor-clear-localstorage', advanced.clearLocalStorageOnStart],
     ['#editor-cloud-backup', advanced.cloudBackup],
     ['#editor-sync-cookies-close', advanced.syncCookiesOnClose !== false],
     ['#editor-sync-idb', advanced.syncIndexedDB],
@@ -726,6 +864,7 @@ function openProfileEditor(id) {
   if (tabRadio) tabRadio.checked = true;
   editorSet('#editor-start-urls', advanced.startUrls || '');
   editorSet('#editor-block-urls', advanced.blockUrls || '');
+  editorSet('#editor-ip-change-policy', advanced.ipChangePolicy || 'patch');
   setEditorTab('basic');
   updateEditorVisibility();
   if (typeof syncThemedSelects === 'function') syncThemedSelects($('#view-profile-editor'));
@@ -847,4 +986,5 @@ Object.assign(window, {
   refreshUaMetaPreview,
   openCreateProfileDialog,
   setupPlatformPresets,
+  randomizeFingerprintDraft,
 });

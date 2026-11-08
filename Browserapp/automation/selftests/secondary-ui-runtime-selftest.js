@@ -38,7 +38,7 @@ try {
   for (const width of [1280, 900]) {
     cli('set', 'viewport', String(width), width === 900 ? '700' : '900');
     for (const mode of ['dark', 'light']) {
-      evaluate('document.documentElement.dataset.uiTheme="oceanic-fingerprint";document.documentElement.dataset.colorMode=' + JSON.stringify(mode));
+      evaluate('document.documentElement.dataset.uiTheme="modern";document.documentElement.dataset.colorMode=' + JSON.stringify(mode));
       const prefix = width + '/' + mode + ': ';
       const metrics = run(() => {
         function rgb(value) { return (value.match(/[\d.]+/g) || []).map(Number); }
@@ -85,7 +85,7 @@ try {
         editorNetworkResult = null;
         const draft = editorDraft(false);
         const section = document.querySelector('.editor-section-card');
-        const editor = { language: draft.language, uiSurface: root.getPropertyValue('--ui-surface').trim(), inkSurface: root.getPropertyValue('--ink-surface-1').trim(), cardBackground: getComputedStyle(section).backgroundColor, nestedLabels: document.querySelectorAll('#view-profile-editor label label').length, fieldDisplay: getComputedStyle(document.querySelector('.field-inline-group')).display };
+        const editor = { language: draft.language, uiSurface: root.getPropertyValue('--ui-surface').trim(), inkSurface: root.getPropertyValue('--modern-neutral-0').trim(), cardBackground: getComputedStyle(section).backgroundColor, nestedLabels: document.querySelectorAll('#view-profile-editor label label').length, fieldDisplay: getComputedStyle(document.querySelector('.field-inline-group')).display };
         return { mode: document.documentElement.dataset.colorMode, width: innerWidth, log, proxy, toggles, grid, status, editor };
       });
       measurements.push(metrics);
@@ -106,7 +106,7 @@ try {
     }
   }
   for (const mode of ['dark', 'light']) {
-    evaluate('document.documentElement.dataset.uiTheme="oceanic-fingerprint";document.documentElement.dataset.colorMode=' + JSON.stringify(mode));
+    evaluate('document.documentElement.dataset.uiTheme="modern";document.documentElement.dataset.colorMode=' + JSON.stringify(mode));
     check(mode + ': footer effective contrast >= 4.5 including inherited opacity', () => {
       const values = run(() => {
         switchView('logs');
@@ -194,7 +194,7 @@ try {
     for (const value of values) assert.equal(value.echo, value.value);
   });
   check('keyboard focus is visible on extension switches in both modes', () => {
-    evaluate('document.documentElement.dataset.uiTheme="oceanic-fingerprint"; switchView("extensions")');
+    evaluate('document.documentElement.dataset.uiTheme="modern"; switchView("extensions")');
     cli('press', 'Tab');
     for (const mode of ['dark', 'light']) {
       evaluate('document.documentElement.dataset.colorMode=' + JSON.stringify(mode));
@@ -266,7 +266,7 @@ try {
     assert.equal(value.calls, 1); assert.equal(value.busy, true); assert.equal(value.restored, true); assert.equal(value.aria,'false');
   });
   for (const mode of ['dark','light']) {
-    evaluate('document.documentElement.dataset.uiTheme="oceanic-fingerprint";document.documentElement.dataset.colorMode=' + JSON.stringify(mode) + ';openProfileEditor("audit-profile");setEditorTab("privacy")');
+    evaluate('document.documentElement.dataset.uiTheme="modern";document.documentElement.dataset.colorMode=' + JSON.stringify(mode) + ';openProfileEditor("audit-profile");setEditorTab("privacy")');
     check(mode + ': editor header, footer, tabs and summary remain readable', () => {
       const values = run(() => ['.profile-editor-head h2', '.editor-tabs button.active', '#editor-summary dd', '.editor-actions .outline', '.profile-summary button', '.editor-back'].map(selector => window.__auditContrast(document.querySelector(selector))));
       assert.ok(values.every(x => x >= 4.5), JSON.stringify(values));
@@ -282,7 +282,7 @@ try {
   for (const width of [1280,900]) {
     cli('set','viewport',String(width),'900');
     for (const mode of ['dark','light']) {
-      evaluate('document.documentElement.dataset.uiTheme="oceanic-fingerprint";document.documentElement.dataset.colorMode=' + JSON.stringify(mode) + ';switchView("profiles");renderProfiles()');
+      evaluate('document.documentElement.dataset.uiTheme="modern";document.documentElement.dataset.colorMode=' + JSON.stringify(mode) + ';switchView("profiles");renderProfiles()');
       const prefix=width+'/'+mode+': ';
       check(prefix+'profile list readable sizes and toolbar controls',()=>{
         const value=run(()=>({font:parseFloat(getComputedStyle(document.querySelector('#profile-table td')).fontSize),buttons:[...document.querySelectorAll('.profile-primary-toolbar button')].map(x=>x.getBoundingClientRect().height),totalContrast:window.__auditContrast(document.querySelector('#profile-total')),runningContrast:window.__auditContrast(document.querySelector('#profile-table .status.running'))}));

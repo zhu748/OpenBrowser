@@ -203,6 +203,10 @@ function normalizeProxyRecord(input = {}, existing = null) {
     lastCheck: existing?.lastCheck || null,
     lastIp: existing?.lastIp || '',
     lastCountryCode: existing?.lastCountryCode || '',
+    lastCountry: existing?.lastCountry || '',
+    lastCity: existing?.lastCity || '',
+    lastTimezone: existing?.lastTimezone || '',
+    lastIsp: existing?.lastIsp || '',
     lastLatencyMs: existing?.lastLatencyMs ?? null,
     lastNetworkType: existing?.lastNetworkType || '',
     lastErrorClass: existing?.lastErrorClass || '',
@@ -615,6 +619,10 @@ class ProxyStore {
         } else {
           item.lastIp = String(pending.result?.ip || '');
           item.lastCountryCode = String(pending.result?.countryCode || pending.result?.country_code || '');
+          item.lastCountry = String(pending.result?.country || pending.result?.lastCountry || item.lastCountry || '');
+          item.lastCity = String(pending.result?.city || pending.result?.lastCity || item.lastCity || '');
+          item.lastTimezone = String(pending.result?.timezone || pending.result?.lastTimezone || item.lastTimezone || '');
+          item.lastIsp = String(pending.result?.isp || pending.result?.lastIsp || item.lastIsp || '');
           item.lastLatencyMs = Number.isFinite(Number(pending.result?.latencyMs)) ? Number(pending.result.latencyMs) : null;
           item.lastNetworkType = String(pending.result?.networkType || '');
           item.lastErrorClass = pending.result?.errorClass ? String(pending.result.errorClass) : '';

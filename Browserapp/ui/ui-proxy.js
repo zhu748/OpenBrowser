@@ -229,13 +229,98 @@ function proxyAuthActionForUpdate(currentValue, nextValue, networkMode = 'proxy'
   return null;
 }
 
+/**
+ * Relative check-time label ("5 分钟前" / absolute fallback), matching the
+ * reference proxy page's 检测时间 column. Pure function so the selftest can
+ * exercise it without a DOM.
+ */
+function formatProxyCheckTime(iso) {
+  const time = Date.parse(String(iso || ''));
+  if (!Number.isFinite(time)) return '—';
+  const diff = Date.now() - time;
+  if (diff >= 0 && diff < 60_000) return '刚刚';
+  if (diff >= 0 && diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
+  if (diff >= 0 && diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`;
+  const date = new Date(time);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/** Filter predicate for the proxy toolbar select (全部/仅可用/仅失败/未检测). */
+function matchesProxyFilter(item, filter) {
+  if (!filter || filter === 'all') return true;
+  if (filter === 'ok') return item.lastCheckOk === true;
+  if (filter === 'fail') return item.lastCheckOk === false;
+  if (filter === 'unchecked') return item.lastCheckOk == null;
+  return true;
+}
+
+/**
+ * Export selected proxies as importable text lines (one raw proxy per line,
+ * optionally followed by `#出口IP` as a remark-free hint the parser ignores).
+ * Pure function; the wiring layer turns it into a download.
+ */
+function buildProxyExportText(items) {
+  const lines = [];
+  for (const item of items || []) {
+    const raw = String(item.raw || '').trim() || `${item.host}:${item.port}`;
+    if (!raw) continue;
+    lines.push(raw);
+  }
+  return lines.join('\n') + (lines.length ? '\n' : '');
+}
+
+/**
+ * Parse batch-import lines into create drafts with reference-style feedback:
+ * duplicates (against the input itself and the existing library) are dropped,
+ * unparsable lines are reported by line number. Pure function.
+ */
+function normalizeProxyImportLines(lines, existingItems, defaultProtocol = 'socks5', limit = 500) {
+  const seen = new Set();
+  const existingKeys = new Set();
+  for (const item of existingItems || []) {
+    if (!item) continue;
+    existingKeys.add(`${item.protocol || ''}|${String(item.host || '').toLowerCase()}|${Number(item.port) || 0}|${item.username || ''}`);
+  }
+  const drafts = [];
+  const missing = [];
+  let duplicates = 0;
+  let truncated = false;
+  const queue = (Array.isArray(lines) ? lines : String(lines || '').split('\n'))
+    .map((line) => String(line).trim())
+    .filter((line) => line && !line.startsWith('//') && !line.startsWith('#'));
+  for (const [index, line] of queue.entries()) {
+    if (drafts.length >= limit) { truncated = true; break; }
+    let parsed = null;
+    try { parsed = parseProxyInputForUi(line, defaultProtocol); }
+    catch (_) { /* unparsable line: counted as missing below */ }
+    if (!parsed || !parsed.host || !parsed.port) { missing.push(index + 1); continue; }
+    const key = `${parsed.protocol}|${String(parsed.host).toLowerCase()}|${Number(parsed.port) || 0}|${parsed.username || ''}`;
+    if (seen.has(key) || existingKeys.has(key)) { duplicates += 1; continue; }
+    seen.add(key);
+    drafts.push({
+      name: parsed.name || `${parsed.protocol.toUpperCase()} ${parsed.host}:${parsed.port}`,
+      protocol: parsed.protocol,
+      host: parsed.host,
+      port: Number(parsed.port),
+      username: parsed.username || '',
+      password: parsed.password || '',
+      raw: parsed.raw,
+      remark: parsed.remark || '',
+    });
+  }
+  return { drafts, duplicates, missing, truncated, total: queue.length };
+}
+
 function renderProxies() {
   const table = $('#proxy-table');
   const empty = $('#proxy-empty');
   const countEl = $('#proxy-count');
   if (!table) return;
   const q = ($('#proxy-search')?.value || '').trim().toLowerCase();
-  const list = proxyLibrary.filter((item) => !q || [item.name, item.host, item.protocol, item.remark, item.lastIp, String(item.port)].join(' ').toLowerCase().includes(q));
+  const filter = $('#proxy-filter')?.value || 'all';
+  const list = proxyLibrary.filter((item) => matchesProxyFilter(item, filter)
+    && (!q || [item.name, item.host, item.protocol, item.remark, item.lastIp, String(item.port)].join(' ').toLowerCase().includes(q)));
   table.replaceChildren();
 
   /**
@@ -280,11 +365,20 @@ function renderProxies() {
     check.dataset.proxySelect = item.id;
     checkCell.append(check);
     const host = `${item.host}:${item.port}`;
-    const auth = item.authenticated ? t('common.confirm') : t('common.cancel');
+    const auth = item.authenticated ? t('proxies.authYes') : t('proxies.authNo');
+    // Reference proxy page shows IP + 位置 + 时区 on the checked row; we keep
+    // the cell compact and surface the rest as a hover tooltip.
+    const locationParts = [item.lastCountry, item.lastCity].filter(Boolean).join(' ');
+    const exitTitleParts = [];
+    if (item.lastIp) exitTitleParts.push(`IP: ${item.lastIp}`);
+    if (locationParts) exitTitleParts.push(`${t('proxies.locationLabel')}: ${locationParts}`);
+    if (item.lastTimezone) exitTitleParts.push(`${t('proxies.timezoneLabel')}: ${item.lastTimezone}`);
+    if (item.lastIsp) exitTitleParts.push(`ISP: ${item.lastIsp}`);
     const exit = item.lastIp
       ? `${item.lastIp}${item.lastCountryCode ? ' · ' + item.lastCountryCode : ''}${item.lastCheckOk === false ? ' · 失败' : ''}`
       : (item.lastCheckOk === false ? (item.lastErrorClass || '失败') : '—');
     const latency = Number.isFinite(Number(item.lastLatencyMs)) ? `${Number(item.lastLatencyMs)}ms` : '—';
+    const checkTime = item.lastCheck ? tx(formatProxyCheckTime(item.lastCheck)) : '—';
     const netType = item.lastNetworkType || '—';
     const actions = element('div', 'actions');
     const edit = iconActionButton('pencil', t('action.edit'), 'mini edit'); edit.dataset.proxyEdit = item.id;
@@ -342,13 +436,21 @@ function renderProxies() {
     if (usage.limit > 0) limitText.title = tx('该代理最多允许同时运行这么多窗口');
     limitCell.append(limitText);
 
+    const exitCell = document.createElement('td');
+    exitCell.textContent = exit;
+    if (exitTitleParts.length) exitCell.title = exitTitleParts.join(' · ');
+    const timeCell = document.createElement('td');
+    timeCell.textContent = checkTime;
+    if (item.lastCheck) timeCell.title = new Date(item.lastCheck).toLocaleString();
+
     row.append(
       checkCell,
       nameCell,
       element('td', '', proto),
       element('td', '', host),
       element('td', '', auth),
-      element('td', '', exit),
+      exitCell,
+      timeCell,
       element('td', '', latency),
       element('td', '', netType),
       usageCell,
@@ -359,11 +461,15 @@ function renderProxies() {
     fragment.append(row);
   }
   table.append(fragment);
-  if (empty) empty.hidden = list.length !== 0;
+  if (empty) {
+    empty.textContent = proxyLibrary.length === 0 ? t('proxies.empty') : t('proxies.emptyFiltered');
+    empty.hidden = list.length !== 0;
+  }
   if (countEl) {
-    const filtered = q ? ` · ${t('proxies.countFiltered', { n: list.length })}` : '';
+    const filtered = q || filter !== 'all' ? ` · ${t('proxies.countFiltered', { n: list.length })}` : '';
     countEl.textContent = t('proxies.count', { n: proxyLibrary.length }) + filtered;
   }
+  updateProxySelectedChip();
   const selectAll = $('#proxy-select-all');
   if (selectAll) {
     const ids = list.map((i) => i.id);
@@ -373,6 +479,15 @@ function renderProxies() {
   }
   if (typeof refreshIcons === 'function') refreshIcons();
   loadedViews.add('proxies');
+}
+
+/** Chip refresh without a full table re-render (checkbox toggles). */
+function updateProxySelectedChip() {
+  const selectedChip = $('#proxy-selected-count');
+  if (!selectedChip) return;
+  const n = selectedProxies.size;
+  selectedChip.hidden = n === 0;
+  selectedChip.textContent = t('proxies.selected', { n });
 }
 
 async function refreshProxies() {
@@ -405,6 +520,7 @@ function openProxyDialog(item = null) {
   $('#proxy-password').value = parsed?.password || item?.password || '';
   $('#proxy-raw').value = parsed?.raw || item?.raw || '';
   $('#proxy-remark').value = parsed?.remark || item?.remark || '';
+  $('#proxy-refresh-url').value = item?.refreshUrl || '';
   $('#proxy-max-concurrency').value = item?.maxConcurrency ? String(item.maxConcurrency) : '';
   const result = $('#proxy-dialog-result');
   result.className = 'proxy-test-result';
@@ -452,6 +568,7 @@ function readProxyForm() {
     password,
     raw: builtRaw,
     ipChannel: $('#proxy-ip-channel')?.value || 'direct',
+    refreshUrl: ($('#proxy-refresh-url')?.value || '').trim(),
     maxConcurrency: Math.max(0, Math.min(1000, Number.parseInt($('#proxy-max-concurrency')?.value || '0', 10) || 0)),
     remark,
   };

@@ -32,8 +32,18 @@ function sanitizeProfile(value) {
   const memoryCandidate = privacyValue.memory === "" || privacyValue.memory === null || privacyValue.memory === undefined
     ? fingerprintValue?.memory
     : privacyValue.memory;
-  const cores = parseLimitedOption(cpuCandidate, [0, 2, 4, 6, 8, 10, 12, 16]);
+  const cores = parseLimitedOption(cpuCandidate, [0, 2, 4, 6, 8, 10, 12, 16, 20, 24]);
   const memory = parseLimitedOption(memoryCandidate, [0, 2, 4, 6, 8]);
+  // Custom launch args: each token must look like a Chromium switch (--flag or --flag=value).
+  // Values may not contain whitespace/semicolons (split first), keeping the surface injectable-free.
+  const customArgs = String(privacyValue.customArgs || "")
+    .split(/[;\r\n]+/)
+    .map((token) => token.trim())
+    .filter((token) => /^--[a-z0-9][a-z0-9._-]*(=[^\s;'"]{0,500})?$/i.test(token))
+    .join(" ")
+    .slice(0, 2000);
+  const macRaw = String(privacyValue.mac || "").trim().toUpperCase().replace(/-/g, ":");
+  const mac = /^[0-9A-F]{2}(:[0-9A-F]{2}){5}$/.test(macRaw) ? macRaw : "";
   const rawProxy = String(value.proxy || "").trim();
   if (rawProxy.length > MAX_PROFILE_PROXY_LENGTH) throw new Error("Proxy URL is too long");
   const networkMode = value.networkMode === "proxy" ? "proxy"
@@ -173,6 +183,17 @@ function sanitizeProfile(value) {
       portScanAllow: String(privacyValue.portScanAllow || "").slice(0, 500),
       cfOptimize: privacyValue.cfOptimize !== false,
       refreshFingerprintOnStart: Boolean(privacyValue.refreshFingerprintOnStart),
+      // 对齐扩展字段：分辨率跟随系统 / 字体指纹模式 / MAC 地址 / 硬件加速 / 沙盒 / 启动参数
+      resolutionMode: privacyValue.resolutionMode === "real" ? "real" : "",
+      fontListMode: allowed(privacyValue.fontListMode, ["real", "noise"], ""),
+      macMode: allowed(privacyValue.macMode, ["real", "custom"], "real"),
+      mac,
+      hardwareAcceleration: allowed(privacyValue.hardwareAcceleration, ["on", "off"], "on"),
+      noSandbox: Boolean(privacyValue.noSandbox),
+      customArgs,
+      fullscreen: Boolean(privacyValue.fullscreen),
+      windowPos: allowed(privacyValue.windowPos, ["tl", "tm", "tr", "ml", "mm", "mr", "bl", "bm", "br"], ""),
+      searchEngine: allowed(privacyValue.searchEngine, ["google", "bing", "yahoo", "yandex", "duckduckgo"], ""),
       // Windows UI scale override for the managed kernel window (browser chrome size).
       // Absent -> null, so chromeArgsForFingerprint falls back to the host display scale.
       forceDeviceScaleFactor: (() => {
@@ -183,6 +204,9 @@ function sanitizeProfile(value) {
       memory,
       ...(fingerprintValue ? { fingerprint: {
         ...fingerprintValue,
+        // WebGL 自定义厂商/渲染器（webglMeta=custom 时由 persona 直接采用）
+        webglVendor: String(fingerprintValue.webglVendor ?? "").replace(/[\r\n]/g, " ").slice(0, 200),
+        webglRenderer: String(fingerprintValue.webglRenderer ?? "").replace(/[\r\n]/g, " ").slice(0, 400),
         cores: cores === null || cores === undefined
           ? (fingerprintValue.cores === 0 || fingerprintValue.cores === "0"
             ? 0
@@ -193,6 +217,26 @@ function sanitizeProfile(value) {
             ? 0
             : (fingerprintValue.memory ?? null))
           : memory,
+        // 噪声种子 / 电池电量 / UA 严格模式 / 自定义字体列表 / SSL 指纹设置
+        // canvas/clientRects marks are integer slots; audio mark is a float seed — keep as-is.
+        canvasId: Number.isFinite(Number(fingerprintValue.canvasId)) && Number(fingerprintValue.canvasId) !== 0
+          ? Math.round(Number(fingerprintValue.canvasId)) : undefined,
+        clientRectsId: Number.isFinite(Number(fingerprintValue.clientRectsId)) && Number(fingerprintValue.clientRectsId) !== 0
+          ? Math.round(Number(fingerprintValue.clientRectsId)) : undefined,
+        audioId: Number.isFinite(Number(fingerprintValue.audioId)) && Number(fingerprintValue.audioId) !== 0
+          ? Number(fingerprintValue.audioId) : undefined,
+        battery: (fingerprintValue.battery && typeof fingerprintValue.battery === "object"
+          && Number.isFinite(Number(fingerprintValue.battery.level)))
+          ? { charging: fingerprintValue.battery.charging !== false, level: Math.min(1, Math.max(0, Number(fingerprintValue.battery.level))) }
+          : undefined,
+        uaStrict: Boolean(fingerprintValue.uaStrict) || undefined,
+        fonts: Array.isArray(fingerprintValue.fonts)
+          ? fingerprintValue.fonts.map((s) => String(s).replace(/[\r\n]/g, "").trim()).filter(Boolean).slice(0, 400)
+          : undefined,
+        sslVersionMin: ["tls1.2", "tls1.3"].includes(String(fingerprintValue.sslVersionMin || ""))
+          ? String(fingerprintValue.sslVersionMin) : undefined,
+        sslBlacklist: String(fingerprintValue.sslBlacklist ?? "").split(/[\s,;，；]+/)
+          .map((s) => s.trim()).filter((s) => /^0x[0-9a-fA-F]{4}$/.test(s)).slice(0, 64).join(",") || undefined,
       } } : {}),
     },
     advanced: {
@@ -207,6 +251,9 @@ function sanitizeProfile(value) {
       blockVideo: Boolean(advancedValue.blockVideo || advancedValue.blockSound),
       blockImages: Boolean(advancedValue.blockImages),
       clearCacheOnStart: Boolean(advancedValue.clearCacheOnStart),
+      clearCookiesOnStart: Boolean(advancedValue.clearCookiesOnStart),
+      clearLocalStorageOnStart: Boolean(advancedValue.clearLocalStorageOnStart),
+      ipChangePolicy: allowed(advancedValue.ipChangePolicy, ["patch", "notify", "stop"], "patch"),
       cloudBackup: Boolean(advancedValue.cloudBackup),
       syncCookiesOnClose: advancedValue.syncCookiesOnClose !== false,
       syncIndexedDB: Boolean(advancedValue.syncIndexedDB),

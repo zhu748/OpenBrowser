@@ -644,7 +644,7 @@ function escapeXmlAttr(str) {
 
 function isCurrentThemeLight() {
   if (typeof document === 'undefined' || !document.documentElement) return false;
-  const theme = document.documentElement.dataset.uiTheme || 'pixel-workstation';
+  const theme = document.documentElement.dataset.uiTheme || 'modern';
   const def = (typeof UI_THEMES !== 'undefined' && UI_THEMES[theme]) ? UI_THEMES[theme] : null;
   if (def?.supportsColorMode) {
     const mode = document.documentElement.dataset.colorMode || (typeof uiColorMode !== 'undefined' ? uiColorMode : 'light');
@@ -661,30 +661,6 @@ function renderMicroWindowSvg(num, isLight = false, size = UI_MARK_SIZE) {
   let fontSize = 12.5;
   if (len === 3) fontSize = 11;
   else if (len >= 4) fontSize = 9.5;
-
-  if (currentTheme === 'oceanic-fingerprint') {
-    // 水墨青黛指纹浏览器专业微标：暗色为玄石青墨质感，浅色为宣纸冷白配竹青微雕
-    const isLightMode = isCurrentThemeLight();
-    const badgeBg = isLightMode ? '#e7edea' : '#131e22';
-    const badgeBorder = isLightMode ? '#b6c6c1' : '#253a40';
-    const stroke1 = isLightMode ? '#7a968f' : '#36545c';
-    const stroke2 = isLightMode ? '#587971' : '#48707b';
-    const stroke3 = isLightMode ? '#3f6259' : '#5d8b96';
-    const textColor = isLightMode ? '#1e332d' : '#dce6e5';
-
-    return `<svg class="env-window-svg ink-cyan-badge" width="${size}" height="${size}" viewBox="0 0 34 34" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect x="0.5" y="0.5" width="33" height="33" rx="5" fill="${badgeBg}" stroke="${badgeBorder}" stroke-width="1"/>
-      <!-- 精雕微缩水墨青指纹回纹 -->
-      <path d="M7 17C7 11.477 11.477 7 17 7C22.523 7 27 11.477 27 17" stroke="${stroke1}" stroke-width="1" stroke-linecap="round" opacity="0.5"/>
-      <path d="M10 17C10 13.134 13.134 10 17 10C20.866 10 24 13.134 24 17" stroke="${stroke2}" stroke-width="1" stroke-linecap="round" opacity="0.65"/>
-      <path d="M13 17C13 14.791 14.791 13 17 13C19.209 13 21 14.791 21 17" stroke="${stroke3}" stroke-width="1" stroke-linecap="round" opacity="0.85"/>
-      <!-- 居中清爽高透环境序号 -->
-      <text x="17" y="23" text-anchor="middle" dominant-baseline="central" 
-            font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif" 
-            font-size="${fontSize}" font-weight="600" fill="${textColor}" 
-            letter-spacing="-0.02em">${escapeXmlAttr(nStr)}</text>
-    </svg>`;
-  }
 
   // 其他主题兼容回落
   const pal = envBadgeColors(num);
@@ -1115,12 +1091,7 @@ async function applySyncSettings(value, announce = false) {
 const UI_THEME_KEY = 'openbrowser-ui-skin-v1';
 const UI_COLOR_MODE_KEY = 'openbrowser-ui-color-mode-v1';
 const UI_THEMES = Object.freeze({
-  'oceanic-fingerprint': { nameKey: 'theme.oceanic.name', colorScheme: 'dark', supportsColorMode: true },
-  'merge-gateway': { nameKey: 'theme.mergeGateway.name', colorScheme: 'light' },
-  'retro-desktop': { nameKey: 'theme.retro.name', colorScheme: 'light' },
-  'pixel-workstation': { nameKey: 'theme.pixel.name', colorScheme: 'dark' },
-  'nes-light': { nameKey: 'theme.nes.name', colorScheme: 'light' },
-  'element-admin': { nameKey: 'theme.native.name', colorScheme: 'light', supportsColorMode: true },
+  'modern': { nameKey: 'theme.modern.name', colorScheme: 'light' },
 });
 
 function themeDisplayName(theme) {
@@ -1515,7 +1486,7 @@ function applyColorMode(pref, persist = true) {
   if (persist) {
     try { localStorage.setItem(UI_COLOR_MODE_KEY, uiColorPreference); } catch (_) {}
   }
-  const theme = document.documentElement.dataset.uiTheme || 'pixel-workstation';
+  const theme = document.documentElement.dataset.uiTheme || 'modern';
   const definition = UI_THEMES[theme];
   const effectiveScheme = definition?.supportsColorMode ? uiColorMode : (definition?.colorScheme || 'dark');
   document.documentElement.style.colorScheme = effectiveScheme;
@@ -1537,7 +1508,6 @@ function applyColorMode(pref, persist = true) {
   } catch (_) {}
   requestAnimationFrame(() => {
     refreshIcons();
-    if (typeof positionThemePopover === 'function') positionThemePopover();
     if (typeof renderProfiles === 'function') renderProfiles();
     if (typeof renderSessions === 'function') renderSessions();
   });
@@ -1545,9 +1515,8 @@ function applyColorMode(pref, persist = true) {
 
 function applyUiTheme(value, persist = true) {
   closeSelectMenu();
-  // Pixel Workstation is the default; saved selections for the other skins remain supported.
-  if (value === 'anime-dream') value = 'element-admin';
-  const theme = Object.hasOwn(UI_THEMES, value) ? value : 'pixel-workstation';
+  // The refactored default UI is the only skin; stale saved selections fall back to it.
+  const theme = Object.hasOwn(UI_THEMES, value) ? value : 'modern';
   const definition = UI_THEMES[theme];
   document.documentElement.dataset.uiTheme = theme;
   const effectiveScheme = definition?.supportsColorMode ? uiColorMode : definition.colorScheme;
@@ -1560,11 +1529,6 @@ function applyUiTheme(value, persist = true) {
       ? `${themeDisplayName(theme)} · ${uiColorPreference === 'auto' ? t('theme.auto') : (uiColorMode === 'dark' ? t('theme.dark') : t('theme.light'))}`
       : themeDisplayName(theme);
   }
-  $$('[data-ui-theme-option]').forEach((button) => {
-    const active = button.dataset.uiThemeOption === theme;
-    button.classList.toggle('active', active);
-    button.setAttribute('aria-pressed', String(active));
-  });
   syncAppearanceControls(theme);
   // Match native window chrome (title bar) to current skin + appearance
   try {
@@ -1576,23 +1540,17 @@ function applyUiTheme(value, persist = true) {
   // Re-apply Lucide after theme CSS (stroke / currentColor) is in effect
   requestAnimationFrame(() => {
     refreshIcons();
-    // Appearance row may appear/hide — re-clamp so options stay fully on-screen after scale
-    if (typeof positionThemePopover === 'function') positionThemePopover();
     if (typeof renderProfiles === 'function') renderProfiles();
     if (typeof renderSessions === 'function') renderSessions();
   });
 }
 
-let savedUiTheme = 'oceanic-fingerprint';
+let savedUiTheme = 'modern';
 try {
-  savedUiTheme = localStorage.getItem(UI_THEME_KEY) || 'oceanic-fingerprint';
-  const migrated = localStorage.getItem('openbrowser-ui-skin-oceanic-light-default-v1');
-  if (!migrated) {
-    savedUiTheme = 'oceanic-fingerprint';
-    localStorage.setItem(UI_THEME_KEY, savedUiTheme);
-    localStorage.setItem(UI_COLOR_MODE_KEY, 'light');
-    localStorage.setItem('openbrowser-ui-skin-oceanic-light-default-v1', '1');
-  }
+  const stored = localStorage.getItem(UI_THEME_KEY);
+  savedUiTheme = Object.hasOwn(UI_THEMES, stored) ? stored : 'modern';
+  if (stored !== savedUiTheme) localStorage.setItem(UI_THEME_KEY, savedUiTheme);
+  localStorage.setItem(UI_COLOR_MODE_KEY, 'light');
 } catch (_) {}
 applyUiTheme(savedUiTheme, false);
 // UI language: default = system; user can pin en/zh/ja/vi/fr/de/th/id
@@ -1601,7 +1559,7 @@ try {
   window.OpenBrowserI18n?.onChange?.((resolved) => {
     invalidateViewCache();
     refreshLocaleChrome();
-    applyUiTheme(document.documentElement.dataset.uiTheme || 'pixel-workstation', false);
+    applyUiTheme(document.documentElement.dataset.uiTheme || 'modern', false);
     const activeView = document.querySelector('.view.active')?.id?.replace(/^view-/, '') || 'profiles';
     if (typeof switchView === 'function') switchView(activeView);
     // invalidateViewCache() above cleared loadedViews, so switchView re-renders
@@ -1794,6 +1752,11 @@ function serializeEditorProxy(strict = true) {
 
 function editorResolution() {
   const selected = $('#editor-resolution').value;
+  if (selected === 'real') {
+    // 跟随系统：宽高保留原值作为回退占位，真实屏幕尺寸由引擎在启动时传入（profile.hostScreen）。
+    const current = ui.profiles.find((item) => item.id === editingProfileId) || {};
+    return { width: Number(current.width) || 1280, height: Number(current.height) || 820 };
+  }
   if (selected !== 'custom') { const [width, height] = selected.split('x').map(Number); return { width, height }; }
   const width = Number($('#editor-width').value); const height = Number($('#editor-height').value);
   if (!Number.isInteger(width) || width < 640 || width > 7680 || !Number.isInteger(height) || height < 480 || height > 4320) throw new Error(tx('请填写有效的窗口宽度和高度'));
@@ -1819,6 +1782,22 @@ function updateEditorVisibility() {
   $('.geo-custom').hidden = $('#editor-geo-mode').value !== 'custom';
   const customResolution = $('#editor-resolution').value === 'custom'; $('#editor-width').hidden = !customResolution; $('#editor-height').hidden = !customResolution;
   $('#editor-font-size').hidden = $('#editor-font-mode').value !== 'custom';
+  const webglCustom = $('#editor-webgl-meta')?.value === 'custom';
+  const webglCustomCard = $('#editor-webgl-custom-fields');
+  if (webglCustomCard) webglCustomCard.hidden = !webglCustom;
+  const macCustom = $('#editor-mac-mode')?.value === 'custom';
+  const macInput = $('#editor-mac');
+  if (macInput) macInput.hidden = !macCustom;
+  const macShuffle = $('#editor-mac-shuffle');
+  if (macShuffle) macShuffle.hidden = !macCustom;
+  const fontListCustom = $('#editor-font-list-mode')?.value === 'custom';
+  const fontList = $('#editor-font-list');
+  if (fontList) {
+    fontList.hidden = !fontListCustom;
+    fontList.closest('label')?.classList.toggle('disabled-row', !fontListCustom);
+  }
+  const batteryLevel = $('#editor-battery-level');
+  if (batteryLevel) batteryLevel.disabled = $('#editor-battery')?.value === 'blocked';
 }
 
 
@@ -1956,6 +1935,8 @@ function useSystemEditorDefaults() {
   // WebGPU must stay on the product default here: "real" would pair a host adapter with a WebGL
   // identity the user may later disguise, which is a cross API contradiction a page can read.
   editorSet('#editor-webrtc', 'real'); editorSet('#editor-canvas', 'real'); editorSet('#editor-webgl', 'real'); editorSet('#editor-webgpu', 'webgl'); editorSet('#editor-audio', 'real'); editorSet('#editor-media', 'real'); editorSet('#editor-speech', 'real'); editorSet('#editor-bluetooth', 'real');
+  for (const sel of ['#editor-canvas-seed', '#editor-crects-seed', '#editor-audio-seed', '#editor-battery-level', '#editor-font-list', '#editor-ssl-min', '#editor-ssl-blacklist']) editorSet(sel, '');
+  editorCheck('#editor-ua-strict', false);
   updateEditorVisibility(); renderEditorSummary(); toast(tx('已读取本机安全默认值'));
   refreshUaMetaPreview().catch(() => {});
 }
@@ -2030,6 +2011,58 @@ document.getElementById('editor-user-agent')?.addEventListener('input', () => {
 });
 document.getElementById('editor-os')?.addEventListener('change', () => refreshUaMetaPreview().catch(() => {}));
 
+// WebGL 自定义标识随机池：按当前选择的系统给出 ANGLE 风格的常见组合（与内核预设同一命名格式）。
+const WEBGL_CUSTOM_PRESETS = {
+  Windows: [
+    ['Google Inc. (NVIDIA)', 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)'],
+    ['Google Inc. (NVIDIA)', 'ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 SUPER Direct3D11 vs_5_0 ps_5_0, D3D11)'],
+    ['Google Inc. (Intel)', 'ANGLE (Intel, Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_5_0, D3D11)'],
+    ['Google Inc. (Intel)', 'ANGLE (Intel, Intel(R) Iris(R) Xe Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)'],
+    ['Google Inc. (AMD)', 'ANGLE (AMD, AMD Radeon RX 6600 Direct3D11 vs_5_0 ps_5_0, D3D11)'],
+    ['Google Inc. (AMD)', 'ANGLE (AMD, AMD Radeon(TM) Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)'],
+  ],
+  macOS: [
+    ['Google Inc. (Apple)', 'ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)'],
+    ['Google Inc. (Apple)', 'ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)'],
+    ['Google Inc. (Intel)', 'ANGLE (Intel, Intel(R) Iris(TM) Plus Graphics 655, OpenGL 4.1)'],
+  ],
+  Linux: [
+    ['Google Inc. (Intel)', 'ANGLE (Intel, Mesa Intel(R) UHD Graphics 630 (CFL GT2), OpenGL 4.6)'],
+    ['Google Inc. (AMD)', 'ANGLE (AMD, AMD Radeon RX 6700 XT (radeonsi navi22 llvm), OpenGL 4.6)'],
+  ],
+  Android: [
+    ['Google Inc. (Qualcomm)', 'ANGLE (Qualcomm, Adreno (TM) 740, OpenGL ES 3.2)'],
+    ['Google Inc. (ARM)', 'ANGLE (ARM, Mali-G715, OpenGL ES 3.2)'],
+  ],
+};
+function editorWebglShuffle() {
+  const presets = WEBGL_CUSTOM_PRESETS[$('#editor-os')?.value] || WEBGL_CUSTOM_PRESETS.Windows;
+  const picked = presets[Math.floor(Math.random() * presets.length)];
+  editorSet('#editor-webgl-vendor', picked[0]);
+  editorSet('#editor-webgl-renderer', picked[1]);
+}
+document.getElementById('editor-webgl-vendor-shuffle')?.addEventListener('click', () => { editorWebglShuffle(); renderEditorSummary(); });
+document.getElementById('editor-webgl-renderer-shuffle')?.addEventListener('click', () => { editorWebglShuffle(); renderEditorSummary(); });
+document.getElementById('editor-os')?.addEventListener('change', () => {
+  if ($('#editor-webgl-meta')?.value === 'custom') editorWebglShuffle();
+});
+
+// MAC 随机：本地管理位（第 2 个十六进制位取 2/6/A/E）+ 随机 5 字节，冒号分隔。
+document.getElementById('editor-mac-shuffle')?.addEventListener('click', () => {
+  const hex = () => Math.floor(Math.random() * 256).toString(16).padStart(2, '0').toUpperCase();
+  const second = ['2', '6', 'A', 'E'][Math.floor(Math.random() * 4)];
+  const mac = [hex()[0] + second, hex(), hex(), hex(), hex(), hex()].join(':');
+  editorSet('#editor-mac', mac);
+  renderEditorSummary();
+});
+
+document.getElementById('editor-random-fp')?.addEventListener('click', () => {
+  if (typeof randomizeFingerprintDraft === 'function') {
+    randomizeFingerprintDraft();
+    toast(tx('已切换为随机指纹组合，点「立即保存」后生效'));
+  }
+});
+
 // engineProfiles is reassigned at many call sites, so the id index is rebuilt
 // lazily whenever the array identity changes: one Map per burst instead of a
 // linear scan over all engine states per rendered row.
@@ -2055,6 +2088,7 @@ function viewMetaFor(view) {
     'rpa-guide': ['view.rpa.guide', 'view.rpa.guide.sub'],
     'api-mcp': ['view.api-mcp', 'view.api-mcp.sub'],
     logs: ['view.logs', 'view.logs.sub'],
+    kernels: ['view.kernels', 'view.kernels.sub'],
     system: ['view.system', 'view.system.sub'],
   };
   const keys = map[view] || map.profiles;
@@ -2166,6 +2200,10 @@ function switchView(view) {
     if (!loadedViews.has('groups')) {
       renderGroupsPage();
     }
+  }
+  if (view === 'kernels') {
+    window.refreshKernelPanel?.();
+    window.refreshKernelInstalledList?.();
   }
   if (view === 'profiles') {
     if (!loadedViews.has('profiles')) {
@@ -3531,126 +3569,6 @@ function renderLogs() {
   }
 }
 
-function themePopoverViewport() {
-  // Prefer visualViewport so page zoom / pinch / OS scale stay correct.
-  const vv = window.visualViewport;
-  if (vv && Number.isFinite(vv.width) && vv.width > 0) {
-    return {
-      left: vv.offsetLeft || 0,
-      top: vv.offsetTop || 0,
-      width: vv.width,
-      height: vv.height,
-    };
-  }
-  return { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight };
-}
-
-/** Header uses backdrop-filter which makes position:fixed relative to header in Chromium.
- *  Portal the menu to <body> so fixed coords match getBoundingClientRect (viewport). */
-function ensureThemePopoverPortaled() {
-  const popover = $('#theme-popover');
-  if (!popover) return null;
-  if (popover.parentElement !== document.body) {
-    document.body.appendChild(popover);
-  }
-  return popover;
-}
-
-function positionThemePopover() {
-  const trigger = $('#theme-trigger');
-  const popover = ensureThemePopoverPortaled() || $('#theme-popover');
-  if (!trigger || !popover || popover.hidden) return;
-
-  const rect = trigger.getBoundingClientRect();
-  const vp = themePopoverViewport();
-  const pad = 10;
-  // Leave room for macOS traffic lights (left) and Windows caption buttons (right).
-  const safeRight = 10;
-  const gap = 8;
-  const maxW = Math.max(200, Math.min(vp.width - pad - safeRight, vp.width - pad * 2));
-  // Native / English labels need more width than the old 300px fixed box.
-  const preferred = Math.min(360, Math.max(280, maxW));
-  const width = Math.min(preferred, maxW);
-
-  popover.style.position = 'fixed';
-  popover.style.zIndex = '2147483000';
-  popover.style.boxSizing = 'border-box';
-  popover.style.width = `${Math.round(width)}px`;
-  popover.style.maxWidth = `${Math.round(maxW)}px`;
-  popover.style.minWidth = `${Math.min(240, maxW)}px`;
-  popover.style.right = 'auto';
-  popover.style.bottom = 'auto';
-  popover.style.margin = '0';
-  popover.style.overflowX = 'hidden';
-  popover.style.overflowY = 'auto';
-
-  // Measure after width is applied so height reflects wrapped content.
-  const measuredW = Math.min(Math.max(popover.offsetWidth || width, width * 0.9), maxW);
-  const measuredH = popover.offsetHeight || 280;
-  const maxH = Math.max(160, vp.height - pad * 2);
-  popover.style.maxHeight = `${Math.round(maxH)}px`;
-
-  // Prefer align to trigger right edge (menu hangs left under the Theme button).
-  let left = rect.right - measuredW;
-  // Clamp fully inside the visual viewport.
-  const maxLeft = vp.left + vp.width - measuredW - pad;
-  const minLeft = vp.left + pad;
-  left = Math.min(Math.max(left, minLeft), maxLeft);
-
-  let top = rect.bottom + gap;
-  const spaceBelow = (vp.top + vp.height - pad) - top;
-  const spaceAbove = rect.top - gap - (vp.top + pad);
-  const useH = Math.min(measuredH, maxH);
-  if (useH > spaceBelow && spaceAbove > spaceBelow) {
-    top = Math.max(vp.top + pad, rect.top - useH - gap);
-  } else {
-    top = Math.min(top, vp.top + vp.height - useH - pad);
-    top = Math.max(vp.top + pad, top);
-  }
-
-  // Final hard clamp (guards float rounding + titlebar overlays).
-  if (left + measuredW > vp.left + vp.width - 4) {
-    left = Math.max(minLeft, vp.left + vp.width - measuredW - 4);
-  }
-  if (top + useH > vp.top + vp.height - 4) {
-    top = Math.max(vp.top + pad, vp.top + vp.height - useH - 4);
-  }
-
-  popover.style.left = `${Math.round(left)}px`;
-  popover.style.top = `${Math.round(top)}px`;
-}
-
-function setThemePopoverOpen(open) {
-  const trigger = $('#theme-trigger');
-  const popover = ensureThemePopoverPortaled() || $('#theme-popover');
-  if (!popover || !trigger) return;
-  popover.hidden = !open;
-  trigger.setAttribute('aria-expanded', String(open));
-  if (open) {
-    // next frames: portal + paint, then measure (appearance row may show for native theme)
-    requestAnimationFrame(() => {
-      positionThemePopover();
-      requestAnimationFrame(() => {
-        positionThemePopover();
-        // appearance panel toggle can change height after theme click
-        setTimeout(positionThemePopover, 0);
-      });
-    });
-  }
-}
-
-$('#theme-trigger').addEventListener('click', (event) => {
-  event.stopPropagation();
-  setThemePopoverOpen($('#theme-popover')?.hidden !== false);
-});
-window.addEventListener('resize', () => positionThemePopover());
-window.addEventListener('scroll', () => positionThemePopover(), true);
-try {
-  window.visualViewport?.addEventListener('resize', () => positionThemePopover());
-  window.visualViewport?.addEventListener('scroll', () => positionThemePopover());
-} catch (_) {}
-
-
 document.addEventListener('focusin', (event) => {
   if (!openSelectMenu || openSelectMenu.settling) return;
   if (openSelectMenu.menu.contains(event.target) || openSelectMenu.button.contains(event.target)) return;
@@ -3687,7 +3605,6 @@ function reconcileShellLayout() {
     }
   }
   if (openSelectMenu) positionSelectMenu(openSelectMenu.menu, openSelectMenu.button);
-  positionThemePopover();
 }
 
 function scheduleShellLayoutReconcile() {

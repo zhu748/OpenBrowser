@@ -2,27 +2,26 @@
 'use strict';
 
 /**
- * OpenBrowser UI submodule
+ * OpenBrowser UI submodule — 内核管理 page (kernel download / check / delete /
+ * progress, aligned with the reference kernel manager: per-kernel status
+ * badges, 检测内核, 确定删除该内核吗？ confirm, cancelable downloads with a
+ * percent + speed progress bar, and the auto-update policy).
  */
 const {
   toast,
   tx,
   t,
   log,
-  element,
-  buildSquareMark,
-  displayProfileNumber,
   updateEngineBadge,
-  afterUiRender,
   syncThemedSelects,
 } = window.OpenBrowserApp || window;
 const $ = window.$ || ((s, root = document) => root.querySelector(s));
-const $$ = window.$$ || ((s, root = document) => [...root.querySelectorAll(s)]);
 const app = window.OpenBrowserApp || window;
 const ui = app.ui || { profiles: [] };
 const save = app.save || (() => {});
 
-// ========== Independent browser kernel channels ==========
+const ENGINE_LABEL = { chromium: 'Chrome for Testing', firefox: 'Firefox' };
+
 function kernelSourceLabel(source) {
   if (source === 'donut-wayfern') return '独立内核';
   if (source === 'chrome-stable') return 'Google Chrome Stable';
@@ -32,16 +31,11 @@ function kernelSourceLabel(source) {
   return source || '—';
 }
 
-// ========== Multi-version kernel downloads (Chrome for Testing / Firefox) ==========
-function kernelEngineName(engine) {
-  return engine === 'firefox' ? 'Firefox' : 'Chrome for Testing';
-}
-
 function fillVersionSelect(select, payload) {
   if (!select) return;
   select.replaceChildren();
   for (const item of payload?.versions || []) {
-    const label = `${item.version}${item.channel === 'esr' ? tx('（ESR）') : ''}${item.installed ? tx(' · 已安装') : ''}`;
+    const label = `${item.version}${item.channel === 'esr' ? t('system.kernel.esrTag') : ''}${item.installed ? t('system.kernel.installedTag') : ''}`;
     select.add(new Option(label, item.version));
   }
 }
@@ -59,11 +53,98 @@ async function loadKernelVersionOptions(engine, refresh) {
   } catch (error) {
     const target = engine === 'firefox' ? firefox : chromium;
     if (target) target.replaceChildren(new Option(t('system.kernel.loadFailed'), ''));
-    toast(t('system.kernel.catalogFailed') + (error?.message || String(error)));
+    toast(t('system.kernel.catalogFailed') + (error?.message || String(error)), { tone: 'error' });
     return null;
   }
 }
 
+// ========== Progress bar (percent + speed + stage), driven by kernel-progress events ==========
+const progressState = { active: false };
+
+function setProgressVisible(visible) {
+  const wrap = document.getElementById('kernel-progress-wrap');
+  if (wrap) wrap.hidden = !visible;
+}
+
+function renderProgress({ percent = 0, speed = 0, label = '' } = {}) {
+  setProgressVisible(true);
+  const fill = document.getElementById('kernel-progress-fill');
+  const pct = document.getElementById('kernel-progress-percent');
+  const speedEl = document.getElementById('kernel-progress-speed');
+  const labelEl = document.getElementById('kernel-progress-label');
+  const mbps = Math.max(0, Number(speed) || 0) / (1024 * 1024);
+  const shown = mbps >= 1 ? mbps.toFixed(1) : mbps.toFixed(2);
+  if (fill) fill.style.width = `${Math.min(100, Math.max(0, percent))}%`;
+  if (pct) pct.textContent = `${Math.floor(percent)}%`;
+  if (speedEl) speedEl.textContent = t('system.kernel.speed', { speed: shown });
+  if (labelEl && label) labelEl.textContent = label;
+}
+
+function hideProgress() {
+  progressState.active = false;
+  setProgressVisible(false);
+  const cancelBtn = document.getElementById('kernel-cancel-download');
+  if (cancelBtn) cancelBtn.hidden = true;
+}
+
+function stageLabel(phase, fallbackMessage) {
+  switch (phase) {
+    case 'download': return t('system.kernel.stageDownload');
+    case 'extract': return t('system.kernel.stageExtract');
+    case 'validate': return t('system.kernel.stageValidate');
+    case 'check': return t('system.kernel.stageCheck');
+    case 'canceled': return t('system.kernel.stageCanceled');
+    case 'deleted': return t('system.kernel.stageDeleted');
+    case 'done': return t('system.kernel.stageDone');
+    default: return fallbackMessage || t('system.kernel.stageDownload');
+  }
+}
+
+function handleKernelProgressEvent(value) {
+  if (!value || value.type !== 'kernel-progress') return;
+  const phase = value.phase;
+  if (phase === 'download') {
+    progressState.active = true;
+    renderProgress({
+      percent: value.percent || 0,
+      speed: value.speed || 0,
+      label: stageLabel('download'),
+    });
+    const cancelBtn = document.getElementById('kernel-cancel-download');
+    if (cancelBtn) cancelBtn.hidden = false;
+    return;
+  }
+  if (phase === 'extract' || phase === 'validate' || phase === 'check') {
+    renderProgress({ percent: 100, speed: 0, label: stageLabel(phase) });
+    return;
+  }
+  if (phase === 'canceled') {
+    hideProgress();
+    toast(t('system.kernel.cancelToast'), { tone: 'warning' });
+    refreshAfterKernelChange();
+    return;
+  }
+  if (phase === 'deleted') {
+    renderProgress({ percent: 100, speed: 0, label: stageLabel('deleted') });
+    setTimeout(hideProgress, 1200);
+    refreshAfterKernelChange();
+    return;
+  }
+  if (phase === 'done') {
+    hideProgress();
+  }
+}
+
+async function refreshAfterKernelChange() {
+  await Promise.all([
+    refreshKernelInstalledList(),
+    refreshKernelPanel(),
+    loadKernelVersionOptions('chromium', false).catch(() => {}),
+    loadKernelVersionOptions('firefox', false).catch(() => {}),
+  ]);
+}
+
+// ========== Per-version install (with progress bar + cancel) ==========
 async function installKernelVersion(engine) {
   const select = engine === 'firefox'
     ? document.getElementById('kernel-firefox-version')
@@ -72,30 +153,37 @@ async function installKernelVersion(engine) {
     ? document.getElementById('kernel-firefox-install')
     : document.getElementById('kernel-chromium-install');
   const progress = document.getElementById('kernel-progress');
+  const cancelBtn = document.getElementById('kernel-cancel-download');
+  const engineName = ENGINE_LABEL[engine] || engine;
   const version = select?.value;
-  if (!version) { toast(t('system.kernel.pickFirst')); return; }
+  if (!version) { toast(t('system.kernel.pickFirst'), { tone: 'warning' }); return; }
   try {
     if (button) button.disabled = true;
-    if (progress) progress.textContent = tx(`正在下载 ${kernelEngineName(engine)} ${version}…`);
-    toast(tx(`开始下载 ${kernelEngineName(engine)} ${version}…`));
+    if (cancelBtn) cancelBtn.hidden = false;
+    progressState.active = true;
+    if (progress) { progress.hidden = true; progress.textContent = ''; }
+    renderProgress({ percent: 0, speed: 0, label: t('system.kernel.stageDownload') });
+    toast(t('system.kernel.installStart', { engine: engineName, version }));
     const kernel = await window.ops.kernelInstallVersion(engine, version);
-    if (progress) progress.textContent = tx(`${kernelEngineName(engine)} ${version} 已就绪：`) + (kernel?.path || '');
-    toast(tx(`${kernelEngineName(engine)} ${version} 安装完成`));
-    log('Kernel', `${kernelEngineName(engine)} ${version} · ${kernel?.path || ''}`);
-    await Promise.all([
-      loadKernelVersionOptions(engine, false),
-      refreshKernelInstalledList(),
-      refreshKernelPanel(),
-    ]);
+    if (progress) { progress.hidden = false; progress.textContent = t('system.kernel.installReady', { engine: engineName, version }) + (kernel?.path || ''); }
+    toast(t('system.kernel.installDone', { engine: engineName, version }), { tone: 'success' });
+    log('Kernel', `${engineName} ${version} · ${kernel?.path || ''}`);
   } catch (error) {
     const message = error?.message || String(error);
-    if (progress) progress.textContent = tx(`下载 ${kernelEngineName(engine)} 失败：`) + message;
-    toast(tx(`下载 ${kernelEngineName(engine)} 失败：`) + message);
+    const canceled = /canceled|取消/i.test(message);
+    if (progress && !canceled) {
+      progress.hidden = false;
+      progress.textContent = t('system.kernel.installFail', { engine: engineName }) + message;
+      toast(t('system.kernel.installFail', { engine: engineName }) + message, { tone: 'error' });
+    }
   } finally {
     if (button) button.disabled = false;
+    hideProgress();
+    await refreshAfterKernelChange();
   }
 }
 
+// ========== Installed kernel list (badges + 检测 / 设为默认 / 删除) ==========
 async function refreshKernelInstalledList() {
   const host = document.getElementById('kernel-installed-list');
   if (!host) return;
@@ -104,42 +192,118 @@ async function refreshKernelInstalledList() {
     const info = await window.ops.getInfo().catch(() => null);
     const pinned = info?.kernel?.meta?.pin || null;
     if (!Array.isArray(installed) || !installed.length) {
-      host.replaceChildren(Object.assign(document.createElement('small'), { textContent: t('system.kernel.installedNone') }));
+      host.replaceChildren(Object.assign(document.createElement('small'), { textContent: t('system.kernel.installedEmpty') }));
       return;
     }
     host.replaceChildren();
     for (const kernel of installed) {
-      const row = document.createElement('div');
-      row.className = 'kernel-installed-item';
-      const isPinned = pinned && pinned.engine === kernel.engine && pinned.version === kernel.version;
-      const name = document.createElement('strong');
-      name.textContent = kernel.name + (isPinned ? tx(' · 当前默认') : '');
-      const path = document.createElement('code');
-      path.textContent = kernel.path || '';
-      const spacer = document.createElement('span');
-      spacer.className = 'spacer';
-      const pinBtn = document.createElement('button');
-      pinBtn.className = 'outline';
-      pinBtn.type = 'button';
-      pinBtn.textContent = isPinned ? t('system.kernel.clearPin') : t('system.kernel.setPin');
-      pinBtn.addEventListener('click', async () => {
-        try {
-          pinBtn.disabled = true;
-          if (isPinned) await window.ops.kernelUnpin();
-          else await window.ops.kernelPin(kernel.engine, kernel.version);
-          toast(isPinned ? t('system.kernel.restoreDefault') : tx(`已将 ${kernel.name} 设为默认内核`));
-          await Promise.all([refreshKernelInstalledList(), refreshKernelPanel()]);
-        } catch (error) {
-          toast(error?.message || String(error));
-        } finally {
-          pinBtn.disabled = false;
-        }
-      });
-      row.append(name, path, spacer, pinBtn);
-      host.append(row);
+      host.append(buildKernelRow(kernel, pinned));
     }
+    syncThemedSelects?.();
   } catch (error) {
     host.replaceChildren(Object.assign(document.createElement('small'), { textContent: t('system.kernel.installedColon') + (error?.message || String(error)) }));
+  }
+}
+
+function buildKernelRow(kernel, pinned) {
+  const row = document.createElement('div');
+  row.className = 'kernel-installed-item';
+  const isPinned = Boolean(pinned && pinned.engine === kernel.engine && pinned.version === kernel.version);
+  const resolved = kernelStatusCache?.kernel;
+  const inUse = Boolean(resolved && resolved.engine === kernel.engine && String(resolved.version) === String(kernel.version));
+
+  const main = document.createElement('div');
+  main.className = 'kernel-installed-main';
+  const name = document.createElement('strong');
+  name.textContent = kernel.name;
+  const badges = document.createElement('span');
+  badges.className = 'kernel-installed-badges';
+  if (isPinned) badges.append(badge(t('system.kernel.badgeDefault'), 'default'));
+  if (inUse) badges.append(badge(t('system.kernel.badgeInUse'), 'use'));
+  else badges.append(badge(t('system.kernel.badgeIdle'), 'idle'));
+  main.append(name, badges);
+  const path = document.createElement('code');
+  path.className = 'kernel-installed-path';
+  path.textContent = kernel.path || '';
+
+  const spacer = document.createElement('span');
+  spacer.className = 'spacer';
+
+  const actions = document.createElement('div');
+  actions.className = 'kernel-installed-actions';
+  const checkBtn = outlineButton(t('system.kernel.check'));
+  checkBtn.addEventListener('click', () => checkKernel(kernel, checkBtn));
+  const pinBtn = outlineButton(isPinned ? t('system.kernel.clearPin') : t('system.kernel.setPin'));
+  pinBtn.addEventListener('click', async () => {
+    try {
+      pinBtn.disabled = true;
+      if (isPinned) await window.ops.kernelUnpin();
+      else await window.ops.kernelPin(kernel.engine, kernel.version);
+      toast(isPinned ? t('system.kernel.restoreDefault') : t('system.kernel.pinToast', { name: kernel.name }), { tone: 'success' });
+      await refreshAfterKernelChange();
+    } catch (error) {
+      toast(error?.message || String(error), { tone: 'error' });
+    } finally {
+      pinBtn.disabled = false;
+    }
+  });
+  const deleteBtn = outlineButton(t('system.kernel.delete'), 'danger');
+  deleteBtn.addEventListener('click', () => deleteKernel(kernel, deleteBtn));
+  actions.append(checkBtn, pinBtn, deleteBtn);
+
+  row.append(main, path, spacer, actions);
+  return row;
+}
+
+function badge(text, kind) {
+  const el = document.createElement('span');
+  el.className = `kernel-badge-pill kernel-badge-${kind}`;
+  el.textContent = text;
+  return el;
+}
+
+function outlineButton(label, extra = '') {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = `outline${extra ? ` ${extra}` : ''}`;
+  btn.textContent = label;
+  return btn;
+}
+
+async function checkKernel(kernel, button) {
+  try {
+    if (button) button.disabled = true;
+    toast(t('system.kernel.checking', { name: kernel.name }));
+    const result = await window.ops.kernelCheck(kernel.engine, kernel.version);
+    toast(t('system.kernel.checkOk', { name: kernel.name, version: result?.version || kernel.version }), { tone: 'success' });
+    log('Kernel', `check ${kernel.name} ok`);
+  } catch (error) {
+    toast(error?.message || String(error), { tone: 'error' });
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function deleteKernel(kernel, button) {
+  const confirmed = await app.confirmAction?.({
+    title: t('system.kernel.deleteTitle'),
+    message: t('system.kernel.deleteMsg'),
+    details: t('system.kernel.deleteDetails', { name: kernel.name }),
+    actionLabel: t('system.kernel.deleteAction'),
+    danger: true,
+  });
+  if (!confirmed) return;
+  try {
+    if (button) button.disabled = true;
+    await window.ops.kernelDelete(kernel.engine, kernel.version);
+    toast(t('system.kernel.deletedToast', { name: kernel.name }), { tone: 'success' });
+    log('Kernel', `deleted ${kernel.name}`);
+  } catch (error) {
+    const message = error?.message || String(error);
+    toast(/使用中/.test(message) ? t('system.kernel.inUseBlock') : message, { tone: 'error' });
+  } finally {
+    if (button) button.disabled = false;
+    await refreshAfterKernelChange();
   }
 }
 
@@ -147,10 +311,21 @@ document.getElementById('kernel-chromium-install')?.addEventListener('click', ()
 document.getElementById('kernel-firefox-install')?.addEventListener('click', () => installKernelVersion('firefox'));
 document.getElementById('kernel-chromium-refresh')?.addEventListener('click', () => loadKernelVersionOptions('chromium', true));
 document.getElementById('kernel-firefox-refresh')?.addEventListener('click', () => loadKernelVersionOptions('firefox', true));
+document.getElementById('kernel-cancel-download')?.addEventListener('click', async () => {
+  try {
+    const result = await window.ops.kernelCancelDownload();
+    if (!result?.canceled) toast(t('system.kernel.cancelNone'), { tone: 'warning' });
+  } catch (error) {
+    toast(error?.message || String(error), { tone: 'error' });
+  }
+});
 window.refreshKernelPanel = refreshKernelPanel;
+window.refreshKernelInstalledList = refreshKernelInstalledList;
+
+let kernelStatusCache = null;
 
 async function refreshKernelPanel() {
-  const badge = document.getElementById('kernel-status-badge');
+  const badge_ = document.getElementById('kernel-status-badge');
   const pathEl = document.getElementById('kernel-path');
   const verEl = document.getElementById('kernel-version');
   const activePathEl = document.getElementById('kernel-active-path');
@@ -159,99 +334,134 @@ async function refreshKernelPanel() {
   const prefer = document.getElementById('kernel-prefer-independent');
   const allow = document.getElementById('kernel-allow-system');
   const systemBrowser = document.getElementById('kernel-system-browser');
+  const autoUpdate = document.getElementById('kernel-auto-update');
+  const syncNote = document.getElementById('kernel-sync-note');
   try {
     const info = await window.ops.getInfo();
     updateEngineBadge(info);
     const st = info.kernel || await window.ops.kernelStatus();
+    kernelStatusCache = st;
     const k = st.kernel;
-    if (badge) {
-      badge.textContent = k ? tx('已安装 · ') + kernelSourceLabel(k.source) : tx('未安装');
-      badge.style.color = k ? '#15803d' : '#b45309';
+    if (badge_) {
+      badge_.textContent = k ? t('system.kernel.badgeInstalled') : t('system.kernel.badgeNone');
+      badge_.dataset.state = k ? 'ok' : 'warn';
     }
     if (pathEl) pathEl.textContent = k?.path || st.kernelsRoot || '—';
     if (verEl) {
       const remote = st.meta?.remoteVersion;
       verEl.textContent = k
-        ? `${k.version || '—'} · ${kernelSourceLabel(k.source)}${remote && remote !== k.version ? tx(' · 远端 ') + remote : ''}`
-        : tx('点击下方下载 Google Chrome Stable');
+        ? `${k.version || '—'} · ${kernelSourceLabel(k.source)}${remote && remote !== k.version ? ` · ${t('system.kernel.updateAvailable', { version: remote })}` : ''}`
+        : t('system.kernel.badgeNone');
     }
     if (channelEl) {
       channelEl.textContent = st.channel
         ? [st.channel.name, st.channel.metaUrl].filter(Boolean).join(' · ')
         : 'Google Chrome Stable';
     }
+    if (syncNote) {
+      syncNote.textContent = k?.source === 'chrome-stable' && k?.version
+        ? t('system.kernel.syncNoteVersion', { version: k.version })
+        : t('system.kernel.syncNote');
+    }
+    if (autoUpdate) autoUpdate.checked = st.autoUpdateKernel !== false;
     const selection = info.kernelSelection;
-    if (activePathEl) activePathEl.textContent = selection?.browser?.path || selection?.message || tx('未选择可执行文件');
+    if (activePathEl) activePathEl.textContent = selection?.browser?.path || selection?.message || '—';
     if (launchModeEl) {
       const mode = selection?.mode;
       launchModeEl.textContent = mode === 'independent'
-        ? `独立内核 · ${selection.browser.name}`
+        ? `${t('system.kernel.modeIndependent')} · ${selection.browser.name}`
         : mode === 'system-manual'
-          ? `手动选择本机浏览器 · ${selection.browser.name}`
+          ? `${t('system.kernel.modeSystemManual')} · ${selection.browser.name}`
           : mode === 'system'
-            ? `本机浏览器 · ${selection.browser.name}`
-            : tx('已阻止启动：需要独立内核');
+            ? `${t('system.kernel.modeSystem')} · ${selection.browser.name}`
+            : t('system.kernel.blocked');
     }
     if (prefer) prefer.checked = info.preferIndependentKernel !== false;
     if (allow) allow.checked = info.allowSystemBrowserFallback === true;
     if (systemBrowser) {
       const selected = info.systemBrowserPath || '';
-      systemBrowser.replaceChildren(new Option(tx('未选择'), ''));
+      systemBrowser.replaceChildren(new Option(t('system.kernel.none'), ''));
       for (const item of info.systemBrowsers || []) {
         systemBrowser.add(new Option(`${item.name} · ${item.path}`, item.path));
       }
       systemBrowser.value = selected;
     }
   } catch (error) {
-    if (badge) badge.textContent = tx('读取失败');
+    if (badge_) {
+      badge_.textContent = t('system.kernel.badgeFail');
+      badge_.dataset.state = 'fail';
+    }
   }
 }
 
-document.getElementById('kernel-refresh')?.addEventListener('click', refreshKernelPanel);
+document.getElementById('kernel-refresh')?.addEventListener('click', () => {
+  refreshKernelPanel();
+  toast(t('system.kernel.refreshed'));
+});
+document.getElementById('kernel-auto-update')?.addEventListener('change', async (e) => {
+  try {
+    await window.ops.kernelPolicy({ autoUpdateKernel: e.target.checked });
+    toast(e.target.checked ? t('system.kernel.autoUpdateOn') : t('system.kernel.autoUpdateOff'), { tone: 'success' });
+  } catch (error) {
+    e.target.checked = !e.target.checked;
+    toast(error.message, { tone: 'error' });
+  }
+});
 document.getElementById('kernel-download')?.addEventListener('click', async () => {
   const progress = document.getElementById('kernel-progress');
   const btn = document.getElementById('kernel-download');
+  const cancelBtn = document.getElementById('kernel-cancel-download');
   try {
     if (btn) btn.disabled = true;
-    if (progress) progress.textContent = tx('正在准备 Google Chrome Stable…');
-    toast(tx('开始下载 Google Chrome Stable…'));
+    if (cancelBtn) cancelBtn.hidden = false;
+    progressState.active = true;
+    if (progress) { progress.hidden = true; progress.textContent = ''; }
+    renderProgress({ percent: 0, speed: 0, label: t('system.kernel.stageDownload') });
+    toast(t('system.kernel.stableBegin'));
     const kernel = await window.ops.kernelDownload(true);
-    if (progress) progress.textContent = tx('内置内核就绪：') + (kernel?.path || '');
-    toast(tx(`${kernelSourceLabel(kernel?.source)} 已就绪 v${kernel?.version || ''}`));
+    if (progress) { progress.hidden = false; progress.textContent = t('system.kernel.stableReady') + (kernel?.path || ''); }
+    toast(t('system.kernel.stableReadyToast', { source: kernelSourceLabel(kernel?.source), version: kernel?.version || '' }), { tone: 'success' });
     await refreshKernelPanel();
     log('Kernel', `${kernelSourceLabel(kernel?.source)} ${kernel?.version || ''} · ${kernel?.path || ''}`);
   } catch (error) {
     const message = error?.message || String(error);
-    if (progress) progress.textContent = tx('内置内核不可用：') + message;
-    toast(tx('内置内核不可用：') + message);
+    const canceled = /canceled|取消/i.test(message);
+    if (!canceled) {
+      if (progress) { progress.hidden = false; progress.textContent = t('system.kernel.stableFail') + message; }
+      toast(t('system.kernel.stableFail') + message, { tone: 'error' });
+    }
   } finally {
     if (btn) btn.disabled = false;
+    hideProgress();
+    await refreshAfterKernelChange();
   }
 });
 document.getElementById('kernel-check-update')?.addEventListener('click', async () => {
   const progress = document.getElementById('kernel-progress');
   try {
-    if (progress) progress.textContent = tx('查询 Google Chrome Stable 版本…');
+    if (progress) { progress.hidden = true; }
     const result = await window.ops.kernelCheckUpdate();
     if (result.error) {
-      toast(tx('内置内核：') + result.error);
-      if (progress) progress.textContent = tx('内置内核：') + result.error;
+      toast(t('system.kernel.stableCheckFail') + result.error, { tone: 'error' });
       return;
     }
     const remote = result.remote;
     const installed = result.installed;
     if (!installed && !remote) {
-      toast(tx('未找到内置内核'));
+      toast(t('system.kernel.stableMissing'), { tone: 'warning' });
       return;
     }
     const ver = installed?.version || remote?.version || '';
     const src = kernelSourceLabel(installed?.source || remote?.source);
-    toast(tx(`内核 ${src} v${ver}${result.needsUpdate ? '（有新版本）' : '（已是最新）'}`));
-    if (progress) progress.textContent = tx(`内核 ${src} · ${ver}${result.needsUpdate ? ' · 可下载更新' : ' · 已是最新'}`);
+    if (result.needsUpdate) {
+      toast(t('system.kernel.stableUpdatable', { source: src, version: ver }), { tone: 'warning' });
+      if (remote?.version) toast(t('system.kernel.updateAvailable', { version: remote.version }));
+    } else {
+      toast(t('system.kernel.stableLatest', { source: src, version: ver }), { tone: 'success' });
+    }
     await refreshKernelPanel();
   } catch (error) {
-    toast(error.message);
-    if (progress) progress.textContent = tx('读取失败：') + error.message;
+    toast(error.message, { tone: 'error' });
   }
 });
 document.getElementById('kernel-choose')?.addEventListener('click', async () => {
@@ -262,36 +472,34 @@ document.getElementById('kernel-choose')?.addEventListener('click', async () => 
     const validation = kernel?.validation;
     const progress = document.getElementById('kernel-progress');
     if (validation?.browser) {
-      toast(tx(`自定义内核验证通过：${validation.browser}`));
-      if (progress) progress.textContent = tx(`兼容性验证通过：${validation.browser}`);
+      toast(t('system.kernel.customValidated', { browser: validation.browser }), { tone: 'success' });
+      if (progress) { progress.hidden = false; progress.textContent = t('system.kernel.customHint', { browser: validation.browser }); }
     } else {
-      toast(tx('已设置自定义内核'));
+      toast(t('system.kernel.customSet'), { tone: 'success' });
     }
     await refreshKernelPanel();
-  } catch (error) { toast(error.message); }
+  } catch (error) { toast(error.message, { tone: 'error' }); }
 });
 document.getElementById('kernel-prefer-independent')?.addEventListener('change', async (e) => {
   try {
     await window.ops.kernelPolicy({ preferIndependentKernel: e.target.checked });
-    toast(e.target.checked ? tx('已优先独立内核') : tx('已允许使用候选列表第一项'));
-  } catch (error) { toast(error.message); }
+    toast(e.target.checked ? t('system.kernel.preferIndependent') : t('system.kernel.preferOff'), { tone: 'success' });
+  } catch (error) { toast(error.message, { tone: 'error' }); }
 });
 document.getElementById('kernel-allow-system')?.addEventListener('change', async (e) => {
   try {
     const systemBrowser = document.getElementById('kernel-system-browser');
     if (e.target.checked && !systemBrowser?.value) {
       e.target.checked = false;
-      toast(tx('请先手动选择回退浏览器'));
+      toast(t('system.kernel.pickSystemFirst'), { tone: 'warning' });
       return;
     }
     await window.ops.kernelPolicy({ allowSystemBrowserFallback: e.target.checked });
-    toast(e.target.checked
-      ? tx('已允许在独立内核不可用时回退本机浏览器')
-      : tx('已禁止自动回退本机浏览器'));
+    toast(e.target.checked ? t('system.kernel.allowOn') : t('system.kernel.allowOff'), { tone: 'success' });
     await refreshKernelPanel();
   } catch (error) {
     e.target.checked = !e.target.checked;
-    toast(error.message);
+    toast(error.message, { tone: 'error' });
   }
 });
 document.getElementById('kernel-system-browser')?.addEventListener('change', async (e) => {
@@ -299,16 +507,20 @@ document.getElementById('kernel-system-browser')?.addEventListener('change', asy
     const allow = document.getElementById('kernel-allow-system');
     await window.ops.kernelPolicy({ systemBrowserPath: e.target.value });
     if (allow && !e.target.value) allow.checked = false;
-    toast(e.target.value ? tx('已选择手动回退浏览器') : tx('已清除手动回退浏览器'));
+    toast(e.target.value ? t('system.kernel.systemBrowserSet') : t('system.kernel.systemBrowserCleared'), { tone: 'success' });
     await refreshKernelPanel();
   } catch (error) {
-    toast(error.message);
+    toast(error.message, { tone: 'error' });
     await refreshKernelPanel();
   }
 });
 
 window.kernelSourceLabel = kernelSourceLabel;
-// Initial load for the multi-version panel.
+// Progress events arrive over the shared engine:event channel.
+try {
+  window.ops?.onEvent?.((value) => handleKernelProgressEvent(value));
+} catch (_) { /* preload not ready yet: install buttons still work */ }
+// Initial load for the kernel manager page.
 loadKernelVersionOptions('chromium', false);
 loadKernelVersionOptions('firefox', false);
 refreshKernelInstalledList();

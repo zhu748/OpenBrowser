@@ -61,20 +61,6 @@ document.addEventListener('click', async (event) => {
     return;
   }
   if (!event.target.closest('.themed-select-menu, .themed-select')) closeSelectMenu();
-  const colorModeBtn = event.target.closest('[data-color-mode]');
-  if (colorModeBtn && colorModeBtn.closest('#theme-appearance')) {
-    event.stopPropagation();
-    applyColorMode(colorModeBtn.dataset.colorMode);
-    return;
-  }
-  const themeOption = event.target.closest('[data-ui-theme-option]');
-  if (themeOption) {
-    applyUiTheme(themeOption.dataset.uiThemeOption);
-    // Keep popover open so user can switch light/dark for 系统原生
-    if (themeOption.dataset.uiThemeOption !== 'element-admin') setThemePopoverOpen(false);
-  } else if (!event.target.closest('#theme-picker') && !event.target.closest('#theme-popover')) {
-    setThemePopoverOpen(false);
-  }
   const nav = event.target.closest('[data-view]'); if (nav) switchView(nav.dataset.view);
   const action = event.target.closest('[data-action]');
   if (action?.dataset.action === 'start') startProfile(action.dataset.id);
@@ -136,12 +122,16 @@ $('#proxy-select-all')?.addEventListener('change', (event) => {
   renderProxies();
 });
 
+$('#proxy-filter')?.addEventListener('change', () => renderProxies());
+
 $('#proxy-delete-selected')?.addEventListener('click', async () => {
   const ids = [...selectedProxies];
   if (!ids.length) return toast(tx('请先勾选代理'));
+  // Reference delete confirm lists the affected proxies by name.
+  const names = ids.map((id) => proxyLibraryItem(id)?.name || id).slice(0, 3).join('、');
   if (!await confirmAction({
     title: tx('删除代理'),
-    message: tx(`确定删除选中的 ${ids.length} 条代理？`),
+    message: t('proxies.deleteConfirmNamed', { names, count: ids.length }),
     confirmLabel: tx('确认删除'),
     tone: 'danger',
   })) return;
@@ -150,9 +140,67 @@ $('#proxy-delete-selected')?.addEventListener('click', async () => {
     ids.forEach((id) => selectedProxies.delete(id));
     invalidateViewCache(['proxies', 'profiles']);
     await refreshProxies();
-    toast('已删除 ' + ids.length + ' 条代理');
+    toast(t('proxies.deleteDone', { n: ids.length }));
     log('Proxy', '删除 ' + ids.length + ' 条');
   } catch (error) { toast(error.message); }
+});
+
+$('#proxy-delete-failed')?.addEventListener('click', async () => {
+  const failed = (proxyLibrary || []).filter((item) => item.lastCheckOk === false);
+  if (!failed.length) return toast(t('proxies.noFailed'));
+  if (!await confirmAction({
+    title: t('proxies.deleteFailed'),
+    message: t('proxies.deleteFailedConfirm', { n: failed.length }),
+    confirmLabel: tx('确认删除'),
+    tone: 'danger',
+  })) return;
+  try {
+    await window.ops.proxyDelete(failed.map((item) => item.id));
+    failed.forEach((item) => selectedProxies.delete(item.id));
+    invalidateViewCache(['proxies', 'profiles']);
+    await refreshProxies();
+    toast(t('proxies.deleteFailedDone', { n: failed.length }));
+    log('Proxy', '删除失败代理 ' + failed.length + ' 条');
+  } catch (error) { toast(error.message); }
+});
+
+$('#proxy-clear-all')?.addEventListener('click', async () => {
+  if (!(proxyLibrary || []).length) return toast(tx('代理库为空'));
+  if (!await confirmAction({
+    title: t('proxies.clearAll'),
+    message: t('proxies.clearAllConfirm'),
+    confirmLabel: t('proxies.confirmClear'),
+    tone: 'danger',
+  })) return;
+  try {
+    await window.ops.proxyDelete((proxyLibrary || []).map((item) => item.id));
+    selectedProxies.clear();
+    invalidateViewCache(['proxies', 'profiles']);
+    await refreshProxies();
+    toast(t('proxies.clearAllDone'));
+    log('Proxy', '清空代理库');
+  } catch (error) { toast(error.message); }
+});
+
+$('#proxy-export-selected')?.addEventListener('click', async () => {
+  const ids = [...selectedProxies];
+  const items = ids.length ? ids.map((id) => proxyLibraryItem(id)).filter(Boolean) : proxyLibrary;
+  if (!items.length) return toast(tx('请先勾选代理'));
+  const text = buildProxyExportText(items);
+  if (!text) return toast(t('proxies.exportEmpty'));
+  // Download via a Blob URL so Electron's save dialog handles the file; one
+  // importable raw-proxy line per record.
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `proxies-${new Date().toISOString().slice(0, 10)}.txt`;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  toast(t('proxies.exportDone', { n: items.length }));
+  log('Proxy', '导出代理 ' + items.length + ' 条');
 });
 
 $('#proxy-check-selected')?.addEventListener('click', async () => {
@@ -170,6 +218,7 @@ document.addEventListener('change', (event) => {
   if (!box) return;
   if (box.checked) selectedProxies.add(box.dataset.proxySelect);
   else selectedProxies.delete(box.dataset.proxySelect);
+  if (typeof updateProxySelectedChip === 'function') updateProxySelectedChip();
 });
 
 document.addEventListener('click', async (event) => {
@@ -184,7 +233,7 @@ document.addEventListener('click', async (event) => {
     const id = del.dataset.proxyDelete;
     if (!await confirmAction({
       title: tx('删除代理'),
-      message: tx('确定删除该代理？'),
+      message: tx('您确认要删除该代理吗？'),
       confirmLabel: tx('确认删除'),
       tone: 'danger',
     })) return;
@@ -205,9 +254,13 @@ document.addEventListener('click', async (event) => {
       const result = await window.ops.proxyCheck({ id });
       invalidateViewCache('proxies');
       await refreshProxies();
-      toast('连接成功 · ' + result.ip + (result.countryCode ? ' · ' + result.countryCode : ''));
+      const locationParts = [result.country, result.city].filter(Boolean).join(' ');
+      const detailParts = [`IP: ${result.ip}`];
+      if (locationParts) detailParts.push(`${t('proxies.locationLabel')}: ${locationParts}`);
+      if (result.timezone) detailParts.push(`${t('proxies.timezoneLabel')}: ${result.timezone}`);
+      toast(`${t('proxies.testSuccess')} · ${detailParts.join(' · ')}`);
       log('Proxy', '检测 ' + id + ' → ' + result.ip);
-    } catch (error) { toast('检测失败：' + error.message); }
+    } catch (error) { toast(tx('检测失败：') + error.message); }
     return;
   }
   const applyBtn = event.target.closest('[data-proxy-apply]');
@@ -299,7 +352,12 @@ $('#proxy-dialog-test')?.addEventListener('click', async () => {
     if (!proxyValue) throw new Error(tx('请先填写主机和端口'));
     const result = await window.ops.proxyCheck(draft.id ? { id: draft.id } : { proxy: proxyValue, ...draft });
     output.className = 'proxy-test-result success';
-    output.textContent = tx('连接成功 · ') + result.ip + (result.countryCode ? ' · ' + result.countryCode : '');
+    // Reference check-result detail: IP + 位置 + 时区 on one line.
+    const locationParts = [result.country, result.city].filter(Boolean).join(' ');
+    const detailParts = [`IP: ${result.ip}`];
+    if (locationParts) detailParts.push(`${t('proxies.locationLabel')}: ${locationParts}`);
+    if (result.timezone) detailParts.push(`${t('proxies.timezoneLabel')}: ${result.timezone}`);
+    output.textContent = `${t('proxies.testSuccess')} · ${detailParts.join(' · ')}`;
     if (draft.id) await refreshProxies();
   } catch (error) {
     output.className = 'proxy-test-result error';
@@ -523,43 +581,33 @@ $('#proxy-batch-import-form')?.addEventListener('submit', async (event) => {
   event.preventDefault();
   if (event.submitter?.value === 'cancel') return $('#proxy-batch-import-dialog').close('cancel');
   const text = $('#proxy-batch-import-text')?.value || '';
-  const lines = text.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('//') && !l.startsWith('#'));
-  if (!lines.length) return toast(tx('请输入要导入的代理'));
+  if (!text.trim()) return toast(tx('请输入要导入的代理'));
   const submitter = event.submitter; if (submitter && submitter.value !== 'cancel') submitter.disabled = true;
   const defaultProtocol = $('#proxy-batch-default-protocol')?.value || 'socks5';
   const ipChannel = $('#proxy-batch-ip-channel')?.value || 'ip-api';
-  let successCount = 0;
-  let failCount = 0;
-  for (const line of lines) {
-    try {
-      const parsed = parseProxyInputForUi(line, defaultProtocol);
-      if (!parsed || !parsed.host || !parsed.port) {
-        failCount++;
-        continue;
-      }
-      const draft = {
-        name: parsed.name || `${parsed.protocol.toUpperCase()} ${parsed.host}:${parsed.port}`,
-        protocol: parsed.protocol,
-        ipChannel,
-        host: parsed.host,
-        port: Number(parsed.port),
-        username: parsed.username || '',
-        password: parsed.password || '',
-        raw: parsed.raw,
-        remark: parsed.remark || '',
-      };
-      await window.ops.proxyCreate(draft);
-      successCount++;
-    } catch (_) {
-      failCount++;
-    }
-  }
+  // Reference import flow: parse all lines first, drop duplicates against the
+  // input itself and the library, then create the rest and report the outcome
+  // (成功 N · 过滤重复 M · 第 K 行缺少信息) instead of a bare ok/fail count.
+  const parsed = normalizeProxyImportLines(text, proxyLibrary, defaultProtocol, 500);
   try {
+    for (const draft of parsed.drafts) {
+      try {
+        await window.ops.proxyCreate({ ...draft, ipChannel });
+      } catch (_) { /* single-line failure must not abort the batch */ }
+    }
     $('#proxy-batch-import-dialog').close();
     invalidateViewCache(['proxies', 'profiles']);
     await refreshProxies();
-    toast(tx(`批量导入完成：成功 ${successCount} 个` + (failCount ? `，失败 ${failCount} 个` : '')));
-    log('Proxy', `批量导入代理完成：${successCount} 成功，${failCount} 失败`);
+    if (parsed.truncated) toast(t('proxies.importTruncated'));
+    if (!parsed.drafts.length && parsed.missing.length) {
+      toast(t('proxies.importMissingOnly', { lines: parsed.missing.join('、') }));
+      return;
+    }
+    const summaryParts = [t('proxies.importParsed', { n: parsed.drafts.length })];
+    if (parsed.duplicates) summaryParts.push(t('proxies.importDuplicates', { n: parsed.duplicates }));
+    if (parsed.missing.length) summaryParts.push(t('proxies.importMissing', { lines: parsed.missing.join('、') }));
+    toast(summaryParts.join(tx('，')));
+    log('Proxy', `批量导入代理：解析 ${parsed.drafts.length}，重复 ${parsed.duplicates}，缺失 ${parsed.missing.length}`);
   } finally { if (submitter) submitter.disabled = false; }
 });
 

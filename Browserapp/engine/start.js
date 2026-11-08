@@ -71,12 +71,131 @@ function extractTimezoneFromArgs(args) {
   return null;
 }
 
+// 默认搜索引擎模板（对齐常见指纹浏览器的搜索引擎选择）。写入 Default/Preferences 的
+// default_search_provider_data.template_url_data，内核首次启动即按此渲染 NTP/ omnibox。
+const SEARCH_ENGINE_TEMPLATES = {
+  google: { short_name: 'Google', keyword: 'google.com', favicon_url: 'https://www.google.com/favicon.ico', url: 'https://www.google.com/search?q={searchTerms}', suggestions_url: 'https://www.google.com/complete/search?client=chrome&q={searchTerms}' },
+  bing: { short_name: 'Microsoft Bing', keyword: 'bing.com', favicon_url: 'https://www.bing.com/favicon.ico', url: 'https://www.bing.com/search?q={searchTerms}', suggestions_url: 'https://www.bing.com/osjson.aspx?query={searchTerms}' },
+  yahoo: { short_name: 'Yahoo', keyword: 'yahoo.com', favicon_url: 'https://www.yahoo.com/favicon.ico', url: 'https://search.yahoo.com/search?p={searchTerms}', suggestions_url: 'https://search.yahoo.com/sugg/os?command={searchTerms}' },
+  yandex: { short_name: 'Yandex', keyword: 'yandex.com', favicon_url: 'https://yandex.com/favicon.ico', url: 'https://yandex.com/search/?text={searchTerms}', suggestions_url: 'https://suggest.yandex.com/suggest-ff.cgi?part={searchTerms}' },
+  duckduckgo: { short_name: 'DuckDuckGo', keyword: 'duckduckgo.com', favicon_url: 'https://duckduckgo.com/favicon.ico', url: 'https://duckduckgo.com/?q={searchTerms}', suggestions_url: 'https://duckduckgo.com/ac/?q={searchTerms}&type=list' },
+};
+
+/**
+ * Merge the chosen default search engine into <root>/Default/Preferences.
+ * Existing Preferences keys are preserved; failure to write is non-fatal (the
+ * environment still starts with the kernel default search engine).
+ */
+function applyDefaultSearchEngine(root, engine) {
+  const template = SEARCH_ENGINE_TEMPLATES[String(engine || '')];
+  if (!template) return false;
+  const prefsPath = path.join(root, 'Default', 'Preferences');
+  let prefs = {};
+  try { prefs = JSON.parse(fs.readFileSync(prefsPath, 'utf8')); } catch (_) { prefs = {}; }
+  prefs.default_search_provider_data = prefs.default_search_provider_data && typeof prefs.default_search_provider_data === 'object'
+    ? prefs.default_search_provider_data
+    : {};
+  prefs.default_search_provider_data.template_url_data = {
+    short_name: template.short_name,
+    keyword: template.keyword,
+    url: template.url,
+    suggestions_url: template.suggestions_url,
+    favicon_url: template.favicon_url,
+    safe_for_autoreplace: false,
+    originating_url: '',
+    prepopulate_id: 0,
+    date_created: '13300000000000000',
+    last_modified: '13300000000000000',
+    sync_guid: 'openbrowser-' + String(engine),
+    alternate_urls: [],
+  };
+  try {
+    fs.mkdirSync(path.dirname(prefsPath), { recursive: true });
+    fs.writeFileSync(prefsPath, JSON.stringify(prefs));
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * Per-profile launch-time data clearing (对齐「启动浏览器前删除 Cookie / Local Storage」).
+ * Cache clearing already exists via advanced.clearCacheOnStart; this covers the
+ * cookie and local-storage/session/indexeddb stores. Best-effort deletes.
+ */
+function clearProfileLaunchData(root, profile) {
+  const advanced = profile?.advanced && typeof profile.advanced === 'object' ? profile.advanced : {};
+  const rm = (relative) => {
+    try { fs.rmSync(path.join(root, relative), { recursive: true, force: true }); return true; } catch (_) { return false; }
+  };
+  const removed = [];
+  if (advanced.clearCookiesOnStart) {
+    for (const relative of ['Default/Network/Cookies', 'Default/Network/Cookies-journal', 'Default/Cookies', 'Default/Cookies-journal']) {
+      if (rm(relative)) removed.push(relative);
+    }
+  }
+  if (advanced.clearLocalStorageOnStart) {
+    for (const relative of ['Default/Local Storage/leveldb', 'Default/Session Storage', 'Default/IndexedDB']) {
+      if (rm(relative)) removed.push(relative);
+    }
+  }
+  return removed;
+}
+
+/**
+ * Host display bounds for privacy.resolutionMode === 'real' (分辨率跟随系统).
+ * The main process has the Electron screen module; failure falls back to the
+ * profile's stored width/height.
+ */
+function hostScreenSummary() {
+  try {
+    const { screen } = require('electron');
+    const display = screen.getPrimaryDisplay();
+    const width = Number(display?.bounds?.width);
+    const height = Number(display?.bounds?.height);
+    if (Number.isFinite(width) && Number.isFinite(height) && width >= 640 && height >= 480) {
+      return { width, height };
+    }
+  } catch (_) {}
+  return null;
+}
+
+// 九宫格窗口位置：相对屏幕工作区的偏移比例（对齐「窗口位置」选择器）。
+const WINDOW_POSITION_RATIOS = {
+  tl: [0, 0], tm: [0.5, 0], tr: [1, 0],
+  ml: [0, 0.5], mm: [0.5, 0.5], mr: [1, 0.5],
+  bl: [0, 1], bm: [0.5, 1], br: [1, 1],
+};
+
+/**
+ * --window-position for the selected grid cell, clamped into the work area so
+ * corner cells never push the window titlebar off-screen.
+ */
+function windowPositionArg(profile) {
+  const cell = String(profile.privacy?.windowPos || '');
+  const ratios = WINDOW_POSITION_RATIOS[cell];
+  if (!ratios) return null;
+  try {
+    const { screen } = require('electron');
+    const workArea = screen.getPrimaryDisplay().workArea;
+    const width = Math.min(Number(profile.width) || 1280, workArea.width);
+    const height = Math.min(Number(profile.height) || 820, workArea.height);
+    const x = Math.round((workArea.width - width) * ratios[0]) + workArea.x;
+    const y = Math.round((workArea.height - height) * ratios[1]) + workArea.y;
+    return `--window-position=${Math.max(workArea.x, x)},${Math.max(workArea.y, y)}`;
+  } catch (_) {
+    return null;
+  }
+}
+
 module.exports = {
   async _start(raw, lifecycleGeneration = null) {
     // let: language/timezone resolution reassigns profile via applyResolvedLocale
     // start() already applied redaction recovery exactly once. Repeating it here
     // would undo an explicit proxyAuthAction=clear before launch.
     let profile = this.resolveStoredProxyProfile(this.sanitizeProfile(raw));
+    // 记录本次启动前的出口 IP（上次运行持久化的值），供 ipChangePolicy 比对。
+    const previousExitIp = String(profile.exitIp || '').trim();
     this.profiles.set(profile.id, profile);
     this.assertStartGenerationActive(profile.id, lifecycleGeneration);
     if (this.running.has(profile.id)) {
@@ -130,6 +249,17 @@ module.exports = {
     await this.ensureExitNetworkForLocale(profile).catch(() => {});
     profile = this.applyResolvedLocale(profile);
     this.profiles.set(profile.id, profile);
+    // IP 变化守护（对齐「IP 发生变化停止打开 / 提醒」）：patch = 默认，重对齐指纹继续；
+    // stop = 启动阶段直接阻断；notify = 发出提醒事件但不阻断。仅在本次启动真的做了
+    // 出口检测时才可能触发（同会话内的缓存命中不会误报）。
+    const currentExitIp = String(profile.exitIp || '').trim();
+    if (previousExitIp && currentExitIp && previousExitIp !== currentExitIp && profile.advanced?.ipChangePolicy && profile.advanced.ipChangePolicy !== 'patch') {
+      const message = `出口 IP 已变化：${previousExitIp} → ${currentExitIp}`;
+      if (profile.advanced.ipChangePolicy === 'stop') {
+        throw Object.assign(new Error(message + '，已按「IP 变化停止打开」策略阻断启动'), { code: 'ip-changed' });
+      }
+      this.emit({ type: 'ip-change-notice', id: profile.id, previousExitIp, currentExitIp, message });
+    }
     // Persist the effective proxy (including credentials returned by a dynamic
     // proxy API) before launching Chromium. A quit immediately after startup
     // must not leave the renderer's redacted copy as the durable state.
@@ -160,6 +290,15 @@ module.exports = {
     // Parallelized (independent IO overlaps; Preferences writers stay serialized). See method.
     await this.prepareProfileFilesForStart(root, profile, restoreSession);
     await removeSingletonFiles(root, { attempts: 6, delayMs: 40 });
+    // 启动前清理 Cookies / Local Storage / IndexedDB（缓存清理在 clearCacheOnStart 既有路径），
+    // 以及默认搜索引擎写入 Preferences —— 都要在内核读取之前完成。
+    const clearedLaunchData = clearProfileLaunchData(root, profile);
+    if (clearedLaunchData.length) {
+      this.emit({ type: 'profile-launch-data-cleared', id: profile.id, removed: clearedLaunchData });
+    }
+    if (profile.privacy?.searchEngine) {
+      applyDefaultSearchEngine(root, profile.privacy.searchEngine);
+    }
     const pageNetwork = this.networkInfo.get(profile.id) || {};
     const customStartUrls = this.resolveStartupUrls(profile);
     const infoStartUrl = profile.advanced.showInfoPage !== false
@@ -181,6 +320,7 @@ module.exports = {
       exitTimezone: profile.exitTimezone || pageNetwork.timezone || '',
       exitLatitude: profile.exitLatitude ?? pageNetwork.latitude,
       exitLongitude: profile.exitLongitude ?? pageNetwork.longitude,
+      hostScreen: hostScreenSummary(),
     });
     if (proxyConfig) {
       const meta = profile.proxyMeta || {};
@@ -276,6 +416,10 @@ module.exports = {
     if (profile.advanced.blockImages) args.push('--blink-settings=imagesEnabled=false');
     if (profile.advanced.blockVideo || profile.advanced.blockSound) args.push('--autoplay-policy=user-gesture-required');
     else args.push('--autoplay-policy=no-user-gesture-required');
+    // 全屏启动 / 九宫格窗口位置（对齐「窗口大小 = 全屏」「窗口位置」）
+    if (profile.privacy?.fullscreen) args.push('--start-fullscreen');
+    const windowPositionArgValue = windowPositionArg(profile);
+    if (windowPositionArgValue && !profile.privacy?.fullscreen) args.push(windowPositionArgValue);
     // Honor the configured cap instead of a hardcoded 8GB: small-memory
     // machines got GC behavior budgeted for 8GB per environment.
     if (profile.advanced.jsHeapMax) args.push(`--js-flags=--max-old-space-size=${Math.max(256, Math.min(16384, Number(profile.advanced.jsHeapMax) || 4096))}`);
@@ -355,6 +499,12 @@ module.exports = {
       // Appending without de-duplicating would repeat names already present
       // from either the base list or the fingerprint merge above.
       args = appendFlagValue(args, 'disable-features', disabledFeatures.join(','));
+    }
+    // 自定义启动参数（每环境高级逃生舱）：放在所有内置参数之后，同名单值参数后者生效，
+    // 即用户显式覆盖内置默认；profile-sanitizer 已做 token 白名单（--flag 或 --flag=value，
+    // 无空白），这里只做二次防御性过滤。
+    for (const token of String(profile.privacy?.customArgs || '').split(/\s+/)) {
+      if (/^--[a-z0-9][a-z0-9._-]*(=[^\s;]{0,500})?$/i.test(token)) args.push(token);
     }
     // Per-env marker extension: software logo + environment number (1, 2, …)
     const envNumber = normalizeEnvNumber(profile.number || profile.name || profile.id || '1');

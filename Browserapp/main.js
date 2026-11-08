@@ -955,34 +955,20 @@ async function fetchChromeStoreIcon(storeId) {
 
 /** Theme chrome colors for fused title bar (shipping-app look). */
 const THEME_CHROME = {
-  'oceanic-fingerprint': { bg: '#080e1e', overlay: '#0d172e', symbol: '#e2ebf8' },
-  'oceanic-fingerprint-light': { bg: '#eaf0ee', overlay: '#f3f7f6', symbol: '#233833' },
-  'merge-gateway': { bg: '#ffffff', overlay: '#ffffff', symbol: '#080808' },
-  'pixel-workstation': { bg: '#0c0f13', overlay: '#161c20', symbol: '#d1e5d4' },
-  'nes-light': { bg: '#c2b59c', overlay: '#d0c4aa', symbol: '#27231b' },
-  'element-admin': { bg: '#e8e8ed', overlay: '#f5f5f7', symbol: '#1d1d1f' },
-  'element-admin-dark': { bg: '#1c1c1e', overlay: '#2c2c2e', symbol: '#f5f5f7' },
-  'retro-desktop': { bg: '#d8d8d8', overlay: '#ececec', symbol: '#1c1c1c' },
-  default: { bg: '#0b1117', overlay: '#151f27', symbol: '#eef8f0' },
+  'modern': { bg: '#ffffff', overlay: '#f5fbff', symbol: '#111213' },
+  default: { bg: '#ffffff', overlay: '#f5fbff', symbol: '#111213' },
 };
 
 function chromeForTheme(themeId, colorMode) {
-  if (themeId === 'element-admin' && colorMode === 'dark') return THEME_CHROME['element-admin-dark'];
-  if (themeId === 'oceanic-fingerprint' && colorMode === 'light') return THEME_CHROME['oceanic-fingerprint-light'];
   return THEME_CHROME[themeId] || THEME_CHROME.default;
 }
 
 function applyWindowChrome(win, themeId, colorMode) {
   if (!win || win.isDestroyed()) return;
   const chrome = chromeForTheme(themeId, colorMode);
-  // macOS: the System Native (element-admin) theme sits on a frosted-glass sidebar
-  // material. A transparent window backdrop lets that material show through the
-  // translucent sidebar/header; the opaque .content covers it so text stays readable.
-  // Every other theme turns vibrancy off and keeps its opaque background.
-  const macVibrant = process.platform === 'darwin' && themeId === 'element-admin';
-  // Windows 11: same idea via Mica — a system-tinted window backdrop that shows through
-  // the translucent sidebar/header. No-op / solid fallback on Win10 or Electron < 30.
-  const winMica = process.platform === 'win32' && themeId === 'element-admin';
+  // The default UI is opaque; no vibrancy / Mica backdrop.
+  const macVibrant = false;
+  const winMica = false;
   try { win.setBackgroundColor((macVibrant || winMica) ? '#00000000' : chrome.bg); } catch (_) {}
   if (process.platform === 'darwin' && typeof win.setVibrancy === 'function') {
     try { win.setVibrancy(macVibrant ? 'sidebar' : null); } catch (_) {}
@@ -1005,7 +991,7 @@ function applyWindowChrome(win, themeId, colorMode) {
 async function createWindow() {
   const isMac = process.platform === 'darwin';
   const isWin = process.platform === 'win32';
-  const chrome = chromeForTheme('pixel-workstation');
+  const chrome = chromeForTheme('modern');
 
   /** @type {Record<string, any>} */
   const options = {
@@ -1284,6 +1270,15 @@ app.whenReady().then(async () => {
     return engine.kernelManager.installChromiumVersion(wanted);
   });
   registerTrustedIpc('kernel:list-installed', () => engine.kernelManager.listInstalledKernels());
+  registerTrustedIpc('kernel:delete', async (_event, engineFamily, version) => {
+    if (engineFamily !== 'firefox' && engineFamily !== 'chromium') throw new Error('Unknown engine');
+    return engine.kernelDelete(engineFamily, String(version || '').trim());
+  });
+  registerTrustedIpc('kernel:check', async (_event, engineFamily, version) => {
+    if (engineFamily !== 'firefox' && engineFamily !== 'chromium') throw new Error('Unknown engine');
+    return engine.kernelCheck(engineFamily, String(version || '').trim());
+  });
+  registerTrustedIpc('kernel:cancel-download', () => engine.kernelCancelDownload());
   registerTrustedIpc('kernel:pin', async (_event, engineFamily, version) => {
     if (engineFamily !== 'firefox' && engineFamily !== 'chromium') throw new Error('Unknown engine');
     return engine.kernelManager.pinKernel({ engine: engineFamily, version: String(version || '').trim() });

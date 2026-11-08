@@ -34,6 +34,7 @@ const STATUS = {
   VERIFYING: 'verifying',
   COMPLETED: 'completed',
   FAILED: 'failed',
+  CANCELED: 'canceled',
 };
 
 const DEFAULT_TIMEOUT_MS = 60_000;
@@ -178,6 +179,22 @@ class Downloader extends EventEmitter {
     this.total = 0;
     this.attempt = 0;
     this._lastEmit = 0;
+    this.canceled = false;
+    // Rolling window of (time, received) samples for the progress speed readout.
+    this._speedSamples = [];
+    this._activeRes = null;
+  }
+
+  /**
+   * Abort the in-flight transfer; the pending start() call rejects with a
+   * 'download canceled' error and retries are skipped.
+   */
+  cancel() {
+    this.canceled = true;
+    const res = this._activeRes;
+    this._activeRes = null;
+    if (res) res.destroy(new Error('download canceled'));
+    if (this.status !== STATUS.COMPLETED) this.setStatus(STATUS.CANCELED);
   }
 
   setStatus(status) {
@@ -190,9 +207,16 @@ class Downloader extends EventEmitter {
     this.total = total;
     this.progress = total > 0 ? Math.min(1, received / total) : 0;
     const now = Date.now();
+    this._speedSamples.push({ t: now, r: received });
+    while (this._speedSamples.length > 8 || (this._speedSamples.length > 2 && now - this._speedSamples[0].t > 4000)) {
+      this._speedSamples.shift();
+    }
+    const first = this._speedSamples[0];
+    const dt = (now - first.t) / 1000;
+    const speed = dt > 0.2 ? (received - first.r) / dt : 0;
     if (now - this._lastEmit >= PROGRESS_EMIT_INTERVAL_MS || received === total) {
       this._lastEmit = now;
-      this.emit('progress', { received, total, progress: this.progress });
+      this.emit('progress', { received, total, progress: this.progress, speed });
     }
   }
 
@@ -248,6 +272,7 @@ class Downloader extends EventEmitter {
       timeoutMs: this.timeoutMs,
       validateUrl: this.options.validateUrl,
     });
+    this._activeRes = res;
 
     const resumed = startOffset > 0 && res.statusCode === 206;
     if (!resumed) startOffset = 0;
@@ -285,6 +310,7 @@ class Downloader extends EventEmitter {
 
     await new Promise((resolve, reject) => {
       const fail = (err) => {
+        if (this._activeRes === res) this._activeRes = null;
         res.destroy();
         out.destroy();
         reject(err);
@@ -399,16 +425,27 @@ class Downloader extends EventEmitter {
         } catch (err) {
           lastError = err;
           this.emit('retry', { attempt, error: err });
+          if (this.canceled) {
+            // A user cancel must not burn through the retry budget.
+            break;
+          }
           if (attempt < maxAttempts) {
             await new Promise((r) => setTimeout(r, 200 * attempt));
           }
         }
       }
 
+      if (this.canceled) {
+        throw lastError || new Error('download canceled');
+      }
       this.setStatus(STATUS.FAILED);
       this.emit('error', lastError);
       throw lastError || new Error('download failed');
     } catch (err) {
+      if (this.canceled) {
+        // Keep the canceled status distinct from a plain failure.
+        throw err;
+      }
       if (this.status !== STATUS.FAILED) {
         this.setStatus(STATUS.FAILED);
         this.emit('error', err);

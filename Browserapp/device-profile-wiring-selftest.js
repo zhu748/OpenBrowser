@@ -20,6 +20,9 @@ const ok = (n, c) => { assert.ok(c, n); console.log('  PASS  ' + n); passed += 1
 
 const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
 const renderer = fs.readFileSync(path.join(__dirname, 'renderer.js'), 'utf8');
+// editorDraft / loadProfile moved into ui/ui-editor.js; the wiring must be
+// checked against every module that can drive the editor.
+const editorModules = [renderer, fs.readFileSync(path.join(__dirname, 'ui', 'ui-editor.js'), 'utf8')];
 
 // --- markup ---
 const selectMatch = html.match(/<select id="editor-device-profile">([\s\S]*?)<\/select>/);
@@ -27,11 +30,11 @@ ok('index.html has the device profile select', Boolean(selectMatch));
 const optionValues = [...(selectMatch?.[1] || '').matchAll(/value="([^"]*)"/g)].map((m) => m[1]).sort();
 ok(`select offers exactly persona/default (got ${optionValues.join(',')})`, JSON.stringify(optionValues) === JSON.stringify(['default', 'persona']));
 
-// --- renderer read + write ---
-ok('renderer reads the select into the draft', /deviceProfile: \$\('#editor-device-profile'\)\?\.value \|\| 'default'/.test(renderer));
-ok('renderer populates the select from the profile', /editorSet\('#editor-device-profile', privacy\.deviceProfile \|\| 'default'\)/.test(renderer));
-ok('normalizing keeps an existing profile off by default', /deviceProfile: String\(privacy\.deviceProfile \|\| 'default'\)/.test(renderer));
-ok('newly created profiles opt in', /privacy: \{[^}]*deviceProfile: 'persona'[^}]*\}/.test(renderer));
+// --- editor read + write ---
+ok('editor reads the select into the draft', editorModules.some((src) => /deviceProfile: \$\('#editor-device-profile'\)\?\.value \|\| 'default'/.test(src)));
+ok('editor populates the select from the profile', editorModules.some((src) => /editorSet\('#editor-device-profile', privacy\.deviceProfile \|\| 'default'\)/.test(src)));
+ok('normalizing keeps an existing profile off by default', editorModules.some((src) => /deviceProfile: String\(privacy\.deviceProfile \|\| 'default'\)/.test(src)));
+ok('newly created profiles opt in', editorModules.some((src) => /privacy: \{[^}]*deviceProfile: 'persona'[^}]*\}/.test(src)));
 
 // --- engine whitelist accepts exactly those values ---
 {

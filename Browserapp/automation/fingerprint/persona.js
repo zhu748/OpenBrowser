@@ -111,9 +111,19 @@ function buildFingerprint(profile = {}) {
   const { OPENBROWSER_KERNEL_VERSION } = require('../browser-kernel');
   const defaultKernelMajor = Number(String(OPENBROWSER_KERNEL_VERSION || '').match(/^\d+/)?.[0]) || 0;
   const uaMajorPool = kernelMajor ? [kernelMajor] : (defaultKernelMajor ? [defaultKernelMajor] : undefined);
+  // UA 严格模式：强制自定义 UA 的 Chrome 主版本与内核一致 — UA 宣传 131 而内核是 148
+  // 是一次性 CSS/API 特性探测即可识破的硬伤，与下方 uaMajorPool 的注释同理。
+  let uaOverrideStr = uaOverride;
+  const strictMajor = kernelMajor || defaultKernelMajor;
+  if (fpIn.uaStrict && uaOverride && strictMajor) {
+    const uaCurrentMajor = Number(uaOverride.match(/Chrome\/(\d+)/)?.[1]) || 0;
+    if (uaCurrentMajor && uaCurrentMajor !== strictMajor) {
+      uaOverrideStr = uaOverride.replace(/Chrome\/\d+/, `Chrome/${strictMajor}`);
+    }
+  }
   let uaProfile;
-  if (uaOverride) {
-    const osFromUa = parseOsFromUa(uaOverride);
+  if (uaOverrideStr) {
+    const osFromUa = parseOsFromUa(uaOverrideStr);
     // buildUaProfile keys OS_PRESETS with exact lowercase ids; profile records may carry
     // aliases ("iOS", "Mac", "Win11") that would otherwise fall through to the host OS.
     const normalizeOsKey = (value) => {
@@ -125,11 +135,11 @@ function buildFingerprint(profile = {}) {
       return v;
     };
     uaProfile = buildUaProfile({
-      userAgent: uaOverride,
+      userAgent: uaOverrideStr,
       // profile.os participates so a saved "macos_arm" profile keeps its Apple Silicon
       // identity (preset pins architecture=arm) even when it also pins a custom UA string.
       os: normalizeOsKey(fpIn.os || clientHintsIn.os || profile.os) || osFromUa,
-      chromeMajor: Number(fpIn.chromeMajor || clientHintsIn.chromeMajor) || undefined,
+      chromeMajor: (fpIn.uaStrict && strictMajor) || Number(fpIn.chromeMajor || clientHintsIn.chromeMajor) || undefined,
       chromeFull: fpIn.ua_full_version || clientHintsIn.ua_full_version || fpIn.fullVersion,
       platform: fpIn.platform,
       architecture: clientHintsIn.architecture || fpIn.architecture,
@@ -248,7 +258,7 @@ function buildFingerprint(profile = {}) {
       gpu: mobileDevice.gpu.family ? { vendor: mobileDevice.gpu.family, architecture: mobileGpuArch(mobileDevice.gpu.family) } : webglPreset.gpu,
     };
     // A pinned UA still wins, but the rest of the phone identity follows the sampled device.
-    if (!uaOverride) uaProfile = mobileDevice.uaProfile;
+    if (!uaOverrideStr) uaProfile = mobileDevice.uaProfile;
   }
   const inferGpuFromRenderer = (rendererStr) => {
     const s = String(rendererStr || '').toLowerCase();
@@ -323,13 +333,23 @@ function buildFingerprint(profile = {}) {
   // which is what makes "screen smaller than the viewport" style inconsistencies show up.
   // Phones report the full display, and their floor is far below the desktop minimum the window
   // sync assumes, so the panel comes from the persona without the desktop clamp.
+  // privacy.resolutionMode === 'real' (跟随系统) opts out of the drawn panel: the engine passes
+  // the host's real display bounds via profile.hostScreen and every screen field follows them.
   const mobileScreen = mobileDevice ? mobileDevice.screen : null;
-  const screenWidth = mobileScreen
-    ? Math.round(Number(fpIn.screenWidth) || mobileScreen.width)
-    : Math.max(640, Math.round(Number(fpIn.screenWidth) || devicePersona?.screen?.width || width));
-  const screenHeight = mobileScreen
-    ? Math.round(Number(fpIn.screenHeight) || mobileScreen.height)
-    : Math.max(480, Math.round(Number(fpIn.screenHeight) || devicePersona?.screen?.height || height));
+  const hostScreen = (profile.hostScreen && Number(profile.hostScreen.width) >= 640 && Number(profile.hostScreen.height) >= 480)
+    ? { width: Math.round(Number(profile.hostScreen.width)), height: Math.round(Number(profile.hostScreen.height)) }
+    : null;
+  const followHostScreen = String(privacy.resolutionMode || '') === 'real' && !mobileScreen && Boolean(hostScreen);
+  const screenWidth = followHostScreen
+    ? hostScreen.width
+    : mobileScreen
+      ? Math.round(Number(fpIn.screenWidth) || mobileScreen.width)
+      : Math.max(640, Math.round(Number(fpIn.screenWidth) || devicePersona?.screen?.width || width));
+  const screenHeight = followHostScreen
+    ? hostScreen.height
+    : mobileScreen
+      ? Math.round(Number(fpIn.screenHeight) || mobileScreen.height)
+      : Math.max(480, Math.round(Number(fpIn.screenHeight) || devicePersona?.screen?.height || height));
   const taskbarHeight = mobileScreen
     ? 0
     : Math.max(0, Math.round(Number(fpIn.taskbarHeight) || devicePersona?.screen?.taskbarHeight || (uaOs === 'macos' || uaOs === 'macos_arm' ? 25 : 40)));
@@ -380,6 +400,11 @@ function buildFingerprint(profile = {}) {
     || privacy.webrtcLocalIp
     || ''
   ).trim() || createLocalIpFromSeed(stableIdentity + ':webrtc-local:' + seed.toString('hex').slice(0, 8));
+
+  // MAC 地址（对齐常见指纹浏览器的设备标识组）：MAC 本身不会暴露给网页 JS，
+  // 但作为环境硬件标识记录在 init.json 与概要中；custom 模式由用户固定。
+  const macMode = mode('macMode', ['real', 'custom'], privacy.macMode === 'custom' ? 'custom' : 'real');
+  const macValue = String(fpIn.mac || privacy.mac || '').trim().toUpperCase();
 
   // Dynamic layer: may change with proxy/exit IP without rebuilding static seeds
   const webrtcAddress = String(
@@ -543,6 +568,10 @@ function buildFingerprint(profile = {}) {
     webrtcLocalIp,
     deviceName,
     deviceNameMode,
+    mac: {
+      mode: macMode,
+      value: macMode === 'custom' && /^[0-9A-F]{2}(:?[0-9A-F]{2}){5}$/.test(macValue.replace(/-/g, ':')) ? macValue.replace(/-/g, ':') : '',
+    },
     battery: {
       mode: batteryMode,
       value: battery,
@@ -569,11 +598,22 @@ function buildFingerprint(profile = {}) {
     // families exclusive to the other platforms so probes for those can be answered honestly
     // as absent. When claimed OS differs from host OS (e.g. Windows persona on macOS host),
     // enable font isolation even without explicit deviceProfile: 'persona'.
+    // privacy.fontListMode: 'real' = 跟随系统（宿主真实字体列表应答），'noise' = 强制随机列表。
     fonts: (() => {
+      if (String(privacy.fontListMode || '') === 'real') return null;
+      // privacy.fingerprint.fonts: 自定义字体列表（编辑器「自定义列表」档），最高优先级。
+      const customFonts = Array.isArray(fpIn.fonts)
+        ? fpIn.fonts.map((s) => String(s).trim()).filter(Boolean)
+        : (typeof fpIn.fonts === 'string'
+          ? fpIn.fonts.split(/[\n,，;；]+/).map((s) => s.trim()).filter(Boolean)
+          : null);
       const hostPlatformNorm = process.platform === "darwin" ? "macos" : (process.platform === "win32" ? "windows" : (process.platform === "linux" ? "linux" : process.platform));
       const foreignFonts = exclusiveFontsForOtherOs(uaOs);
+      if (customFonts && customFonts.length) {
+        return { os: uaOs, list: customFonts, foreign: foreignFonts };
+      }
       const isCrossOs = String(uaOs || '').replace(/_arm$/, '') !== hostPlatformNorm;
-      const shouldEnableFonts = Boolean(devicePersona || mobileDevice || isCrossOs);
+      const shouldEnableFonts = String(privacy.fontListMode || '') === 'noise' || Boolean(devicePersona || mobileDevice || isCrossOs);
       return (shouldEnableFonts && Array.isArray(foreignFonts) && foreignFonts.length > 0)
         ? {
           os: uaOs,
