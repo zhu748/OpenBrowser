@@ -38,15 +38,21 @@ const CHROMIUM_CATALOG_URL = 'https://googlechromelabs.github.io/chrome-for-test
 /** The feed is much larger than the 2 MiB meta cap in browser-kernel.js. */
 const CHROMIUM_CATALOG_MAX_BYTES = 12 * 1024 * 1024;
 const CHROMIUM_CATALOG_TTL_MS = 24 * 60 * 60 * 1000;
-const CHROMIUM_CATALOG_LIMIT = 60;
+/**
+ * Majors kept in the UI list, newest major first. The CfT feed carries dozens
+ * of point builds per major; mainstream fingerprint browsers offer one kernel
+ * per major (Chrome 146/147/148/149/150…), so the catalog keeps the newest
+ * known-good build of each major instead of a flat stream of builds.
+ */
+const CHROMIUM_CATALOG_MAJOR_LIMIT = 15;
 
 /** Mozilla release history (flat, ~650 KiB) and current-channel versions. */
 const FIREFOX_RELEASES_URL = 'https://product-details.mozilla.org/1.0/firefox.json';
 const FIREFOX_VERSIONS_URL = 'https://product-details.mozilla.org/1.0/firefox_versions.json';
 const FIREFOX_CDN_BASE = 'https://download-installer.cdn.mozilla.net/pub/firefox/releases/';
 const FIREFOX_LOCALE = 'en-US';
-/** Newest N majors offered in the UI; older releases predate today's artifact set. */
-const FIREFOX_CATALOG_MAJOR_LIMIT = 12;
+/** Majors offered in the UI, aligned with the Chromium list. */
+const FIREFOX_CATALOG_MAJOR_LIMIT = 15;
 const FIREFOX_CATALOG_TTL_MS = 24 * 60 * 60 * 1000;
 
 const SHA256_HEX = /^[0-9a-f]{64}$/;
@@ -65,24 +71,29 @@ function chromiumUrlForVersion(version, platform) {
 }
 
 /**
- * CfT feed → [{version, url}] for one platform, newest first.
- * Entries without chrome downloads for this platform are dropped.
+ * CfT feed → exactly one entry per major version, newest major first: for
+ * every major (146/147/148/149/150…) the newest known-good build that has a
+ * chrome download for this platform. Point builds within a major collapse
+ * into that single row; majors without a platform build are dropped.
  */
-function filterChromiumCatalog(feed, platform, limit = CHROMIUM_CATALOG_LIMIT) {
+function filterChromiumCatalog(feed, platform, limit = CHROMIUM_CATALOG_MAJOR_LIMIT) {
   const key = String(platform || chromiumCatalogPlatform());
   const versions = Array.isArray(feed?.versions) ? feed.versions : [];
-  const out = [];
+  const byMajor = new Map();
   for (const entry of versions) {
     const version = String(entry?.version || '').trim();
     if (!/^\d+(?:\.\d+){0,3}$/.test(version)) continue;
     const chrome = Array.isArray(entry?.downloads?.chrome) ? entry.downloads.chrome : [];
     const hit = chrome.find((item) => item && item.platform === key && /^https:\/\//.test(String(item.url || '')));
     if (!hit) continue;
-    if (out.some((item) => item.version === version)) continue;
-    out.push({ version, url: String(hit.url) });
+    const major = Number(version.split('.')[0]);
+    if (!Number.isInteger(major) || major <= 0) continue;
+    const candidate = { version, url: String(hit.url), major };
+    const incumbent = byMajor.get(major);
+    if (!incumbent || compareKernelVersions(version, incumbent.version) > 0) byMajor.set(major, candidate);
   }
-  out.sort((a, b) => compareKernelVersions(b.version, a.version));
-  return out.slice(0, Math.max(1, Number(limit) || CHROMIUM_CATALOG_LIMIT));
+  const out = [...byMajor.values()].sort((a, b) => b.major - a.major);
+  return out.slice(0, Math.max(1, Number(limit) || CHROMIUM_CATALOG_MAJOR_LIMIT));
 }
 
 /** Mozilla platform directory used in release paths and SHA256SUMS. */
@@ -311,7 +322,7 @@ module.exports = {
   CHROMIUM_CATALOG_URL,
   CHROMIUM_CATALOG_MAX_BYTES,
   CHROMIUM_CATALOG_TTL_MS,
-  CHROMIUM_CATALOG_LIMIT,
+  CHROMIUM_CATALOG_MAJOR_LIMIT,
   FIREFOX_RELEASES_URL,
   FIREFOX_VERSIONS_URL,
   FIREFOX_CDN_BASE,

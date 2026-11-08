@@ -32,15 +32,36 @@ function check(name, fn) {
 const cftFeed = {
   versions: [
     { version: '159.0.8149.0', downloads: { chrome: [{ platform: 'linux64', url: 'https://storage.googleapis.com/chrome-for-testing-public/159.0.8149.0/linux64/chrome-linux64.zip' }] } },
-    { version: '158.0.7104.0', downloads: { chrome: [] } }, // no linux64 → dropped
+    { version: '158.0.7104.0', downloads: { chrome: [] } }, // no linux64 → whole major dropped
     { version: '157.0.6533.5', downloads: { chrome: [{ platform: 'linux64', url: 'https://storage.googleapis.com/chrome-for-testing-public/157.0.6533.5/linux64/chrome-linux64.zip' }] } },
     { version: 'not-a-version', downloads: { chrome: [{ platform: 'linux64', url: 'https://x/' }] } },
+    // A newer point build of major 159 listed AFTER the incumbent: the newest
+    // build per major must win regardless of feed order.
+    { version: '159.0.8161.4', downloads: { chrome: [{ platform: 'linux64', url: 'https://storage.googleapis.com/chrome-for-testing-public/159.0.8161.4/linux64/chrome-linux64.zip' }] } },
+    // An older point build of major 157 listed after its incumbent: must NOT win.
+    { version: '157.0.6533.0', downloads: { chrome: [{ platform: 'linux64', url: 'https://storage.googleapis.com/chrome-for-testing-public/157.0.6533.0/linux64/chrome-linux64.zip' }] } },
   ],
 };
 
-check('filterChromiumCatalog sorts newest first and drops platform misses', () => {
+check('filterChromiumCatalog: one entry per major, newest build wins', () => {
   const list = kv.filterChromiumCatalog(cftFeed, 'linux64');
-  assert.deepStrictEqual(list.map((item) => item.version), ['159.0.8149.0', '157.0.6533.5']);
+  assert.deepStrictEqual(list.map((item) => item.version), ['159.0.8161.4', '157.0.6533.5']);
+  assert.deepStrictEqual(list.map((item) => item.major), [159, 157]);
+  assert.strictEqual(list[0].url, 'https://storage.googleapis.com/chrome-for-testing-public/159.0.8161.4/linux64/chrome-linux64.zip');
+});
+
+check('filterChromiumCatalog caps the list at N majors, newest majors first', () => {
+  const feed = {
+    versions: Array.from({ length: 18 }, (_, index) => {
+      const major = 142 + index; // majors 142..159
+      const version = `${major}.0.1000.${index}`;
+      return { version, downloads: { chrome: [{ platform: 'linux64', url: `https://storage.googleapis.com/chrome-for-testing-public/${version}/linux64/chrome-linux64.zip` }] } };
+    }),
+  };
+  const list = kv.filterChromiumCatalog(feed, 'linux64');
+  assert.strictEqual(list.length, kv.CHROMIUM_CATALOG_MAJOR_LIMIT);
+  assert.deepStrictEqual(list.map((item) => item.major).slice(0, 3), [159, 158, 157]);
+  assert.ok(!list.some((item) => item.major < 145), 'oldest majors beyond the limit are dropped');
 });
 
 check('chromiumUrlForVersion embeds version and platform', () => {
