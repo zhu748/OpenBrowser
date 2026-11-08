@@ -178,6 +178,7 @@ function classifyUnlock(kind, status, body, cf) {
 function readHttpResponse(socket, timeout, maxBody = 65536) {
   return new Promise((resolve, reject) => {
     const chunks = [];
+    let received = 0;
     let settled = false;
     const timer = setTimeout(() => {
       if (settled) return;
@@ -193,11 +194,14 @@ function readHttpResponse(socket, timeout, maxBody = 65536) {
       else resolve(value);
     };
     socket.on('data', (chunk) => {
-      chunks.push(chunk);
-      const total = Buffer.concat(chunks);
-      if (total.length > maxBody + 8192) {
+      // Count first, concat once at 'end': a per-chunk Buffer.concat makes
+      // the cost quadratic on ~200KB probe responses.
+      received += chunk.length;
+      if (received > maxBody + 8192) {
         try { socket.destroy(); } catch (_) {}
+        return;
       }
+      chunks.push(chunk);
     });
     socket.once('error', (error) => finish(error));
     socket.once('end', () => {
@@ -907,6 +911,12 @@ class StartPageServer {
     if (profileId) this.sessions.set(profileId, session);
     // also index by serial for query-only access
     if (serial && serial !== profileId) this.sessions.set('serial:' + serial, session);
+    // Bounded retention: every launch creates a session entry, and crashed or
+    // externally-deleted profiles had no eviction path.
+    if (this.sessions.size > 512) {
+      const oldest = this.sessions.keys().next().value;
+      this.sessions.delete(oldest);
+    }
 
     const params = new URLSearchParams();
     params.set('pid', profileId || serial);
@@ -1013,6 +1023,7 @@ class StartPageServer {
     const server = this.server;
     this.server = null;
     this.port = null;
+    this.sessions.clear();
     // Keep-alive sockets (progress polling) would otherwise hold close() open;
     // local-api-server.stop() already did this.
     server.closeAllConnections?.();

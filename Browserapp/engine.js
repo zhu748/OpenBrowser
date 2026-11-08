@@ -22,7 +22,7 @@ const { buildWorkerInjectionScript } = require('./automation/fingerprint');
 const { ensureStartPageServer } = require('./automation/start-page-server');
 const { killProcessTree } = require('./automation/protocol/cross-platform');
 const isolation = require('./automation/isolation');
-const { lockPath, releaseProfileLock, scanProcessesUsingProfile, isPidAlive, auditIsolation, isSystemBrowserExecutable, isPathInsideOrEqual, validateDataRootIsolationSecure, assertProfileId, assertSafeProfileChild } = isolation;
+const { lockPath, releaseProfileLock, scanProcessesUsingProfileAsync, isPidAlive, auditIsolation, isSystemBrowserExecutable, isPathInsideOrEqual, validateDataRootIsolationSecure, assertProfileId, assertSafeProfileChild } = isolation;
 const { BrowserKernelManager } = require('./automation/browser-kernel');
 const {
 } = require('./automation/kernel-init-sync');
@@ -350,7 +350,10 @@ class BrowserEngine {
         for (const [profileId, assignedSet] of this.assignments.entries()) {
           this.sqliteStore.setAssignments(profileId, assignedSet);
         }
-        this.sqliteStore.saveProfiles([...this.profiles.values()]);
+        // Diffed write: the debounced persist runs after every UI edit, and
+        // re-encrypting all rows each time dominated the write cost.
+        if (typeof this.sqliteStore.saveProfilesDiffed === 'function') this.sqliteStore.saveProfilesDiffed([...this.profiles.values()]);
+        else this.sqliteStore.saveProfiles([...this.profiles.values()]);
       };
       const previous = this._persistQueue || Promise.resolve();
       const queued = previous.then(write, write);
@@ -1093,7 +1096,10 @@ class BrowserEngine {
         let childDead = afterStop.child
           ? isChildExited(afterStop.child)
           : (numericPid > 0 ? !isPidAlive(numericPid) : true);
-        let helpers = scanProcessesUsingProfile(afterStop.root || '').pids;
+        // Async scan: the sync variant shells out to PowerShell/ps on the main
+        // thread (up to 8s each) and this recovery path used to run it three
+        // times in a row, freezing every window and IPC handler.
+        let helpers = (await scanProcessesUsingProfileAsync(afterStop.root || '')).pids;
         if (!childDead || helpers.length) {
           if (!childDead && numericPid > 0) {
             await killProcessTree(numericPid, managedBrowserKillOptions(afterStop, afterStop.root)).catch(() => {});
@@ -1106,7 +1112,7 @@ class BrowserEngine {
           childDead = afterStop.child
             ? isChildExited(afterStop.child)
             : (numericPid > 0 ? !isPidAlive(numericPid) : true);
-          helpers = scanProcessesUsingProfile(afterStop.root || '').pids;
+          helpers = (await scanProcessesUsingProfileAsync(afterStop.root || '')).pids;
           if (!childDead || helpers.length) {
             if (numericPid > 0 && isPidAlive(numericPid)) {
               try { process.kill(numericPid, 'SIGKILL'); } catch (_) {}
@@ -1119,7 +1125,7 @@ class BrowserEngine {
         childDead = afterStop.child
           ? isChildExited(afterStop.child)
           : (numericPid > 0 ? !isPidAlive(numericPid) : true);
-        helpers = scanProcessesUsingProfile(afterStop.root || '').pids;
+        helpers = (await scanProcessesUsingProfileAsync(afterStop.root || '')).pids;
         if (!childDead) {
           throw afterStop.cleanupError || Object.assign(
             new Error(`Browser environment ${id} is still stopping; child exit has not been confirmed`),

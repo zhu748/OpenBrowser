@@ -425,7 +425,17 @@ function tlsConnectOptionsFromProfile(profile, { socket, servername, rejectUnaut
 class BufferedReader {
   constructor(socket) {
     this.socket = socket; this.buffer = Buffer.alloc(0); this.waiters = []; this.failure = null;
-    this.onData = (chunk) => { this.buffer = Buffer.concat([this.buffer, chunk]); this.pump(); };
+    this.onData = (chunk) => {
+      this.buffer = Buffer.concat([this.buffer, chunk]);
+      // Hard cap: after a handshake timeout the socket stays in flowing mode,
+      // and a local peer could otherwise grow this buffer without bound.
+      if (this.buffer.length > 65536 && this.waiters.length && this.waiters[0].type === 'size') {
+        this.fail(new Error('Proxy handshake buffer overflow'));
+        try { this.socket.destroy(); } catch (_) {}
+        return;
+      }
+      this.pump();
+    };
     this.onError = (error) => this.fail(error);
     this.onClose = () => this.fail(new Error('Socket closed during handshake'));
     socket.on('data', this.onData); socket.on('error', this.onError); socket.on('close', this.onClose);
@@ -763,9 +773,25 @@ function authorization(config) {
 
 function forwardedHeader(header, config) {
   const lines = header.split('\r\n'); const first = lines.shift();
-  const kept = lines.filter((line) => line && !/^proxy-authorization:/i.test(line) && !/^proxy-connection:/i.test(line));
+  // Rewrite client keep-alive into close: the bridge only rewrites the first
+  // request of a client connection, so a reused connection would bypass the
+  // Proxy-Authorization injection below and the second request would fail
+  // with 407. A WebSocket upgrade must keep its original Connection header.
+  let upgradeLine = '';
+  const kept = lines.filter((line) => {
+    if (!line) return false;
+    const lower = line.toLowerCase();
+    if (lower.startsWith('proxy-authorization:') || lower.startsWith('proxy-connection:')) return false;
+    if (lower.startsWith('connection:')) {
+      if (lower.includes('upgrade')) upgradeLine = line;
+      return false;
+    }
+    return true;
+  });
   if (config.authenticated) kept.push('Proxy-Authorization: ' + authorization(config));
-  return [first, ...kept, 'Proxy-Connection: Keep-Alive', '', ''].join('\r\n');
+  if (upgradeLine) kept.push(upgradeLine);
+  else kept.push('Proxy-Connection: close', 'Connection: close');
+  return [first, ...kept, '', ''].join('\r\n');
 }
 
 function connectHttpUpstream(config, onConnect) {

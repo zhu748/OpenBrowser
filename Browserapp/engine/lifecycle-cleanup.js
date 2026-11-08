@@ -335,8 +335,14 @@ module.exports = {
       if (!processAlive || !cdpAlive) {
         item.watchDeadTicks = (item.watchDeadTicks || 0) + 1;
         item.watchEmptyTicks = 0;
-        // pid gone: stop immediately; CDP flaky: need 2 consecutive fails
-        if (!processAlive || item.watchDeadTicks >= 2) {
+        // pid gone: stop immediately. A live process with a dead debug port can
+        // be a transient renderer/GC stall, so demand an escalating number of
+        // consecutive failures (2, 3, then 4 — the cap) before killing a
+        // browser the OS still reports as healthy.
+        const deadThreshold = Math.min(2 + Math.max(0, (item.watchKillAttempts || 0)), 4);
+        if (!processAlive || item.watchDeadTicks >= deadThreshold) {
+          item.watchKillAttempts = (item.watchKillAttempts || 0) + 1;
+          item.watchDeadTicks = 0;
           this.handleBrowserGone(profileId, item, processAlive ? 'cdp-dead' : 'process-exit', {
             kill: true,
             waitForExit: true,
@@ -345,6 +351,7 @@ module.exports = {
         }
       } else {
         item.watchDeadTicks = 0;
+        item.watchKillAttempts = 0;
         // All windows closed (X on last window): no page targets remain.
         // Firefox has no CDP page targets at all, so an empty reading carries
         // no information there — never auto-stop a live Firefox from it.

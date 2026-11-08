@@ -254,17 +254,25 @@ const fullscreenInjection = String.raw`(() => {
       scanShadowRoots(element.shadowRoot);
     }
   };
-  try { scanShadowRoots(document); } catch (_) {}
-  try {
-    const observer = new MutationObserver((records) => {
-      for (const record of records) for (const node of record.addedNodes || []) {
-        if (!(node instanceof Element)) continue;
-        if (node.shadowRoot) installShadowRoot(node.shadowRoot);
-        scanShadowRoots(node);
-      }
-    });
-    observer.observe(document, { childList: true, subtree: true });
-  } catch (_) {}
+  // Defer the whole subtree scan + observer until fullscreen is actually
+  // possible on this document: installing it eagerly costs a querySelectorAll
+  // walk over every later DOM insertion on every synced tab, while fullscreen
+  // video sites are the only consumers of shadow-root events.
+  const activateFullscreenScan = () => {
+    try { scanShadowRoots(document); } catch (_) {}
+    try {
+      const observer = new MutationObserver((records) => {
+        for (const record of records) for (const node of record.addedNodes || []) {
+          if (!(node instanceof Element)) continue;
+          if (node.shadowRoot) installShadowRoot(node.shadowRoot);
+          scanShadowRoots(node);
+        }
+      });
+      observer.observe(document, { childList: true, subtree: true });
+    } catch (_) {}
+  };
+  if (document.fullscreenEnabled) activateFullscreenScan();
+  else document.addEventListener('webkitfullscreenchange', () => { if (!document.__obScanInstalled) { document.__obScanInstalled = true; activateFullscreenScan(); } }, { once: true, capture: true });
   document.addEventListener('fullscreenchange', () => report('change'), true);
   document.addEventListener('webkitfullscreenchange', () => report('webkit-change'), true);
   document.addEventListener('fullscreenerror', () => report('error', 'Fullscreen request was rejected'), true);
@@ -662,7 +670,16 @@ class LiveSyncController extends LiveSyncV4 {
   }
 
   updateSettings(value = {}) {
-    const boolean = (name) => value[name] === undefined ? this.syncSettings[name] : value[name] !== false;
+    // Strict booleans: an IPC/API caller passing "false", 0 or "off" must not
+    // be interpreted as enabling the setting.
+    const boolean = (name) => {
+      if (value[name] === undefined) return this.syncSettings[name];
+      const raw = value[name];
+      if (typeof raw === 'boolean') return raw;
+      if (typeof raw === 'number') return raw !== 0;
+      if (typeof raw === 'string') return !['false', '0', 'off', 'no', ''].includes(raw.trim().toLowerCase());
+      return Boolean(raw);
+    };
     const range = (name, fallback) => Math.max(0, Math.min(5000, Number(value[name] ?? fallback) || 0));
     const next = { ...this.syncSettings, keyboard: boolean('keyboard'), click: boolean('click'), scroll: boolean('scroll'), track: boolean('track'), delayClick: boolean('delayClick'), delayInput: boolean('delayInput') };
     next.inputMinMs = range('inputMinMs', next.inputMinMs); next.inputMaxMs = Math.max(next.inputMinMs, range('inputMaxMs', next.inputMaxMs));
@@ -1023,6 +1040,7 @@ class LiveSyncController extends LiveSyncV4 {
     this.unsubscribeMasterClose?.(); this.unsubscribeMasterClose = null;
     this.syncSession = null;
     this.tabMap?.clear(); this.desiredUrlMap?.clear(); this.geometryPending?.clear(); this.mirroredWindowStates?.clear();
+    this.slaveTabLists?.clear(); this.inputMirror?.clear();
     this.fullscreenByTab?.clear(); this.fullscreenFrameStates?.clear(); this.fullscreenSessions?.clear(); this.fullscreenActiveSessions?.clear();
     for (const initializations of this.fullscreenSessionInitializations?.values?.() || []) {
       for (const state of initializations.values()) state.cancelled = true;
@@ -1074,7 +1092,10 @@ class LiveSyncController extends LiveSyncV4 {
     } catch (error) {
       console.warn('[live-sync] attach non-critical failure on ' + tab.url + ':', error.message);
       connection.close();
-      this.connections.delete(tab.id);
+      // Only drop the mapping when this connection still owns the slot: a
+      // stop()/restart may have refreshed tabs and attached a new connection
+      // for the same tab id while this attempt was failing.
+      if (this.connections.get(tab.id)?.connection === connection) this.connections.delete(tab.id);
     }
   }
 
@@ -1333,6 +1354,9 @@ class LiveSyncController extends LiveSyncV4 {
         failedSlaves.push({ id: slave.id, message: String(error?.message || error) });
       }
     }));
+    // Feed the per-slave tab cache the refresh just fetched, so forwarded
+    // events in this tick skip their own /json/list fetch.
+    for (const [slaveId, list] of slaveLists) this.slaveTabLists.set(slaveId, { tabs: list, at: Date.now() });
     if (!this.isRefreshGenerationCurrent(refreshGeneration)) return;
     this.unreachableSlaves = new Set(failedSlaves.map((failure) => failure.id));
     if (failedSlaves.length) this.reportUnreachableSlaves(failedSlaves);
@@ -1440,6 +1464,11 @@ class LiveSyncController extends LiveSyncV4 {
       })().catch(() => {});
     }
     if (event.method === 'Runtime.executionContextCreated') {
+      // Isolated worlds receive the same DOM events but keep their own
+      // binding sentinel; injecting there would duplicate every forwarded
+      // action on extension pages, exactly like the main-page path guards
+      // against.
+      if (event.params?.context?.auxData?.isDefault === false) return;
       const contextId = event.params?.context?.id;
       if (contextId) connection.command(
         'Runtime.evaluate',
@@ -1480,7 +1509,7 @@ class LiveSyncController extends LiveSyncV4 {
         if (!target && candidates.length) target = candidates.find((tab) => isBlank(tab.url)) || candidates[candidates.length - 1];
       }
       const desiredUrl = isStart(masterTab.url) ? (environmentStartUrl(this.engine, slave.id) || masterTab.url) : masterTab.url;
-      if (!target) target = await cdp.newTab(slave.port, desiredUrl || 'about:blank');
+      if (!target) { target = await cdp.newTab(slave.port, desiredUrl || 'about:blank'); this.slaveTabLists.delete(slave.id); }
       mapping.set(slave.id, target.id);
       if (!alreadyMapped) await this.markSlave(target, slave.id);
       // Only navigate when the *master* desired URL changed. Re-driving navigation every tick
@@ -1509,6 +1538,7 @@ class LiveSyncController extends LiveSyncV4 {
         ? knownLists.get(slave.id)
         : normalTabs(await cdp.tabs(slave.port));
       const extras = current.filter((tab) => !allowed.has(tab.id));
+      if (extras.length) this.slaveTabLists.delete(slave.id);
       for (const tab of extras) { await cdp.closeTab(slave.port, tab.id).catch(() => {}); closed += 1; }
     }));
     if (closed) this.emit({ type: 'live-sync-tab-reconcile', masterTabs: masterTabs.length, closed });
@@ -1535,10 +1565,13 @@ class LiveSyncController extends LiveSyncV4 {
     const masterTab = this.masterTabs.find((tab) => tab.id === masterTabId);
     if (!this.tabMap.has(masterTabId)) await this.ensureMapping(masterTab || { id: masterTabId, url: 'about:blank' });
     const mapping = this.tabMap.get(masterTabId); let targetId = mapping?.get(slave.id);
-    let tabs = await cdp.tabs(slave.port); let tab = tabs.find((item) => item.id === targetId);
+    // Reuse the refresh tick's list (≤1s old) instead of one HTTP /json/list
+    // fetch per forwarded event; the tick below keeps it fresh.
+    let tabs = await this.slaveTabsFor(slave); let tab = tabs.find((item) => item.id === targetId);
     if (!tab) {
       const desiredUrl = isEnvironmentStartUrl(masterTab?.url) ? (environmentStartUrl(this.engine, slave.id) || masterTab.url) : masterTab?.url;
       tab = await cdp.newTab(slave.port, desiredUrl || 'about:blank'); targetId = tab.id;
+      this.slaveTabLists.delete(slave.id);
       if (!mapping) this.tabMap.set(masterTabId, new Map([[slave.id, targetId]])); else mapping.set(slave.id, targetId);
     }
     return tab;
@@ -2188,7 +2221,10 @@ class LiveSyncController extends LiveSyncV4 {
       if (state.x !== value.scroll.x || state.y !== value.scroll.y) {
         value.scroll = { x: state.x, y: state.y };
         this.markActivity?.();
-        await this.forward(value.tab.id, { type: 'scroll', x: state.x, y: state.y });
+        // Route through the queue so poll-detected scrolls stay ordered
+        // relative to queued mouse events; a direct forward() here can
+        // interleave a scrollTo with an in-flight drag on the slaves.
+        this.enqueueForward(value.tab.id, { type: 'scroll', x: state.x, y: state.y });
       }
     } else if (state.x !== value.scroll.x || state.y !== value.scroll.y) {
       // Keep the baseline current without driving slave tabs while a native

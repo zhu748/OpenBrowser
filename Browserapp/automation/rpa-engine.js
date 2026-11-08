@@ -4,6 +4,7 @@ const cdp = require('../cdp');
 const { applyTrustedChange } = require('./trusted-input');
 const humanInput = require('./human-input');
 const { TypingAbortedError } = require('./human-typing');
+const { TaskScheduler } = require('./task-scheduler');
 const {
   getDownloadFileName,
   getFileNameFromContentDisposition,
@@ -20,9 +21,22 @@ const {
   RPA_PLUS_ACTIONS,
   isRegistered,
 } = require('./protocol/rpa-registry');
-const { TaskScheduler } = require('./task-scheduler');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Virtual-key codes for named keys the RPA `key` step dispatches directly.
+const NAMED_KEY_VK = (name) => {
+  const table = { Enter: 13, Tab: 9, Backspace: 8, Delete: 46, Escape: 27, ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40, Home: 36, End: 35, PageUp: 33, PageDown: 34 };
+  const vk = table[name] || 0;
+  return { windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk };
+};
+
+// JSON-clone with a cycle fallback: keeps concurrent RPA tasks from sharing
+// nested variable objects without throwing on unusual template data.
+function cloneVariableValue(value) {
+  if (value === null || typeof value !== 'object') return value;
+  try { return JSON.parse(JSON.stringify(value)); } catch (_) { return value; }
+}
 const OUTPUT_DIRECTORY = path.join(process.cwd(), 'rpa-output');
 // Launching a browser environment is heavy (disk, CPU, memory). A plan that
 // covers many profiles must not boot every kernel at the same instant, so the
@@ -387,6 +401,12 @@ class RpaEngine {
       name: 'rpa-open',
       concurrency: resolveOpenConcurrency(openConcurrency),
     });
+    // Paces the plan step loops (post-start), keeping them off the CDP pool's
+    // overflow path on multi-profile plans.
+    this.taskBodyScheduler = new TaskScheduler({
+      name: 'rpa-task-body',
+      concurrency: 8,
+    });
     this.cancelled = new Set();
   }
 
@@ -435,6 +455,11 @@ class RpaEngine {
     const planVariables = plan.variables && typeof plan.variables === 'object' && !Array.isArray(plan.variables)
       ? plan.variables
       : {};
+    const clonePlanVariables = () => {
+      const copy = {};
+      for (const [key, value] of Object.entries(planVariables)) copy[key] = cloneVariableValue(value ?? '');
+      return copy;
+    };
     const tasks = typeof this.store.createTasks === 'function'
       ? await this.store.createTasks(profileIds.map((profileId) => ({
         plan_id: plan.id,
@@ -442,7 +467,7 @@ class RpaEngine {
         process_name: plan.process_name || plan.plan_name,
         steps: plan.steps,
         process_content: plan.process_content || null,
-        variables: planVariables,
+        variables: clonePlanVariables(),
       })))
       : await Promise.all(profileIds.map((profileId) => this.store.createTask({
         plan_id: plan.id,
@@ -450,9 +475,12 @@ class RpaEngine {
         process_name: plan.process_name || plan.plan_name,
         steps: plan.steps,
         process_content: plan.process_content || null,
-        variables: planVariables,
+        variables: clonePlanVariables(),
       })));
-    const results = await Promise.all(tasks.map((task) => this.runTask(task.id, options)));
+    // Cap concurrent task bodies (profile start already goes through
+    // openScheduler, but the step loops themselves used to run all at once,
+    // overflowing the CDP pool on multi-profile plans).
+    const results = await Promise.all(tasks.map((task) => this.taskBodyScheduler.schedule(() => this.runTask(task.id, options).catch((error) => ({ success: false, error: error.message })))));
     return { success: results.every((item) => item.success), results };
   }
 
@@ -674,7 +702,14 @@ class RpaEngine {
       if (params.timeoutType === 'randomInterval' || params.timeoutType === 'random') {
         ms = randomBetween(params.timeoutMin ?? params.minMs ?? 300, params.timeoutMax ?? params.maxMs ?? 800);
       }
-      await sleep(Math.max(0, Math.min(120000, ms || 1000)));
+      ms = Math.max(0, Math.min(120000, ms || 1000));
+      // Slice the sleep so stop(taskId) takes effect within ~250ms instead of
+      // after the full 120s cap.
+      const deadline = Date.now() + ms;
+      while (Date.now() < deadline) {
+        if (ctx?.isCancelled?.()) throw new Error('cancelled');
+        await sleep(Math.min(250, Math.max(0, deadline - Date.now())));
+      }
       return;
     }
 
@@ -873,7 +908,9 @@ class RpaEngine {
         if (ctx?.isCancelled?.()) throw new Error('cancelled');
         const found = await this.withPage(port, async (ws) => {
           try {
-            await this.focusSelector(ws, selector, target.selectorRadio, target.serial);
+            // Pure existence probe: focusSelector would steal focus and
+            // scrollIntoView every 200ms, changing the page we are waiting on.
+            await this.probeSelector(ws, selector, target.selectorRadio, target.serial);
             return true;
           } catch (_) { return false; }
         }, ctx);
@@ -1258,9 +1295,10 @@ class RpaEngine {
     }
 
     if (type === 'goback') {
+      // cdp.call's 4th argument is a millisecond timeout, not a context.
       await this.withPage(port, (ws) => cdp.call(ws, 'Runtime.evaluate', {
         expression: 'history.back(); true', returnByValue: true,
-      }, ctx));
+      }));
       await sleep(Math.max(0, Math.min(30000, Number(params.timeout) || 500)));
       return;
     }
@@ -1446,8 +1484,11 @@ class RpaEngine {
       await this.withPage(port, async (ws) => {
         const names = Array.isArray(params.params) ? params.params.map(String) : [];
         const values = names.map((name) => variables[name]);
+        // A cyclic variable value would make JSON.stringify throw and kill the
+        // step with an unrelated TypeError; degrade to null like a snapshot.
+        const serialize = (value) => { try { return JSON.stringify(value); } catch (_) { return 'null'; } };
         const wrapped = names.length
-          ? `(() => { const fn = new Function(...${JSON.stringify(names)}, ${JSON.stringify(expression)}); return fn(...${JSON.stringify(values)}); })()`
+          ? `(() => { const fn = new Function(...${serialize(names)}, ${serialize(expression)}); return fn(...${serialize(values)}); })()`
           : expression;
         const result = await cdp.call(ws, 'Runtime.evaluate', {
           expression: wrapped,
@@ -1543,10 +1584,26 @@ class RpaEngine {
     if (type === 'startnode' || type === 'noop') return;
 
     if (type === 'key' || type === 'press' || type === 'keyboard') {
+      const keyName = text(params.key || 'Enter');
       await this.withPage(port, async (ws) => {
-        const key = text(params.key || params.type || 'Enter');
-        await cdp.call(ws, 'Input.dispatchKeyEvent', { type: 'keyDown', key });
-        await cdp.call(ws, 'Input.dispatchKeyEvent', { type: 'keyUp', key });
+        // Full key descriptor (code/vk/text) so printable keys actually type
+        // and sites listening on event.code fire. Falls back to the bare key
+        // name for anything the descriptor tables don't know.
+        const descriptor = humanInput.keyDescriptor(keyName);
+        if (descriptor) {
+          const base = { key: keyName, code: descriptor.code, windowsVirtualKeyCode: descriptor.vk, nativeVirtualKeyCode: descriptor.vk };
+          await cdp.call(ws, 'Input.dispatchKeyEvent', { type: 'keyDown', ...base, text: keyName, unmodifiedText: descriptor.base });
+          await cdp.call(ws, 'Input.dispatchKeyEvent', { type: 'keyUp', ...base });
+          return;
+        }
+        if (humanInput.isNamedKey(keyName)) {
+          const base = { key: keyName, code: keyName, ...NAMED_KEY_VK(keyName) };
+          await cdp.call(ws, 'Input.dispatchKeyEvent', { type: 'rawKeyDown', ...base });
+          await cdp.call(ws, 'Input.dispatchKeyEvent', { type: 'keyUp', ...base });
+          return;
+        }
+        await cdp.call(ws, 'Input.dispatchKeyEvent', { type: 'keyDown', key: keyName });
+        await cdp.call(ws, 'Input.dispatchKeyEvent', { type: 'keyUp', key: keyName });
       }, ctx);
       return;
     }
@@ -1561,7 +1618,10 @@ class RpaEngine {
     const explicit = task?.variables || task?.global_variables || task?.globalVariable || {};
     if (explicit && typeof explicit === 'object' && !Array.isArray(explicit)) {
       for (const [key, value] of Object.entries(explicit)) {
-        if (key) variables[String(key)] = value ?? '';
+        // Deep-clone per task: a plan's tasks run concurrently, and a shared
+        // nested object (e.g. a useExcel row array) would let one profile's
+        // steps mutate another's data.
+        if (key) variables[String(key)] = cloneVariableValue(value ?? '');
       }
     }
     let process = task.process_content;
@@ -1858,7 +1918,22 @@ class RpaEngine {
   async focusSelector(ws, selector, selectorRadio = 'CSS', serial = 1) {
     const isXpath = String(selectorRadio || 'CSS').toUpperCase().startsWith('X');
     const index = Math.max(0, (Number(serial) || 1) - 1);
-    const expression = isXpath
+    // The existence check shares the query logic with the focusing version
+    // but touches neither focus nor scroll, so waiting steps stay side-effect
+    // free (focus steal + scrollIntoView every poll tick used to fight the
+    // page's own scrolling and trigger focus-driven UI).
+    const probeExpression = isXpath
+      ? `(() => {
+          const snap = document.evaluate(${JSON.stringify(selector)}, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+          return Boolean(snap && snap.snapshotLength > ${index});
+        })()`
+      : `(() => {
+          const nodes = document.querySelectorAll(${JSON.stringify(selector)});
+          return Boolean(nodes && nodes.length > ${index});
+        })()`;
+    const probe = await cdp.call(ws, 'Runtime.evaluate', { expression: probeExpression, returnByValue: true });
+    if (probe.result?.value !== true) throw new Error('Selector not found: ' + selector + (serial > 1 ? ` (index ${serial})` : ''));
+    const focusExpression = isXpath
       ? `(() => {
           const snap = document.evaluate(${JSON.stringify(selector)}, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
           if (!snap || snap.snapshotLength <= ${index}) return false;
@@ -1876,6 +1951,22 @@ class RpaEngine {
           el.focus?.();
           el.scrollIntoView?.({ block: 'center', inline: 'center' });
           return true;
+        })()`;
+    const result = await cdp.call(ws, 'Runtime.evaluate', { expression: focusExpression, returnByValue: true });
+    if (result.result?.value !== true) throw new Error('Selector not found: ' + selector + (serial > 1 ? ` (index ${serial})` : ''));
+  }
+
+  async probeSelector(ws, selector, selectorRadio = 'CSS', serial = 1) {
+    const isXpath = String(selectorRadio || 'CSS').toUpperCase().startsWith('X');
+    const index = Math.max(0, (Number(serial) || 1) - 1);
+    const expression = isXpath
+      ? `(() => {
+          const snap = document.evaluate(${JSON.stringify(selector)}, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+          return Boolean(snap && snap.snapshotLength > ${index});
+        })()`
+      : `(() => {
+          const nodes = document.querySelectorAll(${JSON.stringify(selector)});
+          return Boolean(nodes && nodes.length > ${index});
         })()`;
     const result = await cdp.call(ws, 'Runtime.evaluate', { expression, returnByValue: true });
     if (result.result?.value !== true) throw new Error('Selector not found: ' + selector + (serial > 1 ? ` (index ${serial})` : ''));

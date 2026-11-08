@@ -116,7 +116,11 @@ module.exports = {
     // Do not drop unknown engine profiles here — deleteProfiles is the explicit path.
     if (this.usingSqlite && this.sqliteStore) {
       const incomingList = [...incomingIds].map((id) => this.profiles.get(id)).filter(Boolean);
-      this.sqliteStore.saveProfiles(incomingList);
+      // Row-accurate save: saveProfiles re-encrypts and rewrites every row
+      // (cookies can reach 500 KB per profile), while a UI edit usually
+      // touches one profile.
+      if (typeof this.sqliteStore.saveProfilesDiffed === 'function') this.sqliteStore.saveProfilesDiffed(incomingList);
+      else this.sqliteStore.saveProfiles(incomingList);
     }
     await this.persist();
     return this.status();

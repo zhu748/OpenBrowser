@@ -511,11 +511,23 @@ function groupColorOf(profile) {
   return g ? g.color : '#6b7280';
 }
 
-function countProfilesInGroup(groupId) {
-  if (groupId === 'ungrouped' || groupId === UNGROUPED_ID) {
-    return ui.profiles.filter((p) => !p.trashed && !p.groupId).length;
+// One pass for every chip badge: the filter bar used to run a full profile
+// scan per group on every render.
+let __groupCountsCache = null;
+function rebuildGroupCounts() {
+  const counts = new Map([['ungrouped', 0], ['all', 0]]);
+  for (const p of ui.profiles) {
+    if (p.trashed) continue;
+    counts.set('all', (counts.get('all') || 0) + 1);
+    if (!p.groupId) counts.set('ungrouped', (counts.get('ungrouped') || 0) + 1);
+    else counts.set(p.groupId, (counts.get(p.groupId) || 0) + 1);
   }
-  return ui.profiles.filter((p) => !p.trashed && p.groupId === groupId).length;
+  __groupCountsCache = counts;
+}
+
+function countProfilesInGroup(groupId) {
+  if (!__groupCountsCache) rebuildGroupCounts();
+  return __groupCountsCache.get(groupId === 'ungrouped' || groupId === UNGROUPED_ID ? 'ungrouped' : groupId) || 0;
 }
 
 function fillGroupSelect(selectEl, selectedId = '', { includeAll = false, includeUngrouped = true } = {}) {
@@ -2151,7 +2163,9 @@ function switchView(view) {
     }
   }
   if (view === 'rpa') {
-    const tab = arguments[1] || currentRpaTab || 'flows';
+    // Single source of truth (ui-rpa.js keeps its own private copy; the old
+    // implicit global threw ReferenceError when reached before any click).
+    const tab = arguments[1] || window.currentRpaTab || 'flows';
     showRpaPanel(tab);
     if (!loadedViews.has('rpa')) {
       refreshRpaPage();
@@ -2186,6 +2200,10 @@ function renderGroupsPage() {
   const empty = $('#group-empty');
   const countEl = $('#group-count');
   if (!table) return;
+  // Callers (deleteGroup, group renames) mutate ui.profiles right before
+  // rendering this page; the badge cache otherwise serves pre-mutation counts
+  // and the groups view does not re-render on its own.
+  rebuildGroupCounts();
   table.replaceChildren();
   const groups = listGroups();
   if (countEl) countEl.textContent = String(groups.length);
@@ -2334,6 +2352,7 @@ async function assignSelectedToGroup(groupId) {
 function renderGroupFilterChips() {
   const host = $('#profile-group-chips');
   if (!host) return;
+  rebuildGroupCounts();
   host.replaceChildren();
   const mk = (id, label, count) => {
     const btn = document.createElement('button');
@@ -2463,6 +2482,28 @@ function buildStartProgressCell(profileId, progress) {
   wrap.append(label, track, pct);
   wrap.title = progress?.message || startProgressLabel(progress);
   return wrap;
+}
+
+// In-place patch for an existing start-progress cell: mid-launch progress
+// events change only phase/percent/label, and rebuilding the whole table for
+// each of them (batch start = N rows × 8 events) is pure churn.
+function updateStartProgressCell(wrap, progress) {
+  if (!wrap || !progress) return;
+  const percent = Math.max(0, Math.min(100, Number(progress.percent) || 8));
+  const label = startProgressLabel(progress);
+  wrap.dataset.phase = progress.phase || 'prepare';
+  wrap.title = progress.message || label;
+  const labelEl = wrap.querySelector('.start-progress-label');
+  if (labelEl) labelEl.textContent = label;
+  const track = wrap.querySelector('.start-progress-track');
+  if (track) {
+    track.setAttribute('aria-valuenow', String(percent));
+    track.setAttribute('aria-label', label);
+  }
+  const fill = wrap.querySelector('.start-progress-fill');
+  if (fill) fill.style.width = `${percent}%`;
+  const pct = wrap.querySelector('.start-progress-percent');
+  if (pct) pct.textContent = `${percent}%`;
 }
 
 
@@ -2775,6 +2816,10 @@ function scheduleStatusRefresh() {
   if (__statusRefreshTimer) return;
   __statusRefreshTimer = setTimeout(async () => {
     __statusRefreshTimer = 0;
+    // Hidden window (minimized to tray / another workspace): skip the fetch.
+    // The pending state is picked up on the next visibility change, so a
+    // minimized app no longer runs IPC + full table rebuilds in the dark.
+    if (document.hidden) { __statusRefreshPending = true; return; }
     try { engineProfiles = await window.ops.profileStatus(); mergeEngineExitState(engineProfiles); } catch (_) {}
     scheduleRenderProfiles();
     // The proxy library shows which windows are using each proxy, so a start/stop has to refresh
@@ -2782,6 +2827,10 @@ function scheduleStatusRefresh() {
     if (document.querySelector('#view-proxies.view.active')) scheduleProxySearchRender();
   }, 120);
 }
+let __statusRefreshPending = false;
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && __statusRefreshPending) { __statusRefreshPending = false; scheduleStatusRefresh(); }
+});
 let __sessionRefreshTimer = 0;
 function scheduleSessionRefresh() {
   if (__sessionRefreshTimer) return;
@@ -3082,6 +3131,8 @@ async function applyAssignment(enabled) {
     const result = await window.ops.assignExtension(currentExtension.id, ids, enabled); $('#assign-dialog').close(); invalidateViewCache(['extensions', 'profiles', 'sync']); await refreshExtensions(); await refreshStatus();
     log('Extension', `${currentExtension.name} ${enabled ? '添加到' : '移出'} ${ids.length} 个环境`);
     toast(result.restartRequired?.length ? `已保存；${result.restartRequired.length} 个运行环境需重启` : '批量分配已生效');
+  } catch (error) {
+    toast(String(error?.message || error)); log('Error', String(error?.message || error));
   } finally { assignmentInFlight = false; }
 }
 
@@ -4502,7 +4553,11 @@ $('#add-specified-text-group').addEventListener('click', () => {
 $('#specified-text-groups').addEventListener('input', (event) => {
   const id = event.target.dataset.specifiedText; if (!id) return;
   const group = specifiedTextGroups.find((item) => item.id === id); if (!group) return;
-  group.text = event.target.value.slice(0, 500000); group.cursor = Math.min(group.cursor, Math.max(0, specifiedTextItems(group.text).length - 1)); saveSpecifiedTextGroups();
+  group.text = event.target.value.slice(0, 500000); group.cursor = Math.min(group.cursor, Math.max(0, specifiedTextItems(group.text).length - 1));
+  // Debounced: serializing all 20 groups (up to ~10MB) on every keystroke
+  // froze input and could silently exceed the localStorage quota.
+  clearTimeout(saveSpecifiedTextGroups.__timer);
+  saveSpecifiedTextGroups.__timer = setTimeout(() => saveSpecifiedTextGroups(), 400);
   const counter = document.querySelector('[data-specified-count="' + id + '"]'); if (counter) counter.textContent = specifiedTextItems(group.text).length + ' \u6761\u6587\u672c';
 });
 $('#specified-text-groups').addEventListener('change', (event) => {
@@ -4539,7 +4594,16 @@ window.ops.onEvent(async (value) => {
     } else {
       setStartingProgress(value.id, value);
     }
-    // ~8 progress events fire per launch; coalesce to one render per frame.
+    // ~8 progress events fire per launch. Coalesce to one render per frame —
+    // or, when only the percent/label of an already-rendered start cell
+    // changed (the common case mid-launch), patch that cell in place instead
+    // of rebuilding the whole 100-row table.
+    if (document.hidden) return;
+    const existing = document.querySelector(`.start-progress[data-profile-id="${CSS.escape(value.id)}"]`);
+    if (existing && !value.error && value.starting !== false) {
+      updateStartProgressCell(existing, startingProfiles.get(value.id));
+      return;
+    }
     scheduleRenderProfiles();
   }
   if (value.type === 'status') {

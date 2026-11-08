@@ -291,9 +291,21 @@ class PersistentConnection {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
+        // A hung browser (renderer deadlock, long GC, frozen system) never
+        // closes the socket, so timeouts would otherwise burn full 6s waits
+        // forever while keeping the pool entry alive. Self-destruct after
+        // three consecutive timeouts.
+        this.consecutiveTimeouts = (this.consecutiveTimeouts || 0) + 1;
+        if (this.consecutiveTimeouts >= 3) {
+          try { this.socket?.close(); } catch (_) {}
+        }
         reject(new Error(`CDP timeout: ${method}`));
       }, timeout);
-      this.pending.set(id, { resolve, reject, timer });
+      this.pending.set(id, {
+        resolve: (value) => { this.consecutiveTimeouts = 0; resolve(value); },
+        reject,
+        timer,
+      });
       const socket = this.socket;
       try { socket.send(JSON.stringify(message)); }
       catch (error) {

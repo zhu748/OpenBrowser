@@ -1,4 +1,5 @@
 use crate::error::{CoreError, Result};
+use crate::proxy::bridge::upstream_socket_addr;
 use crate::proxy::config::ProxyConfig;
 use crate::proxy::socks5::{
     reply_code_name, SocksAddress, ATYP_DOMAIN, ATYP_IPV4, ATYP_IPV6, AUTH_METHOD_NONE,
@@ -133,7 +134,7 @@ impl Socks5UdpAssociate {
         client_bnd_addr: Option<SocketAddr>,
     ) -> Result<Self> {
         config.validate()?;
-        let upstream_addr = format!("{}:{}", config.host, config.port);
+        let upstream_addr = upstream_socket_addr(&config.host, config.port);
         timeout(
             Duration::from_secs(8),
             Self::associate_raw(config, client_bnd_addr),
@@ -153,7 +154,7 @@ impl Socks5UdpAssociate {
         config: &ProxyConfig,
         client_bnd_addr: Option<SocketAddr>,
     ) -> Result<Self> {
-        let upstream_addr = format!("{}:{}", config.host, config.port);
+        let upstream_addr = upstream_socket_addr(&config.host, config.port);
         let mut stream = TcpStream::connect(&upstream_addr).await.map_err(|e| {
             CoreError::Proxy(format!(
                 "Failed to connect TCP control to SOCKS5 upstream {}: {}",

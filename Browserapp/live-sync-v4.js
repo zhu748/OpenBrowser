@@ -138,7 +138,11 @@ function normalTabs(values) {
 class LiveSyncController {
   constructor(engine, emit) {
     this.engine = engine; this.emit = emit; this.master = null; this.slaves = []; this.connections = new Map(); this.masterTabs = []; this.timer = null;
-    this.forwardQueue = []; this.forwardQueueRunning = false; this.coalescedForwards = new Map();
+    this.forwardQueue = []; this.forwardQueueRunning = false; this.forwardQueueEpoch = 0; this.coalescedForwards = new Map();
+    // Per-slave tab lists (fed by the refresh tick, ~1s TTL) and the last input
+    // value mirrored onto each slave: together they remove one HTTP /json/list
+    // fetch and the full click/select/insert/blur chain per forwarded keystroke.
+    this.slaveTabLists = new Map(); this.inputMirror = new Map();
     this.forwardStats = { coalesced: 0, dropped: 0, processed: 0, lastLatencyMs: 0 }; this.lastHealthEmitAt = 0;
     this.lastWatchErrorAt = 0; this.refreshInFlight = false; this.refreshTask = null; this.refreshEpoch = 0; this.skippedRefreshes = 0;
     // Adaptive sync poll: active input stays fast; idle stretches to save CPU/CDP load.
@@ -215,7 +219,8 @@ class LiveSyncController {
   stop() {
     this.refreshEpoch += 1;
     this.lastWatchErrorAt = 0; this.refreshTask = null; this.refreshInFlight = false; this.skippedRefreshes = 0;
-    this.forwardQueue.length = 0; this.coalescedForwards.clear(); this.forwardQueueRunning = false;
+    this.forwardQueue.length = 0; this.coalescedForwards.clear(); this.forwardQueueEpoch += 1;
+    this.slaveTabLists.clear(); this.inputMirror.clear();
     if (this.timer) clearTimeout(this.timer); this.timer = null; this.tickCount = 0;
     for (const value of this.connections.values()) value.connection.close(); this.connections.clear();
     const previous = { master: this.master?.id || null, slaves: this.slaves.map((item) => item.id) };
@@ -257,7 +262,10 @@ class LiveSyncController {
     if (action === 'navigate') return `navigate:${tabId}`;
     if (payload.type === 'input') return `input:${tabId}:${payload.selector || payload.name || payload.placeholder || ''}`;
     if (payload.type === 'scroll') return `scroll:${tabId}`;
-    if (payload.type === 'wheel') return `wheel:${tabId}:${payload.x || 0}:${payload.y || 0}`;
+    // Wheel deltas coalesce under one key regardless of position: the slave
+    // resolves its own coordinates, so embedding x:y here defeats merging as
+    // soon as the pointer moves a single pixel.
+    if (payload.type === 'wheel') return `wheel:${tabId}`;
     if (payload.type === 'mouse' && payload.phase === 'move') return `move:${tabId}`;
     return '';
   }
@@ -275,21 +283,35 @@ class LiveSyncController {
       const index = this.forwardQueue.findIndex((entry) => entry.key);
       if (index >= 0) { const [removed] = this.forwardQueue.splice(index, 1); this.coalescedForwards.delete(removed.key); this.forwardStats.dropped += 1; }
     }
+    // Keyless events (click, key, change, contextmenu) never coalesce, so a
+    // stalled slave would grow the queue without bound; cap them separately.
+    if (!key) {
+      const keyless = this.forwardQueue.reduce((count, entry) => count + (entry.key ? 0 : 1), 0);
+      if (keyless >= 512) {
+        const index = this.forwardQueue.findIndex((entry) => !entry.key);
+        if (index >= 0) { this.forwardQueue.splice(index, 1); this.forwardStats.dropped += 1; }
+      }
+    }
     const entry = { tabId, payload, action, key, queuedAt: now }; this.forwardQueue.push(entry); if (key) this.coalescedForwards.set(key, entry);
     this.drainForwardQueue(); this.emitForwardHealth();
   }
 
   async drainForwardQueue() {
     if (this.forwardQueueRunning) return; this.forwardQueueRunning = true;
+    // Ownership token: stop() bumps the epoch so a drain that is still awaiting
+    // a CDP dispatch for the previous session cannot keep consuming events of
+    // the next one (which would interleave two drains and reorder
+    // mousePressed/mouseReleased, keyDown/keyUp pairs).
+    const epoch = this.forwardQueueEpoch;
     try {
-      while (this.master && this.forwardQueue.length) {
+      while (this.master && this.forwardQueue.length && epoch === this.forwardQueueEpoch) {
         const entry = this.forwardQueue.shift(); if (entry.key) this.coalescedForwards.delete(entry.key);
         const started = Date.now();
         try { if (entry.action === 'navigate') await this.navigateSlaves(entry.tabId, entry.payload.url); else await this.forward(entry.tabId, entry.payload); }
         catch (error) { this.emit({ type: 'sync-error', action: 'forward', message: error.message }); }
         this.forwardStats.processed += 1; this.forwardStats.lastLatencyMs = Date.now() - started; this.emitForwardHealth();
       }
-    } finally { this.forwardQueueRunning = false; this.emitForwardHealth(true); }
+    } finally { if (epoch === this.forwardQueueEpoch) { this.forwardQueueRunning = false; this.emitForwardHealth(true); } }
   }
 
   emitForwardHealth(force = false) {
@@ -323,10 +345,25 @@ class LiveSyncController {
 
   masterIndex(tabId) { const index = this.masterTabs.findIndex((tab) => tab.id === tabId); return Math.max(0, index); }
 
+  // The refresh tick already fetched each slave's tab list; reusing it for the
+  // ~1s window between ticks removes one HTTP /json/list round-trip per
+  // forwarded event. Creation paths invalidate it explicitly.
+  async slaveTabsFor(slave) {
+    const cached = this.slaveTabLists.get(slave.id);
+    if (cached && Date.now() - cached.at < 1000) return cached.tabs;
+    const tabs = await cdp.tabs(slave.port);
+    this.slaveTabLists.set(slave.id, { tabs, at: Date.now() });
+    return tabs;
+  }
+
   async slaveTab(slave, tabId) {
-    const index = this.masterIndex(tabId); const masterTab = this.masterTabs[index]; let tabs = normalTabs(await cdp.tabs(slave.port));
+    const index = this.masterIndex(tabId); const masterTab = this.masterTabs[index]; let tabs = normalTabs(await this.slaveTabsFor(slave));
     if (masterTab) { const sameUrl = tabs.find((tab) => tab.url === masterTab.url); if (sameUrl) return sameUrl; }
-    while (tabs.length <= index) { await cdp.newTab(slave.port, masterTab?.url || 'about:blank'); tabs = normalTabs(await cdp.tabs(slave.port)); }
+    while (tabs.length <= index) {
+      await cdp.newTab(slave.port, masterTab?.url || 'about:blank');
+      this.slaveTabLists.delete(slave.id);
+      tabs = normalTabs(await cdp.tabs(slave.port));
+    }
     return tabs[index] || tabs[0] || null;
   }
 
@@ -364,7 +401,10 @@ class LiveSyncController {
     if (payload.type === 'click') {
       await this.eachSlave(tabId, async (tab) => {
         const point = await this.mappedMousePoint(tab, payload, true); const button = ['left', 'middle', 'right'][payload.button] || 'left';
-        await cdp.call(tab.webSocketDebuggerUrl, 'Input.dispatchMouseEvent', { type: 'mousePressed', x: point.x, y: point.y, button, buttons: 1, clickCount: 1 });
+        // buttons is the pressed-button bitmask (left=1, right=2, middle=4);
+        // pages read event.buttons to distinguish right/middle clicks.
+        const pressedMask = button === 'right' ? 2 : button === 'middle' ? 4 : 1;
+        await cdp.call(tab.webSocketDebuggerUrl, 'Input.dispatchMouseEvent', { type: 'mousePressed', x: point.x, y: point.y, button, buttons: pressedMask, clickCount: 1 });
         await cdp.call(tab.webSocketDebuggerUrl, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x: point.x, y: point.y, button, buttons: 0, clickCount: 1 });
       });
     } else if (payload.type === 'mouse') {
@@ -381,17 +421,49 @@ class LiveSyncController {
       const expression = `(() => { const deep=(path)=>{let root=document,e=null;for(const part of path.split(/\s*>>>\s*/)){e=root.querySelector(part);if(!e)return null;root=e.shadowRoot||e;}return e;}; const at=(doc,px,py)=>{let e=doc.elementFromPoint(px,py);if(e&&e.tagName==='IFRAME'){try{const r=e.getBoundingClientRect(),d=e.contentDocument;if(d)return at(d,px-r.left,py-r.top);}catch(_){}}return e;}; const similar=()=>{const list=[...document.querySelectorAll('input,textarea,[contenteditable="true"]')];let best=null,score=-1e9;for(const e of list){const r=e.getBoundingClientRect();let s=-Math.hypot(r.left+r.width/2-${x},r.top+r.height/2-${y});if(${tag}&&e.tagName.toLowerCase()===${tag})s+=400;if(${type}&&e.type===${type})s+=120;if(${name}&&e.name===${name})s+=300;if(${placeholder}&&e.placeholder===${placeholder})s+=240;if(s>score){score=s;best=e;}}return best;}; const e=deep(${selector})||at(document,${x},${y})||similar(); if(!e)return false; e.focus(); if(typeof e.setSelectionRange==='function' && ${start}!==null)e.setSelectionRange(${start},${end}); return true; })()`;
       await this.eachSlave(tabId, async (tab) => { const result = await cdp.call(tab.webSocketDebuggerUrl, 'Runtime.evaluate', { expression, returnByValue: true }); if (result.result?.value || !x || !y) return; await cdp.call(tab.webSocketDebuggerUrl, 'Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 }); await cdp.call(tab.webSocketDebuggerUrl, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 }); });
     } else if (payload.type === 'input') {
-      await this.eachSlave(tabId, async (tab) => {
+      await this.eachSlave(tabId, async (tab, slave) => {
         const call = (method, params = {}) => cdp.call(tab.webSocketDebuggerUrl, method, params);
-        let result = await applyTrustedInput(call, payload);
-        const x = Number(payload.x) || 0;
-        const y = Number(payload.y) || 0;
-        if (!result.ok && x && y) {
-          await call('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
-          await call('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
-          result = await applyTrustedInput(call, { ...payload, selector: '' });
+        // Mirror fast path: when the slave already holds a prefix of the new
+        // value on the same element, one probe + one insertText suffices (no
+        // click/focus/select/blur chain, no per-keystroke focus flicker). Any
+        // divergence (deletion, mid-string edit, JS rewrite) falls through to
+        // the full resync below.
+        const mirrorKey = `${slave.id}:${tab.id}`;
+        const mirror = this.inputMirror.get(mirrorKey);
+        const sameElement = mirror
+          && payload.selector && payload.selector === mirror.selector
+          && String(payload.tag || '') === mirror.tag
+          && String(payload.name || '') === mirror.name
+          && String(payload.placeholder || '') === mirror.placeholder;
+        const deletions = String(payload.inputType || '').startsWith('delete');
+        let result = null;
+        if (sameElement && payload.value === mirror.value) {
+          result = { ok: true, native: true, reason: 'mirror-current' };
+        } else if (sameElement && !deletions && payload.value.startsWith(mirror.value)) {
+          result = await applyTrustedInput(call, {
+            ...payload,
+            value: payload.value.slice(mirror.value.length),
+          }, { insertOnly: true, expectedLength: mirror.value.length, expectedHead: mirror.value.slice(0, 64) });
         }
-        if (!result.ok && this.emit) this.emit({ type: 'sync-input-skipped', tabId, reason: result.reason || 'native-input-failed' });
+        if (!result?.ok) {
+          result = await applyTrustedInput(call, payload);
+          const x = Number(payload.x) || 0;
+          const y = Number(payload.y) || 0;
+          if (!result.ok && x && y) {
+            await call('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
+            await call('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
+            result = await applyTrustedInput(call, { ...payload, selector: '' });
+          }
+        }
+        if (result.ok) {
+          this.inputMirror.set(mirrorKey, {
+            selector: payload.selector || '', value: String(payload.value ?? ''),
+            tag: String(payload.tag || ''), name: String(payload.name || ''), placeholder: String(payload.placeholder || ''),
+          });
+          if (this.inputMirror.size > 256) this.inputMirror.delete(this.inputMirror.keys().next().value);
+        } else if (this.emit) {
+          this.emit({ type: 'sync-input-skipped', tabId, reason: result.reason || 'native-input-failed' });
+        }
       });
     } else if (payload.type === 'change') {
       await this.eachSlave(tabId, async (tab) => {

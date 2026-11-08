@@ -31,6 +31,7 @@ const { writeBrowserStartupDiagnostic } = require('./engine/diagnostics');
 const appUpdate = require('./automation/app-update');
 const settingsStore = require('./automation/local-settings');
 const cloudOps = require('./automation/cloud-ops');
+const { lifecycleTimeout } = require('./engine/browser-candidates');
 
 const appDataRoot = app.getPath('appData');
 const userDataRoot = path.join(appDataRoot, 'openbrowser');
@@ -591,7 +592,16 @@ function registerTextShortcuts() {
       ['Control+Q', 'same-text'],
     );
   }
-  const registered = shortcuts.map(([accelerator, action]) => ({ accelerator, registered: globalShortcut.register(accelerator, () => emit({ type: 'text-shortcut', action })) }));
+  // Gate the text-shortcut handlers on a visible main window: the same-text /
+  // specified-text / random-number paste actions are meaningless with no UI to
+  // aim them at, and System+Q-class bindings otherwise hijack the keys from
+  // every other app while OpenBrowser sits minimized to the tray.
+  const gateTextShortcut = (action) => () => {
+    const visible = mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized();
+    if (!visible) return;
+    emit({ type: 'text-shortcut', action });
+  };
+  const registered = shortcuts.map(([accelerator, action]) => ({ accelerator, registered: globalShortcut.register(accelerator, gateTextShortcut(action)) }));
   emit({ type: 'text-shortcut-status', registered });
 }
 
@@ -653,8 +663,26 @@ async function fetchStorePackage(url, proxyValue = null) {
     if (finalUrl.protocol !== 'https:' || !['clients2.google.com', 'clients2.googleusercontent.com'].includes(finalUrl.hostname)) throw new Error('Chrome 商店返回了不受信任的下载地址');
     if (!response.ok) throw new Error('Chrome 商店下载失败（HTTP ' + response.status + '）');
     const declared = Number(response.headers.get('content-length') || 0); if (declared > 120 * 1024 * 1024) throw new Error('扩展包超过 120 MB 限制');
-    const buffer = Buffer.from(await response.arrayBuffer()); if (buffer.length > 120 * 1024 * 1024) throw new Error('扩展包超过 120 MB 限制');
-    return buffer;
+    // Stream into the buffer with a hard cap enforced while reading: a lying
+    // (or absent) content-length must not buffer an unbounded body in memory.
+    const LIMIT = 120 * 1024 * 1024;
+    const chunks = []; let received = 0;
+    const reader = response.body?.getReader?.();
+    if (reader) {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        received += value?.byteLength || 0;
+        if (received > LIMIT) throw new Error('扩展包超过 120 MB 限制');
+        chunks.push(Buffer.from(value));
+      }
+      if (received > LIMIT) throw new Error('扩展包超过 120 MB 限制');
+    } else {
+      const whole = Buffer.from(await response.arrayBuffer());
+      if (whole.length > LIMIT) throw new Error('扩展包超过 120 MB 限制');
+      chunks.push(whole);
+    }
+    return chunks.length === 1 ? chunks[0] : Buffer.concat(chunks);
   } catch (error) {
     if (error.name === 'AbortError') throw new Error('连接 Chrome 应用商店超时，请检查系统代理/VPN，或先给任一目标环境配置可访问 Google 的代理');
     throw error;
@@ -1842,11 +1870,18 @@ function beginQuitCleanup() {
       if (stopResult.remaining.length) return;
       if (!cloud.enabled || !cloud.autoSyncOnQuit) return;
       try {
-        await cloudOps.runCloudBackup({
-          profiles: [...(engine?.profiles?.values?.() || [])],
-          groups: settingsStore.getLocalSettings().uiGroups || [],
-          cloud,
-        });
+        // The quit chain is the only path that actually exits the app, so a
+        // hung backup (network mount, huge browser-data archive) must not
+        // keep the windowless process alive indefinitely.
+        await lifecycleTimeout(
+          cloudOps.runCloudBackup({
+            profiles: [...(engine?.profiles?.values?.() || [])],
+            groups: settingsStore.getLocalSettings().uiGroups || [],
+            cloud,
+          }),
+          90_000,
+          'Quit auto-backup timed out after 90s; exiting anyway'
+        );
       } catch (error) {
         console.warn('OpenBrowser quit auto-backup failed:', error.message);
         try {

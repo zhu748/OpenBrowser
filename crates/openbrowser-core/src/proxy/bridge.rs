@@ -22,6 +22,17 @@ use tokio::sync::watch;
 use tokio::time::timeout;
 use tracing::{debug, info, warn};
 
+/// Format host:port for TcpStream::connect, bracketing a bare IPv6 host:
+/// "2001:db8::1" + 1080 would otherwise parse as a garbage SocketAddr.
+pub fn upstream_socket_addr(host: &str, port: u16) -> String {
+    let looks_ipv6 = host.contains(':') && !host.starts_with('[');
+    if looks_ipv6 {
+        format!("[{}]:{}", host, port)
+    } else {
+        format!("{}:{}", host, port)
+    }
+}
+
 #[derive(Clone)]
 struct ClientHandlerContext {
     config: ProxyConfig,
@@ -166,7 +177,7 @@ impl LocalProxyBridge {
         target_port: u16,
         timeout_dur: Duration,
     ) -> Result<TcpStream> {
-        let upstream_addr = format!("{}:{}", config.host, config.port);
+        let upstream_addr = upstream_socket_addr(&config.host, config.port);
         timeout(
             timeout_dur,
             Self::connect_socks5_upstream_raw(config, target_host, target_port),
@@ -187,7 +198,7 @@ impl LocalProxyBridge {
         target_port: u16,
     ) -> Result<TcpStream> {
         config.validate()?;
-        let upstream_addr = format!("{}:{}", config.host, config.port);
+        let upstream_addr = upstream_socket_addr(&config.host, config.port);
         let mut stream = TcpStream::connect(&upstream_addr).await.map_err(|e| {
             CoreError::Proxy(format!(
                 "Failed to connect to SOCKS5 upstream {}: {}",
@@ -376,7 +387,7 @@ impl LocalProxyBridge {
         target_port: u16,
         timeout_dur: Duration,
     ) -> Result<(TcpStream, Vec<u8>)> {
-        let upstream_addr = format!("{}:{}", config.host, config.port);
+        let upstream_addr = upstream_socket_addr(&config.host, config.port);
         timeout(
             timeout_dur,
             Self::connect_http_upstream_raw(config, target_host, target_port),
@@ -411,7 +422,7 @@ impl LocalProxyBridge {
             )));
         }
 
-        let upstream_addr = format!("{}:{}", config.host, config.port);
+        let upstream_addr = upstream_socket_addr(&config.host, config.port);
         let mut stream = TcpStream::connect(&upstream_addr).await.map_err(|e| {
             CoreError::Http(format!(
                 "Failed to connect to HTTP upstream {}: {}",
@@ -586,7 +597,7 @@ impl LocalProxyBridge {
                     let stream = if let Some(stream) = pool.take_upstream_tcp().await {
                         stream
                     } else {
-                        let upstream_addr = format!("{}:{}", config.host, config.port);
+                        let upstream_addr = upstream_socket_addr(&config.host, config.port);
                         let s = TcpStream::connect(&upstream_addr)
                             .await
                             .map_err(|e| {

@@ -2453,6 +2453,10 @@
     }
     if (Object.prototype.hasOwnProperty.call(UI_ZH_FALLBACKS, s)) return UI_ZH_FALLBACKS[s];
     if (compact !== s && Object.prototype.hasOwnProperty.call(UI_ZH_FALLBACKS, compact)) return UI_ZH_FALLBACKS[compact];
+    // Fast exit for text without CJK characters: the 1240-key scan below is
+    // O(keys × length) and runs for every text node on every table re-render
+    // in non-Chinese locales.
+    if (!/[\u4e00-\u9fff]/.test(s)) return s;
     let out = s;
     for (const zh of UI_ZH_KEYS) {
       if (out.indexOf(zh) === -1) continue;

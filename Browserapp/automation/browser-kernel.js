@@ -2498,11 +2498,20 @@ class BrowserKernelManager {
       ], { detached: process.platform !== 'win32', windowsHide: false, stdio: ['ignore', 'pipe', 'pipe'] });
       child.stdout?.setEncoding('utf8');
       child.stderr?.setEncoding('utf8');
+      // spawn's 'error' is emitted asynchronously (binary deleted between stat
+      // and spawn, wrong arch, permissions); without a listener it becomes an
+      // uncaughtException and the probe degrades into a 12s port wait.
+      const probeState = { spawnError: null };
+      child.once('error', (error) => { probeState.spawnError = error; });
+      const probeAbort = new Promise((_, reject) => {
+        const poll = setInterval(() => { if (probeState.spawnError) { clearInterval(poll); reject(probeState.spawnError); } }, 100);
+        setTimeout(() => clearInterval(poll), 30000).unref?.();
+      });
       child._startupStdout = '';
       child._startupStderr = '';
       child.stdout?.on('data', (chunk) => { child._startupStdout = String(child._startupStdout + chunk).slice(-16 * 1024); });
       child.stderr?.on('data', (chunk) => { child._startupStderr = String(child._startupStderr + chunk).slice(-16 * 1024); });
-      const port = await waitForDevToolsPort(probeRoot);
+      const port = await Promise.race([waitForDevToolsPort(probeRoot), probeAbort]);
       const details = await requestJson(`http://127.0.0.1:${port}/json/version`);
       if (!/\b(chrome|chromium|wayfern)\b/i.test(String(details.Browser || ''))) {
         throw new Error('CDP 返回的浏览器不是 Chromium 兼容内核');

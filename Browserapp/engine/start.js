@@ -276,7 +276,9 @@ module.exports = {
     if (profile.advanced.blockImages) args.push('--blink-settings=imagesEnabled=false');
     if (profile.advanced.blockVideo || profile.advanced.blockSound) args.push('--autoplay-policy=user-gesture-required');
     else args.push('--autoplay-policy=no-user-gesture-required');
-    if (profile.advanced.jsHeapMax) args.push('--js-flags=--max-old-space-size=8192');
+    // Honor the configured cap instead of a hardcoded 8GB: small-memory
+    // machines got GC behavior budgeted for 8GB per environment.
+    if (profile.advanced.jsHeapMax) args.push(`--js-flags=--max-old-space-size=${Math.max(256, Math.min(16384, Number(profile.advanced.jsHeapMax) || 4096))}`);
     if (restoreSession) args.push('--restore-last-session');
     const disabledFeatures = [];
     // Authenticated proxies are exposed to Chrome through the local bridge. Everything else takes

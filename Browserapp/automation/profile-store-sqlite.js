@@ -491,6 +491,41 @@ class ProfileStoreSqlite {
     }
   }
 
+  // Deterministic change-detection hash over the plaintext (JSON of the
+  // profile plus its dedicated columns). The ciphertext itself cannot be
+  // used here: credential-crypto randomizes IV/salt per call, so two
+  // encryptions of one unchanged profile never match.
+  profileDataHash(profile) {
+    if (!profile || typeof profile !== 'object' || !profile.id) return null;
+    const parts = [
+      profile.id,
+      Number.isInteger(profile.number) ? profile.number : (Number(profile.number) || null),
+      String(profile.name || profile.id),
+      profile.groupId != null ? String(profile.groupId) : null,
+      profile.trashed ? 1 : 0,
+      profile.trashedAt ? String(profile.trashedAt) : null,
+      JSON.stringify(profile),
+    ];
+    return require('node:crypto').createHash('sha256').update(JSON.stringify(parts)).digest('hex');
+  }
+
+  // Row-accurate save: only profiles whose hash differs from the last
+  // written/loaded state are encrypted and upserted. The hash map lives with
+  // the store so both syncProfiles and the debounced persist() share it, and
+  // deleteProfiles keeps it from going stale.
+  saveProfilesDiffed(profiles) {
+    if (!Array.isArray(profiles) || !profiles.length) return 0;
+    if (!this._rowHashes) this._rowHashes = new Map();
+    const changed = profiles.filter((profile) => {
+      if (!profile || typeof profile !== 'object' || !profile.id) return false;
+      return this._rowHashes.get(profile.id) !== this.profileDataHash(profile);
+    });
+    if (!changed.length) return 0;
+    this.saveProfiles(changed);
+    for (const profile of changed) this._rowHashes.set(profile.id, this.profileDataHash(profile));
+    return changed.length;
+  }
+
   /**
    * Decode one profile row. Undecodable rows are quarantined into
    * profile_decode_failures (raw bytes preserved for manual recovery) and
@@ -539,9 +574,15 @@ class ProfileStoreSqlite {
   getAllProfiles() {
     const rows = this._statements.getAllProfiles.all();
     const result = [];
+    // Prime the row-hash map from the decoded state: saves through
+    // saveProfilesDiffed then know what is already on disk.
+    this._rowHashes = new Map();
     for (const row of rows) {
       const decoded = this._decodeProfileRow(row, 'getAllProfiles');
-      if (decoded) result.push(decoded);
+      if (decoded) {
+        result.push(decoded);
+        this._rowHashes.set(decoded.id, this.profileDataHash(decoded));
+      }
     }
     return result;
   }
@@ -624,7 +665,13 @@ class ProfileStoreSqlite {
         const safeId = String(id);
         this._statements.clearAssignmentsForProfile.run(safeId);
         const res = this._statements.deleteProfile.run(safeId);
-        if (res.changes > 0) deletedIds.push(safeId);
+        if (res.changes > 0) {
+          deletedIds.push(safeId);
+          // Keep the diff map in sync: profile ids can be recycled (env-001
+          // recreated after a delete), and a stale hash would make the new
+          // row look unchanged and silently skip its write.
+          this._rowHashes?.delete(safeId);
+        }
       }
       this.db.exec('COMMIT;');
     } catch (err) {

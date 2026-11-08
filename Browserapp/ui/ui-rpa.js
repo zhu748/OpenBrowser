@@ -82,6 +82,9 @@ async function confirmRpaAction(options) {
 
 function showRpaPanel(tab) {
   currentRpaTab = tab || 'flows';
+  // Mirror onto window: renderer.js's switchView fallback reads this to
+  // restore the last-open RPA sub-panel on language switch / re-entry.
+  window.currentRpaTab = currentRpaTab;
   document.querySelectorAll('[data-rpa-panel]').forEach((el) => {
     el.hidden = el.getAttribute('data-rpa-panel') !== currentRpaTab;
   });

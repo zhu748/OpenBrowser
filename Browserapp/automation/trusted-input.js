@@ -85,6 +85,10 @@ function buildEditableProbeExpression(payload = {}) {
       editable,
       contenteditable: Boolean(element.isContentEditable),
       valueLength: typeof element.value === 'string' ? element.value.length : 0,
+      // The mirror fast path validates content, not just length: masked or
+      // auto-formatted inputs (phone/card fields) rewrite the value in place
+      // at the same length, which a length-only check cannot detect.
+      valueHead: typeof element.value === 'string' ? element.value.slice(0, 64) : null,
     };
   })()`;
 }
@@ -227,6 +231,27 @@ async function clickCenter(call, probe) {
 async function applyTrustedInput(call, payload = {}, options = {}) {
   if (typeof call !== 'function') throw new TypeError('call must be a CDP command function');
   const normalized = { ...payload, selector: payload.selector || '' };
+  if (options.insertOnly) {
+    // Live-sync fast path: the caller knows the slave already holds a prefix
+    // of the value, so one existence probe + one insertText replaces the full
+    // click/select/insert/blur chain (and its focus flicker). Any mismatch
+    // falls back to the full path driven by the caller.
+    const probe = await evaluate(call, buildEditableProbeExpression(normalized));
+    if (!probe?.found) return { ok: false, native: false, reason: 'element-not-found' };
+    if (!probe.editable) return { ok: false, native: false, reason: 'element-not-editable' };
+    // contenteditable values don't expose element.value and their caret is not
+    // set by the focus/selection sync the mirror relies on; take the full path.
+    if (probe.contenteditable) return { ok: false, native: false, reason: 'mirror-mismatch' };
+    if (Number.isFinite(options.expectedLength) && probe.valueLength !== options.expectedLength) {
+      return { ok: false, native: false, reason: 'mirror-mismatch' };
+    }
+    if (typeof options.expectedHead === 'string' && probe.valueHead !== options.expectedHead) {
+      return { ok: false, native: false, reason: 'mirror-mismatch' };
+    }
+    const text = String(payload.value ?? '');
+    if (text) await call('Input.insertText', { text });
+    return { ok: true, native: true, reason: 'input-inserted', probe };
+  }
   const probe = await evaluate(call, buildEditableProbeExpression(normalized));
   if (!probe?.found) return { ok: false, native: false, reason: 'element-not-found' };
   if (!probe.editable) return { ok: false, native: false, reason: 'element-not-editable' };
