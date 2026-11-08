@@ -142,7 +142,9 @@ module.exports = {
       await this.ensureKernelBootstrap();
     }
     this.assertStartGenerationActive(profile.id, lifecycleGeneration);
-    browser = this.chooseBrowser(profile);
+    // Explicit 'chromium': this profile must not silently fall into a Firefox
+    // kernel even when a Firefox pin exists.
+    browser = this.chooseBrowser(profile, 'chromium');
     root = this.profileRoot(profile.id);
     startupResources.root = root;
     const rootCheck = await validateProfileRootSecure(this.profileDataRootPath, root, profile.id, { create: true });

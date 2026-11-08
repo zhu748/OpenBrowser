@@ -1160,9 +1160,25 @@ app.whenReady().then(async () => {
   registerTrustedIpc('kernel:check-update', async () => engine.checkKernelUpdate());
   registerTrustedIpc('kernel:set-custom', async (_event, binaryPath) => engine.setCustomKernel(String(binaryPath || '')));
   registerTrustedIpc('kernel:policy', async (_event, policy) => engine.setKernelPolicy(policy || {}));
+  registerTrustedIpc('kernel:list-versions', async (_event, engineFamily, refresh) => {
+    if (engineFamily === 'firefox') return engine.kernelManager.listFirefoxVersions({ refresh: Boolean(refresh) });
+    return engine.kernelManager.listChromiumVersions({ refresh: Boolean(refresh) });
+  });
+  registerTrustedIpc('kernel:install-version', async (_event, engineFamily, version) => {
+    const wanted = String(version || '').trim();
+    if (!wanted) throw new Error('Missing version');
+    if (engineFamily === 'firefox') return engine.kernelManager.installFirefoxVersion(wanted);
+    return engine.kernelManager.installChromiumVersion(wanted);
+  });
+  registerTrustedIpc('kernel:list-installed', () => engine.kernelManager.listInstalledKernels());
+  registerTrustedIpc('kernel:pin', async (_event, engineFamily, version) => {
+    if (engineFamily !== 'firefox' && engineFamily !== 'chromium') throw new Error('Unknown engine');
+    return engine.kernelManager.pinKernel({ engine: engineFamily, version: String(version || '').trim() });
+  });
+  registerTrustedIpc('kernel:unpin', async () => engine.kernelManager.clearPin());
   registerTrustedIpc('kernel:choose-custom', async () => {
     const result = await dialog.showOpenDialog({
-      title: '选择独立 Chromium / Chrome 可执行文件',
+      title: '选择独立 Chromium / Chrome / Firefox 可执行文件',
       properties: ['openFile'],
       filters: process.platform === 'win32'
         ? [{ name: 'Executable', extensions: ['exe'] }]

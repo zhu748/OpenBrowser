@@ -21,6 +21,25 @@ const { promisify } = require('util');
 const execFileAsync = promisify(execFile);
 const { isSystemBrowserExecutable } = require('./isolation');
 const { ensureManifest, readManifest, verifyManifest, verifyManifestSeal, MANIFEST_FILENAME } = require('./asset-integrity');
+const {
+  CHROMIUM_CATALOG_URL,
+  CHROMIUM_CATALOG_MAX_BYTES,
+  CHROMIUM_CATALOG_TTL_MS,
+  FIREFOX_RELEASES_URL,
+  FIREFOX_VERSIONS_URL,
+  FIREFOX_CATALOG_TTL_MS,
+  FIREFOX_LOCALE,
+  chromiumUrlForVersion,
+  filterChromiumCatalog,
+  filterFirefoxCatalog,
+  firefoxPlatformDir,
+  parseSha256Sums,
+  firefoxArtifactFor,
+  firefoxCdnUrl,
+  firefoxSumsUrl,
+  firefoxBinaryRelative,
+  compareKernelVersions,
+} = require('./kernel-versions');
 
 /** Optional remote kernel feed URL (unused when integrated seeds are present). */
 const WAYFERN_META = 'https://donutbrowser.com/wayfern.json';
@@ -38,6 +57,8 @@ const SOURCE_WAYFERN = 'donut-wayfern';
 const SOURCE_CFT = 'chrome-for-testing';
 const SOURCE_CHROME_STABLE = 'chrome-stable';
 const SOURCE_CUSTOM = 'custom';
+/** Mozilla release archive (per-version Firefox kernels). */
+const SOURCE_MOZILLA = 'mozilla';
 /** Bundled / userData OpenBrowser 148 independent kernel. Default on macOS x64. */
 const SOURCE_OPENBROWSER = 'openbrowser-148';
 const OPENBROWSER_KERNEL_VERSION = '148.0.7778.165';
@@ -55,6 +76,9 @@ const KERNEL_HOSTS = new Set([
   'googlechromelabs.github.io',
   'storage.googleapis.com',
   'dl.google.com',
+  // Firefox kernels: release metadata and the CDN that serves archives + SHA256SUMS.
+  'product-details.mozilla.org',
+  'download-installer.cdn.mozilla.net',
 ]);
 const acceptedWayfernTerms = new Set();
 
@@ -396,6 +420,7 @@ function kernelDisplayName(source) {
   if (source === SOURCE_CHROME_STABLE) return 'Google Chrome Stable';
   if (source === SOURCE_CUSTOM) return 'Custom Chromium';
   if (source === SOURCE_CFT) return 'Chrome for Testing';
+  if (source === SOURCE_MOZILLA) return 'Firefox';
   return 'Independent Chromium';
 }
 
@@ -592,7 +617,7 @@ async function ensureKernelReadyForLaunch(candidate = {}, versionOutput = '') {
   }
 }
 
-function fetchJson(url, redirects = 0) {
+function fetchJson(url, redirects = 0, maxBytes = MAX_META_BYTES) {
   if (redirects > MAX_REDIRECTS) return Promise.reject(new Error('Kernel metadata redirected too many times'));
   const parsed = trustedKernelUrl(url);
   return new Promise((resolve, reject) => {
@@ -605,7 +630,7 @@ function fetchJson(url, redirects = 0) {
     const req = https.get(parsed, { headers: { 'User-Agent': 'OpenBrowser/1.0 (kernel)' }, timeout: 30000 }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         res.resume();
-        return fetchJson(new URL(res.headers.location, parsed).toString(), redirects + 1)
+        return fetchJson(new URL(res.headers.location, parsed).toString(), redirects + 1, maxBytes)
           .then((value) => finish(resolve, value), (error) => finish(reject, error));
       }
       if (res.statusCode !== 200) {
@@ -616,8 +641,8 @@ function fetchJson(url, redirects = 0) {
       res.on('data', (c) => {
         if (settled) return;
         size += c.length;
-        if (size > MAX_META_BYTES) {
-          const error = new Error('Kernel metadata exceeds 2 MiB');
+        if (size > maxBytes) {
+          const error = new Error(`Kernel metadata exceeds ${Math.round(maxBytes / 1024 / 1024)} MiB`);
           finish(reject, error);
           res.destroy(error);
           req.destroy(error);
@@ -633,6 +658,46 @@ function fetchJson(url, redirects = 0) {
       });
     });
     req.on('timeout', () => req.destroy(new Error('Kernel metadata request timed out')));
+    req.on('error', (error) => finish(reject, error));
+  });
+}
+
+/** Fetch a trusted-host text document (Firefox SHA256SUMS). */
+function fetchText(url, { maxBytes = MAX_META_BYTES, timeoutMs = 30000 } = {}) {
+  const parsed = trustedKernelUrl(url);
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (handler, value) => {
+      if (settled) return;
+      settled = true;
+      handler(value);
+    };
+    const req = https.get(parsed, { headers: { 'User-Agent': 'OpenBrowser/1.0 (kernel)' }, timeout: timeoutMs }, (res) => {
+      if (res.statusCode !== 200) {
+        res.resume();
+        return finish(reject, new Error('HTTP ' + res.statusCode + ' for ' + url));
+      }
+      const chunks = []; let size = 0;
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => {
+        if (settled) return;
+        size += chunk.length;
+        if (size > maxBytes) {
+          const error = new Error(`Kernel text document exceeds ${maxBytes} bytes`);
+          finish(reject, error);
+          res.destroy(error);
+          req.destroy(error);
+        } else {
+          chunks.push(chunk);
+        }
+      });
+      res.on('error', (error) => finish(reject, error));
+      res.on('end', () => {
+        if (settled) return;
+        finish(resolve, chunks.join(''));
+      });
+    });
+    req.on('timeout', () => req.destroy(new Error('Kernel text request timed out')));
     req.on('error', (error) => finish(reject, error));
   });
 }
@@ -869,6 +934,40 @@ async function findExecutable(root, preferredNames) {
   found.sort((a, b) => a.score - b.score);
   // Skip crashpad helpers
   const cleaned = found.filter((f) => !/crashpad|helper|nacl|chrome_crash/i.test(f.name));
+  return (cleaned[0] || found[0] || null)?.full || null;
+}
+
+/** Sync tree walk for installed-kernel discovery (listInstalledKernels is sync). */
+function findExecutableSync(root, preferredNames) {
+  const found = [];
+  const walk = (dir, depth) => {
+    if (depth > 6) return;
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (_) { return; }
+    for (const ent of entries) {
+      const full = path.join(dir, ent.name);
+      if (ent.isDirectory()) {
+        if (ent.name.endsWith('.app')) {
+          const macos = path.join(full, 'Contents', 'MacOS');
+          if (fs.existsSync(macos)) walk(macos, depth + 1);
+          else walk(full, depth + 1);
+        } else if (!['Frameworks', 'Helpers', 'resources', 'locales', 'Resources', 'uninstall', 'update', 'uninst'].includes(ent.name)) {
+          walk(full, depth + 1);
+        }
+      } else {
+        const lower = ent.name.toLowerCase();
+        for (const pref of preferredNames) {
+          const want = String(pref).toLowerCase();
+          if (lower === want || lower.includes(want)) {
+            found.push({ full, score: lower === want ? 0 : 1, name: ent.name });
+          }
+        }
+      }
+    }
+  };
+  try { walk(path.resolve(String(root || '')), 0); } catch (_) { return null; }
+  found.sort((a, b) => a.score - b.score);
+  const cleaned = found.filter((f) => !/crashpad|helper|nacl|chrome_crash|uninstall|updater/i.test(f.name));
   return (cleaned[0] || found[0] || null)?.full || null;
 }
 
@@ -1134,6 +1233,45 @@ class BrowserKernelManager {
   }
 
   /**
+   * Write the integrity manifest for a tree WITHOUT pointing the active-kernel
+   * record at it. Used by per-version installs that stay dormant until pinned.
+   */
+  async baselineTree(target) {
+    const resolved = path.resolve(String(target || ''));
+    const base = path.resolve(this.kernelsRoot);
+    if (!resolved || (resolved !== base && !resolved.startsWith(base + path.sep))) {
+      return { status: 'skipped', reason: 'outside-data-root' };
+    }
+    try {
+      const result = await ensureManifest(resolved, {
+        exclude: [MANIFEST_FILENAME],
+        maxEntries: MAX_INTEGRITY_ENTRIES,
+        checkMtime: false,
+      });
+      let files = result.report?.checked ?? null;
+      if (files === null) {
+        try {
+          const recorded = await readManifest(resolved);
+          files = Array.isArray(recorded?.files) ? recorded.files.length : null;
+        } catch (_) { files = null; }
+      }
+      return { status: result.status === 'created' ? 'baselined' : result.status, files };
+    } catch (error) {
+      return { status: 'skipped', reason: String(error?.message || error) };
+    }
+  }
+
+  /** Point the active-kernel integrity record at an installed tree. */
+  async pointIntegrityAt(root) {
+    const target = path.resolve(String(root || ''));
+    const base = path.resolve(this.kernelsRoot);
+    if (!target.startsWith(base + path.sep) || target === base) return false;
+    this.meta.installRoot = target;
+    await this.saveMeta();
+    return true;
+  }
+
+  /**
    * Record the freshly installed tree so a later run can tell whether files
    * disappeared or were truncated.
    *
@@ -1148,35 +1286,9 @@ class BrowserKernelManager {
       this.integritySummary = { status: 'skipped', reason: 'outside-data-root', checkedAt: new Date().toISOString() };
       return this.integritySummary;
     }
-    try {
-      const result = await ensureManifest(target, {
-        exclude: [MANIFEST_FILENAME],
-        maxEntries: MAX_INTEGRITY_ENTRIES,
-        checkMtime: false,
-      });
-      this.meta.installRoot = target;
-      await this.saveMeta();
-      // A fresh baseline has no report; read back how many files it covered
-      // so the status line can say something concrete.
-      let files = result.report?.checked ?? null;
-      if (files === null) {
-        try {
-          const recorded = await readManifest(target);
-          files = Array.isArray(recorded?.files) ? recorded.files.length : null;
-        } catch (_) { files = null; }
-      }
-      this.integritySummary = {
-        status: result.status === 'created' ? 'baselined' : result.status,
-        files,
-        checkedAt: new Date().toISOString(),
-      };
-    } catch (error) {
-      this.integritySummary = {
-        status: 'skipped',
-        reason: String(error?.message || error),
-        checkedAt: new Date().toISOString(),
-      };
-    }
+    const summary = await this.baselineTree(target);
+    this.integritySummary = { ...summary, checkedAt: new Date().toISOString() };
+    await this.pointIntegrityAt(target);
     return this.integritySummary;
   }
 
@@ -1257,7 +1369,26 @@ class BrowserKernelManager {
   }
 
   resolveInstalled() {
-    // A user-requested Stable download overrides legacy kernels bundled by an
+    // 1) Explicit user pin (kernel panel "设为默认") — highest priority, and the
+    //    only branch that may return a Firefox kernel as the global default.
+    if (this.meta.pin && this.meta.pin.path) {
+      const pin = this.meta.pin;
+      const list = this.listInstalledKernels();
+      const fresh = list.find((k) => k.engine === pin.engine && k.version === pin.version) || null;
+      const trusted = fresh ? fresh.path : safeInstalledBinary(pin.path, this.kernelsRoot);
+      if (trusted && fs.existsSync(trusted)) {
+        return {
+          name: fresh ? fresh.name : (pin.engine === 'firefox' ? `Firefox ${pin.version}` : `Chrome for Testing ${pin.version}`),
+          path: trusted,
+          version: pin.version,
+          engine: pin.engine,
+          independent: true,
+          source: pin.source || (pin.engine === 'firefox' ? SOURCE_MOZILLA : SOURCE_CFT),
+        };
+      }
+    }
+
+    // 2) A user-requested Stable download overrides legacy kernels bundled by an
     // older package. Otherwise the old CFT resource would win forever.
     if (this.meta.source === SOURCE_CHROME_STABLE && this.meta.binary) {
       const stable = safeInstalledBinary(this.meta.binary, this.kernelsRoot);
@@ -1589,6 +1720,403 @@ class BrowserKernelManager {
     };
   }
 
+  // -------------------------------------------------------------------------
+  // Multi-version kernel catalogs (Chrome for Testing) and Firefox kernels.
+  //
+  // Per-version installs live in their own tree (kernels/chromium-versions/<v>,
+  // kernels/firefox/<v>) and coexist; the active one is chosen either by an
+  // explicit pin (pinKernel) or per-profile in the engine layer. Installs are
+  // dormant until pinned, so they never disturb the active kernel's integrity
+  // record.
+  // -------------------------------------------------------------------------
+
+  chromiumCatalogPath() { return path.join(this.kernelsRoot, 'chromium-versions.json'); }
+  firefoxCatalogPath() { return path.join(this.kernelsRoot, 'firefox-versions.json'); }
+
+  async loadCatalogCache(file, platformKey, ttlMs) {
+    try {
+      const raw = JSON.parse(await fsp.readFile(file, 'utf8'));
+      if (!raw || typeof raw !== 'object') return null;
+      if (String(raw.platform || '') !== String(platformKey)) return null;
+      const fetchedAt = Date.parse(raw.fetchedAt || '');
+      if (!Number.isFinite(fetchedAt) || Date.now() - fetchedAt > ttlMs) return null;
+      if (!Array.isArray(raw.versions) || !raw.versions.length) return null;
+      return raw;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async saveCatalogCache(file, payload) {
+    try {
+      await fsp.mkdir(this.kernelsRoot, { recursive: true });
+      await fsp.writeFile(file, JSON.stringify(payload, null, 2) + '\n', 'utf8');
+    } catch (_) { /* cache write is best-effort */ }
+  }
+
+  decorateChromiumInstalled(versions) {
+    return (versions || []).map((item) => ({
+      ...item,
+      installed: fs.existsSync(path.join(this.kernelsRoot, 'chromium-versions', String(item.version || ''))),
+    }));
+  }
+
+  decorateFirefoxInstalled(versions) {
+    return (versions || []).map((item) => ({
+      ...item,
+      installed: fs.existsSync(path.join(this.kernelsRoot, 'firefox', String(item.version || ''))),
+    }));
+  }
+
+  /** Chrome for Testing versions for this platform, newest first (cached 24h). */
+  async listChromiumVersions({ refresh = false } = {}) {
+    const plat = cftPlatformKey();
+    if (!refresh) {
+      const cached = await this.loadCatalogCache(this.chromiumCatalogPath(), plat, CHROMIUM_CATALOG_TTL_MS);
+      if (cached) return { ...cached, versions: this.decorateChromiumInstalled(cached.versions) };
+    }
+    this.onProgress({ phase: 'meta', message: '查询 Chrome for Testing 版本目录…' });
+    const feed = await fetchJson(CHROMIUM_CATALOG_URL, 0, CHROMIUM_CATALOG_MAX_BYTES);
+    const versions = filterChromiumCatalog(feed, plat);
+    if (!versions.length) throw new Error(`当前平台无可用 Chrome for Testing 版本：${plat}`);
+    const payload = { platform: plat, fetchedAt: new Date().toISOString(), versions };
+    await this.saveCatalogCache(this.chromiumCatalogPath(), payload);
+    return { ...payload, versions: this.decorateChromiumInstalled(versions) };
+  }
+
+  /** Firefox versions for this platform: newest release per major + current ESR. */
+  async listFirefoxVersions({ refresh = false } = {}) {
+    const plat = firefoxPlatformDir();
+    if (!plat) throw new Error(`当前平台无可用 Firefox 包：${process.platform}/${process.arch}`);
+    if (!refresh) {
+      const cached = await this.loadCatalogCache(this.firefoxCatalogPath(), plat, FIREFOX_CATALOG_TTL_MS);
+      if (cached) return { ...cached, versions: this.decorateFirefoxInstalled(cached.versions) };
+    }
+    this.onProgress({ phase: 'meta', message: '查询 Firefox 版本目录…' });
+    const [releases, current] = await Promise.all([
+      fetchJson(FIREFOX_RELEASES_URL),
+      fetchJson(FIREFOX_VERSIONS_URL),
+    ]);
+    const versions = filterFirefoxCatalog(releases, current);
+    if (!versions.length) throw new Error('Firefox 版本目录为空');
+    const payload = { platform: plat, fetchedAt: new Date().toISOString(), versions };
+    await this.saveCatalogCache(this.firefoxCatalogPath(), payload);
+    return { ...payload, versions: this.decorateFirefoxInstalled(versions) };
+  }
+
+  /** Download a specific Chrome for Testing version into kernels/chromium-versions/<version>. */
+  async installChromiumVersion(version) {
+    const wanted = String(version || '').trim();
+    if (!/^\d+(?:\.\d+){0,3}$/.test(wanted)) throw new Error('无效的 Chromium 版本号: ' + wanted);
+    const plat = cftPlatformKey();
+    await fsp.mkdir(this.kernelsRoot, { recursive: true });
+    const work = path.join(this.kernelsRoot, 'chromium-versions', wanted);
+
+    // Prefer a catalog URL (known-good list); the official URL pattern is the
+    // offline fallback. Both embed the version, so digest pinning applies either way.
+    let url = chromiumUrlForVersion(wanted, plat);
+    try {
+      const { versions } = await this.listChromiumVersions({ refresh: false });
+      const hit = (versions || []).find((item) => item.version === wanted);
+      if (hit?.url) url = hit.url;
+    } catch (_) { /* offline: pattern URL still versioned + pinnable */ }
+
+    const archivePath = path.join(this.kernelsRoot, `chromium-${wanted}-${plat}.zip`);
+    const pinned = await pinnedArchiveSha256(this.kernelsRoot, url);
+    this.onProgress({ phase: 'download', message: `下载 Chrome for Testing ${wanted}${pinned ? '（校验摘要）' : ''}…`, version: wanted, url });
+    const download = await downloadFile(url, archivePath, (p) => this.onProgress({ phase: 'download', ...p, version: wanted }), {
+      expectedSha256: pinned || '',
+    });
+
+    this.onProgress({ phase: 'extract', message: `解压 Chrome for Testing ${wanted}…`, version: wanted });
+    await fsp.rm(work, { recursive: true, force: true });
+    await fsp.mkdir(work, { recursive: true });
+    await extractZip(archivePath, work);
+
+    let binary = path.join(work, chromeForTestingBinaryRelative(plat));
+    if (!fs.existsSync(binary)) {
+      binary = findExecutableSync(work, process.platform === 'win32' ? ['chrome.exe', 'chrome'] : ['Google Chrome for Testing', 'chrome', 'chromium']);
+    }
+    binary = safeInstalledBinary(binary, work);
+    if (!binary) throw new Error('解压后未找到 Chrome for Testing 可执行文件');
+    if (process.platform !== 'win32') {
+      try { await fsp.chmod(binary, 0o755); } catch (_) {}
+    }
+
+    this.onProgress({ phase: 'validate', message: `验证 Chrome for Testing ${wanted} 兼容性…`, version: wanted, binary });
+    await this.probeBrowserBinary(binary);
+
+    await fsp.writeFile(path.join(work, 'kernel.json'), JSON.stringify({
+      engine: 'chromium',
+      source: SOURCE_CFT,
+      version: wanted,
+      platform: plat,
+      downloadUrl: url,
+      installedAt: new Date().toISOString(),
+    }, null, 2) + '\n', 'utf8');
+
+    await this.baselineTree(work);
+    if (isVersionedArchiveUrl(url, wanted) && download.sha256) {
+      await pinArchiveSha256(this.kernelsRoot, url, download.sha256);
+    }
+    await fsp.rm(archivePath, { force: true }).catch(() => {});
+
+    this.onProgress({ phase: 'done', message: `Chrome for Testing ${wanted} 已就绪`, version: wanted, binary });
+    return {
+      name: `Chrome for Testing ${wanted}`,
+      path: binary,
+      version: wanted,
+      engine: 'chromium',
+      independent: true,
+      source: SOURCE_CFT,
+    };
+  }
+
+  /** Download a Firefox release into kernels/firefox/<version> (esr suffix kept). */
+  async installFirefoxVersion(version) {
+    const wanted = String(version || '').trim();
+    if (!/^\d+(?:\.\d+){0,3}(?:esr)?$/.test(wanted)) throw new Error('无效的 Firefox 版本号: ' + wanted);
+    const platformDir = firefoxPlatformDir();
+    if (!platformDir) throw new Error(`当前平台无可用 Firefox 包：${process.platform}/${process.arch}`);
+    await fsp.mkdir(this.kernelsRoot, { recursive: true });
+
+    // SHA256SUMS is the authoritative artifact list AND the digest source.
+    this.onProgress({ phase: 'meta', message: `获取 Firefox ${wanted} 校验清单…`, version: wanted });
+    const sumsText = await fetchText(firefoxSumsUrl(wanted), { maxBytes: 2 * 1024 * 1024 });
+    const sums = parseSha256Sums(sumsText);
+    if (!sums.size) throw new Error('Firefox SHA256SUMS 为空或格式无效');
+    const artifact = firefoxArtifactFor(platformDir, wanted, sums, FIREFOX_LOCALE);
+    if (!artifact) throw new Error(`Firefox ${wanted} 在 ${platformDir} 平台没有可用安装包`);
+
+    const url = firefoxCdnUrl(wanted, artifact.relPath);
+    const work = path.join(this.kernelsRoot, 'firefox', wanted);
+    const ext = artifact.kind === 'tar.xz' ? 'tar.xz' : artifact.kind === 'dmg' ? 'dmg' : artifact.kind === 'msi' ? 'msi' : 'exe';
+    const archivePath = path.join(this.kernelsRoot, `firefox-${wanted}-${platformDir}.${ext}`);
+
+    // The CDN digest is authoritative from the first download on; a prior pin
+    // only matters when the feed digest is somehow missing.
+    const pinned = await pinnedArchiveSha256(this.kernelsRoot, url);
+    const expectedSha256 = artifact.sha256 || pinned || '';
+    this.onProgress({ phase: 'download', message: `下载 Firefox ${wanted}（校验摘要）…`, version: wanted, url });
+    const download = await downloadFile(url, archivePath, (p) => this.onProgress({ phase: 'download', ...p, version: wanted }), {
+      expectedSha256,
+    });
+
+    this.onProgress({ phase: 'extract', message: `解压 Firefox ${wanted}…`, version: wanted });
+    await fsp.rm(work, { recursive: true, force: true });
+    await fsp.mkdir(work, { recursive: true });
+    if (artifact.kind === 'tar.xz') {
+      await extractTarXz(archivePath, work);
+    } else if (artifact.kind === 'dmg') {
+      await extractDmg(archivePath, work);
+    } else if (artifact.kind === 'msi') {
+      await extractMsi(archivePath, work);
+      await this.ensureWindowsFirefoxTree(work);
+    } else {
+      // Windows full installer: no archive form exists — run it silently into work.
+      await this.runFirefoxSetupExe(archivePath, work);
+    }
+    await assertSafeExtractedTree(work).catch((error) => {
+      throw new Error('Firefox 安装树校验失败：' + (error.message || error));
+    });
+
+    let binary = safeInstalledBinary(path.join(work, firefoxBinaryRelative(platformDir)), work);
+    if (!binary || !fs.existsSync(binary)) {
+      binary = safeInstalledBinary(findExecutableSync(work, ['firefox.exe', 'firefox']), work);
+    }
+    if (!binary) throw new Error('解压后未找到 Firefox 可执行文件');
+    if (process.platform !== 'win32') {
+      try { await fsp.chmod(binary, 0o755); } catch (_) {}
+    }
+
+    this.onProgress({ phase: 'validate', message: `验证 Firefox ${wanted} 兼容性…`, version: wanted, binary });
+    const probe = await this.probeFirefoxBinary(binary);
+
+    await fsp.writeFile(path.join(work, 'kernel.json'), JSON.stringify({
+      engine: 'firefox',
+      source: SOURCE_MOZILLA,
+      version: probe.version || wanted,
+      platform: platformDir,
+      downloadUrl: url,
+      installedAt: new Date().toISOString(),
+    }, null, 2) + '\n', 'utf8');
+
+    await this.baselineTree(work);
+    if (isVersionedArchiveUrl(url, wanted) && download.sha256) {
+      await pinArchiveSha256(this.kernelsRoot, url, download.sha256);
+    }
+    await fsp.rm(archivePath, { force: true }).catch(() => {});
+
+    this.onProgress({ phase: 'done', message: `Firefox ${wanted} 已就绪`, version: wanted, binary });
+    return {
+      name: `Firefox ${wanted}`,
+      path: binary,
+      version: probe.version || wanted,
+      engine: 'firefox',
+      independent: true,
+      source: SOURCE_MOZILLA,
+    };
+  }
+
+  /**
+   * Windows: after msiexec /a, a WiX-wrapper MSI yields the embedded full
+   * installer instead of a tree. Run it silently into work (/D must be the
+   * last argument and unquoted, so the directory must not contain spaces).
+   */
+  async ensureWindowsFirefoxTree(work) {
+    if (process.platform !== 'win32') return;
+    const direct = path.join(work, 'firefox.exe');
+    if (fs.existsSync(direct)) return;
+    const setup = findExecutableSync(work, ['FullInstaller', 'Firefox Setup']);
+    if (!setup) throw new Error('MSI 解包后未找到 firefox.exe，也未找到可静默执行的完整安装器');
+    await this.runFirefoxSetupExe(setup, work);
+    if (!fs.existsSync(direct)) throw new Error('Firefox 静默安装后仍未找到 firefox.exe');
+  }
+
+  async runFirefoxSetupExe(setupPath, work) {
+    if (process.platform !== 'win32') throw new Error('Firefox 安装器仅支持 Windows');
+    const target = path.resolve(String(work || ''));
+    if (!target || !fs.existsSync(setupPath)) throw new Error('Firefox 安装器不存在: ' + setupPath);
+    if (/\s/.test(target)) throw new Error('Windows 静默安装目录不能包含空格: ' + target);
+    this.onProgress({ phase: 'extract', message: '正在静默安装 Firefox…' });
+    await new Promise((resolve, reject) => {
+      const child = spawn(setupPath, ['/S', `/D=${target}`], { windowsHide: true, stdio: 'ignore' });
+      const timer = setTimeout(() => {
+        try { child.kill(); } catch (_) {}
+        reject(new Error('Firefox 静默安装超时'));
+      }, 240000);
+      child.once('error', (error) => { clearTimeout(timer); reject(error); });
+      child.once('exit', (code) => {
+        clearTimeout(timer);
+        // NSIS setup may exit non-zero after a successful per-user install; verify by file.
+        if (fs.existsSync(path.join(target, 'firefox.exe'))) return resolve();
+        if (code === 0) return resolve();
+        reject(new Error('Firefox 静默安装失败 exitCode=' + code));
+      });
+    });
+  }
+
+  /** application.ini fallback (Windows GUI binaries print nothing for --version). */
+  readFirefoxApplicationIni(binaryPath) {
+    const binary = path.resolve(String(binaryPath || ''));
+    const dir = path.dirname(binary);
+    const candidates = [
+      path.join(dir, 'application.ini'),
+      path.join(dir, 'firefox', 'application.ini'),
+      path.join(dir, '..', 'Resources', 'application.ini'),
+    ];
+    for (const file of candidates) {
+      try {
+        const text = fs.readFileSync(file, 'utf8');
+        const app = {};
+        let inApp = false;
+        for (const line of text.split(/\r?\n/)) {
+          const s = line.trim();
+          if (s.startsWith('[')) { inApp = /^\[App\]$/i.test(s); continue; }
+          if (!inApp || !s.includes('=')) continue;
+          const eq = s.indexOf('=');
+          const key = s.slice(0, eq).trim();
+          if (key === 'Version' || key === 'Name' || key === 'Vendor') app[key] = s.slice(eq + 1).trim();
+        }
+        if (app.Version) return app;
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  /** Firefox counterpart of probeBrowserBinary (no CDP: only the binary is verified). */
+  async probeFirefoxBinary(binaryPath) {
+    const resolved = path.resolve(String(binaryPath || ''));
+    let stat;
+    try { stat = await fsp.stat(resolved); } catch (_) { throw new Error('文件不存在: ' + resolved); }
+    if (!stat.isFile()) throw new Error('内核路径必须是可执行文件: ' + resolved);
+    if (process.platform !== 'win32') {
+      try { await fsp.access(resolved, fs.constants.X_OK); } catch (_) { throw new Error('内核文件没有执行权限: ' + resolved); }
+    }
+    let versionOutput = '';
+    try {
+      const result = await execFileAsync(resolved, ['--version'], { timeout: 8000, windowsHide: true, maxBuffer: 64 * 1024 });
+      versionOutput = String(result.stdout || result.stderr || '').trim();
+    } catch (_) { versionOutput = ''; }
+    let version = (versionOutput.match(/(\d+(?:\.\d+){1,3}(?:esr)?)/) || [])[1] || '';
+    if (!/firefox/i.test(versionOutput)) {
+      const ini = this.readFirefoxApplicationIni(resolved);
+      if (!ini || !/firefox/i.test(String(ini.Name || ''))) {
+        throw new Error('所选文件不是受支持的 Firefox 内核: ' + (versionOutput || '未返回版本信息'));
+      }
+      version = String(ini.Version || '') || version;
+    }
+    return { path: resolved, version: version || 'unknown', browser: `Firefox ${version || '?'}` };
+  }
+
+  /** All per-version installs across both engines, newest first within each. */
+  listInstalledKernels() {
+    const readTree = (base, engine) => {
+      const out = [];
+      let entries = [];
+      try { entries = fs.readdirSync(base, { withFileTypes: true }); } catch (_) { return out; }
+      for (const ent of entries) {
+        if (!ent.isDirectory() || ent.name.startsWith('.') || ent.name === '_dmg_mount') continue;
+        const tree = path.join(base, ent.name);
+        let meta = {};
+        try { meta = JSON.parse(fs.readFileSync(path.join(tree, 'kernel.json'), 'utf8')); } catch (_) {}
+        const version = String(meta.version || ent.name);
+        let binary = null;
+        if (engine === 'firefox') {
+          binary = safeInstalledBinary(path.join(tree, firefoxBinaryRelative(firefoxPlatformDir())), tree)
+            || safeInstalledBinary(findExecutableSync(tree, ['firefox.exe', 'firefox']), tree);
+        } else {
+          binary = safeInstalledBinary(path.join(tree, chromeForTestingBinaryRelative(cftPlatformKey())), tree)
+            || safeInstalledBinary(findExecutableSync(tree, ['chrome.exe', 'Google Chrome for Testing', 'chrome']), tree);
+        }
+        if (!binary) continue;
+        const source = String(meta.source || (engine === 'firefox' ? SOURCE_MOZILLA : SOURCE_CFT));
+        out.push({
+          id: `${engine}:${ent.name}`,
+          engine,
+          version,
+          source,
+          path: binary,
+          tree,
+          binaryExists: true,
+          name: engine === 'firefox' ? `Firefox ${version}` : `Chrome for Testing ${version}`,
+        });
+      }
+      return out;
+    };
+    const chromium = readTree(path.join(this.kernelsRoot, 'chromium-versions'), 'chromium');
+    const firefox = readTree(path.join(this.kernelsRoot, 'firefox'), 'firefox');
+    chromium.sort((a, b) => compareKernelVersions(String(b.version), String(a.version)));
+    firefox.sort((a, b) => compareKernelVersions(String(b.version), String(a.version)));
+    return [...chromium, ...firefox];
+  }
+
+  /** Make an installed kernel the default for every profile (explicit pin). */
+  async pinKernel({ engine, version } = {}) {
+    await this.loadMeta();
+    const wantedEngine = engine === 'firefox' ? 'firefox' : 'chromium';
+    const wantedVersion = String(version || '').trim();
+    const list = this.listInstalledKernels();
+    const hit = list.find((k) => k.engine === wantedEngine && (!wantedVersion || k.version === wantedVersion));
+    if (!hit || !hit.binaryExists) {
+      throw new Error(`未找到已安装的 ${wantedEngine === 'firefox' ? 'Firefox' : 'Chromium'} ${wantedVersion || ''} 内核`);
+    }
+    this.meta.pin = { engine: hit.engine, version: hit.version, source: hit.source, path: hit.path };
+    this.meta.updatedAt = new Date().toISOString();
+    await this.saveMeta();
+    await this.pointIntegrityAt(hit.tree);
+    return this.resolveInstalled();
+  }
+
+  /** Drop the explicit pin; bundled/default resolution takes over again. */
+  async clearPin() {
+    await this.loadMeta();
+    this.meta.pin = null;
+    this.meta.updatedAt = new Date().toISOString();
+    await this.saveMeta();
+    return this.resolveInstalled();
+  }
+
   /** Resolve an integrated kernel, or download the official Chrome Stable package. */
   async ensureIntegrated(force = false) {
     if (!this.installPromise) {
@@ -1891,8 +2419,14 @@ class BrowserKernelManager {
     } catch (error) {
       throw new Error('无法执行内核版本检查：' + (error.message || error));
     }
+    // A Firefox --version prints "Mozilla Firefox 141.0"; route it to the
+    // Firefox probe so a custom local Firefox can also be selected.
+    if (/firefox/i.test(versionOutput) && !/\b(chrome|chromium|wayfern)\b/i.test(versionOutput)) {
+      const probe = await this.probeFirefoxBinary(resolved);
+      return { ...probe, browser: `Firefox ${probe.version}` };
+    }
     if (!/\b(chrome|chromium|wayfern)\b/i.test(versionOutput)) {
-      throw new Error('所选文件不是受支持的 Chromium 内核: ' + (versionOutput || '未返回版本信息'));
+      throw new Error('所选文件不是受支持的 Chromium/Firefox 内核: ' + (versionOutput || '未返回版本信息'));
     }
 
     await fsp.mkdir(this.kernelsRoot, { recursive: true });
@@ -1940,9 +2474,17 @@ class BrowserKernelManager {
     const probe = await this.probeBrowserBinary(binaryPath);
     const isOpenBrowser = /[/\\]openbrowser[/\\]chrome_148[/\\]/i.test(probe.path)
       || path.basename(path.dirname(probe.path)) === 'MacOS' && /OpenBrowser$/i.test(path.basename(probe.path));
+    const isFirefox = /firefox/i.test(String(probe.browser || ''));
     this.meta.binary = probe.path;
     this.meta.version = probe.version || (isOpenBrowser ? OPENBROWSER_KERNEL_VERSION : probe.version);
     this.meta.source = isOpenBrowser ? SOURCE_OPENBROWSER : SOURCE_CUSTOM;
+    // A custom Firefox tree never matches a per-version install record, so the
+    // integrity record is dropped here (mirrors the custom-Chromium behavior).
+    if (isFirefox) {
+      this.meta.pin = { engine: 'firefox', version: probe.version || 'custom', source: SOURCE_CUSTOM, path: probe.path };
+      this.meta.installRoot = null;
+      this.integritySummary = null;
+    }
     this.meta.updatedAt = new Date().toISOString();
     this.meta.platform = donutPlatformKey();
     this.meta.downloadUrl = null;
@@ -2001,6 +2543,7 @@ module.exports = {
   SOURCE_CHROME_STABLE,
   SOURCE_CUSTOM,
   SOURCE_OPENBROWSER,
+  SOURCE_MOZILLA,
   OPENBROWSER_KERNEL_VERSION,
   isWayfernKernel,
   companionLibraryForKernelBinary,
@@ -2022,6 +2565,8 @@ module.exports = {
   wayfernSeedDirNames,
   bundledKernelVersion,
   downloadFile,
+  fetchJson,
+  fetchText,
   extractZip,
   extractDeb,
   extractMsi,
@@ -2030,4 +2575,5 @@ module.exports = {
   extractTarGz,
   archiveKindFromUrl,
   resolveWayfernBinary,
+  findExecutableSync,
 };

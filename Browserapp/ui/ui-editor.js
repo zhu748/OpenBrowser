@@ -384,6 +384,7 @@ function editorDraft(strict = true) {
     title: ($('#editor-title')?.value || '').trim(),
     browser: 'Google Chrome',
     os: $('#editor-os')?.value || current.os || 'Windows',
+    engine: $('#editor-engine')?.value === 'firefox' ? 'firefox' : 'chromium',
     userAgent: ($('#editor-user-agent')?.value || '').trim(),
     cookies: strict ? editorCookies() : ($('#editor-cookies')?.value || '').trim(),
     language: window.OpenBrowserLocale.resolveProfileLanguage({
@@ -534,6 +535,7 @@ function openProfileEditor(id) {
   editorSet('#editor-title', profile.title || '');
   editorSet('#editor-browser', 'Google Chrome');
   editorSet('#editor-os', profile.os);
+  editorSet('#editor-engine', profile.engine === 'firefox' ? 'firefox' : 'chromium');
   editorSet('#editor-user-agent', profile.userAgent);
   editorSet('#editor-cookies', (() => {
     if (!profile.cookies) return '';

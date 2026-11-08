@@ -61,6 +61,8 @@ The app supports multiple UI languages, currently including English and Chinese.
 | **Local RPA** | Flows for navigation, waiting, clicking, typing, and screenshots. |
 | **Local API / MCP** | Local integration endpoint on `127.0.0.1:50325` by default. |
 | **Independent kernel** | Download a standalone Chromium kernel or use a custom local path. |
+| **Multi-version kernels** | Direct download of any Chrome for Testing release (per-version archive under `kernels/chromium-versions/<version>`) and official Firefox releases (`kernels/firefox/<version>`, tarball / DMG / MSI per platform, SHA-256 verified from Mozilla's SHA256SUMS). Any installed version can be pinned as the default kernel. |
+| **Firefox engine** | Per-profile engine choice (Chromium or Firefox). Firefox environments launch with UA / language / proxy / telemetry prefs applied via `user.js`, no CDP required. RPA and window sync stay Chromium-only by design. |
 | **Backup options** | Local, WebDAV, GitHub, and cloud-drive backups when explicitly enabled. |
 
 ## Supported platforms

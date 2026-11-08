@@ -776,22 +776,29 @@ function buildEnvBrowserCell(profile) {
   wrap.className = 'env-browser-cell env-browser-cell-engine';
   const rawBrowser = String(profile.browser || '').trim();
   const isEdge = /edge/i.test(rawBrowser);
+  const isFirefox = String(profile?.engine || '').toLowerCase() === 'firefox';
 
   const iconWrap = document.createElement('div');
   iconWrap.className = 'browser-engine-icon';
-  iconWrap.innerHTML = buildBrowserEngineIcon(isEdge ? 'Edge' : 'Chrome', 26);
+  if (isFirefox) {
+    iconWrap.innerHTML = `<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#ff7139"/><path d="M12.6 5.1c2.5 1.5 3.7 3.9 3.4 6.5-.1 1.2-.7 2.1-1.6 2.7 1.5-.2 2.6-1.2 3-2.7.5 2.6-.5 4.9-2.7 6.3-1.9 1.2-4 1.5-6.2.9C6 18.1 4.4 15.9 4.5 13.2c.1-2.1 1.2-3.8 3-4.9-.2.6-.2 1.2 0 1.7.4-1.9 1.7-3.2 3.6-3.7-.8-.6-1.7-.8-2.7-.7 1.4-1.1 3-1.5 4.2-1.2-.2-.9-1-1.6-2.1-1.9 1.6-.4 2.9-.1 4.1.6Z" fill="#fff" opacity=".92"/></svg>`;
+  } else {
+    iconWrap.innerHTML = buildBrowserEngineIcon(isEdge ? 'Edge' : 'Chrome', 26);
+  }
   wrap.append(iconWrap);
 
   const label = document.createElement('div');
   label.className = 'env-browser-label';
 
-  const engineName = isEdge ? 'Microsoft Edge' : 'Chromium';
+  const engineName = isFirefox ? 'Firefox' : (isEdge ? 'Microsoft Edge' : 'Chromium');
   const versionMatch = rawBrowser.match(/\b(?:Chrome|Chromium|Edge)\/(\d+[\.\d]*)/i) || rawBrowser.match(/\b(\d{2,3})\b/);
   const fullVersion = versionMatch ? versionMatch[1] : '130';
   const displayVersion = String(fullVersion).split('.')[0] || fullVersion;
 
   const titleEl = element('strong', '', `${engineName} ${displayVersion}`);
-  let kernelSub = isEdge ? t('profiles.kernel.edge') : t('profiles.kernel.independent');
+  const kernelSub = isFirefox
+    ? (t('profiles.kernel.firefox') || 'Firefox 内核')
+    : (isEdge ? t('profiles.kernel.edge') : t('profiles.kernel.independent'));
   const subEl = element('small', '', kernelSub);
 
   label.append(titleEl, subEl);

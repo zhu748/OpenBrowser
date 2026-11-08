@@ -51,6 +51,9 @@ function sanitizeProfile(value) {
     title: String(value.title || value.displayName || "").slice(0, 120),
     startUrl: effectiveStartUrl,
     browser: "Google Chrome",
+    // Kernel family per profile: 'chromium' (default) or 'firefox'. Falls back
+    // inside profileEngine() when unset, so legacy profiles never carry it.
+    engine: allowed(value.engine, ["chromium", "firefox"], "chromium"),
     os: String(value.os || value.fingerprint?.os || value.privacy?.fingerprint?.os || "Windows").slice(0, 40),
     location: String(value.location || "Local").slice(0, 80),
     networkMode,

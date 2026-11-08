@@ -2174,3 +2174,45 @@ html[data-ui-theme="merge-gateway"] #view-profile-editor .editor-form .check-row
 @media (max-width: 480px) {
   html[data-ui-theme="merge-gateway"] #view-profile-editor .editor-form .segmented label { min-height: 44px; }
 }
+
+/* Multi-version kernel panel (Chrome for Testing / Firefox downloads) */
+#kernel-settings-card .kernel-version-block {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: var(--xai-gray-50, #f8fafc);
+  border: 1px solid var(--xai-border-subtle, #e2e8f0);
+  border-radius: 8px;
+}
+#kernel-settings-card .kernel-version-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+#kernel-settings-card .kernel-engine-label {
+  min-width: 64px;
+  font-weight: 600;
+  font-size: 13px;
+}
+#kernel-settings-card .kernel-version-row select { flex: 1 1 220px; min-width: 200px; }
+#kernel-settings-card .kernel-installed-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+#kernel-settings-card .kernel-installed-item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 6px 8px;
+  background: var(--xai-white, #fff);
+  border: 1px solid var(--xai-border-subtle, #e2e8f0);
+  border-radius: 6px;
+  font-size: 12px;
+}
+#kernel-settings-card .kernel-installed-item code {
+  font-size: 11px;
+  word-break: break-all;
+}
+#kernel-settings-card .kernel-installed-item .spacer { flex: 1 1 auto; }

@@ -570,6 +570,15 @@ class RpaEngine {
     if (!id) throw new Error('RPA task missing profile_id');
     const current = this.engine?.running?.get?.(id);
     if (current?.port) return current;
+    // RPA drives browsers through CDP; Firefox kernels cannot serve it.
+    const engineFamily = (current?.engine)
+      || (this.engine?.profileEngine ? this.engine.profileEngine(this.engine?.profiles?.get?.(id)) : null);
+    if (current && current.engine === 'firefox') {
+      throw new Error('RPA 需要支持 CDP 的 Chromium 内核；Firefox 环境无法执行自动化步骤: ' + id);
+    }
+    if (!current && engineFamily === 'firefox') {
+      throw new Error('RPA 需要支持 CDP 的 Chromium 内核；该环境已设置为 Firefox，无法执行自动化步骤: ' + id);
+    }
 
     const profile = this.engine?.profiles?.get?.(id);
     if (!profile) throw new Error('Profile not found for RPA task: ' + id);

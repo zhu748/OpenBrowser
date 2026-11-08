@@ -150,6 +150,19 @@ function extractUserDataDir(command) {
   return String(match.slice(1).find((value) => value !== undefined) || '').trim();
 }
 
+/**
+ * Firefox-style managed profile flag: `-profile <dir>` (space- or
+ * equals-separated, optionally quoted). Single dash only, so Chromium's
+ * `--profile-directory=Default` (double dash, `=` form) never matches.
+ */
+function extractProfileDirArg(command) {
+  const match = String(command || '').match(
+    /(?:^|\s)-profile(?:\s*=|["' ])(?:"([^"]*)"|'([^']*)'|(\S+))/i
+  );
+  if (!match) return '';
+  return String(match.slice(1).find((value) => value !== undefined) || '').trim();
+}
+
 function windowsExecutableMatches(actualExecutable, expectedExecutable) {
   const actual = path.win32.normalize(String(actualExecutable || '')).toLowerCase();
   const expected = String(expectedExecutable || '').trim();
@@ -174,14 +187,14 @@ function processIdentity(pid, options = {}) {
     if (executables.length && !executables.some((exe) => windowsExecutableMatches(inspected.executablePath, exe))) {
       return { ok: false, reason: 'managed executable does not match', command, executables };
     }
-    if (options.expectedUserDataDir) {
-      const expectedRoot = path.win32.normalize(String(options.expectedUserDataDir)).toLowerCase();
-      const userDataArg = extractUserDataDir(inspected.commandLine);
-      const actualRoot = path.win32.normalize(String(userDataArg || '')).toLowerCase();
-      if (!userDataArg || actualRoot !== expectedRoot) {
-        return { ok: false, reason: 'managed user-data-dir does not match', command };
-      }
+  if (options.expectedUserDataDir) {
+    const expectedRoot = path.win32.normalize(String(options.expectedUserDataDir)).toLowerCase();
+    const userDataArg = extractUserDataDir(inspected.commandLine) || extractProfileDirArg(inspected.commandLine);
+    const actualRoot = path.win32.normalize(String(userDataArg || '')).toLowerCase();
+    if (!userDataArg || actualRoot !== expectedRoot) {
+      return { ok: false, reason: 'managed user-data-dir does not match', command };
     }
+  }
     return { ok: true, command, executablePath: inspected.executablePath };
   }
   let command;
@@ -208,7 +221,10 @@ function processIdentity(pid, options = {}) {
     // " --flag" boundary (or end) and compare resolved paths for equality — this keeps
     // spaced paths working without letting one profile id prefix-match another.
     const bare = command.match(/(?:^|\s)--user-data-dir=((?:(?! --).)*)/)?.[1];
-    const userDataArg = quoted || bare || '';
+    // Firefox managed roots appear as "-profile <dir>"; honor them the same way.
+    const profileQuoted = command.match(/(?:^|\s)-profile["' ](?:"([^"]*)"|'([^']*)')/)?.[1] || '';
+    const profileBare = command.match(/(?:^|\s)-profile(?:=|["' ])((?:(?! --).)*)/)?.[1] || '';
+    const userDataArg = quoted || bare || profileQuoted.trim() || profileBare.trim() || '';
     if (!userDataArg || path.resolve(userDataArg) !== expectedRoot) {
       return { ok: false, reason: 'managed user-data-dir does not match', command };
     }

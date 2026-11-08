@@ -28,8 +28,126 @@ function kernelSourceLabel(source) {
   if (source === 'chrome-stable') return 'Google Chrome Stable';
   if (source === 'chrome-for-testing') return 'Chrome for Testing';
   if (source === 'custom') return '自定义';
+  if (source === 'mozilla') return 'Firefox';
   return source || '—';
 }
+
+// ========== Multi-version kernel downloads (Chrome for Testing / Firefox) ==========
+function kernelEngineName(engine) {
+  return engine === 'firefox' ? 'Firefox' : 'Chrome for Testing';
+}
+
+function fillVersionSelect(select, payload) {
+  if (!select) return;
+  select.replaceChildren();
+  for (const item of payload?.versions || []) {
+    const label = `${item.version}${item.channel === 'esr' ? tx('（ESR）') : ''}${item.installed ? tx(' · 已安装') : ''}`;
+    select.add(new Option(label, item.version));
+  }
+}
+
+async function loadKernelVersionOptions(engine, refresh) {
+  const chromium = document.getElementById('kernel-chromium-version');
+  const firefox = document.getElementById('kernel-firefox-version');
+  if (engine === 'firefox' && firefox) firefox.replaceChildren(new Option(t('system.kernel.loading'), ''));
+  if (engine !== 'firefox' && chromium) chromium.replaceChildren(new Option(t('system.kernel.loading'), ''));
+  try {
+    const payload = await window.ops.kernelListVersions(engine, refresh);
+    if (engine === 'firefox') fillVersionSelect(firefox, payload);
+    else fillVersionSelect(chromium, payload);
+    return payload;
+  } catch (error) {
+    const target = engine === 'firefox' ? firefox : chromium;
+    if (target) target.replaceChildren(new Option(t('system.kernel.loadFailed'), ''));
+    toast(t('system.kernel.catalogFailed') + (error?.message || String(error)));
+    return null;
+  }
+}
+
+async function installKernelVersion(engine) {
+  const select = engine === 'firefox'
+    ? document.getElementById('kernel-firefox-version')
+    : document.getElementById('kernel-chromium-version');
+  const button = engine === 'firefox'
+    ? document.getElementById('kernel-firefox-install')
+    : document.getElementById('kernel-chromium-install');
+  const progress = document.getElementById('kernel-progress');
+  const version = select?.value;
+  if (!version) { toast(t('system.kernel.pickFirst')); return; }
+  try {
+    if (button) button.disabled = true;
+    if (progress) progress.textContent = tx(`正在下载 ${kernelEngineName(engine)} ${version}…`);
+    toast(tx(`开始下载 ${kernelEngineName(engine)} ${version}…`));
+    const kernel = await window.ops.kernelInstallVersion(engine, version);
+    if (progress) progress.textContent = tx(`${kernelEngineName(engine)} ${version} 已就绪：`) + (kernel?.path || '');
+    toast(tx(`${kernelEngineName(engine)} ${version} 安装完成`));
+    log('Kernel', `${kernelEngineName(engine)} ${version} · ${kernel?.path || ''}`);
+    await Promise.all([
+      loadKernelVersionOptions(engine, false),
+      refreshKernelInstalledList(),
+      refreshKernelPanel(),
+    ]);
+  } catch (error) {
+    const message = error?.message || String(error);
+    if (progress) progress.textContent = tx(`下载 ${kernelEngineName(engine)} 失败：`) + message;
+    toast(tx(`下载 ${kernelEngineName(engine)} 失败：`) + message);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function refreshKernelInstalledList() {
+  const host = document.getElementById('kernel-installed-list');
+  if (!host) return;
+  try {
+    const installed = await window.ops.kernelListInstalled();
+    const info = await window.ops.getInfo().catch(() => null);
+    const pinned = info?.kernel?.meta?.pin || null;
+    if (!Array.isArray(installed) || !installed.length) {
+      host.replaceChildren(Object.assign(document.createElement('small'), { textContent: t('system.kernel.installedNone') }));
+      return;
+    }
+    host.replaceChildren();
+    for (const kernel of installed) {
+      const row = document.createElement('div');
+      row.className = 'kernel-installed-item';
+      const isPinned = pinned && pinned.engine === kernel.engine && pinned.version === kernel.version;
+      const name = document.createElement('strong');
+      name.textContent = kernel.name + (isPinned ? tx(' · 当前默认') : '');
+      const path = document.createElement('code');
+      path.textContent = kernel.path || '';
+      const spacer = document.createElement('span');
+      spacer.className = 'spacer';
+      const pinBtn = document.createElement('button');
+      pinBtn.className = 'outline';
+      pinBtn.type = 'button';
+      pinBtn.textContent = isPinned ? t('system.kernel.clearPin') : t('system.kernel.setPin');
+      pinBtn.addEventListener('click', async () => {
+        try {
+          pinBtn.disabled = true;
+          if (isPinned) await window.ops.kernelUnpin();
+          else await window.ops.kernelPin(kernel.engine, kernel.version);
+          toast(isPinned ? t('system.kernel.restoreDefault') : tx(`已将 ${kernel.name} 设为默认内核`));
+          await Promise.all([refreshKernelInstalledList(), refreshKernelPanel()]);
+        } catch (error) {
+          toast(error?.message || String(error));
+        } finally {
+          pinBtn.disabled = false;
+        }
+      });
+      row.append(name, path, spacer, pinBtn);
+      host.append(row);
+    }
+  } catch (error) {
+    host.replaceChildren(Object.assign(document.createElement('small'), { textContent: t('system.kernel.installedColon') + (error?.message || String(error)) }));
+  }
+}
+
+document.getElementById('kernel-chromium-install')?.addEventListener('click', () => installKernelVersion('chromium'));
+document.getElementById('kernel-firefox-install')?.addEventListener('click', () => installKernelVersion('firefox'));
+document.getElementById('kernel-chromium-refresh')?.addEventListener('click', () => loadKernelVersionOptions('chromium', true));
+document.getElementById('kernel-firefox-refresh')?.addEventListener('click', () => loadKernelVersionOptions('firefox', true));
+window.refreshKernelPanel = refreshKernelPanel;
 
 async function refreshKernelPanel() {
   const badge = document.getElementById('kernel-status-badge');
@@ -189,6 +307,9 @@ document.getElementById('kernel-system-browser')?.addEventListener('change', asy
   }
 });
 
-window.refreshKernelPanel = refreshKernelPanel;
 window.kernelSourceLabel = kernelSourceLabel;
+// Initial load for the multi-version panel.
+loadKernelVersionOptions('chromium', false);
+loadKernelVersionOptions('firefox', false);
+refreshKernelInstalledList();
 })();

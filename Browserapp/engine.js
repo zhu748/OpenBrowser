@@ -215,17 +215,45 @@ class BrowserEngine {
 
   candidates() {
     const list = [];
-    // 1) Independent kernel (integrated / custom) — first priority
+    // 1) Independent kernels (integrated seed, per-version installs, custom) —
+    //    Chromium first, then Firefox, so the default selection keeps favoring
+    //    the platform's primary engine.
     const independent = this.kernelManager.resolveInstalled();
-    if (independent) list.push({ name: independent.name, path: independent.path, independent: true, version: independent.version, source: independent.source });
+    if (independent) {
+      list.push({ name: independent.name, path: independent.path, independent: true, version: independent.version, source: independent.source, engine: independent.engine || 'chromium' });
+    }
+    for (const kernel of this.kernelManager.listInstalledKernels()) {
+      if (kernel.path && !list.some((item) => item.path === kernel.path)) {
+        list.push({
+          name: kernel.name,
+          path: kernel.path,
+          independent: true,
+          version: kernel.version,
+          source: kernel.source,
+          engine: kernel.engine,
+        });
+      }
+    }
 
     // 2) System browsers are exposed for explicit manual selection only.
-    for (const item of this.systemBrowserCandidates()) list.push({ ...item, independent: false });
+    for (const item of this.systemBrowserCandidates()) list.push({ ...item, independent: false, engine: 'chromium' });
     return list.filter((item, index, all) => fs.existsSync(item.path) && all.findIndex((other) => other.path === item.path) === index);
   }
 
   systemBrowserCandidates() {
     return systemBrowserCandidatesForPlatform();
+  }
+
+  /**
+   * Engine preference for one profile: 'firefox' | 'chromium'.
+   * The per-profile editor choice wins; without one, the pinned/installed
+   * default kernel decides.
+   */
+  profileEngine(profile) {
+    const engine = String(profile?.engine || '').trim().toLowerCase();
+    if (engine === 'firefox' || engine === 'chromium') return engine;
+    const installed = this.kernelManager.resolveInstalled();
+    return installed?.engine === 'firefox' ? 'firefox' : 'chromium';
   }
 
   resolveStoredProxyProfile(incoming) {
@@ -500,18 +528,26 @@ class BrowserEngine {
 
   profileRoot(id) { return path.join(this.profileDataRootPath, assertProfileId(id)); }
 
-  browserSelection() {
+  browserSelection(preferredEngine = null) {
     const list = this.candidates();
-    const independent = list.find((item) => item.independent);
+    const wantEngine = preferredEngine === 'firefox' || preferredEngine === 'chromium' ? preferredEngine : null;
+    const scoped = wantEngine ? list.filter((item) => (item.engine || 'chromium') === wantEngine) : list;
+    const independent = scoped.find((item) => item.independent);
     if (this.allowSystemBrowserFallback && this.systemBrowserPath) {
-      const manual = list.find((item) => !item.independent && item.path === this.systemBrowserPath);
+      const manual = scoped.find((item) => !item.independent && item.path === this.systemBrowserPath);
       if (manual) return { mode: 'system-manual', browser: manual };
     }
     if (this.preferIndependentKernel) {
       if (independent) return { mode: 'independent', browser: independent };
-      return { mode: 'blocked', browser: null, message: '未找到内置独立浏览器内核。请确认安装包包含 kernels/，或在「本地设置」选择自定义内核。' };
+      return {
+        mode: 'blocked',
+        browser: null,
+        message: wantEngine === 'firefox'
+          ? '未找到可用的 Firefox 内核。请在「本地设置」下载 Firefox。'
+          : '未找到内置独立浏览器内核。请确认安装包包含 kernels/，或在「本地设置」选择自定义内核。',
+      };
     }
-    const browser = independent || list[0];
+    const browser = independent || scoped[0];
     if (!browser) return { mode: 'blocked', browser: null, message: '未找到可用浏览器内核' };
     if (!browser.independent && (!this.allowSystemBrowserFallback || browser.path !== this.systemBrowserPath)) {
       return { mode: 'blocked', browser: null, message: '未找到内置独立浏览器内核。请确认安装包包含 kernels/，或在「本地设置」选择自定义内核。' };
@@ -519,8 +555,11 @@ class BrowserEngine {
     return { mode: browser.independent ? 'independent' : 'system-manual', browser };
   }
 
-  chooseBrowser() {
-    const selection = this.browserSelection();
+  chooseBrowser(profile = null, preferredEngine = null) {
+    const engine = preferredEngine === 'firefox' || preferredEngine === 'chromium'
+      ? preferredEngine
+      : (profile ? this.profileEngine(profile) : null);
+    const selection = this.browserSelection(engine);
     if (selection.browser) {
       if (isSystemBrowserExecutable(selection.browser.path) && !this.allowSystemBrowserFallback) {
         throw new Error('已阻止使用本机浏览器。请安装或选择独立 Chromium 内核。');
@@ -1023,6 +1062,19 @@ class BrowserEngine {
       throw error;
     }
 
+    // Firefox kernels have no CDP; they take the dedicated launch pipeline.
+    // The decision lives here so every caller (UI, local API, RPA) gets it.
+    if (this.profilePrefersFirefox(candidate)) {
+      return this.startManaged(id, candidate, (generation) => this._startFirefox(candidate, generation));
+    }
+    return this.startManaged(id, candidate, (generation) => this._start(candidate, generation));
+  }
+
+  /**
+   * Shared start bookkeeping (starting map + generation barrier). start() used
+   * to inline this; the Chromium and Firefox pipelines both go through it now.
+   */
+  async startManaged(id, candidate, run) {
     const generation = this.nextLifecycleGeneration(id);
     const task = (async () => {
       const pendingStop = this.stopping.get(id);
@@ -1089,7 +1141,7 @@ class BrowserEngine {
       }
       if (afterStop) return this.publicRunning(id);
       this.assertStartGenerationActive(id, generation);
-      return this._start(candidate, generation);
+      return run(generation);
     })();
     task.lifecycleGeneration = generation;
     this.starting.set(id, task);
@@ -1098,6 +1150,19 @@ class BrowserEngine {
     } finally {
       if (this.starting.get(id) === task) this.starting.delete(id);
     }
+  }
+
+  /**
+   * True when a profile asks for the Firefox engine: the per-profile editor
+   * setting, or a Firefox default pin with no per-profile override.
+   */
+  profilePrefersFirefox(profile) {
+    const engine = String(profile?.engine || '').trim().toLowerCase();
+    if (engine === 'firefox') return true;
+    if (engine === 'chromium') return false;
+    // No per-profile choice: fall back to the pinned/installed default kernel.
+    const installed = this.kernelManager.resolveInstalled();
+    return installed?.engine === 'firefox';
   }
 
   publicRunning(id) {
@@ -1119,6 +1184,7 @@ class BrowserEngine {
     }
     return {
       id, running: true, starting: false, stopping: false, pid: item.pid, port: item.port,
+      engine: item.engine || 'chromium',
       browser: item.browser.name, executable: item.browser.path,
       profileDirectory: item.root,
       extensionCount: item.extensions.length,
@@ -1452,6 +1518,8 @@ Object.assign(BrowserEngine.prototype, require('./engine/profile-proxy'));
 // The startup routine (_start) is a prototype mixin in engine/start.js;
 // the public start() entry stays here and calls it through the prototype.
 Object.assign(BrowserEngine.prototype, require('./engine/start'));
+// Firefox launch pipeline (no CDP); prototype-assigned like engine/start.
+Object.assign(BrowserEngine.prototype, require('./engine/start-firefox'));
 
 // Fingerprint injection (worker realms, session attach, delivery
 // verification, start-page refresh) is a prototype mixin in
