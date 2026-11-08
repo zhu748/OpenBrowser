@@ -384,6 +384,10 @@ module.exports = {
               phase: 'watch-ensure',
             }).catch((error) => {
               item.cdpError = `fingerprint injection failed: ${error.message}`;
+              // cdpError is part of the public status view (local API reads it
+              // directly); this path emits no 'status' event, so invalidate
+              // explicitly.
+              this.invalidateStatusCache?.();
               this.emit({
                 type: 'fingerprint-injection-failed',
                 id: profileId,

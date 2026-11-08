@@ -669,14 +669,22 @@ async function fetchStorePackage(url, proxyValue = null) {
     const chunks = []; let received = 0;
     const reader = response.body?.getReader?.();
     if (reader) {
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        received += value?.byteLength || 0;
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          received += value?.byteLength || 0;
+          if (received > LIMIT) throw new Error('扩展包超过 120 MB 限制');
+          chunks.push(Buffer.from(value));
+        }
         if (received > LIMIT) throw new Error('扩展包超过 120 MB 限制');
-        chunks.push(Buffer.from(value));
+      } catch (streamError) {
+        // Release the socket instead of waiting for the 180s abort timer:
+        // a size-cap rejection mid-body otherwise keeps downloading in the
+        // background until the whole oversized file has been transferred.
+        reader.cancel().catch(() => {});
+        throw streamError;
       }
-      if (received > LIMIT) throw new Error('扩展包超过 120 MB 限制');
     } else {
       const whole = Buffer.from(await response.arrayBuffer());
       if (whole.length > LIMIT) throw new Error('扩展包超过 120 MB 限制');
@@ -1308,7 +1316,10 @@ app.whenReady().then(async () => {
     });
     return { success: true, mode, ...applied };
   });
-  registerTrustedIpc('profiles:sync', (_event, profiles) => engine.syncProfiles(profiles));
+  // Status snapshot caching: invalidate on every profile-affecting IPC so the
+  // poll-heavy 'profiles:status' handler can serve a cached array between
+  // mutations (engine.invalidateStatusCache is a no-op when already stale).
+  registerTrustedIpc('profiles:sync', (_event, profiles) => { engine.invalidateStatusCache?.(); return engine.syncProfiles(profiles); });
   registerTrustedIpc('profiles:delete', async (_event, payload) => {
     const ids = sanitizeIds(payload?.ids || []);
     if (syncState.active && syncState.selected.some((id) => ids.includes(id))) endSync();

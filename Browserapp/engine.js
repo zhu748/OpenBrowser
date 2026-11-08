@@ -312,6 +312,7 @@ class BrowserEngine {
         && next.proxyMeta?.ipChannel === profile.proxyMeta?.ipChannel
         && next.proxyMeta?.refreshUrl === profile.proxyMeta?.refreshUrl) continue;
       this.profiles.set(id, next);
+      this.invalidateStatusCache?.();
       changed = true;
     }
     if (changed) await this.persist();
@@ -1298,6 +1299,7 @@ class BrowserEngine {
         profile.cookies = cookieExport;
         profile.updatedAt = new Date().toISOString();
         this.profiles.set(safe, profile);
+        this.invalidateStatusCache?.();
         await this.persist().catch(() => {});
       }
     }
@@ -1398,7 +1400,13 @@ class BrowserEngine {
   // Proxy strings keep their credentials — the renderer merges them back into
   // local state (mergeEngineExitState) and localStorage already strips them.
   status() {
-    return [...this.profiles.values()].map((profile) => {
+    // Snapshot cache: the renderer polls this constantly, and building the
+    // full view (spread + secret scrub per profile × N) is pure waste when
+    // nothing changed. Mutation paths call invalidateStatusCache(); a stale
+    // entry can only ever cost one extra poll (≤120 ms) of outdated badge
+    // text, never correctness of actions — those read live state directly.
+    if (this._statusCache) return this._statusCache;
+    this._statusCache = [...this.profiles.values()].map((profile) => {
       const view = { ...profile, ...this.publicRunning(profile.id), network: this.networkInfo.get(profile.id) || null, assignedExtensions: [...(this.assignments.get(profile.id) || [])] };
       if ('cookies' in view) view.cookies = '';
       if (view.platform && typeof view.platform === 'object') {
@@ -1408,6 +1416,11 @@ class BrowserEngine {
       }
       return view;
     });
+    return this._statusCache;
+  }
+
+  invalidateStatusCache() {
+    this._statusCache = null;
   }
 
   async readExtension(directory, builtIn = false) {
@@ -1502,7 +1515,15 @@ class BrowserEngine {
     return { success: true };
   }
   on(listener) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
-  emit(value) { for (const listener of this.listeners) listener(value); }
+  // 'status' events are emitted exactly at the points where the public view
+  // (running/port/network/...) can change, so they double as the invalidation
+  // signal for the status() snapshot cache. This one hook covers start/stop,
+  // proxy checks, fingerprint-verification outcomes — anything that reports
+  // itself as a status change.
+  emit(value) {
+    if (value?.type === 'status') this._statusCache = null;
+    for (const listener of this.listeners) listener(value);
+  }
   runningWithCdp(ids) {
     return ids.map((id) => ({ id, item: this.running.get(id) }))
       .filter((entry) => entry.item?.port && !entry.item.cleanedUp && !entry.item.stopping);

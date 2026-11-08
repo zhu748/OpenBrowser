@@ -949,7 +949,11 @@ async function startAuthenticatedProxy(config, onStatus = () => {}) {
 async function connectBridge(bridge, hostname, port) {
   const socket = await connectSocket('127.0.0.1', bridge.port); const reader = new BufferedReader(socket);
   if (bridge.protocol === 'http') {
-    socket.write('CONNECT ' + hostname + ':' + port + ' HTTP/1.1\r\nHost: ' + hostname + ':' + port + '\r\nConnection: close\r\n\r\n');
+    // Bracket a bare IPv6 literal: "CONNECT 2001:db8::1:443" is unparseable
+    // on the upstream side (host/port boundary is ambiguous).
+    const authority = String(hostname || '').includes(':') && !String(hostname || '').startsWith('[')
+      ? `[${hostname}]:${port}` : `${hostname}:${port}`;
+    socket.write('CONNECT ' + authority + ' HTTP/1.1\r\nHost: ' + authority + '\r\nConnection: close\r\n\r\n');
     const header = await reader.readUntil('\r\n\r\n');
     const headerStr = header.toString('latin1');
     const status = Number(headerStr.split('\r\n', 1)[0].match(/\s(\d{3})(?:\s|$)/)?.[1] || 0);

@@ -2607,96 +2607,147 @@ function filteredProfilesForCurrentView() {
   });
 }
 
+// One <tr> for the profile table. Pure builder — no caching, no diffing;
+// renderProfiles decides whether an existing row can be reused and only
+// calls this when the row's render key actually changed.
+function buildProfileRow(profile) {
+  const info = profileEngine(profile.id); const row = document.createElement('tr');
+  row.dataset.profileId = profile.id;
+  const selectCell = document.createElement('td'); const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = selectedProfiles.has(profile.id); checkbox.dataset.profileSelect = profile.id; selectCell.append(checkbox);
+  checkbox.setAttribute('aria-label', t('profiles.selectOne', { n: displayProfileNumber(profile) }));
+  const idCell = element('td', 'col-num', displayProfileNumber(profile));
+  const nameCell = document.createElement('td');
+  nameCell.append(buildEnvIdentity(profile));
+  const groupCell = document.createElement('td');
+  groupCell.className = 'col-group';
+  const badge = element('span', 'group-badge group-badge-compact', groupNameOf(profile));
+  badge.style.setProperty('--chip-color', groupColorOf(profile));
+  badge.title = groupNameOf(profile);
+  groupCell.append(badge);
+  const browserCell = document.createElement('td');
+  browserCell.className = 'col-browser';
+  browserCell.append(buildEnvBrowserCell(profile));
+  const proxyCell = document.createElement('td');
+  proxyCell.className = 'col-network';
+  proxyCell.append(networkModeBadge(profile.proxy));
+  const networkCell = document.createElement('td');
+  networkCell.className = 'col-exit';
+  const network = info.network || (profile.exitIp ? { ip: profile.exitIp, countryCode: profile.exitCountryCode, checkedAt: profile.exitCheckedAt } : null);
+  const networkInfo = element('div', 'network-info network-info-compact');
+  if (network?.ip) {
+    const code = String(network.countryCode || '').toUpperCase();
+    const line = element('span', 'exit-compact', (code ? countryFlag(code) + ' ' + code : '🌐') + (network.ip ? ' · ' + String(network.ip).replace(/^(\d+\.\d+)\.\d+\.\d+$/, '$1.*.*') : ''));
+    line.title = (network.ip || '') + (code ? ' · ' + countryName(code) : '');
+    networkInfo.append(line);
+  } else {
+    networkInfo.append(element('span', 'network-pending', isDirectProxy(profile.proxy) ? t('net.localHost') : t('net.untested')));
+  }
+  if (!isDirectProxy(profile.proxy)) {
+    const inspect = element('button', 'network-check', t('action.check'));
+    inspect.title = network?.ip ? t('action.recheck') : t('action.checkExit');
+    inspect.dataset.proxyCheck = profile.id;
+    networkInfo.append(inspect);
+  }
+  networkCell.append(networkInfo);
+  const extensionCell = element('td', 'col-ext', String(info.assignedExtensions?.length || 0));
+  const statusCell = document.createElement('td');
+  statusCell.className = 'col-status';
+  const starting = !info.running && startingProfiles.has(profile.id);
+  if (starting) {
+    statusCell.append(buildStartProgressCell(profile.id, startingProfiles.get(profile.id)));
+    row.classList.add('is-starting');
+  } else {
+    const status = element('span', `status status-compact ${info.running ? 'running' : ''}`, info.running ? t('status.run') : t('status.stop'));
+    if (info.running && info.port) status.title = t('status.runningCdp', { port: info.port });
+    statusCell.append(status);
+  }
+  const actionCell = document.createElement('td');
+  actionCell.className = 'col-actions';
+  const actions = element('div', 'actions');
+  if (activeGroupFilter === 'trash') {
+    const restore = iconActionButton('rotate-ccw', t('trash.restore'), 'mini restore');
+    restore.dataset.action = 'restore';
+    restore.dataset.id = profile.id;
+    const purge = iconActionButton('trash-2', t('trash.purge'), 'mini danger purge');
+    purge.dataset.action = 'purge';
+    purge.dataset.id = profile.id;
+    actions.append(restore, purge);
+  } else {
+    const toggle = iconActionButton(info.running ? 'square' : 'play', info.running ? t('action.stop') : (starting ? t('status.starting') : t('action.start')));
+    toggle.dataset.action = info.running ? 'stop' : 'start';
+    toggle.dataset.id = profile.id;
+    if (starting) {
+      toggle.disabled = true;
+      toggle.classList.add('is-starting');
+      toggle.title = startProgressLabel(startingProfiles.get(profile.id));
+      toggle.setAttribute('aria-label', toggle.title);
+      toggle.setAttribute('aria-disabled', 'true');
+    }
+    const sync = iconActionButton('panels-top-left', t('profiles.syncSelect'), 'mini blue'); sync.dataset.action = 'select-sync'; sync.dataset.id = profile.id; sync.disabled = !info.running || starting; if (sync.disabled) sync.setAttribute('aria-disabled', 'true');
+    const edit = iconActionButton('pencil', t('action.edit'), 'mini edit'); edit.dataset.action = 'edit'; edit.dataset.id = profile.id;
+    const clone = iconActionButton('copy', t('action.clone') || '克隆', 'mini clone'); clone.dataset.action = 'clone'; clone.dataset.id = profile.id;
+    actions.append(toggle, sync, edit, clone);
+  }
+  actionCell.append(actions);
+  row.append(selectCell, idCell, nameCell, groupCell, browserCell, proxyCell, networkCell, extensionCell, statusCell, actionCell);
+  return row;
+}
+
 function renderProfiles() {
   renderGroupFilterChips();
-  const table = $('#profile-table'); table.replaceChildren();
+  const table = $('#profile-table');
   const filtered = filteredProfilesForCurrentView();
   const pageData = window.OpenBrowserProfileList?.paginate?.(filtered, profilePage, profilePageSize)
     || { items: filtered, currentPage: 1, totalPages: 1 };
   profilePage = pageData.currentPage;
   const totalPages = pageData.totalPages;
   const visible = pageData.items;
+  // Row-level diff: scheduleRenderProfiles fires on every poll-driven state
+  // merge, but usually only one row's inputs changed (a badge flip, an exit-IP
+  // arrival). Rebuild only rows whose render key moved; keep the rest (and
+  // their DOM state — focus, tooltips, transition mid-frames) untouched.
+  const renderKeyFor = (profile) => {
+    const info = profileEngine(profile.id);
+    const starting = startingProfiles.get(profile.id) || null;
+    const group = findGroup(profile.groupId);
+    // Group renames/recolors don't touch the profile row itself; the badge
+    // text/color derive from ui.groups, so they participate in the key. The
+    // engine network object (exit IP check result) rides along via its fields.
+    return JSON.stringify([
+      profile.updatedAt || '', profile.name || '', profile.title || '', profile.groupId || '',
+      group ? `${group.name}:${group.color}` : '',
+      profile.browser || '', profile.engine || '', profile.proxy || '', profile.exitIp || '', profile.exitCountryCode || '',
+      info.running, info.port || '', info.cdpError || '', info.verificationBlocked || false,
+      info.assignedExtensions?.length ?? 0, starting ? `${starting.phase}:${starting.percent}` : '',
+      info.network?.ip || '', info.network?.countryCode || '', info.network?.checkedAt || '',
+      activeGroupFilter, window.OpenBrowserI18n?.getLocale?.() || '', displayProfileNumber(profile),
+      // Env badges bake theme-dependent hex colors into inline SVG attributes,
+      // so a light/dark switch must rebuild every row despite same data.
+      isCurrentThemeLight(),
+    ]);
+  };
+  const existingRows = new Map([...table.querySelectorAll('tr[data-profile-id]')].map((row) => [row.dataset.profileId, row]));
+  const seenRows = new Set();
   for (const profile of visible) {
-    const info = profileEngine(profile.id); const row = document.createElement('tr');
-    row.dataset.profileId = profile.id;
-    const selectCell = document.createElement('td'); const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = selectedProfiles.has(profile.id); checkbox.dataset.profileSelect = profile.id; selectCell.append(checkbox);
-    checkbox.setAttribute('aria-label', t('profiles.selectOne', { n: displayProfileNumber(profile) }));
-    const idCell = element('td', 'col-num', displayProfileNumber(profile));
-    const nameCell = document.createElement('td');
-    nameCell.append(buildEnvIdentity(profile));
-    const groupCell = document.createElement('td');
-    groupCell.className = 'col-group';
-    const badge = element('span', 'group-badge group-badge-compact', groupNameOf(profile));
-    badge.style.setProperty('--chip-color', groupColorOf(profile));
-    badge.title = groupNameOf(profile);
-    groupCell.append(badge);
-    const browserCell = document.createElement('td');
-    browserCell.className = 'col-browser';
-    browserCell.append(buildEnvBrowserCell(profile));
-    const proxyCell = document.createElement('td');
-    proxyCell.className = 'col-network';
-    proxyCell.append(networkModeBadge(profile.proxy));
-    const networkCell = document.createElement('td');
-    networkCell.className = 'col-exit';
-    const network = info.network || (profile.exitIp ? { ip: profile.exitIp, countryCode: profile.exitCountryCode, checkedAt: profile.exitCheckedAt } : null);
-    const networkInfo = element('div', 'network-info network-info-compact');
-    if (network?.ip) {
-      const code = String(network.countryCode || '').toUpperCase();
-      const line = element('span', 'exit-compact', (code ? countryFlag(code) + ' ' + code : '🌐') + (network.ip ? ' · ' + String(network.ip).replace(/^(\d+\.\d+)\.\d+\.\d+$/, '$1.*.*') : ''));
-      line.title = (network.ip || '') + (code ? ' · ' + countryName(code) : '');
-      networkInfo.append(line);
-    } else {
-      networkInfo.append(element('span', 'network-pending', isDirectProxy(profile.proxy) ? t('net.localHost') : t('net.untested')));
+    const key = renderKeyFor(profile);
+    const existing = existingRows.get(profile.id);
+    if (existing && existing.dataset.renderKey === key && !seenRows.has(profile.id)) {
+      // Reuse: only the selection checkbox is cheap to resync inline.
+      const checkbox = existing.querySelector('[data-profile-select]');
+      if (checkbox) checkbox.checked = selectedProfiles.has(profile.id);
+      table.append(existing);
+      seenRows.add(profile.id);
+      continue;
     }
-    if (!isDirectProxy(profile.proxy)) {
-      const inspect = element('button', 'network-check', t('action.check'));
-      inspect.title = network?.ip ? t('action.recheck') : t('action.checkExit');
-      inspect.dataset.proxyCheck = profile.id;
-      networkInfo.append(inspect);
-    }
-    networkCell.append(networkInfo);
-    const extensionCell = element('td', 'col-ext', String(info.assignedExtensions?.length || 0));
-    const statusCell = document.createElement('td');
-    statusCell.className = 'col-status';
-    const starting = !info.running && startingProfiles.has(profile.id);
-    if (starting) {
-      statusCell.append(buildStartProgressCell(profile.id, startingProfiles.get(profile.id)));
-      row.classList.add('is-starting');
-    } else {
-      const status = element('span', `status status-compact ${info.running ? 'running' : ''}`, info.running ? t('status.run') : t('status.stop'));
-      if (info.running && info.port) status.title = t('status.runningCdp', { port: info.port });
-      statusCell.append(status);
-    }
-    const actionCell = document.createElement('td');
-    actionCell.className = 'col-actions';
-    const actions = element('div', 'actions');
-    if (activeGroupFilter === 'trash') {
-      const restore = iconActionButton('rotate-ccw', t('trash.restore'), 'mini restore');
-      restore.dataset.action = 'restore';
-      restore.dataset.id = profile.id;
-      const purge = iconActionButton('trash-2', t('trash.purge'), 'mini danger purge');
-      purge.dataset.action = 'purge';
-      purge.dataset.id = profile.id;
-      actions.append(restore, purge);
-    } else {
-      const toggle = iconActionButton(info.running ? 'square' : 'play', info.running ? t('action.stop') : (starting ? t('status.starting') : t('action.start')));
-      toggle.dataset.action = info.running ? 'stop' : 'start';
-      toggle.dataset.id = profile.id;
-      if (starting) {
-        toggle.disabled = true;
-        toggle.classList.add('is-starting');
-        toggle.title = startProgressLabel(startingProfiles.get(profile.id));
-        toggle.setAttribute('aria-label', toggle.title);
-        toggle.setAttribute('aria-disabled', 'true');
-      }
-      const sync = iconActionButton('panels-top-left', t('profiles.syncSelect'), 'mini blue'); sync.dataset.action = 'select-sync'; sync.dataset.id = profile.id; sync.disabled = !info.running || starting; if (sync.disabled) sync.setAttribute('aria-disabled', 'true');
-      const edit = iconActionButton('pencil', t('action.edit'), 'mini edit'); edit.dataset.action = 'edit'; edit.dataset.id = profile.id;
-      const clone = iconActionButton('copy', t('action.clone') || '克隆', 'mini clone'); clone.dataset.action = 'clone'; clone.dataset.id = profile.id;
-      actions.append(toggle, sync, edit, clone);
-    }
-    actionCell.append(actions);
-    row.append(selectCell, idCell, nameCell, groupCell, browserCell, proxyCell, networkCell, extensionCell, statusCell, actionCell); table.append(row);
+    const row = buildProfileRow(profile);
+    row.dataset.renderKey = key;
+    // The stale row for this id must go before its replacement lands, or the
+    // tail sweep (keyed by seen ids) would leave both in the table.
+    if (existing) existing.remove();
+    table.append(row);
+    seenRows.add(profile.id);
   }
+  for (const [id, row] of existingRows) if (!seenRows.has(id)) row.remove();
   const inTrash = activeGroupFilter === 'trash';
   const emptyBtn = $('#empty-trash-btn');
   if (emptyBtn) emptyBtn.hidden = !inTrash;

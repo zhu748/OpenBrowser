@@ -16,6 +16,7 @@ const path = require('path');
 module.exports = {
   async syncProfiles(values) {
     if (!Array.isArray(values) || values.length > 1000) throw new Error('Invalid profile list');
+    this.invalidateStatusCache?.();
     const existingIds = [...this.profiles.keys()];
     const globallyEnabled = existingIds.length ? [...this.extensions.keys()].filter((extensionId) => existingIds.every((profileId) => (this.assignments.get(profileId) || new Set()).has(extensionId))) : [];
     let assignmentsChanged = false;
@@ -128,6 +129,7 @@ module.exports = {
 
   async deleteProfiles(ids, deleteData = true) {
     if (!Array.isArray(ids) || ids.length > 200) throw new Error('Invalid profile selection');
+    this.invalidateStatusCache?.();
     const safeIds = [...new Set(ids.map(assertProfileId))];
     const deleted = []; let stopped = 0;
     for (const id of safeIds) {
@@ -187,6 +189,7 @@ module.exports = {
 
   async trashProfiles(ids) {
     if (!Array.isArray(ids) || ids.length > 200) throw new Error('Invalid profile selection');
+    this.invalidateStatusCache?.();
     const safeIds = [...new Set(ids.map(assertProfileId))];
     const trashed = [];
     let stopped = 0;
@@ -212,6 +215,7 @@ module.exports = {
 
   async restoreProfiles(ids) {
     if (!Array.isArray(ids) || ids.length > 200) throw new Error('Invalid profile selection');
+    this.invalidateStatusCache?.();
     const safeIds = [...new Set(ids.map(assertProfileId))];
     const restored = [];
     for (const id of safeIds) {
@@ -230,10 +234,12 @@ module.exports = {
   },
 
   async purgeProfiles(ids, deleteData = true) {
+    // deleteProfiles invalidates the status cache itself.
     return this.deleteProfiles(ids, deleteData);
   },
 
   async emptyTrash(deleteData = true) {
+    this.invalidateStatusCache?.();
     const trashedIds = [...this.profiles.values()]
       .filter((p) => Boolean(p.trashed))
       .map((p) => p.id);

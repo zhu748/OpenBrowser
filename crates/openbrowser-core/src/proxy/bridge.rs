@@ -445,9 +445,12 @@ impl LocalProxyBridge {
         target_host: &str,
         target_port: u16,
     ) -> Result<Vec<u8>> {
+        // Authority form: a bare IPv6 target must be bracketed, otherwise the
+        // upstream cannot tell where the host ends and the port begins.
+        let target_authority = upstream_socket_addr(target_host, target_port);
         let mut connect_req = format!(
-            "CONNECT {}:{} HTTP/1.1\r\nHost: {}:{}\r\nProxy-Connection: Keep-Alive\r\n",
-            target_host, target_port, target_host, target_port
+            "CONNECT {} HTTP/1.1\r\nHost: {}\r\nProxy-Connection: Keep-Alive\r\n",
+            target_authority, target_authority
         );
 
         if config.is_authenticated() {

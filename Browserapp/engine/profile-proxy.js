@@ -86,6 +86,9 @@ module.exports = {
     this.profiles.set(next.id, next);
     this.networkInfo.set(next.id, network);
     if (persist) this.persist().catch(() => {});
+    // The status emit below also invalidates via the engine emit hook; kept
+    // explicit here so the ordering is obvious even if emit changes.
+    this.invalidateStatusCache?.();
     this.emit({ type: 'status', id: next.id, running: this.running.has(next.id), network, profile: next });
     return { profile: next, network, patch };
   },
@@ -181,6 +184,10 @@ module.exports = {
         );
         nextProfile = this.sanitizeProfile({ ...profile, networkMode: 'proxy', proxy: rawProxy });
         this.profiles.set(nextProfile.id, nextProfile);
+        // If the subsequent probe fails, no 'status' emit happens on this
+        // path; the local API reads status() directly and would keep serving
+        // the pre-extraction proxy forever.
+        this.invalidateStatusCache?.();
       } catch (error) {
         extractError = error;
         if (!profile.proxy || /^(direct|offline|none)$/i.test(String(profile.proxy))) {
