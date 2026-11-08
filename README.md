@@ -63,6 +63,7 @@ The app supports multiple UI languages, currently including English and Chinese.
 | **Independent kernel** | Download a standalone Chromium kernel or use a custom local path. |
 | **Multi-version kernels** | One kernel per major release, like mainstream fingerprint browsers: Chrome for Testing offers its latest build for every major (145/146/147…, under `kernels/chromium-versions/<version>`), and official Firefox releases cover every generation (`kernels/firefox/<version>`, tarball / DMG / MSI per platform, SHA-256 verified from Mozilla's SHA256SUMS). Any installed version can be pinned as the default kernel. |
 | **Firefox engine** | Per-profile engine choice (Chromium or Firefox). Firefox environments launch with UA / language / proxy / telemetry prefs applied via `user.js`, no CDP required. RPA and window sync stay Chromium-only by design. |
+| **Extension install** | Install extensions inside the browser itself — Chrome Web Store "Add to Chrome" or Firefox add-ons — and the install persists in the profile across restarts (no blocking launch switches, profile prep merges `Preferences` instead of clobbering, retention/cache cleanup never touches `Default/Extensions`). The App Center adds batch install (built-in apps, one-click store imports, local folders) with per-profile enable/disable via `--load-extension`. |
 | **Backup options** | Local, WebDAV, GitHub, and cloud-drive backups when explicitly enabled. |
 
 ## Supported platforms

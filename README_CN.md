@@ -63,6 +63,7 @@ OpenBrowser 是一款本地桌面指纹浏览器，用于管理多套互相隔�
 | **独立内核** | 可下载独立 Chromium 内核，也可指定本地路径。 |
 | **多版本内核** | 与主流指纹浏览器一致，每个大版本只提供一份内核：Chrome for Testing 每个大版本（145/146/147…）取最新构建（`kernels/chromium-versions/<版本>`）；官方 Firefox 各代直接下载（`kernels/firefox/<版本>`，tarball / DMG / MSI 按平台，SHA-256 以 Mozilla SHA256SUMS 为准校验）。已安装版本可一键设为全局默认内核。 |
 | **Firefox 内核** | 每个环境可单独选择 Chromium 或 Firefox。Firefox 环境通过 `user.js` 预置 UA / 语言 / 代理 / 遥测关闭等配置，无需 CDP。RPA 与窗口同步按设计仅支持 Chromium 环境。 |
+| **扩展程序** | 与主流指纹浏览器一致，可直接在浏览器内安装扩展（Chrome 应用商店“添加至 Chrome”、Firefox 附加组件页面），安装结果保存在环境里、重启后依然生效（启动无任何阻断开关；profile 预备对 `Preferences` 采用读-改-写合并而非覆盖；数据保留与缓存清理从不触碰 `Default/Extensions`）。应用中心提供批量安装（自带应用、商店一键导入、本地目录）与按环境启停（`--load-extension`）。 |
 | **备份选项** | 本地、WebDAV、GitHub、网盘备份，仅在主动配置后启用。 |
 
 ## 支持平台
