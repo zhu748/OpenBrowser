@@ -335,7 +335,20 @@ class BrowserEngine {
       this._persistDebounceTimer = null;
       this._persistNow().then(this._persistDebounceResolve, this._persistDebounceReject);
     }, 50);
+    // The debounce timer stays unref'd so a quitting app never hangs on it,
+    // but an unref'd timer alone is NOT enough: in a CLI host (zoom-inspect,
+    // engine.init in plain node) it is the only pending work, the loop drains
+    // before the 50ms fires, and every awaiter of this promise deadlocks
+    // while the write is silently lost. A ref'd hold-open timer keeps the
+    // process alive exactly while the write is pending and detaches the
+    // moment it settles.
     this._persistDebounceTimer.unref?.();
+    if (this._persistHoldOpen) clearTimeout(this._persistHoldOpen);
+    this._persistHoldOpen = setTimeout(() => {}, 60000);
+    const releaseHold = () => {
+      if (this._persistHoldOpen) { clearTimeout(this._persistHoldOpen); this._persistHoldOpen = null; }
+    };
+    this._persistDebouncePending.then(releaseHold, releaseHold);
     return this._persistDebouncePending;
   }
 
@@ -1168,7 +1181,9 @@ class BrowserEngine {
     if (engine === 'firefox') return true;
     if (engine === 'chromium') return false;
     // No per-profile choice: fall back to the pinned/installed default kernel.
-    const installed = this.kernelManager.resolveInstalled();
+    // Guarded: unit harnesses build engines via Object.create(prototype)
+    // without a kernel manager; the default kernel choice is Chromium there.
+    const installed = this.kernelManager?.resolveInstalled?.();
     return installed?.engine === 'firefox';
   }
 
@@ -1304,6 +1319,7 @@ class BrowserEngine {
       }
     }
     let graceful = !item.child || isChildExited(item.child);
+    let closeTimer = null;
     if (!graceful && item.child) {
       // Prefer Browser.close so window-X / empty-window auto-stop fully quits Chromium helpers
       try {
@@ -1316,8 +1332,8 @@ class BrowserEngine {
               if (ws) await cdp.call(ws, 'Browser.close', {}, 4000).catch(() => {});
             }
           })(),
-          new Promise((resolve) => setTimeout(resolve, 1800)),
-        ]);
+          new Promise((resolve) => { closeTimer = setTimeout(resolve, 1800); if (closeTimer.unref) closeTimer.unref(); }),
+        ]).finally(() => clearTimeout(closeTimer));
       } catch (_) {}
       graceful = await this.waitForChildExit(item.child, 6500);
     }

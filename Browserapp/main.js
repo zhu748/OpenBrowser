@@ -111,6 +111,7 @@ let liveSync;
 let automation = null;
 let quitting = false;
 let quitCleanupPromise = null;
+let quitCleanupSettled = false;
 let syncSelection = [];
 let syncState = { active: false, master: null, selected: [] };
 const windows = new Set();
@@ -282,7 +283,7 @@ function hideMainWindowToTray(win) {
 function showMainWindow() {
   const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
   if (!win) {
-    createWindow().catch(() => {});
+    createWindow().catch((error) => console.error('[OpenBrowser] window restore failed:', error?.message || error));
     return;
   }
   if (win.isMinimized()) win.restore();
@@ -1902,7 +1903,15 @@ function beginQuitCleanup() {
         } catch (_) {}
       }
     })
-    .finally(() => app.quit());
+    .finally(() => {
+      // app.quit() here re-enters before-quit; Electron resets is_quitting_
+      // when the handler calls preventDefault, and the quitting guard would
+      // swallow that second quit forever (deadlock: no window, no tray, no
+      // exit). Exit directly and finish the will-quit work ourselves.
+      quitCleanupSettled = true;
+      try { stopShortcutBridge(); } catch (_) {}
+      app.exit(0);
+    });
   return quitCleanupPromise;
 }
 
@@ -1940,9 +1949,9 @@ app.on('before-quit', (event) => {
   // A second quit request during cleanup must not bypass the awaited shutdown
   // chain (stopAll, persistence flush, quit backup): that orphans the external
   // browser kernels and drops pending state changes.
-  if (quitting) { event.preventDefault(); return; }
+  if (quitCleanupSettled) return;
   event.preventDefault();
-  beginQuitCleanup();
+  if (!quitCleanupPromise) beginQuitCleanup();
 });
 app.on('will-quit', () => {
   stopShortcutBridge();

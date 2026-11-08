@@ -429,7 +429,7 @@ class BufferedReader {
       this.buffer = Buffer.concat([this.buffer, chunk]);
       // Hard cap: after a handshake timeout the socket stays in flowing mode,
       // and a local peer could otherwise grow this buffer without bound.
-      if (this.buffer.length > 65536 && this.waiters.length && this.waiters[0].type === 'size') {
+      if (this.buffer.length > 65536) {
         this.fail(new Error('Proxy handshake buffer overflow'));
         try { this.socket.destroy(); } catch (_) {}
         return;
@@ -834,7 +834,20 @@ async function startHttpBridge(config, onStatus) {
       try {
         upstream = connectHttpUpstream(config, () => {
           upstream.write(forwardedHeader(header, config), 'latin1');
-          if (!isConnect) { if (remainder.length) upstream.write(remainder); client.pipe(upstream); upstream.pipe(client); client.resume(); return; }
+          if (!isConnect) {
+            if (remainder.length) upstream.write(remainder);
+            // Only the first request on a client connection gets parsed; a
+            // keep-alive reuse would skip Proxy-Authorization injection and
+            // tunnel the second request into the first upstream socket.
+            // Signal Connection: close on the client leg so conforming
+            // clients (Chrome's proxy pool) drop the connection after the
+            // first response instead of reusing it.
+            client.writeHeadOnData = null;
+            const clientEnd = () => { if (!client.destroyed) client.end(); };
+            upstream.once('end', clientEnd);
+            upstream.once('close', () => { clientEnd(); upstream.removeListener('end', clientEnd); });
+            client.pipe(upstream); upstream.pipe(client); client.resume(); return;
+          }
           let response = Buffer.alloc(0);
           const receiveResponse = (data) => {
             response = Buffer.concat([response, data]); if (response.length > 65536) { upstream.destroy(); fail('Proxy response header was too large'); return; }
@@ -1360,17 +1373,22 @@ async function raceSettledValues(tasks, { minWaitMs = 0, maxWaitMs = 10000 } = {
   const results = [];
   const errors = [];
   await Promise.all(tasks.map(async (task) => {
+    let timer = null;
     try {
       const timeoutErr = new Error('lookup timed out');
       timeoutErr.code = 'probe-unavailable';
       timeoutErr.probeUnavailable = true;
       const value = await Promise.race([
         task(),
-        new Promise((_, reject) => setTimeout(() => reject(timeoutErr), maxWaitMs)),
+        new Promise((_, reject) => { timer = setTimeout(() => reject(timeoutErr), maxWaitMs); if (timer.unref) timer.unref(); }),
       ]);
       if (value) results.push(value);
     } catch (err) {
       errors.push(err);
+    } finally {
+      // Losing the race must not leave the maxWait timer alive: six orphaned
+      // 11s timers per lookup keep the loop busy for nothing.
+      clearTimeout(timer);
     }
   }));
   const elapsed = Date.now() - started;
@@ -1912,6 +1930,7 @@ async function lookupProxyCountry(config, options = {}) {
         reused.stale = true;
         reused.fromCache = true;
         reused.probeUnavailable = true;
+        reused.transportVerified = true;
         reused.probeWarning = '探测服务不可用（限频/超时），复用此前缓存的探测结果';
         reused.latencyMs = Date.now() - started;
         return reused;
@@ -1965,6 +1984,7 @@ async function lookupProxyCountry(config, options = {}) {
           networkType: 'proxy',
           fallback: true,
           probeUnavailable: true,
+          transportVerified: true,
           probeWarning: '探测服务不可用（限频/超时），复用既有配置的出口信息',
         };
         probeMemoryCache.set(cacheKey, fallbackResult, ttlMs);

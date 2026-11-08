@@ -15,6 +15,8 @@ const http = require('http');
 const crypto = require('crypto');
 const { URL } = require('url');
 const zlib = require('zlib');
+const gzipAsync = require('util').promisify(zlib.gzip);
+const gunzipAsync = require('util').promisify(zlib.gunzip);
 const { assertProfileId, assertSafeProfileChild } = require('./isolation');
 
 const BACKUP_VERSION = 1;
@@ -35,10 +37,37 @@ function sha256(buf) {
   return crypto.createHash('sha256').update(buf).digest('hex');
 }
 
+// scryptSync costs ~30-45ms of synchronous main-thread time per call and a
+// backup run calls it once per payload. Reuse one salt per passphrase (the
+// KDF cost is then paid once per process; AES-GCM only needs IV uniqueness)
+// and cache the derived key. Wire format OBE1 is unchanged.
+const __cloudKeyCache = new Map();
+const __cloudSaltCache = new Map();
+
+function cloudDerivedKey(passphrase, salt) {
+  const cacheKey = salt.toString('hex') + '|' + passphrase;
+  const cached = __cloudKeyCache.get(cacheKey);
+  if (cached) return cached;
+  const key = crypto.scryptSync(passphrase, salt, 32);
+  if (__cloudKeyCache.size >= 16) __cloudKeyCache.clear();
+  __cloudKeyCache.set(cacheKey, key);
+  return key;
+}
+
+function cloudEncryptSaltFor(passphrase) {
+  let salt = __cloudSaltCache.get(passphrase);
+  if (!salt) {
+    if (__cloudSaltCache.size >= 8) __cloudSaltCache.clear();
+    salt = crypto.randomBytes(16);
+    __cloudSaltCache.set(passphrase, salt);
+  }
+  return salt;
+}
+
 function encryptPayload(plainBuf, passphrase) {
   if (!passphrase) return { encrypted: false, data: plainBuf };
-  const salt = crypto.randomBytes(16);
-  const key = crypto.scryptSync(String(passphrase), salt, 32);
+  const salt = cloudEncryptSaltFor(String(passphrase));
+  const key = cloudDerivedKey(String(passphrase), salt);
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
   const enc = Buffer.concat([cipher.update(plainBuf), cipher.final()]);
@@ -62,7 +91,7 @@ function decryptPayload(buf, passphrase) {
     const iv = buf.subarray(20, 32);
     const tag = buf.subarray(32, 48);
     const enc = buf.subarray(48);
-    const key = crypto.scryptSync(String(passphrase), salt, 32);
+    const key = cloudDerivedKey(String(passphrase), salt);
     const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
     decipher.setAuthTag(tag);
     return Buffer.concat([decipher.update(enc), decipher.final()]);
@@ -456,7 +485,7 @@ async function buildBackupPackage({
       throw new Error('备份包含账号凭据（Cookie / 密码 / 2FA / 代理登录信息或浏览器数据），必须先设置备份口令加密后再上传');
     }
   }
-  const gz = zlib.gzipSync(json, { level: 9 });
+  const gz = await gzipAsync(json, { level: 9 });
   const { encrypted, data } = encryptPayload(gz, passphrase);
   return {
     buffer: data,
@@ -479,7 +508,7 @@ async function parseBackupPackage(buffer, passphrase = '') {
   if (decrypted.length > MAX_BACKUP_PACKAGE_BYTES) throw new Error('备份包解密后超过安全限制');
   let jsonBuf;
   try {
-    jsonBuf = zlib.gunzipSync(decrypted, { maxOutputLength: MAX_BACKUP_JSON_BYTES });
+    jsonBuf = await gunzipAsync(decrypted, { maxOutputLength: MAX_BACKUP_JSON_BYTES });
   } catch (_) {
     jsonBuf = decrypted;
   }

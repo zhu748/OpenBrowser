@@ -192,6 +192,9 @@ async function readBody(req) {
   for await (const chunk of req) {
     size += chunk.length;
     if (size > MAX_BODY_BYTES) {
+      // Destroy the stream: otherwise the peer keeps filling the socket after
+      // the 413 and the queued chunks stay resident until the response lands.
+      req.destroy();
       const error = new Error('request body too large');
       error.statusCode = 413;
       throw error;
@@ -891,6 +894,10 @@ class LocalApiServer {
         ? association
         : (hasManualProxyPatch ? { present: true, value: '' } : association));
       this.engine.profiles.set(id, next);
+      // syncProfiles() invalidates the status snapshot on every other mutation
+      // path; this direct set must match it or the renderer keeps serving a
+      // stale cache until an unrelated status emit happens.
+      this.engine.invalidateStatusCache?.();
       if (typeof this.engine.persist === 'function') await this.engine.persist();
       const profile = this.engine.profiles.get(id);
       return ok({

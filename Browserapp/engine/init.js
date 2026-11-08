@@ -41,17 +41,18 @@ module.exports = {
 
     if (this.usingSqlite && this.sqliteStore) {
       const extensions = this.sqliteStore.listExtensions();
-      for (const extension of extensions) {
-        if (fs.existsSync(extension.path)) {
-          try {
-            const refreshed = await this.readExtension(extension.path, Boolean(extension.builtIn));
-            refreshed.addedAt = extension.addedAt || refreshed.addedAt;
-            this.extensions.set(refreshed.id, refreshed);
-          } catch (_) {
-            this.extensions.set(extension.id, extension);
-          }
+      // Extension directories are independent; refresh them concurrently
+      // instead of serializing manifest/locale/hash reads at every startup.
+      await Promise.all(extensions.map(async (extension) => {
+        if (!fs.existsSync(extension.path)) return;
+        try {
+          const refreshed = await this.readExtension(extension.path, Boolean(extension.builtIn));
+          refreshed.addedAt = extension.addedAt || refreshed.addedAt;
+          this.extensions.set(refreshed.id, refreshed);
+        } catch (_) {
+          this.extensions.set(extension.id, extension);
         }
-      }
+      }));
       const assignments = this.sqliteStore.getAssignments();
       for (const [profileId, ids] of assignments.entries()) {
         this.assignments.set(profileId, ids);

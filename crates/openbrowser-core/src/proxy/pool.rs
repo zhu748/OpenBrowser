@@ -174,6 +174,11 @@ impl UpstreamTunnelPool {
 
         let key = (target_host.to_ascii_lowercase(), target_port);
         let mut guard = self.tunnels.lock().await;
+        // Re-check under the lock: clear() takes this same lock, so a put that
+        // raced the unlocked check can no longer land after the drain.
+        if self.stopped.load(Ordering::Acquire) {
+            return false;
+        }
 
         let total_tunnels: usize = guard.values().map(|v| v.len()).sum();
         if total_tunnels >= self.max_total_tunnels {
@@ -212,6 +217,11 @@ impl UpstreamTunnelPool {
             return false;
         }
         let mut guard = self.raw_tcp.lock().await;
+        // Re-check under the lock, symmetric with put_tunnel: clear() drains
+        // this same mutex, so the unlocked check alone is a TOCTOU window.
+        if self.stopped.load(Ordering::Acquire) {
+            return false;
+        }
         if guard.len() >= self.max_raw_tcp {
             return false;
         }

@@ -11,8 +11,14 @@
  * load, before any connection is opened.
  */
 
+const SANITIZE_MARKERS = ['secret', '[object Navigator]', '[object WorkerNavigator]', '/^Mozilla//'];
+
 function sanitizeInjectionScript(source) {
   if (typeof source !== 'string' || !source) return source;
+  // Fast path: when none of the patch targets is present, skip the five
+  // full-string scans. Fingerprint payloads run multi-MB through every CDP
+  // addScript/evaluate, so the scans are a fixed per-command tax otherwise.
+  if (!SANITIZE_MARKERS.some((marker) => source.includes(marker))) return source;
   let out = source.split('/^Mozilla//').join('/^Mozilla\//');
   out = out.replace(/typeof secret === "string" && secret\.length > 0/g, 'secret === "__UA_BRIDGE_TOKEN__"');
   out = out.replace(

@@ -137,8 +137,8 @@ function normalTabs(values) {
 
 class LiveSyncController {
   constructor(engine, emit) {
-    this.engine = engine; this.emit = emit; this.master = null; this.slaves = []; this.connections = new Map(); this.masterTabs = []; this.timer = null;
-    this.forwardQueue = []; this.forwardQueueRunning = false; this.forwardQueueEpoch = 0; this.coalescedForwards = new Map();
+    this.engine = engine; this.emit = emit; this.master = null; this.slaves = []; this.connections = new Map(); this.masterTabs = []; this.masterTabsById = new Map(); this.timer = null;
+    this.forwardQueue = []; this.forwardQueueRunning = false; this.forwardQueueEpoch = 0; this.coalescedForwards = new Map(); this.forwardQueueKeyless = 0;
     // Per-slave tab lists (fed by the refresh tick, ~1s TTL) and the last input
     // value mirrored onto each slave: together they remove one HTTP /json/list
     // fetch and the full click/select/insert/blur chain per forwarded keystroke.
@@ -224,13 +224,13 @@ class LiveSyncController {
     if (this.timer) clearTimeout(this.timer); this.timer = null; this.tickCount = 0;
     for (const value of this.connections.values()) value.connection.close(); this.connections.clear();
     const previous = { master: this.master?.id || null, slaves: this.slaves.map((item) => item.id) };
-    this.master = null; this.slaves = []; this.masterTabs = [];
+    this.master = null; this.slaves = []; this.masterTabs = []; this.masterTabsById = new Map(); this.forwardQueue = []; this.forwardQueueKeyless = 0;
     this.emit({ type: 'live-sync', active: false, ...previous });
   }
 
   async refreshMasterTabs() {
     if (!this.master) return;
-    const tabs = normalTabs(await cdp.tabs(this.master.item.port)); this.masterTabs = tabs;
+    const tabs = normalTabs(await cdp.tabs(this.master.item.port)); this.masterTabs = tabs; this.masterTabsById = new Map(tabs.map((tab) => [tab.id, tab]));
     const live = new Set(tabs.map((tab) => tab.id));
     for (const [id, value] of this.connections) if (!live.has(id)) { value.connection.close(); this.connections.delete(id); }
     for (const tab of tabs) if (!this.connections.has(tab.id)) await this.attach(tab);
@@ -285,14 +285,15 @@ class LiveSyncController {
     }
     // Keyless events (click, key, change, contextmenu) never coalesce, so a
     // stalled slave would grow the queue without bound; cap them separately.
-    if (!key) {
-      const keyless = this.forwardQueue.reduce((count, entry) => count + (entry.key ? 0 : 1), 0);
-      if (keyless >= 512) {
+    if (!key && this.forwardQueueKeyless >= 512) {
+      // O(1) incremental counter replaces the O(queue) scan; keyless floods
+      // (uncoalescable events) are bounded without touching every entry.
+      if (this.forwardQueueKeyless >= 512) {
         const index = this.forwardQueue.findIndex((entry) => !entry.key);
-        if (index >= 0) { this.forwardQueue.splice(index, 1); this.forwardStats.dropped += 1; }
+        if (index >= 0) { const dropped = this.forwardQueue.splice(index, 1)[0]; if (dropped && !dropped.key) this.forwardQueueKeyless -= 1; this.forwardStats.dropped += 1; }
       }
     }
-    const entry = { tabId, payload, action, key, queuedAt: now }; this.forwardQueue.push(entry); if (key) this.coalescedForwards.set(key, entry);
+    const entry = { tabId, payload, action, key, queuedAt: now }; this.forwardQueue.push(entry); if (!key) this.forwardQueueKeyless += 1; if (key) this.coalescedForwards.set(key, entry);
     this.drainForwardQueue(); this.emitForwardHealth();
   }
 
@@ -305,18 +306,32 @@ class LiveSyncController {
     const epoch = this.forwardQueueEpoch;
     try {
       while (this.master && this.forwardQueue.length && epoch === this.forwardQueueEpoch) {
-        const entry = this.forwardQueue.shift(); if (entry.key) this.coalescedForwards.delete(entry.key);
+        const entry = this.forwardQueue.shift(); if (!entry.key) this.forwardQueueKeyless -= 1; if (entry.key) this.coalescedForwards.delete(entry.key);
         const started = Date.now();
         try { if (entry.action === 'navigate') await this.navigateSlaves(entry.tabId, entry.payload.url); else await this.forward(entry.tabId, entry.payload); }
         catch (error) { this.emit({ type: 'sync-error', action: 'forward', message: error.message }); }
         this.forwardStats.processed += 1; this.forwardStats.lastLatencyMs = Date.now() - started; this.emitForwardHealth();
       }
-    } finally { if (epoch === this.forwardQueueEpoch) { this.forwardQueueRunning = false; this.emitForwardHealth(true); } }
+    } finally {
+      // Unconditional reset: the epoch guard already stops a stale drain from
+      // touching a new session; failing to reset here starves every future
+      // enqueue after a stop() that raced an in-flight forward().
+      this.forwardQueueRunning = false;
+      if (epoch === this.forwardQueueEpoch) this.emitForwardHealth(true);
+    }
   }
 
   emitForwardHealth(force = false) {
     const now = Date.now(); if (!force && now - this.lastHealthEmitAt < 1000) return; this.lastHealthEmitAt = now;
     this.emit({ type: 'sync-health', queueDepth: this.forwardQueue.length, skippedRefreshes: this.skippedRefreshes, ...this.forwardStats });
+  }
+
+  masterTabById(tabId) {
+    // O(1) lookup on the event hot path; falls back to the array when the id
+    // map has not been refreshed yet (constructor / stop reset it directly).
+    return (this.masterTabsById && this.masterTabsById.get(tabId))
+      || this.masterTabs?.find((t) => t.id === tabId)
+      || null;
   }
 
   async handle(tabId, event) {

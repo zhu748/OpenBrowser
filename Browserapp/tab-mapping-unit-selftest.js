@@ -45,6 +45,13 @@ async function main() {
 
     let connectionCloses = 0;
     const openConnection = () => ({ socket: { readyState: 1 }, close() { connectionCloses += 1; } }); const dead = { socket: { readyState: 3 }, close() { connectionCloses += 1; } };
+    // The newtab master tab must be attach-eligible for the reattach/eviction
+    // assertions below. chrome://newtab is an internal page —
+    // refreshMasterTabs never attaches it (canDomLiveSyncTabUrl is false) —
+    // so the URL changes once the mapping phase is done: master has now
+    // "navigated" the newtab page to real content.
+    const mappedBlank = controller.masterTabs[2];
+    mappedBlank.url = 'https://example.test/native'; lists.get(1).find((item) => item.id === mappedBlank.id).url = 'https://example.test/native';
     controller.connections.set('m1', { tab: controller.masterTabs[0], connection: openConnection(), scroll: { x: 0, y: 0 } });
     controller.connections.set('m2', { tab: controller.masterTabs[1], connection: dead, scroll: { x: 0, y: 0 } });
     controller.connections.set('m3', { tab: controller.masterTabs[2], connection: openConnection(), scroll: { x: 0, y: 0 } });

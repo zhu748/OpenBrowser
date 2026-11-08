@@ -4,6 +4,7 @@ const path = require('path');
 const crypto = require('crypto');
 const https = require('https');
 const { spawn } = require('child_process');
+const zipReader = require('./automation/zip-reader');
 
 function extractStoreId(value) {
   const text = String(value || '').trim();
@@ -154,27 +155,31 @@ async function addChromeStoreExtension(input, root, readManifest, fetchPackage =
   const base = path.join(root, 'chrome-store-extensions');
   const directory = path.join(base, storeId);
   const temporary = path.join(base, `.${storeId}-${process.pid}-${Date.now()}`);
-  const zipFile = `${temporary}.zip`;
   await fsp.mkdir(base, { recursive: true });
   await fsp.mkdir(temporary, { recursive: true });
-  await fsp.writeFile(zipFile, zip);
   try {
-    const tar = tarCommand();
-    const listing = await run(tar, ['-tf', zipFile], true);
-    for (const entry of listing.split(/\r?\n/).filter(Boolean)) {
-      const normalized = entry.replace(/\\/g, '/');
+    // Pure-Node extraction: GNU tar cannot read zip archives, and only
+    // bsdtar (macOS/Windows) can. The crx zip reader already parses the
+    // central directory, so listing + extracting via it works everywhere.
+    const archive = zipReader.open(zip);
+    for (const entry of archive.entries) {
+      const normalized = String(entry.name || '').replace(/\\/g, '/');
       if (normalized.startsWith('/') || normalized.split('/').includes('..')) throw new Error('扩展包包含不安全的文件路径');
     }
-    await run(tar, ['-xf', zipFile, '-C', temporary]);
+    for (const entry of archive.entries) {
+      const target = path.join(temporary, entry.name);
+      if (entry.name.endsWith('/')) { await fsp.mkdir(target, { recursive: true }); continue; }
+      await fsp.mkdir(path.dirname(target), { recursive: true });
+      await fsp.writeFile(target, archive.read(entry.name));
+    }
     await assertExtractedTreeSafe(temporary);
-    if (!fs.existsSync(path.join(temporary, 'manifest.json'))) throw new Error('扩展包缺少 manifest.json');
+    if (!archive.has('manifest.json')) throw new Error('扩展包缺少 manifest.json');
     if (details.publicKey) { const manifestFile = path.join(temporary, 'manifest.json'); const manifest = JSON.parse(await fsp.readFile(manifestFile, 'utf8')); if (!manifest.key) { manifest.key = details.publicKey.toString('base64'); await fsp.writeFile(manifestFile, JSON.stringify(manifest), 'utf8'); } }
     await fsp.rm(directory, { recursive: true, force: true });
     await fsp.rename(temporary, directory);
     const extension = await readManifest(directory, false);
     return { ...extension, id: `store-${storeId}`, storeId, source: 'Chrome Web Store', storeUrl: `https://chromewebstore.google.com/detail/${storeId}` };
   } finally {
-    await fsp.rm(zipFile, { force: true }).catch(() => {});
     await fsp.rm(temporary, { recursive: true, force: true }).catch(() => {});
   }
 }

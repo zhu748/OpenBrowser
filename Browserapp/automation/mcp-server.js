@@ -179,6 +179,8 @@ function request(method, path, body, options = {}) {
   });
 }
 
+let toolsMetaCache = null;
+
 function toolsMeta() {
   const tools = [
     // system
@@ -347,11 +349,16 @@ function toolsMeta() {
     ['rpa_template_import', 'Import RPA templates from a payload', { type: 'object', properties: { payload: { type: 'object' } }, required: ['payload'], additionalProperties: false }, 'manage', 'POST', '/api/rpa/templates', null],
     ['rpa_template_delete', 'Delete an RPA template', { type: 'object', properties: { template_id: { type: 'string' } }, required: ['template_id'], additionalProperties: false }, 'manage', 'DELETE', '/api/rpa/templates/', null],
   ];
-  return tools.map((meta) => {
-    const next = [...meta];
-    next[2] = withInputAliases(meta[2]);
-    return next;
-  });
+  // Rebuilding 90+ tool schemas with ~40 aliases each on every callTool()
+  // is pure waste: the alias mapping is static for the process lifetime.
+  if (!toolsMetaCache) {
+    toolsMetaCache = tools.map((meta) => {
+      const next = [...meta];
+      next[2] = withInputAliases(meta[2]);
+      return next;
+    });
+  }
+  return toolsMetaCache;
 }
 
 function toTool(meta) {
@@ -654,8 +661,18 @@ function main() {
   let buffer = '';
   let rpcQueue = Promise.resolve();
   process.stdin.setEncoding('utf8');
+  const MAX_STDIN_BUFFER = 16 * 1024 * 1024;
   process.stdin.on('data', (chunk) => {
     buffer += chunk;
+    // A host that streams without newlines (or a broken client) must not grow
+    // the line buffer without bound.
+    if (buffer.length > MAX_STDIN_BUFFER) {
+      buffer = '';
+      try {
+        writeMessage({ jsonrpc: '2.0', id: null, error: { code: -32000, message: 'request line too large' } });
+      } catch (_) {}
+      return;
+    }
     let index;
     while ((index = buffer.indexOf('\n')) >= 0) {
       const line = buffer.slice(0, index).trim();

@@ -216,7 +216,20 @@ module.exports = {
 
       // Give the process a moment; an immediate exec failure must not be
       // reported as a successful start. There is no port to wait for.
-      await new Promise((resolve) => setTimeout(resolve, 400));
+      // Event-driven: resolve as soon as the child reports exit/error; the
+      // fixed 400ms remains only as a tail bound for a healthy spawn.
+      await new Promise((resolve) => {
+        const timer = setTimeout(finish, 400);
+        if (timer.unref) timer.unref();
+        function finish() {
+          clearTimeout(timer);
+          child.removeListener('exit', finish);
+          child.removeListener('error', finish);
+          resolve();
+        }
+        child.once('exit', finish);
+        child.once('error', finish);
+      });
       if (childExitState.exited || childExitState.error) {
         throw new Error('Firefox 启动后立即退出'
           + (childExitState.code !== null ? ` (code ${childExitState.code})` : '')

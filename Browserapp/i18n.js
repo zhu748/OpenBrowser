@@ -2441,6 +2441,7 @@
   const UI_ZH_FALLBACKS = Object.freeze({ ...UI_ZH_EN, ...RUNTIME_ZH_EN });
   const UI_ZH_KEYS = Object.keys(UI_ZH_FALLBACKS).sort((a, b) => b.length - a.length);
 
+  const zhTranslateMemo = new Map();
   function translateChineseUiText(input) {
     let s = String(input ?? '');
     if (!s || resolved === 'zh-CN') return s;
@@ -2457,6 +2458,12 @@
     // O(keys × length) and runs for every text node on every table re-render
     // in non-Chinese locales.
     if (!/[\u4e00-\u9fff]/.test(s)) return s;
+    // Memo keyed by locale + input: unknown Chinese strings (group names,
+    // notes) pay the ~1240-key scan once per distinct value instead of once
+    // per rendered row.
+    const memoKey = (typeof resolved === 'string' ? resolved : '') + '\u0000' + s;
+    const memoHit = zhTranslateMemo.get(memoKey);
+    if (memoHit !== undefined) return memoHit;
     let out = s;
     for (const zh of UI_ZH_KEYS) {
       if (out.indexOf(zh) === -1) continue;
@@ -2467,6 +2474,7 @@
     out = out.replace(/共\s*(\d+)\s*个/g, '$1 items');
     out = out.replace(/(\d+)\s*步/g, '$1 steps');
     out = out.replace(/环境\s*(\d+)/g, 'Profile $1');
+    if (zhTranslateMemo.size < 512) zhTranslateMemo.set(memoKey, out);
     return out;
   }
 

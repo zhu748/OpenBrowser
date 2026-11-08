@@ -52,34 +52,58 @@ impl H2Fingerprint {
         format!("{}|{}", self.settings_raw, self.window_update)
     }
 
-    /// Build binary HTTP/2 SETTINGS frame matching Chrome
+    /// Build the binary HTTP/2 SETTINGS frame from `settings_raw` itself
+    /// ("id:value,id:value,..."). The old builder hard-coded Chrome's four
+    /// settings, so any custom profile serialized one fingerprint but put a
+    /// different one on the wire — the exact mismatch anti-bot panels flag.
+    /// Malformed entries are skipped (defensive: profiles come from disk).
     pub fn build_settings_frame(&self) -> Vec<u8> {
-        let mut buf = BytesMut::with_capacity(36);
+        let parsed: Vec<(u16, u32)> = self
+            .settings_raw
+            .split(',')
+            .filter_map(|entry| {
+                let entry = entry.trim();
+                let (id, value) = entry.split_once(':')?;
+                let id: u16 = id.trim().parse().ok()?;
+                let value: u32 = value.trim().parse().ok()?;
+                // Identifiers are 0x01..=0xff per RFC 7540; values are 31-bit
+                // unsigned. SETTINGS_ENABLE_PUSH only allows 0/1 on the wire.
+                if id == 0 || value > 0x7FFF_FFFF {
+                    return None;
+                }
+                if id == SETTINGS_ENABLE_PUSH && value > 1 {
+                    return None;
+                }
+                Some((id, value))
+            })
+            .collect();
+        // Fall back to Chrome's defaults when nothing parsed: an empty frame
+        // (length 0) is legal but visibly non-browser.
+        let settings: &[(u16, u32)] = if parsed.is_empty() {
+            &[
+                (SETTINGS_HEADER_TABLE_SIZE, 65536),
+                (SETTINGS_ENABLE_PUSH, 0),
+                (SETTINGS_INITIAL_WINDOW_SIZE, 6291456),
+                (SETTINGS_MAX_HEADER_LIST_SIZE, 262144),
+            ]
+        } else {
+            &parsed
+        };
 
-        // Frame header: 9 bytes
-        // Length (24 bits) = 4 * 6 = 24 bytes
-        buf.put_u8(0);
-        buf.put_u8(0);
-        buf.put_u8(24); // 4 settings * 6 bytes = 24
-        buf.put_u8(0x04); // Type: SETTINGS (0x04)
+        let payload_len = settings.len() * 6;
+        let mut buf = BytesMut::with_capacity(9 + payload_len);
+        // Frame header: 9 bytes, 24-bit length prefix.
+        buf.put_u8((payload_len >> 16) as u8);
+        buf.put_u8((payload_len >> 8) as u8);
+        buf.put_u8(payload_len as u8);
+        buf.put_u8(0x04); // Type: SETTINGS
         buf.put_u8(0x00); // Flags: none (not ACK)
         buf.put_u32(0); // Stream ID: 0
 
-        // 1. SETTINGS_HEADER_TABLE_SIZE: 65536
-        buf.put_u16(SETTINGS_HEADER_TABLE_SIZE);
-        buf.put_u32(65536);
-
-        // 2. SETTINGS_ENABLE_PUSH: 0
-        buf.put_u16(SETTINGS_ENABLE_PUSH);
-        buf.put_u32(0);
-
-        // 3. SETTINGS_INITIAL_WINDOW_SIZE: 6291456
-        buf.put_u16(SETTINGS_INITIAL_WINDOW_SIZE);
-        buf.put_u32(6291456);
-
-        // 4. SETTINGS_MAX_HEADER_LIST_SIZE: 262144
-        buf.put_u16(SETTINGS_MAX_HEADER_LIST_SIZE);
-        buf.put_u32(262144);
+        for (id, value) in settings {
+            buf.put_u16(*id);
+            buf.put_u32(*value);
+        }
 
         buf.to_vec()
     }

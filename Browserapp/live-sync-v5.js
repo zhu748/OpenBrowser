@@ -922,8 +922,16 @@ class LiveSyncController extends LiveSyncV4 {
     return forgotten > 0;
   }
 
+  masterTabById(tabId) {
+    // O(1) lookup on the event hot path; falls back to the array when the id
+    // map has not been refreshed yet (constructor / stop reset it directly).
+    return (this.masterTabsById && this.masterTabsById.get(tabId))
+      || this.masterTabs?.find((t) => t.id === tabId)
+      || null;
+  }
+
   enqueueForward(tabId, payload, action = 'forward') {
-    const masterTab = this.masterTabs?.find((t) => t.id === tabId);
+    const masterTab = this.masterTabById(tabId);
     if (masterTab && !canDomLiveSyncTabUrl(masterTab.url)) return;
     const windowGate = this.acceptWindowEvent(tabId, payload);
     if (!windowGate.accept) {
@@ -973,7 +981,7 @@ class LiveSyncController extends LiveSyncV4 {
     const sessionIsCurrent = () => generation === this.syncGeneration
       && (!session || this.syncSession === session);
     if (!sessionIsCurrent()) return;
-    const masterTab = this.masterTabs?.find((t) => t.id === tabId);
+    const masterTab = this.masterTabById(tabId);
     if (masterTab && !canDomLiveSyncTabUrl(masterTab.url)) return;
     if (payload?.type === 'fullscreen') return this.syncFullscreen(tabId, payload);
     // Protocol gate: operate flags (click+move / scroll+move / keyboard)
@@ -1338,6 +1346,7 @@ class LiveSyncController extends LiveSyncV4 {
 
     for (const id of [...this.tabMap.keys()]) if (!live.has(id)) { this.forgetWindow(id, this.connections.get(id)); await this.closeMappedTabs(id); this.tabMap.delete(id); this.clearFullscreenState(id, 'tab-closed'); }
     this.masterTabs = tabs;
+    this.masterTabsById = new Map(tabs.map((tab) => [tab.id, tab]));
     const slaveLists = new Map(); const slaveExtensionLists = new Map();
     // Parallel slave target fetch (was sequential). Each slave is isolated: a closed or
     // hung environment throws ECONNREFUSED here, and letting that reject the batch would
@@ -1355,7 +1364,10 @@ class LiveSyncController extends LiveSyncV4 {
       }
     }));
     // Feed the per-slave tab cache the refresh just fetched, so forwarded
-    // events in this tick skip their own /json/list fetch.
+    // events in this tick skip their own /json/list fetch. Self-heal when a
+    // caller bypassed the constructor (Object.create(prototype)): the v4
+    // constructor owns this field, and a missing Map would crash the tick.
+    if (!this.slaveTabLists) this.slaveTabLists = new Map();
     for (const [slaveId, list] of slaveLists) this.slaveTabLists.set(slaveId, { tabs: list, at: Date.now() });
     if (!this.isRefreshGenerationCurrent(refreshGeneration)) return;
     this.unreachableSlaves = new Set(failedSlaves.map((failure) => failure.id));
@@ -1371,7 +1383,14 @@ class LiveSyncController extends LiveSyncV4 {
     this._lastMasterTabCount = tabs.length;
     if (doHeavy || tabCountChanged) await this.reconcileSlaveTabs(tabs, slaveLists);
     if (!this.isRefreshGenerationCurrent(refreshGeneration)) return;
-    for (const tab of tabs) if (!this.connections.has(tab.id)) await this.attach(tab);
+    for (const tab of tabs) {
+      if (this.connections.has(tab.id)) continue;
+      // Same predicate as attach()'s own guard: internal pages (chrome://…)
+      // can never hold a DOM live-sync connection, so skip the no-op call
+      // instead of paying it on every refresh tick.
+      if (tab.url && !canDomLiveSyncTabUrl(tab.url)) continue;
+      await this.attach(tab);
+    }
     if (doHeavy && masterExtensionPages) await this.refreshExtensionConnections(masterExtensionPages, slaveExtensionLists);
     if (!this.isRefreshGenerationCurrent(refreshGeneration)) return;
     await Promise.all([...this.connections.entries()].map(async ([id, value]) => {

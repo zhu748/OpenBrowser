@@ -402,7 +402,14 @@ async function downloadAppUpdate() {
     || `https://github.com/${UPDATE_REPOSITORY}/releases/download/v${result.remoteVersion}/${result.asset.name}`;
   if (!updateUrlIsAllowed(downloadUrl, result.asset.name)) throw new Error('The selected update package URL is not trusted');
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 120000);
+  // Idle watchdog instead of the old fixed 120s cap: a 1 GB installer over
+  // a slow link legitimately needs longer than 120s; only a stalled transfer
+  // (no chunks arriving) should abort. Every chunk re-arms it, and any
+  // existing clearTimeout(timer) cleanup still sees the live handle.
+  let timer = null;
+  const IDLE_TIMEOUT_MS = 60000;
+  const armWatchdog = () => { clearTimeout(timer); timer = setTimeout(() => controller.abort(), IDLE_TIMEOUT_MS); };
+  armWatchdog();
   const extension = path.extname(result.asset.name).toLowerCase();
   const baseName = path.basename(result.asset.name, extension);
   const temporaryPath = path.join(electron.app.getPath('downloads'), `${baseName}-${randomUUID()}${extension}`);
@@ -422,12 +429,14 @@ async function downloadAppUpdate() {
       while (true) {
         const chunk = await reader.read();
         if (chunk.done) break;
+        armWatchdog();
         received += chunk.value.byteLength;
         if (received > UPDATE_MAX_BYTES) throw new Error('Update package is too large');
         await file.write(Buffer.from(chunk.value));
         emit({ type: 'app-update-progress', received, total: contentLength || result.asset.size || 0, percent: contentLength ? Math.min(100, Math.round(received / contentLength * 100)) : null, version: result.remoteVersion });
       }
     } finally {
+      clearTimeout(timer);
       await file.close();
     }
     // A server that hangs up early ends the body stream cleanly; without this

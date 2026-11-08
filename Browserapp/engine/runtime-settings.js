@@ -27,13 +27,17 @@ module.exports = {
       exitLongitude: profile.exitLongitude ?? network.longitude,
     };
     const fp = fingerprint || buildFingerprint(enriched);
-    const fpHash = fingerprintConfigHash(fp);
+    // Lazy hash: the watch loop reaches the all-applied early exit below every
+    // ~2.4s per profile with no config change; serializing the whole
+    // fingerprint object for a SHA-1 each pass is wasted steady-state work.
+    let fpHashCached = null;
+    const fpHash = () => (fpHashCached ?? (fpHashCached = fingerprintConfigHash(fp)));
     // Track which CDP page targets already received inject (new tabs must not skip FP)
     const applied = options.appliedTargetIds instanceof Set ? options.appliedTargetIds : new Set();
     // Only a recorded hash may invalidate the cache: callers that never tracked one keep the
     // previous behaviour, while a real config change forces every live tab to be re-applied.
     const configChanged = Boolean(options.appliedFingerprintHash)
-      && options.appliedFingerprintHash !== fpHash;
+      && options.appliedFingerprintHash !== fpHash();
     if (configChanged) applied.clear();
     const blocked = [];
     if (profile.advanced.blockVideo) blocked.push('*.mp4', '*.webm', '*.m3u8', '*.mov', '*.avi');
@@ -66,7 +70,7 @@ module.exports = {
       }
       if (options.trackOn) {
         options.trackOn.fpAppliedTargets = applied;
-        options.trackOn.fpAppliedHash = fpHash;
+        options.trackOn.fpAppliedHash = fpHash();
         options.trackOn.fingerprint = fp;
       }
       return fp;
@@ -83,6 +87,17 @@ module.exports = {
     });
 
     for (const tab of tabs) {
+      // Idempotent per-tab settings applied to every tab on every pass (also
+      // ones already carrying the inject) so blockUrls edits and portScan
+      // toggles take effect without a fingerprint-hash change.
+      if (blocked.length) {
+        await cdp.call(tab.webSocketDebuggerUrl, 'Network.enable').catch(() => {});
+        await cdp.call(tab.webSocketDebuggerUrl, 'Network.setBlockedURLs', { urls: blocked }).catch(() => {});
+      }
+      if (portScanScript) {
+        await cdp.call(tab.webSocketDebuggerUrl, 'Page.addScriptToEvaluateOnNewDocument', { source: portScanScript }).catch(() => {});
+        await cdp.call(tab.webSocketDebuggerUrl, 'Runtime.evaluate', { expression: portScanScript }).catch(() => {});
+      }
       if (!force && applied.has(tab.id)) {
         await fpLog('inject.skip-tab', { phase, profileId: profile.id, tabId: tab.id, url: tab.url, reason: 'already-applied' });
         continue;
@@ -184,17 +199,13 @@ module.exports = {
         });
         // Soft-fail per tab: keep trying other tabs / later phases instead of aborting start.
         const msg = String(error.message || error || '');
+        // Transient races (tab closed after the /json snapshot, port flap)
+        // must not abort the whole pass: start's retries would all fail on a
+        // dead tab id and trigger the Fail-Closed barrier on a healthy env.
+        if (/socket (closed|error)|timeout|connection is closed|Target closed/i.test(msg)) continue;
         if (!/Uncaught|already in effect|cannot be overridden|softInject/i.test(msg)) {
           throw error;
         }
-      }
-      if (blocked.length) {
-        await cdp.call(tab.webSocketDebuggerUrl, 'Network.enable');
-        await cdp.call(tab.webSocketDebuggerUrl, 'Network.setBlockedURLs', { urls: blocked });
-      }
-      if (portScanScript) {
-        await cdp.call(tab.webSocketDebuggerUrl, 'Page.addScriptToEvaluateOnNewDocument', { source: portScanScript });
-        await cdp.call(tab.webSocketDebuggerUrl, 'Runtime.evaluate', { expression: portScanScript });
       }
       // applied.add only when probe matched (see above)
     }
@@ -205,7 +216,7 @@ module.exports = {
     }
     if (options.trackOn) {
       options.trackOn.fpAppliedTargets = applied;
-      options.trackOn.fpAppliedHash = fpHash;
+      options.trackOn.fpAppliedHash = fpHash();
       options.trackOn.fingerprint = fp;
     }
     await fpLog('inject.end', { phase, profileId: profile.id, applied: applied.size, port });

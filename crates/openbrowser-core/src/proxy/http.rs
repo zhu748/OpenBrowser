@@ -34,13 +34,15 @@ impl HttpConnectTarget {
         }
 
         // Case 1: Absolute URI starting with http:// or https://
-        // Deferred (8c): scheme detection still allocates a lowered copy of
-        // the URI; replacing it with a byte-level prefix compare is possible
-        // but would duplicate the [8..]/[7..] slice logic below, so it stays
-        // as-is until a profiling need appears.
-        let lower_uri = uri.to_ascii_lowercase();
-        if lower_uri.starts_with("http://") || lower_uri.starts_with("https://") {
-            let is_https = lower_uri.starts_with("https://");
+        // Byte-level prefix compare: a lowered String per request (old form)
+        // paid one heap allocation on every parsed target.
+        let uri_bytes = uri.as_bytes();
+        let ci_prefix = |prefix: &[u8]| {
+            uri_bytes.len() >= prefix.len()
+                && uri_bytes[..prefix.len()].eq_ignore_ascii_case(prefix)
+        };
+        if ci_prefix(b"http://") || ci_prefix(b"https://") {
+            let is_https = ci_prefix(b"https://");
             let after_scheme = if is_https { &uri[8..] } else { &uri[7..] };
             let authority = match after_scheme.find(['/', '?', '#']) {
                 Some(idx) => &after_scheme[..idx],
@@ -234,9 +236,13 @@ pub fn extract_origin_path(uri: &str) -> String {
     if trimmed.starts_with('/') {
         return trimmed.to_string();
     }
-    let lower = trimmed.to_ascii_lowercase();
-    if lower.starts_with("http://") || lower.starts_with("https://") {
-        let after_scheme = if lower.starts_with("https://") {
+    let trimmed_bytes = trimmed.as_bytes();
+    let ci_prefix = |prefix: &[u8]| {
+        trimmed_bytes.len() >= prefix.len()
+            && trimmed_bytes[..prefix.len()].eq_ignore_ascii_case(prefix)
+    };
+    if ci_prefix(b"http://") || ci_prefix(b"https://") {
+        let after_scheme = if ci_prefix(b"https://") {
             &trimmed[8..]
         } else {
             &trimmed[7..]
@@ -299,21 +305,28 @@ pub fn format_origin_request(header_slice: &[u8], uri_or_target: &str) -> Vec<u8
         if trimmed.is_empty() {
             continue;
         }
-        let lower = trimmed.to_ascii_lowercase();
+        // Slice compare instead of a lowered String per line: header lines
+        // run through here on every forwarded request.
+        let ci_starts_with = |needle: &str| {
+            trimmed.len() >= needle.len()
+                && trimmed.as_bytes()[..needle.len()]
+                    .eq_ignore_ascii_case(needle.as_bytes())
+        };
         // Upgrade stays: the tunnel endpoint is the origin server, and
         // stripping Upgrade while keeping `Connection: Upgrade` broke every
         // ws:// WebSocket handshake over a SOCKS5 upstream.
-        if lower.starts_with("proxy-authorization:")
-            || lower.starts_with("proxy-connection:")
-            || lower.starts_with("proxy-authenticate:")
-            || lower.starts_with("keep-alive:")
+        if ci_starts_with("proxy-authorization:")
+            || ci_starts_with("proxy-connection:")
+            || ci_starts_with("proxy-authenticate:")
+            || ci_starts_with("keep-alive:")
         {
             continue;
         }
         // Same rationale as the forwarded rewrite: only the first request on a
         // client connection is rewritten to origin-form, so the connection
         // must not be reused past the first response.
-        if lower.starts_with("connection:") {
+        if ci_starts_with("connection:") {
+            let lower = trimmed.to_ascii_lowercase();
             if lower.contains("upgrade") {
                 kept_upgrade_connection = true;
                 out.push_str(trimmed);
@@ -359,7 +372,9 @@ pub fn format_forwarded_proxy_request(header_slice: &[u8], auth_header: Option<&
             // Find Host header to build absolute-form request target
             let host_header = lines.iter().find_map(|line| {
                 let trimmed = line.trim();
-                if trimmed.to_ascii_lowercase().starts_with("host:") {
+                let is_host = trimmed.len() >= 5
+                    && trimmed.as_bytes()[..5].eq_ignore_ascii_case(b"host:");
+                if is_host {
                     let val = trimmed[5..].trim();
                     if !val.is_empty() {
                         Some(val)
@@ -395,8 +410,12 @@ pub fn format_forwarded_proxy_request(header_slice: &[u8], auth_header: Option<&
         if trimmed.is_empty() {
             continue;
         }
-        let lower = trimmed.to_ascii_lowercase();
-        if lower.starts_with("proxy-authorization:") || lower.starts_with("proxy-connection:") {
+        let ci_starts_with = |needle: &str| {
+            trimmed.len() >= needle.len()
+                && trimmed.as_bytes()[..needle.len()]
+                    .eq_ignore_ascii_case(needle.as_bytes())
+        };
+        if ci_starts_with("proxy-authorization:") || ci_starts_with("proxy-connection:") {
             continue;
         }
         // Rewrite client keep-alive into close: the bridge only rewrites the
@@ -404,7 +423,8 @@ pub fn format_forwarded_proxy_request(header_slice: &[u8], auth_header: Option<&
         // bypass the Proxy-Authorization injection above and the second
         // request would fail with 407. A WebSocket upgrade
         // (`Connection: Upgrade`) must keep its original header.
-        if lower.starts_with("connection:") {
+        if ci_starts_with("connection:") {
+            let lower = trimmed.to_ascii_lowercase();
             if lower.contains("upgrade") {
                 kept_upgrade_connection = true;
                 out.push_str(trimmed);
@@ -507,6 +527,34 @@ mod tests {
         let t4 = HttpConnectTarget::parse_http_target("http://[::1]:9000/info", "").unwrap();
         assert_eq!(t4.host, "::1");
         assert_eq!(t4.port, 9000);
+    }
+
+    #[test]
+    fn test_parse_http_target_scheme_case_insensitive() {
+        // The zero-allocation prefix compare must stay case-insensitive: a
+        // lowercase-only byte compare would misroute HTTPS:// targets (the
+        // plain-HTTP branch strips 7 bytes instead of 8, corrupting host
+        // parsing). Pins the eq_ignore_ascii_case behavior from the hot-path
+        // rewrite. Scheme identity is asserted through the default port:
+        // https defaults to 443, http to 80.
+        let upper_http = HttpConnectTarget::parse_http_target("HTTP://EXAMPLE.COM/x", "").unwrap();
+        assert_eq!(upper_http.host, "EXAMPLE.COM");
+        assert_eq!(upper_http.port, 80);
+
+        let upper_https = HttpConnectTarget::parse_http_target("HTTPS://SECURE.SITE/", "").unwrap();
+        assert_eq!(upper_https.host, "SECURE.SITE");
+        assert_eq!(upper_https.port, 443);
+
+        let mixed = HttpConnectTarget::parse_http_target("HtTpS://MiXeD.CaSe:9090/p?q=1", "").unwrap();
+        assert_eq!(mixed.host, "MiXeD.CaSe");
+        assert_eq!(mixed.port, 9090);
+
+        // Truncated/partial prefixes must fall through the scheme branch into
+        // the later cases without panicking on slicing. Both hit Case 3
+        // (contains ':'), which rejects the trailing path — the key property
+        // is a clean error, never a corrupted host from an off-by-one strip.
+        assert!(HttpConnectTarget::parse_http_target("http:/", "").is_err());
+        assert!(HttpConnectTarget::parse_http_target("https:/x", "").is_err());
     }
 
     #[test]

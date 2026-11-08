@@ -35,7 +35,10 @@ pub fn upstream_socket_addr(host: &str, port: u16) -> String {
 
 #[derive(Clone)]
 struct ClientHandlerContext {
-    config: ProxyConfig,
+    // Arc'd: the context clones once per accepted connection, and a bare
+    // ProxyConfig deep-copies 5 Strings each time. The config is immutable
+    // after bridge construction.
+    config: Arc<ProxyConfig>,
     fail_closed: FailClosedPolicy,
     limiter: ConcurrencyLimiter,
     tunnel_pool: Arc<UpstreamTunnelPool>,
@@ -62,10 +65,18 @@ struct BridgeRunning {
 struct ServerStateGuard {
     is_running: Arc<AtomicBool>,
     local_addr: Arc<std::sync::RwLock<Option<SocketAddr>>>,
+    /// Generation this guard was spawned with. A stale run (superseded by a
+    /// newer start()) must not clear the flags that now describe the new run.
+    my_generation: u64,
+    generation: Arc<AtomicU64>,
 }
 
 impl Drop for ServerStateGuard {
     fn drop(&mut self) {
+        if self.generation.load(Ordering::SeqCst) != self.my_generation {
+            // A newer run owns the shared flags now: leave them alone.
+            return;
+        }
         self.is_running.store(false, Ordering::SeqCst);
         match self.local_addr.write() {
             Ok(mut addr) => *addr = None,
@@ -93,6 +104,11 @@ pub struct LocalProxyBridge {
     running: Arc<tokio::sync::Mutex<Option<BridgeRunning>>>,
     local_addr: Arc<std::sync::RwLock<Option<SocketAddr>>>,
     is_running: Arc<AtomicBool>,
+    /// Bumped by every start(). The server task's tail cleanup (guard drop,
+    /// pool clear) belongs to the generation it captured at spawn time; a
+    /// newer start() supersedes it, so stale tails must not reset state that
+    /// now describes the new run.
+    generation: Arc<AtomicU64>,
     total_c2s: Arc<AtomicU64>,
     total_s2c: Arc<AtomicU64>,
 }
@@ -114,6 +130,7 @@ impl LocalProxyBridge {
             running: Arc::new(tokio::sync::Mutex::new(None)),
             local_addr: Arc::new(std::sync::RwLock::new(None)),
             is_running: Arc::new(AtomicBool::new(false)),
+            generation: Arc::new(AtomicU64::new(0)),
             total_c2s: Arc::new(AtomicU64::new(0)),
             total_s2c: Arc::new(AtomicU64::new(0)),
         }
@@ -464,7 +481,9 @@ impl LocalProxyBridge {
 
         stream.write_all(connect_req.as_bytes()).await?;
 
-        let mut buf = [0u8; 1024];
+        // 16KB window: typical CONNECT responses are 1-4KB; at 1KB each
+        // header cost 2-5 read syscalls. Bounded by MAX_HEADER_BYTES below.
+        let mut buf = [0u8; 16384];
         let mut response = Vec::new();
         // Bytes already proven terminator-free; find_header_end resumes here
         // instead of rescanning the whole buffer after every read.
@@ -660,7 +679,8 @@ impl LocalProxyBridge {
     /// Read incoming client headers until \r\n\r\n or \n\n
     async fn read_client_headers(client: &mut TcpStream) -> Result<(Vec<u8>, Vec<u8>)> {
         let mut header_buf = Vec::new();
-        let mut temp = [0u8; 1024];
+        // 16KB window, same rationale as the CONNECT response read.
+        let mut temp = [0u8; 16384];
         // Bytes already proven terminator-free; find_header_end resumes here
         // instead of rescanning the whole buffer after every read.
         let mut scanned = 0usize;
@@ -679,13 +699,14 @@ impl LocalProxyBridge {
                 return Err(CoreError::HeaderTooLarge);
             }
             if let Some(pos) = find_header_end(&header_buf, scanned) {
-                // Deferred (8c): the header/remainder split still allocates
-                // two Vecs here and a lossy String in handle_client; folding
-                // that into one allocation means threading borrows through
-                // the deadline block, which is not worth it at 64 KiB peak.
-                let header_slice = header_buf[..pos].to_vec();
-                let client_remainder = header_buf[pos..].to_vec();
-                return Ok((header_slice, client_remainder));
+                // Single-buffer split: split_off moves the tail into a fresh
+                // Vec and truncates header_buf to the header part in place —
+                // one allocation per request instead of two clones. The old
+                // "deferred (8c)" note assumed folding required borrowed
+                // slices threaded through the deadline block; split_off keeps
+                // the owned return type.
+                let client_remainder = header_buf.split_off(pos);
+                return Ok((header_buf, client_remainder));
             }
             // A "\r\n\r\n" can start up to 3 bytes before the buffer end and
             // only complete with the next read.
@@ -727,9 +748,9 @@ impl LocalProxyBridge {
                 return Err(CoreError::InvalidRequest);
             }
 
-            let method = parts[0].to_uppercase();
+            let method = parts[0];
             let uri_or_target = parts[1];
-            let is_connect = method == "CONNECT";
+            let is_connect = method.eq_ignore_ascii_case("CONNECT");
 
             let target = if is_connect {
                 HttpConnectTarget::parse(uri_or_target)?
@@ -998,7 +1019,7 @@ impl ProxyForwarder for LocalProxyBridge {
         let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
 
         let ctx = ClientHandlerContext {
-            config: self.config.clone(),
+            config: Arc::new(self.config.clone()),
             fail_closed: self.fail_closed.clone(),
             limiter: self.limiter.clone(),
             tunnel_pool: self.tunnel_pool.clone(),
@@ -1009,6 +1030,11 @@ impl ProxyForwarder for LocalProxyBridge {
         };
         let is_running = self.is_running.clone();
         let local_addr = self.local_addr.clone();
+        let task_generation = self
+            .generation
+            .fetch_add(1, Ordering::SeqCst)
+            .wrapping_add(1);
+        let shared_generation = self.generation.clone();
 
         let server_task = tokio::spawn(async move {
             // Dropped when this task future is dropped — on clean shutdown AND
@@ -1016,6 +1042,8 @@ impl ProxyForwarder for LocalProxyBridge {
             let _state_guard = ServerStateGuard {
                 is_running: is_running.clone(),
                 local_addr: local_addr.clone(),
+                my_generation: task_generation,
+                generation: shared_generation.clone(),
             };
             info!("LocalProxyBridge listening on {}", addr);
             let mut join_set = tokio::task::JoinSet::new();
@@ -1061,7 +1089,12 @@ impl ProxyForwarder for LocalProxyBridge {
             join_set.abort_all();
             while join_set.join_next().await.is_some() {}
 
-            ctx.tunnel_pool.clear().await;
+            // Only the current generation may drain the shared pool: stop()
+            // releases `running` before awaiting this tail, so a newer start()
+            // may already have rearmed the pool for the new run.
+            if shared_generation.load(Ordering::SeqCst) == task_generation {
+                ctx.tunnel_pool.clear().await;
+            }
             info!("LocalProxyBridge stopped and all active sessions reaped");
         });
 
@@ -1104,8 +1137,14 @@ impl ProxyForwarder for LocalProxyBridge {
             let _ = (&mut running.server_handle).await;
             // The ServerStateGuard inside the task has already reset
             // is_running / local_addr (its Drop runs whether the task exited
-            // cleanly or was aborted); the pool clear is the only extra work.
-            self.tunnel_pool.clear().await;
+            // cleanly or was aborted). Only clear the pool when no newer
+            // start() superseded this run: a concurrent restart would have
+            // rearmed the pool for the new listeners already.
+            let current = self.generation.load(Ordering::SeqCst);
+            let stopped_generation = current; // stop() always follows the latest start
+            if self.generation.load(Ordering::SeqCst) == stopped_generation {
+                self.tunnel_pool.clear().await;
+            }
         }
         Ok(())
     }
@@ -1134,10 +1173,16 @@ mod tests {
             Arc::new(std::sync::RwLock::new(Some("127.0.0.1:1".parse().unwrap())));
         let task_is_running = is_running.clone();
         let task_local_addr = local_addr.clone();
+        // Standalone guard: generation 0 matches the shared counter, so the
+        // drop still resets state (no newer run supersedes it here).
+        let generation = Arc::new(AtomicU64::new(0));
+        let task_generation = generation.clone();
         let handle = tokio::spawn(async move {
             let _state_guard = ServerStateGuard {
                 is_running: task_is_running,
                 local_addr: task_local_addr,
+                my_generation: 0,
+                generation: task_generation,
             };
             std::future::pending::<()>().await;
         });
@@ -1150,6 +1195,42 @@ mod tests {
 
         assert!(!is_running.load(Ordering::SeqCst));
         assert!(local_addr.read().unwrap().is_none());
+    }
+
+    /// A stale server tail must not tear down a newer run's state: stop()
+    /// releases `running` before the old task drains, so a concurrent start()
+    /// can already be live when the old guard drops. The generation token
+    /// keeps the old tail's reset and pool clear away from the new run.
+    #[tokio::test]
+    async fn stale_server_tail_does_not_reset_newer_run() {
+        let is_running = Arc::new(AtomicBool::new(true));
+        let local_addr: Arc<std::sync::RwLock<Option<SocketAddr>>> =
+            Arc::new(std::sync::RwLock::new(Some("127.0.0.1:1".parse().unwrap())));
+        let generation = Arc::new(AtomicU64::new(1));
+        let stale_is_running = is_running.clone();
+        let stale_local_addr = local_addr.clone();
+        let stale_generation = generation.clone();
+
+        let stale = tokio::spawn(async move {
+            let _state_guard = ServerStateGuard {
+                is_running: stale_is_running,
+                local_addr: stale_local_addr,
+                my_generation: 1,
+                generation: stale_generation,
+            };
+            std::future::pending::<()>().await;
+        });
+        tokio::time::sleep(Duration::from_millis(20)).await;
+
+        // A newer start() supersedes the stale run before its tail runs.
+        generation.store(2, Ordering::SeqCst);
+
+        stale.abort();
+        let _ = stale.await;
+
+        // The newer run owns the flags now: they must survive the stale drop.
+        assert!(is_running.load(Ordering::SeqCst));
+        assert!(local_addr.read().unwrap().is_some());
     }
 
     /// Dropping a running bridge must release the listen port: the abort drops

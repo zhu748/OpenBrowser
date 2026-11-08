@@ -2350,9 +2350,24 @@ async function assignSelectedToGroup(groupId) {
 
 
 function renderGroupFilterChips() {
+  // Cheap renderKey: the chips are rebuilt from the same group list on every
+  // profile refresh tick; skip the DOM teardown when nothing visible changed
+  // (group identity+color+label, per-chip counts, active filter, trash count).
   const host = $('#profile-group-chips');
   if (!host) return;
   rebuildGroupCounts();
+  const activeProfiles = ui.profiles.filter((p) => !p.trashed);
+  const trashedCount = ui.profiles.filter((p) => Boolean(p.trashed)).length;
+  const groups = listGroups();
+  const renderKey = JSON.stringify({
+    groups: groups.map((g) => [g.id, g.color || '', localizeSystemLabel(g.name), countProfilesInGroup(g.id)]),
+    all: activeProfiles.length,
+    ungrouped: countProfilesInGroup('ungrouped'),
+    trash: trashedCount,
+    active: activeGroupFilter,
+  });
+  if (renderKey === renderGroupFilterChips._lastKey) return;
+  renderGroupFilterChips._lastKey = renderKey;
   host.replaceChildren();
   const mk = (id, label, count) => {
     const btn = document.createElement('button');
@@ -2370,14 +2385,12 @@ function renderGroupFilterChips() {
     btn.append(dot, text, badge);
     return btn;
   };
-  const activeProfiles = ui.profiles.filter((p) => !p.trashed);
-  const trashedCount = ui.profiles.filter((p) => Boolean(p.trashed)).length;
+  const trashBtn = mk('trash', t('groups.trash'), trashedCount);
   host.append(mk('all', t('groups.all'), activeProfiles.length));
   host.append(mk('ungrouped', t('groups.ungrouped'), countProfilesInGroup('ungrouped')));
-  for (const g of listGroups()) {
+  for (const g of groups) {
     host.append(mk(g.id, localizeSystemLabel(g.name), countProfilesInGroup(g.id)));
   }
-  const trashBtn = mk('trash', t('groups.trash'), trashedCount);
   trashBtn.classList.add('trash-chip');
   host.append(trashBtn);
 }
@@ -2741,6 +2754,7 @@ function renderProfiles() {
     }
     const row = buildProfileRow(profile);
     row.dataset.renderKey = key;
+    row.dataset.i18nPending = '1';
     // The stale row for this id must go before its replacement lands, or the
     // tail sweep (keyed by seen ids) would leave both in the table.
     if (existing) existing.remove();
@@ -2806,7 +2820,14 @@ function renderProfiles() {
   selectAll.indeterminate = selectedOnPage > 0 && selectedOnPage < pageIds.length;
   updateProfileSelectionUi();
   // Translate any remaining Chinese chrome text that was just injected
-  afterUiRender(document.getElementById('view-profiles') || document);
+  // Only rows built during this pass need i18n treatment: reused rows keep
+  // their translations, and afterUiRender walks every element in scope.
+  const profilesScope = document.getElementById('view-profiles') || document;
+  const freshRows = profilesScope.querySelectorAll('[data-i18n-pending]');
+  if (freshRows.length) {
+    afterUiRender(profilesScope);
+    freshRows.forEach((row) => { delete row.dataset.i18nPending; });
+  }
   if (typeof refreshIcons === 'function') refreshIcons();
   loadedViews.add('profiles');
 }
