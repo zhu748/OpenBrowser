@@ -95,6 +95,127 @@ function allowedMethodsForPath(pathname) {
   return null;
 }
 
+// Command routing table (cmd -> handler), the data behind route(). A plain
+// string value serves the path for ANY verb, exactly like the old if/else
+// chain branches that carried no method check (the 405 gate in handle()
+// has already narrowed the verb per path via ROUTE_METHODS above); an
+// object value is verb-specific. Id-in-path RPA routes are prefix entries
+// in API_PREFIX_ROUTES and are consulted after the exact lookup, in the
+// same order the old chain checked them.
+const API_ROUTES = {
+  '/': 'routeStatus',
+  '/status': 'routeStatus',
+  '/api/getVersion': 'routeVersion',
+  '/api/v1/version': 'routeVersion',
+  '/api/v1/user/list': 'routeProfileList',
+  '/api/v2/browser-profile/list': 'routeProfileList',
+  '/api/profiles': 'routeProfileList',
+  '/api/v1/user/create': 'routeProfileCreate',
+  '/api/v2/browser-profile/create': 'routeProfileCreate',
+  '/api/profiles/create': 'routeProfileCreate',
+  '/api/v2/browser-profile/update': 'routeProfileUpdate',
+  '/api/profiles/update': 'routeProfileUpdate',
+  '/api/v2/browser-profile/duplicate': 'routeProfileDuplicate',
+  '/api/profiles/duplicate': 'routeProfileDuplicate',
+  '/api/v1/user/delete': 'routeProfileDelete',
+  '/api/v2/browser-profile/delete': 'routeProfileDelete',
+  '/api/profiles/delete': 'routeProfileDelete',
+  '/api/v1/browser/start': 'routeBrowserStart',
+  '/api/v2/browser-profile/start': 'routeBrowserStart',
+  '/api/browser/start': 'routeBrowserStart',
+  '/api/v1/browser/stop': 'routeBrowserStop',
+  '/api/v2/browser-profile/stop': 'routeBrowserStop',
+  '/api/browser/stop': 'routeBrowserStop',
+  '/api/v1/browser/stop-all': 'routeBrowserStopAll',
+  '/api/v2/browser-profile/stop-all': 'routeBrowserStopAll',
+  '/api/browser/stop-all': 'routeBrowserStopAll',
+  '/api/v1/browser/active': 'routeBrowserActive',
+  '/api/v2/browser-profile/active': 'routeBrowserActive',
+  '/api/browser/active': 'routeBrowserActive',
+  '/api/v1/user/detail': 'routeProfileDetail',
+  '/api/v2/browser-profile/detail': 'routeProfileDetail',
+  '/api/profiles/get': 'routeProfileDetail',
+  '/api/profile': 'routeProfileDetail',
+  '/api/v1/browser/open-url': 'routeBrowserOpenUrl',
+  '/api/browser/open-url': 'routeBrowserOpenUrl',
+  '/api/v1/browser/screenshot': 'routeBrowserScreenshot',
+  '/api/browser/screenshot': 'routeBrowserScreenshot',
+  '/api/v2/proxy-list/list': 'routeProxyList',
+  '/api/proxy/list': 'routeProxyList',
+  '/api/v2/proxy-list/create': 'routeProxyCreate',
+  '/api/proxy/create': 'routeProxyCreate',
+  '/api/v2/proxy-list/update': 'routeProxyUpdate',
+  '/api/proxy/update': 'routeProxyUpdate',
+  '/api/v2/proxy-list/delete': 'routeProxyDelete',
+  '/api/proxy/delete': 'routeProxyDelete',
+  '/api/proxy/check': 'routeProxyCheck',
+  '/api/checkProxy': 'routeProxyCheck',
+  '/api/proxy/check-profile': 'routeProxyCheckProfile',
+  '/api/fingerprint': 'routeFingerprint',
+  '/api/v1/fingerprint': 'routeFingerprint',
+  '/api/isolation/audit': 'routeIsolationAudit',
+  '/api/v1/isolation/audit': 'routeIsolationAudit',
+  '/api/v1/application/list': 'routeAppList',
+  '/api/application/list': 'routeAppList',
+  '/api/apps': 'routeAppList',
+  '/api/application/recommended': 'routeAppRecommended',
+  '/api/apps/recommended': 'routeAppRecommended',
+  '/api/extension/list': 'routeExtensionList',
+  '/api/extensions': 'routeExtensionList',
+  '/api/extension/assign': 'routeExtensionAssign',
+  '/api/extensions/assign': 'routeExtensionAssign',
+  '/api/extension/update': 'routeExtensionStatus',
+  '/api/getExtensionStatus': 'routeExtensionStatus',
+  '/api/sync/status': 'routeSyncStatus',
+  '/api/window-sync/status': 'routeSyncStatus',
+  '/api/sync/start': 'routeSyncStart',
+  '/api/window-sync/start': 'routeSyncStart',
+  '/api/sync/stop': 'routeSyncStop',
+  '/api/window-sync/stop': 'routeSyncStop',
+  '/api/sync/restart': 'routeSyncRestart',
+  '/api/window-sync/restart': 'routeSyncRestart',
+  '/api/sync/arrange': 'routeSyncArrange',
+  '/api/window-sync/arrange': 'routeSyncArrange',
+  '/api/rpa/run': 'routeRpaRun',
+  '/api/rpa': 'routeRpaRun',
+  '/api/rpav2': 'routeRpaRun',
+  '/api/getRpaStatus': 'routeRpaStatus',
+  '/api/rpa/status': 'routeRpaStatus',
+  '/api/stopRpa': 'routeRpaStop',
+  '/api/rpa/stop': 'routeRpaStop',
+  '/api/sync/settings': { GET: 'routeSyncSettingsGet', POST: 'routeSyncSettingsPost' },
+  '/api/rpa/plans': { GET: 'routeRpaPlansList', POST: 'routeRpaPlanUpsert' },
+  '/api/rpa/tasks': { GET: 'routeRpaTasksList', DELETE: 'routeRpaTasksDelete' },
+  '/api/rpa/tasks/delete': { POST: 'routeRpaTasksDelete' },
+  '/api/rpa/templates': { GET: 'routeRpaTemplatesList', POST: 'routeRpaTemplatesAction' },
+};
+
+// Dynamic (id-in-path) routes: checked after the exact table, mirroring the
+// old chain precedence (e.g. DELETE /api/rpa/tasks/delete falls through the
+// exact POST-only entry to the tasks prefix and deletes task id 'delete').
+const API_PREFIX_ROUTES = [
+  { prefix: '/api/rpa/plans/', DELETE: 'routeRpaPlanDelete' },
+  { prefix: '/api/rpa/tasks/', GET: 'routeRpaTaskGet', DELETE: 'routeRpaTaskDelete' },
+  { prefix: '/api/rpa/templates/', suffix: '/install', POST: 'routeRpaTemplateInstall' },
+  { prefix: '/api/rpa/templates/', GET: 'routeRpaTemplateGet', DELETE: 'routeRpaTemplateDelete' },
+];
+
+function resolveApiRoute(method, pathname) {
+  const exact = Object.prototype.hasOwnProperty.call(API_ROUTES, pathname)
+    ? API_ROUTES[pathname]
+    : null;
+  if (exact) {
+    if (typeof exact === 'string') return exact;
+    if (Object.prototype.hasOwnProperty.call(exact, method)) return exact[method];
+  }
+  for (const route of API_PREFIX_ROUTES) {
+    if (!pathname.startsWith(route.prefix)) continue;
+    if (route.suffix && !pathname.endsWith(route.suffix)) continue;
+    if (Object.prototype.hasOwnProperty.call(route, method)) return route[method];
+  }
+  return null;
+}
+
 function decodePathId(value, label) {
   try {
     return decodeURIComponent(String(value || ''));
@@ -725,672 +846,715 @@ class LocalApiServer {
   }
 
   async route(method, pathname, input) {
-    // health / version
-    if (pathname === '/' || pathname === '/status') {
-      return ok({
-        name: 'openbrowser-local-api',
-        version: this.getVersion(),
-        ...this.info(),
-        runningProfiles: this.engine?.running?.size || 0,
-        sync: this.syncBridge?.status?.() || null,
-        rpa: this.rpaEngine?.getStatus?.() || null,
-        platform: this.engine?.platformPreflightReport?.() || null,
-      });
-    }
-    if (pathname === '/api/getVersion' || pathname === '/api/v1/version') {
-      return ok({ version: this.getVersion(), soft: 'OpenBrowser' });
-    }
+    // Lookup-table dispatch: API_ROUTES / API_PREFIX_ROUTES (module scope,
+    // right after allowedMethodsForPath) map every command onto a handler
+    // method, replacing the if/else chain that used to live here. A miss
+    // keeps the old fall-through: undefined -> 404 from handle().
+    const handlerName = resolveApiRoute(method, pathname);
+    if (!handlerName) return undefined;
+    return this[handlerName]({ method, pathname, input });
+  }
 
-    // ---- profiles (v1-style) ----
-    // debug_port / ws in this listing hand out every running profile's CDP port.
-    // The CDP endpoint itself carries no authentication, so the whole surface
-    // leans on the premise that debug ports are only ever bound to 127.0.0.1
-    // (engine start: --remote-debugging-address=127.0.0.1). Keep that binding
-    // intact when touching the launch flags, or this route becomes a full
-    // control-plane disclosure for any process holding the API key.
-    if (pathname === '/api/v1/user/list' || pathname === '/api/v2/browser-profile/list' || pathname === '/api/profiles') {
-      const list = this.engine.status().map((item) => ({
-        id: item.id,
-        user_id: item.id,
-        profile_id: item.id,
-        name: item.name,
-        title: item.title || item.name,
-        number: item.number,
-        status: item.running ? 'Active' : 'Inactive',
-        ws: item.port ? { puppeteer: `ws://127.0.0.1:${item.port}/devtools/browser/${item.id}`, selenium: `127.0.0.1:${item.port}` } : null,
-        debug_port: item.port || null,
-        ...proxySummary(item, this.proxyStore),
-      }));
-      return ok({ list, page: 1, page_size: list.length });
-    }
+  // health / version
+  async routeStatus() {
+    return ok({
+      name: 'openbrowser-local-api',
+      version: this.getVersion(),
+      ...this.info(),
+      runningProfiles: this.engine?.running?.size || 0,
+      sync: this.syncBridge?.status?.() || null,
+      rpa: this.rpaEngine?.getStatus?.() || null,
+      platform: this.engine?.platformPreflightReport?.() || null,
+    });
+  }
 
-    if (pathname === '/api/v1/user/create' || pathname === '/api/v2/browser-profile/create' || pathname === '/api/profiles/create') {
-      if (!this.engine) return fail('profile engine unavailable', 503);
-      let body = normalizeProfileInput(input && typeof input.profile === 'object' ? { ...input, ...input.profile } : input);
-      const association = this.resolveProxyAssociation(input, body);
-      const hasManualProxyConfiguration = !association.present && [
-        'proxy', 'user_proxy_config', 'network_mode', 'networkMode',
-      ].some((key) => Object.prototype.hasOwnProperty.call(body || {}, key));
-      if (association.present) body = { ...body, ...association.patch };
-      const existingIds = new Set(this.engine.profiles ? [...this.engine.profiles.keys()] : []);
-      let id = firstString(body, ['user_id', 'userId', 'profile_id', 'profileId', 'id']).trim();
-      if (!id) {
-        do { id = 'ob-' + Date.now().toString(36) + '-' + crypto.randomBytes(5).toString('hex'); } while (existingIds.has(id));
-      }
-      if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) return fail('invalid profile id', 400);
-      if (existingIds.has(id)) return fail('profile already exists', 409);
-      const numbers = this.engine.profiles ? [...this.engine.profiles.values()].map((item) => Number(item.number)).filter((n) => Number.isInteger(n) && n > 0) : [];
-      const number = Number.isInteger(Number(body.number)) && Number(body.number) > 0 ? Number(body.number) : ((Math.max(0, ...numbers) || 0) + 1);
-      const rawProxy = String(body.proxy || '').trim();
-      const userProxy = body.user_proxy_config && typeof body.user_proxy_config === 'object' ? body.user_proxy_config : {};
-      const proxyType = String(userProxy.proxy_type || 'http').toLowerCase();
-      const proxyHost = String(userProxy.proxy_host || '').trim();
-      const proxyPort = String(userProxy.proxy_port || '').trim();
-      const proxyUser = String(userProxy.proxy_user || '');
-      const proxyPassword = String(userProxy.proxy_password || '');
-      const proxy = rawProxy || (proxyHost && proxyPort ? (proxyType === 'socks' ? 'socks5' : proxyType) + '://' + (proxyUser ? encodeURIComponent(proxyUser) + ':' + encodeURIComponent(proxyPassword) + '@' : '') + proxyHost + ':' + proxyPort : 'Direct');
-      const profile = {
-        ...body,
-        id, number,
-        name: String(body.name || body.title || ('Environment ' + number)),
-        title: String(body.title || body.name || ('Environment ' + number)),
-        language: String(body.language || 'en-US'),
-        networkMode: body.networkMode || (/^(direct|offline|none)$/i.test(proxy) ? 'direct' : 'proxy'),
-        proxy,
-        privacy: {
-          ...(body.privacy && typeof body.privacy === 'object' ? body.privacy : {}),
-        },
-      };
-      // The engine's sanitizer may still reject structurally odd profiles (e.g. a
-      // non-string name slipped past String() coercion). Surface that as a 400
-      // request error rather than an internal 500 from syncProfiles' throw.
-      let created;
-      try {
-        created = this.engine.sanitizeProfile(profile);
-        created = this.normalizeProxyAssociationState(created, association.present
-          ? association
-          : (hasManualProxyConfiguration ? { present: true, value: '' } : association));
-        await this.engine.syncProfiles([created]);
-      } catch (error) {
-        return fail(`invalid profile: ${error.message}`, 400);
-      }
-      if (typeof this.engine.persist === 'function') await this.engine.persist();
-      created = this.engine.profiles.get(id) || created;
-      return ok({ user_id: id, profile_id: id, id, ...proxySummary(created, this.proxyStore), profile: redactProfileForApi(created) });
-    }
+  async routeVersion() {
+    return ok({ version: this.getVersion(), soft: 'OpenBrowser' });
+  }
 
-    if (pathname === '/api/v2/browser-profile/update' || pathname === '/api/profiles/update') {
-      if (!this.engine) return fail('profile engine unavailable', 503);
-      const id = firstString(input, ['profile_id', 'profileId', 'user_id', 'userId', 'id']);
-      if (!id) return fail('profile id required', 400);
-      const current = this.engine.profiles.get(id);
-      if (!current) return fail('profile not found', 404);
-      const clearFingerprint = Boolean(input.__clearFingerprint) || input.fingerprint === null || input.privacy?.fingerprint === null;
-      let body = normalizeProfileInput(input);
-      const association = this.resolveProxyAssociation(input, current);
-      const hasManualProxyPatch = !association.present && (
-        Object.prototype.hasOwnProperty.call(input || {}, 'proxy')
-        || Object.prototype.hasOwnProperty.call(input || {}, 'user_proxy_config')
-        || Object.prototype.hasOwnProperty.call(input || {}, 'userProxyConfig')
-        || Object.prototype.hasOwnProperty.call(input || {}, 'network_mode')
-        || Object.prototype.hasOwnProperty.call(input || {}, 'networkMode')
-      );
-      if (association.present) body = { ...body, ...association.patch };
-      else if (hasManualProxyPatch) {
-        const rawProxy = String(input?.proxy || '').trim();
-        const directRequested = String(input?.network_mode ?? input?.networkMode ?? '').toLowerCase() === 'direct'
-          || /^(direct|offline|none)$/i.test(rawProxy);
-        body = {
-          ...body,
-          ...(directRequested && !rawProxy ? { proxy: 'Direct' } : {}),
-          networkMode: directRequested ? 'direct' : 'proxy',
-          proxyId: null,
-          proxyMeta: this.proxyMetaWithAssociation(current.proxyMeta, null),
-        };
-      }
-      const allowed = new Set([
-        'name', 'title', 'number', 'language', 'proxy', 'networkMode', 'startUrl', 'os', 'platform',
-        'browser', 'userAgent', 'resolution', 'windowSize', 'timezone', 'locale', 'languageCode',
-        'geolocation', 'webglVendor', 'webglRenderer', 'hardwareConcurrency', 'deviceMemory', 'doNotTrack',
-        'privacy', 'fingerprint', 'user_proxy_config', 'note', 'width', 'height', 'advanced',
-        'proxyMeta', 'tag', 'groupId', 'group_name',
-        'proxyId',
-      ]);
-      const patch = {};
-      for (const [key, value] of Object.entries(body)) {
-        if (!allowed.has(key)) continue;
-        if (key === 'startUrl' && value !== undefined) patch.startUrl = value;
-        else if (key === 'userAgent' && value !== undefined) patch.userAgent = value;
-        else if (key === 'windowSize' && value !== undefined) patch.windowSize = value;
-        else if (key === 'networkMode' && value !== undefined) patch.networkMode = value;
-        else if (key === 'languageCode' && value !== undefined) patch.languageCode = value;
-        else if (key === 'privacy' && value !== undefined) {
-          const next = { ...(current.privacy || {}), ...(value && typeof value === 'object' ? value : {}) };
-          if (clearFingerprint) delete next.fingerprint;
-          patch.privacy = next;
-        }
-        else if (key === 'platform' && value && typeof value === 'object') patch.platform = { ...(current.platform || {}), ...value };
-        else if (key === 'advanced' && value && typeof value === 'object') patch.advanced = { ...(current.advanced || {}), ...value };
-        else if (key === 'proxyMeta' && value && typeof value === 'object') patch.proxyMeta = { ...(current.proxyMeta || {}), ...value };
-        else if (key === 'user_proxy_config' && value && typeof value === 'object') {
-          const { proxy_type, proxy_host, proxy_port, proxy_user, proxy_password } = value;
-          if (proxy_host && proxy_port) {
-            const type = String(proxy_type || 'http').toLowerCase();
-            patch.proxy = (type === 'socks' ? 'socks5' : type) + '://' +
-              (proxy_user ? encodeURIComponent(proxy_user) + ':' + encodeURIComponent(proxy_password || '') + '@' : '') +
-              proxy_host + ':' + proxy_port;
-            patch.networkMode = 'proxy';
-          }
-        }
-        else if (key === 'fingerprint' && value && typeof value === 'object') patch.fingerprint = { ...value };
-        else if (key !== 'profile_id' && key !== 'user_id' && key !== 'id') patch[key] = value;
-      }
-      if (clearFingerprint) {
-        delete patch.fingerprint;
-        if (!Object.prototype.hasOwnProperty.call(patch, 'privacy')) {
-          const nextPrivacy = { ...(current.privacy || {}) };
-          delete nextPrivacy.fingerprint;
-          patch.privacy = nextPrivacy;
-        }
-      }
-      const mergedProfile = { ...current, ...patch, id };
-      if (clearFingerprint) {
-        // Older callers/tests may still carry a duplicated top-level
-        // fingerprint alongside privacy.fingerprint. Remove both copies so a
-        // reset cannot be undone by the merge before sanitization.
-        delete mergedProfile.fingerprint;
-        if (mergedProfile.privacy && typeof mergedProfile.privacy === 'object') {
-          delete mergedProfile.privacy.fingerprint;
-        }
-      }
-      const next = this.engine.sanitizeProfile(mergedProfile);
-      this.normalizeProxyAssociationState(next, association.present
+  // ---- profiles (v1-style) ----
+  // debug_port / ws in this listing hand out every running profile's CDP port.
+  // The CDP endpoint itself carries no authentication, so the whole surface
+  // leans on the premise that debug ports are only ever bound to 127.0.0.1
+  // (engine start: --remote-debugging-address=127.0.0.1). Keep that binding
+  // intact when touching the launch flags, or this route becomes a full
+  // control-plane disclosure for any process holding the API key.
+  async routeProfileList() {
+    const list = this.engine.status().map((item) => ({
+      id: item.id,
+      user_id: item.id,
+      profile_id: item.id,
+      name: item.name,
+      title: item.title || item.name,
+      number: item.number,
+      status: item.running ? 'Active' : 'Inactive',
+      ws: item.port ? { puppeteer: `ws://127.0.0.1:${item.port}/devtools/browser/${item.id}`, selenium: `127.0.0.1:${item.port}` } : null,
+      debug_port: item.port || null,
+      ...proxySummary(item, this.proxyStore),
+    }));
+    return ok({ list, page: 1, page_size: list.length });
+  }
+
+  async routeProfileCreate({ input }) {
+    if (!this.engine) return fail('profile engine unavailable', 503);
+    let body = normalizeProfileInput(input && typeof input.profile === 'object' ? { ...input, ...input.profile } : input);
+    const association = this.resolveProxyAssociation(input, body);
+    const hasManualProxyConfiguration = !association.present && [
+      'proxy', 'user_proxy_config', 'network_mode', 'networkMode',
+    ].some((key) => Object.prototype.hasOwnProperty.call(body || {}, key));
+    if (association.present) body = { ...body, ...association.patch };
+    const existingIds = new Set(this.engine.profiles ? [...this.engine.profiles.keys()] : []);
+    let id = firstString(body, ['user_id', 'userId', 'profile_id', 'profileId', 'id']).trim();
+    if (!id) {
+      do { id = 'ob-' + Date.now().toString(36) + '-' + crypto.randomBytes(5).toString('hex'); } while (existingIds.has(id));
+    }
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) return fail('invalid profile id', 400);
+    if (existingIds.has(id)) return fail('profile already exists', 409);
+    const numbers = this.engine.profiles ? [...this.engine.profiles.values()].map((item) => Number(item.number)).filter((n) => Number.isInteger(n) && n > 0) : [];
+    const number = Number.isInteger(Number(body.number)) && Number(body.number) > 0 ? Number(body.number) : ((Math.max(0, ...numbers) || 0) + 1);
+    const rawProxy = String(body.proxy || '').trim();
+    const userProxy = body.user_proxy_config && typeof body.user_proxy_config === 'object' ? body.user_proxy_config : {};
+    const proxyType = String(userProxy.proxy_type || 'http').toLowerCase();
+    const proxyHost = String(userProxy.proxy_host || '').trim();
+    const proxyPort = String(userProxy.proxy_port || '').trim();
+    const proxyUser = String(userProxy.proxy_user || '');
+    const proxyPassword = String(userProxy.proxy_password || '');
+    const proxy = rawProxy || (proxyHost && proxyPort ? (proxyType === 'socks' ? 'socks5' : proxyType) + '://' + (proxyUser ? encodeURIComponent(proxyUser) + ':' + encodeURIComponent(proxyPassword) + '@' : '') + proxyHost + ':' + proxyPort : 'Direct');
+    const profile = {
+      ...body,
+      id, number,
+      name: String(body.name || body.title || ('Environment ' + number)),
+      title: String(body.title || body.name || ('Environment ' + number)),
+      language: String(body.language || 'en-US'),
+      networkMode: body.networkMode || (/^(direct|offline|none)$/i.test(proxy) ? 'direct' : 'proxy'),
+      proxy,
+      privacy: {
+        ...(body.privacy && typeof body.privacy === 'object' ? body.privacy : {}),
+      },
+    };
+    // The engine's sanitizer may still reject structurally odd profiles (e.g. a
+    // non-string name slipped past String() coercion). Surface that as a 400
+    // request error rather than an internal 500 from syncProfiles' throw.
+    let created;
+    try {
+      created = this.engine.sanitizeProfile(profile);
+      created = this.normalizeProxyAssociationState(created, association.present
         ? association
-        : (hasManualProxyPatch ? { present: true, value: '' } : association));
-      this.engine.profiles.set(id, next);
-      // syncProfiles() invalidates the status snapshot on every other mutation
-      // path; this direct set must match it or the renderer keeps serving a
-      // stale cache until an unrelated status emit happens.
-      this.engine.invalidateStatusCache?.();
-      if (typeof this.engine.persist === 'function') await this.engine.persist();
-      const profile = this.engine.profiles.get(id);
-      return ok({
-        profile_id: id,
-        ...proxySummary(profile, this.proxyStore, association.present ? association.value : undefined),
-        profile: redactProfileForApi(profile),
-      });
+        : (hasManualProxyConfiguration ? { present: true, value: '' } : association));
+      await this.engine.syncProfiles([created]);
+    } catch (error) {
+      return fail(`invalid profile: ${error.message}`, 400);
     }
+    if (typeof this.engine.persist === 'function') await this.engine.persist();
+    created = this.engine.profiles.get(id) || created;
+    return ok({ user_id: id, profile_id: id, id, ...proxySummary(created, this.proxyStore), profile: redactProfileForApi(created) });
+  }
 
-    if (pathname === '/api/v2/browser-profile/duplicate' || pathname === '/api/profiles/duplicate') {
-      if (!this.engine) return fail('profile engine unavailable', 503);
-      const duplicateInput = normalizeProfileInput(input);
-      const sourceId = firstString(duplicateInput, ['source_profile_id', 'sourceProfileId', 'profile_id', 'profileId', 'user_id', 'userId', 'id']).trim();
-      if (!sourceId) return fail('source profile id required', 400);
-      const source = this.engine.profiles.get(sourceId);
-      if (!source) return fail('source profile not found', 404);
-      const numbers = [...this.engine.profiles.values()].map((item) => Number(item.number)).filter((n) => Number.isInteger(n) && n > 0);
-      const number = (Math.max(0, ...numbers) || 0) + 1;
-      const id = 'ob-' + Date.now().toString(36) + '-' + crypto.randomBytes(5).toString('hex');
-      const base = this.engine.sanitizeProfile(source);
-      const requestedStartUrl = duplicateInput.startUrl !== undefined
-        ? String(duplicateInput.startUrl || '').trim()
-        : null;
-      const next = this.engine.sanitizeProfile({
-        ...base,
-        id,
-        number,
-        name: String(duplicateInput.name || (base.name ? base.name + ' Copy' : 'Environment ' + number)),
-        title: String(duplicateInput.name || base.title || base.name || ('Environment ' + number)),
-        startUrl: requestedStartUrl === null ? base.startUrl : requestedStartUrl,
-        profileId: id,
-        cookies: '',
+  async routeProfileUpdate({ input }) {
+    if (!this.engine) return fail('profile engine unavailable', 503);
+    const id = firstString(input, ['profile_id', 'profileId', 'user_id', 'userId', 'id']);
+    if (!id) return fail('profile id required', 400);
+    const current = this.engine.profiles.get(id);
+    if (!current) return fail('profile not found', 404);
+    const clearFingerprint = Boolean(input.__clearFingerprint) || input.fingerprint === null || input.privacy?.fingerprint === null;
+    let body = normalizeProfileInput(input);
+    const association = this.resolveProxyAssociation(input, current);
+    const hasManualProxyPatch = !association.present && (
+      Object.prototype.hasOwnProperty.call(input || {}, 'proxy')
+      || Object.prototype.hasOwnProperty.call(input || {}, 'user_proxy_config')
+      || Object.prototype.hasOwnProperty.call(input || {}, 'userProxyConfig')
+      || Object.prototype.hasOwnProperty.call(input || {}, 'network_mode')
+      || Object.prototype.hasOwnProperty.call(input || {}, 'networkMode')
+    );
+    if (association.present) body = { ...body, ...association.patch };
+    else if (hasManualProxyPatch) {
+      const rawProxy = String(input?.proxy || '').trim();
+      const directRequested = String(input?.network_mode ?? input?.networkMode ?? '').toLowerCase() === 'direct'
+        || /^(direct|offline|none)$/i.test(rawProxy);
+      body = {
+        ...body,
+        ...(directRequested && !rawProxy ? { proxy: 'Direct' } : {}),
+        networkMode: directRequested ? 'direct' : 'proxy',
+        proxyId: null,
+        proxyMeta: this.proxyMetaWithAssociation(current.proxyMeta, null),
+      };
+    }
+    const allowed = new Set([
+      'name', 'title', 'number', 'language', 'proxy', 'networkMode', 'startUrl', 'os', 'platform',
+      'browser', 'userAgent', 'resolution', 'windowSize', 'timezone', 'locale', 'languageCode',
+      'geolocation', 'webglVendor', 'webglRenderer', 'hardwareConcurrency', 'deviceMemory', 'doNotTrack',
+      'privacy', 'fingerprint', 'user_proxy_config', 'note', 'width', 'height', 'advanced',
+      'proxyMeta', 'tag', 'groupId', 'group_name',
+      'proxyId',
+    ]);
+    const patch = {};
+    for (const [key, value] of Object.entries(body)) {
+      if (!allowed.has(key)) continue;
+      if (key === 'startUrl' && value !== undefined) patch.startUrl = value;
+      else if (key === 'userAgent' && value !== undefined) patch.userAgent = value;
+      else if (key === 'windowSize' && value !== undefined) patch.windowSize = value;
+      else if (key === 'networkMode' && value !== undefined) patch.networkMode = value;
+      else if (key === 'languageCode' && value !== undefined) patch.languageCode = value;
+      else if (key === 'privacy' && value !== undefined) {
+        const next = { ...(current.privacy || {}), ...(value && typeof value === 'object' ? value : {}) };
+        if (clearFingerprint) delete next.fingerprint;
+        patch.privacy = next;
+      }
+      else if (key === 'platform' && value && typeof value === 'object') patch.platform = { ...(current.platform || {}), ...value };
+      else if (key === 'advanced' && value && typeof value === 'object') patch.advanced = { ...(current.advanced || {}), ...value };
+      else if (key === 'proxyMeta' && value && typeof value === 'object') patch.proxyMeta = { ...(current.proxyMeta || {}), ...value };
+      else if (key === 'user_proxy_config' && value && typeof value === 'object') {
+        const { proxy_type, proxy_host, proxy_port, proxy_user, proxy_password } = value;
+        if (proxy_host && proxy_port) {
+          const type = String(proxy_type || 'http').toLowerCase();
+          patch.proxy = (type === 'socks' ? 'socks5' : type) + '://' +
+            (proxy_user ? encodeURIComponent(proxy_user) + ':' + encodeURIComponent(proxy_password || '') + '@' : '') +
+            proxy_host + ':' + proxy_port;
+          patch.networkMode = 'proxy';
+        }
+      }
+      else if (key === 'fingerprint' && value && typeof value === 'object') patch.fingerprint = { ...value };
+      else if (key !== 'profile_id' && key !== 'user_id' && key !== 'id') patch[key] = value;
+    }
+    if (clearFingerprint) {
+      delete patch.fingerprint;
+      if (!Object.prototype.hasOwnProperty.call(patch, 'privacy')) {
+        const nextPrivacy = { ...(current.privacy || {}) };
+        delete nextPrivacy.fingerprint;
+        patch.privacy = nextPrivacy;
+      }
+    }
+    const mergedProfile = { ...current, ...patch, id };
+    if (clearFingerprint) {
+      // Older callers/tests may still carry a duplicated top-level
+      // fingerprint alongside privacy.fingerprint. Remove both copies so a
+      // reset cannot be undone by the merge before sanitization.
+      delete mergedProfile.fingerprint;
+      if (mergedProfile.privacy && typeof mergedProfile.privacy === 'object') {
+        delete mergedProfile.privacy.fingerprint;
+      }
+    }
+    const next = this.engine.sanitizeProfile(mergedProfile);
+    this.normalizeProxyAssociationState(next, association.present
+      ? association
+      : (hasManualProxyPatch ? { present: true, value: '' } : association));
+    this.engine.profiles.set(id, next);
+    // syncProfiles() invalidates the status snapshot on every other mutation
+    // path; this direct set must match it or the renderer keeps serving a
+    // stale cache until an unrelated status emit happens.
+    this.engine.invalidateStatusCache?.();
+    if (typeof this.engine.persist === 'function') await this.engine.persist();
+    const profile = this.engine.profiles.get(id);
+    return ok({
+      profile_id: id,
+      ...proxySummary(profile, this.proxyStore, association.present ? association.value : undefined),
+      profile: redactProfileForApi(profile),
+    });
+  }
+
+  async routeProfileDuplicate({ input }) {
+    if (!this.engine) return fail('profile engine unavailable', 503);
+    const duplicateInput = normalizeProfileInput(input);
+    const sourceId = firstString(duplicateInput, ['source_profile_id', 'sourceProfileId', 'profile_id', 'profileId', 'user_id', 'userId', 'id']).trim();
+    if (!sourceId) return fail('source profile id required', 400);
+    const source = this.engine.profiles.get(sourceId);
+    if (!source) return fail('source profile not found', 404);
+    const numbers = [...this.engine.profiles.values()].map((item) => Number(item.number)).filter((n) => Number.isInteger(n) && n > 0);
+    const number = (Math.max(0, ...numbers) || 0) + 1;
+    const id = 'ob-' + Date.now().toString(36) + '-' + crypto.randomBytes(5).toString('hex');
+    const base = this.engine.sanitizeProfile(source);
+    const requestedStartUrl = duplicateInput.startUrl !== undefined
+      ? String(duplicateInput.startUrl || '').trim()
+      : null;
+    const next = this.engine.sanitizeProfile({
+      ...base,
+      id,
+      number,
+      name: String(duplicateInput.name || (base.name ? base.name + ' Copy' : 'Environment ' + number)),
+      title: String(duplicateInput.name || base.title || base.name || ('Environment ' + number)),
+      startUrl: requestedStartUrl === null ? base.startUrl : requestedStartUrl,
+      profileId: id,
+      cookies: '',
+      username: '',
+      password: '',
+      totpSecret: '',
+      otp: '',
+      exitCheckedAt: undefined,
+      exitNetwork: undefined,
+      platform: {
+        ...(base.platform || {}),
+        ...(requestedStartUrl === null ? {} : { startUrl: requestedStartUrl }),
         username: '',
         password: '',
         totpSecret: '',
         otp: '',
-        exitCheckedAt: undefined,
-        exitNetwork: undefined,
-        platform: {
-          ...(base.platform || {}),
-          ...(requestedStartUrl === null ? {} : { startUrl: requestedStartUrl }),
-          username: '',
-          password: '',
-          totpSecret: '',
-          otp: '',
-        },
-        advanced: {
-          ...(base.advanced || {}),
-          ...(requestedStartUrl === null ? {} : { startUrls: requestedStartUrl }),
-        },
-        privacy: {
-          ...(base.privacy || {}),
-          fingerprint: undefined,
-          batterySnapshot: undefined,
-          mediaLabels: undefined,
-        },
-      });
-      await this.engine.syncProfiles([next]);
-      if (typeof this.engine.persist === 'function') await this.engine.persist();
-      return ok({ profile_id: id, profile: redactProfileForApi(this.engine.profiles.get(id) || next) });
-    }
+      },
+      advanced: {
+        ...(base.advanced || {}),
+        ...(requestedStartUrl === null ? {} : { startUrls: requestedStartUrl }),
+      },
+      privacy: {
+        ...(base.privacy || {}),
+        fingerprint: undefined,
+        batterySnapshot: undefined,
+        mediaLabels: undefined,
+      },
+    });
+    await this.engine.syncProfiles([next]);
+    if (typeof this.engine.persist === 'function') await this.engine.persist();
+    return ok({ profile_id: id, profile: redactProfileForApi(this.engine.profiles.get(id) || next) });
+  }
 
-    if (pathname === '/api/v1/user/delete' || pathname === '/api/v2/browser-profile/delete' || pathname === '/api/profiles/delete') {
-      if (!this.engine) return fail('profile engine unavailable', 503);
-      const rawIds = firstArray(input, ['user_ids', 'userIds', 'profile_ids', 'profileIds', 'ids'])
-        || [firstDefined(input, ['user_id', 'userId', 'profile_id', 'profileId', 'id'])];
-      const ids = rawIds.map((value) => String(value || '').trim()).filter(Boolean);
-      if (!ids.length) return fail('profile id required', 400);
-      let result;
+  async routeProfileDelete({ input }) {
+    if (!this.engine) return fail('profile engine unavailable', 503);
+    const rawIds = firstArray(input, ['user_ids', 'userIds', 'profile_ids', 'profileIds', 'ids'])
+      || [firstDefined(input, ['user_id', 'userId', 'profile_id', 'profileId', 'id'])];
+    const ids = rawIds.map((value) => String(value || '').trim()).filter(Boolean);
+    if (!ids.length) return fail('profile id required', 400);
+    let result;
+    try {
+      const deleteData = input.delete_data !== undefined
+        ? booleanValue(input.delete_data, true)
+        : booleanValue(input.deleteData, true);
+      result = await this.engine.deleteProfiles(ids, deleteData);
+    } catch (error) {
+      // e.g. isolation root validation rejection while removing profile data —
+      // surface as a request error, not an internal 500.
+      return fail(`delete failed: ${error.message}`, 400);
+    }
+    return ok(result);
+  }
+
+  async routeBrowserStart({ input }) {
+    const id = firstString(input, ['user_id', 'userId', 'profile_id', 'profileId', 'id']);
+    const profile = this.engine.profiles.get(id);
+    if (!profile) return fail('profile not found', 404);
+    const started = await this.engine.start(profile);
+    const port = started?.port || this.engine.running?.get(id)?.port || null;
+    const puppeteerWs = port ? await resolveWebSocketDebuggerUrl(port, id) : null;
+    return ok({
+      user_id: id,
+      profile_id: id,
+      debug_port: port,
+      ws: {
+        puppeteer: puppeteerWs,
+      },
+    });
+  }
+
+  async routeBrowserStop({ input }) {
+    if (!this.engine) return fail('profile engine unavailable', 503);
+    const id = firstString(input, ['user_id', 'userId', 'profile_id', 'profileId', 'id']).trim();
+    if (!id) return fail('profile id required', 400);
+    if (!this.engine.profiles?.has(id)) return fail('profile not found', 404);
+    await this.engine.stop(id);
+    return ok({ user_id: id, profile_id: id });
+  }
+
+  async routeBrowserStopAll() {
+    await this.engine.stopAll();
+    return ok({ stopped: true });
+  }
+
+  async routeBrowserActive() {
+    const active = this.engine.status().filter((item) => item.running).map((item) => ({
+      user_id: item.id,
+      debug_port: item.port,
+      profile_directory: item.profileDirectory || null,
+    }));
+    return ok({ list: active });
+  }
+
+  async routeProfileDetail({ input }) {
+    if (!this.engine) return fail('profile engine unavailable', 503);
+    const id = firstString(input, ['profile_id', 'profileId', 'user_id', 'userId', 'id']);
+    if (!id) return fail('profile id required', 400);
+    const profile = this.engine.profiles?.get(id);
+    if (!profile) return fail('profile not found', 404);
+    const running = this.engine.running?.get(id);
+    return ok({
+      profile_id: id,
+      user_id: id,
+      name: profile.name,
+      title: profile.title,
+      status: running ? 'Active' : 'Inactive',
+      debug_port: running?.port || null,
+      ws: running?.port ? { puppeteer: await resolveWebSocketDebuggerUrl(running.port, id), selenium: '127.0.0.1:' + running.port } : null,
+      profile: redactProfileForApi(profile),
+      ...proxySummary(profile, this.proxyStore),
+    });
+  }
+
+  async routeBrowserOpenUrl({ input }) {
+    if (!this.engine) return fail('browser engine unavailable', 503);
+    const id = firstString(input, ['profile_id', 'profileId', 'user_id', 'userId', 'id']);
+    const rawUrl = firstString(input, ['url', 'target_url', 'targetUrl', 'start_url', 'startUrl']);
+    if (!id) return fail('profile id required', 400);
+    if (!rawUrl) return fail('url required', 400);
+    let targetUrl = rawUrl.trim();
+    if (!/^https?:\/\//i.test(targetUrl) && !/^about:/i.test(targetUrl)) {
+      targetUrl = 'https://' + targetUrl;
+    }
+    const runningItem = this.engine.running?.get(id);
+    const cdp = require('../cdp');
+    if (runningItem?.port) {
       try {
-        const deleteData = input.delete_data !== undefined
-          ? booleanValue(input.delete_data, true)
-          : booleanValue(input.deleteData, true);
-        result = await this.engine.deleteProfiles(ids, deleteData);
+        await cdp.navigate(runningItem.port, targetUrl);
+        return ok({ profile_id: id, url: targetUrl, navigated: true });
       } catch (error) {
-        // e.g. isolation root validation rejection while removing profile data —
-        // surface as a request error, not an internal 500.
-        return fail(`delete failed: ${error.message}`, 400);
+        return fail('navigate failed: ' + error.message, 500);
       }
+    }
+    const profile = this.engine.profiles?.get(id);
+    if (!profile) return fail('profile not found', 404);
+    const started = await this.engine.start({ ...profile, startUrl: targetUrl });
+    const port = started?.port || null;
+    const puppeteerWs = port ? await resolveWebSocketDebuggerUrl(port, id) : null;
+    return ok({
+      profile_id: id,
+      url: targetUrl,
+      started: true,
+      debug_port: port,
+      ws: port ? { puppeteer: puppeteerWs } : null,
+    });
+  }
+
+  async routeBrowserScreenshot({ input }) {
+    if (!this.engine) return fail('browser engine unavailable', 503);
+    const id = firstString(input, ['profile_id', 'profileId', 'user_id', 'userId', 'id']);
+    if (!id) return fail('profile id required', 400);
+    const runningItem = this.engine.running?.get(id);
+    if (!runningItem?.port) return fail('profile is not running', 400);
+    const cdp = require('../cdp');
+    try {
+      const tab = await cdp.firstTab(runningItem.port);
+      if (!tab) return fail('no active tab in profile', 404);
+      const format = String(input.format || 'png').toLowerCase();
+      const shot = await cdp.call(tab.webSocketDebuggerUrl, 'Page.captureScreenshot', { format: format === 'jpeg' ? 'jpeg' : 'png' }, 15000);
+      if (!shot?.data) return fail('failed to capture screenshot', 500);
+      return ok({
+        profile_id: id,
+        format: format === 'jpeg' ? 'jpeg' : 'png',
+        data: shot.data,
+      });
+    } catch (error) {
+      return fail('screenshot failed: ' + error.message, 500);
+    }
+  }
+
+  // ---- proxy library ----
+  async routeProxyList({ input }) {
+    if (!this.proxyStore) return fail('proxy store unavailable', 503);
+    const list = this.proxyStore.list(input).map(redactProxyRecord);
+    return ok({ list, page: 1, page_size: list.length });
+  }
+
+  async routeProxyCreate({ input }) {
+    if (!this.proxyStore) return fail('proxy store unavailable', 503);
+    if (Array.isArray(input) || Array.isArray(input.data)) {
+      const body = Array.isArray(input) ? input : input.data;
+      return ok({ list: await this.proxyStore.createMany(body.map(normalizeProxyInput)) });
+    }
+    return ok(await this.proxyStore.create(normalizeProxyInput(input)));
+  }
+
+  async routeProxyUpdate({ input }) {
+    if (!this.proxyStore) return fail('proxy store unavailable', 503);
+    const id = String(input.proxy_id || input.proxy_library_id || input.proxyId || input.proxyLibraryId || input.id || '');
+    if (!id) return fail('id required', 400);
+    return ok(await this.proxyStore.update(id, normalizeProxyInput(input)));
+  }
+
+  async routeProxyDelete({ input }) {
+    if (!this.proxyStore) return fail('proxy store unavailable', 503);
+    const ids = firstArray(input, ['proxy_ids', 'proxyIds', 'proxy_library_ids', 'proxyLibraryIds', 'proxy_id', 'proxyId', 'ids'])
+      || [firstDefined(input, ['id', 'proxy_id', 'proxyId', 'proxy_library_id', 'proxyLibraryId'])];
+    return ok(await this.proxyStore.remove(ids.filter(Boolean)));
+  }
+
+  async routeProxyCheck({ input }) {
+    if (!this.proxyStore || !this.engine) return fail('proxy check unavailable', 503);
+    const id = String(input.proxy_id || input.proxy_library_id || input.proxyId || input.proxyLibraryId || input.id || '');
+    const item = id ? this.proxyStore.get(id) : null;
+    const raw = item?.raw || input.proxy || input.raw;
+    if (!raw) return fail('proxy required', 400);
+    const ipChannel = firstString(input, ['ip_channel', 'ipChannel'], 'ip-api');
+    try {
+      const result = await this.engine.testProxy({ id: 'proxy-check', name: 'proxy-check', proxy: raw, proxyMeta: { ipChannel: item?.ipChannel || ipChannel } });
+      if (item) await this.proxyStore.markCheck(item.id, result);
       return ok(result);
+    } catch (err) {
+      return fail('proxy check failed: ' + (err?.message || err), 400);
     }
+  }
 
-    if (pathname === '/api/v1/browser/start' || pathname === '/api/v2/browser-profile/start' || pathname === '/api/browser/start') {
-      const id = firstString(input, ['user_id', 'userId', 'profile_id', 'profileId', 'id']);
-      const profile = this.engine.profiles.get(id);
-      if (!profile) return fail('profile not found', 404);
-      const started = await this.engine.start(profile);
-      const port = started?.port || this.engine.running?.get(id)?.port || null;
-      const puppeteerWs = port ? await resolveWebSocketDebuggerUrl(port, id) : null;
-      return ok({
-        user_id: id,
-        profile_id: id,
-        debug_port: port,
-        ws: {
-          puppeteer: puppeteerWs,
-        },
+  async routeProxyCheckProfile({ input }) {
+    if (!this.engine) return fail('profile engine unavailable', 503);
+    const id = firstString(input, ['profile_id', 'profileId', 'user_id', 'userId', 'id']);
+    if (!id) return fail('profile id required', 400);
+    const profile = this.engine.profiles.get(id);
+    if (!profile) return fail('profile not found', 404);
+    try {
+      const result = await this.engine.checkProxy(profile, { allowExtract: false, persist: true });
+      return ok(result);
+    } catch (err) {
+      return fail('check-profile failed: ' + (err?.message || err), 400);
+    }
+  }
+
+  // ---- fingerprint / isolation ----
+  async routeFingerprint({ input }) {
+    const id = firstString(input, ['user_id', 'userId', 'profile_id', 'profileId', 'id']);
+    if (!id) return fail('profile_id required', 400);
+    try {
+      return ok(this.engine.fingerprintFor(id));
+    } catch (error) {
+      return fail(error.message, 400);
+    }
+  }
+
+  async routeIsolationAudit() {
+    return ok(this.engine.isolationAudit());
+  }
+
+  // ---- application center ----
+  async routeAppList({ input }) {
+    if (!this.appCenter) return fail('app center unavailable', 503);
+    return ok(this.appCenter.list(input));
+  }
+
+  async routeAppRecommended() {
+    if (!this.appCenter) return fail('app center unavailable', 503);
+    return ok({ list: this.appCenter.recommended() });
+  }
+
+  async routeExtensionList() {
+    return ok({ list: this.engine.listExtensions() });
+  }
+
+  async routeExtensionAssign({ input }) {
+    const extensionId = firstString(input, ['extension_id', 'extensionId', 'id']);
+    const ids = this.parseIds(input);
+    const enabled = booleanValue(input.enabled, true);
+    if (!extensionId || !ids.length) return fail('extension_id and profile_ids required', 400);
+    await this.engine.assignExtension(extensionId, ids, enabled);
+    return ok({ extension_id: extensionId, profile_ids: ids, enabled });
+  }
+
+  async routeExtensionStatus() {
+    return ok({ list: this.engine.listExtensions() });
+  }
+
+  // ---- window sync ----
+  async routeSyncStatus() {
+    return ok(this.syncBridge.status());
+  }
+
+  async routeSyncStart({ input }) {
+    if (!this.syncBridge) return fail('sync bridge unavailable', 503);
+    if (Object.prototype.hasOwnProperty.call(input || {}, 'settings')) {
+      return fail('sync settings must be updated through /api/sync/settings', 400);
+    }
+    let ids;
+    try {
+      ids = this.parseIds(input);
+    } catch (err) {
+      return fail('invalid profile ids: ' + (err?.message || err), 400);
+    }
+    if (input.operate) this.syncBridge.updateOperateList(input.operate);
+    try {
+      const result = await this.syncBridge.start(ids, {
+        tile: booleanValue(input.tile, true),
+        cascade: booleanValue(input.cascade, false),
       });
+      return ok(result);
+    } catch (err) {
+      return fail('sync start failed: ' + (err?.message || err), 400);
     }
+  }
 
-    if (pathname === '/api/v1/browser/stop' || pathname === '/api/v2/browser-profile/stop' || pathname === '/api/browser/stop') {
-      if (!this.engine) return fail('profile engine unavailable', 503);
-      const id = firstString(input, ['user_id', 'userId', 'profile_id', 'profileId', 'id']).trim();
-      if (!id) return fail('profile id required', 400);
-      if (!this.engine.profiles?.has(id)) return fail('profile not found', 404);
-      await this.engine.stop(id);
-      return ok({ user_id: id, profile_id: id });
+  async routeSyncStop() {
+    if (!this.syncBridge) return fail('sync bridge unavailable', 503);
+    try {
+      return ok(this.syncBridge.stop());
+    } catch (err) {
+      return fail('sync stop failed: ' + (err?.message || err), 400);
     }
+  }
 
-    if (pathname === '/api/v1/browser/stop-all' || pathname === '/api/v2/browser-profile/stop-all' || pathname === '/api/browser/stop-all') {
-      await this.engine.stopAll();
-      return ok({ stopped: true });
+  async routeSyncRestart() {
+    if (!this.syncBridge) return fail('sync bridge unavailable', 503);
+    try {
+      return ok(await this.syncBridge.restart());
+    } catch (err) {
+      return fail('sync restart failed: ' + (err?.message || err), 400);
     }
+  }
 
-    if (pathname === '/api/v1/browser/active' || pathname === '/api/v2/browser-profile/active' || pathname === '/api/browser/active') {
-      const active = this.engine.status().filter((item) => item.running).map((item) => ({
-        user_id: item.id,
-        debug_port: item.port,
-        profile_directory: item.profileDirectory || null,
-      }));
-      return ok({ list: active });
+  async routeSyncArrange({ input }) {
+    if (!this.syncBridge) return fail('sync bridge unavailable', 503);
+    let ids;
+    try {
+      ids = this.parseIds(input);
+    } catch (err) {
+      return fail('invalid profile ids: ' + (err?.message || err), 400);
     }
+    try {
+      return ok(await this.syncBridge.arrange(ids, input.mode || 'tile'));
+    } catch (err) {
+      return fail('sync arrange failed: ' + (err?.message || err), 400);
+    }
+  }
 
-    if (pathname === '/api/v1/user/detail' || pathname === '/api/v2/browser-profile/detail' || pathname === '/api/profiles/get' || pathname === '/api/profile') {
-      if (!this.engine) return fail('profile engine unavailable', 503);
-      const id = firstString(input, ['profile_id', 'profileId', 'user_id', 'userId', 'id']);
-      if (!id) return fail('profile id required', 400);
-      const profile = this.engine.profiles?.get(id);
-      if (!profile) return fail('profile not found', 404);
-      const running = this.engine.running?.get(id);
-      return ok({
-        profile_id: id,
-        user_id: id,
-        name: profile.name,
-        title: profile.title,
-        status: running ? 'Active' : 'Inactive',
-        debug_port: running?.port || null,
-        ws: running?.port ? { puppeteer: await resolveWebSocketDebuggerUrl(running.port, id), selenium: '127.0.0.1:' + running.port } : null,
-        profile: redactProfileForApi(profile),
-        ...proxySummary(profile, this.proxyStore),
-      });
-    }
+  async routeSyncSettingsGet() {
+    return ok(this.syncBridge.getSettings?.() || {});
+  }
 
-    if (pathname === '/api/v1/browser/open-url' || pathname === '/api/browser/open-url') {
-      if (!this.engine) return fail('browser engine unavailable', 503);
-      const id = firstString(input, ['profile_id', 'profileId', 'user_id', 'userId', 'id']);
-      const rawUrl = firstString(input, ['url', 'target_url', 'targetUrl', 'start_url', 'startUrl']);
-      if (!id) return fail('profile id required', 400);
-      if (!rawUrl) return fail('url required', 400);
-      let targetUrl = rawUrl.trim();
-      if (!/^https?:\/\//i.test(targetUrl) && !/^about:/i.test(targetUrl)) {
-        targetUrl = 'https://' + targetUrl;
-      }
-      const runningItem = this.engine.running?.get(id);
-      const cdp = require('../cdp');
-      if (runningItem?.port) {
-        try {
-          await cdp.navigate(runningItem.port, targetUrl);
-          return ok({ profile_id: id, url: targetUrl, navigated: true });
-        } catch (error) {
-          return fail('navigate failed: ' + error.message, 500);
-        }
-      }
-      const profile = this.engine.profiles?.get(id);
-      if (!profile) return fail('profile not found', 404);
-      const started = await this.engine.start({ ...profile, startUrl: targetUrl });
-      const port = started?.port || null;
-      const puppeteerWs = port ? await resolveWebSocketDebuggerUrl(port, id) : null;
-      return ok({
-        profile_id: id,
-        url: targetUrl,
-        started: true,
-        debug_port: port,
-        ws: port ? { puppeteer: puppeteerWs } : null,
-      });
-    }
+  async routeSyncSettingsPost({ input }) {
+    return ok(this.syncBridge.updateSettings?.(input) || {});
+  }
 
-    if (pathname === '/api/v1/browser/screenshot' || pathname === '/api/browser/screenshot') {
-      if (!this.engine) return fail('browser engine unavailable', 503);
-      const id = firstString(input, ['profile_id', 'profileId', 'user_id', 'userId', 'id']);
-      if (!id) return fail('profile id required', 400);
-      const runningItem = this.engine.running?.get(id);
-      if (!runningItem?.port) return fail('profile is not running', 400);
-      const cdp = require('../cdp');
-      try {
-        const tab = await cdp.firstTab(runningItem.port);
-        if (!tab) return fail('no active tab in profile', 404);
-        const format = String(input.format || 'png').toLowerCase();
-        const shot = await cdp.call(tab.webSocketDebuggerUrl, 'Page.captureScreenshot', { format: format === 'jpeg' ? 'jpeg' : 'png' }, 15000);
-        if (!shot?.data) return fail('failed to capture screenshot', 500);
-        return ok({
-          profile_id: id,
-          format: format === 'jpeg' ? 'jpeg' : 'png',
-          data: shot.data,
-        });
-      } catch (error) {
-        return fail('screenshot failed: ' + error.message, 500);
-      }
-    }
+  // ---- RPA ----
+  async routeRpaPlansList() {
+    return ok({ list: this.rpaStore.listPlans() });
+  }
 
-    // ---- proxy library ----
-    if (pathname === '/api/v2/proxy-list/list' || pathname === '/api/proxy/list') {
-      if (!this.proxyStore) return fail('proxy store unavailable', 503);
-      const list = this.proxyStore.list(input).map(redactProxyRecord);
-      return ok({ list, page: 1, page_size: list.length });
-    }
-    if (pathname === '/api/v2/proxy-list/create' || pathname === '/api/proxy/create') {
-      if (!this.proxyStore) return fail('proxy store unavailable', 503);
-      if (Array.isArray(input) || Array.isArray(input.data)) {
-        const body = Array.isArray(input) ? input : input.data;
-        return ok({ list: await this.proxyStore.createMany(body.map(normalizeProxyInput)) });
-      }
-      return ok(await this.proxyStore.create(normalizeProxyInput(input)));
-    }
-    if (pathname === '/api/v2/proxy-list/update' || pathname === '/api/proxy/update') {
-      if (!this.proxyStore) return fail('proxy store unavailable', 503);
-      const id = String(input.proxy_id || input.proxy_library_id || input.proxyId || input.proxyLibraryId || input.id || '');
-      if (!id) return fail('id required', 400);
-      return ok(await this.proxyStore.update(id, normalizeProxyInput(input)));
-    }
-    if (pathname === '/api/v2/proxy-list/delete' || pathname === '/api/proxy/delete') {
-      if (!this.proxyStore) return fail('proxy store unavailable', 503);
-      const ids = firstArray(input, ['proxy_ids', 'proxyIds', 'proxy_library_ids', 'proxyLibraryIds', 'proxy_id', 'proxyId', 'ids'])
-        || [firstDefined(input, ['id', 'proxy_id', 'proxyId', 'proxy_library_id', 'proxyLibraryId'])];
-      return ok(await this.proxyStore.remove(ids.filter(Boolean)));
-    }
-    if (pathname === '/api/proxy/check' || pathname === '/api/checkProxy') {
-      if (!this.proxyStore || !this.engine) return fail('proxy check unavailable', 503);
-      const id = String(input.proxy_id || input.proxy_library_id || input.proxyId || input.proxyLibraryId || input.id || '');
-      const item = id ? this.proxyStore.get(id) : null;
-      const raw = item?.raw || input.proxy || input.raw;
-      if (!raw) return fail('proxy required', 400);
-      const ipChannel = firstString(input, ['ip_channel', 'ipChannel'], 'ip-api');
-      try {
-        const result = await this.engine.testProxy({ id: 'proxy-check', name: 'proxy-check', proxy: raw, proxyMeta: { ipChannel: item?.ipChannel || ipChannel } });
-        if (item) await this.proxyStore.markCheck(item.id, result);
-        return ok(result);
-      } catch (err) {
-        return fail('proxy check failed: ' + (err?.message || err), 400);
-      }
-    }
-    if (pathname === '/api/proxy/check-profile') {
-      if (!this.engine) return fail('profile engine unavailable', 503);
-      const id = firstString(input, ['profile_id', 'profileId', 'user_id', 'userId', 'id']);
-      if (!id) return fail('profile id required', 400);
-      const profile = this.engine.profiles.get(id);
-      if (!profile) return fail('profile not found', 404);
-      try {
-        const result = await this.engine.checkProxy(profile, { allowExtract: false, persist: true });
-        return ok(result);
-      } catch (err) {
-        return fail('check-profile failed: ' + (err?.message || err), 400);
-      }
-    }
-
-    // ---- fingerprint / isolation ----
-    if (pathname === '/api/fingerprint' || pathname === '/api/v1/fingerprint') {
-      const id = firstString(input, ['user_id', 'userId', 'profile_id', 'profileId', 'id']);
-      if (!id) return fail('profile_id required', 400);
-      try {
-        return ok(this.engine.fingerprintFor(id));
-      } catch (error) {
-        return fail(error.message, 400);
-      }
-    }
-    if (pathname === '/api/isolation/audit' || pathname === '/api/v1/isolation/audit') {
-      return ok(this.engine.isolationAudit());
-    }
-
-    // ---- application center ----
-    if (pathname === '/api/v1/application/list' || pathname === '/api/application/list' || pathname === '/api/apps') {
-      if (!this.appCenter) return fail('app center unavailable', 503);
-      return ok(this.appCenter.list(input));
-    }
-    if (pathname === '/api/application/recommended' || pathname === '/api/apps/recommended') {
-      if (!this.appCenter) return fail('app center unavailable', 503);
-      return ok({ list: this.appCenter.recommended() });
-    }
-    if (pathname === '/api/extension/list' || pathname === '/api/extensions') {
-      return ok({ list: this.engine.listExtensions() });
-    }
-    if (pathname === '/api/extension/assign' || pathname === '/api/extensions/assign') {
-      const extensionId = firstString(input, ['extension_id', 'extensionId', 'id']);
-      const ids = this.parseIds(input);
-      const enabled = booleanValue(input.enabled, true);
-      if (!extensionId || !ids.length) return fail('extension_id and profile_ids required', 400);
-      await this.engine.assignExtension(extensionId, ids, enabled);
-      return ok({ extension_id: extensionId, profile_ids: ids, enabled });
-    }
-    if (pathname === '/api/extension/update' || pathname === '/api/getExtensionStatus') {
-      return ok({ list: this.engine.listExtensions() });
-    }
-
-    // ---- window sync ----
-    if (pathname === '/api/sync/status' || pathname === '/api/window-sync/status') {
-      return ok(this.syncBridge.status());
-    }
-    if (pathname === '/api/sync/start' || pathname === '/api/window-sync/start') {
-      if (!this.syncBridge) return fail('sync bridge unavailable', 503);
-      if (Object.prototype.hasOwnProperty.call(input || {}, 'settings')) {
-        return fail('sync settings must be updated through /api/sync/settings', 400);
-      }
-      let ids;
-      try {
-        ids = this.parseIds(input);
-      } catch (err) {
-        return fail('invalid profile ids: ' + (err?.message || err), 400);
-      }
-      if (input.operate) this.syncBridge.updateOperateList(input.operate);
-      try {
-        const result = await this.syncBridge.start(ids, {
-          tile: booleanValue(input.tile, true),
-          cascade: booleanValue(input.cascade, false),
-        });
-        return ok(result);
-      } catch (err) {
-        return fail('sync start failed: ' + (err?.message || err), 400);
-      }
-    }
-    if (pathname === '/api/sync/stop' || pathname === '/api/window-sync/stop') {
-      if (!this.syncBridge) return fail('sync bridge unavailable', 503);
-      try {
-        return ok(this.syncBridge.stop());
-      } catch (err) {
-        return fail('sync stop failed: ' + (err?.message || err), 400);
-      }
-    }
-    if (pathname === '/api/sync/restart' || pathname === '/api/window-sync/restart') {
-      if (!this.syncBridge) return fail('sync bridge unavailable', 503);
-      try {
-        return ok(await this.syncBridge.restart());
-      } catch (err) {
-        return fail('sync restart failed: ' + (err?.message || err), 400);
-      }
-    }
-    if (pathname === '/api/sync/arrange' || pathname === '/api/window-sync/arrange') {
-      if (!this.syncBridge) return fail('sync bridge unavailable', 503);
-      let ids;
-      try {
-        ids = this.parseIds(input);
-      } catch (err) {
-        return fail('invalid profile ids: ' + (err?.message || err), 400);
-      }
-      try {
-        return ok(await this.syncBridge.arrange(ids, input.mode || 'tile'));
-      } catch (err) {
-        return fail('sync arrange failed: ' + (err?.message || err), 400);
-      }
-    }
-    if (pathname === '/api/sync/settings' && method === 'GET') {
-      return ok(this.syncBridge.getSettings?.() || {});
-    }
-    if (pathname === '/api/sync/settings' && method === 'POST') {
-      return ok(this.syncBridge.updateSettings?.(input) || {});
-    }
-
-    // ---- RPA ----
+  async routeRpaPlanUpsert({ input }) {
     const rpaInput = normalizeRpaInput(input);
-    if (pathname === '/api/rpa/plans' && method === 'GET') {
-      return ok({ list: this.rpaStore.listPlans() });
-    }
-    if (pathname === '/api/rpa/plans' && method === 'POST') {
-      return ok(await this.rpaStore.upsertPlan({
-        ...rpaInput,
-        id: rpaInput.id ?? rpaInput.plan_id,
-      }));
-    }
-    if (pathname.startsWith('/api/rpa/plans/') && method === 'DELETE') {
-      const id = decodePathId(pathname.slice('/api/rpa/plans/'.length), 'RPA plan');
-      return ok(await this.rpaStore.deletePlan(id));
-    }
-    if (pathname === '/api/rpa/tasks' && method === 'GET') {
-      const list = this.rpaStore.listTasks(rpaInput);
-      const limit = Math.max(1, Math.min(500, Number(rpaInput.limit) || 50));
-      return ok({ list: list.slice(0, limit), total: list.length });
-    }
-    if (pathname.startsWith('/api/rpa/tasks/') && method === 'GET') {
-      const id = decodePathId(pathname.slice('/api/rpa/tasks/'.length), 'RPA task');
-      const task = this.rpaStore.getTask(id);
-      if (!task) return fail('task not found: ' + id, 404);
-      return ok({ task });
-    }
-    if (pathname.startsWith('/api/rpa/tasks/') && method === 'DELETE') {
-      const id = decodePathId(pathname.slice('/api/rpa/tasks/'.length), 'RPA task');
-      return ok(await this.rpaStore.deleteTask(id));
-    }
-    if ((pathname === '/api/rpa/tasks/delete' && method === 'POST') || (pathname === '/api/rpa/tasks' && method === 'DELETE')) {
-      const rawIds = firstArray(rpaInput, ['task_ids', 'taskIds', 'ids']) || [firstDefined(rpaInput, ['task_id', 'taskId', 'id'])];
-      const ids = rawIds.map((v) => String(v || '').trim()).filter(Boolean);
-      const deleted = [];
-      for (const id of ids) {
-        const res = await this.rpaStore.deleteTask(id);
-        if (res && res.deleted) deleted.push(id);
-      }
-      return ok({ deleted });
-    }
-    if (pathname === '/api/rpa/run' || pathname === '/api/rpa' || pathname === '/api/rpav2') {
-      const wait = rpaInput.wait !== false && rpaInput.wait !== 'false';
-      if (rpaInput.plan_id) {
-        if (!wait) {
-          this.rpaEngine.runPlan(String(rpaInput.plan_id), rpaInput).catch(() => {});
-          return ok({ async: true, plan_id: String(rpaInput.plan_id) });
-        }
-        return ok(await this.rpaEngine.runPlan(String(rpaInput.plan_id), rpaInput));
-      }
-      if (rpaInput.task_id) {
-        if (!wait) {
-          this.rpaEngine.runTask(String(rpaInput.task_id), rpaInput).catch(() => {});
-          return ok({ async: true, task_id: String(rpaInput.task_id) });
-        }
-        return ok(await this.rpaEngine.runTask(String(rpaInput.task_id), rpaInput));
-      }
-      if (Array.isArray(rpaInput.steps)) {
-        const task = await this.rpaStore.createTask({
-          profile_id: firstString(rpaInput, ['profile_id', 'user_id']),
-          process_name: String(rpaInput.process_name || rpaInput.name || 'adhoc'),
-          steps: rpaInput.steps,
-        });
-        if (!wait) {
-          this.rpaEngine.runTask(task.id, rpaInput).catch(() => {});
-          return ok({ async: true, task_id: task.id, task });
-        }
-        return ok(await this.rpaEngine.runTask(task.id, rpaInput));
-      }
-      return fail('plan_id, task_id or steps required', 400);
-    }
-    if (pathname === '/api/getRpaStatus' || pathname === '/api/rpa/status') {
-      return ok({
-        ...this.rpaEngine.getStatus(),
-        tasks: this.rpaStore.listTasks({ status: 'running' }),
-      });
-    }
-    if (pathname === '/api/stopRpa' || pathname === '/api/rpa/stop') {
-      if (!this.rpaEngine) return fail('rpa engine unavailable', 503);
-      const taskId = rpaInput.task_id || null;
-      if (taskId && this.rpaStore) {
-        const task = this.rpaStore.getTask(taskId);
-        if (!task && !this.rpaEngine.running?.has(taskId)) {
-          return fail('task not found: ' + taskId, 404);
-        }
-      }
-      return ok(await this.rpaEngine.stop(taskId));
-    }
+    return ok(await this.rpaStore.upsertPlan({
+      ...rpaInput,
+      id: rpaInput.id ?? rpaInput.plan_id,
+    }));
+  }
 
-    // ---- RPA template store ----
-    if (pathname === '/api/rpa/templates' && method === 'GET') {
-      return ok({
-        list: this.rpaStore.listTemplates(rpaInput),
-        categories: this.rpaStore.listTemplateCategories(),
-      });
-    }
-    if (pathname === '/api/rpa/templates' && method === 'POST') {
-      if (rpaInput.action === 'install' || rpaInput.install) {
-        return ok(await this.rpaStore.installTemplate(String(rpaInput.id || rpaInput.template_id), rpaInput));
-      }
-      if (rpaInput.action === 'import') {
-        return ok(await this.rpaStore.importTemplates(rpaInput.payload || rpaInput.data || rpaInput));
-      }
-      if (rpaInput.action === 'save_as' || rpaInput.save_as) {
-        return ok(await this.rpaStore.saveAsTemplate(rpaInput));
-      }
-      return ok(await this.rpaStore.upsertTemplate(rpaInput));
-    }
-    if (pathname.startsWith('/api/rpa/templates/') && pathname.endsWith('/install') && method === 'POST') {
-      const encodedId = pathname.slice('/api/rpa/templates/'.length, -'/install'.length);
-      const id = decodePathId(encodedId, 'RPA template');
-      return ok(await this.rpaStore.installTemplate(id, rpaInput));
-    }
-    if (pathname.startsWith('/api/rpa/templates/') && method === 'GET') {
-      const id = decodePathId(pathname.slice('/api/rpa/templates/'.length), 'RPA template');
-      const tpl = this.rpaStore.getTemplate(id);
-      if (!tpl) return fail('template not found', 404);
-      return ok(tpl);
-    }
-    if (pathname.startsWith('/api/rpa/templates/') && method === 'DELETE') {
-      const id = decodePathId(pathname.slice('/api/rpa/templates/'.length), 'RPA template');
-      return ok(await this.rpaStore.deleteTemplate(id));
-    }
+  async routeRpaPlanDelete({ pathname }) {
+    const id = decodePathId(pathname.slice('/api/rpa/plans/'.length), 'RPA plan');
+    return ok(await this.rpaStore.deletePlan(id));
+  }
 
-    return undefined;
+  async routeRpaTasksList({ input }) {
+    const rpaInput = normalizeRpaInput(input);
+    const list = this.rpaStore.listTasks(rpaInput);
+    const limit = Math.max(1, Math.min(500, Number(rpaInput.limit) || 50));
+    return ok({ list: list.slice(0, limit), total: list.length });
+  }
+
+  async routeRpaTaskGet({ pathname }) {
+    const id = decodePathId(pathname.slice('/api/rpa/tasks/'.length), 'RPA task');
+    const task = this.rpaStore.getTask(id);
+    if (!task) return fail('task not found: ' + id, 404);
+    return ok({ task });
+  }
+
+  async routeRpaTaskDelete({ pathname }) {
+    const id = decodePathId(pathname.slice('/api/rpa/tasks/'.length), 'RPA task');
+    return ok(await this.rpaStore.deleteTask(id));
+  }
+
+  async routeRpaTasksDelete({ input }) {
+    const rpaInput = normalizeRpaInput(input);
+    const rawIds = firstArray(rpaInput, ['task_ids', 'taskIds', 'ids']) || [firstDefined(rpaInput, ['task_id', 'taskId', 'id'])];
+    const ids = rawIds.map((v) => String(v || '').trim()).filter(Boolean);
+    const deleted = [];
+    for (const id of ids) {
+      const res = await this.rpaStore.deleteTask(id);
+      if (res && res.deleted) deleted.push(id);
+    }
+    return ok({ deleted });
+  }
+
+  async routeRpaRun({ input }) {
+    const rpaInput = normalizeRpaInput(input);
+    const wait = rpaInput.wait !== false && rpaInput.wait !== 'false';
+    if (rpaInput.plan_id) {
+      if (!wait) {
+        this.rpaEngine.runPlan(String(rpaInput.plan_id), rpaInput).catch(() => {});
+        return ok({ async: true, plan_id: String(rpaInput.plan_id) });
+      }
+      return ok(await this.rpaEngine.runPlan(String(rpaInput.plan_id), rpaInput));
+    }
+    if (rpaInput.task_id) {
+      if (!wait) {
+        this.rpaEngine.runTask(String(rpaInput.task_id), rpaInput).catch(() => {});
+        return ok({ async: true, task_id: String(rpaInput.task_id) });
+      }
+      return ok(await this.rpaEngine.runTask(String(rpaInput.task_id), rpaInput));
+    }
+    if (Array.isArray(rpaInput.steps)) {
+      const task = await this.rpaStore.createTask({
+        profile_id: firstString(rpaInput, ['profile_id', 'user_id']),
+        process_name: String(rpaInput.process_name || rpaInput.name || 'adhoc'),
+        steps: rpaInput.steps,
+      });
+      if (!wait) {
+        this.rpaEngine.runTask(task.id, rpaInput).catch(() => {});
+        return ok({ async: true, task_id: task.id, task });
+      }
+      return ok(await this.rpaEngine.runTask(task.id, rpaInput));
+    }
+    return fail('plan_id, task_id or steps required', 400);
+  }
+
+  async routeRpaStatus() {
+    return ok({
+      ...this.rpaEngine.getStatus(),
+      tasks: this.rpaStore.listTasks({ status: 'running' }),
+    });
+  }
+
+  async routeRpaStop({ input }) {
+    const rpaInput = normalizeRpaInput(input);
+    if (!this.rpaEngine) return fail('rpa engine unavailable', 503);
+    const taskId = rpaInput.task_id || null;
+    if (taskId && this.rpaStore) {
+      const task = this.rpaStore.getTask(taskId);
+      if (!task && !this.rpaEngine.running?.has(taskId)) {
+        return fail('task not found: ' + taskId, 404);
+      }
+    }
+    return ok(await this.rpaEngine.stop(taskId));
+  }
+
+  // ---- RPA template store ----
+  async routeRpaTemplatesList({ input }) {
+    const rpaInput = normalizeRpaInput(input);
+    return ok({
+      list: this.rpaStore.listTemplates(rpaInput),
+      categories: this.rpaStore.listTemplateCategories(),
+    });
+  }
+
+  async routeRpaTemplatesAction({ input }) {
+    const rpaInput = normalizeRpaInput(input);
+    if (rpaInput.action === 'install' || rpaInput.install) {
+      return ok(await this.rpaStore.installTemplate(String(rpaInput.id || rpaInput.template_id), rpaInput));
+    }
+    if (rpaInput.action === 'import') {
+      return ok(await this.rpaStore.importTemplates(rpaInput.payload || rpaInput.data || rpaInput));
+    }
+    if (rpaInput.action === 'save_as' || rpaInput.save_as) {
+      return ok(await this.rpaStore.saveAsTemplate(rpaInput));
+    }
+    return ok(await this.rpaStore.upsertTemplate(rpaInput));
+  }
+
+  async routeRpaTemplateInstall({ pathname, input }) {
+    const rpaInput = normalizeRpaInput(input);
+    const encodedId = pathname.slice('/api/rpa/templates/'.length, -'/install'.length);
+    const id = decodePathId(encodedId, 'RPA template');
+    return ok(await this.rpaStore.installTemplate(id, rpaInput));
+  }
+
+  async routeRpaTemplateGet({ pathname }) {
+    const id = decodePathId(pathname.slice('/api/rpa/templates/'.length), 'RPA template');
+    const tpl = this.rpaStore.getTemplate(id);
+    if (!tpl) return fail('template not found', 404);
+    return ok(tpl);
+  }
+
+  async routeRpaTemplateDelete({ pathname }) {
+    const id = decodePathId(pathname.slice('/api/rpa/templates/'.length), 'RPA template');
+    return ok(await this.rpaStore.deleteTemplate(id));
   }
 
   resolveProxyAssociation(input = {}, base = {}) {
@@ -1460,6 +1624,30 @@ class LocalApiServer {
     }
     if (ids.length > 200) throw new Error('Invalid profile selection');
     return [...new Set(ids.map((id) => assertProfileId(String(id))))];
+  }
+}
+
+// Load-time wiring check for the command routing table: every entry must
+// name a real handler method, and an exact route may only exist for a path
+// the 405 method gate (ROUTE_METHODS) already covers — so the table can
+// never silently widen the served API surface.
+for (const [routePath, entry] of Object.entries(API_ROUTES)) {
+  if (!ROUTE_METHODS.has(routePath)) {
+    throw new Error(`local API route not covered by the method gate: ${routePath}`);
+  }
+  const names = typeof entry === 'string' ? [entry] : Object.values(entry);
+  for (const name of names) {
+    if (typeof LocalApiServer.prototype[name] !== 'function') {
+      throw new Error(`local API route handler missing: ${routePath} -> ${name}`);
+    }
+  }
+}
+for (const route of API_PREFIX_ROUTES) {
+  for (const [verb, name] of Object.entries(route)) {
+    if (verb === 'prefix' || verb === 'suffix') continue;
+    if (typeof LocalApiServer.prototype[name] !== 'function') {
+      throw new Error(`local API prefix route handler missing: ${route.prefix} -> ${name}`);
+    }
   }
 }
 

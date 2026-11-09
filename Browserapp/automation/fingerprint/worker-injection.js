@@ -5,46 +5,46 @@
  * resumed. Extracted verbatim from the former automation/fingerprint.js.
  */
 
-const { canonicalBridgeToken, webglParameterOverrides, isDisallowedVendorExtension, normalizeHost, resolveStabilityPolicy } = require('./shared');
+// Shared CFG layer: the os/timezone/deviceMemory/webgl/stability computations the
+// main-world builder (injection-script.js) also embeds live in injection-config.js so
+// the two emitted CFGs cannot drift independently. Key order, key set and the
+// intentionally divergent leaves (vendor, userAgentMetadata, webgpu, stability caps)
+// stay in this file's literal — see the drift list in injection-config.js.
+const { resolveInjectionStability, injectionOs, injectionTimezone, injectionDeviceMemory, injectionWebgl, stabilityNoiseAmplitude, stabilitySampleStepDivisor, stabilityMaxWidth, stabilityMaxHeight, stabilitySquare } = require('./injection-config');
+const { canonicalBridgeToken } = require('./shared');
 
 
 /** Worker-safe subset injected before attached workers are resumed. */
 function buildWorkerInjectionScript(fp) {
   const bridgeToken = canonicalBridgeToken(fp);
-  const stability = fp.stability || fp.canvas?.stability || resolveStabilityPolicy({}, {});
+  const stability = resolveInjectionStability(fp);
   const json = JSON.stringify({
     platform: fp.platform,
     // Mirrors the main-world CFG (injection-script.js): os/mobile/mobileDevice feed the worker's
     // platform guards (isIosPersona / isAndroidPersona / the UAData page-side replacement path).
     // Missing keys made those guards read undefined and silently skip the patches they gate.
-    os: fp.uaProfile?.os || (fp.mobile ? 'android' : 'windows'),
+    os: injectionOs(fp),
     mobile: Boolean(fp.mobile),
     mobileDevice: fp.mobileDevice || null,
     userAgent: fp.userAgent,
     appVersion: fp.uaProfile?.appVersion || String(fp.userAgent || '').replace(/^Mozilla\//, ''),
+    // Intentionally divergent from the main-world CFG (injection-script.js adds the iOS
+    // 'Apple Computer, Inc.' branch and a uaProfile.vendor fallback) — preserved as-is,
+    // see the drift list in injection-config.js.
     vendor: fp.vendor || fp.uaProfile?.vendor || 'Google Inc.',
+    // Intentionally divergent from the main-world CFG (main falls back to
+    // fp.uaProfile?.metadata) — preserved as-is, see injection-config.js.
     userAgentMetadata: fp.userAgentMetadata,
     languages: fp.languages,
-    timezone: fp.timezone || fp.dynamicConfig?.timezone || null,
+    timezone: injectionTimezone(fp),
     hardwareConcurrency: fp.hardwareConcurrency,
-    deviceMemory: (() => {
-      // Pass persona's legal quantised tiers (0.25/0.5) through; snap illegal values to the
-      // nearest step — same policy as the main-world script (injection-script.js).
-      const STEPS = [0.25, 0.5, 1, 2, 4, 8];
-      const raw = Number(fp.deviceMemory);
-      if (!Number.isFinite(raw) || raw <= 0) return 8;
-      if (STEPS.includes(raw)) return Math.min(8, raw);
-      return STEPS.reduce((best, s) => (Math.abs(s - raw) < Math.abs(best - raw) ? s : best), 1);
-    })(),
-    webgl: {
-      mode: fp.webgl?.mode,
-      metaMode: fp.webgl?.metaMode || 'noise',
-      vendor: fp.webgl?.vendor,
-      renderer: fp.webgl?.renderer,
-      mark: fp.webgl?.mark,
-      gpu: fp.webgl?.gpu || null,
-      limits: fp.webgl?.limits || webglParameterOverrides(fp.webgl?.gpu, { reconcileHost: fp.webgl?.reconcileHost !== false, hostPlatform: process.platform }),
-    },
+    // Pass persona's legal quantised tiers (0.25/0.5) through; snap illegal values to the
+    // nearest step — same policy as the main-world script, shared in injection-config.js.
+    deviceMemory: injectionDeviceMemory(fp),
+    webgl: injectionWebgl(fp),
+    // Intentionally divergent from the main-world CFG (main passes fp.webgpu || null
+    // through unchanged; this side restructures to {mode, gpu} and synthesises a
+    // webgl-gpu fallback) — preserved as-is, see injection-config.js.
     webgpu: fp.webgpu ? {
       mode: String(fp.webgpu.mode || 'real'),
       gpu: fp.webgpu.gpu || fp.webgl?.gpu || null,
@@ -59,11 +59,11 @@ function buildWorkerInjectionScript(fp) {
       mode: String(stability.mode || 'auto'),
       hosts: Array.isArray(stability.hosts) ? stability.hosts : [],
       skipHosts: Array.isArray(stability.skipHosts) ? stability.skipHosts : [],
-      noiseAmplitude: Number(stability.noiseAmplitude) || 3,
-      sampleStepDivisor: Number(stability.sampleStepDivisor) || 64,
-      maxWidth: Number(stability.maxWidth) || 600,
-      maxHeight: Number(stability.maxHeight) || 600,
-      square: Number(stability.square) || 8,
+      noiseAmplitude: stabilityNoiseAmplitude(stability),
+      sampleStepDivisor: stabilitySampleStepDivisor(stability),
+      maxWidth: stabilityMaxWidth(stability),
+      maxHeight: stabilityMaxHeight(stability),
+      square: stabilitySquare(stability),
     },
   });
   return `(() => {
