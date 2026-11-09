@@ -349,7 +349,7 @@ async function main() {
   for (const id of [
     'editor-api-extract-url',
     'editor-backup-proxies',
-    'editor-proxy-refresh-start',
+    'editor-proxy-extract-mode',
     'editor-proxy-fill-fingerprint',
     'editor-proxy-require-ready',
     'editor-proxy-not-ready-policy',
