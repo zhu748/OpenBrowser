@@ -40,7 +40,22 @@ module.exports = [
     // generic UI helpers (t/tx/element/toast/$, editor glue, view cache) and
     // the load-time event wiring. The names below are exactly that two-way
     // surface.
-    files: ['renderer.js', 'environment-audit.js', 'i18n.js', 'ui/*.js'],
+    //
+    // Second renderer.js split: renderer-select.js (themed select widget),
+    // renderer-theme.js (theme registry + color-mode system) and
+    // renderer-platform-install.js (app center / store install view) are
+    // sibling classic scripts loaded before renderer.js; they declare their
+    // moved names as top-level script globals and reach renderer-owned state
+    // (extensions / appCenterTab / ...) through the same shared scope.
+    files: [
+      'renderer.js',
+      'renderer-select.js',
+      'renderer-theme.js',
+      'renderer-platform-install.js',
+      'environment-audit.js',
+      'i18n.js',
+      'ui/*.js',
+    ],
     languageOptions: {
       globals: {
         $: 'writable',
@@ -161,6 +176,17 @@ module.exports = [
         stopProfile: 'writable',
         syncState: 'writable',
         updateProfileSelectionUi: 'writable',
+        // second-split modules: names owned by renderer-select.js /
+        // renderer-theme.js / renderer-platform-install.js and reached from
+        // renderer.js's wiring, plus renderer-owned state they reach back.
+        applyAssignment: 'writable',
+        currentExtension: 'writable',
+        enhanceSelects: 'writable',
+        extensions: 'writable',
+        positionSelectMenu: 'writable',
+        savedUiTheme: 'writable',
+        UI_THEMES: 'writable',
+        uiColorMode: 'writable',
         // generic renderer helpers used inside ui/ui-proxy.js
         t: 'writable',
         tx: 'writable',
