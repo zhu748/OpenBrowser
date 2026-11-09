@@ -155,7 +155,18 @@ function isVersionedArchiveUrl(url, version) {
  * version of record for what would get installed.
  */
 function buildVersionFromUrl(url) {
-  const match = /[/_-](\d+\.\d+\.\d+\.\d+)(?=[/_.-]|$)/.exec(String(url || ''));
+  const text = String(url || '');
+  // Scan only path + query: an IPv4 host (https://192.168.1.100/…) would
+  // otherwise be reported as the build version, and the first match would
+  // even win over a real version later in the path.
+  let scan = text;
+  try {
+    const parsed = new URL(text);
+    scan = parsed.pathname + parsed.search;
+  } catch (_) { /* not an absolute URL: scan as-is */ }
+  // A trailing ".digit" means the match truncated a longer version
+  // (1.2.3.4 out of 1.2.3.4.5) — require a separator or end of string.
+  const match = /[/_-](\d+\.\d+\.\d+\.\d+)(?=$|[/_-]|\.(?!\d))/.exec(scan);
   return match ? match[1] : '';
 }
 

@@ -195,7 +195,15 @@ jobs:
               if (!m) continue;
               const [, oid, marker, file] = m;
               if (!file.startsWith("Browserapp/kernels/")) continue;
-              if (marker !== "*") { console.error(`NOT PULLED: ${file}`); failures += 1; continue; }
+              // `git lfs ls-files` scans the whole ref tree: platforms excluded
+              // from this job's sparse checkout are legitimately absent from the
+              // working tree (marker "-"). Only files that ARE on disk count as
+              // failures — an in-scope file whose pull failed still sits there
+              // as a 130-byte pointer and is caught below.
+              if (marker !== "*") {
+                if (!fs.existsSync(file)) continue;
+                console.error(`NOT PULLED: ${file}`); failures += 1; continue;
+              }
               const actual = crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
               checked += 1;
               if (actual !== oid) { console.error(`OID MISMATCH: ${file}\n  pointer ${oid}\n  content ${actual}`); failures += 1; }
@@ -272,7 +280,15 @@ jobs:
               if (!m) continue;
               const [, oid, marker, file] = m;
               if (!file.startsWith("Browserapp/kernels/")) continue;
-              if (marker !== "*") { console.error(`NOT PULLED: ${file}`); failures += 1; continue; }
+              // `git lfs ls-files` scans the whole ref tree: platforms excluded
+              // from this job's sparse checkout are legitimately absent from the
+              // working tree (marker "-"). Only files that ARE on disk count as
+              // failures — an in-scope file whose pull failed still sits there
+              // as a 130-byte pointer and is caught below.
+              if (marker !== "*") {
+                if (!fs.existsSync(file)) continue;
+                console.error(`NOT PULLED: ${file}`); failures += 1; continue;
+              }
               const actual = crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
               checked += 1;
               if (actual !== oid) { console.error(`OID MISMATCH: ${file}\n  pointer ${oid}\n  content ${actual}`); failures += 1; }
@@ -349,7 +365,15 @@ jobs:
               if (!m) continue;
               const [, oid, marker, file] = m;
               if (!file.startsWith("Browserapp/kernels/")) continue;
-              if (marker !== "*") { console.error(`NOT PULLED: ${file}`); failures += 1; continue; }
+              // `git lfs ls-files` scans the whole ref tree: platforms excluded
+              // from this job's sparse checkout are legitimately absent from the
+              // working tree (marker "-"). Only files that ARE on disk count as
+              // failures — an in-scope file whose pull failed still sits there
+              // as a 130-byte pointer and is caught below.
+              if (marker !== "*") {
+                if (!fs.existsSync(file)) continue;
+                console.error(`NOT PULLED: ${file}`); failures += 1; continue;
+              }
               const actual = crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
               checked += 1;
               if (actual !== oid) { console.error(`OID MISMATCH: ${file}\n  pointer ${oid}\n  content ${actual}`); failures += 1; }

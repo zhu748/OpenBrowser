@@ -823,10 +823,20 @@ async function extractZipJs(archivePath, destRoot) {
         const raw = Buffer.alloc(entry.compSize);
         await file.read(raw, 0, entry.compSize, dataOffset);
         const linkTarget = entry.method === 8 ? zlib.inflateRawSync(raw).toString('utf8') : raw.toString('utf8');
-        try {
-          fs.symlinkSync(linkTarget, target, 'file');
-        } catch (err) {
-          warn(`cannot create symlink ${entry.name} (${err.code || err.message}); entry skipped`);
+        // Same lexical containment the js-tar extractor enforces
+        // (symlinkStaysInRoot): a link name escaping destRoot would let a
+        // later member write through it outside the extraction root.
+        const linkResolved = linkTarget && !path.isAbsolute(linkTarget)
+          ? path.resolve(path.dirname(target), linkTarget)
+          : null;
+        if (!linkResolved || (linkResolved !== destRoot && !linkResolved.startsWith(destRoot + path.sep))) {
+          warn(`symlink ${entry.name} -> ${linkTarget} escapes the extraction root; entry skipped`);
+        } else {
+          try {
+            fs.symlinkSync(linkTarget, target, 'file');
+          } catch (err) {
+            warn(`cannot create symlink ${entry.name} (${err.code || err.message}); entry skipped`);
+          }
         }
         extracted += 1;
         continue;
