@@ -686,8 +686,6 @@ function renderMicroWindowSvg(num, isLight = false, size = UI_MARK_SIZE) {
   if (len === 3) fontSize = 11;
   else if (len >= 4) fontSize = 9.5;
 
-  // 其他主题兼容回落
-  const pal = envBadgeColors(num);
   const winBg1 = isLight ? '#f4f6f8' : '#141a20';
   const winBg2 = isLight ? '#e5e9ec' : '#0c1014';
   const winBorder = isLight ? '#c8d1d8' : '#222c36';
