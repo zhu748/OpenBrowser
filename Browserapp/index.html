@@ -73,11 +73,31 @@
           </div>
           <div class="group-chip-row" id="profile-group-chips"></div>
           <div class="toolbar profile-primary-toolbar">
-            <div class="toolbar-left"><button class="primary" id="create-profile"><i data-lucide="plus"></i><span data-i18n="profiles.create">新建环境</span></button><button class="outline" id="batch-add"><i data-lucide="copy-plus"></i><span data-i18n="profiles.batchAdd">批量新增</span></button><button class="outline" id="batch-import"><i data-lucide="file-down"></i><span data-i18n="profiles.batchImport">批量导入</span></button><input id="batch-import-file" type="file" accept=".csv,.json" hidden><button class="outline" id="renumber-profiles" type="button" title="将所有环境按列表顺序重新编号为 1..N" data-i18n-title="profiles.renumberTitle"><i data-lucide="hash"></i><span data-i18n="profiles.renumber">重排编号</span></button><button class="outline" id="batch-export" type="button" title="导出当前选中/筛选的环境配置（不含密码与2FA密钥）" data-i18n-title="profiles.exportTitle"><i data-lucide="file-up"></i><span data-i18n="profiles.batchExport">批量导出</span></button><button class="outline" id="test-all-proxies" type="button" title="逐个检测所有环境的代理IP可用性"><i data-lucide="radar"></i><span data-i18n="profiles.testAllProxy">测试全部代理IP</span></button><button class="outline danger" id="empty-trash-btn" type="button" hidden><i data-lucide="trash"></i><span data-i18n="trash.empty">清空回收站</span></button></div>
+            <div class="toolbar-left"><button class="primary" id="create-profile"><i data-lucide="plus"></i><span data-i18n="profiles.create">新建环境</span></button><button class="outline" id="batch-add"><i data-lucide="copy-plus"></i><span data-i18n="profiles.batchAdd">批量新增</span></button><button class="outline" id="batch-import"><i data-lucide="file-down"></i><span data-i18n="profiles.batchImport">批量导入</span></button><input id="batch-import-file" type="file" accept=".csv,.json" hidden><button class="outline" id="renumber-profiles" type="button" title="将所有环境按列表顺序重新编号为 1..N" data-i18n-title="profiles.renumberTitle"><i data-lucide="hash"></i><span data-i18n="profiles.renumber">重排编号</span></button><button class="outline" id="batch-export" type="button" title="导出当前选中/筛选的环境配置（不含密码与2FA密钥）" data-i18n-title="profiles.exportTitle"><i data-lucide="file-up"></i><span data-i18n="profiles.batchExport">批量导出</span></button><button class="outline" id="test-all-proxies" type="button" title="逐个检测所有环境的代理IP可用性"><i data-lucide="radar"></i><span data-i18n="profiles.testAllProxy">测试全部代理IP</span></button><button class="outline" id="adv-filter-btn" type="button"><i data-lucide="filter"></i><span data-i18n="profiles.advFilter">高级筛选</span></button><button class="outline danger" id="empty-trash-btn" type="button" hidden><i data-lucide="trash"></i><span data-i18n="trash.empty">清空回收站</span></button></div>
             <label class="search"><i data-lucide="search"></i><input id="profile-search" placeholder="搜索环境 / 分组 / 标签" data-i18n-placeholder="profiles.search"></label>
             <div class="cols-config-wrap" id="profile-cols-wrap">
               <button class="outline mini-btn" type="button" id="profile-cols-btn" data-i18n="profiles.customHeader">自定义表头</button>
               <div class="row-more-menu cols-menu" id="profile-cols-menu" hidden></div>
+            </div>
+            <div class="adv-filter-panel" id="adv-filter-panel" hidden>
+              <div class="adv-grid">
+                <label><span data-i18n="adv.name">名称</span><input id="adv-name"></label>
+                <label><span data-i18n="adv.remark">备注</span><input id="adv-remark"></label>
+                <label><span data-i18n="adv.account">账号</span><input id="adv-account"></label>
+                <label><span data-i18n="adv.proxy">代理</span><input id="adv-proxy"></label>
+                <label><span data-i18n="adv.tag">标签</span><input id="adv-tag"></label>
+                <label><span data-i18n="adv.os">系统</span><input id="adv-os"></label>
+                <label><span data-i18n="adv.kernel">内核</span><input id="adv-kernel"></label>
+                <label><span data-i18n="adv.status">状态</span><select id="adv-status"><option value="" data-i18n="adv.all">全部</option><option value="running" data-i18n="adv.running">运行中</option><option value="stopped" data-i18n="adv.stopped">已停止</option></select></label>
+                <label><span data-i18n="adv.fav">收藏</span><select id="adv-fav"><option value="" data-i18n="adv.all">全部</option><option value="yes" data-i18n="adv.faved">已收藏</option><option value="no" data-i18n="adv.unfaved">未收藏</option></select></label>
+              </div>
+              <div class="adv-actions">
+                <button class="primary" id="adv-apply" type="button" data-i18n="adv.apply">应用</button>
+                <button class="outline" id="adv-reset" type="button" data-i18n="adv.reset">重置</button>
+                <input id="adv-save-name" placeholder="筛选器名称" data-i18n-placeholder="adv.saveNamePh">
+                <button class="outline" id="adv-save" type="button" data-i18n="adv.saveAs">保存为筛选器</button>
+              </div>
+              <div class="adv-saved" id="adv-saved-list"></div>
             </div>
           </div>
           <div class="profile-selection-bar" id="profile-selection-bar" hidden>
@@ -215,8 +235,8 @@
                   </div>
                   <p class="network-mode-hint" data-i18n="editor.profileNameHint">* 系统自动生成窗口名称，也可手动修改。</p>
                   <div class="form-two">
-                    <label><span data-i18n="editor.tag">标签分类</span><input id="editor-tag" maxlength="40" placeholder="例如：主力、养号"></label>
-                    <label><span data-i18n="editor.accountName">账号名称</span><input id="editor-platform-name" maxlength="120" placeholder="请输入账号备注名称，便于区分不同账号"></label>
+                    <label><span data-i18n="editor.tag">标签分类</span><input id="editor-tag" maxlength="40" placeholder="例如：主力、养号" data-i18n-placeholder="editor.tagPh"></label>
+                    <label><span data-i18n="editor.accountName">账号名称</span><input id="editor-platform-name" maxlength="120" placeholder="请输入账号备注名称，便于区分不同账号" data-i18n-placeholder="editor.accountNamePh"></label>
                   </div>
                 </div>
 
@@ -228,7 +248,7 @@
                   <div class="form-three">
                     <label>用户名 / 邮箱<input id="editor-platform-user" autocomplete="off" placeholder="平台登录用户名"></label>
                     <label>密码<input id="editor-platform-pass" type="password" autocomplete="new-password" placeholder="平台登录密码"></label>
-                    <label>2FA 密钥 (TOTP)<input id="editor-platform-2fa" autocomplete="off" placeholder="双重验证密钥（可选）"></label>
+                    <label>2FA 密钥 (TOTP)<input id="editor-platform-2fa" autocomplete="off" placeholder="双重验证密钥（可选）" data-i18n-placeholder="editor.totpPh"></label>
                   </div>
                   <div id="editor-extra-accounts"></div>
                   <div class="storage-actions" style="margin:2px 0 8px">
@@ -466,6 +486,18 @@
                       </select>
                     </label>
                     <label class="check-row" style="margin-top:22px"><input id="editor-lang-from-ip" type="checkbox" checked hidden> </label>
+                  </div>
+                </div>
+                <div class="editor-section-card">
+                  <div class="editor-card-header">
+                    <div class="editor-card-title" data-i18n="editor.netSimTitle">网络条件模拟</div>
+                    <div class="editor-card-desc" data-i18n="editor.netSimDesc">模拟离线、网络延迟与上下行限速，用于弱网/离线场景测试</div>
+                  </div>
+                  <div class="form-two">
+                    <label class="check-row" style="margin-top:22px"><input id="editor-net-offline" type="checkbox"> <span data-i18n="editor.netOffline">离线模式</span></label>
+                    <label><span data-i18n="editor.netLatency">网络延迟（ms）</span><input id="editor-net-latency" type="number" min="0" placeholder=""></label>
+                    <label><span data-i18n="editor.netDownload">下载限速（KB/s）</span><input id="editor-net-download" type="number" min="0" placeholder=""></label>
+                    <label><span data-i18n="editor.netUpload">上传限速（KB/s）</span><input id="editor-net-upload" type="number" min="0" placeholder=""></label>
                   </div>
                 </div>
                 <div class="editor-section-card">

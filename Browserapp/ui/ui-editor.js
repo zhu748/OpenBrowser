@@ -115,6 +115,12 @@ function normalizeProfileSettings(profile) {
       uiLanguage: String(privacy.uiLanguage || 'profile'),
       languageMode: String(privacy.languageMode || (privacy.langFromIp !== false ? 'ip' : (privacy.uiLanguage && privacy.uiLanguage !== 'profile' ? privacy.uiLanguage : 'ip'))),
       langFromIp: privacy.langFromIp !== false,
+      networkConditions: privacy.networkConditions && typeof privacy.networkConditions === 'object' ? {
+        offline: Boolean(privacy.networkConditions.offline),
+        latency: Number.isFinite(Number(privacy.networkConditions.latency)) ? Number(privacy.networkConditions.latency) : null,
+        downloadThroughput: Number.isFinite(Number(privacy.networkConditions.downloadThroughput)) ? Number(privacy.networkConditions.downloadThroughput) : null,
+        uploadThroughput: Number.isFinite(Number(privacy.networkConditions.uploadThroughput)) ? Number(privacy.networkConditions.uploadThroughput) : null,
+      } : null,
       timezoneFromIp: privacy.timezoneFromIp !== false,
       geoFromIp: privacy.geoFromIp !== false,
       fontMode: String(privacy.fontMode || 'default'),
@@ -282,6 +288,18 @@ function editorDraft(strict = true) {
     languageMode: $('#editor-language-mode')?.value || 'ip',
     uiLanguage: $('#editor-ui-language')?.value || 'profile',
     langFromIp: ($('#editor-language-mode')?.value || 'ip') === 'ip',
+    // Roxy 对齐：网络条件模拟（离线/延迟/上下行 KB/s，留空=不限制）
+    networkConditions: (() => {
+      const offline = Boolean($('#editor-net-offline')?.checked);
+      const latencyRaw = $('#editor-net-latency')?.value;
+      const downRaw = $('#editor-net-download')?.value;
+      const upRaw = $('#editor-net-upload')?.value;
+      const latency = Number.isFinite(Number(latencyRaw)) && latencyRaw !== '' && latencyRaw != null ? Math.max(0, Number(latencyRaw)) : null;
+      const download = Number.isFinite(Number(downRaw)) && downRaw !== '' && downRaw != null ? Math.max(0, Number(downRaw)) * 1024 : null;
+      const upload = Number.isFinite(Number(upRaw)) && upRaw !== '' && upRaw != null ? Math.max(0, Number(upRaw)) * 1024 : null;
+      if (!offline && latency == null && download == null && upload == null) return undefined;
+      return { offline, latency, downloadThroughput: download, uploadThroughput: upload };
+    })(),
     timezoneFromIp: true,
     geoFromIp: $('#editor-geo-from-ip')?.checked !== false,
     fontMode: $('#editor-font-mode')?.value || 'default',
@@ -611,7 +629,17 @@ function renderEditorSummary() {
     [tx('地理位置提示'), { prompt: t('editor.geoAsk'), allow: t('editor.geoAllow'), deny: t('editor.geoDeny') }[privacy.geoPermission || 'allow'] || t('editor.geoAllow')],
     [tx('地理位置'), labels.geoMode[privacy.geoMode] || (privacy.geoMode === 'custom' ? t('editor.summary.customGeo') : t('editor.basedOnIp'))],
     [tx('分辨率'), privacy.resolutionMode === 'real' ? t('editor.summary.followSystem') : (draft.width + ' × ' + draft.height)],
-    [tx('字体指纹'), privacy.fontListMode === 'real' ? t('editor.summary.followSystem') : (privacy.fontListMode === 'noise' ? t('editor.summary.random') : t('editor.summary.auto'))],
+    [t('editor.summary.fonts'), privacy.fontListMode === 'real' ? t('editor.summary.followSystem') : (privacy.fontListMode === 'noise' ? t('editor.summary.random') : t('editor.summary.auto'))],
+    [t('editor.summary.netSim'), (() => {
+      const ns = privacy.networkConditions;
+      if (!ns || (!ns.offline && !Number.isFinite(Number(ns.latency)) && !Number.isFinite(Number(ns.downloadThroughput)) && !Number.isFinite(Number(ns.uploadThroughput)))) return t('editor.netSimOff');
+      const parts = [];
+      if (ns.offline) parts.push(t('editor.netOffline'));
+      if (Number.isFinite(Number(ns.latency))) parts.push('+' + ns.latency + 'ms');
+      if (Number.isFinite(Number(ns.downloadThroughput))) parts.push('↓' + Math.round(Number(ns.downloadThroughput) / 1024) + 'KB/s');
+      if (Number.isFinite(Number(ns.uploadThroughput))) parts.push('↑' + Math.round(Number(ns.uploadThroughput) / 1024) + 'KB/s');
+      return parts.join(' · ');
+    })()],
     ['WebRTC', labels.webrtc[privacy.webrtc]],
     ['WebGL 图像', labels.webgl[privacy.webgl]],
     ['WebGL Info', privacy.webglMeta === 'custom' ? t('editor.summary.custom') : (privacy.webglMeta === 'real' ? t('editor.summary.real') : t('editor.summary.random'))],
@@ -1094,6 +1122,12 @@ function openProfileEditor(id) {
   if (batteryCharging) batteryCharging.value = batSnap ? (batSnap.charging === false ? 'no' : 'yes') : 'auto';
   editorSet('#editor-battery-charging-time', batSnap && Number.isFinite(Number(batSnap.chargingTime)) ? String(batSnap.chargingTime) : '');
   editorSet('#editor-battery-discharging-time', batSnap && Number.isFinite(Number(batSnap.dischargingTime)) ? String(batSnap.dischargingTime) : '');
+  const netSim = privacy.networkConditions;
+  const netOffline = $('#editor-net-offline');
+  if (netOffline) netOffline.checked = Boolean(netSim?.offline);
+  editorSet('#editor-net-latency', netSim && Number.isFinite(Number(netSim.latency)) ? String(netSim.latency) : '');
+  editorSet('#editor-net-download', netSim && Number.isFinite(Number(netSim.downloadThroughput)) ? String(Math.round(Number(netSim.downloadThroughput) / 1024)) : '');
+  editorSet('#editor-net-upload', netSim && Number.isFinite(Number(netSim.uploadThroughput)) ? String(Math.round(Number(netSim.uploadThroughput) / 1024)) : '');
   editorCheck('#editor-ua-strict', Boolean(privacy.fingerprint?.uaStrict));
   editorSet('#editor-font-list', Array.isArray(privacy.fingerprint?.fonts) ? privacy.fingerprint.fonts.join(', ') : (privacy.fingerprint?.fonts || ''));
   editorSet('#editor-ssl-min', privacy.fingerprint?.sslVersionMin || '');

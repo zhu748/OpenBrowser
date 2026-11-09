@@ -517,6 +517,19 @@ module.exports = {
         throw err;
       }
     };
+    // Roxy 对齐：网络条件模拟（offline/latency/throughput），仅顶层页面会话，失败静默
+    const netSim = enriched.privacy?.networkConditions;
+    if (netSim && !isSubframe && (netSim.offline || Number.isFinite(Number(netSim.latency)) || Number.isFinite(Number(netSim.downloadThroughput)) || Number.isFinite(Number(netSim.uploadThroughput)))) {
+      try {
+        await sessionCall('Network.enable', {}).catch(() => {});
+        await sessionCall('Network.emulateNetworkConditions', {
+          offline: Boolean(netSim.offline),
+          latency: Math.max(0, Number(netSim.latency) || 0),
+          downloadThroughput: Number.isFinite(Number(netSim.downloadThroughput)) ? Number(netSim.downloadThroughput) : -1,
+          uploadThroughput: Number.isFinite(Number(netSim.uploadThroughput)) ? Number(netSim.uploadThroughput) : -1,
+        }, 5000).catch(() => {});
+      } catch (_) {}
+    }
     const fontBlobBridge = injectFp?.fontBlobBridge || baseFp?.fontBlobBridge || item?.fontBlobBridge || item?.fingerprint?.fontBlobBridge;
     if (fontBlobBridge?.channelName) {
       if (!item.fontBlobBridge) item.fontBlobBridge = fontBlobBridge;

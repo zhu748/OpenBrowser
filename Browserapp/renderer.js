@@ -2742,6 +2742,8 @@ function filteredProfilesForCurrentView() {
   // Roxy 对齐：顶部标签条（全部窗口/收藏/已打开）
   if (activeListTab === 'fav') result = result.filter((profile) => profile.favorite && !profile.trashed);
   if (activeListTab === 'open') result = result.filter((profile) => profileEngine(profile.id).running);
+  // Roxy 对齐：高级筛选面板（字段组合 + 状态/收藏）
+  if (advancedFilterState) result = result.filter(advancedFilterMatches);
   // Roxy 对齐：表头点击排序（编号/名称/最后打开/创建/更新）
   if (profileSort?.key) {
     const dir = profileSort.dir || 1;
@@ -2965,7 +2967,12 @@ const PROFILE_COL_DEFS = [
   ['remaining', 'trash.remaining'],
 ];
 let hiddenProfileCols = new Set((() => {
-  try { return JSON.parse(localStorage.getItem('openbrowser-profile-cols-v1') || '[]'); } catch (_) { return []; }
+  try {
+    const raw = localStorage.getItem('openbrowser-profile-cols-v1');
+    // Roxy 默认不展示 创建时间/更新时间（保存过列配置则按用户配置）
+    if (raw == null) return ['created', 'updated'];
+    return JSON.parse(raw);
+  } catch (_) { return ['created', 'updated']; }
 })());
 function applyProfileColumnVisibility(inTrash = false) {
   const table = document.querySelector('.profile-table-compact');
@@ -3021,6 +3028,119 @@ document.querySelector('#view-profiles thead')?.addEventListener('click', (event
   for (const head of document.querySelectorAll('#view-profiles th[data-sort]')) head.classList.remove('sort-asc', 'sort-desc');
   th.classList.add(profileSort.dir === 1 ? 'sort-asc' : 'sort-desc');
   renderProfiles();
+});
+
+// ===== Roxy 对齐：高级筛选 + 保存筛选器 =====
+let advancedFilterState = null;
+let savedFilters = (() => {
+  try { return JSON.parse(localStorage.getItem('openbrowser-saved-filters-v1') || '[]'); } catch (_) { return []; }
+})();
+const ADV_FIELDS = ['name', 'remark', 'account', 'proxy', 'tag', 'os', 'kernel'];
+function advFieldText(profile, field) {
+  switch (field) {
+    case 'name': return [profile.name, profile.title];
+    case 'remark': return [profile.note, profile.notes];
+    case 'account': return [profile.platform?.username, ...(Array.isArray(profile.platform?.accounts) ? profile.platform.accounts.map((acc) => acc?.username) : [])];
+    case 'proxy': return [profile.proxy, profile.proxyMeta?.host];
+    case 'tag': return [profile.tag];
+    case 'os': return [profile.os, profile.osVersion];
+    case 'kernel': return [profile.engine, profile.engineVersion];
+    default: return [];
+  }
+}
+function advancedFilterMatches(profile) {
+  const state = advancedFilterState;
+  if (!state) return true;
+  for (const field of ADV_FIELDS) {
+    const needle = String(state[field] || '').trim().toLowerCase();
+    if (!needle) continue;
+    const hay = advFieldText(profile, field).map((value) => String(value ?? '').toLowerCase());
+    if (!hay.some((value) => value.includes(needle))) return false;
+  }
+  if (state.status === 'running' && !profileEngine(profile.id).running) return false;
+  if (state.status === 'stopped' && profileEngine(profile.id).running) return false;
+  if (state.fav === 'yes' && !profile.favorite) return false;
+  if (state.fav === 'no' && profile.favorite) return false;
+  return true;
+}
+function readAdvancedFilterFromPanel() {
+  const state = {};
+  for (const field of ADV_FIELDS) state[field] = document.getElementById(`adv-${field}`)?.value || '';
+  state.status = $('#adv-status')?.value || '';
+  state.fav = $('#adv-fav')?.value || '';
+  return state;
+}
+function writeAdvancedFilterToPanel(state) {
+  for (const field of ADV_FIELDS) { const el = document.getElementById(`adv-${field}`); if (el) el.value = state?.[field] || ''; }
+  const statusSel = $('#adv-status'); if (statusSel) statusSel.value = state?.status || '';
+  const favSel = $('#adv-fav'); if (favSel) favSel.value = state?.fav || '';
+}
+function advancedFilterIsEmpty(state) {
+  return !state || (!ADV_FIELDS.some((field) => String(state[field] || '').trim()) && !state.status && !state.fav);
+}
+function applyAdvancedFilter(state) {
+  advancedFilterState = advancedFilterIsEmpty(state) ? null : state;
+  $('#adv-filter-btn')?.classList.toggle('active', Boolean(advancedFilterState));
+  profilePage = 1;
+  renderProfiles();
+}
+function persistSavedFilters() {
+  try { localStorage.setItem('openbrowser-saved-filters-v1', JSON.stringify(savedFilters)); } catch (_) {}
+}
+function renderSavedFilters() {
+  const list = $('#adv-saved-list');
+  if (!list) return;
+  list.replaceChildren();
+  if (!savedFilters.length) {
+    list.append(element('span', 'adv-empty', t('adv.none') || '暂无保存的筛选器'));
+    return;
+  }
+  for (const item of savedFilters) {
+    const chip = element('button', 'saved-filter-chip', '');
+    chip.type = 'button';
+    const label = element('span', '', item.name);
+    const del = element('span', 'x', '×');
+    del.title = t('common.delete') || '删除';
+    chip.append(label, del);
+    chip.addEventListener('click', (event) => {
+      if (event.target === del) {
+        savedFilters = savedFilters.filter((entry) => entry !== item);
+        persistSavedFilters();
+        renderSavedFilters();
+        return;
+      }
+      writeAdvancedFilterToPanel(item.state);
+      applyAdvancedFilter(item.state);
+      const panel = $('#adv-filter-panel');
+      if (panel) panel.hidden = true;
+    });
+    list.append(chip);
+  }
+}
+$('#adv-filter-btn')?.addEventListener('click', () => {
+  const panel = $('#adv-filter-panel');
+  if (!panel) return;
+  panel.hidden = !panel.hidden;
+  if (!panel.hidden) { writeAdvancedFilterToPanel(advancedFilterState); renderSavedFilters(); }
+});
+$('#adv-apply')?.addEventListener('click', () => {
+  applyAdvancedFilter(readAdvancedFilterFromPanel());
+  const panel = $('#adv-filter-panel');
+  if (panel) panel.hidden = true;
+});
+$('#adv-reset')?.addEventListener('click', () => { writeAdvancedFilterToPanel(null); applyAdvancedFilter(null); });
+$('#adv-save')?.addEventListener('click', () => {
+  const nameEl = $('#adv-save-name');
+  const name = String(nameEl?.value || '').trim();
+  if (!name) return toast(tx('请先填写筛选器名称'));
+  const state = readAdvancedFilterFromPanel();
+  savedFilters = savedFilters.filter((entry) => entry.name !== name);
+  savedFilters.push({ name, state });
+  if (savedFilters.length > 20) savedFilters = savedFilters.slice(-20);
+  persistSavedFilters();
+  if (nameEl) nameEl.value = '';
+  renderSavedFilters();
+  toast(t('adv.saved') || '筛选器已保存');
 });
 
 function makeEditorReadonly() {
@@ -3965,7 +4085,7 @@ function renderLogs() {
   }
   for (const item of ui.logs) {
     const row = element('div', 'log-row');
-    row.append(element('span', '', item.time), element('span', '', item.module), element('span', '', item.message));
+    row.append(element('span', '', item.time), element('span', '', item.module), element('span', '', tx(item.message)));
     target.append(row);
   }
 }

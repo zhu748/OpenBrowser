@@ -203,6 +203,15 @@ function sanitizeProfile(value) {
       deviceName: String(privacyValue.deviceName || "").slice(0, 120),
       dnt: privacyValue.dnt === true || privacyValue.dnt === "on" ? true : (privacyValue.dnt === false || privacyValue.dnt === "off" ? false : Boolean(privacyValue.dnt)),
       dntMode: allowed(privacyValue.dntMode, ["default", "on", "off"], privacyValue.dnt === true ? "on" : (privacyValue.dnt === false ? "off" : "default")),
+      networkConditions: (() => {
+        const raw = privacyValue.networkConditions;
+        if (!raw || typeof raw !== "object") return null;
+        const out = { offline: Boolean(raw.offline), latency: null, downloadThroughput: null, uploadThroughput: null };
+        if (Number.isFinite(Number(raw.latency))) out.latency = Math.min(60000, Math.max(0, Number(raw.latency)));
+        if (Number.isFinite(Number(raw.downloadThroughput))) out.downloadThroughput = Math.min(1073741824, Math.max(0, Number(raw.downloadThroughput)));
+        if (Number.isFinite(Number(raw.uploadThroughput))) out.uploadThroughput = Math.min(1073741824, Math.max(0, Number(raw.uploadThroughput)));
+        return out;
+      })(),
       portScanProtect: Boolean(privacyValue.portScanProtect),
       portScanAllow: String(privacyValue.portScanAllow || "").slice(0, 500),
       cfOptimize: privacyValue.cfOptimize !== false,

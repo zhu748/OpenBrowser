@@ -254,3 +254,19 @@
 #view-profiles th[data-sort].sort-asc::after{content:' \2191';color:#245cff}
 #view-profiles th[data-sort].sort-desc::after{content:' \2193';color:#245cff}
 .field-warn{color:#b45309;font-size:12px;margin-top:4px;display:block}
+
+/* Round-4: advanced filter panel */
+.adv-filter-panel{position:absolute;top:calc(100% + 6px);right:0;z-index:70;width:520px;max-width:94vw;background:var(--panel,#fff);border:1px solid rgba(127,127,127,.25);border-radius:12px;padding:14px;box-shadow:0 12px 32px rgba(0,0,0,.16)}
+.adv-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px}
+.adv-grid label{display:flex;flex-direction:column;gap:4px;font-size:12px}
+.adv-grid input,.adv-grid select{height:30px}
+.adv-actions{display:flex;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap}
+.adv-actions input{height:30px;flex:1;min-width:120px}
+.adv-saved{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.saved-filter-chip{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(127,127,127,.3);border-radius:999px;padding:3px 10px;background:none;cursor:pointer;font-size:12px}
+.saved-filter-chip:hover{border-color:#245cff}
+.saved-filter-chip .x{opacity:.55}
+.saved-filter-chip .x:hover{opacity:1;color:#c43a49}
+#adv-filter-btn.active{border-color:#245cff;color:#245cff}
+#adv-filter-btn.active span::after{content:' ●';font-size:9px;vertical-align:2px}
+.toolbar{position:relative}
