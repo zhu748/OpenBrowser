@@ -41,9 +41,11 @@ env:
   KERNELS_TAG: ${{ inputs.kernel_tag || 'kernels-v1' }}
   OPENBROWSER_PACKAGE_VARIANT: with-kernel
   OPENBROWSER_BUNDLE_KERNEL: 'true'
+  # Release notes BODY only. The version header ("## OpenBrowser **vX.Y.Z**")
+  # is constructed from RELEASE_TAG at every notes_file site below, so the
+  # notes can never desync from the dispatch input; ensure-release additionally
+  # gates that the constructed notes carry the packaged version tag.
   RELEASE_NOTES: |
-    ## OpenBrowser **v1.0.27**
-
     - 凭据静态加密，环境数据迁移 SQLite 存储（断电安全、旧数据无损迁移）。
     - Rust 代理核心新增上游连接复用，显著降低二次连接延迟。
     - 新增真实设备人格库；多项指纹注入与稳定性修复。
@@ -69,6 +71,15 @@ jobs:
             echo "Release tag must match Browserapp/package.json version: expected $expected_tag, got $RELEASE_TAG" >&2
             exit 1
           fi
+          # Notes/tag gate: the notes header is derived from RELEASE_TAG at every
+          # notes_file construction below, so the notes must carry the tag being
+          # published. A mismatch can only mean a hardcoded version crept back
+          # into the workflow — fail instead of publishing desynced notes.
+          notes_header="## OpenBrowser **${RELEASE_TAG}**"
+          if ! printf '%s\n\n%s\n' "$notes_header" "$RELEASE_NOTES" | grep -Fq -- "$expected_tag"; then
+            echo "Release notes must mention the published tag ${expected_tag} (the header is built from RELEASE_TAG; never hardcode a version in RELEASE_NOTES)." >&2
+            exit 1
+          fi
       - name: Create or update release shell
         shell: bash
         env:
@@ -76,7 +87,8 @@ jobs:
         run: |
           set -euo pipefail
           notes_file="$RUNNER_TEMP/openbrowser-release-notes.md"
-          printf '%s\n' "$RELEASE_NOTES" > "$notes_file"
+          notes_header="## OpenBrowser **${RELEASE_TAG}**"
+          printf '%s\n\n%s\n' "$notes_header" "$RELEASE_NOTES" > "$notes_file"
           if gh release view "$RELEASE_TAG" -R "$GH_REPO" >/dev/null 2>&1; then
             is_draft="$(gh release view "$RELEASE_TAG" -R "$GH_REPO" --json isDraft --jq .isDraft)"
             if [[ "$is_draft" != "true" ]]; then
@@ -167,6 +179,10 @@ jobs:
         # 物化进 kernels/windows-x64/wayfern_fonts，供 selftest:fontnative、
         # package:portable 与 Windows 开发模式使用（LFS 检出已含真实字体）。
         # macOS job 不需要：其字体在已签名 .app 内。
+        # 翻转后（docs/kernel-externalization.md §5）正本不在 sparse 检出/仓库内：
+        # 脚本检测到 kernels/windows-x64/wayfern_fonts 已就绪（Release 归档自带
+        # 物化字体）即按 upToDate 返回（退出码 0），不再硬失败；副本缺失则报错
+        # 并列出恢复路径（kernels:fetch / 本地 bootstrap）。
         run: node scripts/materialize-wayfern-fonts.js
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # stable
         with:
@@ -230,7 +246,8 @@ jobs:
         run: |
           set -euo pipefail
           notes_file="$RUNNER_TEMP/openbrowser-release-notes.md"
-          printf '%s\n' "$RELEASE_NOTES" > "$notes_file"
+          notes_header="## OpenBrowser **${RELEASE_TAG}**"
+          printf '%s\n\n%s\n' "$notes_header" "$RELEASE_NOTES" > "$notes_file"
           bash scripts/publish-release.sh "$RELEASE_TAG" "$notes_file"             dist/OpenBrowser-Windows-x86_64-with-kernel-setup.exe
 
   linux-x86_64:
@@ -346,7 +363,8 @@ jobs:
         run: |
           set -euo pipefail
           notes_file="$RUNNER_TEMP/openbrowser-release-notes.md"
-          printf '%s\n' "$RELEASE_NOTES" > "$notes_file"
+          notes_header="## OpenBrowser **${RELEASE_TAG}**"
+          printf '%s\n\n%s\n' "$notes_header" "$RELEASE_NOTES" > "$notes_file"
           bash scripts/publish-release.sh "$RELEASE_TAG" "$notes_file"             dist/OpenBrowser-Linux-x86_64-with-kernel.tar.gz
 
   macos-x86_64:
@@ -463,7 +481,8 @@ jobs:
         run: |
           set -euo pipefail
           notes_file="$RUNNER_TEMP/openbrowser-release-notes.md"
-          printf '%s\n' "$RELEASE_NOTES" > "$notes_file"
+          notes_header="## OpenBrowser **${RELEASE_TAG}**"
+          printf '%s\n\n%s\n' "$notes_header" "$RELEASE_NOTES" > "$notes_file"
           bash scripts/publish-release.sh "$RELEASE_TAG" "$notes_file"             dist/OpenBrowser-macOS-x86_64.dmg
 
   macos-arm64:
@@ -577,7 +596,8 @@ jobs:
         run: |
           set -euo pipefail
           notes_file="$RUNNER_TEMP/openbrowser-release-notes.md"
-          printf '%s\n' "$RELEASE_NOTES" > "$notes_file"
+          notes_header="## OpenBrowser **${RELEASE_TAG}**"
+          printf '%s\n\n%s\n' "$notes_header" "$RELEASE_NOTES" > "$notes_file"
           bash scripts/publish-release.sh "$RELEASE_TAG" "$notes_file"             dist/OpenBrowser-macOS-arm64-with-kernel.dmg
 
   finalize-release:
@@ -620,7 +640,8 @@ jobs:
           ( cd "$staging" && sha256sum --binary "${expected_assets[@]}" > SHA256SUMS.txt )
           gh release upload "$RELEASE_TAG" --repo "$GH_REPO" "$staging/SHA256SUMS.txt" --clobber
           notes_file="$RUNNER_TEMP/openbrowser-release-notes.md"
-          printf '%s\n' "$RELEASE_NOTES" > "$notes_file"
+          notes_header="## OpenBrowser **${RELEASE_TAG}**"
+          printf '%s\n\n%s\n' "$notes_header" "$RELEASE_NOTES" > "$notes_file"
           args=("$RELEASE_TAG" --repo "$GH_REPO" --draft=false --title "OpenBrowser $RELEASE_TAG" --notes-file "$notes_file")
           if [[ "${{ inputs.prerelease }}" == "true" ]]; then
             args+=(--prerelease)

@@ -77,8 +77,32 @@ function fileNameFromUrl(rawUrl) {
 function openRequest(url, { headers = {}, maxRedirects = DEFAULT_MAX_REDIRECTS, timeoutMs, validateUrl } = {}) {
   return new Promise((resolve, reject) => {
     let redirects = 0;
+    let initialHost = null;
 
-    const attempt = (target) => {
+    // Credentials are scoped to the host they were granted to. A redirect is
+    // a fresh decision about where the request goes (api.github.com ->
+    // objects.githubusercontent.com in the kernel-release flow), so an
+    // Authorization header must never be replayed verbatim to a different
+    // host: each hop compares the target's host (name + port, i.e. URL.host)
+    // against the INITIAL request host and drops Authorization (whatever the
+    // header-name case) when it changed. The per-hop host whitelist in
+    // validateUrl below is unchanged and still applies to every hop.
+    const headersForTarget = (target, currentHeaders) => {
+      let parsed;
+      try {
+        parsed = new URL(target);
+      } catch (_) {
+        return currentHeaders;
+      }
+      if (parsed.host === initialHost) return currentHeaders;
+      const next = { ...currentHeaders };
+      for (const name of Object.keys(next)) {
+        if (name.toLowerCase() === 'authorization') delete next[name];
+      }
+      return next;
+    };
+
+    const attempt = (target, hopHeaders) => {
       let parsed;
       try {
         parsed = new URL(target);
@@ -91,6 +115,7 @@ function openRequest(url, { headers = {}, maxRedirects = DEFAULT_MAX_REDIRECTS, 
         reject(new Error(`unsupported protocol: ${parsed.protocol}`));
         return;
       }
+      if (initialHost === null) initialHost = parsed.host;
       // A redirect is a fresh decision about where to send the request, so the
       // same policy that vetted the original URL is applied to every hop. Without
       // this a response can move the transfer to any host it names.
@@ -103,7 +128,7 @@ function openRequest(url, { headers = {}, maxRedirects = DEFAULT_MAX_REDIRECTS, 
         }
       }
 
-      const req = transport.get(target, { headers }, (res) => {
+      const req = transport.get(target, { headers: hopHeaders }, (res) => {
         const status = res.statusCode || 0;
         if (status >= 300 && status < 400 && res.headers.location) {
           redirects += 1;
@@ -112,7 +137,8 @@ function openRequest(url, { headers = {}, maxRedirects = DEFAULT_MAX_REDIRECTS, 
             reject(new Error('too many redirects'));
             return;
           }
-          attempt(new URL(res.headers.location, target).toString());
+          const nextTarget = new URL(res.headers.location, target).toString();
+          attempt(nextTarget, headersForTarget(nextTarget, hopHeaders));
           return;
         }
         if (status >= 400) {
@@ -131,7 +157,7 @@ function openRequest(url, { headers = {}, maxRedirects = DEFAULT_MAX_REDIRECTS, 
       }
     };
 
-    attempt(url);
+    attempt(url, headers);
   });
 }
 

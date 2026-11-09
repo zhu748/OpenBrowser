@@ -129,12 +129,23 @@ chrome-stable 种子仍由 `prepare:linux-kernel` 下载，不经本机制。
    smoke job 相同模式），删除 "Prune foreign kernels" 步骤；预取步骤里
    `KERNELS_TAG` 输入改为已发布 tag（并把输入 default 更新为该 tag）。
    预取步骤本身**不用改**——种子缺失时它自动走 Release。
-2. `kernel-release.yml`：它仍需要 LFS 内容做"源"。翻转后它已无存在必要
+2. 字体物化三处调用点**已翻转安全，无需随翻改动**（2026-11-09 审查跟进）：
+   `materialize-wayfern-fonts.js` 在正本 `kernels/wayfern-fonts` 缺失时不再
+   无条件 throw——若 `kernels/windows-x64/wayfern_fonts` 已就绪（Release
+   归档打包前已物化：非 git-LFS 指针、android/macos/ubuntu/win11 四分区各
+   >100 文件，阈值与 selftest:fontnative 配对门禁一致），按 upToDate 返回
+   （退出码 0），日志注明"正本缺席（翻转后状态）、种子已含物化字体"；若
+   物化副本缺失/不完整，报错并列出两条恢复路径（A: `kernels:fetch` 拉
+   Release 归档；B: §3 本地 bootstrap）。三处调用点——build-installers.yml
+   windows job 物化步骤（CLI 子进程）、prepare-bundled-kernel.js windows
+   分支、package-portable.js `materializeWayfernFontsForPackaging`（导出
+   函数）——行为一致；正本在场时（翻转前）行为不变。
+3. `kernel-release.yml`：它仍需要 LFS 内容做"源"。翻转后它已无存在必要
    （新内核版本改由本地打包上传或恢复 LFS 后再跑）；先保留，归档前删除。
-3. 仓库瘦身（**归后续代理，本任务红线未动 kernels/ 内容**）：
+4. 仓库瘦身（**归后续代理，本任务红线未动 kernels/ 内容**）：
    `git rm -r Browserapp/kernels/*`（指针仅 0.68 MB，历史无需 rewrite），
    `.gitattributes` 同步清理。
-4. 观察一个发布周期后删除 `git lfs` 相关说明。
+5. 观察一个发布周期后删除 `git lfs` 相关说明。
 过渡期行为：LFS checkout 仍是事实来源时，预取步骤检测到种子就绪即静默跳过
 （零网络），CI 不会因 Release 未发布而挂——这正是回退设计。
 

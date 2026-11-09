@@ -43,9 +43,10 @@
  *    - Currently untracked files in working tree do not leak forbidden sensitive patterns.
  *    - Working-tree disk hygiene verifies absence of __pycache__ and reports/*.png.
  * 5. Portable packager defense:
- *    - Packager appResourceExcludes and isPackagingExcluded recursively forbid reports, __pycache__, *.pyc, .DS_Store, node_modules.
+ *    - Packager appResourceExcludes and isPackagingExcluded recursively forbid reports, __pycache__, *.pyc, .DS_Store, node_modules, CODE_OVERVIEW.md (confidential, any case/depth), .env*, *.log.
  *    - Packager preserves essential deliverables (sources, woff2 font subsets, selftests).
  *    - copyRecursive behavior is validated with an isolated sandbox hierarchy.
+ *    - The post-copy package scan (assertNoSensitiveFilesInTree) fails on any leaked sensitive filename.
  * 6. Mutation sensitivity:
  *    - Core script omissions, missing files, or syntax errors trigger failures.
  *    - Version tampering in any of the 7 locations triggers failure.
@@ -350,8 +351,11 @@ function checkSevenVersionLocations(targetVersion = EXPECTED_VERSION, baseRepo =
     if (!content.includes("RELEASE_NOTES:") || !content.includes("${{ inputs.release_tag }}")) {
       issues.push({ location: 7, file: ".github/workflows/build-installers.yml", message: "workflow release notes synchronization with inputs.release_tag missing" });
     }
-    if (!content.includes(`**v${targetVersion}**`)) {
-      issues.push({ location: 7, file: ".github/workflows/build-installers.yml", message: `workflow release notes version **v${targetVersion}** missing` });
+    if (!content.includes("## OpenBrowser **${RELEASE_TAG}**")) {
+      issues.push({ location: 7, file: ".github/workflows/build-installers.yml", message: "workflow release notes header must be derived from RELEASE_TAG (dynamic), not a hardcoded version" });
+    }
+    if (/## OpenBrowser \*\*v\d+\.\d+\.\d+/.test(content)) {
+      issues.push({ location: 7, file: ".github/workflows/build-installers.yml", message: "workflow release notes must not hardcode a version into the header (notes/tag desync risk)" });
     }
     if (!content.includes("Release tag must match Browserapp/package.json version")) {
       issues.push({ location: 7, file: ".github/workflows/build-installers.yml", message: "workflow runtime release tag/version enforcement missing" });
@@ -589,6 +593,14 @@ check("portable packager explicitly and recursively excludes sensitive artifacts
   assert.strictEqual(packager.isPackagingExcluded("module.cpython-313.pyc"), true, "*.pyc must be excluded");
   assert.strictEqual(packager.isPackagingExcluded("module.pyo"), true, "*.pyo must be excluded");
   assert.strictEqual(packager.isPackagingExcluded("node_modules"), true, "node_modules must be excluded");
+  // Nested-secret contract (confidential-never-commit + local-only artifacts):
+  // the top-level Set is exact-case, so the recursive layer must cover every depth.
+  assert.strictEqual(packager.isPackagingExcluded("CODE_OVERVIEW.md"), true, "CODE_OVERVIEW.md must be excluded");
+  assert.strictEqual(packager.isPackagingExcluded("code_overview.md"), true, "CODE_OVERVIEW.md exclusion is case-insensitive");
+  assert.strictEqual(packager.isPackagingExcluded(".env"), true, ".env must be excluded");
+  assert.strictEqual(packager.isPackagingExcluded(".env.production"), true, ".env* must be excluded");
+  assert.strictEqual(packager.isPackagingExcluded("debug.log"), true, "*.log must be excluded");
+  assert.strictEqual(packager.isPackagingExcluded("APP.LOG"), true, "*.log exclusion is case-insensitive");
 });
 
 check("portable packager preserves all required source files, font subsets, and tests", () => {
@@ -627,6 +639,12 @@ check("portable packager copyRecursive verified with isolated sandbox hierarchy"
     fs.writeFileSync(path.join(src, "scripts/__pycache__/test.pyc"), "PYC-DATA");
     fs.writeFileSync(path.join(src, "scripts/stray.pyc"), "PYC-DATA");
     fs.writeFileSync(path.join(src, ".DS_Store"), "DS-DATA");
+    // Nested confidential / local-only artifacts must never ride along at any depth.
+    fs.mkdirSync(path.join(src, "ui"), { recursive: true });
+    fs.writeFileSync(path.join(src, "ui/CODE_OVERVIEW.md"), "CONFIDENTIAL");
+    fs.writeFileSync(path.join(src, "ui/code_overview.md"), "CONFIDENTIAL");
+    fs.writeFileSync(path.join(src, "ui/.env.local"), "SECRET=1");
+    fs.writeFileSync(path.join(src, "assets/build-debug.log"), "LOG-DATA");
 
     packager.copyRecursive(src, dst);
 
@@ -636,6 +654,48 @@ check("portable packager copyRecursive verified with isolated sandbox hierarchy"
     assert.strictEqual(fs.existsSync(path.join(dst, "scripts/__pycache__")), false, "__pycache__ must be excluded");
     assert.strictEqual(fs.existsSync(path.join(dst, "scripts/stray.pyc")), false, "stray.pyc must be excluded");
     assert.strictEqual(fs.existsSync(path.join(dst, ".DS_Store")), false, ".DS_Store must be excluded");
+    assert.strictEqual(fs.existsSync(path.join(dst, "ui/CODE_OVERVIEW.md")), false, "nested CODE_OVERVIEW.md must be excluded");
+    assert.strictEqual(fs.existsSync(path.join(dst, "ui/code_overview.md")), false, "lowercase nested code_overview.md must be excluded");
+    assert.strictEqual(fs.existsSync(path.join(dst, "ui/.env.local")), false, "nested .env.local must be excluded");
+    assert.strictEqual(fs.existsSync(path.join(dst, "assets/build-debug.log")), false, "nested *.log must be excluded");
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+check("post-copy package scan fails on any leaked sensitive filename", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "openbrowser-pkg-scan-"));
+  try {
+    const pkgRoot = path.join(tmp, "OpenBrowser-mock");
+    const app = path.join(pkgRoot, "runtime", "resources", "app");
+    fs.mkdirSync(path.join(app, "fingerprint"), { recursive: true });
+    fs.writeFileSync(path.join(app, "fingerprint/index.js"), "module.exports = 1;");
+    fs.writeFileSync(path.join(pkgRoot, "README.md"), "ok");
+
+    assert.doesNotThrow(
+      () => packager.assertNoSensitiveFilesInTree(pkgRoot, "clean mock package"),
+      "a clean package tree must pass the scan"
+    );
+    assert.strictEqual(
+      packager.packageRootForResourceApp(app),
+      pkgRoot,
+      "the windows/linux layout must resolve to the package root"
+    );
+    const macApp = path.join(tmp, "OpenBrowser.app", "Contents", "Resources", "app");
+    fs.mkdirSync(macApp, { recursive: true });
+    assert.strictEqual(
+      packager.packageRootForResourceApp(macApp),
+      path.join(tmp, "OpenBrowser.app", ".."),
+      "the macOS layout must resolve to the package root"
+    );
+
+    fs.mkdirSync(path.join(app, "ui"), { recursive: true });
+    fs.writeFileSync(path.join(app, "ui/CODE_OVERVIEW.md"), "CONFIDENTIAL");
+    assert.throws(
+      () => packager.assertNoSensitiveFilesInTree(pkgRoot, "leaky mock package"),
+      /FATAL: sensitive files leaked[\s\S]*CODE_OVERVIEW\.md/,
+      "a nested confidential file must fail the build"
+    );
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

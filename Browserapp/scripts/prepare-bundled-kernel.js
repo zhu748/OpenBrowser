@@ -93,11 +93,17 @@ async function main() {
   // kernels/wayfern-fonts，Windows 打包与开发模式需要平台目录内的物化副本。独立步骤
   // 而非并入 ensureKernelSeedForPackaging：该钩子在种子已物化时直接 no-op 返回，而
   // 字体物化在任何种子状态下都必须检查。macOS 侧字体在已签名 .app 内，绝不物化。
+  // 翻转后（docs/kernel-externalization.md §5）正本缺席：物化副本已就绪则 upToDate。
   if (platform === 'windows-x64') {
     const { materializeWayfernFonts } = require('./materialize-wayfern-fonts');
     const summary = materializeWayfernFonts();
-    console.log(`[kernel] wayfern fonts ${summary.upToDate ? 'already materialized' : 'materialized'}:`
-      + ` ${summary.sourceFiles} files (copied ${summary.copied}) -> kernels/windows-x64/wayfern_fonts`);
+    if (summary.srcAbsent) {
+      console.log('[kernel] wayfern fonts: 正本缺席（翻转后状态）、种子已含物化字体'
+        + ` (${summary.destFiles} files) -> kernels/windows-x64/wayfern_fonts`);
+    } else {
+      console.log(`[kernel] wayfern fonts ${summary.upToDate ? 'already materialized' : 'materialized'}:`
+        + ` ${summary.sourceFiles} files (copied ${summary.copied}) -> kernels/windows-x64/wayfern_fonts`);
+    }
   }
 
   if (platform === 'macos-x64') {
