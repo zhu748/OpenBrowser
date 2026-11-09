@@ -3489,6 +3489,9 @@
   function shouldSkipAuto(el) {
     if (!(el instanceof Element)) return true;
     if (el.closest('script, style, code, pre, [contenteditable="true"]')) return true;
+    // Dynamically managed text (switchView writes the page title every navigation):
+    // neither the catalog pass nor the auto-translate snapshot may own it.
+    if (el.closest('[data-i18n-dynamic]')) return true;
     // Keep third-party/template free text (titles/descriptions) intact
     if (el.closest('.rpa-store-card h4, .rpa-store-card p, #rpa-store-grid h4, #rpa-store-grid p')) return true;
     if (el.id === 'profile-storage-path' || el.id === 'kernel-path' || el.id === 'kernel-version' || el.id === 'kernel-active-path' || el.id === 'kernel-channel' || el.id === 'kernel-launch-mode') return true;
@@ -3499,15 +3502,25 @@
   function sourceForCurrentText(current, previous) {
     const raw = String(current || '');
     const old = String(previous || '');
-    if (/[\u4e00-\u9fff]/.test(raw)) return raw;
-    if (old && raw !== translateChineseUiText(old)) return old;
-    return '';
+    if (old) {
+      // Partial translations keep CJK characters, so the CJK fast path below would
+      // re-record the translated text as the "source" and poison the snapshot that
+      // restoreChineseElement relies on. Only genuinely new content may replace it.
+      if (raw === translateChineseUiText(old)) return old;
+      if (/[\u4e00-\u9fff]/.test(raw)) return raw;
+      return old;
+    }
+    return /[\u4e00-\u9fff]/.test(raw) ? raw : '';
   }
 
   function autoTranslateElement(el) {
     if (shouldSkipAuto(el) || resolved === 'zh-CN') return;
     for (const attr of ['placeholder', 'title', 'aria-label']) {
       if (!el.hasAttribute(attr)) continue;
+      // Catalog-keyed attributes are fully governed by applyNode; snapshotting them here
+      // would poison data-i18n-src-* with a translated value and restore that wrong
+      // locale string on the next switch back to Chinese.
+      if (el.getAttribute('data-i18n-' + (attr === 'aria-label' ? 'aria' : attr))) continue;
       const rawKey = 'data-i18n-src-' + attr;
       const current = el.getAttribute(attr) || '';
       const src = sourceForCurrentText(current, el.getAttribute(rawKey) || '');
@@ -3555,6 +3568,9 @@
   function restoreChineseElement(el) {
     if (!(el instanceof Element)) return;
     for (const attr of ['placeholder', 'title', 'aria-label']) {
+      // Keyed attributes follow the catalog (applyNode); restoring from the auto-translate
+      // snapshot would overwrite the catalog answer with a stale locale string.
+      if (el.getAttribute('data-i18n-' + (attr === 'aria-label' ? 'aria' : attr))) continue;
       const rawKey = 'data-i18n-src-' + attr;
       if (el.hasAttribute(rawKey)) el.setAttribute(attr, el.getAttribute(rawKey));
     }

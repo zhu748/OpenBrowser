@@ -54,7 +54,8 @@
 
     <div class="content">
       <header>
-        <div><h1 id="page-title" data-i18n="view.profiles">环境管理</h1><p id="page-subtitle"></p></div>
+        <div><!-- switchView is the single writer here: a static data-i18n key made every locale pass reset the title to the profiles view (visible on the system view after refreshLocaleChrome). -->
+        <h1 id="page-title" data-i18n-dynamic>环境管理</h1><p id="page-subtitle" data-i18n-dynamic></p></div>
         <div class="header-right" style="display: flex; align-items: center; gap: 12px; z-index: 100;">
           <span class="engine-badge engine-badge-checking" id="engine-badge" title="正在检测浏览器…">
             <i class="engine-badge-dot" aria-hidden="true"></i>
