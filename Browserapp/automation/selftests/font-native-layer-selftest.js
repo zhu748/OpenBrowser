@@ -23,7 +23,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const appRoot = path.join(__dirname, '..');
+const appRoot = path.join(__dirname, '..', '..');
 const kernelsRoot = path.join(appRoot, 'kernels');
 const results = [];
 const check = (name, fn) => {
