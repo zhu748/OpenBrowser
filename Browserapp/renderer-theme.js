@@ -139,9 +139,11 @@ try {
   const stored = localStorage.getItem(UI_THEME_KEY);
   savedUiTheme = Object.hasOwn(UI_THEMES, stored) ? stored : 'modern';
   if (stored !== savedUiTheme) localStorage.setItem(UI_THEME_KEY, savedUiTheme);
-  // Respect a saved color-mode preference (dark/light/auto); only seed the
-  // default 'light' when the user never picked one. The unconditional write
-  // here used to reset dark-mode users back to light on every launch (it was
-  // left behind when the one-shot migration guard was removed in 995973e).
-  if (!localStorage.getItem(UI_COLOR_MODE_KEY)) localStorage.setItem(UI_COLOR_MODE_KEY, 'light');
+  // Respect a saved color-mode preference (dark/light/auto); only seed when
+  // the user never picked one. The seed must match readSavedColorPreference's
+  // 'auto' default: seeding 'light' made a dark-OS user's first launch follow
+  // the OS (dark) and then silently locked them into light from the second
+  // launch on (this write outlived the one-shot migration guard removed in
+  // 995973e).
+  if (!localStorage.getItem(UI_COLOR_MODE_KEY)) localStorage.setItem(UI_COLOR_MODE_KEY, 'auto');
 } catch (_) {}

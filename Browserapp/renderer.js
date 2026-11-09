@@ -688,7 +688,6 @@ function renderMicroWindowSvg(num, isLight = false, size = UI_MARK_SIZE) {
 
   // 其他主题兼容回落
   const pal = envBadgeColors(num);
-  const safeId = String(num).replace(/[^a-zA-Z0-9_-]/g, '_');
   const winBg1 = isLight ? '#f4f6f8' : '#141a20';
   const winBg2 = isLight ? '#e5e9ec' : '#0c1014';
   const winBorder = isLight ? '#c8d1d8' : '#222c36';
@@ -2020,7 +2019,9 @@ async function deleteGroup(id) {
   if (activeGroupFilter === id) activeGroupFilter = 'all';
   save();
   invalidateViewCache(['groups', 'profiles']);
-  window.ops.syncProfiles(ui.profiles).catch(() => {});
+  // fire-and-forget: the group edit is already saved locally; surface a failed
+  // engine sync instead of swallowing it (engineProfiles would drift).
+  window.ops.syncProfiles(ui.profiles).catch((error) => log('Error', '环境同步失败: ' + ((error && error.message) || error)));
   renderGroupsPage();
   renderProfiles();
   toast(tx('已删除分组'));
@@ -2542,7 +2543,7 @@ $('#batch-quick-form')?.addEventListener('submit', async (event) => {
   }
   save();
   invalidateViewCache(['profiles', 'sync']);
-  try { engineProfiles = await window.ops.syncProfiles(ui.profiles); } catch (_) {}
+  try { engineProfiles = await window.ops.syncProfiles(ui.profiles); } catch (error) { log('Error', '环境同步失败: ' + ((error && error.message) || error)); }
   $('#batch-quick-dialog').close();
   renderProfiles();
   toast(t(mode === 'tag' ? 'batch.tagApplied' : 'batch.noteApplied', { n: ids.length }));
