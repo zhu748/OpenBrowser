@@ -2229,9 +2229,11 @@ function normalizeFreeIpApiResult(value) {
   };
 }
 
+/** Field list shared by the direct and proxied ip-api.com lookups. */
+const IP_API_FIELDS = 'status,message,country,countryCode,regionName,city,zip,timezone,lat,lon,isp,org,as,asname,mobile,proxy,hosting,query';
+
 async function lookupDirectIpApi() {
-  const fields = 'status,message,country,countryCode,regionName,city,zip,timezone,lat,lon,isp,org,as,asname,mobile,proxy,hosting,query';
-  const { status, body } = await fetchUrlText(`http://ip-api.com/json/?fields=${fields}`, { timeout: 10000 });
+  const { status, body } = await fetchUrlText(`http://ip-api.com/json/?fields=${IP_API_FIELDS}`, { timeout: 10000 });
   if (status !== 200) throw new Error('HTTP ' + status);
   return normalizeIpApiResult(JSON.parse(body));
 }
@@ -2294,14 +2296,19 @@ async function lookupDirectCountry() {
   }, lookupIpPureDirect);
 }
 
-async function lookupProxyIpApi(config) {
-  const fields = 'status,message,country,countryCode,regionName,city,zip,timezone,lat,lon,isp,org,as,asname,mobile,proxy,hosting,query';
-  const response = await requestProxyHttp(config, 'ip-api.com', '/json/?fields=' + fields);
+/**
+ * Shared skeleton for the proxied exit-IP probe providers: run the tunnel
+ * request, translate a non-200 reply into the probe-unavailable error
+ * contract (recording the provider cooldown bucket when a rate-limited geo
+ * source answers 429), then hand the decoded body to the provider parser.
+ */
+async function probeProxyProvider({ request, rateLimitProvider, httpErrorPrefix, parse }) {
+  const response = await request();
   if (response.status !== 200) {
-    if (response.status === 429) {
-      recordProviderRateLimit('ip-api.com');
+    if (rateLimitProvider && response.status === 429) {
+      recordProviderRateLimit(rateLimitProvider);
     }
-    const err = new Error('Proxy exit lookup returned HTTP ' + response.status);
+    const err = new Error(httpErrorPrefix + response.status);
     err.httpStatus = response.status;
     if (response.status === 429 || (response.status >= 400 && response.status !== 407)) {
       err.code = 'probe-unavailable';
@@ -2309,146 +2316,84 @@ async function lookupProxyIpApi(config) {
     }
     throw err;
   }
-  let json;
-  try {
-    json = JSON.parse(response.body.toString('utf8'));
-  } catch (parseErr) {
-    const err = new Error('Proxy exit lookup JSON parsing failed: ' + parseErr.message);
-    err.code = 'probe-unavailable';
-    err.probeUnavailable = true;
-    throw err;
-  }
-  return normalizeIpApiResult(json);
+  return parse(response.body.toString('utf8'));
+}
+
+/** JSON body parser for the geo providers; keeps the legacy parse-failure wording. */
+function parseProxyProviderJson(normalize) {
+  return (body) => {
+    let json;
+    try {
+      json = JSON.parse(body);
+    } catch (parseErr) {
+      const err = new Error('Proxy exit lookup JSON parsing failed: ' + parseErr.message);
+      err.code = 'probe-unavailable';
+      err.probeUnavailable = true;
+      throw err;
+    }
+    return normalize(json);
+  };
+}
+
+/** HTTPS-first transport with a plain-HTTP fallback when the tunnel itself is healthy. */
+function requestProxyHttpsThenHttp(config, hostname, pathname) {
+  return requestProxyHttps(config, hostname, pathname).catch((httpsErr) => {
+    if (isProxyLinkError(httpsErr)) throw httpsErr;
+    return requestProxyHttp(config, hostname, pathname);
+  });
+}
+
+async function lookupProxyIpApi(config) {
+  return probeProxyProvider({
+    request: () => requestProxyHttp(config, 'ip-api.com', '/json/?fields=' + IP_API_FIELDS),
+    rateLimitProvider: 'ip-api.com',
+    httpErrorPrefix: 'Proxy exit lookup returned HTTP ',
+    parse: parseProxyProviderJson(normalizeIpApiResult),
+  });
 }
 
 async function lookupProxyIpWho(config) {
-  const response = await requestProxyHttps(config, 'ipwho.is', '/');
-  if (response.status !== 200) {
-    if (response.status === 429) {
-      recordProviderRateLimit('ipwho.is');
-    }
-    const err = new Error('Proxy exit lookup returned HTTP ' + response.status);
-    err.httpStatus = response.status;
-    if (response.status === 429 || (response.status >= 400 && response.status !== 407)) {
-      err.code = 'probe-unavailable';
-      err.probeUnavailable = true;
-    }
-    throw err;
-  }
-  let json;
-  try {
-    json = JSON.parse(response.body.toString('utf8'));
-  } catch (parseErr) {
-    const err = new Error('Proxy exit lookup JSON parsing failed: ' + parseErr.message);
-    err.code = 'probe-unavailable';
-    err.probeUnavailable = true;
-    throw err;
-  }
-  return normalizeIpWhoResult(json);
+  return probeProxyProvider({
+    request: () => requestProxyHttps(config, 'ipwho.is', '/'),
+    rateLimitProvider: 'ipwho.is',
+    httpErrorPrefix: 'Proxy exit lookup returned HTTP ',
+    parse: parseProxyProviderJson(normalizeIpWhoResult),
+  });
 }
 
 async function lookupProxyIpInfo(config) {
-  const response = await requestProxyHttps(config, 'ipinfo.io', '/json');
-  if (response.status !== 200) {
-    if (response.status === 429) {
-      recordProviderRateLimit('ipinfo.io');
-    }
-    const err = new Error('Proxy exit lookup returned HTTP ' + response.status);
-    err.httpStatus = response.status;
-    if (response.status === 429 || (response.status >= 400 && response.status !== 407)) {
-      err.code = 'probe-unavailable';
-      err.probeUnavailable = true;
-    }
-    throw err;
-  }
-  let json;
-  try {
-    json = JSON.parse(response.body.toString('utf8'));
-  } catch (parseErr) {
-    const err = new Error('Proxy exit lookup JSON parsing failed: ' + parseErr.message);
-    err.code = 'probe-unavailable';
-    err.probeUnavailable = true;
-    throw err;
-  }
-  return normalizeIpInfoResult(json);
+  return probeProxyProvider({
+    request: () => requestProxyHttps(config, 'ipinfo.io', '/json'),
+    rateLimitProvider: 'ipinfo.io',
+    httpErrorPrefix: 'Proxy exit lookup returned HTTP ',
+    parse: parseProxyProviderJson(normalizeIpInfoResult),
+  });
 }
 
 async function lookupProxyIpWhoisApp(config) {
-  let response;
-  try {
-    response = await requestProxyHttps(config, 'ipwhois.app', '/json/');
-  } catch (httpsErr) {
-    if (isProxyLinkError(httpsErr)) throw httpsErr;
-    response = await requestProxyHttp(config, 'ipwhois.app', '/json/');
-  }
-  if (response.status !== 200) {
-    if (response.status === 429) {
-      recordProviderRateLimit('ipwhois.app');
-    }
-    const err = new Error('Proxy exit lookup returned HTTP ' + response.status);
-    err.httpStatus = response.status;
-    if (response.status === 429 || (response.status >= 400 && response.status !== 407)) {
-      err.code = 'probe-unavailable';
-      err.probeUnavailable = true;
-    }
-    throw err;
-  }
-  let json;
-  try {
-    json = JSON.parse(response.body.toString('utf8'));
-  } catch (parseErr) {
-    const err = new Error('Proxy exit lookup JSON parsing failed: ' + parseErr.message);
-    err.code = 'probe-unavailable';
-    err.probeUnavailable = true;
-    throw err;
-  }
-  return normalizeIpWhoisAppResult(json);
+  return probeProxyProvider({
+    request: () => requestProxyHttpsThenHttp(config, 'ipwhois.app', '/json/'),
+    rateLimitProvider: 'ipwhois.app',
+    httpErrorPrefix: 'Proxy exit lookup returned HTTP ',
+    parse: parseProxyProviderJson(normalizeIpWhoisAppResult),
+  });
 }
 
 async function lookupProxyFreeIpApi(config) {
-  let response;
-  try {
-    response = await requestProxyHttps(config, 'freeipapi.com', '/api/json');
-  } catch (httpsErr) {
-    if (isProxyLinkError(httpsErr)) throw httpsErr;
-    response = await requestProxyHttp(config, 'freeipapi.com', '/api/json');
-  }
-  if (response.status !== 200) {
-    if (response.status === 429) {
-      recordProviderRateLimit('freeipapi.com');
-    }
-    const err = new Error('Proxy exit lookup returned HTTP ' + response.status);
-    err.httpStatus = response.status;
-    if (response.status === 429 || (response.status >= 400 && response.status !== 407)) {
-      err.code = 'probe-unavailable';
-      err.probeUnavailable = true;
-    }
-    throw err;
-  }
-  let json;
-  try {
-    json = JSON.parse(response.body.toString('utf8'));
-  } catch (parseErr) {
-    const err = new Error('Proxy exit lookup JSON parsing failed: ' + parseErr.message);
-    err.code = 'probe-unavailable';
-    err.probeUnavailable = true;
-    throw err;
-  }
-  return normalizeFreeIpApiResult(json);
+  return probeProxyProvider({
+    request: () => requestProxyHttpsThenHttp(config, 'freeipapi.com', '/api/json'),
+    rateLimitProvider: 'freeipapi.com',
+    httpErrorPrefix: 'Proxy exit lookup returned HTTP ',
+    parse: parseProxyProviderJson(normalizeFreeIpApiResult),
+  });
 }
 
 async function lookupProxyCloudflareTrace(config) {
-  const response = await requestProxyHttps(config, 'www.cloudflare.com', '/cdn-cgi/trace');
-  if (response.status !== 200) {
-    const err = new Error('Proxy edge probe returned HTTP ' + response.status);
-    err.httpStatus = response.status;
-    if (response.status === 429 || (response.status >= 400 && response.status !== 407)) {
-      err.code = 'probe-unavailable';
-      err.probeUnavailable = true;
-    }
-    throw err;
-  }
-  return parseCloudflareTrace(response.body.toString('utf8'));
+  return probeProxyProvider({
+    request: () => requestProxyHttps(config, 'www.cloudflare.com', '/cdn-cgi/trace'),
+    httpErrorPrefix: 'Proxy edge probe returned HTTP ',
+    parse: parseCloudflareTrace,
+  });
 }
 
 /**
@@ -2469,17 +2414,11 @@ function normalizeIfconfigMeResult(value) {
 }
 
 async function lookupProxyIfconfigMe(config) {
-  const response = await requestProxyHttps(config, 'ifconfig.me', '/ip');
-  if (response.status !== 200) {
-    const err = new Error('ifconfig.me proxy check returned HTTP ' + response.status);
-    err.httpStatus = response.status;
-    if (response.status === 429 || (response.status >= 400 && response.status !== 407)) {
-      err.code = 'probe-unavailable';
-      err.probeUnavailable = true;
-    }
-    throw err;
-  }
-  return normalizeIfconfigMeResult(response.body.toString('utf8'));
+  return probeProxyProvider({
+    request: () => requestProxyHttps(config, 'ifconfig.me', '/ip'),
+    httpErrorPrefix: 'ifconfig.me proxy check returned HTTP ',
+    parse: normalizeIfconfigMeResult,
+  });
 }
 
 async function probeProxyTunnel(config, hostname = 'www.google.com', port = 443) {

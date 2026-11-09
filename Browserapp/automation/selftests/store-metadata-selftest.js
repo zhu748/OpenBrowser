@@ -92,7 +92,15 @@ function makePackage({ withIcon = true } = {}) {
 
 // ---------- the host wiring ----------
 {
-  const source = fs.readFileSync(path.join(__dirname, '..', '../main.js'), 'utf8');
+  // The metadata pipeline was extracted from main.js into
+  // chrome-store-metadata.js: the behaviour assertions scan the module, and
+  // one wiring assertion keeps main.js tied to it.
+  const source = fs.readFileSync(path.join(__dirname, '..', '../chrome-store-metadata.js'), 'utf8');
+
+  check('the host loads the extracted store-metadata module', () => {
+    const hostSource = fs.readFileSync(path.join(__dirname, '..', '../main.js'), 'utf8');
+    assert.ok(/require\('\.\/chrome-store-metadata'\)/.test(hostSource), 'main.js does not load the module');
+  });
 
   check('the host reads the package with the in-memory reader', () => {
     assert.ok(/require\('\.\/automation\/crx-reader'\)/.test(source), 'reader is not required');
