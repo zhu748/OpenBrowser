@@ -11,6 +11,7 @@ const {
   findMacBinary,
 } = require('./resolve-host-dist');
 const { ensureHostRuntime } = require('./ensure-host-runtime');
+const { ensureKernelSeedForPackaging } = require('./fetch-kernels');
 const {
   findBundledWayfernKernel,
   findBundledChromeStable,
@@ -215,6 +216,7 @@ function appResourceExcludes() {
     'node_modules',
     'dist',
     '.git',
+    '.kernel-release-cache',
     'CODE_OVERVIEW.md',
     'bundled-kernels',
     'rust-core',
@@ -222,6 +224,29 @@ function appResourceExcludes() {
     '__pycache__',
     '.DS_Store',
   ]);
+}
+
+/**
+ * Kernel source transition (docs/kernel-externalization.md): make sure the
+ * integrated seed for this package's platform is material before anything
+ * copies it. Local (git-LFS) content wins; a checkout that only has LFS
+ * pointers auto-fetches from the kernel release
+ * (OPENBROWSER_KERNEL_AUTO_FETCH=0 disables; failures list both recovery
+ * commands). Linux packages use the Google Chrome Stable seed downloaded by
+ * prepare:linux-kernel and are not release-managed.
+ */
+async function ensurePackagingKernelSeeds() {
+  if (!bundleKernelVariantEnabled()) return;
+  const arch = String(packageArch || '').toLowerCase();
+  const isX64 = ['x86_64', 'x64', 'amd64'].includes(arch);
+  const isArm64 = ['arm64', 'aarch64'].includes(arch);
+  if (process.platform === 'win32' && isX64) {
+    await ensureKernelSeedForPackaging('windows-x64');
+  } else if (process.platform === 'darwin' && isX64) {
+    await ensureKernelSeedForPackaging('macos-x64');
+  } else if (process.platform === 'darwin' && isArm64) {
+    await ensureKernelSeedForPackaging('macos-arm64');
+  }
 }
 
 function pruneForeignKernelSeeds(resourceApp, platform = process.platform, arch = packageArch) {
@@ -827,17 +852,24 @@ function packageMac() {
 }
 
 if (require.main === module) {
-  if (process.platform === 'win32') packageWindows();
-  else if (process.platform === 'darwin') packageMac();
-  else if (process.platform === 'linux') packageLinux();
-  else {
-    console.error('当前平台暂不支持 package:portable：' + process.platform);
+  (async () => {
+    await ensurePackagingKernelSeeds();
+    if (process.platform === 'win32') packageWindows();
+    else if (process.platform === 'darwin') packageMac();
+    else if (process.platform === 'linux') packageLinux();
+    else {
+      console.error('当前平台暂不支持 package:portable：' + process.platform);
+      process.exit(1);
+    }
+  })().catch((error) => {
+    console.error('[package] ' + (error && error.message ? error.message : error));
     process.exit(1);
-  }
+  });
 }
 
 module.exports = {
   appResourceExcludes,
+  ensurePackagingKernelSeeds,
   isPackagingExcluded,
   copyRecursive,
   copyRustCore,

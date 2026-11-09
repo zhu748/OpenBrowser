@@ -25,6 +25,7 @@ const {
   isIntegratedKernelCdpReady,
   companionLibraryForKernelBinary,
 } = require('../automation/browser-kernel');
+const { ensureKernelSeedForPackaging } = require('./fetch-kernels');
 
 const appRoot = path.resolve(__dirname, '..');
 const kernelsRoot = path.join(appRoot, 'kernels');
@@ -75,10 +76,18 @@ function assertCdpReady(binary, label) {
   }
 }
 
-function main() {
+async function main() {
   const platform = platformKey();
   console.log(`[kernel] verify integrated seed for ${platform}`);
   console.log(`[kernel] layout root: ${kernelsRoot}`);
+
+  // Kernel source transition (docs/kernel-externalization.md): a fresh
+  // checkout can carry git-LFS pointers instead of kernel content. Make the
+  // seed material before verifying — local content wins, otherwise fetch
+  // from the kernel release (OPENBROWSER_KERNEL_AUTO_FETCH=0 disables; on
+  // failure the error lists both the release and `git lfs pull` recovery
+  // commands). linux-x64 seeds are downloaded by prepare:linux-kernel.
+  await ensureKernelSeedForPackaging(platform);
 
   if (platform === 'macos-x64') {
     const seed = resolveSeedDir('macos-x64');
@@ -133,9 +142,7 @@ function main() {
   throw new Error(`No integrated kernel policy for ${platform}`);
 }
 
-try {
-  main();
-} catch (error) {
+main().catch((error) => {
   console.error(`[kernel] ${error.message}`);
   process.exitCode = 1;
-}
+});

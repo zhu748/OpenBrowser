@@ -56,6 +56,8 @@
     "log:rpa": "node scripts/read-rpa-log.js",
     "prepare:bundled-kernel": "node scripts/prepare-bundled-kernel.js",
     "prepare:linux-kernel": "node scripts/install-linux-stable.js",
+    "kernels:fetch": "node scripts/fetch-kernels.js",
+    "kernels:status": "node scripts/fetch-kernels.js --status",
     "build:native": "node scripts/build-native.js",
     "package:portable": "node scripts/package-portable.js",
     "build:rustcore": "node scripts/build-rust-core.js",

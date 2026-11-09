@@ -64,6 +64,12 @@ jobs:
           cache: npm
           cache-dependency-path: Browserapp/package-lock.json
       - run: npm ci --include=dev --ignore-scripts
+      # Offline unit checks for the kernel-release fetch tooling (no network,
+      # no kernels needed): keeps scripts/fetch-kernels.js covered by the
+      # per-push gate. The real download path is exercised by the
+      # kernel-release / build-installers workflows.
+      - name: Kernel fetch tooling selftest
+        run: node scripts/fetch-kernels.js --selftest
       # Aggregate gate: scripts/selftest-all.js runs every dependency-free
       # selftest in one shot — a new selftest added to package.json's
       # suite list runs here automatically instead of waiting for someone to
