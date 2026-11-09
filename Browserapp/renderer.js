@@ -584,43 +584,6 @@ function displayProfileNumber(profile) {
   return String(positiveProfileNumber(profile?.number) || profile?.name || profile?.id || '');
 }
 
-/** 12-Color Precision Studio Jewel Palette — low-saturation, refined tech minerals engineered for obsidian dark and ceramic light */
-const JEWEL_PALETTE = [
-  // 0: Deep Slate Blue (深海板岩蓝 - 高雅冷灰蓝)
-  { id: 'sapphire', accent: '#6287a2', border: '#3b586e', glow: 'rgba(98,135,162,0.22)', dark1: '#0f1722', dark2: '#090e15', light1: '#f0f5fa', light2: '#e1ecf5', lightBorder: '#9ab8cf', lightText: '#3b586e' },
-  // 1: Muted Iris (柔和冷紫灰)
-  { id: 'amethyst', accent: '#8e7fa8', border: '#5f5077', glow: 'rgba(142,127,168,0.22)', dark1: '#16131f', dark2: '#0c0a12', light1: '#f7f5fa', light2: '#ece8f4', lightBorder: '#b9adc9', lightText: '#5f5077' },
-  // 2: Dusty Rose (烟熏冷玫瑰)
-  { id: 'rose', accent: '#a6727c', border: '#784650', glow: 'rgba(166,114,124,0.22)', dark1: '#1a1215', dark2: '#100a0d', light1: '#faf5f6', light2: '#f4e7e9', lightBorder: '#caa6ad', lightText: '#784650' },
-  // 3: Warm Ochre (沉稳赭石金)
-  { id: 'amber', accent: '#9e8156', border: '#6e5531', glow: 'rgba(158,129,86,0.22)', dark1: '#19150f', dark2: '#0f0c08', light1: '#faf8f4', light2: '#f4eedf', lightBorder: '#c6b493', lightText: '#6e5531' },
-  // 4: Sage Pine (冷杉灰绿)
-  { id: 'emerald', accent: '#5f8a75', border: '#3a5e4b', glow: 'rgba(95,138,117,0.22)', dark1: '#0e1813', dark2: '#080f0b', light1: '#f2f8f5', light2: '#e2efe8', lightBorder: '#99beac', lightText: '#3a5e4b' },
-  // 5: Glacial Cyan (极地冰川青灰)
-  { id: 'cyan', accent: '#588894', border: '#345c66', glow: 'rgba(88,136,148,0.22)', dark1: '#0e181c', dark2: '#080e12', light1: '#f1f7f9', light2: '#e0edf1', lightBorder: '#96b9c3', lightText: '#345c66' },
-  // 6: Deep Twilight (薄暮灰靛)
-  { id: 'indigo', accent: '#727ea1', border: '#475373', glow: 'rgba(114,126,161,0.22)', dark1: '#131622', dark2: '#0a0c14', light1: '#f3f5fa', light2: '#e5e9f4', lightBorder: '#aab2cb', lightText: '#475373' },
-  // 7: Sandstone Topaz (暗哑黄玉)
-  { id: 'topaz', accent: '#968858', border: '#695c33', glow: 'rgba(150,136,88,0.22)', dark1: '#18160f', dark2: '#0e0c08', light1: '#f9f8f3', light2: '#f2eedd', lightBorder: '#c3b894', lightText: '#695c33' },
-  // 8: Muted Teal (冷雾青碧)
-  { id: 'teal', accent: '#548782', border: '#325c58', glow: 'rgba(84,135,130,0.22)', dark1: '#0e1817', dark2: '#080e0e', light1: '#f2f8f7', light2: '#e1efed', lightBorder: '#95bcba', lightText: '#325c58' },
-  // 9: Muted Terracotta (暗珊瑚陶土)
-  { id: 'coral', accent: '#a16c68', border: '#73413d', glow: 'rgba(161,108,104,0.22)', dark1: '#1a1211', dark2: '#100a09', light1: '#faf5f5', light2: '#f5e8e7', lightBorder: '#c7a3a0', lightText: '#73413d' },
-  // 10: Heather Lavender (石楠微紫)
-  { id: 'violet', accent: '#97729e', border: '#6a4671', glow: 'rgba(151,114,158,0.22)', dark1: '#18121a', dark2: '#0f0a10', light1: '#f9f5fa', light2: '#f1e7f3', lightBorder: '#c1a6c7', lightText: '#6a4671' },
-  // 11: Mineral Slate (低饱和矿石冷灰)
-  { id: 'slate', accent: '#707e8f', border: '#465363', glow: 'rgba(112,126,143,0.22)', dark1: '#12161c', dark2: '#0a0d11', light1: '#f4f6f9', light2: '#e7ecf2', lightBorder: '#a9b5c4', lightText: '#465363' }
-];
-
-const ENV_ICON_PALETTE = JEWEL_PALETTE.map((item) => Object.assign([item.dark1, item.dark2], item));
-
-function envBadgeColors(profileOrNumber) {
-  const n = typeof profileOrNumber === 'object' && profileOrNumber !== null
-    ? positiveProfileNumber(profileOrNumber.number) || 0
-    : (parseInt(profileOrNumber, 10) || 0);
-  return ENV_ICON_PALETTE[Math.abs(n) % ENV_ICON_PALETTE.length];
-}
-
 /** Shared square mark size — matches 环境管理 env-badge (CSS --ui-mark-size). */
 const UI_MARK_SIZE = 34;
 
