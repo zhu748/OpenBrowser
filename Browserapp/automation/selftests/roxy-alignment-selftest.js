@@ -139,6 +139,48 @@ check('引擎启动守护（网络不通/IP 变化/IP 国家变化）已接线',
   assert.match(startPage, /if \(options\.force\) throw error/, 'force 模式需上抛检测失败');
 });
 
+check('白名单引擎执行 / 多账号行 / 批量导出与测试代理已实现', () => {
+  const rs = read('engine/runtime-settings.js');
+  assert.match(rs, /parseAllowHosts/, '白名单解析');
+  assert.match(rs, /Fetch\.enable/, 'Fetch 拦截启用');
+  assert.match(rs, /BlockedByClient/, '名单外请求阻断');
+  assert.match(rs, /syncAllowIntercepts\(profile, tabs\)/, '稳态早退前同步拦截连接');
+  const html = read('index.html');
+  for (const marker of ['id="editor-add-account"', 'id="editor-extra-accounts"', 'id="batch-export"', 'id="test-all-proxies"', 'data-i18n-placeholder="editor.widthPh"']) {
+    assert.ok(html.includes(marker), `index.html 缺少 ${marker}`);
+  }
+  const editor = read('ui/ui-editor.js');
+  for (const fn of ['buildExtraAccountRow', 'renderExtraAccounts', 'collectExtraAccounts']) {
+    assert.ok(editor.includes(`function ${fn}(`), `ui-editor 缺少 ${fn}`);
+  }
+  const withAccounts = sanitizeProfile({
+    id: 'env-acc1', name: 'a',
+    platform: { type: 'facebook', username: 'u', password: 'p', accounts: [{ username: 'b', password: 'q', totpSecret: 'k' }, { username: '' }] },
+  });
+  assert.strictEqual(withAccounts.platform.accounts.length, 2);
+  assert.strictEqual(withAccounts.platform.accounts[0].password, 'q');
+  assert.strictEqual(withAccounts.platform.accounts[1].username, '');
+  const ua = require('../../automation/user-agent');
+  const win7 = ua.buildUaProfile({ os: 'windows', osVersion: '7' });
+  assert.ok(/Windows NT 6\.1/.test(win7.userAgent), 'osVersion=7 需产出 NT 6.1 UA');
+  assert.strictEqual(win7.metadata.platformVersion, '1.0.0');
+  const win11 = ua.buildUaProfile({ os: 'windows', osVersion: '11' });
+  assert.strictEqual(win11.metadata.platformVersion, '15.0.0');
+  const mac15 = ua.buildUaProfile({ os: 'macos', osVersion: '15' });
+  assert.strictEqual(mac15.metadata.platformVersion, '15.0.0');
+  const noOs = ua.buildUaProfile({ os: 'windows' });
+  assert.strictEqual(noOs.metadata.platformVersion, '15.0.0', '未选版本回退 preset 默认');
+  const renderer = read('renderer.js');
+  for (const fn of ['sanitizeProfileForExport']) assert.ok(renderer.includes(`function ${fn}(`), `renderer 缺少 ${fn}`);
+  assert.ok(renderer.includes("addEventListener('click', async () =>") && renderer.includes('testProfileProxy'), '测试全部代理需走 ops.testProfileProxy');
+  const table = read('i18n.js');
+  for (const key of ['profiles.batchExport', 'profiles.testAllProxy', 'profiles.exportDone', 'profiles.testAllNone', 'editor.addAccount', 'editor.accUser', 'editor.auto', 'editor.widthPh']) {
+    const count = table.split(`'${key}':`).length - 1;
+    assert.ok(count >= 2, `词条 ${key} 需同时存在于 zh 与 en 表（当前 ${count}）`);
+  }
+  assert.ok(table.includes('"保持最新": "Keep latest"'), 'en 兜底映射缺「保持最新」');
+});
+
 check('i18n 中英词条覆盖全部新增键', () => {
   const table = read('i18n.js');
   const keys = [

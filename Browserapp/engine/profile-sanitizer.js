@@ -102,6 +102,14 @@ function sanitizeProfile(value) {
       username: String(platformValue.username || "").slice(0, 200),
       password: String(platformValue.password || "").slice(0, 500),
       totpSecret: String(platformValue.totpSecret || platformValue.otp || "").slice(0, 200),
+      // Roxy 对齐：多账号行（首账号即主账号字段，这里只做上限与字段清洗）
+      accounts: Array.isArray(platformValue.accounts)
+        ? platformValue.accounts.slice(0, 20).map((acc) => ({
+          username: String(acc?.username || "").slice(0, 200),
+          password: String(acc?.password || "").slice(0, 500),
+          totpSecret: String(acc?.totpSecret || acc?.otp || "").slice(0, 200),
+        }))
+        : [],
     },
     proxyMeta: {
       proxyId,

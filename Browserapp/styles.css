@@ -227,3 +227,15 @@
 .fav-star{color:#f5a623}
 .list-tab .list-tab-count{margin-left:5px;color:var(--muted);font-weight:400;font-size:11px}
 .list-tab.active .list-tab-count{color:var(--blue)}
+/* Roxy 对齐：三联开关在窄列/英文长词下的溢出修复 + 多账号行 */
+.form-three .labeled-block{min-width:0;display:flex;flex-direction:column;gap:8px}
+.form-three .labeled-block .labeled-block-title{margin:0}
+.form-three .labeled-block .segmented{width:100%;margin-bottom:0}
+.form-three .labeled-block .segmented label{flex:1 1 0;min-width:0;text-align:center;padding:8px 4px;white-space:nowrap}
+.labeled-block .segmented{margin-bottom:0}
+.labeled-block .field-inline-group{align-items:center}
+.field-inline-group{flex-wrap:wrap}
+#editor-extra-accounts{display:grid;gap:12px;margin:2px 0 6px}
+.acc-row label.acc-cell{position:relative}
+.acc-row .acc-2fa{padding-right:74px}
+.acc-row .acc-remove{position:absolute;right:0;bottom:0;height:37px;padding:0 12px;border:1px solid var(--border);border-radius:7px;background:#fff;color:#c43a49;font-size:12px;cursor:pointer}

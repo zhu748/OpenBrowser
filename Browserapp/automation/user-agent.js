@@ -148,18 +148,49 @@ function normalizeChromeFull(major, full) {
   return `${m}.0.0.0`;
 }
 
+// Roxy 4.1.0 系统/内核版本下拉：osVersion 参与 UA token 与 Client Hints platformVersion。
+// 返回 null 表示该版本没有专属覆盖（沿用 OS preset 默认值）。
+function osVersionUaAdjustments(preset, osVersion) {
+  const v = String(osVersion || "").trim();
+  if (!v || !preset) return null;
+  if (preset.id === "windows") {
+    const map = {
+      "7": { uaToken: "Windows NT 6.1; Win64; x64", chPlatformVersion: "1.0.0" },
+      "8": { uaToken: "Windows NT 6.2; Win64; x64", chPlatformVersion: "2.0.0" },
+      "8.1": { uaToken: "Windows NT 6.3; Win64; x64", chPlatformVersion: "3.0.0" },
+      "10": { uaToken: "Windows NT 10.0; Win64; x64", chPlatformVersion: "10.0.0" },
+      "11": { uaToken: "Windows NT 10.0; Win64; x64", chPlatformVersion: "15.0.0" },
+    };
+    return map[v] || null;
+  }
+  if (preset.id === "macos" || preset.id === "macos_arm") {
+    if (!/^\d+(\.\d+)*$/.test(v)) return null;
+    return { chPlatformVersion: v === "10.15" ? "10.15.7" : `${v}.0.0` };
+  }
+  if (preset.id === "linux") {
+    const map = { "ubuntu 24.04": "6.8.0", "ubuntu 22.04": "6.5.0", "debian 12": "6.1.0", "fedora 40": "6.8.0" };
+    const hit = map[v.toLowerCase()];
+    return hit ? { chPlatformVersion: hit } : null;
+  }
+  if (preset.id === "android" && /^\d+$/.test(v)) {
+    return { uaAndroidVersion: v, chPlatformVersion: `${v}.0.0` };
+  }
+  return null;
+}
+
 /**
  * Build a complete UA string for desktop or mobile Chrome.
  */
 function buildUserAgentString(options = {}) {
   const osKey = OS_PRESETS[options.os] ? options.os : (options.os === "mac" ? "macos" : detectHostOs());
   const preset = OS_PRESETS[osKey] || OS_PRESETS.windows;
+  const osAdj = osVersionUaAdjustments(preset, options.osVersion);
   const major = Number(options.chromeMajor || options.major || 131) || 131;
   const full = normalizeChromeFull(major, options.chromeFull || options.fullVersion);
   const chromeToken = options.reduced === false ? full : `${major}.0.0.0`;
 
   if (preset.id === "android") {
-    const version = options.androidVersion || options.version || "14";
+    const version = options.androidVersion || osAdj?.uaAndroidVersion || options.version || "14";
     const model = options.model || (options.reduced !== false ? "K" : "SM-S918B");
     return `Mozilla/5.0 (Linux; Android ${version}; ${model}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeToken} Mobile Safari/537.36`;
   }
@@ -167,7 +198,7 @@ function buildUserAgentString(options = {}) {
     const version = String(options.iosVersion || options.version || "18_0").replace(/\./g, "_");
     return `Mozilla/5.0 (iPhone; CPU iPhone OS ${version} like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/${chromeToken} Mobile/15E148 Safari/604.1`;
   }
-  return `Mozilla/5.0 (${preset.uaToken}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeToken} Safari/537.36`;
+  return `Mozilla/5.0 (${osAdj?.uaToken || preset.uaToken}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeToken} Safari/537.36`;
 }
 
 /**
@@ -188,8 +219,10 @@ function buildUserAgentMetadata(ua, overrides = {}) {
     : buildFullVersionList(major, fullVersion);
 
   const platform = overrides.platform || overrides.chPlatform || preset.chPlatform;
+  const osAdj = osVersionUaAdjustments(preset, overrides.osVersion);
   let platformVersion = overrides.platform_version
     || overrides.platformVersion
+    || osAdj?.chPlatformVersion
     || preset.chPlatformVersion;
   let model = overrides.model != null ? String(overrides.model) : (preset.model || "");
 
@@ -256,6 +289,7 @@ function buildUaProfile(options = {}) {
       model: options.model,
       androidVersion: options.androidVersion,
       version: options.version,
+      osVersion: options.osVersion,
     });
   }
 

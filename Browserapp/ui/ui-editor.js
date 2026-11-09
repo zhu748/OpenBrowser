@@ -67,6 +67,14 @@ function normalizeProfileSettings(profile) {
       username: String(platform.username || ''),
       password: String(platform.password || ''),
       totpSecret: String(platform.totpSecret || platform.otp || ''),
+      // Roxy 对齐：多账号行（首账号 = 上方主账号字段，其余来自「添加账号」行）
+      accounts: Array.isArray(platform.accounts)
+        ? platform.accounts.slice(0, 20).map((acc) => ({
+          username: String(acc?.username || ''),
+          password: String(acc?.password || ''),
+          totpSecret: String(acc?.totpSecret || acc?.otp || ''),
+        }))
+        : [],
     },
     proxyMeta: {
       proxyId,
@@ -491,6 +499,7 @@ function editorDraft(strict = true) {
       username: ($('#editor-platform-user')?.value || '').trim(),
       password: $('#editor-platform-pass')?.value || '',
       totpSecret: ($('#editor-platform-2fa')?.value || '').trim(),
+      accounts: collectExtraAccounts(),
     },
     proxyMeta: {
       proxyId: selectedProxyId,
@@ -669,7 +678,7 @@ function fillEditorVersionSelects() {
     osSelect.replaceChildren();
     const auto = document.createElement('option');
     auto.value = '';
-    auto.textContent = tx('自动');
+    auto.textContent = t('editor.auto');
     osSelect.appendChild(auto);
     for (const v of versions) {
       const opt = document.createElement('option');
@@ -748,9 +757,66 @@ function renderDirectBanner() {
     target.textContent = tx('尚未检测');
   }
 }
+// ===== Roxy 对齐：平台账号多账号行（账号与会话 → 添加账号/移除） =====
+function buildExtraAccountRow(acc = {}) {
+  const row = document.createElement('div');
+  row.className = 'form-three acc-row';
+  row.dataset.accRow = '1';
+  const userLabel = document.createElement('label');
+  const passLabel = document.createElement('label');
+  const totpLabel = document.createElement('label');
+  totpLabel.className = 'acc-cell';
+  const userInput = document.createElement('input');
+  userInput.className = 'acc-user';
+  userInput.autocomplete = 'off';
+  const passInput = document.createElement('input');
+  passInput.className = 'acc-pass';
+  passInput.type = 'password';
+  passInput.autocomplete = 'new-password';
+  const totpInput = document.createElement('input');
+  totpInput.className = 'acc-2fa';
+  totpInput.autocomplete = 'off';
+  userLabel.append(t('editor.accUser'), userInput);
+  passLabel.append(t('editor.accPass'), passInput);
+  totpLabel.append(t('editor.acc2fa'), totpInput);
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.className = 'acc-remove';
+  remove.textContent = t('editor.removeAccount');
+  remove.addEventListener('click', () => row.remove());
+  totpLabel.append(remove);
+  userInput.value = String(acc.username || '');
+  passInput.value = String(acc.password || '');
+  totpInput.value = String(acc.totpSecret || '');
+  row.append(userLabel, passLabel, totpLabel);
+  return row;
+}
+function renderExtraAccounts(accounts) {
+  const wrap = $('#editor-extra-accounts');
+  if (!wrap) return;
+  wrap.replaceChildren();
+  for (const acc of (Array.isArray(accounts) ? accounts.slice(0, 19) : [])) {
+    if (!acc?.username && !acc?.password && !acc?.totpSecret) continue;
+    wrap.append(buildExtraAccountRow(acc));
+  }
+}
+function collectExtraAccounts() {
+  const out = [];
+  document.querySelectorAll('#editor-extra-accounts [data-acc-row]').forEach((row) => {
+    const username = (row.querySelector('.acc-user')?.value || '').trim();
+    const password = row.querySelector('.acc-pass')?.value || '';
+    const totpSecret = (row.querySelector('.acc-2fa')?.value || '').trim();
+    if (username || password || totpSecret) out.push({ username, password, totpSecret });
+  });
+  return out;
+}
+
 // 一次性接线：九宫格、分段开关、ID 复制、横幅刷新、教程关闭、右栏一键随机
 function wireEditorAlignmentControls() {
   buildEditorPosGrid();
+  $('#editor-add-account')?.addEventListener('click', () => {
+    $('#editor-extra-accounts')?.append(buildExtraAccountRow());
+  });
   $('#editor-os')?.addEventListener('change', fillEditorVersionSelects);
   $('#editor-engine')?.addEventListener('change', fillEditorVersionSelects);
   $('#editor-id-copy')?.addEventListener('click', async () => {
@@ -867,6 +933,7 @@ function openProfileEditor(id) {
   editorSet('#editor-platform-user', profile.platform?.username || '');
   editorSet('#editor-platform-pass', profile.platform?.password || '');
   editorSet('#editor-platform-2fa', profile.platform?.totpSecret || '');
+  renderExtraAccounts(profile.platform?.accounts);
   fillGroupSelect($('#editor-group'), profile.groupId || UNGROUPED_ID, { includeUngrouped: true });
   const linkedProxyId = profileProxyId(profile);
   renderProxyLibrarySelect($('#editor-proxy-library'), linkedProxyId);

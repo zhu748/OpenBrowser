@@ -2761,8 +2761,8 @@ function exportProfile(id) {
   const profile = ui.profiles.find((item) => item.id === id);
   if (!profile) return;
   closeRowMoreMenu();
-  // 安全：导出配置但不导出平台密码 / 2FA 密钥
-  const sanitized = { ...profile, platform: { ...(profile.platform || {}), password: '', totpSecret: '' } };
+  // 安全：导出配置但不导出平台密码 / 2FA 密钥（含多账号行）
+  const sanitized = sanitizeProfileForExport(profile);
   const blob = new Blob([JSON.stringify(sanitized, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -2917,7 +2917,7 @@ function renderProfiles() {
   const inTrash = activeGroupFilter === 'trash';
   const emptyBtn = $('#empty-trash-btn');
   if (emptyBtn) emptyBtn.hidden = !inTrash;
-  const toolbarLeftButtons = ['#create-profile', '#batch-add', '#batch-import', '#renumber-profiles'];
+  const toolbarLeftButtons = ['#create-profile', '#batch-add', '#batch-import', '#renumber-profiles', '#batch-export', '#test-all-proxies'];
   for (const sel of toolbarLeftButtons) {
     const el = $(sel);
     if (el) el.hidden = inTrash;
@@ -5040,6 +5040,56 @@ $('#batch-import-file').addEventListener('change', async (event) => {
   event.target.value = '';
 });
 
+
+// Roxy 对齐：批量导出窗口（脱敏密码/2FA）与 测试全部代理IP
+function sanitizeProfileForExport(profile) {
+  return {
+    ...profile,
+    platform: {
+      ...(profile.platform || {}),
+      password: '',
+      totpSecret: '',
+      accounts: Array.isArray(profile.platform?.accounts)
+        ? profile.platform.accounts.map((acc) => ({ ...acc, password: '', totpSecret: '' }))
+        : [],
+    },
+  };
+}
+$('#batch-export')?.addEventListener('click', () => {
+  const source = selectedProfiles.size ? ui.profiles.filter((p) => selectedProfiles.has(p.id)) : ui.profiles.filter((p) => !p.trashed);
+  const items = source.map(sanitizeProfileForExport);
+  if (!items.length) return toast(t('profiles.exportNone'));
+  const blob = new Blob([JSON.stringify(items, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `profiles-export-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  toast(t('profiles.exportDone', { n: items.length }));
+});
+$('#test-all-proxies')?.addEventListener('click', async () => {
+  const targets = ui.profiles.filter((p) => !p.trashed && p.networkMode === 'proxy');
+  if (!targets.length) return toast(t('profiles.testAllNone'));
+  toast(t('profiles.testAllStart'));
+  let ok = 0; let bad = 0; let index = 0;
+  const worker = async () => {
+    while (index < targets.length) {
+      const profile = targets[index++];
+      try {
+        const result = await window.ops.testProfileProxy(profile);
+        if (result?.ip) {
+          ok += 1;
+          profile.exitIp = String(result.ip).slice(0, 80);
+          if (result.countryCode) profile.exitCountryCode = String(result.countryCode).slice(0, 4);
+          profile.exitCheckedAt = new Date().toISOString();
+        } else bad += 1;
+      } catch (_) { bad += 1; }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(4, targets.length) }, worker));
+  save(); invalidateViewCache('profiles'); renderProfiles();
+  toast(t('profiles.testAllDone', { ok, bad }));
+});
 
 $('#batch-update').addEventListener('click', () => {
   if (!selectedProfiles.size) return toast(tx('请先选择环境'));

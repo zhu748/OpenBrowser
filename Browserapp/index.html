@@ -73,7 +73,7 @@
           </div>
           <div class="group-chip-row" id="profile-group-chips"></div>
           <div class="toolbar profile-primary-toolbar">
-            <div class="toolbar-left"><button class="primary" id="create-profile"><i data-lucide="plus"></i><span data-i18n="profiles.create">新建环境</span></button><button class="outline" id="batch-add"><i data-lucide="copy-plus"></i><span data-i18n="profiles.batchAdd">批量新增</span></button><button class="outline" id="batch-import"><i data-lucide="file-down"></i><span data-i18n="profiles.batchImport">批量导入</span></button><input id="batch-import-file" type="file" accept=".csv,.json" hidden><button class="outline" id="renumber-profiles" type="button" title="将所有环境按列表顺序重新编号为 1..N" data-i18n-title="profiles.renumberTitle"><i data-lucide="hash"></i><span data-i18n="profiles.renumber">重排编号</span></button><button class="outline danger" id="empty-trash-btn" type="button" hidden><i data-lucide="trash"></i><span data-i18n="trash.empty">清空回收站</span></button></div>
+            <div class="toolbar-left"><button class="primary" id="create-profile"><i data-lucide="plus"></i><span data-i18n="profiles.create">新建环境</span></button><button class="outline" id="batch-add"><i data-lucide="copy-plus"></i><span data-i18n="profiles.batchAdd">批量新增</span></button><button class="outline" id="batch-import"><i data-lucide="file-down"></i><span data-i18n="profiles.batchImport">批量导入</span></button><input id="batch-import-file" type="file" accept=".csv,.json" hidden><button class="outline" id="renumber-profiles" type="button" title="将所有环境按列表顺序重新编号为 1..N" data-i18n-title="profiles.renumberTitle"><i data-lucide="hash"></i><span data-i18n="profiles.renumber">重排编号</span></button><button class="outline" id="batch-export" type="button" title="导出当前选中/筛选的环境配置（不含密码与2FA密钥）" data-i18n-title="profiles.exportTitle"><i data-lucide="file-up"></i><span data-i18n="profiles.batchExport">批量导出</span></button><button class="outline" id="test-all-proxies" type="button" title="逐个检测所有环境的代理IP可用性"><i data-lucide="radar"></i><span data-i18n="profiles.testAllProxy">测试全部代理IP</span></button><button class="outline danger" id="empty-trash-btn" type="button" hidden><i data-lucide="trash"></i><span data-i18n="trash.empty">清空回收站</span></button></div>
             <label class="search"><i data-lucide="search"></i><input id="profile-search" placeholder="搜索环境 / 分组 / 标签" data-i18n-placeholder="profiles.search"></label>
           </div>
           <div class="profile-selection-bar" id="profile-selection-bar" hidden>
@@ -141,7 +141,7 @@
                     <div class="editor-card-desc">选择平台及默认打开的页面</div>
                   </div>
                   <div class="form-two platform-row">
-                    <label class="platform-select-label">* 业务平台
+                    <label class="platform-select-label">* <span data-i18n="editor.platformField">业务平台</span>
                       <select id="editor-platform-type" class="platform-select">
                         <option value="blank" data-url="">空白页</option>
                         <option value="other" data-url="" selected>其他平台</option>
@@ -225,6 +225,10 @@
                     <label>用户名 / 邮箱<input id="editor-platform-user" autocomplete="off" placeholder="平台登录用户名"></label>
                     <label>密码<input id="editor-platform-pass" type="password" autocomplete="new-password" placeholder="平台登录密码"></label>
                     <label>2FA 密钥 (TOTP)<input id="editor-platform-2fa" autocomplete="off" placeholder="双重验证密钥（可选）"></label>
+                  </div>
+                  <div id="editor-extra-accounts"></div>
+                  <div class="storage-actions" style="margin:2px 0 8px">
+                    <button class="outline" type="button" id="editor-add-account"><i data-lucide="user-plus"></i><span data-i18n="editor.addAccount">添加账号</span></button>
                   </div>
                   <label><span data-i18n="editor.cookies">Cookies
                     </span><textarea id="editor-cookies" rows="4" placeholder="选填&#10;支持格式: JSON、Netscape、Name=Value&#10;Name=Value 未写 domain 时，将按行从平台账号的网址自动填充" data-i18n-placeholder="editor.cookiesPh"></textarea>
@@ -500,8 +504,8 @@
                     <label>视口分辨率
                       <div class="field-inline-group">
                         <select id="editor-resolution"><option value="real">跟随系统</option><option value="1280x820">1280 × 820</option><option value="1366x768">1366 × 768</option><option value="1440x900">1440 × 900</option><option value="1920x1080">1920 × 1080</option><option value="custom">自定义</option></select>
-                        <input id="editor-width" type="number" min="640" max="7680" placeholder="宽" style="max-width:80px">
-                        <input id="editor-height" type="number" min="480" max="4320" placeholder="高" style="max-width:80px">
+                        <input id="editor-width" type="number" min="640" max="7680" placeholder="宽" data-i18n-placeholder="editor.widthPh" style="max-width:80px">
+                        <input id="editor-height" type="number" min="480" max="4320" placeholder="高" data-i18n-placeholder="editor.heightPh" style="max-width:80px">
                       </div>
                     </label>
                     <label>字体指纹
@@ -672,7 +676,7 @@
                 <h3>偏好设置</h3>
                 <div class="advanced-card">
                   <strong>云备份</strong>
-                  <p class="network-mode-hint">全局网盘在「本地设置 → 云同步」配置；此处仅控制<strong>本环境</strong>是否参与。</p>
+                  <p class="network-mode-hint" data-i18n="editor.cloudBackupScopeHint">全局网盘在「本地设置 → 云同步」配置；此处仅控制本环境是否参与。</p>
                   <label class="check-row"><input id="editor-cloud-backup" type="checkbox"> 云备份 — 开启后该环境参与云端同步</label>
                   <label class="check-row"><input id="editor-sync-cookies-close" type="checkbox" checked> 每次关闭浏览器进行 Cookies 备份（多设备切换推荐）</label>
                   <label class="check-row"><input id="editor-sync-idb" type="checkbox"> 同步 IndexedDB（部分站点用其辅助 Cookie）</label>

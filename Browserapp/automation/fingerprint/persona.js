@@ -179,6 +179,17 @@ function buildFingerprint(profile = {}) {
     }
   }
 
+  // Roxy 对齐：编辑器「系统版本」下拉（profile.osVersion）参与 UA token 与
+  // Client Hints platformVersion 生成；未选择时保持原有随机 UA 不变。
+  if (String(profile.osVersion || '').trim()) {
+    uaProfile = buildUaProfile({
+      os: uaProfile.os || parseOsFromUa(uaProfile.userAgent),
+      chromeMajor: uaProfile.chromeMajor,
+      ua_full_version: uaProfile.chromeFull,
+      osVersion: String(profile.osVersion).trim(),
+    });
+  }
+
   const parsedOsForFp = parseOsFromUa(uaProfile.userAgent);
   const detectedMobileOs = (uaProfile.os === "android" || parsedOsForFp === "android") ? "android" : ((uaProfile.os === "ios" || parsedOsForFp === "ios") ? "ios" : null);
   let uaOs = detectedMobileOs || desktopOs(uaProfile.os) || desktopOs(parsedOsForFp) || "windows";

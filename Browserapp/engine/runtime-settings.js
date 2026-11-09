@@ -14,6 +14,89 @@ const { sanitizeUrlForLog } = require('../automation/log-sanitizer');
 const { buildPortScanProtectionScript } = require('../automation/port-scan-protection');
 const { fingerprintConfigHash, isEphemeralDocumentUrl } = require('./fingerprint-injection');
 
+// ===== Roxy 对齐：网址访问白名单（Fetch 反选拦截） =====
+// advanced.allowUrls 非空时：名单外的 http(s) 请求一律 Fetch.failRequest(BlockedByClient)。
+// 每个标签页保持一条 PersistentConnection；白名单签名变化才重建，关闭/禁用即拆除。
+const urlAllowIntercepts = new Map(); // `${profileId}:${tabId}` -> { conn, signature }
+function parseAllowHosts(raw) {
+  return String(raw || '')
+    .split(/[\n,]+/)
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean)
+    .map((s) => s.replace(/^[a-z][a-z0-9+.-]*:\/\//, '').split('/')[0].trim())
+    .filter(Boolean)
+    .slice(0, 200);
+}
+function hostAllowedByAllowlist(hostname, hosts) {
+  for (const host of hosts) {
+    if (host.startsWith('*.')) {
+      const bare = host.slice(2);
+      if (hostname === bare || hostname.endsWith('.' + bare)) return true;
+    } else if (hostname === host || hostname.endsWith('.' + host)) {
+      return true;
+    }
+  }
+  return false;
+}
+function teardownAllowIntercept(key) {
+  const entry = urlAllowIntercepts.get(key);
+  if (!entry) return;
+  urlAllowIntercepts.delete(key);
+  try { entry.conn?.close(); } catch (_) {}
+}
+async function ensureAllowIntercept(profileId, tab, allowHosts) {
+  if (!tab?.webSocketDebuggerUrl) return;
+  const key = `${profileId}:${tab.id}`;
+  const signature = allowHosts.join('|');
+  const existing = urlAllowIntercepts.get(key);
+  if (existing && existing.signature === signature) return;
+  teardownAllowIntercept(key);
+  try {
+    const conn = new cdp.PersistentConnection(tab.webSocketDebuggerUrl, {
+      onEvent: (message) => {
+        if (message?.method !== 'Fetch.requestPaused') return;
+        const requestId = message.params?.requestId;
+        if (!requestId) return;
+        const url = String(message.params?.request?.url || '');
+        // 非 http(s)（chrome://、扩展、devtools 等）与启动页一律放行
+        let allowed = !/^https?:/i.test(url) || isEphemeralDocumentUrl(url);
+        if (!allowed) {
+          let hostname = '';
+          try { hostname = new URL(url).hostname.toLowerCase(); } catch (_) {}
+          allowed = hostAllowedByAllowlist(hostname, allowHosts);
+        }
+        const method = allowed ? 'Fetch.continueRequest' : 'Fetch.failRequest';
+        const params = allowed ? { requestId } : { requestId, errorReason: 'BlockedByClient' };
+        Promise.resolve(conn.command(method, params, { timeout: 4000 })).catch(() => {});
+      },
+      onDisconnect: () => urlAllowIntercepts.delete(key),
+    });
+    await conn.open();
+    await conn.command('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] }, { timeout: 4000 });
+    urlAllowIntercepts.set(key, { conn, signature });
+  } catch (_) {
+    teardownAllowIntercept(key);
+  }
+}
+function syncAllowIntercepts(profile, tabs) {
+  const allowHosts = parseAllowHosts(profile?.advanced?.allowUrls);
+  const prefix = `${profile?.id || ''}:`;
+  if (!allowHosts.length) {
+    for (const key of [...urlAllowIntercepts.keys()]) {
+      if (key.startsWith(prefix)) teardownAllowIntercept(key);
+    }
+    return;
+  }
+  const liveKeys = new Set();
+  for (const tab of tabs) {
+    liveKeys.add(`${profile.id}:${tab.id}`);
+    ensureAllowIntercept(profile.id, tab, allowHosts).catch(() => {});
+  }
+  for (const key of [...urlAllowIntercepts.keys()]) {
+    if (key.startsWith(prefix) && !liveKeys.has(key)) teardownAllowIntercept(key);
+  }
+}
+
 module.exports = {
   async applyRuntimeSettings(port, profile, fingerprint = null, options = {}) {
     const phase = String(options.phase || 'applyRuntimeSettings');
@@ -39,6 +122,8 @@ module.exports = {
     const configChanged = Boolean(options.appliedFingerprintHash)
       && options.appliedFingerprintHash !== fpHash();
     if (configChanged) applied.clear();
+    // Roxy 对齐：网址访问白名单 —— 在稳态早退之前同步拦截连接（含拆除失效标签页的连接）
+    syncAllowIntercepts(profile, tabs);
     const blocked = [];
     if (profile.advanced.blockVideo) blocked.push('*.mp4', '*.webm', '*.m3u8', '*.mov', '*.avi');
     const customBlock = String(profile.advanced.blockUrls || '')
