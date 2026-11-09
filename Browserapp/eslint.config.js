@@ -63,6 +63,7 @@ module.exports = [
         appCenterTab: 'writable',
         appCenterData: 'writable',
         proxyLibrary: 'writable',
+        visibleProxies: 'writable',
         renderProfiles: 'writable',
         renderProxies: 'writable',
         refreshProxies: 'writable',

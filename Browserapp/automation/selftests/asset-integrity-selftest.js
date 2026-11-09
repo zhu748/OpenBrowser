@@ -18,6 +18,7 @@ const {
   listFiles,
   toPosix,
   verifyManifestSeal,
+  sealManifest,
   MANIFEST_FILENAME,
 } = require('../asset-integrity');
 
@@ -323,6 +324,33 @@ const flush = () => new Promise((r) => setTimeout(r, 20));
     assert.strictEqual(verifyManifestSeal(await readManifest(root), root), 'invalid', 'bad seal detected');
     const outcome = await ensureManifest(root);
     assert.strictEqual(outcome.status, 'sealed-invalid', 'never silently rebuilt');
+  });
+
+  await checkAsync('v1-sealed manifest (pre-fix key) verifies and migrates to v2', async () => {
+    const root = await makeDir({ 'kernel.bin': 'payload' });
+    const manifest = await buildManifest(root, { hash: true });
+    // Seal with the buggy v1 derivation (os.homedir etc. as function objects).
+    const salt = path.basename(root);
+    const v1Sealed = {
+      ...manifest,
+      hmac: sealManifest(manifest, salt, { legacyKey: true }),
+    };
+    await fsp.writeFile(path.join(root, MANIFEST_FILENAME), JSON.stringify(v1Sealed));
+    assert.strictEqual(verifyManifestSeal(await readManifest(root), root), 'legacy-key',
+      'v1 seal is recognised as the pre-fix key, not tampering');
+    const outcome = await ensureManifest(root);
+    assert.strictEqual(outcome.status, 'ok', 'clean v1-sealed tree still verifies');
+    assert.strictEqual(outcome.upgraded, true, 'and is silently re-sealed');
+    const stored = await readManifest(root);
+    assert.strictEqual(verifyManifestSeal(stored, root), 'valid', 're-sealed with the v2 key');
+    assert.notStrictEqual(stored.hmac, v1Sealed.hmac, 'seal actually changed');
+  });
+
+  await checkAsync('v2 seal differs from v1 seal on the same manifest', async () => {
+    const manifest = { root: '/x', files: [{ filePath: 'a', mtimeMs: 1, size: 1 }] };
+    const v1 = sealManifest(manifest, 'salt', { legacyKey: true });
+    const v2 = sealManifest(manifest, 'salt');
+    assert.notStrictEqual(v1, v2, 'the two derivations must not collide');
   });
 
   // ---- report ----

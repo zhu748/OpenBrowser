@@ -75,19 +75,26 @@ module.exports = {
   },
   isStartPageUrl(url) {
     if (this.startPageServer?.isStartPageUrl?.(url)) return true;
-    const s = String(url || '').toLowerCase();
+    const raw = String(url || '');
+    const s = raw.toLowerCase();
     // Fallback while the session server is not up (unit harnesses, headless
-    // selftests, first paint before ensureStartPage). Only exact page filenames
-    // and the start-server port range qualify: the previous loose
-    // `openbrowser-start` / `openbrowser-native` substring matches let
-    // third-party URLs containing those words be treated as internal start
-    // pages (audited as a reload/mirror hazard). The bare
-    // `openbrowser-start-page` marker was tightened to the full filename for
-    // the same reason: it is a meta-tag name in the page template, never a
-    // generated URL, so `evil.test/openbrowser-start-page-scam` must not match.
-    return s.includes('openbrowser-start.html')
-      || s.includes('openbrowser-start-page.html')
-      || /https?:\/\/127\.0\.0\.1:5032[6-9]\/?/.test(s);
+    // selftests, first paint before ensureStartPage). The fallback matches
+    // only URLs that this engine itself could have produced:
+    //   - the file:// start page written into the profile root (openbrowser-start.html);
+    //   - the start-page server's 127.0.0.1:50326-50329 loopback ports
+    //     (any path) — the same range the live server registers on.
+    // A plain substring match let third-party URLs containing those file
+    // names/words be treated as internal start pages (reload/mirror hazard).
+    if (s.startsWith('file://')) {
+      try {
+        const u = new URL(raw);
+        const name = decodeURIComponent(u.pathname.replace(/\/+$/, '')).split('/').pop();
+        return name === 'openbrowser-start.html' || name === 'openbrowser-start-page.html';
+      } catch (_) {
+        return false;
+      }
+    }
+    return /https?:\/\/(?:127\.0\.0\.1|localhost):5032[6-9](?:\/|$|\?|#)/.test(s);
   },
   envWindowTitle(profile) {
     const number = profile.number || profile.name || profile.id || '';

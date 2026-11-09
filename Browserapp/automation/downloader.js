@@ -287,13 +287,14 @@ class Downloader extends EventEmitter {
     this.received = startOffset;
     this.setProgress(startOffset, this.total || startOffset);
 
-    const hash = crypto.createHash('md5');
-    // SHA-256 is only maintained when the caller expects it or wants it
-    // reported for pinning; hashing a multi-hundred-megabyte archive twice
-    // otherwise costs a second of CPU for nothing.
+    // MD5 is only maintained when the caller expects it: hashing a
+    // multi-hundred-megabyte archive nobody will verify costs real CPU for
+    // nothing. SHA-256 follows the same rule (expected or explicitly asked
+    // for pinning).
+    const md5Hash = this.expectedMd5 ? crypto.createHash('md5') : null;
     const sha256Hash = this.computeSha256 ? crypto.createHash('sha256') : null;
     const updateHashes = (chunk) => {
-      hash.update(chunk);
+      if (md5Hash) md5Hash.update(chunk);
       if (sha256Hash) sha256Hash.update(chunk);
     };
     if (resumed) {
@@ -343,7 +344,7 @@ class Downloader extends EventEmitter {
 
     return {
       path: this.tmpPath,
-      md5: hash.digest('hex'),
+      md5: md5Hash ? md5Hash.digest('hex') : null,
       sha256: sha256Hash ? sha256Hash.digest('hex') : null,
       bytes: this.received,
       resumed,

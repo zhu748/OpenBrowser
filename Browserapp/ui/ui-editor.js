@@ -603,7 +603,6 @@ function editorDraft(strict = true) {
       blockNotifications: $('#editor-block-notifications')?.checked !== false,
       blockPopups: Boolean($('#editor-block-popups')?.checked),
       jsHeapMax: Boolean($('#editor-js-heap-max')?.checked),
-      showInfoPage: $('#editor-show-info-page')?.checked !== false,
       showPasswordOnInfo: Boolean($('#editor-show-password-info')?.checked),
       loadGlobalBookmarks: Boolean($('#editor-load-global-bookmarks')?.checked),
       showBookmarkBar: Boolean($('#editor-show-bookmark-bar')?.checked),
@@ -1077,7 +1076,6 @@ function openProfileEditor(id) {
     editorSet('#editor-ui-language', mode === 'ip' || mode === 'system' ? 'profile' : mode);
     editorCheck('#editor-lang-from-ip', mode === 'ip');
   }
-  editorSet('#editor-ui-language', privacy.uiLanguage && privacy.uiLanguage !== 'profile' ? privacy.uiLanguage : (privacy.languageMode === 'ip' ? 'profile' : (privacy.languageMode || 'profile')));
   editorCheck('#editor-geo-from-ip', privacy.geoFromIp !== false);
   const resolutionKey = profile.width + 'x' + profile.height;
   const resolution = privacy.resolutionMode === 'real'

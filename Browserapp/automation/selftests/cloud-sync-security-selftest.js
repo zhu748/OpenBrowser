@@ -58,6 +58,52 @@ async function main() {
   const plain = await cloud.buildBackupPackage({ profiles: [optedIn({ id: 'env-3', platform: {} })], passphrase: '' });
   assert.strictEqual(plain.meta.encrypted, false);
   console.log('  PASS  unencrypted credential backup rejected (fail closed)');
+
+  // RFC 4918 MOVE semantics: the request URI is the source (the partial
+  // upload) and the Destination header names the canonical target. A server
+  // that supports MOVE must receive the calls in exactly that order.
+  await assert.rejects(
+    () => cloud.upload('webdav', { url: 'http://127.0.0.1:1/dav', dir: 'OpenBrowser', username: 'u', password: 'p' }, Buffer.from('x')),
+    /ECONNREFUSED|upload|失败/,
+  );
+  console.log('  PASS  webdav upload against a dead server fails cleanly');
+
+  {
+    const http = require('http');
+    const server = http.createServer((req, res) => {
+      res.writeHead(201, { 'Content-Length': '0' });
+      res.end();
+    });
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address();
+    const requests = [];
+    server.on('request', (req) => {
+      let body = '';
+      req.on('data', (c) => { body += c.toString('utf8'); });
+      req.on('end', () => {
+        requests.push({ method: req.method, url: req.url, headers: req.headers, body });
+      });
+    });
+    try {
+      const config = { url: `http://127.0.0.1:${port}/dav`, dir: 'OpenBrowser', username: 'u', password: 'p' };
+      const result = await cloud.upload('webdav', config, Buffer.from('package-body'), 'profiles/env-9.obpack');
+      assert.strictEqual(result.provider, 'webdav');
+      assert.strictEqual(result.bytes, 'package-body'.length);
+      const moves = requests.filter((r) => r.method === 'MOVE');
+      assert.strictEqual(moves.length, 1, `expected exactly one MOVE, got ${JSON.stringify(requests.map((r) => r.method))}`);
+      const move = moves[0];
+      assert.ok(move.url.includes('.partial-'), `MOVE request URI must be the partial path, got ${move.url}`);
+      const canonical = `http://127.0.0.1:${port}/dav/OpenBrowser/profiles/env-9.obpack`;
+      assert.strictEqual(move.headers.destination, canonical, `Destination header must point at the canonical path, got ${move.headers.destination}`);
+      const puts = requests.filter((r) => r.method === 'PUT');
+      assert.ok(puts.length >= 1, 'partial PUT must happen before MOVE');
+      assert.ok(puts.every((r) => r.url.includes('.partial-')), 'PUTs must target the partial path, not the canonical one');
+      assert.strictEqual(puts[0].body, 'package-body');
+      console.log('  PASS  MOVE acts on the partial URI with Destination = canonical path');
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  }
 }
 
 main().catch((error) => {

@@ -51,6 +51,9 @@ function applyVersionTrafficLight(payload) {
   // If backend already compared versions, force green/red even if light string is wrong
   if (payload?.upToDate === true) light = 'green';
   else if (payload?.upToDate === false && payload?.remoteVersion) light = 'red';
+  // An unparseable version pair is neither "latest" nor a confirmed update;
+  // keep it gray so the UI never offers a download from an unknown comparison.
+  if (payload?.updateStatus === 'unknown') light = 'unknown';
   lightEl.dataset.state = light;
   if (payload?.currentVersion && versionEl) versionEl.textContent = `v${payload.currentVersion}`;
   let title = t('footer.versionChecking') || '正在检查版本…';
@@ -110,7 +113,7 @@ function renderAppUpdateState() {
   const result = appUpdateState.result;
   version.textContent = result?.remoteVersion ? `v${result.remoteVersion}` : '—';
   check.disabled = appUpdateState.status === 'checking' || appUpdateState.status === 'downloading';
-  download.hidden = !(result && !result.upToDate && (result.canDownload !== false) && result.asset?.name && appUpdateState.status !== 'downloading');
+  download.hidden = !(result && !result.upToDate && result.updateStatus !== 'unknown' && (result.canDownload !== false) && result.asset?.name && appUpdateState.status !== 'downloading');
   download.disabled = appUpdateState.status === 'checking' || appUpdateState.status === 'downloading';
   if (appUpdateState.message) {
     status.textContent = appUpdateState.message;
@@ -124,7 +127,7 @@ function renderAppUpdateState() {
     else status.textContent = t('system.update.downloading');
   }
   else if (result?.supported && result.upToDate) status.textContent = t('system.update.latest', { version: result.currentVersion });
-  else if (result?.supported && !result.upToDate) status.textContent = t('system.update.available', { current: result.currentVersion, version: result.remoteVersion });
+  else if (result?.supported && !result.upToDate && result.updateStatus !== 'unknown') status.textContent = t('system.update.available', { current: result.currentVersion, version: result.remoteVersion });
   else if (result && !result.supported) status.textContent = t('system.update.unsupported');
   else status.textContent = t('system.update.idle');
 }
@@ -142,6 +145,7 @@ async function checkAppUpdate() {
     else if (result.upToDate === false && result.remoteVersion) light = 'red';
     else if (result.supported === false) light = 'unknown';
     else if (!light) light = result.remoteVersion ? (result.upToDate ? 'green' : 'red') : 'unknown';
+    if (result.updateStatus === 'unknown') light = 'unknown';
     applyVersionTrafficLight({ ...result, light });
   } catch (error) {
     appUpdateState.status = 'error';
@@ -1570,7 +1574,11 @@ try {
   const stored = localStorage.getItem(UI_THEME_KEY);
   savedUiTheme = Object.hasOwn(UI_THEMES, stored) ? stored : 'modern';
   if (stored !== savedUiTheme) localStorage.setItem(UI_THEME_KEY, savedUiTheme);
-  localStorage.setItem(UI_COLOR_MODE_KEY, 'light');
+  // Respect a saved color-mode preference (dark/light/auto); only seed the
+  // default 'light' when the user never picked one. The unconditional write
+  // here used to reset dark-mode users back to light on every launch (it was
+  // left behind when the one-shot migration guard was removed in 995973e).
+  if (!localStorage.getItem(UI_COLOR_MODE_KEY)) localStorage.setItem(UI_COLOR_MODE_KEY, 'light');
 } catch (_) {}
 applyUiTheme(savedUiTheme, false);
 // UI language: default = system; user can pin en/zh/ja/vi/fr/de/th/id
@@ -2281,6 +2289,9 @@ function switchView(view) {
   if (view === 'sync') {
     if (!loadedViews.has('sync')) {
       refreshSessions();
+    } else if (sessionsDirty) {
+      sessionsDirty = false;
+      refreshSessions();
     }
   }
   if (view === 'extensions') {
@@ -2299,6 +2310,7 @@ function switchView(view) {
     }
   }
   if (view === 'kernels') {
+    try { window.ensureKernelInitialLoad?.(); } catch (_) {}
     window.refreshKernelPanel?.();
     window.refreshKernelInstalledList?.();
   }
@@ -2871,9 +2883,17 @@ function toggleRowMoreMenu(button) {
   const menu = element('div', 'row-more-menu');
   fillRowMenu(menu, profile, info);
   wrap.append(menu);
-  if (window.lucide?.createIcons) window.lucide.createIcons({ attrs: {}, nameAttr: 'data-lucide' });
+  refreshIcons(menu);
 }
 // Roxy 对齐：整行右键弹出与「其他」一致的动作菜单
+// Single module-level closer so repeated right-clicks cannot stack listeners.
+let activeRowMenuCloser = null;
+function clearRowMenuCloser() {
+  if (!activeRowMenuCloser) return;
+  document.removeEventListener('click', activeRowMenuCloser.click);
+  document.removeEventListener('keydown', activeRowMenuCloser.keydown);
+  activeRowMenuCloser = null;
+}
 document.getElementById('profile-table')?.closest('table')?.addEventListener('contextmenu', (event) => {
   const row = event.target.closest('tr[data-profile-id]');
   if (!row || activeGroupFilter === 'trash') return;
@@ -2888,11 +2908,22 @@ document.getElementById('profile-table')?.closest('table')?.addEventListener('co
   menu.style.zIndex = '80';
   fillRowMenu(menu, profile, profileEngine(profile.id));
   document.body.append(menu);
-  if (window.lucide?.createIcons) window.lucide.createIcons({ attrs: {}, nameAttr: 'data-lucide' });
-  const closer = (clickEvent) => {
-    if (!clickEvent.target.closest('.row-more-menu')) { closeRowMoreMenu(); document.removeEventListener('click', closer); }
+  refreshIcons(menu);
+  clearRowMenuCloser();
+  const entry = {
+    click: (clickEvent) => {
+      if (!clickEvent.target.closest('.row-more-menu')) { closeRowMoreMenu(); clearRowMenuCloser(); }
+    },
+    keydown: (keyEvent) => {
+      if (keyEvent.key === 'Escape') { closeRowMoreMenu(); clearRowMenuCloser(); }
+    },
   };
-  setTimeout(() => document.addEventListener('click', closer));
+  activeRowMenuCloser = entry;
+  setTimeout(() => {
+    if (activeRowMenuCloser !== entry) return;
+    document.addEventListener('click', entry.click);
+    document.addEventListener('keydown', entry.keydown);
+  });
 });
 
 async function restartProfile(id) {
@@ -3335,6 +3366,7 @@ function renderProfiles() {
   };
   const existingRows = new Map([...table.querySelectorAll('tr[data-profile-id]')].map((row) => [row.dataset.profileId, row]));
   const seenRows = new Set();
+  let nextRowAnchor = null; // rows must land before this sibling, null = append at end
   for (const profile of visible) {
     const key = renderKeyFor(profile);
     const existing = existingRows.get(profile.id);
@@ -3342,8 +3374,12 @@ function renderProfiles() {
       // Reuse: only the selection checkbox is cheap to resync inline.
       const checkbox = existing.querySelector('[data-profile-select]');
       if (checkbox) checkbox.checked = selectedProfiles.has(profile.id);
-      table.append(existing);
+      // Move only when the row is not already in the target position:
+      // append/insertBefore force a detach+reflow per call even for in-place nodes.
+      if (nextRowAnchor) table.insertBefore(existing, nextRowAnchor);
+      else if (existing.nextSibling !== null) table.append(existing);
       seenRows.add(profile.id);
+      nextRowAnchor = existing.nextSibling;
       continue;
     }
     const row = buildProfileRow(profile);
@@ -3352,8 +3388,10 @@ function renderProfiles() {
     // The stale row for this id must go before its replacement lands, or the
     // tail sweep (keyed by seen ids) would leave both in the table.
     if (existing) existing.remove();
-    table.append(row);
+    if (nextRowAnchor) table.insertBefore(row, nextRowAnchor);
+    else table.append(row);
     seenRows.add(profile.id);
+    nextRowAnchor = row.nextSibling;
   }
   for (const [id, row] of existingRows) if (!seenRows.has(id)) row.remove();
   const inTrash = activeGroupFilter === 'trash';
@@ -3499,12 +3537,17 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden && __statusRefreshPending) { __statusRefreshPending = false; scheduleStatusRefresh(); }
 });
 let __sessionRefreshTimer = 0;
+// #view-sync is hidden most of the time; same dirty-flag pattern as logsDirty:
+// rebuild sessions only while the view is active, else mark dirty and refresh
+// when the user switches back to the sync view.
+let sessionsDirty = false;
 function scheduleSessionRefresh() {
   if (__sessionRefreshTimer) return;
   __sessionRefreshTimer = setTimeout(() => {
     __sessionRefreshTimer = 0;
     // refreshSessions() already in-flight-dedups its IPC and renders sessions itself.
-    refreshSessions();
+    if (document.querySelector('#view-sync.view.active')) refreshSessions();
+    else sessionsDirty = true;
   }, 120);
 }
 // -----------------------------------------------------------------------------------
@@ -3796,7 +3839,7 @@ function openAssign(id) {
   $('#assign-extension-name').textContent = tx(`${currentExtension.name} · 运行中的环境需重启后生效`);
   const list = $('#assign-profile-list'); list.replaceChildren();
   const assigned = new Set(currentExtension.assignedProfileIds || []);
-  for (const profile of ui.profiles) { const label = element('label', 'assign-item'); const input = document.createElement('input'); input.type = 'checkbox'; input.value = profile.id; input.checked = assigned.has(profile.id); label.append(input, element('span', '', '环境 ' + displayProfileNumber(profile))); list.append(label); }
+  for (const profile of ui.profiles.filter((p) => !p.trashed)) { const label = element('label', 'assign-item'); const input = document.createElement('input'); input.type = 'checkbox'; input.value = profile.id; input.checked = assigned.has(profile.id); label.append(input, element('span', '', '环境 ' + displayProfileNumber(profile))); list.append(label); }
   $('#assign-dialog').showModal();
 }
 
@@ -3924,10 +3967,21 @@ function distributeSpecifiedTexts(items, count, mode = 'sequence', cursor = 0, r
   return { texts: Array.from({ length: amount }, (_unused, index) => values[(start + index) % values.length]), nextCursor: (start + amount) % values.length };
 }
 
+// Quota-overflow toasts are throttled so a tight save loop does not
+// re-notify (and re-translate) on every keystroke.
+let __specifiedTextSaveFailedAt = 0;
 function saveSpecifiedTextGroups() {
   try {
     localStorage.setItem(SPECIFIED_TEXT_GROUPS_KEY, JSON.stringify(specifiedTextGroups.map(({ id, mode, text, cursor }) => ({ id, mode, text, cursor }))));
-  } catch (_) {}
+  } catch (_) {
+    // Quota exceeded: the groups stay in memory but would be silently lost
+    // on restart. Tell the user once per 5 seconds.
+    const now = Date.now();
+    if (now - __specifiedTextSaveFailedAt > 5000) {
+      __specifiedTextSaveFailedAt = now;
+      toast(tx('文本组保存失败：本地存储空间不足，内容将在重启后丢失'), { tone: 'error' });
+    }
+  }
 }
 
 function renderSpecifiedTextGroups() {
@@ -5283,7 +5337,10 @@ window.ops.onEvent(async (value) => {
       scheduleRenderProfiles();
     }
   }
-  if (value.type === 'extensions') await refreshExtensions();
+  if (value.type === 'extensions') {
+    try { await refreshExtensions(); }
+    catch (error) { console.error('refreshExtensions failed for extensions event:', error); }
+  }
   if (value.type === 'platform-preflight' && Array.isArray(value.warnings)) {
     for (const w of value.warnings) {
       log(w.level === 'error' ? 'Error' : 'Platform', `${w.message}${w.hint ? ' — ' + w.hint : ''}`);
@@ -5683,6 +5740,7 @@ switchView = function(view) {
   } catch (_) {}
   if (view === 'system') {
     refreshLocaleChrome();
+    try { window.ensureKernelInitialLoad?.(); } catch (_) {}
     try { refreshKernelPanel?.(); } catch (_) {}
     try { refreshApiMcpPage?.().catch(() => setLocalApiStatus?.(false)); } catch (_) {}
     try { refreshCloudPanel?.().catch(() => {}); } catch (_) {}
@@ -5700,12 +5758,9 @@ switchView = function(view) {
 };
 
 window.ops.onEvent((value) => {
-  if (value?.type === 'kernel-progress') {
-    const progress = document.getElementById('kernel-progress');
-    if (!progress) return;
-    if (value.phase === 'download' && value.percent != null) progress.textContent = tx(`下载中 ${value.percent}% (${Math.round((value.received||0)/1048576)}MB) · ${value.version || ''}`);
-    else if (value.message) progress.textContent = value.message;
-  }
+  // kernel-progress is fully handled by ui/ui-kernel.js handleKernelProgressEvent
+  // (progress bar + stage labels + cancel/refresh); handling it here as well made
+  // lagging download events overwrite the final result in #kernel-progress.
   if (value?.type === 'kernel-error') {
     const progress = document.getElementById('kernel-progress');
     if (progress) progress.textContent = value.message || tx('内核准备失败');

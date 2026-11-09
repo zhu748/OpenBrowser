@@ -2,7 +2,7 @@
 
 const fsp = require("fs/promises");
 const path = require("path");
-const { execFileSync } = require("child_process");
+const { execFile } = require("child_process");
 const { isPidAlive } = require("../automation/isolation");
 
 function isChildExited(child) {
@@ -104,15 +104,20 @@ function systemBrowserCandidatesForPlatform(platform = process.platform, environ
 
 function stopIpcStubForWindow(windowName) {
   const win = String(windowName || "").trim();
-  if (!win || process.platform === "win32") return false;
-  if (!/^SB[0-9A-Za-z_-]{4,64}$/.test(win)) return false;
-  try {
+  if (!win || process.platform === "win32") return Promise.resolve(false);
+  if (!/^SB[0-9A-Za-z_-]{4,64}$/.test(win)) return Promise.resolve(false);
+  // Async: the sync variant blocked the main process for the whole pkill
+  // round-trip on every cleanup path. Failures are best-effort (ENOENT means
+  // pkill is simply absent — debug only; "no process matched" exits 1).
+  return new Promise((resolve) => {
     const regexMode = process.platform === "darwin" ? ["-E"] : [];
-    execFileSync("pkill", [...regexMode, "-f", `ipc-stub\\.py ${win}( |$)`], { stdio: "ignore" });
-    return true;
-  } catch (_) {
-    return false;
-  }
+    execFile("pkill", [...regexMode, "-f", `ipc-stub\\.py ${win}( |$)`], { stdio: "ignore" }, (error) => {
+      if (error && error.code === "ENOENT") {
+        console.debug("[stopIpcStubForWindow] pkill not available:", error.message);
+      }
+      resolve(!error);
+    });
+  });
 }
 
 async function assertExtensionTreeSafe(root) {

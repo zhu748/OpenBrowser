@@ -18,13 +18,16 @@ class PersistentCdp {
       socket.addEventListener('message', (event) => {
         let value; try { value = JSON.parse(String(event.data)); } catch (_) { return; }
         if (value.id && this.pending.has(value.id)) {
-          const pending = this.pending.get(value.id); this.pending.delete(value.id);
+          // Clear the pending timer on success too: the entry holds it, and a
+          // resolved command would otherwise keep its timeout handle alive
+          // until it fired (v4 already fixed the same leak).
+          const pending = this.pending.get(value.id); this.pending.delete(value.id); clearTimeout(pending.timer);
           if (value.error) pending.reject(new Error(value.error.message || 'CDP error')); else pending.resolve(value.result || {});
           return;
         }
         if (value.method) this.onEvent(value).catch(() => {});
       });
-      socket.addEventListener('close', () => { for (const pending of this.pending.values()) pending.reject(new Error('Master CDP connection closed')); this.pending.clear(); });
+      socket.addEventListener('close', () => { for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(new Error('Master CDP connection closed')); } this.pending.clear(); });
       socket.addEventListener('error', () => reject(new Error('Master CDP connection error')));
     });
   }
@@ -32,8 +35,11 @@ class PersistentCdp {
   command(method, params = {}) {
     return new Promise((resolve, reject) => {
       if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return reject(new Error('Master CDP is not connected'));
-      const id = this.nextId++; this.pending.set(id, { resolve, reject }); this.socket.send(JSON.stringify({ id, method, params }));
-      setTimeout(() => { if (this.pending.delete(id)) reject(new Error(`CDP timeout: ${method}`)); }, 6000);
+      const id = this.nextId++;
+      const timer = setTimeout(() => { if (this.pending.delete(id)) reject(new Error(`CDP timeout: ${method}`)); }, 6000);
+      this.pending.set(id, { resolve, reject, timer });
+      try { this.socket.send(JSON.stringify({ id, method, params })); }
+      catch (error) { clearTimeout(timer); this.pending.delete(id); reject(error); }
     });
   }
 

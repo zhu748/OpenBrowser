@@ -95,7 +95,23 @@ module.exports = {
   async testProxy(raw, options = {}) {
     this._proxyTests ||= new Map();
     const profile = this.sanitizeProfile(raw);
-    const key = JSON.stringify([profile.id, profile.proxy, profile.proxyMeta, options]);
+    // Stable dedup key: the previous key serialized the whole proxyMeta object
+    // graph plus the options object, so two callers passing structurally equal
+    // but differently-ordered options (or a renderer-rewritten proxyMeta)
+    // missed each other's in-flight probe and doubled the upstream load.
+    // Keyed on the fields that actually change the probe outcome: profile id,
+    // effective endpoint, lookup channel and the semantic option values
+    // (absent options normalize to their defaults).
+    const forcedRaw = String(options.proxy || options.forcedProxy || '').trim();
+    const key = JSON.stringify([
+      profile.id,
+      forcedRaw || String(profile.proxy || ''),
+      String(profile.proxyMeta?.ipChannel || ''),
+      options.allowExtract !== false,
+      options.includeRisk === true,
+      options.totalTimeoutMs != null ? Number(options.totalTimeoutMs) : 0,
+      options.attemptTimeoutMs != null ? Number(options.attemptTimeoutMs) : 0,
+    ]);
     if (this._proxyTests.has(key)) return this._proxyTests.get(key);
     const task = this._testProxy(raw, options);
     this._proxyTests.set(key, task);

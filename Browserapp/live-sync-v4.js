@@ -138,7 +138,7 @@ function normalTabs(values) {
 class LiveSyncController {
   constructor(engine, emit) {
     this.engine = engine; this.emit = emit; this.master = null; this.slaves = []; this.connections = new Map(); this.masterTabs = []; this.masterTabsById = new Map(); this.timer = null;
-    this.forwardQueue = []; this.forwardQueueRunning = false; this.forwardQueueEpoch = 0; this.coalescedForwards = new Map(); this.forwardQueueKeyless = 0;
+    this.forwardQueue = []; this.forwardQueueRunning = false; this.forwardQueueEpoch = 0; this.coalescedForwards = new Map(); this.forwardQueueKeyless = 0; this.forwardQueueKeylessHead = -1;
     // Per-slave tab lists (fed by the refresh tick, ~1s TTL) and the last input
     // value mirrored onto each slave: together they remove one HTTP /json/list
     // fetch and the full click/select/insert/blur chain per forwarded keystroke.
@@ -219,12 +219,12 @@ class LiveSyncController {
   stop() {
     this.refreshEpoch += 1;
     this.lastWatchErrorAt = 0; this.refreshTask = null; this.refreshInFlight = false; this.skippedRefreshes = 0;
-    this.forwardQueue.length = 0; this.coalescedForwards.clear(); this.forwardQueueEpoch += 1;
-    this.slaveTabLists.clear(); this.inputMirror.clear();
+    this.forwardQueue.length = 0; this.coalescedForwards.clear(); this.forwardQueueEpoch += 1; this.forwardQueueKeylessHead = -1;
+    this.slaveTabLists.clear(); this.inputMirror.clear(); this._pointExpressionCache?.clear();
     if (this.timer) clearTimeout(this.timer); this.timer = null; this.tickCount = 0;
     for (const value of this.connections.values()) value.connection.close(); this.connections.clear();
     const previous = { master: this.master?.id || null, slaves: this.slaves.map((item) => item.id) };
-    this.master = null; this.slaves = []; this.masterTabs = []; this.masterTabsById = new Map(); this.forwardQueue = []; this.forwardQueueKeyless = 0;
+    this.master = null; this.slaves = []; this.masterTabs = []; this.masterTabsById = new Map(); this.forwardQueue = []; this.forwardQueueKeyless = 0; this.forwardQueueKeylessHead = -1;
     this.emit({ type: 'live-sync', active: false, ...previous });
   }
 
@@ -285,15 +285,31 @@ class LiveSyncController {
     }
     // Keyless events (click, key, change, contextmenu) never coalesce, so a
     // stalled slave would grow the queue without bound; cap them separately.
+    // `forwardQueueKeylessHead` caches the index of the oldest keyless entry:
+    // while the queue is below the keyless cap nothing is ever dropped, so the
+    // cursor only has to stay correct once the cap is reached and every
+    // enqueue drops one keyless entry. The cursor is a pure optimization over
+    // findIndex — any inconsistency falls back to one scan.
     if (!key && this.forwardQueueKeyless >= 512) {
-      // O(1) incremental counter replaces the O(queue) scan; keyless floods
-      // (uncoalescable events) are bounded without touching every entry.
-      if (this.forwardQueueKeyless >= 512) {
-        const index = this.forwardQueue.findIndex((entry) => !entry.key);
-        if (index >= 0) { const dropped = this.forwardQueue.splice(index, 1)[0]; if (dropped && !dropped.key) this.forwardQueueKeyless -= 1; this.forwardStats.dropped += 1; }
+      if (this.forwardQueueKeylessHead < 0) this.forwardQueueKeylessHead = this.forwardQueue.findIndex((entry) => !entry.key);
+      const index = this.forwardQueueKeylessHead;
+      if (index >= 0 && this.forwardQueue[index] && !this.forwardQueue[index].key) {
+        this.forwardQueue.splice(index, 1);
+        this.forwardQueueKeyless -= 1; this.forwardStats.dropped += 1;
+        // The prefix shifted by one; the next-oldest keyless entry is now at
+        // `index` — or further back if a keyed entry slid in front of it.
+        if (this.forwardQueue[index] && !this.forwardQueue[index].key) this.forwardQueueKeylessHead = index;
+        else this.forwardQueueKeylessHead = this.forwardQueue.findIndex((entry) => !entry.key);
+      } else {
+        const fallback = this.forwardQueue.findIndex((entry) => !entry.key);
+        if (fallback >= 0) {
+          const dropped = this.forwardQueue.splice(fallback, 1)[0];
+          if (dropped && !dropped.key) { this.forwardQueueKeyless -= 1; this.forwardStats.dropped += 1; }
+        }
+        this.forwardQueueKeylessHead = this.forwardQueue.findIndex((entry) => !entry.key);
       }
     }
-    const entry = { tabId, payload, action, key, queuedAt: now }; this.forwardQueue.push(entry); if (!key) this.forwardQueueKeyless += 1; if (key) this.coalescedForwards.set(key, entry);
+    const entry = { tabId, payload, action, key, queuedAt: now }; this.forwardQueue.push(entry); if (!key) { this.forwardQueueKeyless += 1; if (this.forwardQueueKeylessHead < 0) this.forwardQueueKeylessHead = this.forwardQueue.length - 1; } if (key) this.coalescedForwards.set(key, entry);
     this.drainForwardQueue(); this.emitForwardHealth();
   }
 
@@ -306,7 +322,12 @@ class LiveSyncController {
     const epoch = this.forwardQueueEpoch;
     try {
       while (this.master && this.forwardQueue.length && epoch === this.forwardQueueEpoch) {
-        const entry = this.forwardQueue.shift(); if (!entry.key) this.forwardQueueKeyless -= 1; if (entry.key) this.coalescedForwards.delete(entry.key);
+        const entry = this.forwardQueue.shift();
+        // Head cursor maintenance: one entry left the queue, so the oldest
+        // keyless entry (if any) moved one slot closer to the front.
+        if (this.forwardQueueKeylessHead > 0) this.forwardQueueKeylessHead -= 1;
+        else if (entry && !entry.key) this.forwardQueueKeylessHead = this.forwardQueue.findIndex((next) => !next.key);
+        if (!entry.key) this.forwardQueueKeyless -= 1; if (entry.key) this.coalescedForwards.delete(entry.key);
         const started = Date.now();
         try { if (entry.action === 'navigate') await this.navigateSlaves(entry.tabId, entry.payload.url); else await this.forward(entry.tabId, entry.payload); }
         catch (error) { this.emit({ type: 'sync-error', action: 'forward', message: error.message }); }
@@ -402,13 +423,42 @@ class LiveSyncController {
       : cdp.call(tab.webSocketDebuggerUrl, 'Page.navigate', { url }));
   }
 
-  async mappedMousePoint(tab, payload, focus = false) {
+  // Cache the *construction* of the mappedMousePoint selector expression per
+  // (tabId, selector) pair: it is pure string concatenation over the payload's
+  // identity fields, so the same pair always yields the identical ~2KB string.
+  // The evaluation itself stays per-event: its result is live geometry
+  // (getBoundingClientRect) and must be re-read every time. LRU: at 256 pairs
+  // drop the oldest entry (Map preserves insertion order).
+  _mappedPointExpression(tabId, payload, focus) {
+    if (!this._pointExpressionCache) this._pointExpressionCache = new Map();
+    const identity = [
+      String(payload.selector || ''), String(payload.tag || '').toLowerCase(), String(payload.role || ''),
+      String(payload.ariaLabel || ''), String(payload.text || '').trim().slice(0, 200), String(payload.elementType || ''),
+      Number(payload.x) || 0, Number(payload.y) || 0, payload.rx, payload.ry, focus ? 1 : 0,
+    ].join('\u0000');
+    const key = tabId + '\u0000' + identity;
+    const cached = this._pointExpressionCache.get(key);
+    if (cached) {
+      this._pointExpressionCache.delete(key); this._pointExpressionCache.set(key, cached); // refresh LRU position
+      return cached;
+    }
+    const expression = this._buildMappedPointExpression(payload, focus);
+    if (this._pointExpressionCache.size >= 256) this._pointExpressionCache.delete(this._pointExpressionCache.keys().next().value);
+    this._pointExpressionCache.set(key, expression);
+    return expression;
+  }
+
+  _buildMappedPointExpression(payload, focus) {
     const selector = JSON.stringify(String(payload.selector || '')); const fallbackX = Number(payload.x) || 0; const fallbackY = Number(payload.y) || 0;
     const rx = Math.max(0, Math.min(1, Number.isFinite(Number(payload.rx)) ? Number(payload.rx) : .5)); const ry = Math.max(0, Math.min(1, Number.isFinite(Number(payload.ry)) ? Number(payload.ry) : .5));
     const tag = JSON.stringify(String(payload.tag || '').toLowerCase()); const role = JSON.stringify(String(payload.role || '')); const aria = JSON.stringify(String(payload.ariaLabel || '')); const text = JSON.stringify(String(payload.text || '').trim().slice(0, 200)); const elementType = JSON.stringify(String(payload.elementType || ''));
-    const expression = `(() => { const deep=(path)=>{let root=document,e=null;for(const part of path.split(/\s*>>>\s*/)){e=root.querySelector(part);if(!e)return null;root=e.shadowRoot||e;}return e;}; const visible=(e)=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0}; let e=deep(${selector}); if(!e){const query=${tag}||'button,input,textarea,select,a,[role],[tabindex],[contenteditable="true"]';let score=-1e9;for(const item of document.querySelectorAll(query)){if(!visible(item))continue;let value=0;const itemRole=String(item.getAttribute('role')||'');const itemAria=String(item.getAttribute('aria-label')||'');const itemText=String(item.innerText||item.textContent||'').trim().replace(/\s+/g,' ').slice(0,200);if(${tag}&&item.tagName.toLowerCase()===${tag})value+=100;if(${elementType}&&String(item.type||'')===${elementType})value+=120;if(${role}&&itemRole===${role})value+=250;if(${aria}&&itemAria===${aria})value+=500;if(${text}&&itemText===${text})value+=450;if(value>score){score=value;e=item;}}} if(!e)return{x:${fallbackX},y:${fallbackY},found:false};${focus ? "try{e.focus({preventScroll:true})}catch(_){try{e.focus()}catch(__){}}" : ''}const r=e.getBoundingClientRect();return{x:r.left+r.width*${rx},y:r.top+r.height*${ry},found:true};})()`;
+    return `(() => { const deep=(path)=>{let root=document,e=null;for(const part of path.split(/\s*>>>\s*/)){e=root.querySelector(part);if(!e)return null;root=e.shadowRoot||e;}return e;}; const visible=(e)=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0}; let e=deep(${selector}); if(!e){const query=${tag}||'button,input,textarea,select,a,[role],[tabindex],[contenteditable="true"]';let score=-1e9;for(const item of document.querySelectorAll(query)){if(!visible(item))continue;let value=0;const itemRole=String(item.getAttribute('role')||'');const itemAria=String(item.getAttribute('aria-label')||'');const itemText=String(item.innerText||item.textContent||'').trim().replace(/\s+/g,' ').slice(0,200);if(${tag}&&item.tagName.toLowerCase()===${tag})value+=100;if(${elementType}&&String(item.type||'')===${elementType})value+=120;if(${role}&&itemRole===${role})value+=250;if(${aria}&&itemAria===${aria})value+=500;if(${text}&&itemText===${text})value+=450;if(value>score){score=value;e=item;}}} if(!e)return{x:${fallbackX},y:${fallbackY},found:false};${focus ? "try{e.focus({preventScroll:true})}catch(_){try{e.focus()}catch(__){}}" : ''}const r=e.getBoundingClientRect();return{x:r.left+r.width*${rx},y:r.top+r.height*${ry},found:true};})()`;
+  }
+
+  async mappedMousePoint(tab, payload, focus = false) {
+    const expression = this._mappedPointExpression(tab.id, payload, focus);
     const result = await cdp.call(tab.webSocketDebuggerUrl, 'Runtime.evaluate', { expression, returnByValue: true }).catch(() => null);
-    const value = result?.result?.value; return value && Number.isFinite(value.x) && Number.isFinite(value.y) ? value : { x: fallbackX, y: fallbackY, found: false };
+    const value = result?.result?.value; return value && Number.isFinite(value.x) && Number.isFinite(value.y) ? value : { x: Number(payload.x) || 0, y: Number(payload.y) || 0, found: false };
   }
 
   async forward(tabId, payload) {

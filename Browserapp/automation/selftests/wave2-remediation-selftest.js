@@ -47,7 +47,11 @@ async function checkAsync(name, fn) {
     const src = fs.readFileSync(path.join(__dirname, '..', '..', 'engine.js'), 'utf8');
     assert.ok(/resetZoom[\s\S]{0,400}writeRawAtomically/.test(src), 'resetZoom must use writeRawAtomically');
     assert.ok(!/resetZoom[\s\S]{0,400}fsp\.writeFile/.test(src), 'resetZoom must not bare-writeFile');
-    assert.ok(src.includes(`await writeRawAtomically(file, JSON.stringify(prefs), 0o600);\n      // 写后回读校验`), 'markProfileCleanExit must read back after write');
+    // markProfileCleanExit must read the file back after the atomic write
+    // (catch-return for write failures sits between them in current engine.js,
+    // so anchor on the declaration and span both steps instead of an exact
+    // string match against the old layout).
+    assert.ok(/markProfileCleanExit\(root\)[\s\S]{0,900}writeRawAtomically\(file, JSON\.stringify\(prefs\), 0o600\)[\s\S]{0,900}写后回读校验/.test(src), 'markProfileCleanExit must read back after write');
   });
 
   await checkAsync('markProfileCleanExit writes and the file parses', async () => {

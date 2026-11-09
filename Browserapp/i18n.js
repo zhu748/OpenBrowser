@@ -79,6 +79,9 @@
     'editor.sslCardDesc': '硬件加速、沙盒、默认搜索引擎与自定义启动参数',
     'theme.modern.name': '默认界面',
     'theme.modern.desc': '界面重构后的默认浅色工作台',
+    'theme.auto': '跟随系统',
+    'theme.dark': '深色',
+    'theme.light': '浅色',
     'header.detecting': '检测中',
 
     'view.profiles': '环境管理',
@@ -839,6 +842,9 @@
     'editor.sslCardDesc': "Hardware acceleration, sandbox, default search engine and custom launch args",
     'theme.modern.name': 'Default UI',
     'theme.modern.desc': 'Refactored default light workspace',
+    'theme.auto': 'Auto',
+    'theme.dark': 'Dark',
+    'theme.light': 'Light',
     'header.detecting': 'Checking…',
     'view.profiles': 'Profiles',
     'view.profiles.sub': '',
@@ -1588,6 +1594,9 @@
     'editor.sslCardDesc': "ハードウェアアクセラレーション、サンドボックス、既定検索エンジン、カスタム起動パラメータ",
     'theme.modern.name': 'デフォルトUI',
     'theme.modern.desc': '刷新した標準ライトワークスペース',
+    'theme.auto': 'システムに従う',
+    'theme.dark': 'ダーク',
+    'theme.light': 'ライト',
     'header.detecting': '検出中…',
     'view.profiles': '環境管理',
     'view.groups': 'グループ',
@@ -1705,6 +1714,9 @@
     'editor.sslCardDesc': "Tăng tốc phần cứng, sandbox, công cụ tìm kiếm mặc định và tham số khởi chạy tùy chỉnh",
     'theme.modern.name': 'Giao diện mặc định',
     'theme.modern.desc': 'Không gian làm việc sáng mặc định sau tái cấu trúc',
+    'theme.auto': 'Tự động',
+    'theme.dark': 'Tối',
+    'theme.light': 'Sáng',
     'view.profiles': 'Quản lý môi trường',
     'view.system': 'Cài đặt',
     'view.kernels': 'Quản lý nhân',
@@ -1776,6 +1788,9 @@
     'editor.sslCardDesc': "Accélération matérielle, sandbox, moteur de recherche par défaut et arguments de lancement personnalisés",
     'theme.modern.name': 'Interface par défaut',
     'theme.modern.desc': 'Espace de travail clair par défaut après refonte',
+    'theme.auto': 'Automatique',
+    'theme.dark': 'Sombre',
+    'theme.light': 'Clair',
     'view.profiles': 'Profils',
     'view.system': 'Paramètres',
     'view.kernels': 'Gestion des noyaux',
@@ -1847,6 +1862,9 @@
     'editor.sslCardDesc': "Hardwarebeschleunigung, Sandbox, Standardsuchmaschine und eigene Startparameter",
     'theme.modern.name': 'Standard-UI',
     'theme.modern.desc': 'Neu gestaltete helle Standard-Oberfläche',
+    'theme.auto': 'Automatisch',
+    'theme.dark': 'Dunkel',
+    'theme.light': 'Hell',
     'view.profiles': 'Profile',
     'view.system': 'Einstellungen',
     'view.kernels': 'Kernelverwaltung',
@@ -1918,6 +1936,9 @@
     'editor.sslCardDesc': "การเร่งด้วยฮาร์ดแวร์, sandbox, เสิร์ชเอนจินเริ่มต้น และพารามิเตอร์เริ่มระบบแบบกำหนดเอง",
     'theme.modern.name': 'UI เริ่มต้น',
     'theme.modern.desc': 'พื้นที่ทำงานสว่างเริ่มต้นหลังปรับโครงสร้างใหม่',
+    'theme.auto': 'อัตโนมัติ',
+    'theme.dark': 'มืด',
+    'theme.light': 'สว่าง',
     'view.profiles': 'จัดการโปรไฟล์',
     'view.system': 'ตั้งค่า',
     'view.kernels': 'จัดการเคอร์เนล',
@@ -1989,6 +2010,9 @@
     'editor.sslCardDesc': "Akselerasi perangkat keras, sandbox, mesin pencari bawaan, dan argumen peluncuran kustom",
     'theme.modern.name': 'UI Default',
     'theme.modern.desc': 'Ruang kerja terang bawaan hasil restukturasi',
+    'theme.auto': 'Otomatis',
+    'theme.dark': 'Gelap',
+    'theme.light': 'Terang',
     'view.profiles': 'Kelola profil',
     'view.system': 'Pengaturan',
     'view.kernels': 'Manajemen kernel',
@@ -2050,6 +2074,23 @@
   const listeners = new Set();
   let preference = 'system'; // stored preference
   let resolved = 'zh-CN';
+  // Auto-translate pass bookkeeping: applyDom is on the hot refresh path
+  // (afterUiRender after every table render), and its body-wide `body *`
+  // scan re-walks elements whose text was already snapshot+translated.
+  // Marks are scoped to the current locale: switching the catalog bumps
+  // the epoch, so every WeakSet from the previous locale stops matching
+  // and the full pass runs again (fresh snapshots, fresh translations).
+  let autoPassEpoch = 0;
+  const autoPassedByEpoch = new Map(); // epoch -> WeakSet<Element>
+  function markAutoPassed(el) {
+    let set = autoPassedByEpoch.get(autoPassEpoch);
+    if (!set) { set = new WeakSet(); autoPassedByEpoch.set(autoPassEpoch, set); }
+    set.add(el);
+  }
+  function wasAutoPassed(el) {
+    const set = autoPassedByEpoch.get(autoPassEpoch);
+    return set ? set.has(el) : false;
+  }
 
   function normalizeTag(tag) {
     const raw = String(tag || '').trim().replace(/_/g, '-');
@@ -3427,7 +3468,8 @@
     "，跳过 ": ", skipped ",
     " 个自定义模板": " custom template(s)",
     "自动脚本完成": "Automation finished",
-    "运行失败：": "Run failed: "
+    "运行失败：": "Run failed: ",
+    "文本组保存失败：本地存储空间不足，内容将在重启后丢失": "Text groups not saved: local storage is full, they will be lost after restart"
   });
   const UI_ZH_FALLBACKS = Object.freeze({ ...UI_ZH_EN, ...RUNTIME_ZH_EN });
   const UI_ZH_KEYS = Object.keys(UI_ZH_FALLBACKS).sort((a, b) => b.length - a.length);
@@ -3585,11 +3627,24 @@
     const scope = root || doc;
     if (!scope?.querySelectorAll) return;
     scope.querySelectorAll('[data-i18n], [data-i18n-placeholder], [data-i18n-title], [data-i18n-aria]').forEach(applyNode);
-    const sel = 'body *';
-    scope.querySelectorAll(sel).forEach((el) => {
-      if (resolved === 'zh-CN') restoreChineseElement(el);
-      else autoTranslateElement(el);
-    });
+    if (scope === doc || !scope.contains?.(doc?.documentElement)) {
+      // Full-document pass (locale switch, refreshLocaleChrome): re-marked from
+      // scratch, so a stale element must not stay skipped.
+      scope.querySelectorAll('body *').forEach((el) => {
+        if (resolved === 'zh-CN') restoreChineseElement(el);
+        else autoTranslateElement(el);
+        markAutoPassed(el);
+      });
+    } else {
+      // Scoped render pass: skip elements already processed for this locale.
+      // Dynamically added/rebuilt elements carry no mark and are handled as before.
+      scope.querySelectorAll('body *').forEach((el) => {
+        if (wasAutoPassed(el)) return;
+        if (resolved === 'zh-CN') restoreChineseElement(el);
+        else autoTranslateElement(el);
+        markAutoPassed(el);
+      });
+    }
     if (doc?.documentElement) {
       doc.documentElement.lang = resolved === 'zh-CN' ? 'zh-CN' : resolved;
     }
@@ -3598,7 +3653,14 @@
   function setPreference(pref, { persist = true, silent = false } = {}) {
     const next = !pref || pref === 'system' ? 'system' : (CATALOGS[pref] ? pref : normalizeTag(pref));
     preference = next === 'system' || CATALOGS[next] ? next : 'system';
+    const previousResolved = resolved;
     resolved = resolve(preference);
+    // Locale change invalidates every auto-pass mark (snapshots must be
+    // re-taken and text re-translated for the new catalog).
+    if (resolved !== previousResolved) {
+      autoPassEpoch += 1;
+      if (autoPassedByEpoch.size > 3) autoPassedByEpoch.delete(autoPassEpoch - 3);
+    }
     if (persist) {
       try { localStorage.setItem(STORAGE_KEY, preference); } catch (_) {}
     }

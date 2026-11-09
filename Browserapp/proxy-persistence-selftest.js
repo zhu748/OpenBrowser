@@ -297,7 +297,31 @@ async function main() {
     assert.strictEqual(replacedRestart.list().length, 1);
     assert.strictEqual(replacedRestart.get('long-credential').password, longPassword);
 
-    console.log('PROXY_PERSISTENCE_SELFTEST_OK migration=1 restart=1 encoding=1 escaped_separator=1 special_credentials=1 remark=1 blank_patch=1 masked_patch=1 explicit_clear=1 clear_restart=1 duplicate_ids=1 mutation_queue=1 flush=1 tmp_scan=1 backup_recovery=1 corrupt_preserved=1 rollback=1 replace_all=1 long_credentials=1');
+    // Unchanged state must skip the rewrite even when encryption is on: the
+    // ciphertext differs per call (random IV), so the skip decision has to be
+    // made on the plaintext snapshot, not on the payload.
+    {
+      const skipPath = path.join(directory, 'skip-rewrite.json');
+      const skipStore = new ProxyStore(skipPath, { encrypted: true });
+      await skipStore.load();
+      await skipStore.create({ id: 'skip-item', raw: 'socks5://skip-user:skip-pass@skip.test:1080' });
+      const beforeStat = await fs.stat(skipPath);
+      const beforeBytes = await fs.readFile(skipPath);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      await skipStore.save(); // unchanged content, must not touch the file
+      const afterStat = await fs.stat(skipPath);
+      const afterBytes = await fs.readFile(skipPath);
+      assert.strictEqual(afterStat.mtimeMs, beforeStat.mtimeMs, 'unchanged save() must skip the rewrite');
+      assert.ok(afterBytes.equals(beforeBytes), 'unchanged save() must not alter file bytes');
+      await skipStore.update('skip-item', { name: 'renamed' }); // changed content still persists
+      const changedStat = await fs.stat(skipPath);
+      assert.ok(changedStat.mtimeMs > beforeStat.mtimeMs, 'changed state must rewrite the file');
+      const skipRestart = new ProxyStore(skipPath);
+      await skipRestart.load();
+      assert.strictEqual(skipRestart.get('skip-item').name, 'renamed');
+    }
+
+    console.log('PROXY_PERSISTENCE_SELFTEST_OK migration=1 restart=1 encoding=1 escaped_separator=1 special_credentials=1 remark=1 blank_patch=1 masked_patch=1 explicit_clear=1 clear_restart=1 duplicate_ids=1 mutation_queue=1 flush=1 tmp_scan=1 backup_recovery=1 corrupt_preserved=1 rollback=1 replace_all=1 long_credentials=1 skip_unchanged_rewrite=1');
   } finally {
     await fs.rm(directory, { recursive: true, force: true });
   }

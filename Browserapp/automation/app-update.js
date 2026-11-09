@@ -19,7 +19,7 @@ const { createHash, timingSafeEqual, randomUUID } = require('crypto');
 const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
-const { compareVersions } = require('./version-compare');
+const { compareVersions, isComparable } = require('./version-compare');
 
 const UPDATE_REPOSITORY = 'zhu748/OpenBrowser';
 const UPDATE_API_URL = `https://api.github.com/repos/${UPDATE_REPOSITORY}/releases/latest`;
@@ -344,7 +344,12 @@ async function checkAppUpdate() {
   const meta = await resolveLatestReleaseMeta();
   const remoteVersion = meta.remoteVersion;
   if (!remoteVersion) throw new Error('GitHub Release has no version tag');
-  const upToDate = compareVersions(remoteVersion, currentVersion) <= 0;
+  // compareVersions returns 0 when either side cannot be parsed, which used
+  // to make an unparseable pair claim "up to date" (fail-open). An unknown
+  // comparison must stay unknown instead of silently painting green.
+  const comparable = isComparable(remoteVersion, currentVersion);
+  const upToDate = comparable ? compareVersions(remoteVersion, currentVersion) <= 0 : false;
+  const updateStatus = comparable ? (upToDate ? 'latest' : 'available') : 'unknown';
   let asset = null;
   if (assetName) {
     asset = await resolveReleaseAsset(remoteVersion, assetName);
@@ -364,6 +369,10 @@ async function checkAppUpdate() {
     currentVersion,
     remoteVersion,
     upToDate,
+    // 'latest' | 'available' | 'unknown' — lets consumers distinguish
+    // "verified up to date" from "could not compare" without treating the
+    // latter as a downloadable update.
+    updateStatus,
     releaseName: meta.releaseName || remoteVersion,
     releaseUrl: meta.releaseUrl || `https://github.com/${UPDATE_REPOSITORY}/releases`,
     platform: process.platform,
@@ -503,6 +512,9 @@ function appUpdateLightFromResult(result) {
   // Never use yellow for "I am latest". Failed checks without cache → gray "unknown".
   if (!result) return 'unknown';
   if (result.remoteVersion != null && result.currentVersion != null && result.upToDate != null) {
+    // An unparseable pair cannot claim "latest"; it also must not advertise a
+    // download, so it stays gray instead of turning red.
+    if (result.updateStatus === 'unknown') return 'unknown';
     return result.upToDate ? 'green' : 'red';
   }
   return 'unknown';

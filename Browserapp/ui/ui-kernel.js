@@ -520,8 +520,16 @@ window.kernelSourceLabel = kernelSourceLabel;
 try {
   window.ops?.onEvent?.((value) => handleKernelProgressEvent(value));
 } catch (_) { /* preload not ready yet: install buttons still work */ }
-// Initial load for the kernel manager page.
-loadKernelVersionOptions('chromium', false);
-loadKernelVersionOptions('firefox', false);
-refreshKernelInstalledList();
+// Initial load for the kernel manager page. Deferred until the kernel/system
+// view is first opened: firing these IPCs at module load pays for two version
+// manifest fetches plus an installed-kernels scan on every app start, even
+// though most sessions never open this page.
+let kernelInitialLoadStarted = false;
+window.ensureKernelInitialLoad = function ensureKernelInitialLoad() {
+  if (kernelInitialLoadStarted) return;
+  kernelInitialLoadStarted = true;
+  loadKernelVersionOptions('chromium', false);
+  loadKernelVersionOptions('firefox', false);
+  refreshKernelInstalledList();
+};
 })();

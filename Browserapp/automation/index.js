@@ -108,6 +108,9 @@ async function startAutomation(context = {}) {
       // Proxy credentials are written through a serialized queue. Wait for the
       // queue before Electron is allowed to tear down the main process.
       await proxyStore.flush?.();
+      // RPA task/template updates coalesce into one quiet-period write; flush
+      // it so the final task status is on disk before teardown.
+      await rpaStore.flush?.();
     },
   };
 }

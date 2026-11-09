@@ -8,6 +8,22 @@ const tls = require('tls');
 let proxyDohResolver = null;
 let proxyDohLookup = null;
 
+// DoH degradation is a per-resolution chronic condition (blocked endpoint,
+// restricted network): without deduplication every single lookup re-warns the
+// same message. Rate-limit each distinct message to once per 60s.
+const dohWarnAt = new Map();
+function warnDohDegradedOnce(message) {
+  const now = Date.now();
+  const last = dohWarnAt.get(message) || 0;
+  if (now - last < 60000) return;
+  dohWarnAt.set(message, now);
+  if (dohWarnAt.size > 512) {
+    const oldest = dohWarnAt.keys().next().value;
+    dohWarnAt.delete(oldest);
+  }
+  console.warn(message);
+}
+
 function getProxyDohLookup() {
   if (!proxyDohLookup) {
     try {
@@ -17,7 +33,7 @@ function getProxyDohLookup() {
       }
       const baseLookup = createDohLookup(proxyDohResolver, {
         fallback: (hostname, opts, callback) => {
-          console.warn(`[proxy-forwarder] DoH lookup for "${hostname}" fell back to system DNS (potential ISP DNS leak)`);
+          warnDohDegradedOnce(`[proxy-forwarder] DoH lookup for "${hostname}" fell back to system DNS (potential ISP DNS leak)`);
           dns.lookup(hostname, opts, callback);
         },
       });
@@ -29,16 +45,16 @@ function getProxyDohLookup() {
         const done = typeof opts === 'function' ? opts : callback;
         baseLookup(hostname, settings, (error, address, family) => {
           if (!error) { done(null, address, family); return; }
-          console.warn(`[proxy-forwarder] DoH transport failure for "${hostname}" (${error.code || error.message}); resolving via system DNS (potential ISP DNS leak)`);
+          warnDohDegradedOnce(`[proxy-forwarder] DoH transport failure for "${hostname}" (${error.code || error.message}); resolving via system DNS (potential ISP DNS leak)`);
           dns.lookup(hostname, settings, done);
         });
       };
     } catch (err) {
-      console.warn('[proxy-forwarder] Failed to initialize DoH resolver, falling back to system DNS:', err?.message || err);
+      warnDohDegradedOnce('[proxy-forwarder] Failed to initialize DoH resolver, falling back to system DNS: ' + (err?.message || err));
       proxyDohLookup = (hostname, opts, callback) => {
         const done = typeof opts === 'function' ? opts : callback;
         const options = typeof opts === 'function' ? {} : (opts || {});
-        console.warn(`[proxy-forwarder] DoH lookup unavailable, resolving "${hostname}" with system DNS (potential ISP DNS leak)`);
+        warnDohDegradedOnce(`[proxy-forwarder] DoH lookup unavailable, resolving "${hostname}" with system DNS (potential ISP DNS leak)`);
         dns.lookup(hostname, options, done);
       };
     }
@@ -712,7 +728,7 @@ async function startHttpToSocks5Bridge(config, onStatus) {
         const isAuth = /authentication/i.test(error.message);
         notify(isAuth ? 'AUTH_FAILED' : 'UPSTREAM_CONNECT_FAILED', (target?.host ? target.host + ':' + target.port + ' - ' : '') + error.message);
         if (!client.destroyed) {
-          client.end('HTTP/1.1 502 Bad Gateway\r\nX-Proxy-Error: ' + (isAuth ? 'AUTH_FAILED' : 'UPSTREAM_CONNECT_FAILED') + ': ' + error.message + '\r\nConnection: close\r\n\r\n');
+          client.end('HTTP/1.1 502 Bad Gateway\r\nX-Proxy-Error: ' + (isAuth ? 'AUTH_FAILED' : 'UPSTREAM_CONNECT_FAILED') + ': ' + sanitizeProxyErrorDetail(error.message) + '\r\nConnection: close\r\n\r\n');
         }
       });
     };
@@ -749,7 +765,10 @@ async function startSocks5Bridge(config, onStatus) {
       const responseHead = await remote.read(4);
       if (responseHead[0] !== 5 || responseHead[1] !== 0) {
         notify('TUNNEL_FAILED', 'SOCKS5 tunnel failed with code ' + responseHead[1]);
-        if (!client.destroyed) client.end(Buffer.concat([responseHead, Buffer.from([1, 0, 0, 0, 0, 0, 0])]));
+        // Fixed 10-byte failure reply: VER REP RSV ATYP(IPv4) BND.ADDR BND.PORT.
+        // Echoing the upstream head plus a hand-made tail produced a malformed
+        // frame (ATYP did not match the address bytes that followed).
+        if (!client.destroyed) client.end(Buffer.from([5, responseHead[1], 0, 1, 0, 0, 0, 0, 0, 0]));
         throw new Error('SOCKS5 upstream connection failed with code ' + responseHead[1]);
       }
       const responseAddress = await readSocksAddress(remote, responseHead[3]); const responsePort = await remote.read(2);
@@ -769,6 +788,19 @@ async function startSocks5Bridge(config, onStatus) {
 
 function authorization(config) {
   return 'Basic ' + Buffer.from(config.username + ':' + config.password, 'utf8').toString('base64');
+}
+
+/**
+ * Sanitize an internal error detail before echoing it into a 502 response
+ * header: strip CR/LF (header injection) and cap at 120 chars so upstream
+ * internals (addresses, credentials in URLs, stack fragments) cannot leak in
+ * full while the failure code stays diagnosable.
+ */
+function sanitizeProxyErrorDetail(value) {
+  return String(value || '')
+    .replace(/[\r\n]+/g, ' ')
+    .trim()
+    .slice(0, 120);
 }
 
 function forwardedHeader(header, config) {
@@ -830,7 +862,7 @@ async function startHttpBridge(config, onStatus) {
       client.removeListener('data', receiveHeader); client.pause();
       const header = pending.subarray(0, marker + 4).toString('latin1'); const remainder = pending.subarray(marker + 4);
       const isConnect = /^CONNECT\s+/i.test(header.split('\r\n', 1)[0]); let upstream;
-      const fail = (message) => { notify('UPSTREAM_CONNECT_FAILED', message); if (!client.destroyed) client.end('HTTP/1.1 502 Bad Gateway\r\nX-Proxy-Error: ' + (message || 'UPSTREAM_CONNECT_FAILED') + '\r\nConnection: close\r\n\r\n'); };
+      const fail = (message) => { notify('UPSTREAM_CONNECT_FAILED', message); if (!client.destroyed) client.end('HTTP/1.1 502 Bad Gateway\r\nX-Proxy-Error: ' + sanitizeProxyErrorDetail(message || 'UPSTREAM_CONNECT_FAILED') + '\r\nConnection: close\r\n\r\n'); };
       try {
         upstream = connectHttpUpstream(config, () => {
           upstream.write(forwardedHeader(header, config), 'latin1');

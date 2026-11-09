@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { pathToFileURL } = require('url');
 const { spawn } = require('child_process');
 const cdp = require('./cdp');
@@ -42,6 +43,22 @@ function clampWindowBounds(bounds) {
 }
 
 const SYNC_BINDING = ['open', 'Browser', 'Sync'].join('');
+
+/**
+ * Redact a URL for logs: query and hash can carry tokens/session ids, so only
+ * origin + path survive, and anything still longer than 200 chars is cut.
+ */
+function logSafeUrl(value) {
+  const raw = String(value || '');
+  let safe = raw;
+  try {
+    const parsed = new URL(raw);
+    safe = parsed.origin + parsed.pathname;
+  } catch (_) {
+    safe = raw.split(/[?#]/)[0];
+  }
+  return safe.length > 200 ? safe.slice(0, 200) : safe;
+}
 
 const masterMarker = String.raw`(() => {
   const isTestHarness = () => {
@@ -792,6 +809,14 @@ class LiveSyncController extends LiveSyncV4 {
     this.nativeBridgeState = 'starting';
     this.browserOwnedUntil = Math.max(this.browserOwnedUntil || 0, Date.now() + 1200);
     this.nativeInputStdoutBuffer = '';
+    // Bounded stderr ring (8KB): the helper's stderr is diagnostics-only and
+    // was never drained. A chatty helper would fill the ~64KB pipe buffer and
+    // block forever on write(), silently freezing the native input mirror.
+    const stderrTail = { text: '', limit: 8192 };
+    child.stderr?.setEncoding('utf8');
+    child.stderr?.on('data', (chunk) => {
+      stderrTail.text = (stderrTail.text + String(chunk || '')).slice(-stderrTail.limit);
+    });
     this.nativeBridgeReadyTimer = setTimeout(() => {
       if (this.nativeInputMirror === child && this.nativeBridgeState === 'starting') this.nativeBridgeState = 'ready';
     }, 1200);
@@ -855,6 +880,7 @@ class LiveSyncController extends LiveSyncV4 {
       this.nativeBridgeState = 'down';
       this.browserOwnedUntil = Math.max(this.browserOwnedUntil || 0, Date.now() + 1200);
       this.nativeInputStdoutBuffer = '';
+      if (stderrTail.text) console.debug('[live-sync] native input mirror stderr tail: ' + stderrTail.text.trim());
       const wasDevTools = this.nativeDevToolsMode;
       const wasPopup = this.nativePopupActive;
       this.nativeDevToolsMode = false;
@@ -1077,7 +1103,7 @@ class LiveSyncController extends LiveSyncV4 {
     try {
       await connection.open();
     } catch (openErr) {
-      console.warn('[live-sync] Could not open connection to tab ' + tab.id + ' (' + tab.url + '):', openErr.message);
+      console.warn('[live-sync] Could not open connection to tab ' + tab.id + ' (' + logSafeUrl(tab.url) + '):', openErr.message);
       return;
     }
     const value = { tab, connection, scroll: { x: 0, y: 0 } };
@@ -1087,7 +1113,7 @@ class LiveSyncController extends LiveSyncV4 {
     try {
       await connection.command('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }).catch(() => {});
       await connection.command('Runtime.addBinding', { name: SYNC_BINDING }).catch((err) => {
-        console.warn('[live-sync] addBinding skipped on ' + tab.url + ':', err.message);
+        console.warn('[live-sync] addBinding skipped on ' + logSafeUrl(tab.url) + ':', err.message);
       });
       await connection.command('Page.addScriptToEvaluateOnNewDocument', { source: injection }).catch(() => {});
       await connection.command('Runtime.enable').catch(() => {});
@@ -1103,7 +1129,7 @@ class LiveSyncController extends LiveSyncV4 {
       const position = await connection.command('Runtime.evaluate', { expression: '({x:scrollX,y:scrollY})', returnByValue: true }).catch(() => null);
       value.scroll = position?.result?.value || { x: 0, y: 0 };
     } catch (error) {
-      console.warn('[live-sync] attach non-critical failure on ' + tab.url + ':', error.message);
+      console.warn('[live-sync] attach non-critical failure on ' + logSafeUrl(tab.url) + ':', error.message);
       connection.close();
       // Only drop the mapping when this connection still owns the slot: a
       // stop()/restart may have refreshed tabs and attached a new connection
@@ -1409,6 +1435,45 @@ class LiveSyncController extends LiveSyncV4 {
     if (doHeavy) await this.syncWindowGeometry().catch(() => {});
   }
 
+  /**
+   * Extension ids the master profile was assigned. Only those extension pages
+   * may get a mirrored capture connection: syncing every chrome-extension://
+   * target would mirror input into third-party extensions (password managers
+   * etc.) that just happen to be installed in the profile.
+   *
+   * Source of truth: engine's running entry keeps the Extensions CDP list for
+   * the started profile (see engine/start.js reconcileOnConnection), whose
+   * `id` is the real chrome-extension id. When that is unavailable (no
+   * Extensions CDP — openbrowser-148 loads via --load-extension only), fall
+   * back to the profile's assigned extension directories and accept whatever
+   * id that extension currently serves under. An empty list means "no
+   * extension pages are synced" — the desired behaviour for a profile with no
+   * assigned extensions even when other extensions are physically present
+   * (bundled ones always are).
+   */
+  masterExtensionWhitelist() {
+    const running = this.master && this.engine.running?.get(this.master.id);
+    const ids = new Set();
+    if (Array.isArray(running?.loadedExtensions)) {
+      for (const extension of running.loadedExtensions) {
+        const id = String(extension?.id || '').toLowerCase();
+        if (id) ids.add(id);
+      }
+    }
+    if (!ids.size) {
+      const assigned = this.engine.assignedExtensions?.(this.master?.id) || [];
+      for (const extension of assigned) {
+        try {
+          const manifest = JSON.parse(fs.readFileSync(path.join(extension.path, 'manifest.json'), 'utf8'));
+          const key = manifest.key ? crypto.createHash('sha256').update(manifest.key).digest('hex').slice(0, 32) : '';
+          const id = String(manifest.key && !key ? '' : key).toLowerCase();
+          if (id) ids.add(id);
+        } catch (_) {}
+      }
+    }
+    return ids;
+  }
+
   async refreshExtensionConnections(masterTargets, slaveLists) {
     const live = new Set(masterTargets.map((target) => target.id));
     for (const [id, value] of this.extensionConnections) {
@@ -1419,7 +1484,17 @@ class LiveSyncController extends LiveSyncV4 {
     }
     for (const id of [...this.extensionMap.keys()]) if (!live.has(id)) this.extensionMap.delete(id);
 
-    for (const masterTarget of masterTargets) {
+    // Assignments can change while environments keep running (restartRequired
+    // in engine.assignExtension), so re-read the whitelist every heavy pass.
+    const whitelist = this.masterExtensionWhitelist();
+    const whitelistedTargets = masterTargets.filter((target) => {
+      const id = extensionHost(target);
+      if (!whitelist.size || !id || whitelist.has(id)) return true;
+      console.debug('[live-sync] skipping extension page outside master assignment: ' + extensionPageKey(target));
+      return false;
+    });
+
+    for (const masterTarget of whitelistedTargets) {
       const mapping = this.extensionMap.get(masterTarget.id) || new Map();
       for (const slave of this.slaves) {
         if (!this.isSlaveAvailable(slave)) continue;
@@ -1508,47 +1583,77 @@ class LiveSyncController extends LiveSyncV4 {
     }
   }
 
+  /**
+   * Mark a slave as unreachable for the rest of the tick so isSlaveAvailable()
+   * skips it in every later fan-out (ensureMapping / reconcile / forward), and
+   * surface it once via the existing 10s-deduplicated report channel. A slave
+   * that died after its target list was fetched must isolate itself here —
+   * letting ECONNREFUSED propagate up the refresh tick reaches
+   * handleWatchError, which cannot tell slave traffic from master traffic and
+   * tears down the whole session.
+   */
+  markSlaveUnreachable(slave, error) {
+    this.unreachableSlaves.add(slave.id);
+    this.reportUnreachableSlaves([{ id: slave.id, message: String(error?.message || error) }]);
+  }
+
   async ensureMapping(masterTab, index = -1, initialLists = null) {
     const mapping = this.tabMap.get(masterTab.id) || new Map();
     if (!this.desiredUrlMap) this.desiredUrlMap = new Map();
     const isStart = isEnvironmentStartUrl;
     const isBlank = (url) => /^(about:blank|chrome:\/\/(newtab|new-tab-page)\/?)/i.test(String(url || ''));
     const equivalent = (a, b) => this.urlsMatch(a, b) || (isStart(a) && isStart(b)) || (isBlank(a) && isBlank(b));
+    const unreachable = [];
     await Promise.all(this.slaves.map(async (slave) => {
       if (!this.isSlaveAvailable(slave) || (initialLists && !initialLists.has(slave.id))) return;
-      const available = initialLists?.has(slave.id)
-        ? initialLists.get(slave.id)
-        : normalTabs(await cdp.tabs(slave.port));
-      const mappedId = mapping.get(slave.id);
-      const alreadyMapped = mappedId && available.some((tab) => tab.id === mappedId);
-      let target = alreadyMapped ? available.find((tab) => tab.id === mappedId) : null;
-      if (!alreadyMapped) {
-        if (mappedId) mapping.delete(slave.id);
-        const used = new Set([...this.tabMap.values()].map((value) => value.get(slave.id)).filter(Boolean));
-        const candidates = available.filter((tab) => !used.has(tab.id));
-        target = candidates.find((tab) => this.urlsMatch(tab.url, masterTab.url))
-          || (isStart(masterTab.url) ? candidates.find((tab) => isStart(tab.url)) : null)
-          || (isBlank(masterTab.url) ? candidates.find((tab) => isBlank(tab.url)) : null);
-        if (!target && index >= 0 && available[index] && !used.has(available[index].id)) target = available[index];
-        if (!target && candidates.length) target = candidates.find((tab) => isBlank(tab.url)) || candidates[candidates.length - 1];
-      }
-      const desiredUrl = isStart(masterTab.url) ? (environmentStartUrl(this.engine, slave.id) || masterTab.url) : masterTab.url;
-      if (!target) { target = await cdp.newTab(slave.port, desiredUrl || 'about:blank'); this.slaveTabLists.delete(slave.id); }
-      mapping.set(slave.id, target.id);
-      if (!alreadyMapped) await this.markSlave(target, slave.id);
-      // Only navigate when the *master* desired URL changed. Re-driving navigation every tick
-      // (e.g. after a redirect) causes continuous slave reloads.
-      const desireKey = `${masterTab.id}:${slave.id}`;
-      const previousDesired = this.desiredUrlMap.get(desireKey);
-      const masterDesiredChanged = previousDesired !== this.urlKey(desiredUrl);
-      const needsNavigation = desiredUrl && !equivalent(target.url, desiredUrl) && (masterDesiredChanged || !alreadyMapped);
-      if (needsNavigation) {
-        await cdp.call(target.webSocketDebuggerUrl, 'Page.navigate', { url: desiredUrl }).catch(() => {});
-        this.desiredUrlMap.set(desireKey, this.urlKey(desiredUrl));
-      } else if (desiredUrl) {
-        this.desiredUrlMap.set(desireKey, this.urlKey(desiredUrl));
+      // Every CDP round-trip to this slave can race its shutdown: the target
+      // list above was fetched a moment ago, but newTab / markSlave / navigate
+      // hit the debug port again. Isolate each slave so one death remaps only
+      // that slave instead of aborting the refresh pass.
+      try {
+        const available = initialLists?.has(slave.id)
+          ? initialLists.get(slave.id)
+          : normalTabs(await cdp.tabs(slave.port));
+        const mappedId = mapping.get(slave.id);
+        const alreadyMapped = mappedId && available.some((tab) => tab.id === mappedId);
+        let target = alreadyMapped ? available.find((tab) => tab.id === mappedId) : null;
+        if (!alreadyMapped) {
+          if (mappedId) mapping.delete(slave.id);
+          const used = new Set([...this.tabMap.values()].map((value) => value.get(slave.id)).filter(Boolean));
+          const candidates = available.filter((tab) => !used.has(tab.id));
+          target = candidates.find((tab) => this.urlsMatch(tab.url, masterTab.url))
+            || (isStart(masterTab.url) ? candidates.find((tab) => isStart(tab.url)) : null)
+            || (isBlank(masterTab.url) ? candidates.find((tab) => isBlank(tab.url)) : null);
+          if (!target && index >= 0 && available[index] && !used.has(available[index].id)) target = available[index];
+          if (!target && candidates.length) target = candidates.find((tab) => isBlank(tab.url)) || candidates[candidates.length - 1];
+        }
+        const desiredUrl = isStart(masterTab.url) ? (environmentStartUrl(this.engine, slave.id) || masterTab.url) : masterTab.url;
+        if (!target) { target = await cdp.newTab(slave.port, desiredUrl || 'about:blank'); this.slaveTabLists.delete(slave.id); }
+        mapping.set(slave.id, target.id);
+        if (!alreadyMapped) await this.markSlave(target, slave.id);
+        // Only navigate when the *master* desired URL changed. Re-driving navigation every tick
+        // (e.g. after a redirect) causes continuous slave reloads.
+        const desireKey = `${masterTab.id}:${slave.id}`;
+        const previousDesired = this.desiredUrlMap.get(desireKey);
+        const masterDesiredChanged = previousDesired !== this.urlKey(desiredUrl);
+        const needsNavigation = desiredUrl && !equivalent(target.url, desiredUrl) && (masterDesiredChanged || !alreadyMapped);
+        if (needsNavigation) {
+          await cdp.call(target.webSocketDebuggerUrl, 'Page.navigate', { url: desiredUrl }).catch(() => {});
+          this.desiredUrlMap.set(desireKey, this.urlKey(desiredUrl));
+        } else if (desiredUrl) {
+          this.desiredUrlMap.set(desireKey, this.urlKey(desiredUrl));
+        }
+      } catch (error) {
+        // The half-written mapping entry must go: the next refresh tick would
+        // treat the dead target id as mapped and skip remapping this slave.
+        mapping.delete(slave.id);
+        unreachable.push({ id: slave.id, message: String(error?.message || error) });
       }
     }));
+    if (unreachable.length) {
+      for (const failure of unreachable) this.unreachableSlaves.add(failure.id);
+      this.reportUnreachableSlaves(unreachable);
+    }
     this.tabMap.set(masterTab.id, mapping);
   }
 

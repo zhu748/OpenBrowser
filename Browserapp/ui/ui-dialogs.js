@@ -96,6 +96,7 @@
    * @param {string} [options.text] - Alias for message
    * @param {string} [options.content] - Alias for message
    * @param {string} [options.actionLabel] - Action button text, default: '确定'
+   * @param {string} [options.okText] - Alias for actionLabel (ui-rpa.js)
    * @param {string} [options.confirmText] - Alias for actionLabel
    * @param {string} [options.cancelLabel] - Cancel button text, default: '取消'
    * @param {string} [options.cancelText] - Alias for cancelLabel
@@ -128,7 +129,7 @@
       const isDanger = Boolean(options.danger || options.isDanger || options.type === 'danger' || options.tone === 'danger');
       const rawTitle = options.title || '操作确认';
       const rawMsg = options.message || options.text || options.content || '';
-      const rawAction = options.actionLabel || options.confirmLabel || options.confirmText || '确定';
+      const rawAction = options.okText || options.actionLabel || options.confirmLabel || options.confirmText || '确定';
       const rawCancel = options.cancelLabel || options.cancelText || '取消';
       const rawMeta = options.details || options.meta || '';
       const rawWarn = options.warning || '';

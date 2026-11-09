@@ -326,6 +326,10 @@ class ProxyStore {
 
   async _persistData(nextData, { allowCorruptReplace = false } = {}) {
     const jsonString = JSON.stringify(nextData, null, 2);
+    // Compare plaintext, not the encrypted payload: encryption uses a fresh
+    // random IV per call, so an identical state would otherwise never match
+    // and the skip-write optimization would be permanently disabled.
+    if (jsonString === this._lastPersistedJson) return;
     const shouldEncrypt = this._shouldEncrypt();
     const payload = shouldEncrypt
       ? credentialCrypto.encryptCredential(jsonString)
@@ -380,6 +384,7 @@ class ProxyStore {
     if (current.kind === 'valid') await this._writeAtomic(this.filePath + '.bak', current.raw);
     await this._writeAtomic(this.filePath, payload);
     this._lastPersistedPayload = payload;
+    this._lastPersistedJson = jsonString;
     if (current.kind !== 'valid') {
       try {
         await fsp.access(this.filePath + '.bak');
@@ -466,6 +471,9 @@ class ProxyStore {
       if (main) {
         if (main.migrated) await this._persistData(main.data);
         this.data = main.data;
+        // Seed the plaintext snapshot so a save() without changes skips the
+        // rewrite even before any persist has run in this process.
+        this._lastPersistedJson = JSON.stringify(main.data, null, 2);
         this._reportBadRecords(main.badRecords);
         await this._cleanupRecoveryTemps();
         return cloneData(this.data);
@@ -475,6 +483,7 @@ class ProxyStore {
       if (recovered) {
         await this._persistData(recovered.data, { allowCorruptReplace: mainFailure?.kind === 'corrupt' });
         this.data = recovered.data;
+        this._lastPersistedJson = JSON.stringify(recovered.data, null, 2);
         this._reportBadRecords(recovered.badRecords);
         await this._cleanupRecoveryTemps();
         return cloneData(this.data);

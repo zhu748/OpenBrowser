@@ -63,7 +63,7 @@ function teardownAllowIntercept(key) {
   urlAllowIntercepts.delete(key);
   try { entry.conn?.close(); } catch (_) {}
 }
-async function ensureAllowIntercept(profileId, tab, allowHosts, blockHosts) {
+async function ensureAllowIntercept(engine, profileId, tab, allowHosts, blockHosts) {
   if (!tab?.webSocketDebuggerUrl) return;
   const key = `${profileId}:${tab.id}`;
   const signature = `${allowHosts.join('|')}#${blockHosts.join('|')}`;
@@ -108,11 +108,22 @@ async function ensureAllowIntercept(profileId, tab, allowHosts, blockHosts) {
     await conn.open();
     await conn.command('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] }, { timeout: 4000 });
     urlAllowIntercepts.set(key, { conn, signature });
-  } catch (_) {
+  } catch (error) {
     teardownAllowIntercept(key);
+    // Not silent: an allow/block list that fails to attach leaves the profile
+    // browsing without its configured restrictions — surface it through the
+    // same sync-error channel the engine uses for profile-file mismatches.
+    try {
+      engine?.emit?.({
+        type: 'sync-error',
+        action: 'allow-intercept',
+        id: profileId,
+        message: '网址白名单/黑名单拦截装配失败：' + String(error?.message || error),
+      });
+    } catch (_) {}
   }
 }
-function syncAllowIntercepts(profile, tabs) {
+function syncAllowIntercepts(engine, profile, tabs) {
   const allowHosts = parseAllowHosts(profile?.advanced?.allowUrls);
   const blockHosts = parseAllowHosts(profile?.advanced?.blockUrls);
   const prefix = `${profile?.id || ''}:`;
@@ -125,7 +136,7 @@ function syncAllowIntercepts(profile, tabs) {
   const liveKeys = new Set();
   for (const tab of tabs) {
     liveKeys.add(`${profile.id}:${tab.id}`);
-    ensureAllowIntercept(profile.id, tab, allowHosts, blockHosts).catch(() => {});
+    ensureAllowIntercept(engine, profile.id, tab, allowHosts, blockHosts).catch(() => {});
   }
   for (const key of [...urlAllowIntercepts.keys()]) {
     if (key.startsWith(prefix) && !liveKeys.has(key)) teardownAllowIntercept(key);
@@ -158,7 +169,7 @@ module.exports = {
       && options.appliedFingerprintHash !== fpHash();
     if (configChanged) applied.clear();
     // Roxy 对齐：网址访问白名单 —— 在稳态早退之前同步拦截连接（含拆除失效标签页的连接）
-    syncAllowIntercepts(profile, tabs);
+    syncAllowIntercepts(this, profile, tabs);
     const blocked = [];
     if (profile.advanced.blockVideo) blocked.push('*.mp4', '*.webm', '*.m3u8', '*.mov', '*.avi');
     const customBlock = String(profile.advanced.blockUrls || '')

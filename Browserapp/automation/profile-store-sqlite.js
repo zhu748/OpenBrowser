@@ -10,12 +10,18 @@ const {
 // profiles.data 含代理凭据/Cookies，落库前整体加密（与 state-storage 同一套 credential-crypto），读路径兼容明文
 const credentialCrypto = require('../credential-crypto');
 
+// Module-level flag set when any row had to fall back to plaintext storage;
+// exposed via plaintextFallbackStatus() so callers can surface the downgrade
+// (and never silently persist credentials in the clear without a trace).
+let plaintextFallbackUsed = false;
+
 function encodeProfileData(profile) {
   try {
     return credentialCrypto.encryptCredential(JSON.stringify(profile));
   } catch (error) {
     // The plaintext fallback keeps the row readable, but it is an at-rest
     // security downgrade: make it visible instead of storing silently in the clear.
+    plaintextFallbackUsed = true;
     console.error('profile-store-sqlite: encryptCredential failed, storing profile row as plaintext:', error.message);
     return JSON.stringify(profile);
   }
@@ -609,6 +615,9 @@ class ProfileStoreSqlite {
         const data = encodeProfileData(profile);
 
         this._statements.updateProfileTrash.run(1, nowIso, nowIso, data, String(id));
+        // Keep the diff map in sync with the row just written, otherwise the
+        // next saveProfilesDiffed sees a stale hash and rewrites the row.
+        this._rowHashes?.set(String(id), this.profileDataHash(profile));
         trashedIds.push(String(id));
       }
       this.db.exec('COMMIT;');
@@ -641,6 +650,8 @@ class ProfileStoreSqlite {
         const data = encodeProfileData(profile);
 
         this._statements.updateProfileTrash.run(0, null, nowIso, data, String(id));
+        // Same as trashProfiles: sync the diff map with the written row.
+        this._rowHashes?.set(String(id), this.profileDataHash(profile));
         restoredIds.push(String(id));
       }
       this.db.exec('COMMIT;');
@@ -900,4 +911,8 @@ class ProfileStoreSqlite {
 
 module.exports = {
   ProfileStoreSqlite,
+  /** True when any row was stored as plaintext because encryption failed. */
+  plaintextFallbackUsed: () => plaintextFallbackUsed,
+  /** Test hook: clear the plaintext-fallback flag. */
+  _resetPlaintextFallbackForTests: () => { plaintextFallbackUsed = false; },
 };

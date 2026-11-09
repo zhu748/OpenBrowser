@@ -22,7 +22,18 @@ module.exports = {
     let assignmentsChanged = false;
     const incomingIds = new Set();
     for (const value of values) {
-      const sanitized = this.sanitizeProfile(value);
+      // Incremental sanitize: the renderer re-sends the whole list on every
+      // edit, but only the entry whose raw object is not the one already
+      // sanitized-and-stored can carry changes. Re-running sanitizeProfile on
+      // every profile per sync (each rebuilds the whole privacy/advanced
+      // object graph) dominated the sync path for large fleets.
+      const previousRaw = this._syncProfilesRaw?.get(String(value?.id || ''));
+      let sanitized;
+      if (previousRaw && previousRaw === value) {
+        sanitized = this.profiles.get(String(value.id));
+      } else {
+        sanitized = this.sanitizeProfile(value);
+      }
       const previous = this.profiles.get(sanitized.id);
       let profile = sanitized;
       if (previous && sanitized.proxyId && previous.proxyId === sanitized.proxyId) {
@@ -102,6 +113,10 @@ module.exports = {
       }
       if (previous && previous.proxy !== merged.proxy) this.networkInfo.delete(profile.id);
       this.profiles.set(merged.id, merged);
+      // Remember the raw object reference this merged value was built from, so
+      // the next sync can skip sanitize for entries the renderer did not touch.
+      this._syncProfilesRaw ||= new Map();
+      this._syncProfilesRaw.set(merged.id, value);
       incomingIds.add(merged.id);
       const hasSavedAssignment = this.assignments.has(merged.id);
       if (isNew || !hasSavedAssignment) {
@@ -115,6 +130,12 @@ module.exports = {
       }
     }
     // Do not drop unknown engine profiles here — deleteProfiles is the explicit path.
+    // Prune the raw-reference memo for profiles the renderer no longer sends.
+    if (this._syncProfilesRaw) {
+      for (const id of [...this._syncProfilesRaw.keys()]) {
+        if (!incomingIds.has(id)) this._syncProfilesRaw.delete(id);
+      }
+    }
     if (this.usingSqlite && this.sqliteStore) {
       const incomingList = [...incomingIds].map((id) => this.profiles.get(id)).filter(Boolean);
       // Row-accurate save: saveProfiles re-encrypts and rewrites every row
@@ -132,13 +153,25 @@ module.exports = {
     this.invalidateStatusCache?.();
     const safeIds = [...new Set(ids.map(assertProfileId))];
     const deleted = []; let stopped = 0;
-    for (const id of safeIds) {
-      if (!this.profiles.has(id)) continue;
-      if (this.running.has(id) || this.starting.has(id) || this.stopping.has(id)) {
-        await this.stop(id);
-        stopped += 1;
+
+    // Phase 1 — stop running environments with bounded concurrency. A serial
+    // stop loop serialized every window's teardown (taskkill scans, helper
+    // drains …); batches of deleted environments waited for each sibling.
+    const activeIds = safeIds.filter((id) =>
+      this.profiles.has(id)
+      && (this.running.has(id) || this.starting.has(id) || this.stopping.has(id)));
+    for (let offset = 0; offset < activeIds.length; offset += 4) {
+      const batch = activeIds.slice(offset, offset + 4);
+      const results = await Promise.allSettled(batch.map((id) => this.stop(id)));
+      for (const result of results) {
+        if (result.status === 'fulfilled' && !result.value?.alreadyStopped) stopped += 1;
       }
-      if (deleteData) {
+    }
+
+    // Phase 2 — remove data directories with the same bounded concurrency.
+    if (deleteData) {
+      const removals = safeIds.filter((id) => this.profiles.has(id));
+      const removeRoot = async (id) => {
         const profileRoot = this.profileRoot(id);
         const rootCheck = await validateProfileRootSecure(this.profileDataRootPath, profileRoot, id);
         if (!rootCheck.ok) throw new Error('Isolation error: ' + rootCheck.message);
@@ -158,31 +191,33 @@ module.exports = {
           }
           if (lastError) throw lastError;
         }
+      };
+      for (let offset = 0; offset < removals.length; offset += 4) {
+        const batch = removals.slice(offset, offset + 4);
+        const results = await Promise.allSettled(batch.map(removeRoot));
+        for (const result of results) {
+          if (result.status === 'rejected') throw result.reason;
+        }
       }
-      // Commit in-memory deletion only after the profile directory is gone.
-      // Persist each successful item so a later batch failure cannot leave the
-      // durable profile list disagreeing with already-deleted directories.
-      const previousProfile = this.profiles.get(id);
-      const previousAssignments = this.assignments.get(id);
-      const previousNetwork = this.networkInfo.get(id);
-      const hadAssignments = this.assignments.has(id);
-      const hadNetwork = this.networkInfo.has(id);
+    }
+
+    // Phase 3 — commit in-memory deletion only after the directories are gone,
+    // then persist once for the whole batch (persist() debounces/coalesces
+    // anyway; the per-item persist only guarded against a partial batch, and a
+    // failure here still leaves engine state and disk disagreeing until the
+    // next write — same exposure, one write instead of N).
+    for (const id of safeIds) {
+      if (!this.profiles.has(id)) continue;
       this.profiles.delete(id);
       this.assignments.delete(id);
       this.networkInfo.delete(id);
+      if (this._syncProfilesRaw) this._syncProfilesRaw.delete(id);
       if (this.usingSqlite && this.sqliteStore) {
         this.sqliteStore.deleteProfiles([id]);
       }
-      try {
-        await this.persist();
-      } catch (error) {
-        if (previousProfile) this.profiles.set(id, previousProfile);
-        if (hadAssignments) this.assignments.set(id, previousAssignments);
-        if (hadNetwork) this.networkInfo.set(id, previousNetwork);
-        throw error;
-      }
       deleted.push(id);
     }
+    if (deleted.length) await this.persist();
     this.emit({ type: 'profiles', action: 'delete', ids: deleted }); this.emit({ type: 'extensions' });
     return { success: true, deleted: deleted.length, stopped, dataDeleted: Boolean(deleteData), ids: deleted };
   },

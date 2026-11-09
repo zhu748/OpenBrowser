@@ -134,8 +134,9 @@ $('#proxy-search')?.addEventListener('input', scheduleProxySearchRender);
 
 $('#proxy-select-all')?.addEventListener('change', (event) => {
   const checked = event.target.checked;
-  const q = ($('#proxy-search')?.value || '').trim().toLowerCase();
-  const list = proxyLibrary.filter((item) => !q || [item.name, item.host, item.protocol, item.remark, item.lastIp, String(item.port)].join(' ').toLowerCase().includes(q));
+  // Select exactly the rows the table renders: status filter + search box
+  // (see visibleProxies in ui/ui-proxy.js).
+  const list = visibleProxies(proxyLibrary);
   for (const item of list) {
     if (checked) selectedProxies.add(item.id); else selectedProxies.delete(item.id);
   }

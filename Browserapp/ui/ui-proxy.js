@@ -256,6 +256,18 @@ function matchesProxyFilter(item, filter) {
 }
 
 /**
+ * Proxies currently visible in the proxies view: toolbar status filter plus
+ * the live search box. Shared by renderProxies and the select-all handler
+ * (ui/ui-proxy-wiring.js) so "select all" never grabs hidden rows.
+ */
+function visibleProxies(library) {
+  const q = ($('#proxy-search')?.value || '').trim().toLowerCase();
+  const filter = $('#proxy-filter')?.value || 'all';
+  return (library || proxyLibrary || []).filter((item) => matchesProxyFilter(item, filter)
+    && (!q || [item.name, item.host, item.protocol, item.remark, item.lastIp, String(item.port)].join(' ').toLowerCase().includes(q)));
+}
+
+/**
  * Export selected proxies as importable text lines (one raw proxy per line,
  * optionally followed by `#出口IP` as a remark-free hint the parser ignores).
  * Pure function; the wiring layer turns it into a download.
@@ -317,10 +329,7 @@ function renderProxies() {
   const empty = $('#proxy-empty');
   const countEl = $('#proxy-count');
   if (!table) return;
-  const q = ($('#proxy-search')?.value || '').trim().toLowerCase();
-  const filter = $('#proxy-filter')?.value || 'all';
-  const list = proxyLibrary.filter((item) => matchesProxyFilter(item, filter)
-    && (!q || [item.name, item.host, item.protocol, item.remark, item.lastIp, String(item.port)].join(' ').toLowerCase().includes(q)));
+  const list = visibleProxies(proxyLibrary);
   table.replaceChildren();
 
   /**
@@ -466,7 +475,8 @@ function renderProxies() {
     empty.hidden = list.length !== 0;
   }
   if (countEl) {
-    const filtered = q || filter !== 'all' ? ` · ${t('proxies.countFiltered', { n: list.length })}` : '';
+    const hasFilter = ($('#proxy-search')?.value || '').trim() || ($('#proxy-filter')?.value || 'all') !== 'all';
+    const filtered = hasFilter ? ` · ${t('proxies.countFiltered', { n: list.length })}` : '';
     countEl.textContent = t('proxies.count', { n: proxyLibrary.length }) + filtered;
   }
   updateProxySelectedChip();
@@ -633,7 +643,7 @@ function openProxyApplyDialog(item) {
     }
   };
 
-  for (const p of ui.profiles) {
+  for (const p of ui.profiles.filter((profile) => !profile.trashed)) {
     const isBound = p.proxyId === item.id;
     const label = document.createElement('label');
     label.className = 'assign-item';

@@ -9,6 +9,9 @@ class PipeConnection {
     const fail = (error) => { for (const item of this.pending.values()) { clearTimeout(item.timer); item.reject(error); } this.pending.clear(); };
     this.input.on('error', fail);
     this.output.on('error', fail);
+    // A failed spawn (ENOENT, EACCES) emits 'error' on the child itself, not on the
+    // stdio pipes; without this listener the host process dies with uncaughtException.
+    child.once('error', (error) => fail(error instanceof Error ? error : new Error(String(error))));
     child.once('exit', (code) => fail(new Error(`Chrome extension installer exited: ${code}`)));
   }
 
@@ -54,7 +57,14 @@ async function launchPipeBrowser(browserPath, args, windowsHide = false) {
   if (process.platform !== 'win32') options.detached = true;
   const child = spawn(browserPath, args, options);
   const connection = new PipeConnection(child);
-  await connection.command('Browser.getVersion', {}, 20000);
+  try {
+    await connection.command('Browser.getVersion', {}, 20000);
+  } catch (error) {
+    // A failed handshake (bad path, crash before answering) must not leave an
+    // off-screen Chrome running: the caller's finally never sees the assignment.
+    try { child.kill(); } catch (_) {}
+    throw error;
+  }
   return { child, connection };
 }
 

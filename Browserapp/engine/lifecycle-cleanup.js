@@ -66,7 +66,7 @@ module.exports = {
             try { item.markerProcess.kill(); } catch (_) {}
           }
           // Do not close proxyForwarder while child has not exited to avoid network leak to host
-          stopIpcStubForWindow(item.kernelWindowName);
+          stopIpcStubForWindow(item.kernelWindowName).catch(() => {});
           item.cleanupFailed = true;
           item.cleanupState = 'blocked';
           const failure = new Error(`Browser child exit was not confirmed for profile ${profileId}; cleanup is fail-closed`);
@@ -126,7 +126,7 @@ module.exports = {
         try { item.markerProcess.kill(); } catch (_) {}
       }
       await item.proxyForwarder?.close().catch(() => {});
-      stopIpcStubForWindow(item.kernelWindowName);
+      stopIpcStubForWindow(item.kernelWindowName).catch(() => {});
       const lockReleased = await releaseProfileLock(item.root, item.profileLock).catch(() => false);
       if (!lockReleased && item.profileLock && fs.existsSync(lockPath(item.root))) {
         if (!options.ignoreForeignLock) {

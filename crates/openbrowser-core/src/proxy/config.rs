@@ -99,8 +99,8 @@ impl ProxyConfig {
         let auth = if self.is_authenticated() {
             format!(
                 "{}:{}@",
-                self.username.as_deref().unwrap_or(""),
-                self.password.as_deref().unwrap_or("")
+                encode_userinfo(self.username.as_deref().unwrap_or("")),
+                encode_userinfo(self.password.as_deref().unwrap_or(""))
             )
         } else {
             String::new()
@@ -185,6 +185,29 @@ impl ProxyConfig {
 
         Ok(())
     }
+}
+
+/// Percent-encode a userinfo component (username or password) per RFC 3986.
+///
+/// `validate()` deliberately allows arbitrary encodable credential bytes for
+/// the wire protocols (SOCKS5 RFC 1929 byte strings, HTTP Basic base64), but
+/// those same bytes cannot be pasted raw into a URL: `#`, `@`, `/`, `:` and
+/// CRLF would tear the URL structure apart or leak credential fragments into
+/// non-credential positions. Encoding everything outside the unreserved set
+/// keeps the generated URL parseable and losslessly decodable.
+fn encode_userinfo(part: &str) -> String {
+    let mut out = String::with_capacity(part.len());
+    for byte in part.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char);
+            }
+            _ => {
+                out.push_str(&format!("%{:02X}", byte));
+            }
+        }
+    }
+    out
 }
 
 #[cfg(test)]

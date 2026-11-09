@@ -4,14 +4,30 @@ function request(url, method = 'GET') {
   return new Promise((resolve, reject) => {
     const req = http.request(url, { method, timeout: 5000 }, (res) => {
       let body = '';
+      let settled = false;
+      const fail = (error) => {
+        if (settled) return;
+        settled = true;
+        reject(error instanceof Error ? error : new Error(String(error)));
+      };
       res.setEncoding('utf8');
       res.on('data', (chunk) => {
         body += chunk;
         if (body.length > 32 * 1024 * 1024) req.destroy(new Error('CDP HTTP response too large'));
       });
       res.on('end', () => {
+        if (settled) return;
+        settled = true;
         if (res.statusCode >= 400) return reject(new Error(`CDP HTTP ${res.statusCode}: ${body.slice(0, 200)}`));
         resolve(body);
+      });
+      // A response reset mid-stream (browser exit, renderer crash) never reaches the
+      // request's own 'error' handler once headers have arrived, and 'end' never fires;
+      // the timeout fallback is cleared by destroy. Listen on the response stream so
+      // the promise settles instead of hanging forever.
+      res.on('error', fail);
+      res.on('close', () => {
+        if (!res.complete) fail(new Error('CDP HTTP response aborted'));
       });
     });
     req.on('timeout', () => req.destroy(new Error('CDP HTTP timeout')));

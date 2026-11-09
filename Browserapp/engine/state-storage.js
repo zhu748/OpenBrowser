@@ -48,16 +48,32 @@ async function writeRawAtomically(filePath, value, mode = 0o600) {
   throw lastError || new Error("atomic write failed");
 }
 
+// .bak refresh throttle: refreshing the backup on every write doubles the IO
+// of the persist path (read old + write .bak + write new). Within the window
+// the existing .bak keeps the last refreshed version — recovery may lose at
+// most BAK_REFRESH_INTERVAL_MS of state, which the debounced persist cadence
+// makes acceptable.
+const BAK_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
+const bakLastRefreshAt = new Map();
+
 async function writeJsonAtomically(filePath, value, mode = 0o600) {
-  let previous = null;
-  try {
-    // 原始字节留作 .bak（可能是旧明文，也可能是旧密文），不再解析校验
-    const raw = await fsp.readFile(filePath);
-    previous = raw;
-  } catch (error) {
-    if (error.code === "ENOENT") previous = null;
+  const shouldRefreshBak = (bakLastRefreshAt.get(filePath) || 0) + BAK_REFRESH_INTERVAL_MS <= Date.now();
+  if (shouldRefreshBak) {
+    let previous = null;
+    try {
+      // 原始字节留作 .bak（可能是旧明文，也可能是旧密文），不再解析校验
+      const raw = await fsp.readFile(filePath);
+      previous = raw;
+    } catch (error) {
+      if (error.code === "ENOENT") previous = null;
+    }
+    if (previous != null) {
+      await writeRawAtomically(`${filePath}.bak`, previous, mode);
+      bakLastRefreshAt.set(filePath, Date.now());
+    }
+    // ENOENT leaves no timestamp recorded: the next write must still be able
+    // to produce the first .bak as soon as a previous file exists.
   }
-  if (previous != null) await writeRawAtomically(`${filePath}.bak`, previous, mode);
   const payload = credentialCrypto.isEncrypted(value)
     ? value
     : credentialCrypto.encryptCredential(typeof value === "string" ? value : JSON.stringify(value));

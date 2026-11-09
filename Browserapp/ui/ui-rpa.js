@@ -658,6 +658,15 @@ async function saveCustomTemplateFromDialog() {
   await refreshRpaStore();
 }
 
+// Single rpaTasks fetch feeding both tables: the task table and the run table
+// render from the same dataset, so manual refresh buttons must not pay for two
+// identical IPC round-trips.
+async function refreshRpaTables() {
+  let tasks = null;
+  try { tasks = await window.ops.rpaTasks({}); } catch (_) { tasks = []; }
+  await Promise.all([refreshRpaTasks(tasks), refreshRpaRuns(tasks)]);
+}
+
 async function refreshRpaPage() {
   try {
     await refreshStatus();
@@ -672,10 +681,13 @@ async function refreshRpaPage() {
     if (plan) loadRpaPlanToEditor(plan);
     else { rpaSelectedId = null; renderRpaPlans(); }
   } else renderRpaPlans();
-  await refreshRpaStatusBadge();
-  await refreshRpaTasks();
-  await refreshRpaRuns();
-  await refreshRpaStore();
+  // The five IPC fetches are independent: run them concurrently instead of
+  // paying their latencies back-to-back on every page refresh.
+  await Promise.all([
+    refreshRpaStatusBadge(),
+    refreshRpaTables(),
+    refreshRpaStore(),
+  ]);
   const rpaView = document.getElementById('view-rpa');
   rpaApplyLocalUi(rpaView);
 }
@@ -697,7 +709,7 @@ document.getElementById('rpa-new-plan')?.addEventListener('click', () => createR
 document.getElementById('rpa-new-plan-2')?.addEventListener('click', () => createRpaPlan().catch((e) => toast(e.message)));
 document.getElementById('rpa-create-task')?.addEventListener('click', () => createRpaPlan(tx('任务流程 ') + new Date().toLocaleString()).catch((e) => toast(e.message)));
 document.getElementById('rpa-refresh')?.addEventListener('click', refreshRpaPage);
-document.getElementById('rpa-task-refresh')?.addEventListener('click', refreshRpaTasks);
+document.getElementById('rpa-task-refresh')?.addEventListener('click', () => refreshRpaTables());
 document.getElementById('rpa-task-select-all')?.addEventListener('change', (event) => {
   const checked = event.target.checked;
   const table = document.getElementById('rpa-task-table');
@@ -729,7 +741,7 @@ document.getElementById('rpa-task-delete-checked')?.addEventListener('click', as
     toast(tx('删除失败：') + err.message);
   }
 });
-document.getElementById('rpa-run-refresh')?.addEventListener('click', refreshRpaRuns);
+document.getElementById('rpa-run-refresh')?.addEventListener('click', () => refreshRpaTables());
 document.getElementById('rpa-flow-search')?.addEventListener('input', renderRpaPlans);
 document.getElementById('rpa-task-search')?.addEventListener('input', () => {
   clearTimeout(window.__rpaTaskSearchTimer);

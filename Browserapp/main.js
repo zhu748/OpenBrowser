@@ -188,7 +188,16 @@ let shortcutActionInFlight = false;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function emit(value) {
-  for (const win of windows) if (!win.isDestroyed()) win.webContents.send('engine:event', value);
+  // Per-window isolation: webContents.send on a window destroyed between the
+  // isDestroyed() check and the send throws and would break the fan-out to the
+  // remaining windows — and with it every engine cleanup path that emits.
+  for (const win of windows) {
+    try {
+      if (!win.isDestroyed()) win.webContents.send('engine:event', value);
+    } catch (error) {
+      console.error('[OpenBrowser] engine event dispatch failed:', error?.message || error);
+    }
+  }
 }
 
 function pickWorkArea() {
@@ -729,11 +738,28 @@ function isChromeStoreIconHost(hostname) {
 const chromeStorePageRequests = new Map();
 const CHROME_STORE_PAGE_TTL_MS = 30_000;
 const chromeStorePageCache = new Map(); // safeId -> { html, fetchedAt }
+const CHROME_STORE_PAGE_CACHE_MAX = 24;
+
+// Bounded insert: Map preserves insertion order, so the first key is the
+// oldest entry. Unbounded growth would retain every store page ever opened
+// for the lifetime of the app session.
+function rememberChromeStorePage(safeId, html) {
+  chromeStorePageCache.set(safeId, { html, fetchedAt: Date.now() });
+  while (chromeStorePageCache.size > CHROME_STORE_PAGE_CACHE_MAX) {
+    const oldestKey = chromeStorePageCache.keys().next().value;
+    if (oldestKey === undefined) break;
+    chromeStorePageCache.delete(oldestKey);
+  }
+}
 
 async function fetchChromeStorePageHtml(safeId, timeoutMs = 25000) {
   const now = Date.now();
   const cachedPage = chromeStorePageCache.get(safeId);
-  if (cachedPage && now - cachedPage.fetchedAt < CHROME_STORE_PAGE_TTL_MS) return cachedPage.html;
+  if (cachedPage) {
+    if (now - cachedPage.fetchedAt < CHROME_STORE_PAGE_TTL_MS) return cachedPage.html;
+    // Lazy eviction: an expired entry is dead weight until refetched.
+    chromeStorePageCache.delete(safeId);
+  }
   const pending = chromeStorePageRequests.get(safeId);
   if (pending) return pending;
   const request = (async () => {
@@ -757,7 +783,7 @@ async function fetchChromeStorePageHtml(safeId, timeoutMs = 25000) {
     if (!response.ok) return null;
     const html = await response.text();
     if (html && html.length <= 4 * 1024 * 1024) {
-      chromeStorePageCache.set(safeId, { html, fetchedAt: Date.now() });
+      rememberChromeStorePage(safeId, html);
     }
     return html || null;
   })().catch(() => null).finally(() => chromeStorePageRequests.delete(safeId));
@@ -1951,6 +1977,11 @@ function beginQuitCleanup() {
     // A settings change made moments before quitting may still be inside the
     // quiet period; write it out before the process goes away.
     .then(() => settingsStore.flushSettingsWriter())
+    // RPA task/template updates coalesce into one quiet-period write; flush it
+    // before the process goes away so the final task status reaches the disk.
+    .then(() => automation?.rpaStore?.flush?.().catch((error) => {
+      console.warn('OpenBrowser quit rpa-store flush failed:', error?.message || error);
+    }))
     .then(() => {
       try { liveSync?.stop?.(); } catch (error) {
         console.warn('OpenBrowser quit live-sync cleanup failed:', error?.message || error);

@@ -24,8 +24,10 @@
 const { createTypingEngine, DEFAULT_DELAY_RANGE } = require('./human-typing');
 
 const MODIFIER_SHIFT = 8;
+const MODIFIER_CTRL = 2;
 
 const VK_SHIFT = 16;
+const VK_CONTROL = 17;
 const VK_ENTER = 13;
 const VK_TAB = 9;
 const VK_BACKSPACE = 8;
@@ -267,7 +269,109 @@ function createCdpTypingDriver(call, ws, options = {}) {
     await sleep(0);
   }
 
-  return { typeChar, pressKey, flush };
+  /**
+   * Read the current character length of the focused editable element.
+   *
+   * The clear path used to assume the field only held what a previous run had
+   * typed, so it pressed Backspace `newText.length + 8` times and left whatever
+   * was longer behind. Reading the real length keeps the backspace run
+   * proportional to what is actually in the field.
+   *
+   * @returns {Promise<number|null>} length in code points, or null when the
+   *   transport cannot answer (then the caller falls back to select-all).
+   */
+  async function focusedValueLength() {
+    try {
+      const response = await call.call(ws, 'Runtime.evaluate', {
+        expression: '(() => {'
+          + 'const el = document.activeElement;'
+          + 'if (!el) return null;'
+          + 'if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") {'
+          + '  return typeof el.value === "string" ? Array.from(el.value).length : null;'
+          + '}'
+          + 'if (el.isContentEditable) return Array.from(el.textContent || "").length;'
+          + 'return null;'
+          + '})()',
+        returnByValue: true,
+      });
+      const value = response?.result?.result?.value ?? response?.result?.value ?? response?.value;
+      return Number.isInteger(value) && value >= 0 ? value : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /**
+   * Clear the focused element: Backspace once per existing character. When the
+   * current length cannot be read, fall back to the Ctrl+A + Backspace select
+   * all sequence (Control down, Backspace, Control up) so a long-prefilled
+   * field is still fully cleared.
+   */
+  async function clearFocused() {
+    const length = await focusedValueLength();
+    if (length !== null) {
+      for (let i = 0; i < length; i += 1) {
+        await pressKey('Backspace', { delay: 25 });
+      }
+      return;
+    }
+    await call.call(ws, 'Input.dispatchKeyEvent', {
+      type: 'rawKeyDown',
+      modifiers: MODIFIER_CTRL,
+      key: 'Control',
+      code: 'ControlLeft',
+      windowsVirtualKeyCode: VK_CONTROL,
+      nativeVirtualKeyCode: VK_CONTROL,
+    });
+    try {
+      // Ctrl+A with the control modifier carried on the key event itself.
+      await call.call(ws, 'Input.dispatchKeyEvent', {
+        type: 'keyDown',
+        modifiers: MODIFIER_CTRL,
+        text: 'a',
+        unmodifiedText: 'a',
+        key: 'a',
+        code: 'KeyA',
+        windowsVirtualKeyCode: 65,
+        nativeVirtualKeyCode: 65,
+      });
+      await call.call(ws, 'Input.dispatchKeyEvent', {
+        type: 'keyUp',
+        modifiers: MODIFIER_CTRL,
+        key: 'a',
+        code: 'KeyA',
+        windowsVirtualKeyCode: 65,
+        nativeVirtualKeyCode: 65,
+      });
+      await call.call(ws, 'Input.dispatchKeyEvent', {
+        type: 'rawKeyDown',
+        modifiers: 0,
+        key: 'Backspace',
+        code: 'Backspace',
+        windowsVirtualKeyCode: VK_BACKSPACE,
+        nativeVirtualKeyCode: VK_BACKSPACE,
+      });
+      await call.call(ws, 'Input.dispatchKeyEvent', {
+        type: 'keyUp',
+        modifiers: 0,
+        key: 'Backspace',
+        code: 'Backspace',
+        windowsVirtualKeyCode: VK_BACKSPACE,
+        nativeVirtualKeyCode: VK_BACKSPACE,
+      });
+    } finally {
+      await call.call(ws, 'Input.dispatchKeyEvent', {
+        type: 'keyUp',
+        modifiers: 0,
+        key: 'Control',
+        code: 'ControlLeft',
+        windowsVirtualKeyCode: VK_CONTROL,
+        nativeVirtualKeyCode: VK_CONTROL,
+      });
+    }
+  }
+
+  return { typeChar, pressKey, flush, clearFocused, focusedValueLength };
 }
 
 /**
@@ -289,10 +393,9 @@ async function typeText(call, ws, text, options = {}) {
   const range = options.delayRange || DEFAULT_DELAY_RANGE;
 
   if (options.clear) {
-    const length = Array.from(value).length;
-    for (let i = 0; i < length + 8; i += 1) {
-      await driver.pressKey('Backspace', { delay: 25 });
-    }
+    // Clear what the field actually holds, not what this call is about to
+    // type: a prefilled value longer than the new text used to survive.
+    await driver.clearFocused();
   }
 
   if (options.human) {
@@ -311,4 +414,5 @@ module.exports = {
   PRINTABLE_CHARACTERS: Object.keys(PRINTABLE),
   NAMED_KEY_NAMES: Object.keys(NAMED_KEYS),
   MODIFIER_SHIFT,
+  MODIFIER_CTRL,
 };

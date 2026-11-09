@@ -92,7 +92,13 @@ async function withPatchedRename(failures, fn) {
     const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'state-storage-'));
     const file = path.join(root, 'state.json');
     try {
+      // .bak refresh is throttled (BAK_REFRESH_INTERVAL_MS = 5min) and only a
+      // real .bak write records the timestamp. This case pins that contract:
+      // 1st write has no previous file → no .bak; the immediate 2nd write
+      // produces one from the 1st write's raw bytes; a 3rd write inside the
+      // window must NOT refresh it again.
       await writeJsonAtomically(file, '{"version":1}');
+      assert.strictEqual(fs.existsSync(file + '.bak'), false, 'no .bak while no previous file exists');
       await writeJsonAtomically(file, '{"version":2}');
       const atRest = await fsp.readFile(file, 'utf8');
       assert.ok(atRest.startsWith('OBE1') || atRest.startsWith('OBS1'), 'state file must carry an encryption header');
@@ -101,6 +107,12 @@ async function withPatchedRename(failures, fn) {
       const bak = await fsp.readFile(file + '.bak');
       assert.ok(bak.length > 0, '.bak must preserve previous raw bytes');
       assert.strictEqual((await readEngineStateCandidate(file + '.bak')).saved.version, 1);
+      await writeJsonAtomically(file, '{"version":3}');
+      assert.strictEqual((await readEngineStateCandidate(file)).saved.version, 3);
+      assert.strictEqual(
+        (await readEngineStateCandidate(file + '.bak')).saved.version, 1,
+        '.bak refresh must be throttled within the interval (still the first write\'s bytes)',
+      );
     } finally {
       await fsp.rm(root, { recursive: true, force: true }).catch(() => {});
     }

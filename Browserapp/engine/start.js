@@ -21,12 +21,19 @@ const { resolveProfileTimezone } = require('../automation/locale-from-country');
 const { mergeLoadExtensionArgs } = require('../automation/protocol/app-center-protocol');
 const { backgroundNetworkFlagsForProfile } = require('../automation/request-header-rewriter');
 const { portConnection, reconcileOnConnection } = require('../extension-pipe');
-const { appendDiagnosticOutput, formatBrowserStartupError, isChildExited, removeSingletonFiles, writeBrowserStartupDiagnostic } = require('./index');
+const { appendDiagnosticOutput, formatBrowserStartupError, isChildExited, removeSingletonFiles, writeBrowserStartupDiagnostic, writeRawAtomically } = require('./index');
 const { assertResourceGateForLaunch } = require('./resource-gate');
 const { spawn } = require('child_process');
 const crypto = require('crypto');
 const fs = require('fs');
+const fsp = require('fs/promises');
 const path = require('path');
+
+// Browserapp/ app root (this file lives in Browserapp/engine/). Resource
+// bundles such as kernels/ and bundled-extension/ sit next to main.js, one
+// level above this module — path.join(__dirname, 'kernels') would resolve to
+// the non-existent engine/kernels and silently drop every resource root.
+const APP_ROOT = path.join(__dirname, '..');
 
 // proxy-forwarder is optional: the guarded require keeps a broken optional
 // dependency from taking the startup path down (same pattern as engine.js).
@@ -87,12 +94,12 @@ const SEARCH_ENGINE_TEMPLATES = {
  * Existing Preferences keys are preserved; failure to write is non-fatal (the
  * environment still starts with the kernel default search engine).
  */
-function applyDefaultSearchEngine(root, engine) {
+async function applyDefaultSearchEngine(root, engine) {
   const template = SEARCH_ENGINE_TEMPLATES[String(engine || '')];
   if (!template) return false;
   const prefsPath = path.join(root, 'Default', 'Preferences');
   let prefs = {};
-  try { prefs = JSON.parse(fs.readFileSync(prefsPath, 'utf8')); } catch (_) { prefs = {}; }
+  try { prefs = JSON.parse(await fsp.readFile(prefsPath, 'utf8')); } catch (_) { prefs = {}; }
   prefs.default_search_provider_data = prefs.default_search_provider_data && typeof prefs.default_search_provider_data === 'object'
     ? prefs.default_search_provider_data
     : {};
@@ -111,8 +118,10 @@ function applyDefaultSearchEngine(root, engine) {
     alternate_urls: [],
   };
   try {
-    fs.mkdirSync(path.dirname(prefsPath), { recursive: true });
-    fs.writeFileSync(prefsPath, JSON.stringify(prefs));
+    await fsp.mkdir(path.dirname(prefsPath), { recursive: true });
+    // Atomic write (temp + rename): a partial Preferences file would be read by
+    // the kernel as a corrupt profile on the very next launch.
+    await writeRawAtomically(prefsPath, JSON.stringify(prefs));
     return true;
   } catch (_) {
     return false;
@@ -123,26 +132,47 @@ function applyDefaultSearchEngine(root, engine) {
  * Per-profile launch-time data clearing (对齐「启动浏览器前删除 Cookie / Local Storage」).
  * Cache clearing already exists via advanced.clearCacheOnStart; this covers the
  * cookie and local-storage/session/indexeddb stores. Best-effort deletes.
+ * Target lists are engine-specific (Chromium nests stores under Default/,
+ * Firefox keeps them in the profile root), so the walker below is shared and
+ * parameterized by CHROMIUM_LAUNCH_DATA_TARGETS here and by the Firefox map in
+ * engine/start-firefox.js.
  */
+const CHROMIUM_LAUNCH_DATA_TARGETS = {
+  cookies: ['Default/Network/Cookies', 'Default/Network/Cookies-journal', 'Default/Cookies', 'Default/Cookies-journal'],
+  localStorage: ['Default/Local Storage/leveldb', 'Default/Session Storage', 'Default/IndexedDB'],
+  history: ['Default/History', 'Default/History-journal', 'Default/History Provider Cache', 'Default/Visited Links'],
+};
+
 function clearProfileLaunchData(root, profile) {
   const advanced = profile?.advanced && typeof profile.advanced === 'object' ? profile.advanced : {};
-  const rm = (relative) => {
-    try { fs.rmSync(path.join(root, relative), { recursive: true, force: true }); return true; } catch (_) { return false; }
+  return clearLaunchDataTargets(root, advanced, CHROMIUM_LAUNCH_DATA_TARGETS);
+}
+
+/**
+ * Shared best-effort walker behind clearProfileLaunchData (and the Firefox
+ * variant in start-firefox.js): deletes every engine-specific target whose
+ * launch-clear switch is on, returning the relative paths actually removed
+ * (payload of the profile-launch-data-cleared event).
+ */
+async function clearLaunchDataTargets(root, advanced, targets) {
+  const switches = advanced && typeof advanced === 'object' ? advanced : {};
+  const rm = async (relative) => {
+    try { await fsp.rm(path.join(root, relative), { recursive: true, force: true }); return true; } catch (_) { return false; }
   };
   const removed = [];
-  if (advanced.clearCookiesOnStart) {
-    for (const relative of ['Default/Network/Cookies', 'Default/Network/Cookies-journal', 'Default/Cookies', 'Default/Cookies-journal']) {
-      if (rm(relative)) removed.push(relative);
+  if (switches.clearCookiesOnStart) {
+    for (const relative of targets.cookies) {
+      if (await rm(relative)) removed.push(relative);
     }
   }
-  if (advanced.clearLocalStorageOnStart) {
-    for (const relative of ['Default/Local Storage/leveldb', 'Default/Session Storage', 'Default/IndexedDB']) {
-      if (rm(relative)) removed.push(relative);
+  if (switches.clearLocalStorageOnStart) {
+    for (const relative of targets.localStorage) {
+      if (await rm(relative)) removed.push(relative);
     }
   }
-  if (advanced.clearHistoryOnStart) {
-    for (const relative of ['Default/History', 'Default/History-journal', 'Default/History Provider Cache', 'Default/Visited Links']) {
-      if (rm(relative)) removed.push(relative);
+  if (switches.clearHistoryOnStart) {
+    for (const relative of targets.history) {
+      if (await rm(relative)) removed.push(relative);
     }
   }
   return removed;
@@ -192,6 +222,42 @@ function windowPositionArg(profile) {
   } catch (_) {
     return null;
   }
+}
+
+/**
+ * Commit a mid-start profile snapshot without clobbering concurrent edits.
+ * A start can take seconds (proxy probes, kernel bootstrap, CDP attach); a
+ * save from the editor during that window updates this.profiles directly.
+ * Writing the start-time snapshot back wholesale would revert those edits
+ * (proxy, fingerprint, advanced …) on the next persist. Instead, re-read the
+ * live value and only merge the launch-computed runtime fields this snapshot
+ * actually changed (exit details, resolved locale/timezone, effective proxy).
+ * If the profile was deleted mid-start, the write-back is skipped entirely.
+ */
+function mergeLaunchProfileUpdate(engine, snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return null;
+  const live = engine.profiles.get(snapshot.id);
+  if (!live || live === snapshot) return live || null;
+  const merged = {
+    ...live,
+    // Exit/network details resolved during launch
+    exitIp: snapshot.exitIp,
+    exitCountryCode: snapshot.exitCountryCode,
+    exitTimezone: snapshot.exitTimezone,
+    exitLatitude: snapshot.exitLatitude,
+    exitLongitude: snapshot.exitLongitude,
+    exitCheckedAt: snapshot.exitCheckedAt,
+    exitLatencyMs: snapshot.exitLatencyMs,
+    exitNetworkType: snapshot.exitNetworkType,
+    // Effective proxy after prepare (backup failover / API extraction)
+    proxy: snapshot.proxy,
+    proxyId: snapshot.proxyId,
+    proxyMeta: snapshot.proxyMeta,
+    // Resolved language / timezone-aligned privacy block
+    language: snapshot.language,
+    privacy: snapshot.privacy,
+  };
+  return engine.sanitizeProfile(merged);
 }
 
 module.exports = {
@@ -251,7 +317,10 @@ module.exports = {
     try {
       profile = await this.prepareProfileProxyForStart(profile);
     this.assertStartGenerationActive(profile.id, lifecycleGeneration);
-    this.profiles.set(profile.id, profile);
+    // Merge-only write-back: keep editor edits made while the launch was
+    // resolving the effective proxy (see mergeLaunchProfileUpdate).
+    const afterProxy = mergeLaunchProfileUpdate(this, profile);
+    if (afterProxy) profile = afterProxy;
     // Roxy 客户端设置对齐：内存使用率超上限 / 磁盘可用空间低于下限 → 停止打开窗口。
     currentStage = 'resources'; this.emitStartProgress(profile.id, 'resources', 8, '正在检测内存与磁盘…');
     await assertResourceGateForLaunch({ diskRoot: this.profileRoot(profile.id) });
@@ -270,7 +339,9 @@ module.exports = {
       await this.ensureExitNetworkForLocale(profile).catch(() => {});
     }
     profile = this.applyResolvedLocale(profile);
-    this.profiles.set(profile.id, profile);
+    // Same merge-only write-back after the locale/geo resolution pass.
+    const afterLocale = mergeLaunchProfileUpdate(this, profile);
+    if (afterLocale) profile = afterLocale;
     // IP 变化守护（对齐「IP 发生变化停止打开 / 提醒」）：patch = 默认，重对齐指纹继续；
     // stop = 启动阶段直接阻断；notify = 发出提醒事件但不阻断。仅在本次启动真的做了
     // 出口检测时才可能触发（同会话内的缓存命中不会误报）。
@@ -322,12 +393,12 @@ module.exports = {
     await removeSingletonFiles(root, { attempts: 6, delayMs: 40 });
     // 启动前清理 Cookies / Local Storage / IndexedDB（缓存清理在 clearCacheOnStart 既有路径），
     // 以及默认搜索引擎写入 Preferences —— 都要在内核读取之前完成。
-    const clearedLaunchData = clearProfileLaunchData(root, profile);
+    const clearedLaunchData = await clearProfileLaunchData(root, profile);
     if (clearedLaunchData.length) {
       this.emit({ type: 'profile-launch-data-cleared', id: profile.id, removed: clearedLaunchData });
     }
     if (profile.privacy?.searchEngine) {
-      applyDefaultSearchEngine(root, profile.privacy.searchEngine);
+      await applyDefaultSearchEngine(root, profile.privacy.searchEngine);
     }
     const pageNetwork = this.networkInfo.get(profile.id) || {};
     const customStartUrls = this.resolveStartupUrls(profile);
@@ -418,7 +489,7 @@ module.exports = {
           profile,
           browserPath: browser.path,
           resourceRoots: [
-            path.join(__dirname, 'kernels'),
+            path.join(APP_ROOT, 'kernels'),
             __dirname,
             path.join(this.app.getPath('userData'), 'kernels'),
           ],
@@ -457,7 +528,10 @@ module.exports = {
     if (windowPositionArgValue && !profile.privacy?.fullscreen) args.push(windowPositionArgValue);
     // Honor the configured cap instead of a hardcoded 8GB: small-memory
     // machines got GC behavior budgeted for 8GB per environment.
-    if (profile.advanced.jsHeapMax) args.push(`--js-flags=--max-old-space-size=${Math.max(256, Math.min(16384, Number(profile.advanced.jsHeapMax) || 4096))}`);
+    // jsHeapMax is normalized by the sanitizer (number = MB cap; true → 4096;
+    // null = no cap), so the Number() fallback only guards direct callers.
+    const jsHeapCap = profile.advanced.jsHeapMax;
+    if (jsHeapCap) args.push(`--js-flags=--max-old-space-size=${Math.max(256, Math.min(16384, Number(jsHeapCap) || 4096))}`);
     if (restoreSession) args.push('--restore-last-session');
     const disabledFeatures = [];
     // Authenticated proxies are exposed to Chrome through the local bridge. Everything else takes
@@ -549,7 +623,7 @@ module.exports = {
         profileId: profile.id,
         envNumber,
         userDataPath: this.app.getPath('userData'),
-        templateDir: path.join(__dirname, 'bundled-extension'),
+        templateDir: path.join(APP_ROOT, 'bundled-extension'),
       });
     } catch (error) {
       this.emit({ type: 'sync-error', action: 'env-marker-icon', id: profile.id, message: error.message });
@@ -1055,4 +1129,10 @@ module.exports = {
 
 isValidIanaTimezone,
 extractTimezoneFromArgs,
+// Exported for engine/start-firefox.js (the Firefox launch pipeline reuses the
+// walker with its own root-level target map) and for selftests. Assigned onto
+// the prototype with the rest of this module's surface; both are pure
+// (root, profile, targets) functions that never touch `this`.
+clearProfileLaunchData,
+clearLaunchDataTargets,
 };

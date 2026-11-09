@@ -262,6 +262,69 @@ async function main() {
     console.log('  PASS  restoreProfiles clears trashed flag in SQLite and memory');
     console.log('  PASS  purgeProfiles permanently removes record from SQLite and disk');
     console.log('  PASS  emptyTrash cleans all trashed items while preserving active profiles');
+
+    // ==========================================
+    // Test 3.5 (5b): trash/restore sync _rowHashes — unchanged rows are not rewritten
+    // ==========================================
+    console.log('\n--- [Test 3.5] trash/restore must not make saveProfilesDiffed rewrite unchanged rows ---');
+    {
+      const tempDir35 = fs.mkdtempSync(path.join(os.tmpdir(), 'ob-diff-hash-'));
+      try {
+        const store35 = new ProfileStoreSqlite({
+          dbPath: path.join(tempDir35, 'data.db'),
+          wal: true,
+        });
+        await store35.init();
+        const profiles = [
+          { id: 'diff-a', number: 1, name: 'A', trashed: false },
+          { id: 'diff-b', number: 2, name: 'B', trashed: false },
+        ];
+        store35.saveProfiles(profiles);
+        // Prime the diff map the way a boot does.
+        store35.getAllProfiles();
+
+        // Count real row writes by spying on the upsert statement.
+        let upserts = 0;
+        const realUpsert = store35._statements.upsertProfile;
+        store35._statements.upsertProfile = {
+          run: (...args) => { upserts += 1; return realUpsert.run(...args); },
+        };
+
+        // Re-saving unchanged profiles must write nothing.
+        let changed = store35.saveProfilesDiffed(profiles);
+        assert.equal(changed, 0, 'unchanged profiles are not rewritten');
+        assert.equal(upserts, 0, 'no upsert for unchanged rows');
+
+        // Trash one profile, then re-save the full (unchanged-in-memory) set:
+        // only the trashed row may be rewritten.
+        store35.trashProfiles(['diff-a']);
+        const after = store35.getAllProfiles();
+        upserts = 0;
+        changed = store35.saveProfilesDiffed(after);
+        assert.equal(changed, 0, 'trashProfiles synced the hash map: no rewrite');
+        assert.equal(upserts, 0, 'no upsert after trash for synced rows');
+
+        // Mutating one profile rewrites exactly that row.
+        after[1].name = 'B2';
+        upserts = 0;
+        changed = store35.saveProfilesDiffed(after);
+        assert.equal(changed, 1, 'only the mutated row is detected');
+        assert.equal(upserts, 1, 'exactly one upsert for the mutated row');
+
+        // Restore path: same guarantee.
+        store35.restoreProfiles(['diff-a']);
+        const restored = store35.getAllProfiles();
+        upserts = 0;
+        changed = store35.saveProfilesDiffed(restored);
+        assert.equal(changed, 0, 'restoreProfiles synced the hash map: no rewrite');
+        assert.equal(upserts, 0, 'no upsert after restore for synced rows');
+
+        store35.close();
+        console.log('  PASS  trashProfiles/restoreProfiles keep _rowHashes in sync (no stale-hash rewrites)');
+      } finally {
+        fs.rmSync(tempDir35, { recursive: true, force: true });
+      }
+    }
   } finally {
     fs.rmSync(tempDir3, { recursive: true, force: true });
   }

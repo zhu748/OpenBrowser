@@ -52,6 +52,10 @@ struct BridgeRunning {
     addr: SocketAddr,
     shutdown_tx: watch::Sender<bool>,
     server_handle: tokio::task::JoinHandle<()>,
+    /// Generation captured by the start() call that created this run. stop()
+    /// compares it against the shared counter so a concurrent restart's pool
+    /// is never cleared by an older stop.
+    generation: u64,
 }
 
 /// Resets the bridge's observable state when the server task goes away.
@@ -1093,6 +1097,15 @@ impl ProxyForwarder for LocalProxyBridge {
                             }
                         }
                     }
+                    // With the session cap reached, accept stays disabled and
+                    // new connections sit in the listen backlog. Wake once per
+                    // second while saturated so the condition is observable.
+                    _ = tokio::time::sleep(Duration::from_secs(1)), if join_set.len() >= 512 => {
+                        warn!(
+                            "Proxy session limit reached ({} active); new connections are held in the accept backlog",
+                            join_set.len()
+                        );
+                    }
                 }
             }
 
@@ -1118,6 +1131,7 @@ impl ProxyForwarder for LocalProxyBridge {
             addr,
             shutdown_tx,
             server_handle: server_task,
+            generation: task_generation,
         });
 
         Ok(addr)
@@ -1151,9 +1165,7 @@ impl ProxyForwarder for LocalProxyBridge {
             // cleanly or was aborted). Only clear the pool when no newer
             // start() superseded this run: a concurrent restart would have
             // rearmed the pool for the new listeners already.
-            let current = self.generation.load(Ordering::SeqCst);
-            let stopped_generation = current; // stop() always follows the latest start
-            if self.generation.load(Ordering::SeqCst) == stopped_generation {
+            if running.generation == self.generation.load(Ordering::SeqCst) {
                 self.tunnel_pool.clear().await;
             }
         }

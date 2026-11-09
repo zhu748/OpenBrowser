@@ -23,6 +23,10 @@
 const { buildFirefoxUserJs, firefoxUserAgent, firefoxStartupArgs, firefoxPlatformDir } = require('../automation/kernel-versions');
 const { acquireProfileLock, updateProfileLock, validateProfileRootSecure } = require('../automation/isolation');
 const { removeSingletonFiles, writeBrowserStartupDiagnostic, formatBrowserStartupError, isChildExited } = require('./index');
+const { assertResourceGateForLaunch } = require('./resource-gate');
+// Shared launch-data walker (parameterized target map) from the Chromium
+// startup mixin: start.js does not require this file, so there is no cycle.
+const { clearLaunchDataTargets } = require('./start');
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -92,6 +96,26 @@ async function enforceDataRetentionFirefox(root, profile) {
 }
 
 /**
+ * 启动前清理（advanced.clear*OnStart）的 Firefox 目标列表，对应 start.js 的
+ * CHROMIUM_LAUNCH_DATA_TARGETS。Firefox 把各存储直接放在 profile 根目录：
+ * cookies.sqlite（Cookie）、places.sqlite（历史）、webappsstore.sqlite（站点
+ * localStorage）、sessionstore.json（会话恢复状态，对应 Chromium 侧归入
+ * clearLocalStorageOnStart 的 Default/Session Storage）。
+ * 注意 places.sqlite 同时承载书签与历史（与 enforceDataRetentionFirefox 的
+ * 互斥说明一致）：clearHistoryOnStart 会一并丢失书签——Firefox 无部分保留的表达。
+ */
+const FIREFOX_LAUNCH_DATA_TARGETS = {
+  cookies: ['cookies.sqlite', 'cookies.sqlite-wal', 'cookies.sqlite-shm'],
+  localStorage: ['webappsstore.sqlite', 'webappsstore.sqlite-wal', 'webappsstore.sqlite-shm', 'sessionstore.json'],
+  history: ['places.sqlite', 'places.sqlite-wal', 'places.sqlite-shm', 'history.sqlite'],
+};
+
+/** Firefox variant of start.js clearProfileLaunchData: shared walker, root-level targets. */
+async function clearFirefoxProfileLaunchData(root, profile) {
+  return clearLaunchDataTargets(root, profile?.advanced, FIREFOX_LAUNCH_DATA_TARGETS);
+}
+
+/**
  * Map the profile's advanced/privacy toggles onto Firefox prefs we can
  * actually express in user.js. Only toggles with a real Firefox pref are
  * mapped; anything else stays a declared gap (see the capability declaration
@@ -140,12 +164,24 @@ module.exports = {
    */
   async _startFirefox(raw, lifecycleGeneration = null) {
     let profile = this.resolveStoredProxyProfile(this.sanitizeProfile(raw));
+    // 记录本次启动前的出口 IP（上次运行持久化的值），供 ipChangePolicy 比对。
+    const previousExitIp = String(profile.exitIp || '').trim();
+    const previousExitCountryCode = String(profile.exitCountryCode || '').trim();
     this.profiles.set(profile.id, profile);
     this.assertStartGenerationActive(profile.id, lifecycleGeneration);
     if (this.running.has(profile.id)) {
       return this.publicRunning(profile.id);
     }
     this.assertProxyConcurrencyAvailable(profile);
+    // Surface cross-platform risks once — same one-shot flag and event as _start,
+    // so Chromium and Firefox launches together report exactly one preflight.
+    if (!this._platformPreflightDone) {
+      this._platformPreflightDone = true;
+      try {
+        const preflight = this.platformPreflightReport();
+        if (preflight.warnings.length) this.emit({ type: 'platform-preflight', ok: preflight.ok, warnings: preflight.warnings });
+      } catch (_) {}
+    }
 
     let currentStage = 'prepare';
     this.emitStartProgress(profile.id, 'prepare', 6, '正在准备环境…');
@@ -168,10 +204,49 @@ module.exports = {
       profile = await this.prepareProfileProxyForStart(profile);
       this.assertStartGenerationActive(profile.id, lifecycleGeneration);
       this.profiles.set(profile.id, profile);
+
+      // --- 启动前守卫段（对齐 _start 的顺序与语义，Firefox 管线不再绕过）---
+
+      // 资源闸：内存使用率超上限 / 磁盘可用空间低于下限 → 停止打开窗口。
+      // Firefox profile 不应绕过资源闸（纯 Node 自测环境由 resource-gate 自动跳过）。
+      currentStage = 'resources'; this.emitStartProgress(profile.id, 'resources', 8, '正在检测内存与磁盘…');
+      await assertResourceGateForLaunch({ diskRoot: this.profileRoot(profile.id) });
+
       currentStage = 'proxy'; this.emitStartProgress(profile.id, 'proxy', 18, '正在检测代理与出口…');
-      await this.ensureExitNetworkForLocale(profile).catch(() => {});
+      // 「网络不通停止打开」：守护开启时强制做一次真实出口检测，失败即阻断启动。
+      if (profile.advanced?.stopOpenNet) {
+        try {
+          await this.ensureExitNetworkForLocale(profile, { force: true });
+        } catch (error) {
+          throw Object.assign(new Error('网络不可用，已按「网络不通停止打开」策略停止启动：' + error.message), { code: 'network-unavailable' });
+        }
+        if (!String(profile.exitIp || '').trim()) {
+          throw Object.assign(new Error('网络不可用，已按「网络不通停止打开」策略停止启动'), { code: 'network-unavailable' });
+        }
+      } else {
+        await this.ensureExitNetworkForLocale(profile).catch(() => {});
+      }
       profile = this.applyResolvedLocale(profile);
       this.profiles.set(profile.id, profile);
+
+      // IP 变化守护（对齐「IP 发生变化停止打开 / 提醒」）：与 _start 相同的触发
+      // 条件、错误消息与事件类型；仅在本次启动真的做了出口检测时才可能触发。
+      const currentExitIp = String(profile.exitIp || '').trim();
+      if (previousExitIp && currentExitIp && previousExitIp !== currentExitIp && profile.advanced?.ipChangePolicy && profile.advanced.ipChangePolicy !== 'patch') {
+        const message = `出口 IP 已变化：${previousExitIp} → ${currentExitIp}`;
+        if (profile.advanced.ipChangePolicy === 'stop') {
+          throw Object.assign(new Error(message + '，已按「IP 变化停止打开」策略阻断启动'), { code: 'ip-changed' });
+        }
+        this.emit({ type: 'ip-change-notice', id: profile.id, previousExitIp, currentExitIp, message });
+      }
+      // 「IP 发生变化停止打开 / IP 对应国家发生改变停止打开」：独立于 ipChangePolicy 的硬闸。
+      const currentExitCountryCode = String(profile.exitCountryCode || '').trim();
+      if (profile.advanced?.stopOpenIPChange && previousExitIp && currentExitIp && previousExitIp !== currentExitIp) {
+        throw Object.assign(new Error(`出口 IP 已变化：${previousExitIp} → ${currentExitIp}，已按「IP 发生变化停止打开」策略阻断启动`), { code: 'ip-changed' });
+      }
+      if (profile.advanced?.stopOpenIPCountryChange && previousExitCountryCode && currentExitCountryCode && previousExitCountryCode !== currentExitCountryCode) {
+        throw Object.assign(new Error(`出口国家/地区已变化：${previousExitCountryCode} → ${currentExitCountryCode}，已按「IP 对应国家/地区发生改变停止打开」策略阻断启动`), { code: 'ip-country-changed' });
+      }
       await this.persist();
 
       currentStage = 'kernel'; this.emitStartProgress(profile.id, 'kernel', 30, '正在准备 Firefox 内核…');
@@ -202,6 +277,14 @@ module.exports = {
       // enforceDataRetention): the UI switches must not silently no-op just
       // because this profile runs under a Firefox kernel.
       await enforceDataRetentionFirefox(root, profile);
+
+      // 启动前清理 Cookies / Local Storage / 历史（对齐 _start 的
+      // clearProfileLaunchData；Firefox 目标列表见 FIREFOX_LAUNCH_DATA_TARGETS）。
+      // 事件类型与负载结构与 start.js 完全一致（profile-launch-data-cleared）。
+      const clearedLaunchData = await clearFirefoxProfileLaunchData(root, profile);
+      if (clearedLaunchData.length) {
+        this.emit({ type: 'profile-launch-data-cleared', id: profile.id, removed: clearedLaunchData });
+      }
 
       const pageNetwork = this.networkInfo.get(profile.id) || {};
       const customStartUrls = this.resolveStartupUrls(profile);
@@ -496,3 +579,6 @@ module.exports.firefoxPlatformDir = firefoxPlatformDir;
 // exported for selftests; the launch path calls them directly above.
 module.exports.enforceDataRetentionFirefox = enforceDataRetentionFirefox;
 module.exports.firefoxExtraUserPrefs = firefoxExtraUserPrefs;
+// Launch-data clearing (guard parity with start.js); exported for selftests.
+module.exports.clearFirefoxProfileLaunchData = clearFirefoxProfileLaunchData;
+module.exports.FIREFOX_LAUNCH_DATA_TARGETS = FIREFOX_LAUNCH_DATA_TARGETS;

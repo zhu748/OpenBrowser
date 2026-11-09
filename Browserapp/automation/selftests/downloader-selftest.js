@@ -216,7 +216,9 @@ function startServer(handler) {
       });
       const result = await dl.start();
       assert.strictEqual(result.sha256, sha256(payload));
-      assert.strictEqual(result.md5, md5(payload), 'md5 still reported for callers that want it');
+      // MD5 is no longer computed when only a sha256 was expected: hashing a
+      // large transfer for a digest nobody verifies is pure waste.
+      assert.strictEqual(result.md5, null, 'md5 skipped when not expected');
     } finally {
       await server.close();
     }

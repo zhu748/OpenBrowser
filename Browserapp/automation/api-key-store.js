@@ -46,6 +46,23 @@ class ApiKeyStore {
       return this.apiKey;
     }
 
+    // Concurrent callers used to race through the file-read/mint path and
+    // mint two different keys; the loser overwrote the winner's file. One
+    // shared in-flight promise keeps the mint single-flight. A rejected
+    // promise is shared by every waiter, which is the correct semantics:
+    // they all asked for the same thing and it failed.
+    if (this._resolveInFlight) return this._resolveInFlight;
+    this._resolveInFlight = (async () => {
+      try {
+        return await this._resolveStoredOrMint();
+      } finally {
+        this._resolveInFlight = null;
+      }
+    })();
+    return this._resolveInFlight;
+  }
+
+  async _resolveStoredOrMint() {
     // 1. Try reading key file (encrypted or legacy plaintext)
     try {
       const raw = await fsp.readFile(this.filePath);

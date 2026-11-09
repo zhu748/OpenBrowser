@@ -319,7 +319,14 @@ function sanitizeProfile(value) {
       blockRestoreDialog: advancedValue.blockRestoreDialog !== false,
       blockNotifications: advancedValue.blockNotifications !== false,
       blockPopups: Boolean(advancedValue.blockPopups),
-      jsHeapMax: Boolean(advancedValue.jsHeapMax),
+      // 归一化 JS 堆上限：有限数字且 >0 → 钳位到 [256, 16384] MB 存数值；
+      // true（UI checkbox=启用限制）→ 默认 4096；其余（false/null/undefined）→ null。
+      // 历史版本存 Boolean 值，start.js 消费端把 true 折算成 256MB，见 start.js 消费处。
+      jsHeapMax: (() => {
+        if (advancedValue.jsHeapMax === true) return 4096;
+        const n = Number(advancedValue.jsHeapMax);
+        return Number.isFinite(n) && n > 0 ? Math.min(16384, Math.max(256, Math.round(n))) : null;
+      })(),
       showInfoPage: advancedValue.showInfoPage !== false,
       showPasswordOnInfo: Boolean(advancedValue.showPasswordOnInfo),
       loadGlobalBookmarks: Boolean(advancedValue.loadGlobalBookmarks),

@@ -841,18 +841,28 @@ class BrowserEngine {
 
   async markProfileCleanExit(root) {
     const file = path.join(root, 'Default', 'Preferences');
+    // Write failures stay swallowed (existing semantics): a Preferences write
+    // that cannot complete must not abort the surrounding cleanup commit.
     try {
       const prefs = JSON.parse(await fsp.readFile(file, 'utf8')); prefs.profile ||= {};
       prefs.profile.exit_type = 'Normal'; prefs.profile.exited_cleanly = true;
       await writeRawAtomically(file, JSON.stringify(prefs), 0o600);
-      // 写后回读校验：rename 原子性只保证"旧或新"，写设备异常时也可能整档丢失；
-      // 回读失败则不吞异常，让 lifecycle-cleanup 记录到 sync-error，而非留下
-      // 可能被 Chromium 视为崩溃现场的 Preferences。
+    } catch {
+      return;
+    }
+    // 写后回读校验单独执行：rename 原子性只保证"旧或新"，写设备异常时也可能整档丢失；
+    // 校验失败必须上报（不吞），让调用方/lifecycle-cleanup 记录到 sync-error，而非留下
+    // 可能被 Chromium 视为崩溃现场的 Preferences。所有既有调用方均已 .catch(() => {})
+    // 兜底，这里上抛不会打断清理流程，只会把异常传递给记录侧。
+    try {
       const persisted = JSON.parse(await fsp.readFile(file, 'utf8'));
       if (persisted?.profile?.exit_type !== 'Normal' || persisted?.profile?.exited_cleanly !== true) {
         throw new Error('clean-exit 标记写入后回读不一致');
       }
-    } catch (_) {}
+    } catch (verifyError) {
+      console.error('[BrowserEngine] clean-exit 标记回读校验失败:', verifyError?.message || verifyError);
+      throw verifyError instanceof Error ? verifyError : new Error(String(verifyError));
+    }
   }
 
   startNativeProfileMarker(pid, profileId) {
@@ -907,7 +917,7 @@ class BrowserEngine {
         try { resources.markerProcess.kill(); } catch (_) {}
       }
       await resources.proxyForwarder?.close().catch(() => {});
-      stopIpcStubForWindow(resources.kernelWindowName);
+      stopIpcStubForWindow(resources.kernelWindowName).catch(() => {});
       if (child && !exited) {
         // Startup owns the same profile lock safety rule as running cleanup: a
         // process that may still be alive must keep the lock as a tombstone.
@@ -1421,6 +1431,12 @@ class BrowserEngine {
     // Each environment also has its own deadline, so a stuck startup or WMI/CDP
     // operation cannot prevent unrelated environments and the start-page server
     // from being closed during application shutdown.
+    // Whole-operation budget: 8 passes × the per-item timeout could otherwise
+    // block shutdown for minutes. Once the budget is spent (or a full pass made
+    // no progress), the loop breaks and the remaining ids are reported — the
+    // OS/user-initiated force kill path takes over from there.
+    const STOP_ALL_BUDGET_MS = 30_000;
+    const startedAt = Date.now();
     const failed = [];
     const itemTimeout = Math.max(50, Number(this.stopAllItemTimeoutMs) || STOP_ALL_ITEM_TIMEOUT_MS);
     for (let pass = 0; pass < 8; pass += 1) {
@@ -1437,6 +1453,12 @@ class BrowserEngine {
       }
       const remaining = [...new Set([...this.running.keys(), ...this.starting.keys(), ...this.stopping.keys()])];
       if (!remaining.length) break;
+      // No-progress escape: when a full pass removed nothing, another identical
+      // pass will not either — break instead of burning the remaining rounds.
+      if (remaining.length >= ids.length && Date.now() - startedAt > STOP_ALL_BUDGET_MS) {
+        break;
+      }
+      if (Date.now() - startedAt > STOP_ALL_BUDGET_MS) break;
     }
     const remaining = [...new Set([...this.running.keys(), ...this.starting.keys(), ...this.stopping.keys()])];
     if (remaining.length) failed.push(`lifecycle resources remain: ${remaining.join(', ')}`);
@@ -1580,7 +1602,16 @@ class BrowserEngine {
   // itself as a status change.
   emit(value) {
     if (value?.type === 'status') this._statusCache = null;
-    for (const listener of this.listeners) listener(value);
+    // Listener isolation: a destroyed-window listener (or any single faulty
+    // consumer) must not break the fan-out — the remaining listeners still
+    // need the event, and cleanup paths depend on emit completing.
+    for (const listener of this.listeners) {
+      try {
+        listener(value);
+      } catch (error) {
+        console.error('[BrowserEngine] listener dispatch failed:', error?.message || error);
+      }
+    }
   }
   runningWithCdp(ids) {
     return ids.map((id) => ({ id, item: this.running.get(id) }))

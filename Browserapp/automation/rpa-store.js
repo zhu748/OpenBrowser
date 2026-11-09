@@ -12,6 +12,7 @@ const {
   parseProcessContent,
 } = require('./template-sync');
 const { findUnsupportedSteps } = require('./rpa-engine');
+const { createCoalescedWriter } = require('./coalesced-writer');
 
 /**
  * Plan / task / template store for RPA (JSON file).
@@ -30,11 +31,19 @@ class RpaStore {
   constructor(filePath) {
     this.filePath = filePath;
     this.data = { version: 4, plans: [], tasks: [], templates: [], config: {} };
-    this.saveQueue = Promise.resolve();
     this.sizeLimitBytes = parseStoreSizeLimit();
     // Set by load() when the on-disk store had to be quarantined, so callers
     // (UI, diagnostics) can tell the user instead of plans silently vanishing.
     this.loadReport = { quarantined: false, quarantineFile: '', error: '' };
+    // Every RPA step used to rewrite the whole JSON with two fsyncs. Writes
+    // now coalesce: a burst of updates runs one atomic write after a quiet
+    // period, and callers awaiting save() still learn whether the state
+    // reached the disk.
+    this._writer = createCoalescedWriter({
+      delayMs: 40,
+      write: () => this._writeAtomic(),
+      onError: (error) => console.error('[rpa-store] write failed:', error?.message || error),
+    });
   }
 
   async load() {
@@ -421,46 +430,55 @@ class RpaStore {
     return this.data.config;
   }
 
-  save() {
-    const write = async () => {
-      await fsp.mkdir(path.dirname(this.filePath), { recursive: true });
-      this.enforceStoreBudget();
-      // Same atomic-write discipline as engine/state-storage: unique exclusive
-      // temp file (0600), fsync before rename, fsync of the directory after,
-      // and bounded retries on transient filesystem errors. The previous
-      // fixed-name .tmp write could interleave with a second writer, skip the
-      // fsync entirely, or hand back a partially flushed file after a crash.
-      let lastError = null;
-      for (let attempt = 0; attempt < 4; attempt += 1) {
-        const temporary = `${this.filePath}.tmp-${process.pid}-${crypto.randomBytes(8).toString('hex')}`;
-        let handle = null;
+  /** The atomic-write body shared by save() and the coalesced writer. */
+  async _writeAtomic() {
+    await fsp.mkdir(path.dirname(this.filePath), { recursive: true });
+    this.enforceStoreBudget();
+    // Same atomic-write discipline as engine/state-storage: unique exclusive
+    // temp file (0600), fsync before rename, fsync of the directory after,
+    // and bounded retries on transient filesystem errors. The previous
+    // fixed-name .tmp write could interleave with a second writer, skip the
+    // fsync entirely, or hand back a partially flushed file after a crash.
+    let lastError = null;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const temporary = `${this.filePath}.tmp-${process.pid}-${crypto.randomBytes(8).toString('hex')}`;
+      let handle = null;
+      try {
+        handle = await fsp.open(temporary, 'wx', 0o600);
+        await handle.writeFile(JSON.stringify(this.data, null, 2), 'utf8');
+        await handle.sync();
+        await handle.close();
+        handle = null;
+        await fsp.rename(temporary, this.filePath);
         try {
-          handle = await fsp.open(temporary, 'wx', 0o600);
-          await handle.writeFile(JSON.stringify(this.data, null, 2), 'utf8');
-          await handle.sync();
-          await handle.close();
-          handle = null;
-          await fsp.rename(temporary, this.filePath);
-          try {
-            const directoryHandle = await fsp.open(path.dirname(this.filePath), 'r');
-            await directoryHandle.sync();
-            await directoryHandle.close();
-          } catch (_) {}
-          return;
-        } catch (error) {
-          lastError = error;
-          if (handle) await handle.close().catch(() => {});
-          await fsp.rm(temporary, { force: true }).catch(() => {});
-          if (!TRANSIENT_WRITE_ERRORS.has(error?.code) || attempt === 3) throw error;
-          await new Promise((resolve) => setTimeout(resolve, 5 * (attempt + 1)));
-        }
+          const directoryHandle = await fsp.open(path.dirname(this.filePath), 'r');
+          await directoryHandle.sync();
+          await directoryHandle.close();
+        } catch (_) {}
+        return;
+      } catch (error) {
+        lastError = error;
+        if (handle) await handle.close().catch(() => {});
+        await fsp.rm(temporary, { force: true }).catch(() => {});
+        if (!TRANSIENT_WRITE_ERRORS.has(error?.code) || attempt === 3) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 5 * (attempt + 1)));
       }
-      throw lastError || new Error('rpa-store atomic write failed');
-    };
-    const pending = this.saveQueue.then(write, write);
-    // Keep subsequent writes usable after an individual filesystem failure.
-    this.saveQueue = pending.catch(() => {});
-    return pending;
+    }
+    throw lastError || new Error('rpa-store atomic write failed');
+  }
+
+  /**
+   * Queue a persist of the current state. A burst of RPA task updates coalesces
+   * into one atomic write; awaiting the result still resolves only once the
+   * state is on disk (or rejects with the write error, which is also logged).
+   */
+  save() {
+    return this._writer.request();
+  }
+
+  /** Flush a pending quiet-period write; called from the quit chain. */
+  flush() {
+    return this._writer.flushNow();
   }
 
   /**

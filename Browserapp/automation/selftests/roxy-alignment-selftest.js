@@ -144,7 +144,7 @@ check('白名单引擎执行 / 多账号行 / 批量导出与测试代理已实�
   assert.match(rs, /parseAllowHosts/, '白名单解析');
   assert.match(rs, /Fetch\.enable/, 'Fetch 拦截启用');
   assert.match(rs, /BlockedByClient/, '名单外请求阻断');
-  assert.match(rs, /syncAllowIntercepts\(profile, tabs\)/, '稳态早退前同步拦截连接');
+  assert.match(rs, /syncAllowIntercepts\(engine, profile, tabs\)/, '稳态早退前同步拦截连接');
   const html = read('index.html');
   for (const marker of ['id="editor-add-account"', 'id="editor-extra-accounts"', 'id="batch-export"', 'id="test-all-proxies"', 'data-i18n-placeholder="editor.widthPh"']) {
     assert.ok(html.includes(marker), `index.html 缺少 ${marker}`);

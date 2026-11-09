@@ -98,7 +98,7 @@ check('runtime-settings enforces the blacklist through the same intercept', () =
   const src = read('engine/runtime-settings.js');
   assert.match(src, /parseAllowHosts\(profile\?\.advanced\?\.blockUrls\)/);
   assert.match(src, /blockedByBlacklist/);
-  assert.match(src, /ensureAllowIntercept\(profile\.id, tab, allowHosts, blockHosts\)/);
+  assert.match(src, /ensureAllowIntercept\(engine, profile\.id, tab, allowHosts, blockHosts\)/);
 });
 
 // 7. Sync page: unified-tab actions + client settings IPC

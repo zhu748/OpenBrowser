@@ -122,7 +122,13 @@ async fn run_bridge(args: &[String]) -> Result<()> {
                     let command = std::str::from_utf8(&frame)
                         .map_err(|_| invalid("Control frame must be UTF-8"))?.trim();
                     if command == "stop" || command == "exit" { break; }
-                    return Err(invalid("Unknown bridge control command"));
+                    // Include a truncated preview so a protocol mismatch or a
+                    // writer bug can be identified from the error alone.
+                    let preview: String = command.chars().take(64).collect();
+                    return Err(invalid(&format!(
+                        "Unknown bridge control command: {:?}",
+                        preview
+                    )));
                 }
                 Some(code) = statuses.recv() => {
                     emit(json!({"event":"status", "code":code, "message":code}))?;
@@ -181,8 +187,12 @@ async fn run_lock(args: &[String]) -> Result<()> {
         .ok_or_else(|| invalid("Missing --path for lock"))?;
     let mut lock = FileLock::new(&path.1);
     if !lock.try_lock()? {
+        // Busy is a normal, expected outcome fully described by the stdout
+        // JSON; exiting non-zero here would only add stderr noise and a
+        // misleading "failure" exit code for callers that already parse the
+        // emitted status.
         emit(json!({"status":"busy", "acquired":false}))?;
-        return Err(invalid("Lock already held"));
+        return Ok(());
     }
     emit(json!({"status":"locked", "acquired":true, "pid":std::process::id()}))?;
     let mut lines = control_lines();

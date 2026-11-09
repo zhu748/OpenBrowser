@@ -704,11 +704,14 @@ async function uploadWebDav(config, buffer, remoteName = REMOTE_NAME) {
     }).catch(() => {});
     throw new Error(`WebDAV 上传失败 (${putRes.status})`);
   }
-  const moveRes = await request(target, {
+  // RFC 4918: MOVE acts on the request URI (the source) and the Destination
+  // header names the destination. Moving partial -> canonical keeps the
+  // canonical path from ever holding a half package.
+  const moveRes = await request(partialTarget, {
     method: 'MOVE',
     headers: {
       Authorization: basicAuth(user, pass),
-      Destination: partialTarget,
+      Destination: target,
       Overwrite: 'T',
     },
   });

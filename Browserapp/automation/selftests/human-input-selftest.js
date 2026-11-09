@@ -30,19 +30,42 @@ async function checkAsync(name, fn) {
  * Recording transport plus a minimal editable-field model, so assertions can
  * reason about the text the page would actually end up holding rather than the
  * raw stream of key events.
+ *
+ * `initial` seeds the field's current value, mirroring a prefilled input that
+ * the clear path must wipe before typing. `readLength` controls what the
+ * Runtime.evaluate probe reports back (null simulates an unreadable field).
  */
-function recorder() {
+function recorder({ initial = '', readLength } = {}) {
   const events = [];
-  const buf = [];
-  let pos = 0;
+  const buf = Array.from(initial);
+  let pos = buf.length;
+  let currentReadLength = readLength !== undefined ? readLength : Array.from(initial).length;
+
+  let selectionActive = false;
 
   function applyKey(params) {
+    // Ctrl+A (keyDown 'a' with the ctrl modifier) selects everything, so a
+    // following Backspace deletes the selection in one stroke. It must be
+    // matched before the generic keyDown branch, which would type the 'a'.
+    if (params.type === 'keyDown' && params.modifiers === 2 && params.text === 'a') {
+      selectionActive = buf.length > 0;
+      pos = buf.length;
+      return;
+    }
     if (params.type === 'keyDown') {
       if (typeof params.text === 'string' && params.text) {
         for (const ch of params.text) { buf.splice(pos, 0, ch); pos += 1; }
       }
       return;
     }
+    // A Backspace deletes the whole selection when one is active, or the
+    // single character before the cursor otherwise.
+    if (params.type === 'rawKeyDown' && params.key === 'Backspace') {
+      if (selectionActive) { buf.length = 0; pos = 0; selectionActive = false; }
+      else if (pos > 0) { buf.splice(pos - 1, 1); pos -= 1; }
+      return;
+    }
+    if (params.type === 'rawKeyDown' && params.key === 'Control') return;
     if (params.type !== 'rawKeyDown') return;
     switch (params.key) {
       case 'Backspace': if (pos > 0) { buf.splice(pos - 1, 1); pos -= 1; } break;
@@ -61,7 +84,12 @@ function recorder() {
     events,
     call: (ws, method, params) => {
       events.push({ method, params });
+      if (method === 'Runtime.evaluate') {
+        // The clear path probes the focused field's current length.
+        return Promise.resolve({ result: { result: { value: currentReadLength } } });
+      }
       if (method === 'Input.insertText') {
+        selectionActive = false;
         for (const ch of String(params.text || '')) { buf.splice(pos, 0, ch); pos += 1; }
       } else if (method === 'Input.dispatchKeyEvent') {
         applyKey(params);
@@ -71,6 +99,7 @@ function recorder() {
     value: () => buf.join(''),
     cursor: () => pos,
     names: () => events.map((e) => e.method + ':' + (e.params && e.params.type ? e.params.type : '')),
+    setReadLength: (n) => { currentReadLength = n; },
   };
 }
 
@@ -303,12 +332,52 @@ const WS = 'ws://test/1';
     assert.strictEqual(r.events.length, 0);
   });
 
-  await checkAsync('clear sends a backspace run before typing', async () => {
+  const backspacePresses = (list) => list.filter(
+    (e) => e.params && e.params.type === 'rawKeyDown' && e.params.windowsVirtualKeyCode === 8,
+  );
+
+  await checkAsync('clear on an empty field sends no backspaces and still types', async () => {
     const r = recorder();
-    await typeText(r, WS, 'hi', Object.assign({ delayRange: [0, 0], clear: true }, fast));
+    const stat = await typeText(r, WS, 'hi', Object.assign({ delayRange: [0, 0], clear: true }, fast));
+    assert.strictEqual(stat.chars, 2);
     const firstTyped = r.events.findIndex((e) => e.params && e.params.text === 'h');
-    const cleared = r.events.slice(0, firstTyped).filter((e) => e.params.windowsVirtualKeyCode === 8);
-    assert.ok(cleared.length >= 10, `expected a backspace run, saw ${cleared.length}`);
+    assert.ok(firstTyped > 0 || r.events.length > 0, 'typing happened');
+    assert.strictEqual(backspacePresses(r.events).length, 0, 'nothing to clear');
+    assert.strictEqual(r.value(), 'hi');
+  });
+
+  await checkAsync('clear reads the existing length and wipes a longer prefilled value', async () => {
+    const r = recorder({ initial: 'a-much-longer-prefilled-value' });
+    const stat = await typeText(r, WS, 'hi', Object.assign({ delayRange: [0, 0], clear: true }, fast));
+    assert.strictEqual(stat.chars, 2);
+    const firstTyped = r.events.findIndex((e) => e.params && e.params.text === 'h');
+    assert.ok(firstTyped > 0, 'typing happens after clearing');
+    // One backspace per existing code point (29), no fixed +8 pad.
+    assert.strictEqual(backspacePresses(r.events).length, 29, 'one backspace per existing character');
+    assert.strictEqual(r.value(), 'hi', 'final value is exactly the new text, no residue');
+  });
+
+  await checkAsync('clear handles non-ASCII prefilled values by code point', async () => {
+    const r = recorder({ initial: '中文输入内容' });
+    await typeText(r, WS, 'ok', Object.assign({ delayRange: [0, 0], clear: true }, fast));
+    assert.strictEqual(backspacePresses(r.events).length, 6, 'counts code points, not UTF-16 units');
+    assert.strictEqual(r.value(), 'ok');
+  });
+
+  await checkAsync('clear falls back to Ctrl+A + Backspace when the length probe fails', async () => {
+    const r = recorder({ initial: 'unreadable-prefilled-content', readLength: null });
+    await typeText(r, WS, 'new', Object.assign({ delayRange: [0, 0], clear: true }, fast));
+    const firstTyped = r.events.findIndex((e) => e.params && e.params.text === 'n');
+    assert.ok(firstTyped > 0, 'typing happens after clearing');
+    const clearEvents = r.events.slice(0, firstTyped);
+    const ctrlDown = clearEvents.find((e) => e.params.key === 'Control' && e.params.type === 'rawKeyDown');
+    const selectAll = clearEvents.find((e) => e.params.modifiers === 2 && e.params.text === 'a');
+    const ctrlUp = clearEvents.find((e) => e.params.key === 'Control' && e.params.type === 'keyUp');
+    assert.ok(ctrlDown, 'Control pressed before select-all');
+    assert.ok(selectAll, 'Ctrl+A selects the existing content');
+    assert.ok(ctrlUp, 'Control released after the deletion');
+    assert.strictEqual(backspacePresses(clearEvents).length, 1, 'one Backspace deletes the whole selection');
+    assert.strictEqual(r.value(), 'new', 'final value is the new text only');
   });
 
   await checkAsync('observers receive a compact event stream', async () => {

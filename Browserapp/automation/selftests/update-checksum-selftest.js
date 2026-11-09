@@ -154,6 +154,25 @@ async function main() {
   }
   console.log('  PASS  Ed25519 trust root (deployed key, binding signature, deployment proof)');
 
+  // --- upToDate must fail closed when versions cannot be compared ---
+  // compareVersions() returns 0 when either side is unparseable, which used
+  // to make "unknown" claim up-to-date. checkAppUpdate now gates on
+  // isComparable() and reports updateStatus: 'unknown' instead.
+  assert.ok(APPUPDATE_SRC.includes('isComparable(remoteVersion, currentVersion)'),
+    'checkAppUpdate gates the comparison on isComparable');
+  assert.ok(APPUPDATE_SRC.includes("updateStatus = comparable ? (upToDate ? 'latest' : 'available') : 'unknown'"),
+    'checkAppUpdate reports unknown when versions are not comparable');
+  const lightFor = appUpdate.appUpdateLightFromResult;
+  assert.strictEqual(typeof lightFor, 'function', 'app-update exports appUpdateLightFromResult');
+  assert.strictEqual(lightFor(null), 'unknown');
+  assert.strictEqual(lightFor({ remoteVersion: '1.2.3', currentVersion: '1.2.3', upToDate: true }), 'green');
+  assert.strictEqual(lightFor({ remoteVersion: '1.3.0', currentVersion: '1.2.3', upToDate: false }), 'red');
+  assert.strictEqual(lightFor({ remoteVersion: 'release-2026', currentVersion: '1.2.3', upToDate: false, updateStatus: 'unknown' }),
+    'unknown', 'an unparseable pair never paints green nor offers a red download');
+  assert.strictEqual(lightFor({ remoteVersion: 'release-2026', currentVersion: '1.2.3', upToDate: true, updateStatus: 'unknown' }),
+    'unknown', 'unknown overrides a stale upToDate=true');
+  console.log('  PASS  version traffic light fails closed on unparseable versions');
+
   console.log('UPDATE_CHECKSUM_SELFTEST OK');
 }
 

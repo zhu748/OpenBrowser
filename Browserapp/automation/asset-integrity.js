@@ -47,8 +47,30 @@ function toPosix(p) {
  * against local rewrites, not cryptographic protection of the key itself —
  * a same-user attacker can read the derivation inputs; raising that bar
  * requires an OS keychain and is deliberately out of scope here.
+ *
+ * v1 (buggy, kept only for verifying pre-fix seals) folded the *function
+ * objects* os.homedir / os.hostname / os.platform into the HMAC input
+ * instead of calling them, so the machine-specific part of the key was the
+ * stringified function source — identical on every machine. v2 calls them
+ * and prefixes the input with 'v2|' so the two derivations never collide.
+ * Sealed manifests from v1 verify via `deriveManifestKeyV1` and are
+ * transparently re-sealed with v2 on the next clean pass.
  */
-function deriveManifestKey(salt) {
+function deriveManifestKeyV2(salt) {
+  const os = require('os');
+  const userInfo = (() => { try { return os.userInfo().username || ''; } catch (_) { return ''; } })();
+  const homedir = safeCall(os, 'homedir');
+  const hostname = safeCall(os, 'hostname');
+  const platform = safeCall(os, 'platform');
+  return crypto.createHash('sha256')
+    .update('openbrowser-integrity-v2\0')
+    .update(String(salt || '') + '\0')
+    .update(userInfo + '\0' + homedir + '\0' + hostname + '\0' + platform)
+    .digest();
+}
+
+/** Pre-fix derivation: the function objects leaked into the input un-called. */
+function deriveManifestKeyV1(salt) {
   const os = require('os');
   const userInfo = (() => { try { return os.userInfo().username || ''; } catch (_) { return ''; } })();
   const homedir = os.homedir || '';
@@ -61,9 +83,15 @@ function deriveManifestKey(salt) {
     .digest();
 }
 
-function sealManifest(manifest, salt) {
+/** Call an os.* helper defensively; an empty string on any failure. */
+function safeCall(os, name) {
+  try { return typeof os[name] === 'function' ? String(os[name]()) : ''; } catch (_) { return ''; }
+}
+
+function sealManifest(manifest, salt, { legacyKey = false } = {}) {
   const body = JSON.stringify({ ...manifest, [MANIFEST_SEAL_FIELD]: undefined });
-  return crypto.createHmac('sha256', deriveManifestKey(salt)).update(body).digest('hex');
+  const key = legacyKey ? deriveManifestKeyV1(salt) : deriveManifestKeyV2(salt);
+  return crypto.createHmac('sha256', key).update(body).digest('hex');
 }
 
 /**
@@ -238,15 +266,21 @@ async function readManifest(root) {
 }
 
 /**
- * Verify the manifest's own HMAC seal. Returns true for legacy manifests
- * (no seal — recorded before sealing existed); callers treat "seal present
- * and invalid" as tampering, and "seal absent" as legacy.
+ * Verify the manifest's own HMAC seal. Returns 'valid' (current v2 key),
+ * 'legacy-key' (seal made with the pre-fix v1 derivation — the tree still
+ * verifies, and ensureManifest re-seals it with v2), 'legacy' (no seal —
+ * recorded before sealing existed), or 'invalid' (neither key verifies:
+ * treat as tampering). Callers treat "seal present and invalid" as
+ * tampering, and "seal absent" as legacy.
  */
 function verifyManifestSeal(manifest, root) {
   if (!manifest || typeof manifest[MANIFEST_SEAL_FIELD] !== 'string') return 'legacy';
   const salt = path.basename(String(root || ''));
-  const expected = sealManifest({ ...manifest, [MANIFEST_SEAL_FIELD]: undefined }, salt);
-  return expected === manifest[MANIFEST_SEAL_FIELD] ? 'valid' : 'invalid';
+  const v2 = sealManifest({ ...manifest, [MANIFEST_SEAL_FIELD]: undefined }, salt);
+  if (v2 === manifest[MANIFEST_SEAL_FIELD]) return 'valid';
+  const v1 = sealManifest({ ...manifest, [MANIFEST_SEAL_FIELD]: undefined }, salt, { legacyKey: true });
+  if (v1 === manifest[MANIFEST_SEAL_FIELD]) return 'legacy-key';
+  return 'invalid';
 }
 
 /**
@@ -280,8 +314,9 @@ async function ensureManifest(root, options = {}) {
     return { status: 'mismatch', report };
   }
   const hasHashes = existing.files.some((entry) => typeof entry.sha256 === 'string');
-  if (seal === 'legacy' || !hasHashes) {
-    // Clean tree under the old rules: upgrade to sealed+hashed in place.
+  if (seal === 'legacy' || seal === 'legacy-key' || !hasHashes) {
+    // Clean tree under the old rules: upgrade to the current sealed+hashed
+    // form in place (this also re-seals v1-keyed manifests with the v2 key).
     const manifest = await buildManifest(root, { ...options, hash: true });
     await writeManifest(root, manifest);
     return { status: 'ok', report, upgraded: true };
