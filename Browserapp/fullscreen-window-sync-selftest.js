@@ -176,6 +176,9 @@ async function testFullscreenAndGeometrySync() {
   const mainSource = fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8');
   const liveSyncSource = fs.readFileSync(path.join(__dirname, 'live-sync-v5.js'), 'utf8');
   const rendererSource = fs.readFileSync(path.join(__dirname, 'renderer.js'), 'utf8');
+  // The window-button wiring moved from renderer.js into ui/ui-proxy-wiring.js
+  // (renderer decomposition part 2); the assertion follows the module.
+  const proxyWiringSource = fs.readFileSync(path.join(__dirname, 'ui/ui-proxy-wiring.js'), 'utf8');
   assert.ok(mainSource.includes("['minimized', 'normal', 'maximized', 'fullscreen']"), 'sync:window must allow fullscreen');
   assert.ok(mainSource.includes("fallbackState: 'maximized'"), 'fullscreen window actions must retain a compatibility fallback');
   assert.ok(mainSource.includes("pauseGeometrySync?.(3500"), 'manual tile/cascade must invalidate in-flight geometry sync');
@@ -203,7 +206,7 @@ async function testFullscreenAndGeometrySync() {
   assert.ok(liveSyncSource.includes('if (!guardIsCurrent()) return;'), 'tab activation must re-check the guard after async mapping');
   assert.ok(liveSyncSource.includes('if (heavy && foreground)'), 'background tabs must not fan out zoom changes');
   assert.ok(rendererSource.includes('new ResizeObserver(scheduleShellLayoutReconcile)'), 'renderer must reconcile native window resize geometry');
-  assert.ok(rendererSource.includes('result ? button === windowButton : button === previous'), 'window action state must only commit after backend success');
+  assert.ok(proxyWiringSource.includes('result ? button === windowButton : button === previous'), 'window action state must only commit after backend success');
   assert.ok(__test.fullscreenExpression({ active: true, selector: '#player', tag: 'video' }).includes('requestFullscreen'));
   assert.ok(__test.fullscreenExpression({ active: true, selector: '#player', tag: 'video' }).includes('webkitEnterFullscreen'));
   assert.ok(__test.fullscreenExpression({ active: true, selector: '#player', tag: 'video' }).includes('fullscreenEnabled'));

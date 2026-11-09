@@ -37,7 +37,7 @@ const {
 } = require('../kernel-init-sync');
 const { RequestHeaderRewriter } = require('../../engine');
 
-const appRoot = path.join(__dirname, '..');
+const appRoot = path.join(__dirname, '..', '..');
 const kernelRoot = path.join(appRoot, 'kernels', 'macos-x64');
 const launcher = path.join(kernelRoot, 'launch_openbrowser.sh');
 
@@ -824,7 +824,11 @@ async function runSession(profileConfig, isInject, server) {
   console.log('  Cross-Plane Hardening Verification (Goodall, Hubble, Planck, Main)');
   console.log('======================================================================\n');
 
-  if (process.platform !== 'darwin' || !fs.existsSync(launcher)) {
+  // Pointer-only checkouts (no `git lfs pull`) carry an LFS stub where the
+  // launcher should be; it cannot run, so treat it as kernel-not-present.
+  const launcherMaterial = fs.existsSync(launcher)
+    && !fs.readFileSync(launcher, 'utf8').startsWith('version https://git-lfs');
+  if (process.platform !== 'darwin' || !launcherMaterial) {
     console.error('ERROR: This audit requires the macos-x64 Chromium kernel at', launcher);
     process.exit(1);
   }

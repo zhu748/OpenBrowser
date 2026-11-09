@@ -30,7 +30,7 @@ const {
 } = require('../kernel-init-sync');
 const { buildFingerprint } = require('../fingerprint');
 
-const appRoot = path.join(__dirname, '..');
+const appRoot = path.join(__dirname, '..', '..');
 const kernelRoot = path.join(appRoot, 'kernels', 'macos-x64');
 const launcher = path.join(kernelRoot, 'launch_openbrowser.sh');
 const reapScript = path.join(__dirname, '../reap-orphan-kernels.js');
@@ -188,12 +188,15 @@ async function main() {
     const t1Path = path.join(kernelRoot, 'init_template.json');
     const t2Path = path.join(kernelRoot, 'chrome_148', 'init_clean_standalone.json');
 
-    if (fs.existsSync(t1Path)) {
+    // Pointer-only checkouts (no `git lfs pull`) carry LFS stubs where the
+    // template JSON should be; parsing them is meaningless — skip instead.
+    const material = (p) => fs.existsSync(p) && !fs.readFileSync(p, 'utf8').startsWith('version https://git-lfs');
+    if (material(t1Path)) {
       const t1 = JSON.parse(fs.readFileSync(t1Path, 'utf8'));
       assert.strictEqual('enable-automation' in (t1.cmd_line || {}), false, 'init_template.json must not have enable-automation');
       assert.strictEqual(t1.can_webdriver, true, 'init_template.json must have can_webdriver=true');
     }
-    if (fs.existsSync(t2Path)) {
+    if (material(t2Path)) {
       const t2 = JSON.parse(fs.readFileSync(t2Path, 'utf8'));
       assert.strictEqual('enable-automation' in (t2.cmd_line || {}), false, 'init_clean_standalone.json must not have enable-automation');
       assert.strictEqual(t2.can_webdriver, true, 'init_clean_standalone.json must have can_webdriver=true');

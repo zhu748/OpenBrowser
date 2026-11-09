@@ -102,6 +102,13 @@ const SUITE = [
   ['selftest:fontmetricscope', 'automation/selftests/font-metric-scope-e2e-selftest.js'],
   ['selftest:newtabresume', 'automation/selftests/new-tab-resume-first-e2e-selftest.js'],
   ['selftest:kernelflagforensics', 'automation/selftests/kernel-automation-flag-forensics-selftest.js'],
+  // Repaired legacy failures (theme legacy-naming residue, fullscreen state
+  // commit timing, fpalign CPU/memory options, probebudget keepalive): real
+  // tests of production code that were failing or silently not asserting.
+  ['selftest:theme', 'theme-modern-selftest.js'],
+  ['selftest:fullscreen', 'fullscreen-window-sync-selftest.js'],
+  ['selftest:fpalign', 'automation/selftests/fingerprint-alignment-selftest.js'],
+  ['selftest:probebudget', 'automation/selftests/proxy-probe-budget-selftest.js'],
   // Kernel/display-bound scripts stay out of the aggregate gate on purpose:
   // selftest.js, live-sync-v4-selftest.js, rust-core-*-selftest.js,
   // browser-startup-diagnostic-selftest.js and friends need a real Chromium;

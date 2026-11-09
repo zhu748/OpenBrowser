@@ -34,7 +34,7 @@ const {
 } = require('../query-local-font-blob-gate');
 const { OS_FONTS } = require('../device-personas');
 
-const appRoot = path.join(__dirname, '..');
+const appRoot = path.join(__dirname, '..', '..');
 const kernelRoot = path.join(appRoot, 'kernels', 'macos-x64');
 const launcher = path.join(kernelRoot, 'launch_openbrowser.sh');
 const subsetsRoot = path.join(appRoot, 'assets', 'font-subsets');

@@ -26,7 +26,7 @@ const { spawn, execSync } = require('child_process');
 
 const { createWebRtcFallbackSource } = require('../webrtc-fallback');
 
-const appRoot = path.join(__dirname, '..');
+const appRoot = path.join(__dirname, '..', '..');
 const kernelRoot = path.join(appRoot, 'kernels', 'macos-x64');
 const launcher = path.join(kernelRoot, 'launch_openbrowser.sh');
 

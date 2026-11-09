@@ -33,7 +33,10 @@ function sanitizeProfile(value) {
     ? fingerprintValue?.memory
     : privacyValue.memory;
   const cores = parseLimitedOption(cpuCandidate, [0, 2, 4, 6, 8, 10, 12, 16, 20, 24]);
-  const memory = parseLimitedOption(memoryCandidate, [0, 2, 4, 6, 8, 16]);
+  // navigator.deviceMemory is spec-quantised (0.25/0.5/1/2/4/8) and capped at 8;
+  // 16 was briefly accepted during the RoxyBrowser parity sweep but no real Chrome
+  // reports it — a single read identifies the profile as spoofed. Keep the cap at 8.
+  const memory = parseLimitedOption(memoryCandidate, [0, 2, 4, 6, 8]);
   // Custom launch args: each token must look like a Chromium switch (--flag or --flag=value).
   // Values may not contain whitespace/semicolons (split first), keeping the surface injectable-free.
   const customArgs = String(privacyValue.customArgs || "")
