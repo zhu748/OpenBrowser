@@ -417,6 +417,30 @@ function buildFingerprint(profile = {}) {
   const macMode = mode('macMode', ['real', 'custom'], privacy.macMode === 'custom' ? 'custom' : 'real');
   const macValue = String(fpIn.mac || privacy.mac || '').trim().toUpperCase();
 
+  // --- navigator.connection persona (Roxy networkType/networkSpeed/downloadSpeed/latency 对齐) ---
+  // NetworkInformation exposes host NIC conditions (effectiveType / downlink / rtt) that a
+  // datacenter desktop and a home laptop answer differently. A deterministic seeded draw keeps
+  // the profile stable across restarts; privacy.network overrides individual fields, and
+  // privacy.networkMode 'real' keeps the host answers untouched.
+  const networkMode = mode('networkMode', ['real', 'noise'], 'noise');
+  const networkIn = (fpIn.network && typeof fpIn.network === 'object')
+    ? fpIn.network
+    : (privacy.network && typeof privacy.network === 'object' ? privacy.network : null);
+  const NETWORK_EFFECTIVE_TYPES = ['4g', '4g', '4g', '3g'];
+  const NETWORK_DOWNLINK_POOL = [1.45, 2.3, 4.35, 5.6, 8.7, 9.15, 10.1];
+  const NETWORK_RTT_POOL = [50, 100, 150, 200, 250];
+  const connection = networkMode === 'real' ? null : {
+    type: String(networkIn?.type || (u32(seed, 36) % 4 === 0 ? 'ethernet' : 'wifi')),
+    effectiveType: String(networkIn?.effectiveType || NETWORK_EFFECTIVE_TYPES[u32(seed, 40) % NETWORK_EFFECTIVE_TYPES.length]),
+    downlink: Number.isFinite(Number(networkIn?.downlink))
+      ? Number(networkIn.downlink)
+      : NETWORK_DOWNLINK_POOL[u32(seed, 44) % NETWORK_DOWNLINK_POOL.length],
+    rtt: Number.isFinite(Number(networkIn?.rtt))
+      ? Number(networkIn.rtt)
+      : NETWORK_RTT_POOL[u32(seed, 48) % NETWORK_RTT_POOL.length],
+    saveData: false,
+  };
+
   // Dynamic layer: may change with proxy/exit IP without rebuilding static seeds
   const webrtcAddress = String(
     fpIn.webrtcAddress
@@ -447,6 +471,13 @@ function buildFingerprint(profile = {}) {
       geoposition = { latitude: lat, longitude: lon, accuracy: Number(privacy.accuracy) || 1000 };
     }
   }
+  // Geolocation permission policy (Roxy geoLocation mode 0/1/2 对齐): 'deny' blocks the API
+  // outright, 'allow' reports the permission as granted alongside the overridden coordinates,
+  // and everything else leaves the native prompt flow. The editor derives geoMode from this
+  // switch (deny→disabled / prompt→prompt), so the two stay consistent by construction.
+  const geoPermission = String(privacy.geoPermission || '') === 'deny'
+    ? 'denied'
+    : (String(privacy.geoPermission || '') === 'allow' ? 'granted' : 'prompt');
 
   let webglRenderer = (webglMetaMode === 'real')
     ? null
@@ -583,6 +614,8 @@ function buildFingerprint(profile = {}) {
       mode: macMode,
       value: macMode === 'custom' && /^[0-9A-F]{2}(:?[0-9A-F]{2}){5}$/.test(macValue.replace(/-/g, ':')) ? macValue.replace(/-/g, ':') : '',
     },
+    connection,
+    geoPermission,
     battery: {
       mode: batteryMode,
       value: battery,

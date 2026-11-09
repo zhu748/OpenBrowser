@@ -145,6 +145,16 @@ async function applyFingerprintToTab(cdpCall, webSocketDebuggerUrl, fp, profile 
       accuracy: privacy.accuracy || 100,
     });
   }
+  // Roxy geoLocation mode: 'allow' auto-grants the permission (coordinates above provide the
+  // position), 'deny' blocks it at the browser level so no native prompt can leak host coords.
+  // The injection script mirrors both for hosts where this command is unavailable.
+  if (privacy.geoPermission === 'allow' || privacy.geoPermission === 'deny') {
+    await softOverride('Browser.enable', {});
+    await softOverride('Browser.setPermission', {
+      permission: { name: 'geolocation' },
+      setting: privacy.geoPermission === 'allow' ? 'granted' : 'denied',
+    });
+  }
   if (fp.languages?.[0]) {
     await softOverride('Emulation.setLocaleOverride', { locale: fp.languages[0] });
   }

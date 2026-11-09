@@ -69,6 +69,8 @@ function buildInjectionScript(fp, options = {}) {
     webrtcPolicy: fp.webrtcPolicy,
     webrtcAddress: fp.webrtcAddress || null,
     battery: fp.battery || null,
+    connection: fp.connection || null,
+    geoPermission: fp.geoPermission || null,
     webgpu: fp.webgpu || null,
     bluetooth: fp.bluetooth || null,
     mediaDevices: fp.mediaDevices || null,
@@ -854,11 +856,18 @@ function buildInjectionScript(fp, options = {}) {
     const permProto = typeof Permissions !== "undefined" ? Permissions.prototype : (typeof navigator !== "undefined" && navigator.permissions ? Object.getPrototypeOf(navigator.permissions) : null);
     if (permProto && typeof permProto.query === "function") {
       const notificationStatuses = new WeakSet();
+      // Geolocation permission policy (Roxy geoLocation mode 对齐): the editor's geoPermission
+      // switch forces the reported PermissionStatus. 'granted' pairs with the CDP coordinate
+      // override (tab-apply Browser.setPermission is the native layer; this mirrors it for
+      // hosts where that command is unavailable), 'denied' answers denied before any prompt.
+      const geoStatuses = new WeakSet();
+      const forcedGeoState = (CFG.geoPermission === "denied" || CFG.geoPermission === "granted") ? CFG.geoPermission : null;
       if (typeof PermissionStatus !== "undefined" && PermissionStatus.prototype) {
         const stateDesc = Object.getOwnPropertyDescriptor(PermissionStatus.prototype, "state");
         if (stateDesc && typeof stateDesc.get === "function") {
           const origStateGet = stateDesc.get;
           const patchedStateGet = nativeLike(function state() {
+            if (forcedGeoState && geoStatuses.has(this)) return forcedGeoState;
             if (notificationStatuses.has(this) && typeof Notification !== "undefined") {
               return Notification.permission === "default" ? "prompt" : Notification.permission;
             }
@@ -876,10 +885,45 @@ function buildInjectionScript(fp, options = {}) {
         if (descriptor && descriptor.name === 'notifications') {
           if (status) notificationStatuses.add(status);
         }
+        if (status && forcedGeoState && descriptor && descriptor.name === 'geolocation') {
+          geoStatuses.add(status);
+        }
         return status;
       });
     }
   } catch (_) {}
+
+  // --- geolocation API policy ---
+  // 'denied' keeps the native shape: callbacks fire asynchronously, the error object is a
+  // GeolocationPositionError with code 1, watchPosition yields no id. Without this the host
+  // flow would still raise the native prompt and a user click would leak real coordinates.
+  if (CFG.geoPermission === "denied") {
+    try {
+      const geo = typeof navigator !== "undefined" ? navigator.geolocation : null;
+      if (geo && typeof Geolocation !== "undefined" && Geolocation.prototype) {
+        const makeGeoError = () => {
+          const err = (typeof GeolocationPositionError !== "undefined" && GeolocationPositionError.prototype)
+            ? Object.create(GeolocationPositionError.prototype)
+            : {};
+          Object.defineProperty(err, "code", { value: 1, enumerable: true });
+          Object.defineProperty(err, "message", { value: "User denied Geolocation", enumerable: true });
+          return err;
+        };
+        const denyPosition = () => function getCurrentPosition(success, error) {
+          if (typeof error === "function") {
+            setTimeout(() => {
+              try { error.call(undefined, makeGeoError()); } catch (_) {}
+            }, 0);
+          }
+        };
+        replaceMethod(Geolocation.prototype, "getCurrentPosition", (original) => denyPosition());
+        replaceMethod(Geolocation.prototype, "watchPosition", (original) => function watchPosition(success, error) {
+          denyPosition()(success, error);
+          return 0;
+        });
+      }
+    } catch (_) {}
+  }
 
   // --- window.chrome presence ---
   try {
@@ -4843,6 +4887,39 @@ function buildInjectionScript(fp, options = {}) {
       } else if (navigator.getBattery) {
         replaceMethod(navigator, 'getBattery', (original) => guardReceiver(original, isNavigatorReceiver, serveBattery(original)));
       }
+    } catch (_) {}
+  }
+
+  // --- navigator.connection persona ---
+  // Real desktop Chrome always ships NetworkInformation; its effectiveType/downlink/rtt answer
+  // from the host NIC, a stable cross-API contradiction once UA/screen claim another machine
+  // class. Persona values ride the native prototype accessors (battery pattern): receivers we
+  // issued get the profile answer, anything else falls through to the native getter. iOS
+  // personas delete navigator.connection upstream, so the presence check keeps them intact.
+  if (CFG.connection && typeof navigator !== "undefined" && navigator.connection
+    && typeof NetworkInformation !== "undefined" && NetworkInformation.prototype) {
+    try {
+      const netProto = NetworkInformation.prototype;
+      const netState = CFG.connection;
+      const patchedNetKeys = new Set();
+      const patchNetworkAccessor = (key) => {
+        if (patchedNetKeys.has(key)) return;
+        const descriptor = Object.getOwnPropertyDescriptor(netProto, key);
+        if (!descriptor || typeof descriptor.get !== "function") return;
+        const nativeGet = descriptor.get;
+        const wrappedGet = nativeLike(function networkValue() {
+          if (Object.prototype.hasOwnProperty.call(netState, key)) return netState[key];
+          return nativeGet.call(this);
+        }, nativeGet, "get " + key, 0);
+        Object.defineProperty(netProto, key, {
+          configurable: descriptor.configurable,
+          enumerable: descriptor.enumerable,
+          get: wrappedGet,
+          set: descriptor.set,
+        });
+        patchedNetKeys.add(key);
+      };
+      for (const key of ["type", "effectiveType", "downlink", "rtt", "saveData"]) patchNetworkAccessor(key);
     } catch (_) {}
   }
 

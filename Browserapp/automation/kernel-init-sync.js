@@ -413,6 +413,11 @@ function mapFingerprintToInitFields(fp = {}, profile = {}) {
   if (deviceName && fp.deviceNameMode !== 'real') {
     fields.machine = deviceName.slice(0, 120);
   }
+  // Custom MAC travels with the machine identity (Roxy macInfo/macAddress 对齐). Real mode
+  // leaves the key absent so the kernel keeps its host-derived answer.
+  if (fp.mac?.mode === 'custom' && /^[0-9A-F]{2}(:[0-9A-F]{2}){5}$/i.test(String(fp.mac.value || ''))) {
+    fields.mac_address = String(fp.mac.value).toLowerCase();
+  }
 
   if (webrtcFakeIp !== undefined) fields.webrtc_fake_ip = webrtcFakeIp;
   if (webrtcLocalIp !== undefined) fields.webrtc_local_ip = webrtcLocalIp;
