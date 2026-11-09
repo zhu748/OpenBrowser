@@ -120,10 +120,20 @@ fn test_ja4_fingerprint_format_and_export() {
     // the low nibble of the last byte 0xAB ("b") -> "cb". Likewise
     // "\u{abcd}" (EA AF 8D) -> "ed".
     let non_ascii = openbrowser_core::tls::compute_ja4('t', 0x0303, true, &[], &[], Some("\u{ab}"));
-    assert!(non_ascii.formatted.split('_').next().unwrap().ends_with("cb"));
+    assert!(non_ascii
+        .formatted
+        .split('_')
+        .next()
+        .unwrap()
+        .ends_with("cb"));
     let non_ascii2 =
         openbrowser_core::tls::compute_ja4('t', 0x0303, true, &[], &[], Some("\u{abcd}"));
-    assert!(non_ascii2.formatted.split('_').next().unwrap().ends_with("ed"));
+    assert!(non_ascii2
+        .formatted
+        .split('_')
+        .next()
+        .unwrap()
+        .ends_with("ed"));
 }
 
 #[test]

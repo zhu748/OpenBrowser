@@ -355,7 +355,10 @@ async fn test_fuzz_socks5_upstream_rep0_then_fin_truncated_bind() {
     };
 
     let res = LocalProxyBridge::connect_socks5_upstream(&config, "example.com", 443).await;
-    assert!(res.is_err(), "truncated bind address must fail, not half-open");
+    assert!(
+        res.is_err(),
+        "truncated bind address must fail, not half-open"
+    );
     match res.unwrap_err() {
         CoreError::Socks5(msg) => assert!(msg.contains("truncated bind address"), "Msg: {}", msg),
         other => panic!("Unexpected error: {:?}", other),

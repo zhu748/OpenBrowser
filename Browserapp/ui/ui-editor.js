@@ -871,8 +871,9 @@ function wireEditorAlignmentControls() {
     try { await navigator.clipboard.writeText(id); toast(tx('复制成功')); } catch (_) {}
   });
   $('#editor-direct-refresh')?.addEventListener('click', () => {
-    if (typeof editorCheckProxy === 'function') editorCheckProxy();
-    else if (typeof window.editorCheckProxy === 'function') window.editorCheckProxy();
+    // Assigned at runtime by the network banner wiring when a direct-exit
+    // section is active; both probes must stay window-scoped.
+    if (typeof window.editorCheckProxy === 'function') window.editorCheckProxy();
   });
   $('#editor-tutorial-dismiss')?.addEventListener('click', () => {
     $('#editor-rail-tutorial').hidden = true;

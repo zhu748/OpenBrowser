@@ -58,7 +58,7 @@ fn offline_encoding_and_alpn_edges_are_bounded() {
         ("a ", "60"),
         // FoxIO: non-alphanumeric first/last take the high nibble of the
         // first byte and the low nibble of the last byte.
-        ("\u{ab}", "cb"), // UTF-8 C2 AB: c = 0xC2>>4, b = 0xAB&0x0f
+        ("\u{ab}", "cb"),   // UTF-8 C2 AB: c = 0xC2>>4, b = 0xAB&0x0f
         ("\u{abcd}", "ed"), // UTF-8 EA AF 8D: e = 0xEA>>4, d = 0x8D&0x0f
     ] {
         let actual = compute_ja4('t', 0x0304, false, &[], &[], Some(alpn));

@@ -365,8 +365,7 @@ pub fn format_origin_request(header_slice: &[u8], uri_or_target: &str) -> Vec<u8
         // run through here on every forwarded request.
         let ci_starts_with = |needle: &str| {
             trimmed.len() >= needle.len()
-                && trimmed.as_bytes()[..needle.len()]
-                    .eq_ignore_ascii_case(needle.as_bytes())
+                && trimmed.as_bytes()[..needle.len()].eq_ignore_ascii_case(needle.as_bytes())
         };
         // Upgrade stays: the tunnel endpoint is the origin server, and
         // stripping Upgrade while keeping `Connection: Upgrade` broke every
@@ -463,8 +462,7 @@ pub fn format_forwarded_proxy_request(header_slice: &[u8], auth_header: Option<&
         }
         let ci_starts_with = |needle: &str| {
             trimmed.len() >= needle.len()
-                && trimmed.as_bytes()[..needle.len()]
-                    .eq_ignore_ascii_case(needle.as_bytes())
+                && trimmed.as_bytes()[..needle.len()].eq_ignore_ascii_case(needle.as_bytes())
         };
         if ci_starts_with("proxy-authorization:") || ci_starts_with("proxy-connection:") {
             continue;
@@ -596,7 +594,8 @@ mod tests {
         assert_eq!(upper_https.host, "SECURE.SITE");
         assert_eq!(upper_https.port, 443);
 
-        let mixed = HttpConnectTarget::parse_http_target("HtTpS://MiXeD.CaSe:9090/p?q=1", "").unwrap();
+        let mixed =
+            HttpConnectTarget::parse_http_target("HtTpS://MiXeD.CaSe:9090/p?q=1", "").unwrap();
         assert_eq!(mixed.host, "MiXeD.CaSe");
         assert_eq!(mixed.port, 9090);
 
@@ -705,7 +704,10 @@ mod tests {
         ] {
             let raw = format!("GET /p HTTP/1.1\r\nHost: {host}\r\n\r\n").into_bytes();
             let out = String::from_utf8(format_forwarded_proxy_request(&raw, None)).unwrap();
-            assert!(out.starts_with(&format!("GET {want}/p HTTP/1.1\r\n")), "{out}");
+            assert!(
+                out.starts_with(&format!("GET {want}/p HTTP/1.1\r\n")),
+                "{out}"
+            );
         }
 
         // A folded Host whose merged value carries whitespace must not be
