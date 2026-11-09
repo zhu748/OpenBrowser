@@ -22,7 +22,7 @@ function assert(cond, msg) {
 
 const cases = [
   ['en', 'nav.profiles', 'Profiles'],
-  ['zh-CN', 'nav.profiles', '环境管理'],
+  ['zh-CN', 'nav.profiles', '窗口管理'],
   ['ja', 'nav.system', 'ローカル設定'],
   ['vi', 'common.save', 'Lưu'],
   ['fr', 'common.cancel', 'Annuler'],

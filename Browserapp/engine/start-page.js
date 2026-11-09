@@ -103,8 +103,9 @@ module.exports = {
     const geoMode = privacy.geoMode || 'ip';
     return langMode === 'ip' || tzMode === 'ip' || geoMode === 'ip' || geoMode === 'allow';
   },
-  async ensureExitNetworkForLocale(profile) {
-    if (!this.needsExitNetworkForLocale(profile)) return null;
+  async ensureExitNetworkForLocale(profile, options = {}) {
+    // force: 「网络不通停止打开」守护需要一次真实检测并让失败向上抛出。
+    if (!options.force && !this.needsExitNetworkForLocale(profile)) return null;
     let network = this.networkInfo.get(profile.id);
     if (network?.countryCode || network?.ip) return network;
     const proxyRaw = String(profile.proxy || '');
@@ -133,6 +134,7 @@ module.exports = {
       return network;
     } catch (error) {
       // Direct start succeeded without proxy; geo API failure must not surface as proxy error.
+      if (options.force) throw error;
       if (!isDirect) {
         this.emit({ type: 'proxy-error', id: profile.id, message: '出口信息检测失败（语言/时区可能回退）：' + error.message });
       }

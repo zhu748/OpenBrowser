@@ -70,6 +70,13 @@ document.addEventListener('click', async (event) => {
   if (action?.dataset.action === 'restore') restoreProfile(action.dataset.id);
   if (action?.dataset.action === 'purge') purgeProfile(action.dataset.id);
   if (action?.dataset.action === 'select-sync') { selectedSessions.add(action.dataset.id); pushSyncSelection(); switchView('sync'); }
+  // Roxy 对齐：行「其他」菜单与收藏/复制窗口ID/导出窗口
+  if (action?.dataset.action === 'more') toggleRowMoreMenu(action);
+  if (action?.dataset.action === 'fav') { toggleProfileFavorite(action.dataset.id); closeRowMoreMenu(); }
+  if (action?.dataset.action === 'copy-id') { navigator.clipboard.writeText(action.dataset.id).then(() => toast(tx('复制成功'))).catch(() => {}); closeRowMoreMenu(); }
+  if (action?.dataset.action === 'export-profile') { exportProfile(action.dataset.id); }
+  if (action?.dataset.action === 'note') { closeRowMoreMenu(); openProfileEditor(action.dataset.id); setTimeout(() => document.getElementById('editor-note')?.focus(), 80); }
+  if (!action && !event.target.closest('.row-more-wrap')) closeRowMoreMenu();
 
   const assign = event.target.closest('[data-extension-assign]'); if (assign) openAssign(assign.dataset.extensionAssign);
   const reload = event.target.closest('[data-extension-reload]'); if (reload) { try { const updated = await window.ops.reloadExtension(reload.dataset.extensionReload); toast(tx('扩展已重新加载：') + (updated?.name || '') + ' v' + (updated?.version || '')); invalidateViewCache('extensions'); await refreshExtensions(); } catch (error) { toast(tx('重新加载失败：') + error.message); } }

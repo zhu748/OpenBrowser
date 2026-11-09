@@ -1772,14 +1772,22 @@ function editorCookies() {
 
 
 function updateEditorVisibility() {
-  const direct = editorSelectedNetwork() === 'direct';
+  const network = editorSelectedNetwork();
+  const direct = network === 'direct';
+  const choose = network === 'choose';
   const proxyFields = $('#editor-proxy-fields');
   if (proxyFields) {
-    proxyFields.classList.toggle('disabled', direct);
-    proxyFields.hidden = direct;
+    proxyFields.classList.toggle('disabled', direct || choose);
+    proxyFields.hidden = direct || choose;
   }
+  const chooseBlock = $('#editor-proxy-choose-block');
+  if (chooseBlock) chooseBlock.hidden = !choose;
+  if (typeof renderDirectBanner === 'function') renderDirectBanner();
   $('#editor-timezone').hidden = $('#editor-timezone-mode').value !== 'custom';
-  $('.geo-custom').hidden = $('#editor-geo-mode').value !== 'custom';
+  const geoDenied = $('#editor-geo-permission')?.value === 'deny';
+  const geoGroup = $('#editor-geo-mode')?.closest('.editor-field-group');
+  if (geoGroup) geoGroup.hidden = geoDenied;
+  $('.geo-custom').hidden = geoDenied || $('#editor-geo-mode').value !== 'custom';
   const customResolution = $('#editor-resolution').value === 'custom'; $('#editor-width').hidden = !customResolution; $('#editor-height').hidden = !customResolution;
   $('#editor-font-size').hidden = $('#editor-font-mode').value !== 'custom';
   const webglCustom = $('#editor-webgl-meta')?.value === 'custom';
@@ -2650,22 +2658,120 @@ async function purgeProfile(id) {
 function filteredProfilesForCurrentView() {
   const filter = $('#profile-search')?.value || '';
   const profileList = window.OpenBrowserProfileList;
+  let result;
   if (profileList?.filterProfiles) {
-    return profileList.filterProfiles({
+    result = profileList.filterProfiles({
       profiles: ui.profiles,
       activeGroupFilter,
       query: filter,
       displayProfileNumber,
       groupNameOf,
     });
+  } else {
+    result = ui.profiles.filter((profile) => {
+      if (activeGroupFilter === 'trash') return Boolean(profile.trashed);
+      if (profile.trashed) return false;
+      if (activeGroupFilter === 'ungrouped') return !profile.groupId;
+      if (activeGroupFilter !== 'all' && profile.groupId !== activeGroupFilter) return false;
+      return true;
+    });
   }
-  return ui.profiles.filter((profile) => {
-    if (activeGroupFilter === 'trash') return Boolean(profile.trashed);
-    if (profile.trashed) return false;
-    if (activeGroupFilter === 'ungrouped') return !profile.groupId;
-    if (activeGroupFilter !== 'all' && profile.groupId !== activeGroupFilter) return false;
-    return true;
+  // Roxy 对齐：顶部标签条（全部窗口/收藏/已打开）
+  if (activeListTab === 'fav') result = result.filter((profile) => profile.favorite && !profile.trashed);
+  if (activeListTab === 'open') result = result.filter((profile) => profileEngine(profile.id).running);
+  return result;
+}
+
+// ===== Roxy 对齐：列表标签条 / 行更多菜单 / 收藏 / 导出窗口 =====
+let activeListTab = 'all';
+function renderListTabs() {
+  const row = $('#profile-list-tabs');
+  if (!row) return;
+  const counts = {
+    all: ui.profiles.filter((p) => !p.trashed).length,
+    fav: ui.profiles.filter((p) => p.favorite && !p.trashed).length,
+    open: ui.profiles.filter((p) => !p.trashed && profileEngine(p.id).running).length,
+    trash: ui.profiles.filter((p) => p.trashed).length,
+  };
+  row.querySelectorAll('.list-tab').forEach((tab) => {
+    const key = tab.dataset.listTab;
+    tab.classList.toggle('active', key === (key === 'trash' ? (activeGroupFilter === 'trash' ? 'trash' : activeListTab) : activeListTab));
+    let count = tab.querySelector('.list-tab-count');
+    if (!count) { count = element('span', 'list-tab-count'); tab.append(count); }
+    count.textContent = String(counts[key] ?? 0);
   });
+}
+function switchListTab(tab) {
+  activeListTab = tab;
+  if (tab === 'trash') { if (activeGroupFilter !== 'trash') { activeGroupFilter = 'trash'; } }
+  else if (activeGroupFilter === 'trash') { activeGroupFilter = 'all'; }
+  profilePage = 1;
+  renderProfiles();
+}
+function closeRowMoreMenu() {
+  document.querySelectorAll('.row-more-menu').forEach((menu) => menu.remove());
+}
+function toggleRowMoreMenu(button) {
+  const wrap = button.closest('.row-more-wrap');
+  if (!wrap) return;
+  const existing = wrap.querySelector('.row-more-menu');
+  closeRowMoreMenu();
+  if (existing) return;
+  const profile = ui.profiles.find((item) => item.id === button.dataset.id);
+  if (!profile) return;
+  const info = profileEngine(profile.id);
+  const menu = element('div', 'row-more-menu');
+  const items = [
+    [info.running ? 'stop' : 'start', info.running ? (t('action.stop')) : (t('profiles.openProfile') || '打开窗口'), 'play'],
+    ['edit', t('profiles.menuEdit') || '编辑窗口', 'pencil'],
+    ['fav', profile.favorite ? (t('profiles.unfavorite') || '取消收藏') : (t('profiles.favorite') || '收藏'), 'star'],
+    ['copy-id', t('profiles.copyId') || '复制窗口 ID', 'copy'],
+    ['note', profile.note ? (t('profiles.editNote') || '修改备注') : (t('profiles.addNote') || '添加备注'), 'sticky-note'],
+    ['export-profile', t('profiles.exportProfile') || '导出窗口', 'download'],
+    ['clone', t('action.clone') || '克隆', 'copy-plus'],
+  ];
+  for (const [act, label, icon] of items) {
+    const btn = element('button', '', '');
+    btn.dataset.action = act;
+    btn.dataset.id = profile.id;
+    btn.innerHTML = `<i data-lucide="${icon}"></i><span></span>`;
+    btn.querySelector('span').textContent = label;
+    menu.append(btn);
+  }
+  const danger = element('button', '', '');
+  danger.dataset.action = 'purge';
+  danger.dataset.id = profile.id;
+  danger.style.color = '#c43a49';
+  danger.innerHTML = `<i data-lucide="trash-2"></i><span></span>`;
+  danger.querySelector('span').textContent = t('profiles.menuDelete') || '删除窗口';
+  menu.append(danger);
+  wrap.append(menu);
+  if (window.lucide?.createIcons) window.lucide.createIcons({ attrs: {}, nameAttr: 'data-lucide' });
+}
+async function toggleProfileFavorite(id) {
+  const profile = ui.profiles.find((item) => item.id === id);
+  if (!profile) return;
+  profile.favorite = !profile.favorite;
+  save();
+  invalidateViewCache('profiles');
+  renderProfiles();
+  toast(profile.favorite ? tx('已收藏') : tx('已取消收藏'));
+}
+function exportProfile(id) {
+  const profile = ui.profiles.find((item) => item.id === id);
+  if (!profile) return;
+  closeRowMoreMenu();
+  // 安全：导出配置但不导出平台密码 / 2FA 密钥
+  const sanitized = { ...profile, platform: { ...(profile.platform || {}), password: '', totpSecret: '' } };
+  const blob = new Blob([JSON.stringify(sanitized, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `profile-${displayProfileNumber(profile)}-${profile.id}.json`;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  toast(tx('窗口已导出'));
 }
 
 // One <tr> for the profile table. Pure builder — no caching, no diffing;
@@ -2679,48 +2785,17 @@ function buildProfileRow(profile) {
   const idCell = element('td', 'col-num', displayProfileNumber(profile));
   const nameCell = document.createElement('td');
   nameCell.append(buildEnvIdentity(profile));
-  const groupCell = document.createElement('td');
-  groupCell.className = 'col-group';
-  const badge = element('span', 'group-badge group-badge-compact', groupNameOf(profile));
-  badge.style.setProperty('--chip-color', groupColorOf(profile));
-  badge.title = groupNameOf(profile);
-  groupCell.append(badge);
-  const browserCell = document.createElement('td');
-  browserCell.className = 'col-browser';
-  browserCell.append(buildEnvBrowserCell(profile));
-  const proxyCell = document.createElement('td');
-  proxyCell.className = 'col-network';
-  proxyCell.append(networkModeBadge(profile.proxy));
-  const networkCell = document.createElement('td');
-  networkCell.className = 'col-exit';
-  const network = info.network || (profile.exitIp ? { ip: profile.exitIp, countryCode: profile.exitCountryCode, checkedAt: profile.exitCheckedAt } : null);
-  const networkInfo = element('div', 'network-info network-info-compact');
-  if (network?.ip) {
-    const code = String(network.countryCode || '').toUpperCase();
-    const line = element('span', 'exit-compact', (code ? countryFlag(code) + ' ' + code : '🌐') + (network.ip ? ' · ' + String(network.ip).replace(/^(\d+\.\d+)\.\d+\.\d+$/, '$1.*.*') : ''));
-    line.title = (network.ip || '') + (code ? ' · ' + countryName(code) : '');
-    networkInfo.append(line);
-  } else {
-    networkInfo.append(element('span', 'network-pending', isDirectProxy(profile.proxy) ? t('net.localHost') : t('net.untested')));
+  if (profile.favorite) {
+    const star = element('span', 'fav-star', '★');
+    star.title = t('profiles.favorited') || '已收藏';
+    nameCell.append(star);
   }
-  if (!isDirectProxy(profile.proxy)) {
-    const inspect = element('button', 'network-check', t('action.check'));
-    inspect.title = network?.ip ? t('action.recheck') : t('action.checkExit');
-    inspect.dataset.proxyCheck = profile.id;
-    networkInfo.append(inspect);
-  }
-  networkCell.append(networkInfo);
-  const extensionCell = element('td', 'col-ext', String(info.assignedExtensions?.length || 0));
-  const statusCell = document.createElement('td');
-  statusCell.className = 'col-status';
-  const starting = !info.running && startingProfiles.has(profile.id);
-  if (starting) {
-    statusCell.append(buildStartProgressCell(profile.id, startingProfiles.get(profile.id)));
-    row.classList.add('is-starting');
-  } else {
-    const status = element('span', `status status-compact ${info.running ? 'running' : ''}`, info.running ? t('status.run') : t('status.stop'));
-    if (info.running && info.port) status.title = t('status.runningCdp', { port: info.port });
-    statusCell.append(status);
+  const exitInfo = info.network || (profile.exitIp ? { ip: profile.exitIp, countryCode: profile.exitCountryCode } : null);
+  if (exitInfo?.ip) {
+    const code = String(exitInfo.countryCode || '').toUpperCase();
+    const exitChip = element('small', 'exit-compact', (code ? countryFlag(code) + ' ' + code : '🌐') + ' · ' + String(exitInfo.ip).replace(/^(\d+\.\d+)\.\d+\.\d+$/, '$1.*.*'));
+    exitChip.title = (exitInfo.ip || '') + (code ? ' · ' + countryName(code) : '');
+    nameCell.append(exitChip);
   }
   const actionCell = document.createElement('td');
   actionCell.className = 'col-actions';
@@ -2734,28 +2809,56 @@ function buildProfileRow(profile) {
     purge.dataset.id = profile.id;
     actions.append(restore, purge);
   } else {
-    const toggle = iconActionButton(info.running ? 'square' : 'play', info.running ? t('action.stop') : (starting ? t('status.starting') : t('action.start')));
-    toggle.dataset.action = info.running ? 'stop' : 'start';
-    toggle.dataset.id = profile.id;
-    if (starting) {
-      toggle.disabled = true;
-      toggle.classList.add('is-starting');
-      toggle.title = startProgressLabel(startingProfiles.get(profile.id));
-      toggle.setAttribute('aria-label', toggle.title);
-      toggle.setAttribute('aria-disabled', 'true');
+    const openBtn = iconActionButton(info.running ? 'square' : 'play', info.running ? t('action.stop') : (startingProfiles.has(profile.id) ? t('status.starting') : (t('profiles.openProfile') || '打开窗口')), 'mini primary-outline');
+    openBtn.dataset.action = info.running ? 'stop' : 'start';
+    openBtn.dataset.id = profile.id;
+    if (startingProfiles.has(profile.id)) {
+      openBtn.disabled = true;
+      openBtn.classList.add('is-starting');
+      openBtn.title = startProgressLabel(startingProfiles.get(profile.id));
     }
-    const sync = iconActionButton('panels-top-left', t('profiles.syncSelect'), 'mini blue'); sync.dataset.action = 'select-sync'; sync.dataset.id = profile.id; sync.disabled = !info.running || starting; if (sync.disabled) sync.setAttribute('aria-disabled', 'true');
-    const edit = iconActionButton('pencil', t('action.edit'), 'mini edit'); edit.dataset.action = 'edit'; edit.dataset.id = profile.id;
-    const clone = iconActionButton('copy', t('action.clone') || '克隆', 'mini clone'); clone.dataset.action = 'clone'; clone.dataset.id = profile.id;
-    actions.append(toggle, sync, edit, clone);
+    actions.append(openBtn);
   }
   actionCell.append(actions);
-  row.append(selectCell, idCell, nameCell, groupCell, browserCell, proxyCell, networkCell, extensionCell, statusCell, actionCell);
+  const noteCell = element('td', 'col-note', profile.note ? String(profile.note).slice(0, 40) : '');
+  noteCell.title = profile.note || '';
+  const tagCell = element('td', 'col-tag', profile.tag ? localizeSystemLabel(profile.tag) : '');
+  const projectCell = document.createElement('td');
+  projectCell.className = 'col-group';
+  const badge = element('span', 'group-badge group-badge-compact', groupNameOf(profile));
+  badge.style.setProperty('--chip-color', groupColorOf(profile));
+  badge.title = groupNameOf(profile);
+  projectCell.append(badge);
+  const lastOpenCell = element('td', 'col-lastopen', profile.lastOpenedAt ? new Date(profile.lastOpenedAt).toLocaleString() : '—');
+  const extensionCell = element('td', 'col-ext', String(info.assignedExtensions?.length || 0));
+  const statusCell = document.createElement('td');
+  statusCell.className = 'col-status';
+  const starting = !info.running && startingProfiles.has(profile.id);
+  if (starting) {
+    statusCell.append(buildStartProgressCell(profile.id, startingProfiles.get(profile.id)));
+    row.classList.add('is-starting');
+  } else {
+    const status = element('span', `status status-compact ${info.running ? 'running' : ''}`, info.running ? t('status.run') : t('status.stop'));
+    if (info.running && info.port) status.title = t('status.runningCdp', { port: info.port });
+    statusCell.append(status);
+  }
+  const moreCell = document.createElement('td');
+  moreCell.className = 'col-more';
+  if (activeGroupFilter !== 'trash') {
+    const moreWrap = element('div', 'row-more-wrap');
+    const moreBtn = iconActionButton('ellipsis-vertical', t('profiles.more') || '更多', 'mini');
+    moreBtn.dataset.action = 'more';
+    moreBtn.dataset.id = profile.id;
+    moreWrap.append(moreBtn);
+    moreCell.append(moreWrap);
+  }
+  row.append(selectCell, idCell, nameCell, actionCell, noteCell, tagCell, projectCell, lastOpenCell, extensionCell, statusCell, moreCell);
   return row;
 }
 
 function renderProfiles() {
   renderGroupFilterChips();
+  renderListTabs();
   const table = $('#profile-table');
   const filtered = filteredProfilesForCurrentView();
   const pageData = window.OpenBrowserProfileList?.paginate?.(filtered, profilePage, profilePageSize)
@@ -2776,6 +2879,7 @@ function renderProfiles() {
     // engine network object (exit IP check result) rides along via its fields.
     return JSON.stringify([
       profile.updatedAt || '', profile.name || '', profile.title || '', profile.groupId || '',
+      profile.note || '', profile.tag || '', profile.favorite ? 1 : 0, profile.lastOpenedAt || '',
       group ? `${group.name}:${group.color}` : '',
       profile.browser || '', profile.engine || '', profile.proxy || '', profile.exitIp || '', profile.exitCountryCode || '',
       info.running, info.port || '', info.cdpError || '', info.verificationBlocked || false,
@@ -2974,6 +3078,8 @@ async function startProfile(id) {
   scheduleRenderProfiles();
   try {
     const result = await window.ops.startProfile(payload);
+    profile.lastOpenedAt = new Date().toISOString();
+    save();
     setStartingProgress(id, { phase: 'ready', percent: 100, message: t('status.startPhase.ready') });
     log('Browser', `${displayProfileNumber(profile)} 已启动 · ${result.browser} · CDP ${result.port || 'pending'}`);
     toast(tx(`${displayProfileNumber(profile)} 已启动`));
@@ -3799,12 +3905,30 @@ $('#profile-form').addEventListener('submit', async (event) => {
     startUrl,
     platform: { type: 'other', startUrl },
     ...(template?.platform ? { platform: { ...template.platform, startUrl } } : {}),
-    advanced: { ...(template?.advanced || {}), startUrls: startUrl },
+    advanced: {
+      ...(template?.advanced || {}),
+      startUrls: startUrl,
+      // Roxy 对齐的新环境默认值：弹出保存密码提示开、端口扫描保护开、DNT 开、硬件并发 12、内存 8G、MAC 自定义
+      promptSavePassword: template?.advanced?.promptSavePassword !== undefined ? template.advanced.promptSavePassword : true,
+      openWorkbench: template?.advanced?.openWorkbench || '1',
+      ipChangeRemind: template?.advanced?.ipChangeRemind || '2',
+      googleLogin: template?.advanced?.googleLogin || '2',
+    },
     privacy: {
       languageMode: 'ip',
       langFromIp: true,
       uiLanguage: 'profile',
       deviceProfile: 'persona',
+      // Roxy 对齐默认值（仅新建环境；已有环境不静默改档）
+      ...(template?.privacy ? {} : {
+        webrtc: 'disabled',
+        dntMode: 'on',
+        dnt: true,
+        portScanProtect: true,
+        cores: '12',
+        memory: '8',
+        macMode: 'custom',
+      }),
       ...(template?.privacy ? JSON.parse(JSON.stringify(template.privacy)) : {}),
     },
     ...(template?.fingerprint ? { fingerprint: JSON.parse(JSON.stringify(template.fingerprint)) } : {}),
@@ -3937,6 +4061,23 @@ document.getElementById('editor-platform-type')?.addEventListener('change', () =
 
 setupPlatformPresets('profile-create-platform', 'profile-create-platform-chips', 'profile-create-start-url');
 setupPlatformPresets('batch-add-platform', 'batch-add-platform-chips', 'batch-add-start-url');
+// Roxy 对齐控件一次性接线（版本下拉/九宫格/三段开关/ID 复制/横幅/右栏随机）
+if (typeof wireEditorAlignmentControls === 'function') wireEditorAlignmentControls();
+// 列表标签条（全部窗口/收藏/已打开/回收站）
+document.querySelectorAll('#profile-list-tabs .list-tab').forEach((tab) => {
+  tab.addEventListener('click', () => switchListTab(tab.dataset.listTab));
+});
+// 全局 Ctrl+F 聚焦列表搜索（对齐 搜索 Ctrl+F）
+window.addEventListener('keydown', (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
+    const target = event.target;
+    const typing = target instanceof HTMLElement && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+    if (typing) return;
+    event.preventDefault();
+    $('#profile-search')?.focus();
+    $('#profile-search')?.select?.();
+  }
+});
 
 // Cookie tools (export/import/clear)
 document.getElementById('editor-cookie-export')?.addEventListener('click', () => {

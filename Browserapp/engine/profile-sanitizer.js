@@ -33,7 +33,7 @@ function sanitizeProfile(value) {
     ? fingerprintValue?.memory
     : privacyValue.memory;
   const cores = parseLimitedOption(cpuCandidate, [0, 2, 4, 6, 8, 10, 12, 16, 20, 24]);
-  const memory = parseLimitedOption(memoryCandidate, [0, 2, 4, 6, 8]);
+  const memory = parseLimitedOption(memoryCandidate, [0, 2, 4, 6, 8, 16]);
   // Custom launch args: each token must look like a Chromium switch (--flag or --flag=value).
   // Values may not contain whitespace/semicolons (split first), keeping the surface injectable-free.
   const customArgs = String(privacyValue.customArgs || "")
@@ -65,6 +65,11 @@ function sanitizeProfile(value) {
     // inside profileEngine() when unset, so legacy profiles never carry it.
     engine: allowed(value.engine, ["chromium", "firefox"], "chromium"),
     os: String(value.os || value.fingerprint?.os || value.privacy?.fingerprint?.os || "Windows").slice(0, 40),
+    // Roxy 对齐：系统版本 / 内核版本（内核 'latest' = 保持最新）
+    osVersion: String(value.osVersion || "").slice(0, 40),
+    engineVersion: allowed(value.engineVersion, ["latest"], String(value.engineVersion || "").slice(0, 40) === "" ? "" : String(value.engineVersion).slice(0, 40)),
+    favorite: Boolean(value.favorite),
+    lastOpenedAt: value.lastOpenedAt ? String(value.lastOpenedAt).slice(0, 40) : null,
     location: String(value.location || "Local").slice(0, 80),
     networkMode,
     proxy: networkMode === "direct" ? "Direct" : rawProxy,
@@ -93,6 +98,7 @@ function sanitizeProfile(value) {
     platform: {
       type: String(platformValue.type || "other").slice(0, 40),
       startUrl: effectiveStartUrl,
+      name: String(platformValue.name || "").slice(0, 120),
       username: String(platformValue.username || "").slice(0, 200),
       password: String(platformValue.password || "").slice(0, 500),
       totpSecret: String(platformValue.totpSecret || platformValue.otp || "").slice(0, 200),
@@ -127,9 +133,18 @@ function sanitizeProfile(value) {
       timezoneMode: allowed(privacyValue.timezoneMode, ["ip", "real", "custom"], "ip"),
       timezone: String(privacyValue.timezone || "").slice(0, 100),
       geoMode: allowed(privacyValue.geoMode, ["ip", "disabled", "custom", "prompt", "allow"], privacyValue.geoMode === "prompt" ? "prompt" : (privacyValue.geoMode === "allow" ? "ip" : "ip")),
+      // Roxy 对齐：地理位置提示（询问/允许/禁止）与来源（基于IP匹配/自定义）分离；
+      // 旧 profile 的 geoMode=disabled/prompt 折算进 geoPermission，geoMode 继续供引擎读取。
+      geoPermission: (() => {
+        const explicit = allowed(privacyValue.geoPermission, ["prompt", "allow", "deny"], "");
+        if (explicit) return explicit;
+        if (privacyValue.geoMode === "disabled") return "deny";
+        if (privacyValue.geoMode === "prompt") return "prompt";
+        return "allow";
+      })(),
       latitude: finite(privacyValue.latitude),
       longitude: finite(privacyValue.longitude),
-      accuracy: Math.min(100000, Math.max(1, Number(privacyValue.accuracy) || 100)),
+      accuracy: Math.min(5000, Math.max(10, Number(privacyValue.accuracy) || 1000)),
       uiLanguage: String(privacyValue.uiLanguage || "profile").slice(0, 20),
       langFromIp: privacyValue.langFromIp !== false,
       languageMode: String(privacyValue.languageMode || (privacyValue.langFromIp !== false ? "ip" : (privacyValue.uiLanguage || "profile"))).slice(0, 20),
@@ -258,6 +273,9 @@ function sanitizeProfile(value) {
       syncCookiesOnClose: advancedValue.syncCookiesOnClose !== false,
       syncIndexedDB: Boolean(advancedValue.syncIndexedDB),
       syncLocalStorage: Boolean(advancedValue.syncLocalStorage),
+      // Roxy 对齐：Session Storage 同步 + 数据
+      syncSessionStorage: Boolean(advancedValue.syncSessionStorage),
+      sessionStorages: String(advancedValue.sessionStorages || "").slice(0, 200000),
       syncPasswords: Boolean(advancedValue.syncPasswords),
       syncExtensionData: Boolean(advancedValue.syncExtensionData),
       multiOpen: Boolean(advancedValue.multiOpen),
@@ -265,6 +283,15 @@ function sanitizeProfile(value) {
       startUrls: String(advancedValue.startUrls || effectiveStartUrl || "").slice(0, 8000),
       blockUrls: String(advancedValue.blockUrls || "").slice(0, 8000),
       blockSound: Boolean(advancedValue.blockSound),
+      // Roxy 对齐：弹出保存密码提示（blockPasswordPrompt = !promptSavePassword 的历史字段继续保留）
+      promptSavePassword: advancedValue.promptSavePassword !== undefined ? Boolean(advancedValue.promptSavePassword) : !Boolean(advancedValue.blockPasswordPrompt),
+      stopOpenNet: Boolean(advancedValue.stopOpenNet),
+      stopOpenIPChange: Boolean(advancedValue.stopOpenIPChange),
+      stopOpenIPCountryChange: Boolean(advancedValue.stopOpenIPCountryChange),
+      openWorkbench: allowed(advancedValue.openWorkbench, ["0", "1", "2"], "1"),
+      ipChangeRemind: allowed(advancedValue.ipChangeRemind, ["0", "1", "2"], "2"),
+      googleLogin: allowed(advancedValue.googleLogin, ["0", "1", "2"], "2"),
+      allowUrls: String(advancedValue.allowUrls || "").slice(0, 8000),
       blockPasswordPrompt: Boolean(advancedValue.blockPasswordPrompt),
       blockRestoreDialog: advancedValue.blockRestoreDialog !== false,
       blockNotifications: advancedValue.blockNotifications !== false,

@@ -21,9 +21,9 @@
       <div class="brand"><div class="logo"><img src="assets/logo-pixel.png?v=20261002-flat" alt="OpenBrowser"></div><div><strong>OpenBrowser</strong><small data-i18n="app.brand.sub">LOCAL WORKSPACE</small></div></div>
       <button class="new-browser" id="quick-create"><i data-lucide="plus" aria-hidden="true"></i><span data-i18n="nav.newBrowser">新建浏览器</span></button>
       <nav>
-        <button class="nav active" data-view="profiles"><i data-lucide="layers-3"></i><span data-i18n="nav.profiles">环境管理</span></button>
-        <button class="nav" data-view="groups"><i data-lucide="folder-kanban"></i><span data-i18n="nav.groups">分组管理</span></button>
-        <button class="nav" data-view="proxies"><i data-lucide="network"></i><span data-i18n="nav.proxies">代理管理</span></button>
+        <button class="nav active" data-view="profiles"><i data-lucide="layers-3"></i><span data-i18n="nav.profiles">窗口管理</span></button>
+        <button class="nav" data-view="groups"><i data-lucide="folder-kanban"></i><span data-i18n="nav.groups">项目管理</span></button>
+        <button class="nav" data-view="proxies"><i data-lucide="network"></i><span data-i18n="nav.proxies">代理 IP</span></button>
         <button class="nav" data-view="extensions"><i data-lucide="blocks"></i><span data-i18n="nav.extensions">应用中心</span></button>
         <div class="nav-label" data-i18n="nav.automation">自动化</div>
         <button class="nav" data-view="sync"><i data-lucide="panels-top-left"></i><span data-i18n="nav.sync">窗口同步</span></button>
@@ -65,6 +65,12 @@
 
       <main>
         <section class="view active" id="view-profiles">
+          <div class="list-tab-row" id="profile-list-tabs" role="tablist">
+            <button class="list-tab active" type="button" data-list-tab="all"><span data-i18n="profiles.tabAll">全部窗口</span></button>
+            <button class="list-tab" type="button" data-list-tab="fav"><span data-i18n="profiles.tabFav">收藏</span></button>
+            <button class="list-tab" type="button" data-list-tab="open"><span data-i18n="profiles.tabOpen">已打开</span></button>
+            <button class="list-tab" type="button" data-list-tab="trash"><span data-i18n="profiles.tabTrash">回收站</span></button>
+          </div>
           <div class="group-chip-row" id="profile-group-chips"></div>
           <div class="toolbar profile-primary-toolbar">
             <div class="toolbar-left"><button class="primary" id="create-profile"><i data-lucide="plus"></i><span data-i18n="profiles.create">新建环境</span></button><button class="outline" id="batch-add"><i data-lucide="copy-plus"></i><span data-i18n="profiles.batchAdd">批量新增</span></button><button class="outline" id="batch-import"><i data-lucide="file-down"></i><span data-i18n="profiles.batchImport">批量导入</span></button><input id="batch-import-file" type="file" accept=".csv,.json" hidden><button class="outline" id="renumber-profiles" type="button" title="将所有环境按列表顺序重新编号为 1..N" data-i18n-title="profiles.renumberTitle"><i data-lucide="hash"></i><span data-i18n="profiles.renumber">重排编号</span></button><button class="outline danger" id="empty-trash-btn" type="button" hidden><i data-lucide="trash"></i><span data-i18n="trash.empty">清空回收站</span></button></div>
@@ -79,7 +85,7 @@
               <button class="outline icon-apply" type="button" id="batch-assign-group-btn" title="应用分组"><i data-lucide="check"></i><span data-i18n="profiles.apply">应用</span></button><button class="primary" id="restore-selected" hidden><i data-lucide="rotate-ccw"></i><span data-i18n="trash.restoreSelected">还原选中</span></button><button class="danger" id="delete-selected"><i data-lucide="trash-2"></i><span data-i18n="profiles.batchDelete">批量删除</span></button></div>
           </div>
           <div class="table-card">
-            <table class="profile-table-compact"><thead><tr><th class="col-check"><input type="checkbox" id="select-all-profiles"></th><th class="col-num" data-i18n="profiles.col.num">编号</th><th class="col-name" data-i18n="profiles.col.name">环境名称</th><th class="col-group" data-i18n="profiles.col.group">分组</th><th class="col-browser" data-i18n="profiles.col.browser">内核</th><th class="col-network" data-i18n="profiles.col.network">网络</th><th class="col-exit" data-i18n="profiles.col.exit">出口</th><th class="col-ext" data-i18n="profiles.col.ext">扩展</th><th class="col-status" data-i18n="profiles.col.status">状态</th><th class="col-actions" data-i18n="profiles.col.actions">操作</th></tr></thead><tbody id="profile-table"></tbody></table>
+            <table class="profile-table-compact"><thead><tr><th class="col-check"><input type="checkbox" id="select-all-profiles"></th><th class="col-num" data-i18n="profiles.col.num">编号</th><th class="col-name" data-i18n="profiles.col.name">窗口名称</th><th class="col-actions" data-i18n="profiles.col.actions">操作</th><th class="col-note" data-i18n="profiles.col.note">备注</th><th class="col-tag" data-i18n="profiles.col.tag">标签</th><th class="col-group" data-i18n="profiles.col.project">项目</th><th class="col-lastopen" data-i18n="profiles.col.lastOpen">最后打开</th><th class="col-ext" data-i18n="profiles.col.ext">扩展</th><th class="col-status" data-i18n="profiles.col.status">状态</th><th class="col-more" data-i18n="profiles.col.more">其他</th></tr></thead><tbody id="profile-table"></tbody></table>
             <div class="empty profile-empty-state" id="profile-empty" role="status" hidden>
               <i data-lucide="layers" aria-hidden="true"></i>
               <strong id="profile-empty-title"></strong>
@@ -88,7 +94,7 @@
               <button class="primary" id="profile-empty-create" type="button" data-i18n="profiles.create" hidden>新建环境</button>
             </div>
           </div>
-          <div class="profile-pagination toolbar-pagination" id="profile-pagination"><span class="profile-total"><span data-i18n="profiles.totalLabel">总数：</span><strong id="profile-total">0</strong></span><div class="profile-page-nav"><button type="button" id="profile-prev" aria-label="&#19978;&#19968;&#39029;">&#8249;</button><label><input id="profile-page" type="number" min="1" value="1" aria-label="&#24403;&#21069;&#39029;"> / <span id="profile-pages">1</span></label><button type="button" id="profile-next" aria-label="&#19979;&#19968;&#39029;">&#8250;</button></div><label class="profile-page-size"><select id="profile-page-size" aria-label="&#27599;&#39029;&#25968;&#37327;"><option value="10">10&#26465;/&#39029;</option><option value="20">20&#26465;/&#39029;</option><option value="50">50&#26465;/&#39029;</option><option value="100">100&#26465;/&#39029;</option></select></label></div>
+          <div class="profile-pagination toolbar-pagination" id="profile-pagination"><span class="profile-total"><span data-i18n="profiles.totalLabel">总计</span><strong id="profile-total">0</strong><span data-i18n="profiles.totalUnit">个</span></span><div class="profile-page-nav"><button type="button" id="profile-prev" aria-label="&#19978;&#19968;&#39029;">&#8249;</button><label><span data-i18n="profiles.jumpTo">跳转页数至</span> <input id="profile-page" type="number" min="1" value="1" aria-label="&#24403;&#21069;&#39029;"> / <span id="profile-pages">1</span></label><button type="button" id="profile-next" aria-label="&#19979;&#19968;&#39029;">&#8250;</button></div><label class="profile-page-size"><select id="profile-page-size" aria-label="&#27599;&#39029;&#25968;&#37327;"><option value="10">10&#26465;/&#39029;</option><option value="20">20&#26465;/&#39029;</option><option value="50">50&#26465;/&#39029;</option><option value="100">100&#26465;/&#39029;</option></select></label></div>
 
         </section>
 
@@ -114,7 +120,9 @@
         <section class="view" id="view-profile-editor">
           <div class="profile-editor-head">
             <button class="editor-back" id="editor-back" type="button">‹ 返回</button>
-            <div><h2>修改环境 <span id="editor-profile-id"></span></h2><p>管理账号、网络、指纹与启动设置</p></div>
+            <div><h2><span data-i18n="editor.pageTitle">编辑窗口</span><span id="editor-profile-id" hidden></span></h2>
+              <p class="editor-id-row"><span class="editor-id-label" data-i18n="editor.idLabel">ID:</span><span id="editor-id-text" class="editor-id-value"></span><button class="outline mini-btn" id="editor-id-copy" type="button" data-i18n="editor.copyId">复制</button></p>
+              <p data-i18n="editor.pageDesc">管理账号、网络、指纹与启动设置</p></div>
           </div>
           <div class="editor-tabs" role="tablist">
             <button class="active" type="button" data-editor-tab="basic">平台账号配置</button>
@@ -164,15 +172,47 @@
                         <option value="google" data-url="https://www.google.com">google.com</option>
                       </select>
                     </label>
-                    <label class="platform-url-label">* 启动时打开的指定地址
-                      <input id="editor-start-url" type="url" placeholder="选择平台后自动填入，也可手动修改" autocomplete="off">
+                    <label class="platform-url-label">* <span data-i18n="editor.startWebPage">启动网页</span>
+                      <textarea id="editor-start-url" rows="2" placeholder="必须以 http:// 或 https:// 开头&#10;每行一个 URL，换行以添加多个" data-i18n-placeholder="editor.startUrlPh" autocomplete="off"></textarea>
                     </label>
                   </div>
-                  <p class="network-mode-hint">选择预设平台会写入对应地址；选「空白页」则启动时不打开任何站点；「其他平台」可手填任意 URL。</p>
-                  <div class="form-three">
-                    <label>窗口显示名称<input id="editor-title" maxlength="120" placeholder="例如：美区主号-01"></label>
-                    <label>归属分组<select id="editor-group"></select></label>
-                    <label>标签分类<input id="editor-tag" maxlength="40" placeholder="例如：主力、养号"></label>
+                  <p class="network-mode-hint" data-i18n="editor.startUrlHint">打开窗口时，将自动加载所填写的网址。支持多个网址分别在独立标签页中显示。</p>
+                  <div class="form-three" style="margin-top:12px">
+                    <div class="labeled-block" role="group" aria-label="声音">
+                      <span class="labeled-block-title" data-i18n="editor.sound">声音</span>
+                      <div class="segmented" id="editor-sound-mode" role="radiogroup">
+                        <label><input type="radio" name="editor-sound-mode" value="open" checked><span data-i18n="editor.sizeOpen">开启</span></label>
+                        <label><input type="radio" name="editor-sound-mode" value="close"><span data-i18n="editor.sizeClose">关闭</span></label>
+                      </div>
+                      <input id="editor-block-sound" type="checkbox" hidden>
+                    </div>
+                    <div class="labeled-block" role="group" aria-label="图片">
+                      <span class="labeled-block-title" data-i18n="editor.image">图片</span>
+                      <div class="segmented" id="editor-image-mode" role="radiogroup">
+                        <label><input type="radio" name="editor-image-mode" value="open" checked><span data-i18n="editor.sizeOpen">开启</span></label>
+                        <label><input type="radio" name="editor-image-mode" value="close"><span data-i18n="editor.sizeClose">关闭</span></label>
+                      </div>
+                      <input id="editor-block-images" type="checkbox" hidden>
+                    </div>
+                    <div class="labeled-block" role="group" aria-label="视频">
+                      <span class="labeled-block-title" data-i18n="editor.video">视频</span>
+                      <div class="segmented" id="editor-video-mode" role="radiogroup">
+                        <label><input type="radio" name="editor-video-mode" value="open" checked><span data-i18n="editor.sizeOpen">开启</span></label>
+                        <label><input type="radio" name="editor-video-mode" value="close"><span data-i18n="editor.sizeClose">关闭</span></label>
+                      </div>
+                      <input id="editor-block-video" type="checkbox" hidden>
+                    </div>
+                  </div>
+                  <div class="form-two" style="margin-bottom:10px">
+                    <label><span data-i18n="editor.profileName">窗口名称
+                      </span><input id="editor-title" maxlength="120" placeholder="美区主号-01" data-i18n-placeholder="editor.profileNamePh">
+                    </label>
+                    <label><span data-i18n="editor.group">归属分组</span><select id="editor-group"></select></label>
+                  </div>
+                  <p class="network-mode-hint" data-i18n="editor.profileNameHint">* 系统自动生成窗口名称，也可手动修改。</p>
+                  <div class="form-two">
+                    <label><span data-i18n="editor.tag">标签分类</span><input id="editor-tag" maxlength="40" placeholder="例如：主力、养号"></label>
+                    <label><span data-i18n="editor.accountName">账号名称</span><input id="editor-platform-name" maxlength="120" placeholder="请输入账号备注名称，便于区分不同账号"></label>
                   </div>
                 </div>
 
@@ -186,9 +226,8 @@
                     <label>密码<input id="editor-platform-pass" type="password" autocomplete="new-password" placeholder="平台登录密码"></label>
                     <label>2FA 密钥 (TOTP)<input id="editor-platform-2fa" autocomplete="off" placeholder="双重验证密钥（可选）"></label>
                   </div>
-                  <label style="margin-top:10px">Cookie 会话数据 (JSON)
-                    <textarea id="editor-cookies" rows="4" placeholder='[{"name":"session","value":"...","domain":".example.com","path":"/"}]'></textarea>
-                    <small>选填，支持标准 JSON 数组格式。保存后下次启动自动导入；开启云备份后关闭窗口会自动保持最新同步。</small>
+                  <label><span data-i18n="editor.cookies">Cookies
+                    </span><textarea id="editor-cookies" rows="4" placeholder="选填&#10;支持格式: JSON、Netscape、Name=Value&#10;Name=Value 未写 domain 时，将按行从平台账号的网址自动填充" data-i18n-placeholder="editor.cookiesPh"></textarea>
                   </label>
                   <div class="storage-actions" style="margin-top:8px;margin-bottom:4px">
                     <button class="outline" type="button" id="editor-cookie-export">导出 Cookie</button>
@@ -212,13 +251,25 @@
               <section class="editor-panel" data-editor-panel="proxy">
                 <h3>代理配置</h3>
                 <label class="check-row"><input id="editor-proxy-check-start" type="checkbox"> 每次启动检测出口 IP（动态代理建议开启）</label>
-                <p class="network-mode-hint">本地直连 = 本机网络；代理模式 = HTTP / HTTPS / SOCKS5。</p>
-                <div class="segmented" id="editor-network-mode" role="radiogroup" aria-label="网络模式">
-                  <label><input type="radio" name="editor-network" value="direct" checked>本地直连</label>
-                  <label><input type="radio" name="editor-network" value="custom">代理模式</label>
+                <p class="network-mode-hint" data-i18n="editor.networkHint">本地直连 = 本机网络；代理模式 = HTTP / HTTPS / SOCKS5。</p>
+                <div class="editor-direct-banner" id="editor-direct-banner" hidden>
+                  <div class="direct-banner-main">
+                    <span data-i18n="editor.localNetPrefix">当前环境使用本机网络：</span>
+                    <strong id="editor-direct-exit">—</strong>
+                    <button class="outline mini-btn" id="editor-direct-refresh" type="button" title="重新检测出口 IP" data-i18n-title="editor.recheckExit">⟳</button>
+                  </div>
+                  <p>* <span data-i18n="editor.localNetWarn1">多个窗口或业务账号共用同一出口 IP，可能增加账号关联或平台风控风险。</span></p>
+                  <p>* <span data-i18n="editor.localNetWarn2">建议为每个窗口配置独立代理 IP。</span></p>
                 </div>
-                <label>代理库节点<select id="editor-proxy-library"><option value="">手动填写代理（不关联代理库）</option></select></label>
-                <div class="network-mode-hint" id="editor-proxy-library-status">未关联代理库节点</div>
+                <div class="segmented" id="editor-network-mode" role="radiogroup" aria-label="代理 IP">
+                  <label><input type="radio" name="editor-network" value="direct" checked><span data-i18n="editor.proxyNoUse">不使用</span></label>
+                  <label><input type="radio" name="editor-network" value="custom"><span data-i18n="editor.proxyAdd">添加代理 IP</span></label>
+                  <label><input type="radio" name="editor-network" value="choose"><span data-i18n="editor.proxyChoose">选择代理 IP</span></label>
+                </div>
+                <div id="editor-proxy-choose-block">
+                  <label><span data-i18n="editor.proxyLibraryNode">代理库节点</span><select id="editor-proxy-library"><option value="">手动填写代理（不关联代理库）</option></select></label>
+                  <div class="network-mode-hint" id="editor-proxy-library-status">未关联代理库节点</div>
+                </div>
                 <div id="editor-proxy-fields">
                   <label>快捷智能粘贴（自动解析协议/主机/端口/账号密码）
                     <div style="display:flex;gap:6px;align-items:center;">
@@ -300,19 +351,25 @@
                     <div class="editor-card-desc">选择系统标识、内核与 User-Agent</div>
                   </div>
                   <div class="form-two">
-                    <label>操作系统
-                      <select id="editor-os">
-                        <option value="Windows">Windows</option>
-                        <option value="macOS">macOS</option>
-                        <option value="Linux">Linux</option>
-                        <option value="Android">Android</option>
-                      </select>
+                    <label><span data-i18n="editor.os">系统
+                      </span><div class="field-inline-group">
+                        <select id="editor-os">
+                          <option value="Windows">Windows</option>
+                          <option value="macOS">macOS</option>
+                          <option value="Linux">Linux</option>
+                          <option value="Android">Android</option>
+                        </select>
+                        <select id="editor-os-version" title="系统版本"></select>
+                      </div>
                     </label>
-                    <label>浏览器内核
-                      <select id="editor-engine">
-                        <option value="chromium" selected>Chromium（支持指纹注入 / RPA / 同步）</option>
-                        <option value="firefox">Firefox（独立指纹，无 CDP）</option>
-                      </select>
+                    <label><span data-i18n="editor.kernel">内核
+                      </span><div class="field-inline-group">
+                        <select id="editor-engine">
+                          <option value="chromium" selected>Chrome</option>
+                          <option value="firefox">Firefox</option>
+                        </select>
+                        <select id="editor-engine-version" title="内核版本"></select>
+                      </div>
                     </label>
                     <label class="check-row" style="margin-top:24px"><input id="editor-refresh-fingerprint" type="checkbox"> 每次打开自动刷新随机指纹</label>
                   </div>
@@ -376,8 +433,29 @@
                     </label>
                   </div>
                   <p class="network-mode-hint" data-i18n="editor.lang.hint">选「基于出口 IP」时：系统优先检测节点出口国家（如 JP → ja-JP，US → en-US）。当节点不可用或检测超时，回退至下方首选语言。</p>
-                  <input type="hidden" id="editor-ui-language" value="profile">
-                  <input type="checkbox" id="editor-lang-from-ip" checked hidden>
+                  <div class="form-two" style="margin-top:10px">
+                    <label><span data-i18n="editor.uiLanguage">界面语言
+                      </span><select id="editor-ui-language">
+                        <option value="profile" data-i18n="editor.uiLang.ip">基于 IP 匹配（跟随系统语言）</option>
+                        <option value="en-US">English (US)</option>
+                        <option value="en-GB">English (UK)</option>
+                        <option value="zh-CN">中文（简体）</option>
+                        <option value="zh-TW">中文（繁体）</option>
+                        <option value="ja-JP">日本語</option>
+                        <option value="vi-VN">Tiếng Việt</option>
+                        <option value="fr-FR">Français</option>
+                        <option value="de-DE">Deutsch</option>
+                        <option value="th-TH">ไทย</option>
+                        <option value="id-ID">Bahasa Indonesia</option>
+                        <option value="ko-KR">한국어</option>
+                        <option value="es-ES">Español</option>
+                        <option value="pt-BR">Português (BR)</option>
+                        <option value="ru-RU">Русский</option>
+                        <option value="ar-SA">العربية</option>
+                      </select>
+                    </label>
+                    <label class="check-row" style="margin-top:22px"><input id="editor-lang-from-ip" type="checkbox" checked hidden> </label>
+                  </div>
                 </div>
                 <div class="editor-section-card">
                   <div class="editor-card-header">
@@ -391,20 +469,26 @@
                         <input id="editor-timezone" placeholder="例如：Asia/Shanghai">
                       </div>
                     </label>
-                    <label>WebRTC 防泄露
-                      <select id="editor-webrtc"><option value="proxy">替换（仅代理）</option><option value="real">真实直通</option><option value="disabled">完全禁用</option></select>
+                    <label><span data-i18n="editor.webrtc">WebRTC
+                      </span><select id="editor-webrtc"><option value="proxy" data-i18n="editor.webrtcReplace">替换</option><option value="real" data-i18n="editor.webrtcReal">真实</option><option value="disabled" data-i18n="editor.webrtcDeny">禁止</option></select>
                     </label>
                   </div>
                   <div class="form-two" style="margin-top:12px">
                     <div class="editor-field-group">
-                      <label for="editor-geo-mode">地理位置模拟</label>
+                      <label for="editor-geo-permission" data-i18n="editor.geoPermission">地理位置提示</label>
                       <div class="field-inline-group">
-                        <select id="editor-geo-mode"><option value="ip">基于出口 IP</option><option value="prompt">询问</option><option value="disabled">禁用</option><option value="custom">自定义</option></select>
+                        <select id="editor-geo-permission"><option value="prompt" data-i18n="editor.geoAsk">询问</option><option value="allow" data-i18n="editor.geoAllow">允许</option><option value="deny" data-i18n="editor.geoDeny">禁止</option></select>
+                      </div>
+                    </div>
+                    <div class="editor-field-group">
+                      <label for="editor-geo-mode" data-i18n="editor.geoSource">地理位置</label>
+                      <div class="field-inline-group">
+                        <select id="editor-geo-mode"><option value="ip" data-i18n="editor.geoModeIp">基于 IP 匹配</option><option value="custom">自定义</option></select>
                         <label class="check-row" style="margin:0"><input id="editor-geo-from-ip" type="checkbox" checked> 基于 IP 自动生成坐标</label>
                       </div>
                     </div>
                   </div>
-                  <div class="form-three geo-custom" style="margin-top:12px"><label>纬度<input id="editor-latitude" type="number" step="0.000001" min="-90" max="90"></label><label>经度<input id="editor-longitude" type="number" step="0.000001" min="-180" max="180"></label><label>精度（米）<input id="editor-accuracy" type="number" min="1" max="100000" value="100"></label></div>
+                  <div class="form-three geo-custom" style="margin-top:12px"><label><span data-i18n="editor.geoLng">经度</span><input id="editor-longitude" type="number" step="0.000001" min="-180" max="180" placeholder="请填写经度，示例: -40.123"></label><label><span data-i18n="editor.geoLat">纬度</span><input id="editor-latitude" type="number" step="0.000001" min="-90" max="90" placeholder="请填写纬度，示例: 30.123"></label><label><span data-i18n="editor.geoAccuracy">精度（米）</span><input id="editor-accuracy" type="number" min="10" max="5000" value="1000" placeholder="请填写精度（米），范围: 10-5000"></label></div>
                 </div>
 
                 <div class="editor-section-card">
@@ -432,13 +516,29 @@
                     <textarea id="editor-font-list" rows="2" placeholder="例如：Microsoft YaHei, SimSun, Arial"></textarea>
                   </label>
                   <div class="form-two" style="margin-top:12px">
-                    <div class="labeled-block" role="group" aria-label="窗口启动方式">
-                      <span class="labeled-block-title">窗口启动方式</span>
+                    <div class="labeled-block" role="group" aria-label="窗口大小">
+                      <span class="labeled-block-title" data-i18n="editor.size">窗口大小</span>
                       <div class="field-inline-group">
-                        <label class="check-row" style="margin:0"><input id="editor-fullscreen" type="checkbox"> 全屏启动</label>
-                        <select id="editor-window-pos" style="max-width:130px"><option value="">默认位置</option><option value="tl">左上</option><option value="tm">上中</option><option value="tr">右上</option><option value="ml">左中</option><option value="mm">屏幕居中</option><option value="mr">右中</option><option value="bl">左下</option><option value="bm">下中</option><option value="br">右下</option></select>
+                        <div class="segmented" id="editor-size-mode" role="radiogroup" aria-label="窗口大小">
+                          <label><input type="radio" name="editor-size-mode" value="custom" checked><span data-i18n="editor.sizeCustom">自定义</span></label>
+                          <label><input type="radio" name="editor-size-mode" value="full"><span data-i18n="editor.sizeFull">全屏</span></label>
+                        </div>
+                        <input id="editor-fullscreen" type="checkbox" hidden>
                       </div>
                     </div>
+                    <div class="labeled-block" role="group" aria-label="窗口位置">
+                      <span class="labeled-block-title" data-i18n="editor.position">窗口位置</span>
+                      <div class="field-inline-group">
+                        <select id="editor-window-pos" hidden><option value="">默认位置</option><option value="tl">左上</option><option value="tm">上中</option><option value="tr">右上</option><option value="ml">左中</option><option value="mm">屏幕居中</option><option value="mr">右中</option><option value="bl">左下</option><option value="bm">下中</option><option value="br">右下</option></select>
+                        <div class="pos-grid" id="editor-window-pos-grid" role="group" data-i18n-aria="editor.position"></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="form-two" style="margin-top:12px">
+                    <label><span data-i18n="editor.searchEngine">搜索引擎
+                      </span><select id="editor-search-engine"><option value="google">Google</option><option value="bing">Microsoft Bing</option><option value="yahoo">Yahoo</option><option value="yandex">Yandex</option><option value="duckduckgo">DuckDuckGo</option></select>
+                    </label>
+                    <label></label>
                   </div>
                 </div>
 
@@ -461,9 +561,9 @@
                     <label>蓝牙适配器<select id="editor-bluetooth"><option value="real">真实直通</option><option value="blocked">阻断关闭</option></select></label>
                     <label>ClientRects<select id="editor-client-rects"><option value="noise">随机微扰</option><option value="real">真实直通</option></select></label>
                     <label>SpeechVoices<select id="editor-speech"><option value="noise">随机模拟</option><option value="real">真实直通</option><option value="blocked">阻断关闭</option></select></label>
-                    <label>CPU 核心数<select id="editor-cores"><option value="">自动</option><option value="0">真实</option><option value="2">2 核心</option><option value="4">4 核心</option><option value="6">6 核心</option><option value="8">8 核心</option><option value="10">10 核心</option><option value="12">12 核心</option><option value="16">16 核心</option><option value="20">20 核心</option><option value="24">24 核心</option></select></label>
-                    <label>内存规格<select id="editor-memory"><option value="">自动</option><option value="0">真实</option><option value="2">2 GB</option><option value="4">4 GB</option><option value="6">6 GB</option><option value="8">8 GB</option></select></label>
-                    <label>设备名称模式<select id="editor-device-name-mode"><option value="noise">随机生成</option><option value="custom">自定义输入</option><option value="real">系统真实</option></select></label>
+                    <label><span data-i18n="editor.hwConcurrency">硬件并发数</span><select id="editor-cores"><option value="">自动</option><option value="0">真实</option><option value="2">2核</option><option value="4">4核</option><option value="6">6核</option><option value="8">8核</option><option value="10">10核</option><option value="12" selected>12核</option><option value="16">16核</option><option value="20">20核</option><option value="24">24核</option></select></label>
+                    <label><span data-i18n="editor.deviceMemory">设备内存</span><select id="editor-memory"><option value="">自动</option><option value="0">真实</option><option value="2">2G</option><option value="4">4G</option><option value="6">6G</option><option value="8" selected>8G</option><option value="16">16G</option></select></label>
+                    <label><span data-i18n="editor.deviceNameMode">设备名称</span><select id="editor-device-name-mode"><option value="noise">随机</option><option value="real">真实</option><option value="custom">自定义</option></select></label>
                     <label>自定义设备名<input id="editor-device-name" placeholder="自定义设备名"></label>
                     <label>MAC 地址模式<select id="editor-mac-mode"><option value="real">真实</option><option value="custom">自定义</option></select></label>
                     <label>MAC 地址
@@ -504,12 +604,10 @@
                     <div class="editor-card-desc">硬件加速、沙盒、默认搜索引擎与自定义启动参数</div>
                   </div>
                   <div class="form-two">
-                    <label>硬件加速模式
-                      <select id="editor-gpu-mode"><option value="on">开启（使用宿主 GPU）</option><option value="off">关闭（软件渲染）</option></select>
+                    <label><span data-i18n="editor.hwAccel">硬件加速模式
+                      </span><select id="editor-gpu-mode"><option value="on">开启（使用宿主 GPU）</option><option value="off">关闭（软件渲染）</option></select>
                     </label>
-                    <label>默认搜索引擎
-                      <select id="editor-search-engine"><option value="">默认（Google）</option><option value="google">Google</option><option value="bing">Microsoft Bing</option><option value="yahoo">Yahoo</option><option value="yandex">Yandex</option><option value="duckduckgo">DuckDuckGo</option></select>
-                    </label>
+                    <label></label>
                   </div>
                   <label class="check-row" style="margin-top:12px"><input id="editor-no-sandbox" type="checkbox"> 禁用沙盒 — 容器/无特权 Linux 环境需要；会降低隔离强度</label>
                   <label style="margin-top:12px">自定义启动参数（高级，分号分隔）<input id="editor-custom-args" placeholder="例如 --mute；--disable-features=Translate"></label>
@@ -592,8 +690,7 @@
                     <label><input type="radio" name="editor-tab-mode" value="fixed" checked>每次打开特定网址</label>
                     <label><input type="radio" name="editor-tab-mode" value="restore">打开关闭前的标签页</label>
                   </div>
-                  <label>打开指定网址（选填，多行）<textarea id="editor-start-urls" rows="3" placeholder="可与平台「指定地址」叠加，换行分隔"></textarea></label>
-                  <label>屏蔽指定网址（选填，多行或逗号）<textarea id="editor-block-urls" rows="2" placeholder="例如：*.tracker.com&#10;track.example.com"></textarea></label>
+                  <label>打开指定网址（选填，多行）<textarea id="editor-start-urls" rows="3" placeholder="可与「启动网页」叠加，换行分隔"></textarea></label>
                   <label class="check-row"><input id="editor-multi-open" type="checkbox"> 多开设置 — 允许重复启动同一环境引用</label>
                   <label class="check-row"><input id="editor-show-info-page" type="checkbox" checked> 信息页面 — 展示默认启动信息页</label>
                   <label class="check-row"><input id="editor-show-password-info" type="checkbox"> 显示密码 — 信息页中显示平台登录密码</label>
@@ -601,14 +698,11 @@
                 <div class="advanced-card">
                   <strong>页面与弹窗</strong>
                   <div class="pref-toggle-grid">
-                    <div class="pref-row"><span>禁止加载图片</span><label class="check-row"><input id="editor-block-images" type="checkbox"> 开启</label></div>
-                    <div class="pref-row"><span>禁止播放声音</span><label class="check-row"><input id="editor-block-sound" type="checkbox"> 开启</label></div>
-                    <div class="pref-row"><span>禁止保存密码弹框</span><label class="check-row"><input id="editor-block-password-prompt" type="checkbox"> 开启</label></div>
-                    <div class="pref-row"><span>禁止恢复页面弹框</span><label class="check-row"><input id="editor-block-restore-dialog" type="checkbox" checked> 开启</label></div>
-                    <div class="pref-row"><span>禁止显示通知弹框</span><label class="check-row"><input id="editor-block-notifications" type="checkbox" checked> 开启</label></div>
-                    <div class="pref-row"><span>完全禁用弹窗拦截</span><label class="check-row"><input id="editor-block-popups" type="checkbox"> 开启</label></div>
-                    <div class="pref-row"><span>限制视频自动播放</span><label class="check-row"><input id="editor-block-video" type="checkbox"> 开启</label></div>
-                    <div class="pref-row"><span>JavaScript 内存限制最大</span><label class="check-row"><input id="editor-js-heap-max" type="checkbox"> 开启</label></div>
+                    <div class="pref-row"><span data-i18n="editor.savePasswordPrompt">弹出保存密码提示</span><label class="check-row"><input id="editor-prompt-save-password" type="checkbox" checked> <span data-i18n="editor.open">开启</span></label></div>
+                    <div class="pref-row"><span data-i18n="editor.blockRestoreDialog">禁止恢复页面弹框</span><label class="check-row"><input id="editor-block-restore-dialog" type="checkbox" checked> <span data-i18n="editor.open">开启</span></label></div>
+                    <div class="pref-row"><span data-i18n="editor.blockNotifications">禁止显示通知弹框</span><label class="check-row"><input id="editor-block-notifications" type="checkbox" checked> <span data-i18n="editor.open">开启</span></label></div>
+                    <div class="pref-row"><span data-i18n="editor.blockPopups">完全禁用弹窗拦截</span><label class="check-row"><input id="editor-block-popups" type="checkbox"> <span data-i18n="editor.open">开启</span></label></div>
+                    <div class="pref-row"><span data-i18n="editor.jsHeapMax">JavaScript 内存限制最大</span><label class="check-row"><input id="editor-js-heap-max" type="checkbox"> <span data-i18n="editor.open">开启</span></label></div>
                   </div>
                 </div>
                 <div class="advanced-card">
@@ -634,7 +728,49 @@
                   <label class="check-row"><input id="editor-clear-localstorage" type="checkbox"> 启动时清除 Local Storage / IndexedDB</label>
                 </div>
                 <div class="advanced-card">
-                  <strong>出口网络守护</strong>
+                  <strong data-i18n="editor.startupGuard">启动与网络守护</strong>
+                  <p class="network-mode-hint" data-i18n="editor.startupGuardHint">对齐 RoxyBrowser：网络/IP 守护在启动阶段直接生效，避免环境串号。</p>
+                  <div class="pref-toggle-grid">
+                    <div class="pref-row"><span data-i18n="editor.stopOpenNet">网络不通停止打开</span><label class="check-row"><input id="editor-stop-open-net" type="checkbox"> <span data-i18n="editor.open">开启</span></label></div>
+                    <div class="pref-row"><span data-i18n="editor.stopOpenIP">IP 发生变化停止打开</span><label class="check-row"><input id="editor-stop-open-ip" type="checkbox"> <span data-i18n="editor.open">开启</span></label></div>
+                    <div class="pref-row"><span data-i18n="editor.stopOpenIPCountry">IP 对应国家/地区发生改变停止打开</span><label class="check-row"><input id="editor-stop-open-ip-country" type="checkbox"> <span data-i18n="editor.open">开启</span></label></div>
+                  </div>
+                  <div class="form-two" style="margin-top:10px">
+                    <label><span data-i18n="editor.openWorkbench">打开工作台
+                      </span><select id="editor-open-workbench"><option value="1" data-i18n="editor.sizeOpen">开启</option><option value="0" data-i18n="editor.sizeClose">关闭</option><option value="2" data-i18n="editor.followSoftware">跟随软件设置</option></select>
+                    </label>
+                    <label><span data-i18n="editor.ipChangeRemind">IP 变化提醒
+                      </span><select id="editor-ip-change-remind"><option value="1" data-i18n="editor.sizeOpen">开启</option><option value="0" data-i18n="editor.sizeClose">关闭</option><option value="2" selected data-i18n="editor.followSoftware">跟随软件设置</option></select>
+                    </label>
+                  </div>
+                  <div class="form-two" style="margin-top:10px">
+                    <label><span data-i18n="editor.googleLogin">是否开启谷歌登录
+                      </span><select id="editor-google-login"><option value="1" data-i18n="editor.sizeOpen">开启</option><option value="0" data-i18n="editor.sizeClose">关闭</option><option value="2" selected data-i18n="editor.followSoftware">跟随软件设置</option></select>
+                    </label>
+                    <label></label>
+                  </div>
+                  <label class="check-row" hidden><input id="editor-allow-signin" type="checkbox"> 允许登录 Chrome</label>
+                  <label data-i18n="editor.sessionStorageSyncPh" hidden><textarea id="editor-session-storages" rows="3"></textarea></label>
+                </div>
+                <div class="advanced-card">
+                  <strong data-i18n="editor.urlRules">网址访问规则</strong>
+                  <label><span data-i18n="editor.blockDomainList">网址访问黑名单
+                    </span><textarea id="editor-block-urls" rows="2" placeholder="每行一个 URL，换行以添加多个" data-i18n-placeholder="editor.urlListPh"></textarea>
+                  </label>
+                  <label><span data-i18n="editor.allowDomainList">网址访问白名单
+                    </span><textarea id="editor-allow-urls" rows="2" placeholder="每行一个 URL，换行以添加多个" data-i18n-placeholder="editor.urlListPh"></textarea>
+                  </label>
+                  <p class="network-mode-hint" data-i18n="editor.urlRulesHint">黑名单阻止访问列表中的网站；填写白名单后仅允许访问列表中的网站。</p>
+                </div>
+                <div class="advanced-card">
+                  <strong data-i18n="editor.sessionStorageSync">同步 Session Storage</strong>
+                  <label class="check-row"><input id="editor-sync-session-storage" type="checkbox"> <span data-i18n="editor.open">开启</span>（<span data-i18n="editor.sessionStorageRisk">开启同步 Session Storage 可能存在风险，请谨慎操作！</span>）</label>
+                  <label><span data-i18n="editor.sessionStorageData">Session Storage 数据</span>
+                    <textarea id="editor-session-storage-data" rows="3" placeholder='[{"domain": "www.example1.com", "key": ["key1","key2"]}]'></textarea>
+                  </label>
+                </div>
+                <div class="advanced-card">
+                  <strong data-i18n="editor.exitNetGuard">出口网络守护</strong>
                   <p class="network-mode-hint">出口 IP 与上次记录不一致时的处理方式；「停止打开」在启动阶段直接阻断，避免环境串号。</p>
                   <label>IP 变化策略
                     <select id="editor-ip-change-policy">
@@ -648,8 +784,14 @@
               <div class="editor-actions"><button class="outline" id="editor-cancel" type="button">取消</button><button class="primary" type="submit">立即保存</button></div>
             </form>
             <aside class="profile-summary">
-              <div class="summary-head"><strong>概要</strong><button id="editor-system-defaults" type="button"><i data-lucide="refresh-cw"></i>读取本机默认值</button></div>
+              <div class="rail-tutorial" id="editor-rail-tutorial">
+                <strong data-i18n="editor.tutorial">窗口教程</strong>
+                <p data-i18n="editor.tutorialDesc">了解窗口和窗口指纹</p>
+                <button class="outline mini-btn" id="editor-tutorial-dismiss" type="button" aria-label="关闭">×</button>
+              </div>
+              <div class="summary-head"><strong data-i18n="editor.summaryTitle">概要</strong><button id="editor-system-defaults" type="button"><i data-lucide="refresh-cw"></i>读取本机默认值</button></div>
               <dl id="editor-summary"></dl>
+              <button class="outline rail-random-fp" id="editor-random-fp-rail" type="button"><i data-lucide="shuffle"></i><span data-i18n="editor.randomFingerprint">一键随机指纹</span></button>
               <section class="environment-audit" id="editor-audit"></section>
               <p>保存后，运行中的环境需要重启才能应用浏览器级设置。</p>
             </aside>

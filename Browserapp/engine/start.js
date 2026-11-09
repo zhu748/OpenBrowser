@@ -196,6 +196,7 @@ module.exports = {
     let profile = this.resolveStoredProxyProfile(this.sanitizeProfile(raw));
     // 记录本次启动前的出口 IP（上次运行持久化的值），供 ipChangePolicy 比对。
     const previousExitIp = String(profile.exitIp || '').trim();
+    const previousExitCountryCode = String(profile.exitCountryCode || '').trim();
     this.profiles.set(profile.id, profile);
     this.assertStartGenerationActive(profile.id, lifecycleGeneration);
     if (this.running.has(profile.id)) {
@@ -246,7 +247,19 @@ module.exports = {
     this.assertStartGenerationActive(profile.id, lifecycleGeneration);
     this.profiles.set(profile.id, profile);
     currentStage = 'proxy'; this.emitStartProgress(profile.id, 'proxy', 18, '正在检测代理与出口…');
-    await this.ensureExitNetworkForLocale(profile).catch(() => {});
+    // 「网络不通停止打开」：守护开启时强制做一次真实出口检测，失败即阻断启动。
+    if (profile.advanced?.stopOpenNet) {
+      try {
+        await this.ensureExitNetworkForLocale(profile, { force: true });
+      } catch (error) {
+        throw Object.assign(new Error('网络不可用，已按「网络不通停止打开」策略停止启动：' + error.message), { code: 'network-unavailable' });
+      }
+      if (!String(profile.exitIp || '').trim()) {
+        throw Object.assign(new Error('网络不可用，已按「网络不通停止打开」策略停止启动'), { code: 'network-unavailable' });
+      }
+    } else {
+      await this.ensureExitNetworkForLocale(profile).catch(() => {});
+    }
     profile = this.applyResolvedLocale(profile);
     this.profiles.set(profile.id, profile);
     // IP 变化守护（对齐「IP 发生变化停止打开 / 提醒」）：patch = 默认，重对齐指纹继续；
@@ -259,6 +272,14 @@ module.exports = {
         throw Object.assign(new Error(message + '，已按「IP 变化停止打开」策略阻断启动'), { code: 'ip-changed' });
       }
       this.emit({ type: 'ip-change-notice', id: profile.id, previousExitIp, currentExitIp, message });
+    }
+    // 「IP 发生变化停止打开 / IP 对应国家发生改变停止打开」：独立于 ipChangePolicy 的硬闸。
+    const currentExitCountryCode = String(profile.exitCountryCode || '').trim();
+    if (profile.advanced?.stopOpenIPChange && previousExitIp && currentExitIp && previousExitIp !== currentExitIp) {
+      throw Object.assign(new Error(`出口 IP 已变化：${previousExitIp} → ${currentExitIp}，已按「IP 发生变化停止打开」策略阻断启动`), { code: 'ip-changed' });
+    }
+    if (profile.advanced?.stopOpenIPCountryChange && previousExitCountryCode && currentExitCountryCode && previousExitCountryCode !== currentExitCountryCode) {
+      throw Object.assign(new Error(`出口国家/地区已变化：${previousExitCountryCode} → ${currentExitCountryCode}，已按「IP 对应国家/地区发生改变停止打开」策略阻断启动`), { code: 'ip-country-changed' });
     }
     // Persist the effective proxy (including credentials returned by a dynamic
     // proxy API) before launching Chromium. A quit immediately after startup
