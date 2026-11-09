@@ -89,6 +89,17 @@ async function main() {
   // commands). linux-x64 seeds are downloaded by prepare:linux-kernel.
   await ensureKernelSeedForPackaging(platform);
 
+  // wayfern_fonts 去重（docs/wayfern-fonts-dedup-plan.md 阶段 1）：字体正本在共享目录
+  // kernels/wayfern-fonts，Windows 打包与开发模式需要平台目录内的物化副本。独立步骤
+  // 而非并入 ensureKernelSeedForPackaging：该钩子在种子已物化时直接 no-op 返回，而
+  // 字体物化在任何种子状态下都必须检查。macOS 侧字体在已签名 .app 内，绝不物化。
+  if (platform === 'windows-x64') {
+    const { materializeWayfernFonts } = require('./materialize-wayfern-fonts');
+    const summary = materializeWayfernFonts();
+    console.log(`[kernel] wayfern fonts ${summary.upToDate ? 'already materialized' : 'materialized'}:`
+      + ` ${summary.sourceFiles} files (copied ${summary.copied}) -> kernels/windows-x64/wayfern_fonts`);
+  }
+
   if (platform === 'macos-x64') {
     const seed = resolveSeedDir('macos-x64');
     const bin = path.join(

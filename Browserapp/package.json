@@ -58,6 +58,7 @@
     "prepare:linux-kernel": "node scripts/install-linux-stable.js",
     "kernels:fetch": "node scripts/fetch-kernels.js",
     "kernels:status": "node scripts/fetch-kernels.js --status",
+    "fonts:materialize": "node scripts/materialize-wayfern-fonts.js",
     "build:native": "node scripts/build-native.js",
     "package:portable": "node scripts/package-portable.js",
     "build:rustcore": "node scripts/build-rust-core.js",

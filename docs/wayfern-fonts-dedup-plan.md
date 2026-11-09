@@ -1,6 +1,6 @@
 # 方案：wayfern_fonts 双平台字体树 100% 重复消除实施计划
 
-- 状态：已调查、方案定稿，待分阶段实施（本文件即层次 3 交付物：不删除任何文件，先固化方案与数据）
+- 状态：阶段 1 已执行（2026-11-09，基于 9c0fbef 的工作树，未提交，见 §8）；阶段 2（真实检出验证矩阵）与阶段 3（删 macOS 内嵌份，需重签）待执行
 - 日期：2026-11-09
 - 调查分支：`optimization/p0-p4`
 - 影响范围：`Browserapp/kernels/windows-x64/wayfern_fonts/`、`Browserapp/kernels/macos-arm64/Wayfern.app/Contents/Frameworks/Wayfern Framework.framework/Versions/149.0.7827.114/Resources/wayfern_fonts/`、`Browserapp/scripts/package-portable.js`、`Browserapp/scripts/build-font-subsets.py`、`Browserapp/automation/data/font-metric-families.json`、`Browserapp/automation/selftests/font-native-layer-selftest.js`、`Browserapp/automation/selftests/kernel-integrity-selftest.js`、`Browserapp/automation/selftests/css-font-metrics-e2e-selftest.js`、`Browserapp/automation/selftests/font-metrics-injection-e2e-selftest.js`、`.github/workflows/build-installers.yml`
@@ -141,3 +141,15 @@
 - oid 对比脚本：工作区 `scripts/wayfern_fonts_oid_compare.py`（随本任务交付，建议实施阶段移入仓库）
 - 本文档：`docs/wayfern-fonts-dedup-plan.md`
 - 阶段 0 修复：三个自测脚本的 `appRoot` 路径回归（见 §4）
+
+## 8. 阶段 1 执行记录（2026-11-09，未提交工作树）
+
+- `git mv Browserapp/kernels/windows-x64/wayfern_fonts Browserapp/kernels/wayfern-fonts`：2,157 个文件全部按 R（rename）登记；`.gitattributes` 的 `Browserapp/kernels/**` 规则自动覆盖新路径（`git check-attr filter` 实测 = lfs），LFS oid 不变。三方 oid 比对（新正本暂存区 vs HEAD 旧 Windows 路径 vs HEAD macOS 内嵌树）脚本：`/home/z/my-project/scripts/wayfern_oid_three_way.py`，结果 2,157/2,157 路径、git blob 与 LFS oid 全部一致。
+- 新增 `Browserapp/scripts/materialize-wayfern-fonts.js`（幂等物化，仅 Windows 侧；源为 LFS 指针时清晰报错并提示 `npm run kernels:fetch` / `git lfs pull`）与 `npm run fonts:materialize`。与 §5 阶段 1 第 2 条的差异：不做 macOS 侧物化、不做 `mklink /J` 目录联接——macOS 份在已签名 .app 内绝不能动；Windows 侧用整树复制，保证归档/包内容与历史逐字节等价，避免 CI/打包器对 junction 的语义差异。
+- 消费者全量切换：`package-portable.js`（ensurePackagingKernelSeeds 物化 + prune 显式剔除正本 + assertKernelPackagePolicy 双向断言）、`prepare-bundled-kernel.js`（windows-x64 校验前物化）、`kernel-release.yml`（windows 归档前物化、lfs pull 纳入 wayfern-fonts）、`build-installers.yml`（windows job 物化步骤 + 包内断言；linux job 排除正本省 1.41 GB；macOS job 按约束未动）、`build-font-subsets.py` 与 `font-metric-families.json`（111 条 relativePath 前缀）、`font-native-layer-selftest.js` / `kernel-integrity-selftest.js`（配对断言按“平台目录或共享正本”计数，另增指针检出感知：二进制为 LFS 指针时 natives 判定不可用，配对断言 inconclusive，真实检出守卫强度不变）、两个 e2e 字体测试路径改指正本。
+- `fetch-kernels.js` 无功能改动（仅注释）：kernel-release.yml 打归档前已物化字体，归档布局与历史一致（`kernels/windows-x64/wayfern_fonts` 仍在归档内），下载端无需感知新布局。
+- macOS 侧待办（阶段 3，硬前置 = 阶段 2 验证矩阵全绿）：
+  1. 阶段 2 矩阵全绿后，在 macOS 机器上 `git rm -r` `kernels/macos-arm64/Wayfern.app/Contents/Frameworks/Wayfern Framework.framework/Versions/<ver>/Resources/wayfern_fonts`（2,157 个指针）；
+  2. 立即对内核 .app 重签并验证：`codesign --force --deep --sign <identity> <Wayfern.app>`（ad-hoc 用 `-`，生产用 Developer ID）→ `codesign --verify --deep --strict <Wayfern.app>` 必须通过，新的 `_CodeSignature/CodeResources` 随删除提交一起入库——否则提交态签名失效，Apple Silicon 开发模式内核会被 AMFI 拒绝；
+  3. 重跑 `selftest:fontnative`、`selftest:kint`、`selftest:all` 与 mac arm64 开发模式冒烟（内核可启动 + macos 人格字体探测真实）；
+  4. 把本文档状态更新为“阶段 3 已执行”。`wayfern_data_files/` 3 个同构重复文件可顺带并入共享目录。

@@ -133,6 +133,14 @@ function defaultRepo() {
   return String(process.env.OPENBROWSER_KERNEL_RELEASE_REPO || '').trim() || resolveDefaultRepo();
 }
 
+/*
+ * wayfern_fonts 布局（docs/wayfern-fonts-dedup-plan.md 阶段 1）：字体正本在共享目录
+ * kernels/wayfern-fonts；windows-x64 种子内的 wayfern_fonts 由
+ * scripts/materialize-wayfern-fonts.js 物化（package-portable / prepare-bundled-kernel /
+ * CI 均已接入）。kernel-release.yml 打 windows-x64 归档前已物化字体，归档布局与历史
+ * 一致（归档内仍含 kernels/windows-x64/wayfern_fonts），因此本脚本 fetch 之后无需
+ * 额外物化；纯 `git lfs pull` 的本地检出需另跑一次 `npm run fonts:materialize`。
+ */
 /** True when the file on disk is a git-LFS pointer rather than real content. */
 function isLfsPointerFile(file) {
   try {

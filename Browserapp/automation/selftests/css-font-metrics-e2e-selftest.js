@@ -21,8 +21,10 @@ const { writeOpenBrowserKernelInit } = require('../kernel-init-sync');
 const appRoot = path.join(__dirname, '..', '..');
 const kernelRoot = path.join(appRoot, 'kernels', 'macos-x64');
 const launcher = path.join(kernelRoot, 'launch_openbrowser.sh');
-const macosFontsDir = path.join(appRoot, 'kernels', 'windows-x64', 'wayfern_fonts', 'macos');
-const win11FontsDir = path.join(appRoot, 'kernels', 'windows-x64', 'wayfern_fonts', 'win11');
+// 阶段 1 布局：字体正本在共享目录 kernels/wayfern-fonts（Windows 平台目录内的副本由
+// npm run fonts:materialize 物化；macOS 开发机直接读正本）。
+const macosFontsDir = path.join(appRoot, 'kernels', 'wayfern-fonts', 'macos');
+const win11FontsDir = path.join(appRoot, 'kernels', 'wayfern-fonts', 'win11');
 
 const WINDOWS_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36';
 

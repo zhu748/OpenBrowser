@@ -235,6 +235,22 @@ function appResourceExcludes() {
  * commands). Linux packages use the Google Chrome Stable seed downloaded by
  * prepare:linux-kernel and are not release-managed.
  */
+/**
+ * wayfern_fonts 去重（docs/wayfern-fonts-dedup-plan.md 阶段 1）：打包 Windows 包前把
+ * 共享正本 kernels/wayfern-fonts 物化进 kernels/windows-x64/wayfern_fonts。独立步骤而
+ * 非挂进 ensureKernelSeedForPackaging：该钩子在种子已物化时 no-op 返回，而字体物化在
+ * 任何种子状态下都必须检查；失败必须阻断打包（缺字体的发行包是静默降级缺陷）。
+ * macOS 侧不物化：其字体嵌在已签名 .app 内，改动会破坏签名。
+ */
+async function materializeWayfernFontsForPackaging() {
+  const { materializeWayfernFonts } = require('./materialize-wayfern-fonts');
+  const summary = materializeWayfernFonts();
+  console.log('[package] wayfern fonts:'
+    + ` ${summary.upToDate ? 'already materialized' : 'materialized'}`
+    + ` (${summary.sourceFiles} files, copied ${summary.copied})`
+    + ' -> kernels/windows-x64/wayfern_fonts');
+}
+
 async function ensurePackagingKernelSeeds() {
   if (!bundleKernelVariantEnabled()) return;
   const arch = String(packageArch || '').toLowerCase();
@@ -242,6 +258,7 @@ async function ensurePackagingKernelSeeds() {
   const isArm64 = ['arm64', 'aarch64'].includes(arch);
   if (process.platform === 'win32' && isX64) {
     await ensureKernelSeedForPackaging('windows-x64');
+    await materializeWayfernFontsForPackaging();
   } else if (process.platform === 'darwin' && isX64) {
     await ensureKernelSeedForPackaging('macos-x64');
   } else if (process.platform === 'darwin' && isArm64) {
@@ -278,6 +295,12 @@ function pruneForeignKernelSeeds(resourceApp, platform = process.platform, arch 
     if (keep.has(entry)) continue;
     fs.rmSync(path.join(kernelsDir, entry), { recursive: true, force: true });
   }
+
+  // wayfern_fonts 去重阶段 1：共享正本 kernels/wayfern-fonts 只是物化源，绝不进入
+  // 发行包（包内只保留物化后的 kernels/windows-x64/wayfern_fonts 或 .app 内嵌副本）。
+  // keep 集合从不包含它，上面的循环已删除；这里显式兜底，防止未来 keep 误加。
+  const canonicalFonts = path.join(kernelsDir, 'wayfern-fonts');
+  if (fs.existsSync(canonicalFonts)) fs.rmSync(canonicalFonts, { recursive: true, force: true });
 
   // Strip legacy nested seed dirs to only the shipped platform.
   const wayfernDir = path.join(kernelsDir, 'wayfern');
@@ -363,6 +386,11 @@ function assertKernelPackagePolicy(resourceApp) {
   if (fs.existsSync(path.join(resourceApp, 'bundled-kernels'))) {
     throw new Error('[package] FATAL: legacy bundled-kernels/ must not ship (use kernels/{platform} seeds)');
   }
+  // 阶段 1 布局：共享正本只用于物化，绝不进发行包（包内只保留平台目录内副本）。
+  if (fs.existsSync(path.join(kernelsDir, 'wayfern-fonts'))) {
+    throw new Error('[package] FATAL: shared kernels/wayfern-fonts must not ship'
+      + ' (materialize into kernels/windows-x64/wayfern_fonts instead)');
+  }
   if (shipOpenBrowser) {
     if (!fs.existsSync(openBrowserBin)) {
       throw new Error(
@@ -392,6 +420,14 @@ function assertKernelPackagePolicy(resourceApp) {
     }
     if (!integrated) {
       throw new Error(`[package] FATAL: kernel binary not discovered under kernels/${expected}`);
+    }
+    if (process.platform === 'win32') {
+      // 阶段 1 布局：包内必须携带物化后的字体树（正本已被 pruneForeignKernelSeeds 剔除）。
+      const fontRoot = path.join(kernelsDir, 'windows-x64', 'wayfern_fonts');
+      if (!fs.existsSync(fontRoot)) {
+        throw new Error('[package] FATAL: kernels/windows-x64/wayfern_fonts missing in package'
+          + ' (run npm run fonts:materialize before packaging)');
+      }
     }
     // Fail packaging if companion library CDP readiness markers are missing.
     if (!isIntegratedKernelCdpReady({ path: integrated.binary || integrated.path, source: 'donut-wayfern' })) {

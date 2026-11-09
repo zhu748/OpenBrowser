@@ -72,6 +72,9 @@ LFS 存储**，`git lfs pull` 对任何人在这个远端都拉不到内核内�
     完全相同的命令产出归档并传 draft release（在 `Browserapp/kernels` 有真实
     内容的机器上）：
     ```bash
+    # 阶段 1 布局：先物化共享字体正本，归档布局与历史一致（归档内仍含
+    # kernels/windows-x64/wayfern_fonts；见 docs/wayfern-fonts-dedup-plan.md）
+    node Browserapp/scripts/materialize-wayfern-fonts.js
     tar -czf kernels-windows-x64.tar.gz -C Browserapp/kernels windows-x64
     tar -czf kernels-macos-x64.tar.gz  -C Browserapp/kernels macos-x64
     tar -czf kernels-macos-arm64-app.tar.gz --exclude='*wayfern_fonts' -C Browserapp/kernels macos-arm64

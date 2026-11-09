@@ -136,6 +136,7 @@ jobs:
             !/Browserapp/kernels/macos-x64/
             !/Browserapp/kernels/macos-arm64/
             !/Browserapp/kernels/openbrowser/
+            # kernels/wayfern-fonts（共享字体正本）不排除：随本 job 检出并物化
           sparse-checkout-cone-mode: false
       - name: Prune foreign kernels
         run: rm -rf kernels/macos-x64 kernels/macos-arm64 kernels/openbrowser kernels/wayfern/macos-arm64 kernels/wayfern/macos-x64 || true
@@ -161,6 +162,12 @@ jobs:
             echo "::warning:: kernel release fetch failed; relying on the LFS checkout above (transition fallback)"
           fi
           node scripts/fetch-kernels.js --status --platform windows-x64
+      - name: Materialize shared wayfern fonts into the windows-x64 seed
+        # 阶段 1 布局（docs/wayfern-fonts-dedup-plan.md）：正本 kernels/wayfern-fonts
+        # 物化进 kernels/windows-x64/wayfern_fonts，供 selftest:fontnative、
+        # package:portable 与 Windows 开发模式使用（LFS 检出已含真实字体）。
+        # macOS job 不需要：其字体在已签名 .app 内。
+        run: node scripts/materialize-wayfern-fonts.js
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # stable
         with:
           components: rustfmt, clippy
@@ -212,6 +219,8 @@ jobs:
           CORE="dist/${STEM}/runtime/resources/rust-core/openbrowser-core.exe"
           test -f "$APP/kernels/windows-x64/chrome.exe"
           test -f "$APP/kernels/windows-x64/chrome.dll"
+          test -d "$APP/kernels/windows-x64/wayfern_fonts"
+          test ! -e "$APP/kernels/wayfern-fonts"
           test ! -e "$APP/kernels/macos-x64"
           test ! -e "$APP/kernels/macos-arm64"
           test -f "$CORE"
@@ -254,6 +263,7 @@ jobs:
             !/Browserapp/kernels/windows-x64/
             !/Browserapp/kernels/openbrowser/
             !/Browserapp/kernels/wayfern/
+            !/Browserapp/kernels/wayfern-fonts/
           sparse-checkout-cone-mode: false
       - name: Install desktop test dependencies
         run: |
