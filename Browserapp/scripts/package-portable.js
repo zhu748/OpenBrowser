@@ -11,6 +11,7 @@ const {
   findMacBinary,
 } = require('./resolve-host-dist');
 const { ensureHostRuntime } = require('./ensure-host-runtime');
+const { ensureKernelSeedForPackaging } = require('./fetch-kernels');
 const {
   findBundledWayfernKernel,
   findBundledChromeStable,
@@ -85,13 +86,26 @@ function run(command, args, options = {}) {
   if (result.status !== 0) throw new Error(`${command} exited with code ${result.status}`);
 }
 
+/**
+ * Names never copied into a package, at any depth (case-insensitive).
+ *
+ * CODE_OVERVIEW.md mirrors the root .gitignore's confidential-never-commit rule
+ * (both the root pattern and the any-depth pattern): the top-level
+ * appResourceExcludes Set is exact-case, so a nested copy (e.g.
+ * ui/CODE_OVERVIEW.md) used to slip through this recursive layer. `.env*`
+ * (local secrets) and `*.log` (local run logs) follow the same
+ * local-only-artifact rule.
+ */
 function isPackagingExcluded(entryName, fullPath = "") {
   if (!entryName || typeof entryName !== "string") return false;
   const lower = entryName.toLowerCase();
-  if (lower === "reports" || lower === "__pycache__" || lower === ".ds_store" || lower === "node_modules" || lower === ".git") {
+  if (lower === "reports" || lower === "__pycache__" || lower === ".ds_store" || lower === "node_modules" || lower === ".git" || lower === "code_overview.md") {
     return true;
   }
-  if (lower.endsWith(".pyc") || lower.endsWith(".pyo")) {
+  if (lower.endsWith(".pyc") || lower.endsWith(".pyo") || lower.endsWith(".log")) {
+    return true;
+  }
+  if (lower.startsWith(".env")) {
     return true;
   }
   return false;
@@ -215,6 +229,7 @@ function appResourceExcludes() {
     'node_modules',
     'dist',
     '.git',
+    '.kernel-release-cache',
     'CODE_OVERVIEW.md',
     'bundled-kernels',
     'rust-core',
@@ -222,6 +237,53 @@ function appResourceExcludes() {
     '__pycache__',
     '.DS_Store',
   ]);
+}
+
+/**
+ * Kernel source transition (docs/kernel-externalization.md): make sure the
+ * integrated seed for this package's platform is material before anything
+ * copies it. Local (git-LFS) content wins; a checkout that only has LFS
+ * pointers auto-fetches from the kernel release
+ * (OPENBROWSER_KERNEL_AUTO_FETCH=0 disables; failures list both recovery
+ * commands). Linux packages use the Google Chrome Stable seed downloaded by
+ * prepare:linux-kernel and are not release-managed.
+ */
+/**
+ * wayfern_fonts 去重（docs/wayfern-fonts-dedup-plan.md 阶段 1）：打包 Windows 包前把
+ * 共享正本 kernels/wayfern-fonts 物化进 kernels/windows-x64/wayfern_fonts。独立步骤而
+ * 非挂进 ensureKernelSeedForPackaging：该钩子在种子已物化时 no-op 返回，而字体物化在
+ * 任何种子状态下都必须检查；失败必须阻断打包（缺字体的发行包是静默降级缺陷）。
+ * macOS 侧不物化：其字体嵌在已签名 .app 内，改动会破坏签名。
+ * 内核外置翻转后（docs/kernel-externalization.md §5）正本缺席：Release 归档自带的
+ * kernels/windows-x64/wayfern_fonts 已就绪时按 upToDate 返回，不再硬失败。
+ */
+async function materializeWayfernFontsForPackaging() {
+  const { materializeWayfernFonts } = require('./materialize-wayfern-fonts');
+  const summary = materializeWayfernFonts();
+  if (summary.srcAbsent) {
+    console.log('[package] wayfern fonts: 正本缺席（翻转后状态）、种子已含物化字体'
+      + ` (${summary.destFiles} files in place) -> kernels/windows-x64/wayfern_fonts`);
+    return;
+  }
+  console.log('[package] wayfern fonts:'
+    + ` ${summary.upToDate ? 'already materialized' : 'materialized'}`
+    + ` (${summary.sourceFiles} files, copied ${summary.copied})`
+    + ' -> kernels/windows-x64/wayfern_fonts');
+}
+
+async function ensurePackagingKernelSeeds() {
+  if (!bundleKernelVariantEnabled()) return;
+  const arch = String(packageArch || '').toLowerCase();
+  const isX64 = ['x86_64', 'x64', 'amd64'].includes(arch);
+  const isArm64 = ['arm64', 'aarch64'].includes(arch);
+  if (process.platform === 'win32' && isX64) {
+    await ensureKernelSeedForPackaging('windows-x64');
+    await materializeWayfernFontsForPackaging();
+  } else if (process.platform === 'darwin' && isX64) {
+    await ensureKernelSeedForPackaging('macos-x64');
+  } else if (process.platform === 'darwin' && isArm64) {
+    await ensureKernelSeedForPackaging('macos-arm64');
+  }
 }
 
 function pruneForeignKernelSeeds(resourceApp, platform = process.platform, arch = packageArch) {
@@ -253,6 +315,12 @@ function pruneForeignKernelSeeds(resourceApp, platform = process.platform, arch 
     if (keep.has(entry)) continue;
     fs.rmSync(path.join(kernelsDir, entry), { recursive: true, force: true });
   }
+
+  // wayfern_fonts 去重阶段 1：共享正本 kernels/wayfern-fonts 只是物化源，绝不进入
+  // 发行包（包内只保留物化后的 kernels/windows-x64/wayfern_fonts 或 .app 内嵌副本）。
+  // keep 集合从不包含它，上面的循环已删除；这里显式兜底，防止未来 keep 误加。
+  const canonicalFonts = path.join(kernelsDir, 'wayfern-fonts');
+  if (fs.existsSync(canonicalFonts)) fs.rmSync(canonicalFonts, { recursive: true, force: true });
 
   // Strip legacy nested seed dirs to only the shipped platform.
   const wayfernDir = path.join(kernelsDir, 'wayfern');
@@ -323,6 +391,60 @@ const OPENBROWSER_148_LEGACY_REL = path.join(
 );
 
 /**
+ * Filenames that must never appear anywhere in a packaged tree, whatever copy
+ * path put them there. Mirrors the root .gitignore confidential-never-commit
+ * rules (CODE_OVERVIEW.md) plus local-only artifacts (.env*, *.log).
+ * copyRecursive drops these names at every level; the post-copy scan in
+ * assertKernelPackagePolicy is defense in depth against future copy paths
+ * that bypass isPackagingExcluded.
+ */
+const SENSITIVE_PACKAGE_FILE_RULES = [
+  { match: (name) => name.toLowerCase() === "code_overview.md", label: "CODE_OVERVIEW.md (confidential, never commit/ship)" },
+  { match: (name) => name.toLowerCase().startsWith(".env"), label: ".env* (local secrets)" },
+  { match: (name) => name.toLowerCase().endsWith(".log"), label: "*.log (local logs)" },
+];
+
+/** Walk the packaged tree and fail the build when a sensitive filename appears. */
+function assertNoSensitiveFilesInTree(root, label) {
+  const offenders = [];
+  const walk = (dir) => {
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (_) { return; }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      const rule = SENSITIVE_PACKAGE_FILE_RULES.find((r) => r.match(entry.name));
+      if (rule) {
+        offenders.push(`${path.relative(root, full)} (${rule.label})`);
+        continue;
+      }
+      if (entry.isDirectory() && !entry.isSymbolicLink()) walk(full);
+    }
+  };
+  walk(root);
+  if (offenders.length) {
+    throw new Error('[package] FATAL: sensitive files leaked into the ' + label + ': ' + root + '\n  '
+      + offenders.slice(0, 20).join('\n  ')
+      + (offenders.length > 20 ? `\n  ... and ${offenders.length - 20} more` : ''));
+  }
+}
+
+/**
+ * Derive the portable package root from the packaged app path.
+ * Windows/Linux layout: <pkg>/runtime/resources/app (3 levels up);
+ * macOS layout: <pkg>/OpenBrowser.app/Contents/Resources/app (4 levels up).
+ * Returns null for unknown layouts so callers fall back to the app tree itself.
+ */
+function packageRootForResourceApp(resourceApp) {
+  const parts = resourceApp.split(path.sep);
+  const tail = parts.slice(-2).join(path.sep);
+  if (tail !== path.join("resources", "app") && tail !== path.join("Resources", "app")) return null;
+  const above = parts[parts.length - 3];
+  if (above === "runtime") return path.resolve(resourceApp, "..", "..", "..");
+  if (above === "Contents") return path.resolve(resourceApp, "..", "..", "..", "..");
+  return null;
+}
+
+/**
  * Hard assert after copy: integrated kernels only, correct platform seed, no remote staging tree.
  */
 function assertKernelPackagePolicy(resourceApp) {
@@ -337,6 +459,11 @@ function assertKernelPackagePolicy(resourceApp) {
   const stable = findBundledChromeStable([resourceApp, path.join(resourceApp, 'kernels')]);
   if (fs.existsSync(path.join(resourceApp, 'bundled-kernels'))) {
     throw new Error('[package] FATAL: legacy bundled-kernels/ must not ship (use kernels/{platform} seeds)');
+  }
+  // 阶段 1 布局：共享正本只用于物化，绝不进发行包（包内只保留平台目录内副本）。
+  if (fs.existsSync(path.join(kernelsDir, 'wayfern-fonts'))) {
+    throw new Error('[package] FATAL: shared kernels/wayfern-fonts must not ship'
+      + ' (materialize into kernels/windows-x64/wayfern_fonts instead)');
   }
   if (shipOpenBrowser) {
     if (!fs.existsSync(openBrowserBin)) {
@@ -368,6 +495,14 @@ function assertKernelPackagePolicy(resourceApp) {
     if (!integrated) {
       throw new Error(`[package] FATAL: kernel binary not discovered under kernels/${expected}`);
     }
+    if (process.platform === 'win32') {
+      // 阶段 1 布局：包内必须携带物化后的字体树（正本已被 pruneForeignKernelSeeds 剔除）。
+      const fontRoot = path.join(kernelsDir, 'windows-x64', 'wayfern_fonts');
+      if (!fs.existsSync(fontRoot)) {
+        throw new Error('[package] FATAL: kernels/windows-x64/wayfern_fonts missing in package'
+          + ' (run npm run fonts:materialize before packaging)');
+      }
+    }
     // Fail packaging if companion library CDP readiness markers are missing.
     if (!isIntegratedKernelCdpReady({ path: integrated.binary || integrated.path, source: 'donut-wayfern' })) {
       const lib = companionLibraryForKernelBinary(integrated.binary || integrated.path);
@@ -394,6 +529,17 @@ function assertKernelPackagePolicy(resourceApp) {
     }
   } else if (fs.existsSync(path.join(kernelsDir, 'chrome-stable'))) {
     throw new Error('[package] FATAL: Google Chrome Stable present on a package without the Linux kernel variant');
+  }
+
+  // Nested-secret gate (defense in depth): copyRecursive already drops
+  // CODE_OVERVIEW.md / .env* / *.log at every level; fail the build if one
+  // still reached the product tree through any other copy path. The scan
+  // covers the whole portable package when the layout is recognized.
+  const packageRoot = packageRootForResourceApp(resourceApp);
+  if (packageRoot) {
+    assertNoSensitiveFilesInTree(packageRoot, 'portable package');
+  } else {
+    assertNoSensitiveFilesInTree(resourceApp, 'packaged app tree');
   }
 }
 
@@ -827,18 +973,27 @@ function packageMac() {
 }
 
 if (require.main === module) {
-  if (process.platform === 'win32') packageWindows();
-  else if (process.platform === 'darwin') packageMac();
-  else if (process.platform === 'linux') packageLinux();
-  else {
-    console.error('当前平台暂不支持 package:portable：' + process.platform);
+  (async () => {
+    await ensurePackagingKernelSeeds();
+    if (process.platform === 'win32') packageWindows();
+    else if (process.platform === 'darwin') packageMac();
+    else if (process.platform === 'linux') packageLinux();
+    else {
+      console.error('当前平台暂不支持 package:portable：' + process.platform);
+      process.exit(1);
+    }
+  })().catch((error) => {
+    console.error('[package] ' + (error && error.message ? error.message : error));
     process.exit(1);
-  }
+  });
 }
 
 module.exports = {
   appResourceExcludes,
+  ensurePackagingKernelSeeds,
   isPackagingExcluded,
   copyRecursive,
   copyRustCore,
+  assertNoSensitiveFilesInTree,
+  packageRootForResourceApp,
 };

@@ -75,7 +75,8 @@ impl SyncCoordinator {
         self.is_active = active;
     }
 
-    /// Process a global hotkey action (replacing C# native-sync-hotkeys)
+    /// Process a global hotkey action (Rust-side twin of C# native-sync-hotkeys;
+    /// not wired into the JS host — see ADR §5, 2026-11-09)
     pub fn handle_hotkey(&mut self, action: SyncHotkeyAction) -> bool {
         match action {
             SyncHotkeyAction::Start => {

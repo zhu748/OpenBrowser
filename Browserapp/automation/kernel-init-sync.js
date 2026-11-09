@@ -13,7 +13,7 @@ const crypto = require('crypto');
 
 const { fontsForOs } = require('./device-personas');
 
-const SOURCE_OPENBROWSER = 'openbrowser-148';
+const { SOURCE_OPENBROWSER } = require('./versions');
 
 function isOpenBrowser148(browser = {}) {
   if (!browser) return false;

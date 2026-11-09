@@ -112,13 +112,24 @@ check('8. Cargo.lock openbrowser-core locked version matches ' + EXPECTED_VERSIO
 });
 
 // 9. .github/workflows/build-installers.yml
-check('9. .github/workflows/build-installers.yml release_tag default matches v' + EXPECTED_VERSION, () => {
+check('9. .github/workflows/build-installers.yml release notes derive their version from the dispatch tag', () => {
   const wf = fs.readFileSync(path.join(repoRoot, '.github/workflows/build-installers.yml'), 'utf8');
   const expectedTag = `v${EXPECTED_VERSION}`;
   const defaultMatch = wf.match(/release_tag:[\s\S]*?default:\s*['"]([^'"]+)['"]/);
   assert.ok(defaultMatch, 'Failed to locate release_tag default in workflow');
   assert.strictEqual(defaultMatch[1], expectedTag, `Workflow release_tag default ${defaultMatch[1]} !== ${expectedTag}`);
-  assert.ok(wf.includes(`**${expectedTag}**`), `Workflow RELEASE_NOTES missing **${expectedTag}**`);
+  // The notes header is constructed from RELEASE_TAG at runtime (see the
+  // notes_header lines), so it can never desync from the dispatched release.
+  // A hardcoded version in the workflow is exactly the old defect: publishing
+  // v1.0.28 with notes announcing v1.0.27 and no gate to stop it.
+  assert.ok(
+    wf.includes('## OpenBrowser **${RELEASE_TAG}**'),
+    'Workflow must build the release notes header from RELEASE_TAG (dynamic, not hardcoded)'
+  );
+  assert.ok(
+    !/## OpenBrowser \*\*v\d+\.\d+\.\d+/.test(wf),
+    'Workflow must not hardcode a version into the release notes header'
+  );
 });
 
 console.log(`\n[Version Audit Result] Passed: ${passCount}, Failed: ${failCount}`);

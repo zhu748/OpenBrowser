@@ -60,8 +60,7 @@ const SOURCE_CUSTOM = 'custom';
 /** Mozilla release archive (per-version Firefox kernels). */
 const SOURCE_MOZILLA = 'mozilla';
 /** Bundled / userData OpenBrowser 148 independent kernel. Default on macOS x64. */
-const SOURCE_OPENBROWSER = 'openbrowser-148';
-const OPENBROWSER_KERNEL_VERSION = '148.0.7778.165';
+const { SOURCE_OPENBROWSER, OPENBROWSER_KERNEL_VERSION } = require('./versions');
 const WAYFERN_ACCEPT_TERMS_ARG = '--accept-terms-and-conditions';
 const MAX_META_BYTES = 2 * 1024 * 1024;
 const MAX_KERNEL_BYTES = 2 * 1024 * 1024 * 1024;
@@ -145,6 +144,30 @@ function isVersionedArchiveUrl(url, version) {
   const text = String(url || '');
   const ver = String(version || '');
   return Boolean(ver) && /^\d/.test(ver) && text.includes(ver);
+}
+
+/**
+ * Extract a kernel build version embedded in a download URL, e.g. the
+ * "wayfern-156.0.8078.80-…" basename or a per-version chrome-for-testing
+ * path segment. The Wayfern feed has announced a top-level `version` one
+ * patch ahead of the builds its URLs actually serve (156.0.8078.81 meta vs
+ * 156.0.8078.80 assets), so the URL — not the feed headline — is the
+ * version of record for what would get installed.
+ */
+function buildVersionFromUrl(url) {
+  const text = String(url || '');
+  // Scan only path + query: an IPv4 host (https://192.168.1.100/…) would
+  // otherwise be reported as the build version, and the first match would
+  // even win over a real version later in the path.
+  let scan = text;
+  try {
+    const parsed = new URL(text);
+    scan = parsed.pathname + parsed.search;
+  } catch (_) { /* not an absolute URL: scan as-is */ }
+  // A trailing ".digit" means the match truncated a longer version
+  // (1.2.3.4 out of 1.2.3.4.5) — require a separator or end of string.
+  const match = /[/_-](\d+\.\d+\.\d+\.\d+)(?=$|[/_-]|\.(?!\d))/.exec(scan);
+  return match ? match[1] : '';
 }
 
 async function loadArchiveDigests(kernelsRoot) {
@@ -1724,8 +1747,8 @@ class BrowserKernelManager {
     } catch (err) {
       throw new Error('无法访问远程内核源：' + (err.message || err));
     }
-    const version = String(data.version || '').trim();
-    if (!version) throw new Error('远程内核元数据缺少 version 字段');
+    const feedVersion = String(data.version || '').trim();
+    if (!feedVersion) throw new Error('远程内核元数据缺少 version 字段');
 
     const platform = donutPlatformKey();
     const downloads = data.downloads || {};
@@ -1735,7 +1758,26 @@ class BrowserKernelManager {
       // Enforce a digest when the feed publishes one; today it does not, but
       // the moment it does every install becomes verifiable end to end.
       const digest = extractFeedDigest(data, platform);
-      return { version, url, platform, source: SOURCE_WAYFERN, raw: data, ...digest };
+      // The feed headline has run ahead of the shipped build before
+      // (156.0.8078.81 announced vs 156.0.8078.80 in every URL). What the
+      // URL serves is what gets installed, so the build parsed from the URL
+      // is the version of record; the announced value stays as feedVersion.
+      const buildVersion = buildVersionFromUrl(url);
+      if (buildVersion && buildVersion !== feedVersion) {
+        this.onProgress({
+          phase: 'meta',
+          message: `远程内核元数据版本 ${feedVersion} 与实际构建 ${buildVersion} 不一致，以构建号 ${buildVersion} 为准`,
+        });
+      }
+      return {
+        version: buildVersion || feedVersion,
+        feedVersion,
+        url,
+        platform,
+        source: SOURCE_WAYFERN,
+        raw: data,
+        ...digest,
+      };
     }
 
     // Platform missing (e.g. macos-x64 null) → Chrome for Testing fallback
@@ -2800,6 +2842,7 @@ module.exports = {
   validateArchiveMemberName,
   safeInstalledBinary,
   isVersionedArchiveUrl,
+  buildVersionFromUrl,
   extractFeedDigest,
   pinnedArchiveSha256,
   pinArchiveSha256,

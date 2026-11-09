@@ -6,7 +6,8 @@
   <meta name="color-scheme" content="light">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://lh3.googleusercontent.com https://*.ggpht.com https://*.googleusercontent.com; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; worker-src 'none'">
   <title>OpenBrowser</title>
-  <script src="i18n.js?v=20260720-aqua"></script>
+  <script src="automation/data/locale/i18n-data.js?v=20261109-aqua"></script>
+  <script src="i18n.js?v=20261109-aqua"></script>
   <link rel="icon" type="image/png" href="assets/logo-pixel.png?v=20261002-flat">
   <link rel="stylesheet" href="assets/fonts/pixelify-sans.css?v=20260720-ark">
   <link rel="stylesheet" href="styles.css?v=20260720-pixelfont">
@@ -609,7 +610,7 @@
                     <label>ClientRects<select id="editor-client-rects"><option value="noise">随机微扰</option><option value="real">真实直通</option></select></label>
                     <label>SpeechVoices<select id="editor-speech"><option value="noise">随机模拟</option><option value="real">真实直通</option><option value="blocked">阻断关闭</option></select></label>
                     <label><span data-i18n="editor.hwConcurrency">硬件并发数</span><select id="editor-cores"><option value="">自动</option><option value="0">真实</option><option value="2">2核</option><option value="4">4核</option><option value="6">6核</option><option value="8">8核</option><option value="10">10核</option><option value="12" selected>12核</option><option value="16">16核</option><option value="20">20核</option><option value="24">24核</option></select></label>
-                    <label><span data-i18n="editor.deviceMemory">设备内存</span><select id="editor-memory"><option value="">自动</option><option value="0">真实</option><option value="2">2G</option><option value="4">4G</option><option value="6">6G</option><option value="8" selected>8G</option><option value="16">16G</option></select></label>
+                    <label><span data-i18n="editor.deviceMemory">设备内存</span><select id="editor-memory"><option value="">自动</option><option value="0">真实</option><option value="2">2G</option><option value="4">4G</option><option value="6">6G</option><option value="8" selected>8G</option></select></label>
                     <label><span data-i18n="editor.deviceNameMode">设备名称</span><select id="editor-device-name-mode"><option value="noise">随机</option><option value="real">真实</option><option value="custom">自定义</option></select></label>
                     <label>自定义设备名<input id="editor-device-name" placeholder="自定义设备名" maxlength="30" data-i18n-title="editor.deviceNameTip" title="设备名称最多支持 30 个字符；选填，Android 9/11 不支持"></label>
                     <label>MAC 地址模式<select id="editor-mac-mode"><option value="real">真实</option><option value="custom">自定义</option></select></label>
@@ -780,7 +781,7 @@
                 </div>
                 <div class="advanced-card">
                   <strong data-i18n="editor.startupGuard">启动与网络守护</strong>
-                  <p class="network-mode-hint" data-i18n="editor.startupGuardHint">对齐 RoxyBrowser：网络/IP 守护在启动阶段直接生效，避免环境串号。</p>
+                  <p class="network-mode-hint" data-i18n="editor.startupGuardHint">网络 / IP 守护在启动阶段直接生效，避免环境串号。</p>
                   <div class="pref-toggle-grid">
                     <div class="pref-row"><span data-i18n="editor.stopOpenNet">网络不通停止打开</span><label class="check-row"><input id="editor-stop-open-net" type="checkbox"> <span data-i18n="editor.open">开启</span></label></div>
                     <div class="pref-row"><span data-i18n="editor.stopOpenIP">IP 发生变化停止打开</span><label class="check-row"><input id="editor-stop-open-ip" type="checkbox"> <span data-i18n="editor.open">开启</span></label></div>
@@ -1848,11 +1849,14 @@
   <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
   <script src="environment-audit.js?v=20260719-environment-audit"></script>
   <script src="assets/vendor/lucide.min.js"></script>
+  <script src="renderer-select.js?v=20261109-split"></script>
+  <script src="renderer-theme.js?v=20261109-split"></script>
+  <script src="renderer-platform-install.js?v=20261109-split"></script>
   <script src="ui/ui-profile-list.js"></script>
   <script src="automation/locale-from-country.js"></script>
   <script src="ui/ui-proxy.js?v=20260720-proxy"></script>
   <script src="ui/ui-editor.js?v=20260720-editor"></script>
-  <script src="renderer.js?v=20261108-refactor"></script>
+  <script src="renderer.js?v=20261109-split"></script>
   <script src="ui/ui-proxy-wiring.js?v=20260720-proxy"></script>
   <script src="ui/ui-dialogs.js"></script>
   <script src="ui/ui-rpa.js"></script>

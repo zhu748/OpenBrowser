@@ -224,7 +224,10 @@ function applyRestoredProfiles(result) {
     ui.groups = result.groups;
   }
   save();
-  window.ops.syncProfiles(ui.profiles).catch(() => {});
+  // fire-and-forget: restore already replaced the in-memory list, so keep the
+  // UI responsive, but surface a failed engine sync instead of swallowing it
+  // (the engine-side profile list would silently drift from ui.profiles).
+  window.ops.syncProfiles(ui.profiles).catch((error) => log('Error', '环境同步失败: ' + ((error && error.message) || error)));
   app.renderProfiles?.();
   refreshProxies?.().catch?.(() => {});
 }
@@ -277,25 +280,45 @@ async function pullProfilesFromCloud(ids) {
   return result;
 }
 
+// Re-entrancy guard: every cloud operation snapshots ui.profiles, and the
+// restore / import paths replace it wholesale (applyRestoredProfiles), so two
+// overlapping operations race their snapshots — a double-clicked restore ran
+// twice with the second result silently overwriting the first merge. One
+// file-level flag keeps cloud operations sequential; the clicked button is
+// disabled while its operation runs (assignmentInFlight pattern from
+// renderer-platform-install.js).
+let cloudOpInFlight = false;
+async function withCloudGuard(btn, fn) {
+  if (cloudOpInFlight) return;
+  cloudOpInFlight = true;
+  if (btn) btn.disabled = true;
+  try {
+    await fn();
+  } finally {
+    cloudOpInFlight = false;
+    if (btn) btn.disabled = false;
+  }
+}
+
 $('#cloud-provider')?.addEventListener('change', cloudProviderFieldsVisibility);
 document.querySelectorAll('.cloud-preset-btn').forEach((btn) => {
   btn.addEventListener('click', () => applyCloudPreset(btn.dataset.cloudPreset));
 });
-$('#cloud-choose-dir')?.addEventListener('click', async () => {
+$('#cloud-choose-dir')?.addEventListener('click', (event) => withCloudGuard(event.currentTarget, async () => {
   try {
     const result = await window.ops.cloudChooseDir();
     if (result?.canceled || !result.dir) return;
     if ($('#cloud-local-dir')) $('#cloud-local-dir').textContent = result.dir;
   } catch (error) { toast(error.message); }
-});
-$('#cloud-save-cfg')?.addEventListener('click', async () => {
+}));
+$('#cloud-save-cfg')?.addEventListener('click', (event) => withCloudGuard(event.currentTarget, async () => {
   try {
     const cloud = await window.ops.cloudSetConfig(readCloudForm());
     applyCloudForm(cloud);
     toast(tx('云备份配置已保存'));
   } catch (error) { toast(error.message); }
-});
-$('#cloud-backup-now')?.addEventListener('click', async () => {
+}));
+$('#cloud-backup-now')?.addEventListener('click', (event) => withCloudGuard(event.currentTarget, async () => {
   try {
     const cloud = readCloudForm();
     await window.ops.cloudSetConfig(cloud);
@@ -309,8 +332,8 @@ $('#cloud-backup-now')?.addEventListener('click', async () => {
     toast(tx('备份完成 · ') + (result.meta?.profileCount || 0) + tx(' 个环境 · ') + Math.round((result.meta?.bytes || 0) / 1024) + ' KB');
     log('Cloud', '全量备份 · ' + (result.meta?.profileCount || 0) + ' 环境');
   } catch (error) { toast('备份失败：' + error.message); }
-});
-$('#cloud-restore-now')?.addEventListener('click', async () => {
+}));
+$('#cloud-restore-now')?.addEventListener('click', (event) => withCloudGuard(event.currentTarget, async () => {
   const cloud = readCloudForm();
   const mode = cloud.restoreMode || 'merge';
   const warn = mode === 'overwrite'
@@ -340,16 +363,16 @@ $('#cloud-restore-now')?.addEventListener('click', async () => {
     toast(tx('恢复完成 · ') + (result.profiles?.length || 0) + tx(' 个环境') + (detail ? tx(' · ') + detail : ''));
     log('Cloud', '恢复 · ' + mode + ' · ' + (result.profiles?.length || 0) + (detail ? ' · ' + detail : ''));
   } catch (error) { toast('恢复失败：' + error.message); }
-});
-$('#cloud-export-file')?.addEventListener('click', async () => {
+}));
+$('#cloud-export-file')?.addEventListener('click', (event) => withCloudGuard(event.currentTarget, async () => {
   try {
     const cloud = readCloudForm();
     const result = await window.ops.cloudExportFile({ profiles: ui.profiles, groups: ui.groups || [], cloud });
     if (result?.canceled) return;
     toast(tx('已导出备份文件'));
   } catch (error) { toast(error.message); }
-});
-$('#cloud-import-file')?.addEventListener('click', async () => {
+}));
+$('#cloud-import-file')?.addEventListener('click', (event) => withCloudGuard(event.currentTarget, async () => {
   const cloud = readCloudForm();
   const mode = cloud.restoreMode || 'merge';
   const warn = mode === 'overwrite'
@@ -374,8 +397,8 @@ $('#cloud-import-file')?.addEventListener('click', async () => {
     const detail = formatMergeStats(result.mergeStats);
     toast(tx('导入完成 · ') + (result.profiles?.length || 0) + tx(' 个环境') + (detail ? tx(' · ') + detail : ''));
   } catch (error) { toast('导入失败：' + error.message); }
-});
-document.getElementById('editor-cloud-push-one')?.addEventListener('click', async () => {
+}));
+document.getElementById('editor-cloud-push-one')?.addEventListener('click', (event) => withCloudGuard(event.currentTarget, async () => {
   try {
     const profileId = app.editingProfileId;
     if (!profileId) throw new Error(tx('未打开环境'));
@@ -390,24 +413,24 @@ document.getElementById('editor-cloud-push-one')?.addEventListener('click', asyn
     await window.ops.syncProfiles(ui.profiles);
     await pushProfilesToCloud([profileId]);
   } catch (error) { toast(error.message); }
-});
-document.getElementById('editor-cloud-pull-one')?.addEventListener('click', async () => {
+}));
+document.getElementById('editor-cloud-pull-one')?.addEventListener('click', (event) => withCloudGuard(event.currentTarget, async () => {
   try {
     const profileId = app.editingProfileId;
     if (!profileId) throw new Error(tx('未打开环境'));
     await pullProfilesFromCloud([profileId]);
     app.openProfileEditor(profileId);
   } catch (error) { toast(error.message); }
-});
+}));
 
-$('#cloud-push-selected')?.addEventListener('click', async () => {
+$('#cloud-push-selected')?.addEventListener('click', (event) => withCloudGuard(event.currentTarget, async () => {
   // From settings only: push all profiles that opted into cloudBackup
   try {
     const ids = ui.profiles.filter((p) => p.advanced?.cloudBackup).map((p) => p.id);
     await pushProfilesToCloud(ids);
   } catch (error) { toast(error.message); }
-});
-$('#cloud-pull-selected')?.addEventListener('click', async () => {
+}));
+$('#cloud-pull-selected')?.addEventListener('click', (event) => withCloudGuard(event.currentTarget, async () => {
   try {
     // pull merge from full remote pack (all remote profiles), not homepage selection
     const cloud = readCloudForm();
@@ -424,7 +447,7 @@ $('#cloud-pull-selected')?.addEventListener('click', async () => {
     await refreshCloudPanel();
     toast(tx('恢复完成 · ') + formatMergeStats(result.mergeStats));
   } catch (error) { toast(error.message); }
-});
+}));
 
 window.refreshCloudPanel = refreshCloudPanel;
 window.CLOUD_BRIDGE_PRESETS = CLOUD_BRIDGE_PRESETS;

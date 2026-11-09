@@ -25,6 +25,7 @@ const {
   isIntegratedKernelCdpReady,
   companionLibraryForKernelBinary,
 } = require('../automation/browser-kernel');
+const { ensureKernelSeedForPackaging } = require('./fetch-kernels');
 
 const appRoot = path.resolve(__dirname, '..');
 const kernelsRoot = path.join(appRoot, 'kernels');
@@ -75,10 +76,35 @@ function assertCdpReady(binary, label) {
   }
 }
 
-function main() {
+async function main() {
   const platform = platformKey();
   console.log(`[kernel] verify integrated seed for ${platform}`);
   console.log(`[kernel] layout root: ${kernelsRoot}`);
+
+  // Kernel source transition (docs/kernel-externalization.md): a fresh
+  // checkout can carry git-LFS pointers instead of kernel content. Make the
+  // seed material before verifying — local content wins, otherwise fetch
+  // from the kernel release (OPENBROWSER_KERNEL_AUTO_FETCH=0 disables; on
+  // failure the error lists both the release and `git lfs pull` recovery
+  // commands). linux-x64 seeds are downloaded by prepare:linux-kernel.
+  await ensureKernelSeedForPackaging(platform);
+
+  // wayfern_fonts 去重（docs/wayfern-fonts-dedup-plan.md 阶段 1）：字体正本在共享目录
+  // kernels/wayfern-fonts，Windows 打包与开发模式需要平台目录内的物化副本。独立步骤
+  // 而非并入 ensureKernelSeedForPackaging：该钩子在种子已物化时直接 no-op 返回，而
+  // 字体物化在任何种子状态下都必须检查。macOS 侧字体在已签名 .app 内，绝不物化。
+  // 翻转后（docs/kernel-externalization.md §5）正本缺席：物化副本已就绪则 upToDate。
+  if (platform === 'windows-x64') {
+    const { materializeWayfernFonts } = require('./materialize-wayfern-fonts');
+    const summary = materializeWayfernFonts();
+    if (summary.srcAbsent) {
+      console.log('[kernel] wayfern fonts: 正本缺席（翻转后状态）、种子已含物化字体'
+        + ` (${summary.destFiles} files) -> kernels/windows-x64/wayfern_fonts`);
+    } else {
+      console.log(`[kernel] wayfern fonts ${summary.upToDate ? 'already materialized' : 'materialized'}:`
+        + ` ${summary.sourceFiles} files (copied ${summary.copied}) -> kernels/windows-x64/wayfern_fonts`);
+    }
+  }
 
   if (platform === 'macos-x64') {
     const seed = resolveSeedDir('macos-x64');
@@ -133,9 +159,7 @@ function main() {
   throw new Error(`No integrated kernel policy for ${platform}`);
 }
 
-try {
-  main();
-} catch (error) {
+main().catch((error) => {
   console.error(`[kernel] ${error.message}`);
   process.exitCode = 1;
-}
+});

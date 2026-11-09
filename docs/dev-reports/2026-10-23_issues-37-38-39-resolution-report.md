@@ -94,7 +94,7 @@
    - `selftest:issues`: 100% 通过。
    - `selftest:secondaryui`: 90/90 项全绿通过。
    - `selftest:profile-list`: 通过。
-   - `selftest:i18n`: 全语种字典无缺失通过。
+   - `npm run selftest -- i18n`: 全语种字典无缺失通过。
    - `selftest:isolation`: 32/32 项通过。
    - `selftest:prefconsistency`: 5/5 项通过。
    - `selftest:rustrelease` & `selftest:version`: 版本一致性与规则检查全绿通过。

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Build compact WOFF2 subsets for the font families shipped with the fingerprint layer.
 
-The kernel font assets under kernels/*/wayfern_fonts are full system fonts (200 KB - 1.7 MB
+The kernel font assets under kernels/wayfern-fonts (shared canonical since the wayfern_fonts
+dedup, docs/wayfern-fonts-dedup-plan.md) are full system fonts (200 KB - 1.7 MB
 each, or up to 20 MB for TTCs). Document-layer font registration needs the bytes inline,
 so the payload has to be small. Subsetting to the printable Latin range (and core icon glyphs)
 keeps every advance width and kerning pair that matters for text metrics while cutting file
@@ -39,7 +40,7 @@ UNICODES = (
 
 def resolve_pingfang_source() -> tuple[str, bool]:
     candidates = [
-        os.path.join(ROOT, "kernels", "windows-x64", "wayfern_fonts", "macos", "PingFang.ttc"),
+        os.path.join(ROOT, "kernels", "wayfern-fonts", "macos", "PingFang.ttc"),
         "/System/Library/Fonts/PingFang.ttc",
         "/System/Library/Fonts/Supplemental/PingFang.ttc",
         os.path.expanduser("~/Library/Application Support/com.electron.lark.font_workaround/PingFang.ttc"),
@@ -47,288 +48,288 @@ def resolve_pingfang_source() -> tuple[str, bool]:
     for c in candidates:
         if os.path.exists(c):
             return c, True
-    return "kernels/windows-x64/wayfern_fonts/macos/Hiragino Sans GB.ttc", False
+    return "kernels/wayfern-fonts/macos/Hiragino Sans GB.ttc", False
 
 
 # Additional persona families to reach complete declared family coverage.
 ADDITIONAL_FAMILIES: dict[str, dict[str, dict]] = {
     "windows": {
         "Aldhabi": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/win11/aldhabi6_85.ttf",
+            "relativePath": "kernels/wayfern-fonts/win11/aldhabi6_85.ttf",
             "fontNumber": 0,
         },
         "Cambria Math": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/win11/cambria6_99.ttc",
+            "relativePath": "kernels/wayfern-fonts/win11/cambria6_99.ttc",
             "fontNumber": 1,
         },
         "HoloLens MDL2 Assets": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/win11/segmdl21_86.ttf",
+            "relativePath": "kernels/wayfern-fonts/win11/segmdl21_86.ttf",
             "fontNumber": 0,
         },
         "MS Gothic": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/win11/msgothic5_32.ttc",
+            "relativePath": "kernels/wayfern-fonts/win11/msgothic5_32.ttc",
             "fontNumber": 0,
         },
         "Malgun Gothic": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/win11/malgun6_69.ttf",
+            "relativePath": "kernels/wayfern-fonts/win11/malgun6_69.ttf",
             "fontNumber": 0,
         },
         "Microsoft Himalaya": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/win11/himalaya5_23.ttf",
+            "relativePath": "kernels/wayfern-fonts/win11/himalaya5_23.ttf",
             "fontNumber": 0,
         },
         "Microsoft JhengHei": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/win11/msjh6_15.ttc",
+            "relativePath": "kernels/wayfern-fonts/win11/msjh6_15.ttc",
             "fontNumber": 0,
         },
         "Microsoft YaHei": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/win11/msyh6_31.ttc",
+            "relativePath": "kernels/wayfern-fonts/win11/msyh6_31.ttc",
             "fontNumber": 0,
         },
         "MingLiU-ExtB": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/win11/mingliub7_10.ttc",
+            "relativePath": "kernels/wayfern-fonts/win11/mingliub7_10.ttc",
             "fontNumber": 0,
         },
         "Nirmala UI": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/win11/segoeui5_67.ttf",
+            "relativePath": "kernels/wayfern-fonts/win11/segoeui5_67.ttf",
             "fontNumber": 0,
         },
         "Segoe Fluent Icons": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/win11/segoeicons1_44.ttf",
+            "relativePath": "kernels/wayfern-fonts/win11/segoeicons1_44.ttf",
             "fontNumber": 0,
         },
         "Segoe MDL2 Assets": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/win11/segmdl21_86.ttf",
+            "relativePath": "kernels/wayfern-fonts/win11/segmdl21_86.ttf",
             "fontNumber": 0,
         },
         "Segoe UI Emoji": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/win11/seguiemj1_60.ttf",
+            "relativePath": "kernels/wayfern-fonts/win11/seguiemj1_60.ttf",
             "fontNumber": 0,
         },
         "SimSun": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/win11/simsun5_23.ttc",
+            "relativePath": "kernels/wayfern-fonts/win11/simsun5_23.ttc",
             "fontNumber": 0,
         },
         "Sitka": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/win11/sitkavf2_02.ttf",
+            "relativePath": "kernels/wayfern-fonts/win11/sitkavf2_02.ttf",
             "fontNumber": 0,
         },
         "Yu Gothic": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/win11/yugothm1_95.ttc",
+            "relativePath": "kernels/wayfern-fonts/win11/yugothm1_95.ttc",
             "fontNumber": 0,
         },
     },
     "macos": {
         "American Typewriter": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/AmericanTypewriter.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/AmericanTypewriter.ttc",
             "fontNumber": 0,
         },
         "American Typewriter Semibold": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/AmericanTypewriter.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/AmericanTypewriter.ttc",
             "fontNumber": 3,
         },
         "Andale Mono": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/Andale Mono.ttf",
+            "relativePath": "kernels/wayfern-fonts/macos/Andale Mono.ttf",
             "fontNumber": 0,
         },
         "Apple SD Gothic Neo ExtraBold": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/AppleSDGothicNeo.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/AppleSDGothicNeo.ttc",
             "fontNumber": 14,
         },
         "Avenir": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/Avenir.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/Avenir.ttc",
             "fontNumber": 11,
         },
         "Avenir Next": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/Avenir Next.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/Avenir Next.ttc",
             "fontNumber": 7,
         },
         "Avenir Next Condensed": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/Avenir Next Condensed.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/Avenir Next Condensed.ttc",
             "fontNumber": 7,
         },
         "Baskerville": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/Baskerville.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/Baskerville.ttc",
             "fontNumber": 0,
         },
         "Bodoni 72": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/Bodoni 72.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/Bodoni 72.ttc",
             "fontNumber": 0,
         },
         "Bradley Hand": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/Bradley Hand Bold.ttf",
+            "relativePath": "kernels/wayfern-fonts/macos/Bradley Hand Bold.ttf",
             "fontNumber": 0,
         },
         "Chalkboard": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/Chalkboard.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/Chalkboard.ttc",
             "fontNumber": 0,
         },
         "Chalkboard SE": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/ChalkboardSE.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/ChalkboardSE.ttc",
             "fontNumber": 1,
         },
         "Charter": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/Charter.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/Charter.ttc",
             "fontNumber": 0,
         },
         "Cochin": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/Cochin.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/Cochin.ttc",
             "fontNumber": 0,
         },
         "Copperplate": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/Copperplate.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/Copperplate.ttc",
             "fontNumber": 0,
         },
         "Courier": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/Courier.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/Courier.ttc",
             "fontNumber": 0,
         },
         "Didot": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/Didot.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/Didot.ttc",
             "fontNumber": 0,
         },
         "DIN Alternate": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/DIN Alternate Bold.ttf",
+            "relativePath": "kernels/wayfern-fonts/macos/DIN Alternate Bold.ttf",
             "fontNumber": 0,
         },
         "DIN Condensed": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/DIN Condensed Bold.ttf",
+            "relativePath": "kernels/wayfern-fonts/macos/DIN Condensed Bold.ttf",
             "fontNumber": 0,
         },
         "Futura": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/Futura.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/Futura.ttc",
             "fontNumber": 0,
         },
         "Futura Bold": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/Futura.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/Futura.ttc",
             "fontNumber": 2,
         },
         "Galvji": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/Galvji.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/Galvji.ttc",
             "fontNumber": 0,
         },
         "Gill Sans": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/GillSans.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/GillSans.ttc",
             "fontNumber": 0,
         },
         "Helvetica": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/Helvetica.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/Helvetica.ttc",
             "fontNumber": 0,
         },
         "Helvetica Neue": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/HelveticaNeue.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/HelveticaNeue.ttc",
             "fontNumber": 0,
         },
         "Hiragino Sans": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/HiraginoSans-W3.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/HiraginoSans-W3.ttc",
             "fontNumber": 0,
         },
         "Hoefler Text": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/Hoefler Text.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/Hoefler Text.ttc",
             "fontNumber": 0,
         },
         "InaiMathi Bold": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/InaiMathi-MN.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/InaiMathi-MN.ttc",
             "fontNumber": 1,
         },
         "Kohinoor Devanagari Medium": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/Kohinoor.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/Kohinoor.ttc",
             "fontNumber": 1,
         },
         "Lucida Grande": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/LucidaGrande.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/LucidaGrande.ttc",
             "fontNumber": 0,
         },
         "Marker Felt": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/MarkerFelt.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/MarkerFelt.ttc",
             "fontNumber": 0,
         },
         "Menlo": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/Menlo.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/Menlo.ttc",
             "fontNumber": 0,
         },
         "Microsoft Sans Serif": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/Microsoft Sans Serif.ttf",
+            "relativePath": "kernels/wayfern-fonts/macos/Microsoft Sans Serif.ttf",
             "fontNumber": 0,
         },
         "MuktaMahee Regular": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/MuktaMahee.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/MuktaMahee.ttc",
             "fontNumber": 0,
         },
         "Noteworthy": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/Noteworthy.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/Noteworthy.ttc",
             "fontNumber": 0,
         },
         "Noto Sans Canadian Aboriginal Regular": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/NotoSansCanadianAboriginal-Regular.otf",
+            "relativePath": "kernels/wayfern-fonts/macos/NotoSansCanadianAboriginal-Regular.otf",
             "fontNumber": 0,
         },
         "Noto Sans Gunjala Gondi Regular": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/NotoSansGunjalaGondi-Regular.otf",
+            "relativePath": "kernels/wayfern-fonts/macos/NotoSansGunjalaGondi-Regular.otf",
             "fontNumber": 0,
         },
         "Noto Sans Masaram Gondi Regular": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/NotoSansMasaramGondi-Regular.otf",
+            "relativePath": "kernels/wayfern-fonts/macos/NotoSansMasaramGondi-Regular.otf",
             "fontNumber": 0,
         },
         "Noto Serif Yezidi Regular": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/NotoSerifYezidi-Regular.otf",
+            "relativePath": "kernels/wayfern-fonts/macos/NotoSerifYezidi-Regular.otf",
             "fontNumber": 0,
         },
         "Optima": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/Optima.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/Optima.ttc",
             "fontNumber": 0,
         },
         "Palatino": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/Palatino.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/Palatino.ttc",
             "fontNumber": 0,
         },
         "Papyrus": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/Papyrus.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/Papyrus.ttc",
             "fontNumber": 1,
         },
         "Phosphate": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/Phosphate.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/Phosphate.ttc",
             "fontNumber": 0,
         },
         "Rockwell": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/Rockwell.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/Rockwell.ttc",
             "fontNumber": 0,
         },
         "Savoye LET": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/Savoye LET.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/Savoye LET.ttc",
             "fontNumber": 0,
         },
         "SignPainter": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/SignPainter.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/SignPainter.ttc",
             "fontNumber": 0,
         },
         "SignPainter-HouseScript Semibold": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/SignPainter.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/SignPainter.ttc",
             "fontNumber": 1,
         },
         "Skia": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/Skia.ttf",
+            "relativePath": "kernels/wayfern-fonts/macos/Skia.ttf",
             "fontNumber": 0,
         },
         "Snell Roundhand": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/SnellRoundhand.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/SnellRoundhand.ttc",
             "fontNumber": 0,
         },
         "STIX Two Math Regular": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/STIXTwoMath.otf",
+            "relativePath": "kernels/wayfern-fonts/macos/STIXTwoMath.otf",
             "fontNumber": 0,
         },
         "STIX Two Text Regular": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/STIXTwoText.ttf",
+            "relativePath": "kernels/wayfern-fonts/macos/STIXTwoText.ttf",
             "fontNumber": 0,
         },
         "Times": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/Times.ttc",
+            "relativePath": "kernels/wayfern-fonts/macos/Times.ttc",
             "fontNumber": 0,
         },
         "Trattatello": {
-            "relativePath": "kernels/windows-x64/wayfern_fonts/macos/Trattatello.ttf",
+            "relativePath": "kernels/wayfern-fonts/macos/Trattatello.ttf",
             "fontNumber": 0,
         },
     },
@@ -349,17 +350,17 @@ if pf_has_genuine:
     }
 else:
     ADDITIONAL_FAMILIES["macos"]["PingFang SC"] = {
-        "relativePath": "kernels/windows-x64/wayfern_fonts/macos/Hiragino Sans GB.ttc",
+        "relativePath": "kernels/wayfern-fonts/macos/Hiragino Sans GB.ttc",
         "fontNumber": 0,
         "aliasFor": "Hiragino Sans GB",
-        "source": "kernels/windows-x64/wayfern_fonts/macos/Hiragino Sans GB.ttc#0",
+        "source": "kernels/wayfern-fonts/macos/Hiragino Sans GB.ttc#0",
         "exact": False,
     }
     ADDITIONAL_FAMILIES["macos"]["PingFang HK Light"] = {
-        "relativePath": "kernels/windows-x64/wayfern_fonts/macos/STHeiti Light.ttc",
+        "relativePath": "kernels/wayfern-fonts/macos/STHeiti Light.ttc",
         "fontNumber": 0,
         "aliasFor": "Heiti TC Light",
-        "source": "kernels/windows-x64/wayfern_fonts/macos/STHeiti Light.ttc#0",
+        "source": "kernels/wayfern-fonts/macos/STHeiti Light.ttc#0",
         "exact": False,
     }
 

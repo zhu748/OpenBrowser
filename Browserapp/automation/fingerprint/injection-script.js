@@ -8,7 +8,13 @@
  */
 
 const crypto = require('crypto');
-const { createWebRtcFallbackSource, buildCssFontLocalGateSource, deriveFontPlaceholder, buildQueryLocalFontBlobGateSource, buildUaProfile, buildUaInjectionScript, canonicalBridgeToken, mapPlatformToSubsetKey, loadFontSubsetPayload, buildFontMetricsScript, webglParameterOverrides, isDisallowedVendorExtension, normalizeHost, resolveStabilityPolicy } = require('./shared');
+const { createWebRtcFallbackSource, buildCssFontLocalGateSource, deriveFontPlaceholder, buildQueryLocalFontBlobGateSource, buildUaProfile, buildUaInjectionScript, canonicalBridgeToken, mapPlatformToSubsetKey, loadFontSubsetPayload, buildFontMetricsScript, isDisallowedVendorExtension } = require('./shared');
+// Shared CFG layer: the os/timezone/deviceMemory/webgl/stability computations the
+// worker builder (worker-injection.js) also embeds live in injection-config.js so
+// the two emitted CFGs cannot drift independently. Key order, key set and the
+// intentionally divergent leaves (vendor, userAgentMetadata, webgpu, stability
+// caps) stay in this file's literal — see the drift list in injection-config.js.
+const { resolveInjectionStability, injectionOs, injectionTimezone, injectionDeviceMemory, injectionWebgl, stabilityNoiseAmplitude, stabilitySampleStepDivisor, stabilityHamming, stabilityMaxWidth, stabilityMaxHeight, stabilitySquare } = require('./injection-config');
 
 /**
  * Document-start injection implementing noise/block modes.
@@ -34,34 +40,21 @@ function buildInjectionScript(fp, options = {}) {
       return cached;
     }
   }
-  const stability = fp.stability || fp.canvas?.stability || resolveStabilityPolicy({}, {});
+  const stability = resolveInjectionStability(fp);
   const json = JSON.stringify({
     platform: fp.platform,
-    os: fp.uaProfile?.os || (fp.mobile ? 'android' : 'windows'),
+    os: injectionOs(fp),
     userAgent: fp.userAgent,
     languages: fp.languages,
-    timezone: fp.timezone || fp.dynamicConfig?.timezone || null,
+    timezone: injectionTimezone(fp),
     hardwareConcurrency: fp.hardwareConcurrency,
-    deviceMemory: (() => {
-      // persona.js quantises to DEVICE_MEMORY_STEPS (0.25/0.5/1/2/4/8); Math.max(1, ...) rewrote
-      // the legal 0.25/0.5 tiers to 1, contradicting the CDP/main record. Pass legal values
-      // through; snap anything illegal to the nearest step (capped at 8, as the spec does).
-      const STEPS = [0.25, 0.5, 1, 2, 4, 8];
-      const raw = Number(fp.deviceMemory);
-      if (!Number.isFinite(raw) || raw <= 0) return 8;
-      if (STEPS.includes(raw)) return Math.min(8, raw);
-      return STEPS.reduce((best, s) => (Math.abs(s - raw) < Math.abs(best - raw) ? s : best), 1);
-    })(),
+    // persona.js quantises to DEVICE_MEMORY_STEPS (0.25/0.5/1/2/4/8); Math.max(1, ...) rewrote
+    // the legal 0.25/0.5 tiers to 1, contradicting the CDP/main record. Legal values pass
+    // through; anything illegal snaps to the nearest step (capped at 8, as the spec does).
+    // Shared computation with the worker CFG — see injection-config.js.
+    deviceMemory: injectionDeviceMemory(fp),
     screen: fp.screen,
-    webgl: {
-      mode: fp.webgl?.mode,
-      metaMode: fp.webgl?.metaMode || 'noise',
-      vendor: fp.webgl?.vendor,
-      renderer: fp.webgl?.renderer,
-      mark: fp.webgl?.mark,
-      gpu: fp.webgl?.gpu || null,
-      limits: fp.webgl?.limits || webglParameterOverrides(fp.webgl?.gpu, { reconcileHost: fp.webgl?.reconcileHost !== false, hostPlatform: process.platform }),
-    },
+    webgl: injectionWebgl(fp),
     canvas: fp.canvas,
     audio: fp.audio,
     clientRects: fp.clientRects,
@@ -80,19 +73,23 @@ function buildInjectionScript(fp, options = {}) {
     mobile: Boolean(fp.mobile),
     mobileDevice: fp.mobileDevice || null,
     // The injected navigator.patches read this; without it the page reported empty brands / model.
+    // Intentionally divergent from the worker CFG (worker-injection.js keeps no uaProfile.metadata
+    // fallback) — preserved as-is, see the drift list in injection-config.js.
     userAgentMetadata: fp.userAgentMetadata || fp.uaProfile?.metadata || null,
+    // Intentionally divergent from the worker CFG (worker keeps fp.uaProfile?.vendor ||
+    // 'Google Inc.' with no iOS branch) — preserved as-is, see injection-config.js.
     vendor: fp.vendor || ((fp.mobileDevice?.os === 'ios' || fp.uaProfile?.os === 'ios' || (fp.platform && /iphone|ipad|ipod/i.test(fp.platform))) ? 'Apple Computer, Inc.' : (fp.uaProfile?.vendor || 'Google Inc.')),
     doNotTrack: fp.doNotTrack,
     seed: fp.seed,
     stability: {
       mode: stability.mode,
       active: Boolean(stability.active),
-      noiseAmplitude: Number(stability.noiseAmplitude) || 3,
-      sampleStepDivisor: Number(stability.sampleStepDivisor) || 64,
-      hamming: Number(stability.hamming) || 12,
-      maxWidth: Number(stability.maxWidth) || 600,
-      maxHeight: Number(stability.maxHeight) || 600,
-      square: Number(stability.square) || 8,
+      noiseAmplitude: stabilityNoiseAmplitude(stability),
+      sampleStepDivisor: stabilitySampleStepDivisor(stability),
+      hamming: stabilityHamming(stability),
+      maxWidth: stabilityMaxWidth(stability),
+      maxHeight: stabilityMaxHeight(stability),
+      square: stabilitySquare(stability),
       hosts: Array.isArray(stability.hosts) ? stability.hosts.slice(0, 800) : [],
       skipHosts: Array.isArray(stability.skipHosts) ? stability.skipHosts.slice(0, 200) : [],
     },

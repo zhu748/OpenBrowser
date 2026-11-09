@@ -337,8 +337,10 @@ async function main() {
     assert.ok(html.includes('<option value="custom">自定义</option>'));
   });
   check('cpu select offers 20/24 cores', () => {
-    assert.ok(html.includes('<option value="20">20 核心</option>'));
-    assert.ok(html.includes('<option value="24">24 核心</option>'));
+    // Labels use the RoxyBrowser parity style ("20核", no space) since the
+    // editor restyle; the assertion tracks the capability, not the label copy.
+    assert.ok(html.includes('<option value="20">20核</option>'));
+    assert.ok(html.includes('<option value="24">24核</option>'));
   });
 
   const startSrc = fs.readFileSync(START_JS, 'utf8');

@@ -1031,8 +1031,8 @@ html[data-ui-theme="modern"] .extension-state-legend i.all { background: var(--m
 html[data-ui-theme="modern"] .extension-state-legend i { background: var(--modern-neutral-200); }
 html[data-ui-theme="modern"] .extension-state-legend i.partial { background: #d97706; }
 
-/* Roxy 对齐：声音/图片/视频三联 —— 三列窄格下 max-content 收缩会把控件列压扁；
-   改单列网格：标题在上、分段开关占满整行（与 RoxyBrowser 版式一致） */
+/* 声音/图片/视频三联 —— 三列窄格下 max-content 收缩会把控件列压扁；
+   改单列网格：标题在上、分段开关占满整行 */
 html[data-ui-theme="modern"] #view-profile-editor .editor-form .form-three .labeled-block {
   grid-template-columns: minmax(0, 1fr);
 }

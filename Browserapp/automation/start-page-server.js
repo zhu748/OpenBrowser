@@ -28,7 +28,8 @@ const dnsPromises = dns.promises;
 
 const DEFAULT_PORT = Number(process.env.OPENBROWSER_START_PAGE_PORT || 50326);
 const PORT_CANDIDATES = [DEFAULT_PORT, 50327, 50328, 50329, 0];
-const BROWSER_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+const { mainProcessProbeUa } = require('./versions');
+const BROWSER_UA = mainProcessProbeUa();
 // Start-page session tokens used to live forever: a bookmarked URL stayed
 // valid for the whole process lifetime because nothing ever expired or
 // rotated an entry (finding 7-3). Bound them with a 24h TTL; the per-profile

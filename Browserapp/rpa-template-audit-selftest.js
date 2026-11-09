@@ -43,6 +43,34 @@ const execSteps = (t) => (Array.isArray(t.steps) && t.steps.length)
   if (offenders.length) offenders.slice(0, 10).forEach((o) => console.log('     ✗ ' + o));
 }
 
+// --- 1b. Registry/engine drift guard ---
+// RPA_PLUS_ACTIONS documents the marketplace format; EXECUTABLE_STEP_TYPES is
+// what the engine runs. Actions listed in the registry but absent from the
+// engine set are allowed only when explicitly annotated in rpa-registry.js
+// AND listed here — they fail closed at validation. This guard fires when new
+// drift appears or when an annotated action silently gains an executor.
+{
+  const { RPA_PLUS_ACTIONS } = require('./automation/protocol/rpa-registry.js');
+  const engineSrc = fs.readFileSync(path.join(__dirname, 'automation/rpa-engine.js'), 'utf8');
+  const block = engineSrc.match(/EXECUTABLE_STEP_TYPES = new Set\(\[([\s\S]*?)\]\)/);
+  const executable = new Set(
+    (block ? block[1] : '')
+      .split(',')
+      .map((s) => s.trim().replace(/^'|'$/g, '').toLowerCase())
+      .filter(Boolean)
+  );
+  const KNOWN_WITHOUT_EXECUTOR = new Set(['getEmail', 'saveTag']);
+  const newDrift = RPA_PLUS_ACTIONS.filter(
+    (a) => !executable.has(a.toLowerCase()) && !KNOWN_WITHOUT_EXECUTOR.has(a)
+  );
+  ok('every marketplace action is executable or annotated as fail-closed', newDrift.length === 0);
+  if (newDrift.length) console.log('     ✗ new registry/engine drift: ' + newDrift.join(',') + ' — implement an executor or annotate in rpa-registry.js');
+  for (const action of KNOWN_WITHOUT_EXECUTOR) {
+    const un = findUnsupportedSteps([{ type: action }]) || [];
+    ok(`marketplace action ${action} (no local executor) fails closed at validation`, un.length === 1);
+  }
+}
+
 // --- 2. No leftover paid metadata after the store's free-sanitizer runs on load ---
 {
   const paidTag = /付费|收费|会员|VIP|premium|paid/i;

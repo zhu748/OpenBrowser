@@ -1,3 +1,8 @@
+// native-tab-shortcut-driver.cs — Windows native helper for OpenBrowser.
+// Built by scripts/build-native.js (csc.exe, .NET Framework 4).
+// Provenance unrecorded; no upstream license identified.
+// SPDX-License-Identifier: UNLICENSED
+// See THIRD-PARTY-NOTICES.md section 2 for the licensing discussion.
 using System;
 using System.Runtime.InteropServices;
 using System.Text;

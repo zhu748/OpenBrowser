@@ -8,7 +8,8 @@
  * child window (a child would inherit this window's preload).
  *
  * The allow-list mirrors the session request filter in the host process, so the
- * two cannot drift apart; `selftest:shellguard` fails if they ever do.
+ * two cannot drift apart; `npm run selftest -- shellguard` fails if they ever
+ * do.
  */
 
 const { createPolicy, evaluateNavigation } = require('./navigation-policy');

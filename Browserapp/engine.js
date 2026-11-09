@@ -24,8 +24,6 @@ const { killProcessTree } = require('./automation/protocol/cross-platform');
 const isolation = require('./automation/isolation');
 const { lockPath, releaseProfileLock, scanProcessesUsingProfileAsync, isPidAlive, auditIsolation, isSystemBrowserExecutable, isPathInsideOrEqual, validateDataRootIsolationSecure, assertProfileId, assertSafeProfileChild } = isolation;
 const { BrowserKernelManager } = require('./automation/browser-kernel');
-const {
-} = require('./automation/kernel-init-sync');
 const userAgentModule = require('./automation/user-agent');
 if (!userAgentModule.__navigatorProtoHardened) {
   userAgentModule.__navigatorProtoHardened = true;

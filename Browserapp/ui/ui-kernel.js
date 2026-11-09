@@ -59,8 +59,6 @@ async function loadKernelVersionOptions(engine, refresh) {
 }
 
 // ========== Progress bar (percent + speed + stage), driven by kernel-progress events ==========
-const progressState = { active: false };
-
 function setProgressVisible(visible) {
   const wrap = document.getElementById('kernel-progress-wrap');
   if (wrap) wrap.hidden = !visible;
@@ -81,7 +79,6 @@ function renderProgress({ percent = 0, speed = 0, label = '' } = {}) {
 }
 
 function hideProgress() {
-  progressState.active = false;
   setProgressVisible(false);
   const cancelBtn = document.getElementById('kernel-cancel-download');
   if (cancelBtn) cancelBtn.hidden = true;
@@ -104,7 +101,6 @@ function handleKernelProgressEvent(value) {
   if (!value || value.type !== 'kernel-progress') return;
   const phase = value.phase;
   if (phase === 'download') {
-    progressState.active = true;
     renderProgress({
       percent: value.percent || 0,
       speed: value.speed || 0,
@@ -145,42 +141,68 @@ async function refreshAfterKernelChange() {
 }
 
 // ========== Per-version install (with progress bar + cancel) ==========
+
+// Single-flight download guard: the chromium / firefox install buttons and the
+// stable-channel download all drive the same progress DOM
+// (#kernel-progress-fill/percent/speed) and share one cancel button, while the
+// main-side install guard is keyed per engine:version — two concurrent
+// downloads made the percent/speed readings jump between streams, and the
+// first finisher hid the progress bar + cancel button while the second
+// download was still running. Gate every download trigger until all are idle.
+const KERNEL_DOWNLOAD_TRIGGERS = ['kernel-chromium-install', 'kernel-firefox-install', 'kernel-download'];
+let kernelDownloadInFlight = false;
+
+function setKernelDownloadTriggersDisabled(disabled) {
+  for (const id of KERNEL_DOWNLOAD_TRIGGERS) {
+    const btn = document.getElementById(id);
+    if (btn) btn.disabled = disabled;
+  }
+}
+
+async function withKernelDownloadGuard(fn) {
+  if (kernelDownloadInFlight) return;
+  kernelDownloadInFlight = true;
+  setKernelDownloadTriggersDisabled(true);
+  try {
+    await fn();
+  } finally {
+    kernelDownloadInFlight = false;
+    setKernelDownloadTriggersDisabled(false);
+  }
+}
+
 async function installKernelVersion(engine) {
   const select = engine === 'firefox'
     ? document.getElementById('kernel-firefox-version')
     : document.getElementById('kernel-chromium-version');
-  const button = engine === 'firefox'
-    ? document.getElementById('kernel-firefox-install')
-    : document.getElementById('kernel-chromium-install');
   const progress = document.getElementById('kernel-progress');
   const cancelBtn = document.getElementById('kernel-cancel-download');
   const engineName = ENGINE_LABEL[engine] || engine;
   const version = select?.value;
   if (!version) { toast(t('system.kernel.pickFirst'), { tone: 'warning' }); return; }
-  try {
-    if (button) button.disabled = true;
-    if (cancelBtn) cancelBtn.hidden = false;
-    progressState.active = true;
-    if (progress) { progress.hidden = true; progress.textContent = ''; }
-    renderProgress({ percent: 0, speed: 0, label: t('system.kernel.stageDownload') });
-    toast(t('system.kernel.installStart', { engine: engineName, version }));
-    const kernel = await window.ops.kernelInstallVersion(engine, version);
-    if (progress) { progress.hidden = false; progress.textContent = t('system.kernel.installReady', { engine: engineName, version }) + (kernel?.path || ''); }
-    toast(t('system.kernel.installDone', { engine: engineName, version }), { tone: 'success' });
-    log('Kernel', `${engineName} ${version} · ${kernel?.path || ''}`);
-  } catch (error) {
-    const message = error?.message || String(error);
-    const canceled = /canceled|取消/i.test(message);
-    if (progress && !canceled) {
-      progress.hidden = false;
-      progress.textContent = t('system.kernel.installFail', { engine: engineName }) + message;
-      toast(t('system.kernel.installFail', { engine: engineName }) + message, { tone: 'error' });
+  await withKernelDownloadGuard(async () => {
+    try {
+      if (cancelBtn) cancelBtn.hidden = false;
+      if (progress) { progress.hidden = true; progress.textContent = ''; }
+      renderProgress({ percent: 0, speed: 0, label: t('system.kernel.stageDownload') });
+      toast(t('system.kernel.installStart', { engine: engineName, version }));
+      const kernel = await window.ops.kernelInstallVersion(engine, version);
+      if (progress) { progress.hidden = false; progress.textContent = t('system.kernel.installReady', { engine: engineName, version }) + (kernel?.path || ''); }
+      toast(t('system.kernel.installDone', { engine: engineName, version }), { tone: 'success' });
+      log('Kernel', `${engineName} ${version} · ${kernel?.path || ''}`);
+    } catch (error) {
+      const message = error?.message || String(error);
+      const canceled = /canceled|取消/i.test(message);
+      if (progress && !canceled) {
+        progress.hidden = false;
+        progress.textContent = t('system.kernel.installFail', { engine: engineName }) + message;
+        toast(t('system.kernel.installFail', { engine: engineName }) + message, { tone: 'error' });
+      }
+    } finally {
+      hideProgress();
+      await refreshAfterKernelChange();
     }
-  } finally {
-    if (button) button.disabled = false;
-    hideProgress();
-    await refreshAfterKernelChange();
-  }
+  });
 }
 
 // ========== Installed kernel list (badges + 检测 / 设为默认 / 删除) ==========
@@ -407,14 +429,11 @@ document.getElementById('kernel-auto-update')?.addEventListener('change', async 
     toast(error.message, { tone: 'error' });
   }
 });
-document.getElementById('kernel-download')?.addEventListener('click', async () => {
+document.getElementById('kernel-download')?.addEventListener('click', () => withKernelDownloadGuard(async () => {
   const progress = document.getElementById('kernel-progress');
-  const btn = document.getElementById('kernel-download');
   const cancelBtn = document.getElementById('kernel-cancel-download');
   try {
-    if (btn) btn.disabled = true;
     if (cancelBtn) cancelBtn.hidden = false;
-    progressState.active = true;
     if (progress) { progress.hidden = true; progress.textContent = ''; }
     renderProgress({ percent: 0, speed: 0, label: t('system.kernel.stageDownload') });
     toast(t('system.kernel.stableBegin'));
@@ -431,11 +450,10 @@ document.getElementById('kernel-download')?.addEventListener('click', async () =
       toast(t('system.kernel.stableFail') + message, { tone: 'error' });
     }
   } finally {
-    if (btn) btn.disabled = false;
     hideProgress();
     await refreshAfterKernelChange();
   }
-});
+}));
 document.getElementById('kernel-check-update')?.addEventListener('click', async () => {
   const progress = document.getElementById('kernel-progress');
   try {

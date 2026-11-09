@@ -1,17 +1,28 @@
 'use strict';
 
-// Offline test for the System Native theme's light/dark/auto resolution. renderer.js is a
-// browser script (uses window/document at load), so we extract the two pure functions from
-// its source and run them in a sandbox — this exercises the ACTUAL shipped logic, not a copy.
+// Offline test for the System Native theme's light/dark/auto resolution. The
+// theme system is a browser script (uses window/document at load), so we
+// extract the two pure functions from its source and run them in a sandbox —
+// this exercises the ACTUAL shipped logic, not a copy.
 
 const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
 
-const src = fs.readFileSync(path.join(__dirname, 'renderer.js'), 'utf8');
+// The color-mode resolution moved from renderer.js into renderer-theme.js
+// (second renderer.js split): the behaviour assertions scan the module, and
+// one wiring assertion keeps index.html tied to it (a0e755e pattern).
+const src = fs.readFileSync(path.join(__dirname, 'renderer-theme.js'), 'utf8');
+{
+  const index = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+  const themeTag = index.indexOf('src="renderer-theme.js');
+  const rendererTag = index.indexOf('src="renderer.js');
+  assert.ok(themeTag >= 0 && rendererTag > themeTag,
+    'index.html must load renderer-theme.js before renderer.js');
+}
 const grab = (name, re) => {
   const m = src.match(re);
-  if (!m) throw new Error(`could not extract ${name} from renderer.js`);
+  if (!m) throw new Error(`could not extract ${name} from renderer-theme.js`);
   return m[0];
 };
 const resolveSrc = grab('resolveColorMode', /function resolveColorMode\(pref, prefersDark\) \{[\s\S]*?\n\}/);

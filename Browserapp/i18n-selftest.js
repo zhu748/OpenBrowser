@@ -59,6 +59,10 @@ assert(resolveProfileLanguage({ privacy: { languageMode: 'zh-CN' } }, {}) === 'z
 // data-i18n nodes. They must never leave Chinese behind after switching language.
 const runtimeSourceFiles = [
   'renderer.js',
+  // second renderer.js split modules (loaded by index.html before renderer.js)
+  'renderer-select.js',
+  'renderer-theme.js',
+  'renderer-platform-install.js',
   'ui/ui-rpa.js',
   'ui/ui-dialogs.js',
   'ui/ui-api-mcp.js',
@@ -124,5 +128,11 @@ for (const sample of auditSamples) {
     assert(!/[\u3400-\u9fff]/.test(output), `environment audit English leak: ${output}`);
   }
 }
+
+// Locale data now lives in automation/data/locale/*.json (i18n.js is loader +
+// logic). The generated browser bridge must mirror the JSON byte-for-byte, so a
+// hand edit on either side fails the gate instead of silently shipping drift.
+const buildI18nData = require('./scripts/build-i18n-data.js');
+assert(buildI18nData.isUpToDate(), 'automation/data/locale/i18n-data.js is stale — run: node scripts/build-i18n-data.js');
 
 console.log('i18n-selftest: OK');

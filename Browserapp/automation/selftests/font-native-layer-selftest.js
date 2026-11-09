@@ -23,7 +23,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const appRoot = path.join(__dirname, '..');
+const appRoot = path.join(__dirname, '..', '..');
 const kernelsRoot = path.join(appRoot, 'kernels');
 const results = [];
 const check = (name, fn) => {
@@ -58,10 +58,27 @@ function fileHasMarker(file, marker) {
   return false;
 }
 
-function fontPack(platformDir) {
+/** True when the file is a git-LFS pointer placeholder (no real content on disk). */
+function isLfsPointer(file) {
+  const PREFIX = 'version https://git-lfs';
+  try {
+    const fd = fs.openSync(file, 'r');
+    try {
+      const buf = Buffer.alloc(PREFIX.length + 8);
+      const read = fs.readSync(fd, buf, 0, buf.length, 0);
+      return buf.subarray(0, read).toString('utf8').startsWith(PREFIX);
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch (_) {
+    return false;
+  }
+}
+
+function fontPack(platformDir, extraRoots = []) {
   const byOs = {};
   let total = 0;
-  const stack = [platformDir];
+  const stack = [platformDir, ...extraRoots];
   while (stack.length) {
     const dir = stack.pop();
     let entries = [];
@@ -70,7 +87,9 @@ function fontPack(platformDir) {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) { stack.push(full); continue; }
       const parts = full.split(path.sep);
-      const idx = parts.lastIndexOf('wayfern_fonts');
+      // 阶段 1 布局：共享正本目录名为 wayfern-fonts（连字符），物化副本为
+      // wayfern_fonts（下划线），两处都计入字体包统计。
+      const idx = Math.max(parts.lastIndexOf('wayfern_fonts'), parts.lastIndexOf('wayfern-fonts'));
       if (idx < 0 || !parts[idx + 1]) continue;
       byOs[parts[idx + 1]] = (byOs[parts[idx + 1]] || 0) + 1;
       total += 1;
@@ -82,6 +101,8 @@ function fontPack(platformDir) {
 /** Which kernels in this checkout advertise the native font layer, and with what assets. */
 function inspectKernel(platform, base) {
   let natives = 0;
+  let nativeCandidates = 0;
+  let pointerCandidates = 0;
   const stack = [base];
   while (stack.length) {
     const dir = stack.pop();
@@ -91,12 +112,21 @@ function inspectKernel(platform, base) {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) { stack.push(full); continue; }
       if (!/(Framework|chrome\.dll|chrome\.exe|libskit|^chrome$)/.test(entry.name)) continue;
+      nativeCandidates += 1;
+      if (isLfsPointer(full)) { pointerCandidates += 1; continue; }
       let size = 0; try { size = fs.statSync(full).size; } catch (_) { continue; }
       if (size < 1e6) continue;
       if (fileHasMarker(full, FONT_CONTROL_MARKER)) natives += 1;
     }
   }
-  return { platform, natives, fonts: fontPack(base) };
+  // pointer-only 检出（未 git lfs pull）里 natives 是“无法判定”而非“为 0”：这种平台行
+  // 的配对断言保持 inconclusive（见 check 3）；真实检出（二进制为真内容）守卫强度不变。
+  const pointerOnly = nativeCandidates > 0 && pointerCandidates === nativeCandidates;
+  // 阶段 1 布局（docs/wayfern-fonts-dedup-plan.md）：windows-x64 的字体正本在共享目录
+  // kernels/wayfern-fonts（未物化的开发机平台目录内没有副本）。配对断言按“平台目录或
+  // 共享正本”计数，门禁强度不降级；其它平台不加正本，避免误报 dead font packs。
+  const extraFontRoots = platform === 'windows-x64' ? [path.join(kernelsRoot, 'wayfern-fonts')] : [];
+  return { platform, natives, pointerOnly, fonts: fontPack(base, extraFontRoots) };
 }
 
 function kernelMatrix() {
@@ -145,7 +175,7 @@ check('native font control and a font pack are never split apart', () => {
 
 check('a kernel without the natives is not expected to carry a pack', () => {
   const inconsistent = matrix
-    .filter((entry) => entry.natives === 0 && entry.fonts.total > 0)
+    .filter((entry) => entry.natives === 0 && !entry.pointerOnly && entry.fonts.total > 0)
     .map((entry) => `${entry.platform}: pack without natives`);
   assert.deepStrictEqual(inconsistent, [], `dead font packs: ${inconsistent.join('; ')}`);
 });

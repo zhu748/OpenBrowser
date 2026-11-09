@@ -28,6 +28,16 @@ assert.deepStrictEqual(scripts.slice(rendererIndex - 2, rendererIndex), ['ui/ui-
 assert.deepStrictEqual(scripts.slice(rendererIndex + 1, rendererIndex + 1 + expectedModules.length), expectedModules,
   'UI modules load immediately after renderer.js in dependency order');
 
+// Second renderer.js split: the select widget, theme system and platform
+// install modules are classic scripts loaded before renderer.js — renderer.js
+// itself calls enhanceSelects()/applyUiTheme() during its top-level wiring.
+const splitModules = ['renderer-select.js', 'renderer-theme.js', 'renderer-platform-install.js'];
+for (const split of splitModules) {
+  const splitIndex = scripts.indexOf(split);
+  assert.ok(splitIndex >= 0, `index.html loads ${split}`);
+  assert.ok(splitIndex < scripts.indexOf('ui/ui-proxy.js'), `${split} loads before the ui/ domain modules and renderer.js`);
+}
+
 const noop = () => {};
 function nodeStub() {
   const value = {
@@ -84,6 +94,15 @@ context.window = context;
 context.ops = new Proxy({ onEvent: noop }, {
   get(target, key) { return key in target ? target[key] : async () => ({}); },
 });
+
+// Real page order: the second-split modules load before the ui/ domain
+// modules and renderer.js; run them first here too, so a top-level
+// redeclaration of a renderer-owned name (or a load-time crash in the split
+// modules) fails in this test instead of leaving a white Electron window.
+for (const script of splitModules) {
+  const splitSource = fs.readFileSync(path.join(root, script), 'utf8');
+  new vm.Script(splitSource, { filename: script }).runInContext(context);
+}
 
 // The proxy UI domain module loads before renderer.js in the real page; run it
 // first here too, so a top-level redeclaration of a renderer-owned name fails

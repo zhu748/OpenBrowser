@@ -23,3 +23,6 @@ CODE_OVERVIEW.md
 # Rust build output and packaged native helpers
 /target/
 /Browserapp/rust-core/
+
+# Kernel release fetch cache (scripts/fetch-kernels.js) — never commit
+Browserapp/.kernel-release-cache/

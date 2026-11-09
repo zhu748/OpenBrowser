@@ -28,7 +28,7 @@ const { writeOpenBrowserKernelInit } = require("../kernel-init-sync");
 
 const isMutateMode = process.argv.includes("--mutate");
 
-const appRoot = path.join(__dirname, "..");
+const appRoot = path.join(__dirname, "..", "..");
 const kernelRoot = path.join(appRoot, "kernels", "macos-x64");
 const launcher = path.join(kernelRoot, "launch_openbrowser.sh");
 

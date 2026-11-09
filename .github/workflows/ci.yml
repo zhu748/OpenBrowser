@@ -3,7 +3,7 @@ name: CI
 # Continuous integration gate for every push and pull request:
 # - lint: ESLint correctness rules (zero-error baseline, see eslint.config.js)
 # - smoke: dependency-free Node selftests (no Electron binary, no kernels)
-# - rust: fmt + clippy + tests for the openbrowser-core workspace
+# - rust: fmt + clippy + tests + JS<->Rust bridge selftests (parity + chaos)
 # Full installer builds remain in build-installers.yml (manual dispatch).
 
 on:
@@ -53,7 +53,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Selftests in this job need no kernels; exclude the whole LFS tree.
-          lfs: true
+          lfs: false
           sparse-checkout: |
             /*
             !/Browserapp/kernels/
@@ -64,10 +64,18 @@ jobs:
           cache: npm
           cache-dependency-path: Browserapp/package-lock.json
       - run: npm ci --include=dev --ignore-scripts
+      # Offline unit checks for the kernel-release fetch tooling (no network,
+      # no kernels needed): keeps scripts/fetch-kernels.js covered by the
+      # per-push gate. The real download path is exercised by the
+      # kernel-release / build-installers workflows.
+      - name: Kernel fetch tooling selftest
+        run: node scripts/fetch-kernels.js --selftest
       # Aggregate gate: scripts/selftest-all.js runs every dependency-free
-      # selftest (53 today) in one shot — a new selftest added to package.json's
-      # suite list runs here automatically instead of waiting for someone to
-      # paste another line into this workflow.
+      # selftest in one shot — a new selftest added to the SUITE registry in
+      # scripts/selftest-all.js runs here automatically instead of waiting for
+      # someone to paste another line into this workflow. Entries flagged
+      # darwinOnly are reported as skips on this Linux job (they need the
+      # macOS kernel launcher) and never count as passes.
       - name: Full selftest aggregate (kernel-free suite)
         run: npm run selftest:all
 
@@ -81,7 +89,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          lfs: true
+          lfs: false
           sparse-checkout: |
             /*
             !/Browserapp/kernels/
@@ -101,15 +109,15 @@ jobs:
           npm run selftest:version
 
   rust:
-    name: Rust core (fmt + clippy + tests)
+    name: Rust core (fmt + clippy + tests + bridge selftests)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Cargo needs no kernels; excluding the LFS tree also keeps the
           # checkout small (the kernel bundle is 5k+ files).
-          lfs: true
+          lfs: false
           sparse-checkout: |
             /*
             !/Browserapp/kernels/
@@ -120,12 +128,48 @@ jobs:
         with:
           toolchain: stable
           components: rustfmt, clippy
+      # The bridge selftests below run plain Node scripts; pin the same Node
+      # the lint/smoke jobs use so runner image drift cannot change results.
+      # No npm ci: their module tree (rust-core-bridge.js, the fixtures,
+      # proxy-forwarder.js) is node-builtin-only — nothing imports from
+      # node_modules.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
       - name: cargo fmt
         run: cargo fmt --all -- --check
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: cargo test
         run: cargo test --workspace --locked
+      # --- JS<->Rust bridge gate --------------------------------------------
+      # The bridge (automation/rust-core-bridge.js + the gated branch in
+      # proxy-forwarder.js startAuthenticatedProxy) is the only
+      # production-reachable Rust surface (docs/rust-core-decision.md), but
+      # until now it was exercised only by the manually dispatched
+      # build-installers workflow: a push that broke the JS bridge layer
+      # stayed green here. parity/chaos need no Chromium and no display —
+      # node builtins (http/net/child_process + ps) plus the built binary —
+      # so they slot into this job behind a release build.
+      # build:rustcore = scripts/build-rust-core.js: cargo build --release
+      # --locked at the repo root, copy to Browserapp/rust-core/, then
+      # verify the version JSON — it exits non-zero on any mismatch.
+      - name: Build Rust core (release)
+        working-directory: Browserapp
+        run: npm run build:rustcore
+      # Pin the binary explicitly instead of relying on the target/release
+      # fallback candidate in findRustCoreBinary(): the copied artifact is
+      # the exact binary build:rustcore just verified.
+      - name: Rust bridge parity selftest (JS<->Rust)
+        working-directory: Browserapp
+        env:
+          OPENBROWSER_RUST_CORE_BINARY: ${{ github.workspace }}/Browserapp/rust-core/openbrowser-core
+        run: npm run selftest:rustparity
+      - name: Rust bridge chaos selftest (JS<->Rust)
+        working-directory: Browserapp
+        env:
+          OPENBROWSER_RUST_CORE_BINARY: ${{ github.workspace }}/Browserapp/rust-core/openbrowser-core
+        run: npm run selftest:rustchaos
 
   # ~200 lines of Windows FFI (process/lock.rs, guardian.rs) compile to nothing
   # on Linux: cargo skips cfg(windows) blocks entirely, so per-push CI never
@@ -143,7 +187,7 @@ jobs:
           # the runner's workspace prefix they exceed Windows MAX_PATH and
           # checkout dies with "Filename too long". Cargo never reads kernels,
           # so exclude the tree — same block the smoke jobs already use.
-          lfs: true
+          lfs: false
           sparse-checkout: |
             /*
             !/Browserapp/kernels/

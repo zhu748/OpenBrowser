@@ -37,6 +37,23 @@ ok(managerSource.includes('this.activeDownload = { engine:'), 'installs register
 ok(managerSource.includes('register: (d) =>'), 'downloadFile exposes the Downloader instance');
 ok(managerSource.includes('downloading: this.activeDownload'), 'status() reports the in-flight download');
 
+// 2b. Wayfern feed version bookkeeping. Observed upstream defect: the feed's
+// top-level version ran one patch ahead of the builds its URLs served
+// (156.0.8078.81 announced vs 156.0.8078.80 assets), so the build parsed
+// from the download URL must be the version of record.
+const { buildVersionFromUrl } = require('./automation/browser-kernel.js');
+ok(typeof buildVersionFromUrl === 'function', 'buildVersionFromUrl() exported');
+ok(buildVersionFromUrl('https://download.wayfern.com/wayfern-156.0.8078.80-linux-x64-portable.tar.xz') === '156.0.8078.80', 'tar.xz URL build version parsed');
+ok(buildVersionFromUrl('https://download.wayfern.com/wayfern_156.0.8078.80-2.2_macos.dmg') === '156.0.8078.80', 'dmg URL build version parsed (package revision ignored)');
+ok(buildVersionFromUrl('https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.80/linux64/chrome-linux64.zip') === '156.0.8078.80', 'path-segment build version parsed');
+ok(buildVersionFromUrl('https://download.wayfern.com/wayfern-latest.zip') === '', 'unversioned URL falls back to empty');
+ok(buildVersionFromUrl('https://192.168.1.100/wayfern-latest.zip') === '', 'IPv4 host is not mistaken for a build version');
+ok(buildVersionFromUrl('https://127.0.0.1/download/wayfern-156.0.8078.80.tar.xz') === '156.0.8078.80', 'version in path wins over an IPv4 host');
+ok(buildVersionFromUrl('https://download.wayfern.com/wayfern-1.2.3.4.5.dmg') === '', 'truncated 5-segment version is rejected');
+ok(managerSource.includes('version: buildVersion || feedVersion'), 'fetchOfficialRelease records the URL build as the version');
+ok(managerSource.includes('feedVersion,'), 'fetchOfficialRelease keeps the announced feed version for diagnostics');
+ok(managerSource.includes('与实际构建'), 'feed/build divergence is surfaced through onProgress');
+
 // 3. Engine + IPC + preload plumbing
 const engine = read('engine.js');
 ok(engine.includes('async kernelDelete(') && engine.includes('async kernelCheck(') && engine.includes('async kernelCancelDownload('), 'engine exposes delete/check/cancel');

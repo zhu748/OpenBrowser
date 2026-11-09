@@ -96,12 +96,16 @@ function main() {
   // --- RPA path sandbox ---
   const rpaSrc = fs.readFileSync(path.join(__dirname, 'automation/rpa-engine.js'), 'utf8');
   assert.ok(rpaSrc.includes('resolveSafeRpaPath'), 'RPA must define path sandbox helper');
+  // Step dispatch is a lookup table (STEP_HANDLERS / STEP_TYPE_ALIASES) since
+  // the executeStepInternal if/else chain was refactored away, so each
+  // sandboxed step anchors on its table entry (whose handler is verified at
+  // module load time by the wiring check) plus the sandbox call it makes.
   assert.ok(
-    rpaSrc.includes("if (type === 'useexcel')")
+    rpaSrc.includes("useexcel: 'stepUseExcel'")
     && (rpaSrc.includes('resolveSafeRpaPath(filePath)') || rpaSrc.includes('resolveSpreadsheetPath')),
     'useExcel sandboxed'
   );
-  assert.ok(rpaSrc.includes("if (type === 'uploadattachment')") && rpaSrc.includes('resolveSafeRpaPath(filePath)'), 'uploadAttachment sandboxed');
+  assert.ok(rpaSrc.includes("uploadattachment: 'stepUploadAttachment'") && rpaSrc.includes('resolveSafeRpaPath(filePath)'), 'uploadAttachment sandboxed');
 
   // Runtime sandbox check via re-require internals is hard; unit-test helper by eval of function source
   // Load rpa-engine and exercise through temporary require of path logic:

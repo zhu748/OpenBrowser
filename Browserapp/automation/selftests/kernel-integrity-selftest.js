@@ -30,16 +30,20 @@ function countFontFiles(platformDir) {
     const dir = stack.pop();
     let entries = [];
     try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (_) { continue; }
-    const isFontRoot = path.basename(dir) === 'wayfern_fonts';
-    const insideFontRoot = isFontRoot || dir.includes(path.sep + 'wayfern_fonts' + path.sep);
+    // 阶段 1 布局：共享正本目录名为 wayfern-fonts（连字符），物化副本为
+    // wayfern_fonts（下划线），两处都计入配对断言。
+    const isFontRoot = ['wayfern_fonts', 'wayfern-fonts'].includes(path.basename(dir));
+    const insideFontRoot = isFontRoot
+      || dir.includes(path.sep + 'wayfern_fonts' + path.sep)
+      || dir.includes(path.sep + 'wayfern-fonts' + path.sep);
     for (const entry of entries) {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) { stack.push(full); continue; }
-      if (!insideFontRoot && path.basename(path.dirname(full)) !== 'wayfern_fonts') continue;
-      if (!/^wayfern_fonts/.test(path.basename(dir)) && path.basename(path.dirname(full)) !== 'wayfern_fonts' && !insideFontRoot) continue;
+      if (!insideFontRoot && !['wayfern_fonts', 'wayfern-fonts'].includes(path.basename(path.dirname(full)))) continue;
+      if (!/^wayfern[-_]fonts/.test(path.basename(dir)) && !['wayfern_fonts', 'wayfern-fonts'].includes(path.basename(path.dirname(full))) && !insideFontRoot) continue;
       total += 1;
       const parts = full.split(path.sep);
-      const idx = parts.lastIndexOf('wayfern_fonts');
+      const idx = Math.max(parts.lastIndexOf('wayfern_fonts'), parts.lastIndexOf('wayfern-fonts'));
       if (idx >= 0 && parts[idx + 1]) byOs[parts[idx + 1]] = (byOs[parts[idx + 1]] || 0) + 1;
     }
   }
@@ -253,7 +257,12 @@ function newManager(events) {
     for (const plan of [{ platform: 'macos-arm64', osDir: 'macos' }, { platform: 'windows-x64', osDir: 'win11' }]) {
       const base = path.join(kernelsRoot, plan.platform);
       if (!fs.existsSync(base)) continue;
-      const fonts = countFontFiles(base);
+      let fonts = countFontFiles(base);
+      // 阶段 1 布局：windows-x64 的字体正本在共享目录 kernels/wayfern-fonts（未物化
+      // 的开发机平台目录内没有副本）；配对断言按“平台目录或共享正本”计数，不降级。
+      if (plan.platform === 'windows-x64' && fonts.total === 0) {
+        fonts = countFontFiles(path.join(kernelsRoot, 'wayfern-fonts'));
+      }
       let nativeWithControl = 0;
       const stack = [base];
       while (stack.length) {
