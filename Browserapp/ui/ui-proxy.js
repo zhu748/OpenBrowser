@@ -496,7 +496,7 @@ async function refreshProxies() {
     if (!Array.isArray(proxyLibrary)) proxyLibrary = [];
   } catch (error) {
     proxyLibrary = [];
-    toast('加载代理库失败：' + error.message);
+    toast(tx('加载代理库失败：') + error.message);
   }
   renderProxyLibrarySelectors();
   renderProxies();
@@ -587,7 +587,7 @@ function readProxyForm() {
 
 async function runProxyBatchCheck(ids) {
   if (!ids.length) return toast(tx('请先勾选代理'));
-  toast('正在检测 ' + ids.length + ' 条代理…');
+  toast(tx('正在检测 ') + ids.length + tx(' 条代理…'));
   if (typeof window.ops.proxyCheckMany === 'function') {
     try {
       const summary = await window.ops.proxyCheckMany({ ids });
@@ -624,7 +624,7 @@ function openProxyApplyDialog(item) {
   const updateCount = () => {
     const checkedBoxes = listEl.querySelectorAll('input[type="checkbox"]:checked');
     const countEl = $('#proxy-apply-count');
-    if (countEl) countEl.textContent = `已选择 ${checkedBoxes.length} 个环境`;
+    if (countEl) countEl.textContent = tx('已选择 ') + checkedBoxes.length + tx(' 个环境');
     const selectAll = $('#proxy-apply-select-all');
     if (selectAll) {
       const allBoxes = listEl.querySelectorAll('input[type="checkbox"]');
@@ -680,7 +680,7 @@ const handleProxyRawChange = () => {
       $('#proxy-name').dataset.autoProxyName = 'true';
     }
     if (statusEl) {
-      statusEl.textContent = `已自动解析：${parsed.protocol.toUpperCase()}://${parsed.host}:${parsed.port}${parsed.username ? ' (含认证)' : ''}${parsed.remark ? ' #' + parsed.remark : ''}`;
+      statusEl.textContent = tx('已自动解析：') + parsed.protocol.toUpperCase() + '://' + parsed.host + ':' + parsed.port + (parsed.username ? tx(' (含认证)') : '') + (parsed.remark ? ' #' + parsed.remark : '');
     }
     syncThemedSelects($('#proxy-dialog'));
   } catch (_) {}

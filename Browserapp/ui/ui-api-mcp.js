@@ -132,7 +132,7 @@ document.getElementById('api-open-version')?.addEventListener('click', async () 
     toast(tx('接口正常'));
   } catch (error) {
     if (out) out.textContent = String(error);
-    toast('请求失败：' + error.message);
+    toast(tx('请求失败：') + error.message);
   }
 });
 document.getElementById('api-copy-curl')?.addEventListener('click', async () => {

@@ -30,7 +30,7 @@ $('#editor-proxy-library')?.addEventListener('change', (event) => {
   if (id) applyProxyLibrarySelection('editor', id);
   else {
     const status = $('#editor-proxy-library-status');
-    if (status) status.textContent = '未关联代理库节点';
+    if (status) status.textContent = tx('未关联代理库节点');
   }
 });
 
@@ -76,6 +76,13 @@ document.addEventListener('click', async (event) => {
   if (action?.dataset.action === 'copy-id') { navigator.clipboard.writeText(action.dataset.id).then(() => toast(tx('复制成功'))).catch(() => {}); closeRowMoreMenu(); }
   if (action?.dataset.action === 'export-profile') { exportProfile(action.dataset.id); }
   if (action?.dataset.action === 'note') { closeRowMoreMenu(); openProfileEditor(action.dataset.id); setTimeout(() => document.getElementById('editor-note')?.focus(), 80); }
+  // Roxy 对齐：查看窗口 / 重启 / 行级测代理 / 快捷标签 / 清除缓存 / 删除入回收站
+  if (action?.dataset.action === 'view') { closeRowMoreMenu(); openProfileEditor(action.dataset.id); makeEditorReadonly(); }
+  if (action?.dataset.action === 'restart') { closeRowMoreMenu(); restartProfile(action.dataset.id); }
+  if (action?.dataset.action === 'check-proxy') { closeRowMoreMenu(); checkProfileProxy(action.dataset.id); }
+  if (action?.dataset.action === 'tag') { openBatchQuickDialog('tag', action.dataset.id); }
+  if (action?.dataset.action === 'clear-cache') { closeRowMoreMenu(); clearProfileCache(action.dataset.id); }
+  if (action?.dataset.action === 'trash') { closeRowMoreMenu(); trashProfile(action.dataset.id); }
   if (!action && !event.target.closest('.row-more-wrap')) closeRowMoreMenu();
 
   const assign = event.target.closest('[data-extension-assign]'); if (assign) openAssign(assign.dataset.extensionAssign);
@@ -98,9 +105,15 @@ document.addEventListener('click', async (event) => {
 });
 
 document.addEventListener('change', async (event) => {
+  if (event.target.id === 'editor-engine') {
+    const warn = document.getElementById('editor-engine-warn');
+    const current = (typeof ui !== 'undefined' && typeof editingProfileId !== 'undefined')
+      ? ui.profiles.find((item) => item.id === editingProfileId) : null;
+    if (warn) warn.hidden = !current || String(current.engine === 'firefox' ? 'firefox' : 'chromium') === event.target.value;
+  }
   if (event.target.dataset.extensionToggle) {
     const input = event.target; input.disabled = true;
-    try { toast(input.checked ? '正在批量启用扩展并重启运行环境...' : '正在批量停用扩展并重启运行环境...'); const result = await window.ops.toggleExtensionAll(input.dataset.extensionToggle, input.checked); invalidateViewCache(['extensions', 'profiles', 'sync']); await refreshExtensions(); await refreshStatus(); await refreshSessions(); toast(tx(`已${input.checked ? '启用' : '停用'}，影响 ${result.affected} 个环境，重启 ${result.restarted} 个`)); }
+    try { toast(input.checked ? tx('正在批量启用扩展并重启运行环境...') : tx('正在批量停用扩展并重启运行环境...')); const result = await window.ops.toggleExtensionAll(input.dataset.extensionToggle, input.checked); invalidateViewCache(['extensions', 'profiles', 'sync']); await refreshExtensions(); await refreshStatus(); await refreshSessions(); toast(tx(`已${input.checked ? '启用' : '停用'}，影响 ${result.affected} 个环境，重启 ${result.restarted} 个`)); }
     catch (error) { input.checked = !input.checked; toast(error.message); } finally { input.disabled = false; }
   }
   if (event.target.dataset.profileSelect) { event.target.checked ? selectedProfiles.add(event.target.dataset.profileSelect) : selectedProfiles.delete(event.target.dataset.profileSelect); updateProfileSelectionUi(); }
@@ -304,7 +317,7 @@ $('#proxy-apply-select-all')?.addEventListener('change', (e) => {
   const boxes = document.querySelectorAll('#proxy-apply-list input[type="checkbox"]');
   boxes.forEach((b) => { b.checked = checked; });
   const countEl = $('#proxy-apply-count');
-  if (countEl) countEl.textContent = `已选择 ${checked ? boxes.length : 0} 个环境`;
+  if (countEl) countEl.textContent = tx('已选择 ') + (checked ? boxes.length : 0) + tx(' 个环境');
 });
 
 $('#proxy-apply-form')?.addEventListener('submit', async (event) => {
@@ -338,10 +351,10 @@ $('#proxy-apply-form')?.addEventListener('submit', async (event) => {
     engineProfiles = await window.ops.syncProfiles(ui.profiles);
     renderProfiles();
     $('#proxy-apply-dialog').close();
-    toast(`已成功应用代理到 ${modified} 个环境`);
+    toast(tx('已成功应用代理到 ') + modified + tx(' 个环境'));
     log('Proxy', `应用代理 ${item.name || item.host} 到 ${modified} 个环境`);
   } catch (err) {
-    toast('应用失败：' + err.message);
+    toast(tx('应用失败：') + err.message);
   } finally { if (submitter) submitter.disabled = false; }
 });
 
@@ -407,10 +420,10 @@ $('#proxy-form')?.addEventListener('submit', async (event) => {
     $('#proxy-dialog').close();
     invalidateViewCache(['proxies', 'profiles']);
     await refreshProxies();
-    toast(draft.id ? '代理已更新' : '代理已创建');
+    toast(draft.id ? tx('代理已更新') : tx('代理已创建'));
     log('Proxy', (draft.id ? '更新 ' : '新建 ') + (draft.name || draft.host));
   } catch (error) {
-    toast('保存失败：' + error.message);
+    toast(tx('保存失败：') + error.message);
   } finally { if (submitter) submitter.disabled = false; }
 });
 
@@ -469,7 +482,7 @@ $('#editor-proxy-raw')?.addEventListener('input', () => {
     const library = $('#editor-proxy-library');
     if (library) library.value = '';
     const status = $('#editor-proxy-library-status');
-    if (status) status.textContent = '未关联代理库节点（使用快捷粘贴代理）';
+    if (status) status.textContent = tx('未关联代理库节点（使用快捷粘贴代理）');
     window.__editorProxyAuthTouched = true;
     syncThemedSelects($('#editor-proxy-fields'));
   } catch (_) {}
@@ -496,7 +509,7 @@ $('#editor-proxy-host')?.addEventListener('input', () => {
     const library = $('#editor-proxy-library');
     if (library) library.value = '';
     const status = $('#editor-proxy-library-status');
-    if (status) status.textContent = '未关联代理库节点（使用快捷粘贴代理）';
+    if (status) status.textContent = tx('未关联代理库节点（使用快捷粘贴代理）');
     syncThemedSelects($('#editor-proxy-fields'));
   } catch (_) {}
 });
@@ -634,7 +647,7 @@ document.addEventListener('click', async (event) => {
     toast(tx(`已安装 ${result.extension?.name || '扩展'}`));
     log('Extension', `推荐安装 ${result.extension?.name || url}`);
   } catch (error) {
-    toast('安装失败：' + error.message);
+    toast(tx('安装失败：') + error.message);
     log('Error', error.message);
   }
 });
@@ -644,7 +657,7 @@ $('#batch-set-direct')?.addEventListener('click', async () => {
   try {
     const result = await applySelectedNetworkMode('direct', { restart: true });
     log('Batch', '批量设为本地直连 · ' + result.count);
-    toast('已将 ' + result.count + ' 个环境设为本地直连');
+    toast(tx('已将 ') + result.count + tx(' 个环境设为本地直连'));
   } catch (error) {
     toast(error.message);
   }

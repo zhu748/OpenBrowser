@@ -305,7 +305,7 @@ async function refreshRpaTasks(preloaded) {
     delBtn.onclick = async () => {
       const ok = await confirmRpaAction({
         title: tx('删除任务'),
-        message: `确定要删除任务「${taskName}」吗？`,
+        message: tx('确定要删除任务「') + taskName + tx('」吗？'),
         danger: true,
         okText: tx('删除'),
         cancelText: tx('取消'),
@@ -317,7 +317,7 @@ async function refreshRpaTasks(preloaded) {
         await refreshRpaTasks();
         await refreshRpaRuns();
       } catch (err) {
-        toast('删除失败：' + err.message);
+        toast(tx('删除失败：') + err.message);
       }
     };
     const tdOp = document.createElement('td');
@@ -439,7 +439,7 @@ async function refreshRpaStore() {
     if (meta) meta.textContent = t('rpa.store.localMeta');
   } catch (error) {
     rpaStoreTemplates = [];
-    toast('加载模板仓库失败：' + error.message);
+    toast(tx('加载模板仓库失败：') + error.message);
   }
   renderRpaStore();
 }
@@ -665,7 +665,7 @@ async function refreshRpaPage() {
     if (!Array.isArray(rpaPlans)) rpaPlans = [];
   } catch (error) {
     rpaPlans = [];
-    toast('加载自动脚本失败：' + error.message);
+    toast(tx('加载自动脚本失败：') + error.message);
   }
   if (rpaSelectedId) {
     const plan = rpaPlans.find((p) => p.id === rpaSelectedId) || await window.ops.rpaGetPlan(rpaSelectedId);
@@ -695,7 +695,7 @@ async function createRpaPlan(name) {
 
 document.getElementById('rpa-new-plan')?.addEventListener('click', () => createRpaPlan().catch((e) => toast(e.message)));
 document.getElementById('rpa-new-plan-2')?.addEventListener('click', () => createRpaPlan().catch((e) => toast(e.message)));
-document.getElementById('rpa-create-task')?.addEventListener('click', () => createRpaPlan('任务流程 ' + new Date().toLocaleString()).catch((e) => toast(e.message)));
+document.getElementById('rpa-create-task')?.addEventListener('click', () => createRpaPlan(tx('任务流程 ') + new Date().toLocaleString()).catch((e) => toast(e.message)));
 document.getElementById('rpa-refresh')?.addEventListener('click', refreshRpaPage);
 document.getElementById('rpa-task-refresh')?.addEventListener('click', refreshRpaTasks);
 document.getElementById('rpa-task-select-all')?.addEventListener('change', (event) => {
@@ -714,7 +714,7 @@ document.getElementById('rpa-task-delete-checked')?.addEventListener('click', as
   if (!ids.length) return toast(tx('请先勾选要删除的任务'));
   const ok = await confirmRpaAction({
     title: tx('批量删除任务'),
-    message: `确定要删除选中的 ${ids.length} 个任务吗？`,
+    message: tx('确定要删除选中的 ') + ids.length + tx(' 个任务吗？'),
     danger: true,
     okText: tx('删除'),
     cancelText: tx('取消'),
@@ -722,11 +722,11 @@ document.getElementById('rpa-task-delete-checked')?.addEventListener('click', as
   if (!ok) return;
   try {
     const res = await window.ops.rpaTaskDelete(ids);
-    toast(`已删除 ${res?.deleted?.length || ids.length} 个任务`);
+    toast(tx('已删除 ') + (res?.deleted?.length || ids.length) + tx(' 个任务'));
     await refreshRpaTasks();
     await refreshRpaRuns();
   } catch (err) {
-    toast('删除失败：' + err.message);
+    toast(tx('删除失败：') + err.message);
   }
 });
 document.getElementById('rpa-run-refresh')?.addEventListener('click', refreshRpaRuns);
@@ -772,7 +772,7 @@ document.getElementById('rpa-store-import')?.addEventListener('click', async () 
   try {
     const result = await window.ops.rpaTemplateImport();
     if (result?.canceled) return;
-    toast(`导入 ${result.imported || 0} 个模板` + (result.skipped?.length ? `，跳过 ${result.skipped.length}` : ''));
+    toast(tx('导入 ') + (result.imported || 0) + tx(' 个模板') + (result.skipped?.length ? tx('，跳过 ') + result.skipped.length : ''));
     await refreshRpaStore();
   } catch (e) { toast(e.message); }
 });
@@ -780,7 +780,7 @@ document.getElementById('rpa-store-export-all')?.addEventListener('click', async
   try {
     const result = await window.ops.rpaTemplateExport(null);
     if (result?.canceled) return;
-    toast(result.count ? `已导出 ${result.count} 个自定义模板` : '没有可导出的自定义模板（已写空包）');
+    toast(result.count ? tx('已导出 ') + result.count + tx(' 个自定义模板') : tx('没有可导出的自定义模板（已写空包）'));
   } catch (e) { toast(e.message); }
 });
 document.getElementById('rpa-store-custom')?.addEventListener('click', () => {
@@ -883,14 +883,14 @@ document.getElementById('rpa-run')?.addEventListener('click', async () => {
     toast(tx('自动脚本运行中…'));
     const result = await window.ops.rpaRun({ plan_id: plan.id, profile_ids: profileIds });
     appendRpaLog('完成：' + JSON.stringify(result));
-    toast(result.success === false ? '自动脚本有失败任务' : '自动脚本完成');
+    toast(result.success === false ? tx('自动脚本有失败任务') : tx('自动脚本完成'));
     await refreshRpaStatusBadge();
     await refreshRpaTasks();
     await refreshRpaRuns();
     log('自动脚本', '运行 ' + plan.plan_name);
   } catch (error) {
     appendRpaLog('错误：' + error.message);
-    toast('运行失败：' + error.message);
+    toast(tx('运行失败：') + error.message);
   }
 });
 

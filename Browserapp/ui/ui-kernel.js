@@ -23,10 +23,10 @@ const save = app.save || (() => {});
 const ENGINE_LABEL = { chromium: 'Chrome for Testing', firefox: 'Firefox' };
 
 function kernelSourceLabel(source) {
-  if (source === 'donut-wayfern') return '独立内核';
+  if (source === 'donut-wayfern') return tx('独立内核');
   if (source === 'chrome-stable') return 'Google Chrome Stable';
   if (source === 'chrome-for-testing') return 'Chrome for Testing';
-  if (source === 'custom') return '自定义';
+  if (source === 'custom') return tx('自定义');
   if (source === 'mozilla') return 'Firefox';
   return source || '—';
 }

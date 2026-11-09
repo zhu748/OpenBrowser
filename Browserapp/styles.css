@@ -239,3 +239,18 @@
 .acc-row label.acc-cell{position:relative}
 .acc-row .acc-2fa{padding-right:74px}
 .acc-row .acc-remove{position:absolute;right:0;bottom:0;height:37px;padding:0 12px;border:1px solid var(--border);border-radius:7px;background:#fff;color:#c43a49;font-size:12px;cursor:pointer}
+
+/* Round-3 alignment: optional columns default hidden, enabled per table class */
+.profile-table-compact td.col-created,.profile-table-compact td.col-updated,.profile-table-compact td.col-remaining{display:none}
+.profile-table-compact.cols-created td.col-created,.profile-table-compact.cols-created th.col-created{display:table-cell}
+.profile-table-compact.cols-updated td.col-updated,.profile-table-compact.cols-updated th.col-updated{display:table-cell}
+.profile-table-compact.cols-remaining td.col-remaining,.profile-table-compact.cols-remaining th.col-remaining{display:table-cell}
+.profile-table-compact .cols-menu{position:absolute;z-index:60;min-width:160px}
+.cols-config-wrap{position:relative}
+.cols-menu button{display:flex;width:100%;gap:6px;align-items:center;padding:6px 10px;background:none;border:0;cursor:pointer;text-align:left}
+.cols-menu button:hover{background:rgba(127,127,127,.12)}
+.profile-table-compact.hide-note .col-note,.profile-table-compact.hide-tag .col-tag,.profile-table-compact.hide-group .col-group,.profile-table-compact.hide-lastopen .col-lastopen,.profile-table-compact.hide-ext .col-ext,.profile-table-compact.hide-status .col-status,.profile-table-compact th.col-note[hidden],.profile-table-compact th.col-tag[hidden],.profile-table-compact th.col-group[hidden],.profile-table-compact th.col-lastopen[hidden],.profile-table-compact th.col-ext[hidden],.profile-table-compact th.col-status[hidden],.profile-table-compact th.col-remaining[hidden],.profile-table-compact th.col-created[hidden],.profile-table-compact th.col-updated[hidden]{display:none}
+#view-profiles th[data-sort]{cursor:pointer;user-select:none}
+#view-profiles th[data-sort].sort-asc::after{content:' \2191';color:#245cff}
+#view-profiles th[data-sort].sort-desc::after{content:' \2193';color:#245cff}
+.field-warn{color:#b45309;font-size:12px;margin-top:4px;display:block}

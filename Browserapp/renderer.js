@@ -452,6 +452,26 @@ try {
   save();
 } catch (_) {}
 
+// Roxy 对齐：回收站保留 7 天，启动时自动清理过期项
+const TRASH_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+let profileSort = { key: '', dir: 1 };
+async function purgeExpiredTrash() {
+  const now = Date.now();
+  const expired = ui.profiles.filter((p) => p.trashed && p.trashedAt && now - Date.parse(p.trashedAt) > TRASH_RETENTION_MS);
+  if (!expired.length) return;
+  const ids = expired.map((p) => p.id);
+  try {
+    await window.ops.purgeProfiles(ids, true);
+    ui.profiles = ui.profiles.filter((p) => !ids.includes(p.id));
+    for (const id of ids) { selectedProfiles.delete(id); selectedSessions.delete(id); }
+    save();
+    invalidateViewCache(['profiles', 'groups']);
+    renderProfiles();
+    log('Trash', `已自动清理 ${ids.length} 个超过 7 天的回收站环境`);
+  } catch (_) {}
+}
+setTimeout(() => { purgeExpiredTrash(); }, 4000);
+
 let activeGroupFilter = 'all'; // 'all' | 'ungrouped' | groupId
 
 let __groupListCache = null; // [groupsRef, sortedArray]
@@ -1602,7 +1622,11 @@ new MutationObserver((records) => {
 function toast(message, { tone = 'status' } = {}) {
   const value = $('#toast');
   if (!value) return;
-  value.textContent = message;
+  // Engine/IPC 错误正文多为中文短语，统一过一遍 zh→en 映射（英文与 zh 环境下均为恒等）
+  const translated = typeof message === 'string'
+    ? (window.OpenBrowserI18n?.translateChineseUiText?.(message) ?? message)
+    : message;
+  value.textContent = translated;
   value.dataset.tone = tone;
   value.setAttribute('role', tone === 'error' ? 'alert' : 'status');
   value.setAttribute('aria-live', tone === 'error' ? 'assertive' : 'polite');
@@ -1765,8 +1789,45 @@ function editorResolution() {
 
 function editorCookies() {
   const raw = $('#editor-cookies').value.trim(); if (!raw) return '';
-  let values; try { values = JSON.parse(raw); } catch (_) { throw new Error(tx('Cookie JSON 格式错误')); }
-  if (!Array.isArray(values) || values.some((item) => !item || typeof item !== 'object' || typeof item.name !== 'string' || typeof item.value !== 'string')) throw new Error(tx('Cookie 必须是包含 name 和 value 的 JSON 数组'));
+  // Roxy 对齐：支持 JSON 数组 / Netscape / Name=Value 三种格式；
+  // Name=Value 未写 domain 时按当前平台启动网址自动补 domain。
+  const platformSel = $('#editor-platform-type');
+  const startUrl = platformSel?.selectedOptions?.[0]?.dataset.url
+    || $('#editor-start-urls')?.value?.split(/\r?\n/).find((line) => line.trim())
+    || '';
+  let origin = '';
+  try { origin = startUrl ? new URL(startUrl).origin : ''; } catch (_) { origin = ''; }
+  const fromPair = (name, value, domain, path, extra) => ({
+    name: String(name).trim(),
+    value: String(value),
+    domain: domain || (origin ? new URL(origin).hostname : ''),
+    path: path || '/',
+    ...extra,
+  });
+  const parseNetscape = (text) => text.split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith('#')).map((line) => {
+    const parts = line.split('\t');
+    if (parts.length < 6) return null;
+    const [domain, _flag, path, secure, _expires, name, value] = parts;
+    return fromPair(name, value ?? '', domain, path, { secure: secure === 'TRUE' });
+  }).filter(Boolean);
+  const parsePairs = (text) => text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line) => {
+    const eq = line.indexOf('=');
+    if (eq <= 0) return null;
+    return fromPair(line.slice(0, eq), line.slice(eq + 1), '', '/');
+  }).filter(Boolean);
+  if (raw.startsWith('[') || raw.startsWith('{')) {
+    let values; try { values = JSON.parse(raw); } catch (_) { throw new Error(tx('Cookie JSON 格式错误')); }
+    if (!Array.isArray(values)) values = [values];
+    if (values.some((item) => !item || typeof item !== 'object' || typeof item.name !== 'string' || typeof item.value !== 'string')) throw new Error(tx('Cookie 必须是包含 name 和 value 的 JSON 数组'));
+    return JSON.stringify(values);
+  }
+  if (/^#( Netscape|HTTP Cookie)/i.test(raw) || raw.includes('\t')) {
+    const values = parseNetscape(raw);
+    if (!values.length) throw new Error(tx('Cookie 格式错误，请检查格式'));
+    return JSON.stringify(values);
+  }
+  const values = parsePairs(raw);
+  if (!values.length) throw new Error(tx('Cookie 格式错误，请检查格式'));
   return JSON.stringify(values);
 }
 
@@ -2145,7 +2206,7 @@ function renderProxyLibrarySelect(select, selectedId = '', { includeManual = tru
   if (!select) return;
   const value = String(selectedId || '').trim();
   select.replaceChildren();
-  if (includeManual) select.append(new Option('手动填写代理（不关联代理库）', ''));
+  if (includeManual) select.append(new Option(tx('手动填写代理（不关联代理库）'), ''));
   for (const item of proxyLibrary) {
     select.append(new Option(proxyLibraryLabel(item), String(item.id)));
   }
@@ -2470,6 +2531,8 @@ function updateProfileSelectionUi() {
     '#stop-selected',
     '#copy-selected',
     '#batch-edit-preferences',
+    '#batch-note',
+    '#batch-tag',
     '#batch-update',
     '#batch-set-direct',
     '.batch-group-assign',
@@ -2586,7 +2649,7 @@ async function cloneProfile(id) {
     id: newId,
     number,
     name: String(number),
-    title: target.title ? `${target.title} (副本)` : '',
+    title: target.title ? `${target.title} ${tx('(副本)')}` : '',
     cookies: '',
     exitIp: '',
     exitCountryCode: '',
@@ -2679,6 +2742,27 @@ function filteredProfilesForCurrentView() {
   // Roxy 对齐：顶部标签条（全部窗口/收藏/已打开）
   if (activeListTab === 'fav') result = result.filter((profile) => profile.favorite && !profile.trashed);
   if (activeListTab === 'open') result = result.filter((profile) => profileEngine(profile.id).running);
+  // Roxy 对齐：表头点击排序（编号/名称/最后打开/创建/更新）
+  if (profileSort?.key) {
+    const dir = profileSort.dir || 1;
+    const sortValueOf = (profile) => {
+      switch (profileSort.key) {
+        case 'number': return Number(displayProfileNumber(profile)) || 0;
+        case 'name': return String(profile.title || profile.name || '').toLowerCase();
+        case 'lastopen': return Date.parse(profile.lastOpenedAt || '') || 0;
+        case 'created': return Date.parse(profile.createdAt || '') || 0;
+        case 'updated': return Date.parse(profile.updatedAt || '') || 0;
+        default: return 0;
+      }
+    };
+    result = [...result].sort((a, b) => {
+      const va = sortValueOf(a);
+      const vb = sortValueOf(b);
+      if (va < vb) return -dir;
+      if (va > vb) return dir;
+      return 0;
+    });
+  }
   return result;
 }
 
@@ -2711,6 +2795,40 @@ function switchListTab(tab) {
 function closeRowMoreMenu() {
   document.querySelectorAll('.row-more-menu').forEach((menu) => menu.remove());
 }
+// Roxy 对齐：行菜单全集（查看/编辑/开关/重启/收藏/复制ID/备注/标签/测代理/导出/克隆/清缓存 + 删除）
+function rowMenuItemsFor(profile, info) {
+  return [
+    ['view', t('profiles.menuView') || '查看窗口', 'eye'],
+    ['edit', t('profiles.menuEdit') || '编辑窗口', 'pencil'],
+    [info.running ? 'stop' : 'start', info.running ? (t('action.stop')) : (t('profiles.openProfile') || '打开窗口'), 'play'],
+    ...(info.running ? [['restart', t('profiles.menuRestart') || '重启窗口', 'rotate-cw']] : []),
+    ['fav', profile.favorite ? (t('profiles.unfavorite') || '取消收藏') : (t('profiles.favorite') || '收藏'), 'star'],
+    ['copy-id', t('profiles.copyId') || '复制窗口 ID', 'copy'],
+    ['note', profile.note ? (t('profiles.editNote') || '修改备注') : (t('profiles.addNote') || '添加备注'), 'sticky-note'],
+    ['tag', t('profiles.menuTag') || '添加标签', 'tags'],
+    ['check-proxy', t('profiles.menuCheckProxy') || '测试代理 IP', 'radar'],
+    ['export-profile', t('profiles.exportProfile') || '导出窗口', 'download'],
+    ['clone', t('action.clone') || '克隆', 'copy-plus'],
+    ['clear-cache', t('profiles.menuClearCache') || '清除缓存', 'eraser'],
+  ];
+}
+function fillRowMenu(menu, profile, info) {
+  for (const [act, label, icon] of rowMenuItemsFor(profile, info)) {
+    const btn = element('button', '', '');
+    btn.dataset.action = act;
+    btn.dataset.id = profile.id;
+    btn.innerHTML = `<i data-lucide="${icon}"></i><span></span>`;
+    btn.querySelector('span').textContent = label;
+    menu.append(btn);
+  }
+  const danger = element('button', '', '');
+  danger.dataset.action = activeGroupFilter === 'trash' ? 'purge' : 'trash';
+  danger.dataset.id = profile.id;
+  danger.style.color = '#c43a49';
+  danger.innerHTML = `<i data-lucide="trash-2"></i><span></span>`;
+  danger.querySelector('span').textContent = t('profiles.menuDelete') || '删除窗口';
+  menu.append(danger);
+}
 function toggleRowMoreMenu(button) {
   const wrap = button.closest('.row-more-wrap');
   if (!wrap) return;
@@ -2721,32 +2839,197 @@ function toggleRowMoreMenu(button) {
   if (!profile) return;
   const info = profileEngine(profile.id);
   const menu = element('div', 'row-more-menu');
-  const items = [
-    [info.running ? 'stop' : 'start', info.running ? (t('action.stop')) : (t('profiles.openProfile') || '打开窗口'), 'play'],
-    ['edit', t('profiles.menuEdit') || '编辑窗口', 'pencil'],
-    ['fav', profile.favorite ? (t('profiles.unfavorite') || '取消收藏') : (t('profiles.favorite') || '收藏'), 'star'],
-    ['copy-id', t('profiles.copyId') || '复制窗口 ID', 'copy'],
-    ['note', profile.note ? (t('profiles.editNote') || '修改备注') : (t('profiles.addNote') || '添加备注'), 'sticky-note'],
-    ['export-profile', t('profiles.exportProfile') || '导出窗口', 'download'],
-    ['clone', t('action.clone') || '克隆', 'copy-plus'],
-  ];
-  for (const [act, label, icon] of items) {
-    const btn = element('button', '', '');
-    btn.dataset.action = act;
-    btn.dataset.id = profile.id;
-    btn.innerHTML = `<i data-lucide="${icon}"></i><span></span>`;
-    btn.querySelector('span').textContent = label;
-    menu.append(btn);
-  }
-  const danger = element('button', '', '');
-  danger.dataset.action = 'purge';
-  danger.dataset.id = profile.id;
-  danger.style.color = '#c43a49';
-  danger.innerHTML = `<i data-lucide="trash-2"></i><span></span>`;
-  danger.querySelector('span').textContent = t('profiles.menuDelete') || '删除窗口';
-  menu.append(danger);
+  fillRowMenu(menu, profile, info);
   wrap.append(menu);
   if (window.lucide?.createIcons) window.lucide.createIcons({ attrs: {}, nameAttr: 'data-lucide' });
+}
+// Roxy 对齐：整行右键弹出与「其他」一致的动作菜单
+document.getElementById('profile-table')?.closest('table')?.addEventListener('contextmenu', (event) => {
+  const row = event.target.closest('tr[data-profile-id]');
+  if (!row || activeGroupFilter === 'trash') return;
+  event.preventDefault();
+  closeRowMoreMenu();
+  const profile = ui.profiles.find((item) => item.id === row.dataset.profileId);
+  if (!profile) return;
+  const menu = element('div', 'row-more-menu');
+  menu.style.position = 'fixed';
+  menu.style.left = `${Math.min(event.clientX, window.innerWidth - 220)}px`;
+  menu.style.top = `${Math.min(event.clientY, window.innerHeight - 380)}px`;
+  menu.style.zIndex = '80';
+  fillRowMenu(menu, profile, profileEngine(profile.id));
+  document.body.append(menu);
+  if (window.lucide?.createIcons) window.lucide.createIcons({ attrs: {}, nameAttr: 'data-lucide' });
+  const closer = (clickEvent) => {
+    if (!clickEvent.target.closest('.row-more-menu')) { closeRowMoreMenu(); document.removeEventListener('click', closer); }
+  };
+  setTimeout(() => document.addEventListener('click', closer));
+});
+
+async function restartProfile(id) {
+  const info = profileEngine(id);
+  if (!info.running) return startProfile(id);
+  try { await stopProfile(id); } catch (_) {}
+  return startProfile(id);
+}
+async function trashProfile(id) {
+  const target = ui.profiles.find((item) => item.id === id);
+  if (!target) return;
+  if (!await confirmAction({
+    title: t('profiles.menuDelete') || '删除窗口',
+    message: t('trash.trashConfirmSingle') || '您确认要将所选窗口移至回收站吗？',
+    confirmLabel: t('profiles.menuDelete') || '删除窗口',
+    tone: 'danger',
+  })) return;
+  try {
+    await window.ops.trashProfiles([id]);
+    target.trashed = true;
+    target.trashedAt = new Date().toISOString();
+    selectedProfiles.delete(id);
+    selectedSessions.delete(id);
+    save();
+    invalidateViewCache(['profiles', 'groups', 'sync']);
+    engineProfiles = await window.ops.syncProfiles(ui.profiles);
+    renderProfiles();
+    toast(t('trash.trashed') || '已移入回收站');
+  } catch (error) {
+    toast((t('trash.trashFailed') || '移入回收站失败') + ': ' + error.message);
+  }
+}
+async function clearProfileCache(id) {
+  const profile = ui.profiles.find((item) => item.id === id);
+  if (!profile) return;
+  if (profileEngine(id).running) return toast(tx('请先关闭该窗口，再清除缓存'));
+  if (!await confirmAction({
+    title: tx('清除缓存及 Cookie'),
+    message: tx('清除该环境的缓存及 Cookie？需先关闭窗口。'),
+    confirmLabel: tx('确认清除'),
+    tone: 'danger',
+  })) return;
+  try {
+    await window.ops.clearProfileCacheCookies(id);
+    toast(tx('缓存及 Cookie 已清除'));
+  } catch (error) {
+    toast(tx('清除失败：') + error.message);
+  }
+}
+// Roxy 对齐：批量备注 / 批量标签（行菜单单个标签也走这里）
+function openBatchQuickDialog(mode, singleId = null) {
+  const ids = singleId ? [singleId] : [...selectedProfiles];
+  if (!ids.length) return toast(tx('请先选择环境'));
+  const dialog = $('#batch-quick-dialog');
+  if (!dialog) return;
+  $('#batch-quick-title').textContent = t(mode === 'note' ? 'profiles.batchNote' : 'profiles.batchTag');
+  $('#batch-quick-summary').textContent = t('profiles.selected', { n: ids.length });
+  const field = $('#batch-quick-value');
+  field.value = '';
+  field.placeholder = mode === 'note' ? (t('profiles.addNote') || '添加备注') : (t('profiles.tagPlaceholder') || '输入标签');
+  field.dataset.mode = mode;
+  field.dataset.ids = JSON.stringify(ids);
+  dialog.showModal();
+  setTimeout(() => field.focus(), 60);
+}
+$('#batch-quick-form')?.addEventListener('submit', async (event) => {
+  if (event.submitter?.value === 'cancel') return $('#batch-quick-dialog').close();
+  event.preventDefault();
+  const field = $('#batch-quick-value');
+  const mode = field.dataset.mode || 'note';
+  let ids = [];
+  try { ids = JSON.parse(field.dataset.ids || '[]'); } catch (_) { ids = []; }
+  const value = field.value.trim();
+  for (const id of ids) {
+    const profile = ui.profiles.find((item) => item.id === id);
+    if (!profile) continue;
+    if (mode === 'tag') profile.tag = value;
+    else profile.note = value;
+  }
+  save();
+  invalidateViewCache(['profiles', 'sync']);
+  try { engineProfiles = await window.ops.syncProfiles(ui.profiles); } catch (_) {}
+  $('#batch-quick-dialog').close();
+  renderProfiles();
+  toast(t(mode === 'tag' ? 'batch.tagApplied' : 'batch.noteApplied', { n: ids.length }));
+});
+$('#batch-note')?.addEventListener('click', () => openBatchQuickDialog('note'));
+$('#batch-tag')?.addEventListener('click', () => openBatchQuickDialog('tag'));
+
+// Roxy 对齐：自定义表头（列显隐，localStorage 持久化）
+const PROFILE_COL_DEFS = [
+  ['created', 'profiles.col.created'],
+  ['updated', 'profiles.col.updated'],
+  ['note', 'profiles.col.note'],
+  ['tag', 'profiles.col.tag'],
+  ['group', 'profiles.col.project'],
+  ['lastopen', 'profiles.col.lastOpen'],
+  ['ext', 'profiles.col.ext'],
+  ['status', 'profiles.col.status'],
+  ['remaining', 'trash.remaining'],
+];
+let hiddenProfileCols = new Set((() => {
+  try { return JSON.parse(localStorage.getItem('openbrowser-profile-cols-v1') || '[]'); } catch (_) { return []; }
+})());
+function applyProfileColumnVisibility(inTrash = false) {
+  const table = document.querySelector('.profile-table-compact');
+  if (!table) return;
+  for (const [col] of PROFILE_COL_DEFS) {
+    const th = table.querySelector(`th.col-${col}`);
+    if (th) th.hidden = hiddenProfileCols.has(col);
+    table.classList.toggle(`hide-${col}`, hiddenProfileCols.has(col));
+  }
+  table.classList.toggle('cols-created', !hiddenProfileCols.has('created'));
+  table.classList.toggle('cols-updated', !hiddenProfileCols.has('updated'));
+  table.classList.toggle('cols-remaining', !hiddenProfileCols.has('remaining') || inTrash);
+}
+function renderProfileColsMenu() {
+  const menuEl = $('#profile-cols-menu');
+  if (!menuEl) return;
+  menuEl.replaceChildren();
+  for (const [col, key] of PROFILE_COL_DEFS) {
+    const btn = element('button', '', '');
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = !hiddenProfileCols.has(col);
+    box.addEventListener('change', () => {
+      if (box.checked) hiddenProfileCols.delete(col); else hiddenProfileCols.add(col);
+      try { localStorage.setItem('openbrowser-profile-cols-v1', JSON.stringify([...hiddenProfileCols])); } catch (_) {}
+      applyProfileColumnVisibility();
+      renderProfileColsMenu();
+    });
+    const label = element('span', '', t(key));
+    btn.append(box, label);
+    menuEl.append(btn);
+  }
+}
+$('#profile-cols-btn')?.addEventListener('click', (event) => {
+  event.stopPropagation();
+  const menuEl = $('#profile-cols-menu');
+  if (!menuEl) return;
+  renderProfileColsMenu();
+  menuEl.hidden = !menuEl.hidden;
+});
+document.addEventListener('click', (event) => {
+  if (event.target.closest('#profile-cols-wrap')) return;
+  const menuEl = $('#profile-cols-menu');
+  if (menuEl) menuEl.hidden = true;
+});
+// Roxy 对齐：编号/名称/最后打开/创建/更新 点击表头排序
+document.querySelector('#view-profiles thead')?.addEventListener('click', (event) => {
+  const th = event.target.closest('th[data-sort]');
+  if (!th) return;
+  const key = th.dataset.sort;
+  if (profileSort.key === key) profileSort.dir = -profileSort.dir;
+  else profileSort = { key, dir: 1 };
+  for (const head of document.querySelectorAll('#view-profiles th[data-sort]')) head.classList.remove('sort-asc', 'sort-desc');
+  th.classList.add(profileSort.dir === 1 ? 'sort-asc' : 'sort-desc');
+  renderProfiles();
+});
+
+function makeEditorReadonly() {
+  const form = $('#profile-editor-form');
+  if (!form) return;
+  form.dataset.readonly = '1';
+  form.querySelectorAll('input,select,textarea').forEach((el) => { el.disabled = true; });
+  form.querySelectorAll('button').forEach((btn) => { btn.disabled = true; });
+  for (const id of ['#editor-back', '#editor-cancel']) { const btn = $(id); if (btn) btn.disabled = false; }
 }
 async function toggleProfileFavorite(id) {
   const profile = ui.profiles.find((item) => item.id === id);
@@ -2830,6 +3113,9 @@ function buildProfileRow(profile) {
   badge.title = groupNameOf(profile);
   projectCell.append(badge);
   const lastOpenCell = element('td', 'col-lastopen', profile.lastOpenedAt ? new Date(profile.lastOpenedAt).toLocaleString() : '—');
+  const createdCell = element('td', 'col-created', profile.createdAt ? new Date(profile.createdAt).toLocaleString() : '—');
+  const updatedCell = element('td', 'col-updated', profile.updatedAt ? new Date(profile.updatedAt).toLocaleString() : '—');
+  const remainCell = element('td', 'col-remaining', trashRemainingText(profile));
   const extensionCell = element('td', 'col-ext', String(info.assignedExtensions?.length || 0));
   const statusCell = document.createElement('td');
   statusCell.className = 'col-status';
@@ -2852,8 +3138,16 @@ function buildProfileRow(profile) {
     moreWrap.append(moreBtn);
     moreCell.append(moreWrap);
   }
-  row.append(selectCell, idCell, nameCell, actionCell, noteCell, tagCell, projectCell, lastOpenCell, extensionCell, statusCell, moreCell);
+  row.append(selectCell, idCell, nameCell, actionCell, noteCell, tagCell, projectCell, lastOpenCell, createdCell, updatedCell, remainCell, extensionCell, statusCell, moreCell);
   return row;
+}
+
+function trashRemainingText(profile) {
+  if (!profile.trashedAt) return '—';
+  const left = TRASH_RETENTION_MS - (Date.now() - Date.parse(profile.trashedAt));
+  if (!Number.isFinite(left) || left <= 0) return '0';
+  const hours = Math.floor(left / 3600000);
+  return hours >= 24 ? `${Math.floor(hours / 24)}d` : `${hours}h`;
 }
 
 function renderProfiles() {
@@ -2915,6 +3209,7 @@ function renderProfiles() {
   }
   for (const [id, row] of existingRows) if (!seenRows.has(id)) row.remove();
   const inTrash = activeGroupFilter === 'trash';
+  applyProfileColumnVisibility(inTrash);
   const emptyBtn = $('#empty-trash-btn');
   if (emptyBtn) emptyBtn.hidden = !inTrash;
   const toolbarLeftButtons = ['#create-profile', '#batch-add', '#batch-import', '#renumber-profiles', '#batch-export', '#test-all-proxies'];
@@ -3132,7 +3427,7 @@ async function stopProfile(id) {
 async function checkProfileProxy(id) {
   const profile = ui.profiles.find((item) => item.id === id); if (!profile) return;
   try {
-    toast('正在通过环境 ' + displayProfileNumber(profile) + ' 的代理检测出口 IP...');
+    toast(t('profiles.proxyChecking', { n: displayProfileNumber(profile) }));
     const result = await window.ops.checkProfileProxy(profile);
     profile.exitIp = result.ip; profile.exitCountryCode = result.countryCode; profile.exitTimezone = result.timezone || ''; profile.exitLatitude = result.latitude; profile.exitLongitude = result.longitude; profile.exitCheckedAt = result.checkedAt;
     if (Number.isFinite(Number(result.latencyMs))) profile.exitLatencyMs = Number(result.latencyMs);
@@ -3143,7 +3438,7 @@ async function checkProfileProxy(id) {
     const number = displayProfileNumber(profile); await refreshStatus();
     const detail = formatProxyCheckResult(result);
     log('Proxy', '环境 ' + number + ' 出口检测成功 · ' + detail);
-    toast('环境 ' + number + ' 出口：' + detail);
+    toast(t('profiles.exitResult', { n: number, detail }));
   } catch (error) { log('Proxy', '环境 ' + displayProfileNumber(profile) + ' 检测失败 · ' + error.message); toast('代理检测失败：' + error.message); }
 }
 
@@ -3200,7 +3495,7 @@ function renderExtensions() {
       if (app.installed) top.append(element('span', 'status running', tx('已安装')));
       card.append(top, element('h3', '', app.name), element('p', '', app.description || 'Chrome Web Store'));
       const meta = element('div', 'extension-meta');
-      meta.append(element('span', '', app.category || 'app'), element('span', '', app.installed ? `已启用环境 ${app.assigned_profiles || 0}` : '商店安装'));
+      meta.append(element('span', '', app.category || 'app'), element('span', '', app.installed ? tx('已启用环境 ') + (app.assigned_profiles || 0) : tx('商店安装')));
       card.append(meta);
       const actions = element('div', 'card-actions');
       if (app.installed && app.extension_id) {
@@ -3256,8 +3551,8 @@ function renderExtensions() {
     card.append(top, element('h3', '', extension.name), element('p', '', extension.description || 'Local unpacked Chrome extension'));
     const meta = element('div', 'extension-meta');
     meta.append(
-      element('span', '', `v${extension.version} · MV${extension.manifestVersion} · ${extension.source || (extension.builtIn ? '内置' : '本地')}`),
-      element('span', '', `已启用 ${extension.assignedProfiles}/${ui.profiles.length}`)
+      element('span', '', `v${extension.version} · MV${extension.manifestVersion} · ${extension.source || (extension.builtIn ? tx('内置') : tx('本地'))}`),
+      element('span', '', tx('已启用 ') + extension.assignedProfiles + '/' + ui.profiles.length)
     );
     card.append(meta);
     const actions = element('div', 'card-actions');
@@ -3365,7 +3660,7 @@ async function applyAssignment(enabled) {
   try {
     const result = await window.ops.assignExtension(currentExtension.id, ids, enabled); $('#assign-dialog').close(); invalidateViewCache(['extensions', 'profiles', 'sync']); await refreshExtensions(); await refreshStatus();
     log('Extension', `${currentExtension.name} ${enabled ? '添加到' : '移出'} ${ids.length} 个环境`);
-    toast(result.restartRequired?.length ? `已保存；${result.restartRequired.length} 个运行环境需重启` : '批量分配已生效');
+    toast(result.restartRequired?.length ? tx('已保存；') + result.restartRequired.length + tx(' 个运行环境需重启') : tx('批量分配已生效'));
   } catch (error) {
     toast(String(error?.message || error)); log('Error', String(error?.message || error));
   } finally { assignmentInFlight = false; }
@@ -3462,7 +3757,7 @@ async function refreshSessions() {
   })();
   return __refreshSessionsInFlight;
 }
-function selectedSessionIds(minimum = 1) { const ids = orderedSelectedSessionIds(); if (ids.length < minimum) throw new Error(`请至少选择 ${minimum} 个运行环境`); return ids; }
+function selectedSessionIds(minimum = 1) { const ids = orderedSelectedSessionIds(); if (ids.length < minimum) throw new Error(tx('请至少选择 ') + minimum + tx(' 个运行环境')); return ids; }
 function specifiedTextItems(value) {
   return String(value || '').split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
 }
@@ -3653,10 +3948,10 @@ async function runSyncAction(label, action) {
     if (result?.success === false) {
       const failures = Array.isArray(result.failures) ? result.failures : [];
       const failed = failures.map((item) => specifiedTextFailureLabel(item.id)).join('、');
-      toast(label + '仅完成 ' + (result.profiles?.length || 0) + ' 个环境' + (failed ? '；失败环境：' + failed : ''));
+      toast(label + tx('仅完成 ') + (result.profiles?.length || 0) + tx(' 个环境') + (failed ? tx('；失败环境：') + failed : ''));
       await refreshSessions(); return result;
     }
-    toast(label + '完成'); await refreshSessions(); return result;
+    toast(label + tx('完成')); await refreshSessions(); return result;
   }
   catch (error) { log('Error', error.message); toast(error.message); return null; }
 }
@@ -3883,7 +4178,7 @@ $('#profile-form').addEventListener('submit', async (event) => {
     const raw = libraryProxy?.raw || String(data.get('proxy') || '').trim();
     if (raw) {
       try { proxy = normalizeProxy(raw, type); }
-      catch (error) { return toast('代理格式错误：' + error.message); }
+      catch (error) { return toast(tx('代理格式错误：') + error.message); }
     }
   }
   const templateId = String($('#profile-create-template')?.value || '').trim();
@@ -3969,9 +4264,9 @@ $('#profile-form').addEventListener('submit', async (event) => {
     if (directRadio) directRadio.checked = true;
     const fields = $('#create-proxy-fields'); if (fields) fields.hidden = true;
     await refreshStatus(); log('Profile', '创建环境 ' + number + ' · ' + (isDirectProxy(proxy) ? '本地直连' : '代理'));
-    toast(isDirectProxy(proxy) && networkMode === 'proxy' ? '未填写代理，已自动切换为本地直连' : (isDirectProxy(proxy) ? '已创建（本地直连）' : '已创建（代理模式）'));
+    toast(isDirectProxy(proxy) && networkMode === 'proxy' ? tx('未填写代理，已自动切换为本地直连') : (isDirectProxy(proxy) ? tx('已创建（本地直连）') : tx('已创建（代理模式）')));
   } catch (error) {
-    ui.profiles = ui.profiles.filter((item) => item.id !== profile.id); ui.nextProfileNumber = previousNext; save(); toast('创建失败：' + error.message);
+    ui.profiles = ui.profiles.filter((item) => item.id !== profile.id); ui.nextProfileNumber = previousNext; save(); toast(tx('创建失败：') + error.message);
   } finally { if (submitter) submitter.disabled = false; }
 });
 
@@ -4008,7 +4303,7 @@ const onEditorFormChange = (event) => {
         syncThemedSelect(library);
       }
       const status = $('#editor-proxy-library-status');
-      if (status) status.textContent = '未关联代理库节点（已改为手动代理）';
+      if (status) status.textContent = tx('未关联代理库节点（已改为手动代理）');
     }
     editorNetworkResult = null;
     $('#editor-proxy-result').className = 'proxy-test-result';
@@ -4105,7 +4400,7 @@ document.getElementById('editor-cookie-file')?.addEventListener('change', async 
     const data = JSON.parse(text);
     if (!Array.isArray(data)) throw new Error(tx('Cookie 必须是 JSON 数组'));
     editorSet('#editor-cookies', JSON.stringify(data, null, 2));
-    toast('已导入 ' + data.length + ' 条 Cookie（保存环境后生效）');
+    toast(tx('已导入 ') + data.length + tx(' 条 Cookie（保存环境后生效）'));
   } catch (error) { toast('导入失败：' + error.message); }
 });
 document.getElementById('editor-clear-cache-cookie')?.addEventListener('click', async () => {
@@ -4170,7 +4465,7 @@ $('#profile-editor-form').addEventListener('submit', async (event) => {
         console.warn('编辑时自动保存代理到代理库失败', saveErr);
       }
     }
-    const running = profileEngine(draft.id).running; log('Profile', '已更新环境 ' + displayProfileNumber(draft)); editingProfileId = null; editorNetworkResult = null; switchView('profiles'); toast(running ? '设置已保存，请重启该环境后生效' : '环境设置已保存');
+    const running = profileEngine(draft.id).running; log('Profile', '已更新环境 ' + displayProfileNumber(draft)); editingProfileId = null; editorNetworkResult = null; switchView('profiles'); toast(running ? tx('设置已保存，请重启该环境后生效') : tx('环境设置已保存'));
   } catch (error) { toast('保存失败：' + error.message); }
 });
 
@@ -4195,7 +4490,7 @@ $('#batch-add').addEventListener('click', () => {
   const template = $('#batch-add-template');
   if (template) {
     template.replaceChildren(new Option(tx('使用新环境默认偏好'), ''));
-    for (const profile of ui.profiles) template.append(new Option(`环境 ${displayProfileNumber(profile)}${profile.title ? ' · ' + profile.title : ''}`, profile.id));
+    for (const profile of ui.profiles) template.append(new Option(tx('环境 ') + displayProfileNumber(profile) + (profile.title ? tx(' · ') + profile.title : ''), profile.id));
   }
   $('#batch-add-dialog').showModal();
 });
@@ -4227,7 +4522,7 @@ $('#batch-add-form').addEventListener('submit', async (event) => {
       const libraryProxy = libraryItem ? parseProxyInputForUi(libraryItem, libraryItem.protocol || $('#batch-add-proxy-type')?.value || 'socks5') : null;
       proxies = libraryProxy ? Array(count).fill(libraryProxy.raw) : proxyLines('#batch-add-proxies', '#batch-add-proxy-type');
     }
-    catch (error) { return toast('代理格式错误：' + error.message); }
+    catch (error) { return toast(tx('代理格式错误：') + error.message); }
     if (!proxies.length) return toast(tx('代理模式请填写代理列表'));
     if (libraryItem) proxyIds.push(...Array(count).fill(libraryItem.id));
   }
@@ -4289,9 +4584,9 @@ $('#batch-add-form').addEventListener('submit', async (event) => {
     selectedProfiles = new Set(created.map((item) => item.id)); $('#select-all-profiles').checked = false; $('#batch-add-dialog').close(); $('#batch-add-proxies').value = '';
     await refreshStatus(); await refreshExtensions();
     log('Batch', '批量新增 ' + created.length + ' 个环境 · ' + (networkMode === 'direct' ? '本地直连' : '代理'));
-    toast('已批量创建 ' + created.length + ' 个环境（' + (networkMode === 'direct' ? '本地直连' : '代理模式') + '）');
+    toast(tx('已批量创建 ') + created.length + tx(' 个环境（') + (networkMode === 'direct' ? tx('本地直连') : tx('代理模式')) + tx('）'));
   } catch (error) {
-    ui.profiles = ui.profiles.filter((item) => !created.some((createdItem) => createdItem.id === item.id)); ui.nextProfileNumber = previousNext; save(); toast('批量新增失败：' + error.message);
+    ui.profiles = ui.profiles.filter((item) => !created.some((createdItem) => createdItem.id === item.id)); ui.nextProfileNumber = previousNext; save(); toast(tx('批量新增失败：') + error.message);
   } finally { if (submitter) submitter.disabled = false; }
 });
 $('#delete-selected').addEventListener('click', async () => {
@@ -4427,7 +4722,7 @@ $('#copy-selected')?.addEventListener('click', async () => {
       id,
       number,
       name: String(number),
-      title: source.title ? `${source.title} 副本` : '',
+      title: source.title ? `${source.title} ${tx('副本')}` : '',
       cookies: '',
       platform: { ...(source.platform || {}), username: '', password: '', totpSecret: '' },
       exitIp: '', exitCountryCode: '', exitTimezone: '', exitLatitude: '', exitLongitude: '', exitCheckedAt: '', exitLatencyMs: '', exitNetworkType: '',
@@ -4447,11 +4742,11 @@ $('#copy-selected')?.addEventListener('click', async () => {
     selectedProfiles = new Set(created.map((item) => item.id));
     renderProfiles();
     log('Batch', `复制 ${created.length} 个环境配置`);
-    toast(`已复制 ${created.length} 个环境配置（未复制 Cookie 和账号密码）`);
+    toast(tx('已复制 ') + created.length + tx(' 个环境配置（未复制 Cookie 和账号密码）'));
   } catch (error) {
     await window.ops.deleteProfiles(created.map((item) => item.id), false).catch(() => {});
     ui.profiles = ui.profiles.filter((item) => !created.some((createdItem) => createdItem.id === item.id));
-    ui.nextProfileNumber = previousNext; save(); toast('复制环境失败：' + error.message);
+    ui.nextProfileNumber = previousNext; save(); toast(tx('复制环境失败：') + error.message);
   }
 });
 $('#renumber-profiles')?.addEventListener('click', async () => {
@@ -4499,7 +4794,7 @@ $('#add-store-submit').addEventListener('click', async (event) => {
     invalidateViewCache(['extensions', 'profiles', 'sync']); await refreshExtensions(); await refreshStatus(); await refreshSessions();
     $('#add-app-dialog').close(); $('#chrome-store-url').value = '';
     log('Extension', '商店添加 ' + result.extension.name + ', 分配 ' + result.assigned + ', 重启 ' + result.restarted);
-    toast('已添加 ' + result.extension.name + '，分配 ' + result.assigned + ' 个环境');
+    toast(tx('已添加 ') + result.extension.name + tx('，分配 ') + result.assigned + tx(' 个环境'));
   } catch (error) { toast('商店添加失败：' + error.message); } finally { if (submitter) submitter.disabled = false; }
 });
 $('#refresh-extensions').addEventListener('click', refreshExtensions);
@@ -4941,7 +5236,7 @@ async function initialize() {
           await window.ops.setCloseAction(input.value);
           toast(tx('关闭窗口设置已更新'));
         } catch (e) {
-          toast('设置失败：' + e.message);
+          toast(tx('设置失败：') + e.message);
         }
       });
     });
@@ -5112,14 +5407,14 @@ $('#batch-update-form').addEventListener('submit', async (event) => {
     let proxies = null;
     if (mode !== 'direct') {
       try { proxies = proxyLines('#batch-proxy-list', '#batch-update-proxy-type'); }
-      catch (error) { return toast('代理格式错误：' + error.message); }
+      catch (error) { return toast(tx('代理格式错误：') + error.message); }
     }
     const result = await applySelectedNetworkMode(mode === 'direct' ? 'direct' : 'proxy', { proxies, restart });
     $('#batch-update-dialog').close();
     $('#batch-proxy-list').value = '';
     const modeText = result.direct ? '本地直连' : '已验证代理';
     log('Batch', '批量更新 ' + result.count + ' 个环境 · ' + modeText);
-    toast('已将 ' + result.count + ' 个环境更新为' + modeText);
+    toast(tx('已将 ') + result.count + tx(' 个环境更新为') + modeText);
   } catch (error) {
     log('Proxy', '批量更新失败 · ' + error.message);
     toast(error.message);
@@ -5251,7 +5546,7 @@ $('#batch-edit-preferences')?.addEventListener('click', () => {
   if (!sources.length) return toast(tx('请先选择环境'));
   const templateSelect = $('#batch-pref-template');
   if (templateSelect) {
-    templateSelect.replaceChildren(new Option('手动指定下方偏好设置', ''));
+    templateSelect.replaceChildren(new Option(tx('手动指定下方偏好设置'), ''));
     ui.profiles.forEach((profile) => templateSelect.append(new Option(
       `环境 ${displayProfileNumber(profile)}${profile.title ? ' · ' + profile.title : ''}`,
       profile.id,
@@ -5264,7 +5559,7 @@ $('#batch-edit-preferences')?.addEventListener('click', () => {
   ['batch-pref-block-images', 'batch-pref-block-sound', 'batch-pref-clear-cache', 'batch-pref-multi-open']
     .forEach((id) => { const el = $('#' + id); if (el) el.value = 'keep'; });
   const summary = $('#batch-pref-summary');
-  if (summary) summary.textContent = `将偏好设置统一应用到已勾选的 ${sources.length} 个环境`;
+  if (summary) summary.textContent = tx('将偏好设置统一应用到已勾选的 ') + sources.length + tx(' 个环境');
   $('#batch-preferences-dialog')?.showModal();
 });
 
@@ -5330,7 +5625,7 @@ $('#batch-preferences-form')?.addEventListener('submit', async (event) => {
     $('#batch-preferences-dialog')?.close();
     renderProfiles();
     log('Batch', `已批量更新 ${sources.length} 个环境的偏好设置`);
-    toast(`已批量更新 ${sources.length} 个环境的偏好设置`);
+    toast(tx('已批量更新 ') + sources.length + tx(' 个环境的偏好设置'));
   } catch (error) {
     for (const item of sources) {
       const original = before.get(item.id);
@@ -5339,7 +5634,7 @@ $('#batch-preferences-form')?.addEventListener('submit', async (event) => {
       if (index >= 0) ui.profiles[index] = original;
     }
     save();
-    toast('批量偏好设置失败：' + error.message);
+    toast(tx('批量偏好设置失败：') + error.message);
   } finally {
     if (submit) submit.disabled = false;
   }

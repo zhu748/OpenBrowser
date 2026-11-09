@@ -26,7 +26,7 @@ const save = app.save || (() => {});
 const CLOUD_BRIDGE_PRESETS = {
   gdrive: {
     id: 'gdrive',
-    label: '谷歌云盘',
+    label: tx('谷歌云盘'),
     provider: 'gdrive',
     dir: 'OpenBrowser',
     urlPlaceholder: 'https://alist.example.com/dav/gdrive',
@@ -34,7 +34,7 @@ const CLOUD_BRIDGE_PRESETS = {
   },
   onedrive: {
     id: 'onedrive',
-    label: '微软云 OneDrive',
+    label: tx('微软云 OneDrive'),
     provider: 'onedrive',
     dir: 'OpenBrowser',
     urlPlaceholder: 'https://alist.example.com/dav/onedrive',
@@ -42,7 +42,7 @@ const CLOUD_BRIDGE_PRESETS = {
   },
   quark: {
     id: 'quark',
-    label: '夸克云',
+    label: tx('夸克云'),
     provider: 'quark',
     dir: 'OpenBrowser',
     urlPlaceholder: 'https://alist.example.com/dav/quark',
@@ -50,7 +50,7 @@ const CLOUD_BRIDGE_PRESETS = {
   },
   baidu: {
     id: 'baidu',
-    label: '百度云',
+    label: tx('百度云'),
     provider: 'baidu',
     dir: 'OpenBrowser',
     urlPlaceholder: 'https://alist.example.com/dav/baidu',
@@ -188,8 +188,8 @@ function applyCloudForm(cloud) {
     status.textContent = c.lastError
       ? (tx('上次错误：') + c.lastError)
       : (c.lastSyncAt
-        ? (`上次同步：${c.lastSyncAt} · ${providerLabel} · 恢复策略：${modeLabel}`)
-        : `尚未同步。当前：${providerLabel} · 恢复策略：${modeLabel}（默认不会删除本地独有环境）。`);
+        ? (tx('上次同步：') + c.lastSyncAt + ' · ' + providerLabel + tx(' · 恢复策略：') + modeLabel)
+        : tx('尚未同步。当前：') + providerLabel + tx(' · 恢复策略：') + modeLabel + tx('（默认不会删除本地独有环境）。'));
   }
   cloudProviderFieldsVisibility();
 }
@@ -241,7 +241,7 @@ async function pushProfilesToCloud(ids) {
   if (!cloud.enabled) throw new Error(tx('请先在「本地设置 → 云同步」启用云同步服务并保存配置'));
   await window.ops.cloudSetConfig(cloud);
   const list = enabled.map((p) => p.id);
-  toast('正在推送 ' + list.length + ' 个环境…');
+  toast(tx('正在推送 ') + list.length + tx(' 个环境…'));
   const result = await window.ops.cloudProfilePush({
     profileIds: list,
     profiles: ui.profiles,
@@ -249,7 +249,7 @@ async function pushProfilesToCloud(ids) {
     cloud,
   });
   applyCloudForm(result.cloud || cloud);
-  toast('已推送 ' + (result.results?.length || list.length) + ' 个环境到云端');
+  toast(tx('已推送 ') + (result.results?.length || list.length) + tx(' 个环境到云端'));
   log('Cloud', '单环境推送 · ' + list.join(','));
   return result;
 }
@@ -261,7 +261,7 @@ async function pullProfilesFromCloud(ids) {
   if (!cloud.enabled) throw new Error(tx('请先在「本地设置 → 云同步」启用云同步服务并保存配置'));
   const mode = cloud.restoreMode || 'merge';
   await window.ops.cloudSetConfig(cloud);
-  toast('正在拉取 ' + list.length + ' 个环境…');
+  toast(tx('正在拉取 ') + list.length + tx(' 个环境…'));
   const result = await window.ops.cloudProfilePull({
     profileIds: list,
     localProfiles: ui.profiles,
@@ -272,7 +272,7 @@ async function pullProfilesFromCloud(ids) {
   applyRestoredProfiles(result);
   applyCloudForm(result.cloud || cloud);
   const detail = formatMergeStats(result.mergeStats);
-  toast('拉取完成' + (detail ? ' · ' + detail : ''));
+  toast(tx('拉取完成') + (detail ? tx(' · ') + detail : ''));
   log('Cloud', '单环境拉取 · ' + list.join(',') + (detail ? ' · ' + detail : ''));
   return result;
 }
@@ -306,7 +306,7 @@ $('#cloud-backup-now')?.addEventListener('click', async () => {
       cloud,
     });
     applyCloudForm(result.cloud || cloud);
-    toast('备份完成 · ' + (result.meta?.profileCount || 0) + ' 个环境 · ' + Math.round((result.meta?.bytes || 0) / 1024) + ' KB');
+    toast(tx('备份完成 · ') + (result.meta?.profileCount || 0) + tx(' 个环境 · ') + Math.round((result.meta?.bytes || 0) / 1024) + ' KB');
     log('Cloud', '全量备份 · ' + (result.meta?.profileCount || 0) + ' 环境');
   } catch (error) { toast('备份失败：' + error.message); }
 });
@@ -337,7 +337,7 @@ $('#cloud-restore-now')?.addEventListener('click', async () => {
     applyRestoredProfiles(result);
     await refreshCloudPanel();
     const detail = formatMergeStats(result.mergeStats);
-    toast('恢复完成 · ' + (result.profiles?.length || 0) + ' 个环境' + (detail ? ' · ' + detail : ''));
+    toast(tx('恢复完成 · ') + (result.profiles?.length || 0) + tx(' 个环境') + (detail ? tx(' · ') + detail : ''));
     log('Cloud', '恢复 · ' + mode + ' · ' + (result.profiles?.length || 0) + (detail ? ' · ' + detail : ''));
   } catch (error) { toast('恢复失败：' + error.message); }
 });
@@ -372,7 +372,7 @@ $('#cloud-import-file')?.addEventListener('click', async () => {
     if (result?.canceled) return;
     applyRestoredProfiles(result);
     const detail = formatMergeStats(result.mergeStats);
-    toast('导入完成 · ' + (result.profiles?.length || 0) + ' 个环境' + (detail ? ' · ' + detail : ''));
+    toast(tx('导入完成 · ') + (result.profiles?.length || 0) + tx(' 个环境') + (detail ? tx(' · ') + detail : ''));
   } catch (error) { toast('导入失败：' + error.message); }
 });
 document.getElementById('editor-cloud-push-one')?.addEventListener('click', async () => {
@@ -422,7 +422,7 @@ $('#cloud-pull-selected')?.addEventListener('click', async () => {
     });
     applyRestoredProfiles(result);
     await refreshCloudPanel();
-    toast('恢复完成 · ' + formatMergeStats(result.mergeStats));
+    toast(tx('恢复完成 · ') + formatMergeStats(result.mergeStats));
   } catch (error) { toast(error.message); }
 });
 

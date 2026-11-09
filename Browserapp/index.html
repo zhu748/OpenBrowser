@@ -75,17 +75,21 @@
           <div class="toolbar profile-primary-toolbar">
             <div class="toolbar-left"><button class="primary" id="create-profile"><i data-lucide="plus"></i><span data-i18n="profiles.create">新建环境</span></button><button class="outline" id="batch-add"><i data-lucide="copy-plus"></i><span data-i18n="profiles.batchAdd">批量新增</span></button><button class="outline" id="batch-import"><i data-lucide="file-down"></i><span data-i18n="profiles.batchImport">批量导入</span></button><input id="batch-import-file" type="file" accept=".csv,.json" hidden><button class="outline" id="renumber-profiles" type="button" title="将所有环境按列表顺序重新编号为 1..N" data-i18n-title="profiles.renumberTitle"><i data-lucide="hash"></i><span data-i18n="profiles.renumber">重排编号</span></button><button class="outline" id="batch-export" type="button" title="导出当前选中/筛选的环境配置（不含密码与2FA密钥）" data-i18n-title="profiles.exportTitle"><i data-lucide="file-up"></i><span data-i18n="profiles.batchExport">批量导出</span></button><button class="outline" id="test-all-proxies" type="button" title="逐个检测所有环境的代理IP可用性"><i data-lucide="radar"></i><span data-i18n="profiles.testAllProxy">测试全部代理IP</span></button><button class="outline danger" id="empty-trash-btn" type="button" hidden><i data-lucide="trash"></i><span data-i18n="trash.empty">清空回收站</span></button></div>
             <label class="search"><i data-lucide="search"></i><input id="profile-search" placeholder="搜索环境 / 分组 / 标签" data-i18n-placeholder="profiles.search"></label>
+            <div class="cols-config-wrap" id="profile-cols-wrap">
+              <button class="outline mini-btn" type="button" id="profile-cols-btn" data-i18n="profiles.customHeader">自定义表头</button>
+              <div class="row-more-menu cols-menu" id="profile-cols-menu" hidden></div>
+            </div>
           </div>
           <div class="profile-selection-bar" id="profile-selection-bar" hidden>
             <strong id="profile-selection-count">已选择 0 个环境</strong>
-            <div class="selection-actions"><button class="outline" id="start-selected"><i data-lucide="play"></i><span data-i18n="profiles.startSelected">启动选中</span></button><button class="outline" id="stop-selected"><i data-lucide="square"></i><span data-i18n="profiles.stopSelected">停止选中</span></button><button class="outline" id="copy-selected" type="button" title="复制选中环境的配置，不复制 Cookie 和账号密码" data-i18n-title="profiles.copyTitle"><i data-lucide="copy"></i><span>复制环境</span></button><button class="outline" id="batch-edit-preferences" type="button" title="批量修改选中环境的启动页、系统和高级偏好" data-i18n-title="profiles.batchPrefTitle"><i data-lucide="sliders-horizontal"></i><span>批量偏好</span></button><button class="outline" id="batch-update"><i data-lucide="refresh-cw"></i><span data-i18n="profiles.batchNetwork">切换网络/IP</span></button><button class="outline" id="batch-set-direct" type="button" title="将选中环境改为本地直连" data-i18n-title="profiles.directTitle"><i data-lucide="wifi"></i><span data-i18n="profiles.direct">本地直连</span></button>
+            <div class="selection-actions"><button class="outline" id="start-selected"><i data-lucide="play"></i><span data-i18n="profiles.startSelected">启动选中</span></button><button class="outline" id="stop-selected"><i data-lucide="square"></i><span data-i18n="profiles.stopSelected">停止选中</span></button><button class="outline" id="copy-selected" type="button" title="复制选中环境的配置，不复制 Cookie 和账号密码" data-i18n-title="profiles.copyTitle"><i data-lucide="copy"></i><span data-i18n="profiles.copySelected">复制环境</span></button><button class="outline" id="batch-edit-preferences" type="button" title="批量修改选中环境的启动页、系统和高级偏好" data-i18n-title="profiles.batchPrefTitle"><i data-lucide="sliders-horizontal"></i><span data-i18n="profiles.batchPrefs">批量偏好</span></button><button class="outline" id="batch-note" type="button"><i data-lucide="sticky-note"></i><span data-i18n="profiles.batchNote">批量备注</span></button><button class="outline" id="batch-tag" type="button"><i data-lucide="tags"></i><span data-i18n="profiles.batchTag">批量标签</span></button><button class="outline" id="batch-update"><i data-lucide="refresh-cw"></i><span data-i18n="profiles.batchNetwork">切换网络/IP</span></button><button class="outline" id="batch-set-direct" type="button" title="将选中环境改为本地直连" data-i18n-title="profiles.directTitle"><i data-lucide="wifi"></i><span data-i18n="profiles.direct">本地直连</span></button>
               <label class="batch-group-assign"><span data-i18n="profiles.moveGroup">移到分组</span>
                 <select id="batch-assign-group"></select>
               </label>
               <button class="outline icon-apply" type="button" id="batch-assign-group-btn" title="应用分组"><i data-lucide="check"></i><span data-i18n="profiles.apply">应用</span></button><button class="primary" id="restore-selected" hidden><i data-lucide="rotate-ccw"></i><span data-i18n="trash.restoreSelected">还原选中</span></button><button class="danger" id="delete-selected"><i data-lucide="trash-2"></i><span data-i18n="profiles.batchDelete">批量删除</span></button></div>
           </div>
           <div class="table-card">
-            <table class="profile-table-compact"><thead><tr><th class="col-check"><input type="checkbox" id="select-all-profiles"></th><th class="col-num" data-i18n="profiles.col.num">编号</th><th class="col-name" data-i18n="profiles.col.name">窗口名称</th><th class="col-actions" data-i18n="profiles.col.actions">操作</th><th class="col-note" data-i18n="profiles.col.note">备注</th><th class="col-tag" data-i18n="profiles.col.tag">标签</th><th class="col-group" data-i18n="profiles.col.project">项目</th><th class="col-lastopen" data-i18n="profiles.col.lastOpen">最后打开</th><th class="col-ext" data-i18n="profiles.col.ext">扩展</th><th class="col-status" data-i18n="profiles.col.status">状态</th><th class="col-more" data-i18n="profiles.col.more">其他</th></tr></thead><tbody id="profile-table"></tbody></table>
+            <table class="profile-table-compact"><thead><tr><th class="col-check"><input type="checkbox" id="select-all-profiles"></th><th class="col-num" data-sort="number" data-i18n="profiles.col.num">编号</th><th class="col-name" data-sort="name" data-i18n="profiles.col.name">窗口名称</th><th class="col-actions" data-i18n="profiles.col.actions">操作</th><th class="col-note" data-i18n="profiles.col.note">备注</th><th class="col-tag" data-i18n="profiles.col.tag">标签</th><th class="col-group" data-i18n="profiles.col.project">项目</th><th class="col-lastopen" data-sort="lastopen" data-i18n="profiles.col.lastOpen">最后打开</th><th class="col-created" data-sort="created" data-i18n="profiles.col.created" hidden>创建时间</th><th class="col-updated" data-sort="updated" data-i18n="profiles.col.updated" hidden>更新时间</th><th class="col-remaining" data-i18n="trash.remaining" hidden>剩余时间</th><th class="col-ext" data-i18n="profiles.col.ext">扩展</th><th class="col-status" data-i18n="profiles.col.status">状态</th><th class="col-more" data-i18n="profiles.col.more">其他</th></tr></thead><tbody id="profile-table"></tbody></table>
             <div class="empty profile-empty-state" id="profile-empty" role="status" hidden>
               <i data-lucide="layers" aria-hidden="true"></i>
               <strong id="profile-empty-title"></strong>
@@ -125,10 +129,10 @@
               <p data-i18n="editor.pageDesc">管理账号、网络、指纹与启动设置</p></div>
           </div>
           <div class="editor-tabs" role="tablist">
-            <button class="active" type="button" data-editor-tab="basic">平台账号配置</button>
-            <button type="button" data-editor-tab="proxy">代理配置</button>
-            <button type="button" data-editor-tab="privacy">指纹配置</button>
-            <button type="button" data-editor-tab="advanced">偏好设置</button>
+            <button class="active" type="button" data-editor-tab="basic" data-i18n="editor.tab.basic">平台账号配置</button>
+            <button type="button" data-editor-tab="proxy" data-i18n="editor.tab.proxy">代理配置</button>
+            <button type="button" data-editor-tab="privacy" data-i18n="editor.tab.privacy">指纹配置</button>
+            <button type="button" data-editor-tab="advanced" data-i18n="editor.tab.advanced">偏好设置</button>
           </div>
           <div class="environment-editor">
             <form id="profile-editor-form" class="editor-form">
@@ -283,9 +287,10 @@
                     </div>
                   </label>
                   <label class="check-row" style="margin-top:-4px;margin-bottom:8px;"><input id="editor-proxy-save-to-library" type="checkbox"> 同时保存到代理库（方便其他环境复用）</label>
+                  <p class="network-mode-hint" data-i18n="editor.ipv6Hint" style="margin:0 0 8px">2. IPv6 的代理 IP 主机需填写在 [ ] 内</p>
                   <div class="form-two">
                     <label>代理类型<select id="editor-proxy-type"><option value="socks5">SOCKS5</option><option value="http">HTTP</option><option value="https">HTTPS</option></select></label>
-                    <label>IP 查询通道<select id="editor-ip-channel"><option value="ip-api">IP-API</option><option value="ip2location">IP2Location</option><option value="ifconfig-me">ifconfig.me（HTTPS）</option></select></label>
+                    <label>IP 查询通道<select id="editor-ip-channel" data-i18n-title="editor.ipChannelTip"><option value="ip-api">IP-API</option><option value="ip2location">IP2Location</option><option value="ifconfig-me">ifconfig.me（HTTPS）</option></select></label>
                   </div>
                   <div class="proxy-host-row">
                     <label>代理主机<input id="editor-proxy-host" placeholder="127.0.0.1"></label>
@@ -295,13 +300,13 @@
                     <label>代理账号<input id="editor-proxy-user" autocomplete="off"></label>
                     <label>代理密码<input id="editor-proxy-password" type="password" autocomplete="new-password"></label>
                   </div>
-                  <label>刷新 URL（可选）<input id="editor-refresh-url" type="url" placeholder="https://example.com/refresh"></label>
+                  <label>刷新 URL（可选）<input id="editor-refresh-url" type="url" placeholder="https://example.com/refresh" data-i18n-title="editor.refreshUrlTip"></label>
                   <label>API 提取 URL（可选）<input id="editor-api-extract-url" type="url" placeholder="https://example.com/get?format=txt"></label>
                   <label>备用代理（每行一条，主代理失败时切换）
                     <textarea id="editor-backup-proxies" rows="2" placeholder="socks5://127.0.0.1:1081&#10;http://user:pass@127.0.0.1:8080"></textarea>
                   </label>
                   <div class="form-two">
-                    <label class="check-row"><input id="editor-proxy-refresh-start" type="checkbox"> 每次启动先刷新代理</label>
+                    <label><span data-i18n="editor.extractMode">提取方式</span><select id="editor-proxy-extract-mode"><option value="always" data-i18n="editor.extractAlways">每次打开窗口时提取新 IP</option><option value="onInvalid" data-i18n="editor.extractOnInvalid">IP 失效时重新提取新 IP</option></select></label>
                     <label class="check-row"><input id="editor-proxy-fill-fingerprint" type="checkbox" checked> 检测后自动对齐指纹（时区/语言/定位）</label>
                   </div>
                   <div class="form-two">
@@ -362,6 +367,7 @@
                           <option value="macOS">macOS</option>
                           <option value="Linux">Linux</option>
                           <option value="Android">Android</option>
+                          <option value="iOS">iOS</option>
                         </select>
                         <select id="editor-os-version" title="系统版本"></select>
                       </div>
@@ -374,6 +380,7 @@
                         </select>
                         <select id="editor-engine-version" title="内核版本"></select>
                       </div>
+                      <small class="field-warn" id="editor-engine-warn" hidden data-i18n="editor.engineWarn">修改内核可能导致缓存不兼容，从而使账号登录信息失效，请谨慎操作。</small>
                     </label>
                     <label class="check-row" style="margin-top:24px"><input id="editor-refresh-fingerprint" type="checkbox"> 每次打开自动刷新随机指纹</label>
                   </div>
@@ -503,7 +510,7 @@
                   <div class="form-two">
                     <label>视口分辨率
                       <div class="field-inline-group">
-                        <select id="editor-resolution"><option value="real">跟随系统</option><option value="1280x820">1280 × 820</option><option value="1366x768">1366 × 768</option><option value="1440x900">1440 × 900</option><option value="1920x1080">1920 × 1080</option><option value="custom">自定义</option></select>
+                        <select id="editor-resolution"><option value="real">跟随系统</option><option value="1280x820">1280 × 820</option><option value="1366x768">1366 × 768</option><option value="1440x900">1440 × 900</option><option value="1536x864">1536 × 864</option><option value="1600x900">1600 × 900</option><option value="1680x1050">1680 × 1050</option><option value="1920x1080">1920 × 1080</option><option value="1920x1200">1920 × 1200</option><option value="2560x1080">2560 × 1080</option><option value="2560x1440">2560 × 1440</option><option value="3440x1440">3440 × 1440</option><option value="3840x2160">3840 × 2160</option><option value="custom">自定义</option></select>
                         <input id="editor-width" type="number" min="640" max="7680" placeholder="宽" data-i18n-placeholder="editor.widthPh" style="max-width:80px">
                         <input id="editor-height" type="number" min="480" max="4320" placeholder="高" data-i18n-placeholder="editor.heightPh" style="max-width:80px">
                       </div>
@@ -561,14 +568,17 @@
                     <label>媒体设备<select id="editor-media"><option value="noise">随机模拟</option><option value="real">真实直通</option><option value="blocked">阻断关闭</option></select></label>
                     <label>设备枚举<select id="editor-media-devices"><option value="">跟随媒体设备</option><option value="noise">随机模拟</option><option value="real">真实直通</option><option value="empty">空设备列表</option></select></label>
                     <label>电池状态<select id="editor-battery"><option value="noise">随机模拟</option><option value="real">真实直通</option><option value="blocked">阻断关闭</option></select></label>
-                    <label>电池电量（0–1）<input id="editor-battery-level" type="number" min="0" max="1" step="0.05" placeholder="留空=随机"></label>
+<label>电池电量（0–1）<input id="editor-battery-level" type="number" min="0" max="1" step="0.05" placeholder="留空=随机"></label>
+                    <label><span data-i18n="editor.batteryCharging">充电状态</span><select id="editor-battery-charging"><option value="auto" data-i18n="editor.batteryAuto">自动</option><option value="yes" data-i18n="editor.batteryChargingOn">充电中</option><option value="no" data-i18n="editor.batteryChargingOff">未充电</option></select></label>
+                    <label><span data-i18n="editor.batteryChargeTime">充电时长（秒）</span><input id="editor-battery-charging-time" type="number" min="0" placeholder="留空=自动"></label>
+                    <label><span data-i18n="editor.batteryDischargeTime">放电时长（秒）</span><input id="editor-battery-discharging-time" type="number" min="0" placeholder="留空=自动"></label>
                     <label>蓝牙适配器<select id="editor-bluetooth"><option value="real">真实直通</option><option value="blocked">阻断关闭</option></select></label>
                     <label>ClientRects<select id="editor-client-rects"><option value="noise">随机微扰</option><option value="real">真实直通</option></select></label>
                     <label>SpeechVoices<select id="editor-speech"><option value="noise">随机模拟</option><option value="real">真实直通</option><option value="blocked">阻断关闭</option></select></label>
                     <label><span data-i18n="editor.hwConcurrency">硬件并发数</span><select id="editor-cores"><option value="">自动</option><option value="0">真实</option><option value="2">2核</option><option value="4">4核</option><option value="6">6核</option><option value="8">8核</option><option value="10">10核</option><option value="12" selected>12核</option><option value="16">16核</option><option value="20">20核</option><option value="24">24核</option></select></label>
                     <label><span data-i18n="editor.deviceMemory">设备内存</span><select id="editor-memory"><option value="">自动</option><option value="0">真实</option><option value="2">2G</option><option value="4">4G</option><option value="6">6G</option><option value="8" selected>8G</option><option value="16">16G</option></select></label>
                     <label><span data-i18n="editor.deviceNameMode">设备名称</span><select id="editor-device-name-mode"><option value="noise">随机</option><option value="real">真实</option><option value="custom">自定义</option></select></label>
-                    <label>自定义设备名<input id="editor-device-name" placeholder="自定义设备名"></label>
+                    <label>自定义设备名<input id="editor-device-name" placeholder="自定义设备名" maxlength="30" data-i18n-title="editor.deviceNameTip" title="设备名称最多支持 30 个字符；选填，Android 9/11 不支持"></label>
                     <label>MAC 地址模式<select id="editor-mac-mode"><option value="real">真实</option><option value="custom">自定义</option></select></label>
                     <label>MAC 地址
                       <div class="field-inline-group">
@@ -683,6 +693,8 @@
                   <label class="check-row"><input id="editor-sync-ls" type="checkbox"> 同步 Local Storage（部分站点存登录态）</label>
                   <label class="check-row"><input id="editor-sync-passwords" type="checkbox"> 同步已保存的用户名密码</label>
                   <label class="check-row"><input id="editor-sync-ext" type="checkbox"> 同步插件应用数据（数字货币钱包建议关闭）</label>
+                  <label class="check-row"><input id="editor-sync-tab" type="checkbox" checked> 同步标签页</label>
+                  <label class="check-row"><input id="editor-sync-history" type="checkbox"> 同步历史记录</label>
                   <div class="storage-actions" style="margin-top:10px">
                     <button class="outline" type="button" id="editor-cloud-push-one">立即推送此环境到云</button>
                     <button class="outline" type="button" id="editor-cloud-pull-one">从云拉取并合并此环境</button>
@@ -1745,6 +1757,7 @@
     <div class="dialog-actions"><button value="cancel" class="outline">取消</button><button value="default" class="primary" id="batch-preferences-submit">应用到选中环境</button></div>
   </form></dialog>
 
+  <dialog id="batch-quick-dialog"><form method="dialog" id="batch-quick-form"><div class="dialog-head"><div><h2 id="batch-quick-title">批量备注</h2><p id="batch-quick-summary"></p></div><button value="cancel" aria-label="关闭" data-i18n-aria="common.close">&times;</button></div><label id="batch-quick-field-label"><span id="batch-quick-field-name">备注</span><textarea id="batch-quick-value" rows="3" placeholder=""></textarea></label><div class="dialog-actions"><button value="cancel" class="outline" data-i18n="common.cancel">取消</button><button value="default" class="primary" id="batch-quick-confirm" data-i18n="common.save">保存</button></div></form></dialog>
   <dialog id="batch-delete-dialog"><form method="dialog" id="batch-delete-form"><div class="dialog-head"><div><h2 id="batch-delete-title" data-i18n="profiles.batchDeleteTitle">&#21024;&#38500;&#29615;&#22659;</h2><p id="batch-delete-summary"></p></div><button value="cancel" aria-label="关闭" data-i18n-aria="common.close">&times;</button></div><div class="delete-warning" id="batch-delete-warning">&#27492;&#25805;&#20316;&#20250;&#23558;&#25152;&#26377;&#24050;&#21246;&#36873;&#30340;&#29615;&#22659;&#31227;&#20837;&#22238;&#25910;&#31449;&#65292;&#36816;&#34892;&#20013;&#30340;&#29615;&#22659;&#20250;&#20808;&#23433;&#20840;&#20572;&#27490;&#12290;&#24744;&#21487;&#20197;&#22312;&#22238;&#25910;&#31449;&#20013;&#38543;&#26102;&#36824;&#21407;&#25110;&#24443;&#24213;&#21024;&#38500;&#12290;</div><label class="assign-item" id="batch-delete-data-label"><input id="batch-delete-data" type="checkbox"> <span data-i18n="profiles.deleteDataOption">&#21516;&#26102;&#24443;&#24213;&#21024;&#38500;&#29420;&#31435;&#27983;&#35272;&#22120;&#25968;&#25454;&#65288;&#36339;&#36807;&#22238;&#25910;&#31449;&#65289;</span></label><div class="dialog-actions"><button value="cancel" class="outline">&#21462;&#28040;</button><button value="default" class="danger" id="batch-delete-confirm">&#30830;&#35748;&#21024;&#38500;</button></div></form></dialog>
 
   <dialog id="assign-dialog"><form method="dialog"><div class="dialog-head"><div><h2>批量分配应用</h2><p id="assign-extension-name"></p></div><button value="cancel" aria-label="关闭" data-i18n-aria="common.close">×</button></div><div id="assign-profile-list" class="assign-list"></div><div class="dialog-actions"><button value="cancel" class="outline">取消</button><button value="disable" class="danger" id="unassign-extension">移除选中</button><button value="enable" class="primary" id="assign-extension">添加到选中环境</button></div></form></dialog>

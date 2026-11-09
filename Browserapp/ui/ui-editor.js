@@ -217,6 +217,8 @@ function normalizeProfileSettings(profile) {
       cloudBackup: Boolean(advanced.cloudBackup),
       syncCookiesOnClose: advanced.syncCookiesOnClose !== false,
       syncIndexedDB: Boolean(advanced.syncIndexedDB),
+      syncTab: advanced.syncTab !== false,
+      syncHistory: Boolean(advanced.syncHistory),
       syncLocalStorage: Boolean(advanced.syncLocalStorage),
       syncSessionStorage: Boolean(advanced.syncSessionStorage),
       sessionStorages: String(advanced.sessionStorages || ''),
@@ -358,12 +360,22 @@ function editorDraft(strict = true) {
       canvasId: numberOrUndefined($('#editor-canvas-seed')?.value),
       clientRectsId: numberOrUndefined($('#editor-crects-seed')?.value),
       audioId: numberOrUndefined($('#editor-audio-seed')?.value),
-      // 电池电量（0–1）：填了就走固定电池，留空回随机
+      // 电池电量（0–1）：填了就走固定电池，留空回随机；充电状态/充放电时长对齐 Roxy 电池组
       battery: (() => {
         const v = $('#editor-battery-level')?.value;
-        if (v === '' || v == null) return undefined;
-        const n = Number(v);
-        return Number.isFinite(n) ? { charging: true, level: Math.min(1, Math.max(0, n)) } : undefined;
+        const charging = $('#editor-battery-charging')?.value || 'auto';
+        const ct = $('#editor-battery-charging-time')?.value;
+        const dt = $('#editor-battery-discharging-time')?.value;
+        const n = v === '' || v == null ? NaN : Number(v);
+        const hasLevel = Number.isFinite(n);
+        if (!hasLevel && charging === 'auto' && !ct && !dt) return undefined;
+        const snap = {
+          charging: charging !== 'no',
+          level: hasLevel ? Math.min(1, Math.max(0, n)) : 0.87,
+        };
+        if (ct !== '' && ct != null && Number.isFinite(Number(ct))) snap.chargingTime = Math.max(0, Number(ct));
+        if (dt !== '' && dt != null && Number.isFinite(Number(dt))) snap.dischargingTime = Math.max(0, Number(dt));
+        return snap;
       })(),
       uaStrict: Boolean($('#editor-ua-strict')?.checked),
       fonts: (() => {
@@ -506,7 +518,8 @@ function editorDraft(strict = true) {
       ipChannel: $('#editor-ip-channel')?.value || 'ip-api',
       refreshUrl: ($('#editor-refresh-url')?.value || '').trim(),
       checkOnStart: Boolean($('#editor-proxy-check-start')?.checked),
-      refreshOnStart: Boolean($('#editor-proxy-refresh-start')?.checked),
+      refreshOnStart: ($('#editor-proxy-extract-mode')?.value || 'onInvalid') === 'always',
+      extractMode: ($('#editor-proxy-extract-mode')?.value || 'onInvalid'),
       systemProxy: $('#editor-system-proxy')?.value || 'global',
       directBypass: Boolean($('#editor-direct-bypass')?.checked),
       bypassList: ($('#editor-bypass-list')?.value || '').trim(),
@@ -545,6 +558,8 @@ function editorDraft(strict = true) {
       syncLocalStorage: Boolean($('#editor-sync-ls')?.checked),
       syncPasswords: Boolean($('#editor-sync-passwords')?.checked),
       syncExtensionData: Boolean($('#editor-sync-ext')?.checked),
+      syncTab: $('#editor-sync-tab')?.checked !== false,
+      syncHistory: Boolean($('#editor-sync-history')?.checked),
       syncSessionStorage: Boolean($('#editor-sync-session-storage')?.checked),
       sessionStorages: ($('#editor-session-storage-data')?.value || '').trim(),
       promptSavePassword,
@@ -892,7 +907,7 @@ function randomizeFingerprintDraft() {
   const fontListMode = $('#editor-font-list-mode');
   if (fontListMode) fontListMode.value = 'noise';
   // 清掉手填的固定标识：种子、电量、字体列表、SSL 黑名单全部回到自动档
-  for (const sel of ['#editor-canvas-seed', '#editor-crects-seed', '#editor-audio-seed', '#editor-battery-level', '#editor-font-list', '#editor-ssl-min', '#editor-ssl-blacklist']) {
+  for (const sel of ['#editor-canvas-seed', '#editor-crects-seed', '#editor-audio-seed', '#editor-battery-level', '#editor-battery-charging-time', '#editor-battery-discharging-time', '#editor-font-list', '#editor-ssl-min', '#editor-ssl-blacklist']) {
     const el = $(sel);
     if (el) el.value = '';
   }
@@ -904,6 +919,11 @@ function randomizeFingerprintDraft() {
 
 function openProfileEditor(id) {
   const profile = normalizeProfileSettings(ui.profiles.find((item) => item.id === id)); if (!profile?.id) return;
+  const editorForm = $('#profile-editor-form');
+  if (editorForm) {
+    delete editorForm.dataset.readonly;
+    editorForm.querySelectorAll('input,select,textarea,button').forEach((el) => { el.disabled = false; });
+  }
   editorNetworkResult = profile.exitIp ? { ip: profile.exitIp, countryCode: profile.exitCountryCode, timezone: profile.exitTimezone, latitude: profile.exitLatitude, longitude: profile.exitLongitude, checkedAt: profile.exitCheckedAt } : null;
   editingProfileId = profile.id;
   editorSet('#editor-id', profile.id);
@@ -940,8 +960,8 @@ function openProfileEditor(id) {
   const linkedProxy = proxyLibraryItem(linkedProxyId);
   const proxyLibraryStatus = $('#editor-proxy-library-status');
   if (proxyLibraryStatus) proxyLibraryStatus.textContent = linkedProxy
-    ? `已关联代理库：${proxyLibraryLabel(linkedProxy)}`
-    : (linkedProxyId ? `代理节点已失效：${linkedProxyId}` : '未关联代理库节点');
+    ? tx('已关联代理库：') + proxyLibraryLabel(linkedProxy)
+    : (linkedProxyId ? tx('代理节点已失效：') + linkedProxyId : tx('未关联代理库节点'));
   let proxy = parseEditorProxy(profile.proxy);
   if (linkedProxy) {
     if (proxy.mode !== 'custom' || !proxy.host) {
@@ -992,7 +1012,8 @@ function openProfileEditor(id) {
   editorSet('#editor-api-extract-url', profile.proxyMeta.apiExtractUrl || '');
   editorSet('#editor-backup-proxies', Array.isArray(profile.proxyMeta.backupProxies) ? profile.proxyMeta.backupProxies.join('\n') : '');
   editorCheck('#editor-proxy-check-start', profile.proxyMeta.checkOnStart);
-  editorCheck('#editor-proxy-refresh-start', profile.proxyMeta.refreshOnStart);
+  const extractSel = $('#editor-proxy-extract-mode');
+  if (extractSel) extractSel.value = profile.proxyMeta.extractMode || (profile.proxyMeta.refreshOnStart ? 'always' : 'onInvalid');
   editorCheck('#editor-proxy-fill-fingerprint', profile.proxyMeta.fillFingerprint !== false);
   editorCheck('#editor-proxy-require-ready', profile.proxyMeta.requireReady !== false);
   editorSet('#editor-proxy-not-ready-policy', profile.proxyMeta.notReadyPolicy || (profile.proxyMeta.requireReady === false ? 'continue' : 'block'));
@@ -1068,6 +1089,11 @@ function openProfileEditor(id) {
   editorSet('#editor-crects-seed', fpSeedText(privacy.fingerprint?.clientRectsId));
   editorSet('#editor-audio-seed', fpSeedText(privacy.fingerprint?.audioId));
   editorSet('#editor-battery-level', fpSeedText(privacy.fingerprint?.battery && Number.isFinite(Number(privacy.fingerprint.battery.level)) ? privacy.fingerprint.battery.level : ''));
+  const batSnap = privacy.fingerprint?.battery;
+  const batteryCharging = $('#editor-battery-charging');
+  if (batteryCharging) batteryCharging.value = batSnap ? (batSnap.charging === false ? 'no' : 'yes') : 'auto';
+  editorSet('#editor-battery-charging-time', batSnap && Number.isFinite(Number(batSnap.chargingTime)) ? String(batSnap.chargingTime) : '');
+  editorSet('#editor-battery-discharging-time', batSnap && Number.isFinite(Number(batSnap.dischargingTime)) ? String(batSnap.dischargingTime) : '');
   editorCheck('#editor-ua-strict', Boolean(privacy.fingerprint?.uaStrict));
   editorSet('#editor-font-list', Array.isArray(privacy.fingerprint?.fonts) ? privacy.fingerprint.fonts.join(', ') : (privacy.fingerprint?.fonts || ''));
   editorSet('#editor-ssl-min', privacy.fingerprint?.sslVersionMin || '');
@@ -1116,6 +1142,8 @@ function openProfileEditor(id) {
     ['#editor-sync-ls', advanced.syncLocalStorage],
     ['#editor-sync-passwords', advanced.syncPasswords],
     ['#editor-sync-ext', advanced.syncExtensionData],
+    ['#editor-sync-tab', advanced.syncTab !== false],
+    ['#editor-sync-history', advanced.syncHistory],
     ['#editor-multi-open', advanced.multiOpen],
     ['#editor-block-sound', advanced.blockSound],
     ['#editor-prompt-save-password', advanced.promptSavePassword !== false],
