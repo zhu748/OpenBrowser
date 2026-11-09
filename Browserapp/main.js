@@ -2081,18 +2081,3 @@ app.on('window-all-closed', () => {
   // exits cannot remain active behind a hidden macOS application.
   if (!quitting) app.quit();
 });
-
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = {
-    isNavigableInternalUrl,
-    isDangerousOrBlockedInternalUrl,
-    canMirrorTabUrl,
-    canDomLiveSyncTabUrl,
-    BLOCKED_INTERNAL_SCHEMES,
-    BLOCKED_INTERNAL_HOSTS,
-    ALLOWED_INTERNAL_HOSTS,
-    ALLOWED_INTERNAL_PAGES,
-    MAX_SYNC_TABS,
-    syncTabsFromMaster,
-  };
-}
