@@ -104,6 +104,8 @@ function firefoxExtraUserPrefs(profile) {
   // --- advanced switches that DO have a Firefox pref ---
   if (advanced.blockImages) prefs.push(['permissions.default.image', 2]);
   else prefs.push(['permissions.default.image', 1]);
+  // Roxy 对齐：声音关闭 → Firefox 只能落 autoplay 闸（disablePlaySound 是 Roxy 内核能力）。
+  if (advanced.blockSound || advanced.blockVideo) prefs.push(['media.block-autoplay-until-user-interaction', true]);
   if (advanced.blockNotifications) prefs.push(['permissions.default.desktop-notification', 2]);
   if (privacy.media === 'blocked') {
     prefs.push(['permissions.default.microphone', 2]);

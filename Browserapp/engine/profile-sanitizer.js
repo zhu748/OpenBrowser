@@ -286,6 +286,9 @@ function sanitizeProfile(value) {
       clearCacheOnStart: Boolean(advancedValue.clearCacheOnStart),
       clearCookiesOnStart: Boolean(advancedValue.clearCookiesOnStart),
       clearLocalStorageOnStart: Boolean(advancedValue.clearLocalStorageOnStart),
+      // Roxy 对齐：启动前删除历史记录 / 忽略 HTTPS 证书错误（ignoreHttpsError）
+      clearHistoryOnStart: Boolean(advancedValue.clearHistoryOnStart),
+      ignoreHttpsError: Boolean(advancedValue.ignoreHttpsError),
       ipChangePolicy: allowed(advancedValue.ipChangePolicy, ["patch", "notify", "stop"], "patch"),
       cloudBackup: Boolean(advancedValue.cloudBackup),
       syncCookiesOnClose: advancedValue.syncCookiesOnClose !== false,

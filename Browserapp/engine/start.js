@@ -139,6 +139,11 @@ function clearProfileLaunchData(root, profile) {
       if (rm(relative)) removed.push(relative);
     }
   }
+  if (advanced.clearHistoryOnStart) {
+    for (const relative of ['Default/History', 'Default/History-journal', 'Default/History Provider Cache', 'Default/Visited Links']) {
+      if (rm(relative)) removed.push(relative);
+    }
+  }
   return removed;
 }
 
@@ -435,8 +440,13 @@ module.exports = {
     if (!profile.advanced.allowSignin) args.push('--disable-sync');
     if (profile.privacy.webgpu === 'blocked') args.push('--disable-features=WebGPU');
     if (profile.advanced.blockImages) args.push('--blink-settings=imagesEnabled=false');
+    // Roxy 对齐：「声音 = 关闭」→ 内核真静音（disablePlaySound）；视频关闭仅能落到 autoplay 闸（内核级
+    // disablePlayVideo 是 Roxy 自研内核能力，Chromium 无等价开关，见对齐矩阵）。
+    if (profile.advanced.blockSound) args.push('--mute-audio');
     if (profile.advanced.blockVideo || profile.advanced.blockSound) args.push('--autoplay-policy=user-gesture-required');
     else args.push('--autoplay-policy=no-user-gesture-required');
+    // Roxy 对齐：「忽略 HTTPS 证书错误」（ignoreHttpsError）
+    if (profile.advanced.ignoreHttpsError) args.push('--ignore-certificate-errors');
     // 全屏启动 / 九宫格窗口位置（对齐「窗口大小 = 全屏」「窗口位置」）
     if (profile.privacy?.fullscreen) args.push('--start-fullscreen');
     const windowPositionArgValue = windowPositionArg(profile);

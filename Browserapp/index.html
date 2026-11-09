@@ -712,6 +712,7 @@
                 <label class="check-row"><input id="editor-dnt" type="checkbox" hidden> </label>
                 <label class="check-row"><input id="editor-port-scan" type="checkbox"> 端口扫描保护 — 阻止网站探测本机端口</label>
                 <label>允许被扫描的端口（可选，逗号分隔）<input id="editor-port-scan-allow" placeholder="例如：4000,4001（1–65535）"></label>
+                <label class="check-row"><input id="editor-ignore-https" type="checkbox"> 忽略 HTTPS 证书错误 — 过期/自签名证书不再拦截（对齐 Roxy「ignoreHttpsError」，注意中间人风险）</label>
                 <label class="check-row"><input id="editor-cf-optimize" type="checkbox" checked> Cloudflare 验证优化 — 减少五秒盾卡住（可能略增被识别概率）</label>
               </section>
               <section class="editor-panel" data-editor-panel="advanced">
@@ -774,6 +775,7 @@
                   <label class="check-row"><input id="editor-clear-cache" type="checkbox"> 启动时清除缓存</label>
                   <label class="check-row"><input id="editor-clear-cookies" type="checkbox"> 启动时清除 Cookies</label>
                   <label class="check-row"><input id="editor-clear-localstorage" type="checkbox"> 启动时清除 Local Storage / IndexedDB</label>
+                  <label class="check-row"><input id="editor-clear-history" type="checkbox"> 启动时清除历史记录（对齐 Roxy「启动浏览器前删除历史记录」）</label>
                 </div>
                 <div class="advanced-card">
                   <strong data-i18n="editor.startupGuard">启动与网络守护</strong>

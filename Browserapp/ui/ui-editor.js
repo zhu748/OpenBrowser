@@ -219,6 +219,8 @@ function normalizeProfileSettings(profile) {
       clearCacheOnStart: Boolean(advanced.clearCacheOnStart),
       clearCookiesOnStart: Boolean(advanced.clearCookiesOnStart),
       clearLocalStorageOnStart: Boolean(advanced.clearLocalStorageOnStart),
+      clearHistoryOnStart: Boolean(advanced.clearHistoryOnStart),
+      ignoreHttpsError: Boolean(advanced.ignoreHttpsError),
       ipChangePolicy: ['patch', 'notify', 'stop'].includes(String(advanced.ipChangePolicy || '')) ? String(advanced.ipChangePolicy) : 'patch',
       cloudBackup: Boolean(advanced.cloudBackup),
       syncCookiesOnClose: advanced.syncCookiesOnClose !== false,
@@ -569,6 +571,8 @@ function editorDraft(strict = true) {
       clearCacheOnStart: Boolean($('#editor-clear-cache')?.checked),
       clearCookiesOnStart: Boolean($('#editor-clear-cookies')?.checked),
       clearLocalStorageOnStart: Boolean($('#editor-clear-localstorage')?.checked),
+      clearHistoryOnStart: Boolean($('#editor-clear-history')?.checked),
+      ignoreHttpsError: Boolean($('#editor-ignore-https')?.checked),
       ipChangePolicy: ($('#editor-ip-change-policy')?.value || 'patch') === 'patch' && ipChangeRemind === '1' ? 'notify' : ($('#editor-ip-change-policy')?.value || 'patch'),
       cloudBackup: Boolean($('#editor-cloud-backup')?.checked),
       syncCookiesOnClose: $('#editor-sync-cookies-close')?.checked !== false,
@@ -682,7 +686,8 @@ function renderEditorSummary() {
     [tx('搜索引擎'), privacy.searchEngine ? ({ google: 'Google', bing: 'Microsoft Bing', yahoo: 'Yahoo', yandex: 'Yandex', duckduckgo: 'DuckDuckGo' }[privacy.searchEngine]) : t('editor.summary.default')],
     [tx('自定义启动参数'), privacy.customArgs || '—'],
     [tx('IP 变化策略'), { patch: t('editor.summary.ipPatch'), notify: t('editor.summary.ipNotify'), stop: t('editor.summary.ipStop') }[draft.advanced?.ipChangePolicy || 'patch']],
-    [tx('启动前清理'), [draft.advanced?.clearCacheOnStart && '缓存', draft.advanced?.clearCookiesOnStart && 'Cookies', draft.advanced?.clearLocalStorageOnStart && 'Local Storage'].filter(Boolean).join(' / ') || '—'],
+    [tx('启动前清理'), [draft.advanced?.clearCacheOnStart && '缓存', draft.advanced?.clearCookiesOnStart && 'Cookies', draft.advanced?.clearLocalStorageOnStart && 'Local Storage', draft.advanced?.clearHistoryOnStart && '历史记录'].filter(Boolean).join(' / ') || '—'],
+    [tx('忽略 HTTPS 证书错误'), draft.advanced?.ignoreHttpsError ? t('editor.summary.on') : t('editor.summary.off')],
     [tx('每次打开刷新指纹'), privacy.refreshFingerprintOnStart ? t('editor.summary.on') : t('editor.summary.off')]
   ];
   for (const [name, value] of values) { const row = document.createElement('div'); row.append(element('dt', '', name), element('dd', '', value || '默认')); summary.append(row); }
@@ -1170,6 +1175,8 @@ function openProfileEditor(id) {
     ['#editor-clear-cache', advanced.clearCacheOnStart],
     ['#editor-clear-cookies', advanced.clearCookiesOnStart],
     ['#editor-clear-localstorage', advanced.clearLocalStorageOnStart],
+    ['#editor-clear-history', advanced.clearHistoryOnStart],
+    ['#editor-ignore-https', advanced.ignoreHttpsError],
     ['#editor-cloud-backup', advanced.cloudBackup],
     ['#editor-sync-cookies-close', advanced.syncCookiesOnClose !== false],
     ['#editor-sync-idb', advanced.syncIndexedDB],
