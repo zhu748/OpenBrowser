@@ -15,7 +15,15 @@ const renderer = read('renderer.js');
 const main = read('main.js');
 const index = read('index.html');
 const i18n = read('i18n.js');
+// Locale catalogs moved to automation/data/locale/*.json; i18n.js is loader + logic.
+const zhCatalog = read('automation/data/locale/zh-CN.json');
+const enCatalog = read('automation/data/locale/en.json');
 const css = read('modern.css');
+// The theme registry moved from renderer.js into renderer-theme.js (second
+// renderer.js split): the UI_THEMES assertion scans the module, and one
+// wiring assertion keeps index.html tied to it.
+const rendererTheme = read('renderer-theme.js');
+ok(/<script src="renderer-theme\.js/.test(index), 'index.html loads the renderer-theme.js module');
 
 // 1. Old skins are gone
 for (const stale of ['oceanic-fingerprint.css', 'pixel-workstation.css', 'nes-light.css', 'element-admin.css', 'xai-console.css', 'retro-desktop.css',
@@ -24,7 +32,7 @@ for (const stale of ['oceanic-fingerprint.css', 'pixel-workstation.css', 'nes-li
 }
 ok(!index.includes('theme-picker') && !index.includes('theme-trigger') && !index.includes('theme-popover'), 'theme picker removed from header');
 ok(!/data-ui-theme-option/.test(index) && !/data-ui-theme-option/.test(renderer), 'no theme option buttons left');
-ok(/const UI_THEMES = Object\.freeze\(\{\s*'modern':/.test(renderer) && !/['"](?:oceanic-fingerprint|merge-gateway|retro-desktop|pixel-workstation|nes-light|element-admin|roxy-modern)['"]\s*:/.test(renderer.match(/const UI_THEMES = Object\.freeze\(\{[\s\S]*?\}\);/)?.[0] || ''), 'UI_THEMES registers only modern');
+ok(/const UI_THEMES = Object\.freeze\(\{\s*'modern':/.test(rendererTheme) && !/['"](?:oceanic-fingerprint|merge-gateway|retro-desktop|pixel-workstation|nes-light|element-admin|roxy-modern)['"]\s*:/.test(rendererTheme.match(/const UI_THEMES = Object\.freeze\(\{[\s\S]*?\}\);/)?.[0] || ''), 'UI_THEMES registers only modern');
 ok(main.includes("'modern': { bg: '#ffffff', overlay: '#f5fbff', symbol: '#111213' }"), 'main THEME_CHROME has modern chrome');
 for (const legacy of ['oceanic-fingerprint', 'pixel-workstation', 'nes-light', 'element-admin', 'merge-gateway', 'retro-desktop', 'roxy-modern']) {
   ok(!main.includes(`'${legacy}'`), `main.js has no ${legacy} chrome entry`);
@@ -34,9 +42,10 @@ for (const legacy of ['oceanic-fingerprint', 'pixel-workstation', 'nes-light', '
 ok(index.includes('modern.css'), 'index loads modern.css');
 ok(!index.includes('roxy-modern.css'), 'index no longer references legacy css name');
 ok(index.includes('data-ui-theme="modern"'), 'html root carries data-ui-theme="modern"');
-ok(i18n.includes("'theme.modern.name'") && i18n.includes("'theme.modern.desc'"), 'i18n has theme.modern keys');
-ok(i18n.includes("'theme.modern.name': '默认界面'") && i18n.includes("'theme.modern.name': 'Default UI'"), 'i18n zh+en labels present');
-ok(!i18n.includes("'theme.roxy'") && !i18n.includes("'theme.oceanic'") && !i18n.includes("'theme.pixel'"), 'legacy theme i18n keys removed');
+ok(zhCatalog.includes('"theme.modern.name"') && enCatalog.includes('"theme.modern.desc"'), 'i18n has theme.modern keys');
+ok(zhCatalog.includes('"theme.modern.name": "默认界面"') && enCatalog.includes('"theme.modern.name": "Default UI"'), 'i18n zh+en labels present');
+ok(!zhCatalog.includes('theme.roxy') && !zhCatalog.includes('theme.oceanic') && !zhCatalog.includes('theme.pixel')
+  && !i18n.includes("'theme.roxy'") && !i18n.includes("'theme.oceanic'") && !i18n.includes("'theme.pixel'"), 'legacy theme i18n keys removed');
 
 // 3. CSS scope & design tokens
 ok(css.includes('html[data-ui-theme="modern"]'), 'modern.css scopes to data-ui-theme');
