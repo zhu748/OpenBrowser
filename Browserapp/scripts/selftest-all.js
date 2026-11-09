@@ -10,6 +10,12 @@
  * exits non-zero when ANY script fails — so "which selftests exist" and "which
  * selftests run" can no longer drift apart in the smoke gate.
  *
+ * The SUITE array below is the SINGLE test registry: `npm run selftest -- <name>`
+ * (scripts/selftest-one.js) resolves names against it, and
+ * automation/selftests/selftest-registry-consistency-selftest.js guards the
+ * package.json <-> SUITE contract. Both require() this module, so the list is
+ * declared exactly once.
+ *
  * Kernel/display-bound scripts (real Chromium needed) stay out of the gate on
  * purpose — see the SUITE tail comment. Use --list to print the plan.
  */
@@ -21,9 +27,13 @@ const path = require('path');
 // relative to the app root, not to this file.
 const ROOT = path.join(__dirname, '..');
 
-// [npm script name, argv script path relative to Browserapp/, flags]
+// [registry name, argv script path relative to Browserapp/, flags]
+// The name is the canonical identifier used by `npm run selftest -- <name>`
+// (scripts/selftest-one.js); it no longer implies an npm script of the same
+// name exists — package.json only keeps entries that a workflow, the release
+// gate or the docs still invoke directly.
 const SUITE = [
-  ['selftest', 'environment-audit-selftest.js'],
+  ['selftest:environment', 'environment-audit-selftest.js'],
   ['selftest:hardening', 'security-hardening-selftest.js'],
   ['selftest:credentials', 'automation/selftests/credential-encryption-selftest.js'],
   ['selftest:cloud', 'automation/selftests/cloud-sync-security-selftest.js'],
@@ -109,10 +119,15 @@ const SUITE = [
   ['selftest:fullscreen', 'fullscreen-window-sync-selftest.js'],
   ['selftest:fpalign', 'automation/selftests/fingerprint-alignment-selftest.js'],
   ['selftest:probebudget', 'automation/selftests/proxy-probe-budget-selftest.js'],
+  // Registry-consistency guard: with SUITE as the single registry this is
+  // what stops package.json from silently re-accumulating duplicate
+  // selftest:* entries (P2 single-registry consolidation).
+  ['selftest:registry', 'automation/selftests/selftest-registry-consistency-selftest.js'],
   // Kernel/display-bound scripts stay out of the aggregate gate on purpose:
   // selftest.js, live-sync-v4-selftest.js, rust-core-*-selftest.js,
   // browser-startup-diagnostic-selftest.js and friends need a real Chromium;
-  // they keep their individual npm scripts and CI/本地按环境调用。
+  // they are NOT registered here and keep their individual npm scripts,
+  // invoked per environment by CI or locally.
   // Entries flagged { darwinOnly: true } need the macOS kernel launcher; their
   // scripts self-skip with a misleading "OK n/n" on Linux, so the runner marks
   // them as explicit skips instead of counting them as passes.
@@ -170,4 +185,10 @@ function main() {
   return failed ? 1 : 0;
 }
 
-process.exit(main());
+// The SUITE registry is require()-able without side effects so that
+// scripts/selftest-one.js (single-test runner) and
+// automation/selftests/selftest-registry-consistency-selftest.js (drift guard)
+// share this exact list instead of re-declaring it.
+module.exports = { SUITE, PER_SCRIPT_TIMEOUT_MS };
+
+if (require.main === module) process.exit(main());

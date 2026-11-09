@@ -197,7 +197,7 @@ jobs:
         run: choco install nsis --no-progress --yes
       - name: Self-tests
         run: |
-          npm run selftest
+          npm run selftest:environment
           npm run selftest:automation
           npm run selftest:protocol
           npm run selftest:isolation
@@ -300,7 +300,7 @@ jobs:
           OPENBROWSER_VERIFY_PLATFORM=linux-x64 npm run prepare:bundled-kernel
       - name: Self-tests
         run: |
-          npm run selftest
+          npm run selftest:environment
           npm run selftest:automation
           npm run selftest:protocol
           npm run selftest:isolation
@@ -422,7 +422,7 @@ jobs:
           npm run prepare:bundled-kernel
       - name: Self-tests
         run: |
-          npm run selftest
+          npm run selftest:environment
           npm run selftest:automation
           npm run selftest:protocol
           npm run selftest:isolation
@@ -536,7 +536,7 @@ jobs:
           npm run prepare:bundled-kernel
       - name: Self-tests
         run: |
-          npm run selftest
+          npm run selftest:environment
           npm run selftest:automation
           npm run selftest:protocol
           npm run selftest:isolation

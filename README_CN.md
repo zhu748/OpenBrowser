@@ -82,7 +82,7 @@ OpenBrowser 是一款本地桌面指纹浏览器，用于管理多套互相隔�
 ```bash
 cd Browserapp
 npm ci --include=dev
-npm run selftest
+npm run selftest -- environment   # 快速冒烟（运行单个注册测试）
 npm start
 ```
 
@@ -121,14 +121,21 @@ sudo apt-get install libatk-bridge2.0-0 libatk1.0-0 libatspi2.0-0 libcups2 libdr
 
 ## 自测
 
+`Browserapp/scripts/selftest-all.js` 中的 SUITE 注册表是唯一测试清单；
+`npm run selftest -- <name>` 按注册名（或文件名唯一前缀）解析并运行单个测试。
+
 ```bash
 cd Browserapp
-npm run selftest
-npm run selftest:automation
+npm run selftest -- list     # 列出全部已注册测试
+npm run selftest -- cloud    # 运行单个测试（注册名 / 文件名唯一前缀）
+npm run selftest:all         # 聚合运行全部内核无关自测（CI 冒烟入口）
+```
+
+需要真实 Chromium/内核的测试不在注册表内，仍保留各自的 npm 脚本，例如：
+
+```bash
 npm run selftest:protocol
-npm run selftest:isolation
 npm run selftest:kernel
-npm run selftest:cloud
 ```
 
 ## 项目结构

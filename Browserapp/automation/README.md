@@ -12,17 +12,17 @@
 | `mcp-server.js` | stdio MCP（给 Cursor/Claude） |
 | `index.js` | 主进程挂载入口 |
 
-自测脚本全部位于 `selftests/` 子目录（如 `selftests/automation-selftest.js`、`selftests/mcp-control-selftest.js`），与本目录的生产模块隔离；`package.json` 中 `selftest:*` 脚本已指向新位置。
+自测脚本全部位于 `selftests/` 子目录（如 `selftests/automation-selftest.js`、`selftests/mcp-control-selftest.js`），与本目录的生产模块隔离；哪些测试可运行由 `scripts/selftest-all.js` 的 SUITE 注册表唯一决定，`package.json` 只保留被工作流/门禁直接调用的少数入口。
 
 ## 验证
 
 ```bash
-npm run selftest:automation
+npm run selftest -- automation
 # 或
 node automation/selftests/automation-selftest.js
 
 # MCP 完整控制面（环境、指纹、代理、扩展、同步、RPA、权限策略）
-npm run selftest:mcp
+npm run selftest -- mcp
 ```
 
 ## 日志

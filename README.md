@@ -82,7 +82,7 @@ Requires Node.js LTS and npm.
 ```bash
 cd Browserapp
 npm ci --include=dev
-npm run selftest
+npm run selftest -- environment   # quick smoke check (one registered test)
 npm start
 ```
 
@@ -123,14 +123,23 @@ sudo apt-get install libatk-bridge2.0-0 libatk1.0-0 libatspi2.0-0 libcups2 libdr
 
 ## Self-tests
 
+The SUITE registry in `Browserapp/scripts/selftest-all.js` is the single list of
+registered tests; `npm run selftest -- <name>` resolves a registry name (or a
+unique file-name prefix) and runs that one test.
+
 ```bash
 cd Browserapp
-npm run selftest
-npm run selftest:automation
+npm run selftest -- list     # print every registered test
+npm run selftest -- cloud    # run one test (name / unique file-name prefix)
+npm run selftest:all         # aggregate kernel-free suite (what CI runs)
+```
+
+Kernel/display-bound tests (real Chromium needed) are not in the registry and
+keep their individual npm scripts, for example:
+
+```bash
 npm run selftest:protocol
-npm run selftest:isolation
 npm run selftest:kernel
-npm run selftest:cloud
 ```
 
 ## Project layout

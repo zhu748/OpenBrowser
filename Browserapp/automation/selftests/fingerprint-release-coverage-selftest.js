@@ -79,7 +79,7 @@ const COVERAGE_DOMAINS = [
     domain: "Platform CI Baseline & Surface Integrity",
     description: "Exact cross-platform workflow selftests that run before packaging and guard injection surface integrity",
     suites: [
-      { key: "selftest", script: "node environment-audit-selftest.js", file: "environment-audit-selftest.js" },
+      { key: "selftest:environment", script: "node environment-audit-selftest.js", file: "environment-audit-selftest.js" },
       { key: "selftest:automation", script: "node automation/selftests/automation-selftest.js", file: "automation/selftests/automation-selftest.js" },
       { key: "selftest:protocol", script: "node automation/protocol/protocol-selftest.js", file: "automation/protocol/protocol-selftest.js" },
       { key: "selftest:isolation", script: "node automation/selftests/isolation-fingerprint-selftest.js", file: "automation/selftests/isolation-fingerprint-selftest.js" },

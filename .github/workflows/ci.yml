@@ -71,11 +71,11 @@ jobs:
       - name: Kernel fetch tooling selftest
         run: node scripts/fetch-kernels.js --selftest
       # Aggregate gate: scripts/selftest-all.js runs every dependency-free
-      # selftest in one shot — a new selftest added to package.json's
-      # suite list runs here automatically instead of waiting for someone to
-      # paste another line into this workflow. Entries flagged darwinOnly are
-      # reported as skips on this Linux job (they need the macOS kernel
-      # launcher) and never count as passes.
+      # selftest in one shot — a new selftest added to the SUITE registry in
+      # scripts/selftest-all.js runs here automatically instead of waiting for
+      # someone to paste another line into this workflow. Entries flagged
+      # darwinOnly are reported as skips on this Linux job (they need the
+      # macOS kernel launcher) and never count as passes.
       - name: Full selftest aggregate (kernel-free suite)
         run: npm run selftest:all
 

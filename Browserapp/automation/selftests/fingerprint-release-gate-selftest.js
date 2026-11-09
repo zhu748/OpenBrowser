@@ -77,7 +77,11 @@ assert.ok(
 );
 
 const CORE_SCRIPTS = [
-  { key: "selftest", script: "node environment-audit-selftest.js", file: "environment-audit-selftest.js" },
+  // The bare "selftest" entry is the generic single-test runner over the
+  // SUITE registry (P2 single-registry consolidation); environment-audit
+  // keeps its own explicit registration below so it stays runnable directly.
+  { key: "selftest", script: "node scripts/selftest-one.js", file: "scripts/selftest-one.js" },
+  { key: "selftest:environment", script: "node environment-audit-selftest.js", file: "environment-audit-selftest.js" },
   { key: "selftest:automation", script: "node automation/selftests/automation-selftest.js", file: "automation/selftests/automation-selftest.js" },
   { key: "selftest:protocol", script: "node automation/protocol/protocol-selftest.js", file: "automation/protocol/protocol-selftest.js" },
   { key: "selftest:isolation", script: "node automation/selftests/isolation-fingerprint-selftest.js", file: "automation/selftests/isolation-fingerprint-selftest.js" },
