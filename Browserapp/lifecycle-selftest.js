@@ -25,6 +25,10 @@ function makeEngine() {
   engine.stopAllPromise = null;
   engine.stopAllInProgress = false;
   engine.profiles = new Map();
+  // These unit fixtures do not launch OS processes. Model a completed helper
+  // drain explicitly; the unknown-scan case below overrides this and verifies
+  // that production cleanup retains the lock when process inspection fails.
+  engine.drainProfileHelpers = async () => ({ known: true, pids: [], attempts: 1, timedOut: false });
   engine.emit = () => {};
   engine.sanitizeProfile = (value) => ({ ...value });
   engine.restoreStoredProxyCredentials = (value) => value;
@@ -428,6 +432,8 @@ async function main() {
   await testAppQuitCleanupContract();
   await testLockReleaseFailureRetainsRunningItem();
   await testStartupResourceCleanupUnknownScan();
+  await testRestartRetainsLockWhenProcessScanUnknown();
+  await testQuitFlushFailureStillCleansUp();
   const profile = { id: 'lifecycle-env', name: 'Lifecycle environment' };
   const engine = makeEngine();
   let startCount = 0;
@@ -554,4 +560,63 @@ async function testStartupResourceCleanupUnknownScan() {
     engine.drainProfileHelpers = originalDrain;
     await fs.rm(root, { recursive: true, force: true }).catch(() => {});
   }
+}
+
+async function testRestartRetainsLockWhenProcessScanUnknown() {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ob-restart-unknown-'));
+  const profileRoot = path.join(root, 'env-restart');
+  const profile = { id: 'env-restart' };
+  const engine = makeEngine();
+  const profileLock = await acquireProfileLock(profileRoot, { profileId: profile.id });
+  const previous = { child: { exitCode: 0 }, cleanupFailed: true, root: profileRoot, profileLock };
+  engine.running.set(profile.id, previous);
+  let launches = 0;
+  engine._start = async () => { launches += 1; return { running: true }; };
+  const originalPath = process.env.PATH;
+  // Force real process-inspection failure on every host, rather than relying
+  // on the sandbox's missing /proc or on whether a browser happens to run.
+  process.env.PATH = path.join(root, 'no-programs');
+  try {
+    await assert.rejects(engine.start(profile), (error) => error.code === 'BROWSER_HELPERS_EXIT_UNCONFIRMED');
+    assert.strictEqual(launches, 0);
+    assert.strictEqual(engine.running.get(profile.id), previous);
+    assert.strictEqual(await fs.stat(lockPath(profileRoot)).then(() => true, () => false), true);
+  } finally {
+    process.env.PATH = originalPath;
+    await fs.rm(root, { recursive: true, force: true });
+  }
+}
+
+async function testQuitFlushFailureStillCleansUp() {
+  const source = await fs.readFile(path.join(__dirname, 'main.js'), 'utf8');
+  const start = source.indexOf('function beginQuitCleanup() {');
+  const end = source.indexOf('// A renderer or helper process', start);
+  assert.ok(start >= 0 && end > start);
+  const calls = [];
+  const warnings = [];
+  const failedWrite = (label) => async () => { calls.push(label); throw new Error(label + ' failed'); };
+  const context = {
+    quitCleanupPromise: null, quitting: false, quitCleanupSettled: false,
+    destroyTray: () => {},
+    stopAllForQuit: async () => ({ stopped: true, remaining: [], errors: [] }),
+    engine: { flushPersistence: failedWrite('engine') },
+    settingsStore: {
+      getLocalSettings: () => ({ cloud: { enabled: true, autoSyncOnQuit: true } }),
+      flushSettingsWriter: failedWrite('settings'),
+    },
+    automation: {
+      rpaStore: { flush: () => { calls.push('rpa'); throw new Error('rpa failed'); } },
+      stop: async () => { calls.push('automation-stop'); },
+    },
+    liveSync: { stop: () => { calls.push('sync-stop'); } },
+    cloudOps: { runCloudBackup: async () => { calls.push('backup'); } },
+    lifecycleTimeout: (promise) => promise,
+    stopShortcutBridge: () => { calls.push('shortcut-stop'); },
+    app: { exit: () => { calls.push('exit'); } },
+    console: { warn: (...args) => warnings.push(args.join(' ')) },
+  };
+  await require('vm').runInNewContext(source.slice(start, end) + '\nbeginQuitCleanup();', context);
+  assert.deepStrictEqual(calls, ['engine', 'settings', 'rpa', 'sync-stop', 'automation-stop', 'shortcut-stop', 'exit']);
+  assert.strictEqual(warnings.length, 3, 'every failed flush must be reported');
+  assert.strictEqual(context.quitCleanupSettled, true);
 }

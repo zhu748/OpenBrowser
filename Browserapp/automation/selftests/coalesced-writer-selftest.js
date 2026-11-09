@@ -102,12 +102,66 @@ const keepAlive = setInterval(() => {}, 250);
   await checkAsync('flushNow writes without waiting for the quiet period', async () => {
     const state = { calls: 0, inFlight: 0, maxInFlight: 0, persisted: 0 };
     const writer = createCoalescedWriter({ write: trackingWriter(state), delayMs: 10000 });
-    await writer.request().catch(() => {}); // arms a very long timer
+    const pending = writer.request(); // arms a very long timer
     const started = Date.now();
     await writer.flushNow();
+    await pending;
     assert.ok(Date.now() - started < 1000, 'flushNow waited for the quiet period');
     assert.ok(state.persisted >= 1, 'nothing was written');
     await writer.idle();
+  });
+
+  await checkAsync('flushNow rejects a failed disk write and the next flush can recover', async () => {
+    let fail = true;
+    const writer = createCoalescedWriter({ delayMs: 10000, write: async () => {
+      if (fail) throw new Error('disk unavailable');
+    } });
+    const pending = assert.rejects(writer.request(), /disk unavailable/);
+    try {
+      await assert.rejects(writer.flushNow(), /disk unavailable/);
+      await pending;
+    } finally {
+      fail = false;
+      await writer.flushNow();
+      await pending;
+    }
+    assert.strictEqual(writer.stats().lastError, null);
+  });
+
+  await checkAsync('idle rejects after bounded retries of a failed write', async () => {
+    let fail = true;
+    const writer = createCoalescedWriter({ delayMs: 10000, write: async () => {
+      if (fail) throw new Error('persistent disk failure');
+    } });
+    const pending = assert.rejects(writer.request(), /persistent disk failure/);
+    try {
+      await assert.rejects(writer.idle(), /persistent disk failure/);
+      await pending;
+      assert.strictEqual(writer.stats().runs, 3, 'shutdown retries must remain bounded');
+    } finally {
+      fail = false;
+      await writer.flushNow();
+      await pending;
+    }
+  });
+
+  await checkAsync('an overlapping retry cannot erase the previous flush error', async () => {
+    let finishFirst;
+    let finishSecond;
+    const firstGate = new Promise((resolve) => { finishFirst = resolve; });
+    const secondGate = new Promise((resolve) => { finishSecond = resolve; });
+    let calls = 0;
+    const writer = createCoalescedWriter({ delayMs: 10000, write: async () => {
+      if (++calls === 1) { await firstGate; throw new Error('first write failed'); }
+      await secondGate;
+    } });
+    const request = assert.rejects(writer.request(), /first write failed/);
+    const firstFlush = assert.rejects(writer.flushNow(), /first write failed/);
+    const retry = writer.flushNow();
+    finishFirst();
+    try { await firstFlush; }
+    finally { finishSecond(); await retry; await request; }
+    assert.strictEqual(calls, 2);
   });
 
   await checkAsync('concurrent writers never overlap', async () => {
@@ -226,8 +280,8 @@ const keepAlive = setInterval(() => {}, 250);
       assert.ok(/require\('\.\/object-utils'\)/.test(source), 'deepEqual is not imported');
       assert.ok(/shouldWrite: \(\) => persistedSettingsSnapshot === null/.test(source), 'the skip predicate is missing');
       assert.ok(/deepEqual\(localSettingsCache, persistedSettingsSnapshot\)/.test(source), 'the predicate does not compare the cache');
-      assert.ok(/persistedSettingsSnapshot = JSON\.parse\(JSON\.stringify\(localSettingsCache\)\)/.test(source),
-        'the snapshot is not refreshed after a successful write');
+      assert.ok(source.includes('persistedSettingsSnapshot = snapshot;'),
+        'the persisted marker must use the captured write snapshot');
       const body = source.match(/async function writeLocalSettingsFile\(\) \{[\s\S]*?\n\}/);
       assert.ok(body && body[0].includes('persistedSettingsSnapshot ='), 'the snapshot must be set only by the writer');
     });

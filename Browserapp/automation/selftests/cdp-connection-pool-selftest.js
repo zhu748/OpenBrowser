@@ -65,6 +65,11 @@ class MockSocket {
     const message = JSON.parse(data);
     this.received.push(message);
     const behavior = MockSocket.behaviors.get(this.url) || {};
+    if (behavior.dropAfterSend > 0) {
+      behavior.dropAfterSend -= 1;
+      queueMicrotask(() => this.serverDrop());
+      return;
+    }
     if (behavior.manual) return; // test replies explicitly via serverReply()
     queueMicrotask(() => {
       if (this.readyState === 'closed') return;
@@ -170,6 +175,19 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
       assert.strictEqual(result.echoed, 'Input.dispatchKeyEvent');
       assert.strictEqual(MockSocket.socketsFor(url).length, 2, 'retry opened exactly one extra socket');
       MockSocket.behaviors.delete(url);
+    });
+
+    await checkAsync('same-millisecond disconnect never retries a command already sent', async () => {
+      MockSocket.reset();
+      const url = URL(503);
+      MockSocket.behaviors.set(url, { dropAfterSend: 1 });
+      const originalNow = Date.now;
+      Date.now = () => 123456789;
+      try {
+        await assert.rejects(cdp.call(url, 'Input.dispatchKeyEvent', { type: 'keyDown' }), /closed|error/i);
+        const sent = MockSocket.socketsFor(url).flatMap((socket) => socket.received);
+        assert.strictEqual(sent.length, 1, 'input may have executed already and must never be replayed');
+      } finally { Date.now = originalNow; }
     });
 
     await checkAsync('stale pooled entry with externally closed conn is dropped', async () => {

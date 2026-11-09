@@ -97,7 +97,6 @@ function poolEvict(url, entry) {
 function poolEntryDead(url, entry, error) {
   if (entry.dead) return;
   entry.dead = true;
-  entry.diedAt = Date.now();
   entry.error = error;
   poolEvict(url, entry);
 }
@@ -152,7 +151,6 @@ function poolAcquire(webSocketUrl, timeout) {
     openPromise: null,
     inFlight: 0,
     dead: false,
-    diedAt: 0,
     lastUsed: Date.now(),
     idleTimer: null,
   };
@@ -172,7 +170,6 @@ async function call(webSocketUrl, method, params = {}, timeout = 6000, __retried
   if (typeof WebSocket !== 'function') {
     return Promise.reject(new Error('WebSocket API is unavailable in this host runtime'));
   }
-  const startedAt = Date.now();
   const entry = poolAcquire(webSocketUrl, timeout);
   if (!entry) return callDedicated(webSocketUrl, method, params, timeout);
 
@@ -197,16 +194,6 @@ async function call(webSocketUrl, method, params = {}, timeout = 6000, __retried
   entry.lastUsed = Date.now();
   try {
     return await conn.command(method, params, { timeout });
-  } catch (error) {
-    // Retry only the pre-send rejection: the entry died BEFORE this call began, so the
-    // message was never written to a socket. Mid-flight failures (timeout, socket closed
-    // after send) propagate untouched — retrying those could double-execute input events.
-    const diedBeforeThisCall = entry.diedAt && entry.diedAt <= startedAt && entry.conn === conn;
-    if (diedBeforeThisCall && !__retried) {
-      poolEvict(webSocketUrl, entry);
-      return call(webSocketUrl, method, params, timeout, true);
-    }
-    throw error;
   } finally {
     entry.inFlight -= 1;
     entry.lastUsed = Date.now();

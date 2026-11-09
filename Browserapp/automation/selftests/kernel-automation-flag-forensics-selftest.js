@@ -21,6 +21,7 @@ const assert = require('assert');
 const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
+const os = require('os');
 const { spawn, execSync } = require('child_process');
 
 const {
@@ -74,7 +75,7 @@ async function main() {
 
   // --- 1. Static & Mapping Invariants ---
   await asyncCheck('writeOpenBrowserKernelInit excludes enable-automation from cmd_line', async () => {
-    const tmp = fs.mkdtempSync('/tmp/ob-forensics-');
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ob-forensics-'));
     try {
       const profile = {
         id: 'forensics-test-1',
@@ -103,7 +104,7 @@ async function main() {
   });
 
   await asyncCheck('writeOpenBrowserKernelInit purges pre-existing enable-automation from legacy init.json', async () => {
-    const tmp = fs.mkdtempSync('/tmp/ob-forensics-legacy-');
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ob-forensics-legacy-'));
     try {
       const initPath = path.join(tmp, 'init.json');
       // Simulate a legacy profile whose init.json had enable-automation seeded
@@ -146,7 +147,7 @@ async function main() {
   });
 
   await asyncCheck('can_webdriver and allow_remote_debugging are preserved as true in init.json', async () => {
-    const tmp = fs.mkdtempSync('/tmp/ob-forensics-flags-');
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ob-forensics-flags-'));
     try {
       const profile = { id: 'test-flags', name: 'test-flags', privacy: {} };
       const fp = buildFingerprint(profile);
@@ -207,7 +208,7 @@ async function main() {
   // --- 2. Live Headless Kernel End-to-End CDP & Flag Verification ---
   if (process.platform === 'darwin' && fs.existsSync(launcher)) {
     await asyncCheck('live headless kernel connects CDP without enable-automation', async () => {
-      const profileDir = fs.mkdtempSync('/tmp/ob-live-forensics-');
+      const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ob-live-forensics-'));
       let child = null;
       let ws = null;
       try {

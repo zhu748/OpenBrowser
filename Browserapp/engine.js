@@ -149,6 +149,7 @@ class BrowserEngine {
     // can acquire the same profile.
     this.starting = new Map();
     this.stopping = new Map();
+    this.deletingProfiles = new Set();
     this.lifecycleGenerations = new Map();
     this.lifecycleStopRequests = new Map();
     this.stopAllPromise = null;
@@ -1102,6 +1103,9 @@ class BrowserEngine {
       raw,
     );
     const id = candidate.id;
+    if (this.deletingProfiles?.has(id)) {
+      throw Object.assign(new Error(`Profile ${id} is being deleted`), { code: 'PROFILE_DELETING' });
+    }
     const pendingStart = this.starting.get(id);
     if (pendingStart) return pendingStart;
     if (this.stopAllInProgress) {
@@ -1170,12 +1174,18 @@ class BrowserEngine {
         childDead = afterStop.child
           ? isChildExited(afterStop.child)
           : (numericPid > 0 ? !isPidAlive(numericPid) : true);
-        helpers = (await scanProcessesUsingProfileAsync(afterStop.root || '')).pids;
+        const finalScan = await scanProcessesUsingProfileAsync(afterStop.root || '');
+        helpers = finalScan.pids;
         if (!childDead) {
           throw afterStop.cleanupError || Object.assign(
             new Error(`Browser environment ${id} is still stopping; child exit has not been confirmed`),
             { code: 'BROWSER_EXIT_UNCONFIRMED' },
           );
+        }
+        if (!finalScan.known || helpers.length) {
+          throw Object.assign(new Error(`Browser helper exit is unconfirmed for profile ${id}`), {
+            code: 'BROWSER_HELPERS_EXIT_UNCONFIRMED', pids: helpers,
+          });
         }
         if (afterStop.root) {
           await removeSingletonFiles(afterStop.root, { attempts: 8, delayMs: 40 });

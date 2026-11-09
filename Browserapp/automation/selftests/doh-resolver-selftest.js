@@ -193,7 +193,7 @@ function stubFetch(responseBuf, { status = 200, onUrl } = {}) {
     assert.ok(!encoded.includes('+') && !encoded.includes('/'), 'url-safe alphabet');
   });
 
-  check('TtlCache expires entries', async () => {
+  await checkAsync('TtlCache expires entries', async () => {
     const cache = new TtlCache(10);
     cache.set('k', ['1.2.3.4'], 0.05);
     assert.deepStrictEqual(cache.get('k'), ['1.2.3.4']);
@@ -209,6 +209,90 @@ function stubFetch(responseBuf, { status = 200, onUrl } = {}) {
     assert.strictEqual(cache.size, 2);
     assert.strictEqual(cache.get('a'), undefined);
     assert.deepStrictEqual(cache.get('c'), 3);
+  });
+
+  check('TtlCache does not retain a zero-TTL replacement', () => {
+    const cache = new TtlCache();
+    cache.set('key', 'old', 60);
+    cache.set('key', 'new', 0);
+    assert.strictEqual(cache.get('key'), undefined);
+  });
+
+  check('readName rejects a missing root terminator', () => {
+    assert.throws(() => readName(Buffer.from([1, 97]), 0), /truncated/);
+  });
+
+  check('decodeResponse rejects an incomplete answer instead of returning partial data', () => {
+    const buf = buildResponse({
+      questions: [{ name: 'example.com', type: 1 }],
+      answers: [{ owner: null, type: 1, ttl: 60, rdata: Buffer.from([1, 2, 3, 4]) }],
+    });
+    assert.throws(() => decodeResponse(buf.subarray(0, -1)), /truncated/);
+  });
+
+  await checkAsync('zero-TTL addresses are returned but queried again', async () => {
+    const resolver = new DohResolver();
+    let calls = 0;
+    resolver.query = async () => {
+      calls += 1;
+      return { rcode: 0, answers: [{ type: 'A', ttl: 0, data: '1.2.3.4' }] };
+    };
+    assert.deepStrictEqual(await resolver.resolve4('example.com'), ['1.2.3.4']);
+    await resolver.resolve4('example.com');
+    assert.strictEqual(calls, 2);
+  });
+
+  await checkAsync('CNAME TTL limits the lifetime of the resolved address', async () => {
+    const resolver = new DohResolver();
+    resolver.query = async () => ({ rcode: 0, answers: [
+      { type: 'CNAME', ttl: 0, data: 'target.test' },
+      { type: 'A', ttl: 300, data: '1.2.3.4' },
+    ] });
+    await resolver.resolve4('alias.test');
+    assert.strictEqual(resolver.cache.size, 0);
+  });
+
+  await checkAsync('cancel stops endpoint failover and new queries can start immediately', async () => {
+    let calls = 0;
+    let started;
+    const ready = new Promise((resolve) => { started = resolve; });
+    const resolver = new DohResolver({
+      endpoints: ['https://one.test/q', 'https://two.test/q'],
+      fetchImpl: (_url, { signal }) => new Promise((_resolve, reject) => {
+        calls += 1;
+        signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+        started();
+      }),
+    });
+    const pending = resolver.resolve4('example.com');
+    await ready;
+    resolver.cancel();
+    resolver.query = async () => ({ rcode: 0, answers: [{ type: 'A', ttl: 60, data: '5.6.7.8' }] });
+    const next = resolver.resolve4('example.com');
+    await assert.rejects(pending, (error) => error.code === 'ECANCELLED');
+    assert.deepStrictEqual(await next, ['5.6.7.8']);
+    assert.strictEqual(calls, 1, 'cancel must not contact the second endpoint');
+  });
+
+  await checkAsync('endpoint timeouts are reported as timeouts rather than user cancellation', async () => {
+    const resolver = new DohResolver({
+      endpoints: ['https://one.test/q'], timeoutMs: 10,
+      fetchImpl: (_url, { signal }) => new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+      }),
+    });
+    await assert.rejects(resolver.resolve4('example.com'), (error) => error.code === 'ETIMEDOUT');
+  });
+
+  await checkAsync('concurrent case variants of a DNS name share one query', async () => {
+    const resolver = new DohResolver();
+    let calls = 0;
+    resolver.query = async () => {
+      calls += 1;
+      return { rcode: 0, answers: [{ type: 'A', ttl: 60, data: '1.2.3.4' }] };
+    };
+    await Promise.all([resolver.resolve4('EXAMPLE.com.'), resolver.resolve4('example.com')]);
+    assert.strictEqual(calls, 1);
   });
 
   // ---- resolver behaviour ----

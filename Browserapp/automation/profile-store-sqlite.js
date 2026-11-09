@@ -480,6 +480,9 @@ class ProfileStoreSqlite {
       updatedAt,
       data
     );
+    // Direct writes can replace a row whose previous value is still memoized.
+    // Diffed saves repopulate this entry only after their transaction commits.
+    this._rowHashes?.delete(id);
   }
 
   saveProfiles(profiles) {
@@ -493,6 +496,7 @@ class ProfileStoreSqlite {
       this.db.exec('COMMIT;');
     } catch (err) {
       try { this.db.exec('ROLLBACK;'); } catch (_) {}
+      this._rowHashes?.clear();
       throw err;
     }
   }
@@ -522,13 +526,25 @@ class ProfileStoreSqlite {
   saveProfilesDiffed(profiles) {
     if (!Array.isArray(profiles) || !profiles.length) return 0;
     if (!this._rowHashes) this._rowHashes = new Map();
-    const changed = profiles.filter((profile) => {
-      if (!profile || typeof profile !== 'object' || !profile.id) return false;
-      return this._rowHashes.get(profile.id) !== this.profileDataHash(profile);
-    });
+    // Match SQLite's last-write-wins semantics for duplicate ids before
+    // diffing. Filtering against the old hash first could discard the last
+    // value and leave an earlier, superseded edit on disk.
+    const finalProfiles = new Map();
+    for (const profile of profiles) {
+      if (profile && typeof profile === 'object' && profile.id) finalProfiles.set(String(profile.id), profile);
+    }
+    const changed = [];
+    const nextHashes = new Map();
+    for (const [id, profile] of finalProfiles) {
+      const hash = this.profileDataHash(profile);
+      if (this._rowHashes.get(id) === hash) continue;
+      changed.push(profile);
+      nextHashes.set(id, hash);
+    }
     if (!changed.length) return 0;
     this.saveProfiles(changed);
-    for (const profile of changed) this._rowHashes.set(profile.id, this.profileDataHash(profile));
+    // Reuse the precomputed hashes only after the transaction has committed.
+    for (const [id, hash] of nextHashes) this._rowHashes.set(id, hash);
     return changed.length;
   }
 
@@ -587,7 +603,7 @@ class ProfileStoreSqlite {
       const decoded = this._decodeProfileRow(row, 'getAllProfiles');
       if (decoded) {
         result.push(decoded);
-        this._rowHashes.set(decoded.id, this.profileDataHash(decoded));
+        this._rowHashes.set(String(decoded.id), this.profileDataHash(decoded));
       }
     }
     return result;
@@ -623,6 +639,9 @@ class ProfileStoreSqlite {
       this.db.exec('COMMIT;');
     } catch (err) {
       try { this.db.exec('ROLLBACK;'); } catch (_) {}
+      // Earlier rows may have updated their hashes before a later row failed.
+      // The database rolled back; discard those speculative cache entries too.
+      this._rowHashes?.clear();
       throw err;
     }
     return trashedIds;
@@ -657,6 +676,7 @@ class ProfileStoreSqlite {
       this.db.exec('COMMIT;');
     } catch (err) {
       try { this.db.exec('ROLLBACK;'); } catch (_) {}
+      this._rowHashes?.clear();
       throw err;
     }
     return restoredIds;
@@ -687,6 +707,7 @@ class ProfileStoreSqlite {
       this.db.exec('COMMIT;');
     } catch (err) {
       try { this.db.exec('ROLLBACK;'); } catch (_) {}
+      this._rowHashes?.clear();
       throw err;
     }
     return deletedIds;

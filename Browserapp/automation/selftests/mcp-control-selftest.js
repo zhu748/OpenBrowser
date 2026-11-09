@@ -3,6 +3,7 @@
 const http = require('http');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const { spawn } = require('child_process');
 const { LocalApiServer } = require('../local-api-server');
 const { resolveApiKey } = require('../api-key');
@@ -109,7 +110,7 @@ async function main() {
   const checks = [];
   const record = (name, ok) => checks.push({ name, ok });
 
-  const keyFile = '/tmp/openbrowser-mcp-api-key-' + process.pid + '.txt';
+  const keyFile = path.join(os.tmpdir(), 'openbrowser-mcp-api-key-' + process.pid + '.txt');
   fs.writeFileSync(keyFile, 'mcp-file-key\n', 'utf8');
   const resolvedKey = resolveApiKey({
     env: {

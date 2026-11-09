@@ -612,6 +612,123 @@ function startServer(handler) {
     assert.throws(() => new Downloader(''), /url is required/);
   });
 
+  await checkAsync('cancel before start never downloads or promotes a file', async () => {
+    const server = await startServer((_req, res) => res.end('body'));
+    const dir = await makeTempDir();
+    try {
+      const dl = new Downloader(server.url('/cancel'), { destPath: path.join(dir, 'x') });
+      dl.cancel();
+      await assert.rejects(dl.start(), /download canceled/);
+      assert.strictEqual(dl.status, STATUS.CANCELED);
+      assert.strictEqual(server.hits.length, 0);
+    } finally { await server.close(); }
+  });
+
+  await checkAsync('cancel aborts a request still waiting for response headers', async () => {
+    let dl;
+    const server = await startServer(() => dl.cancel());
+    const dir = await makeTempDir();
+    try {
+      dl = new Downloader(server.url('/hang'), { destPath: path.join(dir, 'x'), timeoutMs: 250, retries: 2 });
+      await assert.rejects(dl.start(), /download canceled/);
+      assert.strictEqual(dl.status, STATUS.CANCELED);
+      assert.strictEqual(server.hits.length, 1, 'cancellation must skip retries');
+    } finally { await server.close(); }
+  });
+
+  await checkAsync('destPath creates its own missing parent directory', async () => {
+    const server = await startServer((_req, res) => res.end('body'));
+    const dir = await makeTempDir();
+    try {
+      const destPath = path.join(dir, 'nested', 'x');
+      const dl = new Downloader(server.url('/file'), { destPath });
+      await dl.start();
+      assert.strictEqual(await fsp.readFile(destPath, 'utf8'), 'body');
+    } finally { await server.close(); }
+  });
+
+  await checkAsync('failed final rename preserves the existing destination', async () => {
+    const server = await startServer((_req, res) => res.end('new'));
+    const dir = await makeTempDir();
+    const destPath = path.join(dir, 'x');
+    const rename = fsp.rename;
+    try {
+      await fsp.writeFile(destPath, 'old');
+      fsp.rename = async (from, to) => {
+        if (to === destPath) throw new Error('simulated replacement failure');
+        return rename(from, to);
+      };
+      const dl = new Downloader(server.url('/file'), { destPath });
+      await assert.rejects(dl.start(), /replacement failure/);
+      assert.strictEqual(await fsp.readFile(destPath, 'utf8'), 'old');
+    } finally { fsp.rename = rename; await server.close(); }
+  });
+
+  for (const range of [undefined, 'bytes 0-2/3', 'bytes 3-5/9']) {
+    await checkAsync(`invalid or incomplete resume range is never promoted (${range})`, async () => {
+      const server = await startServer((_req, res) => {
+        const headers = { 'content-length': 3 };
+        if (range) headers['content-range'] = range;
+        res.writeHead(206, headers);
+        res.end('def');
+      });
+      const dir = await makeTempDir();
+      const destPath = path.join(dir, 'x');
+      try {
+        await fsp.writeFile(destPath + '.partial', 'abc');
+        const dl = new Downloader(server.url('/file'), { destPath });
+        await assert.rejects(dl.start(), /range|truncated/i);
+        assert.strictEqual(await Downloader.fileExists(destPath), false);
+      } finally { await server.close(); }
+    });
+  }
+
+  await checkAsync('a malformed redirect rejects without an uncaught exception', async () => {
+    const server = await startServer((_req, res) => {
+      res.writeHead(302, { location: 'http://[' });
+      res.end();
+    });
+    const dir = await makeTempDir();
+    try {
+      const dl = new Downloader(server.url('/file'), { destPath: path.join(dir, 'x') });
+      await assert.rejects(dl.start(), /invalid url/i);
+    } finally { await server.close(); }
+  });
+
+  await checkAsync('cancel during retry backoff preserves canceled status and skips the next attempt', async () => {
+    const server = await startServer((_req, res) => { res.writeHead(503); res.end(); });
+    const dir = await makeTempDir();
+    let timer;
+    try {
+      const dl = new Downloader(server.url('/retry'), { destPath: path.join(dir, 'x'), retries: 2 });
+      dl.on('retry', () => { timer = setTimeout(() => dl.cancel(), 10); });
+      await assert.rejects(dl.start(), /download canceled/);
+      assert.strictEqual(dl.status, STATUS.CANCELED);
+      assert.strictEqual(server.hits.length, 1);
+      assert.strictEqual(dl.attempt, 1);
+    } finally { clearTimeout(timer); await server.close(); }
+  });
+
+  await checkAsync('cancel during streaming closes the pipeline without promotion', async () => {
+    const server = await startServer((_req, res) => {
+      res.writeHead(200, { 'content-length': 1024 * 1024 });
+      res.flushHeaders();
+      // Let the progress notification's 100ms throttle elapse after headers.
+      const timer = setTimeout(() => res.write(Buffer.alloc(64 * 1024)), 120);
+      res.on('close', () => clearTimeout(timer));
+    });
+    const dir = await makeTempDir();
+    const destPath = path.join(dir, 'x');
+    try {
+      const dl = new Downloader(server.url('/stream'), { destPath, timeoutMs: 1000 });
+      dl.on('progress', ({ received }) => { if (received > 0) dl.cancel(); });
+      await assert.rejects(dl.start(), /download canceled/);
+      assert.strictEqual(dl.status, STATUS.CANCELED);
+      assert.strictEqual(await Downloader.fileExists(destPath), false);
+      assert.strictEqual(dl._activeRes, null);
+    } finally { await server.close(); }
+  });
+
   // ---- report ----
   const passed = results.filter((r) => r.ok).length;
   const failed = results.filter((r) => !r.ok);

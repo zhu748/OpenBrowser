@@ -104,10 +104,12 @@ function readName(buf, offset) {
   let jumped = false;
   let consumed = offset;
   let hops = 0;
+  let terminated = false;
 
   while (pos < buf.length) {
     const len = buf[pos];
     if (len === 0) {
+      terminated = true;
       pos += 1;
       if (!jumped) consumed = pos;
       break;
@@ -131,7 +133,7 @@ function readName(buf, offset) {
     pos += len;
     if (!jumped) consumed = pos;
   }
-
+  if (!terminated) throw new Error('truncated dns name');
   return { name: labels.join('.'), next: consumed };
 }
 
@@ -232,15 +234,15 @@ function decodeResponse(buf) {
 
   const answers = [];
   for (let i = 0; i < ancount; i += 1) {
-    if (pos + 10 > buf.length) break;
     const owner = readName(buf, pos);
     pos = owner.next;
+    if (pos + 10 > buf.length) throw new Error('truncated dns answer');
     const type = buf.readUInt16BE(pos);
     const cls = buf.readUInt16BE(pos + 2);
     const ttl = buf.readUInt32BE(pos + 4);
     const rdlength = buf.readUInt16BE(pos + 8);
     const rdataStart = pos + 10;
-    if (rdataStart + rdlength > buf.length) break;
+    if (rdataStart + rdlength > buf.length) throw new Error('truncated dns rdata');
     const data = decodeRdata(buf, type, rdataStart, rdlength, buf);
     answers.push({
       name: owner.name,
@@ -282,8 +284,11 @@ class TtlCache {
   }
 
   set(key, value, ttlSeconds) {
-    const ttl = Number.isFinite(ttlSeconds) && ttlSeconds > 0 ? ttlSeconds : 60;
     this.entries.delete(key);
+    // A zero TTL permits use for this request only; it must also invalidate a
+    // previous cached value for the same key.
+    if (Number.isFinite(ttlSeconds) && ttlSeconds <= 0) return;
+    const ttl = Number.isFinite(ttlSeconds) ? ttlSeconds : 60;
     this.entries.set(key, { value, expiresAt: Date.now() + ttl * 1000 });
     while (this.entries.size > this.max) {
       const oldest = this.entries.keys().next().value;
@@ -367,6 +372,7 @@ class DohResolver {
     this.controllers = new Set();
     this._warnedEndpoints = new Set();
     this._fetchPromise = null;
+    this._cancelGeneration = 0;
   }
 
   async _fetch() {
@@ -379,6 +385,8 @@ class DohResolver {
 
   /** Abort every query currently in flight. */
   cancel() {
+    this._cancelGeneration += 1;
+    this._inFlight?.clear();
     for (const controller of this.controllers) {
       try { controller.abort(); } catch (_) { /* already settled */ }
     }
@@ -426,18 +434,27 @@ class DohResolver {
     if (!hostname || typeof hostname !== 'string') {
       throw new TypeError('hostname must be a non-empty string');
     }
+    const generation = this._cancelGeneration;
+    const assertNotCancelled = () => {
+      if (generation !== this._cancelGeneration) {
+        throw Object.assign(new Error('dns query cancelled'), { code: 'ECANCELLED' });
+      }
+    };
     const fetchFn = await this._fetch();
+    assertNotCancelled();
     if (typeof fetchFn !== 'function') {
       throw new Error('no fetch implementation available');
     }
 
-    let cancelled = false;
     let lastError = null;
 
     for (const endpoint of shuffle(this.endpoints)) {
+      assertNotCancelled();
       const controller = new AbortController();
+      let timedOut = false;
       this.controllers.add(controller);
       const timer = setTimeout(() => {
+        timedOut = true;
         try { controller.abort(); } catch (_) { /* no-op */ }
       }, this.timeoutMs);
 
@@ -454,28 +471,29 @@ class DohResolver {
           throw new Error(`dns endpoint http ${res.status}`);
         }
         const buf = Buffer.from(await res.arrayBuffer());
-        return decodeResponse(buf);
+        assertNotCancelled();
+        const response = decodeResponse(buf);
+        if (response.truncated) throw new Error('truncated dns response');
+        return response;
       } catch (err) {
-        lastError = err;
-        if (controller.signal.aborted) cancelled = true;
-        this._note(endpoint, err);
-        this._warnEndpointOnce(endpoint, err);
+        assertNotCancelled();
+        lastError = timedOut
+          ? Object.assign(new Error('dns query timed out'), { code: 'ETIMEDOUT', cause: err })
+          : err;
+        this._note(endpoint, lastError);
+        this._warnEndpointOnce(endpoint, lastError);
       } finally {
         clearTimeout(timer);
         this.controllers.delete(controller);
       }
     }
 
-    if (cancelled && !lastError) {
-      throw Object.assign(new Error('dns query cancelled'), { code: 'ECANCELLED' });
-    }
-    if (cancelled) {
-      throw Object.assign(new Error('dns query cancelled'), { code: 'ECANCELLED', cause: lastError });
-    }
     throw lastError || new Error(`could not resolve ${hostname} ${typeName}`);
   }
 
   async _resolveTyped(hostname, typeName, cache) {
+    if (typeof hostname !== 'string' || !hostname) throw new TypeError('hostname must be a non-empty string');
+    hostname = hostname.toLowerCase().replace(/\.$/, '');
     const key = `${typeName}_${hostname}`;
     const hit = cache.get(key);
     if (hit) return hit;
@@ -490,7 +508,7 @@ class DohResolver {
     try {
       return await task;
     } finally {
-      this._inFlight.delete(key);
+      if (this._inFlight.get(key) === task) this._inFlight.delete(key);
     }
   }
 
@@ -506,9 +524,11 @@ class DohResolver {
       throw Object.assign(new Error(`no ${typeName} record for ${hostname}`), { code: 'ENODATA' });
     }
     const value = answers.map((a) => a.data);
-    const minTtl = answers.reduce((acc, a) => {
+    // An address reached through a shorter-lived alias must be resolved again
+    // when that alias expires, even if the final address has a longer TTL.
+    const minTtl = response.answers.filter((a) => a.type === typeName || a.type === 'CNAME').reduce((acc, a) => {
       const ttl = Number(a.ttl);
-      return Number.isFinite(ttl) && ttl > 0 ? Math.min(acc, ttl) : acc;
+      return Number.isFinite(ttl) && ttl >= 0 ? Math.min(acc, ttl) : acc;
     }, Number.POSITIVE_INFINITY);
     cache.set(key, value, Number.isFinite(minTtl) ? minTtl : 60);
     return value;

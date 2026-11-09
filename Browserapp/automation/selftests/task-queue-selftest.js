@@ -262,6 +262,26 @@ check('sameIdentity compares all keys regardless of order', () => {
   assert.strictEqual(sameIdentity(null, { a: 1 }), false);
 });
 
+check('saturated open lane scans occupancy once and still admits batch work', () => {
+  const q = new TaskQueue(1);
+  q.enqueueOpen(Array.from({ length: 2000 }, (_, i) => i));
+  q.acquireNext();
+  q.enqueueBatch([{ profileId: 'batch', identity: identity(1) }], 1);
+  const original = q.countOpening.bind(q);
+  let counts = 0;
+  q.countOpening = (type) => { counts += 1; return original(type); };
+  assert.strictEqual(q.acquireNext().profileId, 'batch');
+  assert.strictEqual(counts, 1, 'lane occupancy must not be recounted per queued task');
+  assert.strictEqual(q.acquireNext(), undefined, 'both saturated lanes remain blocked');
+});
+
+check('batch-only acquisition does not scan the open lane', () => {
+  const q = new TaskQueue(1);
+  q.enqueueBatch([{ profileId: 'batch', identity: identity(1) }], 1);
+  q.countOpening = () => { throw new Error('batch acquisition must not count open tasks'); };
+  assert.strictEqual(q.acquireNext().profileId, 'batch');
+});
+
 // ---- report ----
 const passed = results.filter((r) => r.ok).length;
 const failed = results.filter((r) => !r.ok);

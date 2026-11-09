@@ -253,6 +253,38 @@ async function occupyPort() {
   });
 
   // ================= DoH url / ip helpers =================
+  await checkAsync('manual flush cancels its obsolete quiet-period timer', async () => {
+    const q = new DeferredQueue({ delayMs: 10000, handler: async () => {} });
+    q.add('work').start();
+    await q.flush();
+    assert.strictEqual(q.scheduled, false);
+  });
+
+  await checkAsync('overlapping flush and idle wait without polling timers', async () => {
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const q = new DeferredQueue({ handler: async () => gate });
+    q.add('work');
+    const active = q.flush();
+    const originalTimeout = globalThis.setTimeout;
+    let polls = 0;
+    globalThis.setTimeout = (fn, ms, ...args) => {
+      if (ms === 5) polls += 1;
+      return originalTimeout(fn, ms, ...args);
+    };
+    const waiting = Array.from({ length: 100 }, () => q.flush());
+    waiting.push(q.idle());
+    try {
+      assert.strictEqual(polls, 0, 'completion waiters must share a promise rather than poll');
+    } finally {
+      release();
+      await Promise.all([active, ...waiting]);
+      globalThis.setTimeout = originalTimeout;
+    }
+    assert.strictEqual(q.stats().processed, 1);
+  });
+
+  // ================= DoH url / ip helpers =================
 
   check('getIpFromAnswer takes the last valid address', () => {
     assert.strictEqual(getIpFromAnswer(['1.1.1.1', '2.2.2.2']), '2.2.2.2');

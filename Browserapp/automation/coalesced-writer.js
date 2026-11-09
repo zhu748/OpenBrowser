@@ -75,7 +75,7 @@ function createCoalescedWriter(options = {}) {
         for (const waiter of batch) waiter.resolve();
       } finally {
         // A request that arrived while this run was in flight needs another
-        // run: the queue returns 0 for a flush that overlaps a running one.
+        // run after the current write's completion barrier is released.
         if (queue.size) queue.start(delayMs);
       }
     },  });
@@ -91,11 +91,13 @@ function createCoalescedWriter(options = {}) {
     },
     /** Persist immediately, ignoring the quiet period. */
     flushNow() {
-      return queue.flush();
+      // The failure belongs to this flush, not the mutable diagnostic field:
+      // an overlapping retry may clear lastError before this caller resumes.
+      return queue.flush({ throwOnError: true });
     },
     /** Wait until no write is in flight. */
     idle() {
-      return queue.idle();
+      return queue.idle({ throwOnError: true });
     },
     stats() {
       return {

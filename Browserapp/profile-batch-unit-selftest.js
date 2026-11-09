@@ -64,6 +64,45 @@ async function run() {
   assert(engine.assignments.get(failedId).has('ext-global'), 'disk failure must retain extension assignments');
   assert.strictEqual(engine.networkInfo.get(failedId).ip, '203.0.113.8', 'disk failure must retain network state');
   assert(fs.existsSync(engine.profileRoot(failedId)), 'disk failure must retain browser data');
+
+  // A rejected or incomplete stop must never proceed to data deletion.
+  const stoppedNormally = engine.stop;
+  for (const mode of ['reject', 'incomplete']) {
+    engine.running.set(failedId, { pid: 12345 });
+    engine.stop = async () => {
+      if (mode === 'reject') throw new Error('synthetic stop failure');
+      return { running: true, cleanupBlocked: true };
+    };
+    await assert.rejects(engine.deleteProfiles([failedId], true), /stop|exit/i);
+    assert(engine.profiles.has(failedId), 'failed stop must retain profile metadata');
+    assert(fs.existsSync(path.join(engine.profileRoot(failedId), 'marker.txt')), 'failed stop must retain data');
+    assert(!engine.deletingProfiles?.has(failedId), 'failed deletion must release its operation guard');
+    engine.running.delete(failedId);
+  }
+  engine.stop = stoppedNormally;
+
+  // Hold removal open to model a slow filesystem while another caller tries
+  // to start or delete the same profile through a different API surface.
+  let entered;
+  const removing = new Promise((resolve) => { entered = resolve; });
+  let resume;
+  const released = new Promise((resolve) => { resume = resolve; });
+  fsp.rm = async (target, options) => {
+    if (path.resolve(target) === path.resolve(engine.profileRoot(failedId))) {
+      entered();
+      await released;
+    }
+    return originalRm(target, options);
+  };
+  try {
+    const deletion = engine.deleteProfiles([failedId], true);
+    await removing;
+    await assert.rejects(engine.start(failedProfile), (error) => error.code === 'PROFILE_DELETING');
+    await assert.rejects(engine.deleteProfiles([failedId], true), (error) => error.code === 'PROFILE_DELETING');
+    resume();
+    await deletion;
+    assert(!engine.deletingProfiles.has(failedId));
+  } finally { resume(); fsp.rm = originalRm; }
   await fsp.rm(root, { recursive: true, force: true });
   console.log('PROFILE_BATCH_SELFTEST_OK created=3 deleted=3 stopped=1 data_delete=2 data_retain=1 delete_failure_consistency=1 extension_inheritance=3');
 }

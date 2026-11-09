@@ -128,10 +128,14 @@ class TaskQueue {
 
   /** Claim the next runnable task, respecting each lane's concurrency. */
   acquireNext() {
+    // The lane occupancy is stable during this synchronous search. Counting
+    // it for every blocked candidate turned a saturated queue scan into O(n²).
+    let canOpen;
     const task = this.tasks.find((candidate) => {
       if (candidate.state !== QUEUED) return false;
       if (candidate.type === 'open') {
-        return this.countOpening('open') < this.openConcurrency;
+        if (canOpen === undefined) canOpen = this.countOpening('open') < this.openConcurrency;
+        return canOpen;
       }
       return typeof this.currentBatchConcurrency === 'number'
         && this.activeBatchIds.size < this.currentBatchConcurrency;

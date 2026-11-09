@@ -1657,17 +1657,28 @@ function beginQuitCleanup() {
   destroyTray();
   const cloud = settingsStore.getLocalSettings()?.cloud || {};
   let stopResult = { stopped: true, remaining: [], errors: [] };
+  let persistenceFailed = false;
   quitCleanupPromise = Promise.resolve()
     .then(async () => { stopResult = await stopAllForQuit(); })
     .then(() => engine?.flushPersistence?.())
+    .catch((error) => {
+      persistenceFailed = true;
+      console.warn('OpenBrowser quit engine flush failed:', error?.message || error);
+    })
     // A settings change made moments before quitting may still be inside the
     // quiet period; write it out before the process goes away.
     .then(() => settingsStore.flushSettingsWriter())
+    .catch((error) => {
+      persistenceFailed = true;
+      console.warn('OpenBrowser quit settings flush failed:', error?.message || error);
+    })
     // RPA task/template updates coalesce into one quiet-period write; flush it
     // before the process goes away so the final task status reaches the disk.
-    .then(() => automation?.rpaStore?.flush?.().catch((error) => {
+    .then(() => automation?.rpaStore?.flush?.())
+    .catch((error) => {
+      persistenceFailed = true;
       console.warn('OpenBrowser quit rpa-store flush failed:', error?.message || error);
-    }))
+    })
     .then(() => {
       try { liveSync?.stop?.(); } catch (error) {
         console.warn('OpenBrowser quit live-sync cleanup failed:', error?.message || error);
@@ -1682,6 +1693,7 @@ function beginQuitCleanup() {
       // Stop browsers and flush close-time state before packaging browser data.
       // Otherwise the backup can capture stale cookies or locked SQLite/LevelDB files.
       if (stopResult.remaining.length) return;
+      if (persistenceFailed) return;
       if (!cloud.enabled || !cloud.autoSyncOnQuit) return;
       try {
         // The quit chain is the only path that actually exits the app, so a

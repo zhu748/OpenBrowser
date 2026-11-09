@@ -150,8 +150,21 @@ module.exports = {
 
   async deleteProfiles(ids, deleteData = true) {
     if (!Array.isArray(ids) || ids.length > 200) throw new Error('Invalid profile selection');
-    this.invalidateStatusCache?.();
     const safeIds = [...new Set(ids.map(assertProfileId))];
+    this.deletingProfiles ||= new Set();
+    if (safeIds.some((id) => this.deletingProfiles.has(id))) {
+      throw Object.assign(new Error('Profile deletion is already in progress'), { code: 'PROFILE_DELETING' });
+    }
+    for (const id of safeIds) this.deletingProfiles.add(id);
+    try {
+      return await this._deleteProfiles(safeIds, deleteData);
+    } finally {
+      for (const id of safeIds) this.deletingProfiles.delete(id);
+    }
+  },
+
+  async _deleteProfiles(safeIds, deleteData) {
+    this.invalidateStatusCache?.();
     const deleted = []; let stopped = 0;
 
     // Phase 1 — stop running environments with bounded concurrency. A serial
@@ -163,8 +176,17 @@ module.exports = {
     for (let offset = 0; offset < activeIds.length; offset += 4) {
       const batch = activeIds.slice(offset, offset + 4);
       const results = await Promise.allSettled(batch.map((id) => this.stop(id)));
-      for (const result of results) {
-        if (result.status === 'fulfilled' && !result.value?.alreadyStopped) stopped += 1;
+      for (let index = 0; index < results.length; index += 1) {
+        const result = results[index];
+        if (result.status === 'rejected') throw result.reason;
+        const id = batch[index];
+        if (result.value?.running || result.value?.cleanupBlocked
+          || this.running.has(id) || this.starting.has(id) || this.stopping.has(id)) {
+          throw Object.assign(new Error(`Browser exit is unconfirmed for profile ${id}; deletion stopped`), {
+            code: 'BROWSER_EXIT_UNCONFIRMED', profileId: id,
+          });
+        }
+        if (!result.value?.alreadyStopped) stopped += 1;
       }
     }
 

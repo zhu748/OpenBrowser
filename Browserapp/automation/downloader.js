@@ -26,6 +26,8 @@ const path = require('path');
 const crypto = require('crypto');
 const http = require('http');
 const https = require('https');
+const { Transform } = require('stream');
+const { pipeline } = require('stream/promises');
 const { URL } = require('url');
 
 const STATUS = {
@@ -74,7 +76,7 @@ function fileNameFromUrl(rawUrl) {
 }
 
 /** Open a readable stream for url, following redirects. */
-function openRequest(url, { headers = {}, maxRedirects = DEFAULT_MAX_REDIRECTS, timeoutMs, validateUrl } = {}) {
+function openRequest(url, { headers = {}, maxRedirects = DEFAULT_MAX_REDIRECTS, timeoutMs, validateUrl, signal } = {}) {
   return new Promise((resolve, reject) => {
     let redirects = 0;
     let initialHost = null;
@@ -128,7 +130,7 @@ function openRequest(url, { headers = {}, maxRedirects = DEFAULT_MAX_REDIRECTS, 
         }
       }
 
-      const req = transport.get(target, { headers: hopHeaders }, (res) => {
+      const req = transport.get(target, { headers: hopHeaders, signal }, (res) => {
         const status = res.statusCode || 0;
         if (status >= 300 && status < 400 && res.headers.location) {
           redirects += 1;
@@ -137,7 +139,9 @@ function openRequest(url, { headers = {}, maxRedirects = DEFAULT_MAX_REDIRECTS, 
             reject(new Error('too many redirects'));
             return;
           }
-          const nextTarget = new URL(res.headers.location, target).toString();
+          let nextTarget;
+          try { nextTarget = new URL(res.headers.location, target).toString(); }
+          catch { reject(new Error('invalid url in download redirect')); return; }
           attempt(nextTarget, headersForTarget(nextTarget, hopHeaders));
           return;
         }
@@ -209,6 +213,7 @@ class Downloader extends EventEmitter {
     // Rolling window of (time, received) samples for the progress speed readout.
     this._speedSamples = [];
     this._activeRes = null;
+    this._abortController = new AbortController();
   }
 
   /**
@@ -216,7 +221,9 @@ class Downloader extends EventEmitter {
    * 'download canceled' error and retries are skipped.
    */
   cancel() {
+    if (this.status === STATUS.COMPLETED) return;
     this.canceled = true;
+    this._abortController.abort();
     const res = this._activeRes;
     this._activeRes = null;
     if (res) res.destroy(new Error('download canceled'));
@@ -272,8 +279,9 @@ class Downloader extends EventEmitter {
 
   /** Ensure the destination directory exists and is writable. */
   async ensureWritable() {
-    await fsp.mkdir(this.dir, { recursive: true });
-    const probe = path.join(this.dir, `.write-probe-${process.pid}-${Date.now()}`);
+    const directory = path.dirname(this.destPath);
+    await fsp.mkdir(directory, { recursive: true });
+    const probe = path.join(directory, `.write-probe-${process.pid}-${crypto.randomBytes(8).toString('hex')}`);
     await fsp.writeFile(probe, 'ok');
     await fsp.unlink(probe);
   }
@@ -297,19 +305,43 @@ class Downloader extends EventEmitter {
       maxRedirects: this.options.maxRedirects,
       timeoutMs: this.timeoutMs,
       validateUrl: this.options.validateUrl,
+      signal: this._abortController.signal,
     });
     this._activeRes = res;
+    // Reading a large partial file yields before the pipeline is attached.
+    // A reset/cancel during that read must be handled rather than emitted as
+    // an uncaught response error.
+    let responseError = null;
+    res.on('error', (error) => { responseError = error; });
 
     const resumed = startOffset > 0 && res.statusCode === 206;
     if (!resumed) startOffset = 0;
 
     const contentLength = Number(res.headers['content-length']) || 0;
+    let rangeLength = 0;
+    let rangeTotal = 0;
+    if (res.statusCode === 206) {
+      const range = /^bytes (\d+)-(\d+)\/(\d+|\*)$/i.exec(String(res.headers['content-range'] || ''));
+      const first = Number(range?.[1]);
+      const last = Number(range?.[2]);
+      rangeTotal = range?.[3] === '*' ? 0 : Number(range?.[3]);
+      if (!range || !Number.isSafeInteger(first) || !Number.isSafeInteger(last)
+        || first !== startOffset || last < first
+        || (range?.[3] !== '*' && (!Number.isSafeInteger(rangeTotal) || rangeTotal <= last))
+        || (contentLength && contentLength !== last - first + 1)) {
+        this._activeRes = null;
+        res.destroy();
+        throw new Error('invalid content-range in download response');
+      }
+      rangeLength = last - first + 1;
+    }
     const maxBytes = Number(this.options.maxBytes) > 0 ? Number(this.options.maxBytes) : 0;
-    if (maxBytes && contentLength > maxBytes) {
-      res.resume();
+    if (maxBytes && Math.max(rangeTotal, startOffset + contentLength) > maxBytes) {
+      this._activeRes = null;
+      res.destroy();
       throw new Error(`download exceeds the ${maxBytes} byte limit`);
     }
-    this.total = resumed ? startOffset + contentLength : contentLength;
+    this.total = rangeTotal || (resumed ? startOffset + contentLength : contentLength);
     this.received = startOffset;
     this.setProgress(startOffset, this.total || startOffset);
 
@@ -334,31 +366,25 @@ class Downloader extends EventEmitter {
     }
 
     const out = fs.createWriteStream(this.tmpPath, { flags: resumed ? 'a' : 'w' });
-
-    await new Promise((resolve, reject) => {
-      const fail = (err) => {
-        if (this._activeRes === res) this._activeRes = null;
-        res.destroy();
-        out.destroy();
-        reject(err);
-      };
-      res.on('error', fail);
-      out.on('error', fail);
-      res.on('data', (chunk) => {
-        updateHashes(chunk);
-        this.received += chunk.length;
-        // A missing or understated Content-Length must not let the transfer
-        // grow past the ceiling either.
-        if (maxBytes && this.received > maxBytes) {
-          fail(new Error(`download exceeds the ${maxBytes} byte limit`));
-          return;
-        }
-        this.setProgress(this.received, this.total || this.received);
-      });
-      // 'close' (not 'finish') guarantees the descriptor is closed before rename.
-      out.on('close', resolve);
-      res.pipe(out);
+    const meter = new Transform({
+      transform: (chunk, _encoding, callback) => {
+        try {
+          updateHashes(chunk);
+          this.received += chunk.length;
+          if (maxBytes && this.received > maxBytes) throw new Error(`download exceeds the ${maxBytes} byte limit`);
+          this.setProgress(this.received, this.total || this.received);
+          callback(null, chunk);
+        } catch (error) { callback(error); }
+      },
     });
+    try {
+      // Pipeline preserves backpressure and waits for descriptor teardown on
+      // failure, so a retry cannot race the previous attempt's open file.
+      if (responseError) res.destroy(responseError);
+      await pipeline(res, meter, out, { signal: this._abortController.signal });
+    } finally {
+      if (this._activeRes === res) this._activeRes = null;
+    }
 
     // A server that hangs up after sending fewer bytes than it announced
     // still ends the response stream cleanly, so the pipe above resolves. No
@@ -366,6 +392,9 @@ class Downloader extends EventEmitter {
     // whether one was supplied.
     if (this.total > 0 && this.received < this.total) {
       throw new Error(`truncated response: received ${this.received} of ${this.total} announced bytes`);
+    }
+    if (rangeLength && this.received - startOffset !== rangeLength) {
+      throw new Error('truncated or oversized content-range in download response');
     }
 
     return {
@@ -396,6 +425,7 @@ class Downloader extends EventEmitter {
    */
   async start() {
     try {
+      if (this.canceled) throw new Error('download canceled');
       await this.ensureWritable();
 
       // Reuse a destination that already matches the expected digest.
@@ -404,6 +434,7 @@ class Downloader extends EventEmitter {
         const algorithm = this.expectedSha256 ? 'sha256' : 'md5';
         const existing = await Downloader.digestFile(this.destPath, algorithm);
         if (existing === expectedNow) {
+          if (this.canceled) throw new Error('download canceled');
           this.progress = 1;
           this.setStatus(STATUS.COMPLETED);
           return {
@@ -421,10 +452,12 @@ class Downloader extends EventEmitter {
       const maxAttempts = this.retries + 1;
 
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        if (this.canceled) throw new Error('download canceled');
         this.attempt = attempt;
         try {
           this.setStatus(STATUS.DOWNLOADING);
           const result = await this.downloadOnce();
+          if (this.canceled) throw new Error('download canceled');
 
           this.setStatus(STATUS.VERIFYING);
           const verdict = this.verify(result.md5, result.sha256);
@@ -435,7 +468,7 @@ class Downloader extends EventEmitter {
           }
 
           await fsp.mkdir(path.dirname(this.destPath), { recursive: true });
-          await fsp.rm(this.destPath, { force: true });
+          if (this.canceled) throw new Error('download canceled');
           await fsp.rename(this.tmpPath, this.destPath);
 
           this.progress = 1;
@@ -471,7 +504,7 @@ class Downloader extends EventEmitter {
     } catch (err) {
       if (this.canceled) {
         // Keep the canceled status distinct from a plain failure.
-        throw err;
+        throw new Error('download canceled', { cause: err });
       }
       if (this.status !== STATUS.FAILED) {
         this.setStatus(STATUS.FAILED);

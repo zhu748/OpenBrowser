@@ -30,6 +30,7 @@ class DeferredQueue {
     this.items = [];
     this.timer = null;
     this.running = false;
+    this.activeFlush = null;
     this.runCount = 0;
     this.processedCount = 0;
   }
@@ -107,20 +108,27 @@ class DeferredQueue {
    * Safe to call directly; also used by the timer.
    *
    * @returns {Promise<number>} how many items were processed.
+   * @param {{throwOnError?:boolean}} [options] Propagate this run's failure to
+   *   an explicit persistence caller; scheduled work keeps its retry policy.
    */
-  async flush() {
+  async flush({ throwOnError = false } = {}) {
     // A flush that overlaps a running one must wait for it to finish and then
     // run once more: returning 0 here used to make exit-path flushNow() a
     // no-op exactly when a write was in flight, silently dropping state.
     while (this.running) {
-      await new Promise((resolve) => setTimeout(resolve, 5));
+      await this.activeFlush;
     }
+    this.clearTimer();
     const batch = this.items;
     if (!batch.length) return 0;
 
     const handler = this.handler || this.defaultHandler;
     this.items = [];
     this.running = true;
+    let release;
+    // Publish the completion barrier before invoking the handler, including
+    // handlers which synchronously enqueue another flush.
+    this.activeFlush = new Promise((resolve) => { release = resolve; });
     this.runCount += 1;
 
     try {
@@ -136,26 +144,36 @@ class DeferredQueue {
       if (this.onError) {
         try { this.onError(err, batch); } catch (_) { /* observer */ }
       }
+      if (throwOnError) throw err;
       return 0;
     } finally {
       this.running = false;
+      this.activeFlush = null;
+      release();
     }
   }
 
   /** Wait until no run is in flight and nothing is left queued. */
-  async idle() {
+  async idle({ throwOnError = false } = {}) {
     let stalls = 0;
     while (this.running || this.items.length) {
       if (this.running) {
         stalls = 0;
-        await new Promise((resolve) => setTimeout(resolve, 5));
+        await this.activeFlush;
       } else {
-        const processed = await this.flush();
+        let error = null;
+        const processed = await this.flush({ throwOnError: true }).catch((failure) => {
+          error = failure;
+          return 0;
+        });
         if (processed === 0 && this.items.length) {
           // A persistently failing handler must not turn idle() into an
           // infinite retry loop on the quit path.
           stalls += 1;
-          if (stalls >= 3) break;
+          if (stalls >= 3) {
+            if (throwOnError && error) throw error;
+            break;
+          }
         } else {
           stalls = 0;
         }

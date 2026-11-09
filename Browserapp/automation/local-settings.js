@@ -129,9 +129,13 @@ let persistedSettingsSnapshot = null;
 /** Write the settings file from the in-memory cache. */
 async function writeLocalSettingsFile() {
   ensureInitialized();
+  // Capture exactly the state being written. Edits can replace the live cache
+  // while filesystem operations yield; marking that newer cache as persisted
+  // would make the next coalesced run skip an edit that never reached disk.
+  const snapshot = JSON.parse(JSON.stringify(localSettingsCache));
   await fsp.mkdir(path.dirname(settingsFile), { recursive: true });
   const temporary = settingsFile + '.tmp';
-  const serialized = JSON.stringify({ version: 2, ...localSettingsCache }, null, 2);
+  const serialized = JSON.stringify({ version: 2, ...snapshot }, null, 2);
   const payload = credentialCrypto.encryptCredential(serialized);
 
   // Preserve backup of existing file before atomic rewrite. Only encrypted
@@ -145,9 +149,8 @@ async function writeLocalSettingsFile() {
   } catch (_) {}
 
   await fsp.writeFile(temporary, payload, { mode: 0o600 });
-  await fsp.rm(settingsFile, { force: true });
   await fsp.rename(temporary, settingsFile);
-  persistedSettingsSnapshot = JSON.parse(JSON.stringify(localSettingsCache));
+  persistedSettingsSnapshot = snapshot;
 }
 
 // The cache holds the whole settings object, so a burst of changes only needs
