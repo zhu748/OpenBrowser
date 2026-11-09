@@ -1606,6 +1606,34 @@ try {
     window.OpenBrowserI18n?.setPreference?.(event.target.value);
   });
 } catch (_) {}
+// 启动保护（Roxy 客户端设置对齐）：内存使用率上限 / 磁盘可用空间下限 / 关闭软件行为。
+try {
+  const memoryInput = document.getElementById('launch-memory-limit');
+  const diskInput = document.getElementById('launch-disk-limit');
+  const badge = document.getElementById('launch-gate-badge');
+  const statusEl = document.getElementById('launch-gate-status');
+  const saveBtn = document.getElementById('launch-gate-save');
+  const fillLaunchGate = (settings) => {
+    if (!settings || !memoryInput || !diskInput) return;
+    memoryInput.value = settings.memoryLimit ?? 95;
+    diskInput.value = settings.diskLimit ?? 8;
+    if (badge) badge.textContent = `${memoryInput.value}% / ${diskInput.value}GB`;
+  };
+  window.ops?.getClientSettings?.().then(fillLaunchGate).catch(() => {});
+  saveBtn?.addEventListener('click', async () => {
+    if (!memoryInput || !diskInput) return;
+    try {
+      const saved = await window.ops.saveClientSettings({
+        memoryLimit: memoryInput.value,
+        diskLimit: diskInput.value,
+      });
+      fillLaunchGate(saved);
+      if (statusEl) statusEl.textContent = tx('已保存启动保护设置。');
+    } catch (error) {
+      if (statusEl) statusEl.textContent = tx('保存失败：') + error.message;
+    }
+  });
+} catch (_) {}
 // seed group selects
 try {
   fillGroupSelect($('#batch-assign-group'), UNGROUPED_ID, { includeUngrouped: true });
@@ -5138,7 +5166,36 @@ $('#new-tab').addEventListener('click', () => runSyncAction('新建标签页', (
 $('#navigate-tab').addEventListener('click', () => runSyncAction('批量导航', () => window.ops.tabAction(selectedSessionIds(), 'navigate', { url: normalizeUrl($('#tab-url').value) })));
 $('#reload-tab').addEventListener('click', () => runSyncAction('刷新标签页', () => window.ops.tabAction(selectedSessionIds(), 'reload', {})));
 $('#close-tab').addEventListener('click', () => runSyncAction('关闭标签页', () => window.ops.tabAction(selectedSessionIds(), 'close', {})));
+$('#close-other-tabs')?.addEventListener('click', () => runSyncAction('关闭其他标签页', () => window.ops.tabAction(selectedSessionIds(), 'closeOthers', {})));
+$('#close-blank-tabs')?.addEventListener('click', () => runSyncAction('关闭空白标签页', () => window.ops.tabAction(selectedSessionIds(), 'closeBlank', {})));
 $('#sync-tabs').addEventListener('click', () => runSyncAction('同步标签页', () => window.ops.tabAction(selectedSessionIds(2), 'sync', {})));
+// 窗口同步快捷键（Roxy simulation 快捷键对齐）：仅在同步页生效，避免全局劫持。
+// Ctrl+Alt+A 启动/停止同步；D 停止；R 重启；F3 平铺；F4 层叠；F5 批量输入；X 统一
+// 标签页；B 关闭其他标签页；C 关闭当前页；N 关闭空白标签页；O 打开网址；L 全选会话；
+// P 同步设置（与工具栏按钮标注一致）。
+const syncShortcutHandlers = {
+  'KeyA': () => $(syncState.active ? '#stop-sync' : '#start-sync')?.click(),
+  'KeyD': () => $('#stop-sync')?.click(),
+  'KeyR': () => $('#restart-sync')?.click(),
+  'F3': () => runSyncAction('平铺窗口', () => window.ops.windowAction(selectedSessionIds(), 'tile')),
+  'F4': () => runSyncAction('层叠窗口', () => window.ops.windowAction(selectedSessionIds(), 'cascade')),
+  'F5': () => { document.querySelector('.sync-tab[data-console="text"]')?.click(); $('#sync-text')?.focus(); },
+  'KeyX': () => document.querySelector('.sync-tab[data-console="tabs"]')?.click(),
+  'KeyB': () => $('#close-other-tabs')?.click(),
+  'KeyC': () => $('#close-tab')?.click(),
+  'KeyN': () => $('#close-blank-tabs')?.click(),
+  'KeyO': () => { document.querySelector('.sync-tab[data-console="window"]')?.click(); $('#tab-url')?.focus(); },
+  'KeyL': () => $('#select-all-sessions')?.click(),
+  'KeyP': () => $('#sync-settings-button')?.click(),
+};
+document.addEventListener('keydown', (event) => {
+  if (!document.querySelector('.view.active#view-sync')) return;
+  if (!(event.ctrlKey && event.altKey) || event.shiftKey || event.metaKey) return;
+  const handler = syncShortcutHandlers[event.code];
+  if (!handler) return;
+  event.preventDefault();
+  try { handler(); } catch (error) { toast(error.message); }
+});
 $('#clear-logs').addEventListener('click', () => { ui.logs = []; save(); renderLogs(); });
 $('#choose-profile-storage').addEventListener('click', chooseProfileStorage);
 $('#reset-profile-storage').addEventListener('click', resetProfileStorage);

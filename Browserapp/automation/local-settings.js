@@ -46,12 +46,26 @@ function normalizeCloseAction(value) {
   return CLOSE_ACTION_VALUES.includes(value) ? value : 'ask';
 }
 
+// Roxy 客户端设置默认值（main.mjs 设置对象）：内存使用率上限 95%、磁盘可用空间下限 8GB。
+function clampMemoryLimit(value) {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n)) return 95;
+  return Math.min(100, Math.max(1, n));
+}
+function clampDiskLimit(value) {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n)) return 8;
+  return Math.min(1024, Math.max(0, n));
+}
+
 function defaultCache() {
   return {
     profileDataRoot: defaultRoot,
     cloud: cloudSync.defaultCloudConfig(),
     uiGroups: [],
     closeAction: 'ask',
+    memoryLimit: 95,
+    diskLimit: 8,
   };
 }
 
@@ -81,6 +95,8 @@ async function loadLocalSettings() {
       cloud: { ...cloudSync.defaultCloudConfig(), ...(saved.cloud || {}) },
       uiGroups: Array.isArray(saved.uiGroups) ? saved.uiGroups : [],
       closeAction: normalizeCloseAction(saved.closeAction),
+      memoryLimit: clampMemoryLimit(saved.memoryLimit),
+      diskLimit: clampDiskLimit(saved.diskLimit),
     };
     if (needsMigration) {
       try {
@@ -153,6 +169,8 @@ async function saveLocalSettings(value) {
     cloud: value.cloud || localSettingsCache.cloud || cloudSync.defaultCloudConfig(),
     uiGroups: Array.isArray(value.uiGroups) ? value.uiGroups : (localSettingsCache.uiGroups || []),
     closeAction: normalizeCloseAction(value.closeAction || localSettingsCache.closeAction),
+    memoryLimit: clampMemoryLimit(value.memoryLimit !== undefined ? value.memoryLimit : localSettingsCache.memoryLimit),
+    diskLimit: clampDiskLimit(value.diskLimit !== undefined ? value.diskLimit : localSettingsCache.diskLimit),
   };
   return localSettingsWriter.request();
 }
@@ -170,5 +188,7 @@ module.exports = {
   writeLocalSettingsFile,
   normalizeProfileDataRoot,
   normalizeCloseAction,
+  clampMemoryLimit,
+  clampDiskLimit,
   flushSettingsWriter,
 };

@@ -1233,6 +1233,14 @@ app.whenReady().then(async () => {
     if (value === 'exit') destroyTray();
     return { success: true, closeAction: value };
   });
+  // 启动保护（Roxy 客户端设置对齐）：内存使用率上限 / 磁盘可用空间下限。
+  registerTrustedIpc('system:get-client-settings', () => settingsStore.getLocalSettings());
+  registerTrustedIpc('system:save-client-settings', async (_event, payload) => {
+    const patch = payload && typeof payload === 'object' ? payload : {};
+    await settingsStore.saveLocalSettings({ ...settingsStore.getLocalSettings(), ...patch });
+    if (settingsStore.getLocalSettings().closeAction === 'exit') destroyTray();
+    return settingsStore.getLocalSettings();
+  });
   registerTrustedIpc('app:update-check', async () => {
     const payload = await appUpdate.pushAppUpdateStatus({ check: true });
     if (payload?.error && !payload?.remoteVersion) throw new Error(payload.error);
@@ -1547,11 +1555,26 @@ app.whenReady().then(async () => {
     const ids = sanitizeIds(payload.ids); const entries = engine.runningWithCdp(ids); const action = String(payload.action); const value = payload.payload || {};
     if (action === 'sync') return syncTabsFromMaster(ids);
     if (action === 'list') return engine.sessions();
+    // Roxy 统一标签页语义：closeOthers = 关闭除当前页外的全部标签页；closeBlank = 关闭空白标签页。
+    const isBlankTab = (url) => /^(about:blank|chrome:\/\/(newtab|new-tab-page)\/?)/i.test(String(url || ''));
     for (const { item } of entries) {
       if (action === 'new') await cdp.newTab(item.port, String(value.url || 'about:blank'));
       else if (action === 'navigate') await cdp.navigate(item.port, String(value.url || 'about:blank'));
       else if (action === 'reload') await cdp.reload(item.port);
       else if (action === 'close') { const tab = await cdp.firstTab(item.port); if (tab) await cdp.closeTab(item.port, tab.id); }
+      else if (action === 'closeOthers') {
+        const current = await cdp.firstTab(item.port);
+        for (const tab of await cdp.tabs(item.port)) {
+          if (current && tab.id === current.id) continue;
+          await cdp.closeTab(item.port, tab.id);
+        }
+      }
+      else if (action === 'closeBlank') {
+        for (const tab of await cdp.tabs(item.port)) {
+          if (!isBlankTab(tab.url)) continue;
+          await cdp.closeTab(item.port, tab.id);
+        }
+      }
       else throw new Error('Unknown tab action');
     }
     return { success: true, count: entries.length };

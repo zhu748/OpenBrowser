@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('ops', Object.freeze({
   openGithub: () => ipcRenderer.invoke('app:open-github'),
   setUiChrome: (payload) => ipcRenderer.invoke('system:set-ui-chrome', payload),
   setCloseAction: (mode) => ipcRenderer.invoke('system:set-close-action', mode),
+  getClientSettings: () => ipcRenderer.invoke('system:get-client-settings'),
+  saveClientSettings: (payload) => ipcRenderer.invoke('system:save-client-settings', payload),
   kernelStatus: () => ipcRenderer.invoke('kernel:status'),
   kernelDownload: (force) => ipcRenderer.invoke('kernel:download', force),
   kernelCheckUpdate: () => ipcRenderer.invoke('kernel:check-update'),

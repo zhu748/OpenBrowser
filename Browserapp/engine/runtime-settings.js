@@ -14,9 +14,10 @@ const { sanitizeUrlForLog } = require('../automation/log-sanitizer');
 const { buildPortScanProtectionScript } = require('../automation/port-scan-protection');
 const { fingerprintConfigHash, isEphemeralDocumentUrl } = require('./fingerprint-injection');
 
-// ===== Roxy 对齐：网址访问白名单（Fetch 反选拦截） =====
-// advanced.allowUrls 非空时：名单外的 http(s) 请求一律 Fetch.failRequest(BlockedByClient)。
-// 每个标签页保持一条 PersistentConnection；白名单签名变化才重建，关闭/禁用即拆除。
+// ===== Roxy 对齐：网址访问白名单 / 黑名单（Fetch 反选拦截） =====
+// advanced.allowUrls 非空时：名单外的 http(s) 请求一律拦截；advanced.blockUrls 命中时同样拦截。
+// 文档（顶层导航）被拦时返回本地拦截页（Roxy blockDomain.html 对齐），其余资源 failRequest。
+// 每个标签页保持一条 PersistentConnection；名单签名变化才重建，关闭/禁用即拆除。
 const urlAllowIntercepts = new Map(); // `${profileId}:${tabId}` -> { conn, signature }
 function parseAllowHosts(raw) {
   return String(raw || '')
@@ -26,6 +27,24 @@ function parseAllowHosts(raw) {
     .map((s) => s.replace(/^[a-z][a-z0-9+.-]*:\/\//, '').split('/')[0].trim())
     .filter(Boolean)
     .slice(0, 200);
+}
+// 本地拦截页（对齐 Roxy web/blockDomain.html 的居中版式与文案语义）
+function escapeHtmlText(value) {
+  return String(value).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+function blockedPageHtml(url) {
+  const safeUrl = escapeHtmlText(String(url || '').slice(0, 300));
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><title>无法访问该网页</title><style>
+body{margin:0;padding:0;display:flex;justify-content:center;align-items:center;height:100vh;background-color:#f0f0f0}
+.container{width:var(--width-xs,384px);display:flex;flex-direction:column;justify-content:center;gap:12px}
+.title{color:#111213;font-size:16px;font-weight:400;line-height:20px;text-align:center}
+.text{color:#7c8387;font-size:12px;font-weight:400;line-height:normal;text-align:center;word-break:break-all}
+</style></head><body><div class="container">
+<svg style="display:block;margin:0 auto" xmlns="http://www.w3.org/2000/svg" width="90" height="90" viewBox="0 0 90 90" fill="none"><circle cx="45" cy="45" r="38" stroke="#C8CED3" stroke-width="6"/><path d="M17 17L73 73" stroke="#C8CED3" stroke-width="6" stroke-linecap="round"/></svg>
+<div class="title">无法访问该网页</div>
+<div class="text">该网址已被管理员禁止访问。</div>
+<div class="text">${safeUrl}</div>
+</div></body></html>`;
 }
 function hostAllowedByAllowlist(hostname, hosts) {
   for (const host of hosts) {
@@ -44,10 +63,10 @@ function teardownAllowIntercept(key) {
   urlAllowIntercepts.delete(key);
   try { entry.conn?.close(); } catch (_) {}
 }
-async function ensureAllowIntercept(profileId, tab, allowHosts) {
+async function ensureAllowIntercept(profileId, tab, allowHosts, blockHosts) {
   if (!tab?.webSocketDebuggerUrl) return;
   const key = `${profileId}:${tab.id}`;
-  const signature = allowHosts.join('|');
+  const signature = `${allowHosts.join('|')}#${blockHosts.join('|')}`;
   const existing = urlAllowIntercepts.get(key);
   if (existing && existing.signature === signature) return;
   teardownAllowIntercept(key);
@@ -58,16 +77,31 @@ async function ensureAllowIntercept(profileId, tab, allowHosts) {
         const requestId = message.params?.requestId;
         if (!requestId) return;
         const url = String(message.params?.request?.url || '');
+        const resourceType = String(message.params?.resourceType || '');
         // 非 http(s)（chrome://、扩展、devtools 等）与启动页一律放行
         let allowed = !/^https?:/i.test(url) || isEphemeralDocumentUrl(url);
+        let hostname = '';
         if (!allowed) {
-          let hostname = '';
           try { hostname = new URL(url).hostname.toLowerCase(); } catch (_) {}
           allowed = hostAllowedByAllowlist(hostname, allowHosts);
         }
-        const method = allowed ? 'Fetch.continueRequest' : 'Fetch.failRequest';
-        const params = allowed ? { requestId } : { requestId, errorReason: 'BlockedByClient' };
-        Promise.resolve(conn.command(method, params, { timeout: 4000 })).catch(() => {});
+        const blockedByBlacklist = blockHosts.length > 0 && hostAllowedByAllowlist(hostname, blockHosts);
+        const blocked = blockedByBlacklist || (!allowed && allowHosts.length > 0);
+        if (!blocked) {
+          Promise.resolve(conn.command('Fetch.continueRequest', { requestId }, { timeout: 4000 })).catch(() => {});
+          return;
+        }
+        if (resourceType === 'Document') {
+          // 顶层导航 → 本地拦截页（Roxy blockDomain.html 对齐）
+          Promise.resolve(conn.command('Fetch.fulfillRequest', {
+            requestId,
+            responseCode: 200,
+            responseHeaders: [{ name: 'Content-Type', value: 'text/html; charset=utf-8' }],
+            body: Buffer.from(blockedPageHtml(url), 'utf8').toString('base64'),
+          }, { timeout: 4000 })).catch(() => {});
+          return;
+        }
+        Promise.resolve(conn.command('Fetch.failRequest', { requestId, errorReason: 'BlockedByClient' }, { timeout: 4000 })).catch(() => {});
       },
       onDisconnect: () => urlAllowIntercepts.delete(key),
     });
@@ -80,8 +114,9 @@ async function ensureAllowIntercept(profileId, tab, allowHosts) {
 }
 function syncAllowIntercepts(profile, tabs) {
   const allowHosts = parseAllowHosts(profile?.advanced?.allowUrls);
+  const blockHosts = parseAllowHosts(profile?.advanced?.blockUrls);
   const prefix = `${profile?.id || ''}:`;
-  if (!allowHosts.length) {
+  if (!allowHosts.length && !blockHosts.length) {
     for (const key of [...urlAllowIntercepts.keys()]) {
       if (key.startsWith(prefix)) teardownAllowIntercept(key);
     }
@@ -90,7 +125,7 @@ function syncAllowIntercepts(profile, tabs) {
   const liveKeys = new Set();
   for (const tab of tabs) {
     liveKeys.add(`${profile.id}:${tab.id}`);
-    ensureAllowIntercept(profile.id, tab, allowHosts).catch(() => {});
+    ensureAllowIntercept(profile.id, tab, allowHosts, blockHosts).catch(() => {});
   }
   for (const key of [...urlAllowIntercepts.keys()]) {
     if (key.startsWith(prefix) && !liveKeys.has(key)) teardownAllowIntercept(key);

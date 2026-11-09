@@ -957,7 +957,7 @@
                 </section>
               </div>              <div class="console-panel" id="console-tabs">
                 <label class="field-label">目标 URL<input id="tab-url" value="https://example.com" placeholder="https://example.com"></label>
-                <div class="action-grid"><button class="sync-command" id="new-tab"><i data-lucide="plus"></i><span>新建标签页</span></button><button class="sync-command" id="navigate-tab"><i data-lucide="arrow-right"></i><span>导航当前页</span></button><button class="sync-command" id="reload-tab"><i data-lucide="rotate-cw"></i><span>刷新页面</span></button><button class="sync-command" id="close-tab"><i data-lucide="x"></i><span>关闭当前页</span></button><button class="wide-action sync-command" id="sync-tabs"><i data-lucide="refresh-cw"></i><span>从主控同步全部标签页</span></button></div>
+                <div class="action-grid"><button class="sync-command" id="new-tab"><i data-lucide="plus"></i><span>新建标签页</span></button><button class="sync-command" id="navigate-tab"><i data-lucide="arrow-right"></i><span>导航当前页</span></button><button class="sync-command" id="reload-tab"><i data-lucide="rotate-cw"></i><span>刷新页面</span></button><button class="sync-command" id="close-tab"><i data-lucide="x"></i><span>关闭当前页</span></button><button class="sync-command" id="close-other-tabs"><i data-lucide="x-square"></i><span>关闭其他标签页</span></button><button class="sync-command" id="close-blank-tabs"><i data-lucide="eraser"></i><span>关闭空白标签页</span></button><button class="wide-action sync-command" id="sync-tabs"><i data-lucide="refresh-cw"></i><span>从主控同步全部标签页</span></button></div>
                 <div id="tab-inventory" class="tab-inventory"></div>
               </div>
             </aside>
@@ -1354,6 +1354,23 @@
     <button class="primary" type="button" id="app-download-update" hidden><i data-lucide="download" aria-hidden="true"></i><span data-i18n="system.update.download">下载更新</span></button>
   </div>
   <p class="storage-warning" id="app-update-status" role="status" data-i18n="system.update.idle">尚未检查更新。</p>
+</article>
+<article class="storage-settings-card" id="launch-gate-card">
+  <div class="storage-settings-head">
+    <div>
+      <h3 data-i18n="system.launchgate.title">启动保护</h3>
+      <p data-i18n="system.launchgate.desc">内存使用率或磁盘可用空间超出限制时停止打开窗口（对齐 Roxy 客户端设置，默认 95% / 8GB）。</p>
+    </div>
+    <span id="launch-gate-badge">—</span>
+  </div>
+  <div class="launch-gate-fields" style="margin-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px">
+    <label><span data-i18n="system.launchgate.memory">内存使用率上限（%）</span><input id="launch-memory-limit" type="number" min="1" max="100" step="1" placeholder="95"></label>
+    <label><span data-i18n="system.launchgate.disk">磁盘可用空间下限（GB）</span><input id="launch-disk-limit" type="number" min="0" max="1024" step="1" placeholder="8"></label>
+  </div>
+  <div class="storage-actions" style="margin-top:12px">
+    <button class="primary" type="button" id="launch-gate-save"><i data-lucide="save" aria-hidden="true"></i><span data-i18n="system.launchgate.save">保存设置</span></button>
+  </div>
+  <p class="storage-warning" id="launch-gate-status" role="status" data-i18n="system.launchgate.idle">尚未保存。</p>
 </article>
 <article class="storage-settings-card" id="cloud-backup-card">
   <div class="storage-settings-head">

@@ -22,6 +22,7 @@ const { mergeLoadExtensionArgs } = require('../automation/protocol/app-center-pr
 const { backgroundNetworkFlagsForProfile } = require('../automation/request-header-rewriter');
 const { portConnection, reconcileOnConnection } = require('../extension-pipe');
 const { appendDiagnosticOutput, formatBrowserStartupError, isChildExited, removeSingletonFiles, writeBrowserStartupDiagnostic } = require('./index');
+const { assertResourceGateForLaunch } = require('./resource-gate');
 const { spawn } = require('child_process');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -251,6 +252,9 @@ module.exports = {
       profile = await this.prepareProfileProxyForStart(profile);
     this.assertStartGenerationActive(profile.id, lifecycleGeneration);
     this.profiles.set(profile.id, profile);
+    // Roxy 客户端设置对齐：内存使用率超上限 / 磁盘可用空间低于下限 → 停止打开窗口。
+    currentStage = 'resources'; this.emitStartProgress(profile.id, 'resources', 8, '正在检测内存与磁盘…');
+    await assertResourceGateForLaunch({ diskRoot: this.profileRoot(profile.id) });
     currentStage = 'proxy'; this.emitStartProgress(profile.id, 'proxy', 18, '正在检测代理与出口…');
     // 「网络不通停止打开」：守护开启时强制做一次真实出口检测，失败即阻断启动。
     if (profile.advanced?.stopOpenNet) {
