@@ -59,3 +59,7 @@ OpenBrowser 自 v1.0.26 起附带一个可选的 Rust 原生内核（`crates/ope
 ## 4. 复核节奏
 
 每个 minor 版本发布前对照 §3 条件复核一次；结论记录追加于本文件末尾。
+
+## 5. 复核记录
+
+- **2026-11-09（全面优化审查·可达性核查补充）**：JS 侧 `automation/rust-core-bridge.js` 仅导出 5 个函数，生产真正可达的只有 `startRustProxyBridge`（bridge 命令，且仅在 `OPENBROWSER_USE_RUST_CORE=1` 门控下启用）；`getRustTlsProfile` / `calculateRustTileGrid` 仅被 selftest 调用。因此 §1 功能面中的"UDP 关联、进程守护（ProcessGuardian）、同步协调器（SyncCoordinator）、JitterEngine、CascadeLayout"合计约 1,900 行目前是**未接线库代码**：随 CI 全量编译、测试，但无任何生产调用方。`sync/coordinator.rs` 头注释"replacing C# native-sync-hotkeys"与事实不符（C# 版仍在生产使用），已修正为"Rust 侧孪生实现"。本记录不改变 §3 裁决；下一个 minor 复核时应决定：给 sync 接 CLI（与 live-sync C# 栈对齐），或承认其为备件库并冻结测试维护承诺。

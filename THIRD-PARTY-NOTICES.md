@@ -55,25 +55,25 @@ implements today.
 The Windows input-mirroring / hotkey / window-driver helpers
 (`native-input-mirror.cs`, `native-sync-hotkeys.cs`, `native-profile-marker.cs`,
 `native-omnibox-driver.cs`, `native-tab-shortcut-driver.cs`,
-`native-extension-popup-driver.cs`, `native-upper-ui-jitter-driver.cs`, …)
-carry **no copyright or license header**, and the repository history does not
-record their provenance.
+`native-extension-popup-driver.cs`, `native-upper-ui-jitter-driver.cs`)
+have **no recorded provenance**. An earlier internal review flagged
+`native-input-mirror.cs` as "AGPL code mixed into an MIT project"; a re-audit
+found **no AGPL or GPL markers in the file** and no other in-repo evidence
+for that claim, so it should be treated as *unproven*, not as fact.
 
-An earlier internal review flagged `native-input-mirror.cs` as "AGPL code
-mixed into an MIT project". A re-audit found **no AGPL or GPL markers in the
-file** and no other in-repo evidence for that claim, so it should be treated
-as *unproven*, not as fact. What remains true is that sourceless, headerless
-code cannot be relicensed confidently at all.
-
-Recommended action: obtain the upstream provenance from the original author
-and add an SPDX header to every `native-*.cs` file. Until then, these files
-should be treated as "license unknown" for redistribution purposes.
+As of 2026-11-09 every `native-*.cs` file carries an explicit header marking
+it `SPDX-License-Identifier: UNLICENSED` with a pointer back to this
+section — deliberately NOT an MIT claim, because code of unknown origin
+cannot be relicensed confidently. Recommended action remains: obtain the
+upstream provenance from the original author and replace the UNLICENSED
+marker with the correct license once known.
 
 ## 3. Browser kernel distribution (`Browserapp/kernels/`, LFS)
 
 Kernel binaries are Git-LFS objects (~24 MB of local pointer state; the real
 objects are far larger) plus runtime downloads from `donutbrowser.com`
-(see `docs/` update-trust notes). Chromium is BSD-licensed, but a
+(see `Browserapp/automation/update-trust.js` and its selftest tool
+`Browserapp/automation/update-trust-tool.js`). Chromium is BSD-licensed, but a
 redistributed build must comply with the Chromium license and trademark
 conditions, and the download channel must remain integrity-verified (the
 SHA-256 manifest path added in the security hardening pass). Confirm the
