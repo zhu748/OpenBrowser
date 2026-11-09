@@ -12,6 +12,7 @@ const path = require('path');
 const os = require('os');
 const zlib = require('zlib');
 const { spawnSync, execFileSync } = require('child_process');
+const { OPENBROWSER_KERNEL_VERSION } = require('./versions');
 
 const APP_ROOT = path.resolve(__dirname, '..');
 const ASSETS = path.join(APP_ROOT, 'assets');
@@ -901,9 +902,9 @@ async function prepareMacDockWrapper({
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>CFBundleName</key><string>${appName}</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>148.0.7778.165</string>
+  <key>CFBundleShortVersionString</key><string>${OPENBROWSER_KERNEL_VERSION}</string>
   <key>CFBundleSignature</key><string>Cr24</string>
-  <key>CFBundleVersion</key><string>7778.165</string>
+  <key>CFBundleVersion</key><string>${OPENBROWSER_KERNEL_VERSION.split('.').slice(2).join('.')}</string>
   <key>LSMinimumSystemVersion</key><string>10.13</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSPrincipalClass</key><string>BrowserCrApplication</string>

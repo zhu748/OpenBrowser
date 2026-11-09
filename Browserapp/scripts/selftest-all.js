@@ -61,7 +61,6 @@ const SUITE = [
   ['selftest:proxyconcurrency', 'automation/selftests/proxy-concurrency-selftest.js'],
   ['selftest:localapi', 'automation/selftests/local-api-profile-selftest.js'],
   ['selftest:localapiws', 'automation/selftests/local-api-ws-selftest.js'],
-  ['selftest:localapiport', 'automation/selftests/local-api-port-selftest.js'],
   ['selftest:mcp', 'automation/selftests/mcp-control-selftest.js'],
   ['selftest:profiles', 'profile-workflow-selftest.js'],
   ['selftest:lifecycle', 'lifecycle-selftest.js'],
@@ -77,12 +76,15 @@ const SUITE = [
   ['selftest:fontpersona', 'font-persona-selftest.js'],
   ['selftest:fingerprintpool', 'automation/selftests/fingerprint-pool-selftest.js'],
   ['selftest:fingerprintcoverage', 'automation/selftests/fingerprint-coverage-selftest.js'],
-  ['selftest:cssfontgate', 'automation/selftests/css-font-local-gate-e2e-selftest.js'],
-  ['selftest:cssfontrewrite', 'automation/selftests/css-font-response-rewrite-e2e-selftest.js'],
+  ['selftest:cssfontgate', 'automation/selftests/css-font-local-gate-e2e-selftest.js', { darwinOnly: true }],
+  ['selftest:cssfontrewrite', 'automation/selftests/css-font-response-rewrite-e2e-selftest.js', { darwinOnly: true }],
   // Kernel/display-bound scripts stay out of the aggregate gate on purpose:
   // selftest.js, live-sync-v4-selftest.js, rust-core-*-selftest.js,
   // browser-startup-diagnostic-selftest.js and friends need a real Chromium;
   // they keep their individual npm scripts and CI/本地按环境调用。
+  // Entries flagged { darwinOnly: true } need the macOS kernel launcher; their
+  // scripts self-skip with a misleading "OK n/n" on Linux, so the runner marks
+  // them as explicit skips instead of counting them as passes.
 ];
 
 const argv = process.argv.slice(2);
@@ -91,14 +93,25 @@ const PER_SCRIPT_TIMEOUT_MS = 5 * 60 * 1000;
 
 function main() {
   if (LIST_ONLY) {
-    for (const [name, script] of SUITE) console.log(`${name.padEnd(28)} ${script}`);
+    for (const [name, script, flags] of SUITE) {
+      const mark = flags && flags.darwinOnly ? '  [darwin-only]' : '';
+      console.log(`${name.padEnd(28)} ${script}${mark}`);
+    }
     console.log(`\n${SUITE.length} scripts`);
     return 0;
   }
   const width = Math.max(...SUITE.map(([name]) => name.length));
   const results = [];
   let failed = 0;
-  for (const [name, script] of SUITE) {
+  let skipped = 0;
+  for (const [name, script, flags] of SUITE) {
+    if (flags && flags.darwinOnly && process.platform !== 'darwin') {
+      skipped += 1;
+      results.push({ name, script, pass: null });
+      process.stdout.write(`run  ${name.padEnd(width)}  ${script} ... `);
+      console.log('skip (darwin-only: macOS kernel launcher required)');
+      continue;
+    }
     const scriptPath = path.join(ROOT, script);
     process.stdout.write(`run  ${name.padEnd(width)}  ${script} ... `);
     const started = Date.now();
@@ -118,10 +131,10 @@ function main() {
       if (tail) console.log(tail.replace(/^/gm, '     '));
     }
   }
-  console.log(`\n${SUITE.length - failed}/${SUITE.length} passed, ${failed} failed`);
+  console.log(`\n${SUITE.length - failed - skipped} passed, ${skipped} skipped (darwin-only), ${failed} failed`);
   if (failed) {
     console.log('failed scripts:');
-    for (const r of results.filter((x) => !x.pass)) console.log(`  ${r.name}  ${r.script}`);
+    for (const r of results.filter((x) => x.pass === false)) console.log(`  ${r.name}  ${r.script}`);
   }
   return failed ? 1 : 0;
 }

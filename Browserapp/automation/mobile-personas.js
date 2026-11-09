@@ -28,7 +28,7 @@ const ANDROID_DPR_STEPS = Object.freeze([1.5, 1.75, 2, 2.25, 2.5, 2.625, 2.75, 2
 const ANDROID_PANELS = Object.freeze([1080, 720, 1440]);
 /** Chrome for Android keeps the address bar outside the layout viewport. */
 const URL_BAR_HEIGHT = 56;
-const DEFAULT_CHROME_MAJOR = 148;
+const { MOBILE_DEFAULT_CHROME_MAJOR: DEFAULT_CHROME_MAJOR } = require('./versions');
 
 const normalizeOs = (os) => (String(os || "").toLowerCase() === "ios" ? "ios" : "android");
 

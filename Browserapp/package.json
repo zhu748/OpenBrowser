@@ -40,6 +40,7 @@
     "selftest:templates": "node rpa-template-audit-selftest.js",
     "selftest:colormode": "node color-mode-selftest.js",
     "selftest:kernel": "node automation/selftests/kernel-policy-selftest.js",
+    "selftest:kernelmgmt": "node kernel-management-selftest.js",
     "selftest:kerneltrack": "node scripts/kernel-track-selftest.mjs",
     "track:kernel": "node scripts/kernel-track.mjs",
     "selftest:startup": "node browser-startup-diagnostic-selftest.js",
@@ -60,7 +61,6 @@
     "build:rustcore": "node scripts/build-rust-core.js",
     "selftest:rustrelease": "node automation/selftests/rust-release-packaging-selftest.js && node automation/selftests/release-version-consistency-selftest.js",
     "selftest:theme": "node theme-modern-selftest.js",
-    "selftest:kernel": "node kernel-management-selftest.js",
     "selftest:proxypage": "node proxy-page-alignment-selftest.js",
     "selftest:themes": "node theme-modern-selftest.js",
     "selftest:fplog": "node fingerprint-log-growth-selftest.js",
@@ -231,6 +231,7 @@
     "@eslint/js": "^10.0.1",
     "electron": "43.1.1",
     "eslint": "^10.14.0",
-    "globals": "^17.14.0"
+    "globals": "^17.14.0",
+    "rcedit": "^5.0.2"
   }
 }

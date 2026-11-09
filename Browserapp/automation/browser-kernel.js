@@ -60,8 +60,7 @@ const SOURCE_CUSTOM = 'custom';
 /** Mozilla release archive (per-version Firefox kernels). */
 const SOURCE_MOZILLA = 'mozilla';
 /** Bundled / userData OpenBrowser 148 independent kernel. Default on macOS x64. */
-const SOURCE_OPENBROWSER = 'openbrowser-148';
-const OPENBROWSER_KERNEL_VERSION = '148.0.7778.165';
+const { SOURCE_OPENBROWSER, OPENBROWSER_KERNEL_VERSION } = require('./versions');
 const WAYFERN_ACCEPT_TERMS_ARG = '--accept-terms-and-conditions';
 const MAX_META_BYTES = 2 * 1024 * 1024;
 const MAX_KERNEL_BYTES = 2 * 1024 * 1024 * 1024;

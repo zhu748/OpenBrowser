@@ -14,6 +14,8 @@
  * Applied via CDP + document-start JS inject on stock Chromium.
  */
 
+const { DEFAULT_UA_CHROME_MAJOR, RANDOM_UA_CHROME_MAJORS } = require('./versions');
+
 const GREASE_BRANDS = [
   { brand: "Not:A-Brand", version: "99" },
   { brand: "Not A(Brand", version: "8" },
@@ -185,7 +187,7 @@ function buildUserAgentString(options = {}) {
   const osKey = OS_PRESETS[options.os] ? options.os : (options.os === "mac" ? "macos" : detectHostOs());
   const preset = OS_PRESETS[osKey] || OS_PRESETS.windows;
   const osAdj = osVersionUaAdjustments(preset, options.osVersion);
-  const major = Number(options.chromeMajor || options.major || 131) || 131;
+  const major = Number(options.chromeMajor || options.major || DEFAULT_UA_CHROME_MAJOR) || DEFAULT_UA_CHROME_MAJOR;
   const full = normalizeChromeFull(major, options.chromeFull || options.fullVersion);
   const chromeToken = options.reduced === false ? full : `${major}.0.0.0`;
 
@@ -205,10 +207,10 @@ function buildUserAgentString(options = {}) {
  * Derive Client Hints / UserAgentMetadata from UA (+ optional overrides).
  */
 function buildUserAgentMetadata(ua, overrides = {}) {
-  const parsed = parseChromeVersion(ua) || { full: "131.0.0.0", major: 131 };
+  const parsed = parseChromeVersion(ua) || { full: `${DEFAULT_UA_CHROME_MAJOR}.0.0.0`, major: DEFAULT_UA_CHROME_MAJOR };
   const osKey = overrides.os || parseOsFromUa(ua);
   const preset = OS_PRESETS[osKey] || OS_PRESETS.windows;
-  const major = Number(overrides.chromeMajor || parsed.major) || 131;
+  const major = Number(overrides.chromeMajor || parsed.major) || DEFAULT_UA_CHROME_MAJOR;
   const fullVersion = normalizeChromeFull(
     major,
     overrides.ua_full_version || overrides.uaFullVersion || overrides.fullVersion || parsed.full
@@ -283,7 +285,7 @@ function buildUaProfile(options = {}) {
   if (!userAgent) {
     userAgent = buildUserAgentString({
       os: osKey,
-      chromeMajor: majorHint || 131,
+      chromeMajor: majorHint || DEFAULT_UA_CHROME_MAJOR,
       chromeFull: options.chromeFull || options.fullVersion,
       reduced: options.reduced !== false,
       model: options.model,
@@ -293,7 +295,7 @@ function buildUaProfile(options = {}) {
     });
   }
 
-  const parsed = parseChromeVersion(userAgent) || { full: "131.0.0.0", major: 131 };
+  const parsed = parseChromeVersion(userAgent) || { full: `${DEFAULT_UA_CHROME_MAJOR}.0.0.0`, major: DEFAULT_UA_CHROME_MAJOR };
   const major = majorHint || parsed.major;
   const fullForHints = normalizeChromeFull(
     major,
@@ -1016,7 +1018,7 @@ function buildUaInjectionScript(uaProfile) {
 function randomUaForSeed(seedU32, options = {}) {
   const osList = options.osList || ["windows", "windows", "macos", "linux"];
   const os = osList[seedU32 % osList.length];
-  const majors = options.majors || [128, 129, 130, 131, 132, 133, 134, 135, 136, 137];
+  const majors = options.majors || RANDOM_UA_CHROME_MAJORS;
   const major = majors[(seedU32 >>> 8) % majors.length];
   const build = 6000 + ((seedU32 >>> 16) % 900);
   const patch = (seedU32 >>> 24) % 200;

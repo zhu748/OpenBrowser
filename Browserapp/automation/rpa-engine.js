@@ -19,7 +19,6 @@ const {
   parseProcessContent,
   randomNum,
   RPA_PLUS_ACTIONS,
-  isRegistered,
 } = require('./protocol/rpa-registry');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

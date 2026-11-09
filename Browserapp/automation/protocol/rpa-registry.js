@@ -12,7 +12,13 @@
  * process_content is a node graph / step list; each node has type matching registerAction names.
  */
 
-/** Full RPA Plus action set (order from registerAction calls) */
+/**
+ * Full RPA Plus action set (order from registerAction calls). Documents the
+ * marketplace template format; the engine executes a subset of it
+ * (EXECUTABLE_STEP_TYPES in rpa-engine.js). Entries marked "no local
+ * executor" fail closed at plan validation (findUnsupportedSteps) instead of
+ * throwing mid-run — keep that contract in sync in rpa-template-audit-selftest.
+ */
 const RPA_PLUS_ACTIONS = Object.freeze([
   'startNode',
   'newPage',
@@ -45,7 +51,7 @@ const RPA_PLUS_ACTIONS = Object.freeze([
   'downloadFile',
   'useExcel',
   'importText',
-  'getEmail',
+  'getEmail', // marketplace-listed; no local executor — fails closed at validation
   'get2faCode',
   'getRequest',
   'getResponse',
@@ -57,7 +63,7 @@ const RPA_PLUS_ACTIONS = Object.freeze([
   'extractKey',
   'randomGet',
   'saveRemark',
-  'saveTag',
+  'saveTag', // marketplace-listed; no local executor — fails closed at validation
   'openNewBrowser',
   'applySubProcess',
   'ifElse',
