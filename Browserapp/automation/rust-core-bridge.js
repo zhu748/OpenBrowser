@@ -90,6 +90,33 @@ function query(command, args = []) {
   }).trim());
 }
 
+// The Rust core emits bridge status events with message == code
+// (crates/openbrowser-core/src/main.rs: "message": code), so without this
+// map the user-facing toast would surface the raw code ("AUTH_FAILED").
+// The JS proxy backend already words the same situations in human terms
+// (proxy-forwarder.js: 407 -> 'Proxy username or password was rejected',
+// otherwise 'Proxy tunnel failed with HTTP N'); mirror that register here.
+// Codes are the Rust bridge's fixed vocabulary — crates/openbrowser-core
+// src/proxy/bridge.rs send_proxy_error: AUTH_FAILED, FAIL_CLOSED,
+// HEADER_TOO_LARGE, INVALID_REQUEST, UPSTREAM_CONNECT_FAILED (TUNNEL_FAILED
+// is the JS backend's sibling code, kept for alignment). Unknown codes fall
+// back to the original message so a newer binary cannot lose information;
+// `code` is always forwarded unchanged — only `message` is humanized.
+const RUST_STATUS_MESSAGES = {
+  AUTH_FAILED: 'Proxy username or password was rejected',
+  TUNNEL_FAILED: 'Proxy tunnel failed',
+  UPSTREAM_CONNECT_FAILED: 'Proxy tunnel failed to connect to the destination',
+  FAIL_CLOSED: 'Proxy failed closed: traffic blocked instead of falling back to a direct connection',
+  HEADER_TOO_LARGE: 'Proxy request header was too large',
+  INVALID_REQUEST: 'The proxy rejected a malformed request',
+};
+
+function rustStatusMessage(code, message) {
+  const mapped = RUST_STATUS_MESSAGES[code];
+  if (mapped) return mapped;
+  return typeof message === 'string' && message ? message : code;
+}
+
 function getRustCoreVersion() {
   try { return query('version'); } catch (_) { return null; }
 }
@@ -213,7 +240,8 @@ async function startRustProxyBridge(proxyConfig = {}, onStatus = () => {}, signa
         readyResolve({ port: value.port, chromeUrl: 'http://127.0.0.1:' + value.port,
           pid: child.pid, stop, child, done });
       } else if (value.event === 'status' && typeof value.code === 'string') {
-        notify(value.code, typeof value.message === 'string' ? value.message : value.code);
+        // Humanize the message for the renderer toast; code stays verbatim.
+        notify(value.code, rustStatusMessage(value.code, value.message));
       }
     }
   });
@@ -225,4 +253,4 @@ async function startRustProxyBridge(proxyConfig = {}, onStatus = () => {}, signa
 }
 
 module.exports = { findRustCoreBinary, getRustCoreVersion, getRustTlsProfile,
-  calculateRustTileGrid, startRustProxyBridge };
+  calculateRustTileGrid, startRustProxyBridge, rustStatusMessage };

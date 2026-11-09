@@ -16,8 +16,10 @@
  * package.json <-> SUITE contract. Both require() this module, so the list is
  * declared exactly once.
  *
- * Kernel/display-bound scripts (real Chromium needed) stay out of the gate on
- * purpose — see the SUITE tail comment. Use --list to print the plan.
+ * Scripts kept out of the gate — those needing a real Chromium/display, and
+ * the rust-core-* selftests whose prerequisite is a built Rust binary, not
+ * Chromium — stay out on purpose; see the SUITE tail comment. Use --list to
+ * print the plan.
  */
 
 const { spawnSync } = require('child_process');
@@ -123,11 +125,17 @@ const SUITE = [
   // what stops package.json from silently re-accumulating duplicate
   // selftest:* entries (P2 single-registry consolidation).
   ['selftest:registry', 'automation/selftests/selftest-registry-consistency-selftest.js'],
-  // Kernel/display-bound scripts stay out of the aggregate gate on purpose:
-  // selftest.js, live-sync-v4-selftest.js, rust-core-*-selftest.js,
-  // browser-startup-diagnostic-selftest.js and friends need a real Chromium;
-  // they are NOT registered here and keep their individual npm scripts,
-  // invoked per environment by CI or locally.
+  // Out-of-gate scripts and their real prerequisites — they are NOT
+  // registered here and keep their individual npm scripts:
+  // - selftest.js, live-sync-v4-selftest.js and
+  //   browser-startup-diagnostic-selftest.js need a real Chromium/display.
+  // - rust-core-*-selftest.js (parity/chaos) need NO Chromium: they use
+  //   node builtins only (http/net/child_process + ps) against a built
+  //   Rust core binary (npm run build:rustcore output under
+  //   Browserapp/rust-core/), which this aggregate gate never builds. They
+  //   are covered per push by the rust job in .github/workflows/ci.yml
+  //   (build:rustcore + selftest:rustparity + selftest:rustchaos) and by
+  //   build-installers.yml on release builds.
   // Entries flagged { darwinOnly: true } need the macOS kernel launcher; their
   // scripts self-skip with a misleading "OK n/n" on Linux, so the runner marks
   // them as explicit skips instead of counting them as passes.

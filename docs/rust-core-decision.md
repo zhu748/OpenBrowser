@@ -12,10 +12,10 @@ OpenBrowser 自 v1.0.26 起附带一个可选的 Rust 原生内核（`crates/ope
 | --- | --- |
 | 代码规模 | 约 9,570 行 Rust（含测试），单 crate 工作区 |
 | 功能面 | SOCKS5/HTTP 代理转发与连接池复用、fail-closed 探测、UDP 关联、进程守护（ProcessGuardian）与启动锁、同步协调器 |
-| 激活方式 | 环境变量 `OPENBROWSER_USE_RUST_CORE=1`，且仅作用于无探测编排的 socks5/http 桥接（`proxy-forwarder.js:862`） |
+| 激活方式 | 环境变量 `OPENBROWSER_USE_RUST_CORE=1`，且仅作用于无探测编排的 socks5/http 桥接（`proxy-forwarder.js` 中 `startAuthenticatedProxy` 内 `OPENBROWSER_USE_RUST_CORE === '1'` 门控分支，符号锚定） |
 | 失败语义 | 任何 Rust 桥接错误自动回退到久经验证的 JS 代理后端（fail-open 到既有路径），用户无感知 |
 | 二进制分发 | 安装器内置于 `resources/rust-core/`，开发态从 `target/{debug,release}` 解析 |
-| CI 门禁 | `ci.yml` 独立 rust 作业（fmt + clippy -D warnings + test --locked）；`build-installers.yml` 三个平台各跑 `build:rustcore` + `selftest:rustrelease` + `selftest:rustparity` + `selftest:rustchaos` |
+| CI 门禁 | `ci.yml` 独立 rust 作业（fmt + clippy -D warnings + test --locked，2026-11-09 起追加 `build:rustcore` + `selftest:rustparity` + `selftest:rustchaos`，JS↔Rust 桥接纳入 push 门禁）；`build-installers.yml` 三个平台各跑 `build:rustcore` + `selftest:rustrelease` + `selftest:rustparity` + `selftest:rustchaos` |
 | 许可 | MIT，无第三方 GPL/AGPL 依赖混入 |
 
 ## 2. 备选方案
@@ -54,7 +54,7 @@ OpenBrowser 自 v1.0.26 起附带一个可选的 Rust 原生内核（`crates/ope
 2. 桥接层在现场造成不可回退的事故（进程残留、端口泄漏且 `close()` 无法收敛）；
 3. 连续 2 个版本无人提交 Rust 侧修复（维护者缺位的客观信号）。
 
-移除时的执行清单（届时照单执行）：删除 `crates/`、`Cargo.toml`、`Cargo.lock`、`automation/rust-core-bridge.js`、两个 workflow 中的 rust 作业与打包步骤、`package.json` 中 `build:rustcore`/`selftest:rust*` 脚本、`proxy-forwarder.js:862-886` 的桥接分支，并在 README/发布说明中声明能力撤销的版本号。
+移除时的执行清单（届时照单执行）：删除 `crates/`、`Cargo.toml`、`Cargo.lock`、`automation/rust-core-bridge.js`、两个 workflow 中的 rust 作业与打包步骤、`package.json` 中 `build:rustcore`/`selftest:rust*` 脚本、`proxy-forwarder.js` 中 `startAuthenticatedProxy` 的 `OPENBROWSER_USE_RUST_CORE === '1'` 门控分支（含 Rust 不可用时的回退 warn；按符号锚定而非行号，行号会随文件演进漂移到错误位置），并在 README/发布说明中声明能力撤销的版本号。
 
 ## 4. 复核节奏
 
@@ -62,4 +62,5 @@ OpenBrowser 自 v1.0.26 起附带一个可选的 Rust 原生内核（`crates/ope
 
 ## 5. 复核记录
 
-- **2026-11-09（全面优化审查·可达性核查补充）**：JS 侧 `automation/rust-core-bridge.js` 仅导出 5 个函数，生产真正可达的只有 `startRustProxyBridge`（bridge 命令，且仅在 `OPENBROWSER_USE_RUST_CORE=1` 门控下启用）；`getRustTlsProfile` / `calculateRustTileGrid` 仅被 selftest 调用。因此 §1 功能面中的"UDP 关联、进程守护（ProcessGuardian）、同步协调器（SyncCoordinator）、JitterEngine、CascadeLayout"合计约 1,900 行目前是**未接线库代码**：随 CI 全量编译、测试，但无任何生产调用方。`sync/coordinator.rs` 头注释"replacing C# native-sync-hotkeys"与事实不符（C# 版仍在生产使用），已修正为"Rust 侧孪生实现"。本记录不改变 §3 裁决；下一个 minor 复核时应决定：给 sync 接 CLI（与 live-sync C# 栈对齐），或承认其为备件库并冻结测试维护承诺。
+- **2026-11-09（全面优化审查·可达性核查补充）**：JS 侧 `automation/rust-core-bridge.js` 仅导出 6 个函数（本日 P3 修复新增 `rustStatusMessage` 纯文案映射函数，无 I/O，便于单测直测），生产真正可达的只有 `startRustProxyBridge`（bridge 命令，且仅在 `OPENBROWSER_USE_RUST_CORE=1` 门控下启用）；`getRustTlsProfile` / `calculateRustTileGrid` 仅被 selftest 调用。因此 §1 功能面中的"UDP 关联、进程守护（ProcessGuardian）、同步协调器（SyncCoordinator）、JitterEngine、CascadeLayout"合计约 1,900 行，连同 lock CLI + `FileLock`（`crates/openbrowser-core/src/process/lock.rs` 187 行 + `main.rs` 的 `run_lock` 子命令约 23 行，合计约 200 行；同样无任何 JS 调用方）目前是**未接线库代码**：随 CI 全量编译、测试，但无任何生产调用方。`sync/coordinator.rs` 头注释"replacing C# native-sync-hotkeys"与事实不符（C# 版仍在生产使用），已修正为"Rust 侧孪生实现"。`version` capabilities 仍宣传 `file-lock` 是**有意**的：CLI 确实支持该子命令，且 `rust-release-packaging-selftest.js` 断言其在列——capability 列表不改。本记录不改变 §3 裁决；下一个 minor 复核时应把 sync 与 lock **一并**裁决：接 CLI（sync 与 live-sync C# 栈对齐），或承认其为备件库并冻结测试维护承诺。
+- **2026-11-09（P2/P3 待办落地）**：JS↔Rust 桥接（本 ADR 认定的唯一生产可达面）此前 push 门禁零覆盖——只有手动触发的 build-installers 才执行 parity/chaos。现 `ci.yml` rust 作业尾部追加 `build:rustcore` + `selftest:rustparity` + `selftest:rustchaos`：两者仅需 Node 内置模块（http/net/child_process + ps）与已构建二进制，无需 Chromium/display，也不需要 npm ci（相关模块树全为 Node 内置依赖），二进制路径经 `OPENBROWSER_RUST_CORE_BINARY` 显式传递。同批落地：Rust 桥接状态事件 `message` 恒等于 `code`（`AUTH_FAILED` 等原始码直达用户 toast，Rust 侧因沙箱无 cargo 不改），已在 `rust-core-bridge.js` 增加 code→人话文案映射（`code` 字段不变、未知 code 回退原文，文案对齐 JS 后端 `proxy-forwarder.js` 的 407/隧道失败措辞）；`crates/openbrowser-core/Cargo.toml` windows-sys 删除全历史零引用的两个 `Win32_UI_*` feature（窗口/消息与键盘/鼠标输入面；`Win32_Security` 保守保留），`Cargo.lock` 不动（feature 增删不改变包集合）——cargo 编译由推送后的 rust / rust-windows CI 作业验证。
