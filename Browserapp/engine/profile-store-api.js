@@ -177,8 +177,9 @@ module.exports = {
     for (const id of safeIds) {
       const profile = this.profiles.get(id);
       if (!profile) continue;
-      profile.trashed = true;
-      profile.trashedAt = nowIso;
+      // Fresh-object write: in-place mutation would go undetected by the
+      // identity-memoized profileDataHash (round-4 PERF-2).
+      this.profiles.set(id, { ...profile, trashed: true, trashedAt: nowIso });
       trashed.push(id);
     }
     if (this.usingSqlite && this.sqliteStore) {
@@ -197,8 +198,8 @@ module.exports = {
     for (const id of safeIds) {
       const profile = this.profiles.get(id);
       if (!profile) continue;
-      profile.trashed = false;
-      profile.trashedAt = null;
+      // Fresh-object write, same reason as trashProfiles above.
+      this.profiles.set(id, { ...profile, trashed: false, trashedAt: null });
       restored.push(id);
     }
     if (this.usingSqlite && this.sqliteStore) {
@@ -240,9 +241,8 @@ module.exports = {
     }
     const profile = this.profiles.get(id);
     if (profile) {
-      profile.cookies = '';
-      profile.updatedAt = new Date().toISOString();
-      this.profiles.set(id, profile);
+      // Fresh-object write, same reason as trashProfiles above.
+      this.profiles.set(id, { ...profile, cookies: '', updatedAt: new Date().toISOString() });
       await this.persist().catch(() => {});
     }
     return { success: true, id };

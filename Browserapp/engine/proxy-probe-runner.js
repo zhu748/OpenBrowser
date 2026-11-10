@@ -1,6 +1,6 @@
 'use strict';
 
-async function runProxyProbes(tasks, { totalTimeoutMs = 6500, attemptTimeoutMs = 2200, isLinkError = () => false } = {}) {
+async function runProxyProbes(tasks, { totalTimeoutMs = 6500, attemptTimeoutMs = 2200,  } = {}) {
   // Providers run concurrently with a shared total deadline: the old serial
   // loop paid up to attemptTimeoutMs per provider (6 geo sources ~= worst
   // case 13s tail) while a healthy lookup only ever needs the fastest one.

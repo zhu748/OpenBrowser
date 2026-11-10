@@ -68,17 +68,15 @@ check('3. Browserapp/index.html #app-version display matches v' + EXPECTED_VERSI
 });
 
 // 4. Browserapp/scripts/brand-exe.mjs
-check('4. Browserapp/scripts/brand-exe.mjs PE metadata matches ' + EXPECTED_VERSION + '.0', () => {
+check('4. Browserapp/scripts/brand-exe.mjs PE metadata is derived from package.json', () => {
   const brand = fs.readFileSync(path.join(appRoot, 'scripts/brand-exe.mjs'), 'utf8');
   const expectedFourPart = `${EXPECTED_VERSION}.0`;
-  assert.ok(
-    brand.includes(`'file-version': '${expectedFourPart}'`),
-    `file-version does not match ${expectedFourPart}`
-  );
-  assert.ok(
-    brand.includes(`'product-version': '${expectedFourPart}'`),
-    `product-version does not match ${expectedFourPart}`
-  );
+  // Round-4 (D3): the stamps are DERIVED from package.json, not duplicated;
+  // assert the derivation instead of a frozen literal.
+  assert.ok(brand.includes("new URL('../package.json'"), 'brand-exe must read package.json');
+  assert.ok(brand.includes('`${pkgVersion}.0`'), `derivation must produce ${expectedFourPart}`);
+  assert.ok(brand.includes("'file-version': fileVersion"), 'file-version must use the derived value');
+  assert.ok(brand.includes("'product-version': fileVersion"), 'product-version must use the derived value');
 });
 
 // 5. README.md

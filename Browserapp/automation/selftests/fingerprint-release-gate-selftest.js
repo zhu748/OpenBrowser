@@ -333,10 +333,13 @@ function checkSevenVersionLocations(targetVersion = EXPECTED_VERSION, baseRepo =
   try {
     const content = getFileContent("Browserapp/scripts/brand-exe.mjs");
     const expectedFourPart = `${targetVersion}.0`;
-    const hasFileVer = content.includes(`'file-version': '${expectedFourPart}'`);
-    const hasProductVer = content.includes(`'product-version': '${expectedFourPart}'`);
-    if (!hasFileVer || !hasProductVer) {
-      issues.push({ location: 6, file: "Browserapp/scripts/brand-exe.mjs", message: `brand-exe metadata does not match ${expectedFourPart}` });
+    // Round-4 (D3): stamps are derived from package.json; assert the
+    // derivation link instead of a frozen literal.
+    const hasFileVer = content.includes("'file-version': fileVersion");
+    const hasProductVer = content.includes("'product-version': fileVersion");
+    const derives = content.includes("new URL('../package.json'") && content.includes('`${pkgVersion}.0`');
+    if (!hasFileVer || !hasProductVer || !derives) {
+      issues.push({ location: 6, file: "Browserapp/scripts/brand-exe.mjs", message: `brand-exe metadata is not derived from package.json (${expectedFourPart})` });
     }
   } catch (err) {
     issues.push({ location: 6, file: "Browserapp/scripts/brand-exe.mjs", message: err.message });

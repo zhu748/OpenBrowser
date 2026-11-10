@@ -4554,7 +4554,14 @@ async function initialize() {
     }
   } catch (_) {}
   save();
-  engineProfiles = await window.ops.syncProfiles(ui.profiles); await refreshExtensions(); await refreshSessions(); renderProfiles(); renderLogs();
+  try {
+    engineProfiles = await window.ops.syncProfiles(ui.profiles);
+  } catch (err) {
+    // A failed first sync must not abort the rest of UI init: the engine
+    // store keeps whatever init loaded; later syncs retry the reconcile.
+    console.error('[renderer] initial profile sync failed:', err?.message || err);
+  }
+  await refreshExtensions(); await refreshSessions(); renderProfiles(); renderLogs();
   log('System', readyBrowserLog(info));
   switchView(document.querySelector('.view.active')?.id?.replace(/^view-/, '') || 'profiles');
 }

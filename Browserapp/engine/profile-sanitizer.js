@@ -356,7 +356,10 @@ function sanitizeFingerprintConfig(fp, privacyCores, privacyMemory) {
     const n = Number(v);
     if (!Number.isFinite(n) || n <= 0) return undefined;
     const c = Math.min(8, Math.max(0.25, n));
-    return steps.reduce((best, step) => (Math.abs(step - c) < Math.abs(best - c) ? step : best), steps[0]);
+    // Seed 8 with strict < (identical to persona.js): exact ties break toward
+    // the HIGHER step. Seeding 0.25 sent 6GB to 4 while persona sent it to 8
+    // (round-4 review D2).
+    return steps.reduce((best, step) => (Math.abs(step - c) < Math.abs(best - c) ? step : best), 8);
   };
   const batteryObject = (v) => {
     if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
@@ -455,8 +458,14 @@ function sanitizeFingerprintConfig(fp, privacyCores, privacyMemory) {
   set("hardwareConcurrency", intInRange(fp.hardwareConcurrency, 1, 64));
   set("deviceMemory", snapDeviceMemory(fp.deviceMemory));
   set("maxTouchPoints", intInRange(fp.maxTouchPoints, 0, 64));
-  set("screenWidth", intInRange(fp.screenWidth, 640, 7680));
-  set("screenHeight", intInRange(fp.screenHeight, 480, 4320));
+  // Mobile-aware floors (round-4 review D1): the phone panel pool
+  // (data/mobile-devices.json) emits CSS widths 290-500 and heights down to
+  // 426; a flat 640/480 floor silently re-rolled every pinned mobile panel on
+  // save. Desktop keeps 640/480 (desktop pool starts at 1024; persona clamps
+  // its own desktop branch at 640 the same way).
+  const mobilePanel = /^(android|ios)$/i.test(String(fp.os || fp.clientHints?.os || ""));
+  set("screenWidth", intInRange(fp.screenWidth, mobilePanel ? 240 : 640, 7680));
+  set("screenHeight", intInRange(fp.screenHeight, mobilePanel ? 240 : 480, 4320));
   set("availLeft", intInRange(fp.availLeft, 0, 7680));
   set("availTop", intInRange(fp.availTop, 0, 7680));
   set("availWidth", intInRange(fp.availWidth, 0, 7680));
@@ -474,10 +483,34 @@ function sanitizeFingerprintConfig(fp, privacyCores, privacyMemory) {
   // --- Noise-mode group (fingerprint-level twins of privacy-level modes;
   // persona mode() reads them FIRST, so they silently override the editor's
   // privacy settings when present — exactly why junk values must not survive) ---
-  set("canvas", oneOf(fp.canvas, ["real", "noise", "blocked"]));
-  set("webgl", oneOf(fp.webgl, ["real", "noise", "blocked"]));
+  // Dual-form (round-4): legacy stores carried canvas/webgl/audio as OBJECTS;
+  // the migration contract (sqlite-store-selftest) pins their survival and the
+  // round-3 whitelist dropped them wholesale. String = current mode enum;
+  // object = bounded legacy subkeys; junk drops.
+  if (typeof fp.canvas === "string") set("canvas", oneOf(fp.canvas, ["real", "noise", "blocked"]));
+  else if (fp.canvas && typeof fp.canvas === "object" && !Array.isArray(fp.canvas)) {
+    const o = {};
+    const noise = Number(fp.canvas.noise);
+    if (Number.isFinite(noise) && noise !== 0 && Math.abs(noise) <= 1e12) o.noise = noise;
+    const cm = oneOf(fp.canvas.mode, ["real", "noise", "blocked"]);
+    if (cm) o.mode = cm;
+    if (Object.keys(o).length) set("canvas", o);
+  }
+  if (typeof fp.webgl === "string") set("webgl", oneOf(fp.webgl, ["real", "noise", "blocked"]));
+  else if (fp.webgl && typeof fp.webgl === "object" && !Array.isArray(fp.webgl)) {
+    const o = {};
+    const vendor = String(fp.webgl.vendor ?? "").replace(/[\r\n]/g, " ").slice(0, 200).trim();
+    const renderer = String(fp.webgl.renderer ?? "").replace(/[\r\n]/g, " ").slice(0, 400).trim();
+    if (vendor) o.vendor = vendor;
+    if (renderer) o.renderer = renderer;
+    if (Object.keys(o).length) set("webgl", o);
+  }
   set("webglMeta", oneOf(fp.webglMeta, ["noise", "custom", "real", "blocked"]));
-  set("audio", oneOf(fp.audio, ["real", "noise", "muted"]));
+  if (typeof fp.audio === "string") set("audio", oneOf(fp.audio, ["real", "noise", "muted"]));
+  else if (fp.audio && typeof fp.audio === "object" && !Array.isArray(fp.audio)) {
+    const sr = intInRange(fp.audio.sampleRate, 8000, 768000);
+    if (sr !== undefined) set("audio", { sampleRate: sr });
+  }
   set("clientRects", oneOf(fp.clientRects, ["real", "noise"]));
   set("webrtc", oneOf(fp.webrtc, ["real", "proxy", "disabled"]));
   set("speech", oneOf(fp.speech, ["real", "noise", "blocked"]));

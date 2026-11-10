@@ -2014,7 +2014,7 @@ async function lookupProxyCountry(config, options = {}) {
     const parts = await runProxyProbes(lookups, {
       totalTimeoutMs: options.totalTimeoutMs || 6500,
       attemptTimeoutMs: options.attemptTimeoutMs || 2200,
-      isLinkError: isProxyLinkError,
+      
     });
 
     if (!parts.length) {

@@ -7,7 +7,13 @@ function prepareProfileSync(engine, values) {
   const profiles = new Map();
   const assignments = new Map();
   const networkInvalidations = new Set();
-  if (!Array.isArray(values) || values.length > 1000) throw new Error('Invalid profile list');
+  // Aligned with LOAD_PROFILE_CAP (engine/init.js): the renderer's first
+  // sync sends everything init loaded, so a lower cap here killed UI init
+  // for 1001-5000 profile fleets (round-4 PERF-4).
+  // Aligned with LOAD_PROFILE_CAP (engine/init.js): the renderer's first
+  // sync sends everything init loaded, so a lower cap here killed UI init
+  // for 1001-5000 profile fleets (round-4 PERF-4).
+  if (!Array.isArray(values) || values.length > 5000) throw new Error('Invalid profile list');
   const globallyEnabled = engine.listExtensions().filter((extension) => extension.enabledAll).map((extension) => extension.id);
   for (const value of values) {
     // Inputs are mutable, and IPC creates fresh objects anyway. Reference

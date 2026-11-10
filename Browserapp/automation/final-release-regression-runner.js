@@ -390,7 +390,9 @@ const DIAGNOSTIC_AUDITS = [
 ];
 
 /**
- * Canonical 7 Version Synchronization Locations
+ * Canonical 6 Version Synchronization Locations. The brand-exe PE stamps
+ * derive from package.json at build time; the release selftests verify the
+ * derivation (round-4 D3), so the row is not duplicated here.
  */
 const VERSION_LOCATIONS = [
   { rel: "README.md", pattern: /badge\/version-([0-9.]+)-blue/ },
@@ -398,7 +400,6 @@ const VERSION_LOCATIONS = [
   { rel: "Browserapp/package.json", pattern: /"version":\s*"([0-9.]+)"/ },
   { rel: "Browserapp/package-lock.json", pattern: /"version":\s*"([0-9.]+)"/ },
   { rel: "Browserapp/index.html", pattern: /id="app-version">v([0-9.]+)<\/span>/ },
-  { rel: "Browserapp/scripts/brand-exe.mjs", pattern: /'file-version':\s*'([0-9.]+)'/ },
   { rel: ".github/workflows/build-installers.yml", pattern: /default:\s*'v([0-9.]+)'/ },
 ];
 
