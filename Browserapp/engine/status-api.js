@@ -75,7 +75,13 @@ module.exports = {
    */
   statusDelta(watermark) {
     const snapshot = this.status();
-    const known = Object.fromEntries(snapshot.map((row) => [row.id, row.statusRev]));
+    if (this._statusWatermarkSnapshot !== snapshot) {
+      this._statusWatermarkSnapshot = snapshot;
+      // The snapshot is stable until invalidation. Reuse its immutable index
+      // across idle polls instead of allocating N entries on every request.
+      this._statusWatermark = Object.freeze(Object.fromEntries(snapshot.map((row) => [row.id, row.statusRev])));
+    }
+    const known = this._statusWatermark;
     const caller = (watermark && typeof watermark === 'object' && !Array.isArray(watermark)) ? watermark : null;
     if (!caller) return { full: true, rows: snapshot, watermark: known, removed: [] };
     const removed = [];

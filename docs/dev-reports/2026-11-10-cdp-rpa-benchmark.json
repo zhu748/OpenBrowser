@@ -1,0 +1,70 @@
+{
+  "baseline": "c1c02c6",
+  "node": "v24.22.1",
+  "measuredAt": "2026-11-10T15:30:35.727Z",
+  "scope": "10k-row idle status computation and 50k-record CSV file export; excludes Electron IPC, GUI and browser workload",
+  "status": {
+    "before": {
+      "profiles": 10000,
+      "pollsPerSample": 200,
+      "medianMs": 829.2060230000001,
+      "samplesMs": [
+        829.2060230000001,
+        810.509742,
+        820.564547,
+        834.2582029999999,
+        845.9546310000005
+      ]
+    },
+    "after": {
+      "profiles": 10000,
+      "pollsPerSample": 200,
+      "medianMs": 253.19945200000006,
+      "samplesMs": [
+        253.06985400000002,
+        253.19945200000006,
+        246.68782699999986,
+        253.76627500000018,
+        278.11659800000007
+      ]
+    }
+  },
+  "csv": {
+    "before": {
+      "records": 50000,
+      "outputBytes": 6977805,
+      "sha256": "479de7d6c27fcdbfd6a7e082076faf4d4e50aa1a90336d1b247361d188a7a42c",
+      "medianMs": 79.43535500000002,
+      "samplesMs": [
+        79.43535500000002,
+        79.46678200000002,
+        72.76574799999997
+      ],
+      "medianSampledHeapGrowthBytes": 38570832,
+      "sampledHeapGrowthBytes": [
+        63303040,
+        38570832,
+        38565680
+      ],
+      "heapMeasurement": "heapUsed sampled at write boundaries; excludes input records, not an allocation or RSS bound"
+    },
+    "after": {
+      "records": 50000,
+      "outputBytes": 6977805,
+      "sha256": "479de7d6c27fcdbfd6a7e082076faf4d4e50aa1a90336d1b247361d188a7a42c",
+      "medianMs": 75.69038,
+      "samplesMs": [
+        78.10354000000004,
+        75.69038,
+        66.57560899999999
+      ],
+      "medianSampledHeapGrowthBytes": 16250704,
+      "sampledHeapGrowthBytes": [
+        16250704,
+        16208648,
+        16580864
+      ],
+      "heapMeasurement": "heapUsed sampled at write boundaries; excludes input records, not an allocation or RSS bound"
+    }
+  }
+}

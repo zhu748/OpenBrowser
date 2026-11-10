@@ -226,6 +226,7 @@ class ProfileRoutes {
         password: '',
         totpSecret: '',
         otp: '',
+        accounts: [],
       },
       advanced: {
         ...(base.advanced || {}),

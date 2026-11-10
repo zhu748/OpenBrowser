@@ -2,6 +2,7 @@
 
 const assert = require('assert');
 const { PersistentConnection } = require('./cdp');
+const { PersistentCdp } = require('./live-sync-v4');
 
 class FakeWebSocket {
   static instances = [];
@@ -168,6 +169,79 @@ async function testPostOpenErrorRejectsPending() {
   await rejectsFast(connection.command('Target.getTargets'), /connection is closed/, 'command after socket error');
 }
 
+async function testCloseDuringHandshake() {
+  let disconnected = 0;
+  const connection = new PersistentConnection('ws://fake.test/handshake', {
+    onDisconnect: () => { disconnected += 1; },
+  });
+  const opening = connection.open(60);
+  const socket = latestSocket();
+  const outcome = opening.then(() => 'opened', () => 'closed');
+  connection.close();
+  assert.strictEqual(await Promise.race([outcome, new Promise((resolve) => setImmediate(() => resolve('waiting')))]), 'closed',
+    'close must settle the handshake immediately, without waiting for its timeout');
+  socket.open(); // a late transport event must not resurrect the connection
+  assert.strictEqual(connection.opened, false);
+  assert.strictEqual(connection.closed, true);
+  assert.strictEqual(disconnected, 0, 'explicit shutdown is not an unexpected disconnect');
+}
+
+async function testSharedHandshake() {
+  const connection = new PersistentConnection('ws://fake.test/shared-handshake');
+  const before = FakeWebSocket.instances.length;
+  const first = connection.open(100);
+  const second = connection.open(100);
+  // Handle all results even if an assertion fails.
+  const results = Promise.allSettled([first, second]);
+  try {
+    assert.strictEqual(FakeWebSocket.instances.length - before, 1, 'concurrent open calls must share a socket');
+    latestSocket().open();
+    assert.deepStrictEqual((await results).map((result) => result.status), ['fulfilled', 'fulfilled']);
+    assert.strictEqual(await connection.open(), connection, 'opening an established connection is idempotent');
+    assert.strictEqual(FakeWebSocket.instances.length - before, 1);
+  } finally { connection.close(); await results; }
+}
+
+async function testSendFailureClosesTransport() {
+  let disconnected = 0;
+  const connection = new PersistentConnection('ws://fake.test/send-error', { onDisconnect: () => { disconnected += 1; } });
+  const opening = connection.open(100);
+  const socket = latestSocket(); socket.open(); await opening;
+  const pending = connection.command('Page.enable');
+  const rejection = assert.rejects(pending, /send failed/);
+  socket.send = () => { throw new Error('send failed'); };
+  await assert.rejects(connection.command('Page.navigate'), /send failed/);
+  await rejection;
+  assert.strictEqual(socket.closeCount, 1, 'a failed send must close the physical socket');
+  assert.strictEqual(disconnected, 1);
+  let events = 0; connection.onEvent = () => { events += 1; };
+  socket.emit('message', { data: JSON.stringify({ method: 'Page.loadEventFired' }) });
+  assert.strictEqual(events, 0, 'late events from a closed connection are ignored');
+}
+
+async function testSyncTransportCompatibility() {
+  const events = [];
+  const connection = new PersistentCdp('ws://fake.test/sync', (event) => events.push(event));
+  await assert.rejects(connection.command('Page.enable'), /CDP is not connected/);
+  const opening = connection.open(100);
+  const socket = latestSocket(); socket.open(); await opening;
+  const command = connection.command('Runtime.enable', {}, { sessionId: 'session' });
+  for (const data of ['null', 'true', '42', '"text"', '{']) socket.emit('message', { data });
+  assert.strictEqual(connection.pending.size, 1, 'malformed messages do not crash or settle a pending command');
+  assert.strictEqual(socket.sent[0].sessionId, 'session');
+  socket.emit('message', { data: JSON.stringify({ id: socket.sent[0].id, result: { enabled: true } }) });
+  assert.deepStrictEqual(await command, { enabled: true });
+  socket.emit('message', { data: JSON.stringify({ method: 'Runtime.bindingCalled', params: {} }) });
+  assert.strictEqual(events.length, 1);
+  connection.close();
+  assert.strictEqual(connection.url, 'ws://fake.test/sync');
+
+  const cancelled = new PersistentCdp('ws://fake.test/sync-cancel', () => {});
+  const result = cancelled.open(100);
+  cancelled.close();
+  await rejectsFast(result, /connection closed/, 'sync handshake cancellation');
+}
+
 async function main() {
   const originalWebSocket = global.WebSocket;
   global.WebSocket = FakeWebSocket;
@@ -180,6 +254,10 @@ async function main() {
     await testDisconnectCallback();
     const explicitCloseElapsed = await testExplicitCloseRejectsPending();
     await testPostOpenErrorRejectsPending();
+    await testCloseDuringHandshake();
+    await testSharedHandshake();
+    await testSendFailureClosesTransport();
+    await testSyncTransportCompatibility();
     process.stdout.write([
       'CDP_CONNECTION_SELFTEST_OK',
       `preopen_error_ms=${errorElapsed}`,

@@ -2,6 +2,10 @@
 
 本次执行边界、下载、DNS 与凭据备份的深度复核见 [六轮审查记录](dev-reports/2026-11-10-deep-review.md)。
 
+CDP 连接复用、RPA 文件操作、API 嵌套凭据和状态索引的本次复核见 [通信与文件处理审查](dev-reports/2026-11-10-cdp-rpa-and-response-review.md)。
+
+后续扩展同步、会话选择竞争与流式导入优化见 [同步与流式输入复审](dev-reports/2026-11-10-sync-session-and-streaming-review.md)。
+
 本项目由 Electron 桌面宿主、浏览器环境引擎、UI、自动化服务、网络代理和可选 Rust 核心组成。下面按职责定位源码；生成数据、浏览器内核和检查工具分别维护。
 
 | 类别 | 入口与目录 | 负责的工作 |
@@ -26,6 +30,7 @@
 | 环境维护占用 | `Browserapp/engine/profile-maintenance.js` | 同步检查并占用整批环境；恢复文件期间阻止启动、删除、回收、缓存清理和外部同步，内部提交使用持有者令牌 |
 | 引擎状态投影 | `Browserapp/engine/status-api.js` | 脱敏快照、配置 Map 缓存版本和运行状态增量；statusRev 跟踪运行变化，rev 继续用于编辑冲突 |
 | 状态刷新控制器 | `Browserapp/ui/ui-status-controller.js` | 从真实行构造水位，共享直接/调度 IPC、线性合并增量并丢弃旧快照响应；full 响应直接复用 rows |
+| 会话选择控制器 | `Browserapp/ui/ui-session-controller.js` | 无 DOM 的会话选择合并及串行刷新；响应返回后读取当前勾选和同步状态，迟到调用共享一次后续刷新并等待其完成 |
 | 云恢复文件暂存 | `Browserapp/automation/cloud/file-restore.js` | 整批验证后暂存新文件，保留原文件用于失败回滚；回滚失败保留映射清单和恢复目录 |
 | 引擎领域模块 | `Browserapp/engine/` | 启动、Firefox 启动、清理、Profile CRUD、代理、指纹交付、资源限制、扩展管理 |
 | 启动参数策略 | `Browserapp/engine/launch-arguments.js` | 构建基础与最终 Chromium 参数；通过输入传入代理端点、DPI 和窗口位置，返回拒绝的自定义参数。进程、锁和资源清理由启动编排持有 |
@@ -36,14 +41,21 @@
 | API 路由定义 | `Browserapp/automation/api/route-registry.js` | 每组别名只定义一次 HTTP 方法及处理器；方法门禁与路由分发共用定义，构造服务时校验完整处理器集合 |
 | API 领域处理器 | `Browserapp/automation/api/*-routes.js`、`controllers.js` | 环境/浏览器、代理、同步、RPA、应用/扩展分属独立控制器，各自显式持有依赖；HTTP 服务只负责传输、认证及分发 |
 | API 输入与响应 | `Browserapp/automation/api/input.js`、`profile-ids.js`、`responses.js` | 外部字段别名转换、ID 选择解析、公共响应封装及凭据脱敏；输入规则与网络服务器分离 |
+| API 嵌套凭据 | `Browserapp/automation/api/responses.js` | 主账号、多账号、2FA 和备用代理统一脱敏，保留引擎持有的原始数据；复制环境清空所有账号行 |
 | API CDP 地址 | `Browserapp/automation/api/devtools.js` | 查询真实浏览器 GUID；列表查询最多并发 8 项，同一运行实例复用在途请求，退出/重启的旧结果丢弃。每次尝试的 600ms 期限落实到 HTTP 连接 |
 | 自动化执行 | `Browserapp/automation/rpa-engine.js`、`rpa-store.js`、`task-queue.js`、`task-scheduler.js` | 步骤执行、任务记录、并发与排队 |
 | RPA 动作注册 | `Browserapp/automation/rpa/step-registry.js` | 每个执行器集中声明动作别名；支持和已知不支持动作由同一份注册表描述。未实现动作在浏览器分配前拒绝，不能空执行后报告成功；执行图校验限制循环引用、深度和总步骤数 |
 | RPA 文件路径 | `Browserapp/automation/rpa/paths.js` | 输出与文件输入的物理路径校验；解析已存在的父目录，拒绝子路径中的外逃/悬空链接。表格导入保留 Desktop/Documents/Downloads、OneDrive 等明确允许的目录 |
+| RPA 文件动作 | `Browserapp/automation/rpa/file-steps.js`、`rpa/csv.js` | 文本/CSV/JSON 文件动作与 CSV 编解码；保留 RpaEngine 的公开方法，导出按块写临时文件，成功后替换目标，失败或取消时清理临时文件 |
+| RPA 流式输入 | `Browserapp/automation/rpa/file-input.js` | CSV/文本按 64 KiB 读取并检查取消，CSV 状态跨块保留；结果完成后才发布到变量，JSON 仍按完整文档读取 |
 | RPA 容量策略 | `Browserapp/automation/rpa-store-budget.js` | 按 UTF-8 字节预算回收旧任务、日志与结果；保留最新任务、pending/running 任务及计划/模板 |
 | RPA 变量 | `Browserapp/automation/rpa/variables.js` | 无浏览器依赖的变量复制、插值、条件值解析与结果快照；循环对象隔离可变子对象，BigInt 结果转为十进制字符串，特殊键不改变对象原型 |
 | 持久化 | `Browserapp/engine/persistence.js`、`engine/state-storage.js`、`automation/profile-store-sqlite.js`、`local-settings.js`、`coalesced-writer.js` | 引擎保存/退出排空/导出、原子替换、SQLite、设置、合并写入、凭据加密 |
 | 浏览器通信与同步 | `Browserapp/cdp.js`、`live-sync-v5.js`、`automation/window-sync-bridge.js`、`native-*.cs` | CDP、窗口/输入同步、原生平台能力 |
+| CDP 长连接 | `Browserapp/network/cdp-connection.js` | RPA、池化命令与窗口同步共用握手、命令多路复用及退出结算；cdp.js 负责连接池和浏览器发现，live-sync-v4.js 保留构造参数及同步专用超时的兼容入口 |
+| 扩展页面同步 | `Browserapp/automation/sync/extension-pages.js` | 当前分配对应的扩展身份、缓存、捕获许可、页面索引及连接生命周期；注入文本和 binding 名由同步宿主显式传入 |
+| 扩展路径身份 | `Browserapp/automation/extension-identity.js` | 安装与同步共用路径比较和 Chromium 路径 ID；Windows 折叠比较大小写，POSIX 保留大小写 |
+| 扩展安装通信 | `Browserapp/extension-pipe.js` | 安装器管道帧、命令结算、进程退出和扩展协调；EOF/写入错误立即清理并拒绝后续命令，关闭进程使用一个 5 秒等待期限 |
 | 网络与代理 | `Browserapp/proxy-forwarder.js`、`automation/proxy-store.js`、`doh-resolver.js`、`downloader.js` | SOCKS/HTTP、代理探测、DNS、下载 |
 | 地址与探测数据 | `Browserapp/network/address-policy.js`、`network/probe-results.js` | 共用主机名/IP 规范化、内网与 metadata 分类，以及无 I/O 的探测响应归一化和错误分类 |
 | 代理配置 | `Browserapp/network/proxy-config.js` | 代理输入解析、规范化、浏览器端点与脱敏显示；proxy-forwarder.js 保留既有公开导出 |
@@ -120,6 +132,13 @@
 26. 云恢复的旧 overwrite/remote-wins 参数现在明确表示“同 ID 云端优先，本地独有环境/分组/代理保留”。恢复只向引擎提交选中远端记录；引擎值优先于 renderer 脱敏快照，返回实际引擎列表。公开纯 mergeProfiles 的旧覆盖计算接口保留。
 27. 状态水位使用 statusRev 的不透明字符串，包含引擎实例与运行状态版本；编辑命令继续比较数值 rev。启动/停止/端口/网络/扩展变化不能被配置版本未变而漏掉。
 28. UI 状态水位从实际内存行生成，不单独持久化；full 响应直接使用 rows，不能再请求一次完整状态。等待期间若编辑替换了行数组，旧响应必须丢弃。无变化增量保留数组引用。
+
+29. 状态版本索引随快照数组复用，按只读对象传递；替换行或版本必须生成新数组。不得原地改写 status() 返回的数据或 UI 控制器持有的行。索引复用不改变脱敏、移除检测或旧响应丢弃规则。
+30. CSV 引号内的换行、逗号、双引号和首尾空格是单元格数据；仅非引号字段继续 trim。CSV/文本输入按块解码，取消时不发布部分结果；导出按块写入并检查取消。JSON 输入及导入后的结果仍完整驻留内存，暂不添加输入大小上限。
+31. 扩展捕获许可来自当前分配；空分配不允许捕获任何扩展页面。实际浏览器 ID 必须对应分配路径，不能把全部 loadedExtensions 当成授权。缺少实际 ID 时使用 manifest.key 或 Chromium 的路径身份算法。
+32. 同步停止需要同时关闭已建立连接和在途握手；异步恢复点检查会话代次、主环境及连接归属，禁止旧连接回写新会话的 Map。
+33. 会话列表刷新在响应提交时读取当前选择，避免回滚 IPC 期间的新操作；执行期间的新请求共享后续刷新，其 Promise 等待后续请求实际完成。
+34. 扩展安装和同步使用同一份路径身份规则。不能在 POSIX 平台统一 toLowerCase；安装器退出监听在发送 Browser.close 前注册，进程退出后不再等待命令响应或重新创建退出等待。
 
 ## 本地检查
 

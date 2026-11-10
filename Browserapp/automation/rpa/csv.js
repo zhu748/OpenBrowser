@@ -1,0 +1,92 @@
+'use strict';
+
+/** Feed UTF-8-decoded chunks without retaining the full source or split lines. */
+function createCsvParser(onRow) {
+  let row = [], parts = [], state = 'field', wasQuoted = false, started = false;
+  let first = true, skipLF = false, ended = false;
+  const finishField = () => {
+    const field = parts.join('');
+    row.push(wasQuoted ? field : field.trim());
+    parts = []; wasQuoted = false; state = 'field';
+  };
+  const finishRow = () => { finishField(); onRow(row); row = []; started = false; };
+  return {
+    write(source) {
+      if (ended) throw new Error('CSV parser has ended');
+      if (typeof source !== 'string') throw new TypeError('CSV chunks must be strings');
+      let start = 0;
+      const flush = (end) => { if (end > start) parts.push(source.slice(start, end)); };
+      for (let index = 0; index < source.length; index += 1) {
+        const ch = source[index];
+        if (first) { first = false; if (ch === '\ufeff') { start = index + 1; continue; } }
+        if (skipLF) { skipLF = false; if (ch === '\n') { start = index + 1; continue; } }
+        if (state === 'quoted') {
+          if (ch === '"') { flush(index); start = index + 1; state = 'quote'; }
+          continue;
+        }
+        if (state === 'quote' && ch === '"') {
+          parts.push('"'); state = 'quoted'; start = index + 1; continue;
+        }
+        if (ch === ',') {
+          flush(index); finishField(); start = index + 1; started = true;
+        } else if (ch === '\n' || ch === '\r') {
+          flush(index);
+          if (started) finishRow();
+          start = index + 1; skipLF = ch === '\r';
+        } else if (state === 'quote' || state === 'closed') {
+          if (ch !== ' ' && ch !== '\t') throw new Error('Invalid CSV: unexpected character after closing quote');
+          state = 'closed'; start = index + 1;
+        } else if (ch === '"' && !parts.length && index === start) {
+          state = 'quoted'; wasQuoted = true; started = true; start = index + 1;
+        } else started = true;
+      }
+      flush(source.length);
+    },
+    end() {
+      if (ended) return;
+      ended = true;
+      if (state === 'quoted') throw new Error('Invalid CSV: unterminated quoted field');
+      if (started) finishRow();
+    },
+  };
+}
+
+function createCsvRecordParser() {
+  let headers;
+  const records = [];
+  const parser = createCsvParser((row) => {
+    if (!headers) { headers = row.map((item) => item.trim()); return; }
+    records.push(Object.fromEntries(row.map((item, index) => [headers[index] || ('col' + index), item])));
+  });
+  return { ...parser, records };
+}
+
+function parseCsvRecords(source) {
+  const { write, end, records } = createCsvRecordParser();
+  write(source); end();
+  return records;
+}
+
+function csvCell(value) {
+  const text = typeof value === 'string' ? value : JSON.stringify(value ?? '');
+  return `"${String(text).replace(/"/g, '""')}"`;
+}
+
+/** Bounded batches avoid constructing a second, complete export in memory. */
+function* csvChunks(records, fields, formatCell = csvCell) {
+  let chunk = '';
+  function* append(row) {
+    for (let index = 0; index < row.length; index += 1) {
+      const cell = (index ? ',' : '') + formatCell(row[index]);
+      if (chunk.length + cell.length > 64 * 1024 && chunk) { yield chunk; chunk = ''; }
+      chunk += cell;
+    }
+    chunk += '\n';
+    if (chunk.length >= 64 * 1024) { yield chunk; chunk = ''; }
+  }
+  yield* append(fields);
+  for (const record of records) yield* append(fields.map((field) => record?.[field] ?? ''));
+  if (chunk) yield chunk;
+}
+
+module.exports = { createCsvParser, createCsvRecordParser, parseCsvRecords, csvCell, csvChunks };

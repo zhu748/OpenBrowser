@@ -1,61 +1,16 @@
 const cdp = require('./cdp');
 const { applyTrustedChange, applyTrustedInput } = require('./automation/trusted-input');
 
-class PersistentCdp {
-  constructor(url, onEvent) { this.url = url; this.onEvent = onEvent; this.socket = null; this.nextId = 1; this.pending = new Map(); this.closed = false; }
-  open() {
-    return new Promise((resolve, reject) => {
-      const socket = new WebSocket(this.url); this.socket = socket;
-      let settled = false;
-      const finishOpen = (fn, value) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        fn(value);
-      };
-      const failPending = (error) => {
-        for (const pending of this.pending.values()) {
-          clearTimeout(pending.timer);
-          pending.reject(error);
-        }
-        this.pending.clear();
-      };
-      const timer = setTimeout(() => {
-        const error = new Error('CDP connection timeout');
-        finishOpen(reject, error);
-        failPending(error);
-        try { socket.close(); } catch (_) {}
-      }, 8000);
-      socket.addEventListener('open', () => finishOpen(resolve));
-      socket.addEventListener('message', (event) => {
-        let value; try { value = JSON.parse(String(event.data)); } catch (_) { return; }
-        if (value.id && this.pending.has(value.id)) { const pending = this.pending.get(value.id); this.pending.delete(value.id); clearTimeout(pending.timer); return value.error ? pending.reject(new Error(value.error.message || 'CDP error')) : pending.resolve(value.result || {}); }
-        if (value.method) Promise.resolve(this.onEvent(value)).catch(() => {});
-      });
-      socket.addEventListener('close', () => { this.closed = true; if (this.socket === socket) this.socket = null; const error = new Error('CDP connection closed'); failPending(error); finishOpen(reject, error); });
-      socket.addEventListener('error', () => { const error = new Error('CDP connection error'); failPending(error); finishOpen(reject, error); });
-    });
-  }
+// Keep the legacy constructor and sync-specific timeout defaults while sharing
+// handshake, command multiplexing and teardown with the RPA/CDP transport.
+class PersistentCdp extends cdp.PersistentConnection {
+  constructor(url, onEvent) { super(url, { onEvent }); this.url = url; }
+  open(timeout = 8000) { return super.open(timeout); }
   command(method, params = {}, options = {}) {
-    return new Promise((resolve, reject) => {
-      if (this.closed || !this.socket || this.socket.readyState !== WebSocket.OPEN) return reject(new Error('CDP is not connected'));
-      const id = this.nextId++;
-      const timeout = Math.max(1, Number(options.timeout) || 7000);
-      const timer = setTimeout(() => { if (this.pending.delete(id)) reject(new Error(`CDP timeout: ${method}`)); }, timeout);
-      this.pending.set(id, { resolve, reject, timer });
-      const message = { id, method, params };
-      if (options.sessionId) message.sessionId = options.sessionId;
-      try { this.socket.send(JSON.stringify(message)); }
-      catch (error) { clearTimeout(timer); this.pending.delete(id); reject(error); }
-    });
-  }
-  close() {
-    if (this.closed) return;
-    this.closed = true;
-    for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(new Error('CDP connection closed')); }
-    this.pending.clear();
-    try { this.socket?.close(); } catch (_) {}
-    this.socket = null;
+    if (this.closed || !this.socket || this.socket.readyState !== WebSocket.OPEN) {
+      return Promise.reject(new Error('CDP is not connected'));
+    }
+    return super.command(method, params, { ...options, timeout: Math.max(1, Number(options.timeout) || 7000) });
   }
 }
 

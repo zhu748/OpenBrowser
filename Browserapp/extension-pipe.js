@@ -1,5 +1,6 @@
 const { spawn } = require('child_process');
 const cdp = require('./cdp');
+const { extensionPathKey } = require('./automation/extension-identity');
 
 // Rate-limited unparseable-frame warning: a corrupted frame used to surface
 // only as a mysterious per-command timeout later; a chatty broken installer
@@ -21,25 +22,36 @@ class PipeConnection {
   constructor(child) {
     this.child = child; this.input = child.stdio[3]; this.output = child.stdio[4];
     this.nextId = 1; this.pending = new Map(); this.buffer = Buffer.alloc(0);
+    this.closed = false; this.failure = null;
     this.output.on('data', (chunk) => this.onData(chunk));
-    const fail = (error) => { for (const item of this.pending.values()) { clearTimeout(item.timer); item.reject(error); } this.pending.clear(); };
+    const fail = (error) => this.fail(error);
     this.input.on('error', fail);
     this.output.on('error', fail);
+    this.input.once('close', () => fail(new Error('Chrome extension installer input closed')));
+    this.output.once('close', () => fail(new Error('Chrome extension installer output closed')));
+    this.output.once('end', () => fail(new Error('Chrome extension installer output ended')));
     // A failed spawn (ENOENT, EACCES) emits 'error' on the child itself, not on the
     // stdio pipes; without this listener the host process dies with uncaughtException.
     child.once('error', (error) => fail(error instanceof Error ? error : new Error(String(error))));
     child.once('exit', (code) => fail(new Error(`Chrome extension installer exited: ${code}`)));
   }
 
+  fail(error) {
+    if (this.closed) return;
+    this.closed = true;
+    this.failure = error instanceof Error ? error : new Error(String(error));
+    for (const item of this.pending.values()) { clearTimeout(item.timer); item.reject(this.failure); }
+    this.pending.clear(); this.buffer = Buffer.alloc(0);
+  }
+
   onData(chunk) {
+    if (this.closed) return;
     this.buffer = Buffer.concat([this.buffer, chunk]);
     // A hung or corrupted installer streaming bytes without a NUL separator
     // would otherwise grow this buffer without bound.
     if (this.buffer.length > 16 * 1024 * 1024) {
       const error = new Error('Chrome extension installer frame too large');
-      for (const item of this.pending.values()) { clearTimeout(item.timer); item.reject(error); }
-      this.pending.clear();
-      this.buffer = Buffer.alloc(0);
+      this.fail(error);
       try { this.child.kill(); } catch (_) {}
       return;
     }
@@ -50,6 +62,7 @@ class PipeConnection {
       // but a genuinely corrupted frame must leave a (rate-limited) trace —
       // otherwise its pending command only fails later as a bare timeout.
       if (!raw) continue; let value; try { value = JSON.parse(raw); } catch (_) { warnUnparseableFrame(raw); continue; }
+      if (!value || typeof value !== 'object') continue;
       const item = this.pending.get(value.id); if (!item) continue;
       this.pending.delete(value.id); clearTimeout(item.timer);
       if (value.error) item.reject(new Error(value.error.message || 'Chrome extension installer command failed'));
@@ -58,11 +71,17 @@ class PipeConnection {
   }
 
   command(method, params = {}, timeout = 15000) {
+    if (this.closed) return Promise.reject(this.failure);
     const id = this.nextId++;
+    let frame;
+    try { frame = Buffer.from(JSON.stringify({ id, method, params }) + '\0', 'utf8'); }
+    catch (error) { return Promise.reject(error); }
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { this.pending.delete(id); reject(new Error(`Chrome extension installer timeout: ${method}`)); }, timeout);
       this.pending.set(id, { resolve, reject, timer });
-      this.input.write(Buffer.concat([Buffer.from(JSON.stringify({ id, method, params }), 'utf8'), Buffer.from([0])]), (error) => { if (error) { clearTimeout(timer); this.pending.delete(id); reject(error); } });
+      try {
+        this.input.write(frame, (error) => { if (error) this.fail(error); });
+      } catch (error) { this.fail(error); }
     });
   }
 }
@@ -94,9 +113,20 @@ async function launchInstaller(browserPath, root, extraArgs = []) {
 
 async function closeInstaller(value) {
   if (!value) return;
-  await value.connection.command('Browser.close').catch(() => {});
-  await new Promise((resolve) => { const timer = setTimeout(resolve, 5000); value.child.once('exit', () => { clearTimeout(timer); resolve(); }); });
-  if (value.child.exitCode === null) value.child.kill();
+  const { child, connection } = value;
+  const exited = () => child.exitCode !== null || Boolean(child.signalCode);
+  if (exited()) return;
+  await new Promise((resolve) => {
+    let timer;
+    const finish = () => { clearTimeout(timer); child.removeListener('exit', finish); resolve(); };
+    // Listen before sending: Browser.close can exit before its reply arrives.
+    child.once('exit', finish);
+    timer = setTimeout(finish, 5000);
+    try { Promise.resolve(connection.command('Browser.close', {}, 5000)).catch(() => {}); }
+    catch (_) { finish(); }
+    if (exited()) finish();
+  });
+  if (!exited()) { try { child.kill(); } catch (_) {} }
 }
 
 async function reconcileOnConnection(connection, desired, managedPaths = []) {
@@ -117,17 +147,17 @@ async function reconcileOnConnection(connection, desired, managedPaths = []) {
     }
     throw error;
   }
-  const wanted = new Map(desired.map((item) => [item.path.toLowerCase(), item]));
-  const managed = managedPaths.map((item) => item.toLowerCase());
+  const wanted = new Map(desired.map((item) => [extensionPathKey(item.path), item]));
+  const managed = new Set(managedPaths.map((item) => extensionPathKey(item)));
   for (const extension of current.extensions || []) {
-    const currentPath = String(extension.path || '').toLowerCase();
-    if (managed.includes(currentPath) && !wanted.has(currentPath)) await connection.command('Extensions.uninstall', { id: extension.id });
+    const currentPath = extensionPathKey(extension.path);
+    if (managed.has(currentPath) && !wanted.has(currentPath)) await connection.command('Extensions.uninstall', { id: extension.id });
   }
   const refreshed = await connection.command('Extensions.getExtensions');
-  const present = new Map((refreshed.extensions || []).map((item) => [String(item.path || '').toLowerCase(), item]));
+  const present = new Map((refreshed.extensions || []).map((item) => [extensionPathKey(item.path), item]));
   const installed = [];
   for (const extension of desired) {
-    const existing = present.get(extension.path.toLowerCase());
+    const existing = present.get(extensionPathKey(extension.path));
     if (existing?.enabled) { installed.push({ ...extension, chromeExtensionId: existing.id }); continue; }
     if (existing) await connection.command('Extensions.uninstall', { id: existing.id });
     const result = await connection.command('Extensions.loadUnpacked', { path: extension.path, enableInIncognito: false }, 30000);

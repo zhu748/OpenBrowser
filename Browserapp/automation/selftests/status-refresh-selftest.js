@@ -16,10 +16,13 @@ async function main() {
   engine.publicRunning = (id) => id === 'env-1' ? { ...runtime } : { running: false, port: 0 };
   engine.invalidateStatusCache();
   full = engine.statusDelta(null);
+  assert.equal(engine.statusDelta(full.watermark).watermark, full.watermark, 'idle polls reuse the snapshot index');
+  assert.equal(Object.isFrozen(full.watermark), true, 'a caller cannot mutate the cached index');
   for (const update of [{ running: true, port: 9222 }, { port: 9333 }, { running: false, port: 0 }]) {
     Object.assign(runtime, update);
     engine.emit({ type: 'status', id: 'env-1' });
     const delta = engine.statusDelta(full.watermark);
+    assert.notEqual(delta.watermark, full.watermark, 'runtime changes rebuild the index');
     assert.deepEqual(delta.rows.map((row) => row.id), ['env-1']);
     assert.equal(delta.rows[0].running, runtime.running);
     assert.equal(delta.rows[0].port, runtime.port);
@@ -67,6 +70,22 @@ async function main() {
   resolve({ full: true, rows: [{ id: 'stale' }] });
   assert.equal(await stale, false);
   assert.equal(current[0].id, 'edited', 'an in-flight old reply cannot overwrite a newer editor result');
+
+  let previousWatermark;
+  let projections = 0;
+  let notifications = 0;
+  const stableRow = { id: 'stable', get statusRev() { projections += 1; return 'stable-token'; } };
+  current = [stableRow];
+  const cached = createStatusController({ getRows: () => current, setRows: (next) => { current = next; },
+    fetchDelta: async (watermark) => {
+      if (previousWatermark) assert.equal(watermark, previousWatermark, 'unchanged rows reuse their watermark');
+      previousWatermark = watermark;
+      return { full: false, rows: [], removed: [] };
+    },
+    onRows: () => { notifications += 1; } });
+  await cached.refresh(); await cached.refresh(); await cached.refresh();
+  assert.equal(projections, 1, 'idle IPC must not rebuild every row revision');
+  assert.equal(notifications, 3, 'consumers still reconcile local state on each refresh');
   console.log('STATUS_REFRESH_SELFTEST OK (runtime delta, stable edit revisions, restart tokens, cache lifetime, linear merge, IPC races)');
 }
 main().catch((error) => { console.error(error); process.exitCode = 1; });

@@ -61,6 +61,30 @@ const ok = (name, cond) => { assert.ok(cond, name); console.log('  PASS  ' + nam
   ok('privacy.webrtc disabled preserved', p2.privacy.webrtc === 'disabled');
   ok('privacy.geoMode disabled preserved', p2.privacy.geoMode === 'disabled');
 
+  // Nested credentials follow the same public response policy as the primary
+  // account; redaction must never erase the engine-owned credentials.
+  const accountSecret = 'nested-password-test-only';
+  const otpSecret = 'nested-otp-test-only';
+  const backupSecret = 'backup-password-test-only';
+  r = await route('POST', '/api/profiles/update', {
+    profile_id: id2,
+    platform: { username: 'owner', password: 'primary-secret', accounts: [
+      { username: 'secondary', password: accountSecret, totpSecret: otpSecret },
+    ] },
+    proxyMeta: { backupProxies: ['http://backup:' + backupSecret + '@127.0.0.1:8081'] },
+  });
+  ok('nested credential update succeeds', r.code === 0);
+  for (const secret of [accountSecret, otpSecret, backupSecret]) {
+    ok('update response removes nested secret ' + secret, !JSON.stringify(r).includes(secret));
+  }
+  ok('redaction retains stored secondary password', engine.profiles.get(id2).platform.accounts[0].password === accountSecret);
+  ok('redaction retains stored backup credential', engine.profiles.get(id2).proxyMeta.backupProxies[0].includes(backupSecret));
+  r = await route('GET', '/api/profiles/get', { profile_id: id2 });
+  ok('detail response removes nested credentials', r.code === 0 && !JSON.stringify(r).includes(accountSecret) && !JSON.stringify(r).includes(backupSecret));
+  r = await route('POST', '/api/profiles/duplicate', { profile_id: id2 });
+  ok('duplicate succeeds', r.code === 0);
+  ok('duplicate clears every account credential', engine.profiles.get(r.data.profile_id).platform.accounts.length === 0);
+
   // ---- create 3: duplicate id rejected ----
   r = await route('POST', '/api/v2/browser-profile/create', { user_id: id1, name: 'Dup' });
   ok('duplicate id rejected', r && r.code !== 0);

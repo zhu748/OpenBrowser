@@ -1,9 +1,9 @@
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
 const { pathToFileURL } = require('url');
 const { spawn } = require('child_process');
 const cdp = require('./cdp');
+const { createExtensionSyncMethods, extensionPages } = require('./automation/sync/extension-pages');
 const { LiveSyncController: LiveSyncV4, injection } = require('./live-sync-v4');
 const { planFanoutFromPayload } = require('./automation/protocol/sync-fanout');
 const { settingsToOperateList } = require('./automation/protocol/event-map');
@@ -635,15 +635,6 @@ function normalTabs(values) {
     return canMirrorTabUrl(tab.url);
   });
 }
-function extensionPages(values) { return values.filter((tab) => ['page', 'iframe', 'other', 'background_page'].includes(String(tab.type || 'page')) && /^(chrome|edge)-extension:\/\//i.test(String(tab.url || ''))); }
-function extensionPageKey(tab) {
-  try { const value = new URL(String(tab.url || '')); return (value.protocol + '//' + value.hostname + value.pathname).toLowerCase(); }
-  catch (_) { return String(tab.url || '').split(/[?#]/)[0].toLowerCase(); }
-}
-function extensionHost(tab) {
-  try { return new URL(String(tab.url || '')).hostname.toLowerCase(); }
-  catch (_) { return ''; }
-}
 function environmentStartUrl(engine, id) {
   const running = engine.running.get(id);
   if (running?.startUrl) return running.startUrl;
@@ -670,6 +661,7 @@ class LiveSyncController extends LiveSyncV4 {
     this.extensionMap = new Map(); this.extensionConnections = new Map();
     // Assigned-manifest memo for masterExtensionWhitelist (heavy sync tick).
     this.extensionManifestCache = new Map();
+    this.pendingAttachments = new Set();
     this.mappingReady = false;
     this.activeMasterTab = null; this.lastWindowSync = 0; this.lastHealthCheck = 0; this.nativeInputMirror = null; this.nativePopupActive = false;
     this.geometryPausedUntil = 0; this.geometryPending = new Map(); this.mirroredWindowStates = new Map();
@@ -1076,6 +1068,8 @@ class LiveSyncController extends LiveSyncV4 {
   stop(options = {}) {
     if (options.invalidate !== false) this.syncGeneration += 1;
     this.stopNativeInputMirror();
+    for (const connection of this.pendingAttachments || []) connection.close();
+    this.pendingAttachments?.clear(); this.extensionManifestCache?.clear();
     this.unsubscribeMasterClose?.(); this.unsubscribeMasterClose = null;
     this.syncSession = null;
     this.tabMap?.clear(); this.desiredUrlMap?.clear(); this.geometryPending?.clear(); this.mirroredWindowStates?.clear();
@@ -1097,36 +1091,46 @@ class LiveSyncController extends LiveSyncV4 {
   async attach(tab) {
     if (!tab?.webSocketDebuggerUrl) return;
     if (tab.url && !canDomLiveSyncTabUrl(tab.url)) return;
+    const master = this.master, generation = this.getRefreshGeneration();
+    const isCurrent = () => this.master === master && this.isRefreshGenerationCurrent(generation);
     const connection = new cdp.PersistentConnection(tab.webSocketDebuggerUrl, {
-      onEvent: (event) => this.handle(tab.id, event),
+      onEvent: (event) => {
+        if (this.connections.get(tab.id)?.connection === connection) return this.handle(tab.id, event);
+      },
     });
+    this.pendingAttachments ||= new Set(); this.pendingAttachments.add(connection);
     try {
       await connection.open();
     } catch (openErr) {
-      console.warn('[live-sync] Could not open connection to tab ' + tab.id + ' (' + logSafeUrl(tab.url) + '):', openErr.message);
+      if (isCurrent()) console.warn('[live-sync] Could not open connection to tab ' + tab.id + ' (' + logSafeUrl(tab.url) + '):', openErr.message);
       return;
-    }
+    } finally { this.pendingAttachments.delete(connection); }
+    if (!isCurrent() || this.connections.has(tab.id)) { connection.close(); return; }
     const value = { tab, connection, scroll: { x: 0, y: 0 } };
     value.windowKey = `tab:${tab.id}`;
     value.windowGeneration = this.bindWindowKey(tab.id, value.windowKey);
     this.connections.set(tab.id, value);
+    const command = (method, params = {}) => {
+      if (!isCurrent() || this.connections.get(tab.id) !== value) return Promise.reject(new Error('Sync attachment superseded'));
+      return connection.command(method, params);
+    };
     try {
-      await connection.command('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }).catch(() => {});
-      await connection.command('Runtime.addBinding', { name: SYNC_BINDING }).catch((err) => {
+      await command('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }).catch(() => {});
+      await command('Runtime.addBinding', { name: SYNC_BINDING }).catch((err) => {
         console.warn('[live-sync] addBinding skipped on ' + logSafeUrl(tab.url) + ':', err.message);
       });
-      await connection.command('Page.addScriptToEvaluateOnNewDocument', { source: injection }).catch(() => {});
-      await connection.command('Runtime.enable').catch(() => {});
-      await connection.command('Runtime.evaluate', { expression: injection }).catch(() => {});
-      await connection.command('Page.enable').catch(() => {});
-      await connection.command('Page.addScriptToEvaluateOnNewDocument', { source: masterMarker }).catch(() => {});
-      await connection.command('Runtime.evaluate', { expression: masterMarker }).catch(() => {});
-      const environment = environmentMarker(environmentNumber(this.engine, this.master.id), true);
-      await connection.command('Page.addScriptToEvaluateOnNewDocument', { source: environment }).catch(() => {});
-      await connection.command('Runtime.evaluate', { expression: environment }).catch(() => {});
-      await connection.command('Page.addScriptToEvaluateOnNewDocument', { source: fullscreenInjection }).catch(() => {});
-      await connection.command('Runtime.evaluate', { expression: fullscreenInjection }).catch(() => {});
-      const position = await connection.command('Runtime.evaluate', { expression: '({x:scrollX,y:scrollY})', returnByValue: true }).catch(() => null);
+      await command('Page.addScriptToEvaluateOnNewDocument', { source: injection }).catch(() => {});
+      await command('Runtime.enable').catch(() => {});
+      await command('Runtime.evaluate', { expression: injection }).catch(() => {});
+      await command('Page.enable').catch(() => {});
+      await command('Page.addScriptToEvaluateOnNewDocument', { source: masterMarker }).catch(() => {});
+      await command('Runtime.evaluate', { expression: masterMarker }).catch(() => {});
+      const environment = environmentMarker(environmentNumber(this.engine, master?.id), true);
+      await command('Page.addScriptToEvaluateOnNewDocument', { source: environment }).catch(() => {});
+      await command('Runtime.evaluate', { expression: environment }).catch(() => {});
+      await command('Page.addScriptToEvaluateOnNewDocument', { source: fullscreenInjection }).catch(() => {});
+      await command('Runtime.evaluate', { expression: fullscreenInjection }).catch(() => {});
+      const position = await command('Runtime.evaluate', { expression: '({x:scrollX,y:scrollY})', returnByValue: true }).catch(() => null);
       value.scroll = position?.result?.value || { x: 0, y: 0 };
     } catch (error) {
       console.warn('[live-sync] attach non-critical failure on ' + logSafeUrl(tab.url) + ':', error.message);
@@ -1433,177 +1437,6 @@ class LiveSyncController extends LiveSyncV4 {
       }
     }));
     if (doHeavy) await this.syncWindowGeometry().catch(() => {});
-  }
-
-  /**
-   * Extension ids the master profile was assigned. Only those extension pages
-   * may get a mirrored capture connection: syncing every chrome-extension://
-   * target would mirror input into third-party extensions (password managers
-   * etc.) that just happen to be installed in the profile.
-   *
-   * Source of truth: engine's running entry keeps the Extensions CDP list for
-   * the started profile (see engine/start.js reconcileOnConnection), whose
-   * `id` is the real chrome-extension id. When that is unavailable (no
-   * Extensions CDP — openbrowser-148 loads via --load-extension only), fall
-   * back to the profile's assigned extension directories and accept whatever
-   * id that extension currently serves under. An empty list means "no
-   * extension pages are synced" — the desired behaviour for a profile with no
-   * assigned extensions even when other extensions are physically present
-   * (bundled ones always are).
-   */
-  masterExtensionWhitelist() {
-    const running = this.master && this.engine.running?.get(this.master.id);
-    const ids = new Set();
-    if (Array.isArray(running?.loadedExtensions)) {
-      for (const extension of running.loadedExtensions) {
-        const id = String(extension?.id || '').toLowerCase();
-        if (id) ids.add(id);
-      }
-    }
-    if (!ids.size) {
-      const assigned = this.engine.assignedExtensions?.(this.master?.id) || [];
-      for (const extension of assigned) {
-        const id = this.cachedExtensionKeyId(extension);
-        if (id) ids.add(id);
-      }
-    }
-    return ids;
-  }
-
-  /**
-   * Derive the chrome-extension id from an assigned extension's manifest.key,
-   * memoized per extension.path. This runs on every heavy sync tick (~every
-   * 3rd tick), which used to re-read every assigned manifest synchronously;
-   * now fs.stat first and only re-read when mtimeMs changes. First call still
-   * stats + reads, so the derived id is byte-identical to the uncached path.
-   * A stat failure deletes the entry (next tick retries, like the old code
-   * that re-threw every pass); parse failures are cached as '' so a corrupt
-   * manifest is not re-parsed every tick — the outcome (no id) is the same.
-   */
-  cachedExtensionKeyId(extension) {
-    const manifestPath = path.join(extension.path, 'manifest.json');
-    const cache = this.extensionManifestCache || (this.extensionManifestCache = new Map());
-    let mtimeMs = 0;
-    try { mtimeMs = fs.statSync(manifestPath).mtimeMs; } catch (_) { cache.delete(extension.path); return ''; }
-    const hit = cache.get(extension.path);
-    if (hit && hit.mtimeMs === mtimeMs) return hit.id;
-    let id = '';
-    try {
-      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-      const key = manifest.key ? crypto.createHash('sha256').update(manifest.key).digest('hex').slice(0, 32) : '';
-      id = String(manifest.key && !key ? '' : key).toLowerCase();
-    } catch (_) { id = ''; }
-    cache.set(extension.path, { mtimeMs, id });
-    return id;
-  }
-
-  async refreshExtensionConnections(masterTargets, slaveLists) {
-    const live = new Set(masterTargets.map((target) => target.id));
-    for (const [id, value] of this.extensionConnections) {
-      if (!live.has(id) || value.connection.socket?.readyState !== 1) {
-        value.connection.close(); this.extensionConnections.delete(id);
-        if (!live.has(id)) this.extensionMap.delete(id);
-      }
-    }
-    for (const id of [...this.extensionMap.keys()]) if (!live.has(id)) this.extensionMap.delete(id);
-
-    // Assignments can change while environments keep running (restartRequired
-    // in engine.assignExtension), so re-read the whitelist every heavy pass.
-    const whitelist = this.masterExtensionWhitelist();
-    const whitelistedTargets = masterTargets.filter((target) => {
-      const id = extensionHost(target);
-      if (!whitelist.size || !id || whitelist.has(id)) return true;
-      console.debug('[live-sync] skipping extension page outside master assignment: ' + extensionPageKey(target));
-      return false;
-    });
-
-    for (const masterTarget of whitelistedTargets) {
-      const mapping = this.extensionMap.get(masterTarget.id) || new Map();
-      for (const slave of this.slaves) {
-        if (!this.isSlaveAvailable(slave)) continue;
-        const available = slaveLists.get(slave.id) || [];
-        const current = mapping.get(slave.id);
-        if (current && available.some((target) => target.id === current.id)) continue;
-        if (current) mapping.delete(slave.id);
-        const used = new Set([...this.extensionMap.values()].map((value) => value.get(slave.id)?.id).filter(Boolean));
-        const candidates = available.filter((target) => !used.has(target.id));
-        const exactKey = extensionPageKey(masterTarget); const host = extensionHost(masterTarget);
-        const target = candidates.find((candidate) => extensionPageKey(candidate) === exactKey)
-          || candidates.find((candidate) => extensionHost(candidate) === host);
-        if (target) mapping.set(slave.id, target);
-      }
-      this.extensionMap.set(masterTarget.id, mapping);
-      if (!this.extensionConnections.has(masterTarget.id)) {
-        this.pauseGeometrySync(1200, 'extension-surface-attached');
-        await this.attachExtensionPage(masterTarget).catch((error) => {
-          this.emit({
-            type: 'live-sync-extension-error',
-            targetId: masterTarget.id,
-            url: masterTarget.url,
-            message: String(error?.message || error),
-          });
-        });
-      }
-    }
-  }
-
-  async attachExtensionPage(tab) {
-    let connection;
-    connection = new cdp.PersistentConnection(tab.webSocketDebuggerUrl, {
-      onEvent: (event) => this.handleExtensionPage(tab.id, event),
-      onDisconnect: () => {
-        const current = this.extensionConnections.get(tab.id);
-        if (current?.connection === connection) this.extensionConnections.delete(tab.id);
-      },
-    });
-    await connection.open();
-    const value = { tab, connection }; this.extensionConnections.set(tab.id, value);
-    try {
-      await connection.command('Runtime.addBinding', { name: SYNC_BINDING });
-      await connection.command('Page.addScriptToEvaluateOnNewDocument', { source: injection }).catch(() => {});
-      await connection.command('Runtime.enable');
-      await connection.command('Runtime.evaluate', { expression: injection });
-      await connection.command('Page.enable').catch(() => {});
-      this.emit({ type: 'live-sync-extension-attached', targetId: tab.id, url: tab.url, targets: this.extensionMap.get(tab.id)?.size || 0 });
-    } catch (error) {
-      connection.close(); this.extensionConnections.delete(tab.id); throw error;
-    }
-  }
-
-  async handleExtensionPage(tabId, event) {
-    const connection = this.extensionConnections.get(tabId)?.connection;
-    if (!connection) return;
-    if (event.method === 'Target.attachedToTarget' && event.params?.sessionId) {
-      const sessionId = event.params.sessionId;
-      const command = (method, params = {}) => connection.command(method, params, { sessionId, timeout: 10000 });
-      (async () => {
-        await command('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
-        await command('Runtime.addBinding', { name: SYNC_BINDING });
-        await command('Page.addScriptToEvaluateOnNewDocument', { source: injection });
-        await command('Runtime.enable');
-        await command('Page.enable');
-        await command('Runtime.evaluate', { expression: injection });
-      })().catch(() => {});
-    }
-    if (event.method === 'Runtime.executionContextCreated') {
-      // Isolated worlds receive the same DOM events but keep their own
-      // binding sentinel; injecting there would duplicate every forwarded
-      // action on extension pages, exactly like the main-page path guards
-      // against.
-      if (event.params?.context?.auxData?.isDefault === false) return;
-      const contextId = event.params?.context?.id;
-      if (contextId) connection.command(
-        'Runtime.evaluate',
-        { expression: injection, contextId },
-        event.sessionId ? { sessionId: event.sessionId } : {},
-      ).catch(() => {});
-    }
-    if (event.method === 'Runtime.bindingCalled' && (event.params?.name === SYNC_BINDING || event.params?.name === 'openBrowserSync')) {
-      let payload; try { payload = JSON.parse(event.params.payload); } catch (_) { return; }
-      // V13: extension documents (including side-panel/OOPIF content) are authoritative for
-      // semantic mouse, focus and text events. The native bridge remains responsible for Chrome UI.
-      this.enqueueForward(tabId, payload);
-    }
   }
 
   /**
@@ -2386,6 +2219,12 @@ class LiveSyncController extends LiveSyncV4 {
     }
   }
 }
+
+const extensionMethods = createExtensionSyncMethods({ injection, bindingName: SYNC_BINDING });
+for (const name of Object.keys(extensionMethods)) {
+  if (name in LiveSyncController.prototype) throw new Error('Sync extension member collision: ' + name);
+}
+Object.assign(LiveSyncController.prototype, extensionMethods);
 
 module.exports = {
   LiveSyncController,

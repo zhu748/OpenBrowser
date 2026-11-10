@@ -2875,27 +2875,22 @@ function renderTabInventory() {
   for (const value of sessions.filter((item) => selectedSessions.has(item.id))) { const group = element('div', 'tab-group'); group.append(element('strong', '', `${t('profiles.envName', { n: displayProfileNumber(value.profile || { id: value.id }) })} · ${value.tabs.length} ${t('common.tabs')}`)); for (const tab of value.tabs.slice(0, 6)) group.append(element('span', '', `${tab.title || 'Untitled'} — ${tab.url}`)); target.append(group); }
 }
 
-let __refreshSessionsInFlight = null;
-let __refreshSessionsQueued = false;
-async function refreshSessions() {
-  if (__refreshSessionsInFlight) { __refreshSessionsQueued = true; return __refreshSessionsInFlight; }
-  __refreshSessionsInFlight = (async () => {
-    try {
-      const previous = new Set(selectedSessions); sessions = await window.ops.syncSessions(); const live = new Set(sessions.map((item) => item.id));
-      if (syncState.active) selectedSessions = new Set((syncState.selected || []).filter((id) => live.has(id)));
-      else if (!sessionsInitialized) selectedSessions = new Set(sessions.map((item) => item.id));
-      else selectedSessions = new Set([...previous].filter((id) => live.has(id)));
-      sessionsInitialized = true; if (!selectedSessions.has(preferredMasterId)) preferredMasterId = orderedSelectedSessionIds()[0] || null;
-      if (!syncState.active) pushSyncSelection(); renderSessions();
-      loadedViews.add('sync');
-    } catch (error) { log('CDP', error.message); }
-    finally {
-      __refreshSessionsInFlight = null;
-      if (__refreshSessionsQueued) { __refreshSessionsQueued = false; refreshSessions(); }
-    }
-  })();
-  return __refreshSessionsInFlight;
-}
+const sessionController = window.OpenBrowserSessionController.createSessionController({
+  fetchSessions: () => window.ops.syncSessions(),
+  getState: () => ({ selectedIds: selectedSessions, initialized: sessionsInitialized, preferredMasterId, syncState }),
+  setState: (next) => {
+    sessions = next.sessions;
+    selectedSessions = next.selectedIds;
+    sessionsInitialized = next.initialized;
+    preferredMasterId = next.preferredMasterId;
+  },
+  onRows: () => {
+    if (!syncState.active) pushSyncSelection();
+    renderSessions(); loadedViews.add('sync');
+  },
+  onError: (error) => log('CDP', error.message),
+});
+function refreshSessions() { return sessionController.refresh(); }
 function selectedSessionIds(minimum = 1) { const ids = orderedSelectedSessionIds(); if (ids.length < minimum) throw new Error(tx('请至少选择 ') + minimum + tx(' 个运行环境')); return ids; }
 function specifiedTextItems(value) {
   return String(value || '').split(/\r?\n/).map((item) => item.trim()).filter(Boolean);

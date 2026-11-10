@@ -1,4 +1,5 @@
 const http = require('http');
+const { PersistentConnection } = require('./network/cdp-connection');
 
 function request(url, method = 'GET', options = {}) {
   const timeoutMs = Number.isFinite(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 5000;
@@ -65,6 +66,7 @@ function callDedicated(webSocketUrl, method, params = {}, timeout = 6000) {
     socket.addEventListener('message', (event) => {
       let value;
       try { value = JSON.parse(String(event.data)); } catch (_) { return; }
+      if (!value || typeof value !== 'object') return;
       if (value.id !== id) return;
       if (value.error) finish(reject, new Error(value.error.message || `CDP error: ${method}`));
       else finish(resolve, value.result || {});
@@ -200,153 +202,6 @@ async function call(webSocketUrl, method, params = {}, timeout = 6000, __retried
     entry.inFlight -= 1;
     entry.lastUsed = Date.now();
     if (!entry.dead) armIdleTimer(webSocketUrl, entry);
-  }
-}
-
-class PersistentConnection {
-  constructor(webSocketUrl, options = {}) {
-    this.webSocketUrl = webSocketUrl;
-    this.onEvent = typeof options.onEvent === 'function' ? options.onEvent : null;
-    this.onDisconnect = typeof options.onDisconnect === 'function' ? options.onDisconnect : null;
-    this.nextId = 1;
-    this.pending = new Map();
-    this.socket = options.socket || null;
-    this.closed = false;
-    this.opened = false;
-    this.disconnectNotified = false;
-  }
-
-  async open(timeout = 6000) {
-    if (typeof WebSocket !== 'function') throw new Error('WebSocket API is unavailable in this host runtime');
-    if (this.closed) throw new Error('CDP persistent connection is closed');
-    await new Promise((resolve, reject) => {
-      const socket = new WebSocket(this.webSocketUrl);
-      this.socket = socket;
-      let settled = false;
-      const fail = (error, closeSocket = false) => {
-        const value = error instanceof Error ? error : new Error(String(error || 'CDP persistent socket failed'));
-        // Do not leave a disconnected transport available for later commands. A stale
-        // socket would otherwise make those commands wait until their individual timeout.
-        if (this.socket === socket) {
-          this.socket = null;
-          this.closed = true;
-        }
-        const unexpectedDisconnect = this.opened && !this.disconnectNotified;
-        this.opened = false;
-        this.failAll(value);
-        if (unexpectedDisconnect) {
-          this.disconnectNotified = true;
-          try { this.onDisconnect?.(value, this); } catch (_) {}
-        }
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        if (closeSocket) {
-          try { socket.close(); } catch (_) {}
-        }
-        reject(value);
-      };
-      const timer = setTimeout(() => {
-        fail(new Error('CDP connection timeout'));
-        try { socket.close(); } catch (_) {}
-      }, timeout);
-      socket.addEventListener('open', () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        this.opened = true;
-        resolve();
-      });
-      socket.addEventListener('message', (event) => this.handleMessage(event));
-      socket.addEventListener('error', () => {
-        const error = new Error('CDP persistent socket error');
-        if (!this.closed) fail(error, true);
-      });
-      socket.addEventListener('close', () => {
-        const error = new Error('CDP persistent socket closed');
-        if (!this.closed) fail(error);
-      });
-    });
-    return this;
-  }
-
-  handleMessage(event) {
-    let value;
-    try { value = JSON.parse(String(event.data)); } catch (_) { return; }
-    if (value.id != null) {
-      const pending = this.pending.get(value.id);
-      if (!pending) return;
-      this.pending.delete(value.id);
-      clearTimeout(pending.timer);
-      if (value.error) pending.reject(new Error(value.error.message || 'CDP command failed'));
-      else pending.resolve(value.result || {});
-      return;
-    }
-    if (value.method && this.onEvent) {
-      try { Promise.resolve(this.onEvent(value, this)).catch(() => {}); } catch (_) {}
-    }
-  }
-
-  command(method, params = {}, options = {}) {
-    if (this.closed || !this.socket) return Promise.reject(new Error('CDP persistent connection is closed'));
-    const id = this.nextId++;
-    const timeout = Number(options.timeout) || 6000;
-    const message = { id, method, params };
-    if (options.sessionId) message.sessionId = options.sessionId;
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        // A hung browser (renderer deadlock, long GC, frozen system) never
-        // closes the socket, so timeouts would otherwise burn full 6s waits
-        // forever while keeping the pool entry alive. Self-destruct after
-        // three consecutive timeouts.
-        this.consecutiveTimeouts = (this.consecutiveTimeouts || 0) + 1;
-        if (this.consecutiveTimeouts >= 3) {
-          try { this.socket?.close(); } catch (_) {}
-        }
-        reject(new Error(`CDP timeout: ${method}`));
-      }, timeout);
-      this.pending.set(id, {
-        resolve: (value) => { this.consecutiveTimeouts = 0; resolve(value); },
-        reject,
-        timer,
-      });
-      const socket = this.socket;
-      try { socket.send(JSON.stringify(message)); }
-      catch (error) {
-        clearTimeout(timer);
-        this.pending.delete(id);
-        reject(error);
-        if (this.socket === socket) {
-          this.socket = null;
-          this.closed = true;
-          const unexpectedDisconnect = this.opened && !this.disconnectNotified;
-          this.opened = false;
-          this.failAll(error);
-          if (unexpectedDisconnect) {
-            this.disconnectNotified = true;
-            try { this.onDisconnect?.(error, this); } catch (_) {}
-          }
-        }
-      }
-    });
-  }
-
-  failAll(error) {
-    for (const pending of this.pending.values()) {
-      clearTimeout(pending.timer);
-      pending.reject(error);
-    }
-    this.pending.clear();
-  }
-
-  close() {
-    if (this.closed) return;
-    this.closed = true;
-    this.opened = false;
-    this.failAll(new Error('CDP persistent connection closed'));
-    try { this.socket?.close(); } catch (_) {}
-    this.socket = null;
   }
 }
 

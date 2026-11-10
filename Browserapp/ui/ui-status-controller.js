@@ -22,10 +22,15 @@
    * An edit replacing those rows while IPC waits wins over the stale reply. */
   function createStatusController({ getRows, setRows, fetchDelta, fetchFull, onRows = () => {} }) {
     let pending = null;
+    let watermarkRows = null;
+    let watermark = null;
     function refresh() {
       if (pending) return pending;
       const base = getRows();
-      const watermark = base.length ? Object.fromEntries(base.map((row) => [row.id, row.statusRev ?? row.rev ?? 0])) : null;
+      if (watermarkRows !== base) {
+        watermarkRows = base;
+        watermark = base.length ? Object.freeze(Object.fromEntries(base.map((row) => [row.id, row.statusRev ?? row.rev ?? 0]))) : null;
+      }
       pending = (async () => {
         let next;
         if (typeof fetchDelta === 'function') {

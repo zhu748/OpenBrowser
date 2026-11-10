@@ -41,21 +41,26 @@ function redactProxyRecord(item) {
   };
 }
 
+function redactAccount(account) {
+  if (!account || typeof account !== 'object') return account;
+  const safe = { ...account };
+  for (const key of ['username', 'password', 'totpSecret', 'otp']) {
+    if (typeof safe[key] === 'string') safe[key] = '';
+  }
+  return safe;
+}
+
 function redactProfileForApi(profile) {
   if (!profile || typeof profile !== 'object') return profile;
-  const safe = { ...profile };
+  const safe = redactAccount(profile);
   if (typeof safe.proxy === 'string' && safe.proxy) safe.proxy = redactProxyCredentials(safe.proxy);
   if (typeof safe.cookies === 'string') safe.cookies = '';
-  if (typeof safe.username === 'string') safe.username = '';
-  if (typeof safe.password === 'string') safe.password = '';
-  if (typeof safe.totpSecret === 'string') safe.totpSecret = '';
-  if (typeof safe.otp === 'string') safe.otp = '';
   if (safe.platform && typeof safe.platform === 'object') {
-    safe.platform = { ...safe.platform };
-    if (typeof safe.platform.username === 'string') safe.platform.username = '';
-    if (typeof safe.platform.password === 'string') safe.platform.password = '';
-    if (typeof safe.platform.totpSecret === 'string') safe.platform.totpSecret = '';
-    if (typeof safe.platform.otp === 'string') safe.platform.otp = '';
+    safe.platform = redactAccount(safe.platform);
+    if (Array.isArray(safe.platform.accounts)) safe.platform.accounts = safe.platform.accounts.map(redactAccount);
+  }
+  if (Array.isArray(safe.proxyMeta?.backupProxies)) {
+    safe.proxyMeta = { ...safe.proxyMeta, backupProxies: safe.proxyMeta.backupProxies.map(redactProxyCredentials) };
   }
   return safe;
 }

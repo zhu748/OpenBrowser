@@ -30,7 +30,8 @@ const NAMED_KEY_VK = (name) => {
   return { windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk };
 };
 
-const { OUTPUT_DIRECTORY, resolveSafeRpaPath, resolveSpreadsheetPath } = require('./rpa/paths');
+const { resolveSafeRpaPath, resolveSpreadsheetPath } = require('./rpa/paths');
+const fileSteps = require('./rpa/file-steps');
 const { resolveStepHandler, findUnsupportedSteps, validateStepHandlers } = require('./rpa/step-registry');
 // Launching a browser environment is heavy (disk, CPU, memory). A plan that
 // covers many profiles must not boot every kernel at the same instant, so the
@@ -69,37 +70,6 @@ function isMissingElementError(error) {
   if (!message) return false;
   if (message.includes(CDP_AUTOMATION_BLOCKED)) return false;
   return /Element not found|Selector not found|selectElement failed|No page tab for CDP|useExcel file not found|file path required/i.test(message);
-}
-
-/**
- * Split one CSV line honoring double-quoted fields: a quoted field may contain
- * commas, and "" inside it is a literal quote (standard spreadsheet export).
- * A plain split(',') would shift every column after the first quoted comma.
- */
-function splitCsvLine(line) {
-  const fields = [];
-  let field = '';
-  let quoted = false;
-  for (let index = 0; index < line.length; index += 1) {
-    const ch = line[index];
-    if (quoted) {
-      if (ch === '"') {
-        if (line[index + 1] === '"') { field += '"'; index += 1; }
-        else quoted = false;
-      } else {
-        field += ch;
-      }
-    } else if (ch === '"' && field === '') {
-      quoted = true;
-    } else if (ch === ',') {
-      fields.push(field);
-      field = '';
-    } else {
-      field += ch;
-    }
-  }
-  fields.push(field);
-  return fields;
 }
 
 /**
@@ -992,29 +962,6 @@ class RpaEngine {
     return;
   }
 
-  async stepSaveData({ ctx, params, text }) {
-    const filename = this.outputPath(text(params.name || 'data'), '.txt');
-    await fs.mkdir(path.dirname(filename), { recursive: true });
-    await fs.appendFile(filename, text(params.template ?? params.content ?? '') + '\n', 'utf8');
-    if (ctx?.log) await ctx.log('saved data: ' + filename);
-    return;
-  }
-
-  async stepExportExcel({ ctx, params, variables, text }) {
-    const records = this.exportRecords(params, variables);
-    const fields = Array.isArray(params.fields) && params.fields.length
-      ? params.fields.map(String)
-      : [...new Set(records.flatMap((record) => Object.keys(record || {})))];
-    const csv = [fields, ...records.map((record) => fields.map((field) => record?.[field] ?? ''))]
-      .map((row) => row.map((cell) => this.csvCell(cell)).join(','))
-      .join('\n') + '\n';
-    const filename = this.outputPath(text(params.name || 'export'), '.csv');
-    await fs.mkdir(path.dirname(filename), { recursive: true });
-    await fs.writeFile(filename, csv, 'utf8');
-    if (ctx?.log) await ctx.log('exported CSV: ' + filename);
-    return;
-  }
-
   async stepSaveRemark({ ctx, params, text }) {
     const remark = text(params.content ?? params.remark ?? '');
     ctx.remarks.push(remark);
@@ -1039,125 +986,6 @@ class RpaEngine {
         variables[String(item.key).trim()] = val;
       }
     }
-    return;
-  }
-
-  async stepUseExcel({ ctx, params, variables, text }) {
-    const targetVar = params.variable || 'data';
-    const skippable = (
-      params.isSkip === true
-      || params.isSkip === 1
-      || params.isSkip === '1'
-      || params.isSkip === 'true'
-      || params.optional === true
-      || params.optional === '1'
-      || params.optional === 'true'
-    );
-    let filePath = text(
-      params.path
-      ?? params.filePath
-      ?? params.file
-      ?? params.dataExcelPath
-      ?? params.excelPath
-      ?? params.content
-    ).trim();
-    if (!filePath || /\$\{[^}]+\}/.test(filePath)) {
-      if (!skippable) {
-        throw new Error(
-          filePath
-            ? 'useExcel path is unresolved (' + filePath + '); set the template variable to a local CSV/JSON file'
-            : 'useExcel requires a CSV or JSON file path'
-        );
-      }
-      variables[targetVar] = [];
-      if (ctx?.log) {
-        await ctx.log('useExcel skipped: no spreadsheet path configured (set a CSV/JSON path in template variables)');
-      }
-      return;
-    }
-
-    let safePath;
-    try {
-      safePath = await this.resolveSpreadsheetPath(filePath);
-    } catch (error) {
-      if (skippable) {
-        variables[targetVar] = [];
-        if (ctx?.log) await ctx.log('useExcel skipped: ' + error.message);
-        return;
-      }
-      throw error;
-    }
-
-    const extension = path.extname(safePath).toLowerCase();
-    if (extension === '.xlsx' || extension === '.xls') {
-      const message = 'useExcel does not read .xlsx/.xls yet; convert to .csv or .json and set the path variable';
-      if (skippable) {
-        variables[targetVar] = [];
-        if (ctx?.log) await ctx.log('useExcel skipped: ' + message);
-        return;
-      }
-      throw new Error(message);
-    }
-    if (extension !== '.csv' && extension !== '.json') {
-      const message = 'useExcel currently accepts .csv or .json (got ' + extension + ')';
-      if (skippable) {
-        variables[targetVar] = [];
-        if (ctx?.log) await ctx.log('useExcel skipped: ' + message);
-        return;
-      }
-      throw new Error(message);
-    }
-
-    let raw;
-    try {
-      raw = await fs.readFile(safePath, 'utf8');
-    } catch (_error) {
-      if (skippable) {
-        variables[targetVar] = [];
-        if (ctx?.log) await ctx.log('useExcel skipped: cannot read file ' + safePath);
-        return;
-      }
-      throw new Error('useExcel cannot read file: ' + safePath);
-    }
-
-    let records;
-    if (extension === '.json') {
-      try {
-        records = JSON.parse(raw);
-      } catch (error) {
-        // Same class of bad input as an unreadable file: skip when allowed
-        // rather than failing the whole task with a raw SyntaxError.
-        if (skippable) {
-          variables[targetVar] = [];
-          if (ctx?.log) await ctx.log('useExcel skipped: cannot parse JSON ' + safePath + ' (' + error.message + ')');
-          return;
-        }
-        throw new Error('useExcel cannot parse JSON: ' + error.message);
-      }
-    } else {
-      const lines = raw.split(/\r?\n/).filter((line) => line.length > 0);
-      if (!lines.length) {
-        variables[targetVar] = [];
-        return;
-      }
-      const headers = splitCsvLine(lines[0]).map((item) => item.trim());
-      records = lines.slice(1).map((row) => Object.fromEntries(
-        splitCsvLine(row).map((item, index) => [headers[index] || ('col' + index), item.trim()])
-      ));
-    }
-    if (!Array.isArray(records)) throw new Error('useExcel JSON content must be an array');
-    variables[targetVar] = records;
-    if (ctx?.log) await ctx.log(`useExcel loaded ${records.length} row(s) from ${safePath}`);
-    return;
-  }
-
-  async stepImportText({ params, variables, text }) {
-    const filePath = text(params.path || params.filePath || params.file);
-    if (!filePath) throw new Error('importText requires a file path');
-    const resolved = resolveSafeRpaPath(filePath);
-    const raw = await fs.readFile(resolved, 'utf8');
-    const lines = raw.split(/\r?\n/).filter((line) => line.length > 0);
-    variables[params.variable || 'textLines'] = lines;
     return;
   }
 
@@ -1698,25 +1526,6 @@ class RpaEngine {
     })()`;
   }
 
-  outputPath(name, extension) {
-    const raw = String(name || 'output').replace(/[\\/:*?"<>|]+/g, '_').replace(/^\.+$/, 'output');
-    const suffix = path.extname(raw) ? '' : extension;
-    return resolveSafeRpaPath(path.join(OUTPUT_DIRECTORY, raw + suffix));
-  }
-
-  csvCell(value) {
-    const text = typeof value === 'string' ? value : JSON.stringify(value ?? '');
-    return `"${String(text).replace(/"/g, '""')}"`;
-  }
-
-  exportRecords(params, variables) {
-    const candidate = getVariableValue(params.data || params.content || params.variable || '', variables);
-    if (Array.isArray(candidate)) return candidate;
-    if (candidate && typeof candidate === 'object') return [candidate];
-    const list = Object.values(variables).find(Array.isArray);
-    return Array.isArray(list) ? list : [];
-  }
-
   async findNetworkResource(port, matcher, timeout, { shouldAbort, ctx = null } = {}) {
     const deadline = Date.now() + timeout;
     // Filter inside the page: previously every poll serialized the FULL
@@ -1853,6 +1662,11 @@ class RpaEngine {
   }
 }
 
+// Validate the complete contribution before publishing any domain methods.
+for (const key of Object.keys(fileSteps)) {
+  if (key in RpaEngine.prototype) throw new Error('RPA file member collision: ' + key);
+}
+Object.assign(RpaEngine.prototype, fileSteps);
 validateStepHandlers(RpaEngine.prototype);
 
 module.exports = {

@@ -1,0 +1,84 @@
+{
+  "baseline": "c1c02c6",
+  "node": "v24.22.1",
+  "measuredAt": "2026-11-10T15:56:43.327Z",
+  "scope": "in-memory extension page mapping with injected whitelist; local CSV import; no GUI or real browser",
+  "mapping": {
+    "before": {
+      "pagesPerBrowser": 1000,
+      "medianMs": 63.64197100000001,
+      "samplesMs": [
+        67.16386799999998,
+        63.64197100000001,
+        56.74017300000003,
+        53.668226000000004,
+        65.36336399999999
+      ],
+      "urlReadsPerRefresh": 4000,
+      "idReadsPerRefresh": 1503500
+    },
+    "after": {
+      "pagesPerBrowser": 1000,
+      "medianMs": 4.532274000000001,
+      "samplesMs": [
+        9.164610999999994,
+        5.130978999999996,
+        4.532274000000001,
+        3.772075000000001,
+        3.9549109999999814
+      ],
+      "urlReadsPerRefresh": 4000,
+      "idReadsPerRefresh": 7000
+    }
+  },
+  "csvImport": {
+    "before": {
+      "records": 50000,
+      "fileBytes": 6927805,
+      "sha256": "b9e19e948b4c35924b1dbffdd9b206501ec650e18b9216821489837bd8705036",
+      "medianMs": 120.20363399999997,
+      "samplesMs": [
+        139.21679899999998,
+        118.77072699999997,
+        120.20363399999997
+      ],
+      "medianSampledHeapGrowthBytes": 58698968,
+      "sampledHeapGrowthBytes": [
+        58849640,
+        58669368,
+        58698968
+      ],
+      "medianMaxSampleGapMs": 109.07429200000001,
+      "maxSampleGapsMs": [
+        127.25517400000007,
+        108.64738699999998,
+        109.07429200000001
+      ],
+      "heapMeasurement": "heapUsed sampled on a 1ms interval and completion; includes parsed records, not a precise peak/RSS bound"
+    },
+    "after": {
+      "records": 50000,
+      "fileBytes": 6927805,
+      "sha256": "b9e19e948b4c35924b1dbffdd9b206501ec650e18b9216821489837bd8705036",
+      "medianMs": 102.95216700000003,
+      "samplesMs": [
+        118.54401900000005,
+        100.03253000000007,
+        102.95216700000003
+      ],
+      "medianSampledHeapGrowthBytes": 55294720,
+      "sampledHeapGrowthBytes": [
+        55041192,
+        55294720,
+        55823800
+      ],
+      "medianMaxSampleGapMs": 5.705148000000008,
+      "maxSampleGapsMs": [
+        5.705148000000008,
+        5.328298000000018,
+        8.51727500000004
+      ],
+      "heapMeasurement": "heapUsed sampled on a 1ms interval and completion; includes parsed records, not a precise peak/RSS bound"
+    }
+  }
+}
