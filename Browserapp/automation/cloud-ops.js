@@ -12,6 +12,7 @@
 
 const path = require('path');
 const cloudSync = require('./cloud-sync');
+const { mergeProfileState } = require('./cloud/merge');
 const { assertProfileId, sanitizeIds } = require('./isolation');
 
 let deps = null;
@@ -154,8 +155,11 @@ async function applyBackupBody(body, { mode = 'merge', localProfiles = null, loc
   });
   let restoredFiles = 0;
   const dataById = new Map();
+  const remoteIds = new Set();
   for (const profile of remoteProfiles) {
     assertProfileId(profile?.id);
+    if (remoteIds.has(profile.id)) throw new Error('备份包含重复环境：' + profile.id);
+    remoteIds.add(profile.id);
     if (profile._dataFiles && profile.id) {
       dataById.set(profile.id, profile._dataFiles);
       delete profile._dataFiles;
@@ -167,13 +171,20 @@ async function applyBackupBody(body, { mode = 'merge', localProfiles = null, loc
     : [...(engine?.profiles?.values?.() || [])];
   const localGroupList = Array.isArray(localGroups) ? localGroups : (localSettingsCache.uiGroups || []);
 
-  const merged = cloudSync.mergeProfiles(localList, remoteProfiles, mode);
+  const merged = mergeProfileState(localList, remoteProfiles, mode);
   const groups = cloudSync.mergeGroups(localGroupList, body.groups || [], mode);
+
+  // Validate the whole selected set before writing the first browser file.
+  for (const id of merged.remoteProfileIds) {
+    if (dataById.has(id) && (engine?.running?.has(id) || engine?.starting?.has(id) || engine?.stopping?.has(id))) {
+      throw new Error('请先停止环境，再恢复浏览器数据：' + id);
+    }
+  }
 
   // restore browser data files for profiles that came from remote package
   for (const profile of merged.profiles) {
     const files = dataById.get(profile.id);
-    if (files) {
+    if (files && merged.remoteProfileIds.has(profile.id)) {
       restoredFiles += await cloudSync.restoreProfileDataFiles(path.join(profileRoot, profile.id), files);
     }
   }
@@ -184,10 +195,10 @@ async function applyBackupBody(body, { mode = 'merge', localProfiles = null, loc
     try { localProxies = automation?.proxyStore?.list?.({}) || []; } catch (_) {}
     proxies = cloudSync.mergeProxies(localProxies, proxies, mode);
     if (automation?.proxyStore?.replaceAll) {
-      await automation.proxyStore.replaceAll(proxies).catch(() => {});
+      await automation.proxyStore.replaceAll(proxies);
     } else if (automation?.proxyStore) {
       for (const item of proxies) {
-        try { await automation.proxyStore.create(item); } catch (_) {}
+        await automation.proxyStore.create(item);
       }
     }
   }
@@ -261,8 +272,12 @@ async function runCloudProfilePushExclusive(payload = {}) {
     ? payload.profiles
     : [...(engine?.profiles?.values?.() || [])];
   const results = [];
+  const profilesById = new Map();
+  for (const profile of allProfiles) {
+    if (!profilesById.has(profile.id)) profilesById.set(profile.id, profile);
+  }
   for (const id of ids) {
-    const profile = allProfiles.find((p) => p.id === id);
+    const profile = profilesById.get(id);
     if (!profile) throw new Error('环境不存在：' + id);
     const { buffer, meta } = await cloudSync.buildBackupPackage({
       profiles: [{ ...profile, updatedAt: profile.updatedAt || new Date().toISOString() }],

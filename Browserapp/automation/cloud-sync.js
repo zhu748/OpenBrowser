@@ -7,25 +7,20 @@
  * groups, proxy library snapshot, and optional per-profile browser data files.
  */
 
-const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
-const https = require('https');
-const http = require('http');
+const { request } = require('./cloud/transport');
 const crypto = require('crypto');
 const { URL } = require('url');
 const zlib = require('zlib');
 const gzipAsync = require('util').promisify(zlib.gzip);
 const gunzipAsync = require('util').promisify(zlib.gunzip);
-const { assertProfileId, assertSafeProfileChild } = require('./isolation');
+const { assertProfileId } = require('./isolation');
 
 const BACKUP_VERSION = 1;
 const REMOTE_NAME = 'openbrowser-backup.obpack';
-const MAX_BACKUP_PACKAGE_BYTES = 100 * 1024 * 1024;
-const MAX_BACKUP_JSON_BYTES = 120 * 1024 * 1024;
-const MAX_BROWSER_DATA_BYTES = 80 * 1024 * 1024;
-const MAX_REMOTE_RESPONSE_BYTES = 120 * 1024 * 1024;
-const MAX_REMOTE_ERROR_BYTES = 64 * 1024;
+const { MAX_BACKUP_PACKAGE_BYTES, MAX_BACKUP_JSON_BYTES, MAX_BROWSER_DATA_BYTES,
+  MAX_REMOTE_RESPONSE_BYTES, MAX_REMOTE_ERROR_BYTES } = require('./cloud/limits');
 const SAFE_GITHUB_NAME = /^[A-Za-z0-9_.-]{1,100}$/;
 const SAFE_GITHUB_BRANCH = /^[A-Za-z0-9._\/-]{1,255}$/;
 
@@ -37,319 +32,9 @@ function sha256(buf) {
   return crypto.createHash('sha256').update(buf).digest('hex');
 }
 
-// scrypt costs ~40-50ms of synchronous main-thread time per call and a
-// backup run calls it once per payload. Reuse one salt per passphrase (the
-// KDF cost is then paid once per process; AES-GCM only needs IV uniqueness)
-// and cache the derived key. Wire format OBE1 is unchanged.
-// N=2^17 / r=8 / p=1 per OWASP 2023+ password storage guidance; Node's
-// historical default (N=16384) was below that bar for the single most
-// sensitive at-rest/at-cloud payload. Packages encrypted under the old cost
-// still decrypt (decryptPayload falls back to the legacy derivation), and
-// the next backup written after an upgrade uses the stronger cost.
-const SCRYPT_PARAMS_CURRENT = { N: 131072, r: 8, p: 1, maxmem: 256 * 1024 * 1024 };
-const SCRYPT_PARAMS_LEGACY = { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
-const __cloudKeyCache = new Map();
-const __cloudSaltCache = new Map();
-
-function cloudDerivedKeyWith(passphrase, salt, params) {
-  const cacheKey = `${salt.toString('hex')}|${params.N}|${String(passphrase)}`;
-  const cached = __cloudKeyCache.get(cacheKey);
-  if (cached) return cached;
-  const key = crypto.scryptSync(String(passphrase), salt, 32, params);
-  if (__cloudKeyCache.size >= 16) __cloudKeyCache.clear();
-  __cloudKeyCache.set(cacheKey, key);
-  return key;
-}
-
-function cloudDerivedKey(passphrase, salt) {
-  return cloudDerivedKeyWith(passphrase, salt, SCRYPT_PARAMS_CURRENT);
-}
-
-function cloudDerivedKeyLegacy(passphrase, salt) {
-  return cloudDerivedKeyWith(passphrase, salt, SCRYPT_PARAMS_LEGACY);
-}
-
-function cloudEncryptSaltFor(passphrase) {
-  let salt = __cloudSaltCache.get(passphrase);
-  if (!salt) {
-    if (__cloudSaltCache.size >= 8) __cloudSaltCache.clear();
-    salt = crypto.randomBytes(16);
-    __cloudSaltCache.set(passphrase, salt);
-  }
-  return salt;
-}
-
-function encryptPayload(plainBuf, passphrase) {
-  if (!passphrase) return { encrypted: false, data: plainBuf };
-  const salt = cloudEncryptSaltFor(String(passphrase));
-  const key = cloudDerivedKey(String(passphrase), salt);
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
-  const enc = Buffer.concat([cipher.update(plainBuf), cipher.final()]);
-  const tag = cipher.getAuthTag();
-  return {
-    encrypted: true,
-    data: Buffer.concat([
-      Buffer.from('OBE1'),
-      salt,
-      iv,
-      tag,
-      enc,
-    ]),
-  };
-}
-
-function decryptObe1(salt, iv, tag, enc, passphrase, key) {
-  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
-  decipher.setAuthTag(tag);
-  return Buffer.concat([decipher.update(enc), decipher.final()]);
-}
-
-function decryptPayload(buf, passphrase) {
-  if (buf.length >= 4 && buf.subarray(0, 4).toString() === 'OBE1') {
-    if (!passphrase) throw new Error('备份已加密，请填写恢复密码');
-    const salt = buf.subarray(4, 20);
-    const iv = buf.subarray(20, 32);
-    const tag = buf.subarray(32, 48);
-    const enc = buf.subarray(48);
-    // Try the current cost first, then the pre-upgrade cost: GCM auth covers
-    // both, so a wrong guess fails the tag and we fall through. This keeps
-    // every package written before the KDF upgrade restorable.
-    try {
-      return decryptObe1(salt, iv, tag, enc, String(passphrase), cloudDerivedKey(String(passphrase), salt));
-    } catch (error) {
-      try {
-        return decryptObe1(salt, iv, tag, enc, String(passphrase), cloudDerivedKeyLegacy(String(passphrase), salt));
-      } catch (_) {
-        throw error;
-      }
-    }
-  }
-  return buf;
-}
-
-async function collectProfileDataFiles(profileRoot, profile, limits = {}) {
-  const advanced = profile.advanced || {};
-  const files = {};
-  if (!profileRoot || !fs.existsSync(profileRoot)) return files;
-  // Only pack browser data when this environment opts into cloud backup
-  if (!advanced.cloudBackup) return files;
-  const defaultDir = path.join(profileRoot, 'Default');
-  const candidates = [];
-  // Cookies always included when cloud backup is on (close-time Cookie sync)
-  if (advanced.syncCookiesOnClose !== false || advanced.saveCookies !== false) {
-    candidates.push(['Network/Cookies', path.join(defaultDir, 'Network', 'Cookies')]);
-    candidates.push(['Network/Cookies-journal', path.join(defaultDir, 'Network', 'Cookies-journal')]);
-  }
-  if (advanced.syncLocalStorage) {
-    candidates.push(['Local Storage', path.join(defaultDir, 'Local Storage')]);
-  }
-  if (advanced.syncIndexedDB) {
-    candidates.push(['IndexedDB', path.join(defaultDir, 'IndexedDB')]);
-  }
-  if (advanced.syncPasswords) {
-    candidates.push(['Login Data', path.join(defaultDir, 'Login Data')]);
-    candidates.push(['Login Data-journal', path.join(defaultDir, 'Login Data-journal')]);
-  }
-  if (advanced.syncExtensionData) {
-    candidates.push(['Local Extension Settings', path.join(defaultDir, 'Local Extension Settings')]);
-    candidates.push(['Extension State', path.join(defaultDir, 'Extension State')]);
-  }
-  const maxFile = limits.maxFileBytes || 25 * 1024 * 1024;
-  const maxTotal = limits.maxTotalBytes || 80 * 1024 * 1024;
-  let total = 0;
-
-  async function walk(rel, abs) {
-    let st;
-    try { st = await fsp.lstat(abs); } catch (_) { return; }
-    if (st.isSymbolicLink()) return;
-    if (st.isFile()) {
-      if (st.size > maxFile || total + st.size > maxTotal) return;
-      const buf = await fsp.readFile(abs);
-      files[rel.replace(/\\/g, '/')] = buf.toString('base64');
-      total += st.size;
-      return;
-    }
-    if (!st.isDirectory()) return;
-    const entries = await fsp.readdir(abs).catch(() => []);
-    for (const name of entries) {
-      if (name === '.' || name === '..') continue;
-      await walk(path.join(rel, name), path.join(abs, name));
-    }
-  }
-
-  for (const [rel, abs] of candidates) {
-    await walk(rel, abs);
-  }
-  return files;
-}
-
-async function restoreProfileDataFiles(profileRoot, files) {
-  if (!files || typeof files !== 'object') return 0;
-  const base = path.resolve(profileRoot, 'Default');
-  const entries = Object.entries(files);
-  if (entries.length > 2000) throw new Error('备份文件数量超过安全限制');
-  let count = 0;
-  let totalBytes = 0;
-  for (const [rel, b64] of entries) {
-    if (!rel || typeof b64 !== 'string') continue;
-    // Reject absolute / drive-relative paths before any normalization that strips leading slashes
-    const raw = String(rel).replace(/\0/g, '');
-    if (path.isAbsolute(raw) || path.win32.isAbsolute(raw) || path.posix.isAbsolute(raw)) continue;
-    if (/^[a-zA-Z]:[\\/]/.test(raw) || raw.startsWith('\\\\')) continue;
-    const safe = raw.replace(/^[/\\]+/, '').replace(/\\/g, '/');
-    if (!safe || safe.includes('..') || safe.includes('\0')) continue;
-    // Block path segments that escape after resolve (Windows separators / alternate roots)
-    const abs = path.resolve(base, safe);
-    if (abs !== base && !abs.startsWith(base + path.sep)) continue;
-    // Extra Windows case-insensitive guard
-    const absKey = process.platform === 'win32' ? abs.toLowerCase() : abs;
-    const baseKey = process.platform === 'win32' ? base.toLowerCase() : base;
-    if (absKey !== baseKey && !absKey.startsWith(baseKey + path.sep)) continue;
-    const decoded = Buffer.from(b64, 'base64');
-    if (decoded.length > 25 * 1024 * 1024) throw new Error('备份单文件超过安全限制');
-    totalBytes += decoded.length;
-    if (totalBytes > 80 * 1024 * 1024) throw new Error('备份文件总大小超过安全限制');
-    await assertSafeProfileChild(profileRoot, abs);
-    await fsp.mkdir(path.dirname(abs), { recursive: true });
-    await assertSafeProfileChild(profileRoot, abs);
-    await fsp.writeFile(abs, decoded, { flag: 'w', mode: 0o600 });
-    count += 1;
-  }
-  return count;
-}
-
-function profileStamp(profile) {
-  const p = profile || {};
-  const candidates = [p.updatedAt, p.syncedAt, p.exitCheckedAt, p.createdAt];
-  for (const c of candidates) {
-    const t = Date.parse(String(c || ''));
-    if (Number.isFinite(t)) return t;
-  }
-  return 0;
-}
-
-function stripDataFiles(profile) {
-  if (!profile || typeof profile !== 'object') return profile;
-  const copy = { ...profile };
-  delete copy._dataFiles;
-  return copy;
-}
-
-/**
- * Merge remote backup into local state.
- * mode:
- *  - merge (default): keep local-only; add remote-only; same id → newer wins (timestamp), else remote config fields win
- *  - local-wins: only add missing ids from remote
- *  - remote-wins / overwrite: remote list becomes truth (still reported as merge stats)
- */
-function mergeProfiles(localList = [], remoteList = [], mode = 'merge') {
-  const local = Array.isArray(localList) ? localList.map(stripDataFiles) : [];
-  const remote = Array.isArray(remoteList) ? remoteList.map(stripDataFiles) : [];
-  const stats = { added: 0, updated: 0, kept: 0, skipped: 0, conflicts: 0 };
-
-  if (mode === 'overwrite' || mode === 'remote-wins') {
-    stats.added = remote.filter((r) => !local.some((l) => l.id === r.id)).length;
-    stats.updated = remote.filter((r) => local.some((l) => l.id === r.id)).length;
-    stats.kept = 0;
-    return {
-      profiles: remote.map((p) => ({ ...p, syncedAt: nowIso() })),
-      stats: { ...stats, mode },
-    };
-  }
-
-  const byId = new Map();
-  for (const item of local) {
-    if (item?.id) byId.set(item.id, { ...item, _source: 'local' });
-  }
-
-  for (const remoteItem of remote) {
-    if (!remoteItem?.id) continue;
-    const localItem = byId.get(remoteItem.id);
-    if (!localItem) {
-      byId.set(remoteItem.id, { ...remoteItem, syncedAt: nowIso(), _source: 'remote' });
-      stats.added += 1;
-      continue;
-    }
-    if (mode === 'local-wins') {
-      stats.skipped += 1;
-      continue;
-    }
-    // merge / newer-wins
-    const localTs = profileStamp(localItem);
-    const remoteTs = profileStamp(remoteItem);
-    stats.conflicts += 1;
-    let winner;
-    if (remoteTs && localTs && remoteTs !== localTs) {
-      winner = remoteTs >= localTs ? remoteItem : localItem;
-    } else if (remoteTs && !localTs) {
-      winner = remoteItem;
-    } else if (!remoteTs && localTs) {
-      winner = localItem;
-    } else {
-      // no timestamps: prefer remote cloud-relevant fields, keep local identity/runtime
-      winner = {
-        ...localItem,
-        ...remoteItem,
-        id: localItem.id,
-        number: localItem.number || remoteItem.number,
-        name: localItem.name || remoteItem.name,
-        // cookies/platform/proxy from remote if present
-        cookies: remoteItem.cookies != null && remoteItem.cookies !== '' ? remoteItem.cookies : localItem.cookies,
-        platform: remoteItem.platform || localItem.platform,
-        proxy: remoteItem.proxy != null ? remoteItem.proxy : localItem.proxy,
-        proxyMeta: { ...(localItem.proxyMeta || {}), ...(remoteItem.proxyMeta || {}) },
-        privacy: { ...(localItem.privacy || {}), ...(remoteItem.privacy || {}) },
-        advanced: { ...(localItem.advanced || {}), ...(remoteItem.advanced || {}) },
-      };
-    }
-    const fromRemote = winner === remoteItem || winner.cookies === remoteItem.cookies;
-    byId.set(remoteItem.id, {
-      ...stripDataFiles(winner),
-      syncedAt: nowIso(),
-      updatedAt: winner.updatedAt || nowIso(),
-      _mergedFrom: fromRemote ? 'remote' : 'local',
-    });
-    stats.updated += 1;
-  }
-
-  for (const item of byId.values()) {
-    if (item._source === 'local' && !remote.some((r) => r.id === item.id)) stats.kept += 1;
-    delete item._source;
-    delete item._mergedFrom;
-  }
-
-  return {
-    profiles: [...byId.values()],
-    stats: { ...stats, mode: mode || 'merge' },
-  };
-}
-
-function mergeGroups(localGroups = [], remoteGroups = [], mode = 'merge') {
-  if (mode === 'overwrite' || mode === 'remote-wins') return Array.isArray(remoteGroups) ? remoteGroups : [];
-  const map = new Map();
-  for (const g of localGroups || []) if (g?.id) map.set(g.id, g);
-  for (const g of remoteGroups || []) {
-    if (!g?.id) continue;
-    if (mode === 'local-wins' && map.has(g.id)) continue;
-    map.set(g.id, { ...(map.get(g.id) || {}), ...g });
-  }
-  return [...map.values()];
-}
-
-function mergeProxies(localProxies = [], remoteProxies = [], mode = 'merge') {
-  if (mode === 'overwrite' || mode === 'remote-wins') return Array.isArray(remoteProxies) ? remoteProxies : [];
-  const map = new Map();
-  const keyOf = (p) => p.id || `${p.protocol || ''}:${p.host || ''}:${p.port || ''}`;
-  for (const p of localProxies || []) map.set(keyOf(p), p);
-  for (const p of remoteProxies || []) {
-    const k = keyOf(p);
-    if (mode === 'local-wins' && map.has(k)) continue;
-    map.set(k, { ...(map.get(k) || {}), ...p });
-  }
-  return [...map.values()];
-}
-
+const { encryptPayload, decryptPayload, encryptPayloadAsync, decryptPayloadAsync } = require('./cloud/package-crypto');
+const { collectProfileDataFiles, restoreProfileDataFiles } = require('./cloud/profile-data');
+const { profileStamp, mergeProfiles, mergeGroups, mergeProxies } = require('./cloud/merge');
 function profileRemoteName(id) {
   const safe = assertProfileId(id);
   return `profiles/openbrowser-profile-${safe}.obpack`;
@@ -520,7 +205,7 @@ async function buildBackupPackage({
         maxTotalBytes: Math.max(0, MAX_BROWSER_DATA_BYTES - browserDataBytes),
       });
       for (const encoded of Object.values(item._dataFiles)) {
-        browserDataBytes += Math.floor(String(encoded).length * 3 / 4);
+        browserDataBytes += Buffer.byteLength(encoded, 'base64');
       }
     }
     estimatedJsonBytes += Buffer.byteLength(JSON.stringify(item));
@@ -554,7 +239,8 @@ async function buildBackupPackage({
     }
   }
   const gz = await gzipAsync(json, { level: 9 });
-  const { encrypted, data } = encryptPayload(gz, passphrase);
+  const { encrypted, data } = await encryptPayloadAsync(gz, passphrase);
+  if (data.length > MAX_BACKUP_PACKAGE_BYTES) throw new Error('备份包超过 100 MB 安全限制');
   return {
     buffer: data,
     meta: {
@@ -572,7 +258,7 @@ async function buildBackupPackage({
 async function parseBackupPackage(buffer, passphrase = '') {
   const raw = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
   if (raw.length > MAX_BACKUP_PACKAGE_BYTES) throw new Error('备份包超过 100 MB 安全限制');
-  const decrypted = decryptPayload(raw, passphrase);
+  const decrypted = await decryptPayloadAsync(raw, passphrase);
   if (decrypted.length > MAX_BACKUP_PACKAGE_BYTES) throw new Error('备份包解密后超过安全限制');
   let jsonBuf;
   try {
@@ -584,55 +270,6 @@ async function parseBackupPackage(buffer, passphrase = '') {
   const body = JSON.parse(jsonBuf.toString('utf8'));
   if (!body || !Array.isArray(body.profiles)) throw new Error('备份格式无效');
   return body;
-}
-
-function request(urlString, options = {}, body) {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const finish = (handler, value) => {
-      if (settled) return;
-      settled = true;
-      handler(value);
-    };
-    const u = new URL(urlString);
-    const lib = u.protocol === 'http:' ? http : https;
-    const maxBytes = Number(options.maxBytes) || MAX_REMOTE_RESPONSE_BYTES;
-    if (body && body.length > MAX_REMOTE_RESPONSE_BYTES * 2) return reject(new Error('上传内容超过安全限制'));
-    const req = lib.request({
-      protocol: u.protocol,
-      hostname: u.hostname,
-      port: u.port || (u.protocol === 'http:' ? 80 : 443),
-      path: u.pathname + u.search,
-      method: options.method || 'GET',
-      headers: options.headers || {},
-      timeout: options.timeout || 60000,
-    }, (res) => {
-      const chunks = [];
-      let size = 0;
-      res.on('error', (error) => finish(reject, error));
-      res.on('data', (c) => {
-        if (settled) return;
-        size += c.length;
-        if (size > maxBytes) {
-          const error = new Error('远程响应超过安全限制');
-          finish(reject, error);
-          res.destroy(error);
-          req.destroy(error);
-          return;
-        }
-        chunks.push(c);
-      });
-      res.on('end', () => {
-        if (settled) return;
-        const buf = Buffer.concat(chunks);
-        finish(resolve, { status: res.statusCode || 0, headers: res.headers, body: buf });
-      });
-    });
-    req.on('error', (error) => finish(reject, error));
-    req.on('timeout', () => { req.destroy(new Error('request timeout')); });
-    if (body) req.write(body);
-    req.end();
-  });
 }
 
 function basicAuth(user, pass) {

@@ -43,6 +43,10 @@
 | 网络与代理 | `Browserapp/proxy-forwarder.js`、`automation/proxy-store.js`、`doh-resolver.js`、`downloader.js` | SOCKS/HTTP、代理探测、DNS、下载 |
 | 地址与探测数据 | `Browserapp/network/address-policy.js`、`network/probe-results.js` | 共用主机名/IP 规范化、内网与 metadata 分类，以及无 I/O 的探测响应归一化和错误分类 |
 | 代理配置 | `Browserapp/network/proxy-config.js` | 代理输入解析、规范化、浏览器端点与脱敏显示；proxy-forwarder.js 保留既有公开导出 |
+| 代理身份 | `Browserapp/network/proxy-identity.js` | 纯端点、协议、账号身份比较及环境关联 ID 规则；原 engine/proxy-helpers.js 兼容转发，并保留重试编排 |
+| 代理分配统计 | `Browserapp/automation/proxy-usage.js` | 分配容量校验和使用统计；每次快照建立关联 ID/端点索引，保持手填无协议端点的兼容匹配，不缓存跨快照的可变记录 |
+| 云同步领域 | `Browserapp/automation/cloud/` | merge.js 处理配置冲突与远端来源；package-crypto.js 维护 OBE1 兼容和异步密钥计算；profile-data.js 处理有界文件读写；limits.js 共用写入/恢复限制；transport.js 适配共享 HTTP 传输 |
+| 云同步编排 | `Browserapp/automation/cloud-sync.js`、`cloud-ops.js` | 前者保留包构建及提供商接口，后者协调宿主状态、设置和恢复。浏览器数据仅在远端配置被选中时恢复，代理保存失败必须上抛 |
 | 通用出站请求 | `Browserapp/network/outbound.js` | 代理提取/刷新 URL 的校验、重定向与正文大小限制。与模板同步共用 socket 实际使用的 DNS 答案校验，metadata 始终禁止；内网策略由调用方显式决定 |
 | HTTP 传输 | `Browserapp/network/http-request.js` | Node HTTP/HTTPS 的字节上限、完整响应读取、重定向与连接清理；一个绝对期限覆盖整条重定向链，支持 AbortSignal。代理出站、模板同步及内核元数据共同使用 |
 | 内核归档 | `Browserapp/automation/kernel/archive.js` | 归档成员校验、解压、符号链接检查和安全安装路径；内核选择与安装编排仍由 browser-kernel.js 负责 |
@@ -104,6 +108,9 @@
 19. UI 初始化的首次脱敏保存必须发生在缓存和告警状态初始化后；日志与出口事件共用 `uiStateStore.request()`，立即保存会消费待写请求，pagehide/beforeunload 只排空待写状态。
 20. 非显式 UI 同步中的多账号凭据只按相同行号和用户名恢复；明确的 credentialsAction=replace/clear 不恢复旧值。备用代理优先按行和端点恢复，唯一端点才允许跨行匹配。
 21. 修改注入片段必须检查完整拼接后的脚本，保持片段顺序和共享词法变量可见性；单个片段本身并非独立运行脚本。
+22. 云备份包流程调用异步加密/解密，原同步 encryptPayload/decryptPayload 只保留兼容入口。新旧 KDF 成本的 OBE1 包都必须可恢复，异步改动不能取消认证或复用 IV。
+23. 云恢复配置和浏览器文件共用 mergeProfileState 的来源结果；local-wins 和本地时间较新的冲突不能写入远端文件。写入前检查整批 ID 及运行状态；文件、代理、设置和引擎存储仍不是一个共同事务。
+24. 浏览器数据的写入和恢复使用 cloud/limits.js 的同一组上限；零剩余额度不能回退默认值。备份读取必须按实际字节限额，不能只相信先前 stat 的文件大小。
 
 ## 本地检查
 
@@ -155,12 +162,17 @@ npm run selftest -- launcharguments
 npm run selftest -- automationipc
 npm run selftest -- uistatestore
 npm run selftest -- enginecompose
+npm run selftest -- cloudrestore
+npm run selftest -- cloudcrypto
+npm run selftest -- cloudtransport
+npm run selftest -- proxyusage
 node scripts/benchmark-ui-polling.js 9ae738a 10000
 node scripts/benchmark-review.js 0c06ae8
 node scripts/benchmark-persistence.js
 node scripts/benchmark-rpa-budget.js 0c06ae8
 node scripts/benchmark-maintenance.js 65ddc51
 node scripts/benchmark-session-persistence.js 65ddc51
+node scripts/benchmark-snapshot-paths.js 0e66932
 ```
 
 后续拆分重点及本轮证据见 [性能与可维护性审查](dev-reports/2026-11-10-performance-maintainability-review.md)。
@@ -170,3 +182,4 @@ RPA 与主进程的后续改动见 [第三轮 RPA 生命周期与容量回收](d
 下一轮查询并发、事务和哈希优化见 [会话与事务优化记录](dev-reports/2026-11-10-next-optimization.md)。
 API 控制器、启动参数、内核发现和编辑保存的本轮调整见 [模块分类与校验优化记录](dev-reports/2026-11-10-modular-optimization.md)。
 UI 状态持久化、注入领域片段及引擎成员组合见 [第二轮 UI 与注入模块优化](dev-reports/2026-11-10-round2-ui-and-injection.md)。
+本轮云同步及代理统计优化见 [云同步与代理统计复审](dev-reports/2026-11-10-cloud-proxy-review.md)。
