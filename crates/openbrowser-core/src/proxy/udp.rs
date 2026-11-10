@@ -415,15 +415,13 @@ impl Socks5UdpAssociate {
             if !self.is_control_alive() {
                 return Err(CoreError::Socks5("control connection terminated".into()));
             }
-            let (n, from_addr) = match tokio::time::timeout(
-                Duration::from_secs(1),
-                self.udp_socket.recv_from(buf),
-            )
-            .await
-            {
-                Ok(res) => res?,
-                Err(_) => continue, // recv tick elapsed; re-check liveness above
-            };
+            let (n, from_addr) =
+                match tokio::time::timeout(Duration::from_secs(1), self.udp_socket.recv_from(buf))
+                    .await
+                {
+                    Ok(res) => res?,
+                    Err(_) => continue, // recv tick elapsed; re-check liveness above
+                };
             // Source validation: the sender IP must be the SOCKS5 relay we contacted.
             // Some relays reply from a different ephemeral port on the same host, so the
             // port is NOT part of the check. (The previous condition let a spoofed packet

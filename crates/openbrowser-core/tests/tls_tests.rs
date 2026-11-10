@@ -233,7 +233,9 @@ fn test_chrome_profile_matches_boundary_hardening_ground_truth() {
 
     // The signature-less variant must differ in Part C: that is the proof
     // the _sig suffix is really flowing through the fixture path now.
-    let ja4_no_sig = ClientHelloBuilder::new(profile).server_name("chromium.org").compute_ja4();
+    let ja4_no_sig = ClientHelloBuilder::new(profile)
+        .server_name("chromium.org")
+        .compute_ja4();
     assert_ne!(ja4.formatted, ja4_no_sig.formatted);
 }
 

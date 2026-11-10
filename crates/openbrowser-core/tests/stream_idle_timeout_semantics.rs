@@ -40,7 +40,10 @@ async fn silent_session_errors_within_window() {
     .await
     .expect("watchdog did not fire within 2s");
     let elapsed = start.elapsed();
-    assert!(copied.is_err(), "idle session must error, got Ok({copied:?})");
+    assert!(
+        copied.is_err(),
+        "idle session must error, got Ok({copied:?})"
+    );
     let msg = copied.unwrap_err().to_string();
     assert!(msg.contains("idle timeout"), "unexpected error: {msg}");
     assert!(

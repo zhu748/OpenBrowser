@@ -137,10 +137,7 @@ impl<S: Unpin> Unpin for IdleTimeoutStream<S> {}
 /// tokio semantics. A watchdog races the copy future; when it fires the
 /// session had IDLE_TIMEOUT without a byte in either direction and the copy
 /// is aborted with an error instead of holding its session slot forever.
-pub async fn copy_bidirectional_with_idle_timeout<A, B>(
-    client: A,
-    server: B,
-) -> Result<StreamStats>
+pub async fn copy_bidirectional_with_idle_timeout<A, B>(client: A, server: B) -> Result<StreamStats>
 where
     A: AsyncRead + AsyncWrite + Unpin,
     B: AsyncRead + AsyncWrite + Unpin,
@@ -185,10 +182,7 @@ where
     let mut copy_fut = std::pin::pin!(tokio::io::copy_bidirectional(&mut client, &mut server));
     loop {
         let now = Instant::now();
-        let armed = last_progress
-            .lock()
-            .map(|cell| *cell)
-            .unwrap_or(now + idle);
+        let armed = last_progress.lock().map(|cell| *cell).unwrap_or(now + idle);
         let mut watchdog = Box::pin(sleep(armed.saturating_duration_since(now)));
         tokio::select! {
             biased;

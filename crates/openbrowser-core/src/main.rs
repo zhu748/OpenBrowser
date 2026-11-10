@@ -73,14 +73,12 @@ static STDOUT_ERR: std::sync::Mutex<Option<std::io::Error>> = std::sync::Mutex::
 // or broken pipe). join_stdout_writer() polls THIS, not "sender gone":
 // take() makes the sender None immediately while queued lines may still
 // be unwritten, so a sender-gone check gave the writer ~5ms, not a drain.
-static STDOUT_DONE: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+static STDOUT_DONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 // Set when stdout_sender() spawns the writer thread. join_stdout_writer()
 // returns immediately when nothing was ever emitted: without this marker a
 // no-output exit (usage and every error path never emit) would wait out the
 // full 2s drain deadline for a thread that does not exist.
-static STDOUT_CREATED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+static STDOUT_CREATED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 fn stdout_sender() -> Option<std::sync::mpsc::Sender<Vec<u8>>> {
     let mut guard = STDOUT_TX.lock().unwrap_or_else(|p| p.into_inner());
