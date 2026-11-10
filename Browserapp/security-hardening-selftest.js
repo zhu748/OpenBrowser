@@ -165,7 +165,6 @@ function main() {
   {
     const fnMatch = renderer.match(/function redactProxyForStorage\(proxy\) \{[\s\S]*?\n\}/);
     assert.ok(fnMatch, 'redactProxyForStorage must exist as a standalone function');
-    // eslint-disable-next-line no-new-func
     const redactProxyForStorage = new Function(`${fnMatch[0]}\nreturn redactProxyForStorage;`)();
     assert.strictEqual(redactProxyForStorage('socks5://user:secret@1.2.3.4:1080'), 'socks5://1.2.3.4:1080');
     assert.strictEqual(redactProxyForStorage('1.2.3.4:1080:user:secret'), '1.2.3.4:1080');

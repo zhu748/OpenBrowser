@@ -58,7 +58,6 @@ const buildScanners = ({ allowed, subsets, blocked, inject }) => {
     'const sanitizeDataUri = (value) => value;',
   ].join('\n');
   const postamble = 'return { sanitizeCss, sanitizeSrcValue, mapFontFaceBlocks, rewriteLocalTokens };';
-  // eslint-disable-next-line no-new-func
   return new Function(preamble + '\n' + scannerSource + '\n' + postamble)();
 };
 

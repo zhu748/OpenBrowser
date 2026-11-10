@@ -317,7 +317,15 @@ module.exports = [
       'use-isnan': 'error',
       'valid-typeof': 'error',
       // Non-blocking hygiene (visible, does not fail the gate yet)
-      'no-unused-vars': 'warn',
+      // The `_` prefix marks intentional-unused (positional params, promise
+      // executors, swallowed catches): the codebase has 1200+ such sites,
+      // so without these patterns the gate drowned in false positives and
+      // GitHub capped the annotations at 11, hiding real findings.
+      'no-unused-vars': ['warn', {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+        caughtErrorsIgnorePattern: '^_',
+      }],
       'no-empty': 'off', // ~300 intentional empty catches; needs a sweep first
     },
   },

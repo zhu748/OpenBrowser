@@ -33,7 +33,6 @@ let storeValue = null;
 const localStorage = { getItem: () => storeValue };
 const UI_COLOR_MODE_KEY = 'openbrowser-ui-color-mode-v1';
 const systemPrefersDark = () => false; // never called (we always pass prefersDark explicitly)
-// eslint-disable-next-line no-new-func
 const { resolveColorMode, readSavedColorPreference } = new Function(
   'localStorage', 'UI_COLOR_MODE_KEY', 'systemPrefersDark',
   `${resolveSrc}\n${readSrc}\nreturn { resolveColorMode, readSavedColorPreference };`,

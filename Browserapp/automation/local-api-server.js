@@ -574,10 +574,10 @@ function proxySummary(profile, proxyStore, explicitProxyId = undefined) {
  * On a fresh start /json/version can lose a sub-second race with the caller,
  * so retry briefly (≈3 attempts / ≈2s); on persistent failure return null:
  * callers keep debug_port (still correct) and ws.puppeteer becomes an honest
- * null instead of a fabricated URL. `profileId` is accepted for signature
- * compatibility and deliberately unused.
+ * null instead of a fabricated URL. `_profileId` is accepted for signature
+ * compatibility and deliberately unused (underscore convention).
  */
-async function resolveWebSocketDebuggerUrl(port, profileId) {
+async function resolveWebSocketDebuggerUrl(port, _profileId) {
   if (!port) return null;
   const cdp = require('../cdp');
   const attempts = 3;
