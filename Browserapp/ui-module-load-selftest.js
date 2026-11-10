@@ -25,7 +25,7 @@ const rendererIndex = scripts.indexOf('renderer.js');
 assert.ok(rendererIndex >= 0, 'index.html loads renderer.js');
 assert.ok(scripts.indexOf('ui/ui-groups.js') >= 0 && scripts.indexOf('ui/ui-groups.js') < rendererIndex,
   'group domain functions load before renderer wiring');
-const modelModules = ['ui/ui-profile-list.js', 'shared/proxy-redact.js', 'ui/ui-profile-state.js', 'shared/ipc-result.js', 'shared/profile-values.js', 'ui/ui-state-store.js', 'ui/ui-profile-commands.js', 'ui/ui-refresh-scheduler.js'];
+const modelModules = ['ui/ui-profile-list.js', 'shared/proxy-redact.js', 'ui/ui-profile-state.js', 'shared/ipc-result.js', 'shared/profile-values.js', 'ui/ui-state-store.js', 'ui/ui-profile-commands.js', 'ui/ui-refresh-scheduler.js', 'ui/ui-status-controller.js'];
 for (const script of modelModules) {
   assert.ok(scripts.indexOf(script) >= 0 && scripts.indexOf(script) < rendererIndex,
     `${script} loads before the renderer consumes its API`);

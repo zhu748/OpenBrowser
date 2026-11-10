@@ -62,6 +62,8 @@ const SUITE = [
   ['selftest:profilesync', 'automation/selftests/profile-sync-selftest.js'],
   ['selftest:profilerevisions', 'automation/selftests/profile-revisions-selftest.js'],
   ['selftest:cloud', 'automation/selftests/cloud-sync-security-selftest.js'],
+  ['selftest:cloudmaintenance', 'automation/selftests/cloud-maintenance-selftest.js'],
+  ['selftest:statusrefresh', 'automation/selftests/status-refresh-selftest.js'],
   ['selftest:cloudrestore', 'automation/selftests/cloud-restore-selftest.js'],
   ['selftest:cloudcrypto', 'automation/selftests/cloud-crypto-selftest.js'],
   ['selftest:cloudtransport', 'automation/selftests/cloud-transport-selftest.js'],

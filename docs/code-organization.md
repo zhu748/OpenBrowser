@@ -23,6 +23,10 @@
 | 事件刷新调度 | `Browserapp/ui/ui-refresh-scheduler.js` | 合并事件、串行刷新、保留执行期间的迟到请求、暂停及恢复；不依赖 DOM |
 | 引擎协调 | `Browserapp/engine.js` | 公开 `BrowserEngine`、生命周期协调、状态快照、持久化调度 |
 | 引擎成员组合 | `Browserapp/engine/compose.js` | 安装前检查全部领域贡献的重名、访问器和继承成员覆盖；`BrowserEngine.methodOwners` 提供只读成员归属，保留原调用接口 |
+| 环境维护占用 | `Browserapp/engine/profile-maintenance.js` | 同步检查并占用整批环境；恢复文件期间阻止启动、删除、回收、缓存清理和外部同步，内部提交使用持有者令牌 |
+| 引擎状态投影 | `Browserapp/engine/status-api.js` | 脱敏快照、配置 Map 缓存版本和运行状态增量；statusRev 跟踪运行变化，rev 继续用于编辑冲突 |
+| 状态刷新控制器 | `Browserapp/ui/ui-status-controller.js` | 从真实行构造水位，共享直接/调度 IPC、线性合并增量并丢弃旧快照响应；full 响应直接复用 rows |
+| 云恢复文件暂存 | `Browserapp/automation/cloud/file-restore.js` | 整批验证后暂存新文件，保留原文件用于失败回滚；回滚失败保留映射清单和恢复目录 |
 | 引擎领域模块 | `Browserapp/engine/` | 启动、Firefox 启动、清理、Profile CRUD、代理、指纹交付、资源限制、扩展管理 |
 | 启动参数策略 | `Browserapp/engine/launch-arguments.js` | 构建基础与最终 Chromium 参数；通过输入传入代理端点、DPI 和窗口位置，返回拒绝的自定义参数。进程、锁和资源清理由启动编排持有 |
 | 环境同步准备 | `Browserapp/engine/profile-sync.js` | 暂存校验、凭据恢复、代理合并、扩展继承和网络失效记录；整批成功后才发布到引擎 |
@@ -112,6 +116,11 @@
 23. 云恢复配置和浏览器文件共用 mergeProfileState 的来源结果；local-wins 和本地时间较新的冲突不能写入远端文件。写入前检查整批 ID 及运行状态；文件、代理、设置和引擎存储仍不是一个共同事务。
 24. 浏览器数据的写入和恢复使用 cloud/limits.js 的同一组上限；零剩余额度不能回退默认值。备份读取必须按实际字节限额，不能只相信先前 stat 的文件大小。
 
+25. 恢复文件的维护占用在第一次异步 I/O 前整批取得，并持续到文件回滚和元数据保存结束；失败回滚保留占用及恢复目录，不能继续启动该环境。占用是进程内协调，不是跨进程/崩溃事务。
+26. 云恢复的旧 overwrite/remote-wins 参数现在明确表示“同 ID 云端优先，本地独有环境/分组/代理保留”。恢复只向引擎提交选中远端记录；引擎值优先于 renderer 脱敏快照，返回实际引擎列表。公开纯 mergeProfiles 的旧覆盖计算接口保留。
+27. 状态水位使用 statusRev 的不透明字符串，包含引擎实例与运行状态版本；编辑命令继续比较数值 rev。启动/停止/端口/网络/扩展变化不能被配置版本未变而漏掉。
+28. UI 状态水位从实际内存行生成，不单独持久化；full 响应直接使用 rows，不能再请求一次完整状态。等待期间若编辑替换了行数组，旧响应必须丢弃。无变化增量保留数组引用。
+
 ## 本地检查
 
 在 `Browserapp/` 执行，使用 Node 22.12 或更新版本；`TMPDIR` 需指向真实存在、可写的目录。
@@ -162,6 +171,8 @@ npm run selftest -- launcharguments
 npm run selftest -- automationipc
 npm run selftest -- uistatestore
 npm run selftest -- enginecompose
+npm run selftest -- cloudmaintenance
+npm run selftest -- statusrefresh
 npm run selftest -- cloudrestore
 npm run selftest -- cloudcrypto
 npm run selftest -- cloudtransport
@@ -173,6 +184,7 @@ node scripts/benchmark-rpa-budget.js 0c06ae8
 node scripts/benchmark-maintenance.js 65ddc51
 node scripts/benchmark-session-persistence.js 65ddc51
 node scripts/benchmark-snapshot-paths.js 0e66932
+node scripts/benchmark-status-merge.js c8c4102
 ```
 
 后续拆分重点及本轮证据见 [性能与可维护性审查](dev-reports/2026-11-10-performance-maintainability-review.md)。
@@ -183,3 +195,5 @@ RPA 与主进程的后续改动见 [第三轮 RPA 生命周期与容量回收](d
 API 控制器、启动参数、内核发现和编辑保存的本轮调整见 [模块分类与校验优化记录](dev-reports/2026-11-10-modular-optimization.md)。
 UI 状态持久化、注入领域片段及引擎成员组合见 [第二轮 UI 与注入模块优化](dev-reports/2026-11-10-round2-ui-and-injection.md)。
 本轮云同步及代理统计优化见 [云同步与代理统计复审](dev-reports/2026-11-10-cloud-proxy-review.md)。
+
+后续维护占用、文件回滚和运行状态增量修复见 [恢复与状态刷新优化](dev-reports/2026-11-10-restore-status-followup.md)。

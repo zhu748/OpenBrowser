@@ -13,7 +13,9 @@
 const path = require('path');
 const cloudSync = require('./cloud-sync');
 const { mergeProfileState } = require('./cloud/merge');
-const { assertProfileId, sanitizeIds } = require('./isolation');
+const { prepareFileRestore } = require('./cloud/file-restore');
+const { acquireProfileMaintenance } = require('../engine/profile-maintenance');
+const { assertProfileId, sanitizeIds, assertSafeProfileChild } = require('./isolation');
 
 let deps = null;
 
@@ -143,77 +145,94 @@ async function runCloudBackupExclusive(payload = {}) {
   return { success: true, meta, result, cloud };
 }
 
-async function applyBackupBody(body, { mode = 'merge', localProfiles = null, localGroups = null } = {}) {
+async function applyBackupBody(body, options = {}) {
+  return enqueueCloudOp(() => applyBackupBodyExclusive(body, options));
+}
+
+async function applyBackupBodyExclusive(body, { mode = 'merge', localProfiles = null, localGroups = null } = {}) {
   const { getEngine, getAutomation, getSettings, saveSettings } = requireDeps();
   const engine = getEngine();
   const automation = getAutomation();
   const localSettingsCache = getSettings();
   const profileRoot = engine?.getProfileDataRoot?.() || localSettingsCache.profileDataRoot;
-  const remoteProfiles = (body.profiles || []).map((p) => {
-    const copy = { ...p };
-    return copy;
-  });
-  let restoredFiles = 0;
+  if (!['merge', 'local-wins', 'remote-wins', 'overwrite'].includes(mode)) throw new Error('恢复策略无效');
+  if (!Array.isArray(body.profiles) || body.profiles.length > 5000) throw new Error('备份环境列表无效或超过 5000 个');
+  if (body.groups != null && !Array.isArray(body.groups)) throw new Error('备份分组列表无效');
+  if (body.proxies != null && !Array.isArray(body.proxies)) throw new Error('备份代理列表无效');
+  const remoteProfiles = body.profiles.map((profile) => ({ ...profile }));
   const dataById = new Map();
   const remoteIds = new Set();
   for (const profile of remoteProfiles) {
     assertProfileId(profile?.id);
     if (remoteIds.has(profile.id)) throw new Error('备份包含重复环境：' + profile.id);
     remoteIds.add(profile.id);
+    engine?.sanitizeProfile?.(profile);
     if (profile._dataFiles && profile.id) {
       dataById.set(profile.id, profile._dataFiles);
       delete profile._dataFiles;
     }
   }
 
-  const localList = Array.isArray(localProfiles)
-    ? localProfiles
-    : [...(engine?.profiles?.values?.() || [])];
+  // Engine data is authoritative; renderer snapshots can be redacted or stale.
+  const localList = engine?.profiles?.values ? [...engine.profiles.values()] : (localProfiles || []);
   const localGroupList = Array.isArray(localGroups) ? localGroups : (localSettingsCache.uiGroups || []);
-
-  const merged = mergeProfileState(localList, remoteProfiles, mode);
-  const groups = cloudSync.mergeGroups(localGroupList, body.groups || [], mode);
-
-  // Validate the whole selected set before writing the first browser file.
-  for (const id of merged.remoteProfileIds) {
-    if (dataById.has(id) && (engine?.running?.has(id) || engine?.starting?.has(id) || engine?.stopping?.has(id))) {
-      throw new Error('请先停止环境，再恢复浏览器数据：' + id);
+  // Legacy mode names keep working. Restore never deletes unrelated local
+  // environments, groups or proxy records; same-ID remote values take priority.
+  const mergeMode = ['overwrite', 'remote-wins'].includes(mode) ? 'remote-preferred' : mode;
+  const merged = mergeProfileState(localList, remoteProfiles, mergeMode);
+  merged.stats.mode = mode;
+  if (merged.profiles.length > 5000) throw new Error('合并后环境数量超过 5000 个');
+  const groups = cloudSync.mergeGroups(localGroupList, body.groups || [], mergeMode);
+  const ids = [...merged.remoteProfileIds].filter((id) => dataById.has(id));
+  const lease = acquireProfileMaintenance(engine, ids);
+  let transaction;
+  let phase = 'prepare';
+  let rollbackFailed = false;
+  try {
+    const selections = [];
+    for (const id of ids) {
+      const root = path.join(profileRoot, id);
+      await assertSafeProfileChild(profileRoot, root);
+      selections.push({ root, files: dataById.get(id) });
     }
-  }
-
-  // restore browser data files for profiles that came from remote package
-  for (const profile of merged.profiles) {
-    const files = dataById.get(profile.id);
-    if (files && merged.remoteProfileIds.has(profile.id)) {
-      restoredFiles += await cloudSync.restoreProfileDataFiles(path.join(profileRoot, profile.id), files);
+    transaction = await prepareFileRestore(selections);
+    phase = 'files';
+    await transaction.commit();
+    phase = 'proxies';
+    let proxies = body.proxies || [];
+    if (Array.isArray(proxies) && proxies.length) {
+      const localProxies = automation?.proxyStore?.list?.({}) || [];
+      proxies = cloudSync.mergeProxies(localProxies, proxies, mergeMode);
+      if (automation?.proxyStore?.replaceAll) await automation.proxyStore.replaceAll(proxies);
+      else if (automation?.proxyStore) for (const item of proxies) await automation.proxyStore.create(item);
     }
-  }
-
-  let proxies = body.proxies || [];
-  if (Array.isArray(proxies) && proxies.length) {
-    let localProxies = [];
-    try { localProxies = automation?.proxyStore?.list?.({}) || []; } catch (_) {}
-    proxies = cloudSync.mergeProxies(localProxies, proxies, mode);
-    if (automation?.proxyStore?.replaceAll) {
-      await automation.proxyStore.replaceAll(proxies);
-    } else if (automation?.proxyStore) {
-      for (const item of proxies) {
-        await automation.proxyStore.create(item);
+    phase = 'settings';
+    await saveSettings({ ...getSettings(), uiGroups: groups });
+    phase = 'profiles';
+    const selectedProfiles = merged.profiles.filter((profile) => merged.remoteProfileIds.has(profile.id));
+    if (engine && selectedProfiles.length) await engine.syncProfiles(selectedProfiles.map((profile) => ({
+      ...profile, secretsAction: 'replace', proxyAuthAction: 'clear',
+    })), { maintenanceToken: lease.token });
+    const cleanupWarnings = await transaction.finish();
+    return {
+      profiles: engine?.profiles?.values ? [...engine.profiles.values()] : merged.profiles,
+      groups, proxies, restoredFiles: transaction.count,
+      mergeStats: merged.stats, createdAt: body.createdAt,
+      ...(cleanupWarnings.length ? { cleanupWarnings } : {}),
+    };
+  } catch (error) {
+    error.restorePhase = phase;
+    if (transaction) {
+      try { await transaction.rollback(); }
+      catch (rollbackError) {
+        rollbackFailed = true;
+        throw Object.assign(new AggregateError([error, rollbackError], error.message + '；原文件回滚失败'), {
+          restorePhase: phase, recoveryDirectories: rollbackError.recoveryDirectories,
+        });
       }
     }
-  }
-
-  await saveSettings({ ...getSettings(), uiGroups: groups });
-  if (engine) await engine.syncProfiles(merged.profiles);
-
-  return {
-    profiles: merged.profiles,
-    groups,
-    proxies,
-    restoredFiles,
-    mergeStats: merged.stats,
-    createdAt: body.createdAt,
-  };
+    throw error;
+  } finally { if (!rollbackFailed) lease.release(); }
 }
 
 async function runCloudRestore(payload = {}) {
@@ -235,7 +254,7 @@ async function runCloudRestoreExclusive(payload = {}) {
     body.profiles = (body.profiles || []).filter((p) => allow.has(String(p.id)));
   }
 
-  const applied = await applyBackupBody(body, {
+  const applied = await applyBackupBodyExclusive(body, {
     mode,
     localProfiles: payload.localProfiles,
     localGroups: payload.localGroups,
@@ -325,7 +344,7 @@ async function runCloudProfilePullExclusive(payload = {}) {
     combinedRemote = combinedRemote.concat(body.profiles || []);
     per.push({ id, remoteName, count: (body.profiles || []).length, createdAt: body.createdAt });
   }
-  const applied = await applyBackupBody(
+  const applied = await applyBackupBodyExclusive(
     { profiles: combinedRemote, groups: payload.groups || localSettingsCache.uiGroups || [], proxies: [] },
     { mode, localProfiles, localGroups: payload.localGroups }
   );

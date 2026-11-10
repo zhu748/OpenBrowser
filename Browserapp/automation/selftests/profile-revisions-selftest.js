@@ -215,7 +215,7 @@ async function main() {
     ]);
     const full = engine.statusDelta(null);
     assert.equal(full.full, true, 'no watermark answers full');
-    const watermark = engine.profiles.revisionState();
+    const watermark = full.watermark;
     // No change since the watermark: empty delta.
     const none = engine.statusDelta(watermark);
     assert.equal(none.full, false);

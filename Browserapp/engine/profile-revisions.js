@@ -45,10 +45,13 @@ class TrackedProfileMap extends Map {
     super();
     this._revisions = new Map(); // id -> { rev, hash }
     this._sequence = 0;
+    this._version = 0;
     if (entries != null) {
       for (const [id, profile] of entries) this.set(id, profile);
     }
   }
+
+  get version() { return this._version; }
 
   /** Current revision of a profile (0 when unknown/never written). */
   revisionOf(id) {
@@ -75,17 +78,21 @@ class TrackedProfileMap extends Map {
       if (hash && previous?.hash === hash) return super.set(key, profile);
       if (hash) this._revisions.set(key, { rev: ++this._sequence, hash });
     }
+    this._version += 1;
     return super.set(key, profile);
   }
 
   delete(id) {
     const key = String(id);
     this._revisions.delete(key);
-    return super.delete(key);
+    const removed = super.delete(key);
+    if (removed) this._version += 1;
+    return removed;
   }
 
   clear() {
     this._revisions.clear();
+    if (this.size) this._version += 1;
     super.clear();
   }
 }

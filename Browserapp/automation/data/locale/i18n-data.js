@@ -6221,7 +6221,6 @@
     "下次启动实际使用": "Used on next launch",
     "正在检测浏览器…": "Checking browser…",
     "智能合并（推荐）": "Smart merge (recommended)",
-    "云端完全覆盖本地": "Cloud overwrites local",
     "加密密码（可选）": "Passphrase (optional)",
     "批量更新网络模式": "Batch update network",
     "每次打开刷新指纹": "Refresh fingerprint on each open",
@@ -6925,7 +6924,9 @@
     "网站定位权限已禁止": "Website location permission is blocked",
     "图形接口": "Graphics APIs",
     "摄像头和麦克风权限已禁止": "Camera and microphone permissions are blocked",
-    "：": ": "
+    "：": ": ",
+    "云端优先（保留本地独有环境）": "Prefer cloud (keep local-only environments)",
+    "云端优先": "Prefer cloud"
   },
   "runtimeZhEn": {
     "有新版本 v${payload.remoteVersion}（当前 v${payload.currentVersion}），点击查看更新": "Update available v${payload.remoteVersion} (current v${payload.currentVersion}); click to view",
@@ -7080,12 +7081,10 @@
     "正在全量备份…": "Creating full backup…",
     "备份完成 ·": "Backup complete ·",
     "备份失败：": "Backup failed: ",
-    "将用云端备份完全覆盖本地环境列表，本地独有环境会丢失。确定？": "Cloud backup will fully replace the local profile list; local-only profiles will be lost. Continue?",
     "仅从云端新增本地没有的环境，已有环境不变。继续？": "Only add cloud profiles that do not exist locally; existing profiles stay unchanged. Continue?",
     "智能合并：同 ID 取较新版本，本地独有环境会保留。继续？": "Smart merge: keep the newer version for matching IDs and preserve local-only profiles. Continue?",
     "恢复失败：": "Restore failed: ",
     "已导出备份文件": "Backup file exported",
-    "导入将完全覆盖本地环境列表。确定？": "Import will fully replace the local profile list. Continue?",
     "导入将按当前恢复策略合并。继续？": "Import will merge using the current restore policy. Continue?",
     "请先勾选「云备份」并保存环境": "Enable “Cloud backup” and save the profile first",
     "独立目录：": "Isolated directory: ",
@@ -7254,7 +7253,9 @@
     " 个自定义模板": " custom template(s)",
     "自动脚本完成": "Automation finished",
     "运行失败：": "Run failed: ",
-    "文本组保存失败：本地存储空间不足，内容将在重启后丢失": "Text groups not saved: local storage is full, they will be lost after restart"
+    "文本组保存失败：本地存储空间不足，内容将在重启后丢失": "Text groups not saved: local storage is full, they will be lost after restart",
+    "同 ID 环境以云端为准，本地独有环境会保留。继续？": "Use cloud values for matching IDs and keep local-only environments. Continue?",
+    "同 ID 环境以备份为准，本地独有环境会保留。继续？": "Use backup values for matching IDs and keep local-only environments. Continue?"
   }
 };
 })(typeof window !== 'undefined' ? window : globalThis);

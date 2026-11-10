@@ -8,9 +8,10 @@
  * (3-4 extra passes per profile). Equivalence is pinned by
  * scripts/benchmark-profile-sync.js --compare.
  */
+const { assertProfileNotMaintained } = require('./profile-maintenance');
 const { proxyHasCredentials, sameProxyEndpoint, sameProxyIdentity } = require('./index');
 
-function prepareProfileSync(engine, values) {
+function prepareProfileSync(engine, values, { maintenanceToken } = {}) {
   const profiles = new Map();
   const assignments = new Map();
   const networkInvalidations = new Set();
@@ -25,6 +26,7 @@ function prepareProfileSync(engine, values) {
     // Inputs are mutable, and IPC creates fresh objects anyway. Reference
     // equality cannot prove that this profile (or a nested field) is unchanged.
     const sanitized = engine.sanitizeProfile(value);
+    assertProfileNotMaintained(engine, sanitized.id, maintenanceToken);
     const previous = (profiles.get(sanitized.id) || engine.profiles.get(sanitized.id));
     let profile = sanitized;
     if (previous && sanitized.proxyId && previous.proxyId === sanitized.proxyId) {

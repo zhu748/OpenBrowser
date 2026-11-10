@@ -129,6 +129,7 @@ const {
 
 const { isValidIanaTimezone, extractTimezoneFromArgs } = require('./engine/start');
 const { TrackedProfileMap } = require('./engine/profile-revisions');
+const { assertProfileNotMaintained } = require('./engine/profile-maintenance');
 
 class BrowserEngine {
   constructor(app, options = {}) {
@@ -146,6 +147,7 @@ class BrowserEngine {
     this.starting = new Map();
     this.stopping = new Map();
     this.deletingProfiles = new Set();
+    this.profileMaintenance = new Map();
     this.lifecycleGenerations = new Map();
     this.lifecycleStopRequests = new Map();
     this.stopAllPromise = null;
@@ -428,7 +430,7 @@ class BrowserEngine {
   setProfileDataRoot(value) {
     const raw = String(value || '').trim();
     if (!raw) throw new Error('Environment data directory is required');
-    if (this.running.size || this.starting.size || this.stopping.size) {
+    if (this.running.size || this.starting.size || this.stopping.size || this.profileMaintenance?.size) {
       throw new Error('Stop all browser environments before changing the data directory');
     }
     const check = validateDataRootIsolationSecure(raw);
@@ -1009,6 +1011,7 @@ class BrowserEngine {
       raw,
     );
     const id = candidate.id;
+    assertProfileNotMaintained(this, id);
     if (this.deletingProfiles?.has(id)) {
       throw Object.assign(new Error(`Profile ${id} is being deleted`), { code: 'PROFILE_DELETING' });
     }
@@ -1033,6 +1036,7 @@ class BrowserEngine {
    * to inline this; the Chromium and Firefox pipelines both go through it now.
    */
   async startManaged(id, candidate, run) {
+    assertProfileNotMaintained(this, id);
     const generation = this.nextLifecycleGeneration(id);
     const task = (async () => {
       const pendingStop = this.stopping.get(id);
@@ -1391,88 +1395,6 @@ class BrowserEngine {
     return { stopped: remaining.length === 0, remaining, errors: [...new Set(failed)] };
   }
 
-  // Public status view. Cookie jars (up to 500 KB per profile) and platform
-  // account secrets do not belong in a poll payload that the renderer requests
-  // every ~120 ms: the editor reads them from local state, and the cloud-backup
-  // flow receives the full profile through the 'profile-closed' event instead.
-  // Proxy strings keep their credentials — the renderer merges them back into
-  // local state (mergeEngineExitState) and localStorage already strips them.
-  status() {
-    // Snapshot cache: the renderer polls this constantly, and building the
-    // full view (spread + secret scrub per profile × N) is pure waste when
-    // nothing changed. Mutation paths call invalidateStatusCache(); a stale
-    // entry can only ever cost one extra poll (≤120 ms) of outdated badge
-    // text, never correctness of actions — those read live state directly.
-    if (this._statusCache) return this._statusCache;
-    this._statusCache = [...this.profiles.values()].map((profile) => {
-      const view = { ...profile, ...this.publicRunning(profile.id), network: this.networkInfo.get(profile.id) || null, assignedExtensions: [...(this.assignments.get(profile.id) || [])] };
-      // Engine revision of this row: lets the renderer issue per-ID modify
-      // commands with a base revision (applyProfileCommands) instead of
-      // resending the whole fleet. Zero cost per poll: this runs only when
-      // the snapshot cache was invalidated.
-      view.rev = this.profiles.revisionOf?.(profile.id) || 0;
-      if ('cookies' in view) view.cookies = '';
-      if (view.platform && typeof view.platform === 'object') {
-        view.platform = { ...view.platform };
-        if ('password' in view.platform) view.platform.password = '';
-        if ('totpSecret' in view.platform) view.platform.totpSecret = '';
-        // 多账号行与主账号字段同源（profile-sanitizer 原样保留 password/totpSecret），
-        // 这里同样只留 username：轮询通道绝不携带任意一行的账号机密，
-        // 编辑器需要的完整行仍走一次性 'profile-closed' 事件（与 cookies 同一设计）。
-        if (Array.isArray(view.platform.accounts) && view.platform.accounts.length) {
-          view.platform.accounts = view.platform.accounts.map((account) => ({
-            ...account,
-            password: '',
-            totpSecret: '',
-          }));
-        }
-      }
-      return view;
-    });
-    return this._statusCache;
-  }
-
-  invalidateStatusCache() {
-    this._statusCache = null;
-    this._statusDeltaEpoch = (this._statusDeltaEpoch || 0) + 1;
-  }
-
-  /**
-   * Incremental status view for the renderer's 120ms poll loop. The caller
-   * passes its last-seen revision watermark ({id: rev}); the engine answers
-   * only rows whose revision moved past it, plus removed ids, and the new
-   * watermark. At 1000+ profile fleets a full status view is megabytes per
-   * poll (measured 3.5MB at N=1000, ~30MB/s at the UI's poll cadence); the
-   * delta lane cuts the payload to the rows that actually changed.
-   *
-   * `full: true` is the resync fallback: any mismatch (unknown ids, a stale
-   * shape the caller cannot merge) returns full instead, so the poll loop
-   * degrades to today's behavior rather than guessing.
-   */
-  statusDelta(watermark) {
-    const known = this.profiles.revisionState?.() || {};
-    const caller = (watermark && typeof watermark === 'object' && !Array.isArray(watermark)) ? watermark : null;
-    if (!caller) return { full: true, rows: this.status(), watermark: known, removed: [] };
-    const removed = [];
-    for (const id of Object.keys(caller)) {
-      if (!(id in known)) removed.push(id);
-    }
-    const snapshot = this.status();
-    const byId = new Map(snapshot.map((row) => [row.id, row]));
-    let unknown = 0;
-    const rows = [];
-    for (const [id, rev] of Object.entries(known)) {
-      const seen = caller[id];
-      if (seen === undefined) { unknown += 1; continue; }
-      if (seen !== rev) {
-        const row = byId.get(id);
-        if (row) rows.push(row);
-      }
-    }
-    if (unknown > 0) return { full: true, rows: snapshot, watermark: known, removed: [] };
-    return { full: false, rows, removed, watermark: known };
-  }
-
   on(listener) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
   // 'status' events are emitted exactly at the points where the public view
   // (running/port/network/...) can change, so they double as the invalidation
@@ -1516,6 +1438,7 @@ Object.defineProperty(BrowserEngine, 'methodOwners', {
     ['extensions-api', require('./engine/extensions-api')],
     ['persistence', require('./engine/persistence')],
     ['session-api', require('./engine/session-api')],
+    ['status-api', require('./engine/status-api')],
   ]),
 });
 

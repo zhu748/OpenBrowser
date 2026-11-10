@@ -2640,7 +2640,7 @@ function visibleProfilePageIds() {
 
 async function refreshStatus() {
   invalidateViewCache(['sync', 'profiles']);
-  engineProfiles = await window.ops.profileStatus(); mergeEngineExitState(engineProfiles); renderProfiles();
+  await statusController.refresh(); renderProfiles();
 }
 
 // --- Render/IPC coalescing (perf) --------------------------------------------------
@@ -2680,46 +2680,22 @@ function scheduleProxySearchRender() {
     });
   }, 120);
 }
-// Status poll lane. The engine's full status view is megabytes per poll at
-// 1000+ profile fleets (measured 3.5MB at N=1000, ~30MB/s across the poll
-// cadence), so the loop polls the DELTA lane: it sends its last-seen revision
-// watermark and receives only rows whose engine revision moved, plus removed
-// ids. Any shape mismatch (engine rows the watermark never saw) makes the
-// engine answer full:true, and the loop resyncs exactly like the old lane.
-const STATUS_WATERMARK_KEY = 'openbrowser-status-watermark-v1';
-function loadStatusWatermark() {
-  try { const raw = JSON.parse(localStorage.getItem(STATUS_WATERMARK_KEY) || 'null'); return raw && typeof raw === 'object' ? raw : null; } catch (_) { return null; }
-}
-function saveStatusWatermark(value) {
-  try { localStorage.setItem(STATUS_WATERMARK_KEY, JSON.stringify(value)); } catch (_) {}
-}
-let __statusWatermark = loadStatusWatermark();
+// The controller owns IPC serialization and derives watermarks from actual rows.
+const statusController = window.OpenBrowserStatusController.createStatusController({
+  getRows: () => engineProfiles,
+  setRows: (rows) => { engineProfiles = rows; },
+  fetchDelta: (watermark) => window.ops.profileStatusDelta(watermark),
+  fetchFull: () => window.ops.profileStatus(),
+  onRows: (rows) => mergeEngineExitState(rows),
+});
 const __statusRefresher = window.OpenBrowserRefreshScheduler.createRefreshScheduler({
   isPaused: () => document.hidden,
   refresh: async () => {
-    try {
-      const delta = await window.ops.profileStatusDelta(__statusWatermark);
-      if (delta && delta.full === false && Array.isArray(delta.rows)) {
-        const byId = new Map(delta.rows.map((row) => [row.id, row]));
-        const removed = new Set(delta.removed || []);
-        engineProfiles = engineProfiles
-          .filter((row) => !removed.has(row.id))
-          .map((row) => byId.get(row.id) || row);
-        for (const row of delta.rows) {
-          if (!engineProfiles.some((item) => item.id === row.id)) engineProfiles.push(row);
-        }
-        __statusWatermark = delta.watermark || null;
-        saveStatusWatermark(__statusWatermark);
-      } else {
-        engineProfiles = await window.ops.profileStatus();
-        __statusWatermark = engineProfiles.reduce((acc, row) => { acc[row.id] = row.rev || 0; return acc; }, {});
-        saveStatusWatermark(__statusWatermark);
-      }
-      mergeEngineExitState(engineProfiles);
-    } catch (_) {}
+    await statusController.refresh();
     scheduleRenderProfiles();
     if (document.querySelector('#view-proxies.view.active')) scheduleProxySearchRender();
   },
+  onError: (error) => console.warn('Status refresh failed:', error.message),
 });
 function scheduleStatusRefresh() {
   __statusRefresher.request();

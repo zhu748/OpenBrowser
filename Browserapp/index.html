@@ -1410,7 +1410,7 @@
       <select id="cloud-restore-mode">
         <option value="merge">智能合并（推荐）</option>
         <option value="local-wins">仅新增云端有、本地没有的</option>
-        <option value="overwrite">云端完全覆盖本地</option>
+        <option value="overwrite">云端优先（保留本地独有环境）</option>
       </select>
     </label>
   </div>
@@ -1860,6 +1860,7 @@
   <script src="ui/ui-state-store.js"></script>
   <script src="ui/ui-profile-commands.js"></script>
   <script src="ui/ui-refresh-scheduler.js"></script>
+  <script src="ui/ui-status-controller.js"></script>
   <script src="automation/locale-from-country.js"></script>
   <script src="ui/ui-groups.js"></script>
   <script src="ui/ui-proxy.js?v=20260720-proxy"></script>

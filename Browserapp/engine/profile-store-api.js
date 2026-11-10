@@ -9,6 +9,7 @@
 
 const { assertProfileId, assertSafeProfileChild, validateProfileRootSecure } = require('../automation/isolation');
 const { prepareProfileSync } = require('./profile-sync');
+const { assertProfileNotMaintained, acquireProfileMaintenance } = require('./profile-maintenance');
 const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
@@ -30,8 +31,8 @@ module.exports = {
     return { profile: structuredClone(profile), rev: this.profiles.revisionOf(safeId) };
   },
 
-  async syncProfiles(values) {
-    const staged = prepareProfileSync(this, values);
+  async syncProfiles(values, options = {}) {
+    const staged = prepareProfileSync(this, values, options);
     publishProfileSync(this, staged);
     // Do not drop unknown engine profiles here — deleteProfiles is the explicit path.
     // persist() coalesces the burst, checks row differences and propagates write
@@ -97,6 +98,7 @@ module.exports = {
   async deleteProfiles(ids, deleteData = true) {
     if (!Array.isArray(ids) || ids.length > 200) throw new Error('Invalid profile selection');
     const safeIds = [...new Set(ids.map(assertProfileId))];
+    for (const id of safeIds) assertProfileNotMaintained(this, id);
     this.deletingProfiles ||= new Set();
     if (safeIds.some((id) => this.deletingProfiles.has(id))) {
       throw Object.assign(new Error('Profile deletion is already in progress'), { code: 'PROFILE_DELETING' });
@@ -192,6 +194,7 @@ module.exports = {
   async trashProfiles(ids) {
     if (!Array.isArray(ids) || ids.length > 200) throw new Error('Invalid profile selection');
     const safeIds = [...new Set(ids.map(assertProfileId))];
+    for (const id of safeIds) assertProfileNotMaintained(this, id);
     // Same operation guard as deleteProfiles: trashing shares the deletingProfiles
     // set so a start() racing in mid-transition is rejected by the existing check
     // in engine.js, and a second trash/delete of the same ids cannot interleave
@@ -262,6 +265,7 @@ module.exports = {
     if (!Array.isArray(ids) || ids.length > 200) throw new Error('Invalid profile selection');
     this.invalidateStatusCache?.();
     const safeIds = [...new Set(ids.map(assertProfileId))];
+    for (const id of safeIds) assertProfileNotMaintained(this, id);
     const restored = [];
     for (const id of safeIds) {
       const profile = this.profiles.get(id);
@@ -294,25 +298,27 @@ module.exports = {
   /** Clear cache + cookies on disk for a stopped profile. */
   async clearProfileCacheAndCookies(profileId) {
     const id = assertProfileId(profileId);
-    if (this.running.has(id) || this.starting.has(id) || this.stopping.has(id)) throw new Error('请先关闭窗口再清除缓存及 Cookie');
-    const root = this.profileRoot(id);
-    await this.clearProfileCache(root);
-    const base = path.join(root, 'Default');
-    for (const name of [
-      path.join('Network', 'Cookies'),
-      path.join('Network', 'Cookies-journal'),
-      'Cookies',
-      'Cookies-journal',
-    ]) {
-      const target = await assertSafeProfileChild(root, path.join(base, name));
-      await fsp.rm(target, { recursive: true, force: true }).catch(() => {});
-    }
-    const profile = this.profiles.get(id);
-    if (profile) {
-      // Fresh-object write, same reason as trashProfiles above.
-      this.profiles.set(id, { ...profile, cookies: '', updatedAt: new Date().toISOString() });
-      await this.persist().catch(() => {});
-    }
+    const lease = acquireProfileMaintenance(this, [id]);
+    try {
+      const root = this.profileRoot(id);
+      await this.clearProfileCache(root);
+      const base = path.join(root, 'Default');
+      for (const name of [
+        path.join('Network', 'Cookies'),
+        path.join('Network', 'Cookies-journal'),
+        'Cookies',
+        'Cookies-journal',
+      ]) {
+        const target = await assertSafeProfileChild(root, path.join(base, name));
+        await fsp.rm(target, { recursive: true, force: true }).catch(() => {});
+      }
+      const profile = this.profiles.get(id);
+      if (profile) {
+        // Fresh-object write, same reason as trashProfiles above.
+        this.profiles.set(id, { ...profile, cookies: '', updatedAt: new Date().toISOString() });
+        await this.persist();
+      }
+    } finally { lease.release(); }
     return { success: true, id };
   },
 

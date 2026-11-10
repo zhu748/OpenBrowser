@@ -84,38 +84,17 @@ async function collectProfileDataFiles(profileRoot, profile, limits = {}) {
 }
 
 async function restoreProfileDataFiles(profileRoot, files) {
-  if (!files || typeof files !== 'object') return 0;
-  const base = path.resolve(profileRoot, 'Default');
-  const entries = Object.entries(files);
-  if (entries.length > MAX_BROWSER_DATA_FILES) throw new Error('备份文件数量超过安全限制');
-  let count = 0;
-  let totalBytes = 0;
-  for (const [rel, b64] of entries) {
-    if (!rel || typeof b64 !== 'string') continue;
-    // Reject absolute / drive-relative paths before any normalization that strips leading slashes
-    const raw = String(rel).replace(/\0/g, '');
-    if (path.isAbsolute(raw) || path.win32.isAbsolute(raw) || path.posix.isAbsolute(raw)) continue;
-    if (/^[a-zA-Z]:[\\/]/.test(raw) || raw.startsWith('\\\\')) continue;
-    const safe = raw.replace(/^[/\\]+/, '').replace(/\\/g, '/');
-    if (!safe || safe.includes('..') || safe.includes('\0')) continue;
-    // Block path segments that escape after resolve (Windows separators / alternate roots)
-    const abs = path.resolve(base, safe);
-    if (abs !== base && !abs.startsWith(base + path.sep)) continue;
-    // Extra Windows case-insensitive guard
-    const absKey = process.platform === 'win32' ? abs.toLowerCase() : abs;
-    const baseKey = process.platform === 'win32' ? base.toLowerCase() : base;
-    if (absKey !== baseKey && !absKey.startsWith(baseKey + path.sep)) continue;
-    const decoded = Buffer.from(b64, 'base64');
-    if (decoded.length > MAX_BROWSER_FILE_BYTES) throw new Error('备份单文件超过安全限制');
-    totalBytes += decoded.length;
-    if (totalBytes > MAX_BROWSER_DATA_BYTES) throw new Error('备份文件总大小超过安全限制');
-    await assertSafeProfileChild(profileRoot, abs);
-    await fsp.mkdir(path.dirname(abs), { recursive: true });
-    await assertSafeProfileChild(profileRoot, abs);
-    await fsp.writeFile(abs, decoded, { flag: 'w', mode: 0o600 });
-    count += 1;
+  const { prepareFileRestore } = require('./file-restore');
+  const transaction = await prepareFileRestore([{ root: profileRoot, files: files || {} }]);
+  try { await transaction.commit(); }
+  catch (error) {
+    try { await transaction.rollback(); }
+    catch (rollbackError) { throw new AggregateError([error, rollbackError], '浏览器文件恢复及回滚失败'); }
+    throw error;
   }
-  return count;
+  const warnings = await transaction.finish();
+  if (warnings.length) console.warn('[cloud] restore staging cleanup failed:', warnings);
+  return transaction.count;
 }
 
 module.exports = { collectProfileDataFiles, restoreProfileDataFiles };

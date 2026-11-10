@@ -74,3 +74,5 @@ npm run selftest:all
 4. **大型模块**：live-sync-v5.js（2,401 行）、browser-kernel.js（2,206 行）和 rpa-engine.js（1,869 行）仍承担较多编排工作，后续优先按资源生命周期边界拆分，避免仅为缩短文件增加间接调用。
 5. **大包主线程开销**：JSON 编解码和 AES 操作仍在主线程；本轮仅把 KDF 异步化。进一步降低大包峰值内存和卡顿，需要流式包格式或完整 Worker 管线及兼容性设计。
 6. **平台验证**：本轮未修改 Rust；环境无 Cargo，未编译或运行 Rust 测试。未运行真实 Electron/Chromium、多实例负载及 Windows/macOS 原生端到端检查。现有纯 Node 通过不替代这些验证。
+
+本报告后的维护占用、文件失败回滚、恢复语义与运行状态增量修复见 [后续优化记录](2026-11-10-restore-status-followup.md)。

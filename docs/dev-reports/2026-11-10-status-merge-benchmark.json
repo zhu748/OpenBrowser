@@ -1,0 +1,30 @@
+{
+  "baseline": "c8c4102",
+  "node": "v24.22.1",
+  "measuredAt": "2026-11-10T15:07:11.903Z",
+  "scope": "in-memory status merge only; no desktop or browser workload",
+  "parity": true,
+  "profiles": 10000,
+  "added": 1000,
+  "before": {
+    "medianMs": 94.23542399999997,
+    "samplesMs": [
+      98.35537699999998,
+      89.28970499999997,
+      96.02272600000003,
+      93.941416,
+      94.23542399999997
+    ]
+  },
+  "after": {
+    "medianMs": 1.429497000000083,
+    "samplesMs": [
+      1.429497000000083,
+      0.8307740000000194,
+      0.6053540000000339,
+      1.4950160000000778,
+      1.5523580000000265
+    ]
+  },
+  "unchangedPreservesArray": true
+}

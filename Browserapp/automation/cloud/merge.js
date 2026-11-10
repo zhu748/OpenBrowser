@@ -75,7 +75,9 @@ function mergeProfileState(localList = [], remoteList = [], mode = 'merge') {
     const remoteTs = profileStamp(remoteItem);
     stats.conflicts += 1;
     let winner;
-    if (remoteTs && localTs && remoteTs !== localTs) {
+    if (mode === 'remote-preferred') {
+      winner = remoteItem;
+    } else if (remoteTs && localTs && remoteTs !== localTs) {
       winner = remoteTs >= localTs ? remoteItem : localItem;
     } else if (remoteTs && !localTs) {
       winner = remoteItem;

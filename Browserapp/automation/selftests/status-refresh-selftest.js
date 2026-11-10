@@ -1,0 +1,72 @@
+'use strict';
+
+const assert = require('node:assert/strict');
+const { BrowserEngine } = require('../../engine');
+const { TrackedProfileMap } = require('../../engine/profile-revisions');
+const { createStatusController, mergeStatusDelta } = require('../../ui/ui-status-controller');
+
+async function main() {
+  const engine = Object.assign(Object.create(BrowserEngine.prototype), {
+    profiles: new TrackedProfileMap([['env-1', { id: 'env-1', cookies: 'private' }], ['env-2', { id: 'env-2' }]]),
+    running: new Map(), networkInfo: new Map(), assignments: new Map(), listeners: new Set(),
+  });
+  let full;
+  const configRev = engine.profiles.revisionOf('env-1');
+  const runtime = { running: false, port: 0 };
+  engine.publicRunning = (id) => id === 'env-1' ? { ...runtime } : { running: false, port: 0 };
+  engine.invalidateStatusCache();
+  full = engine.statusDelta(null);
+  for (const update of [{ running: true, port: 9222 }, { port: 9333 }, { running: false, port: 0 }]) {
+    Object.assign(runtime, update);
+    engine.emit({ type: 'status', id: 'env-1' });
+    const delta = engine.statusDelta(full.watermark);
+    assert.deepEqual(delta.rows.map((row) => row.id), ['env-1']);
+    assert.equal(delta.rows[0].running, runtime.running);
+    assert.equal(delta.rows[0].port, runtime.port);
+    assert.equal(delta.rows[0].rev, configRev, 'runtime changes must not invalidate editor base revisions');
+    assert.equal(delta.rows[0].cookies, '', 'new status lane retains redaction');
+    full = delta;
+  }
+  engine.networkInfo.set('env-1', { ip: '192.0.2.1' });
+  engine.assignments.set('env-1', new Set(['extension']));
+  engine.invalidateStatusCache();
+  const changed = engine.statusDelta(full.watermark);
+  assert.equal(changed.rows.length, 1);
+  assert.deepEqual(changed.rows[0].assignedExtensions, ['extension']);
+  assert.equal(engine.statusDelta(changed.watermark).rows.length, 0);
+  engine.profiles.set('env-1', { id: 'env-1', name: 'changed' });
+  assert.equal(engine.statusDelta(changed.watermark).rows[0].name, 'changed', 'Map edits invalidate cached status without a second hook');
+  engine.profiles.delete('env-2');
+  assert.equal(engine.status().length, 1);
+  assert.equal(engine._statusStamps.has('env-2'), false, 'removed IDs do not grow status bookkeeping');
+  const oldToken = engine.status()[0].statusRev;
+  engine._statusStamps.clear(); engine._statusInstance = null; engine.invalidateStatusCache();
+  assert.notEqual(engine.status()[0].statusRev, oldToken, 'a new engine incarnation cannot share an old watermark');
+
+  let reads = 0;
+  const rows = Array.from({ length: 10000 }, (_, id) => ({ get id() { reads += 1; return id; } }));
+  const delta = { full: false, rows: Array.from({ length: 1000 }, (_, i) => ({ id: 10000 + i })), removed: [] };
+  assert.equal(mergeStatusDelta(rows, delta).length, 11000);
+  assert.ok(reads < 5 * rows.length, 'delta append must not scan the whole fleet per new row');
+  assert.equal(mergeStatusDelta(rows, { full: false, rows: [] }), rows);
+
+  let current = [];
+  let resolve;
+  let calls = 0;
+  const controller = createStatusController({ getRows: () => current, setRows: (next) => { current = next; },
+    fetchDelta: (watermark) => { calls += 1; assert.equal(watermark, null); return new Promise((done) => { resolve = done; }); },
+    fetchFull: async () => { throw new Error('full response already contains rows'); } });
+  const first = controller.refresh();
+  assert.equal(controller.refresh(), first, 'scheduled and direct refresh share IPC');
+  resolve({ full: true, rows: [{ id: 'first', statusRev: 'opaque' }] }); await first;
+  assert.equal(current[0].id, 'first');
+  assert.equal(calls, 1);
+  current = [];
+  const stale = controller.refresh();
+  current = [{ id: 'edited', statusRev: 'new' }];
+  resolve({ full: true, rows: [{ id: 'stale' }] });
+  assert.equal(await stale, false);
+  assert.equal(current[0].id, 'edited', 'an in-flight old reply cannot overwrite a newer editor result');
+  console.log('STATUS_REFRESH_SELFTEST OK (runtime delta, stable edit revisions, restart tokens, cache lifetime, linear merge, IPC races)');
+}
+main().catch((error) => { console.error(error); process.exitCode = 1; });

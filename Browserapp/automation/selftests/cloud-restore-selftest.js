@@ -14,7 +14,7 @@ async function main() {
   const remote = { id: 'env-1', name: 'remote', updatedAt: '2026-01-01', _dataFiles: { 'Network/Cookies': Buffer.from('remote').toString('base64') } };
   const cookieFile = path.join(root, 'env-1/Default/Network/Cookies');
   const engine = { profiles: new Map([[local.id, local]]), getProfileDataRoot: () => root,
-    running: new Map(), starting: new Map(), stopping: new Map(), async syncProfiles() {} };
+    running: new Map(), starting: new Map(), stopping: new Map(), async syncProfiles(profiles) { for (const profile of profiles) this.profiles.set(profile.id, profile); } };
   let settings = {};
   let writes = 0;
   const proxyStore = { list: () => [], async replaceAll() {} };

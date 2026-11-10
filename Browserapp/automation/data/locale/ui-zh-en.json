@@ -281,7 +281,6 @@
   "下次启动实际使用": "Used on next launch",
   "正在检测浏览器…": "Checking browser…",
   "智能合并（推荐）": "Smart merge (recommended)",
-  "云端完全覆盖本地": "Cloud overwrites local",
   "加密密码（可选）": "Passphrase (optional)",
   "批量更新网络模式": "Batch update network",
   "每次打开刷新指纹": "Refresh fingerprint on each open",
@@ -985,5 +984,7 @@
   "网站定位权限已禁止": "Website location permission is blocked",
   "图形接口": "Graphics APIs",
   "摄像头和麦克风权限已禁止": "Camera and microphone permissions are blocked",
-  "：": ": "
+  "：": ": ",
+  "云端优先（保留本地独有环境）": "Prefer cloud (keep local-only environments)",
+  "云端优先": "Prefer cloud"
 }

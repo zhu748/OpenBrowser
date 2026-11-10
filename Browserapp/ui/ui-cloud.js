@@ -173,7 +173,7 @@ function applyCloudForm(cloud) {
   if (badge) badge.textContent = c.enabled ? (c.lastSyncAt ? tx('已同步') : tx('已启用')) : tx('未配置');
   const status = $('#cloud-sync-status');
   if (status) {
-    const modeLabel = ({ merge: '智能合并', 'local-wins': '仅新增', overwrite: '覆盖' })[c.restoreMode || 'merge'] || '智能合并';
+    const modeLabel = ({ merge: '智能合并', 'local-wins': '仅新增', overwrite: '云端优先' })[c.restoreMode || 'merge'] || '智能合并';
     const providerLabel = ({
       local: '本地', webdav: 'WebDAV', github: 'GitHub', gdrive: '谷歌云',
       onedrive: '微软云', quark: '夸克云', baidu: '百度云',
@@ -213,14 +213,10 @@ function formatMergeStats(stats) {
 function applyRestoredProfiles(result) {
   if (!result?.profiles) return;
   ui.profiles = result.profiles.map((p) => normalizeProfileSettings(p));
-  if (Array.isArray(result.groups) && result.groups.length) {
+  if (Array.isArray(result.groups)) {
     ui.groups = result.groups;
   }
   save();
-  // fire-and-forget: restore already replaced the in-memory list, so keep the
-  // UI responsive, but surface a failed engine sync instead of swallowing it
-  // (the engine-side profile list would silently drift from ui.profiles).
-  window.ops.syncProfiles(ui.profiles).catch((error) => log('Error', '环境同步失败: ' + ((error && error.message) || error)));
   app.renderProfiles?.();
   refreshProxies?.().catch?.(() => {});
 }
@@ -330,7 +326,7 @@ $('#cloud-restore-now')?.addEventListener('click', (event) => withCloudGuard(eve
   const cloud = readCloudForm();
   const mode = cloud.restoreMode || 'merge';
   const warn = mode === 'overwrite'
-    ? '将用云端备份完全覆盖本地环境列表，本地独有环境会丢失。确定？'
+    ? '同 ID 环境以云端为准，本地独有环境会保留。继续？'
     : (mode === 'local-wins'
       ? '仅从云端新增本地没有的环境，已有环境不变。继续？'
       : '智能合并：同 ID 取较新版本，本地独有环境会保留。继续？');
@@ -369,7 +365,7 @@ $('#cloud-import-file')?.addEventListener('click', (event) => withCloudGuard(eve
   const cloud = readCloudForm();
   const mode = cloud.restoreMode || 'merge';
   const warn = mode === 'overwrite'
-    ? '导入将完全覆盖本地环境列表。确定？'
+    ? '同 ID 环境以备份为准，本地独有环境会保留。继续？'
     : '导入将按当前恢复策略合并。继续？';
   const approved = await app.confirmAction?.({
     title: tx('导入备份文件'),
