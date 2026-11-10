@@ -13,6 +13,7 @@ const {
 } = require('./template-sync');
 const { findUnsupportedSteps } = require('./rpa-engine');
 const { createCoalescedWriter } = require('./coalesced-writer');
+const { enforceStoreBudget } = require('./rpa-store-budget');
 
 /**
  * Plan / task / template store for RPA (JSON file).
@@ -445,7 +446,9 @@ class RpaStore {
       let handle = null;
       try {
         handle = await fsp.open(temporary, 'wx', 0o600);
-        await handle.writeFile(JSON.stringify(this.data, null, 2), 'utf8');
+        // Match the compact UTF-8 size used by enforceStoreBudget and avoid
+        // writing indentation for every task/log/step on each save.
+        await handle.writeFile(JSON.stringify(this.data), 'utf8');
         await handle.sync();
         await handle.close();
         handle = null;
@@ -487,37 +490,7 @@ class RpaStore {
    * and templates are never touched; pending/running tasks are never dropped.
    */
   enforceStoreBudget() {
-    // Track sizes per task instead of re-serializing the whole store after
-    // every single eviction (O(n^2) stringify on a large store).
-    const taskSize = (task) => {
-      try { return Buffer.byteLength(JSON.stringify(task) || 'null', 'utf8'); }
-      catch (_) { return 0; }
-    };
-    let total;
-    try { total = Buffer.byteLength(JSON.stringify(this.data), 'utf8'); }
-    catch (_) { return; }
-    if (total <= this.sizeLimitBytes) return;
-    const overhead = Math.max(0, total - this.data.tasks.reduce((sum, task) => sum + taskSize(task), 0));
-    const fits = () => overhead + this.data.tasks.reduce((sum, task) => sum + taskSize(task), 0) <= this.sizeLimitBytes;
-    const ACTIVE = new Set(['pending', 'running']);
-    for (let i = this.data.tasks.length - 1; i >= 1 && !fits(); i -= 1) {
-      if (!ACTIVE.has(String(this.data.tasks[i]?.status || ''))) {
-        this.data.tasks.splice(i, 1);
-      }
-    }
-    if (fits()) return;
-    for (const task of [...this.data.tasks].reverse()) {
-      if (fits()) return;
-      if (Array.isArray(task.process_logs) && task.process_logs.length) task.process_logs = [];
-    }
-    for (const task of [...this.data.tasks].reverse()) {
-      if (fits()) return;
-      if (task.process_result && typeof task.process_result === 'object') {
-        delete task.process_result.variables;
-        delete task.process_result.exports;
-        task.process_result.__shed = 'result payload dropped to keep rpa-store.json under the size limit';
-      }
-    }
+    enforceStoreBudget(this.data, this.sizeLimitBytes);
   }
 
   // ---------- plans ----------

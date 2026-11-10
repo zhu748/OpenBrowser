@@ -64,6 +64,29 @@ check('zip reader reads stored entries byte-exact', () => {
   assert.deepStrictEqual([...archive.read('assets/raw.bin')], [0, 1, 2, 3, 4]);
 });
 
+check('zip reader bounds actual inflation before accepting a forged size', () => {
+  const archive = buildZip([{ name: 'large.txt', data: 'x'.repeat(1024 * 1024), method: 'deflate' }]);
+  const eocd = zipReader.findEndOfCentralDirectory(archive);
+  const cd = archive.readUInt32LE(eocd + 16);
+  archive.writeUInt32LE(8, cd + 24);
+  // The zlib bound, rather than an after-the-fact length check, rejects this.
+  assert.throws(() => zipReader.open(archive).read('large.txt'), /exceeds declared size/);
+});
+
+check('zip reader accepts empty stored and deflated entries', () => {
+  for (const method of ['store', 'deflate']) {
+    const archive = zipReader.open(buildZip([{ name: 'empty', data: '', method }]));
+    assert.strictEqual(archive.read('empty').length, 0);
+  }
+});
+
+check('zip reader rejects stored size mismatches before copying data', () => {
+  const archive = buildZip([{ name: 'raw', data: '12345678', method: 'store' }]);
+  const cd = archive.readUInt32LE(zipReader.findEndOfCentralDirectory(archive) + 16);
+  archive.writeUInt32LE(1, cd + 24);
+  assert.throws(() => zipReader.open(archive).read('raw'), /stored size mismatch/);
+});
+
 check('zip reader parses json entries', () => {
   const archive = zipReader.open(SAMPLE_ZIP);
   assert.strictEqual(archive.readJson('manifest.json').version, '2.4.1');

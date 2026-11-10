@@ -103,8 +103,21 @@ async function run() {
     await deletion;
     assert(!engine.deletingProfiles.has(failedId));
   } finally { resume(); fsp.rm = originalRm; }
+  // SQLite deletion is one transaction, and a rejected transaction must not
+  // remove a subset of the profiles from the engine's live state.
+  engine.usingSqlite = true;
+  engine.sqliteStore = { deleteProfiles: () => { throw new Error('synthetic database failure'); } };
+  await assert.rejects(engine.deleteProfiles(['env-001', 'env-002'], false), /synthetic database failure/);
+  assert(engine.profiles.has('env-001') && engine.profiles.has('env-002'));
+  assert(engine.assignments.has('env-001') && engine.assignments.has('env-002'));
+  const databaseCalls = [];
+  engine.sqliteStore.deleteProfiles = (ids) => { databaseCalls.push(ids); };
+  engine.persist = async () => {};
+  const databaseDeleted = await engine.deleteProfiles(['env-001', 'env-002', 'env-001'], false);
+  assert.strictEqual(databaseDeleted.deleted, 2);
+  assert.deepStrictEqual(databaseCalls, [['env-001', 'env-002']], 'one database transaction per batch, with duplicate ids removed');
   await fsp.rm(root, { recursive: true, force: true });
-  console.log('PROFILE_BATCH_SELFTEST_OK created=3 deleted=3 stopped=1 data_delete=2 data_retain=1 delete_failure_consistency=1 extension_inheritance=3');
+  console.log('PROFILE_BATCH_SELFTEST_OK lifecycle, inheritance, disk/database failure consistency and batched deletion');
 }
 
 run().catch((error) => { console.error(error); process.exitCode = 1; });

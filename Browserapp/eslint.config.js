@@ -96,6 +96,18 @@ module.exports = [
         clearProfileCache: 'writable',
         trashProfile: 'writable',
         renderProfiles: 'writable',
+        // Group domain functions moved from renderer.js to ui/ui-groups.js.
+        renderGroupsPage: 'writable',
+        openGroupDialog: 'writable',
+        saveGroupFromDialog: 'writable',
+        deleteGroup: 'writable',
+        assignSelectedToGroup: 'writable',
+        GROUP_COLORS: 'readonly',
+        createGroupId: 'writable',
+        normalizeGroup: 'writable',
+        findGroup: 'writable',
+        rebuildGroupCounts: 'writable',
+        countProfilesInGroup: 'writable',
         renderProxies: 'writable',
         refreshProxies: 'writable',
         renderLogs: 'writable',
@@ -307,6 +319,22 @@ module.exports = [
       // Non-blocking hygiene (visible, does not fail the gate yet)
       'no-unused-vars': 'warn',
       'no-empty': 'off', // ~300 intentional empty catches; needs a sweep first
+    },
+  },
+  {
+    // index.html loads this as a classic script. Its existing public function
+    // declarations are shared with renderer.js, as declared by /* exported */.
+    files: ['ui/ui-groups.js'],
+    languageOptions: {
+      sourceType: 'script',
+      // The owner declares these names; only consumers need ambient globals.
+      globals: {
+        renderGroupsPage: 'off',
+        openGroupDialog: 'off',
+        saveGroupFromDialog: 'off',
+        deleteGroup: 'off',
+        assignSelectedToGroup: 'off',
+      },
     },
   },
 ];

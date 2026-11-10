@@ -129,7 +129,6 @@ function main() {
   assert.throws(() => resolveSafeRpaPath('../../../../etc/passwd'), /RPA file path/);
 
   // --- engine: attach inject + refresh order + extract warn ---
-  const engineSrc = fs.readFileSync(path.join(__dirname, 'engine.js'), 'utf8');
   // applyFingerprintToSession moved to the engine/fingerprint-injection.js mixin; its
   // call sites (the _start attach handler) stay in engine.js.
   const fpInjectSrc = fs.readFileSync(path.join(__dirname, 'engine', 'fingerprint-injection.js'), 'utf8');
@@ -144,7 +143,8 @@ function main() {
   const extractPos = prepareBody.indexOf('if (extractUrl)');
   assert.ok(refreshPos >= 0 && extractPos >= 0 && refreshPos < extractPos, 'refresh must run before extract on start');
   assert.ok(profileProxySrc.includes("code: 'extract-error'"), 'extract failure must warn');
-  assert.ok(engineSrc.includes("profiles: [...this.profiles.values()]"), 'engine must persist profiles with secrets');
+  const persistenceSrc = fs.readFileSync(path.join(__dirname, 'engine', 'persistence.js'), 'utf8');
+  assert.ok(persistenceSrc.includes("profiles: [...this.profiles.values()]"), 'engine must persist profiles with secrets');
   assert.ok(!profileProxySrc.includes('const url = refreshUrl || extractUrl'), 'refresh must not fall back extractUrl as refresh target');
 
   // --- renderer: secrets redaction ---

@@ -17,9 +17,7 @@ module.exports = {
   async syncProfiles(values) {
     if (!Array.isArray(values) || values.length > 1000) throw new Error('Invalid profile list');
     this.invalidateStatusCache?.();
-    const existingIds = [...this.profiles.keys()];
-    const globallyEnabled = existingIds.length ? [...this.extensions.keys()].filter((extensionId) => existingIds.every((profileId) => (this.assignments.get(profileId) || new Set()).has(extensionId))) : [];
-    let assignmentsChanged = false;
+    const globallyEnabled = this.listExtensions().filter((extension) => extension.enabledAll).map((extension) => extension.id);
     const incomingIds = new Set();
     for (const value of values) {
       // Incremental sanitize: the renderer re-sends the whole list on every
@@ -126,7 +124,7 @@ module.exports = {
         for (const [extensionId, extension] of this.extensions) {
           if (extension.builtIn) assigned.add(extensionId);
         }
-        this.assignments.set(merged.id, assigned); assignmentsChanged = true;
+        this.assignments.set(merged.id, assigned);
       }
     }
     // Do not drop unknown engine profiles here — deleteProfiles is the explicit path.
@@ -223,20 +221,19 @@ module.exports = {
       }
     }
 
-    // Phase 3 — commit in-memory deletion only after the directories are gone,
-    // then persist once for the whole batch (persist() debounces/coalesces
-    // anyway; the per-item persist only guarded against a partial batch, and a
-    // failure here still leaves engine state and disk disagreeing until the
-    // next write — same exposure, one write instead of N).
-    for (const id of safeIds) {
-      if (!this.profiles.has(id)) continue;
+    // Phase 3 — after directory removal, commit the database batch before
+    // removing live records, then persist the remaining engine state once.
+    const existingIds = safeIds.filter((id) => this.profiles.has(id));
+    if (existingIds.length && this.usingSqlite && this.sqliteStore) {
+      // One transaction for the batch. A database failure must leave the
+      // in-memory records intact instead of committing a partial removal.
+      this.sqliteStore.deleteProfiles(existingIds);
+    }
+    for (const id of existingIds) {
       this.profiles.delete(id);
       this.assignments.delete(id);
       this.networkInfo.delete(id);
       if (this._syncProfilesRaw) this._syncProfilesRaw.delete(id);
-      if (this.usingSqlite && this.sqliteStore) {
-        this.sqliteStore.deleteProfiles([id]);
-      }
       deleted.push(id);
     }
     if (deleted.length) await this.persist();

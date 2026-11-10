@@ -1,12 +1,9 @@
 const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
-const crypto = require('crypto');
 const os = require('os');
-const { pathToFileURL } = require('url');
 const { spawn } = require('child_process');
 const cdp = require('./cdp');
-const { addChromeStoreExtension } = require('./store-extension');
 let proxyForwarderModule = {};
 try {
   proxyForwarderModule = require('./proxy-forwarder');
@@ -22,31 +19,8 @@ const { buildWorkerInjectionScript } = require('./automation/fingerprint');
 const { ensureStartPageServer } = require('./automation/start-page-server');
 const { killProcessTree } = require('./automation/protocol/cross-platform');
 const isolation = require('./automation/isolation');
-const { lockPath, releaseProfileLock, scanProcessesUsingProfileAsync, isPidAlive, auditIsolation, isSystemBrowserExecutable, isPathInsideOrEqual, validateDataRootIsolationSecure, assertProfileId, assertSafeProfileChild } = isolation;
+const { lockPath, releaseProfileLock, scanProcessesUsingProfileAsync, isPidAlive, auditIsolation, isSystemBrowserExecutable, validateDataRootIsolationSecure, assertProfileId, assertSafeProfileChild } = isolation;
 const { BrowserKernelManager } = require('./automation/browser-kernel');
-const userAgentModule = require('./automation/user-agent');
-if (!userAgentModule.__navigatorProtoHardened) {
-  userAgentModule.__navigatorProtoHardened = true;
-  const origBuildUa = userAgentModule.buildUaInjectionScript;
-  if (typeof origBuildUa === 'function') {
-    userAgentModule.buildUaInjectionScript = function (uaProfile) {
-      let script = origBuildUa.call(this, uaProfile);
-      script = script.replace(
-        'if (typeof Navigator !== "undefined" && (receiver instanceof Navigator || Object.prototype.toString.call(receiver) === "[object Navigator]")) return true;',
-        'if (typeof Navigator !== "undefined" && receiver !== Navigator.prototype && (receiver instanceof Navigator || Object.prototype.toString.call(receiver) === "[object Navigator]")) return true;'
-      );
-      script = script.replace(
-        'if (typeof WorkerNavigator !== "undefined" && (receiver instanceof WorkerNavigator || Object.prototype.toString.call(receiver) === "[object WorkerNavigator]")) return true;',
-        'if (typeof WorkerNavigator !== "undefined" && receiver !== WorkerNavigator.prototype && (receiver instanceof WorkerNavigator || Object.prototype.toString.call(receiver) === "[object WorkerNavigator]")) return true;'
-      );
-      script = script.replace(/typeof secret === "string" && secret\.length > 0/g, 'secret === "__UA_BRIDGE_TOKEN__"');
-      return script;
-    };
-  }
-}
-
-
-
 const STOP_ALL_ITEM_TIMEOUT_MS = process.platform === 'win32' ? 22000 : 12000;
 
 const {
@@ -63,10 +37,7 @@ const {
   formatBrowserStartupError,
   writeBrowserStartupDiagnostic,
   stopIpcStubForWindow,
-  KERNEL_POLICY_VERSION,
   writeRawAtomically,
-  writeJsonAtomically,
-  assertExtensionTreeSafe,
   sanitizeProfile: sanitizeProfileData,
 } = require("./engine/index");
 const { sanitizeInjectionScript, installCdpHardening } = require('./engine/cdp-hardening');
@@ -316,124 +287,6 @@ class BrowserEngine {
     }
     if (changed) await this.persist();
     return changed;
-  }
-
-  persist() {
-    // Coalesce bursts (syncProfiles, batch start/stop, extension assigns)
-    // into one queued write: each persist() re-serializes the whole state and
-    // (for the SQLite path) re-encrypts every profile.
-    if (this._persistDebounceTimer) {
-      clearTimeout(this._persistDebounceTimer);
-    } else {
-      this._persistDebouncePending = new Promise((resolve, reject) => {
-        this._persistDebounceResolve = resolve;
-        this._persistDebounceReject = reject;
-      });
-    }
-    this._persistDebounceTimer = setTimeout(() => {
-      this._persistDebounceTimer = null;
-      this._persistNow().then(this._persistDebounceResolve, this._persistDebounceReject);
-    }, 50);
-    // The debounce timer stays unref'd so a quitting app never hangs on it,
-    // but an unref'd timer alone is NOT enough: in a CLI host (zoom-inspect,
-    // engine.init in plain node) it is the only pending work, the loop drains
-    // before the 50ms fires, and every awaiter of this promise deadlocks
-    // while the write is silently lost. A ref'd hold-open timer keeps the
-    // process alive exactly while the write is pending and detaches the
-    // moment it settles.
-    this._persistDebounceTimer.unref?.();
-    if (this._persistHoldOpen) clearTimeout(this._persistHoldOpen);
-    this._persistHoldOpen = setTimeout(() => {}, 60000);
-    const releaseHold = () => {
-      if (this._persistHoldOpen) { clearTimeout(this._persistHoldOpen); this._persistHoldOpen = null; }
-    };
-    this._persistDebouncePending.then(releaseHold, releaseHold);
-    return this._persistDebouncePending;
-  }
-
-  _persistNow() {
-    if (this.usingSqlite && this.sqliteStore) {
-      const write = async () => {
-        this.sqliteStore.setMeta('kernelPolicyVersion', KERNEL_POLICY_VERSION);
-        this.sqliteStore.setMeta('preferIndependentKernel', this.preferIndependentKernel);
-        this.sqliteStore.setMeta('allowSystemBrowserFallback', this.allowSystemBrowserFallback);
-        this.sqliteStore.setMeta('systemBrowserPath', this.systemBrowserPath);
-
-        this.sqliteStore.saveExtensions([...this.extensions.values()]);
-        for (const [profileId, assignedSet] of this.assignments.entries()) {
-          this.sqliteStore.setAssignments(profileId, assignedSet);
-        }
-        // Diffed write: the debounced persist runs after every UI edit, and
-        // re-encrypting all rows each time dominated the write cost.
-        if (typeof this.sqliteStore.saveProfilesDiffed === 'function') this.sqliteStore.saveProfilesDiffed([...this.profiles.values()]);
-        else this.sqliteStore.saveProfiles([...this.profiles.values()]);
-      };
-      const previous = this._persistQueue || Promise.resolve();
-      const queued = previous.then(write, write);
-      this._persistQueue = queued.catch(() => {});
-      return queued;
-    }
-
-    const assignments = Object.fromEntries([...this.assignments].map(([id, values]) => [id, [...values]]));
-    const payload = JSON.stringify({
-      extensions: [...this.extensions.values()],
-      assignments,
-      profiles: [...this.profiles.values()],
-      kernelPolicyVersion: KERNEL_POLICY_VERSION,
-      preferIndependentKernel: this.preferIndependentKernel,
-      allowSystemBrowserFallback: this.allowSystemBrowserFallback,
-      systemBrowserPath: this.systemBrowserPath,
-    }, null, 2);
-    const write = () => writeJsonAtomically(this.stateFile, payload);
-    const previous = this._persistQueue || Promise.resolve();
-    const queued = previous.then(write, write);
-    this._persistQueue = queued.catch(() => {});
-    return queued;
-  }
-
-  flushPersistence() {
-    // The quit path must wait for a pending debounced write, not just the
-    // already-started one.
-    const pending = this._persistDebounceTimer
-      ? Promise.resolve().then(() => {
-          clearTimeout(this._persistDebounceTimer);
-          this._persistDebounceTimer = null;
-          return this._persistNow();
-        }).then(this._persistDebounceResolve, this._persistDebounceReject)
-      : null;
-    return pending || this._persistQueue || Promise.resolve();
-  }
-
-  dumpToJson(indent = 2) {
-    if (this.usingSqlite && this.sqliteStore) {
-      return this.sqliteStore.dumpToJson(indent);
-    }
-    const assignments = Object.fromEntries([...this.assignments].map(([id, values]) => [id, [...values]]));
-    return JSON.stringify({
-      extensions: [...this.extensions.values()],
-      assignments,
-      profiles: [...this.profiles.values()],
-      kernelPolicyVersion: KERNEL_POLICY_VERSION,
-      preferIndependentKernel: this.preferIndependentKernel,
-      allowSystemBrowserFallback: this.allowSystemBrowserFallback,
-      systemBrowserPath: this.systemBrowserPath,
-    }, null, indent);
-  }
-
-  exportEngineState() {
-    if (this.usingSqlite && this.sqliteStore) {
-      return this.sqliteStore.exportEngineState();
-    }
-    const assignments = Object.fromEntries([...this.assignments].map(([id, values]) => [id, [...values]]));
-    return {
-      extensions: [...this.extensions.values()],
-      assignments,
-      profiles: [...this.profiles.values()],
-      kernelPolicyVersion: KERNEL_POLICY_VERSION,
-      preferIndependentKernel: this.preferIndependentKernel,
-      allowSystemBrowserFallback: this.allowSystemBrowserFallback,
-      systemBrowserPath: this.systemBrowserPath,
-    };
   }
 
   kernelStatus() {
@@ -1511,97 +1364,6 @@ class BrowserEngine {
     this._statusCache = null;
   }
 
-  async readExtension(directory, builtIn = false) {
-    const extensionPath = await assertExtensionTreeSafe(directory);
-    const manifestPath = path.join(extensionPath, 'manifest.json'); const manifest = JSON.parse(await fsp.readFile(manifestPath, 'utf8'));
-    if (![2, 3].includes(manifest.manifest_version) || typeof manifest.name !== 'string' || typeof manifest.version !== 'string') throw new Error('The selected folder does not contain a valid Chrome extension manifest');
-    let messages = {}; const locale = String(manifest.default_locale || 'en').replace(/[^a-zA-Z0-9_-]/g, '');
-    for (const candidate of [locale, 'en', 'en_US', 'zh_CN']) { try { messages = JSON.parse(await fsp.readFile(path.join(extensionPath, '_locales', candidate, 'messages.json'), 'utf8')); if (Object.keys(messages).length) break; } catch (_) {} }
-    const localized = (text) => { const match = String(text || '').match(/^__MSG_([^_].*?)__$/i); return match && messages[match[1]]?.message ? String(messages[match[1]].message) : String(text || ''); };
-    const iconSource = this.extensionIconSource(manifest);
-    let iconUrl = null;
-    if (iconSource) {
-      const iconPath = path.resolve(extensionPath, iconSource.replace(/^[/\\]+/, ''));
-      if (isPathInsideOrEqual(iconPath, extensionPath)) {
-        try {
-          const iconRealPath = await fsp.realpath(iconPath);
-          const iconStat = await fsp.lstat(iconPath);
-          if (!iconStat.isSymbolicLink() && iconStat.isFile() && isPathInsideOrEqual(iconRealPath, extensionPath)) iconUrl = pathToFileURL(iconRealPath).toString();
-        } catch (_) {}
-      }
-    }
-    const id = crypto.createHash('sha256').update(extensionPath.toLowerCase()).digest('hex').slice(0, 20);
-    return { id, name: localized(manifest.name), version: manifest.version, description: localized(manifest.description), manifestVersion: manifest.manifest_version, path: extensionPath, iconUrl, builtIn, addedAt: new Date().toISOString() };
-  }
-
-  extensionIconSource(manifest) {
-    const iconSets = [manifest.icons, manifest.action?.default_icon, manifest.browser_action?.default_icon, manifest.page_action?.default_icon];
-    for (const iconSet of iconSets) {
-      if (typeof iconSet === 'string') return iconSet;
-      if (!iconSet || typeof iconSet !== 'object') continue;
-      const candidates = Object.entries(iconSet)
-        .filter(([, value]) => typeof value === 'string')
-        .sort(([left], [right]) => Number(right) - Number(left));
-      if (candidates[0]) return candidates[0][1];
-    }
-    return null;
-  }
-
-  async addExtension(directory) { const value = await this.readExtension(directory, false); this.extensions.set(value.id, value); await this.persist(); this.emit({ type: 'extensions' }); return value; }
-  async addStoreExtension(url, fetchPackage) { const value = await addChromeStoreExtension(url, this.app.getPath('userData'), (directory, builtIn) => this.readExtension(directory, builtIn), fetchPackage); this.extensions.set(value.id, value); await this.persist(); this.emit({ type: 'extensions' }); return value; }
-  listExtensions() {
-    const profileIds = [...this.profiles.keys()];
-    return [...this.extensions.values()].map((item) => {
-      const assignedProfileIds = profileIds.filter((id) => (this.assignments.get(id) || new Set()).has(item.id));
-      return { ...item, assignedProfiles: assignedProfileIds.length, assignedProfileIds, enabledAll: profileIds.length > 0 && assignedProfileIds.length === profileIds.length };
-    });
-  }
-  async assignExtension(extensionId, profileIds, enabled) {
-    if (!this.extensions.has(extensionId)) throw new Error('Unknown extension');
-    if (!Array.isArray(profileIds) || profileIds.length > 1000) throw new Error('Invalid profile list');
-    for (const profileId of profileIds) { const safe = assertProfileId(profileId); const set = this.assignments.get(safe) || new Set(); if (enabled) set.add(extensionId); else set.delete(extensionId); this.assignments.set(safe, set); }
-    await this.persist(); this.emit({ type: 'extensions' }); return { success: true, restartRequired: profileIds.filter((id) => this.running.has(id)) };
-  }
-  async reloadExtension(id) {
-    const existing = this.extensions.get(id);
-    if (!existing) throw new Error('Unknown extension');
-    if (!fs.existsSync(existing.path)) throw new Error('Extension path does not exist');
-    const updated = await this.readExtension(existing.path, Boolean(existing.builtIn));
-    updated.addedAt = existing.addedAt || updated.addedAt;
-    this.extensions.set(id, updated);
-    await this.persist();
-    this.emit({ type: 'extensions' });
-    return updated;
-  }
-  async reloadAllExtensions() {
-    const results = [];
-    for (const [id, ext] of this.extensions.entries()) {
-      if (fs.existsSync(ext.path)) {
-        try {
-          const updated = await this.readExtension(ext.path, Boolean(ext.builtIn));
-          updated.addedAt = ext.addedAt || updated.addedAt;
-          this.extensions.set(id, updated);
-          results.push(updated);
-        } catch (e) {
-          console.warn('[extensions] Failed to reload extension ' + id + ':', e.message);
-        }
-      }
-    }
-    await this.persist();
-    this.emit({ type: 'extensions' });
-    return results;
-  }
-  async removeExtension(id) {
-    const value = this.extensions.get(id);
-    if (!value || value.builtIn) throw new Error('Built-in extension cannot be removed');
-    this.extensions.delete(id);
-    for (const set of this.assignments.values()) set.delete(id);
-    if (this.usingSqlite && this.sqliteStore) {
-      this.sqliteStore.deleteExtension(id);
-    }
-    await this.persist();
-    return { success: true };
-  }
   on(listener) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
   // 'status' events are emitted exactly at the points where the public view
   // (running/port/network/...) can change, so they double as the invalidation
@@ -1655,6 +1417,8 @@ Object.assign(BrowserEngine.prototype, require('./engine/fingerprint-injection')
 // binding, same engine.<method>() surface, bodies verbatim.
 Object.assign(BrowserEngine.prototype, require('./engine/lifecycle-cleanup'));
 Object.assign(BrowserEngine.prototype, require('./engine/profile-store-api'));
+Object.assign(BrowserEngine.prototype, require('./engine/extensions-api'));
+Object.assign(BrowserEngine.prototype, require('./engine/persistence'));
 
 module.exports = {
   BrowserEngine,

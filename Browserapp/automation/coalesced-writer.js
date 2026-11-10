@@ -25,6 +25,8 @@ const DEFAULT_DELAY_MS = 40;
  *   state already matches what was persisted. A predicate that throws is
  *   treated as "write", because persisting is the safe outcome.
  * @param {(err:Error) => void} [options.onError] observer for write failures
+ * @param {boolean} [options.keepAlive=false] keep a CLI alive while requests
+ *   await persistence; background retries alone do not hold the process open
  */
 function createCoalescedWriter(options = {}) {
   const write = options.write;
@@ -37,6 +39,16 @@ function createCoalescedWriter(options = {}) {
   let waiters = [];
   let lastError = null;
   let skipped = 0;
+  let pendingRequests = 0;
+  let keepAliveTimer = null;
+
+  function releaseRequest() {
+    pendingRequests -= 1;
+    if (pendingRequests === 0 && keepAliveTimer !== null) {
+      clearInterval(keepAliveTimer);
+      keepAliveTimer = null;
+    }
+  }
 
   const queue = new DeferredQueue({
     delayMs,
@@ -83,11 +95,17 @@ function createCoalescedWriter(options = {}) {
   return {
     /** Ask for the current state to be persisted; resolves once it is on disk. */
     request() {
-      return new Promise((resolve, reject) => {
+      const pending = new Promise((resolve, reject) => {
         waiters.push({ resolve, reject });
         queue.add(1);
         queue.start(delayMs);
       });
+      if (options.keepAlive) {
+        pendingRequests += 1;
+        if (keepAliveTimer === null) keepAliveTimer = setInterval(() => {}, 60_000);
+        pending.then(releaseRequest, releaseRequest);
+      }
+      return pending;
     },
     /** Persist immediately, ignoring the quiet period. */
     flushNow() {

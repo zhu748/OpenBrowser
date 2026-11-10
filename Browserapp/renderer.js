@@ -539,14 +539,9 @@ function groupColorOf(profile) {
 // scan per group on every render.
 let __groupCountsCache = null;
 function rebuildGroupCounts() {
-  const counts = new Map([['ungrouped', 0], ['all', 0]]);
-  for (const p of ui.profiles) {
-    if (p.trashed) continue;
-    counts.set('all', (counts.get('all') || 0) + 1);
-    if (!p.groupId) counts.set('ungrouped', (counts.get('ungrouped') || 0) + 1);
-    else counts.set(p.groupId, (counts.get(p.groupId) || 0) + 1);
-  }
-  __groupCountsCache = counts;
+  const summary = window.OpenBrowserProfileList.summarizeProfiles(ui.profiles, (id) => profileEngine(id).running);
+  __groupCountsCache = summary.groups;
+  return summary;
 }
 
 function countProfilesInGroup(groupId) {
@@ -1848,176 +1843,17 @@ function switchView(view) {
   } catch (_) {}
 }
 
-// ========== 分组管理 ==========
-function renderGroupsPage() {
-  const table = $('#group-table');
-  const empty = $('#group-empty');
-  const countEl = $('#group-count');
-  if (!table) return;
-  // Callers (deleteGroup, group renames) mutate ui.profiles right before
-  // rendering this page; the badge cache otherwise serves pre-mutation counts
-  // and the groups view does not re-render on its own.
-  rebuildGroupCounts();
-  table.replaceChildren();
-  const groups = listGroups();
-  if (countEl) countEl.textContent = String(groups.length);
-  const fragment = new DocumentFragment();
-  // ungrouped row
-  {
-    const row = document.createElement('tr');
-    const n = countProfilesInGroup('ungrouped');
-    const colorCell = document.createElement('td');
-    colorCell.append(buildSquareMark('—', { color: '#94a3b8', title: t('groups.ungrouped'), size: UI_MARK_SIZE, className: 'group-mark' }));
-    row.append(
-      colorCell,
-      element('td', '', t('groups.ungrouped')),
-      element('td', '', String(n)),
-      element('td', '', t('groups.default')),
-      element('td', '', '—')
-    );
-    fragment.append(row);
-  }
-  for (const g of groups) {
-    const row = document.createElement('tr');
-    const colorCell = document.createElement('td');
-    const letter = String(g.name || '?').trim().charAt(0) || '?';
-    colorCell.append(buildSquareMark(letter, {
-      color: g.color || '#245cff',
-      title: g.name,
-      size: UI_MARK_SIZE,
-      className: 'group-mark',
-    }));
-    const nameCell = document.createElement('td');
-    const nameWrap = element('div', 'profile-name env-identity');
-    nameWrap.append(element('strong', '', g.name));
-    if (g.note) nameWrap.append(element('small', 'group-note', g.note));
-    nameCell.append(nameWrap);
-    const n = countProfilesInGroup(g.id);
-    const actions = element('div', 'actions');
-    const edit = element('button', 'mini edit', t('action.edit')); edit.dataset.groupEdit = g.id;
-    const view = element('button', 'mini blue', t('action.use')); view.dataset.groupView = g.id;
-    const del = element('button', 'mini', t('action.delete')); del.dataset.groupDelete = g.id;
-    actions.append(view, edit, del);
-    const actionCell = document.createElement('td'); actionCell.append(actions);
-    row.append(colorCell, nameCell, element('td', '', String(n)), element('td', '', (g.createdAt || '').replace('T', ' ').slice(0, 16) || '—'), actionCell);
-    fragment.append(row);
-  }
-  table.append(fragment);
-  if (empty) empty.hidden = true;
-  afterUiRender(document.getElementById('view-groups') || document);
-  loadedViews.add('groups');
-}
-
-function openGroupDialog(group = null) {
-  $('#group-edit-id').value = group?.id || '';
-  $('#group-dialog-title').textContent = group ? tx('编辑分组') : tx('新建分组');
-  $('#group-name').value = group?.name || '';
-  $('#group-note').value = group?.note || '';
-  const color = group?.color || GROUP_COLORS[listGroups().length % GROUP_COLORS.length];
-  const normalizedColor = /^#[0-9a-fA-F]{6}$/.test(color) ? color : '#245cff';
-  $('#group-color').value = normalizedColor;
-  $('#group-color-preview')?.style.setProperty('--group-color', normalizedColor);
-  // color chips
-  const chips = $('#group-color-chips');
-  if (chips) {
-    chips.replaceChildren();
-    for (const c of GROUP_COLORS) {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'group-color-pick' + (c.toLowerCase() === normalizedColor.toLowerCase() ? ' active' : '');
-      b.style.background = c;
-      b.dataset.color = c;
-      chips.append(b);
-    }
-  }
-  $('#group-dialog').showModal();
-}
-
-function saveGroupFromDialog() {
-  const id = $('#group-edit-id').value.trim();
-  const name = $('#group-name').value.trim();
-  if (!name) throw new Error(tx('请输入分组名称'));
-  const color = $('#group-color').value.trim();
-  if (!/^#[0-9a-fA-F]{6}$/.test(color)) throw new Error(tx('颜色必须是 #RRGGBB 格式'));
-  const note = $('#group-note').value.trim();
-  if (id) {
-    const idx = ui.groups.findIndex((g) => g.id === id);
-    if (idx < 0) throw new Error(tx('分组不存在'));
-    if (ui.groups.some((g) => g.id !== id && g.name === name)) throw new Error(tx('已有同名分组'));
-    ui.groups[idx] = normalizeGroup({ ...ui.groups[idx], name, color, note }, idx);
-  } else {
-    if (ui.groups.some((g) => g.name === name)) throw new Error(tx('已有同名分组'));
-    ui.groups.push(normalizeGroup({
-      id: createGroupId(),
-      name,
-      color,
-      note,
-      sort: listGroups().length,
-    }, listGroups().length));
-  }
-  save();
-  invalidateViewCache(['groups', 'profiles']);
-  renderGroupsPage();
-  renderProfiles();
-  fillGroupSelect($('#editor-group'), $('#editor-group')?.value || UNGROUPED_ID);
-  fillGroupSelect($('#batch-add-group'), $('#batch-add-group')?.value || UNGROUPED_ID);
-  fillGroupSelect($('#profile-create-group'), $('#profile-create-group')?.value || UNGROUPED_ID);
-  fillGroupSelect($('#batch-assign-group'), '', { includeUngrouped: true });
-}
-
-async function deleteGroup(id) {
-  const g = findGroup(id);
-  if (!g) return;
-  const n = countProfilesInGroup(id);
-  if (!await confirmAction({
-    title: tx('删除分组'),
-    message: tx('删除分组「') + g.name + tx('」？\n其中 ') + n + tx(' 个环境将变为「未分组」。'),
-    confirmLabel: tx('删除分组'),
-    tone: 'danger',
-  })) return;
-  ui.profiles = ui.profiles.map((p) => (p.groupId === id ? { ...p, groupId: UNGROUPED_ID } : p));
-  ui.groups = ui.groups.filter((item) => item.id !== id);
-  if (activeGroupFilter === id) activeGroupFilter = 'all';
-  save();
-  invalidateViewCache(['groups', 'profiles']);
-  // fire-and-forget: the group edit is already saved locally; surface a failed
-  // engine sync instead of swallowing it (engineProfiles would drift).
-  window.ops.syncProfiles(ui.profiles).catch((error) => log('Error', '环境同步失败: ' + ((error && error.message) || error)));
-  renderGroupsPage();
-  renderProfiles();
-  toast(tx('已删除分组'));
-  log('Group', '删除分组 ' + g.name);
-}
-
-async function assignSelectedToGroup(groupId) {
-  const ids = [...selectedProfiles];
-  if (!ids.length) throw new Error(tx('请先勾选环境'));
-  const gid = groupId === 'ungrouped' ? UNGROUPED_ID : groupId;
-  if (gid && !findGroup(gid)) throw new Error(tx('分组不存在'));
-  ui.profiles = ui.profiles.map((p) => (ids.includes(p.id) ? { ...p, groupId: gid } : p));
-  save();
-  engineProfiles = await window.ops.syncProfiles(ui.profiles);
-  renderProfiles();
-  toast(tx(`已将 ${ids.length} 个环境移到「${gid ? groupNameOf({ groupId: gid }) : '未分组'}」`));
-  log('Group', `批量移动 ${ids.length} 个环境 → ${gid || '未分组'}`);
-}
-
-// allow nav buttons to pass rpa tab via dataset
-
-
-function renderGroupFilterChips() {
+function renderGroupFilterChips(summary = rebuildGroupCounts()) {
   // Cheap renderKey: the chips are rebuilt from the same group list on every
   // profile refresh tick; skip the DOM teardown when nothing visible changed
   // (group identity+color+label, per-chip counts, active filter, trash count).
   const host = $('#profile-group-chips');
   if (!host) return;
-  rebuildGroupCounts();
-  const activeProfiles = ui.profiles.filter((p) => !p.trashed);
-  const trashedCount = ui.profiles.filter((p) => Boolean(p.trashed)).length;
+  const trashedCount = summary.trash;
   const groups = listGroups();
   const renderKey = JSON.stringify({
     groups: groups.map((g) => [g.id, g.color || '', localizeSystemLabel(g.name), countProfilesInGroup(g.id)]),
-    all: activeProfiles.length,
+    all: summary.all,
     ungrouped: countProfilesInGroup('ungrouped'),
     trash: trashedCount,
     active: activeGroupFilter,
@@ -2042,7 +1878,7 @@ function renderGroupFilterChips() {
     return btn;
   };
   const trashBtn = mk('trash', t('groups.trash'), trashedCount);
-  host.append(mk('all', t('groups.all'), activeProfiles.length));
+  host.append(mk('all', t('groups.all'), summary.all));
   host.append(mk('ungrouped', t('groups.ungrouped'), countProfilesInGroup('ungrouped')));
   for (const g of groups) {
     host.append(mk(g.id, localizeSystemLabel(g.name), countProfilesInGroup(g.id)));
@@ -2258,66 +2094,24 @@ async function purgeProfile(id) {
 }
 
 function filteredProfilesForCurrentView() {
-  const filter = $('#profile-search')?.value || '';
-  const profileList = window.OpenBrowserProfileList;
-  let result;
-  if (profileList?.filterProfiles) {
-    result = profileList.filterProfiles({
-      profiles: ui.profiles,
-      activeGroupFilter,
-      query: filter,
-      displayProfileNumber,
-      groupNameOf,
-    });
-  } else {
-    result = ui.profiles.filter((profile) => {
-      if (activeGroupFilter === 'trash') return Boolean(profile.trashed);
-      if (profile.trashed) return false;
-      if (activeGroupFilter === 'ungrouped') return !profile.groupId;
-      if (activeGroupFilter !== 'all' && profile.groupId !== activeGroupFilter) return false;
-      return true;
-    });
-  }
-  // Roxy 对齐：顶部标签条（全部窗口/收藏/已打开）
-  if (activeListTab === 'fav') result = result.filter((profile) => profile.favorite && !profile.trashed);
-  if (activeListTab === 'open') result = result.filter((profile) => profileEngine(profile.id).running);
-  // Roxy 对齐：高级筛选面板（字段组合 + 状态/收藏）
-  if (advancedFilterState) result = result.filter(advancedFilterMatches);
-  // Roxy 对齐：表头点击排序（编号/名称/最后打开/创建/更新）
-  if (profileSort?.key) {
-    const dir = profileSort.dir || 1;
-    const sortValueOf = (profile) => {
-      switch (profileSort.key) {
-        case 'number': return Number(displayProfileNumber(profile)) || 0;
-        case 'name': return String(profile.title || profile.name || '').toLowerCase();
-        case 'lastopen': return Date.parse(profile.lastOpenedAt || '') || 0;
-        case 'created': return Date.parse(profile.createdAt || '') || 0;
-        case 'updated': return Date.parse(profile.updatedAt || '') || 0;
-        default: return 0;
-      }
-    };
-    result = [...result].sort((a, b) => {
-      const va = sortValueOf(a);
-      const vb = sortValueOf(b);
-      if (va < vb) return -dir;
-      if (va > vb) return dir;
-      return 0;
-    });
-  }
-  return result;
+  return window.OpenBrowserProfileList.filterProfiles({
+    profiles: ui.profiles,
+    activeGroupFilter,
+    query: $('#profile-search')?.value || '',
+    displayProfileNumber,
+    groupNameOf,
+    activeListTab,
+    advancedFilter: advancedFilterState,
+    isRunning: (id) => profileEngine(id).running,
+    sort: profileSort,
+  });
 }
 
 // ===== Roxy 对齐：列表标签条 / 行更多菜单 / 收藏 / 导出窗口 =====
 let activeListTab = 'all';
-function renderListTabs() {
+function renderListTabs(counts = rebuildGroupCounts()) {
   const row = $('#profile-list-tabs');
   if (!row) return;
-  const counts = {
-    all: ui.profiles.filter((p) => !p.trashed).length,
-    fav: ui.profiles.filter((p) => p.favorite && !p.trashed).length,
-    open: ui.profiles.filter((p) => !p.trashed && profileEngine(p.id).running).length,
-    trash: ui.profiles.filter((p) => p.trashed).length,
-  };
   row.querySelectorAll('.list-tab').forEach((tab) => {
     const key = tab.dataset.listTab;
     tab.classList.toggle('active', key === (key === 'trash' ? (activeGroupFilter === 'trash' ? 'trash' : activeListTab) : activeListTab));
@@ -2593,34 +2387,7 @@ let advancedFilterState = null;
 let savedFilters = (() => {
   try { return JSON.parse(localStorage.getItem('openbrowser-saved-filters-v1') || '[]'); } catch (_) { return []; }
 })();
-const ADV_FIELDS = ['name', 'remark', 'account', 'proxy', 'tag', 'os', 'kernel'];
-function advFieldText(profile, field) {
-  switch (field) {
-    case 'name': return [profile.name, profile.title];
-    case 'remark': return [profile.note, profile.notes];
-    case 'account': return [profile.platform?.username, ...(Array.isArray(profile.platform?.accounts) ? profile.platform.accounts.map((acc) => acc?.username) : [])];
-    case 'proxy': return [profile.proxy, profile.proxyMeta?.host];
-    case 'tag': return [profile.tag];
-    case 'os': return [profile.os, profile.osVersion];
-    case 'kernel': return [profile.engine, profile.engineVersion];
-    default: return [];
-  }
-}
-function advancedFilterMatches(profile) {
-  const state = advancedFilterState;
-  if (!state) return true;
-  for (const field of ADV_FIELDS) {
-    const needle = String(state[field] || '').trim().toLowerCase();
-    if (!needle) continue;
-    const hay = advFieldText(profile, field).map((value) => String(value ?? '').toLowerCase());
-    if (!hay.some((value) => value.includes(needle))) return false;
-  }
-  if (state.status === 'running' && !profileEngine(profile.id).running) return false;
-  if (state.status === 'stopped' && profileEngine(profile.id).running) return false;
-  if (state.fav === 'yes' && !profile.favorite) return false;
-  if (state.fav === 'no' && profile.favorite) return false;
-  return true;
-}
+const ADV_FIELDS = window.OpenBrowserProfileList.ADV_FIELDS;
 function readAdvancedFilterFromPanel() {
   const state = {};
   for (const field of ADV_FIELDS) state[field] = document.getElementById(`adv-${field}`)?.value || '';
@@ -2829,8 +2596,9 @@ function trashRemainingText(profile) {
 }
 
 function renderProfiles() {
-  renderGroupFilterChips();
-  renderListTabs();
+  const summary = rebuildGroupCounts();
+  renderGroupFilterChips(summary);
+  renderListTabs(summary);
   const table = $('#profile-table');
   const filtered = filteredProfilesForCurrentView();
   const pageData = window.OpenBrowserProfileList?.paginate?.(filtered, profilePage, profilePageSize)

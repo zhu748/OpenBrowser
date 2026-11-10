@@ -7,17 +7,8 @@ function normalizeText(value) {
 
 // Roxy 对齐：搜索支持 字段::值 语法（name/remark/account/proxy/tag/os/kernel/id/group），
 // 其余词仍走全文模糊匹配；多个条件之间是「与」关系。
-const FIELD_ALIASES = {
-  name: ['name'],
-  remark: ['remark'],
-  account: ['account'],
-  proxy: ['proxy'],
-  tag: ['tag'],
-  os: ['os'],
-  kernel: ['kernel'],
-  id: ['id'],
-  group: ['group'],
-};
+const ADV_FIELDS = Object.freeze(['name', 'remark', 'account', 'proxy', 'tag', 'os', 'kernel']);
+const SEARCH_FIELDS = new Set([...ADV_FIELDS, 'id', 'group']);
 
 function profileFieldText(profile, field, displayProfileNumber, groupNameOf) {
   switch (field) {
@@ -38,7 +29,10 @@ function profileFieldText(profile, field, displayProfileNumber, groupNameOf) {
   }
 }
 
-function filterProfiles({ profiles = [], activeGroupFilter = 'all', query = '', displayProfileNumber, groupNameOf }) {
+function filterProfiles({
+  profiles = [], activeGroupFilter = 'all', query = '', displayProfileNumber, groupNameOf,
+  activeListTab = 'all', advancedFilter = null, isRunning = () => false, sort = null,
+}) {
   const numberOf = typeof displayProfileNumber === 'function' ? displayProfileNumber : (profile) => profile?.number || profile?.id || '';
   const groupOf = typeof groupNameOf === 'function' ? groupNameOf : () => '';
   const fieldTokens = [];
@@ -46,17 +40,35 @@ function filterProfiles({ profiles = [], activeGroupFilter = 'all', query = '', 
   for (const raw of String(query ?? '').trim().split(/\s+/)) {
     if (!raw) continue;
     const match = raw.match(/^([a-zA-Z_]+)::(.*)$/);
-    if (match && FIELD_ALIASES[match[1].toLowerCase()]) fieldTokens.push([match[1].toLowerCase(), normalizeText(match[2])]);
+    if (match && SEARCH_FIELDS.has(match[1].toLowerCase())) fieldTokens.push([match[1].toLowerCase(), normalizeText(match[2])]);
     else textTokens.push(normalizeText(raw));
   }
-  return profiles.filter((profile) => {
-    if (activeGroupFilter === 'trash') return Boolean(profile.trashed);
-    if (profile.trashed) return false;
-    if (activeGroupFilter === 'ungrouped') return !profile.groupId;
-    if (activeGroupFilter !== 'all' && profile.groupId !== activeGroupFilter) return false;
-    return true;
-  }).filter((profile) => {
-    const freeText = [
+  // Compile the panel values once per query, rather than once per profile.
+  const advancedTokens = ADV_FIELDS.flatMap((field) => {
+    const needle = String(advancedFilter?.[field] || '').trim().toLowerCase();
+    return needle ? [[field, needle]] : [];
+  });
+  const result = profiles.filter((profile) => {
+    if (activeGroupFilter === 'trash') {
+      if (!profile.trashed) return false;
+    } else {
+      if (profile.trashed) return false;
+      if (activeGroupFilter === 'ungrouped') {
+        if (profile.groupId) return false;
+      } else if (activeGroupFilter !== 'all' && profile.groupId !== activeGroupFilter) return false;
+    }
+    if (activeListTab === 'fav' && (!profile.favorite || profile.trashed)) return false;
+    if (activeListTab === 'open' && !isRunning(profile.id)) return false;
+    if (advancedFilter?.status === 'running' && !isRunning(profile.id)) return false;
+    if (advancedFilter?.status === 'stopped' && isRunning(profile.id)) return false;
+    if (advancedFilter?.fav === 'yes' && !profile.favorite) return false;
+    if (advancedFilter?.fav === 'no' && profile.favorite) return false;
+    for (const [field, needle] of advancedTokens) {
+      if (!profileFieldText(profile, field, numberOf, groupOf)
+        .some((value) => String(value ?? '').toLowerCase().includes(needle))) return false;
+    }
+    // Empty and field-only searches never need the full-text projection.
+    const freeText = textTokens.length ? [
       profile.name,
       profile.title,
       profile.id,
@@ -65,7 +77,7 @@ function filterProfiles({ profiles = [], activeGroupFilter = 'all', query = '', 
       profile.proxy,
       profile.tag,
       groupOf(profile),
-    ].map(normalizeText);
+    ].map(normalizeText) : [];
     for (const token of textTokens) {
       if (!freeText.some((value) => value.includes(token))) return false;
     }
@@ -75,6 +87,42 @@ function filterProfiles({ profiles = [], activeGroupFilter = 'all', query = '', 
     }
     return true;
   });
+  return sort?.key ? sortProfiles(result, sort, numberOf) : result;
+}
+
+function sortProfiles(profiles, sort, numberOf) {
+  const valueOf = (profile) => {
+    switch (sort.key) {
+      case 'number': return Number(numberOf(profile)) || 0;
+      case 'name': return String(profile.title || profile.name || '').toLowerCase();
+      case 'lastopen': return Date.parse(profile.lastOpenedAt || '') || 0;
+      case 'created': return Date.parse(profile.createdAt || '') || 0;
+      case 'updated': return Date.parse(profile.updatedAt || '') || 0;
+      default: return 0;
+    }
+  };
+  const dir = sort.dir || 1;
+  // Date parsing / text normalization happens N times, not per comparison.
+  return profiles.map((profile) => ({ profile, value: valueOf(profile) }))
+    .sort((a, b) => a.value < b.value ? -dir : a.value > b.value ? dir : 0)
+    .map(({ profile }) => profile);
+}
+
+function summarizeProfiles(profiles = [], isRunning = () => false) {
+  const counts = { all: 0, fav: 0, open: 0, trash: 0, groups: new Map([['all', 0], ['ungrouped', 0]]) };
+  for (const profile of profiles) {
+    if (profile.trashed) {
+      counts.trash += 1;
+      continue;
+    }
+    counts.all += 1;
+    if (profile.favorite) counts.fav += 1;
+    if (isRunning(profile.id)) counts.open += 1;
+    const group = profile.groupId || 'ungrouped';
+    counts.groups.set(group, (counts.groups.get(group) || 0) + 1);
+  }
+  counts.groups.set('all', counts.all);
+  return counts;
 }
 
 function paginate(items = [], page = 1, pageSize = 10) {
@@ -90,7 +138,7 @@ function paginate(items = [], page = 1, pageSize = 10) {
   };
 }
 
-  const api = { filterProfiles, paginate };
+  const api = { ADV_FIELDS, filterProfiles, summarizeProfiles, paginate };
   if (typeof module === 'object' && module.exports) {
     module.exports = api;
   } else if (typeof window !== 'undefined') {

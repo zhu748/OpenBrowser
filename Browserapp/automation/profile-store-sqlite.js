@@ -65,6 +65,7 @@ class ProfileStoreSqlite {
     this.db = null;
     this.isOpen = false;
     this._statements = {};
+    this._assignmentSnapshot = null;
   }
 
   /**
@@ -451,6 +452,7 @@ class ProfileStoreSqlite {
     }
     this.isOpen = false;
     this._statements = {};
+    this._assignmentSnapshot = null;
   }
 
   /* ---------------- Profile operations ---------------- */
@@ -689,6 +691,7 @@ class ProfileStoreSqlite {
    */
   deleteProfiles(ids) {
     if (!Array.isArray(ids) || !ids.length) return [];
+    this._assignmentSnapshot = null;
     const deletedIds = [];
     this.db.exec('BEGIN TRANSACTION;');
     try {
@@ -806,6 +809,7 @@ class ProfileStoreSqlite {
 
   deleteExtension(id) {
     const safeId = String(id);
+    this._assignmentSnapshot = null;
     this.db.exec('BEGIN TRANSACTION;');
     try {
       this._statements.clearAssignmentsForExtension.run(safeId);
@@ -828,11 +832,46 @@ class ProfileStoreSqlite {
       if (!map.has(pid)) map.set(pid, new Set());
       map.get(pid).add(eid);
     }
+    // Callers mutate their returned Sets (engine.init retains them), so the
+    // persisted snapshot must own independent copies.
+    this._assignmentSnapshot = new Map([...map].map(([id, ids]) => [id, new Set(ids)]));
     return map;
+  }
+
+  /** Replace only changed profile assignments in one transaction. */
+  saveAssignmentsDiffed(assignments) {
+    if (!this._assignmentSnapshot) this.getAssignments();
+    const final = new Map();
+    for (const [profileId, ids] of assignments) {
+      final.set(String(profileId), new Set([...ids].map(String)));
+    }
+    const changed = [];
+    for (const [profileId, ids] of final) {
+      const previous = this._assignmentSnapshot.get(profileId);
+      if ((previous?.size || 0) === ids.size && [...ids].every((id) => previous?.has(id))) continue;
+      changed.push([profileId, ids]);
+    }
+    if (!changed.length) return 0;
+    this.db.exec('BEGIN TRANSACTION;');
+    try {
+      for (const [profileId, ids] of changed) {
+        this._statements.clearAssignmentsForProfile.run(profileId);
+        for (const id of ids) this._statements.addAssignment.run(profileId, id);
+      }
+      this.db.exec('COMMIT;');
+    } catch (error) {
+      try { this.db.exec('ROLLBACK;'); } catch {}
+      this._assignmentSnapshot = null;
+      throw error;
+    }
+    // Publish only committed values, including empty sets after a clear.
+    for (const [profileId, ids] of changed) this._assignmentSnapshot.set(profileId, ids);
+    return changed.length;
   }
 
   setAssignments(profileId, extensionIds) {
     const safePid = String(profileId);
+    this._assignmentSnapshot = null;
     this.db.exec('BEGIN TRANSACTION;');
     try {
       this._statements.clearAssignmentsForProfile.run(safePid);
@@ -848,6 +887,7 @@ class ProfileStoreSqlite {
 
   assignExtension(extensionId, profileIds, enabled) {
     const safeEid = String(extensionId);
+    this._assignmentSnapshot = null;
     this.db.exec('BEGIN TRANSACTION;');
     try {
       for (const pid of profileIds) {

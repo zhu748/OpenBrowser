@@ -13,6 +13,7 @@ const path = require('path');
 
 const root = path.resolve(__dirname, '..', '..');
 const rendererSource = fs.readFileSync(path.join(root, 'renderer.js'), 'utf8');
+const groupsUiSource = fs.readFileSync(path.join(root, 'ui', 'ui-groups.js'), 'utf8');
 // renderProxies moved to the ui/ui-proxy.js domain module
 const proxyUiSource = fs.readFileSync(path.join(root, 'ui', 'ui-proxy.js'), 'utf8');
 // refreshExtensions moved to renderer-platform-install.js (second renderer.js split)
@@ -37,7 +38,7 @@ console.log('Running list-render-cache-tabs-selftest...');
 // =========================================================================
 
 test('A1: renderGroupsPage uses new DocumentFragment() for batch mounting', () => {
-  const funcMatch = rendererSource.match(/function renderGroupsPage\(\)\s*\{([\s\S]*?)\n\}/);
+  const funcMatch = groupsUiSource.match(/function renderGroupsPage\(\)\s*\{([\s\S]*?)\n\}/);
   assert.ok(funcMatch, 'renderGroupsPage function declaration found');
   const body = funcMatch[1];
   assert.ok(body.includes('new DocumentFragment()'), 'must construct new DocumentFragment()');
@@ -96,7 +97,7 @@ test('B4: loadedViews marks views as loaded upon successful render/pull', () => 
   // loadedViews.add('extensions') lives in refreshExtensions (renderer-platform-install.js)
   assert.match(platformSource, /loadedViews\.add\('extensions'\);/, 'extensions added to loadedViews');
   assert.match(rendererSource, /loadedViews\.add\('sync'\);/, 'sync added to loadedViews');
-  assert.match(rendererSource, /loadedViews\.add\('groups'\);/, 'groups added to loadedViews');
+  assert.match(groupsUiSource, /loadedViews\.add\('groups'\);/, 'groups added to loadedViews');
   assert.match(rendererSource, /loadedViews\.add\('profiles'\);/, 'profiles added to loadedViews');
 });
 
@@ -105,7 +106,7 @@ test('B5: Cache invalidation points cover all data mutations', () => {
   assert.ok(rendererSource.includes("invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies'])"),
     'profile creation/edit/batch-ops invalidate related views');
   // Groups
-  assert.ok(rendererSource.includes("invalidateViewCache(['groups', 'profiles'])"),
+  assert.ok(groupsUiSource.includes("invalidateViewCache(['groups', 'profiles'])"),
     'group ops invalidate groups & profiles views');
   // Proxies — mutation call sites moved to ui/ui-proxy-wiring.js (renderProxies
   // itself lives in ui/ui-proxy.js). Assert against the real call sites instead

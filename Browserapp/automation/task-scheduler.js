@@ -63,6 +63,8 @@ class TaskScheduler {
     this.failedCount = 0;
     this.timedOutCount = 0;
     this.onError = typeof options.onError === 'function' ? options.onError : null;
+    this.idlePromise = null;
+    this.resolveIdle = null;
   }
 
   get size() {
@@ -127,6 +129,7 @@ class TaskScheduler {
       this.runJob(job).finally(() => {
         this.running -= 1;
         if (!this.destroyed) this.pump();
+        this.notifyIdle();
       });
     }
   }
@@ -154,10 +157,20 @@ class TaskScheduler {
   }
 
   /** Resolve once nothing is running or queued. */
-  async drain() {
-    while (this.busy) {
-      await sleep(5);
+  drain() {
+    if (!this.busy) return Promise.resolve();
+    if (!this.idlePromise) {
+      this.idlePromise = new Promise((resolve) => { this.resolveIdle = resolve; });
     }
+    return this.idlePromise;
+  }
+
+  notifyIdle() {
+    if (this.busy || !this.resolveIdle) return;
+    const resolve = this.resolveIdle;
+    this.resolveIdle = null;
+    this.idlePromise = null;
+    resolve();
   }
 
   /**
@@ -171,6 +184,7 @@ class TaskScheduler {
     const error = reason instanceof Error ? reason : new Error(`scheduler "${this.name}" was destroyed`);
     for (const job of this.pending) job.reject(error);
     this.pending = [];
+    this.notifyIdle();
     return dropped;
   }
 

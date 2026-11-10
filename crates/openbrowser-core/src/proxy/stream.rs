@@ -7,8 +7,8 @@ pub struct StreamStats {
     pub server_to_client_bytes: u64,
 }
 
-/// Zero-copy bidirectional streaming between client socket and upstream proxy socket.
-/// Uses tokio::io::copy_bidirectional under the hood with kernel splice where available.
+/// Bidirectional asynchronous streaming between client and upstream sockets.
+/// Delegates buffering and half-close handling to tokio::io::copy_bidirectional.
 pub async fn copy_bidirectional<A, B>(mut client: A, mut server: B) -> Result<StreamStats>
 where
     A: AsyncRead + AsyncWrite + Unpin,

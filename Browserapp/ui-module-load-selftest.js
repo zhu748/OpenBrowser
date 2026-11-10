@@ -23,6 +23,10 @@ const scripts = [...index.matchAll(/<script\s+src="([^"]+)"/g)].map((match) => m
 const rendererIndex = scripts.indexOf('renderer.js');
 
 assert.ok(rendererIndex >= 0, 'index.html loads renderer.js');
+assert.ok(scripts.indexOf('ui/ui-groups.js') >= 0 && scripts.indexOf('ui/ui-groups.js') < rendererIndex,
+  'group domain functions load before renderer wiring');
+assert.ok(scripts.indexOf('ui/ui-profile-list.js') >= 0 && scripts.indexOf('ui/ui-profile-list.js') < rendererIndex,
+  'profile list model loads before the renderer consumes its API');
 assert.deepStrictEqual(scripts.slice(rendererIndex - 2, rendererIndex), ['ui/ui-proxy.js', 'ui/ui-editor.js'],
   'the proxy and editor domain modules load immediately before renderer.js');
 assert.deepStrictEqual(scripts.slice(rendererIndex + 1, rendererIndex + 1 + expectedModules.length), expectedModules,
@@ -91,6 +95,10 @@ const context = vm.createContext({
   switchView: noop,
 });
 context.window = context;
+new vm.Script(fs.readFileSync(path.join(root, 'ui/ui-profile-list.js'), 'utf8'),
+  { filename: 'ui/ui-profile-list.js' }).runInContext(context);
+assert.strictEqual(typeof context.OpenBrowserProfileList.filterProfiles, 'function');
+assert.strictEqual(typeof context.OpenBrowserProfileList.summarizeProfiles, 'function');
 context.ops = new Proxy({ onEvent: noop }, {
   get(target, key) { return key in target ? target[key] : async () => ({}); },
 });
@@ -108,6 +116,8 @@ for (const script of splitModules) {
 // first here too, so a top-level redeclaration of a renderer-owned name fails
 // in this test instead of leaving a white Electron window.
 const proxyUiSource = fs.readFileSync(path.join(root, 'ui/ui-proxy.js'), 'utf8');
+new vm.Script(fs.readFileSync(path.join(root, 'ui/ui-groups.js'), 'utf8'),
+  { filename: 'ui/ui-groups.js' }).runInContext(context);
 new vm.Script(proxyUiSource, { filename: 'ui/ui-proxy.js' }).runInContext(context);
 const editorSource = fs.readFileSync(path.join(root, 'ui/ui-editor.js'), 'utf8');
 new vm.Script(editorSource, { filename: 'ui/ui-editor.js' }).runInContext(context);
@@ -149,6 +159,7 @@ for (const script of expectedModules) {
 }
 
 for (const name of [
+  'renderGroupsPage', 'openGroupDialog', 'saveGroupFromDialog', 'deleteGroup', 'assignSelectedToGroup',
   'confirmAction', 'confirmDialog', 'showRpaPanel', 'refreshRpaPage', 'appendRpaLog', 'refreshApiMcpPage',
   'setLocalApiStatus', 'refreshKernelPanel', 'refreshCloudPanel',
 ]) {

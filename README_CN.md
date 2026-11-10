@@ -167,6 +167,10 @@ OpenBrowser/
 
 ## 文档
 
+- [代码分类与维护入口](./docs/code-organization.md)
+- [性能与可维护性审查](./docs/dev-reports/2026-11-10-performance-maintainability-review.md)
+- [第二轮持久化与模块优化](./docs/dev-reports/2026-11-10-round2-persistence-and-modules.md)
+- [第三轮 RPA 生命周期与容量优化](./docs/dev-reports/2026-11-10-round3-rpa-lifecycle-and-budget.md)
 - [自动化模块](./Browserapp/automation/README.md)
 - [免责声明](./DISCLAIMER.md)
 - [第三方组件声明](./Browserapp/THIRD-PARTY-NOTICES.md)

@@ -490,7 +490,7 @@ function buildUaInjectionScript(uaProfile) {
           const subHolder = {
             toString(...args) {
               const secret = args[0];
-              if (typeof secret === "string" && secret.length > 0) {
+              if (secret === "__UA_BRIDGE_TOKEN__") {
                 if (nativeSource.has(this)) return { bridge: true, nativeText: nativeSource.get(this) };
                 try {
                   const inherited = origSubToString.call(this, secret);
@@ -627,7 +627,7 @@ function buildUaInjectionScript(uaProfile) {
       const holder = {
         toString(...args) {
           const secret = args[0];
-          if (typeof secret === "string" && secret.length > 0) {
+          if (secret === "__UA_BRIDGE_TOKEN__") {
             if (nativeSource.has(this)) return { bridge: true, nativeText: nativeSource.get(this) };
             try {
               const inherited = originalToString.call(this, secret);
@@ -661,8 +661,8 @@ function buildUaInjectionScript(uaProfile) {
       if (typeof WorkerNavigator !== "undefined" && receiver === WorkerNavigator.prototype) return false;
       if (receiver && receiver.constructor && receiver.constructor.prototype === receiver) return false;
       if (typeof navigator !== "undefined" && receiver === navigator) return true;
-      if (typeof Navigator !== "undefined" && (receiver instanceof Navigator || Object.prototype.toString.call(receiver) === "[object Navigator]")) return true;
-      if (typeof WorkerNavigator !== "undefined" && (receiver instanceof WorkerNavigator || Object.prototype.toString.call(receiver) === "[object WorkerNavigator]")) return true;
+      if (typeof Navigator !== "undefined" && receiver !== Navigator.prototype && (receiver instanceof Navigator || (Object.prototype.toString.call(receiver) === "[object Navigator]" && !Navigator.prototype.isPrototypeOf(receiver) && receiver !== Navigator.prototype))) return true;
+      if (typeof WorkerNavigator !== "undefined" && receiver !== WorkerNavigator.prototype && (receiver instanceof WorkerNavigator || (Object.prototype.toString.call(receiver) === "[object WorkerNavigator]" && !WorkerNavigator.prototype.isPrototypeOf(receiver) && receiver !== WorkerNavigator.prototype))) return true;
       return false;
     } catch (_) { return false; }
   };

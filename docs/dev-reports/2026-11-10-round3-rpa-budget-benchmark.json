@@ -1,0 +1,23 @@
+{
+  "node": "v24.22.1",
+  "baseline": "0c06ae8",
+  "tasks": 1000,
+  "originalBytes": 375951,
+  "limitBytes": 93987,
+  "samples": "1 warmup + median of 5 runs, CPU only, no filesystem",
+  "before": {
+    "ms": 608.9905,
+    "serializationCalls": 471121,
+    "retainedTasks": 248,
+    "finalBytes": 93199
+  },
+  "after": {
+    "ms": 3.5265,
+    "serializationCalls": 1001,
+    "retainedTasks": 250,
+    "finalBytes": 93951
+  },
+  "speedup": 172.69,
+  "originalPrettyBytes": 492975,
+  "originalCompactBytes": 375951
+}

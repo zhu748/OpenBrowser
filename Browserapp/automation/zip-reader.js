@@ -21,7 +21,7 @@ const METHOD_DEFLATE = 8;
 const EOCD_MIN_SIZE = 22;
 const MAX_COMMENT_SIZE = 0xffff;
 const ZIP64_SENTINEL = 0xffffffff;
-/** Declared entry sizes above this are rejected up front (zip-bomb guard). */
+/** Hard bound on both declared and actual extracted entry sizes. */
 const MAX_UNCOMPRESSED_SIZE = 64 * 1024 * 1024;
 
 /** Locate the End Of Central Directory record, scanning back over any comment. */
@@ -105,6 +105,10 @@ function readEntries(buf) {
 
 /** Extract a single entry's bytes, inflating deflate entries. */
 function readEntry(buf, entry) {
+  if (!Number.isSafeInteger(entry.uncompressedSize) || entry.uncompressedSize < 0
+    || entry.uncompressedSize > MAX_UNCOMPRESSED_SIZE) {
+    throw new Error(`invalid uncompressed size for ${entry.name}`);
+  }
   const pos = entry.localHeaderOffset;
   if (pos + 30 > buf.length || buf.readUInt32LE(pos) !== LFH_SIGNATURE) {
     throw new Error(`corrupt local header for ${entry.name}`);
@@ -119,9 +123,22 @@ function readEntry(buf, entry) {
 
   const raw = buf.slice(dataStart, dataEnd);
   let out;
-  if (entry.method === METHOD_STORE) out = Buffer.from(raw);
-  else if (entry.method === METHOD_DEFLATE) out = zlib.inflateRawSync(raw);
-  else throw new Error(`unsupported compression method ${entry.method} for ${entry.name}`);
+  if (entry.method === METHOD_STORE) {
+    if (raw.length !== entry.uncompressedSize) {
+      throw new Error(`corrupt entry: ${entry.name} (stored size mismatch)`);
+    }
+    out = Buffer.from(raw);
+  } else if (entry.method === METHOD_DEFLATE) {
+    // Checking only after inflation lets a forged small size allocate an
+    // unbounded buffer first. Enforce the declaration while zlib produces it.
+    // Node requires a positive limit, including for legitimate empty files.
+    try {
+      out = zlib.inflateRawSync(raw, { maxOutputLength: Math.max(1, entry.uncompressedSize) });
+    } catch (error) {
+      if (error.code !== 'ERR_BUFFER_TOO_LARGE') throw error;
+      throw new Error(`corrupt entry: ${entry.name} (inflated data exceeds declared size)`);
+    }
+  } else throw new Error(`unsupported compression method ${entry.method} for ${entry.name}`);
   // The declared size is the contract: a mismatch means a torn or crafted
   // archive, and the extracted bytes must not be trusted.
   if (out.length !== entry.uncompressedSize) {

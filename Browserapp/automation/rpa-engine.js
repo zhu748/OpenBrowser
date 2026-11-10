@@ -429,6 +429,8 @@ class RpaEngine {
       concurrency: 8,
     });
     this.cancelled = new Set();
+    this.queued = new Set();
+    this.stopGeneration = 0;
   }
 
   async writeDiagnostic(record) {
@@ -449,6 +451,8 @@ class RpaEngine {
     return {
       running: [...this.running.keys()],
       count: this.running.size,
+      queued: [...this.queued],
+      queuedCount: this.queued.size,
     };
   }
 
@@ -458,14 +462,18 @@ class RpaEngine {
     // flag and the runTask finally block performs the actual cleanup, so
     // getStatus() never under-reports work that is still executing.
     if (taskId) {
-      this.cancelled.add(taskId);
-      return { success: true, taskId, state: this.running.has(taskId) ? 'cancelling' : 'not-running' };
+      const active = this.running.has(taskId) || this.queued.has(taskId);
+      if (active) this.cancelled.add(taskId);
+      return { success: true, taskId, state: active ? 'cancelling' : 'not-running' };
     }
-    for (const id of [...this.running.keys()]) this.cancelled.add(id);
-    return { success: true, stoppedAll: true, count: this.running.size };
+    this.stopGeneration += 1;
+    const ids = new Set([...this.running.keys(), ...this.queued]);
+    for (const id of ids) this.cancelled.add(id);
+    return { success: true, stoppedAll: true, count: ids.size };
   }
 
   async runPlan(planId, options = {}) {
+    const generation = this.stopGeneration;
     const plan = this.store.getPlan(planId);
     if (!plan) throw new Error('RPA plan not found: ' + planId);
     const profileIds = Array.isArray(options.profile_ids) && options.profile_ids.length
@@ -501,7 +509,16 @@ class RpaEngine {
     // Cap concurrent task bodies (profile start already goes through
     // openScheduler, but the step loops themselves used to run all at once,
     // overflowing the CDP pool on multi-profile plans).
-    const results = await Promise.all(tasks.map((task) => this.taskBodyScheduler.schedule(() => this.runTask(task.id, options).catch((error) => ({ success: false, error: error.message })))));
+    const results = await Promise.all(tasks.map((task) => {
+      this.queued.add(task.id);
+      if (generation !== this.stopGeneration) this.cancelled.add(task.id);
+      return this.taskBodyScheduler.schedule(() => this.runTask(task.id, options)
+        .catch((error) => ({ success: false, taskId: task.id, error: error.message })))
+        .finally(() => {
+          this.queued.delete(task.id);
+          if (!this.running.has(task.id)) this.cancelled.delete(task.id);
+        });
+    }));
     return { success: results.every((item) => item.success), results };
   }
 
@@ -511,16 +528,7 @@ class RpaEngine {
     if (this.running.has(taskId)) throw new Error('Task already running: ' + taskId);
 
     this.running.set(taskId, { startedAt: Date.now() });
-    this.cancelled.delete(taskId);
-    await this.store.updateTask(taskId, { status: 'running', start_time: new Date().toISOString(), process_logs: [] }, { save: false });
-    this.emit({ type: 'rpa-task', taskId, status: 'running', profileId: task.profile_id });
-    await this.writeDiagnostic({
-      type: 'rpa-task-start',
-      taskId,
-      planId: task.plan_id || null,
-      profileId: task.profile_id,
-      processName: task.process_name || null,
-    });
+    if (!this.queued.delete(taskId)) this.cancelled.delete(taskId);
 
     const logs = [];
     const log = async (message, level = 'info') => {
@@ -534,6 +542,14 @@ class RpaEngine {
 
     let context = null;
     try {
+      if (this.cancelled.has(taskId)) throw new Error('cancelled');
+      await this.store.updateTask(taskId, { status: 'running', start_time: new Date().toISOString(), process_logs: [] }, { save: false });
+      this.emit({ type: 'rpa-task', taskId, status: 'running', profileId: task.profile_id });
+      await this.writeDiagnostic({
+        type: 'rpa-task-start', taskId, planId: task.plan_id || null,
+        profileId: task.profile_id, processName: task.process_name || null,
+      });
+      if (this.cancelled.has(taskId)) throw new Error('cancelled');
       const entry = await this.ensureProfileRunning(task.profile_id, { log });
       const port = entry.port;
       // process_content task field or steps array
@@ -588,6 +604,7 @@ class RpaEngine {
         }
       }
 
+      ensureTaskAlive();
       const snapshot = snapshotVariables(context.variables);
       const result = {
         ok: true,
@@ -671,10 +688,13 @@ class RpaEngine {
 
     let startPromise = this.profileStarts.get(id);
     if (!startPromise) {
-      if (log) await log('profile is not running; starting before RPA: ' + id);
-      startPromise = this.openScheduler
-        .schedule(() => this.engine.start(profile), undefined, { stepName: 'open' })
-        .finally(() => this.profileStarts.delete(id));
+      // Publish the barrier before logging can yield or re-enter this method.
+      startPromise = Promise.resolve().then(async () => {
+        if (log) await log('profile is not running; starting before RPA: ' + id);
+        return this.openScheduler.schedule(() => this.engine.start(profile), undefined, { stepName: 'open' });
+      }).finally(() => {
+        if (this.profileStarts.get(id) === startPromise) this.profileStarts.delete(id);
+      });
       this.profileStarts.set(id, startPromise);
     } else if (log) {
       await log('profile start already in progress; waiting before RPA: ' + id);

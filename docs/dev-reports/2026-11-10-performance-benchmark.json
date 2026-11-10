@@ -1,0 +1,40 @@
+{
+  "node": "v24.22.1",
+  "baseline": "0c06ae8",
+  "profiles": 1000,
+  "samples": "median of 9 batches, 30 calls/batch, 30 warmup calls",
+  "results": [
+    {
+      "name": "1000 profiles: empty search",
+      "beforeMs": 1.6692,
+      "afterMs": 0.0304,
+      "speedup": 54.89
+    },
+    {
+      "name": "1000 profiles: date sort",
+      "beforeMs": 10.3139,
+      "afterMs": 0.5522,
+      "speedup": 18.68
+    },
+    {
+      "name": "1000 profiles: field search",
+      "beforeMs": 1.8907,
+      "afterMs": 0.401,
+      "speedup": 4.72
+    },
+    {
+      "name": "1000 profiles, 100 extensions, 3 assignments/profile",
+      "beforeMs": 4.2286,
+      "afterMs": 0.1289,
+      "speedup": 32.79
+    }
+  ],
+  "emptySearchDisplayProjections": {
+    "before": 2000,
+    "after": 0
+  },
+  "schedulerDrainInitialPollingTimers": {
+    "before": 100,
+    "after": 0
+  }
+}

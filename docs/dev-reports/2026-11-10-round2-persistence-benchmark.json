@@ -1,0 +1,37 @@
+{
+  "node": "v24.22.1",
+  "profiles": 1000,
+  "assignmentsPerProfile": 3,
+  "samples": "2 warmup runs + median of 9 runs per scenario",
+  "comparison": "per-profile setAssignments versus saveAssignmentsDiffed, both real SQLite WAL files",
+  "results": [
+    {
+      "scenario": "unchanged",
+      "before": {
+        "ms": 25.8252,
+        "transactions": 1000,
+        "rowChanges": 6000
+      },
+      "after": {
+        "ms": 0.332,
+        "transactions": 0,
+        "rowChanges": 0
+      },
+      "speedup": 77.78
+    },
+    {
+      "scenario": "one profile changed",
+      "before": {
+        "ms": 25.2963,
+        "transactions": 1000,
+        "rowChanges": 6002
+      },
+      "after": {
+        "ms": 0.4726,
+        "transactions": 1,
+        "rowChanges": 8
+      },
+      "speedup": 53.52
+    }
+  ]
+}

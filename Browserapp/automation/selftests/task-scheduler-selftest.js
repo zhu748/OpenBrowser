@@ -287,6 +287,55 @@ const delay = (ms) => new Promise((r) => setTimeout(r, ms));
     assert.strictEqual(s.stats().completed, 4);
   });
 
+  await checkAsync('concurrent drain callers wait for late jobs without polling timers', async () => {
+    const s = new TaskScheduler();
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const first = s.schedule(() => gate);
+    const originalSetTimeout = global.setTimeout;
+    let pollingTimers = 0;
+    let completed = 0;
+    let drained = false;
+    global.setTimeout = (callback, ms, ...args) => {
+      if (ms === 5) pollingTimers += 1;
+      return originalSetTimeout(callback, ms, ...args);
+    };
+    try {
+      const waiters = Array.from({ length: 100 }, () => s.drain());
+      const lastWaiter = s.drain().then(() => { drained = true; });
+      await Promise.resolve();
+      assert.strictEqual(drained, false, 'drain stays pending while a job is held');
+      const late = s.schedule(() => { completed += 1; });
+      release();
+      await Promise.all([first, late, lastWaiter, ...waiters]);
+      assert.strictEqual(completed, 1, 'drain includes jobs queued while waiting');
+      assert.strictEqual(s.busy, false);
+      assert.strictEqual(pollingTimers, 0, 'drain uses completion notifications rather than 5ms timers');
+    } finally {
+      release();
+      global.setTimeout = originalSetTimeout;
+      await s.drain();
+    }
+  });
+
+  await checkAsync('destroy cancels pending jobs but drain still waits for running work', async () => {
+    const s = new TaskScheduler();
+    let release;
+    const running = s.schedule(() => new Promise((resolve) => { release = resolve; }));
+    const cancelled = s.schedule(() => { throw new Error('must never run'); }).catch((error) => error.message);
+    await Promise.resolve();
+    let drained = false;
+    const waiting = s.drain().then(() => { drained = true; });
+    assert.strictEqual(s.destroy(), 1);
+    await Promise.resolve();
+    assert.strictEqual(drained, false);
+    release();
+    await Promise.all([running, waiting]);
+    assert.match(await cancelled, /destroyed/);
+    assert.strictEqual(s.busy, false);
+    await s.drain();
+  });
+
   await checkAsync('destroy rejects queued jobs and refuses new ones', async () => {
     const s = new TaskScheduler({ concurrency: 1 });
     let release;
