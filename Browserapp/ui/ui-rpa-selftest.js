@@ -146,18 +146,18 @@ function getOrCreate(id, tag = 'div') {
 }
 
 // Pre-create standard RPA DOM ids
-const rpaGrid = getOrCreate('rpa-store-grid');
+const _rpaGrid = getOrCreate('rpa-store-grid');
 const rpaCountWrap = new MockElement('div');
 rpaCountWrap.className = 'rpa-toolbar-right';
 const rpaCountEl = getOrCreate('rpa-store-count', 'b');
 rpaCountWrap.append(rpaCountEl);
-const rpaPlanTable = getOrCreate('rpa-plan-table', 'tbody');
-const rpaTaskTable = getOrCreate('rpa-task-table', 'tbody');
-const rpaRunTable = getOrCreate('rpa-run-table', 'tbody');
-const rpaLogList = getOrCreate('rpa-log-list');
-const rpaView = getOrCreate('view-rpa');
+const _rpaPlanTable = getOrCreate('rpa-plan-table', 'tbody');
+const _rpaTaskTable = getOrCreate('rpa-task-table', 'tbody');
+const _rpaRunTable = getOrCreate('rpa-run-table', 'tbody');
+const _rpaLogList = getOrCreate('rpa-log-list');
+const _rpaView = getOrCreate('view-rpa');
 
-const localRenderRoots = [];
+const _localRenderRoots = [];
 const context = vm.createContext({
   console,
   document: {

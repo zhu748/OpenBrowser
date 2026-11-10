@@ -189,7 +189,7 @@ const BUSY_PORT = 50325;
 
   // ---- platform tab regenerates from the stored config ----
   {
-    const { window, elements } = buildSandbox(
+    const { window, elements: _elements } = buildSandbox(
       { host: '127.0.0.1', port: LIVE_PORT, requestedPort: BUSY_PORT, portFallback: { requested: BUSY_PORT, port: LIVE_PORT, reason: 'in-use' }, url: `http://127.0.0.1:${LIVE_PORT}/`, apiKeyRequired: true },
       { mcpScript: '/app/automation/mcp-server.js', apiKey: 'k-123', apiKeyFile: '/app/local-api-key.txt', port: LIVE_PORT },
     );

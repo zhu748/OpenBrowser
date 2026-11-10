@@ -249,6 +249,81 @@ async function measureSize(size) {
 
 const state = { _engine: null, profileRoot: null, dbRoot: null };
 
+/**
+ * Real-kernel session phase (R2): spawn REAL Chrome Stable kernels (one per
+ * profile — the engine auto-resolves Browserapp/kernels/chrome-stable, no
+ * environment setup needed), wait for CDP readiness, then measure the
+ * engine.sessions() inventory lane against the real kernel, and stop
+ * everything with leak verification at the end.
+ *
+ * This complements the fake-kernel HTTP stand-in in benchmark-real-load.js:
+ * there the transport is modeled; here the full spawn → CDP boot → /json/list
+ * round-trip runs against the real binary the product ships.
+ */
+async function runRealKernelSessions(engine) {
+  // Container-sane default: one real Chrome instance. Each extra instance
+  // multiplies memory/thread pressure; in a constrained sandbox two
+  // simultaneous spawns can crash in the zygote (verified — SIGABRT at N=2),
+  // which is a container limit, not a product defect. Override with
+  // REAL_KERNEL_SESSIONS=N on hosts that can afford it.
+  const SESSIONS = Math.max(1, Math.min(10, Number(process.env.REAL_KERNEL_SESSIONS || 1)));
+  const ids = Array.from({ length: SESSIONS }, (_, i) => `render-${i}`);
+  const seeded = ids.map((id) => engine.profiles.get(id)).filter(Boolean);
+  if (seeded.length < SESSIONS) throw new Error(`only ${seeded.length}/${SESSIONS} seed profiles present in the engine`);
+
+  const report = { requested: SESSIONS, spawnMs: null, running: 0, rows: 0, failures: 0, wallSingleMs: null, wallDoubleMs: null, stopLeftovers: [] };
+
+  // Spawn: real Chrome Stable per profile; about:blank keeps navigation noise
+  // out of the measurement. The run itself is launched with OPENBROWSER_HEADLESS
+  // (the app's own supported switch) plus --no-sandbox per profile via
+  // privacy.customArgs — both are required in a container; a GUI launch here
+  // dies in the zygote sandbox (verified: direct spawn probes).
+  const spawnStart = performance.now();
+  await Promise.all(seeded.map((profile) => engine.start({
+    ...profile,
+    platform: { ...profile.platform, startUrl: 'about:blank' },
+    startUrl: 'about:blank',
+    privacy: { ...(profile.privacy || {}), customArgs: '--no-sandbox' },
+    // The engine's stored seed carries advanced.startUrls = "about:blank"
+    // (mirrored by the sanitizer); headless Chrome rejects multiple CLI
+    // targets, so keep exactly one startup URL.
+    advanced: { ...(profile.advanced || {}), startUrls: '' },
+  })));
+
+  // Wait for CDP readiness (spawn returns after the start pipeline; poll the
+  // running map until every instance exposes a CDP port).
+  const deadline = Date.now() + 90000;
+  for (;;) {
+    const ready = engine.runningWithCdp([...engine.running.keys()]).length;
+    if (ready >= SESSIONS) break;
+    if (Date.now() > deadline) throw new Error(`only ${ready}/${SESSIONS} kernels reached CDP readiness`);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  report.spawnMs = +(performance.now() - spawnStart).toFixed(0);
+  report.running = engine.running.size;
+
+  // Inventory lane, single caller.
+  const t0 = performance.now();
+  const rows = await engine.sessions();
+  report.wallSingleMs = +(performance.now() - t0).toFixed(1);
+  report.rows = rows.length;
+  report.failures = rows.filter((row) => row.error).length;
+
+  // Two concurrent callers: the shared-query dedup contract must converge to
+  // one batch — wall time must not double versus the single call.
+  const t1 = performance.now();
+  const [againA, againB] = await Promise.all([engine.sessions(), engine.sessions()]);
+  report.wallDoubleMs = +(performance.now() - t1).toFixed(1);
+  if (againA.length !== againB.length) throw new Error('concurrent callers disagree on row count');
+
+  // Teardown with leak verification: engine.stop runs the full process-tree
+  // cleanup per profile; afterwards the running map must be empty.
+  await Promise.allSettled(ids.map((id) => engine.stop(id).catch(() => {})));
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  report.stopLeftovers = [...engine.running.keys()];
+  return report;
+}
+
 /** Lazily built engine: the renderer's boot sequence fires its first
  * profiles:sync/profileStatus during initialize(), before any benchmark size
  * exists. Building on first IPC use gives those boot calls a real engine with
@@ -307,12 +382,20 @@ async function main() {
     reports.push(report);
   }
 
+  // R2: real-kernel sessions against the shipped Chrome Stable binary.
+  let kernel = null;
+  try {
+    kernel = await runRealKernelSessions(state._engine);
+  } catch (error) {
+    kernel = { error: String(error?.message || error) };
+  }
+
   // Teardown: engine holds sqlite handles + a start-page server; flush both.
   await state._engine?.flushPersistence?.();
   try { await state._engine?.startPageServer?.stop?.(); } catch (_) {}
 
   if (JSON_MODE) {
-    console.log(JSON.stringify({ node: process.version, electron: process.versions.electron, reports }, null, 1));
+    console.log(JSON.stringify({ node: process.version, electron: process.versions.electron, reports, kernel }, null, 1));
   } else {
     console.log(`real-render benchmark — Electron ${process.versions.electron}, Chromium ${process.versions.chrome}, window 1440x900`);
     for (const r of reports) {
@@ -339,6 +422,12 @@ async function main() {
         const pl = r.pollLane;
         if (pl.error) console.log(`     poll-lane: ERROR ${pl.error}`);
         else console.log(`     poll-lane: full ${pl.fullBytes}B, delta-first ${pl.deltaFirstBytes}B, steady ${pl.steadyBytes}B`);
+      }
+    }
+    if (kernel) {
+      if (kernel.error) console.log(`kernel-sessions: ERROR ${kernel.error}`);
+      else {
+        console.log(`kernel-sessions: ${kernel.running}/${kernel.requested} real Chrome Stable, spawn ${kernel.spawnMs}ms, sessions single ${kernel.wallSingleMs}ms / double ${kernel.wallDoubleMs}ms, rows ${kernel.rows}, failures ${kernel.failures}, stop-leftovers ${kernel.stopLeftovers.length ? kernel.stopLeftovers.join(',') : 'none'}`);
       }
     }
   }

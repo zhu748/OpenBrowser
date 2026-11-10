@@ -7,20 +7,9 @@
 const {
   toast,
   tx,
-  t,
-  log,
-  element,
-  buildSquareMark,
-  displayProfileNumber,
-  updateEngineBadge,
   afterUiRender,
-  syncThemedSelects,
 } = window.OpenBrowserApp || window;
-const $ = window.$ || ((s, root = document) => root.querySelector(s));
-const $$ = window.$$ || ((s, root = document) => [...root.querySelectorAll(s)]);
 const app = window.OpenBrowserApp || window;
-const ui = app.ui || { profiles: [] };
-const save = app.save || (() => {});
 
 // ========== API & MCP (local-only) ==========
 function shellQuote(value) {
@@ -105,7 +94,7 @@ async function refreshApiMcpPage() {
     }
     if (curlHint) curlHint.textContent = 'curl -s -H ' + shellQuote('api-key: ' + keyPlaceholder) + ' ' + shellQuote(base + 'api/getVersion');
     setLocalApiStatus(!!info);
-  } catch (error) {
+  } catch (_error) {
     if (pill) { pill.textContent = tx('未启动'); pill.classList.add('off'); }
     setLocalApiStatus(false);
   }

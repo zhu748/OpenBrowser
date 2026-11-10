@@ -361,4 +361,31 @@ module.exports = [
       },
     },
   },
+  {
+    // Classic-script shared scope: single-file unused analysis is structurally
+    // wrong for these files. They load as classic <script> siblings sharing
+    // one global scope — applyProxyLibrarySelection is defined in
+    // ui/ui-proxy.js and consumed by ui/ui-proxy-wiring.js; the profile
+    // actions (restartProfile / trashProfile / clearProfileCache / ...) are
+    // defined in renderer.js and consumed by the ui/ modules; renderer.js's
+    // extensions / appCenterTab / ... state is read across scripts. ESLint's
+    // no-unused-vars cannot see cross-file usage (globals entries only cover
+    // no-undef — `mergeRemoteProxy: 'writable'` never silenced its warning),
+    // so it reports every cross-script API as unused. Dead code in these
+    // files is caught by the selftest suite (proxyformat / profileui /
+    // secondary-ui-runtime / layout guards); the IIFE ui modules
+    // (api-mcp / cloud / kernel / rpa) keep the rule ON and are held clean.
+    files: [
+      'renderer.js',
+      'renderer-platform-install.js',
+      'renderer-select.js',
+      'renderer-theme.js',
+      'environment-audit.js',
+      'i18n.js',
+      'ui/ui-proxy.js',
+    ],
+    rules: {
+      'no-unused-vars': 'off',
+    },
+  },
 ];

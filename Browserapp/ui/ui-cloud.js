@@ -7,20 +7,13 @@
 const {
   toast,
   tx,
-  t,
   log,
-  element,
-  buildSquareMark,
-  displayProfileNumber,
-  updateEngineBadge,
   afterUiRender,
-  syncThemedSelects,
 } = window.OpenBrowserApp || window;
 const $ = window.$ || ((s, root = document) => root.querySelector(s));
 const $$ = window.$$ || ((s, root = document) => [...root.querySelectorAll(s)]);
 const app = window.OpenBrowserApp || window;
 const ui = app.ui || { profiles: [] };
-const save = app.save || (() => {});
 
 // ---------- Cloud backup UI (本地设置) ----------
 const CLOUD_BRIDGE_PRESETS = {

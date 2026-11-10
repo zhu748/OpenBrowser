@@ -15,10 +15,7 @@ const {
   updateEngineBadge,
   syncThemedSelects,
 } = window.OpenBrowserApp || window;
-const $ = window.$ || ((s, root = document) => root.querySelector(s));
 const app = window.OpenBrowserApp || window;
-const ui = app.ui || { profiles: [] };
-const save = app.save || (() => {});
 
 const ENGINE_LABEL = { chromium: 'Chrome for Testing', firefox: 'Firefox' };
 
@@ -408,7 +405,7 @@ async function refreshKernelPanel() {
       }
       systemBrowser.value = selected;
     }
-  } catch (error) {
+  } catch (_error) {
     if (badge_) {
       badge_.textContent = t('system.kernel.badgeFail');
       badge_.dataset.state = 'fail';

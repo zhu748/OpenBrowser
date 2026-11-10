@@ -1,31 +1,26 @@
 # Dependencies
 node_modules
 node_modules/
-
 # Python bytecode and cache
 __pycache__
 __pycache__/
 *.pyc
-
 # Test reports and build output
 Browserapp/reports/
 /reports/
 dist
 dist/
-
 # OS generated files
 .DS_Store
-
 # Internal maintenance documentation (confidential - never commit)
 CODE_OVERVIEW.md
 **/CODE_OVERVIEW.md
-
 # Rust build output and packaged native helpers
 /target/
 /Browserapp/rust-core/
-
 # Kernel release fetch cache (scripts/fetch-kernels.js) — never commit
 Browserapp/.kernel-release-cache/
-
 # Runtime-downloaded linux-x64 kernel (scripts/install-linux-stable.js) — never commit
 Browserapp/kernels/chrome-stable/
+# Process crash dumps (ELF core files) — never commit
+Browserapp/core

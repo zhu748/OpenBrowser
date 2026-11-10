@@ -10,17 +10,11 @@ const {
   t,
   log,
   element,
-  buildSquareMark,
   displayProfileNumber,
-  updateEngineBadge,
   afterUiRender,
-  syncThemedSelects,
 } = window.OpenBrowserApp || window;
-const $ = window.$ || ((s, root = document) => root.querySelector(s));
-const $$ = window.$$ || ((s, root = document) => [...root.querySelectorAll(s)]);
 const app = window.OpenBrowserApp || window;
 const ui = app.ui || { profiles: [] };
-const save = app.save || (() => {});
 
 // ========== Automation scripts (local-only panels) ==========
 let rpaPlans = [];

@@ -637,7 +637,6 @@ function isCurrentThemeLight() {
 
 /** Clean, professional environment badge — pure engineering aesthetics, no toy illustration */
 function renderMicroWindowSvg(num, isLight = false, size = UI_MARK_SIZE) {
-  const currentTheme = (typeof document !== 'undefined' && document.documentElement?.dataset?.uiTheme) || '';
   const nStr = String(num);
   const len = nStr.length;
   let fontSize = 12.5;
@@ -645,7 +644,6 @@ function renderMicroWindowSvg(num, isLight = false, size = UI_MARK_SIZE) {
   else if (len >= 4) fontSize = 9.5;
 
   const winBg1 = isLight ? '#f4f6f8' : '#141a20';
-  const winBg2 = isLight ? '#e5e9ec' : '#0c1014';
   const winBorder = isLight ? '#c8d1d8' : '#222c36';
   const numColor = isLight ? '#2d3748' : '#d2dbe2';
 
@@ -2088,7 +2086,6 @@ async function restoreProfile(id) {
 
 async function purgeProfile(id) {
   const target = ui.profiles.find((item) => item.id === id);
-  const name = target ? (target.title || target.name || id) : id;
   if (!await confirmAction({
     title: t('trash.purge'),
     message: t('trash.confirmPurgeSingle'),
