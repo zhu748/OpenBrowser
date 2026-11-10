@@ -11,8 +11,32 @@ try {
   console.warn('[BrowserEngine] Note: proxy-forwarder module load warning:', pfErr.message);
 }
 const {
-  parseProxy = (v) => ({ protocol: 'direct', host: '', port: 0 }),
+  parseProxy = () => ({ protocol: 'direct', host: '', port: 0 }),
+  // Only used by resolveStoredProxyProfile's live-library branch; the fallback
+  // mirrors normalizeIpLookupChannel's accepted set so engine.js still loads
+  // when proxy-forwarder is unavailable.
+  normalizeIpLookupChannel = (v) => {
+    const raw = String(v || '').trim().toLowerCase();
+    if (raw === 'ifconfig' || raw === 'ifconfig.me' || raw === 'ifconfig-me') return 'ifconfig-me';
+    return ['ip-api', 'ip2location', 'ifconfig-me'].includes(raw) ? raw : 'ip-api';
+  },
 } = proxyForwarderModule;
+// Mirrors sanitizeProfile's guard (profile-sanitizer.js) so the direct field
+// rewrite in resolveStoredProxyProfile cannot smuggle a longer raw through.
+const MAX_PROFILE_PROXY_LENGTH = 64 * 1024;
+
+/** Field-level resubstitution for sanitizeProfile outputs: clones the profile
+ * once and applies the given top-level and proxyMeta patches. Never used on
+ * unsanitized input — callers pass only engine-stored or sanitize outputs. */
+function withAssociation(profile, proxyId, patch = {}) {
+  const { proxyMeta: patchMeta, ...rest } = patch;
+  return {
+    ...profile,
+    ...rest,
+    proxyId,
+    proxyMeta: { ...(profile.proxyMeta || {}), ...(patchMeta || {}), proxyId },
+  };
+}
 const { applyLanguagePreferences, verifyLanguagePreferences, syncProfileLocalState } = require('./automation/profile-file-consistency');
 const { platformPreflight } = require('./automation/platform-preflight');
 const { buildWorkerInjectionScript } = require('./automation/fingerprint');
@@ -227,46 +251,47 @@ class BrowserEngine {
   }
 
   resolveStoredProxyProfile(incoming) {
+    // All inputs to this method are sanitizeProfile outputs (or engine-stored
+    // profiles which were sanitized on entry), so the association, length and
+    // enum shape guarantees still hold. Resubstitution therefore rewrites the
+    // affected fields directly instead of re-sanitizing the whole profile:
+    // the sync path called this per profile, and the extra full sanitize was
+    // the dominant cost of large-fleet syncs.
     const profile = incoming && typeof incoming === 'object' ? incoming : null;
     if (!profile) return profile;
     const direct = profile.networkMode === 'direct' || /^(?:direct|offline|none)$/i.test(String(profile.proxy || '').trim());
     const association = profileProxyAssociation(profile);
     const proxyId = direct ? null : normalizedProxyAssociationId(association.value);
     if (!proxyId) {
-      return this.sanitizeProfile({
-        ...profile,
-        proxyId: null,
-        proxyMeta: { ...(profile.proxyMeta || {}), proxyId: null },
-      });
+      return withAssociation(profile, null);
     }
     if (!this.proxyStore) {
-      return this.sanitizeProfile({
-        ...profile,
-        proxyId,
-        proxyMeta: { ...(profile.proxyMeta || {}), proxyId },
-      });
+      return withAssociation(profile, proxyId);
     }
     const item = this.proxyStore.get?.(proxyId);
     if (!item?.raw) {
       // A deleted library entry must not leave a ghost association that later
       // overwrites Direct/manual proxy edits. Keep the last raw endpoint as a
       // manual proxy and remove every accepted association alias via sanitize.
-      return this.sanitizeProfile({
-        ...profile,
-        proxyId: null,
-        proxyMeta: { ...(profile.proxyMeta || {}), proxyId: null },
-      });
+      return withAssociation(profile, null);
     }
-    return this.sanitizeProfile({
-      ...profile,
+    // Store-sourced fields keep a minimal guard: raw is trimmed and length-
+    // capped exactly like sanitizeProfile would (MAX_PROFILE_PROXY_LENGTH),
+    // ipChannel is normalized through the same entry gate the store uses,
+    // refreshUrl keeps the same 1000-char cap. The golden equivalence runs
+    // (benchmark-profile-sync.js --compare) pin these outputs.
+    const raw = String(item.raw).trim();
+    if (raw.length > MAX_PROFILE_PROXY_LENGTH) {
+      throw new Error('Proxy URL is too long');
+    }
+    return withAssociation(profile, item.id, {
       networkMode: 'proxy',
-      proxy: item.raw,
-      proxyId: item.id,
+      proxy: raw,
       proxyMeta: {
         ...(profile.proxyMeta || {}),
         proxyId: item.id,
-        ipChannel: item.ipChannel || profile.proxyMeta?.ipChannel || 'ip-api',
-        refreshUrl: item.refreshUrl || profile.proxyMeta?.refreshUrl || '',
+        ipChannel: normalizeIpLookupChannel(item.ipChannel || profile.proxyMeta?.ipChannel || 'ip-api'),
+        refreshUrl: String(item.refreshUrl || profile.proxyMeta?.refreshUrl || '').slice(0, 1000),
       },
     });
   }

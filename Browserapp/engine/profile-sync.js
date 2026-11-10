@@ -1,6 +1,13 @@
 'use strict';
 
-/** Stage the entire sync before publishing any live profile, assignment or network changes. */
+/**
+ * Stage the entire sync before publishing any live profile, assignment or network changes.
+ * Every object this module rewrites (previous, staged, resolved) is a sanitizeProfile
+ * output, so merge paths rewrite only the affected fields; re-running the full
+ * sanitizer on already-sanitized input was the dominant cost of large-fleet syncs
+ * (3-4 extra passes per profile). Equivalence is pinned by
+ * scripts/benchmark-profile-sync.js --compare.
+ */
 const { proxyHasCredentials, sameProxyEndpoint, sameProxyIdentity } = require('./index');
 
 function prepareProfileSync(engine, values) {
@@ -10,11 +17,10 @@ function prepareProfileSync(engine, values) {
   // Aligned with LOAD_PROFILE_CAP (engine/init.js): the renderer's first
   // sync sends everything init loaded, so a lower cap here killed UI init
   // for 1001-5000 profile fleets (round-4 PERF-4).
-  // Aligned with LOAD_PROFILE_CAP (engine/init.js): the renderer's first
-  // sync sends everything init loaded, so a lower cap here killed UI init
-  // for 1001-5000 profile fleets (round-4 PERF-4).
   if (!Array.isArray(values) || values.length > 5000) throw new Error('Invalid profile list');
   const globallyEnabled = engine.listExtensions().filter((extension) => extension.enabledAll).map((extension) => extension.id);
+  // Hoisted out of the per-profile loop: O(N × E) → O(N + E) for first syncs.
+  const builtInIds = [...engine.extensions.values()].filter((extension) => extension.builtIn).map((extension) => extension.id);
   for (const value of values) {
     // Inputs are mutable, and IPC creates fresh objects anyway. Reference
     // equality cannot prove that this profile (or a nested field) is unchanged.
@@ -32,11 +38,13 @@ function prepareProfileSync(engine, values) {
       if (!matchesPrevious && !matchesStored) {
         // A linked profile whose endpoint/auth was manually edited becomes a
         // manual proxy. This prevents the old library id from overwriting it.
-        profile = engine.sanitizeProfile({
+        // Field rewrite of an already-sanitized object; the re-sanitize it
+        // replaced could only have reproduced these same two fields.
+        profile = {
           ...sanitized,
           proxyId: null,
           proxyMeta: { ...(sanitized.proxyMeta || {}), proxyId: null },
-        });
+        };
       }
     }
     profile = engine.resolveStoredProxyProfile(profile);
@@ -51,7 +59,7 @@ function prepareProfileSync(engine, values) {
       const prevHasAuth = proxyHasCredentials(prevProxy);
       const explicitlyCleared = String(value?.proxyAuthAction ?? value?.proxy_auth_action ?? '').toLowerCase() === 'clear';
       if (!explicitlyCleared && !nextHasAuth && prevHasAuth && sameProxyEndpoint(prevProxy, nextProxy)) {
-        merged = engine.sanitizeProfile({ ...profile, proxy: prevProxy });
+        merged = { ...profile, proxy: prevProxy };
       }
       // Restore cookies/platform secrets only when UI clearly redacted ALL of them
       // (post-localStorage load) while engine still holds values — not when user
@@ -70,7 +78,7 @@ function prepareProfileSync(engine, values) {
           || String(previous.platform?.totpSecret || '').trim()
         );
       if (uiLooksRedacted) {
-        merged = engine.sanitizeProfile({
+        merged = {
           ...merged,
           cookies: previous.cookies || '',
           platform: {
@@ -78,12 +86,12 @@ function prepareProfileSync(engine, values) {
             password: previous.platform?.password || '',
             totpSecret: previous.platform?.totpSecret || '',
           },
-        });
+        };
       }
       // Renderer storage intentionally omits runtime exit details. Keep the engine's
       // last successful result unless the proxy itself changed (which invalidates it).
       if (previous.proxy === merged.proxy && previous.exitIp && !profile.exitIp) {
-        merged = engine.sanitizeProfile({
+        merged = {
           ...merged,
           exitIp: previous.exitIp,
           exitCountryCode: previous.exitCountryCode,
@@ -93,7 +101,7 @@ function prepareProfileSync(engine, values) {
           exitCheckedAt: previous.exitCheckedAt,
           exitLatencyMs: previous.exitLatencyMs,
           exitNetworkType: previous.exitNetworkType,
-        });
+        };
       }
     }
     if (previous && previous.proxy !== merged.proxy) networkInvalidations.add(profile.id);
@@ -103,9 +111,7 @@ function prepareProfileSync(engine, values) {
       const assigned = new Set(assignments.get(merged.id) || engine.assignments.get(merged.id));
       for (const extensionId of globallyEnabled) assigned.add(extensionId);
       // The bundled marker is part of the environment contract.
-      for (const [extensionId, extension] of engine.extensions) {
-        if (extension.builtIn) assigned.add(extensionId);
-      }
+      for (const extensionId of builtInIds) assigned.add(extensionId);
       assignments.set(merged.id, assigned);
     }
   }
