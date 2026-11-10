@@ -1202,11 +1202,6 @@ class RpaEngine {
     return;
   }
 
-  async stepBestEffortNoop({ ctx, type }) {
-    if (ctx?.log) await ctx.log(`${type}: best-effort no-op in current runtime`);
-    return;
-  }
-
   async stepGoBack({ port, ctx, params }) {
     // cdp.call's 4th argument is a millisecond timeout, not a context.
     await this.withPage(port, (ws) => cdp.call(ws, 'Runtime.evaluate', {

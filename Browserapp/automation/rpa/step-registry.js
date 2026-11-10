@@ -32,7 +32,6 @@ const STEPS = [
   ['stepGoogleSheet', ['googlesheet']],
   ['stepGetCookies', ['getcookies']],
   ['stepGetClipboard', ['getclipboard', 'getactiveelement']],
-  ['stepBestEffortNoop', ['keycombination', 'applysubprocess', 'getcaptcha', 'closeotherpage']],
   ['stepGoBack', ['goback']],
   ['stepSwitchPage', ['switchpage']],
   ['stepUploadAttachment', ['uploadattachment']],
@@ -51,6 +50,17 @@ const STEPS = [
   ['stepKey', ['key', 'press', 'keyboard']],
 ];
 
+// Known marketplace actions without an implementation remain visible to tooling,
+// but cannot pass execution validation or silently turn a task into a success.
+const unavailable = new Map([
+  ['keycombination', 'Keyboard combinations are not implemented'],
+  ['applysubprocess', 'External subprocess plans are not implemented'],
+  ['getcaptcha', 'No captcha provider is configured'],
+  ['closeotherpage', 'Closing other pages is not implemented'],
+  ['getemail', 'No email provider is configured'],
+  ['savetag', 'Saving marketplace tags is not implemented'],
+]);
+
 const handlers = new Map();
 for (const [handler, types] of STEPS) {
   for (const type of types) {
@@ -63,6 +73,15 @@ const MAX_VALIDATION_DEPTH = 64;
 const MAX_VALIDATION_STEPS = 10000;
 
 function resolveStepHandler(type) { return handlers.get(String(type || '').toLowerCase()) || null; }
+
+function getStepCapability(type) {
+  const key = String(type || '').toLowerCase();
+  const handler = resolveStepHandler(key);
+  return Object.freeze({ type: key, status: handler ? 'supported' : 'unsupported', handler,
+    message: handler ? '' : (unavailable.get(key) || 'Unknown RPA action') });
+}
+
+const unsupportedStepTypes = Object.freeze([...unavailable.keys()]);
 
 function validateStepHandlers(prototype) {
   for (const [type, handler] of handlers) {
@@ -90,7 +109,7 @@ function findUnsupportedSteps(steps, path = []) {
         }
         const step = list[index] || {};
         const type = String(step.type || step.action || '').toLowerCase();
-        if (!resolveStepHandler(type)) unsupported.push({ path: currentPath, type: type || '(empty)' });
+        if (!resolveStepHandler(type)) unsupported.push({ path: currentPath, type: type || '(empty)', message: getStepCapability(type).message });
         for (const key of ['children', 'elseChildren', 'errorChildren']) {
           if (exhausted) break;
           const children = Array.isArray(step[key]) ? step[key] : step.params?.[key];
@@ -108,4 +127,4 @@ function assertStepGraph(steps) {
   if (invalid) throw Object.assign(new Error('Invalid RPA step graph: ' + invalid.reason), { code: 'RPA_INVALID_GRAPH' });
 }
 
-module.exports = { resolveStepHandler, validateStepHandlers, executableStepTypes, findUnsupportedSteps, assertStepGraph };
+module.exports = { resolveStepHandler, validateStepHandlers, executableStepTypes, unsupportedStepTypes, getStepCapability, findUnsupportedSteps, assertStepGraph };

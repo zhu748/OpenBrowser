@@ -1,23 +1,17 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 const vm = require('node:vm');
 const ipc = require('../../shared/ipc-result');
 const commands = require('../../ui/ui-profile-commands');
 const { sanitizeInjectionScript } = require('../../engine/cdp-hardening');
 
-// Execute the real renderer event binding with injected desktop capabilities.
-const renderer = fs.readFileSync(path.join(__dirname, '../../renderer.js'), 'utf8');
-const start = renderer.indexOf("$('#profile-editor-form').addEventListener('submit'");
-const end = renderer.indexOf("\n$('#batch-add').", start);
-assert.ok(start >= 0 && end > start);
+// Exercise the exported save controller directly; moving renderer bindings
+// must not change the behavioral contract or require source-code slicing.
 function harness({ apply, linkProxy = false, latest = { id: 'a', name: 'A', note: 'Engine update' } } = {}) {
   const initial = { id: 'a', name: 'A', proxy: 'Direct', note: 'Original' };
   const state = { saves: 0, calls: [], toasts: [], switched: 0 };
-  let submit;
-  const form = { dataset: {}, addEventListener(_event, handler) { submit = handler; } };
+  const form = { dataset: {} };
   const context = {
     ui: { profiles: [initial] }, editingProfileId: 'a', editingProfileBaseRev: 1,
     engineProfiles: [{ id: 'a', rev: 1 }], editorNetworkResult: null,
@@ -37,7 +31,29 @@ function harness({ apply, linkProxy = false, latest = { id: 'a', name: 'A', note
       syncProfiles() { throw new Error('editor must not resubmit the fleet'); },
     } },
   };
-  vm.runInNewContext(renderer.slice(start, end), context);
+  const submit = commands.createProfileEditorSubmit({
+    getSession: () => ({ id: context.editingProfileId, baseRev: context.editingProfileBaseRev, networkResult: null }),
+    getProfiles: () => context.ui.profiles,
+    readDraft: context.editorDraft,
+    ops: context.window.ops,
+    publish(profile) {
+      const index = context.ui.profiles.findIndex((item) => item.id === profile.id);
+      if (index >= 0) context.ui.profiles[index] = profile;
+      context.save();
+    },
+    setRows: (rows) => { context.engineProfiles = rows; },
+    normalize: (profile) => profile,
+    saveProxy: async () => linkProxy ? (await context.window.ops.proxyCreate()).id : null,
+    onSaved(_draft, session) {
+      if (context.editingProfileId === session.id) {
+        context.editingProfileId = null;
+        context.switchView();
+      }
+    },
+    onError: (error) => context.toast(error.message),
+    onConflict: () => context.toast('stale'),
+    onWarning: () => {},
+  });
   return { state, context, form, submit: () => submit({ currentTarget: form, preventDefault() {} }) };
 }
 
@@ -71,6 +87,10 @@ async function main() {
   assert.equal(pending.state.switched, 0);
 
   const linked = harness({ linkProxy: true });
+  linked.context.window.ops.proxyCreate = async () => {
+    linked.context.engineProfiles = [{ id: 'a', rev: 99 }];
+    return { id: 'library' };
+  };
   await linked.submit();
   assert.equal(linked.state.calls.length, 2);
   assert.equal(linked.state.calls[1][0].baseRev, 2);

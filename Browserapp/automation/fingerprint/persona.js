@@ -1,5 +1,7 @@
 'use strict';
 
+const { normalizeCoordinates } = require('../../shared/profile-values');
+
 /**
  * Persona construction: buildFingerprint (deterministic profile ->
  * static/dynamic fingerprint config) and its consistency diagnostics.
@@ -458,18 +460,16 @@ function buildFingerprint(profile = {}) {
         || ''
       ).trim() || null);
   let geoposition = null;
-  if (privacy.geoMode === 'custom' && Number.isFinite(Number(privacy.latitude)) && Number.isFinite(Number(privacy.longitude))) {
+  const customLocation = normalizeCoordinates(privacy.latitude, privacy.longitude);
+  const exitLocation = normalizeCoordinates(profile.exitLatitude, profile.exitLongitude);
+  if (privacy.geoMode === 'custom' && customLocation.valid) {
     geoposition = {
-      latitude: Number(privacy.latitude),
-      longitude: Number(privacy.longitude),
+      latitude: customLocation.latitude,
+      longitude: customLocation.longitude,
       accuracy: Number(privacy.accuracy) || 100,
     };
-  } else if (privacy.geoMode !== 'disabled' && privacy.geoMode !== 'prompt') {
-    const lat = Number(profile.exitLatitude);
-    const lon = Number(profile.exitLongitude);
-    if (Number.isFinite(lat) && Number.isFinite(lon)) {
-      geoposition = { latitude: lat, longitude: lon, accuracy: Number(privacy.accuracy) || 1000 };
-    }
+  } else if (privacy.geoMode !== 'custom' && privacy.geoMode !== 'disabled' && privacy.geoMode !== 'prompt' && exitLocation.valid) {
+    geoposition = { latitude: exitLocation.latitude, longitude: exitLocation.longitude, accuracy: Number(privacy.accuracy) || 1000 };
   }
   // Geolocation permission policy (Roxy geoLocation mode 0/1/2 对齐): 'deny' blocks the API
   // outright, 'allow' reports the permission as granted alongside the overridden coordinates,

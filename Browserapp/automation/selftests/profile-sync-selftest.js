@@ -59,6 +59,17 @@ async function main() {
   assert.equal(engine.profiles.get('dupe').name, 'Last', 'duplicate IDs retain sequential last-write semantics');
   assert.equal(engine.profiles.get('dupe').cookies, 'private-cookie', 'later redaction restores the staged predecessor secrets');
   assert.ok(engine.assignments.get('dupe').has('builtin'));
+  const accounts = [{ username: 'first', password: 'first-secret', totpSecret: 'first-totp' },
+    { username: 'second', password: 'second-secret', totpSecret: '' }];
+  await engine.syncProfiles([{ id: 'accounts', name: 'Accounts', platform: { accounts } }]);
+  const redacted = accounts.map((account) => ({ ...account, password: '', totpSecret: '' }));
+  await engine.syncProfiles([{ id: 'accounts', name: 'Accounts', platform: { accounts: redacted } }]);
+  assert.deepEqual(engine.profiles.get('accounts').platform.accounts, accounts, 'redacted UI rows retain stored secrets');
+  await engine.syncProfiles([{ id: 'accounts', name: 'Accounts', platform: { accounts: redacted.slice().reverse() } }]);
+  assert.ok(engine.profiles.get('accounts').platform.accounts.every((account) => !account.password), 'reordered usernames cannot inherit a different row secret');
+  await engine.syncProfiles([{ id: 'accounts', name: 'Accounts', platform: { accounts }, credentialsAction: 'replace' }]);
+  await engine.syncProfiles([{ id: 'accounts', name: 'Accounts', platform: { accounts: redacted }, credentialsAction: 'clear' }]);
+  assert.ok(engine.profiles.get('accounts').platform.accounts.every((account) => !account.password && !account.totpSecret), 'explicit clear remains authoritative');
   console.log('PROFILE_SYNC_SELFTEST OK (single persistence lane, mutable input, coalesced sync)');
 }
 

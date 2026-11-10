@@ -3,6 +3,7 @@
 const { assertProfileId } = require("../automation/isolation");
 const { normalizeIpLookupChannel } = require("../proxy-forwarder");
 const { profileProxyAssociation, normalizedProxyAssociationId } = require("./proxy-helpers");
+const { normalizeCoordinates, toFiniteNumber: finite } = require("../shared/profile-values");
 
 const MAX_PROFILE_PROXY_LENGTH = 64 * 1024;
 
@@ -17,7 +18,6 @@ function sanitizeProfile(value) {
     ? value.fingerprint
     : (privacyValue.fingerprint && typeof privacyValue.fingerprint === "object" ? privacyValue.fingerprint : null);
   const allowed = (candidate, values, fallback) => values.includes(String(candidate || "")) ? String(candidate) : fallback;
-  const finite = (candidate) => candidate !== "" && candidate !== null && candidate !== undefined && Number.isFinite(Number(candidate)) ? Number(candidate) : null;
   const width = Math.min(7680, Math.max(640, Number(value.width) || 1280));
   const height = Math.min(4320, Math.max(480, Number(value.height) || 820));
   const number = Number.parseInt(value.number, 10);
@@ -54,6 +54,8 @@ function sanitizeProfile(value) {
   const effectiveStartUrl = String(value.startUrl || platformValue.startUrl || advancedValue.startUrls || "").trim().slice(0, 2000);
   const proxyAssociation = profileProxyAssociation(value);
   const proxyId = networkMode === "direct" ? null : normalizedProxyAssociationId(proxyAssociation.value);
+  const location = normalizeCoordinates(privacyValue.latitude, privacyValue.longitude);
+  const exitLocation = normalizeCoordinates(value.exitLatitude, value.exitLongitude);
 
   return {
     id,
@@ -93,8 +95,8 @@ function sanitizeProfile(value) {
     exitIp: String(value.exitIp || "").slice(0, 80),
     exitCountryCode: String(value.exitCountryCode || "").slice(0, 4),
     exitTimezone: String(value.exitTimezone || "").slice(0, 100),
-    exitLatitude: finite(value.exitLatitude),
-    exitLongitude: finite(value.exitLongitude),
+    exitLatitude: exitLocation.latitude,
+    exitLongitude: exitLocation.longitude,
     exitCheckedAt: String(value.exitCheckedAt || "").slice(0, 40),
     exitLatencyMs: finite(value.exitLatencyMs),
     exitNetworkType: String(value.exitNetworkType || "").slice(0, 40),
@@ -160,8 +162,8 @@ function sanitizeProfile(value) {
         if (privacyValue.geoMode === "prompt") return "prompt";
         return "allow";
       })(),
-      latitude: finite(privacyValue.latitude),
-      longitude: finite(privacyValue.longitude),
+      latitude: location.latitude,
+      longitude: location.longitude,
       accuracy: Math.min(5000, Math.max(10, Number(privacyValue.accuracy) || 1000)),
       uiLanguage: String(privacyValue.uiLanguage || "profile").slice(0, 20),
       langFromIp: privacyValue.langFromIp !== false,

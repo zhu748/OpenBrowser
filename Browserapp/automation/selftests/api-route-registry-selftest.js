@@ -4,7 +4,9 @@ const assert = require('node:assert/strict');
 const { allowedMethodsForPath, resolveApiRoute, validateApiRoutes } = require('../api/route-registry');
 const { LocalApiServer } = require('../local-api-server');
 
-validateApiRoutes(LocalApiServer.prototype);
+const server = new LocalApiServer({ apiKey: 'route-registry-test' });
+validateApiRoutes(server.routeHandlers);
+assert.equal(Object.isFrozen(server.routeHandlers), true);
 assert.throws(() => validateApiRoutes({}), /handler missing/i);
 for (const alias of ['/api/v1/user/list', '/api/v2/browser-profile/list', '/api/profiles']) {
   assert.deepEqual(allowedMethodsForPath(alias), ['GET']);

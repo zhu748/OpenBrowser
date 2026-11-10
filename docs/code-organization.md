@@ -10,22 +10,31 @@
 | 扩展 IPC | `Browserapp/main/extensions-ipc.js` | 扩展安装/分配/删除路由和有界重启；通过宿主传入的可信 IPC 注册函数挂载 |
 | 内核 IPC | `Browserapp/main/kernel-ipc.js` | 14 个内核查询、下载、安装、校验、固定版本和文件选择频道；使用同一可信注册入口 |
 | 环境 IPC | `Browserapp/main/profile-ipc.js` | 15 个环境管理频道，统一移除前的同步选择清理；同步状态由宿主持有并通过回调注入 |
+| 自动化 IPC | `Browserapp/main/automation-ipc.js` | 22 个 RPA、模版、API Key 与 MCP 频道；注入可信注册入口，并在每次调用时获取当前自动化服务及窗口。临时步骤先校验再创建任务 |
 | IPC 结果契约 | `Browserapp/shared/ipc-result.js` | 环境修改命令和编辑快照通过普通对象传递结果；在 renderer 中重建带 code/stale 的错误，避免 Electron/contextBridge 丢失自定义 Error 字段 |
-| 编辑会话 | `Browserapp/ui/ui-profile-commands.js` | 打开时读取字段与版本号配对的引擎快照；过期/取消的请求不显示。先确认单环境命令成功，再发布本地数据；冲突不自动重试旧表单 |
+| 数值与坐标契约 | `Browserapp/shared/profile-values.js` | UI/Node 共用无宿主依赖的有限数值、经纬度及成对坐标校验；空值、布尔值及越界坐标不能成为有效位置 |
+| 代理脱敏 | `Browserapp/shared/proxy-redact.js` | 浏览器与 Node 共用一份字符串脱敏实现；`automation/proxy-redact.js` 保留原有 require 入口 |
+| UI 持久化 | `Browserapp/ui/ui-state-store.js` | 通过回调读写存储和当前状态，统一立即保存、日志/出口事件合并保存、退出排空、配额降级与凭据脱敏；降级保留规范的 note/tag 字段 |
+| 编辑会话 | `Browserapp/ui/ui-profile-commands.js` | 打开与保存控制器通过明确回调访问状态；过期/取消的请求不显示。代理关联使用第一次保存返回的版本，不能借用后台刷新的新版本重试旧草稿 |
 | UI 交互 | `Browserapp/renderer.js`、`ui/`、`renderer-*.js` | DOM、表单、交互状态、页面切换 |
 | 分组界面 | `Browserapp/ui/ui-groups.js` | 分组页面、编辑对话框、删除分组、批量移动环境；事件绑定由 renderer 负责 |
 | 列表数据逻辑 | `Browserapp/ui/ui-profile-list.js` | 搜索、分组过滤、收藏/运行状态筛选、高级筛选、排序、分页、统计；同时支持浏览器和 CommonJS |
-| 环境状态合并 | `Browserapp/ui/ui-profile-state.js` | 启动时按 ID 合并 UI 与引擎环境，恢复凭据和代理，保留列表顺序；通过回调注入校验及代理策略 |
+| 环境状态合并 | `Browserapp/ui/ui-profile-state.js` | 启动时按 ID 合并环境并恢复匹配的备用代理凭据。轮询合并只复制变化行，未变化时保留数组和对象引用；明确的 null 清除旧出口信息 |
 | 事件刷新调度 | `Browserapp/ui/ui-refresh-scheduler.js` | 合并事件、串行刷新、保留执行期间的迟到请求、暂停及恢复；不依赖 DOM |
 | 引擎协调 | `Browserapp/engine.js` | 公开 `BrowserEngine`、生命周期协调、状态快照、持久化调度 |
+| 引擎成员组合 | `Browserapp/engine/compose.js` | 安装前检查全部领域贡献的重名、访问器和继承成员覆盖；`BrowserEngine.methodOwners` 提供只读成员归属，保留原调用接口 |
 | 引擎领域模块 | `Browserapp/engine/` | 启动、Firefox 启动、清理、Profile CRUD、代理、指纹交付、资源限制、扩展管理 |
+| 启动参数策略 | `Browserapp/engine/launch-arguments.js` | 构建基础与最终 Chromium 参数；通过输入传入代理端点、DPI 和窗口位置，返回拒绝的自定义参数。进程、锁和资源清理由启动编排持有 |
 | 环境同步准备 | `Browserapp/engine/profile-sync.js` | 暂存校验、凭据恢复、代理合并、扩展继承和网络失效记录；整批成功后才发布到引擎 |
 | 会话查询 | `Browserapp/engine/session-api.js` | 跨 UI/API 共享有界查询队列，合并同一运行实例的重叠查询，过滤退出及重启后的旧结果 |
 | 扩展管理 | `Browserapp/engine/extensions-api.js` | 读取元数据、安装/重载/删除、分配、按扩展汇总环境；通过 prototype mixin 保持原调用接口 |
 | 本地控制面 | `Browserapp/automation/local-api-server.js`、`mcp-server.js`、`protocol/` | HTTP/MCP 路由、输入和权限校验、协议转换 |
-| API 路由定义 | `Browserapp/automation/api/route-registry.js` | 每组别名只定义一次 HTTP 方法及处理器；方法门禁与路由分发共用定义，并在加载时校验处理器 |
+| API 路由定义 | `Browserapp/automation/api/route-registry.js` | 每组别名只定义一次 HTTP 方法及处理器；方法门禁与路由分发共用定义，构造服务时校验完整处理器集合 |
+| API 领域处理器 | `Browserapp/automation/api/*-routes.js`、`controllers.js` | 环境/浏览器、代理、同步、RPA、应用/扩展分属独立控制器，各自显式持有依赖；HTTP 服务只负责传输、认证及分发 |
+| API 输入与响应 | `Browserapp/automation/api/input.js`、`profile-ids.js`、`responses.js` | 外部字段别名转换、ID 选择解析、公共响应封装及凭据脱敏；输入规则与网络服务器分离 |
+| API CDP 地址 | `Browserapp/automation/api/devtools.js` | 查询真实浏览器 GUID；列表查询最多并发 8 项，同一运行实例复用在途请求，退出/重启的旧结果丢弃。每次尝试的 600ms 期限落实到 HTTP 连接 |
 | 自动化执行 | `Browserapp/automation/rpa-engine.js`、`rpa-store.js`、`task-queue.js`、`task-scheduler.js` | 步骤执行、任务记录、并发与排队 |
-| RPA 动作注册 | `Browserapp/automation/rpa/step-registry.js` | 每个执行器集中声明动作别名；分发、支持范围和处理器校验由同一份数据生成。执行图校验限制循环引用、深度和总步骤数 |
+| RPA 动作注册 | `Browserapp/automation/rpa/step-registry.js` | 每个执行器集中声明动作别名；支持和已知不支持动作由同一份注册表描述。未实现动作在浏览器分配前拒绝，不能空执行后报告成功；执行图校验限制循环引用、深度和总步骤数 |
 | RPA 文件路径 | `Browserapp/automation/rpa/paths.js` | 输出与文件输入的物理路径校验；解析已存在的父目录，拒绝子路径中的外逃/悬空链接。表格导入保留 Desktop/Documents/Downloads、OneDrive 等明确允许的目录 |
 | RPA 容量策略 | `Browserapp/automation/rpa-store-budget.js` | 按 UTF-8 字节预算回收旧任务、日志与结果；保留最新任务、pending/running 任务及计划/模板 |
 | RPA 变量 | `Browserapp/automation/rpa/variables.js` | 无浏览器依赖的变量复制、插值、条件值解析与结果快照；循环对象隔离可变子对象，BigInt 结果转为十进制字符串，特殊键不改变对象原型 |
@@ -37,10 +46,12 @@
 | 通用出站请求 | `Browserapp/network/outbound.js` | 代理提取/刷新 URL 的校验、重定向与正文大小限制。与模板同步共用 socket 实际使用的 DNS 答案校验，metadata 始终禁止；内网策略由调用方显式决定 |
 | HTTP 传输 | `Browserapp/network/http-request.js` | Node HTTP/HTTPS 的字节上限、完整响应读取、重定向与连接清理；一个绝对期限覆盖整条重定向链，支持 AbortSignal。代理出站、模板同步及内核元数据共同使用 |
 | 内核归档 | `Browserapp/automation/kernel/archive.js` | 归档成员校验、解压、符号链接检查和安全安装路径；内核选择与安装编排仍由 browser-kernel.js 负责 |
+| 内核发现 | `Browserapp/automation/kernel/discovery.js` | 平台路径、文件树查找、打包资源发现和版本清单读取；不下载、不启动进程、不修改安装元数据。browser-kernel.js 保持原有公开导出 |
 | 内核摘要信任 | `Browserapp/automation/kernel/archive-trust.js` | 摘要读取、提取、原子文件写入与有界记录；同进程按目录串行合并 pin 写入，查询等待此前已入队的写入 |
 | 内核元数据 | `Browserapp/automation/kernel/metadata.js` | 可信主机 JSON/文本读取；每跳校验目标，响应限额按 UTF-8 传输字节执行，内核选择与安装编排不再重复实现流读取 |
 | 商店响应读取 | `Browserapp/chrome-store-metadata.js`、`automation/response-body.js` | 商店页面/图标/CRX 下载与缓存、正文读取字节限制和流取消 |
 | 指纹构建与注入 | `Browserapp/automation/fingerprint/`、`user-agent.js`、`kernel-init-sync.js` | Persona 构造、主页面/Worker 注入、内核字段映射 |
+| 注入运行片段 | `Browserapp/automation/fingerprint/runtime/`、`runtime-source.js` | 页面按 9 个领域、Worker 按 4 个领域组织；固定顺序拼接到原有 IIFE，不新增页面全局变量或额外函数作用域。构建配置、缓存及字体载荷编排保留在原入口 |
 | Rust 核心 | `crates/openbrowser-core/src/{proxy,sync,process,tls}` | 可选代理桥、同步/进程/TLS 库；生产接线范围见 `rust-core-decision.md` |
 | 构建与开发工具 | `Browserapp/scripts/`、`.github/workflows/` | 启动、打包、获取内核、检查注册表、性能基准、CI |
 | 发布资源清单 | `Browserapp/scripts/runtime-manifest.js` | 显式列出顶层运行入口及资源领域，保留原生辅助程序和供应商树；排除开发、自测与审计工具，并检查复制后的目录 |
@@ -87,6 +98,12 @@
 13. HTTP 的 socket 空闲超时不能代替总期限。共享传输在响应 end 前保留绝对期限，并处理 error/aborted/提前 close；拒绝和跳转会销毁旧连接。跨 origin 跳转移除 Cookie、Authorization 等敏感头，每跳仍由调用方 URL 策略校验。模板请求保留原有不自动跟随跳转的行为。
 14. 静态 RPA 执行图最多允许 64 层嵌套、10,000 个步骤，超过限制或包含循环引用时明确拒绝。任务在分配浏览器前检查；商店预处理也检查图形边界。动作是否可执行与图是否安全分别判断，便于展示暂不支持的商店模板。
 15. RPA 文件路径必须同时满足逻辑目录和物理目录边界，新增文件也要检查已存在的父目录。允许的根目录本身可重定向到 OneDrive 等位置，但其子链接不能外逃。路径验证与后续文件操作仍是两个阶段，不构成防御其他进程并发替换路径的原子文件系统沙箱。
+16. `syncProfiles()` 已等待持久化完成，创建/复制 API 不再补写第二次。直接修改 Map 的入口仍负责保存和缓存失效。
+17. 自定义位置无效时不回退到其他来源，保持未知；合法的 `(0, 0)` 继续有效。API 的 `geolocation` 参数非法时返回 HTTP 400；旧数据清洗将非法坐标对转换为两个 null。
+18. API 新处理器加入对应领域控制器和路由注册表；不再向 HTTP 服务添加业务方法。编辑器保存测试直接调用公开控制器，不截取 renderer 源码。
+19. UI 初始化的首次脱敏保存必须发生在缓存和告警状态初始化后；日志与出口事件共用 `uiStateStore.request()`，立即保存会消费待写请求，pagehide/beforeunload 只排空待写状态。
+20. 非显式 UI 同步中的多账号凭据只按相同行号和用户名恢复；明确的 credentialsAction=replace/clear 不恢复旧值。备用代理优先按行和端点恢复，唯一端点才允许跨行匹配。
+21. 修改注入片段必须检查完整拼接后的脚本，保持片段顺序和共享词法变量可见性；单个片段本身并非独立运行脚本。
 
 ## 本地检查
 
@@ -132,6 +149,13 @@ npm run selftest -- archiveconcurrency
 npm run selftest -- httpboundaries
 npm run selftest -- rparegistry
 npm run selftest -- rpapaths
+npm run selftest -- profilevalues
+npm run selftest -- apiinventory
+npm run selftest -- launcharguments
+npm run selftest -- automationipc
+npm run selftest -- uistatestore
+npm run selftest -- enginecompose
+node scripts/benchmark-ui-polling.js 9ae738a 10000
 node scripts/benchmark-review.js 0c06ae8
 node scripts/benchmark-persistence.js
 node scripts/benchmark-rpa-budget.js 0c06ae8
@@ -144,3 +168,5 @@ node scripts/benchmark-session-persistence.js 65ddc51
 RPA 与主进程的后续改动见 [第三轮 RPA 生命周期与容量回收](dev-reports/2026-11-10-round3-rpa-lifecycle-and-budget.md)。
 本次同步、刷新、下载与分类复审见 [项目复审与优化记录](dev-reports/2026-11-10-project-review.md)。
 下一轮查询并发、事务和哈希优化见 [会话与事务优化记录](dev-reports/2026-11-10-next-optimization.md)。
+API 控制器、启动参数、内核发现和编辑保存的本轮调整见 [模块分类与校验优化记录](dev-reports/2026-11-10-modular-optimization.md)。
+UI 状态持久化、注入领域片段及引擎成员组合见 [第二轮 UI 与注入模块优化](dev-reports/2026-11-10-round2-ui-and-injection.md)。

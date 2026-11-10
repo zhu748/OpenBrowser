@@ -328,62 +328,32 @@ function cloneProfilePreferences(profile) {
   };
 }
 
-// save() re-normalizes every profile through redactProfileForStorage; paying
-// that per status burst stalled the UI during batch start/stop. Coalesce the
-// exit-field persist into one trailing save (same pattern as log()).
-let __exitStatePersistTimer = 0;
-function scheduleEngineExitStateSave() {
-  clearTimeout(__exitStatePersistTimer);
-  __exitStatePersistTimer = setTimeout(() => { __exitStatePersistTimer = 0; save(); }, 500);
-}
-
 function mergeEngineExitState(values) {
-  if (!Array.isArray(values) || !values.length) return false;
-  const byId = new Map(values.map((item) => [item.id, item]));
-  const exitFields = ['exitIp', 'exitCountryCode', 'exitTimezone', 'exitLatitude', 'exitLongitude', 'exitCheckedAt', 'exitLatencyMs', 'exitNetworkType'];
-  let changed = false;
-  ui.profiles = ui.profiles.map((local) => {
-    const remote = byId.get(local.id);
-    if (!remote) return local;
-    let next = { ...local };
-    if (remote.exitIp) {
-      for (const field of exitFields) {
-        if (remote[field] === undefined || remote[field] === null || remote[field] === '') continue;
-        if (next[field] !== remote[field]) { next[field] = remote[field]; changed = true; }
-      }
-    }
-    if (remote.proxy && proxyHasCredentials(remote.proxy) && !proxyHasCredentials(next.proxy)) {
-      next.proxy = remote.proxy;
-      changed = true;
-    }
-    if (remote.proxyId && !next.proxyId) {
-      next.proxyId = remote.proxyId;
-      changed = true;
-    }
-    const resolvedProxyId = next.proxyId || remote.proxyId;
-    if (resolvedProxyId && !proxyHasCredentials(next.proxy)) {
-      const libItem = proxyLibraryItem(resolvedProxyId);
-      if (libItem) {
-        const fullProxy = parseProxyInputForUi(libItem, libItem.protocol || 'socks5')?.raw;
-        if (fullProxy && proxyHasCredentials(fullProxy)) {
-          next.proxy = fullProxy;
-          changed = true;
-        }
-      }
-    }
-    return next;
+  const result = window.OpenBrowserProfileState.mergeExitState({ profiles: ui.profiles, engineProfiles: values,
+    hasCredentials: proxyHasCredentials,
+    restoreProxy(proxy, proxyId) {
+      const item = proxyLibraryItem(proxyId);
+      return item ? parseProxyInputForUi(item, item.protocol || 'socks5')?.raw || proxy : proxy;
+    },
   });
-  if (changed) scheduleEngineExitStateSave();
-  return changed;
+  if (result.changed) {
+    ui.profiles = result.profiles;
+    uiStateStore.request();
+  }
+  return result.changed;
 }
 
-function loadUi() {
-  try {
-    const value = JSON.parse(localStorage.getItem(UI_KEY));
-    if (value && Array.isArray(value.profiles)) return value;
-  } catch (_) {}
-  return { profiles: defaultProfiles(), groups: defaultGroups(), logs: [] };
-}
+const uiStateStore = window.OpenBrowserUiState.createUiStateStore({
+  read: () => localStorage.getItem(UI_KEY),
+  write: (value) => localStorage.setItem(UI_KEY, value),
+  getState: () => ui,
+  normalizeProfile: (profile) => normalizeProfileSettings(profile),
+  fallback: () => ({ profiles: defaultProfiles(), groups: defaultGroups(), logs: [] }),
+  onQuota: (error) => notifyStorageQuotaExceeded(error),
+  onFailure: (error) => console.warn('[OpenBrowser Storage] Unable to persist UI state:', error?.message || error),
+});
+
+function loadUi() { return uiStateStore.load(); }
 
 function normalizeGroup(raw, index = 0) {
   const value = raw && typeof raw === 'object' ? raw : {};
@@ -451,11 +421,6 @@ const loadedUi = loadUi();
 const migratedUi = migrateProfileNumbers(loadedUi.profiles, loadedUi.nextProfileNumber);
 const migratedGroups = migrateGroups(loadedUi.groups, migratedUi.profiles);
 let ui = { ...loadedUi, ...migratedUi, groups: migratedGroups };
-// Immediate migration: purge secrets from any older localStorage dumps.
-try {
-  save();
-} catch (_) {}
-
 // Roxy 对齐：回收站保留 7 天，启动时自动清理过期项
 const TRASH_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 let profileSort = { key: '', dir: 1 };
@@ -956,49 +921,6 @@ function iconActionButton(icon, label, className = 'mini') {
   }
   return button;
 }
-// Keep behaviorally identical to automation/proxy-redact.js (redactProxyCredentials):
-// the hardening selftest locks the two together case by case, so a fix applied to
-// one must be mirrored here — there is exactly one canonical implementation to reason
-// about, and this copy exists only because the renderer has no require().
-function redactProxyForStorage(proxy) {
-  const raw = String(proxy ?? '').trim();
-  if (!raw) return 'Direct';
-  if (/^(direct|offline|none)$/i.test(raw)) return raw;
-  try {
-    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) {
-      const parsed = new URL(raw);
-      parsed.username = '';
-      parsed.password = '';
-      return parsed.toString();
-    }
-  } catch (_) {}
-  const parts = raw.split(':');
-  // host:port:user:pass → host:port only
-  if (parts.length >= 4) return `${parts[0]}:${parts[1]}`;
-  return raw;
-}
-
-function redactProfileForStorage(profile) {
-  const value = normalizeProfileSettings(profile);
-  return {
-    ...value,
-    cookies: '',
-    proxy: redactProxyForStorage(value.proxy),
-    platform: {
-      ...(value.platform || {}),
-      password: '',
-      totpSecret: '',
-      // 多账号行与主账号字段同规则脱敏：username 保留（列表/编辑器展示用），
-      // password/totpSecret 清空。'profile-closed' 事件带来的完整行只存在于
-      // 内存 ui.profiles（编辑器一次性读取，与 cookies 同一设计），save()
-      // 在序列化时统一经过这里，localStorage 永不落盘任何一行的机密。
-      accounts: Array.isArray(value.platform?.accounts)
-        ? value.platform.accounts.map((account) => ({ ...account, password: '', totpSecret: '' }))
-        : [],
-    },
-  };
-}
-
 let lastQuotaWarningAt = 0;
 function notifyStorageQuotaExceeded(error) {
   const now = Date.now();
@@ -1013,52 +935,18 @@ function notifyStorageQuotaExceeded(error) {
   console.warn('[OpenBrowser Storage] localStorage save failed, quota exceeded:', error?.message || error);
 }
 
-function trimProfileForUiStorage(profile) {
-  const value = redactProfileForStorage(profile);
-  return {
-    id: value.id,
-    number: value.number,
-    name: value.name,
-    groupId: value.groupId,
-    tags: value.tags,
-    trashed: value.trashed,
-    trashedAt: value.trashedAt,
-    notes: value.notes,
-    networkMode: value.networkMode,
-    proxy: value.proxy,
-    proxyId: value.proxyId,
-    createdAt: value.createdAt,
-    updatedAt: value.updatedAt,
-  };
-}
-
-const save = () => {
+function save() {
   if (!Array.isArray(ui.groups)) ui.groups = defaultGroups();
   __groupListCache = null;
   __groupMapCache = null;
-  const safe = {
-    ...ui,
-    profiles: (ui.profiles || []).map((item) => redactProfileForStorage(item)),
-  };
-  try {
-    // Never persist cookies / platform secrets / proxy passwords in renderer localStorage.
-    // Secrets stay in main-process engine state (openbrowser-data.db).
-    localStorage.setItem(UI_KEY, JSON.stringify(safe));
-  } catch (err) {
-    notifyStorageQuotaExceeded(err);
-    // 降级策略：修剪非核心状态（丢弃全部日志、精简 profile 仅保留 UI 展示字段）
-    try {
-      const trimmed = {
-        ...ui,
-        logs: [],
-        profiles: (ui.profiles || []).map((item) => trimProfileForUiStorage(item)),
-      };
-      localStorage.setItem(UI_KEY, JSON.stringify(trimmed));
-    } catch (fallbackErr) {
-      console.warn('[OpenBrowser Storage] Trimmed localStorage fallback also failed:', fallbackErr?.message || fallbackErr);
-    }
-  }
-};
+  return uiStateStore.save();
+}
+// All state/cache bindings are initialized before the first migration write.
+// This removes credentials from legacy localStorage immediately after load.
+save();
+window.addEventListener?.('beforeunload', () => uiStateStore.flush());
+window.addEventListener?.('pagehide', () => uiStateStore.flush());
+
 function textDelayRange() { return syncSettings.delayInput ? [syncSettings.inputMinMs / 1000, syncSettings.inputMaxMs / 1000] : [0, 0]; }
 function fillSyncSettingsForm() {
   const checks = { '#settings-sync-keyboard': 'keyboard', '#settings-sync-click': 'click', '#settings-sync-scroll': 'scroll', '#settings-sync-track': 'track', '#settings-delay-click': 'delayClick', '#settings-delay-input': 'delayInput' };
@@ -1180,15 +1068,11 @@ async function confirmAction(options) {
   }
   return confirmUi(options);
 }
-let __logPersistTimer = 0;
 let logsDirty = false;
 function log(module, message) {
   ui.logs.unshift({ time: new Date().toLocaleTimeString('zh-CN', { hour12: false }), module, message });
   ui.logs = ui.logs.slice(0, 200);
-  // save() serializes every profile into localStorage; a burst of log lines
-  // (batch start/stop, sync events) used to pay that once per line.
-  clearTimeout(__logPersistTimer);
-  __logPersistTimer = setTimeout(() => { __logPersistTimer = 0; save(); }, 500);
+  uiStateStore.request();
   // #view-logs is hidden most of the time; rebuilding up to 200 rows per log
   // line is wasted work. Render now only while the view is active, else mark
   // dirty and render when the logs view is switched to.
@@ -1450,7 +1334,7 @@ function applyEditorNetworkResult(result = {}, { fillFingerprint = true } = {}) 
   if (result.countryCode) {
     editorSet('#editor-language-mode', 'ip');
   }
-  if (Number.isFinite(Number(result.latitude)) && Number.isFinite(Number(result.longitude))) {
+  if (window.OpenBrowserProfileValues.normalizeCoordinates(result.latitude, result.longitude).valid) {
     editorSet('#editor-geo-mode', 'ip');
   }
   updateEditorVisibility();
@@ -3713,85 +3597,45 @@ document.getElementById('editor-clear-cache-cookie')?.addEventListener('click', 
     toast(tx('缓存及 Cookie 已清除'));
   } catch (error) { toast(error.message); }
 });
-$('#profile-editor-form').addEventListener('submit', async (event) => {
-  event.preventDefault(); const index = ui.profiles.findIndex((item) => item.id === editingProfileId); if (index < 0) return toast(tx('环境不存在'));
-  const editedId = editingProfileId;
-  const form = event.currentTarget;
-  if (form?.dataset.saving === '1') return;
-  if (form) form.dataset.saving = '1';
-  const shouldSaveEditorProxyToLib = Boolean($('#editor-proxy-save-to-library')?.checked);
-  try {
-    const previous = ui.profiles[index]; const draft = editorDraft(true); if (!draft.name) throw new Error(tx('环境名称不能为空'));
-    if (draft.proxy !== previous.proxy && !editorNetworkResult) { delete draft.exitIp; delete draft.exitCountryCode; delete draft.exitTimezone; delete draft.exitLatitude; delete draft.exitLongitude; delete draft.exitCheckedAt; }
-    draft.updatedAt = new Date().toISOString();
-    const commitEdit = (profile, baseRev) => window.OpenBrowserProfileCommands.commitProfileEdit({
-      profile, baseRev,
-      applyCommands: (commands) => window.ops.applyProfileCommands(commands),
-      commit: (accepted, rows) => {
-        const currentIndex = ui.profiles.findIndex((item) => item.id === accepted.id);
-        if (currentIndex >= 0) ui.profiles[currentIndex] = accepted;
-        engineProfiles = rows;
-        save();
-        invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies']);
-      },
-    });
-    await commitEdit(draft, editingProfileBaseRev);
+$('#profile-editor-form').addEventListener('submit', window.OpenBrowserProfileCommands.createProfileEditorSubmit({
+  getSession: () => ({ id: editingProfileId, baseRev: editingProfileBaseRev, networkResult: editorNetworkResult,
+    saveProxy: Boolean($('#editor-proxy-save-to-library')?.checked), proxyType: $('#editor-proxy-type')?.value || 'socks5' }),
+  getProfiles: () => ui.profiles,
+  readDraft: () => editorDraft(true),
+  ops: window.ops,
+  publish(profile) {
+    const index = ui.profiles.findIndex((item) => item.id === profile.id);
+    if (index >= 0) ui.profiles[index] = profile;
+    save();
+    invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies']);
     renderProfiles();
-    if (shouldSaveEditorProxyToLib && !isDirectProxy(draft.proxy)) {
-      try {
-        const parsed = parseProxyInputForUi(draft.proxy, $('#editor-proxy-type')?.value || 'socks5');
-        if (parsed?.host && parsed?.port) {
-          const createdLib = await window.ops.proxyCreate({
-            name: `环境${displayProfileNumber(draft)}代理`,
-            protocol: parsed.protocol || 'socks5',
-            host: parsed.host,
-            port: Number(parsed.port),
-            username: parsed.username || '',
-            password: parsed.password || '',
-            raw: parsed.raw || draft.proxy,
-            remark: `由环境${displayProfileNumber(draft)}编辑时自动保存`,
-          });
-          if (createdLib?.id) {
-            const linked = { ...draft, proxyId: createdLib.id, proxyMeta: { ...(draft.proxyMeta || {}), proxyId: createdLib.id } };
-            const rev = engineProfiles.find((item) => item.id === draft.id)?.rev;
-            await commitEdit(linked, rev);
-          }
-          await refreshProxies();
-        }
-      } catch (saveErr) {
-        console.warn('编辑时自动保存代理到代理库失败', saveErr);
-      }
-    }
-    const running = profileEngine(draft.id).running;
+  },
+  setRows: (rows) => { engineProfiles = rows; },
+  normalize: normalizeProfileSettings,
+  async saveProxy(draft, session) {
+    if (!session.saveProxy || isDirectProxy(draft.proxy)) return null;
+    const parsed = parseProxyInputForUi(draft.proxy, session.proxyType);
+    if (!parsed?.host || !parsed?.port) return null;
+    const number = displayProfileNumber(draft);
+    const created = await window.ops.proxyCreate({ name: `环境${number}代理`, protocol: parsed.protocol || 'socks5',
+      host: parsed.host, port: Number(parsed.port), username: parsed.username || '', password: parsed.password || '',
+      raw: parsed.raw || draft.proxy, remark: `由环境${number}编辑时自动保存` });
+    return created?.id || null;
+  },
+  afterProxy: (_draft, session) => session.saveProxy ? refreshProxies() : undefined,
+  onSaved(draft, session) {
     log('Profile', '已更新环境 ' + displayProfileNumber(draft));
-    if (editingProfileId === editedId) {
+    if (editingProfileId === session.id) {
       editingProfileId = null;
       editorNetworkResult = null;
       switchView('profiles');
     }
-    toast(running ? tx('设置已保存，请重启该环境后生效') : tx('环境设置已保存'));
-  } catch (error) {
-    if (error?.code === 'PROFILE_STALE_REV') {
-      try {
-        const current = window.OpenBrowserIpcResult.unwrapIpcResult(await window.ops.profileForEdit(editedId));
-        const currentIndex = ui.profiles.findIndex((item) => item.id === current.profile.id);
-        if (currentIndex >= 0) {
-          ui.profiles[currentIndex] = normalizeProfileSettings(current.profile);
-          save();
-          invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies']);
-        }
-        engineProfiles = await window.ops.profileStatus();
-      } catch (refreshError) {
-        log('Error', '读取最新环境失败：' + refreshError.message);
-      }
-      toast(tx('环境已被其他操作更新，请重新打开编辑器后保存；当前草稿未提交。'));
-    } else {
-      toast('保存失败：' + error.message);
-    }
-  } finally {
-    if (form) delete form.dataset.saving;
-  }
-});
+    toast(profileEngine(draft.id).running ? tx('设置已保存，请重启该环境后生效') : tx('环境设置已保存'));
+  },
+  onError: (error) => toast('保存失败：' + tx(error.message)),
+  onConflict: () => toast(tx('环境已被其他操作更新，请重新打开编辑器后保存；当前草稿未提交。')),
+  onWarning: (error) => log('Error', '更新环境关联数据失败：' + error.message),
+}));
 
 $('#batch-add').addEventListener('click', () => {
   $('#batch-add-start').value = String(nextProfileNumber());

@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const { RpaEngine } = require('../rpa-engine');
 const { RpaStore } = require('../rpa-store');
-const { executableStepTypes, resolveStepHandler, findUnsupportedSteps, validateStepHandlers } = require('../rpa/step-registry');
+const { executableStepTypes, unsupportedStepTypes, getStepCapability, resolveStepHandler, findUnsupportedSteps, validateStepHandlers } = require('../rpa/step-registry');
 
 async function main() {
   validateStepHandlers(RpaEngine.prototype);
@@ -15,6 +15,11 @@ async function main() {
   }
   assert.equal(resolveStepHandler('__proto__'), null);
   assert.equal(resolveStepHandler('SLEEP'), 'stepWait');
+  for (const type of unsupportedStepTypes) {
+    assert.equal(getStepCapability(type).status, 'unsupported');
+    assert.equal(resolveStepHandler(type), null);
+    assert.equal(findUnsupportedSteps([{ type }]).length, 1);
+  }
   assert.throws(() => validateStepHandlers({}), /without executor/);
   const cycle = [{ type: 'wait' }]; cycle[0].children = cycle;
   assert.equal(findUnsupportedSteps(cycle)[0].reason, 'cyclic steps');
@@ -43,6 +48,12 @@ async function main() {
   assert.match(result.error, /Invalid RPA steps/);
   assert.equal(starts, 0, 'invalid plans fail before browser allocation');
   assert.equal(runner.running.size, 0, 'preflight failures release the run marker');
+  for (const type of ['keyCombination', 'applySubProcess', 'getCaptcha', 'closeOtherPage']) {
+    runner.store.getTask = () => ({ id: 'invalid', profile_id: 'a', steps: [{ type }] });
+    assert.equal((await runner.runTask('invalid')).success, false, type + ' cannot be reported as success');
+    await assert.rejects(runner.executeStepInternal(0, { type }, { variables: {} }), /Unsupported RPA step/);
+  }
+  assert.equal(starts, 0, 'unimplemented actions never allocate a browser');
   console.log('RPA_REGISTRY_BOUNDARIES_SELFTEST OK (single registry, aliases, real dispatch, cycles, nesting, count budget)');
 }
 main().catch((error) => { console.error(error); process.exitCode = 1; });

@@ -1499,36 +1499,25 @@ class BrowserEngine {
 
 }
 
-// Runtime settings application, the startup-page/locale environment cluster
-// and the constructor-time init routine are prototype mixins:
-Object.assign(BrowserEngine.prototype, require('./engine/runtime-settings'));
-Object.assign(BrowserEngine.prototype, require('./engine/start-page'));
-Object.assign(BrowserEngine.prototype, require('./engine/init'));
-
-// The profile-proxy runtime group (resolve/apply/test/check/refresh/prepare)
-// is a prototype mixin in engine/profile-proxy.js; engine/start.js calls
-// this.prepareProfileProxyForStart through the prototype.
-Object.assign(BrowserEngine.prototype, require('./engine/profile-proxy'));
-
-// The startup routine (_start) is a prototype mixin in engine/start.js;
-// the public start() entry stays here and calls it through the prototype.
-Object.assign(BrowserEngine.prototype, require('./engine/start'));
-// Firefox launch pipeline (no CDP); prototype-assigned like engine/start.
-Object.assign(BrowserEngine.prototype, require('./engine/start-firefox'));
-
-// Fingerprint injection (worker realms, session attach, delivery
-// verification, start-page refresh) is a prototype mixin in
-// engine/fingerprint-injection.js.
-Object.assign(BrowserEngine.prototype, require('./engine/fingerprint-injection'));
-
-// Lifecycle cleanup and the profile store API are prototype mixins kept in
-// engine/lifecycle-cleanup.js and engine/profile-store-api.js: same `this`
-// binding, same engine.<method>() surface, bodies verbatim.
-Object.assign(BrowserEngine.prototype, require('./engine/lifecycle-cleanup'));
-Object.assign(BrowserEngine.prototype, require('./engine/profile-store-api'));
-Object.assign(BrowserEngine.prototype, require('./engine/extensions-api'));
-Object.assign(BrowserEngine.prototype, require('./engine/persistence'));
-Object.assign(BrowserEngine.prototype, require('./engine/session-api'));
+// Contributions retain the public engine API, but duplicates can no longer
+// silently replace another domain's methods. Ownership is available for diagnostics.
+const { installEngineModules } = require('./engine/compose');
+Object.defineProperty(BrowserEngine, 'methodOwners', {
+  value: installEngineModules(BrowserEngine.prototype, [
+    ['runtime-settings', require('./engine/runtime-settings')],
+    ['start-page', require('./engine/start-page')],
+    ['init', require('./engine/init')],
+    ['profile-proxy', require('./engine/profile-proxy')],
+    ['start', require('./engine/start')],
+    ['start-firefox', require('./engine/start-firefox')],
+    ['fingerprint-injection', require('./engine/fingerprint-injection')],
+    ['lifecycle-cleanup', require('./engine/lifecycle-cleanup')],
+    ['profile-store-api', require('./engine/profile-store-api')],
+    ['extensions-api', require('./engine/extensions-api')],
+    ['persistence', require('./engine/persistence')],
+    ['session-api', require('./engine/session-api')],
+  ]),
+});
 
 module.exports = {
   BrowserEngine,

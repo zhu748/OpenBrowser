@@ -45,5 +45,66 @@
     return rows;
   }
 
-  return { commitProfileEdit, createProfileEditorOpener };
+  /**
+   * Own an editor save session independently of renderer globals. All reads are
+   * explicit so a completed request cannot close another editor or borrow the
+   * revision of a newer background refresh for an older draft.
+   */
+  function createProfileEditorSubmit({ getSession, getProfiles, readDraft, ops, publish, setRows,
+    normalize, saveProxy, afterProxy, onSaved, onError, onConflict, onWarning }) {
+    let saving = false;
+    return async (event) => {
+      event.preventDefault();
+      if (saving) return;
+      const session = getSession();
+      const previous = getProfiles().find((profile) => profile.id === session.id);
+      if (!previous) return onError(new Error('环境不存在'));
+      const form = event.currentTarget;
+      saving = true;
+      if (form) form.dataset.saving = '1';
+      const commit = (profile, baseRev) => commitProfileEdit({ profile, baseRev,
+        applyCommands: (commands) => ops.applyProfileCommands(commands),
+        commit: (accepted, rows) => { publish(accepted); setRows(rows); },
+      });
+      try {
+        const draft = readDraft();
+        if (!draft.name) throw new Error('环境名称不能为空');
+        if (draft.proxy !== previous.proxy && !session.networkResult) {
+          for (const key of ['exitIp', 'exitCountryCode', 'exitTimezone', 'exitLatitude', 'exitLongitude', 'exitCheckedAt']) delete draft[key];
+        }
+        draft.updatedAt = new Date().toISOString();
+        const rows = await commit(draft, session.baseRev);
+        if (saveProxy) {
+          try {
+            const proxyId = await saveProxy(draft, session);
+            if (proxyId) {
+              const linked = { ...draft, proxyId, proxyMeta: { ...(draft.proxyMeta || {}), proxyId } };
+              // The draft has seen exactly this command result, never a newer
+              // polling snapshot that may contain changes from another client.
+              await commit(linked, rows.find((row) => row.id === draft.id).rev);
+            }
+            await afterProxy?.(draft, session);
+          } catch (error) { onWarning(error); }
+        }
+        onSaved(draft, session);
+        return true;
+      } catch (error) {
+        if (error?.code === 'PROFILE_STALE_REV') {
+          try {
+            const current = unwrapIpcResult(await ops.profileForEdit(session.id));
+            publish(normalize(current.profile));
+            setRows(await ops.profileStatus());
+          } catch (refreshError) { onWarning(refreshError); }
+          // Refresh the row, but do not grant the still-open draft a new revision.
+          onConflict(error);
+        } else { onError(error); }
+        return false;
+      } finally {
+        saving = false;
+        if (form) delete form.dataset.saving;
+      }
+    };
+  }
+
+  return { commitProfileEdit, createProfileEditorOpener, createProfileEditorSubmit };
 });

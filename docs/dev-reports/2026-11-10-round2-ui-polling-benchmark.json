@@ -1,0 +1,8 @@
+{
+  "baseline": "9ae738a",
+  "profiles": 10000,
+  "oldReplacements": 10000,
+  "newReplacements": 0,
+  "oldArrayRetained": false,
+  "newArrayRetained": true
+}

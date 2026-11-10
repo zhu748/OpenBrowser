@@ -412,11 +412,11 @@ function editorDraft(strict = true) {
     catch (_) { throw new Error(tx('自定义时区无效，请使用 Asia/Shanghai 这类 IANA 时区名称')); }
   }
   if (strict && privacy.geoMode === 'custom') {
-    const latitude = Number(privacy.latitude); const longitude = Number(privacy.longitude);
-    if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+    const location = window.OpenBrowserProfileValues.normalizeCoordinates(privacy.latitude, privacy.longitude);
+    if (!location.valid) {
       throw new Error(tx('自定义地理位置经纬度无效'));
     }
-    privacy.latitude = latitude; privacy.longitude = longitude;
+    privacy.latitude = location.latitude; privacy.longitude = location.longitude;
   }
   const selectedNetwork = editorSelectedNetwork();
   const selectedProxyValue = String($('#editor-proxy-library')?.value || '').trim();

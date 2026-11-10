@@ -410,8 +410,8 @@ async function tabs(port, options = {}) {
   return (await targets(port, options)).filter((item) => item.type === 'page');
 }
 
-async function browserSocket(port) {
-  const version = await json(`http://127.0.0.1:${port}/json/version`);
+async function browserSocket(port, options = {}) {
+  const version = await json(`http://127.0.0.1:${port}/json/version`, 'GET', options);
   return version.webSocketDebuggerUrl;
 }
 

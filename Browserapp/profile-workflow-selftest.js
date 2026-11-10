@@ -53,7 +53,7 @@ async function main() {
 
     const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
     const renderer = fs.readFileSync(path.join(__dirname, 'renderer.js'), 'utf8');
-    const fingerprintInject = fs.readFileSync(path.join(__dirname, 'automation', 'fingerprint', 'injection-script.js'), 'utf8');
+    const fingerprintInject = require('./automation/fingerprint').buildInjectionScript(require('./automation/fingerprint').buildFingerprint(base));
     const fingerprintTab = fs.readFileSync(path.join(__dirname, 'automation', 'fingerprint', 'tab-apply.js'), 'utf8');
     const liveSync = fs.readFileSync(path.join(__dirname, 'live-sync-v5.js'), 'utf8');
     const nativeMirror = fs.readFileSync(path.join(__dirname, 'native-input-mirror.cs'), 'utf8');

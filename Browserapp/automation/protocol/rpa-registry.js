@@ -23,7 +23,7 @@ const RPA_PLUS_ACTIONS = Object.freeze([
   'startNode',
   'newPage',
   'closePage',
-  'closeOtherPage',
+  'closeOtherPage', // no local executor; rejected before browser allocation
   'switchPage',
   'gotoUrl',
   'refreshPage',
@@ -38,7 +38,7 @@ const RPA_PLUS_ACTIONS = Object.freeze([
   'uploadAttachment',
   'javaScript',
   'keyboard',
-  'keyCombination',
+  'keyCombination', // no local executor; use implemented keyboard actions
   'waitTime',
   'waitForSelector',
   'waitForResponse',
@@ -65,7 +65,7 @@ const RPA_PLUS_ACTIONS = Object.freeze([
   'saveRemark',
   'saveTag', // marketplace-listed; no local executor — fails closed at validation
   'openNewBrowser',
-  'applySubProcess',
+  'applySubProcess', // external subprocess references have no local executor
   'ifElse',
   'forElements',
   'forTimes',
@@ -73,7 +73,7 @@ const RPA_PLUS_ACTIONS = Object.freeze([
   'whileData',
   'breakLoop',
   'closeBrowser',
-  'getCaptcha',
+  'getCaptcha', // no configured provider; rejected before browser allocation
   'googleSheet',
   'getOpenAI',
 ]);

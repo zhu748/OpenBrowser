@@ -11,15 +11,14 @@
  */
 
 const { ensureKernelReadyForLaunch } = require('../automation/browser-kernel');
-const { LIST_VALUE_FLAGS, appendFlagValue, mergeFlags } = require('../automation/command-line-flags');
+const { buildBaseLaunchArguments, completeLaunchArguments, SECURITY_SWITCH_DENYLIST } = require('./launch-arguments');
 const { normalizeEnvNumber, prepareMacDockWrapper, prepareMarkerExtension } = require('../automation/env-icon');
-const { buildFingerprint, chromeArgsForFingerprint } = require('../automation/fingerprint');
+const { buildFingerprint } = require('../automation/fingerprint');
 const { fpLog, summarizeFp, logPath: fingerprintLogPath } = require('../automation/fingerprint-debug-log');
 const { acquireProfileLock, updateProfileLock, validateProfileRootSecure } = require('../automation/isolation');
 const { fingerprintForNativeKernelInject, isOpenBrowser148, writeOpenBrowserKernelInit } = require('../automation/kernel-init-sync');
 const { resolveProfileTimezone } = require('../automation/locale-from-country');
 const { mergeLoadExtensionArgs } = require('../automation/protocol/app-center-protocol');
-const { backgroundNetworkFlagsForProfile } = require('../automation/request-header-rewriter');
 const { portConnection, reconcileOnConnection } = require('../extension-pipe');
 const { appendDiagnosticOutput, formatBrowserStartupError, isChildExited, removeSingletonFiles, writeBrowserStartupDiagnostic, writeRawAtomically } = require('./index');
 const { assertResourceGateForLaunch } = require('./resource-gate');
@@ -48,29 +47,6 @@ const {
   needsProxyBridge = () => false,
   chromeProxyEndpoint = () => '',
 } = proxyForwarderModule;
-
-// customArgs（profile.privacy.customArgs）不得覆盖的安全类 Chromium 开关。
-// customArgs 是每环境的高级逃生舱，追加在所有内置参数之后；Chromium 同名单值
-// 参数后者生效，因此用户 —— 或导入/云恢复档案（不受信输入面）—— 能借它静默
-// 关掉内置加固：fail-closed 代理路由、WebRTC IP 泄漏防护、仅回环的 CDP 暴露面、
-// 沙箱与同源策略。逃生舱对非安全开关保持开放；下列开关在启动时拒绝并告警。
-// --disable-ipv6 出于同一理由在列：代理模式由管线自行追加（见下方 proxy 分支），
-// 经 customArgs 注入的副本还会把直连环境的 IPv6 一并关掉。
-const SECURITY_SWITCH_DENYLIST = new Set([
-  'proxy-server',
-  'proxy-bypass-list',
-  'proxy-pac-url',
-  'force-webrtc-ip-handling-policy',
-  'remote-debugging-port',
-  'remote-debugging-pipe',
-  'remote-allow-origins',
-  'user-data-dir',
-  'profile-directory',
-  'load-extension',
-  'disable-web-security',
-  'no-sandbox',
-  'disable-ipv6',
-]);
 
 /**
  * Validate whether a string is a recognized, valid IANA time zone identifier.
@@ -462,46 +438,13 @@ module.exports = {
       startupResources.proxyForwarder = proxyForwarder;
     }
     this.emitStartProgress(profile.id, 'configure', 48, '正在配置启动参数…');
-    let args = [
-      `--user-data-dir=${root}`,
-      `--disk-cache-dir=${path.join(root, 'OpenBrowserCache')}`,
-      `--crash-dumps-dir=${path.join(root, 'OpenBrowserCrashReports')}`,
-      '--profile-directory=Default',
-      '--no-first-run',
-      '--no-default-browser-check',
-      '--hide-crash-restore-bubble',
-      '--disable-session-crashed-bubble',
-      '--disable-background-mode',
-      '--enable-unsafe-extension-debugging',
-      '--extensions-on-chrome-urls',
-      '--enable-features=AutomaticFullscreenContentSetting,WindowPlacement,WindowManagement',
-      '--disable-gesture-requirement-for-presentation',
-      '--disable-fullscreen-low-power-mode',
-      // Random loopback port only; never bind 0.0.0.0. Restrict CDP WebSocket origins
-      // (was * — any local page that learns the port could attach and steal session).
-      '--remote-debugging-port=0',
-      '--remote-allow-origins=http://127.0.0.1,http://localhost',
-    ];
-    // Fingerprint chrome flags (UA / webrtc / webgl / lang / window-size)
     let hostScaleFactor = null;
     try {
       hostScaleFactor = this.getHostScaleFactor ? this.getHostScaleFactor() : null;
     } catch (_) {
       hostScaleFactor = null;
     }
-    args = mergeFlags(args, chromeArgsForFingerprint(fingerprint, profile, { hostScaleFactor }), {
-      listFlags: LIST_VALUE_FLAGS,
-    });
-    const langList = (Array.isArray(fingerprint?.languages) && fingerprint.languages.length)
-      ? fingerprint.languages
-      : (Array.isArray(profile?.languages) && profile.languages.length)
-        ? profile.languages
-        : profile?.language
-          ? [profile.language]
-          : [];
-    if (langList.length && !args.some((a) => a.startsWith('--accept-lang='))) {
-      args.push(`--accept-lang=${langList.join(',')}`);
-    }
+    let args = buildBaseLaunchArguments({ root, fingerprint, profile, hostScaleFactor });
     // openbrowser-148: write profile/init.json so Framework native FP matches buildFingerprint
     let runtimeFingerprint = fingerprint;
     kernelWindowName = null;
@@ -535,121 +478,11 @@ module.exports = {
         });
       }
     }
-    if (!profile.advanced.allowSignin) args.push('--disable-sync');
-    if (profile.privacy.webgpu === 'blocked') args.push('--disable-features=WebGPU');
-    if (profile.advanced.blockImages) args.push('--blink-settings=imagesEnabled=false');
-    // Roxy 对齐：「声音 = 关闭」→ 内核真静音（disablePlaySound）；视频关闭仅能落到 autoplay 闸（内核级
-    // disablePlayVideo 是 Roxy 自研内核能力，Chromium 无等价开关，见对齐矩阵）。
-    if (profile.advanced.blockSound) args.push('--mute-audio');
-    if (profile.advanced.blockVideo || profile.advanced.blockSound) args.push('--autoplay-policy=user-gesture-required');
-    else args.push('--autoplay-policy=no-user-gesture-required');
-    // Roxy 对齐：「忽略 HTTPS 证书错误」（ignoreHttpsError）
-    if (profile.advanced.ignoreHttpsError) args.push('--ignore-certificate-errors');
-    // 全屏启动 / 九宫格窗口位置（对齐「窗口大小 = 全屏」「窗口位置」）
-    if (profile.privacy?.fullscreen) args.push('--start-fullscreen');
-    const windowPositionArgValue = windowPositionArg(profile);
-    if (windowPositionArgValue && !profile.privacy?.fullscreen) args.push(windowPositionArgValue);
-    // Honor the configured cap instead of a hardcoded 8GB: small-memory
-    // machines got GC behavior budgeted for 8GB per environment.
-    // jsHeapMax is normalized by the sanitizer (number = MB cap; true → 4096;
-    // null = no cap), so the Number() fallback only guards direct callers.
-    const jsHeapCap = profile.advanced.jsHeapMax;
-    if (jsHeapCap) args.push(`--js-flags=--max-old-space-size=${Math.max(256, Math.min(16384, Number(jsHeapCap) || 4096))}`);
-    if (restoreSession) args.push('--restore-last-session');
-    const disabledFeatures = [];
-    // Authenticated proxies are exposed to Chrome through the local bridge. Everything else takes
-    // the canonical endpoint from the parser, never from a pattern match on the raw string:
-    // `socks5h://`, a `#remark` suffix or a trailing slash used to miss every branch and emit no
-    // `--proxy-server` at all, which let Chromium resolve through the host's system proxy — a
-    // real-IP leak behind a UI that still reported the configured proxy.
-    let proxy = proxyForwarder ? proxyForwarder.url : chromeProxyEndpoint(profile.proxy);
-    // systemProxy: off = 强制本机直连(不走系统代理)；use/global + Direct = 不传 --proxy-server（跟随系统路由）
-    const sysMode = profile.proxyMeta?.systemProxy || 'global';
-    if (profile.networkMode === 'proxy' && (!proxy || proxy === 'direct://')) {
-      throw Object.assign(new Error('代理模式缺少有效路由，已停止启动'), { code: 'proxy-required' });
-    }
-    if (!proxy && sysMode === 'off') {
-      proxy = 'direct://';
-    }
-    if (proxyConfig && !proxy && sysMode !== 'off') {
-      // Fail closed rather than fall back to the host route. A profile that is configured with a
-      // proxy must never quietly leave through the machine's own network.
-      throw new Error('代理已配置但无法生成可用的浏览器代理端点，已按安全策略阻断启动以避免真实 IP 泄漏。');
-    }
-    if (proxy) {
-      args.push(`--proxy-server=${proxy}`);
-      // HTTP/SOCKS proxies are IPv4; disable IPv6 so Chrome cannot skip the proxy.
-      if (!args.includes('--disable-ipv6')) args.push('--disable-ipv6');
-      args = args.filter((arg) => !arg.startsWith('--force-webrtc-ip-handling-policy='));
-      args.push('--force-webrtc-ip-handling-policy=disable_non_proxied_udp');
-      // 本机启动页必须直连，不走代理；可叠加用户直连白名单
-      let bypass = '<-loopback>;127.0.0.1;localhost';
-      if (profile.networkMode !== 'proxy' && profile.proxyMeta?.directBypass && profile.proxyMeta.bypassList) {
-        // Clamp to host-shaped entries only：'*' 会让全部主机绕过路由且无任何校验，
-        // 路径分隔符也不可能出现于 Chromium bypass 主机模式 —— 两者丢弃，其余原样透传。
-        const extra = String(profile.proxyMeta.bypassList)
-          .split(/[\s,;]+/)
-          .map((s) => s.trim())
-          .filter((s) => s && s !== '*' && !/[\\/]/.test(s));
-        if (extra.length) bypass += ';' + extra.join(';');
-      }
-      const existingBypass = args.findIndex((a) => a.startsWith('--proxy-bypass-list='));
-      if (existingBypass >= 0) args[existingBypass] = '--proxy-bypass-list=' + bypass;
-      else args.push(`--proxy-bypass-list=${bypass}`);
-    }
-    // Startup URLs: do NOT put the OpenBrowser start page (or first custom URL) on the
-    // CLI. The process would paint and run collectFingerprint before CDP inject.
-    // Spawn on about:blank, inject via CDP, then keepDefaultTab navigates to startUrl.
-    // Startup URLs: do NOT put the OpenBrowser start page (or first custom URL) on the
-    // CLI. The process would paint and run collectFingerprint before CDP inject.
-    // Spawn on about:blank, inject via CDP, then keepDefaultTab navigates to startUrl.
-    if (!restoreSession) {
-      // about:blank only when there is something to navigate to afterwards;
-      // with no start page and no custom URLs the browser must open its NTP.
-      if (startUrl || customStartUrls.length) args.push('about:blank');
-      for (const extra of customStartUrls.slice(1)) args.push(extra);
-    }
-    // Cross-platform process overhead reducers (safe for multi-profile fleets).
-    // Applied for all envs — not only proxied ones — so Win/mac idle CPU stays low.
-    const perfFlags = backgroundNetworkFlagsForProfile(profile);
-    for (const flag of perfFlags) {
-      if (!args.some((a) => a.split('=')[0] === flag.split('=')[0])) args.push(flag);
-    }
-    disabledFeatures.push(
-      'OptimizationHints',
-      'MediaRouter',
-      'Translate',
-      'AutofillServerCommunication',
-      'NetworkPrediction',
-      'InterestFeedContentSuggestions',
-      'CalculateNativeWinOcclusion',
-    );
-    if (proxyConfig) {
-      // Extra hardening when traffic already goes through a bridge.
-      if (!args.includes('--disable-quic')) args.push('--disable-quic');
-    }
-    // Prefer process reuse when many profiles are open (lower RAM; still one renderer isolation base).
-    if (!args.some((a) => a.startsWith('--renderer-process-limit='))) {
-      args.push('--renderer-process-limit=4');
-    }
-    if (disabledFeatures.length) {
-      // Appending without de-duplicating would repeat names already present
-      // from either the base list or the fingerprint merge above.
-      args = appendFlagValue(args, 'disable-features', disabledFeatures.join(','));
-    }
-    // 自定义启动参数（每环境高级逃生舱）：放在所有内置参数之后，同名单值参数后者生效，
-    // 即用户显式覆盖内置默认；profile-sanitizer 已做 token 白名单（--flag 或 --flag=value，
-    // 无空白）。安全类开关（代理/CDP/沙箱/同源策略等，见 SECURITY_SWITCH_DENYLIST）
-    // 在此拒绝并告警，其余照常透传。
-    const rejectedCustomSwitches = [];
-    for (const token of String(profile.privacy?.customArgs || '').split(/\s+/)) {
-      if (!/^--[a-z0-9][a-z0-9._-]*(=[^\s;]{0,500})?$/i.test(token)) continue;
-      if (SECURITY_SWITCH_DENYLIST.has(token.slice(2).split('=')[0])) {
-        rejectedCustomSwitches.push(token);
-        continue;
-      }
-      args.push(token);
-    }
+    const configuredArgs = completeLaunchArguments(args, { profile, proxyConfig, restoreSession, startUrl,
+      customStartUrls, windowPosition: windowPositionArg(profile),
+      proxyEndpoint: proxyForwarder ? proxyForwarder.url : chromeProxyEndpoint(profile.proxy) });
+    args = configuredArgs.args;
+    const { rejectedCustomSwitches } = configuredArgs;
     if (rejectedCustomSwitches.length) {
       this.emit({
         type: 'sync-error',

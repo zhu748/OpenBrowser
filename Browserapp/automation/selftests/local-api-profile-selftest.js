@@ -25,6 +25,9 @@ const ok = (name, cond) => { assert.ok(cond, name); console.log('  PASS  ' + nam
   const engine = new BrowserEngine(app, { profileDataRoot: path.join(userData, 'browser-profiles-v2') });
   // Do not auto-bootstrap a real kernel in this offline test.
   engine.kernelBootstrapPromise = null;
+  const persist = engine.persist.bind(engine);
+  let persistCalls = 0;
+  engine.persist = () => { persistCalls += 1; return persist(); };
 
   const api = new LocalApiServer({ engine, apiKey: 'test-key-123', allowedOrigins: [] });
   // route() reads this._req/_res internally? No — route(method, pathname, input, req). Drive directly.
@@ -33,6 +36,7 @@ const ok = (name, cond) => { assert.ok(cond, name); console.log('  PASS  ' + nam
   // ---- create 1: minimal, auto id/number ----
   let r = await route('POST', '/api/v1/user/create', { name: 'Env One', language: 'en-US', proxy: 'Direct' });
   ok('create returns code 0', r && r.code === 0);
+  ok('create persists through the engine exactly once', persistCalls === 1);
   ok('create assigns ob- id', /^ob-[A-Za-z0-9_-]{1,64}$/.test(r.data.user_id));
   const id1 = r.data.user_id;
   ok('engine has profile', engine.profiles.has(id1));

@@ -135,6 +135,7 @@ async function createMockDevToolsServer(browserGuid, listenPort = 0) {
   const listRes = await route('GET', '/api/v1/user/list', {});
   ok('list API succeeds', listRes.code === 0);
   const listItem = listRes.data.list.find((x) => x.id === 'test-p1');
+  ok('list uses the actual browser GUID', listItem.ws?.puppeteer === `ws://127.0.0.1:9555/devtools/browser/${routeGuid}`);
   ok('list item has ws.puppeteer in ws:// format', listItem.ws?.puppeteer.startsWith('ws://127.0.0.1:9555/devtools/browser/'));
   ok('list item ws.puppeteer is not http://', !listItem.ws?.puppeteer.startsWith('http://'));
 

@@ -22,6 +22,7 @@ const path = require('path');
 const { sanitizeProfile } = require('../../engine/profile-sanitizer');
 const { buildFingerprint } = require('../../automation/fingerprint');
 const { chromeArgsForFingerprint } = require('../../automation/fingerprint/chrome-args');
+const { completeLaunchArguments } = require('../../engine/launch-arguments');
 
 const REPO_HTML = path.join(__dirname, '..', '..', 'index.html');
 const START_JS = path.join(__dirname, '..', '..', 'engine', 'start.js');
@@ -359,10 +360,14 @@ async function main() {
   });
 
   const startSrc = fs.readFileSync(START_JS, 'utf8');
+  check('launch configuration applies fullscreen', () => {
+    const profile = sanitizeProfile(baseProfile({ privacy: { fullscreen: true } }));
+    const { args } = completeLaunchArguments([], { profile, proxyEndpoint: '' });
+    assert.ok(args.includes('--start-fullscreen'));
+  });
   for (const marker of [
     'applyDefaultSearchEngine(root, profile.privacy.searchEngine)',
     'clearProfileLaunchData(root, profile)',
-    "args.push('--start-fullscreen')",
     'windowPositionArg(profile)',
     "profile.advanced.ipChangePolicy === 'stop'",
     'ip-change-notice',

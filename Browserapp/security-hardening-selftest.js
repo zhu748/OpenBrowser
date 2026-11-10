@@ -123,50 +123,24 @@ function main() {
   assert.ok(persistenceSrc.includes("profiles: [...this.profiles.values()]"), 'engine must persist profiles with secrets');
   assert.ok(!profileProxySrc.includes('const url = refreshUrl || extractUrl'), 'refresh must not fall back extractUrl as refresh target');
 
-  // --- renderer: secrets redaction ---
+  // UI and Node use the exported redaction boundary, without source slicing.
   const renderer = fs.readFileSync(path.join(__dirname, 'renderer.js'), 'utf8');
-  assert.ok(renderer.includes('redactProfileForStorage'), 'renderer must redact secrets');
-  assert.ok(renderer.includes('cookies: \'\''), 'redact clears cookies');
-  assert.ok(renderer.includes('totpSecret: \'\''), 'redact clears totp');
-  assert.ok(renderer.includes('proxy: redactProxyForStorage(value.proxy)'),
-    'redact must strip proxy credentials before localStorage persistence');
+  assert.ok(renderer.includes('createUiStateStore'), 'renderer must use the redacting persistence boundary');
   {
-    const fnSrc = renderer.match(/function redactProfileForStorage\(profile\) \{[\s\S]*?\n\}/);
-    assert.ok(fnSrc, 'redactProfileForStorage must exist as a standalone function');
-    assert.ok(fnSrc[0].includes('redactProxyForStorage('),
-      'redactProfileForStorage body must pass proxy through redactProxyForStorage');
-  }
-
-  // Behavioral check: redactProxyForStorage semantics (extracted from renderer source).
-  {
-    const fnMatch = renderer.match(/function redactProxyForStorage\(proxy\) \{[\s\S]*?\n\}/);
-    assert.ok(fnMatch, 'redactProxyForStorage must exist as a standalone function');
-    const redactProxyForStorage = new Function(`${fnMatch[0]}\nreturn redactProxyForStorage;`)();
-    assert.strictEqual(redactProxyForStorage('socks5://user:secret@1.2.3.4:1080'), 'socks5://1.2.3.4:1080');
-    assert.strictEqual(redactProxyForStorage('1.2.3.4:1080:user:secret'), '1.2.3.4:1080');
-    assert.strictEqual(redactProxyForStorage('1.2.3.4:1080'), '1.2.3.4:1080');
-    assert.strictEqual(redactProxyForStorage('direct'), 'direct');
-    assert.strictEqual(redactProxyForStorage(''), 'Direct');
-    // The renderer copy and the shared canonical module must agree on every
-    // shape — this is the lock that keeps the two from drifting apart.
-    const { redactProxyCredentials } = require('./automation/proxy-redact');
-    const cases = [
-      'socks5://user:secret@1.2.3.4:1080',
-      'socks5://u:p@127.0.0.1:1080#MCP%20proxy',
-      'http://user:pass@example.com:8080/path?q=1',
-      'https://[2001:db8::1]:8443',
-      '1.2.3.4:1080:user:secret',
-      '1.2.3.4:1080',
-      'direct', 'Direct', 'OFFLINE', 'none',
-      '', '   ', null, undefined,
-    ];
-    for (const input of cases) {
-      assert.strictEqual(
-        redactProxyForStorage(input),
-        redactProxyCredentials(input),
-        `renderer redactProxyForStorage must match shared redactProxyCredentials for ${JSON.stringify(input)}`,
-      );
+    const { redactProfileForStorage } = require('./ui/ui-state-store');
+    const { redactProxyCredentials } = require('./shared/proxy-redact');
+    assert.strictEqual(require('./automation/proxy-redact').redactProxyCredentials, redactProxyCredentials);
+    const original = { id: 'secrets', proxy: 'socks5://user:primary-secret@host:1080', cookies: 'cookie-secret',
+      password: 'legacy-secret', proxyMeta: { backupProxies: ['http://u:backup-secret@backup:8080'] },
+      platform: { password: 'account-secret', totpSecret: 'totp-secret', accounts: [{ username: 'visible', password: 'row-secret' }] } };
+    const safe = redactProfileForStorage(original);
+    for (const secret of ['primary-secret', 'cookie-secret', 'legacy-secret', 'backup-secret', 'account-secret', 'totp-secret', 'row-secret']) {
+      assert.ok(!JSON.stringify(safe).includes(secret), 'UI storage must omit ' + secret);
     }
+    assert.strictEqual(safe.platform.accounts[0].username, 'visible');
+    assert.strictEqual(original.platform.password, 'account-secret', 'redaction must not mutate in-memory credentials');
+    assert.strictEqual(redactProxyCredentials('1.2.3.4:1080:user:secret'), '1.2.3.4:1080');
+    assert.strictEqual(redactProxyCredentials(''), 'Direct');
   }
 
   // --- IPC sender trust: exact app index.html path, not any file:…/index.html ---

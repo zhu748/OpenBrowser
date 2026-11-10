@@ -51,11 +51,11 @@ const execSteps = (t) => (Array.isArray(t.steps) && t.steps.length)
 // drift appears or when an annotated action silently gains an executor.
 {
   const { RPA_PLUS_ACTIONS } = require('./automation/protocol/rpa-registry.js');
-  const { executableStepTypes } = require('./automation/rpa/step-registry');
+  const { executableStepTypes, unsupportedStepTypes } = require('./automation/rpa/step-registry');
   const executable = new Set(executableStepTypes);
-  const KNOWN_WITHOUT_EXECUTOR = new Set(['getEmail', 'saveTag']);
+  const KNOWN_WITHOUT_EXECUTOR = new Set(unsupportedStepTypes);
   const newDrift = RPA_PLUS_ACTIONS.filter(
-    (a) => !executable.has(a.toLowerCase()) && !KNOWN_WITHOUT_EXECUTOR.has(a)
+    (a) => !executable.has(a.toLowerCase()) && !KNOWN_WITHOUT_EXECUTOR.has(a.toLowerCase())
   );
   ok('every marketplace action is executable or annotated as fail-closed', newDrift.length === 0);
   if (newDrift.length) console.log('     ✗ new registry/engine drift: ' + newDrift.join(',') + ' — implement an executor or annotate in rpa-registry.js');

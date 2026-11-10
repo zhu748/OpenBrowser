@@ -88,6 +88,19 @@ function prepareProfileSync(engine, values) {
           },
         };
       }
+      // Account rows are redacted independently of the main account fields.
+      // Restore only the same row/username during a non-explicit UI reload;
+      // editor replace/clear commands must retain their requested empty values.
+      const accounts = profile.platform?.accounts || [];
+      const previousAccounts = previous.platform?.accounts || [];
+      if (!explicitSecretUpdate && accounts.length && accounts.every((account) => !account.password && !account.totpSecret)) {
+        const restored = accounts.map((account, index) => {
+          const source = previousAccounts[index];
+          return source?.username === account.username
+            ? { ...account, password: source.password || '', totpSecret: source.totpSecret || '' } : account;
+        });
+        merged = { ...merged, platform: { ...merged.platform, accounts: restored } };
+      }
       // Renderer storage intentionally omits runtime exit details. Keep the engine's
       // last successful result unless the proxy itself changed (which invalidates it).
       if (previous.proxy === merged.proxy && previous.exitIp && !profile.exitIp) {
