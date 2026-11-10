@@ -3,6 +3,7 @@ const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { isRuntimeResource, assertRuntimeResourceTree } = require('./runtime-manifest');
 const {
   resolveHostDist,
   findHostAppBundle,
@@ -111,7 +112,8 @@ function isPackagingExcluded(entryName) {
   return false;
 }
 
-function copyRecursive(source, destination) {
+function copyRecursive(source, destination, include = null) {
+  if (include && !include(source)) return;
   const base = path.basename(source);
   if (isPackagingExcluded(base, source)) {
     return;
@@ -126,7 +128,7 @@ function copyRecursive(source, destination) {
     fs.mkdirSync(destination, { recursive: true });
     for (const entry of fs.readdirSync(source)) {
       if (isPackagingExcluded(entry, path.join(source, entry))) continue;
-      copyRecursive(path.join(source, entry), path.join(destination, entry));
+      copyRecursive(path.join(source, entry), path.join(destination, entry), include);
     }
     return;
   }
@@ -564,7 +566,8 @@ function copyAppResources(resourceApp) {
   fs.mkdirSync(resourceApp, { recursive: true });
   for (const entry of fs.readdirSync(appRoot)) {
     if (excluded.has(entry)) continue;
-    copyRecursive(path.join(appRoot, entry), path.join(resourceApp, entry));
+    copyRecursive(path.join(appRoot, entry), path.join(resourceApp, entry),
+      (source) => isRuntimeResource(path.relative(appRoot, source)));
   }
   pruneForeignKernelSeeds(resourceApp);
   // Never ship local-only kernel notes / backups / private markers
@@ -591,6 +594,7 @@ function copyAppResources(resourceApp) {
     + ' chrome-stable=' + shouldShipChromeStable()
     + ' auto-download=chrome-stable'
     + ' arch=' + packageArch + ' platform=' + process.platform);
+  assertRuntimeResourceTree(resourceApp);
   assertKernelPackagePolicy(resourceApp);
 }
 

@@ -51,14 +51,8 @@ const execSteps = (t) => (Array.isArray(t.steps) && t.steps.length)
 // drift appears or when an annotated action silently gains an executor.
 {
   const { RPA_PLUS_ACTIONS } = require('./automation/protocol/rpa-registry.js');
-  const engineSrc = fs.readFileSync(path.join(__dirname, 'automation/rpa-engine.js'), 'utf8');
-  const block = engineSrc.match(/EXECUTABLE_STEP_TYPES = new Set\(\[([\s\S]*?)\]\)/);
-  const executable = new Set(
-    (block ? block[1] : '')
-      .split(',')
-      .map((s) => s.trim().replace(/^'|'$/g, '').toLowerCase())
-      .filter(Boolean)
-  );
+  const { executableStepTypes } = require('./automation/rpa/step-registry');
+  const executable = new Set(executableStepTypes);
   const KNOWN_WITHOUT_EXECUTOR = new Set(['getEmail', 'saveTag']);
   const newDrift = RPA_PLUS_ACTIONS.filter(
     (a) => !executable.has(a.toLowerCase()) && !KNOWN_WITHOUT_EXECUTOR.has(a)

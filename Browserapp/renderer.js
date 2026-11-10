@@ -1770,6 +1770,7 @@ function renderProxyLibrarySelectors() {
 }
 
 function switchView(view) {
+  if (view !== 'profile-editor') openProfileEditor.cancel?.();
   try {
     const currentActive = document.querySelector('.view.active')?.id?.replace(/^view-/, '');
     if (currentActive) {
@@ -3578,8 +3579,8 @@ $$('[data-editor-tab]').forEach((button) => {
   });
 });
 setEditorTab('basic');
-$('#editor-back').addEventListener('click', () => { editingProfileId = null; editorNetworkResult = null; switchView('profiles'); });
-$('#editor-cancel').addEventListener('click', () => { editingProfileId = null; editorNetworkResult = null; switchView('profiles'); });
+$('#editor-back').addEventListener('click', () => { openProfileEditor.cancel(); editingProfileId = null; editorNetworkResult = null; switchView('profiles'); });
+$('#editor-cancel').addEventListener('click', () => { openProfileEditor.cancel(); editingProfileId = null; editorNetworkResult = null; switchView('profiles'); });
 $('#editor-system-defaults').addEventListener('click', useSystemEditorDefaults);
 const editorProxyFieldsSelector = '#editor-proxy-host,#editor-proxy-port,#editor-proxy-user,#editor-proxy-password,#editor-proxy-raw';
 const editorProxyGeneralSelector = '#editor-proxy-type,input[name="editor-network"],' + editorProxyFieldsSelector;
@@ -3714,42 +3715,27 @@ document.getElementById('editor-clear-cache-cookie')?.addEventListener('click', 
 });
 $('#profile-editor-form').addEventListener('submit', async (event) => {
   event.preventDefault(); const index = ui.profiles.findIndex((item) => item.id === editingProfileId); if (index < 0) return toast(tx('环境不存在'));
+  const editedId = editingProfileId;
+  const form = event.currentTarget;
+  if (form?.dataset.saving === '1') return;
+  if (form) form.dataset.saving = '1';
   const shouldSaveEditorProxyToLib = Boolean($('#editor-proxy-save-to-library')?.checked);
   try {
     const previous = ui.profiles[index]; const draft = editorDraft(true); if (!draft.name) throw new Error(tx('环境名称不能为空'));
     if (draft.proxy !== previous.proxy && !editorNetworkResult) { delete draft.exitIp; delete draft.exitCountryCode; delete draft.exitTimezone; delete draft.exitLatitude; delete draft.exitLongitude; delete draft.exitCheckedAt; }
     draft.updatedAt = new Date().toISOString();
-    ui.profiles[index] = draft;
-    save();
-    invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies']);
-    // This strict editor submission is an explicit replacement, including empty
-    // Cookie/password/TOTP fields. Keep the action marker out of UI persistence.
-    const commandPayload = { ...draft, credentialsAction: 'replace' };
-    // Per-ID modify command instead of a whole-fleet sync: only the edited row
-    // is validated, hashed and persisted, and the engine rejects the save when
-    // it changed this row since the editor opened (stale baseRev).
-    try {
-      engineProfiles = await window.ops.applyProfileCommands([{
-        kind: 'modify', id: draft.id, baseRev: editingProfileBaseRev, profile: commandPayload,
-      }]);
-    } catch (error) {
-      if (error?.code === 'PROFILE_STALE_REV') {
-        // The engine moved this row on since the editor opened. Refresh from
-        // the engine, then resubmit with the fresh revision once — engine-side
-        // changes were never seen by this editor, so a single retry against the
-        // now-current row is the same contract a full sync would give.
-        engineProfiles = await window.ops.profileStatus();
-        mergeEngineExitState(engineProfiles);
-        const fresh = engineProfiles.find((item) => item.id === draft.id);
-        if (!fresh) throw error;
-        engineProfiles = await window.ops.applyProfileCommands([{
-          kind: 'modify', id: draft.id, baseRev: fresh.rev || 0, profile: commandPayload,
-        }]);
-        log('Profile', '环境在编辑期间被引擎更新，已基于最新版本重新保存');
-      } else {
-        throw error;
-      }
-    }
+    const commitEdit = (profile, baseRev) => window.OpenBrowserProfileCommands.commitProfileEdit({
+      profile, baseRev,
+      applyCommands: (commands) => window.ops.applyProfileCommands(commands),
+      commit: (accepted, rows) => {
+        const currentIndex = ui.profiles.findIndex((item) => item.id === accepted.id);
+        if (currentIndex >= 0) ui.profiles[currentIndex] = accepted;
+        engineProfiles = rows;
+        save();
+        invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies']);
+      },
+    });
+    await commitEdit(draft, editingProfileBaseRev);
     renderProfiles();
     if (shouldSaveEditorProxyToLib && !isDirectProxy(draft.proxy)) {
       try {
@@ -3766,11 +3752,9 @@ $('#profile-editor-form').addEventListener('submit', async (event) => {
             remark: `由环境${displayProfileNumber(draft)}编辑时自动保存`,
           });
           if (createdLib?.id) {
-            draft.proxyId = createdLib.id;
-            draft.proxyMeta = { ...(draft.proxyMeta || {}), proxyId: createdLib.id };
-            ui.profiles[index] = draft;
-            save();
-            await window.ops.syncProfiles(ui.profiles);
+            const linked = { ...draft, proxyId: createdLib.id, proxyMeta: { ...(draft.proxyMeta || {}), proxyId: createdLib.id } };
+            const rev = engineProfiles.find((item) => item.id === draft.id)?.rev;
+            await commitEdit(linked, rev);
           }
           await refreshProxies();
         }
@@ -3778,8 +3762,35 @@ $('#profile-editor-form').addEventListener('submit', async (event) => {
         console.warn('编辑时自动保存代理到代理库失败', saveErr);
       }
     }
-    const running = profileEngine(draft.id).running; log('Profile', '已更新环境 ' + displayProfileNumber(draft)); editingProfileId = null; editorNetworkResult = null; switchView('profiles'); toast(running ? tx('设置已保存，请重启该环境后生效') : tx('环境设置已保存'));
-  } catch (error) { toast('保存失败：' + error.message); }
+    const running = profileEngine(draft.id).running;
+    log('Profile', '已更新环境 ' + displayProfileNumber(draft));
+    if (editingProfileId === editedId) {
+      editingProfileId = null;
+      editorNetworkResult = null;
+      switchView('profiles');
+    }
+    toast(running ? tx('设置已保存，请重启该环境后生效') : tx('环境设置已保存'));
+  } catch (error) {
+    if (error?.code === 'PROFILE_STALE_REV') {
+      try {
+        const current = window.OpenBrowserIpcResult.unwrapIpcResult(await window.ops.profileForEdit(editedId));
+        const currentIndex = ui.profiles.findIndex((item) => item.id === current.profile.id);
+        if (currentIndex >= 0) {
+          ui.profiles[currentIndex] = normalizeProfileSettings(current.profile);
+          save();
+          invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies']);
+        }
+        engineProfiles = await window.ops.profileStatus();
+      } catch (refreshError) {
+        log('Error', '读取最新环境失败：' + refreshError.message);
+      }
+      toast(tx('环境已被其他操作更新，请重新打开编辑器后保存；当前草稿未提交。'));
+    } else {
+      toast('保存失败：' + error.message);
+    }
+  } finally {
+    if (form) delete form.dataset.saving;
+  }
 });
 
 $('#batch-add').addEventListener('click', () => {

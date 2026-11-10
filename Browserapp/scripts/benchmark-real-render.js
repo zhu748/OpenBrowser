@@ -176,30 +176,33 @@ const RENDERER_MEASURE = `(async (size) => {
   // Editor save + conflict-retry path against the real engine (the P1-a
   // contract): open the real editor state, save via applyProfileCommands with
   // the row's real rev, force an engine-side write underneath, confirm the
-  // stale save is rejected and the retry lands.
+  // stale save is rejected and a new edit based on the refreshed row lands.
   out.editorConflict = null;
   try {
     const row = await window.ops.profileStatus();
     const target = row.find((item) => item.id === 'render-0');
     if (!target) throw new Error('render-0 missing from status');
     // 1) clean save
-    const clean = await window.ops.applyProfileCommands([{
+    const clean = window.OpenBrowserIpcResult.unwrapIpcResult(await window.ops.applyProfileCommands([{
       kind: 'modify', id: 'render-0', baseRev: target.rev,
       profile: { ...target, name: '环境 0 (编辑保存)' },
-    }]);
+    }]));
     const savedRev = clean.find((item) => item.id === 'render-0').rev;
     // 2) engine-side write the renderer never sees (stale base)
     const staleSave = await window.ops.applyProfileCommands([{
       kind: 'modify', id: 'render-0', baseRev: target.rev,
       profile: { ...target, name: '环境 0 (旧版本保存)' },
-    }]).then(() => 'landed', (error) => error?.code || String(error));
+    }]).then((result) => {
+      window.OpenBrowserIpcResult.unwrapIpcResult(result);
+      return 'landed';
+    }).catch((error) => error?.code || String(error));
     // 3) resync + retry against the fresh revision
     const fresh = await window.ops.profileStatus();
     const freshRow = fresh.find((item) => item.id === 'render-0');
-    const retried = await window.ops.applyProfileCommands([{
+    const retried = window.OpenBrowserIpcResult.unwrapIpcResult(await window.ops.applyProfileCommands([{
       kind: 'modify', id: 'render-0', baseRev: freshRow.rev,
       profile: { ...freshRow, name: '环境 0 (重试保存)' },
-    }]);
+    }]));
     const finalName = retried.find((item) => item.id === 'render-0').name;
     out.editorConflict = { savedRev, staleSave, finalName };
   } catch (error) {

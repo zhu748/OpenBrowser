@@ -362,6 +362,21 @@ module.exports = [
     },
   },
   {
+    files: ['engine/**/*.js', 'main/**/*.js', 'network/**/*.js', 'automation/kernel/**/*.js', 'automation/api/**/*.js'],
+    rules: {
+      'no-restricted-globals': ['error', 'window', 'document', 'navigator', 'localStorage', 'sessionStorage'],
+    },
+  },
+  {
+    files: ['renderer*.js', 'ui/*.js', 'environment-audit.js', 'i18n.js', 'shared/*.js'],
+    ignores: ['**/*selftest*.js'],
+    rules: {
+      // UMD modules may declare require/module for Node selftests, but the
+      // renderer cannot rely on host process globals in its isolated sandbox.
+      'no-restricted-globals': ['error', 'process', 'Buffer', '__dirname', '__filename', 'global', 'setImmediate'],
+    },
+  },
+  {
     // Classic-script shared scope: single-file unused analysis is structurally
     // wrong for these files. They load as classic <script> siblings sharing
     // one global scope — applyProxyLibrarySelection is defined in

@@ -40,7 +40,7 @@ try {
     for (const mode of ['dark', 'light']) {
       evaluate('document.documentElement.dataset.uiTheme="modern";document.documentElement.dataset.colorMode=' + JSON.stringify(mode));
       const prefix = width + '/' + mode + ': ';
-      const metrics = run(() => {
+      const metrics = run(async () => {
         function rgb(value) { return (value.match(/[\d.]+/g) || []).map(Number); }
         function composite(top, bottom) {
           const alpha = top[3] ?? 1;
@@ -80,7 +80,7 @@ try {
         const health = document.querySelector('#sync-health');
         const status = {};
         for (const state of ['healthy', 'warning']) { health.className = 'sync-health ' + state; status[state] = contrast(health); }
-        openProfileEditor('audit-profile'); setEditorTab('privacy');
+        await openProfileEditor('audit-profile'); setEditorTab('privacy');
         editorSet('#editor-language-mode', 'ip'); editorSet('#editor-language', 'ja-JP');
         editorNetworkResult = null;
         const draft = editorDraft(false);
@@ -157,8 +157,8 @@ try {
   }
   cli('set', 'viewport', '1280', '900');
   check('fixed strategy and known IP language precedence preserved', () => {
-    const values = run(() => {
-      openProfileEditor('audit-profile');
+    const values = run(async () => {
+      await openProfileEditor('audit-profile');
       editorSet('#editor-language', 'ja-JP'); editorSet('#editor-language-mode', 'fr-FR');
       const fixed = editorDraft(false).language;
       editorSet('#editor-language-mode', 'ip'); editorNetworkResult = { countryCode: 'DE' };
@@ -169,15 +169,15 @@ try {
   check('every supported exit country matches the canonical engine locale', () => {
     const { COUNTRY_TO_LOCALE } = require('../locale-from-country');
     const expected = Object.entries(COUNTRY_TO_LOCALE);
-    const actual = evaluate('(' + ((entries) => {
-      openProfileEditor('audit-profile'); editorSet('#editor-language-mode', 'ip'); editorSet('#editor-language', 'ja-JP');
+    const actual = evaluate('(' + (async (entries) => {
+      await openProfileEditor('audit-profile'); editorSet('#editor-language-mode', 'ip'); editorSet('#editor-language', 'ja-JP');
       return entries.map(([country]) => { editorNetworkResult = { countryCode: ' ' + country.toLowerCase() + ' ' }; return editorDraft(false).language; });
     }).toString() + ')(' + JSON.stringify(expected) + ')');
     assert.deepEqual(actual, expected.map(([, locale]) => locale));
   });
   check('unknown-country, no-probe, and system language strategies remain deterministic', () => {
-    const actual = run(() => {
-      openProfileEditor('audit-profile'); editorSet('#editor-language', 'ja-JP'); editorSet('#editor-language-mode', 'ip');
+    const actual = run(async () => {
+      await openProfileEditor('audit-profile'); editorSet('#editor-language', 'ja-JP'); editorSet('#editor-language-mode', 'ip');
       editorNetworkResult = { countryCode: 'ZZ' }; const unknown = editorDraft(false).language;
       editorNetworkResult = null; const noProbe = editorDraft(false).language;
       editorSet('#editor-language-mode', 'system');
@@ -190,7 +190,7 @@ try {
     assert.equal(names.length, 3); assert.ok(names.every(x => x && x.startsWith('Extension ')));
   });
   check('OS and language custom selects immediately echo values', () => {
-    const values = run(() => { openProfileEditor('audit-profile'); return ['editor-os', 'editor-language'].map(id => { const select = document.getElementById(id); return { value: select.selectedOptions[0]?.textContent.trim(), echo: select.closest('.themed-select')?.querySelector('.themed-select-value')?.textContent.trim() }; }); });
+    const values = run(async () => { await openProfileEditor('audit-profile'); return ['editor-os', 'editor-language'].map(id => { const select = document.getElementById(id); return { value: select.selectedOptions[0]?.textContent.trim(), echo: select.closest('.themed-select')?.querySelector('.themed-select-value')?.textContent.trim() }; }); });
     for (const value of values) assert.equal(value.echo, value.value);
   });
   check('keyboard focus is visible on extension switches in both modes', () => {
@@ -210,13 +210,13 @@ try {
   });
   check('actual editor submit persists fallback and reopen echoes it', () => {
     const value = evaluate('(' + (async () => {
-      openProfileEditor('audit-profile');
+      await openProfileEditor('audit-profile');
       editorSet('#editor-name', 'UI Audit');
       editorSet('#editor-language-mode', 'ip'); editorSet('#editor-language', 'ja-JP');
       editorNetworkResult = null;
       document.querySelector('#profile-editor-form').requestSubmit();
       await Promise.resolve();
-      openProfileEditor('audit-profile');
+      await openProfileEditor('audit-profile');
       return { saved: window.__uiAuditSavedProfiles?.[0]?.language, reopened: document.querySelector('#editor-language').value };
     }).toString() + ')()');
     assert.equal(value.saved, 'ja-JP'); assert.equal(value.reopened, 'ja-JP');
@@ -224,8 +224,8 @@ try {
   for (const theme of evaluate('Object.keys(UI_THEMES)')) {
     check(theme + ': editor selections and compound fields survive theme switch', () => {
       evaluate('document.documentElement.dataset.uiTheme=' + JSON.stringify(theme));
-      const state = run(() => {
-        openProfileEditor('audit-profile'); setEditorTab('privacy');
+      const state = run(async () => {
+        await openProfileEditor('audit-profile'); setEditorTab('privacy');
         const group = document.querySelector('.field-inline-group');
         const select = document.querySelector('#editor-language');
         return { display: getComputedStyle(group).display, nested: document.querySelectorAll('#view-profile-editor label label').length, value: select.selectedOptions[0]?.textContent.trim(), echo: select.closest('.themed-select')?.querySelector('.themed-select-value')?.textContent.trim() };
@@ -234,8 +234,8 @@ try {
     });
   }
   check('proxy mode with an empty endpoint blocks save instead of becoming direct', () => {
-    const value = run(() => {
-      openProfileEditor('audit-profile');
+    const value = run(async () => {
+      await openProfileEditor('audit-profile');
       document.querySelector('input[name="editor-network"][value="custom"]').checked = true;
       editorSet('#editor-proxy-host', ''); editorSet('#editor-proxy-port', ''); editorSet('#editor-api-extract-url', '');
       let error = ''; try { editorDraft(true); } catch (e) { error = e.message; }
@@ -249,7 +249,7 @@ try {
   });
   check('proxy test ignores double clicks and restores disabled/busy state', () => {
     const value = evaluate('(' + (async () => {
-      openProfileEditor('audit-profile');
+      await openProfileEditor('audit-profile');
       document.querySelector('input[name="editor-network"][value="custom"]').checked = true;
       editorSet('#editor-proxy-host', '127.0.0.1'); editorSet('#editor-proxy-port', '9');
       const original = window.ops.testProfileProxy;
@@ -266,7 +266,7 @@ try {
     assert.equal(value.calls, 1); assert.equal(value.busy, true); assert.equal(value.restored, true); assert.equal(value.aria,'false');
   });
   for (const mode of ['dark','light']) {
-    evaluate('document.documentElement.dataset.uiTheme="modern";document.documentElement.dataset.colorMode=' + JSON.stringify(mode) + ';openProfileEditor("audit-profile");setEditorTab("privacy")');
+    evaluate('(async () => {document.documentElement.dataset.uiTheme="modern";document.documentElement.dataset.colorMode=' + JSON.stringify(mode) + ';await openProfileEditor("audit-profile");setEditorTab("privacy")})()');
     check(mode + ': editor header, footer, tabs and summary remain readable', () => {
       const values = run(() => ['.profile-editor-head h2', '.editor-tabs button.active', '#editor-summary dd', '.editor-actions .outline', '.profile-summary button', '.editor-back'].map(selector => window.__auditContrast(document.querySelector(selector))));
       assert.ok(values.every(x => x >= 4.5), JSON.stringify(values));

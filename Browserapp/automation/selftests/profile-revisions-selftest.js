@@ -19,6 +19,7 @@ const { BrowserEngine } = require('../../engine');
 const { TrackedProfileMap, profileDataHash } = require('../../engine/profile-revisions');
 const { ProfileStoreSqlite } = require('../../automation/profile-store-sqlite');
 const { registerProfileIpc } = require('../../main/profile-ipc');
+const { unwrapIpcResult } = require('../../shared/ipc-result');
 
 function buildEngine(tmp) {
   const engine = new BrowserEngine({ getPath: () => tmp });
@@ -53,9 +54,16 @@ async function main() {
     map.set('a1', row2);
     row2.name = 'A3-in-place';
     map.set('a1', row2);
-    assert.equal(map.revisionOf('a1'), 2, 'in-place mutation is detected through the content hash');
-    assert.equal(map.revisionState(['a1', 'missing']).a1, 2);
+    assert.equal(map.revisionOf('a1'), 4, 'delete/recreate does not reuse an old editor revision');
+    assert.equal(map.revisionState(['a1', 'missing']).a1, 4);
     assert.equal(map.revisionState(['a1', 'missing']).missing, 0);
+    map.clear();
+    assert.equal(map.revisionOf('a1'), 0, 'clear removes the revision index too');
+    map.set('a1', row);
+    assert.equal(map.revisionOf('a1'), 5, 'clear does not reuse issued revisions');
+    const seeded = new TrackedProfileMap([['a1', row], ['b1', { id: 'b1', name: 'B' }]]);
+    assert.equal(seeded.size, 2, 'entry construction initializes tracking before calling set');
+    assert.notEqual(seeded.revisionOf('a1'), seeded.revisionOf('b1'));
   }
 
   // ---- shared hash: engine map and sqlite store see the same bytes ----
@@ -119,7 +127,20 @@ async function main() {
     await engine.syncProfiles([{ id: 'v1', name: 'V1', number: 1 }]);
     await assert.rejects(engine.applyProfileCommands([]), /Invalid profile commands/);
     await assert.rejects(engine.applyProfileCommands([{ kind: 'delete', id: 'v1' }]), /Unknown profile command/);
-    await assert.rejects(engine.applyProfileCommands([{ kind: 'modify', id: 'v1' }]), /Invalid base revision/);
+    await assert.rejects(engine.applyProfileCommands([{ kind: 'modify', id: 'v1', profile: { id: 'v1' } }]), /Invalid base revision/);
+    const unchanged = structuredClone(engine.status());
+    const editor = engine.profileForEdit('v1');
+    assert.equal(editor.rev, engine.profiles.revisionOf('v1'));
+    editor.profile.name = 'Detached editor copy';
+    assert.notEqual(engine.profiles.get('v1').name, editor.profile.name, 'editor snapshots cannot mutate engine state');
+    assert.throws(() => engine.profileForEdit('missing'), (error) => error.code === 'PROFILE_NOT_FOUND');
+    await assert.rejects(engine.applyProfileCommands([
+      { kind: 'modify', id: 'v1', baseRev: 1, profile: { id: 'other', name: 'Other' } },
+    ]), (error) => error.code === 'PROFILE_COMMAND_ID_MISMATCH');
+    await assert.rejects(engine.applyProfileCommands([
+      { kind: 'modify', id: 'missing', baseRev: 0, profile: { id: 'missing', name: 'Missing' } },
+    ]), (error) => error.code === 'PROFILE_NOT_FOUND');
+    assert.deepEqual(engine.status(), unchanged, 'invalid targets cannot publish partial changes');
     await assert.rejects(engine.applyProfileCommands([
       { kind: 'modify', id: 'v1', baseRev: 1, profile: { id: 'v1', name: 'a' } },
       { kind: 'modify', id: 'v1', baseRev: 1, profile: { id: 'v1', name: 'b' } },
@@ -169,9 +190,10 @@ async function main() {
       kind: 'modify', id: 'i1', baseRev: rev, profile: { id: 'i1', name: 'I1-edited', number: 1 },
     }]);
     assert.equal(engine.profiles.get('i1').name, 'I1-edited', 'IPC path lands the command');
-    await assert.rejects(channels.get('profiles:apply-commands')(null, [
+    const rejected = await channels.get('profiles:apply-commands')(null, [
       { kind: 'modify', id: 'i1', baseRev: rev, profile: { id: 'i1', name: 'I1-stale', number: 1 } },
-    ]), (error) => error.code === 'PROFILE_STALE_REV');
+    ]);
+    assert.throws(() => unwrapIpcResult(structuredClone(rejected)), (error) => error.code === 'PROFILE_STALE_REV');
   }
 
   // ---- status poll payload: rev stays consistent with the cache ----

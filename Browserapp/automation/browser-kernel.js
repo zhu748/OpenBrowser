@@ -1,5 +1,7 @@
 'use strict';
 
+const { writeFileAtomic, isVersionedArchiveUrl, buildVersionFromUrl, pinnedArchiveSha256, pinArchiveSha256, extractFeedDigest } = require('./kernel/archive-trust');
+
 /**
  * Independent Chromium kernel manager.
  *
@@ -9,12 +11,25 @@
  */
 
 const { Downloader } = require('./downloader');
+const { createKernelMetadataClient } = require('./kernel/metadata');
+const {
+  validateArchiveMemberName,
+  assertSafeExtractedTree,
+  isPathInsideRoot,
+  safeInstalledBinary,
+  extractZip,
+  extractDeb,
+  extractMsi,
+  extractTarXz,
+  extractTarGz,
+  extractDmg,
+  archiveKindFromUrl
+} = require('./kernel/archive');
 const { compareVersions } = require('./version-compare');
 const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
 const os = require('os');
-const https = require('https');
 const http = require('http');
 const { execFile, spawn } = require('child_process');
 const { promisify } = require('util');
@@ -65,7 +80,6 @@ const WAYFERN_ACCEPT_TERMS_ARG = '--accept-terms-and-conditions';
 const MAX_META_BYTES = 2 * 1024 * 1024;
 const MAX_KERNEL_BYTES = 2 * 1024 * 1024 * 1024;
 const MAX_REDIRECTS = 6;
-const MAX_ARCHIVE_ENTRIES = 100000;
 // A full browser tree is a few thousand files; the cap only guards against a
 // pathological tree, and a truncated listing still cannot hide a missing file.
 const MAX_INTEGRITY_ENTRIES = 60000;
@@ -89,275 +103,9 @@ function trustedKernelUrl(value) {
   return parsed;
 }
 
-// ---------------------------------------------------------------------------
-// Archive digest pinning.
-//
-// Google publishes no checksums inside the Chrome-for-Testing metadata and the
-// Wayfern feed has none today either, so a first download can only be trusted
-// as far as TLS + the host allow-list go. What CAN be hardened is every
-// download after the first: the digest of a known-good archive is recorded
-// locally and any later fetch of the same versioned URL must reproduce it
-// byte for byte. A compromised mirror (or a feed entry quietly repointed at
-// different bytes) then fails closed instead of installing silently.
-// Rolling "current" URLs (dl.google.com .../google-chrome-stable_current_...)
-// legitimately change content under a fixed URL, so they are never pinned.
-// ---------------------------------------------------------------------------
-
-const ARCHIVE_DIGESTS_FILE = 'archive-digests.json';
-const MAX_ARCHIVE_DIGEST_PINS = 32;
-const SHA256_HEX = /^[0-9a-f]{64}$/;
-
-function archiveDigestsPath(kernelsRoot) {
-  return path.join(kernelsRoot, ARCHIVE_DIGESTS_FILE);
-}
-
-/**
- * Atomic write for the kernels/ bookkeeping files: unique temp file + fsync +
- * rename + directory fsync, so a crash never leaves a torn JSON file behind
- * (a torn archive-digests.json would silently disable digest verification).
- */
-async function writeFileAtomic(targetPath, contents) {
-  const directory = path.dirname(targetPath);
-  await fsp.mkdir(directory, { recursive: true });
-  const temporary = `${targetPath}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  let handle = null;
-  try {
-    handle = await fsp.open(temporary, 'wx', 0o600);
-    await handle.writeFile(contents);
-    await handle.sync();
-    await handle.close();
-    handle = null;
-    await fsp.rename(temporary, targetPath);
-    try {
-      const directoryHandle = await fsp.open(directory, 'r');
-      await directoryHandle.sync();
-      await directoryHandle.close();
-    } catch (_) {}
-  } finally {
-    if (handle) await handle.close().catch(() => {});
-    await fsp.rm(temporary, { force: true }).catch(() => {});
-  }
-}
-
-/** A URL is pinnable only when it embeds a concrete version string. */
-function isVersionedArchiveUrl(url, version) {
-  const text = String(url || '');
-  const ver = String(version || '');
-  return Boolean(ver) && /^\d/.test(ver) && text.includes(ver);
-}
-
-/**
- * Extract a kernel build version embedded in a download URL, e.g. the
- * "wayfern-156.0.8078.80-…" basename or a per-version chrome-for-testing
- * path segment. The Wayfern feed has announced a top-level `version` one
- * patch ahead of the builds its URLs actually serve (156.0.8078.81 meta vs
- * 156.0.8078.80 assets), so the URL — not the feed headline — is the
- * version of record for what would get installed.
- */
-function buildVersionFromUrl(url) {
-  const text = String(url || '');
-  // Scan only path + query: an IPv4 host (https://192.168.1.100/…) would
-  // otherwise be reported as the build version, and the first match would
-  // even win over a real version later in the path.
-  let scan = text;
-  try {
-    const parsed = new URL(text);
-    scan = parsed.pathname + parsed.search;
-  } catch (_) { /* not an absolute URL: scan as-is */ }
-  // A trailing ".digit" means the match truncated a longer version
-  // (1.2.3.4 out of 1.2.3.4.5) — require a separator or end of string.
-  const match = /[/_-](\d+\.\d+\.\d+\.\d+)(?=$|[/_-]|\.(?!\d))/.exec(scan);
-  return match ? match[1] : '';
-}
-
-async function loadArchiveDigests(kernelsRoot) {
-  let raw;
-  try {
-    raw = await fsp.readFile(archiveDigestsPath(kernelsRoot), 'utf8');
-  } catch (error) {
-    if (error.code === 'ENOENT') return { pins: {} };
-    // Exists but unreadable: the pins on disk are unknown, so this must never
-    // be treated as "no pins yet" (that would silently disable verification).
-    console.error(`[kernel] archive digest store unreadable (${ARCHIVE_DIGESTS_FILE}): ${error.message}`);
-    return { pins: {}, corrupt: true };
-  }
-  try {
-    const parsed = JSON.parse(raw);
-    const pins = parsed && typeof parsed === 'object' && parsed.pins && typeof parsed.pins === 'object' ? parsed.pins : null;
-    return pins ? { pins } : { pins: {} };
-  } catch (error) {
-    // A corrupt file used to be indistinguishable from "nothing pinned yet",
-    // which fails open exactly where the design promises fail-closed.
-    console.error(`[kernel] archive digest store corrupt (${ARCHIVE_DIGESTS_FILE}): ${error.message}; previously verified URLs will download unverified`);
-    return { pins: {}, corrupt: true };
-  }
-}
-
-/** Digest previously recorded for this exact URL, or null. */
-async function pinnedArchiveSha256(kernelsRoot, url) {
-  if (!url) return null;
-  const { pins, corrupt } = await loadArchiveDigests(kernelsRoot);
-  const entry = pins[url];
-  const sha256 = entry && typeof entry === 'object' ? entry.sha256 : entry;
-  const value = String(sha256 || '').toLowerCase();
-  if (SHA256_HEX.test(value)) return value;
-  // No usable pin is normally just "not pinned yet"; with a corrupt store it
-  // means a previously verified URL is about to download unverified. The
-  // download still proceeds (refusing would break users), but not silently.
-  if (corrupt) {
-    console.warn('[kernel] archive digest store corrupt; download will proceed unverified:', url);
-  }
-  return null;
-}
-
-/** Record the digest of a known-good archive; keeps the newest N pins. */
-async function pinArchiveSha256(kernelsRoot, url, sha256) {
-  const value = String(sha256 || '').toLowerCase();
-  if (!url || !SHA256_HEX.test(value)) return false;
-  try {
-    const { pins } = await loadArchiveDigests(kernelsRoot);
-    delete pins[url];
-    pins[url] = { sha256: value, pinnedAt: new Date().toISOString() };
-    const keys = Object.keys(pins);
-    for (const stale of keys.slice(0, Math.max(0, keys.length - MAX_ARCHIVE_DIGEST_PINS))) {
-      delete pins[stale];
-    }
-    await writeFileAtomic(
-      archiveDigestsPath(kernelsRoot),
-      JSON.stringify({ version: 1, pins }, null, 2) + '\n'
-    );
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
-
-/**
- * Pull an optional digest out of a kernel feed document. Accepts the shapes a
- * feed is likely to grow (`sha256`, `sha256Hex`, per-platform `checksums`),
- * validates the hex, and returns {} when nothing trustworthy is published.
- */
-function extractFeedDigest(feed, platform) {
-  const out = {};
-  if (!feed || typeof feed !== 'object') return out;
-  const direct = [feed.sha256, feed.sha256Hex];
-  const checksums = feed.checksums && typeof feed.checksums === 'object' ? feed.checksums : {};
-  const fromMap = checksums[platform] || checksums[String(platform || '').replace(/\s+/g, '')];
-  const nested = fromMap && typeof fromMap === 'object' ? fromMap.sha256 : fromMap;
-  const sha256 = String(direct.find(Boolean) || nested || '').trim().toLowerCase();
-  if (SHA256_HEX.test(sha256)) out.sha256 = sha256;
-  const md5 = String(feed.md5 || (fromMap && typeof fromMap === 'object' ? fromMap.md5 : '') || '').trim().toLowerCase();
-  if (/^[0-9a-f]{32}$/.test(md5)) out.md5 = md5;
-  return out;
-}
-
-function validateArchiveMemberName(value) {
-  const name = String(value || '').replace(/\\/g, '/');
-  if (!name || name.includes('\0') || name.startsWith('/') || /^[A-Za-z]:\//.test(name)) {
-    throw new Error('Kernel archive contains an absolute or invalid path');
-  }
-  const parts = name.split('/').filter(Boolean);
-  const reserved = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;
-  if (parts.some((part) => part === '..' || part.includes(':') || /[. ]$/.test(part) || reserved.test(part))) {
-    throw new Error('Kernel archive contains an unsafe path segment');
-  }
-  return name;
-}
-
-async function preflightArchiveMembers(archivePath, kind) {
-  if (kind === 'dmg') return;
-  let stdout;
-  if (kind === 'zip') {
-    if (process.platform === 'win32') {
-      const escaped = archivePath.replace(/'/g, "''");
-      const script = [
-        'Add-Type -AssemblyName System.IO.Compression.FileSystem',
-        `$z=[System.IO.Compression.ZipFile]::OpenRead('${escaped}')`,
-        "try { $z.Entries | ForEach-Object { $mode=($_.ExternalAttributes -shr 16) -band 0xF000; \"$($_.FullName)`t$mode\" } } finally { $z.Dispose() }",
-      ].join('; ');
-      ({ stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-Command', script], {
-        windowsHide: true,
-        maxBuffer: 32 * 1024 * 1024,
-      }));
-      const rows = String(stdout || '').split(/\r?\n/).filter(Boolean);
-      if (!rows.length || rows.length > MAX_ARCHIVE_ENTRIES) throw new Error('Kernel archive entry count is invalid');
-      for (const row of rows) {
-        const split = row.lastIndexOf('\t');
-        const name = split >= 0 ? row.slice(0, split) : row;
-        const mode = split >= 0 ? Number(row.slice(split + 1)) : 0;
-        validateArchiveMemberName(name);
-        if (mode === 0xA000) throw new Error('Kernel ZIP contains a symbolic link');
-      }
-      return;
-    } else {
-      ({ stdout } = await execFileAsync('unzip', ['-Z1', archivePath], { maxBuffer: 32 * 1024 * 1024 }));
-      const names = String(stdout || '').split(/\r?\n/).filter(Boolean);
-      if (!names.length || names.length > MAX_ARCHIVE_ENTRIES) throw new Error('Kernel archive entry count is invalid');
-      for (const name of names) validateArchiveMemberName(name);
-      const listing = await execFileAsync('unzip', ['-Z', '-l', archivePath], { maxBuffer: 32 * 1024 * 1024 });
-      if (String(listing.stdout || '').split(/\r?\n/).some((line) => /^l[rwx-]{9}\s/.test(line))) {
-        throw new Error('Kernel ZIP contains a symbolic link');
-      }
-      return;
-    }
-  } else {
-    ({ stdout } = await execFileAsync('tar', ['-tf', archivePath], { maxBuffer: 32 * 1024 * 1024 }));
-    const names = String(stdout || '').split(/\r?\n/).filter(Boolean);
-    if (!names.length || names.length > MAX_ARCHIVE_ENTRIES) throw new Error('Kernel archive entry count is invalid');
-    for (const name of names) validateArchiveMemberName(name);
-    const listing = await execFileAsync('tar', ['-tvf', archivePath], { maxBuffer: 32 * 1024 * 1024 });
-    if (String(listing.stdout || '').split(/\r?\n/).some((line) => line[0] === 'l' || line[0] === 'h')) {
-      throw new Error('Kernel TAR contains a link');
-    }
-    return;
-  }
-}
-
-async function assertSafeExtractedTree(root) {
-  const base = await fsp.realpath(root);
-  const stack = [base];
-  let count = 0;
-  while (stack.length) {
-    const dir = stack.pop();
-    const entries = await fsp.readdir(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      count += 1;
-      if (count > MAX_ARCHIVE_ENTRIES) throw new Error('Extracted kernel contains too many files');
-      const full = path.join(dir, entry.name);
-      const stat = await fsp.lstat(full);
-      if (stat.isSymbolicLink()) {
-        const target = await fsp.realpath(full).catch(() => null);
-        if (!target || !isPathInsideRoot(target, base)) throw new Error('Extracted kernel contains an unsafe link');
-        continue;
-      }
-      if (stat.isDirectory()) stack.push(full);
-      else if (!stat.isFile()) throw new Error('Extracted kernel contains a special file');
-    }
-  }
-}
-
-function isPathInsideRoot(candidate, root) {
-  const child = path.resolve(candidate);
-  const base = path.resolve(root);
-  const normalize = (value) => process.platform === 'win32' ? value.toLowerCase() : value;
-  return normalize(child) === normalize(base) || normalize(child).startsWith(normalize(base) + path.sep);
-}
-
-function safeInstalledBinary(candidate, root) {
-  if (!candidate || !root) return null;
-  const lexical = path.resolve(candidate);
-  const base = path.resolve(root);
-  if (!isPathInsideRoot(lexical, base)) return null;
-  try {
-    const linkStat = fs.lstatSync(lexical);
-    if (linkStat.isSymbolicLink() || !linkStat.isFile()) return null;
-    const real = fs.realpathSync.native(lexical);
-    const realBase = fs.realpathSync.native(base);
-    return isPathInsideRoot(real, realBase) ? lexical : null;
-  } catch (_) {
-    return null;
-  }
-}
+const { fetchJson, fetchText } = createKernelMetadataClient({
+  validateUrl: trustedKernelUrl, maxRedirects: MAX_REDIRECTS, maxBytes: MAX_META_BYTES,
+});
 
 function donutPlatformKey() {
   const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
@@ -686,102 +434,6 @@ async function ensureKernelReadyForLaunch(candidate = {}, versionOutput = '') {
   }
 }
 
-function fetchJson(url, redirects = 0, maxBytes = MAX_META_BYTES) {
-  if (redirects > MAX_REDIRECTS) return Promise.reject(new Error('Kernel metadata redirected too many times'));
-  const parsed = trustedKernelUrl(url);
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const finish = (handler, value) => {
-      if (settled) return;
-      settled = true;
-      handler(value);
-    };
-    const req = https.get(parsed, { headers: { 'User-Agent': 'OpenBrowser/1.0 (kernel)' }, timeout: 30000 }, (res) => {
-      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        res.resume();
-        return fetchJson(new URL(res.headers.location, parsed).toString(), redirects + 1, maxBytes)
-          .then((value) => finish(resolve, value), (error) => finish(reject, error));
-      }
-      if (res.statusCode !== 200) {
-        res.resume();
-        return finish(reject, new Error('HTTP ' + res.statusCode + ' for ' + url));
-      }
-      const chunks = []; let size = 0;
-      res.on('data', (c) => {
-        if (settled) return;
-        size += c.length;
-        if (size > maxBytes) {
-          const error = new Error(`Kernel metadata exceeds ${Math.round(maxBytes / 1024 / 1024)} MiB`);
-          finish(reject, error);
-          res.destroy(error);
-          req.destroy(error);
-        } else {
-          chunks.push(c);
-        }
-      });
-      res.on('error', (error) => finish(reject, error));
-      res.on('end', () => {
-        if (settled) return;
-        try { finish(resolve, JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
-        catch (e) { finish(reject, e); }
-      });
-    });
-    req.on('timeout', () => req.destroy(new Error('Kernel metadata request timed out')));
-    req.on('error', (error) => finish(reject, error));
-  });
-}
-
-/**
- * Fetch a trusted-host text document (Firefox SHA256SUMS). Mirrors fetchJson's
- * redirect handling: every hop is re-validated by trustedKernelUrl and capped
- * at MAX_REDIRECTS — a 302 on the sums URL used to fail every Firefox install
- * with a bare "HTTP 302".
- */
-function fetchText(url, { maxBytes = MAX_META_BYTES, timeoutMs = 30000, redirects = 0 } = {}) {
-  if (redirects > MAX_REDIRECTS) return Promise.reject(new Error('Kernel text document redirected too many times'));
-  const parsed = trustedKernelUrl(url);
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const finish = (handler, value) => {
-      if (settled) return;
-      settled = true;
-      handler(value);
-    };
-    const req = https.get(parsed, { headers: { 'User-Agent': 'OpenBrowser/1.0 (kernel)' }, timeout: timeoutMs }, (res) => {
-      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        res.resume();
-        return fetchText(new URL(res.headers.location, parsed).toString(), { maxBytes, timeoutMs, redirects: redirects + 1 })
-          .then((value) => finish(resolve, value), (error) => finish(reject, error));
-      }
-      if (res.statusCode !== 200) {
-        res.resume();
-        return finish(reject, new Error('HTTP ' + res.statusCode + ' for ' + url));
-      }
-      const chunks = []; let size = 0;
-      res.setEncoding('utf8');
-      res.on('data', (chunk) => {
-        if (settled) return;
-        size += chunk.length;
-        if (size > maxBytes) {
-          const error = new Error(`Kernel text document exceeds ${maxBytes} bytes`);
-          finish(reject, error);
-          res.destroy(error);
-          req.destroy(error);
-        } else {
-          chunks.push(chunk);
-        }
-      });
-      res.on('error', (error) => finish(reject, error));
-      res.on('end', () => {
-        if (settled) return;
-        finish(resolve, chunks.join(''));
-      });
-    });
-    req.on('timeout', () => req.destroy(new Error('Kernel text request timed out')));
-    req.on('error', (error) => finish(reject, error));
-  });
-}
-
 /**
  * Fetch a kernel archive.
  *
@@ -835,7 +487,6 @@ function downloadFile(url, dest, onProgress, options = {}) {
     sha256: result.sha256 || null,
   }));
 }
-
 
 function requestJson(url, timeout = 5000) {
   return new Promise((resolve, reject) => {
@@ -897,107 +548,6 @@ async function stopProbeProcess(child) {
     } else {
       child.kill('SIGKILL');
     }
-  }
-}
-
-async function extractZip(zipPath, destDir) {
-  await preflightArchiveMembers(zipPath, 'zip');
-  await new Promise((resolve, reject) => {
-    if (process.platform === 'win32') {
-      const ps = `Expand-Archive -LiteralPath '${zipPath.replace(/'/g, "''")}' -DestinationPath '${destDir.replace(/'/g, "''")}' -Force`;
-      execFile('powershell.exe', ['-NoProfile', '-Command', ps], { windowsHide: true }, (err) => (err ? reject(err) : resolve()));
-      return;
-    }
-    execFile('unzip', ['-o', '-q', zipPath, '-d', destDir], (err) => {
-      if (err) {
-        if (process.platform === 'darwin') {
-          execFile('ditto', ['-x', '-k', zipPath, destDir], (e2) => (e2 ? reject(err) : resolve()));
-          return;
-        }
-        return reject(err);
-      }
-      resolve();
-    });
-  });
-  await assertSafeExtractedTree(destDir);
-}
-
-async function extractDeb(debPath, destDir) {
-  if (process.platform !== 'linux') throw new Error('DEB 仅支持 Linux');
-  await execFileAsync('dpkg-deb', ['-x', debPath, destDir]);
-  // Keep only /opt/google/chrome. The Debian package also contains system-wide
-  // launchers/cron hooks with absolute symlinks that are irrelevant here.
-  for (const systemPath of ['usr', 'etc']) {
-    await fsp.rm(path.join(destDir, systemPath), { recursive: true, force: true });
-  }
-  await assertSafeExtractedTree(destDir);
-}
-
-async function extractMsi(msiPath, destDir) {
-  if (process.platform !== 'win32') throw new Error('MSI 仅支持 Windows');
-  await execFileAsync('msiexec.exe', ['/a', msiPath, `/qn`, '/norestart', `TARGETDIR=${destDir}`], {
-    windowsHide: true,
-    timeout: 120000,
-  });
-  await assertSafeExtractedTree(destDir);
-}
-
-async function extractTarXz(archivePath, destDir) {
-  await preflightArchiveMembers(archivePath, 'tar.xz');
-  await execFileAsync('tar', ['-xJf', archivePath, '-C', destDir]);
-  await assertSafeExtractedTree(destDir);
-}
-
-async function extractTarGz(archivePath, destDir) {
-  await preflightArchiveMembers(archivePath, 'tar.gz');
-  await execFileAsync('tar', ['-xzf', archivePath, '-C', destDir]);
-  await assertSafeExtractedTree(destDir);
-}
-
-/**
- * macOS: mount DMG, copy first .app into destDir, detach.
- * High-level DMG extract helper for macOS kernel archives.
- */
-async function extractDmg(dmgPath, destDir) {
-  if (process.platform !== 'darwin') throw new Error('DMG 仅支持 macOS');
-  const mountRoot = path.join(destDir, '_dmg_mount');
-  await fsp.mkdir(mountRoot, { recursive: true });
-  let mountPoint = null;
-  try {
-    const { stdout } = await execFileAsync('hdiutil', [
-      'attach', dmgPath, '-nobrowse', '-readonly', '-mountroot', mountRoot,
-    ], { maxBuffer: 4 * 1024 * 1024 });
-    // Prefer scanning mountRoot for .app; fallback parse plist-ish output for /Volumes/
-    const entries = await fsp.readdir(mountRoot, { withFileTypes: true }).catch(() => []);
-    const vol = entries.find((e) => e.isDirectory());
-    if (vol) mountPoint = path.join(mountRoot, vol.name);
-    if (!mountPoint) {
-      const m = String(stdout || '').match(/\/Volumes\/[^\n\t]+/);
-      if (m) mountPoint = m[0].trim();
-    }
-    if (!mountPoint || !fs.existsSync(mountPoint)) throw new Error('无法挂载 DMG');
-
-    const apps = (await fsp.readdir(mountPoint, { withFileTypes: true }))
-      .filter((e) => e.isDirectory() && e.name.endsWith('.app'))
-      .map((e) => path.join(mountPoint, e.name));
-    if (!apps.length) throw new Error('DMG 内未找到 .app');
-
-    const appName = path.basename(apps[0]);
-    const targetApp = path.join(destDir, appName);
-    await fsp.rm(targetApp, { recursive: true, force: true }).catch(() => {});
-    // ditto preserves resource forks / codesign better than cp -R
-    await execFileAsync('ditto', [apps[0], targetApp]);
-    await assertSafeExtractedTree(targetApp);
-  } finally {
-    // detach everything under mountRoot
-    try {
-      const kids = await fsp.readdir(mountRoot).catch(() => []);
-      for (const name of kids) {
-        await execFileAsync('hdiutil', ['detach', path.join(mountRoot, name), '-quiet']).catch(() => {});
-      }
-      await execFileAsync('hdiutil', ['detach', mountRoot, '-quiet']).catch(() => {});
-    } catch (_) {}
-    await fsp.rm(mountRoot, { recursive: true, force: true }).catch(() => {});
   }
 }
 
@@ -1252,20 +802,6 @@ function bundledKernelVersion(root) {
     } catch (_) {}
   }
   return 'bundled';
-}
-
-function archiveKindFromUrl(url) {
-  const u = String(url || '').toLowerCase();
-  if (u.endsWith('.deb')) return 'deb';
-  if (u.endsWith('.msi')) return 'msi';
-  if (u.endsWith('.dmg')) return 'dmg';
-  if (u.endsWith('.tar.xz') || u.endsWith('.txz')) return 'tar.xz';
-  if (u.endsWith('.tar.gz') || u.endsWith('.tgz')) return 'tar.gz';
-  if (u.endsWith('.zip')) return 'zip';
-  if (u.includes('.dmg')) return 'dmg';
-  if (u.includes('.tar.xz')) return 'tar.xz';
-  if (u.includes('.zip')) return 'zip';
-  return 'zip';
 }
 
 class BrowserKernelManager {

@@ -15,7 +15,7 @@
 /**
  * Full RPA Plus action set (order from registerAction calls). Documents the
  * marketplace template format; the engine executes a subset of it
- * (EXECUTABLE_STEP_TYPES in rpa-engine.js). Entries marked "no local
+ * (rpa/step-registry.js). Entries marked "no local
  * executor" fail closed at plan validation (findUnsupportedSteps) instead of
  * throwing mid-run — keep that contract in sync in rpa-template-audit-selftest.
  */

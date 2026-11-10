@@ -9,7 +9,7 @@
 // and the network-mode installer calls intentionally stay in renderer.js —
 // they own startUrl/platform preferences beyond the proxy domain.
 
-document.addEventListener('click', (event) => {
+document.addEventListener('click', async (event) => {
   const nav = event.target.closest('[data-view="rpa"][data-rpa-tab]');
   if (!nav) return;
   // switchView will be called by existing nav handler; stash tab
@@ -75,9 +75,9 @@ document.addEventListener('click', async (event) => {
   if (action?.dataset.action === 'fav') { toggleProfileFavorite(action.dataset.id); closeRowMoreMenu(); }
   if (action?.dataset.action === 'copy-id') { navigator.clipboard.writeText(action.dataset.id).then(() => toast(tx('复制成功'))).catch(() => {}); closeRowMoreMenu(); }
   if (action?.dataset.action === 'export-profile') { exportProfile(action.dataset.id); }
-  if (action?.dataset.action === 'note') { closeRowMoreMenu(); openProfileEditor(action.dataset.id); setTimeout(() => document.getElementById('editor-note')?.focus(), 80); }
+  if (action?.dataset.action === 'note') { closeRowMoreMenu(); if (await openProfileEditor(action.dataset.id)) document.getElementById('editor-note')?.focus(); }
   // Roxy 对齐：查看窗口 / 重启 / 行级测代理 / 快捷标签 / 清除缓存 / 删除入回收站
-  if (action?.dataset.action === 'view') { closeRowMoreMenu(); openProfileEditor(action.dataset.id); makeEditorReadonly(); }
+  if (action?.dataset.action === 'view') { closeRowMoreMenu(); if (await openProfileEditor(action.dataset.id)) makeEditorReadonly(); }
   if (action?.dataset.action === 'restart') { closeRowMoreMenu(); restartProfile(action.dataset.id); }
   if (action?.dataset.action === 'check-proxy') { closeRowMoreMenu(); checkProfileProxy(action.dataset.id); }
   if (action?.dataset.action === 'tag') { openBatchQuickDialog('tag', action.dataset.id); }

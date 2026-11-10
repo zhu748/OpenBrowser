@@ -16,6 +16,7 @@ const bridge = {
   setSyncSettings: async () => ({}),
   proxyList: async () => [],
   profileStatus: async () => [],
+  profileForEdit: async (id) => ({ ipcResult: 1, ok: true, value: { profile: structuredClone(window.ui.profiles.find((profile) => profile.id === id)), rev: 1 } }),
   syncProfiles: async (profiles) => { window.__uiAuditSavedProfiles = profiles; return profiles.map((profile) => ({ ...profile, running: false })); },
   extensionList: async () => [],
   appCenterList: async () => ({ list: { builtin: [], recommended: [], local: [] }, counts: {} }),

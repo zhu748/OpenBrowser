@@ -1,0 +1,38 @@
+'use strict';
+
+const assert = require('node:assert/strict');
+const { cloneVariableValue, snapshotVariables, interpolate, getVariableValue, resolveConditionValue } = require('../rpa/variables');
+
+const original = { nested: [{ value: 1 }] };
+const copy = cloneVariableValue(original);
+copy.nested[0].value = 2;
+assert.equal(original.nested[0].value, 1);
+const cycle = { nested: { value: 1 } }; cycle.self = cycle;
+const detached = cloneVariableValue(cycle);
+assert.equal(detached.self, detached);
+detached.nested.value = 2;
+assert.equal(cycle.nested.value, 1, 'cyclic variables cannot leak changes between tasks');
+cycle.callback = () => 'value';
+const withFunction = cloneVariableValue(cycle);
+assert.equal(withFunction.self, withFunction);
+withFunction.nested.value = 3;
+assert.equal(cycle.nested.value, 1, 'cyclic objects with callable leaves also detach');
+const bigint = cloneVariableValue({ value: 1n });
+assert.equal(bigint.value, 1n);
+assert.equal(interpolate('${ user }/${missing}/${count}', { user: 'A', count: 0 }), 'A//0');
+assert.deepEqual(getVariableValue(['${count}', 'hello ${user}'], { count: 2, user: 'A' }), [2, 'hello A']);
+assert.equal(resolveConditionValue('false'), false);
+assert.equal(resolveConditionValue('unknownVariable'), undefined);
+assert.equal(resolveConditionValue('${value}', { value: 7 }), 7);
+const result = snapshotVariables({ cycle, fn: () => {} });
+assert.equal(result.cycle.self, '[circular]');
+assert.equal(result.fn, '[function]');
+assert.doesNotThrow(() => JSON.stringify(snapshotVariables({ cycle })));
+assert.deepEqual(snapshotVariables({ large: 12345678901234567890n }), { large: '12345678901234567890' });
+const specialKeys = JSON.parse('{"__proto__":{"admin":true},"nested":{"__proto__":{"value":1}}}');
+const safe = snapshotVariables(specialKeys);
+assert.equal(Object.getPrototypeOf(safe), Object.prototype);
+assert.equal(Object.hasOwn(safe, '__proto__'), true);
+assert.equal(Object.getPrototypeOf(safe.nested), Object.prototype);
+assert.deepEqual(JSON.parse(JSON.stringify(safe)), specialKeys, 'literal keys survive without changing object prototypes');
+console.log('RPA_VARIABLES_SELFTEST OK (task isolation, cycles, callable leaves, interpolation, snapshot serialization)');

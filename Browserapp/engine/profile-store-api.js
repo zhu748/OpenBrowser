@@ -13,13 +13,26 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
 
+/** One publication path for full sync and revision-checked commands. */
+function publishProfileSync(engine, staged) {
+  engine.invalidateStatusCache?.();
+  for (const [id, profile] of staged.profiles) engine.profiles.set(id, profile);
+  for (const [id, assigned] of staged.assignments) engine.assignments.set(id, assigned);
+  for (const id of staged.networkInvalidations) engine.networkInfo.delete(id);
+}
+
 module.exports = {
+  profileForEdit(id) {
+    const safeId = assertProfileId(id);
+    const profile = this.profiles.get(safeId);
+    if (!profile) throw Object.assign(new Error(`Profile not found: ${safeId}`), { code: 'PROFILE_NOT_FOUND' });
+    // Explicit trusted-editor read; polling status continues to redact secrets.
+    return { profile: structuredClone(profile), rev: this.profiles.revisionOf(safeId) };
+  },
+
   async syncProfiles(values) {
     const staged = prepareProfileSync(this, values);
-    this.invalidateStatusCache?.();
-    for (const [id, profile] of staged.profiles) this.profiles.set(id, profile);
-    for (const [id, assigned] of staged.assignments) this.assignments.set(id, assigned);
-    for (const id of staged.networkInvalidations) this.networkInfo.delete(id);
+    publishProfileSync(this, staged);
     // Do not drop unknown engine profiles here — deleteProfiles is the explicit path.
     // persist() coalesces the burst, checks row differences and propagates write
     // failures. Saving here as well hashed the same credential payload twice.
@@ -39,8 +52,8 @@ module.exports = {
    * started from (status view's .rev). When the engine has moved on since
    * (proxy exit persisted, close-time cookie snapshot, local API edit …),
    * the command is REJECTED with code PROFILE_STALE_REV: the caller refreshes
-   * its row and retries, or falls back to a full sync — never a silent
-   * last-writer-wins overwrite of engine-side changes it has never seen.
+   * its row before editing again. Never silently resubmit an old draft with
+   * a newer revision or use a full sync to bypass the conflict gate.
    */
   async applyProfileCommands(commands) {
     if (!Array.isArray(commands) || commands.length > 200 || commands.length === 0) {
@@ -53,6 +66,12 @@ module.exports = {
         throw new Error('Unknown profile command');
       }
       const id = assertProfileId(command.id);
+      if (!command.profile || command.profile.id !== id) {
+        throw Object.assign(new Error('Profile command ID does not match payload'), { code: 'PROFILE_COMMAND_ID_MISMATCH' });
+      }
+      if (!this.profiles.has(id)) {
+        throw Object.assign(new Error(`Profile not found: ${id}`), { code: 'PROFILE_NOT_FOUND' });
+      }
       if (seen.has(id)) throw Object.assign(new Error(`Duplicate command for profile ${id}`), { code: 'PROFILE_COMMAND_DUPLICATE' });
       seen.add(id);
       const baseRev = Number(command.baseRev);
@@ -70,10 +89,7 @@ module.exports = {
       });
     }
     const staged = prepareProfileSync(this, modify.map((entry) => entry.profile));
-    this.invalidateStatusCache?.();
-    for (const [id, profile] of staged.profiles) this.profiles.set(id, profile);
-    for (const [id, assigned] of staged.assignments) this.assignments.set(id, assigned);
-    for (const id of staged.networkInvalidations) this.networkInfo.delete(id);
+    publishProfileSync(this, staged);
     await this.persist();
     return this.status();
   },
@@ -144,6 +160,7 @@ module.exports = {
           if (lastError) throw lastError;
         }
       };
+
       for (let offset = 0; offset < removals.length; offset += 4) {
         const batch = removals.slice(offset, offset + 4);
         const results = await Promise.allSettled(batch.map(removeRoot));

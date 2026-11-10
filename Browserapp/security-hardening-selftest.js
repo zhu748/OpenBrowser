@@ -93,38 +93,14 @@ function main() {
   assert.strictEqual(stripped.canvas.mode, 'noise');
   assert.strictEqual(fpNoiseOff.canvas.mode, 'noise');
 
-  // --- RPA path sandbox ---
-  const rpaSrc = fs.readFileSync(path.join(__dirname, 'automation/rpa-engine.js'), 'utf8');
-  assert.ok(rpaSrc.includes('resolveSafeRpaPath'), 'RPA must define path sandbox helper');
-  // Step dispatch is a lookup table (STEP_HANDLERS / STEP_TYPE_ALIASES) since
-  // the executeStepInternal if/else chain was refactored away, so each
-  // sandboxed step anchors on its table entry (whose handler is verified at
-  // module load time by the wiring check) plus the sandbox call it makes.
-  assert.ok(
-    rpaSrc.includes("useexcel: 'stepUseExcel'")
-    && (rpaSrc.includes('resolveSafeRpaPath(filePath)') || rpaSrc.includes('resolveSpreadsheetPath')),
-    'useExcel sandboxed'
-  );
-  assert.ok(rpaSrc.includes("uploadattachment: 'stepUploadAttachment'") && rpaSrc.includes('resolveSafeRpaPath(filePath)'), 'uploadAttachment sandboxed');
-
-  // Runtime sandbox check via re-require internals is hard; unit-test helper by eval of function source
-  // Load rpa-engine and exercise through temporary require of path logic:
-  const OUTPUT_DIRECTORY = path.join(process.cwd(), 'rpa-output');
-  function isPathInsideRoot(candidate, root) {
-    const child = path.resolve(candidate);
-    const base = path.resolve(root);
-    return child === base || child.startsWith(base + path.sep);
-  }
-  function resolveSafeRpaPath(filePath) {
-    const raw = String(filePath || '').trim();
-    if (!raw) throw new Error('file path required');
-    if (raw.includes('\0')) throw new Error('invalid file path');
-    const resolved = path.isAbsolute(raw) ? path.resolve(raw) : path.resolve(OUTPUT_DIRECTORY, raw);
-    if (!isPathInsideRoot(resolved, OUTPUT_DIRECTORY)) throw new Error('RPA file path must be inside the RPA output directory');
-    return resolved;
-  }
-  const okRel = resolveSafeRpaPath('data/a.csv');
-  assert.ok(okRel.includes('rpa-output'));
+  // --- RPA path sandbox: exercise the production resolver and dispatch map ---
+  const { resolveSafeRpaPath } = require('./automation/rpa/paths');
+  const { resolveStepHandler } = require('./automation/rpa/step-registry');
+  const { RpaEngine } = require('./automation/rpa-engine');
+  assert.equal(resolveStepHandler('useexcel'), 'stepUseExcel');
+  assert.equal(resolveStepHandler('uploadattachment'), 'stepUploadAttachment');
+  assert.equal(typeof RpaEngine.prototype[resolveStepHandler('useexcel')], 'function');
+  assert.ok(resolveSafeRpaPath('data/a.csv').includes('rpa-output'));
   assert.throws(() => resolveSafeRpaPath('/etc/passwd'), /RPA file path/);
   assert.throws(() => resolveSafeRpaPath('../../../../etc/passwd'), /RPA file path/);
 

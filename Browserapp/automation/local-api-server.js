@@ -43,178 +43,7 @@ function fail(msg, code = -1, data = null) {
   return { code, msg: String(msg || 'error'), data };
 }
 
-const ROUTE_METHODS = new Map();
-
-function registerRouteMethods(methods, paths) {
-  const allowed = Object.freeze(methods.map((method) => String(method).toUpperCase()));
-  for (const pathname of paths) ROUTE_METHODS.set(pathname, allowed);
-}
-
-registerRouteMethods(['GET'], [
-  '/', '/status', '/api/getVersion', '/api/v1/version',
-  '/api/v1/user/list', '/api/v2/browser-profile/list', '/api/profiles',
-  '/api/v1/user/detail', '/api/v2/browser-profile/detail', '/api/profiles/get', '/api/profile',
-  '/api/v1/browser/active', '/api/v2/browser-profile/active', '/api/browser/active',
-  '/api/v2/proxy-list/list', '/api/proxy/list',
-  '/api/fingerprint', '/api/v1/fingerprint', '/api/isolation/audit', '/api/v1/isolation/audit',
-  '/api/v1/application/list', '/api/application/list', '/api/apps',
-  '/api/application/recommended', '/api/apps/recommended',
-  '/api/extension/list', '/api/extensions', '/api/extension/update', '/api/getExtensionStatus',
-  '/api/sync/status', '/api/window-sync/status', '/api/getRpaStatus', '/api/rpa/status',
-]);
-registerRouteMethods(['POST'], [
-  '/api/v1/user/create', '/api/v2/browser-profile/create', '/api/profiles/create',
-  '/api/v2/browser-profile/update', '/api/profiles/update',
-  '/api/v2/browser-profile/duplicate', '/api/profiles/duplicate',
-  '/api/v1/user/delete', '/api/v2/browser-profile/delete', '/api/profiles/delete',
-  '/api/v1/browser/start', '/api/v2/browser-profile/start', '/api/browser/start',
-  '/api/v1/browser/stop', '/api/v2/browser-profile/stop', '/api/browser/stop',
-  '/api/v1/browser/stop-all', '/api/v2/browser-profile/stop-all', '/api/browser/stop-all',
-  '/api/v1/browser/open-url', '/api/browser/open-url',
-  '/api/v1/browser/screenshot', '/api/browser/screenshot',
-  '/api/v2/proxy-list/create', '/api/proxy/create',
-  '/api/v2/proxy-list/update', '/api/proxy/update',
-  '/api/v2/proxy-list/delete', '/api/proxy/delete',
-  '/api/proxy/check', '/api/checkProxy', '/api/proxy/check-profile',
-  '/api/extension/assign', '/api/extensions/assign',
-  '/api/sync/start', '/api/window-sync/start', '/api/sync/stop', '/api/window-sync/stop',
-  '/api/sync/restart', '/api/window-sync/restart', '/api/sync/arrange', '/api/window-sync/arrange',
-  '/api/rpa/run', '/api/rpa', '/api/rpav2', '/api/stopRpa', '/api/rpa/stop',
-]);
-registerRouteMethods(['GET', 'POST'], ['/api/sync/settings', '/api/rpa/plans', '/api/rpa/templates']);
-registerRouteMethods(['GET', 'DELETE'], ['/api/rpa/tasks']);
-registerRouteMethods(['POST'], ['/api/rpa/tasks/delete']);
-
-function allowedMethodsForPath(pathname) {
-  const exact = ROUTE_METHODS.get(pathname);
-  if (exact) return exact;
-  if (pathname.startsWith('/api/rpa/plans/')) return ['DELETE'];
-  if (pathname.startsWith('/api/rpa/tasks/')) return ['GET', 'DELETE'];
-  if (pathname.startsWith('/api/rpa/templates/') && pathname.endsWith('/install')) return ['POST'];
-  if (pathname.startsWith('/api/rpa/templates/')) return ['GET', 'DELETE'];
-  return null;
-}
-
-// Command routing table (cmd -> handler), the data behind route(). A plain
-// string value serves the path for ANY verb, exactly like the old if/else
-// chain branches that carried no method check (the 405 gate in handle()
-// has already narrowed the verb per path via ROUTE_METHODS above); an
-// object value is verb-specific. Id-in-path RPA routes are prefix entries
-// in API_PREFIX_ROUTES and are consulted after the exact lookup, in the
-// same order the old chain checked them.
-const API_ROUTES = {
-  '/': 'routeStatus',
-  '/status': 'routeStatus',
-  '/api/getVersion': 'routeVersion',
-  '/api/v1/version': 'routeVersion',
-  '/api/v1/user/list': 'routeProfileList',
-  '/api/v2/browser-profile/list': 'routeProfileList',
-  '/api/profiles': 'routeProfileList',
-  '/api/v1/user/create': 'routeProfileCreate',
-  '/api/v2/browser-profile/create': 'routeProfileCreate',
-  '/api/profiles/create': 'routeProfileCreate',
-  '/api/v2/browser-profile/update': 'routeProfileUpdate',
-  '/api/profiles/update': 'routeProfileUpdate',
-  '/api/v2/browser-profile/duplicate': 'routeProfileDuplicate',
-  '/api/profiles/duplicate': 'routeProfileDuplicate',
-  '/api/v1/user/delete': 'routeProfileDelete',
-  '/api/v2/browser-profile/delete': 'routeProfileDelete',
-  '/api/profiles/delete': 'routeProfileDelete',
-  '/api/v1/browser/start': 'routeBrowserStart',
-  '/api/v2/browser-profile/start': 'routeBrowserStart',
-  '/api/browser/start': 'routeBrowserStart',
-  '/api/v1/browser/stop': 'routeBrowserStop',
-  '/api/v2/browser-profile/stop': 'routeBrowserStop',
-  '/api/browser/stop': 'routeBrowserStop',
-  '/api/v1/browser/stop-all': 'routeBrowserStopAll',
-  '/api/v2/browser-profile/stop-all': 'routeBrowserStopAll',
-  '/api/browser/stop-all': 'routeBrowserStopAll',
-  '/api/v1/browser/active': 'routeBrowserActive',
-  '/api/v2/browser-profile/active': 'routeBrowserActive',
-  '/api/browser/active': 'routeBrowserActive',
-  '/api/v1/user/detail': 'routeProfileDetail',
-  '/api/v2/browser-profile/detail': 'routeProfileDetail',
-  '/api/profiles/get': 'routeProfileDetail',
-  '/api/profile': 'routeProfileDetail',
-  '/api/v1/browser/open-url': 'routeBrowserOpenUrl',
-  '/api/browser/open-url': 'routeBrowserOpenUrl',
-  '/api/v1/browser/screenshot': 'routeBrowserScreenshot',
-  '/api/browser/screenshot': 'routeBrowserScreenshot',
-  '/api/v2/proxy-list/list': 'routeProxyList',
-  '/api/proxy/list': 'routeProxyList',
-  '/api/v2/proxy-list/create': 'routeProxyCreate',
-  '/api/proxy/create': 'routeProxyCreate',
-  '/api/v2/proxy-list/update': 'routeProxyUpdate',
-  '/api/proxy/update': 'routeProxyUpdate',
-  '/api/v2/proxy-list/delete': 'routeProxyDelete',
-  '/api/proxy/delete': 'routeProxyDelete',
-  '/api/proxy/check': 'routeProxyCheck',
-  '/api/checkProxy': 'routeProxyCheck',
-  '/api/proxy/check-profile': 'routeProxyCheckProfile',
-  '/api/fingerprint': 'routeFingerprint',
-  '/api/v1/fingerprint': 'routeFingerprint',
-  '/api/isolation/audit': 'routeIsolationAudit',
-  '/api/v1/isolation/audit': 'routeIsolationAudit',
-  '/api/v1/application/list': 'routeAppList',
-  '/api/application/list': 'routeAppList',
-  '/api/apps': 'routeAppList',
-  '/api/application/recommended': 'routeAppRecommended',
-  '/api/apps/recommended': 'routeAppRecommended',
-  '/api/extension/list': 'routeExtensionList',
-  '/api/extensions': 'routeExtensionList',
-  '/api/extension/assign': 'routeExtensionAssign',
-  '/api/extensions/assign': 'routeExtensionAssign',
-  '/api/extension/update': 'routeExtensionStatus',
-  '/api/getExtensionStatus': 'routeExtensionStatus',
-  '/api/sync/status': 'routeSyncStatus',
-  '/api/window-sync/status': 'routeSyncStatus',
-  '/api/sync/start': 'routeSyncStart',
-  '/api/window-sync/start': 'routeSyncStart',
-  '/api/sync/stop': 'routeSyncStop',
-  '/api/window-sync/stop': 'routeSyncStop',
-  '/api/sync/restart': 'routeSyncRestart',
-  '/api/window-sync/restart': 'routeSyncRestart',
-  '/api/sync/arrange': 'routeSyncArrange',
-  '/api/window-sync/arrange': 'routeSyncArrange',
-  '/api/rpa/run': 'routeRpaRun',
-  '/api/rpa': 'routeRpaRun',
-  '/api/rpav2': 'routeRpaRun',
-  '/api/getRpaStatus': 'routeRpaStatus',
-  '/api/rpa/status': 'routeRpaStatus',
-  '/api/stopRpa': 'routeRpaStop',
-  '/api/rpa/stop': 'routeRpaStop',
-  '/api/sync/settings': { GET: 'routeSyncSettingsGet', POST: 'routeSyncSettingsPost' },
-  '/api/rpa/plans': { GET: 'routeRpaPlansList', POST: 'routeRpaPlanUpsert' },
-  '/api/rpa/tasks': { GET: 'routeRpaTasksList', DELETE: 'routeRpaTasksDelete' },
-  '/api/rpa/tasks/delete': { POST: 'routeRpaTasksDelete' },
-  '/api/rpa/templates': { GET: 'routeRpaTemplatesList', POST: 'routeRpaTemplatesAction' },
-};
-
-// Dynamic (id-in-path) routes: checked after the exact table, mirroring the
-// old chain precedence (e.g. DELETE /api/rpa/tasks/delete falls through the
-// exact POST-only entry to the tasks prefix and deletes task id 'delete').
-const API_PREFIX_ROUTES = [
-  { prefix: '/api/rpa/plans/', DELETE: 'routeRpaPlanDelete' },
-  { prefix: '/api/rpa/tasks/', GET: 'routeRpaTaskGet', DELETE: 'routeRpaTaskDelete' },
-  { prefix: '/api/rpa/templates/', suffix: '/install', POST: 'routeRpaTemplateInstall' },
-  { prefix: '/api/rpa/templates/', GET: 'routeRpaTemplateGet', DELETE: 'routeRpaTemplateDelete' },
-];
-
-function resolveApiRoute(method, pathname) {
-  const exact = Object.prototype.hasOwnProperty.call(API_ROUTES, pathname)
-    ? API_ROUTES[pathname]
-    : null;
-  if (exact) {
-    if (typeof exact === 'string') return exact;
-    if (Object.prototype.hasOwnProperty.call(exact, method)) return exact[method];
-  }
-  for (const route of API_PREFIX_ROUTES) {
-    if (!pathname.startsWith(route.prefix)) continue;
-    if (route.suffix && !pathname.endsWith(route.suffix)) continue;
-    if (Object.prototype.hasOwnProperty.call(route, method)) return route[method];
-  }
-  return null;
-}
+const { allowedMethodsForPath, resolveApiRoute, validateApiRoutes } = require('./api/route-registry');
 
 function decodePathId(value, label) {
   try {
@@ -881,8 +710,7 @@ class LocalApiServer {
   }
 
   async route(method, pathname, input) {
-    // Lookup-table dispatch: API_ROUTES / API_PREFIX_ROUTES (module scope,
-    // right after allowedMethodsForPath) map every command onto a handler
+    // The shared route registry maps each command onto a handler
     // method, replacing the if/else chain that used to live here. A miss
     // keeps the old fall-through: undefined -> 404 from handle().
     const handlerName = resolveApiRoute(method, pathname);
@@ -1682,28 +1510,6 @@ class LocalApiServer {
   }
 }
 
-// Load-time wiring check for the command routing table: every entry must
-// name a real handler method, and an exact route may only exist for a path
-// the 405 method gate (ROUTE_METHODS) already covers — so the table can
-// never silently widen the served API surface.
-for (const [routePath, entry] of Object.entries(API_ROUTES)) {
-  if (!ROUTE_METHODS.has(routePath)) {
-    throw new Error(`local API route not covered by the method gate: ${routePath}`);
-  }
-  const names = typeof entry === 'string' ? [entry] : Object.values(entry);
-  for (const name of names) {
-    if (typeof LocalApiServer.prototype[name] !== 'function') {
-      throw new Error(`local API route handler missing: ${routePath} -> ${name}`);
-    }
-  }
-}
-for (const route of API_PREFIX_ROUTES) {
-  for (const [verb, name] of Object.entries(route)) {
-    if (verb === 'prefix' || verb === 'suffix') continue;
-    if (typeof LocalApiServer.prototype[name] !== 'function') {
-      throw new Error(`local API prefix route handler missing: ${route.prefix} -> ${name}`);
-    }
-  }
-}
+validateApiRoutes(LocalApiServer.prototype);
 
 module.exports = { LocalApiServer, resolveWebSocketDebuggerUrl };

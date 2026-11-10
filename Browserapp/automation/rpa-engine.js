@@ -1,6 +1,7 @@
 'use strict';
 
 const cdp = require('../cdp');
+const { cloneVariableValue, capResultString, snapshotVariables, interpolate, getVariableValue, resolveConditionValue } = require('./rpa/variables');
 const { applyTrustedChange } = require('./trusted-input');
 const humanInput = require('./human-input');
 const { TypingAbortedError } = require('./human-typing');
@@ -12,7 +13,6 @@ const {
   getDownloadFailureMessage,
 } = require('./download-naming');
 const fs = require('fs/promises');
-const fssync = require('fs');
 const path = require('path');
 const os = require('os');
 const {
@@ -30,13 +30,8 @@ const NAMED_KEY_VK = (name) => {
   return { windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk };
 };
 
-// JSON-clone with a cycle fallback: keeps concurrent RPA tasks from sharing
-// nested variable objects without throwing on unusual template data.
-function cloneVariableValue(value) {
-  if (value === null || typeof value !== 'object') return value;
-  try { return JSON.parse(JSON.stringify(value)); } catch (_) { return value; }
-}
-const OUTPUT_DIRECTORY = path.join(process.cwd(), 'rpa-output');
+const { OUTPUT_DIRECTORY, resolveSafeRpaPath, resolveSpreadsheetPath } = require('./rpa/paths');
+const { resolveStepHandler, findUnsupportedSteps, validateStepHandlers } = require('./rpa/step-registry');
 // Launching a browser environment is heavy (disk, CPU, memory). A plan that
 // covers many profiles must not boot every kernel at the same instant, so the
 // launches go through a small queue. Steps themselves still interleave.
@@ -51,47 +46,6 @@ const RPA_DIAGNOSTIC_LIMIT = 512 * 1024;
 // The kernel refuses CDP automation with this sentence; only its stable prefix
 // is matched, so the check does not depend on the product name inside it.
 const CDP_AUTOMATION_BLOCKED = 'Browser automation requires a paid';
-// Result payloads carry the extracted values: strings are capped at
-// RPA_RESULT_CHAR_LIMIT per value; structure is kept whole. Task logs keep the
-// original full-content behavior — store growth is bounded by task-history
-// pruning and the store size budget, not by log trimming.
-const PARSED_RESULT_CHAR_LIMIT = Number(process.env.OPENBROWSER_RPA_RESULT_CHAR_LIMIT);
-const RPA_RESULT_CHAR_LIMIT = Number.isFinite(PARSED_RESULT_CHAR_LIMIT) && PARSED_RESULT_CHAR_LIMIT > 0
-  ? Math.floor(PARSED_RESULT_CHAR_LIMIT)
-  : 20000;
-
-/** Per-string cap for result payloads; structure (arrays/objects) is kept, only string length is capped. */
-function capResultString(text) {
-  return text.length > RPA_RESULT_CHAR_LIMIT
-    ? text.slice(0, RPA_RESULT_CHAR_LIMIT) + `…[truncated ${text.length - RPA_RESULT_CHAR_LIMIT} chars]`
-    : text;
-}
-
-/**
- * Cycle-safe copy of final task variables for process_result and the API
- * response. Strings are capped per RPA_RESULT_CHAR_LIMIT; everything else is
- * kept whole.
- */
-function snapshotVariables(variables) {
-  const clone = (value, seen) => {
-    if (typeof value === 'function') return '[function]';
-    if (typeof value === 'string') return capResultString(value);
-    if (value == null || typeof value !== 'object') return value;
-    if (seen.has(value)) return '[circular]';
-    seen.add(value);
-    try {
-      if (Array.isArray(value)) return value.map((item) => clone(item, seen));
-      const out = {};
-      for (const [key, item] of Object.entries(value)) out[key] = clone(item, seen);
-      return out;
-    } finally {
-      seen.delete(value);
-    }
-  };
-  const copied = {};
-  for (const [key, value] of Object.entries(variables || {})) copied[key] = clone(value, new Set());
-  return copied;
-}
 
 /** True when a missing element should not fail the whole flow. */
 function isOptionalElementStep(params = {}) {
@@ -148,104 +102,6 @@ function splitCsvLine(line) {
   return fields;
 }
 
-function isPathInsideRoot(candidate, root) {
-  const child = path.resolve(candidate);
-  const base = path.resolve(root);
-  const normalize = (value) => process.platform === 'win32' ? value.toLowerCase() : value;
-  return normalize(child) === normalize(base) || normalize(child).startsWith(normalize(base) + path.sep);
-}
-
-/**
- * Resolve a user-supplied local file path for RPA steps.
- * Absolute paths must stay under OUTPUT_DIRECTORY (or optional extraRoots).
- * Relative paths resolve under OUTPUT_DIRECTORY only.
- */
-function resolveSafeRpaPath(filePath, { extraRoots = [] } = {}) {
-  const raw = String(filePath || '').trim();
-  if (!raw) throw new Error('file path required');
-  if (raw.includes('\0')) throw new Error('invalid file path');
-  const roots = [OUTPUT_DIRECTORY, ...extraRoots].map((item) => path.resolve(item));
-  const resolved = path.isAbsolute(raw)
-    ? path.resolve(raw)
-    : path.resolve(OUTPUT_DIRECTORY, raw);
-  if (!roots.some((root) => isPathInsideRoot(resolved, root))) {
-    throw new Error('RPA file path must be inside the RPA output directory');
-  }
-  return resolved;
-}
-
-const EXECUTABLE_STEP_TYPES = new Set([
-  'wait', 'sleep', 'delay', 'waittime',
-  'goto', 'navigate', 'open', 'gotourl',
-  'reload', 'refreshpage',
-  'newtab', 'new_tab', 'newpage',
-  'closetab', 'close_tab', 'closepage',
-  'typetext', 'type', 'input', 'inserttext', 'inputcontent',
-  'click', 'clickelement', 'waitforselector', 'fortimes',
-  'javascript', 'evaluate', 'script', 'js',
-  'scroll', 'scrollpage', 'screenshotpage', 'screenshot',
-  'geturl', 'clearcookies', 'startnode', 'noop', 'breakloop', 'break',
-  'key', 'press', 'keyboard',
-  'combineprocess', 'getelement', 'passingelement', 'hover', 'focuselement',
-  'selectelement', 'getrequest',
-  'ifelse', 'forelements', 'forlists', 'whiledata', 'tojson', 'extractkey',
-  'extractdata', 'savedata', 'exportexcel', 'saveremark', 'variableoperation',
-  'goback', 'switchpage', 'uploadattachment', 'downloadfile',
-  'waitforresponse', 'getresponse', 'stoplinsten', 'closebrowser',
-  'opennewbrowser', 'getopenai',
-  'useexcel',
-  'importtext', 'randomget', 'get2facode', 'googlesheet', 'getcookies', 'getclipboard', 'getactiveelement',
-  'keycombination', 'applysubprocess', 'getcaptcha', 'closeotherpage',
-]);
-
-// Action aliases (gotoUrl/clickElement/inputContent/waitTime/...) normalize onto
-// the canonical step type each executor handles. Keys are every non-canonical member of
-// EXECUTABLE_STEP_TYPES; values are the canonical type (the first name of the old
-// if/else chain condition that used to list the whole group). Alias resolution only
-// picks the executor — handlers still receive the caller's original `type`, so
-// alias-sensitive behavior (log lines, default variable names, per-alias sub-branches
-// like tojson/extractkey/extractdata) is unchanged.
-const STEP_TYPE_ALIASES = {
-  sleep: 'wait', delay: 'wait', waittime: 'wait',
-  navigate: 'goto', open: 'goto', gotourl: 'goto',
-  refreshpage: 'reload', new_tab: 'newtab', newpage: 'newtab',
-  close_tab: 'closetab', closepage: 'closetab', type: 'typetext',
-  input: 'typetext', inserttext: 'typetext', inputcontent: 'typetext',
-  clickelement: 'click', hover: 'passingelement', extractkey: 'tojson',
-  extractdata: 'tojson', getactiveelement: 'getclipboard', applysubprocess: 'keycombination',
-  getcaptcha: 'keycombination', closeotherpage: 'keycombination', waitforresponse: 'getrequest',
-  getresponse: 'getrequest', stoplinsten: 'getrequest', scrollpage: 'scroll',
-  script: 'evaluate', js: 'evaluate', javascript: 'evaluate',
-  screenshot: 'screenshotpage', break: 'breakloop', press: 'key',
-  keyboard: 'key', noop: 'startnode',
-};
-
-function findUnsupportedSteps(steps, path = []) {
-  if (!Array.isArray(steps)) return [{ path, type: '', reason: 'steps must be an array' }];
-  const unsupported = [];
-  for (let index = 0; index < steps.length; index += 1) {
-    const step = steps[index] || {};
-    const type = String(step.type || step.action || '').toLowerCase();
-    const currentPath = [...path, index + 1];
-    if (!EXECUTABLE_STEP_TYPES.has(type)) {
-      unsupported.push({ path: currentPath, type: type || '(empty)' });
-    }
-    const children = Array.isArray(step.children)
-      ? step.children
-      : (Array.isArray(step.params?.children) ? step.params.children : null);
-    if (children) unsupported.push(...findUnsupportedSteps(children, currentPath));
-    const elseChildren = Array.isArray(step.elseChildren)
-      ? step.elseChildren
-      : (Array.isArray(step.params?.elseChildren) ? step.params.elseChildren : null);
-    if (elseChildren) unsupported.push(...findUnsupportedSteps(elseChildren, currentPath));
-    const errorChildren = Array.isArray(step.errorChildren)
-      ? step.errorChildren
-      : (Array.isArray(step.params?.errorChildren) ? step.params.errorChildren : null);
-    if (errorChildren) unsupported.push(...findUnsupportedSteps(errorChildren, currentPath));
-  }
-  return unsupported;
-}
-
 /**
  * Resolve the per-character delay window for text entry.
  *
@@ -263,21 +119,6 @@ function inputDelayRange(params, human) {
 
 function randomBetween(min, max) {
   return randomNum(min, max);
-}
-
-function interpolate(value, variables = {}) {
-  if (typeof value !== 'string') return value;
-  return value.replace(/\$\{([^}]+)\}/g, (_, key) => {
-    const result = variables[String(key).trim()];
-    return result == null ? '' : String(result);
-  });
-}
-
-function getVariableValue(value, variables = {}) {
-  if (Array.isArray(value)) return value.map((item) => getVariableValue(item, variables));
-  if (typeof value !== 'string') return value;
-  const match = value.match(/^\$\{([^}]+)\}$/);
-  return match ? variables[match[1].trim()] : interpolate(value, variables);
 }
 
 function defaultRpaLogPath(userDataPath = null) {
@@ -312,7 +153,6 @@ function formatRpaError(error) {
   }
   return message;
 }
-
 
 class BreakLoopSignal extends Error {
   constructor(message = 'breakLoop') {
@@ -376,34 +216,6 @@ function resolveElementTarget(params = {}, variables = {}) {
   }
   const serial = resolveSerial(params);
   return { selector, selectorRadio, serial };
-}
-
-function resolveConditionValue(input, variables = {}) {
-  if (Array.isArray(input)) {
-    return input.map((item) => resolveConditionValue(item, variables));
-  }
-  if (input == null) return input;
-  if (typeof input !== 'string') return input;
-  const trimmed = input.trim();
-  const match = trimmed.match(/^\$\{([^}]+)\}$/);
-  if (match) {
-    return variables[match[1].trim()];
-  }
-  if (trimmed === 'true') return true;
-  if (trimmed === 'false') return false;
-  if (trimmed === 'null') return null;
-  if (trimmed === 'undefined') return undefined;
-
-  if (Object.prototype.hasOwnProperty.call(variables, trimmed)) {
-    return variables[trimmed];
-  }
-  if (trimmed.includes('${')) {
-    return interpolate(trimmed, variables);
-  }
-  if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(trimmed)) {
-    return undefined;
-  }
-  return input;
 }
 
 /**
@@ -585,25 +397,13 @@ class RpaEngine {
         profileId: task.profile_id, processName: task.process_name || null,
       });
       this.assertTaskAlive(execution);
-      const entry = await this.ensureProfileRunning(task.profile_id, { log });
-      this.assertTaskAlive(execution);
-      const port = entry.port;
-      // process_content task field or steps array
-      let steps = Array.isArray(task.steps) ? task.steps : [];
-      if ((!steps.length) && task.process_content) {
-        steps = parseProcessContent(task.process_content);
-      } else if (typeof task.steps === 'string') {
-        steps = parseProcessContent(task.steps);
-      }
-      await log(`start task on profile ${task.profile_id}, steps=${steps.length}`);
-
       context = {
         log,
         options,
         variables: this.initialVariables(task),
         task,
         remarks: [],
-        port,
+        port: null,
         activeProfileId: task.profile_id,
         // Steps that target "the page" must operate on the tab the flow is
         // actually on: withPage used firstTab unconditionally, so after a
@@ -611,6 +411,25 @@ class RpaEngine {
         activeTabId: null,
         ...execution,
       };
+      // Validate before acquiring browser resources or executing any step.
+      // process_content task field or steps array
+      let steps = Array.isArray(task.steps) ? task.steps : [];
+      if ((!steps.length) && task.process_content) {
+        steps = parseProcessContent(task.process_content);
+      } else if (typeof task.steps === 'string') {
+        steps = parseProcessContent(task.steps);
+      }
+      const unsupported = findUnsupportedSteps(steps);
+      if (unsupported.length) {
+        const issue = unsupported[0];
+        throw Object.assign(new Error('Invalid RPA steps: ' + (issue.reason || issue.type)), { code: 'RPA_INVALID_STEPS' });
+      }
+      const entry = await this.ensureProfileRunning(task.profile_id, { log });
+      this.assertTaskAlive(execution);
+      const port = entry.port;
+      context.port = port;
+      await log(`start task on profile ${task.profile_id}, steps=${steps.length}`);
+
       // Optional task-level budget: OPENBROWSER_RPA_TASK_TIMEOUT_MS (or a
       // per-run options.timeout_ms) bounds the whole task; 0 disables it.
       // Expose the deadline on the context so a long single step (getOpenAI)
@@ -778,18 +597,7 @@ class RpaEngine {
     const value = (input) => getVariableValue(input, variables);
     const text = (input) => String(value(input) ?? '');
 
-    // Lookup-table dispatch: STEP_TYPE_ALIASES folds the 82 executable type
-    // names onto the 47 canonical executors of STEP_HANDLERS (both at module
-    // scope), replacing the if/else chain that used to live here. Handlers are
-    // RpaEngine methods receiving everything the chain closures captured,
-    // including the caller's original `type`; a miss takes the exact default
-    // path the chain used to fall through to.
-    const canonicalType = Object.prototype.hasOwnProperty.call(STEP_TYPE_ALIASES, type)
-      ? STEP_TYPE_ALIASES[type]
-      : type;
-    const handlerName = Object.prototype.hasOwnProperty.call(STEP_HANDLERS, canonicalType)
-      ? STEP_HANDLERS[canonicalType]
-      : null;
+    const handlerName = resolveStepHandler(type);
     if (handlerName) {
       await this[handlerName]({ port, step, ctx, type, params, variables, value, text });
       return;
@@ -1758,90 +1566,7 @@ class RpaEngine {
    * On Windows also accepts OneDrive-redirected Desktop/Documents and realpath-resolved trees.
    */
   async resolveSpreadsheetPath(filePath) {
-    const raw = String(filePath || '').trim();
-    if (!raw) throw new Error('useExcel requires a CSV or JSON file path');
-    if (raw.includes('\0')) throw new Error('invalid file path');
-
-    const home = os.homedir();
-    const userProfile = process.env.USERPROFILE || home;
-    const folderNames = ['Desktop', 'Documents', 'Downloads'];
-    // Only the named subfolders are allowed roots. The bare base directory is
-    // intentionally excluded (see doc comment above).
-    const expandFolderRoots = (base) => {
-      const roots = [];
-      for (const name of folderNames) {
-        roots.push(path.join(base, name));
-        // OneDrive Known Folder Move: Desktop may live under OneDrive\Desktop
-        roots.push(path.join(base, 'OneDrive', name));
-        roots.push(path.join(base, 'OneDrive - Personal', name));
-      }
-      return roots;
-    };
-
-    const candidates = [];
-    if (path.isAbsolute(raw)) {
-      candidates.push(path.resolve(raw));
-    } else {
-      candidates.push(path.resolve(OUTPUT_DIRECTORY, raw));
-      candidates.push(path.resolve(home, raw));
-      for (const name of folderNames) {
-        candidates.push(path.resolve(home, name, raw));
-      }
-      if (process.platform === 'win32') {
-        candidates.push(path.resolve(userProfile, raw));
-        for (const name of folderNames) {
-          candidates.push(path.resolve(userProfile, name, raw));
-          candidates.push(path.resolve(userProfile, 'OneDrive', name, raw));
-          candidates.push(path.resolve(userProfile, 'OneDrive - Personal', name, raw));
-        }
-      }
-    }
-
-    const allowedRoots = [
-      OUTPUT_DIRECTORY,
-      ...expandFolderRoots(home),
-    ];
-    if (process.platform === 'win32') {
-      for (const root of expandFolderRoots(userProfile)) {
-        if (!allowedRoots.includes(root)) allowedRoots.push(root);
-      }
-    }
-    // realpath so junctions/symlinks (OneDrive Desktop) still pass the sandbox
-    const resolvedAllowed = [];
-    for (const root of allowedRoots) {
-      resolvedAllowed.push(root);
-      try {
-        const real = fssync.realpathSync.native ? fssync.realpathSync.native(root) : fssync.realpathSync(root);
-        if (real && !resolvedAllowed.includes(real)) resolvedAllowed.push(real);
-      } catch (_) {}
-    }
-
-    let lastError = null;
-    for (const candidate of candidates) {
-      let realCandidate = candidate;
-      try {
-        realCandidate = fssync.realpathSync.native ? fssync.realpathSync.native(candidate) : fssync.realpathSync(candidate);
-      } catch (_) {
-        // file may not exist yet — still check lexical containment
-      }
-      const okRoot = resolvedAllowed.some((root) => isPathInsideRoot(candidate, root) || isPathInsideRoot(realCandidate, root));
-      if (!okRoot) {
-        lastError = new Error('useExcel path is outside allowed folders (Desktop/Documents/Downloads/rpa-output)');
-        continue;
-      }
-      try {
-        await fs.access(candidate);
-        return candidate;
-      } catch (_error) {
-        try {
-          await fs.access(realCandidate);
-          return realCandidate;
-        } catch (_) {
-          lastError = new Error('useExcel file not found: ' + candidate);
-        }
-      }
-    }
-    throw lastError || new Error('useExcel requires a CSV or JSON file path');
+    return resolveSpreadsheetPath(filePath);
   }
 
   evaluateCondition(params, variables) {
@@ -1981,7 +1706,7 @@ class RpaEngine {
   outputPath(name, extension) {
     const raw = String(name || 'output').replace(/[\\/:*?"<>|]+/g, '_').replace(/^\.+$/, 'output');
     const suffix = path.extname(raw) ? '' : extension;
-    return path.join(OUTPUT_DIRECTORY, raw + suffix);
+    return resolveSafeRpaPath(path.join(OUTPUT_DIRECTORY, raw + suffix));
   }
 
   csvCell(value) {
@@ -2133,48 +1858,7 @@ class RpaEngine {
   }
 }
 
-
-
-// Step executor lookup table: canonical step type (every key of
-// STEP_TYPE_ALIASES plus the canonical names themselves) → handler method
-// name on RpaEngine. It replaces the old if/else dispatch chain; the
-// load-time wiring check below keeps the table, the alias map and
-// EXECUTABLE_STEP_TYPES from drifting apart.
-const STEP_HANDLERS = {
-  wait: 'stepWait', goto: 'stepGoto', reload: 'stepReload', newtab: 'stepNewTab',
-  closetab: 'stepCloseTab', typetext: 'stepTypeText', click: 'stepClick', passingelement: 'stepPassingElement',
-  selectelement: 'stepSelectElement', waitforselector: 'stepWaitForSelector', fortimes: 'stepForTimes', combineprocess: 'stepCombineProcess',
-  forlists: 'stepForLists', ifelse: 'stepIfElse', whiledata: 'stepWhileData', focuselement: 'stepFocusElement',
-  getelement: 'stepGetElement', forelements: 'stepForElements', tojson: 'stepToJson', savedata: 'stepSaveData',
-  exportexcel: 'stepExportExcel', saveremark: 'stepSaveRemark', variableoperation: 'stepVariableOperation', useexcel: 'stepUseExcel',
-  importtext: 'stepImportText', randomget: 'stepRandomGet', get2facode: 'stepGet2FACode', googlesheet: 'stepGoogleSheet',
-  getcookies: 'stepGetCookies', getclipboard: 'stepGetClipboard', keycombination: 'stepBestEffortNoop', goback: 'stepGoBack',
-  switchpage: 'stepSwitchPage', uploadattachment: 'stepUploadAttachment', downloadfile: 'stepDownloadFile', getrequest: 'stepNetworkRequest',
-  getopenai: 'stepGetOpenAI', scroll: 'stepScroll', evaluate: 'stepEvaluate', screenshotpage: 'stepScreenshot',
-  geturl: 'stepGetUrl', clearcookies: 'stepClearCookies', closebrowser: 'stepCloseBrowser', opennewbrowser: 'stepOpenNewBrowser',
-  breakloop: 'stepBreakLoop', startnode: 'stepNoop', key: 'stepKey',
-};
-
-// Every executable type (canonical or alias) must resolve to a real handler
-// method, and no alias may fall outside the executable set: a missing entry
-// would silently turn into the "Unsupported RPA step type" throw at runtime,
-// so fail fast at require time instead.
-for (const stepType of EXECUTABLE_STEP_TYPES) {
-  const canonical = Object.prototype.hasOwnProperty.call(STEP_TYPE_ALIASES, stepType)
-    ? STEP_TYPE_ALIASES[stepType]
-    : stepType;
-  const handlerName = Object.prototype.hasOwnProperty.call(STEP_HANDLERS, canonical)
-    ? STEP_HANDLERS[canonical]
-    : null;
-  if (!handlerName || typeof RpaEngine.prototype[handlerName] !== 'function') {
-    throw new Error(`RPA step type without executor: ${stepType} (${canonical})`);
-  }
-}
-for (const alias of Object.keys(STEP_TYPE_ALIASES)) {
-  if (!EXECUTABLE_STEP_TYPES.has(alias)) {
-    throw new Error(`RPA step alias missing from EXECUTABLE_STEP_TYPES: ${alias}`);
-  }
-}
+validateStepHandlers(RpaEngine.prototype);
 
 module.exports = {
   RpaEngine,

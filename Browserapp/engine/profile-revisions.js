@@ -10,7 +10,8 @@
  *
  *   - content-aware: a rewrite that produces the same bytes keeps the previous
  *     revision (no churn from no-op writes);
- *   - monotonic: any observable content change bumps the revision by one;
+ *   - monotonic: changes get an engine-local sequence number, including after
+ *     delete/recreate or clear (old editors must never match a new record);
  *   - fresh-object invariant stays intact: identity memoization uses the same
  *     content hash as the sqlite diffed save, so an in-place mutation of a
  *     stored object is still detected (the hash is over content, not identity).
@@ -41,8 +42,12 @@ function profileDataHash(profile) {
 
 class TrackedProfileMap extends Map {
   constructor(entries) {
-    super(entries);
+    super();
     this._revisions = new Map(); // id -> { rev, hash }
+    this._sequence = 0;
+    if (entries != null) {
+      for (const [id, profile] of entries) this.set(id, profile);
+    }
   }
 
   /** Current revision of a profile (0 when unknown/never written). */
@@ -68,14 +73,20 @@ class TrackedProfileMap extends Map {
       // object itself follows the caller's reference: the sqlite diffed save
       // compares by content hash, so this never causes extra row writes.
       if (hash && previous?.hash === hash) return super.set(key, profile);
-      if (hash) this._revisions.set(key, { rev: (previous?.rev || 0) + 1, hash });
+      if (hash) this._revisions.set(key, { rev: ++this._sequence, hash });
     }
     return super.set(key, profile);
   }
 
   delete(id) {
-    this._revisions.delete(String(id));
-    return super.delete(id);
+    const key = String(id);
+    this._revisions.delete(key);
+    return super.delete(key);
+  }
+
+  clear() {
+    this._revisions.clear();
+    super.clear();
   }
 }
 

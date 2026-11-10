@@ -1,5 +1,7 @@
 'use strict';
 
+const { captureIpcResult } = require('../shared/ipc-result');
+
 /** Profile IPC; sync selection remains owned by the host and is injected here. */
 function registerProfileIpc({ registerTrustedIpc, engine, sanitizeIds, beforeRemove }) {
   function removalIds(payload) {
@@ -8,7 +10,8 @@ function registerProfileIpc({ registerTrustedIpc, engine, sanitizeIds, beforeRem
     return ids;
   }
   registerTrustedIpc('profiles:sync', (_event, profiles) => engine.syncProfiles(profiles));
-  registerTrustedIpc('profiles:apply-commands', (_event, commands) => engine.applyProfileCommands(commands));
+  registerTrustedIpc('profiles:apply-commands', (_event, commands) => captureIpcResult(() => engine.applyProfileCommands(commands)));
+  registerTrustedIpc('profiles:editor-state', (_event, id) => captureIpcResult(() => engine.profileForEdit(id)));
   registerTrustedIpc('profiles:delete', (_event, payload) => engine.deleteProfiles(removalIds(payload), payload?.deleteData !== false));
   registerTrustedIpc('profiles:trash', (_event, payload) => engine.trashProfiles(removalIds(payload)));
   registerTrustedIpc('profiles:restore', (_event, payload) => engine.restoreProfiles(sanitizeIds(payload?.ids || [])));

@@ -11,7 +11,7 @@ const {
   normalizeRemoteTemplate,
   parseProcessContent,
 } = require('./template-sync');
-const { findUnsupportedSteps } = require('./rpa-engine');
+const { findUnsupportedSteps, assertStepGraph } = require('./rpa/step-registry');
 const { createCoalescedWriter } = require('./coalesced-writer');
 const { enforceStoreBudget } = require('./rpa-store-budget');
 
@@ -275,6 +275,7 @@ class RpaStore {
   /** Mark ephemeral interstitial selectors as optional so missing overlays never fail runs. */
   static sanitizeOptionalOverlaySteps(steps) {
     if (!Array.isArray(steps)) return steps;
+    assertStepGraph(steps);
     const mark = (step) => {
       if (!step || typeof step !== 'object') return;
       const bag = step.params && typeof step.params === 'object'
@@ -295,12 +296,10 @@ class RpaStore {
         step.optional = true;
         step.isShow = '0';
       }
-      if (Array.isArray(step.children)) step.children.forEach(mark);
-      if (Array.isArray(step.elseChildren)) step.elseChildren.forEach(mark);
-      if (Array.isArray(step.errorChildren)) step.errorChildren.forEach(mark);
-      if (Array.isArray(step.params?.children)) step.params.children.forEach(mark);
-      if (Array.isArray(step.params?.elseChildren)) step.params.elseChildren.forEach(mark);
-      if (Array.isArray(step.params?.errorChildren)) step.params.errorChildren.forEach(mark);
+      for (const key of ['children', 'elseChildren', 'errorChildren']) {
+        const children = Array.isArray(step[key]) ? step[key] : step.params?.[key];
+        if (Array.isArray(children)) children.forEach(mark);
+      }
     };
     steps.forEach(mark);
     return steps;

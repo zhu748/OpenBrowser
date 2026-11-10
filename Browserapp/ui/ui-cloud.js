@@ -412,7 +412,7 @@ document.getElementById('editor-cloud-pull-one')?.addEventListener('click', (eve
     const profileId = app.editingProfileId;
     if (!profileId) throw new Error(tx('未打开环境'));
     await pullProfilesFromCloud([profileId]);
-    app.openProfileEditor(profileId);
+    await app.openProfileEditor(profileId);
   } catch (error) { toast(error.message); }
 }));
 

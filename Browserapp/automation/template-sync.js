@@ -19,46 +19,14 @@
  * 解密：key = md5(template_id).hex[0:16]，AES-CBC，iv=key
  */
 
-const https = require('https');
-const http = require('http');
+const { requestBuffer } = require('../network/http-request');
 const crypto = require('crypto');
 const zlib = require('zlib');
+const { isCloudMetadataHostname, isPrivateOrLocalHostname, createPolicyLookup } = require('../network/address-policy');
 const { parseProcessContent } = require('./protocol/rpa-registry');
 
 const TEMPLATE_SYNC_MAX_RESPONSE_BYTES = 20 * 1024 * 1024; // process packs are small JSON.gz
 const MAX_PACK_OUTPUT_BYTES = 64 * 1024 * 1024; // decompressed pack ceiling (zip-bomb guard)
-
-function isCloudMetadataHostname(hostname) {
-  const host = String(hostname || '').trim().toLowerCase().replace(/^\[|\]$/g, '');
-  if (!host) return true;
-  if (host === 'metadata' || host === 'metadata.google.internal') return true;
-  if (host.endsWith('.metadata.google.internal')) return true;
-  if (host === '169.254.169.254' || host === '169.254.170.2') return true;
-  return false;
-}
-
-function isPrivateOrLocalHostname(hostname) {
-  const host = String(hostname || '').trim().toLowerCase().replace(/^\[|\]$/g, '');
-  if (!host) return true;
-  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) return true;
-  if (host === '0.0.0.0' || host === '::' || host === '::1') return true;
-  const m = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (m) {
-    const parts = m.slice(1).map((n) => Number(n));
-    if (parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return true;
-    const [a, b] = parts;
-    if (a === 10 || a === 127 || a === 0) return true;
-    if (a === 169 && b === 254) return true;
-    if (a === 172 && b >= 16 && b <= 31) return true;
-    if (a === 192 && b === 168) return true;
-    if (a === 100 && b >= 64 && b <= 127) return true;
-    if (a === 198 && (b === 18 || b === 19)) return true;
-  }
-  if (host.includes(':')) {
-    if (host === '::1' || host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80')) return true;
-  }
-  return false;
-}
 
 /**
  * SSRF guard for every outbound request this module makes (base + process-pack
@@ -85,38 +53,14 @@ function assertSafeTemplateSyncUrl(url) {
 }
 
 function requestRaw(url, { method = 'GET', headers = {}, body = null, timeout = 30000 } = {}) {
-  return new Promise((resolve, reject) => {
-    const u = assertSafeTemplateSyncUrl(url);
-    const lib = u.protocol === 'https:' ? https : http;
-    const req = lib.request({
-      protocol: u.protocol,
-      hostname: u.hostname,
-      port: u.port || (u.protocol === 'https:' ? 443 : 80),
-      path: u.pathname + u.search,
-      method,
-      headers: {
-        Accept: '*/*',
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120 Safari/537.36',
-        ...headers,
-      },
-      timeout,
-    }, (res) => {
-      const chunks = [];
-      let size = 0;
-      res.on('data', (c) => {
-        size += c.length;
-        if (size > TEMPLATE_SYNC_MAX_RESPONSE_BYTES) {
-          req.destroy(new Error('模版同步响应体过大'));
-          return;
-        }
-        chunks.push(c);
-      });
-      res.on('end', () => resolve({ status: res.statusCode, buffer: Buffer.concat(chunks), headers: res.headers }));
-    });
-    req.on('error', reject);
-    req.on('timeout', () => req.destroy(new Error('请求超时')));
-    if (body) req.write(typeof body === 'string' ? body : JSON.stringify(body));
-    req.end();
+  const parsed = assertSafeTemplateSyncUrl(url);
+  return requestBuffer(parsed.toString(), {
+    method, timeoutMs: timeout, maxBytes: TEMPLATE_SYNC_MAX_RESPONSE_BYTES,
+    body: body == null || typeof body === 'string' ? body : JSON.stringify(body),
+    headers: { Accept: '*/*', 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120 Safari/537.36', ...headers },
+    validateUrl: assertSafeTemplateSyncUrl,
+    lookup: createPolicyLookup({ allowPrivate: String(process.env.OPENBROWSER_ALLOW_PRIVATE_TEMPLATE_SYNC || '').trim() === '1' }),
+    timeoutMessage: '请求超时', tooLargeMessage: '模版同步响应体过大',
   });
 }
 

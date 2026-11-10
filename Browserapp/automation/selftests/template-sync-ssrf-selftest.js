@@ -4,7 +4,7 @@
  * SSRF guard regression tests for remote template sync.
  *
  * Every outbound request the template store makes funnels through
- * requestRaw(), whose first statement is assertSafeTemplateSyncUrl(). These
+ * requestRaw(), which validates the URL before using the shared transport. These
  * checks pin that contract: scheme allow-list, no embedded credentials,
  * cloud-metadata always blocked, private/loopback rejected unless
  * OPENBROWSER_ALLOW_PRIVATE_TEMPLATE_SYNC=1, and a 20MB response cap.
@@ -92,11 +92,11 @@ async function main() {
   });
   console.log('  PASS  private targets blocked unless OPENBROWSER_ALLOW_PRIVATE_TEMPLATE_SYNC=1');
 
-  // --- single network egress: requestRaw is the only place a socket opens ---
+  // --- one guarded entry into the shared network transport ---
   const src = fs.readFileSync(path.join(__dirname, '..', 'template-sync.js'), 'utf8');
-  assert.ok(src.includes('const u = assertSafeTemplateSyncUrl(url);'), 'requestRaw must guard before any I/O');
-  const libRequests = src.match(/lib\.request\(/g) || [];
-  assert.strictEqual(libRequests.length, 1, 'exactly one request construction site (inside requestRaw)');
+  assert.ok(src.includes('const parsed = assertSafeTemplateSyncUrl(url);'), 'requestRaw must guard before any I/O');
+  const libRequests = src.match(/requestBuffer\(/g) || [];
+  assert.strictEqual(libRequests.length, 1, 'exactly one shared transport entry (inside requestRaw)');
   for (const forbidden of [/https\.request\(/, /http\.request\(/, /fetch\(/, /net\.connect\(/, /tls\.connect\(/]) {
     assert.ok(!forbidden.test(src), `no direct egress path: ${forbidden}`);
   }

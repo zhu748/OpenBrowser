@@ -1,8 +1,8 @@
 // Profile-editor domain module (classic script, no build step).
 // Loaded before renderer.js, after ui/ui-proxy.js; declares the editor-domain
 // functions renderer.js and its event wiring call as shared script globals.
-// Keep this file declarations-only apart from the export block at the very
-// end (same load-order contract as ui/ui-proxy.js).
+// The editor-open coordinator is initialized here without touching the DOM;
+// fields are populated only after the trusted engine snapshot arrives.
 //
 // Functions (verbatim from renderer.js):
 //   normalizeProfileSettings — profile schema defaults/sanitizing for the editor
@@ -951,8 +951,26 @@ function randomizeFingerprintDraft() {
   renderEditorSummary();
 }
 
-function openProfileEditor(id) {
-  const profile = normalizeProfileSettings(ui.profiles.find((item) => item.id === id)); if (!profile?.id) return;
+const profileEditorOpener = window.OpenBrowserProfileCommands.createProfileEditorOpener({
+  readSnapshot: (id) => window.ops.profileForEdit(id),
+  show: ({ profile, rev }) => showProfileEditor(profile, rev),
+});
+
+async function openProfileEditor(id) {
+  try {
+    return await profileEditorOpener.open(id);
+  } catch (error) {
+    toast(tx('读取环境失败：') + error.message);
+    return false;
+  }
+}
+openProfileEditor.cancel = () => profileEditorOpener.cancel();
+
+function showProfileEditor(value, revision) {
+  const profile = normalizeProfileSettings(value); if (!profile?.id) return;
+  const currentIndex = ui.profiles.findIndex((item) => item.id === profile.id);
+  if (currentIndex >= 0) ui.profiles[currentIndex] = profile;
+  else ui.profiles.push(profile);
   const editorForm = $('#profile-editor-form');
   if (editorForm) {
     delete editorForm.dataset.readonly;
@@ -960,11 +978,8 @@ function openProfileEditor(id) {
   }
   editorNetworkResult = profile.exitIp ? { ip: profile.exitIp, countryCode: profile.exitCountryCode, timezone: profile.exitTimezone, latitude: profile.exitLatitude, longitude: profile.exitLongitude, checkedAt: profile.exitCheckedAt } : null;
   editingProfileId = profile.id;
-  // Base engine revision at editor-open time: the submit path sends per-ID
-  // modify commands (profiles:apply-commands) so a fleet sync only carries the
-  // edited rows, and the engine rejects the save if it changed this profile
-  // meanwhile (proxy exit persisted at close, local API edit, cookie snapshot).
-  editingProfileBaseRev = (engineProfiles || []).find((item) => item.id === profile.id)?.rev || 0;
+  // The complete fields and this revision came from one engine snapshot.
+  editingProfileBaseRev = revision;
   editorSet('#editor-id', profile.id);
   $('#editor-profile-id').textContent = displayProfileNumber(profile);
   editorSet('#editor-name', displayProfileNumber(profile));

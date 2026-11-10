@@ -25,7 +25,7 @@ const rendererIndex = scripts.indexOf('renderer.js');
 assert.ok(rendererIndex >= 0, 'index.html loads renderer.js');
 assert.ok(scripts.indexOf('ui/ui-groups.js') >= 0 && scripts.indexOf('ui/ui-groups.js') < rendererIndex,
   'group domain functions load before renderer wiring');
-const modelModules = ['ui/ui-profile-list.js', 'ui/ui-profile-state.js', 'ui/ui-refresh-scheduler.js'];
+const modelModules = ['ui/ui-profile-list.js', 'ui/ui-profile-state.js', 'shared/ipc-result.js', 'ui/ui-profile-commands.js', 'ui/ui-refresh-scheduler.js'];
 for (const script of modelModules) {
   assert.ok(scripts.indexOf(script) >= 0 && scripts.indexOf(script) < rendererIndex,
     `${script} loads before the renderer consumes its API`);
@@ -104,6 +104,8 @@ for (const script of modelModules) {
 assert.strictEqual(typeof context.OpenBrowserProfileList.filterProfiles, 'function');
 assert.strictEqual(typeof context.OpenBrowserProfileList.summarizeProfiles, 'function');
 assert.strictEqual(typeof context.OpenBrowserProfileState.reconcileProfiles, 'function');
+assert.strictEqual(typeof context.OpenBrowserIpcResult.unwrapIpcResult, 'function');
+assert.strictEqual(typeof context.OpenBrowserProfileCommands.commitProfileEdit, 'function');
 assert.strictEqual(typeof context.OpenBrowserRefreshScheduler.createRefreshScheduler, 'function');
 context.ops = new Proxy({ onEvent: noop }, {
   get(target, key) { return key in target ? target[key] : async () => ({}); },
