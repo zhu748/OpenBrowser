@@ -31,7 +31,7 @@ function makeDomContext() {
   };
   HTMLCanvasElement.prototype.toDataURL = function toDataURL() { return 'data:image/png;base64,'; };
   function WebGLRenderingContext() {}
-  WebGLRenderingContext.prototype.getParameter = function getParameter(param) { return null; };
+  WebGLRenderingContext.prototype.getParameter = function getParameter(_param) { return null; };
   WebGLRenderingContext.prototype.getExtension = function getExtension(name) { return name === 'webgl_debug_renderer_info' ? {} : null; };
 
   const navigator = Object.create(Navigator.prototype);

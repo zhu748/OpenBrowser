@@ -397,9 +397,9 @@ async function callTool(name, args = {}) {
   if (TOOL_BLACKLIST.includes(name) || (TOOL_WHITELIST.length && !TOOL_WHITELIST.includes(name))) {
     throw new Error(`Tool ${name} is disabled by MCP policy`);
   }
-  const level = meta[3];
-  const method = meta[5];
-  const path = meta[6];
+  const _level = meta[3];
+  const _method = meta[5];
+  const _path = meta[6];
 
   switch (name) {
     case 'status':

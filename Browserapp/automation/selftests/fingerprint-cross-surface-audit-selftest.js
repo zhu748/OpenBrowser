@@ -64,7 +64,7 @@ const check = (name, fn) => {
   }
 };
 
-const checkKnownGap = (name, fn) => {
+const _checkKnownGap = (name, fn) => {
   try {
     fn();
     results.push({ name, ok: true, gap: true });

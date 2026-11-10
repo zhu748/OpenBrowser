@@ -1871,7 +1871,7 @@ class ProbeMemoryCache {
 const probeMemoryCache = new ProbeMemoryCache();
 
 const providerCooldowns = new Map();
-let probeRotationCounter = 0;
+let _probeRotationCounter = 0;
 
 function recordProviderRateLimit(providerName, cooldownMs = 60000) {
   if (providerName) {
@@ -1893,11 +1893,7 @@ function clearProviderCooldowns() {
   providerCooldowns.clear();
 }
 
-function rotateArray(arr, offset) {
-  if (!arr || arr.length <= 1) return arr ? [...arr] : [];
-  const shift = ((offset % arr.length) + arr.length) % arr.length;
-  return [...arr.slice(shift), ...arr.slice(0, shift)];
-}
+
 
 function clearProbeCache() {
   probeMemoryCache.clear();

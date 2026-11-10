@@ -28,9 +28,8 @@ const { writeOpenBrowserKernelInit } = require('../kernel-init-sync');
 const {
   buildQueryLocalFontBlobGateSource,
   inspectGatePayload,
-  clearFontSubsetCaches,
 } = require('../query-local-font-blob-gate');
-const { OS_FONTS } = require('../device-personas');
+
 
 const appRoot = path.join(__dirname, '..', '..');
 const kernelRoot = path.join(appRoot, 'kernels', 'macos-x64');
@@ -477,7 +476,7 @@ async function runSession({ serverPort, mutate, headed, customPersonaList }) {
 
   check('On-demand subset packaging stays compact and strictly respects the 20MB budget limit', () => {
     // 1. Compact targeted list
-    const targetedStats = inspectGatePayload({
+    const _targetedStats = inspectGatePayload({
       os: 'windows',
       list: ['Arial', 'Calibri', 'Segoe UI', 'Bahnschrift'],
     });

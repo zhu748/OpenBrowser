@@ -15,7 +15,7 @@ const fs = require('fs');
 const http = require('http');
 const os = require('os');
 const path = require('path');
-const { spawn, execSync } = require('child_process');
+const { spawn } = require('child_process');
 
 const { buildFingerprint, buildInjectionScript } = require('../fingerprint');
 const { writeOpenBrowserKernelInit } = require('../kernel-init-sync');

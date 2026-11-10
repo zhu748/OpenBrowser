@@ -10,8 +10,6 @@ const {
   canDomLiveSyncTabUrl,
   ALLOWED_INTERNAL_PAGES,
   ALLOWED_INTERNAL_HOSTS,
-  BLOCKED_INTERNAL_HOSTS,
-  BLOCKED_INTERNAL_SCHEMES,
 } = require('../../live-sync-v5');
 
 const results = [];
@@ -122,7 +120,7 @@ async function run() {
     controller.master = { id: 'm1', item: { port: 9222 } };
     controller.slaves = [{ id: 's1', port: 9223 }];
 
-    let connectionCreated = false;
+    let _connectionCreated = false;
     const privilegedTab = {
       id: 'tab-settings',
       url: 'chrome://settings',

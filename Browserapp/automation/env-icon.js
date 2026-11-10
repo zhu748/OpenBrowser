@@ -606,16 +606,7 @@ function writeArtifactStamp(stampPath, key) {
  * worst case before was a reader catching a truncated PNG, or a 16px icon
  * from one run mixed with a 128px icon from the other).
  */
-function writeArtifactAtomic(file, data) {
-  const tmp = `${file}.tmp-${process.pid}-${Math.floor(Math.random() * 0x10000).toString(16)}`;
-  try {
-    fs.writeFileSync(tmp, data);
-    fs.renameSync(tmp, file);
-  } catch (_) {
-    try { fs.rmSync(tmp, { force: true }); } catch (__) {}
-    throw _;
-  }
-}
+
 
 /**
  * Stamp key extended with the outputs' own mtime fingerprints: after a crash
@@ -653,7 +644,7 @@ async function prepareMarkerExtension({ profileId, envNumber, userDataPath, temp
   const iconOutputs = [16, 32, 48, 128].map((size) => path.join(dest, `icon-${size}.png`));
   const expected = iconOutputs
     .concat([path.join(dest, 'manifest.json'), path.join(dest, 'marker.js')]);
-  const stampKey = JSON.stringify({ v: ARTIFACT_STAMP_VERSION, label });
+  const _stampKey = JSON.stringify({ v: ARTIFACT_STAMP_VERSION, label });
   const stampKeyWithOutputs = JSON.stringify({ v: ARTIFACT_STAMP_VERSION, label, outputs: artifactOutputFingerprint(expected) });
   if (artifactIsFresh(stampPath, stampKeyWithOutputs, expected)) return dest;
 

@@ -241,7 +241,7 @@ async function verifyManifest(root, manifest, options = {}) {
 }
 
 /** Write a manifest next to the directory contents, sealed with an HMAC. */
-async function writeManifest(root, manifest, options = {}) {
+async function writeManifest(root, manifest) {
   await fsp.mkdir(root, { recursive: true });
   const target = path.join(root, MANIFEST_FILENAME);
   const salt = path.basename(String(root || ''));

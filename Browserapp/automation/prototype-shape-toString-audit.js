@@ -20,7 +20,7 @@
  * Executed in a fully loaded, attached HTTP document (document.readyState === 'complete').
  */
 
-const assert = require('assert');
+
 const fs = require('fs');
 const http = require('http');
 const os = require('os');
@@ -822,7 +822,7 @@ async function runAuditSession(profileConfig, isInject, server) {
             conn.command('Fetch.continueRequest', { requestId: reqId }, { sessionId: event.sessionId }).catch(() => {});
             return;
           }
-          try { requestHeaderRewriter.handleEvent(event, conn); } catch (e) {}
+          try { requestHeaderRewriter.handleEvent(event, conn); } catch (_e) {}
           return;
         }
       }
@@ -1063,7 +1063,7 @@ async function runAuditSession(profileConfig, isInject, server) {
 
   const baseTargets = rawResults.baseline?.targets || {};
   const winTargets = rawResults.windows?.targets || {};
-  const iosTargets = rawResults.ios?.targets || {};
+  const _iosTargets = rawResults.ios?.targets || {};
 
   let totalScanned = 0;
   let toStringMismatches = 0;
@@ -1082,29 +1082,29 @@ async function runAuditSession(profileConfig, isInject, server) {
     const bDesc = baseT.protoDesc || {};
     const wDesc = winT.protoDesc || {};
 
-    let descDiff = false;
+    let _descDiff = false;
     if (bDesc.exists && wDesc.exists) {
       if (bDesc.enumerable !== wDesc.enumerable ||
           bDesc.configurable !== wDesc.configurable ||
           bDesc.writable !== wDesc.writable ||
           bDesc.isAccessor !== wDesc.isAccessor) {
-        descDiff = true;
+        _descDiff = true;
         descriptorMismatches++;
       }
     }
 
     // Check toString & name/length on getters / values
-    let tsDiff = false;
-    let isGen = false;
+    let _tsDiff = false;
+    let _isGen = false;
 
     const checkFnPair = (bFn, wFn, role) => {
       if (!bFn || !wFn) return;
       if (wFn.isGenerator) {
         generatorLeaks++;
-        isGen = true;
+        _isGen = true;
       }
       if (bFn.isNativeCode && !wFn.isNativeCode) {
-        tsDiff = true;
+        _tsDiff = true;
         toStringMismatches++;
         diffTable.push({
           api: `${key} (${role})`,
@@ -1117,7 +1117,7 @@ async function runAuditSession(profileConfig, isInject, server) {
           wLen: wFn.length,
         });
       } else if (bFn.name !== wFn.name || bFn.length !== wFn.length) {
-        tsDiff = true;
+        _tsDiff = true;
         diffTable.push({
           api: `${key} (${role})`,
           issue: 'Name or length arity mismatch',

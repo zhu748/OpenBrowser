@@ -48,7 +48,7 @@ function ok(name, condition) {
   let wrongKeyFailed = false;
   try {
     credentialCrypto.decryptAesGcm(encObe1, 'wrong-encryption-key-0000000000000000');
-  } catch (err) {
+  } catch (_err) {
     wrongKeyFailed = true;
   }
   ok('Decryption with wrong key throws authentication error', wrongKeyFailed === true);

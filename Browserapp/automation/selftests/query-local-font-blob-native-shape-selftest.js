@@ -29,10 +29,8 @@ const { buildFingerprint, buildInjectionScript } = require('../fingerprint');
 const { writeOpenBrowserKernelInit } = require('../kernel-init-sync');
 const {
   buildQueryLocalFontBlobGateSource,
-  inspectGatePayload,
-  clearFontSubsetCaches,
 } = require('../query-local-font-blob-gate');
-const { OS_FONTS } = require('../device-personas');
+
 
 const appRoot = path.join(__dirname, '..', '..');
 const kernelRoot = path.join(appRoot, 'kernels', 'macos-x64');
@@ -356,7 +354,7 @@ async function runSession({ serverPort, headed, customPersonaList }) {
 
     let probe = null;
     let clicked = false;
-    let pageErrors = [];
+    let _pageErrors = [];
     const deadline = Date.now() + 10000;
 
     while (Date.now() < deadline) {
@@ -376,7 +374,7 @@ async function runSession({ serverPort, headed, customPersonaList }) {
         expression: 'window.__pageErrors || []',
         returnByValue: true,
       }, sessionId);
-      pageErrors = errCheck?.result?.result?.value || [];
+      _pageErrors = errCheck?.result?.result?.value || [];
 
       if (probe !== null && probe !== undefined) {
         break;
@@ -439,7 +437,7 @@ async function runSession({ serverPort, headed, customPersonaList }) {
     const index = JSON.parse(fs.readFileSync(path.join(subsetsRoot, 'index.json'), 'utf8'));
     let totalWoff2 = 0;
     let totalSfnt = 0;
-    for (const [platform, fonts] of Object.entries(index.platforms)) {
+    for (const [, fonts] of Object.entries(index.platforms)) {
       for (const entry of Object.values(fonts)) {
         if (entry.file.endsWith('.woff2')) totalWoff2++;
         if (entry.file.endsWith('.ttf') || entry.file.endsWith('.otf') || entry.file.endsWith('.ttc')) totalSfnt++;

@@ -5,10 +5,9 @@ const fsp = require('fs/promises');
 const os = require('os');
 const path = require('path');
 const {
-  MANAGED_LOCAL_STATE_KEYS,
+  
   primaryProfileLocale,
   expectedLocalState,
-  applyLocalStateLanguage,
   verifyLocalStateLanguage,
   syncProfileLocalState,
 } = require('../profile-file-consistency');

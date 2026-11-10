@@ -131,7 +131,7 @@ async function waitForPage(port, timeoutMs = 16000) {
   return null;
 }
 
-function buildProbeScript(targetFamilies, mutateOmitFamily = null) {
+function buildProbeScript(targetFamilies) {
   return `(async () => {
     const realFontsDesc = Object.getOwnPropertyDescriptor(Document.prototype, 'fonts');
     if (realFontsDesc && realFontsDesc.get) {

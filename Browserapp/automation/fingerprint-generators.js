@@ -12,7 +12,7 @@
  */
 
 const crypto = require('crypto');
-const { HOST_WEBGL_LIMITS, getHostWebglLimits } = require('./device-personas');
+const {  getHostWebglLimits } = require('./device-personas');
 
 function hashSeed(input) {
   return crypto.createHash('sha256').update(String(input || '')).digest();

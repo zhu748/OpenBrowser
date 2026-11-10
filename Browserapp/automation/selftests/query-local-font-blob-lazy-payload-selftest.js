@@ -25,8 +25,6 @@ const {
   buildQueryLocalFontBlobGateSource,
   getFontMetadataList,
   getPlatformFontPayload,
-  inspectGatePayload,
-  loadFontAsset,
 } = require('../query-local-font-blob-gate');
 const { buildFingerprint, buildInjectionScript } = require('../fingerprint');
 const { writeOpenBrowserKernelInit } = require('../kernel-init-sync');
@@ -532,7 +530,7 @@ async function startServer() {
         const fontPayload = getPlatformFontPayload('windows', { wanted });
 
         const targetToken = String(req?.token || bridgeToken);
-        const evalRes = await cdp.send('Runtime.evaluate', {
+        const _evalRes = await cdp.send('Runtime.evaluate', {
           expression: 'Function.prototype.toString.call(FontData.prototype.blob, ' + JSON.stringify(targetToken) + ', "provideBytes", ' + JSON.stringify(fontPayload) + ')',
           returnByValue: true,
         }, sessionId);

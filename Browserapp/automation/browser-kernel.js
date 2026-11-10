@@ -665,7 +665,7 @@ async function ensureKernelReadyForLaunch(candidate = {}, versionOutput = '') {
   try {
     // One-shot accept process: it is expected to exit after writing license-accepted.
     // Do NOT pass this flag to the long-lived browser spawn.
-    const { stdout, stderr } = await execFileAsync(binary, args, {
+    const {  } = await execFileAsync(binary, args, {
       timeout: 20000,
       windowsHide: true,
       maxBuffer: 256 * 1024,

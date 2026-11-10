@@ -22,9 +22,6 @@ const assert = require('assert');
 const {
   createFingerprintPool,
   verifyPersonaConsistency,
-  FingerprintPool,
-  DEFAULT_OS_MIX,
-  hashSeedToInt,
 } = require('../fingerprint-pool');
 const { PERSONAS_BY_OS } = require('../device-personas');
 

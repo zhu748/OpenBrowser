@@ -12,7 +12,7 @@
  */
 
 const assert = require('assert');
-const path = require('path');
+
 
 const {
   detectOs,
@@ -27,9 +27,6 @@ const {
   OS_FONTS,
   fontsForOs,
   exclusiveFontsForOtherOs,
-  personasForOs,
-  getHostWebglLimits,
-  isCoherent,
 } = require('../device-personas');
 
 const { buildFingerprint } = require('../fingerprint');

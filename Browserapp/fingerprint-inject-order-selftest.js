@@ -20,7 +20,7 @@ const {
 
 function main() {
   // --- engine start order: inject before keepDefaultTab ---
-  const engineSrc = fs.readFileSync(path.join(__dirname, 'engine.js'), 'utf8');
+  const _engineSrc = fs.readFileSync(path.join(__dirname, 'engine.js'), 'utf8');
   // _start moved to the engine/start.js mixin (startup routine); the start-order
   // assertions read the mixin source.
   const startSrc = fs.readFileSync(path.join(__dirname, 'engine', 'start.js'), 'utf8');

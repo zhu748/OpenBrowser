@@ -9,7 +9,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
+
 const {
   assertSafeOutboundUrl,
   isCloudMetadataHostname,
@@ -21,7 +21,7 @@ const {
   buildWorkerInjectionScript,
   buildInjectionScript,
 } = require('./automation/fingerprint');
-const { consistencyFromFp, fingerprintForNativeKernelInject } = require('./automation/kernel-init-sync');
+const {  fingerprintForNativeKernelInject } = require('./automation/kernel-init-sync');
 
 function main() {
   // --- SSRF: cloud metadata always blocked ---
@@ -81,7 +81,7 @@ function main() {
   });
   // Access internal via require path re-read
   const kin = require('./automation/kernel-init-sync');
-  const patch = kin.mapFingerprintToInitFields
+  const _patch = kin.mapFingerprintToInitFields
     ? null
     : null;
   // consistencyFromFp not exported — inspect via write path fields by re-require source string

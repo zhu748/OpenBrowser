@@ -35,7 +35,7 @@ const appVersion = JSON.parse(fs.readFileSync(path.join(appRoot, 'package.json')
 // Module mock for loading main.js without launching Electron desktop runtime
 const Module = require('module');
 const origLoad = Module._load;
-Module._load = function(req, parent, isMain) {
+Module._load = function(req, _isMain) {
   if (req === 'electron' || req.includes('host-bridge')) {
     return {
       app: {
@@ -73,29 +73,24 @@ try {
 
 const {
   buildFingerprint,
-  buildInjectionScript,
   buildWorkerInjectionScript,
   chromeArgsForFingerprint,
   webglParameterOverrides,
   normalizeGpuArchitecture,
   isDisallowedVendorExtension,
-  WEBGL_PRESETS,
-  HOST_WEBGL_LIMITS,
-  getHostWebglLimits,
   isPersonaWebglCompatible,
   resolveCompatiblePersona,
 } = require('../fingerprint');
 const { buildQueryLocalFontBlobGateSource } = require('../query-local-font-blob-gate');
-const { OS_FONTS, DEVICE_PERSONAS } = require('../device-personas');
+const { OS_FONTS } = require('../device-personas');
 const { parseProxy } = require('../../proxy-forwarder');
 const {
   timezoneFromCountryCode,
   resolveProfileTimezone,
-  isIanaTimezoneId,
 } = require('../locale-from-country');
 const { isValidIanaTimezone, extractTimezoneFromArgs } = require('../../engine');
 const { computeCascadeBounds } = require('../protocol/window-sync-protocol');
-const { StartPageServer } = require('../start-page-server');
+
 
 console.log('==================================================================');
 console.log('--- Starting Issue #19, #21, #22 and Font Blob Closure Audit ---');
@@ -117,7 +112,7 @@ console.log('--- SECTION 1: Auditing FontData.blob() Binary Metadata vs Declared
 
 const indexJsonPath = path.join(appRoot, 'assets', 'font-subsets', 'index.json');
 assert(fs.existsSync(indexJsonPath), 'index.json must exist');
-const fontIndex = JSON.parse(fs.readFileSync(indexJsonPath, 'utf8'));
+const _fontIndex = JSON.parse(fs.readFileSync(indexJsonPath, 'utf8'));
 
 const pyCheckScript = `
 import json, sys, os

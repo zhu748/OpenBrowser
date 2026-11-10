@@ -96,7 +96,7 @@ async function sandboxIllegalInvocation(fp) {
   const sandbox = makeWorkerSandbox();
   vm.runInNewContext(buildWorkerInjectionScript(fp), sandbox, { timeout: 20000 });
   try {
-    const p = await sandbox.StorageManager.prototype.estimate.call({});
+    const _p = await sandbox.StorageManager.prototype.estimate.call({});
     return false; // resolved: no rejection raised
   } catch (err) {
     return err instanceof TypeError || /Illegal invocation/.test(String(err && err.message));

@@ -59,7 +59,7 @@ const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-const { execSync, execFileSync } = require("child_process");
+const {  execFileSync } = require("child_process");
 
 const isMutateMode = process.argv.includes("--mutate") || process.env.MUTATE === "1";
 
@@ -754,7 +754,7 @@ check("mutation sensitivity: script with syntax error fails runnable check", () 
 });
 
 check("mutation sensitivity: tampering with any of the 7 version locations fails validation", () => {
-  const tamperedVersion = "1.0.99";
+  const _tamperedVersion = "1.0.99";
   const locations = [
     { rel: "README.md", tampered: "# Readme\n[![Version](https://img.shields.io/badge/version-1.0.99-blue)]" },
     { rel: "README_CN.md", tampered: "# 说明\n[![Version](https://img.shields.io/badge/version-1.0.99-blue)]" },
@@ -813,12 +813,12 @@ check("mutation sensitivity: simulated untracked forbidden files trigger gate fa
 });
 
 check("mutation sensitivity: packager failing to exclude forbidden artifacts triggers failure", () => {
-  const dummyExcludedCheck = (name) => false;
+  const dummyExcludedCheck = (_name) => false;
   assert.strictEqual(dummyExcludedCheck("reports"), false, "Simulated dummy exclusion check must fail exclusion");
 });
 
 check("mutation sensitivity: packager erroneously excluding required deliverables triggers failure", () => {
-  const dummyExcludedCheck = (name) => true;
+  const dummyExcludedCheck = (_name) => true;
   assert.strictEqual(dummyExcludedCheck("main.js"), true, "Simulated dummy exclusion check must flag over-exclusion");
 });
 

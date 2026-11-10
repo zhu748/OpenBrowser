@@ -21,10 +21,9 @@ const {
   buildFingerprint,
   applyFingerprintToTab,
 } = require("../fingerprint");
-const { BrowserEngine, RequestHeaderRewriter, createRequestHeaderRewriter } = require("../../engine");
+const { BrowserEngine, RequestHeaderRewriter } = require("../../engine");
 const {
   buildUaProfile,
-  buildUserAgentMetadata,
   formatAcceptLanguage,
   buildAcceptLanguageHeader,
   OS_PRESETS,
@@ -34,7 +33,6 @@ const {
   fontsForOs,
   exclusiveFontsForOtherOs,
   isCoherent,
-  OS_FONTS,
 } = require("../device-personas");
 
 const kernelRoot = path.join(appRoot, "kernels", "macos-x64");
@@ -100,7 +98,7 @@ class Cdp {
     return typeof c === "undefined" ? this.send(a, b || {}) : this.send(b, c || {});
   }
   close() {
-    for (const [id, resolve] of this.pending.entries()) {
+    for (const [, resolve] of this.pending.entries()) {
       resolve({ error: { message: "CDP connection closed" } });
     }
     this.pending.clear();
@@ -430,7 +428,7 @@ function normalizeHeaders(headers) {
     let callCount = 0;
     const commands = [];
     const fakeConn = {
-      command: async (method, params, opts) => {
+      command: async (method, params, _opts) => {
         commands.push({ method, params });
         callCount += 1;
         if (callCount === 1) {

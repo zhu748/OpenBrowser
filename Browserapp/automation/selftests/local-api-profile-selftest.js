@@ -8,7 +8,7 @@
 
 const path = require('path');
 const os = require('os');
-const fs = require('fs');
+
 const fsp = require('fs/promises');
 const assert = require('assert');
 const { BrowserEngine } = require('../../engine.js');

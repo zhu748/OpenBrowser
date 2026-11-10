@@ -128,6 +128,7 @@ const {
 } = require('./automation/request-header-rewriter');
 
 const { isValidIanaTimezone, extractTimezoneFromArgs } = require('./engine/start');
+const { TrackedProfileMap } = require('./engine/profile-revisions');
 
 class BrowserEngine {
   constructor(app, options = {}) {
@@ -137,7 +138,7 @@ class BrowserEngine {
     // high-DPI (125%/150%/200%) displays. Supplied by main.js; optional so tests and
     // non-Windows hosts keep the previous default of 1.
     this.getHostScaleFactor = typeof options.getHostScaleFactor === 'function' ? options.getHostScaleFactor : null;
-    this.profiles = new Map();
+    this.profiles = new TrackedProfileMap();
     this.running = new Map();
     // Per-profile lifecycle barriers. A browser must finish stopping (including
     // process-tree, proxy bridge, and profile-lock cleanup) before a new start
@@ -1405,6 +1406,11 @@ class BrowserEngine {
     if (this._statusCache) return this._statusCache;
     this._statusCache = [...this.profiles.values()].map((profile) => {
       const view = { ...profile, ...this.publicRunning(profile.id), network: this.networkInfo.get(profile.id) || null, assignedExtensions: [...(this.assignments.get(profile.id) || [])] };
+      // Engine revision of this row: lets the renderer issue per-ID modify
+      // commands with a base revision (applyProfileCommands) instead of
+      // resending the whole fleet. Zero cost per poll: this runs only when
+      // the snapshot cache was invalidated.
+      view.rev = this.profiles.revisionOf?.(profile.id) || 0;
       if ('cookies' in view) view.cookies = '';
       if (view.platform && typeof view.platform === 'object') {
         view.platform = { ...view.platform };
@@ -1428,6 +1434,43 @@ class BrowserEngine {
 
   invalidateStatusCache() {
     this._statusCache = null;
+    this._statusDeltaEpoch = (this._statusDeltaEpoch || 0) + 1;
+  }
+
+  /**
+   * Incremental status view for the renderer's 120ms poll loop. The caller
+   * passes its last-seen revision watermark ({id: rev}); the engine answers
+   * only rows whose revision moved past it, plus removed ids, and the new
+   * watermark. At 1000+ profile fleets a full status view is megabytes per
+   * poll (measured 3.5MB at N=1000, ~30MB/s at the UI's poll cadence); the
+   * delta lane cuts the payload to the rows that actually changed.
+   *
+   * `full: true` is the resync fallback: any mismatch (unknown ids, a stale
+   * shape the caller cannot merge) returns full instead, so the poll loop
+   * degrades to today's behavior rather than guessing.
+   */
+  statusDelta(watermark) {
+    const known = this.profiles.revisionState?.() || {};
+    const caller = (watermark && typeof watermark === 'object' && !Array.isArray(watermark)) ? watermark : null;
+    if (!caller) return { full: true, rows: this.status(), watermark: known, removed: [] };
+    const removed = [];
+    for (const id of Object.keys(caller)) {
+      if (!(id in known)) removed.push(id);
+    }
+    const snapshot = this.status();
+    const byId = new Map(snapshot.map((row) => [row.id, row]));
+    let unknown = 0;
+    const rows = [];
+    for (const [id, rev] of Object.entries(known)) {
+      const seen = caller[id];
+      if (seen === undefined) { unknown += 1; continue; }
+      if (seen !== rev) {
+        const row = byId.get(id);
+        if (row) rows.push(row);
+      }
+    }
+    if (unknown > 0) return { full: true, rows: snapshot, watermark: known, removed: [] };
+    return { full: false, rows, removed, watermark: known };
   }
 
   on(listener) { this.listeners.add(listener); return () => this.listeners.delete(listener); }

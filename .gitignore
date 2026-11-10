@@ -26,3 +26,6 @@ CODE_OVERVIEW.md
 
 # Kernel release fetch cache (scripts/fetch-kernels.js) — never commit
 Browserapp/.kernel-release-cache/
+
+# Runtime-downloaded linux-x64 kernel (scripts/install-linux-stable.js) — never commit
+Browserapp/kernels/chrome-stable/

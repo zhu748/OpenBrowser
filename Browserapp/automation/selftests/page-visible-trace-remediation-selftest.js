@@ -15,7 +15,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const { deriveFontPlaceholder, deriveBridgeToken } = require('../font-placeholder');
+const { deriveFontPlaceholder } = require('../font-placeholder');
 const { buildPortScanProtectionScript } = require('../port-scan-protection');
 const { StartPageServer } = require('../start-page-server');
 
@@ -64,9 +64,9 @@ check('live-sync-v5.js fullscreenInjection uses WeakSet without document own pro
   const code = match[1];
 
   // Run in a simulated browser window sandbox
-  let bindingCalled = null;
+  let _bindingCalled = null;
   const mockWindow = {
-    openBrowserSync: (payload) => { bindingCalled = payload; },
+    openBrowserSync: (payload) => { _bindingCalled = payload; },
   };
   const mockDoc = Object.create({ addEventListener: () => {}, removeEventListener: () => {} });
   const mockElementProto = {
@@ -113,7 +113,7 @@ check('masterMarker does not inject on standard web pages or localhost without t
   const code = match[1];
 
   // Standard web page context (e.g. localhost or example.com)
-  const dom = { elements: [] };
+  const _dom = { elements: [] };
   const mockDoc = {
     documentElement: {},
     getElementById: () => null,

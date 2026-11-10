@@ -12,7 +12,7 @@ const appRoot = path.join(__dirname, "..", "..");
 const kernelRoot = path.join(appRoot, "kernels", "macos-x64");
 const launcher = path.join(kernelRoot, "launch_openbrowser.sh");
 
-const { buildFingerprint, buildInjectionScript } = require("../fingerprint");
+const { buildFingerprint } = require("../fingerprint");
 const { writeOpenBrowserKernelInit } = require("../kernel-init-sync");
 const { BrowserEngine, RequestHeaderRewriter } = require("../../engine");
 const cdp = require("../../cdp");

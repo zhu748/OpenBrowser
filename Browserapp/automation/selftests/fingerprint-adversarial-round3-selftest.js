@@ -17,7 +17,7 @@
  *   - All browser launches strictly use --headless=new and clean up upon exit.
  */
 
-const assert = require('assert');
+
 const fs = require('fs');
 const http = require('http');
 const os = require('os');
@@ -27,8 +27,6 @@ const { spawn, execSync } = require('child_process');
 const cdp = require('../../cdp');
 const {
   buildFingerprint,
-  buildInjectionScript,
-  buildWorkerInjectionScript,
   chromeArgsForFingerprint,
   applyFingerprintToTab,
 } = require('../fingerprint');
@@ -717,7 +715,7 @@ async function runSession(profileConfig, isInject, server) {
             conn.command('Fetch.continueRequest', { requestId: reqId }, { sessionId: event.sessionId }).catch(() => {});
             return;
           }
-          try { requestHeaderRewriter.handleEvent(event, conn); } catch (e) {}
+          try { requestHeaderRewriter.handleEvent(event, conn); } catch (_e) {}
           return;
         }
       }
@@ -1132,7 +1130,7 @@ async function runSession(profileConfig, isInject, server) {
     }
     const idxSecChUa = names.indexOf('sec-ch-ua');
     const idxUserAgent = names.indexOf('user-agent');
-    const idxAcceptLang = names.indexOf('accept-language');
+    const _idxAcceptLang = names.indexOf('accept-language');
 
     if (idxSecChUa === -1 || idxUserAgent === -1) {
       return { ok: false, reason: `Missing required wire headers: sec-ch-ua=${idxSecChUa}, user-agent=${idxUserAgent}` };

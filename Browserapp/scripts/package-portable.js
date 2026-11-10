@@ -96,7 +96,7 @@ function run(command, args, options = {}) {
  * (local secrets) and `*.log` (local run logs) follow the same
  * local-only-artifact rule.
  */
-function isPackagingExcluded(entryName, fullPath = "") {
+function isPackagingExcluded(entryName) {
   if (!entryName || typeof entryName !== "string") return false;
   const lower = entryName.toLowerCase();
   if (lower === "reports" || lower === "__pycache__" || lower === ".ds_store" || lower === "node_modules" || lower === ".git" || lower === "code_overview.md") {
@@ -208,9 +208,7 @@ function shouldShipChromeStable(platform = process.platform, arch = packageArch)
 }
 
 /** @deprecated alias for shouldShipIntegratedWayfern. */
-function shouldShipBundledWayfern(platform = process.platform, arch = packageArch) {
-  return shouldShipIntegratedWayfern(platform, arch);
-}
+
 
 /**
  * App tree entries NOT copied into resources/app for this package.

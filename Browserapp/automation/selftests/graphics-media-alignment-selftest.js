@@ -94,7 +94,7 @@ function createMockWindow(options = {}) {
       if (param === 0x0d3a) return new Int32Array([4096, 4096]);
       return 100;
     }
-    getShaderPrecisionFormat(st, pt) {
+    getShaderPrecisionFormat(st, _pt) {
       if (!(this instanceof WebGLRenderingContext)) throw new TypeError('Illegal invocation');
       if (st !== 0x8b30 && st !== 0x8b31) return null;
       return new WebGLShaderPrecisionFormat(127, 127, 23);

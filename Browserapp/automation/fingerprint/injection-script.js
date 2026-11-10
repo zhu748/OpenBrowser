@@ -8,7 +8,7 @@
  */
 
 const crypto = require('crypto');
-const { createWebRtcFallbackSource, buildCssFontLocalGateSource, deriveFontPlaceholder, buildQueryLocalFontBlobGateSource, buildUaProfile, buildUaInjectionScript, canonicalBridgeToken, mapPlatformToSubsetKey, loadFontSubsetPayload, buildFontMetricsScript, isDisallowedVendorExtension } = require('./shared');
+const { createWebRtcFallbackSource, buildCssFontLocalGateSource, deriveFontPlaceholder, buildQueryLocalFontBlobGateSource, buildUaProfile, buildUaInjectionScript, canonicalBridgeToken, mapPlatformToSubsetKey, loadFontSubsetPayload, buildFontMetricsScript } = require('./shared');
 // Shared CFG layer: the os/timezone/deviceMemory/webgl/stability computations the
 // worker builder (worker-injection.js) also embeds live in injection-config.js so
 // the two emitted CFGs cannot drift independently. Key order, key set and the

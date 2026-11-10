@@ -16,7 +16,7 @@
 
 const assert = require('assert');
 const fs = require('fs');
-const fsp = require('fs/promises');
+
 const http = require('http');
 const os = require('os');
 const path = require('path');

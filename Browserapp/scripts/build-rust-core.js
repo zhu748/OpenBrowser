@@ -60,7 +60,7 @@ function buildRustCore() {
   let parsed;
   try {
     parsed = JSON.parse(verifyResult.stdout.trim());
-  } catch (err) {
+  } catch (_err) {
     throw new Error(`Invalid JSON emitted by openbrowser-core version: ${verifyResult.stdout}`);
   }
 

@@ -23,11 +23,9 @@ const crypto = require('crypto');
 const {
   PERSONAS_BY_OS,
   fontsForOs,
-  exclusiveFontsForOtherOs,
 } = require('./device-personas');
 const {
   MEDIA_DEVICE_POOLS_BY_OS,
-  OS_PRESETS,
 } = require('./fingerprint');
 
 const DEFAULT_OS_MIX = Object.freeze({

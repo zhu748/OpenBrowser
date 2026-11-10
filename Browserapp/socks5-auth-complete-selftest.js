@@ -1,6 +1,6 @@
 const assert = require('assert');
 const net = require('net');
-const { parseProxy, startAuthenticatedProxy, encodeSocksAddress } = require('./proxy-forwarder');
+const { parseProxy, startAuthenticatedProxy } = require('./proxy-forwarder');
 
 class Reader {
   constructor(socket) {
@@ -87,7 +87,7 @@ const isMutate = process.argv.includes('--mutate');
       const methods = await reader.read(greeting[1]);
       if (methods.includes(0)) {
         socket.write(Buffer.from([5, 0])); // No auth selected
-        const req = await reader.read(4);
+        const _req = await reader.read(4);
         socket.write(Buffer.from([5, 2, 0, 1, 0, 0, 0, 0, 0, 0])); // Rejection: connection not allowed
         socket.destroy();
         return;

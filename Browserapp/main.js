@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const fsp = require('fs/promises');
 const { pathToFileURL } = require('url');
-const { spawn, execFile } = require('child_process');
+const { spawn } = require('child_process');
 const cdp = require('./cdp');
 const { BrowserEngine } = require('./engine');
 const { registerExtensionIpc } = require('./main/extensions-ipc');
@@ -28,7 +28,7 @@ const { fetchStoreEntries } = require('./automation/store-fetch');
 const { fetchStorePackage, fetchChromeStoreIcon, fetchChromeStoreMetadata, validChromeStoreId } = require('./chrome-store-metadata');
 const { startAutomation } = require('./automation');
 const cloudSync = require('./automation/cloud-sync');
-const credentialCrypto = require('./credential-crypto');
+
 const { ensureDataRootIsolationSecure, terminateProcessesUsingProfile, sanitizeIds } = require('./automation/isolation');
 const { createCrashHandler, buildHelperProcessGoneReport } = require('./automation/crash-report');
 const { writeBrowserStartupDiagnostic } = require('./engine/diagnostics');
@@ -678,7 +678,7 @@ const THEME_CHROME = {
   default: { bg: '#ffffff', overlay: '#f5fbff', symbol: '#111213' },
 };
 
-function chromeForTheme(themeId, colorMode) {
+function chromeForTheme(themeId, _colorMode) {
   return THEME_CHROME[themeId] || THEME_CHROME.default;
 }
 
@@ -996,7 +996,7 @@ app.whenReady().then(async () => {
     const payload = await appUpdate.pushAppUpdateStatus({ check: true });
     if (payload?.error && !payload?.remoteVersion) throw new Error(payload.error);
     // Return check fields (without event envelope noise for renderer helpers)
-    const { type, light, checkedAt, error, ...rest } = payload || {};
+    const {  light, checkedAt, error, ...rest } = payload || {};
     if (error && !rest.supported) throw new Error(error);
     return rest.currentVersion != null ? { ...rest, light, checkedAt } : await appUpdate.checkAppUpdate();
   });

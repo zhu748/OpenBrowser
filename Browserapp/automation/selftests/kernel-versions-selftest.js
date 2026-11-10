@@ -13,7 +13,7 @@
 
 const assert = require('assert');
 const kv = require('../../automation/kernel-versions');
-const { compareVersions } = require('../../automation/version-compare');
+
 
 let passed = 0;
 let failed = 0;

@@ -18,7 +18,6 @@ const {
 const {
   RPA_PLUS_ACTIONS,
   parseProcessContent,
-  normalizeStep,
   isRegistered,
   ACTION_PARAM_SCHEMA,
 } = require('./rpa-registry');

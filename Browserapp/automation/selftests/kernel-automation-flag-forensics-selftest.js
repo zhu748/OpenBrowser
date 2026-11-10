@@ -27,7 +27,6 @@ const { spawn, execSync } = require('child_process');
 const {
   writeOpenBrowserKernelInit,
   validateKernelInitInvariants,
-  loadInitObject,
 } = require('../kernel-init-sync');
 const { buildFingerprint } = require('../fingerprint');
 
@@ -266,7 +265,7 @@ async function main() {
         ws = new WebSocket(pageTarget.webSocketDebuggerUrl);
         await new Promise((resolve, reject) => {
           ws.onopen = resolve;
-          ws.onerror = (e) => reject(new Error('WebSocket connection failed'));
+          ws.onerror = (_e) => reject(new Error('WebSocket connection failed'));
         });
 
         // Query Runtime evaluation to verify browser state

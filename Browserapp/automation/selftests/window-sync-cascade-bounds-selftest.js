@@ -21,15 +21,11 @@
  */
 
 const assert = require('assert');
-const path = require('path');
+
 
 const {
   computeCascadeBounds,
   resolveWorkArea,
-  DEFAULT_MIN_WINDOW_WIDTH,
-  DEFAULT_MIN_WINDOW_HEIGHT,
-  DEFAULT_WINDOW_WIDTH,
-  DEFAULT_WINDOW_HEIGHT,
 } = require('../protocol/window-sync-protocol');
 
 const isMutateMode = process.argv.includes('--mutate') || process.env.MUTATE === '1';
@@ -357,7 +353,7 @@ check('mutation sensitivity: disabling protocol clamp causes out-of-bounds viola
   let tinyViolationCaught = false;
   try {
     assertBoundsWithinWorkArea(unclampedTiny[0].bounds, tinyWorkArea, 'unclamped-tiny');
-  } catch (err) {
+  } catch (_err) {
     tinyViolationCaught = true;
   }
   assert.ok(tinyViolationCaught, 'Disabling clamping must cause tiny screen overflow assertion failure');
@@ -374,7 +370,7 @@ check('mutation sensitivity: disabling protocol clamp causes out-of-bounds viola
   let oversizedViolationCaught = false;
   try {
     assertBoundsWithinWorkArea(unclampedOversized[0].bounds, standardWorkArea, 'unclamped-oversized');
-  } catch (err) {
+  } catch (_err) {
     oversizedViolationCaught = true;
   }
   assert.ok(oversizedViolationCaught, 'Disabling clamping must cause oversized window overflow assertion failure');
@@ -395,7 +391,7 @@ check('mutation sensitivity: disabling protocol clamp causes out-of-bounds viola
     unclampedHighCount.forEach((item, index) => {
       assertBoundsWithinWorkArea(item.bounds, { x: 0, y: 0, width: 1000, height: 800 }, `unclamped-drift[${index}]`);
     });
-  } catch (err) {
+  } catch (_err) {
     runawayViolationCaught = true;
   }
   assert.ok(runawayViolationCaught, 'Disabling clamping must cause runaway drift overflow assertion failure');

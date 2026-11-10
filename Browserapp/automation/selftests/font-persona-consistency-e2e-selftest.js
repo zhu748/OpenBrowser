@@ -23,7 +23,7 @@ const { spawn, execSync } = require('child_process');
 
 const { buildFingerprint, buildInjectionScript } = require('../fingerprint');
 const { writeOpenBrowserKernelInit } = require('../kernel-init-sync');
-const { OS_FONTS, fontsForOs, exclusiveFontsForOtherOs } = require('../device-personas');
+const { OS_FONTS } = require('../device-personas');
 
 const appRoot = path.join(__dirname, '..', '..');
 const kernelRoot = path.join(appRoot, 'kernels', 'macos-x64');

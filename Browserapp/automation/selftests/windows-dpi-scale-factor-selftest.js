@@ -31,14 +31,13 @@
  */
 
 const assert = require('assert');
-const path = require('path');
+
 const { execFileSync } = require('child_process');
 
 const {
   chromeArgsForFingerprint,
   buildFingerprint,
   buildInjectionScript,
-  OS_PRESETS,
 } = require('../fingerprint');
 
 const {
@@ -410,7 +409,7 @@ check('mutation sensitivity: omission of --force-device-scale-factor on win32 is
   try {
     const scaleFlags = getScaleFactorFlags(simulatedRegressedWin32Args);
     assert.strictEqual(scaleFlags.length, 1, 'Must fail when flag is missing on win32');
-  } catch (err) {
+  } catch (_err) {
     caught = true;
   }
   assert.ok(caught, 'Mutation check must detect omission of force-device-scale-factor on win32');
@@ -426,7 +425,7 @@ check('mutation sensitivity: duplicate --force-device-scale-factor flags are det
   try {
     const scaleFlags = getScaleFactorFlags(duplicatedArgs);
     assert.strictEqual(scaleFlags.length, 1, 'Must fail on duplicate flags');
-  } catch (err) {
+  } catch (_err) {
     caught = true;
   }
   assert.ok(caught, 'Mutation check must detect duplicate scale factor flags');
@@ -441,7 +440,7 @@ check('mutation sensitivity: pollution on non-Windows platform is detected', () 
   try {
     const scaleFlags = getScaleFactorFlags(pollutedDarwinArgs);
     assert.strictEqual(scaleFlags.length, 0, 'Must fail when darwin receives scale flag');
-  } catch (err) {
+  } catch (_err) {
     caught = true;
   }
   assert.ok(caught, 'Mutation check must detect scale factor pollution on darwin');
@@ -454,7 +453,7 @@ check('mutation sensitivity: clobbered user explicit scale override is detected'
   try {
     const scaleFlags = getScaleFactorFlags(clobberedScaleArgs);
     assert.strictEqual(parseScaleFactorValue(scaleFlags[0]), expectedUserScale);
-  } catch (err) {
+  } catch (_err) {
     caught = true;
   }
   assert.ok(caught, 'Mutation check must detect clobbered user explicit scale factor');
@@ -466,7 +465,7 @@ check('mutation sensitivity: invalid scale factor (NaN or zero) is detected', ()
   try {
     const parsed = parseScaleFactorValue(invalidArgs[0]);
     assert.ok(Number.isFinite(parsed) && parsed > 0, 'Must fail on NaN or invalid scale');
-  } catch (err) {
+  } catch (_err) {
     caught = true;
   }
   assert.ok(caught, 'Mutation check must detect non-numeric or invalid scale factor');

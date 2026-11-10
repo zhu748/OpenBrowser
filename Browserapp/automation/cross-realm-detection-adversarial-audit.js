@@ -26,7 +26,7 @@
  * 10. Four Sub-Contexts: about:blank, srcdoc, blob:, data: (opaque origin isolation & host leaks)
  */
 
-const assert = require('assert');
+
 const fs = require('fs');
 const http = require('http');
 const os = require('os');
@@ -699,7 +699,7 @@ async function runAuditSession(profileConfig, isInject, server) {
             conn.command('Fetch.continueRequest', { requestId: reqId }, { sessionId: event.sessionId }).catch(() => {});
             return;
           }
-          try { requestHeaderRewriter.handleEvent(event, conn); } catch (e) {
+          try { requestHeaderRewriter.handleEvent(event, conn); } catch (_e) {
             conn.command('Fetch.continueRequest', { requestId: reqId }, { sessionId: event.sessionId }).catch(() => {});
           }
           return;

@@ -21,8 +21,8 @@
  *   - the script cache keeps the two variants separate.
  */
 
-const assert = require('assert');
-const path = require('path');
+
+
 const { buildFingerprint, buildInjectionScript, applyFingerprintToTab, loadFontSubsetPayload } = require('../fingerprint');
 
 const results = [];

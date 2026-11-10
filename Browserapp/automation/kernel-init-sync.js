@@ -130,7 +130,7 @@ function isValidPrivateIpv4(ip) {
     if (n < 0 || n > 255) return false;
     nums.push(n);
   }
-  const [a, b, c, d] = nums;
+  const [a, b, ] = nums;
   if (a === 10) return true;
   if (a === 172 && b >= 16 && b <= 31) return true;
   if (a === 192 && b === 168) return true;

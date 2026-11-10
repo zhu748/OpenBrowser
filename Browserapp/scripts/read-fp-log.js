@@ -8,8 +8,8 @@
  */
 
 const fs = require('fs');
-const path = require('path');
-const os = require('os');
+
+
 const { defaultLogPath } = require('../automation/fingerprint-debug-log');
 
 function resolvePath() {

@@ -19,11 +19,10 @@
 
 const assert = require("assert");
 const http = require("http");
-const path = require("path");
+
 
 const {
   COUNTRY_TO_TIMEZONE,
-  localeFromCountryCode,
   timezoneFromCountryCode,
   isIanaTimezoneId,
   resolveProfileTimezone,
@@ -343,7 +342,7 @@ check("start-page server refresh failure preserves profile timezone and never le
 });
 
 check("start-page server refresh with missing session does not crash and avoids host timezone leak", async () => {
-  const hostTimezone = (() => {
+  const _hostTimezone = (() => {
     try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (_) { return "UTC"; }
   })();
 
@@ -421,13 +420,13 @@ check("mutation sensitivity: refresh clobbering to empty or host timezone is det
   })();
 
   // Mutant 1: clobber to empty string
-  const mutantClobberEmpty = (session) => {
+  const mutantClobberEmpty = (_session) => {
     return "";
   };
   assert.strictEqual(mutantClobberEmpty({ timezone: "America/Chicago" }), "");
 
   // Mutant 2: clobber to host timezone
-  const mutantClobberHost = (session) => {
+  const mutantClobberHost = (_session) => {
     return hostTimezone;
   };
   assert.strictEqual(mutantClobberHost({ timezone: "America/Chicago" }), hostTimezone);

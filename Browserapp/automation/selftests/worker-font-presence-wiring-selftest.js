@@ -71,7 +71,7 @@ function extractMethodSource(fullSource, methodName) {
   let depth = 0;
   let inString = false;
   let stringChar = '';
-  let inRegex = false;
+  let _inRegex = false;
   let inComment = false;
   let inBlockComment = false;
 

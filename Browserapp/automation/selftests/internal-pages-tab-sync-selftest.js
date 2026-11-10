@@ -57,7 +57,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // Load production exports from main.js by providing lightweight desktop host bridge mock
 const Module = require('module');
 const origLoad = Module._load;
-Module._load = function(req, parent, isMain) {
+Module._load = function(req, _isMain) {
   if (req === 'electron' || req.includes('host-bridge')) {
     return {
       app: {
@@ -95,7 +95,6 @@ const {
   canMirrorTabUrl,
   canDomLiveSyncTabUrl,
   MAX_SYNC_TABS,
-  syncTabsFromMaster,
 } = mainModule;
 
 async function runLiveBrowser(profileName) {

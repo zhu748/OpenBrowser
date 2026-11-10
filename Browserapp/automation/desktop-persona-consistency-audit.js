@@ -29,11 +29,9 @@ const { spawn, execSync } = require('child_process');
 const cdp = require('../cdp');
 const {
   buildFingerprint,
-  buildInjectionScript,
   buildWorkerInjectionScript,
   chromeArgsForFingerprint,
   applyFingerprintToTab,
-  mapPlatformToSubsetKey,
 } = require('./fingerprint');
 const {
   writeOpenBrowserKernelInit,
@@ -41,10 +39,9 @@ const {
   validateKernelInitInvariants,
   detectOs,
   detectInitOs,
-  MEDIA_POOLS_BY_OS,
 } = require('./kernel-init-sync');
 const { RequestHeaderRewriter } = require('../engine');
-const { fontsForOs, exclusiveFontsForOtherOs, pickPersona, OS_FONTS } = require('./device-personas');
+const {  } = require('./device-personas');
 
 const appRoot = path.join(__dirname, '..');
 const kernelRoot = path.join(appRoot, 'kernels', 'macos-x64');
@@ -623,7 +620,7 @@ async function runSession(profileConfig, isInject, server) {
             conn.command('Fetch.continueRequest', { requestId: reqId }, { sessionId: event.sessionId }).catch(() => {});
             return;
           }
-          try { requestHeaderRewriter.handleEvent(event, conn); } catch (e) {}
+          try { requestHeaderRewriter.handleEvent(event, conn); } catch (_e) {}
           return;
         }
       }
@@ -659,7 +656,7 @@ async function runSession(profileConfig, isInject, server) {
     };
 
     let primarySessionId = null;
-    let primaryTargetId = null;
+    let _primaryTargetId = null;
     let primaryReadyResolve = null;
     const primaryReadyPromise = new Promise((resolve) => { primaryReadyResolve = resolve; });
 
@@ -668,7 +665,7 @@ async function runSession(profileConfig, isInject, server) {
         const { sessionId, targetInfo = {} } = event.params || {};
         if (targetInfo.type === 'page' && !primarySessionId) {
           primarySessionId = sessionId;
-          primaryTargetId = targetInfo.targetId;
+          _primaryTargetId = targetInfo.targetId;
           if (primaryReadyResolve) primaryReadyResolve(sessionId);
         }
       }
@@ -908,7 +905,7 @@ async function runSession(profileConfig, isInject, server) {
   const lClient = linuxRes.client || {};
   const wClient = windowsRes.client || {};
 
-  const bHead = baselineRes.headers || {};
+  const _bHead = baselineRes.headers || {};
   const lHead = linuxRes.headers || {};
   const wHead = windowsRes.headers || {};
 

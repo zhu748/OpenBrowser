@@ -24,7 +24,7 @@ const { spawn, execSync, execFileSync } = require('child_process');
 const appRoot = path.resolve(__dirname, '..', '..');
 const { buildFingerprint, buildInjectionScript } = require(path.join(appRoot, 'automation', 'fingerprint'));
 const { writeOpenBrowserKernelInit } = require(path.join(appRoot, 'automation', 'kernel-init-sync'));
-const { buildQueryLocalFontBlobGateSource, inspectGatePayload } = require(path.join(appRoot, 'automation', 'query-local-font-blob-gate'));
+const { buildQueryLocalFontBlobGateSource } = require(path.join(appRoot, 'automation', 'query-local-font-blob-gate'));
 
 const kernelRoot = path.join(appRoot, 'kernels', 'macos-x64');
 const launcher = path.join(kernelRoot, 'launch_openbrowser.sh');
@@ -459,7 +459,7 @@ async function runCdpSession({ serverPort }) {
 // Main Test Suite
 // =============================================================================
 (async () => {
-  const isMutate = process.argv.includes('--mutate');
+  const _isMutate = process.argv.includes('--mutate');
 
   console.log('==================================================================');
   console.log('--- Phase 1: WOFF2 Binary Name-Table Integrity (Offline) ---');
@@ -717,7 +717,7 @@ async function runCdpSession({ serverPort }) {
     let caught = false;
     try {
       assert.strictEqual(tamperedRecord.name1, tamperedRecord.family, 'Binary nameID 1 must match exposed family');
-    } catch (err) {
+    } catch (_err) {
       caught = true;
     }
     assert.strictEqual(caught, true, 'Validator must reject mismatched binary name records');

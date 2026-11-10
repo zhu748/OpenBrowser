@@ -627,13 +627,7 @@ const {
 
 const { canMirrorTabUrl, canDomLiveSyncTabUrl } = createTabUrlPolicy({ isEnvironmentStartUrl });
 
-function managedTabs(values) {
-  return (values || []).filter((tab) => {
-    if (!tab || !tab.url) return false;
-    if (/^(devtools|chrome-extension|edge-extension):/i.test(tab.url)) return false;
-    return canMirrorTabUrl(tab.url);
-  });
-}
+
 function normalTabs(values) {
   return (values || []).filter((tab) => {
     if (!tab || !tab.url) return false;
@@ -2330,7 +2324,7 @@ class LiveSyncController extends LiveSyncV4 {
         value.healthFailures = 0;
         const state = result.result?.value || {};
         return state.visible === true || state.focused === true;
-      } catch (error) {
+      } catch (_error) {
         value.healthFailures = (value.healthFailures || 0) + 1;
         if (value.healthFailures >= 3) {
           value.connection.close();

@@ -53,7 +53,7 @@ const {
  */
 function canonicalBridgeToken(fp) {
   if (!fp || typeof fp !== 'object') return deriveBridgeToken(fp);
-  const { fontBlobBridge, consistency, ...declared } = fp;
+  const { fontBlobBridge: _fontBlobBridge, consistency: _consistency, ...declared } = fp;
   return deriveBridgeToken(declared);
 }
 

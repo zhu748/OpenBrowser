@@ -25,12 +25,7 @@ const kernelModule = require('../../automation/browser-kernel');
 const { BrowserKernelManager } = kernelModule;
 const kv = require('../../automation/kernel-versions');
 
-const { BrowserEngine } = (() => {
-  // engine.js requires electron-dependent pieces lazily; loading it under node
-  // works because its top level only wires prototypes. See existing
-  // kernel-policy-selftest for the same trick.
-  return { BrowserEngine: null };
-})();
+
 
 let passed = 0;
 let failed = 0;
@@ -135,7 +130,7 @@ if (IS_LINUX_X64) {
     };
     // A real tar.xz whose tree layout matches firefoxBinaryRelative('linux-x86_64').
     const staging = await fsp.mkdtemp(path.join(os.tmpdir(), 'ob-ffsrc-'));
-    const srcBinary = makeStubBrowser(staging);
+    const _srcBinary = makeStubBrowser(staging);
     await fsp.writeFile(path.join(staging, 'firefox', 'application.ini'), '[App]\nName=Firefox\nVersion=141.0\n');
     const archive = path.join(staging, 'firefox-141.0.tar.xz');
     execFileSync('tar', ['-cJf', archive, '-C', staging, 'firefox']);

@@ -20,7 +20,7 @@
  * 12. navigator.webdriver & window.chrome object shapes (prototype brand checks, worker webdriver leak, chrome.app mobile/iOS contradiction)
  */
 
-const assert = require('assert');
+
 const fs = require('fs');
 const http = require('http');
 const os = require('os');
@@ -30,17 +30,12 @@ const { spawn, execSync } = require('child_process');
 const cdp = require('../cdp');
 const {
   buildFingerprint,
-  buildInjectionScript,
   buildWorkerInjectionScript,
   chromeArgsForFingerprint,
   applyFingerprintToTab,
 } = require('./fingerprint');
 const {
   writeOpenBrowserKernelInit,
-  mapFingerprintToInitFields,
-  validateKernelInitInvariants,
-  detectOs,
-  detectInitOs,
 } = require('./kernel-init-sync');
 const { RequestHeaderRewriter } = require('../engine');
 
@@ -801,7 +796,7 @@ async function runSession(profileConfig, isInject, server) {
             conn.command('Fetch.continueRequest', { requestId: reqId }, { sessionId: event.sessionId }).catch(() => {});
             return;
           }
-          try { requestHeaderRewriter.handleEvent(event, conn); } catch (e) {}
+          try { requestHeaderRewriter.handleEvent(event, conn); } catch (_e) {}
           return;
         }
       }

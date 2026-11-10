@@ -160,7 +160,7 @@ function isPathInsideRoot(candidate, root) {
  * Absolute paths must stay under OUTPUT_DIRECTORY (or optional extraRoots).
  * Relative paths resolve under OUTPUT_DIRECTORY only.
  */
-function resolveSafeRpaPath(filePath, { extraRoots = [], mustExist = false } = {}) {
+function resolveSafeRpaPath(filePath, { extraRoots = [] } = {}) {
   const raw = String(filePath || '').trim();
   if (!raw) throw new Error('file path required');
   if (raw.includes('\0')) throw new Error('invalid file path');
@@ -1288,7 +1288,7 @@ class RpaEngine {
     let raw;
     try {
       raw = await fs.readFile(safePath, 'utf8');
-    } catch (error) {
+    } catch (_error) {
       if (skippable) {
         variables[targetVar] = [];
         if (ctx?.log) await ctx.log('useExcel skipped: cannot read file ' + safePath);
@@ -1814,7 +1814,7 @@ class RpaEngine {
       try {
         await fs.access(candidate);
         return candidate;
-      } catch (error) {
+      } catch (_error) {
         try {
           await fs.access(realCandidate);
           return realCandidate;
@@ -2108,9 +2108,7 @@ class RpaEngine {
   }
 }
 
-function valueOf(input, variables) {
-  return getVariableValue(input, variables);
-}
+
 
 // Step executor lookup table: canonical step type (every key of
 // STEP_TYPE_ALIASES plus the canonical names themselves) → handler method

@@ -31,7 +31,7 @@ function createMockDom() {
     return { width: w, height: h, data: new Uint8ClampedArray(w * h * 4) };
   };
   function WebGLRenderingContext() {}
-  WebGLRenderingContext.prototype.getParameter = function getParameter(param) { return null; };
+  WebGLRenderingContext.prototype.getParameter = function getParameter(_param) { return null; };
   WebGLRenderingContext.prototype.getExtension = function getExtension() { return null; };
   WebGLRenderingContext.prototype.getSupportedExtensions = function getSupportedExtensions() { return ['OES_texture_float']; };
 
@@ -82,7 +82,7 @@ function createMockDom() {
     configurable: true,
     enumerable: true,
   });
-  Permissions.prototype.query = async function query(desc) {
+  Permissions.prototype.query = async function query(_desc) {
     return new PermissionStatus();
   };
 

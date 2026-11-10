@@ -7,7 +7,6 @@ const path = require('path');
 const {
   NATIVE_MANAGED_PREFERENCE_KEYS,
   languagePreferenceChain,
-  expectedLanguagePreferences,
   applyLanguagePreferences,
   verifyLanguagePreferences,
   syncProfileLanguagePreferences,

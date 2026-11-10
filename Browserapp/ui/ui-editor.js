@@ -960,6 +960,11 @@ function openProfileEditor(id) {
   }
   editorNetworkResult = profile.exitIp ? { ip: profile.exitIp, countryCode: profile.exitCountryCode, timezone: profile.exitTimezone, latitude: profile.exitLatitude, longitude: profile.exitLongitude, checkedAt: profile.exitCheckedAt } : null;
   editingProfileId = profile.id;
+  // Base engine revision at editor-open time: the submit path sends per-ID
+  // modify commands (profiles:apply-commands) so a fleet sync only carries the
+  // edited rows, and the engine rejects the save if it changed this profile
+  // meanwhile (proxy exit persisted at close, local API edit, cookie snapshot).
+  editingProfileBaseRev = (engineProfiles || []).find((item) => item.id === profile.id)?.rev || 0;
   editorSet('#editor-id', profile.id);
   $('#editor-profile-id').textContent = displayProfileNumber(profile);
   editorSet('#editor-name', displayProfileNumber(profile));

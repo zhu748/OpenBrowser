@@ -7,7 +7,7 @@
  * Override: OPENBROWSER_FP_LOG=/path/to/file.log
  */
 
-const fs = require('fs');
+
 const fsp = require('fs/promises');
 const path = require('path');
 const os = require('os');

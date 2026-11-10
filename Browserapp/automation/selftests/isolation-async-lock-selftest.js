@@ -16,12 +16,11 @@
 const assert = require('assert');
 const path = require('path');
 const os = require('os');
-const fs = require('fs');
+
 const fsp = require('fs/promises');
 const {
   acquireProfileLock,
   releaseProfileLock,
-  updateProfileLock,
   lockPath,
   scanProcessesUsingProfileAsync,
 } = require('../isolation');

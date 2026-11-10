@@ -5,12 +5,6 @@ const path = require("path");
 const {
   BrowserEngine,
   evaluateFingerprintDelivery,
-  normalizePlatformFamily,
-  detectUaPlatform,
-  extractChromeMajor,
-  extractGpuBrand,
-  normalizeTimezone,
-  extractPrimaryLanguage,
 } = require("../../engine");
 
 const results = [];

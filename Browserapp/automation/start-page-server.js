@@ -334,7 +334,7 @@ async function connectProxyTunnel(bridge, hostname, port, timeout = 8000) {
 function probeDirect(url, timeout = 8000, maxBody = 65536) {
   return new Promise((resolve) => {
     let parsed;
-    try { parsed = new URL(url); } catch (error) {
+    try { parsed = new URL(url); } catch (_error) {
       resolve({ ok: false, status: 0, error: 'invalid url', body: '' });
       return;
     }
@@ -523,7 +523,7 @@ function normalizeCountryCode(value) {
   return String(value || '').trim().toUpperCase();
 }
 
-async function fetchJsonUrl(url, { timeout = 12000, headers = {} } = {}) {
+async function fetchJsonUrl(url, { timeout = 12000 } = {}) {
   const probe = await probeDirect(url, timeout, 200000);
   if (!probe.ok && !(probe.status >= 200 && probe.status < 500)) {
     throw new Error(probe.error || ('HTTP ' + (probe.status || 0)));
@@ -532,7 +532,7 @@ async function fetchJsonUrl(url, { timeout = 12000, headers = {} } = {}) {
   if (!text) throw new Error('empty response');
   try {
     return JSON.parse(text);
-  } catch (error) {
+  } catch (_error) {
     throw new Error('invalid json response');
   }
 }

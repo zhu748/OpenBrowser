@@ -9,6 +9,11 @@ const {
 } = require('../engine/state-storage');
 // profiles.data 含代理凭据/Cookies，落库前整体加密（与 state-storage 同一套 credential-crypto），读路径兼容明文
 const credentialCrypto = require('../credential-crypto');
+// Shared with engine/profile-revisions.js: one hash definition backs both the
+// row-diff map here and the engine-side revision counters, so they can never
+// drift apart (a change in either consumer silently invalidates the other's
+// change detection otherwise).
+const { profileDataHash: sharedProfileDataHash } = require('../engine/profile-revisions');
 
 // Module-level flag set when any row had to fall back to plaintext storage;
 // exposed via plaintextFallbackStatus() so callers can surface the downgrade
@@ -527,21 +532,10 @@ class ProfileStoreSqlite {
   // profile plus its dedicated columns). The ciphertext itself cannot be
   // used here: credential-crypto randomizes IV/salt per call, so two
   // encryptions of one unchanged profile never match.
+  // Implementation lives in engine/profile-revisions.js and is shared with the
+  // engine's TrackedProfileMap revisions.
   profileDataHash(profile) {
-    if (!profile || typeof profile !== 'object' || !profile.id) return null;
-    const parts = [
-      profile.id,
-      Number.isInteger(profile.number) ? profile.number : (Number(profile.number) || null),
-      String(profile.name || profile.id),
-      profile.groupId != null ? String(profile.groupId) : null,
-      profile.trashed ? 1 : 0,
-      profile.trashedAt ? String(profile.trashedAt) : null,
-    ];
-    // Hash the two JSON sections separately: embedding the profile JSON inside
-    // another JSON array escaped and copied large cookie strings a second time.
-    // The NUL separator cannot occur unescaped in either JSON section.
-    return require('node:crypto').createHash('sha256')
-      .update(JSON.stringify(parts)).update('\0').update(JSON.stringify(profile)).digest('hex');
+    return sharedProfileDataHash(profile);
   }
 
   // Row-accurate save: only profiles whose hash differs from the last

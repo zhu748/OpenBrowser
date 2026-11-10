@@ -834,6 +834,10 @@ function normalizeSyncSettings(value = {}) {
 let syncSettings = (() => { try { return normalizeSyncSettings(JSON.parse(localStorage.getItem(SYNC_SETTINGS_KEY) || '{}')); } catch (_) { return { ...DEFAULT_SYNC_SETTINGS }; } })();
 let pendingDeleteProfiles = [];
 let editingProfileId = null;
+// Engine revision captured when the editor opened; the submit path sends it as
+// the command's baseRev (profiles:apply-commands) so the engine can reject a
+// save that would silently overwrite engine-side changes made meanwhile.
+let editingProfileBaseRev = 0;
 let editorNetworkResult = null;
 let toastTimer = null;
 const PROFILE_PAGE_SIZES = [10, 20, 50, 100];
@@ -2794,13 +2798,43 @@ function scheduleProxySearchRender() {
     });
   }, 120);
 }
-// Retain a trailing refresh when events arrive during a slow IPC request.
-// Only one scheduled status request runs at a time, so an older response
-// cannot overtake the next request and overwrite newer scheduled state.
+// Status poll lane. The engine's full status view is megabytes per poll at
+// 1000+ profile fleets (measured 3.5MB at N=1000, ~30MB/s across the poll
+// cadence), so the loop polls the DELTA lane: it sends its last-seen revision
+// watermark and receives only rows whose engine revision moved, plus removed
+// ids. Any shape mismatch (engine rows the watermark never saw) makes the
+// engine answer full:true, and the loop resyncs exactly like the old lane.
+const STATUS_WATERMARK_KEY = 'openbrowser-status-watermark-v1';
+function loadStatusWatermark() {
+  try { const raw = JSON.parse(localStorage.getItem(STATUS_WATERMARK_KEY) || 'null'); return raw && typeof raw === 'object' ? raw : null; } catch (_) { return null; }
+}
+function saveStatusWatermark(value) {
+  try { localStorage.setItem(STATUS_WATERMARK_KEY, JSON.stringify(value)); } catch (_) {}
+}
+let __statusWatermark = loadStatusWatermark();
 const __statusRefresher = window.OpenBrowserRefreshScheduler.createRefreshScheduler({
   isPaused: () => document.hidden,
   refresh: async () => {
-    try { engineProfiles = await window.ops.profileStatus(); mergeEngineExitState(engineProfiles); } catch (_) {}
+    try {
+      const delta = await window.ops.profileStatusDelta(__statusWatermark);
+      if (delta && delta.full === false && Array.isArray(delta.rows)) {
+        const byId = new Map(delta.rows.map((row) => [row.id, row]));
+        const removed = new Set(delta.removed || []);
+        engineProfiles = engineProfiles
+          .filter((row) => !removed.has(row.id))
+          .map((row) => byId.get(row.id) || row);
+        for (const row of delta.rows) {
+          if (!engineProfiles.some((item) => item.id === row.id)) engineProfiles.push(row);
+        }
+        __statusWatermark = delta.watermark || null;
+        saveStatusWatermark(__statusWatermark);
+      } else {
+        engineProfiles = await window.ops.profileStatus();
+        __statusWatermark = engineProfiles.reduce((acc, row) => { acc[row.id] = row.rev || 0; return acc; }, {});
+        saveStatusWatermark(__statusWatermark);
+      }
+      mergeEngineExitState(engineProfiles);
+    } catch (_) {}
     scheduleRenderProfiles();
     if (document.querySelector('#view-proxies.view.active')) scheduleProxySearchRender();
   },
@@ -3691,11 +3725,35 @@ $('#profile-editor-form').addEventListener('submit', async (event) => {
     ui.profiles[index] = draft;
     save();
     invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies']);
-    const syncPayload = ui.profiles.slice();
     // This strict editor submission is an explicit replacement, including empty
     // Cookie/password/TOTP fields. Keep the action marker out of UI persistence.
-    syncPayload[index] = { ...draft, credentialsAction: 'replace' };
-    engineProfiles = await window.ops.syncProfiles(syncPayload); renderProfiles();
+    const commandPayload = { ...draft, credentialsAction: 'replace' };
+    // Per-ID modify command instead of a whole-fleet sync: only the edited row
+    // is validated, hashed and persisted, and the engine rejects the save when
+    // it changed this row since the editor opened (stale baseRev).
+    try {
+      engineProfiles = await window.ops.applyProfileCommands([{
+        kind: 'modify', id: draft.id, baseRev: editingProfileBaseRev, profile: commandPayload,
+      }]);
+    } catch (error) {
+      if (error?.code === 'PROFILE_STALE_REV') {
+        // The engine moved this row on since the editor opened. Refresh from
+        // the engine, then resubmit with the fresh revision once — engine-side
+        // changes were never seen by this editor, so a single retry against the
+        // now-current row is the same contract a full sync would give.
+        engineProfiles = await window.ops.profileStatus();
+        mergeEngineExitState(engineProfiles);
+        const fresh = engineProfiles.find((item) => item.id === draft.id);
+        if (!fresh) throw error;
+        engineProfiles = await window.ops.applyProfileCommands([{
+          kind: 'modify', id: draft.id, baseRev: fresh.rev || 0, profile: commandPayload,
+        }]);
+        log('Profile', '环境在编辑期间被引擎更新，已基于最新版本重新保存');
+      } else {
+        throw error;
+      }
+    }
+    renderProfiles();
     if (shouldSaveEditorProxyToLib && !isDirectProxy(draft.proxy)) {
       try {
         const parsed = parseProxyInputForUi(draft.proxy, $('#editor-proxy-type')?.value || 'socks5');

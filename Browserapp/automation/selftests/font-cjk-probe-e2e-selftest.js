@@ -39,7 +39,7 @@ const { spawn, execSync, spawnSync } = require('child_process');
 const appRoot = path.resolve(__dirname, '..', '..');
 const { buildFingerprint, buildInjectionScript } = require(path.join(appRoot, 'automation', 'fingerprint'));
 const { writeOpenBrowserKernelInit } = require(path.join(appRoot, 'automation', 'kernel-init-sync'));
-const { OS_FONTS } = require(path.join(appRoot, 'automation', 'device-personas'));
+
 
 const kernelRoot = path.join(appRoot, 'kernels', 'macos-x64');
 const launcher = path.join(kernelRoot, 'launch_openbrowser.sh');
@@ -93,7 +93,7 @@ const CJK_FAMILIES = {
   ],
 };
 
-const COMMON_CJK_PROBES = [
+const _COMMON_CJK_PROBES = [
   { label: 'Eight Principles of Yong (Standard Calligraphy Probe)', char: '永', cp: 0x6C38 },
   { label: 'High-frequency Chinese Probe (Country)', char: '国', cp: 0x56FD },
   { label: 'High-frequency Chinese Probe (Central)', char: '中', cp: 0x4E2D },

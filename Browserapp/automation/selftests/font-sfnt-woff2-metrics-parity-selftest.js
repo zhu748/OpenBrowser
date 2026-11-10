@@ -35,7 +35,7 @@ const appRoot = path.join(__dirname, '..', '..');
 const checkScript = path.join(appRoot, 'scripts', 'font-metrics-parity-check.py');
 
 const isFast = process.argv.includes('--fast');
-const isVerbose = process.argv.includes('--verbose');
+const _isVerbose = process.argv.includes('--verbose');
 
 const results = [];
 const check = (name, fn) => {

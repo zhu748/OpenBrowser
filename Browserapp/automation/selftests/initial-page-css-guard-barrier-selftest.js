@@ -255,17 +255,17 @@ function buildProbeScript() {
 async function testZeroInitialTargetsBehavior() {
   // Test that if no initial targets exist, the barrier resolves immediately without waiting for timeout
   const pendingInitialTargets = new Set();
-  let barrierSettled = false;
-  let barrierTimer = null;
+  let _barrierSettled = false;
+  let _barrierTimer = null;
   let barrierResolved = false;
 
   const barrierPromise = new Promise((resolve) => {
     if (pendingInitialTargets.size === 0) {
-      barrierSettled = true;
+      _barrierSettled = true;
       barrierResolved = true;
       resolve();
     } else {
-      barrierTimer = setTimeout(() => resolve(), 8000);
+      _barrierTimer = setTimeout(() => resolve(), 8000);
     }
   });
 
@@ -278,7 +278,7 @@ async function testZeroInitialTargetsBehavior() {
 
 async function testConnectionCloseResilienceBehavior() {
   // Test that closing connection rejects barrier immediately and clears timer
-  const pendingInitialTargets = new Set(['target_123']);
+  const _pendingInitialTargets = new Set(['target_123']);
   let barrierSettled = false;
   let barrierReject;
   let timerCleared = false;
@@ -345,7 +345,7 @@ async function testTargetDestroyedBehavior() {
 
 async function testDiagnosticFailureBehavior() {
   // Test that failure rejects clearly rather than silently leaking
-  const pendingInitialTargets = new Set(['target_err']);
+  const _pendingInitialTargets = new Set(['target_err']);
   let barrierSettled = false;
   let barrierReject;
 
@@ -491,7 +491,7 @@ async function runLiveBarrierTest(serverPort, mutate) {
     try {
       await engine.keepDefaultTab(devToolsPort, `http://127.0.0.1:${serverPort}/start.html`);
       keepDefaultTabSuccess = true;
-    } catch (e) {
+    } catch (_e) {
       keepDefaultTabSuccess = false;
     }
 

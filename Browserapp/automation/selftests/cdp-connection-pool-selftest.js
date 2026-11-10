@@ -98,10 +98,7 @@ class MockSocket {
 
 const realWebSocket = globalThis.WebSocket;
 const results = [];
-function check(name, fn) {
-  try { fn(); results.push({ name, ok: true }); }
-  catch (e) { results.push({ name, ok: false, err: e.message || String(e) }); }
-}
+
 async function checkAsync(name, fn) {
   try { await fn(); results.push({ name, ok: true }); }
   catch (e) { results.push({ name, ok: false, err: e.message || String(e) }); }

@@ -108,7 +108,7 @@ function openRequest(url, { headers = {}, maxRedirects = DEFAULT_MAX_REDIRECTS, 
       let parsed;
       try {
         parsed = new URL(target);
-      } catch (err) {
+      } catch (_err) {
         reject(new Error(`invalid url: ${target}`));
         return;
       }

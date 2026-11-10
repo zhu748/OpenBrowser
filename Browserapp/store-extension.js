@@ -1,9 +1,9 @@
-const fs = require('fs');
+
 const fsp = require('fs/promises');
 const path = require('path');
 const crypto = require('crypto');
 const https = require('https');
-const { spawn } = require('child_process');
+
 const zipReader = require('./automation/zip-reader');
 
 function extractStoreId(value) {
@@ -100,24 +100,7 @@ function crxDetails(buffer) {
 
 function crxZip(buffer) { return crxDetails(buffer).zip; }
 
-function tarCommand() {
-  if (process.platform === 'win32') {
-    const systemRoot = process.env.SystemRoot || process.env.WINDIR || 'C:\\Windows';
-    const candidates = [
-      path.join(systemRoot, 'System32', 'tar.exe'),
-      'tar.exe',
-      'tar'
-    ];
-    for (const candidate of candidates) {
-      if (candidate.includes(path.sep)) {
-        if (fs.existsSync(candidate)) return candidate;
-      } else {
-        return candidate;
-      }
-    }
-  }
-  return 'tar';
-}
+
 
 async function assertExtractedTreeSafe(root) {
   const pending = [root];
@@ -135,15 +118,7 @@ async function assertExtractedTreeSafe(root) {
   }
 }
 
-function run(command, args, capture = false) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { windowsHide: true, stdio: capture ? ['ignore', 'pipe', 'pipe'] : 'ignore' });
-    let output = ''; let error = '';
-    if (capture) { child.stdout.on('data', (chunk) => { output += chunk; }); child.stderr.on('data', (chunk) => { error += chunk; }); }
-    child.once('error', reject);
-    child.once('exit', (code) => code === 0 ? resolve(output) : reject(new Error(error.trim() || `${command} 执行失败（${code}）`)));
-  });
-}
+
 
 async function addChromeStoreExtension(input, root, readManifest, fetchPackage = download) {
   const storeId = extractStoreId(input);

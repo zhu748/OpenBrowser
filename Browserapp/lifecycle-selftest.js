@@ -516,7 +516,7 @@ async function testLockReleaseFailureRetainsRunningItem() {
   engine.emit = () => {};
   engine.markProfileCleanExit = async () => {};
   const profile = { id: 'env-lock-fail' };
-  const profileLock = await acquireProfileLock(profileRoot, { profileId: profile.id });
+  const _profileLock = await acquireProfileLock(profileRoot, { profileId: profile.id });
   const item = {
     child: { pid: 1234, exitCode: 0, signalCode: null, once() {}, removeListener() {} },
     pid: 1234,

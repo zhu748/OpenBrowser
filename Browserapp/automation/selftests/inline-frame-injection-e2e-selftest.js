@@ -220,7 +220,7 @@ async function run(kind, inject) {
   return { reports, injected, openerResult, openerIdentity, targetCount: (targets.result?.targetInfos || []).length };
 }
 
-const identityOf = (profile) => ({
+const _identityOf = (profile) => ({
   platform: profile.platform,
   cores: profile.hardwareConcurrency,
   mem: profile.deviceMemory,

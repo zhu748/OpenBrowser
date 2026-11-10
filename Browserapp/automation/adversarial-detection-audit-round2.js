@@ -19,7 +19,7 @@
  * against the production fingerprint-injected browser session.
  */
 
-const assert = require('assert');
+
 const fs = require('fs');
 const http = require('http');
 const os = require('os');
@@ -858,7 +858,7 @@ async function measureSessionRound2(profileConfig, inject, server) {
             conn.command('Fetch.continueRequest', { requestId: reqId }, { sessionId: event.sessionId }).catch(() => {});
             return;
           }
-          try { requestHeaderRewriter.handleEvent(event, conn); } catch (e) {}
+          try { requestHeaderRewriter.handleEvent(event, conn); } catch (_e) {}
           return;
         }
       }
@@ -1004,7 +1004,7 @@ async function measureSessionRound2(profileConfig, inject, server) {
 }
 
 
-function compareAndAudit(baseline, injected, profileConfig = {}) {
+function compareAndAudit(baseline, injected) {
   const findings = [];
   const notVulnerable = [];
   const unverified = [];
@@ -1157,8 +1157,8 @@ function compareAndAudit(baseline, injected, profileConfig = {}) {
   // ============================================================
   const bMainH = bRec.mainPage?.map || {};
   const iMainH = iRec.mainPage?.map || {};
-  const bFetchH = bRec.mainFetch?.map || {};
-  const iFetchH = iRec.mainFetch?.map || {};
+  const _bFetchH = bRec.mainFetch?.map || {};
+  const _iFetchH = iRec.mainFetch?.map || {};
 
   // 3.1 User-Agent on wire
   if (iMainH['user-agent'] && bMainH['user-agent']) {
@@ -1229,7 +1229,7 @@ function compareAndAudit(baseline, injected, profileConfig = {}) {
   // ============================================================
   // Category 4: Worker Environments
   // ============================================================
-  const bC4 = bCli.category4_workers || {};
+  const _bC4 = bCli.category4_workers || {};
   const iC4 = iCli.category4_workers || {};
 
   // 4.1 DedicatedWorker
@@ -1275,7 +1275,7 @@ function compareAndAudit(baseline, injected, profileConfig = {}) {
   const bC5 = bCli.category5_sideChannels || {};
   const iC5 = iCli.category5_sideChannels || {};
 
-  const bMm = bC5.matchMedia || {};
+  const _bMm = bC5.matchMedia || {};
   const iMm = iC5.matchMedia || {};
   const iScr = iC5.screen || {};
 
@@ -1330,7 +1330,7 @@ function compareAndAudit(baseline, injected, profileConfig = {}) {
   return { findings, notVulnerable, unverified };
 }
 function generateMarkdownReport(baseline, injected, auditResults) {
-  const { findings, notVulnerable, unverified } = auditResults;
+  const { findings, notVulnerable } = auditResults;
 
   const p0 = findings.filter((f) => f.sev === 'P0');
   const p1 = findings.filter((f) => f.sev === 'P1');

@@ -1,7 +1,7 @@
 'use strict';
 const assert = require('assert');
 const net = require('net');
-const http = require('http');
+
 const {
   lookupProxyCountry,
   normalizeIpWhoisAppResult,
@@ -19,28 +19,7 @@ function listen(server) {
   });
 }
 
-function until(socket, marker) {
-  return new Promise((resolve, reject) => {
-    let data = Buffer.alloc(0);
-    const onData = (chunk) => {
-      data = Buffer.concat([data, chunk]);
-      if (data.includes(marker)) {
-        cleanup();
-        resolve(data);
-      }
-    };
-    const onError = (error) => {
-      cleanup();
-      reject(error);
-    };
-    const cleanup = () => {
-      socket.off('data', onData);
-      socket.off('error', onError);
-    };
-    socket.on('data', onData);
-    socket.once('error', onError);
-  });
-}
+
 
 async function run() {
   console.log('Starting Proxy Multi-Source Probe Selftest...');
@@ -126,7 +105,7 @@ async function run() {
     // - ipinfo.io returns 429 (rate-limited)
     // - ipwho.is returns 500 (transient error)
     // - ipwhois.app returns 200 with rich Geo data (Tokyo, Asia/Tokyo, lat/lon)
-    let ipinfoCount = 0;
+    let _ipinfoCount = 0;
     let ipwhoisCount = 0;
 
     const mockProxy = net.createServer((clientSocket) => {
@@ -136,7 +115,7 @@ async function run() {
           const match = text.match(/CONNECT\s+([^:]+):(\d+)/i);
           const targetHost = match ? match[1] : '';
           if (targetHost.includes('ipinfo.io')) {
-            ipinfoCount++;
+            _ipinfoCount++;
             recordProviderRateLimit('ipinfo.io');
           }
           clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');

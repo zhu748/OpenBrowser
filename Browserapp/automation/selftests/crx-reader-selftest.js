@@ -7,12 +7,12 @@
  */
 
 const assert = require('assert');
-const zlib = require('zlib');
+
 const crypto = require('crypto');
 
 const zipReader = require('../zip-reader');
 const {
-  crc32, buildZip, writeVarint, pbLengthDelimited, pbMessage, buildCrx2, buildCrx3, expectedExtensionId,
+   buildZip, pbLengthDelimited, buildCrx2, buildCrx3, expectedExtensionId,
 } = require('../crx-fixtures');
 const crxReader = require('../crx-reader');
 

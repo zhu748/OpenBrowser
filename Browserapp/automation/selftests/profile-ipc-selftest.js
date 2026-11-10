@@ -10,6 +10,7 @@ async function main() {
   const engine = Object.fromEntries([
     'syncProfiles', 'deleteProfiles', 'trashProfiles', 'restoreProfiles', 'purgeProfiles', 'emptyTrash',
     'start', 'stop', 'clearProfileCacheAndCookies', 'status', 'testProxy', 'checkProxy',
+    'applyProfileCommands', 'statusDelta',
   ].map((method) => [method, (...args) => { calls.push([method, ...args]); return method; }]));
   registerProfileIpc({
     registerTrustedIpc(channel, handler) { assert.equal(handlers.has(channel), false); handlers.set(channel, handler); },
@@ -18,7 +19,11 @@ async function main() {
     beforeRemove(ids) { before.push(ids); },
   });
   const invoke = (action, value) => handlers.get(`profiles:${action}`)(null, value);
-  assert.equal(handlers.size, 12);
+  assert.equal(handlers.size, 14);
+  assert.equal(invoke('apply-commands', [{ kind: 'modify', id: 'a', baseRev: 1 }]), 'applyProfileCommands');
+  assert.deepEqual(calls.at(-1), ['applyProfileCommands', [{ kind: 'modify', id: 'a', baseRev: 1 }]]);
+  assert.equal(invoke('status-delta', { a: 1 }), 'statusDelta');
+  assert.deepEqual(calls.at(-1), ['statusDelta', { a: 1 }]);
   assert.equal(invoke('sync', [{ id: 'a' }]), 'syncProfiles');
   assert.deepEqual(calls.at(-1), ['syncProfiles', [{ id: 'a' }]]);
   for (const [action, method] of [['delete', 'deleteProfiles'], ['purge', 'purgeProfiles'], ['trash', 'trashProfiles']]) {
@@ -41,7 +46,7 @@ async function main() {
   invoke('check-proxy', { id: 'a' }); assert.deepEqual(calls.at(-1), ['checkProxy', { id: 'a' }, { persist: true }]);
   engine.start = async () => { throw new Error('start failed'); };
   await assert.rejects(invoke('start'), /start failed/);
-  console.log('PROFILE_IPC_SELFTEST OK (trusted registration, 12 channels, validation, selection, errors)');
+  console.log('PROFILE_IPC_SELFTEST OK (trusted registration, 14 channels, validation, selection, errors)');
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1; });

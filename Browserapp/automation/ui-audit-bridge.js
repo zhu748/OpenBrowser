@@ -52,6 +52,6 @@ window.ops = new Proxy(bridge, {
   get(target, key) {
     if (key in target) return target[key];
     if (typeof key !== 'string') return undefined;
-    return (...args) => { window.__uiAuditCalls.push(key); return Promise.resolve({}); };
+    return () => { window.__uiAuditCalls.push(key); return Promise.resolve({}); };
   },
 });

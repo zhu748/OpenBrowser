@@ -13,7 +13,7 @@ const { RpaEngine } = require('../rpa-engine');
 const { WindowSyncBridge } = require('../window-sync-bridge');
 const { AppCenter } = require('../app-center');
 
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const _wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function fakeEngine() {
   const profiles = new Map([

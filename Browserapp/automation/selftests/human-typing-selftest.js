@@ -171,7 +171,7 @@ function deterministic(seq) {
   await checkAsync('typoRate 100 always slips and still reproduces the input', async () => {
     const driver = createBufferDriver();
     const engine = createTypingEngine(driver, {
-      randomInt: (min, max) => min,
+      randomInt: (min, _max) => min,
       sleep: async () => {},
       pickWrongChar: () => 'z',
     });

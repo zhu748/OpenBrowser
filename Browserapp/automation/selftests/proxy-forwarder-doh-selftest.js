@@ -6,7 +6,6 @@ const net = require('net');
 const {
   connectSocket,
   setProxyDohResolver,
-  getProxyDohLookup,
 } = require('../../proxy-forwarder');
 
 function listen(server) {
@@ -17,17 +16,7 @@ function listen(server) {
 }
 
 const results = [];
-function check(name, fn) {
-  try {
-    fn();
-    results.push({ name, ok: true });
-    console.log(`  PASS  ${name}`);
-  } catch (error) {
-    results.push({ name, ok: false });
-    console.log(`  FAIL  ${name} - ${error.message}`);
-    process.exitCode = 1;
-  }
-}
+
 
 async function checkAsync(name, fn) {
   try {

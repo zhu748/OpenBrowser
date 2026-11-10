@@ -29,7 +29,7 @@ const { assertResourceGateForLaunch } = require('./resource-gate');
 const { clearLaunchDataTargets, mergeLaunchProfileUpdate } = require('./start');
 const { spawn } = require('child_process');
 const path = require('path');
-const fs = require('fs');
+
 
 // proxy-forwarder is optional in _start; keep the same guarded require here so
 // a missing optional dependency cannot take the Firefox path down either.

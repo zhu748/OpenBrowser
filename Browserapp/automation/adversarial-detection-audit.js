@@ -17,7 +17,7 @@
  * NOTE: This is an audit tool. It reports all observable differentiators and exits 0.
  */
 
-const assert = require('assert');
+
 const fs = require('fs');
 const http = require('http');
 const os = require('os');

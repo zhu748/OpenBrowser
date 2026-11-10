@@ -79,7 +79,7 @@ if (process.env.OPENBROWSER_TEST_HEADLESS === undefined) process.env.OPENBROWSER
 const repoRoot = path.resolve(appRoot, "..");
 const pkgPath = path.join(appRoot, "package.json");
 const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
-const scripts = pkg.scripts || {};
+const _scripts = pkg.scripts || {};
 
 const EXPECTED_VERSION = pkg.version;
 assert.ok(

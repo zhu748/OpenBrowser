@@ -444,7 +444,7 @@ async function main() {
   });
 
   await check('2.10: illegal receiver on getHighEntropyValues rejects with TypeError: Illegal invocation', () => {
-    const b = baseline.highEntropy?.illegalReceiver;
+    const _b = baseline.highEntropy?.illegalReceiver;
     const i = injected.highEntropy?.illegalReceiver;
     assert.strictEqual(i?.ok, false, 'illegal receiver must reject');
     assert.strictEqual(i?.errorName, 'TypeError', 'Must reject with TypeError');

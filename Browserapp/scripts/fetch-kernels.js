@@ -356,7 +356,7 @@ function validateDownloadUrl(url) {
   let parsed;
   try {
     parsed = new URL(url);
-  } catch (err) {
+  } catch (_err) {
     throw new Error(`invalid download url: ${url}`);
   }
   if (parsed.protocol !== 'https:') throw new Error(`insecure download url: ${url}`);

@@ -4,13 +4,7 @@ const assert = require('assert');
 const fsp = require('fs/promises');
 const os = require('os');
 const path = require('path');
-const { BrowserEngine, isValidIanaTimezone, extractTimezoneFromArgs } = require('../../engine');
-const {
-  syncProfileLocalState,
-  expectedLocalState,
-  verifyLocalStateLanguage,
-} = require('../profile-file-consistency');
-
+const { BrowserEngine } = require('../../engine');
 const results = [];
 async function check(name, fn) {
   try {

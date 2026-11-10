@@ -47,6 +47,7 @@ const SUITE = [
   ['selftest:enginetransaction', 'automation/selftests/engine-transaction-selftest.js'],
   ['selftest:enginesessions', 'automation/selftests/engine-sessions-selftest.js'],
   ['selftest:profilesync', 'automation/selftests/profile-sync-selftest.js'],
+  ['selftest:profilerevisions', 'automation/selftests/profile-revisions-selftest.js'],
   ['selftest:cloud', 'automation/selftests/cloud-sync-security-selftest.js'],
   ['selftest:apikey', 'automation/selftests/api-key-store-selftest.js'],
   ['selftest:isolation', 'automation/selftests/isolation-fingerprint-selftest.js'],

@@ -14,7 +14,6 @@ const {
   validateKernelInitInvariants,
   isValidPrivateIpv4,
   verifyKernelInitReadback,
-  mediaLabelsFromFp,
 } = require('../kernel-init-sync');
 const { buildFingerprint } = require('../fingerprint');
 

@@ -25,7 +25,6 @@ const {
   PERSONAS_BY_OS,
   WINDOWS_PERSONAS,
   MACOS_APPLE_PERSONAS,
-  pickPersona,
   isCoherent,
   fontsForOs,
   applyPersonaPerturbations,
@@ -80,7 +79,7 @@ async function asyncCheck(name, fn) {
   });
 
   check('persona records bind CPU, memory, DPR, screen, WebGL GPU, and fonts', () => {
-    for (const [os, pool] of Object.entries(PERSONAS_BY_OS)) {
+    for (const [, pool] of Object.entries(PERSONAS_BY_OS)) {
       for (const p of pool) {
         assert.ok(Number.isInteger(p.cores) && p.cores >= 2, 'cores must be valid');
         assert.ok(Number.isInteger(p.memory) && p.memory >= 4 && p.memory <= 8, 'memory must be legal W3C tier');
@@ -179,7 +178,7 @@ async function asyncCheck(name, fn) {
       CanvasRenderingContext2D: {
         prototype: {
           font: '16px Arial',
-          measureText(text) {
+          measureText(_text) {
             return {
               width: 100.0,
               actualBoundingBoxLeft: 0,
@@ -240,7 +239,7 @@ async function asyncCheck(name, fn) {
       CanvasRenderingContext2D: {
         prototype: {
           font: '72px "Menlo"',
-          measureText(text) {
+          measureText(_text) {
             measuredFont = this.font;
             return { width: 150.0, actualBoundingBoxLeft: 0, actualBoundingBoxRight: 150 };
           },

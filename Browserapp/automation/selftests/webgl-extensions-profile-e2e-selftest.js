@@ -34,12 +34,10 @@ const {
   applyFingerprintToTab,
   webglParameterOverrides,
   WEBGL_PARAM_IDS,
-  HOST_WEBGL_LIMITS,
-  getHostWebglLimits,
   isPersonaWebglCompatible,
   compatiblePersonasForOs,
 } = require('../fingerprint');
-const { personasForOs, pickPersona } = require('../device-personas');
+const {  } = require('../device-personas');
 const { writeOpenBrowserKernelInit } = require('../kernel-init-sync');
 
 const appRoot = path.join(__dirname, '..', '..');

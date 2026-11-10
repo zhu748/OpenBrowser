@@ -27,6 +27,57 @@ module.exports = {
     return this.status();
   },
 
+  /**
+   * Per-ID modify commands with base-revision conflict detection. Reuses
+   * prepareProfileSync unchanged (validation, merge, extension inheritance,
+   * association break and network invalidation all apply per command), so the
+   * only difference from syncProfiles is scope + the conflict gate.
+   *
+   * Command: { kind: 'modify', id, baseRev, profile } — the profile is the
+   * full edited form exactly as syncProfiles would receive it (same fields,
+   * same redaction behavior). baseRev is the engine revision the editor
+   * started from (status view's .rev). When the engine has moved on since
+   * (proxy exit persisted, close-time cookie snapshot, local API edit …),
+   * the command is REJECTED with code PROFILE_STALE_REV: the caller refreshes
+   * its row and retries, or falls back to a full sync — never a silent
+   * last-writer-wins overwrite of engine-side changes it has never seen.
+   */
+  async applyProfileCommands(commands) {
+    if (!Array.isArray(commands) || commands.length > 200 || commands.length === 0) {
+      throw new Error('Invalid profile commands');
+    }
+    const seen = new Set();
+    const modify = [];
+    for (const command of commands) {
+      if (!command || typeof command !== 'object' || command.kind !== 'modify') {
+        throw new Error('Unknown profile command');
+      }
+      const id = assertProfileId(command.id);
+      if (seen.has(id)) throw Object.assign(new Error(`Duplicate command for profile ${id}`), { code: 'PROFILE_COMMAND_DUPLICATE' });
+      seen.add(id);
+      const baseRev = Number(command.baseRev);
+      if (!Number.isInteger(baseRev) || baseRev < 0) throw new Error('Invalid base revision');
+      modify.push({ id, baseRev, profile: command.profile });
+    }
+    const stale = modify.filter((entry) => this.profiles.revisionOf?.(entry.id) !== entry.baseRev);
+    if (stale.length) {
+      // Reject the whole batch: half-applied commands would strand the caller
+      // between two revisions. The error carries both sides so the renderer
+      // can refresh exactly the affected rows.
+      throw Object.assign(new Error(`Profile revision conflict for: ${stale.map((entry) => entry.id).join(', ')}`), {
+        code: 'PROFILE_STALE_REV',
+        stale: stale.map((entry) => ({ id: entry.id, baseRev: entry.baseRev, rev: this.profiles.revisionOf?.(entry.id) || 0 })),
+      });
+    }
+    const staged = prepareProfileSync(this, modify.map((entry) => entry.profile));
+    this.invalidateStatusCache?.();
+    for (const [id, profile] of staged.profiles) this.profiles.set(id, profile);
+    for (const [id, assigned] of staged.assignments) this.assignments.set(id, assigned);
+    for (const id of staged.networkInvalidations) this.networkInfo.delete(id);
+    await this.persist();
+    return this.status();
+  },
+
   async deleteProfiles(ids, deleteData = true) {
     if (!Array.isArray(ids) || ids.length > 200) throw new Error('Invalid profile selection');
     const safeIds = [...new Set(ids.map(assertProfileId))];

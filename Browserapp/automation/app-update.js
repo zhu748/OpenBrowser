@@ -104,7 +104,7 @@ async function resolveReleaseChecksums(remoteVersion) {
 
 /** Fetch the detached Ed25519 signature asset for the checksum manifest, if published. */
 async function fetchReleaseSignature(remoteVersion, parentSignal) {
-  const { verifyManifestSignature } = require('./update-trust');
+  
   const sigUrl = `https://github.com/${UPDATE_REPOSITORY}/releases/download/v${remoteVersion}/${UPDATE_CHECKSUM_ASSET}.sig`;
   const controller = new AbortController();
   const onAbort = () => controller.abort();

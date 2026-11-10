@@ -283,7 +283,7 @@ async function runProfile(label, serverPort) {
         assert.strictEqual(gl2.MAX_VIEWPORT_DIMS_CTOR, 'Int32Array');
       });
       check('the adapter name and the limits come from the same identity', () => {
-        const limits = run.limits;
+        const _limits = run.limits;
         const expectedVendor = String((run.fp.webgl?.gpu || {}).vendor || '').toLowerCase();
         assert.ok(expectedVendor, 'the run must know which GPU it claims');
         const expected = expectedVendor === 'nvidia' ? 32768 : 16384;

@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
-const { once } = require('node:events');
+
 const core = require('../rust-core-bridge');
 const { Reader, connect, listen, socksServer } = require('../rust-core-test-fixtures');
 

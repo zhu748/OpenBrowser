@@ -8,6 +8,7 @@ function registerProfileIpc({ registerTrustedIpc, engine, sanitizeIds, beforeRem
     return ids;
   }
   registerTrustedIpc('profiles:sync', (_event, profiles) => engine.syncProfiles(profiles));
+  registerTrustedIpc('profiles:apply-commands', (_event, commands) => engine.applyProfileCommands(commands));
   registerTrustedIpc('profiles:delete', (_event, payload) => engine.deleteProfiles(removalIds(payload), payload?.deleteData !== false));
   registerTrustedIpc('profiles:trash', (_event, payload) => engine.trashProfiles(removalIds(payload)));
   registerTrustedIpc('profiles:restore', (_event, payload) => engine.restoreProfiles(sanitizeIds(payload?.ids || [])));
@@ -17,6 +18,7 @@ function registerProfileIpc({ registerTrustedIpc, engine, sanitizeIds, beforeRem
   registerTrustedIpc('profiles:stop', (_event, id) => engine.stop(id));
   registerTrustedIpc('profiles:clear-cache-cookies', (_event, id) => engine.clearProfileCacheAndCookies(id));
   registerTrustedIpc('profiles:status', () => engine.status());
+  registerTrustedIpc('profiles:status-delta', (_event, watermark) => engine.statusDelta(watermark));
   registerTrustedIpc('profiles:test-proxy', (_event, profile) => engine.testProxy(profile));
   registerTrustedIpc('profiles:check-proxy', (_event, profile) => engine.checkProxy(profile, { persist: true }));
 }

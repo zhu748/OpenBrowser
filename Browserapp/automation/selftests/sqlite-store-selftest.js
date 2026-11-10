@@ -2,7 +2,7 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const fsp = require('node:fs/promises');
+
 const path = require('node:path');
 const os = require('node:os');
 const cp = require('node:child_process');
@@ -367,14 +367,14 @@ async function main() {
     global.localStorage = mockLocalStorage;
 
     // Simulate renderer save() with large profile payload
-    const { JSDOM } = require('node:v8'); // Just test logic
+     // Just test logic
     // Define helper methods directly mirroring renderer.js
     function redactProfileForStorage(profile) {
       return { ...profile, cookies: '', platform: {} };
     }
 
     let lastQuotaWarningAt = 0;
-    function notifyStorageQuotaExceeded(error) {
+    function notifyStorageQuotaExceeded(_error) {
       const now = Date.now();
       if (now - lastQuotaWarningAt > 5000) {
         lastQuotaWarningAt = now;

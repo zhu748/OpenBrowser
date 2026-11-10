@@ -18,7 +18,7 @@
  *  6. Kernel Init Mapping (kernel-init-sync mapFingerprintToInitFields, invariants, WebRTC media labels)
  */
 
-const assert = require('assert');
+
 const fs = require('fs');
 const http = require('http');
 const os = require('os');
@@ -28,11 +28,9 @@ const { spawn, execSync } = require('child_process');
 const cdp = require('../cdp');
 const {
   buildFingerprint,
-  buildInjectionScript,
   buildWorkerInjectionScript,
   chromeArgsForFingerprint,
   applyFingerprintToTab,
-  mapPlatformToSubsetKey,
 } = require('./fingerprint');
 const {
   writeOpenBrowserKernelInit,
@@ -42,8 +40,8 @@ const {
   detectInitOs,
 } = require('./kernel-init-sync');
 const { RequestHeaderRewriter } = require('../engine');
-const { mobilePersona, devicesForOs } = require('./mobile-personas');
-const { fontsForOs, exclusiveFontsForOtherOs, pickPersona } = require('./device-personas');
+const {  } = require('./mobile-personas');
+const {  } = require('./device-personas');
 
 const appRoot = path.join(__dirname, '..');
 const kernelRoot = path.join(appRoot, 'kernels', 'macos-x64');
@@ -618,7 +616,7 @@ async function runSession(profileConfig, isInject, server) {
             conn.command('Fetch.continueRequest', { requestId: reqId }, { sessionId: event.sessionId }).catch(() => {});
             return;
           }
-          try { requestHeaderRewriter.handleEvent(event, conn); } catch (e) {}
+          try { requestHeaderRewriter.handleEvent(event, conn); } catch (_e) {}
           return;
         }
       }
@@ -654,7 +652,7 @@ async function runSession(profileConfig, isInject, server) {
     };
 
     let primarySessionId = null;
-    let primaryTargetId = null;
+    let _primaryTargetId = null;
     let primaryReadyResolve = null;
     const primaryReadyPromise = new Promise((resolve) => { primaryReadyResolve = resolve; });
 
@@ -663,7 +661,7 @@ async function runSession(profileConfig, isInject, server) {
         const { sessionId, targetInfo = {} } = event.params || {};
         if (targetInfo.type === 'page' && !primarySessionId) {
           primarySessionId = sessionId;
-          primaryTargetId = targetInfo.targetId;
+          _primaryTargetId = targetInfo.targetId;
           if (primaryReadyResolve) primaryReadyResolve(sessionId);
         }
       }
@@ -875,7 +873,7 @@ async function runSession(profileConfig, isInject, server) {
   const aClient = androidRes.client || {};
   const iClient = iosRes.client || {};
 
-  const bHead = baselineRes.headers || {};
+  const _bHead = baselineRes.headers || {};
   const aHead = androidRes.headers || {};
   const iHead = iosRes.headers || {};
 
@@ -986,15 +984,15 @@ async function runSession(profileConfig, isInject, server) {
 })();
 
 function generateMarkdownReport(dump) {
-  const b = dump.baseline.client || {};
-  const a = dump.android.client || {};
-  const i = dump.ios.client || {};
+  const _b = dump.baseline.client || {};
+  const _a = dump.android.client || {};
+  const _i = dump.ios.client || {};
 
-  const bH = dump.baseline.headers || {};
-  const aH = dump.android.headers || {};
-  const iH = dump.ios.headers || {};
+  const _bH = dump.baseline.headers || {};
+  const _aH = dump.android.headers || {};
+  const _iH = dump.ios.headers || {};
 
-  const k = dump.kernelInitAudit || {};
+  const _k = dump.kernelInitAudit || {};
 
   return `# OpenBrowser 移动端画像（Android / iOS）端到端一致性审计报告
 

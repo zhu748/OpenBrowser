@@ -30,7 +30,7 @@ const profile = {
 let passed = 0;
 const ok = (n, c) => { assert.ok(c, n); passed++; };
 
-async function oneRun(i) {
+async function oneRun(_i) {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'prep-'));
   const def = path.join(root, 'Default');
   await fsp.mkdir(path.join(def, 'Network'), { recursive: true });

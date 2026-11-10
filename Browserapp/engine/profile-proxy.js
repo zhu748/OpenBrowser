@@ -21,7 +21,7 @@ try {
   console.warn('[BrowserEngine/profile-proxy] Note: proxy-forwarder module load warning:', pfErr.message);
 }
 const {
-  parseProxy = (v) => ({ protocol: 'direct', host: '', port: 0 }),
+  parseProxy = (_v) => ({ protocol: 'direct', host: '', port: 0 }),
   lookupProxyCountry = async () => ({ ip: '', country: '', countryCode: '' }),
   extractProxyFromApi = async () => '',
   invokeProxyRefresh = async () => '',

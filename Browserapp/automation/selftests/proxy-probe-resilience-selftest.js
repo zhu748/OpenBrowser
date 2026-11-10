@@ -1,18 +1,16 @@
 'use strict';
 const assert = require('assert');
 const net = require('net');
-const http = require('http');
+
 const {
   parseProxy,
   lookupProxyCountry,
   classifyProxyError,
   clearProbeCache,
-  getProbeCacheStats,
   getProbeCacheKey,
   isProxyLinkError,
   isProbeServiceError,
   ProbeMemoryCache,
-  DEFAULT_PROBE_CACHE_TTL_MS,
 } = require('../../proxy-forwarder');
 
 function listen(server) {
@@ -22,19 +20,7 @@ function listen(server) {
   });
 }
 
-function until(socket, marker) {
-  return new Promise((resolve, reject) => {
-    let data = Buffer.alloc(0);
-    const onData = (chunk) => {
-      data = Buffer.concat([data, chunk]);
-      if (data.includes(marker)) { cleanup(); resolve(data); }
-    };
-    const onError = (error) => { cleanup(); reject(error); };
-    const cleanup = () => { socket.off('data', onData); socket.off('error', onError); };
-    socket.on('data', onData);
-    socket.once('error', onError);
-  });
-}
+
 
 async function run() {
   console.log('Starting Proxy Probe Resilience Selftest...');

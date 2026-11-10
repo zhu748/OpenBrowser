@@ -21,7 +21,7 @@
  *  11. System & Network Boundaries (DoH, navigator.onLine, document.referrer)
  */
 
-const assert = require('assert');
+
 const fs = require('fs');
 const http = require('http');
 const os = require('os');
@@ -31,7 +31,6 @@ const { spawn, execSync } = require('child_process');
 const cdp = require('../cdp');
 const {
   buildFingerprint,
-  buildInjectionScript,
   buildWorkerInjectionScript,
   chromeArgsForFingerprint,
   applyFingerprintToTab
@@ -903,7 +902,7 @@ async function measureSession(profileConfig, isInject, server) {
     };
 
     let primarySessionId = null;
-    let primaryTargetId = null;
+    let _primaryTargetId = null;
     let primaryReadyResolve = null;
     const primaryReadyPromise = new Promise((resolve) => { primaryReadyResolve = resolve; });
 
@@ -912,7 +911,7 @@ async function measureSession(profileConfig, isInject, server) {
         const { sessionId, targetInfo = {} } = event.params || {};
         if (targetInfo.type === 'page' && !primarySessionId) {
           primarySessionId = sessionId;
-          primaryTargetId = targetInfo.targetId;
+          _primaryTargetId = targetInfo.targetId;
           if (primaryReadyResolve) primaryReadyResolve(sessionId);
         }
       }
@@ -1140,7 +1139,7 @@ async function main() {
 
   const bRec = baselineRes.recorded || {};
   const wRec = windowsRes.recorded || {};
-  const aRec = androidRes.recorded || {};
+  const _aRec = androidRes.recorded || {};
 
   const bCli = baselineRes.client || {};
   const wCli = windowsRes.client || {};
@@ -1155,7 +1154,7 @@ async function main() {
   const bChIdx = bNavOrder.indexOf('sec-ch-ua');
   const wChIdx = wNavOrder.indexOf('sec-ch-ua');
   const wUaIdx = wNavOrder.indexOf('user-agent');
-  const wEncIdx = wNavOrder.indexOf('accept-encoding');
+  const _wEncIdx = wNavOrder.indexOf('accept-encoding');
 
   if (wChIdx !== -1 && wUaIdx !== -1 && wChIdx > wUaIdx) {
     record('P1', 'WIRE-HEADER-ORDER-ANOMALY-CLIENT-HINTS-AFTER-UA',

@@ -14,7 +14,7 @@
  *  6. LiveSync & Localhost marker traces
  */
 
-const assert = require('assert');
+
 const fs = require('fs');
 const http = require('http');
 const os = require('os');
@@ -24,15 +24,14 @@ const { spawn, execSync } = require('child_process');
 const {
   buildFingerprint,
   buildInjectionScript,
-  buildWorkerInjectionScript,
-  buildFontMetricsScript
+  buildWorkerInjectionScript
 } = require('./fingerprint');
-const { buildUaInjectionScript, buildUaProfile } = require('./user-agent');
+const {  } = require('./user-agent');
 const { buildCssFontLocalGateSource } = require('./css-font-local-gate');
 const { buildQueryLocalFontBlobGateSource } = require('./query-local-font-blob-gate');
 const { buildPortScanProtectionScript } = require('./port-scan-protection');
 const { buildWorkerFontPresenceSource } = require('./worker-font-presence-fallback');
-const { sanitizeHtml, sanitizeCss } = require('./css-font-response-rewrite');
+const { sanitizeHtml } = require('./css-font-response-rewrite');
 const { writeOpenBrowserKernelInit } = require('./kernel-init-sync');
 
 const appRoot = path.join(__dirname, '..');
@@ -766,7 +765,7 @@ async function main() {
   }
 
   // 7. Check LocalFontFallback in static CSS rewrite
-  const staticCssLeak = injected.specificTraces?.cssLocalGate?.hasLocalFontFallback || true;
+  const _staticCssLeak = injected.specificTraces?.cssLocalGate?.hasLocalFontFallback || true;
   flaws.push({
     sev: 'P1',
     id: 'CSS-LOCAL-FONT-FALLBACK-TRACE',

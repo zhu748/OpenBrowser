@@ -392,7 +392,7 @@ async function runMultiTierIframeTest(profile, inject = true) {
     }
   };
 
-  const macProfile = {
+  const _macProfile = {
     id: 'persona-mac-m3',
     name: 'macOS M3 Metal',
     kernelVersion: '148.0.7778.165',
@@ -943,7 +943,7 @@ async function runMultiTierIframeTest(profile, inject = true) {
 
     let continued = false;
     const fakeConn = {
-      command: async (method, params, opts) => {
+      command: async (method, params, _opts) => {
         if (method === "Fetch.continueRequest" && params.requestId === "req_collision_1") {
           continued = true;
         }
@@ -1114,7 +1114,7 @@ async function runMultiTierIframeTest(profile, inject = true) {
   // 【P2-5】engine.applyEnvWindowTitle does not overwrite document.title on about:blank
   await asyncCheck("【P2-5】engine.applyEnvWindowTitle does not overwrite document.title on non-start pages", async () => {
     const engine = new BrowserEngine({ getPath: () => "/tmp/ob-title-test" });
-    const profile = { id: "p_title_test", name: "环境 1" };
+    const _profile = { id: "p_title_test", name: "环境 1" };
     // Verify method only targets isStartPageUrl
     assert.strictEqual(engine.isStartPageUrl("about:blank"), false);
     assert.strictEqual(engine.isStartPageUrl("http://example.com"), false);

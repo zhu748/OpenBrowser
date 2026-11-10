@@ -53,7 +53,7 @@ async function main() {
   // ==========================================
   console.log('\n--- [Issue #38] Computer Shutdown / Crash Recovery ---');
   const { acquireProfileLock, releaseProfileLock } = require('../isolation');
-  const { readPreferences, writePreferences } = require('../profile-file-consistency');
+  const { readPreferences } = require('../profile-file-consistency');
 
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ob-issue38-test-'));
   try {
