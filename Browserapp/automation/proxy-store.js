@@ -381,7 +381,12 @@ class ProxyStore {
       }
     }
 
-    if (current.kind === 'valid') await this._writeAtomic(this.filePath + '.bak', current.raw);
+    if (current.kind === 'valid') {
+      const backup = shouldEncrypt && !credentialCrypto.isEncrypted(current.raw)
+        ? credentialCrypto.encryptCredential(current.raw)
+        : current.raw;
+      await this._writeAtomic(this.filePath + '.bak', backup);
+    }
     await this._writeAtomic(this.filePath, payload);
     this._lastPersistedPayload = payload;
     this._lastPersistedJson = jsonString;
@@ -412,6 +417,20 @@ class ProxyStore {
     }
     const shouldEncrypt = this._shouldEncrypt();
     return { path: candidatePath, raw: rawBuf, stat, ...decodeStoredData(rawText, isEnc || !shouldEncrypt) };
+  }
+
+  async _protectLegacyBackup() {
+    if (!this._shouldEncrypt()) return;
+    let backup;
+    try { backup = await this._readCandidate(this.filePath + '.bak'); }
+    catch (error) {
+      // Invalid recovery artifacts retain their original bytes for diagnosis.
+      if (error.code === 'ENOENT' || error.code === PROXY_STORE_CORRUPTION_CODE) return;
+      throw error;
+    }
+    if (!credentialCrypto.isEncrypted(backup.raw)) {
+      await this._writeAtomic(backup.path, credentialCrypto.encryptCredential(backup.raw));
+    }
   }
 
   async _recoveryCandidates() {
@@ -470,6 +489,7 @@ class ProxyStore {
 
       if (main) {
         if (main.migrated) await this._persistData(main.data);
+        await this._protectLegacyBackup();
         this.data = main.data;
         // Seed the plaintext snapshot so a save() without changes skips the
         // rewrite even before any persist has run in this process.
@@ -482,6 +502,7 @@ class ProxyStore {
       const recovered = (await this._recoveryCandidates())[0] || null;
       if (recovered) {
         await this._persistData(recovered.data, { allowCorruptReplace: mainFailure?.kind === 'corrupt' });
+        await this._protectLegacyBackup();
         this.data = recovered.data;
         this._lastPersistedJson = JSON.stringify(recovered.data, null, 2);
         this._reportBadRecords(recovered.badRecords);

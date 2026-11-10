@@ -11,6 +11,7 @@
 
 const dns = require('dns');
 const net = require('net');
+const { readResponseBuffer } = require('./response-body');
 
 const DEFAULT_ENDPOINTS = [
   'https://cloudflare-dns.com/dns-query',
@@ -33,6 +34,7 @@ const CLASS_IN = 1;
 /** RFC 1035 label limits: 63 octets per label, 255 octets per name. */
 const MAX_LABEL_LENGTH = 63;
 const MAX_NAME_LENGTH = 255;
+const MAX_DNS_MESSAGE_BYTES = 65535;
 
 const TEXT_DECODER = new TextDecoder('utf-8', { fatal: false });
 
@@ -58,12 +60,15 @@ function encodeName(name) {
     throw new Error('dns name too long');
   }
   const chunks = [];
+  let wireLength = 1; // terminating root label
   for (const label of normalized.split('.')) {
-    if (!label) continue;
+    if (!label) throw new Error('empty dns label');
     const bytes = Buffer.from(label, 'utf8');
     if (bytes.length > MAX_LABEL_LENGTH) {
       throw new Error('dns label too long');
     }
+    wireLength += 1 + bytes.length;
+    if (wireLength > MAX_NAME_LENGTH) throw new Error('dns name too long');
     chunks.push(Buffer.from([bytes.length]));
     chunks.push(bytes);
   }
@@ -468,9 +473,10 @@ class DohResolver {
           throw new Error('invalid dns response object');
         }
         if (typeof res.status === 'number' && res.status >= 400) {
+          try { Promise.resolve(res.body?.cancel()).catch(() => {}); } catch (_) {}
           throw new Error(`dns endpoint http ${res.status}`);
         }
-        const buf = Buffer.from(await res.arrayBuffer());
+        const buf = await readResponseBuffer(res, MAX_DNS_MESSAGE_BYTES, 'DNS response exceeds the 65535 byte limit');
         assertNotCancelled();
         const response = decodeResponse(buf);
         if (response.truncated) throw new Error('truncated dns response');

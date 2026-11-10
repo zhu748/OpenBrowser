@@ -51,6 +51,39 @@ async function withPatchedRename(failures, fn) {
 }
 
 (async () => {
+  await check('legacy engine-state migration encrypts the recovery backup', async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'state-backup-'));
+    const file = path.join(root, 'state.json');
+    const crypto = require('../../credential-crypto');
+    try {
+      await fsp.writeFile(file, JSON.stringify({ password: 'legacy-test-secret', version: 1 }));
+      await writeJsonAtomically(file, { version: 2 });
+      const backup = await fsp.readFile(file + '.bak');
+      assert.ok(crypto.isEncrypted(backup), 'backup cannot retain plaintext credentials');
+      assert.ok(!backup.includes(Buffer.from('legacy-test-secret')));
+      assert.equal((await readEngineStateCandidate(file + '.bak')).saved.password, 'legacy-test-secret');
+    } finally { await fsp.rm(root, { recursive: true, force: true }); }
+  });
+
+  await check('directory handles close even when directory fsync is unsupported', async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'state-storage-'));
+    const original = fsp.open;
+    let closed = 0;
+    fsp.open = async (...args) => {
+      if (args[0] === root && args[1] === 'r') return {
+        sync: async () => { throw Object.assign(new Error('directory fsync unsupported'), { code: 'EINVAL' }); },
+        close: async () => { closed += 1; },
+      };
+      return original.apply(fsp, args);
+    };
+    try {
+      const file = path.join(root, 'state.json');
+      await writeRawAtomically(file, 'durable');
+      assert.strictEqual(await fsp.readFile(file, 'utf8'), 'durable');
+      assert.strictEqual(closed, 1, 'failed fsync must not leak its directory descriptor');
+    } finally { fsp.open = original; await fsp.rm(root, { recursive: true, force: true }); }
+  });
+
   await check('writeRawAtomically retries a transient open error', async () => {
     const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'state-storage-'));
     const file = path.join(root, 'state.json');

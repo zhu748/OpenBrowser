@@ -79,15 +79,14 @@ function fileNameFromUrl(rawUrl) {
 function openRequest(url, { headers = {}, maxRedirects = DEFAULT_MAX_REDIRECTS, timeoutMs, validateUrl, signal } = {}) {
   return new Promise((resolve, reject) => {
     let redirects = 0;
-    let initialHost = null;
+    let initialOrigin = null;
 
-    // Credentials are scoped to the host they were granted to. A redirect is
+    // Credentials are scoped to the origin they were granted to. A redirect is
     // a fresh decision about where the request goes (api.github.com ->
-    // objects.githubusercontent.com in the kernel-release flow), so an
-    // Authorization header must never be replayed verbatim to a different
-    // host: each hop compares the target's host (name + port, i.e. URL.host)
-    // against the INITIAL request host and drops Authorization (whatever the
-    // header-name case) when it changed. The per-hop host whitelist in
+    // objects.githubusercontent.com in the kernel-release flow), so a
+    // credential header must never be replayed to a different origin (including
+    // a protocol downgrade on the same host). Cookie headers need the same
+    // protection as Authorization. The per-hop host whitelist in
     // validateUrl below is unchanged and still applies to every hop.
     const headersForTarget = (target, currentHeaders) => {
       let parsed;
@@ -96,10 +95,10 @@ function openRequest(url, { headers = {}, maxRedirects = DEFAULT_MAX_REDIRECTS, 
       } catch (_) {
         return currentHeaders;
       }
-      if (parsed.host === initialHost) return currentHeaders;
+      if (parsed.origin === initialOrigin) return currentHeaders;
       const next = { ...currentHeaders };
       for (const name of Object.keys(next)) {
-        if (name.toLowerCase() === 'authorization') delete next[name];
+        if (['authorization', 'cookie', 'cookie2'].includes(name.toLowerCase())) delete next[name];
       }
       return next;
     };
@@ -117,7 +116,7 @@ function openRequest(url, { headers = {}, maxRedirects = DEFAULT_MAX_REDIRECTS, 
         reject(new Error(`unsupported protocol: ${parsed.protocol}`));
         return;
       }
-      if (initialHost === null) initialHost = parsed.host;
+      if (initialOrigin === null) initialOrigin = parsed.origin;
       // A redirect is a fresh decision about where to send the request, so the
       // same policy that vetted the original URL is applied to every hop. Without
       // this a response can move the transfer to any host it names.
@@ -145,7 +144,7 @@ function openRequest(url, { headers = {}, maxRedirects = DEFAULT_MAX_REDIRECTS, 
           attempt(nextTarget, headersForTarget(nextTarget, hopHeaders));
           return;
         }
-        if (status >= 400) {
+        if (status < 200 || status >= 300) {
           res.resume();
           reject(Object.assign(new Error(`http ${status}`), { statusCode: status }));
           return;
@@ -355,7 +354,7 @@ class Downloader extends EventEmitter {
       if (md5Hash) md5Hash.update(chunk);
       if (sha256Hash) sha256Hash.update(chunk);
     };
-    if (resumed) {
+    if (resumed && (md5Hash || sha256Hash)) {
       // Re-read the partial file so the digest covers the whole payload.
       await new Promise((resolve, reject) => {
         const prior = fs.createReadStream(this.tmpPath);

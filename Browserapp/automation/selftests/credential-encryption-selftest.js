@@ -9,6 +9,7 @@ const credentialCrypto = require('../../credential-crypto');
 const cloudSync = require('../cloud-sync');
 const { ProxyStore } = require('../proxy-store');
 const { ApiKeyStore, KEY_FILE, TXT_FILE } = require('../api-key-store');
+const localSettings = require('../local-settings');
 
 let testCount = 0;
 let passedCount = 0;
@@ -196,9 +197,11 @@ function ok(name, condition) {
   ok('Post-migration file is encrypted at rest', credentialCrypto.isEncrypted(migratedProxyBytes));
   ok('Plaintext old password gone from primary file', !migratedProxyBytes.toString('utf8').includes('old_plain_password_789'));
 
-  // Backup file exists and holds the original plaintext
-  const backupProxyContent = await fsp.readFile(legacyProxyFile + '.bak', 'utf8');
-  ok('Backup file exists and preserved original data', backupProxyContent.includes('old_plain_password_789'));
+  // Recovery must preserve the original data without retaining plaintext secrets.
+  const backupProxyContent = await fsp.readFile(legacyProxyFile + '.bak');
+  ok('Migrated proxy backup is encrypted', credentialCrypto.isEncrypted(backupProxyContent));
+  ok('Migrated proxy backup contains no plaintext password', !backupProxyContent.includes(Buffer.from('old_plain_password_789')));
+  ok('Encrypted backup preserved original data', credentialCrypto.decryptCredential(backupProxyContent).includes('old_plain_password_789'));
 
   // Data can be read back transparently after migration
   const pPostCheck = new ProxyStore(legacyProxyFile, { encrypted: true });
@@ -206,6 +209,10 @@ function ok(name, condition) {
   const postItems = pPostCheck.list();
   ok('Migrated store has 1 item', postItems.length === 1);
   ok('Migrated item password decrypted correctly', postItems[0].password === 'old_plain_password_789');
+
+  await fsp.writeFile(legacyProxyFile + '.bak', legacyContent);
+  await new ProxyStore(legacyProxyFile, { encrypted: true }).load();
+  ok('An encrypted main file also upgrades a pre-existing plaintext backup', credentialCrypto.isEncrypted(await fsp.readFile(legacyProxyFile + '.bak')));
 
   // Corrupted File Recovery Test
   const corruptFile = path.join(proxyDir, 'corrupt-proxy.json');
@@ -216,6 +223,7 @@ function ok(name, condition) {
   await pCorruptStore.load();
   await pCorruptStore.flush();
   ok('Corrupted main file recovered transparently from .bak backup', pCorruptStore.list().length === 1);
+  ok('Recovered legacy proxy backup is encrypted', credentialCrypto.isEncrypted(await fsp.readFile(corruptFile + '.bak')));
   const corruptFilesFound = (await fsp.readdir(proxyDir)).filter((n) => n.includes('corrupt-proxy.json.corrupt-'));
   ok('Corrupted bytes snapshot preserved as .corrupt-*', corruptFilesFound.length > 0);
 
@@ -292,18 +300,10 @@ function ok(name, condition) {
   await fsp.writeFile(testSettingsFile, JSON.stringify(plainSettingsObj, null, 2), 'utf8');
   ok('Initial settings file is plaintext', !credentialCrypto.isEncrypted(await fsp.readFile(testSettingsFile)));
 
-  // Simulate main.js loadLocalSettings + migration
-  let rawSettings = await fsp.readFile(testSettingsFile);
-  let loadedSettings = null;
-  if (!credentialCrypto.isEncrypted(rawSettings)) {
-    loadedSettings = JSON.parse(rawSettings.toString('utf8'));
-    // Migration: encrypt and rewrite atomically with backup
-    await fsp.writeFile(testSettingsFile + '.bak', rawSettings);
-    const encPayload = credentialCrypto.encryptCredential(JSON.stringify(loadedSettings, null, 2));
-    const tmpFile = testSettingsFile + '.tmp';
-    await fsp.writeFile(tmpFile, encPayload);
-    await fsp.rename(tmpFile, testSettingsFile);
-  }
+  // Exercise the actual settings migration, including its backup policy.
+  localSettings.initLocalSettings({ file: testSettingsFile, defaultProfileDataRoot: path.join(tmpBase, 'browser-profiles') });
+  await localSettings.loadLocalSettings();
+  ok('Legacy settings migration creates no plaintext backup', !fs.existsSync(testSettingsFile + '.bak'));
 
   // Verify settings file is now encrypted
   const encryptedSettingsBytes = await fsp.readFile(testSettingsFile);
@@ -312,9 +312,12 @@ function ok(name, condition) {
   ok('Plaintext GitHub token not in settings file', !encryptedSettingsBytes.toString('utf8').includes('ghp_fake_token_1234567890'));
   ok('Plaintext WebDAV password not in settings file', !encryptedSettingsBytes.toString('utf8').includes('dav_secret_password'));
 
-  // Verify backup exists and contains valid plaintext
-  const settingsBak = await fsp.readFile(testSettingsFile + '.bak', 'utf8');
-  ok('Settings .bak backup preserved original data', settingsBak.includes('fake-cloud-backup-passphrase-999'));
+  const savingSettings = localSettings.saveLocalSettings({ memoryLimit: 80 });
+  await localSettings.flushSettingsWriter();
+  await savingSettings;
+  const settingsBak = await fsp.readFile(testSettingsFile + '.bak');
+  ok('Settings .bak backup is encrypted', credentialCrypto.isEncrypted(settingsBak));
+  ok('Settings .bak backup preserved original data', credentialCrypto.decryptCredential(settingsBak).includes('fake-cloud-backup-passphrase-999'));
 
   // Decrypt and verify payload fidelity
   const decryptedSettingsObj = JSON.parse(credentialCrypto.decryptCredential(encryptedSettingsBytes));

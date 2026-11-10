@@ -729,6 +729,51 @@ function startServer(handler) {
     } finally { await server.close(); }
   });
 
+  await checkAsync('non-success responses cannot replace an existing destination', async () => {
+    const server = await startServer((_req, res) => { res.writeHead(304); res.end(); });
+    const dir = await makeTempDir();
+    const destPath = path.join(dir, 'cached');
+    try {
+      await fsp.writeFile(destPath, 'keep');
+      await assert.rejects(new Downloader(server.url('/cached'), { destPath }).start(), /http 304/);
+      assert.strictEqual(await fsp.readFile(destPath, 'utf8'), 'keep');
+    } finally { await server.close(); await fsp.rm(dir, { recursive: true, force: true }); }
+  });
+
+  await checkAsync('cross-origin redirects strip cookies and authorization', async () => {
+    let seen;
+    const target = await startServer((req, res) => { seen = req.headers; res.end('safe'); });
+    const source = await startServer((_req, res) => { res.writeHead(302, { location: target.url('/file') }); res.end(); });
+    const dir = await makeTempDir();
+    try {
+      await new Downloader(source.url('/file'), { dir, headers: {
+        Authorization: 'Bearer secret', cOoKiE: 'session=secret', Cookie2: 'legacy=secret', 'X-Public': 'kept',
+      } }).start();
+      assert.strictEqual(seen.authorization, undefined);
+      assert.strictEqual(seen.cookie, undefined);
+      assert.strictEqual(seen.cookie2, undefined);
+      assert.strictEqual(seen['x-public'], 'kept');
+    } finally { await source.close(); await target.close(); await fsp.rm(dir, { recursive: true, force: true }); }
+  });
+
+  await checkAsync('unhashed resume never rereads existing partial bytes', async () => {
+    const server = await startServer((_req, res) => {
+      res.writeHead(206, { 'content-range': 'bytes 3-5/6', 'content-length': 3 }); res.end('def');
+    });
+    const dir = await makeTempDir();
+    const destPath = path.join(dir, 'resume');
+    const fs = require('fs');
+    const original = fs.createReadStream;
+    let rereads = 0;
+    try {
+      await fsp.writeFile(destPath + '.partial', 'abc');
+      fs.createReadStream = (...args) => { rereads += 1; return original(...args); };
+      await new Downloader(server.url('/resume'), { destPath }).start();
+      assert.strictEqual(await fsp.readFile(destPath, 'utf8'), 'abcdef');
+      assert.strictEqual(rereads, 0, 'no hash means no need to scan the partial file');
+    } finally { fs.createReadStream = original; await server.close(); await fsp.rm(dir, { recursive: true, force: true }); }
+  });
+
   // ---- report ----
   const passed = results.filter((r) => r.ok).length;
   const failed = results.filter((r) => !r.ok);

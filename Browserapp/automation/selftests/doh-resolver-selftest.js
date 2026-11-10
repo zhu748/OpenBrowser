@@ -92,6 +92,28 @@ function stubFetch(responseBuf, { status = 200, onUrl } = {}) {
 
 (async () => {
   // ---- encoding ----
+  check('encodeQuery enforces the complete wire-name byte limit', () => {
+    assert.doesNotThrow(() => encodeQuery([...Array(3).fill('a'.repeat(63)), 'b'.repeat(61)].join('.')));
+    assert.throws(() => encodeQuery(Array(4).fill('a'.repeat(63)).join('.')), /name too long/);
+    assert.throws(() => encodeQuery('example..com'), /empty dns label/);
+    assert.throws(() => encodeQuery([...Array(4).fill('é'.repeat(31)), 'a', 'b'].join('.')), /name too long/);
+  });
+
+  await checkAsync('oversized streamed DoH responses are cancelled before decoding', async () => {
+    let cancelled = false;
+    let finish;
+    const resolver = new DohResolver({ endpoints: ['https://doh.test/dns-query'], fetchImpl: async () => new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(new Uint8Array(65536));
+        finish = setTimeout(() => controller.close(), 50);
+      },
+      cancel() { clearTimeout(finish); cancelled = true; },
+    })) });
+    await assert.rejects(resolver.query('example.com'), /DNS response exceeds/);
+    assert.strictEqual(cancelled, true);
+    assert.strictEqual(resolver.controllers.size, 0);
+  });
+
   check('encodeQuery builds a valid header', () => {
     const q = encodeQuery('example.com', 'A', 0x1234);
     assert.strictEqual(q.readUInt16BE(0), 0x1234, 'id');

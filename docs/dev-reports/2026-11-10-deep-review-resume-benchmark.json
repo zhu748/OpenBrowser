@@ -1,0 +1,19 @@
+{
+  "baseline": "f082bef",
+  "node": "v24.22.1",
+  "partialBytes": 33554432,
+  "fetchedBytes": 4096,
+  "samples": "5 measured runs after 1 warmup per version",
+  "results": [
+    {
+      "name": "before",
+      "medianMs": 51.072,
+      "rereadBytes": 33554432
+    },
+    {
+      "name": "after",
+      "medianMs": 2.688,
+      "rereadBytes": 0
+    }
+  ]
+}

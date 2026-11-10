@@ -33,8 +33,8 @@ async function writeRawAtomically(filePath, value, mode = 0o600) {
       await fsp.rename(temporary, filePath);
       try {
         const directoryHandle = await fsp.open(directory, "r");
-        await directoryHandle.sync();
-        await directoryHandle.close();
+        try { await directoryHandle.sync(); }
+        finally { await directoryHandle.close(); }
       } catch (_) {}
       return;
     } catch (error) {
@@ -61,14 +61,16 @@ async function writeJsonAtomically(filePath, value, mode = 0o600) {
   if (shouldRefreshBak) {
     let previous = null;
     try {
-      // 原始字节留作 .bak（可能是旧明文，也可能是旧密文），不再解析校验
+      // Preserve encrypted bytes as-is; encrypt legacy plaintext before it
+      // becomes a long-lived recovery copy containing cookies or credentials.
       const raw = await fsp.readFile(filePath);
       previous = raw;
     } catch (error) {
       if (error.code === "ENOENT") previous = null;
     }
     if (previous != null) {
-      await writeRawAtomically(`${filePath}.bak`, previous, mode);
+      const backup = credentialCrypto.isEncrypted(previous) ? previous : credentialCrypto.encryptCredential(previous);
+      await writeRawAtomically(`${filePath}.bak`, backup, mode);
       bakLastRefreshAt.set(filePath, Date.now());
     }
     // ENOENT leaves no timestamp recorded: the next write must still be able

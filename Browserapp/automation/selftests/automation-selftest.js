@@ -143,6 +143,7 @@ async function httpText(port, method, urlPath, headers = {}) {
 
 async function main() {
   console.log('OpenBrowser automation selftest\n');
+  const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'openbrowser-automation-'));
 
   // 1) App center catalog
   const engine = createFakeEngine();
@@ -155,7 +156,7 @@ async function main() {
   ok('app-center list builtin/recommended/local');
 
   // 2) RPA store
-  const storePath = path.join('/tmp', `openbrowser-automation-selftest-rpa-${process.pid}-${Date.now()}.json`);
+  const storePath = path.join(fixtureRoot, 'rpa.json');
   const store = new RpaStore(storePath);
   await store.load();
   const plan = await store.upsertPlan({
@@ -265,7 +266,7 @@ async function main() {
   ok('rpa result snapshot caps');
 
   // Task history pruning: pending tasks always survive, terminal tasks do not.
-  const pruneStorePath = path.join(os.tmpdir(), `openbrowser-rpa-prune-${process.pid}-${Date.now()}.json`);
+  const pruneStorePath = path.join(fixtureRoot, 'rpa-prune.json');
   const pruneStore = new RpaStore(pruneStorePath);
   await pruneStore.load();
   await pruneStore.createTasks(Array.from({ length: 8 }, (_, index) => ({
@@ -282,7 +283,7 @@ async function main() {
   ok('rpa-store task history pruning');
 
   // Store size budget: over-limit stores shed old tasks, then logs, then result payloads.
-  const budgetStorePath = path.join(os.tmpdir(), `openbrowser-rpa-budget-${process.pid}-${Date.now()}.json`);
+  const budgetStorePath = path.join(fixtureRoot, 'rpa-budget.json');
   const budgetStore = new RpaStore(budgetStorePath);
   await budgetStore.load();
   budgetStore.sizeLimitBytes = 4096;
@@ -321,8 +322,8 @@ async function main() {
   assert.strictEqual(rpaAutoStartCount, 1, 'rpa auto-start starts profile once');
   ok('rpa-engine auto-starts stopped profile');
 
-  const rpaLogPath = path.join(os.tmpdir(), `openbrowser-rpa-log-${process.pid}-${Date.now()}.log`);
-  const paidGateStorePath = path.join(os.tmpdir(), `openbrowser-paid-gate-rpa-${process.pid}-${Date.now()}.json`);
+  const rpaLogPath = path.join(fixtureRoot, 'rpa.log');
+  const paidGateStorePath = path.join(fixtureRoot, 'paid-gate.json');
   const paidGateStore = new RpaStore(paidGateStorePath);
   await paidGateStore.load();
   const paidGateEngine = createFakeEngine();
@@ -423,7 +424,7 @@ async function main() {
     ok('rpa useExcel path sandbox (bare home root removed)');
   }
 
-  const proxyStore = new ProxyStore(path.join(os.tmpdir(), `openbrowser-automation-selftest-proxies-${process.pid}.json`));
+  const proxyStore = new ProxyStore(path.join(fixtureRoot, 'proxies.json'));
   await proxyStore.load();
   const proxyCountBeforeImport = proxyStore.list().length;
   const importedProxies = await proxyStore.createMany([
@@ -706,6 +707,7 @@ async function main() {
   ok('mcp schema tools/list shape');
 
   await new Promise((resolve) => server.server.close(() => resolve()));
+  fs.rmSync(fixtureRoot, { recursive: true, force: true });
   console.log('\nAll automation selftests passed.');
 }
 

@@ -558,7 +558,11 @@ class RpaEngine {
     if (!task) throw new Error('RPA task not found: ' + taskId);
     if (this.running.has(taskId)) throw new Error('Task already running: ' + taskId);
 
-    this.running.set(taskId, { startedAt: Date.now() });
+    const startedAt = Date.now();
+    const taskTimeoutMs = resolveTaskTimeoutMs(options);
+    const taskDeadline = taskTimeoutMs > 0 ? startedAt + taskTimeoutMs : 0;
+    const execution = { taskDeadline, isCancelled: () => this.cancelled.has(taskId) };
+    this.running.set(taskId, { startedAt });
     if (!this.queued.delete(taskId)) this.cancelled.delete(taskId);
 
     const logs = [];
@@ -573,15 +577,16 @@ class RpaEngine {
 
     let context = null;
     try {
-      if (this.cancelled.has(taskId)) throw new Error('cancelled');
+      this.assertTaskAlive(execution);
       await this.store.updateTask(taskId, { status: 'running', start_time: new Date().toISOString(), process_logs: [] }, { save: false });
       this.emit({ type: 'rpa-task', taskId, status: 'running', profileId: task.profile_id });
       await this.writeDiagnostic({
         type: 'rpa-task-start', taskId, planId: task.plan_id || null,
         profileId: task.profile_id, processName: task.process_name || null,
       });
-      if (this.cancelled.has(taskId)) throw new Error('cancelled');
+      this.assertTaskAlive(execution);
       const entry = await this.ensureProfileRunning(task.profile_id, { log });
+      this.assertTaskAlive(execution);
       const port = entry.port;
       // process_content task field or steps array
       let steps = Array.isArray(task.steps) ? task.steps : [];
@@ -604,21 +609,13 @@ class RpaEngine {
         // actually on: withPage used firstTab unconditionally, so after a
         // newtab/switchpage every later click/read hit the original tab.
         activeTabId: null,
-        isCancelled: () => this.cancelled.has(taskId),
+        ...execution,
       };
       // Optional task-level budget: OPENBROWSER_RPA_TASK_TIMEOUT_MS (or a
       // per-run options.timeout_ms) bounds the whole task; 0 disables it.
-      const taskTimeoutMs = resolveTaskTimeoutMs(options);
-      const taskDeadline = taskTimeoutMs > 0 ? Date.now() + taskTimeoutMs : 0;
       // Expose the deadline on the context so a long single step (getOpenAI)
       // can bound itself with the same task budget.
-      context.taskDeadline = taskDeadline;
-      const ensureTaskAlive = () => {
-        if (this.cancelled.has(taskId)) throw new Error('cancelled');
-        if (taskDeadline && Date.now() > taskDeadline) {
-          throw new Error(`task timeout exceeded: over ${Math.round(taskTimeoutMs / 1000)}s (OPENBROWSER_RPA_TASK_TIMEOUT_MS / options.timeout_ms)`);
-        }
-      };
+      const ensureTaskAlive = () => this.assertTaskAlive(context);
       for (let index = 0; index < steps.length; index += 1) {
         ensureTaskAlive();
         const step = steps[index] || {};
@@ -737,10 +734,24 @@ class RpaEngine {
     return entry;
   }
 
+  assertTaskAlive(ctx) {
+    if (ctx?.isCancelled?.()) throw new Error('cancelled');
+    if (ctx?.taskDeadline && Date.now() >= ctx.taskDeadline) {
+      throw Object.assign(new Error('task timeout exceeded (OPENBROWSER_RPA_TASK_TIMEOUT_MS / options.timeout_ms)'), {
+        code: 'ERPA_TASK_TIMEOUT',
+      });
+    }
+  }
+
   async executeStep(port, step, ctx) {
+    this.assertTaskAlive(ctx);
     try {
       await this.executeStepInternal(port, step, ctx);
+      this.assertTaskAlive(ctx);
     } catch (error) {
+      // Cancellation and task expiry are terminal, including inside nested
+      // loops and recovery branches. They must never dispatch errorChildren.
+      this.assertTaskAlive(ctx);
       if (error instanceof BreakLoopSignal || error instanceof TypingAbortedError) {
         throw error;
       }
@@ -797,20 +808,24 @@ class RpaEngine {
     // after the full 120s cap.
     const deadline = Date.now() + ms;
     while (Date.now() < deadline) {
-      if (ctx?.isCancelled?.()) throw new Error('cancelled');
-      await sleep(Math.min(250, Math.max(0, deadline - Date.now())));
+      this.assertTaskAlive(ctx);
+      await sleep(Math.min(250, Math.max(0, Math.min(deadline, ctx?.taskDeadline || deadline) - Date.now())));
     }
+    this.assertTaskAlive(ctx);
     return;
   }
 
-  async stepGoto({ port, params, text }) {
+  async stepGoto({ port, ctx, params, text }) {
     const url = text(params.url || params.href || 'about:blank');
-    await cdp.navigate(port, url);
+    await this.withPage(port, async (ws) => {
+      const result = await cdp.call(ws, 'Page.navigate', { url }, 20000);
+      if (result.errorText) throw new Error('navigate failed: ' + result.errorText);
+    }, ctx, { createIfMissing: true });
     return;
   }
 
-  async stepReload({ port }) {
-    await cdp.reload(port);
+  async stepReload({ port, ctx }) {
+    await this.withPage(port, (ws) => cdp.call(ws, 'Page.reload', { ignoreCache: false }), ctx);
     return;
   }
 
@@ -870,7 +885,7 @@ class RpaEngine {
             human: humanTyping,
             delayRange: inputDelayRange(params, humanTyping),
             typoConfig: params.typoConfig,
-            shouldAbort: () => Boolean(ctx?.isCancelled?.()),
+            shouldAbort: () => { this.assertTaskAlive(ctx); return false; },
           });
         }, ctx);
       } catch (error) {
@@ -888,7 +903,7 @@ class RpaEngine {
         human: humanTyping,
         delayRange: inputDelayRange(params, humanTyping),
         typoConfig: params.typoConfig,
-        shouldAbort: () => Boolean(ctx?.isCancelled?.()),
+        shouldAbort: () => { this.assertTaskAlive(ctx); return false; },
       });
     }
     return;
@@ -995,7 +1010,7 @@ class RpaEngine {
     const deadline = Date.now() + timeout;
     let success = false;
     while (Date.now() < deadline) {
-      if (ctx?.isCancelled?.()) throw new Error('cancelled');
+      this.assertTaskAlive(ctx);
       const found = await this.withPage(port, async (ws) => {
         try {
           // Pure existence probe: focusSelector would steal focus and
@@ -1384,12 +1399,12 @@ class RpaEngine {
     return;
   }
 
-  async stepGoBack({ port, params }) {
+  async stepGoBack({ port, ctx, params }) {
     // cdp.call's 4th argument is a millisecond timeout, not a context.
     await this.withPage(port, (ws) => cdp.call(ws, 'Runtime.evaluate', {
       expression: 'history.back(); true', returnByValue: true,
-    }));
-    await sleep(Math.max(0, Math.min(30000, Number(params.timeout) || 500)));
+    }), ctx);
+    await this.stepWait({ params: { ms: Math.max(0, Math.min(30000, Number(params.timeout) || 500)) }, ctx });
     return;
   }
 
@@ -1650,8 +1665,10 @@ class RpaEngine {
     if (!started?.port) throw new Error('openNewBrowser did not return a CDP port');
     const prevPort = ctx.port;
     const prevProfileId = ctx.activeProfileId;
+    const prevTabId = ctx.activeTabId;
     ctx.port = started.port;
     ctx.activeProfileId = profile.id;
+    ctx.activeTabId = null;
     variables.openedBrowserProfileId = profile.id;
 
     const children = Array.isArray(step.children) ? step.children : (Array.isArray(params.children) ? params.children : []);
@@ -1666,6 +1683,7 @@ class RpaEngine {
       }
       ctx.port = prevPort;
       ctx.activeProfileId = prevProfileId;
+      ctx.activeTabId = prevTabId;
     }
     return;
   }
@@ -1988,6 +2006,7 @@ class RpaEngine {
     // hits themselves.
     const expression = `(() => { const matcher = ${JSON.stringify(String(matcher || ''))}; const all = performance.getEntriesByType("resource"); for (let i = all.length - 1; i >= 0; i--) { const entry = all[i]; if (!matcher || String(entry.name).includes(matcher)) return { name: entry.name, initiatorType: entry.initiatorType }; } return null; })()`;
     do {
+      this.assertTaskAlive(ctx);
       if (shouldAbort && shouldAbort()) throw new Error('cancelled');
       const resource = await this.withPage(port, async (ws) => {
         const result = await cdp.call(ws, 'Runtime.evaluate', {
@@ -2003,13 +2022,15 @@ class RpaEngine {
     throw new Error('network resource not found: ' + matcher);
   }
 
-  async withPage(port, fn, ctx = null) {
+  async withPage(port, fn, ctx = null, { createIfMissing = false } = {}) {
+    this.assertTaskAlive(ctx);
     // One /json/list per resolution: the pinned-tab lookup and the firstTab
     // fallback each used to issue their own HTTP roundtrip (two per step; in
     // 100-iteration loops this dominated step latency). The listing is cached
     // for this single withPage call only — never across steps — and a pinned-
     // tab miss falls back to the same first-tab preference cdp.firstTab uses.
     const list = await cdp.tabs(port);
+    this.assertTaskAlive(ctx);
     let tab = null;
     if (ctx?.activeTabId) {
       tab = list.find((item) => item.id === ctx.activeTabId) || null;
@@ -2019,6 +2040,10 @@ class RpaEngine {
     }
     if (!tab) {
       tab = list.find((item) => !item.url.startsWith('chrome://') && !item.url.startsWith('edge://')) || list[0] || null;
+    }
+    if (!tab && createIfMissing) {
+      tab = await cdp.newTab(port, 'about:blank');
+      if (ctx) ctx.activeTabId = tab.id;
     }
     if (!tab?.webSocketDebuggerUrl) throw new Error('No page tab for CDP port ' + port);
     return fn(tab.webSocketDebuggerUrl);
