@@ -2781,27 +2781,22 @@ function scheduleProxySearchRender() {
     });
   }, 120);
 }
-// Leading-guard throttle: fetch at most once per window during a burst (keeps progress
-// visible) instead of once per event; the trailing fetch captures the settled state.
-let __statusRefreshTimer = 0;
-function scheduleStatusRefresh() {
-  if (__statusRefreshTimer) return;
-  __statusRefreshTimer = setTimeout(async () => {
-    __statusRefreshTimer = 0;
-    // Hidden window (minimized to tray / another workspace): skip the fetch.
-    // The pending state is picked up on the next visibility change, so a
-    // minimized app no longer runs IPC + full table rebuilds in the dark.
-    if (document.hidden) { __statusRefreshPending = true; return; }
+// Retain a trailing refresh when events arrive during a slow IPC request.
+// Only one scheduled status request runs at a time, so an older response
+// cannot overtake the next request and overwrite newer scheduled state.
+const __statusRefresher = window.OpenBrowserRefreshScheduler.createRefreshScheduler({
+  isPaused: () => document.hidden,
+  refresh: async () => {
     try { engineProfiles = await window.ops.profileStatus(); mergeEngineExitState(engineProfiles); } catch (_) {}
     scheduleRenderProfiles();
-    // The proxy library shows which windows are using each proxy, so a start/stop has to refresh
-    // that view too while it is on screen.
     if (document.querySelector('#view-proxies.view.active')) scheduleProxySearchRender();
-  }, 120);
+  },
+});
+function scheduleStatusRefresh() {
+  __statusRefresher.request();
 }
-let __statusRefreshPending = false;
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && __statusRefreshPending) { __statusRefreshPending = false; scheduleStatusRefresh(); }
+  if (!document.hidden) __statusRefresher.resume();
 });
 let __sessionRefreshTimer = 0;
 // #view-sync is hidden most of the time; same dirty-flag pattern as logsDirty:
@@ -4530,49 +4525,19 @@ async function initialize() {
   // Merge secrets already loaded in main process (not stored in localStorage).
   try {
     const engineStatus = await window.ops.profileStatus();
-    if (Array.isArray(engineStatus) && engineStatus.length) {
-      const byId = new Map(engineStatus.map((item) => [item.id, item]));
-      // Discard stale localStorage entries deleted in engine (e.g. via Local API)
-      ui.profiles = ui.profiles.filter((local) => byId.has(local.id)).map((local) => {
-        const remote = byId.get(local.id);
-        if (!remote) return local;
-        let mergedProxy = mergeRemoteProxy(local.proxy, remote.proxy);
-        const resolvedProxyId = local.proxyId || remote.proxyId;
-        if (resolvedProxyId && !proxyHasCredentials(mergedProxy)) {
-          const libItem = proxyLibraryItem(resolvedProxyId);
-          if (libItem) {
-            const fullProxy = parseProxyInputForUi(libItem, libItem.protocol || 'socks5')?.raw;
-            if (fullProxy && proxyHasCredentials(fullProxy)) mergedProxy = fullProxy;
-          }
-        }
-        return normalizeProfileSettings({
-          ...local,
-          proxyId: resolvedProxyId || null,
-          ...(remote.exitIp ? {
-            exitIp: remote.exitIp,
-            exitCountryCode: remote.exitCountryCode,
-            exitTimezone: remote.exitTimezone,
-            exitLatitude: remote.exitLatitude,
-            exitLongitude: remote.exitLongitude,
-            exitCheckedAt: remote.exitCheckedAt,
-            exitLatencyMs: remote.exitLatencyMs,
-            exitNetworkType: remote.exitNetworkType,
-          } : {}),
-          cookies: local.cookies || remote.cookies || '',
-          proxy: mergedProxy,
-          platform: {
-            ...(local.platform || {}),
-            password: local.platform?.password || remote.platform?.password || '',
-            totpSecret: local.platform?.totpSecret || remote.platform?.totpSecret || '',
-          },
-        });
+    if (Array.isArray(engineStatus)) {
+      ui.profiles = window.OpenBrowserProfileState.reconcileProfiles({
+        localProfiles: ui.profiles,
+        engineProfiles: engineStatus,
+        normalizeProfile: normalizeProfileSettings,
+        mergeProxy: mergeRemoteProxy,
+        restoreProxy(proxy, proxyId) {
+          if (!proxyId || proxyHasCredentials(proxy)) return proxy;
+          const item = proxyLibraryItem(proxyId);
+          const fullProxy = item && parseProxyInputForUi(item, item.protocol || 'socks5')?.raw;
+          return fullProxy && proxyHasCredentials(fullProxy) ? fullProxy : proxy;
+        },
       });
-      // Engine-only profiles (restored from disk) not yet in UI list
-      for (const remote of engineStatus) {
-        if (!ui.profiles.some((item) => item.id === remote.id)) {
-          ui.profiles.push(normalizeProfileSettings(remote));
-        }
-      }
     }
   } catch (_) {}
   save();

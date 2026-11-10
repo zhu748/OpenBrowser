@@ -1,7 +1,7 @@
 /**
  * Chrome Web Store metadata / icon pipeline.
  *
- * Extracted verbatim from main.js (P2 modularisation, zero behaviour change):
+ * Owns bounded downloads and caches for:
  * the CRX package download, the store detail-page scrape with its TTL cache,
  * og:* metadata parsing, icon download and the userData/app-center-icons
  * disk cache. Consumed by main.js for the `extensions:add-store` proxy
@@ -11,6 +11,7 @@
 const { app, session } = require('./host-bridge');
 const path = require('path');
 const fsp = require('fs/promises');
+const { readResponseBuffer } = require('./automation/response-body');
 
 async function fetchStorePackage(url, proxyValue = null) {
   const initial = new URL(url);
@@ -25,35 +26,7 @@ async function fetchStorePackage(url, proxyValue = null) {
     const finalUrl = new URL(String(response.url || url));
     if (finalUrl.protocol !== 'https:' || !['clients2.google.com', 'clients2.googleusercontent.com'].includes(finalUrl.hostname)) throw new Error('Chrome 商店返回了不受信任的下载地址');
     if (!response.ok) throw new Error('Chrome 商店下载失败（HTTP ' + response.status + '）');
-    const declared = Number(response.headers.get('content-length') || 0); if (declared > 120 * 1024 * 1024) throw new Error('扩展包超过 120 MB 限制');
-    // Stream into the buffer with a hard cap enforced while reading: a lying
-    // (or absent) content-length must not buffer an unbounded body in memory.
-    const LIMIT = 120 * 1024 * 1024;
-    const chunks = []; let received = 0;
-    const reader = response.body?.getReader?.();
-    if (reader) {
-      try {
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          received += value?.byteLength || 0;
-          if (received > LIMIT) throw new Error('扩展包超过 120 MB 限制');
-          chunks.push(Buffer.from(value));
-        }
-        if (received > LIMIT) throw new Error('扩展包超过 120 MB 限制');
-      } catch (streamError) {
-        // Release the socket instead of waiting for the 180s abort timer:
-        // a size-cap rejection mid-body otherwise keeps downloading in the
-        // background until the whole oversized file has been transferred.
-        reader.cancel().catch(() => {});
-        throw streamError;
-      }
-    } else {
-      const whole = Buffer.from(await response.arrayBuffer());
-      if (whole.length > LIMIT) throw new Error('扩展包超过 120 MB 限制');
-      chunks.push(whole);
-    }
-    return chunks.length === 1 ? chunks[0] : Buffer.concat(chunks);
+    return await readResponseBuffer(response, 120 * 1024 * 1024, '扩展包超过 120 MB 限制');
   } catch (error) {
     if (error.name === 'AbortError') throw new Error('连接 Chrome 应用商店超时，请检查系统代理/VPN，或先给任一目标环境配置可访问 Google 的代理');
     throw error;
@@ -116,9 +89,8 @@ async function fetchChromeStorePageHtml(safeId, timeoutMs = 25000) {
     const pageUrl = `https://chromewebstore.google.com/detail/${safeId}`;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
-    let response;
     try {
-      response = await storeSession.fetch(pageUrl, {
+      const response = await storeSession.fetch(pageUrl, {
         redirect: 'follow',
         signal: controller.signal,
         headers: {
@@ -126,15 +98,14 @@ async function fetchChromeStorePageHtml(safeId, timeoutMs = 25000) {
           'accept-language': 'en-US,en;q=0.9',
         },
       });
+      if (!response.ok) return null;
+      const html = (await readResponseBuffer(response, 4 * 1024 * 1024)).toString('utf8');
+      if (html) rememberChromeStorePage(safeId, html);
+      return html || null;
     } finally {
       clearTimeout(timeout);
+      controller.abort();
     }
-    if (!response.ok) return null;
-    const html = await response.text();
-    if (html && html.length <= 4 * 1024 * 1024) {
-      rememberChromeStorePage(safeId, html);
-    }
-    return html || null;
   })().catch(() => null).finally(() => chromeStorePageRequests.delete(safeId));
   chromeStorePageRequests.set(safeId, request);
   return request;
@@ -303,23 +274,25 @@ async function fetchChromeStoreIcon(storeId) {
     if (parsed.protocol !== 'https:' || !isChromeStoreIconHost(parsed.hostname)) return null;
     const imageController = new AbortController();
     const imageTimeout = setTimeout(() => imageController.abort(), 20000);
-    let imageResponse;
+    let data;
+    let contentType;
     try {
-      imageResponse = await storeSession.fetch(parsed.toString(), {
+      const imageResponse = await storeSession.fetch(parsed.toString(), {
         redirect: 'follow',
         signal: imageController.signal,
         headers: { 'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36' },
       });
+      const finalUrl = new URL(imageResponse.url || parsed.toString());
+      contentType = String(imageResponse.headers.get('content-type') || '').toLowerCase();
+      if (!imageResponse.ok || !isChromeStoreIconHost(finalUrl.hostname)) return null;
+      // Some CDNs omit content-type; accept by magic bytes later.
+      if (contentType && !contentType.startsWith('image/') && !contentType.includes('octet-stream')) return null;
+      data = await readResponseBuffer(imageResponse, 2 * 1024 * 1024);
+      if (!data.length) return null;
     } finally {
       clearTimeout(imageTimeout);
+      imageController.abort();
     }
-    const finalUrl = new URL(imageResponse.url || parsed.toString());
-    const contentType = String(imageResponse.headers.get('content-type') || '').toLowerCase();
-    if (!imageResponse.ok || !isChromeStoreIconHost(finalUrl.hostname)) return null;
-    // Some CDNs omit content-type; accept by magic bytes later
-    if (contentType && !contentType.startsWith('image/') && !contentType.includes('octet-stream')) return null;
-    const data = Buffer.from(await imageResponse.arrayBuffer());
-    if (!data.length || data.length > 2 * 1024 * 1024) return null;
     await fsp.mkdir(cacheDir, { recursive: true });
     await fsp.writeFile(cacheFile, data);
     return bufferToDataUrl(data, contentType);

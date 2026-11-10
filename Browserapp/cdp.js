@@ -1,43 +1,45 @@
 const http = require('http');
 
-function request(url, method = 'GET') {
+function request(url, method = 'GET', options = {}) {
+  const timeoutMs = Number.isFinite(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 5000;
   return new Promise((resolve, reject) => {
-    const req = http.request(url, { method, timeout: 5000 }, (res) => {
+    let settled = false;
+    let timer;
+    const finish = (error, body) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (error) reject(error);
+      else resolve(body);
+    };
+    const req = http.request(url, { method, timeout: timeoutMs }, (res) => {
       let body = '';
-      let settled = false;
-      const fail = (error) => {
-        if (settled) return;
-        settled = true;
-        reject(error instanceof Error ? error : new Error(String(error)));
-      };
       res.setEncoding('utf8');
       res.on('data', (chunk) => {
         body += chunk;
         if (body.length > 32 * 1024 * 1024) req.destroy(new Error('CDP HTTP response too large'));
       });
       res.on('end', () => {
-        if (settled) return;
-        settled = true;
-        if (res.statusCode >= 400) return reject(new Error(`CDP HTTP ${res.statusCode}: ${body.slice(0, 200)}`));
-        resolve(body);
+        if (res.statusCode >= 400) finish(new Error(`CDP HTTP ${res.statusCode}: ${body.slice(0, 200)}`));
+        else finish(null, body);
       });
-      // A response reset mid-stream (browser exit, renderer crash) never reaches the
-      // request's own 'error' handler once headers have arrived, and 'end' never fires;
-      // the timeout fallback is cleared by destroy. Listen on the response stream so
-      // the promise settles instead of hanging forever.
-      res.on('error', fail);
+      res.on('error', (error) => finish(error));
       res.on('close', () => {
-        if (!res.complete) fail(new Error('CDP HTTP response aborted'));
+        if (!res.complete) finish(new Error('CDP HTTP response aborted'));
       });
     });
-    req.on('timeout', () => req.destroy(new Error('CDP HTTP timeout')));
-    req.on('error', reject);
+    const expire = () => req.destroy(new Error('CDP HTTP timeout'));
+    // An inactivity timeout alone is reset by every partial chunk. The absolute
+    // deadline also bounds peers that keep dripping bytes without completing.
+    timer = setTimeout(expire, timeoutMs);
+    req.on('timeout', expire);
+    req.on('error', (error) => finish(error));
     req.end();
   });
 }
 
-async function json(url, method = 'GET') {
-  return JSON.parse(await request(url, method));
+async function json(url, method = 'GET', options = {}) {
+  return JSON.parse(await request(url, method, options));
 }
 
 // One-shot transport: opens a dedicated socket per command and closes it on settle.
@@ -393,8 +395,8 @@ function closeAllPooledSockets() {
   }
 }
 
-async function targets(port) {
-  const values = await json(`http://127.0.0.1:${port}/json/list`);
+async function targets(port, options = {}) {
+  const values = await json(`http://127.0.0.1:${port}/json/list`, 'GET', options);
   return values.filter((item) => item.webSocketDebuggerUrl).map((item) => ({
     id: item.id,
     type: item.type,
@@ -404,8 +406,8 @@ async function targets(port) {
   }));
 }
 
-async function tabs(port) {
-  return (await targets(port)).filter((item) => item.type === 'page');
+async function tabs(port, options = {}) {
+  return (await targets(port, options)).filter((item) => item.type === 'page');
 }
 
 async function browserSocket(port) {

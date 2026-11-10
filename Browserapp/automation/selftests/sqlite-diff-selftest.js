@@ -56,6 +56,11 @@ const crypto = require('../../credential-crypto');
     assert.equal(store.saveProfilesDiffed(changed), 2);
     assert.equal(hashes, 2, 'each final profile must be hashed only once per save');
     store.profileDataHash = hash;
+    const quoted = { id: 'quoted', name: 'Quotes', cookies: '"\\\0中文'.repeat(1000) };
+    assert.equal(store.profileDataHash(quoted), store.profileDataHash(structuredClone(quoted)), 'hash is stable across JSON-equivalent copies');
+    for (const patch of [{ name: 'Other' }, { cookies: quoted.cookies + 'x' }, { number: 2 }, { groupId: 'changed' }, { trashed: true }]) {
+      assert.notEqual(store.profileDataHash(quoted), store.profileDataHash({ ...quoted, ...patch }), 'column and payload changes affect the hash');
+    }
     console.log('SQLITE_DIFF_SELFTEST OK (direct saves, trash/restore rollback, unchanged rows)');
   } finally {
     store.close();

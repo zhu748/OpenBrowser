@@ -59,7 +59,9 @@ const engine = read('engine.js');
 ok(engine.includes('async kernelDelete(') && engine.includes('async kernelCheck(') && engine.includes('async kernelCancelDownload('), 'engine exposes delete/check/cancel');
 ok(engine.includes('autoUpdateKernel') , 'engine policy accepts autoUpdateKernel');
 const main = read('main.js');
-for (const ch of ["'kernel:delete'", "'kernel:check'", "'kernel:cancel-download'"]) ok(main.includes(ch), `IPC ${ch} registered`);
+ok(main.includes('registerKernelIpc({ registerTrustedIpc, engine, dialog })'), 'host registers the kernel IPC domain through its trusted sender guard');
+const kernelIpc = read('main/kernel-ipc.js');
+for (const ch of ["'kernel:delete'", "'kernel:check'", "'kernel:cancel-download'"]) ok(kernelIpc.includes(ch), `IPC ${ch} registered`);
 const preload = read('preload.js');
 ok(preload.includes('kernelDelete:') && preload.includes('kernelCheck:') && preload.includes('kernelCancelDownload:'), 'preload ops expose delete/check/cancel');
 

@@ -3,145 +3,26 @@
 /**
  * Profile store API mixin for BrowserEngine (prototype-assigned by engine.js):
  * profile CRUD, trash/restore/purge, cache clearing, and cookie import/export.
- * Persistence itself stays in engine.js (persist) and engine/state-storage.js;
+ * Persistence itself stays in engine/persistence.js and engine/state-storage.js;
  * these are the operations the UI and profile-store-sqlite drive.
  */
 
 const { assertProfileId, assertSafeProfileChild, validateProfileRootSecure } = require('../automation/isolation');
-const { proxyHasCredentials, sameProxyEndpoint, sameProxyIdentity } = require('./index');
+const { prepareProfileSync } = require('./profile-sync');
 const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
 
 module.exports = {
   async syncProfiles(values) {
-    if (!Array.isArray(values) || values.length > 1000) throw new Error('Invalid profile list');
+    const staged = prepareProfileSync(this, values);
     this.invalidateStatusCache?.();
-    const globallyEnabled = this.listExtensions().filter((extension) => extension.enabledAll).map((extension) => extension.id);
-    const incomingIds = new Set();
-    for (const value of values) {
-      // Incremental sanitize: the renderer re-sends the whole list on every
-      // edit, but only the entry whose raw object is not the one already
-      // sanitized-and-stored can carry changes. Re-running sanitizeProfile on
-      // every profile per sync (each rebuilds the whole privacy/advanced
-      // object graph) dominated the sync path for large fleets.
-      const previousRaw = this._syncProfilesRaw?.get(String(value?.id || ''));
-      let sanitized;
-      if (previousRaw && previousRaw === value) {
-        sanitized = this.profiles.get(String(value.id));
-      } else {
-        sanitized = this.sanitizeProfile(value);
-      }
-      const previous = this.profiles.get(sanitized.id);
-      let profile = sanitized;
-      if (previous && sanitized.proxyId && previous.proxyId === sanitized.proxyId) {
-        const stored = this.proxyStore?.get?.(sanitized.proxyId);
-        const matchesPrevious = sameProxyIdentity(sanitized.proxy, previous.proxy)
-          || (!proxyHasCredentials(sanitized.proxy) && sameProxyEndpoint(sanitized.proxy, previous.proxy));
-        const matchesStored = Boolean(stored?.raw) && (
-          sameProxyIdentity(sanitized.proxy, stored.raw)
-          || (!proxyHasCredentials(sanitized.proxy) && sameProxyEndpoint(sanitized.proxy, stored.raw))
-        );
-        if (!matchesPrevious && !matchesStored) {
-          // A linked profile whose endpoint/auth was manually edited becomes a
-          // manual proxy. This prevents the old library id from overwriting it.
-          profile = this.sanitizeProfile({
-            ...sanitized,
-            proxyId: null,
-            proxyMeta: { ...(sanitized.proxyMeta || {}), proxyId: null },
-          });
-        }
-      }
-      profile = this.resolveStoredProxyProfile(profile);
-      const isNew = !previous;
-      // UI may send redacted proxy (no auth) after localStorage reload. Prefer previous
-      // authenticated form only when host:port match and incoming lacks credentials.
-      let merged = profile;
-      if (previous) {
-        const nextProxy = String(profile.proxy || '');
-        const prevProxy = String(previous.proxy || '');
-        const nextHasAuth = proxyHasCredentials(nextProxy);
-        const prevHasAuth = proxyHasCredentials(prevProxy);
-        const explicitlyCleared = String(value?.proxyAuthAction ?? value?.proxy_auth_action ?? '').toLowerCase() === 'clear';
-        if (!explicitlyCleared && !nextHasAuth && prevHasAuth && sameProxyEndpoint(prevProxy, nextProxy)) {
-          merged = this.sanitizeProfile({ ...profile, proxy: prevProxy });
-        }
-        // Restore cookies/platform secrets only when UI clearly redacted ALL of them
-        // (post-localStorage load) while engine still holds values — not when user
-        // intentionally cleared a single field in the editor.
-        const secretAction = String(value?.secretsAction ?? value?.credentialsAction ?? '').trim().toLowerCase();
-        const explicitSecretUpdate = value?.__secretsExplicit === true
-          || secretAction === 'replace'
-          || secretAction === 'clear';
-        const uiLooksRedacted = !explicitSecretUpdate
-          && !String(profile.cookies || '').trim()
-          && !String(profile.platform?.password || '').trim()
-          && !String(profile.platform?.totpSecret || '').trim()
-          && (
-            String(previous.cookies || '').trim()
-            || String(previous.platform?.password || '').trim()
-            || String(previous.platform?.totpSecret || '').trim()
-          );
-        if (uiLooksRedacted) {
-          merged = this.sanitizeProfile({
-            ...merged,
-            cookies: previous.cookies || '',
-            platform: {
-              ...(merged.platform || {}),
-              password: previous.platform?.password || '',
-              totpSecret: previous.platform?.totpSecret || '',
-            },
-          });
-        }
-        // Renderer storage intentionally omits runtime exit details. Keep the engine's
-        // last successful result unless the proxy itself changed (which invalidates it).
-        if (previous.proxy === merged.proxy && previous.exitIp && !profile.exitIp) {
-          merged = this.sanitizeProfile({
-            ...merged,
-            exitIp: previous.exitIp,
-            exitCountryCode: previous.exitCountryCode,
-            exitTimezone: previous.exitTimezone,
-            exitLatitude: previous.exitLatitude,
-            exitLongitude: previous.exitLongitude,
-            exitCheckedAt: previous.exitCheckedAt,
-            exitLatencyMs: previous.exitLatencyMs,
-            exitNetworkType: previous.exitNetworkType,
-          });
-        }
-      }
-      if (previous && previous.proxy !== merged.proxy) this.networkInfo.delete(profile.id);
-      this.profiles.set(merged.id, merged);
-      // Remember the raw object reference this merged value was built from, so
-      // the next sync can skip sanitize for entries the renderer did not touch.
-      this._syncProfilesRaw ||= new Map();
-      this._syncProfilesRaw.set(merged.id, value);
-      incomingIds.add(merged.id);
-      const hasSavedAssignment = this.assignments.has(merged.id);
-      if (isNew || !hasSavedAssignment) {
-        const assigned = this.assignments.get(merged.id) || new Set();
-        for (const extensionId of globallyEnabled) assigned.add(extensionId);
-        // The bundled marker is part of the environment contract.
-        for (const [extensionId, extension] of this.extensions) {
-          if (extension.builtIn) assigned.add(extensionId);
-        }
-        this.assignments.set(merged.id, assigned);
-      }
-    }
+    for (const [id, profile] of staged.profiles) this.profiles.set(id, profile);
+    for (const [id, assigned] of staged.assignments) this.assignments.set(id, assigned);
+    for (const id of staged.networkInvalidations) this.networkInfo.delete(id);
     // Do not drop unknown engine profiles here — deleteProfiles is the explicit path.
-    // Prune the raw-reference memo for profiles the renderer no longer sends.
-    if (this._syncProfilesRaw) {
-      for (const id of [...this._syncProfilesRaw.keys()]) {
-        if (!incomingIds.has(id)) this._syncProfilesRaw.delete(id);
-      }
-    }
-    if (this.usingSqlite && this.sqliteStore) {
-      const incomingList = [...incomingIds].map((id) => this.profiles.get(id)).filter(Boolean);
-      // Row-accurate save: saveProfiles re-encrypts and rewrites every row
-      // (cookies can reach 500 KB per profile), while a UI edit usually
-      // touches one profile.
-      if (typeof this.sqliteStore.saveProfilesDiffed === 'function') this.sqliteStore.saveProfilesDiffed(incomingList);
-      else this.sqliteStore.saveProfiles(incomingList);
-    }
+    // persist() coalesces the burst, checks row differences and propagates write
+    // failures. Saving here as well hashed the same credential payload twice.
     await this.persist();
     return this.status();
   },
@@ -233,7 +114,6 @@ module.exports = {
       this.profiles.delete(id);
       this.assignments.delete(id);
       this.networkInfo.delete(id);
-      if (this._syncProfilesRaw) this._syncProfilesRaw.delete(id);
       deleted.push(id);
     }
     if (deleted.length) await this.persist();

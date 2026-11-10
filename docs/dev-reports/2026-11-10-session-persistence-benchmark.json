@@ -1,0 +1,64 @@
+{
+  "baseline": "65ddc511c316e097e0f33f0bbfb283bf89903e5f",
+  "node": "v24.22.1",
+  "platform": "linux",
+  "sessionScope": "real local HTTP requests, one fixture server with 20ms response delay; one measurement per scenario, not real browsers",
+  "persistenceScope": "real SQLite WAL, encryption and row diffs; 2 warmups + median of 9 samples, excludes coalescing delay; explicit transaction count excludes metadata autocommits",
+  "hashScope": "plaintext serialization + SHA-256 CPU, 2 warmups + median of 9 samples, one hash per profile in both versions",
+  "sessions": [
+    {
+      "profiles": 10,
+      "simultaneousCallers": 2,
+      "before": {
+        "requests": 20,
+        "peakActiveRequests": 20,
+        "elapsedMs": 42.155
+      },
+      "after": {
+        "requests": 10,
+        "peakActiveRequests": 8,
+        "elapsedMs": 46.128
+      }
+    },
+    {
+      "profiles": 100,
+      "simultaneousCallers": 2,
+      "before": {
+        "requests": 200,
+        "peakActiveRequests": 164,
+        "elapsedMs": 100.128
+      },
+      "after": {
+        "requests": 100,
+        "peakActiveRequests": 8,
+        "elapsedMs": 412.148
+      }
+    }
+  ],
+  "persistence": {
+    "profiles": 100,
+    "cookieBytesPerProfile": 1000,
+    "extensions": 25,
+    "assignmentsPerProfile": 3,
+    "before": {
+      "ms": 14.158,
+      "explicitTransactions": 3,
+      "nestedSavepoints": 0
+    },
+    "after": {
+      "ms": 6.861,
+      "explicitTransactions": 1,
+      "nestedSavepoints": 3
+    }
+  },
+  "hashes": {
+    "profiles": 100,
+    "cookieBytesPerProfile": 100000,
+    "before": {
+      "ms": 83.425
+    },
+    "after": {
+      "ms": 32.513
+    }
+  }
+}

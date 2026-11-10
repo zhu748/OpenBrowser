@@ -1387,7 +1387,7 @@ class BrowserEngine {
     return ids.map((id) => ({ id, item: this.running.get(id) }))
       .filter((entry) => entry.item?.port && !entry.item.cleanedUp && !entry.item.stopping);
   }
-  async sessions() { const entries = this.runningWithCdp([...this.running.keys()]); const result = await Promise.all(entries.map(async ({ id, item }) => { try { return { id, profile: this.profiles.get(id), port: item.port, browser: item.browser.name, tabs: await cdp.tabs(item.port) }; } catch (error) { return { id, profile: this.profiles.get(id), port: item.port, browser: item.browser.name, tabs: [], error: error.message }; } })); return result; }
+
 }
 
 // Runtime settings application, the startup-page/locale environment cluster
@@ -1419,6 +1419,7 @@ Object.assign(BrowserEngine.prototype, require('./engine/lifecycle-cleanup'));
 Object.assign(BrowserEngine.prototype, require('./engine/profile-store-api'));
 Object.assign(BrowserEngine.prototype, require('./engine/extensions-api'));
 Object.assign(BrowserEngine.prototype, require('./engine/persistence'));
+Object.assign(BrowserEngine.prototype, require('./engine/session-api'));
 
 module.exports = {
   BrowserEngine,

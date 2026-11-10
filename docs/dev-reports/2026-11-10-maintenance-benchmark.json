@@ -1,0 +1,42 @@
+{
+  "baseline": "65ddc511c316e097e0f33f0bbfb283bf89903e5f",
+  "node": "v24.22.1",
+  "platform": "linux",
+  "samples": "2 warmups + median of 9 samples; restore uses 30 calls per sample",
+  "scope": "synthetic engine-only restore, sync sanitization/hash CPU, actual SQLite row-change counts; excludes desktop IPC, browsers and credential encryption",
+  "restore": {
+    "profiles": 1000,
+    "before": {
+      "ms": 2.2685,
+      "idReads": 999000
+    },
+    "after": {
+      "ms": 0.0969,
+      "idReads": 3000
+    }
+  },
+  "sync": {
+    "profiles": 1000,
+    "cookieBytesPerProfile": 10000,
+    "before": {
+      "ms": 99.4493,
+      "hashes": 2000
+    },
+    "after": {
+      "ms": 51.3767,
+      "hashes": 1000
+    }
+  },
+  "sqliteRows": {
+    "extensions": 100,
+    "metadataKeys": 4,
+    "before": {
+      "unchangedRowWrites": 104,
+      "singleEditRowWrites": 104
+    },
+    "after": {
+      "unchangedRowWrites": 0,
+      "singleEditRowWrites": 1
+    }
+  }
+}

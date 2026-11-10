@@ -7,6 +7,8 @@ const { spawn, execFile } = require('child_process');
 const cdp = require('./cdp');
 const { BrowserEngine } = require('./engine');
 const { registerExtensionIpc } = require('./main/extensions-ipc');
+const { registerKernelIpc } = require('./main/kernel-ipc');
+const { registerProfileIpc } = require('./main/profile-ipc');
 const { LiveSyncController } = require('./live-sync-v5');
 
 // Host process performance (Win / macOS / Linux): cut background timers and idle GPU work.
@@ -975,48 +977,7 @@ app.whenReady().then(async () => {
     applyWindowChrome(win, themeId, colorMode);
     return { success: true, theme: themeId, colorMode };
   });
-  registerTrustedIpc('kernel:status', () => engine.kernelStatus());
-  registerTrustedIpc('kernel:download', async (_event, force) => engine.ensureIndependentKernel(Boolean(force)));
-  registerTrustedIpc('kernel:check-update', async () => engine.checkKernelUpdate());
-  registerTrustedIpc('kernel:set-custom', async (_event, binaryPath) => engine.setCustomKernel(String(binaryPath || '')));
-  registerTrustedIpc('kernel:policy', async (_event, policy) => engine.setKernelPolicy(policy || {}));
-  registerTrustedIpc('kernel:list-versions', async (_event, engineFamily, refresh) => {
-    if (engineFamily === 'firefox') return engine.kernelManager.listFirefoxVersions({ refresh: Boolean(refresh) });
-    return engine.kernelManager.listChromiumVersions({ refresh: Boolean(refresh) });
-  });
-  registerTrustedIpc('kernel:install-version', async (_event, engineFamily, version) => {
-    const wanted = String(version || '').trim();
-    if (!wanted) throw new Error('Missing version');
-    if (engineFamily === 'firefox') return engine.kernelManager.installFirefoxVersion(wanted);
-    return engine.kernelManager.installChromiumVersion(wanted);
-  });
-  registerTrustedIpc('kernel:list-installed', () => engine.kernelManager.listInstalledKernels());
-  registerTrustedIpc('kernel:delete', async (_event, engineFamily, version) => {
-    if (engineFamily !== 'firefox' && engineFamily !== 'chromium') throw new Error('Unknown engine');
-    return engine.kernelDelete(engineFamily, String(version || '').trim());
-  });
-  registerTrustedIpc('kernel:check', async (_event, engineFamily, version) => {
-    if (engineFamily !== 'firefox' && engineFamily !== 'chromium') throw new Error('Unknown engine');
-    return engine.kernelCheck(engineFamily, String(version || '').trim());
-  });
-  registerTrustedIpc('kernel:cancel-download', () => engine.kernelCancelDownload());
-  registerTrustedIpc('kernel:pin', async (_event, engineFamily, version) => {
-    if (engineFamily !== 'firefox' && engineFamily !== 'chromium') throw new Error('Unknown engine');
-    return engine.kernelManager.pinKernel({ engine: engineFamily, version: String(version || '').trim() });
-  });
-  registerTrustedIpc('kernel:unpin', async () => engine.kernelManager.clearPin());
-  registerTrustedIpc('kernel:choose-custom', async () => {
-    const result = await dialog.showOpenDialog({
-      title: '选择独立 Chromium / Chrome / Firefox 可执行文件',
-      properties: ['openFile'],
-      filters: process.platform === 'win32'
-        ? [{ name: 'Executable', extensions: ['exe'] }]
-        : [{ name: 'All', extensions: ['*'] }],
-    });
-    if (result.canceled || !result.filePaths[0]) return { canceled: true };
-    const kernel = await engine.setCustomKernel(result.filePaths[0]);
-    return { canceled: false, kernel };
-  });
+  registerKernelIpc({ registerTrustedIpc, engine, dialog });
   registerTrustedIpc('system:get-storage', () => ({ profileRoot: engine.getProfileDataRoot(), defaultProfileRoot: defaultProfileDataRoot, running: engine.running.size }));
   registerTrustedIpc('system:choose-storage', async () => {
     if (engine.running.size) throw new Error('\u8bf7\u5148\u505c\u6b62\u6240\u6709\u73af\u5883\uff0c\u518d\u4fee\u6539\u6570\u636e\u4fdd\u5b58\u4f4d\u7f6e');
@@ -1095,47 +1056,16 @@ app.whenReady().then(async () => {
     });
     return { success: true, mode, ...applied };
   });
-  // Status snapshot caching: invalidate on every profile-affecting IPC so the
-  // poll-heavy 'profiles:status' handler can serve a cached array between
-  // mutations (engine.invalidateStatusCache is a no-op when already stale).
-  registerTrustedIpc('profiles:sync', (_event, profiles) => { engine.invalidateStatusCache?.(); return engine.syncProfiles(profiles); });
-  registerTrustedIpc('profiles:delete', async (_event, payload) => {
-    const ids = sanitizeIds(payload?.ids || []);
-    if (syncState.active && syncState.selected.some((id) => ids.includes(id))) endSync();
-    syncSelection = syncSelection.filter((id) => !ids.includes(id));
-    syncState = { ...syncState, selected: syncState.selected.filter((id) => !ids.includes(id)) };
-    emit({ type: 'sync-state', ...syncSnapshot() });
-    return engine.deleteProfiles(ids, payload?.deleteData !== false);
+  registerProfileIpc({
+    registerTrustedIpc, engine, sanitizeIds,
+    beforeRemove(ids) {
+      const removed = new Set(ids);
+      if (syncState.active && syncState.selected.some((id) => removed.has(id))) endSync();
+      syncSelection = syncSelection.filter((id) => !removed.has(id));
+      syncState = { ...syncState, selected: syncState.selected.filter((id) => !removed.has(id)) };
+      emit({ type: 'sync-state', ...syncSnapshot() });
+    },
   });
-  registerTrustedIpc('profiles:trash', async (_event, payload) => {
-    const ids = sanitizeIds(payload?.ids || []);
-    if (syncState.active && syncState.selected.some((id) => ids.includes(id))) endSync();
-    syncSelection = syncSelection.filter((id) => !ids.includes(id));
-    syncState = { ...syncState, selected: syncState.selected.filter((id) => !ids.includes(id)) };
-    emit({ type: 'sync-state', ...syncSnapshot() });
-    return engine.trashProfiles(ids);
-  });
-  registerTrustedIpc('profiles:restore', async (_event, payload) => {
-    const ids = sanitizeIds(payload?.ids || []);
-    return engine.restoreProfiles(ids);
-  });
-  registerTrustedIpc('profiles:purge', async (_event, payload) => {
-    const ids = sanitizeIds(payload?.ids || []);
-    if (syncState.active && syncState.selected.some((id) => ids.includes(id))) endSync();
-    syncSelection = syncSelection.filter((id) => !ids.includes(id));
-    syncState = { ...syncState, selected: syncState.selected.filter((id) => !ids.includes(id)) };
-    emit({ type: 'sync-state', ...syncSnapshot() });
-    return engine.purgeProfiles(ids, payload?.deleteData !== false);
-  });
-  registerTrustedIpc('profiles:empty-trash', async (_event, payload) => {
-    return engine.emptyTrash(payload?.deleteData !== false);
-  });
-  registerTrustedIpc('profiles:start', (_event, profile) => engine.start(profile));
-  registerTrustedIpc('profiles:stop', (_event, id) => engine.stop(id));
-  registerTrustedIpc('profiles:clear-cache-cookies', (_event, id) => engine.clearProfileCacheAndCookies(id));
-  registerTrustedIpc('profiles:status', () => engine.status());
-  registerTrustedIpc('profiles:test-proxy', (_event, profile) => engine.testProxy(profile));
-  registerTrustedIpc('profiles:check-proxy', (_event, profile) => engine.checkProxy(profile, { persist: true }));
 
   registerExtensionIpc({ registerTrustedIpc, engine, dialog, sanitizeIds, fetchStorePackage });
 

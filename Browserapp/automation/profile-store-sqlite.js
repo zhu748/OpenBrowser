@@ -257,6 +257,8 @@ class ProfileStoreSqlite {
       deleteGroup: this.db.prepare('DELETE FROM groups WHERE id = ?'),
 
       // Extension statements
+      // Compare in SQLite so every caller, including direct saves and reopened
+      // stores, skips unchanged rows without a second mutable cache to maintain.
       upsertExtension: this.db.prepare(`
         INSERT INTO extensions (id, name, version, path, built_in, added_at, data)
         VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -266,7 +268,8 @@ class ProfileStoreSqlite {
           path = excluded.path,
           built_in = excluded.built_in,
           added_at = excluded.added_at,
-          data = excluded.data;
+          data = excluded.data
+        WHERE extensions.data IS NOT excluded.data;
       `),
       getAllExtensions: this.db.prepare('SELECT data FROM extensions'),
       deleteExtension: this.db.prepare('DELETE FROM extensions WHERE id = ?'),
@@ -291,6 +294,7 @@ class ProfileStoreSqlite {
       setMeta: this.db.prepare(`
         INSERT INTO meta (key, value) VALUES (?, ?)
         ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        WHERE meta.value IS NOT excluded.value
       `),
       getAllMeta: this.db.prepare('SELECT key, value FROM meta'),
     };
@@ -325,8 +329,7 @@ class ProfileStoreSqlite {
     this._prepareStatements();
 
     // Perform migration inside an atomic transaction
-    this.db.exec('BEGIN TRANSACTION;');
-    try {
+    this.withTransaction(() => {
       // 1. Profiles
       const profiles = Array.isArray(saved.profiles) ? saved.profiles : [];
       for (const profile of profiles) {
@@ -408,11 +411,7 @@ class ProfileStoreSqlite {
       this._statements.setMeta.run('migrated_at', JSON.stringify(new Date().toISOString()));
       this._statements.setMeta.run('migrated_from', JSON.stringify(this.legacyJsonPath));
 
-      this.db.exec('COMMIT;');
-    } catch (err) {
-      try { this.db.exec('ROLLBACK;'); } catch (_) {}
-      throw err;
-    }
+    });
 
     // Integrity check
     const countRow = this._statements.getProfileCount.get();
@@ -453,6 +452,33 @@ class ProfileStoreSqlite {
     this.isOpen = false;
     this._statements = {};
     this._assignmentSnapshot = null;
+    this._rowHashes?.clear();
+  }
+
+  /** Synchronous transactions compose through savepoints; rollback invalidates derived caches. */
+  withTransaction(work) {
+    const depth = this._transactionDepth || 0;
+    const savepoint = `openbrowser_${depth}`;
+    this.db.exec(depth ? `SAVEPOINT ${savepoint};` : 'BEGIN TRANSACTION;');
+    this._transactionDepth = depth + 1;
+    try {
+      const result = work();
+      if (result && typeof result.then === 'function') {
+        Promise.resolve(result).catch(() => {});
+        throw new TypeError('SQLite transaction callbacks must be synchronous');
+      }
+      this.db.exec(depth ? `RELEASE SAVEPOINT ${savepoint};` : 'COMMIT;');
+      return result;
+    } catch (error) {
+      try {
+        this.db.exec(depth ? `ROLLBACK TO SAVEPOINT ${savepoint}; RELEASE SAVEPOINT ${savepoint};` : 'ROLLBACK;');
+      } catch { /* preserve the original write/commit failure */ }
+      this._rowHashes?.clear();
+      this._assignmentSnapshot = null;
+      throw error;
+    } finally {
+      this._transactionDepth = depth;
+    }
   }
 
   /* ---------------- Profile operations ---------------- */
@@ -489,18 +515,12 @@ class ProfileStoreSqlite {
 
   saveProfiles(profiles) {
     if (!Array.isArray(profiles)) return;
-    this.db.exec('BEGIN TRANSACTION;');
-    try {
+    this.withTransaction(() => {
       for (const profile of profiles) {
         if (!profile || typeof profile !== 'object' || !profile.id) continue;
         this.saveProfile(profile);
       }
-      this.db.exec('COMMIT;');
-    } catch (err) {
-      try { this.db.exec('ROLLBACK;'); } catch (_) {}
-      this._rowHashes?.clear();
-      throw err;
-    }
+    });
   }
 
   // Deterministic change-detection hash over the plaintext (JSON of the
@@ -516,9 +536,12 @@ class ProfileStoreSqlite {
       profile.groupId != null ? String(profile.groupId) : null,
       profile.trashed ? 1 : 0,
       profile.trashedAt ? String(profile.trashedAt) : null,
-      JSON.stringify(profile),
     ];
-    return require('node:crypto').createHash('sha256').update(JSON.stringify(parts)).digest('hex');
+    // Hash the two JSON sections separately: embedding the profile JSON inside
+    // another JSON array escaped and copied large cookie strings a second time.
+    // The NUL separator cannot occur unescaped in either JSON section.
+    return require('node:crypto').createHash('sha256')
+      .update(JSON.stringify(parts)).update('\0').update(JSON.stringify(profile)).digest('hex');
   }
 
   // Row-accurate save: only profiles whose hash differs from the last
@@ -620,8 +643,7 @@ class ProfileStoreSqlite {
   trashProfiles(ids, nowIso = new Date().toISOString()) {
     if (!Array.isArray(ids) || !ids.length) return [];
     const trashedIds = [];
-    this.db.exec('BEGIN TRANSACTION;');
-    try {
+    this.withTransaction(() => {
       for (const id of ids) {
         const row = this._statements.getProfile.get(String(id));
         if (!row || !row.data) continue;
@@ -638,14 +660,7 @@ class ProfileStoreSqlite {
         this._rowHashes?.set(String(id), this.profileDataHash(profile));
         trashedIds.push(String(id));
       }
-      this.db.exec('COMMIT;');
-    } catch (err) {
-      try { this.db.exec('ROLLBACK;'); } catch (_) {}
-      // Earlier rows may have updated their hashes before a later row failed.
-      // The database rolled back; discard those speculative cache entries too.
-      this._rowHashes?.clear();
-      throw err;
-    }
+    });
     return trashedIds;
   }
 
@@ -658,8 +673,7 @@ class ProfileStoreSqlite {
     if (!Array.isArray(ids) || !ids.length) return [];
     const restoredIds = [];
     const nowIso = new Date().toISOString();
-    this.db.exec('BEGIN TRANSACTION;');
-    try {
+    this.withTransaction(() => {
       for (const id of ids) {
         const row = this._statements.getProfile.get(String(id));
         if (!row || !row.data) continue;
@@ -675,12 +689,7 @@ class ProfileStoreSqlite {
         this._rowHashes?.set(String(id), this.profileDataHash(profile));
         restoredIds.push(String(id));
       }
-      this.db.exec('COMMIT;');
-    } catch (err) {
-      try { this.db.exec('ROLLBACK;'); } catch (_) {}
-      this._rowHashes?.clear();
-      throw err;
-    }
+    });
     return restoredIds;
   }
 
@@ -693,8 +702,7 @@ class ProfileStoreSqlite {
     if (!Array.isArray(ids) || !ids.length) return [];
     this._assignmentSnapshot = null;
     const deletedIds = [];
-    this.db.exec('BEGIN TRANSACTION;');
-    try {
+    this.withTransaction(() => {
       for (const id of ids) {
         const safeId = String(id);
         this._statements.clearAssignmentsForProfile.run(safeId);
@@ -707,12 +715,7 @@ class ProfileStoreSqlite {
           this._rowHashes?.delete(safeId);
         }
       }
-      this.db.exec('COMMIT;');
-    } catch (err) {
-      try { this.db.exec('ROLLBACK;'); } catch (_) {}
-      this._rowHashes?.clear();
-      throw err;
-    }
+    });
     return deletedIds;
   }
 
@@ -744,16 +747,11 @@ class ProfileStoreSqlite {
 
   saveGroups(groups) {
     if (!Array.isArray(groups)) return;
-    this.db.exec('BEGIN TRANSACTION;');
-    try {
+    this.withTransaction(() => {
       for (const group of groups) {
         this.saveGroup(group);
       }
-      this.db.exec('COMMIT;');
-    } catch (err) {
-      try { this.db.exec('ROLLBACK;'); } catch (_) {}
-      throw err;
-    }
+    });
   }
 
   listGroups() {
@@ -786,16 +784,11 @@ class ProfileStoreSqlite {
 
   saveExtensions(extensions) {
     if (!Array.isArray(extensions)) return;
-    this.db.exec('BEGIN TRANSACTION;');
-    try {
+    this.withTransaction(() => {
       for (const ext of extensions) {
         this.saveExtension(ext);
       }
-      this.db.exec('COMMIT;');
-    } catch (err) {
-      try { this.db.exec('ROLLBACK;'); } catch (_) {}
-      throw err;
-    }
+    });
   }
 
   listExtensions() {
@@ -810,15 +803,10 @@ class ProfileStoreSqlite {
   deleteExtension(id) {
     const safeId = String(id);
     this._assignmentSnapshot = null;
-    this.db.exec('BEGIN TRANSACTION;');
-    try {
+    this.withTransaction(() => {
       this._statements.clearAssignmentsForExtension.run(safeId);
       this._statements.deleteExtension.run(safeId);
-      this.db.exec('COMMIT;');
-    } catch (err) {
-      try { this.db.exec('ROLLBACK;'); } catch (_) {}
-      throw err;
-    }
+    });
   }
 
   /* ---------------- Assignment operations ---------------- */
@@ -852,18 +840,12 @@ class ProfileStoreSqlite {
       changed.push([profileId, ids]);
     }
     if (!changed.length) return 0;
-    this.db.exec('BEGIN TRANSACTION;');
-    try {
+    this.withTransaction(() => {
       for (const [profileId, ids] of changed) {
         this._statements.clearAssignmentsForProfile.run(profileId);
         for (const id of ids) this._statements.addAssignment.run(profileId, id);
       }
-      this.db.exec('COMMIT;');
-    } catch (error) {
-      try { this.db.exec('ROLLBACK;'); } catch {}
-      this._assignmentSnapshot = null;
-      throw error;
-    }
+    });
     // Publish only committed values, including empty sets after a clear.
     for (const [profileId, ids] of changed) this._assignmentSnapshot.set(profileId, ids);
     return changed.length;
@@ -872,24 +854,18 @@ class ProfileStoreSqlite {
   setAssignments(profileId, extensionIds) {
     const safePid = String(profileId);
     this._assignmentSnapshot = null;
-    this.db.exec('BEGIN TRANSACTION;');
-    try {
+    this.withTransaction(() => {
       this._statements.clearAssignmentsForProfile.run(safePid);
       for (const eid of extensionIds) {
         this._statements.addAssignment.run(safePid, String(eid));
       }
-      this.db.exec('COMMIT;');
-    } catch (err) {
-      try { this.db.exec('ROLLBACK;'); } catch (_) {}
-      throw err;
-    }
+    });
   }
 
   assignExtension(extensionId, profileIds, enabled) {
     const safeEid = String(extensionId);
     this._assignmentSnapshot = null;
-    this.db.exec('BEGIN TRANSACTION;');
-    try {
+    this.withTransaction(() => {
       for (const pid of profileIds) {
         const safePid = String(pid);
         if (enabled) {
@@ -898,11 +874,7 @@ class ProfileStoreSqlite {
           this._statements.removeAssignment.run(safePid, safeEid);
         }
       }
-      this.db.exec('COMMIT;');
-    } catch (err) {
-      try { this.db.exec('ROLLBACK;'); } catch (_) {}
-      throw err;
-    }
+    });
   }
 
   /* ---------------- Metadata & Settings ---------------- */
@@ -935,6 +907,18 @@ class ProfileStoreSqlite {
   }
 
   /* ---------------- Export & Cloud compatibility ---------------- */
+
+  /** Persist the engine-owned tables together; unrelated groups are retained. */
+  saveEngineState(state) {
+    return this.withTransaction(() => {
+      for (const key of ['kernelPolicyVersion', 'preferIndependentKernel', 'allowSystemBrowserFallback', 'systemBrowserPath']) {
+        this.setMeta(key, state[key]);
+      }
+      this.saveExtensions(state.extensions);
+      this.saveAssignmentsDiffed(new Map(Object.entries(state.assignments)));
+      return this.saveProfilesDiffed(state.profiles);
+    });
+  }
 
   /**
    * Export the complete engine state formatted identically to the legacy JSON file.

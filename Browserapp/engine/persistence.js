@@ -18,6 +18,10 @@ module.exports = {
     let write;
     if (this.usingSqlite && this.sqliteStore) {
       write = async () => {
+        if (typeof this.sqliteStore.saveEngineState === 'function') {
+          return this.sqliteStore.saveEngineState(this._engineStateSnapshot());
+        }
+        // Compatibility for storage adapters without the atomic snapshot API.
         this.sqliteStore.setMeta('kernelPolicyVersion', KERNEL_POLICY_VERSION);
         this.sqliteStore.setMeta('preferIndependentKernel', this.preferIndependentKernel);
         this.sqliteStore.setMeta('allowSystemBrowserFallback', this.allowSystemBrowserFallback);
