@@ -11,7 +11,9 @@ const {
   normalizeRemoteTemplate,
   parseProcessContent,
 } = require('./template-sync');
-const { findUnsupportedSteps, assertStepGraph } = require('./rpa/step-registry');
+const { analyzeStepGraph, assertStepGraph } = require('./rpa/step-registry');
+const { createTaskRecord, pruneTaskHistory } = require('./rpa/task-records');
+const { resolveStepChildren } = require('./rpa/step-shape');
 const { createCoalescedWriter } = require('./coalesced-writer');
 const { enforceStoreBudget } = require('./rpa-store-budget');
 
@@ -297,7 +299,7 @@ class RpaStore {
         step.isShow = '0';
       }
       for (const key of ['children', 'elseChildren', 'errorChildren']) {
-        const children = Array.isArray(step[key]) ? step[key] : step.params?.[key];
+        const children = resolveStepChildren(step, key);
         if (Array.isArray(children)) children.forEach(mark);
       }
     };
@@ -554,18 +556,7 @@ class RpaStore {
 
   /** Keep only the newest tasks so rpa-store.json stays bounded. */
   pruneTasks() {
-    const data = this.data.tasks;
-    if (data.length <= TASK_HISTORY_LIMIT) return [];
-    const ACTIVE = new Set(['pending', 'running']);
-    const removed = [];
-    // Drop oldest terminal tasks first; never drop tasks that may still execute.
-    for (let i = data.length - 1; i >= 0 && data.length > TASK_HISTORY_LIMIT; i -= 1) {
-      if (!ACTIVE.has(String(data[i]?.status || ''))) {
-        removed.push(data[i].id);
-        data.splice(i, 1);
-      }
-    }
-    return removed;
+    return pruneTaskHistory(this.data.tasks, TASK_HISTORY_LIMIT);
   }
 
   async deleteTask(id) {
@@ -577,54 +568,15 @@ class RpaStore {
   }
 
   async createTask(input = {}) {
-    const now = new Date().toISOString();
-    const variables = input.variables && typeof input.variables === 'object' && !Array.isArray(input.variables)
-      ? { ...input.variables }
-      : {};
-    const task = {
-      id: String(input.id || crypto.randomUUID()),
-      plan_id: input.plan_id ? String(input.plan_id) : null,
-      profile_id: String(input.profile_id || ''),
-      process_name: String(input.process_name || 'task').slice(0, 120),
-      status: 'pending',
-      steps: Array.isArray(input.steps) ? input.steps : [],
-      process_content: input.process_content !== undefined ? input.process_content : null,
-      variables,
-      process_logs: [],
-      process_result: null,
-      create_time: now,
-      start_time: null,
-      complete_time: null,
-      update_time: now,
-    };
-    this.data.tasks.unshift(task);
-    this.pruneTasks();
-    await this.save();
+    const [task] = await this.createTasks([input]);
     return task;
   }
 
   async createTasks(inputs = []) {
     if (!Array.isArray(inputs) || !inputs.length) return [];
     const now = new Date().toISOString();
-    const tasks = inputs.map((input = {}) => ({
-      id: String(input.id || crypto.randomUUID()),
-      plan_id: input.plan_id ? String(input.plan_id) : null,
-      profile_id: String(input.profile_id || ''),
-      process_name: String(input.process_name || 'task').slice(0, 120),
-      status: 'pending',
-      steps: Array.isArray(input.steps) ? input.steps : [],
-      process_content: input.process_content !== undefined ? input.process_content : null,
-      variables: input.variables && typeof input.variables === 'object' && !Array.isArray(input.variables)
-        ? { ...input.variables }
-        : {},
-      process_logs: [],
-      process_result: null,
-      create_time: now,
-      start_time: null,
-      complete_time: null,
-      update_time: now,
-    }));
-    this.data.tasks.unshift(...tasks);
+    const tasks = inputs.map((input) => createTaskRecord(input, now));
+    this.data.tasks = tasks.concat(this.data.tasks);
     this.pruneTasks();
     await this.save();
     return tasks;
@@ -650,30 +602,7 @@ class RpaStore {
    * surface these counts so "install template" is visibly "run template code".
    */
   static countSensitiveSteps(steps = []) {
-    const walk = (list, depth = 0) => {
-      let evaluate = 0; let openai = 0; let download = 0;
-      if (depth > 8 || !Array.isArray(list)) return { evaluate, openai, download };
-      for (const step of list) {
-        if (!step || typeof step !== 'object') continue;
-        const type = String(step.type || '').toLowerCase();
-        if (type === 'evaluate' || type === 'script' || type === 'js' || type === 'javascript') evaluate += 1;
-        if (type === 'getopenai') openai += 1;
-        if (type === 'downloadfile') download += 1;
-        for (const key of ['children', 'steps', 'nodes', 'branches']) {
-          if (Array.isArray(step[key])) {
-            const nested = RpaStore.countSensitiveSteps(step[key], depth + 1) || RpaStore.walkForSensitiveSteps(step[key], depth + 1);
-            evaluate += nested.evaluate; openai += nested.openai; download += nested.download;
-          }
-        }
-      }
-      return { evaluate, openai, download };
-    };
-    return walk(steps);
-  }
-
-  // Alias kept for internal recursion clarity above.
-  static walkForSensitiveSteps(steps, depth) {
-    return RpaStore.countSensitiveSteps(steps, depth);
+    return analyzeStepGraph(steps).sensitive;
   }
 
   /** Human-readable capability summary for toast/API surfaces. */
@@ -715,8 +644,7 @@ class RpaStore {
     });
     const evaluated = items.map((template) => {
       this.applyFreeTemplateInPlace(template);
-      const unsupported = findUnsupportedSteps(template.steps || []);
-      const sensitive = RpaStore.countSensitiveSteps(template.steps || []);
+      const { unsupported, sensitive } = analyzeStepGraph(template.steps || []);
       return {
         ...template,
         pay_type: 1,
@@ -852,7 +780,7 @@ class RpaStore {
     // Always re-mark optional overlays so installed plans never hard-fail on geo/cookie chrome.
     steps = RpaStore.sanitizeOptionalOverlaySteps(steps);
     if (!steps.length) throw new Error('模版没有可执行步骤（未同步 process_content）');
-    const unsupported = findUnsupportedSteps(steps);
+    const { unsupported, sensitive } = analyzeStepGraph(steps);
     if (unsupported.length) {
       const summary = unsupported.slice(0, 4).map((item) => `${item.path.join('.')}: ${item.type}`).join(', ');
       throw new Error(`模版包含当前版本未支持的步骤，不能创建不可运行流程：${summary}`);
@@ -872,7 +800,6 @@ class RpaStore {
     stored.uses = (Number(stored.uses) || 0) + 1;
     stored.update_time = new Date().toISOString();
     await this.save();
-    const sensitive = RpaStore.countSensitiveSteps(steps);
     return {
       plan,
       template: this.forceFreeTemplate(stored),

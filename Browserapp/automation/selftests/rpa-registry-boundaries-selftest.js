@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const { RpaEngine } = require('../rpa-engine');
 const { RpaStore } = require('../rpa-store');
-const { executableStepTypes, unsupportedStepTypes, getStepCapability, resolveStepHandler, findUnsupportedSteps, validateStepHandlers } = require('../rpa/step-registry');
+const { executableStepTypes, unsupportedStepTypes, getStepCapability, resolveStepHandler, analyzeStepGraph, findUnsupportedSteps, validateStepHandlers } = require('../rpa/step-registry');
 
 async function main() {
   validateStepHandlers(RpaEngine.prototype);
@@ -23,10 +23,42 @@ async function main() {
   assert.throws(() => validateStepHandlers({}), /without executor/);
   const cycle = [{ type: 'wait' }]; cycle[0].children = cycle;
   assert.equal(findUnsupportedSteps(cycle)[0].reason, 'cyclic steps');
+  assert.deepEqual(RpaStore.countSensitiveSteps(cycle), { evaluate: 0, openai: 0, download: 0 }, 'disclosure also terminates on cycles');
   assert.throws(() => RpaStore.sanitizeOptionalOverlaySteps(cycle), (error) => error.code === 'RPA_INVALID_GRAPH');
   let deep = [{ type: 'wait' }];
   for (let index = 0; index < 1000; index += 1) deep = [{ type: 'ifelse', children: deep }];
   assert.equal(findUnsupportedSteps(deep)[0].reason, 'step nesting exceeds limit');
+  assert.doesNotThrow(() => RpaStore.countSensitiveSteps(deep));
+  const flow = [{ type: 'ifElse', children: [{ action: 'javaScript' }],
+    elseChildren: [{ type: 'downloadFile' }], params: { errorChildren: [{ type: 'getOpenAI' }],
+      children: [{ type: 'evaluate' }, { type: 'evaluate' }] } }];
+  const analysis = analyzeStepGraph(flow);
+  assert.deepEqual(analysis.unsupported, []);
+  assert.deepEqual(analysis.sensitive, { evaluate: 1, openai: 1, download: 1 }, 'branches follow executor precedence and action aliases');
+  const wrapped = [{ type: 'forTimes', params: { config: { times: 1, children: [{ type: 'script' }] } } }];
+  assert.equal(analyzeStepGraph(wrapped).sensitive.evaluate, 1, 'params.config children are disclosed');
+  assert.equal(findUnsupportedSteps([{ type: 'forTimes', config: { children: [{ type: 'missing' }] } }])[0].type, 'missing',
+    'config children are validated before browser allocation');
+  const wrappedCycle = [{ type: 'forTimes', params: { config: {} } }];
+  wrappedCycle[0].params.config.children = wrappedCycle;
+  assert.equal(findUnsupportedSteps(wrappedCycle)[0].reason, 'cyclic steps');
+  const dispatches = [];
+  const wrappedRunner = Object.assign(Object.create(RpaEngine.prototype), {
+    executeStep: async (_port, step) => dispatches.push(step.type),
+  });
+  await wrappedRunner.executeStepInternal(0, wrapped[0], { variables: {} });
+  assert.deepEqual(dispatches, ['script'], 'the analyzed wrapped child is the child actually executed');
+  const reused = [{ type: 'script' }];
+  assert.equal(RpaStore.countSensitiveSteps([{ type: 'ifElse', children: reused, elseChildren: reused }]).evaluate, 2,
+    'shared acyclic subflows count at each executable path');
+  assert.equal(RpaStore.countSensitiveSteps(Array.from({ length: 10001 }, () => ({ type: 'evaluate' }))).evaluate, 10000,
+    'capability analysis observes the validation step budget');
+  const listing = new RpaStore('unused-in-memory-test.json');
+  listing.data.templates = [{ id: 'cycle', steps: cycle }];
+  assert.throws(() => listing.listTemplates(), (error) => error.code === 'RPA_INVALID_GRAPH');
+  listing.data.templates = [{ id: 'flow', steps: flow }];
+  const templates = listing.listTemplates();
+  assert.deepEqual(templates.find((item) => item.id === 'flow').sensitive_steps, analysis.sensitive);
   assert.equal(findUnsupportedSteps(Array.from({ length: 10001 }, () => ({ type: 'wait' })))[0].reason, 'step count exceeds limit');
   const shared = [{ type: 'missing' }];
   const issues = findUnsupportedSteps([{ type: 'ifelse', children: shared, elseChildren: shared }]);

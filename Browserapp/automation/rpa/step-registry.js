@@ -1,5 +1,7 @@
 'use strict';
 
+const { resolveStepChildren } = require('./step-shape');
+
 // Each executor declares its accepted spellings once; validation and dispatch share it.
 const STEPS = [
   ['stepWait', ['wait', 'sleep', 'delay', 'waittime']],
@@ -89,8 +91,10 @@ function validateStepHandlers(prototype) {
   }
 }
 
-function findUnsupportedSteps(steps, path = []) {
-  if (!Array.isArray(steps)) return [{ path, type: '', reason: 'steps must be an array' }];
+/** Validation and capability disclosure follow the same executable branches and budgets. */
+function analyzeStepGraph(steps, path = []) {
+  const sensitive = { evaluate: 0, openai: 0, download: 0 };
+  if (!Array.isArray(steps)) return { unsupported: [{ path, type: '', reason: 'steps must be an array' }], sensitive };
   const unsupported = []; const ancestors = new Set();
   let visited = 0; let exhausted = false;
   const visit = (list, prefix, depth) => {
@@ -109,17 +113,25 @@ function findUnsupportedSteps(steps, path = []) {
         }
         const step = list[index] || {};
         const type = String(step.type || step.action || '').toLowerCase();
-        if (!resolveStepHandler(type)) unsupported.push({ path: currentPath, type: type || '(empty)', message: getStepCapability(type).message });
+        const handler = resolveStepHandler(type);
+        if (!handler) unsupported.push({ path: currentPath, type: type || '(empty)', message: getStepCapability(type).message });
+        if (handler === 'stepEvaluate') sensitive.evaluate += 1;
+        else if (handler === 'stepGetOpenAI') sensitive.openai += 1;
+        else if (handler === 'stepDownloadFile') sensitive.download += 1;
         for (const key of ['children', 'elseChildren', 'errorChildren']) {
           if (exhausted) break;
-          const children = Array.isArray(step[key]) ? step[key] : step.params?.[key];
+          const children = resolveStepChildren(step, key);
           if (Array.isArray(children)) visit(children, currentPath, depth + 1);
         }
       }
     } finally { ancestors.delete(list); }
   };
   visit(steps, path, 0);
-  return unsupported;
+  return { unsupported, sensitive };
+}
+
+function findUnsupportedSteps(steps, path = []) {
+  return analyzeStepGraph(steps, path).unsupported;
 }
 
 function assertStepGraph(steps) {
@@ -127,4 +139,4 @@ function assertStepGraph(steps) {
   if (invalid) throw Object.assign(new Error('Invalid RPA step graph: ' + invalid.reason), { code: 'RPA_INVALID_GRAPH' });
 }
 
-module.exports = { resolveStepHandler, validateStepHandlers, executableStepTypes, unsupportedStepTypes, getStepCapability, findUnsupportedSteps, assertStepGraph };
+module.exports = { resolveStepHandler, validateStepHandlers, executableStepTypes, unsupportedStepTypes, getStepCapability, analyzeStepGraph, findUnsupportedSteps, assertStepGraph };

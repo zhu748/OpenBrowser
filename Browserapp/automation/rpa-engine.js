@@ -33,6 +33,7 @@ const NAMED_KEY_VK = (name) => {
 const { resolveSafeRpaPath, resolveSpreadsheetPath } = require('./rpa/paths');
 const fileSteps = require('./rpa/file-steps');
 const { resolveStepHandler, findUnsupportedSteps, validateStepHandlers } = require('./rpa/step-registry');
+const { resolveStepParams, resolveStepChildren } = require('./rpa/step-shape');
 // Launching a browser environment is heavy (disk, CPU, memory). A plan that
 // covers many profiles must not boot every kernel at the same instant, so the
 // launches go through a small queue. Steps themselves still interleave.
@@ -544,9 +545,7 @@ class RpaEngine {
       if (error instanceof BreakLoopSignal || error instanceof TypingAbortedError) {
         throw error;
       }
-      const errorChildren = Array.isArray(step.errorChildren)
-        ? step.errorChildren
-        : (Array.isArray(step.params?.errorChildren) ? step.params.errorChildren : null);
+      const errorChildren = resolveStepChildren(step, 'errorChildren');
       if (Array.isArray(errorChildren) && errorChildren.length > 0) {
         if (ctx?.log) await ctx.log(`step error handled by errorChildren: ${error.message}`);
         for (const child of errorChildren) {
@@ -561,8 +560,7 @@ class RpaEngine {
   async executeStepInternal(port, step, ctx) {
     port = ctx?.port || port;
     const type = String(step.type || step.action || '').toLowerCase();
-    const rawParams = step.params && typeof step.params === 'object' ? step.params : step;
-    const params = rawParams.config && typeof rawParams.config === 'object' ? rawParams.config : rawParams;
+    const params = resolveStepParams(step);
     const variables = ctx.variables || (ctx.variables = {});
     const value = (input) => getVariableValue(input, variables);
     const text = (input) => String(value(input) ?? '');
@@ -814,7 +812,7 @@ class RpaEngine {
 
   async stepForTimes({ port, step, ctx, params, variables, value }) {
     const times = Math.max(0, Math.min(1000, Number(value(params.times)) || 1));
-    const children = Array.isArray(step.children) ? step.children : (Array.isArray(params.children) ? params.children : []);
+    const children = resolveStepChildren(step, 'children') || [];
     try {
       for (let i = 0; i < times; i += 1) {
         if (params.variableIndex) variables[params.variableIndex] = i;
@@ -827,8 +825,8 @@ class RpaEngine {
     return;
   }
 
-  async stepCombineProcess({ port, step, ctx, params }) {
-    const children = Array.isArray(step.children) ? step.children : (Array.isArray(params.children) ? params.children : []);
+  async stepCombineProcess({ port, step, ctx }) {
+    const children = resolveStepChildren(step, 'children') || [];
     for (const child of children) await this.executeStep(port, child, ctx);
     return;
   }
@@ -840,7 +838,7 @@ class RpaEngine {
       try { items = JSON.parse(list); } catch (_) { items = list.split(/\r?\n/).filter(Boolean); }
     }
     if (!Array.isArray(items)) throw new Error('forLists requires an array variable: ' + String(params.content || ''));
-    const children = Array.isArray(step.children) ? step.children : (Array.isArray(params.children) ? params.children : []);
+    const children = resolveStepChildren(step, 'children') || [];
     try {
       for (let index = 0; index < items.length; index += 1) {
         variables[params.variable || 'item'] = items[index];
@@ -856,8 +854,8 @@ class RpaEngine {
 
   async stepIfElse({ port, step, ctx, params, variables }) {
     const condition = this.evaluateCondition(params, variables);
-    const children = Array.isArray(step.children) ? step.children : (Array.isArray(params.children) ? params.children : []);
-    const elseChildren = Array.isArray(step.elseChildren) ? step.elseChildren : (Array.isArray(params.elseChildren) ? params.elseChildren : []);
+    const children = resolveStepChildren(step, 'children') || [];
+    const elseChildren = resolveStepChildren(step, 'elseChildren') || [];
     if (!condition) {
       for (const child of elseChildren) await this.executeStep(port, child, ctx);
     } else {
@@ -868,7 +866,7 @@ class RpaEngine {
 
   async stepWhileData({ port, step, ctx, params, variables }) {
     const max = Math.max(1, Math.min(10000, Number(params.maxLoops || 100)));
-    const children = Array.isArray(step.children) ? step.children : (Array.isArray(params.children) ? params.children : []);
+    const children = resolveStepChildren(step, 'children') || [];
     try {
       for (let count = 0; count < max && this.evaluateCondition(params, variables); count += 1) {
         for (const child of children) await this.executeStep(port, child, ctx);
@@ -931,7 +929,7 @@ class RpaEngine {
     const selector = target.selector;
     if (!selector) throw new Error('forElements requires selector');
     const elements = await this.withPage(port, (ws) => this.listElements(ws, selector, params), ctx);
-    const children = Array.isArray(step.children) ? step.children : (Array.isArray(params.children) ? params.children : []);
+    const children = resolveStepChildren(step, 'children') || [];
     try {
       for (let index = 0; index < elements.length; index += 1) {
         variables[params.variable || 'element'] = elements[index];
@@ -1302,7 +1300,7 @@ class RpaEngine {
     ctx.activeTabId = null;
     variables.openedBrowserProfileId = profile.id;
 
-    const children = Array.isArray(step.children) ? step.children : (Array.isArray(params.children) ? params.children : []);
+    const children = resolveStepChildren(step, 'children') || [];
     try {
       for (const child of children) {
         await this.executeStep(ctx.port, child, ctx);

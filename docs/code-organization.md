@@ -1,5 +1,9 @@
 # 代码分类与维护入口
 
+本轮列表 DOM 更新、RPA 步骤契约与任务记录整理见 [2026-11-11 项目复审](dev-reports/2026-11-11-review-followup.md)。
+
+后续队列、批量操作、同步文本和显示缓存的连续迭代见 [优化与复审记录](dev-reports/2026-11-11-iterative-optimization.md)。
+
 本次执行边界、下载、DNS 与凭据备份的深度复核见 [六轮审查记录](dev-reports/2026-11-10-deep-review.md)。
 
 CDP 连接复用、RPA 文件操作、API 嵌套凭据和状态索引的本次复核见 [通信与文件处理审查](dev-reports/2026-11-10-cdp-rpa-and-response-review.md)。
@@ -23,6 +27,9 @@ CDP 连接复用、RPA 文件操作、API 嵌套凭据和状态索引的本次�
 | UI 交互 | `Browserapp/renderer.js`、`ui/`、`renderer-*.js` | DOM、表单、交互状态、页面切换 |
 | 分组界面 | `Browserapp/ui/ui-groups.js` | 分组页面、编辑对话框、删除分组、批量移动环境；事件绑定由 renderer 负责 |
 | 列表数据逻辑 | `Browserapp/ui/ui-profile-list.js` | 搜索、分组过滤、收藏/运行状态筛选、高级筛选、排序、分页、统计；同时支持浏览器和 CommonJS |
+| 列表行更新 | `Browserapp/ui/ui-profile-rows.js` | 维护显示字段的缓存键，按可见页 ID 复用、替换、移动及删除行；未变化的行保持原 DOM 位置；renderer 提供行构造和选择状态 |
+| 环境批量集合 | `Browserapp/ui/ui-profile-batch.js` | 按 ID 集合线性移除、回收或恢复环境；保留顺序和已有记录引用，供批量操作与回滚共用 |
+| 同步文本数据 | `Browserapp/ui/ui-sync-text.js` | 文本分行、顺序/随机分发及游标、会话数字排序；每次排序只建立一份会话索引，编号解析与 DOM 无关 |
 | 环境状态合并 | `Browserapp/ui/ui-profile-state.js` | 启动时按 ID 合并环境并恢复匹配的备用代理凭据。轮询合并只复制变化行，未变化时保留数组和对象引用；明确的 null 清除旧出口信息 |
 | 事件刷新调度 | `Browserapp/ui/ui-refresh-scheduler.js` | 合并事件、串行刷新、保留执行期间的迟到请求、暂停及恢复；不依赖 DOM |
 | 引擎协调 | `Browserapp/engine.js` | 公开 `BrowserEngine`、生命周期协调、状态快照、持久化调度 |
@@ -44,7 +51,9 @@ CDP 连接复用、RPA 文件操作、API 嵌套凭据和状态索引的本次�
 | API 嵌套凭据 | `Browserapp/automation/api/responses.js` | 主账号、多账号、2FA 和备用代理统一脱敏，保留引擎持有的原始数据；复制环境清空所有账号行 |
 | API CDP 地址 | `Browserapp/automation/api/devtools.js` | 查询真实浏览器 GUID；列表查询最多并发 8 项，同一运行实例复用在途请求，退出/重启的旧结果丢弃。每次尝试的 600ms 期限落实到 HTTP 连接 |
 | 自动化执行 | `Browserapp/automation/rpa-engine.js`、`rpa-store.js`、`task-queue.js`、`task-scheduler.js` | 步骤执行、任务记录、并发与排队 |
-| RPA 动作注册 | `Browserapp/automation/rpa/step-registry.js` | 每个执行器集中声明动作别名；支持和已知不支持动作由同一份注册表描述。未实现动作在浏览器分配前拒绝，不能空执行后报告成功；执行图校验限制循环引用、深度和总步骤数 |
+| RPA 动作注册与分析 | `Browserapp/automation/rpa/step-registry.js` | 每个执行器集中声明动作别名；一次有界遍历同时提供未支持动作与敏感能力统计，执行图校验限制循环引用、深度和总步骤数 |
+| RPA 步骤结构 | `Browserapp/automation/rpa/step-shape.js` | 执行器、校验器与模板预处理共用参数包和分支读取规则；支持 params.config，保持顶层数组优先及异常分支的既有语义 |
+| RPA 任务记录 | `Browserapp/automation/rpa/task-records.js` | 单条与批量创建共用字段和默认值；按原顺序线性清理最旧终态记录，保留 pending/running 任务 |
 | RPA 文件路径 | `Browserapp/automation/rpa/paths.js` | 输出与文件输入的物理路径校验；解析已存在的父目录，拒绝子路径中的外逃/悬空链接。表格导入保留 Desktop/Documents/Downloads、OneDrive 等明确允许的目录 |
 | RPA 文件动作 | `Browserapp/automation/rpa/file-steps.js`、`rpa/csv.js` | 文本/CSV/JSON 文件动作与 CSV 编解码；保留 RpaEngine 的公开方法，导出按块写临时文件，成功后替换目标，失败或取消时清理临时文件 |
 | RPA 流式输入 | `Browserapp/automation/rpa/file-input.js` | CSV/文本按 64 KiB 读取并检查取消，CSV 状态跨块保留；结果完成后才发布到变量，JSON 仍按完整文档读取 |
@@ -82,6 +91,7 @@ CDP 连接复用、RPA 文件操作、API 嵌套凭据和状态索引的本次�
 ## 已建立的模块边界
 
 - `renderer.js` 从 `window.OpenBrowserProfileList` 调用数据操作；DOM 创建和事件处理继续由 UI 层负责。`index.html` 必须先加载列表模块，加载顺序由自测检查。
+- 列表行位置、显示缓存键和复用规则由 `OpenBrowserProfileRows` 维护；未变化页不得重新移动节点，选择变化只更新复选框。新增渲染字段需同步更新 `ui-profile-rows.js` 中的 `profileRenderKey()`。
 - `OpenBrowserProfileState` 和 `OpenBrowserRefreshScheduler` 同样先于 renderer 加载，仅各暴露一个命名空间；数据合并和刷新调度可在 Node 中独立验证，无需添加跨脚本函数全局变量。
 - 状态事件的刷新在前一个请求结束后再调度下一次；执行期间的多个事件合并为一次后续刷新。窗口隐藏时保留待办，重新可见时恢复。直接调用的其他刷新入口仍有各自行为。
 - `filterProfiles` 的参数包含查询、分组、顶部标签、高级条件、运行状态查询和排序。字段定义集中在列表模块；高级标签筛选与字段搜索均支持 `tag` 和 `tags`。

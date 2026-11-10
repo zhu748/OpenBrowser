@@ -57,6 +57,7 @@ class TaskScheduler {
     this.sleep = typeof options.sleep === 'function' ? options.sleep : sleep;
 
     this.pending = [];
+    this.pendingHead = 0;
     this.running = 0;
     this.destroyed = false;
     this.completedCount = 0;
@@ -68,11 +69,11 @@ class TaskScheduler {
   }
 
   get size() {
-    return this.pending.length;
+    return this.pending.length - this.pendingHead;
   }
 
   get busy() {
-    return this.running > 0 || this.pending.length > 0;
+    return this.running > 0 || this.size > 0;
   }
 
   stats() {
@@ -80,7 +81,7 @@ class TaskScheduler {
       name: this.name,
       concurrency: this.concurrency,
       running: this.running,
-      pending: this.pending.length,
+      pending: this.size,
       completed: this.completedCount,
       failed: this.failedCount,
       timedOut: this.timedOutCount,
@@ -121,8 +122,17 @@ class TaskScheduler {
 
   /** Start as many queued jobs as the concurrency limit allows. */
   pump() {
-    while (!this.destroyed && this.running < this.concurrency && this.pending.length > 0) {
-      const job = this.pending.shift();
+    while (!this.destroyed && this.running < this.concurrency && this.size > 0) {
+      const job = this.pending[this.pendingHead];
+      this.pending[this.pendingHead++] = undefined;
+      // Release completed prefixes without shifting every waiting payload.
+      if (this.pendingHead === this.pending.length) {
+        this.pending = [];
+        this.pendingHead = 0;
+      } else if (this.pendingHead >= 1024 && this.pendingHead * 2 >= this.pending.length) {
+        this.pending = this.pending.slice(this.pendingHead);
+        this.pendingHead = 0;
+      }
       this.running += 1;
       // `finally` is the single place that frees the slot, so a rejection or a
       // timeout can never strand it.
@@ -135,7 +145,6 @@ class TaskScheduler {
   }
 
   async runJob(job) {
-    const label = job.stepName ? `${this.name}.${job.stepName}` : this.name;
     try {
       const work = Promise.resolve().then(() => job.handle(job.payload));
       const result = await withTimeout(work, job.timeout);
@@ -144,15 +153,19 @@ class TaskScheduler {
     } catch (err) {
       if (err && err.code === 'ETIMEDOUT') this.timedOutCount += 1;
       else this.failedCount += 1;
-      if (this.onError) {
-        try { this.onError(err, { name: this.name, stepName: job.stepName }); } catch (_) { /* observer */ }
-      }
+      this.reportError(err, job);
       job.reject(err);
     } finally {
       if (this.concurrency === 1 && this.serialInterval > 0 && !this.destroyed) {
-        await this.sleep(this.serialInterval);
+        try { await this.sleep(this.serialInterval); }
+        catch (error) { this.reportError(error, job); }
       }
-      void label;
+    }
+  }
+
+  reportError(error, job) {
+    if (this.onError) {
+      try { this.onError(error, { name: this.name, stepName: job.stepName }); } catch (_) { /* observer */ }
     }
   }
 
@@ -180,10 +193,11 @@ class TaskScheduler {
    */
   destroy(reason) {
     this.destroyed = true;
-    const dropped = this.pending.length;
+    const dropped = this.size;
     const error = reason instanceof Error ? reason : new Error(`scheduler "${this.name}" was destroyed`);
-    for (const job of this.pending) job.reject(error);
+    for (let index = this.pendingHead; index < this.pending.length; index += 1) this.pending[index].reject(error);
     this.pending = [];
+    this.pendingHead = 0;
     this.notifyIdle();
     return dropped;
   }

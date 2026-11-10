@@ -1,0 +1,57 @@
+{
+  "baseline": "4867888",
+  "node": "v24.22.1",
+  "platform": "linux",
+  "scope": "Local Node CPU and queue latency; 2 warmups, 5 samples; not whole-application speedups.",
+  "scheduler": [
+    {
+      "size": 1000,
+      "beforeMedianMs": 1.342,
+      "afterMedianMs": 0.892
+    },
+    {
+      "size": 10000,
+      "beforeMedianMs": 12.072,
+      "afterMedianMs": 6.864
+    },
+    {
+      "size": 30000,
+      "beforeMedianMs": 127.208,
+      "afterMedianMs": 27.63
+    }
+  ],
+  "sessionSort": [
+    {
+      "size": 100,
+      "beforeMedianMs": 1.226,
+      "afterMedianMs": 0.131
+    },
+    {
+      "size": 1000,
+      "beforeMedianMs": 18.655,
+      "afterMedianMs": 0.318
+    },
+    {
+      "size": 3000,
+      "beforeMedianMs": 70.568,
+      "afterMedianMs": 0.885
+    }
+  ],
+  "batchRemoval": [
+    {
+      "size": 1000,
+      "beforeMedianMs": 1.167,
+      "afterMedianMs": 0.085
+    },
+    {
+      "size": 10000,
+      "beforeMedianMs": 130.782,
+      "afterMedianMs": 0.656
+    },
+    {
+      "size": 20000,
+      "beforeMedianMs": 375.224,
+      "afterMedianMs": 1.846
+    }
+  ]
+}

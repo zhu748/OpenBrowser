@@ -122,9 +122,10 @@ async function main() {
   record('api key placeholder falls back to configured file', resolvedKey.key === 'mcp-file-key' && resolvedKey.filePath === keyFile);
 
   const engine = fakeEngine();
-  const proxyStore = new ProxyStore('/tmp/openbrowser-mcp-proxy-' + process.pid + '.json');
+  const proxyStore = new ProxyStore(path.join(os.tmpdir(), 'openbrowser-mcp-proxy-' + process.pid + '.json'));
   await proxyStore.load();
-  const rpaStore = new RpaStore('/tmp/openbrowser-mcp-rpa-' + process.pid + '.json');
+  const rpaFile = path.join(os.tmpdir(), 'openbrowser-mcp-rpa-' + process.pid + '.json');
+  const rpaStore = new RpaStore(rpaFile);
   await rpaStore.load();
   const rpa = new RpaEngine({ engine, store: rpaStore, emit: () => {} });
   const syncState = { active: false, selected: [] };
@@ -408,6 +409,18 @@ async function main() {
     for (const call of extraCalls) {
       calls.push({ id: nextId++, method: 'tools/call', params: { name: call.name, arguments: call.args } });
     }
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(deadline);
+      child.kill();
+      resolve(responses);
+    };
+    // A deadline bounds a broken child; successful replies need no fixed wait.
+    const deadline = setTimeout(finish, 6000);
+    child.once('error', finish);
+    child.once('close', finish);
     child.stdout.on('data', (chunk) => {
       stdout += chunk;
       let index;
@@ -418,10 +431,9 @@ async function main() {
         const msg = JSON.parse(line);
         if (msg.id !== undefined) responses.set(msg.id, msg);
       }
+      if (calls.every((call) => responses.has(call.id))) finish();
     });
-    const finish = () => { child.kill(); resolve(responses); };
     child.stdin.on('error', () => finish());
-    setTimeout(finish, 6000);
     for (const call of calls) child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: call.id, method: call.method, params: call.params }) + '\n');
   });
 
@@ -521,6 +533,7 @@ async function main() {
   await api.stop();
   await proxyStore.deleteFile?.();
   try { fs.unlinkSync(keyFile); } catch (_) {}
+  try { fs.unlinkSync(rpaFile); } catch (_) {}
   if (fail.length) {
     console.error(JSON.stringify({ success: false, checks: checks.length, failed: fail.map((item) => item.name) }, null, 2));
     process.exitCode = 1;

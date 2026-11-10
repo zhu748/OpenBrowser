@@ -25,7 +25,7 @@ const rendererIndex = scripts.indexOf('renderer.js');
 assert.ok(rendererIndex >= 0, 'index.html loads renderer.js');
 assert.ok(scripts.indexOf('ui/ui-groups.js') >= 0 && scripts.indexOf('ui/ui-groups.js') < rendererIndex,
   'group domain functions load before renderer wiring');
-const modelModules = ['ui/ui-profile-list.js', 'shared/proxy-redact.js', 'ui/ui-profile-state.js', 'shared/ipc-result.js', 'shared/profile-values.js', 'ui/ui-state-store.js', 'ui/ui-profile-commands.js', 'ui/ui-refresh-scheduler.js', 'ui/ui-status-controller.js', 'ui/ui-session-controller.js'];
+const modelModules = ['ui/ui-profile-list.js', 'ui/ui-profile-rows.js', 'ui/ui-profile-batch.js', 'ui/ui-sync-text.js', 'shared/proxy-redact.js', 'ui/ui-profile-state.js', 'shared/ipc-result.js', 'shared/profile-values.js', 'ui/ui-state-store.js', 'ui/ui-profile-commands.js', 'ui/ui-refresh-scheduler.js', 'ui/ui-status-controller.js', 'ui/ui-session-controller.js'];
 for (const script of modelModules) {
   assert.ok(scripts.indexOf(script) >= 0 && scripts.indexOf(script) < rendererIndex,
     `${script} loads before the renderer consumes its API`);
@@ -103,6 +103,9 @@ for (const script of modelModules) {
 }
 assert.strictEqual(typeof context.OpenBrowserProfileList.filterProfiles, 'function');
 assert.strictEqual(typeof context.OpenBrowserProfileList.summarizeProfiles, 'function');
+assert.strictEqual(typeof context.OpenBrowserProfileRows.reconcileProfileRows, 'function');
+assert.strictEqual(typeof context.OpenBrowserProfileBatch.removeProfilesById, 'function');
+assert.strictEqual(typeof context.OpenBrowserSyncText.orderedSessionIds, 'function');
 assert.strictEqual(typeof context.OpenBrowserProfileState.reconcileProfiles, 'function');
 assert.strictEqual(typeof context.OpenBrowserIpcResult.unwrapIpcResult, 'function');
 assert.strictEqual(typeof context.OpenBrowserProfileCommands.commitProfileEdit, 'function');

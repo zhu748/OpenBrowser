@@ -1,0 +1,46 @@
+{
+  "baseline": "4867888",
+  "node": "v24.22.1",
+  "platform": "linux",
+  "scope": "Row DOM-operation model; local in-memory task-retention benchmark; no browser or disk timings.",
+  "rowMutations": [
+    {
+      "size": 10,
+      "refreshes": 100,
+      "beforePlacements": 1000,
+      "afterPlacements": 0
+    },
+    {
+      "size": 50,
+      "refreshes": 100,
+      "beforePlacements": 5000,
+      "afterPlacements": 0
+    },
+    {
+      "size": 100,
+      "refreshes": 100,
+      "beforePlacements": 10000,
+      "afterPlacements": 0
+    }
+  ],
+  "taskRetention": [
+    {
+      "size": 1000,
+      "beforeMedianMs": 0.105,
+      "afterMedianMs": 0.126,
+      "speedup": 0.83
+    },
+    {
+      "size": 10000,
+      "beforeMedianMs": 1.775,
+      "afterMedianMs": 0.613,
+      "speedup": 2.9
+    },
+    {
+      "size": 20000,
+      "beforeMedianMs": 21.646,
+      "afterMedianMs": 1.331,
+      "speedup": 16.26
+    }
+  ]
+}

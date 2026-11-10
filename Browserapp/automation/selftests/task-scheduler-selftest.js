@@ -410,6 +410,55 @@ const delay = (ms) => new Promise((r) => setTimeout(r, ms));
     assert.deepStrictEqual(registry.names(), []);
   });
 
+  await checkAsync('large FIFO queues drain and release their consumed payloads', async () => {
+    const scheduler = new TaskScheduler({ concurrency: 1 });
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const first = scheduler.schedule(() => gate);
+    const order = [];
+    const jobs = Array.from({ length: 5000 }, (_, index) => scheduler.schedule(() => { order.push(index); return index; }));
+    assert.strictEqual(scheduler.size, 5000);
+    release();
+    await first;
+    assert.deepStrictEqual(await Promise.all(jobs), Array.from({ length: 5000 }, (_, index) => index));
+    await scheduler.drain();
+    assert.deepStrictEqual(order, Array.from({ length: 5000 }, (_, index) => index));
+    assert.strictEqual(scheduler.size, 0);
+    assert.strictEqual(scheduler.pending.length, 0, 'idle queue releases its backing array');
+    assert.strictEqual(await scheduler.schedule(() => 'again'), 'again');
+  });
+
+  await checkAsync('failed spacing reports an error and still releases the slot', async () => {
+    const errors = [];
+    const scheduler = new TaskScheduler({ serialInterval: 1,
+      sleep: async () => { throw new Error('spacing failed'); },
+      onError: (error) => { errors.push(error.message); throw new Error('observer failed'); },
+    });
+    assert.deepStrictEqual(await Promise.all([scheduler.schedule(() => 1), scheduler.schedule(() => 2)]), [1, 2]);
+    await scheduler.drain();
+    assert.deepStrictEqual(errors, ['spacing failed', 'spacing failed']);
+    assert.strictEqual(scheduler.running, 0);
+  });
+
+  await checkAsync('destroy after partial drain rejects only remaining jobs', async () => {
+    const scheduler = new TaskScheduler();
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const outcomes = [];
+    const first = scheduler.schedule(() => 1);
+    const second = scheduler.schedule(() => gate);
+    const last = scheduler.schedule(() => 3).catch((error) => outcomes.push(error.message));
+    await first;
+    await new Promise(setImmediate);
+    assert.strictEqual(scheduler.size, 1);
+    assert.strictEqual(scheduler.destroy(), 1);
+    release();
+    await Promise.all([second, last]);
+    await scheduler.drain();
+    assert.strictEqual(outcomes.length, 1);
+    assert.strictEqual(scheduler.size, 0);
+  });
+
   // ---- report ----
   const passed = results.filter((r) => r.ok).length;
   const failed = results.filter((r) => !r.ok);

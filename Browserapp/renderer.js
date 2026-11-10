@@ -2509,57 +2509,14 @@ function renderProfiles() {
   // merge, but usually only one row's inputs changed (a badge flip, an exit-IP
   // arrival). Rebuild only rows whose render key moved; keep the rest (and
   // their DOM state — focus, tooltips, transition mid-frames) untouched.
-  const renderKeyFor = (profile) => {
-    const info = profileEngine(profile.id);
-    const starting = startingProfiles.get(profile.id) || null;
-    const group = findGroup(profile.groupId);
-    // Group renames/recolors don't touch the profile row itself; the badge
-    // text/color derive from ui.groups, so they participate in the key. The
-    // engine network object (exit IP check result) rides along via its fields.
-    return JSON.stringify([
-      profile.updatedAt || '', profile.name || '', profile.title || '', profile.groupId || '',
-      profile.note || '', profile.tag || '', profile.favorite ? 1 : 0, profile.lastOpenedAt || '',
-      group ? `${group.name}:${group.color}` : '',
-      profile.browser || '', profile.engine || '', profile.proxy || '', profile.exitIp || '', profile.exitCountryCode || '',
-      info.running, info.port || '', info.cdpError || '', info.verificationBlocked || false,
-      info.assignedExtensions?.length ?? 0, starting ? `${starting.phase}:${starting.percent}` : '',
-      info.network?.ip || '', info.network?.countryCode || '', info.network?.checkedAt || '',
-      activeGroupFilter, window.OpenBrowserI18n?.getLocale?.() || '', displayProfileNumber(profile),
-      // Env badges bake theme-dependent hex colors into inline SVG attributes,
-      // so a light/dark switch must rebuild every row despite same data.
-      isCurrentThemeLight(),
-    ]);
-  };
-  const existingRows = new Map([...table.querySelectorAll('tr[data-profile-id]')].map((row) => [row.dataset.profileId, row]));
-  const seenRows = new Set();
-  let nextRowAnchor = null; // rows must land before this sibling, null = append at end
-  for (const profile of visible) {
-    const key = renderKeyFor(profile);
-    const existing = existingRows.get(profile.id);
-    if (existing && existing.dataset.renderKey === key && !seenRows.has(profile.id)) {
-      // Reuse: only the selection checkbox is cheap to resync inline.
-      const checkbox = existing.querySelector('[data-profile-select]');
-      if (checkbox) checkbox.checked = selectedProfiles.has(profile.id);
-      // Move only when the row is not already in the target position:
-      // append/insertBefore force a detach+reflow per call even for in-place nodes.
-      if (nextRowAnchor) table.insertBefore(existing, nextRowAnchor);
-      else if (existing.nextSibling !== null) table.append(existing);
-      seenRows.add(profile.id);
-      nextRowAnchor = existing.nextSibling;
-      continue;
-    }
-    const row = buildProfileRow(profile);
-    row.dataset.renderKey = key;
-    row.dataset.i18nPending = '1';
-    // The stale row for this id must go before its replacement lands, or the
-    // tail sweep (keyed by seen ids) would leave both in the table.
-    if (existing) existing.remove();
-    if (nextRowAnchor) table.insertBefore(row, nextRowAnchor);
-    else table.append(row);
-    seenRows.add(profile.id);
-    nextRowAnchor = row.nextSibling;
-  }
-  for (const [id, row] of existingRows) if (!seenRows.has(id)) row.remove();
+  const renderKeyFor = (profile) => window.OpenBrowserProfileRows.profileRenderKey({
+    profile, info: profileEngine(profile.id), starting: startingProfiles.get(profile.id), group: findGroup(profile.groupId),
+    view: activeGroupFilter, locale: window.OpenBrowserI18n?.getLocale?.() || '', number: displayProfileNumber(profile),
+    light: isCurrentThemeLight(), remaining: activeGroupFilter === 'trash' ? trashRemainingText(profile) : '',
+  });
+  window.OpenBrowserProfileRows.reconcileProfileRows({
+    table, profiles: visible, renderKeyFor, buildRow: buildProfileRow, selectedIds: selectedProfiles,
+  });
   const inTrash = activeGroupFilter === 'trash';
   applyProfileColumnVisibility(inTrash);
   const emptyBtn = $('#empty-trash-btn');
@@ -2758,9 +2715,10 @@ async function startProfile(id) {
  */
 async function runPool(items, worker, concurrency = 3) {
   const queue = [...items];
+  let cursor = 0;
   const workers = Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
-    while (queue.length) {
-      const item = queue.shift();
+    while (cursor < queue.length) {
+      const item = queue[cursor++];
       await worker(item);
     }
   });
@@ -2893,21 +2851,11 @@ const sessionController = window.OpenBrowserSessionController.createSessionContr
 function refreshSessions() { return sessionController.refresh(); }
 function selectedSessionIds(minimum = 1) { const ids = orderedSelectedSessionIds(); if (ids.length < minimum) throw new Error(tx('请至少选择 ') + minimum + tx(' 个运行环境')); return ids; }
 function specifiedTextItems(value) {
-  return String(value || '').split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+  return window.OpenBrowserSyncText.specifiedTextItems(value);
 }
 
 function distributeSpecifiedTexts(items, count, mode = 'sequence', cursor = 0, random = Math.random) {
-  const values = Array.isArray(items) ? items.map((item) => String(item)).filter((item) => item.length > 0) : [];
-  const amount = Math.max(0, Number.parseInt(count, 10) || 0);
-  if (!values.length || !amount) return { texts: [], nextCursor: Math.max(0, Number.parseInt(cursor, 10) || 0) };
-  if (mode === 'random') {
-    return {
-      texts: Array.from({ length: amount }, () => values[Math.min(values.length - 1, Math.max(0, Math.floor(Number(random()) * values.length)))]),
-      nextCursor: Math.max(0, Number.parseInt(cursor, 10) || 0)
-    };
-  }
-  const start = ((Number.parseInt(cursor, 10) || 0) % values.length + values.length) % values.length;
-  return { texts: Array.from({ length: amount }, (_unused, index) => values[(start + index) % values.length]), nextCursor: (start + amount) % values.length };
+  return window.OpenBrowserSyncText.distributeSpecifiedTexts(items, count, mode, cursor, random);
 }
 
 // Quota-overflow toasts are throttled so a tight save loop does not
@@ -2950,13 +2898,7 @@ function renderSpecifiedTextGroups() {
 }
 
 function specifiedTextSessionIds() {
-  return selectedSessionIds().sort((left, right) => {
-    const leftSession = sessions.find((item) => item.id === left);
-    const rightSession = sessions.find((item) => item.id === right);
-    const leftNumber = String(displayProfileNumber(leftSession?.profile || { id: left }));
-    const rightNumber = String(displayProfileNumber(rightSession?.profile || { id: right }));
-    return leftNumber.localeCompare(rightNumber, 'zh-CN', { numeric: true, sensitivity: 'base' }) || String(left).localeCompare(String(right));
-  });
+  return window.OpenBrowserSyncText.orderedSessionIds(selectedSessionIds(), sessions, displayProfileNumber);
 }
 
 function specifiedTextFailureLabel(id) {
@@ -3725,7 +3667,7 @@ $('#batch-add-form').addEventListener('submit', async (event) => {
     log('Batch', '批量新增 ' + created.length + ' 个环境 · ' + (networkMode === 'direct' ? '本地直连' : '代理'));
     toast(tx('已批量创建 ') + created.length + tx(' 个环境（') + (networkMode === 'direct' ? tx('本地直连') : tx('代理模式')) + tx('）'));
   } catch (error) {
-    ui.profiles = ui.profiles.filter((item) => !created.some((createdItem) => createdItem.id === item.id)); ui.nextProfileNumber = previousNext; save(); toast(tx('批量新增失败：') + error.message);
+    ui.profiles = window.OpenBrowserProfileBatch.removeProfilesById(ui.profiles, created.map((item) => item.id)); ui.nextProfileNumber = previousNext; save(); toast(tx('批量新增失败：') + error.message);
   } finally { if (submitter) submitter.disabled = false; }
 });
 $('#delete-selected').addEventListener('click', async () => {
@@ -3733,7 +3675,8 @@ $('#delete-selected').addEventListener('click', async () => {
   if (!pendingDeleteProfiles.length) return toast(tx('请先勾选要删除的环境'));
   const inTrash = activeGroupFilter === 'trash';
   try {
-    const status = await window.ops.profileStatus(); const running = status.filter((item) => item.running && pendingDeleteProfiles.includes(item.id)).length;
+    const status = await window.ops.profileStatus(); const pendingIds = new Set(pendingDeleteProfiles);
+    const running = status.filter((item) => item.running && pendingIds.has(item.id)).length;
     if (inTrash) {
       $('#batch-delete-title').textContent = t('trash.purge');
       $('#batch-delete-summary').textContent = t('trash.purgeSummary', { count: pendingDeleteProfiles.length });
@@ -3764,15 +3707,9 @@ $('#batch-delete-form').addEventListener('submit', async (event) => {
           ? await window.ops.purgeProfiles(ids, true)
           : await window.ops.trashProfiles(ids));
     if (inTrash || deleteData) {
-      ui.profiles = ui.profiles.filter((item) => !ids.includes(item.id));
+      ui.profiles = window.OpenBrowserProfileBatch.removeProfilesById(ui.profiles, ids);
     } else {
-      for (const id of ids) {
-        const p = ui.profiles.find((item) => item.id === id);
-        if (p) {
-          p.trashed = true;
-          p.trashedAt = new Date().toISOString();
-        }
-      }
+      window.OpenBrowserProfileBatch.setProfilesTrashed(ui.profiles, ids, true);
     }
     for (const id of ids) { selectedProfiles.delete(id); selectedSessions.delete(id); }
     if (!ui.profiles.length) ui.nextProfileNumber = 1;
@@ -3796,14 +3733,8 @@ $('#restore-selected')?.addEventListener('click', async () => {
   if (!ids.length) return toast(tx('请先勾选环境'));
   try {
     await window.ops.restoreProfiles(ids);
-    for (const id of ids) {
-      const p = ui.profiles.find((item) => item.id === id);
-      if (p) {
-        delete p.trashed;
-        delete p.trashedAt;
-      }
-      selectedProfiles.delete(id);
-    }
+    window.OpenBrowserProfileBatch.setProfilesTrashed(ui.profiles, ids, false);
+    for (const id of ids) selectedProfiles.delete(id);
     save();
     invalidateViewCache(['profiles', 'groups', 'sync']);
     engineProfiles = await window.ops.syncProfiles(ui.profiles);
@@ -3828,9 +3759,8 @@ $('#empty-trash-btn')?.addEventListener('click', async () => {
   try {
     await window.ops.emptyTrash(true);
     ui.profiles = ui.profiles.filter((p) => !p.trashed);
-    for (const id of [...selectedProfiles]) {
-      if (!ui.profiles.some((p) => p.id === id)) selectedProfiles.delete(id);
-    }
+    const remainingIds = new Set(ui.profiles.map((profile) => profile.id));
+    for (const id of selectedProfiles) if (!remainingIds.has(id)) selectedProfiles.delete(id);
     save();
     invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies']);
     engineProfiles = await window.ops.syncProfiles(ui.profiles);
@@ -3851,8 +3781,8 @@ $('#copy-selected')?.addEventListener('click', async () => {
   const previousNext = nextProfileNumber();
   const used = new Set(ui.profiles.map((item) => item.id));
   const created = sources.map((local, index) => {
-    const engineProfile = engineProfiles.find((item) => item.id === local.id);
-    const source = normalizeProfileSettings(engineProfile ? { ...local, ...engineProfile } : local);
+    const engineProfile = profileEngine(local.id);
+    const source = normalizeProfileSettings(engineProfile?.id ? { ...local, ...engineProfile } : local);
     const number = previousNext + index;
     const id = createInternalProfileId(number, used); used.add(id);
     const clone = normalizeProfileSettings({
@@ -3884,7 +3814,7 @@ $('#copy-selected')?.addEventListener('click', async () => {
     toast(tx('已复制 ') + created.length + tx(' 个环境配置（未复制 Cookie 和账号密码）'));
   } catch (error) {
     await window.ops.deleteProfiles(created.map((item) => item.id), false).catch(() => {});
-    ui.profiles = ui.profiles.filter((item) => !created.some((createdItem) => createdItem.id === item.id));
+    ui.profiles = window.OpenBrowserProfileBatch.removeProfilesById(ui.profiles, created.map((item) => item.id));
     ui.nextProfileNumber = previousNext; save(); toast(tx('复制环境失败：') + error.message);
   }
 });
