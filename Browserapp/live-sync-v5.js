@@ -597,17 +597,21 @@ function environmentMarker(id, master) {
 })()`;
 }
 
-function isEnvironmentStartUrl(value) {
+// Single authoritative predicate for "is this URL one of OUR start pages".
+// Delegates to the engine mixin (engine/start-page.js): the live start-page
+// server binds a DYNAMIC port and knows its registered sessions, so any local
+// copy hardcoding 127.0.0.1:5032x drifts by construction. This local copy used
+// bare includes('openbrowser-start.html') / hardcoded 5032[6-9], which matched
+// https://evil.com/openbrowser-start.html — the exact hazard class the old
+// comments claimed was eliminated (a third-party page treated as an internal
+// start page gets slave navigation/zoom routing it must never receive).
+// Fallback mirrors main.js isEnvironmentStartUrl (the model): engine absent or
+// pre-mixin (unit harnesses pass mock engines without the mixin) → file:// +
+// openbrowser-start.html filename only, never a bare substring on other hosts.
+function isEnvironmentStartUrl(value, engine) {
   const s = String(value || '');
-  // Exact generated filenames only. The previous bare
-  // `openbrowser-start` / `openbrowser-native` alternation matched any
-  // third-party URL containing those words; both markers exist solely as
-  // meta-tag names in page templates and never in generated URLs — same
-  // hazard class as the engine-side fallback (already tightened).
-  if (/openbrowser-start\.html/i.test(s)) return true;
-  if (/openbrowser-start-page\.html/i.test(s)) return true;
-  if (/https?:\/\/127\.0\.0\.1:5032[6-9]\/?/i.test(s)) return true;
-  return false;
+  if (Boolean(engine?.isStartPageUrl?.(s))) return true;
+  return /^file:\/\/\//i.test(s) && /openbrowser-start\.html$/i.test(s);
 }
 
 // --- Internal Browser Page Synchronization Rules ---
@@ -670,6 +674,8 @@ class LiveSyncController extends LiveSyncV4 {
     this.tabMap = new Map();
     this.desiredUrlMap = new Map();
     this.extensionMap = new Map(); this.extensionConnections = new Map();
+    // Assigned-manifest memo for masterExtensionWhitelist (heavy sync tick).
+    this.extensionManifestCache = new Map();
     this.mappingReady = false;
     this.activeMasterTab = null; this.lastWindowSync = 0; this.lastHealthCheck = 0; this.nativeInputMirror = null; this.nativePopupActive = false;
     this.geometryPausedUntil = 0; this.geometryPending = new Map(); this.mirroredWindowStates = new Map();
@@ -1463,15 +1469,38 @@ class LiveSyncController extends LiveSyncV4 {
     if (!ids.size) {
       const assigned = this.engine.assignedExtensions?.(this.master?.id) || [];
       for (const extension of assigned) {
-        try {
-          const manifest = JSON.parse(fs.readFileSync(path.join(extension.path, 'manifest.json'), 'utf8'));
-          const key = manifest.key ? crypto.createHash('sha256').update(manifest.key).digest('hex').slice(0, 32) : '';
-          const id = String(manifest.key && !key ? '' : key).toLowerCase();
-          if (id) ids.add(id);
-        } catch (_) {}
+        const id = this.cachedExtensionKeyId(extension);
+        if (id) ids.add(id);
       }
     }
     return ids;
+  }
+
+  /**
+   * Derive the chrome-extension id from an assigned extension's manifest.key,
+   * memoized per extension.path. This runs on every heavy sync tick (~every
+   * 3rd tick), which used to re-read every assigned manifest synchronously;
+   * now fs.stat first and only re-read when mtimeMs changes. First call still
+   * stats + reads, so the derived id is byte-identical to the uncached path.
+   * A stat failure deletes the entry (next tick retries, like the old code
+   * that re-threw every pass); parse failures are cached as '' so a corrupt
+   * manifest is not re-parsed every tick — the outcome (no id) is the same.
+   */
+  cachedExtensionKeyId(extension) {
+    const manifestPath = path.join(extension.path, 'manifest.json');
+    const cache = this.extensionManifestCache || (this.extensionManifestCache = new Map());
+    let mtimeMs = 0;
+    try { mtimeMs = fs.statSync(manifestPath).mtimeMs; } catch (_) { cache.delete(extension.path); return ''; }
+    const hit = cache.get(extension.path);
+    if (hit && hit.mtimeMs === mtimeMs) return hit.id;
+    let id = '';
+    try {
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+      const key = manifest.key ? crypto.createHash('sha256').update(manifest.key).digest('hex').slice(0, 32) : '';
+      id = String(manifest.key && !key ? '' : key).toLowerCase();
+    } catch (_) { id = ''; }
+    cache.set(extension.path, { mtimeMs, id });
+    return id;
   }
 
   async refreshExtensionConnections(masterTargets, slaveLists) {
@@ -1600,7 +1629,10 @@ class LiveSyncController extends LiveSyncV4 {
   async ensureMapping(masterTab, index = -1, initialLists = null) {
     const mapping = this.tabMap.get(masterTab.id) || new Map();
     if (!this.desiredUrlMap) this.desiredUrlMap = new Map();
-    const isStart = isEnvironmentStartUrl;
+    // Engine-aware start-page test: delegates to this.engine.isStartPageUrl
+    // (live port + registered sessions) so mapping cannot classify a
+    // third-party URL as a start page. See isEnvironmentStartUrl above.
+    const isStart = (url) => isEnvironmentStartUrl(url, this.engine);
     const isBlank = (url) => /^(about:blank|chrome:\/\/(newtab|new-tab-page)\/?)/i.test(String(url || ''));
     const equivalent = (a, b) => this.urlsMatch(a, b) || (isStart(a) && isStart(b)) || (isBlank(a) && isBlank(b));
     const unreachable = [];
@@ -1698,7 +1730,7 @@ class LiveSyncController extends LiveSyncV4 {
     // fetch per forwarded event; the tick below keeps it fresh.
     let tabs = await this.slaveTabsFor(slave); let tab = tabs.find((item) => item.id === targetId);
     if (!tab) {
-      const desiredUrl = isEnvironmentStartUrl(masterTab?.url) ? (environmentStartUrl(this.engine, slave.id) || masterTab.url) : masterTab?.url;
+      const desiredUrl = isEnvironmentStartUrl(masterTab?.url, this.engine) ? (environmentStartUrl(this.engine, slave.id) || masterTab.url) : masterTab?.url;
       tab = await cdp.newTab(slave.port, desiredUrl || 'about:blank'); targetId = tab.id;
       this.slaveTabLists.delete(slave.id);
       if (!mapping) this.tabMap.set(masterTabId, new Map([[slave.id, targetId]])); else mapping.set(slave.id, targetId);
@@ -1707,7 +1739,7 @@ class LiveSyncController extends LiveSyncV4 {
   }
 
   async navigateSlaves(masterTabId, url) {
-    if (!isEnvironmentStartUrl(url)) return super.navigateSlaves(masterTabId, url);
+    if (!isEnvironmentStartUrl(url, this.engine)) return super.navigateSlaves(masterTabId, url);
     await this.eachSlave(masterTabId, async (tab, slave) => {
       const desiredUrl = environmentStartUrl(this.engine, slave.id) || url;
       if (this.urlsMatch(tab.url, desiredUrl)) return;
@@ -1783,16 +1815,11 @@ class LiveSyncController extends LiveSyncV4 {
   async syncZoom(masterTabId, factor) {
     let corrected = 0;
     const masterTab = this.masterTabs.find((tab) => tab.id === masterTabId);
-    const isStartPage = (v) => {
-      const s = String(v || '').toLowerCase();
-      // Exact filenames only — the bare openbrowser-start /
-      // openbrowser-native substrings only ever matched third-party URLs
-      // (they are meta-tag names, not generated URLs); see
-      // isEnvironmentStartUrl above for the shared rationale.
-      return s.includes('openbrowser-start.html')
-        || s.includes('openbrowser-start-page.html')
-        || /https?:\/\/127\.0\.0\.1:5032[6-9]\/?/.test(s);
-    };
+    // Shared predicate, engine-delegating: the old local copy used bare
+    // includes('openbrowser-start.html') + hardcoded 5032[6-9], letting
+    // https://evil.com/openbrowser-start.html pass as a start page and steal
+    // zoom correction. See isEnvironmentStartUrl for the full rationale.
+    const isStartPage = (v) => isEnvironmentStartUrl(v, this.engine);
     const equivalentUrl = (a, b) => {
       const x = String(a || '').toLowerCase().replace(/\/$/, '');
       const y = String(b || '').toLowerCase().replace(/\/$/, '');

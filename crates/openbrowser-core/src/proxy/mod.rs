@@ -21,5 +21,5 @@ pub use forwarder::ProxyForwarder;
 pub use http::HttpConnectTarget;
 pub use pool::{ConcurrencyLimiter, UpstreamTunnelPool};
 pub use socks5::{reply_code_name, SocksAddress, SOCKS5_VERSION};
-pub use stream::{copy_bidirectional, StreamStats};
+pub use stream::{copy_bidirectional, copy_bidirectional_with_idle_timeout, StreamStats, IDLE_TIMEOUT};
 pub use udp::{Socks5UdpAssociate, Socks5UdpPacket};

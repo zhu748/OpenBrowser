@@ -1,5 +1,7 @@
 use crate::error::{CoreError, Result};
-use crate::tls::fingerprint::{compute_ja3, compute_ja4, Ja3Fingerprint, Ja4Fingerprint};
+use crate::tls::fingerprint::{
+    compute_ja3, compute_ja4, compute_ja4_with_signatures, Ja3Fingerprint, Ja4Fingerprint,
+};
 use crate::tls::profile::TlsProfile;
 use bytes::{BufMut, BytesMut};
 use rand::{Rng, RngExt};
@@ -60,6 +62,22 @@ impl ClientHelloBuilder {
             self.server_name.is_some(),
             &self.profile.ciphers,
             &self.profile.extensions,
+            self.profile.alpn.first().map(|s| s.as_str()),
+        )
+    }
+
+    /// Compute deterministic JA4 fingerprint including TLS 1.3 signature
+    /// algorithms in Part C (real JA4 semantics, FoxIO spec): without the
+    /// suffix the fingerprint silently diverges from what real Chrome (and
+    /// the repo's own boundary_hardening vector) produce.
+    pub fn compute_ja4_with_signatures(&self) -> Ja4Fingerprint {
+        compute_ja4_with_signatures(
+            't', // TCP transport
+            self.profile.max_version,
+            self.server_name.is_some(),
+            &self.profile.ciphers,
+            &self.profile.extensions,
+            Some(&self.profile.signature_algorithms),
             self.profile.alpn.first().map(|s| s.as_str()),
         )
     }
@@ -132,7 +150,8 @@ impl ClientHelloBuilder {
         // Extensions buffer in exact Chromium order:
         // GREASE -> server_name -> extended_master_secret -> renegotiation_info ->
         // supported_groups -> ec_point_formats -> session_ticket -> alpn -> status_request ->
-        // key_share -> psk_key_exchange_modes -> supported_versions -> compress_certificate -> application_settings
+        // signature_algorithms -> key_share -> psk_key_exchange_modes -> supported_versions ->
+        // signed_certificate_timestamp -> compress_certificate -> application_settings -> padding
         let mut ext_buf = BytesMut::with_capacity(384);
 
         // 0. GREASE extension if enabled
@@ -206,6 +225,20 @@ impl ClientHelloBuilder {
         ext_buf.put_u16(0); // empty responder_id_list
         ext_buf.put_u16(0); // empty request_extensions
 
+        // 9. signature_algorithms (0x000D) — RFC 8446 §4.2.3 makes this
+        // extension MANDATORY for any ClientHello offering TLS 1.3; a
+        // TLS1.3-offering fixture without it is structurally invalid, which
+        // is precisely the kind of gap JA4 Part C exposes.
+        if !self.profile.signature_algorithms.is_empty() {
+            ext_buf.put_u16(0x000D);
+            let sigs_len = (self.profile.signature_algorithms.len() * 2) as u16;
+            ext_buf.put_u16(sigs_len + 2);
+            ext_buf.put_u16(sigs_len);
+            for sig in &self.profile.signature_algorithms {
+                ext_buf.put_u16(*sig);
+            }
+        }
+
         // 9. key_share (0x0033)
         ext_buf.put_u16(0x0033);
         let has_grease = self.profile.enable_grease;
@@ -257,7 +290,12 @@ impl ClientHelloBuilder {
             ext_buf.put_u16(v);
         }
 
-        // 12. compress_certificate (0x001B) — RFC 8879.
+        // 12. signed_certificate_timestamp (0x0012) — RFC 6962. Empty body:
+        // the client asks for SCTs, none are supplied statically.
+        ext_buf.put_u16(0x0012);
+        ext_buf.put_u16(0);
+
+        // 13. compress_certificate (0x001B) — RFC 8879.
         // Chrome advertises two algorithms (brotli + zlib): 1 byte count + 2 bytes per
         // algorithm = 5 bytes of extension body. The previous encoding wrote
         // body_len=3 with count=2, which is a malformed ClientHello a strict
@@ -268,12 +306,20 @@ impl ClientHelloBuilder {
         ext_buf.put_u16(0x0002); // brotli
         ext_buf.put_u16(0x0001); // zlib
 
-        // 13. application_settings (0x4469 - ALPS)
+        // 14. application_settings (0x4469 - ALPS)
         ext_buf.put_u16(0x4469);
         ext_buf.put_u16(5); // 2 bytes total len + 1 byte proto len + 2 bytes "h2"
         ext_buf.put_u16(3);
         ext_buf.put_u8(2);
         ext_buf.put_slice(b"h2");
+
+        // 15. padding (0x0015) — RFC 7685. The FoxIO ground-truth vector ends
+        // its extension list with padding; Chrome pads the ClientHello so the
+        // record lands on a 512-byte multiple. Zero pad bytes here still emit
+        // the (empty) extension: the presence, not the length, is what the
+        // extension list carries.
+        ext_buf.put_u16(0x0015);
+        ext_buf.put_u16(0);
 
         // Write total extensions length
         let ext_len = ext_buf.len() as u16;

@@ -124,8 +124,17 @@ class ApiKeyStore {
   }
 
   async rotate() {
+    // Keep the previous key so a failed persist can roll the in-memory key
+    // back: without that, memory would hold a key no client knows and no file
+    // holds — memory/disk divergence that invalidates every client silently.
+    const previousKey = this.apiKey;
     this.apiKey = generateKey();
-    await this.save();
+    try {
+      await this.save();
+    } catch (error) {
+      this.apiKey = previousKey;
+      throw error;
+    }
     return this.apiKey;
   }
 
@@ -138,19 +147,22 @@ class ApiKeyStore {
       const serialized = JSON.stringify({ version: 2, apiKey: this.apiKey }, null, 2);
       const payload = credentialCrypto.encryptCredential(serialized);
       await fsp.writeFile(temporaryJson, payload, { mode: 0o600 });
-      await fsp.rm(this.filePath, { force: true });
+      // 直接原子替换，失败保留旧文件：rm+rename 之间 key 文件不存在，一旦
+      // rename 失败（Windows AV/共享冲突）或进程在两个 await 之间崩溃，持久
+      // 化的 key 就没了，下一次 resolve() 会静默铸造新 key，使所有已分发
+      // API/MCP 客户端 key 失效。rename 在 POSIX 原子替换目标文件，Windows
+      // 上映射为 MoveFileEx(REPLACE_EXISTING)。
       await fsp.rename(temporaryJson, this.filePath);
       // Clean up plaintext txt file to prevent credential leakage
       await fsp.rm(this.txtPath, { force: true }).catch(() => {});
     } else {
       await fsp.writeFile(temporaryJson, JSON.stringify({ version: 1, apiKey: this.apiKey }, null, 2), { mode: 0o600 });
-      await fsp.rm(this.filePath, { force: true });
       await fsp.rename(temporaryJson, this.filePath);
 
       try {
         const temporaryTxt = this.txtPath + '.tmp-' + process.pid + '-' + crypto.randomBytes(4).toString('hex');
         await fsp.writeFile(temporaryTxt, `${this.apiKey}\n`, { encoding: 'utf8', mode: 0o600 });
-        await fsp.rm(this.txtPath, { force: true });
+        // Same atomic-replace rationale as the json branch above.
         await fsp.rename(temporaryTxt, this.txtPath);
       } catch (_) {}
     }

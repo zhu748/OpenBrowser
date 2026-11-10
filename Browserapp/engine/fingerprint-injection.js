@@ -544,7 +544,10 @@ module.exports = {
       } catch (_) {}
     }
     await applyFingerprintToTab(sessionCall, null, injectFp, enriched, {
-      applyKey: `session:${targetInfo?.targetId || sessionId}`,
+      // Same `target:<id>` key space the ws-URL fallback in tab-apply.js derives, so
+      // the alreadyPatched short-circuit sees what the page-WebSocket callers recorded
+      // for the same physical tab instead of registering the document-start script twice.
+      applyKey: `target:${targetInfo?.targetId || sessionId}`,
       targetType: targetInfo?.type,
       isSubframe,
       livePatchDocument: isEphemeralDocumentUrl(targetInfo?.url),

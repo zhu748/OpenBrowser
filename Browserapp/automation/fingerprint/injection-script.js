@@ -2849,7 +2849,7 @@ function buildInjectionScript(fp, options = {}) {
           timezone: CFG.timezone,
           screen: CFG.screen,
           webgl: { vendor: CFG.webgl?.vendor, renderer: CFG.webgl?.renderer }, bridgeToken: BRIDGE_TOKEN
-        }) + ");<\/script>";
+        }).replace(/</g, "\\u003c") + ");<\/script>";
 
         const cleanSrcdoc = (val) => {
           if (typeof val !== "string") return val;

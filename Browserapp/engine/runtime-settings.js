@@ -123,10 +123,27 @@ async function ensureAllowIntercept(engine, profileId, tab, allowHosts, blockHos
     } catch (_) {}
   }
 }
+// 稳态解析缓存：watch 循环每个运行中的环境约 2.4s 就走一遍 applyRuntimeSettings，
+// syncAllowIntercepts 在稳态早退（≈197）之前执行，白/黑名单原文未变时每轮重新
+// split/trim（各至多 8000 字符）纯属浪费。按原文签名缓存解析结果，
+// 与 ensureAllowIntercepts 按签名缓存每个标签页的做法对齐。
+const allowListParseCache = new Map(); // profileId -> { raw: 'allowUrls#blockUrls', allowHosts, blockHosts }
 function syncAllowIntercepts(engine, profile, tabs) {
-  const allowHosts = parseAllowHosts(profile?.advanced?.allowUrls);
-  const blockHosts = parseAllowHosts(profile?.advanced?.blockUrls);
-  const prefix = `${profile?.id || ''}:`;
+  const profileId = profile?.id || '';
+  const rawAllow = String(profile?.advanced?.allowUrls || '');
+  const rawBlock = String(profile?.advanced?.blockUrls || '');
+  const rawKey = `${rawAllow}#${rawBlock}`;
+  let cached = allowListParseCache.get(profileId);
+  if (!cached || cached.raw !== rawKey) {
+    cached = {
+      raw: rawKey,
+      allowHosts: parseAllowHosts(rawAllow),
+      blockHosts: parseAllowHosts(rawBlock),
+    };
+    allowListParseCache.set(profileId, cached);
+  }
+  const { allowHosts, blockHosts } = cached;
+  const prefix = `${profileId}:`;
   if (!allowHosts.length && !blockHosts.length) {
     for (const key of [...urlAllowIntercepts.keys()]) {
       if (key.startsWith(prefix)) teardownAllowIntercept(key);

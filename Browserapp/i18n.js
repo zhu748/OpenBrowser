@@ -348,7 +348,7 @@
     const scope = root || doc;
     if (!scope?.querySelectorAll) return;
     scope.querySelectorAll('[data-i18n], [data-i18n-placeholder], [data-i18n-title], [data-i18n-aria]').forEach(applyNode);
-    if (scope === doc || !scope.contains?.(doc?.documentElement)) {
+    if (scope === doc) {
       // Full-document pass (locale switch, refreshLocaleChrome): re-marked from
       // scratch, so a stale element must not stay skipped.
       scope.querySelectorAll('body *').forEach((el) => {

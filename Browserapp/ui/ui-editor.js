@@ -431,7 +431,7 @@ function editorDraft(strict = true) {
   // Plain HTTP proxies carry Basic credentials on the wire in cleartext — that is
   // the protocol, not a bug we can fix client-side, but the user deserves to know
   // before their residential proxy password rides an unencrypted hop.
-  if (typeof toast === 'function' && /^http:\/\//i.test(String(proxy)) && /:[^:@/]+@/.test(String(proxy))) {
+  if (strict && typeof toast === 'function' && /^http:\/\//i.test(String(proxy)) && /:[^:@/]+@/.test(String(proxy))) {
     try { toast(tx('注意：HTTP 代理的账号密码将以明文经由代理链路传输，建议改用 HTTPS 或 SOCKS5 代理'), { tone: 'warning' }); } catch (_) {}
   }
   const currentProxyParsed = parseEditorProxy(current.proxy);
@@ -822,6 +822,7 @@ function buildExtraAccountRow(acc = {}) {
   passInput.autocomplete = 'new-password';
   const totpInput = document.createElement('input');
   totpInput.className = 'acc-2fa';
+  totpInput.type = 'password';
   totpInput.autocomplete = 'off';
   userLabel.append(t('editor.accUser'), userInput);
   passLabel.append(t('editor.accPass'), passInput);

@@ -336,13 +336,21 @@ $('#proxy-apply-form')?.addEventListener('submit', async (event) => {
   const submitter = event.submitter;
   if (submitter && submitter.value !== 'cancel') submitter.disabled = true;
   let modified = 0;
+  // 变更前快照：syncProfiles 失败时本地列表与引擎存档不能停留在半应用
+  // 状态（此前无回滚，失败后界面与存档都保留了新代理值）。
+  const snapshots = new Map();
   for (const pid of checkedIds) {
     const idx = ui.profiles.findIndex((p) => p.id === pid);
     if (idx >= 0) {
-      ui.profiles[idx].networkMode = 'proxy';
-      ui.profiles[idx].proxy = proxyVal;
-      ui.profiles[idx].proxyId = item.id;
-      ui.profiles[idx].proxyMeta = { ...(ui.profiles[idx].proxyMeta || {}), proxyId: item.id };
+      const prev = ui.profiles[idx];
+      snapshots.set(idx, {
+        networkMode: prev.networkMode, proxy: prev.proxy, proxyId: prev.proxyId,
+        proxyMeta: prev.proxyMeta ? { ...prev.proxyMeta } : prev.proxyMeta,
+      });
+      prev.networkMode = 'proxy';
+      prev.proxy = proxyVal;
+      prev.proxyId = item.id;
+      prev.proxyMeta = { ...(prev.proxyMeta || {}), proxyId: item.id };
       modified++;
     }
   }
@@ -355,6 +363,9 @@ $('#proxy-apply-form')?.addEventListener('submit', async (event) => {
     toast(tx('已成功应用代理到 ') + modified + tx(' 个环境'));
     log('Proxy', `应用代理 ${item.name || item.host} 到 ${modified} 个环境`);
   } catch (err) {
+    for (const [idx, snap] of snapshots) Object.assign(ui.profiles[idx], snap);
+    save();
+    renderProfiles();
     toast(tx('应用失败：') + err.message);
   } finally { if (submitter) submitter.disabled = false; }
 });

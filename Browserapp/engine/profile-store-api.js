@@ -123,18 +123,60 @@ module.exports = {
 
   async trashProfiles(ids) {
     if (!Array.isArray(ids) || ids.length > 200) throw new Error('Invalid profile selection');
-    this.invalidateStatusCache?.();
     const safeIds = [...new Set(ids.map(assertProfileId))];
+    // Same operation guard as deleteProfiles: trashing shares the deletingProfiles
+    // set so a start() racing in mid-transition is rejected by the existing check
+    // in engine.js, and a second trash/delete of the same ids cannot interleave
+    // its stop phase with this one.
+    this.deletingProfiles ||= new Set();
+    if (safeIds.some((id) => this.deletingProfiles.has(id))) {
+      throw Object.assign(new Error('Profile deletion is already in progress'), { code: 'PROFILE_DELETING' });
+    }
+    for (const id of safeIds) this.deletingProfiles.add(id);
+    try {
+      return await this._trashProfiles(safeIds);
+    } finally {
+      for (const id of safeIds) this.deletingProfiles.delete(id);
+    }
+  },
+
+  async _trashProfiles(safeIds) {
+    this.invalidateStatusCache?.();
     const trashed = [];
     let stopped = 0;
     const nowIso = new Date().toISOString();
+
+    // Phase 1 — stop running environments first, with the same bounded-concurrency
+    // batches deleteProfiles uses. Trash is a soft delete, but it still must not
+    // flip profiles to trashed while their windows are live: the wrapper teardown
+    // persists state on close, and a mid-stop persist of a partially trashed batch
+    // committed the subset as final even when a later item's stop failed.
+    const activeIds = safeIds.filter((id) =>
+      this.profiles.has(id)
+      && (this.running.has(id) || this.starting.has(id) || this.stopping.has(id)));
+    for (let offset = 0; offset < activeIds.length; offset += 4) {
+      const batch = activeIds.slice(offset, offset + 4);
+      const results = await Promise.allSettled(batch.map((id) => this.stop(id)));
+      for (let index = 0; index < results.length; index += 1) {
+        const result = results[index];
+        if (result.status === 'rejected') throw result.reason;
+        const id = batch[index];
+        if (result.value?.running || result.value?.cleanupBlocked
+          || this.running.has(id) || this.starting.has(id) || this.stopping.has(id)) {
+          throw Object.assign(new Error(`Browser exit is unconfirmed for profile ${id}; trashing stopped`), {
+            code: 'BROWSER_EXIT_UNCONFIRMED', profileId: id,
+          });
+        }
+        if (!result.value?.alreadyStopped) stopped += 1;
+      }
+    }
+
+    // Phase 2 — only after every stop resolved does any profile flip to trashed.
+    // A rejected or incomplete stop above aborts with zero partial trash instead
+    // of leaving a subset the next unrelated persist would commit.
     for (const id of safeIds) {
       const profile = this.profiles.get(id);
       if (!profile) continue;
-      if (this.running.has(id) || this.starting.has(id) || this.stopping.has(id)) {
-        await this.stop(id);
-        stopped += 1;
-      }
       profile.trashed = true;
       profile.trashedAt = nowIso;
       trashed.push(id);

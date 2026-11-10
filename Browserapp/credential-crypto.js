@@ -18,6 +18,11 @@ const KEY_LENGTH = 32;
 let _safeStorageMock = null;
 let _cachedMasterKey = null;
 
+// P3-31: rate-limit the plaintext-legacy warning — a multi-row store read
+// would otherwise warn once per row and drown everything else in the console.
+const LEGACY_PLAINTEXT_WARN_LIMIT = 5;
+let __legacyPlaintextWarnCount = 0;
+
 /**
  * Returns true if Electron safeStorage is available and configured on this system.
  * Allows override via mock for testing environments.
@@ -169,6 +174,10 @@ function getFormat(bufferOrString) {
 // 256-bit random hex string, so the KDF is defence in depth rather than the
 // main strength; pay it once per (passphrase, salt) instead of once per record.
 const __derivedKeyCache = new Map();
+// THREAT MODEL: this cache holds raw derived key material in memory for the
+// process lifetime; accepted because the protected asset is data at rest —
+// anyone who can read this process's memory already has wider reach (Electron
+// main process) than any at-rest ciphertext. Never serialized anywhere.
 const DERIVED_KEY_CACHE_MAX = 256;
 
 function deriveAesKey(passphrase, salt) {
@@ -199,15 +208,59 @@ function deriveAesKeyAtCloudCost(passphrase, salt) {
   return key;
 }
 
+// —— P2-11: KDF cost tag + negative decrypt cache ——
+// OBE1 carries no KDF-cost field, so every record that fails GCM auth under the
+// default derivation (wrong passphrase, or a cloud-cost package derived at the
+// default cost first) pays a SECOND blocking scryptSync at N=131072 on the
+// Electron main thread — a wrong passphrase on a multi-row cloud restore then
+// performs 2×N blocking derivations and freezes the UI. All three fixes stay
+// inside this module; cloud-sync.js owns the shared OBE1 wire format and must
+// not drift, so the tag rides in the envelope's last SALT byte — the only field
+// both sides treat as opaque scrypt input. cloud-sync derives the identical key
+// from the identical salt bytes, and the magic stays OBE1.
+//   0x01 = Node default cost (N=16384), 0x02 = cloud cost (N=131072).
+//   Untagged (fully random) salts = legacy envelopes → dual attempt preserved
+//   so every existing store still decrypts (legacy fallback stays).
+const __negativeDecryptCache = new Map();
+const NEGATIVE_DECRYPT_CACHE_MAX = 1024;
+const SALT_COST_TAG_DEFAULT = 0x01;
+const SALT_COST_TAG_CLOUD = 0x02;
+const SALT_LENGTH_UNTAGGED = SALT_LENGTH - 1;
+
+function saltCostTag(salt) {
+  return Buffer.isBuffer(salt) && salt.length >= SALT_LENGTH ? salt[SALT_LENGTH - 1] : 0;
+}
+
+function negativeCacheKey(passphrase, salt) {
+  return String(passphrase) + '|' + salt.toString('hex');
+}
+
+// A GCM failure is permanent per (passphrase, salt): the tag is deterministic,
+// so remembering the failure lets later rows fast-fail with zero derivations.
+function rememberFailedDecrypt(passphrase, salt) {
+  if (__negativeDecryptCache.size >= NEGATIVE_DECRYPT_CACHE_MAX) __negativeDecryptCache.clear();
+  __negativeDecryptCache.set(negativeCacheKey(passphrase, salt), Date.now());
+}
+
+function clearNegativeDecryptCache() {
+  __negativeDecryptCache.clear();
+}
+
 // Reuse one salt per passphrase for encryption so the KDF cost is paid once
 // per process. AES-GCM only requires IV uniqueness per key; the IV stays random.
 const __encryptSaltCache = new Map();
+// THREAT MODEL: holds KDF salts in memory for process lifetime — same
+// acceptance as __derivedKeyCache above; never persisted or serialized.
 
 function encryptSaltFor(passphrase) {
   let salt = __encryptSaltCache.get(passphrase);
   if (!salt) {
     if (__encryptSaltCache.size >= 32) __encryptSaltCache.clear();
-    salt = crypto.randomBytes(SALT_LENGTH);
+    // P2-11: 15 random bytes + cost-tag byte (0x01 = default cost; writes here
+    // always use the default derivation). See the P2-11 block above — the tag
+    // is inside the salt, so both this module and cloud-sync derive the
+    // identical key from the identical bytes and the wire stays OBE1.
+    salt = Buffer.concat([crypto.randomBytes(SALT_LENGTH_UNTAGGED), Buffer.from([SALT_COST_TAG_DEFAULT])]);
     __encryptSaltCache.set(passphrase, salt);
   }
   return salt;
@@ -248,18 +301,61 @@ function decryptAesGcm(buf, passphraseOrKey) {
   const tag = buf.subarray(HEADER_LENGTH + SALT_LENGTH + IV_LENGTH, HEADER_LENGTH + SALT_LENGTH + IV_LENGTH + TAG_LENGTH);
   const enc = buf.subarray(HEADER_LENGTH + SALT_LENGTH + IV_LENGTH + TAG_LENGTH);
 
-  const key = deriveAesKey(passphrase, salt);
   const openWith = (k) => {
     const decipher = crypto.createDecipheriv('aes-256-gcm', k, iv);
     decipher.setAuthTag(tag);
     return Buffer.concat([decipher.update(enc), decipher.final()]);
   };
+  // P2-11: negative cache first — a remembered (passphrase, salt) failure
+  // fast-fails before ANY scryptSync, so a wrong passphrase on a multi-row
+  // restore pays one derivation for row 1 and none for rows 2..N.
+  if (__negativeDecryptCache.has(negativeCacheKey(passphrase, salt))) {
+    throw new Error('OBE1 解密失败：口令或数据不匹配（命中失败缓存）');
+  }
+  const costTag = saltCostTag(salt);
+  if (costTag === SALT_COST_TAG_DEFAULT || costTag === SALT_COST_TAG_CLOUD) {
+    // Tagged salt: single derivation at the tagged cost. A legacy UNTAGGED
+    // salt is fully random, so ~1/256 of legacy records collide with a tag
+    // byte; a tag collision is indistinguishable from a wrong passphrase
+    // until the other cost is tried. On failure, try the other cost ONCE
+    // before caching the negative result — that covers the collision without
+    // paying the dual attempt on the success path.
+    const cloudTagged = costTag === SALT_COST_TAG_CLOUD;
+    const derivedKey = cloudTagged
+      ? deriveAesKeyAtCloudCost(passphrase, salt)
+      : deriveAesKey(passphrase, salt);
+    try {
+      const plain = openWith(derivedKey);
+      clearNegativeDecryptCache();
+      return plain;
+    } catch (_) {
+      const otherKey = cloudTagged
+        ? deriveAesKey(passphrase, salt)
+        : deriveAesKeyAtCloudCost(passphrase, salt);
+      try {
+        const plain = openWith(otherKey);
+        clearNegativeDecryptCache();
+        return plain;
+      } catch (error) {
+        rememberFailedDecrypt(passphrase, salt);
+        throw error;
+      }
+    }
+  }
+  // Legacy untagged salt: keep the dual attempt (default first, cloud second)
+  // so every existing store still decrypts. The negative cache above bounds
+  // the cost of repeated wrong-passphrase attempts.
   try {
-    return openWith(key);
+    const plain = openWith(deriveAesKey(passphrase, salt));
+    clearNegativeDecryptCache();
+    return plain;
   } catch (error) {
     try {
-      return openWith(deriveAesKeyAtCloudCost(passphrase, salt));
+      const plain = openWith(deriveAesKeyAtCloudCost(passphrase, salt));
+      clearNegativeDecryptCache();
+      return plain;
     } catch (_) {
+      rememberFailedDecrypt(passphrase, salt);
       throw error;
     }
   }
@@ -327,8 +423,16 @@ function decryptCredential(bufferOrString, options = {}) {
 
   // Plaintext legacy fallback. A ciphertext that was swapped for plaintext (or a
   // never-encrypted store) lands here silently; log it so an encryption downgrade
-  // is at least observable instead of invisible.
-  console.warn('[credential-crypto] decrypting legacy plaintext payload (no OBS1/AES-GCM magic header)');
+  // is at least observable instead of invisible. Rate-limited (P3-31): a store
+  // read hits this once per row, which would otherwise flood the console and
+  // push the signal (a possible downgrade attack) under the noise.
+  if (__legacyPlaintextWarnCount < LEGACY_PLAINTEXT_WARN_LIMIT) {
+    __legacyPlaintextWarnCount += 1;
+    console.warn('[credential-crypto] decrypting legacy plaintext payload (no OBS1/AES-GCM magic header)');
+    if (__legacyPlaintextWarnCount === LEGACY_PLAINTEXT_WARN_LIMIT) {
+      console.warn('[credential-crypto] legacy-plaintext warning limit reached; further warnings suppressed for this process');
+    }
+  }
   return buf.toString('utf8');
 }
 
@@ -364,4 +468,8 @@ module.exports = {
   decryptCredential,
   encryptCredentialJson,
   decryptCredentialJson,
+  // P2-11 test surface: salt cost-tag constants + negative-cache hook.
+  SALT_COST_TAG_DEFAULT: SALT_COST_TAG_DEFAULT,
+  SALT_COST_TAG_CLOUD: SALT_COST_TAG_CLOUD,
+  clearNegativeDecryptCache: clearNegativeDecryptCache,
 };

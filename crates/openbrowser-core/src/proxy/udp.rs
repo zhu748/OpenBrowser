@@ -379,12 +379,18 @@ impl Socks5UdpAssociate {
     /// One buffer holds header + payload for a single send_to; the send path
     /// bypasses Socks5UdpPacket entirely, so no target clone and no payload
     /// Vec copy happen per datagram.
+    /// RFC 1928 §7: an ASSOCIATE session lives exactly as long as its TCP
+    /// control connection — relaying into a session whose control side is
+    /// dead (peer FIN/RST already buffered) only feeds a zombie relay.
     pub async fn send_to(
         &self,
         data: &[u8],
         target_addr: &SocksAddress,
         target_port: u16,
     ) -> Result<usize> {
+        if !self.is_control_alive() {
+            return Err(CoreError::Socks5("control connection terminated".into()));
+        }
         let mut buf = BytesMut::with_capacity(32 + data.len());
         append_udp_header(&mut buf, 0, target_addr, target_port)?;
         buf.put_slice(data);
@@ -397,62 +403,82 @@ impl Socks5UdpAssociate {
     /// decoded in place, and the payload is slid to the front, so the receive
     /// path allocates nothing per datagram (IPv4/IPv6 addresses are Copy; a
     /// Domain relay address still builds its String).
+    ///
+    /// RFC 1928 §7: the session ends with its TCP control connection, so the
+    /// data path must verify liveness itself — the relay will happily keep
+    /// a UDP socket open after the control side died, and a plain recv_from
+    /// would then block the caller forever. The recv is bounded (~1s ticks);
+    /// each tick re-checks the control connection and surfaces its death as
+    /// an error instead of a silent infinite wait.
     pub async fn recv_from(&self, buf: &mut [u8]) -> Result<(usize, SocksAddress, u16)> {
-        let (n, from_addr) = self.udp_socket.recv_from(buf).await?;
-        // Source validation: the sender IP must be the SOCKS5 relay we contacted.
-        // Some relays reply from a different ephemeral port on the same host, so the
-        // port is NOT part of the check. (The previous condition let a spoofed packet
-        // from any IP that merely matched the relay port bypass validation entirely.)
-        if from_addr.ip() != self.relay_addr.ip() {
-            return Err(CoreError::Socks5(format!(
-                "Received UDP packet from unexpected address: expected {}, got {}",
-                self.relay_addr, from_addr
-            )));
-        }
+        loop {
+            if !self.is_control_alive() {
+                return Err(CoreError::Socks5("control connection terminated".into()));
+            }
+            let (n, from_addr) = match tokio::time::timeout(
+                Duration::from_secs(1),
+                self.udp_socket.recv_from(buf),
+            )
+            .await
+            {
+                Ok(res) => res?,
+                Err(_) => continue, // recv tick elapsed; re-check liveness above
+            };
+            // Source validation: the sender IP must be the SOCKS5 relay we contacted.
+            // Some relays reply from a different ephemeral port on the same host, so the
+            // port is NOT part of the check. (The previous condition let a spoofed packet
+            // from any IP that merely matched the relay port bypass validation entirely.)
+            if from_addr.ip() != self.relay_addr.ip() {
+                return Err(CoreError::Socks5(format!(
+                    "Received UDP packet from unexpected address: expected {}, got {}",
+                    self.relay_addr, from_addr
+                )));
+            }
 
-        // In-place header validation over buf[..n], the same rules
-        // Socks5UdpPacket::decode applies, minus the payload copy.
-        if n < 4 {
-            return Err(CoreError::Socks5(
-                "UDP packet too short for SOCKS5 header (< 4 bytes)".into(),
-            ));
-        }
-        let rsv = u16::from_be_bytes([buf[0], buf[1]]);
-        if rsv != 0 {
-            return Err(CoreError::Socks5(format!(
-                "Invalid reserved field in SOCKS5 UDP header: 0x{:04x}",
-                rsv
-            )));
-        }
-        let frag = buf[2];
-        if frag != 0 {
-            // RFC 1928: fragmentation is at the IP layer; a SOCKS5 UDP relay
-            // cannot reassemble fragments, so they must be dropped, not
-            // forwarded as if they were complete datagrams.
-            return Err(CoreError::Socks5(format!(
-                "Fragmented SOCKS5 UDP datagrams are not supported (frag={})",
-                frag
-            )));
-        }
+            // In-place header validation over buf[..n], the same rules
+            // Socks5UdpPacket::decode applies, minus the payload copy.
+            if n < 4 {
+                return Err(CoreError::Socks5(
+                    "UDP packet too short for SOCKS5 header (< 4 bytes)".into(),
+                ));
+            }
+            let rsv = u16::from_be_bytes([buf[0], buf[1]]);
+            if rsv != 0 {
+                return Err(CoreError::Socks5(format!(
+                    "Invalid reserved field in SOCKS5 UDP header: 0x{:04x}",
+                    rsv
+                )));
+            }
+            let frag = buf[2];
+            if frag != 0 {
+                // RFC 1928: fragmentation is at the IP layer; a SOCKS5 UDP relay
+                // cannot reassemble fragments, so they must be dropped, not
+                // forwarded as if they were complete datagrams.
+                return Err(CoreError::Socks5(format!(
+                    "Fragmented SOCKS5 UDP datagrams are not supported (frag={})",
+                    frag
+                )));
+            }
 
-        let mut cursor = std::io::Cursor::new(&buf[..n]);
-        cursor.set_position(3);
-        let address = SocksAddress::decode(&mut cursor)?;
-        let header_len = cursor.position() as usize;
+            let mut cursor = std::io::Cursor::new(&buf[..n]);
+            cursor.set_position(3);
+            let address = SocksAddress::decode(&mut cursor)?;
+            let header_len = cursor.position() as usize;
 
-        if n < header_len + 2 {
-            return Err(CoreError::Socks5(
-                "UDP packet truncated before destination port".into(),
-            ));
+            if n < header_len + 2 {
+                return Err(CoreError::Socks5(
+                    "UDP packet truncated before destination port".into(),
+                ));
+            }
+            let port = u16::from_be_bytes([buf[header_len], buf[header_len + 1]]);
+
+            // Slide the payload to the front of the caller's buffer; copy_within
+            // tolerates source and destination overlapping.
+            let payload_len = n - header_len - 2;
+            buf.copy_within(header_len + 2..n, 0);
+
+            return Ok((payload_len, address, port));
         }
-        let port = u16::from_be_bytes([buf[header_len], buf[header_len + 1]]);
-
-        // Slide the payload to the front of the caller's buffer; copy_within
-        // tolerates source and destination overlapping.
-        let payload_len = n - header_len - 2;
-        buf.copy_within(header_len + 2..n, 0);
-
-        Ok((payload_len, address, port))
     }
 
     pub fn relay_addr(&self) -> SocketAddr {

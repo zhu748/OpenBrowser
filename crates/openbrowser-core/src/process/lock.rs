@@ -135,8 +135,14 @@ impl ProcessLock for FileLock {
                 handle,
                 LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY,
                 0,
-                1,
-                0,
+                // Whole-file lock: u32::MAX in both low and high halves. The
+                // old [0,1) range locked a single byte, so a second process
+                // opening the file could LockFileEx bytes [1,2) and both
+                // believed they held the single-instance guard — semantics
+                // Unix flock (whole file) never had. Windows permits byte
+                // ranges beyond EOF for exactly this purpose.
+                u32::MAX,
+                u32::MAX,
                 &mut overlapped,
             )
         };
@@ -167,10 +173,19 @@ impl ProcessLock for FileLock {
             let handle = file.as_raw_handle() as windows_sys::Win32::Foundation::HANDLE;
             let mut overlapped: windows_sys::Win32::System::IO::OVERLAPPED =
                 unsafe { std::mem::zeroed() };
-            unsafe {
-                UnlockFileEx(handle, 0, 1, 0, &mut overlapped);
-            }
             self.locked = false;
+            // Propagate like the Unix path (:80-86): a failed unlock leaves
+            // the byte range locked behind us (handle close may or may not
+            // release it), which the caller must hear about instead of a
+            // bogus Ok(()). The range mirrors the whole-file LockFileEx above.
+            let ret = unsafe { UnlockFileEx(handle, 0, u32::MAX, u32::MAX, &mut overlapped) };
+            if ret == 0 {
+                let err = std::io::Error::last_os_error();
+                return Err(CoreError::ProcessLock(format!(
+                    "UnlockFileEx failed on {:?}: {}",
+                    self.path, err
+                )));
+            }
         }
         Ok(())
     }

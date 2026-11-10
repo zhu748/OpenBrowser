@@ -6,8 +6,10 @@
  * Verifies GAP-11 fix:
  * 1. ws.puppeteer returns standard ws://127.0.0.1:port/devtools/browser/<guid>
  *    when Chromium DevTools /json/version is available.
- * 2. ws.puppeteer falls back to ws://127.0.0.1:port/devtools/browser/<id>
- *    when /json/version is unreachable.
+ * 2. ws.puppeteer returns null when /json/version is unreachable after a
+ *    bounded retry — never a URL synthesized from the profile id (the GUID
+ *    segment is random 32-hex from /json/version, so such a URL can never
+ *    connect; see automation review 2026-11-10 [P2-4]).
  * 3. Never returns http:// in ws.puppeteer across start/detail/open-url/list endpoints.
  */
 
@@ -25,7 +27,7 @@ const ok = (name, cond) => {
   passed += 1;
 };
 
-async function createMockDevToolsServer(browserGuid) {
+async function createMockDevToolsServer(browserGuid, listenPort = 0) {
   return new Promise((resolve) => {
     const server = http.createServer((req, res) => {
       if (req.url === '/json/version') {
@@ -44,7 +46,7 @@ async function createMockDevToolsServer(browserGuid) {
         res.end();
       }
     });
-    server.listen(0, '127.0.0.1', () => {
+    server.listen(listenPort, '127.0.0.1', () => {
       resolve(server);
     });
   });
@@ -66,16 +68,28 @@ async function createMockDevToolsServer(browserGuid) {
     await new Promise((res) => mockServer.close(res));
   }
 
-  // Test 2: Fallback when port is dead / no HTTP listener
-  // Use a port that was just closed and is now free
-  const fallback = await resolveWebSocketDebuggerUrl(mockPort, 'profile-fallback-id');
-  ok('falls back to ws://127.0.0.1:port/devtools/browser/<id> on unreachable port',
-    fallback === `ws://127.0.0.1:${mockPort}/devtools/browser/profile-fallback-id`);
-  ok('fallback url uses ws:// protocol', fallback.startsWith('ws://'));
+  // Test 2: Honest null when /json/version is unreachable.
+  // GAP-11's original fix fabricated ws://…/devtools/browser/<profileId> on
+  // timeout: the browser-level GUID comes from /json/version (random 32-hex),
+  // NOT the profile id, so the synthesized URL could never connect while
+  // sitting inside an HTTP-200 success envelope. Bounded retry (≈3 attempts)
+  // now absorbs the startup race; on persistent failure the resolver returns
+  // null so clients see an honest value (debug_port stays correct, ws.puppeteer
+  // becomes null). Updated for the 2026-11-10 automation review [P2-4].
+  const unreachable = await resolveWebSocketDebuggerUrl(mockPort, 'profile-fallback-id');
+  ok('returns honest null on unreachable port instead of a fabricated URL', unreachable === null);
+  ok('null port resolves to null', (await resolveWebSocketDebuggerUrl(0, 'x')) === null);
 
-  // Test 3: Local API route handlers integration
+  // Test 3: Local API route handlers integration.
+  // The routes resolve ws.puppeteer through live /json/version, so the mock
+  // engine's fixed port must have a real (mock) DevTools listener behind it;
+  // with the honest-null fix a dead port would correctly yield null.
   const userData = await fsp.mkdtemp(path.join(os.tmpdir(), 'ob-ws-test-'));
   const dummyProfile = { id: 'test-p1', name: 'Test P1', proxy: 'Direct' };
+  const routeGuid = '11111111-2222-3333-4444-555555555555';
+  // Bind the real listener on the port the mock engine reports (9555) so the
+  // routes exercise the live /json/version path end to end.
+  const mockServer2 = await createMockDevToolsServer(routeGuid, 9555);
 
   const mockEngine = {
     profiles: new Map([['test-p1', dummyProfile]]),
@@ -125,6 +139,7 @@ async function createMockDevToolsServer(browserGuid) {
   ok('list item ws.puppeteer is not http://', !listItem.ws?.puppeteer.startsWith('http://'));
 
   await api.stop().catch(() => {});
+  await new Promise((res) => mockServer2.close(res));
   await fsp.rm(userData, { recursive: true, force: true }).catch(() => {});
 
   console.log(`\n======================================================`);

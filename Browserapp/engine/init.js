@@ -12,6 +12,12 @@ const fs = require('fs');
 const path = require('path');
 const { ProfileStoreSqlite } = require('../automation/profile-store-sqlite');
 
+// Startup load cap. 1000 was low for RPA farms and truncated SILENTLY: the
+// JSON archive then lost the tail on the next persist (persist writes only
+// the loaded set). 5000 keeps startup bounded while covering real fleet
+// sizes, and exceeding it is now warned, not invisible.
+const LOAD_PROFILE_CAP = 5000;
+
 module.exports = {
   async init(bundledExtensionPath) {
     await this.kernelManager.loadMeta();
@@ -58,11 +64,16 @@ module.exports = {
         this.assignments.set(profileId, ids);
       }
       const loadedProfiles = this.sqliteStore.getAllProfiles();
-      for (const raw of loadedProfiles.slice(0, 1000)) {
+      for (const raw of loadedProfiles.slice(0, LOAD_PROFILE_CAP)) {
         try {
           const profile = this.sanitizeProfile(raw);
           this.profiles.set(profile.id, profile);
         } catch (_) {}
+      }
+      // 静默截断修正：超限必须有可见性；否则上千环境的用户有档案「凭空消失」
+      // 却无任何线索（下一次 persist 只写回已加载集合，JSON 存档会被覆盖）。
+      if (loadedProfiles.length > LOAD_PROFILE_CAP) {
+        console.warn(`[BrowserEngine] ${loadedProfiles.length} profiles exceed the load cap; only the first ${LOAD_PROFILE_CAP} were loaded.`);
       }
       const meta = this.sqliteStore.getAllMeta();
       if (typeof meta.preferIndependentKernel === 'boolean') {
@@ -116,11 +127,14 @@ module.exports = {
         // Profiles (incl. cookies / proxy auth / platform secrets) live in main-process state,
         // not renderer localStorage, so XSS cannot dump them from the UI store.
         if (Array.isArray(saved.profiles)) {
-          for (const raw of saved.profiles.slice(0, 1000)) {
+          for (const raw of saved.profiles.slice(0, LOAD_PROFILE_CAP)) {
             try {
               const profile = this.sanitizeProfile(raw);
               this.profiles.set(profile.id, profile);
             } catch (_) {}
+          }
+          if (saved.profiles.length > LOAD_PROFILE_CAP) {
+            console.warn(`[BrowserEngine] ${saved.profiles.length} profiles exceed the load cap; only the first ${LOAD_PROFILE_CAP} were loaded.`);
           }
         }
         if (typeof saved.preferIndependentKernel === 'boolean') this.preferIndependentKernel = saved.preferIndependentKernel;

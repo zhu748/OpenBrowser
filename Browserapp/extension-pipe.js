@@ -1,6 +1,22 @@
 const { spawn } = require('child_process');
 const cdp = require('./cdp');
 
+// Rate-limited unparseable-frame warning: a corrupted frame used to surface
+// only as a mysterious per-command timeout later; a chatty broken installer
+// would otherwise warn once per frame and flood the console (same pattern as
+// credential-crypto.js LEGACY_PLAINTEXT_WARN_LIMIT).
+const BAD_FRAME_WARN_LIMIT = 5;
+let badFrameWarnCount = 0;
+function warnUnparseableFrame(raw) {
+  if (badFrameWarnCount >= BAD_FRAME_WARN_LIMIT) return;
+  badFrameWarnCount += 1;
+  const preview = String(raw).slice(0, 120);
+  console.warn(`[extension-pipe] dropping unparseable installer frame (${raw.length} bytes): ${JSON.stringify(preview)}${raw.length > 120 ? '…' : ''}`);
+  if (badFrameWarnCount === BAD_FRAME_WARN_LIMIT) {
+    console.warn('[extension-pipe] unparseable-frame warning limit reached; further warnings suppressed for this process');
+  }
+}
+
 class PipeConnection {
   constructor(child) {
     this.child = child; this.input = child.stdio[3]; this.output = child.stdio[4];
@@ -30,7 +46,10 @@ class PipeConnection {
     for (;;) {
       const end = this.buffer.indexOf(0); if (end < 0) break;
       const raw = this.buffer.subarray(0, end).toString('utf8'); this.buffer = this.buffer.subarray(end + 1);
-      if (!raw) continue; let value; try { value = JSON.parse(raw); } catch (_) { continue; }
+      // Frames are NUL-separated JSON; skip keepalive/empty frames silently,
+      // but a genuinely corrupted frame must leave a (rate-limited) trace —
+      // otherwise its pending command only fails later as a bare timeout.
+      if (!raw) continue; let value; try { value = JSON.parse(raw); } catch (_) { warnUnparseableFrame(raw); continue; }
       const item = this.pending.get(value.id); if (!item) continue;
       this.pending.delete(value.id); clearTimeout(item.timer);
       if (value.error) item.reject(new Error(value.error.message || 'Chrome extension installer command failed'));

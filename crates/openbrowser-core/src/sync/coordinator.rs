@@ -119,7 +119,14 @@ impl SyncCoordinator {
 
         let mut plans = Vec::with_capacity(self.slaves.len());
 
-        for (id, slave) in &self.slaves {
+        // Iterate slaves in ascending id order: HashMap iteration is
+        // randomized per run, so an unordered fan-out produced a different
+        // plan sequence (and event log) on every dispatch. Sorting makes the
+        // sequence deterministic and event logs replayable.
+        let mut ordered_slaves: Vec<(&u64, &WindowTarget)> = self.slaves.iter().collect();
+        ordered_slaves.sort_unstable_by_key(|(id, _)| **id);
+
+        for (id, slave) in ordered_slaves {
             let delay = self.jitter.generate_delay();
 
             let mapped_event = match event {

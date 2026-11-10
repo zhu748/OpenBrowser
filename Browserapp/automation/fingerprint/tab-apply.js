@@ -56,9 +56,18 @@ async function applyFingerprintToTab(cdpCall, webSocketDebuggerUrl, fp, profile 
     : null;
   const source = buildInjectionScript(fp);
   const fpKey = injectSourceKeyCached(injectionCacheKeyFor(fp), source);
+  // One key space, keyed by the CDP target id. Callers that attach a target through
+  // a flat session (engine/fingerprint-injection.js) register as `target:<id>` while
+  // the ws-URL path below derives the SAME id from /devtools/(page|browser)/<id> —
+  // otherwise the alreadyPatched short-circuit cannot see what the other caller
+  // recorded for the same physical tab and Page.addScriptToEvaluateOnNewDocument
+  // ends up registered twice.
+  const wsTargetId = typeof webSocketDebuggerUrl === 'string' && webSocketDebuggerUrl
+    ? (webSocketDebuggerUrl.match(/\/devtools\/(?:page|browser)\/([0-9A-Fa-f-]+)/) || [])[1]
+    : null;
   const injectTargetKey = typeof options.applyKey === 'string' && options.applyKey
     ? options.applyKey
-    : (typeof webSocketDebuggerUrl === 'string' && webSocketDebuggerUrl ? webSocketDebuggerUrl : '');
+    : (wsTargetId ? `target:${wsTargetId}` : (typeof webSocketDebuggerUrl === 'string' && webSocketDebuggerUrl ? webSocketDebuggerUrl : ''));
   const forceInject = options.force === true;
   const injectState = injectTargetKey ? TARGET_INJECT_STATE.get(injectTargetKey) : null;
   const sameConfig = Boolean(injectState && injectState.fpKey === fpKey);

@@ -986,6 +986,13 @@ function redactProfileForStorage(profile) {
       ...(value.platform || {}),
       password: '',
       totpSecret: '',
+      // 多账号行与主账号字段同规则脱敏：username 保留（列表/编辑器展示用），
+      // password/totpSecret 清空。'profile-closed' 事件带来的完整行只存在于
+      // 内存 ui.profiles（编辑器一次性读取，与 cookies 同一设计），save()
+      // 在序列化时统一经过这里，localStorage 永不落盘任何一行的机密。
+      accounts: Array.isArray(value.platform?.accounts)
+        ? value.platform.accounts.map((account) => ({ ...account, password: '', totpSecret: '' }))
+        : [],
     },
   };
 }
@@ -1196,7 +1203,13 @@ function maskProxy(value) {
   if (isDirectProxy(raw)) return t('net.localDirect');
   try {
     const parsed = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? new URL(raw) : null;
-    if (parsed) return parsed.protocol.replace(':', '').toUpperCase() + ' · ' + parsed.hostname + ':' + parsed.port + (parsed.username ? ' · ' + t('net.auth') : '');
+    // new URL yields '' for the scheme's default port, so https://proxy:443 used
+    // to render as "HTTPS · proxy:" — display the effective port instead
+    // (80/http, 443/https; anything else keeps its explicit port).
+    if (parsed) {
+      const effectivePort = parsed.port || { 'http:': 80, 'https:': 443 }[parsed.protocol] || '';
+      return parsed.protocol.replace(':', '').toUpperCase() + ' · ' + parsed.hostname + ':' + effectivePort + (parsed.username ? ' · ' + t('net.auth') : '');
+    }
   } catch (_) {}
   const parts = raw.split(':');
   return parts.length >= 4 ? 'SOCKS5 · ' + parts[0] + ':' + parts[1] + ' · ' + t('net.auth') : raw;
@@ -1817,7 +1830,7 @@ function switchView(view) {
     const tab = arguments[1] || window.currentRpaTab || 'flows';
     showRpaPanel(tab);
     if (!loadedViews.has('rpa')) {
-      refreshRpaPage();
+      refreshRpaPage().catch(() => {});
       loadedViews.add('rpa');
     }
   } else {
@@ -4562,11 +4575,20 @@ function parseCsvLine(line) {
   values.push(current.trim()); return values;
 }
 
+// 导入行数上限：此前一百万行的文件会被完整 parse、逐行构造成环境对象、
+// 再整份发往 IPC，配额兜底在那之后才裁剪。10,000 行在解析边界就截断——
+// 整数好记，且比任何真实环境清单大一个量级以上。
+const IMPORT_ROW_CAP = 10000;
 function parseImportedProfiles(text, extension) {
-  if (extension === 'json') { const values = JSON.parse(text); if (!Array.isArray(values)) throw new Error('\u5bfc\u5165 JSON \u5fc5\u987b\u662f\u6570\u7ec4'); return values; }
-  const lines = text.split(/\r?\n/).filter((line) => line.trim()); if (lines.length < 2) return [];
+  if (extension === 'json') {
+    const values = JSON.parse(text); if (!Array.isArray(values)) throw new Error('\u5bfc\u5165 JSON \u5fc5\u987b\u662f\u6570\u7ec4');
+    return { rows: values.slice(0, IMPORT_ROW_CAP), truncated: values.length > IMPORT_ROW_CAP };
+  }
+  const lines = text.split(/\r?\n/).filter((line) => line.trim()); if (lines.length < 2) return { rows: [], truncated: false };
   const headers = parseCsvLine(lines[0]).map((item) => item.toLowerCase());
-  return lines.slice(1).map((line, row) => { const values = parseCsvLine(line); const item = Object.fromEntries(headers.map((key, index) => [key, values[index] || ''])); return { id: item.id || 'env-import-' + Date.now().toString(36) + '-' + row, name: item.name || item.id || 'Imported ' + (row + 1), browser: item.browser || 'Google Chrome', language: item.language || 'en-US', proxy: item.proxy || item.ip || 'Direct', proxyType: item.proxytype || '', exitIp: item.ip || '', exitCountryCode: item.countrycode || '', tag: item.tag || item.group || 'Imported', os: 'Windows', location: item.location || 'Local' }; });
+  // 截断发生在逐行构造对象之前：数据行 = lines[1..]，含表头共取 CAP+1 行。
+  const body = lines.slice(1, IMPORT_ROW_CAP + 1);
+  return { rows: body.map((line, row) => { const values = parseCsvLine(line); const item = Object.fromEntries(headers.map((key, index) => [key, values[index] || ''])); return { id: item.id || 'env-import-' + Date.now().toString(36) + '-' + row, name: item.name || item.id || 'Imported ' + (row + 1), browser: item.browser || 'Google Chrome', language: item.language || 'en-US', proxy: item.proxy || item.ip || 'Direct', proxyType: item.proxytype || '', exitIp: item.ip || '', exitCountryCode: item.countrycode || '', tag: item.tag || item.group || 'Imported', os: 'Windows', location: item.location || 'Local' }; }), truncated: lines.length - 1 > IMPORT_ROW_CAP };
 }
 
 $('#batch-import').addEventListener('click', () => $('#batch-import-file').click());
@@ -4574,10 +4596,14 @@ $('#batch-import-file').addEventListener('change', async (event) => {
   const file = event.target.files[0]; if (!file) return;
   const previousLength = ui.profiles.length; const previousNext = ui.nextProfileNumber;
   try {
-    const extension = file.name.toLowerCase().endsWith('.json') ? 'json' : 'csv'; const imported = parseImportedProfiles(await file.text(), extension);
+    const extension = file.name.toLowerCase().endsWith('.json') ? 'json' : 'csv'; const parsed = parseImportedProfiles(await file.text(), extension);
+    const imported = parsed.rows;
     const start = nextProfileNumber(); const used = new Set(ui.profiles.map((item) => item.id));
     const normalized = imported.map((item, index) => { const number = start + index; const id = createInternalProfileId(number, used); used.add(id); return { id, number, name: String(number), browser: 'Google Chrome', language: String(item.language || 'en-US'), proxy: String(item.proxy || item.ip || 'Direct'), proxyType: String(item.proxyType || item.proxytype || ''), exitIp: String(item.exitIp || item.ip || ''), exitCountryCode: String(item.exitCountryCode || item.countrycode || ''), tag: String(item.tag || item.group || 'Imported'), os: 'Windows', location: String(item.location || 'Local') }; });
-    ui.profiles.push(...normalized); ui.nextProfileNumber = start + normalized.length; save(); invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies']); engineProfiles = await window.ops.syncProfiles(ui.profiles); renderProfiles(); log('Import', '\u6279\u91cf\u5bfc\u5165 ' + normalized.length + ' \u4e2a\u73af\u5883'); toast('\u5df2\u5bfc\u5165 ' + normalized.length + ' \u4e2a\u73af\u5883');
+    ui.profiles.push(...normalized); ui.nextProfileNumber = start + normalized.length; save(); invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies']); engineProfiles = await window.ops.syncProfiles(ui.profiles); renderProfiles(); log('Import', '\u6279\u91cf\u5bfc\u5165 ' + normalized.length + ' \u4e2a\u73af\u5883');
+    // 截断必须用户可见（沿用既有 toast 约定），否则用户以为全量导入成功。
+    if (parsed.truncated) toast('\u5df2\u5bfc\u5165 ' + normalized.length + ' \u4e2a\u73af\u5883\uff08\u8d85\u51fa\u4e0a\u9650\uff0c\u5df2\u622a\u65ad\u4e3a\u524d ' + normalized.length + ' \u884c\uff09');
+    else toast('\u5df2\u5bfc\u5165 ' + normalized.length + ' \u4e2a\u73af\u5883');
   } catch (error) { ui.profiles = ui.profiles.slice(0, previousLength); ui.nextProfileNumber = previousNext; save(); toast('\u5bfc\u5165\u5931\u8d25\uff1a' + error.message); }
   event.target.value = '';
 });

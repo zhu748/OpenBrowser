@@ -525,7 +525,7 @@ function renderRpaStore() {
       : (stepCount ? t('rpa.store.unsupportedPrefix', { items: (tpl.unsupported_steps || []).slice(0, 3).map((item) => item.type).join(', ') }) : t('rpa.store.noSteps'));
     useBtn.title = useTitle;
     useBtn.setAttribute('aria-label', `${tpl.name || tpl.id} · ${useText}`);
-    useBtn.onclick = () => installRpaTemplate(tpl.id).catch((e) => toast(e.message));
+    useBtn.onclick = () => rpaOnce(() => installRpaTemplate(tpl.id)).catch((e) => toast(e.message));
 
     const previewBtn = document.createElement('button');
     previewBtn.type = 'button';
@@ -658,6 +658,18 @@ async function saveCustomTemplateFromDialog() {
   await refreshRpaStore();
 }
 
+// 连点/在途保护：创建计划、安装模板、运行三类操作在 IPC 往返期间可被再次
+// 触发；id 为空的 upsert 每次都会新建计划（rpa-store upsertPlan），双击即
+// 产生重复流程并对同一批环境重复执行。一次只允许一个在途操作。
+let rpaOpInFlight = false;
+function rpaOnce(fn) {
+  if (rpaOpInFlight) return Promise.resolve();
+  rpaOpInFlight = true;
+  return Promise.resolve()
+    .then(() => fn())
+    .finally(() => { rpaOpInFlight = false; });
+}
+
 // Single rpaTasks fetch feeding both tables: the task table and the run table
 // render from the same dataset, so manual refresh buttons must not pay for two
 // identical IPC round-trips.
@@ -705,10 +717,10 @@ async function createRpaPlan(name) {
   toast(tx('已创建流程'));
 }
 
-document.getElementById('rpa-new-plan')?.addEventListener('click', () => createRpaPlan().catch((e) => toast(e.message)));
-document.getElementById('rpa-new-plan-2')?.addEventListener('click', () => createRpaPlan().catch((e) => toast(e.message)));
-document.getElementById('rpa-create-task')?.addEventListener('click', () => createRpaPlan(tx('任务流程 ') + new Date().toLocaleString()).catch((e) => toast(e.message)));
-document.getElementById('rpa-refresh')?.addEventListener('click', refreshRpaPage);
+document.getElementById('rpa-new-plan')?.addEventListener('click', () => rpaOnce(createRpaPlan).catch((e) => toast(e.message)));
+document.getElementById('rpa-new-plan-2')?.addEventListener('click', () => rpaOnce(createRpaPlan).catch((e) => toast(e.message)));
+document.getElementById('rpa-create-task')?.addEventListener('click', () => rpaOnce(() => createRpaPlan(tx('任务流程 ') + new Date().toLocaleString())).catch((e) => toast(e.message)));
+document.getElementById('rpa-refresh')?.addEventListener('click', () => refreshRpaPage().catch(() => {}));
 document.getElementById('rpa-task-refresh')?.addEventListener('click', () => refreshRpaTables());
 document.getElementById('rpa-task-select-all')?.addEventListener('change', (event) => {
   const checked = event.target.checked;
@@ -878,6 +890,8 @@ document.getElementById('rpa-delete')?.addEventListener('click', async () => {
 });
 
 document.getElementById('rpa-run')?.addEventListener('click', async () => {
+  if (rpaOpInFlight) return;
+  rpaOpInFlight = true;
   try {
     let steps;
     try { steps = JSON.parse(document.getElementById('rpa-steps-json').value || '[]'); }
@@ -903,6 +917,8 @@ document.getElementById('rpa-run')?.addEventListener('click', async () => {
   } catch (error) {
     appendRpaLog('错误：' + error.message);
     toast(tx('运行失败：') + error.message);
+  } finally {
+    rpaOpInFlight = false;
   }
 });
 

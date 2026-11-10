@@ -101,9 +101,12 @@ async function engineStateRecoveryCandidates(filePath) {
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
   }
+  // Only .bak and .tmp-<pid>-<hex> can ever exist: writeRawAtomically builds
+  // temporary files as `${filePath}.tmp-<pid>-<hex>` (renamed away on success),
+  // so a bare `${filePath}.tmp` was listed here but never produced by any code
+  // path — a dead candidate. The .tmp-* sweep below covers every real temp file.
   const candidates = [
     `${filePath}.bak`,
-    `${filePath}.tmp`,
     ...names.filter((name) => name.startsWith(base + ".tmp-")).map((name) => path.join(directory, name)),
   ];
   const valid = [];

@@ -75,7 +75,14 @@ async function assertResourceGateForLaunch({ diskRoot } = {}) {
   try {
     const stats = await fsp.statfs(target);
     availableGb = (stats.bsize * stats.bavail) / DISK_BYTES_PER_GB;
-  } catch (_) { /* statfs 不可用：跳过磁盘项 */ }
+  } catch (_) {
+    // 首次启动新环境时 profile 目录尚未创建（ENOENT），磁盘闸恰好漏掉最
+    // 需要检查的那次启动：回退到父目录（随 store 创建、必然存在）。
+    try {
+      const stats = await fsp.statfs(require('path').dirname(target));
+      availableGb = (stats.bsize * stats.bavail) / DISK_BYTES_PER_GB;
+    } catch (_) { /* statfs 不可用：跳过磁盘项 */ }
+  }
   const verdict = evaluateResourceGate({
     usedPercent,
     availableGb,

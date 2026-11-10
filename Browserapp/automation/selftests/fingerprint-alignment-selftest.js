@@ -170,11 +170,26 @@ async function main() {
     const blank = sanitizeProfile(baseProfile({ privacy: { fingerprint: { canvasId: '' } } }));
     assert.strictEqual(blank.privacy.fingerprint.canvasId, undefined);
   });
-  check('battery level clamps into 0-1 and charging normalizes', () => {
-    assert.deepStrictEqual(seeded.privacy.fingerprint.battery, { charging: true, level: 1 });
+  check('battery level clamps into 0-1, charging normalizes, times survive', () => {
+    // seeded may or may not carry times; assert the invariants, not an exact shape.
+    const b = seeded.privacy.fingerprint.battery;
+    assert.ok(b && typeof b === 'object');
+    assert.strictEqual(b.charging, true);
+    assert.strictEqual(b.level, 1);
+    if (b.chargingTime !== undefined) assert.ok(Number.isFinite(b.chargingTime) && b.chargingTime >= 0);
+    if (b.dischargingTime !== undefined) assert.ok(Number.isFinite(b.dischargingTime) && b.dischargingTime >= 0);
     const off = sanitizeProfile(baseProfile({ privacy: { fingerprint: { battery: { charging: false, level: 0.3 } } } }));
     assert.deepStrictEqual(off.privacy.fingerprint.battery, { charging: false, level: 0.3 });
-    const junk = sanitizeProfile(baseProfile({ privacy: { fingerprint: { battery: 'noise' } } }));
+    // Round-3 fix: the editor writes chargingTime/dischargingTime and the
+    // generators consume them (generators.js:518-523) — the old sanitizer
+    // silently stripped both on every save. They must now survive.
+    const withTimes = sanitizeProfile(baseProfile({ privacy: { fingerprint: { battery: { charging: true, level: 0.5, chargingTime: 60, dischargingTime: 120 } } } }));
+    assert.deepStrictEqual(withTimes.privacy.fingerprint.battery, { charging: true, level: 0.5, chargingTime: 60, dischargingTime: 120 });
+    // Round-3 fix: the STRING form is the battery MODE enum (persona.js:81),
+    // previously dropped wholesale; a valid enum value survives, junk drops.
+    const junkEnum = sanitizeProfile(baseProfile({ privacy: { fingerprint: { battery: 'noise' } } }));
+    assert.strictEqual(junkEnum.privacy.fingerprint.battery, 'noise');
+    const junk = sanitizeProfile(baseProfile({ privacy: { fingerprint: { battery: 'bogus' } } }));
     assert.strictEqual(junk.privacy.fingerprint.battery, undefined);
   });
   check('uaStrict survives as boolean', () => {

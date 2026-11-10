@@ -40,7 +40,7 @@ class RpaStore {
     // now coalesce: a burst of updates runs one atomic write after a quiet
     // period, and callers awaiting save() still learn whether the state
     // reached the disk.
-    this._writer = createCoalescedWriter({
+    this._writer = createCoalescedWriter({ keepAlive: true,
       delayMs: 40,
       write: () => this._writeAtomic(),
       onError: (error) => console.error('[rpa-store] write failed:', error?.message || error),

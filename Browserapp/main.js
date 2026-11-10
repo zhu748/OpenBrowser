@@ -425,7 +425,7 @@ function isEnvironmentStartUrl(value) {
   // start page (reload/mirror-sync hazard); the substring match now only
   // recognises the exact file name we generate for the file:// fallback.
   if (Boolean(engine?.isStartPageUrl?.(s))) return true;
-  return /^file:\/\//i.test(s) && /openbrowser-start\.html/i.test(s);
+  return /^file:\/\/\//i.test(s) && /openbrowser-start\.html$/i.test(s);
 }
 
 function environmentStartUrl(entry) {
@@ -635,7 +635,11 @@ function startShortcutBridge() {
   child.stdout.setEncoding('utf8');
   child.stdout.on('data', (chunk) => {
     output += chunk;
-    const lines = output.split(/\r?\n/); output = lines.pop() || '';
+    const lines = output.split(/\r?\n/);
+    // Partial (newline-less) line remainder, capped like the stderr handler
+    // below: a native binary streaming one unterminated line grows this buffer
+    // for the process lifetime — stdout has no backpressure-driven bound.
+    output = (lines.pop() || '').slice(-1000);
     for (const line of lines.map((value) => value.trim()).filter(Boolean)) {
       if (line === 'READY') emit({ type: 'shortcut-status', mode: 'windows-hook', active: true, accelerators: ['Ctrl+Alt+A', 'Ctrl+Alt+S', 'Ctrl+Alt+D', 'Ctrl+Alt+R'] });
       else if (line === 'start' || line === 'stop' || line === 'restart') runShortcut(line);
@@ -950,9 +954,41 @@ app.whenReady().then(async () => {
   });
   // 启动保护（Roxy 客户端设置对齐）：内存使用率上限 / 磁盘可用空间下限。
   registerTrustedIpc('system:get-client-settings', () => settingsStore.getLocalSettings());
+  // 白名单三键 + 类型/范围校验：renderer 的 patch 不再整个浅合并进设置。
+  // 旧实现把任意键一并并入并持久化（cloud/uiGroups/profileDataRoot 可被一次
+  // IPC 覆盖，或注入任意未知键）；此处镜像 system:set-close-action 的做法——
+  // 归一化一律走 settingsStore 自身的 clamp（clampMemoryLimit 1-100、
+  // clampDiskLimit 0-1024、closeAction 枚举），非法值丢弃并只记一次日志，
+  // 绝不静默回退默认值（garbage patch 不得改写已存设置）。renderer 的
+  // input.value 是数字字符串，故先 Number() 再判有限。
+  let warnedClientSettingsDrops = false;
   registerTrustedIpc('system:save-client-settings', async (_event, payload) => {
     const patch = payload && typeof payload === 'object' ? payload : {};
-    await settingsStore.saveLocalSettings({ ...settingsStore.getLocalSettings(), ...patch });
+    const known = new Set(['memoryLimit', 'diskLimit', 'closeAction']);
+    const dropped = [];
+    const next = {};
+    if (patch.memoryLimit !== undefined) {
+      const num = Number(patch.memoryLimit);
+      if (!Number.isFinite(num)) dropped.push(`memoryLimit:${JSON.stringify(patch.memoryLimit)}`);
+      else next.memoryLimit = settingsStore.clampMemoryLimit(num);
+    }
+    if (patch.diskLimit !== undefined) {
+      const num = Number(patch.diskLimit);
+      if (!Number.isFinite(num)) dropped.push(`diskLimit:${JSON.stringify(patch.diskLimit)}`);
+      else next.diskLimit = settingsStore.clampDiskLimit(num);
+    }
+    if (patch.closeAction !== undefined) {
+      // 枚举精确匹配：normalizeCloseAction 会把非法值静默改成 'ask'，
+      // 一次垃圾提交就能覆盖用户已选的 'tray'/'exit'。
+      if (patch.closeAction === 'ask' || patch.closeAction === 'tray' || patch.closeAction === 'exit') next.closeAction = patch.closeAction;
+      else dropped.push(`closeAction:${JSON.stringify(patch.closeAction)}`);
+    }
+    for (const key of Object.keys(patch)) if (!known.has(key)) dropped.push(`unknown:${key}`);
+    if (dropped.length && !warnedClientSettingsDrops) {
+      warnedClientSettingsDrops = true;
+      console.warn('[client-settings] dropped untrusted keys/values:', dropped.join(', '), '(further drops are silent for this process)');
+    }
+    await settingsStore.saveLocalSettings({ ...settingsStore.getLocalSettings(), ...next });
     if (settingsStore.getLocalSettings().closeAction === 'exit') destroyTray();
     return settingsStore.getLocalSettings();
   });

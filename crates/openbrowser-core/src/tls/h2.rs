@@ -56,8 +56,9 @@ impl H2Fingerprint {
     /// ("id:value,id:value,..."). The old builder hard-coded Chrome's four
     /// settings, so any custom profile serialized one fingerprint but put a
     /// different one on the wire — the exact mismatch anti-bot panels flag.
-    /// Malformed entries are skipped (defensive: profiles come from disk).
-    pub fn build_settings_frame(&self) -> Vec<u8> {
+    /// Malformed entries are skipped (defensive: profiles come from disk);
+    /// a payload that cannot fit the 24-bit frame length is an error.
+    pub fn build_settings_frame(&self) -> crate::error::Result<Vec<u8>> {
         let parsed: Vec<(u16, u32)> = self
             .settings_raw
             .split(',')
@@ -91,6 +92,16 @@ impl H2Fingerprint {
         };
 
         let payload_len = settings.len() * 6;
+        // SETTINGS frame length is a 24-bit field: a settings_raw large enough
+        // to push the payload past 16 MiB-1 would wrap the 3-byte prefix and
+        // put an inconsistent frame on the wire. A profile is attacker-shaped
+        // input (deserialized from disk), so reject instead of truncating.
+        if payload_len > 0xFF_FFFF {
+            return Err(crate::error::CoreError::Tls(format!(
+                "HTTP/2 SETTINGS payload length {} exceeds the 24-bit frame length limit (0xFF_FFFF); settings_raw is malformed",
+                payload_len
+            )));
+        }
         let mut buf = BytesMut::with_capacity(9 + payload_len);
         // Frame header: 9 bytes, 24-bit length prefix.
         buf.put_u8((payload_len >> 16) as u8);
@@ -105,7 +116,7 @@ impl H2Fingerprint {
             buf.put_u32(*value);
         }
 
-        buf.to_vec()
+        Ok(buf.to_vec())
     }
 
     /// Build binary HTTP/2 WINDOW_UPDATE frame

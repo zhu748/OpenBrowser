@@ -954,14 +954,19 @@ async function fetchKernels(options = {}) {
     plan.push({ platform, assets: collectAssets(platform) });
   }
   const metaNames = metaAssets(assetNames);
-  const metaPlan = metaNames.length > 0
-    ? metaNames.map((name) => {
-      const asset = (release.assets || []).find((entry) => entry.name === name);
-      if (sums.has(name)) asset._sha256 = sums.get(name);
-      else warn(`meta asset ${name} missing from ${SUMS_ASSET}; downloading unverified`);
-      return asset;
-    })
-    : [];
+  // Meta assets are extracted into kernels/ exactly like kernel archives, so
+  // the strict SHA256SUMS policy applies to them too: an asset absent from the
+  // manifest fails the fetch here, before anything is downloaded. The old
+  // warn-and-proceed path was doubly broken — the consumption loop silently
+  // skipped assets without a checksum (packaged meta content went missing with
+  // no error), and dropping that guard would have turned them into unverified
+  // downloads extracted straight into kernels/.
+  const metaPlan = metaNames.map((name) => {
+    const asset = (release.assets || []).find((entry) => entry.name === name);
+    if (!sums.has(name)) throw new Error(`meta asset ${name} is missing from ${SUMS_ASSET}; refusing unverified download`);
+    asset._sha256 = sums.get(name);
+    return asset;
+  });
 
   if (dryRun) {
     log('dry run — nothing will be downloaded or extracted');
@@ -1035,12 +1040,13 @@ async function fetchKernels(options = {}) {
   }
 
   if (metaPlan.length > 0) {
+    // _sha256 is guaranteed by the plan construction above; downloadAsset
+    // still re-refuses on a missing checksum as the single-sourced check. The
+    // old `if (asset._sha256)` guard silently skipped unverified meta assets.
     for (const asset of metaPlan) {
-      if (asset._sha256) {
-        await downloadAsset(asset, { cacheDir, token, force });
-        await extractArchive(path.join(cacheDir, asset.name), kernelsRoot);
-        log(`meta assets extracted from ${asset.name}`);
-      }
+      await downloadAsset(asset, { cacheDir, token, force });
+      await extractArchive(path.join(cacheDir, asset.name), kernelsRoot);
+      log(`meta assets extracted from ${asset.name}`);
     }
   }
 

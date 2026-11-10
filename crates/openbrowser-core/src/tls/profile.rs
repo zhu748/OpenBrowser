@@ -15,6 +15,12 @@ pub struct TlsProfile {
     pub supported_groups: Vec<u16>,
     pub alpn: Vec<String>,
     pub enable_grease: bool,
+    /// TLS 1.3 requires signature_algorithms (RFC 8446 §4.2.3); the fixture
+    /// previously omitted the extension entirely. `#[serde(default)]` keeps
+    /// profiles deserialized from disk (written before the field existed)
+    /// loading instead of failing.
+    #[serde(default)]
+    pub signature_algorithms: Vec<u16>,
 }
 
 impl Default for TlsProfile {
@@ -27,8 +33,14 @@ impl TlsProfile {
     /// Chrome modern profile (Chrome 120 - 131)
     /// Strict Chromium extension order:
     /// server_name -> extended_master_secret -> renegotiation_info -> supported_groups ->
-    /// ec_point_formats -> session_ticket -> alpn -> status_request -> key_share ->
-    /// psk_key_exchange_modes -> supported_versions -> compress_certificate -> application_settings
+    /// ec_point_formats -> session_ticket -> alpn -> status_request -> signature_algorithms ->
+    /// key_share -> psk_key_exchange_modes -> supported_versions -> signed_certificate_timestamp ->
+    /// compress_certificate -> application_settings -> padding
+    ///
+    /// The vectors are the repo's own ground truth (tests/boundary_hardening.rs
+    /// FoxIO vector, incl. the GREASE-tolerant 15-cipher / 16-extension form);
+    /// the JA4 that falls out of them is t13d1516h2_8daaf6152771_e5627efa2ab1
+    /// — the same numbers real Chrome exposes.
     ///
     /// `min_version` and `permute_extensions` were removed: both were
     /// write-only (never read by the builder, which always emits TLS 1.2+ in
@@ -64,11 +76,14 @@ impl TlsProfile {
                 0x0023, // session_ticket
                 0x0010, // alpn
                 0x0005, // status_request
+                0x000D, // signature_algorithms (TLS 1.3 mandatory, RFC 8446 §4.2.3)
                 0x0033, // key_share
                 0x002D, // psk_key_exchange_modes
                 0x002B, // supported_versions
+                0x0012, // signed_certificate_timestamp
                 0x001B, // compress_certificate
                 0x4469, // application_settings (ALPS)
+                0x0015, // padding (watch openbrowser extension-order)
             ],
             supported_groups: vec![
                 0x001D, // X25519
@@ -77,6 +92,16 @@ impl TlsProfile {
             ],
             alpn: vec!["h2".to_string(), "http/1.1".to_string()],
             enable_grease: true,
+            signature_algorithms: vec![
+                0x0403, // ecdsa_secp256r1_sha256
+                0x0804, // rsa_pss_rsae_sha256
+                0x0401, // ecdsa_secp256r1_sha1 (Chrome legacy, FoxIO vector order)
+                0x0503, // ecdsa_secp384r1_sha384
+                0x0805, // rsa_pss_rsae_sha384
+                0x0501, // rsa_pkcs1_sha384
+                0x0806, // rsa_pss_rsae_sha512
+                0x0601, // rsa_pkcs1_sha512
+            ],
         }
     }
 }

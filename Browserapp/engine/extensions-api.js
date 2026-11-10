@@ -43,7 +43,14 @@ module.exports = {
         } catch (_) {}
       }
     }
-    const id = crypto.createHash('sha256').update(extensionPath.toLowerCase()).digest('hex').slice(0, 20);
+    // Lowercase canonicalization is only correct on case-INSENSITIVE
+    // filesystems (win/mac: differently-cased paths are the same dir). On
+    // Linux (case-sensitive) it collapses two distinct dirs into one id and
+    // the second extension silently shadows the first in the extensions map.
+    // Trade-off (accepted): Linux ids change once for paths containing
+    // uppercase; win/mac ids are byte-identical to the old derivation.
+    const pathKey = process.platform === 'linux' ? extensionPath : extensionPath.toLowerCase();
+    const id = crypto.createHash('sha256').update(pathKey).digest('hex').slice(0, 20);
     return { id, name: localized(manifest.name), version: manifest.version, description: localized(manifest.description), manifestVersion: manifest.manifest_version, path: extensionPath, iconUrl, builtIn, addedAt: new Date().toISOString() };
   },
 

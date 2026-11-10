@@ -71,7 +71,11 @@ function chromeArgsForFingerprint(fp, profile = {}, options = {}) {
   if (lang) {
     const tag = String(lang).trim();
     const primary = tag.split(',')[0].trim();
-    if (primary) args.push(`--lang=${primary}`);
+    // BCP47 形状门：该值来自 profile 字段 / API 输入。无此校验时，
+    // "--foo bar" 或带换行的值会注入额外的 chromium 命令行参数。
+    if (primary && /^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$/.test(primary) && primary.length <= 35) {
+      args.push(`--lang=${primary}`);
+    }
   }
   if (process.platform === 'win32') {
     // Keep a *single* consistent UI scale across all multi-environment windows on Windows

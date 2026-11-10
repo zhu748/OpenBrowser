@@ -15,8 +15,6 @@ const BREAKER_COOLDOWN: Duration = Duration::from_secs(30);
 /// traffic MUST be dropped/rejected. Direct fallback is strictly forbidden.
 #[derive(Debug, Clone)]
 pub struct FailClosedPolicy {
-    /// If true, any failure immediately blocks subsequent requests
-    pub strict_block: bool,
     /// When true, direct fallback is never permitted
     pub disallow_direct_fallback: bool,
     /// Circuit breaker state
@@ -27,7 +25,6 @@ pub struct FailClosedPolicy {
 impl Default for FailClosedPolicy {
     fn default() -> Self {
         Self {
-            strict_block: true,
             disallow_direct_fallback: true,
             tripped: Arc::new(AtomicBool::new(false)),
             tripped_at: Arc::new(Mutex::new(None)),
@@ -36,13 +33,12 @@ impl Default for FailClosedPolicy {
 }
 
 impl FailClosedPolicy {
-    pub fn new(strict: bool) -> Self {
-        Self {
-            strict_block: strict,
-            disallow_direct_fallback: true,
-            tripped: Arc::new(AtomicBool::new(false)),
-            tripped_at: Arc::new(Mutex::new(None)),
-        }
+    /// `strict` used to set a `strict_block` field that nothing ever read —
+    /// the breaker behavior is identical either way, so the parameter is gone
+    /// with the field. Every caller passed `true`; FailClosedPolicy::default()
+    /// is the same policy.
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Check if the route is allowed to proceed under the fail-closed policy.

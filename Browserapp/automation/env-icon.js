@@ -23,6 +23,17 @@ const LOGO_NATIVE_PNG = path.join(ASSETS, 'logo-native.png');
 const LOGO_PNG = path.join(ASSETS, 'logo.png');
 const LOGO_ICNS = path.join(ASSETS, 'logo.icns');
 
+// Digit-less names (profile named "../x"): the old fallback returned raw.slice(0,3)
+// — a raw path fragment like "../" — which flowed into the macOS wrapper filename
+// `.env-icon-${label}.png` inside Contents/MacOS and could write one directory above
+// the bundle. Hash the raw name to a stable 1-999 label instead: raw fragments never
+// reach paths, and the same name keeps the same badge across rebuilds (stable stamp key).
+function digitlessEnvLabel(raw) {
+  let hash = 5381;
+  for (let i = 0; i < raw.length; i += 1) hash = ((hash << 5) + hash + raw.charCodeAt(i)) >>> 0;
+  return String((hash % 999) + 1);
+}
+
 function normalizeEnvNumber(value) {
   const raw = String(value ?? '').trim();
   if (!raw) return '1';
@@ -31,7 +42,7 @@ function normalizeEnvNumber(value) {
     const n = Math.max(1, Math.min(999, Number(digits[0]) || 1));
     return String(n);
   }
-  return raw.slice(0, 3) || '1';
+  return digitlessEnvLabel(raw);
 }
 
 /**
@@ -671,13 +682,10 @@ async function prepareMarkerExtension({ profileId, envNumber, userDataPath, temp
       48: 'icon-48.png',
       128: 'icon-128.png',
     },
-    content_scripts: [
-      {
-        matches: ['http://*/*', 'https://*/*'],
-        js: ['marker.js'],
-        run_at: 'document_idle',
-      },
-    ],
+    // No content_scripts: marker.js is comment-only, so registering it on every
+    // http/https page made Chromium spin up a content-script world per page that
+    // never does anything. Keep the marker.js write and the outputs list unchanged
+    // so the artifact stamp key stays stable across this change.
   };
   await fsp.writeFile(path.join(dest, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf8');
 

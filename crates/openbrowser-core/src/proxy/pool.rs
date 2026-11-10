@@ -1,5 +1,5 @@
 use crate::error::{CoreError, Result};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -92,7 +92,7 @@ pub struct PooledTcp {
 /// never competes with real handshakes.
 #[derive(Debug)]
 pub struct UpstreamTunnelPool {
-    tunnels: Mutex<HashMap<(String, u16), Vec<PooledTunnel>>>,
+    tunnels: Mutex<HashMap<(String, u16), VecDeque<PooledTunnel>>>,
     raw_tcp: Mutex<Vec<PooledTcp>>,
     recent_dials: Mutex<HashMap<(String, u16), Instant>>,
     prewarm_permits: Arc<Semaphore>,
@@ -135,6 +135,11 @@ impl UpstreamTunnelPool {
     }
 
     /// Retrieve an established tunnel for the given target host and port.
+    /// FIFO: put_tunnel appends, take_tunnel takes from the front, so the
+    /// OLDEST standby is served first and every standby ages roughly
+    /// together. LIFO (`pop`) used to keep the oldest entry parked until it
+    /// TTL'd out, so the pool steadily recycled its freshest tunnel and
+    /// handed out stale ones at restart-of-traffic time.
     pub async fn take_tunnel(
         &self,
         target_host: &str,
@@ -144,7 +149,7 @@ impl UpstreamTunnelPool {
         let mut guard = self.tunnels.lock().await;
 
         if let Some(list) = guard.get_mut(&key) {
-            while let Some(tunnel) = list.pop() {
+            while let Some(tunnel) = list.pop_front() {
                 if tunnel.created_at.elapsed() < self.ttl && is_stream_healthy(&tunnel.stream) {
                     if list.is_empty() {
                         guard.remove(&key);
@@ -187,11 +192,12 @@ impl UpstreamTunnelPool {
 
         let list = guard.entry(key).or_default();
         if list.len() >= self.max_tunnels_per_target {
-            // Drop oldest
-            list.remove(0);
+            // Drop oldest (front): with FIFO takes, the front is the entry
+            // closest to aging out anyway.
+            list.pop_front();
         }
 
-        list.push(PooledTunnel {
+        list.push_back(PooledTunnel {
             stream,
             upstream_remainder,
             created_at: Instant::now(),

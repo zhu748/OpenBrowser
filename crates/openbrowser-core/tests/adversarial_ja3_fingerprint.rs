@@ -466,7 +466,7 @@ fn test_adversarial_h2_settings_akamai_frame_integrity() {
     assert_eq!(akamai, "1:65536,2:0,4:6291456,6:262144|15663105");
 
     // 2. Binary SETTINGS frame verification (RFC 7540 Section 6.5)
-    let settings = h2.build_settings_frame();
+    let settings = h2.build_settings_frame().expect("settings frame");
     assert_eq!(
         settings.len(),
         9 + 24,

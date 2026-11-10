@@ -431,20 +431,31 @@ class RpaEngine {
     this.cancelled = new Set();
     this.queued = new Set();
     this.stopGeneration = 0;
+    // Serializes writeDiagnostic's append/truncate pairs (see writeDiagnostic).
+    this._diagnosticQueue = Promise.resolve();
   }
 
-  async writeDiagnostic(record) {
-    if (!this.rpaLogPath) return;
-    try {
-      await fs.mkdir(path.dirname(this.rpaLogPath), { recursive: true });
-      const line = JSON.stringify({ at: new Date().toISOString(), ...record }) + '\n';
-      await fs.appendFile(this.rpaLogPath, line, 'utf8');
-      const stat = await fs.stat(this.rpaLogPath);
-      if (stat.size > RPA_DIAGNOSTIC_LIMIT) {
-        const content = await fs.readFile(this.rpaLogPath, 'utf8');
-        await fs.writeFile(this.rpaLogPath, content.slice(-Math.floor(RPA_DIAGNOSTIC_LIMIT / 2)), 'utf8');
-      }
-    } catch (_) {}
+  writeDiagnostic(record) {
+    if (!this.rpaLogPath) return Promise.resolve();
+    // Serialize through a queue: concurrent task completions both appended,
+    // then both read the over-limit file and each wrote back their own tail
+    // computed from pre-truncate content — one of the two writes was lost.
+    // The chain also keeps the truncate read-modify-write off other appends.
+    const run = async () => {
+      try {
+        await fs.mkdir(path.dirname(this.rpaLogPath), { recursive: true });
+        const line = JSON.stringify({ at: new Date().toISOString(), ...record }) + '\n';
+        await fs.appendFile(this.rpaLogPath, line, 'utf8');
+        const stat = await fs.stat(this.rpaLogPath);
+        if (stat.size > RPA_DIAGNOSTIC_LIMIT) {
+          const content = await fs.readFile(this.rpaLogPath, 'utf8');
+          await fs.writeFile(this.rpaLogPath, content.slice(-Math.floor(RPA_DIAGNOSTIC_LIMIT / 2)), 'utf8');
+        }
+      } catch (_) {}
+    };
+    const queued = this._diagnosticQueue.then(run, run);
+    this._diagnosticQueue = queued.then(() => {}, () => {});
+    return queued;
   }
 
   getStatus() {
@@ -469,6 +480,26 @@ class RpaEngine {
     this.stopGeneration += 1;
     const ids = new Set([...this.running.keys(), ...this.queued]);
     for (const id of ids) this.cancelled.add(id);
+    // Await actual termination (bounded 2.5s, 250ms polls like stepWait): this
+    // all-tasks stop runs inside the quit chain BEFORE rpaStore.flush()
+    // (automation/index.js stop()); the old request-only return let tasks
+    // observe cancellation at their next step boundary and land their terminal
+    // status update after that flush — rpa-store.json kept status:'running'
+    // for tasks cancelled at quit, so the UI/status API reported phantom
+    // running tasks on next launch. Once the maps drain, the terminal
+    // store.updateTask (default save:true, awaited before the finally
+    // deletes this.running) has already persisted, so the later flush is a
+    // no-op safety net rather than the only writer. The cap keeps a genuinely
+    // stuck in-flight CDP step from wedging the quit chain: past it the tasks
+    // are left to their own step-boundary observation and only a warning is
+    // emitted.
+    const drainDeadline = Date.now() + 2500;
+    while ((this.running.size || this.queued.size) && Date.now() < drainDeadline) {
+      await sleep(250);
+    }
+    if (this.running.size || this.queued.size) {
+      console.warn('[rpa] stop(): ' + (this.running.size + this.queued.size) + ' task(s) still in flight after 2.5s drain; proceeding with stop (step-boundary cancellation will persist their terminal state)');
+    }
     return { success: true, stoppedAll: true, count: ids.size };
   }
 
@@ -1559,7 +1590,10 @@ class RpaEngine {
       }
       const resultValue = result.result?.value;
       if (params.variable) variables[params.variable] = resultValue;
-      if (ctx?.log) await ctx.log('evaluate result: ' + JSON.stringify(resultValue));
+      // Cyclic evaluate results made JSON.stringify throw here, failing the
+      // step AFTER the evaluate already succeeded; reuse the safe serializer
+      // from the params wrapping above (degrades to 'null' like a snapshot).
+      if (ctx?.log) await ctx.log('evaluate result: ' + serialize(resultValue));
     }, ctx);
     return;
   }
@@ -1970,15 +2004,22 @@ class RpaEngine {
   }
 
   async withPage(port, fn, ctx = null) {
+    // One /json/list per resolution: the pinned-tab lookup and the firstTab
+    // fallback each used to issue their own HTTP roundtrip (two per step; in
+    // 100-iteration loops this dominated step latency). The listing is cached
+    // for this single withPage call only — never across steps — and a pinned-
+    // tab miss falls back to the same first-tab preference cdp.firstTab uses.
+    const list = await cdp.tabs(port);
     let tab = null;
     if (ctx?.activeTabId) {
-      const list = await cdp.tabs(port);
       tab = list.find((item) => item.id === ctx.activeTabId) || null;
       // The pinned tab can vanish (user closed it, closetab step): fall back
       // to firstTab rather than failing the whole flow.
       if (!tab) ctx.activeTabId = null;
     }
-    if (!tab) tab = await cdp.firstTab(port);
+    if (!tab) {
+      tab = list.find((item) => !item.url.startsWith('chrome://') && !item.url.startsWith('edge://')) || list[0] || null;
+    }
     if (!tab?.webSocketDebuggerUrl) throw new Error('No page tab for CDP port ' + port);
     return fn(tab.webSocketDebuggerUrl);
   }

@@ -89,7 +89,7 @@ async fn test_proxy_bridge_http_connect_to_socks5_success() -> Result<()> {
         remark: None,
     };
 
-    let fail_closed = FailClosedPolicy::new(true);
+    let fail_closed = FailClosedPolicy::new();
     let bridge = LocalProxyBridge::new(config, fail_closed);
     let bridge_addr = bridge.start().await?;
 
@@ -152,7 +152,7 @@ async fn test_proxy_bridge_fail_closed_blocking() -> Result<()> {
         remark: None,
     };
 
-    let fail_closed = FailClosedPolicy::new(true);
+    let fail_closed = FailClosedPolicy::new();
     // Explicitly trip the circuit breaker
     fail_closed.trip("Security audit trigger");
 
@@ -193,7 +193,7 @@ async fn test_proxy_bridge_background_spam_blocked() -> Result<()> {
         remark: None,
     };
 
-    let fail_closed = FailClosedPolicy::new(true);
+    let fail_closed = FailClosedPolicy::new();
     let bridge = LocalProxyBridge::new(config, fail_closed);
     let bridge_addr = bridge.start().await?;
 
@@ -224,7 +224,7 @@ async fn test_proxy_bridge_header_too_large() -> Result<()> {
         remark: None,
     };
 
-    let fail_closed = FailClosedPolicy::new(true);
+    let fail_closed = FailClosedPolicy::new();
     let bridge = LocalProxyBridge::new(config, fail_closed);
     let bridge_addr = bridge.start().await?;
 

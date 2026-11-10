@@ -463,8 +463,17 @@ async function downloadAppUpdate() {
     // downgrade paths. OPENBROWSER_ALLOW_UNSIGNED_UPDATE=1 restores the old
     // warn-and-proceed behavior for historical releases, explicitly opt-in.
     const checksums = await resolveReleaseChecksums(result.remoteVersion);
-    const expectedHex = (checksums?.map && (checksums.map.get(result.asset.name)
-      || checksums.map.get(path.basename(result.asset.name)))) || null;
+    // The digest must be looked up under the exact platform asset name the
+    // updater expects (updateAssetName()); parseChecksumManifest accepts any
+    // filename, so a manifest that omits or renames that line must never
+    // verify through some other entry it happens to list. When a manifest IS
+    // published it must cover this download; that case is refused outright
+    // below — the OPENBROWSER_ALLOW_UNSIGNED_UPDATE escape hatch is for
+    // releases with no manifest at all, not for a manifest that dodges the
+    // expected asset name.
+    const expectedHex = (checksums?.map && checksums.map.has(result.asset.name)
+      ? String(checksums.map.get(result.asset.name)).toLowerCase()
+      : null);
     // Detached Ed25519 signature over the manifest bytes. A published .sig is
     // binding: an invalid or untrusted signature is fatal, and NO env var
     // downgrades it — the point of the trust root is that replacing the
@@ -479,6 +488,11 @@ async function downloadAppUpdate() {
     if (expectedHex) {
       const valid = await verifyFileSha256(temporaryPath, expectedHex);
       if (!valid) throw new Error('Update package failed SHA-256 integrity verification — the download is corrupted or was tampered with');
+    } else if (checksums?.map && checksums.map.size) {
+      // Manifest published but it does not list this platform's expected asset
+      // name: that is a tampered/renamed manifest, not a legacy release —
+      // refuse even with the env override.
+      throw new Error(`Release v${result.remoteVersion} ${UPDATE_CHECKSUM_ASSET} does not list the expected asset ${result.asset.name} — refusing to run an unverifiable installer`);
     } else if (process.env.OPENBROWSER_ALLOW_UNSIGNED_UPDATE === '1') {
       console.warn(`[OpenBrowser] release v${result.remoteVersion} publishes no ${UPDATE_CHECKSUM_ASSET} — proceeding without integrity verification (OPENBROWSER_ALLOW_UNSIGNED_UPDATE=1)`);
     } else {
@@ -566,7 +580,9 @@ async function saveCachedAppUpdateStatus(result) {
     };
     const temporary = cacheFile + '.tmp';
     await fsp.writeFile(temporary, JSON.stringify(payload, null, 2), 'utf8');
-    await fsp.rm(cacheFile, { force: true });
+    // 直接原子替换，失败保留旧文件：rm+rename 之间缓存文件不存在，一次失败的
+    // rename（Windows AV/共享冲突）或两个 await 之间的崩溃会丢掉整个缓存条目。
+    // rename 在 POSIX 原子替换目标文件，Windows 上映射为 MoveFileEx(REPLACE_EXISTING)。
     await fsp.rename(temporary, cacheFile);
   } catch (_) { /* non-fatal */ }
 }

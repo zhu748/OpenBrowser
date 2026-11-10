@@ -143,7 +143,13 @@ function sanitizeProfile(value) {
     privacy: {
       webrtc: allowed(privacyValue.webrtc, ["proxy", "disabled", "real"], "proxy"),
       timezoneMode: allowed(privacyValue.timezoneMode, ["ip", "real", "custom"], "ip"),
-      timezone: String(privacyValue.timezone || "").slice(0, 100),
+      timezone: (() => {
+        // IANA shape gate: bounded length alone still let arbitrary junk into
+        // Intl timezone emulation; invalid -> "" (persona falls back to the
+        // IP-derived zone, same as an empty field today).
+        const s = String(privacyValue.timezone || "").trim();
+        return /^[A-Za-z0-9_+/-]{1,100}$/.test(s) ? s : "";
+      })(),
       geoMode: allowed(privacyValue.geoMode, ["ip", "disabled", "custom", "prompt", "allow"], privacyValue.geoMode === "prompt" ? "prompt" : (privacyValue.geoMode === "allow" ? "ip" : "ip")),
       // Roxy 对齐：地理位置提示（询问/允许/禁止）与来源（基于IP匹配/自定义）分离；
       // 旧 profile 的 geoMode=disabled/prompt 折算进 geoPermission，geoMode 继续供引擎读取。
@@ -238,42 +244,7 @@ function sanitizeProfile(value) {
       })(),
       cores,
       memory,
-      ...(fingerprintValue ? { fingerprint: {
-        ...fingerprintValue,
-        // WebGL 自定义厂商/渲染器（webglMeta=custom 时由 persona 直接采用）
-        webglVendor: String(fingerprintValue.webglVendor ?? "").replace(/[\r\n]/g, " ").slice(0, 200),
-        webglRenderer: String(fingerprintValue.webglRenderer ?? "").replace(/[\r\n]/g, " ").slice(0, 400),
-        cores: cores === null || cores === undefined
-          ? (fingerprintValue.cores === 0 || fingerprintValue.cores === "0"
-            ? 0
-            : (fingerprintValue.cores ?? null))
-          : cores,
-        memory: memory === null || memory === undefined
-          ? (fingerprintValue.memory === 0 || fingerprintValue.memory === "0"
-            ? 0
-            : (fingerprintValue.memory ?? null))
-          : memory,
-        // 噪声种子 / 电池电量 / UA 严格模式 / 自定义字体列表 / SSL 指纹设置
-        // canvas/clientRects marks are integer slots; audio mark is a float seed — keep as-is.
-        canvasId: Number.isFinite(Number(fingerprintValue.canvasId)) && Number(fingerprintValue.canvasId) !== 0
-          ? Math.round(Number(fingerprintValue.canvasId)) : undefined,
-        clientRectsId: Number.isFinite(Number(fingerprintValue.clientRectsId)) && Number(fingerprintValue.clientRectsId) !== 0
-          ? Math.round(Number(fingerprintValue.clientRectsId)) : undefined,
-        audioId: Number.isFinite(Number(fingerprintValue.audioId)) && Number(fingerprintValue.audioId) !== 0
-          ? Number(fingerprintValue.audioId) : undefined,
-        battery: (fingerprintValue.battery && typeof fingerprintValue.battery === "object"
-          && Number.isFinite(Number(fingerprintValue.battery.level)))
-          ? { charging: fingerprintValue.battery.charging !== false, level: Math.min(1, Math.max(0, Number(fingerprintValue.battery.level))) }
-          : undefined,
-        uaStrict: Boolean(fingerprintValue.uaStrict) || undefined,
-        fonts: Array.isArray(fingerprintValue.fonts)
-          ? fingerprintValue.fonts.map((s) => String(s).replace(/[\r\n]/g, "").trim()).filter(Boolean).slice(0, 400)
-          : undefined,
-        sslVersionMin: ["tls1.2", "tls1.3"].includes(String(fingerprintValue.sslVersionMin || ""))
-          ? String(fingerprintValue.sslVersionMin) : undefined,
-        sslBlacklist: String(fingerprintValue.sslBlacklist ?? "").split(/[\s,;，；]+/)
-          .map((s) => s.trim()).filter((s) => /^0x[0-9a-fA-F]{4}$/.test(s)).slice(0, 64).join(",") || undefined,
-      } } : {}),
+      ...(fingerprintValue ? { fingerprint: sanitizeFingerprintConfig(fingerprintValue, cores, memory) } : {}),
     },
     advanced: {
       saveCookies: advancedValue.saveCookies !== false,
@@ -343,3 +314,244 @@ module.exports = {
   MAX_PROFILE_PROXY_LENGTH,
   sanitizeProfile,
 };
+
+
+// Module-scope helper, hoisted so the sanitizeProfile body above can call it.
+// Rebuilds privacy.fingerprint through an EXPLICIT key whitelist. The former
+// spread passthrough let arbitrary unknown keys from raw API objects and
+// legacy/cloud-restored profiles survive into the engine store and from there
+// into every export surface (dumpToJson / sqlite dump / cloud backup all
+// serialize the store verbatim). The key set and per-key rules follow the
+// persona.js consumer inventory: dropping a key persona actually reads would
+// silently re-roll users' fingerprint identity, so the list is the FULL
+// consumed set (plus legacy-carried keys with no current writer), not a
+// minimal one. Unknown keys are dropped by construction — that is the fix.
+function sanitizeFingerprintConfig(fp, privacyCores, privacyMemory) {
+  const str = (v, cap) => {
+    if (v === undefined || v === null) return undefined;
+    const s = String(v).replace(/[\r\n]/g, " ").trim();
+    return s ? s.slice(0, cap) : undefined;
+  };
+  const bool = (v) => (typeof v === "boolean" ? v : undefined);
+  const intInRange = (v, min, max) => {
+    const n = Number(v);
+    return Number.isFinite(n) && n >= min && n <= max ? Math.round(n) : undefined;
+  };
+  const oneOf = (v, list) => (list.includes(v) ? v : undefined);
+  const strList = (v, capEntries, capEach) => {
+    const arr = Array.isArray(v) ? v : (typeof v === "string" ? v.split(/[\n,，;；]+/) : null);
+    if (!arr) return undefined;
+    const out = arr
+      .map((s) => String(s).replace(/[\r\n]/g, "").trim()).filter(Boolean)
+      .slice(0, capEntries).map((s) => s.slice(0, capEach));
+    return out.length ? out : undefined;
+  };
+  const intSeed = (v, round = true) => {
+    const n = Number(v);
+    if (!Number.isFinite(n) || n === 0) return undefined;
+    return round ? Math.round(n) : n;
+  };
+  const snapDeviceMemory = (v) => {
+    const steps = [0.25, 0.5, 1, 2, 4, 8];
+    const n = Number(v);
+    if (!Number.isFinite(n) || n <= 0) return undefined;
+    const c = Math.min(8, Math.max(0.25, n));
+    return steps.reduce((best, step) => (Math.abs(step - c) < Math.abs(best - c) ? step : best), steps[0]);
+  };
+  const batteryObject = (v) => {
+    if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
+    if (!Number.isFinite(Number(v.level))) return undefined;
+    const out = { charging: v.charging !== false, level: Math.min(1, Math.max(0, Number(v.level))) };
+    // The old rule silently stripped these two: the editor writes them
+    // (battery form) and the generators consume them, so every save was
+    // discarding user input on these fields.
+    const ct = Number(v.chargingTime);
+    const dt = Number(v.dischargingTime);
+    if (Number.isFinite(ct) && ct >= 0) out.chargingTime = Math.round(ct);
+    if (Number.isFinite(dt) && dt >= 0) out.dischargingTime = Math.round(dt);
+    return out;
+  };
+  const clientHintsOf = (v) => {
+    if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
+    const out = {};
+    const put = (k, val) => { if (val !== undefined) out[k] = val; };
+    put("os", str(v.os, 40));
+    put("architecture", str(v.architecture, 40));
+    put("platform_version", str(v.platform_version, 40));
+    put("platformVersion", str(v.platformVersion, 40));
+    put("ua_full_version", str(v.ua_full_version, 80));
+    put("chromeMajor", intInRange(v.chromeMajor, 1, 999));
+    put("model", str(v.model, 120));
+    put("mobile", bool(v.mobile));
+    put("wow64", bool(v.wow64));
+    put("bitness", oneOf(v.bitness, ["32", "64"]));
+    return Object.keys(out).length ? out : undefined;
+  };
+  const webgpuObject = (v) => {
+    if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
+    const out = {};
+    const vendor = str(v.vendor, 40);
+    const architecture = str(v.architecture, 40);
+    if (vendor !== undefined) out.vendor = vendor;
+    if (architecture !== undefined) out.architecture = architecture;
+    return Object.keys(out).length ? out : undefined;
+  };
+  const mediaDevicesArray = (v) => {
+    if (!Array.isArray(v)) return undefined;
+    const out = v.slice(0, 8).map((d) => {
+      if (!d || typeof d !== "object") return null;
+      const kind = oneOf(d.kind, ["audioinput", "videoinput", "audiooutput"]);
+      if (!kind) return null;
+      return {
+        kind,
+        label: String(d.label || "").replace(/[\r\n]/g, " ").slice(0, 200),
+        deviceId: String(d.deviceId || "").replace(/[\r\n]/g, "").slice(0, 64),
+        groupId: String(d.groupId || "").replace(/[\r\n]/g, "").slice(0, 64),
+      };
+    }).filter(Boolean);
+    return out.length ? out : undefined;
+  };
+  const mediaLabelsObject = (v) => {
+    if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
+    const out = {};
+    for (const k of ["audioinput", "videoinput", "audiooutput"]) {
+      const s = str(v[k], 200);
+      if (s !== undefined) out[k] = s;
+    }
+    return Object.keys(out).length ? out : undefined;
+  };
+  const networkObject = (v) => {
+    if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
+    const out = {};
+    const type = oneOf(v.type, ["ethernet", "wifi"]); if (type) out.type = type;
+    const et = oneOf(v.effectiveType, ["slow-2g", "2g", "3g", "4g"]); if (et) out.effectiveType = et;
+    const dl = Number(v.downlink);
+    if (Number.isFinite(dl)) out.downlink = Math.min(10, Math.max(0, dl));
+    const rtt = intInRange(v.rtt, 0, 3000); if (rtt !== undefined) out.rtt = rtt;
+    return Object.keys(out).length ? out : undefined;
+  };
+
+  const out = {};
+  const set = (key, value) => { if (value !== undefined) out[key] = value; };
+
+  // --- Identity / OS group (os is load-bearing: persona.js:141 reads it
+  // BEFORE the profile's own os field; keep it bounded but unmapped —
+  // persona.js normalizeOsKey stays the single alias-mapping authority. ---
+  set("os", str(fp.os, 40));
+  set("clientHints", clientHintsOf(fp.clientHints));
+  set("platform", str(fp.platform, 40));
+  set("userAgent", str(fp.userAgent, 1000));
+  set("languages", strList(fp.languages, 400, 40));
+  set("vendor", str(fp.vendor, 80));
+  set("deviceProfile", oneOf(fp.deviceProfile, ["default", "persona"]));
+
+  // --- Hardware / screen group ---
+  set("cores", privacyCores === null || privacyCores === undefined
+    ? (fp.cores === 0 || fp.cores === "0" ? 0 : (fp.cores ?? null))
+    : privacyCores);
+  set("memory", privacyMemory === null || privacyMemory === undefined
+    ? (fp.memory === 0 || fp.memory === "0" ? 0 : (fp.memory ?? null))
+    : privacyMemory);
+  set("hardwareConcurrency", intInRange(fp.hardwareConcurrency, 1, 64));
+  set("deviceMemory", snapDeviceMemory(fp.deviceMemory));
+  set("maxTouchPoints", intInRange(fp.maxTouchPoints, 0, 64));
+  set("screenWidth", intInRange(fp.screenWidth, 640, 7680));
+  set("screenHeight", intInRange(fp.screenHeight, 480, 4320));
+  set("availLeft", intInRange(fp.availLeft, 0, 7680));
+  set("availTop", intInRange(fp.availTop, 0, 7680));
+  set("availWidth", intInRange(fp.availWidth, 0, 7680));
+  set("availHeight", intInRange(fp.availHeight, 0, 7680));
+  set("screenX", intInRange(fp.screenX, 0, 7680));
+  set("screenY", intInRange(fp.screenY, 0, 7680));
+  set("taskbarHeight", intInRange(fp.taskbarHeight, 0, 200));
+  set("colorDepth", [24, 30].includes(Number(fp.colorDepth)) ? Number(fp.colorDepth) : undefined);
+  set("hdr", bool(fp.hdr));
+  set("devicePixelRatio", (() => {
+    const n = Number(fp.devicePixelRatio);
+    return Number.isFinite(n) && n > 0 ? Math.min(5, Math.max(0.5, Math.round(n * 100) / 100)) : undefined;
+  })());
+
+  // --- Noise-mode group (fingerprint-level twins of privacy-level modes;
+  // persona mode() reads them FIRST, so they silently override the editor's
+  // privacy settings when present — exactly why junk values must not survive) ---
+  set("canvas", oneOf(fp.canvas, ["real", "noise", "blocked"]));
+  set("webgl", oneOf(fp.webgl, ["real", "noise", "blocked"]));
+  set("webglMeta", oneOf(fp.webglMeta, ["noise", "custom", "real", "blocked"]));
+  set("audio", oneOf(fp.audio, ["real", "noise", "muted"]));
+  set("clientRects", oneOf(fp.clientRects, ["real", "noise"]));
+  set("webrtc", oneOf(fp.webrtc, ["real", "proxy", "disabled"]));
+  set("speech", oneOf(fp.speech, ["real", "noise", "blocked"]));
+  set("bluetooth", oneOf(fp.bluetooth, ["real", "blocked"]));
+  set("networkMode", oneOf(fp.networkMode, ["real", "noise"]));
+  set("macMode", oneOf(fp.macMode, ["real", "custom"]));
+  set("deviceNameMode", oneOf(fp.deviceNameMode, ["noise", "custom", "real"]));
+
+  // --- Dual-form keys: one key, two surfaces (mode string vs data object) ---
+  if (typeof fp.battery === "string") set("battery", oneOf(fp.battery, ["real", "noise", "blocked"]));
+  else set("battery", batteryObject(fp.battery));
+  if (typeof fp.webgpu === "string") set("webgpu", oneOf(fp.webgpu, ["real", "blocked", "webgl"]));
+  else set("webgpu", webgpuObject(fp.webgpu));
+  if (typeof fp.mediaDevices === "string") set("mediaDevices", oneOf(fp.mediaDevices, ["real", "noise", "empty"]));
+  else set("mediaDevices", mediaDevicesArray(fp.mediaDevices));
+
+  // --- Seeds / WebGL identity ---
+  set("canvasId", intSeed(fp.canvasId));
+  set("clientRectsId", intSeed(fp.clientRectsId));
+  set("audioId", intSeed(fp.audioId, false)); // float seed by design
+  set("webglId", intSeed(fp.webglId));
+  set("webglVendor", String(fp.webglVendor ?? "").replace(/[\r\n]/g, " ").slice(0, 200));
+  set("webglRenderer", String(fp.webglRenderer ?? "").replace(/[\r\n]/g, " ").slice(0, 400));
+  set("gpuVendor", str(fp.gpuVendor, 40));
+  set("gpuArchitecture", str(fp.gpuArchitecture, 40));
+  set("reconcileHost", bool(fp.reconcileHost));
+  set("webglReconcileHost", bool(fp.webglReconcileHost));
+  set("webglCapabilityGating", bool(fp.webglCapabilityGating));
+  set("lazyFontPayload", bool(fp.lazyFontPayload));
+
+  // --- UA-CH / strictness group ---
+  if (fp.uaStrict) out.uaStrict = Boolean(fp.uaStrict);
+  set("chromeMajor", intInRange(fp.chromeMajor, 1, 999));
+  set("ua_full_version", str(fp.ua_full_version, 80));
+  set("fullVersion", str(fp.fullVersion, 80));
+  set("architecture", str(fp.architecture, 40));
+  set("platform_version", str(fp.platform_version, 40));
+  set("platformVersion", str(fp.platformVersion, 40));
+  set("model", str(fp.model, 120));
+  set("mobile", bool(fp.mobile));
+  set("wow64", bool(fp.wow64));
+  set("bitness", oneOf(fp.bitness, ["32", "64"]));
+
+  // --- Peripherals / WebRTC / network persona ---
+  set("mediaLabels", mediaLabelsObject(fp.mediaLabels));
+  set("deviceName", str(fp.deviceName, 120));
+  set("mac", (() => {
+    const s = String(fp.mac || "").toUpperCase().replace(/-/g, ":").trim();
+    return /^[0-9A-F]{2}(:[0-9A-F]{2}){5}$/.test(s) ? s : "";
+  })());
+  set("webrtcAddress", str(fp.webrtcAddress, 80));
+  const wlip = str(fp.webrtcLocalIp, 80);
+  if (wlip && /^(\d{1,3}\.){3}\d{1,3}$/.test(wlip)) set("webrtcLocalIp", wlip);
+  set("network", networkObject(fp.network));
+  set("fonts", strList(fp.fonts, 400, 200)); // string form now splits; entries mirror the old array rule
+  set("sslVersionMin", oneOf(String(fp.sslVersionMin || ""), ["tls1.2", "tls1.3"]));
+  set("sslBlacklist", String(fp.sslBlacklist ?? "").split(/[\s,;，；]+/)
+    .map((s) => s.trim()).filter((s) => /^0x[0-9a-fA-F]{4}$/.test(s)).slice(0, 64).join(",") || undefined);
+
+  // --- Stability group (fingerprint-level twins of the privacy-level editor fields) ---
+  set("stabilityMode", oneOf(fp.stabilityMode, ["off", "auto", "force"]));
+  set("stabilityHost", str(fp.stabilityHost, 200));
+  set("stabilityHosts", (() => {
+    const arr = strList(fp.stabilityHosts, 800, 200);
+    return arr ? arr.map((s) => s.toLowerCase()) : undefined;
+  })());
+  set("stabilitySkipHosts", (() => {
+    const arr = strList(fp.stabilitySkipHosts, 200, 200);
+    return arr ? arr.map((s) => s.toLowerCase()) : undefined;
+  })());
+  set("stabilityHamming", intInRange(fp.stabilityHamming, 1, 64));
+  set("stabilityMaxWidth", intInRange(fp.stabilityMaxWidth, 64, 4096));
+  set("stabilityMaxHeight", intInRange(fp.stabilityMaxHeight, 64, 4096));
+  set("stabilitySquare", intInRange(fp.stabilitySquare, 2, 64));
+
+  return Object.keys(out).length ? out : undefined;
+}

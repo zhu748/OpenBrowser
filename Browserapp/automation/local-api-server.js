@@ -328,8 +328,17 @@ async function readBody(req) {
   try {
     return JSON.parse(raw);
   } catch (_) {
+    // Form-encoded bodies: keep duplicate keys instead of collapsing them via
+    // fromEntries (ids=a&ids=b&ids=c used to shrink to the last single value,
+    // silently truncating batch ops). A repeated key becomes an array, which
+    // matches the JSON body path's semantics ({"ids": ["a","b"]}).
     const params = new URLSearchParams(raw);
-    return Object.fromEntries(params.entries());
+    const out = {};
+    for (const key of new Set(params.keys())) {
+      const values = params.getAll(key);
+      out[key] = values.length > 1 ? values : values[0];
+    }
+    return out;
   }
 }
 
@@ -555,20 +564,46 @@ function proxySummary(profile, proxyStore, explicitProxyId = undefined) {
   };
 }
 
+/**
+ * Resolve the browser-level ws://…/devtools/browser/<guid> URL from CDP
+ * /json/version.
+ *
+ * The GUID segment is minted by the browser at startup; it is NOT the profile
+ * id, so a URL synthesized from profileId can never connect — it used to be
+ * returned inside an HTTP-200 success envelope and clients failed silently.
+ * On a fresh start /json/version can lose a sub-second race with the caller,
+ * so retry briefly (≈3 attempts / ≈2s); on persistent failure return null:
+ * callers keep debug_port (still correct) and ws.puppeteer becomes an honest
+ * null instead of a fabricated URL. `profileId` is accepted for signature
+ * compatibility and deliberately unused.
+ */
 async function resolveWebSocketDebuggerUrl(port, profileId) {
   if (!port) return null;
-  const fallback = `ws://127.0.0.1:${port}/devtools/browser/${profileId || 'default'}`;
-  try {
-    const cdp = require('../cdp');
-    const ws = await Promise.race([
-      cdp.browserSocket(port),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('cdp version timeout')), 1500)),
-    ]);
-    if (typeof ws === 'string' && ws.startsWith('ws://')) {
-      return ws;
+  const cdp = require('../cdp');
+  const attempts = 3;
+  const attemptTimeoutMs = 600;
+  const retryGapMs = 200;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, retryGapMs));
+    let timer = null;
+    try {
+      const ws = await Promise.race([
+        cdp.browserSocket(port),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error('cdp /json/version timeout')), attemptTimeoutMs);
+          if (typeof timer.unref === 'function') timer.unref();
+        }),
+      ]);
+      if (typeof ws === 'string' && ws.startsWith('ws://')) return ws;
+    } catch (_) {
+      // Dead port or slow /json/version: try again up to the bounded budget.
+    } finally {
+      // Clear on success as well: a settled race used to leave the timer
+      // armed to fire a useless later rejection.
+      if (timer) clearTimeout(timer);
     }
-  } catch (_) {}
-  return fallback;
+  }
+  return null;
 }
 
 /**
@@ -941,6 +976,11 @@ class LocalApiServer {
       created = this.normalizeProxyAssociationState(created, association.present
         ? association
         : (hasManualProxyConfiguration ? { present: true, value: '' } : association));
+      // existingIds was snapshotted before the awaits above, so two concurrent
+      // creates carrying the same client id could both pass the 409 check and
+      // the later syncProfiles write would win silently. Re-check membership
+      // synchronously here (single-threaded between the check and the write).
+      if (this.engine.profiles?.has(id)) return fail('profile already exists', 409);
       await this.engine.syncProfiles([created]);
     } catch (error) {
       return fail(`invalid profile: ${error.message}`, 400);
@@ -1126,6 +1166,7 @@ class LocalApiServer {
   }
 
   async routeBrowserStart({ input }) {
+    if (!this.engine) return fail('profile engine unavailable', 503);
     const id = firstString(input, ['user_id', 'userId', 'profile_id', 'profileId', 'id']);
     const profile = this.engine.profiles.get(id);
     if (!profile) return fail('profile not found', 404);
@@ -1464,6 +1505,8 @@ class LocalApiServer {
   }
 
   async routeRpaRun({ input }) {
+    if (!this.rpaEngine) return fail('rpa engine unavailable', 503);
+    if (!this.rpaStore) return fail('rpa store unavailable', 503);
     const rpaInput = normalizeRpaInput(input);
     const wait = rpaInput.wait !== false && rpaInput.wait !== 'false';
     if (rpaInput.plan_id) {
@@ -1481,6 +1524,16 @@ class LocalApiServer {
       return ok(await this.rpaEngine.runTask(String(rpaInput.task_id), rpaInput));
     }
     if (Array.isArray(rpaInput.steps)) {
+      // Ad-hoc steps skip template import's validation, so a typo'd or newer-
+      // than-runtime step type used to be persisted and only fail (or silently
+      // no-op) mid-run. Reject non-empty findUnsupportedSteps up front, exactly
+      // like template installation does (rpa-store.js installTemplate).
+      const { findUnsupportedSteps } = require('./rpa-engine');
+      const unsupported = findUnsupportedSteps(rpaInput.steps);
+      if (unsupported.length) {
+        const summary = unsupported.slice(0, 4).map((item) => `${item.path.join('.')}: ${item.type}`).join(', ');
+        return fail(`steps contain unsupported RPA step types: ${summary}`, 400);
+      }
       const task = await this.rpaStore.createTask({
         profile_id: firstString(rpaInput, ['profile_id', 'user_id']),
         process_name: String(rpaInput.process_name || rpaInput.name || 'adhoc'),
@@ -1496,6 +1549,8 @@ class LocalApiServer {
   }
 
   async routeRpaStatus() {
+    if (!this.rpaEngine) return fail('rpa engine unavailable', 503);
+    if (!this.rpaStore) return fail('rpa store unavailable', 503);
     return ok({
       ...this.rpaEngine.getStatus(),
       tasks: this.rpaStore.listTasks({ status: 'running' }),

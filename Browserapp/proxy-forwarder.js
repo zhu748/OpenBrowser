@@ -720,7 +720,16 @@ async function startHttpToSocks5Bridge(config, onStatus) {
         if (client.destroyed) { upstream.destroy(); return; }
         sockets.add(upstream); upstream.once('close', () => sockets.delete(upstream)); upstream.on('error', () => client.destroy()); client.on('error', () => upstream.destroy());
         if (target.method === 'CONNECT') client.write('HTTP/1.1 200 Connection Established\r\nProxy-Agent: OpenBrowser\r\n\r\n');
-        else upstream.write(target.header, 'latin1');
+        else {
+          // 非 CONNECT：与 startHttpBridge 同一 keep-alive 危害 —— 桥只解析每条
+          // 客户端连接的第一个请求，客户端 Connection: keep-alive（HTTP/1.1 缺省）
+          // 复用连接时第二个请求会被 pipe 进第一个请求的 SOCKS 目标（跨站请求/
+          // Cookie 误投递）。复用 forwardedHeader('socks-tunnel') 改写：目标站点
+          // 收到 Connection: close 后随首个响应关闭，upstream.pipe(client) 结束
+          // 客户端腿，复用不可能发生。不注入任何认证（SOCKS 握手已完成，且这里
+          // 的请求头直发目标站点）。
+          upstream.write(forwardedHeader(target.header, config, 'socks-tunnel'), 'latin1');
+        }
         if (connected.remainder.length) client.write(connected.remainder); if (body.length) upstream.write(body);
         client.pipe(upstream); upstream.pipe(client); client.resume();
       })().catch((error) => {
@@ -803,12 +812,24 @@ function sanitizeProxyErrorDetail(value) {
     .slice(0, 120);
 }
 
-function forwardedHeader(header, config) {
+// 单一实现（single-source）：两条桥接路径共用的请求头改写 ——
+// 'http-upstream'（明文 HTTP 上游，startHttpBridge）与 'socks-tunnel'
+// （HTTP→SOCKS 桥，startHttpToSocks5Bridge 非 CONNECT 请求）。仓库曾因
+// 两份漂移副本吃过亏：新增桥接路径必须复用这里，不许再抄一份。
+// 两条路径共有的不变式：
+// - 剥离逐跳代理头（Proxy-Authorization / Proxy-Connection）——idempotent，
+//   parseHttpTarget 已剥过一遍也无妨；
+// - `Connection:` 一律重写：非 Upgrade 追加 Connection: close。桥只解析每条
+//   客户端连接的第一个请求；keep-alive 复用会把第二个请求隧进第一个请求的
+//   上游 socket（跨站请求/Cookie 误投递），Connection: close 让上游在首个
+//   响应后关闭，upstream.pipe(client) 随之结束客户端腿，复用不可能发生。
+//   Upgrade（WebSocket）保留原 Connection 行，不追加 close。
+// 仅 'http-upstream' 模式：注入上游 Basic 认证（407 由上游代理裁决）并追加
+// Proxy-Connection: close；'socks-tunnel' 模式的请求头直发目标站点，SOCKS
+// 握手已在上游完成认证 —— 目标站点绝不能看到任何代理凭据或逐跳代理头。
+function forwardedHeader(header, config, mode = 'http-upstream') {
+  const httpUpstream = mode === 'http-upstream';
   const lines = header.split('\r\n'); const first = lines.shift();
-  // Rewrite client keep-alive into close: the bridge only rewrites the first
-  // request of a client connection, so a reused connection would bypass the
-  // Proxy-Authorization injection below and the second request would fail
-  // with 407. A WebSocket upgrade must keep its original Connection header.
   let upgradeLine = '';
   const kept = lines.filter((line) => {
     if (!line) return false;
@@ -820,9 +841,12 @@ function forwardedHeader(header, config) {
     }
     return true;
   });
-  if (config.authenticated) kept.push('Proxy-Authorization: ' + authorization(config));
+  if (httpUpstream && config.authenticated) kept.push('Proxy-Authorization: ' + authorization(config));
   if (upgradeLine) kept.push(upgradeLine);
-  else kept.push('Proxy-Connection: close', 'Connection: close');
+  else {
+    if (httpUpstream) kept.push('Proxy-Connection: close');
+    kept.push('Connection: close');
+  }
   return [first, ...kept, '', ''].join('\r\n');
 }
 
@@ -870,11 +894,14 @@ async function startHttpBridge(config, onStatus) {
             if (remainder.length) upstream.write(remainder);
             // Only the first request on a client connection gets parsed; a
             // keep-alive reuse would skip Proxy-Authorization injection and
-            // tunnel the second request into the first upstream socket.
-            // Signal Connection: close on the client leg so conforming
-            // clients (Chrome's proxy pool) drop the connection after the
-            // first response instead of reusing it.
-            client.writeHeadOnData = null;
+            // tunnel the second request into the first upstream socket. The
+            // actual safeguard is the Connection: close rewrite forwardedHeader
+            // performs on the client leg's request: the upstream proxy closes
+            // after the first response, and the clientEnd/close handlers below
+            // end the client socket, so reuse cannot happen. (An earlier
+            // revision assigned client.writeHeadOnData = null here claiming a
+            // further safeguard — that mechanism never existed; nothing ever
+            // read the property. Do not reintroduce it.)
             const clientEnd = () => { if (!client.destroyed) client.end(); };
             upstream.once('end', clientEnd);
             upstream.once('close', () => { clientEnd(); upstream.removeListener('end', clientEnd); });

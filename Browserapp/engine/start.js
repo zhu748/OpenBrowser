@@ -49,6 +49,29 @@ const {
   chromeProxyEndpoint = () => '',
 } = proxyForwarderModule;
 
+// customArgs（profile.privacy.customArgs）不得覆盖的安全类 Chromium 开关。
+// customArgs 是每环境的高级逃生舱，追加在所有内置参数之后；Chromium 同名单值
+// 参数后者生效，因此用户 —— 或导入/云恢复档案（不受信输入面）—— 能借它静默
+// 关掉内置加固：fail-closed 代理路由、WebRTC IP 泄漏防护、仅回环的 CDP 暴露面、
+// 沙箱与同源策略。逃生舱对非安全开关保持开放；下列开关在启动时拒绝并告警。
+// --disable-ipv6 出于同一理由在列：代理模式由管线自行追加（见下方 proxy 分支），
+// 经 customArgs 注入的副本还会把直连环境的 IPv6 一并关掉。
+const SECURITY_SWITCH_DENYLIST = new Set([
+  'proxy-server',
+  'proxy-bypass-list',
+  'proxy-pac-url',
+  'force-webrtc-ip-handling-policy',
+  'remote-debugging-port',
+  'remote-debugging-pipe',
+  'remote-allow-origins',
+  'user-data-dir',
+  'profile-directory',
+  'load-extension',
+  'disable-web-security',
+  'no-sandbox',
+  'disable-ipv6',
+]);
+
 /**
  * Validate whether a string is a recognized, valid IANA time zone identifier.
  */
@@ -562,7 +585,12 @@ module.exports = {
       // 本机启动页必须直连，不走代理；可叠加用户直连白名单
       let bypass = '<-loopback>;127.0.0.1;localhost';
       if (profile.networkMode !== 'proxy' && profile.proxyMeta?.directBypass && profile.proxyMeta.bypassList) {
-        const extra = String(profile.proxyMeta.bypassList).split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean);
+        // Clamp to host-shaped entries only：'*' 会让全部主机绕过路由且无任何校验，
+        // 路径分隔符也不可能出现于 Chromium bypass 主机模式 —— 两者丢弃，其余原样透传。
+        const extra = String(profile.proxyMeta.bypassList)
+          .split(/[\s,;]+/)
+          .map((s) => s.trim())
+          .filter((s) => s && s !== '*' && !/[\\/]/.test(s));
         if (extra.length) bypass += ';' + extra.join(';');
       }
       const existingBypass = args.findIndex((a) => a.startsWith('--proxy-bypass-list='));
@@ -611,9 +639,24 @@ module.exports = {
     }
     // 自定义启动参数（每环境高级逃生舱）：放在所有内置参数之后，同名单值参数后者生效，
     // 即用户显式覆盖内置默认；profile-sanitizer 已做 token 白名单（--flag 或 --flag=value，
-    // 无空白），这里只做二次防御性过滤。
+    // 无空白）。安全类开关（代理/CDP/沙箱/同源策略等，见 SECURITY_SWITCH_DENYLIST）
+    // 在此拒绝并告警，其余照常透传。
+    const rejectedCustomSwitches = [];
     for (const token of String(profile.privacy?.customArgs || '').split(/\s+/)) {
-      if (/^--[a-z0-9][a-z0-9._-]*(=[^\s;]{0,500})?$/i.test(token)) args.push(token);
+      if (!/^--[a-z0-9][a-z0-9._-]*(=[^\s;]{0,500})?$/i.test(token)) continue;
+      if (SECURITY_SWITCH_DENYLIST.has(token.slice(2).split('=')[0])) {
+        rejectedCustomSwitches.push(token);
+        continue;
+      }
+      args.push(token);
+    }
+    if (rejectedCustomSwitches.length) {
+      this.emit({
+        type: 'sync-error',
+        action: 'custom-args',
+        id: profile.id,
+        message: '已拒绝安全相关自定义启动参数（不可覆盖内置安全旗标）：' + rejectedCustomSwitches.join(' '),
+      });
     }
     // Per-env marker extension: software logo + environment number (1, 2, …)
     const envNumber = normalizeEnvNumber(profile.number || profile.name || profile.id || '1');
@@ -774,6 +817,13 @@ module.exports = {
         spawnError: diagnostic.spawnError || null,
       });
       await this.cleanupStartupResources(startupResources);
+      // Preserve the original error object: rewrapping into a fresh Error dropped
+      // .code (PROFILE_LOCK_LOST / BROWSER_START_CANCELLED) and the stack, which
+      // the restart/RPA flows match on. Assign the formatted message, rethrow the original.
+      if (error && typeof error === 'object') {
+        error.message = formatBrowserStartupError(error, child, diagnostic);
+        throw error;
+      }
       throw new Error(formatBrowserStartupError(error, child, diagnostic));
     }
     if (profile.cookies && profile.advanced.saveCookies) { try { await this.importProfileCookies(connection, profile.cookies); } catch (error) { this.emit({ type: 'sync-error', action: 'import-cookies', id: profile.id, message: 'Cookie 导入失败：' + error.message }); } }
@@ -1135,4 +1185,10 @@ extractTimezoneFromArgs,
 // (root, profile, targets) functions that never touch `this`.
 clearProfileLaunchData,
 clearLaunchDataTargets,
+// Reused by the Firefox pipeline (engine/start-firefox.js) so both engines share
+// the same merge-only write-back contract for mid-start profile snapshots.
+mergeLaunchProfileUpdate,
+// Single source of the security switch denylist used to filter
+// profile.privacy.customArgs at launch time; exported for reuse and tests.
+SECURITY_SWITCH_DENYLIST,
 };

@@ -178,7 +178,6 @@ function attachNavigationGuard(webContents, windowName, policy, hooks = {}) {
 
   webContents.on('will-navigate', handleNavigate);
 
-  let previousHandler = null;
   if (typeof webContents.setWindowOpenHandler === 'function') {
     webContents.setWindowOpenHandler((details) => {
       const decision = evaluateWindowOpen(policy, windowName, details.url, { initialUrl });
@@ -192,12 +191,14 @@ function attachNavigationGuard(webContents, windowName, policy, hooks = {}) {
     });
   }
 
+  // The window-open handler is TERMINAL: Electron exposes no getter for the
+  // previous handler, so the old "restore" branch could only ever install a
+  // stale value. detach() removes just the will-navigate listener; the open
+  // handler stays (same semantics as shell-guard's navigation guard, its
+  // only production sibling).
   return function detach() {
     if (typeof webContents.removeListener === 'function') {
       webContents.removeListener('will-navigate', handleNavigate);
-    }
-    if (previousHandler && typeof webContents.setWindowOpenHandler === 'function') {
-      webContents.setWindowOpenHandler(previousHandler);
     }
   };
 }

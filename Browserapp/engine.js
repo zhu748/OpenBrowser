@@ -675,7 +675,34 @@ class BrowserEngine {
       const platformUrl = String(profile.platform?.startUrl || '').trim();
       if (platformUrl && !urls.includes(platformUrl)) urls.push(platformUrl);
     }
-    const lines = String(profile.advanced?.startUrls || '').split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+    // Startup-URL 防注入（见 P2 系列）：这些行会原样进入两个内核的 CLI 位置参数
+    // （start.js:582 / start-firefox.js extraStartUrls），与 customArgs 同属
+    // 命令行注入面 —— 但 customArgs 在 profile-sanitizer 有白名单正则，
+    // 这里此前完全没有校验。导入/云端恢复的 profile 会在无人交互时重放该字段。
+    const lines = String(profile.advanced?.startUrls || '')
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .filter((line) => {
+        // 硬拒绝 '-'/'--' 开头：浏览器把它们当开关解析（flag 注入第二通道）。
+        if (line.startsWith('-')) {
+          console.warn(`[BrowserEngine] 拒绝可疑启动参数（'-' 前缀，不作为 URL 传递）: ${line.slice(0, 120)}`);
+          return false;
+        }
+        // 带 scheme 的行只允许安全导航目标；注意 chrome:// 等内核 scheme
+        // 仍需显式列入才可用（默认排除，最小攻击面）。
+        const schemeMatch = line.match(/^([a-z][a-z0-9+.-]*):/i);
+        if (schemeMatch) {
+          const scheme = schemeMatch[1].toLowerCase();
+          const allowed = ['http', 'https', 'file', 'about'];
+          if (!allowed.includes(scheme)) {
+            console.warn(`[BrowserEngine] 拒绝非白名单 scheme 的启动 URL（仅 ${allowed.join('/')}）: ${line.slice(0, 120)}`);
+            return false;
+          }
+        }
+        // 无 scheme 的行（example.com）保持放行：浏览器按搜索查询处理，保留 UX。
+        return true;
+      });
     for (const line of lines) if (!urls.includes(line)) urls.push(line);
     if (String(profile.platform?.type || '') === 'blank' && !urls.length) urls.push('about:blank');
     return urls.slice(0, 20);
@@ -1053,7 +1080,11 @@ class BrowserEngine {
         this.running.delete(id);
         afterStop = null;
       }
-      if (afterStop) return this.publicRunning(id);
+      if (afterStop) {
+        // Healthy instance already running: mark it so callers can tell a
+        // fresh start from a no-op relaunch (previously indistinguishable).
+        return { ...this.publicRunning(id), alreadyRunning: true };
+      }
       this.assertStartGenerationActive(id, generation);
       return run(generation);
     })();
@@ -1224,7 +1255,7 @@ class BrowserEngine {
     if (wantCookieSnap && item.cdpConnection) {
       cookieExport = await this.exportProfileCookies(item.cdpConnection).catch(() => '');
       if (cookieExport) {
-        profile.cookies = cookieExport;
+        profile.cookies = cookieExport.slice(0, 500000);
         profile.updatedAt = new Date().toISOString();
         this.profiles.set(safe, profile);
         this.invalidateStatusCache?.();
@@ -1354,6 +1385,16 @@ class BrowserEngine {
         view.platform = { ...view.platform };
         if ('password' in view.platform) view.platform.password = '';
         if ('totpSecret' in view.platform) view.platform.totpSecret = '';
+        // 多账号行与主账号字段同源（profile-sanitizer 原样保留 password/totpSecret），
+        // 这里同样只留 username：轮询通道绝不携带任意一行的账号机密，
+        // 编辑器需要的完整行仍走一次性 'profile-closed' 事件（与 cookies 同一设计）。
+        if (Array.isArray(view.platform.accounts) && view.platform.accounts.length) {
+          view.platform.accounts = view.platform.accounts.map((account) => ({
+            ...account,
+            password: '',
+            totpSecret: '',
+          }));
+        }
       }
       return view;
     });

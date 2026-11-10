@@ -10,7 +10,7 @@ use crate::proxy::socks5::{
     reply_code_name, ATYP_DOMAIN, ATYP_IPV4, ATYP_IPV6, AUTH_METHOD_NONE, AUTH_METHOD_USER_PASS,
     CMD_CONNECT, REP_SUCCEEDED, SOCKS5_AUTH_SUBNEGOTIATION_VERSION, SOCKS5_VERSION,
 };
-use crate::proxy::stream::{copy_bidirectional, StreamStats};
+use crate::proxy::stream::{copy_bidirectional_with_idle_timeout, StreamStats};
 use crate::proxy::MAX_HEADER_BYTES;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -152,6 +152,22 @@ impl LocalProxyBridge {
 
     pub fn tunnel_pool(&self) -> &Arc<UpstreamTunnelPool> {
         &self.tunnel_pool
+    }
+
+    /// Shared generation counter, exposed for tests that assert the racing
+    /// stop/start tails always resolve against the NEWEST run.
+    pub fn generation(&self) -> &Arc<AtomicU64> {
+        &self.generation
+    }
+
+    /// Generation of the currently running bridge run, if any.
+    pub fn current_run_generation(&self) -> Option<u64> {
+        match self.running.try_lock() {
+            Ok(guard) => guard.as_ref().map(|r| r.generation),
+            // A start()/stop() holding the lock mid-flight is fine for this
+            // read: the caller's own start just set it under the same lock.
+            Err(_) => None,
+        }
     }
 
     pub fn with_handshake_timeout(mut self, timeout: Duration) -> Self {
@@ -507,9 +523,14 @@ impl LocalProxyBridge {
         let header_end = loop {
             let n = stream.read(&mut buf).await?;
             if n == 0 {
-                return Err(CoreError::Http(
-                    "Upstream closed connection during CONNECT handshake".into(),
-                ));
+                // EOF during the handshake is transport death (a pooled stream
+                // the health check raced, or the peer FIN mid-CONNECT), not an
+                // application verdict: classify as Io so the pooled-connect
+                // guard falls through to a fresh dial instead of propagating.
+                return Err(CoreError::Io(std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    "Upstream closed connection during CONNECT handshake",
+                )));
             }
             response.extend_from_slice(&buf[..n]);
             // The size bound runs before the terminator search: any block that
@@ -597,9 +618,14 @@ impl LocalProxyBridge {
             .await
             {
                 Ok(remainder) => return Ok((stream, remainder)),
-                Err(_) => {
-                    // Stale connection in pool; fall through to fresh dial
-                }
+                // Retry on transport-level errors only: a pooled stream that
+                // died mid-CONNECT (EOF/RST/timeout) is stale by definition.
+                // A 407 (bad credentials) or non-200 is an application-level
+                // verdict that would repeat identically on a fresh dial, and
+                // falling through here would silently double the upstream
+                // CONNECT volume per client request.
+                Err(e @ (CoreError::AuthFailed(_) | CoreError::Http(_))) => return Err(e),
+                Err(_) => {} // transport-level: fall through to fresh dial
             }
         }
         Self::connect_http_upstream_raw(config, target_host, target_port).await
@@ -981,8 +1007,11 @@ impl LocalProxyBridge {
             }
         };
 
-        // 7. Bidirectional streaming (outside of handshake deadline)
-        let stats = copy_bidirectional(client, upstream).await?;
+        // 7. Bidirectional streaming (outside of handshake deadline), bounded
+        // by an inactivity ceiling: without it a wedged session (upstream
+        // replied 200 then silence) holds one of the 512 session slots forever.
+        // Bytes in either direction extend the deadline; see stream.rs.
+        let stats = copy_bidirectional_with_idle_timeout(client, upstream).await?;
         ctx.total_c2s
             .fetch_add(stats.client_to_server_bytes, Ordering::Relaxed);
         ctx.total_s2c
@@ -1024,6 +1053,22 @@ impl ProxyForwarder for LocalProxyBridge {
             return Ok(r.addr);
         }
 
+        // Invariant: generation must advance before rearm so stale tails never
+        // clear a rearmed pool. The old run's task tail and stop() tail both
+        // gate their pool clear on `generation == task_generation`, and stop()
+        // releases `running` before awaiting that tail — so a tail can run
+        // anywhere inside this critical section, including across the await
+        // points below (TcpListener::bind). If rearm() happened first, a tail
+        // landing in that window would still see the OLD counter value, match,
+        // and clear() the pool AFTER this run rearmed it — leaving the shared
+        // pool stopped=true forever, silently refusing every put_tunnel and
+        // prewarm for the whole new bridge run. Advancing the counter first
+        // makes any such tail see a mismatch and skip its clear.
+        let task_generation = self
+            .generation
+            .fetch_add(1, Ordering::SeqCst)
+            .wrapping_add(1);
+
         // A pool shared across bridge runs survives stop() with stopped=true;
         // without the rearm, a restart on the same pool would refuse every
         // put and prewarm forever.
@@ -1045,10 +1090,6 @@ impl ProxyForwarder for LocalProxyBridge {
         };
         let is_running = self.is_running.clone();
         let local_addr = self.local_addr.clone();
-        let task_generation = self
-            .generation
-            .fetch_add(1, Ordering::SeqCst)
-            .wrapping_add(1);
         let shared_generation = self.generation.clone();
 
         let server_task = tokio::spawn(async move {

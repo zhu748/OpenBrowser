@@ -731,8 +731,14 @@ function fetchJson(url, redirects = 0, maxBytes = MAX_META_BYTES) {
   });
 }
 
-/** Fetch a trusted-host text document (Firefox SHA256SUMS). */
-function fetchText(url, { maxBytes = MAX_META_BYTES, timeoutMs = 30000 } = {}) {
+/**
+ * Fetch a trusted-host text document (Firefox SHA256SUMS). Mirrors fetchJson's
+ * redirect handling: every hop is re-validated by trustedKernelUrl and capped
+ * at MAX_REDIRECTS — a 302 on the sums URL used to fail every Firefox install
+ * with a bare "HTTP 302".
+ */
+function fetchText(url, { maxBytes = MAX_META_BYTES, timeoutMs = 30000, redirects = 0 } = {}) {
+  if (redirects > MAX_REDIRECTS) return Promise.reject(new Error('Kernel text document redirected too many times'));
   const parsed = trustedKernelUrl(url);
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -742,6 +748,11 @@ function fetchText(url, { maxBytes = MAX_META_BYTES, timeoutMs = 30000 } = {}) {
       handler(value);
     };
     const req = https.get(parsed, { headers: { 'User-Agent': 'OpenBrowser/1.0 (kernel)' }, timeout: timeoutMs }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        res.resume();
+        return fetchText(new URL(res.headers.location, parsed).toString(), { maxBytes, timeoutMs, redirects: redirects + 1 })
+          .then((value) => finish(resolve, value), (error) => finish(reject, error));
+      }
       if (res.statusCode !== 200) {
         res.resume();
         return finish(reject, new Error('HTTP ' + res.statusCode + ' for ' + url));
@@ -865,12 +876,28 @@ function startupOutput(child) {
 
 async function stopProbeProcess(child) {
   if (!child || child.exitCode !== null) return;
-  child.kill('SIGTERM');
+  // POSIX: the probe spawns detached in its own process group; killing only
+  // the direct child orphaned renderer/gpu children, which kept the probe
+  // user-data dir busy and made the trailing fsp.rm(probeRoot, {force:true})
+  // silently fail. Negative-pid signals reach the whole group; ESRCH just
+  // means it is already gone. Windows keeps the direct-child kill (this file
+  // has no Windows process-tree helper and job objects are out of scope).
+  if (process.platform !== 'win32') {
+    try { process.kill(-child.pid, 'SIGTERM'); } catch (_) { try { child.kill('SIGTERM'); } catch (_) {} }
+  } else {
+    child.kill('SIGTERM');
+  }
   await new Promise((resolve) => {
     const timer = setTimeout(resolve, 3000);
     child.once('exit', () => { clearTimeout(timer); resolve(); });
   });
-  if (child.exitCode === null) child.kill('SIGKILL');
+  if (child.exitCode === null) {
+    if (process.platform !== 'win32') {
+      try { process.kill(-child.pid, 'SIGKILL'); } catch (_) { try { child.kill('SIGKILL'); } catch (_) {} }
+    } else {
+      child.kill('SIGKILL');
+    }
+  }
 }
 
 async function extractZip(zipPath, destDir) {
@@ -1952,6 +1979,15 @@ class BrowserKernelManager {
     const plat = cftPlatformKey();
     await fsp.mkdir(this.kernelsRoot, { recursive: true });
     const work = path.join(this.kernelsRoot, 'chromium-versions', wanted);
+    // deleteKernel refuses to remove a tree the running kernel resolves from
+    // (isKernelInUse); reinstalls used to rm it anyway. Reinstalling the same
+    // version under a live profile left Windows unable to delete the locked
+    // exe (force:true swallowed it → corrupt mixed tree after extraction) and
+    // on POSIX let running processes keep executing deleted files, diverging
+    // from the kernel.json/digest baseline.
+    if (this.isKernelInUse('chromium', wanted)) {
+      throw new Error('当前内核正在使用中，无法重新安装');
+    }
 
     // Prefer a catalog URL (known-good list); the official URL pattern is the
     // offline fallback. Both embed the version, so digest pinning applies either way.
@@ -1975,8 +2011,6 @@ class BrowserKernelManager {
         expectedSha256: pinned || '',
         register: (d) => { if (this.activeDownload) this.activeDownload.downloader = d; },
       });
-    } catch (error) {
-      throw error;
     } finally {
       this.activeDownload = null;
     }
@@ -1999,14 +2033,16 @@ class BrowserKernelManager {
     this.onProgress({ phase: 'validate', message: `验证 Chrome for Testing ${wanted} 兼容性…`, version: wanted, binary });
     await this.probeBrowserBinary(binary);
 
-    await fsp.writeFile(path.join(work, 'kernel.json'), JSON.stringify({
+    // writeFileAtomic: a torn kernel.json drops the tree out of
+    // listInstalledKernels (JSON.parse fails) and strands hundreds of MB.
+    await writeFileAtomic(path.join(work, 'kernel.json'), JSON.stringify({
       engine: 'chromium',
       source: SOURCE_CFT,
       version: wanted,
       platform: plat,
       downloadUrl: url,
       installedAt: new Date().toISOString(),
-    }, null, 2) + '\n', 'utf8');
+    }, null, 2) + '\n');
 
     await this.baselineTree(work);
     if (isVersionedArchiveUrl(url, wanted) && download.sha256) {
@@ -2037,6 +2073,10 @@ class BrowserKernelManager {
     const platformDir = firefoxPlatformDir();
     if (!platformDir) throw new Error(`当前平台无可用 Firefox 包：${process.platform}/${process.arch}`);
     await fsp.mkdir(this.kernelsRoot, { recursive: true });
+    // Same in-use invariant as the Chromium per-version install above.
+    if (this.isKernelInUse('firefox', wanted)) {
+      throw new Error('当前内核正在使用中，无法重新安装');
+    }
 
     // SHA256SUMS is the authoritative artifact list AND the digest source.
     this.onProgress({ phase: 'meta', message: `获取 Firefox ${wanted} 校验清单…`, version: wanted });
@@ -2100,14 +2140,15 @@ class BrowserKernelManager {
     this.onProgress({ phase: 'validate', message: `验证 Firefox ${wanted} 兼容性…`, version: wanted, binary });
     const probe = await this.probeFirefoxBinary(binary);
 
-    await fsp.writeFile(path.join(work, 'kernel.json'), JSON.stringify({
+    // writeFileAtomic: same torn-write invariant as the Chromium kernel.json.
+    await writeFileAtomic(path.join(work, 'kernel.json'), JSON.stringify({
       engine: 'firefox',
       source: SOURCE_MOZILLA,
       version: probe.version || wanted,
       platform: platformDir,
       downloadUrl: url,
       installedAt: new Date().toISOString(),
-    }, null, 2) + '\n', 'utf8');
+    }, null, 2) + '\n');
 
     await this.baselineTree(work);
     if (isVersionedArchiveUrl(url, wanted) && download.sha256) {
@@ -2474,10 +2515,28 @@ class BrowserKernelManager {
     return this.ensureIntegrated(force);
   }
 
-  async installWayfern(release) {
+  installWayfern(release) {
+    // The three default-source installs share one fixed work dir + archive
+    // path with no in-flight guard — the exact hazard the per-version comment
+    // above documents (concurrent installs truncating each other's .partial
+    // and rm-ing each other's extract trees). Keyed per version like
+    // _withVersionInstallGuard's per-version keys.
+    const version = String(release?.version || '').trim() || 'unknown';
+    return this._withVersionInstallGuard(`wayfern:${version}`, () => this.installWayfernInternal(release));
+  }
+
+  async installWayfernInternal(release) {
     const { version, url, platform } = release;
     const work = path.join(this.kernelsRoot, 'wayfern');
     await fsp.mkdir(this.kernelsRoot, { recursive: true });
+    // Reinstalling over the tree the running kernel resolves from used to rm
+    // it with no in-use check (deleteKernel refuses exactly this). A profile
+    // running from this tree keeps executing deleted files on POSIX; on
+    // Windows the locked exe makes force:true leave a corrupt mixed tree.
+    const resolvedNow = this.resolveInstalled();
+    if (resolvedNow && resolvedNow.source === SOURCE_WAYFERN && isPathInsideRoot(resolvedNow.path, work)) {
+      throw new Error('当前内核正在使用中，无法重新安装');
+    }
 
     const kind = archiveKindFromUrl(url);
     const ext = kind === 'dmg' ? 'dmg' : kind === 'tar.xz' ? 'tar.xz' : kind === 'tar.gz' ? 'tar.gz' : 'zip';
@@ -2550,11 +2609,23 @@ class BrowserKernelManager {
     return this.resolveInstalled();
   }
 
-  async installChromeStable(release) {
+  installChromeStable(release) {
+    // See installWayfern: shared fixed work/archive paths need the single-
+    // flight guard the per-version installs already have.
+    return this._withVersionInstallGuard('chrome-stable:stable', () => this.installChromeStableInternal(release));
+  }
+
+  async installChromeStableInternal(release) {
     const { url, kind = archiveKindFromUrl(url) } = release;
     const work = path.join(this.kernelsRoot, 'chrome-stable');
     await fsp.mkdir(this.kernelsRoot, { recursive: true });
     const archivePath = path.join(this.kernelsRoot, `google-chrome-stable-${donutPlatformKey()}.${kind}`);
+    // Same in-use invariant as installWayfern: never rm the tree the running
+    // kernel is executing from.
+    const resolvedNow = this.resolveInstalled();
+    if (resolvedNow && resolvedNow.source === SOURCE_CHROME_STABLE && isPathInsideRoot(resolvedNow.path, work)) {
+      throw new Error('当前内核正在使用中，无法重新安装');
+    }
 
     const expectedSha256 = await pinnedArchiveSha256(this.kernelsRoot, url);
     this.onProgress({ phase: 'download', message: '下载 Google Chrome Stable 正式包…', version: 'stable', url });
@@ -2596,12 +2667,12 @@ class BrowserKernelManager {
     this.onProgress({ phase: 'validate', message: '验证 Google Chrome Stable 兼容性…', version: 'stable', binary });
     const probe = await this.probeBrowserBinary(binary);
     const version = probe.version || 'stable';
-    await fsp.writeFile(path.join(work, 'kernel.json'), JSON.stringify({
+    await writeFileAtomic(path.join(work, 'kernel.json'), JSON.stringify({
       version,
       source: SOURCE_CHROME_STABLE,
       platform: donutPlatformKey(),
       downloadUrl: url,
-    }, null, 2) + '\n', 'utf8');
+    }, null, 2) + '\n');
 
     this.meta.binary = binary;
     this.meta.version = version;
@@ -2623,12 +2694,24 @@ class BrowserKernelManager {
     return this.resolveInstalled();
   }
 
-  async installChromeForTesting(release) {
+  installChromeForTesting(release) {
+    // See installWayfern: shared fixed work/archive paths need the per-version
+    // single-flight guard.
+    const version = String(release?.version || '').trim() || 'unknown';
+    return this._withVersionInstallGuard(`cft:${version}`, () => this.installChromeForTestingInternal(release));
+  }
+
+  async installChromeForTestingInternal(release) {
     const { version, url } = release;
     const plat = cftPlatformKey();
     const work = path.join(this.kernelsRoot, 'chrome-for-testing');
     await fsp.mkdir(this.kernelsRoot, { recursive: true });
     const zipPath = path.join(this.kernelsRoot, `chrome-${version}-${plat}.zip`);
+    // Same in-use invariant as installWayfern.
+    const resolvedNow = this.resolveInstalled();
+    if (resolvedNow && resolvedNow.source === SOURCE_CFT && isPathInsideRoot(resolvedNow.path, work)) {
+      throw new Error('当前内核正在使用中，无法重新安装');
+    }
 
     // CfT URLs embed the exact version, so a pinned digest is a strict
     // byte-exact guarantee on every re-download of the same version.

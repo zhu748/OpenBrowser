@@ -85,7 +85,7 @@ module.exports = {
     //     (any path) — the same range the live server registers on.
     // A plain substring match let third-party URLs containing those file
     // names/words be treated as internal start pages (reload/mirror hazard).
-    if (s.startsWith('file://')) {
+    if (s.startsWith('file:///')) {
       try {
         const u = new URL(raw);
         const name = decodeURIComponent(u.pathname.replace(/\/+$/, '')).split('/').pop();

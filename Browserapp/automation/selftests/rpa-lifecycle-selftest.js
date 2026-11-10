@@ -54,8 +54,14 @@ async function main() {
     const plan = rpa.runPlan('plan');
     await started;
     assert.equal(rpa.getStatus().queuedCount, 2);
-    await rpa.stop(stopAll ? null : 't2');
+    // Release the in-step gate BEFORE stop(): stop-all now drains actual
+    // termination (automation review 2026-11-10 [P2-9]) — a quit waits up to
+    // 2.5s for running tasks to observe cancellation — so awaiting stop()
+    // while a step is still gated would only test the drain cap. This order
+    // matches a real quit: steps keep running, cancellation is requested,
+    // then steps finish and their terminal state persists.
     release();
+    await rpa.stop(stopAll ? null : 't2');
     const result = await plan;
     assert.equal(result.success, false);
     assert.equal(tasks.get('t2').status, 'cancelled');

@@ -168,7 +168,13 @@ function applyProxyLibrarySelection(kind, id) {
       try { radio.dispatchEvent(new Event('change', { bubbles: true })); } catch (_) {}
     }
     const prefix = editor ? 'editor' : 'create';
-    const parsed = parseProxyInputForUi(item.raw || item, item.protocol || 'socks5');
+    // Same defensive parse as openProxyDialog: this runs synchronously inside
+    // the #editor-proxy-library change listener (ui/ui-proxy-wiring.js), so a
+    // malformed stored raw would crash the listener. Toast + fall back to the
+    // per-field values below.
+    let parsed = null;
+    try { parsed = parseProxyInputForUi(item.raw || item, item.protocol || 'socks5'); }
+    catch (error) { toast(tx('代理格式错误：') + error.message); }
     editorSet(`#${prefix}-proxy-type`, parsed?.protocol || item.protocol || 'socks5');
     editorSet(`#${prefix}-proxy-host`, parsed?.host || item.host || '');
     editorSet(`#${prefix}-proxy-port`, parsed?.port || item.port || '');
@@ -521,7 +527,16 @@ function openProxyDialog(item = null) {
   $('#proxy-dialog-title').textContent = item ? tx('编辑代理') : tx('新建代理');
   $('#proxy-name').value = item?.name || '';
   delete $('#proxy-name').dataset.autoProxyName;
-  const parsed = item ? parseProxyInputForUi(item.raw || item, item.protocol || 'socks5') : null;
+  // A malformed stored raw must not escape as a sync throw: the edit-button
+  // handler (ui/ui-proxy-wiring.js) is async, so the rejection went unhandled
+  // and the dialog never opened. Toast the parse error and fall back to the
+  // per-field values — the `parsed?.x || item?.x` chains below already handle
+  // a null parsed.
+  let parsed = null;
+  if (item) {
+    try { parsed = parseProxyInputForUi(item.raw || item, item.protocol || 'socks5'); }
+    catch (error) { toast(tx('代理格式错误：') + error.message); }
+  }
   $('#proxy-protocol').value = parsed?.protocol || item?.protocol || 'socks5';
   $('#proxy-ip-channel').value = item?.ipChannel || 'ip-api';
   $('#proxy-host').value = parsed?.host || item?.host || '';
@@ -558,7 +573,13 @@ function readProxyForm() {
   const host = (formHost && !formHost.includes(':') && !formHost.includes('@') && !formHost.includes('/'))
     ? formHost
     : (parsed?.host || formHost);
-  const port = Number(formPort || parsed?.port || 0);
+  // Integer-coerce with the same 1-65535 range enforced by buildProxyUiValue
+  // and the main-process store (automation/proxy-store.js): garbage input used
+  // to leak NaN into draft.port. 0 stays the "unset" value (as the old
+  // `|| 0` fallback), so the save/test paths surface the standard
+  // host+port validation error instead of NaN poisoning.
+  const portNumber = Number(formPort || parsed?.port || 0);
+  const port = Number.isInteger(portNumber) && portNumber >= 1 && portNumber <= 65535 ? portNumber : 0;
   const username = formUser || parsed?.username || '';
   const password = formPass || parsed?.password || '';
   const name = formName || parsed?.name || '';

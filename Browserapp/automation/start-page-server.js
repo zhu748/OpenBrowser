@@ -353,9 +353,14 @@ function probeDirect(url, timeout = 8000, maxBody = 65536) {
         Connection: 'close',
       },
     }, (response) => {
+      let received = 0;
       const chunks = [];
       response.on('data', (chunk) => {
-        if (Buffer.concat(chunks).length < maxBody) chunks.push(chunk);
+        // Count first, concat once: the per-chunk Buffer.concat above was
+        // O(n²) on large responses — same hazard readHttpResponse's counter
+        // pattern (see ~:202) already documents.
+        received += chunk.length;
+        if (received <= maxBody) chunks.push(chunk);
       });
       response.once('end', () => {
         resolve({
@@ -791,8 +796,15 @@ class StartPageServer {
     // generated URLs, so they only ever produced false positives on
     // third-party URLs — same hazard class as the engine-side fallback that
     // was already tightened (engine/start-page.js). Kept in lockstep with it.
-    if (s.includes('openbrowser-start.html')) return true;
-    if (s.includes('openbrowser-start-page.html')) return true;
+    if (s.startsWith('file:///')) {
+      // file:// pages: only the EXACT generated filenames qualify (basename
+      // compare, in lockstep with the engine/start-page.js fallback). The
+      // former bare substring matched https://evil.com/openbrowser-start.html
+      // — the exact third-party hazard this predicate exists to reject.
+      const path = s.replace(/^file:\/\//, '').split('?')[0];
+      const base = path.substring(path.lastIndexOf('/') + 1);
+      return base === 'openbrowser-start.html' || base === 'openbrowser-start-page.html';
+    }
     if (this.port) {
       return s.startsWith(`http://127.0.0.1:${this.port}/`)
         || s.startsWith(`http://localhost:${this.port}/`);
@@ -938,8 +950,12 @@ class StartPageServer {
     if (serial && serial !== profileId) this.sessions.set('serial:' + serial, session);
     // Bounded retention: every launch creates a session entry, and crashed or
     // externally-deleted profiles had no eviction path.
-    if (this.sessions.size > 512) {
+    while (this.sessions.size > 512) {
+      // One registerSession can add TWO rows (profileId + serial:) but the
+      // old single delete evicted at most one, so the map crept upward on
+      // every relaunch. Loop until the cap actually holds.
       const oldest = this.sessions.keys().next().value;
+      if (oldest === undefined) break;
       this.sessions.delete(oldest);
     }
 

@@ -528,6 +528,8 @@ async function main() {
 if (require.main === module) {
   main().catch((err) => {
     console.error('Audit execution error:', err);
-    process.exit(0);
+    // A crashed audit must not read as a clean pass in the release gate
+    // (the runner only records CRASH on nonzero exit).
+    process.exit(1);
   });
 }

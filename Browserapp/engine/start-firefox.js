@@ -26,7 +26,7 @@ const { removeSingletonFiles, writeBrowserStartupDiagnostic, formatBrowserStartu
 const { assertResourceGateForLaunch } = require('./resource-gate');
 // Shared launch-data walker (parameterized target map) from the Chromium
 // startup mixin: start.js does not require this file, so there is no cycle.
-const { clearLaunchDataTargets } = require('./start');
+const { clearLaunchDataTargets, mergeLaunchProfileUpdate } = require('./start');
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -167,6 +167,9 @@ module.exports = {
     // 记录本次启动前的出口 IP（上次运行持久化的值），供 ipChangePolicy 比对。
     const previousExitIp = String(profile.exitIp || '').trim();
     const previousExitCountryCode = String(profile.exitCountryCode || '').trim();
+    // Initial publication of the sanitized candidate (mirrors start.js's first
+    // profiles.set): nothing async has elapsed yet, so a plain set is correct —
+    // the merge-only contract applies to the write-backs after async phases.
     this.profiles.set(profile.id, profile);
     this.assertStartGenerationActive(profile.id, lifecycleGeneration);
     if (this.running.has(profile.id)) {
@@ -203,7 +206,14 @@ module.exports = {
     try {
       profile = await this.prepareProfileProxyForStart(profile);
       this.assertStartGenerationActive(profile.id, lifecycleGeneration);
-      this.profiles.set(profile.id, profile);
+      // Merge-only write-back (same contract as the Chromium pipeline's
+      // mergeLaunchProfileUpdate): prepareProfileProxyForStart spans async network
+      // roundtrips, during which a concurrent editor save can land in this.profiles.
+      // A wholesale snapshot write-back here would revert that save on the next
+      // persist; if the profile was deleted mid-start, the merge returns null and
+      // the write-back is skipped entirely.
+      const afterProxy = mergeLaunchProfileUpdate(this, profile);
+      if (afterProxy) profile = afterProxy;
 
       // --- 启动前守卫段（对齐 _start 的顺序与语义，Firefox 管线不再绕过）---
 
@@ -227,7 +237,11 @@ module.exports = {
         await this.ensureExitNetworkForLocale(profile).catch(() => {});
       }
       profile = this.applyResolvedLocale(profile);
-      this.profiles.set(profile.id, profile);
+      // Second merge-only write-back after locale/geo resolution, mirroring the
+      // Chromium pipeline's afterLocale merge (start.js): never a wholesale
+      // snapshot write-back inside the multi-second launch window.
+      const afterLocale = mergeLaunchProfileUpdate(this, profile);
+      if (afterLocale) profile = afterLocale;
 
       // IP 变化守护（对齐「IP 发生变化停止打开 / 提醒」）：与 _start 相同的触发
       // 条件、错误消息与事件类型；仅在本次启动真的做了出口检测时才可能触发。
