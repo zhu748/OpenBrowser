@@ -451,89 +451,89 @@ $('#proxy-form')?.addEventListener('submit', async (event) => {
 
 $('#proxy-dialog')?.addEventListener('close', () => { editingProxyRecord = null; });
 
-$('#create-proxy-raw')?.addEventListener('input', () => {
-  const raw = $('#create-proxy-raw').value.trim();
-  if (!raw) return;
-  try {
-    const parsed = parseProxyInputForUi(raw, $('#create-proxy-type')?.value || 'socks5');
-    if (!parsed) return;
-    if ($('#create-proxy-type')) $('#create-proxy-type').value = parsed.protocol;
-    if ($('#create-proxy-host')) $('#create-proxy-host').value = parsed.host;
-    if ($('#create-proxy-port')) $('#create-proxy-port').value = parsed.port;
-    if ($('#create-proxy-user')) $('#create-proxy-user').value = parsed.username;
-    if ($('#create-proxy-password')) $('#create-proxy-password').value = parsed.password;
-    const input = $('#create-proxy-input') || document.querySelector('#profile-form input[name="proxy"]');
-    if (input) input.value = parsed.raw;
-    const library = $('#create-proxy-library');
-    if (library) library.value = '';
-    syncThemedSelects($('#profile-dialog'));
-  } catch (_) {}
+// M-5/M-6: the four live-parse listeners (create/editor × raw/host) were
+// four near-identical 18-line bodies differing only in field id prefix,
+// how each found field is written back, and which side effects fire. One
+// parameterized installer owns the shared skeleton (trim, guard, parse,
+// write-back, library unlink, themed-select sync, silent catch); the
+// per-listener options below pin down only the differences.
+function installProxyLiveParse({ listenId, typeSel, rawId, hostId, portId, userId, passwordId, isHostField, requireCompound, fillInputSel, authTouch, statusSel, statusText, scopeSel }) {
+  const el = $(listenId);
+  if (!el) return;
+  el.addEventListener('input', () => {
+    const value = el.value.trim();
+    if (!value) return;
+    if (requireCompound && !value.includes(':') && !value.includes('@') && !value.includes('/')) return;
+    try {
+      const parsed = parseProxyInputForUi(value, $(typeSel)?.value || 'socks5');
+      if (!parsed) return;
+      if ($(typeSel)) $(typeSel).value = parsed.protocol;
+      // The raw field overwrites every parsed field unconditionally; the
+      // host field is mid-edit so only the fields the paste actually
+      // carries are filled (host itself always, the rest only when parsed).
+      if (!isHostField || parsed.host) $(hostId).value = parsed.host;
+      if (!isHostField || parsed.port) if ($(portId)) $(portId).value = parsed.port;
+      if (!isHostField || parsed.username) {
+        if ($(userId)) $(userId).value = parsed.username;
+        if (authTouch) authTouch();
+      }
+      if (!isHostField || parsed.password) {
+        if ($(passwordId)) $(passwordId).value = parsed.password;
+        if (authTouch) authTouch();
+      }
+      if (!isHostField && $(rawId)) $(rawId).value = parsed.raw;
+      if (isHostField && $(rawId)) $(rawId).value = parsed.raw;
+      const input = fillInputSel ? document.querySelector(fillInputSel) : null;
+      if (input) input.value = parsed.raw;
+      const library = $('#create-proxy-library') || $('#editor-proxy-library');
+      if (library) library.value = '';
+      if (statusSel) {
+        const status = $(statusSel);
+        if (status) status.textContent = statusText;
+      }
+      syncThemedSelects($(scopeSel));
+    } catch (_) {}
+  });
+}
+
+installProxyLiveParse({
+  listenId: '#create-proxy-raw', typeSel: '#create-proxy-type',
+  rawId: '#create-proxy-raw', hostId: '#create-proxy-host', portId: '#create-proxy-port',
+  userId: '#create-proxy-user', passwordId: '#create-proxy-password',
+  isHostField: false, requireCompound: false,
+  fillInputSel: '#create-proxy-input, #profile-form input[name="proxy"]',
+  authTouch: null, statusSel: null, statusText: '', scopeSel: '#profile-dialog',
 });
 
-$('#create-proxy-host')?.addEventListener('input', () => {
-  const value = $('#create-proxy-host').value.trim();
-  if (!value || (!value.includes(':') && !value.includes('@') && !value.includes('/'))) return;
-  try {
-    const parsed = parseProxyInputForUi(value, $('#create-proxy-type')?.value || 'socks5');
-    if (!parsed) return;
-    if ($('#create-proxy-type')) $('#create-proxy-type').value = parsed.protocol;
-    $('#create-proxy-host').value = parsed.host;
-    if (parsed.port && $('#create-proxy-port')) $('#create-proxy-port').value = parsed.port;
-    if (parsed.username && $('#create-proxy-user')) $('#create-proxy-user').value = parsed.username;
-    if (parsed.password && $('#create-proxy-password')) $('#create-proxy-password').value = parsed.password;
-    if ($('#create-proxy-raw')) $('#create-proxy-raw').value = parsed.raw;
-    const input = $('#create-proxy-input') || document.querySelector('#profile-form input[name="proxy"]');
-    if (input) input.value = parsed.raw;
-    const library = $('#create-proxy-library');
-    if (library) library.value = '';
-    syncThemedSelects($('#profile-dialog'));
-  } catch (_) {}
+installProxyLiveParse({
+  listenId: '#create-proxy-host', typeSel: '#create-proxy-type',
+  rawId: '#create-proxy-raw', hostId: '#create-proxy-host', portId: '#create-proxy-port',
+  userId: '#create-proxy-user', passwordId: '#create-proxy-password',
+  isHostField: true, requireCompound: true,
+  fillInputSel: '#create-proxy-input, #profile-form input[name="proxy"]',
+  authTouch: null, statusSel: null, statusText: '', scopeSel: '#profile-dialog',
 });
 
-$('#editor-proxy-raw')?.addEventListener('input', () => {
-  const raw = $('#editor-proxy-raw').value.trim();
-  if (!raw) return;
-  try {
-    const parsed = parseProxyInputForUi(raw, $('#editor-proxy-type')?.value || 'socks5');
-    if (!parsed) return;
-    if ($('#editor-proxy-type')) $('#editor-proxy-type').value = parsed.protocol;
-    if ($('#editor-proxy-host')) $('#editor-proxy-host').value = parsed.host;
-    if ($('#editor-proxy-port')) $('#editor-proxy-port').value = parsed.port;
-    if ($('#editor-proxy-user')) $('#editor-proxy-user').value = parsed.username;
-    if ($('#editor-proxy-password')) $('#editor-proxy-password').value = parsed.password;
-    const library = $('#editor-proxy-library');
-    if (library) library.value = '';
-    const status = $('#editor-proxy-library-status');
-    if (status) status.textContent = tx('未关联代理库节点（使用快捷粘贴代理）');
-    window.__editorProxyAuthTouched = true;
-    syncThemedSelects($('#editor-proxy-fields'));
-  } catch (_) {}
+installProxyLiveParse({
+  listenId: '#editor-proxy-raw', typeSel: '#editor-proxy-type',
+  rawId: '#editor-proxy-raw', hostId: '#editor-proxy-host', portId: '#editor-proxy-port',
+  userId: '#editor-proxy-user', passwordId: '#editor-proxy-password',
+  isHostField: false, requireCompound: false,
+  fillInputSel: null,
+  authTouch: () => { window.__editorProxyAuthTouched = true; },
+  statusSel: '#editor-proxy-library-status', statusText: tx('未关联代理库节点（使用快捷粘贴代理）'),
+  scopeSel: '#editor-proxy-fields',
 });
 
-$('#editor-proxy-host')?.addEventListener('input', () => {
-  const value = $('#editor-proxy-host').value.trim();
-  if (!value || (!value.includes(':') && !value.includes('@') && !value.includes('/'))) return;
-  try {
-    const parsed = parseProxyInputForUi(value, $('#editor-proxy-type')?.value || 'socks5');
-    if (!parsed) return;
-    if ($('#editor-proxy-type')) $('#editor-proxy-type').value = parsed.protocol;
-    $('#editor-proxy-host').value = parsed.host;
-    if (parsed.port && $('#editor-proxy-port')) $('#editor-proxy-port').value = parsed.port;
-    if (parsed.username && $('#editor-proxy-user')) {
-      $('#editor-proxy-user').value = parsed.username;
-      window.__editorProxyAuthTouched = true;
-    }
-    if (parsed.password && $('#editor-proxy-password')) {
-      $('#editor-proxy-password').value = parsed.password;
-      window.__editorProxyAuthTouched = true;
-    }
-    if ($('#editor-proxy-raw')) $('#editor-proxy-raw').value = parsed.raw;
-    const library = $('#editor-proxy-library');
-    if (library) library.value = '';
-    const status = $('#editor-proxy-library-status');
-    if (status) status.textContent = tx('未关联代理库节点（使用快捷粘贴代理）');
-    syncThemedSelects($('#editor-proxy-fields'));
-  } catch (_) {}
+installProxyLiveParse({
+  listenId: '#editor-proxy-host', typeSel: '#editor-proxy-type',
+  rawId: '#editor-proxy-raw', hostId: '#editor-proxy-host', portId: '#editor-proxy-port',
+  userId: '#editor-proxy-user', passwordId: '#editor-proxy-password',
+  isHostField: true, requireCompound: true,
+  fillInputSel: null,
+  authTouch: () => { window.__editorProxyAuthTouched = true; },
+  statusSel: '#editor-proxy-library-status', statusText: tx('未关联代理库节点（使用快捷粘贴代理）'),
+  scopeSel: '#editor-proxy-fields',
 });
 
 $('#editor-proxy-user')?.addEventListener('input', () => { window.__editorProxyAuthTouched = true; });

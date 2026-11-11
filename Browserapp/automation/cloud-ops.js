@@ -295,24 +295,46 @@ async function runCloudProfilePushExclusive(payload = {}) {
   for (const profile of allProfiles) {
     if (!profilesById.has(profile.id)) profilesById.set(profile.id, profile);
   }
+  // C-8: one failing id used to abort the whole multi-profile push and the
+  // exception discarded every result of the ids that had already shipped —
+  // the caller learned nothing about the partial success, and lastError was
+  // never recorded. Each id pushes independently; failures are collected
+  // per id, already-shipped results survive, and the batch ends with one
+  // aggregated error that still names every failed id.
+  const failures = [];
   for (const id of ids) {
     const profile = profilesById.get(id);
-    if (!profile) throw new Error('环境不存在：' + id);
-    const { buffer, meta } = await cloudSync.buildBackupPackage({
-      profiles: [{ ...profile, updatedAt: profile.updatedAt || new Date().toISOString() }],
-      groups: Array.isArray(payload.groups) ? payload.groups : (localSettingsCache.uiGroups || []),
-      proxies: [],
-      settings: { kind: 'profile', profileId: id },
-      profileDataRoot: engine?.getProfileDataRoot?.() || localSettingsCache.profileDataRoot,
-      includeBrowserData: cloud.includeBrowserData !== false,
-      passphrase: cloud.passphrase || '',
-      profileIds: [id],
-    });
-    const remoteName = cloudSync.profileRemoteName(id);
-    const result = await cloudSync.upload(cloud.provider, providerConfigFromCloud(cloud), buffer, remoteName);
-    results.push({ id, meta, result, remoteName });
+    if (!profile) { failures.push({ id, error: new Error('环境不存在：' + id) }); continue; }
+    try {
+      const { buffer, meta } = await cloudSync.buildBackupPackage({
+        profiles: [{ ...profile, updatedAt: profile.updatedAt || new Date().toISOString() }],
+        groups: Array.isArray(payload.groups) ? payload.groups : (localSettingsCache.uiGroups || []),
+        proxies: [],
+        settings: { kind: 'profile', profileId: id },
+        profileDataRoot: engine?.getProfileDataRoot?.() || localSettingsCache.profileDataRoot,
+        includeBrowserData: cloud.includeBrowserData !== false,
+        passphrase: cloud.passphrase || '',
+        profileIds: [id],
+      });
+      const remoteName = cloudSync.profileRemoteName(id);
+      const result = await cloudSync.upload(cloud.provider, providerConfigFromCloud(cloud), buffer, remoteName);
+      results.push({ id, meta, result, remoteName });
+    } catch (error) {
+      failures.push({ id, error });
+    }
   }
   cloud.lastSyncAt = new Date().toISOString();
+  if (failures.length) {
+    const summary = failures.map(({ id, error }) => `${id}: ${error.message}`).join('；');
+    cloud.lastError = summary;
+    await saveSettings(mergeCloudIntoSettings(getSettings(), cloud));
+    emit({ type: 'cloud-sync', action: 'profile-push', count: results.length, ids, failedIds: failures.map((f) => f.id) });
+    if (!results.length) throw new Error('云推送全部失败：' + summary);
+    const error = new Error(`云推送部分失败（成功 ${results.length}/${ids.length}）：${summary}`);
+    error.code = 'CLOUD_PUSH_PARTIAL';
+    error.partialResults = results;
+    throw error;
+  }
   cloud.lastError = '';
   await saveSettings(mergeCloudIntoSettings(getSettings(), cloud));
   emit({ type: 'cloud-sync', action: 'profile-push', count: results.length, ids });
