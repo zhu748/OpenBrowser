@@ -77,7 +77,12 @@ function parseCsvRecords(source) {
 
 function csvCell(value) {
   const text = typeof value === 'string' ? value : JSON.stringify(value ?? '');
-  const source = String(text);
+  let source = String(text);
+  // CSV formula injection: scraped content starting with =, +, -, @ (or a
+  // tab/CR, which Excel also honors as a formula introducer) executes as a
+  // formula when the export is opened in a spreadsheet app. Prefix with a
+  // single quote — the standard neutralizer — so the value renders as text.
+  if (/^[=+\-@\t\r]/.test(source)) source = "'" + source;
   return `"${source.includes('"') ? source.replace(/"/g, '""') : source}"`;
 }
 

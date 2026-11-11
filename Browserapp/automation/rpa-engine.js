@@ -155,7 +155,11 @@ function resolveSerial(params = {}) {
   if (params.serialType === 'randomInterval' || params.serialType === 'random') {
     const min = Number(params.serialMin) || 1;
     const max = Number(params.serialMax) || 1;
-    return randomBetween(min, max);
+    // Serial is an element INDEX (1-based), so it must be an integer: a float
+    // here lands in `nodes[1.37]` (undefined for CSS, silently truncated by
+    // WebIDL for XPath) and every multi-element step misreports "Selector not
+    // found". randomBetween is [min, max] inclusive.
+    return Math.floor(randomBetween(min, max));
   }
   const val = Number(params.serial);
   return Number.isFinite(val) && val > 0 ? Math.floor(val) : 1;
@@ -1591,7 +1595,7 @@ class RpaEngine {
           return arr;
         })()`
       : `Array.from(document.querySelectorAll(${JSON.stringify(selector)}))`;
-    const index = Math.max(0, (Number(serial) || 1) - 1);
+    const index = Math.max(0, Math.floor(Number(serial) || 1) - 1);
     return `(() => {
       const nodes = ${finder};
       const map = ${mapper};
@@ -1657,7 +1661,7 @@ class RpaEngine {
 
   async focusSelector(ws, selector, selectorRadio = 'CSS', serial = 1) {
     const isXpath = String(selectorRadio || 'CSS').toUpperCase().startsWith('X');
-    const index = Math.max(0, (Number(serial) || 1) - 1);
+    const index = Math.max(0, Math.floor(Number(serial) || 1) - 1);
     // The existence check shares the query logic with the focusing version
     // but touches neither focus nor scroll, so waiting steps stay side-effect
     // free (focus steal + scrollIntoView every poll tick used to fight the
@@ -1698,7 +1702,7 @@ class RpaEngine {
 
   async probeSelector(ws, selector, selectorRadio = 'CSS', serial = 1) {
     const isXpath = String(selectorRadio || 'CSS').toUpperCase().startsWith('X');
-    const index = Math.max(0, (Number(serial) || 1) - 1);
+    const index = Math.max(0, Math.floor(Number(serial) || 1) - 1);
     const expression = isXpath
       ? `(() => {
           const snap = document.evaluate(${JSON.stringify(selector)}, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
@@ -1714,7 +1718,7 @@ class RpaEngine {
 
   async boundingBox(ws, selector, selectorRadio = 'CSS', serial = 1) {
     const isXpath = String(selectorRadio || 'CSS').toUpperCase().startsWith('X');
-    const index = Math.max(0, (Number(serial) || 1) - 1);
+    const index = Math.max(0, Math.floor(Number(serial) || 1) - 1);
     const expression = isXpath
       ? `(() => {
           const snap = document.evaluate(${JSON.stringify(selector)}, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);

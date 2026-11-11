@@ -36,6 +36,12 @@ const BROWSER_UA = mainProcessProbeUa();
 // revocation in registerSession() is the other half of the fix.
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
+// Reachability verdicts are cached per exit identity (proxy/direct + exit IP)
+// for this long: every workbench load used to re-probe all targets through
+// the real proxy, which costs seconds on slow exits and cannot change the
+// verdict within the window. ?refresh=1 bypasses the cache.
+const REACHABILITY_CACHE_MS = 120 * 1000;
+
 /** 访问能力探测目标：连通 + 出口地区 + best-effort 可用性信号 */
 const REACHABILITY_TARGETS = {
   google: {
@@ -768,13 +774,16 @@ function proxyEndpoint(value) {
 }
 
 class StartPageServer {
+  /** @type {Map<string, object>} profileId -> session payload */
+  sessions = new Map();
+  /** @type {Map<string, {at:number, data:object, meta:object}>} exit identity -> cached reachability verdict */
+  #reachabilityCache = new Map();
+
   constructor(options = {}) {
     this.host = options.host || '127.0.0.1';
     this.preferredPort = Number(options.port) || DEFAULT_PORT;
     this.port = null;
     this.server = null;
-    /** @type {Map<string, object>} profileId -> session payload */
-    this.sessions = new Map();
     /** optional BrowserEngine for network refresh */
     this.engine = options.engine || null;
     this.lookupDirectNetwork = options.lookupDirectNetwork || lookupDirectNetwork;
@@ -1418,6 +1427,18 @@ h1{margin:0 0 12px;font-size:20px}p{margin:8px 0;color:#b7becc}code{color:#93c5f
           proxy = '';
         }
       }
+      const refresh = query.refresh === '1' || query.refresh === 'true';
+      // TTL cache keyed by exit identity: every workbench load used to re-probe
+      // google/youtube/wikipedia through the real proxy, so the check card sat
+      // seconds on slow exits. The verdict cannot change within the TTL for the
+      // same exit IP; ?refresh=1 (the card's re-check button) bypasses.
+      const cacheKey = JSON.stringify([proxy || 'direct', exitNetwork?.ip || session?.exitIp || '']);
+      const now = Date.now();
+      const cached = !refresh && this.#reachabilityCache?.get(cacheKey);
+      if (cached && now - cached.at <= REACHABILITY_CACHE_MS) {
+        return this.#json(res, 200, { ok: true, data: cached.data, cached: true,
+          meta: { exitIp: cached.meta.exitIp, exitCountryCode: cached.meta.exitCountryCode, viaProxy: cached.meta.viaProxy } });
+      }
       try {
         const data = await this.lookupReachability({
           proxy,
@@ -1427,15 +1448,19 @@ h1{margin:0 0 12px;font-size:20px}p{margin:8px 0;color:#b7becc}code{color:#93c5f
             country: '',
           },
         });
-        return this.#json(res, 200, {
-          ok: true,
-          data,
-          meta: {
-            exitIp: exitNetwork?.ip || session?.exitIp || '',
-            exitCountryCode: exitNetwork?.countryCode || session?.countryCode || '',
-            viaProxy: Boolean(proxy),
-          },
-        });
+        const meta = {
+          exitIp: exitNetwork?.ip || session?.exitIp || '',
+          exitCountryCode: exitNetwork?.countryCode || session?.countryCode || '',
+          viaProxy: Boolean(proxy),
+        };
+        this.#reachabilityCache.set(cacheKey, { at: now, data, meta });
+        if (this.#reachabilityCache.size > 32) {
+          // Simple bound: drop the oldest entry so the map cannot grow with
+          // every proxy/port combination the fleet cycles through.
+          const oldest = this.#reachabilityCache.keys().next().value;
+          if (oldest !== undefined) this.#reachabilityCache.delete(oldest);
+        }
+        return this.#json(res, 200, { ok: true, data, meta });
       } catch (error) {
         return this.#json(res, 500, { ok: false, msg: error.message });
       }

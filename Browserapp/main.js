@@ -1153,10 +1153,13 @@ app.whenReady().then(async () => {
       : {})));
     return { success: true, count: entries.length, degraded: transitions.filter((value) => value?.degraded).length };
   });
-  registerTrustedIpc('sync:text', async (_event, payload) => {
-    const ids = sanitizeIds(payload.ids); const action = String(payload.action); const text = String(payload.text || '').slice(0, 100000);
+  // Shared text-assignment runner for sync:text and sync:text-batch: the two
+  // used to carry near-identical copies of the delay clamp, concurrency and
+  // failure-aggregation logic, so any fix had to be applied twice.
+  async function runTextAssignments({ ids, resolveText, allowClear = false, clearAction = '', delayMin, delayMax }) {
     const entries = new Map(engine.runningWithCdp(ids).map((entry) => [entry.id, entry]));
-    const min = Math.max(0, Math.min(5, Number(payload.delayMin) || 0)); const max = Math.max(min, Math.min(5, Number(payload.delayMax) || min));
+    const min = Math.max(0, Math.min(5, Number(delayMin) || 0));
+    const max = Math.max(min, Math.min(5, Number(delayMax) || min));
     const profiles = []; const failures = [];
     // Environments are independent: run them concurrently so the per-entry
     // random delays overlap instead of stacking (10 envs at delayMax=5 used to
@@ -1166,11 +1169,15 @@ app.whenReady().then(async () => {
       if (!entry) return { id, failure: 'Environment is not running or has no CDP session' };
       try {
         let result;
-        if (action === 'clear') result = await cdp.clearFocused(entry.item.port); else {
+        if (allowClear && clearAction === 'clear') {
+          result = await cdp.clearFocused(entry.item.port);
+        } else {
+          const text = resolveText(id);
           const delay = min + Math.random() * (max - min); if (delay) await sleep(delay * 1000);
           result = await cdp.insertText(entry.item.port, text);
         }
-        return { id, profile: { id, targetId: result.targetId, textLength: text.length } };
+        const textLength = allowClear && clearAction === 'clear' ? 0 : resolveText(id).length;
+        return { id, profile: { id, targetId: result.targetId, textLength } };
       } catch (error) { return { id, failure: error.message }; }
     }));
     for (const outcome of outcomes) {
@@ -1178,30 +1185,17 @@ app.whenReady().then(async () => {
       else failures.push({ id: outcome.id, message: outcome.failure });
     }
     return { success: failures.length === 0 && profiles.length === ids.length, profiles, failures };
+  }
+  registerTrustedIpc('sync:text', async (_event, payload) => {
+    const ids = sanitizeIds(payload.ids); const action = String(payload.action); const text = String(payload.text || '').slice(0, 100000);
+    return runTextAssignments({ ids, resolveText: () => text, allowClear: true, clearAction: action, delayMin: payload.delayMin, delayMax: payload.delayMax });
   });
   registerTrustedIpc('sync:text-batch', async (_event, payload) => {
     const ids = sanitizeIds(payload.ids);
     const texts = Array.isArray(payload.texts) ? payload.texts.map((value) => String(value || '').slice(0, 100000)) : [];
     if (!ids.length || texts.length !== ids.length) throw new Error('Text assignments must match the selected environments');
     const assignments = new Map(ids.map((id, index) => [id, texts[index]]));
-    const entries = new Map(engine.runningWithCdp(ids).map((entry) => [entry.id, entry]));
-    const min = Math.max(0, Math.min(5, Number(payload.delayMin) || 0)); const max = Math.max(min, Math.min(5, Number(payload.delayMax) || min));
-    const profiles = []; const failures = [];
-    // Same concurrency rationale as sync:text: per-environment delays overlap.
-    const outcomes = await Promise.all(ids.map(async (id) => {
-      const entry = entries.get(id); const assignedText = assignments.get(id) || '';
-      if (!entry) return { id, failure: 'Environment is not running or has no CDP session' };
-      try {
-        const delay = min + Math.random() * (max - min); if (delay) await sleep(delay * 1000);
-        const result = await cdp.insertText(entry.item.port, assignedText);
-        return { id, profile: { id, targetId: result.targetId, textLength: assignedText.length } };
-      } catch (error) { return { id, failure: error.message }; }
-    }));
-    for (const outcome of outcomes) {
-      if (outcome.profile) profiles.push(outcome.profile);
-      else failures.push({ id: outcome.id, message: outcome.failure });
-    }
-    return { success: failures.length === 0 && profiles.length === ids.length, profiles, failures };
+    return runTextAssignments({ ids, resolveText: (id) => assignments.get(id) || '', delayMin: payload.delayMin, delayMax: payload.delayMax });
   });
   registerTrustedIpc('sync:tabs', async (_event, payload) => {
     const ids = sanitizeIds(payload.ids); const entries = engine.runningWithCdp(ids); const action = String(payload.action); const value = payload.payload || {};

@@ -18,6 +18,33 @@ const bridge = {
   profileStatus: async () => [],
   profileForEdit: async (id) => ({ ipcResult: 1, ok: true, value: { profile: structuredClone(window.ui.profiles.find((profile) => profile.id === id)), rev: 1 } }),
   syncProfiles: async (profiles) => { window.__uiAuditSavedProfiles = profiles; return profiles.map((profile) => ({ ...profile, running: false })); },
+  // Storage warnings toast on init; the editor's apply-commands commit path
+  // calls this on submit. Both are legitimate production calls that used to
+  // fall through the Proxy and trip the unexpected-calls audit.
+  getProfileStorage: async () => ({ warnings: [] }),
+  // Record what the editor actually committed (mirrors syncProfiles' snapshot
+  // semantics) so assertions can verify submitted drafts survive the round trip.
+  // Rows carry monotonic revs: commitProfileEdit rejects result rows without
+  // a safe integer rev greater than zero (PROFILE_COMMAND_RESULT_INVALID).
+  applyProfileCommands: async (commands = []) => {
+    window.__uiAuditCommandRevs ||= {};
+    for (const command of commands || []) {
+      if (command?.kind === 'modify' && command?.profile?.id) {
+        const id = command.profile.id;
+        window.__uiAuditCommandRevs[id] = Math.max(Number(command.baseRev) || 0, window.__uiAuditCommandRevs[id] || 0) + 1;
+        const index = (window.__uiAuditSavedProfiles || []).findIndex((profile) => profile.id === id);
+        if (index >= 0) window.__uiAuditSavedProfiles[index] = command.profile;
+        else (window.__uiAuditSavedProfiles ||= []).push(command.profile);
+      }
+    }
+    return {
+      ipcResult: 1,
+      ok: true,
+      value: (window.__uiAuditSavedProfiles || []).map((profile) => ({
+        ...profile, running: false, rev: window.__uiAuditCommandRevs[profile.id] || 1,
+      })),
+    };
+  },
   extensionList: async () => [],
   appCenterList: async () => ({ list: { builtin: [], recommended: [], local: [] }, counts: {} }),
   syncSessions: async () => [],

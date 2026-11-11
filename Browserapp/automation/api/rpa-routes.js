@@ -72,15 +72,26 @@ class RpaRoutes {
     const rpaInput = normalizeRpaInput(input);
     const wait = rpaInput.wait !== false && rpaInput.wait !== 'false';
     if (rpaInput.plan_id) {
+      // The async (wait=false) path used to fire-and-forget with an empty
+      // catch: a missing plan or one without profile_ids threw inside that
+      // catch, so no task was ever created, no diagnostic was written, and
+      // the client still got {async:true}. Validate everything runPlan would
+      // throw on UP FRONT so both modes fail identically.
+      if (!this.rpaStore.getPlan(String(rpaInput.plan_id))) {
+        return fail('RPA plan not found: ' + rpaInput.plan_id, 404);
+      }
       if (!wait) {
-        this.rpaEngine.runPlan(String(rpaInput.plan_id), rpaInput).catch(() => {});
+        this.fireAndForget(() => this.rpaEngine.runPlan(String(rpaInput.plan_id), rpaInput), { kind: 'run-plan', plan_id: String(rpaInput.plan_id) });
         return ok({ async: true, plan_id: String(rpaInput.plan_id) });
       }
       return ok(await this.rpaEngine.runPlan(String(rpaInput.plan_id), rpaInput));
     }
     if (rpaInput.task_id) {
+      if (!this.rpaStore.getTask(String(rpaInput.task_id))) {
+        return fail('task not found: ' + rpaInput.task_id, 404);
+      }
       if (!wait) {
-        this.rpaEngine.runTask(String(rpaInput.task_id), rpaInput).catch(() => {});
+        this.fireAndForget(() => this.rpaEngine.runTask(String(rpaInput.task_id), rpaInput), { kind: 'run-task', task_id: String(rpaInput.task_id) });
         return ok({ async: true, task_id: String(rpaInput.task_id) });
       }
       return ok(await this.rpaEngine.runTask(String(rpaInput.task_id), rpaInput));
@@ -102,12 +113,30 @@ class RpaRoutes {
         steps: rpaInput.steps,
       });
       if (!wait) {
-        this.rpaEngine.runTask(task.id, rpaInput).catch(() => {});
+        this.fireAndForget(() => this.rpaEngine.runTask(task.id, rpaInput), { kind: 'run-task', task_id: task.id });
         return ok({ async: true, task_id: task.id, task });
       }
       return ok(await this.rpaEngine.runTask(task.id, rpaInput));
     }
     return fail('plan_id, task_id or steps required', 400);
+  }
+
+  /**
+   * Run an async RPA launch in the background. Unlike the old bare
+   * `.catch(() => {})`, launch-phase errors (race: task deleted/finished
+   * between the pre-check and the run, scheduler rejects) are written to the
+   * RPA diagnostic log so a zero-trace failure can still be post-mortemed.
+   */
+  fireAndForget(run, meta = {}) {
+    Promise.resolve()
+      .then(run)
+      .catch((error) => {
+        console.warn('[rpa-api] async ' + (meta.kind || 'run') + ' failed:', error?.message || error);
+        const write = this.rpaEngine?.writeDiagnostic?.bind(this.rpaEngine);
+        if (write) {
+          write({ type: 'rpa-async-error', ...meta, error: String(error?.message || error) }).catch(() => {});
+        }
+      });
   }
 
   async routeRpaStatus() {
@@ -123,7 +152,17 @@ class RpaRoutes {
     const rpaInput = normalizeRpaInput(input);
     if (!this.rpaEngine) return fail('rpa engine unavailable', 503);
     const taskId = rpaInput.task_id || null;
-    if (taskId && this.rpaStore) {
+    // An EMPTY body must not mean "stop everything": any local script that
+    // sends {} (or typos the field name) used to abort every running task —
+    // including tasks other callers started — and get a success response.
+    // "Stop all" now requires an explicit opt-in.
+    if (!taskId) {
+      if (rpaInput.all !== true && rpaInput.all !== 'true') {
+        return fail('task_id required (send {"all": true} to stop every running task)', 400);
+      }
+      return ok(await this.rpaEngine.stop(null));
+    }
+    if (this.rpaStore) {
       const task = this.rpaStore.getTask(taskId);
       if (!task && !this.rpaEngine.running?.has(taskId)) {
         return fail('task not found: ' + taskId, 404);

@@ -17,6 +17,17 @@ module.exports = function bootstrap({ json, bridgeToken }) {
   const noise = (n) => { const x = Math.sin((n + 1) * seedNum) * 10000; return x - Math.floor(x); };
   const square = Math.max(2, Number(CFG.stability?.square) || 8);
   const workerLocks = new Map();
+  // Bounded like the main thread's canvasNoiseLocks: video/frame-processing
+  // workers allocate many distinct canvas sizes and the map must not grow for
+  // the worker's whole lifetime.
+  const WORKER_LOCK_LIMIT = 64;
+  const rememberWorkerLock = (key, locked) => {
+    if (workerLocks.size >= WORKER_LOCK_LIMIT) {
+      const oldest = workerLocks.keys().next().value;
+      if (oldest !== undefined) workerLocks.delete(oldest);
+    }
+    workerLocks.set(key, locked);
+  };
   const normalizeHost = (value) => String(value || '')
     .trim()
     .toLowerCase()
@@ -35,15 +46,25 @@ module.exports = function bootstrap({ json, bridgeToken }) {
   };
   // Match main-thread stabilityActiveNow: evaluate host at noise-time, not only at launch.
   // active === true 时 noiseAmplitude = 1 (零噪声)，skipHosts 命中时 active === false (保留常规噪声 amp=3)
+  // Memoized like the main thread: the verdict only depends on CFG (fixed per
+  // injection) and the worker's hostname (fixed per worker), so the host-list
+  // scans must not re-run on every noise sample.
+  let __stabilityVerdict;
   const stabilityActiveNow = () => {
+    if (__stabilityVerdict !== undefined) return __stabilityVerdict;
     const st = CFG.stability || {};
-    if (st.mode === 'force') return !listHasHost(st.skipHosts, currentHost());
-    if (st.mode === 'off') return false;
-    const host = currentHost();
-    if (!host) return Boolean(st.active);
-    if (listHasHost(st.skipHosts, host)) return false;
-    if (listHasHost(st.hosts, host)) return true;
-    return Boolean(st.active);
+    let verdict;
+    if (st.mode === 'force') verdict = !listHasHost(st.skipHosts, currentHost());
+    else if (st.mode === 'off') verdict = false;
+    else {
+      const host = currentHost();
+      if (!host) verdict = Boolean(st.active);
+      else if (listHasHost(st.skipHosts, host)) verdict = false;
+      else if (listHasHost(st.hosts, host)) verdict = true;
+      else verdict = Boolean(st.active);
+    }
+    __stabilityVerdict = verdict;
+    return verdict;
   };
   const noiseAmplitudeNow = () => stabilityActiveNow() ? (Number(CFG.stability?.noiseAmplitude) || 1) : 3;
   const sampleStepDivisorNow = () => stabilityActiveNow()
@@ -74,10 +95,9 @@ module.exports = function bootstrap({ json, bridgeToken }) {
                 locked.push({ px: px, delta: Math.floor(noise(px + mark) * amp) - Math.floor(amp / 2) });
               }
             }
-            workerLocks.set(key, locked);
+            rememberWorkerLock(key, locked);
           }
-          for (let i = 0; i < locked.length; i += 1) {
-            const item = locked[i];
+          for (let i = 0; i < locked.length; i += 1) {            const item = locked[i];
             if (item.px + 3 >= data.length) continue;
             if (data[item.px + 3] === 0) continue;
             data[item.px] = Math.max(0, Math.min(255, data[item.px] + item.delta));

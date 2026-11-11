@@ -1362,26 +1362,38 @@ async function testEditorProxy() {
   output.setAttribute('aria-busy', 'true');
   const button = $('#editor-test-proxy');
   if (button) button.disabled = true;
+  // Direct-exit banner re-check hook (ui-editor.js #editor-direct-refresh). The
+  // banner has no output element of its own, so the direct path borrows the
+  // proxy result line and a toast for feedback.
+  const directRefresh = $('#editor-direct-banner') && !$('#editor-direct-banner').hidden;
   try {
     const draft = editorDraft(true);
-    if (/^Direct$/i.test(draft.proxy) && !draft.proxyMeta?.apiExtractUrl) throw new Error(tx('本地直连无需代理检测'));
+    const isDirect = /^Direct$/i.test(draft.proxy) && !draft.proxyMeta?.apiExtractUrl;
+    if (isDirect && !directRefresh) throw new Error(tx('本地直连无需代理检测'));
     output.className = 'proxy-test-result';
-    output.textContent = tx('正在检测代理出口...');
+    output.textContent = tx(directRefresh ? '正在检测出口 IP...' : '正在检测代理出口...');
     const result = await window.ops.testProfileProxy(draft);
     if (editingProfileId !== profileId) return;
     const fill = $('#editor-proxy-fill-fingerprint')?.checked !== false;
     applyEditorNetworkResult(result, { fillFingerprint: fill });
+    if (directRefresh) renderDirectBanner();
     output.className = 'proxy-test-result success';
     output.textContent = tx('连接成功 · ') + formatProxyCheckResult(result);
   } catch (error) {
     output.className = 'proxy-test-result error';
     const cls = error?.errorClass ? ` [${error.errorClass}]` : '';
-    if (editingProfileId === profileId) output.textContent = tx('检测失败 · ') + error.message + cls;
+    if (editingProfileId === profileId) {
+      output.textContent = tx('检测失败 · ') + error.message + cls;
+      if (directRefresh) toast(tx('检测失败：') + error.message);
+    }
   } finally {
     output.setAttribute('aria-busy', 'false');
     if (button) button.disabled = false;
   }
 }
+// Window-scoped hook for the direct-exit banner's re-check button; ui-editor.js
+// is loaded before renderer.js and reaches this through the DOM contract only.
+window.__editorTestProxy = testEditorProxy;
 
 async function applyEditorProxyFingerprint() {
   const output = $('#editor-proxy-result');

@@ -217,7 +217,11 @@ try {
       document.querySelector('#profile-editor-form').requestSubmit();
       await Promise.resolve();
       await openProfileEditor('audit-profile');
-      return { saved: window.__uiAuditSavedProfiles?.[0]?.language, reopened: document.querySelector('#editor-language').value };
+      // Look up by id: the saved array starts with whatever initialize()
+      // synced from localStorage (env-001 et al.), so index [0] can point at
+      // an unrelated profile depending on storage left by earlier runs.
+      const saved = (window.__uiAuditSavedProfiles || []).find((profile) => profile.id === 'audit-profile');
+      return { saved: saved?.language, reopened: document.querySelector('#editor-language').value };
     }).toString() + ')()');
     assert.equal(value.saved, 'ja-JP'); assert.equal(value.reopened, 'ja-JP');
   });

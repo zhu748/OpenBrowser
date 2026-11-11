@@ -168,6 +168,14 @@ async function main() {
   assert.strictEqual(resolveSerial({ serial: -1 }), 1);
   const randSerial = resolveSerial({ serialType: 'random', serialMin: 5, serialMax: 10 });
   assert.ok(randSerial >= 5 && randSerial <= 10);
+  // Serial indexes a NodeList, so random intervals must produce integers —
+  // floats silently break CSS lookups (nodes[1.37] is undefined) while XPath
+  // truncates them, leaving the two selector modes inconsistent.
+  assert.ok(Number.isInteger(randSerial), 'random serial must be an integer');
+  for (let i = 0; i < 50; i += 1) {
+    const s = resolveSerial({ serialType: 'randomInterval', serialMin: 5, serialMax: 10 });
+    assert.ok(Number.isInteger(s) && s >= 5 && s <= 10, `randomInterval serial must be an integer in [5,10], got ${s}`);
+  }
   pass('resolveSerial bounds and defaults');
 
   // resolveElementTarget

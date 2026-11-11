@@ -560,7 +560,11 @@ async function main() {
   assert.ok(startHtml.includes('health-score-card'));
   assert.ok(!startHtml.includes('多国语言支持'));
   assert.ok(!startHtml.includes('Network &amp; Fingerprint Check'));
-  assert.ok(startHtml.includes('image-rendering:pixelated'));
+  // 工作台改版：像素 logo 移除，改为顶栏徽章 + 时钟 + 国旗（flag-clip 圆形裁剪）
+  assert.ok(!startHtml.includes('image-rendering:pixelated'));
+  assert.ok(startHtml.includes('id="flag-slot"'));
+  assert.ok(startHtml.includes('id="tb-clock"'));
+  assert.ok(startHtml.includes('id="flag-clip"'));
   assert.ok(startHtml.includes('IP 网络身份'));
   assert.ok(startHtml.includes('泄露与一致性'));
   assert.ok(startHtml.includes('访问能力'));

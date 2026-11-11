@@ -879,9 +879,15 @@ function wireEditorAlignmentControls() {
     try { await navigator.clipboard.writeText(id); toast(tx('复制成功')); } catch (_) {}
   });
   $('#editor-direct-refresh')?.addEventListener('click', () => {
-    // Assigned at runtime by the network banner wiring when a direct-exit
-    // section is active; both probes must stay window-scoped.
-    if (typeof window.editorCheckProxy === 'function') window.editorCheckProxy();
+    // Direct-exit re-check: testEditorProxy (renderer.js) performs a real exit
+    // probe with the current draft and refreshes the direct banner through
+    // applyEditorNetworkResult. It used to call a window.editorCheckProxy that
+    // no file ever assigned — a dead button that silently did nothing.
+    if (typeof window.__editorTestProxy === 'function') {
+      window.__editorTestProxy().catch(() => {});
+    } else {
+      toast(tx('暂不可用，请稍后重试'));
+    }
   });
   $('#editor-tutorial-dismiss')?.addEventListener('click', () => {
     $('#editor-rail-tutorial').hidden = true;
@@ -1016,9 +1022,7 @@ function showProfileEditor(value, revision) {
   editorSet('#editor-tag', profile.tag);
   editorSet('#editor-note', profile.note);
   editorSet('#editor-platform-type', profile.platform?.type || 'other');
-  editorSet('#editor-start-url', profile.platform?.startUrl || '');
-  // if type is blank, keep URL empty
-  if ((profile.platform?.type || '') === 'blank') editorSet('#editor-start-url', '');
+  // 启动 URL 只在此处赋值一次：blank 类型强制清空（见下方 startUrls 合并处的同规则）
   editorSet('#editor-platform-user', profile.platform?.username || '');
   editorSet('#editor-platform-pass', profile.platform?.password || '');
   editorSet('#editor-platform-2fa', profile.platform?.totpSecret || '');
@@ -1236,8 +1240,11 @@ function showProfileEditor(value, revision) {
   const tabMode = advanced.tabMode === 'restore' ? 'restore' : 'fixed';
   const tabRadio = document.querySelector('input[name="editor-tab-mode"][value="' + tabMode + '"]');
   if (tabRadio) tabRadio.checked = true;
-  // 启动网页（多行）：旧字段 startUrl + startUrls 合并展示
-  editorSet('#editor-start-url', [profile.platform?.startUrl || '', profile.advanced?.startUrls || ''].filter(Boolean).join('\n'));
+  // 启动网页（多行）：旧字段 startUrl + startUrls 合并展示；blank 平台类型
+  // 强制清空——此处是 editor-start-url 的唯一赋值点，先前 1010 行附近的首次
+  // 赋值会被本行无条件覆盖，导致 blank 清空规则失效。
+  const editorStartUrlBlank = (profile.platform?.type || '') === 'blank';
+  editorSet('#editor-start-url', editorStartUrlBlank ? '' : [profile.platform?.startUrl || '', profile.advanced?.startUrls || ''].filter(Boolean).join('\n'));
   editorSet('#editor-start-urls', '');
   editorSet('#editor-block-urls', advanced.blockUrls || '');
   editorSet('#editor-allow-urls', advanced.allowUrls || '');

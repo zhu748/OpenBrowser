@@ -421,8 +421,9 @@ module.exports = `  // --- fonts ---
             subtree: true,
             childList: true,
             characterData: true,
-            attributes: true,
-            attributeFilter: ['class', 'style', 'font-family'],
+            // No `attributes`: the callback above only acts on characterData and
+            // childList records, so attribute records were pure callback overhead
+            // on every class/style flip an SPA makes.
           });
         } catch (_) {}
       }

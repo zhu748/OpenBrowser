@@ -36,21 +36,44 @@ module.exports = function bootstrap({ uaScript, json, bridgeToken }) {
   // - active === true (稳定性生效): noiseAmplitude = 1 -> delta 恒为 0 (零噪声，最大一致性)
   // - active === false (常规噪声或 skipHosts 例外): noiseAmplitude = 3 -> delta ∈ {-1, 0, 1}
   // - skipHosts 是保留常规噪声的例外表，不可短路返回原生真实数据
+  // The verdict is memoized at document scope: it depends only on CFG (fixed
+  // per injection) and location.hostname (fixed per document), yet it used to
+  // re-run up to 4 host-list scans on EVERY canvas noise sample — thousands of
+  // regex passes per minute on host-heavy configurations.
+  let __stabilityVerdict;
   const stabilityActiveNow = () => {
+    if (__stabilityVerdict !== undefined) return __stabilityVerdict;
     const st = CFG.stability || {};
+    let verdict;
     if (st.mode === 'force') {
-      return !listHasHost(st.skipHosts, currentHost());
+      verdict = !listHasHost(st.skipHosts, currentHost());
+    } else if (st.mode === 'off') {
+      verdict = false;
+    } else {
+      const host = currentHost();
+      if (!host) verdict = Boolean(st.active);
+      else if (listHasHost(st.skipHosts, host)) verdict = false;
+      else if (listHasHost(st.hosts, host)) verdict = true;
+      else verdict = Boolean(st.active);
     }
-    if (st.mode === 'off') return false;
-    const host = currentHost();
-    if (!host) return Boolean(st.active);
-    if (listHasHost(st.skipHosts, host)) return false;
-    if (listHasHost(st.hosts, host)) return true;
-    return Boolean(st.active);
+    __stabilityVerdict = verdict;
+    return verdict;
   };
   const noiseAmplitudeNow = () => stabilityActiveNow() ? (Number(CFG.stability?.noiseAmplitude) || 1) : 3;
   const sampleStepDivisorNow = () => stabilityActiveNow() ? (Number(CFG.stability?.sampleStepDivisor) || 128) : 64;
   const canvasNoiseLocks = new Map();
+  // Lock entries are keyed by canvas size × call site; a page that allocates
+  // many distinct sizes (video frames, chart libraries) used to grow the map
+  // without bound for the document's lifetime. 64 keys × a few hundred deltas
+  // each covers real usage; the oldest entry is evicted first.
+  const CANVAS_NOISE_LOCK_LIMIT = 64;
+  const rememberCanvasNoiseLock = (key, locked) => {
+    if (canvasNoiseLocks.size >= CANVAS_NOISE_LOCK_LIMIT) {
+      const oldest = canvasNoiseLocks.keys().next().value;
+      if (oldest !== undefined) canvasNoiseLocks.delete(oldest);
+    }
+    canvasNoiseLocks.set(key, locked);
+  };
   const applyCanvasNoise = (imageData, mark) => {
     try {
       if (!imageData || !imageData.data) return imageData;
@@ -80,7 +103,7 @@ module.exports = function bootstrap({ uaScript, json, bridgeToken }) {
               locked.push({ px: px, delta: delta });
             }
           }
-          canvasNoiseLocks.set(key, locked);
+          rememberCanvasNoiseLock(key, locked);
         }
         for (let i = 0; i < locked.length; i += 1) {
           const item = locked[i];

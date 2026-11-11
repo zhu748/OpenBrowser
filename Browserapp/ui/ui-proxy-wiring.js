@@ -38,7 +38,17 @@ $('#batch-add-proxy-library')?.addEventListener('change', (event) => {
   const id = String(event.target.value || '').trim();
   const item = proxyLibraryItem(id);
   const textarea = $('#batch-add-proxies');
-  if (item && textarea) textarea.value = parseProxyInputForUi(item, item.protocol || 'socks5')?.raw || item.raw || `${item.host}:${item.port}`;
+  // parseProxyInputForUi throws on a malformed raw entry (a corrupt library
+  // row used to kill this listener outright); a toast matches how the
+  // openProxyDialog path reports the same failure.
+  if (item && textarea) {
+    try {
+      textarea.value = parseProxyInputForUi(item, item.protocol || 'socks5')?.raw || item.raw || `${item.host}:${item.port}`;
+    } catch (error) {
+      textarea.value = item.raw || `${item.host}:${item.port}`;
+      toast(tx('代理格式错误：') + error.message);
+    }
+  }
 });
 
 document.addEventListener('click', async (event) => {
@@ -550,7 +560,15 @@ $('#editor-proxy-import-and-bind-btn')?.addEventListener('click', async () => {
   const targetRaw = rawInput || fallbackRaw;
   if (!targetRaw) return toast(tx('请先输入或快捷粘贴代理信息'));
 
-  const parsed = parseProxyInputForUi(targetRaw, formProtocol);
+  let parsed = null;
+  try {
+    parsed = parseProxyInputForUi(targetRaw, formProtocol);
+  } catch (error) {
+    // parseProxyInputForUi throws on malformed raw URIs; without this guard
+    // the rejection escaped the listener entirely (the try below starts
+    // after the parse) and the user saw no feedback at all.
+    return toast(tx('代理格式错误：') + error.message);
+  }
   if (!parsed || !parsed.host || !parsed.port) return toast(tx('代理格式不正确，缺少主机或端口'));
 
   try {
@@ -622,11 +640,19 @@ $('#proxy-batch-import-form')?.addEventListener('submit', async (event) => {
   // (成功 N · 过滤重复 M · 第 K 行缺少信息) instead of a bare ok/fail count.
   const parsed = normalizeProxyImportLines(text, proxyLibrary, defaultProtocol, 500);
   try {
-    for (const draft of parsed.drafts) {
+    // Bounded concurrency (runPool, renderer.js): 500 lines used to be 500
+    // serial IPC round-trips. Failures are counted per line and reported —
+    // the old empty catch reported the parse count as created, so a fully
+    // failed batch still toasted "成功导入 N".
+    let created = 0; const failedLines = [];
+    await runPool(parsed.drafts, async (draft) => {
       try {
         await window.ops.proxyCreate({ ...draft, ipChannel });
-      } catch (_) { /* single-line failure must not abort the batch */ }
-    }
+        created += 1;
+      } catch (error) {
+        failedLines.push(draft.raw || `${draft.host}:${draft.port}`);
+      }
+    }, 4);
     $('#proxy-batch-import-dialog').close();
     invalidateViewCache(['proxies', 'profiles']);
     await refreshProxies();
@@ -635,11 +661,12 @@ $('#proxy-batch-import-form')?.addEventListener('submit', async (event) => {
       toast(t('proxies.importMissingOnly', { lines: parsed.missing.join('、') }));
       return;
     }
-    const summaryParts = [t('proxies.importParsed', { n: parsed.drafts.length })];
+    const summaryParts = [t('proxies.importParsed', { n: created })];
     if (parsed.duplicates) summaryParts.push(t('proxies.importDuplicates', { n: parsed.duplicates }));
     if (parsed.missing.length) summaryParts.push(t('proxies.importMissing', { lines: parsed.missing.join('、') }));
+    if (failedLines.length) summaryParts.push(tx(`导入失败 ${failedLines.length} 条`));
     toast(summaryParts.join(tx('，')));
-    log('Proxy', `批量导入代理：解析 ${parsed.drafts.length}，重复 ${parsed.duplicates}，缺失 ${parsed.missing.length}`);
+    log('Proxy', `批量导入代理：成功 ${created}，失败 ${failedLines.length}，重复 ${parsed.duplicates}，缺失 ${parsed.missing.length}`);
   } finally { if (submitter) submitter.disabled = false; }
 });
 

@@ -196,6 +196,12 @@ async function applyFingerprintToTab(cdpCall, webSocketDebuggerUrl, fp, profile 
     if (registrationError) throw registrationError;
   }
   if (injectTargetKey) {
+    // LRU refresh: Map.set on an existing key keeps its OLD insertion position,
+    // so a long-lived active tab could be evicted by a burst of one-shot targets
+    // (about:blank popups etc.) and then re-registered on next apply — stacking
+    // duplicate addScriptToEvaluateOnNewDocument registrations. Delete first so
+    // every update moves the key to the fresh end.
+    TARGET_INJECT_STATE.delete(injectTargetKey);
     TARGET_INJECT_STATE.set(injectTargetKey, { fpKey, identifier: scriptIdentifier, documentStartOk, evaluated: false });
     if (TARGET_INJECT_STATE.size > MAX_TRACKED_TARGETS) TARGET_INJECT_STATE.delete(TARGET_INJECT_STATE.keys().next().value);
   }
@@ -216,6 +222,8 @@ async function applyFingerprintToTab(cdpCall, webSocketDebuggerUrl, fp, profile 
     evaluatedOk = true;
   }
   if (injectTargetKey) {
+    // LRU refresh — same reason as the pre-registration write above.
+    TARGET_INJECT_STATE.delete(injectTargetKey);
     TARGET_INJECT_STATE.set(injectTargetKey, { fpKey, identifier: scriptIdentifier, documentStartOk, evaluated: evaluatedOk });
     if (TARGET_INJECT_STATE.size > MAX_TRACKED_TARGETS) {
       // Bounded: keep the most recent targets so a long-running host cannot grow this forever.
