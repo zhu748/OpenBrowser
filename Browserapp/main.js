@@ -558,8 +558,13 @@ function handleLiveSyncEvent(value) {
 
 async function beginSync(ids = syncSelection) {
   let selected = sanitizeIds(ids);
-  if (selected.length < 2) selected = engine.runningWithCdp([...engine.running.keys()]).map((entry) => entry.id);
+  let expanded = false;
+  if (selected.length < 2) {
+    selected = engine.runningWithCdp([...engine.running.keys()]).map((entry) => entry.id);
+    expanded = selected.length >= 2;
+  }
   if (selected.length < 2) throw new Error('\u8bf7\u81f3\u5c11\u9009\u62e9\u4e24\u4e2a\u8fd0\u884c\u4e2d\u7684\u6d4f\u89c8\u5668\u73af\u5883');
+  if (expanded) emit({ type: 'sync-notice', message: '\u672a\u9009\u62e9\u73af\u5883\uff0c\u5df2\u81ea\u52a8\u7eb3\u5165\u5168\u90e8\u8fd0\u884c\u4e2d\u7684\u73af\u5883\u8fdb\u884c\u540c\u6b65' });
   syncSelection = selected;
   await tile(selected, false);
   const tabs = await syncTabsFromMaster(selected);

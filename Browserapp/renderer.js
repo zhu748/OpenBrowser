@@ -4306,6 +4306,11 @@ window.ops.onEvent(async (value) => {
     else syncHealth = { queueDepth: 0, coalesced: 0, dropped: 0, lastLatencyMs: 0, recovering: false };
     renderSessions(); log('Sync', value.active ? '同步已启动' : '同步已停止');
   }
+  if (value.type === 'sync-notice' && value.message) {
+    // Sync with fewer than 2 selected environments silently expanded to ALL
+    // running ones; the user must see which environments just joined the group.
+    log('Sync', value.message); toast(value.message);
+  }
   if (value.type === 'sync-health') {
     syncHealth = { ...syncHealth, ...value, recovering: false };
     // Throttle status paints — health events can fire ~1Hz while syncing.

@@ -178,11 +178,15 @@ module.exports = `  // --- timezone spoofing (Intl.DateTimeFormat & Date) ---
 
 
 
-      const formatTzDate = (date) => {
-        try {
+      // Hottest path in the injection: Date.prototype.toString previously built
+      // TWO ICU formatters per call (this one plus the offset probe). The
+      // options are fixed for the injection lifetime, so build once and reuse.
+      let toPartsFormatter = null;
+      const getToPartsFormatter = () => {
+        if (!toPartsFormatter) {
           // en-US on purpose: the weekday and month abbreviations V8 prints are fixed English,
           // while the zone name in the parenthetical follows the default locale (zoneNameFor).
-          const parts = new OrigDateTimeFormat('en-US', {
+          toPartsFormatter = new OrigDateTimeFormat('en-US', {
             timeZone: targetTz,
             weekday: 'short',
             month: 'short',
@@ -193,7 +197,13 @@ module.exports = `  // --- timezone spoofing (Intl.DateTimeFormat & Date) ---
             second: '2-digit',
             hour12: false,
             timeZoneName: 'long'
-          }).formatToParts(date);
+          });
+        }
+        return toPartsFormatter;
+      };
+      const formatTzDate = (date) => {
+        try {
+          const parts = getToPartsFormatter().formatToParts(date);
           const get = (type) => parts.find(p => p.type === type)?.value || '';
           const weekday = get('weekday');
           const month = get('month');

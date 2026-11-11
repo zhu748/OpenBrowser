@@ -171,11 +171,14 @@ module.exports = `  // Same guard as the page copy: the engine may already be in
         return whole === 0 ? 0 : whole;
       });
 
-      const formatTzDate = (date) => {
-        try {
+      // Hottest path in the worker injection, same as the main thread:
+      // build the fixed-options formatter once and reuse it.
+      let toPartsFormatter = null;
+      const getToPartsFormatter = () => {
+        if (!toPartsFormatter) {
           // en-US on purpose: the weekday and month abbreviations V8 prints are fixed English,
           // while the zone name in the parenthetical follows the default locale (zoneNameFor).
-          const parts = new OrigDateTimeFormat('en-US', {
+          toPartsFormatter = new OrigDateTimeFormat('en-US', {
             timeZone: targetTz,
             weekday: 'short',
             month: 'short',
@@ -186,7 +189,13 @@ module.exports = `  // Same guard as the page copy: the engine may already be in
             second: '2-digit',
             hour12: false,
             timeZoneName: 'long'
-          }).formatToParts(date);
+          });
+        }
+        return toPartsFormatter;
+      };
+      const formatTzDate = (date) => {
+        try {
+          const parts = getToPartsFormatter().formatToParts(date);
           const get = (type) => parts.find(p => p.type === type)?.value || '';
           const weekday = get('weekday');
           const month = get('month');
