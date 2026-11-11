@@ -144,7 +144,11 @@ class LocalApiServer {
   pruneAuthPeers(now = Date.now()) {
     if (this.authFailuresByPeer.size <= LocalApiServer.PEER_LIMIT()) return;
     for (const [peer, entry] of this.authFailuresByPeer) {
-      if (entry.until < now && entry.count === 0) this.authFailuresByPeer.delete(peer);
+      // Expired (or never-set) lockouts are reclaimable. Stored entries always
+      // have count >= 1, so the previous `entry.count === 0` guard never
+      // matched anything and pushed pruning into the blind eviction loop
+      // below, which could evict an active lockout ahead of stale entries.
+      if (!entry.until || entry.until < now) this.authFailuresByPeer.delete(peer);
     }
     while (this.authFailuresByPeer.size > LocalApiServer.PEER_LIMIT()) {
       const oldest = [...this.authFailuresByPeer.entries()]

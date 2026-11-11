@@ -46,7 +46,14 @@
     function load() {
       try {
         const value = JSON.parse(read());
-        if (value && Array.isArray(value.profiles)) return { ...value, logs: Array.isArray(value.logs) ? value.logs : [] };
+        if (value && Array.isArray(value.profiles)) {
+          // Quota-incident guard: a trimmed snapshot only preserves display
+          // fields. Merging it over the engine's authoritative state would
+          // strip fingerprints and proxy settings on the next sync, so keep
+          // only the non-profile parts (window geometry etc.).
+          if (value.degraded) return { ...fallback(), degraded: true };
+          return { ...value, logs: Array.isArray(value.logs) ? value.logs : [] };
+        }
       } catch (_) { /* Missing, corrupt or blocked storage starts with defaults. */ }
       return fallback();
     }
@@ -63,7 +70,13 @@
         notify(onQuota, error);
         if (safe) {
           try {
-            write(JSON.stringify({ ...safe, logs: [], profiles: safe.profiles.map(trimRedactedProfile) }));
+            // Degraded-restore sentinel: trimmed profiles keep only ~20 basic
+            // fields. If a later session loaded them wholesale, initialize()
+            // would push the crippled objects back into the engine and
+            // overwrite fingerprints/proxy/platform settings (data loss).
+            // The marker lets load() reject the trimmed copy so the engine
+            // state stays authoritative after a quota incident.
+            write(JSON.stringify({ ...safe, logs: [], degraded: true, profiles: safe.profiles.map(trimRedactedProfile) }));
             return { ok: true, trimmed: true };
           } catch (fallbackError) { notify(onFailure, fallbackError); }
         } else { notify(onFailure, error); }

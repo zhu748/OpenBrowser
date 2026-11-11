@@ -189,6 +189,27 @@ function confineWebContents(contents) {
 app.on('web-contents-created', (_event, contents) => confineWebContents(contents));
 let shortcutBridge = null;
 let shortcutFallbackRegistered = false;
+// Accelerators registered by the fallback bridge and by the text shortcuts,
+// so stopShortcutBridge can unregister exactly its own keys instead of
+// unregisterAll() (which would silently drop the text shortcuts if this ever
+// runs outside the quit path).
+let registeredShortcutAccelerators = [];
+
+function trackRegisteredShortcuts(shortcuts, registered) {
+  const successfullyRegistered = new Set(registeredShortcutAccelerators);
+  for (let index = 0; index < registered.length; index += 1) {
+    if (registered[index]?.registered) successfullyRegistered.add(registered[index].accelerator);
+  }
+  registeredShortcutAccelerators = [...successfullyRegistered];
+  void shortcuts;
+}
+
+function unregisterTrackedShortcuts() {
+  for (const accelerator of registeredShortcutAccelerators) {
+    try { globalShortcut.unregister(accelerator); } catch (_) {}
+  }
+  registeredShortcutAccelerators = [];
+}
 let shortcutActionInFlight = false;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -596,6 +617,7 @@ function registerShortcutFallback() {
     accelerator,
     registered: globalShortcut.register(accelerator, () => runShortcut(action)),
   }));
+  trackRegisteredShortcuts(shortcuts, registered);
   emit({ type: 'shortcut-status', mode: process.platform === 'darwin' ? 'macos-global' : 'host-fallback', registered });
 }
 
@@ -622,6 +644,7 @@ function registerTextShortcuts() {
     emit({ type: 'text-shortcut', action });
   };
   const registered = shortcuts.map(([accelerator, action]) => ({ accelerator, registered: globalShortcut.register(accelerator, gateTextShortcut(action)) }));
+  trackRegisteredShortcuts(shortcuts, registered);
   emit({ type: 'text-shortcut-status', registered });
 }
 
@@ -670,7 +693,9 @@ function stopShortcutBridge() {
   const child = shortcutBridge;
   shortcutBridge = null;
   if (child && !child.killed) { try { child.kill(); } catch (_) {} }
-  globalShortcut.unregisterAll();
+  // Unregister only what this module registered; unregisterAll() would also
+  // drop the text shortcuts (see registeredShortcutAccelerators).
+  unregisterTrackedShortcuts();
   shortcutFallbackRegistered = false;
 }
 
@@ -876,6 +901,11 @@ app.whenReady().then(async () => {
     console.error('OpenBrowser window creation failed:', error.message);
     throw error;
   });
+  // Attach a no-op handler immediately: a creation failure that happens before
+  // the `await windowPromise` below would otherwise sit unhandled across the
+  // intermediate awaits and be logged a second time by the global
+  // unhandledRejection handler.
+  windowPromise.catch(() => {});
   const localSettings = await localSettingsPromise;
   const initialRootCheck = await ensureDataRootIsolationSecure(localSettings.profileDataRoot);
   if (!initialRootCheck.ok) throw new Error(initialRootCheck.message);
@@ -1128,17 +1158,24 @@ app.whenReady().then(async () => {
     const entries = new Map(engine.runningWithCdp(ids).map((entry) => [entry.id, entry]));
     const min = Math.max(0, Math.min(5, Number(payload.delayMin) || 0)); const max = Math.max(min, Math.min(5, Number(payload.delayMax) || min));
     const profiles = []; const failures = [];
-    for (const id of ids) {
+    // Environments are independent: run them concurrently so the per-entry
+    // random delays overlap instead of stacking (10 envs at delayMax=5 used to
+    // add ~25s of pure serial waiting before the last environment typed).
+    const outcomes = await Promise.all(ids.map(async (id) => {
       const entry = entries.get(id);
-      if (!entry) { failures.push({ id, message: 'Environment is not running or has no CDP session' }); continue; }
+      if (!entry) return { id, failure: 'Environment is not running or has no CDP session' };
       try {
         let result;
         if (action === 'clear') result = await cdp.clearFocused(entry.item.port); else {
           const delay = min + Math.random() * (max - min); if (delay) await sleep(delay * 1000);
           result = await cdp.insertText(entry.item.port, text);
         }
-        profiles.push({ id, targetId: result.targetId, textLength: text.length });
-      } catch (error) { failures.push({ id, message: error.message }); }
+        return { id, profile: { id, targetId: result.targetId, textLength: text.length } };
+      } catch (error) { return { id, failure: error.message }; }
+    }));
+    for (const outcome of outcomes) {
+      if (outcome.profile) profiles.push(outcome.profile);
+      else failures.push({ id: outcome.id, message: outcome.failure });
     }
     return { success: failures.length === 0 && profiles.length === ids.length, profiles, failures };
   });
@@ -1150,14 +1187,19 @@ app.whenReady().then(async () => {
     const entries = new Map(engine.runningWithCdp(ids).map((entry) => [entry.id, entry]));
     const min = Math.max(0, Math.min(5, Number(payload.delayMin) || 0)); const max = Math.max(min, Math.min(5, Number(payload.delayMax) || min));
     const profiles = []; const failures = [];
-    for (const id of ids) {
+    // Same concurrency rationale as sync:text: per-environment delays overlap.
+    const outcomes = await Promise.all(ids.map(async (id) => {
       const entry = entries.get(id); const assignedText = assignments.get(id) || '';
-      if (!entry) { failures.push({ id, message: 'Environment is not running or has no CDP session' }); continue; }
+      if (!entry) return { id, failure: 'Environment is not running or has no CDP session' };
       try {
         const delay = min + Math.random() * (max - min); if (delay) await sleep(delay * 1000);
         const result = await cdp.insertText(entry.item.port, assignedText);
-        profiles.push({ id, targetId: result.targetId, textLength: assignedText.length });
-      } catch (error) { failures.push({ id, message: error.message }); }
+        return { id, profile: { id, targetId: result.targetId, textLength: assignedText.length } };
+      } catch (error) { return { id, failure: error.message }; }
+    }));
+    for (const outcome of outcomes) {
+      if (outcome.profile) profiles.push(outcome.profile);
+      else failures.push({ id: outcome.id, message: outcome.failure });
     }
     return { success: failures.length === 0 && profiles.length === ids.length, profiles, failures };
   });
@@ -1171,9 +1213,9 @@ app.whenReady().then(async () => {
       if (action === 'new') await cdp.newTab(item.port, String(value.url || 'about:blank'));
       else if (action === 'navigate') await cdp.navigate(item.port, String(value.url || 'about:blank'));
       else if (action === 'reload') await cdp.reload(item.port);
-      else if (action === 'close') { const tab = await cdp.firstTab(item.port); if (tab) await cdp.closeTab(item.port, tab.id); }
+      else if (action === 'close') { const tab = await cdp.activeTab(item.port); if (tab) await cdp.closeTab(item.port, tab.id); }
       else if (action === 'closeOthers') {
-        const current = await cdp.firstTab(item.port);
+        const current = await cdp.activeTab(item.port);
         for (const tab of await cdp.tabs(item.port)) {
           if (current && tab.id === current.id) continue;
           await cdp.closeTab(item.port, tab.id);
@@ -1273,6 +1315,7 @@ app.whenReady().then(async () => {
     const store = proxyStore();
     const ids = Array.isArray(payload?.ids) ? payload.ids.map(String) : [];
     if (!ids.length) throw new Error('ids required');
+    if (ids.length > 100) throw new Error('ids cannot exceed 100 per check; split the selection into batches');
     // Serial execution made "check all" run minutes inside one invoke (100 ×
     // 6.5s budget worst case). engine.testProxy already dedups identical
     // in-flight probes, so a bounded pool is safe; same shape as

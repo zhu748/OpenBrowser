@@ -614,6 +614,7 @@ class ProfileStoreSqlite {
     // Prime the row-hash map from the decoded state: saves through
     // saveProfilesDiffed then know what is already on disk.
     this._rowHashes = new Map();
+    let legacySaltRows = 0;
     for (const row of rows) {
       const decoded = this._decodeProfileRow(row, 'getAllProfiles');
       if (decoded) {
@@ -621,10 +622,40 @@ class ProfileStoreSqlite {
         const raw = row.data instanceof Uint8Array ? Buffer.from(row.data) : row.data;
         // Legacy/plaintext fallback rows must be encrypted by the next save,
         // even when their decoded fields have not changed.
-        if (credentialCrypto.isEncrypted(raw)) this._rowHashes.set(String(decoded.id), this.profileDataHash(decoded));
+        if (credentialCrypto.isEncrypted(raw)) {
+          this._rowHashes.set(String(decoded.id), this.profileDataHash(decoded));
+          // Pre-unified-salt envelopes each pay their own scryptSync on every
+          // load (30-45ms sync per row → seconds of startup freeze on large
+          // stores). Count them so the migration below can re-encrypt the
+          // whole store once, after which loads pay a single derivation.
+          if (credentialCrypto.isUnifiedSaltEnvelope && !credentialCrypto.isUnifiedSaltEnvelope(raw)) legacySaltRows += 1;
+        }
       }
     }
+    this._scheduleLegacySaltMigration(result, legacySaltRows);
     return result;
+  }
+
+  /**
+   * Re-encrypt legacy per-row-salt rows under the current unified salt. Runs
+   * once per load when such rows exist, off the critical path (setImmediate),
+   * and never throws into the caller: a failed migration just leaves the rows
+   * as they were (next load tries again).
+   */
+  _scheduleLegacySaltMigration(profiles, legacyCount) {
+    if (!legacyCount || this._legacySaltMigrationScheduled) return;
+    this._legacySaltMigrationScheduled = true;
+    setImmediate(() => {
+      try {
+        // saveProfiles re-encrypts via encryptSaltFor, which shares one salt
+        // per passphrase; the derived-key cache already holds this load's
+        // keys, so no additional scrypt derivations are paid here.
+        this.saveProfiles(profiles);
+      } catch (error) {
+        console.warn('[profile-store] legacy salt migration deferred:', error?.message || error);
+        this._legacySaltMigrationScheduled = false;
+      }
+    });
   }
 
   /**

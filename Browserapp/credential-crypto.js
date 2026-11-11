@@ -160,6 +160,25 @@ function isEncrypted(bufferOrString) {
 }
 
 /**
+ * Whether an OBE1 envelope was written by the current unified-salt scheme.
+ * Used by the sqlite profile store to detect legacy per-row-salt rows: each
+ * such row costs its own scryptSync derivation on load, so they are migrated
+ * in one background pass after startup (re-encrypted under the shared salt,
+ * the whole store then pays one derivation per process).
+ */
+function isUnifiedSaltEnvelope(bufferOrString) {
+  if (!bufferOrString) return false;
+  const buf = Buffer.isBuffer(bufferOrString)
+    ? bufferOrString
+    : Buffer.from(String(bufferOrString), 'binary');
+  if (buf.length < HEADER_LENGTH + SALT_LENGTH) return false;
+  if (buf.subarray(0, HEADER_LENGTH).toString('ascii') !== MAGIC_AES_GCM_V1) return false;
+  const salt = buf.subarray(HEADER_LENGTH, HEADER_LENGTH + SALT_LENGTH);
+  const tag = saltCostTag(salt);
+  return tag === SALT_COST_TAG_DEFAULT || tag === SALT_COST_TAG_CLOUD;
+}
+
+/**
  * Return format name: 'OBS1', 'OBE1', or 'plaintext'.
  */
 function getFormat(bufferOrString) {
@@ -467,6 +486,7 @@ module.exports = {
   getMasterKeyFilePath,
   resetLocalMasterKeyCache,
   isEncrypted,
+  isUnifiedSaltEnvelope,
   getFormat,
   encryptAesGcm,
   decryptAesGcm,

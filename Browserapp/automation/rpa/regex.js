@@ -30,7 +30,10 @@ function runRegex(pattern, flags, text, { signal, timeoutMs = 1000 } = {}) {
     worker.once('error', (error) => finish(error));
     worker.once('exit', (code) => { if (!settled) finish(new Error(`Regular expression worker exited (${code})`)); });
     timer = setTimeout(() => finish(Object.assign(new Error('Regular expression execution timed out'), { code: 'RPA_REGEX_TIMEOUT' })),
-      Math.max(1, Math.min(1000, Number(timeoutMs) || 1000)));
+      // Callers pass their whole remaining task budget (minutes); the previous
+      // hard 1000ms clamp silently rejected legitimate multi-second matches on
+      // large text. 10s stays generous while still bounding a runaway worker.
+      Math.max(1, Math.min(10_000, Number(timeoutMs) || 1000)));
     signal?.addEventListener('abort', abort, { once: true });
     if (signal?.aborted) abort();
   });

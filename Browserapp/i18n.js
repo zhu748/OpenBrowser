@@ -228,7 +228,14 @@
     out = out.replace(/共\s*(\d+)\s*个/g, '$1 items');
     out = out.replace(/(\d+)\s*步/g, '$1 steps');
     out = out.replace(/环境\s*(\d+)/g, 'Profile $1');
-    if (zhTranslateMemo.size < 512) zhTranslateMemo.set(memoKey, out);
+    // Insertion-order eviction (FIFO) instead of a hard stop at 512: the memo
+    // used to permanently stop caching once full, so entries 513+ re-ran the
+    // full key scan on every render for the rest of the session.
+    if (zhTranslateMemo.size >= 512) {
+      const oldestKey = zhTranslateMemo.keys().next().value;
+      if (oldestKey !== undefined) zhTranslateMemo.delete(oldestKey);
+    }
+    zhTranslateMemo.set(memoKey, out);
     return out;
   }
 

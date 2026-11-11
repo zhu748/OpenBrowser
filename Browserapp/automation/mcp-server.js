@@ -151,8 +151,21 @@ function request(method, path, body, options = {}) {
       timeout: timeoutMs,
     }, (res) => {
       let data = '';
+      let received = 0;
+      // Same rationale as the local API's readBody: a screenshot base64 or a
+      // full profile list can be large, but an unbounded string accumulation
+      // turns any runaway response into an OOM in the MCP bridge process.
+      const MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
       res.setEncoding('utf8');
-      res.on('data', (chunk) => { data += chunk; });
+      res.on('data', (chunk) => {
+        received += chunk.length;
+        if (received > MAX_RESPONSE_BYTES) {
+          res.destroy();
+          reject(new Error(`MCP: Local API response exceeded ${MAX_RESPONSE_BYTES} bytes`));
+          return;
+        }
+        data += chunk;
+      });
       res.on('end', () => {
         if (res.statusCode === 401) {
           if (!options._retried) {
@@ -667,7 +680,11 @@ function main() {
     // A host that streams without newlines (or a broken client) must not grow
     // the line buffer without bound.
     if (buffer.length > MAX_STDIN_BUFFER) {
-      buffer = '';
+      // Drop only up to the next newline boundary: clearing the whole buffer
+      // also destroyed complete lines queued behind the oversized one and put
+      // the stream permanently out of frame with the client's messages.
+      const nextLine = buffer.indexOf('\n');
+      buffer = nextLine >= 0 ? buffer.slice(nextLine + 1) : '';
       try {
         writeMessage({ jsonrpc: '2.0', id: null, error: { code: -32000, message: 'request line too large' } });
       } catch (_) {}
@@ -683,7 +700,15 @@ function main() {
       // Preserve transport order for mutating tools. Without serialization,
       // back-to-back profile updates can both read the same old profile and
       // let the later completion overwrite the earlier mutation.
-      rpcQueue = rpcQueue.then(() => handleRpc(message));
+      // The trailing catch keeps the chain alive: if handleRpc ever rejects
+      // (e.g. writeMessage hits EPIPE after the client disconnects), every
+      // later .then callback would be skipped and all remaining MCP requests
+      // would silently go unanswered for the lifetime of the process.
+      rpcQueue = rpcQueue
+        .then(() => handleRpc(message))
+        .catch((error) => {
+          try { console.error('[mcp] rpc handling failed:', (error && error.message) || error); } catch (_) {}
+        });
     }
   });
   process.stdin.on('end', () => {

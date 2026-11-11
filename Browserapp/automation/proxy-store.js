@@ -528,6 +528,14 @@ class ProxyStore {
 
   async save() {
     return this._enqueueMutation(async () => {
+      // Skip the double deep-clone when nothing changed since the last
+      // persisted state (markCheck no-ops, redundant saves): _persistData's
+      // own comparison handles it with one stringify, and the caller gets a
+      // plain read-only view instead of a needless full-store copy.
+      if (this._lastPersistedJson && JSON.stringify(this.data, null, 2) === this._lastPersistedJson) {
+        await this._persistData(this.data);
+        return cloneData(this.data);
+      }
       const snapshot = cloneData(this.data);
       await this._persistData(snapshot);
       return cloneData(snapshot);

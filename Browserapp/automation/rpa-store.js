@@ -392,6 +392,10 @@ class RpaStore {
     for (const template of this.data.templates) {
       if (template.source === 'catalog' || RpaStore.isLegacyExternalSource(template.source) || RpaStore.hasLegacyExternalId(template)) {
         const canonical = this.normalizeLocalCatalogTemplate(template);
+        // Preserve the locally tracked usage count: normalize hard-codes uses
+        // to 0 for catalog inputs, but a stored template's usage is real state
+        // (installTemplate increments it) and must survive restarts.
+        canonical.uses = Number(template.uses) || 0;
         const prev = byCanonical.get(canonical.id);
         if (!prev) {
           byCanonical.set(canonical.id, {
@@ -417,7 +421,7 @@ class RpaStore {
         byCanonical.set(next.id, {
           ...next,
           create_time: existing.create_time || next.create_time,
-          uses: 0,
+          uses: Math.max(Number(existing.uses) || 0, Number(next.uses) || 0),
         });
       }
     }
@@ -441,7 +445,11 @@ class RpaStore {
   /** The atomic-write body shared by save() and the coalesced writer. */
   async _writeAtomic() {
     await fsp.mkdir(path.dirname(this.filePath), { recursive: true });
-    this.enforceStoreBudget();
+    // One serialization serves both the budget check and the write: the old
+    // path stringified the full store 2-3 times per save (budget total, then
+    // the write itself, plus per-task sizes when over the limit).
+    const serialized = this.enforceStoreBudget()
+      ?? JSON.stringify(this.data);
     // Same atomic-write discipline as engine/state-storage: unique exclusive
     // temp file (0600), fsync before rename, fsync of the directory after,
     // and bounded retries on transient filesystem errors. The previous
@@ -455,7 +463,7 @@ class RpaStore {
         handle = await fsp.open(temporary, 'wx', 0o600);
         // Match the compact UTF-8 size used by enforceStoreBudget and avoid
         // writing indentation for every task/log/step on each save.
-        await handle.writeFile(credentialCrypto.encryptCredential(JSON.stringify(this.data)));
+        await handle.writeFile(credentialCrypto.encryptCredential(serialized));
         await handle.sync();
         await handle.close();
         handle = null;
@@ -496,9 +504,10 @@ class RpaStore {
    * Keep rpa-store.json under sizeLimitBytes. Shedding order: oldest terminal
    * tasks first, then log tails, then result payloads of what remains. Plans
    * and templates are never touched; pending/running tasks are never dropped.
+   * Returns the compact JSON serialization for _writeAtomic to reuse.
    */
   enforceStoreBudget() {
-    enforceStoreBudget(this.data, this.sizeLimitBytes);
+    return enforceStoreBudget(this.data, this.sizeLimitBytes);
   }
 
   // ---------- plans ----------
@@ -543,6 +552,13 @@ class RpaStore {
   }
 
   async deletePlan(id) {
+    // Same guard as deleteTask: yanking a running plan's task records makes
+    // the in-flight task's terminal updateTask throw and the run surfaces a
+    // misleading failure instead of "plan deleted".
+    const activeTask = this.data.tasks.find((item) => item.plan_id === id && (item.status === 'pending' || item.status === 'running'));
+    if (activeTask) {
+      throw Object.assign(new Error('计划下仍有正在执行或排队中的任务，请先停止或等待任务完成'), { code: 'RPA_PLAN_HAS_ACTIVE_TASKS' });
+    }
     this.data.plans = this.data.plans.filter((item) => item.id !== id);
     this.data.tasks = this.data.tasks.filter((item) => item.plan_id !== id);
     await this.save();
@@ -737,7 +753,16 @@ class RpaStore {
     // Must use stored reference — getTemplate() returns a free view clone.
     const existing = id ? this.getStoredTemplate(id) : null;
     if (existing?.builtin && input.force !== true) {
-      if (Array.isArray(input.steps) || input.name) {
+      // Guard must be symmetric: steps/name/desc/categories/tags are all part
+      // of a template's identity. The old guard only blocked steps/name, so a
+      // client could still rewrite a builtin's description or category list
+      // while claiming an innocent metadata update.
+      const touchesIdentity = Array.isArray(input.steps)
+        || input.name !== undefined
+        || input.desc !== undefined
+        || input.categories !== undefined
+        || input.tags !== undefined;
+      if (touchesIdentity) {
         throw new Error('内置模版不可修改，请「使用模版」后另存为流程，或另存为自定义模版');
       }
     }
@@ -844,7 +869,9 @@ class RpaStore {
     let imported = 0;
     let updated = 0;
     for (const tpl of result.templates || []) {
-      const existing = this.getTemplate(tpl.id);
+      // Must use the stored reference: getTemplate() returns a free view clone,
+      // and Object.assign on that clone would silently drop every remote update.
+      const existing = this.getStoredTemplate(tpl.id);
       if (existing) {
         // Keep local uses if higher
         tpl.uses = Math.max(Number(existing.uses) || 0, Number(tpl.uses) || 0);

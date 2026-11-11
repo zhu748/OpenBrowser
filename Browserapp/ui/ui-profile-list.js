@@ -82,7 +82,9 @@ function filterProfiles({
       if (!freeText.some((value) => value.includes(token))) return false;
     }
     for (const [field, needle] of fieldTokens) {
-      const hay = profileFieldText(profile, field, displayProfileNumber, groupNameOf).map(normalizeText);
+      // numberOf keeps the id::/number:: fallback (profile.number missing →
+      // profile.id) consistent with the advanced-panel and free-text paths.
+      const hay = profileFieldText(profile, field, numberOf, groupOf).map(normalizeText);
       if (!hay.some((value) => value.includes(needle))) return false;
     }
     return true;

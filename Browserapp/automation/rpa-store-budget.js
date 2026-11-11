@@ -6,12 +6,20 @@ function taskSize(task) {
   return Buffer.byteLength(JSON.stringify(task) || 'null', 'utf8');
 }
 
-/** Keep newest/active tasks and shed old history, then logs, then results. */
+/**
+ * Keep newest/active tasks and shed old history, then logs, then results.
+ * Returns the compact JSON serialization of the data when the store fit
+ * unchanged (the common case), so the caller reuses it for the write and
+ * pays only one stringify per save. After shedding, returns null: the
+ * caller serializes once itself — the eviction stage must not re-serialize
+ * the surviving tasks (kept linear by the budget selftest).
+ */
 function enforceStoreBudget(data, limitBytes) {
   let total;
-  try { total = Buffer.byteLength(JSON.stringify(data), 'utf8'); }
-  catch { return; }
-  if (total <= limitBytes) return;
+  let serialized;
+  try { serialized = JSON.stringify(data); total = Buffer.byteLength(serialized, 'utf8'); }
+  catch { return null; }
+  if (total <= limitBytes) return serialized;
 
   const records = data.tasks.map((task) => ({ task, bytes: taskSize(task), keep: true }));
   let taskBytes = records.reduce((sum, item) => sum + item.bytes, 0);
@@ -28,7 +36,7 @@ function enforceStoreBudget(data, limitBytes) {
     count -= 1;
   }
   if (count !== records.length) data.tasks = records.filter((item) => item.keep).map((item) => item.task);
-  if (fits()) return;
+  if (fits()) return null;
 
   const updateSize = (item) => {
     const bytes = taskSize(item.task);
@@ -53,6 +61,7 @@ function enforceStoreBudget(data, limitBytes) {
       updateSize(item);
     }
   }
+  return null;
 }
 
 module.exports = { enforceStoreBudget };

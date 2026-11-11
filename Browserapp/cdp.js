@@ -287,6 +287,27 @@ async function firstTab(port) {
   return list.find((item) => !item.url.startsWith('chrome://') && !item.url.startsWith('edge://')) || list[0] || null;
 }
 
+// The tab the user is actually looking at, not merely the first non-internal
+// one. `firstTab` kept "close others" closing the page the user was viewing
+// whenever they were not on the first tab.
+async function activeTab(port) {
+  const list = await tabs(port);
+  const candidates = list.filter((item) => item.webSocketDebuggerUrl);
+  const probed = await Promise.all(candidates.map(async (item) => {
+    try {
+      const result = await call(item.webSocketDebuggerUrl, 'Runtime.evaluate', {
+        expression: 'document.visibilityState === "visible" && document.hasFocus()',
+        returnByValue: true,
+      });
+      return { tab: item, active: Boolean(result.result?.value) };
+    } catch (_) { return { tab: item, active: false }; }
+  }));
+  return (probed.find((item) => item.active) || { tab: null }).tab
+    || list.find((item) => !item.url.startsWith('chrome://') && !item.url.startsWith('edge://'))
+    || list[0]
+    || null;
+}
+
 const focusedEditableExpression = `(() => {
   const deepestActiveElement = () => {
     let value = document.activeElement;
@@ -324,13 +345,15 @@ function chooseFocusedEditable(inspected) {
 
 async function focusedEditableTab(port) {
   const list = await tabs(port);
-  const inspected = [];
-  for (const tab of list) {
+  // Probe tabs concurrently (order preserved): a serial loop cost one CDP
+  // round trip per tab on every insertText/clearFocused call — 20 tabs meant
+  // 20 serial awaits before the first keystroke could land.
+  const inspected = (await Promise.all(list.map(async (tab) => {
     try {
       const result = await call(tab.webSocketDebuggerUrl, 'Runtime.evaluate', { expression: focusedEditableExpression, returnByValue: true });
-      inspected.push({ tab, state: result.result?.value || {} });
-    } catch (_) {}
-  }
+      return { tab, state: result.result?.value || {} };
+    } catch (_) { return null; }
+  }))).filter(Boolean);
   return chooseFocusedEditable(inspected);
 }
 
@@ -516,4 +539,4 @@ async function setWindowBounds(port, bounds, options = {}) {
   return { windowId: value.windowId, bounds: next };
 }
 
-module.exports = { json, call, connect, PersistentConnection, closePooledSocket, closeAllPooledSockets, targets, tabs, browserSocket, newTab, closeTab, activateTab, firstTab, focusedEditableTab, insertText, clearFocused, navigate, reload, windowForTarget, windowForPort, setWindowState, setWindowBounds, __test: { focusedEditableExpression, chooseFocusedEditable, textWasInserted, waitForWindowState, callDedicated, pool: { callPool, POOL_MAX, setIdleMs: (ms) => { POOL_IDLE_MS = Number(ms) || 30_000; }, get idleMs() { return POOL_IDLE_MS; } } } };
+module.exports = { json, call, connect, PersistentConnection, closePooledSocket, closeAllPooledSockets, targets, tabs, browserSocket, newTab, closeTab, activateTab, firstTab, activeTab, focusedEditableTab, insertText, clearFocused, navigate, reload, windowForTarget, windowForPort, setWindowState, setWindowBounds, __test: { focusedEditableExpression, chooseFocusedEditable, textWasInserted, waitForWindowState, callDedicated, pool: { callPool, POOL_MAX, setIdleMs: (ms) => { POOL_IDLE_MS = Number(ms) || 30_000; }, get idleMs() { return POOL_IDLE_MS; } } } };

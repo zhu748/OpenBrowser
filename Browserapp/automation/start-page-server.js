@@ -1508,16 +1508,35 @@ h1{margin:0 0 12px;font-size:20px}p{margin:8px 0;color:#b7becc}code{color:#93c5f
 }
 
 let singleton = null;
+let singletonPromise = null;
 
 async function ensureStartPageServer(options = {}) {
   if (singleton?.server) {
     if (options.engine) singleton.setEngine(options.engine);
     return singleton;
   }
-  singleton = new StartPageServer(options);
-  if (options.engine) singleton.setEngine(options.engine);
-  await singleton.start();
-  return singleton;
+  // Cache the in-flight start promise: two concurrent callers (e.g. a batch
+  // profile launch racing through buildStartPageUrl) both used to construct a
+  // StartPageServer; the first to finish bound 50326, the loser silently fell
+  // through to the next PORT_CANDIDATES port, leaving two listeners alive with
+  // `singleton` pointing at only one of them.
+  if (!singletonPromise) {
+    singletonPromise = (async () => {
+      const server = new StartPageServer(options);
+      if (options.engine) server.setEngine(options.engine);
+      await server.start();
+      singleton = server;
+      return server;
+    })().catch((error) => {
+      // Allow a later call to retry after a failed startup instead of caching
+      // the rejection forever.
+      singletonPromise = null;
+      throw error;
+    });
+  }
+  const server = await singletonPromise;
+  if (options.engine) server.setEngine(options.engine);
+  return server;
 }
 
 function getStartPageServer() {

@@ -177,17 +177,23 @@ class RequestHeaderRewriter {
     // Only process requests at Request stage (where responseStatusCode is null/undefined)
     if (!requestId || responseStatusCode != null) return;
 
+    // CDP requestIds (`interception-job-<N>`) restart from 1 for every newly
+    // attached target session, so a bare requestId collides across sessions
+    // sharing this rewriter. Key the in-flight set by sessionId:requestId so a
+    // concurrent first request from another session is still header-rewritten
+    // instead of being silently passed through unmodified.
+    const inFlightKey = sessionId ? `${sessionId}:${requestId}` : requestId;
     // Prevent duplicate in-flight processing for the same requestId across sessions
-    if (this.inFlight.has(requestId)) {
+    if (this.inFlight.has(inFlightKey)) {
       this._sendCommand(connection, "Fetch.continueRequest", { requestId }, { sessionId, timeout: 3000 }).catch(() => {});
       return;
     }
-    this.inFlight.add(requestId);
+    this.inFlight.add(inFlightKey);
     if (sessionId) {
       if (!this.inFlightBySession.has(sessionId)) {
         this.inFlightBySession.set(sessionId, new Set());
       }
-      this.inFlightBySession.get(sessionId).add(requestId);
+      this.inFlightBySession.get(sessionId).add(inFlightKey);
     }
 
     (async () => {
@@ -201,10 +207,10 @@ class RequestHeaderRewriter {
           clearTimeout(safetyTimer);
           safetyTimer = null;
         }
-        this.inFlight.delete(requestId);
+        this.inFlight.delete(inFlightKey);
         if (sessionId && this.inFlightBySession.has(sessionId)) {
           const s = this.inFlightBySession.get(sessionId);
-          s.delete(requestId);
+          s.delete(inFlightKey);
           if (s.size === 0) this.inFlightBySession.delete(sessionId);
         }
 

@@ -375,6 +375,20 @@ class Downloader extends EventEmitter {
     }
 
     const out = fs.createWriteStream(this.tmpPath, { flags: resumed ? 'a' : 'w' });
+    // req.setTimeout only bounds socket idle time: a server that drips a few
+    // bytes every <60s could hold a 2 GiB kernel download open forever while
+    // the retry budget never gets a chance to kick in. Track the last time
+    // progress actually advanced and abort the transfer when it stalls.
+    const STALL_TIMEOUT_MS = Math.max(this.timeoutMs, 60_000);
+    let stallTimer = null;
+    const armStallTimer = () => {
+      if (stallTimer) clearTimeout(stallTimer);
+      stallTimer = setTimeout(() => {
+        this._activeRes?.destroy(new Error(`download stalled: no progress for ${STALL_TIMEOUT_MS}ms`));
+      }, STALL_TIMEOUT_MS);
+      if (typeof stallTimer.unref === 'function') stallTimer.unref();
+    };
+    armStallTimer();
     const meter = new Transform({
       transform: (chunk, _encoding, callback) => {
         try {
@@ -382,6 +396,7 @@ class Downloader extends EventEmitter {
           this.received += chunk.length;
           if (maxBytes && this.received > maxBytes) throw new Error(`download exceeds the ${maxBytes} byte limit`);
           this.setProgress(this.received, this.total || this.received);
+          armStallTimer();
           callback(null, chunk);
         } catch (error) { callback(error); }
       },
@@ -392,6 +407,7 @@ class Downloader extends EventEmitter {
       if (responseError) res.destroy(responseError);
       await pipeline(res, meter, out, { signal: this._abortController.signal });
     } finally {
+      if (stallTimer) clearTimeout(stallTimer);
       if (this._activeRes === res) this._activeRes = null;
     }
 

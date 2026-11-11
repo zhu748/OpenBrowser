@@ -618,13 +618,20 @@ function readProxyForm() {
 
 async function runProxyBatchCheck(ids) {
   if (!ids.length) return toast(tx('请先勾选代理'));
-  toast(tx('正在检测 ') + ids.length + tx(' 条代理…'));
+  // The backend rejects >100 ids per invoke; slice here so "select all" on a
+  // large library checks the first batch and reports the remainder instead of
+  // previously dropping ids 101+ silently.
+  const MAX_BATCH = 100;
+  const remainingCount = Math.max(0, ids.length - MAX_BATCH);
+  const batch = ids.slice(0, MAX_BATCH);
+  toast(tx('正在检测 ') + batch.length + tx(' 条代理…'));
   if (typeof window.ops.proxyCheckMany === 'function') {
     try {
-      const summary = await window.ops.proxyCheckMany({ ids });
+      const summary = await window.ops.proxyCheckMany({ ids: batch });
       invalidateViewCache('proxies');
       await refreshProxies();
-      toast(tx(`检测完成：成功 ${summary.ok || 0} · 失败 ${summary.fail || 0}`));
+      toast(tx(`检测完成：成功 ${summary.ok || 0} · 失败 ${summary.fail || 0}`)
+        + (remainingCount ? tx('；另有 ') + remainingCount + tx(' 条未检测，请分批勾选') : ''));
       return;
     } catch (error) {
       await refreshProxies();

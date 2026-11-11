@@ -199,6 +199,7 @@ class BrowserEngine {
     this.systemBrowserPath = null;
     this.kernelBootstrapPromise = null;
     this.startPageServer = null;
+    this.startPagePromise = null;
   }
 
   async ensureStartPage() {
@@ -206,7 +207,17 @@ class BrowserEngine {
       this.startPageServer.setEngine?.(this);
       return this.startPageServer;
     }
-    this.startPageServer = await ensureStartPageServer({ engine: this });
+    // Share the in-flight start across concurrent callers (the module-level
+    // singleton guard alone still leaves a window while `await start()` runs:
+    // `server` is only assigned after the port is bound).
+    if (!this.startPagePromise) {
+      this.startPagePromise = ensureStartPageServer({ engine: this })
+        .catch((error) => {
+          this.startPagePromise = null;
+          throw error;
+        });
+    }
+    this.startPageServer = await this.startPagePromise;
     this.startPageServer.setEngine?.(this);
     return this.startPageServer;
   }
@@ -1293,7 +1304,12 @@ class BrowserEngine {
         profile.updatedAt = new Date().toISOString();
         this.profiles.set(safe, profile);
         this.invalidateStatusCache?.();
-        await this.persist().catch(() => {});
+        // Do not await the full-store persist on the stop critical path:
+        // stopAll launches N concurrent stops and each awaiting persist()
+        // turned batch exit into N full-profile serializations + writes. The
+        // coalesced writer merges these; the quit chain's flushPersistence()
+        // is the durability guarantee.
+        this.persist().catch(() => {});
       }
     }
     let graceful = !item.child || isChildExited(item.child);
@@ -1379,11 +1395,6 @@ class BrowserEngine {
       }
       const remaining = [...new Set([...this.running.keys(), ...this.starting.keys(), ...this.stopping.keys()])];
       if (!remaining.length) break;
-      // No-progress escape: when a full pass removed nothing, another identical
-      // pass will not either — break instead of burning the remaining rounds.
-      if (remaining.length >= ids.length && Date.now() - startedAt > STOP_ALL_BUDGET_MS) {
-        break;
-      }
       if (Date.now() - startedAt > STOP_ALL_BUDGET_MS) break;
     }
     const remaining = [...new Set([...this.running.keys(), ...this.starting.keys(), ...this.stopping.keys()])];

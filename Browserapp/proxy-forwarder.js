@@ -801,32 +801,40 @@ async function startAuthenticatedProxy(config, onStatus = () => {}) {
 
 async function connectBridge(bridge, hostname, port) {
   const socket = await connectSocket('127.0.0.1', bridge.port); const reader = new BufferedReader(socket);
-  if (bridge.protocol === 'http') {
-    // Bracket a bare IPv6 literal: "CONNECT 2001:db8::1:443" is unparseable
-    // on the upstream side (host/port boundary is ambiguous).
-    const authority = String(hostname || '').includes(':') && !String(hostname || '').startsWith('[')
-      ? `[${hostname}]:${port}` : `${hostname}:${port}`;
-    socket.write('CONNECT ' + authority + ' HTTP/1.1\r\nHost: ' + authority + '\r\nConnection: close\r\n\r\n');
-    const header = await reader.readUntil('\r\n\r\n');
-    const headerStr = header.toString('latin1');
-    const status = Number(headerStr.split('\r\n', 1)[0].match(/\s(\d{3})(?:\s|$)/)?.[1] || 0);
-    if (status !== 200) {
-      const proxyErrorMatch = headerStr.match(/^X-Proxy-Error:\s*([^\r\n]+)/mi);
-      const detail = proxyErrorMatch ? ' (' + proxyErrorMatch[1] + ')' : '';
-      if (status === 407 || (proxyErrorMatch && /AUTH_FAILED|authentication/i.test(proxyErrorMatch[1]))) {
-        throw new Error('Proxy authentication failed' + detail);
+  try {
+    if (bridge.protocol === 'http') {
+      // Bracket a bare IPv6 literal: "CONNECT 2001:db8::1:443" is unparseable
+      // on the upstream side (host/port boundary is ambiguous).
+      const authority = String(hostname || '').includes(':') && !String(hostname || '').startsWith('[')
+        ? `[${hostname}]:${port}` : `${hostname}:${port}`;
+      socket.write('CONNECT ' + authority + ' HTTP/1.1\r\nHost: ' + authority + '\r\nConnection: close\r\n\r\n');
+      const header = await reader.readUntil('\r\n\r\n');
+      const headerStr = header.toString('latin1');
+      const status = Number(headerStr.split('\r\n', 1)[0].match(/\s(\d{3})(?:\s|$)/)?.[1] || 0);
+      if (status !== 200) {
+        const proxyErrorMatch = headerStr.match(/^X-Proxy-Error:\s*([^\r\n]+)/mi);
+        const detail = proxyErrorMatch ? ' (' + proxyErrorMatch[1] + ')' : '';
+        if (status === 407 || (proxyErrorMatch && /AUTH_FAILED|authentication/i.test(proxyErrorMatch[1]))) {
+          throw new Error('Proxy authentication failed' + detail);
+        }
+        throw new Error('Proxy test tunnel failed with HTTP ' + status + detail);
       }
-      throw new Error('Proxy test tunnel failed with HTTP ' + status + detail);
+    } else {
+      socket.write(Buffer.from([5, 1, 0])); const greeting = await reader.read(2); if (greeting[1] !== 0) throw new Error('Local SOCKS5 bridge rejected no-auth mode');
+      socket.write(Buffer.concat([Buffer.from([5, 1, 0]), encodeSocksAddress(hostname), Buffer.from([port >> 8, port & 255])]));
+      const reply = await reader.read(4);
+      if (reply[1] !== 0) throw new Error('SOCKS5 proxy test tunnel failed with code ' + reply[1]);
+      await readSocksAddress(reader, reply[3]); await reader.read(2);
     }
-  } else {
-    socket.write(Buffer.from([5, 1, 0])); const greeting = await reader.read(2); if (greeting[1] !== 0) throw new Error('Local SOCKS5 bridge rejected no-auth mode');
-    socket.write(Buffer.concat([Buffer.from([5, 1, 0]), encodeSocksAddress(hostname), Buffer.from([port >> 8, port & 255])]));
-    const reply = await reader.read(4);
-    if (reply[1] !== 0) throw new Error('SOCKS5 proxy test tunnel failed with code ' + reply[1]);
-    await readSocksAddress(reader, reply[3]); await reader.read(2);
+    const remainder = reader.release(); if (remainder.length) socket.unshift(remainder);
+    return socket;
+  } catch (error) {
+    // The handshake socket is created before any await; without this cleanup a
+    // failed CONNECT/SOCKS reply left the socket dangling on the bridge until
+    // some caller happened to close the whole bridge.
+    socket.destroy();
+    throw error;
   }
-  const remainder = reader.release(); if (remainder.length) socket.unshift(remainder);
-  return socket;
 }
 
 function decodeChunked(buffer) {
@@ -1153,6 +1161,10 @@ class ProbeMemoryCache {
 }
 
 const probeMemoryCache = new ProbeMemoryCache();
+// In-flight probe dedup for lookupProxyCountry, keyed like probeMemoryCache.
+// Concurrent callers of the same proxy share one probe cycle instead of each
+// hammering all seven providers (and the upstream proxy auth) at once.
+const lookupInFlight = new Map();
 
 const providerCooldowns = new Map();
 let _probeRotationCounter = 0;
@@ -1266,9 +1278,24 @@ async function lookupProxyCountry(config, options = {}) {
       cloned.latencyMs = cached.value.latencyMs ?? (Date.now() - started);
       return cloned;
     }
+    // In-flight dedup: the engine's locale check and a UI/API check of the
+    // same proxy used to each run the full 7-provider probe cycle (double
+    // traffic, double rate-limit exposure). Late callers await the first
+    // caller's promise instead. A forced refresh always runs its own probe.
+    const pending = lookupInFlight.get(cacheKey);
+    if (pending) {
+      const shared = await pending;
+      const cloned = cloneLookupResult(shared);
+      cloned.cached = true;
+      cloned.fromCache = true;
+      cloned.sharedProbe = true;
+      cloned.latencyMs = shared.latencyMs ?? (Date.now() - started);
+      return cloned;
+    }
   }
 
-  try {
+  const probeCycle = (async () => {
+    try {
     const withSignal = (lookup) => (signal) => lookup({ ...config, probeSignal: signal });
     const richProviders = [
       { name: 'ip-api.com', fn: lookupProxyIpApi },
@@ -1425,9 +1452,9 @@ async function lookupProxyCountry(config, options = {}) {
     };
     if (options.includeRisk === true) enriched = await enrichWithIpPure(enriched, () => lookupIpPureProxy(config));
 
-    probeMemoryCache.set(cacheKey, enriched, ttlMs);
-    return enriched;
-  } catch (error) {
+      probeMemoryCache.set(cacheKey, enriched, ttlMs);
+      return enriched;
+    } catch (error) {
     const err = new Error(error.message || String(error));
     err.code = error.code || (error.errorClass === 'probe-unavailable' ? 'probe-unavailable' : undefined);
     err.errorClass = error.errorClass || classifyProxyError(error);
@@ -1442,6 +1469,15 @@ async function lookupProxyCountry(config, options = {}) {
     err.latencyMs = error.latencyMs ?? (Date.now() - started);
     throw err;
   }
+  })().finally(() => {
+    // Only clear our own entry: a forced refresh may have replaced it.
+    if (lookupInFlight.get(cacheKey) === probeCycle) lookupInFlight.delete(cacheKey);
+  });
+
+  // Publish before the first await inside the cycle so a concurrent caller
+  // sees it; forced refreshes keep their own cycle and skip the shared entry.
+  if (!bypassCache) lookupInFlight.set(cacheKey, probeCycle);
+  return await probeCycle;
 }
 
 /** Field list shared by the direct and proxied ip-api.com lookups. */
@@ -1492,7 +1528,18 @@ async function lookupDirectCloudflareTrace() {
 }
 
 /** Direct (no proxy) multi-source exit lookup. */
-async function lookupDirectCountry() {
+// Module-level cache: the direct exit is a machine property, not something
+// that changes per call. Every profile start with a start page used to fire
+// the full 6-provider fan-out again (and the start-page server does its own),
+// doubling the public-source traffic and rate-limit exposure per launch.
+const DIRECT_LOOKUP_CACHE_TTL_MS = 10 * 60 * 1000;
+let directLookupCache = null;
+
+async function lookupDirectCountry(options = {}) {
+  const force = Boolean(options.force || options.refresh);
+  if (!force && directLookupCache && Date.now() - directLookupCache.at < DIRECT_LOOKUP_CACHE_TTL_MS) {
+    return { ...directLookupCache.value, cached: true, fromCache: true };
+  }
   const parts = await raceSettledValues([
     lookupDirectIpApi,
     lookupDirectIpWho,
@@ -1503,12 +1550,14 @@ async function lookupDirectCountry() {
   ], { maxWaitMs: 11000 });
   if (!parts.length) throw new Error('本地出口查询失败：所有公开源均不可用');
   const merged = mergeNetworkLookups(parts);
-  return enrichWithIpPure({
+  const result = enrichWithIpPure({
     ...merged,
     latencyMs: null,
     networkType: networkTypeFromLookup(merged),
     protocol: 'direct',
   }, lookupIpPureDirect);
+  directLookupCache = { at: Date.now(), value: result };
+  return result;
 }
 
 /**

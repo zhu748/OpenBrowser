@@ -16,6 +16,7 @@ const {
 const fs = require('fs/promises');
 const path = require('path');
 const os = require('os');
+const nodeCrypto = require('crypto');
 const {
   parseProcessContent,
   randomNum,
@@ -482,12 +483,25 @@ class RpaEngine {
       if (Object.prototype.hasOwnProperty.call(snapshot, '__exported')) {
         result.exports = snapshot.__exported;
       }
-      await this.store.updateTask(taskId, {
-        status: 'success',
-        complete_time: new Date().toISOString(),
-        process_result: result,
-        process_logs: logs,
-      });
+      // Terminal write for a fully-successful run. A transient disk failure
+      // here must not reclassify the task as "failed" via the generic catch
+      // below (the steps all executed); retry the write once and keep success.
+      try {
+        await this.store.updateTask(taskId, {
+          status: 'success',
+          complete_time: new Date().toISOString(),
+          process_result: result,
+          process_logs: logs,
+        });
+      } catch (persistError) {
+        await log('terminal result write failed; retrying once: ' + formatRpaError(persistError), 'error').catch(() => {});
+        await this.store.updateTask(taskId, {
+          status: 'success',
+          complete_time: new Date().toISOString(),
+          process_result: result,
+          process_logs: logs,
+        });
+      }
       await this.writeDiagnostic({
         type: 'rpa-task-success',
         taskId,
@@ -1287,7 +1301,10 @@ class RpaEngine {
       // Cyclic evaluate results made JSON.stringify throw here, failing the
       // step AFTER the evaluate already succeeded; reuse the safe serializer
       // from the params wrapping above (degrades to 'null' like a snapshot).
-      if (ctx?.log) await ctx.log('evaluate result: ' + serialize(resultValue));
+      // Cap the logged serialization: evaluate is routinely used to read
+      // whole-page innerHTML (multi-MB), which used to bloat process_logs and
+      // the persisted task record on every iteration of a loop.
+      if (ctx?.log) await ctx.log('evaluate result: ' + capResultString(serialize(resultValue)));
     }, ctx);
     return;
   }
@@ -1299,7 +1316,12 @@ class RpaEngine {
     const format = String(params.format || 'png').toLowerCase();
     const extension = format === 'jpeg' || format === 'jpg' ? '.jpg' : format === 'webp' ? '.webp' : '.png';
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = this.outputPath(text(params.name || params.path) || `screenshot-${stamp}`, extension);
+    // Concurrent tasks of the same plan share the output directory; a
+    // millisecond timestamp alone let two screenshots silently overwrite each
+    // other. Task id + random suffix keeps names unique.
+    const cryptoRandomId = (length) => nodeCrypto.randomBytes(16).toString('hex').slice(0, length);
+    const unique = `-${String(ctx?.taskId || '').replace(/[^a-zA-Z0-9]/g, '').slice(-8) || cryptoRandomId(4)}-${cryptoRandomId(4)}`;
+    const filename = this.outputPath(text(params.name || params.path) || `screenshot-${stamp}${unique}`, extension);
     await fs.mkdir(path.dirname(filename), { recursive: true });
     await fs.writeFile(filename, Buffer.from(String(shot.data), 'base64'));
     if (params.variable) variables[params.variable] = filename;
@@ -1340,7 +1362,12 @@ class RpaEngine {
     }
     const profile = [...this.engine.profiles.values()].find((item) => Number(item.number) === requestedNumber);
     if (!profile) throw new Error('openNewBrowser local environment not found: ' + requestedNumber);
-    const started = await this.engine.start(profile);
+    // Route through ensureProfileRunning so the launch honors the 2-wide
+    // openScheduler and the per-profile start dedup instead of bypassing both
+    // (a forLists flow opening 20 environments used to fire 20 concurrent
+    // engine.start calls in a single tick).
+    const entry = await this.ensureProfileRunning(profile.id, { log: ctx.log });
+    const started = entry?.port ? entry : null;
     if (!started?.port) throw new Error('openNewBrowser did not return a CDP port');
     const prevPort = ctx.port;
     const prevProfileId = ctx.activeProfileId;

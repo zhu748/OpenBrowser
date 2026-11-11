@@ -1656,7 +1656,10 @@ class LiveSyncController extends LiveSyncV4 {
     await Promise.all(this.slaves.map(async (slave) => {
       if (!this.isSlaveAvailable(slave)) return;
       const mapped = await this.slaveTab(slave, masterTabId);
-      const candidates = normalTabs(await cdp.tabs(slave.port));
+      // Reuse the 1s per-slave tab cache (same as slaveTab above): a direct
+      // cdp.tabs() here cost a full /json/list round trip per slave on every
+      // heavy tick while zoom was being corrected.
+      const candidates = normalTabs(await this.slaveTabsFor(slave));
       const targets = new Map();
       if (mapped) targets.set(mapped.id, mapped);
       if (masterTab) for (const tab of candidates) if (equivalentUrl(tab.url, masterTab.url)) targets.set(tab.id, tab);

@@ -418,7 +418,12 @@ function migrateProfileNumbers(profiles, savedNextNumber) {
 }
 
 const loadedUi = loadUi();
-const migratedUi = migrateProfileNumbers(loadedUi.profiles, loadedUi.nextProfileNumber);
+// A degraded snapshot (quota fallback) only preserved display fields; its
+// profiles must never be merged back over the engine's authoritative state.
+if (loadedUi.degraded) {
+  console.warn('[OpenBrowser Storage] Degraded UI snapshot detected after a quota incident; restoring profiles from engine state.');
+}
+const migratedUi = migrateProfileNumbers(loadedUi.degraded ? [] : loadedUi.profiles, loadedUi.nextProfileNumber);
 const migratedGroups = migrateGroups(loadedUi.groups, migratedUi.profiles);
 let ui = { ...loadedUi, ...migratedUi, groups: migratedGroups };
 // Roxy 对齐：回收站保留 7 天，启动时自动清理过期项
@@ -2189,15 +2194,35 @@ $('#batch-quick-form')?.addEventListener('submit', async (event) => {
   let ids = [];
   try { ids = JSON.parse(field.dataset.ids || '[]'); } catch (_) { ids = []; }
   const value = field.value.trim();
+  const previous = new Map();
   for (const id of ids) {
     const profile = ui.profiles.find((item) => item.id === id);
     if (!profile) continue;
+    previous.set(id, { tag: profile.tag, note: profile.note });
     if (mode === 'tag') profile.tag = value;
     else profile.note = value;
   }
   save();
   invalidateViewCache(['profiles', 'sync']);
-  try { engineProfiles = await window.ops.syncProfiles(ui.profiles); } catch (error) { log('Error', '环境同步失败: ' + ((error && error.message) || error)); }
+  try {
+    engineProfiles = await window.ops.syncProfiles(ui.profiles);
+  } catch (error) {
+    // Roll back so local state does not diverge from the engine while the
+    // toast claims success (same pattern as every other syncProfiles caller).
+    for (const [id, snapshot] of previous) {
+      const profile = ui.profiles.find((item) => item.id === id);
+      if (!profile) continue;
+      profile.tag = snapshot.tag;
+      profile.note = snapshot.note;
+    }
+    save();
+    invalidateViewCache(['profiles', 'sync']);
+    $('#batch-quick-dialog').close();
+    renderProfiles();
+    log('Error', '环境同步失败: ' + ((error && error.message) || error));
+    toast(tx('环境同步失败') + ': ' + ((error && error.message) || error));
+    return;
+  }
   $('#batch-quick-dialog').close();
   renderProfiles();
   toast(t(mode === 'tag' ? 'batch.tagApplied' : 'batch.noteApplied', { n: ids.length }));
@@ -3719,11 +3744,14 @@ $('#batch-delete-form').addEventListener('submit', async (event) => {
     engineProfiles = await window.ops.syncProfiles(ui.profiles);
     renderProfiles();
     if (inTrash || deleteData) {
-      log('Batch', '彻底删除 ' + result.deleted + ' 个环境');
+      log('Batch', '彻底删除 ' + (result.deleted ?? ids.length) + ' 个环境');
       toast(t('trash.purged'));
     } else {
-      log('Batch', '移入回收站 ' + result.deleted + ' 个环境');
-      toast(t('trash.movedToTrash', { n: result.deleted }));
+      // Engine returns { success, trashed, stopped, ids } — there is no
+      // `deleted` field on the trash path; it interpolated as undefined.
+      const moved = result.trashed ?? ids.length;
+      log('Batch', '移入回收站 ' + moved + ' 个环境');
+      toast(t('trash.movedToTrash', { n: moved }));
     }
   } catch (error) { toast(error.message); } finally { if (submitter) submitter.disabled = false; }
 });

@@ -36,6 +36,12 @@ function createCoalescedWriter(options = {}) {
     : DEFAULT_DELAY_MS;
 
   const shouldWrite = typeof options.shouldWrite === 'function' ? options.shouldWrite : () => true;
+  // Retry backoff for a persistently failing write (full disk, EACCES…):
+  // retrying at the base delay forever turned a disk outage into an IO storm.
+  const maxRetryDelayMs = Number.isFinite(options.maxRetryDelayMs) && options.maxRetryDelayMs >= delayMs
+    ? Number(options.maxRetryDelayMs)
+    : Math.max(delayMs, 5000);
+  let consecutiveFailures = 0;
   let waiters = [];
   let lastError = null;
   let skipped = 0;
@@ -81,14 +87,23 @@ function createCoalescedWriter(options = {}) {
             try { options.onError(error); } catch (_) { /* observer */ }
           }
           for (const waiter of batch) waiter.reject(error);
+          consecutiveFailures += 1;
           throw error; // the queue keeps the item so a later request retries
         }
 
+        consecutiveFailures = 0;
         for (const waiter of batch) waiter.resolve();
       } finally {
         // A request that arrived while this run was in flight needs another
         // run after the current write's completion barrier is released.
-        if (queue.size) queue.start(delayMs);
+        // Failed runs back off exponentially (capped) so a persistent disk
+        // error does not hammer the filesystem at the base delay forever.
+        if (queue.size) {
+          const backoffDelay = consecutiveFailures > 0
+            ? Math.min(maxRetryDelayMs, delayMs * (2 ** Math.min(10, consecutiveFailures - 1)))
+            : delayMs;
+          queue.start(backoffDelay);
+        }
       }
     },  });
 
