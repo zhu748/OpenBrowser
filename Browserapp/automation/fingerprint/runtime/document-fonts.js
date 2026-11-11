@@ -390,6 +390,9 @@ module.exports = `  // --- fonts ---
       const fontScopeVerdicts = new WeakMap();
       let fontScopeEpoch = 0;
       let fontScopeDepth = 0;
+      // Elements cleaned by the innermost active sanitize scope (see the
+      // dedup note inside sanitizeElementFontScope).
+      let fontScopeCleaned = new Set();
       const bumpFontScopeEpoch = () => { fontScopeEpoch += 1; };
       if (typeof globalThis.MutationObserver === 'function' && globalThis.document) {
         try {
@@ -434,6 +437,32 @@ module.exports = `  // --- fonts ---
           fontSet.addEventListener('loadingerror', bumpFontScopeEpoch);
         }
       } catch (_) {}
+      // R-1: synchronous CSSOM mutations never produce MutationObserver
+      // records (the observer is async; constructable/adopted stylesheets
+      // never touch the DOM at all), so a page that re-skins fonts via
+      // sheet.insertRule kept hitting stale font-scope verdicts. Wrap the
+      // mutating CSSOM entry points to bump the epoch synchronously.
+      try {
+        const cssProto = globalThis.CSSStyleSheet && globalThis.CSSStyleSheet.prototype;
+        if (cssProto) {
+          for (const method of ['insertRule', 'deleteRule', 'replaceRule', 'replaceSync']) {
+            const orig = cssProto[method];
+            if (typeof orig !== 'function') continue;
+            try {
+              Object.defineProperty(cssProto, method, {
+                configurable: true,
+                enumerable: true,
+                writable: true,
+                value: nativeLike(function cssMutate(...args) {
+                  const result = orig.apply(this, args);
+                  bumpFontScopeEpoch();
+                  return result;
+                }, orig, method, orig.length),
+              });
+            } catch (_) {}
+          }
+        }
+      } catch (_) {}
 
       sanitizeElementFontScope = (element, callback) => {
         // A layout library can read another metric from inside the callback (getBoundingClientRect
@@ -442,8 +471,17 @@ module.exports = `  // --- fonts ---
         // measurement, and reading the native value is both correct and finite.
         if (fontScopeDepth >= 4) return callback();
         fontScopeDepth += 1;
+        // P0-2: an element already cleaned by an ENCLOSING scope in this same
+        // synchronous batch is left untouched here — the ancestor scope's
+        // finally will restore it. This keeps nested metric reads (rect ->
+        // offsetWidth -> ...) from rewriting and restoring the same elements
+        // once per nesting level, which multiplied the mutation records a
+        // page's MutationObserver could observe.
+        const cleanedByOuterScope = fontScopeDepth > 1 ? fontScopeCleaned : null;
         const modified = [];
+        fontScopeCleaned = new Set();
         const applyCleanFamily = (node, style, originalInline, originalAttr, clean) => {
+          if (cleanedByOuterScope && cleanedByOuterScope.has(node)) return;
           try {
             if (style) {
               style.setProperty('font-family', clean, 'important');
@@ -452,6 +490,7 @@ module.exports = `  // --- fonts ---
               node.setAttribute('font-family', clean);
               modified.push({ element: node, originalAttr });
             }
+            if (node && typeof node === 'object') { try { fontScopeCleaned.add(node); } catch (_) {} }
           } catch (_) {}
         };
         const checkNode = (node) => {
@@ -513,6 +552,8 @@ module.exports = `  // --- fonts ---
               }
             } catch (_) {}
           }
+          // Restore the enclosing scope's cleaned-set: this scope is popping.
+          fontScopeCleaned = cleanedByOuterScope || new Set();
           fontScopeDepth -= 1;
         }
       };

@@ -129,6 +129,25 @@ module.exports = function bootstrap({ uaScript, json, bridgeToken }) {
   const BRIDGE_TOKEN = ${JSON.stringify(bridgeToken)};
   const nativeSource = new WeakMap();
   const subWindowSyncHooks = [];
+  // R-3: the runtime swallows ~290 silent catches; when a persona surface
+  // silently stops applying nobody can tell which fragment dropped it. With
+  // CFG.telemetry on (a debugging build), fragment catches report once per
+  // unique (fragment, key) through this hook; default builds keep the
+  // zero-noise behavior. The bridgeToken keys the report so the host can
+  // attribute it to a profile configuration.
+  const telemetrySeen = new Set();
+  const __obReportError = (fragment, key, error) => {
+    if (!CFG.telemetry) return;
+    try {
+      const dedupe = fragment + ':' + key;
+      if (telemetrySeen.has(dedupe)) return;
+      telemetrySeen.add(dedupe);
+      // Neutral tag: the injected payload must not carry product-identifying
+      // strings (see the injected-payload scan in isolation-fingerprint-
+      // selftest).
+      console.debug('[fp-telemetry]', fragment, key, String((error && error.message) || error), BRIDGE_TOKEN.slice(0, 8));
+    } catch (_) {}
+  };
   // Assigned by the font-shield block below when a profile declares foreign families. The
   // clientRects patch wraps its measurement in this scope so both layers live in ONE bridge
   // wrapper: two independent nativeLike wrappers would make replaceMethod treat the second

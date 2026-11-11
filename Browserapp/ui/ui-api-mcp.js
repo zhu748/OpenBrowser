@@ -165,17 +165,36 @@ document.getElementById('mcp-config-tabs')?.addEventListener('click', (event) =>
   if (mcpTa) mcpTa.textContent = JSON.stringify(tab === 'platform' ? window.__mcpConfigPlatform : window.__mcpConfigCommon, null, 2);
 });
 
+// F-8: a multi-step RPA run emits a rpa-task event per step transition; a
+// burst used to fire one rpaTasks IPC fetch + two full table rebuilds per
+// event. Coalesce: pending bursts share one trailing refresh (100ms), and a
+// refresh already in flight makes later events skip ahead to the next tick
+// instead of stacking concurrent fetches.
+let rpaTaskRefreshQueued = false;
+let rpaTaskRefreshInFlight = false;
+function queueRpaTaskRefresh() {
+  if (rpaTaskRefreshQueued) return;
+  rpaTaskRefreshQueued = true;
+  setTimeout(async () => {
+    rpaTaskRefreshQueued = false;
+    if (rpaTaskRefreshInFlight) { queueRpaTaskRefresh(); return; }
+    rpaTaskRefreshInFlight = true;
+    try {
+      // One IPC fetch feeds both tables; each refresh used to issue its own call.
+      const tasks = await window.ops.rpaTasks({});
+      window.refreshRpaTasks?.(tasks);
+      window.refreshRpaRuns?.(tasks);
+    } catch (_) {}
+    finally { rpaTaskRefreshInFlight = false; }
+  }, 100);
+}
+
 window.ops.onEvent(async (value) => {
   if (value?.type === 'rpa-log') window.appendRpaLog?.((value.level || 'info') + ': ' + value.message);
   if (value?.type === 'rpa-task') {
     window.appendRpaLog?.('task ' + value.taskId + ' → ' + value.status + (value.message ? ' · ' + value.message : ''));
     window.refreshRpaStatusBadge?.();
-    // One IPC fetch feeds both tables; each refresh used to issue its own call.
-    try {
-      const tasks = await window.ops.rpaTasks({});
-      window.refreshRpaTasks?.(tasks);
-      window.refreshRpaRuns?.(tasks);
-    } catch (_) {}
+    queueRpaTaskRefresh();
   }
   if (value?.type === 'local-api') {
     setLocalApiStatus(true);

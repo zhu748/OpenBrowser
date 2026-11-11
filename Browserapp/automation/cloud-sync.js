@@ -399,6 +399,15 @@ async function downloadWebDav(config, remoteName = REMOTE_NAME) {
 async function uploadGitHub(config, buffer, remoteName = REMOTE_NAME) {
   const { owner, repo, token, branch, filePath } = validatedGitHubConfig(config, remoteName);
   const apiBase = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath.split('/').map(encodeURIComponent).join('/')}`;
+  // C-10: the GitHub Contents API rejects requests whose JSON payload exceeds
+  // ~100MB and becomes unreliable well below that; base64 inflates the package
+  // by 4/3. Failing up front with a clear message beats pushing 70MB for a
+  // minute only to get a 422 the message cannot distinguish from an auth issue.
+  // WebDAV keeps no such cap (MAX_BACKUP_PACKAGE_BYTES stays the writer bound).
+  const GITHUB_MAX_PACKAGE_BYTES = 50 * 1024 * 1024;
+  if (buffer.length > GITHUB_MAX_PACKAGE_BYTES) {
+    throw new Error(`备份包 ${(buffer.length / 1048576).toFixed(1)}MB 超过 GitHub 通道上限 50MB（Contents API 限制）；请改用 WebDAV 通道或减小备份范围`);
+  }
   let sha;
   const getRes = await request(`${apiBase}?ref=${encodeURIComponent(branch)}`, {
     method: 'GET',

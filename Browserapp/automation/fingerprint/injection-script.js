@@ -44,6 +44,10 @@ function buildInjectionScript(fp, options = {}) {
   const stability = resolveInjectionStability(fp);
   const json = JSON.stringify({
     engine: fp.engine || fp.uaProfile?.engine || 'chromium',
+    // R-3: opt-in runtime telemetry for debugging builds (default off): the
+    // runtime's silent catches report once per (fragment, key) through the
+    // bootstrap's __obReportError hook when this is true.
+    telemetry: process.env.OPENBROWSER_FP_TELEMETRY === '1',
     platform: fp.platform,
     os: injectionOs(fp),
     userAgent: fp.userAgent,

@@ -86,6 +86,35 @@ module.exports = `  // --- canvas ---
             });
           }
           if (proto.measureText) {
+            // F-5: the jitter and the Proxy wrapper depend only on
+            // (origin, seed, font, text) — the same tuple used to produce
+            // them. Pages measure the same strings repeatedly (layout
+            // libraries, virtual scrolling), and each call used to rebuild
+            // the hash AND allocate a fresh Proxy. Cache both, keyed by the
+            // text only (origin/seed/font change rarely; font is part of the
+            // key because one context can be re-fonted).
+            const measureJitterCache = new Map();
+            const MEASURE_JITTER_CACHE_MAX = 512;
+            const jitterFor = (font, text) => {
+              const key = font + '\\u0000' + text;
+              let cached = measureJitterCache.get(key);
+              if (!cached) {
+                const originStr = String(targetWin?.location?.origin || globalThis.location?.origin || '');
+                const seedStr = String(CFG.seed || CFG.canvas?.mark || '1');
+                const hashKey = originStr + ':' + seedStr + ':' + font + ':' + text;
+                let h = 0;
+                for (let i = 0; i < hashKey.length; i++) h = ((h << 5) - h + hashKey.charCodeAt(i)) | 0;
+                const jitter = ((h % 100) / 10000);
+                const widthJitter = (((h % 200) - 100) / 10000);
+                if (measureJitterCache.size >= MEASURE_JITTER_CACHE_MAX) {
+                  const oldest = measureJitterCache.keys().next().value;
+                  if (oldest !== undefined) measureJitterCache.delete(oldest);
+                }
+                cached = { jitter, widthJitter };
+                measureJitterCache.set(key, cached);
+              }
+              return cached;
+            };
             replaceMethod(proto, 'measureText', (origMeasure) => function measureText(text, ...args) {
               const currentFont = String(this.font || '');
               const cleanFont = sanitizeCanvasFontShorthand(currentFont);
@@ -106,13 +135,7 @@ module.exports = `  // --- canvas ---
               }
               try {
                 const s = String(text || '');
-                const originStr = String(targetWin?.location?.origin || globalThis.location?.origin || '');
-                const seedStr = String(CFG.seed || CFG.canvas?.mark || '1');
-                const hashKey = originStr + ':' + seedStr + ':' + currentFont + ':' + s;
-                let h = 0;
-                for (let i = 0; i < hashKey.length; i++) h = ((h << 5) - h + hashKey.charCodeAt(i)) | 0;
-                const jitter = ((h % 100) / 10000);
-                const widthJitter = (((h % 200) - 100) / 10000);
+                const { jitter, widthJitter } = jitterFor(currentFont, s);
                 return new Proxy(tm, {
                   get(target, prop, receiver) {
                     if (prop === 'constructor') return target.constructor;

@@ -74,15 +74,34 @@ module.exports = `  // --- screen ---
         }
       } catch (_) {}
     }
-    try { Object.defineProperty(window, 'devicePixelRatio', nativeAccessor('devicePixelRatio', { configurable: true, get: () => s.devicePixelRatio || 1 })); } catch (_) {}
+    // Shape parity (P0-1): in real Chromium these metrics are enumerable
+    // accessors on Window.prototype, NOT own properties of the window
+    // instance. Installing them as own props made Object.getOwnPropertyNames
+    // / Object.keys(window) reveal the persona (extra own keys that no stock
+    // browser has). Install on the prototype and delete any same-named own
+    // property so the shape probes see a stock window.
+    const defineWindowMetric = (key, desc) => {
+      try {
+        const proto = Object.getPrototypeOf(window);
+        if (proto && proto !== Object.prototype) {
+          Object.defineProperty(proto, key, { configurable: true, enumerable: true, get: desc.get, set: desc.set });
+          try { delete window[key]; } catch (_) {}
+        } else {
+          Object.defineProperty(window, key, desc);
+        }
+      } catch (_) {
+        try { Object.defineProperty(window, key, desc); } catch (_) {}
+      }
+    };
+    try { defineWindowMetric('devicePixelRatio', nativeAccessor('devicePixelRatio', { configurable: true, get: () => s.devicePixelRatio || 1 })); } catch (_) {}
     for (const [key, value] of Object.entries({ screenX: s.screenX, screenY: s.screenY, screenLeft: s.screenX, screenTop: s.screenY })) {
-      try { Object.defineProperty(window, key, nativeAccessor(key, { configurable: true, get: () => value || 0 })); } catch (_) {}
+      try { defineWindowMetric(key, nativeAccessor(key, { configurable: true, get: () => value || 0 })); } catch (_) {}
     }
 
     const initialInnerWidth = Number(window.innerWidth) || Number(s.availWidth) || Number(s.width) || 1;
     const initialInnerHeight = Number(window.innerHeight) || Number(s.availHeight) || Number(s.height) || 1;
-    try { Object.defineProperty(window, 'innerWidth', nativeAccessor('innerWidth', { configurable: true, get: () => liveViewportSize('width', initialInnerWidth) })); } catch (_) {}
-    try { Object.defineProperty(window, 'innerHeight', nativeAccessor('innerHeight', { configurable: true, get: () => liveViewportSize('height', initialInnerHeight) })); } catch (_) {}
+    try { defineWindowMetric('innerWidth', nativeAccessor('innerWidth', { configurable: true, get: () => liveViewportSize('width', initialInnerWidth) })); } catch (_) {}
+    try { defineWindowMetric('innerHeight', nativeAccessor('innerHeight', { configurable: true, get: () => liveViewportSize('height', initialInnerHeight) })); } catch (_) {}
     const isFullscreen = () => {
       try { return Boolean(document && (document.fullscreenElement || document.webkitFullscreenElement)); }
       catch (_) { return false; }
@@ -95,17 +114,27 @@ module.exports = `  // --- screen ---
       const w = liveViewportSize('width', initialInnerWidth);
       return (MOBILE || isFullscreen()) ? w : (w + 16);
     };
-    try { Object.defineProperty(window, 'outerWidth', nativeAccessor('outerWidth', { configurable: true, get: getOuterWidth })); } catch (_) {}
-    try { Object.defineProperty(window, 'outerHeight', nativeAccessor('outerHeight', { configurable: true, get: getOuterHeight })); } catch (_) {}
+    try { defineWindowMetric('outerWidth', nativeAccessor('outerWidth', { configurable: true, get: getOuterWidth })); } catch (_) {}
+    try { defineWindowMetric('outerHeight', nativeAccessor('outerHeight', { configurable: true, get: getOuterHeight })); } catch (_) {}
     if (MOBILE) {
+      // ontouchstart genuinely is an own window property in stock browsers
+      // (it round-trips through the attribute), so it stays on the instance —
+      // but enumerable, matching the real shape.
       try { Object.defineProperty(window, 'ontouchstart', nativeAccessor('ontouchstart', { configurable: true, enumerable: true, get: () => null })); } catch (_) {}
-      try { Object.defineProperty(window, 'orientation', nativeAccessor('orientation', { configurable: true, get: () => 0 })); } catch (_) {}
+      try { defineWindowMetric('orientation', nativeAccessor('orientation', { configurable: true, get: () => 0 })); } catch (_) {}
 
     }
 
     try {
       if (typeof window.matchMedia === "function") {
         const origMatchMedia = window.matchMedia.bind(window);
+        // F-10: pages call matchMedia on every resize/layout pass (frameworks
+        // included); the four feature regexes are fixed, so they are built
+        // once instead of recompiled per call.
+        const RE_DEVICE_WIDTH = /\\((min-|max-)?device-width:\\s*([\\d.]+)px\\)/;
+        const RE_DEVICE_HEIGHT = /\\((min-|max-)?device-height:\\s*([\\d.]+)px\\)/;
+        const RE_WEBKIT_DPR = /\\(-webkit-(min-|max-)?device-pixel-ratio:\\s*([\\d.]+)\\)/;
+        const RE_RESOLUTION = /\\((min-|max-)?resolution:\\s*([\\d.]+)(dppx|dpi)\\)/;
         // A plain object literal is not a MediaQueryList: Object.getPrototypeOf(mql) and
         // an instanceof MediaQueryList check both give the patch away, and the listener methods
         // silently do nothing. Take a real MediaQueryList from the engine and override only the
@@ -139,7 +168,7 @@ module.exports = `  // --- screen ---
             const q = String(query || "").toLowerCase();
             const sw = dynamicScreen.width();
             const sh = dynamicScreen.height();
-            const mDevW = q.match(/\\((min-|max-)?device-width:\\s*([\\d.]+)px\\)/);
+            const mDevW = q.match(RE_DEVICE_WIDTH);
             if (mDevW) {
               const type = mDevW[1] || "";
               const val = parseFloat(mDevW[2]);
@@ -149,7 +178,7 @@ module.exports = `  // --- screen ---
               else matches = Math.abs(sw - val) < 1;
               return spoofMql(query, matches);
             }
-            const mDevH = q.match(/\\((min-|max-)?device-height:\\s*([\\d.]+)px\\)/);
+            const mDevH = q.match(RE_DEVICE_HEIGHT);
             if (mDevH) {
               const type = mDevH[1] || "";
               const val = parseFloat(mDevH[2]);
@@ -159,7 +188,7 @@ module.exports = `  // --- screen ---
               else matches = Math.abs(sh - val) < 1;
               return spoofMql(query, matches);
             }
-            const mDpr = q.match(/\\(-webkit-(min-|max-)?device-pixel-ratio:\\s*([\\d.]+)\\)/);
+            const mDpr = q.match(RE_WEBKIT_DPR);
             if (mDpr) {
               const type = mDpr[1] || "";
               const val = parseFloat(mDpr[2]);
@@ -170,7 +199,7 @@ module.exports = `  // --- screen ---
               else matches = Math.abs(curDpr - val) < 0.01;
               return spoofMql(query, matches);
             }
-            const mRes = q.match(/\\((min-|max-)?resolution:\\s*([\\d.]+)(dppx|dpi)\\)/);
+            const mRes = q.match(RE_RESOLUTION);
             if (mRes) {
               const type = mRes[1] || "";
               const val = parseFloat(mRes[2]);

@@ -410,22 +410,33 @@ module.exports = {
     restoreSession = profile.advanced.tabMode === 'restore' || profile.advanced.restoreSession;
     // Parallelized (independent IO overlaps; Preferences writers stay serialized). See method.
     await this.prepareProfileFilesForStart(root, profile, restoreSession);
-    await removeSingletonFiles(root, { attempts: 6, delayMs: 40 });
-    // 启动前清理 Cookies / Local Storage / IndexedDB（缓存清理在 clearCacheOnStart 既有路径），
-    // 以及默认搜索引擎写入 Preferences —— 都要在内核读取之前完成。
-    const clearedLaunchData = await clearProfileLaunchData(root, profile);
+    // F-7: the post-prep chain used to run four independent async steps
+    // strictly in sequence (~4 round trips of fs IO). clearProfileLaunchData
+    // (Cookies/LS/IDB removal), applyDefaultSearchEngine (Preferences write)
+    // and ensureLegacyFingerprintSeed (one-time seed migration) touch
+    // disjoint files, so they overlap; removeSingletonFiles already ran
+    // inside prepareProfileFilesForStart and ran again here only as an
+    // afterguard, so it joins the same batch. The clearedLaunchData event
+    // still fires before spawn, and buildFingerprint below waits on the
+    // batch before reading anything these writers own.
+    const launchDataCleared = clearProfileLaunchData(root, profile);
+    const searchEngineApplied = profile.privacy?.searchEngine
+      ? applyDefaultSearchEngine(root, profile.privacy.searchEngine)
+      : null;
+    const seedEnsured = ensureLegacyFingerprintSeed(this, profile);
+    await Promise.all([
+      launchDataCleared,
+      searchEngineApplied,
+      seedEnsured,
+      removeSingletonFiles(root, { attempts: 6, delayMs: 40 }),
+    ]);
+    const clearedLaunchData = await launchDataCleared;
     if (clearedLaunchData.length) {
       this.emit({ type: 'profile-launch-data-cleared', id: profile.id, removed: clearedLaunchData });
-    }
-    if (profile.privacy?.searchEngine) {
-      await applyDefaultSearchEngine(root, profile.privacy.searchEngine);
     }
     const pageNetwork = this.networkInfo.get(profile.id) || {};
     // Explicit identity refresh is independent of per-site sampling stability.
     const allowSeedRefresh = profile.privacy.refreshFingerprintOnStart;
-    // One-time migration for profiles that never rolled a seed (see the helper): the
-    // derivation must not hang off a guessable sequence id.
-    await ensureLegacyFingerprintSeed(this, profile);
     const fingerprint = buildFingerprint({
       ...profile,
       fingerprintLaunchSeed: allowSeedRefresh ? crypto.randomBytes(16).toString('hex') : '',
