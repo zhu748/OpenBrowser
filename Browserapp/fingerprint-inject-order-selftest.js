@@ -34,7 +34,7 @@ function main() {
   const block = startSrc.slice(startIdx, nextMember > 0 ? startIdx + nextMember : startIdx + 20000);
   // Match call sites only (not comments mentioning keepDefaultTab before inject).
   const injectPos = block.indexOf('await this.applyRuntimeSettings');
-  const keepPos = block.indexOf('await this.keepDefaultTab');
+  const keepPos = block.indexOf('await openVerifiedStartupTabs');
   assert.ok(injectPos >= 0 && keepPos >= 0, 'both inject and keepDefaultTab call sites in start tail');
   assert.ok(injectPos < keepPos, 'applyRuntimeSettings must run before keepDefaultTab (welcome page race)');
   assert.ok(block.includes('Fingerprint inject BEFORE'), 'order comment present');
@@ -42,7 +42,7 @@ function main() {
   assert.ok(launchSrc.includes("args.push('about:blank')"), 'spawn must use about:blank instead of startUrl on CLI');
   assert.ok(launchSrc.includes('do NOT put the OpenBrowser start page'), 'CLI startUrl deferral comment');
   // re-inject after navigate
-  assert.ok(block.includes('start-page re-inject') || block.includes('appliedTargetIds: new Set()'), 're-inject after start page navigate');
+  assert.ok(block.includes('await this.ensureStartPageFingerprint'), 're-inject after start page navigate');
 
   // applyFingerprintToTab enables Page domain
   const fpSrc = fs.readFileSync(path.join(__dirname, 'automation', 'fingerprint', 'tab-apply.js'), 'utf8');
@@ -54,7 +54,7 @@ function main() {
   // Late targets must finish injection and response setup before resume.
   const fpInjectSrc = fs.readFileSync(path.join(__dirname, 'engine', 'fingerprint-injection.js'), 'utf8');
   const lateStart = fpInjectSrc.indexOf('// A timed-out target');
-  const lateEnd = fpInjectSrc.indexOf('} else if (workerTypes.has', lateStart);
+  const lateEnd = fpInjectSrc.indexOf('} catch (error)', fpInjectSrc.indexOf('await resumeTarget()', lateStart));
   const lateBlock = fpInjectSrc.slice(lateStart, lateEnd);
   assert.ok(lateStart > 0);
   assert.ok(lateBlock.indexOf('await armResponseRewriting(injectBudget)') < lateBlock.indexOf('await resumeTarget()'));

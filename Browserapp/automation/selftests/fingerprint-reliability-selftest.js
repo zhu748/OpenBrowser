@@ -152,7 +152,7 @@ function documentScope() {
     const fp = buildFingerprint(p);
     const live = { userAgent: fp.userAgent, platform: fp.platform, hardwareConcurrency: fp.hardwareConcurrency,
       screenWidth: fp.screen.width, screenHeight: fp.screen.height, devicePixelRatio: fp.screen.devicePixelRatio,
-      deviceMemoryPresent: false, secureContext: false };
+      deviceMemoryPresent: false, secureContext: false, vendor: fp.vendor, timezone: fp.timezone, languages: fp.languages };
     assert.equal(evaluateFingerprintDelivery(p, fp, live, { strict: true }).ok, true);
     live.secureContext = true;
     assert.ok(evaluateFingerprintDelivery(p, fp, live, { strict: true }).mismatches.some((m) => m.field === 'deviceMemory'));

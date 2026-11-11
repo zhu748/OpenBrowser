@@ -382,8 +382,8 @@ module.exports = {
         } else {
           item.watchEmptyTicks = 0;
           // New tabs must receive the same fingerprint inject as the launch tab.
-          // Soft-fail: never throw out of the watch loop (would spam Uncaught).
-          if (item.fingerprint && item.profile && !item.fpEnsureBusy) {
+          // Observe failures inside the watch loop and stop an unmanaged live target.
+          if (cdpCapable && item.fingerprint && item.profile && !item.fpEnsureBusy) {
             item.fpEnsureBusy = true;
             const reFp = item.nativeKernelFingerprint
               ? fingerprintForNativeKernelInject(item.fingerprint)
@@ -404,6 +404,9 @@ module.exports = {
                 id: profileId,
                 message: error.message,
               });
+              return this.handleBrowserGone(profileId, item, 'runtime-fingerprint-failed', {
+                expected: false, error: error.message, kill: true, waitForExit: true,
+              }).catch((cleanupError) => this.emit({ type: 'sync-error', id: profileId, message: cleanupError.message }));
             }).finally(() => { item.fpEnsureBusy = false; });
           }
         }

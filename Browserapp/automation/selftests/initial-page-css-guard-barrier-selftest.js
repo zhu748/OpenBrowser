@@ -530,7 +530,7 @@ async function runLiveBarrierTest(serverPort, mutate) {
   // Check 2: Initial pre-existing targets are filtered and tracked
   check('startWorkerFingerprintInjection filters pre-existing page/iframe targets into pending set', () => {
     assert.ok(methodSource.includes('pendingInitialTargets'), 'Must track pendingInitialTargets');
-    assert.ok(methodSource.includes("ttype === 'page' || ttype === 'iframe'"), 'Must filter page and iframe targets');
+    assert.ok(methodSource.includes("pageLikeTypes.has(ttype) || workerTypes.has(ttype)"), 'Must include page, iframe and worker targets in the startup barrier');
   });
 
   // Check 3: Barrier promise is constructed and awaited

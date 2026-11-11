@@ -391,8 +391,8 @@ async function check(name, fn) {
     assert.ok(engineCode.includes("verifyStartupFingerprintDelivery"), "Must implement verifyStartupFingerprintDelivery");
     assert.ok(engineCode.includes("fingerprint-verification-failed"), "Must emit fingerprint-verification-failed");
     assert.ok(engineCode.includes("item.verificationBlocked = true"), "Must mark verificationBlocked on item");
-    assert.ok(engineCode.includes("start.navigate-verification-barrier-errorpage"), "Must log navigation to local error page on verification failure");
-    assert.ok(engineCode.includes("指纹未按配置交付，已阻止访问目标站点"), "Must include Chinese warning on error page");
+    assert.ok(engineCode.includes("code: 'FINGERPRINT_DELIVERY_FAILED'"), "Verification failure must throw into lifecycle cleanup");
+    assert.ok(engineCode.includes("指纹未按配置交付，已停止浏览器"), "Must report browser shutdown on failed delivery");
     assert.ok(!engineCode.includes("start.navigate-after-fail"), "Exceptions must never navigate to startUrl");
   });
 

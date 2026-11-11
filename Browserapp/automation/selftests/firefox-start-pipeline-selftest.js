@@ -24,9 +24,9 @@ const path = require('path');
 
 let passed = 0;
 let failed = 0;
-function check(name, fn) {
+async function check(name, fn) {
   try {
-    fn();
+    await fn();
     passed += 1;
     console.log(`  ok  ${name}`);
   } catch (error) {
@@ -136,7 +136,7 @@ function makeStubFirefox(tmp) {
 
   try {
     const started = await engine.start(profile);
-    check('start() launches via the firefox pipeline', () => {
+    await check('start() launches via the firefox pipeline', () => {
       assert.strictEqual(started.running, true);
       assert.strictEqual(started.engine, 'firefox');
       assert.strictEqual(started.port, null);
@@ -144,7 +144,7 @@ function makeStubFirefox(tmp) {
     });
 
     const item = engine.running.get('env-900');
-    check('running item shape for firefox', () => {
+    await check('running item shape for firefox', () => {
       assert.strictEqual(item.engine, 'firefox');
       assert.strictEqual(item.cdpConnection, null);
       assert.strictEqual(item.port, null);
@@ -155,7 +155,7 @@ function makeStubFirefox(tmp) {
       assert.match(item.fingerprint.userAgent, /Firefox\/141\.0$/);
     });
 
-    check('user.js written before spawn with proxy/UA/telemetry prefs', () => {
+    await check('user.js written before spawn with proxy/UA/telemetry prefs', () => {
       const copied = fs.readFileSync(path.join(markerDir, 'user.js.copy'), 'utf8');
       assert.ok(copied.includes('user_pref("network.proxy.type", 1);'), 'manual proxy mode');
       assert.ok(copied.includes('user_pref("general.useragent.override",'), 'UA override');
@@ -163,26 +163,26 @@ function makeStubFirefox(tmp) {
       assert.ok(copied.includes('user_pref("toolkit.telemetry.enabled", false);'), 'no telemetry');
     });
 
-    check('launch args used -profile and --no-remote', () => {
+    await check('launch args used -profile and --no-remote', () => {
       const args = fs.readFileSync(path.join(markerDir, 'args.txt'), 'utf8');
       assert.ok(args.includes('--no-remote'));
       assert.ok(args.includes('--remote-debugging-port=0'));
       assert.ok(!args.includes('https://'), 'startup URLs must not bypass preload');
     });
-    check('BiDi registers and verifies before both startup URLs navigate', () => {
+    await check('BiDi registers and verifies before both startup URLs navigate', () => {
       const registered = commands.findIndex((command) => command.method === 'script.addPreloadScript');
       const navigated = commands.findIndex((command) => command.method === 'browsingContext.navigate');
       assert.ok(registered >= 0 && navigated > registered);
       assert.equal(commands.filter((command) => command.method === 'browsingContext.navigate').length, 2);
     });
 
-    check('progress events were emitted', () => {
+    await check('progress events were emitted', () => {
       const progress = events.filter((e) => e.type === 'profile-start-progress' && e.id === 'env-900');
       assert.ok(progress.some((e) => e.phase === 'ready' && e.percent === 100));
     });
 
     const stopped = await engine.stop('env-900');
-    check('stop() kills the firefox process and clears running', async () => {
+    await check('stop() kills the firefox process and clears running', async () => {
       assert.strictEqual(stopped.running, false);
       assert.strictEqual(engine.running.has('env-900'), false);
       // process really gone
@@ -191,13 +191,13 @@ function makeStubFirefox(tmp) {
       try { process.kill(stopped.pid, 0); alive = true; } catch (_) {}
       assert.strictEqual(alive, false, 'stub firefox must be dead after stop');
     });
-    check('status event emitted after stop', () => {
+    await check('status event emitted after stop', () => {
       assert.ok(events.some((e) => e.type === 'status' && e.id === 'env-900' && e.running === false));
     });
     rejectPreload = true;
     const beforeFailure = commands.filter((command) => command.method === 'browsingContext.navigate').length;
     await assert.rejects(engine.start(profile), /test preload rejected/);
-    check('failed Firefox preload closes the browser without target navigation', () => {
+    await check('failed Firefox preload closes the browser without target navigation', () => {
       assert.equal(engine.running.has(profile.id), false);
       assert.equal(commands.filter((command) => command.method === 'browsingContext.navigate').length, beforeFailure);
     });

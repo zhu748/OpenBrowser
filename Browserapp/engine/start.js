@@ -875,16 +875,7 @@ module.exports = {
           blocked: true,
         });
 
-        // Fail-Closed: DO NOT navigate to target site or startUrl.
-        // Navigate to a safe local error page to prevent real fingerprint exposure.
-        const safeErrorHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>指纹注入失败 - 启动已阻断</title><style>body{font-family:system-ui,-apple-system,sans-serif;margin:0;padding:40px;background:#18181b;color:#f4f4f5;}h1{color:#ef4444;font-size:22px;margin-top:0;}.card{background:#27272a;border:1px solid #3f3f46;border-radius:8px;padding:24px;max-width:620px;margin:40px auto;box-shadow:0 4px 6px -1px rgba(0,0,0,.3);}.desc{color:#a1a1aa;font-size:14px;line-height:1.6;}.err{background:#09090b;padding:12px;border-radius:6px;font-family:monospace;font-size:13px;color:#f87171;word-break:break-all;white-space:pre-wrap;margin:16px 0;}.hint{font-size:13px;color:#71717a;}</style></head><body><div class="card"><h1>⚠️ 指纹防护注入未就绪</h1><p class="desc">为避免原生环境及真实指纹泄露至目标站点，系统已触发 Fail-Closed 安全屏障，中止访问目标地址。</p><div class="err">` + String(failureDetails).replace(/[<>&"]/g, (c) => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c])) + `</div><p class="hint">请关闭该浏览器窗口，检查内核状态或代理配置后重试。</p></div></body></html>`;
-        const safeErrorUrl = `data:text/html;charset=utf-8,${encodeURIComponent(safeErrorHtml)}`;
-        await fpLog('start.navigate-barrier-errorpage', { profileId: profile.id, failureDetails });
-        try {
-          await this.keepDefaultTab(item.port, safeErrorUrl);
-        } catch (navError) {
-          await fpLog('start.navigate-barrier-fail', { profileId: profile.id, error: String(navError.message || navError) });
-        }
+        throw Object.assign(new Error(failureDetails), { code: 'FINGERPRINT_INJECTION_FAILED' });
       } else {
         // Fail-Closed: Verify actual delivered fingerprint via CDP probe before target navigation
         currentStage = 'verify'; this.emitStartProgress(profile.id, 'verify', 92, '正在校验指纹交付…');
@@ -899,30 +890,21 @@ module.exports = {
           });
         }
 
-        if (!deliveryResult.ok && deliveryResult.blocked) {
-          const mismatchMessages = (deliveryResult.mismatches || []).map((m) => typeof m === 'object' ? (m.message || JSON.stringify(m)) : String(m));
+        if (!deliveryResult?.ok) {
+          const mismatchMessages = (deliveryResult?.mismatches || []).map((m) => typeof m === 'object' ? (m.message || JSON.stringify(m)) : String(m));
           const failureDetails = mismatchMessages.join('\n');
-          item.fingerprintVerificationError = deliveryResult.message || failureDetails;
+          item.fingerprintVerificationError = deliveryResult?.message || failureDetails;
           item.verificationBlocked = true;
 
           this.emit({
             type: 'fingerprint-verification-failed',
             id: profile.id,
             blocked: true,
-            mismatches: deliveryResult.mismatches,
-            message: deliveryResult.message || ('指纹交付校验失败: ' + mismatchMessages.join('; ')),
+            mismatches: deliveryResult?.mismatches || [],
+            message: deliveryResult?.message || ('指纹交付校验失败: ' + mismatchMessages.join('; ')),
           });
 
-          // Fail-Closed: DO NOT navigate to target site or startUrl.
-          // Navigate to a safe local error page to prevent real fingerprint exposure.
-          const safeErrorHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>指纹校验失败 - 启动已阻断</title><style>body{font-family:system-ui,-apple-system,sans-serif;margin:0;padding:40px;background:#18181b;color:#f4f4f5;}h1{color:#ef4444;font-size:22px;margin-top:0;}.card{background:#27272a;border:1px solid #3f3f46;border-radius:8px;padding:24px;max-width:620px;margin:40px auto;box-shadow:0 4px 6px -1px rgba(0,0,0,.3);}.desc{color:#a1a1aa;font-size:14px;line-height:1.6;}.err{background:#09090b;padding:12px;border-radius:6px;font-family:monospace;font-size:13px;color:#f87171;word-break:break-all;white-space:pre-wrap;margin:16px 0;}.hint{font-size:13px;color:#71717a;}</style></head><body><div class="card"><h1>⚠️ 指纹未按配置交付</h1><p class="desc">为避免原生环境及真实指纹泄露至目标站点，系统检测到实际交付指纹与配置存在直接矛盾，已触发 Fail-Closed 安全屏障，阻止访问目标站点。</p><div class="err">` + String(failureDetails).replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c])) + `</div><p class="hint">指纹未按配置交付，已阻止访问目标站点。请检查内核兼容性或环境指纹配置后重试。</p></div></body></html>`;
-          const safeErrorUrl = `data:text/html;charset=utf-8,${encodeURIComponent(safeErrorHtml)}`;
-          await fpLog('start.navigate-verification-barrier-errorpage', { profileId: profile.id, failureDetails });
-          try {
-            await this.keepDefaultTab(item.port, safeErrorUrl);
-          } catch (navError) {
-            await fpLog('start.navigate-verification-barrier-fail', { profileId: profile.id, error: String(navError.message || navError) });
-          }
+          throw Object.assign(new Error(item.fingerprintVerificationError || '指纹未按配置交付，已停止浏览器'), { code: 'FINGERPRINT_DELIVERY_FAILED' });
         } else if (startUrl) {
           await fpLog('start.navigate-startpage', { profileId: profile.id, startUrl });
           try {
@@ -932,14 +914,15 @@ module.exports = {
             throw navError;
           }
           try {
-            await this.ensureStartPageFingerprint(item, profile, injectFp, startUrl);
+            await this.ensureStartPageFingerprint(item, profile, injectFp);
           } catch (reInjectError) {
             await fpLog('start.reinject-fail', { profileId: profile.id, error: String(reInjectError.message || reInjectError) });
             this.emit({
               type: 'fingerprint-injection-failed',
               id: profile.id,
-              message: 'start-page re-inject: ' + reInjectError.message,
+              message: 'post-navigation verification: ' + reInjectError.message,
             });
+            throw reInjectError;
           }
         }
       }
@@ -958,6 +941,7 @@ module.exports = {
         item.verificationBlocked = true;
         item.fingerprintVerificationError = error.message;
       }
+      throw error;
     }
     this.assertStartGenerationActive(profile.id, lifecycleGeneration);
     if (this.running.get(profile.id) !== item || item.cleanedUp || item.stopping) {
@@ -965,11 +949,7 @@ module.exports = {
     }
     // Detect user closing browser with X (process may stay alive; CDP/pages are source of truth)
     this.startRunningWatch(item);
-    if (item.verificationBlocked) {
-      currentStage = 'blocked'; this.emitStartProgress(profile.id, 'blocked', 100, '指纹校验失败，已阻止访问目标站点');
-    } else {
-      currentStage = 'ready'; this.emitStartProgress(profile.id, 'ready', 100, '启动完成');
-    }
+    currentStage = 'ready'; this.emitStartProgress(profile.id, 'ready', 100, '启动完成');
     this.emit({ type: 'status', id: profile.id, running: true, blocked: Boolean(item.verificationBlocked), ...this.publicRunning(profile.id) });
     return this.publicRunning(profile.id);
     } catch (error) {

@@ -4,7 +4,7 @@
  * Fingerprint injection mixin for BrowserEngine (prototype-assigned by
  * engine.js): service-worker/worker-realm injection, per-session page attach
  * injection (before target resume), startup delivery verification, start-page
- * fingerprint refresh, and network-driven fingerprint patches. The two helpers
+ * fingerprint verification, and network-driven fingerprint patches. The two helpers
  * shared with engine.js's applyRuntimeSettings — fingerprintConfigHash and
  * isEphemeralDocumentUrl — are re-exported here and imported back by engine.js.
  */
@@ -46,9 +46,8 @@ function isEphemeralDocumentUrl(url) {
 
 module.exports = {
   async startWorkerFingerprintInjection(item, fingerprint) {
-    // NOTE: the fingerprint used for service-worker injection is pinned per
-    // connection (see the cdp.connect wrapper and the connect call below) —
-    // no process-global state is updated here on purpose.
+    // Every worker handler captures this connection's own fingerprint. Concurrent
+    // profile launches must never share a process-global "latest" identity.
     const workerPrivacy = (item.profile && item.profile.privacy) || {};
     const portScanSource = workerPrivacy.portScanProtect
       ? '\n' + buildPortScanProtectionScript(workerPrivacy.portScanAllow)
@@ -84,6 +83,13 @@ module.exports = {
     const requestHeaderRewriter = new RequestHeaderRewriter({
       profile: item.profile,
       fingerprint,
+      onFatalError: (error) => {
+        item.requestHeaderRewriteError = error.message;
+        this.emit({ type: 'fingerprint-injection-failed', id: item.profile.id, stage: 'request-headers', message: error.message });
+        this.handleBrowserGone(item.profile.id, item, 'request-header-rewrite-failed', {
+          expected: false, error: error.message, kill: true, waitForExit: true,
+        }).catch((cleanupError) => this.emit({ type: 'sync-error', id: item.profile.id, message: cleanupError.message }));
+      },
       logger: (details) => {
         if (details?.type === 'request-rewrite-error') {
           item.requestHeaderRewriteError = details.error;
@@ -91,11 +97,9 @@ module.exports = {
       },
     });
     item.requestHeaderRewriter = requestHeaderRewriter;
-    // service_worker is owned by cdp-hardening's connect wrapper (it injects
-    // buildWorkerInjectionScript on SW attach). Duplicating it here cost one
-    // redundant Runtime.evaluate round trip per SW attach; the second copy was
-    // rejected by the bridge-token guard in the worker script anyway.
-    const workerTypes = new Set(['worker', 'shared_worker']);
+    // One owner for DedicatedWorker, SharedWorker and ServiceWorker delivery.
+    const workerTypes = new Set(['worker', 'shared_worker', 'service_worker']);
+    const targetSetup = new Map();
     const internalUrl = /^(chrome|chrome-extension|edge|edge-extension|devtools):/i;
     const report = (error, targetInfo = {}) => {
       item.workerFingerprintError = error.message;
@@ -128,6 +132,8 @@ module.exports = {
       barrierResolve = resolve;
       barrierReject = reject;
     });
+
+    barrierPromise.catch(() => {}); // observed again by the startup await below
 
     const settleBarrier = (err) => {
       if (barrierSettled) return;
@@ -208,7 +214,7 @@ module.exports = {
       // Fetch.requestPaused at Request stage (responseStatusCode == null) is handled by
       // requestHeaderRewriter to guarantee that main-frame navigations, subresources, and workers
       // carry persona User-Agent, Client Hints (sec-ch-ua*), and Accept-Language without host leaks.
-      if (event?.method === 'Fetch.requestPaused' && event.params?.requestId && event.params?.responseStatusCode == null) {
+      if (event?.method === 'Fetch.requestPaused' && event.params?.requestId && event.params?.responseStatusCode == null && event.params?.responseErrorReason == null) {
         try { requestHeaderRewriter.handleEvent(event, connection); } catch (_) {}
         return;
       }
@@ -226,6 +232,7 @@ module.exports = {
         }
         if (detachedSessionId) {
           workerSessionToTargetId.delete(detachedSessionId);
+          targetSetup.delete(detachedSessionId);
           try { requestHeaderRewriter.cleanupSession(detachedSessionId); } catch (_) {}
           try { fontResponseRewriter.cleanupSession?.(detachedSessionId); } catch (_) {}
         }
@@ -237,6 +244,13 @@ module.exports = {
         const destroyedId = event.params?.targetId;
         if (destroyedId && item.attachedWorkerTargets) {
           item.attachedWorkerTargets.delete(destroyedId);
+        }
+        for (const [session, target] of workerSessionToTargetId) {
+          if (target !== destroyedId) continue;
+          workerSessionToTargetId.delete(session);
+          targetSetup.delete(session);
+          requestHeaderRewriter.cleanupSession(session);
+          fontResponseRewriter.cleanupSession?.(session);
         }
         if (destroyedId && pendingInitialTargets.has(destroyedId)) {
           pendingInitialTargets.delete(destroyedId);
@@ -250,11 +264,12 @@ module.exports = {
       if (event.method !== 'Target.attachedToTarget') return;
       const { sessionId, targetInfo = {}, waitingForDebugger } = event.params || {};
       if (!sessionId) return;
+      if (targetSetup.has(sessionId)) return targetSetup.get(sessionId);
       const targetId = targetInfo.targetId;
       if (targetId) workerSessionToTargetId.set(sessionId, targetId);
       const isInitial = Boolean(targetId && pendingInitialTargets.has(targetId));
 
-      (async () => {
+      const setup = (async () => {
         // A fresh tab (window.open with noopener, ctrl-click, or any target opened without an
         // opener) can attach while its renderer still has no execution context. Every session
         // command then waits out its full timeout, and because the target stays paused on
@@ -268,7 +283,6 @@ module.exports = {
           await connection.command('Runtime.runIfWaitingForDebugger', {}, { sessionId, timeout: 3000 });
         };
         const armResponseRewriting = async (timeout) => {
-          if (targetInfo.type === 'iframe') return;
           await fontResponseRewriter.enable(connection, { sessionId, timeout });
           await connection.command('Fetch.enable', {
             patterns: [
@@ -286,7 +300,7 @@ module.exports = {
               autoAttach: true,
               waitForDebuggerOnStart: true,
               flatten: true,
-            }, { sessionId }).catch(() => {});
+            }, { sessionId });
             if (isInitial) {
               // Startup barrier targets are known-ready and must be sanitized before first paint.
               // Critical: inject fingerprint BEFORE resuming the page/iframe target.
@@ -295,13 +309,6 @@ module.exports = {
               // Enable Fetch while this page/iframe is paused. The next navigation then receives
               // sanitized HTML/CSS bytes before the renderer tokenizes its static styles.
               await armResponseRewriting(8000);
-              if (!completedInitialTargets.has(targetId)) {
-                completedInitialTargets.add(targetId);
-                pendingInitialTargets.delete(targetId);
-                if (pendingInitialTargets.size === 0) {
-                  settleBarrier();
-                }
-              }
             } else {
               // A timed-out target is closed rather than resumed without its identity.
               const injectBudget = targetInfo.type === 'iframe' ? 5000 : 8000;
@@ -314,36 +321,21 @@ module.exports = {
                 await armResponseRewriting(injectBudget);
               } finally { clearTimeout(timer); }
             }
-            await resumeTarget();
           } else if (workerTypes.has(targetInfo.type) && !internalUrl.test(String(targetInfo.url || ''))) {
             if (!item.attachedWorkerTargets) item.attachedWorkerTargets = new Set();
-            if (targetId && item.attachedWorkerTargets.has(targetId)) {
-              await resumeTarget();
-              return;
+            await connection.command('Network.enable', {}, { sessionId, timeout: 3000 });
+            const workerUa = requestHeaderRewriter.enabled ? requestHeaderRewriter.persona : null;
+            if (workerUa) {
+              await connection.command('Network.setUserAgentOverride', {
+                userAgent: workerUa.userAgent,
+                acceptLanguage: workerUa.acceptLanguage,
+                platform: workerUa.platformNav || workerUa.platform,
+                ...(requestHeaderRewriter.supportsClientHints ? { userAgentMetadata: workerUa.metadata } : {}),
+              }, { sessionId, timeout: 3000 });
             }
-            if (targetId) item.attachedWorkerTargets.add(targetId);
-            const isServiceWorker = targetInfo.type === 'service_worker';
-            if (!isServiceWorker) {
-              await connection.command('Network.enable', {}, { sessionId }).catch(() => {});
-              const workerUa = requestHeaderRewriter.enabled ? requestHeaderRewriter.persona : null;
-              if (workerUa) {
-                await connection.command('Network.setUserAgentOverride', {
-                  userAgent: workerUa.userAgent,
-                  acceptLanguage: workerUa.acceptLanguage,
-                  platform: workerUa.platformNav || workerUa.platform,
-                  userAgentMetadata: workerUa.metadata,
-                }, { sessionId }).catch(() => {});
-                await connection.command('Emulation.setUserAgentOverride', {
-                  userAgent: workerUa.userAgent,
-                  acceptLanguage: workerUa.acceptLanguage,
-                  platform: workerUa.platformNav || workerUa.platform,
-                  userAgentMetadata: workerUa.metadata,
-                }, { sessionId }).catch(() => {});
-              }
-              await connection.command('Fetch.enable', {
-                patterns: [{ urlPattern: '*', requestStage: 'Request' }],
-              }, { sessionId, timeout: 8000 }).catch(() => {});
-            }
+            await connection.command('Fetch.enable', {
+              patterns: [{ urlPattern: '*', requestStage: 'Request' }],
+            }, { sessionId, timeout: 3000 });
             // Worker fingerprint injection (DedicatedWorker, SharedWorker, and ServiceWorker)
             // Evaluated before runIfWaitingForDebugger so the worker global scope carries persona
             // mocks before evaluating initial worker scripts. Short timeout guarantees no hang.
@@ -351,6 +343,17 @@ module.exports = {
             if (evaluation?.exceptionDetails) {
               throw new Error(evaluation.exceptionDetails.exception?.description || evaluation.exceptionDetails.text || 'Worker fingerprint execution failed');
             }
+            if (targetId) item.attachedWorkerTargets.add(targetId);
+          }
+          await resumeTarget();
+          if (pageLikeTypes.has(targetInfo.type) && targetId) {
+            if (!item.fpAppliedTargets) item.fpAppliedTargets = new Set();
+            item.fpAppliedTargets.add(targetId);
+          }
+          if (isInitial && !completedInitialTargets.has(targetId)) {
+            completedInitialTargets.add(targetId);
+            pendingInitialTargets.delete(targetId);
+            if (pendingInitialTargets.size === 0) settleBarrier();
           }
         } catch (error) {
           pausedTargetNeedsResume = false;
@@ -371,31 +374,14 @@ module.exports = {
           if (isInitial) {
             settleBarrier(new Error(`Initial target session attach failed for ${targetId}: ${error.message}`));
           }
-        } finally {
-          // Only targets with successful setup may resume. Failed targets were closed above.
-          if (pausedTargetNeedsResume) {
-            pausedTargetNeedsResume = false;
-            await connection.command('Runtime.runIfWaitingForDebugger', {}, { sessionId, timeout: 3000 })
-              .catch((error) => report(error, targetInfo));
-          }
         }
       })();
+      targetSetup.set(sessionId, setup);
+      return setup;
     };
 
     const connection = await cdp.connect(browserWs, {
       onEvent: onAttached,
-      // Pin this browser's own persona for service-worker injection (see the
-      // cdp.connect wrapper): prevents cross-profile fingerprint bleed when
-      // several environments start concurrently.
-      serviceWorkerFingerprint: fingerprint,
-      serviceWorkerLogContext: {
-        profile: item.profile,
-        logger: (details) => {
-          if (details?.type === 'fingerprint-injection-failed') {
-            item.workerFingerprintError = String(details?.message || '');
-          }
-        },
-      },
       onDisconnect: (error) => {
         try { requestHeaderRewriter.destroy(); } catch (_) {}
         try { fontResponseRewriter.destroy?.(); } catch (_) {}
@@ -441,12 +427,12 @@ module.exports = {
       let discoveredTargets = [];
       try {
         const targetsRes = await connection.command('Target.getTargets', {}, { timeout: 8000 });
-        discoveredTargets = targetsRes?.targetInfos || [];
+        if (!Array.isArray(targetsRes?.targetInfos)) throw new Error('Invalid target discovery result');
+        discoveredTargets = targetsRes.targetInfos;
       } catch (_) {
-        try {
-          const fallbackTargets = await cdp.targets(item.port);
-          discoveredTargets = fallbackTargets || [];
-        } catch (_) {}
+        const fallbackTargets = await cdp.targets(item.port);
+        if (!Array.isArray(fallbackTargets)) throw new Error('Cannot enumerate initial fingerprint targets');
+        discoveredTargets = fallbackTargets;
       }
 
       for (const t of discoveredTargets) {
@@ -454,7 +440,7 @@ module.exports = {
         const ttype = t.type;
         const turl = String(t.url || '');
         const pageLikeTypes = new Set(['page', 'iframe', 'popup', 'webview']);
-        if ((ttype === 'page' || ttype === 'iframe' || pageLikeTypes.has(ttype)) && !internalUrl.test(turl) && tid) {
+        if ((pageLikeTypes.has(ttype) || workerTypes.has(ttype)) && !internalUrl.test(turl) && tid) {
           pendingInitialTargets.add(tid);
         }
       }
@@ -568,8 +554,6 @@ module.exports = {
         mobile: false,
       }).catch(() => {});
     }
-    if (!item.fpAppliedTargets) item.fpAppliedTargets = new Set();
-    if (targetInfo?.targetId) item.fpAppliedTargets.add(targetInfo.targetId);
     item.fpAppliedHash = fingerprintConfigHash(injectFp);
     item.fingerprint = baseFp;
     return injectFp;
@@ -716,127 +700,23 @@ module.exports = {
       liveProbe,
     };
   },
-  /**
-   * After start-page navigation: inject fingerprint, probe live surfaces, reload once
-   * if still looks like the host machine. Writes diagnostics to fingerprint-inject.log.
-   */
-  async ensureStartPageFingerprint(item, profile, injectFp, startUrl) {
-    const port = item?.port;
-    if (!port) return null;
-    const sleep = (ms) => new Promise((r) => { const t = setTimeout(r, ms); t.unref?.(); });
-    // Give navigation a moment to produce a target URL.
-    for (let i = 0; i < 10; i += 1) {
-      const tabs = await cdp.tabs(port).catch(() => []);
-      if (tabs.some((t) => this.isStartPageUrl(t.url) || /about:blank/i.test(String(t.url || '')))) break;
-      await sleep(100);
-    }
-    await this.applyRuntimeSettings(port, profile, injectFp, {
-      appliedTargetIds: item?.fpAppliedTargets instanceof Set ? item.fpAppliedTargets : new Set(),
-      appliedFingerprintHash: item?.fpAppliedHash,
-      trackOn: item,
-      phase: 'post-startpage',
+  /** Verify every startup tab again without stacking a second live injection. */
+  async ensureStartPageFingerprint(item, profile, injectFp) {
+    if (!item?.port) throw new Error('Missing CDP port for post-navigation verification');
+    await this.applyRuntimeSettings(item.port, profile, injectFp, {
+      appliedTargetIds: item.fpAppliedTargets instanceof Set ? item.fpAppliedTargets : new Set(),
+      appliedFingerprintHash: item.fpAppliedHash,
+      trackOn: item, phase: 'post-startpage', verifyApplied: true,
     });
-    // Short settle before the first repaint request; the retry below covers a slower boot.
-    await sleep(120);
-    // Ask welcome page to repaint fingerprint table from spoofed navigator.
-    // Retry a few times: start-page script may still be booting. Stop as soon as the page
-    // confirms it ran the collector — it re-samples itself on a timer after that, so extra
-    // rounds only added fixed delay to the launch (this loop always ran its full 3 rounds
-    // and slept after the last one because the result was discarded).
-    for (let repaint = 0; repaint < 3; repaint += 1) {
-      let collected = false;
-      try {
-        const tabsR = await cdp.tabs(port).catch(() => []);
-        for (const tab of tabsR) {
-          if (!tab.webSocketDebuggerUrl) continue;
-          if (!this.isStartPageUrl(tab.url) && !/about:blank/i.test(String(tab.url || ''))) continue;
-          const outcome = await cdp.call(tab.webSocketDebuggerUrl, 'Runtime.evaluate', {
-            expression: `(() => { try { if (typeof window.__openbrowserCollectFingerprint === 'function') { window.__openbrowserCollectFingerprint('post-inject-${repaint}'); return 'ok'; } return 'missing'; } catch (e) { return String(e && e.message || e); } })()`,
-            returnByValue: true,
-          }, 3000).catch(() => null);
-          if ((outcome?.result?.value ?? outcome?.value) === 'ok') collected = true;
-        }
-      } catch (_) {}
-      if (collected) break;
-      await sleep(200);
+    // Refresh the local information table after verified delivery.
+    const tabs = await cdp.tabs(item.port);
+    for (const tab of tabs) {
+      if (!this.isStartPageUrl(tab.url) || !tab.webSocketDebuggerUrl) continue;
+      await cdp.call(tab.webSocketDebuggerUrl, 'Runtime.evaluate', {
+        expression: `if (typeof window.__openbrowserCollectFingerprint === 'function') window.__openbrowserCollectFingerprint('post-inject')`,
+      }, 3000).catch(() => {});
     }
-    const tabs = await cdp.tabs(port).catch(() => []);
-    const page = tabs.find((t) => this.isStartPageUrl(t.url)) || tabs[0];
-    if (!page?.webSocketDebuggerUrl) {
-      await fpLog('probe.no-tab', { profileId: profile.id, port, tabCount: tabs.length });
-      return null;
-    }
-    let live = null;
-    try {
-      const probe = await cdp.call(page.webSocketDebuggerUrl, 'Runtime.evaluate', {
-        expression: LIVE_PROBE_EXPRESSION,
-        returnByValue: true,
-      }, 8000);
-      live = probe?.result?.value || probe?.value || null;
-    } catch (error) {
-      live = { probeError: String(error.message || error) };
-    }
-    const intended = summarizeFp(injectFp);
-    const hostLikeWebgl = Boolean(live?.webglRenderer && /Radeon|GeForce|Intel\(R\)|W6800|RX |GTX |RTX /i.test(String(live.webglRenderer)))
-      && intended?.webglRenderer
-      && String(live.webglRenderer) !== String(intended.webglRenderer);
-    const hostLikeCores = intended?.hardwareConcurrency != null
-      && live?.hardwareConcurrency != null
-      && Number(live.hardwareConcurrency) !== Number(intended.hardwareConcurrency)
-      && Number(live.hardwareConcurrency) >= 12;
-    const bad = hostLikeWebgl || hostLikeCores
-      || (intended?.userAgent && live?.userAgent && intended.userAgent !== live.userAgent);
-    await fpLog('probe.startpage', {
-      profileId: profile.id,
-      port,
-      url: page.url,
-      intended,
-      live,
-      hostLikeWebgl,
-      hostLikeCores,
-      bad,
-    });
-    if (!bad) return live;
-
-    // Hard recovery: re-register document-start script and reload start page.
-    await fpLog('probe.reload-startpage', { profileId: profile.id, reason: { hostLikeWebgl, hostLikeCores } });
-    try {
-      const fontBlobBridge = injectFp?.fontBlobBridge || profile?.fingerprint?.fontBlobBridge || item?.fontBlobBridge;
-      if (fontBlobBridge?.channelName && page?.webSocketDebuggerUrl) {
-        try {
-          await cdp.call(page.webSocketDebuggerUrl, 'Runtime.enable', {}).catch(() => {});
-          await cdp.call(page.webSocketDebuggerUrl, 'Runtime.addBinding', { name: fontBlobBridge.channelName }).catch((err) => {
-            const msg = String(err?.message || err);
-            if (!/already exists/i.test(msg)) {}
-          });
-        } catch (_) {}
-      }
-      await applyFingerprintToTab(cdp.call, page.webSocketDebuggerUrl, injectFp, profile, { force: true });
-      await cdp.call(page.webSocketDebuggerUrl, 'Page.enable', {}).catch(() => {});
-      if (startUrl) await cdp.call(page.webSocketDebuggerUrl, 'Page.navigate', { url: startUrl });
-      else await cdp.call(page.webSocketDebuggerUrl, 'Page.reload', { ignoreCache: true });
-      await sleep(600);
-      await this.applyRuntimeSettings(port, profile, injectFp, {
-        appliedTargetIds: item?.fpAppliedTargets instanceof Set ? item.fpAppliedTargets : new Set(),
-        appliedFingerprintHash: item?.fpAppliedHash,
-        trackOn: item,
-        phase: 'post-reload',
-      });
-      const tabs2 = await cdp.tabs(port).catch(() => []);
-      const page2 = tabs2.find((t) => this.isStartPageUrl(t.url)) || tabs2[0];
-      if (page2?.webSocketDebuggerUrl) {
-        const probe2 = await cdp.call(page2.webSocketDebuggerUrl, 'Runtime.evaluate', {
-          expression: LIVE_PROBE_EXPRESSION,
-          returnByValue: true,
-        }, 8000).catch((e) => ({ result: { value: { probeError: String(e.message || e) } } }));
-        const live2 = probe2?.result?.value || probe2?.value || null;
-        await fpLog('probe.after-reload', { profileId: profile.id, live: live2, intended });
-        return live2;
-      }
-    } catch (error) {
-      await fpLog('probe.reload-fail', { profileId: profile.id, error: String(error.message || error) });
-    }
-    return live;
+    return injectFp;
   },
   fingerprintPatchFromNetwork(network = {}, profile = {}) {
     const privacy = { ...(profile.privacy || {}) };

@@ -3,11 +3,11 @@
 /**
  * CDP-layer hardening, extracted from engine.js: sanitization of every script
  * that crosses the CDP boundary (addScriptToEvaluateOnNewDocument /
- * Runtime.evaluate) and the connect-time wrapper that pins each browser
- * connection's service workers to that profile's fingerprint.
+ * Runtime.evaluate) for the browser connection. Worker setup is owned by fingerprint-injection.js
+ * so one path controls evaluation, network rewriting and debugger resume.
  *
- * The patches are idempotent (guarded by cdp.__scriptSanitized /
- * cdp.__serviceWorkerHardened) and are installed once at engine.js module
+ * The patches are idempotent (guarded by cdp.__scriptSanitized on
+ * the shared cdp module) and are installed once at engine.js module
  * load, before any connection is opened.
  */
 
@@ -35,10 +35,8 @@ function sanitizeInjectionScript(source) {
 /**
  * Install the CDP hardening patches on the shared cdp module.
  * @param {object} cdp the ./cdp module instance
- * @param {Function} buildWorkerInjectionScript worker-realm injection builder
- *   (injected so this module stays free of fingerprint-package coupling)
  */
-function installCdpHardening(cdp, { buildWorkerInjectionScript }) {
+function installCdpHardening(cdp) {
 if (!cdp.__scriptSanitized) {
   cdp.__scriptSanitized = true;
   const origCdpCall = cdp.call;
@@ -67,77 +65,6 @@ if (!cdp.__scriptSanitized) {
   }
 }
 
-if (!cdp.__serviceWorkerHardened) {
-  cdp.__serviceWorkerHardened = true;
-  const origConnect = cdp.connect;
-  cdp.connect = async function (webSocketUrl, options = {}) {
-    const originalOnEvent = options.onEvent;
-    // Per-connection persona: the caller (startWorkerFingerprintInjection) pins
-    // the exact fingerprint that belongs to THIS browser connection. When the
-    // option is absent we skip injection entirely — we must NEVER fall back to
-    // a process-global "latest" fingerprint: two profiles starting concurrently
-    // would otherwise cross-inject each other's identity into service workers.
-    const serviceWorkerFingerprint = options.serviceWorkerFingerprint || null;
-    const serviceWorkerLogContext = options.serviceWorkerLogContext || null;
-    const attachedWorkerTargets = new Set();
-    const sessionToTargetId = new Map();
-    const wrappedOptions = { ...options };
-    delete wrappedOptions.serviceWorkerFingerprint;
-    delete wrappedOptions.serviceWorkerLogContext;
-    wrappedOptions.onEvent = async (event, conn) => {
-      if (event?.method === 'Target.attachedToTarget') {
-        const { sessionId, targetInfo = {}, waitingForDebugger } = event.params || {};
-        const targetId = targetInfo.targetId;
-        if (sessionId && targetId) sessionToTargetId.set(sessionId, targetId);
-        if (sessionId && targetInfo.type === 'service_worker') {
-          if (targetId && attachedWorkerTargets.has(targetId)) {
-            if (waitingForDebugger) {
-              await conn.command('Runtime.runIfWaitingForDebugger', {}, { sessionId }).catch(() => {});
-            }
-            return;
-          }
-          if (targetId) attachedWorkerTargets.add(targetId);
-          const fp = serviceWorkerFingerprint;
-          if (fp) {
-            const logFailure = (err) => {
-              const logger = serviceWorkerLogContext?.logger;
-              if (typeof logger === 'function') {
-                logger({
-                  type: 'fingerprint-injection-failed',
-                  id: serviceWorkerLogContext?.profile?.id,
-                  targetType: 'service_worker',
-                  stage: 'worker-inject',
-                  operation: 'sw-evaluate',
-                  message: err?.message || String(err),
-                });
-              }
-            };
-            try {
-              const source = buildWorkerInjectionScript(fp);
-              await conn.command('Runtime.evaluate', { expression: source }, { sessionId, timeout: 2000 }).catch((evalErr) => {
-                logFailure(evalErr);
-              });
-            } catch (err) {
-              logFailure(err);
-            }
-          }
-        }
-      } else if (event?.method === 'Target.detachedFromTarget') {
-        const sid = event.params?.sessionId;
-        const tid = event.params?.targetId || (sid ? sessionToTargetId.get(sid) : null);
-        if (tid) attachedWorkerTargets.delete(tid);
-        if (sid) sessionToTargetId.delete(sid);
-      } else if (event?.method === 'Target.targetDestroyed') {
-        const tid = event.params?.targetId;
-        if (tid) attachedWorkerTargets.delete(tid);
-      }
-      if (typeof originalOnEvent === 'function') {
-        return originalOnEvent(event, conn);
-      }
-    };
-    return origConnect.call(this, webSocketUrl, wrappedOptions);
-  };
-}
 }
 
 module.exports = {

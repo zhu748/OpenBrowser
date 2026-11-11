@@ -420,11 +420,11 @@ function normalizeHeaders(headers) {
     const names = headers.map((h) => h.name.toLowerCase());
     assert.ok(!names.includes("accept-language"), "CORS OPTIONS preflight must not have Accept-Language injected");
     assert.ok(names.includes("user-agent"), "OPTIONS must have User-Agent");
-    assert.ok(names.includes("sec-ch-ua"), "OPTIONS must have sec-ch-ua");
+    assert.ok(!names.includes("sec-ch-ua"), "OPTIONS must preserve native Client Hints eligibility");
     assert.ok(names.includes("origin"), "OPTIONS must preserve origin");
   });
 
-  await check("RequestHeaderRewriter fails open on command rejection and cleans up session", async () => {
+  await check("RequestHeaderRewriter blocks on command rejection and cleans up session", async () => {
     let callCount = 0;
     const commands = [];
     const fakeConn = {
@@ -451,8 +451,8 @@ function normalizeHeaders(headers) {
     }, fakeConn);
 
     await sleep(50);
-    assert.strictEqual(commands.length, 2, "Must retry without headers when first continueRequest rejects");
-    assert.strictEqual(commands[1].params.headers, undefined, "Fallback must omit headers to fail open");
+    assert.strictEqual(commands.length, 2, "Must block when modified continueRequest rejects");
+    assert.strictEqual(commands[1].method, "Fetch.failRequest", "Failure must block rather than resume raw headers");
 
     assert.strictEqual(rewriter.inFlight.size, 0, "In-flight must be cleared after continue");
     rewriter.inFlight.add("dummy-req");

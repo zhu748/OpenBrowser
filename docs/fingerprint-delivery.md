@@ -14,6 +14,12 @@ Both engines launch on `about:blank`. External startup URLs are opened only afte
 
 For Chromium, late page/iframe targets finish injection and response setup before resuming. A failed target is closed; when target closure cannot be confirmed, its browser is stopped. Worker evaluation exceptions are inspected instead of being treated as successful protocol calls.
 
+Startup injection or verification failures now reject startup and terminate the browser through its normal lifecycle cleanup. A failed browser is not left running on an error page. Runtime checks only mark targets successful after a valid probe; timeouts and script errors on targets that still exist are failures. The post-navigation pass verifies all current startup tabs without stacking a second injection or automatically reloading an external site. This pass observes the current documents; it does not establish what a site observed before that probe.
+
+Dedicated workers, shared workers and service workers share one Chromium setup path. Network UA and request interception are configured before evaluation and debugger resume. Existing worker targets participate in the startup barrier. A page becomes available to the extra-startup-tab navigator only after its Fetch setup and debugger resume complete. OOPIF sessions receive the same request/response setup. These ordering contracts have simulated-protocol coverage; native-kernel validation is still required.
+
+Request-header rewrite failures block the paused request instead of retrying with raw headers. Duplicate pause events share one pending operation; session detach cancels it. If both continuation and request blocking fail without a confirmed closed session/request, the host stops the browser. Low-entropy Client Hints are rewritten only when the native request already contains them, preserving secure-context, policy and preflight eligibility. Failed-response events go to the response handler and cannot remain paused in the request handler. Header array ordering does not certify the actual HTTP/2 wire order or a complete TLS/JA3 identity.
+
 When exit coordinates are unavailable, location permission is denied instead of granting access to host coordinates or substituting `(0,0)`. Native WebRTC proxy mode without an exit IP no longer falls back to real ICE.
 
 ## Firefox implementation and limits
@@ -21,6 +27,7 @@ When exit coordinates are unavailable, location permission is denied instead of 
 Firefox uses its loopback-only Remote Agent with WebDriver BiDi. `script.addPreloadScript` is registered without a sandbox so it runs in the document's main realm before page scripts, including subsequently created frame documents. The initial blank document is patched and probed before target navigation. Supported native emulation commands supplement the shared runtime script; unsupported optional commands are reported. A configured position requires the native geolocation override to succeed.
 
 The BiDi connection is part of the running item's lifecycle and is closed on stop. Unexpected disconnects stop the managed browser.
+Repeated opens share a single BiDi socket. Firefox liveness checks use BiDi and do not invoke the Chromium runtime-injection sweep.
 
 | Surface | Firefox status |
 |---|---|
@@ -50,10 +57,13 @@ From `Browserapp/`:
 
 ```sh
 npm run selftest -- fpreliability
+npm run selftest -- fpdeliveryboundaries
 npm run selftest:firefoxstart
 ```
 
 The reliability suite uses actual configuration/build/injection functions, VM document execution, fault-injected CDP calls, deferred-session files and an in-memory BiDi transport. The Firefox launch suite runs the actual process lifecycle with a stub executable and simulated protocol messages; it is not a native Gecko rendering test. It stubs network discovery and makes no external exit-IP requests.
+
+The delivery-boundary suite exercises duplicate/rejected/hung request handling, strict probes, all three Chromium worker types, page readiness publication and Firefox watcher routing. It also executes the production Chromium startup routine with process/protocol fixtures to check that injection failures, mismatches and probe exceptions invoke process cleanup before target navigation, while a verified launch still completes. Fixtures do not substitute for the native browser gate below.
 
 Native Firefox verification is a separate gate:
 

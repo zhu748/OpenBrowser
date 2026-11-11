@@ -12,6 +12,7 @@ const { applyFingerprintToTab, buildFingerprint } = require('../automation/finge
 const { LIVE_PROBE_EXPRESSION, fpLog, summarizeFp, logPath: fingerprintLogPath } = require('../automation/fingerprint-debug-log');
 const { sanitizeUrlForLog } = require('../automation/log-sanitizer');
 const { buildPortScanProtectionScript } = require('../automation/port-scan-protection');
+const { evaluateFingerprintDelivery } = require('../automation/request-header-rewriter');
 const { fingerprintConfigHash, isEphemeralDocumentUrl } = require('./fingerprint-injection');
 
 // ===== Roxy 对齐：网址访问白名单 / 黑名单（Fetch 反选拦截） =====
@@ -164,6 +165,7 @@ module.exports = {
   async applyRuntimeSettings(port, profile, fingerprint = null, options = {}) {
     const phase = String(options.phase || 'applyRuntimeSettings');
     const tabs = await cdp.tabs(port);
+    if (phase === 'pre-startpage' && !tabs.length) throw new Error('No page target available for fingerprint delivery');
     const network = this.networkInfo.get(profile.id) || {};
     // merge IP-detected geo/tz into profile for fingerprint apply
     const enriched = {
@@ -211,7 +213,7 @@ module.exports = {
     // live tab already carries the inject there is nothing to do, and logging begin/skip/end
     // each time would burn disk and append tab URLs to the diagnostic log forever.
     // Prune closed targets, keep the tracked state fresh, and return quietly.
-    if (!force && tabs.every((tab) => applied.has(tab.id))) {
+    if (!force && !options.verifyApplied && tabs.every((tab) => applied.has(tab.id))) {
       const liveIds = new Set(tabs.map((tab) => tab.id));
       for (const id of [...applied]) {
         if (!liveIds.has(id)) applied.delete(id);
@@ -246,7 +248,7 @@ module.exports = {
         await cdp.call(tab.webSocketDebuggerUrl, 'Page.addScriptToEvaluateOnNewDocument', { source: portScanScript }).catch(() => {});
         await cdp.call(tab.webSocketDebuggerUrl, 'Runtime.evaluate', { expression: portScanScript }).catch(() => {});
       }
-      if (!force && applied.has(tab.id)) {
+      if (!force && !options.verifyApplied && applied.has(tab.id)) {
         await fpLog('inject.skip-tab', { phase, profileId: profile.id, tabId: tab.id, url: tab.url, reason: 'already-applied' });
         continue;
       }
@@ -262,81 +264,26 @@ module.exports = {
             });
           } catch (_) {}
         }
-        await applyFingerprintToTab(cdp.call, tab.webSocketDebuggerUrl, fp, enriched, {
+        if (force || !applied.has(tab.id)) await applyFingerprintToTab(cdp.call, tab.webSocketDebuggerUrl, fp, enriched, {
           livePatchDocument: isEphemeralDocumentUrl(tab.url),
         });
-        let live = null;
-        try {
-          const probe = await cdp.call(tab.webSocketDebuggerUrl, 'Runtime.evaluate', {
-            expression: LIVE_PROBE_EXPRESSION,
-            returnByValue: true,
-          }, 8000);
-          live = probe?.result?.value || probe?.value || null;
-        } catch (probeError) {
-          live = { probeError: String(probeError.message || probeError) };
+        const probe = await cdp.call(tab.webSocketDebuggerUrl, 'Runtime.evaluate', {
+          expression: LIVE_PROBE_EXPRESSION, returnByValue: true,
+        }, 8000);
+        const live = probe?.result?.value ?? probe?.value ?? null;
+        const exception = probe?.exceptionDetails || probe?.result?.exceptionDetails;
+        const verified = evaluateFingerprintDelivery(profile, fp, exception ? { probeError: exception.text || 'Probe script failed' } : live, { strict: true });
+        if (!verified.ok) {
+          const error = new Error('指纹交付校验失败：' + verified.mismatches.map((m) => m.message).join('; '));
+          error.code = 'FINGERPRINT_DELIVERY_FAILED';
+          error.mismatches = verified.mismatches;
+          throw error;
         }
-        const mismatch = live && !live.probeError ? {
-          ua: Boolean(fp.userAgent && live.userAgent && fp.userAgent !== live.userAgent),
-          platform: Boolean(fp.platform && live.platform && fp.platform !== live.platform),
-          cores: fp.hardwareConcurrency != null && live.hardwareConcurrency != null
-            && Number(fp.hardwareConcurrency) !== Number(live.hardwareConcurrency),
-          memory: fp.deviceMemory != null && live.deviceMemory != null
-            && Number(fp.deviceMemory) !== Number(live.deviceMemory),
-          webglRenderer: Boolean(fp.webgl?.renderer && live.webglRenderer
-            && String(live.webglRenderer) !== String(fp.webgl.renderer)
-            && !String(live.webglRenderer).includes(String(fp.webgl.renderer).slice(0, 24))),
-        } : null;
         await fpLog('inject.tab-ok', {
-          phase,
-          profileId: profile.id,
-          tabId: tab.id,
-          url: sanitizeUrlForLog(tab.url).slice(0, 240),
-          intended: summarizeFp(fp),
-          live,
-          mismatch,
+          phase, profileId: profile.id, tabId: tab.id,
+          url: sanitizeUrlForLog(tab.url).slice(0, 240), intended: summarizeFp(fp), live,
         });
-        // If probe still shows host hardware, re-evaluate inject once more immediately.
-        if (mismatch && (mismatch.cores || mismatch.webglRenderer || mismatch.memory)) {
-          await fpLog('inject.tab-ineffective', {
-            phase,
-            profileId: profile.id,
-            tabId: tab.id,
-            mismatch,
-          });
-          try {
-            await applyFingerprintToTab(cdp.call, tab.webSocketDebuggerUrl, fp, enriched, {
-              force: true,
-              livePatchDocument: isEphemeralDocumentUrl(tab.url),
-            });
-            const probe2 = await cdp.call(tab.webSocketDebuggerUrl, 'Runtime.evaluate', {
-              expression: LIVE_PROBE_EXPRESSION,
-              returnByValue: true,
-            }, 8000);
-            const live2 = probe2?.result?.value || probe2?.value || null;
-            await fpLog('inject.tab-retry', {
-              phase,
-              profileId: profile.id,
-              tabId: tab.id,
-              live: live2,
-            });
-            const coresOk = !(fp.hardwareConcurrency != null && live2?.hardwareConcurrency != null
-              && Number(fp.hardwareConcurrency) !== Number(live2.hardwareConcurrency));
-            const webglOk = !(fp.webgl?.renderer && live2?.webglRenderer
-              && String(live2.webglRenderer) !== String(fp.webgl.renderer)
-              && /Radeon|GeForce|W6800|GTX |RTX /i.test(String(live2.webglRenderer)));
-            if (coresOk && webglOk) applied.add(tab.id);
-            // else leave unmarked so force/post-startpage can try again
-          } catch (retryError) {
-            await fpLog('inject.tab-retry-fail', {
-              phase,
-              profileId: profile.id,
-              tabId: tab.id,
-              error: String(retryError.message || retryError),
-            });
-          }
-        } else {
-          applied.add(tab.id);
-        }
+        applied.add(tab.id);
       } catch (error) {
         await fpLog('inject.tab-fail', {
           phase,
@@ -345,17 +292,14 @@ module.exports = {
           url: sanitizeUrlForLog(tab.url).slice(0, 240),
           error: String(error.message || error),
         });
-        // Soft-fail per tab: keep trying other tabs / later phases instead of aborting start.
-        const msg = String(error.message || error || '');
-        // Transient races (tab closed after the /json snapshot, port flap)
-        // must not abort the whole pass: start's retries would all fail on a
-        // dead tab id and trigger the Fail-Closed barrier on a healthy env.
-        if (/socket (closed|error)|timeout|connection is closed|Target closed/i.test(msg)) continue;
-        if (!/Uncaught|already in effect|cannot be overridden|softInject/i.test(msg)) {
-          throw error;
-        }
+        applied.delete(tab.id);
+        // A closed target is harmless only when a fresh snapshot confirms its removal.
+        // Timeouts, script exceptions and missing probes on live tabs remain failures.
+        const liveTabs = await cdp.tabs(port).catch(() => null);
+        if (liveTabs && !liveTabs.some((entry) => entry.id === tab.id)) continue;
+        throw error;
       }
-      // applied.add only when probe matched (see above)
+      // Only verified targets enter the applied set.
     }
     // Drop closed targets so Set does not grow forever
     const liveIds = new Set(tabs.map((t) => t.id));

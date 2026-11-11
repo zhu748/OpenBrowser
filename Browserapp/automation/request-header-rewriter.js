@@ -54,6 +54,10 @@ class RequestHeaderRewriter {
     this.logger = typeof options.logger === "function" ? options.logger : null;
     this.inFlight = new Set();
     this.inFlightBySession = new Map();
+    this.operations = new Map();
+    this.commandTimeout = Math.max(10, Math.min(10000, Number(options.commandTimeout) || 6000));
+    this.onFatalError = options.onFatalError;
+    this.destroyed = false;
     this.profile = options.profile || {};
     this.fingerprint = options.fingerprint || null;
     this.setPersona(options.profile, options.fingerprint);
@@ -104,6 +108,7 @@ class RequestHeaderRewriter {
       meta.formFactors = metaFormFactors;
     }
 
+    this.supportsClientHints = Boolean(uaProfile.metadata && /(?:Chrome|Chromium|Edg)\//i.test(uaProfile.userAgent || ua));
     this.persona = {
       userAgent: override.userAgent || uaProfile.userAgent || ua,
       acceptLanguage: acceptLanguageHeader || override.acceptLanguage,
@@ -158,6 +163,8 @@ class RequestHeaderRewriter {
     const reqs = this.inFlightBySession.get(sessionId);
     if (reqs) {
       for (const rid of reqs) {
+        this.operations.get(rid)?.cancel();
+        this.operations.delete(rid);
         this.inFlight.delete(rid);
       }
       this.inFlightBySession.delete(sessionId);
@@ -165,223 +172,203 @@ class RequestHeaderRewriter {
   }
 
   destroy() {
+    this.destroyed = true;
+    for (const operation of this.operations.values()) operation.cancel();
+    this.operations.clear();
     this.inFlight.clear();
     this.inFlightBySession.clear();
   }
 
   handleEvent(event, connection) {
-    if (!event || event.method !== "Fetch.requestPaused" || !event.params) return;
-    const { requestId, request, responseStatusCode } = event.params;
+    if (this.destroyed || event?.method !== "Fetch.requestPaused" || !event.params) return;
+    const { requestId, request, responseStatusCode, responseErrorReason } = event.params;
     const sessionId = event.sessionId;
-
-    // Only process requests at Request stage (where responseStatusCode is null/undefined)
-    if (!requestId || responseStatusCode != null) return;
-
-    // CDP requestIds (`interception-job-<N>`) restart from 1 for every newly
-    // attached target session, so a bare requestId collides across sessions
-    // sharing this rewriter. Key the in-flight set by sessionId:requestId so a
-    // concurrent first request from another session is still header-rewritten
-    // instead of being silently passed through unmodified.
-    const inFlightKey = sessionId ? `${sessionId}:${requestId}` : requestId;
-    // Prevent duplicate in-flight processing for the same requestId across sessions
-    if (this.inFlight.has(inFlightKey)) {
-      this._sendCommand(connection, "Fetch.continueRequest", { requestId }, { sessionId, timeout: 3000 }).catch(() => {});
-      return;
-    }
-    this.inFlight.add(inFlightKey);
+    if (!requestId || responseStatusCode != null || responseErrorReason != null) return;
+    const key = sessionId ? `${sessionId}:${requestId}` : requestId;
+    // Duplicate notifications must never resume a pending request with raw headers.
+    if (this.inFlight.has(key)) return this.operations.get(key)?.promise;
+    const operation = { cancelled: false, reject: null, cancel() {
+      this.cancelled = true;
+      this.reject?.(new Error('Request session was closed'));
+    } };
+    this.operations.set(key, operation);
+    this.inFlight.add(key);
     if (sessionId) {
-      if (!this.inFlightBySession.has(sessionId)) {
-        this.inFlightBySession.set(sessionId, new Set());
-      }
-      this.inFlightBySession.get(sessionId).add(inFlightKey);
+      if (!this.inFlightBySession.has(sessionId)) this.inFlightBySession.set(sessionId, new Set());
+      this.inFlightBySession.get(sessionId).add(key);
     }
-
-    (async () => {
-      let settled = false;
-      let safetyTimer = null;
-
-      const doContinue = async (headers) => {
-        if (settled) return;
-        settled = true;
-        if (safetyTimer) {
-          clearTimeout(safetyTimer);
-          safetyTimer = null;
-        }
-        this.inFlight.delete(inFlightKey);
-        if (sessionId && this.inFlightBySession.has(sessionId)) {
-          const s = this.inFlightBySession.get(sessionId);
-          s.delete(inFlightKey);
-          if (s.size === 0) this.inFlightBySession.delete(sessionId);
-        }
-
-        try {
-          const params = { requestId };
-          if (headers && Array.isArray(headers)) params.headers = headers;
-          await this._sendCommand(connection, "Fetch.continueRequest", params, { sessionId, timeout: 6000 });
-        } catch (_) {
-          // If continuing with modified headers was rejected by CDP, fallback to raw continueRequest to avoid hanging
-          try {
-            await this._sendCommand(connection, "Fetch.continueRequest", { requestId }, { sessionId, timeout: 3000 });
-          } catch (_) {}
-        }
-      };
-
-      // Fail-open timeout guard: if anything stalls, resume after 7 seconds
-      safetyTimer = setTimeout(() => {
-        if (!settled) {
-          doContinue().catch(() => {});
-        }
-      }, 7000);
-      if (typeof safetyTimer.unref === "function") safetyTimer.unref();
-
+    const send = async (method, params) => {
+      if (operation.cancelled) throw new Error('Request session was closed');
+      let timer;
       try {
-        if (!this.enabled || !this.persona) {
-          return await doContinue();
-        }
-
-        const url = String(request?.url || "");
-        // Filter internal browser schemes: chrome, devtools, data, blob, about, etc.
-        if (/^(chrome|chrome-extension|edge|edge-extension|devtools|data|blob|about|javascript|filesystem|view-source|isolated-app):/i.test(url)) {
-          return await doContinue();
-        }
-
-        const reqHeaders = request?.headers || {};
-        const method = String(request?.method || "GET").toUpperCase();
-
-        // Filter WebSocket upgrades: modifying headers can break native WebSocket handshake
-        let isWs = false;
-        for (const [hk, hv] of Object.entries(reqHeaders)) {
-          if (hk.toLowerCase() === "upgrade" && String(hv).toLowerCase() === "websocket") {
-            isWs = true;
-            break;
-          }
-        }
-        if (isWs) {
-          return await doContinue();
-        }
-
-        const otherHeaders = [];
-        const existingKeys = new Set();
-        const seenNames = new Set();
-
-        for (const [k, v] of Object.entries(reqHeaders)) {
-          const lk = k.toLowerCase();
-          existingKeys.add(lk);
-          // Strip all host User-Agent, Accept-Language, and any Client Hints (sec-ch-ua*)
-          if (
-            lk === "user-agent" ||
-            lk === "accept-language" ||
-            lk.startsWith("sec-ch-ua")
-          ) {
-            continue;
-          }
-          if (seenNames.has(lk)) continue;
-          seenNames.add(lk);
-          otherHeaders.push({ name: k, value: String(v) });
-        }
-
-        // Real iOS WebKit never implements or sends User-Agent Client Hints (sec-ch-ua*).
-        // Sending sec-ch-ua-platform: "iOS" is an immediate adversarial red-team dead giveaway.
-        const isIos = this.persona.platform === "iOS"
-          || this.persona.platformNav === "iPhone"
-          || this.persona.platformNav === "iPad"
-          || /iphone|ipad|ipod|ios/i.test(this.persona.platformNav || "")
-          || /iphone|ipad|ipod/i.test(this.persona.userAgent || "");
-
-        const secChUaHeaders = [];
-        if (!isIos) {
-          if (this.secChUa) {
-            secChUaHeaders.push({ name: "sec-ch-ua", value: this.secChUa });
-          }
-          secChUaHeaders.push({ name: "sec-ch-ua-mobile", value: this.persona.mobile ? "?1" : "?0" });
-          if (this.persona.platform) {
-            secChUaHeaders.push({ name: "sec-ch-ua-platform", value: "\"" + this.persona.platform + "\"" });
-          }
-
-          // High-entropy User-Agent Client Hints (ONLY populated if server requested via Accept-CH)
-          const meta = this.persona.metadata || {};
-
-          if (existingKeys.has("sec-ch-ua-arch")) {
-            const arch = meta.architecture !== undefined ? meta.architecture : (this.persona.platform === "Android" ? "" : "x86");
-            secChUaHeaders.push({ name: "sec-ch-ua-arch", value: "\"" + arch + "\"" });
-          }
-          if (existingKeys.has("sec-ch-ua-bitness")) {
-            const bitness = meta.bitness !== undefined ? meta.bitness : (this.persona.platform === "Android" ? "" : "64");
-            secChUaHeaders.push({ name: "sec-ch-ua-bitness", value: "\"" + bitness + "\"" });
-          }
-          if (existingKeys.has("sec-ch-ua-model")) {
-            const model = meta.model !== undefined ? meta.model : "";
-            secChUaHeaders.push({ name: "sec-ch-ua-model", value: "\"" + model + "\"" });
-          }
-          if (existingKeys.has("sec-ch-ua-platform-version")) {
-            const pv = meta.platformVersion !== undefined ? meta.platformVersion : "15.0.0";
-            secChUaHeaders.push({ name: "sec-ch-ua-platform-version", value: "\"" + pv + "\"" });
-          }
-          if (existingKeys.has("sec-ch-ua-full-version")) {
-            const fv = meta.fullVersion || meta.uaFullVersion || "148.0.0.0";
-            secChUaHeaders.push({ name: "sec-ch-ua-full-version", value: "\"" + fv + "\"" });
-          }
-          if (existingKeys.has("sec-ch-ua-full-version-list")) {
-            secChUaHeaders.push({ name: "sec-ch-ua-full-version-list", value: this.secChUaFullVersionList });
-          }
-          if (existingKeys.has("sec-ch-ua-form-factors")) {
-            const ff = meta.formFactors || meta.form_factors;
-            if (ff) {
-              const val = Array.isArray(ff) ? ff.map((f) => "\"" + f + "\"").join(", ") : "\"" + ff + "\"";
-              secChUaHeaders.push({ name: "sec-ch-ua-form-factors", value: val });
-            } else if (this.persona.mobile) {
-              secChUaHeaders.push({ name: "sec-ch-ua-form-factors", value: "\"Mobile\"" });
-            }
-          }
-          if (existingKeys.has("sec-ch-ua-wow64")) {
-            secChUaHeaders.push({ name: "sec-ch-ua-wow64", value: meta.wow64 ? "?1" : "?0" });
-          }
-        }
-
-        let userAgentHeader = null;
-        if (this.persona.userAgent) {
-          userAgentHeader = { name: "User-Agent", value: this.persona.userAgent };
-        }
-
-        let acceptLanguageHeader = null;
-        if (this.persona.acceptLanguage && (method !== "OPTIONS" || existingKeys.has("accept-language"))) {
-          acceptLanguageHeader = { name: "Accept-Language", value: this.persona.acceptLanguage };
-        }
-
-        const newHeaders = [...otherHeaders];
-        if (secChUaHeaders.length > 0) {
-          newHeaders.push(...secChUaHeaders);
-        }
-        if (userAgentHeader) {
-          newHeaders.push(userAgentHeader);
-        }
-        if (acceptLanguageHeader) {
-          newHeaders.push(acceptLanguageHeader);
-        }
-
-        const indexedHeaders = newHeaders.map((h, idx) => {
-          const lk = (h && typeof h.name === "string") ? h.name.toLowerCase() : "";
-          const canonicalRank = CHROMIUM_CANONICAL_HEADER_INDEX.has(lk)
-            ? CHROMIUM_CANONICAL_HEADER_INDEX.get(lk)
-            : (1000 + idx);
-          return { header: h, rank: canonicalRank, originalIndex: idx };
+        return await new Promise((resolve, reject) => {
+          operation.reject = reject;
+          timer = setTimeout(() => reject(new Error(`Request rewrite timeout: ${method}`)), this.commandTimeout);
+          timer.unref?.();
+          this._sendCommand(connection, method, params, { sessionId, timeout: this.commandTimeout }).then(resolve, reject);
         });
-
-        indexedHeaders.sort((a, b) => {
-          if (a.rank !== b.rank) return a.rank - b.rank;
-          return a.originalIndex - b.originalIndex;
-        });
-
-        const sortedHeaders = indexedHeaders.map((item) => item.header);
-
-        await doContinue(sortedHeaders);
-      } catch (err) {
-        if (this.logger) {
-          try { this.logger({ type: "request-rewrite-error", error: err.message, url: request?.url }); } catch (_) {}
+      } finally { clearTimeout(timer); operation.reject = null; }
+    };
+    operation.promise = (async () => {
+      try {
+        const headers = this._rewriteHeaders(request);
+        await send('Fetch.continueRequest', { requestId, ...(headers ? { headers } : {}) });
+      } catch (error) {
+        if (operation.cancelled) return;
+        try { this.logger?.({ type: 'request-rewrite-error', error: error.message }); } catch (_) {}
+        try {
+          await send('Fetch.failRequest', { requestId, errorReason: 'BlockedByClient' });
+        } catch (blockError) {
+          // A detached session or an already completed request has no pause left to release.
+          if (!operation.cancelled && !/Invalid InterceptionId|No resource with given identifier|Target closed|Session (?:closed|with given id not found)/i.test(String(blockError.message))) {
+            try { this.onFatalError?.(blockError); } catch (_) {}
+          }
         }
-        await doContinue();
+      } finally {
+        this.operations.delete(key);
+        this.inFlight.delete(key);
+        const requests = this.inFlightBySession.get(sessionId);
+        requests?.delete(key);
+        if (requests?.size === 0) this.inFlightBySession.delete(sessionId);
       }
     })();
+    return operation.promise;
+  }
+
+  _rewriteHeaders(request) {
+    if (!this.enabled || !this.persona) return null;
+    const url = String(request?.url || '');
+    if (/^(chrome|chrome-extension|edge|edge-extension|devtools|data|blob|about|javascript|filesystem|view-source|isolated-app):/i.test(url)) return null;
+    const reqHeaders = request?.headers || {};
+    const method = String(request?.method || "GET").toUpperCase();
+
+    // Filter WebSocket upgrades: modifying headers can break native WebSocket handshake
+    let isWs = false;
+    for (const [hk, hv] of Object.entries(reqHeaders)) {
+      if (hk.toLowerCase() === "upgrade" && String(hv).toLowerCase() === "websocket") {
+        isWs = true;
+        break;
+      }
+    }
+    if (isWs) {
+      return null;
+    }
+
+    const otherHeaders = [];
+    const existingKeys = new Set();
+    const seenNames = new Set();
+
+    for (const [k, v] of Object.entries(reqHeaders)) {
+      const lk = k.toLowerCase();
+      existingKeys.add(lk);
+      // Strip all host User-Agent, Accept-Language, and any Client Hints (sec-ch-ua*)
+      if (
+        lk === "user-agent" ||
+        lk === "accept-language" ||
+        lk.startsWith("sec-ch-ua")
+      ) {
+        continue;
+      }
+      if (seenNames.has(lk)) continue;
+      seenNames.add(lk);
+      otherHeaders.push({ name: k, value: String(v) });
+    }
+
+    // Real iOS WebKit never implements or sends User-Agent Client Hints (sec-ch-ua*).
+    // Sending sec-ch-ua-platform: "iOS" is an immediate adversarial red-team dead giveaway.
+    const isIos = this.persona.platform === "iOS"
+      || this.persona.platformNav === "iPhone"
+      || this.persona.platformNav === "iPad"
+      || /iphone|ipad|ipod|ios/i.test(this.persona.platformNav || "")
+      || /iphone|ipad|ipod/i.test(this.persona.userAgent || "");
+
+    const secChUaHeaders = [];
+    if (!isIos && this.supportsClientHints) {
+      if (this.secChUa && existingKeys.has("sec-ch-ua")) {
+        secChUaHeaders.push({ name: "sec-ch-ua", value: this.secChUa });
+      }
+      if (existingKeys.has("sec-ch-ua-mobile")) secChUaHeaders.push({ name: "sec-ch-ua-mobile", value: this.persona.mobile ? "?1" : "?0" });
+      if (this.persona.platform && existingKeys.has("sec-ch-ua-platform")) {
+        secChUaHeaders.push({ name: "sec-ch-ua-platform", value: "\"" + this.persona.platform + "\"" });
+      }
+
+      // High-entropy User-Agent Client Hints (ONLY populated if server requested via Accept-CH)
+      const meta = this.persona.metadata || {};
+
+      if (existingKeys.has("sec-ch-ua-arch")) {
+        const arch = meta.architecture !== undefined ? meta.architecture : (this.persona.platform === "Android" ? "" : "x86");
+        secChUaHeaders.push({ name: "sec-ch-ua-arch", value: "\"" + arch + "\"" });
+      }
+      if (existingKeys.has("sec-ch-ua-bitness")) {
+        const bitness = meta.bitness !== undefined ? meta.bitness : (this.persona.platform === "Android" ? "" : "64");
+        secChUaHeaders.push({ name: "sec-ch-ua-bitness", value: "\"" + bitness + "\"" });
+      }
+      if (existingKeys.has("sec-ch-ua-model")) {
+        const model = meta.model !== undefined ? meta.model : "";
+        secChUaHeaders.push({ name: "sec-ch-ua-model", value: "\"" + model + "\"" });
+      }
+      if (existingKeys.has("sec-ch-ua-platform-version")) {
+        const pv = meta.platformVersion !== undefined ? meta.platformVersion : "15.0.0";
+        secChUaHeaders.push({ name: "sec-ch-ua-platform-version", value: "\"" + pv + "\"" });
+      }
+      if (existingKeys.has("sec-ch-ua-full-version")) {
+        const fv = meta.fullVersion || meta.uaFullVersion || "148.0.0.0";
+        secChUaHeaders.push({ name: "sec-ch-ua-full-version", value: "\"" + fv + "\"" });
+      }
+      if (existingKeys.has("sec-ch-ua-full-version-list")) {
+        secChUaHeaders.push({ name: "sec-ch-ua-full-version-list", value: this.secChUaFullVersionList });
+      }
+      if (existingKeys.has("sec-ch-ua-form-factors")) {
+        const ff = meta.formFactors || meta.form_factors;
+        if (ff) {
+          const val = Array.isArray(ff) ? ff.map((f) => "\"" + f + "\"").join(", ") : "\"" + ff + "\"";
+          secChUaHeaders.push({ name: "sec-ch-ua-form-factors", value: val });
+        } else if (this.persona.mobile) {
+          secChUaHeaders.push({ name: "sec-ch-ua-form-factors", value: "\"Mobile\"" });
+        }
+      }
+      if (existingKeys.has("sec-ch-ua-wow64")) {
+        secChUaHeaders.push({ name: "sec-ch-ua-wow64", value: meta.wow64 ? "?1" : "?0" });
+      }
+    }
+
+    let userAgentHeader = null;
+    if (this.persona.userAgent) {
+      userAgentHeader = { name: "User-Agent", value: this.persona.userAgent };
+    }
+
+    let acceptLanguageHeader = null;
+    if (this.persona.acceptLanguage && (method !== "OPTIONS" || existingKeys.has("accept-language"))) {
+      acceptLanguageHeader = { name: "Accept-Language", value: this.persona.acceptLanguage };
+    }
+
+    const newHeaders = [...otherHeaders];
+    if (secChUaHeaders.length > 0) {
+      newHeaders.push(...secChUaHeaders);
+    }
+    if (userAgentHeader) {
+      newHeaders.push(userAgentHeader);
+    }
+    if (acceptLanguageHeader) {
+      newHeaders.push(acceptLanguageHeader);
+    }
+
+    const indexedHeaders = newHeaders.map((h, idx) => {
+      const lk = (h && typeof h.name === "string") ? h.name.toLowerCase() : "";
+      const canonicalRank = CHROMIUM_CANONICAL_HEADER_INDEX.has(lk)
+        ? CHROMIUM_CANONICAL_HEADER_INDEX.get(lk)
+        : (1000 + idx);
+      return { header: h, rank: canonicalRank, originalIndex: idx };
+    });
+
+    indexedHeaders.sort((a, b) => {
+      if (a.rank !== b.rank) return a.rank - b.rank;
+      return a.originalIndex - b.originalIndex;
+    });
+
+    const sortedHeaders = indexedHeaders.map((item) => item.header);
+
+    return sortedHeaders;
   }
 }
 
@@ -393,22 +380,22 @@ function createRequestHeaderRewriter(options = {}) {
 function normalizePlatformFamily(str) {
   if (!str || typeof str !== 'string') return null;
   const s = str.trim().toLowerCase();
-  if (s.includes('win')) return 'windows';
+  if (s.includes('iphone') || s.includes('ipad') || s.includes('ipod') || s.includes('ios')) return 'ios';
   if (s.includes('mac') || s.includes('darwin')) return 'macos';
+  if (s.includes('win')) return 'windows';
   if (s.includes('android')) return 'android';
   if (s.includes('linux') || s.includes('x11')) return 'linux';
-  if (s.includes('iphone') || s.includes('ipad') || s.includes('ipod') || s.includes('ios')) return 'ios';
   return s;
 }
 
 function detectUaPlatform(ua) {
   if (!ua || typeof ua !== 'string') return null;
   const s = ua.toLowerCase();
+  if (s.includes('iphone') || s.includes('ipad') || s.includes('ipod') || s.includes('cpu os')) return 'ios';
   if (s.includes('windows nt') || s.includes('win64') || s.includes('wow64') || s.includes('windows')) return 'windows';
   if (s.includes('macintosh') || s.includes('mac os x') || s.includes('macos')) return 'macos';
   if (s.includes('android')) return 'android';
   if (s.includes('linux') || s.includes('x11')) return 'linux';
-  if (s.includes('iphone') || s.includes('ipad') || s.includes('cpu os')) return 'ios';
   return null;
 }
 
@@ -433,10 +420,10 @@ function extractGpuBrand(str) {
 
 function normalizeTimezone(tz) {
   if (!tz || typeof tz !== 'string') return '';
-  let s = tz.trim().toLowerCase();
-  if (s.startsWith('etc/')) s = s.slice(4);
-  if (s === 'gmt' || s === 'utc' || s === 'z') return 'utc';
-  return s;
+  const text = tz.trim();
+  if (/^(?:etc\/)?(?:gmt|utc|z)$/i.test(text)) return 'utc';
+  try { return new Intl.DateTimeFormat('en', { timeZone: text }).resolvedOptions().timeZone.toLowerCase(); }
+  catch (_) { return text.toLowerCase(); }
 }
 
 function extractPrimaryLanguage(val) {
@@ -500,6 +487,9 @@ function evaluateFingerprintDelivery(profile = {}, fingerprint = {}, liveProbe =
       });
     }
   }
+  if (options.strict && expectedPlatform && liveProbe.platform !== expectedPlatform && !mismatches.some((m) => m.field === 'platform')) {
+    mismatches.push({ field: 'platform', expected: expectedPlatform, actual: liveProbe.platform, message: '实际 navigator.platform 与配置不一致' });
+  }
 
   // 3. User-Agent verification (Key fragments: platform segment, Chrome major)
   const expectedUa = String(fingerprint?.userAgent || profile?.userAgent || '').trim();
@@ -551,7 +541,7 @@ function evaluateFingerprintDelivery(profile = {}, fingerprint = {}, liveProbe =
   if (!isRealTimezone) {
     const expectedTz = String(fingerprint?.timezone || profile?.exitTimezone || privacy.timezone || '').trim();
     const liveTz = String(liveProbe.timezone || '').trim();
-    if (expectedTz && liveTz && expectedTz.toLowerCase() !== 'real') {
+    if (expectedTz && (liveTz || options.strict) && expectedTz.toLowerCase() !== 'real') {
       if (normalizeTimezone(expectedTz) !== normalizeTimezone(liveTz)) {
         mismatches.push({
           field: 'timezone',
@@ -591,6 +581,11 @@ function evaluateFingerprintDelivery(profile = {}, fingerprint = {}, liveProbe =
             message: "WebGL GPU 身份不符：期望 " + expBrand + "，实际交付 " + liveBrand,
           });
         }
+        if (options.strict && liveProbe.webglUnmasked === true) {
+          for (const [field, expected, actual] of [['webglRenderer', expectedRenderer, liveRenderer], ['webglVendor', expectedVendor, liveVendor]]) {
+            if (expected && expected !== actual) mismatches.push({ field, expected, actual, message: `${field} 未按配置交付` });
+          }
+        }
       }
     }
   }
@@ -608,11 +603,11 @@ function evaluateFingerprintDelivery(profile = {}, fingerprint = {}, liveProbe =
     const expectedLang = extractPrimaryLanguage(fingerprint?.languages || profile?.language);
     const liveLang = extractPrimaryLanguage(liveProbe.languages || liveProbe.language);
 
-    if (expectedLang && liveLang) {
+    if (expectedLang && (liveLang || options.strict)) {
       if (expectedLang !== liveLang) {
         const expBase = expectedLang.split('-')[0];
-        const liveBase = liveLang.split('-')[0];
-        if (expBase !== liveBase) {
+        const liveBase = (liveLang || '').split('-')[0];
+        if (options.strict || expBase !== liveBase) {
           mismatches.push({
             field: 'languages',
             expected: expectedLang,
@@ -656,13 +651,20 @@ function evaluateFingerprintDelivery(profile = {}, fingerprint = {}, liveProbe =
   }
 
   if (options.strict) {
+    if (!isSystemLanguage && Array.isArray(fingerprint.languages) && fingerprint.languages.length) {
+      const expected = fingerprint.languages.map((entry) => String(entry).toLowerCase());
+      const actual = Array.isArray(liveProbe.languages) ? liveProbe.languages.map((entry) => String(entry).toLowerCase()) : [];
+      if (JSON.stringify(expected) !== JSON.stringify(actual) && !mismatches.some((m) => m.field === 'languages')) {
+        mismatches.push({ field: 'languages', expected, actual, message: '语言列表未按配置交付' });
+      }
+    }
     for (const [field, expected] of [['screenWidth', fingerprint.screen?.width], ['screenHeight', fingerprint.screen?.height], ['devicePixelRatio', fingerprint.screen?.devicePixelRatio]]) {
       if (expected != null && Number(liveProbe[field]) !== Number(expected)) {
         mismatches.push({ field, expected, actual: liveProbe[field], message: `${field} 未按配置交付` });
       }
     }
-    if (fingerprint.engine === 'firefox' && liveProbe.vendor !== '') {
-      mismatches.push({ field: 'vendor', expected: '', actual: liveProbe.vendor, message: 'Firefox vendor 应保持原生空字符串' });
+    if (fingerprint.vendor != null && liveProbe.vendor !== fingerprint.vendor) {
+      mismatches.push({ field: 'vendor', expected: fingerprint.vendor, actual: liveProbe.vendor, message: 'navigator.vendor 未按配置交付' });
     }
   }
   return {

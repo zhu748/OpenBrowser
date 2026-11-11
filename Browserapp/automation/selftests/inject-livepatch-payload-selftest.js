@@ -127,7 +127,7 @@ function ok(name, cond, detail) {
 
   async function runApplyForFp(targetFp, opts) {
     const pageId = `PAGE${(pageSeq += 1)}`;
-    const cdpCall = async () => ({});
+    const cdpCall = async (_url, method) => method === 'Page.addScriptToEvaluateOnNewDocument' ? { identifier: `id-${pageId}` } : {};
     await applyFingerprintToTab(cdpCall, `ws://127.0.0.1:1/devtools/page/${pageId}`, targetFp, { privacy: {} }, opts);
   }
 

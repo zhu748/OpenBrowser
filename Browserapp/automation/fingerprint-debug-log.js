@@ -114,9 +114,10 @@ const LIVE_PROBE_EXPRESSION = `(() => {
   try {
     const canvas = document.createElement('canvas');
     const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-    let webglVendor = null, webglRenderer = null;
+    let webglVendor = null, webglRenderer = null, webglUnmasked = false;
     if (gl) {
       const ext = gl.getExtension('WEBGL_debug_renderer_info');
+      webglUnmasked = Boolean(ext);
       webglVendor = ext ? gl.getParameter(ext.UNMASKED_VENDOR_WEBGL) : gl.getParameter(gl.VENDOR);
       webglRenderer = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
     }
@@ -136,6 +137,7 @@ const LIVE_PROBE_EXPRESSION = `(() => {
       devicePixelRatio: window.devicePixelRatio,
       webglVendor: webglVendor,
       webglRenderer: webglRenderer,
+      webglUnmasked,
       webdriver: navigator.webdriver === true,
       timezone: (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (_) { return ''; } })(),
       uaDataPlatform: navigator.userAgentData && navigator.userAgentData.platform || null,

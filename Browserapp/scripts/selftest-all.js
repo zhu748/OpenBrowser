@@ -160,6 +160,7 @@ const SUITE = [
   ['selftest:groupsui', 'automation/selftests/groups-ui-selftest.js'],
   ['selftest:uabuilder', 'automation/selftests/ua-builder-selftest.js'],
   ['selftest:fpreliability', 'automation/selftests/fingerprint-reliability-selftest.js'],
+  ['selftest:fpdeliveryboundaries', 'automation/selftests/fingerprint-delivery-boundaries-selftest.js'],
   ['selftest:profilebatch', 'profile-batch-unit-selftest.js'],
   ['selftest:syncbackpressure', 'sync-backpressure-unit-selftest.js'],
   ['selftest:syncsettings', 'sync-settings-unit-selftest.js'],

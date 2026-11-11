@@ -94,7 +94,7 @@ module.exports = {
         return false;
       }
     }
-    return /https?:\/\/(?:127\.0\.0\.1|localhost):5032[6-9](?:\/|$|\?|#)/.test(s);
+    return /^https?:\/\/(?:127\.0\.0\.1|localhost):5032[6-9](?:\/|$|\?|#)/.test(s);
   },
   envWindowTitle(profile) {
     const number = profile.number || profile.name || profile.id || '';

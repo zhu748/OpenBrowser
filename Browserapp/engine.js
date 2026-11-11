@@ -39,7 +39,6 @@ function withAssociation(profile, proxyId, patch = {}) {
 }
 const { applyLanguagePreferences, verifyLanguagePreferences, syncProfileLocalState } = require('./automation/profile-file-consistency');
 const { platformPreflight } = require('./automation/platform-preflight');
-const { buildWorkerInjectionScript } = require('./automation/fingerprint');
 const { ensureStartPageServer } = require('./automation/start-page-server');
 const { killProcessTree } = require('./automation/protocol/cross-platform');
 const isolation = require('./automation/isolation');
@@ -74,7 +73,7 @@ const { sanitizeInjectionScript, installCdpHardening } = require('./engine/cdp-h
 
 
 
-installCdpHardening(cdp, { buildWorkerInjectionScript });
+installCdpHardening(cdp);
 
 /**
  * Chromium 原生线缆层 HTTP 报头标准槽位序列 (Canonical Wire Header Order).

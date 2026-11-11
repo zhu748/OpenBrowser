@@ -24,9 +24,16 @@ class BidiConnection {
     this.intentionalClose = false;
   }
 
-  async open(timeout = 8000) {
-    if (this.closed) throw new Error('BiDi connection is closed');
-    this.socket = this.socketFactory(this.endpoint);
+  open(timeout = 8000) {
+    if (this.closed) return Promise.reject(new Error('BiDi connection is closed'));
+    if (this.openPromise) return this.openPromise;
+    this.openPromise = this._open(timeout);
+    return this.openPromise;
+  }
+
+  async _open(timeout) {
+    try { this.socket = this.socketFactory(this.endpoint); }
+    catch (error) { this.terminate(error); throw error; }
     this.socket.addEventListener('message', (event) => {
       if (this.closed) return;
       let message;

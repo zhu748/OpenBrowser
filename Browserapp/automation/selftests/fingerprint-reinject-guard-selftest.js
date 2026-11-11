@@ -48,7 +48,7 @@ const ok = (name, cond) => { assert.ok(cond, name); console.log('  PASS  ' + nam
     { id: 'T2', url: 'https://example.com/b', webSocketDebuggerUrl: 'ws://127.0.0.1:9222/2' },
   ];
   cdp.tabs = async () => tabs;
-  cdp.call = async () => ({ result: { value: null } });
+  cdp.call = async () => { const fp = injectCalls.at(-1)?.[2] || {}; return { result: { value: { userAgent: fp.userAgent, platform: fp.platform, hardwareConcurrency: fp.hardwareConcurrency } } }; };
 
   const run = (fingerprint, options) => BrowserEngine.prototype.applyRuntimeSettings.call(
     { networkInfo: new Map() }, 9222, { id: 'reinject', advanced: {}, privacy: {} }, fingerprint, options,

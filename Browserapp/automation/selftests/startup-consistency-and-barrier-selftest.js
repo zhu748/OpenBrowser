@@ -169,8 +169,8 @@ async function check(name, fn) {
     const engineCode = fs.readFileSync(path.join(__dirname, '../../engine/start.js'), 'utf8');
     assert.ok(engineCode.includes('start.pre-inject-fail-attempt'), 'Must log retry attempts');
     assert.ok(engineCode.includes('injectionFailed'), 'Must define injection barrier failure check');
-    assert.ok(engineCode.includes('start.navigate-barrier-errorpage'), 'Must log navigation to local error page on barrier failure');
-    assert.ok(engineCode.includes('data:text/html;charset=utf-8'), 'Must navigate to safe local error page on barrier failure');
+    assert.ok(engineCode.includes("code: 'FINGERPRINT_INJECTION_FAILED'"), 'Injection failures must throw into startup cleanup');
+    assert.ok(engineCode.includes("this.handleBrowserGone(profile.id, liveItem, 'start-failed'"), 'Failed starts must clean up the live browser');
     assert.ok(engineCode.includes('blocked: true'), 'Must mark event blocked on barrier failure');
   });
 

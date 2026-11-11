@@ -614,10 +614,8 @@ async function runLiveEngineIntegration(serverPort, mutate) {
     assert.ok(armCallIdx !== -1, 'initial-target path must arm response rewriting (armResponseRewriting)');
     assert.ok(resumeCallIdx !== -1, 'initial-target path must resume via resumeTarget()');
     assert.ok(armCallIdx !== -1 && armCallIdx < resumeCallIdx, 'fontResponseRewriter.enable must precede Runtime.runIfWaitingForDebugger on the initial-target path');
-    // Late-created targets intentionally resume first and arm rewriting in the
-    // background (documented in the module): a tab just opened has no document
-    // worth sanitizing yet. Record that path too, without ordering it.
-    assert.ok(methodSource.includes('if (!isInitial) armResponseRewriting(2500)'), 'late-target path arms rewriting after resume by design');
+    const lateIdx = methodSource.indexOf('await armResponseRewriting(injectBudget)');
+    assert.ok(lateIdx !== -1 && lateIdx < resumeCallIdx, 'Late targets must also arm rewriting before resume');
   });
 
   // Check 5: Browser connection configures Target.setAutoAttach with flatten: true
