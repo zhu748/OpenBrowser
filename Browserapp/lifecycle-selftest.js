@@ -14,9 +14,11 @@ const {
 } = require('./automation/isolation');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+let fixtureDataRoot;
 
 function makeEngine() {
   const engine = Object.create(BrowserEngine.prototype);
+  engine.profileDataRootPath = fixtureDataRoot;
   engine.running = new Map();
   engine.starting = new Map();
   engine.stopping = new Map();
@@ -319,7 +321,10 @@ async function testStopCancelsInFlightStart() {
   const profile = { id: 'cancel-start', name: 'Cancel start' };
   let releasePrepare;
   const prepareGate = new Promise((resolve) => { releasePrepare = resolve; });
+  let enteredPrepare;
+  const preparing = new Promise((resolve) => { enteredPrepare = resolve; });
   engine._start = async (raw, generation) => {
+    enteredPrepare();
     await prepareGate;
     engine.assertStartGenerationActive(raw.id, generation);
     engine.running.set(raw.id, {
@@ -332,7 +337,7 @@ async function testStopCancelsInFlightStart() {
   };
 
   const starting = engine.start(profile);
-  await sleep(0);
+  await preparing;
   const stopping = engine.stop(profile.id);
   releasePrepare();
   await assert.rejects(starting, (error) => error.code === 'BROWSER_START_CANCELLED');
@@ -503,7 +508,13 @@ async function main() {
   process.stdout.write(`LIFECYCLE_SELFTEST_OK concurrent_start=1 start_waits_stop=1 concurrent_stop=1 restart_cycles=5 failed_start_recovery=1 starts=${startCount} stops=${stopCount}\n`);
 }
 
-main().catch((error) => {
+async function runWithDataRoot() {
+  fixtureDataRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'ob-lifecycle-fixture-'));
+  try { await main(); }
+  finally { await fs.rm(fixtureDataRoot, { recursive: true, force: true }); }
+}
+
+runWithDataRoot().catch((error) => {
   process.stderr.write((error && error.stack) || String(error));
   process.exitCode = 1;
 });

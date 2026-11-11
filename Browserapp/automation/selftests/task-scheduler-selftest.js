@@ -424,7 +424,7 @@ const delay = (ms) => new Promise((r) => setTimeout(r, ms));
     await scheduler.drain();
     assert.deepStrictEqual(order, Array.from({ length: 5000 }, (_, index) => index));
     assert.strictEqual(scheduler.size, 0);
-    assert.strictEqual(scheduler.pending.length, 0, 'idle queue releases its backing array');
+    assert.strictEqual(scheduler.pending.size, 0, 'idle queue releases pending jobs');
     assert.strictEqual(await scheduler.schedule(() => 'again'), 'again');
   });
 
@@ -457,6 +457,60 @@ const delay = (ms) => new Promise((r) => setTimeout(r, ms));
     await scheduler.drain();
     assert.strictEqual(outcomes.length, 1);
     assert.strictEqual(scheduler.size, 0);
+  });
+
+  await checkAsync('busy keys leave slots for other keys and preserve per-key FIFO', async () => {
+    const s = new TaskScheduler({ concurrency: 2, maxPending: 3 });
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const order = [];
+    const first = s.schedule(() => gate, null, { key: 'a' });
+    const a2 = s.schedule(() => { order.push('a2'); }, null, { key: 'a' });
+    const a3 = s.schedule(() => { order.push('a3'); }, null, { key: 'a' });
+    const a4 = s.schedule(() => { order.push('a4'); }, null, { key: 'a' });
+    await assert.rejects(s.schedule(() => {}, null, { key: 'a' }), (error) => error.code === 'QUEUE_FULL');
+    try {
+      await s.schedule(() => { order.push('b'); }, null, { key: 'b' });
+      await new Promise(setImmediate);
+      assert.deepStrictEqual(order, ['b'], 'independent work starts even when a key has filled the queue');
+      assert.strictEqual(s.running, 1, 'key waiters do not count as running work');
+    } finally { release(); }
+    await Promise.all([first, a2, a3, a4]); await s.drain();
+    assert.deepStrictEqual(order, ['b', 'a2', 'a3', 'a4']);
+    assert.strictEqual(s.keys.size + s.ready.size + s.size, 0, 'idle keys and payloads are released');
+  });
+
+  await checkAsync('cancelled key heads and destroyed groups release all queued work', async () => {
+    const s = new TaskScheduler();
+    let release;
+    const first = s.schedule(() => new Promise((resolve) => { release = resolve; }));
+    const controller = new AbortController();
+    const cancelled = s.schedule(() => { throw new Error('must not run'); }, null, { key: 'a', signal: controller.signal });
+    const next = s.schedule(() => 'promoted', null, { key: 'a' });
+    controller.abort(new Error('cancelled head'));
+    await assert.rejects(cancelled, /cancelled head/);
+    release(); await first;
+    assert.strictEqual(await next, 'promoted'); await s.drain();
+    const active = s.schedule(() => new Promise((resolve) => { release = resolve; }), null, { key: 'a' });
+    const queued = ['a', 'a', 'b'].map((key) => s.schedule(() => {}, null, { key }).catch((error) => error.message));
+    await Promise.resolve();
+    assert.strictEqual(s.destroy(), 3);
+    release(); await active; await Promise.all(queued); await s.drain();
+    assert.strictEqual(s.keys.size + s.ready.size + s.size, 0);
+  });
+
+  await checkAsync('timeouts retain a key until the actual work finishes', async () => {
+    const s = new TaskScheduler({ concurrency: 2 });
+    let release;
+    const slow = s.schedule(() => new Promise((resolve) => { release = resolve; }), null, { key: 'a', timeout: 5 });
+    let started = false;
+    const waiting = s.schedule(() => { started = true; }, null, { key: 'a' });
+    await assert.rejects(slow, (error) => error.code === 'ETIMEDOUT');
+    assert.strictEqual(started, false);
+    assert.strictEqual(await s.schedule(() => 'independent', null, { key: 'b' }), 'independent');
+    release(); await waiting; await s.drain();
+    assert.strictEqual(started, true);
+    assert.strictEqual(s.keys.size, 0);
   });
 
   // ---- report ----

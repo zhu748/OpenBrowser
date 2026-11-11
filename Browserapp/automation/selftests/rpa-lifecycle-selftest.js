@@ -90,6 +90,34 @@ async function main() {
   assert.ok([...duringCreate.tasks.values()].every((task) => task.status === 'cancelled'));
   await duringCreate.rpa.stop('unknown');
   assert.equal(duringCreate.rpa.cancelled.size, 0, 'unknown ids do not accumulate cancellation markers');
+  const fair = fixture();
+  fair.rpa.taskBodyScheduler.setConcurrency(2);
+  const planValues = ['shared', 'shared', 'shared', 'independent'].map((profile_id) => ({
+    profile_id, steps: [{ type: 'noop' }],
+  }));
+  const fairTasks = await fair.store.createTasks(planValues);
+  let release;
+  let entered;
+  const started = new Promise((resolve) => { entered = resolve; });
+  const gate = new Promise((resolve) => { release = resolve; });
+  fair.rpa.executeStep = async (_port, _step, ctx) => {
+    if (ctx.task.id === 't1') { entered(); await gate; }
+  };
+  const runs = fairTasks.map((task) => fair.rpa.runTask(task.id));
+  await started;
+  try {
+    await new Promise(setImmediate);
+    assert.equal(fair.tasks.get('t4').status, 'success', 'a busy profile cannot stall unrelated profiles');
+    assert.equal(fair.rpa.taskBodyScheduler.running, 1);
+    await fair.rpa.stop('t2');
+    const cancelled = await Promise.race([runs[1], new Promise((_, reject) => setTimeout(() => reject(new Error('queued stop waited for active profile')), 500))]);
+    assert.equal(cancelled.status, 'cancelled');
+    assert.equal(fair.rpa.queued.has('t2'), false, 'queued cancellation settles without waiting for the held browser');
+    assert.equal(fair.rpa.queuedControllers.has('t2'), false);
+  } finally { release(); }
+  await Promise.all(runs);
+  await fair.rpa.taskBodyScheduler.drain();
+  assert.equal(fair.rpa.taskBodyScheduler.keys.size + fair.rpa.queuedControllers.size, 0);
   console.log('RPA_LIFECYCLE_SELFTEST OK (launch barrier, failed initialization, queued cancellation, stop during create)');
 }
 

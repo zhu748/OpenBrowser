@@ -33,6 +33,18 @@ async function main() {
   assert.equal((await call('automation:rpa-run', { profile_id: 'p', steps: [{ type: 'wait', ms: 1 }] })).success, true);
   assert.equal(created, 1);
   assert.deepEqual(await call('automation:rpa-task-delete', ['active', 'done', 'done']), { deleted: ['done'], skipped: ['active'] });
+  const startedDuringSave = new Set();
+  automation.rpaEngine.getStatus = () => ({ running: [], queued: [...startedDuringSave] });
+  automation.rpaStore.deleteTask = async (id) => {
+    assert.equal(startedDuringSave.has(id), false, 'recheck active tasks between asynchronous deletions');
+    startedDuringSave.add('second');
+    return { deleted: true };
+  };
+  assert.deepEqual(await call('automation:rpa-task-delete', ['first', 'second']), { deleted: ['first'], skipped: ['second'] });
+  startedDuringSave.clear();
+  automation.rpaEngine.isTaskActive = (id) => startedDuringSave.has(id);
+  automation.rpaEngine.getStatus = () => { throw new Error('bulk deletion must not project the whole task fleet per ID'); };
+  assert.deepEqual(await call('automation:rpa-task-delete', ['first', 'second']), { deleted: ['first'], skipped: ['second'] });
   assert.equal((await call('automation:api-key-rotate')).apiKey, 'rotated-test-key');
   assert.equal(call('automation:mcp-paths').port, 1234);
   assert.match(call('automation:mcp-paths').mcpScript, /automation[/\\]mcp-server\.js$/);

@@ -167,10 +167,13 @@ OpenBrowser/
 - RPA 计划、变量与执行结果也加密保存；旧 JSON 文件在成功读取后自动迁移。请通过应用导入/导出，避免直接编辑存储文件。
 - 密钥文件无法读取或可靠保存时拒绝写入凭据，防止重启后无法恢复。请保留原密钥和数据文件进行恢复。
 - RPA CSV/文本/JSON 导入最多 32 MiB、100,000 行；CSV 最多 1,000 列，CSV 字段和文本行最多 1,048,576 个 UTF-16 码元。超限文件请拆分。
+- RPA 按任务所属环境串行，跨环境共用 8 个执行槽；等待任务可取消，且不会占用执行槽。
+- 浏览器数据恢复中断后，会阻止该环境启动、删除数据及缓存清理，并保留恢复目录供检查；已完成恢复的暂存残留会在下次启动时清理。
 
 ## 文档
 
-- [本轮安全、执行与恢复优化](./docs/dev-reports/2026-11-11-security-runtime-optimization.md)
+- [调度、状态响应与恢复中断保护优化](./docs/dev-reports/2026-11-11-queue-status-recovery-optimization.md)
+- [安全、执行与恢复优化](./docs/dev-reports/2026-11-11-security-runtime-optimization.md)
 - [代码分类与维护入口](./docs/code-organization.md)
 - [项目复审与优化记录](./docs/dev-reports/2026-11-10-project-review.md)
 - [会话查询、事务与哈希优化](./docs/dev-reports/2026-11-10-next-optimization.md)

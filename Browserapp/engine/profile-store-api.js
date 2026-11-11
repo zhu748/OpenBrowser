@@ -10,6 +10,7 @@
 const { assertProfileId, assertSafeProfileChild, validateProfileRootSecure } = require('../automation/isolation');
 const { prepareProfileSync } = require('./profile-sync');
 const { assertProfileNotMaintained, acquireProfileMaintenance } = require('./profile-maintenance');
+const { assertProfileRestoreReady } = require('../automation/cloud/file-restore');
 const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
@@ -114,6 +115,14 @@ module.exports = {
   async _deleteProfiles(safeIds, deleteData) {
     this.invalidateStatusCache?.();
     const deleted = []; let stopped = 0;
+    // Preflight the whole batch before removing any data: recovery backups
+    // from an interrupted restore must not disappear in a later bulk purge.
+    if (deleteData) {
+      for (let offset = 0; offset < safeIds.length; offset += 4) {
+        await Promise.all(safeIds.slice(offset, offset + 4)
+          .filter((id) => this.profiles.has(id)).map((id) => assertProfileRestoreReady(this.profileRoot(id))));
+      }
+    }
 
     // Phase 1 — stop running environments with bounded concurrency. A serial
     // stop loop serialized every window's teardown (taskkill scans, helper
@@ -301,6 +310,7 @@ module.exports = {
     const lease = acquireProfileMaintenance(this, [id]);
     try {
       const root = this.profileRoot(id);
+      await assertProfileRestoreReady(root);
       await this.clearProfileCache(root);
       const base = path.join(root, 'Default');
       for (const name of [

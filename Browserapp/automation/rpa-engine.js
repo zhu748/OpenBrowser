@@ -214,7 +214,7 @@ class RpaEngine {
     });
     this.cancelled = new Set();
     this.queued = new Set();
-    this.profileRuns = new Map();
+    this.queuedControllers = new Map();
     this.stopGeneration = 0;
     // Serializes writeDiagnostic's append/truncate pairs (see writeDiagnostic).
     this._diagnosticQueue = Promise.resolve();
@@ -252,16 +252,21 @@ class RpaEngine {
     };
   }
 
+  isTaskActive(taskId) {
+    return this.running.has(taskId) || this.queued.has(taskId);
+  }
+
   async stop(taskId) {
     // Honest cancel semantics: we only REQUEST cancellation here. The task
     // stays in `running` until its step loop / long-step polls observe the
     // flag and the runTask finally block performs the actual cleanup, so
     // getStatus() never under-reports work that is still executing.
     if (taskId) {
-      const active = this.running.has(taskId) || this.queued.has(taskId);
+      const active = this.isTaskActive(taskId);
       if (active) {
         this.cancelled.add(taskId);
         this.running.get(taskId)?.controller?.abort(new Error('cancelled'));
+        this.queuedControllers.get(taskId)?.abort(new Error('cancelled'));
       }
       return { success: true, taskId, state: active ? 'cancelling' : 'not-running' };
     }
@@ -270,6 +275,7 @@ class RpaEngine {
     for (const id of ids) {
       this.cancelled.add(id);
       this.running.get(id)?.controller?.abort(new Error('cancelled'));
+      this.queuedControllers.get(id)?.abort(new Error('cancelled'));
     }
     // Await actual termination (bounded 2.5s, 250ms polls like stepWait): this
     // all-tasks stop runs inside the quit chain BEFORE rpaStore.flush()
@@ -343,30 +349,35 @@ class RpaEngine {
   async _scheduleTask(taskId, options, generation) {
     const task = this.store.getTask(taskId);
     if (!task) throw new Error('RPA task not found: ' + taskId);
-    if (this.running.has(taskId) || this.queued.has(taskId)) throw new Error('Task already running or queued: ' + taskId);
+    if (this.isTaskActive(taskId)) throw new Error('Task already running or queued: ' + taskId);
     this.queued.add(taskId);
-    if (generation !== this.stopGeneration) this.cancelled.add(taskId);
+    const controller = new AbortController();
+    this.queuedControllers.set(taskId, controller);
+    if (generation !== this.stopGeneration) {
+      this.cancelled.add(taskId);
+      controller.abort(new Error('cancelled'));
+    }
     try {
       return await this.taskBodyScheduler.schedule(async () => {
-        // Serialize flows sharing a browser; different profiles can interleave.
-        const profileId = String(task.profile_id || '');
-        const previous = this.profileRuns.get(profileId) || Promise.resolve();
-        let release;
-        const gate = new Promise((resolve) => { release = resolve; });
-        this.profileRuns.set(profileId, gate);
-        await previous;
-        try { return await this._runTask(taskId, options); }
-        finally {
-          release();
-          if (this.profileRuns.get(profileId) === gate) this.profileRuns.delete(profileId);
-        }
-      });
+        this.queuedControllers.delete(taskId);
+        return this._runTask(taskId, options);
+      }, null, { key: String(task.profile_id || ''), signal: controller.signal });
     } catch (error) {
+      if (this.cancelled.has(taskId)) {
+        const message = formatRpaError(error);
+        const result = { ok: false, error: message };
+        await this.store.updateTask(taskId, { status: 'cancelled', start_time: null, complete_time: new Date().toISOString(),
+          process_result: result, process_logs: [] });
+        this.emit({ type: 'rpa-task', taskId, status: 'cancelled', profileId: task.profile_id, message });
+        await this.writeDiagnostic({ type: 'rpa-task-cancelled', taskId, profileId: task.profile_id, error: message });
+        return { success: false, taskId, error: message, status: 'cancelled', result };
+      }
       if (task.status === 'pending') await this.store.updateTask(taskId, {
         status: 'failed', complete_time: new Date().toISOString(), error: error.message,
       });
       throw error;
     } finally {
+      this.queuedControllers.delete(taskId);
       this.queued.delete(taskId);
       if (!this.running.has(taskId)) this.cancelled.delete(taskId);
     }

@@ -202,6 +202,10 @@ jobs:
           node scripts/selftest-one.js reviewruntime
           node scripts/selftest-one.js reviewupdate
           node scripts/selftest-one.js reviewinputmetrics
+          node scripts/selftest-one.js sched
+          node scripts/selftest-one.js rpalifecycle
+          node scripts/selftest-one.js statusrefresh
+          node scripts/selftest-one.js cloudrecovery
 
   # ~200 lines of Windows FFI (process/lock.rs, guardian.rs) compile to nothing
   # on Linux: cargo skips cfg(windows) blocks entirely, so per-push CI never

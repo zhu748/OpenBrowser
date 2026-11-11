@@ -171,6 +171,8 @@ This repository contains source code, documentation, and — via [Git LFS](https
 - RPA plans, variables and results are encrypted at rest. Existing JSON stores migrate after a successful read; use application import/export instead of editing storage files.
 - Credential writes are refused when the local key cannot be read or durably saved. Preserve the original key and data files for recovery.
 - RPA CSV/text/JSON inputs are limited to 32 MiB and 100,000 rows. CSV allows at most 1,000 columns; CSV fields and text lines allow at most 1,048,576 UTF-16 code units. Split larger inputs.
+- RPA tasks share eight execution slots and run serially per task profile. Waiting tasks can be cancelled without occupying execution slots.
+- Interrupted browser-data restores block launching or deleting the affected data until their recovery directories have been reviewed. Completed restores clean up leftover staging directories on the next launch.
 
 ## Documentation
 

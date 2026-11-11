@@ -81,7 +81,11 @@ async function main() {
       if (to === path.join(profileRoot, 'Default/second') && from.endsWith('.new')) throw new Error('injected rename failure');
       return rename(from, to);
     };
-    try { await assert.rejects(tx.commit(), /rename failure/); await tx.rollback(); }
+    try {
+      await assert.rejects(tx.commit(), /rename failure/);
+      await assert.rejects(tx.finish(), /not committed/, 'partial installation cannot be marked complete');
+      await tx.rollback();
+    }
     finally { fs.rename = rename; }
     assert.equal(await fs.readFile(file, 'utf8'), 'remote', 'mid-commit failure restores earlier files');
     const recoverable = await prepareFileRestore([{ root: profileRoot, files: { 'Network/Cookies': b64('committed') } }]);

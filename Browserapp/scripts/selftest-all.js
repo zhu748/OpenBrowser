@@ -39,6 +39,7 @@ const SUITE = [
   ['selftest:reviewruntime', 'automation/selftests/review-runtime-selftest.js'],
   ['selftest:reviewupdate', 'automation/selftests/review-update-selftest.js'],
   ['selftest:reviewinputmetrics', 'automation/selftests/review-input-metrics-selftest.js'],
+  ['selftest:cloudrecovery', 'automation/selftests/cloud-recovery-selftest.js'],
   ['selftest:environment', 'environment-audit-selftest.js'],
   ['selftest:hardening', 'security-hardening-selftest.js'],
   ['selftest:addresspolicy', 'automation/selftests/address-policy-selftest.js'],

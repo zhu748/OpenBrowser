@@ -18,6 +18,11 @@ async function main() {
   full = engine.statusDelta(null);
   assert.equal(engine.statusDelta(full.watermark).watermark, full.watermark, 'idle polls reuse the snapshot index');
   assert.equal(Object.isFrozen(full.watermark), true, 'a caller cannot mutate the cached index');
+  assert.deepEqual(engine.statusDelta(full.watermark, { includeWatermark: false }), { full: false, rows: [], removed: [] });
+  const compact = engine.statusDelta(null, { includeWatermark: false });
+  assert.equal(compact.full, true);
+  assert.deepEqual(compact.rows, full.rows, 'compact responses retain the full resync fallback');
+  assert.equal(Object.hasOwn(compact, 'watermark'), false);
   for (const update of [{ running: true, port: 9222 }, { port: 9333 }, { running: false, port: 0 }]) {
     Object.assign(runtime, update);
     engine.emit({ type: 'status', id: 'env-1' });
@@ -41,6 +46,7 @@ async function main() {
   assert.equal(engine.statusDelta(changed.watermark).rows[0].name, 'changed', 'Map edits invalidate cached status without a second hook');
   engine.profiles.delete('env-2');
   assert.equal(engine.status().length, 1);
+  assert.deepEqual(engine.statusDelta(changed.watermark, { includeWatermark: false }).removed, ['env-2']);
   assert.equal(engine._statusStamps.has('env-2'), false, 'removed IDs do not grow status bookkeeping');
   const oldToken = engine.status()[0].statusRev;
   engine._statusStamps.clear(); engine._statusInstance = null; engine.invalidateStatusCache();

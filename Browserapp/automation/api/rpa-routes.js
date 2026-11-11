@@ -48,6 +48,7 @@ class RpaRoutes {
   }
 
   isTaskActive(id) {
+    if (typeof this.rpaEngine?.isTaskActive === 'function') return this.rpaEngine.isTaskActive(id);
     const status = this.rpaEngine?.getStatus?.() || {};
     return (status.running || []).includes(id) || (status.queued || []).includes(id);
   }

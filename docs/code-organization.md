@@ -1,5 +1,7 @@
 # 代码分类与维护入口
 
+调度公平性、状态响应精简与恢复跨重启保护见 [调度、状态响应与恢复中断保护优化](dev-reports/2026-11-11-queue-status-recovery-optimization.md)。
+
 本轮凭据、存储完整性、RPA 并发与正则隔离、更新签名和性能测量见 [安全、执行边界与恢复优化](dev-reports/2026-11-11-security-runtime-optimization.md)。
 
 - `automation/rpa/regex.js` 与 `regex-worker.js`：有界、可终止的自定义正则执行。
@@ -47,10 +49,10 @@ CDP 连接复用、RPA 文件操作、API 嵌套凭据和状态索引的本次�
 | 引擎协调 | `Browserapp/engine.js` | 公开 `BrowserEngine`、生命周期协调、状态快照、持久化调度 |
 | 引擎成员组合 | `Browserapp/engine/compose.js` | 安装前检查全部领域贡献的重名、访问器和继承成员覆盖；`BrowserEngine.methodOwners` 提供只读成员归属，保留原调用接口 |
 | 环境维护占用 | `Browserapp/engine/profile-maintenance.js` | 同步检查并占用整批环境；恢复文件期间阻止启动、删除、回收、缓存清理和外部同步，内部提交使用持有者令牌 |
-| 引擎状态投影 | `Browserapp/engine/status-api.js` | 脱敏快照、配置 Map 缓存版本和运行状态增量；statusRev 跟踪运行变化，rev 继续用于编辑冲突 |
+| 引擎状态投影 | `Browserapp/engine/status-api.js` | 脱敏快照、配置 Map 缓存版本和运行状态增量；statusRev 跟踪运行变化，rev 继续用于编辑冲突；可信 UI 响应省略其未使用的水位表，默认公开返回格式兼容 |
 | 状态刷新控制器 | `Browserapp/ui/ui-status-controller.js` | 从真实行构造水位，共享直接/调度 IPC、线性合并增量并丢弃旧快照响应；full 响应直接复用 rows |
 | 会话选择控制器 | `Browserapp/ui/ui-session-controller.js` | 无 DOM 的会话选择合并及串行刷新；响应返回后读取当前勾选和同步状态，迟到调用共享一次后续刷新并等待其完成 |
-| 云恢复文件暂存 | `Browserapp/automation/cloud/file-restore.js` | 整批验证后暂存新文件，保留原文件用于失败回滚；回滚失败保留映射清单和恢复目录 |
+| 云恢复文件暂存 | `Browserapp/automation/cloud/file-restore.js` | 整批验证后暂存新文件，保留原文件用于失败回滚；清单/新文件落盘后才提交；跨重启检查未完成目录，成功提交/回滚的残留可自动清理 |
 | 引擎领域模块 | `Browserapp/engine/` | 启动、Firefox 启动、清理、Profile CRUD、代理、指纹交付、资源限制、扩展管理 |
 | 启动参数策略 | `Browserapp/engine/launch-arguments.js` | 构建基础与最终 Chromium 参数；通过输入传入代理端点、DPI 和窗口位置，返回拒绝的自定义参数。进程、锁和资源清理由启动编排持有 |
 | 环境同步准备 | `Browserapp/engine/profile-sync.js` | 暂存校验、凭据恢复、代理合并、扩展继承和网络失效记录；整批成功后才发布到引擎 |
@@ -63,6 +65,7 @@ CDP 连接复用、RPA 文件操作、API 嵌套凭据和状态索引的本次�
 | API 嵌套凭据 | `Browserapp/automation/api/responses.js` | 主账号、多账号、2FA 和备用代理统一脱敏，保留引擎持有的原始数据；复制环境清空所有账号行 |
 | API CDP 地址 | `Browserapp/automation/api/devtools.js` | 查询真实浏览器 GUID；列表查询最多并发 8 项，同一运行实例复用在途请求，退出/重启的旧结果丢弃。每次尝试的 600ms 期限落实到 HTTP 连接 |
 | 自动化执行 | `Browserapp/automation/rpa-engine.js`、`rpa-store.js`、`task-queue.js`、`task-scheduler.js` | 步骤执行、任务记录、并发与排队 |
+| 自动化调度 | `Browserapp/automation/task-scheduler.js` | 全局并发上限与每个 key 的 FIFO 共用队列；等待 key 不占执行槽，取消可从队列中直接移除；超时后仍等底层工作结束才释放 key 和槽位 |
 | RPA 动作注册与分析 | `Browserapp/automation/rpa/step-registry.js` | 每个执行器集中声明动作别名；一次有界遍历同时提供未支持动作与敏感能力统计，执行图校验限制循环引用、深度和总步骤数 |
 | RPA 步骤结构 | `Browserapp/automation/rpa/step-shape.js` | 执行器、校验器与模板预处理共用参数包和分支读取规则；支持 params.config，保持顶层数组优先及异常分支的既有语义 |
 | RPA 任务记录 | `Browserapp/automation/rpa/task-records.js` | 单条与批量创建共用字段和默认值；按原顺序线性清理最旧终态记录，保留 pending/running 任务 |

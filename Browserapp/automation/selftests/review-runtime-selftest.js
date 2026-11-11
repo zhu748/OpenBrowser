@@ -53,6 +53,9 @@ async function main() {
   active = 0; peak = 0;
   rpa.executeStep = async () => { active++; peak = Math.max(peak, active); await delay(10); active--; };
   const runs = [...tasks.keys()].map((id) => rpa.runTask(id));
+  assert.equal(rpa.isTaskActive('t0'), true);
+  assert.equal(rpa.isTaskActive('t11'), true);
+  assert.equal(rpa.isTaskActive('missing'), false);
   const routes = new RpaRoutes({ rpaEngine: rpa, rpaStore: {
     deleteTask: () => { throw new Error('cannot delete an active task'); },
   } });
@@ -61,11 +64,12 @@ async function main() {
   assert.ok((await Promise.all(runs)).every((r) => r.success));
   assert.equal(peak, 8, 'public single-task calls use the shared task-body limit');
   assert.equal(rpa.queued.size + rpa.running.size, 0);
+  assert.equal(rpa.isTaskActive('t0'), false);
   for (const task of tasks.values()) task.profile_id = 'same-profile';
   active = 0; peak = 0;
   await Promise.all([...tasks.keys()].map((id) => rpa.runTask(id)));
   assert.equal(peak, 1, 'flows using the same profile cannot overlap');
-  assert.equal(rpa.profileRuns.size, 0);
+  assert.equal(rpa.taskBodyScheduler.keys.size, 0);
 
   assert.deepEqual(await runRegex('(a+)', '', 'baa'), ['aa', 'aa']);
   await assert.rejects(runRegex('[', '', 'abc'), /regular expression|unterminated/i);

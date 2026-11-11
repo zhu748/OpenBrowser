@@ -1,0 +1,75 @@
+{
+  "node": "v24.22.1",
+  "measuredAt": "2026-11-11T01:41:41.036Z",
+  "baseline": "528a10a response contract",
+  "scope": "real status methods and trusted IPC handler, synthetic sanitized profiles; JSON size only, no desktop or browser",
+  "parity": true,
+  "cases": [
+    {
+      "profiles": 10,
+      "requestBytes": 332,
+      "firstReply": {
+        "beforeBytes": 35763,
+        "afterBytes": 35418
+      },
+      "idleReply": {
+        "beforeBytes": 382,
+        "afterBytes": 37,
+        "beforeSerializeMedianMs": 0.001679,
+        "afterSerializeMedianMs": 0.000311
+      },
+      "idleRoundTrip": {
+        "beforeBytes": 714,
+        "afterBytes": 369
+      },
+      "oneChangedReply": {
+        "beforeBytes": 3921,
+        "afterBytes": 3575
+      }
+    },
+    {
+      "profiles": 100,
+      "requestBytes": 3483,
+      "firstReply": {
+        "beforeBytes": 357787,
+        "afterBytes": 354291
+      },
+      "idleReply": {
+        "beforeBytes": 3533,
+        "afterBytes": 37,
+        "beforeSerializeMedianMs": 0.006402,
+        "afterSerializeMedianMs": 0.000295
+      },
+      "idleRoundTrip": {
+        "beforeBytes": 7016,
+        "afterBytes": 3520
+      },
+      "oneChangedReply": {
+        "beforeBytes": 7075,
+        "afterBytes": 3577
+      }
+    },
+    {
+      "profiles": 1000,
+      "requestBytes": 36784,
+      "firstReply": {
+        "beforeBytes": 3584291,
+        "afterBytes": 3547494
+      },
+      "idleReply": {
+        "beforeBytes": 36834,
+        "afterBytes": 37,
+        "beforeSerializeMedianMs": 0.060958,
+        "afterSerializeMedianMs": 0.00015
+      },
+      "idleRoundTrip": {
+        "beforeBytes": 73618,
+        "afterBytes": 36821
+      },
+      "oneChangedReply": {
+        "beforeBytes": 40379,
+        "afterBytes": 3579
+      }
+    }
+  ]
+}

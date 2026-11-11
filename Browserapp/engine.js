@@ -130,6 +130,7 @@ const {
 const { isValidIanaTimezone, extractTimezoneFromArgs } = require('./engine/start');
 const { TrackedProfileMap } = require('./engine/profile-revisions');
 const { assertProfileNotMaintained } = require('./engine/profile-maintenance');
+const { assertProfileRestoreReady } = require('./automation/cloud/file-restore');
 
 class BrowserEngine {
   constructor(app, options = {}) {
@@ -1115,6 +1116,9 @@ class BrowserEngine {
         // fresh start from a no-op relaunch (previously indistinguishable).
         return { ...this.publicRunning(id), alreadyRunning: true };
       }
+      this.assertStartGenerationActive(id, generation);
+      await assertProfileRestoreReady(this.profileRoot(id));
+      // stop/delete can invalidate this start while the filesystem check waits.
       this.assertStartGenerationActive(id, generation);
       return run(generation);
     })();

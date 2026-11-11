@@ -73,7 +73,7 @@ module.exports = {
    * shape the caller cannot merge) returns full instead, so the poll loop
    * degrades to today's behavior rather than guessing.
    */
-  statusDelta(watermark) {
+  statusDelta(watermark, { includeWatermark = true } = {}) {
     const snapshot = this.status();
     if (this._statusWatermarkSnapshot !== snapshot) {
       this._statusWatermarkSnapshot = snapshot;
@@ -82,8 +82,11 @@ module.exports = {
       this._statusWatermark = Object.freeze(Object.fromEntries(snapshot.map((row) => [row.id, row.statusRev])));
     }
     const known = this._statusWatermark;
+    // The trusted UI derives its watermark from its actual rows. Omitting the
+    // redundant response index keeps idle replies constant-sized at fleet scale.
+    const reply = (full, rows, removed) => ({ full, rows, removed, ...(includeWatermark ? { watermark: known } : {}) });
     const caller = (watermark && typeof watermark === 'object' && !Array.isArray(watermark)) ? watermark : null;
-    if (!caller) return { full: true, rows: snapshot, watermark: known, removed: [] };
+    if (!caller) return reply(true, snapshot, []);
     const removed = [];
     for (const id of Object.keys(caller)) {
       if (!Object.hasOwn(known, id)) removed.push(id);
@@ -96,7 +99,7 @@ module.exports = {
       if (seen === undefined) { unknown += 1; continue; }
       if (seen !== statusRev) rows.push(row);
     }
-    if (unknown > 0) return { full: true, rows: snapshot, watermark: known, removed: [] };
-    return { full: false, rows, removed, watermark: known };
+    if (unknown > 0) return reply(true, snapshot, []);
+    return reply(false, rows, removed);
   },
 };
