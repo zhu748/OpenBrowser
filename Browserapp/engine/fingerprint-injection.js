@@ -19,6 +19,7 @@ const { resolveProfileLanguage, resolveProfileTimezone } = require('../automatio
 const { runtimePolicyProfile, applyTargetRuntimePolicy, forgetTargetRuntimePolicy } = require('./runtime-policy');
 const { getPlatformFontPayload } = require('../automation/query-local-font-blob-gate');
 const { RequestHeaderRewriter, evaluateFingerprintDelivery } = require('../automation/request-header-rewriter');
+const { WorkerScriptPrefixer, TRANSIENT_ERRORS: TRANSIENT_PREFIX_ERRORS } = require('../automation/worker-script-prefixer');
 const { buildWorkerFontPresenceSource } = require('../automation/worker-font-presence-fallback');
 const crypto = require('crypto');
 const { closePageFingerprintConnection } = require('./fingerprint-transport');
@@ -58,6 +59,12 @@ module.exports = {
     if (fingerprint?.fontBlobBridge && !item.fontBlobBridge) {
       item.fontBlobBridge = fingerprint.fontBlobBridge;
     }
+    // Chromium 143+ gate (see the worker branch in onAttached): worker-session
+    // Runtime.evaluate of the real source deadlocks intermittently, so delivery goes
+    // through script-response prefixing. Decided here, before any target attaches, so
+    // the browser-level Fetch arm below and every page worker branch see the flag.
+    const kernelMajor = Number(String(item.kernelVersion || fingerprint?.kernelVersion || '').split('.')[0]) || 0;
+    item.workerScriptPrefixDelivery = kernelMajor >= 143;
     const browserWs = await cdp.browserSocket(item.port);
     // Response rewriting runs below the parser, before static HTML/CSS is turned into a
     // stylesheet. It complements the document gate, which only sees dynamic DOM/CSSOM writes.
@@ -77,6 +84,14 @@ module.exports = {
       },
     });
     item.cssFontResponseRewriter = fontResponseRewriter;
+    // Chromium 157+ worker delivery: page-level Fetch prefixing of worker scripts.
+    // Created up front with the full source; only consulted when the runtime probe
+    // marks the browser as requiring prefix delivery (item.workerScriptPrefixDelivery).
+    const workerScriptPrefixer = new WorkerScriptPrefixer({
+      source,
+      logger: (details) => this.emit({ type: details?.type, id: item.profile?.id, url: details?.url }),
+    });
+    item.workerScriptPrefixer = workerScriptPrefixer;
     const requestHeaderRewriter = new RequestHeaderRewriter({
       profile: item.profile,
       fingerprint,
@@ -243,7 +258,23 @@ module.exports = {
       // requestHeaderRewriter to guarantee that main-frame navigations, subresources, and workers
       // carry persona User-Agent, Client Hints (sec-ch-ua*), and Accept-Language without host leaks.
       if (event?.method === 'Fetch.requestPaused' && event.params?.requestId && event.params?.responseStatusCode == null && event.params?.responseErrorReason == null) {
+        // Chromium 143+ workers: worker script responses get the injection source
+        // prefixed at the response stage (see workerScriptPrefixer). The request
+        // stage still flows through requestHeaderRewriter so persona UA and
+        // Client Hints headers apply; the prefixer only records the request id.
+        if (item.workerScriptPrefixDelivery && workerScriptPrefixer?.matches(event.params.request?.url)) {
+          try { workerScriptPrefixer.track(event); } catch (_) {}
+        }
         try { requestHeaderRewriter.handleEvent(event, connection); } catch (_) {}
+        return;
+      }
+
+      // Response-stage pause of a tracked worker script: fulfill with the injected prefix.
+      if (event?.method === 'Fetch.requestPaused' && event.params?.requestId && event.params?.responseStatusCode != null
+        && item.workerScriptPrefixDelivery && workerScriptPrefixer?.hasTracked(event)) {
+        workerScriptPrefixer.handlePaused(event, connection).catch((error) => {
+          if (!TRANSIENT_PREFIX_ERRORS.test(String(error?.message))) report(error, { type: 'page' });
+        });
         return;
       }
 
@@ -334,6 +365,26 @@ module.exports = {
           if (!pausedTargetNeedsResume) return;
           pausedTargetNeedsResume = false;
           await state.command('Runtime.runIfWaitingForDebugger', {}, { sessionId, timeout: 3000 });
+          // Chrome 157: Network.enable on a PAUSED service worker times out; it works
+          // right after the pause is released. Deferred SW network setup lands here.
+          if (item.serviceWorkerNetSetupSessions?.delete(sessionId)) {
+            try {
+              await state.command('Network.enable', {}, { sessionId, timeout: 3000 });
+              const workerUa = requestHeaderRewriter.enabled ? requestHeaderRewriter.persona : null;
+              if (workerUa) {
+                await state.command('Network.setUserAgentOverride', {
+                  userAgent: workerUa.userAgent,
+                  acceptLanguage: workerUa.acceptLanguage,
+                  platform: workerUa.platformNav || workerUa.platform,
+                  ...(requestHeaderRewriter.supportsClientHints ? { userAgentMetadata: workerUa.metadata } : {}),
+                }, { sessionId, timeout: 3000 });
+              }
+            } catch (error) {
+              // The SW may already be stopped (no clients); its script is prefixed
+              // regardless, so this is a best-effort header override, never fatal.
+              this.emit({ type: 'service-worker-network-setup-deferred-failed', id: item.profile?.id, message: error.message });
+            }
+          }
         };
         const armResponseRewriting = async (timeout) => {
           await fontResponseRewriter.enable(scopedConnection, { sessionId, timeout });
@@ -342,6 +393,13 @@ module.exports = {
               { urlPattern: '*', requestStage: 'Request' },
               { urlPattern: '*', requestStage: 'Response', resourceType: 'Document' },
               { urlPattern: '*', requestStage: 'Response', resourceType: 'Stylesheet' },
+              // Chromium 157+ worker delivery: the page-level Fetch prefixer needs the
+              // response stage of worker scripts. Their resourceType is "Other" (not
+              // "Script"), so the patterns must be URL-based, not resourceType-based.
+              { urlPattern: '*.js', requestStage: 'Response' },
+              { urlPattern: '*.js?*', requestStage: 'Response' },
+              { urlPattern: '*.mjs', requestStage: 'Response' },
+              { urlPattern: '*.mjs?*', requestStage: 'Response' },
             ],
           }, { sessionId, timeout });
         };
@@ -378,25 +436,61 @@ module.exports = {
             }
           } else if (workerTypes.has(targetInfo.type) && !internalUrl.test(String(targetInfo.url || ''))) {
             if (!item.attachedWorkerTargets) item.attachedWorkerTargets = new Set();
-            await state.command('Network.enable', {}, { sessionId, timeout: 3000 });
-            const workerUa = requestHeaderRewriter.enabled ? requestHeaderRewriter.persona : null;
-            if (workerUa) {
-              await state.command('Network.setUserAgentOverride', {
-                userAgent: workerUa.userAgent,
-                acceptLanguage: workerUa.acceptLanguage,
-                platform: workerUa.platformNav || workerUa.platform,
-                ...(requestHeaderRewriter.supportsClientHints ? { userAgentMetadata: workerUa.metadata } : {}),
-              }, { sessionId, timeout: 3000 });
-            }
-            await state.command('Fetch.enable', {
-              patterns: [{ urlPattern: '*', requestStage: 'Request' }],
-            }, { sessionId, timeout: 3000 });
-            // Worker fingerprint injection (DedicatedWorker, SharedWorker, and ServiceWorker)
-            // Evaluated before runIfWaitingForDebugger so the worker global scope carries persona
-            // mocks before evaluating initial worker scripts. Short timeout guarantees no hang.
-            const evaluation = await state.command('Runtime.evaluate', { expression: source }, { sessionId, timeout: 3000 });
-            if (evaluation?.exceptionDetails) {
-              throw new Error(evaluation.exceptionDetails.exception?.description || evaluation.exceptionDetails.text || 'Worker fingerprint execution failed');
+            // item.workerScriptPrefixDelivery is decided in startWorkerFingerprintInjection
+            // (Chromium >= 143). See the long comment there for the deadlock rationale.
+            if (item.workerScriptPrefixDelivery) {
+              if (targetInfo.type === 'service_worker') {
+                // SW scripts load through the browser process: the browser-level Fetch
+                // domain (armed in startWorkerFingerprintInjection) prefixes them.
+                // Network setup only works AFTER the pause is released on Chrome 157,
+                // so defer it to resumeTarget().
+                item.serviceWorkerNetSetupSessions = item.serviceWorkerNetSetupSessions || new Set();
+                item.serviceWorkerNetSetupSessions.add(sessionId);
+              } else {
+                // Dedicated/Shared workers: script prefixing (page-level Fetch) carries
+                // the JS mocks; the network-layer override below keeps their fetch()
+                // headers persona too (works on paused dedicated workers, unlike SWs).
+                await state.command('Network.enable', {}, { sessionId, timeout: 3000 });
+                const workerUa = requestHeaderRewriter.enabled ? requestHeaderRewriter.persona : null;
+                if (workerUa) {
+                  await state.command('Network.setUserAgentOverride', {
+                    userAgent: workerUa.userAgent,
+                    acceptLanguage: workerUa.acceptLanguage,
+                    platform: workerUa.platformNav || workerUa.platform,
+                    ...(requestHeaderRewriter.supportsClientHints ? { userAgentMetadata: workerUa.metadata } : {}),
+                  }, { sessionId, timeout: 3000 });
+                }
+              }
+            } else {
+              await state.command('Network.enable', {}, { sessionId, timeout: 3000 });
+              const workerUa = requestHeaderRewriter.enabled ? requestHeaderRewriter.persona : null;
+              if (workerUa) {
+                await state.command('Network.setUserAgentOverride', {
+                  userAgent: workerUa.userAgent,
+                  acceptLanguage: workerUa.acceptLanguage,
+                  platform: workerUa.platformNav || workerUa.platform,
+                  ...(requestHeaderRewriter.supportsClientHints ? { userAgentMetadata: workerUa.metadata } : {}),
+                }, { sessionId, timeout: 3000 });
+              }
+              await state.command('Fetch.enable', {
+                patterns: [{ urlPattern: '*', requestStage: 'Request' }],
+              }, { sessionId, timeout: 3000 }).catch((error) => {
+                if (!/wasn't found|not found/i.test(String(error?.message))) throw error;
+                item.workerFetchDomainUnavailable = true;
+                this.emit({
+                  type: 'worker-fetch-domain-unavailable',
+                  id: item.profile?.id,
+                  targetType: targetInfo.type,
+                  message: 'Worker session Fetch domain unavailable; relying on Network.setUserAgentOverride',
+                });
+              });
+              // Worker fingerprint injection (DedicatedWorker, SharedWorker, and ServiceWorker)
+              // Evaluated before runIfWaitingForDebugger so the worker global scope carries persona
+              // mocks before evaluating initial worker scripts. Short timeout guarantees no hang.
+              const evaluation = await state.command('Runtime.evaluate', { expression: source }, { sessionId, timeout: 3000 });
+              if (evaluation?.exceptionDetails) {
+                throw new Error(evaluation.exceptionDetails.exception?.description || evaluation.exceptionDetails.text || 'Worker fingerprint execution failed');
+              }
             }
             await applyTargetRuntimePolicy({ owner: item, targetId: targetId || sessionId, targetType: targetInfo.type,
               registrationOwner: connection, registrationScope: sessionId,
@@ -467,6 +561,7 @@ module.exports = {
         policySessions.clear();
         try { requestHeaderRewriter.destroy(); } catch (_) {}
         try { fontResponseRewriter.destroy?.(); } catch (_) {}
+        try { workerScriptPrefixer.destroy(); } catch (_) {}
         if (!barrierSettled) {
           settleBarrier(new Error(`CDP connection closed before initial target barrier resolved: ${error?.message || error}`));
         }
@@ -493,6 +588,7 @@ module.exports = {
       policySessions.clear();
       try { requestHeaderRewriter.destroy(); } catch (_) {}
       try { fontResponseRewriter.destroy?.(); } catch (_) {}
+      try { workerScriptPrefixer.destroy(); } catch (_) {}
       if (!barrierSettled) {
         settleBarrier(new Error('CDP connection closed before initial target barrier resolved'));
       }
@@ -545,6 +641,23 @@ module.exports = {
         waitForDebuggerOnStart: true,
         flatten: true,
       });
+
+      // Chromium 143+ Service Worker scripts load through the browser process and
+      // bypass page-level Fetch interception. Arm the browser-level Fetch domain so
+      // workerScriptPrefixer can rewrite their responses too (request stage passes
+      // through, response stage gets the injection prefix). Harmless on builds where
+      // the classic evaluate delivery runs instead — those never set the flag.
+      if (item.workerScriptPrefixDelivery) {
+        await connection.command('Fetch.enable', {
+          patterns: [
+            { urlPattern: '*', requestStage: 'Request' },
+            { urlPattern: '*.js', requestStage: 'Response' },
+            { urlPattern: '*.js?*', requestStage: 'Response' },
+            { urlPattern: '*.mjs', requestStage: 'Response' },
+            { urlPattern: '*.mjs?*', requestStage: 'Response' },
+          ],
+        }, { timeout: 8000 });
+      }
 
       // Synchronize on the initial target barrier before returning to prevent navigation race
       await barrierPromise;

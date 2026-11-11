@@ -171,6 +171,42 @@ jobs:
           OPENBROWSER_RUST_CORE_BINARY: ${{ github.workspace }}/Browserapp/rust-core/openbrowser-core
         run: npm run selftest:rustchaos
 
+  # Native fingerprint gates on real browser kernels. Browsers come from the
+  # playwright-managed cache (pinned, no apt flakiness); the gates exit 2 when a
+  # browser is missing, which the runner reports as a skip, never a false pass.
+  native-gates:
+    name: Native fingerprint gates (Chromium ${{ matrix.browser }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium]
+    defaults:
+      run:
+        working-directory: Browserapp
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: false
+          sparse-checkout: |
+            /*
+            !/Browserapp/kernels/
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Browserapp/package-lock.json
+      - run: npm ci --include=dev --ignore-scripts
+      - name: Install Chromium for Testing
+        run: npx @puppeteer/browsers install chrome@stable --path "$HOME/.cache/ob-browsers"
+      - name: Fingerprint native consistency gate (Chromium)
+        env:
+          OPENBROWSER_CHROMIUM_BINARY: ${{ format('{0}/.cache/ob-browsers/{1}', env.HOME, 'chrome-linux64/chrome') }}
+          OPENBROWSER_NATIVE_NO_SANDBOX: '1'
+        run: node automation/selftests/fingerprint-native-consistency-selftest.js
+
   review-boundaries:
     name: Storage and runtime boundaries (${{ matrix.os }}, Node ${{ matrix.node }})
     runs-on: ${{ matrix.os }}

@@ -296,11 +296,16 @@ async function runCdpSession({ serverPort }) {
   });
 
   const launchArgs = [dir, '--headless=new'];
-  const child = spawn(launcher, launchArgs, {
-    cwd: kernelRoot,
-    detached: true,
-    stdio: 'ignore',
-  });
+  const kernelLauncherUsable = process.platform === 'darwin' && fs.existsSync(launcher)
+    && !String(fs.readFileSync(launcher, 'utf8').slice(0, 40)).includes('git-lfs');
+  const nativeBinary = process.env.OPENBROWSER_CHROMIUM_BINARY
+    || ['chromium', 'google-chrome', 'chrome']
+      .find((b) => spawnSync(b, ['--version'], { timeout: 4000 }).status === 0) || null;
+  const nativeFallback = !kernelLauncherUsable && nativeBinary;
+  const child = nativeFallback
+    ? spawn(nativeBinary, ['--user-data-dir=' + dir, '--headless=new', '--remote-debugging-port=0',
+        '--no-first-run', '--no-default-browser-check'], { detached: true, stdio: 'ignore' })
+    : spawn(launcher, launchArgs, { cwd: kernelRoot, detached: true, stdio: 'ignore' });
   child.unref();
 
   let devToolsPort = null;
@@ -573,9 +578,17 @@ function validateDeepMetadata(item) {
   console.log('--- Phase 2: Live Browser Kernel CDP Execution & FontFace.load() ---');
   console.log('==================================================================');
 
-  if (process.platform !== 'darwin' || !fs.existsSync(launcher)) {
-    skip('Real kernel CDP test', 'Requires macOS kernel launcher');
-  } else {
+  const kernelLauncherUsable = process.platform === 'darwin' && fs.existsSync(launcher)
+    && !String(fs.readFileSync(launcher, 'utf8').slice(0, 40)).includes('git-lfs');
+  const nativeBinary = process.env.OPENBROWSER_CHROMIUM_BINARY
+    || (await import('node:child_process').then((cp) => ['chromium', 'google-chrome', 'chrome']
+      .find((b) => cp.spawnSync(b, ['--version'], { timeout: 4000 }).status === 0)) || null);
+  if (!kernelLauncherUsable && !nativeBinary) {
+    skip('Real kernel CDP test', 'Requires macOS kernel launcher or OPENBROWSER_CHROMIUM_BINARY');
+  } else if (!kernelLauncherUsable) {
+    console.log('  NOTE  macOS kernel launcher unavailable; running the CDP phase on the native Chromium binary (delivery path identical, kernel-specific fonts unverifiable)');
+  }
+  if (kernelLauncherUsable || nativeBinary) {
     const { server, port } = await startServer();
     let session = null;
     try {

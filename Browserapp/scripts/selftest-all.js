@@ -203,6 +203,22 @@ const SUITE = [
   ['selftest:fullscreen', 'fullscreen-window-sync-selftest.js'],
   ['selftest:fpalign', 'automation/selftests/fingerprint-alignment-selftest.js'],
   ['selftest:probebudget', 'automation/selftests/proxy-probe-budget-selftest.js'],
+  // Native-browser gates (Chromium/Firefox fingerprints on real kernels). They need
+  // OPENBROWSER_CHROMIUM_BINARY / OPENBROWSER_FIREFOX_BINARY and a display-less
+  // headless run; exit code 2 marks the browser as unavailable (reported as skip).
+  ['selftest:fingerprintnative', 'automation/selftests/fingerprint-native-consistency-selftest.js', { nativeOnly: true }],
+  ['selftest:firefoxfingerprint', 'automation/selftests/firefox-fingerprint-e2e-selftest.js', { nativeOnly: true }],
+  ['pageentry', 'automation/selftests/fingerprint-page-entry-matrix-selftest.js', { nativeOnly: true }],
+  ['nativereqheaders', 'automation/selftests/fingerprint-request-headers-selftest.js', { nativeOnly: true }],
+  ['sessionfaults', 'automation/selftests/fingerprint-session-faults-selftest.js', { nativeOnly: true }],
+  ['concurrencysiso', 'automation/selftests/fingerprint-concurrent-isolation-selftest.js', { nativeOnly: true }],
+  ['renderconsistency', 'automation/selftests/fingerprint-render-consistency-selftest.js', { nativeOnly: true }],
+  ['permleak', 'automation/selftests/fingerprint-permission-leak-selftest.js', { nativeOnly: true }],
+  ['navlifecycle', 'automation/selftests/fingerprint-navigation-lifecycle-selftest.js', { nativeOnly: true }],
+  ['interfacesurface', 'automation/selftests/fingerprint-interface-surface-selftest.js', { nativeOnly: true }],
+  ['multiplatform', 'automation/selftests/fingerprint-multiplatform-selftest.js', { nativeOnly: true }],
+  ['ffworker', 'automation/selftests/firefox-worker-delivery-selftest.js', { nativeOnly: true }],
+  ['selftest:ffmitm', 'automation/selftests/firefox-worker-mitm-proxy-selftest.js', { nativeOnly: true }],
   // Registry-consistency guard: with SUITE as the single registry this is
   // what stops package.json from silently re-accumulating duplicate
   // selftest:* entries (P2 single-registry consolidation).
@@ -242,6 +258,7 @@ function main() {
   let skipped = 0;
   let partial = 0;
   for (const [name, script, flags] of SUITE) {
+    const scriptPath = path.join(ROOT, script);
     if (flags && flags.darwinOnly && process.platform !== 'darwin') {
       skipped += 1;
       results.push({ name, script, pass: null });
@@ -249,9 +266,34 @@ function main() {
       console.log('skip (darwin-only: macOS kernel launcher required)');
       continue;
     }
-    const scriptPath = path.join(ROOT, script);
-    process.stdout.write(`run  ${name.padEnd(width)}  ${script} ... `);
+    if (flags && flags.nativeOnly) {
+      // Native-browser gates exit 2 when the browser binary env var is unset.
+      // Probe availability first so an absent browser is a visible skip, never a pass.
+      process.stdout.write(`run  ${name.padEnd(width)}  ${script} ... `);
+      const startedNative = Date.now();
+      // Native gates launch real browsers and routinely run for minutes; the
+      // 60s availability probe must not become the de-facto execution timeout
+      // (a SIGTERM here turns a green gate into FAILED).
+      const probe = spawnSync(process.execPath, [scriptPath, 'selftest'], {
+        cwd: ROOT, encoding: 'utf8', timeout: PER_SCRIPT_TIMEOUT_MS, maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      if (probe.status === 2) {
+        skipped += 1;
+        results.push({ name, script, pass: null, outcome: 'skipped' });
+        console.log('skip (native-only: browser binary not provided)');
+        continue;
+      }
+      const seconds0 = ((Date.now() - startedNative) / 1000).toFixed(1);
+      const status0 = classifySelftestResult(probe);
+      results.push({ name, script, pass: status0 === 'passed', outcome: status0, seconds: seconds0, status: probe.status, signal: probe.signal });
+      if (status0 === 'failed') failed += 1;
+      else if (status0 === 'partial') partial += 1;
+      else if (status0 === 'skipped') skipped += 1;
+      console.log(status0 === 'passed' ? `ok (${seconds0}s)` : `${status0.toUpperCase()} (exit=${probe.status})`);
+      continue;
+    }
     const started = Date.now();
+    process.stdout.write(`run  ${name.padEnd(width)}  ${script} ... `);
     const res = spawnSync(process.execPath, [scriptPath, 'selftest'], {
       cwd: ROOT,
       encoding: 'utf8',

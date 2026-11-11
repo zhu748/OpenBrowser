@@ -198,5 +198,8 @@
     "eslint": "^10.14.0",
     "globals": "^17.14.0",
     "rcedit": "^5.0.2"
+  },
+  "dependencies": {
+    "chromium": "^3.0.3"
   }
 }

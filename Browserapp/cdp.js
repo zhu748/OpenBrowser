@@ -270,8 +270,17 @@ async function browserSocket(port, options = {}) {
   return version.webSocketDebuggerUrl;
 }
 
+// Opening a tab with a URL through /json/new lets Chromium commit the navigation
+// before the fingerprint engine's auto-attach pause engages, so the first inline
+// script can observe host values (verified on Chrome 157: direct-URL first read is
+// raw, blank-then-navigate is persona). Create the target blank — the engine then
+// injects while the blank document is paused — and navigate only afterwards.
 async function newTab(port, url = 'about:blank') {
-  return json(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`, 'PUT');
+  const target = await json(`http://127.0.0.1:${port}/json/new?about:blank`, 'PUT');
+  if (target && url && url !== 'about:blank' && target.webSocketDebuggerUrl) {
+    await call(target.webSocketDebuggerUrl, 'Page.navigate', { url }).catch(() => navigate(port, url));
+  }
+  return target;
 }
 
 async function closeTab(port, targetId) {

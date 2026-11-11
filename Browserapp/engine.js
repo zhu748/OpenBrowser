@@ -834,6 +834,7 @@ class BrowserEngine {
         try { resources.markerProcess.kill(); } catch (_) {}
       }
       await resources.proxyForwarder?.close().catch(() => {});
+      await resources.workerMitmProxy?.close().catch(() => {});
       stopIpcStubForWindow(resources.kernelWindowName).catch(() => {});
       if (child && !exited) {
         // Startup owns the same profile lock safety rule as running cleanup: a
@@ -983,6 +984,7 @@ class BrowserEngine {
       child: resources.child || null,
       cdpConnection: resources.connection || null,
       proxyForwarder: resources.proxyForwarder || null,
+      workerMitmProxy: resources.workerMitmProxy || null,
       markerProcess: resources.markerProcess || null,
       profileLock: resources.profileLock || null,
       pid: resources.child?.pid || null,

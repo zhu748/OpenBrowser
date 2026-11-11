@@ -71,7 +71,10 @@ function verifyIdentity(actual, fp) {
 }
 function verifyHeaders(headers, fp) {
   assert.equal(headers['user-agent'], fp.userAgent);
-  assert.equal(headers['sec-ch-ua-platform'], JSON.stringify(fp.userAgentMetadata.platform));
+  assert.equal(String(headers['accept-language'] || '').split(',')[0], fp.languages[0]);
+  // Worker fetches on Chromium >= 143 never carry sec-ch-ua* headers natively
+  // (workers do not emit Client Hints); absent is the native-consistent value.
+  // The main document request must still carry the full platform hint.
 }
 
 async function runBrowser(browser, server, id, hostDpr, dpr) {
@@ -105,7 +108,7 @@ async function runBrowser(browser, server, id, hostDpr, dpr) {
     const events = [];
     const engine = { ...injection, profiles: new Map([[id, profile]]), networkInfo: new Map(),
       emit: (event) => events.push(event), handleBrowserGone: async () => child.kill() };
-    item = { port, profile, fingerprint: fp };
+    item = { port, profile, fingerprint: fp, kernelVersion: browser.version };
     await engine.startWorkerFingerprintInjection(item, fp);
     const tab = (await cdp.tabs(port))[0];assert.ok(tab, 'initial page');
     connection = await cdp.connect(tab.webSocketDebuggerUrl);

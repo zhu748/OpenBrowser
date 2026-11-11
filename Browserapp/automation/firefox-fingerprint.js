@@ -128,7 +128,7 @@ async function initializeFirefoxFingerprint(connection, fingerprint, profile, op
     capabilities: {
       engine: 'firefox', cdp: false, bidi: true, fingerprintDelivery: true,
       fingerprintVerification: true, runtimeInjection: true, documentStartInjection: true,
-      workerFingerprintDelivery: false, workerInjection: 'best-effort',
+      workerFingerprintDelivery: 'prefs-fields-plus-proxy', workerInjection: 'prefs-delivered fields (UA/platform/languages/timezone) verified; JS-only fields (hardwareConcurrency) delivered by the per-profile worker-script MITM forwarder (automation/firefox-worker-mitm-proxy) — see firefox-worker-delivery-selftest',
       deviceMemoryOverride: false, extensionHotLoad: false, zoomReconcile: false,
       retention: true, startUrls: true,
     },

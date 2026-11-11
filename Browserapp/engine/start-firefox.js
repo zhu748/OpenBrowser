@@ -338,12 +338,27 @@ module.exports = {
 
       const proxyConfig = this.proxyConfig(profile.proxy);
       let proxy = null;
+      let workerMitm = null;
       if (needsProxyBridge(proxyConfig)) {
         proxyForwarder = await startAuthenticatedProxy(proxyConfig, (value) => this.emit({ type: 'proxy-error', id: profile.id, code: value.code, message: value.message }));
         startupResources.proxyForwarder = proxyForwarder;
         proxy = proxyForwarder.url;
       } else {
         proxy = chromeProxyEndpoint(profile.proxy);
+        // Direct path: route the browser through the worker-script MITM forwarder
+        // so worker scopes receive the persona JS-only fields (hardwareConcurrency)
+        // that no BiDi channel can deliver. Real-proxy profiles keep their bridge
+        // (chaining the rewriter behind an authenticated upstream is a follow-up).
+        try {
+          const { FirefoxWorkerMitmProxy } = require('../automation/firefox-worker-mitm-proxy');
+          const { buildWorkerInjectionScript } = require('../automation/fingerprint');
+          workerMitm = new FirefoxWorkerMitmProxy({ workerSource: buildWorkerInjectionScript(fingerprint) });
+          await workerMitm.start();
+          startupResources.workerMitmProxy = workerMitm;
+          proxy = workerMitm.url;
+        } catch (mitmError) {
+          this.emit({ type: 'proxy-error', id: profile.id, code: 'WORKER_MITM_UNAVAILABLE', message: mitmError.message });
+        }
       }
       const sysMode = profile.proxyMeta?.systemProxy || 'global';
       if (profile.networkMode === 'proxy' && (!proxy || proxy === 'direct://')) {
@@ -361,13 +376,17 @@ module.exports = {
       currentStage = 'configure'; this.emitStartProgress(profile.id, 'configure', 48, '正在写入 Firefox 配置…');
       const acceptLanguages = collectAcceptLanguages(fingerprint, profile);
       const locale = String(profile.language || 'en-US');
+      const workerMitmActive = Boolean(workerMitm);
       const userJs = buildFirefoxUserJs({
         userAgent: fingerprint.userAgent,
         acceptLanguages,
         locale,
         proxyEndpoint: proxy && proxy !== 'direct://' ? proxy : '',
-        noProxyHosts: 'localhost, 127.0.0.1',
-        extraPrefs: firefoxExtraUserPrefs(profile, fingerprint),
+        // The MITM forwarder must see loopback traffic too; every other proxy
+        // keeps loopback direct.
+        noProxyHosts: workerMitmActive ? '' : 'localhost, 127.0.0.1',
+        extraPrefs: [...firefoxExtraUserPrefs(profile, fingerprint),
+          ...(workerMitmActive ? [['network.proxy.allow_hijacking_localhost', true]] : [])],
       });
       // user.js wins over prefs.js at every startup, then Firefox copies it to
       // prefs.js. Writing it fresh each launch keeps the proxy/UA/prefs current.
@@ -542,7 +561,7 @@ module.exports = {
         running: true,
         capabilities: item.capabilities,
         undeliverable: {
-          workerFingerprint: 'Worker 使用 realm 创建事件补充注入，尚不保证首条脚本前交付（UA/语言由 user.js 全局覆盖，OffscreenCanvas 噪声为尽力而为）。',
+          workerFingerprint: 'Worker 首条脚本身份：UA/语言/时区由 user.js 全局覆盖；hardwareConcurrency 等 JS-only 字段经每 profile 的 worker 脚本 MITM 转发器在代理层前缀注入（直连路径；认证代理链路为后续项）。',
           deviceMemory: '保留 Firefox 原生接口形态，不创建 Chromium 的 deviceMemory 接口。',
           frameFontSurface: '跨 OS persona 下，子帧内 document.fonts 为度量层代理，foreign check 门控与文本栅格可能与主文档存在残差（主文档已验证正确，Chromium 路径无此问题）。',
           intlAppLocale: 'Intl 运行时 locale 跟随内核语言包（en-US 构建即 en-US）——与 persona 语言形成「英文界面 + 母语内容偏好」的真实用户形态；不再用 BiDi locale override（实测会将 Accept-Language 头重写为单条）。',

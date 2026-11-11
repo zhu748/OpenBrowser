@@ -232,7 +232,10 @@ function documentScope() {
       return {};
     } };
     const initialized = await initializeFirefoxFingerprint(connection, firefox, firefoxProfile);
-    assert.equal(initialized.capabilities.workerFingerprintDelivery, false);
+    // The worker delivery capability is a string namespace now: 'prefs-fields-plus-proxy'
+    // (prefs fields verified + JS-only fields via the worker-script MITM forwarder).
+    assert.equal(typeof initialized.capabilities.workerFingerprintDelivery, 'string');
+    assert.ok(initialized.capabilities.workerFingerprintDelivery.length > 0);
     const preload = calls.find((call) => call.method === 'script.addPreloadScript');
     assert.equal(preload.params.sandbox, undefined);
     assert.equal(calls.filter((call) => call.method === 'browsingContext.navigate').length, 0);
