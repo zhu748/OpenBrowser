@@ -12,11 +12,9 @@
  * Key lifecycle: the shipped public keys live in TRUSTED_KEYS below. The
  * first real key was generated and embedded 2026-11-07; releases from that
  * point on should publish SHA256SUMS.txt.sig assets alongside the manifest.
- * Until a given release carries a .sig, verification stays
- * permissive-but-honest: unsigned releases keep the (already fail-closed)
- * digest-only path; once a .sig asset exists, an invalid or untrusted
- * signature is fatal and no env var can downgrade it — replacing the release
- * account must not become a path to code execution. The deployment proof in
+ * Future updates require a signature. app-update.js contains an exact
+ * historical version exception; transport failures and malformed signatures
+ * never become that exception, and no env var bypasses the trust root. The deployment proof in
  * selftests/data/update-trust-proof.json ties the embedded key to the
  * offline private half and is checked by update-checksum-selftest on every
  * CI run.

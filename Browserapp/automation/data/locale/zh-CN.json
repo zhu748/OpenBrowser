@@ -735,5 +735,10 @@
   "profiles.cloneCopied": "已复制 {n} 个环境配置（未复制 Cookie 和账号密码）",
   "ext.assignDone": "已添加 {name}，分配 {n} 个环境",
   "ext.assignFail": "商店添加失败：{message}",
-  "batch.prefApplied": "已将 {n} 个环境更新为{mode}"
+  "batch.prefApplied": "已将 {n} 个环境更新为{mode}",
+  "storage.recoveryTitle": "数据恢复提醒",
+  "storage.warning.profiles": "{count} 个环境无法解码，原始数据已保留，请检查密钥并恢复。",
+  "storage.warning.recovered": "环境配置已从备份恢复，请检查最近的修改是否完整。",
+  "storage.warning.rpa": "RPA 数据文件损坏，原文件已保留，请恢复计划和任务历史。",
+  "storage.warning.proxies": "{count} 条代理记录格式异常，请检查代理管理。"
 }

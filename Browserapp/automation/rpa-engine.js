@@ -6,6 +6,7 @@ const { applyTrustedChange } = require('./trusted-input');
 const humanInput = require('./human-input');
 const { TypingAbortedError } = require('./human-typing');
 const { TaskScheduler } = require('./task-scheduler');
+const { runRegex } = require('./rpa/regex');
 const {
   getDownloadFileName,
   getFileNameFromContentDisposition,
@@ -213,6 +214,7 @@ class RpaEngine {
     });
     this.cancelled = new Set();
     this.queued = new Set();
+    this.profileRuns = new Map();
     this.stopGeneration = 0;
     // Serializes writeDiagnostic's append/truncate pairs (see writeDiagnostic).
     this._diagnosticQueue = Promise.resolve();
@@ -257,12 +259,18 @@ class RpaEngine {
     // getStatus() never under-reports work that is still executing.
     if (taskId) {
       const active = this.running.has(taskId) || this.queued.has(taskId);
-      if (active) this.cancelled.add(taskId);
+      if (active) {
+        this.cancelled.add(taskId);
+        this.running.get(taskId)?.controller?.abort(new Error('cancelled'));
+      }
       return { success: true, taskId, state: active ? 'cancelling' : 'not-running' };
     }
     this.stopGeneration += 1;
     const ids = new Set([...this.running.keys(), ...this.queued]);
-    for (const id of ids) this.cancelled.add(id);
+    for (const id of ids) {
+      this.cancelled.add(id);
+      this.running.get(id)?.controller?.abort(new Error('cancelled'));
+    }
     // Await actual termination (bounded 2.5s, 250ms polls like stepWait): this
     // all-tasks stop runs inside the quit chain BEFORE rpaStore.flush()
     // (automation/index.js stop()); the old request-only return let tasks
@@ -323,20 +331,48 @@ class RpaEngine {
     // Cap concurrent task bodies (profile start already goes through
     // openScheduler, but the step loops themselves used to run all at once,
     // overflowing the CDP pool on multi-profile plans).
-    const results = await Promise.all(tasks.map((task) => {
-      this.queued.add(task.id);
-      if (generation !== this.stopGeneration) this.cancelled.add(task.id);
-      return this.taskBodyScheduler.schedule(() => this.runTask(task.id, options)
-        .catch((error) => ({ success: false, taskId: task.id, error: error.message })))
-        .finally(() => {
-          this.queued.delete(task.id);
-          if (!this.running.has(task.id)) this.cancelled.delete(task.id);
-        });
-    }));
+    const results = await Promise.all(tasks.map((task) => this._scheduleTask(task.id, options, generation)
+      .catch((error) => ({ success: false, taskId: task.id, error: error.message }))));
     return { success: results.every((item) => item.success), results };
   }
 
   async runTask(taskId, options = {}) {
+    return this._scheduleTask(taskId, options, this.stopGeneration);
+  }
+
+  async _scheduleTask(taskId, options, generation) {
+    const task = this.store.getTask(taskId);
+    if (!task) throw new Error('RPA task not found: ' + taskId);
+    if (this.running.has(taskId) || this.queued.has(taskId)) throw new Error('Task already running or queued: ' + taskId);
+    this.queued.add(taskId);
+    if (generation !== this.stopGeneration) this.cancelled.add(taskId);
+    try {
+      return await this.taskBodyScheduler.schedule(async () => {
+        // Serialize flows sharing a browser; different profiles can interleave.
+        const profileId = String(task.profile_id || '');
+        const previous = this.profileRuns.get(profileId) || Promise.resolve();
+        let release;
+        const gate = new Promise((resolve) => { release = resolve; });
+        this.profileRuns.set(profileId, gate);
+        await previous;
+        try { return await this._runTask(taskId, options); }
+        finally {
+          release();
+          if (this.profileRuns.get(profileId) === gate) this.profileRuns.delete(profileId);
+        }
+      });
+    } catch (error) {
+      if (task.status === 'pending') await this.store.updateTask(taskId, {
+        status: 'failed', complete_time: new Date().toISOString(), error: error.message,
+      });
+      throw error;
+    } finally {
+      this.queued.delete(taskId);
+      if (!this.running.has(taskId)) this.cancelled.delete(taskId);
+    }
+  }
+
+  async _runTask(taskId, options = {}) {
     const task = this.store.getTask(taskId);
     if (!task) throw new Error('RPA task not found: ' + taskId);
     if (this.running.has(taskId)) throw new Error('Task already running: ' + taskId);
@@ -344,8 +380,9 @@ class RpaEngine {
     const startedAt = Date.now();
     const taskTimeoutMs = resolveTaskTimeoutMs(options);
     const taskDeadline = taskTimeoutMs > 0 ? startedAt + taskTimeoutMs : 0;
-    const execution = { taskDeadline, isCancelled: () => this.cancelled.has(taskId) };
-    this.running.set(taskId, { startedAt });
+    const controller = new AbortController();
+    const execution = { taskDeadline, signal: controller.signal, isCancelled: () => this.cancelled.has(taskId) };
+    this.running.set(taskId, { startedAt, controller });
     if (!this.queued.delete(taskId)) this.cancelled.delete(taskId);
 
     const logs = [];
@@ -943,7 +980,7 @@ class RpaEngine {
     return;
   }
 
-  async stepToJson({ type, params, variables, value }) {
+  async stepToJson({ type, params, variables, value, ctx }) {
     const source = value(params.content);
     let result = source;
     if (type === 'tojson') {
@@ -953,7 +990,9 @@ class RpaEngine {
       result = params.key ? String(params.key).split('.').reduce((item, key) => item?.[key], object) : object;
     } else {
       const sourceText = String(source ?? '');
-      const match = new RegExp(String(params.reg || ''), params.notUpper ? '' : 'i').exec(sourceText);
+      const remaining = ctx?.taskDeadline ? Math.max(1, ctx.taskDeadline - Date.now()) : 1000;
+      const match = await runRegex(String(params.reg || ''), params.notUpper ? '' : 'i', sourceText,
+        { signal: ctx?.signal, timeoutMs: remaining });
       result = match ? (params.onlyGetFirst ? match[1] || match[0] : match[0]) : '';
     }
     if (params.variable) variables[params.variable] = result;

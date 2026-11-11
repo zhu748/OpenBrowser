@@ -738,5 +738,10 @@
   "profiles.cloneCopied": "Cloned {n} profiles (cookies and credentials not copied)",
   "ext.assignDone": "Added {name}, assigned to {n} profiles",
   "ext.assignFail": "Store install failed: {message}",
-  "batch.prefApplied": "Updated {n} profiles to {mode}"
+  "batch.prefApplied": "Updated {n} profiles to {mode}",
+  "storage.recoveryTitle": "Pemberitahuan pemulihan data",
+  "storage.warning.profiles": "Tidak dapat mendekode {count} profil. Data asli disimpan; periksa kunci sebelum memulihkan.",
+  "storage.warning.recovered": "Pengaturan dipulihkan dari cadangan. Periksa perubahan terbaru.",
+  "storage.warning.rpa": "Penyimpanan RPA rusak. Berkas asli disimpan; pulihkan rencana dan riwayat tugas.",
+  "storage.warning.proxies": "Ada {count} catatan proxy yang tidak valid. Periksa pengaturan proxy."
 }

@@ -7,7 +7,7 @@ const crypto = require('node:crypto');
 const { getVariableValue } = require('./variables');
 const { OUTPUT_DIRECTORY, resolveSafeRpaPath } = require('./paths');
 const { csvCell, csvChunks } = require('./csv');
-const { readCsvRecords, readTextLines } = require('./file-input');
+const { readCsvRecords, readTextLines, readJsonRecords } = require('./file-input');
 
 module.exports = {
   async stepSaveData({ ctx, params, text }) {
@@ -126,37 +126,15 @@ module.exports = {
       return;
     }
 
-    let raw;
-    try {
-      raw = await fs.readFile(safePath, 'utf8');
-    } catch (_error) {
-      check();
-      if (skippable) {
-        variables[targetVar] = [];
-        if (ctx?.log) await ctx.log('useExcel skipped: cannot read file ' + safePath);
-        return;
-      }
-      throw new Error('useExcel cannot read file: ' + safePath);
-    }
-
     let records;
-    check();
-    if (extension === '.json') {
-      try {
-        records = JSON.parse(raw);
-      } catch (error) {
-        // Same class of bad input as an unreadable file: skip when allowed
-        // rather than failing the whole task with a raw SyntaxError.
-        if (skippable) {
-          variables[targetVar] = [];
-          if (ctx?.log) await ctx.log('useExcel skipped: cannot parse JSON ' + safePath + ' (' + error.message + ')');
-          return;
-        }
-        throw new Error('useExcel cannot parse JSON: ' + error.message);
-      }
+    try { records = await readJsonRecords(safePath, check); }
+    catch (error) {
+      check();
+      if (!skippable) throw error;
+      variables[targetVar] = [];
+      if (ctx?.log) await ctx.log('useExcel skipped: cannot read or parse JSON ' + safePath + ' (' + error.message + ')');
+      return;
     }
-    check();
-    if (!Array.isArray(records)) throw new Error('useExcel JSON content must be an array');
     variables[targetVar] = records;
     if (ctx?.log) await ctx.log(`useExcel loaded ${records.length} row(s) from ${safePath}`);
     return;

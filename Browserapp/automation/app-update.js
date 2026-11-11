@@ -20,6 +20,7 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
 const { compareVersions, isComparable } = require('./version-compare');
+const { readResponseBuffer } = require('./response-body');
 
 const UPDATE_REPOSITORY = 'zhu748/OpenBrowser';
 const UPDATE_API_URL = `https://api.github.com/repos/${UPDATE_REPOSITORY}/releases/latest`;
@@ -28,13 +29,15 @@ const UPDATE_RELEASES_ATOM = `https://github.com/${UPDATE_REPOSITORY}/releases.a
 const UPDATE_ASSETS = Object.freeze({
   'darwin:x64': 'OpenBrowser-macOS-x86_64.dmg',
   'darwin:arm64': 'OpenBrowser-macOS-arm64-with-kernel.dmg',
-  'win32:x64': 'OpenBrowser-Windows-x86_64-with-kernel.exe',
+  'win32:x64': 'OpenBrowser-Windows-x86_64-with-kernel-setup.exe',
   'linux:x64': 'OpenBrowser-Linux-x86_64-with-kernel.tar.gz',
 });
 const UPDATE_MAX_BYTES = 1024 * 1024 * 1024;
 const UPDATE_TIMEOUT_MS = 20000;
 const UPDATE_ALLOWED_HOSTS = new Set(['github.com', 'objects.githubusercontent.com', 'release-assets.githubusercontent.com']);
 const UPDATE_CHECKSUM_ASSET = 'SHA256SUMS.txt';
+// Exact historical exception, never inferred from missing network assets.
+const LEGACY_UNSIGNED_RELEASES = new Set(['1.0.27']);
 
 // Window broadcaster, injected by main.js (its emit() iterates live windows).
 let broadcastEvent = null;
@@ -86,7 +89,7 @@ async function resolveReleaseChecksums(remoteVersion) {
         signal: controller.signal,
       });
       if (response.ok) {
-        const manifestBuffer = Buffer.from(await response.arrayBuffer());
+        const manifestBuffer = await readResponseBuffer(response, 65536);
         if (manifestBuffer.length && manifestBuffer.length <= 65536) {
           const map = parseChecksumManifest(manifestBuffer.toString('utf8'));
           if (map.size) {
@@ -98,7 +101,9 @@ async function resolveReleaseChecksums(remoteVersion) {
     } finally {
       clearTimeout(timer);
     }
-  } catch (_) { /* manifest unavailable on this release */ }
+  } catch (error) {
+    if (error.code === 'UPDATE_SIGNATURE_FAILED') throw error;
+  }
   return null;
 }
 
@@ -109,6 +114,7 @@ async function fetchReleaseSignature(remoteVersion, parentSignal) {
   const controller = new AbortController();
   const onAbort = () => controller.abort();
   parentSignal?.addEventListener?.('abort', onAbort, { once: true });
+  if (parentSignal?.aborted) controller.abort();
   const timer = setTimeout(() => controller.abort(), UPDATE_TIMEOUT_MS);
   try {
     const response = await fetch(sigUrl, {
@@ -116,12 +122,13 @@ async function fetchReleaseSignature(remoteVersion, parentSignal) {
       headers: { 'User-Agent': updateUserAgent(), Accept: 'application/octet-stream' },
       signal: controller.signal,
     });
-    if (!response.ok) return null;
-    const signature = Buffer.from(await response.arrayBuffer());
-    if (!signature.length || signature.length > 4096) return null;
+    if (response.status === 404) return null;
+    if (!response.ok) throw new Error(`Signature request failed (HTTP ${response.status})`);
+    const signature = await readResponseBuffer(response, 4096);
+    if (!signature.length || signature.length > 4096) throw new Error('Invalid release signature size');
     return signature;
-  } catch (_) {
-    return null;
+  } catch (error) {
+    throw Object.assign(new Error(`Release signature could not be verified: ${error.message}`, { cause: error }), { code: 'UPDATE_SIGNATURE_FAILED' });
   } finally {
     clearTimeout(timer);
     parentSignal?.removeEventListener?.('abort', onAbort);
@@ -148,8 +155,8 @@ function updatePlatformKey() {
   return `${process.platform}:${process.arch}`;
 }
 
-function updateAssetName() {
-  return UPDATE_ASSETS[updatePlatformKey()] || null;
+function updateAssetName(platformKey = updatePlatformKey()) {
+  return UPDATE_ASSETS[platformKey] || null;
 }
 
 function updateUrlIsAllowed(value, assetName) {
@@ -274,6 +281,7 @@ async function resolveLatestReleaseMeta() {
     };
   } finally {
     clearTimeout(timer);
+    controller.abort();
   }
 }
 
@@ -463,6 +471,9 @@ async function downloadAppUpdate() {
     // downgrade paths. OPENBROWSER_ALLOW_UNSIGNED_UPDATE=1 restores the old
     // warn-and-proceed behavior for historical releases, explicitly opt-in.
     const checksums = await resolveReleaseChecksums(result.remoteVersion);
+    if (!checksums?.signature && !LEGACY_UNSIGNED_RELEASES.has(result.remoteVersion)) {
+      throw new Error(`Release v${result.remoteVersion} has no trusted signature — refusing to run the installer`);
+    }
     // The digest must be looked up under the exact platform asset name the
     // updater expects (updateAssetName()); parseChecksumManifest accepts any
     // filename, so a manifest that omits or renames that line must never
@@ -506,6 +517,7 @@ async function downloadAppUpdate() {
     throw error;
   } finally {
     clearTimeout(timer);
+    controller.abort();
   }
 }
 

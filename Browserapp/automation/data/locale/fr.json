@@ -738,5 +738,10 @@
   "profiles.cloneCopied": "Cloned {n} profiles (cookies and credentials not copied)",
   "ext.assignDone": "Added {name}, assigned to {n} profiles",
   "ext.assignFail": "Store install failed: {message}",
-  "batch.prefApplied": "Updated {n} profiles to {mode}"
+  "batch.prefApplied": "Updated {n} profiles to {mode}",
+  "storage.recoveryTitle": "Avis de récupération des données",
+  "storage.warning.profiles": "Impossible de décoder {count} profils. Les données sont conservées ; vérifiez la clé avant la restauration.",
+  "storage.warning.recovered": "Les paramètres ont été restaurés depuis une sauvegarde. Vérifiez vos modifications récentes.",
+  "storage.warning.rpa": "Le stockage RPA est endommagé. Le fichier original est conservé ; restaurez les plans et l’historique.",
+  "storage.warning.proxies": "{count} entrées proxy sont invalides. Vérifiez leurs paramètres."
 }

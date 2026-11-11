@@ -26,7 +26,8 @@ const fsp = require('node:fs/promises');
 const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
-const { performance, monitorEventLoopDelay } = require('node:perf_hooks');
+const { performance } = require('node:perf_hooks');
+const { LoopMonitor } = require('../automation/event-loop-monitor');
 
 const { BrowserEngine } = require('../engine');
 const { ProfileStoreSqlite } = require('../automation/profile-store-sqlite');
@@ -47,30 +48,6 @@ function percentile(sorted, p) {
   return sorted[index];
 }
 
-class LoopMonitor {
-  constructor() {
-    this.monitor = monitorEventLoopDelay({ resolution: 1 });
-    this.samples = [];
-    this.timer = setInterval(() => {
-      this.samples.push(this.monitor.mean);
-      this.monitor.reset();
-    }, 200);
-    this.timer.unref?.();
-  }
-  start() { this.monitor.enable(); return this; }
-  stop() {
-    this.monitor.disable();
-    clearInterval(this.timer);
-    this.samples.sort((a, b) => a - b);
-    return {
-      p50Ms: percentile(this.samples, 50) / 1e6,
-      p95Ms: percentile(this.samples, 95) / 1e6,
-      p99Ms: percentile(this.samples, 99) / 1e6,
-      rawCount: this.samples.length,
-    };
-  }
-}
-
 function rssMb() {
   const usage = process.memoryUsage.rss();
   return usage / 1024 / 1024;
@@ -86,7 +63,8 @@ function startFakeKernel() {
     liveSockets += 1;
     peakSockets = Math.max(peakSockets, liveSockets);
     server.getConnections?.(() => {});
-    const close = () => { liveSockets = Math.max(0, liveSockets - 1); };
+    let closed = false;
+    const close = () => { if (!closed) { closed = true; liveSockets = Math.max(0, liveSockets - 1); } };
     res.on('finish', close);
     res.on('close', close);
     setTimeout(() => {
@@ -183,8 +161,7 @@ async function runScenario(size) {
           let bytes;
           if (lane === 'delta') {
             const delta = await Promise.resolve(engine.statusDelta(watermark));
-            if (delta.full === false) watermark = delta.watermark;
-            else watermark = engine.profiles.revisionState();
+            watermark = delta.watermark;
             bytes = Buffer.byteLength(JSON.stringify(delta));
           } else {
             await Promise.resolve(engine.status());
@@ -265,7 +242,8 @@ async function runScenario(size) {
     report.sync.perEditStagingMs = +(performance.now() - t0).toFixed(3);
   }
 
-  await fsp.rm(root, { recursive: true, force: true }).catch(() => {});
+  engine.sqliteStore.close();
+  await fsp.rm(root, { recursive: true, force: true });
   return report;
 }
 

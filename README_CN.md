@@ -163,10 +163,14 @@ OpenBrowser/
 - 第三方组件声明见 [`THIRD-PARTY-NOTICES.md`](./Browserapp/THIRD-PARTY-NOTICES.md)。
 - 云备份集成只有在用户显式配置后才会主动联网。
 - **包含账号凭据（Cookie / 密码 / 2FA / 代理登录信息 / 浏览器数据）的备份必须设置备份口令加密后才会上传**，未加密的凭据上传会被直接拒绝。
-- 应用内更新器从上游发布仓库（`zhu748/OpenBrowser`）下载安装包，并在启动安装器前校验 release 发布的 `SHA256SUMS.txt` 清单；缺失清单的旧版本仅给出警告。
+- 应用内更新器从 `zhu748/OpenBrowser` 下载并核对安装包 SHA-256，同时验证 `SHA256SUMS.txt.sig` 的 Ed25519 签名。后续版本缺失签名或签名获取失败时拒绝运行安装器；仅精确列出的历史版本 `1.0.27` 保留兼容策略。
+- RPA 计划、变量与执行结果也加密保存；旧 JSON 文件在成功读取后自动迁移。请通过应用导入/导出，避免直接编辑存储文件。
+- 密钥文件无法读取或可靠保存时拒绝写入凭据，防止重启后无法恢复。请保留原密钥和数据文件进行恢复。
+- RPA CSV/文本/JSON 导入最多 32 MiB、100,000 行；CSV 最多 1,000 列，CSV 字段和文本行最多 1,048,576 个 UTF-16 码元。超限文件请拆分。
 
 ## 文档
 
+- [本轮安全、执行与恢复优化](./docs/dev-reports/2026-11-11-security-runtime-optimization.md)
 - [代码分类与维护入口](./docs/code-organization.md)
 - [项目复审与优化记录](./docs/dev-reports/2026-11-10-project-review.md)
 - [会话查询、事务与哈希优化](./docs/dev-reports/2026-11-10-next-optimization.md)

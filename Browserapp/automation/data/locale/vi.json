@@ -738,5 +738,10 @@
   "profiles.cloneCopied": "Cloned {n} profiles (cookies and credentials not copied)",
   "ext.assignDone": "Added {name}, assigned to {n} profiles",
   "ext.assignFail": "Store install failed: {message}",
-  "batch.prefApplied": "Updated {n} profiles to {mode}"
+  "batch.prefApplied": "Updated {n} profiles to {mode}",
+  "storage.recoveryTitle": "Thông báo khôi phục dữ liệu",
+  "storage.warning.profiles": "Không thể giải mã {count} hồ sơ. Dữ liệu gốc được giữ lại; hãy kiểm tra khóa trước khi khôi phục.",
+  "storage.warning.recovered": "Đã khôi phục cấu hình từ bản sao lưu. Hãy kiểm tra các thay đổi gần đây.",
+  "storage.warning.rpa": "Dữ liệu RPA bị hỏng. Tệp gốc được giữ lại; hãy khôi phục kế hoạch và lịch sử tác vụ.",
+  "storage.warning.proxies": "Có {count} bản ghi proxy không hợp lệ. Hãy kiểm tra cài đặt proxy."
 }

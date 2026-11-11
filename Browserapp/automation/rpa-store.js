@@ -4,6 +4,7 @@
 const fsp = require('fs/promises');
 const path = require('path');
 const crypto = require('crypto');
+const credentialCrypto = require('../credential-crypto');
 const { cloneBuiltinTemplates } = require('./rpa-templates-builtin');
 const localCatalog = require('./data/catalog-templates.json');
 const {
@@ -51,9 +52,11 @@ class RpaStore {
 
   async load() {
     this.loadReport = { quarantined: false, quarantineFile: '', error: '' };
+    let encrypted = false;
     try {
-      const raw = await fsp.readFile(this.filePath, 'utf8');
-      const parsed = JSON.parse(raw);
+      const raw = await fsp.readFile(this.filePath);
+      encrypted = credentialCrypto.isEncrypted(raw);
+      const parsed = JSON.parse(encrypted ? credentialCrypto.decryptCredential(raw) : raw.toString('utf8'));
       this.data = {
         version: Number(parsed.version) || 3,
         plans: Array.isArray(parsed.plans) ? parsed.plans : [],
@@ -62,6 +65,9 @@ class RpaStore {
         config: parsed.config && typeof parsed.config === 'object' ? parsed.config : {},
       };
     } catch (error) {
+      // A temporarily unavailable keyring is not an empty/corrupt store.
+      // Refuse startup rather than overwriting encrypted plans and secrets.
+      if (encrypted) throw new Error('Cannot decrypt RPA store; existing data was preserved', { cause: error });
       // A corrupt store resets to empty; keep the broken file aside so plans and
       // task history can be recovered by hand instead of vanishing silently.
       if (error && error.code !== 'ENOENT') {
@@ -449,7 +455,7 @@ class RpaStore {
         handle = await fsp.open(temporary, 'wx', 0o600);
         // Match the compact UTF-8 size used by enforceStoreBudget and avoid
         // writing indentation for every task/log/step on each save.
-        await handle.writeFile(JSON.stringify(this.data), 'utf8');
+        await handle.writeFile(credentialCrypto.encryptCredential(JSON.stringify(this.data)));
         await handle.sync();
         await handle.close();
         handle = null;
@@ -563,9 +569,9 @@ class RpaStore {
   async deleteTask(id) {
     const before = this.data.tasks.length;
     this.data.tasks = this.data.tasks.filter((item) => item.id !== id);
-    if (this.data.tasks.length === before) return { success: false, id };
+    if (this.data.tasks.length === before) return { success: false, deleted: false, id };
     await this.save();
-    return { success: true, id };
+    return { success: true, deleted: true, id };
   }
 
   async createTask(input = {}) {

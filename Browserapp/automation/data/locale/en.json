@@ -738,5 +738,10 @@
   "profiles.cloneCopied": "Cloned {n} profiles (cookies and credentials not copied)",
   "ext.assignDone": "Added {name}, assigned to {n} profiles",
   "ext.assignFail": "Store install failed: {message}",
-  "batch.prefApplied": "Updated {n} profiles to {mode}"
+  "batch.prefApplied": "Updated {n} profiles to {mode}",
+  "storage.recoveryTitle": "Data recovery notice",
+  "storage.warning.profiles": "Could not decode {count} profile(s). Original data was preserved; check the key before restoring.",
+  "storage.warning.recovered": "Profile settings were recovered from a backup. Check your recent changes.",
+  "storage.warning.rpa": "The RPA store was damaged. The original file was preserved; restore plans and task history.",
+  "storage.warning.proxies": "{count} proxy record(s) have invalid data. Review proxy settings."
 }

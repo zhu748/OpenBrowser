@@ -11,13 +11,14 @@
  *
  *   1. A rejected job must release its slot. Otherwise one failure stops the
  *      queue from ever draining.
- *   2. A timed-out job must not hold its slot while the underlying work keeps
- *      running. The wait is bounded and the slot is released on timeout.
+ *   2. Timeout/cancellation rejects the caller and aborts cooperative work.
+ *      The slot remains occupied until that work actually settles.
  *
  * Schedulers are named so callers can share one instance per concern.
  */
 
 const DEFAULT_CONCURRENCY = 1;
+const DEFAULT_MAX_PENDING = 10000;
 
 /** Reject after `ms`, and clear the timer whichever way the race resolves. */
 function withTimeout(promise, ms) {
@@ -55,6 +56,8 @@ class TaskScheduler {
       ? Number(options.defaultTimeout)
       : 0;
     this.sleep = typeof options.sleep === 'function' ? options.sleep : sleep;
+    this.maxPending = Number.isSafeInteger(options.maxPending) && options.maxPending >= 0
+      ? options.maxPending : DEFAULT_MAX_PENDING;
 
     this.pending = [];
     this.pendingHead = 0;
@@ -82,6 +85,7 @@ class TaskScheduler {
       concurrency: this.concurrency,
       running: this.running,
       pending: this.size,
+      maxPending: this.maxPending,
       completed: this.completedCount,
       failed: this.failedCount,
       timedOut: this.timedOutCount,
@@ -92,7 +96,7 @@ class TaskScheduler {
   /**
    * Queue a job.
    *
-   * @param {(payload:*) => Promise<*>} handle
+   * @param {(payload:*, context:{signal:AbortSignal}) => Promise<*>} handle
    * @param {*} [payload]
    * @param {{stepName?:string, timeout?:number}} [options]
    * @returns {Promise<*>} Resolves or rejects with the job outcome.
@@ -104,9 +108,17 @@ class TaskScheduler {
     if (this.destroyed) {
       return Promise.reject(new Error(`scheduler "${this.name}" has been destroyed`));
     }
+    if (options.signal != null && (typeof options.signal.addEventListener !== 'function'
+      || typeof options.signal.removeEventListener !== 'function')) {
+      return Promise.reject(new TypeError('signal must be an AbortSignal'));
+    }
+    if (options.signal?.aborted) return Promise.reject(options.signal.reason || new Error('task cancelled'));
+    if (this.running >= this.concurrency && this.size >= this.maxPending) {
+      return Promise.reject(Object.assign(new Error(`scheduler "${this.name}" queue is full`), { code: 'QUEUE_FULL' }));
+    }
 
     return new Promise((resolve, reject) => {
-      this.pending.push({
+      const job = {
         handle,
         payload,
         stepName: options.stepName || '',
@@ -115,7 +127,18 @@ class TaskScheduler {
           : this.defaultTimeout,
         resolve,
         reject,
-      });
+        signal: options.signal,
+      };
+      job.onQueuedAbort = () => {
+        const index = this.pending.indexOf(job, this.pendingHead);
+        if (index < 0) return;
+        this.pending.splice(index, 1);
+        job.signal.removeEventListener('abort', job.onQueuedAbort);
+        reject(job.signal.reason || new Error('task cancelled'));
+        this.notifyIdle();
+      };
+      job.signal?.addEventListener('abort', job.onQueuedAbort, { once: true });
+      this.pending.push(job);
       this.pump();
     });
   }
@@ -124,6 +147,7 @@ class TaskScheduler {
   pump() {
     while (!this.destroyed && this.running < this.concurrency && this.size > 0) {
       const job = this.pending[this.pendingHead];
+      job.signal?.removeEventListener('abort', job.onQueuedAbort);
       this.pending[this.pendingHead++] = undefined;
       // Release completed prefixes without shifting every waiting payload.
       if (this.pendingHead === this.pending.length) {
@@ -134,8 +158,7 @@ class TaskScheduler {
         this.pendingHead = 0;
       }
       this.running += 1;
-      // `finally` is the single place that frees the slot, so a rejection or a
-      // timeout can never strand it.
+      // Release capacity only after the underlying work has settled.
       this.runJob(job).finally(() => {
         this.running -= 1;
         if (!this.destroyed) this.pump();
@@ -145,9 +168,24 @@ class TaskScheduler {
   }
 
   async runJob(job) {
+    const controller = new AbortController();
+    let timer;
+    let wasInterrupted = false;
+    let interrupt;
+    const interrupted = new Promise((_resolve, reject) => { interrupt = reject; });
+    const abort = (error) => { wasInterrupted = true; controller.abort(error); interrupt(error); };
+    const onAbort = () => abort(job.signal.reason || Object.assign(new Error('task cancelled'), { code: 'ABORT_ERR' }));
+    job.signal?.addEventListener('abort', onAbort, { once: true });
+    if (job.signal?.aborted) onAbort();
+    const work = Promise.resolve().then(() => {
+      controller.signal.throwIfAborted();
+      return job.handle(job.payload, { signal: controller.signal });
+    });
+    if (job.timeout > 0) timer = setTimeout(() => abort(Object.assign(
+      new Error(`task timed out after ${job.timeout}ms`), { code: 'ETIMEDOUT' }
+    )), job.timeout);
     try {
-      const work = Promise.resolve().then(() => job.handle(job.payload));
-      const result = await withTimeout(work, job.timeout);
+      const result = await Promise.race([work, interrupted]);
       this.completedCount += 1;
       job.resolve(result);
     } catch (err) {
@@ -156,6 +194,11 @@ class TaskScheduler {
       this.reportError(err, job);
       job.reject(err);
     } finally {
+      clearTimeout(timer);
+      job.signal?.removeEventListener('abort', onAbort);
+      // A handler may ignore AbortSignal. Do not admit replacement work while
+      // its sockets/CPU are still active, even though its caller has timed out.
+      if (wasInterrupted) await work.catch(() => {});
       if (this.concurrency === 1 && this.serialInterval > 0 && !this.destroyed) {
         try { await this.sleep(this.serialInterval); }
         catch (error) { this.reportError(error, job); }
@@ -195,7 +238,11 @@ class TaskScheduler {
     this.destroyed = true;
     const dropped = this.size;
     const error = reason instanceof Error ? reason : new Error(`scheduler "${this.name}" was destroyed`);
-    for (let index = this.pendingHead; index < this.pending.length; index += 1) this.pending[index].reject(error);
+    for (let index = this.pendingHead; index < this.pending.length; index += 1) {
+      const job = this.pending[index];
+      job.signal?.removeEventListener('abort', job.onQueuedAbort);
+      job.reject(error);
+    }
     this.pending = [];
     this.pendingHead = 0;
     this.notifyIdle();
@@ -270,4 +317,5 @@ module.exports = {
   withTimeout,
   normalizeConcurrency,
   DEFAULT_CONCURRENCY,
+  DEFAULT_MAX_PENDING,
 };

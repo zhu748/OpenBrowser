@@ -4374,6 +4374,20 @@ async function initialize() {
   }
   await refreshExtensions(); await refreshSessions(); renderProfiles(); renderLogs();
   log('System', readyBrowserLog(info));
+  try {
+    const storage = await window.ops.getProfileStorage();
+    const warningKeys = { PROFILE_DECODE_FAILED: 'storage.warning.profiles', ENGINE_RECOVERED: 'storage.warning.recovered',
+      RPA_QUARANTINED: 'storage.warning.rpa', PROXY_RECORD_INVALID: 'storage.warning.proxies' };
+    const warnings = (Array.isArray(storage?.warnings) ? storage.warnings : []).map((warning) => ({ ...warning,
+      message: warningKeys[warning.code] ? t(warningKeys[warning.code], { count: warning.count }) : warning.message }));
+    for (const warning of warnings) log('Storage', warning.message);
+    if (warnings.length) {
+      toast(warnings.map((warning) => warning.message).join('\n'));
+      const row = document.createElement('div');
+      row.append(element('dt', '', t('storage.recoveryTitle')), element('dd', '', warnings.map((warning) => warning.message).join(' ')));
+      $('#runtime-info')?.append(row);
+    }
+  } catch (error) { log('Storage', error.message); }
   switchView(document.querySelector('.view.active')?.id?.replace(/^view-/, '') || 'profiles');
 }
 function readyBrowserLog(info) {

@@ -10,6 +10,7 @@ const { registerExtensionIpc } = require('./main/extensions-ipc');
 const { registerKernelIpc } = require('./main/kernel-ipc');
 const { registerProfileIpc } = require('./main/profile-ipc');
 const { registerAutomationControlIpc } = require('./main/automation-ipc');
+const { collectStorageDiagnostics } = require('./automation/storage-diagnostics');
 const { LiveSyncController } = require('./live-sync-v5');
 
 // Host process performance (Win / macOS / Linux): cut background timers and idle GPU work.
@@ -1015,7 +1016,8 @@ app.whenReady().then(async () => {
     return { success: true, theme: themeId, colorMode };
   });
   registerKernelIpc({ registerTrustedIpc, engine, dialog });
-  registerTrustedIpc('system:get-storage', () => ({ profileRoot: engine.getProfileDataRoot(), defaultProfileRoot: defaultProfileDataRoot, running: engine.running.size }));
+  registerTrustedIpc('system:get-storage', () => ({ profileRoot: engine.getProfileDataRoot(), defaultProfileRoot: defaultProfileDataRoot,
+    running: engine.running.size, ...collectStorageDiagnostics({ engine, automation }) }));
   registerTrustedIpc('system:choose-storage', async () => {
     if (engine.running.size) throw new Error('\u8bf7\u5148\u505c\u6b62\u6240\u6709\u73af\u5883\uff0c\u518d\u4fee\u6539\u6570\u636e\u4fdd\u5b58\u4f4d\u7f6e');
     const options = { title: '\u9009\u62e9\u73af\u5883\u6570\u636e\u4fdd\u5b58\u76ee\u5f55', defaultPath: engine.getProfileDataRoot(), properties: ['openDirectory', 'createDirectory', 'promptToCreate'] };
@@ -1332,11 +1334,11 @@ app.whenReady().then(async () => {
   registerTrustedIpc('automation:app-center-icons', async (_event, storeIds) => {
     const ids = [...new Set((Array.isArray(storeIds) ? storeIds : []).map(validChromeStoreId).filter(Boolean))];
     // Bounded fan-out: the panel may ask for dozens of entries at once.
-    return fetchStoreEntries(ids, (id) => fetchChromeStoreIcon(id));
+    return fetchStoreEntries(ids, (id, { signal }) => fetchChromeStoreIcon(id, { signal }));
   });
   registerTrustedIpc('automation:app-center-metadata', async (_event, storeIds) => {
     const ids = [...new Set((Array.isArray(storeIds) ? storeIds : []).map(validChromeStoreId).filter(Boolean))];
-    return fetchStoreEntries(ids, (id) => fetchChromeStoreMetadata(id));
+    return fetchStoreEntries(ids, (id, { signal }) => fetchChromeStoreMetadata(id, { signal }));
   });
 
 

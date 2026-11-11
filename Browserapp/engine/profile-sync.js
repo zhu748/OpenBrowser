@@ -15,10 +15,9 @@ function prepareProfileSync(engine, values, { maintenanceToken } = {}) {
   const profiles = new Map();
   const assignments = new Map();
   const networkInvalidations = new Set();
-  // Aligned with LOAD_PROFILE_CAP (engine/init.js): the renderer's first
-  // sync sends everything init loaded, so a lower cap here killed UI init
-  // for 1001-5000 profile fleets (round-4 PERF-4).
-  if (!Array.isArray(values) || values.length > 5000) throw new Error('Invalid profile list');
+  // Transport limits bound external requests; full trusted UI snapshots must
+  // accept every loaded profile, including fleets larger than 5000 records.
+  if (!Array.isArray(values)) throw new Error('Invalid profile list');
   const globallyEnabled = engine.listExtensions().filter((extension) => extension.enabledAll).map((extension) => extension.id);
   // Hoisted out of the per-profile loop: O(N × E) → O(N + E) for first syncs.
   const builtInIds = [...engine.extensions.values()].filter((extension) => extension.builtIn).map((extension) => extension.id);

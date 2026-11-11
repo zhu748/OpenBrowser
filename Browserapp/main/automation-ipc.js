@@ -143,7 +143,8 @@ function registerAutomationControlIpc({ registerTrustedIpc, getAutomation, getMa
   register('automation:rpa-task-delete', async ({ automation }, _event, ids) => {
     if (!automation) throw new Error('Automation stack is not ready');
     const list = [...new Set((Array.isArray(ids) ? ids : [ids]).map((id) => String(id || '').trim()).filter(Boolean))];
-    const running = new Set(automation.rpaEngine?.getStatus?.().running || []);
+    const status = automation.rpaEngine?.getStatus?.() || {};
+    const running = new Set([...(status.running || []), ...(status.queued || [])]);
     const deleted = []; const skipped = [];
     for (const id of list) {
       if (running.has(id)) { skipped.push(id); continue; }

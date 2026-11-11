@@ -171,6 +171,38 @@ jobs:
           OPENBROWSER_RUST_CORE_BINARY: ${{ github.workspace }}/Browserapp/rust-core/openbrowser-core
         run: npm run selftest:rustchaos
 
+  review-boundaries:
+    name: Storage and runtime boundaries (${{ matrix.os }}, Node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: [22, 24]
+    defaults:
+      run:
+        working-directory: Browserapp
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: false
+          sparse-checkout: |
+            /*
+            !/Browserapp/kernels/
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+      # These regressions use only Node builtins; no Electron download or
+      # browser kernel is required. Desktop/browser E2E remains a release gate.
+      - name: Storage, runtime, update and input regressions
+        run: |
+          node scripts/selftest-one.js reviewstorage
+          node scripts/selftest-one.js reviewruntime
+          node scripts/selftest-one.js reviewupdate
+          node scripts/selftest-one.js reviewinputmetrics
+
   # ~200 lines of Windows FFI (process/lock.rs, guardian.rs) compile to nothing
   # on Linux: cargo skips cfg(windows) blocks entirely, so per-push CI never
   # saw them and Windows-only regressions surfaced only in manual release

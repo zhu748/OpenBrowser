@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { ProxyStore } = require('../proxy-store');
 const { RpaStore } = require('../rpa-store');
+const { decryptCredential, isEncrypted } = require('../../credential-crypto');
 
 async function main() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ob-persistence-boundaries-'));
@@ -73,7 +74,7 @@ async function main() {
       const first = rpa.save();
       try {
         await rpa.flush();
-        const saved = JSON.parse(await fs.readFile(target, 'utf8'));
+        const saved = JSON.parse(decryptCredential(await fs.readFile(target)));
         assert.equal(saved.config.marker, 'trailing');
       } finally { await first; await trailing; fs.rename = rename; }
     });
@@ -93,7 +94,8 @@ async function main() {
         try {
           if (kind === 'proxy') await store._writeAtomic(target, '{}');
           else await new RpaStore(target)._writeAtomic();
-          JSON.parse(await fs.readFile(target, 'utf8'));
+          const raw = await fs.readFile(target);
+          JSON.parse(isEncrypted(raw) ? decryptCredential(raw) : raw.toString('utf8'));
           assert.equal(closed, 1, 'every opened directory handle must close');
         } finally { fs.open = open; }
       });

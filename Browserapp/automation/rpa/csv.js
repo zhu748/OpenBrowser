@@ -1,13 +1,20 @@
 'use strict';
 
 /** Feed UTF-8-decoded chunks without retaining the full source or split lines. */
-function createCsvParser(onRow) {
+function createCsvParser(onRow, { maxFieldChars = Infinity, maxColumns = Infinity } = {}) {
   let row = [], parts = [], state = 'field', wasQuoted = false, started = false;
+  let fieldChars = 0;
+  const append = (part) => {
+    fieldChars += part.length;
+    if (fieldChars > maxFieldChars) throw new Error('CSV field exceeds the character limit');
+    parts.push(part);
+  };
   let first = true, skipLF = false, ended = false;
   const finishField = () => {
     const field = parts.join('');
+    if (row.length >= maxColumns) throw new Error('CSV row exceeds the column limit');
     row.push(wasQuoted ? field : field.trim());
-    parts = []; wasQuoted = false; state = 'field';
+    parts = []; fieldChars = 0; wasQuoted = false; state = 'field';
   };
   const finishRow = () => { finishField(); onRow(row); row = []; started = false; };
   return {
@@ -15,7 +22,7 @@ function createCsvParser(onRow) {
       if (ended) throw new Error('CSV parser has ended');
       if (typeof source !== 'string') throw new TypeError('CSV chunks must be strings');
       let start = 0;
-      const flush = (end) => { if (end > start) parts.push(source.slice(start, end)); };
+      const flush = (end) => { if (end > start) append(source.slice(start, end)); };
       for (let index = 0; index < source.length; index += 1) {
         const ch = source[index];
         if (first) { first = false; if (ch === '\ufeff') { start = index + 1; continue; } }
@@ -25,7 +32,7 @@ function createCsvParser(onRow) {
           continue;
         }
         if (state === 'quote' && ch === '"') {
-          parts.push('"'); state = 'quoted'; start = index + 1; continue;
+          append('"'); state = 'quoted'; start = index + 1; continue;
         }
         if (ch === ',') {
           flush(index); finishField(); start = index + 1; started = true;
@@ -51,13 +58,14 @@ function createCsvParser(onRow) {
   };
 }
 
-function createCsvRecordParser() {
+function createCsvRecordParser({ maxRows = Infinity, ...limits } = {}) {
   let headers;
   const records = [];
   const parser = createCsvParser((row) => {
     if (!headers) { headers = row.map((item) => item.trim()); return; }
+    if (records.length >= maxRows) throw new Error('CSV exceeds the row limit');
     records.push(Object.fromEntries(row.map((item, index) => [headers[index] || ('col' + index), item])));
-  });
+  }, limits);
   return { ...parser, records };
 }
 

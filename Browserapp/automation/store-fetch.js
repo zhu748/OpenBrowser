@@ -43,10 +43,15 @@ async function fetchStoreEntries(ids, fetcher, options = {}) {
     concurrency: resolveConcurrency(options.concurrency),
     defaultTimeout: Number.isFinite(options.timeoutMs) && options.timeoutMs > 0 ? Number(options.timeoutMs) : DEFAULT_TIMEOUT_MS,
   });
+  // Bound the whole batch too: an injected/non-cooperative fetcher cannot
+  // leave queued promises waiting forever behind occupied execution slots.
+  const batchTimer = setTimeout(() => scheduler.destroy(Object.assign(
+    new Error('Store lookup batch timed out'), { code: 'ETIMEDOUT' }
+  )), scheduler.defaultTimeout * Math.ceil(wanted.length / scheduler.concurrency));
 
-  const results = await Promise.all(wanted.map((id) => scheduler.schedule(async () => {
+  const results = await Promise.all(wanted.map((id) => scheduler.schedule(async (_payload, { signal }) => {
     try {
-      const value = await fetcher(id);
+      const value = await fetcher(id, { signal });
       return value === undefined ? null : value;
     } catch (_) {
       return null;
@@ -54,7 +59,7 @@ async function fetchStoreEntries(ids, fetcher, options = {}) {
     // The timeout is applied by the scheduler around the job, so it surfaces as
     // a rejection of schedule() itself - normalise that too, or one hung lookup
     // would take the whole batch with it.
-  }).catch(() => null)));
+  }).catch(() => null))).finally(() => clearTimeout(batchTimer));
 
   const out = {};
   for (let index = 0; index < wanted.length; index += 1) {

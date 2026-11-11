@@ -135,7 +135,7 @@ function makePackage({ withIcon = true } = {}) {
   check('the store-page fallback is still reachable', () => {
     assert.ok(/catch \(_\) \{\n    \/\/ CRX download often blocked; fall through to store page scrape/.test(source),
       'the fallback comment/behaviour is gone');
-    assert.ok(/fetchChromeStoreIcon\(safeId\)/.test(source), 'the fallback scrape is gone');
+    assert.ok(/fetchChromeStoreIcon\(safeId, \{ signal \}\)/.test(source), 'the fallback scrape is gone');
   });
 }
 

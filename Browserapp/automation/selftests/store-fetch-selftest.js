@@ -118,8 +118,8 @@ function trackingFetcher(state, delayMs = 5) {
     const source = fs.readFileSync(path.join(__dirname, '..', '../main.js'), 'utf8');
     check('both app-centre lookups go through the bounded queue', () => {
       assert.ok(/require\('\.\/automation\/store-fetch'\)/.test(source), 'helper is not required');
-      assert.ok(/fetchStoreEntries\(ids, \(id\) => fetchChromeStoreIcon\(id\)\)/.test(source), 'icons are not queued');
-      assert.ok(/fetchStoreEntries\(ids, \(id\) => fetchChromeStoreMetadata\(id\)\)/.test(source), 'metadata is not queued');
+      assert.ok(/fetchStoreEntries\(ids, \(id, \{ signal \}\) => fetchChromeStoreIcon\(id, \{ signal \}\)\)/.test(source), 'icons are not queued');
+      assert.ok(/fetchStoreEntries\(ids, \(id, \{ signal \}\) => fetchChromeStoreMetadata\(id, \{ signal \}\)\)/.test(source), 'metadata is not queued');
     });
     check('the unbounded fan-out is gone', () => {
       assert.ok(!/Promise\.all\(ids\.map/.test(source), 'a Promise.all over ids is still present');

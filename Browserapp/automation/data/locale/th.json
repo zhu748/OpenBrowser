@@ -738,5 +738,10 @@
   "profiles.cloneCopied": "Cloned {n} profiles (cookies and credentials not copied)",
   "ext.assignDone": "Added {name}, assigned to {n} profiles",
   "ext.assignFail": "Store install failed: {message}",
-  "batch.prefApplied": "Updated {n} profiles to {mode}"
+  "batch.prefApplied": "Updated {n} profiles to {mode}",
+  "storage.recoveryTitle": "แจ้งเตือนการกู้คืนข้อมูล",
+  "storage.warning.profiles": "ไม่สามารถถอดรหัสโปรไฟล์ {count} รายการได้ ข้อมูลต้นฉบับยังอยู่ โปรดตรวจสอบคีย์ก่อนกู้คืน",
+  "storage.warning.recovered": "กู้คืนการตั้งค่าจากข้อมูลสำรองแล้ว โปรดตรวจสอบการเปลี่ยนแปลงล่าสุด",
+  "storage.warning.rpa": "ข้อมูล RPA เสียหาย ไฟล์ต้นฉบับยังอยู่ โปรดกู้คืนแผนและประวัติงาน",
+  "storage.warning.proxies": "ข้อมูลพร็อกซี {count} รายการไม่ถูกต้อง โปรดตรวจสอบการตั้งค่า"
 }

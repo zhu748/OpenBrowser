@@ -89,6 +89,27 @@ async function main() {
     }
 
     let cancelled = 0;
+    for (const target of ['page', 'image', 'package']) {
+      let ready;
+      const reading = new Promise((resolve) => { ready = resolve; });
+      const controller = new AbortController();
+      const abortable = await fixture(path.join(root, `external-${target}`), async (url, options) => {
+        if (target === 'image' && url !== imageUrl) return new Response(html);
+        const response = new Response(new ReadableStream({ start(stream) {
+          options.signal.addEventListener('abort', () => stream.error(options.signal.reason), { once: true });
+        } }));
+        const reader = response.body.getReader.bind(response.body);
+        response.body.getReader = () => { ready(); return reader(); };
+        return response;
+      });
+      const pending = target === 'package'
+        ? abortable.api.fetchStorePackage('https://clients2.google.com/service/update2/crx', null, { signal: controller.signal })
+        : abortable.api.fetchChromeStoreIcon(id, { signal: controller.signal });
+      await reading;
+      controller.abort(new Error('external cancellation'));
+      await assert.rejects(pending, /external cancellation/);
+      assert.equal(abortable.timers.size, 0, target + ' cancellation cleans its transport deadline');
+    }
     let reads = 0;
     const oversized = await fixture(path.join(root, 'oversized'), async (url) => {
       if (url !== imageUrl) return new Response(html);

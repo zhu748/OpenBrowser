@@ -1,5 +1,13 @@
 # 代码分类与维护入口
 
+本轮凭据、存储完整性、RPA 并发与正则隔离、更新签名和性能测量见 [安全、执行边界与恢复优化](dev-reports/2026-11-11-security-runtime-optimization.md)。
+
+- `automation/rpa/regex.js` 与 `regex-worker.js`：有界、可终止的自定义正则执行。
+- `automation/event-loop-monitor.js`：直接读取事件循环直方图分位数，不对均值取分位数。
+- `automation/storage-diagnostics.js`：对 UI 输出脱敏后的恢复提醒，原始失败记录保留在存储层。
+- 所有 RPA 执行入口共用任务体调度；超时不能在底层工作结束前释放资源槽位。
+- 环境加载和完整 UI 同步不能按显示数量截断；RPA 输入预算与环境存储完整性分别管理。
+
 代理/RPA 退出排空、设置读写与恢复、API 密钥并发的后续四轮检查见 [持久化与并发优化记录](dev-reports/2026-11-11-persistence-concurrency-followup.md)。
 
 DNS、下载连接、RPA 变量隔离和 CSV 导出的本次五轮检查见 [网络与 RPA 复核记录](dev-reports/2026-11-11-network-rpa-csv-review.md)。

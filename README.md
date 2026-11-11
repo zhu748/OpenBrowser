@@ -167,7 +167,10 @@ This repository contains source code, documentation, and — via [Git LFS](https
 - Third-party notices are documented in [`THIRD-PARTY-NOTICES.md`](./Browserapp/THIRD-PARTY-NOTICES.md).
 - Cloud backup integrations only connect outward after explicit user configuration.
 - **Backups that contain account credentials (cookies / passwords / 2FA / proxy logins / browser data) are only uploaded when a backup passphrase is set** — unencrypted credential uploads are rejected.
-- The in-app updater downloads installers from the upstream release repository (`zhu748/OpenBrowser`) and verifies every download against the release's `SHA256SUMS.txt` manifest before launching it; releases without a manifest produce a visible warning.
+- The updater checks installer SHA-256 and the Ed25519 signature in `SHA256SUMS.txt.sig`. Future releases with missing, invalid or unavailable signatures are refused; only the exact historical version `1.0.27` retains the legacy compatibility policy.
+- RPA plans, variables and results are encrypted at rest. Existing JSON stores migrate after a successful read; use application import/export instead of editing storage files.
+- Credential writes are refused when the local key cannot be read or durably saved. Preserve the original key and data files for recovery.
+- RPA CSV/text/JSON inputs are limited to 32 MiB and 100,000 rows. CSV allows at most 1,000 columns; CSV fields and text lines allow at most 1,048,576 UTF-16 code units. Split larger inputs.
 
 ## Documentation
 

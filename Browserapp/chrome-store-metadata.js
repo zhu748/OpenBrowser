@@ -13,7 +13,8 @@ const path = require('path');
 const fsp = require('fs/promises');
 const { readResponseBuffer } = require('./automation/response-body');
 
-async function fetchStorePackage(url, proxyValue = null) {
+async function fetchStorePackage(url, proxyValue = null, { signal } = {}) {
+  signal?.throwIfAborted();
   const initial = new URL(url);
   if (initial.protocol !== 'https:' || initial.hostname !== 'clients2.google.com') throw new Error('Chrome 商店下载地址无效');
   const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 180000);
@@ -22,7 +23,8 @@ async function fetchStorePackage(url, proxyValue = null) {
     if (proxyValue === 'system') await storeSession.setProxy({ mode: 'system' });
     else if (proxyValue) await storeSession.setProxy({ mode: 'fixed_servers', proxyRules: proxyValue });
     else await storeSession.setProxy({ mode: 'direct' });
-    const response = await storeSession.fetch(url, { redirect: 'follow', signal: controller.signal, headers: { 'user-agent': 'Mozilla/5.0 OpenBrowserLocal/3.0' } });
+    signal?.throwIfAborted();
+    const response = await storeSession.fetch(url, { redirect: 'follow', signal: signal ? AbortSignal.any([controller.signal, signal]) : controller.signal, headers: { 'user-agent': 'Mozilla/5.0 OpenBrowserLocal/3.0' } });
     const finalUrl = new URL(String(response.url || url));
     if (finalUrl.protocol !== 'https:' || !['clients2.google.com', 'clients2.googleusercontent.com'].includes(finalUrl.hostname)) throw new Error('Chrome 商店返回了不受信任的下载地址');
     if (!response.ok) throw new Error('Chrome 商店下载失败（HTTP ' + response.status + '）');
@@ -74,7 +76,8 @@ function rememberChromeStorePage(safeId, html) {
   }
 }
 
-async function fetchChromeStorePageHtml(safeId, timeoutMs = 25000) {
+async function fetchChromeStorePageHtml(safeId, timeoutMs = 25000, { signal } = {}) {
+  signal?.throwIfAborted();
   const now = Date.now();
   const cachedPage = chromeStorePageCache.get(safeId);
   if (cachedPage) {
@@ -83,7 +86,7 @@ async function fetchChromeStorePageHtml(safeId, timeoutMs = 25000) {
     chromeStorePageCache.delete(safeId);
   }
   const pending = chromeStorePageRequests.get(safeId);
-  if (pending) return pending;
+  if (pending && !signal) return pending;
   const request = (async () => {
     const storeSession = session.fromPartition('persist:openbrowser-extension-store');
     const pageUrl = `https://chromewebstore.google.com/detail/${safeId}`;
@@ -92,7 +95,7 @@ async function fetchChromeStorePageHtml(safeId, timeoutMs = 25000) {
     try {
       const response = await storeSession.fetch(pageUrl, {
         redirect: 'follow',
-        signal: controller.signal,
+        signal: signal ? AbortSignal.any([controller.signal, signal]) : controller.signal,
         headers: {
           'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
           'accept-language': 'en-US,en;q=0.9',
@@ -106,8 +109,8 @@ async function fetchChromeStorePageHtml(safeId, timeoutMs = 25000) {
       clearTimeout(timeout);
       controller.abort();
     }
-  })().catch(() => null).finally(() => chromeStorePageRequests.delete(safeId));
-  chromeStorePageRequests.set(safeId, request);
+  })().catch((_error) => { signal?.throwIfAborted(); return null; }).finally(() => { if (!signal) chromeStorePageRequests.delete(safeId); });
+  if (!signal) chromeStorePageRequests.set(safeId, request);
   return request;
 }
 
@@ -159,7 +162,8 @@ function extensionIconSource(manifest) {
   return null;
 }
 
-async function fetchChromeStoreMetadata(storeId) {
+async function fetchChromeStoreMetadata(storeId, { signal } = {}) {
+  signal?.throwIfAborted();
   const safeId = validChromeStoreId(storeId);
   if (!safeId) return null;
   const cacheDir = path.join(app.getPath('userData'), 'app-center-icons');
@@ -174,7 +178,7 @@ async function fetchChromeStoreMetadata(storeId) {
       if (cached.icon_url && String(cached.icon_url).startsWith('data:')) return cached;
       if (cached.description) {
         // Try page icon scrape if only description was cached
-        const icon = await fetchChromeStoreIcon(safeId);
+        const icon = await fetchChromeStoreIcon(safeId, { signal });
         if (icon) {
           const next = { ...cached, icon_url: icon };
           await fsp.writeFile(metadataFile, JSON.stringify({ ...next, icon_url: 'file-cache' }), 'utf8').catch(() => {});
@@ -197,20 +201,20 @@ async function fetchChromeStoreMetadata(storeId) {
   // entry pay a full package download (up to the 180s budget when proxies
   // are unreachable). The page runs first; the package is only fetched for
   // whatever the page could not express.
-  const pageHtml = await fetchChromeStorePageHtml(safeId);
+  const pageHtml = await fetchChromeStorePageHtml(safeId, 25000, { signal });
   if (pageHtml) {
     const pageMeta = chromeStoreTextMeta(pageHtml);
     if (pageMeta.title) metadata.name = pageMeta.title;
     if (pageMeta.description) metadata.description = pageMeta.description;
     const pageIcon = chromeStoreImageUrl(pageHtml);
-    if (pageIcon) metadata.icon_url = await fetchChromeStoreIcon(safeId);
+    if (pageIcon) metadata.icon_url = await fetchChromeStoreIcon(safeId, { signal });
   }
   // Page answered both fields: skip the package download entirely.
   const skipPackage = Boolean(metadata.name && metadata.description);
   try {
     if (!skipPackage) {
       const query = new URLSearchParams({ response: 'redirect', prodversion: '150.0.0.0', acceptformat: 'crx2,crx3', x: `id=${safeId}&installsource=ondemand&uc` });
-      const buffer = await fetchStorePackage(`https://clients2.google.com/service/update2/crx?${query}`);
+      const buffer = await fetchStorePackage(`https://clients2.google.com/service/update2/crx?${query}`, null, { signal });
       const { parseCrx, readManifest, readFile } = require('./automation/crx-reader');
       const parsed = parseCrx(buffer);
       // The signing key decides the extension id. A package whose signed id does
@@ -239,9 +243,10 @@ async function fetchChromeStoreMetadata(storeId) {
   }
 
   if (!metadata.icon_url) {
-    const icon = await fetchChromeStoreIcon(safeId);
+    const icon = await fetchChromeStoreIcon(safeId, { signal });
     if (icon) metadata.icon_url = icon;
   }
+  signal?.throwIfAborted();
   if (metadata.icon_url || metadata.description) {
     await fsp.mkdir(cacheDir, { recursive: true }).catch(() => {});
     // Don't store huge data URLs in JSON — image is in .img cache
@@ -254,19 +259,20 @@ async function fetchChromeStoreMetadata(storeId) {
   return (metadata.icon_url || metadata.description) ? metadata : null;
 }
 
-async function fetchChromeStoreIcon(storeId) {
+async function fetchChromeStoreIcon(storeId, { signal } = {}) {
+  signal?.throwIfAborted();
   const safeId = validChromeStoreId(storeId);
   if (!safeId) return null;
   const cacheDir = path.join(app.getPath('userData'), 'app-center-icons');
   const cacheFile = path.join(cacheDir, `${safeId}.img`);
   const cached = await cachedIconDataUrl(cacheFile);
   if (cached) return cached;
-  if (chromeStoreIconRequests.has(safeId)) return chromeStoreIconRequests.get(safeId);
+  if (!signal && chromeStoreIconRequests.has(safeId)) return chromeStoreIconRequests.get(safeId);
   const request = (async () => {
     const storeSession = session.fromPartition('persist:openbrowser-extension-store');
     // Shared page fetch: the metadata path already downloaded the detail page
     // in most cases, so the icon only pays for the image download itself.
-    const pageHtml = await fetchChromeStorePageHtml(safeId);
+    const pageHtml = await fetchChromeStorePageHtml(safeId, 25000, { signal });
     if (!pageHtml) return null;
     const imageUrl = chromeStoreImageUrl(pageHtml);
     if (!imageUrl) return null;
@@ -279,7 +285,7 @@ async function fetchChromeStoreIcon(storeId) {
     try {
       const imageResponse = await storeSession.fetch(parsed.toString(), {
         redirect: 'follow',
-        signal: imageController.signal,
+        signal: signal ? AbortSignal.any([imageController.signal, signal]) : imageController.signal,
         headers: { 'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36' },
       });
       const finalUrl = new URL(imageResponse.url || parsed.toString());
@@ -296,8 +302,8 @@ async function fetchChromeStoreIcon(storeId) {
     await fsp.mkdir(cacheDir, { recursive: true });
     await fsp.writeFile(cacheFile, data);
     return bufferToDataUrl(data, contentType);
-  })().catch(() => null).finally(() => chromeStoreIconRequests.delete(safeId));
-  chromeStoreIconRequests.set(safeId, request);
+  })().catch((_error) => { signal?.throwIfAborted(); return null; }).finally(() => { if (!signal) chromeStoreIconRequests.delete(safeId); });
+  if (!signal) chromeStoreIconRequests.set(safeId, request);
   return request;
 }
 

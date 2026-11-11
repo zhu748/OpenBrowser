@@ -741,7 +741,12 @@
       "profiles.cloneCopied": "已复制 {n} 个环境配置（未复制 Cookie 和账号密码）",
       "ext.assignDone": "已添加 {name}，分配 {n} 个环境",
       "ext.assignFail": "商店添加失败：{message}",
-      "batch.prefApplied": "已将 {n} 个环境更新为{mode}"
+      "batch.prefApplied": "已将 {n} 个环境更新为{mode}",
+      "storage.recoveryTitle": "数据恢复提醒",
+      "storage.warning.profiles": "{count} 个环境无法解码，原始数据已保留，请检查密钥并恢复。",
+      "storage.warning.recovered": "环境配置已从备份恢复，请检查最近的修改是否完整。",
+      "storage.warning.rpa": "RPA 数据文件损坏，原文件已保留，请恢复计划和任务历史。",
+      "storage.warning.proxies": "{count} 条代理记录格式异常，请检查代理管理。"
     },
     "en": {
       "app.brand.sub": "LOCAL WORKSPACE",
@@ -1483,7 +1488,12 @@
       "profiles.cloneCopied": "Cloned {n} profiles (cookies and credentials not copied)",
       "ext.assignDone": "Added {name}, assigned to {n} profiles",
       "ext.assignFail": "Store install failed: {message}",
-      "batch.prefApplied": "Updated {n} profiles to {mode}"
+      "batch.prefApplied": "Updated {n} profiles to {mode}",
+      "storage.recoveryTitle": "Data recovery notice",
+      "storage.warning.profiles": "Could not decode {count} profile(s). Original data was preserved; check the key before restoring.",
+      "storage.warning.recovered": "Profile settings were recovered from a backup. Check your recent changes.",
+      "storage.warning.rpa": "The RPA store was damaged. The original file was preserved; restore plans and task history.",
+      "storage.warning.proxies": "{count} proxy record(s) have invalid data. Review proxy settings."
     },
     "ja": {
       "app.brand.sub": "LOCAL WORKSPACE",
@@ -2225,7 +2235,12 @@
       "profiles.cloneCopied": "Cloned {n} profiles (cookies and credentials not copied)",
       "ext.assignDone": "Added {name}, assigned to {n} profiles",
       "ext.assignFail": "Store install failed: {message}",
-      "batch.prefApplied": "Updated {n} profiles to {mode}"
+      "batch.prefApplied": "Updated {n} profiles to {mode}",
+      "storage.recoveryTitle": "データ復元のお知らせ",
+      "storage.warning.profiles": "{count} 件のプロファイルを復号できません。元のデータは保持されています。復元前にキーを確認してください。",
+      "storage.warning.recovered": "バックアップから設定を復元しました。最近の変更を確認してください。",
+      "storage.warning.rpa": "RPA データが破損しています。元のファイルは保持されています。プランと履歴を復元してください。",
+      "storage.warning.proxies": "{count} 件のプロキシデータが無効です。設定を確認してください。"
     },
     "vi": {
       "app.brand.sub": "LOCAL WORKSPACE",
@@ -2967,7 +2982,12 @@
       "profiles.cloneCopied": "Cloned {n} profiles (cookies and credentials not copied)",
       "ext.assignDone": "Added {name}, assigned to {n} profiles",
       "ext.assignFail": "Store install failed: {message}",
-      "batch.prefApplied": "Updated {n} profiles to {mode}"
+      "batch.prefApplied": "Updated {n} profiles to {mode}",
+      "storage.recoveryTitle": "Thông báo khôi phục dữ liệu",
+      "storage.warning.profiles": "Không thể giải mã {count} hồ sơ. Dữ liệu gốc được giữ lại; hãy kiểm tra khóa trước khi khôi phục.",
+      "storage.warning.recovered": "Đã khôi phục cấu hình từ bản sao lưu. Hãy kiểm tra các thay đổi gần đây.",
+      "storage.warning.rpa": "Dữ liệu RPA bị hỏng. Tệp gốc được giữ lại; hãy khôi phục kế hoạch và lịch sử tác vụ.",
+      "storage.warning.proxies": "Có {count} bản ghi proxy không hợp lệ. Hãy kiểm tra cài đặt proxy."
     },
     "fr": {
       "app.brand.sub": "LOCAL WORKSPACE",
@@ -3709,7 +3729,12 @@
       "profiles.cloneCopied": "Cloned {n} profiles (cookies and credentials not copied)",
       "ext.assignDone": "Added {name}, assigned to {n} profiles",
       "ext.assignFail": "Store install failed: {message}",
-      "batch.prefApplied": "Updated {n} profiles to {mode}"
+      "batch.prefApplied": "Updated {n} profiles to {mode}",
+      "storage.recoveryTitle": "Avis de récupération des données",
+      "storage.warning.profiles": "Impossible de décoder {count} profils. Les données sont conservées ; vérifiez la clé avant la restauration.",
+      "storage.warning.recovered": "Les paramètres ont été restaurés depuis une sauvegarde. Vérifiez vos modifications récentes.",
+      "storage.warning.rpa": "Le stockage RPA est endommagé. Le fichier original est conservé ; restaurez les plans et l’historique.",
+      "storage.warning.proxies": "{count} entrées proxy sont invalides. Vérifiez leurs paramètres."
     },
     "de": {
       "app.brand.sub": "LOCAL WORKSPACE",
@@ -4451,7 +4476,12 @@
       "profiles.cloneCopied": "Cloned {n} profiles (cookies and credentials not copied)",
       "ext.assignDone": "Added {name}, assigned to {n} profiles",
       "ext.assignFail": "Store install failed: {message}",
-      "batch.prefApplied": "Updated {n} profiles to {mode}"
+      "batch.prefApplied": "Updated {n} profiles to {mode}",
+      "storage.recoveryTitle": "Hinweis zur Datenwiederherstellung",
+      "storage.warning.profiles": "{count} Profile konnten nicht entschlüsselt werden. Die Originaldaten bleiben erhalten. Prüfen Sie den Schlüssel.",
+      "storage.warning.recovered": "Die Einstellungen wurden aus einer Sicherung wiederhergestellt. Prüfen Sie die letzten Änderungen.",
+      "storage.warning.rpa": "Der RPA-Speicher ist beschädigt. Die Originaldatei bleibt erhalten. Stellen Sie Pläne und Aufgabenverlauf wieder her.",
+      "storage.warning.proxies": "{count} Proxy-Einträge sind ungültig. Prüfen Sie die Einstellungen."
     },
     "th": {
       "app.brand.sub": "LOCAL WORKSPACE",
@@ -5193,7 +5223,12 @@
       "profiles.cloneCopied": "Cloned {n} profiles (cookies and credentials not copied)",
       "ext.assignDone": "Added {name}, assigned to {n} profiles",
       "ext.assignFail": "Store install failed: {message}",
-      "batch.prefApplied": "Updated {n} profiles to {mode}"
+      "batch.prefApplied": "Updated {n} profiles to {mode}",
+      "storage.recoveryTitle": "แจ้งเตือนการกู้คืนข้อมูล",
+      "storage.warning.profiles": "ไม่สามารถถอดรหัสโปรไฟล์ {count} รายการได้ ข้อมูลต้นฉบับยังอยู่ โปรดตรวจสอบคีย์ก่อนกู้คืน",
+      "storage.warning.recovered": "กู้คืนการตั้งค่าจากข้อมูลสำรองแล้ว โปรดตรวจสอบการเปลี่ยนแปลงล่าสุด",
+      "storage.warning.rpa": "ข้อมูล RPA เสียหาย ไฟล์ต้นฉบับยังอยู่ โปรดกู้คืนแผนและประวัติงาน",
+      "storage.warning.proxies": "ข้อมูลพร็อกซี {count} รายการไม่ถูกต้อง โปรดตรวจสอบการตั้งค่า"
     },
     "id": {
       "app.brand.sub": "LOCAL WORKSPACE",
@@ -5935,7 +5970,12 @@
       "profiles.cloneCopied": "Cloned {n} profiles (cookies and credentials not copied)",
       "ext.assignDone": "Added {name}, assigned to {n} profiles",
       "ext.assignFail": "Store install failed: {message}",
-      "batch.prefApplied": "Updated {n} profiles to {mode}"
+      "batch.prefApplied": "Updated {n} profiles to {mode}",
+      "storage.recoveryTitle": "Pemberitahuan pemulihan data",
+      "storage.warning.profiles": "Tidak dapat mendekode {count} profil. Data asli disimpan; periksa kunci sebelum memulihkan.",
+      "storage.warning.recovered": "Pengaturan dipulihkan dari cadangan. Periksa perubahan terbaru.",
+      "storage.warning.rpa": "Penyimpanan RPA rusak. Berkas asli disimpan; pulihkan rencana dan riwayat tugas.",
+      "storage.warning.proxies": "Ada {count} catatan proxy yang tidak valid. Periksa pengaturan proxy."
     }
   },
   "uiZhEn": {

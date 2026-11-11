@@ -15,20 +15,16 @@ const credentialCrypto = require('../credential-crypto');
 // change detection otherwise).
 const { profileDataHash: sharedProfileDataHash } = require('../engine/profile-revisions');
 
-// Module-level flag set when any row had to fall back to plaintext storage;
-// exposed via plaintextFallbackStatus() so callers can surface the downgrade
-// (and never silently persist credentials in the clear without a trace).
+// Retained for older diagnostics consumers; plaintext writes are now refused.
 let plaintextFallbackUsed = false;
 
 function encodeProfileData(profile) {
   try {
     return credentialCrypto.encryptCredential(JSON.stringify(profile));
   } catch (error) {
-    // The plaintext fallback keeps the row readable, but it is an at-rest
-    // security downgrade: make it visible instead of storing silently in the clear.
-    plaintextFallbackUsed = true;
-    console.error('profile-store-sqlite: encryptCredential failed, storing profile row as plaintext:', error.message);
-    return JSON.stringify(profile);
+    throw Object.assign(new Error('Profile encryption failed; existing data was preserved', { cause: error }), {
+      code: 'CREDENTIAL_ENCRYPTION_FAILED',
+    });
   }
 }
 
@@ -622,7 +618,10 @@ class ProfileStoreSqlite {
       const decoded = this._decodeProfileRow(row, 'getAllProfiles');
       if (decoded) {
         result.push(decoded);
-        this._rowHashes.set(String(decoded.id), this.profileDataHash(decoded));
+        const raw = row.data instanceof Uint8Array ? Buffer.from(row.data) : row.data;
+        // Legacy/plaintext fallback rows must be encrypted by the next save,
+        // even when their decoded fields have not changed.
+        if (credentialCrypto.isEncrypted(raw)) this._rowHashes.set(String(decoded.id), this.profileDataHash(decoded));
       }
     }
     return result;

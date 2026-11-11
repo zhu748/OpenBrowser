@@ -609,6 +609,13 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: false
+          sparse-checkout: Browserapp/automation
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
       - name: Verify draft assets, publish checksum manifest and release
         shell: bash
         env:
@@ -639,6 +646,14 @@ jobs:
           done
           ( cd "$staging" && sha256sum --binary "${expected_assets[@]}" > SHA256SUMS.txt )
           gh release upload "$RELEASE_TAG" --repo "$GH_REPO" "$staging/SHA256SUMS.txt" --clobber
+          # The signing key stays offline. Missing/untrusted signatures keep
+          # this release in draft. Upload a signature over the exact manifest,
+          # then rerun only this failed finalization job (do not rebuild assets).
+          if ! gh release download "$RELEASE_TAG" --repo "$GH_REPO" --pattern SHA256SUMS.txt.sig --dir "$staging"; then
+            echo "Sign the draft SHA256SUMS.txt offline, upload SHA256SUMS.txt.sig, then rerun this failed job." >&2
+            exit 1
+          fi
+          node Browserapp/automation/update-trust-tool.js verify "$staging/SHA256SUMS.txt" "$staging/SHA256SUMS.txt.sig"
           notes_file="$RUNNER_TEMP/openbrowser-release-notes.md"
           notes_header="## OpenBrowser **${RELEASE_TAG}**"
           printf '%s\n\n%s\n' "$notes_header" "$RELEASE_NOTES" > "$notes_file"

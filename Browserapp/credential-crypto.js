@@ -92,40 +92,50 @@ function getLocalMasterKey() {
   }
 
   const keyPath = getMasterKeyFilePath();
-  try {
-    if (fs.existsSync(keyPath)) {
+  const readKey = () => {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
       const content = fs.readFileSync(keyPath, 'utf8').trim();
-      if (content && content.length >= 32) {
-        _cachedMasterKey = content;
-        return _cachedMasterKey;
-      }
+      if (content.length >= 32) return content;
+      // The exclusive creator may not have completed its first write yet.
+      if (attempt < 9) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
     }
-  } catch (_) {}
+    throw new Error('Local master key is invalid; preserve the key file for recovery');
+  };
+  try { _cachedMasterKey = readKey(); return _cachedMasterKey; }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
 
   // Generate a new 256-bit cryptographically secure key
   const generated = crypto.randomBytes(32).toString('hex');
+  let handle;
+  let created = false;
   try {
     const dir = path.dirname(keyPath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
     }
-    fs.writeFileSync(keyPath, generated, { encoding: 'utf8', mode: 0o600 });
+    // Never replace a key another process created between our read and open.
+    handle = fs.openSync(keyPath, 'wx', 0o600);
+    created = true;
+    fs.writeFileSync(handle, generated, { encoding: 'utf8' });
+    fs.fsyncSync(handle);
+    let directoryHandle;
+    try { directoryHandle = fs.openSync(dir, 'r'); fs.fsyncSync(directoryHandle); }
+    catch (_) { /* directory fsync is unavailable on some platforms */ }
+    finally { if (directoryHandle !== undefined) fs.closeSync(directoryHandle); }
     _cachedMasterKey = generated;
     return _cachedMasterKey;
   } catch (writeErr) {
-    // SECURITY: never derive the key from guessable system identity (hostname /
-    // username / homedir). A predictable key silently converts "at rest"
-    // encryption into plaintext for anyone who can read those values. Instead
-    // fall back to a random in-memory session key: the process keeps working,
-    // but anything encrypted now will not be readable after restart (on a
-    // read-only filesystem it could not be persisted anyway).
-    _cachedMasterKey = crypto.randomBytes(32).toString('hex');
-    console.warn(
-      `[OpenBrowser] cannot persist master key at ${keyPath} (${writeErr.message}); ` +
-      'using a random in-memory session key — encrypted credentials will NOT survive an app restart. ' +
-      'Fix filesystem permissions or set OPENBROWSER_MASTER_KEY_FILE to a writable path.',
-    );
-    return _cachedMasterKey;
+    if (writeErr.code === 'EEXIST') {
+      // An exclusive creator may still be writing its 64-byte key. Briefly
+      // retry reads; never overwrite an empty, damaged or inaccessible key.
+      _cachedMasterKey = readKey();
+      return _cachedMasterKey;
+    }
+    throw new Error(`Cannot persist local master key at ${keyPath}; credential writes were refused: ${writeErr.message}`, { cause: writeErr });
+  } finally {
+    if (handle !== undefined) fs.closeSync(handle);
+    // A partial key is kept for diagnosis rather than replaced on restart.
+    if (created && !_cachedMasterKey) console.error('[credential-crypto] master key creation failed; preserve the key file for recovery');
   }
 }
 
@@ -231,15 +241,16 @@ function saltCostTag(salt) {
   return Buffer.isBuffer(salt) && salt.length >= SALT_LENGTH ? salt[SALT_LENGTH - 1] : 0;
 }
 
-function negativeCacheKey(passphrase, salt) {
-  return String(passphrase) + '|' + salt.toString('hex');
+function negativeCacheKey(passphrase, envelope) {
+  // Authentication failure belongs to the complete envelope. Several healthy
+  // records share a salt, so caching only that salt poisons unrelated records.
+  return crypto.createHash('sha256').update(String(passphrase).length + ':' + String(passphrase)).update(envelope).digest('hex');
 }
 
-// A GCM failure is permanent per (passphrase, salt): the tag is deterministic,
-// so remembering the failure lets later rows fast-fail with zero derivations.
-function rememberFailedDecrypt(passphrase, salt) {
+// Cache only repeated failures of the same complete authenticated envelope.
+function rememberFailedDecrypt(passphrase, envelope) {
   if (__negativeDecryptCache.size >= NEGATIVE_DECRYPT_CACHE_MAX) __negativeDecryptCache.clear();
-  __negativeDecryptCache.set(negativeCacheKey(passphrase, salt), Date.now());
+  __negativeDecryptCache.set(negativeCacheKey(passphrase, envelope), Date.now());
 }
 
 function clearNegativeDecryptCache() {
@@ -306,10 +317,9 @@ function decryptAesGcm(buf, passphraseOrKey) {
     decipher.setAuthTag(tag);
     return Buffer.concat([decipher.update(enc), decipher.final()]);
   };
-  // P2-11: negative cache first — a remembered (passphrase, salt) failure
-  // fast-fails before ANY scryptSync, so a wrong passphrase on a multi-row
-  // restore pays one derivation for row 1 and none for rows 2..N.
-  if (__negativeDecryptCache.has(negativeCacheKey(passphrase, salt))) {
+  // Repeated reads of the same bad envelope avoid another KDF attempt.
+  // Other records sharing the salt are always authenticated independently.
+  if (__negativeDecryptCache.has(negativeCacheKey(passphrase, buf))) {
     throw new Error('OBE1 解密失败：口令或数据不匹配（命中失败缓存）');
   }
   const costTag = saltCostTag(salt);
@@ -326,7 +336,6 @@ function decryptAesGcm(buf, passphraseOrKey) {
       : deriveAesKey(passphrase, salt);
     try {
       const plain = openWith(derivedKey);
-      clearNegativeDecryptCache();
       return plain;
     } catch (_) {
       const otherKey = cloudTagged
@@ -334,10 +343,9 @@ function decryptAesGcm(buf, passphraseOrKey) {
         : deriveAesKeyAtCloudCost(passphrase, salt);
       try {
         const plain = openWith(otherKey);
-        clearNegativeDecryptCache();
         return plain;
       } catch (error) {
-        rememberFailedDecrypt(passphrase, salt);
+        rememberFailedDecrypt(passphrase, buf);
         throw error;
       }
     }
@@ -347,15 +355,13 @@ function decryptAesGcm(buf, passphraseOrKey) {
   // the cost of repeated wrong-passphrase attempts.
   try {
     const plain = openWith(deriveAesKey(passphrase, salt));
-    clearNegativeDecryptCache();
     return plain;
   } catch (error) {
     try {
       const plain = openWith(deriveAesKeyAtCloudCost(passphrase, salt));
-      clearNegativeDecryptCache();
       return plain;
     } catch (_) {
-      rememberFailedDecrypt(passphrase, salt);
+      rememberFailedDecrypt(passphrase, buf);
       throw error;
     }
   }

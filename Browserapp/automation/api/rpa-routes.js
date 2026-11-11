@@ -43,19 +43,26 @@ class RpaRoutes {
 
   async routeRpaTaskDelete({ pathname }) {
     const id = decodePathId(pathname.slice('/api/rpa/tasks/'.length), 'RPA task');
+    if (this.isTaskActive(id)) return fail('task is running or queued: ' + id, 409);
     return ok(await this.rpaStore.deleteTask(id));
+  }
+
+  isTaskActive(id) {
+    const status = this.rpaEngine?.getStatus?.() || {};
+    return (status.running || []).includes(id) || (status.queued || []).includes(id);
   }
 
   async routeRpaTasksDelete({ input }) {
     const rpaInput = normalizeRpaInput(input);
     const rawIds = firstArray(rpaInput, ['task_ids', 'taskIds', 'ids']) || [firstDefined(rpaInput, ['task_id', 'taskId', 'id'])];
     const ids = rawIds.map((v) => String(v || '').trim()).filter(Boolean);
-    const deleted = [];
+    const deleted = []; const skipped = [];
     for (const id of ids) {
+      if (this.isTaskActive(id)) { skipped.push(id); continue; }
       const res = await this.rpaStore.deleteTask(id);
       if (res && res.deleted) deleted.push(id);
     }
-    return ok({ deleted });
+    return ok({ deleted, skipped });
   }
 
   async routeRpaRun({ input }) {

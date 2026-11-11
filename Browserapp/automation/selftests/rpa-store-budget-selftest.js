@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { enforceStoreBudget } = require('../rpa-store-budget');
 const { RpaStore } = require('../rpa-store');
+const { decryptCredential } = require('../../credential-crypto');
 const bytes = (value) => Buffer.byteLength(JSON.stringify(value), 'utf8');
 
 async function main() {
@@ -49,8 +50,9 @@ async function main() {
     store.sizeLimitBytes = limit;
     await store._writeAtomic();
     const raw = await fs.readFile(file);
-    assert.ok(raw.length <= limit, 'the actual file uses the same byte accounting as the budget');
-    assert.deepEqual(JSON.parse(raw), store.data);
+    const plaintext = decryptCredential(raw);
+    assert.ok(Buffer.byteLength(plaintext) <= limit, 'the budget bounds plaintext data before the encryption envelope');
+    assert.deepEqual(JSON.parse(plaintext), store.data);
   } finally { await fs.rm(root, { recursive: true, force: true }); }
   console.log('RPA_STORE_BUDGET_SELFTEST OK (linear serialization, retention, UTF-8, exact limit, actual file size)');
 }
