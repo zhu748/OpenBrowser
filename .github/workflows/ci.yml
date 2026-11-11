@@ -78,6 +78,12 @@ jobs:
       # macOS kernel launcher) and never count as passes.
       - name: Full selftest aggregate (kernel-free suite)
         run: npm run selftest:all
+        env:
+          # The aggregate suite's native-only availability probe must SKIP when
+          # this job provides no browser: without the guard the gates pick up
+          # the runner's unusable google-chrome from PATH, fail to launch it
+          # (exit 1) or hang to the per-script timeout.
+          OPENBROWSER_REQUIRE_EXPLICIT_BINARY: '1'
 
   smoke-windows:
     name: Node selftests (Windows smoke)

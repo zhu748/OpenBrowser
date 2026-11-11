@@ -31,6 +31,13 @@ const CHROMIUM_CANDIDATES = ['chromium', 'google-chrome', 'chrome', 'chrome.exe'
 
 function chooseChromiumBinary() {
   const explicit = process.env.OPENBROWSER_CHROMIUM_BINARY;
+  // PATH fallback exists for developer machines. CI hosts (GitHub runners ship
+  // a google-chrome that cannot launch under the job user) and the aggregate
+  // suite's availability probe must treat an unset explicit binary as
+  // unavailable instead of half-running a broken browser.
+  if (!explicit && process.env.OPENBROWSER_REQUIRE_EXPLICIT_BINARY === '1') {
+    throw new Unavailable('Set OPENBROWSER_CHROMIUM_BINARY to an installed Chromium/Chrome executable.');
+  }
   for (const binary of explicit ? [explicit] : CHROMIUM_CANDIDATES) {
     const result = spawnSync(binary, ['--version'], { encoding: 'utf8', timeout: 5000, windowsHide: true });
     const version = String(result.stdout || '').match(/\b(\d+\.\d+\.\d+\.\d+)\b/)?.[1];
