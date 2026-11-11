@@ -339,26 +339,48 @@ module.exports = {
       const proxyConfig = this.proxyConfig(profile.proxy);
       let proxy = null;
       let workerMitm = null;
-      if (needsProxyBridge(proxyConfig)) {
-        proxyForwarder = await startAuthenticatedProxy(proxyConfig, (value) => this.emit({ type: 'proxy-error', id: profile.id, code: value.code, message: value.message }));
-        startupResources.proxyForwarder = proxyForwarder;
-        proxy = proxyForwarder.url;
-      } else {
-        proxy = chromeProxyEndpoint(profile.proxy);
-        // Direct path: route the browser through the worker-script MITM forwarder
-        // so worker scopes receive the persona JS-only fields (hardwareConcurrency)
-        // that no BiDi channel can deliver. Real-proxy profiles keep their bridge
-        // (chaining the rewriter behind an authenticated upstream is a follow-up).
-        try {
-          const { FirefoxWorkerMitmProxy } = require('../automation/firefox-worker-mitm-proxy');
-          const { buildWorkerInjectionScript } = require('../automation/fingerprint');
-          workerMitm = new FirefoxWorkerMitmProxy({ workerSource: buildWorkerInjectionScript(fingerprint) });
-          await workerMitm.start();
-          startupResources.workerMitmProxy = workerMitm;
-          proxy = workerMitm.url;
-        } catch (mitmError) {
-          this.emit({ type: 'proxy-error', id: profile.id, code: 'WORKER_MITM_UNAVAILABLE', message: mitmError.message });
+      // Both paths route through the per-profile worker-script MITM forwarder so
+      // worker scopes receive the persona JS-only fields (hardwareConcurrency)
+      // that no BiDi channel can deliver. With a configured upstream proxy the
+      // forwarder chains THROUGH the authenticated bridge (it speaks plain HTTP
+      // CONNECT to the bridge, which strips/owns the credentials); on the direct
+      // path it is the only proxy. Any MITM failure is a capability downgrade,
+      // never a launch blocker: we keep the plain endpoint and emit an event.
+      try {
+        const { FirefoxWorkerMitmProxy } = require('../automation/firefox-worker-mitm-proxy');
+        const { buildWorkerInjectionScript } = require('../automation/fingerprint');
+        let chain = null;
+        if (needsProxyBridge(proxyConfig)) {
+          proxyForwarder = await startAuthenticatedProxy(proxyConfig, (value) => this.emit({ type: 'proxy-error', id: profile.id, code: value.code, message: value.message }));
+          startupResources.proxyForwarder = proxyForwarder;
+          // The bridge is a loopback HTTP proxy; the MITM forwarder forwards
+          // through it and re-injects Proxy-Authorization from the config.
+          const bridgeUrl = new URL(proxyForwarder.url);
+          chain = { host: bridgeUrl.hostname, port: Number(bridgeUrl.port) || 80 };
         }
+        let upstreamCaBundle = null;
+        try {
+          const caPath = '/etc/ssl/certs/ca-certificates.crt';
+          if (require('fs').existsSync(caPath)) upstreamCaBundle = require('fs').readFileSync(caPath);
+        } catch (_) { /* optional */ }
+        workerMitm = new FirefoxWorkerMitmProxy({
+          workerSource: buildWorkerInjectionScript(fingerprint),
+          ...(upstreamCaBundle ? { upstreamCaBundle } : {}),
+          ...(chain ? {
+            upstreamProxy: {
+              host: chain.host,
+              port: chain.port,
+              username: proxyConfig.username,
+              password: proxyConfig.password,
+            },
+          } : {}),
+        });
+        await workerMitm.start();
+        startupResources.workerMitmProxy = workerMitm;
+        proxy = workerMitm.url;
+      } catch (mitmError) {
+        this.emit({ type: 'proxy-error', id: profile.id, code: 'WORKER_MITM_UNAVAILABLE', message: mitmError.message });
+        if (!proxy) proxy = proxyForwarder ? proxyForwarder.url : chromeProxyEndpoint(profile.proxy);
       }
       const sysMode = profile.proxyMeta?.systemProxy || 'global';
       if (profile.networkMode === 'proxy' && (!proxy || proxy === 'direct://')) {
@@ -391,6 +413,21 @@ module.exports = {
       // user.js wins over prefs.js at every startup, then Firefox copies it to
       // prefs.js. Writing it fresh each launch keeps the proxy/UA/prefs current.
       await fspWriteFile(path.join(root, 'user.js'), userJs, 'utf8');
+      // Trust the MITM CA in the profile's NSS store so intercepted worker
+      // scripts validate on ANY origin. Best-effort: without certutil the launch
+      // proceeds, the browser will refuse the intercepted TLS and the runtime
+      // proxy-error event already tells the surface why.
+      if (workerMitmActive) {
+        try {
+          const { installFirefoxCa } = require('../automation/firefox-trust-installer');
+          const imported = installFirefoxCa(root, workerMitm.ca.cert);
+          if (!imported.ok) {
+            this.emit({ type: 'proxy-error', id: profile.id, code: 'WORKER_MITM_CA_IMPORT_FAILED', message: imported.reason + (imported.detail ? ': ' + imported.detail : '') });
+          }
+        } catch (trustError) {
+          this.emit({ type: 'proxy-error', id: profile.id, code: 'WORKER_MITM_CA_IMPORT_FAILED', message: trustError.message });
+        }
+      }
 
       currentStage = 'spawn'; this.emitStartProgress(profile.id, 'spawn', 62, '正在启动 Firefox…');
       this.assertStartGenerationActive(profile.id, lifecycleGeneration);
@@ -561,7 +598,7 @@ module.exports = {
         running: true,
         capabilities: item.capabilities,
         undeliverable: {
-          workerFingerprint: 'Worker 首条脚本身份：UA/语言/时区由 user.js 全局覆盖；hardwareConcurrency 等 JS-only 字段经每 profile 的 worker 脚本 MITM 转发器在代理层前缀注入（直连路径；认证代理链路为后续项）。',
+          workerFingerprint: 'Worker 首条脚本身份：UA/语言/时区由 user.js 全局覆盖；hardwareConcurrency 等 JS-only 字段经每 profile 的 worker 脚本 MITM 转发器在代理层前缀注入（直连与认证代理链路均生效——转发器链在认证桥之后；CA 经 NSS 导入 profile 信任，需 kernels/certutil 或 PATH 上的 certutil，缺失时降级为不拦截并发事件）。',
           deviceMemory: '保留 Firefox 原生接口形态，不创建 Chromium 的 deviceMemory 接口。',
           frameFontSurface: '跨 OS persona 下，子帧内 document.fonts 为度量层代理，foreign check 门控与文本栅格可能与主文档存在残差（主文档已验证正确，Chromium 路径无此问题）。',
           intlAppLocale: 'Intl 运行时 locale 跟随内核语言包（en-US 构建即 en-US）——与 persona 语言形成「英文界面 + 母语内容偏好」的真实用户形态；不再用 BiDi locale override（实测会将 Accept-Language 头重写为单条）。',

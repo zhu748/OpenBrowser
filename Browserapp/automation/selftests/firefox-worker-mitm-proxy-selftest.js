@@ -81,6 +81,7 @@ process.on('uncaughtException', (e) => { console.error('UNCAUGHT', e.stack); pro
     workerSource: 'globalThis.__wk = "prefix";',
     terminatingHosts: ['127.0.0.1'],
     trustedUpstreamCert: origin.certPem, // our test origin's self-signed leaf
+    allowedUpstreamHosts: ['127.0.0.1', 'localhost'], // loopback test origins
   });
   await proxy.start();
   let failures = 0;
@@ -156,6 +157,64 @@ process.on('uncaughtException', (e) => { console.error('UNCAUGHT', e.stack); pro
     }
     tun2.socket.destroy();
     blindRaw.close();
+
+    // --- 4. chained upstream: MITM behind an authenticated proxy bridge ---
+    // A dumb "auth" bridge: requires Proxy-Authorization, then tunnels CONNECT.
+    const bridgeSawAuth = { value: false };
+    const bridge = require('net').createServer((c) => {
+      let buf = Buffer.alloc(0);
+      const onBridgeData = (chunk) => {
+        buf = Buffer.concat([buf, chunk]);
+        const marker = buf.indexOf('\r\n\r\n');
+        if (marker < 0) return;
+        c.removeListener('data', onBridgeData);
+        const head = buf.subarray(0, marker).toString('latin1');
+        const rest = buf.subarray(marker + 4);
+        if (/^CONNECT\s+/i.test(head.split('\r\n', 1)[0])) {
+          const expected = 'Basic ' + Buffer.from('u:p', 'utf8').toString('base64');
+          if (!new RegExp('proxy-authorization:\\s*' + expected, 'i').test(head)) {
+            c.end('HTTP/1.1 407 Proxy Authentication Required\r\nConnection: close\r\n\r\n');
+            return;
+          }
+          bridgeSawAuth.value = true;
+          const target = head.split(' ')[1].replace(/\s+HTTP.*$/, '');
+          const [thost, tport] = target.split(':');
+          const up = require('net').connect({ host: thost, port: Number(tport) }, () => {
+            c.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+            if (rest.length) up.write(rest);
+            c.pipe(up); up.pipe(c);
+          });
+          up.on('error', () => c.destroy());
+          c.on('error', () => up.destroy());
+        }
+      };
+      c.on('data', onBridgeData);
+    });
+    await new Promise((r) => bridge.listen(0, '127.0.0.1', r));
+
+    // The chained proxy instance forwards through the bridge with credentials.
+    const chained = new FirefoxWorkerMitmProxy({
+      workerSource: 'globalThis.__wk = "chain";',
+      upstreamProxy: { host: '127.0.0.1', port: bridge.address().port, username: 'u', password: 'p' },
+      trustedUpstreamCert: origin.certPem,
+      allowedUpstreamHosts: ['127.0.0.1'],
+      logger: (...a) => console.log('[chained]', ...a),
+    });
+    await chained.start();
+    const tun3 = await connectTunnel(chained.port, '127.0.0.1:' + origin.port);
+    if (!/200/.test(tun3.reply)) { console.error('FAIL chained CONNECT reply: ' + tun3.reply.split('\r\n')[0]); failures += 1; }
+    else {
+      const reqText = `GET /worker.js HTTP/1.1\r\nHost: 127.0.0.1\r\nsec-fetch-dest: worker\r\naccept: */*\r\nconnection: close\r\n\r\n`;
+      const reply = await tlsFetchOverTunnel(tun3, reqText);
+      if (!reply.includes('globalThis.__wk = "chain"') || !reply.includes(WORKER_SRC)) {
+        console.error('FAIL chained https worker prefix missing:\n' + reply.slice(0, 300)); failures += 1;
+      } else if (!bridgeSawAuth.value) {
+        console.error('FAIL chained upstream never authenticated'); failures += 1;
+      } else console.log('PASS HTTPS worker script is prefixed through a chained authenticated bridge');
+    }
+    tun3.socket.destroy();
+    await chained.close();
+    bridge.close();
 
     await new Promise((r) => httpOrigin.close(r));
   } finally {
