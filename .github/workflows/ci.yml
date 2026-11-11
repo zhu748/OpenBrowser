@@ -203,19 +203,19 @@ jobs:
         run: npx @puppeteer/browsers install chrome@stable --path "$HOME/.cache/ob-browsers"
       - name: Fingerprint native consistency gate (Chromium)
         env:
-          # Resolved at run time: puppeteer installs into a VERSIONED directory
-          # (chrome/linux-<build>/chrome-linux64/chrome) and $HOME is a shell
-          # variable GitHub Actions `format()` cannot see — a static path here
-          # has silently skipped the gate on every stable bump.
-          OPENBROWSER_CHROMIUM_BINARY: ${CHROME_BIN}
           OPENBROWSER_NATIVE_NO_SANDBOX: '1'
         run: |
+          # Resolved at run time and exported for the gate: puppeteer installs
+          # into a VERSIONED directory (chrome/linux-<build>/chrome-linux64/chrome)
+          # and workflow `env:` cannot expand shell variables — a static path
+          # here has silently skipped the gate on every stable bump.
           CHROME_BIN="$(find "$HOME/.cache/ob-browsers" -type f -name chrome -path '*/chrome-linux64/*' | head -n 1)"
           if [ -z "$CHROME_BIN" ] || [ ! -x "$CHROME_BIN" ]; then
             echo "chrome binary not found under $HOME/.cache/ob-browsers" >&2
             exit 1
           fi
           echo "CHROME_BIN=$CHROME_BIN"
+          export OPENBROWSER_CHROMIUM_BINARY="$CHROME_BIN"
           node automation/selftests/fingerprint-native-consistency-selftest.js
 
   review-boundaries:
