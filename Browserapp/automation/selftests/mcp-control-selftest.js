@@ -12,6 +12,7 @@ const { RpaStore } = require('../rpa-store');
 const { RpaEngine } = require('../rpa-engine');
 const { WindowSyncBridge } = require('../window-sync-bridge');
 const { AppCenter } = require('../app-center');
+const credentialCrypto = require('../../credential-crypto');
 
 const _wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -106,11 +107,11 @@ function fakeEngine() {
   };
 }
 
-async function main() {
+async function runIntegration(directory, resources) {
   const checks = [];
   const record = (name, ok) => checks.push({ name, ok });
 
-  const keyFile = path.join(os.tmpdir(), 'openbrowser-mcp-api-key-' + process.pid + '.txt');
+  const keyFile = path.join(directory, 'api-key.txt');
   fs.writeFileSync(keyFile, 'mcp-file-key\n', 'utf8');
   const resolvedKey = resolveApiKey({
     env: {
@@ -122,12 +123,12 @@ async function main() {
   record('api key placeholder falls back to configured file', resolvedKey.key === 'mcp-file-key' && resolvedKey.filePath === keyFile);
 
   const engine = fakeEngine();
-  const proxyStore = new ProxyStore(path.join(os.tmpdir(), 'openbrowser-mcp-proxy-' + process.pid + '.json'));
+  const proxyStore = resources.proxyStore = new ProxyStore(path.join(directory, 'proxy-library.json'));
   await proxyStore.load();
-  const rpaFile = path.join(os.tmpdir(), 'openbrowser-mcp-rpa-' + process.pid + '.json');
-  const rpaStore = new RpaStore(rpaFile);
+  const rpaFile = path.join(directory, 'rpa-store.json');
+  const rpaStore = resources.rpaStore = new RpaStore(rpaFile);
   await rpaStore.load();
-  const rpa = new RpaEngine({ engine, store: rpaStore, emit: () => {} });
+  const rpa = resources.rpa = new RpaEngine({ engine, store: rpaStore, emit: () => {} });
   const syncState = { active: false, selected: [] };
   let syncTileCount = 0;
   let syncSettingsUpdateCount = 0;
@@ -143,7 +144,7 @@ async function main() {
     updateSettings: (patch) => { syncSettingsUpdateCount += 1; return patch; },
   });
   const appCenter = new AppCenter({ engine });
-  const api = new LocalApiServer({
+  const api = resources.api = new LocalApiServer({
     port: 0,
     apiKey: 'mcp-selftest-key',
     engine,
@@ -488,7 +489,7 @@ async function main() {
   record('mcp run mode hides unrestricted rpa_run_steps', !runTools.some((tool) => tool.name === 'rpa_run_steps'));
   record('mcp run mode blocks unrestricted rpa_run_steps', String(run.get(7)?.error?.message || '').includes('requires permission level manage'));
 
-  const plain401Server = http.createServer((_req, res) => {
+  const plain401Server = resources.plain401Server = http.createServer((_req, res) => {
     res.writeHead(401, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.end('unauthorized');
   });
@@ -530,15 +531,37 @@ async function main() {
 
   const fail = checks.filter((item) => !item.ok);
   for (const check of checks) console.log((check.ok ? 'PASS' : 'FAIL') + '  ' + check.name);
-  await api.stop();
-  await proxyStore.deleteFile?.();
-  try { fs.unlinkSync(keyFile); } catch (_) {}
-  try { fs.unlinkSync(rpaFile); } catch (_) {}
   if (fail.length) {
     console.error(JSON.stringify({ success: false, checks: checks.length, failed: fail.map((item) => item.name) }, null, 2));
     process.exitCode = 1;
   } else {
     console.log(JSON.stringify({ success: true, checks: checks.length }, null, 2));
+  }
+}
+
+async function main() {
+  const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'openbrowser-mcp-'));
+  const previousKeyFile = process.env.OPENBROWSER_MASTER_KEY_FILE;
+  const resources = {};
+  process.env.OPENBROWSER_MASTER_KEY_FILE = path.join(directory, 'master.key');
+  credentialCrypto.resetLocalMasterKeyCache();
+  try { await runIntegration(directory, resources); }
+  finally {
+    try {
+      await resources.rpa?.stop();
+      await resources.api?.stop();
+      await resources.proxyStore?.flush();
+      await resources.rpaStore?.flush();
+      if (resources.plain401Server?.listening) {
+        resources.plain401Server.closeAllConnections();
+        await new Promise((resolve) => resources.plain401Server.close(resolve));
+      }
+    } finally {
+      if (previousKeyFile === undefined) delete process.env.OPENBROWSER_MASTER_KEY_FILE;
+      else process.env.OPENBROWSER_MASTER_KEY_FILE = previousKeyFile;
+      credentialCrypto.resetLocalMasterKeyCache();
+      await fs.promises.rm(directory, { recursive: true, force: true });
+    }
   }
 }
 

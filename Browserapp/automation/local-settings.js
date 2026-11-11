@@ -70,6 +70,15 @@ function defaultCache() {
 }
 
 let localSettingsCache = null;
+let settingsRevision = 0;
+let settingsLoad = null;
+let settingsFileQueue = Promise.resolve();
+
+function serializeSettingsFile(operation) {
+  const pending = settingsFileQueue.then(operation, operation);
+  settingsFileQueue = pending.catch(() => {});
+  return pending;
+}
 
 /** The live settings object (same reference semantics the main process had). */
 function getLocalSettings() {
@@ -79,6 +88,17 @@ function getLocalSettings() {
 
 async function loadLocalSettings() {
   ensureInitialized();
+  if (settingsLoad) return settingsLoad;
+  const pending = readLocalSettings(settingsRevision);
+  settingsLoad = pending;
+  try { return await pending; }
+  finally { if (settingsLoad === pending) settingsLoad = null; }
+}
+
+async function readLocalSettings(revision) {
+  // Disk must include edits already queued before a reload. A later edit is
+  // guarded by the revision check below, including on the error/reset path.
+  await flushSettingsWriter();
   try {
     const raw = await fsp.readFile(settingsFile);
     let jsonStr;
@@ -90,6 +110,7 @@ async function loadLocalSettings() {
       needsMigration = true;
     }
     const saved = JSON.parse(jsonStr);
+    if (settingsRevision !== revision) return getLocalSettings();
     localSettingsCache = {
       profileDataRoot: normalizeProfileDataRoot(saved.profileDataRoot),
       cloud: { ...cloudSync.defaultCloudConfig(), ...(saved.cloud || {}) },
@@ -99,24 +120,32 @@ async function loadLocalSettings() {
       diskLimit: clampDiskLimit(saved.diskLimit),
     };
     if (needsMigration) {
+      persistedSettingsSnapshot = null;
       try {
-        await writeLocalSettingsFile();
+        await localSettingsWriter.request();
       } catch (migrateError) {
         console.warn('OpenBrowser settings encryption migration warning:', migrateError.message);
       }
-    }
+    } else persistedSettingsSnapshot = JSON.parse(JSON.stringify(localSettingsCache));
     return localSettingsCache;
   } catch (error) {
+    if (settingsRevision !== revision) return getLocalSettings();
     // A torn settings file used to be silently reset to factory defaults and
     // then overwritten by the next write. Keep the corrupt copy aside so it
     // can still be recovered by hand; booting on defaults is unchanged.
     if (error.code !== 'ENOENT') {
-      try {
-        const aside = `${settingsFile}.corrupt-${Date.now()}`;
-        await fsp.rename(settingsFile, aside);
-        console.warn(`OpenBrowser: local settings corrupt (${error.message}); reset to defaults, original kept at ${aside}`);
-      } catch (_) {}
+      await serializeSettingsFile(async () => {
+        if (settingsRevision !== revision) return;
+        persistedSettingsSnapshot = null;
+        try {
+          const aside = `${settingsFile}.corrupt-${Date.now()}`;
+          await fsp.rename(settingsFile, aside);
+          console.warn(`OpenBrowser: local settings corrupt (${error.message}); original kept at ${aside}`);
+        } catch (_) {}
+      });
     }
+    if (settingsRevision !== revision) return getLocalSettings();
+    persistedSettingsSnapshot = null;
     localSettingsCache = defaultCache();
     return localSettingsCache;
   }
@@ -129,34 +158,37 @@ let persistedSettingsSnapshot = null;
 /** Write the settings file from the in-memory cache. */
 async function writeLocalSettingsFile() {
   ensureInitialized();
-  // Capture exactly the state being written. Edits can replace the live cache
-  // while filesystem operations yield; marking that newer cache as persisted
-  // would make the next coalesced run skip an edit that never reached disk.
-  const snapshot = JSON.parse(JSON.stringify(localSettingsCache));
-  await fsp.mkdir(path.dirname(settingsFile), { recursive: true });
-  const temporary = settingsFile + '.tmp';
-  const serialized = JSON.stringify({ version: 2, ...snapshot }, null, 2);
-  const payload = credentialCrypto.encryptCredential(serialized);
+  return serializeSettingsFile(async () => {
+    // Capture exactly the state being written. Edits can replace the live cache
+    // while filesystem operations yield; marking that newer cache as persisted
+    // would make the next coalesced run skip an edit that never reached disk.
+    const snapshot = JSON.parse(JSON.stringify(localSettingsCache));
+    await fsp.mkdir(path.dirname(settingsFile), { recursive: true });
+    const temporary = settingsFile + '.tmp';
+    const serialized = JSON.stringify({ version: 2, ...snapshot }, null, 2);
+    const payload = credentialCrypto.encryptCredential(serialized);
 
-  // Preserve backup of existing file before atomic rewrite. Only encrypted
-  // content may land in the .bak: a legacy plaintext file must not gain a
-  // long-lived plaintext twin. All artifacts stay owner-only (0600).
-  try {
-    const existing = await fsp.readFile(settingsFile);
-    if (credentialCrypto.isEncrypted(existing)) {
-      await fsp.writeFile(settingsFile + '.bak', existing, { mode: 0o600 });
-    }
-  } catch (_) {}
+    // Preserve backup of existing file before atomic rewrite. Only encrypted
+    // content may land in the .bak: a legacy plaintext file must not gain a
+    // long-lived plaintext twin. All artifacts stay owner-only (0600).
+    try {
+      const existing = await fsp.readFile(settingsFile);
+      if (credentialCrypto.isEncrypted(existing)) {
+        await fsp.writeFile(settingsFile + '.bak', existing, { mode: 0o600 });
+      }
+    } catch (_) {}
 
-  await fsp.writeFile(temporary, payload, { mode: 0o600 });
-  await fsp.rename(temporary, settingsFile);
-  persistedSettingsSnapshot = snapshot;
+    await fsp.writeFile(temporary, payload, { mode: 0o600 });
+    await fsp.rename(temporary, settingsFile);
+    persistedSettingsSnapshot = snapshot;
+  });
 }
 
 // The cache holds the whole settings object, so a burst of changes only needs
 // the last one on disk. Going through one writer also stops concurrent callers
 // from racing on the same temporary file.
 const localSettingsWriter = createCoalescedWriter({
+  keepAlive: true,
   write: writeLocalSettingsFile,
   // Saving the same settings twice is common (panel switches, repeated toggles)
   // and the disk already holds that state, so skip the write entirely.
@@ -175,12 +207,14 @@ async function saveLocalSettings(value) {
     memoryLimit: clampMemoryLimit(value.memoryLimit !== undefined ? value.memoryLimit : localSettingsCache.memoryLimit),
     diskLimit: clampDiskLimit(value.diskLimit !== undefined ? value.diskLimit : localSettingsCache.diskLimit),
   };
+  settingsRevision += 1;
   return localSettingsWriter.request();
 }
 
 /** Flush a pending quiet-period write; called from the quit chain. */
-function flushSettingsWriter() {
-  return localSettingsWriter.flushNow();
+async function flushSettingsWriter() {
+  await localSettingsWriter.flushNow();
+  await localSettingsWriter.idle();
 }
 
 module.exports = {

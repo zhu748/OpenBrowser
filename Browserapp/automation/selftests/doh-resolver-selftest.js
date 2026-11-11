@@ -483,6 +483,41 @@ function stubFetch(responseBuf, { status = 200, onUrl } = {}) {
     assert.strictEqual(result.family, 6);
   });
 
+  await checkAsync('numeric and named family options select the requested resolver', async () => {
+    const lookup = createDohLookup(fakeResolver(), { fallback: null });
+    for (const options of [6, { family: 'IPv6' }]) {
+      assert.deepStrictEqual(await callLookup(lookup, 'known.test', options), { address: '2001:db8::1', family: 6 });
+    }
+    assert.deepStrictEqual(await callLookup(lookup, 'known.test', { family: 'IPv4' }), { address: '203.0.113.7', family: 4 });
+    assert.throws(() => lookup('known.test', { family: 7 }, () => {}), /family/);
+  });
+
+  await checkAsync('an explicit IPv4 miss never queries or returns IPv6', async () => {
+    let v6Calls = 0;
+    const lookup = createDohLookup({
+      resolve4: async () => { throw Object.assign(new Error('no A record'), { code: 'ENODATA' }); },
+      resolve6: async () => { v6Calls += 1; return ['2001:db8::1']; },
+    }, { fallback: null });
+    for (const options of [4, { family: 4 }, { family: 'IPv4', all: true }]) {
+      await assert.rejects(callLookup(lookup, 'v6only.test', options), { code: 'ENOTFOUND' });
+    }
+    assert.strictEqual(v6Calls, 0);
+  });
+
+  await checkAsync('IP literals return asynchronously without DNS or system queries', async () => {
+    const unexpected = () => { throw new Error('IP literals must not query DNS'); };
+    const lookup = createDohLookup({ resolve4: unexpected, resolve6: unexpected }, { systemLookup: unexpected });
+    for (const [address, family] of [['127.0.0.1', 4], ['::1', 6]]) {
+      let synchronous = true;
+      const result = new Promise((resolve, reject) => lookup(address, { all: true }, (error, rows) => {
+        if (error) { reject(error); return; }
+        try { assert.strictEqual(synchronous, false); resolve(rows); } catch (cause) { reject(cause); }
+      }));
+      synchronous = false;
+      assert.deepStrictEqual(await result, [{ address, family }]);
+    }
+  });
+
   await checkAsync('the all flag yields the whole address list', async () => {
     const lookup = createDohLookup(fakeResolver(), { systemLookup: () => { throw new Error('must not be used'); } });
     const addresses = await new Promise((resolve, reject) => {
@@ -532,6 +567,31 @@ function stubFetch(responseBuf, { status = 200, onUrl } = {}) {
   await checkAsync('a callback that rejects the contract is reported clearly', async () => {
     const lookup = createDohLookup(fakeResolver(), { systemLookup: () => {} });
     assert.throws(() => lookup('known.test', {}), /callback required/);
+  });
+
+  check('consumer callback exceptions never trigger a second callback or DNS fallback', () => {
+    const { execFileSync } = require('node:child_process');
+    const source = `
+      const assert = require('node:assert/strict');
+      const { createDohLookup } = require(${JSON.stringify(require.resolve('../doh-resolver'))});
+      let calls = 0, fallbacks = 0;
+      const timer = setTimeout(() => { throw new Error('callback did not throw'); }, 1000);
+      process.once('uncaughtException', (error) => {
+        clearTimeout(timer);
+        assert.equal(error.message, 'consumer failure');
+        assert.equal(calls, 1);
+        assert.equal(fallbacks, 0);
+        console.log('callback propagated once');
+      });
+      process.on('unhandledRejection', () => { clearTimeout(timer); process.exitCode = 1; });
+      createDohLookup({ resolve4: async () => ['192.0.2.1'] }, {
+        systemLookup: (_host, _options, callback) => { fallbacks += 1; callback(null, '192.0.2.2', 4); },
+      })('callback.test', {}, () => {
+        calls += 1;
+        throw Object.assign(new Error('consumer failure'), { code: 'ENODATA' });
+      });
+    `;
+    assert.match(execFileSync(process.execPath, ['-e', source], { encoding: 'utf8', timeout: 3000 }), /callback propagated once/);
   });
 
   await checkAsync('an IPv6-only host is answered via the DoH AAAA fallback before the system resolver', async () => {

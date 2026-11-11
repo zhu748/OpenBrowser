@@ -69,23 +69,28 @@ function parseCsvRecords(source) {
 
 function csvCell(value) {
   const text = typeof value === 'string' ? value : JSON.stringify(value ?? '');
-  return `"${String(text).replace(/"/g, '""')}"`;
+  const source = String(text);
+  return `"${source.includes('"') ? source.replace(/"/g, '""') : source}"`;
 }
 
 /** Bounded batches avoid constructing a second, complete export in memory. */
 function* csvChunks(records, fields, formatCell = csvCell) {
   let chunk = '';
-  function* append(row) {
-    for (let index = 0; index < row.length; index += 1) {
-      const cell = (index ? ',' : '') + formatCell(row[index]);
+  // Emit directly: a nested generator plus fields.map allocated two objects
+  // for every exported record, even though the values are consumed once.
+  for (let rowIndex = -1; rowIndex < records.length; rowIndex += 1) {
+    const record = rowIndex < 0 ? null : records[rowIndex];
+    for (let index = 0; index < fields.length; index += 1) {
+      const field = fields[index];
+      let value = field;
+      if (rowIndex >= 0) value = record != null && Object.hasOwn(record, field) ? record[field] ?? '' : '';
+      const cell = (index ? ',' : '') + formatCell(value);
       if (chunk.length + cell.length > 64 * 1024 && chunk) { yield chunk; chunk = ''; }
       chunk += cell;
     }
     chunk += '\n';
     if (chunk.length >= 64 * 1024) { yield chunk; chunk = ''; }
   }
-  yield* append(fields);
-  for (const record of records) yield* append(fields.map((field) => record?.[field] ?? ''));
   if (chunk) yield chunk;
 }
 

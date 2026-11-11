@@ -456,8 +456,8 @@ class RpaStore {
         await fsp.rename(temporary, this.filePath);
         try {
           const directoryHandle = await fsp.open(path.dirname(this.filePath), 'r');
-          await directoryHandle.sync();
-          await directoryHandle.close();
+          try { await directoryHandle.sync(); }
+          finally { await directoryHandle.close(); }
         } catch (_) {}
         return;
       } catch (error) {
@@ -481,8 +481,9 @@ class RpaStore {
   }
 
   /** Flush a pending quiet-period write; called from the quit chain. */
-  flush() {
-    return this._writer.flushNow();
+  async flush() {
+    await this._writer.flushNow();
+    await this._writer.idle();
   }
 
   /**

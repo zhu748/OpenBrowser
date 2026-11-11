@@ -747,14 +747,47 @@ function startServer(handler) {
     const dir = await makeTempDir();
     try {
       await new Downloader(source.url('/file'), { dir, headers: {
-        Authorization: 'Bearer secret', cOoKiE: 'session=secret', Cookie2: 'legacy=secret', 'X-Public': 'kept',
+        Authorization: 'Bearer secret', cOoKiE: 'session=secret', Cookie2: 'legacy=secret',
+        'Proxy-Authorization': 'Basic secret', Host: 'original.test', 'X-Public': 'kept',
       } }).start();
       assert.strictEqual(seen.authorization, undefined);
       assert.strictEqual(seen.cookie, undefined);
       assert.strictEqual(seen.cookie2, undefined);
+      assert.strictEqual(seen['proxy-authorization'], undefined);
+      assert.strictEqual(seen.host, new URL(target.url('/file')).host);
       assert.strictEqual(seen['x-public'], 'kept');
     } finally { await source.close(); await target.close(); await fsp.rm(dir, { recursive: true, force: true }); }
   });
+
+  for (const status of [302, 503]) {
+    await checkAsync(`ignored HTTP ${status} bodies close immediately instead of draining forever`, async () => {
+      let ignoredSocket, interval, closed;
+      const closedPromise = new Promise((resolve) => { closed = resolve; });
+      const server = await startServer((req, res) => {
+        if (req.url === '/final') { res.end('complete'); return; }
+        ignoredSocket = req.socket;
+        ignoredSocket.once('close', closed);
+        res.writeHead(status, { location: '/final' });
+        res.write('ignored');
+        interval = setInterval(() => res.write('still ignored'), 10);
+        res.once('close', () => clearInterval(interval));
+      });
+      const dir = await makeTempDir();
+      let deadline;
+      try {
+        const dl = new Downloader(server.url('/source'), { dir });
+        if (status === 302) await dl.start();
+        else await assert.rejects(dl.start(), /http 503/);
+        await Promise.race([
+          closedPromise,
+          new Promise((_, reject) => { deadline = setTimeout(() => reject(new Error('ignored response socket leaked')), 250); }),
+        ]);
+      } finally {
+        clearTimeout(deadline); clearInterval(interval); ignoredSocket?.destroy();
+        await server.close(); await fsp.rm(dir, { recursive: true, force: true });
+      }
+    });
+  }
 
   await checkAsync('unhashed resume never rereads existing partial bytes', async () => {
     const server = await startServer((_req, res) => {

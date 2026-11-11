@@ -31,6 +31,13 @@ class ApiKeyStore {
     this.filePath = path.join(userDataPath, KEY_FILE);
     this.txtPath = path.join(userDataPath, TXT_FILE);
     this.apiKey = '';
+    this._keyQueue = Promise.resolve();
+  }
+
+  _enqueueKeyOperation(operation) {
+    const pending = this._keyQueue.then(operation, operation);
+    this._keyQueue = pending.catch(() => {});
+    return pending;
   }
 
   shouldEncrypt() {
@@ -42,8 +49,10 @@ class ApiKeyStore {
   async resolve(explicitKey) {
     const cleanedExplicit = cleanApiKey(explicitKey);
     if (cleanedExplicit && !isApiKeyPlaceholder(cleanedExplicit)) {
-      this.apiKey = cleanedExplicit;
-      return this.apiKey;
+      return this._enqueueKeyOperation(() => {
+        this.apiKey = cleanedExplicit;
+        return cleanedExplicit;
+      });
     }
 
     // Concurrent callers used to race through the file-read/mint path and
@@ -52,14 +61,10 @@ class ApiKeyStore {
     // promise is shared by every waiter, which is the correct semantics:
     // they all asked for the same thing and it failed.
     if (this._resolveInFlight) return this._resolveInFlight;
-    this._resolveInFlight = (async () => {
-      try {
-        return await this._resolveStoredOrMint();
-      } finally {
-        this._resolveInFlight = null;
-      }
-    })();
-    return this._resolveInFlight;
+    const pending = this._enqueueKeyOperation(() => this._resolveStoredOrMint());
+    this._resolveInFlight = pending;
+    try { return await pending; }
+    finally { if (this._resolveInFlight === pending) this._resolveInFlight = null; }
   }
 
   async _resolveStoredOrMint() {
@@ -127,45 +132,51 @@ class ApiKeyStore {
     // Keep the previous key so a failed persist can roll the in-memory key
     // back: without that, memory would hold a key no client knows and no file
     // holds — memory/disk divergence that invalidates every client silently.
-    const previousKey = this.apiKey;
-    this.apiKey = generateKey();
-    try {
-      await this.save();
-    } catch (error) {
-      this.apiKey = previousKey;
-      throw error;
-    }
-    return this.apiKey;
+    return this._enqueueKeyOperation(async () => {
+      const previousKey = this.apiKey;
+      const nextKey = generateKey();
+      this.apiKey = nextKey;
+      try {
+        await this.save(nextKey);
+      } catch (error) {
+        this.apiKey = previousKey;
+        throw error;
+      }
+      return nextKey;
+    });
   }
 
-  async save() {
+  async save(apiKey = this.apiKey) {
     await fsp.mkdir(path.dirname(this.filePath), { recursive: true });
     const temporaryJson = this.filePath + '.tmp-' + process.pid + '-' + crypto.randomBytes(4).toString('hex');
     const shouldEncrypt = this.shouldEncrypt();
 
-    if (shouldEncrypt) {
-      const serialized = JSON.stringify({ version: 2, apiKey: this.apiKey }, null, 2);
-      const payload = credentialCrypto.encryptCredential(serialized);
-      await fsp.writeFile(temporaryJson, payload, { mode: 0o600 });
-      // 直接原子替换，失败保留旧文件：rm+rename 之间 key 文件不存在，一旦
-      // rename 失败（Windows AV/共享冲突）或进程在两个 await 之间崩溃，持久
-      // 化的 key 就没了，下一次 resolve() 会静默铸造新 key，使所有已分发
-      // API/MCP 客户端 key 失效。rename 在 POSIX 原子替换目标文件，Windows
-      // 上映射为 MoveFileEx(REPLACE_EXISTING)。
-      await fsp.rename(temporaryJson, this.filePath);
-      // Clean up plaintext txt file to prevent credential leakage
-      await fsp.rm(this.txtPath, { force: true }).catch(() => {});
-    } else {
-      await fsp.writeFile(temporaryJson, JSON.stringify({ version: 1, apiKey: this.apiKey }, null, 2), { mode: 0o600 });
-      await fsp.rename(temporaryJson, this.filePath);
+    try {
+      if (shouldEncrypt) {
+        const serialized = JSON.stringify({ version: 2, apiKey }, null, 2);
+        const payload = credentialCrypto.encryptCredential(serialized);
+        await fsp.writeFile(temporaryJson, payload, { mode: 0o600 });
+        // 直接原子替换，失败保留旧文件：rm+rename 之间 key 文件不存在，一旦
+        // rename 失败（Windows AV/共享冲突）或进程在两个 await 之间崩溃，持久
+        // 化的 key 就没了，下一次 resolve() 会静默铸造新 key，使所有已分发
+        // API/MCP 客户端 key 失效。rename 在 POSIX 原子替换目标文件，Windows
+        // 上映射为 MoveFileEx(REPLACE_EXISTING)。
+        await fsp.rename(temporaryJson, this.filePath);
+        // Clean up plaintext txt file to prevent credential leakage
+        await fsp.rm(this.txtPath, { force: true }).catch(() => {});
+      } else {
+        await fsp.writeFile(temporaryJson, JSON.stringify({ version: 1, apiKey }, null, 2), { mode: 0o600 });
+        await fsp.rename(temporaryJson, this.filePath);
 
-      try {
         const temporaryTxt = this.txtPath + '.tmp-' + process.pid + '-' + crypto.randomBytes(4).toString('hex');
-        await fsp.writeFile(temporaryTxt, `${this.apiKey}\n`, { encoding: 'utf8', mode: 0o600 });
-        // Same atomic-replace rationale as the json branch above.
-        await fsp.rename(temporaryTxt, this.txtPath);
-      } catch (_) {}
-    }
+        try {
+          await fsp.writeFile(temporaryTxt, `${apiKey}\n`, { encoding: 'utf8', mode: 0o600 });
+          // Same atomic-replace rationale as the json branch above.
+          await fsp.rename(temporaryTxt, this.txtPath);
+        } catch (_) {}
+        finally { await fsp.rm(temporaryTxt, { force: true }).catch(() => {}); }
+      }
+    } finally { await fsp.rm(temporaryJson, { force: true }).catch(() => {}); }
   }
 }
 

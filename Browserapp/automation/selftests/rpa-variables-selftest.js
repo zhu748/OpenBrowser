@@ -2,6 +2,32 @@
 
 const assert = require('node:assert/strict');
 const { cloneVariableValue, snapshotVariables, interpolate, getVariableValue, resolveConditionValue } = require('../rpa/variables');
+const { RpaEngine } = require('../rpa-engine');
+
+const initialVariables = (task) => RpaEngine.prototype.initialVariables.call({}, task);
+const template = { process_content: { nodes: [{ type: 'startNode', globalVariable: [
+  { key: 'rows', value: [{ count: 1 }] },
+  { key: 'constructor', value: 'user-defined' },
+  { key: '__proto__', value: { count: 2 } },
+] }] } };
+const firstTask = initialVariables(template);
+const secondTask = initialVariables(template);
+firstTask.rows[0].count = 99;
+assert.equal(secondTask.rows[0].count, 1, 'start-node objects must be detached for each task');
+assert.equal(template.process_content.nodes[0].globalVariable[0].value[0].count, 1, 'the installed template stays unchanged');
+assert.equal(firstTask.constructor, 'user-defined', 'prototype member names are valid variable names');
+assert.equal(Object.hasOwn(firstTask, '__proto__'), true);
+assert.equal(Object.getPrototypeOf(firstTask), null, 'variable writes cannot change the dictionary prototype');
+const specialTask = initialVariables({ variables: JSON.parse('{"__proto__":{"flag":true},"constructor":7}') });
+assert.equal(Object.getPrototypeOf(specialTask), null);
+assert.equal(Object.hasOwn(specialTask, '__proto__'), true);
+assert.equal(specialTask.constructor, 7);
+const priority = initialVariables({ ...template, variables: { rows: ['explicit'], constructor: 'explicit' } });
+assert.deepEqual(priority.rows, ['explicit']);
+assert.equal(priority.constructor, 'explicit');
+assert.equal(interpolate('${constructor}/${toString}/${__proto__}', {}), '//', 'missing variables never resolve through Object.prototype');
+assert.equal(getVariableValue('${constructor}', {}), undefined);
+assert.equal(resolveConditionValue('${toString}', {}), undefined);
 
 const original = { nested: [{ value: 1 }] };
 const copy = cloneVariableValue(original);

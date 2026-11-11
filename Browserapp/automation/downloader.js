@@ -98,7 +98,7 @@ function openRequest(url, { headers = {}, maxRedirects = DEFAULT_MAX_REDIRECTS, 
       if (parsed.origin === initialOrigin) return currentHeaders;
       const next = { ...currentHeaders };
       for (const name of Object.keys(next)) {
-        if (['authorization', 'cookie', 'cookie2'].includes(name.toLowerCase())) delete next[name];
+        if (['authorization', 'proxy-authorization', 'cookie', 'cookie2', 'host'].includes(name.toLowerCase())) delete next[name];
       }
       return next;
     };
@@ -129,11 +129,21 @@ function openRequest(url, { headers = {}, maxRedirects = DEFAULT_MAX_REDIRECTS, 
         }
       }
 
+      let discarded = false;
+      const fail = (error) => { if (!discarded) reject(error); };
       const req = transport.get(target, { headers: hopHeaders, signal }, (res) => {
+        res.on('error', fail);
+        const discard = () => {
+          // Ignored bodies have no size or time bound. Do not keep draining
+          // them while following another hop or reporting a failed download.
+          discarded = true;
+          res.destroy();
+          req.destroy();
+        };
         const status = res.statusCode || 0;
         if (status >= 300 && status < 400 && res.headers.location) {
           redirects += 1;
-          res.resume();
+          discard();
           if (redirects > maxRedirects) {
             reject(new Error('too many redirects'));
             return;
@@ -145,14 +155,14 @@ function openRequest(url, { headers = {}, maxRedirects = DEFAULT_MAX_REDIRECTS, 
           return;
         }
         if (status < 200 || status >= 300) {
-          res.resume();
+          discard();
           reject(Object.assign(new Error(`http ${status}`), { statusCode: status }));
           return;
         }
         resolve(res);
       });
 
-      req.on('error', reject);
+      req.on('error', fail);
       if (timeoutMs) {
         req.setTimeout(timeoutMs, () => {
           req.destroy(new Error('request timeout'));

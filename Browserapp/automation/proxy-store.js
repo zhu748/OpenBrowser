@@ -289,12 +289,18 @@ class ProxyStore {
 
   _enqueueMutation(operation) {
     const queued = this._mutationQueue.then(operation, operation);
+    this._lastMutation = queued;
     this._mutationQueue = queued.catch(() => {});
     return queued;
   }
 
-  flush() {
-    return this._mutationQueue;
+  async flush() {
+    for (;;) {
+      this._flushCheckEntries();
+      const pending = this._lastMutation || this._mutationQueue;
+      await pending;
+      if (!this._checkEntries?.length && pending === (this._lastMutation || this._mutationQueue)) return;
+    }
   }
 
   async _writeAtomic(targetPath, payload) {
@@ -311,8 +317,8 @@ class ProxyStore {
       await fsp.rename(temporary, targetPath);
       try {
         const directoryHandle = await fsp.open(directory, 'r');
-        await directoryHandle.sync();
-        await directoryHandle.close();
+        try { await directoryHandle.sync(); }
+        finally { await directoryHandle.close(); }
       } catch (_) {}
     } finally {
       if (handle) await handle.close().catch(() => {});
@@ -630,12 +636,26 @@ class ProxyStore {
    */
   _appendCheckEntry(entry) {
     this._checkEntries ||= [];
-    this._checkFlush ||= setImmediate(() => {
-      this._checkFlush = null;
-      const entries = this._checkEntries;
-      this._checkEntries = [];
-      this._commitMutation((draft) => entries.map((pending) => {
-        const item = draft.items.find((candidate) => candidate.id === pending.id);
+    const pending = new Promise((resolve, reject) => {
+      this._checkEntries.push({ ...entry, resolve, reject });
+    });
+    this._checkFlush ||= setImmediate(() => this._flushCheckEntries());
+    return pending;
+  }
+
+  _flushCheckEntries() {
+    if (this._checkFlush) clearImmediate(this._checkFlush);
+    this._checkFlush = null;
+    if (!this._checkEntries?.length) return;
+    const entries = this._checkEntries;
+    this._checkEntries = [];
+    this._commitMutation((draft) => {
+      // Index once per batch instead of scanning all proxies for each check.
+      // Preserve first-match behavior for duplicate IDs in legacy files.
+      const byId = new Map();
+      for (const item of draft.items) if (!byId.has(item.id)) byId.set(item.id, item);
+      return entries.map((pending) => {
+        const item = byId.get(pending.id);
         if (!item) return { missing: pending.id };
         item.lastCheck = new Date().toISOString();
         if (pending.kind === 'error') {
@@ -656,18 +676,15 @@ class ProxyStore {
         }
         item.update_time = item.lastCheck;
         return { item };
-      })).then((outcomes) => {
-        entries.forEach((pending, index) => {
-          const outcome = outcomes[index];
-          if (outcome.missing) pending.reject(new Error('代理不存在: ' + outcome.missing));
-          else pending.resolve(outcome.item);
-        });
-      }, (failure) => {
-        for (const pending of entries) pending.reject(failure);
       });
-    });
-    return new Promise((resolve, reject) => {
-      this._checkEntries.push({ ...entry, resolve, reject });
+    }).then((outcomes) => {
+      entries.forEach((pending, index) => {
+        const outcome = outcomes[index];
+        if (Object.hasOwn(outcome, 'missing')) pending.reject(new Error('代理不存在: ' + outcome.missing));
+        else pending.resolve(outcome.item);
+      });
+    }, (failure) => {
+      for (const pending of entries) pending.reject(failure);
     });
   }
 

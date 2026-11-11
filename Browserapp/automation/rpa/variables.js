@@ -75,7 +75,8 @@ function snapshotVariables(variables) {
 function interpolate(value, variables = {}) {
   if (typeof value !== 'string') return value;
   return value.replace(/\$\{([^}]+)\}/g, (_, key) => {
-    const result = variables[String(key).trim()];
+    const name = String(key).trim();
+    const result = Object.hasOwn(variables, name) ? variables[name] : undefined;
     return result == null ? '' : String(result);
   });
 }
@@ -84,7 +85,8 @@ function getVariableValue(value, variables = {}) {
   if (Array.isArray(value)) return value.map((item) => getVariableValue(item, variables));
   if (typeof value !== 'string') return value;
   const match = value.match(/^\$\{([^}]+)\}$/);
-  return match ? variables[match[1].trim()] : interpolate(value, variables);
+  const key = match?.[1].trim();
+  return match ? (Object.hasOwn(variables, key) ? variables[key] : undefined) : interpolate(value, variables);
 }
 
 function resolveConditionValue(input, variables = {}) {
@@ -96,7 +98,8 @@ function resolveConditionValue(input, variables = {}) {
   const trimmed = input.trim();
   const match = trimmed.match(/^\$\{([^}]+)\}$/);
   if (match) {
-    return variables[match[1].trim()];
+    const key = match[1].trim();
+    return Object.hasOwn(variables, key) ? variables[key] : undefined;
   }
   if (trimmed === 'true') return true;
   if (trimmed === 'false') return false;

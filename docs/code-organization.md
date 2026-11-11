@@ -1,5 +1,9 @@
 # 代码分类与维护入口
 
+代理/RPA 退出排空、设置读写与恢复、API 密钥并发的后续四轮检查见 [持久化与并发优化记录](dev-reports/2026-11-11-persistence-concurrency-followup.md)。
+
+DNS、下载连接、RPA 变量隔离和 CSV 导出的本次五轮检查见 [网络与 RPA 复核记录](dev-reports/2026-11-11-network-rpa-csv-review.md)。
+
 本轮列表 DOM 更新、RPA 步骤契约与任务记录整理见 [2026-11-11 项目复审](dev-reports/2026-11-11-review-followup.md)。
 
 后续队列、批量操作、同步文本和显示缓存的连续迭代见 [优化与复审记录](dev-reports/2026-11-11-iterative-optimization.md)。

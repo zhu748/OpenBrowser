@@ -561,7 +561,7 @@ class RpaEngine {
     port = ctx?.port || port;
     const type = String(step.type || step.action || '').toLowerCase();
     const params = resolveStepParams(step);
-    const variables = ctx.variables || (ctx.variables = {});
+    const variables = ctx.variables || (ctx.variables = Object.create(null));
     const value = (input) => getVariableValue(input, variables);
     const text = (input) => String(value(input) ?? '');
 
@@ -1351,7 +1351,9 @@ class RpaEngine {
   }
 
   initialVariables(task) {
-    const variables = {};
+    // Every step writes user-selected variable names into this dictionary.
+    // A null prototype keeps __proto__/constructor ordinary data keys.
+    const variables = Object.create(null);
     // Explicit plan/task variables win first (installed templates may store these without process_content).
     const explicit = task?.variables || task?.global_variables || task?.globalVariable || {};
     if (explicit && typeof explicit === 'object' && !Array.isArray(explicit)) {
@@ -1362,15 +1364,15 @@ class RpaEngine {
         if (key) variables[String(key)] = cloneVariableValue(value ?? '');
       }
     }
-    let process = task.process_content;
+    let process = task?.process_content;
     if (typeof process === 'string') {
       try { process = JSON.parse(process); } catch (_) { process = null; }
     }
     const start = process?.nodes?.find((node) => node.type === 'startNode');
     const definitions = start?.globalVariable || start?.config?.variableObjList || [];
     for (const item of definitions) {
-      if (item?.key && !(String(item.key) in variables)) {
-        variables[String(item.key)] = item.value ?? '';
+      if (item?.key && !Object.hasOwn(variables, String(item.key))) {
+        variables[String(item.key)] = cloneVariableValue(item.value ?? '');
       }
     }
     return variables;

@@ -18,6 +18,77 @@ const crypto = require('../../credential-crypto');
   try {
     settings.initLocalSettings({ file, defaultProfileDataRoot: path.join(root, 'profiles') });
     await settings.loadLocalSettings();
+    await settings.saveLocalSettings({ memoryLimit: 79 });
+    const queuedEdit = settings.saveLocalSettings({ memoryLimit: 80 });
+    await settings.loadLocalSettings();
+    await queuedEdit;
+    assert.equal(settings.getLocalSettings().memoryLimit, 80, 'reload cannot overwrite an edit waiting for persistence');
+
+    const originalRead = fs.readFile;
+    let reads = 0;
+    fs.readFile = async (...args) => { if (args[0] === file) reads += 1; return originalRead(...args); };
+    try {
+      await Promise.all(Array.from({ length: 20 }, () => settings.loadLocalSettings()));
+      assert.equal(reads, 1, 'concurrent reloads share one read/decrypt operation');
+    } finally { fs.readFile = originalRead; }
+
+    let finishRead, enteredRead;
+    const readGate = new Promise((resolve) => { finishRead = resolve; });
+    const readStarted = new Promise((resolve) => { enteredRead = resolve; });
+    let gateOnce = true;
+    fs.readFile = async (...args) => {
+      const raw = await originalRead(...args);
+      if (args[0] === file && gateOnce) { gateOnce = false; enteredRead(); await readGate; }
+      return raw;
+    };
+    try {
+      const reload = settings.loadLocalSettings();
+      await readStarted;
+      const editDuringRead = settings.saveLocalSettings({ memoryLimit: 84 });
+      finishRead();
+      await Promise.all([reload, editDuringRead]);
+      assert.equal(settings.getLocalSettings().memoryLimit, 84, 'an old disk read cannot replace newer settings');
+    } finally { finishRead(); fs.readFile = originalRead; }
+
+    // An external reload changes what is on disk, so the no-op write marker
+    // must follow the newly loaded file rather than an earlier save.
+    const external = JSON.parse(crypto.decryptCredential(await fs.readFile(file)));
+    external.memoryLimit = 85;
+    await fs.writeFile(file, crypto.encryptCredential(JSON.stringify(external)));
+    await settings.loadLocalSettings();
+    assert.equal(settings.getLocalSettings().memoryLimit, 85);
+    await settings.saveLocalSettings({ memoryLimit: 84 });
+    assert.equal(JSON.parse(crypto.decryptCredential(await fs.readFile(file))).memoryLimit, 84,
+      'saving an earlier value after reload must not be skipped');
+
+    await fs.writeFile(file, '{broken settings');
+    let quarantineEntered, finishQuarantine;
+    const quarantineStarted = new Promise((resolve) => { quarantineEntered = resolve; });
+    const quarantineGate = new Promise((resolve) => { finishQuarantine = resolve; });
+    fs.rename = async (...args) => {
+      if (args[0] === file && String(args[1]).includes('.corrupt-')) {
+        quarantineEntered(); await quarantineGate;
+      }
+      return originalRename(...args);
+    };
+    let releaseTimer, duringQuarantine;
+    try {
+      const reload = settings.loadLocalSettings();
+      await quarantineStarted;
+      duringQuarantine = settings.saveLocalSettings({ memoryLimit: 86 });
+      const order = await Promise.race([
+        duringQuarantine.then(() => 'write overtook quarantine'),
+        new Promise((resolve) => { releaseTimer = setTimeout(() => { finishQuarantine(); resolve('quarantine released'); }, 100); }),
+      ]);
+      finishQuarantine();
+      await Promise.all([reload, duringQuarantine]);
+      assert.equal(order, 'quarantine released', 'new writes must wait for an active quarantine');
+      assert.equal(settings.getLocalSettings().memoryLimit, 86, 'a late corrupt-read reset cannot replace an edit');
+      assert.equal(JSON.parse(crypto.decryptCredential(await fs.readFile(file))).memoryLimit, 86);
+    } finally {
+      clearTimeout(releaseTimer); finishQuarantine(); await duringQuarantine;
+      fs.rename = originalRename;
+    }
 
     let release;
     const blocked = new Promise((resolve) => { release = resolve; });
@@ -34,13 +105,17 @@ const crypto = require('../../credential-crypto');
     };
 
     const first = settings.saveLocalSettings({ memoryLimit: 81 });
+    const flushing = settings.flushSettingsWriter();
     await writing;
     const second = settings.saveLocalSettings({ memoryLimit: 82 });
     release();
+    await flushing;
+    const flushed = JSON.parse(crypto.decryptCredential(await fs.readFile(file)));
     await Promise.all([first, second]);
     await settings.flushSettingsWriter();
     const saved = JSON.parse(crypto.decryptCredential(await fs.readFile(file)));
     assert.equal(saved.memoryLimit, 82, 'an edit during a write must reach disk');
+    assert.equal(flushed.memoryLimit, 82, 'quit flush must include edits arriving during its write');
 
     // A failed replacement must leave the last good settings readable.
     fs.rename = async (...args) => {
@@ -54,7 +129,7 @@ const crypto = require('../../credential-crypto');
     await settings.flushSettingsWriter();
     const retried = JSON.parse(crypto.decryptCredential(await fs.readFile(file)));
     assert.equal(retried.memoryLimit, 83, 'failed writes remain retryable');
-    console.log('LOCAL_SETTINGS_SELFTEST OK (concurrent edits, atomic replacement, retry)');
+    console.log('LOCAL_SETTINGS_SELFTEST OK (reload/write races, shared reads, quit drain, atomic replacement, retry)');
   } finally {
     fs.rename = originalRename;
     if (originalKeyFile === undefined) delete process.env.OPENBROWSER_MASTER_KEY_FILE;

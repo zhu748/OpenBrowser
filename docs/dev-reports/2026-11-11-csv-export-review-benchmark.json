@@ -1,0 +1,92 @@
+{
+  "baseline": "bd9a694c852bae7dfccf299e0e8417ab0880c937",
+  "node": "v24.22.1",
+  "measuredAt": "2026-11-10T23:41:35.226Z",
+  "scope": "CSV chunk generation only; synthetic in-memory records, no disk/browser/GUI; seven samples after warmup",
+  "narrow": {
+    "before": {
+      "rows": 100000,
+      "columns": 8,
+      "characters": 15111192,
+      "bytes": 16911192,
+      "chunks": 231,
+      "sha256": "dc0c3dde63fd74bd219ee8b033b8b9c351228b03ba2cc5e2db6f7f11d63f73fb",
+      "medianMs": 123.81647599999997,
+      "samplesMs": [
+        126.00805400000002,
+        118.03508599999998,
+        119.57958000000008,
+        140.91202799999996,
+        126.25239099999999,
+        123.81647599999997,
+        121.09085499999992
+      ],
+      "medianEndHeapGrowthBytes": 59187208,
+      "heapMeasurement": "heapUsed at iteration end minus after explicit GC; not a peak memory measurement"
+    },
+    "after": {
+      "rows": 100000,
+      "columns": 8,
+      "characters": 15111192,
+      "bytes": 16911192,
+      "chunks": 231,
+      "sha256": "dc0c3dde63fd74bd219ee8b033b8b9c351228b03ba2cc5e2db6f7f11d63f73fb",
+      "medianMs": 111.96935300000007,
+      "samplesMs": [
+        121.79119099999991,
+        111.96935300000007,
+        110.375268,
+        112.58629600000017,
+        105.99565499999994,
+        122.39040799999998,
+        111.90751099999989
+      ],
+      "medianEndHeapGrowthBytes": 51841888,
+      "heapMeasurement": "heapUsed at iteration end minus after explicit GC; not a peak memory measurement"
+    },
+    "speedup": 1.1058068362688485
+  },
+  "wide": {
+    "before": {
+      "rows": 20000,
+      "columns": 64,
+      "characters": 24009590,
+      "bytes": 26649590,
+      "chunks": 367,
+      "sha256": "5bf5ccc1a8a1f9621294c2739bcecd82596292520472db1a2494bfefcefae15f",
+      "medianMs": 202.60387200000014,
+      "samplesMs": [
+        214.15213300000005,
+        247.36617999999999,
+        195.603697,
+        200.7087610000001,
+        193.5506170000001,
+        232.8603290000001,
+        202.60387200000014
+      ],
+      "medianEndHeapGrowthBytes": 18338776,
+      "heapMeasurement": "heapUsed at iteration end minus after explicit GC; not a peak memory measurement"
+    },
+    "after": {
+      "rows": 20000,
+      "columns": 64,
+      "characters": 24009590,
+      "bytes": 26649590,
+      "chunks": 367,
+      "sha256": "5bf5ccc1a8a1f9621294c2739bcecd82596292520472db1a2494bfefcefae15f",
+      "medianMs": 180.50582999999983,
+      "samplesMs": [
+        182.592807,
+        183.99632899999995,
+        170.25304299999993,
+        204.853069,
+        170.34911799999986,
+        174.11448799999994,
+        180.50582999999983
+      ],
+      "medianEndHeapGrowthBytes": 19699584,
+      "heapMeasurement": "heapUsed at iteration end minus after explicit GC; not a peak memory measurement"
+    },
+    "speedup": 1.1224228713277589
+  }
+}

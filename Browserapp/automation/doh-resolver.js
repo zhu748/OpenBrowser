@@ -609,19 +609,34 @@ function createDohLookup(resolver, options = {}) {
   }
 
   return function dohLookup(hostname, opts, callback) {
-    const settings = typeof opts === 'function' ? {} : (opts || {});
+    const settings = typeof opts === 'number' ? { family: opts }
+      : typeof opts === 'function' ? {} : (opts || {});
     const done = typeof opts === 'function' ? opts : callback;
     if (typeof done !== 'function') throw new TypeError('callback required');
+    // Consumer exceptions belong to the caller, outside the DNS promise chain.
+    // Otherwise an exception can trigger fallback and invoke the callback twice.
+    const complete = (...args) => queueMicrotask(() => done(...args));
 
     const wantsAll = settings.all === true;
-    const family = settings.family;
+    const family = settings.family === 'IPv4' ? 4 : settings.family === 'IPv6' ? 6 : (settings.family ?? 0);
+    if (![0, 4, 6].includes(family)) {
+      throw Object.assign(new TypeError('family must be 0, 4, 6, IPv4 or IPv6'), { code: 'ERR_INVALID_ARG_VALUE' });
+    }
+    const literalFamily = net.isIP(hostname);
+    if (literalFamily) {
+      // Match dns.lookup: IP literals need no remote lookup, even when the
+      // requested family differs. Preserve its asynchronous callback contract.
+      if (wantsAll) complete(null, [{ address: hostname, family: literalFamily }]);
+      else complete(null, hostname, literalFamily);
+      return undefined;
+    }
 
     const lookupFamily = (target) => (family === 6 ? resolver.resolve6(target) : resolver.resolve4(target));
 
     // resolve4 ENODATA on an IPv6-only host must not leak straight to the
     // system resolver (plaintext ISP DNS): try AAAA through DoH first.
     const resolveWithV6Fallback = (target) => lookupFamily(target).catch((error) => {
-      if (family === 6 || !error || (error.code !== 'ENODATA' && error.code !== 'ENOTFOUND')) throw error;
+      if (family !== 0 || !error || (error.code !== 'ENODATA' && error.code !== 'ENOTFOUND')) throw error;
       if (typeof resolver.resolve6 !== 'function') throw error;
       return resolver.resolve6(target).then((addresses) => {
         const list = (Array.isArray(addresses) ? addresses : [addresses]).filter(Boolean);
@@ -637,19 +652,19 @@ function createDohLookup(resolver, options = {}) {
         if (list.length === 0) throw Object.assign(new Error(`No record for ${hostname}`), { code: 'ENODATA' });
         const resolvedFamily = family === 6 ? 6 : (net.isIP(String(list[0])) === 6 ? 6 : 4);
         if (wantsAll) {
-          done(null, list.map((address) => ({ address, family: resolvedFamily })));
+          complete(null, list.map((address) => ({ address, family: resolvedFamily })));
           return;
         }
-        done(null, list[0], resolvedFamily);
+        complete(null, list[0], resolvedFamily);
       })
       .catch((error) => {
         // Only a missing record is worth retrying through the system
         // resolver; a transport failure is reported so the caller can decide.
         if (error && (error.code === 'ENODATA' || error.code === 'ENOTFOUND')) {
-          useSystem(hostname, settings, done);
+          useSystem(hostname, settings, complete);
           return;
         }
-        done(error);
+        complete(error);
       });
 
     return undefined;

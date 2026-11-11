@@ -15,6 +15,11 @@ async function main() {
   const fields = Object.keys(records[0]);
   const encoded = [...csvChunks(records, fields)].join('');
   assert.deepEqual(parseCsvRecords(encoded), records, 'exported cells round-trip including whitespace and quoted blank lines');
+  const specialFields = ['constructor', 'toString', '__proto__'];
+  const specialRecords = [{}, JSON.parse('{"constructor":"own","toString":"text","__proto__":"literal"}')];
+  assert.deepEqual(parseCsvRecords([...csvChunks(specialRecords, specialFields)].join('')), [
+    { constructor: '', toString: '', ['__proto__']: '' }, specialRecords[1],
+  ], 'only own record fields are exported; prototype member names remain valid columns');
   for (const input of [encoded, '\ufeffa,b\r\n"x""y",z\r\n\n"",\n', 'name\n"a" \n']) {
     for (let width = 1; width <= 64; width += 1) {
       const parser = createCsvRecordParser();
@@ -47,6 +52,17 @@ async function main() {
     assert.equal(await fs.readFile(output, 'utf8'), encoded);
     await rpa.executeStep(0, { type: 'useExcel', path: output, variable: 'loaded' }, ctx);
     assert.deepEqual(ctx.variables.loaded, records, 'actual file actions share the same CSV contract');
+
+    const specialContext = { variables: rpa.initialVariables({}), remarks: [] };
+    await rpa.executeStep(0, { type: 'useExcel', path: output, variable: '__proto__' }, specialContext);
+    assert.deepEqual(specialContext.variables.__proto__, records);
+    assert.equal(Object.getPrototypeOf(specialContext.variables), null, 'file steps cannot alter task variable prototypes');
+    const emptyContext = { remarks: [] };
+    await rpa.executeStep(0, { type: 'variableOperation', params: {
+      type: 'set', variableObjList: [{ key: '__proto__', value: { marker: true } }],
+    } }, emptyContext);
+    assert.equal(Object.getPrototypeOf(emptyContext.variables), null, 'direct step execution also creates a safe dictionary');
+    assert.deepEqual(emptyContext.variables.__proto__, { marker: true });
 
     // Enough data to cross write boundaries, with a cancellation during I/O.
     ctx.variables.records = Array.from({ length: 4000 }, (_, n) => ({ n, text: '测试😀'.repeat(20) }));

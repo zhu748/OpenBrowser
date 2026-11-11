@@ -1030,11 +1030,9 @@ app.whenReady().then(async () => {
     return { success: true, profileRoot };
   });
   registerTrustedIpc('cloud:get-config', async () => {
-    await settingsStore.loadLocalSettings();
     return settingsStore.getLocalSettings().cloud || cloudSync.defaultCloudConfig();
   });
   registerTrustedIpc('cloud:set-config', async (_event, cloud) => {
-    await settingsStore.loadLocalSettings();
     const next = { ...cloudSync.defaultCloudConfig(), ...(settingsStore.getLocalSettings().cloud || {}), ...(cloud || {}) };
     await settingsStore.saveLocalSettings({ ...settingsStore.getLocalSettings(), cloud: next });
     return next;
