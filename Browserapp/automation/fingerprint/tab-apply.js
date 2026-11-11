@@ -11,16 +11,65 @@ const { buildInjectionScript, injectSourceKeyCached, injectionCacheKeyFor } = re
 const { normalizeCoordinates } = require('../../shared/profile-values');
 const { assertFingerprintConsistency } = require('./persona');
 
-// Bookkeeping for the per-target inject. The runtime drives the same document-start script from
-// several places (pre-start, post-start, watch sweeps, reload recovery, worker attach). Registering
-// one identical source twice makes Chromium run it twice on every later navigation, and evaluating
-// it twice on a live document stacks a second layer of noise on the readers, which shifts canvas /
-// clientRects while the profile is already in use. Tracking what each target already carries keeps
-// the later passes true no-ops without leaving anything the page itself could detect.
-const TARGET_INJECT_STATE = new Map();
-const MAX_TRACKED_TARGETS = 256;
+// Registrations belong to a CDP connection/session, not just a target ID.
+// Weak owners are released with the connection; live targets are never evicted.
+const OWNER_INJECT_STATE = new WeakMap();
+
+function targetKey(webSocketDebuggerUrl, options) {
+  if (typeof options.applyKey === 'string' && options.applyKey) return options.applyKey;
+  if (typeof webSocketDebuggerUrl !== 'string' || !webSocketDebuggerUrl) return '';
+  const id = webSocketDebuggerUrl.match(/\/devtools\/(?:page|browser)\/([^/?#]+)/)?.[1];
+  return id ? `target:${id}` : webSocketDebuggerUrl;
+}
+
+function closedTargetError() {
+  return Object.assign(new Error('Fingerprint target session was closed'), { code: 'FINGERPRINT_TARGET_CLOSED' });
+}
+
+function forgetFingerprintOwner(owner) {
+  const states = owner && OWNER_INJECT_STATE.get(owner);
+  if (!states) return;
+  for (const state of states.values()) state.closed = true;
+  OWNER_INJECT_STATE.delete(owner);
+}
+
+function forgetFingerprintTarget(owner, key, scope) {
+  const states = owner && OWNER_INJECT_STATE.get(owner);
+  if (!states) return;
+  for (const [id, state] of states) {
+    if (state.targetKey !== key || (scope !== undefined && state.scope !== scope)) continue;
+    state.closed = true;
+    states.delete(id);
+  }
+}
 
 async function applyFingerprintToTab(cdpCall, webSocketDebuggerUrl, fp, profile = {}, options = {}) {
+  assertFingerprintConsistency(fp);
+  if (typeof cdpCall !== 'function') throw new Error('CDP call function required');
+  const owner = options.registrationOwner || cdpCall;
+  const key = targetKey(webSocketDebuggerUrl, options);
+  if (!key) return applyToTarget(cdpCall, webSocketDebuggerUrl, fp, profile, options, { applied: null, closed: false });
+  if ((typeof owner !== 'object' || owner === null) && typeof owner !== 'function') throw new Error('Invalid fingerprint registration owner');
+  let states = OWNER_INJECT_STATE.get(owner);
+  if (!states) { states = new Map(); OWNER_INJECT_STATE.set(owner, states); }
+  const scope = String(options.registrationScope || '');
+  const stateKey = JSON.stringify([scope, key]);
+  let state = states.get(stateKey);
+  if (!state) {
+    state = { targetKey: key, scope, applied: null, tail: Promise.resolve(), closed: false };
+    states.set(stateKey, state);
+  }
+  // Serialize all configurations for one session. Concurrent identical applies
+  // reuse the first registration; a rejection cannot poison later retries.
+  const operation = state.tail.then(() => {
+    if (state.closed) throw closedTargetError();
+    return applyToTarget(cdpCall, webSocketDebuggerUrl, fp, profile, options, state);
+  });
+  state.tail = operation.catch(() => {});
+  return operation;
+}
+
+async function applyToTarget(cdpCall, webSocketDebuggerUrl, fp, profile, options, state) {
   assertFingerprintConsistency(fp);
   const privacy = profile.privacy || {};
   const timezone = privacy.timezoneMode === 'real'
@@ -44,7 +93,7 @@ async function applyFingerprintToTab(cdpCall, webSocketDebuggerUrl, fp, profile 
   //  1) (wsUrl, method, params) — classic page WebSocket path
   //  2) (method, params) — flattened session path (sessionId bound by caller)
   const invoke = async (method, params = {}) => {
-    if (typeof cdpCall !== 'function') throw new Error('CDP call function required');
+    if (state.closed) throw closedTargetError();
     if (webSocketDebuggerUrl == null) return cdpCall(method, params);
     return cdpCall(webSocketDebuggerUrl, method, params);
   };
@@ -59,20 +108,8 @@ async function applyFingerprintToTab(cdpCall, webSocketDebuggerUrl, fp, profile 
     : null;
   const source = buildInjectionScript(fp);
   const fpKey = injectSourceKeyCached(injectionCacheKeyFor(fp), source);
-  // One key space, keyed by the CDP target id. Callers that attach a target through
-  // a flat session (engine/fingerprint-injection.js) register as `target:<id>` while
-  // the ws-URL path below derives the SAME id from /devtools/(page|browser)/<id> —
-  // otherwise the alreadyPatched short-circuit cannot see what the other caller
-  // recorded for the same physical tab and Page.addScriptToEvaluateOnNewDocument
-  // ends up registered twice.
-  const wsTargetId = typeof webSocketDebuggerUrl === 'string' && webSocketDebuggerUrl
-    ? (webSocketDebuggerUrl.match(/\/devtools\/(?:page|browser)\/([0-9A-Fa-f-]+)/) || [])[1]
-    : null;
-  const injectTargetKey = typeof options.applyKey === 'string' && options.applyKey
-    ? options.applyKey
-    : (wsTargetId ? `target:${wsTargetId}` : (typeof webSocketDebuggerUrl === 'string' && webSocketDebuggerUrl ? webSocketDebuggerUrl : ''));
   const forceInject = options.force === true;
-  const injectState = injectTargetKey ? TARGET_INJECT_STATE.get(injectTargetKey) : null;
+  const injectState = state.applied;
   const sameConfig = Boolean(injectState && injectState.fpKey === fpKey);
   const alreadyPatched = Boolean(sameConfig && injectState.documentStartOk && injectState.evaluated);
   // Nothing left to do for this target: the live document already carries this exact config and the
@@ -118,18 +155,17 @@ async function applyFingerprintToTab(cdpCall, webSocketDebuggerUrl, fp, profile 
       userAgentMetadata: isIos ? undefined : override.userAgentMetadata,
     });
   }
-  // Desktop windows must retain Chromium's live viewport. A fixed device-metrics
-  // override leaves the renderer at the fingerprint's initial size after resize,
-  // producing a large blank region. screen.* remains spoofed by the document script.
+  // Zero desktop layout dimensions retain Chromium's live viewport while
+  // synchronizing CSS resolution/screen queries with the declared identity.
   // A phone profile is the exception: there the layout viewport IS the device panel, and pinning
   // it is what makes innerWidth, screen.*, the pixel ratio and pointer type agree inside a
   // desktop window. Emulated touch goes with it, or a phone that cannot answer touch probes is
   // immediately suspicious.
-  if (fp.mobile && fp.screen) {
+  if (fp.mobile && fp.screen && !options.isSubframe && options.targetType !== 'iframe') {
     const viewport = fp.mobileDevice?.viewport || {};
     const mobileWidth = Math.round(Number(viewport.width) || Number(fp.screen.width) || 360);
     const mobileHeight = Math.round(Number(viewport.height) || Number(fp.screen.height) || 640);
-    await softOverride('Emulation.setDeviceMetricsOverride', {
+    await invoke('Emulation.setDeviceMetricsOverride', {
       width: mobileWidth,
       height: mobileHeight,
       deviceScaleFactor: Number(fp.screen.devicePixelRatio) || 3,
@@ -140,18 +176,27 @@ async function applyFingerprintToTab(cdpCall, webSocketDebuggerUrl, fp, profile 
       positionX: 0,
       positionY: 0,
     });
-    await softOverride('Emulation.setTouchEmulationEnabled', {
+    await invoke('Emulation.setTouchEmulationEnabled', {
       enabled: true,
       maxTouchPoints: Number(fp.maxTouchPoints) || 5,
     });
   } else if (fp.screen && !options.isSubframe && options.targetType !== 'iframe') {
-    await softOverride('Emulation.clearDeviceMetricsOverride', {});
+    // DPR=1 is an override too: clearing metrics would restore a 1.5x/2x host.
+    // This command is required; failure must prevent publishing the target.
+    await invoke('Emulation.setDeviceMetricsOverride', {
+      width: 0,
+      height: 0,
+      deviceScaleFactor: Number(fp.screen.devicePixelRatio) || 1,
+      mobile: false,
+      screenWidth: Math.round(Number(fp.screen.width)),
+      screenHeight: Math.round(Number(fp.screen.height)),
+    });
   }
   if (timezone) {
     await softOverride('Emulation.setTimezoneOverride', { timezoneId: timezone });
   }
   if (latitude !== null && longitude !== null && Number.isFinite(latitude) && Number.isFinite(longitude)) {
-    await softOverride('Emulation.setGeolocationOverride', {
+    await invoke('Emulation.setGeolocationOverride', {
       latitude,
       longitude,
       accuracy: privacy.accuracy || 100,
@@ -161,7 +206,7 @@ async function applyFingerprintToTab(cdpCall, webSocketDebuggerUrl, fp, profile 
   // position), 'deny' blocks it at the browser level so no native prompt can leak host coords.
   // The injection script mirrors both for hosts where this command is unavailable.
   if (fp.geoPermission === 'granted' || fp.geoPermission === 'denied') {
-    await softOverride('Browser.setPermission', {
+    await (fp.geoPermission === 'granted' ? invoke : softOverride)('Browser.setPermission', {
       permission: { name: 'geolocation' },
       setting: fp.geoPermission,
     });
@@ -178,8 +223,14 @@ async function applyFingerprintToTab(cdpCall, webSocketDebuggerUrl, fp, profile 
     if (scriptIdentifier) {
       // The config changed under a live registration: drop the stale script so the next navigation
       // cannot run both the previous and the current inject back to back.
-      await invoke('Page.removeScriptToEvaluateOnNewDocument', { identifier: scriptIdentifier });
+      state.applied = { ...injectState, documentStartOk: false, evaluated: false };
+      try {
+        await invoke('Page.removeScriptToEvaluateOnNewDocument', { identifier: scriptIdentifier });
+      } catch (error) {
+        if (!/script not found/i.test(String(error?.message || error))) throw error;
+      }
       scriptIdentifier = null;
+      state.applied = null;
     }
     let registrationError;
     for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -197,16 +248,8 @@ async function applyFingerprintToTab(cdpCall, webSocketDebuggerUrl, fp, profile 
     }
     if (registrationError) throw registrationError;
   }
-  if (injectTargetKey) {
-    // LRU refresh: Map.set on an existing key keeps its OLD insertion position,
-    // so a long-lived active tab could be evicted by a burst of one-shot targets
-    // (about:blank popups etc.) and then re-registered on next apply — stacking
-    // duplicate addScriptToEvaluateOnNewDocument registrations. Delete first so
-    // every update moves the key to the fresh end.
-    TARGET_INJECT_STATE.delete(injectTargetKey);
-    TARGET_INJECT_STATE.set(injectTargetKey, { fpKey, identifier: scriptIdentifier, documentStartOk, evaluated: false });
-    if (TARGET_INJECT_STATE.size > MAX_TRACKED_TARGETS) TARGET_INJECT_STATE.delete(TARGET_INJECT_STATE.keys().next().value);
-  }
+  if (state.closed) throw closedTargetError();
+  state.applied = { fpKey, identifier: scriptIdentifier, documentStartOk, evaluated: false };
   let evaluatedOk = Boolean(sameConfig && injectState.evaluated);
   if (!options.skipEvaluate && !options.isWaiting) {
     const evaluated = await invoke('Runtime.evaluate', {
@@ -223,20 +266,14 @@ async function applyFingerprintToTab(cdpCall, webSocketDebuggerUrl, fp, profile 
     }
     evaluatedOk = true;
   }
-  if (injectTargetKey) {
-    // LRU refresh — same reason as the pre-registration write above.
-    TARGET_INJECT_STATE.delete(injectTargetKey);
-    TARGET_INJECT_STATE.set(injectTargetKey, { fpKey, identifier: scriptIdentifier, documentStartOk, evaluated: evaluatedOk });
-    if (TARGET_INJECT_STATE.size > MAX_TRACKED_TARGETS) {
-      // Bounded: keep the most recent targets so a long-running host cannot grow this forever.
-      const oldest = TARGET_INJECT_STATE.keys().next().value;
-      TARGET_INJECT_STATE.delete(oldest);
-    }
-  }
+  if (state.closed) throw closedTargetError();
+  state.applied = { fpKey, identifier: scriptIdentifier, documentStartOk, evaluated: evaluatedOk };
   return { documentStartOk, evaluated: evaluatedOk };
 }
 
 
 module.exports = {
   applyFingerprintToTab,
+  forgetFingerprintOwner,
+  forgetFingerprintTarget,
 };

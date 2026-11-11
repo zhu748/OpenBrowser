@@ -87,7 +87,7 @@ function runOne(entry, extraArgs) {
   if (flags && flags.darwinOnly && process.platform !== 'darwin') {
     console.log(`skip  ${name}  ${script}`);
     console.log('     (darwin-only: macOS kernel launcher required)');
-    return 0;
+    return process.env.OPENBROWSER_REQUIRE_COMPLETE_TESTS === '1' ? 2 : 0;
   }
   const scriptPath = path.join(ROOT, script);
   const started = Date.now();
@@ -95,12 +95,20 @@ function runOne(entry, extraArgs) {
   const res = spawnSync(process.execPath, [scriptPath, 'selftest', ...extraArgs], {
     cwd: ROOT,
     timeout: PER_SCRIPT_TIMEOUT_MS,
-    stdio: 'inherit',
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
   });
+  if (res.stdout) process.stdout.write(res.stdout);
+  if (res.stderr) process.stderr.write(res.stderr);
   const seconds = ((Date.now() - started) / 1000).toFixed(1);
-  if (res.status === 0) {
+  const status = require('./selftest-status').classifySelftestResult(res);
+  if (status === 'passed') {
     console.log(`ok (${seconds}s)`);
     return 0;
+  }
+  if (status === 'partial' || status === 'skipped') {
+    console.log(`${status} (${seconds}s)`);
+    return process.env.OPENBROWSER_REQUIRE_COMPLETE_TESTS === '1' ? 2 : 0;
   }
   console.log(`FAIL (exit=${res.status}${res.signal ? ' signal=' + res.signal : ''}, ${seconds}s)`);
   return res.status === null ? 1 : res.status;

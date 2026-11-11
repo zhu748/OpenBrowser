@@ -9,6 +9,9 @@ const { evaluateBidi } = require('../network/bidi-connection');
 const { startupNavigationUrl } = require('../engine/startup-session');
 const { assertUrlAccessPolicySupported } = require('./url-access-policy');
 
+// Context events and startup navigation share the same in-flight native setup.
+const contextEmulation = new WeakMap();
+
 function buildFirefoxFingerprint(profile, version) {
   assertUrlAccessPolicySupported(profile, 'firefox');
   if (/android|ios|iphone|ipad/i.test(profile.os || '')) throw new Error('Firefox 当前支持桌面设备配置，请选择 Windows、macOS 或 Linux');
@@ -37,8 +40,7 @@ function buildFirefoxFingerprint(profile, version) {
 async function initializeFirefoxFingerprint(connection, fingerprint, profile, options = {}) {
   const warnings = [];
   await connection.command('session.new', { capabilities: { alwaysMatch: { acceptInsecureCerts: Boolean(profile.advanced?.ignoreHttpsError) } } });
-  // The emulation commands below are context-scoped in current WebDriver BiDi (the spec
-  // requires `contexts`, and Firefox 160 rejects the call without it), so the tree has to
+  // Apply native emulation to explicit top-level contexts, so the tree has to
   // be resolved BEFORE the emulation phase. The preload registration is order-independent:
   // it applies to every future document in every context, including tabs opened later.
   const tree = await connection.command('browsingContext.getTree', {});
@@ -76,10 +78,22 @@ async function initializeFirefoxFingerprint(connection, fingerprint, profile, op
     const location = fingerprint.dynamicConfig?.geoposition;
     if (location) {
       // There is no safe host-location fallback when the configured position cannot be delivered.
-      await connection.command('emulation.setGeolocationOverride', { coordinates: location });
+      await scoped('emulation.setGeolocationOverride', { coordinates: location });
     }
   };
-  await applyEmulation(topLevelContexts, 'initial');
+  const pendingContexts = new Map();
+  const initialEmulation = applyEmulation(topLevelContexts, 'initial');
+  for (const context of topLevelContexts) pendingContexts.set(context, initialEmulation);
+  await initialEmulation;
+  const ensureContext = (context, label = 'new-context') => {
+    if (!pendingContexts.has(context)) {
+      const task = Promise.resolve().then(() => applyEmulation([context], label));
+      // An event handler can await an earlier listener before observing this task.
+      task.catch(() => {});
+      pendingContexts.set(context, task);
+    }
+    return pendingContexts.get(context);
+  };
   // Omitting sandbox is essential: prototypes must be patched in the page's main realm.
   const source = buildInjectionScript(fingerprint);
   const preload = await connection.command('script.addPreloadScript', { functionDeclaration: `() => {\n${source}\n}` });
@@ -87,24 +101,28 @@ async function initializeFirefoxFingerprint(connection, fingerprint, profile, op
   const workerSource = buildWorkerInjectionScript(fingerprint);
   const previousEvent = connection.onEvent;
   connection.onEvent = async (event, conn) => {
-    await previousEvent?.(event, conn);
     const realm = event.params;
+    // Child frames inherit top-level native settings; the emulation commands do
+    // not accept frame contexts. Reserve the task before awaiting other listeners.
+    const contextReady = event.method === 'browsingContext.contextCreated' && realm?.context && realm.parent == null
+      ? ensureContext(realm.context) : null;
+    if (event.method === 'browsingContext.contextDestroyed') pendingContexts.delete(realm?.context);
+    await previousEvent?.(event, conn);
+    // Required native failures propagate to BiDi's fatal event/disconnect path.
+    if (contextReady) await contextReady;
     if (event.method === 'script.realmCreated' && /worker$/.test(realm?.type || '')) {
       try { await evaluateBidi(conn, { realm: realm.realm }, workerSource); }
       catch (error) { options.onWorkerError?.(error); }
     }
-    if (event.method === 'browsingContext.contextCreated' && realm?.context) {
-      try { await applyEmulation([realm.context], 'new-context'); }
-      catch (error) { warnings.push(`emulation(new context ${realm.context}): ${error.message}`); }
-    }
   };
-  await connection.command('session.subscribe', { events: ['script.realmCreated', 'browsingContext.contextCreated'] });
+  await connection.command('session.subscribe', { events: ['script.realmCreated', 'browsingContext.contextCreated', 'browsingContext.contextDestroyed'] });
   for (const context of contexts) {
     await evaluateBidi(connection, { context: context.context }, source);
     const live = await evaluateBidi(connection, { context: context.context }, LIVE_PROBE_EXPRESSION);
     const verified = evaluateFingerprintDelivery(profile, fingerprint, live, { strict: true });
     if (!verified.ok) throw new Error('Firefox 指纹交付校验失败：' + verified.mismatches.map((m) => m.message).join('; '));
   }
+  contextEmulation.set(connection, ensureContext);
   return {
     context: contexts[0].context, preload: preload.script, warnings,
     capabilities: {
@@ -118,9 +136,13 @@ async function initializeFirefoxFingerprint(connection, fingerprint, profile, op
 }
 
 async function navigateFirefoxStartup(connection, context, urls) {
+  const ensureContext = contextEmulation.get(connection);
+  if (!ensureContext) throw new Error('Firefox fingerprint initialization is required before navigation');
   urls = [...new Set(urls.map(startupNavigationUrl).filter(Boolean))];
   for (let index = 0; index < urls.length; index += 1) {
     const target = index === 0 ? context : (await connection.command('browsingContext.create', { type: 'tab' })).context;
+    if (!target) throw new Error('Firefox did not create a browsing context');
+    await ensureContext(target, 'startup');
     await connection.command('browsingContext.navigate', { context: target, url: urls[index], wait: 'interactive' }, 15000);
   }
 }

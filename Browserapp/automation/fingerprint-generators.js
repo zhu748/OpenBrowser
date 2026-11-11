@@ -1,5 +1,7 @@
 'use strict';
 
+const { noiseDelta } = require('./fingerprint/noise-policy');
+
 /**
  * Seed-derived fingerprint generators and persona data tables.
  *
@@ -355,18 +357,9 @@ function listIncludesHost(list, host) {
  * Resolve site-aware canvas/webgl stability.
  * mode: off | auto | force
  *
- * 【稳定性策略与 skipHosts 语义设计说明】
- * 1. stability 目标：高风控站点（如电商、金融、社交）往往对 Canvas / WebGL 做重复采样比对，
- *    若每次采样结果波动则判为指纹浏览器。
- *    因此当 stability 命中（active === true）时，将噪声振幅 noiseAmplitude 压缩为 1。
- *    根据 delta = Math.floor(noise * amp) - Math.floor(amp / 2)，当 amp=1 时 delta 恒为 0（零噪声，最大一致性）。
- * 2. skipHosts 含义：例外名单（DEFAULT_STABILITY_SKIP_HOSTS 包括 sephora.com, cdn.*, static.* 等）。
- *    其语义是“即使父域命中 stability 策略，这些主机也保留常规噪声”的例外表（not skipped 即保留降噪），
- *    绝不是“跳过指纹伪造”。命中 skipHosts 时 active 为 false，保留默认常规噪声（amp=3，delta ∈ {-1,0,1}）。
- * 3. mode 三态语义：
- *    - 'force': 强制开启 stability（除 skipHosts 外全部 active=true，零噪声）
- *    - 'off': 关闭 stability（active 恒为 false，全部保留常规噪声 amp=3）
- *    - 'auto' / 默认: 仅当 host 命中 stability.hosts 且未被 skipHosts 排除时 active=true（零噪声），其余站点保留常规噪声。
+ * Stable hosts reuse sparse deterministic +/-1 perturbations. Normal mode
+ * retains the original -1/0/+1 distribution. Neither mode disables noise.
+ * skipHosts selects normal mode; off/auto/force control host selection.
  */
 function resolveStabilityPolicy(privacy = {}, options = {}) {
   const fpIn = (privacy.fingerprint && typeof privacy.fingerprint === 'object' ? privacy.fingerprint : null) || (options.fingerprint && typeof options.fingerprint === 'object' ? options.fingerprint : {});
@@ -392,7 +385,7 @@ function resolveStabilityPolicy(privacy = {}, options = {}) {
   let active = false;
   if (mode === 'force') active = !skipped;
   else if (mode === 'auto') active = matched && !skipped;
-  // reduced amplitude: 1 (stable) vs 3 (default) pixel delta range
+  // Stable mode uses sparse nonzero samples; normal mode keeps the legacy distribution.
   const noiseAmplitude = active ? 1 : 3;
   const sampleStepDivisor = active ? 128 : 64;
   return {
@@ -485,7 +478,8 @@ function applyStableCanvasNoise(imageData, mark, options = {}) {
       for (let x = 0; x < (limitW || width); x += square) {
         const px = ((y * width) + x) * 4;
         if (px + 3 >= data.length) continue;
-        const delta = Math.floor(noise(px + mark) * amp) - Math.floor(amp / 2);
+        if (data[px + 3] === 0) continue;
+        const delta = noiseDelta(noise(px + mark), amp);
         locked.push({ px, delta });
       }
     }
@@ -494,6 +488,7 @@ function applyStableCanvasNoise(imageData, mark, options = {}) {
   for (const item of locked) {
     const px = item.px;
     if (px + 3 >= data.length) continue;
+    if (data[px + 3] === 0) continue;
     data[px] = Math.max(0, Math.min(255, data[px] + item.delta));
   }
   return imageData;

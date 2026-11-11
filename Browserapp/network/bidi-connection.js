@@ -83,7 +83,9 @@ class BidiConnection {
     for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(error); }
     this.pending.clear();
     try { this.socket?.close(); } catch (_) {}
-    if (!this.intentionalClose) { try { this.onDisconnect?.(error); } catch (_) {} }
+    if (!this.intentionalClose) {
+      try { Promise.resolve(this.onDisconnect?.(error)).catch(() => {}); } catch (_) {}
+    }
   }
 
   close() {

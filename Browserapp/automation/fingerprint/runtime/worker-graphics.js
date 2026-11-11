@@ -222,7 +222,7 @@ module.exports = `  const canvasMark = Number(CFG.canvas?.mark) || 1;
             for (let i = 0; pixels && i < pixels.length; i += step2) {
               const alphaIdx = i - (i % 4) + 3;
               if (alphaIdx < pixels.length && pixels[alphaIdx] === 0) continue;
-              const n = Math.floor(noise(i + mark) * ampW) - Math.floor(ampW / 2);
+              const n = noiseDelta(noise(i + mark), ampW);
               pixels[i] = Math.max(0, Math.min(255, (pixels[i] || 0) + n));
             }
           }

@@ -27,6 +27,7 @@ const path = require('path');
 const { saveDeferredSession } = require('./startup-session');
 const { assertUrlAccessPolicySupported } = require('../automation/url-access-policy');
 const { runtimePolicyProfile } = require('./runtime-policy');
+const { closePageFingerprintConnections } = require('./fingerprint-transport');
 
 module.exports = {
   cleanupRunningItem(profileId, item, options = {}) {
@@ -50,6 +51,7 @@ module.exports = {
       item.bidiConnection = null;
       item.workerFingerprintConnection?.close();
       item.workerFingerprintConnection = null;
+      closePageFingerprintConnections(item);
 
       if (options.kill && !isChildExited(item.child) && item.pid) {
         await killProcessTree(item.pid, managedBrowserKillOptions(item, item.root)).catch(() => {});

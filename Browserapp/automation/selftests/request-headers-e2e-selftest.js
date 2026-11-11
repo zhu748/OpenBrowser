@@ -56,7 +56,7 @@ const check = async (name, fn) => {
   }
 };
 const skip = (name, why) => {
-  results.push({ name, ok: true });
+  results.push({ name, ok: null, skipped: true });
   console.log(`  SKIP  ${name}${why ? " - " + why : ""}`);
 };
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -168,7 +168,8 @@ function normalizeHeaders(headers) {
     assert.strictEqual(prof.metadata.architecture, "");
     assert.strictEqual(prof.metadata.bitness, "");
     assert.strictEqual(prof.clientHints.mobile, "1");
-    assert.ok(prof.userAgent.includes("Android 14"));
+    assert.ok(prof.userAgent.includes("Android 10; K"));
+    assert.strictEqual(prof.metadata.platformVersion, "14.0.0");
     assert.ok(prof.userAgent.includes("Mobile Safari"));
   });
 
@@ -463,6 +464,7 @@ function normalizeHeaders(headers) {
 
   if (process.platform !== "darwin" || !fs.existsSync(launcher)) {
     skip("Real browser E2E session", "macos-x64 kernel launcher not available on this environment");
+    process.exitCode = results.some((r) => r.ok === false) ? 1 : 2;
     return;
   }
 

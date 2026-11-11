@@ -77,7 +77,7 @@ const _checkKnownGap = (name, fn) => {
 };
 
 const skip = (name, why) => {
-  results.push({ name, ok: true });
+  results.push({ name, ok: null, skipped: true });
   console.log(`  SKIP  ${name}${why ? ' - ' + why : ''}`);
 };
 
@@ -823,8 +823,9 @@ async function runAuditSession(label, userAgent, osName, timezone, serverPort, m
 
 (async () => {
   if (process.platform !== 'darwin' || !fs.existsSync(launcher)) {
-    skip('macos-x64 kernel launcher available');
-    console.log(`fingerprint-cross-surface-audit-selftest: OK ${results.length}/${results.length}`);
+    skip('native browser verification', 'macos-x64 kernel launcher unavailable');
+    console.log('fingerprint-cross-surface-audit-selftest: SKIPPED (native browser unavailable)');
+    process.exitCode = 2;
     return;
   }
 
@@ -1122,12 +1123,12 @@ async function runAuditSession(label, userAgent, osName, timezone, serverPort, m
     server.close();
   }
 
-  const passed = results.filter((r) => r.ok).length;
-  const total = results.length;
-  console.log(`\nfingerprint-cross-surface-audit-selftest: OK ${passed}/${total}`);
-  if (passed !== total) {
-    process.exitCode = 1;
-  }
+  const passed = results.filter((r) => r.ok === true).length;
+  const failed = results.filter((r) => r.ok === false).length;
+  const skipped = results.filter((r) => r.skipped).length;
+  console.log(`\nfingerprint-cross-surface-audit-selftest: ${passed} passed, ${skipped} skipped, ${failed} failed`);
+  process.exitCode = failed ? 1 : (skipped ? 2 : 0);
+
 })().catch((err) => {
   console.error('Audit execution error:', err);
   process.exit(1);

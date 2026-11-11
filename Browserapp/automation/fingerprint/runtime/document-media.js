@@ -526,41 +526,6 @@ module.exports = `  // --- media capture policy ---
     } catch (_) {}
   }
 
-  // --- navigator.connection persona ---
-  // Real desktop Chrome always ships NetworkInformation; its effectiveType/downlink/rtt answer
-  // from the host NIC, a stable cross-API contradiction once UA/screen claim another machine
-  // class. Persona values ride the native prototype accessors (battery pattern): receivers we
-  // issued get the profile answer, anything else falls through to the native getter. iOS
-  // personas delete navigator.connection upstream, so the presence check keeps them intact.
-  if (CFG.connection && typeof navigator !== "undefined" && navigator.connection
-    && typeof NetworkInformation !== "undefined" && NetworkInformation.prototype) {
-    try {
-      const netProto = NetworkInformation.prototype;
-      const realConnection = navigator.connection;
-      const netState = CFG.connection;
-      const patchedNetKeys = new Set();
-      const patchNetworkAccessor = (key) => {
-        if (patchedNetKeys.has(key)) return;
-        const descriptor = Object.getOwnPropertyDescriptor(netProto, key);
-        if (!descriptor || typeof descriptor.get !== "function") return;
-        const nativeGet = descriptor.get;
-        const wrappedGet = nativeLike(function networkValue() {
-          const original = nativeGet.call(this);
-          if (this === realConnection && Object.prototype.hasOwnProperty.call(netState, key)) return netState[key];
-          return original;
-        }, nativeGet, "get " + key, 0);
-        Object.defineProperty(netProto, key, {
-          configurable: descriptor.configurable,
-          enumerable: descriptor.enumerable,
-          get: wrappedGet,
-          set: descriptor.set,
-        });
-        patchedNetKeys.add(key);
-      };
-      for (const key of ["type", "effectiveType", "downlink", "rtt", "saveData"]) patchNetworkAccessor(key);
-    } catch (_) {}
-  }
-
   // --- bluetooth adapter ---
   // Keep the native interface and prototype shape, but answer as a machine without an adapter.
   // Hiding the whole interface would itself diverge from a desktop Chrome secure context.

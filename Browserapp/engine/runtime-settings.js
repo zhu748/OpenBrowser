@@ -15,6 +15,7 @@ const { compileUrlAccessPolicy } = require('../automation/url-access-policy');
 const { runtimePolicyProfile, applyTargetRuntimePolicy, pruneRuntimePolicyPages } = require('./runtime-policy');
 const { evaluateFingerprintDelivery } = require('../automation/request-header-rewriter');
 const { fingerprintConfigHash, isEphemeralDocumentUrl } = require('./fingerprint-injection');
+const { pageFingerprintConnection, pageFingerprintRegistration, closePageFingerprintConnections } = require('./fingerprint-transport');
 
 module.exports = {
   async applyRuntimeSettings(port, profile, fingerprint = null, options = {}) {
@@ -53,6 +54,7 @@ module.exports = {
       throw new Error('网址访问规则拦截尚未就绪，已停止继续浏览');
     }
     const policyOwner = options.trackOn || applied;
+    closePageFingerprintConnections(policyOwner, new Set(tabs.map((tab) => tab.id)));
     const sessions = options.trackOn?.fingerprintTargetSessions || new Map();
     const sessionTargets = new Map([...sessions].map(([sessionId, target]) => [target.targetId, { ...target, sessionId }]));
     const policyIds = new Set(tabs.map((tab) => tab.id));
@@ -63,9 +65,11 @@ module.exports = {
     for (const [targetId, target] of policyTargets) {
       try {
         await applyTargetRuntimePolicy({ owner: policyOwner, targetId, profile: policyProfile, targetType: target.targetType,
+          registrationOwner: target.sessionId ? options.trackOn.workerFingerprintConnection : pageFingerprintRegistration(policyOwner, target.tab),
+          registrationScope: target.sessionId || '',
           invoke: target.sessionId
             ? (method, params) => options.trackOn.workerFingerprintConnection.command(method, params, { sessionId: target.sessionId, timeout: 5000 })
-            : (method, params) => cdp.call(target.tab.webSocketDebuggerUrl, method, params),
+            : async (method, params) => (await pageFingerprintConnection(this, policyOwner, target.tab)).command(method, params),
         });
       } catch (error) {
         if (target.sessionId && !sessions.has(target.sessionId)) continue;
@@ -113,21 +117,30 @@ module.exports = {
         continue;
       }
       try {
+        const flat = sessionTargets.get(tab.id);
+        const connection = flat ? options.trackOn.workerFingerprintConnection
+          : await pageFingerprintConnection(this, policyOwner, tab);
+        const invoke = (method, params, timeout = 8000) => connection.command(method, params, {
+          ...(flat ? { sessionId: flat.sessionId } : {}), timeout,
+        });
         const fontBlobBridge = fp?.fontBlobBridge || options?.trackOn?.fontBlobBridge || options?.trackOn?.fingerprint?.fontBlobBridge;
         if (fontBlobBridge?.channelName && tab.webSocketDebuggerUrl) {
           if (options?.trackOn) { options.trackOn.fontBlobBridge = fontBlobBridge; options.trackOn.fingerprint = fp; }
           try {
-            await cdp.call(tab.webSocketDebuggerUrl, 'Runtime.enable', {}).catch(() => {});
-            await cdp.call(tab.webSocketDebuggerUrl, 'Runtime.addBinding', { name: fontBlobBridge.channelName }).catch((err) => {
+            await invoke('Runtime.enable', {}).catch(() => {});
+            await invoke('Runtime.addBinding', { name: fontBlobBridge.channelName }).catch((err) => {
               const msg = String(err?.message || err);
               if (!/already exists/i.test(msg)) {}
             });
           } catch (_) {}
         }
-        if (force || !applied.has(tab.id)) await applyFingerprintToTab(cdp.call, tab.webSocketDebuggerUrl, fp, enriched, {
+        if (force || !applied.has(tab.id)) await applyFingerprintToTab(invoke, null, fp, enriched, {
+          applyKey: `target:${tab.id}`,
+          registrationOwner: connection,
+          registrationScope: flat?.sessionId || '',
           livePatchDocument: isEphemeralDocumentUrl(tab.url),
         });
-        const probe = await cdp.call(tab.webSocketDebuggerUrl, 'Runtime.evaluate', {
+        const probe = await invoke('Runtime.evaluate', {
           expression: LIVE_PROBE_EXPRESSION, returnByValue: true, awaitPromise: true,
         }, 8000);
         const live = probe?.result?.value ?? probe?.value ?? null;

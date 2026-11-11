@@ -333,6 +333,7 @@ async function main() {
   // -------------------------------------------------------------------------
   if (process.platform !== 'darwin' || !fs.existsSync(launcher)) {
     console.log('SKIP: macOS Chromium kernel not present on this host.');
+    process.exitCode = 2;
     return;
   }
 

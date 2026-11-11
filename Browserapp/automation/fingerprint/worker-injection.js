@@ -38,6 +38,7 @@ function buildWorkerInjectionScript(fp) {
     languages: fp.languages,
     timezone: injectionTimezone(fp),
     hardwareConcurrency: fp.hardwareConcurrency,
+    connection: fp.connection || null,
     // Pass persona's legal quantised tiers (0.25/0.5) through; snap illegal values to the
     // nearest step — same policy as the main-world script, shared in injection-config.js.
     deviceMemory: injectionDeviceMemory(fp),

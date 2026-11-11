@@ -113,7 +113,7 @@ class PersistentConnection {
     this.failAll(error);
     if (notify) {
       this.disconnectNotified = true;
-      try { this.onDisconnect?.(error, this); } catch (_) {}
+      try { Promise.resolve(this.onDisconnect?.(error, this)).catch(() => {}); } catch (_) {}
     }
     try { socket?.close(); } catch (_) {}
   }

@@ -146,6 +146,15 @@ const LIVE_PROBE_EXPRESSION = `(async () => {
       screenWidth: screen.width,
       screenHeight: screen.height,
       devicePixelRatio: window.devicePixelRatio,
+      connection: (() => {
+        const network = navigator.connection;
+        if (!network) return null;
+        const values = {};
+        for (const key of ['type', 'effectiveType', 'downlink', 'rtt', 'saveData']) {
+          if (key in network) values[key] = network[key];
+        }
+        return values;
+      })(),
       webglVendor: webglVendor,
       webglRenderer: webglRenderer,
       webglUnmasked,

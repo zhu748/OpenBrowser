@@ -11,7 +11,7 @@
 
 const cdp = require('../cdp');
 const { createCssFontResponseRewriter } = require('../automation/css-font-response-rewrite');
-const { applyFingerprintToTab, buildFingerprint, buildWorkerInjectionScript } = require('../automation/fingerprint');
+const { applyFingerprintToTab, buildFingerprint, buildWorkerInjectionScript, forgetFingerprintOwner, forgetFingerprintTarget } = require('../automation/fingerprint');
 const { LIVE_PROBE_EXPRESSION, fpLog } = require('../automation/fingerprint-debug-log');
 const { deriveFontPlaceholder } = require('../automation/font-placeholder');
 const { fingerprintForNativeKernelInject } = require('../automation/kernel-init-sync');
@@ -21,6 +21,8 @@ const { getPlatformFontPayload } = require('../automation/query-local-font-blob-
 const { RequestHeaderRewriter, evaluateFingerprintDelivery } = require('../automation/request-header-rewriter');
 const { buildWorkerFontPresenceSource } = require('../automation/worker-font-presence-fallback');
 const crypto = require('crypto');
+const { closePageFingerprintConnection } = require('./fingerprint-transport');
+const { FingerprintSession } = require('./fingerprint-session');
 
 // Stable identity of the document-start config. Two inject payloads built from the same
 // fingerprint serialise identically, so this is what decides whether a live tab still matches
@@ -97,6 +99,7 @@ module.exports = {
     // One owner for DedicatedWorker, SharedWorker and ServiceWorker delivery.
     const workerTypes = new Set(['worker', 'shared_worker', 'service_worker']);
     const targetSetup = new Map();
+    const sessionStates = new Map();
     const internalUrl = /^(chrome|chrome-extension|edge|edge-extension|devtools):/i;
     const report = (error, targetInfo = {}) => {
       item.workerFingerprintError = error.message;
@@ -146,6 +149,32 @@ module.exports = {
       } else {
         barrierResolve();
       }
+    };
+
+    const replacementFor = (state) => [...sessionStates.values()].some((other) =>
+      other !== state && other.targetId === state.targetId && !other.reason);
+    const cancelAll = () => {
+      for (const state of sessionStates.values()) state.cancel('closed');
+      sessionStates.clear();
+      workerSessionToTargetId.clear();
+      targetSetup.clear();
+      item.fpAppliedTargets?.clear();
+      item.attachedWorkerTargets?.clear();
+    };
+    const targetStillExists = async (connection, targetId) => {
+      try {
+        const snapshot = await connection.command('Target.getTargets', {}, { timeout: 3000 });
+        if (!Array.isArray(snapshot?.targetInfos)) return null;
+        return snapshot.targetInfos.some((target) => (target.targetId || target.id) === targetId);
+      } catch (_) { return null; }
+    };
+    const confirmLostReadySession = async (state, connection) => {
+      if (item.stopping || item.cleanedUp || replacementFor(state)) return;
+      const exists = await targetStillExists(connection, state.targetId);
+      if (item.stopping || item.cleanedUp || replacementFor(state) || exists === false) return;
+      await this.handleBrowserGone(item.profile.id, item, 'fingerprint-session-detached', {
+        expected: false, error: 'A live target lost its verified fingerprint session', kill: true, waitForExit: true,
+      });
     };
 
     const onAttached = (event, connection) => {
@@ -226,16 +255,28 @@ module.exports = {
       if (event?.method === 'Target.detachedFromTarget') {
         const detachedSessionId = event.params?.sessionId;
         const detachedTargetId = event.params?.targetId || (detachedSessionId ? workerSessionToTargetId.get(detachedSessionId) : null);
-        if (detachedTargetId && item.attachedWorkerTargets) {
+        const detachedState = sessionStates.get(detachedSessionId);
+        detachedState?.cancel('detached');
+        sessionStates.delete(detachedSessionId);
+        const hasReplacement = [...policySessions].some(([id, target]) =>
+          id !== detachedSessionId && target.targetId === detachedTargetId);
+        if (!hasReplacement && detachedTargetId && item.attachedWorkerTargets) {
           item.attachedWorkerTargets.delete(detachedTargetId);
         }
-        if (detachedTargetId) forgetTargetRuntimePolicy(item, detachedTargetId);
+        if (detachedTargetId) {
+          forgetFingerprintTarget(connection, `target:${detachedTargetId}`, detachedSessionId);
+          if (!hasReplacement) item.fpAppliedTargets?.delete(detachedTargetId);
+        }
+        if (detachedTargetId) forgetTargetRuntimePolicy(item, detachedTargetId, connection, detachedSessionId);
         if (detachedSessionId) {
           policySessions.delete(detachedSessionId);
           workerSessionToTargetId.delete(detachedSessionId);
           targetSetup.delete(detachedSessionId);
           try { requestHeaderRewriter.cleanupSession(detachedSessionId); } catch (_) {}
           try { fontResponseRewriter.cleanupSession?.(detachedSessionId); } catch (_) {}
+        }
+        if (detachedState?.ready) {
+          confirmLostReadySession(detachedState, connection).catch((error) => report(error, { targetId: detachedTargetId }));
         }
         return;
       }
@@ -244,11 +285,16 @@ module.exports = {
       if (event?.method === 'Target.targetDestroyed') {
         const destroyedId = event.params?.targetId;
         forgetTargetRuntimePolicy(item, destroyedId);
+        forgetFingerprintTarget(connection, `target:${destroyedId}`);
+        closePageFingerprintConnection(item, destroyedId);
+        item.fpAppliedTargets?.delete(destroyedId);
         if (destroyedId && item.attachedWorkerTargets) {
           item.attachedWorkerTargets.delete(destroyedId);
         }
         for (const [session, target] of workerSessionToTargetId) {
           if (target !== destroyedId) continue;
+          sessionStates.get(session)?.cancel('destroyed');
+          sessionStates.delete(session);
           workerSessionToTargetId.delete(session);
           policySessions.delete(session);
           targetSetup.delete(session);
@@ -264,13 +310,16 @@ module.exports = {
         return;
       }
 
-      if (event.method !== 'Target.attachedToTarget') return;
+      if (event.method !== 'Target.attachedToTarget' || item.stopping || item.cleanedUp) return;
       const { sessionId, targetInfo = {}, waitingForDebugger } = event.params || {};
       if (!sessionId) return;
       if (targetSetup.has(sessionId)) return targetSetup.get(sessionId);
       const targetId = targetInfo.targetId;
       if (targetId) workerSessionToTargetId.set(sessionId, targetId);
       const isInitial = Boolean(targetId && pendingInitialTargets.has(targetId));
+      const state = new FingerprintSession({ sessionId, targetId, item, connection });
+      sessionStates.set(sessionId, state);
+      const scopedConnection = { command: (method, params, options) => state.command(method, params, options) };
 
       const setup = (async () => {
         // A fresh tab (window.open with noopener, ctrl-click, or any target opened without an
@@ -281,13 +330,14 @@ module.exports = {
         // allows and never released twice.
         let pausedTargetNeedsResume = Boolean(waitingForDebugger);
         const resumeTarget = async () => {
+          state.assertActive();
           if (!pausedTargetNeedsResume) return;
           pausedTargetNeedsResume = false;
-          await connection.command('Runtime.runIfWaitingForDebugger', {}, { sessionId, timeout: 3000 });
+          await state.command('Runtime.runIfWaitingForDebugger', {}, { sessionId, timeout: 3000 });
         };
         const armResponseRewriting = async (timeout) => {
-          await fontResponseRewriter.enable(connection, { sessionId, timeout });
-          await connection.command('Fetch.enable', {
+          await fontResponseRewriter.enable(scopedConnection, { sessionId, timeout });
+          await state.command('Fetch.enable', {
             patterns: [
               { urlPattern: '*', requestStage: 'Request' },
               { urlPattern: '*', requestStage: 'Response', resourceType: 'Document' },
@@ -299,7 +349,7 @@ module.exports = {
           const pageLikeTypes = new Set(['page', 'iframe', 'popup', 'webview']);
           if (targetInfo.type === 'page' || targetInfo.type === 'iframe' || pageLikeTypes.has(targetInfo.type)) {
             // Nested attach so workers/iframes under this page also pause for inject.
-            await connection.command('Target.setAutoAttach', {
+            await state.command('Target.setAutoAttach', {
               autoAttach: true,
               waitForDebuggerOnStart: true,
               flatten: true,
@@ -308,7 +358,7 @@ module.exports = {
               // Startup barrier targets are known-ready and must be sanitized before first paint.
               // Critical: inject fingerprint BEFORE resuming the page/iframe target.
               // Polling in startRunningWatch is only a fallback, not the primary path.
-              await this.applyFingerprintToSession(connection, sessionId, item, fingerprint, { ...targetInfo, waitingForDebugger });
+              await state.run(() => this.applyFingerprintToSession(connection, sessionId, item, fingerprint, { ...targetInfo, waitingForDebugger, setupGuard: state }));
               // Enable Fetch while this page/iframe is paused. The next navigation then receives
               // sanitized HTML/CSS bytes before the renderer tokenizes its static styles.
               await armResponseRewriting(8000);
@@ -318,42 +368,47 @@ module.exports = {
               let timer;
               try {
                 await Promise.race([
-                  this.applyFingerprintToSession(connection, sessionId, item, fingerprint, { ...targetInfo, waitingForDebugger }),
-                  new Promise((resolve, reject) => { timer = setTimeout(() => reject(new Error('Fingerprint target injection timeout')), injectBudget); }),
+                  state.run(() => this.applyFingerprintToSession(connection, sessionId, item, fingerprint, { ...targetInfo, waitingForDebugger, setupGuard: state })),
+                  new Promise((_resolve, reject) => { timer = setTimeout(() => {
+                    state.cancel('timeout', 'Fingerprint target injection timeout');reject(state.error);
+                  }, injectBudget); }),
                 ]);
                 await armResponseRewriting(injectBudget);
               } finally { clearTimeout(timer); }
             }
           } else if (workerTypes.has(targetInfo.type) && !internalUrl.test(String(targetInfo.url || ''))) {
             if (!item.attachedWorkerTargets) item.attachedWorkerTargets = new Set();
-            await connection.command('Network.enable', {}, { sessionId, timeout: 3000 });
+            await state.command('Network.enable', {}, { sessionId, timeout: 3000 });
             const workerUa = requestHeaderRewriter.enabled ? requestHeaderRewriter.persona : null;
             if (workerUa) {
-              await connection.command('Network.setUserAgentOverride', {
+              await state.command('Network.setUserAgentOverride', {
                 userAgent: workerUa.userAgent,
                 acceptLanguage: workerUa.acceptLanguage,
                 platform: workerUa.platformNav || workerUa.platform,
                 ...(requestHeaderRewriter.supportsClientHints ? { userAgentMetadata: workerUa.metadata } : {}),
               }, { sessionId, timeout: 3000 });
             }
-            await connection.command('Fetch.enable', {
+            await state.command('Fetch.enable', {
               patterns: [{ urlPattern: '*', requestStage: 'Request' }],
             }, { sessionId, timeout: 3000 });
             // Worker fingerprint injection (DedicatedWorker, SharedWorker, and ServiceWorker)
             // Evaluated before runIfWaitingForDebugger so the worker global scope carries persona
             // mocks before evaluating initial worker scripts. Short timeout guarantees no hang.
-            const evaluation = await connection.command('Runtime.evaluate', { expression: source }, { sessionId, timeout: 3000 });
+            const evaluation = await state.command('Runtime.evaluate', { expression: source }, { sessionId, timeout: 3000 });
             if (evaluation?.exceptionDetails) {
               throw new Error(evaluation.exceptionDetails.exception?.description || evaluation.exceptionDetails.text || 'Worker fingerprint execution failed');
             }
             await applyTargetRuntimePolicy({ owner: item, targetId: targetId || sessionId, targetType: targetInfo.type,
+              registrationOwner: connection, registrationScope: sessionId,
               profile: runtimePolicyProfile(item.profile, this.profiles?.get?.(item.profile.id)),
-              invoke: (method, params) => connection.command(method, params, { sessionId, timeout: 3000 }),
+              invoke: (method, params) => state.command(method, params, { timeout: 3000 }),
             });
-            if (targetId) item.attachedWorkerTargets.add(targetId);
           }
           await resumeTarget();
-          if (targetId && (pageLikeTypes.has(targetInfo.type) || workerTypes.has(targetInfo.type)) && !internalUrl.test(String(targetInfo.url || ''))) {
+          state.assertActive();
+          state.ready = Boolean(targetId && (pageLikeTypes.has(targetInfo.type) || workerTypes.has(targetInfo.type)) && !internalUrl.test(String(targetInfo.url || '')));
+          if (state.ready && workerTypes.has(targetInfo.type)) item.attachedWorkerTargets?.add(targetId);
+          if (state.ready) {
             policySessions.set(sessionId, { targetId, type: targetInfo.type });
           }
           if (pageLikeTypes.has(targetInfo.type) && targetId) {
@@ -367,6 +422,20 @@ module.exports = {
           }
         } catch (error) {
           pausedTargetNeedsResume = false;
+          if (!state.reason) state.cancel('failed', error.message);
+          if (sessionStates.get(sessionId) === state) sessionStates.delete(sessionId);
+          if (state.reason === 'closed' || item.stopping || item.cleanedUp || connection.closed) return;
+          if (state.reason === 'destroyed') return;
+          if (state.reason === 'detached') {
+            if (replacementFor(state)) return;
+            const exists = await targetStillExists(connection, targetId);
+            if (replacementFor(state)) return;
+            if (exists === false) {
+              pendingInitialTargets.delete(targetId);
+              if (!pendingInitialTargets.size) settleBarrier();
+              return;
+            }
+          }
           report(error, targetInfo);
           // Closing an iframe/worker target can be unsupported; then stop its browser.
           try {
@@ -392,7 +461,9 @@ module.exports = {
 
     const connection = await cdp.connect(browserWs, {
       onEvent: onAttached,
-      onDisconnect: (error) => {
+      onDisconnect: (error, disconnected) => {
+        cancelAll();
+        forgetFingerprintOwner(disconnected);
         policySessions.clear();
         try { requestHeaderRewriter.destroy(); } catch (_) {}
         try { fontResponseRewriter.destroy?.(); } catch (_) {}
@@ -417,6 +488,8 @@ module.exports = {
 
     const origClose = connection.close.bind(connection);
     connection.close = () => {
+      cancelAll();
+      forgetFingerprintOwner(connection);
       policySessions.clear();
       try { requestHeaderRewriter.destroy(); } catch (_) {}
       try { fontResponseRewriter.destroy?.(); } catch (_) {}
@@ -502,15 +575,31 @@ module.exports = {
     // session-scoped CDP calls for targets attached with flatten:true
     const isSubframe = targetInfo?.type === 'iframe';
     const isWaiting = Boolean(targetInfo?.waitingForDebugger || targetInfo?.isWaiting);
+    const setupGuard = targetInfo.setupGuard;
+    setupGuard?.assertActive();
+    if (item.fingerprintPageConnections?.has(targetInfo?.targetId)) {
+      // Retire the old session before applying the new session's native
+      // overrides, so old-agent teardown cannot undo the new emulation.
+      // Blank/paused targets cannot run a site during this handover.
+      if (!isWaiting && !isEphemeralDocumentUrl(targetInfo?.url)) {
+        throw Object.assign(new Error('Cannot transfer fingerprint ownership on an active document'), {
+          code: 'FINGERPRINT_HANDOVER_UNSAFE',
+        });
+      }
+      closePageFingerprintConnection(item, targetInfo.targetId);
+    }
     const sessionCall = async (method, params = {}, timeout = 8000) => {
       try {
+        setupGuard?.assertActive();
         // Optimization: on targets paused waiting for debugger at startup, Runtime.evaluate
         // blocks until Runtime.runIfWaitingForDebugger is called, hanging for 6-8s timeout.
         // Page.addScriptToEvaluateOnNewDocument already guarantees sync execution on document start.
         if (isWaiting && method === 'Runtime.evaluate') {
           return {};
         }
-        return await connection.command(method, params, { sessionId, timeout });
+        return setupGuard
+          ? await setupGuard.command(method, params, { timeout })
+          : await connection.command(method, params, { sessionId, timeout });
       } catch (err) {
         if (isSubframe && /Command can only be executed on top-level targets|Cannot find default execution context/i.test(String(err?.message || err))) {
           return {};
@@ -545,31 +634,22 @@ module.exports = {
       } catch (_) {}
     }
     await applyFingerprintToTab(sessionCall, null, injectFp, enriched, {
-      // Same `target:<id>` key space the ws-URL fallback in tab-apply.js derives, so
-      // the alreadyPatched short-circuit sees what the page-WebSocket callers recorded
-      // for the same physical tab instead of registering the document-start script twice.
+      // Keep one registration per connection/session. Once this persistent
+      // session is ready it can replace the initial page-WebSocket owner.
       applyKey: `target:${targetInfo?.targetId || sessionId}`,
+      registrationOwner: connection,
+      registrationScope: sessionId,
       targetType: targetInfo?.type,
       isSubframe,
       isWaiting,
       livePatchDocument: isEphemeralDocumentUrl(targetInfo?.url),
     });
     await applyTargetRuntimePolicy({ owner: item, targetId: targetInfo?.targetId || sessionId,
+      registrationOwner: connection, registrationScope: sessionId,
       targetType: targetInfo?.type || 'page', waiting: isWaiting,
       profile: runtimePolicyProfile(profile, this.profiles?.get?.(profile.id)), invoke: sessionCall,
     });
-    // Synchronize Blink physical layout scaling with target devicePixelRatio for desktop personas.
-    // Without setDeviceMetricsOverride, Blink computes CSS @media (resolution) at host 1dppx,
-    // creating an observable contradiction with window.devicePixelRatio and JS matchMedia.
-    const dpr = Number(injectFp?.screen?.devicePixelRatio);
-    if (dpr && dpr !== 1 && !injectFp?.mobileDevice && !isSubframe && targetInfo?.type !== 'iframe') {
-      await sessionCall('Emulation.setDeviceMetricsOverride', {
-        width: 0,
-        height: 0,
-        deviceScaleFactor: dpr,
-        mobile: false,
-      }).catch(() => {});
-    }
+    setupGuard?.assertActive();
     item.fpAppliedHash = fingerprintConfigHash(injectFp);
     item.fingerprint = baseFp;
     return injectFp;

@@ -43,6 +43,21 @@ function realm({ worker = false, secure = true } = {}) {
   return scope;
 }
 
+function installNativeNetwork(scope, rtt) {
+  scope.hostRtt = rtt;
+  vm.runInContext(`
+    class NetworkInformation {
+      get rtt(){if(this!==connection)throw new TypeError('Illegal invocation');return hostRtt}
+      get downlink(){if(this!==connection)throw new TypeError('Illegal invocation');return 999}
+      get effectiveType(){if(this!==connection)throw new TypeError('Illegal invocation');return 'host'}
+      get saveData(){if(this!==connection)throw new TypeError('Illegal invocation');return true}
+    }
+    const connection=new NetworkInformation();
+    Object.defineProperty(navProto,'connection',{configurable:true,get(){return connection}});
+    globalThis.NetworkInformation=NetworkInformation;
+  `, scope);
+}
+
 (async () => {
   await test('document and worker Client Hints accept iterables, validate arguments and reject forged receivers', async () => {
     const fp = buildFingerprint(profile());
@@ -100,6 +115,37 @@ function realm({ worker = false, secure = true } = {}) {
     assert.equal(vm.runInContext("'userAgentData' in navigator", child), false);
     assert.equal(vm.runInContext("'deviceMemory' in navigator", child), false);
     assert.equal(vm.runInContext('navigator.userAgent', child), fp.userAgent);
+  });
+  await test('synchronous blank/nested child frames receive the network persona without waiting for CDP', () => {
+    const fp = buildFingerprint(profile({ network: { rtt: 250, downlink: 2.3, effectiveType: '3g' } }));
+    const parent = realm(), child = realm({ secure: false }), nested = realm();
+    installNativeNetwork(parent, 1);installNativeNetwork(child, 2);installNativeNetwork(nested, 3);
+    parent.childFrame = vm.runInContext('globalThis', child);
+    child.childFrame = vm.runInContext('globalThis', nested);
+    vm.runInContext(buildInjectionScript(fp), parent);
+    vm.runInContext('new HTMLIFrameElement().contentWindow', parent);
+    vm.runInContext('new HTMLIFrameElement().contentWindow', child);
+    for (const scope of [parent, child, nested]) {
+      assert.equal(vm.runInContext('navigator.connection.rtt', scope), fp.connection.rtt);
+      assert.equal(vm.runInContext('navigator.connection.downlink', scope), fp.connection.downlink);
+      assert.equal(vm.runInContext("'type' in navigator.connection", scope), false);
+      const RealmTypeError = vm.runInContext('TypeError', scope);
+      assert.throws(() => vm.runInContext("Object.getOwnPropertyDescriptor(NetworkInformation.prototype,'rtt').get.call(Object.create(NetworkInformation.prototype))", scope), (e) => e instanceof RealmTypeError);
+    }
+    const getter = vm.runInContext("Object.getOwnPropertyDescriptor(NetworkInformation.prototype,'rtt').get", child);
+    vm.runInContext('new HTMLIFrameElement().contentWindow', parent);
+    assert.equal(vm.runInContext("Object.getOwnPropertyDescriptor(NetworkInformation.prototype,'rtt').get", child), getter);
+  });
+  await test('child network APIs stay absent when native APIs are absent or the persona is iOS', () => {
+    for (const ios of [false, true]) {
+      const parent = realm(), child = realm();
+      installNativeNetwork(parent, 1);if (ios) installNativeNetwork(child, 2);
+      parent.childFrame = vm.runInContext('globalThis', child);
+      const fp = buildFingerprint({ ...profile(), ...(ios ? { os: 'iOS' } : {}) });
+      vm.runInContext(buildInjectionScript(fp), parent);
+      vm.runInContext('new HTMLIFrameElement().contentWindow', parent);
+      assert.equal(vm.runInContext("'connection' in navigator", child), false);
+    }
   });
   await test('real media-device mode cannot prune independent speech, battery, Bluetooth or connection policies', async () => {
     const fp = buildFingerprint(profile({ mediaDevices: 'real', speech: 'blocked', battery: 'blocked', bluetooth: 'blocked' }));

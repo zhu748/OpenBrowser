@@ -1,5 +1,7 @@
 'use strict';
 
+const { runtimeSource: stabilityRuntime } = require('../noise-policy');
+
 // Ordered fragment of one emitted IIFE; runtime-source.js owns assembly.
 module.exports = function bootstrap({ uaScript, json, bridgeToken }) {
   return `${uaScript}
@@ -14,53 +16,7 @@ module.exports = function bootstrap({ uaScript, json, bridgeToken }) {
     let x = Math.sin((n + 1) * seedNum) * 10000;
     return x - Math.floor(x);
   };
-  const normalizeHost = (value) => String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/^https?:\\/\\//, '')
-    .replace(/\\/.*$/, '')
-    .replace(/:\\d+$/, '')
-    .replace(/^\\*\\./, '');
-  const hostMatches = (host, pattern) => {
-    const h = normalizeHost(host);
-    const p = normalizeHost(pattern);
-    if (!h || !p) return false;
-    if (h === p) return true;
-    return h.endsWith('.' + p);
-  };
-  const listHasHost = (list, host) => Array.isArray(list) && list.some((item) => hostMatches(host, item));
-  const currentHost = () => {
-    try { return normalizeHost(location && location.hostname); } catch (_) { return ''; }
-  };
-  // stability 策略动态判定：
-  // - active === true (稳定性生效): noiseAmplitude = 1 -> delta 恒为 0 (零噪声，最大一致性)
-  // - active === false (常规噪声或 skipHosts 例外): noiseAmplitude = 3 -> delta ∈ {-1, 0, 1}
-  // - skipHosts 是保留常规噪声的例外表，不可短路返回原生真实数据
-  // The verdict is memoized at document scope: it depends only on CFG (fixed
-  // per injection) and location.hostname (fixed per document), yet it used to
-  // re-run up to 4 host-list scans on EVERY canvas noise sample — thousands of
-  // regex passes per minute on host-heavy configurations.
-  let __stabilityVerdict;
-  const stabilityActiveNow = () => {
-    if (__stabilityVerdict !== undefined) return __stabilityVerdict;
-    const st = CFG.stability || {};
-    let verdict;
-    if (st.mode === 'force') {
-      verdict = !listHasHost(st.skipHosts, currentHost());
-    } else if (st.mode === 'off') {
-      verdict = false;
-    } else {
-      const host = currentHost();
-      if (!host) verdict = Boolean(st.active);
-      else if (listHasHost(st.skipHosts, host)) verdict = false;
-      else if (listHasHost(st.hosts, host)) verdict = true;
-      else verdict = Boolean(st.active);
-    }
-    __stabilityVerdict = verdict;
-    return verdict;
-  };
-  const noiseAmplitudeNow = () => stabilityActiveNow() ? (Number(CFG.stability?.noiseAmplitude) || 1) : 3;
-  const sampleStepDivisorNow = () => stabilityActiveNow() ? (Number(CFG.stability?.sampleStepDivisor) || 128) : 64;
+${stabilityRuntime}
   const canvasNoiseLocks = new Map();
   // Lock entries are keyed by canvas size × call site; a page that allocates
   // many distinct sizes (video frames, chart libraries) used to grow the map
@@ -99,7 +55,7 @@ module.exports = function bootstrap({ uaScript, json, bridgeToken }) {
               const px = ((y * width) + x) * 4;
               if (px + 3 >= data.length) continue;
               if (data[px + 3] === 0) continue;
-              const delta = Math.floor(noise(px + mark) * amp) - Math.floor(amp / 2);
+              const delta = noiseDelta(noise(px + mark), amp);
               locked.push({ px: px, delta: delta });
             }
           }
@@ -118,7 +74,7 @@ module.exports = function bootstrap({ uaScript, json, bridgeToken }) {
           const px = ((y * width) + x) * 4;
           if (px + 3 >= data.length) continue;
           if (data[px + 3] === 0) continue;
-          const n = Math.floor(noise(px + mark) * amp) - Math.floor(amp / 2);
+          const n = noiseDelta(noise(px + mark), amp);
           data[px] = Math.max(0, Math.min(255, data[px] + n));
         }
       }
@@ -133,7 +89,7 @@ module.exports = function bootstrap({ uaScript, json, bridgeToken }) {
   // silently stops applying nobody can tell which fragment dropped it. With
   // CFG.telemetry on (a debugging build), fragment catches report once per
   // unique (fragment, key) through this hook; default builds keep the
-  // zero-noise behavior. The bridgeToken keys the report so the host can
+  // silent behavior. The bridgeToken keys the report so the host can
   // attribute it to a profile configuration.
   const telemetrySeen = new Set();
   const __obReportError = (fragment, key, error) => {

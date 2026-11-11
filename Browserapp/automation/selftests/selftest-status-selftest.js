@@ -1,0 +1,13 @@
+'use strict';
+const assert = require('node:assert/strict');
+const { classifySelftestResult: classify } = require('../../scripts/selftest-status');
+assert.equal(classify({ status: 0, stdout: 'PASS actual assertion\nsuite: OK 1/1' }), 'passed');
+assert.equal(classify({ status: 0, stdout: 'SKIP missing browser\nsuite: OK 1/1' }), 'skipped');
+assert.equal(classify({ status: 0, stdout: 'PASS offline assertion\nSKIP native browser' }), 'partial');
+assert.equal(classify({ status: 2, stdout: 'SKIPPED missing browser' }), 'skipped');
+assert.equal(classify({ status: 2, stdout: 'PASS offline\nSKIP browser' }), 'partial');
+assert.equal(classify({ status: 1, stdout: 'PASS offline\nSKIP browser', stderr: 'FAIL assertion' }), 'failed');
+assert.equal(classify({ status: null, signal: 'SIGTERM', stdout: 'SKIP' }), 'failed');
+assert.equal(classify({ status: 0, error: new Error('spawn failure') }), 'failed');
+assert.equal(classify({ status: 0, stdout: 'PASS tests handling the text SKIP in the middle of a line' }), 'passed');
+console.log('selftest-status-selftest: OK 9/9');

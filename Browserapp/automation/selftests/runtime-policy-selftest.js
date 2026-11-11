@@ -77,7 +77,7 @@ function realm() {
     assert.equal(vm.runInContext('baseCalls', context), 1, 'each bridge miss delegates only once');
   });
   await test('cached fingerprints still receive saved policy edits, removals and port disable', async () => {
-    const savedCdp = { tabs: cdp.tabs, call: cdp.call };
+    const savedCdp = { tabs: cdp.tabs, call: cdp.call, connect: cdp.connect };
     const launched = profile({ portScanProtect: true, portScanAllow: '8080' }, { blockVideo: true });
     const fp = buildFingerprint(launched);
     const owner = {}, applied = new Set(['page']);
@@ -92,6 +92,7 @@ function realm() {
       if (method === 'Runtime.evaluate') vm.runInContext(params.expression, context);
       return {};
     };
+    cdp.connect = async (url) => ({ command: (method, params) => cdp.call(url, method, params), close() {} });
     const run = () => applyRuntimeSettings.call(engine, 1234, launched, fp, { appliedTargetIds: applied, appliedFingerprintHash: fingerprintConfigHash(fp), trackOn: owner });
     try {
       assert.equal(await run(), fp);

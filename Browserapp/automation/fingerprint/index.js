@@ -24,6 +24,8 @@ module.exports = {
   FONT_SUBSET_ROOT: shared.FONT_SUBSET_ROOT,
   chromeArgsForFingerprint: chromeArgs.chromeArgsForFingerprint,
   applyFingerprintToTab: tabApply.applyFingerprintToTab,
+  forgetFingerprintOwner: tabApply.forgetFingerprintOwner,
+  forgetFingerprintTarget: tabApply.forgetFingerprintTarget,
   fingerprintConsistencyIssues: persona.fingerprintConsistencyIssues,
   assertFingerprintConsistency: persona.assertFingerprintConsistency,
   hashSeed: shared.hashSeed,

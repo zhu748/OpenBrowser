@@ -4,9 +4,13 @@
 
 Profiles keep a `fingerprintSeed` alongside their ID. The editor's randomize action generates a new 128-bit seed in the draft, clears old overrides, and selects a coherent device persona. Saving commits the new identity; reopening an unchanged profile keeps it stable. Refresh-on-start uses an additional launch seed independently of the sampling stability mode.
 
+Legacy seed migration must persist successfully before either engine launches. A failed write blocks startup and keeps the selected seed pending in memory; retries flush that same identity instead of treating an uncommitted seed as saved or drawing another one. Concurrent migrations share one flush. Migration merges only the seed into the latest profile row and rejects a profile deleted or re-seeded during the write.
+
 Chromium UA generation uses the selected kernel's major/full version. Generated Client Hints are saved with the UA. An explicit custom UA takes precedence over the OS-version selector.
 
-Editor-generated UA profiles retain `privacy.fingerprint.uaGenerated`. They follow the actual kernel on later launches, including its full version; editing the UA text makes it custom again. Strict mode updates the UA token, brands, full version and full-version list together. A custom UA that contradicts its navigator platform or Client Hints fails configuration validation before Chromium is spawned. The same validator runs before per-tab injection.
+Editor-generated UA profiles retain `privacy.fingerprint.uaGenerated`. They follow the actual kernel on later launches, including its full version; editing the UA text makes it custom again. Strict mode updates the UA token, brands, full version and full-version list together. A custom UA that contradicts its navigator platform, Client Hints, or actual Chromium major version fails configuration validation before Chromium is spawned. Regenerating or clearing the UA, or enabling strict mode, repairs a stale major. The same validator runs before per-tab injection. Reduced UA strings may be identical across profiles on the same platform and kernel; the profile identity is not a promise of a unique UA string.
+
+Canvas and WebGL stability use one host policy in documents and workers. Stable mode uses sparse, seeded +/-1 pixel deltas; normal mode retains its -1/0/+1 distribution. Repeated reads of unchanged input keep the same deltas. Stable mode no longer reduces the entire delta distribution to zero. Auto mode resolves amplitude and sample density against the current realm's host instead of reusing the pre-navigation snapshot; prefix exceptions such as `cdn.` have the same meaning in both realms. This correction changes affected stable-mode pixel fingerprints once after upgrading.
 
 Mobile UA generation and runtime construction resolve one device identity. Client Hints persist its device selector and OS release so a saved UA cannot be paired with a second random phone. Unknown model selectors and unsupported model/OS combinations are rejected with an actionable error. The UA's reduced `Android 10; K` token is never used as its real Client Hints model or release.
 
@@ -25,6 +29,22 @@ Startup injection or verification failures now reject startup and terminate the 
 On secure Chromium documents the live probe also reads low- and high-entropy Client Hints with a bounded wait. Delivery checks compare brands, mobile, architecture, bitness, model, platform version, full browser version and the full-version list. Missing APIs or failed entropy probes cannot pass a secure-document check. Opaque initial documents preserve native secure-context gating; configuration validation handles identity contradictions before navigation.
 
 The document media-query wrapper replaces individual persona predicates and delegates the complete expression to the native parser, preserving conjunctions, negation, media types and query lists. This is not certification that injected JS metrics and the renderer's CSS media evaluation agree on every kernel. Native CSS, GPU rendering, Canvas/Audio outputs, WebRTC and worker-first-instruction delivery remain separate platform validation gates.
+
+Desktop target setup applies native device metrics even for DPR=1, using zero layout dimensions to retain live viewport resizing and explicit persona screen dimensions for CSS device queries. Mobile targets retain pinned device viewports. Metric-command failures reject target setup; they cannot be recorded as successful injection. Subframes inherit top-level metrics instead of receiving top-level-only commands.
+
+Resizing a desktop window changes its viewport but no longer grows the persona's `screen.width`, `screen.height` or available display bounds. Keeping the display fixed also keeps it aligned with the native CSS device metrics. A configured geolocation override, a granted location permission, and mobile touch emulation must succeed natively before document registration; unsupported-command errors cannot silently leave the host location or desktop touch behavior active.
+
+## Registration ownership and recovery
+
+Document registrations and runtime policies are tracked by their actual CDP connection and flat-session identity. Different sessions on the same target have separate registrations. Concurrent applies in one session serialize, and a failed operation does not poison retries. Live registrations are not evicted when the browser exceeds 256 targets. Closing or detaching a session invalidates its state and cancels late/queued setup; an old asynchronous result cannot mark a replacement session successful.
+
+Target setup also has a session cancellation guard around native overrides, Fetch registration, worker evaluation and debugger resume. Detach, destruction, connection closure and late-page injection timeout cancel the remaining setup immediately, even if a protocol command has not returned. Commands already sent cannot be recalled, but their late results cannot issue subsequent commands or republish readiness. A ready flat session lost from a still-live target stops its browser unless another session owns the target; destruction and replacement are rechecked against current targets. Repeated old detach events preserve a verified replacement's readiness.
+
+The initial page path uses a managed persistent WebSocket rather than the idle-evicted command pool or one-command sockets. A blank or debugger-paused target can transfer ownership to the persistent browser flat session: the old page connection is retired before the new native overrides are applied. An active, unpaused document cannot silently transfer ownership. Normal page closure is confirmed against current targets so closing one tab does not stop the other windows; unexpected owner loss on a still-live target stops its browser. Browser cleanup closes both active and still-opening fallback connections.
+
+Fingerprint and port-policy replacement invalidate the previous registration before removing it. If installing the replacement fails, a later request for the original configuration reinstalls its removed script. Policy registrations also follow connection/session ownership, so retiring the initial page session cannot remove the only future-document port guard or cause a flat session to remove another session's identifier.
+
+Chromium implementation reference: [InspectorPageAgent registration state and session disposal](https://chromium.googlesource.com/chromium/src/+/49651c0b5af34684bc1ecd8f0a347187796da1d9/third_party/blink/renderer/core/inspector/inspector_page_agent.cc). The lifecycle guarantees above have fault-injected protocol coverage; native browser handover/navigation tests are still required on supported platforms.
 
 Dedicated workers, shared workers and service workers share one Chromium setup path. Network UA and request interception are configured before evaluation and debugger resume. Existing worker targets participate in the startup barrier. A page becomes available to the extra-startup-tab navigator only after its Fetch setup and debugger resume complete. OOPIF sessions receive the same request/response setup. These ordering contracts have simulated-protocol coverage; native-kernel validation is still required.
 
@@ -60,6 +80,10 @@ Synthetic media enumeration calls the native method first, preserving native err
 
 Choosing real media enumeration no longer prunes independent speech, battery, Bluetooth or connection policies from the emitted script. Network-information getters retain native receiver validation. These behaviors have VM regression coverage; physical capture devices and native permission dialogs require browser validation.
 
+Document and worker NetworkInformation accessors now share one implementation and configuration. Real mode and absent native members remain untouched; iOS personas omit the API in both scopes. Duplicate injection does not stack the network getters. The live document probe compares exposed connection members with the launched persona so a failed patch cannot silently pass a network-value mismatch.
+
+Same-origin child synchronization installs the network patch before exposing newly accessed blank iframe windows, including nested frames. It also patches existing child windows. Native member absence and receiver exceptions remain intact in each child realm. VM coverage exercises synchronous access; native cross-origin frame delivery remains a browser gate.
+
 Contract references:
 
 - [UA Client Hints interface](https://wicg.github.io/ua-client-hints/)
@@ -68,6 +92,8 @@ Contract references:
 ## Firefox implementation and limits
 
 Firefox uses its loopback-only Remote Agent with WebDriver BiDi. `script.addPreloadScript` is registered without a sandbox so it runs in the document's main realm before page scripts, including subsequently created frame documents. The initial blank document is patched and probed before target navigation. Supported native emulation commands supplement the shared runtime script; unsupported optional commands are reported. A configured position requires the native geolocation override to succeed.
+
+Managed startup navigation and top-level context-created events share one native emulation task per context. Each extra startup tab waits for that task before navigating, whether its event arrives before or after the create response. Geolocation uses the same explicit context scope as UA and timezone, with the existing fallback for older kernels that reject context parameters. Required location failures reject startup or propagate through BiDi's fatal event/disconnect path. Child contexts inherit their top-level native overrides and do not receive top-level-only commands. This does not guarantee native emulation before the first script of an independently opened popup; those context events are asynchronous.
 
 The BiDi connection is part of the running item's lifecycle and is closed on stop. Unexpected disconnects stop the managed browser.
 Repeated opens share a single BiDi socket. Firefox liveness checks use BiDi and do not invoke the Chromium runtime-injection sweep.
@@ -87,6 +113,7 @@ Official protocol references:
 
 - [Firefox BiDi connection](https://developer.mozilla.org/en-US/docs/Web/WebDriver/How_to/Create_BiDi_connection)
 - [BiDi script module and document preload scripts](https://developer.mozilla.org/en-US/docs/Web/WebDriver/Reference/BiDi/Modules/script)
+- [BiDi emulation commands and context scope](https://w3c.github.io/webdriver-bidi/#module-emulation)
 
 ## Session restoration
 
@@ -102,6 +129,11 @@ From `Browserapp/`:
 npm run selftest -- fpreliability
 npm run selftest -- fpidentity
 npm run selftest -- fprealms
+npm run selftest -- fpconsistency
+npm run selftest -- fplifecycle
+npm run selftest -- fpsessionraces
+npm run selftest -- firefoxcontexts
+npm run selftest -- teststatus
 npm run selftest -- runtimepolicy
 npm run selftest -- urlpolicy
 npm run selftest -- mobilepersonas
@@ -112,6 +144,16 @@ npm run selftest:firefoxstart
 The reliability suite uses actual configuration/build/injection functions, VM document execution, fault-injected CDP calls, deferred-session files and an in-memory BiDi transport. The Firefox launch suite runs the actual process lifecycle with a stub executable and simulated protocol messages; it is not a native Gecko rendering test. It stubs network discovery and makes no external exit-IP requests.
 
 The delivery-boundary suite exercises duplicate/rejected/hung request handling, strict probes, all three Chromium worker types, page readiness publication and Firefox watcher routing. It also executes the production Chromium startup routine with process/protocol fixtures to check that injection failures, mismatches and probe exceptions invoke process cleanup before target navigation, while a verified launch still completes. Fixtures do not substitute for the native browser gate below.
+
+Portable Chromium verification (Windows/macOS/Linux) is a separate required platform check:
+
+```sh
+OPENBROWSER_CHROMIUM_BINARY=/absolute/path/to/chrome npm run selftest:fingerprintnative
+```
+
+This gate starts actual Chromium with the production page/worker setup against a local HTTP server. It checks inline first-script identity, the first instruction in dedicated/shared/service workers, navigation and worker-fetch UA/Client Hints, network-value parity, native CSS resolution/device-width at host 2x/persona 1x and host 1x/persona 2x, Canvas restart stability and cross-profile separation. Non-test traffic uses a closed loopback proxy. It covers stock Chromium's injection path; custom native kernels, font assets, GPU output, Audio and WebRTC need their own platform gates. Root-only test containers can explicitly set `OPENBROWSER_NATIVE_NO_SANDBOX=1` when their environment requires it.
+
+Missing prerequisites exit 2; runtime/assertion failures exit 1. The aggregate and single-test runners classify skipped browser assertions as `skipped` or `partial`, never `passed`. `OPENBROWSER_REQUIRE_COMPLETE_TESTS=1` makes either classification fail the wrapper command. The reviewed macOS-only cross-surface, worker-scope, UA-iterable and request-header entry points also return 2 when native execution is unavailable.
 
 Native Firefox verification is a separate gate:
 

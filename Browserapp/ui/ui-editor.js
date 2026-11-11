@@ -1279,7 +1279,7 @@ async function refreshUaMetaPreview() {
     const el = document.getElementById('editor-ua-meta');
     if (el) {
       el.hidden = false;
-      el.textContent = tx('留空：启动时按环境 ID 自动生成 UA + Client Hints（各环境互不相同）');
+      el.textContent = tx('留空：启动时按环境配置和内核版本生成 UA + Client Hints；相同平台的 UA 可以相同。');
     }
     return;
   }

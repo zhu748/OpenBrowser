@@ -24,6 +24,7 @@
 
 const { spawnSync } = require('child_process');
 const path = require('path');
+const { classifySelftestResult } = require('./selftest-status');
 
 // Browserapp root (this runner lives in scripts/); all script paths are
 // relative to the app root, not to this file.
@@ -35,6 +36,11 @@ const ROOT = path.join(__dirname, '..');
 // name exists — package.json only keeps entries that a workflow, the release
 // gate or the docs still invoke directly.
 const SUITE = [
+  ['selftest:fpconsistency', 'automation/selftests/fingerprint-runtime-consistency-selftest.js'],
+  ['selftest:fplifecycle', 'automation/selftests/fingerprint-lifecycle-selftest.js'],
+  ['selftest:fpsessionraces', 'automation/selftests/fingerprint-session-races-selftest.js'],
+  ['selftest:firefoxcontexts', 'automation/selftests/firefox-context-barrier-selftest.js'],
+  ['selftest:teststatus', 'automation/selftests/selftest-status-selftest.js'],
   ['selftest:reviewstorage', 'automation/selftests/review-storage-selftest.js'],
   ['selftest:reviewruntime', 'automation/selftests/review-runtime-selftest.js'],
   ['selftest:reviewupdate', 'automation/selftests/review-update-selftest.js'],
@@ -234,6 +240,7 @@ function main() {
   const results = [];
   let failed = 0;
   let skipped = 0;
+  let partial = 0;
   for (const [name, script, flags] of SUITE) {
     if (flags && flags.darwinOnly && process.platform !== 'darwin') {
       skipped += 1;
@@ -252,21 +259,25 @@ function main() {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     const seconds = ((Date.now() - started) / 1000).toFixed(1);
-    const pass = res.status === 0;
-    if (!pass) failed += 1;
-    results.push({ name, script, pass, seconds, status: res.status, signal: res.signal });
-    console.log(pass ? `ok (${seconds}s)` : `FAIL (exit=${res.status}${res.signal ? ' signal=' + res.signal : ''})`);
+    const status = classifySelftestResult(res);
+    const pass = status === 'passed';
+    if (status === 'failed') failed += 1;
+    else if (status === 'partial') partial += 1;
+    else if (status === 'skipped') skipped += 1;
+    results.push({ name, script, pass: status === 'failed' ? false : (pass ? true : null),
+      outcome: status, seconds, status: res.status, signal: res.signal });
+    console.log(pass ? `ok (${seconds}s)` : `${status.toUpperCase()} (exit=${res.status}${res.signal ? ' signal=' + res.signal : ''})`);
     if (!pass && res.stderr) {
       const tail = String(res.stderr).trim().split('\n').slice(-6).join('\n');
       if (tail) console.log(tail.replace(/^/gm, '     '));
     }
   }
-  console.log(`\n${SUITE.length - failed - skipped} passed, ${skipped} skipped (darwin-only), ${failed} failed`);
+  console.log(`\n${SUITE.length - failed - skipped - partial} passed, ${partial} partial, ${skipped} skipped, ${failed} failed`);
   if (failed) {
     console.log('failed scripts:');
     for (const r of results.filter((x) => x.pass === false)) console.log(`  ${r.name}  ${r.script}`);
   }
-  return failed ? 1 : 0;
+  return failed || (process.env.OPENBROWSER_REQUIRE_COMPLETE_TESTS === '1' && (partial || skipped)) ? 1 : 0;
 }
 
 // The SUITE registry is require()-able without side effects so that

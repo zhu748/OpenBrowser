@@ -1,19 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 
-/**
- * Stability policy & skipHosts semantic locking selftest.
- *
- * Verifies and locks the intended design semantics:
- * 1. stability match -> active === true -> noiseAmplitude === 1 -> delta === 0 (zero noise, max consistency)
- * 2. skipHosts match -> active === false -> noiseAmplitude === 3 -> delta in {-1, 0, 1} (exception table retaining normal noise)
- * 3. mode 3-state semantics:
- *    - 'off': active is always false
- *    - 'force': active is true for all hosts except skipHosts
- *    - 'auto': active is true only for hosts in stability.hosts that are not in skipHosts
- * 4. Numerical assertion: delta = Math.floor(noise * amp) - Math.floor(amp / 2)
- *    yields exactly {0} for amp=1, and exactly {-1, 0, 1} for amp=3.
- */
+/** Stable mode keeps sparse deterministic nonzero perturbations; skipHosts
+ * retains normal noise. Runtime realm parity is covered by fpconsistency. */
 
 const assert = require('assert');
 const { resolveStabilityPolicy } = require('../fingerprint');
@@ -86,21 +75,12 @@ check('resolveStabilityPolicy: mode=force enables stability everywhere except sk
   assert.strictEqual(resSephora.noiseAmplitude, 3, 'skipHosts must retain noiseAmplitude 3');
 });
 
-// 7. Numerical delta formula proof: amp=1 delta is {0}, amp=3 delta is {-1, 0, 1}
-check('Numerical proof: delta formula yields {0} for amp=1 and {-1, 0, 1} for amp=3', () => {
-  const deltasAmp1 = new Set();
-  const deltasAmp3 = new Set();
-  const step = 1 / 10000;
-  for (let i = 0; i < 10000; i++) {
-    const n = i * step; // n in [0, 1)
-    const d1 = Math.floor(n * 1) - Math.floor(1 / 2);
-    const d3 = Math.floor(n * 3) - Math.floor(3 / 2);
-    deltasAmp1.add(d1);
-    deltasAmp3.add(d3);
-  }
-
-  assert.deepStrictEqual(Array.from(deltasAmp1), [0], 'amp=1 delta must be strictly {0} (zero noise)');
-  assert.deepStrictEqual(Array.from(deltasAmp3).sort((a, b) => a - b), [-1, 0, 1], 'amp=3 delta must be strictly {-1, 0, 1}');
+// Stable noise is bounded and sparse, but never collapses the whole distribution to zero.
+check('Stable and normal distributions both contain nonzero noise', () => {
+  const { noiseDelta } = require('../fingerprint/noise-policy');
+  const distributions = [1, 3].map((amp) => Array.from({length:10000}, (_,i) => noiseDelta(i / 10000, amp)));
+  for (const values of distributions) assert.deepStrictEqual([...new Set(values)].sort(), [-1, 0, 1]);
+  assert.ok(distributions[0].filter(Boolean).length < distributions[1].filter(Boolean).length);
 });
 
 const failed = results.filter((r) => !r.ok);

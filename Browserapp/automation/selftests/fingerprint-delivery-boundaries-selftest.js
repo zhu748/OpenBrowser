@@ -77,7 +77,7 @@ async function startupHarness(fault) {
   child.stdout.setEncoding = child.stderr.setEncoding = () => {};
   child.kill = () => { child.killed = true; };
   const connection = { close() {} };
-  let spawns = 0;
+  let spawns = 0, persistCalls = 0;
   const actualRequire = Module.createRequire(require.resolve('../../engine/start'));
   const replacements = {
     child_process: { spawn: () => { spawns += 1; return child; } },
@@ -102,7 +102,9 @@ async function startupHarness(fault) {
     sanitizeProfile, resolveStoredProxyProfile: (value) => value, prepareProfileProxyForStart: async (value) => value,
     assertStartGenerationActive() {}, assertProxyConcurrencyAvailable() {}, emit() {}, emitStartProgress() {},
     profileRoot: () => root, applyResolvedLocale: (value) => value,
-    ensureExitNetworkForLocale: async () => null, persist: async () => {}, assignedExtensions: () => [],
+    ensureExitNetworkForLocale: async () => null, persist: async () => {
+      persistCalls += 1;if (fault === 'seed' && persistCalls === 2) throw new Error('fixture seed disk failure');
+    }, assignedExtensions: () => [],
     kernelStatus: () => ({ installed: true }), chooseBrowser: () => ({ name: 'fixture', path: '/fixture/chromium', version: '149.0.0.0' }),
     prepareProfileFilesForStart: async () => {}, resolveStartupUrls: () => ['https://example.test/'], proxyConfig: () => null,
     waitForPort: async () => 12345, startNativeProfileMarker: () => null, suppressStartupExtensionPages: async () => {},
@@ -115,7 +117,10 @@ async function startupHarness(fault) {
     async handleBrowserGone(id, item, _reason, options) { assert.equal(options.kill, true); item.stopping = true; child.kill(); engine.running.delete(id); },
   };
   try {
-    if (fault === 'config' || fault === 'url-config') {
+    if (fault === 'seed') {
+      await assert.rejects(compiled.exports._start.call(engine, p), { code: 'FINGERPRINT_SEED_PERSIST_FAILED' });
+      assert.equal(spawns, 0);assert.equal(engine.navigations, 0);assert.equal(engine.startupCleanups, 1);
+    } else if (fault === 'config' || fault === 'url-config') {
       await assert.rejects(compiled.exports._start.call(engine, p), fault === 'config' ? /指纹配置不一致/ : /无效网站规则/);
       assert.equal(spawns, 0); assert.equal(engine.navigations, 0); assert.equal(engine.running.size, 0);
       assert.equal(engine.startupCleanups || 0, fault === 'config' ? 1 : 0);
@@ -210,6 +215,7 @@ async function startupHarness(fault) {
       if (method === 'Runtime.evaluate' && params.expression === LIVE_PROBE_EXPRESSION) { probes += 1; return { result: { value: live } }; }
       return {};
     };
+    cdp.connect = async (url) => ({ command: (method, params) => cdp.call(url, method, params), close() {} });
     const applied = new Set(); const trackOn = {};
     const run = (extra = {}) => runtime.applyRuntimeSettings.call({ networkInfo: new Map() }, 12345, profile, fp, { appliedTargetIds: applied, trackOn, ...extra });
     try {
@@ -379,6 +385,7 @@ async function startupHarness(fault) {
   for (const fault of ['inject', 'verify', 'probe']) {
     await test(`Chromium ${fault} failure rejects startup and kills its process without navigation`, () => startupHarness(fault));
   }
+  await test('seed persistence failure stops Chromium before process spawn and releases launch resources', () => startupHarness('seed'));
   await test('verified Chromium startup navigates and starts its watcher', () => startupHarness(null));
   await test('contradictory Chromium configuration is rejected before process spawn', () => startupHarness('config'));
   await test('invalid website rules are rejected before Chromium process spawn or resource acquisition', () => startupHarness('url-config'));

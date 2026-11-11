@@ -55,10 +55,13 @@ module.exports = `  // --- screen ---
     // viewport, the touch surface has to exist as own properties rather than only through
     // navigator.maxTouchPoints, and screen.* stays the panel instead of growing with the window.
     const dynamicScreen = {
-      width: () => (MOBILE && baseScreenWidth ? baseScreenWidth : (baseScreenWidth ? Math.max(baseScreenWidth, liveViewportSize('width', baseScreenWidth)) : liveViewportSize('width', 1920))),
-      height: () => (MOBILE && baseScreenHeight ? baseScreenHeight : (baseScreenHeight ? Math.max(baseScreenHeight, liveViewportSize('height', baseScreenHeight)) : liveViewportSize('height', 1080))),
-      availWidth: () => (MOBILE && baseAvailWidth ? baseAvailWidth : (baseAvailWidth ? Math.max(baseAvailWidth, liveViewportSize('width', baseAvailWidth)) : liveViewportSize('width', 1920))),
-      availHeight: () => (MOBILE && baseAvailHeight ? baseAvailHeight : (baseAvailHeight ? Math.max(baseAvailHeight, liveViewportSize('height', baseAvailHeight)) : liveViewportSize('height', 1040))),
+      // A display is stable when its window is resized. Growing screen.* with
+      // the live viewport contradicted the native CSS device metrics and also
+      // changed the profile identity mid-session on oversized windows.
+      width: () => baseScreenWidth || liveViewportSize('width', 1920),
+      height: () => baseScreenHeight || liveViewportSize('height', 1080),
+      availWidth: () => baseAvailWidth || liveViewportSize('width', 1920),
+      availHeight: () => baseAvailHeight || liveViewportSize('height', 1040),
       availLeft: () => s.availLeft ?? 0,
       availTop: () => s.availTop ?? 0,
       colorDepth: () => s.colorDepth ?? 24,

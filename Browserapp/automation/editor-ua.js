@@ -18,7 +18,7 @@ function buildEditorUa(engine, payload = {}) {
   }
   const version = browser?.version || OPENBROWSER_KERNEL_VERSION;
   const major = Number(payload.chromeMajor) || parseChromeVersion(payload.userAgent)?.major || Number(version.split('.')[0]);
-  const generated = (ua) => ({ ...ua, kernelBound: !payload.userAgent && ua.chromeFull === version });
+  const generated = (ua) => ({ ...ua, kernelVersion: version, kernelBound: !payload.userAgent && ua.chromeFull === version });
   if ((os === 'android' || os === 'ios') && !payload.userAgent) {
     return generated(require('./mobile-personas').mobilePersona(payload.deviceSeed ?? crypto.randomBytes(4).readUInt32BE(0), os, {
       chromeMajor: major, chromeFull: Number(version.split('.')[0]) === major ? version : undefined,

@@ -43,12 +43,15 @@ const ok = (name, cond) => { assert.ok(cond, name); console.log('  PASS  ' + nam
 
   const originalTabs = cdp.tabs;
   const originalCall = cdp.call;
+  const originalConnect = cdp.connect;
   const tabs = [
     { id: 'T1', url: 'https://example.com/a', webSocketDebuggerUrl: 'ws://127.0.0.1:9222/1' },
     { id: 'T2', url: 'https://example.com/b', webSocketDebuggerUrl: 'ws://127.0.0.1:9222/2' },
   ];
   cdp.tabs = async () => tabs;
   cdp.call = async () => { const fp = injectCalls.at(-1)?.[2] || {}; return { result: { value: { userAgent: fp.userAgent, platform: fp.platform, hardwareConcurrency: fp.hardwareConcurrency } } }; };
+
+  cdp.connect = async (url) => ({ command: (method, params) => cdp.call(url, method, params), close() {} });
 
   const run = (fingerprint, options) => BrowserEngine.prototype.applyRuntimeSettings.call(
     { networkInfo: new Map() }, 9222, { id: 'reinject', advanced: {}, privacy: {} }, fingerprint, options,
@@ -109,6 +112,7 @@ const ok = (name, cond) => { assert.ok(cond, name); console.log('  PASS  ' + nam
   } finally {
     cdp.tabs = originalTabs;
     cdp.call = originalCall;
+    cdp.connect = originalConnect;
     delete process.env.OPENBROWSER_FP_LOG;
     await fsp.rm(dir, { recursive: true, force: true }).catch(() => {});
   }

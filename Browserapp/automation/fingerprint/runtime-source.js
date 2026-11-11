@@ -22,6 +22,7 @@ const workerBootstrap = require('./runtime/worker-bootstrap');
 const workerTimezone = require('./runtime/worker-timezone');
 const workerGraphics = require('./runtime/worker-graphics');
 const workerGpuStorage = require('./runtime/worker-gpu-storage');
+const networkFragment = require('./runtime/network-fragment');
 
 // Parse the assembled CFG once (it is a JSON literal produced by
 // injection-script.js), then decide fragment inclusion against it.
@@ -43,7 +44,7 @@ function fontsFragmentActive(cfg) {
   ) : true;
 }
 
-// This fragment also owns speech, battery, connection and Bluetooth. It can
+// This fragment also owns speech, battery and Bluetooth. It can
 // only be dropped when every independent branch is inactive.
 function mediaFragmentActive(cfg) {
   return cfg ? Boolean(
@@ -53,7 +54,6 @@ function mediaFragmentActive(cfg) {
     || (cfg.speech?.mode === 'noise' && Array.isArray(cfg.speech.voices))
     || cfg.battery?.mode === 'blocked'
     || (cfg.battery?.mode === 'noise' && cfg.battery.value && !cfg.battery.value.blocked)
-    || cfg.connection
     || cfg.bluetooth?.mode === 'blocked'
   ) : true;
 }
@@ -71,6 +71,7 @@ function buildDocumentRuntime(context) {
   return [
     documentBootstrap(context),
     documentNavigator,
+    networkFragment,
     documentTimezoneAudio,
     drop(keepFonts) ?? documentFonts,
     documentScreen,
@@ -84,6 +85,7 @@ function buildDocumentRuntime(context) {
 function buildWorkerRuntime(context) {
   return [
     workerBootstrap(context),
+    networkFragment,
     workerTimezone,
     workerGraphics,
     workerGpuStorage,

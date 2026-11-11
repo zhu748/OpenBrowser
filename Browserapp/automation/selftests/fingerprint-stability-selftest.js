@@ -166,7 +166,8 @@ async function main() {
   const imgC = makeImg();
   applyStableCanvasNoise(imgC, 1, { ...opts, lockMap: new Map(), mark: 1 });
   const blocksC = sampleCanvasBlocks(imgC.data, width, height, { square: 8 });
-  assert.ok(hammingDistance(blocksA, blocksC) >= 0);
+  assert.ok(hammingDistance(blocksA, blocksC) > 0, 'different marks must produce different samples');
+  assert.ok(hammingDistance(blocksA, sampleCanvasBlocks(makeImg().data, width, height, { square: 8 })) > 0, 'stable mode must perturb the source');
   const forceScript = buildInjectionScript(buildFingerprint({
     id: 'prof_hamming_1',
     name: 'hamming',

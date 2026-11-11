@@ -38,7 +38,6 @@ const check = (name, fn) => {
   try { fn(); results.push({ name, ok: true }); console.log(`  PASS  ${name}`); }
   catch (err) { results.push({ name, ok: false }); console.log(`  FAIL  ${name} — ${err.message}`); process.exitCode = 1; }
 };
-const skip = (name, why) => { results.push({ name, ok: true }); console.log(`  SKIP  ${name} — ${why}`); };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const SCOPE_SNAPSHOT = `(async () => {
@@ -294,7 +293,8 @@ function compareIdentity(kind, value, fp) {
 (async () => {
   if (process.platform !== 'darwin' || !fs.existsSync(launcher)) {
     console.log('  SKIP  macos-x64 kernel launcher unavailable');
-    console.log('worker-scope-family-e2e-selftest: ok');
+    console.log('worker-scope-family-e2e-selftest: SKIPPED (native browser unavailable)');
+    process.exitCode = 2;
     return;
   }
   const profile = {
@@ -313,7 +313,7 @@ function compareIdentity(kind, value, fp) {
   fs.writeFileSync(path.join(os.tmpdir(), 'openbrowser-worker-scope-injected.json'), JSON.stringify({ pageInjected, swInjected }, null, 1));
 
   if (pageBaseline.error || pageInjected.error || swBaseline.error || swInjected.error) {
-    skip('worker scope probe completed', String(pageBaseline.error || pageInjected.error || swBaseline.error || swInjected.error));
+    throw new Error('Worker scope probe failed: ' + String(pageBaseline.error || pageInjected.error || swBaseline.error || swInjected.error));
   } else {
     check('the injection script runs in every worker scope', () => {
       for (const kind of ['dedicated', 'shared']) assert.strictEqual(pageInjected.inject[kind], 'ok', `${kind} inject: ${pageInjected.inject[kind]}`);

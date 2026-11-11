@@ -1,5 +1,7 @@
 'use strict';
 
+const { runtimeSource: stabilityRuntime } = require('../noise-policy');
+
 // Ordered fragment of one emitted IIFE; runtime-source.js owns assembly.
 module.exports = function bootstrap({ json, bridgeToken }) {
   return `(() => {
@@ -28,48 +30,7 @@ module.exports = function bootstrap({ json, bridgeToken }) {
     }
     workerLocks.set(key, locked);
   };
-  const normalizeHost = (value) => String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/:\\d+$/, '')
-    .replace(/^\\*\\./, '');
-  const hostMatches = (host, pattern) => {
-    const h = normalizeHost(host);
-    const p = normalizeHost(pattern);
-    if (!h || !p) return false;
-    if (h === p) return true;
-    return h.endsWith('.' + p);
-  };
-  const listHasHost = (list, host) => Array.isArray(list) && list.some((item) => hostMatches(host, item));
-  const currentHost = () => {
-    try { return normalizeHost(self && self.location && self.location.hostname); } catch (_) { return ''; }
-  };
-  // Match main-thread stabilityActiveNow: evaluate host at noise-time, not only at launch.
-  // active === true 时 noiseAmplitude = 1 (零噪声)，skipHosts 命中时 active === false (保留常规噪声 amp=3)
-  // Memoized like the main thread: the verdict only depends on CFG (fixed per
-  // injection) and the worker's hostname (fixed per worker), so the host-list
-  // scans must not re-run on every noise sample.
-  let __stabilityVerdict;
-  const stabilityActiveNow = () => {
-    if (__stabilityVerdict !== undefined) return __stabilityVerdict;
-    const st = CFG.stability || {};
-    let verdict;
-    if (st.mode === 'force') verdict = !listHasHost(st.skipHosts, currentHost());
-    else if (st.mode === 'off') verdict = false;
-    else {
-      const host = currentHost();
-      if (!host) verdict = Boolean(st.active);
-      else if (listHasHost(st.skipHosts, host)) verdict = false;
-      else if (listHasHost(st.hosts, host)) verdict = true;
-      else verdict = Boolean(st.active);
-    }
-    __stabilityVerdict = verdict;
-    return verdict;
-  };
-  const noiseAmplitudeNow = () => stabilityActiveNow() ? (Number(CFG.stability?.noiseAmplitude) || 1) : 3;
-  const sampleStepDivisorNow = () => stabilityActiveNow()
-    ? (Number(CFG.stability?.sampleStepDivisor) || 128)
-    : 64;
+${stabilityRuntime}
   const applyNoise = (imageData, mark) => {
     try {
       const data = imageData.data;
@@ -92,7 +53,7 @@ module.exports = function bootstrap({ json, bridgeToken }) {
                 const px = ((y * width) + x) * 4;
                 if (px + 3 >= data.length) continue;
                 if (data[px + 3] === 0) continue;
-                locked.push({ px: px, delta: Math.floor(noise(px + mark) * amp) - Math.floor(amp / 2) });
+                locked.push({ px: px, delta: noiseDelta(noise(px + mark), amp) });
               }
             }
             rememberWorkerLock(key, locked);
@@ -109,13 +70,13 @@ module.exports = function bootstrap({ json, bridgeToken }) {
             const px = ((y * width) + x) * 4;
             if (px + 3 >= data.length) continue;
             if (data[px + 3] === 0) continue;
-            const n = Math.floor(noise(px + mark) * amp) - Math.floor(amp / 2);
+            const n = noiseDelta(noise(px + mark), amp);
             data[px] = Math.max(0, Math.min(255, data[px] + n));
           }
         }
       } else {
         for (let i = 0; i < data.length; i += 4) {
-          const n = Math.floor(noise(i + mark) * amp) - Math.floor(amp / 2);
+          const n = noiseDelta(noise(i + mark), amp);
           data[i] = Math.max(0, Math.min(255, data[i] + n));
         }
       }
@@ -339,16 +300,19 @@ module.exports = function bootstrap({ json, bridgeToken }) {
             delete WorkerNavigator.prototype.userAgentData;
             delete WorkerNavigator.prototype.gpu;
             delete WorkerNavigator.prototype.deviceMemory;
+            delete WorkerNavigator.prototype.connection;
           }
           if (typeof self !== "undefined" && self.navigator) {
             delete self.navigator.userAgentData;
             delete self.navigator.gpu;
             delete self.navigator.deviceMemory;
+            delete self.navigator.connection;
           }
           if (typeof self !== "undefined") {
             delete self.GPU;
             delete self.GPUAdapter;
             delete self.GPUDevice;
+            delete self.NetworkInformation;
           }
         } catch (_) {}
       }

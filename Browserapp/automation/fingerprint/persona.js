@@ -816,6 +816,11 @@ function fingerprintConsistencyIssues(fp) {
     add('client-hints-ua-mismatch', `Client Hints platform (${fp?.userAgentMetadata?.platform || 'empty'}) does not match the ${uaOs} user agent.`, 'error');
   }
   const uaVersion = parseChromeVersion(fp?.userAgent);
+  const actualKernelMajor = Number(String(fp?.kernelVersion || '').match(/^\d+/)?.[0]);
+  if (uaVersion && actualKernelMajor && uaVersion.major !== actualKernelMajor) {
+    add('ua-kernel-version-mismatch',
+      `UA Chrome ${uaVersion.major} 与实际内核 ${actualKernelMajor} 不一致；请重新生成 UA、清空自定义 UA，或启用 UA 严格模式。`, 'error');
+  }
   const metadata = fp?.userAgentMetadata;
   if (uaVersion && metadata) {
     const full = metadata.uaFullVersion || metadata.fullVersion;

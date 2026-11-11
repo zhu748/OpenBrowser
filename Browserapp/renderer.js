@@ -1506,6 +1506,9 @@ async function showUaMetaPreview(ua) {
     `architecture: ${meta.architecture || ''}  bitness: ${meta.bitness || ''}  mobile: ${meta.mobile}`,
     `uaFullVersion: ${meta.uaFullVersion || meta.fullVersion || ''}`,
     `brands: ${brands}`,
+    ...(ua.kernelVersion && ua.chromeMajor !== Number(ua.kernelVersion.split('.')[0])
+      ? [tx('UA 主版本与内核不一致，启动将被阻止；请重新生成 UA 或启用严格模式。')]
+      : []),
   ].join('\n');
 }
 
