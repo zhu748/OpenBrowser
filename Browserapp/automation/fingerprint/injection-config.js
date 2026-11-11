@@ -75,6 +75,7 @@ function injectionTimezone(fp) {
 
 /** CFG.deviceMemory: pass legal quantised tiers through, snap illegal ones. */
 function injectionDeviceMemory(fp) {
+  if (fp.deviceMemory == null) return null;
   const raw = Number(fp.deviceMemory);
   if (!Number.isFinite(raw) || raw <= 0) return 8;
   if (DEVICE_MEMORY_STEPS.includes(raw)) return Math.min(8, raw);

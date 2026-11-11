@@ -265,21 +265,18 @@ module.exports = {
         const resumeTarget = async () => {
           if (!pausedTargetNeedsResume) return;
           pausedTargetNeedsResume = false;
-          await connection.command('Runtime.runIfWaitingForDebugger', {}, { sessionId, timeout: 3000 })
-            .catch(() => {});
+          await connection.command('Runtime.runIfWaitingForDebugger', {}, { sessionId, timeout: 3000 });
         };
         const armResponseRewriting = async (timeout) => {
           if (targetInfo.type === 'iframe') return;
-          try {
-            await fontResponseRewriter.enable(connection, { sessionId, timeout });
-            await connection.command('Fetch.enable', {
-              patterns: [
-                { urlPattern: '*', requestStage: 'Request' },
-                { urlPattern: '*', requestStage: 'Response', resourceType: 'Document' },
-                { urlPattern: '*', requestStage: 'Response', resourceType: 'Stylesheet' },
-              ],
-            }, { sessionId, timeout }).catch(() => {});
-          } catch (_) {}
+          await fontResponseRewriter.enable(connection, { sessionId, timeout });
+          await connection.command('Fetch.enable', {
+            patterns: [
+              { urlPattern: '*', requestStage: 'Request' },
+              { urlPattern: '*', requestStage: 'Response', resourceType: 'Document' },
+              { urlPattern: '*', requestStage: 'Response', resourceType: 'Stylesheet' },
+            ],
+          }, { sessionId, timeout });
         };
         try {
           const pageLikeTypes = new Set(['page', 'iframe', 'popup', 'webview']);
@@ -306,18 +303,18 @@ module.exports = {
                 }
               }
             } else {
-              // Late-created target: bound the inject, resume, then arm rewriting in the
-              // background. Response rewriting only has to be armed before the *next* document
-              // load, and a tab that the user just opened has no document worth sanitizing yet.
-              const injectBudget = targetInfo.type === 'iframe' ? 1500 : 2500;
-              await Promise.race([
-                Promise.resolve(this.applyFingerprintToSession(connection, sessionId, item, fingerprint, { ...targetInfo, waitingForDebugger }))
-                  .catch((error) => report(error, targetInfo)),
-                new Promise((resolve) => { const timer = setTimeout(resolve, injectBudget); if (timer && typeof timer.unref === 'function') timer.unref(); }),
-              ]);
+              // A timed-out target is closed rather than resumed without its identity.
+              const injectBudget = targetInfo.type === 'iframe' ? 5000 : 8000;
+              let timer;
+              try {
+                await Promise.race([
+                  this.applyFingerprintToSession(connection, sessionId, item, fingerprint, { ...targetInfo, waitingForDebugger }),
+                  new Promise((resolve, reject) => { timer = setTimeout(() => reject(new Error('Fingerprint target injection timeout')), injectBudget); }),
+                ]);
+                await armResponseRewriting(injectBudget);
+              } finally { clearTimeout(timer); }
             }
             await resumeTarget();
-            if (!isInitial) armResponseRewriting(2500).catch(() => {});
           } else if (workerTypes.has(targetInfo.type) && !internalUrl.test(String(targetInfo.url || ''))) {
             if (!item.attachedWorkerTargets) item.attachedWorkerTargets = new Set();
             if (targetId && item.attachedWorkerTargets.has(targetId)) {
@@ -350,14 +347,21 @@ module.exports = {
             // Worker fingerprint injection (DedicatedWorker, SharedWorker, and ServiceWorker)
             // Evaluated before runIfWaitingForDebugger so the worker global scope carries persona
             // mocks before evaluating initial worker scripts. Short timeout guarantees no hang.
-            await connection.command('Runtime.evaluate', {
-              expression: source,
-            }, { sessionId, timeout: 3000 }).catch((evalErr) => {
-              report(evalErr, targetInfo);
-            });
+            const evaluation = await connection.command('Runtime.evaluate', { expression: source }, { sessionId, timeout: 3000 });
+            if (evaluation?.exceptionDetails) {
+              throw new Error(evaluation.exceptionDetails.exception?.description || evaluation.exceptionDetails.text || 'Worker fingerprint execution failed');
+            }
           }
         } catch (error) {
+          pausedTargetNeedsResume = false;
           report(error, targetInfo);
+          // Closing an iframe/worker target can be unsupported; then stop its browser.
+          try {
+            const closed = targetId && await connection.command('Target.closeTarget', { targetId }, { timeout: 3000 });
+            if (!closed?.success) throw new Error('Target closure was not confirmed');
+          } catch (_) {
+            this.handleBrowserGone(item.profile.id, item, 'fingerprint-target-failed', { expected: false, error: error.message, kill: true, waitForExit: true }).catch(() => {});
+          }
           this.emit({
             type: 'fingerprint-injection-failed',
             id: item.profile?.id,
@@ -368,8 +372,7 @@ module.exports = {
             settleBarrier(new Error(`Initial target session attach failed for ${targetId}: ${error.message}`));
           }
         } finally {
-          // Release the pause on every path, including a rejected inject: a target left waiting
-          // for the debugger never paints, so failing closed here means a permanent blank tab.
+          // Only targets with successful setup may resume. Failed targets were closed above.
           if (pausedTargetNeedsResume) {
             pausedTargetNeedsResume = false;
             await connection.command('Runtime.runIfWaitingForDebugger', {}, { sessionId, timeout: 3000 })
@@ -500,7 +503,7 @@ module.exports = {
       : baseFp;
     // session-scoped CDP calls for targets attached with flatten:true
     const isSubframe = targetInfo?.type === 'iframe';
-    const isWaiting = Boolean(targetInfo?.waitingForDebugger || targetInfo?.isWaiting || !targetInfo?.url || targetInfo?.url === 'about:blank');
+    const isWaiting = Boolean(targetInfo?.waitingForDebugger || targetInfo?.isWaiting);
     const sessionCall = async (method, params = {}, timeout = 8000) => {
       try {
         // Optimization: on targets paused waiting for debugger at startup, Runtime.evaluate
@@ -550,6 +553,7 @@ module.exports = {
       applyKey: `target:${targetInfo?.targetId || sessionId}`,
       targetType: targetInfo?.type,
       isSubframe,
+      isWaiting,
       livePatchDocument: isEphemeralDocumentUrl(targetInfo?.url),
     });
     // Synchronize Blink physical layout scaling with target devicePixelRatio for desktop personas.
@@ -607,10 +611,10 @@ module.exports = {
     const port = item?.port;
     if (!port && !options.probe && options.mockProbe === undefined) {
       return {
-        ok: true,
-        blocked: false,
-        mismatches: [],
-        warnings: ['未获取到调试端口，跳过指纹交付校验'],
+        ok: false,
+        blocked: true,
+        mismatches: [{ field: 'port', message: '未获取到调试端口，无法校验指纹交付' }],
+        warnings: [],
         liveProbe: null,
       };
     }
@@ -650,7 +654,7 @@ module.exports = {
     }
 
     const targetFp = fingerprint || item?.fingerprint || {};
-    const evalResult = evaluateFingerprintDelivery(profile, targetFp, liveProbe);
+    const evalResult = evaluateFingerprintDelivery(profile, targetFp, liveProbe, { strict: true });
     if (probeWarning && !evalResult.warnings.includes(probeWarning)) {
       evalResult.warnings.push(probeWarning);
     }
@@ -876,17 +880,12 @@ module.exports = {
       ? (this.profiles.get(profileOrId) || this.running.get(profileOrId)?.profile)
       : profileOrId;
     if (!profile) throw new Error('profile not found');
-    const fingerprint = buildFingerprint(profile);
-    // Firefox has no CDP, so nothing can inject or verify this expectation.
-    // Mark it intent-only at the source (parity with publicRunning's
-    // capabilities) so downstream consumers cannot mistake it for a
-    // delivery promise. Keep the shape: existing readers of the fields still
-    // work, they just see the extra marker.
+    const running = this.running?.get(profile.id);
     if (this.profilePrefersFirefox?.(profile)) {
-      fingerprint.delivery = 'intent-only';
-      fingerprint.undeliverable = 'Firefox 无 CDP：该指纹期望无法注入或验证，仅为配置意图。';
+      const fingerprint = running?.fingerprint || require('../automation/firefox-fingerprint').buildFirefoxFingerprint(profile, this.chooseBrowser(profile, 'firefox').version);
+      return { ...structuredClone(fingerprint), delivery: running?.capabilities?.fingerprintDelivery ? 'verified-document' : 'configured' };
     }
-    return fingerprint;
+    return running?.fingerprint ? structuredClone(running.fingerprint) : buildFingerprint(profile);
   },
 
 fingerprintConfigHash,

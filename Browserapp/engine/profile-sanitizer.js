@@ -51,7 +51,7 @@ function sanitizeProfile(value) {
   if (rawProxy.length > MAX_PROFILE_PROXY_LENGTH) throw new Error("Proxy URL is too long");
   const networkMode = value.networkMode === "proxy" ? "proxy"
     : value.networkMode === "direct" || !rawProxy || /^(direct|offline|none)$/i.test(rawProxy) ? "direct" : "proxy";
-  const effectiveStartUrl = String(value.startUrl || platformValue.startUrl || advancedValue.startUrls || "").trim().slice(0, 2000);
+  const effectiveStartUrl = String(value.startUrl || platformValue.startUrl || advancedValue.startUrls || "").split(/\r?\n/, 1)[0].trim().slice(0, 2000);
   const proxyAssociation = profileProxyAssociation(value);
   const proxyId = networkMode === "direct" ? null : normalizedProxyAssociationId(proxyAssociation.value);
   const location = normalizeCoordinates(privacyValue.latitude, privacyValue.longitude);
@@ -90,6 +90,7 @@ function sanitizeProfile(value) {
       return Number.isFinite(n) && n > 0 ? Math.min(5, Math.max(0.5, Math.round(n * 100) / 100)) : null;
     })(),
     userAgent: String(value.userAgent || "").replace(/[\r\n]/g, " ").slice(0, 1000),
+    fingerprintSeed: String(value.fingerprintSeed || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 128),
     cookies: String(value.cookies || "").slice(0, 500000),
     note: String(value.note || "").slice(0, 2000),
     exitIp: String(value.exitIp || "").slice(0, 80),
@@ -176,7 +177,7 @@ function sanitizeProfile(value) {
       canvas: allowed(privacyValue.canvas, ["real", "noise", "blocked"], privacyValue.canvas === "blocked" ? "blocked" : (privacyValue.canvas === "real" ? "real" : "noise")),
       webgl: allowed(privacyValue.webgl, ["real", "noise", "blocked"], privacyValue.webgl === "blocked" ? "blocked" : (privacyValue.webgl === "real" ? "real" : "noise")),
       webglMeta: allowed(privacyValue.webglMeta, ["noise", "custom", "real", "blocked"], "noise"),
-      webgpu: allowed(privacyValue.webgpu, ["real", "blocked", "webgl"], privacyValue.webgpu === "webgl" ? "webgl" : (privacyValue.webgpu === "blocked" ? "blocked" : "real")),
+      webgpu: allowed(privacyValue.webgpu, ["real", "blocked", "webgl"], "webgl"),
       audio: allowed(privacyValue.audio, ["real", "noise", "muted"], privacyValue.audio === "muted" ? "muted" : (privacyValue.audio === "real" ? "real" : "noise")),
       media: allowed(privacyValue.media, ["real", "blocked", "noise"], privacyValue.media === "blocked" ? "blocked" : (privacyValue.media === "noise" ? "noise" : "real")),
       mediaDevices: allowed(privacyValue.mediaDevices, ["real", "noise", "empty"], privacyValue.mediaDevices === "real" ? "real" : (privacyValue.mediaDevices === "empty" ? "empty" : (privacyValue.media === "noise" ? "noise" : (privacyValue.media === "blocked" ? "empty" : "noise")))),
@@ -209,7 +210,7 @@ function sanitizeProfile(value) {
           ? String(privacyValue.stabilitySkipHosts).split(/[\r\n,;\s]+/).map((s) => s.trim().toLowerCase()).filter(Boolean).slice(0, 200)
           : null),
       clientRects: allowed(privacyValue.clientRects, ["real", "noise"], privacyValue.clientRects === "real" ? "real" : "noise"),
-      speech: allowed(privacyValue.speech, ["real", "blocked", "noise"], privacyValue.speech === "blocked" ? "blocked" : (privacyValue.speech === "noise" ? "noise" : "real")),
+      speech: allowed(privacyValue.speech, ["real", "blocked", "noise"], "noise"),
       deviceNameMode: allowed(privacyValue.deviceNameMode, ["noise", "custom", "real"], "noise"),
       deviceName: String(privacyValue.deviceName || "").slice(0, 120),
       dnt: privacyValue.dnt === true || privacyValue.dnt === "on" ? true : (privacyValue.dnt === false || privacyValue.dnt === "off" ? false : Boolean(privacyValue.dnt)),

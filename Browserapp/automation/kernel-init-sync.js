@@ -342,19 +342,21 @@ function mapFingerprintToInitFields(fp = {}, profile = {}) {
         webrtcPolicy = 3;
         webrtcFakeIp = exitIp;
       } else {
-        // Exit IP is missing: cannot fake exit IP; downgrade to real mode (policy 1)
-        // Never write empty or placeholder fake IP (e.g. 0.0.0.0)
-        webrtcPolicy = 1;
+        // No exit identity is available: never downgrade proxy protection to real ICE.
+        isWebrtcEnable = false;
+        webrtcPolicy = 0;
       }
     } else {
       // Real mode
       webrtcPolicy = 1;
     }
 
-    if (!isValidPrivateIpv4(localIp)) {
-      localIp = fallbackPrivateIp(profile.id || fp.profileId || 'webrtc-local');
+    if (isWebrtcEnable) {
+      if (!isValidPrivateIpv4(localIp)) {
+        localIp = fallbackPrivateIp(profile.id || fp.profileId || 'webrtc-local');
+      }
+      webrtcLocalIp = localIp;
     }
-    webrtcLocalIp = localIp;
   } else {
     isWebrtcEnable = false;
     webrtcPolicy = 0;
@@ -689,20 +691,25 @@ function applyFingerprintFields(init, fields) {
     delete init.webrtc_local_ip;
     delete init.webrtc_stun_servers;
   } else if (init.is_webrtc_enable === true) {
-    // 2. 策略为伪造出口 IP 时必须具备合法的出口 IP，否则降级为 real (策略 1) 且不写入占位/空 fake ip
+    // 2. An unavailable proxy identity disables ICE instead of exposing real addresses.
     if (init.webrtc_policy === 3) {
       if (fields.webrtc_fake_ip && fields.webrtc_fake_ip !== '0.0.0.0') {
         init.webrtc_fake_ip = fields.webrtc_fake_ip;
-      } else if (!init.webrtc_fake_ip || init.webrtc_fake_ip === '0.0.0.0') {
-        init.webrtc_policy = 1;
+      } else if (Object.hasOwn(fields, 'webrtc_policy') || !init.webrtc_fake_ip || init.webrtc_fake_ip === '0.0.0.0') {
+        init.is_webrtc_enable = false;
+        init.webrtc_policy = 0;
         delete init.webrtc_fake_ip;
+        delete init.webrtc_local_ip;
+        delete init.webrtc_stun_servers;
       }
     } else if (init.webrtc_policy === 1 || init.webrtc_policy === 0) {
       delete init.webrtc_fake_ip;
     }
 
     // 3. webrtc_local_ip 必须为有效私网 IPv4 地址
-    if (fields.webrtc_local_ip && isValidPrivateIpv4(fields.webrtc_local_ip)) {
+    if (!init.is_webrtc_enable) {
+      delete init.webrtc_local_ip;
+    } else if (fields.webrtc_local_ip && isValidPrivateIpv4(fields.webrtc_local_ip)) {
       init.webrtc_local_ip = fields.webrtc_local_ip;
     } else if (!init.webrtc_local_ip || !isValidPrivateIpv4(init.webrtc_local_ip)) {
       init.webrtc_local_ip = fallbackPrivateIp(fields._windowName || 'webrtc-local');

@@ -112,6 +112,7 @@
     "selftest:firefoxkernel": "node automation/selftests/firefox-kernel-selftest.js",
     "selftest:dualengine": "node automation/selftests/engine-dual-engine-selftest.js",
     "selftest:firefoxstart": "node automation/selftests/firefox-start-pipeline-selftest.js",
+    "selftest:firefoxfingerprint": "node automation/selftests/firefox-fingerprint-e2e-selftest.js",
     "selftest:profileext": "node automation/selftests/profile-extensions-selftest.js",
     "selftest:cdpnoise": "node automation/selftests/cdp-noise-e2e-selftest.js",
     "selftest:workerfp": "node automation/selftests/worker-fingerprint-e2e-selftest.js",

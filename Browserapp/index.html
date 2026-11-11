@@ -274,7 +274,7 @@
                   </div>
                   <label>备注内容<textarea id="editor-note" rows="3" maxlength="2000" placeholder="记录该环境的详细说明、历史操作或注意事项"></textarea></label>
                   <div class="form-two" hidden>
-                    <label>浏览器<select id="editor-browser"><option>Google Chrome</option></select></label>
+                    <label>浏览器<select id="editor-browser"><option>Google Chrome</option><option>Firefox</option></select></label>
                   </div>
                 </div>
               </section>
@@ -413,7 +413,7 @@
                     <button type="button" class="outline" id="editor-ua-generate">按系统生成 UA</button>
                     <button type="button" class="outline" id="editor-ua-random">随机 UA</button>
                     <button type="button" class="outline" id="editor-ua-clear">跟随自动</button>
-                    <label class="ua-ver">Chrome 主版本 <input id="editor-ua-chrome-major" type="number" min="100" max="200" value="131" style="width:72px"></label>
+                    <label class="ua-ver">Chrome 主版本 <input id="editor-ua-chrome-major" type="number" min="100" max="200" placeholder="跟随内核" style="width:92px"></label>
                     <label class="check-row" style="margin:0" title="强制 UA 的 Chrome 主版本与所选内核一致，避免版本特征被网站探测"><input id="editor-ua-strict" type="checkbox"> UA 严格模式</label>
                   </div>
                   <pre class="ua-meta-preview" id="editor-ua-meta" hidden></pre>

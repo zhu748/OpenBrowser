@@ -23,6 +23,7 @@ function main() {
   const _engineSrc = fs.readFileSync(path.join(__dirname, 'engine.js'), 'utf8');
   // _start moved to the engine/start.js mixin (startup routine); the start-order
   // assertions read the mixin source.
+  const launchSrc = fs.readFileSync(path.join(__dirname, 'engine', 'launch-arguments.js'), 'utf8');
   const startSrc = fs.readFileSync(path.join(__dirname, 'engine', 'start.js'), 'utf8');
   const startIdx = startSrc.indexOf('item.startupExtensionGuard');
   assert.ok(startIdx > 0, 'startup block present');
@@ -38,8 +39,8 @@ function main() {
   assert.ok(injectPos < keepPos, 'applyRuntimeSettings must run before keepDefaultTab (welcome page race)');
   assert.ok(block.includes('Fingerprint inject BEFORE'), 'order comment present');
   // CLI must not open start page before CDP inject
-  assert.ok(startSrc.includes("args.push('about:blank')"), 'spawn must use about:blank instead of startUrl on CLI');
-  assert.ok(startSrc.includes('do NOT put the OpenBrowser start page') || startSrc.includes('Do NOT put the OpenBrowser start page'), 'CLI startUrl deferral comment');
+  assert.ok(launchSrc.includes("args.push('about:blank')"), 'spawn must use about:blank instead of startUrl on CLI');
+  assert.ok(launchSrc.includes('do NOT put the OpenBrowser start page'), 'CLI startUrl deferral comment');
   // re-inject after navigate
   assert.ok(block.includes('start-page re-inject') || block.includes('appliedTargetIds: new Set()'), 're-inject after start page navigate');
 
@@ -50,25 +51,15 @@ function main() {
     fpSrc.slice(fpSrc.indexOf('async function applyFingerprintToTab'))
   ), 'Runtime.evaluate must not swallow inject errors');
 
-  // --- late-created page targets resume before response rewriting is armed ---
-  // The attach handler moved with startWorkerFingerprintInjection into the
-  // engine/fingerprint-injection.js mixin.
+  // Late targets must finish injection and response setup before resume.
   const fpInjectSrc = fs.readFileSync(path.join(__dirname, 'engine', 'fingerprint-injection.js'), 'utf8');
-  const latchIdx = fpInjectSrc.indexOf('pausedTargetNeedsResume');
-  assert.ok(latchIdx > 0, 'attach handler must keep a single resume latch');
-  const attachBlock = fpInjectSrc.slice(latchIdx, latchIdx + 8000);
-  const initialIdx = attachBlock.indexOf('if (isInitial) {');
-  const lateIdx = attachBlock.indexOf('Late-created target');
-  const resumeIdx = attachBlock.indexOf('await resumeTarget();');
-  const armIdx = attachBlock.indexOf('if (!isInitial) armResponseRewriting(2500)');
-  assert.ok(initialIdx > 0 && lateIdx > initialIdx, 'page branch must split the startup barrier from late targets');
-  assert.ok(resumeIdx > lateIdx, 'late target must resume after the bounded inject');
-  assert.ok(armIdx > resumeIdx, 'response rewriting for late targets must be armed after the resume');
-  const initialBlock = attachBlock.slice(initialIdx, lateIdx);
-  assert.ok(initialBlock.indexOf('armResponseRewriting(8000)') > 0,
-    'startup barrier must keep arming response rewriting while the target is paused');
-  assert.ok(/finally[\s\S]{0,400}pausedTargetNeedsResume/.test(attachBlock),
-    'every exit path must release the pause through the latch');
+  const lateStart = fpInjectSrc.indexOf('// A timed-out target');
+  const lateEnd = fpInjectSrc.indexOf('} else if (workerTypes.has', lateStart);
+  const lateBlock = fpInjectSrc.slice(lateStart, lateEnd);
+  assert.ok(lateStart > 0);
+  assert.ok(lateBlock.indexOf('await armResponseRewriting(injectBudget)') < lateBlock.indexOf('await resumeTarget()'));
+  assert.ok(fpInjectSrc.includes("'Target.closeTarget'"), 'failed targets must close');
+  assert.ok(fpInjectSrc.includes('if (evaluation?.exceptionDetails)'), 'worker script exceptions must fail');
 
   // --- start-page re-samples fingerprint after inject settle ---
   const tpl = fs.readFileSync(path.join(__dirname, 'automation/start-page-template.js'), 'utf8');

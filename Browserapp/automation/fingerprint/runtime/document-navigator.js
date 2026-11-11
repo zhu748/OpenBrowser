@@ -434,7 +434,7 @@ module.exports = `  // --- hide automation (navigator.webdriver / AutomationCont
 
   // --- window.chrome presence ---
   try {
-    if (typeof window !== "undefined") {
+    if (CFG.engine !== 'firefox' && typeof window !== "undefined") {
       if (isIosPersona) {
         try {
           Object.defineProperty(window, "chrome", {

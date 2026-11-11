@@ -10,12 +10,8 @@
  * modules disagreed (131 / 137 / 148 / 120). Import from here instead of
  * redefining.
  *
- * Note on UA majors: persona.js pins the real kernel major for every profile
- * it builds ("an engine advertising Chrome 128-137 while running a 148 kernel
- * is a one-shot feature-detection tell"). The desktop fallback major below is
- * only reached by bare programmatic calls whose exact output is pinned by
- * fingerprint-stability selftests, so it deliberately keeps its historical
- * value instead of tracking the kernel.
+ * Defaults follow the bundled kernel; a selected kernel supplies its own
+ * major and full version at launch and in the editor UA generator.
  */
 
 /** Bundled OpenBrowser 148 independent kernel (macOS x64 default). */
@@ -28,10 +24,10 @@ const SOURCE_OPENBROWSER = 'openbrowser-148';
 const OPENBROWSER_KERNEL_MAJOR = Number(OPENBROWSER_KERNEL_VERSION.match(/^\d+/)[0]);
 
 /** Last-resort Chrome major for buildUserAgentString when nothing pins one. */
-const DEFAULT_UA_CHROME_MAJOR = 131;
+const DEFAULT_UA_CHROME_MAJOR = OPENBROWSER_KERNEL_MAJOR;
 
 /** Majors pool for randomUaForSeed when the caller does not pass one. */
-const RANDOM_UA_CHROME_MAJORS = [128, 129, 130, 131, 132, 133, 134, 135, 136, 137];
+const RANDOM_UA_CHROME_MAJORS = [OPENBROWSER_KERNEL_MAJOR];
 
 /** Chrome for Android major — mobile Chrome autoupdates, so it tracks the kernel. */
 const MOBILE_DEFAULT_CHROME_MAJOR = OPENBROWSER_KERNEL_MAJOR;

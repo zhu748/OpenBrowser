@@ -1265,6 +1265,15 @@ function editorCookies() {
 
 
 function updateEditorVisibility() {
+  const firefox = $('#editor-engine')?.value === 'firefox';
+  const browserName = $('#editor-browser');
+  if (browserName) { browserName.value = firefox ? 'Firefox' : 'Google Chrome'; browserName.disabled = true; }
+  const memory = $('#editor-memory');
+  if (memory) { memory.disabled = firefox; memory.title = firefox ? tx('Firefox 保留原生接口，不提供设备内存覆盖') : ''; }
+  for (const selector of ['#editor-ua-random', '#editor-ua-chrome-major']) {
+    const control = $(selector);
+    if (control) control.disabled = firefox;
+  }
   const network = editorSelectedNetwork();
   const direct = network === 'direct';
   const choose = network === 'choose';
@@ -1453,6 +1462,8 @@ function editorOsToUaKey(osLabel) {
 async function applyBuiltUa(payload) {
   if (!window.ops?.buildUa) throw new Error(tx('UA 生成接口不可用，请重启应用'));
   const ua = await window.ops.buildUa(payload);
+  const form = $('#profile-editor-form');
+  if (form) form.dataset.uaProfile = JSON.stringify(ua);
   editorSet('#editor-user-agent', ua.userAgent || '');
   // sync OS selector with generated UA platform
   if (ua.os === 'macos') editorSet('#editor-os', 'macOS');
@@ -1469,6 +1480,11 @@ async function showUaMetaPreview(ua) {
   const el = document.getElementById('editor-ua-meta');
   if (!el) return;
   if (!ua) { el.hidden = true; el.textContent = ''; return; }
+  if (ua.engine === 'firefox') {
+    el.hidden = false;
+    el.textContent = tx('Firefox UA 跟随实际内核版本；不使用 Chromium Client Hints。') + `\nplatform: ${ua.platform}`;
+    return;
+  }
   const meta = ua.metadata || ua.userAgentMetadata || {};
   const brands = (meta.brands || []).map((b) => `${b.brand} ${b.version}`).join(', ');
   el.hidden = false;
@@ -1485,8 +1501,11 @@ async function showUaMetaPreview(ua) {
 document.getElementById('editor-ua-generate')?.addEventListener('click', async () => {
   try {
     await applyBuiltUa({
+      profileId: editingProfileId,
+      engine: $('#editor-engine')?.value,
+      engineVersion: $('#editor-engine-version')?.value,
       os: editorOsToUaKey($('#editor-os')?.value),
-      chromeMajor: Number($('#editor-ua-chrome-major')?.value) || 131,
+      chromeMajor: Number($('#editor-ua-chrome-major')?.value) || undefined,
     });
     toast(tx('已按系统生成 UA + Client Hints'));
   } catch (e) { toast(e.message); }
@@ -1494,6 +1513,9 @@ document.getElementById('editor-ua-generate')?.addEventListener('click', async (
 document.getElementById('editor-ua-random')?.addEventListener('click', async () => {
   try {
     await applyBuiltUa({
+      profileId: editingProfileId,
+      engine: $('#editor-engine')?.value,
+      engineVersion: $('#editor-engine-version')?.value,
       random: true,
       chromeMajor: Number($('#editor-ua-chrome-major')?.value) || undefined,
     });

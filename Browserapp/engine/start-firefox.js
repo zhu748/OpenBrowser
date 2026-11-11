@@ -1,26 +1,14 @@
 'use strict';
 
 /**
- * Firefox launch pipeline mixin for BrowserEngine (prototype-assigned by engine.js).
- *
- * Firefox has no CDP: everything Chromium does through the DevTools protocol
- * must happen before the process starts. This mixin implements the same
- * lifecycle contract as _start (progress events, profile lock, running item,
- * start-page handover, exit watching, startup diagnostics) with Firefox
- * primitives:
- *
- *   - user.js prefs (UA / languages / locale / proxy / telemetry off) written
- *     into the profile root right before spawn;
- *   - the authenticated-proxy bridge (identical local forwarder as Chromium)
- *     with network.proxy.* prefs pointing at it;
- *   - -P-free dedicated profile: `-profile <root>` + --no-remote;
- *   - the start page opened as the launch URL (no about:blank + CDP navigate).
- *
- * The running item carries connection:null + engine:'firefox' so downstream
- * consumers (RPA steps, live sync, local API) can guard on it.
+ * Firefox launch pipeline: native prefs are written before spawn, then a loopback
+ * WebDriver BiDi session registers main-world document-start injection, verifies
+ * the initial blank page, and only then navigates the requested startup tabs.
+ * CDP-specific consumers keep using port:null; the BiDi connection is tracked
+ * separately and closed with the browser's profile lock/proxy resources.
  */
 
-const { buildFirefoxUserJs, firefoxUserAgent, firefoxStartupArgs, firefoxPlatformDir } = require('../automation/kernel-versions');
+const { buildFirefoxUserJs, firefoxStartupArgs, firefoxPlatformDir } = require('../automation/kernel-versions');
 const { acquireProfileLock, updateProfileLock, validateProfileRootSecure } = require('../automation/isolation');
 const { removeSingletonFiles, writeBrowserStartupDiagnostic, formatBrowserStartupError, isChildExited } = require('./index');
 const { assertResourceGateForLaunch } = require('./resource-gate');
@@ -29,6 +17,9 @@ const { assertResourceGateForLaunch } = require('./resource-gate');
 const { clearLaunchDataTargets, mergeLaunchProfileUpdate } = require('./start');
 const { spawn } = require('child_process');
 const path = require('path');
+const { readDeferredSessionUrls, preserveLegacySession } = require('./startup-session');
+const { BidiConnection, waitForFirefoxEndpoint } = require('../network/bidi-connection');
+const { buildFirefoxFingerprint, initializeFirefoxFingerprint, navigateFirefoxStartup } = require('../automation/firefox-fingerprint');
 
 
 // proxy-forwarder is optional in _start; keep the same guarded require here so
@@ -121,10 +112,23 @@ async function clearFirefoxProfileLaunchData(root, profile) {
  * mapped; anything else stays a declared gap (see the capability declaration
  * event) instead of silently pretending to work.
  */
-function firefoxExtraUserPrefs(profile) {
+function firefoxExtraUserPrefs(profile, fingerprint = null) {
   const advanced = profile?.advanced || {};
   const privacy = profile?.privacy || {};
   const prefs = [];
+  // First navigation is controlled by BiDi, after preload registration and verification.
+  prefs.push(['browser.startup.page', 0], ['browser.startup.homepage', 'about:blank'],
+    ['browser.sessionstore.resume_from_crash', false], ['browser.sessionstore.resume_session_once', false]);
+  if (fingerprint) {
+    prefs.push(['general.platform.override', fingerprint.platform]);
+    const oscpu = /win/i.test(fingerprint.platform) ? 'Windows NT 10.0; Win64; x64'
+      : /mac/i.test(fingerprint.platform) ? 'Intel Mac OS X 10.15' : 'Linux x86_64';
+    prefs.push(['general.oscpu.override', oscpu]);
+    prefs.push(['media.peerconnection.enabled', privacy.webrtc !== 'disabled' && !(privacy.webrtc === 'proxy' && !fingerprint.webrtcAddress)]);
+    if (privacy.geoPermission === 'deny' || (privacy.geoPermission === 'allow' && !fingerprint.dynamicConfig?.geoposition)) {
+      prefs.push(['permissions.default.geo', 2]);
+    }
+  }
   // --- advanced switches that DO have a Firefox pref ---
   if (advanced.blockImages) prefs.push(['permissions.default.image', 2]);
   else prefs.push(['permissions.default.image', 1]);
@@ -301,19 +305,24 @@ module.exports = {
       }
 
       const pageNetwork = this.networkInfo.get(profile.id) || {};
-      const customStartUrls = this.resolveStartupUrls(profile);
+      const fingerprint = buildFirefoxFingerprint(profile, browser.version);
+      let customStartUrls = this.resolveStartupUrls(profile);
+      if (profile.advanced.tabMode === 'restore' || profile.advanced.restoreSession) {
+        const restoredUrls = await readDeferredSessionUrls(root);
+        if (restoredUrls.length) customStartUrls = restoredUrls;
+        else await preserveLegacySession(root, 'firefox');
+      }
       const infoStartUrl = profile.advanced.showInfoPage !== false
         ? await this.buildStartPageUrl(
           { ...profile, exitIp: pageNetwork.ip || profile.exitIp || '', title: profile.title || profile.name },
           root,
           browser.name,
-          0
+          0,
+          fingerprint
         )
         : null;
       const startUrl = customStartUrls[0] || infoStartUrl || 'about:blank';
-      // Chromium opens advanced.startUrls 2..N as extra CLI tabs; Firefox used
-      // to drop them (only the first URL survived). Pass the rest as extra
-      // positional args so multi-URL profiles behave the same on both engines.
+      // Additional URLs are opened through BiDi after the startup barrier.
       const extraStartUrls = customStartUrls.slice(1);
 
       const proxyConfig = this.proxyConfig(profile.proxy);
@@ -339,16 +348,15 @@ module.exports = {
       // --proxy-bypass-list does; loopback is always excluded via prefs below.
 
       currentStage = 'configure'; this.emitStartProgress(profile.id, 'configure', 48, '正在写入 Firefox 配置…');
-      const osName = firefoxOsName(profile);
-      const acceptLanguages = collectAcceptLanguages(null, profile);
+      const acceptLanguages = collectAcceptLanguages(fingerprint, profile);
       const locale = String(profile.language || 'en-US');
       const userJs = buildFirefoxUserJs({
-        userAgent: profile.userAgent || firefoxUserAgent(osName, browser.version),
+        userAgent: fingerprint.userAgent,
         acceptLanguages,
         locale,
         proxyEndpoint: proxy && proxy !== 'direct://' ? proxy : '',
         noProxyHosts: 'localhost, 127.0.0.1',
-        extraPrefs: firefoxExtraUserPrefs(profile),
+        extraPrefs: firefoxExtraUserPrefs(profile, fingerprint),
       });
       // user.js wins over prefs.js at every startup, then Firefox copies it to
       // prefs.js. Writing it fresh each launch keeps the proxy/UA/prefs current.
@@ -357,8 +365,9 @@ module.exports = {
       currentStage = 'spawn'; this.emitStartProgress(profile.id, 'spawn', 62, '正在启动 Firefox…');
       this.assertStartGenerationActive(profile.id, lifecycleGeneration);
       const headless = /^(1|true|new)$/i.test(String(process.env.OPENBROWSER_HEADLESS || '').trim());
-      const args = firefoxStartupArgs({ root, startUrl, extraUrls: extraStartUrls, headless });
+      const args = firefoxStartupArgs({ root, startUrl: 'about:blank', headless, remoteDebugging: true });
       const spawnEnv = { ...process.env };
+      if (fingerprint.timezone && process.platform !== 'win32') spawnEnv.TZ = fingerprint.timezone;
       const child = spawn(browser.path, args, {
         detached: process.platform !== 'win32',
         windowsHide: headless,
@@ -436,7 +445,7 @@ module.exports = {
         startedAt: new Date().toISOString(),
         extensions: [],
         loadedExtensions: [],
-        fingerprint: null,
+        fingerprint,
         engine: 'firefox',
         kernelWindowName: null,
         nativeKernelFingerprint: false,
@@ -488,27 +497,33 @@ module.exports = {
         queueMicrotask(() => handleChildError(item.childExitState.error));
       }
 
+      currentStage = 'inject'; this.emitStartProgress(profile.id, 'inject', 82, '正在注入 Firefox 设备指纹…');
+      const endpoint = await waitForFirefoxEndpoint(child);
+      const connection = new BidiConnection(endpoint, {
+        onDisconnect: (error) => {
+          if (item.cleanedUp || item.stopping) return;
+          this.handleBrowserGone(profile.id, item, 'firefox-bidi-disconnect', {
+            expected: false, error: error.message, kill: true, waitForExit: true,
+          }).catch((cleanupError) => this.emit({ type: 'sync-error', id: profile.id, message: cleanupError.message }));
+        },
+      });
+      item.bidiConnection = connection;
+      await connection.open();
+      const delivered = await initializeFirefoxFingerprint(connection, fingerprint, profile, {
+        onWorkerError: (error) => {
+          item.workerFingerprintError = error.message;
+          this.emit({ type: 'worker-fingerprint-injection-failed', id: profile.id, message: error.message });
+        },
+      });
+      this.assertStartGenerationActive(profile.id, lifecycleGeneration);
+      item.capabilities = delivered.capabilities;
+      item.bidiContext = delivered.context;
+      item.fingerprintWarnings = delivered.warnings;
+      currentStage = 'verify'; this.emitStartProgress(profile.id, 'verify', 94, 'Firefox 页面指纹校验完成');
+      await navigateFirefoxStartup(connection, delivered.context, [startUrl, ...extraStartUrls]);
       currentStage = 'ready'; this.emitStartProgress(profile.id, 'ready', 100, 'Firefox 启动完成');
       this.startRunningWatch(item);
-      // Capability declaration (audit finding: the Firefox path skipped every
-      // profile-prep capability without telling anyone). Downstream consumers
-      // (renderer badges, RPA planning, local API) get one authoritative event
-      // per launch instead of having to infer the gaps from the engine field.
-      // Fingerprint expectations are undeliverable here: there is no CDP in
-      // Firefox, so nothing can inject or verify the persona. main.js's
-      // automation:fingerprint answers a buildFingerprint for Firefox profiles
-      // too — the declaration marks it as intent-only, not a delivery promise.
-      item.capabilities = {
-        engine: 'firefox',
-        cdp: false,
-        fingerprintDelivery: false,
-        fingerprintVerification: false,
-        runtimeInjection: false,
-        extensionHotLoad: false,
-        zoomReconcile: false,
-        retention: true,
-        startUrls: true,
-      };
+      // Report verified document delivery and the remaining worker/API limits.
       this.emit({
         type: 'capability-declaration',
         id: profile.id,
@@ -516,7 +531,8 @@ module.exports = {
         running: true,
         capabilities: item.capabilities,
         undeliverable: {
-          fingerprint: 'Firefox 无 CDP：指纹期望值无法注入或验证，automation:fingerprint 返回的仅为配置意图。',
+          workerFingerprint: 'Worker 使用 realm 创建事件补充注入，尚不保证首条脚本前交付。',
+          deviceMemory: '保留 Firefox 原生接口形态，不创建 Chromium 的 deviceMemory 接口。',
           extensions: '扩展热装/同步依赖 CDP Extensions 域，Firefox 下不可用。',
           zoomReconcile: 'Preferences 缩放重置依赖 Chromium Preferences 结构，Firefox 无此文件。',
         },
@@ -541,6 +557,7 @@ module.exports = {
         spawnError: diagnostic.spawnError || null,
       }).catch(() => {});
       if (liveItem) {
+        liveItem.verificationBlocked = true;
         await this.handleBrowserGone(profile.id, liveItem, 'start-failed', {
           expected: false,
           error: error?.message || String(error),

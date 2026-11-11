@@ -24,6 +24,7 @@ const { killProcessTree } = require('../automation/protocol/cross-platform');
 const { isChildExited, managedBrowserKillOptions, removeSingletonFiles, stopIpcStubForWindow } = require('./index');
 const fs = require('fs');
 const path = require('path');
+const { saveDeferredSession } = require('./startup-session');
 
 module.exports = {
   cleanupRunningItem(profileId, item, options = {}) {
@@ -42,6 +43,9 @@ module.exports = {
       item.cleanedUp = false;
       item.stopping = true;
       this.clearRunningWatch(item);
+      await saveDeferredSession(item, (url) => this.isStartPageUrl?.(url)).catch(() => {});
+      item.bidiConnection?.close();
+      item.bidiConnection = null;
       item.workerFingerprintConnection?.close();
       item.workerFingerprintConnection = null;
 
@@ -320,10 +324,17 @@ module.exports = {
           await cdp.json(`http://127.0.0.1:${item.port}/json/version`);
           cdpAlive = true;
           const pages = await cdp.tabs(item.port).catch(() => []);
+          if (pages.length) item.sessionUrls = pages.map((page) => page.url);
           pageCount = Array.isArray(pages) ? pages.length : 0;
         } catch (_) {
           cdpAlive = false;
         }
+      } else if (item.engine === 'firefox' && item.bidiConnection && !item.bidiConnection.closed) {
+        try {
+          const tree = await item.bidiConnection.command('browsingContext.getTree', { maxDepth: 0 }, 2000);
+          if (tree.contexts?.length) item.sessionUrls = tree.contexts.map((context) => context.url);
+          cdpAlive = true;
+        } catch (_) { cdpAlive = false; }
       } else {
         cdpAlive = true;
       }

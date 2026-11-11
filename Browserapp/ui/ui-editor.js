@@ -261,6 +261,10 @@ function normalizeProfileSettings(profile) {
 
 function editorDraft(strict = true) {
   const current = ui.profiles.find((item) => item.id === editingProfileId) || {};
+  const editorForm = $('#profile-editor-form');
+  let generatedUa = null;
+  try { generatedUa = JSON.parse(editorForm?.dataset.uaProfile || 'null'); } catch (_) {}
+  if (generatedUa?.userAgent !== ($('#editor-user-agent')?.value || '').trim()) generatedUa = null;
   let resolution = { width: Number($('#editor-width')?.value) || current.width || 1280, height: Number($('#editor-height')?.value) || current.height || 820 };
   if (strict) resolution = editorResolution();
   else if ($('#editor-resolution')?.value && $('#editor-resolution').value !== 'custom') {
@@ -361,7 +365,8 @@ function editorDraft(strict = true) {
       return Number.isFinite(n) ? n : '';
     })(),
     fingerprint: {
-      ...(current.privacy?.fingerprint || {}),
+      ...(editorForm?.dataset.resetFingerprint ? {} : (current.privacy?.fingerprint || {})),
+      clientHints: generatedUa?.clientHints || (editorForm?.dataset.resetFingerprint ? undefined : current.privacy?.fingerprint?.clientHints),
       webglVendor: (($('#editor-webgl-vendor')?.value || '').trim()).slice(0, 200),
       webglRenderer: (($('#editor-webgl-renderer')?.value || '').trim()).slice(0, 400),
       cores: (() => {
@@ -509,6 +514,8 @@ function editorDraft(strict = true) {
     lastOpenedAt: current.lastOpenedAt || null,
     engine: $('#editor-engine')?.value === 'firefox' ? 'firefox' : 'chromium',
     userAgent: ($('#editor-user-agent')?.value || '').trim(),
+    fingerprint: undefined,
+    fingerprintSeed: editorForm?.dataset.fingerprintSeed || current.fingerprintSeed || '',
     cookies: strict ? editorCookies() : ($('#editor-cookies')?.value || '').trim(),
     language: window.OpenBrowserLocale.resolveProfileLanguage({
       language: $('#editor-language')?.value || current.language || 'en-US',
@@ -866,7 +873,7 @@ function wireEditorAlignmentControls() {
     $('#editor-extra-accounts')?.append(buildExtraAccountRow());
   });
   $('#editor-os')?.addEventListener('change', fillEditorVersionSelects);
-  $('#editor-engine')?.addEventListener('change', fillEditorVersionSelects);
+  $('#editor-engine')?.addEventListener('change', () => { fillEditorVersionSelects(); updateEditorVisibility(); });
   $('#editor-id-copy')?.addEventListener('click', async () => {
     const id = $('#editor-id-text')?.textContent || '';
     try { await navigator.clipboard.writeText(id); toast(tx('复制成功')); } catch (_) {}
@@ -902,12 +909,17 @@ function wireEditorAlignmentControls() {
 }
 
 
-// 只改模式与输入框，不直接改任何 profile —— 用户仍需点「保存」才会生效；
-// 也不会给设备档案强行重掷（deviceProfile 只切到「独立随机」，种子仍由环境 ID 派生）。
-// 一键随机指纹：把所有可伪造面全部切到随机/噪声档，并清掉手填的固定标识。
-// 只改模式与输入框，不直接改任何 profile —— 用户仍需点「保存」才会生效；
-// 也不会给设备档案强行重掷（deviceProfile 只切到「独立随机」，种子仍由环境 ID 派生）。
+// Generate a fresh persistent identity in the draft. Save commits the new seed;
+// reopening an unchanged profile keeps that identity stable across launches.
 function randomizeFingerprintDraft() {
+  const form = $('#profile-editor-form');
+  if (form) {
+    const bytes = new Uint8Array(16);
+    window.crypto.getRandomValues(bytes);
+    form.dataset.fingerprintSeed = Array.from(bytes, (n) => n.toString(16).padStart(2, '0')).join('');
+    form.dataset.resetFingerprint = '1';
+    delete form.dataset.uaProfile;
+  }
   const noiseTargets = [
     ['#editor-canvas', 'noise'], ['#editor-webgl', 'noise'], ['#editor-webgl-meta', 'noise'],
     ['#editor-webgpu', 'webgl'], ['#editor-audio', 'noise'], ['#editor-media', 'noise'],
@@ -919,7 +931,7 @@ function randomizeFingerprintDraft() {
     if (el) el.value = value;
   }
   const deviceProfile = $('#editor-device-profile');
-  if (deviceProfile) deviceProfile.value = 'default';
+  if (deviceProfile) deviceProfile.value = 'persona';
   const ua = $('#editor-user-agent');
   if (ua) ua.value = '';
   const deviceName = $('#editor-device-name');
@@ -941,7 +953,7 @@ function randomizeFingerprintDraft() {
   const fontListMode = $('#editor-font-list-mode');
   if (fontListMode) fontListMode.value = 'noise';
   // 清掉手填的固定标识：种子、电量、字体列表、SSL 黑名单全部回到自动档
-  for (const sel of ['#editor-canvas-seed', '#editor-crects-seed', '#editor-audio-seed', '#editor-battery-level', '#editor-battery-charging-time', '#editor-battery-discharging-time', '#editor-font-list', '#editor-ssl-min', '#editor-ssl-blacklist']) {
+  for (const sel of ['#editor-cores', '#editor-memory', '#editor-canvas-seed', '#editor-crects-seed', '#editor-audio-seed', '#editor-battery-level', '#editor-battery-charging-time', '#editor-battery-discharging-time', '#editor-font-list', '#editor-ssl-min', '#editor-ssl-blacklist']) {
     const el = $(sel);
     if (el) el.value = '';
   }
@@ -973,6 +985,9 @@ function showProfileEditor(value, revision) {
   else ui.profiles.push(profile);
   const editorForm = $('#profile-editor-form');
   if (editorForm) {
+    editorForm.dataset.fingerprintSeed = profile.fingerprintSeed || '';
+    delete editorForm.dataset.uaProfile;
+    delete editorForm.dataset.resetFingerprint;
     delete editorForm.dataset.readonly;
     editorForm.querySelectorAll('input,select,textarea,button').forEach((el) => { el.disabled = false; });
   }
@@ -1259,6 +1274,9 @@ async function refreshUaMetaPreview() {
   try {
     const ua = await window.ops.buildUa({
       userAgent: raw,
+      profileId: editingProfileId,
+      engine: $('#editor-engine')?.value,
+      engineVersion: $('#editor-engine-version')?.value,
       os: editorOsToUaKey($('#editor-os')?.value),
       chromeMajor: Number($('#editor-ua-chrome-major')?.value) || undefined,
     });

@@ -14,7 +14,10 @@
  * Applied via CDP + document-start JS inject on stock Chromium.
  */
 
-const { DEFAULT_UA_CHROME_MAJOR, RANDOM_UA_CHROME_MAJORS } = require('./versions');
+const { OPENBROWSER_KERNEL_VERSION, DEFAULT_UA_CHROME_MAJOR, RANDOM_UA_CHROME_MAJORS } = require('./versions');
+
+const crypto = require('node:crypto');
+const UA_BRIDGE_KEY = crypto.randomBytes(32);
 
 const GREASE_BRANDS = [
   { brand: "Not:A-Brand", version: "99" },
@@ -295,6 +298,16 @@ function buildUaProfile(options = {}) {
     });
   }
 
+  if (/Firefox\//i.test(userAgent) && !/Chrome\//i.test(userAgent)) {
+    const preset = OS_PRESETS[osKey] || OS_PRESETS.windows;
+    const appPlatform = osKey.startsWith('macos') ? 'Macintosh' : (osKey === 'windows' ? 'Windows' : 'X11');
+    return {
+      engine: 'firefox', userAgent, appVersion: `5.0 (${appPlatform})`,
+      platform: options.platformNav || options.platform || preset.platformNav,
+      vendor: '', os: osKey, chromeMajor: 0, chromeFull: '', metadata: null, clientHints: {},
+    };
+  }
+
   const parsed = parseChromeVersion(userAgent) || { full: `${DEFAULT_UA_CHROME_MAJOR}.0.0.0`, major: DEFAULT_UA_CHROME_MAJOR };
   const major = majorHint || parsed.major;
   const fullForHints = normalizeChromeFull(
@@ -415,11 +428,12 @@ function cdpUserAgentOverride(uaProfile, acceptLanguage = "") {
  * Supports both Window (Navigator) and DedicatedWorker (WorkerNavigator) contexts.
  */
 function buildUaInjectionScript(uaProfile) {
+  const bridgeToken = crypto.createHmac('sha256', UA_BRIDGE_KEY).update(JSON.stringify(uaProfile)).digest('hex');
   const payload = {
     userAgent: uaProfile.userAgent,
     appVersion: uaProfile.appVersion,
     platform: uaProfile.platform,
-    vendor: uaProfile.vendor || "Google Inc.",
+    vendor: uaProfile.vendor ?? "Google Inc.",
     brands: uaProfile.metadata?.brands || [],
     fullVersionList: uaProfile.metadata?.fullVersionList || [],
     fullVersion: uaProfile.metadata?.uaFullVersion || uaProfile.chromeFull,
@@ -434,6 +448,7 @@ function buildUaInjectionScript(uaProfile) {
   const json = JSON.stringify(payload);
   return `(() => {
   const U = ${json};
+  const UA_BRIDGE_TOKEN = ${JSON.stringify(bridgeToken)};
   const nativeSource = new WeakMap();
   const originalToString = Function.prototype.toString;
   const nativeLike = (wrapper, original) => {
@@ -490,7 +505,7 @@ function buildUaInjectionScript(uaProfile) {
           const subHolder = {
             toString(...args) {
               const secret = args[0];
-              if (secret === "__UA_BRIDGE_TOKEN__") {
+              if (secret === UA_BRIDGE_TOKEN) {
                 if (nativeSource.has(this)) return { bridge: true, nativeText: nativeSource.get(this) };
                 try {
                   const inherited = origSubToString.call(this, secret);
@@ -627,7 +642,7 @@ function buildUaInjectionScript(uaProfile) {
       const holder = {
         toString(...args) {
           const secret = args[0];
-          if (secret === "__UA_BRIDGE_TOKEN__") {
+          if (secret === UA_BRIDGE_TOKEN) {
             if (nativeSource.has(this)) return { bridge: true, nativeText: nativeSource.get(this) };
             try {
               const inherited = originalToString.call(this, secret);
@@ -1020,16 +1035,15 @@ function randomUaForSeed(seedU32, options = {}) {
   const os = osList[seedU32 % osList.length];
   const majors = options.majors || RANDOM_UA_CHROME_MAJORS;
   const major = majors[(seedU32 >>> 8) % majors.length];
-  const build = 6000 + ((seedU32 >>> 16) % 900);
-  const patch = (seedU32 >>> 24) % 200;
-  const full = `${major}.0.${build}.${patch}`;
+  const knownFull = String(options.fullVersion || OPENBROWSER_KERNEL_VERSION);
+  const full = Number(knownFull.split('.')[0]) === Number(major) ? knownFull : `${major}.0.0.0`;
   return buildUaProfile({
     os,
     chromeMajor: major,
     chromeFull: full,
     reduced: true,
     ua_full_version: full,
-    architecture: os === "macos" && (seedU32 & 1) ? "arm" : undefined,
+    architecture: os === "macos" && ((seedU32 >>> 12) & 1) ? "arm" : undefined,
   });
 }
 

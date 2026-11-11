@@ -634,10 +634,9 @@ class BrowserEngine {
     else delete prefs.webkit.webprefs.default_font_size;
     prefs.bookmark_bar ||= {};
     prefs.bookmark_bar.show_on_all_tabs = Boolean(profile.advanced.showBookmarkBar);
-    if (profile.advanced.blockRestoreDialog) {
-      prefs.session ||= {};
-      prefs.session.restore_on_startup = profile.advanced.tabMode === 'restore' || profile.advanced.restoreSession ? 1 : 5;
-    }
+    // Native auto-restore can execute pages before the injection barrier.
+    prefs.session ||= {};
+    prefs.session.restore_on_startup = 5;
     await writeRawAtomically(file, JSON.stringify(prefs), 0o600);
     try {
       const persisted = JSON.parse(await fsp.readFile(file, 'utf8'));
@@ -1178,11 +1177,7 @@ class BrowserEngine {
       ? {
         engine: 'firefox',
         cdp: false,
-        // Firefox has no CDP: a fingerprint expectation cannot be injected or
-        // verified. Downstream (RPA planning, start-page expected checks, local
-        // API) must treat fingerprint values as intent, never as a delivery
-        // promise — declared here instead of relying on every consumer
-        // checking the engine string.
+        // Defaults stay false until the BiDi initialization verifies delivery.
         fingerprintDelivery: false,
         fingerprintVerification: false,
         runtimeInjection: false,
@@ -1209,7 +1204,7 @@ class BrowserEngine {
         canvas: item.fingerprint.canvas?.mode,
         webgl: item.fingerprint.webgl?.mode,
         webrtc: item.fingerprint.webrtc,
-        ...(item.engine === 'firefox' ? { delivery: 'intent-only' } : {}),
+        ...(item.engine === 'firefox' ? { delivery: item.capabilities?.fingerprintDelivery ? 'verified-document' : 'intent-only' } : {}),
       } : null,
     };
   }

@@ -229,7 +229,11 @@ module.exports = {
       } catch (_) {}
       return false;
     };
-    const values = await cdp.tabs(port); if (!values.length) return;
+    const values = await cdp.tabs(port);
+    if (!values.length) {
+      if (options.strict) throw new Error('启动标签页不可用');
+      return;
+    }
     const expected = String(startUrl || '').trim();
     let keep = values.find((tab) => this.isStartPageUrl(tab.url)) || values[0];
     const preferredId = keep?.id;
@@ -245,10 +249,12 @@ module.exports = {
             await cdp.call(keep.webSocketDebuggerUrl, 'Page.navigate', { url: expected });
           });
         } else {
-          await cdp.call(keep.webSocketDebuggerUrl, 'Page.navigate', { url: expected });
+          const navigation = await cdp.call(keep.webSocketDebuggerUrl, 'Page.navigate', { url: expected });
+          if (options.strict && navigation?.errorText) throw new Error(navigation.errorText);
         }
         await new Promise((resolve) => { const t = setTimeout(resolve, 400); t.unref?.(); });
-      } catch (_) {
+      } catch (error) {
+        if (options.strict) throw error;
         try { await cdp.call(keep.webSocketDebuggerUrl, 'Page.navigate', { url: expected }); } catch (__) {}
       }
     }
@@ -270,7 +276,7 @@ module.exports = {
    * OpenBrowser 原生启动页 URL：http://127.0.0.1:50326/?pid=...&id=...&name=...
    * 会话与网络信息由本引擎写入启动页服务，不依赖其它指纹浏览器。
    */
-  async buildStartPageUrl(profile, root, browserName, extensionCount) {
+  async buildStartPageUrl(profile, root, browserName, extensionCount, fingerprintOverride = null) {
     let pageNetwork = this.networkInfo.get(profile.id) || null;
     // 启动前尽量补全出口信息，启动页打开即可显示 IP（直连/代理同理）
     const hasProxy = profile.proxy && !/^(direct|offline|none)$/i.test(String(profile.proxy));
@@ -289,12 +295,16 @@ module.exports = {
         pageNetwork = this.networkInfo.get(profile.id) || null;
       }
     }
-    const timezone = profile.exitTimezone
-      || pageNetwork?.timezone
-      || (profile.privacy?.timezoneMode === 'custom' ? profile.privacy.timezone : '')
-      || '';
-    const fpForStart = (() => {
+    const timezone = fingerprintOverride
+      ? (fingerprintOverride.timezone || '')
+      : (profile.privacy?.timezoneMode === 'real' ? '' : (
+        (profile.privacy?.timezoneMode === 'custom' ? profile.privacy.timezone : '')
+        || profile.exitTimezone || pageNetwork?.timezone || ''));
+    const fpForStart = fingerprintOverride || (() => {
       try {
+        if (profile.engine === 'firefox') {
+          return require('../automation/firefox-fingerprint').buildFirefoxFingerprint(profile, this.chooseBrowser(profile, 'firefox').version);
+        }
         return buildFingerprint({
           ...profile,
           kernelVersion: this.kernelStatus()?.kernel?.version || profile.kernelVersion,
@@ -314,7 +324,7 @@ module.exports = {
         exitTimezone: timezone,
         exitIp: pageNetwork?.ip || profile.exitIp || '',
         exitCountryCode: pageNetwork?.countryCode || profile.exitCountryCode || '',
-        userAgent: profile.userAgent || uaFromFp,
+        userAgent: uaFromFp || profile.userAgent,
         group_name: profile.group_name || profile.groupName || '',
         privacy: {
           ...(profile.privacy || {}),
@@ -328,7 +338,7 @@ module.exports = {
       }, {
         timezone,
         network: pageNetwork,
-        userAgent: profile.userAgent || uaFromFp,
+        userAgent: uaFromFp || profile.userAgent,
         group_name: profile.group_name || profile.groupName || '',
         browserName,
         extensionCount,

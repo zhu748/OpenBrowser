@@ -8,6 +8,7 @@
 
 const { buildUaProfile, cdpUserAgentOverride, buildAcceptLanguageHeader, formatAcceptLanguage } = require('./shared');
 const { buildInjectionScript, injectSourceKeyCached, injectionCacheKeyFor } = require('./injection-script');
+const { normalizeCoordinates } = require('../../shared/profile-values');
 
 // Bookkeeping for the per-target inject. The runtime drives the same document-start script from
 // several places (pre-start, post-start, watch sweeps, reload recovery, worker attach). Registering
@@ -22,19 +23,19 @@ async function applyFingerprintToTab(cdpCall, webSocketDebuggerUrl, fp, profile 
   const privacy = profile.privacy || {};
   const timezone = privacy.timezoneMode === 'real'
     ? ''
-    : String(privacy.timezone || profile.timezone || profile.exitTimezone || fp.timezone || '').trim();
+    : String(fp.timezone || (privacy.timezoneMode === 'custom' ? privacy.timezone : profile.exitTimezone) || '').trim();
   // geoMode: custom coords | disabled/prompt (no override) | ip/allow (from exit IP)
   let latitude = null;
   let longitude = null;
   if (privacy.geoMode === 'custom') {
-    latitude = Number(privacy.latitude);
-    longitude = Number(privacy.longitude);
+    const location = normalizeCoordinates(privacy.latitude, privacy.longitude);
+    if (location.valid) ({ latitude, longitude } = location);
   } else if (privacy.geoMode === 'disabled' || privacy.geoMode === 'prompt') {
     latitude = null;
     longitude = null;
   } else {
-    latitude = Number(profile.exitLatitude);
-    longitude = Number(profile.exitLongitude);
+    const location = normalizeCoordinates(profile.exitLatitude, profile.exitLongitude);
+    if (location.valid) ({ latitude, longitude } = location);
   }
 
   // cdpCall may be:
@@ -74,7 +75,7 @@ async function applyFingerprintToTab(cdpCall, webSocketDebuggerUrl, fp, profile 
   const alreadyPatched = Boolean(sameConfig && injectState.documentStartOk && injectState.evaluated);
   // Nothing left to do for this target: the live document already carries this exact config and the
   // document-start registration covers every later navigation.
-  if (alreadyPatched && !forceInject) return;
+  if (alreadyPatched && !forceInject) return { documentStartOk: true, evaluated: true };
 
   // Page domain must be enabled or addScriptToEvaluateOnNewDocument is a no-op on some hosts.
   await invoke('Page.enable', {}).catch(() => {});
@@ -147,7 +148,7 @@ async function applyFingerprintToTab(cdpCall, webSocketDebuggerUrl, fp, profile 
   if (timezone) {
     await softOverride('Emulation.setTimezoneOverride', { timezoneId: timezone });
   }
-  if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+  if (latitude !== null && longitude !== null && Number.isFinite(latitude) && Number.isFinite(longitude)) {
     await softOverride('Emulation.setGeolocationOverride', {
       latitude,
       longitude,
@@ -157,11 +158,10 @@ async function applyFingerprintToTab(cdpCall, webSocketDebuggerUrl, fp, profile 
   // Roxy geoLocation mode: 'allow' auto-grants the permission (coordinates above provide the
   // position), 'deny' blocks it at the browser level so no native prompt can leak host coords.
   // The injection script mirrors both for hosts where this command is unavailable.
-  if (privacy.geoPermission === 'allow' || privacy.geoPermission === 'deny') {
-    await softOverride('Browser.enable', {});
+  if (fp.geoPermission === 'granted' || fp.geoPermission === 'denied') {
     await softOverride('Browser.setPermission', {
       permission: { name: 'geolocation' },
-      setting: privacy.geoPermission === 'allow' ? 'granted' : 'denied',
+      setting: fp.geoPermission,
     });
   }
   if (fp.languages?.[0]) {
@@ -176,67 +176,44 @@ async function applyFingerprintToTab(cdpCall, webSocketDebuggerUrl, fp, profile 
     if (scriptIdentifier) {
       // The config changed under a live registration: drop the stale script so the next navigation
       // cannot run both the previous and the current inject back to back.
-      await invoke('Page.removeScriptToEvaluateOnNewDocument', { identifier: scriptIdentifier }).catch(() => {});
+      await invoke('Page.removeScriptToEvaluateOnNewDocument', { identifier: scriptIdentifier });
       scriptIdentifier = null;
     }
-    try {
-      const added = await invoke('Page.addScriptToEvaluateOnNewDocument', { source });
-      scriptIdentifier = added?.identifier || added?.result?.identifier || scriptIdentifier;
-      documentStartOk = true;
-    } catch (error) {
-      const msg = String(error && error.message || error || '');
-      if (!/already|duplicate|exists/i.test(msg)) {
-        // Retry once after re-enabling Page domain.
-        await invoke('Page.enable', {}).catch(() => {});
-        try {
-          const added = await invoke('Page.addScriptToEvaluateOnNewDocument', { source });
-          scriptIdentifier = added?.identifier || added?.result?.identifier || scriptIdentifier;
-          documentStartOk = true;
-        } catch (retryError) {
-          const retryMsg = String(retryError && retryError.message || retryError || '');
-          if (!/already|duplicate|exists/i.test(retryMsg)) {
-            // Soft: still try Runtime.evaluate on current document.
-            documentStartOk = false;
-          } else {
-            documentStartOk = true;
-          }
-        }
-      } else {
+    let registrationError;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const added = await invoke('Page.addScriptToEvaluateOnNewDocument', { source });
+        scriptIdentifier = added?.identifier || added?.result?.identifier || null;
+        if (!scriptIdentifier) throw new Error('Document-start registration returned no identifier');
         documentStartOk = true;
+        registrationError = null;
+        break;
+      } catch (error) {
+        registrationError = error;
+        if (attempt === 0) await invoke('Page.enable', {});
       }
     }
+    if (registrationError) throw registrationError;
   }
-  // Already-open documents: best-effort patch. Never abort startup if evaluate throws
-  // (Chromium often reports "Uncaught" for redefine races; document-start still applies on next nav).
-  let evaluatedOk = false;
+  if (injectTargetKey) {
+    TARGET_INJECT_STATE.set(injectTargetKey, { fpKey, identifier: scriptIdentifier, documentStartOk, evaluated: false });
+    if (TARGET_INJECT_STATE.size > MAX_TRACKED_TARGETS) TARGET_INJECT_STATE.delete(TARGET_INJECT_STATE.keys().next().value);
+  }
+  let evaluatedOk = Boolean(sameConfig && injectState.evaluated);
   if (!options.skipEvaluate && !options.isWaiting) {
-    try {
-      const evaluated = await invoke('Runtime.evaluate', {
+    const evaluated = await invoke('Runtime.evaluate', {
       expression: livePatchSource || source,
       returnByValue: false,
       awaitPromise: false,
     });
-    const exceptionDetails = evaluated && (evaluated.exceptionDetails || evaluated.result?.exceptionDetails);
-    if (exceptionDetails) {
-      // leave a soft signal for callers that inspect return value; do not throw
-      const text = exceptionDetails.text
-        || exceptionDetails.exception?.description
-        || 'Uncaught';
-      const err = new Error(text);
-      err.softInject = true;
-      err.exceptionDetails = exceptionDetails;
-      err.documentStartOk = documentStartOk;
-      // Soft path: swallow so keepDefaultTab can still open the welcome page.
-    } else {
-      evaluatedOk = true;
-    }
-  } catch (error) {
-    const msg = String(error && error.message || error || '');
-    if (!/Uncaught|already in effect|cannot be overridden|Cannot find default execution context|Command can only be executed on top-level targets/i.test(msg)) {
-      // unexpected CDP transport errors still surface
+    const details = evaluated?.exceptionDetails || evaluated?.result?.exceptionDetails;
+    if (details) {
+      const error = new Error(details.exception?.description || details.text || 'Fingerprint script execution failed');
+      error.exceptionDetails = details;
+      error.documentStartOk = documentStartOk;
       throw error;
     }
-  }
+    evaluatedOk = true;
   }
   if (injectTargetKey) {
     TARGET_INJECT_STATE.set(injectTargetKey, { fpKey, identifier: scriptIdentifier, documentStartOk, evaluated: evaluatedOk });
@@ -246,6 +223,7 @@ async function applyFingerprintToTab(cdpCall, webSocketDebuggerUrl, fp, profile 
       TARGET_INJECT_STATE.delete(oldest);
     }
   }
+  return { documentStartOk, evaluated: evaluatedOk };
 }
 
 

@@ -472,14 +472,14 @@ function backgroundNetworkFlagsForProfile(profile) {
   return flags;
 }
 
-function evaluateFingerprintDelivery(profile = {}, fingerprint = {}, liveProbe = null) {
+function evaluateFingerprintDelivery(profile = {}, fingerprint = {}, liveProbe = null, options = {}) {
   const mismatches = [];
   const warnings = [];
 
-  // 1. Probe error or missing live data: WARN only, do not fail
-  if (!liveProbe || liveProbe.probeError) {
-    warnings.push(liveProbe?.probeError ? ("探针返回异常: " + liveProbe.probeError) : "探针未返回数据 (undefined)");
-    return { ok: true, mismatches: [], warnings };
+  // A failed/empty probe cannot establish delivery.
+  if (!liveProbe || liveProbe.probeError || (options.strict && (!liveProbe.userAgent || !liveProbe.platform))) {
+    const message = liveProbe?.probeError ? ("探针返回异常: " + liveProbe.probeError) : "指纹探针缺少 UA 或平台数据";
+    return { ok: false, mismatches: [{ field: 'probe', message }], warnings };
   }
 
   const privacy = profile?.privacy || {};
@@ -506,6 +506,9 @@ function evaluateFingerprintDelivery(profile = {}, fingerprint = {}, liveProbe =
   const liveUa = String(liveProbe.userAgent || '').trim();
 
   if (expectedUa && liveUa) {
+    if (options.strict && expectedUa !== liveUa) {
+      mismatches.push({ field: 'userAgent', expected: expectedUa, actual: liveUa, message: '实际 UA 与配置不一致' });
+    }
     const expectedUaPlat = detectUaPlatform(expectedUa);
     const liveUaPlat = detectUaPlatform(liveUa);
     if (expectedUaPlat && liveUaPlat && expectedUaPlat !== liveUaPlat) {
@@ -622,11 +625,11 @@ function evaluateFingerprintDelivery(profile = {}, fingerprint = {}, liveProbe =
   }
 
   // 8. Hardware Concurrency & Device Memory (explicitly specified only)
-  const rawCores = privacy.cores ?? profile?.cores ?? privacy.fingerprint?.cores;
+  const rawCores = options.strict ? fingerprint.hardwareConcurrency : (privacy.cores ?? profile?.cores ?? privacy.fingerprint?.cores);
   const explicitCores = (rawCores !== '' && rawCores !== null && rawCores !== undefined) ? Number(rawCores) : NaN;
   if (Number.isFinite(explicitCores) && explicitCores > 0) {
     const liveCores = Number(liveProbe.hardwareConcurrency);
-    if (Number.isFinite(liveCores) && liveCores !== Math.round(explicitCores)) {
+    if ((options.strict && !Number.isFinite(liveCores)) || (Number.isFinite(liveCores) && liveCores !== Math.round(explicitCores))) {
       mismatches.push({
         field: 'hardwareConcurrency',
         expected: Math.round(explicitCores),
@@ -636,11 +639,13 @@ function evaluateFingerprintDelivery(profile = {}, fingerprint = {}, liveProbe =
     }
   }
 
-  const rawMemory = privacy.memory ?? profile?.memory ?? privacy.fingerprint?.memory;
+  const rawMemory = options.strict ? fingerprint.deviceMemory : (privacy.memory ?? profile?.memory ?? privacy.fingerprint?.memory);
   const explicitMemory = (rawMemory !== '' && rawMemory !== null && rawMemory !== undefined) ? Number(rawMemory) : NaN;
-  if (Number.isFinite(explicitMemory) && explicitMemory > 0) {
+  // Initial opaque about:blank documents can legitimately lack secure-context APIs.
+  const memoryGatedOff = liveProbe.deviceMemoryPresent === false && liveProbe.secureContext === false;
+  if (Number.isFinite(explicitMemory) && explicitMemory > 0 && !memoryGatedOff) {
     const liveMemory = Number(liveProbe.deviceMemory);
-    if (Number.isFinite(liveMemory) && liveMemory !== Number(explicitMemory)) {
+    if ((options.strict && !Number.isFinite(liveMemory)) || (Number.isFinite(liveMemory) && liveMemory !== Number(explicitMemory))) {
       mismatches.push({
         field: 'deviceMemory',
         expected: explicitMemory,
@@ -650,6 +655,16 @@ function evaluateFingerprintDelivery(profile = {}, fingerprint = {}, liveProbe =
     }
   }
 
+  if (options.strict) {
+    for (const [field, expected] of [['screenWidth', fingerprint.screen?.width], ['screenHeight', fingerprint.screen?.height], ['devicePixelRatio', fingerprint.screen?.devicePixelRatio]]) {
+      if (expected != null && Number(liveProbe[field]) !== Number(expected)) {
+        mismatches.push({ field, expected, actual: liveProbe[field], message: `${field} 未按配置交付` });
+      }
+    }
+    if (fingerprint.engine === 'firefox' && liveProbe.vendor !== '') {
+      mismatches.push({ field: 'vendor', expected: '', actual: liveProbe.vendor, message: 'Firefox vendor 应保持原生空字符串' });
+    }
+  }
   return {
     ok: mismatches.length === 0,
     mismatches,

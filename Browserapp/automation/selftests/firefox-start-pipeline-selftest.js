@@ -60,6 +60,7 @@ function makeStubFirefox(tmp) {
     'ROOT="$2"',
     'cp "$ROOT/user.js" "' + markerDir + '/user.js.copy" 2>/dev/null',
     'echo "$@" > "' + markerDir + '/args.txt"',
+    'echo "WebDriver BiDi listening on ws://127.0.0.1:12345" >&2',
     'while :; do sleep 0.2; done',
     'exit 0',
     '',
@@ -77,6 +78,39 @@ function makeStubFirefox(tmp) {
   }
   const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'ob-ffstart-'));
   const engine = await makeEngine(tmp);
+  engine.ensureExitNetworkForLocale = async () => null;
+  // Exercise the production BiDi client and launch barriers without a network socket.
+  const originalWebSocket = global.WebSocket;
+  const commands = [];
+  let rejectPreload = false;
+  const remote = (value) => {
+    if (value === null) return { type: 'null' };
+    if (Array.isArray(value)) return { type: 'array', value: value.map(remote) };
+    if (typeof value === 'object') return { type: 'object', value: Object.entries(value).map(([key, entry]) => [key, remote(entry)]) };
+    return { type: typeof value, value };
+  };
+  global.WebSocket = class extends EventTarget {
+    constructor() { super(); this.readyState = 0; queueMicrotask(() => { this.readyState = 1; this.dispatchEvent(new Event('open')); }); }
+    close() { this.readyState = 3; this.dispatchEvent(new Event('close')); }
+    send(text) {
+      const command = JSON.parse(text);
+      commands.push(command);
+      let result = {};
+      if (command.method === 'script.addPreloadScript') result = { script: 'firefox-preload' };
+      if (command.method === 'browsingContext.getTree') result = { contexts: [{ context: 'initial', url: 'about:blank' }] };
+      if (command.method === 'browsingContext.create') result = { context: 'extra' };
+      if (command.method === 'script.evaluate') {
+        const fp = engine.running.get('env-900').fingerprint;
+        result = { type: 'success', result: command.params.expression.includes('webglVendor: webglVendor')
+          ? remote({ platform: fp.platform, userAgent: fp.userAgent, hardwareConcurrency: fp.hardwareConcurrency, languages: fp.languages, timezone: fp.timezone, vendor: '', screenWidth: fp.screen.width, screenHeight: fp.screen.height, devicePixelRatio: fp.screen.devicePixelRatio })
+          : { type: 'undefined' } };
+      }
+      const response = rejectPreload && command.method === 'script.addPreloadScript'
+        ? { type: 'error', id: command.id, error: 'unknown error', message: 'test preload rejected' }
+        : { type: 'success', id: command.id, result };
+      queueMicrotask(() => this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(response) })));
+    }
+  };
   const { binary, markerDir } = makeStubFirefox(tmp);
 
   // probe stubs: the stub is not a real browser.
@@ -92,7 +126,7 @@ function makeStubFirefox(tmp) {
     language: 'en-US',
     networkMode: 'direct',
     proxy: 'Direct',
-    advanced: { showInfoPage: false, multiOpen: false },
+    advanced: { showInfoPage: false, multiOpen: false, startUrls: 'https://first.test\nhttps://second.test' },
     privacy: {},
   };
   engine.profiles.set('env-900', profile);
@@ -115,6 +149,10 @@ function makeStubFirefox(tmp) {
       assert.strictEqual(item.cdpConnection, null);
       assert.strictEqual(item.port, null);
       assert.strictEqual(item.browser.engine, 'firefox');
+      assert.ok(item.bidiConnection);
+      assert.strictEqual(started.capabilities.fingerprintDelivery, true);
+      assert.strictEqual(started.capabilities.workerFingerprintDelivery, false);
+      assert.match(item.fingerprint.userAgent, /Firefox\/141\.0$/);
     });
 
     check('user.js written before spawn with proxy/UA/telemetry prefs', () => {
@@ -128,6 +166,14 @@ function makeStubFirefox(tmp) {
     check('launch args used -profile and --no-remote', () => {
       const args = fs.readFileSync(path.join(markerDir, 'args.txt'), 'utf8');
       assert.ok(args.includes('--no-remote'));
+      assert.ok(args.includes('--remote-debugging-port=0'));
+      assert.ok(!args.includes('https://'), 'startup URLs must not bypass preload');
+    });
+    check('BiDi registers and verifies before both startup URLs navigate', () => {
+      const registered = commands.findIndex((command) => command.method === 'script.addPreloadScript');
+      const navigated = commands.findIndex((command) => command.method === 'browsingContext.navigate');
+      assert.ok(registered >= 0 && navigated > registered);
+      assert.equal(commands.filter((command) => command.method === 'browsingContext.navigate').length, 2);
     });
 
     check('progress events were emitted', () => {
@@ -148,12 +194,20 @@ function makeStubFirefox(tmp) {
     check('status event emitted after stop', () => {
       assert.ok(events.some((e) => e.type === 'status' && e.id === 'env-900' && e.running === false));
     });
+    rejectPreload = true;
+    const beforeFailure = commands.filter((command) => command.method === 'browsingContext.navigate').length;
+    await assert.rejects(engine.start(profile), /test preload rejected/);
+    check('failed Firefox preload closes the browser without target navigation', () => {
+      assert.equal(engine.running.has(profile.id), false);
+      assert.equal(commands.filter((command) => command.method === 'browsingContext.navigate').length, beforeFailure);
+    });
   } catch (error) {
     failed += 1;
     console.error('FAIL  pipeline crashed: ' + (error && error.stack || error));
   } finally {
     unsubscribe();
     await engine.stopAll().catch(() => {});
+    global.WebSocket = originalWebSocket;
     await fsp.rm(tmp, { recursive: true, force: true }).catch(() => {});
   }
 

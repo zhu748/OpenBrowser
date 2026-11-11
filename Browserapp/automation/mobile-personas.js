@@ -173,6 +173,7 @@ function mobilePersona(seedU32, os = "android", options = {}) {
     userAgent,
     os: key,
     chromeMajor,
+    chromeFull: options.chromeFull,
     platformNav: isIos ? "iPhone" : "Linux armv8l",
     platform: isIos ? "iOS" : "Android",
     platformVersion: `${osVersion}.0.0`,

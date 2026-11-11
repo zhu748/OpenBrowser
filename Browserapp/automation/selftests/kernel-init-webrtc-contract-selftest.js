@@ -165,11 +165,12 @@ async function main() {
     privacy: { webrtc: 'proxy' },
   };
   const fieldsMissingExit = mapFingerprintToInitFields(buildFingerprint(profileMissingExit), profileMissingExit);
-  assert.strictEqual(fieldsMissingExit.is_webrtc_enable, true);
-  assert.strictEqual(fieldsMissingExit.webrtc_policy, 1,
-    'missing exit IP must safely downgrade webrtc_policy to 1 (real)');
+  assert.strictEqual(fieldsMissingExit.is_webrtc_enable, false);
+  assert.strictEqual(fieldsMissingExit.webrtc_policy, 0,
+    'missing exit IP must disable native ICE instead of exposing real addresses');
   assert.strictEqual(fieldsMissingExit.webrtc_fake_ip, undefined,
     'missing exit IP must NOT set webrtc_fake_ip (neither empty nor placeholder)');
+  assert.strictEqual(fieldsMissingExit.webrtc_local_ip, undefined);
 
   console.log('Section 2: OK');
 
@@ -233,6 +234,7 @@ async function main() {
   for (const badIp of ['8.8.8.8', '0.0.0.0', '']) {
     const prof = {
       id: 'bad-local-ip-profile',
+      exitIp: '203.0.113.17',
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/148.0.0.0',
       privacy: { webrtcLocalIp: badIp },
     };
@@ -439,7 +441,7 @@ async function main() {
   assert.strictEqual(contradictoryWebRtcInit.webrtc_fake_ip, undefined);
   assert.strictEqual(contradictoryWebRtcInit.webrtc_local_ip, undefined);
 
-  // 5.2 Defense: applyFingerprintFields corrects policy 3 without fake IP to policy 1
+  // 5.2 Defense: an unavailable proxy identity disables native ICE.
   const contradictoryPolicy3Init = {
     is_webrtc_enable: true,
     webrtc_policy: 3,
@@ -449,8 +451,9 @@ async function main() {
     webrtc_policy: 3,
     // NO fake IP
   });
-  assert.strictEqual(contradictoryPolicy3Init.webrtc_policy, 1,
-    'Policy 3 without fake IP must be downgraded to 1');
+  assert.strictEqual(contradictoryPolicy3Init.webrtc_policy, 0,
+    'Policy 3 without fake IP must disable ICE');
+  assert.strictEqual(contradictoryPolicy3Init.is_webrtc_enable, false);
   assert.strictEqual(contradictoryPolicy3Init.webrtc_fake_ip, undefined);
 
   // 5.3 Rejection: validator rejects raw contradictory state

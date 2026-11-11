@@ -322,9 +322,10 @@ function buildFirefoxUserJs({ userAgent, acceptLanguages, locale, proxyEndpoint,
 }
 
 /** Firefox CLI for a launch: -profile <root>, --no-remote, optional -headless, URL(s). */
-function firefoxStartupArgs({ root, startUrl, extraUrls, headless }) {
+function firefoxStartupArgs({ root, startUrl, extraUrls, headless, remoteDebugging = false }) {
   const args = ['-profile', String(root)];
   args.push('--no-remote');
+  if (remoteDebugging) args.push('--remote-debugging-port=0');
   if (headless) args.push('-headless');
   const first = String(startUrl || 'about:blank');
   const rest = (Array.isArray(extraUrls) ? extraUrls : [])

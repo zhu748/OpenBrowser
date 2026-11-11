@@ -27,6 +27,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
+const { readDeferredSessionUrls, preserveLegacySession, openVerifiedStartupTabs } = require('./startup-session');
 
 // Browserapp/ app root (this file lives in Browserapp/engine/). Resource
 // bundles such as kernels/ and bundled-extension/ sit next to main.js, one
@@ -400,19 +401,8 @@ module.exports = {
       await applyDefaultSearchEngine(root, profile.privacy.searchEngine);
     }
     const pageNetwork = this.networkInfo.get(profile.id) || {};
-    const customStartUrls = this.resolveStartupUrls(profile);
-    const infoStartUrl = profile.advanced.showInfoPage !== false
-      ? await this.buildStartPageUrl(
-        { ...profile, exitIp: pageNetwork.ip || profile.exitIp || '', title: profile.title || profile.name },
-        root,
-        browser.name,
-        extensions.length
-      )
-      : null;
-    startUrl = customStartUrls[0] || infoStartUrl;
-    const proxyConfig = this.proxyConfig(profile.proxy);
-    // Site-stability keeps static marks; refresh-on-start only when stability is off.
-    const allowSeedRefresh = profile.privacy.refreshFingerprintOnStart && profile.privacy.stabilityMode === 'off';
+    // Explicit identity refresh is independent of per-site sampling stability.
+    const allowSeedRefresh = profile.privacy.refreshFingerprintOnStart;
     const fingerprint = buildFingerprint({
       ...profile,
       fingerprintLaunchSeed: allowSeedRefresh ? crypto.randomBytes(16).toString('hex') : '',
@@ -422,6 +412,23 @@ module.exports = {
       exitLongitude: profile.exitLongitude ?? pageNetwork.longitude,
       hostScreen: hostScreenSummary(),
     });
+    let customStartUrls = this.resolveStartupUrls(profile);
+    if (restoreSession) {
+      const restoredUrls = await readDeferredSessionUrls(root);
+      if (restoredUrls.length) customStartUrls = restoredUrls;
+      else await preserveLegacySession(root, 'chromium');
+    }
+    const infoStartUrl = profile.advanced.showInfoPage !== false
+      ? await this.buildStartPageUrl(
+        { ...profile, exitIp: pageNetwork.ip || profile.exitIp || '', title: profile.title || profile.name },
+        root,
+        browser.name,
+        extensions.length,
+        fingerprint
+      )
+      : null;
+    startUrl = customStartUrls[0] || infoStartUrl;
+    const proxyConfig = this.proxyConfig(profile.proxy);
     if (proxyConfig) {
       const meta = profile.proxyMeta || {};
       const major = Number(meta.tlsChromeMajor)
@@ -476,6 +483,7 @@ module.exports = {
           id: profile.id,
           message: '内核 init 指纹同步失败：' + error.message,
         });
+        throw error;
       }
     }
     const configuredArgs = completeLaunchArguments(args, { profile, proxyConfig, restoreSession, startUrl,
@@ -853,10 +861,12 @@ module.exports = {
       injectionFailed = !injectSucceeded || !workerSucceeded;
 
       if (injectionFailed) {
+        item.verificationBlocked = true;
         const failureDetails = [
           !injectSucceeded ? ('Pre-inject 失败: ' + (injectError?.message || injectError || '未知错误')) : '',
           !workerSucceeded ? ('Worker inject 失败: ' + (workerError?.message || workerError || '未知错误')) : '',
         ].filter(Boolean).join('; ');
+        item.fingerprintVerificationError = failureDetails;
 
         this.emit({
           type: 'fingerprint-injection-failed',
@@ -878,10 +888,11 @@ module.exports = {
       } else {
         // Fail-Closed: Verify actual delivered fingerprint via CDP probe before target navigation
         currentStage = 'verify'; this.emitStartProgress(profile.id, 'verify', 92, '正在校验指纹交付…');
-        let deliveryResult = { ok: true, blocked: false, mismatches: [], warnings: [] };
+        let deliveryResult = { ok: false, blocked: true, mismatches: [], warnings: [] };
         try {
           deliveryResult = await this.verifyStartupFingerprintDelivery(item, profile, item.fingerprint || fingerprint);
         } catch (verifyError) {
+          deliveryResult.mismatches.push({ field: 'probe', message: verifyError.message || String(verifyError) });
           await fpLog('start.delivery-verify-exception', {
             profileId: profile.id,
             error: String(verifyError?.message || verifyError),
@@ -912,12 +923,13 @@ module.exports = {
           } catch (navError) {
             await fpLog('start.navigate-verification-barrier-fail', { profileId: profile.id, error: String(navError.message || navError) });
           }
-        } else if (!restoreSession && startUrl) {
+        } else if (startUrl) {
           await fpLog('start.navigate-startpage', { profileId: profile.id, startUrl });
           try {
-            await this.keepDefaultTab(item.port, startUrl, { keepUrls: customStartUrls });
+            await openVerifiedStartupTabs(this, item, [startUrl, ...customStartUrls.slice(1)]);
           } catch (navError) {
             await fpLog('start.navigate-fail', { profileId: profile.id, error: String(navError.message || navError) });
+            throw navError;
           }
           try {
             await this.ensureStartPageFingerprint(item, profile, injectFp, startUrl);
@@ -941,12 +953,10 @@ module.exports = {
     } catch (error) {
       if (item) item.cdpError = error.message;
       await fpLog('start.fail', { profileId: profile.id, error: String(error.message || error) });
-      // Last chance: still try to open start page so UI is not stuck on about:blank.
-      if (item && !restoreSession && startUrl && item.port && !item.verificationBlocked && !injectionFailed) {
-        try {
-          await this.keepDefaultTab(item.port, startUrl, { keepUrls: customStartUrls });
-          await fpLog('start.navigate-after-fail', { profileId: profile.id, startUrl });
-        } catch (_) {}
+      // Never navigate a target after an unverified startup exception.
+      if (item) {
+        item.verificationBlocked = true;
+        item.fingerprintVerificationError = error.message;
       }
     }
     this.assertStartGenerationActive(profile.id, lifecycleGeneration);

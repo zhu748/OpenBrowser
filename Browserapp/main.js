@@ -1239,35 +1239,7 @@ app.whenReady().then(async () => {
   });
   registerTrustedIpc('automation:fingerprint', (_event, id) => engine.fingerprintFor(String(id || '')));
   registerTrustedIpc('automation:isolation-audit', () => engine.isolationAudit());
-  registerTrustedIpc('automation:build-ua', (_event, payload = {}) => {
-    const { buildUaProfile, randomUaForSeed, parseOsFromUa } = require('./automation/user-agent');
-    const crypto = require('crypto');
-    if (payload?.random) {
-      const seed = crypto.randomBytes(4).readUInt32BE(0);
-      return randomUaForSeed(seed, {
-        majors: payload.chromeMajor ? [Number(payload.chromeMajor)] : undefined,
-        osList: payload.os ? [payload.os] : undefined,
-      });
-    }
-    const osMap = { Windows: 'windows', windows: 'windows', macOS: 'macos', macos: 'macos', Mac: 'macos', Linux: 'linux', linux: 'linux', Android: 'android', android: 'android' };
-    const os = osMap[payload.os] || payload.os || parseOsFromUa(payload.userAgent || '') || undefined;
-    if (os === 'android') {
-      const { mobilePersona } = require('./automation/mobile-personas');
-      const deviceSeed = payload.deviceSeed !== undefined
-        ? Number(payload.deviceSeed)
-        : crypto.randomBytes(4).readUInt32BE(0);
-      return mobilePersona(deviceSeed, 'android', {
-        chromeMajor: Number(payload.chromeMajor) || undefined,
-      }).uaProfile;
-    }
-    return buildUaProfile({
-      userAgent: payload.userAgent || '',
-      os,
-      chromeMajor: Number(payload.chromeMajor) || undefined,
-      chromeFull: payload.chromeFull || payload.fullVersion,
-      reduced: payload.reduced !== false,
-    });
-  });
+  registerTrustedIpc('automation:build-ua', (_event, payload = {}) => require('./automation/editor-ua').buildEditorUa(engine, payload));
 
   const proxyStore = () => {
     if (!automation?.proxyStore) throw new Error('代理库未就绪');

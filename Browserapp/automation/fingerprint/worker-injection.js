@@ -32,7 +32,7 @@ function buildWorkerInjectionScript(fp) {
     // Intentionally divergent from the main-world CFG (injection-script.js adds the iOS
     // 'Apple Computer, Inc.' branch and a uaProfile.vendor fallback) — preserved as-is,
     // see the drift list in injection-config.js.
-    vendor: fp.vendor || fp.uaProfile?.vendor || 'Google Inc.',
+    vendor: fp.vendor ?? fp.uaProfile?.vendor ?? 'Google Inc.',
     // Intentionally divergent from the main-world CFG (main falls back to
     // fp.uaProfile?.metadata) — preserved as-is, see injection-config.js.
     userAgentMetadata: fp.userAgentMetadata,

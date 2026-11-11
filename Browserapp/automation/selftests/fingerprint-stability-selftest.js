@@ -313,7 +313,7 @@ async function main() {
   // The seed-refresh gate and the TLS major follow the built fingerprint inside
   // the _start routine, which moved to the engine/start.js mixin.
   const startSrc = fs.readFileSync(path.join(__dirname, '../../engine/start.js'), 'utf8');
-  assert.ok(startSrc.includes("stabilityMode === 'off'"), 'refresh seed must yield to stability');
+  assert.ok(startSrc.includes("const allowSeedRefresh = profile.privacy.refreshFingerprintOnStart;"), 'explicit refresh is independent of sampling stability');
   assert.ok(startSrc.includes('fingerprint?.uaProfile?.chromeMajor'), 'tls major should follow built fingerprint');
   // webglMeta real skips vendor spoof
   const metaReal = buildFingerprint({

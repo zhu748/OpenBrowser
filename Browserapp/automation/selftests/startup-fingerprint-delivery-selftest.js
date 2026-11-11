@@ -290,28 +290,15 @@ async function check(name, fn) {
   });
 
   // -------------------------------------------------------------------------
-  // 4. 探针异常容错与稳定性（只 warn，不阻断）
+  // 4. Missing/failed probes are failures, never evidence of successful delivery.
   // -------------------------------------------------------------------------
-  await check("4.1: 探针返回 undefined 时不阻断启动，仅记录警告", async () => {
-    const profile = { id: "p_probe_undef", platform: "Win32", privacy: {} };
-    const res = evaluateFingerprintDelivery(profile, {}, undefined);
-    assert.strictEqual(res.ok, true, "Must not block when probe is undefined");
-    assert.ok(res.warnings.length > 0, "Must log warning");
-  });
-
-  await check("4.2: 探针返回 null 时不阻断启动，仅记录警告", async () => {
-    const profile = { id: "p_probe_null", platform: "Win32", privacy: {} };
-    const res = evaluateFingerprintDelivery(profile, {}, null);
-    assert.strictEqual(res.ok, true, "Must not block when probe is null");
-    assert.ok(res.warnings.length > 0, "Must log warning");
-  });
-
-  await check("4.3: 探针抛错 (probeError) 时不阻断启动，仅记录警告", async () => {
-    const profile = { id: "p_probe_err", platform: "Win32", privacy: {} };
-    const res = evaluateFingerprintDelivery(profile, {}, { probeError: "Execution context was destroyed" });
-    assert.strictEqual(res.ok, true, "Must not block when probeError occurs");
-    assert.ok(res.warnings.some((w) => w.includes("Execution context was destroyed")));
-  });
+  for (const [name, probe] of [['undefined', undefined], ['null', null], ['probeError', { probeError: 'Execution context was destroyed' }]]) {
+    await check(`4: ${name} probe blocks startup`, async () => {
+      const res = evaluateFingerprintDelivery({ id: 'probe-failure', privacy: {} }, {}, probe);
+      assert.strictEqual(res.ok, false);
+      assert.ok(res.mismatches.some((m) => m.field === 'probe'));
+    });
+  }
 
   await check("4.4: 无 WebGL 上下文（无头环境/无GPU）只 warn 不阻断", async () => {
     const profile = {
@@ -378,7 +365,7 @@ async function check(name, fn) {
     assert.strictEqual(engine.deliveryVerificationFailures.get("p_consecutive"), 3);
 
     // Attempt 4 hits ceiling and immediately blocks without probe
-    const r4 = await engine.verifyStartupFingerprintDelivery(item, profile, null, { mockProbe: { platform: "Win32" } });
+    const r4 = await engine.verifyStartupFingerprintDelivery(item, profile, null, { mockProbe: { platform: "Win32", userAgent: "Mozilla/5.0 (Windows NT 10.0) Chrome/148.0.0.0" } });
     assert.strictEqual(r4.ok, false);
     assert.strictEqual(r4.blocked, true);
     assert.strictEqual(r4.consecutiveLimitReached, true);
@@ -389,7 +376,7 @@ async function check(name, fn) {
     assert.strictEqual(engine.deliveryVerificationFailures.has("p_consecutive"), false);
 
     // After reset, valid probe succeeds
-    const r5 = await engine.verifyStartupFingerprintDelivery(item, profile, null, { mockProbe: { platform: "Win32" } });
+    const r5 = await engine.verifyStartupFingerprintDelivery(item, profile, null, { mockProbe: { platform: "Win32", userAgent: "Mozilla/5.0 (Windows NT 10.0) Chrome/148.0.0.0" } });
     assert.strictEqual(r5.ok, true);
     assert.strictEqual(r5.blocked, false);
   });
@@ -406,7 +393,7 @@ async function check(name, fn) {
     assert.ok(engineCode.includes("item.verificationBlocked = true"), "Must mark verificationBlocked on item");
     assert.ok(engineCode.includes("start.navigate-verification-barrier-errorpage"), "Must log navigation to local error page on verification failure");
     assert.ok(engineCode.includes("指纹未按配置交付，已阻止访问目标站点"), "Must include Chinese warning on error page");
-    assert.ok(engineCode.includes("!item.verificationBlocked"), "Must guard catch-block fallback from navigating to startUrl");
+    assert.ok(!engineCode.includes("start.navigate-after-fail"), "Exceptions must never navigate to startUrl");
   });
 
 

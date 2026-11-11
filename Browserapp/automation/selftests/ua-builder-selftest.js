@@ -31,8 +31,8 @@ for (const profile of samples) {
     assert.equal(vm.runInContext(`typeof Function.prototype.toString.call(
       Object.getOwnPropertyDescriptor(${kind}.prototype, 'userAgent').get, 'arbitrary-secret')`, scope), 'string',
     'arbitrary strings do not expose the internal bridge');
-    assert.equal(vm.runInContext(`Function.prototype.toString.call(
-      Object.getOwnPropertyDescriptor(${kind}.prototype, 'userAgent').get, '__UA_BRIDGE_TOKEN__').bridge`, scope), true);
+    assert.equal(vm.runInContext(`typeof Function.prototype.toString.call(
+      Object.getOwnPropertyDescriptor(${kind}.prototype, 'userAgent').get, '__UA_BRIDGE_TOKEN__')`, scope), 'string', 'fixed public token must not expose the private bridge');
     assert.throws(() => vm.runInContext(`Object.getOwnPropertyDescriptor(${kind}.prototype, 'userAgent').get.call(${kind}.prototype)`, scope),
       (error) => error.name === 'TypeError', 'prototype receiver still rejects illegal invocation');
   }

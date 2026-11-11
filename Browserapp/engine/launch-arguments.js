@@ -62,7 +62,7 @@ function buildBaseLaunchArguments({ root, fingerprint, profile, hostScaleFactor 
 }
 
 /** Complete policy flags and report rejected overrides to the caller. */
-function completeLaunchArguments(initialArgs, { profile, proxyConfig, proxyEndpoint, restoreSession, startUrl, customStartUrls = [], windowPosition = null }) {
+function completeLaunchArguments(initialArgs, { profile, proxyConfig, proxyEndpoint, windowPosition = null }) {
   let args = initialArgs.slice();
   if (!profile.advanced.allowSignin) args.push('--disable-sync');
   if (profile.privacy.webgpu === 'blocked') args.push('--disable-features=WebGPU');
@@ -84,7 +84,6 @@ function completeLaunchArguments(initialArgs, { profile, proxyConfig, proxyEndpo
   // null = no cap), so the Number() fallback only guards direct callers.
   const jsHeapCap = profile.advanced.jsHeapMax;
   if (jsHeapCap) args.push(`--js-flags=--max-old-space-size=${Math.max(256, Math.min(16384, Number(jsHeapCap) || 4096))}`);
-  if (restoreSession) args.push('--restore-last-session');
   const disabledFeatures = [];
   // Authenticated proxies are exposed to Chrome through the local bridge. Everything else takes
   // the canonical endpoint from the parser, never from a pattern match on the raw string:
@@ -129,12 +128,8 @@ function completeLaunchArguments(initialArgs, { profile, proxyConfig, proxyEndpo
   // Startup URLs: do NOT put the OpenBrowser start page (or first custom URL) on the
   // CLI. The process would paint and run collectFingerprint before CDP inject.
   // Spawn on about:blank, inject via CDP, then keepDefaultTab navigates to startUrl.
-  if (!restoreSession) {
-    // about:blank only when there is something to navigate to afterwards;
-    // with no start page and no custom URLs the browser must open its NTP.
-    if (startUrl || customStartUrls.length) args.push('about:blank');
-    for (const extra of customStartUrls.slice(1)) args.push(extra);
-  }
+  // All URLs, including restored tabs, are opened only after injection verification.
+  args.push('about:blank');
   // Cross-platform process overhead reducers (safe for multi-profile fleets).
   // Applied for all envs — not only proxied ones — so Win/mac idle CPU stays low.
   const perfFlags = backgroundNetworkFlagsForProfile(profile);

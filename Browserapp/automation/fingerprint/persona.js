@@ -17,7 +17,8 @@ const { pickPersona, fontsForOs, exclusiveFontsForOtherOs, getHostWebglLimits, i
 function buildFingerprint(profile = {}) {
   const stableIdentity = profile.id || profile.name || 'default';
   const launchSeed = String(profile.fingerprintLaunchSeed || '').trim();
-  const seed = hashSeed(launchSeed ? `${stableIdentity}:${launchSeed}` : stableIdentity);
+  const identitySeed = profile.fingerprintSeed ? `${stableIdentity}:${profile.fingerprintSeed}` : stableIdentity;
+  const seed = hashSeed(launchSeed ? `${identitySeed}:${launchSeed}` : identitySeed);
   const rnd = mulberry32(u32(seed, 0));
   const privacy = profile.privacy || {};
   const fpIn = (privacy.fingerprint && typeof privacy.fingerprint === 'object' ? privacy.fingerprint : null) || (profile.fingerprint && typeof profile.fingerprint === 'object' ? profile.fingerprint : {});
@@ -164,6 +165,7 @@ function buildFingerprint(profile = {}) {
       .find((value) => value === "windows" || value === "macos" || value === "macos_arm" || value === "linux");
     uaProfile = randomUaForSeed(u32(seed, 44), {
       majors: uaMajorPool,
+      fullVersion: profile.kernelVersion || OPENBROWSER_KERNEL_VERSION,
       // The UA is the source of truth for every OS-facing fingerprint surface.
       // macos_arm goes through as-is: OS_PRESETS.macos_arm emits the same MacIntel UA token
       // but pins Client Hints architecture=arm, which downstream persona/WebGL pools key on.
@@ -183,8 +185,9 @@ function buildFingerprint(profile = {}) {
 
   // Roxy 对齐：编辑器「系统版本」下拉（profile.osVersion）参与 UA token 与
   // Client Hints platformVersion 生成；未选择时保持原有随机 UA 不变。
-  if (String(profile.osVersion || '').trim()) {
+  if (!uaOverrideStr && String(profile.osVersion || '').trim()) {
     uaProfile = buildUaProfile({
+      ...clientHintsIn,
       os: uaProfile.os || parseOsFromUa(uaProfile.userAgent),
       chromeMajor: uaProfile.chromeMajor,
       ua_full_version: uaProfile.chromeFull,
@@ -241,7 +244,10 @@ function buildFingerprint(profile = {}) {
     .find((value) => value === 'android' || value === 'ios');
   let mobileDevice = null;
   if (mobileRequested && supportsRuntimePersona(mobileRequested)) {
-    mobileDevice = mobilePersona(u32(seed, 52), mobileRequested, { chromeMajor: kernelMajor || undefined });
+    mobileDevice = mobilePersona(u32(seed, 52), mobileRequested, {
+      chromeMajor: kernelMajor || defaultKernelMajor || undefined,
+      chromeFull: profile.kernelVersion || OPENBROWSER_KERNEL_VERSION,
+    });
     uaOs = mobileDevice.os;
     if (!hasCoresOverride) cores = mobileDevice.cores;
     if (!hasMemoryOverride) memory = mobileDevice.deviceMemory;
@@ -475,9 +481,11 @@ function buildFingerprint(profile = {}) {
   // outright, 'allow' reports the permission as granted alongside the overridden coordinates,
   // and everything else leaves the native prompt flow. The editor derives geoMode from this
   // switch (deny→disabled / prompt→prompt), so the two stay consistent by construction.
-  const geoPermission = String(privacy.geoPermission || '') === 'deny'
+  const requestedGeoPermission = String(privacy.geoPermission || '') === 'deny'
     ? 'denied'
     : (String(privacy.geoPermission || '') === 'allow' ? 'granted' : 'prompt');
+  // An allowed permission without deliverable coordinates would expose the host location.
+  const geoPermission = requestedGeoPermission === 'granted' && !geoposition ? 'denied' : requestedGeoPermission;
 
   let webglRenderer = (webglMetaMode === 'real')
     ? null
@@ -685,7 +693,7 @@ function buildFingerprint(profile = {}) {
         gpu: { vendor: mobileDevice.gpu.vendor, renderer: mobileDevice.gpu.renderer, family: mobileDevice.gpu.family },
       }
       : null,
-    vendor: fpIn.vendor || ((mobileDevice?.os === 'ios' || uaOs === 'ios' || (fpIn.platform && /iphone|ipad|ipod/i.test(fpIn.platform))) ? 'Apple Computer, Inc.' : (mobileDevice?.vendor || uaProfile?.vendor || 'Google Inc.')),
+    vendor: fpIn.vendor ?? ((mobileDevice?.os === 'ios' || uaOs === 'ios' || (fpIn.platform && /iphone|ipad|ipod/i.test(fpIn.platform))) ? 'Apple Computer, Inc.' : (mobileDevice?.vendor ?? uaProfile?.vendor ?? 'Google Inc.')),
     acceptLanguage: buildAcceptLanguageHeader(languages),
     doNotTrack: privacy.dnt ? '1' : null,
     // Static noise identity vs dynamic exit-IP layer
@@ -769,7 +777,7 @@ function fingerprintConsistencyIssues(fp) {
   if (fp?.platform !== expectedPlatform) {
     add('platform-ua-mismatch', `navigator.platform (${fp?.platform || 'empty'}) does not match the ${uaOs} user agent.`);
   }
-  if (fp?.userAgentMetadata?.platform !== expectedChPlatform) {
+  if (fp?.uaProfile?.engine !== 'firefox' && fp?.userAgentMetadata?.platform !== expectedChPlatform) {
     add('client-hints-ua-mismatch', `Client Hints platform (${fp?.userAgentMetadata?.platform || 'empty'}) does not match the ${uaOs} user agent.`);
   }
   if (uaOs === 'windows' && /Apple M[0-9]|OpenGL 4\.1|Mesa|RADV/i.test(renderer)) {

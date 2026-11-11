@@ -43,6 +43,7 @@ function buildInjectionScript(fp, options = {}) {
   }
   const stability = resolveInjectionStability(fp);
   const json = JSON.stringify({
+    engine: fp.engine || fp.uaProfile?.engine || 'chromium',
     platform: fp.platform,
     os: injectionOs(fp),
     userAgent: fp.userAgent,
@@ -79,7 +80,7 @@ function buildInjectionScript(fp, options = {}) {
     userAgentMetadata: fp.userAgentMetadata || fp.uaProfile?.metadata || null,
     // Intentionally divergent from the worker CFG (worker keeps fp.uaProfile?.vendor ||
     // 'Google Inc.' with no iOS branch) — preserved as-is, see injection-config.js.
-    vendor: fp.vendor || ((fp.mobileDevice?.os === 'ios' || fp.uaProfile?.os === 'ios' || (fp.platform && /iphone|ipad|ipod/i.test(fp.platform))) ? 'Apple Computer, Inc.' : (fp.uaProfile?.vendor || 'Google Inc.')),
+    vendor: fp.vendor ?? ((fp.mobileDevice?.os === 'ios' || fp.uaProfile?.os === 'ios' || (fp.platform && /iphone|ipad|ipod/i.test(fp.platform))) ? 'Apple Computer, Inc.' : (fp.uaProfile?.vendor ?? 'Google Inc.')),
     doNotTrack: fp.doNotTrack,
     seed: fp.seed,
     stability: {
