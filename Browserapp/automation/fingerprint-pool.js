@@ -97,6 +97,15 @@ function hashSeedToInt(seed, suffix = '') {
   return h.readUInt32BE(0);
 }
 
+/** 64-char lowercase hex, the shape Chrome mints enumerateDevices ids in. */
+function mediaDeviceId(seed, slot = '') {
+  return crypto.createHash('sha256')
+    .update(String(seed != null ? seed : ''))
+    .update(':media:')
+    .update(String(slot != null ? slot : ''))
+    .digest('hex');
+}
+
 /**
  * Verify internal consistency of a single persona across all hardware and platform axes.
  *
@@ -442,7 +451,10 @@ function generatePoolPersonas({ seed = 'openbrowser-pool', size = 20, osMix = DE
       ? 'Win32'
       : (chosenOs === 'macos' ? 'MacIntel' : (chosenOs === 'linux' ? 'Linux x86_64' : 'Linux armv8l'));
 
-    const chromeMajor = 128;
+    // The pool advertises the same engine the shipped kernel runs — a hardcoded major is how
+    // the 128 fossil crept in while every other surface moved to 148+.
+    const { OPENBROWSER_KERNEL_MAJOR } = require('./versions');
+    const chromeMajor = OPENBROWSER_KERNEL_MAJOR;
     let uaString = '';
     if (chosenOs === 'windows') {
       uaString = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeMajor}.0.0.0 Safari/537.36`;
@@ -451,7 +463,8 @@ function generatePoolPersonas({ seed = 'openbrowser-pool', size = 20, osMix = DE
     } else if (chosenOs === 'linux') {
       uaString = `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeMajor}.0.0.0 Safari/537.36`;
     } else if (chosenOs === 'android') {
-      uaString = `Mozilla/5.0 (Linux; Android 14; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeMajor}.0.0.0 Mobile Safari/537.36`;
+      // Frozen reduced UA (Chrome 110+ reduction): the OS segment stays Android 10; K.
+      uaString = `Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeMajor}.0.0.0 Mobile Safari/537.36`;
     }
 
     const personaId = `fpp-${chosenOs}-${i}-${hashSeedToInt(seed, `id:${i}`).toString(16).slice(0, 8)}`;
@@ -498,9 +511,11 @@ function generatePoolPersonas({ seed = 'openbrowser-pool', size = 20, osMix = DE
         output: media.output,
         video: media.video,
         devices: [
-          { kind: 'audioinput', label: media.input, deviceId: `fpp-aid-${i}`, groupId: `fpp-gid-${i}` },
-          { kind: 'audiooutput', label: media.output, deviceId: `fpp-aod-${i}`, groupId: `fpp-gid-${i}` },
-          { kind: 'videoinput', label: media.video, deviceId: `fpp-vid-${i}`, groupId: `fpp-gid-${i}` },
+          // Chrome reports deviceId/groupId as 64-char lowercase hex (origin-scoped random
+          // ids); the short "fpp-aid-3" form is a format no stock build emits.
+          { kind: 'audioinput', label: media.input, deviceId: mediaDeviceId(seed, `audioinput:${i}`), groupId: mediaDeviceId(seed, `group:${i}`) },
+          { kind: 'audiooutput', label: media.output, deviceId: mediaDeviceId(seed, `audiooutput:${i}`), groupId: mediaDeviceId(seed, `group:${i}`) },
+          { kind: 'videoinput', label: media.video, deviceId: mediaDeviceId(seed, `videoinput:${i}`), groupId: mediaDeviceId(seed, `group:${i}`) },
         ],
       },
       webrtc_media_labels: {

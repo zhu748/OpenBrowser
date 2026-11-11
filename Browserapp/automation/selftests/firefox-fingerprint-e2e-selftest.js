@@ -35,7 +35,11 @@ const { BidiConnection, waitForFirefoxEndpoint, evaluateBidi } = require('../../
   let connection;
   try {
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-    const profile = sanitizeProfile({ id: 'firefox-native', name: 'Firefox native', engine: 'firefox', os: 'Windows', privacy: { cores: 4, memory: 0, webrtc: 'disabled', fontListMode: 'real', timezoneMode: 'custom', timezone: 'America/New_York' }, advanced: { showInfoPage: false } });
+    // Claim a panel larger than any headless default window (Linux headless Firefox opens a
+    // 1366x768 screen-sized window): the screen patch keeps screen.* >= the live window so
+    // geometry stays consistent, and a 1280x820 claim would correctly keep native width
+    // under a 1366 window and fail this gate on Linux while passing on a 1280-wide macOS host.
+    const profile = sanitizeProfile({ id: 'firefox-native', name: 'Firefox native', engine: 'firefox', os: 'Windows', width: 1440, height: 900, privacy: { cores: 4, memory: 0, webrtc: 'disabled', fontListMode: 'real', timezoneMode: 'custom', timezone: 'America/New_York' }, advanced: { showInfoPage: false } });
     const fp = buildFirefoxFingerprint(profile, version);
     await fs.writeFile(path.join(root, 'user.js'), buildFirefoxUserJs({
       userAgent: fp.userAgent, acceptLanguages: fp.languages.join(','), locale: fp.languages[0],

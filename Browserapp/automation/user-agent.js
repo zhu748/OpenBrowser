@@ -23,6 +23,7 @@ const GREASE_BRANDS = [
   { brand: "Not:A-Brand", version: "99" },
   { brand: "Not A(Brand", version: "8" },
   { brand: "Not)A;Brand", version: "24" },
+  { brand: "Not;A=Brand", version: "99" },
   { brand: "Not_A Brand", version: "8" },
   { brand: "Not/A)Brand", version: "8" },
 ];
@@ -128,7 +129,9 @@ function parseOsFromUa(ua = "") {
  * Build grease brands list similar to real Chrome sec-ch-ua order.
  */
 function buildBrands(major) {
-  const m = String(Math.max(1, Number(major) || 120));
+  // Fall back to the kernel default (never a stale literal): an unpinned major still
+  // advertises the same engine the browser actually runs.
+  const m = String(Math.max(1, Number(major) || DEFAULT_UA_CHROME_MAJOR));
   const grease = GREASE_BRANDS[Number(m) % GREASE_BRANDS.length];
   const chromium = { brand: "Chromium", version: m };
   const chrome = { brand: "Google Chrome", version: m };
@@ -178,7 +181,10 @@ function osVersionUaAdjustments(preset, osVersion) {
     return hit ? { chPlatformVersion: hit } : null;
   }
   if (preset.id === "android" && /^\d+$/.test(v)) {
-    return { uaAndroidVersion: v, chPlatformVersion: `${v}.0.0` };
+    // The UA itself stays frozen at "Android 10; K" (Chrome 110+ reduction) no matter which
+    // release the device runs; the selected version surfaces only in Client Hints
+    // platformVersion. Emitting "Android 14; K" is a string no stock build ever sent.
+    return { chPlatformVersion: `${v}.0.0` };
   }
   return null;
 }
@@ -195,9 +201,13 @@ function buildUserAgentString(options = {}) {
   const chromeToken = options.reduced === false ? full : `${major}.0.0.0`;
 
   if (preset.id === "android") {
-    const version = options.androidVersion || osAdj?.uaAndroidVersion || options.version || "14";
-    const model = options.model || (options.reduced !== false ? "K" : "SM-S918B");
-    return `Mozilla/5.0 (Linux; Android ${version}; ${model}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeToken} Mobile Safari/537.36`;
+    // Frozen reduced UA (Chrome 110+): the OS segment never moves off Android 10, the model
+    // segment is the placeholder K, and the device identity lives in Client Hints. The
+    // full-form branch (reduced === false) keeps a real model and the full four-segment
+    // version, which is the only other shape stock builds emit.
+    const model = options.reduced !== false ? "K" : (options.model || "SM-S918B");
+    const osToken = options.reduced !== false ? "Android 10" : `Android ${options.androidVersion || options.version || "10"}`;
+    return `Mozilla/5.0 (Linux; ${osToken}; ${model}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeToken} Mobile Safari/537.36`;
   }
   if (preset.id === "ios") {
     const version = String(options.iosVersion || options.version || "18_0").replace(/\./g, "_");
@@ -538,6 +548,11 @@ function buildUaInjectionScript(uaProfile) {
         applyNavPatches(subWin.Navigator.prototype);
       }
       if (subWin.navigator) {
+        // Register the sub-window's GENUINE instances so the getters this realm installs into
+        // the child keep answering the child's own navigator (and its userAgentData) — synthetic
+        // receivers built on the child's prototypes stay rejected.
+        try { approvedNavs.add(subWin.navigator); } catch (_) {}
+        try { if (subWin.navigator.userAgentData) approvedUad.add(subWin.navigator.userAgentData); } catch (_) {}
         cleanNavProperties(subWin.navigator);
       }
       hookIframeAccess(subWin);
@@ -669,6 +684,15 @@ function buildUaInjectionScript(uaProfile) {
   const sameValue = (obj, key, expected) => {
     try { return obj && obj[key] === expected; } catch (_) { return false; }
   };
+  // Genuine-instance whitelist. WebIDL getters brand-check the receiver against internal
+  // slots, which pure JS cannot inspect; instanceof/toString heuristics accept the synthetic
+  // receivers a page builds with Object.create(Navigator.prototype) — receivers the real
+  // engine rejects with "Illegal invocation" (verified against stock Chrome 157 / Firefox
+  // 160), which is a one-line injection oracle. Only this realm's own navigator instance and
+  // sub-window instances registered at sync time may read; everything else falls through to
+  // the original getter and inherits its native rejection.
+  const approvedNavs = new WeakSet();
+  const approvedUad = new WeakSet();
   const isNav = (receiver) => {
     try {
       if (!receiver) return false;
@@ -676,8 +700,7 @@ function buildUaInjectionScript(uaProfile) {
       if (typeof WorkerNavigator !== "undefined" && receiver === WorkerNavigator.prototype) return false;
       if (receiver && receiver.constructor && receiver.constructor.prototype === receiver) return false;
       if (typeof navigator !== "undefined" && receiver === navigator) return true;
-      if (typeof Navigator !== "undefined" && receiver !== Navigator.prototype && (receiver instanceof Navigator || (Object.prototype.toString.call(receiver) === "[object Navigator]" && !Navigator.prototype.isPrototypeOf(receiver) && receiver !== Navigator.prototype))) return true;
-      if (typeof WorkerNavigator !== "undefined" && receiver !== WorkerNavigator.prototype && (receiver instanceof WorkerNavigator || (Object.prototype.toString.call(receiver) === "[object WorkerNavigator]" && !WorkerNavigator.prototype.isPrototypeOf(receiver) && receiver !== WorkerNavigator.prototype))) return true;
+      if (approvedNavs.has(receiver)) return true;
       return false;
     } catch (_) { return false; }
   };
@@ -804,6 +827,7 @@ function buildUaInjectionScript(uaProfile) {
       bitness: String(U.bitness ?? ""),
       wow64: Boolean(U.wow64),
       uaFullVersion: String(U.fullVersion || ""),
+      formFactors: (U.chPlatform === "Android") ? ["Mobile", "Tablet"] : ["Desktop"],
     };
     const parseHints = (hints, targetMethod, ErrorCtor = TypeError) => {
       if (hints === null || hints === undefined || typeof hints === "number" || typeof hints === "boolean" || typeof hints === "string" || typeof hints === "symbol" || typeof hints === "bigint") {
@@ -815,8 +839,34 @@ function buildUaInjectionScript(uaProfile) {
       return Array.from(hints, (item) => String(item));
     };
 
-    if (typeof NavigatorUAData !== "undefined") {
+      // formFactors is the newest high-entropy hint: probe once whether THIS build supports
+      // it, and only answer where the genuine engine would. Adding the member where the
+      // build hides it is a version-detection oracle (same principle as the deviceMemory
+      // secure-context gate). The native probe resolves as a microtask before page code runs.
+      // Hoisted above the branch so both the patch path and the create-from-scratch path
+      // share it; where the engine has no NavigatorUAData the probe can never run and the
+      // hint stays hidden, which is exactly what that build does.
+      let hostFormFactorsSupported = false;
+      try {
+        const realUad = (typeof navigator !== "undefined" && navigator.userAgentData) || null;
+        const hostGeh = realUad && typeof realUad.getHighEntropyValues === "function"
+          ? realUad.getHighEntropyValues : null;
+        if (hostGeh) {
+          try {
+            hostGeh.call(realUad, ["formFactors"]).then((r) => {
+              hostFormFactorsSupported = Boolean(r) && Array.isArray(r.formFactors);
+            }, () => {});
+          } catch (_) {}
+        }
+      } catch (_) {}
+      if (typeof NavigatorUAData !== "undefined") {
       const targetProto = NavigatorUAData.prototype;
+      // The genuine userAgentData instance this realm ships. UA-CH accessors brand-check the
+      // receiver, and instanceof accepts Object.create(NavigatorUAData.prototype) fakes the
+      // native accessors reject — only the real instance (plus sub-window instances registered
+      // by the sync) gets answers here; every other receiver delegates to the original
+      // accessor and inherits its native "Illegal invocation".
+      const realUad = (() => { try { return (typeof navigator !== "undefined" && navigator.userAgentData) || null; } catch (_) { return null; } })();
       const makeUaGetter = (prop, fn) => {
         let originalGetter = null;
         try {
@@ -827,7 +877,7 @@ function buildUaInjectionScript(uaProfile) {
         Object.defineProperty(h, prop, {
           configurable: true,
           get: function() {
-            if (!(this instanceof NavigatorUAData) && Object.prototype.toString.call(this) !== "[object NavigatorUAData]") {
+            if (!(this === realUad || approvedUad.has(this))) {
               const RealmTypeError = getRealmTypeError(this, targetProto);
               if (originalGetter) {
                 try {
@@ -862,8 +912,7 @@ function buildUaInjectionScript(uaProfile) {
       const nativeToJSON = targetProto.toJSON;
       const isUaReceiver = (receiver) => {
         try {
-          return receiver instanceof NavigatorUAData
-            || Object.prototype.toString.call(receiver) === "[object NavigatorUAData]";
+          return receiver === realUad || approvedUad.has(receiver);
         } catch (_) { return false; }
       };
       let geh;
@@ -890,7 +939,7 @@ function buildUaInjectionScript(uaProfile) {
           }
           const out = { brands, mobile: Boolean(U.mobile), platform: String(U.chPlatform || "") };
           for (const h of want) {
-            if (h in highEntropy) out[h] = highEntropy[h];
+            if (h in highEntropy && (h !== "formFactors" || hostFormFactorsSupported)) out[h] = highEntropy[h];
             if (h === "uaFullVersion") out.uaFullVersion = highEntropy.fullVersion;
           }
           return Promise.resolve(out);
@@ -993,7 +1042,7 @@ function buildUaInjectionScript(uaProfile) {
           }
           const out = { brands, mobile: Boolean(U.mobile), platform: String(U.chPlatform || "") };
           for (const h of want) {
-            if (h in highEntropy) out[h] = highEntropy[h];
+            if (h in highEntropy && (h !== "formFactors" || hostFormFactorsSupported)) out[h] = highEntropy[h];
             if (h === "uaFullVersion") out.uaFullVersion = highEntropy.fullVersion;
           }
           return Promise.resolve(out);

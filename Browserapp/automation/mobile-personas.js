@@ -42,14 +42,23 @@ function supportsRuntimePersona(os) {
 }
 
 /** Highest Android release a device advertises support for, e.g. "12-15" -> 15. */
-function androidVersionFromRange(range, fallback = 13) {
+function androidVersionFromRange(range, options = {}) {
+  const legacy = typeof options === 'number' ? options : null;
+  const fallback = legacy != null ? legacy : (Number.isFinite(options.fallback) ? options.fallback : 13);
+  const seed = legacy != null ? 1 : (Number.isFinite(options.seed) ? Math.abs(Math.trunc(options.seed)) : 1);
   const versions = String(range || "")
     .split(/[^0-9]+/)
     .filter(Boolean)
     .map(Number)
     .filter((n) => Number.isFinite(n) && n >= 8 && n <= 99);
   if (!versions.length) return fallback;
-  return Math.max(...versions);
+  const max = Math.max(...versions);
+  const min = Math.min(...versions);
+  // Real fleets sit on the top edge of the support window (auto-update), with a visible
+  // minority one release behind. Sampling only Math.max collapsed every range onto its top
+  // edge — 99% of personas reported the same Android release, a herd signal.
+  const lag = (seed % 10) < 3 ? 1 : 0;
+  return Math.max(min, max - lag);
 }
 
 /**
@@ -110,20 +119,26 @@ function sanitizeModelToken(value, fallback = "") {
   return cleaned || fallback;
 }
 
-function buildAndroidUserAgent({ model, version, chromeMajor } = {}) {
+function buildAndroidUserAgent({ chromeMajor } = {}) {
+  // Chrome for Android froze its UA at "Linux; Android 10; K" (UA reduction, Chrome 110+):
+  // every real device ships the frozen token plus a reduced Chrome version, and the device
+  // identity travels in Client Hints (model / platformVersion) instead. A real model token
+  // next to a reduced Chrome version is a combination no stock build emits, so the persona
+  // keeps the frozen form and pushes the model only into the CH metadata.
   const major = Number(chromeMajor) || DEFAULT_CHROME_MAJOR;
-  const token = sanitizeModelToken(model, "Android");
-  const release = Number(version) || 13;
-  return `Mozilla/5.0 (Linux; Android ${release}; ${token}) AppleWebKit/537.36 `
+  return `Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 `
     + `(KHTML, like Gecko) Chrome/${major}.0.0.0 Mobile Safari/537.36`;
 }
 
-function buildIosUserAgent({ version, chromeMajor } = {}) {
+function buildIosUserAgent({ version, chromeMajor, chromeFull } = {}) {
+  // iOS Chrome reports the full four-segment CriOS version (e.g. 148.0.7778.165) — the
+  // reduced "{major}.0.0.0" form is a desktop-ism that no iOS build ever sent.
   const major = Number(chromeMajor) || DEFAULT_CHROME_MAJOR;
+  const full = /^\d+\.\d+\.\d+\.\d+$/.test(String(chromeFull || '')) ? String(chromeFull) : `${major}.0.0.0`;
   const relStr = String(version || 18).trim();
   const release = relStr.includes("_") ? relStr : (relStr.includes(".") ? relStr.replace(/\./g, "_") : `${relStr}_0`);
   return `Mozilla/5.0 (iPhone; CPU iPhone OS ${release} like Mac OS X) AppleWebKit/605.1.15 `
-    + `(KHTML, like Gecko) CriOS/${major}.0.0.0 Mobile/15E148 Safari/604.1`;
+    + `(KHTML, like Gecko) CriOS/${full} Mobile/15E148 Safari/604.1`;
 }
 
 /** GPU family key used by the WebGL payload, derived from the vendor string the pool reports. */
@@ -143,15 +158,31 @@ function gpuFamily(vendor) {
  * @param {"android"|"ios"} [os]
  * @param {{ chromeMajor?: number }} [options]
  */
+/**
+ * Minimum iOS a Chrome of the given major can be installed on. Chrome for iOS 132+ requires
+ * iOS 16, so a persona whose device tops out below that floor can never run the kernel the
+ * profile advertises — an impossible combination a single navigator.osversion read exposes.
+ */
+function minIosForChrome(chromeMajor) {
+  const major = Number(chromeMajor) || 0;
+  return major >= 132 ? 16 : 0;
+}
+
 function mobilePersona(seedU32, os = "android", options = {}) {
   const key = normalizeOs(os);
-  const devices = devicesForOs(key);
-  if (!devices.length) throw new Error(`mobile device pool has no ${key} entries`);
   const seed = Number.isFinite(Number(seedU32)) ? Math.abs(Math.trunc(Number(seedU32))) : 1;
-  const device = devices[seed % devices.length];
   const isIos = key === "ios";
   const chromeMajor = Number(options.chromeMajor) || DEFAULT_CHROME_MAJOR;
-  const osVersion = androidVersionFromRange(device.osRange, isIos ? 18 : 13);
+  let devices = devicesForOs(key);
+  if (!devices.length) throw new Error(`mobile device pool has no ${key} entries`);
+  if (isIos) {
+    // Devices whose support window cannot reach the Chrome floor are excluded from the draw.
+    const floor = minIosForChrome(chromeMajor);
+    const capable = devices.filter((device) => androidVersionFromRange(device.osRange, { seed }) >= floor);
+    if (capable.length) devices = capable;
+  }
+  const device = devices[seed % devices.length];
+  const osVersion = androidVersionFromRange(device.osRange, { seed: seed >>> 16, fallback: isIos ? 18 : 13 });
   const resolvedPanel = isIos ? null : resolveAndroidPanel(device.width);
   const dpr = isIos ? deriveIosDpr(device.width, device.name) : resolvedPanel.dpr;
   // The pool records the display in CSS pixels, so the layout viewport is that panel minus the
@@ -166,8 +197,8 @@ function mobilePersona(seedU32, os = "android", options = {}) {
   const model = isIos ? "iPhone" : sanitizeModelToken(device.model, sanitizeModelToken(device.name, "Android"));
   const deviceModel = sanitizeModelToken(device.model, sanitizeModelToken(device.name, isIos ? "iPhone" : "Android"));
   const userAgent = isIos
-    ? buildIosUserAgent({ version: osVersion, chromeMajor })
-    : buildAndroidUserAgent({ model, version: osVersion, chromeMajor });
+    ? buildIosUserAgent({ version: osVersion, chromeMajor, chromeFull: options.chromeFull })
+    : buildAndroidUserAgent({ chromeMajor });
   const vendor = isIos ? "Apple Computer, Inc." : "Google Inc.";
   const uaProfile = buildUaProfile({
     userAgent,
@@ -237,6 +268,7 @@ module.exports = {
   devicesForOs,
   supportsRuntimePersona,
   androidVersionFromRange,
+  minIosForChrome,
   resolveAndroidPanel,
   deriveAndroidDpr,
   deriveIosDpr,

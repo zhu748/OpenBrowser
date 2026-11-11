@@ -150,6 +150,9 @@ function makeCtx(fp, opts = {}) {
     addEventListener() {}, removeEventListener() {},
     Intl, Date, Math, JSON, Object, Function, Array, String, Number, Boolean, Symbol,
     Promise, WeakMap, WeakSet, Map, Set, Reflect, Proxy, Error, TypeError, RangeError,
+    // Real engines expose FontFaceSet as a global (verified against Chrome 157 / Firefox
+    // 160); the check() gate patches the prototype method, so the stub has to model it.
+    FontFaceSet,
     DOMException: function DOMException(m) { this.message = m; },
   };
   win.window = win; win.globalThis = win; win.self = win; win.top = win;
@@ -207,14 +210,19 @@ async function main() {
   );
   ok('queryLocalFonts honours a postscriptNames filter', filteredList.length === 2 && filteredList.includes('Calibri') && filteredList.includes('Segoe UI'));
 
-  // --- document.fonts.check must stay exactly the browser implementation ---
+  // --- document.fonts.check: native pass-through, gated only for foreign families ---
+  // The host font store aliases cross-platform families (fontconfig maps "Helvetica Neue"
+  // onto a local face), so on a cross-OS host a native check() answers true for a family the
+  // claimed platform never ships — a one-line OS oracle. The gate answers false for lists
+  // containing a foreign family (matching the real engine's all-families-available rule)
+  // and stays native for everything else.
   const check = (c, spec) => vm.runInContext(`document.fonts.check(${JSON.stringify(spec)})`, c);
   const calls = () => ctx.__nativeCheckCalls.length;
   const before = calls();
   ok('check() is left to the browser for a platform family', check(ctx, '12px "Segoe UI"') === true);
-  ok('check() is left to the browser for a foreign family', check(ctx, '12px "Helvetica Neue"') === true);
+  ok('check() answers false for a foreign family the claimed platform never ships', check(ctx, '12px "Helvetica Neue"') === false);
   ok('check() is left to the browser for an unknown family', check(ctx, '12px "Some Web Font 123"') === true);
-  ok('every check() reached the browser implementation', calls() === before + 3);
+  ok('platform and unknown families reached the browser implementation; the foreign list was answered by the gate', calls() === before + 2);
 
   const meta = JSON.parse(vm.runInContext(`JSON.stringify({
     own: Object.prototype.hasOwnProperty.call(document.fonts, 'check'),

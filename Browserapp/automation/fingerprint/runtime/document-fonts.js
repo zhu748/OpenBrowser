@@ -200,6 +200,98 @@ module.exports = `  // --- fonts ---
       const foreignFontSet = new Set(CFG.fonts.foreign
         .map((name) => String(name || '').trim().toLowerCase())
         .filter(Boolean));
+      // document.fonts.check() consults the HOST font store, so on a cross-OS host the
+      // platform aliases (fontconfig mapping "Helvetica Neue" onto a local face) answer true
+      // for a family the claimed platform never ships — a one-line OS oracle. The real
+      // engine returns false when ANY family in the shorthand is unavailable, so the
+      // patched check answers false for lists containing a foreign family and stays native
+      // for everything else.
+      try {
+        const fontsSet = globalThis.document && globalThis.document.fonts;
+        if (fontsSet && typeof fontsSet.check === 'function') {
+          const proto = globalThis.FontFaceSet && globalThis.FontFaceSet.prototype;
+          const nativeDesc = proto ? Object.getOwnPropertyDescriptor(proto, 'check') : null;
+          // Patch the PROTOTYPE method, never the instance: a stock FontFaceSet exposes zero
+          // own members (verified against Chrome 157 / Firefox 160), so an own-property gate
+          // is itself a one-read shape tell. The prototype stays patched, the instance stays
+          // shape-clean, and foreign lists are answered before the native is consulted.
+          const nativeCheckFn = nativeDesc && typeof nativeDesc.value === 'function' ? nativeDesc.value : fontsSet.check.bind(fontsSet);
+          const parseFamilyListFromShorthand = (value) => {
+            const match = String(value || '').match(/^([\\s\\S]*?\\d+(?:\\.\\d+)?(?:px|pt|em|rem|%)(?:\\s*\\/\\s*[^\\s,]+)?\\s+)([\\s\\S]+)$/i);
+            if (!match) return null;
+            const families = [];
+            let current = '';
+            let quote = null;
+            for (let i = 0; i < match[2].length; i += 1) {
+              const ch = match[2][i];
+              if (quote) {
+                current += ch;
+                if (ch === quote && match[2][i - 1] !== '\\\\') quote = null;
+                continue;
+              }
+              if (ch === '"' || ch === "'") { quote = ch; current += ch; continue; }
+              if (ch === ',') { families.push(current.trim()); current = ''; continue; }
+              current += ch;
+            }
+            if (current.trim()) families.push(current.trim());
+            return families;
+          };
+          const isForeignToken = (token) => {
+            const stripped = String(token || '').trim().replace(/^(['"])([\\s\\S]*)\\1$/, '$2').trim().toLowerCase();
+            return foreignFontSet.has(stripped);
+          };
+          // A foreign family a page registered as its own WEB font (FontFace + add / an
+          // @font-face url() rule) is genuinely available, and the real engine answers
+          // check() true for it. FontFaceSet is Set-like, so the registered faces can be
+          // walked from the receiver; only foreign families with no registered face are
+          // answered false.
+          const stripFamily = (token) => String(token || '').trim().replace(/^(['"])([\\s\\S]*)\\1$/, '$2').trim().toLowerCase();
+          const hasRegisteredFace = (set, lowerFamily) => {
+            try {
+              for (const face of set) {
+                if (face && stripFamily(String(face.family || '')) === lowerFamily) return true;
+              }
+            } catch (_) {}
+            return false;
+          };
+          const patchedCheck = nativeLike(function check(font, ...rest) {
+            const families = parseFamilyListFromShorthand(font);
+            if (families) {
+              for (const token of families) {
+                if (!isForeignToken(token)) continue;
+                if (!hasRegisteredFace(this, stripFamily(token))) return false;
+              }
+            }
+            return nativeCheckFn.call(this, font, ...rest);
+          }, nativeCheckFn, 'check', 1, false);
+          if (proto && nativeDesc) {
+            Object.defineProperty(proto, 'check', { configurable: true, enumerable: true, writable: true, value: patchedCheck });
+          } else {
+            Object.defineProperty(fontsSet, 'check', { configurable: true, enumerable: true, writable: true, value: patchedCheck });
+          }
+          subWindowSyncHooks.push((subWin) => {
+            try {
+              const subProto = subWin.FontFaceSet && subWin.FontFaceSet.prototype;
+              const subFonts = subWin.document && subWin.document.fonts;
+              if (subProto && typeof subFonts.check === 'function') {
+                const subNative = Object.getOwnPropertyDescriptor(subProto, 'check');
+                const subNativeFn = subNative && subNative.value ? subNative.value : subFonts.check.bind(subFonts);
+                const subCheck = nativeLike(function check(font, ...rest) {
+                  const families = parseFamilyListFromShorthand(font);
+                  if (families) {
+                    for (const token of families) {
+                      if (!isForeignToken(token)) continue;
+                      if (!hasRegisteredFace(this, stripFamily(token))) return false;
+                    }
+                  }
+                  return subNativeFn.call(this, font, ...rest);
+                }, subNativeFn, 'check', 1, false);
+                Object.defineProperty(subProto, 'check', { configurable: true, enumerable: true, writable: true, value: subCheck });
+              }
+            } catch (_) {}
+          });
+        }
+      } catch (_) {}
       const splitFamilyList = (value) => {
         const out = [];
         let current = '';

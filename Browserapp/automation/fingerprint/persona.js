@@ -17,6 +17,10 @@ const { pickPersona, fontsForOs, exclusiveFontsForOtherOs, getHostWebglLimits, i
 function buildFingerprint(profile = {}) {
   const stableIdentity = profile.id || profile.name || 'default';
   const launchSeed = String(profile.fingerprintLaunchSeed || '').trim();
+  // No machine-id salt here: profiles sync across machines (cloud-sync), and an unseeded
+  // profile must keep its fingerprint identity wherever it is restored. The replay risk of
+  // sequence ids ("env-001") is closed at the engine layer instead — start.js rolls a random
+  // persistent fingerprintSeed for legacy profiles on first launch.
   const identitySeed = profile.fingerprintSeed ? `${stableIdentity}:${profile.fingerprintSeed}` : stableIdentity;
   const seed = hashSeed(launchSeed ? `${identitySeed}:${launchSeed}` : identitySeed);
   const rnd = mulberry32(u32(seed, 0));
@@ -53,6 +57,10 @@ function buildFingerprint(profile = {}) {
   const isHdrRequested = Boolean(fpIn.hdr || privacy.hdr || profile.hdr || (Number(fpIn.colorDepth) === 30));
   let colorDepth = isHdrRequested ? 30 : 24;
   let devicePixelRatio = [1, 1, 1.25, 1.5, 2][u32(seed, 24) % 5];
+  // Claimed-OS-aware DPR redraw for the non-persona desktop path (see the reassignment below
+  // once uaOs is resolved): one global pool let a macOS claim land on 1.25 — a scaling step
+  // macOS never offers — while Windows drew 2x. macOS defaults to 2x Retina, Windows laptops
+  // cluster at 100/125/150%, Linux mostly 1x.
 
   // Numeric noise marks (canvas/webgl ±10000; audio/clientRects from seed formulas unless overridden)
   const canvasId = (u32(seed, 28) % 20000) - 10000 || 1;
@@ -205,6 +213,17 @@ function buildFingerprint(profile = {}) {
   if (uaOs === 'macos' && uaArchitecture === 'arm') uaOs = 'macos_arm';
   else if (uaOs === 'macos_arm' && uaArchitecture && uaArchitecture !== 'arm') uaOs = 'macos';
   const personaRequested = String(fpIn.deviceProfile ?? privacy.deviceProfile ?? '').toLowerCase() === 'persona';
+  const mobileRequested = [fpIn.os, clientHintsIn.os, profile.os, uaProfile.os]
+    .map((value) => String(value || '').toLowerCase())
+    .find((value) => value === 'android' || value === 'ios');
+  // Non-persona desktop DPR now follows the claimed OS (mobile and persona paths overwrite
+  // this below with the device record's own ratio).
+  if (!personaRequested && !mobileRequested) {
+    const dprPool = (uaOs === 'macos' || uaOs === 'macos_arm')
+      ? [2, 2, 2, 1]
+      : (uaOs === 'linux' ? [1, 1, 1, 1.25, 1.5] : [1, 1, 1, 1.25, 1.5]);
+    devicePixelRatio = dprPool[u32(seed, 24) % dprPool.length];
+  }
   const webglOptions = webglPresetsForOs(uaOs, { legacy: !personaRequested });
   let webglPreset = webglOptions[u32(seed, 8) % webglOptions.length];
 
@@ -239,9 +258,6 @@ function buildFingerprint(profile = {}) {
   // core count and GPU all come out of the same pool record, and only that single record is
   // sampled. The operating system has to be asked for explicitly because a desktop kernel
   // cannot fall into a phone identity by accident.
-  const mobileRequested = [fpIn.os, clientHintsIn.os, profile.os, uaProfile.os]
-    .map((value) => String(value || '').toLowerCase())
-    .find((value) => value === 'android' || value === 'ios');
   let mobileDevice = null;
   if (mobileRequested && supportsRuntimePersona(mobileRequested)) {
     mobileDevice = mobilePersona(u32(seed, 52), mobileRequested, {
@@ -394,7 +410,13 @@ function buildFingerprint(profile = {}) {
     ? null
     : (batteryMode === 'blocked'
       ? { blocked: true }
-      : createBatteryFromSeed(stableIdentity + ':battery:' + seed.toString('hex').slice(0, 8), fpIn.battery || privacy.batterySnapshot || null));
+      : createBatteryFromSeed(
+        stableIdentity + ':battery:' + seed.toString('hex').slice(0, 8),
+        fpIn.battery || privacy.batterySnapshot || null,
+        // A seeded ~40% of desktop personas take the AC-power shape (no battery hardware):
+        // every desktop carrying a laptop-style partial charge is a fleet-level mismatch.
+        { acPowered: !mobileDevice && (u32(seed, 72) % 10) < 4 },
+      ));
   const speechVoices = createSpeechVoicesFromSeed(
     stableIdentity + ':speech:' + seed.toString('hex').slice(0, 8),
     languages, // single resolved chain: same source as navigator.languages / Accept-Language
@@ -437,15 +459,22 @@ function buildFingerprint(profile = {}) {
   const NETWORK_EFFECTIVE_TYPES = ['4g', '4g', '4g', '3g'];
   const NETWORK_DOWNLINK_POOL = [1.45, 2.3, 4.35, 5.6, 8.7, 9.15, 10.1];
   const NETWORK_RTT_POOL = [50, 100, 150, 200, 250];
+  // connection.type is Android-only in stock Chrome: a desktop build leaves the field
+  // undefined, so a desktop persona reporting ethernet/wifi is a one-read tell — the key is
+  // omitted on desktop unless the user pinned it. Seeds moved off 36/44 (which the persona
+  // draw and the UA draw already use) onto their own offsets so the axes stay independent;
+  // shared seed offsets make correlated draws, which is itself a fingerprint.
   const connection = networkMode === 'real' ? null : {
-    type: String(networkIn?.type || (u32(seed, 36) % 4 === 0 ? 'ethernet' : 'wifi')),
-    effectiveType: String(networkIn?.effectiveType || NETWORK_EFFECTIVE_TYPES[u32(seed, 40) % NETWORK_EFFECTIVE_TYPES.length]),
+    ...(mobileDevice
+      ? { type: String(networkIn?.type || (u32(seed, 56) % 4 === 0 ? 'ethernet' : 'wifi')) }
+      : (networkIn?.type ? { type: String(networkIn.type) } : {})),
+    effectiveType: String(networkIn?.effectiveType || NETWORK_EFFECTIVE_TYPES[u32(seed, 60) % NETWORK_EFFECTIVE_TYPES.length]),
     downlink: Number.isFinite(Number(networkIn?.downlink))
       ? Number(networkIn.downlink)
-      : NETWORK_DOWNLINK_POOL[u32(seed, 44) % NETWORK_DOWNLINK_POOL.length],
+      : NETWORK_DOWNLINK_POOL[u32(seed, 64) % NETWORK_DOWNLINK_POOL.length],
     rtt: Number.isFinite(Number(networkIn?.rtt))
       ? Number(networkIn.rtt)
-      : NETWORK_RTT_POOL[u32(seed, 48) % NETWORK_RTT_POOL.length],
+      : NETWORK_RTT_POOL[u32(seed, 68) % NETWORK_RTT_POOL.length],
     saveData: false,
   };
 
@@ -780,16 +809,16 @@ function fingerprintConsistencyIssues(fp) {
   if (fp?.uaProfile?.engine !== 'firefox' && fp?.userAgentMetadata?.platform !== expectedChPlatform) {
     add('client-hints-ua-mismatch', `Client Hints platform (${fp?.userAgentMetadata?.platform || 'empty'}) does not match the ${uaOs} user agent.`);
   }
-  if (uaOs === 'windows' && /Apple M[0-9]|OpenGL 4\.1|Mesa|RADV/i.test(renderer)) {
+  if (uaOs === 'windows' && /Apple M[0-9]|OpenGL 4\.1|Mesa|RADV|SwiftShader|llvmpipe|Software Rasterizer/i.test(renderer)) {
     add('webgl-ua-mismatch', 'WebGL renderer does not look like a Windows renderer.');
   }
-  if ((uaOs === 'macos' || uaOs === 'macos_arm') && (/Direct3D|D3D11|Mesa|RADV/i.test(renderer) || !/Apple|Intel|AMD/i.test(vendor + renderer))) {
+  if ((uaOs === 'macos' || uaOs === 'macos_arm') && (/Direct3D|D3D11|Mesa|RADV|SwiftShader|llvmpipe/i.test(renderer) || !/Apple|Intel|AMD/i.test(vendor + renderer))) {
     add('webgl-ua-mismatch', 'WebGL renderer does not look like a macOS renderer.');
   }
   if (uaOs === 'linux' && (/Direct3D|D3D11|Apple M[0-9]/i.test(renderer) || !/Mesa|RADV|OpenGL/i.test(renderer))) {
     add('webgl-ua-mismatch', 'WebGL renderer does not look like a Linux renderer.');
   }
-  if (mobileOs && /Direct3D|D3D11|Apple M[0-9]|Mesa|RADV/i.test(renderer)) {
+  if (mobileOs && /Direct3D|D3D11|Apple M[0-9]|Mesa|RADV|SwiftShader|llvmpipe/i.test(renderer)) {
     add('webgl-ua-mismatch', 'WebGL renderer does not look like a mobile GPU.');
   }
   if (fp?.mobile && !(Number(fp?.maxTouchPoints) > 0)) {
@@ -819,6 +848,16 @@ function fingerprintConsistencyIssues(fp) {
   }
   if (fp?.deviceMemory != null && !(Number(fp.deviceMemory) >= 1 && Number(fp.deviceMemory) <= 8)) {
     add('memory-invalid', 'deviceMemory must be between 1 and 8 when overridden.', 'error');
+  }
+  // Hardware-class coherence (the isCoherent rules from device-personas.js applied to the
+  // final assembled fingerprint): these pairings are not combinations real machines ship
+  // with, and detectors score the combination, not each value on its own.
+  // (A macOS DPR of 1 is deliberately NOT flagged: a Mac on an external non-Retina display
+  // answers exactly that, so the per-OS DPR pool keeps it as a legitimate draw.)
+  const hwCores = Number(fp?.hardwareConcurrency) || 0;
+  const hwMemory = Number(fp?.deviceMemory) || 0;
+  if (hwCores >= 12 && hwMemory > 0 && hwMemory < 8) {
+    add('hardware-class-incoherent', '12+ logical cores paired with <8 GB deviceMemory is not a combination real hardware ships.', 'warning');
   }
   // WebGL and WebGPU read the same physical adapter, so a page that finds a disguised WebGL
   // renderer next to an untouched WebGPU adapter has two GPUs on one machine - a contradiction no

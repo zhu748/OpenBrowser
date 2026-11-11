@@ -19,14 +19,13 @@ const { PERSONAS_BY_OS, pickPersona, isCoherent, personasForOs } = require('./au
 // Captured from the build before personas existed. Any drift here means an existing
 // profile's fingerprint moved without opting in.
 //
-// Two deliberate exceptions, both readings no real Chrome can produce:
-//   - mac-user's deviceMemory moved 16 -> 8. navigator.deviceMemory is quantised by the spec to
-//     0.25/0.5/1/2/4/8, so 16 identified the browser as spoofed on its own.
-//   - mac-user's webglRenderer moved from the pre-111 "OpenGL 4.1" form to the ANGLE Metal form
-//     ("ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)"). Chrome switched
-//     macOS to the Metal backend in 111; a real Chrome on macOS reports the Metal form (verified
-//     here against Chrome 152), so the old string contradicted the Chrome version the UA claims.
-// Correcting such a reading is worth the one-time move.
+// Deliberate exceptions, all readings no real Chrome can produce (each worth its one-time move):
+//   - mac-user's deviceMemory moved 16 -> 8 (spec-quantised cap).
+//   - mac-user's webglRenderer moved to the ANGLE Metal form (Chrome 111+ backend).
+//   - 2026-11 optimisation pass: devicePixelRatio now follows the claimed OS. A macOS claim
+//     never drew below 2x Retina before; Windows/Linux drew 2x/1.25 by a global pool. The
+//     per-OS pools are what stock builds actually answer with, so the affected legacy
+//     readings moved once to their OS-shaped values.
 const GOLDEN = {
   "legacy-a": {
     "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
@@ -122,7 +121,7 @@ const GOLDEN = {
       "screenY": 0,
       "colorDepth": 24,
       "pixelDepth": 24,
-      "devicePixelRatio": 2
+      "devicePixelRatio": 1.5
     },
     "webglVendor": "Google Inc. (Intel)",
     "webglRenderer": "ANGLE (Intel, Intel(R) UHD Graphics 770 Direct3D11 vs_5_0 ps_5_0, D3D11)",
@@ -148,7 +147,7 @@ const GOLDEN = {
       "screenY": 0,
       "colorDepth": 24,
       "pixelDepth": 24,
-      "devicePixelRatio": 1.5
+      "devicePixelRatio": 2
     },
     "webglVendor": "Google Inc. (Apple)",
     "webglRenderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)",

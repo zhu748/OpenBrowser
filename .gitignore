@@ -22,5 +22,7 @@ CODE_OVERVIEW.md
 Browserapp/.kernel-release-cache/
 # Runtime-downloaded linux-x64 kernel (scripts/install-linux-stable.js) — never commit
 Browserapp/kernels/chrome-stable/
+# Runtime-downloaded Firefox stable kernel (automation/kernel-versions.js CDN fetch) — never commit
+Browserapp/kernels/firefox-stable/
 # Process crash dumps (ELF core files) — never commit
 Browserapp/core

@@ -33,29 +33,54 @@ function buildFirefoxFingerprint(profile, version) {
 
 async function initializeFirefoxFingerprint(connection, fingerprint, profile, options = {}) {
   const warnings = [];
-  const optional = async (method, params) => {
-    try { await connection.command(method, params); return true; }
-    catch (error) {
-      if (error.code !== 'unknown command' && error.code !== 'unsupported operation') throw error;
-      warnings.push(`${method}: ${error.message}`);
-      return false;
+  await connection.command('session.new', { capabilities: { alwaysMatch: { acceptInsecureCerts: Boolean(profile.advanced?.ignoreHttpsError) } } });
+  // The emulation commands below are context-scoped in current WebDriver BiDi (the spec
+  // requires `contexts`, and Firefox 160 rejects the call without it), so the tree has to
+  // be resolved BEFORE the emulation phase. The preload registration is order-independent:
+  // it applies to every future document in every context, including tabs opened later.
+  const tree = await connection.command('browsingContext.getTree', {});
+  const contexts = tree.contexts || [];
+  if (!contexts.length) throw new Error('Firefox has no initial browsing context');
+  const topLevelContexts = contexts.map((c) => c.context);
+  // New top-level tabs are covered by the global preload (UA/JS surfaces), but the
+  // context-scoped emulation overrides have to be re-applied per context, so the arrival
+  // event is subscribed before any new tab can open.
+  const applyEmulation = async (contextIds, label) => {
+    if (!contextIds.length) return;
+    const scoped = async (method, params) => {
+      try { return await connection.command(method, { contexts: contextIds, ...params }); }
+      catch (error) {
+        // Older builds reject the then-unknown `contexts` field; retry once without it so
+        // an ERI kernel keeps working while a current one gets the scoped form.
+        if (String(error.code || error.message || '').includes('invalid argument')) {
+          return connection.command(method, params);
+        }
+        throw error;
+      }
+    };
+    try { await scoped('emulation.setUserAgentOverride', { userAgent: fingerprint.userAgent }); }
+    catch (error) { warnings.push(`emulation.setUserAgentOverride(${label}): ${error.message}`); }
+    if (fingerprint.timezone) {
+      try { await scoped('emulation.setTimezoneOverride', { timezone: fingerprint.timezone }); }
+      catch (error) { warnings.push(`emulation.setTimezoneOverride(${label}): ${error.message}`); }
+    }
+    // No emulation.setLocaleOverride: on Firefox 160 the BiDi locale override rewrites the
+    // Accept-Language HTTP header to the bare single locale ("de-DE"), destroying the
+    // persona's language chain that intl.accept_languages would otherwise ship (measured:
+    // pref "de-DE,de" alone produces header "de-DE,de;q=0.9" with a clean JS surface). The
+    // Intl runtime surfaces are owned by the document injection and the TZ environment, and
+    // navigator.language(s) by the injection (plus the pref in worker scopes).
+    const location = fingerprint.dynamicConfig?.geoposition;
+    if (location) {
+      // There is no safe host-location fallback when the configured position cannot be delivered.
+      await connection.command('emulation.setGeolocationOverride', { coordinates: location });
     }
   };
-  await connection.command('session.new', { capabilities: { alwaysMatch: { acceptInsecureCerts: Boolean(profile.advanced?.ignoreHttpsError) } } });
+  await applyEmulation(topLevelContexts, 'initial');
   // Omitting sandbox is essential: prototypes must be patched in the page's main realm.
   const source = buildInjectionScript(fingerprint);
   const preload = await connection.command('script.addPreloadScript', { functionDeclaration: `() => {\n${source}\n}` });
   if (!preload.script) throw new Error('Firefox did not register the fingerprint preload script');
-  await optional('emulation.setUserAgentOverride', { userAgent: fingerprint.userAgent });
-  const nativeTimezone = fingerprint.timezone
-    ? await optional('emulation.setTimezoneOverride', { timezone: fingerprint.timezone })
-    : false;
-  await optional('emulation.setLocaleOverride', { locale: fingerprint.languages[0] });
-  const location = fingerprint.dynamicConfig?.geoposition;
-  if (location) {
-    // There is no safe host-location fallback when the configured position cannot be delivered.
-    await connection.command('emulation.setGeolocationOverride', { coordinates: location });
-  }
   const workerSource = buildWorkerInjectionScript(fingerprint);
   const previousEvent = connection.onEvent;
   connection.onEvent = async (event, conn) => {
@@ -65,11 +90,12 @@ async function initializeFirefoxFingerprint(connection, fingerprint, profile, op
       try { await evaluateBidi(conn, { realm: realm.realm }, workerSource); }
       catch (error) { options.onWorkerError?.(error); }
     }
+    if (event.method === 'browsingContext.contextCreated' && realm?.context) {
+      try { await applyEmulation([realm.context], 'new-context'); }
+      catch (error) { warnings.push(`emulation(new context ${realm.context}): ${error.message}`); }
+    }
   };
-  await connection.command('session.subscribe', { events: ['script.realmCreated'] });
-  const tree = await connection.command('browsingContext.getTree', {});
-  const contexts = tree.contexts || [];
-  if (!contexts.length) throw new Error('Firefox has no initial browsing context');
+  await connection.command('session.subscribe', { events: ['script.realmCreated', 'browsingContext.contextCreated'] });
   for (const context of contexts) {
     await evaluateBidi(connection, { context: context.context }, source);
     const live = await evaluateBidi(connection, { context: context.context }, LIVE_PROBE_EXPRESSION);
@@ -81,7 +107,7 @@ async function initializeFirefoxFingerprint(connection, fingerprint, profile, op
     capabilities: {
       engine: 'firefox', cdp: false, bidi: true, fingerprintDelivery: true,
       fingerprintVerification: true, runtimeInjection: true, documentStartInjection: true,
-      workerFingerprintDelivery: false, workerInjection: 'best-effort', nativeTimezone,
+      workerFingerprintDelivery: false, workerInjection: 'best-effort',
       deviceMemoryOverride: false, extensionHotLoad: false, zoomReconcile: false,
       retention: true, startUrls: true,
     },

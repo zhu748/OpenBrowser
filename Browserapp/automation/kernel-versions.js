@@ -282,6 +282,9 @@ function userPref(key, value) {
 function buildFirefoxUserJs({ userAgent, acceptLanguages, locale, proxyEndpoint, noProxyHosts, extraPrefs }) {
   const lines = [];
   if (userAgent) lines.push(userPref('general.useragent.override', userAgent));
+  // intl.locale.requested is neutral for the Accept-Language surfaces (verified live on 160:
+  // accept "de-DE,de" ships header "de-DE,de;q=0.9" with clean navigator.languages, requested
+  // locale set or not); it keeps the chrome UI coherent with the claimed locale.
   if (acceptLanguages) lines.push(userPref('intl.accept_languages', acceptLanguages));
   if (locale) lines.push(userPref('intl.locale.requested', locale));
   const proxy = parseProxyEndpoint(proxyEndpoint);

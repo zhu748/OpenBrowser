@@ -196,6 +196,16 @@ module.exports = `  // --- screen ---
       if (!subWin || subWin === window || patchedSubWindows.has(subWin)) return;
       patchedSubWindows.add(subWin);
       try {
+        // Register the sub-window's GENUINE instances before this realm's getters are
+        // installed into the child: the getters close over this closure's predicates, and
+        // only the registered real navigator/screen may read through them — synthetic
+        // receivers built on the child's prototypes stay rejected with "Illegal invocation".
+        if (subWin.navigator) {
+          try { crossRealmApproved.add(subWin.navigator); } catch (_) {}
+        }
+        if (subWin.screen) {
+          try { crossRealmApproved.add(subWin.screen); } catch (_) {}
+        }
         const subNav = subWin.Navigator && subWin.Navigator.prototype;
         if (subNav) {
           for (const [key, desc] of Object.entries(navPatch)) {

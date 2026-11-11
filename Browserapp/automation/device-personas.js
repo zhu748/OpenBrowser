@@ -23,8 +23,11 @@ const crypto = require("crypto");
 /** @type {DevicePersona[]} */
 const WINDOWS_PERSONAS = [
   {
-    os: "windows", cores: 8, memory: 8, colorDepth: 24, devicePixelRatio: 1,
-    screen: { width: 1920, height: 1080 },
+    // 1080p laptop panel at Windows' default 125% scaling: screen.* report CSS pixels
+    // (physical / DPR), so the pair 1536x864 @ 1.25 is the shape real UHD 620 laptops
+    // answer with — 1920x1080 @ 1.25 is arithmetic no monitor produces.
+    os: "windows", cores: 8, memory: 8, colorDepth: 24, devicePixelRatio: 1.25,
+    screen: { width: 1536, height: 864 },
     webgl: {
       vendor: "Google Inc. (Intel)",
       renderer: "ANGLE (Intel, Intel(R) UHD Graphics 620 Direct3D11 vs_5_0 ps_5_0, D3D11)",
@@ -68,8 +71,9 @@ const WINDOWS_PERSONAS = [
     },
   },
   {
-    os: "windows", cores: 6, memory: 8, colorDepth: 24, devicePixelRatio: 1,
-    screen: { width: 1920, height: 1080 },
+    // Iris Xe laptops default to 125-150% scaling on 1080p panels; this one ships 150%.
+    os: "windows", cores: 6, memory: 8, colorDepth: 24, devicePixelRatio: 1.5,
+    screen: { width: 1280, height: 720 },
     webgl: {
       vendor: "Google Inc. (Intel)",
       renderer: "ANGLE (Intel, Intel(R) Iris(R) Xe Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)",
@@ -125,9 +129,11 @@ const MACOS_INTEL_PERSONAS = [
     },
   },
   {
-    // MacBook Pro 16" (2019): 8-core Intel + Radeon Pro 5500M (RDNA1).
+    // MacBook Pro 16" (2019): 8-core Intel + Radeon Pro 5500M (RDNA1). Native 3072x1920
+    // panel, default scaled resolution "looks like 1792x1120" — 1728x1117 is the Apple
+    // Silicon 16" panel and never shipped on this Intel model.
     os: "macos", cores: 8, memory: 8, colorDepth: 30, devicePixelRatio: 2,
-    screen: { width: 1728, height: 1117 },
+    screen: { width: 1792, height: 1120 },
     webgl: {
       vendor: "Google Inc. (AMD)",
       renderer: "ANGLE (AMD, ANGLE Metal Renderer: AMD Radeon Pro 5500M, Unspecified Version)",

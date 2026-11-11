@@ -195,6 +195,11 @@ module.exports = function bootstrap({ json, bridgeToken }) {
     let getter;
     const holder = {
       get [key]() {
+        // Same brand-check approximation as the document runtime: only the realm's own
+        // WorkerNavigator instance may read. A worker scope is a single realm — there are no
+        // sub-windows to register, so synthetic receivers (Object.create(
+        // WorkerNavigator.prototype), subclasses, plain objects) throw "Illegal invocation"
+        // exactly like the real engine does.
         const isProto = (typeof WorkerNavigator !== 'undefined' && this === WorkerNavigator.prototype) ||
           (this && this.constructor && this.constructor.prototype === this) ||
           (this && Object.getPrototypeOf(this) === Object.prototype);
@@ -202,11 +207,7 @@ module.exports = function bootstrap({ json, bridgeToken }) {
           this &&
           !isProto &&
           (typeof WorkerNavigator === 'undefined' || this !== WorkerNavigator.prototype) &&
-          (
-            this === (typeof navigator !== 'undefined' ? navigator : null) ||
-            (typeof WorkerNavigator !== 'undefined' && (this instanceof WorkerNavigator || WorkerNavigator.prototype.isPrototypeOf(this))) ||
-            (this.constructor && this.constructor.name === 'WorkerNavigator' && this !== this.constructor.prototype)
-          )
+          this === (typeof navigator !== 'undefined' ? navigator : null)
         );
         if (!isWorkerNav) {
           const RealmTypeError = getWorkerRealmTypeError(this);

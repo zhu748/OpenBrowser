@@ -508,7 +508,7 @@ function withinHammingThreshold(a, b, threshold = 12) {
 
 
 /** Deterministic battery snapshot derived from seed. */
-function createBatteryFromSeed(seedInput, override = null) {
+function createBatteryFromSeed(seedInput, override = null, options = {}) {
   if (override && typeof override === 'object') {
     const level = Math.min(1, Math.max(0, Number(override.level)));
     const charging = override.charging !== false && override.charging !== 0 && override.charging !== '0';
@@ -522,6 +522,17 @@ function createBatteryFromSeed(seedInput, override = null) {
         ? Math.max(0, Number(override.dischargingTime))
         : (charging ? null : 7200),
       level: Number.isFinite(level) ? level : 0.87,
+    };
+  }
+  // Desktop towers without a battery answer getBattery with the AC-power shape: charging,
+  // full, zero charging time, Infinity discharge. Giving every desktop persona a laptop-style
+  // partial-level draw is a mismatch on its own axis (the battery axis was never audited).
+  if (options && options.acPowered) {
+    return {
+      charging: true,
+      chargingTime: 0,
+      dischargingTime: null,
+      level: 1,
     };
   }
   const seed = hashSeed(String(seedInput || 'battery'));

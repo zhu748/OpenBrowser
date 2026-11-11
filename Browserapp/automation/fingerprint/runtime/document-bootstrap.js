@@ -217,6 +217,20 @@ module.exports = function bootstrap({ uaScript, json, bridgeToken }) {
     } catch (_) {}
     return (typeof TypeError !== "undefined" ? TypeError : Error);
   };
+  // Genuine-instance whitelist for cross-realm receivers. WebIDL getters brand-check the
+  // receiver against interface internal slots, which pure JS cannot inspect. The previous
+  // structural acceptance (foreign constructor name + prototype match) also accepted synthetic
+  // receivers built on ANOTHER realm's prototype (Object.create(frameWin.Navigator.prototype)
+  // passed the parent-closure getters installed by patchSubWindow) — receivers stock engines
+  // reject with "Illegal invocation" (verified against Chrome 157 / Firefox 160). Only this
+  // realm's own navigator/screen instance and sub-window instances registered at sync time
+  // (see document-screen.js patchSubWindow) may read; everything else throws.
+  const crossRealmApproved = new WeakSet();
+  const isPlatformObject = (receiver, localInstance) => {
+    if (!receiver) return false;
+    if (receiver === localInstance) return true;
+    return crossRealmApproved.has(receiver);
+  };
   const makeNativeGetter = (key, getValue, targetType, realmWin) => {
     let getter;
     const holder = {
@@ -225,15 +239,9 @@ module.exports = function bootstrap({ uaScript, json, bridgeToken }) {
           const isProto = (typeof Navigator !== "undefined" && this === Navigator.prototype) ||
             (this && this.constructor && this.constructor.prototype === this) ||
             (this && Object.getPrototypeOf(this) === Object.prototype);
-          const isNav = Boolean(
-            this &&
-            !isProto &&
-            (typeof Navigator === "undefined" || this !== Navigator.prototype) &&
-            (
-              this === (typeof navigator !== "undefined" ? navigator : null) ||
-              (typeof Navigator !== "undefined" && (this instanceof Navigator || Navigator.prototype.isPrototypeOf(this))) ||
-              (this.constructor && this.constructor.name === "Navigator" && this !== this.constructor.prototype)
-            )
+          const isNav = !isProto && isPlatformObject(
+            this,
+            typeof navigator !== "undefined" ? navigator : null
           );
           if (!isNav) {
             const RealmTypeError = (realmWin && realmWin.TypeError) || getRealmTypeError(this);
@@ -245,15 +253,9 @@ module.exports = function bootstrap({ uaScript, json, bridgeToken }) {
           const isProto = (typeof Screen !== "undefined" && this === Screen.prototype) ||
             (this && this.constructor && this.constructor.prototype === this) ||
             (this && Object.getPrototypeOf(this) === Object.prototype);
-          const isScr = Boolean(
-            this &&
-            !isProto &&
-            (typeof Screen === "undefined" || this !== Screen.prototype) &&
-            (
-              this === (typeof screen !== "undefined" ? screen : null) ||
-              (typeof Screen !== "undefined" && (this instanceof Screen || Screen.prototype.isPrototypeOf(this))) ||
-              (this.constructor && this.constructor.name === "Screen" && this !== this.constructor.prototype)
-            )
+          const isScr = !isProto && isPlatformObject(
+            this,
+            typeof screen !== "undefined" ? screen : null
           );
           if (!isScr) {
             const RealmTypeError = (realmWin && realmWin.TypeError) || getRealmTypeError(this);

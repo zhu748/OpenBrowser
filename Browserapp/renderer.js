@@ -1547,7 +1547,9 @@ const WEBGL_CUSTOM_PRESETS = {
   macOS: [
     ['Google Inc. (Apple)', 'ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)'],
     ['Google Inc. (Apple)', 'ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)'],
-    ['Google Inc. (Intel)', 'ANGLE (Intel, Intel(R) Iris(TM) Plus Graphics 655, OpenGL 4.1)'],
+    // Chrome 111+ on macOS only ships the ANGLE Metal backend; the old "OpenGL 4.1" ANGLE
+    // form is a string no current build emits next to a modern UA.
+    ['Google Inc. (Intel)', 'ANGLE (Intel, ANGLE Metal Renderer: Intel(R) Iris(TM) Plus Graphics 655, Unspecified Version)'],
   ],
   Linux: [
     ['Google Inc. (Intel)', 'ANGLE (Intel, Mesa Intel(R) UHD Graphics 630 (CFL GT2), OpenGL 4.6)'],
@@ -1558,9 +1560,20 @@ const WEBGL_CUSTOM_PRESETS = {
     ['Google Inc. (ARM)', 'ANGLE (ARM, Mali-G715, OpenGL ES 3.2)'],
   ],
 };
+// Random picks become persistent fingerprint surfaces once saved, so the shuffle uses the
+// platform CSPRNG instead of Math.random (predictable and shared with page code paths).
+function cryptoRandomIndex(length) {
+  const max = Math.max(1, Math.floor(Number(length) || 1));
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    const buf = new Uint32Array(1);
+    crypto.getRandomValues(buf);
+    return buf[0] % max;
+  }
+  return Math.floor(Math.random() * max);
+}
 function editorWebglShuffle() {
   const presets = WEBGL_CUSTOM_PRESETS[$('#editor-os')?.value] || WEBGL_CUSTOM_PRESETS.Windows;
-  const picked = presets[Math.floor(Math.random() * presets.length)];
+  const picked = presets[cryptoRandomIndex(presets.length)];
   editorSet('#editor-webgl-vendor', picked[0]);
   editorSet('#editor-webgl-renderer', picked[1]);
 }
@@ -1572,9 +1585,12 @@ document.getElementById('editor-os')?.addEventListener('change', () => {
 
 // MAC 随机：本地管理位（第 2 个十六进制位取 2/6/A/E）+ 随机 5 字节，冒号分隔。
 document.getElementById('editor-mac-shuffle')?.addEventListener('click', () => {
-  const hex = () => Math.floor(Math.random() * 256).toString(16).padStart(2, '0').toUpperCase();
-  const second = ['2', '6', 'A', 'E'][Math.floor(Math.random() * 4)];
-  const mac = [hex()[0] + second, hex(), hex(), hex(), hex(), hex()].join(':');
+  const bytes = new Uint8Array(5);
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') crypto.getRandomValues(bytes);
+  else for (let i = 0; i < bytes.length; i += 1) bytes[i] = Math.floor(Math.random() * 256);
+  const hex = (v) => v.toString(16).padStart(2, '0').toUpperCase();
+  const second = ['2', '6', 'A', 'E'][cryptoRandomIndex(4)];
+  const mac = [hex(bytes[0])[0] + second, ...[...bytes].slice(1).map(hex)].join(':');
   editorSet('#editor-mac', mac);
   renderEditorSummary();
 });

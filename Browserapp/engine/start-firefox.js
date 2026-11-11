@@ -14,7 +14,7 @@ const { removeSingletonFiles, writeBrowserStartupDiagnostic, formatBrowserStartu
 const { assertResourceGateForLaunch } = require('./resource-gate');
 // Shared launch-data walker (parameterized target map) from the Chromium
 // startup mixin: start.js does not require this file, so there is no cycle.
-const { clearLaunchDataTargets, mergeLaunchProfileUpdate } = require('./start');
+const { clearLaunchDataTargets, mergeLaunchProfileUpdate, ensureLegacyFingerprintSeed } = require('./start');
 const { spawn } = require('child_process');
 const path = require('path');
 const { readDeferredSessionUrls, preserveLegacySession } = require('./startup-session');
@@ -45,6 +45,11 @@ function firefoxOsName(profile) {
 }
 
 function collectAcceptLanguages(fingerprint, profile) {
+  // Firefox derives BOTH the Accept-Language header and navigator.languages (including in
+  // workers, where the best-effort injection cannot reach) from this one pref, and Firefox
+  // 160 exposes the pref verbatim — quality values set here leak into navigator.languages as
+  // literal "en;q=0.9" tags. A plain list keeps every surface self-consistent; the q-less
+  // header is a real shape too (Firefox sends exactly what the user types in preferences).
   const fromFp = Array.isArray(fingerprint?.languages) && fingerprint.languages.length ? fingerprint.languages : null;
   const fromProfile = Array.isArray(profile?.languages) && profile.languages.length ? profile.languages : null;
   const single = profile?.language ? [profile.language] : null;
@@ -305,6 +310,9 @@ module.exports = {
       }
 
       const pageNetwork = this.networkInfo.get(profile.id) || {};
+      // Same one-time migration as the Chromium pipeline: a Firefox profile whose identity
+      // still hangs off its sequence id gets its persistent seed rolled before the build.
+      await ensureLegacyFingerprintSeed(this, profile);
       const fingerprint = buildFirefoxFingerprint(profile, browser.version);
       let customStartUrls = this.resolveStartupUrls(profile);
       if (profile.advanced.tabMode === 'restore' || profile.advanced.restoreSession) {
@@ -531,8 +539,11 @@ module.exports = {
         running: true,
         capabilities: item.capabilities,
         undeliverable: {
-          workerFingerprint: 'Worker 使用 realm 创建事件补充注入，尚不保证首条脚本前交付。',
+          workerFingerprint: 'Worker 使用 realm 创建事件补充注入，尚不保证首条脚本前交付（UA/语言由 user.js 全局覆盖，OffscreenCanvas 噪声为尽力而为）。',
           deviceMemory: '保留 Firefox 原生接口形态，不创建 Chromium 的 deviceMemory 接口。',
+          frameFontSurface: '跨 OS persona 下，子帧内 document.fonts 为度量层代理，foreign check 门控与文本栅格可能与主文档存在残差（主文档已验证正确，Chromium 路径无此问题）。',
+          intlAppLocale: 'Intl 运行时 locale 跟随内核语言包（en-US 构建即 en-US）——与 persona 语言形成「英文界面 + 母语内容偏好」的真实用户形态；不再用 BiDi locale override（实测会将 Accept-Language 头重写为单条）。',
+          linuxWebglRendererFormat: 'Linux 声称的 WebGL renderer 沿用 ANGLE 包装格式；当前 Firefox(Linux) 走原生 GL 报 Mesa 形态，该残差未建模（Windows/macOS 已实测一致）。',
           extensions: '扩展热装/同步依赖 CDP Extensions 域，Firefox 下不可用。',
           zoomReconcile: 'Preferences 缩放重置依赖 Chromium Preferences 结构，Firefox 无此文件。',
         },

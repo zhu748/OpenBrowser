@@ -260,6 +260,26 @@ function mergeLaunchProfileUpdate(engine, snapshot) {
   return engine.sanitizeProfile(merged);
 }
 
+/**
+ * One-time identity migration for profiles that predate fingerprint seeds (or were created
+ * via the API without one): buildFingerprint derives every axis from the profile id alone,
+ * and batch ids are guessable sequences ("env-001") — anyone who knows the naming scheme
+ * can replay the derivation and reproduce the fingerprint exactly. Roll a persistent seed
+ * once; it lives in the profile record, so the identity stays portable across cloud restore,
+ * and privacy.refreshFingerprintOnStart keeps its separate meaning (a fresh LAUNCH seed
+ * every start). Best-effort persist: the in-memory copy already carries the seed for this
+ * launch even if the disk write is momentarily blocked.
+ */
+async function ensureLegacyFingerprintSeed(engine, profile) {
+  if (!profile || String(profile.fingerprintSeed || '').trim()) return false;
+  profile.fingerprintSeed = crypto.randomBytes(16).toString('hex');
+  try {
+    engine.profiles.set(profile.id, profile);
+    await engine.persist();
+  } catch (_) {}
+  return true;
+}
+
 module.exports = {
   async _start(raw, lifecycleGeneration = null) {
     // let: language/timezone resolution reassigns profile via applyResolvedLocale
@@ -403,6 +423,9 @@ module.exports = {
     const pageNetwork = this.networkInfo.get(profile.id) || {};
     // Explicit identity refresh is independent of per-site sampling stability.
     const allowSeedRefresh = profile.privacy.refreshFingerprintOnStart;
+    // One-time migration for profiles that never rolled a seed (see the helper): the
+    // derivation must not hang off a guessable sequence id.
+    await ensureLegacyFingerprintSeed(this, profile);
     const fingerprint = buildFingerprint({
       ...profile,
       fingerprintLaunchSeed: allowSeedRefresh ? crypto.randomBytes(16).toString('hex') : '',
@@ -1011,6 +1034,9 @@ clearLaunchDataTargets,
 // Reused by the Firefox pipeline (engine/start-firefox.js) so both engines share
 // the same merge-only write-back contract for mid-start profile snapshots.
 mergeLaunchProfileUpdate,
+// Shared by both launch pipelines: rolls the persistent seed a legacy (unseeded) profile
+// is missing before its fingerprint is built (see the function comment above).
+ensureLegacyFingerprintSeed,
 // Single source of the security switch denylist used to filter
 // profile.privacy.customArgs at launch time; exported for reuse and tests.
 SECURITY_SWITCH_DENYLIST,

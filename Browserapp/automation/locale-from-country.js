@@ -25,7 +25,9 @@ const COUNTRY_TO_LOCALE = {
   AT: 'de-AT',
   CH: 'de-CH',
   FR: 'fr-FR',
-  BE: 'fr-BE',
+  // Belgium is majority Dutch-speaking (Flemish ~60%): nl-BE is the default locale a real
+  // Belgian install ships; fr-BE described only the French-speaking minority.
+  BE: 'nl-BE',
   ES: 'es-ES',
   MX: 'es-MX',
   AR: 'es-AR',
