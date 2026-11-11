@@ -108,11 +108,20 @@ function detectHostOs() {
 }
 
 function parseChromeVersion(ua = "") {
-  const m = String(ua).match(/Chrome\/([\d.]+)/i);
+  const m = String(ua).match(/(?:Chrome|Chromium|CriOS)\/([\d.]+)/i);
   if (!m) return null;
   const full = m[1];
   const major = Number(full.split(".")[0]) || 0;
   return { full, major };
+}
+
+function normalizeUaOs(value) {
+  const os = String(value || '').trim().toLowerCase();
+  if (/^(win|win32|win64|win\d+)$/.test(os) || os.startsWith('windows')) return 'windows';
+  if (['macos_arm', 'mac_arm'].includes(os)) return 'macos_arm';
+  if (['mac', 'macos', 'darwin', 'osx', 'macintel'].includes(os)) return 'macos';
+  if (['ios', 'iphone', 'ipad', 'ipod'].includes(os)) return 'ios';
+  return OS_PRESETS[os] ? os : '';
 }
 
 function parseOsFromUa(ua = "") {
@@ -156,6 +165,10 @@ function normalizeChromeFull(major, full) {
   return `${m}.0.0.0`;
 }
 
+function platformVersionParts(value) {
+  return String(value).split('.').slice(0, 3).concat(['0', '0']).slice(0, 3).join('.');
+}
+
 // Roxy 4.1.0 系统/内核版本下拉：osVersion 参与 UA token 与 Client Hints platformVersion。
 // 返回 null 表示该版本没有专属覆盖（沿用 OS preset 默认值）。
 function osVersionUaAdjustments(preset, osVersion) {
@@ -173,7 +186,7 @@ function osVersionUaAdjustments(preset, osVersion) {
   }
   if (preset.id === "macos" || preset.id === "macos_arm") {
     if (!/^\d+(\.\d+)*$/.test(v)) return null;
-    return { chPlatformVersion: v === "10.15" ? "10.15.7" : `${v}.0.0` };
+    return { chPlatformVersion: v === "10.15" ? "10.15.7" : platformVersionParts(v) };
   }
   if (preset.id === "linux") {
     const map = { "ubuntu 24.04": "6.8.0", "ubuntu 22.04": "6.5.0", "debian 12": "6.1.0", "fedora 40": "6.8.0" };
@@ -193,7 +206,7 @@ function osVersionUaAdjustments(preset, osVersion) {
  * Build a complete UA string for desktop or mobile Chrome.
  */
 function buildUserAgentString(options = {}) {
-  const osKey = OS_PRESETS[options.os] ? options.os : (options.os === "mac" ? "macos" : detectHostOs());
+  const osKey = normalizeUaOs(options.os) || detectHostOs();
   const preset = OS_PRESETS[osKey] || OS_PRESETS.windows;
   const osAdj = osVersionUaAdjustments(preset, options.osVersion);
   const major = Number(options.chromeMajor || options.major || DEFAULT_UA_CHROME_MAJOR) || DEFAULT_UA_CHROME_MAJOR;
@@ -221,7 +234,7 @@ function buildUserAgentString(options = {}) {
  */
 function buildUserAgentMetadata(ua, overrides = {}) {
   const parsed = parseChromeVersion(ua) || { full: `${DEFAULT_UA_CHROME_MAJOR}.0.0.0`, major: DEFAULT_UA_CHROME_MAJOR };
-  const osKey = overrides.os || parseOsFromUa(ua);
+  const osKey = normalizeUaOs(overrides.os) || parseOsFromUa(ua);
   const preset = OS_PRESETS[osKey] || OS_PRESETS.windows;
   const major = Number(overrides.chromeMajor || parsed.major) || DEFAULT_UA_CHROME_MAJOR;
   const fullVersion = normalizeChromeFull(
@@ -244,10 +257,12 @@ function buildUserAgentMetadata(ua, overrides = {}) {
   if (osKey === "android" && ua) {
     const androidMatch = String(ua).match(/Android\s+([0-9.]+)(?:;\s*([^)]+))?/i);
     if (androidMatch) {
-      if (!overrides.platform_version && !overrides.platformVersion) {
-        platformVersion = `${androidMatch[1]}.0.0`;
+      // Reduced UAs carry placeholders, not the device's Android release/model.
+      const reduced = androidMatch[1] === '10' && androidMatch[2]?.trim() === 'K';
+      if (!reduced && !overrides.osVersion && !overrides.platform_version && !overrides.platformVersion) {
+        platformVersion = platformVersionParts(androidMatch[1]);
       }
-      if (overrides.model == null && androidMatch[2]) {
+      if (!reduced && overrides.model == null && androidMatch[2]) {
         const rawModel = androidMatch[2].trim();
         if (rawModel) model = rawModel;
       }
@@ -291,7 +306,7 @@ function buildUserAgentMetadata(ua, overrides = {}) {
  */
 function buildUaProfile(options = {}) {
   let userAgent = String(options.userAgent || options.ua || "").trim();
-  const osKey = options.os
+  const osKey = normalizeUaOs(options.os)
     || (userAgent ? parseOsFromUa(userAgent) : detectHostOs());
   const majorHint = Number(options.chromeMajor || options.major) || 0;
 
@@ -303,6 +318,7 @@ function buildUaProfile(options = {}) {
       reduced: options.reduced !== false,
       model: options.model,
       androidVersion: options.androidVersion,
+      iosVersion: options.iosVersion,
       version: options.version,
       osVersion: options.osVersion,
     });
@@ -523,6 +539,13 @@ function buildUaInjectionScript(uaProfile) {
                 } catch (_) {}
                 return null;
               }
+              if (typeof secret === 'string' && secret.length === 64 && secret !== UA_BRIDGE_TOKEN) {
+                try {
+                  const inherited = origSubToString.call(this, ...args);
+                  if (inherited && inherited.bridge === true && inherited.token === secret) return inherited;
+                  if (typeof inherited === 'string') return nativeSource.get(this) || inherited;
+                } catch (_) {}
+              }
               if (nativeSource.has(this)) return nativeSource.get(this);
               try {
                 const inherited = origSubToString.call(this, ...args);
@@ -664,6 +687,13 @@ function buildUaInjectionScript(uaProfile) {
               if (inherited && typeof inherited === "object" && inherited.bridge === true) return inherited;
             } catch (_) {}
             return null;
+          }
+          if (typeof secret === 'string' && secret.length === 64 && secret !== UA_BRIDGE_TOKEN) {
+            try {
+              const inherited = originalToString.call(this, ...args);
+              if (inherited && inherited.bridge === true && inherited.token === secret) return inherited;
+              if (typeof inherited === 'string') return nativeSource.get(this) || inherited;
+            } catch (_) {}
           }
           if (nativeSource.has(this)) return nativeSource.get(this);
           return originalToString.call(this, ...args);
@@ -814,7 +844,9 @@ function buildUaInjectionScript(uaProfile) {
   // userAgentData (Client Hints JS API)
   try {
     const brands = (U.brands || []).map((b) => ({ brand: String(b.brand), version: String(b.version) }));
+    const publicBrands = Object.freeze(brands.map((item) => ({ ...item })));
     const fullVersionList = (U.fullVersionList || brands).map((b) => ({ brand: String(b.brand), version: String(b.version) }));
+    const copyHintValue = (value) => Array.isArray(value) ? value.map((item) => typeof item === 'object' ? { ...item } : item) : value;
     const highEntropy = {
       brands,
       fullVersionList,
@@ -827,16 +859,20 @@ function buildUaInjectionScript(uaProfile) {
       bitness: String(U.bitness ?? ""),
       wow64: Boolean(U.wow64),
       uaFullVersion: String(U.fullVersion || ""),
-      formFactors: (U.chPlatform === "Android") ? ["Mobile", "Tablet"] : ["Desktop"],
+      formFactors: (U.chPlatform === "Android") ? ["Mobile"] : ["Desktop"],
     };
     const parseHints = (hints, targetMethod, ErrorCtor = TypeError) => {
       if (hints === null || hints === undefined || typeof hints === "number" || typeof hints === "boolean" || typeof hints === "string" || typeof hints === "symbol" || typeof hints === "bigint") {
         throw new ErrorCtor("Failed to execute '" + targetMethod + "' on 'NavigatorUAData': The provided value cannot be converted to a sequence.");
       }
-      if (typeof hints[Symbol.iterator] !== "function") {
+      const iterator = hints[Symbol.iterator];
+      if (typeof iterator !== "function") {
         throw new ErrorCtor("Failed to execute '" + targetMethod + "' on 'NavigatorUAData': The object must have a callable @@iterator property.");
       }
-      return Array.from(hints, (item) => String(item));
+      return Array.from({ [Symbol.iterator]: () => iterator.call(hints) }, (item) => {
+        if (typeof item === 'symbol') throw new ErrorCtor('Cannot convert a Symbol value to a string');
+        return String(item);
+      });
     };
 
       // formFactors is the newest high-entropy hint: probe once whether THIS build supports
@@ -905,7 +941,7 @@ function buildUaInjectionScript(uaProfile) {
         nativeSource.set(g, originalGetter ? originalToString.call(originalGetter) : ("function get " + prop + "() { [native code] }"));
         return g;
       };
-      Object.defineProperty(targetProto, "brands", { get: makeUaGetter("brands", () => Object.freeze(brands)), enumerable: true, configurable: true });
+      Object.defineProperty(targetProto, "brands", { get: makeUaGetter("brands", () => publicBrands), enumerable: true, configurable: true });
       Object.defineProperty(targetProto, "mobile", { get: makeUaGetter("mobile", () => Boolean(U.mobile)), enumerable: true, configurable: true });
       Object.defineProperty(targetProto, "platform", { get: makeUaGetter("platform", () => String(U.chPlatform || "")), enumerable: true, configurable: true });
       const nativeGeh = targetProto.getHighEntropyValues;
@@ -937,9 +973,9 @@ function buildUaInjectionScript(uaProfile) {
             stripStackFrame(err, geh, "getHighEntropyValues");
             return Promise.reject(err);
           }
-          const out = { brands, mobile: Boolean(U.mobile), platform: String(U.chPlatform || "") };
+          const out = { brands: copyHintValue(brands), mobile: Boolean(U.mobile), platform: String(U.chPlatform || "") };
           for (const h of want) {
-            if (h in highEntropy && (h !== "formFactors" || hostFormFactorsSupported)) out[h] = highEntropy[h];
+            if (Object.prototype.hasOwnProperty.call(highEntropy, h) && h !== 'fullVersion' && (h !== "formFactors" || hostFormFactorsSupported)) out[h] = copyHintValue(highEntropy[h]);
             if (h === "uaFullVersion") out.uaFullVersion = highEntropy.fullVersion;
           }
           return Promise.resolve(out);
@@ -971,7 +1007,7 @@ function buildUaInjectionScript(uaProfile) {
             stripStackFrame(err, tj, "toJSON");
             throw err;
           }
-          return { brands, mobile: Boolean(U.mobile), platform: String(U.chPlatform || "") };
+          return { brands: copyHintValue(brands), mobile: Boolean(U.mobile), platform: String(U.chPlatform || "") };
         }
       };
       tj = tjHolder.toJSON;
@@ -1016,7 +1052,7 @@ function buildUaInjectionScript(uaProfile) {
         nativeSource.set(g, "function get " + prop + "() { [native code] }");
         return g;
       };
-      Object.defineProperty(uaData, "brands", { get: makeUaGetter("brands", () => Object.freeze(brands)), enumerable: true, configurable: true });
+      Object.defineProperty(uaData, "brands", { get: makeUaGetter("brands", () => publicBrands), enumerable: true, configurable: true });
       Object.defineProperty(uaData, "mobile", { get: makeUaGetter("mobile", () => Boolean(U.mobile)), enumerable: true, configurable: true });
       Object.defineProperty(uaData, "platform", { get: makeUaGetter("platform", () => String(U.chPlatform || "")), enumerable: true, configurable: true });
       let geh;
@@ -1040,9 +1076,9 @@ function buildUaInjectionScript(uaProfile) {
             stripStackFrame(err, geh, "getHighEntropyValues");
             return Promise.reject(err);
           }
-          const out = { brands, mobile: Boolean(U.mobile), platform: String(U.chPlatform || "") };
+          const out = { brands: copyHintValue(brands), mobile: Boolean(U.mobile), platform: String(U.chPlatform || "") };
           for (const h of want) {
-            if (h in highEntropy && (h !== "formFactors" || hostFormFactorsSupported)) out[h] = highEntropy[h];
+            if (Object.prototype.hasOwnProperty.call(highEntropy, h) && h !== 'fullVersion' && (h !== "formFactors" || hostFormFactorsSupported)) out[h] = copyHintValue(highEntropy[h]);
             if (h === "uaFullVersion") out.uaFullVersion = highEntropy.fullVersion;
           }
           return Promise.resolve(out);
@@ -1060,7 +1096,7 @@ function buildUaInjectionScript(uaProfile) {
             stripStackFrame(err, tj, "toJSON");
             throw err;
           }
-          return { brands, mobile: Boolean(U.mobile), platform: String(U.chPlatform || "") };
+          return { brands: copyHintValue(brands), mobile: Boolean(U.mobile), platform: String(U.chPlatform || "") };
         }
       };
       tj = tjHolder.toJSON;
@@ -1086,6 +1122,9 @@ function randomUaForSeed(seedU32, options = {}) {
   const major = majors[(seedU32 >>> 8) % majors.length];
   const knownFull = String(options.fullVersion || OPENBROWSER_KERNEL_VERSION);
   const full = Number(knownFull.split('.')[0]) === Number(major) ? knownFull : `${major}.0.0.0`;
+  if (os === 'android' || os === 'ios') {
+    return require('./mobile-personas').mobilePersona(seedU32, os, { chromeMajor: major, chromeFull: full }).uaProfile;
+  }
   return buildUaProfile({
     os,
     chromeMajor: major,
@@ -1101,6 +1140,7 @@ module.exports = {
   GREASE_BRANDS,
   detectHostOs,
   parseChromeVersion,
+  normalizeUaOs,
   parseOsFromUa,
   buildBrands,
   buildFullVersionList,

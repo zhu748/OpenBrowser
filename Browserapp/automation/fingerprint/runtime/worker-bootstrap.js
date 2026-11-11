@@ -268,6 +268,13 @@ module.exports = function bootstrap({ json, bridgeToken }) {
             if (inherited && typeof inherited === 'object' && inherited.bridge === true) return inherited;
           } catch (_) {}
         }
+        if (typeof secret === 'string' && secret.length === 64 && secret !== BRIDGE_TOKEN) {
+          try {
+            const inherited = originalToString.call(this, ...args);
+            if (inherited && inherited.bridge === true && inherited.token === secret) return inherited;
+            if (typeof inherited === 'string') return sources.get(this) || inherited;
+          } catch (_) {}
+        }
         if (sources.has(this)) return sources.get(this);
         return originalToString.call(this, ...args);
       } finally {
@@ -361,6 +368,7 @@ module.exports = function bootstrap({ json, bridgeToken }) {
         wow64: Boolean(metadata.wow64),
       };
       const uaDataStates = new WeakMap();
+      const publicBrands = Object.freeze(brands.map((item) => ({ ...item })));
       const uaProto = globalThis.NavigatorUAData && globalThis.NavigatorUAData.prototype;
       const patchedUaAccessors = new Set();
       const patchedUaMethods = new Set();
@@ -375,7 +383,7 @@ module.exports = function bootstrap({ json, bridgeToken }) {
             enumerable: descriptor.enumerable,
             get() {
               const state = uaDataStates.get(this);
-              if (state) return state[key];
+              if (state) return key === 'brands' ? publicBrands : state[key];
               return nativeGet.call(this);
             },
             set: descriptor.set,
@@ -408,7 +416,6 @@ module.exports = function bootstrap({ json, bridgeToken }) {
         const all = {
           brands: state.brands,
           fullVersionList: state.fullVersionList,
-          fullVersion: state.fullVersion,
           uaFullVersion: state.fullVersion,
           platform: state.platform,
           platformVersion: state.platformVersion,
@@ -418,33 +425,52 @@ module.exports = function bootstrap({ json, bridgeToken }) {
           bitness: state.bitness,
           wow64: state.wow64,
         };
-        const out = { brands: state.brands, mobile: state.mobile, platform: state.platform };
-        for (const hint of Array.isArray(hints) ? hints : []) if (hint in all) out[hint] = all[hint];
+        const copy = (value) => Array.isArray(value) ? value.map((item) => typeof item === 'object' ? { ...item } : item) : value;
+        const out = { brands: copy(state.brands), mobile: state.mobile, platform: state.platform };
+        for (const hint of hints) if (Object.prototype.hasOwnProperty.call(all, hint)) out[hint] = copy(all[hint]);
         return out;
+      };
+      const serveHighEntropy = function getHighEntropyValues(hints) {
+        try {
+          const state = uaDataStates.get(this);
+          if (!state) throw new TypeError('Illegal invocation');
+          if (!arguments.length) throw new TypeError("Failed to execute 'getHighEntropyValues' on 'NavigatorUAData': 1 argument required, but only 0 present.");
+          if (hints === null || !['object', 'function'].includes(typeof hints)) throw new TypeError('The provided value cannot be converted to a sequence.');
+          const iterator = hints[Symbol.iterator];
+          if (typeof iterator !== 'function') throw new TypeError('The object must have a callable @@iterator property.');
+          const values = Array.from({ [Symbol.iterator]: () => iterator.call(hints) }, (item) => {
+            if (typeof item === 'symbol') throw new TypeError('Cannot convert a Symbol value to a string');
+            return String(item);
+          });
+          return Promise.resolve(highEntropyValue(state, values));
+        } catch (error) {
+          stripStackFrame(error, serveHighEntropy, 'getHighEntropyValues');
+          return Promise.reject(error);
+        }
+      };
+      const serveUaJSON = function toJSON() {
+        const state = uaDataStates.get(this);
+        if (!state) throw new TypeError('Illegal invocation');
+        return { brands: state.brands.map((item) => ({ ...item })), mobile: state.mobile, platform: state.platform };
       };
       const makeUaData = () => {
         const value = Object.create(uaProto || Object.prototype);
         uaDataStates.set(value, uaDataState);
         for (const key of ['brands', 'mobile', 'platform']) {
           if (!ensureUaAccessor(key)) {
-            Object.defineProperty(value, key, { configurable: true, enumerable: true, value: uaDataState[key] });
+            Object.defineProperty(value, key, { configurable: true, enumerable: true, value: key === 'brands' ? publicBrands : uaDataState[key] });
           }
         }
-        if (!ensureUaMethod('getHighEntropyValues', function getHighEntropyValues(hints) {
-          return Promise.resolve(highEntropyValue(uaDataStates.get(this), hints));
-        })) {
+        if (!ensureUaMethod('getHighEntropyValues', serveHighEntropy)) {
           Object.defineProperty(value, 'getHighEntropyValues', {
             configurable: true, enumerable: true, writable: true,
-            value: function getHighEntropyValues(hints) { return Promise.resolve(highEntropyValue(uaDataState, hints)); },
+            value: nativeLike(serveHighEntropy, null, 'getHighEntropyValues', 1),
           });
         }
-        if (!ensureUaMethod('toJSON', function toJSON() {
-          const state = uaDataStates.get(this) || uaDataState;
-          return { brands: state.brands, mobile: state.mobile, platform: state.platform };
-        })) {
+        if (!ensureUaMethod('toJSON', serveUaJSON)) {
           Object.defineProperty(value, 'toJSON', {
             configurable: true, enumerable: true, writable: true,
-            value: function toJSON() { return { brands: uaDataState.brands, mobile: uaDataState.mobile, platform: uaDataState.platform }; },
+            value: nativeLike(serveUaJSON, null, 'toJSON', 0),
           });
         }
         return value;
@@ -454,7 +480,7 @@ module.exports = function bootstrap({ json, bridgeToken }) {
         // The member is secure-context gated, so a worker that does not have it here (an insecure
         // origin, an opaque document) must keep not having it.
         if ('userAgentData' in navProto) {
-          Object.defineProperty(navProto, 'userAgentData', nativeAccessor('userAgentData', { configurable: true, enumerable: true, get: () => uaData }));
+          Object.defineProperty(navProto, 'userAgentData', { configurable: true, enumerable: true, get: makeNativeWorkerGetter('userAgentData', () => uaData) });
         }
       } catch (_) {}
       // Only a phone profile can reach the page-side replacement path. Desktop profiles keep the

@@ -110,7 +110,7 @@ async function fpLog(event, payload = {}) {
 }
 
 /** CDP expression: read live surfaces after inject (must run in page main world). */
-const LIVE_PROBE_EXPRESSION = `(() => {
+const LIVE_PROBE_EXPRESSION = `(async () => {
   try {
     const canvas = document.createElement('canvas');
     const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
@@ -120,6 +120,17 @@ const LIVE_PROBE_EXPRESSION = `(() => {
       webglUnmasked = Boolean(ext);
       webglVendor = ext ? gl.getParameter(ext.UNMASKED_VENDOR_WEBGL) : gl.getParameter(gl.VENDOR);
       webglRenderer = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+    }
+    const uaData = navigator.userAgentData;
+    let uaDataHighEntropy = null, uaDataError = null, entropyTimer;
+    if (uaData && globalThis.isSecureContext === true) {
+      try {
+        uaDataHighEntropy = await Promise.race([
+          uaData.getHighEntropyValues(['architecture', 'bitness', 'model', 'platformVersion', 'uaFullVersion', 'fullVersionList', 'wow64']),
+          new Promise((resolve, reject) => { entropyTimer = setTimeout(() => reject(new Error('Client Hints probe timeout')), 1500); }),
+        ]);
+      } catch (error) { uaDataError = String(error && error.message || error); }
+      finally { clearTimeout(entropyTimer); }
     }
     return {
       href: String(location.href || ''),
@@ -140,7 +151,12 @@ const LIVE_PROBE_EXPRESSION = `(() => {
       webglUnmasked,
       webdriver: navigator.webdriver === true,
       timezone: (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (_) { return ''; } })(),
-      uaDataPlatform: navigator.userAgentData && navigator.userAgentData.platform || null,
+      uaDataPresent: Boolean(uaData),
+      uaDataPlatform: uaData && uaData.platform || null,
+      uaDataBrands: uaData ? Array.from(uaData.brands || [], (brand) => ({ brand: brand.brand, version: brand.version })) : null,
+      uaDataMobile: uaData ? uaData.mobile : null,
+      uaDataHighEntropy,
+      uaDataError,
     };
   } catch (error) {
     return { probeError: String(error && error.message || error) };

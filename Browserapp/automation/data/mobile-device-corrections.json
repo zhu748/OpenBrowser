@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "devices": [
+    {
+      "os": "android",
+      "model": "SM-G990B",
+      "name": "Samsung SM-G990B",
+      "osRange": "12-16",
+      "cores": 8,
+      "width": 360,
+      "height": 780,
+      "panel": 1080,
+      "dpr": 3,
+      "gpuVendor": "Qualcomm",
+      "gpuRenderer": "Adreno (TM) 660",
+      "sources": [
+        "https://doc.samsungmobile.com/SM-G990B/021362220125/deu.html",
+        "https://www.samsung.com/uk/support/mobile-devices/what-is-the-difference-between-the-galaxy-s21-fe-s21-s21-and-s20-fe/",
+        "https://www.qualcomm.com/smartphones/products/8-series/snapdragon-888-5g-mobile-platform"
+      ]
+    }
+  ]
+}

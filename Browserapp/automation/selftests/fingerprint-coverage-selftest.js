@@ -257,7 +257,7 @@ check('a GPU class without driver limits is surfaced instead of assumed', () => 
     hardwareConcurrency: 8,
     deviceMemory: 8,
     webgl: { mode: 'noise', vendor: 'Google Inc. (Vivante)', renderer: 'Vivante GC7000', gpu: { vendor: 'vivante', architecture: 'gc7000' } },
-    userAgentMetadata: { platform: 'Windows' },
+    userAgentMetadata: buildFingerprint({ id: 'unknown-gpu-metadata', userAgent: WINDOWS_UA }).userAgentMetadata,
   });
   const codes = issues.issues.map((issue) => issue.code);
   assert.ok(codes.includes('webgl-limits-unknown-gpu'),

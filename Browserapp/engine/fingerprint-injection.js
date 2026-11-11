@@ -12,11 +12,11 @@
 const cdp = require('../cdp');
 const { createCssFontResponseRewriter } = require('../automation/css-font-response-rewrite');
 const { applyFingerprintToTab, buildFingerprint, buildWorkerInjectionScript } = require('../automation/fingerprint');
-const { LIVE_PROBE_EXPRESSION, fpLog, summarizeFp } = require('../automation/fingerprint-debug-log');
+const { LIVE_PROBE_EXPRESSION, fpLog } = require('../automation/fingerprint-debug-log');
 const { deriveFontPlaceholder } = require('../automation/font-placeholder');
 const { fingerprintForNativeKernelInject } = require('../automation/kernel-init-sync');
 const { resolveProfileLanguage, resolveProfileTimezone } = require('../automation/locale-from-country');
-const { buildPortScanProtectionScript } = require('../automation/port-scan-protection');
+const { runtimePolicyProfile, applyTargetRuntimePolicy, forgetTargetRuntimePolicy } = require('./runtime-policy');
 const { getPlatformFontPayload } = require('../automation/query-local-font-blob-gate');
 const { RequestHeaderRewriter, evaluateFingerprintDelivery } = require('../automation/request-header-rewriter');
 const { buildWorkerFontPresenceSource } = require('../automation/worker-font-presence-fallback');
@@ -48,15 +48,10 @@ module.exports = {
   async startWorkerFingerprintInjection(item, fingerprint) {
     // Every worker handler captures this connection's own fingerprint. Concurrent
     // profile launches must never share a process-global "latest" identity.
-    const workerPrivacy = (item.profile && item.profile.privacy) || {};
-    const portScanSource = workerPrivacy.portScanProtect
-      ? '\n' + buildPortScanProtectionScript(workerPrivacy.portScanAllow)
-      : '';
     const fontPresenceSource = typeof buildWorkerFontPresenceSource === 'function'
       ? buildWorkerFontPresenceSource(fingerprint)
       : '';
     const source = buildWorkerInjectionScript(fingerprint)
-      + portScanSource
       + (fontPresenceSource ? '\n' + fontPresenceSource : '');
     if (fingerprint?.fontBlobBridge && !item.fontBlobBridge) {
       item.fontBlobBridge = fingerprint.fontBlobBridge;
@@ -83,6 +78,8 @@ module.exports = {
     const requestHeaderRewriter = new RequestHeaderRewriter({
       profile: item.profile,
       fingerprint,
+      getPolicyProfile: () => runtimePolicyProfile(item.profile, this.profiles?.get?.(item.profile.id)),
+      isInternalRequest: (url) => Boolean(this.startPageServer?.server && this.startPageServer.isStartPageUrl?.(url)),
       onFatalError: (error) => {
         item.requestHeaderRewriteError = error.message;
         this.emit({ type: 'fingerprint-injection-failed', id: item.profile.id, stage: 'request-headers', message: error.message });
@@ -121,6 +118,8 @@ module.exports = {
 
     // Tracking for initial pre-existing target attach and fetch enablement barrier
     const workerSessionToTargetId = new Map();
+    const policySessions = new Map();
+    item.fingerprintTargetSessions = policySessions;
     const pendingInitialTargets = new Set();
     const completedInitialTargets = new Set();
     let barrierResolve;
@@ -230,7 +229,9 @@ module.exports = {
         if (detachedTargetId && item.attachedWorkerTargets) {
           item.attachedWorkerTargets.delete(detachedTargetId);
         }
+        if (detachedTargetId) forgetTargetRuntimePolicy(item, detachedTargetId);
         if (detachedSessionId) {
+          policySessions.delete(detachedSessionId);
           workerSessionToTargetId.delete(detachedSessionId);
           targetSetup.delete(detachedSessionId);
           try { requestHeaderRewriter.cleanupSession(detachedSessionId); } catch (_) {}
@@ -242,12 +243,14 @@ module.exports = {
       // If an initial target closes before attaching, unblock barrier without hanging
       if (event?.method === 'Target.targetDestroyed') {
         const destroyedId = event.params?.targetId;
+        forgetTargetRuntimePolicy(item, destroyedId);
         if (destroyedId && item.attachedWorkerTargets) {
           item.attachedWorkerTargets.delete(destroyedId);
         }
         for (const [session, target] of workerSessionToTargetId) {
           if (target !== destroyedId) continue;
           workerSessionToTargetId.delete(session);
+          policySessions.delete(session);
           targetSetup.delete(session);
           requestHeaderRewriter.cleanupSession(session);
           fontResponseRewriter.cleanupSession?.(session);
@@ -343,9 +346,16 @@ module.exports = {
             if (evaluation?.exceptionDetails) {
               throw new Error(evaluation.exceptionDetails.exception?.description || evaluation.exceptionDetails.text || 'Worker fingerprint execution failed');
             }
+            await applyTargetRuntimePolicy({ owner: item, targetId: targetId || sessionId, targetType: targetInfo.type,
+              profile: runtimePolicyProfile(item.profile, this.profiles?.get?.(item.profile.id)),
+              invoke: (method, params) => connection.command(method, params, { sessionId, timeout: 3000 }),
+            });
             if (targetId) item.attachedWorkerTargets.add(targetId);
           }
           await resumeTarget();
+          if (targetId && (pageLikeTypes.has(targetInfo.type) || workerTypes.has(targetInfo.type)) && !internalUrl.test(String(targetInfo.url || ''))) {
+            policySessions.set(sessionId, { targetId, type: targetInfo.type });
+          }
           if (pageLikeTypes.has(targetInfo.type) && targetId) {
             if (!item.fpAppliedTargets) item.fpAppliedTargets = new Set();
             item.fpAppliedTargets.add(targetId);
@@ -383,6 +393,7 @@ module.exports = {
     const connection = await cdp.connect(browserWs, {
       onEvent: onAttached,
       onDisconnect: (error) => {
+        policySessions.clear();
         try { requestHeaderRewriter.destroy(); } catch (_) {}
         try { fontResponseRewriter.destroy?.(); } catch (_) {}
         if (!barrierSettled) {
@@ -406,6 +417,7 @@ module.exports = {
 
     const origClose = connection.close.bind(connection);
     connection.close = () => {
+      policySessions.clear();
       try { requestHeaderRewriter.destroy(); } catch (_) {}
       try { fontResponseRewriter.destroy?.(); } catch (_) {}
       if (!barrierSettled) {
@@ -542,6 +554,10 @@ module.exports = {
       isWaiting,
       livePatchDocument: isEphemeralDocumentUrl(targetInfo?.url),
     });
+    await applyTargetRuntimePolicy({ owner: item, targetId: targetInfo?.targetId || sessionId,
+      targetType: targetInfo?.type || 'page', waiting: isWaiting,
+      profile: runtimePolicyProfile(profile, this.profiles?.get?.(profile.id)), invoke: sessionCall,
+    });
     // Synchronize Blink physical layout scaling with target devicePixelRatio for desktop personas.
     // Without setDeviceMetricsOverride, Blink computes CSS @media (resolution) at host 1dppx,
     // creating an observable contradiction with window.devicePixelRatio and JS matchMedia.
@@ -628,6 +644,7 @@ module.exports = {
           const probeRes = await cdp.call(probeTab.webSocketDebuggerUrl, 'Runtime.evaluate', {
             expression: LIVE_PROBE_EXPRESSION,
             returnByValue: true,
+            awaitPromise: true,
           }, timeout);
           liveProbe = probeRes?.result?.value || probeRes?.value || null;
         }

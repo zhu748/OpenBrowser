@@ -11,155 +11,10 @@ const cdp = require('../cdp');
 const { applyFingerprintToTab, buildFingerprint } = require('../automation/fingerprint');
 const { LIVE_PROBE_EXPRESSION, fpLog, summarizeFp, logPath: fingerprintLogPath } = require('../automation/fingerprint-debug-log');
 const { sanitizeUrlForLog } = require('../automation/log-sanitizer');
-const { buildPortScanProtectionScript } = require('../automation/port-scan-protection');
+const { compileUrlAccessPolicy } = require('../automation/url-access-policy');
+const { runtimePolicyProfile, applyTargetRuntimePolicy, pruneRuntimePolicyPages } = require('./runtime-policy');
 const { evaluateFingerprintDelivery } = require('../automation/request-header-rewriter');
 const { fingerprintConfigHash, isEphemeralDocumentUrl } = require('./fingerprint-injection');
-
-// ===== Roxy 对齐：网址访问白名单 / 黑名单（Fetch 反选拦截） =====
-// advanced.allowUrls 非空时：名单外的 http(s) 请求一律拦截；advanced.blockUrls 命中时同样拦截。
-// 文档（顶层导航）被拦时返回本地拦截页（Roxy blockDomain.html 对齐），其余资源 failRequest。
-// 每个标签页保持一条 PersistentConnection；名单签名变化才重建，关闭/禁用即拆除。
-const urlAllowIntercepts = new Map(); // `${profileId}:${tabId}` -> { conn, signature }
-function parseAllowHosts(raw) {
-  return String(raw || '')
-    .split(/[\n,]+/)
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean)
-    .map((s) => s.replace(/^[a-z][a-z0-9+.-]*:\/\//, '').split('/')[0].trim())
-    .filter(Boolean)
-    .slice(0, 200);
-}
-// 本地拦截页（对齐 Roxy web/blockDomain.html 的居中版式与文案语义）
-function escapeHtmlText(value) {
-  return String(value).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
-}
-function blockedPageHtml(url) {
-  const safeUrl = escapeHtmlText(String(url || '').slice(0, 300));
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><title>无法访问该网页</title><style>
-body{margin:0;padding:0;display:flex;justify-content:center;align-items:center;height:100vh;background-color:#f0f0f0}
-.container{width:var(--width-xs,384px);display:flex;flex-direction:column;justify-content:center;gap:12px}
-.title{color:#111213;font-size:16px;font-weight:400;line-height:20px;text-align:center}
-.text{color:#7c8387;font-size:12px;font-weight:400;line-height:normal;text-align:center;word-break:break-all}
-</style></head><body><div class="container">
-<svg style="display:block;margin:0 auto" xmlns="http://www.w3.org/2000/svg" width="90" height="90" viewBox="0 0 90 90" fill="none"><circle cx="45" cy="45" r="38" stroke="#C8CED3" stroke-width="6"/><path d="M17 17L73 73" stroke="#C8CED3" stroke-width="6" stroke-linecap="round"/></svg>
-<div class="title">无法访问该网页</div>
-<div class="text">该网址已被管理员禁止访问。</div>
-<div class="text">${safeUrl}</div>
-</div></body></html>`;
-}
-function hostAllowedByAllowlist(hostname, hosts) {
-  for (const host of hosts) {
-    if (host.startsWith('*.')) {
-      const bare = host.slice(2);
-      if (hostname === bare || hostname.endsWith('.' + bare)) return true;
-    } else if (hostname === host || hostname.endsWith('.' + host)) {
-      return true;
-    }
-  }
-  return false;
-}
-function teardownAllowIntercept(key) {
-  const entry = urlAllowIntercepts.get(key);
-  if (!entry) return;
-  urlAllowIntercepts.delete(key);
-  try { entry.conn?.close(); } catch (_) {}
-}
-async function ensureAllowIntercept(engine, profileId, tab, allowHosts, blockHosts) {
-  if (!tab?.webSocketDebuggerUrl) return;
-  const key = `${profileId}:${tab.id}`;
-  const signature = `${allowHosts.join('|')}#${blockHosts.join('|')}`;
-  const existing = urlAllowIntercepts.get(key);
-  if (existing && existing.signature === signature) return;
-  teardownAllowIntercept(key);
-  try {
-    const conn = new cdp.PersistentConnection(tab.webSocketDebuggerUrl, {
-      onEvent: (message) => {
-        if (message?.method !== 'Fetch.requestPaused') return;
-        const requestId = message.params?.requestId;
-        if (!requestId) return;
-        const url = String(message.params?.request?.url || '');
-        const resourceType = String(message.params?.resourceType || '');
-        // 非 http(s)（chrome://、扩展、devtools 等）与启动页一律放行
-        let allowed = !/^https?:/i.test(url) || isEphemeralDocumentUrl(url);
-        let hostname = '';
-        if (!allowed) {
-          try { hostname = new URL(url).hostname.toLowerCase(); } catch (_) {}
-          allowed = hostAllowedByAllowlist(hostname, allowHosts);
-        }
-        const blockedByBlacklist = blockHosts.length > 0 && hostAllowedByAllowlist(hostname, blockHosts);
-        const blocked = blockedByBlacklist || (!allowed && allowHosts.length > 0);
-        if (!blocked) {
-          Promise.resolve(conn.command('Fetch.continueRequest', { requestId }, { timeout: 4000 })).catch(() => {});
-          return;
-        }
-        if (resourceType === 'Document') {
-          // 顶层导航 → 本地拦截页（Roxy blockDomain.html 对齐）
-          Promise.resolve(conn.command('Fetch.fulfillRequest', {
-            requestId,
-            responseCode: 200,
-            responseHeaders: [{ name: 'Content-Type', value: 'text/html; charset=utf-8' }],
-            body: Buffer.from(blockedPageHtml(url), 'utf8').toString('base64'),
-          }, { timeout: 4000 })).catch(() => {});
-          return;
-        }
-        Promise.resolve(conn.command('Fetch.failRequest', { requestId, errorReason: 'BlockedByClient' }, { timeout: 4000 })).catch(() => {});
-      },
-      onDisconnect: () => urlAllowIntercepts.delete(key),
-    });
-    await conn.open();
-    await conn.command('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] }, { timeout: 4000 });
-    urlAllowIntercepts.set(key, { conn, signature });
-  } catch (error) {
-    teardownAllowIntercept(key);
-    // Not silent: an allow/block list that fails to attach leaves the profile
-    // browsing without its configured restrictions — surface it through the
-    // same sync-error channel the engine uses for profile-file mismatches.
-    try {
-      engine?.emit?.({
-        type: 'sync-error',
-        action: 'allow-intercept',
-        id: profileId,
-        message: '网址白名单/黑名单拦截装配失败：' + String(error?.message || error),
-      });
-    } catch (_) {}
-  }
-}
-// 稳态解析缓存：watch 循环每个运行中的环境约 2.4s 就走一遍 applyRuntimeSettings，
-// syncAllowIntercepts 在稳态早退（≈197）之前执行，白/黑名单原文未变时每轮重新
-// split/trim（各至多 8000 字符）纯属浪费。按原文签名缓存解析结果，
-// 与 ensureAllowIntercepts 按签名缓存每个标签页的做法对齐。
-const allowListParseCache = new Map(); // profileId -> { raw: 'allowUrls#blockUrls', allowHosts, blockHosts }
-function syncAllowIntercepts(engine, profile, tabs) {
-  const profileId = profile?.id || '';
-  const rawAllow = String(profile?.advanced?.allowUrls || '');
-  const rawBlock = String(profile?.advanced?.blockUrls || '');
-  const rawKey = `${rawAllow}#${rawBlock}`;
-  let cached = allowListParseCache.get(profileId);
-  if (!cached || cached.raw !== rawKey) {
-    cached = {
-      raw: rawKey,
-      allowHosts: parseAllowHosts(rawAllow),
-      blockHosts: parseAllowHosts(rawBlock),
-    };
-    allowListParseCache.set(profileId, cached);
-  }
-  const { allowHosts, blockHosts } = cached;
-  const prefix = `${profileId}:`;
-  if (!allowHosts.length && !blockHosts.length) {
-    for (const key of [...urlAllowIntercepts.keys()]) {
-      if (key.startsWith(prefix)) teardownAllowIntercept(key);
-    }
-    return;
-  }
-  const liveKeys = new Set();
-  for (const tab of tabs) {
-    liveKeys.add(`${profile.id}:${tab.id}`);
-    ensureAllowIntercept(engine, profile.id, tab, allowHosts, blockHosts).catch(() => {});
-  }
-  for (const key of [...urlAllowIntercepts.keys()]) {
-    if (key.startsWith(prefix) && !liveKeys.has(key)) teardownAllowIntercept(key);
-  }
-}
 
 module.exports = {
   async applyRuntimeSettings(port, profile, fingerprint = null, options = {}) {
@@ -175,6 +30,7 @@ module.exports = {
       exitLongitude: profile.exitLongitude ?? network.longitude,
     };
     const fp = fingerprint || buildFingerprint(enriched);
+    const policyProfile = runtimePolicyProfile(profile, this.profiles?.get?.(profile.id));
     // Lazy hash: the watch loop reaches the all-applied early exit below every
     // ~2.4s per profile with no config change; serializing the whole
     // fingerprint object for a SHA-1 each pass is wasted steady-state work.
@@ -187,21 +43,36 @@ module.exports = {
     const configChanged = Boolean(options.appliedFingerprintHash)
       && options.appliedFingerprintHash !== fpHash();
     if (configChanged) applied.clear();
-    // Roxy 对齐：网址访问白名单 —— 在稳态早退之前同步拦截连接（含拆除失效标签页的连接）
-    syncAllowIntercepts(this, profile, tabs);
-    const blocked = [];
-    if (profile.advanced.blockVideo) blocked.push('*.mp4', '*.webm', '*.m3u8', '*.mov', '*.avi');
-    const customBlock = String(profile.advanced.blockUrls || '')
-      .split(/[\n,]+/)
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .slice(0, 200);
-    for (const u of customBlock) if (!blocked.includes(u)) blocked.push(u);
-    // Port scan protection: block common localhost probe ports unless allow-listed
-    // Speech voices: fingerprint injection (speech.mode blocked/noise/real)
-    let portScanScript = null;
-    if (profile.privacy.portScanProtect) {
-      portScanScript = buildPortScanProtectionScript(profile.privacy.portScanAllow);
+    // The browser-level Fetch owner handles access policy and persona headers
+    // together. Startup may validate it on blank tabs before that owner exists;
+    // all subsequent restricted browsing requires the live owner.
+    const requestOwner = options.trackOn?.requestHeaderRewriter;
+    if (requestOwner && !requestOwner.destroyed) requestOwner.refreshUrlPolicy(policyProfile);
+    else if (compileUrlAccessPolicy(policyProfile).active
+      && !(phase === 'pre-startpage' && tabs.every((tab) => isEphemeralDocumentUrl(tab.url)))) {
+      throw new Error('网址访问规则拦截尚未就绪，已停止继续浏览');
+    }
+    const policyOwner = options.trackOn || applied;
+    const sessions = options.trackOn?.fingerprintTargetSessions || new Map();
+    const sessionTargets = new Map([...sessions].map(([sessionId, target]) => [target.targetId, { ...target, sessionId }]));
+    const policyIds = new Set(tabs.map((tab) => tab.id));
+    for (const id of sessionTargets.keys()) policyIds.add(id);
+    pruneRuntimePolicyPages(policyOwner, policyIds);
+    const policyTargets = new Map(tabs.map((tab) => [tab.id, { targetType: 'page', tab }]));
+    for (const [id, target] of sessionTargets) policyTargets.set(id, { targetType: target.type, sessionId: target.sessionId });
+    for (const [targetId, target] of policyTargets) {
+      try {
+        await applyTargetRuntimePolicy({ owner: policyOwner, targetId, profile: policyProfile, targetType: target.targetType,
+          invoke: target.sessionId
+            ? (method, params) => options.trackOn.workerFingerprintConnection.command(method, params, { sessionId: target.sessionId, timeout: 5000 })
+            : (method, params) => cdp.call(target.tab.webSocketDebuggerUrl, method, params),
+        });
+      } catch (error) {
+        if (target.sessionId && !sessions.has(target.sessionId)) continue;
+        const current = target.tab ? await cdp.tabs(port).catch(() => null) : null;
+        if (current && !current.some((tab) => tab.id === targetId)) continue;
+        throw error;
+      }
     }
 
     // Re-injecting a document that already carries this exact config stacks a second layer of
@@ -237,17 +108,6 @@ module.exports = {
     });
 
     for (const tab of tabs) {
-      // Idempotent per-tab settings applied to every tab on every pass (also
-      // ones already carrying the inject) so blockUrls edits and portScan
-      // toggles take effect without a fingerprint-hash change.
-      if (blocked.length) {
-        await cdp.call(tab.webSocketDebuggerUrl, 'Network.enable').catch(() => {});
-        await cdp.call(tab.webSocketDebuggerUrl, 'Network.setBlockedURLs', { urls: blocked }).catch(() => {});
-      }
-      if (portScanScript) {
-        await cdp.call(tab.webSocketDebuggerUrl, 'Page.addScriptToEvaluateOnNewDocument', { source: portScanScript }).catch(() => {});
-        await cdp.call(tab.webSocketDebuggerUrl, 'Runtime.evaluate', { expression: portScanScript }).catch(() => {});
-      }
       if (!force && !options.verifyApplied && applied.has(tab.id)) {
         await fpLog('inject.skip-tab', { phase, profileId: profile.id, tabId: tab.id, url: tab.url, reason: 'already-applied' });
         continue;
@@ -268,7 +128,7 @@ module.exports = {
           livePatchDocument: isEphemeralDocumentUrl(tab.url),
         });
         const probe = await cdp.call(tab.webSocketDebuggerUrl, 'Runtime.evaluate', {
-          expression: LIVE_PROBE_EXPRESSION, returnByValue: true,
+          expression: LIVE_PROBE_EXPRESSION, returnByValue: true, awaitPromise: true,
         }, 8000);
         const live = probe?.result?.value ?? probe?.value ?? null;
         const exception = probe?.exceptionDetails || probe?.result?.exceptionDetails;

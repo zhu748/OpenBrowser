@@ -25,6 +25,7 @@ module.exports = {
   chromeArgsForFingerprint: chromeArgs.chromeArgsForFingerprint,
   applyFingerprintToTab: tabApply.applyFingerprintToTab,
   fingerprintConsistencyIssues: persona.fingerprintConsistencyIssues,
+  assertFingerprintConsistency: persona.assertFingerprintConsistency,
   hashSeed: shared.hashSeed,
   createMediaDevicesFromSeed: shared.createMediaDevicesFromSeed,
   createSpeechVoicesFromSeed: shared.createSpeechVoicesFromSeed,

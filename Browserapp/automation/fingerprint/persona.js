@@ -1,6 +1,7 @@
 'use strict';
 
 const { normalizeCoordinates } = require('../../shared/profile-values');
+const { normalizeUaOs, parseChromeVersion } = require('../user-agent');
 
 /**
  * Persona construction: buildFingerprint (deterministic profile ->
@@ -126,50 +127,36 @@ function buildFingerprint(profile = {}) {
   // 是一次性 CSS/API 特性探测即可识破的硬伤，与下方 uaMajorPool 的注释同理。
   let uaOverrideStr = uaOverride;
   const strictMajor = kernelMajor || defaultKernelMajor;
-  if (fpIn.uaStrict && uaOverride && strictMajor) {
-    const uaCurrentMajor = Number(uaOverride.match(/Chrome\/(\d+)/)?.[1]) || 0;
-    if (uaCurrentMajor && uaCurrentMajor !== strictMajor) {
-      uaOverrideStr = uaOverride.replace(/Chrome\/\d+/, `Chrome/${strictMajor}`);
-    }
+  const strictFull = profile.kernelVersion || OPENBROWSER_KERNEL_VERSION;
+  const strictUa = fpIn.uaStrict || fpIn.uaGenerated;
+  if (strictUa && uaOverride && strictMajor) {
+    uaOverrideStr = uaOverride.replace(/(Chrome|Chromium|CriOS)\/[\d.]+/i,
+      (_, brand) => `${brand}/${brand.toLowerCase() === 'crios' ? strictFull : `${strictMajor}.0.0.0`}`);
   }
   let uaProfile;
   if (uaOverrideStr) {
     const osFromUa = parseOsFromUa(uaOverrideStr);
     // buildUaProfile keys OS_PRESETS with exact lowercase ids; profile records may carry
     // aliases ("iOS", "Mac", "Win11") that would otherwise fall through to the host OS.
-    const normalizeOsKey = (value) => {
-      const v = String(value || '').toLowerCase().trim();
-      if (v === 'win' || v === 'win32' || v === 'win64' || v.startsWith('windows')) return 'windows';
-      if (v === 'mac' || v === 'darwin' || v === 'osx') return 'macos';
-      if (v === 'macos_arm' || v === 'mac_arm') return 'macos_arm';
-      if (v === 'iphone' || v === 'ipad' || v === 'ipod') return 'ios';
-      return v;
-    };
     uaProfile = buildUaProfile({
       userAgent: uaOverrideStr,
       // profile.os participates so a saved "macos_arm" profile keeps its Apple Silicon
       // identity (preset pins architecture=arm) even when it also pins a custom UA string.
-      os: normalizeOsKey(fpIn.os || clientHintsIn.os || profile.os) || osFromUa,
-      chromeMajor: (fpIn.uaStrict && strictMajor) || Number(fpIn.chromeMajor || clientHintsIn.chromeMajor) || undefined,
-      chromeFull: fpIn.ua_full_version || clientHintsIn.ua_full_version || fpIn.fullVersion,
+      os: normalizeUaOs(fpIn.os || clientHintsIn.os || profile.os) || osFromUa,
+      chromeMajor: (strictUa && strictMajor) || Number(fpIn.chromeMajor || clientHintsIn.chromeMajor) || undefined,
+      chromeFull: strictUa ? strictFull : (fpIn.ua_full_version || clientHintsIn.ua_full_version || fpIn.fullVersion),
       platform: fpIn.platform,
-      architecture: clientHintsIn.architecture || fpIn.architecture,
+      architecture: clientHintsIn.architecture ?? fpIn.architecture,
       platform_version: clientHintsIn.platform_version || fpIn.platformVersion,
       model: clientHintsIn.model,
       mobile: clientHintsIn.mobile,
       wow64: clientHintsIn.wow64,
       bitness: clientHintsIn.bitness,
-      ua_full_version: clientHintsIn.ua_full_version || fpIn.ua_full_version,
+      ua_full_version: strictUa ? strictFull : (clientHintsIn.ua_full_version || fpIn.ua_full_version),
     });
   } else {
     const desktopRequested = [fpIn.os, clientHintsIn.os, profile.os]
-      .map((value) => String(value || "").toLowerCase().trim())
-      .map((value) => {
-        if (value === "win" || value === "win32" || value === "win64") return "windows";
-        if (value === "mac" || value === "darwin" || value === "osx") return "macos";
-        if (value === "macos_arm" || value === "mac_arm") return "macos_arm";
-        return value;
-      })
+      .map(normalizeUaOs)
       .find((value) => value === "windows" || value === "macos" || value === "macos_arm" || value === "linux");
     uaProfile = randomUaForSeed(u32(seed, 44), {
       majors: uaMajorPool,
@@ -214,7 +201,7 @@ function buildFingerprint(profile = {}) {
   else if (uaOs === 'macos_arm' && uaArchitecture && uaArchitecture !== 'arm') uaOs = 'macos';
   const personaRequested = String(fpIn.deviceProfile ?? privacy.deviceProfile ?? '').toLowerCase() === 'persona';
   const mobileRequested = [fpIn.os, clientHintsIn.os, profile.os, uaProfile.os]
-    .map((value) => String(value || '').toLowerCase())
+    .map(normalizeUaOs)
     .find((value) => value === 'android' || value === 'ios');
   // Non-persona desktop DPR now follows the claimed OS (mobile and persona paths overwrite
   // this below with the device record's own ratio).
@@ -260,9 +247,15 @@ function buildFingerprint(profile = {}) {
   // cannot fall into a phone identity by accident.
   let mobileDevice = null;
   if (mobileRequested && supportsRuntimePersona(mobileRequested)) {
+    const androidUa = uaOverrideStr.match(/Android\s+([0-9.]+);\s*([^;)]+)/i);
+    const explicitMobileVersion = androidUa && !(androidUa[1] === '10' && androidUa[2].trim() === 'K')
+      ? androidUa[1] : uaOverrideStr.match(/CPU (?:iPhone )?OS (\d+(?:_\d+)*)/i)?.[1].replace(/_/g, '.');
     mobileDevice = mobilePersona(u32(seed, 52), mobileRequested, {
       chromeMajor: kernelMajor || defaultKernelMajor || undefined,
       chromeFull: profile.kernelVersion || OPENBROWSER_KERNEL_VERSION,
+      deviceModel: clientHintsIn.deviceModel,
+      model: clientHintsIn.model !== 'K' ? (clientHintsIn.model || (uaOverrideStr ? uaProfile.metadata?.model : '')) : '',
+      osVersion: clientHintsIn.platform_version || clientHintsIn.platformVersion || explicitMobileVersion || (!uaOverrideStr ? profile.osVersion : ''),
     });
     uaOs = mobileDevice.os;
     if (!hasCoresOverride) cores = mobileDevice.cores;
@@ -294,6 +287,16 @@ function buildFingerprint(profile = {}) {
     };
     // A pinned UA still wins, but the rest of the phone identity follows the sampled device.
     if (!uaOverrideStr) uaProfile = mobileDevice.uaProfile;
+    else {
+      uaProfile = buildUaProfile({
+        userAgent: uaProfile.userAgent, os: mobileDevice.os,
+        chromeMajor: uaProfile.chromeMajor, chromeFull: uaProfile.chromeFull,
+        ...mobileDevice.uaProfile.clientHints,
+        ua_full_version: uaProfile.chromeFull,
+        platformNav: mobileDevice.uaProfile.platform, vendor: mobileDevice.vendor,
+      });
+      uaProfile.clientHints.deviceModel = mobileDevice.deviceModel;
+    }
   }
   const inferGpuFromRenderer = (rendererStr) => {
     const s = String(rendererStr || '').toLowerCase();
@@ -400,6 +403,7 @@ function buildFingerprint(profile = {}) {
     : ((privacy.mediaLabels && typeof privacy.mediaLabels === 'object') ? privacy.mediaLabels : null);
   const mediaDevices = mediaDevicesMode === 'real'
     ? null
+    : mediaDevicesMode === 'empty' ? []
     : createMediaDevicesFromSeed(stableIdentity + ':' + seed.toString('hex').slice(0, 12), {
       emptyLabels: mediaDevicesMode === 'empty',
       extra: Array.isArray(fpIn.mediaDevices) ? fpIn.mediaDevices : null,
@@ -607,6 +611,7 @@ function buildFingerprint(profile = {}) {
     platform: fpIn.platform || uaProfile.platform || OS_PRESETS[uaOs].platformNav,
     userAgent: uaProfile.userAgent,
     uaProfile,
+    kernelVersion: profile.kernelVersion || '',
     clientHints: uaProfile.clientHints,
     userAgentMetadata: uaProfile.metadata,
     // Single chain: fpIn.languages only participates upstream in candidateLangs, so all three
@@ -666,6 +671,7 @@ function buildFingerprint(profile = {}) {
     },
     mediaDevices: {
       mode: mediaDevicesMode,
+      blockCapture: privacy.media === 'blocked',
       devices: mediaDevices,
       labels: mediaLabelTemplates,
     },
@@ -794,7 +800,7 @@ function fingerprintConsistencyIssues(fp) {
   const mobileOs = (parsedOs === 'android' || parsedOs === 'ios') ? parsedOs : null;
   const uaOs = mobileOs
     ? mobileOs
-    : (desktopOs(fp?.uaProfile?.os) || desktopOs(parsedOs) || 'windows');
+    : (desktopOs(parsedOs) || 'windows');
   const expectedPlatform = mobileOs
     ? (mobileOs === 'ios' ? 'iPhone' : 'Linux armv8l')
     : (OS_PRESETS[uaOs]?.platformNav || OS_PRESETS.windows.platformNav);
@@ -804,10 +810,34 @@ function fingerprintConsistencyIssues(fp) {
 
   const add = (code, message, severity = 'warning') => issues.push({ code, severity, message });
   if (fp?.platform !== expectedPlatform) {
-    add('platform-ua-mismatch', `navigator.platform (${fp?.platform || 'empty'}) does not match the ${uaOs} user agent.`);
+    add('platform-ua-mismatch', `navigator.platform (${fp?.platform || 'empty'}) does not match the ${uaOs} user agent.`, 'error');
   }
   if (fp?.uaProfile?.engine !== 'firefox' && fp?.userAgentMetadata?.platform !== expectedChPlatform) {
-    add('client-hints-ua-mismatch', `Client Hints platform (${fp?.userAgentMetadata?.platform || 'empty'}) does not match the ${uaOs} user agent.`);
+    add('client-hints-ua-mismatch', `Client Hints platform (${fp?.userAgentMetadata?.platform || 'empty'}) does not match the ${uaOs} user agent.`, 'error');
+  }
+  const uaVersion = parseChromeVersion(fp?.userAgent);
+  const metadata = fp?.userAgentMetadata;
+  if (uaVersion && metadata) {
+    const full = metadata.uaFullVersion || metadata.fullVersion;
+    const versions = [full,
+      ...(metadata.brands || []).filter((b) => /^(Chromium|Google Chrome)$/.test(b.brand)).map((b) => b.version),
+      ...(metadata.fullVersionList || []).filter((b) => /^(Chromium|Google Chrome)$/.test(b.brand)).map((b) => b.version)];
+    if (versions.some((value) => Number(String(value || '').split('.')[0]) !== uaVersion.major)
+        || (metadata.uaFullVersion && metadata.fullVersion && metadata.uaFullVersion !== metadata.fullVersion)
+        || (uaVersion.full !== `${uaVersion.major}.0.0.0` && uaVersion.full !== full)
+        || (metadata.fullVersionList || []).some((b) => /^(Chromium|Google Chrome)$/.test(b.brand) && b.version !== full)) {
+      add('client-hints-version-mismatch', 'UA, brands and fullVersionList must describe one browser version.', 'error');
+    }
+  }
+  if (fp?.mobileDevice && metadata && mobileOs === 'android') {
+    if (metadata.model !== fp.mobileDevice.model || Number(metadata.platformVersion?.split('.')[0]) !== fp.mobileDevice.osVersion || metadata.mobile !== true) {
+      add('mobile-identity-mismatch', 'Mobile Client Hints must describe the sampled device and OS release.', 'error');
+    }
+    const explicit = String(fp.userAgent || '').match(/Android\s+([0-9.]+);\s*([^;)]+)/i);
+    if (explicit && !(explicit[1] === '10' && explicit[2].trim() === 'K')
+        && (Number(explicit[1].split('.')[0]) !== Number(metadata.platformVersion?.split('.')[0]) || explicit[2].trim() !== metadata.model)) {
+      add('mobile-ua-metadata-mismatch', 'The full Android UA must match the device model and OS in Client Hints.', 'error');
+    }
   }
   if (uaOs === 'windows' && /Apple M[0-9]|OpenGL 4\.1|Mesa|RADV|SwiftShader|llvmpipe|Software Rasterizer/i.test(renderer)) {
     add('webgl-ua-mismatch', 'WebGL renderer does not look like a Windows renderer.');
@@ -846,8 +876,8 @@ function fingerprintConsistencyIssues(fp) {
   if (fp?.hardwareConcurrency != null && !(Number(fp.hardwareConcurrency) >= 1 && Number(fp.hardwareConcurrency) <= 64)) {
     add('cores-invalid', 'hardwareConcurrency must be between 1 and 64 when overridden.', 'error');
   }
-  if (fp?.deviceMemory != null && !(Number(fp.deviceMemory) >= 1 && Number(fp.deviceMemory) <= 8)) {
-    add('memory-invalid', 'deviceMemory must be between 1 and 8 when overridden.', 'error');
+  if (fp?.deviceMemory != null && ![0.25, 0.5, 1, 2, 4, 8].includes(Number(fp.deviceMemory))) {
+    add('memory-invalid', 'deviceMemory must use a supported quantized tier.', 'error');
   }
   // Hardware-class coherence (the isCoherent rules from device-personas.js applied to the
   // final assembled fingerprint): these pairings are not combinations real machines ship
@@ -892,8 +922,21 @@ function fingerprintConsistencyIssues(fp) {
   return { ok: !issues.some((issue) => issue.severity === 'error'), issues };
 }
 
+function assertFingerprintConsistency(fp) {
+  const result = fingerprintConsistencyIssues(fp);
+  const errors = result.issues.filter((issue) => issue.severity === 'error');
+  if (errors.length) {
+    const error = new Error('指纹配置不一致：' + errors.map((issue) => issue.message).join('; '));
+    error.code = 'FINGERPRINT_CONFIG_INVALID';
+    error.issues = errors;
+    throw error;
+  }
+  return result;
+}
+
 
 module.exports = {
   buildFingerprint,
   fingerprintConsistencyIssues,
+  assertFingerprintConsistency,
 };

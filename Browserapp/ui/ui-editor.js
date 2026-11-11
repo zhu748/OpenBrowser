@@ -264,7 +264,10 @@ function editorDraft(strict = true) {
   const editorForm = $('#profile-editor-form');
   let generatedUa = null;
   try { generatedUa = JSON.parse(editorForm?.dataset.uaProfile || 'null'); } catch (_) {}
-  if (generatedUa?.userAgent !== ($('#editor-user-agent')?.value || '').trim()) generatedUa = null;
+  const uaDraft = window.OpenBrowserProfileCommands.resolveEditorUaDraft({
+    current, userAgent: $('#editor-user-agent')?.value, generatedUa,
+    reset: Boolean(editorForm?.dataset.resetFingerprint),
+  });
   let resolution = { width: Number($('#editor-width')?.value) || current.width || 1280, height: Number($('#editor-height')?.value) || current.height || 820 };
   if (strict) resolution = editorResolution();
   else if ($('#editor-resolution')?.value && $('#editor-resolution').value !== 'custom') {
@@ -366,7 +369,7 @@ function editorDraft(strict = true) {
     })(),
     fingerprint: {
       ...(editorForm?.dataset.resetFingerprint ? {} : (current.privacy?.fingerprint || {})),
-      clientHints: generatedUa?.clientHints || (editorForm?.dataset.resetFingerprint ? undefined : current.privacy?.fingerprint?.clientHints),
+      ...uaDraft.fingerprint,
       webglVendor: (($('#editor-webgl-vendor')?.value || '').trim()).slice(0, 200),
       webglRenderer: (($('#editor-webgl-renderer')?.value || '').trim()).slice(0, 400),
       cores: (() => {
@@ -513,7 +516,7 @@ function editorDraft(strict = true) {
     favorite: current.favorite === true ? true : (current.favorite === false ? false : Boolean(current.favorite)),
     lastOpenedAt: current.lastOpenedAt || null,
     engine: $('#editor-engine')?.value === 'firefox' ? 'firefox' : 'chromium',
-    userAgent: ($('#editor-user-agent')?.value || '').trim(),
+    userAgent: uaDraft.userAgent,
     fingerprint: undefined,
     fingerprintSeed: editorForm?.dataset.fingerprintSeed || current.fingerprintSeed || '',
     cookies: strict ? editorCookies() : ($('#editor-cookies')?.value || '').trim(),
@@ -958,8 +961,10 @@ function randomizeFingerprintDraft() {
   if (dnt) dnt.checked = false;
   const fontListMode = $('#editor-font-list-mode');
   if (fontListMode) fontListMode.value = 'noise';
+  const batteryCharging = $('#editor-battery-charging');
+  if (batteryCharging) batteryCharging.value = 'auto';
   // 清掉手填的固定标识：种子、电量、字体列表、SSL 黑名单全部回到自动档
-  for (const sel of ['#editor-cores', '#editor-memory', '#editor-canvas-seed', '#editor-crects-seed', '#editor-audio-seed', '#editor-battery-level', '#editor-battery-charging-time', '#editor-battery-discharging-time', '#editor-font-list', '#editor-ssl-min', '#editor-ssl-blacklist']) {
+  for (const sel of ['#editor-cores', '#editor-memory', '#editor-canvas-seed', '#editor-crects-seed', '#editor-audio-seed', '#editor-battery-level', '#editor-battery-charging-time', '#editor-battery-discharging-time', '#editor-media-label-audio', '#editor-media-label-video', '#editor-media-label-output', '#editor-font-list', '#editor-ssl-min', '#editor-ssl-blacklist']) {
     const el = $(sel);
     if (el) el.value = '';
   }
@@ -1013,7 +1018,7 @@ function showProfileEditor(value, revision) {
   editorSet('#editor-os-version', profile.osVersion || '');
   editorSet('#editor-engine', profile.engine === 'firefox' ? 'firefox' : 'chromium');
   editorSet('#editor-engine-version', profile.engineVersion || 'latest');
-  editorSet('#editor-user-agent', profile.userAgent);
+  editorSet('#editor-user-agent', profile.privacy?.fingerprint?.userAgent || profile.userAgent);
   editorSet('#editor-cookies', (() => {
     if (!profile.cookies) return '';
     try { return JSON.stringify(JSON.parse(profile.cookies), null, 2); } catch (_) { return profile.cookies; }

@@ -30,7 +30,9 @@ if (!isMutateMode) {
   console.log("Starting mobile-personas selftest (mode: NORMAL)...\n");
 
   // --- 1. Pool Shape & Coverage ---
-  ok("the pool carries a large Android set", android.length >= 1750 && android.length + ios.length === personas.POOL_SIZE);
+  ok("the runtime pool excludes quarantined records with accountable counts", android.length > 1000
+    && android.length + ios.length === personas.POOL_SIZE
+    && personas.POOL_SIZE + personas.QUARANTINED_COUNT === personas.CATALOG_SIZE);
   ok("the pool carries valid iOS models", ios.length >= 30);
   ok("every device has a usable viewport", [...android, ...ios].every((d) => (
     Number.isInteger(d.width) && d.width >= 280 && d.width <= 700
@@ -79,8 +81,10 @@ if (!isMutateMode) {
   for (let seed = 0; seed < 200; seed += 1) {
     androidSamples.push(personas.mobilePersona(seed * 7919 + 13, "android"));
   }
-  ok("Android UA names the sampled model and carries Mobile token", androidSamples.every((p) => (
-    p.userAgent.includes(`Android ${p.osVersion}; ${p.model})`)
+  ok("Android UA preserves reduction while Client Hints carry the sampled identity", androidSamples.every((p) => (
+    p.userAgent.includes('Android 10; K)')
+    && p.uaProfile.metadata.model === p.model
+    && p.uaProfile.metadata.platformVersion === `${p.osVersion}.0.0`
     && /Chrome\/\d+\.0\.0\.0 Mobile Safari/.test(p.userAgent)
   )));
   ok("Android persona carries Linux armv8l platform and no desktop tokens", androidSamples.every((p) => (
@@ -162,7 +166,7 @@ if (!isMutateMode) {
 
   const distinct = new Set();
   for (let seed = 0; seed < 1909; seed += 1) distinct.add(personas.mobilePersona(seed, "android").name);
-  ok("the Android pool is spread over the seeds", distinct.size >= 1500);
+  ok("the Android pool covers every runtime model", distinct.size === new Set(android.map((d) => d.name)).size);
 
   // --- 6. Runtime Integration with buildFingerprint ---
   const mobileAndroid = buildFingerprint({

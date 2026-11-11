@@ -229,7 +229,7 @@
   "editor.blockDomainList": "URL Blocklist",
   "editor.allowDomainList": "URL Allowlist",
   "editor.urlListPh": "One URL per line, add new lines for multiple",
-  "editor.urlRulesHint": "Blocklist denies listed sites; with an allowlist, only listed sites are accessible.",
+  "editor.urlRulesHint": "Chromium only. Rules match domains and subdomains; URL paths are ignored. Optional ports are supported. Blocklist takes priority; a nonempty allowlist permits only listed sites.",
   "editor.exitNetGuard": "Exit Network Guard",
   "editor.tutorial": "Profile Tutorial",
   "editor.tutorialDesc": "Understanding profiles and profile fingerprints",

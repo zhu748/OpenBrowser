@@ -38,7 +38,7 @@ async function workerHarness(type, behavior = {}) {
   const saved = { connect: cdp.connect, browserSocket: cdp.browserSocket, targets: cdp.targets };
   const commands = [];
   let onEvent;
-  const item = { port: 12345, profile, fingerprint: fp };
+  const item = { port: 12345, profile: behavior.profile || profile, fingerprint: fp };
   const engine = {
     emit() {}, networkInfo: new Map(),
     applyFingerprintToSession: async () => {},
@@ -56,7 +56,7 @@ async function workerHarness(type, behavior = {}) {
       }
       if (method === 'Target.setAutoAttach' && !options.sessionId) queueMicrotask(() => onEvent(event, connection));
       if (method === 'Fetch.enable' && behavior.fetch) return behavior.fetch(item);
-      if (method === 'Runtime.evaluate' && behavior.evaluate) return behavior.evaluate();
+      if (method === 'Runtime.evaluate' && behavior.evaluate) return behavior.evaluate(params);
       if (method === 'Target.closeTarget') return { success: behavior.canClose !== false };
       return {};
     },
@@ -77,9 +77,10 @@ async function startupHarness(fault) {
   child.stdout.setEncoding = child.stderr.setEncoding = () => {};
   child.kill = () => { child.killed = true; };
   const connection = { close() {} };
+  let spawns = 0;
   const actualRequire = Module.createRequire(require.resolve('../../engine/start'));
   const replacements = {
-    child_process: { spawn: () => child },
+    child_process: { spawn: () => { spawns += 1; return child; } },
     '../automation/browser-kernel': { ensureKernelReadyForLaunch: async () => {} },
     '../automation/env-icon': { normalizeEnvNumber: () => '1', prepareMarkerExtension: async () => null },
     '../automation/isolation': { validateProfileRootSecure: async () => ({ ok: true }), acquireProfileLock: async () => ({}), updateProfileLock: async () => ({}) },
@@ -93,6 +94,8 @@ async function startupHarness(fault) {
   compiled.require = (name) => replacements[name] || actualRequire(name);
   compiled._compile(fs.readFileSync(filename, 'utf8'), filename);
   const p = sanitizeProfile({ ...profile, advanced: { showInfoPage: false } });
+  if (fault === 'config') { p.os = 'Linux'; p.userAgent = fp.userAgent; }
+  if (fault === 'url-config') p.advanced.allowUrls = '*';
   const engine = {
     profiles: new Map(), running: new Map(), extensions: new Map(), networkInfo: new Map(),
     app: { getPath: () => root }, navigations: 0, watches: 0, attempts: 0,
@@ -107,11 +110,16 @@ async function startupHarness(fault) {
     startWorkerFingerprintInjection: async () => {},
     verifyStartupFingerprintDelivery: async () => { if (fault === 'probe') throw new Error('fixture probe failed'); return fault === 'verify' ? { ok: false, mismatches: [{ message: 'fixture mismatch' }] } : { ok: true }; },
     ensureStartPageFingerprint: async () => {}, applyEnvWindowTitle: async () => {},
+    cleanupStartupResources: async () => { engine.startupCleanups = (engine.startupCleanups || 0) + 1; return {}; },
     publicRunning: () => ({ running: engine.running.has(p.id) }), startRunningWatch: () => { engine.watches += 1; },
     async handleBrowserGone(id, item, _reason, options) { assert.equal(options.kill, true); item.stopping = true; child.kill(); engine.running.delete(id); },
   };
   try {
-    if (fault) {
+    if (fault === 'config' || fault === 'url-config') {
+      await assert.rejects(compiled.exports._start.call(engine, p), fault === 'config' ? /指纹配置不一致/ : /无效网站规则/);
+      assert.equal(spawns, 0); assert.equal(engine.navigations, 0); assert.equal(engine.running.size, 0);
+      assert.equal(engine.startupCleanups || 0, fault === 'config' ? 1 : 0);
+    } else if (fault) {
       await assert.rejects(compiled.exports._start.call(engine, p), /fixture/);
       assert.equal(engine.navigations, 0); assert.equal(child.killed, true);
       assert.equal(engine.running.size, 0); assert.equal(engine.watches, 0);
@@ -239,6 +247,81 @@ async function startupHarness(fault) {
       assert.ok(!harness.commands.some((call) => call.method === 'Runtime.runIfWaitingForDebugger'));
     } finally { harness.cleanup(); }
   });
+  for (const type of ['worker', 'shared_worker', 'service_worker']) {
+    await test(`${type} port protection completes before resume and detaches cleanly`, async () => {
+      const harness = await workerHarness(type, { profile: { ...profile, privacy: { ...profile.privacy, portScanProtect: true } } });
+      try {
+        await harness.startup;
+        const policyIndex = harness.commands.findIndex((call) => call.method === 'Runtime.evaluate' && call.params.expression.includes('const initial ='));
+        const resumeIndex = harness.commands.findIndex((call) => call.method === 'Runtime.runIfWaitingForDebugger');
+        assert.ok(policyIndex >= 0 && policyIndex < resumeIndex);
+        assert.equal(harness.item.fingerprintTargetSessions.get('worker-session').type, type);
+        await harness.dispatch({ method: 'Target.detachedFromTarget', params: { sessionId: 'worker-session', targetId: 'target' } });
+        assert.equal(harness.item.fingerprintTargetSessions.size, 0);
+        await harness.dispatch({ method: 'Target.attachedToTarget', params: { sessionId: 'reattached-session', waitingForDebugger: true,
+          targetInfo: { targetId: 'target', type, url: 'https://example.test/worker.js' } } });
+        assert.equal(harness.item.fingerprintTargetSessions.get('reattached-session').type, type);
+        assert.equal(harness.commands.filter((call) => call.method === 'Runtime.evaluate' && call.params.expression.includes('const initial =')).length, 2, 'reattaching must reapply the policy in the new session');
+      } finally { harness.cleanup(); }
+    });
+  }
+  await test('failed worker port policy blocks debugger resume', async () => {
+    const harness = await workerHarness('worker', {
+      profile: { ...profile, privacy: { ...profile.privacy, portScanProtect: true } },
+      evaluate: (params) => params.expression.includes('const initial =') ? { exceptionDetails: { text: 'port policy failed' } } : {},
+    });
+    try {
+      await assert.rejects(harness.startup, /port policy failed/);
+      assert.equal(harness.item.fingerprintTargetSessions.size, 0);
+      assert.equal(harness.commands.some((call) => call.method === 'Runtime.runIfWaitingForDebugger'), false);
+    } finally { harness.cleanup(); }
+  });
+  for (const type of ['page', 'iframe', 'worker', 'shared_worker', 'service_worker']) {
+    await test(`${type} shares access policy with headers before Fetch readiness and debugger resume`, async () => {
+      const gate = deferred();
+      const restricted = { ...profile, advanced: { ...profile.advanced, allowUrls: 'allowed.test' } };
+      const harness = await workerHarness(type, { profile: restricted, fetch: () => gate.promise });
+      try {
+        await turn();
+        assert.ok(harness.commands.some((call) => call.method === 'Fetch.enable'));
+        assert.equal(harness.commands.some((call) => call.method === 'Runtime.runIfWaitingForDebugger'), false);
+        harness.dispatch({ method: 'Fetch.requestPaused', sessionId: 'worker-session', params: {
+          requestId: 'access-denied', resourceType: 'Fetch', request: { url: 'https://blocked.test/', method: 'GET', headers: {} },
+        } });
+        await turn();
+        assert.ok(harness.commands.some((call) => call.method === 'Fetch.failRequest' && call.params.requestId === 'access-denied'));
+        assert.equal(harness.commands.some((call) => call.method === 'Fetch.continueRequest' && call.params.requestId === 'access-denied'), false);
+        gate.resolve({});
+        await harness.startup;
+        harness.engine.profiles = new Map([[profile.id, { ...restricted, advanced: { ...restricted.advanced, allowUrls: 'next.test' } }]]);
+        harness.dispatch({ method: 'Fetch.requestPaused', sessionId: 'worker-session', params: {
+          requestId: 'changed-policy', resourceType: 'Fetch', request: { url: 'https://allowed.test/', method: 'GET', headers: {} },
+        } });
+        await turn();
+        assert.ok(harness.commands.some((call) => call.method === 'Fetch.failRequest' && call.params.requestId === 'changed-policy'), 'saved edits apply before a watcher sweep');
+      } finally { gate.resolve({}); harness.cleanup(); }
+    });
+  }
+  await test('access policy exempts only the actual managed start-page server', async () => {
+    const harness = await workerHarness('page', { profile: { ...profile, advanced: { ...profile.advanced, allowUrls: 'allowed.test' } } });
+    try {
+      harness.engine.startPageServer = { server: {}, isStartPageUrl: (value) => new URL(value).origin === 'http://127.0.0.1:50326' };
+      await harness.startup;
+      for (const [requestId, url] of [['internal', 'http://127.0.0.1:50326/api/session'], ['different-port', 'http://127.0.0.1:50327/'], ['external-name', 'https://evil.test/openbrowser-start.html']]) {
+        harness.dispatch({ method: 'Fetch.requestPaused', sessionId: 'worker-session', params: {
+          requestId, resourceType: 'Fetch', request: { url, method: 'GET', headers: {} },
+        } });
+        await turn();
+        assert.ok(harness.commands.some((call) => call.params.requestId === requestId && call.method === (requestId === 'internal' ? 'Fetch.continueRequest' : 'Fetch.failRequest')));
+      }
+      harness.engine.startPageServer.server = null;
+      harness.dispatch({ method: 'Fetch.requestPaused', sessionId: 'worker-session', params: {
+        requestId: 'stopped-server', resourceType: 'Fetch', request: { url: 'http://127.0.0.1:50326/', method: 'GET', headers: {} },
+      } });
+      await turn();
+      assert.ok(harness.commands.some((call) => call.params.requestId === 'stopped-server' && call.method === 'Fetch.failRequest'));
+    } finally { harness.cleanup(); }
+  });
   await test('worker request interception failures never resume an unconfigured target', async () => {
     const harness = await workerHarness('worker', { fetch() { throw new Error('Fetch unavailable'); } });
     try {
@@ -297,5 +380,7 @@ async function startupHarness(fault) {
     await test(`Chromium ${fault} failure rejects startup and kills its process without navigation`, () => startupHarness(fault));
   }
   await test('verified Chromium startup navigates and starts its watcher', () => startupHarness(null));
+  await test('contradictory Chromium configuration is rejected before process spawn', () => startupHarness('config'));
+  await test('invalid website rules are rejected before Chromium process spawn or resource acquisition', () => startupHarness('url-config'));
   console.log(`fingerprint-delivery-boundaries-selftest: OK ${count}/${count}`);
 })().catch((error) => { console.error(error); process.exitCode = 1; });

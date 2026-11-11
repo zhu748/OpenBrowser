@@ -1,7 +1,18 @@
 'use strict';
 
 // Ordered fragment of one emitted IIFE; runtime-source.js owns assembly.
-module.exports = `  // --- mediaDevices ---
+module.exports = `  // --- media capture policy ---
+  if (CFG.mediaDevices && (CFG.mediaDevices.blockCapture || CFG.mediaDevices.mode === 'empty')) {
+    try {
+      const receiver = navigator.mediaDevices;
+      const proto = typeof MediaDevices !== 'undefined' ? MediaDevices.prototype : receiver;
+      const denied = function getUserMedia() {
+        return Promise.reject(new DOMException('Media capture is unavailable for this profile', CFG.mediaDevices.blockCapture ? 'NotAllowedError' : 'NotFoundError'));
+      };
+      if (receiver && proto) replaceMethod(proto, 'getUserMedia', (original) => guardReceiver(original, (value) => value === receiver, denied));
+    } catch (_) {}
+  }
+  // --- mediaDevices ---
   if (CFG.mediaDevices && CFG.mediaDevices.mode && CFG.mediaDevices.mode !== 'real' && Array.isArray(CFG.mediaDevices.devices)) {
     try {
       const devProto = typeof MediaDeviceInfo !== "undefined" ? MediaDeviceInfo.prototype : Object.prototype;
@@ -69,28 +80,33 @@ module.exports = `  // --- mediaDevices ---
       // out ids up front both diverged from the real surface and made the synthetic identifiers
       // readable without any permission prompt.
       const withheldDevices = CFG.mediaDevices.devices.map((d) => makeDevice(d.kind, "", "", ""));
-      const enumerateForPermission = async () => {
-        let granted = false;
-        try {
-          const perms = navigator.permissions;
-          if (perms && typeof perms.query === 'function') {
-            const [cam, mic] = await Promise.all([
-              Promise.resolve().then(() => perms.query({ name: 'camera' })).catch(() => null),
-              Promise.resolve().then(() => perms.query({ name: 'microphone' })).catch(() => null),
-            ]);
-            granted = Boolean((cam && cam.state === 'granted') || (mic && mic.state === 'granted'));
-          }
-        } catch (_) {}
-        return (granted ? devices : withheldDevices).slice();
+      const enumerateForPermission = (nativeDevices) => {
+        // The native enumeration already applies per-kind permission, document
+        // visibility and Permissions Policy. Use only its exposure decisions;
+        // never return host labels or identifiers to the caller.
+        const present = new Set(), exposed = new Set(), withheld = new Set();
+        for (const device of nativeDevices) {
+          present.add(device.kind);
+          if (device.label) exposed.add(device.kind);
+        }
+        return devices.flatMap((device, index) => {
+          if (!present.has(device.kind)) return [];
+          if (exposed.has(device.kind)) return [device];
+          if (withheld.has(device.kind)) return [];
+          withheld.add(device.kind);
+          return [withheldDevices[index]];
+        });
       };
       const mdProto = typeof MediaDevices !== 'undefined' ? MediaDevices.prototype : null;
       const realMediaDevices = (() => { try { return navigator.mediaDevices || null; } catch (_) { return null; } })();
       const isRealMediaDevices = (receiver) => receiver === realMediaDevices;
-      const serveDevices = async function enumerateDevices() { return enumerateForPermission(); };
+      const wrapEnumeration = (original) => guardReceiver(original, isRealMediaDevices, async function enumerateDevices(...args) {
+        return enumerateForPermission(await original.apply(this, args));
+      });
       if (mdProto && mdProto.enumerateDevices) {
-        replaceMethod(mdProto, 'enumerateDevices', (original) => guardReceiver(original, isRealMediaDevices, serveDevices));
+        replaceMethod(mdProto, 'enumerateDevices', wrapEnumeration);
       } else if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
-        replaceMethod(navigator.mediaDevices, 'enumerateDevices', (original) => guardReceiver(original, isRealMediaDevices, serveDevices));
+        replaceMethod(navigator.mediaDevices, 'enumerateDevices', wrapEnumeration);
       }
 
       // MediaStreamTrack label & getSettings shielding:
@@ -520,6 +536,7 @@ module.exports = `  // --- mediaDevices ---
     && typeof NetworkInformation !== "undefined" && NetworkInformation.prototype) {
     try {
       const netProto = NetworkInformation.prototype;
+      const realConnection = navigator.connection;
       const netState = CFG.connection;
       const patchedNetKeys = new Set();
       const patchNetworkAccessor = (key) => {
@@ -528,8 +545,9 @@ module.exports = `  // --- mediaDevices ---
         if (!descriptor || typeof descriptor.get !== "function") return;
         const nativeGet = descriptor.get;
         const wrappedGet = nativeLike(function networkValue() {
-          if (Object.prototype.hasOwnProperty.call(netState, key)) return netState[key];
-          return nativeGet.call(this);
+          const original = nativeGet.call(this);
+          if (this === realConnection && Object.prototype.hasOwnProperty.call(netState, key)) return netState[key];
+          return original;
         }, nativeGet, "get " + key, 0);
         Object.defineProperty(netProto, key, {
           configurable: descriptor.configurable,

@@ -43,9 +43,19 @@ function fontsFragmentActive(cfg) {
   ) : true;
 }
 
-// mediaDevices fragment: only runs in a non-'real' mode with a device list.
+// This fragment also owns speech, battery, connection and Bluetooth. It can
+// only be dropped when every independent branch is inactive.
 function mediaFragmentActive(cfg) {
-  return cfg ? Boolean(cfg.mediaDevices && cfg.mediaDevices.mode && cfg.mediaDevices.mode !== 'real' && Array.isArray(cfg.mediaDevices.devices)) : true;
+  return cfg ? Boolean(
+    (cfg.mediaDevices && cfg.mediaDevices.mode && cfg.mediaDevices.mode !== 'real' && Array.isArray(cfg.mediaDevices.devices))
+    || cfg.mediaDevices?.blockCapture
+    || cfg.speech?.mode === 'blocked'
+    || (cfg.speech?.mode === 'noise' && Array.isArray(cfg.speech.voices))
+    || cfg.battery?.mode === 'blocked'
+    || (cfg.battery?.mode === 'noise' && cfg.battery.value && !cfg.battery.value.blocked)
+    || cfg.connection
+    || cfg.bluetooth?.mode === 'blocked'
+  ) : true;
 }
 
 function buildDocumentRuntime(context) {

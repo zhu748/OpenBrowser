@@ -359,6 +359,13 @@ module.exports = function bootstrap({ uaScript, json, bridgeToken }) {
           } catch (_) {}
           return null;
         }
+        if (typeof secret === 'string' && secret.length === 64 && secret !== BRIDGE_TOKEN) {
+          try {
+            const inherited = originalToString.call(this, ...args);
+            if (inherited && inherited.bridge === true && inherited.token === secret) return inherited;
+            if (typeof inherited === 'string') return nativeSource.get(this) || inherited;
+          } catch (_) {}
+        }
         if (nativeSource.has(this)) return nativeSource.get(this);
         try {
           if (typeof this.toString === "function" && this.toString !== patchedToString) {

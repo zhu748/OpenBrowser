@@ -1517,6 +1517,7 @@ document.getElementById('editor-ua-generate')?.addEventListener('click', async (
       engine: $('#editor-engine')?.value,
       engineVersion: $('#editor-engine-version')?.value,
       os: editorOsToUaKey($('#editor-os')?.value),
+      osVersion: $('#editor-os-version')?.value,
       chromeMajor: Number($('#editor-ua-chrome-major')?.value) || undefined,
     });
     toast(tx('已按系统生成 UA + Client Hints'));
@@ -1529,6 +1530,8 @@ document.getElementById('editor-ua-random')?.addEventListener('click', async () 
       engine: $('#editor-engine')?.value,
       engineVersion: $('#editor-engine-version')?.value,
       random: true,
+      os: editorOsToUaKey($('#editor-os')?.value),
+      osVersion: $('#editor-os-version')?.value,
       chromeMajor: Number($('#editor-ua-chrome-major')?.value) || undefined,
     });
     toast(tx('已随机生成 UA'));

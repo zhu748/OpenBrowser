@@ -22,8 +22,7 @@
  *   - vendor: main falls back to the iOS 'Apple Computer, Inc.' branch when
  *     the persona is iOS (mobileDevice/uaProfile/platform tests); worker falls
  *     back to fp.uaProfile?.vendor || 'Google Inc.' only.
- *   - userAgentMetadata: main falls back to fp.uaProfile?.metadata; worker has
- *     no fallback (undefined drops the key).
+ *   - userAgentMetadata uses the same uaProfile fallback in both realms.
  *   - webgpu: main passes fp.webgpu || null through unchanged; worker
  *     restructures it to {mode, gpu} and synthesises a webgl-gpu fallback.
  *   - stability: main slices hosts to 800 / skipHosts to 200, emits hamming,

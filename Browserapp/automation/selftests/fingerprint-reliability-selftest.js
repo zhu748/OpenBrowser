@@ -74,6 +74,9 @@ function documentScope() {
     const body = source.slice(source.indexOf('function randomizeFingerprintDraft()'), source.indexOf('\nconst profileEditorOpener'));
     const nodes = new Map();
     const $ = (selector) => { if (!nodes.has(selector)) nodes.set(selector, { value: '', dataset: {} }); return nodes.get(selector); };
+    $('#editor-battery-charging').value = 'no';
+    $('#editor-battery-level').value = '0.5';
+    $('#editor-media-label-audio').value = 'Fixed microphone';
     const context = vm.createContext({ $, window: { crypto: crypto.webcrypto }, renderEditorSummary() {} });
     vm.runInContext(body, context);
     vm.runInContext('randomizeFingerprintDraft()', context);
@@ -82,6 +85,9 @@ function documentScope() {
     assert.match(first, /^[a-f0-9]{32}$/);
     assert.notEqual(first, $('#profile-editor-form').dataset.fingerprintSeed);
     assert.equal($('#editor-device-profile').value, 'persona');
+    assert.equal($('#editor-battery-charging').value, 'auto');
+    assert.equal($('#editor-battery-level').value, '');
+    assert.equal($('#editor-media-label-audio').value, '');
   });
   await test('real memory remains native after executing the complete injection', () => {
     const fp = buildFingerprint(profile({ privacy: { memory: 0, fontListMode: 'real' } }));
@@ -233,7 +239,11 @@ function documentScope() {
     await navigateFirefoxStartup(connection, initialized.context, ['https://one.test', 'https://two.test']);
     assert.equal(calls.filter((call) => call.method === 'browsingContext.navigate').length, 2);
     assert.ok(calls.findIndex((call) => call.method === 'script.evaluate') < calls.findIndex((call) => call.method === 'browsingContext.navigate'));
-    await assert.rejects(initializeFirefoxFingerprint({ command: async (method) => { if (method === 'script.addPreloadScript') throw new Error('preload failed'); return {}; } }, firefox, firefoxProfile), /preload failed/);
+    await assert.rejects(initializeFirefoxFingerprint({ command: async (method) => {
+      if (method === 'browsingContext.getTree') return { contexts: [{ context: 'initial' }] };
+      if (method === 'script.addPreloadScript') throw new Error('preload failed');
+      return {};
+    } }, firefox, firefoxProfile), /preload failed/);
     await assert.rejects(evaluateBidi({ command: async () => ({ type: 'exception', exceptionDetails: { text: 'bad script' } }) }, { context: 'initial' }, 'bad'), /bad script/);
   });
   await test('BiDi transport bounds requests and rejects pending commands on disconnect', async () => {

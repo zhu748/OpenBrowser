@@ -128,91 +128,57 @@ module.exports = `  // --- screen ---
     try {
       if (typeof window.matchMedia === "function") {
         const origMatchMedia = window.matchMedia.bind(window);
-        // F-10: pages call matchMedia on every resize/layout pass (frameworks
-        // included); the four feature regexes are fixed, so they are built
-        // once instead of recompiled per call.
-        const RE_DEVICE_WIDTH = /\\((min-|max-)?device-width:\\s*([\\d.]+)px\\)/;
-        const RE_DEVICE_HEIGHT = /\\((min-|max-)?device-height:\\s*([\\d.]+)px\\)/;
-        const RE_WEBKIT_DPR = /\\(-webkit-(min-|max-)?device-pixel-ratio:\\s*([\\d.]+)\\)/;
-        const RE_RESOLUTION = /\\((min-|max-)?resolution:\\s*([\\d.]+)(dppx|dpi)\\)/;
-        // A plain object literal is not a MediaQueryList: Object.getPrototypeOf(mql) and
-        // an instanceof MediaQueryList check both give the patch away, and the listener methods
-        // silently do nothing. Take a real MediaQueryList from the engine and override only the
-        // two values we need, so the prototype chain, brand checks and change events stay real.
-        const spoofMql = (query, matches) => {
-          const real = origMatchMedia(String(query));
-          if (real.matches === matches) return real;
-          try {
-            // Re-query with a expression the engine itself resolves to the value we need, so the
-            // object keeps live change notifications instead of a frozen boolean.
-            const forced = origMatchMedia(matches ? 'all' : 'not all');
-            Object.defineProperty(forced, 'media', {
-              configurable: true, enumerable: true, get: nativeLike(function media() { return String(query); }, null, 'media', 0),
+        const mediaEvents = new WeakMap();
+        try {
+          const eventProto = typeof MediaQueryListEvent !== 'undefined' ? MediaQueryListEvent.prototype : null;
+          const descriptor = eventProto && Object.getOwnPropertyDescriptor(eventProto, 'media');
+          if (descriptor?.get && descriptor.configurable) {
+            const originalGet = descriptor.get;
+            Object.defineProperty(eventProto, 'media', { ...descriptor,
+              get: nativeLike(function media() {
+                const original = originalGet.call(this);
+                return mediaEvents.has(this) ? mediaEvents.get(this) : original;
+              }, originalGet, 'get media', 0),
             });
-            if (forced.matches !== matches) {
-              Object.defineProperty(forced, 'matches', {
-                configurable: true, enumerable: true, get: nativeLike(function matches() { return matches; }, null, 'matches', 0),
-              });
-            }
-            return forced;
-          } catch (_) {}
-          try {
-            Object.defineProperty(real, 'matches', {
-              configurable: true, enumerable: true, get: nativeLike(function matches() { return matches; }, null, 'matches', 0),
-            });
-          } catch (_) {}
-          return real;
-        };
+          }
+        } catch (_) {}
+        // Replace individual persona predicates, then let the native CSS parser
+        // evaluate the complete expression. Returning the first regex match loses
+        // conjunctions, negation, media types, comma lists and invalid syntax.
+        const RE_PERSONA_MEDIA = /\\(\\s*((?:min-|max-)?(?:device-width|device-height|resolution)|-webkit-(?:min-|max-)?device-pixel-ratio)\\s*:\\s*([+]?(?:\\d*\\.)?\\d+)\\s*(px|dppx|dpi|dpcm)?\\s*\\)/gi;
+        const rewriteMediaQuery = (query) => query.replace(RE_PERSONA_MEDIA, (whole, feature, raw, rawUnit) => {
+          const name = feature.toLowerCase().replace(/^-webkit-/, '');
+          const unit = String(rawUnit || '').toLowerCase();
+          let expected = Number(raw), actual;
+          if (name.includes('device-width') || name.includes('device-height')) {
+            if (unit !== 'px') return whole;
+            actual = name.includes('device-width') ? dynamicScreen.width() : dynamicScreen.height();
+          } else {
+            if (name.includes('resolution') && !['dppx', 'dpi', 'dpcm'].includes(unit)) return whole;
+            if (name.includes('device-pixel-ratio') && unit) return whole;
+            actual = Number(s.devicePixelRatio) || 1;
+            if (unit === 'dpi') expected /= 96;
+            if (unit === 'dpcm') expected *= 2.54 / 96;
+          }
+          const matches = name.startsWith('min-') ? actual >= expected
+            : name.startsWith('max-') ? actual <= expected : Math.abs(actual - expected) < 0.000001;
+          return matches ? '(min-resolution: 0.001dppx)' : '(max-resolution: 0dppx)';
+        });
         const patchedMatchMedia = {
           matchMedia(query) {
-            const q = String(query || "").toLowerCase();
-            const sw = dynamicScreen.width();
-            const sh = dynamicScreen.height();
-            const mDevW = q.match(RE_DEVICE_WIDTH);
-            if (mDevW) {
-              const type = mDevW[1] || "";
-              const val = parseFloat(mDevW[2]);
-              let matches = false;
-              if (type === "min-") matches = sw >= val;
-              else if (type === "max-") matches = sw <= val;
-              else matches = Math.abs(sw - val) < 1;
-              return spoofMql(query, matches);
+            const original = String(query);
+            const rewritten = rewriteMediaQuery(original);
+            const result = origMatchMedia(rewritten);
+            if (rewritten !== original) {
+              try { result.addEventListener('change', (event) => {
+                if (event.isTrusted === true) mediaEvents.set(event, original);
+              }); } catch (_) {}
+              try { Object.defineProperty(result, 'media', {
+                configurable: true, enumerable: true,
+                get: nativeLike(function media() { return original; }, null, 'get media', 0),
+              }); } catch (_) {}
             }
-            const mDevH = q.match(RE_DEVICE_HEIGHT);
-            if (mDevH) {
-              const type = mDevH[1] || "";
-              const val = parseFloat(mDevH[2]);
-              let matches = false;
-              if (type === "min-") matches = sh >= val;
-              else if (type === "max-") matches = sh <= val;
-              else matches = Math.abs(sh - val) < 1;
-              return spoofMql(query, matches);
-            }
-            const mDpr = q.match(RE_WEBKIT_DPR);
-            if (mDpr) {
-              const type = mDpr[1] || "";
-              const val = parseFloat(mDpr[2]);
-              const curDpr = Number(s.devicePixelRatio) || 1;
-              let matches = false;
-              if (type === "min-") matches = curDpr >= val;
-              else if (type === "max-") matches = curDpr <= val;
-              else matches = Math.abs(curDpr - val) < 0.01;
-              return spoofMql(query, matches);
-            }
-            const mRes = q.match(RE_RESOLUTION);
-            if (mRes) {
-              const type = mRes[1] || "";
-              const val = parseFloat(mRes[2]);
-              const unit = mRes[3];
-              const curDpr = Number(s.devicePixelRatio) || 1;
-              const curVal = unit === "dpi" ? curDpr * 96 : curDpr;
-              let matches = false;
-              if (type === "min-") matches = curVal >= val;
-              else if (type === "max-") matches = curVal <= val;
-              else matches = Math.abs(curVal - val) < (unit === "dpi" ? 1 : 0.01);
-              return spoofMql(query, matches);
-            }
-            return origMatchMedia(query);
+            return result;
           }
         }.matchMedia;
         nativeSource.set(patchedMatchMedia, "function matchMedia() { [native code] }");
@@ -238,6 +204,7 @@ module.exports = `  // --- screen ---
         const subNav = subWin.Navigator && subWin.Navigator.prototype;
         if (subNav) {
           for (const [key, desc] of Object.entries(navPatch)) {
+            if (!(key in subNav)) continue;
             const g = makeNativeGetter(key, desc.get, "navigator", subWin);
             Object.defineProperty(subNav, key, { configurable: true, enumerable: true, get: g });
             if (subWin.navigator) {
@@ -246,6 +213,7 @@ module.exports = `  // --- screen ---
           }
           if (typeof Navigator !== "undefined" && Navigator.prototype) {
             for (const k of ['userAgentData', 'plugins', 'mimeTypes']) {
+              if (!(k in subNav)) continue;
               const d = Object.getOwnPropertyDescriptor(Navigator.prototype, k);
               if (d) {
                 try { Object.defineProperty(subNav, k, d); } catch (_) {}
@@ -357,6 +325,13 @@ module.exports = `  // --- screen ---
                       if (inherited && typeof inherited === "object" && inherited.bridge === true) return inherited;
                     } catch (_) {}
                     return null;
+                  }
+                  if (typeof secret === 'string' && secret.length === 64 && secret !== BRIDGE_TOKEN) {
+                    try {
+                      const inherited = origSubToString.call(this, ...args);
+                      if (inherited && inherited.bridge === true && inherited.token === secret) return inherited;
+                      if (typeof inherited === 'string') return nativeSource.get(this) || inherited;
+                    } catch (_) {}
                   }
                   if (nativeSource.has(this)) return nativeSource.get(this);
                   try {

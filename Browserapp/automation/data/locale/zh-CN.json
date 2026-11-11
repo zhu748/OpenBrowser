@@ -229,7 +229,7 @@
   "editor.blockDomainList": "网址访问黑名单",
   "editor.allowDomainList": "网址访问白名单",
   "editor.urlListPh": "每行一个 URL，换行以添加多个",
-  "editor.urlRulesHint": "黑名单阻止访问列表中的网站；填写白名单后仅允许访问列表中的网站。",
+  "editor.urlRulesHint": "仅 Chromium 支持。按域名及子域匹配，URL 路径不参与匹配；可指定端口。黑名单优先，填写白名单后仅允许名单内网站。",
   "editor.exitNetGuard": "出口网络守护",
   "editor.tutorial": "窗口教程",
   "editor.tutorialDesc": "了解窗口和窗口指纹",

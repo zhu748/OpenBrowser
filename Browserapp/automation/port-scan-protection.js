@@ -1,5 +1,7 @@
 'use strict';
 
+const PORT_BRIDGE_TOKEN = require('node:crypto').randomBytes(32).toString('hex');
+
 /**
  * Page-level local-port probe protection.
  *
@@ -22,12 +24,23 @@ function normalizePortAllowList(value) {
   return [...ports].sort((a, b) => a - b);
 }
 
-function buildPortScanProtectionScript(value) {
+function buildPortScanProtectionScript(value, { enabled = true } = {}) {
   const allow = normalizePortAllowList(value);
   return `(() => {
-  const allow = new Set(${JSON.stringify(allow)});
-  const nativeText = new WeakMap();
+  const token = ${JSON.stringify(PORT_BRIDGE_TOKEN)};
+  const initial = { enabled: ${enabled !== false}, allow: ${JSON.stringify(allow)} };
   const previousToString = Function.prototype.toString;
+  try {
+    const existing = previousToString.call(previousToString, token);
+    if (existing && existing.bridge === true && existing.token === token && typeof existing.update === 'function') {
+      existing.update(initial);
+      return;
+    }
+  } catch (_) {}
+  if (!initial.enabled) return;
+  let active = initial.enabled;
+  let allow = new Set(initial.allow);
+  const nativeText = new WeakMap();
   const markNative = (fn, text) => {
     try { nativeText.set(fn, text); } catch (_) {}
     return fn;
@@ -35,10 +48,12 @@ function buildPortScanProtectionScript(value) {
   const install = (target, key, value) => {
     if (!target) return false;
     try {
+      const descriptor = Object.getOwnPropertyDescriptor(target, key);
       Object.defineProperty(target, key, {
         configurable: true,
         enumerable: false,
         writable: true,
+        ...(descriptor && 'value' in descriptor ? descriptor : {}),
         value: value,
       });
       return true;
@@ -78,8 +93,16 @@ function buildPortScanProtectionScript(value) {
   };
   const defaultPort = (protocol) => (protocol === 'https:' || protocol === 'wss:' ? 443 : 80);
   const isBlocked = (value) => {
+    if (!active) return false;
     const target = parseTarget(value);
     if (!target || !isLocalHost(target.hostname)) return false;
+    // A local page must be able to load its own API/resources, including the
+    // managed start page. This does not grant an external origin any local port.
+    try {
+      const current = new URL(currentHref());
+      const protocol = target.protocol === 'ws:' ? 'http:' : target.protocol === 'wss:' ? 'https:' : target.protocol;
+      if (protocol === current.protocol && target.host === current.host) return false;
+    } catch (_) {}
     const port = Number(target.port || defaultPort(String(target.protocol || '').toLowerCase()));
     if (!Number.isInteger(port) || port === 80 || port === 443) return false;
     return !allow.has(port);
@@ -112,12 +135,14 @@ function buildPortScanProtectionScript(value) {
   try {
     const OriginalWebSocket = globalThis.WebSocket;
     if (typeof OriginalWebSocket === 'function') {
-      const WrappedWebSocket = markNative(function WebSocket(url, protocols) {
-        if (isBlocked(url)) throw securityError("Failed to construct 'WebSocket': Access to restricted URI denied.");
-        return protocols === undefined ? new OriginalWebSocket(url) : new OriginalWebSocket(url, protocols);
-      }, 'function WebSocket() { [native code] }');
-      WrappedWebSocket.prototype = OriginalWebSocket.prototype;
+      const WrappedWebSocket = markNative(new Proxy(OriginalWebSocket, {
+        construct(target, args, newTarget) {
+          if (isBlocked(args[0])) throw securityError("Failed to construct 'WebSocket': Access to restricted URI denied.");
+          return Reflect.construct(target, args, newTarget);
+        },
+      }), 'function WebSocket() { [native code] }');
       install(globalThis, 'WebSocket', WrappedWebSocket);
+      install(OriginalWebSocket.prototype, 'constructor', WrappedWebSocket);
     }
   } catch (_) {}
 
@@ -125,12 +150,14 @@ function buildPortScanProtectionScript(value) {
   try {
     const OriginalEventSource = globalThis.EventSource;
     if (typeof OriginalEventSource === 'function') {
-      const WrappedEventSource = markNative(function EventSource(url, options) {
-        if (isBlocked(url)) throw securityError("Failed to construct 'EventSource': Access to restricted URI denied.");
-        return options === undefined ? new OriginalEventSource(url) : new OriginalEventSource(url, options);
-      }, 'function EventSource() { [native code] }');
-      WrappedEventSource.prototype = OriginalEventSource.prototype;
+      const WrappedEventSource = markNative(new Proxy(OriginalEventSource, {
+        construct(target, args, newTarget) {
+          if (isBlocked(args[0])) throw securityError("Failed to construct 'EventSource': Access to restricted URI denied.");
+          return Reflect.construct(target, args, newTarget);
+        },
+      }), 'function EventSource() { [native code] }');
       install(globalThis, 'EventSource', WrappedEventSource);
+      install(OriginalEventSource.prototype, 'constructor', WrappedEventSource);
     }
   } catch (_) {}
 
@@ -143,7 +170,8 @@ function buildPortScanProtectionScript(value) {
         if (isBlocked(url)) return false;
         return originalSendBeacon.apply(this, arguments);
       }, 'function sendBeacon() { [native code] }');
-      install(nav, 'sendBeacon', wrappedSendBeacon);
+      const navProto = Object.getPrototypeOf(nav);
+      install(navProto && typeof navProto.sendBeacon === 'function' ? navProto : nav, 'sendBeacon', wrappedSendBeacon);
     }
   } catch (_) {}
 
@@ -161,10 +189,12 @@ function buildPortScanProtectionScript(value) {
         configurable: true,
         enumerable: descriptor.enumerable === true,
         get: function src() {
+          const original = descriptor.get.call(this);
           const attempted = blockedSource.get(this);
-          return attempted === undefined ? descriptor.get.call(this) : attempted;
+          return attempted === undefined ? original : attempted;
         },
         set: function src(value) {
+          descriptor.get.call(this); // Preserve the native receiver check before any policy effect.
           if (isBlocked(value)) {
             let attempted = String(value);
             try { attempted = new URL(String(value), currentHref()).href; } catch (_) {}
@@ -179,9 +209,14 @@ function buildPortScanProtectionScript(value) {
             } catch (_) {}
             return;
           }
+          blockedSource.delete(this);
           return descriptor.set.call(this, value);
         },
       };
+      for (const slot of ['get', 'set']) {
+        try { Object.defineProperty(wrappedDescriptor[slot], 'name', { configurable: true, value: descriptor[slot].name }); } catch (_) {}
+        markNative(wrappedDescriptor[slot], 'function ' + slot + ' src() { [native code] }');
+      }
       Object.defineProperty(proto, 'src', wrappedDescriptor);
     } catch (_) {}
   };
@@ -191,8 +226,13 @@ function buildPortScanProtectionScript(value) {
 
   try {
     const patchedToString = markNative(function toString() {
+      if (arguments[0] === token) return {
+        bridge: true, token,
+        nativeText: nativeText.get(this) || previousToString.call(this),
+        update(next) { active = next.enabled !== false; allow = new Set(next.allow); },
+      };
       const native = nativeText.get(this);
-      return native === undefined ? previousToString.call(this) : native;
+      return native === undefined ? previousToString.apply(this, arguments) : native;
     }, 'function toString() { [native code] }');
     install(Function.prototype, 'toString', patchedToString);
   } catch (_) {}

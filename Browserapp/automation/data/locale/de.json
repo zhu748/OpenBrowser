@@ -229,7 +229,7 @@
   "editor.blockDomainList": "URL Blocklist",
   "editor.allowDomainList": "URL Allowlist",
   "editor.urlListPh": "One URL per line, add new lines for multiple",
-  "editor.urlRulesHint": "Blocklist denies listed sites; with an allowlist, only listed sites are accessible.",
+  "editor.urlRulesHint": "Nur Chromium. Regeln gelten für Domains und Subdomains; URL-Pfade werden ignoriert. Ports können angegeben werden. Die Sperrliste hat Vorrang. Bei gefüllter Freigabeliste sind nur die dort genannten Websites zugänglich.",
   "editor.exitNetGuard": "Exit Network Guard",
   "editor.tutorial": "Profile Tutorial",
   "editor.tutorialDesc": "Understanding profiles and profile fingerprints",

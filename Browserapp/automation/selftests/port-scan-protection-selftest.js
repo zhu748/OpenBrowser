@@ -94,7 +94,7 @@ function createSandbox(allow) {
   check('WebSocket allows allowlisted ports and stays native-looking', () => {
     const socket = new allow8080.context.WebSocket('ws://127.0.0.1:8080/');
     assert.strictEqual(socket.url, 'ws://127.0.0.1:8080/');
-    assert.strictEqual(allow8080.context.WebSocket.toString(), 'function WebSocket() { [native code] }');
+    assert.strictEqual(vm.runInContext('Function.prototype.toString.call(WebSocket)', allow8080.context), 'function WebSocket() { [native code] }');
   });
 
   check('XMLHttpRequest.open blocks a direct probe', () => {

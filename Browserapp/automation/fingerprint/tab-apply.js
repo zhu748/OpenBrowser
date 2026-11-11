@@ -9,6 +9,7 @@
 const { buildUaProfile, cdpUserAgentOverride, buildAcceptLanguageHeader, formatAcceptLanguage } = require('./shared');
 const { buildInjectionScript, injectSourceKeyCached, injectionCacheKeyFor } = require('./injection-script');
 const { normalizeCoordinates } = require('../../shared/profile-values');
+const { assertFingerprintConsistency } = require('./persona');
 
 // Bookkeeping for the per-target inject. The runtime drives the same document-start script from
 // several places (pre-start, post-start, watch sweeps, reload recovery, worker attach). Registering
@@ -20,6 +21,7 @@ const TARGET_INJECT_STATE = new Map();
 const MAX_TRACKED_TARGETS = 256;
 
 async function applyFingerprintToTab(cdpCall, webSocketDebuggerUrl, fp, profile = {}, options = {}) {
+  assertFingerprintConsistency(fp);
   const privacy = profile.privacy || {};
   const timezone = privacy.timezoneMode === 'real'
     ? ''

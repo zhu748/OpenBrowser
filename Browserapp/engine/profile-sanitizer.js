@@ -386,11 +386,14 @@ function sanitizeFingerprintConfig(fp, privacyCores, privacyMemory) {
     put("platform_version", str(v.platform_version, 40));
     put("platformVersion", str(v.platformVersion, 40));
     put("ua_full_version", str(v.ua_full_version, 80));
+    put("deviceModel", str(v.deviceModel, 120));
     put("chromeMajor", intInRange(v.chromeMajor, 1, 999));
     put("model", str(v.model, 120));
-    put("mobile", bool(v.mobile));
-    put("wow64", bool(v.wow64));
-    put("bitness", oneOf(v.bitness, ["32", "64"]));
+    const hintBool = (value) => value === true || value === '1' || value === 1 ? true
+      : value === false || value === '0' || value === 0 ? false : undefined;
+    put("mobile", hintBool(v.mobile));
+    put("wow64", hintBool(v.wow64));
+    put("bitness", oneOf(v.bitness, ["", "32", "64"]));
     return Object.keys(out).length ? out : undefined;
   };
   const webgpuObject = (v) => {
@@ -447,6 +450,7 @@ function sanitizeFingerprintConfig(fp, privacyCores, privacyMemory) {
   set("clientHints", clientHintsOf(fp.clientHints));
   set("platform", str(fp.platform, 40));
   set("userAgent", str(fp.userAgent, 1000));
+  set("uaGenerated", bool(fp.uaGenerated));
   set("languages", strList(fp.languages, 400, 40));
   set("vendor", str(fp.vendor, 80));
   set("deviceProfile", oneOf(fp.deviceProfile, ["default", "persona"]));

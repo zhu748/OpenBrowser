@@ -1,5 +1,7 @@
 'use strict';
 
+const { assertUrlAccessPolicySupported } = require('../automation/url-access-policy');
+
 /**
  * Firefox launch pipeline: native prefs are written before spawn, then a loopback
  * WebDriver BiDi session registers main-world document-start injection, verifies
@@ -184,6 +186,7 @@ module.exports = {
     if (this.running.has(profile.id)) {
       return this.publicRunning(profile.id);
     }
+    assertUrlAccessPolicySupported(profile, 'firefox');
     this.assertProxyConcurrencyAvailable(profile);
     // Surface cross-platform risks once — same one-shot flag and event as _start,
     // so Chromium and Firefox launches together report exactly one preflight.

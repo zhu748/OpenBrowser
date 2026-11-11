@@ -17,15 +17,23 @@ const vm = require('vm');
 const fp = require('../fingerprint');
 
 const results = [];
+const pending = [];
+const pass = (name) => {
+  results.push({ name, ok: true });
+  console.log(`  PASS  ${name}`);
+};
+const fail = (name, error) => {
+  results.push({ name, ok: false, error });
+  console.log(`  FAIL  ${name} - ${error.message}`);
+  process.exitCode = 1;
+};
 const check = (name, fn) => {
   try {
-    fn();
-    results.push({ name, ok: true });
-    console.log(`  PASS  ${name}`);
+    const value = fn();
+    if (value && typeof value.then === 'function') pending.push(Promise.resolve(value).then(() => pass(name), (error) => fail(name, error)));
+    else pass(name);
   } catch (error) {
-    results.push({ name, ok: false, error });
-    console.log(`  FAIL  ${name} - ${error.message}`);
-    process.exitCode = 1;
+    fail(name, error);
   }
 };
 
@@ -189,7 +197,7 @@ function createMockWindow(options = {}) {
       createElement: () => ({}),
       fonts: { forEach: () => {} },
     },
-    Function, Object, Array, String, Number, Boolean, Symbol, WeakMap, WeakSet, Set, Map,
+    Object, Array, String, Number, Boolean, Symbol, WeakMap, WeakSet, Set, Map,
     TypeError, RangeError, Error, Math, console, Float32Array, Int32Array, Uint8Array, Uint8ClampedArray,
   };
   win.globalThis = win;
@@ -222,7 +230,7 @@ function createMockWorker(options = {}) {
       hardwareConcurrency: 8,
       deviceMemory: 8,
     },
-    Function, Object, Array, String, Number, Boolean, Symbol, WeakMap, WeakSet, Set, Map,
+    Object, Array, String, Number, Boolean, Symbol, WeakMap, WeakSet, Set, Map,
     TypeError, RangeError, Error, Math, console, Float32Array, Int32Array, Uint8Array, Uint8ClampedArray,
   };
   workerScope.globalThis = workerScope;
@@ -347,13 +355,13 @@ check('Task B: Desktop persona receives standard high-precision float (127, 127,
 check('Task B: Mobile persona receives mobile medium float precision (14, 14, 10)', () => {
   const mobileFp = fp.buildFingerprint({
     id: 'mobile-prec-test',
-    userAgent: 'Mozilla/5.0 (Linux; Android 13; SM-G981B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36',
+    userAgent: 'Mozilla/5.0 (Linux; Android 13; SM-G990B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36',
     privacy: { webgl: 'noise' },
     fingerprint: {
       os: 'android',
       mobile: true,
       platform: 'Linux armv8l',
-      webgl: { mode: 'noise', vendor: 'Qualcomm', renderer: 'Adreno (TM) 730', gpu: { vendor: 'qualcomm', architecture: 'adreno-700' } }
+      webgl: { mode: 'noise', vendor: 'Qualcomm', renderer: 'Adreno (TM) 660', gpu: { vendor: 'qualcomm', architecture: 'adreno-600' } }
     }
   });
   const { win } = createMockWindow({ fingerprint: mobileFp });
@@ -545,9 +553,9 @@ check('Task E: Zero-sized boxes keep exact 0 dimensions with negative noise step
 });
 
 // Summary report
-const passed = results.filter(r => r.ok).length;
-const total = results.length;
-console.log(`\n${passed}/${total} checks passed.`);
-if (passed !== total) {
-  process.exitCode = 1;
-}
+Promise.all(pending).then(() => {
+  const passed = results.filter(r => r.ok).length;
+  const total = results.length;
+  console.log(`\n${passed}/${total} checks passed.`);
+  if (passed !== total) process.exitCode = 1;
+});

@@ -25,6 +25,8 @@ const { isChildExited, managedBrowserKillOptions, removeSingletonFiles, stopIpcS
 const fs = require('fs');
 const path = require('path');
 const { saveDeferredSession } = require('./startup-session');
+const { assertUrlAccessPolicySupported } = require('../automation/url-access-policy');
+const { runtimePolicyProfile } = require('./runtime-policy');
 
 module.exports = {
   cleanupRunningItem(profileId, item, options = {}) {
@@ -342,6 +344,19 @@ module.exports = {
       // Stop may have started while the CDP probes were in flight. Never let a
       // stale watcher callback act on, or reschedule itself for, a torn-down item.
       if (item.cleanedUp || item.stopping || this.running.get(profileId) !== item) return;
+
+      if (item.engine === 'firefox') {
+        try { assertUrlAccessPolicySupported(runtimePolicyProfile(item.profile, this.profiles?.get?.(profileId)), 'firefox'); }
+        catch (error) {
+          item.cdpError = error.message;
+          this.invalidateStatusCache?.();
+          this.emit({ type: 'sync-error', action: 'url-access-policy', id: profileId, message: error.message });
+          await this.handleBrowserGone(profileId, item, 'url-access-policy-unsupported', {
+            expected: false, error: error.message, kill: true, waitForExit: true,
+          }).catch((cleanupError) => this.emit({ type: 'sync-error', id: profileId, message: cleanupError.message }));
+          return;
+        }
+      }
 
       if (!processAlive || !cdpAlive) {
         item.watchDeadTicks = (item.watchDeadTicks || 0) + 1;

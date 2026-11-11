@@ -13,7 +13,8 @@
 const { ensureKernelReadyForLaunch } = require('../automation/browser-kernel');
 const { buildBaseLaunchArguments, completeLaunchArguments, SECURITY_SWITCH_DENYLIST } = require('./launch-arguments');
 const { normalizeEnvNumber, prepareMacDockWrapper, prepareMarkerExtension } = require('../automation/env-icon');
-const { buildFingerprint } = require('../automation/fingerprint');
+const { buildFingerprint, assertFingerprintConsistency } = require('../automation/fingerprint');
+const { assertUrlAccessPolicySupported } = require('../automation/url-access-policy');
 const { fpLog, summarizeFp, logPath: fingerprintLogPath } = require('../automation/fingerprint-debug-log');
 const { acquireProfileLock, updateProfileLock, validateProfileRootSecure } = require('../automation/isolation');
 const { fingerprintForNativeKernelInject, isOpenBrowser148, writeOpenBrowserKernelInit } = require('../automation/kernel-init-sync');
@@ -184,6 +185,9 @@ async function clearLaunchDataTargets(root, advanced, targets) {
  * profile's stored width/height.
  */
 function hostScreenSummary() {
+  // Requiring the npm Electron launcher under plain Node can download a binary.
+  // Only the Electron main process exposes the screen service used here.
+  if (!process.versions.electron) return null;
   try {
     const { screen } = require('electron');
     const display = screen.getPrimaryDisplay();
@@ -208,6 +212,7 @@ const WINDOW_POSITION_RATIOS = {
  * corner cells never push the window titlebar off-screen.
  */
 function windowPositionArg(profile) {
+  if (!process.versions.electron) return null;
   const cell = String(profile.privacy?.windowPos || '');
   const ratios = WINDOW_POSITION_RATIOS[cell];
   if (!ratios) return null;
@@ -294,6 +299,7 @@ module.exports = {
     if (this.running.has(profile.id)) {
       return this.publicRunning(profile.id);
     }
+    assertUrlAccessPolicySupported(profile);
     this.assertProxyConcurrencyAvailable(profile);
     // Surface cross-platform risks (Windows MAX_PATH on a deep data root, missing env,
     // Linux sandbox, …) once — turns silent per-platform breakage into an actionable event.
@@ -446,6 +452,7 @@ module.exports = {
       exitLongitude: profile.exitLongitude ?? pageNetwork.longitude,
       hostScreen: hostScreenSummary(),
     });
+    assertFingerprintConsistency(fingerprint);
     let customStartUrls = this.resolveStartupUrls(profile);
     if (restoreSession) {
       const restoredUrls = await readDeferredSessionUrls(root);

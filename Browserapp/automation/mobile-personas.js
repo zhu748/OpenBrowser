@@ -16,7 +16,20 @@
  */
 
 const pool = require("./data/mobile-devices.json");
+const corrections = require('./data/mobile-device-corrections.json');
 const { buildUaProfile } = require("./user-agent");
+
+const correctedDevices = new Map(corrections.devices.map((device) => [`${device.os}:${device.model}`, device]));
+// The imported catalogue contains a repeated fallback geometry for unrelated phones.
+// Keep the original catalogue for provenance, but do not randomly advertise those
+// unverified records as physical devices. Corrections are applied before quarantine.
+const catalogDevices = pool.devices.map((device) => ({
+  ...device, ...correctedDevices.get(`${device.os}:${device.model}`),
+}));
+const runtimeDevices = catalogDevices.filter((device) => !(device.os === 'android' && device.width === 360 && device.height === 592));
+const devicesByOs = new Map(['android', 'ios'].map((os) => [os, runtimeDevices.filter((device) => device.os === os)]));
+const androidCatalog = catalogDevices.filter((device) => device.os === 'android');
+const eligibleDevices = new Set(runtimeDevices);
 
 /** Operating systems whose personas the injector can currently back with a consistent surface. */
 const RUNTIME_OS = Object.freeze(["android", "ios"]);
@@ -34,7 +47,7 @@ const normalizeOs = (os) => (String(os || "").toLowerCase() === "ios" ? "ios" : 
 
 function devicesForOs(os) {
   const key = normalizeOs(os);
-  return pool.devices.filter((device) => device.os === key);
+  return devicesByOs.get(key).slice();
 }
 
 function supportsRuntimePersona(os) {
@@ -173,18 +186,37 @@ function mobilePersona(seedU32, os = "android", options = {}) {
   const seed = Number.isFinite(Number(seedU32)) ? Math.abs(Math.trunc(Number(seedU32))) : 1;
   const isIos = key === "ios";
   const chromeMajor = Number(options.chromeMajor) || DEFAULT_CHROME_MAJOR;
-  let devices = devicesForOs(key);
+  let devices = devicesByOs.get(key);
   if (!devices.length) throw new Error(`mobile device pool has no ${key} entries`);
+  const requestedModel = String(options.deviceModel || options.model || '').trim();
+  if (requestedModel && requestedModel !== 'K' && requestedModel !== 'iPhone') {
+    devices = devices.filter((device) => [device.model, device.name].includes(requestedModel));
+    if (!devices.length) throw new Error(`移动设备型号没有可用的指纹记录：${requestedModel}；请重新生成 UA 或随机指纹`);
+  }
+  const requestedVersion = Number(String(options.osVersion || '').split('.')[0]);
+  if (requestedVersion > 0) {
+    devices = devices.filter((device) => {
+      const versions = String(device.osRange).split(/[^0-9]+/).filter(Boolean).map(Number);
+      return versions.length && requestedVersion >= Math.min(...versions) && requestedVersion <= Math.max(...versions);
+    });
+    if (!devices.length) throw new Error(`移动设备型号与系统版本 ${requestedVersion} 不兼容；请重新生成 UA 或随机指纹`);
+  }
   if (isIos) {
     // Devices whose support window cannot reach the Chrome floor are excluded from the draw.
     const floor = minIosForChrome(chromeMajor);
     const capable = devices.filter((device) => androidVersionFromRange(device.osRange, { seed }) >= floor);
-    if (capable.length) devices = capable;
+    if (!capable.length) throw new Error(`No iOS persona supports Chrome ${chromeMajor}`);
+    devices = capable;
   }
-  const device = devices[seed % devices.length];
-  const osVersion = androidVersionFromRange(device.osRange, { seed: seed >>> 16, fallback: isIos ? 18 : 13 });
+  // Removing bad records must not shift every existing valid seed to a different
+  // phone. Preserve its old catalogue slot when it remains eligible; only a
+  // quarantined or explicitly constrained identity needs a new selection.
+  const legacyDevice = key === 'android' ? androidCatalog[seed % androidCatalog.length] : null;
+  const device = !requestedModel && !requestedVersion && legacyDevice && eligibleDevices.has(legacyDevice)
+    ? legacyDevice : devices[seed % devices.length];
+  const osVersion = requestedVersion > 0 ? requestedVersion : androidVersionFromRange(device.osRange, { seed: seed >>> 16, fallback: isIos ? 18 : 13 });
   const resolvedPanel = isIos ? null : resolveAndroidPanel(device.width);
-  const dpr = isIos ? deriveIosDpr(device.width, device.name) : resolvedPanel.dpr;
+  const dpr = Number(device.dpr) || (isIos ? deriveIosDpr(device.width, device.name) : resolvedPanel.dpr);
   // The pool records the display in CSS pixels, so the layout viewport is that panel minus the
   // browser chrome. screen.* keeps the full panel, which is what a phone reports.
   const screenWidth = device.width;
@@ -222,8 +254,10 @@ function mobilePersona(seedU32, os = "android", options = {}) {
   uaProfile.clientHints.architecture = "";
   uaProfile.clientHints.bitness = "";
   uaProfile.vendor = vendor;
+  // Persist the actual device selector, including iOS where the public model is only iPhone.
+  uaProfile.clientHints.deviceModel = device.model || device.name;
 
-  const panelWidth = isIos ? Math.round(screenWidth * dpr) : resolvedPanel.panel;
+  const panelWidth = Number(device.panel) || (isIos ? Math.round(screenWidth * dpr) : resolvedPanel.panel);
   const panelHeight = Math.round(screenHeight * dpr);
   const panelError = isIos ? 0 : Number(resolvedPanel.error.toFixed(2));
 
@@ -261,7 +295,9 @@ function mobilePersona(seedU32, os = "android", options = {}) {
 }
 
 module.exports = {
-  POOL_SIZE: pool.count || pool.devices.length,
+  POOL_SIZE: runtimeDevices.length,
+  CATALOG_SIZE: pool.devices.length,
+  QUARANTINED_COUNT: pool.devices.length - runtimeDevices.length,
   RUNTIME_OS,
   ANDROID_DPR_STEPS,
   ANDROID_PANELS,

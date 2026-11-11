@@ -6,11 +6,12 @@
  * Extracted verbatim from engine.js: the wire-order table (JA4H/Akamai
  * defence), the RequestHeaderRewriter class that reorders and rewrites
  * request headers per persona, and the pure UA/timezone/language helpers it
- * shares with delivery evaluation. No CDP, no Electron, no engine state —
- * the only outside dependency is buildUaProfile from ./user-agent.
+ * shares with delivery evaluation. Transport and live-profile access are
+ * supplied by the host; user-agent and url-access-policy own the pure parsing.
  */
 
 const { buildUaProfile, cdpUserAgentOverride, buildAcceptLanguageHeader } = require('./user-agent');
+const { compileUrlAccessPolicy, blockedPageHtml } = require('./url-access-policy');
 
 const CHROMIUM_CANONICAL_HEADER_ORDER = Object.freeze([
   "host",
@@ -60,7 +61,22 @@ class RequestHeaderRewriter {
     this.destroyed = false;
     this.profile = options.profile || {};
     this.fingerprint = options.fingerprint || null;
+    this.getPolicyProfile = typeof options.getPolicyProfile === 'function' ? options.getPolicyProfile : null;
+    this.isInternalRequest = typeof options.isInternalRequest === 'function' ? options.isInternalRequest : null;
+    this.refreshUrlPolicy();
     this.setPersona(options.profile, options.fingerprint);
+  }
+
+  refreshUrlPolicy(profile = this.getPolicyProfile ? this.getPolicyProfile() : this.profile) {
+    const key = JSON.stringify([profile?.advanced?.allowUrls || '', profile?.advanced?.blockUrls || '']);
+    if (key !== this.urlPolicyKey) {
+      // Publish both only after successful validation; bad edits never become
+      // an empty, permissive policy or replace the launch fingerprint.
+      const policy = compileUrlAccessPolicy(profile);
+      this.urlPolicy = policy;
+      this.urlPolicyKey = key;
+    }
+    return this.urlPolicy;
   }
 
   setPersona(profile = {}, fingerprint = {}) {
@@ -211,8 +227,22 @@ class RequestHeaderRewriter {
     };
     operation.promise = (async () => {
       try {
-        const headers = this._rewriteHeaders(request);
-        await send('Fetch.continueRequest', { requestId, ...(headers ? { headers } : {}) });
+        const policy = this.refreshUrlPolicy();
+        if (policy.active && !this.isInternalRequest?.(request?.url) && policy.blocks(request?.url)) {
+          if (event.params.resourceType === 'Document') {
+            await send('Fetch.fulfillRequest', { requestId, responseCode: 403,
+              responseHeaders: [
+                { name: 'Content-Type', value: 'text/html; charset=utf-8' },
+                { name: 'Cache-Control', value: 'no-store' },
+                { name: 'Content-Security-Policy', value: "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'" },
+              ],
+              body: Buffer.from(blockedPageHtml(request.url), 'utf8').toString('base64'),
+            });
+          } else await send('Fetch.failRequest', { requestId, errorReason: 'BlockedByClient' });
+        } else {
+          const headers = this._rewriteHeaders(request);
+          await send('Fetch.continueRequest', { requestId, ...(headers ? { headers } : {}) });
+        }
       } catch (error) {
         if (operation.cancelled) return;
         try { this.logger?.({ type: 'request-rewrite-error', error: error.message }); } catch (_) {}
@@ -533,6 +563,34 @@ function evaluateFingerprintDelivery(profile = {}, fingerprint = {}, liveProbe =
         actual: liveProbe.uaDataPlatform,
         message: "Client Hints 平台与 UA 不符：期望 " + uaOrConfigFamily + "，实际交付 " + liveProbe.uaDataPlatform,
       });
+    }
+  }
+
+  if (options.strict && fingerprint.userAgentMetadata && /(?:Chrome|Chromium)\//i.test(expectedUa)) {
+    const metadata = fingerprint.userAgentMetadata;
+    const addHintMismatch = (field, expected, actual) => mismatches.push({
+      field: `userAgentData.${field}`, expected, actual, message: `Client Hints ${field} 未按配置交付`,
+    });
+    if (liveProbe.secureContext === true && liveProbe.uaDataPresent === false) {
+      addHintMismatch('present', true, false);
+    }
+    if (Array.isArray(liveProbe.uaDataBrands) && JSON.stringify(liveProbe.uaDataBrands) !== JSON.stringify(metadata.brands)) {
+      addHintMismatch('brands', metadata.brands, liveProbe.uaDataBrands);
+    }
+    if (typeof liveProbe.uaDataMobile === 'boolean' && liveProbe.uaDataMobile !== metadata.mobile) {
+      addHintMismatch('mobile', metadata.mobile, liveProbe.uaDataMobile);
+    }
+    if (liveProbe.uaDataError) addHintMismatch('probe', 'success', liveProbe.uaDataError);
+    const entropy = liveProbe.uaDataHighEntropy;
+    if (liveProbe.secureContext === true && liveProbe.uaDataPresent === true && !entropy && !liveProbe.uaDataError) {
+      addHintMismatch('probe', 'high-entropy result', entropy);
+    }
+    if (entropy && liveProbe.secureContext === true) {
+      for (const key of ['architecture', 'bitness', 'model', 'platformVersion', 'wow64', 'fullVersionList']) {
+        if (JSON.stringify(entropy[key]) !== JSON.stringify(metadata[key])) addHintMismatch(key, metadata[key], entropy[key]);
+      }
+      const expectedFull = metadata.uaFullVersion || metadata.fullVersion;
+      if (entropy.uaFullVersion !== expectedFull) addHintMismatch('uaFullVersion', expectedFull, entropy.uaFullVersion);
     }
   }
 

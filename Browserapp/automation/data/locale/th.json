@@ -229,7 +229,7 @@
   "editor.blockDomainList": "URL Blocklist",
   "editor.allowDomainList": "URL Allowlist",
   "editor.urlListPh": "One URL per line, add new lines for multiple",
-  "editor.urlRulesHint": "Blocklist denies listed sites; with an allowlist, only listed sites are accessible.",
+  "editor.urlRulesHint": "รองรับเฉพาะ Chromium กฎจะจับคู่โดเมนและโดเมนย่อย โดยไม่ใช้เส้นทาง URL และสามารถระบุพอร์ตได้ รายการบล็อกมีลำดับความสำคัญสูงกว่า หากมีรายการอนุญาต จะเข้าถึงได้เฉพาะเว็บไซต์ในรายการเท่านั้น",
   "editor.exitNetGuard": "Exit Network Guard",
   "editor.tutorial": "Profile Tutorial",
   "editor.tutorialDesc": "Understanding profiles and profile fingerprints",

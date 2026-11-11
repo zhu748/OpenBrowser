@@ -7,6 +7,23 @@
 
   const { unwrapIpcResult } = ipc;
 
+  function resolveEditorUaDraft({ current = {}, userAgent = '', generatedUa = null, reset = false }) {
+    const value = String(userAgent || '').trim();
+    const previous = current.privacy?.fingerprint?.userAgent || current.userAgent || '';
+    const generated = generatedUa?.userAgent === value ? generatedUa : null;
+    const keep = !reset && value === previous;
+    return {
+      userAgent: value,
+      fingerprint: {
+        // The editor has one visible UA field. Migrate the hidden legacy override
+        // and discard old hints when the user changes or clears that field.
+        userAgent: undefined,
+        clientHints: generated?.clientHints || (keep ? current.privacy?.fingerprint?.clientHints : undefined),
+        uaGenerated: generated ? generated.kernelBound === true : (keep && current.privacy?.fingerprint?.uaGenerated === true),
+      },
+    };
+  }
+
   /** Fetch fields and their revision together; only the latest request may open. */
   function createProfileEditorOpener({ readSnapshot, show }) {
     let generation = 0;
@@ -106,5 +123,5 @@
     };
   }
 
-  return { commitProfileEdit, createProfileEditorOpener, createProfileEditorSubmit };
+  return { commitProfileEdit, createProfileEditorOpener, createProfileEditorSubmit, resolveEditorUaDraft };
 });

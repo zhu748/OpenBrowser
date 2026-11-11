@@ -229,7 +229,7 @@
   "editor.blockDomainList": "URL Blocklist",
   "editor.allowDomainList": "URL Allowlist",
   "editor.urlListPh": "One URL per line, add new lines for multiple",
-  "editor.urlRulesHint": "Blocklist denies listed sites; with an allowlist, only listed sites are accessible.",
+  "editor.urlRulesHint": "Chromium のみ対応。ドメインとサブドメインで照合し、URL のパスは使用しません。ポートを指定できます。拒否リストを優先し、許可リストを設定すると記載されたサイトのみアクセスできます。",
   "editor.exitNetGuard": "Exit Network Guard",
   "editor.tutorial": "Profile Tutorial",
   "editor.tutorialDesc": "Understanding profiles and profile fingerprints",

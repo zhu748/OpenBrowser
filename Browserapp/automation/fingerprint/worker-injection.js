@@ -33,9 +33,8 @@ function buildWorkerInjectionScript(fp) {
     // 'Apple Computer, Inc.' branch and a uaProfile.vendor fallback) — preserved as-is,
     // see the drift list in injection-config.js.
     vendor: fp.vendor ?? fp.uaProfile?.vendor ?? 'Google Inc.',
-    // Intentionally divergent from the main-world CFG (main falls back to
-    // fp.uaProfile?.metadata) — preserved as-is, see injection-config.js.
-    userAgentMetadata: fp.userAgentMetadata,
+    // Keep the same metadata fallback as the document builder.
+    userAgentMetadata: fp.userAgentMetadata || fp.uaProfile?.metadata || null,
     languages: fp.languages,
     timezone: injectionTimezone(fp),
     hardwareConcurrency: fp.hardwareConcurrency,

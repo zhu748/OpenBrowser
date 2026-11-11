@@ -17,6 +17,7 @@ const {
   validateKernelInitInvariants,
 } = require('../kernel-init-sync');
 const { buildFingerprint } = require('../fingerprint');
+const { isLfsPointerFile } = require('../../scripts/fetch-kernels');
 
 async function main() {
   assert.strictEqual(isOpenBrowser148({ source: 'openbrowser-148' }), true);
@@ -234,7 +235,9 @@ async function main() {
   // The shipped template itself must be free of those inherited values, not just the written result.
   {
     const templatePath = path.join(__dirname, '../../kernels/macos-x64/init_template.json');
-    if (fs.existsSync(templatePath)) {
+    if (isLfsPointerFile(templatePath)) {
+      console.log('SKIP bundled native template validation: init_template.json is an unmaterialized Git LFS pointer');
+    } else if (fs.existsSync(templatePath)) {
       const template = loadInitObject(await fsp.readFile(templatePath));
       assert.ok(template, 'bundled init template must parse');
       assert.ok(template.token && typeof template.token === 'object',

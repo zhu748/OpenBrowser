@@ -181,8 +181,8 @@ module.exports = `  // --- hide automation (navigator.webdriver / AutomationCont
             return v === "none" || v === "default";
           }
         } else if (arguments.length === 1) {
-          const s = String(prop || "").toLowerCase();
-          if (s.includes("-webkit-touch-callout")) return true;
+          const s = String(prop).replace(/\\(\\s*-webkit-touch-callout\\s*:\\s*(none|default)\\s*\\)/gi, '(display: block)');
+          return origSupports.call(this, s);
         }
         return origSupports.apply(this, arguments);
       };
