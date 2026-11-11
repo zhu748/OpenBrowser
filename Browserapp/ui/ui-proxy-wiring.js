@@ -649,7 +649,7 @@ $('#proxy-batch-import-form')?.addEventListener('submit', async (event) => {
       try {
         await window.ops.proxyCreate({ ...draft, ipChannel });
         created += 1;
-      } catch (error) {
+      } catch (_) {
         failedLines.push(draft.raw || `${draft.host}:${draft.port}`);
       }
     }, 4);
