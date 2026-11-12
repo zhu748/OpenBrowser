@@ -79,8 +79,8 @@ async function main() {
   assert.ok(APPUPDATE_SRC.includes('verified: Boolean(expectedHex)'), 'result reports whether the digest was verified');
   assert.ok(APPUPDATE_SRC.includes('received < contentLength'), 'truncated transfer is detected');
   assert.ok(APPUPDATE_SRC.includes('Update download was truncated'), 'truncated transfer is rejected');
-  assert.ok(APPUPDATE_SRC.includes('proceeding without integrity verification'), 'manifest-less release logs a loud warning when explicitly overridden');
-  assert.ok(APPUPDATE_SRC.includes('OPENBROWSER_ALLOW_UNSIGNED_UPDATE'), 'manifest-less release requires an explicit env override');
+  assert.ok(!APPUPDATE_SRC.includes('OPENBROWSER_ALLOW_UNSIGNED_UPDATE'), 'environment variables cannot allow unsigned updates');
+  assert.ok(!APPUPDATE_SRC.includes('LEGACY_UNSIGNED_RELEASES'), 'historical versions cannot allow unsigned updates');
   assert.ok(APPUPDATE_SRC.includes('refusing to run an unverifiable installer'), 'manifest-less release fails closed by default');
   assert.ok(APPUPDATE_SRC.includes('updateUrlIsAllowed(downloadUrl'), 'download URL passes the host allow-list');
   assert.ok(APPUPDATE_SRC.includes('new Set([\'github.com\', \'objects.githubusercontent.com\', \'release-assets.githubusercontent.com\'])'), 'update hosts are allow-listed');
@@ -97,12 +97,10 @@ async function main() {
     'result reports whether the manifest was signed');
   assert.ok(APPUPDATE_SRC.includes('fetchReleaseSignature'),
     'release signature asset is fetched alongside the manifest');
-  // The signature gate must sit BEFORE the OPENBROWSER_ALLOW_UNSIGNED_UPDATE
-  // branch: an env var may relax the digest requirement, never the trust root.
+  // Authentication and integrity must both precede handing the file to the OS.
   const sigGatePos = APPUPDATE_SRC.indexOf('manifest signature is not trusted');
-  const unsignedBranchPos = APPUPDATE_SRC.indexOf('OPENBROWSER_ALLOW_UNSIGNED_UPDATE === \'1\'');
-  assert.ok(sigGatePos > 0 && unsignedBranchPos > sigGatePos,
-    'signature gate precedes the unsigned-release escape hatch');
+  assert.ok(sigGatePos > 0 && sigGatePos < APPUPDATE_SRC.indexOf('const openError = await electron.shell.openPath'),
+    'signature gate precedes installer launch');
 
   // Behavioral: update-trust module primitives against the deployed root.
   {

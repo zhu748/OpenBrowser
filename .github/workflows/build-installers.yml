@@ -57,7 +57,11 @@ jobs:
             exit 1
           fi
           test "$(git rev-parse HEAD)" = "$(git rev-parse "$RELEASE_TAG^{commit}")"
-          test "$(gh release view "$RELEASE_TAG" --repo "$GH_REPO" --json isDraft --jq .isDraft)" = true
+          if gh release view "$RELEASE_TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
+            test "$(gh release view "$RELEASE_TAG" --repo "$GH_REPO" --json isDraft --jq .isDraft)" = true
+          else
+            gh release create "$RELEASE_TAG" --repo "$GH_REPO" --target "$(git rev-parse HEAD)" --draft --title "OpenBrowser $RELEASE_TAG" --notes "$RELEASE_NOTES"
+          fi
       - name: Select platform builders
         id: matrix
         shell: bash
@@ -133,6 +137,8 @@ jobs:
           npm run selftest -- onlinepackage
           npm run selftest:kernel
           npm run selftest -- reviewupdate
+          npm run selftest:proxyconcurrency
+          npm run selftest:dnsleakclassify
       - name: Install NSIS
         if: runner.os == 'Windows'
         shell: pwsh

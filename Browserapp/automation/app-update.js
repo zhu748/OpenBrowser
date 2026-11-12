@@ -36,8 +36,6 @@ const UPDATE_MAX_BYTES = 1024 * 1024 * 1024;
 const UPDATE_TIMEOUT_MS = 20000;
 const UPDATE_ALLOWED_HOSTS = new Set(['github.com', 'objects.githubusercontent.com', 'release-assets.githubusercontent.com']);
 const UPDATE_CHECKSUM_ASSET = 'SHA256SUMS.txt';
-// Exact historical exception, never inferred from missing network assets.
-const LEGACY_UNSIGNED_RELEASES = new Set(['1.0.27']);
 
 // Window broadcaster, injected by main.js (its emit() iterates live windows).
 let broadcastEvent = null;
@@ -463,32 +461,24 @@ async function downloadAppUpdate() {
       throw new Error(`Update download was truncated: received ${received} of ${contentLength} announced bytes`);
     }
     emit({ type: 'app-update-progress', received, total: contentLength || result.asset.size || received, percent: 100, version: result.remoteVersion });
-    // Integrity gate: when the release publishes SHA256SUMS.txt the downloaded
-    // installer MUST match before it is handed to the OS (fail closed on
-    // mismatch). Releases without a manifest fail closed by default too — the
-    // manifest lives in the same account as the installer, but requiring it at
-    // least blocks the "replaced both files" and "quietly dropped the manifest"
-    // downgrade paths. OPENBROWSER_ALLOW_UNSIGNED_UPDATE=1 restores the old
-    // warn-and-proceed behavior for historical releases, explicitly opt-in.
+    // Every installer requires an authenticated manifest and its exact digest.
+    // Historical versions and environment variables cannot bypass verification.
     const checksums = await resolveReleaseChecksums(result.remoteVersion);
-    if (!checksums?.signature && !LEGACY_UNSIGNED_RELEASES.has(result.remoteVersion)) {
+    if (!checksums?.signature) {
       throw new Error(`Release v${result.remoteVersion} has no trusted signature — refusing to run the installer`);
     }
     // The digest must be looked up under the exact platform asset name the
     // updater expects (updateAssetName()); parseChecksumManifest accepts any
     // filename, so a manifest that omits or renames that line must never
     // verify through some other entry it happens to list. When a manifest IS
-    // published it must cover this download; that case is refused outright
-    // below — the OPENBROWSER_ALLOW_UNSIGNED_UPDATE escape hatch is for
-    // releases with no manifest at all, not for a manifest that dodges the
-    // expected asset name.
+    // published it must cover this download under the selected filename.
     const expectedHex = (checksums?.map && checksums.map.has(result.asset.name)
       ? String(checksums.map.get(result.asset.name)).toLowerCase()
       : null);
     // Detached Ed25519 signature over the manifest bytes. A published .sig is
     // binding: an invalid or untrusted signature is fatal, and NO env var
-    // downgrades it — the point of the trust root is that replacing the
-    // release account must not become a path to code execution.
+    // downgrades it. The trusted release signer authenticates these exact
+    // bytes; changes to the signing workflow remain a privileged operation.
     if (checksums?.signature) {
       const { verifyManifestSignature } = require('./update-trust');
       const verdict = verifyManifestSignature(checksums.manifestBuffer, checksums.signature);
@@ -499,15 +489,8 @@ async function downloadAppUpdate() {
     if (expectedHex) {
       const valid = await verifyFileSha256(temporaryPath, expectedHex);
       if (!valid) throw new Error('Update package failed SHA-256 integrity verification — the download is corrupted or was tampered with');
-    } else if (checksums?.map && checksums.map.size) {
-      // Manifest published but it does not list this platform's expected asset
-      // name: that is a tampered/renamed manifest, not a legacy release —
-      // refuse even with the env override.
-      throw new Error(`Release v${result.remoteVersion} ${UPDATE_CHECKSUM_ASSET} does not list the expected asset ${result.asset.name} — refusing to run an unverifiable installer`);
-    } else if (process.env.OPENBROWSER_ALLOW_UNSIGNED_UPDATE === '1') {
-      console.warn(`[OpenBrowser] release v${result.remoteVersion} publishes no ${UPDATE_CHECKSUM_ASSET} — proceeding without integrity verification (OPENBROWSER_ALLOW_UNSIGNED_UPDATE=1)`);
     } else {
-      throw new Error(`Release v${result.remoteVersion} publishes no ${UPDATE_CHECKSUM_ASSET} — refusing to run an unverifiable installer (set OPENBROWSER_ALLOW_UNSIGNED_UPDATE=1 to override)`);
+      throw new Error(`Release v${result.remoteVersion} ${UPDATE_CHECKSUM_ASSET} does not list the expected asset ${result.asset.name} — refusing to run an unverifiable installer`);
     }
     const openError = await electron.shell.openPath(temporaryPath);
     if (openError) electron.shell.showItemInFolder(temporaryPath);

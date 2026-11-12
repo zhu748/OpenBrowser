@@ -27,7 +27,7 @@ async function main() {
     update.paths = Module._nodeModulePaths(path.dirname(file));
     const requireOriginal = update.require.bind(update);
     update.require = (name) => {
-      if (name === 'electron') return { app: { getVersion: () => '1.0.27', getPath: () => root },
+      if (name === 'electron') return { app: { getVersion: () => '1.0.0', getPath: () => root },
         shell: { openPath: async () => { opened++; return ''; }, showItemInFolder() {} } };
       if (name === './update-trust') return trust.exports;
       return requireOriginal(name);
@@ -47,14 +47,15 @@ async function main() {
     const signed = crypto.sign(null, manifest, privateKey);
     let scenario = 'valid';
     global.fetch = async (url, options = {}) => {
-      if (url.endsWith('/releases.atom')) return new Response('<feed><entry><id>https://github.com/zhu748/OpenBrowser/releases/tag/v9.0.0</id></entry></feed>');
+      if (url.endsWith('/releases.atom')) return new Response('<feed><entry><id>https://github.com/zhu748/OpenBrowser/releases/tag/v'
+        + (scenario === 'legacy-missing' ? '1.0.27' : '9.0.0') + '</id></entry></feed>');
       if (options.method === 'HEAD') return scenario === 'head-blocked'
         ? new Response(null, { status: 403 })
         : new Response(null, { headers: { 'content-length': String(payload.length) } });
       if (url.endsWith('/releases/tags/v9.0.0')) return Response.json({ assets: [{ name: asset, size: payload.length,
         browser_download_url: 'https://github.com/zhu748/OpenBrowser/releases/download/v9.0.0/' + asset }] });
       if (url.endsWith('SHA256SUMS.txt.sig')) {
-        if (scenario === 'missing') return new Response('', { status: 404 });
+        if (scenario === 'missing' || scenario === 'legacy-missing') return new Response('', { status: 404 });
         if (scenario === 'network') throw new Error('connection reset');
         if (scenario === 'server') return new Response('', { status: 500 });
         if (scenario === 'empty') return new Response(Buffer.alloc(0));
@@ -66,7 +67,7 @@ async function main() {
       throw new Error('Unexpected URL: ' + url);
     };
     process.env.OPENBROWSER_ALLOW_UNSIGNED_UPDATE = '1';
-    for (scenario of ['missing', 'network', 'server', 'empty', 'large', 'invalid', 'tampered']) {
+    for (scenario of ['missing', 'legacy-missing', 'network', 'server', 'empty', 'large', 'invalid', 'tampered']) {
       await assert.rejects(api.downloadAppUpdate(), /signature|SHA-256/i, scenario);
       assert.equal(opened, 0, scenario + ' must never reach the OS');
       assert.deepEqual(await fs.readdir(root), [], scenario + ' removes the failed installer');

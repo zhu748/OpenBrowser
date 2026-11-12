@@ -99,6 +99,7 @@ Or use the launcher scripts from the repository root:
 ```bash
 cd Browserapp
 # Optional: OPENBROWSER_PACKAGE_ARCH=x86_64 or arm64
+npm run build:rustcore
 npm run package:portable
 ```
 
@@ -163,7 +164,7 @@ This repository contains source code and documentation. It does not track browse
 - Third-party notices are documented in [`THIRD-PARTY-NOTICES.md`](./Browserapp/THIRD-PARTY-NOTICES.md).
 - Cloud backup integrations only connect outward after explicit user configuration.
 - **Backups that contain account credentials (cookies / passwords / 2FA / proxy logins / browser data) are only uploaded when a backup passphrase is set** — unencrypted credential uploads are rejected.
-- The updater checks installer SHA-256 and the Ed25519 signature in `SHA256SUMS.txt.sig`. Future releases with missing, invalid or unavailable signatures are refused; only the exact historical version `1.0.27` retains the legacy compatibility policy.
+- The updater checks installer SHA-256 and the Ed25519 signature in `SHA256SUMS.txt.sig`. All updates require a valid signature and matching installer digest, including historical releases; environment variables cannot bypass verification.
 - Release signing uses an encrypted GitHub Actions secret exposed only to the final signing step. Install this reissued 1.0.0 once manually to migrate from the earlier missing signing key; subsequent signed releases use the new trust root.
 - RPA plans, variables and results are encrypted at rest. Existing JSON stores migrate after a successful read; use application import/export instead of editing storage files.
 - Credential writes are refused when the local key cannot be read or durably saved. Preserve the original key and data files for recovery.

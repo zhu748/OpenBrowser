@@ -99,6 +99,7 @@ npm start
 ```bash
 cd Browserapp
 # 可选：OPENBROWSER_PACKAGE_ARCH=x86_64 或 arm64
+npm run build:rustcore
 npm run package:portable
 ```
 
@@ -160,7 +161,7 @@ OpenBrowser/
 - 第三方组件声明见 [`THIRD-PARTY-NOTICES.md`](./Browserapp/THIRD-PARTY-NOTICES.md)。
 - 云备份集成只有在用户显式配置后才会主动联网。
 - **包含账号凭据（Cookie / 密码 / 2FA / 代理登录信息 / 浏览器数据）的备份必须设置备份口令加密后才会上传**，未加密的凭据上传会被直接拒绝。
-- 应用内更新器从 `zhu748/OpenBrowser` 下载并核对安装包 SHA-256，同时验证 `SHA256SUMS.txt.sig` 的 Ed25519 签名。后续版本缺失签名或签名获取失败时拒绝运行安装器；仅精确列出的历史版本 `1.0.27` 保留兼容策略。
+- 应用内更新器从 `zhu748/OpenBrowser` 下载并核对安装包 SHA-256，同时验证 `SHA256SUMS.txt.sig` 的 Ed25519 签名。所有更新（包括历史版本）都必须通过签名和安装包哈希校验，缺失或失败时拒绝运行安装器，环境变量不能绕过验签。
 - 发布签名使用 GitHub 加密 Secret，仅在最终签名步骤暴露。旧版 1.0.0 请先手动覆盖安装本次重发版本，以接入新的签名公钥；后续签名更新使用新信任根。
 - RPA 计划、变量与执行结果也加密保存；旧 JSON 文件在成功读取后自动迁移。请通过应用导入/导出，避免直接编辑存储文件。
 - 密钥文件无法读取或可靠保存时拒绝写入凭据，防止重启后无法恢复。请保留原密钥和数据文件进行恢复。

@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * Offline release-signing tool for the Ed25519 updater trust root.
+ * Release-signing tool for the Ed25519 updater trust root (CI or local signer).
  *
  *   node update-trust-tool.js genkey
  *       Generate an Ed25519 keypair. The private key is written ONLY if
