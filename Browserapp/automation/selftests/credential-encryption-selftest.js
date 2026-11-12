@@ -25,6 +25,13 @@ function ok(name, condition) {
   console.log('OpenBrowser Credential At-Rest Encryption & Migration Self-Test');
 
   const tmpBase = await fsp.mkdtemp(path.join(os.tmpdir(), 'ob-cred-selftest-'));
+  const originalKey = process.env.OPENBROWSER_MASTER_KEY;
+  const originalKeyFile = process.env.OPENBROWSER_MASTER_KEY_FILE;
+  const isolatedKeyFile = path.join(tmpBase, 'default-master.key');
+  delete process.env.OPENBROWSER_MASTER_KEY;
+  process.env.OPENBROWSER_MASTER_KEY_FILE = isolatedKeyFile;
+  credentialCrypto.resetLocalMasterKeyCache();
+  try {
 
   // =========================================================================
   // 1. Core AES-256-GCM (OBE1) round-trip & wrong key rejection
@@ -131,7 +138,7 @@ function ok(name, condition) {
   const key2 = credentialCrypto.getLocalMasterKey();
   ok('Master key persists across restarts', key2 === key1);
 
-  delete process.env.OPENBROWSER_MASTER_KEY_FILE;
+  process.env.OPENBROWSER_MASTER_KEY_FILE = isolatedKeyFile;
   credentialCrypto.resetLocalMasterKeyCache();
 
   // =========================================================================
@@ -325,8 +332,14 @@ function ok(name, condition) {
   ok('Decrypted GitHub token matches', decryptedSettingsObj.cloud.github.token === 'ghp_fake_token_1234567890');
   ok('Decrypted WebDAV password matches', decryptedSettingsObj.cloud.webdav.password === 'dav_secret_password');
 
-  // Clean up test temporary directory
-  await fsp.rm(tmpBase, { recursive: true, force: true }).catch(() => {});
-
   console.log(`\nAll ${passedCount}/${testCount} credential encryption self-test checks PASSED!`);
-})();
+  } finally {
+    credentialCrypto.setSafeStorageMock(null);
+    credentialCrypto.resetLocalMasterKeyCache();
+    if (originalKey === undefined) delete process.env.OPENBROWSER_MASTER_KEY;
+    else process.env.OPENBROWSER_MASTER_KEY = originalKey;
+    if (originalKeyFile === undefined) delete process.env.OPENBROWSER_MASTER_KEY_FILE;
+    else process.env.OPENBROWSER_MASTER_KEY_FILE = originalKeyFile;
+    await fsp.rm(tmpBase, { recursive: true, force: true });
+  }
+})().catch((error) => { console.error(error); process.exitCode = 1; });

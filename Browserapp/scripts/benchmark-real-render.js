@@ -16,7 +16,7 @@
  * process's event-loop percentiles while re-rendering.
  *
  * Usage (needs a display):
- *   xvfb-run -a node scripts/benchmark-real-render.js [--sizes 10,100,1000] [--json]
+ *   xvfb-run -a node_modules/.bin/electron scripts/benchmark-real-render.js [--sizes 10,100,1000] [--json]
  */
 
 const { app, BrowserWindow } = require('electron');
@@ -85,7 +85,7 @@ function registerBootIpc() {
   // Lenient catch-all: the UI may probe optional surfaces on interaction;
   // those never run during the measurement and must not crash it.
   for (const channel of [
-    'system:set-close-action', 'sync:settings:get', 'sync:settings:set', 'app-update:check',
+    'system:set-close-action', 'system:set-ui-chrome', 'sync:settings:get', 'sync:settings:set', 'app:update-check',
     'extensions:list', 'proxy:list', 'rpa:list', 'clipboard:read', 'client-settings:save',
     'ua:build', 'system:get-client-settings', 'system:choose-storage', 'system:reset-storage',
     'system:open-storage', 'sync:get-settings', 'sync:selection', 'automation:app-center',
@@ -108,7 +108,12 @@ const RENDERER_MEASURE = `(async (size) => {
     favorite: i % 7 === 0, tag: i % 5 === 0 ? 'work' : '',
   }));
   // Real IPC lane the UI uses on boot: renderer local state -> engine -> status.
-  await window.ops.syncProfiles(fleet);
+  engineProfiles = await window.ops.syncProfiles(fleet);
+  ui.profiles = fleet.map(normalizeProfileSettings);
+  activeGroupFilter = 'all'; activeListTab = 'all'; profilePage = 1;
+  document.getElementById('profile-search').value = '';
+  invalidateViewCache(['profiles', 'groups', 'sync']);
+  switchView('profiles');
   const p = (arr, q) => arr[Math.min(arr.length - 1, Math.ceil((q / 100) * arr.length) - 1)];
   const out = { size, pageSizes: {} };
   // The list view is paginated (10/20/50/100 rows). DOM cost is per-page and
@@ -122,17 +127,17 @@ const RENDERER_MEASURE = `(async (size) => {
       sel.value = String(pageSize);
       sel.dispatchEvent(new Event('change', { bubbles: true }));
     }
-    window.renderProfiles(); // warm-up with this page size
+    renderProfiles(); // warm-up with this page size
     const rows = [];
     const filterSamples = [];
     for (let r = 0; r < 5; r += 1) {
       const f0 = performance.now();
-      const summary = window.OpenBrowserProfileList.summarizeProfiles(window.ui.profiles, () => false);
-      const filtered = window.OpenBrowserProfileList.filterProfiles({ profiles: window.ui.profiles, summary, search: '', groupFilter: '', trash: 'active' });
+      const summary = window.OpenBrowserProfileList.summarizeProfiles(ui.profiles, () => false);
+      const filtered = window.OpenBrowserProfileList.filterProfiles({ profiles: ui.profiles, summary, search: '', groupFilter: '', trash: 'active' });
       window.OpenBrowserProfileList.paginate(filtered, 1, pageSize);
       filterSamples.push(performance.now() - f0);
       const t0 = performance.now();
-      window.renderProfiles();
+      renderProfiles();
       const renderMs = performance.now() - t0;
       const t1 = performance.now();
       document.querySelectorAll('#profile-list tr, [data-profile-id]').forEach((el) => void el.getBoundingClientRect());
@@ -149,8 +154,37 @@ const RENDERER_MEASURE = `(async (size) => {
       domNodes: document.querySelectorAll('*').length,
       profileRows: document.querySelectorAll('#profile-table tr[data-profile-id]').length,
     };
+    if (out.pageSizes[pageSize].profileRows !== Math.min(size, pageSize)) throw new Error('Benchmark did not render the requested fleet/page size');
   }
   out.domNodes = out.pageSizes[100].domNodes;
+  // Drive the actual renderer command helper and group action through preload,
+  // trusted IPC, the engine and SQLite, rather than only timing their stubs.
+  await commitProfilePatches([{ id: 'render-0', patch: { tag: 'desktop-tag', note: 'desktop-note' } }]);
+  ui.groups = [{ id: 'desktop-group', name: 'Desktop group' }];
+  selectedProfiles = new Set(['render-0', 'render-' + (size - 1)]);
+  await assignSelectedToGroup('desktop-group');
+  const verified = await window.ops.profileStatus();
+  const selected = verified.find((row) => row.id === 'render-0');
+  if (selected.tag !== 'desktop-tag' || selected.note !== 'desktop-note' || selected.groupId !== 'desktop-group'
+    || ui.profiles[0].groupId !== 'desktop-group' || verified.find((row) => row.id === 'render-1').groupId === 'desktop-group') {
+    throw new Error('Desktop metadata edits did not remain scoped to the selection');
+  }
+  out.metadataOperations = { tagged: true, noted: true, grouped: true, unselectedPreserved: true };
+  const confirm = confirmAction;
+  try {
+    confirmAction = async () => true;
+    document.getElementById('renumber-profiles').click();
+    const deadline = performance.now() + 15000;
+    for (;;) {
+      const numbered = await window.ops.profileStatus();
+      const byId = new Map(numbered.map((row) => [row.id, row]));
+      if (ui.profiles.every((row, index) => byId.get(row.id)?.number === index + 1
+        && byId.get(row.id)?.name === String(index + 1))) break;
+      if (performance.now() > deadline) throw new Error('Desktop renumbering did not finish');
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    }
+    out.metadataOperations.renumbered = true;
+  } finally { confirmAction = confirm; }
   // Editor save + conflict-retry path against the real engine (the P1-a
   // contract): open the real editor state, save via applyProfileCommands with
   // the row's real rev, force an engine-side write underneath, confirm the
@@ -251,6 +285,7 @@ const state = { _engine: null, profileRoot: null, dbRoot: null };
  * round-trip runs against the real binary the product ships.
  */
 async function runRealKernelSessions(engine) {
+  if (process.env.OPENBROWSER_CHROMIUM_BINARY) await engine.kernelManager.setCustomBinary(process.env.OPENBROWSER_CHROMIUM_BINARY);
   // Container-sane default: one real Chrome instance. Each extra instance
   // multiplies memory/thread pressure; in a constrained sandbox two
   // simultaneous spawns can crash in the zygote (verified — SIGABRT at N=2),

@@ -18,10 +18,12 @@ async function main() {
     sanitizeIds(values) { if (!Array.isArray(values)) throw new Error('invalid IDs'); return [...new Set(values.map(String))]; },
     beforeRemove(ids) { before.push(ids); },
   });
-  const invoke = (action, value) => handlers.get(`profiles:${action}`)(null, value);
+  const invoke = (action, value, options) => handlers.get(`profiles:${action}`)(null, value, options);
   assert.equal(handlers.size, 15);
   assert.deepEqual(await invoke('apply-commands', [{ kind: 'modify', id: 'a', baseRev: 1 }]), { ipcResult: 1, ok: true, value: 'applyProfileCommands' });
-  assert.deepEqual(calls.at(-1), ['applyProfileCommands', [{ kind: 'modify', id: 'a', baseRev: 1 }]]);
+  assert.deepEqual(calls.at(-1), ['applyProfileCommands', [{ kind: 'modify', id: 'a', baseRev: 1 }], undefined]);
+  await invoke('apply-commands', [{ kind: 'patch', id: 'a', baseRev: 1, patch: { note: 'n' } }], { delta: true });
+  assert.deepEqual(calls.at(-1).at(-1), { delta: true }, 'scoped replies cross trusted IPC');
   assert.deepEqual(await invoke('editor-state', 'a'), { ipcResult: 1, ok: true, value: 'profileForEdit' });
   assert.deepEqual(calls.at(-1), ['profileForEdit', 'a']);
   assert.equal(invoke('status-delta', { a: 1 }), 'statusDelta');

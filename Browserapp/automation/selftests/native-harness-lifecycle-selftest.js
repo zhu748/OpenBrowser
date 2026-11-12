@@ -36,7 +36,7 @@ async function scenario(stage) {
     '../../engine/launch-arguments': { buildBaseLaunchArguments() {
       if (stage === 'arguments') throw new Error('argument build failed');
       return [];
-    } },
+    }, completeLaunchArguments(args) { return { args }; } },
     '../../engine/fingerprint-injection': { async startWorkerFingerprintInjection(item) {
       assert.notEqual(stage, 'baseline', 'the raw baseline must not install fingerprint patches');
       item.workerFingerprintConnection = { close() { disconnected += 1; } };

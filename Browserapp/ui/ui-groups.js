@@ -131,14 +131,20 @@ async function deleteGroup(id) {
     confirmLabel: tx('删除分组'),
     tone: 'danger',
   })) return;
-  ui.profiles = ui.profiles.map((p) => (p.groupId === id ? { ...p, groupId: UNGROUPED_ID } : p));
+  try {
+    await commitProfilePatches(ui.profiles.filter((profile) => profile.groupId === id)
+      .map((profile) => ({ id: profile.id, patch: { groupId: UNGROUPED_ID } })));
+  } catch (error) {
+    renderGroupsPage();
+    renderProfiles();
+    toast(tx('环境同步失败') + ': ' + error.message);
+    log('Error', error.message);
+    return;
+  }
   ui.groups = ui.groups.filter((item) => item.id !== id);
   if (activeGroupFilter === id) activeGroupFilter = 'all';
   save();
   invalidateViewCache(['groups', 'profiles']);
-  // fire-and-forget: the group edit is already saved locally; surface a failed
-  // engine sync instead of swallowing it (engineProfiles would drift).
-  window.ops.syncProfiles(ui.profiles).catch((error) => log('Error', '环境同步失败: ' + ((error && error.message) || error)));
   renderGroupsPage();
   renderProfiles();
   toast(tx('已删除分组'));
@@ -150,9 +156,8 @@ async function assignSelectedToGroup(groupId) {
   if (!ids.size) throw new Error(tx('请先勾选环境'));
   const gid = groupId === 'ungrouped' ? UNGROUPED_ID : groupId;
   if (gid && !findGroup(gid)) throw new Error(tx('分组不存在'));
-  ui.profiles = ui.profiles.map((p) => (ids.has(p.id) ? { ...p, groupId: gid } : p));
-  save();
-  engineProfiles = await window.ops.syncProfiles(ui.profiles);
+  await commitProfilePatches(ui.profiles.filter((profile) => ids.has(profile.id))
+    .map((profile) => ({ id: profile.id, patch: { groupId: gid } })));
   renderProfiles();
   toast(tx(`已将 ${ids.size} 个环境移到「${gid ? groupNameOf({ groupId: gid }) : '未分组'}」`));
   log('Group', `批量移动 ${ids.size} 个环境 → ${gid || '未分组'}`);

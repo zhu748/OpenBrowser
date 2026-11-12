@@ -6,6 +6,7 @@ const { DatabaseSync } = require('node:sqlite');
 const {
   readEngineStateCandidate,
   engineStateRecoveryCandidates,
+  writeRawAtomically,
 } = require('../engine/state-storage');
 // profiles.data 含代理凭据/Cookies，落库前整体加密（与 state-storage 同一套 credential-crypto），读路径兼容明文
 const credentialCrypto = require('../credential-crypto');
@@ -119,12 +120,40 @@ class ProfileStoreSqlite {
     }
 
     if (!this.isOpen) {
-      this._openDatabase();
-      this._createSchema();
-      this._prepareStatements();
+      try {
+        this._openDatabase();
+        this._createSchema();
+        this._prepareStatements();
+      } catch (error) {
+        this.close();
+        throw error;
+      }
     }
 
+    try {
+      await this._encryptLegacyMigrationBackups();
+    } catch (error) {
+      this.close();
+      throw new Error('Cannot secure legacy migration backups; existing data was preserved', { cause: error });
+    }
     return { migrated };
+  }
+
+  async _encryptLegacyMigrationBackups() {
+    if (!this.legacyJsonPath) return;
+    const directory = path.dirname(this.legacyJsonPath);
+    const prefix = path.basename(this.legacyJsonPath) + '.migrated-';
+    let entries;
+    try { entries = await fs.promises.readdir(directory, { withFileTypes: true }); }
+    catch (error) { if (error.code === 'ENOENT') return; throw error; }
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.startsWith(prefix) || !/^\d+\.bak$/.test(entry.name.slice(prefix.length))) continue;
+      const target = path.join(directory, entry.name);
+      const raw = await fs.promises.readFile(target);
+      if (!credentialCrypto.isEncrypted(raw)) {
+        await writeRawAtomically(target, credentialCrypto.encryptCredential(raw));
+      }
+    }
   }
 
   _openDatabase() {
@@ -422,14 +451,15 @@ class ProfileStoreSqlite {
       throw new Error(`Profile count mismatch after migration: inserted ${insertedCount}, expected ${expectedCount}`);
     }
 
-    // Rename legacy JSON to .migrated-<timestamp>.bak
+    // Recovery copies must not retain plaintext credentials after migration.
+    // Commit the encrypted backup durably before removing the original. Failure
+    // aborts migration so init preserves the authoritative legacy file.
     if (this.backupOldJson && fs.existsSync(this.legacyJsonPath)) {
       const backupPath = `${this.legacyJsonPath}.migrated-${Date.now()}.bak`;
-      try {
-        fs.renameSync(this.legacyJsonPath, backupPath);
-      } catch (renameErr) {
-        console.warn(`Could not rename legacy JSON file to ${backupPath}: ${renameErr.message}`);
-      }
+      const original = fs.readFileSync(this.legacyJsonPath);
+      const backup = credentialCrypto.isEncrypted(original) ? original : credentialCrypto.encryptCredential(original);
+      await writeRawAtomically(backupPath, backup);
+      fs.unlinkSync(this.legacyJsonPath);
     }
   }
 
@@ -440,6 +470,9 @@ class ProfileStoreSqlite {
   }
 
   close() {
+    clearImmediate(this._legacySaltMigrationHandle);
+    this._legacySaltMigrationHandle = null;
+    this._legacySaltMigrationScheduled = false;
     if (this.db) {
       // Windows 下 WAL 的 -shm 映射在 close 后才释放，先 checkpoint 再关闭，确保临时目录可清理
       try {
@@ -614,7 +647,7 @@ class ProfileStoreSqlite {
     // Prime the row-hash map from the decoded state: saves through
     // saveProfilesDiffed then know what is already on disk.
     this._rowHashes = new Map();
-    let legacySaltRows = 0;
+    const legacySaltRows = [];
     for (const row of rows) {
       const decoded = this._decodeProfileRow(row, 'getAllProfiles');
       if (decoded) {
@@ -628,11 +661,13 @@ class ProfileStoreSqlite {
           // load (30-45ms sync per row → seconds of startup freeze on large
           // stores). Count them so the migration below can re-encrypt the
           // whole store once, after which loads pay a single derivation.
-          if (credentialCrypto.isUnifiedSaltEnvelope && !credentialCrypto.isUnifiedSaltEnvelope(raw)) legacySaltRows += 1;
+          if (credentialCrypto.getFormat(raw) === 'OBE1' && !credentialCrypto.isUnifiedSaltEnvelope(raw)) {
+            legacySaltRows.push({ id: row.id, data: row.data });
+          }
         }
       }
     }
-    this._scheduleLegacySaltMigration(result, legacySaltRows);
+    this._scheduleLegacySaltMigration(legacySaltRows);
     return result;
   }
 
@@ -642,20 +677,37 @@ class ProfileStoreSqlite {
    * and never throws into the caller: a failed migration just leaves the rows
    * as they were (next load tries again).
    */
-  _scheduleLegacySaltMigration(profiles, legacyCount) {
-    if (!legacyCount || this._legacySaltMigrationScheduled) return;
+  _scheduleLegacySaltMigration(rows) {
+    if (!rows.length || this._legacySaltMigrationScheduled) return;
     this._legacySaltMigrationScheduled = true;
-    setImmediate(() => {
+    const database = this.db;
+    let offset = 0;
+    const migrate = () => {
+      this._legacySaltMigrationHandle = null;
+      if (this.db !== database || !this.isOpen) return;
       try {
-        // saveProfiles re-encrypts via encryptSaltFor, which shares one salt
-        // per passphrase; the derived-key cache already holds this load's
-        // keys, so no additional scrypt derivations are paid here.
-        this.saveProfiles(profiles);
+        // Yield between bounded batches. Compare the original ciphertext in
+        // the UPDATE: edits and deletions since the read always win, and a
+        // migration can never reinsert a deleted profile or overwrite columns.
+        const update = database.prepare('UPDATE profiles SET data=? WHERE id=? AND data=?');
+        this.withTransaction(() => {
+          for (const row of rows.slice(offset, offset + 50)) {
+            const current = this._statements.getProfile.get(String(row.id));
+            if (!current || !Buffer.from(current.data).equals(Buffer.from(row.data))) continue;
+            const { profile, error } = tryDecodeProfileData(current.data);
+            if (error) throw new Error(error);
+            update.run(encodeProfileData(profile), String(row.id), row.data);
+          }
+        });
+        offset += 50;
+        if (offset < rows.length) this._legacySaltMigrationHandle = setImmediate(migrate);
+        else this._legacySaltMigrationScheduled = false;
       } catch (error) {
         console.warn('[profile-store] legacy salt migration deferred:', error?.message || error);
         this._legacySaltMigrationScheduled = false;
       }
-    });
+    };
+    this._legacySaltMigrationHandle = setImmediate(migrate);
   }
 
   /**

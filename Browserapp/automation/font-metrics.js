@@ -366,6 +366,7 @@ function buildFontMetricsScript(platformKey, options = {}) {
         toStringReentryDepth += 1;
         try {
           if (secret === BRIDGE_TOKEN) {
+            if ((args[1] === 'documentInstalled' || args[1] === 'sharedWorkers')) return origToString.call(this, ...args);
             if (nativeMap.has(this)) return { bridge: true, nativeText: nativeMap.get(this) };
             try {
               const inherited = origToString.call(this, secret);

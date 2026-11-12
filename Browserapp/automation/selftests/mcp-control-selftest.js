@@ -518,16 +518,18 @@ async function runIntegration(directory, resources) {
   record('mcp whitelist restricts tools', (whitelist.get(2)?.result?.tools || []).map((tool) => tool.name).sort().join(',') === 'list_profiles,mcp_policy');
 
   // 401 flood backoff: after the lockout threshold of consecutive failures the
-  // server must answer 429 even for a request carrying the correct key.
+  // server backs off invalid keys while valid loopback clients remain usable.
   let lockoutSeen = false;
   for (let attempt = 0; attempt < 30 && !lockoutSeen; attempt += 1) {
     const attemptRes = await request('GET', '/api/v1/user/list', undefined, 'wrong-key');
     if (attemptRes.status === 429) lockoutSeen = true;
   }
-  const lockedOut = await request('GET', '/api/v1/user/list', undefined, 'mcp-selftest-key');
+  const lockedOut = await request('GET', '/api/v1/user/list', undefined, 'wrong-key');
   record('local-api 401 flood triggers 429 lockout', lockoutSeen && lockedOut.status === 429);
   const retryAfter = Number(lockedOut.headers['retry-after'] || 0);
   record('local-api lockout advertises retry-after', retryAfter >= 1 && retryAfter <= 60);
+  const authorized = await request('GET', '/api/v1/user/list', undefined, 'mcp-selftest-key');
+  record('valid clients remain authorized during peer lockout', authorized.status === 200);
 
   const fail = checks.filter((item) => !item.ok);
   for (const check of checks) console.log((check.ok ? 'PASS' : 'FAIL') + '  ' + check.name);

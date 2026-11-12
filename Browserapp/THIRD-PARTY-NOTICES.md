@@ -17,8 +17,8 @@ The complete upstream license text is included as `LICENSE.chrome-power.txt`.
 
 ## Desktop host runtime
 
-- Version: 43.1.1
-- Package: `desktop-shell` (npm alias)
+- Version: 43.8.8
+- Package: `electron` (npm)
 - License: MIT
 
 The portable release embeds a desktop application host and its bundled Chromium
@@ -33,3 +33,14 @@ component notices are included as `runtime/LICENSES.chromium.html`.
 - Usage: build-time only
 
 `rcedit` is used only while building the Windows portable package to set the project icon and version metadata. It is not loaded by the application at runtime.
+
+## Acorn
+
+- Version: 8.19.0
+- Source: https://github.com/acornjs/acorn
+- License: MIT
+
+The unmodified parser is bundled at `automation/vendor/acorn.js`. Private worker
+preparation embeds the compact `acorn-runtime.js`, generated reproducibly by
+`scripts/build-worker-parser.js` without changing token spelling or line breaks.
+The full MIT license is included in that runtime and in `automation/vendor/acorn.LICENSE`.

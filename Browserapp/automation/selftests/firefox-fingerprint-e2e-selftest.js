@@ -14,7 +14,7 @@ const { buildFirefoxUserJs, firefoxStartupArgs } = require('../kernel-versions')
 const { buildFirefoxFingerprint, initializeFirefoxFingerprint, navigateFirefoxStartup } = require('../firefox-fingerprint');
 const { BidiConnection, waitForFirefoxEndpoint, evaluateBidi } = require('../../network/bidi-connection');
 
-(async () => {
+async function run(generation) {
   const binary = process.env.OPENBROWSER_FIREFOX_BINARY;
   if (!binary) {
     console.error('Native Firefox verification requires OPENBROWSER_FIREFOX_BINARY; no browser checks ran.');
@@ -35,11 +35,7 @@ const { BidiConnection, waitForFirefoxEndpoint, evaluateBidi } = require('../../
   let connection;
   try {
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-    // Claim a panel larger than any headless default window (Linux headless Firefox opens a
-    // 1366x768 screen-sized window): the screen patch keeps screen.* >= the live window so
-    // geometry stays consistent, and a 1280x820 claim would correctly keep native width
-    // under a 1366 window and fail this gate on Linux while passing on a 1280-wide macOS host.
-    const profile = sanitizeProfile({ id: 'firefox-native', name: 'Firefox native', engine: 'firefox', os: 'Windows', width: 1440, height: 900, privacy: { cores: 4, memory: 0, webrtc: 'disabled', fontListMode: 'real', timezoneMode: 'custom', timezone: 'America/New_York' }, advanced: { showInfoPage: false } });
+    const profile = sanitizeProfile({ id: 'firefox-native', fingerprintVersion: generation, name: 'Firefox native', engine: 'firefox', os: 'Windows', width: 1440, height: 900, privacy: { cores: 4, memory: 0, webrtc: 'disabled', fontListMode: 'real', timezoneMode: 'custom', timezone: 'America/New_York' }, advanced: { showInfoPage: false } });
     const fp = buildFirefoxFingerprint(profile, version);
     await fs.writeFile(path.join(root, 'user.js'), buildFirefoxUserJs({
       userAgent: fp.userAgent, acceptLanguages: fp.languages.join(','), locale: fp.languages[0],
@@ -68,7 +64,7 @@ const { BidiConnection, waitForFirefoxEndpoint, evaluateBidi } = require('../../
     }
     assert.ok(requests.some((request) => request.path === '/doc' && request.ua === fp.userAgent));
     assert.ok(requests.some((request) => request.path === '/frame' && request.ua === fp.userAgent));
-    console.log(`Firefox ${version}: native document-start, iframe first-script, device fields, timezone and HTTP UA verified`);
+    console.log(`Firefox ${version} generation ${generation}: native document-start, iframe first-script, device fields, timezone and HTTP UA verified`);
     console.log('Workers: not certified by this document/iframe gate; capability remains best-effort.');
   } finally {
     connection?.close();
@@ -80,4 +76,6 @@ const { BidiConnection, waitForFirefoxEndpoint, evaluateBidi } = require('../../
     await new Promise((resolve) => server.close(resolve));
     await fs.rm(root, { recursive: true, force: true });
   }
-})().catch((error) => { console.error(error); process.exitCode = 1; });
+}
+run(1).then(() => process.exitCode === 2 ? undefined : run(2))
+  .catch((error) => { console.error(error); process.exitCode = 1; });

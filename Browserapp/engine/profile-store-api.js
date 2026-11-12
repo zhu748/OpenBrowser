@@ -57,18 +57,18 @@ module.exports = {
    * its row before editing again. Never silently resubmit an old draft with
    * a newer revision or use a full sync to bypass the conflict gate.
    */
-  async applyProfileCommands(commands) {
+  async applyProfileCommands(commands, options = {}) {
     if (!Array.isArray(commands) || commands.length > 200 || commands.length === 0) {
       throw new Error('Invalid profile commands');
     }
     const seen = new Set();
     const modify = [];
     for (const command of commands) {
-      if (!command || typeof command !== 'object' || command.kind !== 'modify') {
+      if (!command || typeof command !== 'object' || !['modify', 'patch'].includes(command.kind)) {
         throw new Error('Unknown profile command');
       }
       const id = assertProfileId(command.id);
-      if (!command.profile || command.profile.id !== id) {
+      if (command.kind === 'modify' && (!command.profile || command.profile.id !== id)) {
         throw Object.assign(new Error('Profile command ID does not match payload'), { code: 'PROFILE_COMMAND_ID_MISMATCH' });
       }
       if (!this.profiles.has(id)) {
@@ -78,7 +78,19 @@ module.exports = {
       seen.add(id);
       const baseRev = Number(command.baseRev);
       if (!Number.isInteger(baseRev) || baseRev < 0) throw new Error('Invalid base revision');
-      modify.push({ id, baseRev, profile: command.profile });
+      let profile = command.profile;
+      if (command.kind === 'patch') {
+        const patch = command.patch;
+        const fields = new Set(['name', 'title', 'number', 'groupId', 'tag', 'note']);
+        if (!patch || typeof patch !== 'object' || Array.isArray(patch)
+          || !Object.keys(patch).length || Object.keys(patch).some((key) => !fields.has(key))) {
+          throw new Error('Invalid profile metadata patch');
+        }
+        // Resolve untouched fields from authoritative state, never the UI's
+        // redacted or stale full profile. Identity and credentials cannot be patched.
+        profile = { ...this.profiles.get(id), ...patch };
+      }
+      modify.push({ id, baseRev, profile });
     }
     const stale = modify.filter((entry) => this.profiles.revisionOf?.(entry.id) !== entry.baseRev);
     if (stale.length) {
@@ -93,7 +105,8 @@ module.exports = {
     const staged = prepareProfileSync(this, modify.map((entry) => entry.profile));
     publishProfileSync(this, staged);
     await this.persist();
-    return this.status();
+    const rows = this.status();
+    return options?.delta === true ? rows.filter((row) => seen.has(row.id)) : rows;
   },
 
   async deleteProfiles(ids, deleteData = true) {

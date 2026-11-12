@@ -25,6 +25,8 @@ const workerGraphics = require('./runtime/worker-graphics');
 const workerGpuStorage = require('./runtime/worker-gpu-storage');
 const workerSessionBootstrap = require('./runtime/worker-session-bootstrap');
 const networkFragment = require('./runtime/network-fragment');
+const { runtimeSource: nativeArguments } = require('./native-arguments');
+const { runtimeSource: webglCapabilities } = require('./webgl-capabilities');
 const codecMatrixFragment = require('./runtime/codec-matrix-fragment');
 
 // Parse the assembled CFG once (it is a JSON literal produced by
@@ -73,55 +75,48 @@ function buildDocumentRuntime(context) {
   const drop = (keep) => (keep === false ? '' : undefined);
   return [
     documentBootstrap(context),
+    nativeArguments,
     documentNavigator,
     networkFragment,
     documentTimezoneAudio,
     drop(keepFonts) ?? documentFonts,
     documentScreen,
+    webglCapabilities,
     documentGraphics,
     drop(keepWebrtc) ?? documentWebrtc,
     drop(keepMedia) ?? documentMedia,
+    // Install inside the document helper closure, before its IIFE closes.
+    context.workerSource ? workerConstructorPatch({ workerSource: context.workerSource }) : '',
     documentGpuStorage,
     // Codec capability matrix: passive unless the CFG carries a matrix.
     codecMatrixFragment(context),
-    // blob:/data: worker identity delivery: the Fetch prefixer only sees
-    // network-loaded scripts, so inline workers need a main-world constructor
-    // patch (see runtime/worker-constructor-patch.js).
-    context.workerSource
-      ? workerConstructorPatch({ workerSource: context.workerSource })
-      : '',
   ].join('');
 }
 
 function buildWorkerRuntime(context) {
-  // The session bootstrap must be able to re-emit the ENTIRE worker prefix
-  // (itself included) for blob:/data: session delivery, so its __SELF_SOURCE__
-  // placeholder is substituted at assembly time — after assembly, replace the
-  // marker with the final source. See buildWorkerRuntimeFull below.
+  // A named, closure-local installer can serialize itself for child workers.
+  // The source is reconstructed only at runtime, without recursive embedding.
   const assembled = [
     workerBootstrap(context),
+    nativeArguments,
     networkFragment,
     workerTimezone,
+    webglCapabilities,
     workerGraphics,
     workerGpuStorage,
   ].join('');
   return assembled;
 }
 
-/** Full worker source including the session bootstrap. Callers that deliver
- *  worker identity (engine prefixer, document Worker patch) must use THIS
- *  builder so blob:/data: sessions can re-run original scripts under the
- *  already-installed prefix mocks. The session fragment carries NO copy of
- *  the prefix: re-emission runs the original text as a plain second
- *  importScripts after the bootstrap's own persona import (see
- *  runtime/worker-session-bootstrap.js), which keeps the composed document
- *  script free of a second font-payload copy (font-bridge budget).
+/** Add private nested-worker delivery and original WorkerLocation handling.
+ *  The fragment runs inside the named installer and adds no global hooks.
  */
 function buildWorkerRuntimeFull(context) {
   const body = buildWorkerRuntime(context);
   const closeIdx = body.lastIndexOf('})();');
-  if (closeIdx === -1) return body + workerSessionBootstrap;
-  return body.slice(0, closeIdx) + workerSessionBootstrap + body.slice(closeIdx);
+  if (closeIdx === -1) throw new Error('Worker installer closing expression is missing');
+  const complete = body.slice(0, closeIdx) + (context.fontPresenceSource || '') + workerSessionBootstrap + body.slice(closeIdx);
+  return complete.replace(/\(\);\s*$/, '');
 }
 
 module.exports = { buildDocumentRuntime, buildWorkerRuntime, buildWorkerRuntimeFull };

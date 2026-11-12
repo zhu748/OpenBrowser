@@ -10,7 +10,7 @@ function registerProfileIpc({ registerTrustedIpc, engine, sanitizeIds, beforeRem
     return ids;
   }
   registerTrustedIpc('profiles:sync', (_event, profiles) => engine.syncProfiles(profiles));
-  registerTrustedIpc('profiles:apply-commands', (_event, commands) => captureIpcResult(() => engine.applyProfileCommands(commands)));
+  registerTrustedIpc('profiles:apply-commands', (_event, commands, options) => captureIpcResult(() => engine.applyProfileCommands(commands, options)));
   registerTrustedIpc('profiles:editor-state', (_event, id) => captureIpcResult(() => engine.profileForEdit(id)));
   registerTrustedIpc('profiles:delete', (_event, payload) => engine.deleteProfiles(removalIds(payload), payload?.deleteData !== false));
   registerTrustedIpc('profiles:trash', (_event, payload) => engine.trashProfiles(removalIds(payload)));

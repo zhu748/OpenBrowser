@@ -312,6 +312,7 @@ function cloneProfilePreferences(profile) {
   delete privacy.mediaLabels;
   return {
     os: value.os,
+    fingerprintVersion: Number(value.fingerprintVersion || 1),
     userAgent: value.userAgent,
     width: value.width,
     height: value.height,
@@ -2226,6 +2227,34 @@ async function clearProfileCache(id) {
     toast(tx('清除失败：') + error.message);
   }
 }
+async function commitProfilePatches(patches) {
+  try {
+    return await window.OpenBrowserProfileCommands.commitProfilePatches({
+      patches, rows: engineProfiles,
+      applyCommands: (commands, options) => window.ops.applyProfileCommands(commands, options),
+      onCommitted(commands, accepted) {
+        const byId = new Map(accepted.map((row) => [row.id, row]));
+        const byCommand = new Map(commands.map((command) => [command.id, command]));
+        engineProfiles = engineProfiles.map((row) => byId.get(row.id) || row);
+        ui.profiles = ui.profiles.map((profile) => {
+          const command = byCommand.get(profile.id);
+          if (!command) return profile;
+          const row = byId.get(profile.id);
+          return { ...profile, ...Object.fromEntries(Object.keys(command.patch).map((key) => [key, row[key]])) };
+        });
+        save();
+        invalidateViewCache(['profiles', 'groups', 'sync']);
+      },
+    });
+  } catch (error) {
+    if (error.completedCount > 0) {
+      renderProfiles();
+      error.message = tx('已完成 ') + error.completedCount + tx(' 个环境，其余未完成：') + error.message;
+    }
+    throw error;
+  }
+}
+
 // Roxy 对齐：批量备注 / 批量标签（行菜单单个标签也走这里）
 function openBatchQuickDialog(mode, singleId = null) {
   const ids = singleId ? [singleId] : [...selectedProfiles];
@@ -2250,29 +2279,12 @@ $('#batch-quick-form')?.addEventListener('submit', async (event) => {
   let ids = [];
   try { ids = JSON.parse(field.dataset.ids || '[]'); } catch (_) { ids = []; }
   const value = field.value.trim();
-  const previous = new Map();
-  for (const id of ids) {
-    const profile = ui.profiles.find((item) => item.id === id);
-    if (!profile) continue;
-    previous.set(id, { tag: profile.tag, note: profile.note });
-    if (mode === 'tag') profile.tag = value;
-    else profile.note = value;
-  }
-  save();
-  invalidateViewCache(['profiles', 'sync']);
   try {
-    engineProfiles = await window.ops.syncProfiles(ui.profiles);
+    const existing = new Set(ui.profiles.map((profile) => profile.id));
+    await commitProfilePatches(ids.filter((id) => existing.has(id)).map((id) => ({
+      id, patch: { [mode === 'tag' ? 'tag' : 'note']: value },
+    })));
   } catch (error) {
-    // Roll back so local state does not diverge from the engine while the
-    // toast claims success (same pattern as every other syncProfiles caller).
-    for (const [id, snapshot] of previous) {
-      const profile = ui.profiles.find((item) => item.id === id);
-      if (!profile) continue;
-      profile.tag = snapshot.tag;
-      profile.note = snapshot.note;
-    }
-    save();
-    invalidateViewCache(['profiles', 'sync']);
     $('#batch-quick-dialog').close();
     renderProfiles();
     log('Error', '环境同步失败: ' + ((error && error.message) || error));
@@ -3353,6 +3365,7 @@ $('#profile-form').addEventListener('submit', async (event) => {
   const template = templateId ? ui.profiles.find((item) => item.id === templateId) : null;
   const profile = {
     id: createInternalProfileId(number),
+    fingerprintVersion: Number(template?.fingerprintVersion || (template ? 1 : 2)),
     number,
     name: String(number),
     browser: data.get('browser') || template?.browser || 'Google Chrome',
@@ -3371,7 +3384,7 @@ $('#profile-form').addEventListener('submit', async (event) => {
     advanced: {
       ...(template?.advanced || {}),
       startUrls: startUrl,
-      // Roxy 对齐的新环境默认值：弹出保存密码提示开、端口扫描保护开、DNT 开、硬件并发 12、内存 8G、MAC 自定义
+      // Roxy 对齐的新环境默认值：弹出保存密码提示开、端口扫描保护开、DNT 开，硬件参数随设备人格
       promptSavePassword: template?.advanced?.promptSavePassword !== undefined ? template.advanced.promptSavePassword : true,
       openWorkbench: template?.advanced?.openWorkbench || '1',
       ipChangeRemind: template?.advanced?.ipChangeRemind || '2',
@@ -3388,8 +3401,6 @@ $('#profile-form').addEventListener('submit', async (event) => {
         dntMode: 'on',
         dnt: true,
         portScanProtect: true,
-        cores: '12',
-        memory: '8',
         macMode: 'custom',
       }),
       ...(template?.privacy ? JSON.parse(JSON.stringify(template.privacy)) : {}),
@@ -3708,6 +3719,7 @@ $('#batch-add-form').addEventListener('submit', async (event) => {
     created.push({
       ...(templatePreferences ? structuredClone(templatePreferences) : {}),
       id,
+      fingerprintVersion: Number(templatePreferences?.fingerprintVersion || (templatePreferences ? 1 : 2)),
       number,
       name: String(number),
       title: '',
@@ -3911,15 +3923,12 @@ $('#renumber-profiles')?.addEventListener('click', async () => {
     tone: 'danger',
   })) return;
   try {
-    ui.profiles.forEach((profile, index) => {
-      const num = index + 1;
-      profile.number = num;
-      profile.name = String(num);
-    });
+    await commitProfilePatches(ui.profiles.map((profile, index) => ({
+      id: profile.id, patch: { number: index + 1, name: String(index + 1) },
+    })));
     ui.nextProfileNumber = ui.profiles.length + 1;
     save();
     invalidateViewCache('profiles');
-    engineProfiles = await window.ops.syncProfiles(ui.profiles);
     renderProfiles();
     log('Profile', `已将 ${ui.profiles.length} 个环境重新编号为 1..${ui.profiles.length}`);
     toast(tx(`已将 ${ui.profiles.length} 个环境重排为 1..${ui.profiles.length}`));
@@ -4520,7 +4529,7 @@ $('#batch-import-file').addEventListener('change', async (event) => {
     const extension = file.name.toLowerCase().endsWith('.json') ? 'json' : 'csv'; const parsed = parseImportedProfiles(await file.text(), extension);
     const imported = parsed.rows;
     const start = nextProfileNumber(); const used = new Set(ui.profiles.map((item) => item.id));
-    const normalized = imported.map((item, index) => { const number = start + index; const id = createInternalProfileId(number, used); used.add(id); return { id, number, name: String(number), browser: 'Google Chrome', language: String(item.language || 'en-US'), proxy: String(item.proxy || item.ip || 'Direct'), proxyType: String(item.proxyType || item.proxytype || ''), exitIp: String(item.exitIp || item.ip || ''), exitCountryCode: String(item.exitCountryCode || item.countrycode || ''), tag: String(item.tag || item.group || 'Imported'), os: 'Windows', location: String(item.location || 'Local') }; });
+    const normalized = imported.map((item, index) => { const number = start + index; const id = createInternalProfileId(number, used); used.add(id); return { id, fingerprintVersion: 2, number, name: String(number), browser: 'Google Chrome', language: String(item.language || 'en-US'), proxy: String(item.proxy || item.ip || 'Direct'), proxyType: String(item.proxyType || item.proxytype || ''), exitIp: String(item.exitIp || item.ip || ''), exitCountryCode: String(item.exitCountryCode || item.countrycode || ''), tag: String(item.tag || item.group || 'Imported'), os: 'Windows', location: String(item.location || 'Local') }; });
     ui.profiles.push(...normalized); ui.nextProfileNumber = start + normalized.length; save(); invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies']); engineProfiles = await window.ops.syncProfiles(ui.profiles); renderProfiles(); log('Import', '\u6279\u91cf\u5bfc\u5165 ' + normalized.length + ' \u4e2a\u73af\u5883');
     // 截断必须用户可见（沿用既有 toast 约定），否则用户以为全量导入成功。
     if (parsed.truncated) toast('\u5df2\u5bfc\u5165 ' + normalized.length + ' \u4e2a\u73af\u5883\uff08\u8d85\u51fa\u4e0a\u9650\uff0c\u5df2\u622a\u65ad\u4e3a\u524d ' + normalized.length + ' \u884c\uff09');

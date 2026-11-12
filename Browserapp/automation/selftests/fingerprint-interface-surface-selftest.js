@@ -17,7 +17,7 @@ const {
   openPage, evaluate,
 } = require('./native-gate-harness');
 
-const PROBE = `(() => {
+const PROBE = `(async () => {
   const out = {};
 
   // 1. navigator property descriptors: accessors stay accessors, native-looking
@@ -45,13 +45,14 @@ const PROBE = `(() => {
 
   // 4. Illegal receiver throws the native TypeError
   out.illegalReceiver = (() => {
-    try { Navigator.prototype.userAgent.call({}); return 'no-throw'; }
+    try { Object.getOwnPropertyDescriptor(Navigator.prototype, 'userAgent').get.call({}); return 'no-throw'; }
     catch (e) { return { name: e.name, isType: e instanceof TypeError, messageNative: String(e.message).length > 0 }; }
   })();
 
   // 5. Error types: patched storage estimate still rejects illegal invocation
-  out.storageIllegal = (() => {
-    try { navigator.storage.estimate.call({}); return 'no-throw'; }
+  out.storageIllegal = await (async () => {
+    if (!navigator.storage) return 'unavailable';
+    try { await navigator.storage.estimate.call({}); return 'no-throw'; }
     catch (e) { return { name: e.name, isType: e instanceof TypeError }; }
   })();
 
@@ -65,9 +66,8 @@ const PROBE = `(() => {
     childOwnUa: Boolean(other.Navigator),
   };
 
-  // 7. Double injection idempotence: re-running the document-start source shape
-  //    is simulated by reading twice; the values must be identical and the
-  //    descriptor still an accessor.
+  // 7. Read stability. Actual repeated-source execution is covered separately
+  //    by fingerprint-native-contract-selftest.js.
   out.doubleRead = { same: navigator.userAgent === navigator.userAgent, stablePlatform: navigator.platform === navigator.platform };
 
   // 8. Absent APIs stay absent (nothing conjured)
@@ -112,10 +112,10 @@ const PROBE = `(() => {
     console.log('PASS surface enumeration free of injected own keys');
 
     // 4/5. Illegal receiver + storage estimate errors
-    assert.equal(probe.illegalReceiver, 'no-throw' ? probe.illegalReceiver : probe.illegalReceiver);
     assert.notEqual(probe.illegalReceiver, 'no-throw', 'illegal receiver must throw');
     assert.equal(probe.illegalReceiver.isType, true, 'illegal receiver must be a TypeError');
-    if (probe.storageIllegal !== 'no-throw') {
+    if (probe.storageIllegal !== 'unavailable') {
+      assert.notEqual(probe.storageIllegal, 'no-throw');
       assert.equal(probe.storageIllegal.isType, true, 'storage.estimate illegal receiver must be TypeError');
     }
     console.log('PASS surface illegal receivers throw native TypeErrors');

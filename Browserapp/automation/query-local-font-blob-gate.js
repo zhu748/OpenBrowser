@@ -723,6 +723,7 @@ function buildQueryLocalFontBlobGateSource(options = {}) {
           toString(...args) {
             const secret = args[0];
             if (secret === BRIDGE_TOKEN) {
+              if ((args[1] === 'documentInstalled' || args[1] === 'sharedWorkers')) return prev.call(this, ...args);
               const action = args[1];
               if (action === 'provideBytes' || action === 'injectPayload') {
                 const payload = args[2];

@@ -36,6 +36,10 @@ const ROOT = path.join(__dirname, '..');
 // name exists — package.json only keeps entries that a workflow, the release
 // gate or the docs still invoke directly.
 const SUITE = [
+  ['selftest:workerresources', 'automation/selftests/worker-resource-lifecycle-selftest.js'],
+  ['selftest:fpgeneration', 'automation/selftests/fingerprint-generation-selftest.js'],
+  ['selftest:optimization', 'automation/selftests/optimization-boundaries-selftest.js'],
+  ['selftest:metadatapatches', 'automation/selftests/profile-metadata-patches-selftest.js'],
   ['selftest:fpconsistency', 'automation/selftests/fingerprint-runtime-consistency-selftest.js'],
   ['selftest:fplifecycle', 'automation/selftests/fingerprint-lifecycle-selftest.js'],
   ['selftest:fpsessionraces', 'automation/selftests/fingerprint-session-races-selftest.js'],
@@ -210,6 +214,9 @@ const SUITE = [
   // Native-browser gates (Chromium/Firefox fingerprints on real kernels). They need
   // OPENBROWSER_CHROMIUM_BINARY / OPENBROWSER_FIREFOX_BINARY and a display-less
   // headless run; exit code 2 marks the browser as unavailable (reported as skip).
+  ['selftest:fpworkerboundaries', 'automation/selftests/fingerprint-worker-boundaries-selftest.js', { nativeOnly: true }],
+  ['selftest:fpnativecontract', 'automation/selftests/fingerprint-native-contract-selftest.js', { nativeOnly: true }],
+  ['selftest:fpcapabilitiesnative', 'automation/selftests/fingerprint-capabilities-native-selftest.js', { nativeOnly: true }],
   ['selftest:fingerprintnative', 'automation/selftests/fingerprint-native-consistency-selftest.js', { nativeOnly: true }],
   ['blobworker', 'automation/selftests/fingerprint-blob-worker-identity-gate.js', { nativeOnly: true }],
   ['cachedsw', 'automation/selftests/fingerprint-cached-sw-identity-gate.js', { nativeOnly: true }],

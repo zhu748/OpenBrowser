@@ -20,7 +20,7 @@ const { assertProfileId } = require('./isolation');
 const BACKUP_VERSION = 1;
 const REMOTE_NAME = 'openbrowser-backup.obpack';
 const { MAX_BACKUP_PACKAGE_BYTES, MAX_BACKUP_JSON_BYTES, MAX_BROWSER_DATA_BYTES,
-  MAX_REMOTE_RESPONSE_BYTES, MAX_REMOTE_ERROR_BYTES } = require('./cloud/limits');
+  MAX_REMOTE_ERROR_BYTES } = require('./cloud/limits');
 const SAFE_GITHUB_NAME = /^[A-Za-z0-9_.-]{1,100}$/;
 const SAFE_GITHUB_BRANCH = /^[A-Za-z0-9._\/-]{1,255}$/;
 
@@ -413,14 +413,17 @@ async function uploadGitHub(config, buffer, remoteName = REMOTE_NAME) {
     method: 'GET',
     headers: {
       Authorization: `Bearer ${token}`,
-      Accept: 'application/vnd.github+json',
+      Accept: 'application/vnd.github.object+json',
       'User-Agent': 'OpenBrowser-CloudSync',
     },
-    maxBytes: MAX_REMOTE_ERROR_BYTES,
+    // Contents <=1 MiB include base64; larger files return metadata with this
+    // media type. Bound successful metadata separately from short error text.
+    maxBytes: 2 * 1024 * 1024,
   });
   if (getRes.status === 200) {
-    try { sha = JSON.parse(getRes.body.toString('utf8')).sha; } catch (_) {}
-  }
+    sha = JSON.parse(getRes.body.toString('utf8')).sha;
+    if (!/^[a-f0-9]{40,64}$/i.test(String(sha || ''))) throw new Error('GitHub 备份元数据缺少有效 SHA');
+  } else if (getRes.status !== 404) throw new Error(`GitHub 备份元数据读取失败 (${getRes.status})`);
   const payload = JSON.stringify({
     message: `OpenBrowser backup ${nowIso()} · ${remoteName}`,
     content: buffer.toString('base64'),
@@ -451,17 +454,14 @@ async function downloadGitHub(config, remoteName = REMOTE_NAME) {
     method: 'GET',
     headers: {
       Authorization: `Bearer ${token}`,
-      Accept: 'application/vnd.github+json',
+      Accept: 'application/vnd.github.raw+json',
       'User-Agent': 'OpenBrowser-CloudSync',
     },
-    maxBytes: MAX_REMOTE_RESPONSE_BYTES,
+    maxBytes: MAX_BACKUP_PACKAGE_BYTES,
   });
   if (res.status !== 200) throw new Error(`GitHub 下载失败 (${res.status})`);
-  const json = JSON.parse(res.body.toString('utf8'));
-  if (!json.content) throw new Error('GitHub 文件内容为空');
-  const decoded = Buffer.from(String(json.content).replace(/\n/g, ''), 'base64');
-  if (decoded.length > MAX_BACKUP_PACKAGE_BYTES) throw new Error('GitHub 备份超过安全限制');
-  return decoded;
+  if (!res.body.length) throw new Error('GitHub 文件内容为空');
+  return res.body;
 }
 
 /** Google Drive via "application data" style: user provides WebDAV-compatible endpoint or API key is not enough.

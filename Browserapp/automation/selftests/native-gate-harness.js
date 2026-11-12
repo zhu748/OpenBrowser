@@ -21,7 +21,7 @@ const { spawn, spawnSync } = require('node:child_process');
 const cdp = require('../../cdp');
 const { buildFingerprint } = require('../fingerprint');
 const { sanitizeProfile } = require('../../engine/profile-sanitizer');
-const { buildBaseLaunchArguments } = require('../../engine/launch-arguments');
+const { buildBaseLaunchArguments, completeLaunchArguments } = require('../../engine/launch-arguments');
 const injection = require('../../engine/fingerprint-injection');
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -123,9 +123,11 @@ async function launchPersonaBrowser(browser, persona, options = {}) {
     return closing;
   };
   try {
-    const args = buildBaseLaunchArguments({ root, fingerprint, profile, hostScaleFactor: options.hostDpr || 1 });
+    const initialArgs = buildBaseLaunchArguments({ root, fingerprint, profile, hostScaleFactor: options.hostDpr || 1 });
+    const args = completeLaunchArguments(initialArgs, { profile, proxyConfig: null,
+      proxyEndpoint: 'http://127.0.0.1:9' }).args.filter((arg) => arg !== 'about:blank');
     // Only loopback test pages may bypass the unavailable outbound proxy.
-    args.push('--headless=new', '--disable-dev-shm-usage', '--disable-background-networking',
+    args.push(...(options.headless === false ? [] : ['--headless=new']), '--disable-dev-shm-usage', '--disable-background-networking',
       '--disable-popup-blocking',
       '--proxy-server=http://127.0.0.1:9', '--proxy-bypass-list=127.0.0.1;localhost');
     if (!args.some((arg) => arg.startsWith('--force-device-scale-factor='))) args.push('--force-device-scale-factor=' + (options.hostDpr || 1));

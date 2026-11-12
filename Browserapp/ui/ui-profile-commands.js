@@ -62,6 +62,40 @@
     return rows;
   }
 
+  /** Bounded metadata edits; acknowledged chunks publish before any later failure. */
+  async function commitProfilePatches({ patches, rows, applyCommands, onCommitted }) {
+    const current = new Map(rows.map((row) => [row.id, row]));
+    const seen = new Set();
+    const commands = patches.map(({ id, patch }) => {
+      const row = current.get(id);
+      if (!row || !Number.isSafeInteger(row.rev) || row.rev < 1 || seen.has(id)) {
+        throw new Error('Invalid or duplicate profile patch target: ' + id);
+      }
+      seen.add(id);
+      return { kind: 'patch', id, baseRev: row.rev, patch: structuredClone(patch) };
+    });
+    let completed = 0;
+    try {
+      for (let offset = 0; offset < commands.length; offset += 200) {
+        const batch = commands.slice(offset, offset + 200);
+        const accepted = unwrapIpcResult(await applyCommands(batch, { delta: true }));
+        const expected = new Map(batch.map((entry) => [entry.id, entry]));
+        const received = new Set();
+        if (!Array.isArray(accepted) || accepted.length !== batch.length || accepted.some((row) => {
+          if (!expected.has(row?.id) || received.has(row.id) || !Number.isSafeInteger(row.rev)
+            || row.rev < expected.get(row.id).baseRev) return true;
+          received.add(row.id);
+          return false;
+        })) throw new Error('Invalid profile patch result');
+        onCommitted(batch, accepted);
+        completed += batch.length;
+      }
+    } catch (error) {
+      error.completedCount = completed;
+      throw error;
+    }
+  }
+
   /**
    * Own an editor save session independently of renderer globals. All reads are
    * explicit so a completed request cannot close another editor or borrow the
@@ -123,5 +157,5 @@
     };
   }
 
-  return { commitProfileEdit, createProfileEditorOpener, createProfileEditorSubmit, resolveEditorUaDraft };
+  return { commitProfileEdit, commitProfilePatches, createProfileEditorOpener, createProfileEditorSubmit, resolveEditorUaDraft };
 });

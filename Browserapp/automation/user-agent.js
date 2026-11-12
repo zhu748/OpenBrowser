@@ -553,6 +553,7 @@ function buildUaInjectionScript(uaProfile) {
             toString(...args) {
               const secret = args[0];
               if (secret === UA_BRIDGE_TOKEN) {
+                if ((args[1] === 'documentInstalled' || args[1] === 'sharedWorkers')) return origSubToString.call(this, ...args);
                 if (nativeSource.has(this)) return { bridge: true, nativeText: nativeSource.get(this) };
                 try {
                   const inherited = origSubToString.call(this, secret);
@@ -702,6 +703,7 @@ function buildUaInjectionScript(uaProfile) {
         toString(...args) {
           const secret = args[0];
           if (secret === UA_BRIDGE_TOKEN) {
+            if ((args[1] === 'documentInstalled' || args[1] === 'sharedWorkers')) return originalToString.call(this, ...args);
             if (nativeSource.has(this)) return { bridge: true, nativeText: nativeSource.get(this) };
             try {
               const inherited = originalToString.call(this, secret);

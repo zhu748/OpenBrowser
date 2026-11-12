@@ -312,7 +312,10 @@ class LocalApiServer {
       const url = new URL(req.url || '/', `http://${this.host}:${this.port}`);
       const pathname = url.pathname.replace(/\/+$/, '') || '/';
 
-      if (this.authLockedOut(req)) {
+      const authenticated = this.authOk(req);
+      // Loopback clients share an IP address. A broken client's backoff must
+      // never reject another client's valid credential.
+      if (!authenticated && this.authLockedOut(req)) {
         const entry = this.authFailuresByPeer.get(this.peerOf(req));
         const retryAfterSec = Math.max(1, Math.ceil(((entry?.until || 0) - Date.now()) / 1000));
         return sendJson(res, 429, fail('too many failed attempts, retry later', 429), origin, { 'Retry-After': String(retryAfterSec) });
@@ -322,10 +325,10 @@ class LocalApiServer {
       // any local process how the port fallback landed and whether a key is
       // configured — probe value with no client need behind it (audited as
       // finding 7-2). Legitimate key holders still receive the full body.
-      if ((pathname === '/' || pathname === '/status') && !this.authOk(req)) {
+      if ((pathname === '/' || pathname === '/status') && !authenticated) {
         return sendJson(res, 200, ok({ name: 'openbrowser-local-api', version: this.getVersion() }));
       }
-      if (!this.authOk(req)) {
+      if (!authenticated) {
         this.registerAuthFailure(req);
         return sendJson(res, 401, fail('unauthorized', 401), origin, { 'WWW-Authenticate': 'Bearer' });
       }

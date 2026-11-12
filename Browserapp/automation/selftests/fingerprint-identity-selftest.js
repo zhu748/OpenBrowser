@@ -177,7 +177,7 @@ function scopeFor(fp) {
     assert.equal(queries.at(-1), '(resolution: 1garbage)');
     const ios = scopeFor(buildFingerprint(profile({ os: 'iOS' })));
     assert.equal(vm.runInContext(`CSS.supports('not (-webkit-touch-callout: none) and (display: invalid)')`, ios.scope), false);
-    assert.equal(ios.queries.at(-1), 'not (display: block) and (display: invalid)');
+    assert.equal(ios.queries.at(-1), 'not (-webkit-touch-callout: none) and (display: invalid)', 'iOS capability queries must reach the actual CSS parser unchanged');
   });
   await test('the production async probe and strict delivery detect high-entropy Client Hints drift', async () => {
     const fp = buildFingerprint(profile());

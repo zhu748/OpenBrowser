@@ -14,6 +14,20 @@ module.exports = `  // --- screen ---
     const rawWinHeightDesc = Object.getOwnPropertyDescriptor(window, 'innerHeight') || Object.getOwnPropertyDescriptor(Object.getPrototypeOf(window), 'innerHeight');
     const rawInnerHeightGet = rawWinHeightDesc?.get ? () => rawWinHeightDesc.get.call(window) : null;
 
+    // Keep native mobile outer metrics: without a viewport meta tag the layout
+    // viewport may be 980px wide while the device window is only 320px wide.
+    const captureOuter = (key, fallback) => {
+      const desc = Object.getOwnPropertyDescriptor(window, key)
+        || Object.getOwnPropertyDescriptor(Object.getPrototypeOf(window), key);
+      const initial = Number(window[key]) || fallback;
+      return () => {
+        try { return Number(desc?.get ? desc.get.call(window) : initial) || fallback; }
+        catch (_) { return fallback; }
+      };
+    };
+    const nativeOuterWidth = captureOuter('outerWidth', Number(CFG.mobileDevice?.viewport?.width) || baseScreenWidth);
+    const nativeOuterHeight = captureOuter('outerHeight', Number(CFG.mobileDevice?.viewport?.height) || baseScreenHeight);
+
     const rawVisualViewport = window.visualViewport;
     const rawVisualWidthDesc = rawVisualViewport ? (Object.getOwnPropertyDescriptor(rawVisualViewport, 'width') || Object.getOwnPropertyDescriptor(Object.getPrototypeOf(rawVisualViewport), 'width')) : null;
     const rawVisualWidthGet = rawVisualWidthDesc?.get ? () => rawVisualWidthDesc.get.call(rawVisualViewport) : null;
@@ -22,6 +36,13 @@ module.exports = `  // --- screen ---
 
     const liveViewportSize = (axis, fallback) => {
       try {
+        // Preserve the layout viewport and native rounding under mobile page
+        // scaling; visualViewport can be narrower by a fractional pixel.
+        const mobileInner = axis === 'width' ? rawInnerWidthGet : rawInnerHeightGet;
+        if (MOBILE && typeof mobileInner === 'function') {
+          const size = Number(mobileInner());
+          if (Number.isFinite(size) && size > 0) return size;
+        }
         if (axis === 'width') {
           if (typeof rawVisualWidthGet === 'function') {
             const vw = Number(rawVisualWidthGet());
@@ -51,8 +72,8 @@ module.exports = `  // --- screen ---
       return fallback;
     };
 
-    // A phone has no desktop title bar or window chrome: outerWidth/outerHeight track the layout
-    // viewport, the touch surface has to exist as own properties rather than only through
+    // A phone has no desktop title bar or window chrome: outerWidth/outerHeight track the device
+    // window, the touch surface has to exist as own properties rather than only through
     // navigator.maxTouchPoints, and screen.* stays the panel instead of growing with the window.
     const dynamicScreen = {
       // A display is stable when its window is resized. Growing screen.* with
@@ -77,24 +98,29 @@ module.exports = `  // --- screen ---
         }
       } catch (_) {}
     }
-    // Shape parity (P0-1): in real Chromium these metrics are enumerable
-    // accessors on Window.prototype, NOT own properties of the window
-    // instance. Installing them as own props made Object.getOwnPropertyNames
-    // / Object.keys(window) reveal the persona (extra own keys that no stock
-    // browser has). Install on the prototype and delete any same-named own
-    // property so the shape probes see a stock window.
+    // Preserve the descriptor's original owner, flags, setter and brand check.
+    // Chromium Window metrics are replaceable own accessors on WindowProxy.
     const defineWindowMetric = (key, desc) => {
       try {
-        const proto = Object.getPrototypeOf(window);
-        if (proto && proto !== Object.prototype) {
-          Object.defineProperty(proto, key, { configurable: true, enumerable: true, get: desc.get, set: desc.set });
-          try { delete window[key]; } catch (_) {}
-        } else {
-          Object.defineProperty(window, key, desc);
-        }
-      } catch (_) {
-        try { Object.defineProperty(window, key, desc); } catch (_) {}
-      }
+        let owner = window;
+        let original;
+        while (owner && !(original = Object.getOwnPropertyDescriptor(owner, key))) owner = Object.getPrototypeOf(owner);
+        if (!owner) owner = window;
+        const read = desc.get;
+        const nativeGet = original?.get;
+        const getter = typeof nativeGet === 'function'
+          ? nativeLike(function () {
+            const native = Reflect.apply(nativeGet, this, []);
+            return this === window ? read.call(this) : native;
+          }, nativeGet, nativeGet.name, nativeGet.length)
+          : read;
+        Object.defineProperty(owner, key, {
+          configurable: original?.configurable ?? true,
+          enumerable: original?.enumerable ?? true,
+          get: getter,
+          set: original?.set || desc.set,
+        });
+      } catch (_) {}
     };
     try { defineWindowMetric('devicePixelRatio', nativeAccessor('devicePixelRatio', { configurable: true, get: () => s.devicePixelRatio || 1 })); } catch (_) {}
     for (const [key, value] of Object.entries({ screenX: s.screenX, screenY: s.screenY, screenLeft: s.screenX, screenTop: s.screenY })) {
@@ -105,18 +131,8 @@ module.exports = `  // --- screen ---
     const initialInnerHeight = Number(window.innerHeight) || Number(s.availHeight) || Number(s.height) || 1;
     try { defineWindowMetric('innerWidth', nativeAccessor('innerWidth', { configurable: true, get: () => liveViewportSize('width', initialInnerWidth) })); } catch (_) {}
     try { defineWindowMetric('innerHeight', nativeAccessor('innerHeight', { configurable: true, get: () => liveViewportSize('height', initialInnerHeight) })); } catch (_) {}
-    const isFullscreen = () => {
-      try { return Boolean(document && (document.fullscreenElement || document.webkitFullscreenElement)); }
-      catch (_) { return false; }
-    };
-    const getOuterHeight = () => {
-      const h = liveViewportSize('height', initialInnerHeight);
-      return (MOBILE || isFullscreen()) ? h : (h + 88);
-    };
-    const getOuterWidth = () => {
-      const w = liveViewportSize('width', initialInnerWidth);
-      return (MOBILE || isFullscreen()) ? w : (w + 16);
-    };
+    const getOuterHeight = () => nativeOuterHeight();
+    const getOuterWidth = () => nativeOuterWidth();
     try { defineWindowMetric('outerWidth', nativeAccessor('outerWidth', { configurable: true, get: getOuterWidth })); } catch (_) {}
     try { defineWindowMetric('outerHeight', nativeAccessor('outerHeight', { configurable: true, get: getOuterHeight })); } catch (_) {}
     if (MOBILE) {
@@ -363,14 +379,6 @@ module.exports = `  // --- screen ---
                     } catch (_) {}
                   }
                   if (nativeSource.has(this)) return nativeSource.get(this);
-                  try {
-                    if (typeof this.toString === "function" && this.toString !== patchedSubToString) {
-                      const crossRealm = this.toString(BRIDGE_TOKEN);
-                      if (crossRealm && typeof crossRealm === "object" && crossRealm.bridge === true && crossRealm.nativeText) {
-                        return crossRealm.nativeText;
-                      }
-                    }
-                  } catch (_) {}
                   return origSubToString.call(this, ...args);
                 } finally {
                   subToStringReentryDepth -= 1;

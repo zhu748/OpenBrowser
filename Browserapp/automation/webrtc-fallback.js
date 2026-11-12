@@ -110,6 +110,7 @@ function createWebRtcFallbackSource(options) {
       const patchedToString = function toString(...args) {
         const secret = args[0];
         if (secret === BRIDGE_TOKEN) {
+          if ((args[1] === 'documentInstalled' || args[1] === 'sharedWorkers')) return originalFunctionToString.call(this, ...args);
           if (nativeSource.has(this)) return { bridge: true, nativeText: nativeSource.get(this) };
           try {
             const inherited = originalFunctionToString.call(this, secret);

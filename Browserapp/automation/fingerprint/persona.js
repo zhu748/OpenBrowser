@@ -1,5 +1,7 @@
 'use strict';
 
+const { fingerprintVersion, createFingerprintDraw } = require('./generation');
+
 const { normalizeCoordinates } = require('../../shared/profile-values');
 const { normalizeUaOs, parseChromeVersion, osChromeSupportViolation } = require('../user-agent');
 
@@ -9,7 +11,7 @@ const { normalizeUaOs, parseChromeVersion, osChromeSupportViolation } = require(
  * Extracted verbatim from the former automation/fingerprint.js.
  */
 
-const { pickPersona, fontsForOs, exclusiveFontsForOtherOs, getHostWebglLimits, isPersonaWebglCompatible, resolveCompatiblePersona, applyPersonaPerturbations, mobilePersona, supportsRuntimePersona, buildUaProfile, randomUaForSeed, buildAcceptLanguageHeader, parseOsFromUa, OS_PRESETS, canonicalBridgeToken, hashSeed, u32, mulberry32, WEBGL_PRESETS, webglPresetsForOs, WEBGL_PARAM_IDS, webglParameterOverrides, expectedClientHintPlatform, buildWebglFpPayload, desktopOs, resolveStabilityPolicy, createBatteryFromSeed, createMediaDevicesFromSeed, createSpeechVoicesFromSeed, createDeviceNameFromSeed, createLocalIpFromSeed, createLocalMdnsFromSeed, formatGeopositionValue, audioMarkFromSeed, clientRectMarkFromSeed } = require('./shared');
+const { pickPersona, fontsForOs, exclusiveFontsForOtherOs, isPersonaWebglCompatible, resolveCompatiblePersona, applyPersonaPerturbations, mobilePersona, supportsRuntimePersona, buildUaProfile, randomUaForSeed, buildAcceptLanguageHeader, parseOsFromUa, OS_PRESETS, canonicalBridgeToken, hashSeed, mulberry32, WEBGL_PRESETS, webglPresetsForOs, webglParameterOverrides, expectedClientHintPlatform, buildWebglFpPayload, desktopOs, resolveStabilityPolicy, createBatteryFromSeed, createMediaDevicesFromSeed, createSpeechVoicesFromSeed, createDeviceNameFromSeed, createLocalIpFromSeed, createLocalMdnsFromSeed, formatGeopositionValue, audioMarkFromSeed, clientRectMarkFromSeed } = require('./shared');
 
 
 /**
@@ -24,7 +26,9 @@ function buildFingerprint(profile = {}) {
   // persistent fingerprintSeed for legacy profiles on first launch.
   const identitySeed = profile.fingerprintSeed ? `${stableIdentity}:${profile.fingerprintSeed}` : stableIdentity;
   const seed = hashSeed(launchSeed ? `${identitySeed}:${launchSeed}` : identitySeed);
-  const rnd = mulberry32(u32(seed, 0));
+  const version = fingerprintVersion(profile.fingerprintVersion);
+  const draw = createFingerprintDraw(seed, version);
+  const rnd = mulberry32(draw('sequence', 0));
   const privacy = profile.privacy || {};
   const fpIn = (privacy.fingerprint && typeof privacy.fingerprint === 'object' ? privacy.fingerprint : null) || (profile.fingerprint && typeof profile.fingerprint === 'object' ? profile.fingerprint : {});
 
@@ -40,7 +44,7 @@ function buildFingerprint(profile = {}) {
   const hasMemoryOverride = Number.isFinite(memoryOverride) && memoryOverride > 0;
   let cores = hasCoresOverride
     ? Math.min(64, Math.max(1, Math.round(coresOverride)))
-    : [4, 6, 8, 12, 16][u32(seed, 12) % 5];
+    : [4, 6, 8, 12, 16][draw('hardware.cores', 12) % 5];
   // navigator.deviceMemory is quantised by the spec to 0.25/0.5/1/2/4/8 and capped at 8, so the
   // former 16/32 draws were values no real Chrome can report — a single read identified the
   // browser as spoofed. Desktop Chrome effectively only ever reports 4 or 8. Correcting this
@@ -52,7 +56,7 @@ function buildFingerprint(profile = {}) {
     ? DEVICE_MEMORY_STEPS.reduce((best, step) => (
       Math.abs(step - memoryOverride) < Math.abs(best - memoryOverride) ? step : best
     ), 8)
-    : memoryPool[u32(seed, 16) % memoryPool.length];
+    : memoryPool[draw('hardware.memory', 16) % memoryPool.length];
   // Non-persona default panel: 1280x820 is not a physical panel any monitor ships, and
   // "default" profiles clustering on one impossible size is a fleet-level signal. The
   // unseeded default now samples the common real panels instead (still overridable by
@@ -61,20 +65,20 @@ function buildFingerprint(profile = {}) {
     [1920, 1080], [1920, 1080], [1920, 1080], [1536, 864], [1366, 768],
     [2560, 1440], [1440, 900], [1680, 1050], [1600, 900], [3840, 2160],
   ];
-  const defaultPanel = REAL_PANELS[u32(seed, 86) % REAL_PANELS.length];
+  const defaultPanel = REAL_PANELS[draw('screen.panel', 86) % REAL_PANELS.length];
   const width = Number(profile.width) || defaultPanel[0];
   const height = Number(profile.height) || defaultPanel[1];
   const isHdrRequested = Boolean(fpIn.hdr || privacy.hdr || profile.hdr || (Number(fpIn.colorDepth) === 30));
   let colorDepth = isHdrRequested ? 30 : 24;
-  let devicePixelRatio = [1, 1, 1.25, 1.5, 2][u32(seed, 24) % 5];
+  let devicePixelRatio = [1, 1, 1.25, 1.5, 2][draw('screen.dpr', 24) % 5];
   // Claimed-OS-aware DPR redraw for the non-persona desktop path (see the reassignment below
   // once uaOs is resolved): one global pool let a macOS claim land on 1.25 — a scaling step
   // macOS never offers — while Windows drew 2x. macOS defaults to 2x Retina, Windows laptops
   // cluster at 100/125/150%, Linux mostly 1x.
 
   // Numeric noise marks (canvas/webgl ±10000; audio/clientRects from seed formulas unless overridden)
-  const canvasId = (u32(seed, 28) % 20000) - 10000 || 1;
-  const webglId = (u32(seed, 32) % 20000) - 10000 || 1;
+  const canvasId = (draw('canvas.mark', 28) % 20000) - 10000 || 1;
+  const webglId = (draw('webgl.mark', 32) % 20000) - 10000 || 1;
   const audioIdDefault = audioMarkFromSeed(seed.toString('hex'));
   const clientRectsIdDefault = clientRectMarkFromSeed(seed);
   const audioId = Number.isFinite(Number(fpIn.audioId)) ? Number(fpIn.audioId) : audioIdDefault;
@@ -167,7 +171,7 @@ function buildFingerprint(profile = {}) {
     const desktopRequested = [fpIn.os, clientHintsIn.os, profile.os]
       .map(normalizeUaOs)
       .find((value) => value === "windows" || value === "macos" || value === "macos_arm" || value === "linux");
-    uaProfile = randomUaForSeed(u32(seed, 44), {
+    uaProfile = randomUaForSeed(draw('userAgent', 44), {
       majors: uaMajorPool,
       fullVersion: profile.kernelVersion || OPENBROWSER_KERNEL_VERSION,
       // The UA is the source of truth for every OS-facing fingerprint surface.
@@ -208,7 +212,7 @@ function buildFingerprint(profile = {}) {
   const uaArchitecture = String(uaProfile?.metadata?.architecture || '').toLowerCase();
   if (uaOs === 'macos' && uaArchitecture === 'arm') uaOs = 'macos_arm';
   else if (uaOs === 'macos_arm' && uaArchitecture && uaArchitecture !== 'arm') uaOs = 'macos';
-  const personaRequested = String(fpIn.deviceProfile ?? privacy.deviceProfile ?? '').toLowerCase() === 'persona';
+  const personaRequested = version >= 2 || String(fpIn.deviceProfile ?? privacy.deviceProfile ?? '').toLowerCase() === 'persona';
   const mediaIn = (fpIn.mediaPreferences && typeof fpIn.mediaPreferences === 'object')
     ? fpIn.mediaPreferences
     : (privacy.mediaPreferences && typeof privacy.mediaPreferences === 'object' ? privacy.mediaPreferences : null);
@@ -221,21 +225,20 @@ function buildFingerprint(profile = {}) {
     const dprPool = (uaOs === 'macos' || uaOs === 'macos_arm')
       ? [2, 2, 2, 1]
       : (uaOs === 'linux' ? [1, 1, 1, 1.25, 1.5] : [1, 1, 1, 1.25, 1.5]);
-    devicePixelRatio = dprPool[u32(seed, 24) % dprPool.length];
+    devicePixelRatio = dprPool[draw('screen.dpr', 24) % dprPool.length];
   }
   const webglOptions = webglPresetsForOs(uaOs, { legacy: !personaRequested });
-  let webglPreset = webglOptions[u32(seed, 8) % webglOptions.length];
+  let webglPreset = webglOptions[draw('webgl.preset', 8) % webglOptions.length];
 
-  // --- coherent device persona (opt-in) ---------------------------------------------
-  // Drawing CPU, memory, colour depth, pixel ratio and GPU from separate pools can produce
-  // machines that do not exist (4 cores with 32 GB, a 1x non-Retina Mac), and detectors score
-  // the combination rather than each value. A persona bundles axes that co-occur on real
-  // hardware. Off by default: switching an existing profile's hardware identity mid-life is
-  // itself a risk, so this only applies where it was explicitly requested.
+  // --- coherent device persona (v2 default, legacy opt-in) ---
+  // Drawing hardware axes independently can produce uncommon combinations.
+  // A persona bundles CPU, memory, colour depth, pixel ratio and GPU from real
+  // hardware. Version 1 retains its opt-in behavior; version 2 uses the coherent
+  // pool by default without changing profiles saved under version 1.
   let devicePersona = null;
   if (personaRequested) {
-    devicePersona = pickPersona(uaOs, u32(seed, 36));
-    const useGating = fpIn.webglCapabilityGating !== false && privacy.webglCapabilityGating !== false;
+    devicePersona = pickPersona(uaOs, draw('device.persona', 36));
+    const useGating = version === 1 && fpIn.webglCapabilityGating !== false && privacy.webglCapabilityGating !== false;
     if (useGating && !isPersonaWebglCompatible(devicePersona, process.platform)) {
       devicePersona = resolveCompatiblePersona(devicePersona, process.platform);
     }
@@ -262,7 +265,7 @@ function buildFingerprint(profile = {}) {
     const androidUa = uaOverrideStr.match(/Android\s+([0-9.]+);\s*([^;)]+)/i);
     const explicitMobileVersion = androidUa && !(androidUa[1] === '10' && androidUa[2].trim() === 'K')
       ? androidUa[1] : uaOverrideStr.match(/CPU (?:iPhone )?OS (\d+(?:_\d+)*)/i)?.[1].replace(/_/g, '.');
-    mobileDevice = mobilePersona(u32(seed, 52), mobileRequested, {
+    mobileDevice = mobilePersona(draw('mobile.persona', 52), mobileRequested, {
       chromeMajor: kernelMajor || defaultKernelMajor || undefined,
       chromeFull: profile.kernelVersion || OPENBROWSER_KERNEL_VERSION,
       deviceModel: clientHintsIn.deviceModel,
@@ -274,11 +277,8 @@ function buildFingerprint(profile = {}) {
     if (!hasMemoryOverride) memory = mobileDevice.deviceMemory;
     colorDepth = isHdrRequested ? (mobileDevice.colorDepth || 30) : 24;
     devicePixelRatio = mobileDevice.dpr;
-    // Mobile WebGL identity is synthesised through the same ANGLE template the desktop pool
-    // uses (fingerprint-generators.js android table): `ANGLE (<vendor>, <renderer>, OpenGL ES 3.2)`.
-    // The old path copied the pool's raw gpuVendor/gpuRenderer ("Qualcomm"/"Adreno 540"), which
-    // a one-line regex flags as synthetic; gpu.architecture was an empty string, pushing
-    // webglParameterOverrides to its most conservative fallback.
+    // Android uses the Chromium ANGLE family template. Version 2 iOS uses
+    // the Apple preset directly; version 1 retains its historical wrapper.
     const mobileAngleRenderer = (dev) => `ANGLE (${dev.gpu.vendor}, ${dev.gpu.renderer}, OpenGL ES 3.2)`;
     // Architecture from the repo's existing mobile family mapping only (see normalizeGpuArchitecture
     // in fingerprint-generators.js): qualcomm->adreno-700, arm->valhall, samsung->rdna-2,
@@ -293,8 +293,8 @@ function buildFingerprint(profile = {}) {
     };
     webglPreset = {
       ...webglPreset,
-      vendor: `Google Inc. (${mobileDevice.gpu.vendor})`,
-      renderer: mobileAngleRenderer(mobileDevice),
+      vendor: version >= 2 && mobileRequested === 'ios' ? 'Apple Inc.' : `Google Inc. (${mobileDevice.gpu.vendor})`,
+      renderer: version >= 2 && mobileRequested === 'ios' ? 'Apple GPU' : mobileAngleRenderer(mobileDevice),
       gpu: mobileDevice.gpu.family ? { vendor: mobileDevice.gpu.family, architecture: mobileGpuArch(mobileDevice.gpu.family) } : webglPreset.gpu,
     };
     // A pinned UA still wins, but the rest of the phone identity follows the sampled device.
@@ -439,7 +439,7 @@ function buildFingerprint(profile = {}) {
       : createBatteryFromSeed(
         stableIdentity + ':battery:' + seed.toString('hex').slice(0, 8),
         fpIn.battery || privacy.batterySnapshot || null,
-        { acPowered: !isLaptopClass || (!mobileDevice && (u32(seed, 72) % 10) < 4) },
+        { acPowered: !isLaptopClass || (!mobileDevice && (draw('battery.power', 72) % 10) < 4) },
       ));
   const speechVoices = createSpeechVoicesFromSeed(
     stableIdentity + ':speech:' + seed.toString('hex').slice(0, 8),
@@ -503,13 +503,13 @@ function buildFingerprint(profile = {}) {
   // seed offsets 76-84 (fresh — no axis shares an offset with any other draw).
   const mediaPrefs = {
     colorScheme: mediaIn?.colorScheme
-      || (u32(seed, 76) % 10 < 8 ? 'light' : 'dark'),
+      || (draw('media.colorScheme', 76) % 10 < 8 ? 'light' : 'dark'),
     reducedMotion: mediaIn?.reducedMotion
-      || (u32(seed, 78) % 20 < 17 ? 'no-preference' : 'reduce'),
+      || (draw('media.reducedMotion', 78) % 20 < 17 ? 'no-preference' : 'reduce'),
     forcedColors: mediaIn?.forcedColors
-      || (u32(seed, 80) % 100 < 3 ? 'active' : 'none'),
+      || (draw('media.forcedColors', 80) % 100 < 3 ? 'active' : 'none'),
     contrast: mediaIn?.contrast
-      || (u32(seed, 82) % 20 < 19 ? 'no-preference' : (u32(seed, 82) % 40 < 21 ? 'more' : 'less')),
+      || (draw('media.contrast', 82) % 20 < 19 ? 'no-preference' : (draw('media.contrast', 82) % 40 < 21 ? 'more' : 'less')),
   };
   // Codec capability matrix per claimed OS (stock-Chrome answers). Deliberately coarse:
   // only the families detectors probe. true/false are full answers; objects carry
@@ -545,15 +545,15 @@ function buildFingerprint(profile = {}) {
     : (uaOs === 'macos' || uaOs === 'macos_arm') ? CODEC_MATRIX.macos : CODEC_MATRIX.windows;
   const connection = networkMode === 'real' ? null : {
     ...(mobileDevice
-      ? { type: String(networkIn?.type || (u32(seed, 56) % 4 === 0 ? 'ethernet' : 'wifi')) }
+      ? { type: String(networkIn?.type || (draw('network.type', 56) % 4 === 0 ? 'ethernet' : 'wifi')) }
       : (networkIn?.type ? { type: String(networkIn.type) } : {})),
-    effectiveType: String(networkIn?.effectiveType || NETWORK_EFFECTIVE_TYPES[u32(seed, 60) % NETWORK_EFFECTIVE_TYPES.length]),
+    effectiveType: String(networkIn?.effectiveType || NETWORK_EFFECTIVE_TYPES[draw('network.effectiveType', 60) % NETWORK_EFFECTIVE_TYPES.length]),
     downlink: Number.isFinite(Number(networkIn?.downlink))
       ? Number(networkIn.downlink)
-      : NETWORK_DOWNLINK_POOL[u32(seed, 64) % NETWORK_DOWNLINK_POOL.length],
+      : NETWORK_DOWNLINK_POOL[draw('network.downlink', 64) % NETWORK_DOWNLINK_POOL.length],
     rtt: Number.isFinite(Number(networkIn?.rtt))
       ? Number(networkIn.rtt)
-      : NETWORK_RTT_POOL[u32(seed, 68) % NETWORK_RTT_POOL.length],
+      : NETWORK_RTT_POOL[draw('network.rtt', 68) % NETWORK_RTT_POOL.length],
     saveData: false,
   };
 
@@ -601,9 +601,8 @@ function buildFingerprint(profile = {}) {
   const rLow = String(webglRenderer || '').toLowerCase();
   let resolvedVendor = fpIn.webglVendor || webglPreset.vendor;
   if (!fpIn.webglVendor && mobileDevice) {
-    // Adreno / Mali / PowerVR renderers carry no desktop keyword; the ANGLE-synthesised pool
-    // vendor (Google Inc. (<chip vendor>)) is the only truthful answer, same as the ANGLE table.
-    resolvedVendor = `Google Inc. (${mobileDevice.gpu.vendor})`;
+    // Keep the device preset vendor, including version 2 iOS's Apple identity.
+    resolvedVendor = webglPreset.vendor;
   } else if (!fpIn.webglVendor && webglRenderer) {
     if (rLow.includes('nvidia') || rLow.includes('geforce')) resolvedVendor = 'Google Inc. (NVIDIA)';
     else if (rLow.includes('intel') || rLow.includes('arc') || rLow.includes('iris') || rLow.includes('uhd')) resolvedVendor = 'Google Inc. (Intel)';
@@ -620,7 +619,7 @@ function buildFingerprint(profile = {}) {
   if (!hasManualWebglOverride && uaOs === 'windows') {
     if (webglRenderer && /metal|apple/i.test(webglRenderer)) {
       const winPresets = WEBGL_PRESETS.windows;
-      const picked = winPresets[u32(seed, 8) % winPresets.length];
+      const picked = winPresets[draw('webgl.preset', 8) % winPresets.length];
       webglRenderer = picked.renderer;
       webglVendor = picked.vendor;
       if (webglGpu) { webglGpu.vendor = picked.gpu.vendor; webglGpu.architecture = picked.gpu.architecture; }
@@ -631,7 +630,7 @@ function buildFingerprint(profile = {}) {
   } else if (!hasManualWebglOverride && (uaOs === 'android' || detectedMobileOs === 'android')) {
     if (webglRenderer && /direct3d|d3d11|metal|nvidia|geforce|radeon|intel|iris|uhd|apple/i.test(webglRenderer)) {
       const andrPresets = WEBGL_PRESETS.android;
-      const picked = andrPresets[u32(seed, 8) % andrPresets.length];
+      const picked = andrPresets[draw('webgl.preset', 8) % andrPresets.length];
       webglRenderer = picked.renderer;
       webglVendor = picked.vendor;
       if (webglGpu) { webglGpu.vendor = picked.gpu.vendor; webglGpu.architecture = picked.gpu.architecture; }
@@ -661,7 +660,8 @@ function buildFingerprint(profile = {}) {
       if (!webglGpu.architecture) webglGpu.architecture = 'common-3';
     }
   }
-  const webglReconcileHost = fpIn.reconcileHost ?? fpIn.webglReconcileHost ?? privacy.webglReconcileHost ?? (process.platform === 'darwin');
+  const webglReconcileHost = version === 1
+    && (fpIn.reconcileHost ?? fpIn.webglReconcileHost ?? privacy.webglReconcileHost ?? (process.platform === 'darwin'));
   const webgl = {
     mode: webglMode,
     metaMode: webglMetaMode,
@@ -679,6 +679,7 @@ function buildFingerprint(profile = {}) {
   webgl.fpPayload = buildWebglFpPayload(webgl);
 
   const fingerprint = {
+    ...(version >= 2 ? { generationVersion: version } : {}),
     seed: seed.toString('hex').slice(0, 16),
     profileId: profile.id,
     os: uaOs,
@@ -984,14 +985,14 @@ function fingerprintConsistencyIssues(fp) {
     add('memory-invalid', 'deviceMemory must use a supported quantized tier.', 'error');
   }
   // Hardware-class coherence (the isCoherent rules from device-personas.js applied to the
-  // final assembled fingerprint): these pairings are not combinations real machines ship
-  // with, and detectors score the combination, not each value on its own.
+  // final assembled fingerprint). These are heuristics, not physical constraints:
+  // deviceMemory is quantised and RAM may be upgraded independently of the CPU.
   // (A macOS DPR of 1 is deliberately NOT flagged: a Mac on an external non-Retina display
   // answers exactly that, so the per-OS DPR pool keeps it as a legitimate draw.)
   const hwCores = Number(fp?.hardwareConcurrency) || 0;
   const hwMemory = Number(fp?.deviceMemory) || 0;
   if (hwCores >= 12 && hwMemory > 0 && hwMemory < 8) {
-    add('hardware-class-incoherent', '12+ logical cores paired with <8 GB deviceMemory is not a combination real hardware ships.', 'warning');
+    add('hardware-class-incoherent', '12+ logical cores paired with <8 GB deviceMemory is unusual for the bundled device personas.', 'warning');
   }
   // window.outerWidth/outerHeight larger than screen.availWidth/availHeight: a window
   // cannot exceed the work area on any OS (taskbar/dock alone forbids the equality case
@@ -1013,7 +1014,7 @@ function fingerprintConsistencyIssues(fp) {
   const hwRenderer = String(fp?.webgl?.renderer || fp?.webglPreset?.renderer || '');
   const workstationGpu = /RTX 40[7-9]|RTX 50|RX 79|Radeon Pro W[67]|A[0-9]000|MPS/mi.test(hwRenderer);
   if (workstationGpu && hwCores > 0 && hwCores <= 4 && hwMemory > 0 && hwMemory <= 4) {
-    add('hardware-class-incoherent', 'A workstation-class GPU paired with 4 cores / <=4 GB deviceMemory is not a combination real hardware ships.', 'warning');
+    add('hardware-class-incoherent', 'A workstation-class GPU paired with 4 cores / <=4 GB deviceMemory is unusual for the bundled device personas.', 'warning');
   }
   // WebGL and WebGPU read the same physical adapter, so a page that finds a disguised WebGL
   // renderer next to an untouched WebGPU adapter has two GPUs on one machine - a contradiction no
@@ -1027,18 +1028,11 @@ function fingerprintConsistencyIssues(fp) {
       'WebGL reports a profile GPU while WebGPU is left on the host adapter; the two APIs will disagree.',
       'warning');
   }
-  // The driver limits are derived from the same GPU the renderer string names, so the class the
-  // limits table knows about has to be the class the renderer claims. Mobile GPU families have no
-  // table entry yet, which is why this is a warning - those profiles keep the host limits, and
-  // surfacing that is the difference between a known gap and a silent one.
-    const hostLimits = getHostWebglLimits(process.platform);
-  if (webglGpu && hostLimits) {
-    const rawLimits = webglParameterOverrides(webglGpu, { reconcileHost: false });
-    if (rawLimits && rawLimits[WEBGL_PARAM_IDS.MAX_TEXTURE_SIZE] > hostLimits.maxTextureSize) {
-      add('webgl-limits-reconciled-with-host',
-        `GPU persona requires texture size ${rawLimits[WEBGL_PARAM_IDS.MAX_TEXTURE_SIZE]} which exceeds host execution capacity (${hostLimits.maxTextureSize}); reconciled to host capacity to maintain texImage2D validity.`,
-        'info');
-    }
+  // The host OS is not a driver capability probe. Bounds are checked in each
+  // live context; construction cannot claim they have already been verified.
+  if (mobileOs === 'ios' && fp?.webgl?.metaMode !== 'real'
+      && /ANGLE|Google Inc\./i.test(String(fp?.webgl?.vendor) + ' ' + String(fp?.webgl?.renderer))) {
+    add('ios-webgl-shape', 'The iOS WebGL identity contains a desktop ANGLE wrapper.', 'warning');
   }
   if (webglGpu && (webglGpu.vendor || webglGpu.architecture) && !webglParameterOverrides(webglGpu)) {
     add('webgl-limits-unknown-gpu',

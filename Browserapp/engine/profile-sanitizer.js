@@ -5,6 +5,8 @@ const { normalizeIpLookupChannel } = require("../proxy-forwarder");
 const { profileProxyAssociation, normalizedProxyAssociationId } = require("./proxy-helpers");
 const { normalizeCoordinates, toFiniteNumber: finite } = require("../shared/profile-values");
 
+const { fingerprintVersion } = require("../automation/fingerprint/generation");
+
 const MAX_PROFILE_PROXY_LENGTH = 64 * 1024;
 
 function sanitizeProfile(value) {
@@ -90,6 +92,7 @@ function sanitizeProfile(value) {
       return Number.isFinite(n) && n > 0 ? Math.min(5, Math.max(0.5, Math.round(n * 100) / 100)) : null;
     })(),
     userAgent: String(value.userAgent || "").replace(/[\r\n]/g, " ").slice(0, 1000),
+    fingerprintVersion: fingerprintVersion(value.fingerprintVersion),
     fingerprintSeed: String(value.fingerprintSeed || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 128),
     cookies: String(value.cookies || "").slice(0, 500000),
     note: String(value.note || "").slice(0, 2000),

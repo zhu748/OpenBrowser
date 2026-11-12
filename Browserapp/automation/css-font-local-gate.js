@@ -421,6 +421,7 @@ function buildCssFontLocalGateSource(personaFonts, fontSubsets, options = {}) {
       toString(...args) {
         const secret = args[0];
         if (secret === BRIDGE_TOKEN) {
+          if ((args[1] === 'documentInstalled' || args[1] === 'sharedWorkers')) return originalToString.call(this, ...args);
           if (nativeSource.has(this)) return { bridge: true, nativeText: nativeSource.get(this) };
           try {
             const inherited = originalToString.call(this, secret);
@@ -519,68 +520,55 @@ function buildCssFontLocalGateSource(personaFonts, fontSubsets, options = {}) {
   }
 
   const OrigBlob = typeof Blob !== 'undefined' ? Blob : null;
+  const nativeBlobType = OrigBlob && Object.getOwnPropertyDescriptor(OrigBlob.prototype, 'type')?.get;
   const blobCssInfo = new WeakMap();
   const rawToCleanBlobUrl = new Map();
   const cleanToRawBlobUrl = new Map();
 
   function extractBlobPartsText(blobParts) {
-    if (!blobParts) return '';
-    let str = '';
+    // A custom iterable or element getter was already consumed by native Blob.
+    // Never replay it merely to collect optional CSS metadata.
+    if (!Array.isArray(blobParts) || Object.getPrototypeOf(blobParts) !== Array.prototype) return null;
+    if (Object.getOwnPropertyDescriptor(blobParts, Symbol.iterator)) return null;
+    const parts = [];
     try {
-      const iter = Array.isArray(blobParts) ? blobParts : Array.from(blobParts);
-      for (const part of iter) {
-        if (typeof part === 'string') {
-          str += part;
-        } else if (part instanceof ArrayBuffer) {
-          try { str += new TextDecoder('utf-8').decode(part); } catch (_) {}
-        } else if (ArrayBuffer.isView(part)) {
-          try { str += new TextDecoder('utf-8').decode(part); } catch (_) {}
-        } else if (part && typeof part === 'object' && blobCssInfo.has(part)) {
-          str += blobCssInfo.get(part).text;
-        } else if (part != null) {
-          str += String(part);
-        }
+      for (let i = 0; i < blobParts.length; i++) {
+        const descriptor = Object.getOwnPropertyDescriptor(blobParts, String(i));
+        if (!descriptor || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) return null;
+        const part = descriptor.value;
+        if (typeof part === 'string') parts.push(new TextEncoder().encode(part));
+        else if (part instanceof ArrayBuffer) parts.push(new Uint8Array(part));
+        else if (ArrayBuffer.isView(part)) parts.push(new Uint8Array(part.buffer, part.byteOffset, part.byteLength));
+        else if (part && blobCssInfo.has(part)) parts.push(new TextEncoder().encode(blobCssInfo.get(part).text));
+        else return null;
       }
-    } catch (_) {}
-    return str;
+      const bytes = new Uint8Array(parts.reduce((n, part) => n + part.byteLength, 0));
+      let offset = 0;
+      for (const part of parts) { bytes.set(part, offset); offset += part.byteLength; }
+      return new TextDecoder('utf-8').decode(bytes);
+    } catch (_) { return null; }
   }
 
   if (OrigBlob) {
-    const PatchedBlob = function Blob(blobParts, options) {
-      if (!new.target) {
-        throw new TypeError("Failed to construct 'Blob': Please use the 'new' operator, this DOM object constructor cannot be called as a function.");
-      }
-      const instance = Reflect.construct(OrigBlob, arguments, new.target);
-      const typeStr = (options && options.type) ? String(options.type).toLowerCase() : '';
-      const isCssType = typeStr.includes('text/css');
-
-      let cssText = null;
-      if (isCssType) {
-        cssText = extractBlobPartsText(blobParts);
-      } else if (blobParts && (Array.isArray(blobParts) || blobParts[Symbol.iterator])) {
-        const sample = extractBlobPartsText(blobParts);
-        if (sample.toLowerCase().includes('@font-face') && sample.toLowerCase().includes('local(')) {
-          cssText = sample;
+    const typeGetter = Object.getOwnPropertyDescriptor(OrigBlob.prototype, 'type')?.get;
+    let PatchedBlob;
+    PatchedBlob = new Proxy(OrigBlob, {
+      construct(target, args, newTarget) {
+        const instance = Reflect.construct(target, args, newTarget === PatchedBlob ? target : newTarget);
+        const typeStr = typeof typeGetter === 'function' ? typeGetter.call(instance) : String(instance.type || '');
+        const cssText = !typeStr || typeStr.includes('text/css') ? extractBlobPartsText(args[0]) : null;
+        if (cssText !== null && (typeStr.includes('text/css') || /@font-face/i.test(cssText) && /local\\(/i.test(cssText))) {
+          blobCssInfo.set(instance, { text: cssText, type: typeStr || 'text/css' });
         }
-      }
-
-      if (cssText !== null) {
-        blobCssInfo.set(instance, {
-          text: cssText,
-          type: (options && options.type) ? options.type : 'text/css',
-        });
-      }
-      return instance;
-    };
-    PatchedBlob.prototype = OrigBlob.prototype;
-    nativeLike(PatchedBlob, OrigBlob, 'Blob', 0, true);
+        return instance;
+      },
+    });
+    nativeLike(PatchedBlob, OrigBlob, 'Blob', OrigBlob.length, true);
     try {
-      Object.defineProperty(window, 'Blob', {
-        configurable: true,
-        writable: true,
-        enumerable: false,
-        value: PatchedBlob,
-      });
+      const descriptor = Object.getOwnPropertyDescriptor(window, 'Blob');
+      Object.defineProperty(window, 'Blob', { ...descriptor, value: PatchedBlob });
+      const constructor = Object.getOwnPropertyDescriptor(OrigBlob.prototype, 'constructor');
+      Object.defineProperty(OrigBlob.prototype, 'constructor', { ...constructor, value: PatchedBlob });
     } catch (_) {}
   }
 
@@ -590,26 +578,25 @@ function buildCssFontLocalGateSource(personaFonts, fontSubsets, options = {}) {
 
     if (typeof origCreate === 'function') {
       const cleanCreate = nativeLike(function createObjectURL(obj) {
-        if (!obj || typeof obj !== 'object') return origCreate.call(URL, obj);
+        // Native validation must happen before optional CSS bookkeeping. A
+        // Blob subclass may override .type; MediaSource is also a native input.
+        const rawUrl = origCreate.apply(this, arguments);
         const info = blobCssInfo.get(obj);
-        const isTypeCss = Boolean(obj.type && typeof obj.type === 'string' && obj.type.toLowerCase().includes('text/css'));
-        if (!info && !isTypeCss) {
-          return origCreate.call(URL, obj);
-        }
-
+        let type = '';
+        try { type = typeof nativeBlobType === 'function' ? nativeBlobType.call(obj) : ''; } catch (_) {}
+        if (!info && !type.includes('text/css')) return rawUrl;
         const rawText = info ? info.text : '';
         if (rawText && rawText.toLowerCase().includes('@font-face') && rawText.toLowerCase().includes('local(')) {
           const cleanText = sanitizeCss(rawText);
           if (cleanText !== rawText) {
             const cleanBlob = new OrigBlob([cleanText], { type: (info && info.type) || 'text/css' });
             const cleanUrl = origCreate.call(URL, cleanBlob);
-            const rawUrl = origCreate.call(URL, obj);
             rawToCleanBlobUrl.set(rawUrl, cleanUrl);
             cleanToRawBlobUrl.set(cleanUrl, rawUrl);
             return cleanUrl;
           }
         }
-        return origCreate.call(URL, obj);
+        return rawUrl;
       }, origCreate, 'createObjectURL', 1, false);
 
       try {
@@ -624,22 +611,22 @@ function buildCssFontLocalGateSource(personaFonts, fontSubsets, options = {}) {
 
     if (typeof origRevoke === 'function') {
       const cleanRevoke = nativeLike(function revokeObjectURL(url) {
-        const urlStr = String(url);
-        if (cleanToRawBlobUrl.has(urlStr)) {
-          const rawUrl = cleanToRawBlobUrl.get(urlStr);
-          cleanToRawBlobUrl.delete(urlStr);
+        let normalized;
+        const args = Array.from(arguments);
+        if (args.length) args[0] = { [Symbol.toPrimitive]() { normalized = \`\${url}\`; return normalized; } };
+        const result = origRevoke.apply(this, args);
+        if (cleanToRawBlobUrl.has(normalized)) {
+          const rawUrl = cleanToRawBlobUrl.get(normalized);
+          cleanToRawBlobUrl.delete(normalized);
           rawToCleanBlobUrl.delete(rawUrl);
-          try { origRevoke.call(URL, rawUrl); } catch (_) {}
-          return origRevoke.call(URL, urlStr);
-        }
-        if (rawToCleanBlobUrl.has(urlStr)) {
-          const cleanUrl = rawToCleanBlobUrl.get(urlStr);
-          rawToCleanBlobUrl.delete(urlStr);
+          origRevoke.call(URL, rawUrl);
+        } else if (rawToCleanBlobUrl.has(normalized)) {
+          const cleanUrl = rawToCleanBlobUrl.get(normalized);
+          rawToCleanBlobUrl.delete(normalized);
           cleanToRawBlobUrl.delete(cleanUrl);
-          try { origRevoke.call(URL, cleanUrl); } catch (_) {}
-          return origRevoke.call(URL, urlStr);
+          origRevoke.call(URL, cleanUrl);
         }
-        return origRevoke.call(URL, url);
+        return result;
       }, origRevoke, 'revokeObjectURL', 1, false);
 
       try {

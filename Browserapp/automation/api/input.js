@@ -77,6 +77,7 @@ function normalizeProfileInput(input = {}) {
   if (out.user_id === undefined && out.userId !== undefined) out.user_id = out.userId;
   if (out.start_url !== undefined) out.startUrl = out.start_url;
   if (out.user_agent !== undefined) out.userAgent = out.user_agent;
+  if (out.fingerprint_version !== undefined) out.fingerprintVersion = out.fingerprint_version;
   if (out.network_mode !== undefined) out.networkMode = out.network_mode;
   if (out.language_code !== undefined) out.languageCode = out.language_code;
   if (out.user_proxy_config === undefined && out.userProxyConfig !== undefined) out.user_proxy_config = out.userProxyConfig;

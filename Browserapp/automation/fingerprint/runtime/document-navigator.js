@@ -171,28 +171,8 @@ module.exports = `  // --- hide automation (navigator.webdriver / AutomationCont
         });
       } catch (_) {}
     }
-    if (typeof CSS !== "undefined" && typeof CSS.supports === "function") {
-      const origSupports = CSS.supports;
-      const patchedSupports = function supports(prop, val) {
-        if (arguments.length === 2) {
-          const p = String(prop || "").trim().toLowerCase();
-          if (p === "-webkit-touch-callout") {
-            const v = String(val || "").trim().toLowerCase();
-            return v === "none" || v === "default";
-          }
-        } else if (arguments.length === 1) {
-          const s = String(prop).replace(/\\(\\s*-webkit-touch-callout\\s*:\\s*(none|default)\\s*\\)/gi, '(display: block)');
-          return origSupports.call(this, s);
-        }
-        return origSupports.apply(this, arguments);
-      };
-      nativeLike(patchedSupports, origSupports, "supports", 2);
-      try {
-        Object.defineProperty(CSS, "supports", {
-          configurable: true, enumerable: true, writable: true, value: patchedSupports,
-        });
-      } catch (_) {}
-    }
+    // CSS capability queries retain the actual stylesheet parser behavior.
+
   }
 
   if (isMobilePersona) {

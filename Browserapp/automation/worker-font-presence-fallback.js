@@ -1,6 +1,6 @@
 'use strict';
 
-const { deriveBridgeToken } = require('./font-placeholder');
+const { canonicalBridgeToken } = require('./fingerprint/shared');
 
 /**
  * Worker font presence fallback script builder.
@@ -21,7 +21,7 @@ function buildWorkerFontPresenceSource(fp) {
   }
 
   const personaFonts = list.map((name) => String(name));
-  const bridgeToken = String(fp.bridgeToken || deriveBridgeToken(fp));
+  const bridgeToken = String(fp.bridgeToken || canonicalBridgeToken(fp));
 
   return `(() => {
   'use strict';
@@ -87,6 +87,7 @@ function buildWorkerFontPresenceSource(fp) {
           toString(...args) {
             const secret = args[0];
             if (secret === BRIDGE_TOKEN) {
+              if ((args[1] === 'documentInstalled' || args[1] === 'sharedWorkers') || args[1] === 'workerInstalled') return originalToString.call(this, ...args);
               if (nativeSource.has(this)) return { bridge: true, nativeText: nativeSource.get(this) };
               try {
                 const inherited = originalToString.call(this, secret);

@@ -20,8 +20,8 @@ const { runtimePolicyProfile, applyTargetRuntimePolicy, forgetTargetRuntimePolic
 const { getPlatformFontPayload } = require('../automation/query-local-font-blob-gate');
 const { RequestHeaderRewriter, evaluateFingerprintDelivery } = require('../automation/request-header-rewriter');
 const { WorkerScriptPrefixer, TRANSIENT_ERRORS: TRANSIENT_PREFIX_ERRORS } = require('../automation/worker-script-prefixer');
-const { buildWorkerFontPresenceSource } = require('../automation/worker-font-presence-fallback');
 const crypto = require('crypto');
+const { buildWorkerDeliveryProbe } = require('../automation/fingerprint/worker-injection');
 const { closePageFingerprintConnection } = require('./fingerprint-transport');
 const { FingerprintSession } = require('./fingerprint-session');
 
@@ -51,11 +51,7 @@ module.exports = {
   async startWorkerFingerprintInjection(item, fingerprint) {
     // Every worker handler captures this connection's own fingerprint. Concurrent
     // profile launches must never share a process-global "latest" identity.
-    const fontPresenceSource = typeof buildWorkerFontPresenceSource === 'function'
-      ? buildWorkerFontPresenceSource(fingerprint)
-      : '';
-    const source = buildWorkerInjectionScript(fingerprint)
-      + (fontPresenceSource ? '\n' + fontPresenceSource : '');
+    const source = buildWorkerInjectionScript(fingerprint);
     if (fingerprint?.fontBlobBridge && !item.fontBlobBridge) {
       item.fontBlobBridge = fingerprint.fontBlobBridge;
     }
@@ -393,7 +389,7 @@ module.exports = {
               (async () => {
                 let needsSource = true;
                 try {
-                  const probe = await state.command('Runtime.evaluate', { expression: 'self.__obWorkerIdentityApplied === true' }, { sessionId, timeout: 1500 });
+                  const probe = await state.command('Runtime.evaluate', { expression: buildWorkerDeliveryProbe(fingerprint) }, { sessionId, timeout: 1500 });
                   needsSource = !(probe && probe.result && probe.result.value === true);
                 } catch (_) { /* stopped or short-lived SW: try the source anyway */ }
                 if (!needsSource) return;

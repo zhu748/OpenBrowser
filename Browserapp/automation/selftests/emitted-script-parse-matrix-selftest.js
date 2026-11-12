@@ -1,97 +1,49 @@
 #!/usr/bin/env node
 'use strict';
 
-/**
- * Emitted-script parse matrix gate.
- *
- * The injection source is assembled from template-literal fragments whose inclusion is
- * CFG-driven (runtime-source.js prunes per persona/mode). The escaping layers
- * (string-in-string-in-template) have produced three bugs that only surfaced in
- * darwin-gated or native gates — both effectively skipped in per-push CI. This gate
- * parses, for every persona x mode combination that pruning can emit, both the document
- * script and the worker script with new Function(), so a malformed join or quoting
- * regression fails statically on every push.
- *
- * Complements fingerprint-coverage-selftest.js (four-layer contract) which checks
- * presence, not parseability.
- */
+// Exercise actual input fields, then verify their resolved values before parsing
+// both emitted realms. A parse count alone can hide ignored test arguments.
+const assert = require('node:assert/strict');
+const { buildFingerprint, buildInjectionScript, buildWorkerInjectionScript } = require('../fingerprint');
 
-const assert = require('assert');
-const {
-  buildFingerprint,
-  buildInjectionScript,
-} = require('../fingerprint');
-const { buildWorkerInjectionScript } = require('../fingerprint/worker-injection');
-
-const MODES = ['blocked', 'noise', 'real', 'proxy', 'off'];
-
-function buildFor(os, overrides, identity, extra) {
-  return buildFingerprint(
-    { os, ...overrides },
-    { identity, seed: `seed-${identity}`, privacy: {}, ...(extra || {}) },
-  );
-}
-
-function run() {
-  const oses = ['windows', 'macos', 'macos_arm', 'linux'];
-  let docCount = 0;
-  let workerCount = 0;
-  const failures = [];
-
+const oses = ['windows', 'macos', 'macos_arm', 'linux', 'android', 'ios'];
+const seeds = new Set();
+const configs = new Set();
+let count = 0;
+for (const version of [1, 2]) {
   for (const os of oses) {
-    for (const webrtcMode of MODES) {
-      for (const fonts of [true, false]) {
-        for (const deviceProfile of ['pool', 'persona']) {
-          const identity = `pm-${os}-${webrtcMode}-${fonts ? 'f' : 'nf'}-${deviceProfile}`;
-          const fp = buildFor(os, {
-            webrtc: webrtcMode,
-            fontsEnabled: fonts,
-            deviceProfile,
-            webrtcAddress: webrtcMode === 'proxy' ? '203.0.113.7' : undefined,
-          }, identity);
-          const label = `${identity}`;
-
-          try {
-            const doc = buildInjectionScript(fp, { bridgeToken: `bt-${identity}` });
-            new Function(doc);
-            docCount++;
-          } catch (error) {
-            failures.push(`document ${label}: ${error.message}`);
-          }
-
-          try {
-            const worker = buildWorkerInjectionScript(fp);
-            new Function(worker);
-            workerCount++;
-          } catch (error) {
-            failures.push(`worker ${label}: ${error.message}`);
-          }
+    for (const webrtc of ['real', 'proxy', 'disabled']) {
+      for (const fontListMode of ['real', 'noise']) {
+        for (const deviceProfile of ['default', 'persona']) {
+          const id = `parse-v${version}-${os}-${webrtc}-${fontListMode}-${deviceProfile}`;
+          const fp = buildFingerprint({
+            id, name: id, os, fingerprintSeed: `seed-${id}`, fingerprintVersion: version,
+            privacy: { webrtc, fontListMode, deviceProfile, fingerprint: { webrtcAddress: '203.0.113.7' } },
+          });
+          assert.equal(fp.webrtc, webrtc, id);
+          assert.equal(Boolean(fp.fonts), fontListMode === 'noise', id);
+          assert.equal(fp.mobile, os === 'android' || os === 'ios', id);
+          assert.ok(fp.consistency.ok, id);
+          seeds.add(fp.seed);
+          configs.add(JSON.stringify(fp.staticConfig));
+          new Function(buildInjectionScript(fp, { bridgeToken: `bt-${id}` }));
+          new Function(buildWorkerInjectionScript(fp));
+          count++;
         }
       }
     }
   }
-
-  // Mobile personas exercise different fragment sets (iOS scrub, android tables).
-  for (const os of ['android', 'ios']) {
-    for (const fonts of [true, false]) {
-      const identity = `pm-${os}-${fonts ? 'f' : 'nf'}`;
-      const fp = buildFor(os, { fontsEnabled: fonts }, identity);
-      try {
-        const doc = buildInjectionScript(fp, { bridgeToken: `bt-${identity}` });
-        new Function(doc);
-        docCount++;
-        const worker = buildWorkerInjectionScript(fp);
-        new Function(worker);
-        workerCount++;
-      } catch (error) {
-        failures.push(`${identity}: ${error.message}`);
-      }
-    }
-  }
-
-  assert.strictEqual(failures.length, 0,
-    `emitted-script parse matrix failures:\n${failures.join('\n')}`);
-  console.log(`emitted-script-parse-matrix: OK (document=${docCount} worker=${workerCount} combinations parsed)`);
 }
-
-run();
+assert.equal(seeds.size, count, 'each case must exercise its own seeded identity');
+assert.equal(configs.size, count, 'matrix inputs must produce distinct static configurations');
+// Modes with different fragment behavior, independent of WebRTC's valid modes.
+for (const mode of ['real', 'noise', 'blocked']) {
+  const fp = buildFingerprint({ id: `parse-graphics-${mode}`, fingerprintVersion: 2,
+    privacy: { canvas: mode, webgl: mode, audio: mode === 'blocked' ? 'muted' : mode } });
+  assert.equal(fp.canvas.mode, mode);
+  assert.equal(fp.webgl.mode, mode);
+  new Function(buildInjectionScript(fp));
+  new Function(buildWorkerInjectionScript(fp));
+  count++;
+}
+console.log(`emitted-script-parse-matrix: OK (document=${count} worker=${count}, 144 distinct identities)`);

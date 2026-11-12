@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const { CURRENT_FINGERPRINT_VERSION } = require('../fingerprint/generation');
 const { resolveWebSocketDebuggerUrl } = require('./devtools');
 const { booleanValue, firstDefined, firstArray, firstString, normalizeProfileInput, readProxyAssociation } = require('./input');
 const { ok, fail, redactProfileForApi, proxySummary } = require('./responses');
@@ -57,6 +58,7 @@ class ProfileRoutes {
     const profile = {
       ...body,
       id, number,
+      fingerprintVersion: body.fingerprintVersion ?? CURRENT_FINGERPRINT_VERSION,
       name: String(body.name || body.title || ('Environment ' + number)),
       title: String(body.title || body.name || ('Environment ' + number)),
       language: String(body.language || 'en-US'),

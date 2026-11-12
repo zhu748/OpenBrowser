@@ -1,10 +1,11 @@
 'use strict';
 
 const { runtimeSource: stabilityRuntime } = require('../noise-policy');
+const { WORKER_RUNTIME_REVISION } = require('../runtime-revision');
 
 // Ordered fragment of one emitted IIFE; runtime-source.js owns assembly.
 module.exports = function bootstrap({ json, bridgeToken }) {
-  return `(() => {
+  return `(function installWorkerIdentity(originalWorkerUrl, constructorInstaller) {
   const CFG = ${json};
 
   // Phone identity flags mirroring the main-world script: declared once at IIFE top level so
@@ -86,6 +87,7 @@ ${stabilityRuntime}
   const sources = new WeakMap();
   const originalToString = Function.prototype.toString;
   const BRIDGE_TOKEN = ${JSON.stringify(bridgeToken)};
+  let sharedWorkerRegistry;
   const inspectBridge = (fn) => {
     try {
       if (typeof fn !== 'function') return null;
@@ -102,7 +104,15 @@ ${stabilityRuntime}
   };
   // Same-token worker recovery passes are no-ops. A changed profile has a fresh token and can
   // still apply without placing any marker on WorkerGlobalScope.
-  const workerBridgeCheck = inspectBridge(Function.prototype.toString); if (workerBridgeCheck && workerBridgeCheck.token === BRIDGE_TOKEN) return;
+  const workerBridgeCheck = inspectBridge(Function.prototype.toString);
+  try {
+    if (Function.prototype.toString.call(Function.prototype.toString, BRIDGE_TOKEN, 'workerInstalled') === ${WORKER_RUNTIME_REVISION}) return;
+  } catch (_) {}
+  // Retire only known flags from an older cached prefix; the new installation
+  // never depends on a page-writable global marker.
+  for (const key of ['__obWorkerIdentityApplied', '__obImportSession', '__obPersonaUrl']) {
+    try { delete globalThis[key]; } catch (_) {}
+  }
   const nativeLike = (wrapper, original, nameOverride, lengthOverride, isConstructor = false) => {
     if (typeof wrapper !== 'function') return wrapper;
     const fnName = nameOverride !== undefined ? nameOverride : (original ? original.name : (wrapper.name || ''));
@@ -121,6 +131,7 @@ ${stabilityRuntime}
       clean = holder[fnName];
       try { Object.defineProperty(clean, 'length', { configurable: true, value: fnLength }); } catch (_) {}
     }
+    if (!isConstructor) clean = new Proxy(clean, {});
     const nativeStr = (typeof original === 'function')
       ? (sources.get(original) || originalToString.call(original))
       : ('function ' + fnName + '() { [native code] }');
@@ -199,7 +210,7 @@ ${stabilityRuntime}
         return getValue.call(this);
       }
     };
-    getter = Object.getOwnPropertyDescriptor(holder, key).get;
+    getter = new Proxy(Object.getOwnPropertyDescriptor(holder, key).get, {});
     try { Object.defineProperty(getter, 'name', { configurable: true, value: 'get ' + key }); } catch (_) {}
     try { Object.defineProperty(getter, 'length', { configurable: true, value: 0 }); } catch (_) {}
     try { sources.set(getter, 'function get ' + key + '() { [native code] }'); } catch (_) {}
@@ -213,6 +224,11 @@ ${stabilityRuntime}
     let toStringReentryDepth = 0;
     const rawToString = function toString(...args) {
       const secret = args[0];
+      if (secret === BRIDGE_TOKEN && args[1] === 'sharedWorkers') {
+        if (args[2]) sharedWorkerRegistry = args[2];
+        return sharedWorkerRegistry;
+      }
+      if (secret === BRIDGE_TOKEN && args[1] === 'workerInstalled') return ${WORKER_RUNTIME_REVISION};
       if (toStringReentryDepth > 0) {
         if (sources.has(this)) {
           if (secret === BRIDGE_TOKEN) return { bridge: true, token: BRIDGE_TOKEN, nativeText: sources.get(this) };
@@ -250,7 +266,7 @@ ${stabilityRuntime}
       if (!proto || typeof proto[key] !== 'function') return;
       const original = proto[key];
       const existing = inspectBridge(original);
-      if (existing) {
+      if (existing && (!['getParameter', 'getShaderPrecisionFormat'].includes(key) || !workerBridgeCheck)) {
         try { sources.set(original, existing.nativeText || ('function ' + (original.name || key) + '() { [native code] }')); } catch (_) {}
         return;
       }

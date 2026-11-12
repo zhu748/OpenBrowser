@@ -84,6 +84,8 @@ ${stabilityRuntime}
   const originalToString = Function.prototype.toString;
   const BRIDGE_TOKEN = ${JSON.stringify(bridgeToken)};
   const nativeSource = new WeakMap();
+  let documentInstallationComplete = false;
+  let sharedWorkerRegistry;
   const subWindowSyncHooks = [];
   // R-3: the runtime swallows ~290 silent catches; when a persona surface
   // silently stops applying nobody can tell which fragment dropped it. With
@@ -166,6 +168,7 @@ ${stabilityRuntime}
       clean = holder[fnName];
       try { Object.defineProperty(clean, "length", { configurable: true, value: fnLength }); } catch (_) {}
     }
+    if (!isConstructor) clean = new Proxy(clean, {});
     let nativeStr;
     if (typeof original === "function") {
       const origStr = nativeSource.get(original) || originalToString.call(original);
@@ -270,7 +273,7 @@ ${stabilityRuntime}
         }
       }
     };
-    getter = Object.getOwnPropertyDescriptor(holder, key).get;
+    getter = new Proxy(Object.getOwnPropertyDescriptor(holder, key).get, {});
     try { Object.defineProperty(getter, "name", { configurable: true, value: "get " + key }); } catch (_) {}
     try { Object.defineProperty(getter, "length", { configurable: true, value: 0 }); } catch (_) {}
     nativeSource.set(getter, "function get " + key + "() { [native code] }");
@@ -280,8 +283,9 @@ ${stabilityRuntime}
     if (typeof fn !== "function") return fn;
     try { Object.defineProperty(fn, "name", { configurable: true, value: "get " + key }); } catch (_) {}
     try { Object.defineProperty(fn, "length", { configurable: true, value: 0 }); } catch (_) {}
-    try { nativeSource.set(fn, "function get " + key + "() { [native code] }"); } catch (_) {}
-    return fn;
+    const getter = new Proxy(fn, {});
+    try { nativeSource.set(getter, "function get " + key + "() { [native code] }"); } catch (_) {}
+    return getter;
   };
   const nativeSetter = (key, fn) => {
     if (typeof fn !== "function") return fn;
@@ -291,7 +295,7 @@ ${stabilityRuntime}
     return fn;
   };
   const nativeAccessor = (key, desc) => {
-    if (desc && typeof desc.get === "function") nativeGetter(key, desc.get);
+    if (desc && typeof desc.get === "function") desc.get = nativeGetter(key, desc.get);
     if (desc && typeof desc.set === "function") {
       try { Object.defineProperty(desc.set, "name", { configurable: true, value: "set " + key }); } catch (_) {}
       try { nativeSource.set(desc.set, "function set " + key + "() { [native code] }"); } catch (_) {}
@@ -304,6 +308,14 @@ ${stabilityRuntime}
       toString(...args) {
         const secret = args[0];
         if (secret === BRIDGE_TOKEN) {
+          if (args[1] === 'sharedWorkers') {
+            if (args[2]) sharedWorkerRegistry = args[2];
+            return sharedWorkerRegistry;
+          }
+          if (args[1] === 'documentInstalled') {
+            if (args[2] === true) documentInstallationComplete = true;
+            return documentInstallationComplete;
+          }
           if (args[1] === "register" && typeof args[2] === "function" && typeof args[3] === "string") {
             nativeSource.set(args[2], args[3]);
             return true;
@@ -323,14 +335,6 @@ ${stabilityRuntime}
           } catch (_) {}
         }
         if (nativeSource.has(this)) return nativeSource.get(this);
-        try {
-          if (typeof this.toString === "function" && this.toString !== patchedToString) {
-            const crossRealm = this.toString(BRIDGE_TOKEN);
-            if (crossRealm && typeof crossRealm === "object" && crossRealm.bridge === true && crossRealm.nativeText) {
-              return crossRealm.nativeText;
-            }
-          }
-        } catch (_) {}
         return originalToString.call(this, ...args);
       }
     };

@@ -170,6 +170,10 @@ This repository contains source code, documentation, and — via [Git LFS](https
 - The updater checks installer SHA-256 and the Ed25519 signature in `SHA256SUMS.txt.sig`. Future releases with missing, invalid or unavailable signatures are refused; only the exact historical version `1.0.27` retains the legacy compatibility policy.
 - RPA plans, variables and results are encrypted at rest. Existing JSON stores migrate after a successful read; use application import/export instead of editing storage files.
 - Credential writes are refused when the local key cannot be read or durably saved. Preserve the original key and data files for recovery.
+- SQLite migration backups are encrypted, including historical plaintext migration backups. An existing database that cannot be opened blocks startup instead of selecting empty storage. Background encryption migration preserves subsequent edits and deletions.
+- On Linux without a system keyring, credentials use local-master-key AES-GCM instead of the weak `basic_text` backend; existing records remain readable.
+- Group, tag, note and number edits use profile IDs and revision checks. Operations above 200 entries acknowledge batches separately; later failures preserve acknowledged results and report how many completed.
+- GitHub backups support replacing existing files and restoring packages above 1 MiB. Metadata read failures prevent replacement uploads.
 - RPA CSV/text/JSON inputs are limited to 32 MiB and 100,000 rows. CSV allows at most 1,000 columns; CSV fields and text lines allow at most 1,048,576 UTF-16 code units. Split larger inputs.
 - RPA tasks share eight execution slots and run serially per task profile. Waiting tasks can be cancelled without occupying execution slots.
 - Interrupted browser-data restores block launching or deleting the affected data until their recovery directories have been reviewed. Completed restores clean up leftover staging directories on the next launch.

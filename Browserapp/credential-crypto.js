@@ -28,18 +28,23 @@ let __legacyPlaintextWarnCount = 0;
  * Allows override via mock for testing environments.
  */
 function isSafeStorageAvailable() {
+  const usable = (storage) => Boolean(storage?.isEncryptionAvailable?.())
+    && storage.getSelectedStorageBackend?.() !== 'basic_text';
   if (_safeStorageMock !== null) {
     try {
-      return Boolean(_safeStorageMock.isEncryptionAvailable?.());
+      return usable(_safeStorageMock);
     } catch (_) {
       return false;
     }
   }
+  // In plain Node, require('electron') resolves the executable and may run its
+  // downloader synchronously. Only the Electron host exposes safeStorage.
+  if (!process.versions.electron) return false;
   try {
     const electron = require('electron');
     const safeStorage = electron?.safeStorage;
     if (safeStorage && typeof safeStorage.isEncryptionAvailable === 'function') {
-      return Boolean(safeStorage.isEncryptionAvailable());
+      return usable(safeStorage);
     }
   } catch (_) {}
   return false;
@@ -49,6 +54,7 @@ function getSafeStorage() {
   if (_safeStorageMock !== null) {
     return _safeStorageMock;
   }
+  if (!process.versions.electron) return null;
   try {
     const electron = require('electron');
     return electron?.safeStorage || null;

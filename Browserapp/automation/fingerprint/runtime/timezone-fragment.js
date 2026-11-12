@@ -578,49 +578,57 @@ const AUDIO_CORE = `  // --- audio ---
         } catch (_) {}
         if (targetWin.AudioBuffer && targetWin.AudioBuffer.prototype.getChannelData) {
           const processed = new WeakMap();
+          const nativeGetChannel = targetWin.AudioBuffer.prototype.getChannelData;
+          const nativeLength = targetWin.Float32Array
+            ? Object.getOwnPropertyDescriptor(Object.getPrototypeOf(targetWin.Float32Array.prototype), 'length')?.get
+            : null;
+          const applyRenderedNoise = (buffer, channel, data) => {
+            if (!renderedBuffers.has(buffer)) return data;
+            let channels = processed.get(buffer);
+            if (!channels) { channels = new Set(); processed.set(buffer, channels); }
+            if (channels.has(channel)) return data;
+            let silent = true;
+            for (let i = 0; i < data.length; i++) if (data[i] !== 0) { silent = false; break; }
+            if (!silent) {
+              const spans = spanFor(buffer, channel);
+              for (let i = 0; i < data.length; i++) {
+                if (inAuthoredSpan(spans, i)) continue;
+                data[i] += (noise(i + channel * 4099 + mark) - 0.5) * 1e-7;
+              }
+            }
+            channels.add(channel);
+            return data;
+          };
           if (targetWin.AudioBuffer.prototype.copyToChannel) {
             hookOwn(targetWin.AudioBuffer.prototype, 'copyToChannel', (original) => function copyToChannel(source, channelNumber, startInChannel) {
-              const result = original.apply(this, arguments);
+              const call = invokeNativeUnsigned(original, this, arguments, [1, 2]);
               try {
-                const length = source && typeof source.length === 'number' ? source.length : 0;
-                recordSpan(this, channelNumber, startInChannel, length);
+                const length = nativeLength ? nativeLength.call(source) : source.length;
+                recordSpan(this, call.values[1], call.values[2], length);
               } catch (_) {}
-              return result;
+              return call.value;
             });
           }
           __REPLACE_HELPER__(targetWin.AudioBuffer.prototype, 'getChannelData', (original) => function getChannelData(channelIndex) {
-            const data = original.apply(this, arguments);
-            try {
-              if (!renderedBuffers.has(this)) return data;
-              const channel = Number(channelIndex) || 0;
-              let channels = processed.get(this);
-              if (!channels) { channels = new Set(); processed.set(this, channels); }
-              if (!channels.has(channel)) {
-                let silent = true;
-                for (let i = 0; i < data.length; i += 1) {
-                  if (data[i] !== 0) { silent = false; break; }
-                }
-                if (!silent) {
-                  const spans = spanFor(this, channel);
-                  for (let i = 0; i < data.length; i += 1) {
-                    if (inAuthoredSpan(spans, i)) continue;
-                    data[i] = data[i] + (noise(i + channel * 4099 + mark) - 0.5) * 1e-7;
-                  }
-                }
-                channels.add(channel);
-              }
-            } catch (_) {}
-            return data;
+            const call = invokeNativeUnsigned(original, this, arguments, [0]);
+            try { applyRenderedNoise(this, call.values[0], call.value); } catch (_) {}
+            return call.value;
           });
-
           if (targetWin.AudioBuffer.prototype.copyFromChannel) {
             __REPLACE_HELPER__(targetWin.AudioBuffer.prototype, 'copyFromChannel', (original) => function copyFromChannel(destination, channelNumber, startInChannel) {
+              // Validate and convert before touching the render buffer. Repeat the
+              // native copy only with already-converted primitive indices.
+              const call = invokeNativeUnsigned(original, this, arguments, [1, 2]);
               if (renderedBuffers.has(this)) {
-                try { this.getChannelData(Number(channelNumber) || 0); } catch (_) {}
+                const channel = call.values[1];
+                const data = nativeGetChannel.call(this, channel);
+                applyRenderedNoise(this, channel, data);
+                return original.call(this, destination, channel, call.values[2] ?? 0);
               }
-              return original.apply(this, arguments);
+              return call.value;
             });
           }
+
         }
         if (targetWin.AnalyserNode) {
           const patchFreq = (name) => {

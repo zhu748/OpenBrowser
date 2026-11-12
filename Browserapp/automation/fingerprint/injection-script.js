@@ -114,7 +114,7 @@ function buildInjectionScript(fp, options = {}) {
   // prefixer only intercepts network-loaded scripts). buildWorkerInjectionScript
   // is required lazily to avoid a require cycle with worker-injection.js.
   const { buildWorkerInjectionScript } = require('./worker-injection');
-  const mainScript = buildDocumentRuntime({ uaScript, json, bridgeToken, workerSource: buildWorkerInjectionScript(fp) });
+  const mainScript = buildDocumentRuntime({ uaScript, json, bridgeToken, workerSource: buildWorkerInjectionScript(fp, { coreOnly: true }) });
 
   let fontMetricsScript = '';
   let cssFontLocalGateScript = '';
@@ -223,9 +223,16 @@ function buildInjectionScript(fp, options = {}) {
   }
 
   const composed = [mainScript, webrtcFallbackScript, fontMetricsScript, cssFontLocalGateScript, queryLocalFontBlobGateScript].filter(Boolean).join('\n');
-  const output = sharedFontPayloadForOutput
-    ? '(() => {\nconst ' + SHARED_FONT_PAYLOAD_VAR + ' = ' + JSON.stringify(sharedFontPayloadForOutput) + ';\n' + composed + '\n})();'
-    : composed;
+  // Check before the UA layer can replace Function.toString and obscure the
+  // document bridge. A real replay of the whole source must be a no-op.
+  const replayGuard = 'try { if (Function.prototype.toString.call(Function.prototype.toString, '
+    + JSON.stringify(bridgeToken) + ', "documentInstalled") === true) return; } catch (_) {}\n';
+  const complete = '\n;Function.prototype.toString.call(Function.prototype.toString, '
+    + JSON.stringify(bridgeToken) + ', "documentInstalled", true);';
+  const payload = sharedFontPayloadForOutput
+    ? 'const ' + SHARED_FONT_PAYLOAD_VAR + ' = ' + JSON.stringify(sharedFontPayloadForOutput) + ';\n'
+    : '';
+  const output = '(() => {\n' + replayGuard + payload + composed + complete + '\n})();';
   return rememberInjectionScript(injectionCacheKey, output);
 }
 

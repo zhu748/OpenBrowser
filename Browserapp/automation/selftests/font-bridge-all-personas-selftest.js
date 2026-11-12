@@ -89,7 +89,9 @@ for (const os of PLATFORMS) {
   const payloadMatch = script.match(/const __obPlatformFontPayload = (\[.*?\]);/s);
   assert.ok(payloadMatch, `${os}: the shared font payload binding must exist`);
   const payloadBytes = payloadMatch[1].length;
-  assert.ok(script.length <= Math.ceil(payloadBytes * 1.35) + 400000,
+  const parserBytes = require('../fingerprint/runtime/worker-constructor-patch').parserSourceBytes;
+  assert.equal((script.match(/function Parser\(/g) || []).length, 1, 'share one parser implementation in each document source');
+  assert.ok(script.length <= Math.ceil(payloadBytes * 1.35) + 400000 + parserBytes,
     `${os}: composed script ${script.length}B exceeds the payload-bound budget (payload ${payloadBytes}B) — a second full payload copy likely crept back in`);
 }
 

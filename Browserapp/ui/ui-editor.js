@@ -518,6 +518,7 @@ function editorDraft(strict = true) {
     engine: $('#editor-engine')?.value === 'firefox' ? 'firefox' : 'chromium',
     userAgent: uaDraft.userAgent,
     fingerprint: undefined,
+    fingerprintVersion: Number(editorForm?.dataset.fingerprintVersion || current.fingerprintVersion || 1),
     fingerprintSeed: editorForm?.dataset.fingerprintSeed || current.fingerprintSeed || '',
     cookies: strict ? editorCookies() : ($('#editor-cookies')?.value || '').trim(),
     language: window.OpenBrowserLocale.resolveProfileLanguage({
@@ -926,6 +927,7 @@ function randomizeFingerprintDraft() {
     const bytes = new Uint8Array(16);
     window.crypto.getRandomValues(bytes);
     form.dataset.fingerprintSeed = Array.from(bytes, (n) => n.toString(16).padStart(2, '0')).join('');
+    form.dataset.fingerprintVersion = '2';
     form.dataset.resetFingerprint = '1';
     delete form.dataset.uaProfile;
   }
@@ -997,6 +999,7 @@ function showProfileEditor(value, revision) {
   const editorForm = $('#profile-editor-form');
   if (editorForm) {
     editorForm.dataset.fingerprintSeed = profile.fingerprintSeed || '';
+    editorForm.dataset.fingerprintVersion = String(profile.fingerprintVersion || 1);
     delete editorForm.dataset.uaProfile;
     delete editorForm.dataset.resetFingerprint;
     delete editorForm.dataset.readonly;

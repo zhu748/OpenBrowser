@@ -20,15 +20,21 @@ module.exports = {
     await this.kernelManager.loadMeta();
     let migrateKernelPolicy = false;
     let recoveredState = false;
+    let existingDatabase = false;
+    try { existingDatabase = fs.statSync(this.dbFile).size > 0; }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+
+    const storageUnavailable = (cause) => Object.assign(new Error(
+      'Existing SQLite storage is unavailable; data was preserved. Repair or restore the database before continuing.',
+      { cause }
+    ), { code: 'STORAGE_UNAVAILABLE', dbPath: this.dbFile });
+    if (existingDatabase && !ProfileStoreSqlite.isSupported()) throw storageUnavailable();
 
     if (ProfileStoreSqlite.isSupported()) {
+      const sqlite = new ProfileStoreSqlite({
+        dbPath: this.dbFile, legacyJsonPath: this.stateFile, wal: true, backupOldJson: true,
+      });
       try {
-        const sqlite = new ProfileStoreSqlite({
-          dbPath: this.dbFile,
-          legacyJsonPath: this.stateFile,
-          wal: true,
-          backupOldJson: true,
-        });
         const initRes = await sqlite.init();
         this.sqliteStore = sqlite;
         this.usingSqlite = true;
@@ -36,6 +42,8 @@ module.exports = {
           this.emit({ type: 'storage-migrated', engine: 'sqlite' });
         }
       } catch (err) {
+        sqlite.close();
+        if (existingDatabase || fs.existsSync(this.dbFile)) throw storageUnavailable(err);
         console.warn(`[BrowserEngine] SQLite initialization failed, falling back to legacy JSON: ${err.message}`);
         this.sqliteStore = null;
         this.usingSqlite = false;

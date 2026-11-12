@@ -4,6 +4,14 @@
 
 Profiles keep a `fingerprintSeed` alongside their ID. The editor's randomize action generates a new 128-bit seed in the draft, clears old overrides, and selects a coherent device persona. Saving commits the new identity; reopening an unchanged profile keeps it stable. Refresh-on-start uses an additional launch seed independently of the sampling stability mode.
 
+Profiles also persist `fingerprintVersion`. Missing versions mean **1**, including old backups and sync records. New profiles created through the API, single/batch creation dialogs, and the tabular importer use **2**. Templates and clones inherit their source version. The editor's randomize action upgrades the draft to version 2; saving commits both the seed and version. Ordinary edits and launches do not upgrade existing identities. Unsupported versions are rejected. API create accepts `fingerprintVersion` or `fingerprint_version`; API sync/import retains version 1 when absent.
+
+Version 2 derives random fields using domain-separated SHA-256 (`seed + field name`), replacing version 1's overlapping seed offsets. Its default hardware path selects one coherent CPU/memory/screen/DPR/GPU template; new single-profile creation no longer pins 12 cores/8 GB over that template. Selection is independent of the host OS, while version 1 retains its historical host gating. Configured identity can be reproduced across hosts, but rendering pixels and usable limits still depend on the kernel, driver and fonts. Reusing a common hardware template is expected; this is not a guarantee of globally unique identities.
+
+Document and worker WebGL wrappers query the actual context before applying persona limits. Maximum capabilities are bounded by native values, uniform-buffer alignment retains the native minimum requirement, typed-array range types are preserved, and native invalid-enum/null/receiver behavior is retained. OS constants are not measurements of GPU capability. These corrections apply to **both** versions: affected live readings change after upgrade even when the saved identity stays version 1. This bounds capability claims without virtualizing the driver or making every operation match a different GPU.
+
+Version 2 iOS templates use `Apple Inc.` / `Apple GPU` instead of a desktop ANGLE wrapper. This does not turn Chromium into WebKit or certify a catalogue device as real hardware. Older iOS identities retain their generation behavior and report the wrapper as a consistency warning. Mobile window metrics preserve native outer-window dimensions and layout-viewport rounding, including pages without a viewport meta tag; screen, layout viewport and visual viewport are distinct quantities.
+
 Legacy seed migration must persist successfully before either engine launches. A failed write blocks startup and keeps the selected seed pending in memory; retries flush that same identity instead of treating an uncommitted seed as saved or drawing another one. Concurrent migrations share one flush. Migration merges only the seed into the latest profile row and rejects a profile deleted or re-seeded during the write.
 
 Chromium UA generation uses the selected kernel's major/full version. Generated Client Hints are saved with the UA. An explicit custom UA takes precedence over the OS-version selector.
@@ -17,6 +25,26 @@ Mobile UA generation and runtime construction resolve one device identity. Clien
 The imported mobile catalogue is not a verified hardware database. `mobile-device-corrections.json` records sourced corrections; 447 Android records with the repeated, unverified `360 × 592` fallback geometry are excluded from sampling. Existing Android seeds retain their original catalogue device when it remains eligible. A quarantined record can resolve to a different identity; explicitly pinned unknown models must be regenerated. The remaining records still require hardware validation and are not labelled verified by these checks.
 
 Firefox defaults to a Firefox/Gecko UA generated from its actual kernel version. Its random-UA button is disabled. Device identities can still change through the profile seed. Firefox preserves its native absence of Chromium-only APIs such as `navigator.deviceMemory` and Client Hints; it does not receive `window.chrome` from the shared injection script.
+
+## Native API behavior and worker delivery
+
+WebGL enum arguments pass through native WebIDL conversion once, after native receiver validation. Numeric, string, boxed and unsigned-long-wrapped arguments resolve to the same persona metadata in WebGL1/2, documents and workers, including shader precision queries. Context-loss nulls and native invalid-argument errors are retained. Reported shader precision and runtime capability bounds cannot exceed the actual driver.
+
+Rendered AudioBuffer reads and copies also delegate argument validation and unsigned-long conversion to the native method. User conversion hooks run once, invalid destination buffers fail before channel conversion, and explicit samples written through copyToChannel remain exact after subsequent reads. The Blob font gate reads the native Blob type getter only after successful native URL creation; custom type getters and failed arguments gain no extra reads. Object URL revocation converts its argument once across both the font and worker layers.
+
+Worker and SharedWorker constructors proxy the native constructor, retain its prototype and subclass construction, and preserve the original observable WorkerLocation. The Blob font gate uses the same native construction rules; optional CSS bookkeeping does not replay custom Blob iterators, element getters or options getters. Ordinary Function.prototype.toString calls do not access or execute a function's custom toString property. Wrapped callable proxies prevent foreign-realm stringification from exposing those wrapper bodies.
+
+Inline-worker preparation reads immutable local Blob bytes and uses a private Acorn tokenizer/parser to preserve hashbangs and genuine directive prologues. A continued string expression is not split into a directive and a second statement. Module entries receive a first static side-effect import that installs the configured identity before the original static dependencies execute. This retains the native module graph and startup-message delivery rather than delaying user code behind a dynamic import. The entry's import.meta.url and WorkerLocation retain the original URL. This is covered for Blob and data entries; cyclic graphs and arbitrary module loaders still need separate compatibility validation.
+
+Child-worker installation is reconstructed from a private named function, including the font-presence layer. Installation checks and runtime revision checks use the private function bridge rather than public WorkerGlobalScope flags or source-passing hooks. Replaying the complete document source checks completion before its UA layer runs; installation-status messages pass through the UA, font and WebRTC layers. This prevents repeated wrapping when the complete source is executed again.
+
+Related same-origin documents coordinate rewritten SharedWorker Blob URLs through that private bridge, including iframes and opener chains. Only successful native construction publishes a prepared Blob entry; failed constructors cannot displace a live worker. Entries are retained for the original Blob URL's lifetime rather than evicted at an arbitrary thread count. Prepared Blob resources use the original creator's realm and are revoked with the original URL or a non-BFCache pagehide. A revoked canonical URL is retained for native reconnection to an already-live SharedWorker. Data entries are deterministic and need no document cache. Dedicated module helper URLs are released after a private initialization message, native error or termination; entry URLs are released as soon as the native constructor captures them.
+
+The registry covers participating related same-origin documents; unrelated tabs and URLs created in another agent are not globally coordinated. A pure JavaScript registry does not replace the browser's own global SharedWorker identity store. Retaining many original Blob URLs also retains their prepared mappings until those URLs or their creator are released.
+
+Inline worker preparation deliberately fails with SecurityError when CSP blocks reading the Blob source. Trusted inline script URLs are also rejected when preparation would require bypassing Trusted Types. The runtime creates no permissive Trusted Types policy. This protects identity delivery at the cost of compatibility with those inline-worker configurations; network-worker delivery retains the existing transport. Software rendering, strict-CSP workers and iOS emulation must not be labelled indistinguishable from native hardware or WebKit.
+
+Window metrics retain the native descriptor owner, enumerability, setter and illegal-receiver checks. Native outer-window dimensions replace fixed desktop border estimates. iOS CSS.supports uses the actual CSS parser, so JS queries, declaration acceptance and stylesheet @supports agree; Chromium-only and WebKit-only capabilities still require their real engines.
 
 ## Startup barrier
 
@@ -127,6 +155,8 @@ From `Browserapp/`:
 
 ```sh
 npm run selftest -- fpreliability
+npm run selftest -- fpgeneration
+npm run selftest -- emittedscriptparse
 npm run selftest -- fpidentity
 npm run selftest -- fprealms
 npm run selftest -- fpconsistency
@@ -146,6 +176,31 @@ The reliability suite uses actual configuration/build/injection functions, VM do
 The delivery-boundary suite exercises duplicate/rejected/hung request handling, strict probes, all three Chromium worker types, page readiness publication and Firefox watcher routing. It also executes the production Chromium startup routine with process/protocol fixtures to check that injection failures, mismatches and probe exceptions invoke process cleanup before target navigation, while a verified launch still completes. Fixtures do not substitute for the native browser gate below.
 
 Portable Chromium verification (Windows/macOS/Linux) is a separate required platform check:
+
+The generation gate compares 240 pre-change version-1 identity digests, samples 2,000 version-2 profiles, checks replay under simulated host OSes, and verifies API defaults. The parse matrix validates resolved settings before parsing 147 document and 147 worker scripts.
+
+The capability gate compares unmodified and injected software-driver WebGL1/2 contexts in documents and blob workers, allocates a one-row texture at the advertised maximum width, and compares Android/iOS window geometry against native device emulation with and without a viewport meta tag:
+
+```sh
+OPENBROWSER_CHROMIUM_BINARY=/absolute/path/to/chrome npm run selftest -- fpcapabilitiesnative
+```
+
+The native-contract gate compares an unmodified browser with version-1 Windows and version-2 Windows/Android/iOS configurations. It exercises full font protection, Blob iterators/getters/subclasses, Worker URL/options conversion and subclassing, classic/module/shared workers, private state, cross-realm stringification, actual repeated-source execution, and CSP/Trusted Types failures. The harness uses both production launch-argument stages so configured software-driver flags actually reach Chrome.
+
+```sh
+OPENBROWSER_CHROMIUM_BINARY=/absolute/path/to/chrome npm run selftest -- fpnativecontract
+# On Linux with a running display, repeat without headless mode:
+OPENBROWSER_CONTRACT_HEADFUL=1 OPENBROWSER_CHROMIUM_BINARY=/absolute/path/to/chrome npm run selftest -- fpnativecontract
+```
+
+The worker-boundary gate adds native URL/Blob, rendered AudioBuffer and shader-precision conversion comparisons; SharedWorker reuse across iframes and detached-opener descendants; constructor-failure and revoked-URL reuse; and classic/module grammar, static-dependency identity, import.meta.url and early message delivery. Its fixtures run against a clean copy of the same Chromium binary before Windows and Android injection. A separate resource test checks actual Blob URL allocation and revocation around module load, early termination and constructor failure without starting extra native threads.
+
+```sh
+OPENBROWSER_CHROMIUM_BINARY=/absolute/path/to/chrome npm run selftest -- fpworkerboundaries
+npm run selftest -- workerresources
+```
+
+The general document and worker delivery gate:
 
 ```sh
 OPENBROWSER_CHROMIUM_BINARY=/absolute/path/to/chrome npm run selftest:fingerprintnative

@@ -21,6 +21,7 @@ module.exports = [
       'assets/**',
       'bundled-extension/**',
       'automation/data/**',
+      'automation/vendor/**',
     ],
   },
   {
@@ -198,6 +199,7 @@ module.exports = [
         cloneProfile: 'writable',
         closeSelectMenu: 'writable',
         confirmAction: 'writable',
+        commitProfilePatches: 'writable',
         handleQuickPasteToInput: 'writable',
         installProxyTypeControl: 'writable',
         openSelectMenu: 'writable',

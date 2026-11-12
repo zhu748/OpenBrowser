@@ -12,11 +12,13 @@
 // stay in this file's literal — see the drift list in injection-config.js.
 const { resolveInjectionStability, injectionOs, injectionTimezone, injectionDeviceMemory, injectionWebgl, stabilityNoiseAmplitude, stabilitySampleStepDivisor, stabilityMaxWidth, stabilityMaxHeight, stabilitySquare } = require('./injection-config');
 const { canonicalBridgeToken } = require('./shared');
+const { WORKER_RUNTIME_REVISION } = require('./runtime-revision');
 const { buildWorkerRuntimeFull } = require('./runtime-source');
+const { buildWorkerFontPresenceSource } = require('../worker-font-presence-fallback');
 
 
 /** Worker-safe subset injected before attached workers are resumed. */
-function buildWorkerInjectionScript(fp) {
+function buildWorkerInjectionScript(fp, options = {}) {
   const bridgeToken = canonicalBridgeToken(fp);
   const stability = resolveInjectionStability(fp);
   const json = JSON.stringify({
@@ -67,17 +69,21 @@ function buildWorkerInjectionScript(fp) {
       square: stabilitySquare(stability),
     },
   });
-  // Idempotency guard: the engine evaluates this source on EVERY service-worker
-  // session (cached SWs start from the script cache with no prefix), including
-  // network-fetched ones whose script bytes already carry the prefix. The marker
-  // makes the second run a no-op instead of a double-install (double-wrapped
-  // constructors, duplicated font bridges).
-  const guard = "if (typeof self !== 'undefined' && self.__obWorkerIdentityApplied) { /* already installed */ } else { if (typeof self !== 'undefined') self.__obWorkerIdentityApplied = true;\n";
-  const full = buildWorkerRuntimeFull({ json, bridgeToken });
-  return guard + full + "\n}";
+  // The private Function bridge in worker-bootstrap owns idempotency.
+  // The entire prefix returns before any fragment can be installed twice.
+  const core = buildWorkerRuntimeFull({ json, bridgeToken, fontPresenceSource: buildWorkerFontPresenceSource(fp) });
+  if (options.coreOnly) return core;
+  const { installerSource } = require('./runtime/worker-constructor-patch');
+  return core + '(undefined, (' + installerSource + '));';
 
 }
 
+function buildWorkerDeliveryProbe(fp) {
+  const token = JSON.stringify(canonicalBridgeToken(fp));
+  return `Function.prototype.toString.call(Function.prototype.toString, ${token}, 'workerInstalled') === ${WORKER_RUNTIME_REVISION}`;
+}
+
 module.exports = {
+  buildWorkerDeliveryProbe,
   buildWorkerInjectionScript,
 };

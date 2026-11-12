@@ -250,53 +250,30 @@ module.exports = `  const canvasMark = Number(CFG.canvas?.mark) || 1;
       if (metaMode !== 'real') {
         if (proto.getParameter) {
           replace(proto, 'getParameter', (original) => function(param) {
-            const UNMASKED_VENDOR_WEBGL = 0x9245;
-            const UNMASKED_RENDERER_WEBGL = 0x9246;
-            if (param === UNMASKED_VENDOR_WEBGL || param === UNMASKED_RENDERER_WEBGL) {
-              if (!enabledDebugExts.has(this)) {
-                // Conforms to real Chrome: without WEBGL_debug_renderer_info, native returns null and sets INVALID_ENUM
-                return original.apply(this, arguments);
-              }
-              if (param === UNMASKED_VENDOR_WEBGL) return metaMode === 'blocked' ? '' : CFG.webgl.vendor;
-              if (param === UNMASKED_RENDERER_WEBGL) return metaMode === 'blocked' ? '' : CFG.webgl.renderer;
+            const queried = readWebglParameter(original, this, arguments);
+            const native = queried.value;
+            const enumValue = queried.param;
+            if (native === null) return native;
+            if (enumValue === 0x9245 || enumValue === 0x9246) {
+              if (!enabledDebugExts.has(this)) return native;
+              if (metaMode === 'blocked') return '';
+              return enumValue === 0x9245 ? CFG.webgl.vendor : CFG.webgl.renderer;
             }
             const limits = CFG.webgl && CFG.webgl.limits;
             if (limits) {
-              if (param === 0x0d3a) {
-                const native = original.apply(this, arguments);
-                const side = Number(limits[0x84e8]) || 0;
-                if (side && native && native.length === 2) {
-                  const out = new native.constructor(2);
-                  out[0] = side; out[1] = side;
-                  return out;
-                }
-                return native;
+              const key = enumValue === 0x0d3a ? 0x84e8 : enumValue;
+              if (Object.prototype.hasOwnProperty.call(limits, key)) {
+                return boundWebglLimit(native, limits[key], enumValue);
               }
-              if (param === 0x846d) {
-                const native = original.apply(this, arguments);
-                const maxPoint = Number(limits[0x846d]) || 0;
-                if (maxPoint && native && native.length === 2) {
-                  const out = new native.constructor(2);
-                  out[0] = native[0] || 1;
-                  out[1] = maxPoint;
-                  return out;
-                }
-                return native;
-              }
-              const isWebgl2 = typeof WebGL2RenderingContext !== 'undefined' && (this instanceof WebGL2RenderingContext);
-              const WEBGL2_PARAM_KEYS = [0x8a30, 0x8a34, 0x8a2b, 0x8a2d];
-              if (WEBGL2_PARAM_KEYS.includes(param)) {
-                if (isWebgl2) return limits[param];
-                return original.apply(this, arguments);
-              }
-              if (Object.prototype.hasOwnProperty.call(limits, param)) return limits[param];
             }
-            return original.apply(this, arguments);
+            return native;
           });
         }
         if (proto.getShaderPrecisionFormat) {
           replace(proto, 'getShaderPrecisionFormat', (original) => function(shaderType, precisionType) {
-            const fmt = original.apply(this, arguments);
+            const invocation = invokeNativeUnsigned(original, this, arguments, [0, 1]);
+            const fmt = invocation.value;
+            precisionType = invocation.values[1];
             if (!fmt) return null;
 
             const osName = String(CFG.os || '').toLowerCase();
@@ -324,6 +301,7 @@ module.exports = `  const canvasMark = Number(CFG.canvas?.mark) || 1;
             }
 
             if (target) {
+              for (const key of ['rangeMin', 'rangeMax', 'precision']) target[key] = Math.min(Number(fmt[key]), target[key]);
               precisionOverridesMap.set(fmt, target);
             }
             return fmt;
