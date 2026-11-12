@@ -734,8 +734,13 @@ async function validateProfileRootSecure(dataRoot, profileRoot, profileId, optio
   const dataCheck = validateDataRootIsolationSecure(dataRoot, options);
   if (!dataCheck.ok) return dataCheck;
   if (isLinkLike(profileRoot)) return { ok: false, message: 'profile root must not be a symlink or junction', root: profileRoot };
-  const realRoot = await fsp.realpath(profileRoot).catch(() => path.resolve(profileRoot));
   const realBase = await fsp.realpath(dataRoot).catch(() => path.resolve(dataRoot));
+  const realRoot = await fsp.realpath(profileRoot).catch((error) => {
+    if (error.code !== 'ENOENT') throw error;
+    // The lexical check guarantees this direct child. Resolve its existing
+    // parent first so aliases such as macOS /var -> /private/var stay aligned.
+    return path.join(realBase, profileId);
+  });
   if (!isPathInsideOrEqual(realRoot, realBase) || normalizedPath(realRoot) === normalizedPath(realBase)) {
     return { ok: false, message: 'profile root resolves outside environment data directory', root: realRoot };
   }

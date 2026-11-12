@@ -15,6 +15,31 @@ const { ProfileRoutes } = require('../api/profile-routes');
 const { reconcileProfiles, mergeExitState } = require('../../ui/ui-profile-state');
 const { collectProfileDataFiles } = require('../cloud/profile-data');
 const { readRestoreState } = require('../cloud/restore-state');
+const { validateProfileRootSecure } = require('../isolation');
+
+async function aliasedProfileRoots(root) {
+  const dataRoot = path.join(root, 'boundary-profiles');
+  await fs.mkdir(dataRoot);
+  const profileRoot = path.join(dataRoot, 'new');
+  const missing = await validateProfileRootSecure(dataRoot, profileRoot, 'new');
+  assert.equal(missing.ok, true, missing.message);
+  assert.equal(missing.realRoot, path.join(await fs.realpath(dataRoot), 'new'));
+  await assert.rejects(fs.access(profileRoot), { code: 'ENOENT' }, 'validation must not create the profile');
+  await fs.mkdir(profileRoot);
+  assert.equal((await validateProfileRootSecure(dataRoot, profileRoot, 'new')).ok, true);
+  assert.equal((await validateProfileRootSecure(dataRoot, path.join(dataRoot, 'created'), 'created', { create: true })).ok, true);
+  const outside = path.join(root, 'outside');
+  await fs.mkdir(outside);
+  const linkType = process.platform === 'win32' ? 'junction' : 'dir';
+  const linkedProfile = path.join(dataRoot, 'escape');
+  await fs.symlink(outside, linkedProfile, linkType);
+  assert.equal((await validateProfileRootSecure(dataRoot, linkedProfile, 'escape')).ok, false,
+    'an aliased ancestor must not allow a symlinked profile root');
+  const linkedDataRoot = path.join(root, 'linked-profiles');
+  await fs.symlink(dataRoot, linkedDataRoot, linkType);
+  assert.equal((await validateProfileRootSecure(linkedDataRoot, path.join(linkedDataRoot, 'new'), 'new')).ok, false,
+    'the data root itself must still reject symlinks');
+}
 
 async function publicationFailures(root) {
   for (const scenario of ['both-fail', 'last-fails', 'last-succeeds']) {
@@ -41,7 +66,14 @@ async function publicationFailures(root) {
 }
 
 async function main() {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ob-optimization-'));
+  const temporaryRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'ob-optimization-'));
+  const physicalRoot = path.join(temporaryRoot, 'physical');
+  const alias = path.join(temporaryRoot, 'alias');
+  await fs.mkdir(physicalRoot);
+  // Exercise macOS-style temporary directory aliases on every platform.
+  await fs.symlink(physicalRoot, alias, process.platform === 'win32' ? 'junction' : 'dir');
+  const root = path.join(alias, 'app');
+  await fs.mkdir(root);
   const oldKey = process.env.OPENBROWSER_MASTER_KEY_FILE;
   process.env.OPENBROWSER_MASTER_KEY_FILE = path.join(root, 'master.key');
   const engine = new BrowserEngine({ getPath: () => root });
@@ -54,6 +86,7 @@ async function main() {
   await engine.sqliteStore.init();
   const upload = cloud.upload;
   try {
+    await aliasedProfileRoots(root);
     await publicationFailures(root);
     configure();
     await engine.syncProfiles([{ id: 'p', name: 'Original', cookies: 'synthetic-cookie',
@@ -137,12 +170,12 @@ async function main() {
     assert.equal(engine.profileMaintenance.size, 0);
     assert.equal(await readRestoreState(engine), null);
     assert.deepEqual(engine.sqliteStore.getAllProfiles().map((p) => p.id), ['p']);
-    console.log('OPTIMIZATION_INTEGRATION_SELFTEST OK (backup roundtrip, authoritative UI, API guards, WAL, busy backup, limits, metadata compensation)');
+    console.log('OPTIMIZATION_INTEGRATION_SELFTEST OK (aliased roots, symlink guards, backup roundtrip, authoritative UI, API guards, WAL, busy backup, limits, metadata compensation)');
   } finally {
     cloud.upload = upload;
     engine.sqliteStore.close();
     if (oldKey === undefined) delete process.env.OPENBROWSER_MASTER_KEY_FILE; else process.env.OPENBROWSER_MASTER_KEY_FILE = oldKey;
-    await fs.rm(root, { recursive: true, force: true });
+    await fs.rm(temporaryRoot, { recursive: true, force: true });
   }
 }
 main().catch((error) => { console.error(error); process.exitCode = 1; });
