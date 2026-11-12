@@ -149,7 +149,33 @@ module.exports = `  // --- screen ---
         // evaluate the complete expression. Returning the first regex match loses
         // conjunctions, negation, media types, comma lists and invalid syntax.
         const RE_PERSONA_MEDIA = /\\(\\s*((?:min-|max-)?(?:device-width|device-height|resolution)|-webkit-(?:min-|max-)?device-pixel-ratio)\\s*:\\s*([+]?(?:\\d*\\.)?\\d+)\\s*(px|dppx|dpi|dpcm)?\\s*\\)/gi;
-        const rewriteMediaQuery = (query) => query.replace(RE_PERSONA_MEDIA, (whole, feature, raw, rawUnit) => {
+        // Preference features (prefers-color-scheme etc.) report the persona's draw, not
+        // the host's: a dark-mode host answering "light" (or the reverse) is a single-read
+        // mismatch the detector gets for free. Mapped to always-true/always-false
+        // tautologies the native parser then composes with the rest of the query.
+        const mediaPrefs = CFG.mediaPreferences || {};
+        // Pointer/hover follow the DEVICE CLASS, not a draw: a phone or tablet answers
+        // (any-)pointer:coarse and (any-)hover:none; a desktop with a mouse answers fine
+        // and hover. The host's actual input devices are invisible to the persona.
+        const isTouchClass = Boolean(CFG.mobile || CFG.mobileDevice);
+        const pointerValue = isTouchClass ? 'coarse' : 'fine';
+        const hoverValue = isTouchClass ? 'none' : 'hover';
+        const RE_PREFS_MEDIA = /\\(\\s*((?:any-)?(?:pointer|hover)|prefers-color-scheme|prefers-reduced-motion|prefers-contrast|forced-colors|prefers-reduced-transparency|inverted-colors|prefers-reduced-data)\\s*:\\s*([a-z-]+)\\s*\\)/gi;
+        const rewritePrefMedia = (query) => query.replace(RE_PREFS_MEDIA, (whole, feature, value) => {
+          const f = String(feature).toLowerCase();
+          let drawn;
+          if (f === 'pointer' || f === 'any-pointer') drawn = pointerValue;
+          else if (f === 'hover' || f === 'any-hover') drawn = hoverValue;
+          else switch (f) {
+            case 'prefers-color-scheme': drawn = String(mediaPrefs.colorScheme || 'light'); break;
+            case 'prefers-reduced-motion': drawn = String(mediaPrefs.reducedMotion || 'no-preference'); break;
+            case 'prefers-contrast': drawn = String(mediaPrefs.contrast || 'no-preference'); break;
+            case 'forced-colors': drawn = String(mediaPrefs.forcedColors || 'none'); break;
+            default: return whole; // reduced-transparency/inverted-colors/reduced-data: host default
+          }
+          return String(value).toLowerCase() === drawn ? '(min-resolution: 0.001dppx)' : '(max-resolution: 0dppx)';
+        });
+        const rewriteMediaQuery = (query) => rewritePrefMedia(query.replace(RE_PERSONA_MEDIA, (whole, feature, raw, rawUnit) => {
           const name = feature.toLowerCase().replace(/^-webkit-/, '');
           const unit = String(rawUnit || '').toLowerCase();
           let expected = Number(raw), actual;
@@ -166,7 +192,7 @@ module.exports = `  // --- screen ---
           const matches = name.startsWith('min-') ? actual >= expected
             : name.startsWith('max-') ? actual <= expected : Math.abs(actual - expected) < 0.000001;
           return matches ? '(min-resolution: 0.001dppx)' : '(max-resolution: 0dppx)';
-        });
+        }));
         const patchedMatchMedia = {
           matchMedia(query) {
             const original = String(query);

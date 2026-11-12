@@ -67,7 +67,15 @@ function buildWorkerInjectionScript(fp) {
       square: stabilitySquare(stability),
     },
   });
-  return buildWorkerRuntimeFull({ json, bridgeToken });
+  // Idempotency guard: the engine evaluates this source on EVERY service-worker
+  // session (cached SWs start from the script cache with no prefix), including
+  // network-fetched ones whose script bytes already carry the prefix. The marker
+  // makes the second run a no-op instead of a double-install (double-wrapped
+  // constructors, duplicated font bridges).
+  const guard = "if (typeof self !== 'undefined' && self.__obWorkerIdentityApplied) { /* already installed */ } else { if (typeof self !== 'undefined') self.__obWorkerIdentityApplied = true;\n";
+  const full = buildWorkerRuntimeFull({ json, bridgeToken });
+  return guard + full + "\n}";
+
 }
 
 module.exports = {

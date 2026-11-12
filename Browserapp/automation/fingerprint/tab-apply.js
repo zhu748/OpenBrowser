@@ -132,6 +132,21 @@ async function applyToTarget(cdpCall, webSocketDebuggerUrl, fp, profile, options
     }
   };
 
+  // Media features at the COMPOSITOR level: Emulation.setEmulatedMedia makes the
+  // color-scheme and prefers-* answers agree for CSS `@media` blocks and
+  // :root color-scheme rendering, complementing the document-side matchMedia
+  // rewrite (which covers JS MediaQueryList reads). Cheap and per-tab.
+  if (fp.mediaPreferences) {
+    const prefs = fp.mediaPreferences;
+    await softOverride('Emulation.setEmulatedMedia', {
+      features: [
+        { name: 'prefers-color-scheme', value: String(prefs.colorScheme || 'light') },
+        { name: 'prefers-reduced-motion', value: String(prefs.reducedMotion || 'no-preference') },
+        { name: 'prefers-contrast', value: String(prefs.contrast || 'no-preference') },
+        { name: 'forced-colors', value: String(prefs.forcedColors || 'none') },
+      ],
+    });
+  }
   // Network/Emulation.setUserAgentOverride + UserAgentMetadata (Client Hints)
   if (fp.userAgent || fp.uaProfile) {
     const isIos = Boolean((fp.mobileDevice && fp.mobileDevice.os === 'ios') || fp.uaProfile?.os === 'ios' || (fp.platform && /iphone|ipad|ipod/i.test(fp.platform)));

@@ -92,6 +92,9 @@ module.exports = {
       logger: (details) => this.emit({ type: details?.type, id: item.profile?.id, url: details?.url }),
     });
     item.workerScriptPrefixer = workerScriptPrefixer;
+    // Kept for cached-SW delivery: sessions that start from the script cache get this
+    // source evaluated directly post-resume (see resumeTarget in onAttached).
+    item.workerFingerprintSource = source;
     const requestHeaderRewriter = new RequestHeaderRewriter({
       profile: item.profile,
       fingerprint,
@@ -373,6 +376,39 @@ module.exports = {
           await state.command('Runtime.runIfWaitingForDebugger', {}, { sessionId, timeout: 3000 });
           // Chrome 157: Network.enable on a PAUSED service worker times out; it works
           // right after the pause is released. Deferred SW network setup lands here.
+          // Cached SW delivery also lands here: the first evaluate of a nontrivial
+          // script on a paused worker deadlocks on Chromium 157 (the whole reason the
+          // prefixer exists), so the direct evaluate runs AFTER runIfWaitingForDebugger.
+          const cachedSwSession = item.pendingCachedSwSessions?.delete(sessionId);
+          if (cachedSwSession && item.workerFingerprintSource) {
+            // Fire-and-forget: an SW is mid-install/activate at this moment (its event
+            // handlers own the thread), so a awaited evaluate here queues behind them and
+            // can hold resumeTarget — and the whole attach pipeline — for seconds.
+            // Scheduled off the critical path with a small delay for the install/activate
+            // handlers to drain; failures (stopped/replaced SW) are events, not errors.
+            const swUrl = String(targetInfo.url || '');
+            const swSource = item.workerFingerprintSource;
+            const profileId = item.profile?.id;
+            const delayedSwInject = setTimeout(() => {
+              (async () => {
+                let needsSource = true;
+                try {
+                  const probe = await state.command('Runtime.evaluate', { expression: 'self.__obWorkerIdentityApplied === true' }, { sessionId, timeout: 1500 });
+                  needsSource = !(probe && probe.result && probe.result.value === true);
+                } catch (_) { /* stopped or short-lived SW: try the source anyway */ }
+                if (!needsSource) return;
+                const evaluation = await state.command('Runtime.evaluate', { expression: swSource }, { sessionId, timeout: 4000 });
+                if (evaluation?.exceptionDetails) {
+                  this.emit({ type: 'service-worker-cached-evaluate-failed', id: profileId, message: evaluation.exceptionDetails.text || 'exception' });
+                } else {
+                  this.emit({ type: 'service-worker-cached-injected', id: profileId, url: swUrl });
+                }
+              })().catch((error) => {
+                this.emit({ type: 'service-worker-cached-evaluate-failed', id: profileId, message: error.message });
+              });
+            }, 400);
+            delayedSwInject.unref?.();
+          }
           if (item.serviceWorkerNetSetupSessions?.delete(sessionId)) {
             try {
               await state.command('Network.enable', {}, { sessionId, timeout: 3000 });
@@ -458,6 +494,14 @@ module.exports = {
                 // so defer it to resumeTarget().
                 item.serviceWorkerNetSetupSessions = item.serviceWorkerNetSetupSessions || new Set();
                 item.serviceWorkerNetSetupSessions.add(sessionId);
+                // A cached SW starts from the script cache with no network request, so
+                // the prefixer never fires for its URL and the SW scope would read host
+                // values (the last P0 delivery hole from the audit). Track the session
+                // for a post-resume evaluate; the fulfilledUrls dedup below keeps a
+                // network-fetched SW (already prefixed in its script bytes) from being
+                // evaluated twice.
+                item.pendingCachedSwSessions = item.pendingCachedSwSessions || new Set();
+                item.pendingCachedSwSessions.add(sessionId);
               } else {
                 // Dedicated/Shared workers: script prefixing (page-level Fetch) carries
                 // the JS mocks; the network-layer override below keeps their fetch()
@@ -574,6 +618,9 @@ module.exports = {
         try { requestHeaderRewriter.destroy(); } catch (_) {}
         try { fontResponseRewriter.destroy?.(); } catch (_) {}
         try { workerScriptPrefixer.destroy(); } catch (_) {}
+        item.pendingCachedSwSessions?.clear();
+        item.serviceWorkerNetSetupSessions?.clear();
+        item.workerFingerprintSource = null;
         if (!barrierSettled) {
           settleBarrier(new Error(`CDP connection closed before initial target barrier resolved: ${error?.message || error}`));
         }
@@ -601,6 +648,9 @@ module.exports = {
       try { requestHeaderRewriter.destroy(); } catch (_) {}
       try { fontResponseRewriter.destroy?.(); } catch (_) {}
       try { workerScriptPrefixer.destroy(); } catch (_) {}
+      item.pendingCachedSwSessions?.clear();
+      item.serviceWorkerNetSetupSessions?.clear();
+      item.workerFingerprintSource = null;
       if (!barrierSettled) {
         settleBarrier(new Error('CDP connection closed before initial target barrier resolved'));
       }

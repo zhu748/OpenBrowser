@@ -119,7 +119,14 @@ const MEDIA_DEVICE_POOLS_BY_OS = Object.freeze({
     { input: 'Built-in Microphone', output: 'MacBook Air Speakers', video: 'FaceTime HD Camera' },
     { input: 'Built-in Microphone', output: 'Internal Speakers', video: 'FaceTime HD Camera' },
     { input: 'MacBook Pro Microphone', output: 'MacBook Pro Speakers', video: 'FaceTime HD Camera (Built-in)' },
-    { input: 'Mac mini Microphone', output: 'Mac mini Speakers', video: 'FaceTime HD Camera' },
+  ]),
+  // Desktop-class Macs (iMac / Studio / mini): no built-in mic on the mini/Studio (they
+  // ship none), iMac has one; speakers exist on iMac only. Display-attached cameras are
+  // the norm. A desktop persona drawing "MacBook Pro Speakers" is the audit's mismatch.
+  macos_desktop: Object.freeze([
+    { input: 'MacBook Pro Microphone', output: 'MacBook Pro Speakers', video: 'FaceTime HD Camera (Built-in)' },
+    { input: 'Microphone (Display Audio)', output: 'Speakers (Display Audio)', video: 'FaceTime HD Camera (Studio Display)' },
+    { input: 'iMac Microphone', output: 'iMac Speakers', video: 'FaceTime HD Camera' },
   ]),
   android: Object.freeze([
     { input: 'Built-in Audio', output: 'Built-in Speaker', video: 'Back Camera' },
@@ -556,8 +563,9 @@ function createMediaDevicesFromSeed(seedInput, options = {}) {
   let acc = 0;
   for (let i = 0; i < raw.length; i += 1) acc += raw.charCodeAt(i);
   const osKey = String(options.os || '').toLowerCase();
+  const desktopClass = options.laptop === false;
   const pool = (osKey.startsWith('macos') || osKey === 'darwin')
-    ? MEDIA_DEVICE_POOLS_BY_OS.macos
+    ? (desktopClass ? MEDIA_DEVICE_POOLS_BY_OS.macos_desktop : MEDIA_DEVICE_POOLS_BY_OS.macos)
     : (osKey === 'android'
       ? MEDIA_DEVICE_POOLS_BY_OS.android
       : (osKey === 'linux'

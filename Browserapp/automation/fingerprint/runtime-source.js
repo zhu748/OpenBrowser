@@ -25,6 +25,7 @@ const workerGraphics = require('./runtime/worker-graphics');
 const workerGpuStorage = require('./runtime/worker-gpu-storage');
 const workerSessionBootstrap = require('./runtime/worker-session-bootstrap');
 const networkFragment = require('./runtime/network-fragment');
+const codecMatrixFragment = require('./runtime/codec-matrix-fragment');
 
 // Parse the assembled CFG once (it is a JSON literal produced by
 // injection-script.js), then decide fragment inclusion against it.
@@ -81,6 +82,8 @@ function buildDocumentRuntime(context) {
     drop(keepWebrtc) ?? documentWebrtc,
     drop(keepMedia) ?? documentMedia,
     documentGpuStorage,
+    // Codec capability matrix: passive unless the CFG carries a matrix.
+    codecMatrixFragment(context),
     // blob:/data: worker identity delivery: the Fetch prefixer only sees
     // network-loaded scripts, so inline workers need a main-world constructor
     // patch (see runtime/worker-constructor-patch.js).

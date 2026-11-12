@@ -83,6 +83,9 @@ const WINDOWS_PERSONAS = [
 ];
 
 /** Apple Silicon hardware: Retina (2x) and 30-bit colour are the norm, not the exception. */
+// All Apple Silicon entries are MacBook panels (laptop: true by default); a desktop-class
+// Apple machine (Studio/mini driving an external display) has no built-in camera/mic of
+// its own and is served by the macos_desktop media pool only when laptop: false.
 const MACOS_APPLE_PERSONAS = [
   {
     os: "macos", cores: 8, memory: 8, colorDepth: 30, devicePixelRatio: 2,
@@ -126,6 +129,26 @@ const MACOS_INTEL_PERSONAS = [
       vendor: "Google Inc. (Intel)",
       renderer: "ANGLE (Intel, ANGLE Metal Renderer: Intel(R) Iris(TM) Plus Graphics 655, Unspecified Version)",
       gpu: { vendor: "intel", architecture: "gen-9" },
+    },
+  },
+  {
+    // MacBook Air 13" (2017): dual-core i5 + HD 6000 (gen-8). Panel stays 1440x900 @ 2x.
+    os: "macos", cores: 4, memory: 8, colorDepth: 24, devicePixelRatio: 2,
+    screen: { width: 1440, height: 900 },
+    webgl: {
+      vendor: "Google Inc. (Intel)",
+      renderer: "ANGLE (Intel, ANGLE Metal Renderer: Intel(R) HD Graphics 6000, Unspecified Version)",
+      gpu: { vendor: "intel", architecture: "gen-8" },
+    },
+  },
+  {
+    // MacBook Pro 15" (2018): 6-core i7 + Radeon Pro 560X (Polaris).
+    os: "macos", cores: 6, memory: 8, colorDepth: 30, devicePixelRatio: 2,
+    screen: { width: 1680, height: 1050 },
+    webgl: {
+      vendor: "Google Inc. (AMD)",
+      renderer: "ANGLE (AMD, ANGLE Metal Renderer: AMD Radeon Pro 560X OpenGL Engine, Unspecified Version)",
+      gpu: { vendor: "amd", architecture: "polaris-2" },
     },
   },
   {
@@ -181,6 +204,36 @@ const LINUX_PERSONAS = [
       vendor: "Google Inc. (AMD)",
       renderer: "ANGLE (AMD, AMD Radeon Graphics (radeonsi, renoir), OpenGL 4.6)",
       gpu: { vendor: "amd", architecture: "rdna-2" },
+    },
+  },
+  {
+    // Common desktop-workstation shape: 6-core Ryzen 5 + RX 6600 (RDNA2 discrete).
+    os: "linux", cores: 6, memory: 8, colorDepth: 24, devicePixelRatio: 1,
+    screen: { width: 1920, height: 1080 },
+    webgl: {
+      vendor: "Google Inc. (AMD)",
+      renderer: "ANGLE (AMD, AMD Radeon RX 6600 (radeonsi, navi23), OpenGL 4.6)",
+      gpu: { vendor: "amd", architecture: "rdna-2" },
+    },
+  },
+  {
+    // Framework/T14-style Intel laptop: 8-core 13th-gen UHD 770 (Xe-LP).
+    os: "linux", cores: 8, memory: 8, colorDepth: 24, devicePixelRatio: 1,
+    screen: { width: 1920, height: 1200 },
+    webgl: {
+      vendor: "Google Inc. (Intel)",
+      renderer: "ANGLE (Intel, Mesa Intel(R) UHD Graphics 770 (RPL-S GT1), OpenGL 4.6)",
+      gpu: { vendor: "intel", architecture: "gen-12lp" },
+    },
+  },
+  {
+    // Budget desktop: 4-core i3 + UHD 630 (CFL GT2) — still a very common fleet box.
+    os: "linux", cores: 4, memory: 8, colorDepth: 24, devicePixelRatio: 1,
+    screen: { width: 1366, height: 768 },
+    webgl: {
+      vendor: "Google Inc. (Intel)",
+      renderer: "ANGLE (Intel, Mesa Intel(R) UHD Graphics 630 (CFL GT2), OpenGL 4.6)",
+      gpu: { vendor: "intel", architecture: "gen-9" },
     },
   },
 ];
@@ -295,13 +348,18 @@ const OS_FONTS = Object.freeze({
     "Noto Sans Gunjala Gondi Regular", "Noto Sans Masaram Gondi Regular",
     "Noto Serif Yezidi Regular",
   ]),
+  // Trimmed to the families backed by real subset assets (see assets/font-subsets/index.json):
+  // a claimed-but-unserved family silently falls back to the HOST rasterizer when a page
+  // uses it, leaking the host's glyph shapes. The dropped nine (Bitstream Charter, Cantarell,
+  // Century Schoolbook L, Courier 10 Pitch, Dingbats, FreeSerif, Noto Sans CJK JP/SC,
+  // Ubuntu Condensed) had no subset payload.
   linux: Object.freeze([
-    "Abyssinica SIL", "Bitstream Charter", "Cantarell", "Century Schoolbook L", "Courier 10 Pitch",
-    "DejaVu Sans", "DejaVu Sans Mono", "DejaVu Serif", "Dingbats", "FreeMono", "FreeSans",
-    "FreeSerif", "Liberation Mono", "Liberation Sans", "Liberation Sans Narrow",
+    "Abyssinica SIL",
+    "DejaVu Sans", "DejaVu Sans Mono", "DejaVu Serif", "FreeMono", "FreeSans",
+    "Liberation Mono", "Liberation Sans", "Liberation Sans Narrow",
     "Liberation Serif", "Nimbus Mono PS", "Nimbus Roman", "Nimbus Sans", "Noto Color Emoji",
-    "Noto Mono", "Noto Sans", "Noto Sans CJK JP", "Noto Sans CJK SC", "Noto Serif",
-    "P052", "Standard Symbols PS", "Ubuntu", "Ubuntu Condensed", "Ubuntu Mono", "URW Bookman",
+    "Noto Mono", "Noto Sans", "Noto Serif",
+    "P052", "Standard Symbols PS", "Ubuntu", "Ubuntu Mono", "URW Bookman",
     "URW Gothic", "Z003",
   ]),
   ios: Object.freeze([

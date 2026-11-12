@@ -207,7 +207,7 @@ jobs:
       - run: npm ci --include=dev --ignore-scripts
       - name: Install Chromium for Testing
         run: npx @puppeteer/browsers install chrome@stable --path "$HOME/.cache/ob-browsers"
-      - name: Fingerprint native consistency gate (Chromium)
+      - name: Fingerprint native consistency + worker delivery gates (Chromium)
         env:
           OPENBROWSER_NATIVE_NO_SANDBOX: '1'
         run: |
@@ -223,6 +223,11 @@ jobs:
           echo "CHROME_BIN=$CHROME_BIN"
           export OPENBROWSER_CHROMIUM_BINARY="$CHROME_BIN"
           node automation/selftests/fingerprint-native-consistency-selftest.js
+          # Worker-delivery behavior gates: blob/data/extensionless/nested worker
+          # identity, and cached-service-worker scope identity. Both exercise the
+          # Chromium 143+/157+ delivery paths that no static selftest can cover.
+          node automation/selftests/fingerprint-blob-worker-identity-gate.js
+          node automation/selftests/fingerprint-cached-sw-identity-gate.js
 
   review-boundaries:
     name: Storage and runtime boundaries (${{ matrix.os }}, Node ${{ matrix.node }})

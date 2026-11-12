@@ -311,6 +311,25 @@ module.exports = `  // --- hide automation (navigator.webdriver / AutomationCont
     } catch (_) {}
   }
 
+  // --- Gamepad sanitization (host controllers must not surface) ---
+  // A controller plugged into the HOST answers navigator.getGamepads() with the host's
+  // device list and fires gamepadconnected with its vendor/product ids — a hardware
+  // inventory read that ignores the persona entirely. The persona models the common
+  // real state (no controller connected): the list is empty and events never fire. A
+  // synthetic non-empty list would be worse: ids, hand mappings and vibration support
+  // would all have to be coherent per platform.
+  if (typeof navigator !== "undefined") {
+    try {
+      if (typeof navigator.getGamepads === "function") {
+        const EMPTY_PADS = [null, null, null, null];
+        Object.defineProperty(navigator, "getGamepads", {
+          configurable: true, enumerable: true, writable: true,
+          value: nativeLike(function getGamepads() { return EMPTY_PADS; }, null, "getGamepads", 0),
+        });
+      }
+    } catch (_) {}
+  }
+
   // --- Keyboard Layout side-channel shielding (navigator.keyboard.getLayoutMap) ---
   if (typeof Keyboard !== "undefined" && Keyboard.prototype && typeof Keyboard.prototype.getLayoutMap === "function") {
     const US_KEYBOARD_LAYOUT = {

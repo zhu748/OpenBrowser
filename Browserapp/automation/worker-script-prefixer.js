@@ -25,6 +25,11 @@ class WorkerScriptPrefixer {
     this.commandTimeout = Math.max(2000, Math.min(15000, Number(options.commandTimeout) || 8000));
     this.requestStage = new Set();
     this.inFlight = new Set();
+    // URLs whose script bodies this prefixer has fulfilled with the persona prefix.
+    // Cached service workers start from the script cache with NO network request, so
+    // their sessions see no prefixing; the engine uses this set to evaluate the source
+    // directly on those sessions exactly once per URL instead.
+    this.fulfilledUrls = new Set();
     this.destroyed = false;
     this.logger = typeof options.logger === 'function' ? options.logger : null;
   }
@@ -140,6 +145,7 @@ class WorkerScriptPrefixer {
           original,
         ]).toString('base64'),
       }, { sessionId: event.sessionId, timeout: this.commandTimeout });
+      this.fulfilledUrls.add(url);
       this.logger?.({ type: 'worker-script-prefixed', url });
       return true;
     } finally {

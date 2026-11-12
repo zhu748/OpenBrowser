@@ -68,6 +68,8 @@ function buildInjectionScript(fp, options = {}) {
     webrtcPolicy: fp.webrtcPolicy,
     webrtcAddress: fp.webrtcAddress || null,
     webrtcLocalMdns: typeof fp.webrtcLocalMdns === 'string' ? fp.webrtcLocalMdns : '',
+    mediaPreferences: fp.mediaPreferences || { colorScheme: 'light', reducedMotion: 'no-preference', forcedColors: 'none', contrast: 'no-preference' },
+    codecMatrix: fp.codecMatrix || null,
     battery: fp.battery || null,
     connection: fp.connection || null,
     geoPermission: fp.geoPermission || null,

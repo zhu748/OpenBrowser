@@ -168,8 +168,11 @@ function scopeFor(fp) {
     assert.equal(events.own, false);
     vm.runInContext(`matchMedia('not all and (min-device-width: 1px), print and (resolution: 192dpi)')`, scope);
     assert.equal(queries.at(-1), 'not all and (min-resolution: 0.001dppx), print and (min-resolution: 0.001dppx)');
+    // prefers-* is now persona-driven (round 11): the predicate is rewritten to a
+    // resolution tautology so the native parser composes the persona's draw. The
+    // default profile's draw is light, so 'dark' maps to the always-false tautology.
     vm.runInContext(`matchMedia('(prefers-color-scheme: dark)')`, scope);
-    assert.equal(queries.at(-1), '(prefers-color-scheme: dark)');
+    assert.equal(queries.at(-1), '(max-resolution: 0dppx)');
     vm.runInContext(`matchMedia('(resolution: 1garbage)')`, scope);
     assert.equal(queries.at(-1), '(resolution: 1garbage)');
     const ios = scopeFor(buildFingerprint(profile({ os: 'iOS' })));

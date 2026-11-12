@@ -36,6 +36,105 @@ module.exports = `  const canvasMark = Number(CFG.canvas?.mark) || 1;
   // OffscreenCanvas metrics in a worker sees the jitter on one side only —
   // and a cross-session comparison sees the raw host font stack on the
   // worker side.
+  // Font-family sanitization, mirroring the document gate (document-fonts.js): a
+  // font family foreign to the claimed OS must not reach the host rasterizer inside
+  // a worker either, or OffscreenCanvas measureText/drawText leaks the host's
+  // fontconfig substitution for that family. The ctx.font setter rewrites foreign
+  // families out before the native side sees them.
+  if (CFG.fonts && Array.isArray(CFG.fonts.foreign) && CFG.fonts.foreign.length
+    && globalThis.OffscreenCanvasRenderingContext2D?.prototype) {
+    try {
+      const foreignFontSet = new Set(CFG.fonts.foreign
+        .map((name) => String(name || '').trim().toLowerCase())
+        .filter(Boolean));
+      const stripFamily = (token) => String(token || '').trim()
+        .replace(/^"([^"\\\\]|\\\\.)*"$/, '')
+        .replace(/^'([^'\\\\]|\\\\.)*'$/, '')
+        .replace(/^"([^"]*)"$/, '$1')
+        .replace(/^'([^']*)'$/, '$1')
+        .trim();
+      const splitFamilyList = (value) => {
+        const out = [];
+        let current = '';
+        let quote = null;
+        for (let i = 0; i < value.length; i++) {
+          const ch = value[i];
+          if (quote) {
+            current += ch;
+            if (ch === quote && value[i - 1] !== String.fromCharCode(92)) quote = null;
+            continue;
+          }
+          if (ch === '"' || ch === "'") { quote = ch; current += ch; continue; }
+          if (ch === ',') { out.push(current.trim()); current = ''; continue; }
+          current += ch;
+        }
+        if (current.trim()) out.push(current.trim());
+        return out;
+      };
+      const isForeignFamily = (token) => foreignFontSet.has(stripFamily(token).toLowerCase());
+      const sanitizeFamilyList = (families) => {
+        const kept = families.filter((token) => !isForeignFamily(token));
+        return kept.length ? kept.join(', ') : 'monospace';
+      };
+      const fontFamilyPart = (font) => {
+        const match = String(font || '').match(/^([\\s\\S]*?\\d+(?:\\.\\d+)?(?:px|pt|em|rem|%)(?:\\s*\\/\\s*[^\\s,]+)?\\s+)([\\s\\S]+)$/i);
+        return match ? { prefix: match[1], families: splitFamilyList(match[2]) } : null;
+      };
+      const sanitizeFontShorthand = (font) => {
+        const text = String(font || '');
+        const parsed = fontFamilyPart(text);
+        if (!parsed) return text;
+        const clean = sanitizeFamilyList(parsed.families);
+        return clean === parsed.families.join(', ') ? text : parsed.prefix + clean;
+      };
+      const ctxProto = globalThis.OffscreenCanvasRenderingContext2D.prototype;
+      const fontDescriptor = Object.getOwnPropertyDescriptor(ctxProto, 'font');
+      if (fontDescriptor && typeof fontDescriptor.get === 'function' && typeof fontDescriptor.set === 'function') {
+        const nativeGet = fontDescriptor.get;
+        const nativeSet = fontDescriptor.set;
+        const originals = new WeakMap();
+        Object.defineProperty(ctxProto, 'font', {
+          configurable: fontDescriptor.configurable,
+          enumerable: fontDescriptor.enumerable,
+          get: nativeLike(function font() {
+            const original = originals.get(this);
+            if (original !== undefined) return original;
+            return nativeGet.call(this);
+          }, nativeGet, 'get font', 0),
+          set: nativeLike(function font(value) {
+            const original = String(value);
+            const clean = sanitizeFontShorthand(original);
+            if (clean === original) {
+              originals.delete(this);
+              return nativeSet.call(this, value);
+            }
+            originals.set(this, original);
+            return nativeSet.call(this, clean);
+          }, nativeSet, 'set font', 1),
+        });
+      }
+      // measureText also sanitizes on the fly: a font set before this patch installed
+      // (or via a direct native path) must not rasterize a foreign family either.
+      const originalMeasureForSanitize = ctxProto.measureText;
+      if (typeof originalMeasureForSanitize === 'function') {
+        Object.defineProperty(ctxProto, 'measureText', {
+          configurable: true,
+          enumerable: true,
+          writable: true,
+          value: nativeLike(function measureText(text) {
+            const currentFont = String(this.font || '');
+            const cleanFont = sanitizeFontShorthand(currentFont);
+            if (cleanFont !== currentFont) {
+              try { this.font = cleanFont; } catch (_) {}
+              try { return originalMeasureForSanitize.call(this, text); }
+              finally { try { this.font = currentFont; } catch (_) {} }
+            }
+            return originalMeasureForSanitize.call(this, text);
+          }, originalMeasureForSanitize, 'measureText', 1),
+        });
+      }
+    } catch (_) {}
+  }
   if (globalThis.OffscreenCanvasRenderingContext2D?.prototype?.measureText) {
     const measureJitterCache = new Map();
     const MEASURE_JITTER_CACHE_MAX = 512;
@@ -73,6 +172,16 @@ module.exports = `  const canvasMark = Number(CFG.canvas?.mark) || 1;
               if (prop === 'actualBoundingBoxLeft') return val - jitter;
               if (prop === 'actualBoundingBoxAscent') return val + (jitter * 0.5);
               if (prop === 'actualBoundingBoxDescent') return val - (jitter * 0.5);
+              // Keep parity with the document-side TextMetrics proxy (see
+              // document-graphics.js): fontBoundingBox* and baseline offsets get the
+              // same half/quarter-strength jitter so a value compared across the main
+              // thread and a worker cannot diverge in WHICH properties are spoofed.
+              if (prop === 'fontBoundingBoxAscent') return val + (jitter * 0.5);
+              if (prop === 'fontBoundingBoxDescent') return val - (jitter * 0.5);
+              if (prop === 'fontBoundingBoxLeft') return val - jitter;
+              if (prop === 'fontBoundingBoxRight') return val + jitter;
+              if (prop === 'alphabeticBaseline') return val + (jitter * 0.25);
+              if (prop === 'ideographicBaseline' || prop === 'hangingBaseline') return val + (jitter * 0.25);
             }
             return typeof val === 'function' ? val.bind(target) : val;
           },

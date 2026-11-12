@@ -1,5 +1,10 @@
 #!/usr/bin/env node
 'use strict';
+// Strict mode (OPENBROWSER_ADVERSARIAL_STRICT=1): known-open-gaps become hard failures.
+// The default stays WARN so in-flight remediation does not block unrelated verification;
+// the macOS regression runner adopts strict mode as gaps close (rounds 9-12 closed the
+// media-preference, codec-matrix, worker-font, mDNS and cached-SW gaps).
+const STRICT_MODE = process.env.OPENBROWSER_ADVERSARIAL_STRICT === '1';
 
 /**
  * OpenBrowser Fingerprint Adversarial Round 3 Unified Acceptance Self-Test Suite
@@ -58,7 +63,7 @@ function check(id, title, testFn, options = {}) {
       results.push({ id, title, status: 'PASS' });
     } else {
       const msg = res && res.message ? res.message : (res && res.reason ? res.reason : 'Condition not met');
-      if (isKnownGap) {
+      if (isKnownGap && !STRICT_MODE) {
         warnCount++;
         console.log(`  WARN  [${id}] ${title} (Known Open Gap / In-Progress) — ${msg}`);
         results.push({ id, title, status: 'WARN', reason: msg });
@@ -70,7 +75,7 @@ function check(id, title, testFn, options = {}) {
       }
     }
   } catch (err) {
-    if (isKnownGap) {
+    if (isKnownGap && !STRICT_MODE) {
       warnCount++;
       console.log(`  WARN  [${id}] ${title} (Known Open Gap / In-Progress) — ${err.message}`);
       results.push({ id, title, status: 'WARN', reason: err.message });

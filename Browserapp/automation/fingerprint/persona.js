@@ -53,8 +53,17 @@ function buildFingerprint(profile = {}) {
       Math.abs(step - memoryOverride) < Math.abs(best - memoryOverride) ? step : best
     ), 8)
     : memoryPool[u32(seed, 16) % memoryPool.length];
-  const width = Number(profile.width) || 1280;
-  const height = Number(profile.height) || 820;
+  // Non-persona default panel: 1280x820 is not a physical panel any monitor ships, and
+  // "default" profiles clustering on one impossible size is a fleet-level signal. The
+  // unseeded default now samples the common real panels instead (still overridable by
+  // profile.width/height). Seed offset 86 is fresh.
+  const REAL_PANELS = [
+    [1920, 1080], [1920, 1080], [1920, 1080], [1536, 864], [1366, 768],
+    [2560, 1440], [1440, 900], [1680, 1050], [1600, 900], [3840, 2160],
+  ];
+  const defaultPanel = REAL_PANELS[u32(seed, 86) % REAL_PANELS.length];
+  const width = Number(profile.width) || defaultPanel[0];
+  const height = Number(profile.height) || defaultPanel[1];
   const isHdrRequested = Boolean(fpIn.hdr || privacy.hdr || profile.hdr || (Number(fpIn.colorDepth) === 30));
   let colorDepth = isHdrRequested ? 30 : 24;
   let devicePixelRatio = [1, 1, 1.25, 1.5, 2][u32(seed, 24) % 5];
@@ -200,6 +209,9 @@ function buildFingerprint(profile = {}) {
   if (uaOs === 'macos' && uaArchitecture === 'arm') uaOs = 'macos_arm';
   else if (uaOs === 'macos_arm' && uaArchitecture && uaArchitecture !== 'arm') uaOs = 'macos';
   const personaRequested = String(fpIn.deviceProfile ?? privacy.deviceProfile ?? '').toLowerCase() === 'persona';
+  const mediaIn = (fpIn.mediaPreferences && typeof fpIn.mediaPreferences === 'object')
+    ? fpIn.mediaPreferences
+    : (privacy.mediaPreferences && typeof privacy.mediaPreferences === 'object' ? privacy.mediaPreferences : null);
   const mobileRequested = [fpIn.os, clientHintsIn.os, profile.os, uaProfile.os]
     .map(normalizeUaOs)
     .find((value) => value === 'android' || value === 'ios');
@@ -409,6 +421,7 @@ function buildFingerprint(profile = {}) {
       extra: Array.isArray(fpIn.mediaDevices) ? fpIn.mediaDevices : null,
       labels: mediaLabelTemplates,
       os: uaOs,
+      laptop: devicePersona ? devicePersona.laptop !== false : undefined,
     });
   // Device class, not a coin flip, decides the battery shape. Desktop-class personas
   // (Mac mini / iMac / Studio, Linux towers, Windows desktops) have no battery hardware at
@@ -483,6 +496,53 @@ function buildFingerprint(profile = {}) {
   // omitted on desktop unless the user pinned it. Seeds moved off 36/44 (which the persona
   // draw and the UA draw already use) onto their own offsets so the axes stay independent;
   // shared seed offsets make correlated draws, which is itself a fingerprint.
+  // CSS media preference axes. Real-world distribution, not uniform: Chrome's own
+  // telemetry (and every analytics vendor) shows ~80% light scheme, ~85% no reduced
+  // motion, forced-colors is a rare accessibility setting (~3%), and pointer/hover
+  // follow the device class (mobile -> coarse/none; desktop -> fine/hover). Drawn from
+  // seed offsets 76-84 (fresh — no axis shares an offset with any other draw).
+  const mediaPrefs = {
+    colorScheme: mediaIn?.colorScheme
+      || (u32(seed, 76) % 10 < 8 ? 'light' : 'dark'),
+    reducedMotion: mediaIn?.reducedMotion
+      || (u32(seed, 78) % 20 < 17 ? 'no-preference' : 'reduce'),
+    forcedColors: mediaIn?.forcedColors
+      || (u32(seed, 80) % 100 < 3 ? 'active' : 'none'),
+    contrast: mediaIn?.contrast
+      || (u32(seed, 82) % 20 < 19 ? 'no-preference' : (u32(seed, 82) % 40 < 21 ? 'more' : 'less')),
+  };
+  // Codec capability matrix per claimed OS (stock-Chrome answers). Deliberately coarse:
+  // only the families detectors probe. true/false are full answers; objects carry
+  // profile-level detail for the H.264 families where it matters. Anything absent
+  // passes through the host answer untouched.
+  const CODEC_MATRIX = {
+    windows: {
+      video: { 'video/mp4': true, 'video/webm': true, 'video/av1': true },
+      audio: { 'audio/mp4': true, 'audio/webm': true, 'audio/ogg': true },
+      recorder: { 'video/webm': true, 'video/mp4': true, 'video/x-matroska': true },
+      rtcVideo: { 'video/vp8': true, 'video/vp9': true, 'video/av1': true, 'video/h264': true },
+      rtcAudio: { 'audio/opus': true, 'audio/red': true, 'audio/G722': true, 'audio/PCMU': true, 'audio/PCMA': true },
+    },
+    macos: {
+      video: { 'video/mp4': true, 'video/webm': true, 'video/av1': true },
+      audio: { 'audio/mp4': true, 'audio/webm': true, 'audio/ogg': false },
+      recorder: { 'video/webm': true, 'video/mp4': true, 'video/x-matroska': true },
+      rtcVideo: { 'video/vp8': true, 'video/vp9': true, 'video/av1': true, 'video/h264': true },
+      rtcAudio: { 'audio/opus': true, 'audio/red': true, 'audio/G722': true, 'audio/PCMU': true, 'audio/PCMA': true },
+    },
+    macos_arm: null, // same as macos — filled below
+    linux: {
+      video: { 'video/mp4': true, 'video/webm': true, 'video/av1': true },
+      audio: { 'audio/mp4': true, 'audio/webm': true, 'audio/ogg': true },
+      recorder: { 'video/webm': true, 'video/x-matroska': true },
+      rtcVideo: { 'video/vp8': true, 'video/vp9': true, 'video/av1': true, 'video/h264': false },
+      rtcAudio: { 'audio/opus': true, 'audio/red': true, 'audio/G722': true, 'audio/PCMU': true, 'audio/PCMA': true },
+    },
+  };
+  CODEC_MATRIX.macos_arm = CODEC_MATRIX.macos;
+  const codecMatrix = uaOs === 'linux'
+    ? CODEC_MATRIX.linux
+    : (uaOs === 'macos' || uaOs === 'macos_arm') ? CODEC_MATRIX.macos : CODEC_MATRIX.windows;
   const connection = networkMode === 'real' ? null : {
     ...(mobileDevice
       ? { type: String(networkIn?.type || (u32(seed, 56) % 4 === 0 ? 'ethernet' : 'wifi')) }
@@ -673,6 +733,8 @@ function buildFingerprint(profile = {}) {
       value: macMode === 'custom' && /^[0-9A-F]{2}(:?[0-9A-F]{2}){5}$/.test(macValue.replace(/-/g, ':')) ? macValue.replace(/-/g, ':') : '',
     },
     connection,
+    codecMatrix,
+    mediaPreferences: mediaPrefs,
     geoPermission,
     battery: {
       mode: batteryMode,
@@ -930,6 +992,20 @@ function fingerprintConsistencyIssues(fp) {
   const hwMemory = Number(fp?.deviceMemory) || 0;
   if (hwCores >= 12 && hwMemory > 0 && hwMemory < 8) {
     add('hardware-class-incoherent', '12+ logical cores paired with <8 GB deviceMemory is not a combination real hardware ships.', 'warning');
+  }
+  // window.outerWidth/outerHeight larger than screen.availWidth/availHeight: a window
+  // cannot exceed the work area on any OS (taskbar/dock alone forbids the equality case
+  // on the axis it occupies). A persona that draws them independently produces exactly
+  // that impossible geometry.
+  const hwAvailWidth = Number(fp?.screen?.availWidth) || 0;
+  const hwAvailHeight = Number(fp?.screen?.availHeight) || 0;
+  const hwOuterW = Number(fp?.windowOuter?.width ?? fp?.window?.outerWidth) || 0;
+  const hwOuterH = Number(fp?.windowOuter?.height ?? fp?.window?.outerHeight) || 0;
+  if (hwAvailWidth && hwOuterW && hwOuterW > hwAvailWidth) {
+    add('window-exceeds-avail', 'window.outerWidth exceeds screen.availWidth; no OS draws a window wider than the work area.', 'warning');
+  }
+  if (hwAvailHeight && hwOuterH && hwOuterH > hwAvailHeight) {
+    add('window-exceeds-avail', 'window.outerHeight exceeds screen.availHeight; the taskbar/dock alone makes that impossible.', 'warning');
   }
   // Low-end CPU with a workstation-class GPU: real machines pair RTX 40xx / RDNA3-class
   // cards with 8+ cores and 16+ GB. A 4-core/4 GB host driving an RTX 4080 is a pairing

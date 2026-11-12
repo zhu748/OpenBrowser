@@ -146,6 +146,20 @@ module.exports = `  // --- canvas ---
                       if (prop === 'actualBoundingBoxLeft') return val - jitter;
                       if (prop === 'actualBoundingBoxAscent') return val + (jitter * 0.5);
                       if (prop === 'actualBoundingBoxDescent') return val - (jitter * 0.5);
+                      // fontBoundingBox* and the baseline offsets expose the FONT's own
+                      // metrics, not the text's — a different font (or none) answers with
+                      // the host's rasterized values. The same seeded jitter family applies
+                      // (half-strength on the vertical box edges, mirroring the ascent/
+                      // descent treatment), keeping every numeric property persona-sourced.
+                      if (prop === 'fontBoundingBoxAscent') return val + (jitter * 0.5);
+                      if (prop === 'fontBoundingBoxDescent') return val - (jitter * 0.5);
+                      if (prop === 'fontBoundingBoxLeft') return val - jitter;
+                      if (prop === 'fontBoundingBoxRight') return val + jitter;
+                      // Baselines are intrinsic constants of the font's em box; the
+                      // smallest defensible nudge (quarter-strength) keeps them from
+                      // reading the host verbatim without inventing impossible geometry.
+                      if (prop === 'alphabeticBaseline') return val + (jitter * 0.25);
+                      if (prop === 'ideographicBaseline' || prop === 'hangingBaseline') return val + (jitter * 0.25);
                     }
                     return typeof val === 'function' ? val.bind(target) : val;
                   }

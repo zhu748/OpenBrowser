@@ -158,12 +158,24 @@ module.exports = `  // --- worker session bootstrap hook ---
     }
 
     const nestedPartsToText = (parts) => {
+      // Chunked decode: Function.prototype.apply caps arguments near 65536 on some
+      // engines (V8's true cap is higher but stack-bound), so a single .apply over a
+      // multi-MB blob part throws RangeError — and this helper then reports the whole
+      // worker as "not text-capturable" and skips persona delivery for it. The document
+      // side spreads with .apply-free accumulation; 8k chunks keep the worker side
+      // identical in behavior without the parameter-limit cliff.
       try {
         let text = '';
+        const appendBytes = (bytes) => {
+          const CHUNK = 8192;
+          for (let i = 0; i < bytes.length; i += CHUNK) {
+            text += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+          }
+        };
         for (const part of parts) {
           if (typeof part === 'string') text += part;
-          else if (part instanceof ArrayBuffer) text += String.fromCharCode.apply(null, new Uint8Array(part));
-          else if (ArrayBuffer.isView(part)) text += String.fromCharCode.apply(null, new Uint8Array(part.buffer, part.byteOffset, part.byteLength));
+          else if (part instanceof ArrayBuffer) appendBytes(new Uint8Array(part));
+          else if (ArrayBuffer.isView(part)) appendBytes(new Uint8Array(part.buffer, part.byteOffset, part.byteLength));
           else return null;
         }
         return text;
