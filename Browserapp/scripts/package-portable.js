@@ -32,22 +32,15 @@ let hostDist = (() => {
 const distRoot = path.join(appRoot, 'dist');
 
 /**
- * Default packaging always ships the integrated kernel.
- * Opt out only with OPENBROWSER_PACKAGE_VARIANT=without-kernel or OPENBROWSER_BUNDLE_KERNEL=false.
+ * Installers contain the desktop host and Rust core. Browser kernels are
+ * downloaded after installation and must never be copied into a release.
  */
 function packageVariant() {
   const variant = String(process.env.OPENBROWSER_PACKAGE_VARIANT || '').trim().toLowerCase();
-  if (variant === 'without-kernel' || variant === 'no-kernel' || variant === 'kernel-free') {
+  if (variant === '' || variant === 'without-kernel' || variant === 'no-kernel' || variant === 'kernel-free') {
     return 'without-kernel';
   }
-  if (variant === 'with-kernel' || variant === 'kernel' || variant === '') {
-    // Empty defaults to with-kernel (product default).
-    if (variant === '' && String(process.env.OPENBROWSER_BUNDLE_KERNEL || 'true').toLowerCase() === 'false') {
-      return 'without-kernel';
-    }
-    return 'with-kernel';
-  }
-  throw new Error('OPENBROWSER_PACKAGE_VARIANT must be with-kernel (default) or without-kernel');
+  throw new Error('Bundled-kernel installers are no longer supported; use without-kernel or leave OPENBROWSER_PACKAGE_VARIANT unset');
 }
 
 function bundleKernelVariantEnabled() {
@@ -60,7 +53,7 @@ function packageVariantSuffix(platform = process.platform, arch = packageArch) {
   const isVariantPlatform = p === 'win32' || p === 'linux'
     || (p === 'darwin' && (a === 'arm64' || packageVariant() === 'without-kernel'));
   if (!isVariantPlatform) return '';
-  // Default product SKU is with-kernel; keep stable artifact suffix for CI/release assets.
+  // The suffix identifies installers that download a kernel after installation.
   return packageVariant() === 'without-kernel' ? '-without-kernel' : '-with-kernel';
 }
 

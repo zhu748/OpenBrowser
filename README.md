@@ -99,8 +99,6 @@ Or use the launcher scripts from the repository root:
 ```bash
 cd Browserapp
 # Optional: OPENBROWSER_PACKAGE_ARCH=x86_64 or arm64
-# Ubuntu x86_64 only: explicitly fetch the Chrome for Testing package seed.
-npm run prepare:linux-kernel
 npm run package:portable
 ```
 
@@ -112,9 +110,7 @@ Build output is written to `Browserapp/dist/`.
 | macOS | Includes `OpenBrowser.app` and `启动.command`. |
 | Ubuntu x86_64 | Includes an `OpenBrowser-…tar.gz` portable archive and launcher. |
 
-Ubuntu packages include Chrome for Testing under
-`kernels/chrome-for-testing/chrome-linux64`; the application never downloads a
-kernel at runtime. Run the package as a normal desktop user, not with `sudo`.
+Installers do not contain a browser kernel. Download the independent Chrome Stable kernel in the application after installation. Run the Linux package as a normal desktop user, not with `sudo`.
 If required, install the standard Electron/Chromium desktop libraries:
 
 ```bash
@@ -157,7 +153,7 @@ OpenBrowser/
 └── README_CN.md           # Chinese documentation
 ```
 
-This repository contains source code, documentation, and — via [Git LFS](https://git-lfs.com/) — the platform kernel seeds used for packaging: the Windows x64 and macOS arm64 kernels are checked in under `Browserapp/kernels/` (LFS), the macOS x86_64 OpenBrowser 148 runtime is checked in as regular files, and Ubuntu x86_64 builds fetch Chrome Stable explicitly during CI packaging. It never includes profiles, cookies, proxy credentials, or installers. Clone with `git lfs install && git clone …` to receive the kernel seeds.
+This repository contains source code and documentation. It does not track browser binaries, use Git LFS, or bundle browser kernels in installers. A normal `git clone` is sufficient. OpenBrowser downloads an independent official Chrome Stable kernel when needed, or uses a browser selected by the user. Downloaded kernels and browser profiles remain local and ignored by Git.
 
 ## Data and security
 
@@ -168,6 +164,7 @@ This repository contains source code, documentation, and — via [Git LFS](https
 - Cloud backup integrations only connect outward after explicit user configuration.
 - **Backups that contain account credentials (cookies / passwords / 2FA / proxy logins / browser data) are only uploaded when a backup passphrase is set** — unencrypted credential uploads are rejected.
 - The updater checks installer SHA-256 and the Ed25519 signature in `SHA256SUMS.txt.sig`. Future releases with missing, invalid or unavailable signatures are refused; only the exact historical version `1.0.27` retains the legacy compatibility policy.
+- Release signing uses an encrypted GitHub Actions secret exposed only to the final signing step. Install this reissued 1.0.0 once manually to migrate from the earlier missing signing key; subsequent signed releases use the new trust root.
 - RPA plans, variables and results are encrypted at rest. Existing JSON stores migrate after a successful read; use application import/export instead of editing storage files.
 - Credential writes are refused when the local key cannot be read or durably saved. Preserve the original key and data files for recovery.
 - SQLite migration backups are encrypted, including historical plaintext migration backups. An existing database that cannot be opened blocks startup instead of selecting empty storage. Background encryption migration preserves subsequent edits and deletions.
@@ -193,7 +190,7 @@ This repository contains source code, documentation, and — via [Git LFS](https
 
 The independent kernel comes from [Donut Browser](https://github.com/zhom/donutbrowser) / [Wayfern](https://wayfern.com/) by [zhom](https://github.com/zhom). Update feed: [wayfern.json](https://donutbrowser.com/wayfern.json). Terms: [Wayfern ToS](https://wayfern.com/tos).
 
-Kernel seeds for Windows x64 and macOS arm64 are stored in this repository through Git LFS under `Browserapp/kernels/` and are consumed by CI packaging; macOS x86_64 packages use the checked-in OpenBrowser 148 runtime; Ubuntu x86_64 packages fetch Chrome Stable from Google during CI. Runtime kernel updates still follow the official feed.
+Installers contain the desktop application and Rust core only. Browser kernels are downloaded after installation; no seed archive or Git LFS service is needed to build or run this release.
 
 </details>
 

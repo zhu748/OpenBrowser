@@ -53,7 +53,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Selftests in this job need no kernels; exclude the whole LFS tree.
-          lfs: false
           sparse-checkout: |
             /*
             !/Browserapp/kernels/
@@ -95,7 +94,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          lfs: false
           sparse-checkout: |
             /*
             !/Browserapp/kernels/
@@ -123,7 +121,6 @@ jobs:
         with:
           # Cargo needs no kernels; excluding the LFS tree also keeps the
           # checkout small (the kernel bundle is 5k+ files).
-          lfs: false
           sparse-checkout: |
             /*
             !/Browserapp/kernels/
@@ -194,7 +191,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          lfs: false
           sparse-checkout: |
             /*
             !/Browserapp/kernels/
@@ -244,7 +240,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          lfs: false
           sparse-checkout: |
             /*
             !/Browserapp/kernels/
@@ -284,7 +279,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          lfs: false
           sparse-checkout: |
             /*
             !/Browserapp/kernels/
@@ -323,7 +317,6 @@ jobs:
           # the runner's workspace prefix they exceed Windows MAX_PATH and
           # checkout dies with "Filename too long". Cargo never reads kernels,
           # so exclude the tree — same block the smoke jobs already use.
-          lfs: false
           sparse-checkout: |
             /*
             !/Browserapp/kernels/

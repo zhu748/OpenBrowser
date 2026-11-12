@@ -1,3 +1,5 @@
+> 历史方案：当前版本已停用 Git LFS 和内置内核，改为安装后在程序内下载。本文仅保留历史审查背景。
+
 # Kernel externalization — Release assets + CI prefetch
 
 状态：机制已落地（2026-11-09，optimization/p0-p4 分支）。目标：把 4.22 GB 的

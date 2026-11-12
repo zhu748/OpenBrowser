@@ -26,3 +26,11 @@ Browserapp/kernels/chrome-stable/
 Browserapp/kernels/firefox-stable/
 # Process crash dumps (ELF core files) — never commit
 Browserapp/core
+
+# Browser kernels are downloaded at runtime, never versioned or bundled.
+/Browserapp/kernels/
+# Release-signing private keys and local credentials must never enter Git.
+.env
+.env.*
+**/*signing-private*.pem
+/signing-keys/

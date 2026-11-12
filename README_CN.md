@@ -99,8 +99,6 @@ npm start
 ```bash
 cd Browserapp
 # 可选：OPENBROWSER_PACKAGE_ARCH=x86_64 或 arm64
-# 仅 Ubuntu x86_64：显式获取 Chrome for Testing 内核种子。
-npm run prepare:linux-kernel
 npm run package:portable
 ```
 
@@ -112,8 +110,7 @@ npm run package:portable
 | macOS | 包含 `OpenBrowser.app` 和 `启动.command`。 |
 | Ubuntu x86_64 | 包含 `OpenBrowser-…tar.gz` 便携包和启动器。 |
 
-Ubuntu 安装包将 Chrome for Testing 内置在
-`kernels/chrome-for-testing/chrome-linux64`；应用运行时不会下载内核。请用普通桌面用户运行，不要使用 `sudo`。如缺少依赖，可安装标准 Electron/Chromium 桌面库：
+安装包不内置浏览器内核，安装后在程序内下载独立的 Chrome Stable 内核。请用普通桌面用户运行 Linux 程序，不要使用 `sudo`。如缺少依赖，可安装标准 Electron/Chromium 桌面库：
 
 ```bash
 sudo apt-get install libatk-bridge2.0-0 libatk1.0-0 libatspi2.0-0 libcups2 libdrm2 libgbm1 libglib2.0-0 libgtk-3-0 libnspr4 libnss3 libxcomposite1 libxdamage1 libxfixes3 libxkbcommon0 libxrandr2
@@ -153,7 +150,7 @@ OpenBrowser/
 └── README_CN.md           # 中文说明
 ```
 
-仓库包含源码与文档，不含 Profile、Cookie、代理凭据或安装包；Windows x64 与 macOS arm64 的平台内核种子通过 [Git LFS](https://git-lfs.com/) 存放在 `Browserapp/kernels/` 下，macOS x86_64 的 OpenBrowser 148 运行时以常规文件入库，Ubuntu x86_64 构建会在 CI 打包时显式获取 Chrome Stable。克隆时请先 `git lfs install` 再 `git clone`，否则内核种子只会是指针文件。
+仓库只保留源码与文档，不使用 Git LFS，不跟踪浏览器二进制，也不在安装包内预装内核。普通 `git clone` 即可获取完整源码。首次使用时，程序会按需下载独立的官方 Chrome Stable 内核，也可选择用户自己的浏览器。下载的内核、Profile、Cookie、代理凭据均保留在本地，不进入 Git。
 
 ## 数据与安全
 
@@ -164,6 +161,7 @@ OpenBrowser/
 - 云备份集成只有在用户显式配置后才会主动联网。
 - **包含账号凭据（Cookie / 密码 / 2FA / 代理登录信息 / 浏览器数据）的备份必须设置备份口令加密后才会上传**，未加密的凭据上传会被直接拒绝。
 - 应用内更新器从 `zhu748/OpenBrowser` 下载并核对安装包 SHA-256，同时验证 `SHA256SUMS.txt.sig` 的 Ed25519 签名。后续版本缺失签名或签名获取失败时拒绝运行安装器；仅精确列出的历史版本 `1.0.27` 保留兼容策略。
+- 发布签名使用 GitHub 加密 Secret，仅在最终签名步骤暴露。旧版 1.0.0 请先手动覆盖安装本次重发版本，以接入新的签名公钥；后续签名更新使用新信任根。
 - RPA 计划、变量与执行结果也加密保存；旧 JSON 文件在成功读取后自动迁移。请通过应用导入/导出，避免直接编辑存储文件。
 - 密钥文件无法读取或可靠保存时拒绝写入凭据，防止重启后无法恢复。请保留原密钥和数据文件进行恢复。
 - SQLite 迁移备份会加密保存，已有的明文迁移备份也会自动加密；已有数据库无法打开时拒绝切换到空存储。后台加密迁移不会覆盖后续修改或恢复已删除记录。
@@ -197,7 +195,7 @@ OpenBrowser/
 
 独立内核来自 [Donut Browser](https://github.com/zhom/donutbrowser) / [Wayfern](https://wayfern.com/)（作者 [zhom](https://github.com/zhom)）。更新源：[wayfern.json](https://donutbrowser.com/wayfern.json)。条款：[Wayfern ToS](https://wayfern.com/tos)。
 
-Windows x64 与 macOS arm64 的内核种子以 Git LFS 形式存放在本仓库 `Browserapp/kernels/` 下，供 CI 打包消费；macOS x86_64 包使用已纳入源码的 OpenBrowser 148 运行时；Ubuntu x86_64 包在 CI 时从 Google 获取 Chrome Stable。运行时的内核更新仍跟随官方源。
+安装包只包含桌面程序和 Rust 核心；浏览器内核在安装后下载，不依赖内核种子归档或 Git LFS。
 
 </details>
 

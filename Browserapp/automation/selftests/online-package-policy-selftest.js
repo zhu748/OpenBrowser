@@ -22,9 +22,11 @@ try {
     assert.equal(fs.existsSync(path.join(fixture, 'kernels')), false, 'no LFS pointers survive an online build');
   }
   process.env.OPENBROWSER_PACKAGE_VARIANT = 'with-kernel';
-  assert.equal(shouldShipOpenBrowser148Kernel('darwin', 'x86_64'), true);
-  assert.equal(packageArtifactStem('darwin', 'x86_64'), 'OpenBrowser-macOS-x86_64', 'retain existing bundled Intel release name');
-  console.log('ONLINE_PACKAGE_POLICY_SELFTEST OK (four online variants, kernel/LFS pruning, existing bundled Intel contract)');
+  assert.throws(() => shouldShipOpenBrowser148Kernel('darwin', 'x86_64'), /no longer supported/);
+  delete process.env.OPENBROWSER_PACKAGE_VARIANT;
+  assert.equal(shouldShipOpenBrowser148Kernel('darwin', 'x86_64'), false);
+  assert.equal(packageArtifactStem('darwin', 'x86_64'), 'OpenBrowser-macOS-x86_64-without-kernel', 'the default build also downloads its kernel later');
+  console.log('ONLINE_PACKAGE_POLICY_SELFTEST OK (four online variants, default without kernel, no LFS resources, legacy bundled build rejected)');
 } finally {
   if (previous === undefined) delete process.env.OPENBROWSER_PACKAGE_VARIANT;
   else process.env.OPENBROWSER_PACKAGE_VARIANT = previous;

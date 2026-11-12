@@ -1,3 +1,0 @@
-Browserapp/kernels/** filter=lfs diff=lfs merge=lfs -text
-# This small metadata file is committed as JSON, not as an LFS pointer.
-Browserapp/kernels/meta/.kernel-track-cache.json -filter !diff !merge

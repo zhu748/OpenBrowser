@@ -1,0 +1,6 @@
+{
+  "description": "Deployment proof for the release automation key. Private material is kept outside Git and in an encrypted GitHub Actions secret.",
+  "generatedAt": "2026-11-12",
+  "manifest": "OpenBrowser update signing deployment proof\nrepository: zhu748/OpenBrowser\npublic-key: MCowBQYDK2VwAyEAtb6HMwpkFLJszNXzyxNQoha0jIptgm7VCAKxQgWAnSo=\ngenerated: 2026-11-12\n",
+  "signatureBase64": "sHIqqG09u4dGAYALpgTXmmKdJqFiijipp6qhcPwHxqgs9KAVM7MRfQWP1BIwAkaKZU65Sc0y/m9dym6ozpQNCw=="
+}

@@ -24,6 +24,7 @@ const appUpdate = require('../app-update');
 const updateTrust = require('../update-trust');
 const APPUPDATE_SRC = fs.readFileSync(path.join(__dirname, '..', 'app-update.js'), 'utf8');
 const TRUST_PROOF = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'update-trust-proof.json'), 'utf8'));
+const CURRENT_TRUST_PROOF = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'update-trust-current-proof.json'), 'utf8'));
 
 async function main() {
   // --- parseChecksumManifest: real function, real input shapes ---
@@ -136,6 +137,10 @@ async function main() {
       Buffer.from(TRUST_PROOF.signatureBase64, 'base64'),
     );
     assert.strictEqual(proofTampered.ok, false, 'proof signature does not verify over tampered bytes');
+    assert.equal(updateTrust.verifyManifestSignature(Buffer.from(CURRENT_TRUST_PROOF.manifest),
+      Buffer.from(CURRENT_TRUST_PROOF.signatureBase64, 'base64')).ok, true, 'current release signer matches a deployed trust root');
+    assert.equal(updateTrust.verifyManifestSignature(Buffer.from(CURRENT_TRUST_PROOF.manifest + 'tampered'),
+      Buffer.from(CURRENT_TRUST_PROOF.signatureBase64, 'base64')).ok, false, 'current signer cannot authenticate modified bytes');
 
     // Malformed inputs are rejected, not thrown.
     assert.strictEqual(updateTrust.verifyManifestSignature(null, goodSig).ok, false);

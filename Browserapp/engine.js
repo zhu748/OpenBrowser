@@ -347,10 +347,10 @@ class BrowserEngine {
   async ensureKernelBootstrap() {
     if (this.kernelStatus().installed) return this.kernelStatus().kernel;
     if (!this.kernelBootstrapPromise) {
-      this.emit({ type: 'kernel-progress', phase: 'bootstrap', message: '首次启动：正在定位内置独立浏览器内核…' });
+      this.emit({ type: 'kernel-progress', phase: 'bootstrap', message: '正在检查独立浏览器内核，未安装时将下载 Chrome Stable…' });
       this.kernelBootstrapPromise = this.ensureIndependentKernel(false)
         .catch((error) => {
-          this.emit({ type: 'kernel-error', message: '内置独立内核不可用：' + error.message });
+          this.emit({ type: 'kernel-error', message: '独立内核准备失败：' + error.message });
           throw error;
         })
         .finally(() => { this.kernelBootstrapPromise = null; });
@@ -359,8 +359,8 @@ class BrowserEngine {
   }
 
   /**
-   * Resolve the integrated independent kernel only.
-   * Runtime auto-download of Wayfern / Chrome for Testing is permanently disabled.
+   * Use an installed independent kernel, or download official Chrome Stable.
+   * Legacy kernels remain discoverable for existing installations.
    */
   async ensureIndependentKernel(force = false) {
     const kernel = await this.kernelManager.ensureIntegrated(force);

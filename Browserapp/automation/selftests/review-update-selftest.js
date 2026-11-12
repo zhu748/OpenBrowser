@@ -34,6 +34,12 @@ async function main() {
     };
     update._compile(await fs.readFile(file, 'utf8'), file);
     const api = update.exports;
+    const { packageArtifactStem } = require('../../scripts/package-portable');
+    for (const [platform, arch, packageArch, suffix] of [
+      ['win32', 'x64', 'x86_64', '-setup.exe'], ['linux', 'x64', 'x86_64', '.tar.gz'],
+      ['darwin', 'x64', 'x86_64', '.dmg'], ['darwin', 'arm64', 'arm64', '.dmg'],
+    ]) assert.equal(api.updateAssetName(platform + ':' + arch), packageArtifactStem(platform, packageArch) + suffix,
+      'updater must request the actual online installer for ' + platform + '/' + arch);
     const asset = api.updateAssetName();
     assert.ok(asset);
     const payload = Buffer.from('audit fixture - never execute');
@@ -42,7 +48,11 @@ async function main() {
     let scenario = 'valid';
     global.fetch = async (url, options = {}) => {
       if (url.endsWith('/releases.atom')) return new Response('<feed><entry><id>https://github.com/zhu748/OpenBrowser/releases/tag/v9.0.0</id></entry></feed>');
-      if (options.method === 'HEAD') return new Response(null, { headers: { 'content-length': String(payload.length) } });
+      if (options.method === 'HEAD') return scenario === 'head-blocked'
+        ? new Response(null, { status: 403 })
+        : new Response(null, { headers: { 'content-length': String(payload.length) } });
+      if (url.endsWith('/releases/tags/v9.0.0')) return Response.json({ assets: [{ name: asset, size: payload.length,
+        browser_download_url: 'https://github.com/zhu748/OpenBrowser/releases/download/v9.0.0/' + asset }] });
       if (url.endsWith('SHA256SUMS.txt.sig')) {
         if (scenario === 'missing') return new Response('', { status: 404 });
         if (scenario === 'network') throw new Error('connection reset');
@@ -65,8 +75,15 @@ async function main() {
     const result = await api.downloadAppUpdate();
     assert.equal(result.signed, true); assert.equal(result.verified, true); assert.equal(opened, 1);
     assert.deepEqual(await fs.readFile(result.path), payload);
+    scenario = 'head-blocked';
+    const fallback = await api.downloadAppUpdate();
+    assert.equal(fallback.signed, true);assert.equal(fallback.verified, true);assert.equal(opened, 2,
+      'a blocked HEAD still resolves the signed platform installer through the release API');
     const workflow = await fs.readFile(path.join(__dirname, '../../../.github/workflows/build-installers.yml'), 'utf8');
     const verification = workflow.indexOf('update-trust-tool.js verify');
+    const signing = workflow.indexOf('update-trust-tool.js sign');
+    assert.ok(signing > 0 && signing < verification, 'the exact manifest is signed before verification');
+    assert.ok(workflow.includes('${{ secrets.OPENBROWSER_UPDATE_SIGNING_KEY }}'), 'CI has an explicit encrypted signing-key binding');
     assert.ok(verification > 0 && verification < workflow.lastIndexOf('--draft=false'), 'publication follows signature verification');
     for (const platform of ['win32:x64', 'linux:x64', 'darwin:x64', 'darwin:arm64']) {
       assert.ok(workflow.includes(api.updateAssetName(platform)), 'updater asset must match the published installer: ' + platform);

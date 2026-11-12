@@ -6,9 +6,9 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { packageArtifactStem } = require('./package-portable');
 
-assert.equal(process.env.OPENBROWSER_PACKAGE_VARIANT, 'without-kernel');
 const root = path.resolve(__dirname, '..');
 const stem = packageArtifactStem();
+assert.ok(stem.endsWith('-without-kernel'));
 const packageRoot = path.join(root, 'dist', stem);
 const resources = process.platform === 'darwin'
   ? path.join(packageRoot, 'OpenBrowser.app', 'Contents', 'Resources')
@@ -24,7 +24,14 @@ assert.equal(version.control_protocol, 1);
 if (process.platform === 'darwin') execFileSync('codesign', ['--verify', '--deep', '--strict', path.join(packageRoot, 'OpenBrowser.app')]);
 const suffix = process.platform === 'win32' ? '-setup.exe' : process.platform === 'darwin' ? '.dmg' : '.tar.gz';
 const artifact = 'dist/' + stem + suffix;
+const packagedUpdater = require(path.join(appRoot, 'automation', 'app-update.js'));
+assert.equal(packagedUpdater.updateAssetName(), path.basename(artifact), 'packaged updater must request this platform installer');
+const packagedTrust = require(path.join(appRoot, 'automation', 'update-trust.js'));
+assert.deepEqual(packagedTrust.trustedPublicKeys(), require('../automation/update-trust').trustedPublicKeys());
+const proof = require('../automation/selftests/data/update-trust-current-proof.json');
+assert.equal(packagedTrust.verifyManifestSignature(Buffer.from(proof.manifest), Buffer.from(proof.signatureBase64, 'base64')).ok,
+  true, 'packaged app must trust the current release signer');
 assert.ok(fs.statSync(path.join(root, artifact)).size > 4096, 'installer must contain a real payload');
 const outputIndex = process.argv.indexOf('--github-output');
 if (outputIndex >= 0) fs.appendFileSync(process.argv[outputIndex + 1], `artifact=${artifact}\n`);
-console.log(`Verified online installer ${artifact}: app/core ${sourceVersion}, no bundled kernel`);
+console.log(`Verified online installer ${artifact}: app/core ${sourceVersion}, no bundled kernel, matching updater asset and current signing key`);

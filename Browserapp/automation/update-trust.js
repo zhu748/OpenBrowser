@@ -6,8 +6,10 @@
  * Threat model: SHA256SUMS.txt and the installer travel through the same
  * GitHub account. An account takeover replaces both, and a digest check
  * "passes" against the attacker's own manifest. A signature made with a
- * private key that never touches the release account breaks that coupling:
- * the manifest is signed offline, the public key is embedded in the app.
+ * separate release-signing key makes a replaced manifest detectable. The
+ * current private key is an encrypted GitHub Actions secret exposed only to
+ * the release signing step; the public key is embedded in the app. Repository
+ * write access that can modify that workflow remains part of the trust boundary.
  *
  * Key lifecycle: the shipped public keys live in TRUSTED_KEYS below. The
  * first real key was generated and embedded 2026-11-07; releases from that
@@ -16,7 +18,7 @@
  * historical version exception; transport failures and malformed signatures
  * never become that exception, and no env var bypasses the trust root. The deployment proof in
  * selftests/data/update-trust-proof.json ties the embedded key to the
- * offline private half and is checked by update-checksum-selftest on every
+ * private half; both historical and current proofs are checked on every
  * CI run.
  *
  * Rotation: append the new key to TRUSTED_KEYS; releases signed with any
@@ -32,6 +34,8 @@ const TRUSTED_KEYS = [
   // `node update-trust-tool.js sign SHA256SUMS.txt` before publishing; the
   // public half below is the only part that may ever be committed.
   'MCowBQYDK2VwAyEAnSISpERX6lMiPF2De4D7RBjf0PmqP7COy6xF/t3li/A=',
+  // Key 2 — current release signer; private half is an encrypted Actions secret.
+  'MCowBQYDK2VwAyEAtb6HMwpkFLJszNXzyxNQoha0jIptgm7VCAKxQgWAnSo=',
 ];
 
 function trustedPublicKeys() {
