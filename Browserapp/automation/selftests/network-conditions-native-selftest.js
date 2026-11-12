@@ -36,4 +36,7 @@ const { applyNetworkConditions } = require('../../engine/network-conditions');
   } finally {
     page?.close();await live?.close();server.closeAllConnections();await new Promise((resolve) => server.close(resolve));
   }
-})().catch((error) => { console.error(error); process.exitCode = 1; });
+})().catch((error) => {
+  console.error((error instanceof h.Unavailable ? 'SKIP ' : 'FAIL ') + error.stack);
+  process.exitCode = error instanceof h.Unavailable ? 2 : 1;
+});

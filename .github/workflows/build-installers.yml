@@ -274,7 +274,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          lfs: true
+          # Linux downloads its Chrome seed from Google. Unrelated Wayfern
+          # metadata must not require missing Git LFS objects during checkout.
+          lfs: false
           sparse-checkout: |
             /*
             !/Browserapp/kernels/macos-x64/
