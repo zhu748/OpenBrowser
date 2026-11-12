@@ -11,7 +11,6 @@
  * Exit codes: 2 = native prerequisite missing, 1 = assertion failure.
  */
 const assert = require('node:assert/strict');
-const http = require('node:http');
 const {
   Unavailable, delay, entrySnapshotSource, chooseChromiumBinary, buildPersona,
   launchPersonaBrowser, openPage, evaluate, startDualOriginServers, verifyIdentity,

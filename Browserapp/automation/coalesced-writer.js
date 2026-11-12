@@ -39,7 +39,7 @@ function createCoalescedWriter(options = {}) {
   // Retry backoff for a persistently failing write (full disk, EACCES…):
   // retrying at the base delay forever turned a disk outage into an IO storm.
   const maxRetryDelayMs = Number.isFinite(options.maxRetryDelayMs) && options.maxRetryDelayMs >= delayMs
-    ? Number(options.maxRetryDelayMs)
+    ? Math.max(1, Number(options.maxRetryDelayMs))
     : Math.max(delayMs, 5000);
   let consecutiveFailures = 0;
   let waiters = [];
@@ -47,6 +47,9 @@ function createCoalescedWriter(options = {}) {
   let skipped = 0;
   let pendingRequests = 0;
   let keepAliveTimer = null;
+  const retryDelay = () => consecutiveFailures > 0
+    ? Math.min(maxRetryDelayMs, Math.max(1, delayMs) * (2 ** Math.min(10, consecutiveFailures - 1)))
+    : delayMs;
 
   function releaseRequest() {
     pendingRequests -= 1;
@@ -58,6 +61,7 @@ function createCoalescedWriter(options = {}) {
 
   const queue = new DeferredQueue({
     delayMs,
+    retryDelayMs: retryDelay,
     handler: async () => {
       const batch = waiters;
       waiters = [];
@@ -74,6 +78,7 @@ function createCoalescedWriter(options = {}) {
         }
 
         if (!needWrite) {
+          consecutiveFailures = 0;
           skipped += 1;
           for (const waiter of batch) waiter.resolve();
           return;
@@ -99,10 +104,7 @@ function createCoalescedWriter(options = {}) {
         // Failed runs back off exponentially (capped) so a persistent disk
         // error does not hammer the filesystem at the base delay forever.
         if (queue.size) {
-          const backoffDelay = consecutiveFailures > 0
-            ? Math.min(maxRetryDelayMs, delayMs * (2 ** Math.min(10, consecutiveFailures - 1)))
-            : delayMs;
-          queue.start(backoffDelay);
+          queue.start(retryDelay());
         }
       }
     },  });
@@ -112,8 +114,9 @@ function createCoalescedWriter(options = {}) {
     request() {
       const pending = new Promise((resolve, reject) => {
         waiters.push({ resolve, reject });
-        queue.add(1);
-        queue.start(delayMs);
+        // The writer persists the whole value; only one dirty marker is needed.
+        if (!queue.size) queue.add(1);
+        queue.start(retryDelay());
       });
       if (options.keepAlive) {
         pendingRequests += 1;

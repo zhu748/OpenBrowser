@@ -1,0 +1,159 @@
+{
+  "date": "2026-11-12",
+  "environment": {
+    "node": {
+      "version": "v24.22.1",
+      "available": true
+    },
+    "rust": {
+      "cargo": {
+        "available": true,
+        "version": "cargo 1.99.1 (5f94df478 2026-08-27)"
+      },
+      "rustc": {
+        "available": true,
+        "version": "rustc 1.99.1 (58cf8f9c3 2026-10-13)"
+      },
+      "rustfmt": {
+        "available": true,
+        "version": "rustfmt 1.10.0-stable (58cf8f9c35 2026-10-13)"
+      },
+      "clippy": {
+        "available": true,
+        "version": "clippy 0.1.99 (58cf8f9c35 2026-10-13)"
+      }
+    },
+    "chromium": {
+      "available": true,
+      "version": "Google Chrome for Testing 157.0.8103.78",
+      "launch": {
+        "available": true,
+        "exitCode": 0,
+        "detail": "[1111/214608.936914:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Failed to open socket: Operation not permitted\n[1111/214608.937019:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")\n[1111/214608.938538:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Failed to open socket: Operation not permitted\n[1111/214608.938582:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Failed to open socket: Operation not permitted\n[1111/214608.938941:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")\n[1111/214608.938957:WARNING:dbus/object_proxy.cc:439] Failed to connect to NameOwnerChanged signal for object: /org/freedesktop/portal/desktop\n[1111/214608.938980:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")\n[1111/214608.938980:ERROR:net/base/address_tracker_linux.cc:224] Could not create NETLINK socket: Operation not permitted (1)\n[1111/214608.939007:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")\n[1111/214608.940633:ERROR:device/udev_linux/udev_watcher.cc:51] Failed to initialize a udev monitor.\n[1111/214608.966337:WARNING:media/gpu/vaapi/vaapi_wrapper.cc:1652] drmGetDevices2() has not found any devices\n[1111/214608.968330:WARNING:sandbox/policy/linux/sandbox_linux.cc:405] InitializeSandbox() called with multiple threads in process gpu-process.\n[1111/214609.324149:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: \n[1111/214609.324305:WARNING:device/bluetooth/dbus/bluez_dbus_manager.cc:209] Floss manager service not available, cannot set Floss enable/disable.\n[1111/214609.324300:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")\n[1111/214609.334548:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: \n"
+      }
+    },
+    "firefox": {
+      "available": true,
+      "version": "Mozilla Firefox 160.0"
+    },
+    "electron": {
+      "path": "/workspace/scratch/fcc145c5a183/OpenBrowser/Browserapp/node_modules/electron/dist/electron",
+      "available": true,
+      "version": "43.1.1"
+    },
+    "temp": {
+      "path": "/workspace/scratch/fcc145c5a183/tmp",
+      "writable": true
+    },
+    "tcp": {
+      "available": true
+    },
+    "unixSocket": {
+      "available": false,
+      "error": "EPERM"
+    },
+    "toolsReady": true,
+    "headlessEnvironmentReady": true,
+    "desktopPrerequisitesReady": false
+  },
+  "rust": {
+    "baselinePassed": 117,
+    "passed": 121,
+    "failed": 0,
+    "newPoolRegressions": {
+      "before": {
+        "passed": 0,
+        "failed": 4
+      },
+      "after": {
+        "passed": 4,
+        "failed": 0
+      }
+    },
+    "parityPassed": 8,
+    "chaosPassed": 5,
+    "packagingPassed": 3,
+    "clippyWarnings": 0
+  },
+  "nativeHarnessCases": 7,
+  "iceIsolation": [
+    {
+      "mode": "native",
+      "first": {
+        "candidates": [],
+        "timeout": true,
+        "gatheringState": "gathering",
+        "elapsedMs": 15012
+      }
+    },
+    {
+      "mode": "script",
+      "first": {
+        "candidates": [],
+        "timeout": true,
+        "gatheringState": "gathering",
+        "elapsedMs": 15005
+      }
+    },
+    {
+      "mode": "real-mode-script",
+      "first": {
+        "candidates": [],
+        "timeout": true,
+        "gatheringState": "gathering",
+        "elapsedMs": 15005
+      }
+    },
+    {
+      "mode": "fallback-only",
+      "first": {
+        "candidates": [],
+        "isTrusted": true,
+        "targetToString": "[object RTCPeerConnection]",
+        "elapsedMs": 124
+      }
+    }
+  ],
+  "controlledIceStandalone": {
+    "result": "passed",
+    "injectedGatherElapsedMs": 127,
+    "nativeBaselineAndInjectedInSameProcess": true,
+    "originalFiveSecondFailureRetained": true
+  },
+  "limits": [
+    "Full Electron GUI and full Chrome blocked by Unix socket/display prerequisites",
+    "macOS-specific kernel and native window checks require that platform",
+    "Headless Shell does not certify complete Chrome UI behavior"
+  ],
+  "nodeNativeFinal": {
+    "passed": 179,
+    "partial": 1,
+    "skipped": 2,
+    "failed": 0,
+    "registered": 182,
+    "partialReason": "macOS-specific kernel launcher unavailable; five static assertions did run",
+    "skippedReason": "two macOS-only font gates",
+    "tail": [
+      "run  selftest:fpalign                  automation/selftests/fingerprint-alignment-selftest.js ... ok (0.1s)",
+      "run  selftest:probebudget              automation/selftests/proxy-probe-budget-selftest.js ... ok (0.1s)",
+      "run  selftest:fingerprintnative        automation/selftests/fingerprint-native-consistency-selftest.js ... ok (2.1s)",
+      "run  blobworker                        automation/selftests/fingerprint-blob-worker-identity-gate.js ... ok (1.3s)",
+      "run  cachedsw                          automation/selftests/fingerprint-cached-sw-identity-gate.js ... ok (12.0s)",
+      "run  selftest:firefoxfingerprint       automation/selftests/firefox-fingerprint-e2e-selftest.js ... ok (2.5s)",
+      "run  pageentry                         automation/selftests/fingerprint-page-entry-matrix-selftest.js ... ok (1.3s)",
+      "run  nativereqheaders                  automation/selftests/fingerprint-request-headers-selftest.js ... ok (2.0s)",
+      "run  sessionfaults                     automation/selftests/fingerprint-session-faults-selftest.js ... ok (11.2s)",
+      "run  concurrencysiso                   automation/selftests/fingerprint-concurrent-isolation-selftest.js ... ok (1.6s)",
+      "run  renderconsistency                 automation/selftests/fingerprint-render-consistency-selftest.js ... ok (0.9s)",
+      "run  permleak                          automation/selftests/fingerprint-permission-leak-selftest.js ... ok (15.9s)",
+      "run  navlifecycle                      automation/selftests/fingerprint-navigation-lifecycle-selftest.js ... ok (33.5s)",
+      "run  interfacesurface                  automation/selftests/fingerprint-interface-surface-selftest.js ... ok (0.7s)",
+      "run  multiplatform                     automation/selftests/fingerprint-multiplatform-selftest.js ... ok (1.9s)",
+      "run  ffworker                          automation/selftests/firefox-worker-delivery-selftest.js ... ok (13.3s)",
+      "run  selftest:ffmitm                   automation/selftests/firefox-worker-mitm-proxy-selftest.js ... ok (8.3s)",
+      "run  selftest:registry                 automation/selftests/selftest-registry-consistency-selftest.js ... ok (5.5s)",
+      "",
+      "179 passed, 1 partial, 2 skipped, 0 failed"
+    ]
+  }
+}

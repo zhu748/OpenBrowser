@@ -185,6 +185,7 @@ impl UpstreamTunnelPool {
             return false;
         }
 
+        self.prune_expired_tunnels(&mut guard);
         let total_tunnels: usize = guard.values().map(|v| v.len()).sum();
         if total_tunnels >= self.max_total_tunnels {
             return false;
@@ -228,6 +229,7 @@ impl UpstreamTunnelPool {
         if self.stopped.load(Ordering::Acquire) {
             return false;
         }
+        guard.retain(|connection| connection.created_at.elapsed() < self.ttl);
         if guard.len() >= self.max_raw_tcp {
             return false;
         }
@@ -245,7 +247,7 @@ impl UpstreamTunnelPool {
     pub async fn record_dial(&self, target_host: &str, target_port: u16) {
         let key = (target_host.to_ascii_lowercase(), target_port);
         let mut guard = self.recent_dials.lock().await;
-        if guard.len() > RECENT_DIAL_CAP {
+        if guard.len() >= RECENT_DIAL_CAP {
             guard.retain(|_, at| at.elapsed() < self.ttl);
         }
         if guard.len() >= RECENT_DIAL_CAP && !guard.contains_key(&key) {
@@ -271,7 +273,8 @@ impl UpstreamTunnelPool {
         if !recently_dialed {
             return false;
         }
-        let tunnels = self.tunnels.lock().await;
+        let mut tunnels = self.tunnels.lock().await;
+        self.prune_expired_tunnels(&mut tunnels);
         tunnels.get(&key).map_or(0, |v| v.len()) < self.max_tunnels_per_target
             && tunnels.values().map(|v| v.len()).sum::<usize>() < self.max_total_tunnels
     }
@@ -316,5 +319,96 @@ impl UpstreamTunnelPool {
     /// would keep refusing puts and prewarms forever.
     pub fn rearm(&self) {
         self.stopped.store(false, Ordering::Release);
+    }
+
+    /// Expired standbys must release capacity even if their targets are never
+    /// requested again; pruning only in take_tunnel permanently filled the pool.
+    fn prune_expired_tunnels(&self, tunnels: &mut HashMap<(String, u16), VecDeque<PooledTunnel>>) {
+        tunnels.retain(|_, list| {
+            list.retain(|tunnel| tunnel.created_at.elapsed() < self.ttl);
+            !list.is_empty()
+        });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::net::TcpListener;
+
+    async fn connected_pair() -> (TcpStream, TcpStream) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let (client, accepted) = tokio::join!(
+            TcpStream::connect(listener.local_addr().unwrap()),
+            listener.accept()
+        );
+        (client.unwrap(), accepted.unwrap().0)
+    }
+
+    async fn expired_tunnel_pool() -> (UpstreamTunnelPool, Vec<TcpStream>) {
+        let pool = UpstreamTunnelPool::new(2, Duration::from_secs(60));
+        let mut peers = Vec::new();
+        for host in ["old-a.test", "old-b.test"] {
+            let (stream, peer) = connected_pair().await;
+            assert!(pool.put_tunnel(host.into(), 443, stream, Vec::new()).await);
+            peers.push(peer);
+        }
+        let expired = Instant::now() - Duration::from_secs(120);
+        for list in pool.tunnels.lock().await.values_mut() {
+            for tunnel in list {
+                tunnel.created_at = expired;
+            }
+        }
+        (pool, peers)
+    }
+
+    #[tokio::test]
+    async fn expired_recency_entries_allow_new_targets() {
+        let pool = UpstreamTunnelPool::new(2, Duration::from_secs(60));
+        for index in 0..RECENT_DIAL_CAP {
+            pool.record_dial(&format!("old-{index}.test"), 443).await;
+        }
+        let expired = Instant::now() - Duration::from_secs(120);
+        for at in pool.recent_dials.lock().await.values_mut() {
+            *at = expired;
+        }
+        pool.record_dial("new.test", 443).await;
+        assert!(pool.should_prewarm("new.test", 443).await);
+    }
+
+    #[tokio::test]
+    async fn expired_tunnels_do_not_block_prewarm_eligibility() {
+        let (pool, _peers) = expired_tunnel_pool().await;
+        pool.record_dial("new.test", 443).await;
+        assert!(pool.should_prewarm("new.test", 443).await);
+    }
+
+    #[tokio::test]
+    async fn expired_tunnels_do_not_block_new_tunnel_admission() {
+        let (pool, _peers) = expired_tunnel_pool().await;
+        let (stream, _peer) = connected_pair().await;
+        assert!(
+            pool.put_tunnel("new.test".into(), 443, stream, Vec::new())
+                .await
+        );
+        assert_eq!(pool.active_tunnel_count().await, 1);
+    }
+
+    #[tokio::test]
+    async fn expired_raw_connections_do_not_block_new_connections() {
+        let pool = UpstreamTunnelPool::new(2, Duration::from_secs(60));
+        let mut peers = Vec::new();
+        for _ in 0..pool.max_raw_tcp {
+            let (stream, peer) = connected_pair().await;
+            assert!(pool.put_upstream_tcp(stream).await);
+            peers.push(peer);
+        }
+        let expired = Instant::now() - Duration::from_secs(120);
+        for connection in pool.raw_tcp.lock().await.iter_mut() {
+            connection.created_at = expired;
+        }
+        let (stream, _peer) = connected_pair().await;
+        assert!(pool.put_upstream_tcp(stream).await);
+        assert_eq!(pool.raw_tcp_count().await, 1);
     }
 }

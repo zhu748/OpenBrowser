@@ -40,6 +40,7 @@ class BidiConnection {
       const text = String(event.data);
       if (text.length > 16 * 1024 * 1024) { this.terminate(new Error('Firefox BiDi response exceeded its size limit')); return; }
       try { message = JSON.parse(text); } catch (_) { return; }
+      if (!message || typeof message !== 'object' || Array.isArray(message)) return;
       if (message.id !== undefined) {
         const pending = this.pending.get(message.id);
         if (!pending) return;
@@ -68,10 +69,13 @@ class BidiConnection {
     if (this.closed || !this.socket || this.socket.readyState !== 1) return Promise.reject(new Error('BiDi connection is not open'));
     if (this.pending.size >= 256) return Promise.reject(new Error('Too many pending BiDi commands'));
     const id = this.nextId++;
+    let payload;
+    try { payload = JSON.stringify({ id, method, params }); }
+    catch (error) { return Promise.reject(error); }
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { this.pending.delete(id); reject(new Error(`BiDi timeout: ${method}`)); }, timeout);
       this.pending.set(id, { resolve, reject, timer });
-      try { this.socket.send(JSON.stringify({ id, method, params })); }
+      try { this.socket.send(payload); }
       catch (error) { this.terminate(error); }
     });
   }

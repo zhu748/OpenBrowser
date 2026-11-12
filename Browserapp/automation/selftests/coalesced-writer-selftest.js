@@ -45,6 +45,72 @@ function trackingWriter(state, delayMs = 0, failTimes = 0) {
 const keepAlive = setInterval(() => {}, 250);
 
 (async () => {
+  await checkAsync('failed writes back off, cap retries and recover the normal delay', async () => {
+    const originalSet = global.setTimeout, originalClear = global.clearTimeout;
+    const delays = [];
+    // Drive explicit flushes while observing the actual retry timers, without
+    // timing assertions or allowing background retries to race the test.
+    global.setTimeout = (_callback, delay) => { delays.push(delay); return { unref() {} }; };
+    global.clearTimeout = () => {};
+    try {
+      let fail = true;
+      const writer = createCoalescedWriter({ delayMs: 10, maxRetryDelayMs: 40, write: () => {
+        if (fail) throw new Error('disk unavailable');
+      } });
+      const request = assert.rejects(writer.request(), /disk unavailable/);
+      for (const delay of [10, 20, 40, 40]) {
+        await assert.rejects(writer.flushNow(), /disk unavailable/);
+        assert.equal(delays.at(-1), delay);
+      }
+      await request;
+      const retry = assert.rejects(writer.request(), /disk unavailable/);
+      assert.equal(delays.at(-1), 40, 'new requests must retain failure backoff');
+      await assert.rejects(writer.flushNow(), /disk unavailable/);
+      await retry;
+      fail = false;
+      await writer.flushNow();
+      const saved = writer.request();
+      assert.equal(delays.at(-1), 10);
+      await writer.flushNow();
+      await saved;
+      fail = true;
+      const immediate = createCoalescedWriter({ delayMs: 0, maxRetryDelayMs: 0, write: () => {
+        if (fail) throw new Error('disk unavailable');
+      } });
+      const rejected = assert.rejects(immediate.request(), /disk unavailable/);
+      await assert.rejects(immediate.flushNow(), /disk unavailable/);
+      await rejected;
+      assert.equal(delays.at(-1), 1, 'zero quiet periods must not produce zero-delay failure retries');
+      fail = false;
+      await immediate.flushNow();
+    } finally { global.setTimeout = originalSet; global.clearTimeout = originalClear; }
+  });
+
+  await checkAsync('large bursts retain one dirty marker and settle every caller', async () => {
+    let writes = 0;
+    const writer = createCoalescedWriter({ delayMs: 10000, write: () => { writes += 1; } });
+    const requests = Array.from({ length: 10000 }, () => writer.request());
+    assert.equal(writer.stats().pending, 1);
+    await writer.flushNow();
+    await Promise.all(requests);
+    assert.equal(writes, 1);
+    assert.equal(writer.stats().waiters, 0);
+  });
+
+  await checkAsync('deferred batches accept imports larger than the argument limit', async () => {
+    const { DeferredQueue } = require('../deferred-queue');
+    const items = Array.from({ length: 200000 }, (_, index) => index);
+    let received;
+    const queue = new DeferredQueue({ handler: (batch) => { received = batch; } });
+    queue.addAll(items);
+    assert.equal(await queue.flush(), items.length);
+    assert.deepEqual(received, items);
+    queue.addAll([1, 2]);
+    queue.addAll(queue.items);
+    await queue.flush();
+    assert.deepEqual(received, [1, 2, 1, 2]);
+  });
+
   await checkAsync('a burst of requests produces a single write', async () => {
     const state = { calls: 0, inFlight: 0, maxInFlight: 0, persisted: 0 };
     const writer = createCoalescedWriter({ write: trackingWriter(state), delayMs: 25 });

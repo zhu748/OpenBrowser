@@ -79,6 +79,16 @@ assert.strictEqual(changed.profiles[0], fleet[0]);
 assert.equal(changed.profiles[1].exitLatitude, null, 'authoritative clearing must remove stale coordinates');
 assert.equal(changed.profiles[1].exitLongitude, 0, 'zero is a valid update');
 assert.equal(fleet[1].exitLatitude, 10, 'polling merge does not mutate source state');
+const cleared = mergeExitState({ ...config, engineProfiles: [{ id: '1', exitIp: '', exitLatitude: null, exitLongitude: null, exitCountryCode: '' }] });
+assert.equal(cleared.profiles[1].exitIp, '', 'an explicitly cleared exit cannot remain visible');
+assert.equal(cleared.profiles[1].exitCountryCode, '');
+assert.equal(cleared.profiles[1].exitLatitude, null);
+assert.equal(mergeExitState({ ...config, engineProfiles: [{ id: '1', exitIp: undefined }] }).profiles, fleet,
+  'omitted exit data leaves the last known UI value intact');
+const startupCleared = reconcileProfiles({ localProfiles: [fleet[1]], engineProfiles: [{ id: '1', exitIp: '', exitLatitude: null }],
+  normalizeProfile: (value) => value, mergeProxy: (value) => value });
+assert.equal(startupCleared[0].exitIp, '', 'startup also honors authoritative exit clearing');
+assert.equal(startupCleared[0].exitLatitude, null);
 
 const browser = { setTimeout, clearTimeout, URL };
 for (const name of ['../../shared/proxy-redact', '../../ui/ui-state-store']) {

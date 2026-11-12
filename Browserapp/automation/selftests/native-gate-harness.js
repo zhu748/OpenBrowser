@@ -104,42 +104,58 @@ function buildPersona(id, spec = {}) {
 async function launchPersonaBrowser(browser, persona, options = {}) {
   const { profile, fingerprint } = persona;
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'openbrowser-native-gate-'));
-  const args = buildBaseLaunchArguments({ root, fingerprint, profile, hostScaleFactor: options.hostDpr || 1 });
-  // Route non-test destinations to a closed proxy; tests only need loopback.
-  // Popup blocking stays off so window.open entries behave like a real user profile.
-  args.push('--headless=new', '--disable-dev-shm-usage', '--disable-background-networking',
-    '--disable-popup-blocking',
-    '--proxy-server=http://127.0.0.1:9', '--proxy-bypass-list=127.0.0.1;localhost');
-  if (!args.some((arg) => arg.startsWith('--force-device-scale-factor='))) args.push('--force-device-scale-factor=' + (options.hostDpr || 1));
-  if (process.env.OPENBROWSER_NATIVE_NO_SANDBOX === '1') args.push('--no-sandbox');
-  args.push('about:blank');
-  const child = spawn(browser.binary, args, { stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true });
-  let stderr = '', spawnError;
-  child.stderr?.on('data', (data) => { stderr = (stderr + data).slice(-12000); });
-  child.on('error', (error) => { spawnError = error; });
-  let port;
-  for (let i = 0; i < 150; i += 1) {
-    if (spawnError) throw spawnError;
-    if (child.exitCode !== null || child.signalCode !== null) throw new Error('Chromium exited before CDP readiness: ' + stderr);
-    try { port = Number((await fsp.readFile(path.join(root, 'DevToolsActivePort'), 'utf8')).split('\n')[0]); } catch (_) {}
-    if (port) break;
-    await delay(100);
-  }
-  assert.ok(port, 'Chromium did not publish a CDP port: ' + stderr);
-  const events = [];
-  const engine = { ...injection, profiles: new Map([[profile.id, profile]]), networkInfo: new Map(),
-    emit: (event) => events.push(event),
-    handleBrowserGone: async () => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); } };
-  const item = { port, profile, fingerprint, kernelVersion: browser.version };
-  await engine.startWorkerFingerprintInjection(item, fingerprint);
-  const close = async () => {
-    try { item.workerFingerprintConnection?.close(); } catch (_) {}
-    if (child.exitCode === null && child.signalCode === null) {
-      await new Promise((resolve) => { const timer = setTimeout(resolve, 5000); child.once('exit', () => { clearTimeout(timer); resolve(); }); child.kill('SIGKILL'); });
-    }
-    await fsp.rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  let child, item, closing;
+  const close = () => {
+    if (closing) return closing;
+    closing = (async () => {
+      try { item?.workerFingerprintConnection?.close(); } catch (_) {}
+      if (child?.pid && child.exitCode === null && child.signalCode === null) {
+        await new Promise((resolve) => {
+          let timer;
+          const done = () => { clearTimeout(timer); child.removeListener('exit', done); resolve(); };
+          timer = setTimeout(done, 5000);
+          child.once('exit', done);
+          try { child.kill('SIGKILL'); } catch (_) { done(); }
+        });
+      }
+      await fsp.rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    })();
+    return closing;
   };
-  return { child, port, item, engine, events, close };
+  try {
+    const args = buildBaseLaunchArguments({ root, fingerprint, profile, hostScaleFactor: options.hostDpr || 1 });
+    // Only loopback test pages may bypass the unavailable outbound proxy.
+    args.push('--headless=new', '--disable-dev-shm-usage', '--disable-background-networking',
+      '--disable-popup-blocking',
+      '--proxy-server=http://127.0.0.1:9', '--proxy-bypass-list=127.0.0.1;localhost');
+    if (!args.some((arg) => arg.startsWith('--force-device-scale-factor='))) args.push('--force-device-scale-factor=' + (options.hostDpr || 1));
+    if (process.env.OPENBROWSER_NATIVE_NO_SANDBOX === '1') args.push('--no-sandbox');
+    args.push('about:blank');
+    child = spawn(browser.binary, args, { stdio: ['ignore', 'ignore', 'pipe'], windowsHide: true });
+    let stderr = '', spawnError;
+    child.stderr?.on('data', (data) => { stderr = (stderr + data).slice(-12000); });
+    child.on('error', (error) => { spawnError = error; });
+    let port;
+    for (let i = 0; i < 150; i += 1) {
+      if (spawnError) throw spawnError;
+      if (child.exitCode !== null || child.signalCode !== null) throw new Error('Chromium exited before CDP readiness: ' + stderr);
+      try { port = Number((await fsp.readFile(path.join(root, 'DevToolsActivePort'), 'utf8')).split('\n')[0]); } catch (_) {}
+      if (port) break;
+      await delay(100);
+    }
+    assert.ok(port, 'Chromium did not publish a CDP port: ' + stderr);
+    const events = [];
+    const engine = { ...injection, profiles: new Map([[profile.id, profile]]), networkInfo: new Map(),
+      emit: (event) => events.push(event),
+      handleBrowserGone: async () => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); } };
+    item = { port, profile, fingerprint, kernelVersion: browser.version };
+    if (options.injectFingerprint !== false) await engine.startWorkerFingerprintInjection(item, fingerprint);
+    return { child, port, item, engine, events, close };
+  } catch (error) {
+    try { await close(); }
+    catch (cleanupError) { throw new AggregateError([error, cleanupError], 'Browser launch failed and cleanup was incomplete'); }
+    throw error;
+  }
 }
 
 /** Open a CDP connection to the first tab and navigate it. */

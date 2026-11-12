@@ -12,12 +12,15 @@ async function runProxyProbes(tasks, { totalTimeoutMs = 6500, attemptTimeoutMs =
 
   const attempts = tasks.map((task, index) => new Promise((resolve) => {
     const controller = new AbortController();
+    let settled = false;
     const timeoutError = Object.assign(
       new Error('Proxy probe deadline exceeded'),
       { code: 'probe-unavailable', probeUnavailable: true }
     );
     const settle = (slot) => {
-      clearTimeout(slot.timer);
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
       controller.abort();
       resolve(slot);
     };

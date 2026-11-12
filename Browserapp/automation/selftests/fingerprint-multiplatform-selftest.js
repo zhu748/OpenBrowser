@@ -15,7 +15,7 @@ const assert = require('node:assert/strict');
 const http = require('node:http');
 const {
   Unavailable, delay, chooseChromiumBinary, buildPersona, launchPersonaBrowser,
-  openPage, evaluate, verifyIdentity,
+  openPage, evaluate,
 } = require('./native-gate-harness');
 
 const PAGE = `<!doctype html><script>globalThis.first = null;</script>`;

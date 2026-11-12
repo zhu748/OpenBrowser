@@ -39,7 +39,7 @@
         ...local,
         proxyMeta: restoreBackupProxies(local.proxyMeta, remote.proxyMeta, mergeProxy),
         proxyId: proxyId || null,
-        ...(remote.exitIp ? {
+        ...(Object.hasOwn(remote, 'exitIp') && remote.exitIp !== undefined ? {
           exitIp: remote.exitIp,
           exitCountryCode: remote.exitCountryCode,
           exitTimezone: remote.exitTimezone,
@@ -86,7 +86,7 @@
       const remote = byId.get(local.id);
       if (!remote) return;
       let next = local;
-      if (remote.exitIp) {
+      if (Object.hasOwn(remote, 'exitIp') && remote.exitIp !== undefined) {
         for (const field of exitFields) if (remote[field] !== undefined) next = withField(next, local, field, remote[field]);
       }
       if (remote.proxy && hasCredentials(remote.proxy) && !hasCredentials(next.proxy)) next = withField(next, local, 'proxy', remote.proxy);

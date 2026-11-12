@@ -72,6 +72,9 @@ class PersistentConnection {
     const timeout = Number(options.timeout) || 6000;
     const message = { id, method, params };
     if (options.sessionId) message.sessionId = options.sessionId;
+    let payload;
+    try { payload = JSON.stringify(message); }
+    catch (error) { return Promise.reject(error); }
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
@@ -84,7 +87,7 @@ class PersistentConnection {
       this.pending.set(id, {
         resolve: (value) => { this.consecutiveTimeouts = 0; resolve(value); }, reject, timer,
       });
-      try { this.socket.send(JSON.stringify(message)); }
+      try { this.socket.send(payload); }
       catch (error) { this.terminate(error, true); }
     });
   }

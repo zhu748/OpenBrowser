@@ -19,6 +19,7 @@ class DeferredQueue {
    * @param {number} [options.delayMs] Quiet period before a run.
    * @param {(items:Array<*>) => (void|Promise<void>)} [options.handler]
    * @param {(err:Error, items:Array<*>) => void} [options.onError]
+   * @param {() => number} [options.retryDelayMs] Delay after a failed run.
    */
   constructor(options = {}) {
     this.delayMs = Number.isFinite(options.delayMs) && options.delayMs >= 0
@@ -26,6 +27,7 @@ class DeferredQueue {
       : DEFAULT_DELAY_MS;
     this.handler = typeof options.handler === 'function' ? options.handler : null;
     this.onError = typeof options.onError === 'function' ? options.onError : null;
+    this.retryDelayMs = typeof options.retryDelayMs === 'function' ? options.retryDelayMs : () => this.delayMs;
 
     this.items = [];
     this.timer = null;
@@ -51,7 +53,11 @@ class DeferredQueue {
 
   /** Append several items. */
   addAll(items) {
-    if (Array.isArray(items)) this.items.push(...items);
+    if (Array.isArray(items)) {
+      // Avoid the engine's function-argument limit, including for large imports.
+      const length = items.length;
+      for (let index = 0; index < length; index += 1) this.items.push(items[index]);
+    }
     return this;
   }
 
@@ -140,7 +146,9 @@ class DeferredQueue {
       // the timer: without a new start() the requeued batch stayed parked
       // forever when the failure came from the timer's own flush().
       this.items = batch.concat(this.items);
-      this.start(this.delayMs);
+      let delay = this.delayMs;
+      try { delay = this.retryDelayMs(); } catch (_) { /* use the default */ }
+      this.start(delay);
       if (this.onError) {
         try { this.onError(err, batch); } catch (_) { /* observer */ }
       }

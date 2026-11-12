@@ -6,14 +6,13 @@
  * Geolocation allow/deny, permission query states, media device labels,
  * WebRTC ICE candidates / SDP / getStats — none may carry the host's real
  * addresses or the host's device labels. "No candidates produced" is NOT
- * accepted as evidence of address rewriting: the probe answers STUN itself on
- * loopback so reflexive candidates must exist and must be rewritten.
+ * accepted as evidence of address rewriting. A native policy that suppresses
+ * gathering is checked separately, with native terminal events still required.
  *
  * Exit codes: 2 = native prerequisite missing, 1 = assertion failure.
  */
 const assert = require('node:assert/strict');
 const dgram = require('node:dgram');
-const http = require('node:http');
 const {
   Unavailable, delay, chooseChromiumBinary, buildPersona, launchPersonaBrowser,
   openPage, evaluate,
@@ -81,17 +80,28 @@ const PROBE_TEMPLATE = `(async () => {
   //    persona address, not 127.x or the LAN IP.
   const gather = () => new Promise((resolve) => {
     const candidates = [];
-    let pc = null;
+    let pc = null, timer, settled = false;
+    const started = performance.now();
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      const elapsedMs = Math.round(performance.now() - started);
+      try { pc?.close(); } catch (_) {}
+      resolve({ ...result, elapsedMs });
+    };
     try {
       pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:127.0.0.1:\${STUN_PORT}' }] });
-    } catch (e) { resolve({ error: String(e) }); return; }
+    } catch (e) { finish({ error: String(e) }); return; }
     pc.onicecandidate = (e) => {
-      if (!e.candidate) { resolve({ candidates, isTrusted: e.isTrusted, targetToString: String(e.target) }); return; }
+      if (!e.candidate) { finish({ candidates, isTrusted: e.isTrusted, targetToString: String(e.target) }); return; }
       candidates.push(e.candidate.candidate);
     };
     pc.createDataChannel('probe');
-    pc.createOffer().then((o) => pc.setLocalDescription(o)).catch((e) => resolve({ error: String(e) }));
-    setTimeout(() => { try { pc.close(); } catch (_) {} resolve({ candidates, timeout: true }); }, 5000);
+    pc.createOffer().then((o) => pc.setLocalDescription(o)).catch((e) => finish({ error: String(e) }));
+    // Native ICE gathering has no five-second completion guarantee. Keep a
+    // finite deadline while allowing cold network initialization under load.
+    timer = setTimeout(() => finish({ candidates, timeout: true, gatheringState: pc.iceGatheringState }), 15000);
   });
   out.rtc.first = await gather();
   // Object-graph fidelity: a rebuilt event would lose isTrusted/target.
@@ -128,12 +138,20 @@ const PROBE_TEMPLATE = `(async () => {
   // webrtc 'proxy' mode rewrites candidates; the persona webrtc local IP is set by the pool.
   const persona = buildPersona('native-leak', { os: 'Windows', webrtc: 'proxy', webrtcAddress: '203.0.113.77' });
   const fp = persona.fingerprint;
-  const session = await launchPersonaBrowser(browser, persona);
+  let session;
   try {
+    // Measure the unmodified ICE agent in the SAME browser process first.
+    // Separate launches have different network-initialization timing on
+    // restricted hosts and cannot establish an injection regression.
+    session = await launchPersonaBrowser(browser, persona, { injectFingerprint: false });
     const page = await openPage(session.port, 'about:blank');
+    const expression = PROBE_TEMPLATE.replace(/\$\{STUN_PORT\}/g, String(stun.port));
     await evaluate(page, `document.open(); document.write('<!doctype html><html><body></body></html>'); document.close(); true`);
     await delay(200);
-    const expression = PROBE_TEMPLATE.replace(/\$\{STUN_PORT\}/g, String(stun.port));
+    const nativeProbe = await evaluate(page, expression, 45000);
+    await session.engine.startWorkerFingerprintInjection(session.item, fp);
+    await evaluate(page, `document.open(); document.write('<!doctype html><html><body></body></html>'); document.close(); true`);
+    await delay(200);
     const probe = await evaluate(page, expression, 45000);
 
     // Permissions answered (state strings, not crashes)
@@ -170,11 +188,21 @@ const PROBE_TEMPLATE = `(async () => {
     const addressIn = (c) => (c.match(/\b(\d{1,3}(?:\.\d{1,3}){3})\b/g) || []);
     const allAddrs = candidates.flatMap(addressIn);
     const hostLan = allAddrs.filter((a) => a.startsWith('192.168.') || a.startsWith('10.') || a.startsWith('172.'));
-    if (candidates.length === 0) {
+    let nativeIceObservable = true;
+    if (probe.rtc.first.timeout === true) {
+      assert.equal(nativeProbe.rtc.first.timeout, true, 'injected ICE stalled after the same native browser completed: '
+        + JSON.stringify({ native: nativeProbe.rtc.first, injected: probe.rtc.first }));
+      assert.deepEqual(nativeProbe.rtc.first.candidates, []);
+      assert.deepEqual(candidates, []);
+      assert.equal(nativeProbe.rtc.first.gatheringState, 'gathering');
+      assert.equal(probe.rtc.first.gatheringState, 'gathering');
+      nativeIceObservable = false;
+      console.log('SKIP ICE lifecycle/event assertions: unmodified and injected agents both timed out in gathering in the same browser process');
+    } else if (candidates.length === 0) {
       // Suppressed-by-policy path: the page must still see a native,
       // well-formed gathering lifecycle (state transitions + null terminal
       // event), never an error or a hang.
-      assert.equal(probe.rtc.isTrusted, true, 'terminal icecandidate event must be native');
+      assert.equal(probe.rtc.isTrusted, true, 'terminal icecandidate event must be native: ' + JSON.stringify(probe.rtc.first));
       console.log('PASS leak ICE gathering suppressed by no-proxy UDP policy (lifecycle native)');
     } else {
       const personaIp = fp.webrtcLocalIp || '';
@@ -184,9 +212,11 @@ const PROBE_TEMPLATE = `(async () => {
     }
 
     // Event object fidelity
-    assert.equal(probe.rtc.isTrusted, true, 'icecandidate event must be native (isTrusted)');
-    assert.equal(probe.rtc.eventTargetNative, true, 'icecandidate event target must be the real RTCPeerConnection');
-    console.log('PASS leak ICE event object graph is native');
+    if (nativeIceObservable) {
+      assert.equal(probe.rtc.isTrusted, true, 'icecandidate event must be native (isTrusted)');
+      assert.equal(probe.rtc.eventTargetNative, true, 'icecandidate event target must be the real RTCPeerConnection');
+      console.log('PASS leak ICE event object graph is native (gathered in ' + probe.rtc.first.elapsedMs + 'ms)');
+    }
 
     // SDP
     const sdpHostAddrs = (probe.rtc.sdp.match(/\b(?!0\.0\.0\.0)(\d{1,3}(?:\.\d{1,3}){3})\b/g) || [])
@@ -201,7 +231,7 @@ const PROBE_TEMPLATE = `(async () => {
 
     console.log('fingerprint-permission-leak-selftest: OK');
   } finally {
-    await session.close().catch(() => {});
+    await session?.close().catch(() => {});
     stun.close();
   }
 })().catch((error) => {

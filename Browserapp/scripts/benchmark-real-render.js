@@ -24,7 +24,7 @@ const fs = require('node:fs');
 
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const {  monitorEventLoopDelay } = require('node:perf_hooks');
+const { LoopMonitor } = require('../automation/event-loop-monitor');
 const os = require('node:os');
 
 const { BrowserEngine } = require('../engine');
@@ -36,28 +36,6 @@ function argValue(name) { const i = process.argv.indexOf(name); return i >= 0 ? 
 const SIZES = (argValue('--sizes') || '10,100,1000').split(',').map(Number);
 const JSON_MODE = process.argv.includes('--json');
 const APP = path.resolve(__dirname, '..');
-
-function percentile(sorted, p) {
-  if (!sorted.length) return 0;
-  const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil((p / 100) * sorted.length) - 1));
-  return sorted[index];
-}
-
-class LoopMonitor {
-  constructor() {
-    this.monitor = monitorEventLoopDelay({ resolution: 1 });
-    this.samples = [];
-    this.timer = setInterval(() => { this.samples.push(this.monitor.mean); this.monitor.reset(); }, 200);
-    this.timer.unref?.();
-  }
-  start() { this.monitor.enable(); return this; }
-  stop() {
-    this.monitor.disable();
-    clearInterval(this.timer);
-    this.samples.sort((a, b) => a - b);
-    return { p50Ms: percentile(this.samples, 50) / 1e6, p95Ms: percentile(this.samples, 95) / 1e6, p99Ms: percentile(this.samples, 99) / 1e6 };
-  }
-}
 
 
 
@@ -212,13 +190,22 @@ const RENDERER_MEASURE = `(async (size) => {
   // IPC bridge: payload bytes per poll at this fleet size.
   out.pollLane = null;
   try {
-    const watermark0 = null;
     const fullBytes = new Blob([JSON.stringify(await window.ops.profileStatus())]).size;
-    const delta1 = await window.ops.profileStatusDelta(watermark0);
-    const deltaBytes = new Blob([JSON.stringify(delta1)]).size;
-    const steady = await window.ops.profileStatusDelta(delta1.watermark || {});
-    const steadyBytes = new Blob([JSON.stringify(steady)]).size;
-    out.pollLane = { fullBytes, deltaFirstBytes: deltaBytes, steadyBytes };
+    let rows = [];
+    const responses = [];
+    const controller = window.OpenBrowserStatusController.createStatusController({
+      getRows: () => rows, setRows: (value) => { rows = value; },
+      fetchFull: () => window.ops.profileStatus(),
+      fetchDelta: async (watermark) => {
+        const delta = await window.ops.profileStatusDelta(watermark);
+        responses.push({ bytes: new Blob([JSON.stringify(delta)]).size, full: delta.full });
+        return delta;
+      },
+    });
+    await controller.refresh();
+    await controller.refresh();
+    if (responses.length !== 2 || responses[1].full !== false) throw new Error('steady poll did not use the incremental lane');
+    out.pollLane = { fullBytes, deltaFirstBytes: responses[0].bytes, steadyBytes: responses[1].bytes };
   } catch (error) {
     out.pollLane = { error: String(error?.message || error) };
   }

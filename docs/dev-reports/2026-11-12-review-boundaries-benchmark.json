@@ -1,0 +1,36 @@
+{
+  "baselineRef": "a8d7ebe",
+  "baseline": {
+    "saveRequests": 10000,
+    "dirtyMarkers": 10000,
+    "writes": 1,
+    "retryDelays": [
+      10,
+      10,
+      10,
+      10
+    ],
+    "largeBatchItems": "RangeError",
+    "completedProbes": 1000,
+    "probeTimersRetained": 1000,
+    "staleProbeResult": "applied",
+    "profileNameAfterProbe": "Original"
+  },
+  "current": {
+    "saveRequests": 10000,
+    "dirtyMarkers": 1,
+    "writes": 1,
+    "retryDelays": [
+      10,
+      20,
+      40,
+      40
+    ],
+    "largeBatchItems": 200000,
+    "completedProbes": 1000,
+    "probeTimersRetained": 0,
+    "staleProbeResult": "PROFILE_STALE_REV",
+    "profileNameAfterProbe": "Edited"
+  },
+  "scope": "Deterministic operation and retained-resource counts; not desktop/browser throughput."
+}

@@ -32,6 +32,7 @@ const { LoopMonitor } = require('../automation/event-loop-monitor');
 const { BrowserEngine } = require('../engine');
 const { ProfileStoreSqlite } = require('../automation/profile-store-sqlite');
 const { prepareProfileSync } = require('../engine/profile-sync');
+const { createStatusController } = require('../ui/ui-status-controller');
 
 function argValue(name) { const i = process.argv.indexOf(name); return i >= 0 ? process.argv[i + 1] : null; }
 const SIZES = (argValue('--sizes') || process.env.REAL_LOAD_SIZES || '10,100,1000').split(',').map(Number);
@@ -135,11 +136,13 @@ async function runScenario(size) {
       timings.push(performance.now() - start);
     }
     await engine.flushPersistence();
+    const steady = timings.slice(1).sort((a, b) => a - b);
     report.sync = {
       firstMs: +timings[0].toFixed(1),
-      steadyMedianMs: +[...timings].sort((a, b) => a - b)[Math.floor(timings.length / 2)].toFixed(1),
+      steadyMedianMs: +((steady[0] + steady[1]) / 2).toFixed(1),
     };
     report.loop.afterSync = loop.stop();
+    report.rss.afterFleetMb = +rssMb().toFixed(1);
   }
 
   // ---- Phase 2: renderer-style poll loop while idle (full vs delta lane) ----
@@ -148,7 +151,16 @@ async function runScenario(size) {
     const pollDelays = { full: [], delta: [] };
     const ipcPayloadBytes = { full: { total: 0, peak: 0 }, delta: { total: 0, peak: 0 } };
     const runLane = async (lane) => {
-      let watermark = null;
+      let rows = [], deltaBytes = 0;
+      const status = createStatusController({
+        getRows: () => rows, setRows: (value) => { rows = value; },
+        fetchFull: () => engine.status(),
+        fetchDelta: (watermark) => {
+          const delta = engine.statusDelta(watermark, { includeWatermark: false });
+          deltaBytes = Buffer.byteLength(JSON.stringify(delta));
+          return delta;
+        },
+      });
       const start = performance.now();
       let polls = 0;
       let done = false;
@@ -160,9 +172,8 @@ async function runScenario(size) {
           const t0 = performance.now();
           let bytes;
           if (lane === 'delta') {
-            const delta = await Promise.resolve(engine.statusDelta(watermark));
-            watermark = delta.watermark;
-            bytes = Buffer.byteLength(JSON.stringify(delta));
+            await status.refresh();
+            bytes = deltaBytes;
           } else {
             await Promise.resolve(engine.status());
             bytes = Buffer.byteLength(JSON.stringify(engine.status()));
@@ -228,7 +239,6 @@ async function runScenario(size) {
     report.loop.duringSessions = loop.stop();
   }
 
-  report.rss = { afterFleetMb: +rssMb().toFixed(1) };
   await engine.flushPersistence();
   await kernel.close();
   report.rss.finalMb = +rssMb().toFixed(1);

@@ -27,6 +27,23 @@ const {
   invokeProxyRefresh = async () => '',
   classifyProxyError = () => 'proxy-unknown',
 } = proxyForwarderModule;
+const { assertProfileNotMaintained } = require('./profile-maintenance');
+const { sameProxyIdentity } = require('./proxy-helpers');
+
+/** Reject a late network result before it can overwrite an edit or deletion. */
+function profileWriteGuard(engine, id) {
+  assertProfileNotMaintained(engine, id);
+  const previous = engine.profiles.get(id);
+  const revision = engine.profiles.revisionOf?.(id);
+  return () => {
+    assertProfileNotMaintained(engine, id);
+    const unchanged = revision === undefined ? engine.profiles.get(id) === previous
+      : engine.profiles.revisionOf(id) === revision;
+    if (!unchanged) throw Object.assign(new Error(`Profile changed during proxy operation: ${id}`), {
+      code: 'PROFILE_STALE_REV', profileId: id,
+    });
+  };
+}
 
 module.exports = {
   async resolveProfileProxyConfig(profile, { allowExtract = true } = {}) {
@@ -107,6 +124,13 @@ module.exports = {
       profile.id,
       forcedRaw || String(profile.proxy || ''),
       String(profile.proxyMeta?.ipChannel || ''),
+      profile.proxyMeta?.backupProxies || [],
+      options.allowExtract !== false ? profile.proxyMeta?.apiExtractUrl || '' : '',
+      options.proxySource || '',
+      [profile.exitIp, profile.exitCountryCode, profile.exitCountry, profile.exitRegion, profile.exitCity,
+        profile.exitTimezone, profile.exitLatitude, profile.exitLongitude],
+      this.networkInfo?.get?.(profile.id) || null,
+      this.profiles?.get?.(profile.id)?.proxy || '',
       options.allowExtract !== false,
       options.includeRisk === true,
       options.totalTimeoutMs != null ? Number(options.totalTimeoutMs) : 0,
@@ -129,6 +153,11 @@ module.exports = {
     } else {
       resolved = await this.resolveProfileProxyConfig(profile, { allowExtract: options.allowExtract !== false });
     }
+    const previousResult = this.networkInfo?.get?.(profile.id);
+    // Verification and geography belong to a proxy identity, not just a profile
+    // ID. Backups, forced probes and extraction may select a different route.
+    const knownProxy = previousResult?.proxyRaw || this.profiles?.get?.(profile.id)?.proxy || profile.proxy;
+    const reusePrevious = sameProxyIdentity(resolved.raw, knownProxy);
     try {
       const result = await lookupProxyCountry(resolved.config, {
         force: true,
@@ -138,14 +167,14 @@ module.exports = {
         ipChannel: profile.proxyMeta?.ipChannel,
         // Cold cache + a rate-limited probe service: the profile's last known exit is a valid
         // degradation source, otherwise a 429 would look like a dead proxy.
-        profile,
+        profile: reusePrevious ? profile : undefined,
         // Last applied network (kept by applyNetworkToProfile). Used only to
         // carry legacy verification evidence through degraded results/errors;
         // it never manufactures a verification.
-        previousResult: this.networkInfo?.get?.(profile.id) || undefined,
-        exitIp: profile.exitIp,
-        exitCountryCode: profile.exitCountryCode,
-        exitTimezone: profile.exitTimezone,
+        previousResult: reusePrevious ? previousResult : undefined,
+        exitIp: reusePrevious ? profile.exitIp : undefined,
+        exitCountryCode: reusePrevious ? profile.exitCountryCode : undefined,
+        exitTimezone: reusePrevious ? profile.exitTimezone : undefined,
       });
       return {
         ...result,
@@ -174,7 +203,9 @@ module.exports = {
       this.resolveStoredProxyProfile(this.sanitizeProfile(raw)),
       raw,
     );
+    const assertCurrent = profileWriteGuard(this, profile.id);
     const network = await this.testProxy(profile, options);
+    assertCurrent();
     const applied = this.applyNetworkToProfile(profile, network, { persist: false });
     // A successful manual check may be followed immediately by app shutdown. Do not
     // acknowledge it until the durable engine state contains the new exit details.
@@ -190,6 +221,7 @@ module.exports = {
       this.resolveStoredProxyProfile(this.sanitizeProfile(raw)),
       raw,
     );
+    const assertCurrent = profileWriteGuard(this, profile.id);
     const refreshUrl = String(profile.proxyMeta?.refreshUrl || '').trim();
     const extractUrl = String(profile.proxyMeta?.apiExtractUrl || '').trim();
     // refreshUrl and apiExtractUrl stay separate: refresh rotates; extract re-reads endpoint.
@@ -197,27 +229,33 @@ module.exports = {
     const refresh = refreshUrl
       ? await invokeProxyRefresh(refreshUrl)
       : { ok: true, skipped: true, reason: 'no-refresh-url' };
+    assertCurrent();
     let nextProfile = profile;
     let extractError = null;
     if (extractUrl) {
+      let extracted;
       try {
-        const extracted = await extractProxyFromApi(extractUrl);
+        extracted = await extractProxyFromApi(extractUrl);
+      } catch (error) {
+        extractError = error;
+        if (!profile.proxy || /^(direct|offline|none)$/i.test(String(profile.proxy))) {
+          throw new Error('动态代理提取失败：' + (error.message || error));
+        }
+      }
+      assertCurrent();
+      if (extracted) {
         const rawProxy = extracted.raw || (
           extracted.protocol + '://'
           + (extracted.username ? (encodeURIComponent(extracted.username) + ':' + encodeURIComponent(extracted.password) + '@') : '')
           + extracted.host + ':' + extracted.port
         );
         nextProfile = this.sanitizeProfile({ ...profile, networkMode: 'proxy', proxy: rawProxy });
+        if (!sameProxyIdentity(profile.proxy, nextProfile.proxy)) this.networkInfo?.delete(nextProfile.id);
         this.profiles.set(nextProfile.id, nextProfile);
         // If the subsequent probe fails, no 'status' emit happens on this
         // path; the local API reads status() directly and would keep serving
         // the pre-extraction proxy forever.
         this.invalidateStatusCache?.();
-      } catch (error) {
-        extractError = error;
-        if (!profile.proxy || /^(direct|offline|none)$/i.test(String(profile.proxy))) {
-          throw new Error('动态代理提取失败：' + (error.message || error));
-        }
       }
     }
     const network = await this.checkProxy(nextProfile, { allowExtract: false, persist: true });

@@ -14,10 +14,8 @@
 const assert = require('node:assert/strict');
 const {
   Unavailable, chooseChromiumBinary, buildPersona, launchPersonaBrowser,
-  openPage, evaluate, startDualOriginServers, verifyIdentity,
+  openPage, evaluate, startDualOriginServers,
 } = require('./native-gate-harness');
-
-const NAV = `<!doctype html><script>globalThis.first = null;</script>`; // navigation doc (headers recorded server-side)
 
 (async () => {
   const browser = chooseChromiumBinary();

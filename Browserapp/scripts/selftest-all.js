@@ -68,6 +68,9 @@ const SUITE = [
   ['selftest:settings', 'automation/selftests/local-settings-selftest.js'],
   ['selftest:persistenceboundaries', 'automation/selftests/persistence-boundaries-selftest.js'],
   ['selftest:coalesce', 'automation/selftests/coalesced-writer-selftest.js'],
+  ['selftest:proxyoperations', 'automation/selftests/proxy-operation-race-selftest.js'],
+  ['selftest:transportisolation', 'automation/selftests/transport-isolation-selftest.js'],
+  ['selftest:nativeharness', 'automation/selftests/native-harness-lifecycle-selftest.js'],
   ['selftest:sqlitediff', 'automation/selftests/sqlite-diff-selftest.js'],
   ['selftest:sqlitenoop', 'automation/selftests/sqlite-noop-selftest.js'],
   ['selftest:sqliteassignments', 'automation/selftests/sqlite-assignments-selftest.js'],
@@ -246,6 +249,14 @@ const argv = process.argv.slice(2);
 const LIST_ONLY = argv.includes('--list');
 const PER_SCRIPT_TIMEOUT_MS = 5 * 60 * 1000;
 
+function printDiagnosticTail(result) {
+  for (const output of [result.stdout, result.stderr]) {
+    const tail = String(output || '').trim().split('\n').slice(-6).join('\n');
+    if (tail) console.log(tail.replace(/^/gm, '     '));
+  }
+  if (result.error) console.log('     ' + result.error.message);
+}
+
 function main() {
   if (LIST_ONLY) {
     for (const [name, script, flags] of SUITE) {
@@ -283,16 +294,19 @@ function main() {
       if (probe.status === 2) {
         skipped += 1;
         results.push({ name, script, pass: null, outcome: 'skipped' });
-        console.log('skip (native-only: browser binary not provided)');
+        console.log('skip (native prerequisite unavailable)');
+        printDiagnosticTail(probe);
         continue;
       }
       const seconds0 = ((Date.now() - startedNative) / 1000).toFixed(1);
       const status0 = classifySelftestResult(probe);
-      results.push({ name, script, pass: status0 === 'passed', outcome: status0, seconds: seconds0, status: probe.status, signal: probe.signal });
+      results.push({ name, script, pass: status0 === 'failed' ? false : (status0 === 'passed' ? true : null),
+        outcome: status0, seconds: seconds0, status: probe.status, signal: probe.signal });
       if (status0 === 'failed') failed += 1;
       else if (status0 === 'partial') partial += 1;
       else if (status0 === 'skipped') skipped += 1;
       console.log(status0 === 'passed' ? `ok (${seconds0}s)` : `${status0.toUpperCase()} (exit=${probe.status})`);
+      if (status0 !== 'passed') printDiagnosticTail(probe);
       continue;
     }
     const started = Date.now();
@@ -312,10 +326,7 @@ function main() {
     results.push({ name, script, pass: status === 'failed' ? false : (pass ? true : null),
       outcome: status, seconds, status: res.status, signal: res.signal });
     console.log(pass ? `ok (${seconds}s)` : `${status.toUpperCase()} (exit=${res.status}${res.signal ? ' signal=' + res.signal : ''})`);
-    if (!pass && res.stderr) {
-      const tail = String(res.stderr).trim().split('\n').slice(-6).join('\n');
-      if (tail) console.log(tail.replace(/^/gm, '     '));
-    }
+    if (!pass) printDiagnosticTail(res);
   }
   console.log(`\n${SUITE.length - failed - skipped - partial} passed, ${partial} partial, ${skipped} skipped, ${failed} failed`);
   if (failed) {

@@ -1,5 +1,9 @@
 # 代码分类与维护入口
 
+环境补齐、Rust 连接池过期回收、原生测试清理和基准口径修正见 [环境与原生验证续轮](dev-reports/2026-11-12-environment-native-optimization.md)；工具路径与复现命令见 [开发环境说明](dev-environment.md)。
+
+保存退避、代理并发与验证归属、共享通信隔离和出口状态一致性的四轮审查见 [2026-11-12 深度审查与优化](dev-reports/2026-11-12-review-boundaries.md)。改前改后对照脚本为 `Browserapp/scripts/benchmark-review-boundaries.js`。
+
 调度公平性、状态响应精简与恢复跨重启保护见 [调度、状态响应与恢复中断保护优化](dev-reports/2026-11-11-queue-status-recovery-optimization.md)。
 
 本轮凭据、存储完整性、RPA 并发与正则隔离、更新签名和性能测量见 [安全、执行边界与恢复优化](dev-reports/2026-11-11-security-runtime-optimization.md)。

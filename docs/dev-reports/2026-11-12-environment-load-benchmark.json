@@ -1,0 +1,335 @@
+{
+  "scope": "Real Node engine, SQLite, loopback HTTP kernel simulator; measurement corrections are not production speedup claims.",
+  "baseline": {
+    "node": "v24.22.1",
+    "kernelLatencyMs": 20,
+    "pollMs": 120,
+    "reports": [
+      {
+        "size": 10,
+        "rss": {
+          "afterFleetMb": 63,
+          "finalMb": 63
+        },
+        "loop": {
+          "afterSync": {
+            "p50Ms": 1.081343,
+            "p95Ms": 1.132543,
+            "p99Ms": 12.320767,
+            "maxMs": 331.087871,
+            "rawCount": 121
+          },
+          "duringPoll": {
+            "p50Ms": 1.088511,
+            "p95Ms": 1.292287,
+            "p99Ms": 4.771839,
+            "maxMs": 32.489471,
+            "rawCount": 9820
+          },
+          "duringSessions": {
+            "p50Ms": 1.084415,
+            "p95Ms": 1.766399,
+            "p99Ms": 4.300799,
+            "maxMs": 4.300799,
+            "rawCount": 39
+          }
+        },
+        "poll": {
+          "rounds": 50,
+          "fullBuildMsP95": 3.703,
+          "fullIpcBytesAvg": 36045,
+          "fullIpcPeak": 36045,
+          "deltaBuildMsP95": 0.545,
+          "deltaIpcBytesAvg": 1084,
+          "deltaIpcPeak": 36428
+        },
+        "sync": {
+          "firstMs": 377,
+          "steadyMedianMs": 62.1,
+          "perEditStagingMs": 0.234
+        },
+        "sessions": {
+          "running": 10,
+          "callers": 2,
+          "returnedRows": 20,
+          "failures": 0,
+          "wallMs": 70.6,
+          "httpTotal": 10,
+          "peakConnections": 8
+        }
+      },
+      {
+        "size": 100,
+        "rss": {
+          "afterFleetMb": 68.4,
+          "finalMb": 68.4
+        },
+        "loop": {
+          "afterSync": {
+            "p50Ms": 1.077247,
+            "p95Ms": 1.125375,
+            "p99Ms": 12.009471,
+            "maxMs": 15.220735,
+            "rawCount": 137
+          },
+          "duringPoll": {
+            "p50Ms": 1.085439,
+            "p95Ms": 1.324031,
+            "p99Ms": 5.042175,
+            "maxMs": 77.201407,
+            "rawCount": 9666
+          },
+          "duringSessions": {
+            "p50Ms": 1.088511,
+            "p95Ms": 2.682879,
+            "p99Ms": 4.714495,
+            "maxMs": 4.866047,
+            "rawCount": 224
+          }
+        },
+        "poll": {
+          "rounds": 50,
+          "fullBuildMsP95": 9.487,
+          "fullIpcBytesAvg": 361204,
+          "fullIpcPeak": 361204,
+          "deltaBuildMsP95": 9.291,
+          "deltaIpcBytesAvg": 10560,
+          "deltaIpcPeak": 364561
+        },
+        "sync": {
+          "firstMs": 63.9,
+          "steadyMedianMs": 59.1,
+          "perEditStagingMs": 0.128
+        },
+        "sessions": {
+          "running": 100,
+          "callers": 2,
+          "returnedRows": 200,
+          "failures": 0,
+          "wallMs": 297.7,
+          "httpTotal": 100,
+          "peakConnections": 8
+        }
+      },
+      {
+        "size": 1000,
+        "rss": {
+          "afterFleetMb": 168.1,
+          "finalMb": 168.1
+        },
+        "loop": {
+          "afterSync": {
+            "p50Ms": 1.090559,
+            "p95Ms": 1.231871,
+            "p99Ms": 112.852991,
+            "maxMs": 209.715199,
+            "rawCount": 130
+          },
+          "duringPoll": {
+            "p50Ms": 1.077247,
+            "p95Ms": 1.146879,
+            "p99Ms": 3.356671,
+            "maxMs": 91.160575,
+            "rawCount": 9589
+          },
+          "duringSessions": {
+            "p50Ms": 1.082367,
+            "p95Ms": 2.531327,
+            "p99Ms": 16.695295,
+            "maxMs": 20.856831,
+            "rawCount": 242
+          }
+        },
+        "poll": {
+          "rounds": 50,
+          "fullBuildMsP95": 39.255,
+          "fullIpcBytesAvg": 3624055,
+          "fullIpcPeak": 3624055,
+          "deltaBuildMsP95": 7.301,
+          "deltaIpcBytesAvg": 107319,
+          "deltaIpcPeak": 3658916
+        },
+        "sync": {
+          "firstMs": 270.5,
+          "steadyMedianMs": 162.9,
+          "perEditStagingMs": 0.706
+        },
+        "sessions": {
+          "running": 100,
+          "callers": 2,
+          "returnedRows": 200,
+          "failures": 0,
+          "wallMs": 370.1,
+          "httpTotal": 100,
+          "peakConnections": 8
+        }
+      }
+    ]
+  },
+  "corrected": {
+    "node": "v24.22.1",
+    "kernelLatencyMs": 20,
+    "pollMs": 120,
+    "reports": [
+      {
+        "size": 10,
+        "rss": {
+          "afterFleetMb": 56.8,
+          "finalMb": 62.8
+        },
+        "loop": {
+          "afterSync": {
+            "p50Ms": 1.076223,
+            "p95Ms": 1.127423,
+            "p99Ms": 2.607103,
+            "maxMs": 57.835519,
+            "rawCount": 136
+          },
+          "duringPoll": {
+            "p50Ms": 1.077247,
+            "p95Ms": 1.155071,
+            "p99Ms": 1.584127,
+            "maxMs": 21.757951,
+            "rawCount": 10646
+          },
+          "duringSessions": {
+            "p50Ms": 1.077247,
+            "p95Ms": 1.863679,
+            "p99Ms": 4.239359,
+            "maxMs": 4.239359,
+            "rawCount": 40
+          }
+        },
+        "poll": {
+          "rounds": 50,
+          "fullBuildMsP95": 0.825,
+          "fullIpcBytesAvg": 36045,
+          "fullIpcPeak": 36045,
+          "deltaBuildMsP95": 1.186,
+          "deltaIpcBytesAvg": 758,
+          "deltaIpcPeak": 36102
+        },
+        "sync": {
+          "firstMs": 108.9,
+          "steadyMedianMs": 52,
+          "perEditStagingMs": 0.438
+        },
+        "sessions": {
+          "running": 10,
+          "callers": 2,
+          "returnedRows": 20,
+          "failures": 0,
+          "wallMs": 62.5,
+          "httpTotal": 10,
+          "peakConnections": 8
+        }
+      },
+      {
+        "size": 100,
+        "rss": {
+          "afterFleetMb": 69.3,
+          "finalMb": 71.9
+        },
+        "loop": {
+          "afterSync": {
+            "p50Ms": 1.076223,
+            "p95Ms": 1.159167,
+            "p99Ms": 9.420799,
+            "maxMs": 18.513919,
+            "rawCount": 137
+          },
+          "duringPoll": {
+            "p50Ms": 1.076223,
+            "p95Ms": 1.146879,
+            "p99Ms": 1.927167,
+            "maxMs": 73.531391,
+            "rawCount": 10481
+          },
+          "duringSessions": {
+            "p50Ms": 1.076223,
+            "p95Ms": 1.518591,
+            "p99Ms": 1.901567,
+            "maxMs": 2.498559,
+            "rawCount": 251
+          }
+        },
+        "poll": {
+          "rounds": 50,
+          "fullBuildMsP95": 40.169,
+          "fullIpcBytesAvg": 361204,
+          "fullIpcPeak": 361204,
+          "deltaBuildMsP95": 8.865,
+          "deltaIpcBytesAvg": 7262,
+          "deltaIpcPeak": 361263
+        },
+        "sync": {
+          "firstMs": 65.3,
+          "steadyMedianMs": 58.3,
+          "perEditStagingMs": 0.266
+        },
+        "sessions": {
+          "running": 100,
+          "callers": 2,
+          "returnedRows": 200,
+          "failures": 0,
+          "wallMs": 286.4,
+          "httpTotal": 100,
+          "peakConnections": 8
+        }
+      },
+      {
+        "size": 1000,
+        "rss": {
+          "afterFleetMb": 134.2,
+          "finalMb": 148.9
+        },
+        "loop": {
+          "afterSync": {
+            "p50Ms": 1.078271,
+            "p95Ms": 1.104895,
+            "p99Ms": 61.439999,
+            "maxMs": 125.632511,
+            "rawCount": 140
+          },
+          "duringPoll": {
+            "p50Ms": 1.078271,
+            "p95Ms": 1.173503,
+            "p99Ms": 2.572287,
+            "maxMs": 323.747839,
+            "rawCount": 8982
+          },
+          "duringSessions": {
+            "p50Ms": 1.078271,
+            "p95Ms": 1.935359,
+            "p99Ms": 11.550719,
+            "maxMs": 167.903231,
+            "rawCount": 246
+          }
+        },
+        "poll": {
+          "rounds": 50,
+          "fullBuildMsP95": 65.43,
+          "fullIpcBytesAvg": 3624055,
+          "fullIpcPeak": 3624055,
+          "deltaBuildMsP95": 27.479,
+          "deltaIpcBytesAvg": 72519,
+          "deltaIpcPeak": 3624116
+        },
+        "sync": {
+          "firstMs": 175.4,
+          "steadyMedianMs": 111.3,
+          "perEditStagingMs": 1.639
+        },
+        "sessions": {
+          "running": 100,
+          "callers": 2,
+          "returnedRows": 200,
+          "failures": 0,
+          "wallMs": 482.6,
+          "httpTotal": 100,
+          "peakConnections": 8
+        }
+      }
+    ]
+  }
+}
