@@ -188,6 +188,7 @@ jobs:
         run: node scripts/materialize-wayfern-fonts.js
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # stable
         with:
+          toolchain: stable
           components: rustfmt, clippy
       - name: Build and validate native Rust core
         run: |
@@ -298,6 +299,7 @@ jobs:
       - run: npm ci --include=dev
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # stable
         with:
+          toolchain: stable
           components: rustfmt, clippy
       - name: Build and validate native Rust core
         run: |
@@ -411,6 +413,7 @@ jobs:
       - run: npm ci --include=dev
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # stable
         with:
+          toolchain: stable
           components: rustfmt, clippy
       - name: Build and validate native Rust core
         run: |
@@ -529,6 +532,7 @@ jobs:
       - run: npm ci --include=dev
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # stable
         with:
+          toolchain: stable
           components: rustfmt, clippy
       - name: Build and validate native Rust core
         run: |

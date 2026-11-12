@@ -57,7 +57,8 @@ function bundleKernelVariantEnabled() {
 function packageVariantSuffix(platform = process.platform, arch = packageArch) {
   const p = String(platform || '').toLowerCase();
   const a = String(arch || '').toLowerCase();
-  const isVariantPlatform = p === 'win32' || p === 'linux' || (p === 'darwin' && a === 'arm64');
+  const isVariantPlatform = p === 'win32' || p === 'linux'
+    || (p === 'darwin' && (a === 'arm64' || packageVariant() === 'without-kernel'));
   if (!isVariantPlatform) return '';
   // Default product SKU is with-kernel; keep stable artifact suffix for CI/release assets.
   return packageVariant() === 'without-kernel' ? '-without-kernel' : '-with-kernel';
@@ -191,7 +192,7 @@ function shouldShipOpenBrowser148Kernel(platform = process.platform, arch = pack
   const p = String(platform || '').toLowerCase();
   const a = String(arch || '').toLowerCase();
   const isX64 = a === 'x64' || a === 'x86_64' || a === 'amd64';
-  return p === 'darwin' && isX64;
+  return p === 'darwin' && isX64 && bundleKernelVariantEnabled();
 }
 
 function shouldShipIntegratedWayfern(platform = process.platform, arch = packageArch) {
@@ -226,6 +227,7 @@ function shouldShipChromeStable(platform = process.platform, arch = packageArch)
  */
 function appResourceExcludes() {
   return new Set([
+    ...(!bundleKernelVariantEnabled() ? ['kernels'] : []),
     'node_modules',
     'dist',
     '.git',
@@ -289,6 +291,10 @@ async function ensurePackagingKernelSeeds() {
 function pruneForeignKernelSeeds(resourceApp, platform = process.platform, arch = packageArch) {
   const kernelsDir = path.join(resourceApp, 'kernels');
   if (!fs.existsSync(kernelsDir)) return;
+  if (!bundleKernelVariantEnabled()) {
+    fs.rmSync(kernelsDir, { recursive: true, force: true });
+    return;
+  }
   const shipOpenBrowser = shouldShipOpenBrowser148Kernel(platform, arch);
   const shipWayfern = shouldShipIntegratedWayfern(platform, arch);
   const shipStable = shouldShipChromeStable(platform, arch);
@@ -825,7 +831,9 @@ function packageLinux() {
     '',
     '1. Extract the complete tar.gz archive and run ./OpenBrowser as a normal desktop user.',
     '2. Do not run as root or via sudo: profile data belongs to the desktop user.',
-    '3. This package includes the official Google Chrome Stable package under kernels/chrome-stable; it never downloads a browser kernel at runtime.',
+    bundleKernelVariantEnabled()
+      ? '3. This package includes Google Chrome Stable under kernels/chrome-stable. A missing kernel can be downloaded after launch.'
+      : '3. This package downloads Google Chrome Stable after launch when no independent kernel is installed; an Internet connection is required.',
     '4. Ubuntu desktop dependencies (install when missing):',
     '   sudo apt-get install libatk-bridge2.0-0 libatk1.0-0 libatspi2.0-0 libcups2 libdrm2 libgbm1 libglib2.0-0 libgtk-3-0 libnspr4 libnss3 libxcomposite1 libxdamage1 libxfixes3 libxkbcommon0 libxrandr2',
     '5. If audio support is missing, install libasound2 (Ubuntu 22.04) or libasound2t64 (Ubuntu 24.04+).',
@@ -923,7 +931,9 @@ function packageMac() {
   // Must re-sign AFTER Info.plist / Resources mutations, otherwise Apple Silicon Gatekeeper rejects the app.
   signMacAppBundle(appBundle);
 
-  const kernelNote = packageArch === 'x86_64'
+  const kernelNote = !bundleKernelVariantEnabled()
+    ? '3. 本包不内置浏览器内核；启动后可联网下载 Google Chrome Stable，也可在“本地设置”选择自定义 Chromium。'
+    : packageArch === 'x86_64'
     ? '3. 本包（macOS x86_64 / Intel）已内置 OpenBrowser 148 独立内核（kernels/macos-x64）；内核缺失时可下载 Google Chrome Stable。'
     : bundleKernelVariantEnabled()
       ? '3. 本包（macOS arm64）已内置独立内核（kernels/macos-arm64）；内核缺失时可下载 Google Chrome Stable。'
@@ -991,6 +1001,9 @@ if (require.main === module) {
 }
 
 module.exports = {
+  packageArtifactStem,
+  shouldShipOpenBrowser148Kernel,
+  pruneForeignKernelSeeds,
   appResourceExcludes,
   ensurePackagingKernelSeeds,
   isPackagingExcluded,
