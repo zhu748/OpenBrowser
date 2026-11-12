@@ -92,18 +92,19 @@ class WorkerScriptPrefixer {
           { name: 'Content-Type', value: 'application/javascript' },
           { name: 'Cache-Control', value: 'no-store' },
         ],
+        // Footer BEFORE the original body: a network worker that synchronously
+        // spawns a nested worker at top level must already observe
+        // self.__obPersonaUrl when the nested rewrite runs. The footer var is
+        // IIFE-scoped so no marker leaks onto the realm global (the pattern
+        // also fires for page scripts, which early-return the source but
+        // would still execute this footer).
         body: Buffer.concat([
           Buffer.from(this.source, 'utf8'),
           Buffer.from('\n;\n', 'utf8'),
+            Buffer.from(';(function(){try{var b=' + JSON.stringify(this.source)
+            + ';Object.defineProperty(self,\'__obPersonaUrl\',{value:URL.createObjectURL(new Blob([b],{type:\'application/javascript\'})),configurable:true,writable:true});}catch(e){}})();\n', 'utf8'),
+          Buffer.from('\n;\n', 'utf8'),
           original,
-          // Footer: publish the persona prefix URL for the worker-scope
-          // nested-Worker patch (nested workers of a network worker must not
-          // read the host platform). The prefix is embedded once per network
-          // worker body; the worker mints a blob URL from it on first run.
-          // Document-script font budgets are unaffected (this copy lives only
-          // in the fulfilled network response).
-          Buffer.from('\n;try{var __obB=' + JSON.stringify(this.source)
-            + ';Object.defineProperty(self,\'__obPersonaUrl\',{value:URL.createObjectURL(new Blob([__obB],{type:\'application/javascript\'})),configurable:true,writable:true});__obB=null;}catch(e){}\n', 'utf8'),
         ]).toString('base64'),
       }, { sessionId: event.sessionId, timeout: this.commandTimeout });
       this.logger?.({ type: 'worker-script-prefixed', url });

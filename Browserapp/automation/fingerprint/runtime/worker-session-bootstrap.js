@@ -189,6 +189,7 @@ module.exports = `  // --- worker session bootstrap hook ---
       + '  "use strict";\\n'
       + '  try {\\n'
       + '    importScripts(' + JSON.stringify(personaU) + ');\\n'
+      + '    try { Object.defineProperty(self, "__obPersonaUrl", { value: ' + JSON.stringify(personaU) + ', configurable: true, writable: true }); } catch (e) {}\\n'
       + '    var t = await (await fetch(' + JSON.stringify(originalUrl) + ')).text();\\n'
       + '    if (typeof self.__obImportSession === "function") {\\n'
       + '      self.__obImportSession("boot", t);\\n'
@@ -203,14 +204,29 @@ module.exports = `  // --- worker session bootstrap hook ---
       + '  "use strict";\\n'
       + '  try {\\n'
       + '    importScripts(' + JSON.stringify(personaU) + ');\\n'
+      + '    try { Object.defineProperty(self, "__obPersonaUrl", { value: ' + JSON.stringify(personaU) + ', configurable: true, writable: true }); } catch (e) {}\\n'
       + '    if (typeof self.__obImportSession === "function") {\\n'
       + '      self.__obImportSession("boot", ' + JSON.stringify(text) + ');\\n'
       + '    }\\n'
       + '  } catch (e) {}\\n'
       + '})();';
 
+    // First read captures the persona URL into a closure and removes the
+    // self marker (it is configurable for exactly this); later constructions
+    // use the cached value. Before the first nested construction the
+    // property remains visible to getOwnPropertyNames — documented residual.
+    let nestedPersonaUrlCache = null;
+    const nestedPersonaUrl = () => {
+      if (nestedPersonaUrlCache) return nestedPersonaUrlCache;
+      const v = self.__obPersonaUrl;
+      if (!v) return null;
+      nestedPersonaUrlCache = String(v);
+      try { delete self.__obPersonaUrl; } catch (e) {}
+      return nestedPersonaUrlCache;
+    };
+
     const nestedRewrite = (u, isModule) => {
-      const personaU = self.__obPersonaUrl;
+      const personaU = nestedPersonaUrl();
       if (!personaU || !nativeWorkerCreateObjectURL || !nestedNativeBlob) return null;
       // Module workers are NEVER intercepted here: dynamic import() of a
       // classic-shaped blob from a nested module worker deadlocks under the
