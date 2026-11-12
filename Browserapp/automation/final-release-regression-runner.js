@@ -324,6 +324,27 @@ const DIAGNOSTIC_AUDITS = [
     rationale: "Round 2 live-kernel A/B adversarial detector (capability APIs, wire headers, worker contexts, media queries)"
   },
   {
+    key: "audit:valuefingerprint",
+    script: "node automation/value-fingerprint-adversarial-audit.js",
+    file: "automation/value-fingerprint-adversarial-audit.js",
+    category: "DIAGNOSTIC_AUDIT",
+    rationale: "Round 5 value-level Chromium A/B audit (canvas/WebGL/audio rendered values, Math quirks, SVG values, driver marks, worker identity)"
+  },
+  {
+    key: "audit:valuefirefox",
+    script: "node automation/value-fingerprint-firefox-audit.js",
+    file: "automation/value-fingerprint-firefox-audit.js",
+    category: "DIAGNOSTIC_AUDIT",
+    rationale: "Round 5 value-level Firefox A/B audit through the full production path (document preload + worker MITM, both worker delivery paths)"
+  },
+  {
+    key: "audit:mathparity",
+    script: "node automation/math-value-parity-audit.js",
+    file: "automation/math-value-parity-audit.js",
+    category: "DIAGNOSTIC_AUDIT",
+    rationale: "Math/ECMAScript cross-engine value parity (archived: fdlibm-derived engines are bit-identical; host-libm inheritance is not a persona contradiction)"
+  },
+  {
     key: "audit:brandtrace",
     script: "node automation/page-visible-brand-trace-audit.js",
     file: "automation/page-visible-brand-trace-audit.js",

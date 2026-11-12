@@ -12,7 +12,7 @@
 // stay in this file's literal — see the drift list in injection-config.js.
 const { resolveInjectionStability, injectionOs, injectionTimezone, injectionDeviceMemory, injectionWebgl, stabilityNoiseAmplitude, stabilitySampleStepDivisor, stabilityMaxWidth, stabilityMaxHeight, stabilitySquare } = require('./injection-config');
 const { canonicalBridgeToken } = require('./shared');
-const { buildWorkerRuntime } = require('./runtime-source');
+const { buildWorkerRuntimeFull } = require('./runtime-source');
 
 
 /** Worker-safe subset injected before attached workers are resumed. */
@@ -67,7 +67,7 @@ function buildWorkerInjectionScript(fp) {
       square: stabilitySquare(stability),
     },
   });
-  return buildWorkerRuntime({ json, bridgeToken });
+  return buildWorkerRuntimeFull({ json, bridgeToken });
 }
 
 module.exports = {

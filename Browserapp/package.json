@@ -192,7 +192,8 @@
     "audit:brandtrace": "node automation/page-visible-brand-trace-audit.js",
     "audit:mobilepersona": "node automation/mobile-persona-consistency-audit.js",
     "audit:valuefingerprint": "node automation/value-fingerprint-adversarial-audit.js",
-    "audit:valuefirefox": "node automation/value-fingerprint-firefox-audit.js"
+    "audit:valuefirefox": "node automation/value-fingerprint-firefox-audit.js",
+    "audit:mathparity": "node automation/math-value-parity-audit.js"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

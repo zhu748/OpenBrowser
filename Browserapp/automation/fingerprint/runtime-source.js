@@ -23,6 +23,7 @@ const workerConstructorPatch = require('./runtime/worker-constructor-patch');
 const workerTimezone = require('./runtime/worker-timezone');
 const workerGraphics = require('./runtime/worker-graphics');
 const workerGpuStorage = require('./runtime/worker-gpu-storage');
+const workerSessionBootstrap = require('./runtime/worker-session-bootstrap');
 const networkFragment = require('./runtime/network-fragment');
 
 // Parse the assembled CFG once (it is a JSON literal produced by
@@ -90,13 +91,34 @@ function buildDocumentRuntime(context) {
 }
 
 function buildWorkerRuntime(context) {
-  return [
+  // The session bootstrap must be able to re-emit the ENTIRE worker prefix
+  // (itself included) for blob:/data: session delivery, so its __SELF_SOURCE__
+  // placeholder is substituted at assembly time — after assembly, replace the
+  // marker with the final source. See buildWorkerRuntimeFull below.
+  const assembled = [
     workerBootstrap(context),
     networkFragment,
     workerTimezone,
     workerGraphics,
     workerGpuStorage,
   ].join('');
+  return assembled;
 }
 
-module.exports = { buildDocumentRuntime, buildWorkerRuntime };
+/** Full worker source including the session bootstrap. Callers that deliver
+ *  worker identity (engine prefixer, document Worker patch) must use THIS
+ *  builder so blob:/data: sessions can re-run original scripts under the
+ *  already-installed prefix mocks. The session fragment carries NO copy of
+ *  the prefix: re-emission runs the original text as a plain second
+ *  importScripts after the bootstrap's own persona import (see
+ *  runtime/worker-session-bootstrap.js), which keeps the composed document
+ *  script free of a second font-payload copy (font-bridge budget).
+ */
+function buildWorkerRuntimeFull(context) {
+  const body = buildWorkerRuntime(context);
+  const closeIdx = body.lastIndexOf('})();');
+  if (closeIdx === -1) return body + workerSessionBootstrap;
+  return body.slice(0, closeIdx) + workerSessionBootstrap + body.slice(closeIdx);
+}
+
+module.exports = { buildDocumentRuntime, buildWorkerRuntime, buildWorkerRuntimeFull };

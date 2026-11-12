@@ -47,6 +47,25 @@ const WORKER_SNAP = `(() => {
   postMessage(JSON.stringify(out));
 })()`;
 
+// SharedWorker variant: same fields, but delivered over the first connect()ed
+// MessagePort (SharedWorkerGlobalScope cannot postMessage the page directly).
+const SHARED_WORKER_SNAP = `(() => {
+  self.onconnect = (e) => {
+    const port = e.ports[0];
+    port.start();
+    const out = { platform: navigator.platform, cores: navigator.hardwareConcurrency,
+      ua: navigator.userAgent, tz: Intl.DateTimeFormat().resolvedOptions().timeZone };
+    try {
+      const c = new OffscreenCanvas(200, 60);
+      const ctx = c.getContext('2d');
+      ctx.font = '13px "Arial"';
+      ctx.fillText('probe', 4, 22);
+      out.mtext = ctx.measureText('mmmmmmmmmmlli').width;
+    } catch (err) { out.mtextErr = String(err); }
+    port.postMessage(JSON.stringify(out));
+  };
+})()`;
+
 (async () => {
   let browser, session, server;
   try {
@@ -93,22 +112,55 @@ const WORKER_SNAP = `(() => {
       const blobWorker = await run(new Worker(URL.createObjectURL(new Blob([${JSON.stringify(WORKER_SNAP)}], { type: 'application/javascript' }))));
       const dataWorker = await run(new Worker('data:application/javascript;base64,' + btoa(${JSON.stringify(WORKER_SNAP)})));
       const networkWorker = await run(new Worker(location.origin + '/worker.js'));
+      // Binary-backed blob: the bytes are identical to WORKER_SNAP but travel
+      // as a Uint8Array part — no string part anywhere in the Blob.
+      const bytes = new TextEncoder().encode(${JSON.stringify(WORKER_SNAP)});
+      const binaryBlobWorker = await run(new Worker(URL.createObjectURL(new Blob([bytes], { type: 'application/javascript' }))));
+      // Response-derived blob: the classic wasm-compile pattern
+      // (fetch->arrayBuffer->Blob) a detector uses to dodge string captures.
+      const respBlob = await fetch(location.origin + '/worker.js').then((r) => r.blob());
+      const responseWorker = await run(new Worker(URL.createObjectURL(respBlob)));
+      // Module worker with blob URL.
+      const moduleWorker = await run(new Worker(URL.createObjectURL(new Blob(['export default null;' + ${JSON.stringify(WORKER_SNAP)}], { type: 'text/javascript' })), { type: 'module' }));
+      // importScripts(blob:) from inside a classic blob worker: the nested
+      // script runs AFTER the outer worker's own persona bootstrap, so it must
+      // be wrapped by the worker-side importScripts patch.
+      const nestedSrc = "importScripts(URL.createObjectURL(new Blob([" + JSON.stringify(${JSON.stringify(WORKER_SNAP)}) + "], { type: 'application/javascript' })));";
+      const importScriptsWorker2 = await run(new Worker(URL.createObjectURL(new Blob([nestedSrc], { type: 'application/javascript' }))));
+      // SharedWorker via blob URL.
+      const sharedRun = () => new Promise((resolve) => {
+        try {
+          const sw = new SharedWorker(URL.createObjectURL(new Blob([${JSON.stringify(SHARED_WORKER_SNAP)}], { type: 'application/javascript' })));
+          sw.port.onmessage = (e) => resolve(e.data);
+          sw.onerror = (e) => resolve(JSON.stringify({ err: e.message }));
+          setTimeout(() => resolve(JSON.stringify({ timeout: true })), 10000);
+          sw.port.start();
+        } catch (e) { resolve(JSON.stringify({ err: String(e.message) })); }
+      });
+      const sharedWorker = await sharedRun();
       const c = document.createElement('canvas');
       const ctx = c.getContext('2d');
       ctx.font = '13px "Arial"';
       const mainMtext = ctx.measureText('mmmmmmmmmmlli').width;
-      return JSON.stringify({ blobWorker, dataWorker, networkWorker, mainMtext });
+      return JSON.stringify({ blobWorker, dataWorker, networkWorker, binaryBlobWorker, responseWorker, moduleWorker, importScriptsWorker: importScriptsWorker2, sharedWorker, mainMtext });
     })()`);
     assert.ok(probe && !probe.err, 'worker probes failed: ' + JSON.stringify(probe));
     const parsed = JSON.parse(probe);
     const blobWorker = JSON.parse(parsed.blobWorker);
     const dataWorker = JSON.parse(parsed.dataWorker);
     const networkWorker = JSON.parse(parsed.networkWorker);
+    const binaryBlobWorker = JSON.parse(parsed.binaryBlobWorker);
+    const responseWorker = JSON.parse(parsed.responseWorker);
+    const moduleWorker = JSON.parse(parsed.moduleWorker);
+    const importScriptsWorker = JSON.parse(parsed.importScriptsWorker);
+    const sharedWorker = JSON.parse(parsed.sharedWorker);
     assert.ok(!blobWorker.timeout && !blobWorker.err, 'blob worker: ' + parsed.blobWorker);
     assert.ok(!dataWorker.timeout && !dataWorker.err, 'data worker: ' + parsed.dataWorker);
     assert.ok(!networkWorker.timeout && !networkWorker.err, 'network worker: ' + parsed.networkWorker);
 
-    for (const [label, worker] of [['blob', blobWorker], ['data', dataWorker], ['network', networkWorker]]) {
+    for (const [label, worker] of [['blob', blobWorker], ['data', dataWorker], ['network', networkWorker],
+      ['binaryBlob', binaryBlobWorker], ['responseBlob', responseWorker], ['module', moduleWorker],
+      ['importScriptsNested', importScriptsWorker], ['shared', sharedWorker]]) {
       assert.equal(worker.platform, fingerprint.platform, label + ' worker platform');
       assert.equal(worker.cores, fingerprint.hardwareConcurrency, label + ' worker cores');
       assert.equal(worker.tz, fingerprint.timezone, label + ' worker timezone');
