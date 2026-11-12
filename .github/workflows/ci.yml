@@ -264,6 +264,48 @@ jobs:
           node scripts/selftest-one.js rpalifecycle
           node scripts/selftest-one.js statusrefresh
           node scripts/selftest-one.js cloudrecovery
+          node scripts/selftest-one.js optimizationintegration
+          node scripts/selftest-one.js restorejournal
+          node scripts/selftest-one.js diagnosticlauncher
+          node scripts/selftest-one.js mcptransport
+
+  desktop-gates:
+    name: Electron desktop behavior (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    defaults:
+      run:
+        working-directory: Browserapp
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          lfs: false
+          sparse-checkout: |
+            /*
+            !/Browserapp/kernels/
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Browserapp/package-lock.json
+      - run: npm ci --include=dev --ignore-scripts
+      - run: node node_modules/electron/install.js
+      - name: Real DOM, preload, IPC, SQLite and editor conflict gates
+        env:
+          OPENBROWSER_MASTER_KEY_FILE: ${{ runner.temp }}/openbrowser-desktop.key
+        run: |
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            xvfb-run -a node node_modules/electron/cli.js --no-sandbox scripts/benchmark-real-render.js --sizes 10,100,1000 --skip-kernel --json
+            xvfb-run -a node automation/selftests/app-startup-e2e-selftest.js
+          else
+            node node_modules/electron/cli.js scripts/benchmark-real-render.js --sizes 10,100,1000 --skip-kernel --json
+          fi
 
   # ~200 lines of Windows FFI (process/lock.rs, guardian.rs) compile to nothing
   # on Linux: cargo skips cfg(windows) blocks entirely, so per-push CI never

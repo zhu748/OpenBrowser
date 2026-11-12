@@ -92,6 +92,23 @@ async function main() {
   await cached.refresh(); await cached.refresh(); await cached.refresh();
   assert.equal(projections, 1, 'idle IPC must not rebuild every row revision');
   assert.equal(notifications, 3, 'consumers still reconcile local state on each refresh');
+  current = [];
+  const requests = [];
+  const cursorClient = createStatusController({ getRows: () => current, setRows: (next) => { current = next; },
+    fetchDelta: async (watermark) => { requests.push(watermark); return engine.statusDelta(watermark, { includeWatermark: false, includeCursor: true }); } });
+  await cursorClient.refresh(); await cursorClient.refresh();
+  assert.equal(typeof requests[1], 'string', 'steady refresh sends one opaque cursor');
+  const cursor = requests[1];
+  engine.profiles.set('env-1', { id: 'env-1', name: 'cursor-change', cookies: 'private' });
+  await cursorClient.refresh();
+  assert.equal(current[0].name, 'cursor-change'); assert.equal(current[0].cookies, '');
+  for (let i = 0; i < 10; i++) { engine.invalidateStatusCache(); engine.statusDelta(null, { includeCursor: true }); }
+  assert.equal(engine._statusCursorHistory.size, 8);
+  assert.equal(engine.statusDelta(cursor).full, true, 'expired history safely resynchronizes');
+  assert.equal(engine.statusDelta('unknown-engine:cursor').full, true);
+  current = [{ id: 'local-edit', statusRev: 'local' }];
+  await cursorClient.refresh();
+  assert.equal(typeof requests.at(-1), 'object', 'a local row replacement invalidates the cursor');
   console.log('STATUS_REFRESH_SELFTEST OK (runtime delta, stable edit revisions, restart tokens, cache lifetime, linear merge, IPC races)');
 }
 main().catch((error) => { console.error(error); process.exitCode = 1; });

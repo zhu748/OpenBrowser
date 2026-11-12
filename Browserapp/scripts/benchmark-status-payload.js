@@ -50,7 +50,11 @@ function scenario(size) {
   assert.equal(changedAfter.rows.length, 1);
   assert.deepEqual(mergeStatusDelta(full.rows, changedBefore), mergeStatusDelta(full.rows, changedAfter));
   const requestBytes = bytes(full.watermark);
+  const cursorFirst = compact(null);
+  const cursorIdle = compact(cursorFirst.cursor);
   return { profiles: size, requestBytes,
+    cursorRequestBytes: bytes(cursorFirst.cursor),
+    cursorIdleRoundTripBytes: bytes(cursorFirst.cursor) + bytes(cursorIdle),
     firstReply: { beforeBytes: bytes(full), afterBytes: bytes(first) },
     idleReply: { beforeBytes: bytes(idleBefore), afterBytes: bytes(idleAfter),
       beforeSerializeMedianMs: medianSerializationMs(idleBefore), afterSerializeMedianMs: medianSerializationMs(idleAfter) },

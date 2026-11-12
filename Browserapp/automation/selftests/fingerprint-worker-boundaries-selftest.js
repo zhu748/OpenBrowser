@@ -199,6 +199,9 @@ async function main() {
         if (!spec.inject) baseline = observed;
         compare(observed, baseline, spec.inject ? fp : null);
         console.log(`PASS ${spec.os} injected=${spec.inject}: URL/Audio/WebGL coercion, SharedWorker sharing/cache, worker grammar/module dependencies`);
+      } catch (error) {
+        console.error('WORKER_BOUNDARY_DIAGNOSTICS', JSON.stringify({ os: spec.os, inject: spec.inject, ...session.diagnostics() }));
+        throw error;
       } finally { connection?.close(); await session.close(); }
     }
   } finally { await new Promise((resolve) => server.close(resolve)); }

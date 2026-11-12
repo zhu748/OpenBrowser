@@ -36,6 +36,11 @@ const ROOT = path.join(__dirname, '..');
 // name exists — package.json only keeps entries that a workflow, the release
 // gate or the docs still invoke directly.
 const SUITE = [
+  ['selftest:appstartup', 'automation/selftests/app-startup-e2e-selftest.js', { nativeOnly: true }],
+  ['selftest:restorejournal', 'automation/selftests/restore-journal-selftest.js'],
+  ['selftest:diagnosticlauncher', 'automation/selftests/diagnostic-launcher-selftest.js'],
+  ['selftest:optimizationintegration', 'automation/selftests/optimization-integration-selftest.js'],
+  ['selftest:mcptransport', 'automation/selftests/mcp-transport-boundaries-selftest.js'],
   ['selftest:workerresources', 'automation/selftests/worker-resource-lifecycle-selftest.js'],
   ['selftest:fpgeneration', 'automation/selftests/fingerprint-generation-selftest.js'],
   ['selftest:optimization', 'automation/selftests/optimization-boundaries-selftest.js'],
@@ -258,7 +263,10 @@ const PER_SCRIPT_TIMEOUT_MS = 5 * 60 * 1000;
 
 function printDiagnosticTail(result) {
   for (const output of [result.stdout, result.stderr]) {
-    const tail = String(output || '').trim().split('\n').slice(-6).join('\n');
+    const raw = String(output || '').trim();
+    const tail = result.status !== 0 && result.status !== 2
+      ? (raw.length > 16000 ? raw.slice(0, 4000) + '\n[diagnostics truncated]\n' + raw.slice(-12000) : raw)
+      : raw.split('\n').slice(-6).join('\n');
     if (tail) console.log(tail.replace(/^/gm, '     '));
   }
   if (result.error) console.log('     ' + result.error.message);

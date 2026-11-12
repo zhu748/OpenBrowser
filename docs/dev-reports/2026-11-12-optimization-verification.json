@@ -1,0 +1,402 @@
+{
+  "reviewDate": "2026-11-12",
+  "baseCommit": "bb4a3bd87dbfdbdc37af4bdf332e3bca3c5d6e38",
+  "changes": [
+    "authoritative credential backup and stopped-profile leases",
+    "WAL refusal and skipped-file manifests",
+    "encrypted cross-store recovery journal and startup compensation",
+    "guarded API/UI mutation and overlapping publication rollback",
+    "incremental UI requests/responses and bounded cursor history",
+    "nested diagnostic redaction and HTTP lifecycle cleanup",
+    "macOS launcher sandbox/origin policy and shell literals",
+    "real-main startup readiness barrier and isolated userData",
+    "Cargo target directory support and three-platform Electron CI"
+  ],
+  "environment": {
+    "node": {
+      "version": "v24.22.1",
+      "available": true
+    },
+    "rust": {
+      "cargo": {
+        "available": true,
+        "version": "cargo 1.99.1 (5f94df478 2026-08-27)"
+      },
+      "rustc": {
+        "available": true,
+        "version": "rustc 1.99.1 (58cf8f9c3 2026-10-13)"
+      },
+      "rustfmt": {
+        "available": true,
+        "version": "rustfmt 1.10.0-stable (58cf8f9c35 2026-10-13)"
+      },
+      "clippy": {
+        "available": true,
+        "version": "clippy 0.1.99 (58cf8f9c35 2026-10-13)"
+      }
+    },
+    "chromium": {
+      "available": true,
+      "version": "Google Chrome for Testing 157.0.8103.78",
+      "launch": {
+        "available": true,
+        "exitCode": 0,
+        "detail": "510:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: \n[34801:34815:1112/110807.516638:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")\n[34801:34815:1112/110807.516657:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")\n[34801:34801:1112/110807.516826:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: \n[34801:34801:1112/110807.522536:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: \n[34801:34815:1112/110807.522756:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")\n[34801:34801:1112/110807.550260:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: \n[34801:34815:1112/110807.550311:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Failed to connect to socket /run/dbus/system_bus_socket: No such file or directory\n[34801:34815:1112/110807.550336:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Failed to connect to socket /run/dbus/system_bus_socket: No such file or directory\n[34801:34801:1112/110807.550671:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: \n[34801:34815:1112/110807.550743:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")\n[34801:34801:1112/110807.551753:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: \n[34801:34801:1112/110807.557196:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.Properties.GetAll: object_path= /org/freedesktop/UPower/devices/DisplayDevice: unknown error type: \n[34801:34801:1112/110807.557244:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: \n[34801:34815:1112/110807.557311:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")\n[34801:34801:1112/110807.566024:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: \n[34801:34815:1112/110807.566106:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")\n[34801:34801:1112/110807.574039:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: \n[34801:34815:1112/110807.575693:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Failed to connect to socket /run/dbus/system_bus_socket: No such file or directory\n[34801:34801:1112/110807.579481:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.NetworkManager.GetDevices: object_path= /org/freedesktop/NetworkManager: unknown error type: \n[34801:34801:1112/110807.608840:ERROR:chrome/browser/component_updater/soda_language_pack_component_installer.cc:87] On demand update of the SODA language component failed with error: 5\n[34801:34801:1112/110807.611371:ERROR:chrome/browser/component_updater/soda_component_installer.cc:101] On demand update of the SODA component failed with error: 5\n"
+      }
+    },
+    "firefox": {
+      "available": true,
+      "version": "Mozilla Firefox 160.0"
+    },
+    "electron": {
+      "path": "/workspace/OpenBrowser/Browserapp/node_modules/electron/dist/electron",
+      "available": true,
+      "version": "43.8.8"
+    },
+    "temp": {
+      "path": "/tmp",
+      "writable": true
+    },
+    "tcp": {
+      "available": true
+    },
+    "unixSocket": {
+      "available": true
+    },
+    "toolsReady": true,
+    "headlessEnvironmentReady": true,
+    "desktopPrerequisitesReady": true
+  },
+  "validation": {
+    "aggregate": {
+      "passed": 190,
+      "partial": 1,
+      "skipped": 2,
+      "failed": 0
+    },
+    "aggregateScope": "Node + Chromium 157 + Firefox 160; two macOS-only gates skipped, kernel flag forensics partial on Linux. Registry gained the separate Linux display startup gate after this aggregate started.",
+    "realMainStartup": {
+      "passed": true,
+      "scope": "Actual main.js, isolated userData, preload, revision conflict, cursor, row visibility, normal quit"
+    },
+    "desktop": {
+      "node": "v24.22.1",
+      "electron": "43.8.8",
+      "reports": [
+        {
+          "size": 10,
+          "pageSizes": {
+            "10": {
+              "renderMedianMs": 5.9,
+              "renderP95Ms": 7.5,
+              "layoutMedianMs": 1.7,
+              "filterFleetP95Ms": 0.1,
+              "domNodes": 3730,
+              "profileRows": 10
+            },
+            "100": {
+              "renderMedianMs": 5.5,
+              "renderP95Ms": 6.3,
+              "layoutMedianMs": 2.1,
+              "filterFleetP95Ms": 0.1,
+              "domNodes": 3730,
+              "profileRows": 10
+            }
+          },
+          "domNodes": 3730,
+          "metadataOperations": {
+            "tagged": true,
+            "noted": true,
+            "grouped": true,
+            "unselectedPreserved": true,
+            "renumbered": true
+          },
+          "editorConflict": {
+            "savedRev": 25,
+            "staleSave": "PROFILE_STALE_REV",
+            "finalName": "环境 0 (重试保存)"
+          },
+          "pollLane": {
+            "fullBytes": 39977,
+            "deltaFirstBytes": 40050,
+            "steadyBytes": 76
+          },
+          "rendererRssMb": 9.5,
+          "mainLoop": {
+            "p50Ms": 1.129471,
+            "p95Ms": 1.239039,
+            "p99Ms": 2.691071,
+            "maxMs": 3.952639,
+            "rawCount": 408
+          }
+        },
+        {
+          "size": 100,
+          "pageSizes": {
+            "10": {
+              "renderMedianMs": 3.8,
+              "renderP95Ms": 6,
+              "layoutMedianMs": 1.4,
+              "filterFleetP95Ms": 0.1,
+              "domNodes": 3729,
+              "profileRows": 10
+            },
+            "100": {
+              "renderMedianMs": 4.9,
+              "renderP95Ms": 6.6,
+              "layoutMedianMs": 1.8,
+              "filterFleetP95Ms": 0.1,
+              "domNodes": 7342,
+              "profileRows": 100
+            }
+          },
+          "domNodes": 7342,
+          "metadataOperations": {
+            "tagged": true,
+            "noted": true,
+            "grouped": true,
+            "unselectedPreserved": true,
+            "renumbered": true
+          },
+          "editorConflict": {
+            "savedRev": 230,
+            "staleSave": "PROFILE_STALE_REV",
+            "finalName": "环境 0 (重试保存)"
+          },
+          "pollLane": {
+            "fullBytes": 366578,
+            "deltaFirstBytes": 366651,
+            "steadyBytes": 76
+          },
+          "rendererRssMb": 9.5,
+          "mainLoop": {
+            "p50Ms": 1.132543,
+            "p95Ms": 1.492991,
+            "p99Ms": 5.255167,
+            "maxMs": 14.073855,
+            "rawCount": 640
+          }
+        },
+        {
+          "size": 1000,
+          "pageSizes": {
+            "10": {
+              "renderMedianMs": 4.3,
+              "renderP95Ms": 4.5,
+              "layoutMedianMs": 5.7,
+              "filterFleetP95Ms": 0.2,
+              "domNodes": 3729,
+              "profileRows": 10
+            },
+            "100": {
+              "renderMedianMs": 8.1,
+              "renderP95Ms": 10.3,
+              "layoutMedianMs": 3,
+              "filterFleetP95Ms": 0.7,
+              "domNodes": 7342,
+              "profileRows": 100
+            }
+          },
+          "domNodes": 7342,
+          "metadataOperations": {
+            "tagged": true,
+            "noted": true,
+            "grouped": true,
+            "unselectedPreserved": true,
+            "renumbered": true
+          },
+          "editorConflict": {
+            "savedRev": 2235,
+            "staleSave": "PROFILE_STALE_REV",
+            "finalName": "环境 0 (重试保存)"
+          },
+          "pollLane": {
+            "fullBytes": 3637972,
+            "deltaFirstBytes": 3638045,
+            "steadyBytes": 76
+          },
+          "rendererRssMb": 9.5,
+          "mainLoop": {
+            "p50Ms": 1.124351,
+            "p95Ms": 1.202175,
+            "p99Ms": 7.868415,
+            "maxMs": 158.597119,
+            "rawCount": 2017
+          }
+        }
+      ],
+      "kernel": {
+        "requested": 1,
+        "spawnMs": 15026,
+        "running": 1,
+        "rows": 1,
+        "failures": 0,
+        "wallSingleMs": 2,
+        "wallDoubleMs": 0.4,
+        "stopLeftovers": []
+      }
+    },
+    "rust": {
+      "fmt": true,
+      "clippyWarningsDenied": true,
+      "testsPassed": 121,
+      "bridgeParityPassed": 8,
+      "bridgeChaosPassed": 5,
+      "releasePackagingAndVersionChecks": true
+    },
+    "ciYamlParsed": true,
+    "diffWhitespaceCheck": true,
+    "eslintZeroWarnings": true
+  },
+  "benchmarks": {
+    "statusPayload": {
+      "node": "v24.22.1",
+      "measuredAt": "2026-11-12T11:16:41.883Z",
+      "baseline": "528a10a response contract",
+      "scope": "real status methods and trusted IPC handler, synthetic sanitized profiles; JSON size only, no desktop or browser",
+      "parity": true,
+      "cases": [
+        {
+          "profiles": 10,
+          "requestBytes": 332,
+          "cursorRequestBytes": 29,
+          "cursorIdleRoundTripBytes": 105,
+          "firstReply": {
+            "beforeBytes": 36223,
+            "afterBytes": 35917
+          },
+          "idleReply": {
+            "beforeBytes": 382,
+            "afterBytes": 76,
+            "beforeSerializeMedianMs": 0.002688,
+            "afterSerializeMedianMs": 0.000779
+          },
+          "idleRoundTrip": {
+            "beforeBytes": 714,
+            "afterBytes": 408
+          },
+          "oneChangedReply": {
+            "beforeBytes": 3967,
+            "afterBytes": 3660
+          }
+        },
+        {
+          "profiles": 100,
+          "requestBytes": 3483,
+          "cursorRequestBytes": 29,
+          "cursorIdleRoundTripBytes": 105,
+          "firstReply": {
+            "beforeBytes": 362387,
+            "afterBytes": 358930
+          },
+          "idleReply": {
+            "beforeBytes": 3533,
+            "afterBytes": 76,
+            "beforeSerializeMedianMs": 0.008842,
+            "afterSerializeMedianMs": 0.000313
+          },
+          "idleRoundTrip": {
+            "beforeBytes": 7016,
+            "afterBytes": 3559
+          },
+          "oneChangedReply": {
+            "beforeBytes": 7121,
+            "afterBytes": 3662
+          }
+        },
+        {
+          "profiles": 1000,
+          "requestBytes": 36784,
+          "cursorRequestBytes": 29,
+          "cursorIdleRoundTripBytes": 105,
+          "firstReply": {
+            "beforeBytes": 3630291,
+            "afterBytes": 3593533
+          },
+          "idleReply": {
+            "beforeBytes": 36834,
+            "afterBytes": 76,
+            "beforeSerializeMedianMs": 0.055104,
+            "afterSerializeMedianMs": 0.000198
+          },
+          "idleRoundTrip": {
+            "beforeBytes": 73618,
+            "afterBytes": 36860
+          },
+          "oneChangedReply": {
+            "beforeBytes": 40425,
+            "afterBytes": 3664
+          }
+        }
+      ]
+    },
+    "metadata": {
+      "node": "v24.22.1",
+      "samples": 5,
+      "warmups": 1,
+      "note": "Synthetic profiles; real SQLite and encryption; elapsed includes 50ms persistence coalescing. No desktop rendering is measured.",
+      "reports": [
+        {
+          "size": 10,
+          "selected": 10,
+          "full": {
+            "medianMs": 53.78,
+            "requestBytes": 33922,
+            "responseBytes": 35242,
+            "sanitizedProfiles": 10
+          },
+          "patch": {
+            "medianMs": 54.33,
+            "requestBytes": 671,
+            "responseBytes": 35242,
+            "sanitizedProfiles": 10
+          }
+        },
+        {
+          "size": 100,
+          "selected": 10,
+          "full": {
+            "medianMs": 59.89,
+            "requestBytes": 338933,
+            "responseBytes": 352155,
+            "sanitizedProfiles": 100
+          },
+          "patch": {
+            "medianMs": 53.85,
+            "requestBytes": 681,
+            "responseBytes": 35262,
+            "sanitizedProfiles": 10
+          }
+        },
+        {
+          "size": 1000,
+          "selected": 10,
+          "full": {
+            "medianMs": 126.59,
+            "requestBytes": 3391734,
+            "responseBytes": 3525578,
+            "sanitizedProfiles": 1000
+          },
+          "patch": {
+            "medianMs": 67.38,
+            "requestBytes": 691,
+            "responseBytes": 35282,
+            "sanitizedProfiles": 10
+          }
+        }
+      ]
+    }
+  },
+  "observedIntermittency": {
+    "gate": "fingerprint-worker-boundaries-selftest.js",
+    "browser": "Chrome for Testing 157.0.8103.78",
+    "observation": "One aggregate run lost a CDP socket after its baseline phase; root cause not established.",
+    "followup": "Focused rerun and three further isolated runs passed; later serial full aggregate also passed. No automatic retry or weakened fingerprint checks added. Harness now captures fail-closed reason, child exit and bounded stderr; failed-suite output retains the error header.",
+    "focusedPassingRuns": 4
+  },
+  "limitations": [
+    "Windows/macOS desktop CI configured but not executed from this Linux workspace.",
+    "Custom macOS vendor kernels and native window controls require corresponding operating systems.",
+    "Recovery requires the same profile root, readable encryption key and writable stores; failures retain journal and guards."
+  ]
+}

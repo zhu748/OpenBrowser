@@ -331,6 +331,7 @@ function cloneProfilePreferences(profile) {
 
 function mergeEngineExitState(values) {
   const result = window.OpenBrowserProfileState.mergeExitState({ profiles: ui.profiles, engineProfiles: values,
+    normalizeProfile: normalizeProfileSettings,
     hasCredentials: proxyHasCredentials,
     restoreProxy(proxy, proxyId) {
       const item = proxyLibraryItem(proxyId);
@@ -342,6 +343,40 @@ function mergeEngineExitState(values) {
     uiStateStore.request();
   }
   return result.changed;
+}
+
+// Publish acknowledged revisions before the next UI command can reuse a row.
+async function syncUiProfiles(profiles) {
+  const rows = await window.ops.syncProfiles(profiles, { delta: true });
+  engineProfiles = window.OpenBrowserStatusController.mergeStatusDelta(engineProfiles, { full: false, rows, removed: [] });
+  mergeEngineExitState(rows);
+  return engineProfiles;
+}
+
+async function readUiProfiles() {
+  const rows = await window.ops.profileStatus();
+  mergeEngineExitState(rows);
+  return rows;
+}
+
+async function saveEditorDraftForCloud() {
+  const id = editingProfileId;
+  const local = ui.profiles.find((profile) => profile.id === id);
+  if (!local) throw new Error(tx('环境不存在'));
+  const baseRev = editingProfileBaseRev;
+  return window.OpenBrowserProfileCommands.commitProfileEdit({
+    profile: { ...local, ...editorDraft(true), id }, baseRev,
+    applyCommands: (commands) => window.ops.applyProfileCommands(commands),
+    commit(profile, rows) {
+      const accepted = rows.find((row) => row.id === id);
+      const index = ui.profiles.findIndex((row) => row.id === id);
+      if (index >= 0) ui.profiles[index] = { ...profile, rev: accepted.rev };
+      if (editingProfileId === id && editingProfileBaseRev === baseRev) editingProfileBaseRev = accepted.rev;
+      engineProfiles = rows;
+      mergeEngineExitState(rows);
+      save(); invalidateViewCache(['profiles', 'groups', 'sync', 'proxies']); renderProfiles();
+    },
+  });
 }
 
 const uiStateStore = window.OpenBrowserUiState.createUiStateStore({
@@ -2002,7 +2037,7 @@ async function cloneProfile(id) {
   save();
   invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies']);
   try {
-    engineProfiles = await window.ops.syncProfiles(ui.profiles);
+    engineProfiles = await syncUiProfiles([cloned]);
     renderProfiles();
     toast(tx(`已克隆环境 #${displayProfileNumber(target)} 到 #${number}`));
     log('Profile', `克隆环境 #${displayProfileNumber(target)} 到 #${number}`);
@@ -2023,7 +2058,7 @@ async function restoreProfile(id) {
     }
     save();
     invalidateViewCache(['profiles', 'groups', 'sync']);
-    engineProfiles = await window.ops.syncProfiles(ui.profiles);
+    engineProfiles = await readUiProfiles();
     renderProfiles();
     toast(t('trash.restored'));
   } catch (error) {
@@ -2046,7 +2081,7 @@ async function purgeProfile(id) {
     selectedSessions.delete(id);
     save();
     invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies']);
-    engineProfiles = await window.ops.syncProfiles(ui.profiles);
+    engineProfiles = await readUiProfiles();
     renderProfiles();
     toast(t('trash.purged'));
   } catch (error) {
@@ -2203,7 +2238,7 @@ async function trashProfile(id) {
     selectedSessions.delete(id);
     save();
     invalidateViewCache(['profiles', 'groups', 'sync']);
-    engineProfiles = await window.ops.syncProfiles(ui.profiles);
+    engineProfiles = await readUiProfiles();
     renderProfiles();
     toast(t('trash.trashed') || '已移入回收站');
   } catch (error) {
@@ -2733,7 +2768,7 @@ function scheduleProxySearchRender() {
 // The controller owns IPC serialization and derives watermarks from actual rows.
 const statusController = window.OpenBrowserStatusController.createStatusController({
   getRows: () => engineProfiles,
-  setRows: (rows) => { engineProfiles = rows; },
+  setRows: (rows) => { engineProfiles = rows; mergeEngineExitState(rows); },
   fetchDelta: (watermark) => window.ops.profileStatusDelta(watermark),
   fetchFull: () => window.ops.profileStatus(),
   onRows: (rows) => mergeEngineExitState(rows),
@@ -3413,7 +3448,7 @@ $('#profile-form').addEventListener('submit', async (event) => {
   ui.profiles.push(profile); ui.nextProfileNumber = number + 1; save();
   invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies']);
   try {
-    await window.ops.syncProfiles(ui.profiles); $('#profile-dialog').close(); form.reset();
+    await syncUiProfiles([profile]); $('#profile-dialog').close(); form.reset();
     if (shouldSaveToLib && !isDirectProxy(proxy)) {
       try {
         const parsed = parseProxyInputForUi(proxy, $('#create-proxy-type')?.value || 'socks5');
@@ -3615,7 +3650,7 @@ $('#profile-editor-form').addEventListener('submit', window.OpenBrowserProfileCo
     invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies']);
     renderProfiles();
   },
-  setRows: (rows) => { engineProfiles = rows; },
+  setRows: (rows) => { engineProfiles = rows; mergeEngineExitState(rows); },
   normalize: normalizeProfileSettings,
   async saveProxy(draft, session) {
     if (!session.saveProxy || isDirectProxy(draft.proxy)) return null;
@@ -3754,7 +3789,7 @@ $('#batch-add-form').addEventListener('submit', async (event) => {
       const result = verified[index]; if (!result) return;
       profile.exitIp = result.ip; profile.exitCountryCode = result.countryCode; profile.exitTimezone = result.timezone || ''; profile.exitLatitude = result.latitude; profile.exitLongitude = result.longitude; profile.exitCheckedAt = result.checkedAt;
     });
-    ui.profiles.push(...created); ui.nextProfileNumber = start + created.length; save(); invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies']); engineProfiles = await window.ops.syncProfiles(ui.profiles);
+    ui.profiles.push(...created); ui.nextProfileNumber = start + created.length; save(); invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies']); engineProfiles = await syncUiProfiles(created);
     selectedProfiles = new Set(created.map((item) => item.id)); $('#select-all-profiles').checked = false; $('#batch-add-dialog').close(); $('#batch-add-proxies').value = '';
     await refreshStatus(); await refreshExtensions();
     log('Batch', '批量新增 ' + created.length + ' 个环境 · ' + (networkMode === 'direct' ? '本地直连' : '代理'));
@@ -3809,7 +3844,7 @@ $('#batch-delete-form').addEventListener('submit', async (event) => {
     pendingDeleteProfiles = []; save(); $('#select-all-profiles').checked = false; $('#batch-delete-dialog').close();
     invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies']);
     await refreshStatus(); await refreshSessions(); await refreshExtensions();
-    engineProfiles = await window.ops.syncProfiles(ui.profiles);
+    engineProfiles = await readUiProfiles();
     renderProfiles();
     if (inTrash || deleteData) {
       log('Batch', '彻底删除 ' + (result.deleted ?? ids.length) + ' 个环境');
@@ -3833,7 +3868,7 @@ $('#restore-selected')?.addEventListener('click', async () => {
     for (const id of ids) selectedProfiles.delete(id);
     save();
     invalidateViewCache(['profiles', 'groups', 'sync']);
-    engineProfiles = await window.ops.syncProfiles(ui.profiles);
+    engineProfiles = await readUiProfiles();
     renderGroupFilterChips();
     updateProfileSelectionUi();
     renderProfiles();
@@ -3859,7 +3894,7 @@ $('#empty-trash-btn')?.addEventListener('click', async () => {
     for (const id of selectedProfiles) if (!remainingIds.has(id)) selectedProfiles.delete(id);
     save();
     invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies']);
-    engineProfiles = await window.ops.syncProfiles(ui.profiles);
+    engineProfiles = await readUiProfiles();
     renderProfiles();
     toast(t('trash.emptied'));
   } catch (err) {
@@ -3897,7 +3932,7 @@ $('#copy-selected')?.addEventListener('click', async () => {
   try {
     ui.profiles.push(...created); ui.nextProfileNumber = previousNext + created.length; save();
     invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies']);
-    engineProfiles = await window.ops.syncProfiles(ui.profiles);
+    engineProfiles = await syncUiProfiles(created);
     for (let index = 0; index < sources.length; index += 1) {
       const extensionIds = profileEngine(sources[index].id).assignedExtensions || [];
       for (const extensionId of extensionIds) await window.ops.assignExtension(extensionId, [created[index].id], true);
@@ -4445,9 +4480,11 @@ async function initialize() {
   ui.profiles = ui.profiles.map((item) => ({ ...item, browser: 'Google Chrome' }));
   await refreshProxies().catch(() => {});
   // Merge secrets already loaded in main process (not stored in localStorage).
+  let initialEngineRows = null;
   try {
     const engineStatus = await window.ops.profileStatus();
     if (Array.isArray(engineStatus)) {
+      initialEngineRows = engineStatus;
       ui.profiles = window.OpenBrowserProfileState.reconcileProfiles({
         localProfiles: ui.profiles,
         engineProfiles: engineStatus,
@@ -4464,7 +4501,10 @@ async function initialize() {
   } catch (_) {}
   save();
   try {
-    engineProfiles = await window.ops.syncProfiles(ui.profiles);
+    // Only an empty engine needs the one-time migration of legacy UI data.
+    // Reposting a hydrated fleet would overwrite newer API/cloud edits.
+    if (initialEngineRows?.length) engineProfiles = initialEngineRows;
+    else if (initialEngineRows) engineProfiles = await syncUiProfiles(ui.profiles);
   } catch (err) {
     // A failed first sync must not abort the rest of UI init: the engine
     // store keeps whatever init loaded; later syncs retry the reconcile.
@@ -4492,10 +4532,11 @@ function readyBrowserLog(info) {
   const n = Array.isArray(info?.browsers) ? info.browsers.length : 0;
   return n > 0 ? `引擎启动 · ${n} 个浏览器可用` : '引擎启动 · 未找到浏览器';
 }
-initialize().catch((error) => {
+const appInitialization = initialize().then(() => true).catch((error) => {
   updateEngineBadge({ browsers: [] });
   log('Error', error.message);
   toast(error.message);
+  return false;
 });
 
 
@@ -4530,7 +4571,7 @@ $('#batch-import-file').addEventListener('change', async (event) => {
     const imported = parsed.rows;
     const start = nextProfileNumber(); const used = new Set(ui.profiles.map((item) => item.id));
     const normalized = imported.map((item, index) => { const number = start + index; const id = createInternalProfileId(number, used); used.add(id); return { id, fingerprintVersion: 2, number, name: String(number), browser: 'Google Chrome', language: String(item.language || 'en-US'), proxy: String(item.proxy || item.ip || 'Direct'), proxyType: String(item.proxyType || item.proxytype || ''), exitIp: String(item.exitIp || item.ip || ''), exitCountryCode: String(item.exitCountryCode || item.countrycode || ''), tag: String(item.tag || item.group || 'Imported'), os: 'Windows', location: String(item.location || 'Local') }; });
-    ui.profiles.push(...normalized); ui.nextProfileNumber = start + normalized.length; save(); invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies']); engineProfiles = await window.ops.syncProfiles(ui.profiles); renderProfiles(); log('Import', '\u6279\u91cf\u5bfc\u5165 ' + normalized.length + ' \u4e2a\u73af\u5883');
+    ui.profiles.push(...normalized); ui.nextProfileNumber = start + normalized.length; save(); invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies']); engineProfiles = await syncUiProfiles(normalized); renderProfiles(); log('Import', '\u6279\u91cf\u5bfc\u5165 ' + normalized.length + ' \u4e2a\u73af\u5883');
     // 截断必须用户可见（沿用既有 toast 约定），否则用户以为全量导入成功。
     if (parsed.truncated) toast('\u5df2\u5bfc\u5165 ' + normalized.length + ' \u4e2a\u73af\u5883\uff08\u8d85\u51fa\u4e0a\u9650\uff0c\u5df2\u622a\u65ad\u4e3a\u524d ' + normalized.length + ' \u884c\uff09');
     else toast('\u5df2\u5bfc\u5165 ' + normalized.length + ' \u4e2a\u73af\u5883');
@@ -4627,9 +4668,13 @@ $('#batch-update-form').addEventListener('submit', async (event) => {
 
 // Expose core app utilities and state to UI submodules
 window.OpenBrowserApp = {
+  whenReady: () => appInitialization,
   get ui() { return ui; },
   get engineProfiles() { return engineProfiles; },
   get editingProfileId() { return editingProfileId; },
+  get editingProfileBaseRev() { return editingProfileBaseRev; },
+  syncProfiles: syncUiProfiles,
+  saveEditorDraftForCloud,
   get loadedViews() { return loadedViews; },
   invalidateViewCache,
   save,
@@ -4822,7 +4867,7 @@ $('#batch-preferences-form')?.addEventListener('submit', async (event) => {
 
     save();
     invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies']);
-    engineProfiles = await window.ops.syncProfiles(ui.profiles);
+    engineProfiles = await syncUiProfiles(sources);
     $('#batch-preferences-dialog')?.close();
     renderProfiles();
     log('Batch', `已批量更新 ${sources.length} 个环境的偏好设置`);

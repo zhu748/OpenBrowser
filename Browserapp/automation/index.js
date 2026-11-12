@@ -43,6 +43,7 @@ async function startAutomation(context = {}) {
 
   const proxyStore = new ProxyStore(path.join(userDataPath, 'proxy-library.json'));
   await proxyStore.load();
+  await context.beforeApiStart?.(proxyStore);
   await engine?.setProxyStore?.(proxyStore);
 
   const rpaEngine = new RpaEngine({

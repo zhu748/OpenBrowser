@@ -367,7 +367,7 @@ $('#proxy-apply-form')?.addEventListener('submit', async (event) => {
   save();
   invalidateViewCache(['proxies', 'profiles']);
   try {
-    engineProfiles = await window.ops.syncProfiles(ui.profiles);
+    engineProfiles = await (window.OpenBrowserApp?.syncProfiles || window.ops.syncProfiles)(Array.from(snapshots.keys(), (index) => ui.profiles[index]));
     renderProfiles();
     $('#proxy-apply-dialog').close();
     toast(tx('已成功应用代理到 ') + modified + tx(' 个环境'));

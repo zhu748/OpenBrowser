@@ -178,12 +178,14 @@ class ProfileRoutes {
     this.normalizeProxyAssociationState(next, association.present
       ? association
       : (hasManualProxyPatch ? { present: true, value: '' } : association));
-    this.engine.profiles.set(id, next);
-    // syncProfiles() invalidates the status snapshot on every other mutation
-    // path; this direct set must match it or the renderer keeps serving a
-    // stale cache until an unrelated status emit happens.
-    this.engine.invalidateStatusCache?.();
-    if (typeof this.engine.persist === 'function') await this.engine.persist();
+    try {
+      // API patches were built from authoritative fields above. Publication
+      // must still share the engine's maintenance/deletion and proxy rules.
+      await this.engine.syncProfiles([{ ...next, credentialsAction: 'replace', proxyAuthAction: 'clear' }]);
+    } catch (error) {
+      if (['PROFILE_MAINTENANCE', 'PROFILE_DELETING', 'PROFILE_STALE_REV'].includes(error.code)) return fail(error.message, 409);
+      throw error;
+    }
     const profile = this.engine.profiles.get(id);
     return ok({
       profile_id: id,

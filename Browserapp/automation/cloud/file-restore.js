@@ -138,11 +138,13 @@ async function prepareFileRestore(selections) {
         total += size;
         if (total > MAX_BROWSER_DATA_BYTES) throw new Error('备份文件总大小超过安全限制');
         await assertSafeProfileChild(root, target);
+        let hadOriginal = false;
         try {
           const stat = await fs.lstat(target);
           if (!stat.isFile()) throw new Error('备份文件目标不是普通文件');
+          hadOriginal = true;
         } catch (error) { if (error.code !== 'ENOENT') throw error; }
-        records.push({ root, target, encoded, installed: false, moved: false });
+        records.push({ root, target, encoded, hadOriginal, installed: false, moved: false });
       }
     }
     // Refuse a file that is also another file's parent (including normalized aliases).
@@ -188,6 +190,7 @@ async function prepareFileRestore(selections) {
 
   return {
     count: records.length,
+    recoveryRecords: records.map(({ root, target, staged, backup, hadOriginal }) => ({ root, target, staged, backup, hadOriginal })),
     async commit() {
       if (committed || settled) throw new Error('Restore transaction is no longer pending');
       committed = true;

@@ -15,6 +15,12 @@ const $$ = window.$$ || ((s, root = document) => [...root.querySelectorAll(s)]);
 const app = window.OpenBrowserApp || window;
 const ui = app.ui || { profiles: [] };
 
+function reportBackupWarnings(meta) {
+  if (!meta?.skippedFileCount) return;
+  toast(tx('部分文件未备份') + ' · ' + meta.skippedFileCount);
+  log('Cloud', JSON.stringify({ skippedFileCount: meta.skippedFileCount, skippedFiles: meta.skippedFiles }));
+}
+
 // ---------- Cloud backup UI (本地设置) ----------
 const CLOUD_BRIDGE_PRESETS = {
   gdrive: {
@@ -236,12 +242,12 @@ async function pushProfilesToCloud(ids) {
   toast(tx('正在推送 ') + list.length + tx(' 个环境…'));
   const result = await window.ops.cloudProfilePush({
     profileIds: list,
-    profiles: ui.profiles,
     groups: ui.groups || [],
     cloud,
   });
   applyCloudForm(result.cloud || cloud);
   toast(tx('已推送 ') + (result.results?.length || list.length) + tx(' 个环境到云端'));
+  for (const item of result.results || []) reportBackupWarnings(item.meta);
   log('Cloud', '单环境推送 · ' + list.join(','));
   return result;
 }
@@ -313,13 +319,13 @@ $('#cloud-backup-now')?.addEventListener('click', (event) => withCloudGuard(even
     await window.ops.cloudSetConfig(cloud);
     toast(tx('正在全量备份…'));
     const result = await window.ops.cloudBackup({
-      profiles: ui.profiles,
-      groups: ui.groups || [],
+        groups: ui.groups || [],
       cloud,
     });
     applyCloudForm(result.cloud || cloud);
     toast(tx('备份完成 · ') + (result.meta?.profileCount || 0) + tx(' 个环境 · ') + Math.round((result.meta?.bytes || 0) / 1024) + ' KB');
     log('Cloud', '全量备份 · ' + (result.meta?.profileCount || 0) + ' 环境');
+    reportBackupWarnings(result.meta);
   } catch (error) { toast('备份失败：' + error.message); }
 }));
 $('#cloud-restore-now')?.addEventListener('click', (event) => withCloudGuard(event.currentTarget, async () => {
@@ -356,9 +362,10 @@ $('#cloud-restore-now')?.addEventListener('click', (event) => withCloudGuard(eve
 $('#cloud-export-file')?.addEventListener('click', (event) => withCloudGuard(event.currentTarget, async () => {
   try {
     const cloud = readCloudForm();
-    const result = await window.ops.cloudExportFile({ profiles: ui.profiles, groups: ui.groups || [], cloud });
+    const result = await window.ops.cloudExportFile({ groups: ui.groups || [], cloud });
     if (result?.canceled) return;
     toast(tx('已导出备份文件'));
+    reportBackupWarnings(result.meta);
   } catch (error) { toast(error.message); }
 }));
 $('#cloud-import-file')?.addEventListener('click', (event) => withCloudGuard(event.currentTarget, async () => {
@@ -393,13 +400,7 @@ document.getElementById('editor-cloud-push-one')?.addEventListener('click', (eve
     if (!profileId) throw new Error(tx('未打开环境'));
     // ensure current form flags saved conceptually: require cloudBackup checked
     if (!$('#editor-cloud-backup')?.checked) throw new Error(tx('请先勾选「云备份」并保存环境'));
-    // stamp draft cloud on and push current saved profile
-    const idx = ui.profiles.findIndex((p) => p.id === profileId);
-    if (idx < 0) throw new Error(tx('环境不存在'));
-    // apply current editor draft flags without full save
-    ui.profiles[idx] = { ...ui.profiles[idx], ...app.editorDraft(false), updatedAt: new Date().toISOString() };
-    save();
-    await window.ops.syncProfiles(ui.profiles);
+    await app.saveEditorDraftForCloud();
     await pushProfilesToCloud([profileId]);
   } catch (error) { toast(error.message); }
 }));

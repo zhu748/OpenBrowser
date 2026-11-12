@@ -784,7 +784,7 @@ async function applySelectedNetworkMode(mode, { proxies = null, restart = true }
   try {
     save();
     invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies']);
-    engineProfiles = await window.ops.syncProfiles(ui.profiles);
+    engineProfiles = await (window.OpenBrowserApp?.syncProfiles || window.ops.syncProfiles)(profiles);
   } catch (error) {
     for (const snap of snapshot) {
       const profile = ui.profiles.find((item) => item.id === snap.id);

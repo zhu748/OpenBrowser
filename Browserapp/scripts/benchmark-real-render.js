@@ -28,7 +28,6 @@ const { LoopMonitor } = require('../automation/event-loop-monitor');
 const os = require('node:os');
 
 const { BrowserEngine } = require('../engine');
-const { ProfileStoreSqlite } = require('../automation/profile-store-sqlite');
 const { registerProfileIpc } = require('../main/profile-ipc');
 const { ensureDataRootIsolationSecure } = require('../automation/isolation');
 
@@ -82,11 +81,12 @@ function registerBootIpc() {
   }));
   guard('sync:state', () => ({ active: false, master: null, selected: [] }));
   guard('sync:sessions', () => state._engine ? state._engine.sessions() : []);
+  guard('extensions:list', () => state._engine.listExtensions());
   // Lenient catch-all: the UI may probe optional surfaces on interaction;
   // those never run during the measurement and must not crash it.
   for (const channel of [
     'system:set-close-action', 'system:set-ui-chrome', 'sync:settings:get', 'sync:settings:set', 'app:update-check',
-    'extensions:list', 'proxy:list', 'rpa:list', 'clipboard:read', 'client-settings:save',
+    'proxy:list', 'rpa:list', 'clipboard:read', 'client-settings:save',
     'ua:build', 'system:get-client-settings', 'system:choose-storage', 'system:reset-storage',
     'system:open-storage', 'sync:get-settings', 'sync:selection', 'automation:app-center',
   ]) {
@@ -98,8 +98,10 @@ function registerBootIpc() {
 }
 
 const RENDERER_MEASURE = `(async (size) => {
+  const known = new Map((await window.ops.profileStatus()).map((row) => [row.id, row.rev]));
   const fleet = Array.from({ length: size }, (_, i) => ({
     id: 'render-' + i, name: '环境 ' + i, number: i + 1,
+    rev: known.get('render-' + i),
     os: 'Windows', language: 'en-US', width: 1280, height: 820,
     networkMode: 'direct', proxy: 'Direct',
     privacy: { cores: 8, memory: 8, customArgs: '' },
@@ -109,7 +111,8 @@ const RENDERER_MEASURE = `(async (size) => {
   }));
   // Real IPC lane the UI uses on boot: renderer local state -> engine -> status.
   engineProfiles = await window.ops.syncProfiles(fleet);
-  ui.profiles = fleet.map(normalizeProfileSettings);
+  const fleetIds = new Set(fleet.map((row) => row.id));
+  ui.profiles = engineProfiles.filter((row) => fleetIds.has(row.id)).map(normalizeProfileSettings);
   activeGroupFilter = 'all'; activeListTab = 'all'; profilePage = 1;
   document.getElementById('profile-search').value = '';
   invalidateViewCache(['profiles', 'groups', 'sync']);
@@ -154,7 +157,7 @@ const RENDERER_MEASURE = `(async (size) => {
       domNodes: document.querySelectorAll('*').length,
       profileRows: document.querySelectorAll('#profile-table tr[data-profile-id]').length,
     };
-    if (out.pageSizes[pageSize].profileRows !== Math.min(size, pageSize)) throw new Error('Benchmark did not render the requested fleet/page size');
+    if (out.pageSizes[pageSize].profileRows !== Math.min(size, pageSize)) throw new Error('Benchmark fleet/page mismatch: ' + JSON.stringify({ size, pageSize, profilePageSize, uiRows: ui.profiles.length, actualRows: out.pageSizes[pageSize].profileRows, filtered: filteredProfilesForCurrentView().length }));
   }
   out.domNodes = out.pageSizes[100].domNodes;
   // Drive the actual renderer command helper and group action through preload,
@@ -308,7 +311,7 @@ async function runRealKernelSessions(engine) {
     ...profile,
     platform: { ...profile.platform, startUrl: 'about:blank' },
     startUrl: 'about:blank',
-    privacy: { ...(profile.privacy || {}), customArgs: '--no-sandbox' },
+    privacy: { ...(profile.privacy || {}), noSandbox: process.env.OPENBROWSER_NATIVE_NO_SANDBOX === '1' },
     // The engine's stored seed carries advanced.startUrls = "about:blank"
     // (mirrored by the sanitizer); headless Chrome rejects multiple CLI
     // targets, so keep exactly one startup URL.
@@ -355,22 +358,20 @@ async function runRealKernelSessions(engine) {
  * a real store, so the measured renderer is the fully booted real UI. */
 async function ensureEngine() {
   if (state._engine) return state._engine;
-  const engine = new BrowserEngine(app, { profileDataRoot: state.profileRoot });
-  engine.usingSqlite = true;
-  engine.sqliteStore = new ProfileStoreSqlite({ dbPath: path.join(state.dbRoot, 'boot.db'), wal: true });
-  await engine.sqliteStore.init();
+  const engine = new BrowserEngine(app, { profileDataRoot: state.profileRoot, dbPath: path.join(state.dbRoot, 'boot.db') });
   await engine.init(path.join(APP, 'bundled-extension'));
   state._engine = engine;
   return engine;
 }
 
 async function main() {
-  if (!process.env.DISPLAY) {
+  if (process.platform === 'linux' && !process.env.DISPLAY) {
     console.error('real-render benchmark needs a display (run under xvfb-run -a).');
     app.exit(2);
     return;
   }
   const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ob-real-render-'));
+  app.setPath('userData', dataRoot);
   const profileDataRoot = path.join(dataRoot, 'profiles');
   fs.mkdirSync(profileDataRoot, { recursive: true });
   state.profileRoot = profileDataRoot;
@@ -397,27 +398,33 @@ async function main() {
   });
   await win.loadFile(path.join(APP, 'index.html'));
   await win.webContents.executeJavaScript('typeof window.renderProfiles', true); // renderer booted
-  // Let the renderer's boot-time sync/IPC settle; the first profileStatus
-  // poll cycle needs to have run at least once.
-  await new Promise((resolve) => setTimeout(resolve, 800));
+  if (!await win.webContents.executeJavaScript('window.OpenBrowserApp.whenReady()', true)) {
+    const logs = await win.webContents.executeJavaScript('window.OpenBrowserApp.ui.logs.slice(0, 5)', true);
+    throw new Error('Renderer initialization failed before the desktop gate: ' + JSON.stringify(logs));
+  }
 
   const reports = [];
   for (const size of SIZES) {
     const report = await measureSize(size);
+    if (report.editorConflict?.error || report.editorConflict?.staleSave !== 'PROFILE_STALE_REV' || report.pollLane?.error) {
+      throw new Error('Desktop behavior gate failed: ' + JSON.stringify({ editorConflict: report.editorConflict, pollLane: report.pollLane }));
+    }
     reports.push(report);
   }
 
   // R2: real-kernel sessions against the shipped Chrome Stable binary.
   let kernel = null;
-  try {
-    kernel = await runRealKernelSessions(state._engine);
-  } catch (error) {
-    kernel = { error: String(error?.message || error) };
+  if (process.argv.includes('--skip-kernel')) kernel = { skipped: true, reason: 'desktop-only gate requested' };
+  else {
+    try { kernel = await runRealKernelSessions(state._engine); }
+    catch (error) { kernel = { error: String(error?.message || error) }; }
   }
 
   // Teardown: engine holds sqlite handles + a start-page server; flush both.
+  await state._engine?.stopAll?.();
   await state._engine?.flushPersistence?.();
   try { await state._engine?.startPageServer?.stop?.(); } catch (_) {}
+  if (process.argv.includes('--require-kernel') && kernel?.error) throw new Error('Real kernel gate failed: ' + kernel.error);
 
   if (JSON_MODE) {
     console.log(JSON.stringify({ node: process.version, electron: process.versions.electron, reports, kernel }, null, 1));
@@ -456,10 +463,16 @@ async function main() {
       }
     }
   }
+  state._engine?.sqliteStore?.close?.();
+  win?.destroy();
+  for (const root of [dataRoot, state.dbRoot]) { try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {} }
   app.exit(0);
 }
 
 main().catch(async (error) => {
   console.error('REAL_RENDER_FAILED:', error);
+  try { await state._engine?.stopAll?.(); } catch (_) {}
+  try { await state._engine?.startPageServer?.stop?.(); } catch (_) {}
+  try { state._engine?.sqliteStore?.close?.(); } catch (_) {}
   app.exit(1);
 });

@@ -40,7 +40,8 @@ const cloudOps = require('./automation/cloud-ops');
 const { lifecycleTimeout } = require('./engine/browser-candidates');
 
 const appDataRoot = app.getPath('appData');
-const userDataRoot = path.join(appDataRoot, 'openbrowser');
+const userDataRoot = process.env.OPENBROWSER_USER_DATA
+  ? path.resolve(process.env.OPENBROWSER_USER_DATA) : path.join(appDataRoot, 'openbrowser');
 app.setName('OpenBrowser');
 try { process.title = 'OpenBrowser'; } catch (_) { /* ignore */ }
 // Guard: root/sudo would isolate configs under /var/root and break CPU/memory UI sync.
@@ -115,6 +116,10 @@ async function updateProfileDataRoot(value) {
 let engine;
 let liveSync;
 let automation = null;
+let resolveStartupReady;
+let rejectStartupReady;
+const startupReady = new Promise((resolve, reject) => { resolveStartupReady = resolve; rejectStartupReady = reject; });
+startupReady.catch(() => {});
 let quitting = false;
 let quitCleanupPromise = null;
 let quitCleanupSettled = false;
@@ -879,7 +884,11 @@ app.whenReady().then(async () => {
   // so that handler (and only it) must be registered BEFORE createWindow();
   // awaiting it earlier in the chain left a window where the first invoke
   // rejected with "No handler registered" and the profile list never rendered.
-  registerTrustedIpc('system:info', () => ({
+  registerTrustedIpc('system:info', async () => {
+    // The first frame may paint while storage and automation initialize, but
+    // renderer initialization must wait until its whole IPC surface exists.
+    await startupReady;
+    return {
     appVersion: app.getVersion(),
     chrome: process.versions.chrome,
     browsers: engine?.candidates?.() ?? [],
@@ -896,7 +905,8 @@ app.whenReady().then(async () => {
     titleBarIntegrated: process.platform === 'darwin' || process.platform === 'win32',
     platform: process.platform,
     closeAction: settingsStore.normalizeCloseAction(settingsStore.getLocalSettings().closeAction),
-  }));
+    };
+  });
   // The renderer's initialize() also invokes sync:state right after getInfo —
   // same early-registration requirement, or the bare await in initialize()
   // rejects and the profile list never renders (verified in round 2).
@@ -956,6 +966,7 @@ app.whenReady().then(async () => {
 
   try {
     automation = await startAutomation({
+      beforeApiStart: (proxyStore) => cloudOps.recoverPendingRestore({ proxyStore }),
       app,
       engine,
       liveSync,
@@ -1087,21 +1098,7 @@ app.whenReady().then(async () => {
   registerTrustedIpc('cloud:profile-push', async (_event, payload) => cloudOps.runCloudProfilePush(payload || {}));
   registerTrustedIpc('cloud:profile-pull', async (_event, payload) => cloudOps.runCloudProfilePull(payload || {}));
   registerTrustedIpc('cloud:export-file', async (_event, payload) => {
-    const cloud = { ...settingsStore.getLocalSettings().cloud, ...(payload?.cloud || {}) };
-    const profiles = Array.isArray(payload?.profiles) ? payload.profiles : [...(engine?.profiles?.values?.() || [])];
-    const groups = Array.isArray(payload?.groups) ? payload.groups : (settingsStore.getLocalSettings().uiGroups || []);
-    let proxies = [];
-    try { proxies = automation?.proxyStore?.list?.({}) || []; } catch (_) {}
-    const { buffer, meta } = await cloudSync.buildBackupPackage({
-      profiles,
-      groups,
-      proxies,
-      settings: {},
-      profileDataRoot: engine?.getProfileDataRoot?.() || settingsStore.getLocalSettings().profileDataRoot,
-      includeBrowserData: cloud.includeBrowserData !== false,
-      passphrase: cloud.passphrase || '',
-      profileIds: payload?.profileIds || null,
-    });
+    const { buffer, meta } = await cloudOps.createBackupPackage(payload || {});
     const result = await dialog.showSaveDialog({
       title: '导出 OpenBrowser 备份',
       defaultPath: `openbrowser-backup-${Date.now()}.obpack`,
@@ -1367,9 +1364,11 @@ app.whenReady().then(async () => {
   // The window was created in parallel with settings loading above; by this point
   // createWindow() has either resolved or thrown, and awaiting it again is free.
   await windowPromise;
+  resolveStartupReady();
   appUpdate.startAppUpdateWatcher();
 })
   .catch((error) => {
+    rejectStartupReady(error);
     // A failed init (data-root isolation, engine/SQLite construction) used to
     // be swallowed by the global rejection logger: the window stayed up while
     // every engine-backed IPC handler threw. Fail loudly instead.

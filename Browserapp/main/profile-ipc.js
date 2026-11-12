@@ -9,7 +9,9 @@ function registerProfileIpc({ registerTrustedIpc, engine, sanitizeIds, beforeRem
     beforeRemove(ids);
     return ids;
   }
-  registerTrustedIpc('profiles:sync', (_event, profiles) => engine.syncProfiles(profiles));
+  registerTrustedIpc('profiles:sync', (_event, profiles, options) => engine.syncProfiles(profiles, {
+    checkRevisions: true, ...(options?.delta === true ? { delta: true } : {}),
+  }));
   registerTrustedIpc('profiles:apply-commands', (_event, commands, options) => captureIpcResult(() => engine.applyProfileCommands(commands, options)));
   registerTrustedIpc('profiles:editor-state', (_event, id) => captureIpcResult(() => engine.profileForEdit(id)));
   registerTrustedIpc('profiles:delete', (_event, payload) => engine.deleteProfiles(removalIds(payload), payload?.deleteData !== false));
@@ -21,7 +23,7 @@ function registerProfileIpc({ registerTrustedIpc, engine, sanitizeIds, beforeRem
   registerTrustedIpc('profiles:stop', (_event, id) => engine.stop(id));
   registerTrustedIpc('profiles:clear-cache-cookies', (_event, id) => engine.clearProfileCacheAndCookies(id));
   registerTrustedIpc('profiles:status', () => engine.status());
-  registerTrustedIpc('profiles:status-delta', (_event, watermark) => engine.statusDelta(watermark, { includeWatermark: false }));
+  registerTrustedIpc('profiles:status-delta', (_event, watermark) => engine.statusDelta(watermark, { includeWatermark: false, includeCursor: true }));
   registerTrustedIpc('profiles:test-proxy', (_event, profile) => engine.testProxy(profile));
   registerTrustedIpc('profiles:check-proxy', (_event, profile) => engine.checkProxy(profile, { persist: true }));
 }

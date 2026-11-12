@@ -15,7 +15,7 @@
  *   OPENBROWSER_MCP_TOOL_WHITELIST=json array of tool names
  */
 
-const http = require('http');
+const { requestBuffer } = require('../network/http-request');
 const { resolveApiKey, apiKeyFileCandidates } = require('./api-key');
 
 const PORT = Number(process.env.OPENBROWSER_API_PORT || process.env.PORT || 50325);
@@ -128,68 +128,36 @@ function withInputAliases(schema) {
   return next;
 }
 
-function request(method, path, body, options = {}) {
+async function request(method, path, body, options = {}) {
   const payload = body === undefined ? null : JSON.stringify(body);
   const currentKey = getApiKey(Boolean(options._retried), Boolean(options._retried));
-  const timeoutMs = options.timeout || 60000;
-  return new Promise((resolve, reject) => {
-    const headers = {
-      'Content-Type': 'application/json',
-      ...(payload ? { 'Content-Length': Buffer.byteLength(payload) } : {}),
-    };
-    if (currentKey) {
-      headers['api-key'] = currentKey;
-      headers['x-api-key'] = currentKey;
-      headers['Authorization'] = `Bearer ${currentKey}`;
-    }
-    const req = http.request({
-      host: HOST,
-      port: PORT,
-      path,
-      method,
-      headers,
-      timeout: timeoutMs,
-    }, (res) => {
-      let data = '';
-      let received = 0;
-      // Same rationale as the local API's readBody: a screenshot base64 or a
-      // full profile list can be large, but an unbounded string accumulation
-      // turns any runaway response into an OOM in the MCP bridge process.
-      const MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
-      res.setEncoding('utf8');
-      res.on('data', (chunk) => {
-        received += chunk.length;
-        if (received > MAX_RESPONSE_BYTES) {
-          res.destroy();
-          reject(new Error(`MCP: Local API response exceeded ${MAX_RESPONSE_BYTES} bytes`));
-          return;
-        }
-        data += chunk;
-      });
-      res.on('end', () => {
-        if (res.statusCode === 401) {
-          if (!options._retried) {
-            getApiKey(true, true);
-            return request(method, path, body, { ...options, _retried: true }).then(resolve, reject);
-          }
-          const challenge = String(res.headers['www-authenticate'] || '').trim();
-          const challengeHint = challenge ? ` Server challenge: ${challenge}.` : '';
-          const candidates = apiKeyFileCandidates();
-          const candidateHint = candidates.length ? ` Checked locations: ${candidates.join(', ')}.` : '';
-          return reject(new Error(`MCP: Local API at http://${HOST}:${PORT} rejected all supplied API credentials (401). Set OPENBROWSER_API_KEY or OPENBROWSER_API_KEY_FILE to the key shown on the OpenBrowser API & MCP page.${challengeHint}${candidateHint}`));
-        }
-        let parsed;
-        try { parsed = JSON.parse(data || '{}'); }
-        catch (_) { return reject(new Error(`Invalid JSON from Local API (HTTP ${res.statusCode}): ${data.slice(0, 200)}`)); }
-        if (res.statusCode >= 400) return reject(new Error(`Local API error (HTTP ${res.statusCode}): ${parsed.msg || parsed.message || res.statusCode}`));
-        resolve(parsed);
-      });
-    });
-    req.on('error', reject);
-    req.on('timeout', () => req.destroy(new Error('Local API timeout')));
-    if (payload) req.write(payload);
-    req.end();
+  // One absolute deadline includes key reload/retry, headers and body reads.
+  const deadline = options._deadline ?? Date.now() + (options.timeout ?? 60000);
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) throw Object.assign(new Error('Local API timeout'), { code: 'ETIMEDOUT' });
+  const headers = { 'Content-Type': 'application/json',
+    ...(payload ? { 'Content-Length': Buffer.byteLength(payload) } : {}) };
+  if (currentKey) {
+    headers['api-key'] = currentKey;
+    headers['x-api-key'] = currentKey;
+    headers.Authorization = `Bearer ${currentKey}`;
+  }
+  const res = await requestBuffer(`http://${HOST.includes(':') ? '[' + HOST + ']' : HOST}:${PORT}${path}`, {
+    method, headers, body: payload, timeoutMs: remaining, maxBytes: 32 * 1024 * 1024,
+    signal: options.signal, timeoutMessage: 'Local API timeout',
+    tooLargeMessage: 'MCP: Local API response exceeded 32 MiB',
   });
+  if (res.status === 401) {
+    if (!options._retried) return request(method, path, body, { ...options, _retried: true, _deadline: deadline });
+    const challenge = String(res.headers['www-authenticate'] || '').trim();
+    const candidates = apiKeyFileCandidates();
+    throw new Error(`MCP: Local API at http://${HOST}:${PORT} rejected all supplied API credentials (401). Set OPENBROWSER_API_KEY or OPENBROWSER_API_KEY_FILE to the key shown on the OpenBrowser API & MCP page.${challenge ? ` Server challenge: ${challenge}.` : ''}${candidates.length ? ` Checked locations: ${candidates.join(', ')}.` : ''}`);
+  }
+  let parsed;
+  try { parsed = JSON.parse(res.buffer.toString('utf8') || '{}'); }
+  catch (_) { throw new Error(`Invalid JSON from Local API (HTTP ${res.status})`); }
+  if (res.status >= 400) throw new Error(`Local API error (HTTP ${res.status}): ${parsed.msg || parsed.message || res.status}`);
+  return parsed;
 }
 
 let toolsMetaCache = null;

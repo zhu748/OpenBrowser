@@ -149,10 +149,14 @@ async function launchPersonaBrowser(browser, persona, options = {}) {
     const events = [];
     const engine = { ...injection, profiles: new Map([[profile.id, profile]]), networkInfo: new Map(),
       emit: (event) => events.push(event),
-      handleBrowserGone: async () => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); } };
+      handleBrowserGone: async (_id, _item, reason, details) => {
+        events.push({ type: 'harness-browser-stop', reason, details });
+        if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+      } };
     item = { port, profile, fingerprint, kernelVersion: browser.version };
     if (options.injectFingerprint !== false) await engine.startWorkerFingerprintInjection(item, fingerprint);
-    return { child, port, item, engine, events, close };
+    return { child, port, item, engine, events, close,
+      diagnostics: () => ({ exitCode: child.exitCode, signal: child.signalCode, stderr, events }) };
   } catch (error) {
     try { await close(); }
     catch (cleanupError) { throw new AggregateError([error, cleanupError], 'Browser launch failed and cleanup was incomplete'); }

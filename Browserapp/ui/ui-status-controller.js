@@ -24,6 +24,8 @@
     let pending = null;
     let watermarkRows = null;
     let watermark = null;
+    let cursor = null;
+    let cursorRows = null;
     function refresh() {
       if (pending) return pending;
       const base = getRows();
@@ -34,9 +36,11 @@
       pending = (async () => {
         let next;
         if (typeof fetchDelta === 'function') {
-          const delta = await fetchDelta(watermark);
-          try { next = mergeStatusDelta(base, delta); }
+          const delta = await fetchDelta(cursorRows === base ? cursor : watermark);
+          let validDelta = false;
+          try { next = mergeStatusDelta(base, delta); validDelta = true; }
           catch (_) { next = await fetchFull(); }
+          if (validDelta && getRows() === base && typeof delta?.cursor === 'string') { cursor = delta.cursor; cursorRows = next; }
         } else next = await fetchFull();
         if (getRows() !== base) return false;
         setRows(next);

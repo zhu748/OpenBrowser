@@ -11,6 +11,7 @@
 const fsp = require('fs/promises');
 const path = require('path');
 const os = require('os');
+const { sanitizeForLog } = require('./log-sanitizer');
 
 function defaultLogPath() {
   if (process.env.OPENBROWSER_FP_LOG) return String(process.env.OPENBROWSER_FP_LOG);
@@ -69,7 +70,7 @@ async function fpLog(event, payload = {}) {
   const line = JSON.stringify({
     ts: new Date().toISOString(),
     event: String(event || 'log'),
-    ...payload,
+    ...sanitizeForLog(payload),
   }) + '\n';
   const primary = logPath();
   try {
@@ -77,7 +78,7 @@ async function fpLog(event, payload = {}) {
     await rotateIfOversized(primary);
     // If an old root-owned empty file blocks us, replace it once.
     try {
-      await fsp.appendFile(primary, line, { encoding: 'utf8', flag: 'a' });
+      await fsp.appendFile(primary, line, { encoding: 'utf8', flag: 'a', mode: 0o600 });
       return;
     } catch (err) {
       if (err && (err.code === 'EACCES' || err.code === 'EPERM')) {
@@ -92,7 +93,8 @@ async function fpLog(event, payload = {}) {
   } catch (_) {
     writeFailCount += 1;
     try {
-      await fsp.appendFile(FALLBACK_LOG, line, 'utf8');
+      await rotateIfOversized(FALLBACK_LOG);
+      await fsp.appendFile(FALLBACK_LOG, line, { encoding: 'utf8', mode: 0o600 });
       if (writeFailCount <= 3) {
         try {
           await fsp.appendFile(FALLBACK_LOG, JSON.stringify({

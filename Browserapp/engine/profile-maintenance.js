@@ -18,7 +18,7 @@ function acquireProfileMaintenance(engine, ids) {
   for (const id of selected) {
     assertProfileNotMaintained(engine, id);
     if (engine.running?.has(id) || engine.starting?.has(id) || engine.stopping?.has(id) || engine.deletingProfiles?.has(id)) {
-      throw Object.assign(new Error('请先停止环境，再恢复浏览器数据：' + id), { code: 'PROFILE_BUSY', profileId: id });
+      throw Object.assign(new Error('请先停止环境，再备份、恢复或维护浏览器数据：' + id), { code: 'PROFILE_BUSY', profileId: id });
     }
   }
   const token = Symbol('profile-maintenance');

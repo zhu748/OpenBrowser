@@ -13,7 +13,8 @@
 const path = require('path');
 const cloudSync = require('./cloud-sync');
 const { mergeProfileState } = require('./cloud/merge');
-const { prepareFileRestore } = require('./cloud/file-restore');
+const { prepareFileRestore, assertProfileRestoreReady } = require('./cloud/file-restore');
+const { captureRestoreState, saveRestoreState, readRestoreState, rollbackRestoreState, cleanupRestoreState, removeRestoreState } = require('./cloud/restore-state');
 const { acquireProfileMaintenance } = require('../engine/profile-maintenance');
 const { assertProfileId, sanitizeIds, assertSafeProfileChild } = require('./isolation');
 
@@ -108,34 +109,60 @@ async function runCloudBackup(payload = {}) {
   return enqueueCloudOp(() => runCloudBackupExclusive(payload));
 }
 
-async function runCloudBackupExclusive(payload = {}) {
-  const { getEngine, getAutomation, emit, getSettings, saveSettings } = requireDeps();
+/** Resolve credentials in the host, and hold stopped profiles while reading files. */
+async function buildEngineBackup(payload = {}, { settings, includeProxies = true } = {}) {
+  const { getEngine, getAutomation, getSettings } = requireDeps();
   const engine = getEngine();
-  const automation = getAutomation();
-  const localSettingsCache = getSettings();
-  const cloud = { ...localSettingsCache.cloud, ...(payload.cloud || {}) };
-  const allProfiles = Array.isArray(payload.profiles)
-    ? payload.profiles
-    : [...(engine?.profiles?.values?.() || [])];
-  const profileIds = Array.isArray(payload.profileIds) ? payload.profileIds.map(String) : null;
-  const groups = Array.isArray(payload.groups) ? payload.groups : (localSettingsCache.uiGroups || []);
-  let proxies = [];
-  try { proxies = automation?.proxyStore?.list?.({}) || []; } catch (_) {}
-  const { buffer, meta } = await cloudSync.buildBackupPackage({
-    profiles: allProfiles,
-    groups,
-    proxies,
-    // Only the non-secret cloud sync state (provider choice, dir, lastSyncAt…)
-    // is packed; the passphrase is star-masked like before, and the rest of
-    // the credentials (webdav.username/password, github.token, bridge
-    // passwords) never ride along in plaintext — an encrypted package keeps
-    // working, an unencrypted one is rejected by the plaintext gate.
-    settings: { cloud: sanitizeCloudForBackup(cloud) },
-    profileDataRoot: engine?.getProfileDataRoot?.() || localSettingsCache.profileDataRoot,
-    includeBrowserData: cloud.includeBrowserData !== false,
-    passphrase: cloud.passphrase || '',
-    profileIds,
-  });
+  const local = getSettings();
+  const cloud = { ...local.cloud, ...(payload.cloud || {}) };
+  const values = engine?.profiles?.values ? [...engine.profiles.values()] : (payload.profiles || []);
+  const ids = Array.isArray(payload.profileIds) ? new Set(payload.profileIds.map(assertProfileId)) : null;
+  const selected = values.filter((profile) => ids ? ids.has(profile.id) : profile.advanced?.cloudBackup);
+  const fileIds = cloud.includeBrowserData !== false ? selected.filter((profile) => profile.advanced?.cloudBackup).map((profile) => profile.id) : [];
+  // Close-time automatic pushes can arrive just before the stop promise settles.
+  for (const id of fileIds) if (engine?.stopping?.has(id)) await engine.stopping.get(id);
+  const lease = acquireProfileMaintenance(engine, fileIds);
+  try {
+    const profiles = structuredClone(selected.map((profile) => engine?.profiles?.get(profile.id) || profile));
+    const proxies = includeProxies ? (getAutomation()?.proxyStore?.list?.({}) || []) : [];
+    const result = await cloudSync.buildBackupPackage({
+      profiles, groups: payload.groups || local.uiGroups || [], proxies,
+      settings: settings || { cloud: sanitizeCloudForBackup(cloud) },
+      profileDataRoot: engine?.getProfileDataRoot?.() || local.profileDataRoot,
+      includeBrowserData: cloud.includeBrowserData !== false,
+      passphrase: cloud.passphrase || '', profileIds: ids ? [...ids] : null,
+    });
+    return { ...result, cloud };
+  } finally { lease.release(); }
+}
+
+function createBackupPackage(payload = {}) {
+  return enqueueCloudOp(() => buildEngineBackup(payload));
+}
+
+/** Called before the API starts; interrupted restores finish compensation first. */
+async function recoverPendingRestore({ proxyStore } = {}) {
+  const { getEngine, getSettings, saveSettings } = requireDeps();
+  const engine = getEngine();
+  const state = await readRestoreState(engine);
+  if (!state) return false;
+  const lease = acquireProfileMaintenance(engine, state.profiles.map((entry) => entry.id));
+  let proxyLease;
+  try {
+    if (state.proxies !== null) proxyLease = await proxyStore.acquireMaintenance?.();
+    if (state.phase !== 'committed') await rollbackRestoreState({ engine, proxyStore, getSettings, saveSettings,
+      state, maintenanceToken: proxyLease?.token });
+    await cleanupRestoreState(engine, state);
+    lease.release(); proxyLease?.release();
+    return true;
+  } catch (error) {
+    throw Object.assign(new Error('未完成的恢复需要修复；原始数据与恢复记录已保留', { cause: error }), { code: 'CLOUD_RECOVERY_REQUIRED' });
+  }
+}
+
+async function runCloudBackupExclusive(payload = {}) {
+  const { emit, getSettings, saveSettings } = requireDeps();
+  const { buffer, meta, cloud } = await buildEngineBackup(payload);
   const remoteName = payload.remoteName || cloudSync.REMOTE_NAME;
   const result = await cloudSync.upload(cloud.provider, providerConfigFromCloud(cloud), buffer, remoteName);
   cloud.lastSyncAt = new Date().toISOString();
@@ -183,19 +210,33 @@ async function applyBackupBodyExclusive(body, { mode = 'merge', localProfiles = 
   merged.stats.mode = mode;
   if (merged.profiles.length > 5000) throw new Error('合并后环境数量超过 5000 个');
   const groups = cloudSync.mergeGroups(localGroupList, body.groups || [], mergeMode);
-  const ids = [...merged.remoteProfileIds].filter((id) => dataById.has(id));
+  const ids = [...merged.remoteProfileIds];
   const lease = acquireProfileMaintenance(engine, ids);
+  const proxyStore = automation?.proxyStore;
+  let proxyLease;
+  let recovery;
+  let proxiesChanged = false;
+  let groupsChanged = false;
+  let profilesChanged = false;
   let transaction;
   let phase = 'prepare';
   let rollbackFailed = false;
   try {
+    if (await readRestoreState(engine)) throw Object.assign(new Error('请先恢复上次未完成的云恢复操作'), { code: 'CLOUD_RECOVERY_REQUIRED' });
+    if (body.proxies?.length) proxyLease = await proxyStore?.acquireMaintenance?.();
+    for (const id of ids) await assertProfileRestoreReady(path.join(profileRoot, id));
+    recovery = structuredClone(captureRestoreState(engine, ids, proxyStore, getSettings(), Boolean(body.proxies?.length)));
+    await saveRestoreState(engine, recovery);
     const selections = [];
-    for (const id of ids) {
+    for (const id of ids.filter((id) => dataById.has(id))) {
       const root = path.join(profileRoot, id);
       await assertSafeProfileChild(profileRoot, root);
       selections.push({ root, files: dataById.get(id) });
     }
     transaction = await prepareFileRestore(selections);
+    recovery.records = transaction.recoveryRecords;
+    recovery.phase = 'pending';
+    await saveRestoreState(engine, recovery);
     phase = 'files';
     await transaction.commit();
     phase = 'proxies';
@@ -203,17 +244,28 @@ async function applyBackupBodyExclusive(body, { mode = 'merge', localProfiles = 
     if (Array.isArray(proxies) && proxies.length) {
       const localProxies = automation?.proxyStore?.list?.({}) || [];
       proxies = cloudSync.mergeProxies(localProxies, proxies, mergeMode);
-      if (automation?.proxyStore?.replaceAll) await automation.proxyStore.replaceAll(proxies);
-      else if (automation?.proxyStore) for (const item of proxies) await automation.proxyStore.create(item);
+      if (proxyStore?.replaceAll) await proxyStore.replaceAll(proxies, { maintenanceToken: proxyLease?.token });
+      else if (proxyStore) for (const item of proxies) await proxyStore.create(item);
+      proxiesChanged = true;
     }
     phase = 'settings';
+    groupsChanged = true;
     await saveSettings({ ...getSettings(), uiGroups: groups });
     phase = 'profiles';
+    profilesChanged = true;
     const selectedProfiles = merged.profiles.filter((profile) => merged.remoteProfileIds.has(profile.id));
     if (engine && selectedProfiles.length) await engine.syncProfiles(selectedProfiles.map((profile) => ({
       ...profile, secretsAction: 'replace', proxyAuthAction: 'clear',
     })), { maintenanceToken: lease.token });
-    const cleanupWarnings = await transaction.finish();
+    recovery.phase = 'committed';
+    await saveRestoreState(engine, recovery);
+    let cleanupWarnings = [];
+    // The durable decision is final. Cleanup failure must not roll back
+    // metadata after backups have already been deleted by finish().
+    try {
+      cleanupWarnings = await transaction.finish();
+      await removeRestoreState(engine);
+    } catch (cleanupError) { cleanupWarnings.push({ message: cleanupError.message }); }
     return {
       profiles: engine?.profiles?.values ? [...engine.profiles.values()] : merged.profiles,
       groups, proxies, restoredFiles: transaction.count,
@@ -222,17 +274,23 @@ async function applyBackupBodyExclusive(body, { mode = 'merge', localProfiles = 
     };
   } catch (error) {
     error.restorePhase = phase;
-    if (transaction) {
-      try { await transaction.rollback(); }
+    if (recovery) {
+      try {
+        await rollbackRestoreState({ engine, proxyStore, getSettings, saveSettings, state: recovery,
+          maintenanceToken: proxyLease?.token, restoreProxies: proxiesChanged, restoreGroups: groupsChanged, restoreProfiles: profilesChanged });
+        await transaction?.rollback();
+        await cleanupRestoreState(engine, recovery);
+      }
       catch (rollbackError) {
         rollbackFailed = true;
-        throw Object.assign(new AggregateError([error, rollbackError], error.message + '；原文件回滚失败'), {
+        throw Object.assign(new AggregateError([error, rollbackError], error.message + '；恢复回滚未完成，恢复记录已保留，重新启动应用后将重试'), {
+          code: 'CLOUD_RECOVERY_REQUIRED',
           restorePhase: phase, recoveryDirectories: rollbackError.recoveryDirectories,
         });
       }
     }
     throw error;
-  } finally { if (!rollbackFailed) lease.release(); }
+  } finally { if (!rollbackFailed) { lease.release(); proxyLease?.release(); } }
 }
 
 async function runCloudRestore(payload = {}) {
@@ -287,9 +345,7 @@ async function runCloudProfilePushExclusive(payload = {}) {
   const cloud = { ...localSettingsCache.cloud, ...(payload.cloud || {}) };
   const ids = sanitizeIds(payload.profileIds || (payload.profileId ? [payload.profileId] : []));
   if (!ids.length) throw new Error('请指定要同步的环境');
-  const allProfiles = Array.isArray(payload.profiles)
-    ? payload.profiles
-    : [...(engine?.profiles?.values?.() || [])];
+  const allProfiles = engine?.profiles?.values ? [...engine.profiles.values()] : (payload.profiles || []);
   const results = [];
   const profilesById = new Map();
   for (const profile of allProfiles) {
@@ -306,15 +362,8 @@ async function runCloudProfilePushExclusive(payload = {}) {
     const profile = profilesById.get(id);
     if (!profile) { failures.push({ id, error: new Error('环境不存在：' + id) }); continue; }
     try {
-      const { buffer, meta } = await cloudSync.buildBackupPackage({
-        profiles: [{ ...profile, updatedAt: profile.updatedAt || new Date().toISOString() }],
-        groups: Array.isArray(payload.groups) ? payload.groups : (localSettingsCache.uiGroups || []),
-        proxies: [],
-        settings: { kind: 'profile', profileId: id },
-        profileDataRoot: engine?.getProfileDataRoot?.() || localSettingsCache.profileDataRoot,
-        includeBrowserData: cloud.includeBrowserData !== false,
-        passphrase: cloud.passphrase || '',
-        profileIds: [id],
+      const { buffer, meta } = await buildEngineBackup({ ...payload, profiles: [profile], profileIds: [id] }, {
+        settings: { kind: 'profile', profileId: id }, includeProxies: false,
       });
       const remoteName = cloudSync.profileRemoteName(id);
       const result = await cloudSync.upload(cloud.provider, providerConfigFromCloud(cloud), buffer, remoteName);
@@ -384,6 +433,8 @@ module.exports = {
   sanitizeCloudForBackup,
   mergeCloudIntoSettings,
   runCloudBackup,
+  createBackupPackage,
+  recoverPendingRestore,
   applyBackupBody,
   runCloudRestore,
   runCloudProfilePush,

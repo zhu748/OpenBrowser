@@ -73,19 +73,27 @@ module.exports = {
    * shape the caller cannot merge) returns full instead, so the poll loop
    * degrades to today's behavior rather than guessing.
    */
-  statusDelta(watermark, { includeWatermark = true } = {}) {
+  statusDelta(watermark, { includeWatermark = true, includeCursor = false } = {}) {
     const snapshot = this.status();
     if (this._statusWatermarkSnapshot !== snapshot) {
       this._statusWatermarkSnapshot = snapshot;
       // The snapshot is stable until invalidation. Reuse its immutable index
       // across idle polls instead of allocating N entries on every request.
       this._statusWatermark = Object.freeze(Object.fromEntries(snapshot.map((row) => [row.id, row.statusRev])));
+      this._statusCursor = `${this._statusInstance}:snapshot:${this._statusCursorSequence = (this._statusCursorSequence || 0) + 1}`;
+      this._statusCursorHistory ||= new Map();
+      this._statusCursorHistory.set(this._statusCursor, this._statusWatermark);
+      // A small bounded history supports independent clients and in-flight
+      // refreshes without retaining profile arrays or permanent tombstones.
+      while (this._statusCursorHistory.size > 8) this._statusCursorHistory.delete(this._statusCursorHistory.keys().next().value);
     }
     const known = this._statusWatermark;
     // The trusted UI derives its watermark from its actual rows. Omitting the
     // redundant response index keeps idle replies constant-sized at fleet scale.
-    const reply = (full, rows, removed) => ({ full, rows, removed, ...(includeWatermark ? { watermark: known } : {}) });
-    const caller = (watermark && typeof watermark === 'object' && !Array.isArray(watermark)) ? watermark : null;
+    const reply = (full, rows, removed) => ({ full, rows, removed,
+      ...(includeWatermark ? { watermark: known } : {}), ...(includeCursor ? { cursor: this._statusCursor } : {}) });
+    const caller = typeof watermark === 'string' ? this._statusCursorHistory.get(watermark)
+      : (watermark && typeof watermark === 'object' && !Array.isArray(watermark)) ? watermark : null;
     if (!caller) return reply(true, snapshot, []);
     const removed = [];
     for (const id of Object.keys(caller)) {

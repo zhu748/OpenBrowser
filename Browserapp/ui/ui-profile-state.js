@@ -34,10 +34,13 @@
     for (const local of localProfiles) {
       const remote = byId.get(local.id);
       if (!remote) continue;
-      const proxyId = local.proxyId || remote.proxyId;
+      const authoritative = Number.isSafeInteger(remote.rev) && remote.rev > 0;
+      const sameRevision = !authoritative || local.rev === remote.rev;
+      const proxyId = authoritative ? remote.proxyId : (local.proxyId || remote.proxyId);
       result.push(normalizeProfile({
         ...local,
-        proxyMeta: restoreBackupProxies(local.proxyMeta, remote.proxyMeta, mergeProxy),
+        ...remote,
+        proxyMeta: authoritative ? remote.proxyMeta : restoreBackupProxies(local.proxyMeta, remote.proxyMeta, mergeProxy),
         proxyId: proxyId || null,
         ...(Object.hasOwn(remote, 'exitIp') && remote.exitIp !== undefined ? {
           exitIp: remote.exitIp,
@@ -49,12 +52,13 @@
           exitLatencyMs: remote.exitLatencyMs,
           exitNetworkType: remote.exitNetworkType,
         } : {}),
-        cookies: local.cookies || remote.cookies || '',
-        proxy: restoreProxy(mergeProxy(local.proxy, remote.proxy), proxyId),
+        cookies: (sameRevision && local.cookies) || remote.cookies || '',
+        proxy: restoreProxy(authoritative ? remote.proxy : mergeProxy(local.proxy, remote.proxy), proxyId),
         platform: {
           ...(local.platform || {}),
-          password: local.platform?.password || remote.platform?.password || '',
-          totpSecret: local.platform?.totpSecret || remote.platform?.totpSecret || '',
+          ...(remote.platform || {}),
+          password: (sameRevision && local.platform?.password) || remote.platform?.password || '',
+          totpSecret: (sameRevision && local.platform?.totpSecret) || remote.platform?.totpSecret || '',
         },
       }));
       seen.add(local.id);
@@ -77,15 +81,22 @@
   }
 
   /** Merge polling data without changing references for unchanged profiles. */
-  function mergeExitState({ profiles, engineProfiles, hasCredentials, restoreProxy = (proxy) => proxy }) {
+  function mergeExitState({ profiles, engineProfiles, hasCredentials, restoreProxy = (proxy) => proxy, normalizeProfile = (profile) => profile }) {
     if (!Array.isArray(engineProfiles) || !engineProfiles.length) return { profiles, changed: false };
     const byId = new Map(engineProfiles.filter(Boolean).map((item) => [item.id, item]));
     const exitFields = ['exitIp', 'exitCountryCode', 'exitTimezone', 'exitLatitude', 'exitLongitude', 'exitCheckedAt', 'exitLatencyMs', 'exitNetworkType'];
     let result = profiles;
+    const localIds = new Set();
     profiles.forEach((local, index) => {
+      localIds.add(local.id);
       const remote = byId.get(local.id);
       if (!remote) return;
       let next = local;
+      if (Number.isSafeInteger(remote.rev) && remote.rev > 0 && remote.rev !== local.rev) {
+        // An API/cloud edit moves configuration as well as runtime state.
+        // Old cached secrets cannot prove ownership of the new revision.
+        next = normalizeProfile({ ...local, ...remote });
+      }
       if (Object.hasOwn(remote, 'exitIp') && remote.exitIp !== undefined) {
         for (const field of exitFields) if (remote[field] !== undefined) next = withField(next, local, field, remote[field]);
       }
@@ -101,6 +112,12 @@
         result[index] = next;
       }
     });
+    for (const remote of engineProfiles) {
+      if (!remote || localIds.has(remote.id)) continue;
+      if (result === profiles) result = profiles.slice();
+      result.push(normalizeProfile(remote));
+      localIds.add(remote.id);
+    }
     return { profiles: result, changed: result !== profiles };
   }
 

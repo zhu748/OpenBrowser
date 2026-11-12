@@ -9,19 +9,12 @@
 
 const { assertProfileId, assertSafeProfileChild, validateProfileRootSecure } = require('../automation/isolation');
 const { prepareProfileSync } = require('./profile-sync');
+const { persistProfileSync } = require('./profile-publication');
 const { assertProfileNotMaintained, acquireProfileMaintenance } = require('./profile-maintenance');
 const { assertProfileRestoreReady } = require('../automation/cloud/file-restore');
 const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
-
-/** One publication path for full sync and revision-checked commands. */
-function publishProfileSync(engine, staged) {
-  engine.invalidateStatusCache?.();
-  for (const [id, profile] of staged.profiles) engine.profiles.set(id, profile);
-  for (const [id, assigned] of staged.assignments) engine.assignments.set(id, assigned);
-  for (const id of staged.networkInvalidations) engine.networkInfo.delete(id);
-}
 
 module.exports = {
   profileForEdit(id) {
@@ -34,12 +27,13 @@ module.exports = {
 
   async syncProfiles(values, options = {}) {
     const staged = prepareProfileSync(this, values, options);
-    publishProfileSync(this, staged);
     // Do not drop unknown engine profiles here — deleteProfiles is the explicit path.
     // persist() coalesces the burst, checks row differences and propagates write
     // failures. Saving here as well hashed the same credential payload twice.
-    await this.persist();
-    return this.status();
+    await persistProfileSync(this, staged);
+    this.emit({ type: 'status', action: 'profiles-update' });
+    const rows = this.status();
+    return options.delta === true ? rows.filter((row) => staged.profiles.has(row.id)) : rows;
   },
 
   /**
@@ -103,8 +97,8 @@ module.exports = {
       });
     }
     const staged = prepareProfileSync(this, modify.map((entry) => entry.profile));
-    publishProfileSync(this, staged);
-    await this.persist();
+    await persistProfileSync(this, staged);
+    this.emit({ type: 'status', action: 'profiles-update' });
     const rows = this.status();
     return options?.delta === true ? rows.filter((row) => seen.has(row.id)) : rows;
   },

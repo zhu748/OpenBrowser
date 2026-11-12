@@ -11,7 +11,7 @@
 const { assertProfileNotMaintained } = require('./profile-maintenance');
 const { proxyHasCredentials, sameProxyEndpoint, sameProxyIdentity } = require('./index');
 
-function prepareProfileSync(engine, values, { maintenanceToken } = {}) {
+function prepareProfileSync(engine, values, { maintenanceToken, checkRevisions = false } = {}) {
   const profiles = new Map();
   const assignments = new Map();
   const networkInvalidations = new Set();
@@ -26,7 +26,11 @@ function prepareProfileSync(engine, values, { maintenanceToken } = {}) {
     // equality cannot prove that this profile (or a nested field) is unchanged.
     const sanitized = engine.sanitizeProfile(value);
     assertProfileNotMaintained(engine, sanitized.id, maintenanceToken);
+    if (engine.deletingProfiles?.has(sanitized.id)) throw Object.assign(new Error('Profile is being deleted: ' + sanitized.id), { code: 'PROFILE_DELETING' });
     const previous = (profiles.get(sanitized.id) || engine.profiles.get(sanitized.id));
+    if (checkRevisions && previous && Number(value.rev) !== engine.profiles.revisionOf(sanitized.id)) {
+      throw Object.assign(new Error('环境配置已变更，请刷新后重试：' + sanitized.id), { code: 'PROFILE_STALE_REV' });
+    }
     let profile = sanitized;
     if (previous && sanitized.proxyId && previous.proxyId === sanitized.proxyId) {
       const stored = engine.proxyStore?.get?.(sanitized.proxyId);

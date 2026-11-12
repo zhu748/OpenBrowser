@@ -65,9 +65,10 @@ function sanitizeUrlForLog(url) {
   }
 
   if (parsed.username || parsed.password) {
+    const decode = (value) => { try { return decodeURIComponent(value); } catch (_) { return value; } };
     // Proxy and callback URLs can carry basic-auth credentials inline.
-    parsed.username = parsed.username ? maskSecretString(decodeURIComponent(parsed.username)) : '';
-    parsed.password = parsed.password ? maskSecretString(decodeURIComponent(parsed.password)) : '';
+    parsed.username = parsed.username ? maskSecretString(decode(parsed.username)) : '';
+    parsed.password = parsed.password ? maskSecretString(decode(parsed.password)) : '';
   }
 
   for (const key of Array.from(new Set(parsed.searchParams.keys()))) {
@@ -120,6 +121,8 @@ function sanitizeForLog(input, options = {}) {
       const child = value[key];
       if (keys.has(key)) {
         out[key] = maskScalar(child);
+      } else if (typeof child === 'string' && /^(?:url|href|location|documentURL|startUrl)$/i.test(key)) {
+        out[key] = sanitizeUrlForLog(child);
       } else if (child !== null && typeof child === 'object') {
         out[key] = walk(child);
       } else {

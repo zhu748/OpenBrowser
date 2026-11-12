@@ -30,7 +30,8 @@ function buildRustCore() {
     throw new Error(`cargo build exited with code ${buildResult.status}`);
   }
 
-  const releaseBin = path.join(repoRoot, 'target', 'release', executable);
+  const targetRoot = process.env.CARGO_TARGET_DIR ? path.resolve(repoRoot, process.env.CARGO_TARGET_DIR) : path.join(repoRoot, 'target');
+  const releaseBin = path.join(targetRoot, 'release', executable);
   if (!fs.existsSync(releaseBin)) {
     throw new Error(`Cargo build succeeded but binary not found at ${releaseBin}`);
   }

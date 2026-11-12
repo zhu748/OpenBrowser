@@ -31,7 +31,7 @@ contextBridge.exposeInMainWorld('ops', Object.freeze({
   chooseProfileStorage: () => ipcRenderer.invoke('system:choose-storage'),
   resetProfileStorage: () => ipcRenderer.invoke('system:reset-storage'),
   openProfileStorage: () => ipcRenderer.invoke('system:open-storage'),
-  syncProfiles: (profiles) => ipcRenderer.invoke('profiles:sync', profiles),
+  syncProfiles: (profiles, options) => ipcRenderer.invoke('profiles:sync', profiles, options),
   // Plain IPC result data is unwrapped in the renderer, after contextBridge.
   applyProfileCommands: (commands, options) => ipcRenderer.invoke('profiles:apply-commands', commands, options),
   profileForEdit: (id) => ipcRenderer.invoke('profiles:editor-state', id),

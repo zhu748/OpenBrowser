@@ -542,8 +542,17 @@ class ProxyStore {
     });
   }
 
-  _commitMutation(mutator) {
+  async acquireMaintenance() {
+    if (this._maintenance) throw Object.assign(new Error('Proxy library is being restored'), { code: 'PROXY_MAINTENANCE' });
+    const token = Symbol('proxy-maintenance');
+    this._maintenance = token;
+    await this._mutationQueue;
+    return { token, release: () => { if (this._maintenance === token) this._maintenance = null; } };
+  }
+
+  _commitMutation(mutator, maintenanceToken) {
     return this._enqueueMutation(async () => {
+      if (this._maintenance && this._maintenance !== maintenanceToken) throw Object.assign(new Error('Proxy library is being restored'), { code: 'PROXY_MAINTENANCE' });
       const draft = cloneData(this.data);
       const result = await mutator(draft);
       await this._persistData(draft);
@@ -619,7 +628,7 @@ class ProxyStore {
     });
   }
 
-  async replaceAll(list = []) {
+  async replaceAll(list = [], { maintenanceToken } = {}) {
     if (!Array.isArray(list)) throw new Error('请提供代理数组');
     if (list.length > 5000) throw new Error('代理数量已达上限 5000');
     return this._commitMutation((draft) => {
@@ -632,7 +641,7 @@ class ProxyStore {
       draft.version = 2;
       draft.items = items;
       return items;
-    });
+    }, maintenanceToken);
   }
 
   /**

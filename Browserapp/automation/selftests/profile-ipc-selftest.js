@@ -27,9 +27,9 @@ async function main() {
   assert.deepEqual(await invoke('editor-state', 'a'), { ipcResult: 1, ok: true, value: 'profileForEdit' });
   assert.deepEqual(calls.at(-1), ['profileForEdit', 'a']);
   assert.equal(invoke('status-delta', { a: 1 }), 'statusDelta');
-  assert.deepEqual(calls.at(-1), ['statusDelta', { a: 1 }, { includeWatermark: false }]);
+  assert.deepEqual(calls.at(-1), ['statusDelta', { a: 1 }, { includeWatermark: false, includeCursor: true }]);
   assert.equal(invoke('sync', [{ id: 'a' }]), 'syncProfiles');
-  assert.deepEqual(calls.at(-1), ['syncProfiles', [{ id: 'a' }]]);
+  assert.deepEqual(calls.at(-1), ['syncProfiles', [{ id: 'a' }], { checkRevisions: true }]);
   for (const [action, method] of [['delete', 'deleteProfiles'], ['purge', 'purgeProfiles'], ['trash', 'trashProfiles']]) {
     invoke(action, { ids: ['a', 'a', 'b'], deleteData: false });
     assert.deepEqual(before.at(-1), ['a', 'b']);

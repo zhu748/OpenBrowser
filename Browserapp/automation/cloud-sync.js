@@ -196,6 +196,7 @@ async function buildBackupPackage({
   const packedProfiles = [];
   let browserDataBytes = 0;
   let estimatedJsonBytes = 0;
+  const skippedFiles = [];
   for (const profile of list) {
     assertProfileId(profile?.id);
     const item = { ...profile, updatedAt: profile.updatedAt || nowIso() };
@@ -203,6 +204,7 @@ async function buildBackupPackage({
       const root = path.join(profileDataRoot, profile.id);
       item._dataFiles = await collectProfileDataFiles(root, profile, {
         maxTotalBytes: Math.max(0, MAX_BROWSER_DATA_BYTES - browserDataBytes),
+        onSkipped: (entry) => skippedFiles.push({ profileId: profile.id, ...entry }),
       });
       for (const encoded of Object.values(item._dataFiles)) {
         browserDataBytes += Buffer.byteLength(encoded, 'base64');
@@ -220,6 +222,7 @@ async function buildBackupPackage({
     groups,
     proxies,
     settings,
+    backupWarnings: skippedFiles,
   };
   const json = Buffer.from(JSON.stringify(body), 'utf8');
   if (json.length > MAX_BACKUP_JSON_BYTES) throw new Error('备份内容超过 120 MB 安全限制');
@@ -251,6 +254,9 @@ async function buildBackupPackage({
       profileIds: packedProfiles.map((p) => p.id),
       bytes: data.length,
       sha256: sha256(data),
+      complete: skippedFiles.length === 0,
+      skippedFileCount: skippedFiles.length,
+      skippedFiles: skippedFiles.slice(0, 100),
     },
   };
 }
