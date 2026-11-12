@@ -143,6 +143,7 @@ const SUITE = [
   ['selftest:fontpersona', 'font-persona-selftest.js'],
   ['selftest:fingerprintpool', 'automation/selftests/fingerprint-pool-selftest.js'],
   ['selftest:fingerprintcoverage', 'automation/selftests/fingerprint-coverage-selftest.js'],
+  ['selftest:emittedscriptparse', 'automation/selftests/emitted-script-parse-matrix-selftest.js'],
   ['selftest:cssfontgate', 'automation/selftests/css-font-local-gate-e2e-selftest.js', { darwinOnly: true }],
   ['selftest:cssfontrewrite', 'automation/selftests/css-font-response-rewrite-e2e-selftest.js', { darwinOnly: true }],
   // Rescued from the orphan backlog (P1 audit): real tests of production

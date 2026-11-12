@@ -99,6 +99,14 @@ const SHARED_WORKER_SNAP = `(() => {
         res.end(networkWorkerBody);
         return;
       }
+      // Extensionless worker endpoint: the URL carries no .js suffix, so only the
+      // resourceType-"Other" + Sec-Fetch-Dest discriminator can reach it. This is
+      // the P0 delivery hole this gate protects against reopening.
+      if (req.url.startsWith('/api/worker')) {
+        res.setHeader('Content-Type', 'application/javascript');
+        res.end(networkWorkerBody);
+        return;
+      }
       res.setHeader('Content-Type', 'text/html');
       res.end('<!doctype html><html><body>gate</body></html>');
     });
@@ -117,6 +125,7 @@ const SHARED_WORKER_SNAP = `(() => {
       const blobWorker = await run(new Worker(URL.createObjectURL(new Blob([${JSON.stringify(WORKER_SNAP)}], { type: 'application/javascript' }))));
       const dataWorker = await run(new Worker('data:application/javascript;base64,' + btoa(${JSON.stringify(WORKER_SNAP)})));
       const networkWorker = await run(new Worker(location.origin + '/worker.js'));
+      const extensionlessWorker = await run(new Worker(location.origin + '/api/worker'));
       // Binary-backed blob: the bytes are identical to WORKER_SNAP but travel
       // as a Uint8Array part — no string part anywhere in the Blob.
       const bytes = new TextEncoder().encode(${JSON.stringify(WORKER_SNAP)});
@@ -169,13 +178,14 @@ const SHARED_WORKER_SNAP = `(() => {
       const ctx = c.getContext('2d');
       ctx.font = '13px "Arial"';
       const mainMtext = ctx.measureText('mmmmmmmmmmlli').width;
-      return JSON.stringify({ blobWorker, dataWorker, networkWorker, binaryBlobWorker, responseWorker, moduleWorker, importScriptsWorker: importScriptsWorker2, sharedWorker, nestedWorker, nestedImportScriptsWorker, mainMtext });
+      return JSON.stringify({ blobWorker, dataWorker, networkWorker, extensionlessWorker, binaryBlobWorker, responseWorker, moduleWorker, importScriptsWorker: importScriptsWorker2, sharedWorker, nestedWorker, nestedImportScriptsWorker, mainMtext });
     })()`);
     assert.ok(probe && !probe.err, 'worker probes failed: ' + JSON.stringify(probe));
     const parsed = JSON.parse(probe);
     const blobWorker = JSON.parse(parsed.blobWorker);
     const dataWorker = JSON.parse(parsed.dataWorker);
     const networkWorker = JSON.parse(parsed.networkWorker);
+    const extensionlessWorker = JSON.parse(parsed.extensionlessWorker);
     const binaryBlobWorker = JSON.parse(parsed.binaryBlobWorker);
     const responseWorker = JSON.parse(parsed.responseWorker);
     const moduleWorker = JSON.parse(parsed.moduleWorker);
@@ -186,8 +196,9 @@ const SHARED_WORKER_SNAP = `(() => {
     assert.ok(!blobWorker.timeout && !blobWorker.err, 'blob worker: ' + parsed.blobWorker);
     assert.ok(!dataWorker.timeout && !dataWorker.err, 'data worker: ' + parsed.dataWorker);
     assert.ok(!networkWorker.timeout && !networkWorker.err, 'network worker: ' + parsed.networkWorker);
+    assert.ok(!extensionlessWorker.timeout && !extensionlessWorker.err, 'extensionless worker: ' + parsed.extensionlessWorker);
 
-    for (const [label, worker] of [['blob', blobWorker], ['data', dataWorker], ['network', networkWorker],
+    for (const [label, worker] of [['blob', blobWorker], ['data', dataWorker], ['network', networkWorker], ['extensionless', extensionlessWorker],
       ['binaryBlob', binaryBlobWorker], ['responseBlob', responseWorker], ['module', moduleWorker],
       ['importScriptsNested', importScriptsWorker], ['shared', sharedWorker],
       ['nestedClassic', nestedWorker], ['nestedImportScripts', nestedImportScriptsWorker]]) {

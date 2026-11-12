@@ -17,6 +17,9 @@ module.exports = `  // --- webrtc ---
     // accessors without constructing anything - which is why the shapes below have to be exact.
     try {
       const targetIp = String(CFG.webrtcAddress || '');
+      // Host-type candidates are rewritten to the persona's mDNS name (Chrome's default
+      // privacy mode) instead of a raw private IP; srflx/prflx keep the exit address.
+      const localMdnsName = String(CFG.webrtcLocalMdns || '').trim();
       // A candidate address names either this machine (host), the address this machine's traffic is
       // observed from (srflx/prflx) or the TURN server that will relay the media (relay). Only the
       // relay address belongs to a third party and has to survive untouched. Every other type
@@ -34,7 +37,10 @@ module.exports = `  // --- webrtc ---
         if (!m) return line;
         let changed = false;
         let addr = m[6];
-        if (!isRelayType(m[8]) && addr !== targetIp) { addr = targetIp; changed = true; }
+        if (!isRelayType(m[8]) && addr !== targetIp) {
+          addr = (String(m[8]) === 'host' && localMdnsName) ? localMdnsName : targetIp;
+          changed = true;
+        }
         // raddr names the base address the candidate was observed from, which is this machine even
         // when the candidate itself is a relay allocation. Masking it only when it looked private
         // left the base address of a public host next to the rewritten candidate.

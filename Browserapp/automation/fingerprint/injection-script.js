@@ -67,6 +67,7 @@ function buildInjectionScript(fp, options = {}) {
     webrtc: fp.webrtc,
     webrtcPolicy: fp.webrtcPolicy,
     webrtcAddress: fp.webrtcAddress || null,
+    webrtcLocalMdns: typeof fp.webrtcLocalMdns === 'string' ? fp.webrtcLocalMdns : '',
     battery: fp.battery || null,
     connection: fp.connection || null,
     geoPermission: fp.geoPermission || null,
@@ -213,6 +214,7 @@ function buildInjectionScript(fp, options = {}) {
       webrtcFallbackScript = createWebRtcFallbackSource({
         publicIp: exitAddress || null,
         localIp: fp.webrtcLocalIp || (fp.webrtc && fp.webrtc.localIp) || null,
+        localMdns: fp.webrtcLocalMdns || (fp.webrtc && fp.webrtc.localMdns) || null,
         bridgeToken,
       });
     } catch (_) {}

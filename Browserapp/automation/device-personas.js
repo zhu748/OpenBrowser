@@ -142,7 +142,7 @@ const MACOS_INTEL_PERSONAS = [
   },
   {
     // iMac Pro (2017): 10-core Xeon + Radeon Pro Vega 56.
-    os: "macos", cores: 10, memory: 8, colorDepth: 30, devicePixelRatio: 2,
+    os: "macos", cores: 10, memory: 8, colorDepth: 30, devicePixelRatio: 2, laptop: false,
     screen: { width: 2560, height: 1440 },
     webgl: {
       vendor: "Google Inc. (AMD)",

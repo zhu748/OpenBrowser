@@ -1,7 +1,7 @@
 'use strict';
 
 const { normalizeCoordinates } = require('../../shared/profile-values');
-const { normalizeUaOs, parseChromeVersion } = require('../user-agent');
+const { normalizeUaOs, parseChromeVersion, osChromeSupportViolation } = require('../user-agent');
 
 /**
  * Persona construction: buildFingerprint (deterministic profile ->
@@ -9,7 +9,7 @@ const { normalizeUaOs, parseChromeVersion } = require('../user-agent');
  * Extracted verbatim from the former automation/fingerprint.js.
  */
 
-const { pickPersona, fontsForOs, exclusiveFontsForOtherOs, getHostWebglLimits, isPersonaWebglCompatible, resolveCompatiblePersona, applyPersonaPerturbations, mobilePersona, supportsRuntimePersona, buildUaProfile, randomUaForSeed, buildAcceptLanguageHeader, parseOsFromUa, OS_PRESETS, canonicalBridgeToken, hashSeed, u32, mulberry32, WEBGL_PRESETS, webglPresetsForOs, WEBGL_PARAM_IDS, webglParameterOverrides, expectedClientHintPlatform, buildWebglFpPayload, desktopOs, resolveStabilityPolicy, createBatteryFromSeed, createMediaDevicesFromSeed, createSpeechVoicesFromSeed, createDeviceNameFromSeed, createLocalIpFromSeed, formatGeopositionValue, audioMarkFromSeed, clientRectMarkFromSeed } = require('./shared');
+const { pickPersona, fontsForOs, exclusiveFontsForOtherOs, getHostWebglLimits, isPersonaWebglCompatible, resolveCompatiblePersona, applyPersonaPerturbations, mobilePersona, supportsRuntimePersona, buildUaProfile, randomUaForSeed, buildAcceptLanguageHeader, parseOsFromUa, OS_PRESETS, canonicalBridgeToken, hashSeed, u32, mulberry32, WEBGL_PRESETS, webglPresetsForOs, WEBGL_PARAM_IDS, webglParameterOverrides, expectedClientHintPlatform, buildWebglFpPayload, desktopOs, resolveStabilityPolicy, createBatteryFromSeed, createMediaDevicesFromSeed, createSpeechVoicesFromSeed, createDeviceNameFromSeed, createLocalIpFromSeed, createLocalMdnsFromSeed, formatGeopositionValue, audioMarkFromSeed, clientRectMarkFromSeed } = require('./shared');
 
 
 /**
@@ -410,6 +410,15 @@ function buildFingerprint(profile = {}) {
       labels: mediaLabelTemplates,
       os: uaOs,
     });
+  // Device class, not a coin flip, decides the battery shape. Desktop-class personas
+  // (Mac mini / iMac / Studio, Linux towers, Windows desktops) have no battery hardware at
+  // all: getBattery still exists on Chrome desktops, but the reading is always the
+  // AC-powered full state. Laptop-class panels keep the seeded partial-charge draw. Screen
+  // size is the class proxy that is already part of the persona record.
+  const isLaptopClass = Boolean(mobileDevice)
+    || (devicePersona
+      ? Boolean(devicePersona.laptop)
+      : !(Number(screenWidth) >= 2200 && Number(screenHeight) >= 1200));
   const battery = batteryMode === 'real'
     ? null
     : (batteryMode === 'blocked'
@@ -417,9 +426,7 @@ function buildFingerprint(profile = {}) {
       : createBatteryFromSeed(
         stableIdentity + ':battery:' + seed.toString('hex').slice(0, 8),
         fpIn.battery || privacy.batterySnapshot || null,
-        // A seeded ~40% of desktop personas take the AC-power shape (no battery hardware):
-        // every desktop carrying a laptop-style partial charge is a fleet-level mismatch.
-        { acPowered: !mobileDevice && (u32(seed, 72) % 10) < 4 },
+        { acPowered: !isLaptopClass || (!mobileDevice && (u32(seed, 72) % 10) < 4) },
       ));
   const speechVoices = createSpeechVoicesFromSeed(
     stableIdentity + ':speech:' + seed.toString('hex').slice(0, 8),
@@ -445,6 +452,14 @@ function buildFingerprint(profile = {}) {
     || privacy.webrtcLocalIp
     || ''
   ).trim() || createLocalIpFromSeed(stableIdentity + ':webrtc-local:' + seed.toString('hex').slice(0, 8));
+  // Chrome's default mDNS privacy mode names the host candidate <uuid4>.local instead of a
+  // raw RFC1918 address; see createLocalMdnsFromSeed. Consumed by the candidate rewrite
+  // paths (document-webrtc proxy mode and the synthetic fallback).
+  const webrtcLocalMdns = String(
+    fpIn.webrtcLocalMdns
+    || privacy.webrtcLocalMdns
+    || ''
+  ).trim() || createLocalMdnsFromSeed(stableIdentity + ':webrtc-mdns:' + seed.toString('hex').slice(0, 8));
 
   // MAC 地址（对齐常见指纹浏览器的设备标识组）：MAC 本身不会暴露给网页 JS，
   // 但作为环境硬件标识记录在 init.json 与概要中；custom 模式由用户固定。
@@ -650,6 +665,7 @@ function buildFingerprint(profile = {}) {
     webrtcPolicy,
     webrtcAddress,
     webrtcLocalIp,
+    webrtcLocalMdns,
     deviceName,
     deviceNameMode,
     mac: {
@@ -749,6 +765,7 @@ function buildFingerprint(profile = {}) {
       battery,
       webrtcPolicy,
       webrtcLocalIp,
+    webrtcLocalMdns,
       deviceName,
       stability,
       userAgentMetadata: uaProfile.metadata,
@@ -760,6 +777,7 @@ function buildFingerprint(profile = {}) {
       geopositionText: formatGeopositionValue(geoposition),
       webrtcAddress,
       webrtcLocalIp,
+    webrtcLocalMdns,
       webrtc: webrtcMode,
     },
     // deterministic random for scripts
@@ -850,6 +868,25 @@ function fingerprintConsistencyIssues(fp) {
   if ((uaOs === 'macos' || uaOs === 'macos_arm') && (/Direct3D|D3D11|Mesa|RADV|SwiftShader|llvmpipe/i.test(renderer) || !/Apple|Intel|AMD/i.test(vendor + renderer))) {
     add('webgl-ua-mismatch', 'WebGL renderer does not look like a macOS renderer.');
   }
+  // CPU-architecture vs GPU: an x86 Client Hints architecture cannot ship an Apple M-series
+  // GPU and an arm hint cannot ship an Intel/AMD discrete part. The legacy mixed pool used
+  // to draw exactly that; this gate makes any future regression loud instead of silent.
+  const fpArchitecture = String(fp?.clientHints?.architecture || '').toLowerCase();
+  if (uaOs === 'macos' && /Apple M[0-9]/i.test(renderer) && fpArchitecture && fpArchitecture !== 'arm') {
+    add('webgl-ua-mismatch', 'An Apple M-series GPU requires an arm Client Hints architecture; this profile claims x86.', 'error');
+  }
+  if (uaOs === 'macos_arm' && /Intel|Radeon|AMD/i.test(renderer)) {
+    add('webgl-ua-mismatch', 'An arm macOS persona cannot ship an Intel/AMD GPU.', 'error');
+  }
+  // OS-version vs Chrome-major support window (Win7/8/8.1 → 109, macOS 10.15 → 138).
+  const fpChromeMajor = Number(parseChromeVersion(fp?.userAgent)?.major) || 0;
+  const fpOsVersion = String(fp?.osVersion || '').trim();
+  const osChromeViolation = fpOsVersion && fpChromeMajor
+    ? osChromeSupportViolation({ id: uaOs }, fpOsVersion, fpChromeMajor)
+    : null;
+  if (osChromeViolation) {
+    add('os-chrome-support-mismatch', `Chrome ${fpChromeMajor} never shipped on ${osChromeViolation.osId} ${osChromeViolation.osVersion} (last supporting major: ${osChromeViolation.maxChromeMajor}).`, 'warning');
+  }
   if (uaOs === 'linux' && (/Direct3D|D3D11|Apple M[0-9]/i.test(renderer) || !/Mesa|RADV|OpenGL/i.test(renderer))) {
     add('webgl-ua-mismatch', 'WebGL renderer does not look like a Linux renderer.');
   }
@@ -893,6 +930,14 @@ function fingerprintConsistencyIssues(fp) {
   const hwMemory = Number(fp?.deviceMemory) || 0;
   if (hwCores >= 12 && hwMemory > 0 && hwMemory < 8) {
     add('hardware-class-incoherent', '12+ logical cores paired with <8 GB deviceMemory is not a combination real hardware ships.', 'warning');
+  }
+  // Low-end CPU with a workstation-class GPU: real machines pair RTX 40xx / RDNA3-class
+  // cards with 8+ cores and 16+ GB. A 4-core/4 GB host driving an RTX 4080 is a pairing
+  // no OEM ships, and "cheap CPU + top GPU" is exactly what lazy pool draws produce.
+  const hwRenderer = String(fp?.webgl?.renderer || fp?.webglPreset?.renderer || '');
+  const workstationGpu = /RTX 40[7-9]|RTX 50|RX 79|Radeon Pro W[67]|A[0-9]000|MPS/mi.test(hwRenderer);
+  if (workstationGpu && hwCores > 0 && hwCores <= 4 && hwMemory > 0 && hwMemory <= 4) {
+    add('hardware-class-incoherent', 'A workstation-class GPU paired with 4 cores / <=4 GB deviceMemory is not a combination real hardware ships.', 'warning');
   }
   // WebGL and WebGPU read the same physical adapter, so a page that finds a disguised WebGL
   // renderer next to an untouched WebGPU adapter has two GPUs on one machine - a contradiction no

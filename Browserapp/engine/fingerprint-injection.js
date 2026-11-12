@@ -264,6 +264,12 @@ module.exports = {
         // Client Hints headers apply; the prefixer only records the request id.
         if (item.workerScriptPrefixDelivery && workerScriptPrefixer?.matches(event.params.request?.url)) {
           try { workerScriptPrefixer.track(event); } catch (_) {}
+        } else if (item.workerScriptPrefixDelivery && String(event.params.resourceType || '') === 'Other') {
+          // Extensionless worker scripts are resourceType "Other" at the request stage with
+          // no discriminating headers (no Sec-Fetch-Dest on worker loads); track them
+          // speculatively and let the response stage decide via MIME type. Non-worker
+          // "Other" responses (favicons, pings) are dropped there without a body read.
+          try { workerScriptPrefixer.track(event); } catch (_) {}
         }
         try { requestHeaderRewriter.handleEvent(event, connection); } catch (_) {}
         return;
@@ -400,6 +406,12 @@ module.exports = {
               { urlPattern: '*.js?*', requestStage: 'Response' },
               { urlPattern: '*.mjs', requestStage: 'Response' },
               { urlPattern: '*.mjs?*', requestStage: 'Response' },
+              // Extensionless worker endpoints (/api/worker, /sw?v=2) match none of the
+              // suffix patterns. Worker script loads are classified resourceType "Other",
+              // so a suffix-free "Other" response pattern still reaches them while leaving
+              // page scripts (resourceType "Script"), documents and stylesheets untouched.
+              // matches() then filters on Sec-Fetch-Dest before anything is rewritten.
+              { urlPattern: '*', requestStage: 'Response', resourceType: 'Other' },
             ],
           }, { sessionId, timeout });
         };
@@ -655,6 +667,9 @@ module.exports = {
             { urlPattern: '*.js?*', requestStage: 'Response' },
             { urlPattern: '*.mjs', requestStage: 'Response' },
             { urlPattern: '*.mjs?*', requestStage: 'Response' },
+            // Extensionless worker/SW scripts are resourceType "Other" (see the page-level
+            // pattern above); Sec-Fetch-Dest filtering happens in WorkerScriptPrefixer.
+            { urlPattern: '*', requestStage: 'Response', resourceType: 'Other' },
           ],
         }, { timeout: 8000 });
       }

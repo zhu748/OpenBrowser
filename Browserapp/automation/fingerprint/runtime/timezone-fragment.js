@@ -502,10 +502,15 @@ const AUDIO_CORE = `  // --- audio ---
         const audioClaimedOs = String(CFG.os || '').toLowerCase();
         const isWinAudio = audioClaimedOs.includes('win');
         const isLinuxAudio = audioClaimedOs.includes('linux');
+        const isMacAudio = audioClaimedOs.includes('mac');
 
-        if (isWinAudio || isLinuxAudio) {
-          const mockSampleRate = 48000;
-          const mockBaseLatency = 512 / 48000;
+        // Every claimed OS gets a native-looking default: Windows/Linux devices run
+        // 48 kHz (baseLatency 128/48000 — 512 samples is a Firefox-style block, not what
+        // Chrome's AudioDestination reports), while every Mac since 10.6 answers 44.1 kHz.
+        // macOS previously fell through unmocked, so a 48 kHz host leaked through verbatim.
+        if (isWinAudio || isLinuxAudio || isMacAudio) {
+          const mockSampleRate = isMacAudio ? 44100 : 48000;
+          const mockBaseLatency = 128 / mockSampleRate;
 
           for (const ctor of [targetWin.AudioContext, targetWin.webkitAudioContext].filter(Boolean)) {
             if (ctor && ctor.prototype) {

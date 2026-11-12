@@ -149,8 +149,8 @@ const GOLDEN = {
       "pixelDepth": 24,
       "devicePixelRatio": 2
     },
-    "webglVendor": "Google Inc. (Apple)",
-    "webglRenderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)",
+    "webglVendor": "Google Inc. (Intel)",
+    "webglRenderer": "ANGLE (Intel, ANGLE Metal Renderer: Intel(R) Iris(TM) Plus Graphics 655, Unspecified Version)",
     "languages": [
       "en-US",
       "en"

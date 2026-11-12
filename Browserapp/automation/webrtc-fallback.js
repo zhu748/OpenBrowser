@@ -20,6 +20,7 @@ function createWebRtcFallbackSource(options) {
   const hasLocalIp = opts.localIp != null && String(opts.localIp).trim() !== '';
   const publicIp = hasPublicIp ? String(opts.publicIp).trim() : null;
   const localIp = hasLocalIp ? String(opts.localIp).trim() : null;
+  const localMdns = opts.localMdns != null && String(opts.localMdns).trim() !== '' ? String(opts.localMdns).trim() : null;
   if (!publicIp && !localIp) return '';
   const bridgeToken = String(opts.bridgeToken || deriveBridgeToken({ publicIp: publicIp || '', localIp: localIp || '' }));
 
@@ -49,10 +50,13 @@ function createWebRtcFallbackSource(options) {
   const hasLocal = ${JSON.stringify(hasLocalIp)};
   const PUBLIC_IP = ${JSON.stringify(publicIp)};
   const LOCAL_IP = ${JSON.stringify(localIp)};
+  // Chrome's default mDNS privacy mode names the host candidate <uuid4>.local, not a raw
+  // RFC1918 address. The stats-side address keeps the private IP shape real stats carry.
+  const LOCAL_MDNS = ${JSON.stringify(localMdns || null)};
   // A side with no value contributes no source: its candidate/stat entries are skipped so no
   // shared-constant placeholder leaks into the synthetic surface.
   const hostCandidate = () => hasLocal
-    ? 'candidate:1 1 udp 2113937151 ' + LOCAL_IP + ' 55555 typ host generation 0 ufrag ' + 'abcd' + ' network-cost 999'
+    ? 'candidate:1 1 udp 2113937151 ' + (LOCAL_MDNS || LOCAL_IP) + ' 55555 typ host generation 0 ufrag ' + 'abcd' + ' network-cost 999'
     : null;
   const srflxCandidate = () => hasPublic
     ? 'candidate:2 1 udp 1685987071 ' + PUBLIC_IP + ' 55558 typ srflx raddr 0.0.0.0 rport 0 generation 0 ufrag ' + 'abcd' + ' network-cost 999'

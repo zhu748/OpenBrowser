@@ -726,6 +726,20 @@ function createLocalIpFromSeed(seedInput) {
   return `172.${16 + (u32(seed, 4) % 16)}.${u32(seed, 8) % 256}.${1 + (u32(seed, 12) % 254)}`;
 }
 
+/**
+ * Deterministic mDNS hostname for the host candidate. Chrome ≥74 hides local ICE host
+ * candidates behind an mDNS <uuid4>.local name by default; exposing a raw RFC1918 IPv4 as
+ * the host candidate is a one-read tell that the candidates were synthesized or the mDNS
+ * privacy feature was disabled. The hostname is a UUIDv4 shape derived from the same
+ * profile identity so it stays stable per profile.
+ */
+function createLocalMdnsFromSeed(seedInput) {
+  const seed = hashSeed(String(seedInput || 'local-mdns'));
+  const hex = seed.toString('hex'); // 64 hex chars
+  const p = (index, count) => hex.slice(index * 2, index * 2 + count * 2);
+  return `${p(0, 4)}-${p(4, 2)}-4${hex.slice(10, 13)}-${((parseInt(hex.slice(13, 14), 16) & 0x3) | 0x8).toString(16)}${hex.slice(14, 17)}-${p(8, 6)}.local`;
+}
+
 function formatGeopositionValue(geo) {
   if (!geo || typeof geo !== 'object') return null;
   const lat = Number(geo.latitude);
@@ -776,18 +790,24 @@ function desktopOs(os) {
   return ['windows', 'macos', 'macos_arm', 'linux'].includes(os) ? os : null;
 }
 
+// The legacy (non-persona) pools are split by CPU architecture exactly like the persona
+// pools: a mixed pool draws "Apple M2" renderers under an x86 Client Hints architecture
+// (and Iris under arm), a machine that never shipped. Detectors score that pair directly.
 const LEGACY_MACOS_WEBGL_PRESETS = Object.freeze([
+  { vendor: 'Google Inc. (Intel)', renderer: 'ANGLE (Intel, ANGLE Metal Renderer: Intel(R) Iris(TM) Plus Graphics 640, Unspecified Version)', gpu: { vendor: 'intel', architecture: 'gen9' } },
+  { vendor: 'Google Inc. (Intel)', renderer: 'ANGLE (Intel, ANGLE Metal Renderer: Intel(R) Iris(TM) Plus Graphics 655, Unspecified Version)', gpu: { vendor: 'intel', architecture: 'gen9' } },
+]);
+const LEGACY_MACOS_ARM_WEBGL_PRESETS = Object.freeze([
   { vendor: 'Google Inc. (Apple)', renderer: 'ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)', gpu: { vendor: 'apple', architecture: 'common-3' } },
   { vendor: 'Google Inc. (Apple)', renderer: 'ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)', gpu: { vendor: 'apple', architecture: 'common-3' } },
   { vendor: 'Google Inc. (Apple)', renderer: 'ANGLE (Apple, ANGLE Metal Renderer: Apple M2 Pro, Unspecified Version)', gpu: { vendor: 'apple', architecture: 'common-3' } },
-  { vendor: 'Google Inc. (Intel)', renderer: 'ANGLE (Intel, ANGLE Metal Renderer: Intel(R) Iris(TM) Plus Graphics 640, Unspecified Version)', gpu: { vendor: 'intel', architecture: 'gen9' } },
 ]);
 
 function webglPresetsForOs(os, options = {}) {
   let list = WEBGL_PRESETS.windows;
   // "macos" is the x86 Chrome build (Intel Mac); "macos_arm" is the Apple Silicon build.
   // Mixing the two pools is a contradiction detectors score directly.
-  if (options.legacy && (os === 'macos' || os === 'macos_arm')) list = LEGACY_MACOS_WEBGL_PRESETS;
+  if (options.legacy && (os === 'macos' || os === 'macos_arm')) list = os === 'macos_arm' ? LEGACY_MACOS_ARM_WEBGL_PRESETS : LEGACY_MACOS_WEBGL_PRESETS;
   else if (os === 'macos') list = WEBGL_PRESETS.macos_intel;
   else if (os === 'macos_arm') list = WEBGL_PRESETS.macos_apple;
   else if (os === 'linux') list = WEBGL_PRESETS.linux;
@@ -1087,6 +1107,8 @@ module.exports = {
   createSpeechVoicesFromSeed,
   createDeviceNameFromSeed,
   createLocalIpFromSeed,
+  createLocalMdnsFromSeed,
+  LEGACY_MACOS_ARM_WEBGL_PRESETS,
   formatGeopositionValue,
   audioMarkFromSeed,
   clientRectMarkFromSeed,

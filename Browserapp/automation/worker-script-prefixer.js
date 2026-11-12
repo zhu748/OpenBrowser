@@ -33,13 +33,42 @@ class WorkerScriptPrefixer {
     this.source = source || '';
   }
 
-  /** True when the paused request is a worker script this prefixer should rewrite. */
+  /**
+   * True when the paused request is a worker script this prefixer should rewrite.
+   *
+   * The request-stage view of a worker script load is nearly blind: no Sec-Fetch-Dest,
+   * no UA/sec-ch-ua headers (verified empirically — worker script requests expose only
+   * Accept/Referer), and possibly no .js suffix (extensionless endpoints like
+   * /api/worker). The URL suffix therefore only covers the common case; the
+   * extensionless case is discriminated at the RESPONSE stage by
+   * isExtensionlessWorkerResponse() (resourceType "Other" + JavaScript MIME).
+   */
   matches(url) {
     if (this.destroyed || !this.source) return false;
     const text = String(url || '');
     if (!/^https?:/i.test(text)) return false;
     const path = text.split('?')[0].split('#')[0];
     return WORKER_SCRIPT_PATTERN.test(path);
+  }
+
+  /**
+   * Response-stage discriminator for extensionless worker scripts: worker loads are
+   * resourceType "Other" (page scripts are "Script", documents "Document") and served
+   * with a JavaScript MIME type. Covers dedicated, shared and service workers alike.
+   */
+  isExtensionlessWorkerResponse(event) {
+    if (this.destroyed || !this.source) return false;
+    const params = event?.params || {};
+    const url = String(params.request?.url || '');
+    if (!/^https?:/i.test(url)) return false;
+    const path = url.split('?')[0].split('#')[0];
+    if (WORKER_SCRIPT_PATTERN.test(path)) return false; // already matched by suffix
+    if (String(params.resourceType || '') !== 'Other') return false;
+    if (params.responseStatusCode == null) return false;
+    const responseHeaders = params.responseHeaders;
+    if (!Array.isArray(responseHeaders)) return false;
+    const mime = String(responseHeaders.find((h) => String(h.name || '').toLowerCase() === 'content-type')?.value || '').toLowerCase();
+    return /(?:application|text)\/(?:x-)?(?:javascript|ecmascript)/.test(mime);
   }
 
   /** Track a request-stage pause without continuing it (the header rewriter continues). */
@@ -78,6 +107,10 @@ class WorkerScriptPrefixer {
     const key = event.sessionId ? `${event.sessionId}:${requestId}` : requestId;
     if (responseStatusCode == null) return false; // request stage is tracked via track()
     if (!this.requestStage.delete(key)) return false;
+    // Extensionless worker scripts were tracked speculatively at the request stage
+    // (no discriminator was visible there); the response stage now decides.
+    if (!WORKER_SCRIPT_PATTERN.test(url.split('?')[0].split('#')[0])
+      && !this.isExtensionlessWorkerResponse(event)) return false;
     if (this.inFlight.has(key)) return false;
     this.inFlight.add(key);
     try {
