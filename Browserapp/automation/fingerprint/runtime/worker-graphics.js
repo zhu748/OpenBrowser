@@ -30,6 +30,56 @@ module.exports = `  const canvasMark = Number(CFG.canvas?.mark) || 1;
       } catch (_) { return blob; }
     });
   }
+  // Worker measureText parity: the main thread jitters TextMetrics by a
+  // (origin, seed, font, text) hash (document-graphics F-5); without the same
+  // treatment here, a detector comparing main-thread canvas metrics with
+  // OffscreenCanvas metrics in a worker sees the jitter on one side only —
+  // and a cross-session comparison sees the raw host font stack on the
+  // worker side.
+  if (globalThis.OffscreenCanvasRenderingContext2D?.prototype?.measureText) {
+    const measureJitterCache = new Map();
+    const MEASURE_JITTER_CACHE_MAX = 512;
+    const jitterFor = (font, text) => {
+      const key = font + '\u0000' + text;
+      let cached = measureJitterCache.get(key);
+      if (!cached) {
+        const originStr = String(globalThis.location?.origin || '');
+        const seedStr = String(CFG.seed || CFG.canvas?.mark || '1');
+        const hashKey = originStr + ':' + seedStr + ':' + font + ':' + text;
+        let h = 0;
+        for (let i = 0; i < hashKey.length; i++) h = ((h << 5) - h + hashKey.charCodeAt(i)) | 0;
+        const jitter = ((h % 100) / 10000);
+        const widthJitter = (((h % 200) - 100) / 10000);
+        if (measureJitterCache.size >= MEASURE_JITTER_CACHE_MAX) {
+          const oldest = measureJitterCache.keys().next().value;
+          if (oldest !== undefined) measureJitterCache.delete(oldest);
+        }
+        cached = { jitter, widthJitter };
+        measureJitterCache.set(key, cached);
+      }
+      return cached;
+    };
+    replace(globalThis.OffscreenCanvasRenderingContext2D.prototype, 'measureText', (original) => function measureText(text, ...args) {
+      const tm = original.call(this, text, ...args);
+      try {
+        const s = String(text || '');
+        const { jitter, widthJitter } = jitterFor(String(this.font || ''), s);
+        return new Proxy(tm, {
+          get(target, prop) {
+            const val = Reflect.get(target, prop, target);
+            if (typeof val === 'number') {
+              if (prop === 'width') return val === 0 ? 0 : Math.max(0, val + widthJitter);
+              if (prop === 'actualBoundingBoxRight') return val + jitter;
+              if (prop === 'actualBoundingBoxLeft') return val - jitter;
+              if (prop === 'actualBoundingBoxAscent') return val + (jitter * 0.5);
+              if (prop === 'actualBoundingBoxDescent') return val - (jitter * 0.5);
+            }
+            return typeof val === 'function' ? val.bind(target) : val;
+          },
+        });
+      } catch (_) { return tm; }
+    });
+  }
   if (CFG.webgl?.mode === 'blocked') {
     replace(globalThis.OffscreenCanvas?.prototype, 'getContext', (original) => function(type, ...rest) {
       const value = String(type || '');

@@ -19,6 +19,7 @@ const documentWebrtc = require('./runtime/document-webrtc');
 const documentMedia = require('./runtime/document-media');
 const documentGpuStorage = require('./runtime/document-gpu-storage');
 const workerBootstrap = require('./runtime/worker-bootstrap');
+const workerConstructorPatch = require('./runtime/worker-constructor-patch');
 const workerTimezone = require('./runtime/worker-timezone');
 const workerGraphics = require('./runtime/worker-graphics');
 const workerGpuStorage = require('./runtime/worker-gpu-storage');
@@ -79,6 +80,12 @@ function buildDocumentRuntime(context) {
     drop(keepWebrtc) ?? documentWebrtc,
     drop(keepMedia) ?? documentMedia,
     documentGpuStorage,
+    // blob:/data: worker identity delivery: the Fetch prefixer only sees
+    // network-loaded scripts, so inline workers need a main-world constructor
+    // patch (see runtime/worker-constructor-patch.js).
+    context.workerSource
+      ? workerConstructorPatch({ workerSource: context.workerSource })
+      : '',
   ].join('');
 }
 

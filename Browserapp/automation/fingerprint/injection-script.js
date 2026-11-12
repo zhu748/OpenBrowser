@@ -106,7 +106,12 @@ function buildInjectionScript(fp, options = {}) {
     ? buildUaInjectionScript(fp.uaProfile)
     : (fp.userAgent ? buildUaInjectionScript(buildUaProfile({ userAgent: fp.userAgent, platform: fp.platform })) : '');
 
-  const mainScript = buildDocumentRuntime({ uaScript, json, bridgeToken });
+  // The document script also carries the worker injection source so the
+  // Worker-constructor patch can prefix blob:/data: workers (the Fetch
+  // prefixer only intercepts network-loaded scripts). buildWorkerInjectionScript
+  // is required lazily to avoid a require cycle with worker-injection.js.
+  const { buildWorkerInjectionScript } = require('./worker-injection');
+  const mainScript = buildDocumentRuntime({ uaScript, json, bridgeToken, workerSource: buildWorkerInjectionScript(fp) });
 
   let fontMetricsScript = '';
   let cssFontLocalGateScript = '';

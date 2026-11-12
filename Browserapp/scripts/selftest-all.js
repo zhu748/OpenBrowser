@@ -207,6 +207,7 @@ const SUITE = [
   // OPENBROWSER_CHROMIUM_BINARY / OPENBROWSER_FIREFOX_BINARY and a display-less
   // headless run; exit code 2 marks the browser as unavailable (reported as skip).
   ['selftest:fingerprintnative', 'automation/selftests/fingerprint-native-consistency-selftest.js', { nativeOnly: true }],
+  ['blobworker', 'automation/selftests/fingerprint-blob-worker-identity-gate.js', { nativeOnly: true }],
   ['selftest:firefoxfingerprint', 'automation/selftests/firefox-fingerprint-e2e-selftest.js', { nativeOnly: true }],
   ['pageentry', 'automation/selftests/fingerprint-page-entry-matrix-selftest.js', { nativeOnly: true }],
   ['nativereqheaders', 'automation/selftests/fingerprint-request-headers-selftest.js', { nativeOnly: true }],
