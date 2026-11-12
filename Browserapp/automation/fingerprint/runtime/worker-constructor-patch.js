@@ -163,6 +163,7 @@ module.exports = function workerConstructorPatch({ workerSource }) {
     + '  "use strict";\\n'
     + '  try {\\n'
     + '    importScripts(' + JSON.stringify(personaU) + ');\\n'
+    + '    try { Object.defineProperty(self, "__obPersonaUrl", { value: ' + JSON.stringify(personaU) + ', configurable: true, writable: true }); } catch (e) {}\\n'
     + '    var t = await (await fetch(' + JSON.stringify(originalUrl) + ')).text();\\n'
     + '    if (typeof self.__obImportSession === "function") {\\n'
     + '      self.__obImportSession("boot", t);\\n'
@@ -174,6 +175,7 @@ module.exports = function workerConstructorPatch({ workerSource }) {
     + '  "use strict";\\n'
     + '  try {\\n'
     + '    importScripts(' + JSON.stringify(personaU) + ');\\n'
+    + '    try { Object.defineProperty(self, "__obPersonaUrl", { value: ' + JSON.stringify(personaU) + ', configurable: true, writable: true }); } catch (e) {}\\n'
     + '    if (typeof self.__obImportSession === "function") {\\n'
     + '      self.__obImportSession("boot", ' + JSON.stringify(originalText) + ');\\n'
     + '    }\\n'
@@ -195,7 +197,11 @@ module.exports = function workerConstructorPatch({ workerSource }) {
     if (/^data:/.test(u)) {
       const text = dataUrlText(u);
       if (text !== null) {
-        return nativeCreateObjectURL.call(URL, new Blob([PERSONA_SOURCE + '\\n;\\n' + text],
+        // Footer publishes the persona URL so the nested-Worker patch inside
+        // this worker can serve grandchild workers without another copy of
+        // PERSONA_SOURCE (the literal is already in this closure).
+        const footer = ';try{Object.defineProperty(self,"__obPersonaUrl",{value:URL.createObjectURL(new Blob([' + JSON.stringify(PERSONA_SOURCE) + '],{type:"application/javascript"})),configurable:true,writable:true});}catch(e){}\\n';
+        return nativeCreateObjectURL.call(URL, new Blob([PERSONA_SOURCE + footer + '\\n;\\n' + text],
           { type: isModule ? 'text/javascript' : 'application/javascript' }));
       }
       return null;
@@ -205,7 +211,8 @@ module.exports = function workerConstructorPatch({ workerSource }) {
       const parts = blob ? blobParts.get(blob) : undefined;
       const text = parts ? partsToText(parts) : null;
       if (text !== null) {
-        return nativeCreateObjectURL.call(URL, new Blob([PERSONA_SOURCE + '\\n;\\n' + text],
+        const footer = ';try{Object.defineProperty(self,"__obPersonaUrl",{value:URL.createObjectURL(new Blob([' + JSON.stringify(PERSONA_SOURCE) + '],{type:"application/javascript"})),configurable:true,writable:true});}catch(e){}\\n';
+        return nativeCreateObjectURL.call(URL, new Blob([PERSONA_SOURCE + footer + '\\n;\\n' + text],
           { type: isModule ? 'text/javascript' : 'application/javascript' }));
       }
       if (isModule) return null;

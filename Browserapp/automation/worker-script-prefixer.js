@@ -92,7 +92,19 @@ class WorkerScriptPrefixer {
           { name: 'Content-Type', value: 'application/javascript' },
           { name: 'Cache-Control', value: 'no-store' },
         ],
-        body: Buffer.concat([Buffer.from(this.source, 'utf8'), Buffer.from('\n;\n', 'utf8'), original]).toString('base64'),
+        body: Buffer.concat([
+          Buffer.from(this.source, 'utf8'),
+          Buffer.from('\n;\n', 'utf8'),
+          original,
+          // Footer: publish the persona prefix URL for the worker-scope
+          // nested-Worker patch (nested workers of a network worker must not
+          // read the host platform). The prefix is embedded once per network
+          // worker body; the worker mints a blob URL from it on first run.
+          // Document-script font budgets are unaffected (this copy lives only
+          // in the fulfilled network response).
+          Buffer.from('\n;try{var __obB=' + JSON.stringify(this.source)
+            + ';Object.defineProperty(self,\'__obPersonaUrl\',{value:URL.createObjectURL(new Blob([__obB],{type:\'application/javascript\'})),configurable:true,writable:true});__obB=null;}catch(e){}\n', 'utf8'),
+        ]).toString('base64'),
       }, { sessionId: event.sessionId, timeout: this.commandTimeout });
       this.logger?.({ type: 'worker-script-prefixed', url });
       return true;

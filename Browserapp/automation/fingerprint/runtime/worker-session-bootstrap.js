@@ -87,4 +87,171 @@ module.exports = `  // --- worker session bootstrap hook ---
     try { Object.defineProperty(wrappedImportScripts, 'length', { value: 0 }); } catch (e) {}
     self.importScripts = wrappedImportScripts;
   }
+
+  // --- worker-scope Worker constructor patch (nested worker identity) ---
+  // A worker created from INSIDE another worker (new Worker in worker scope)
+  // never passes the document-side constructor patch, and the engine's
+  // worker-attach only applies a UA override — the nested worker's
+  // navigator.platform / hardwareConcurrency read the HOST. Mirror the
+  // document-side hybrid here:
+  //   - patched Blob records parts in a WeakMap (nothing on the instance)
+  //   - patched createObjectURL keeps a bounded url->Blob registry
+  //   - string-backed blob / data: workers are rewritten synchronously to
+  //     persona+text blobs; the persona prefix comes from self.__obPersonaUrl
+  //     (published by the bootstrap that launched THIS worker, or by the
+  //     engine prefixer footer for network workers) via a nested bootstrap
+  //     that importScripts it first — so the prefix text exists exactly once.
+  //   - binary-backed classic workers get the session bootstrap (persona
+  //     import, in-worker fetch of the original blob, hook re-run).
+  //   - module and network URLs pass through untouched.
+  const nestedNativeWorker = typeof Worker === 'function' ? Worker : null;
+  const nestedNativeBlob = nativeWorkerBlob;
+  const nestedBlobParts = (typeof WeakMap === 'function' && nestedNativeBlob) ? new WeakMap() : null;
+  if (nestedNativeWorker && nestedBlobParts) {
+    const NestedPatchedBlob = function Blob(parts, options) {
+      if (!(this instanceof NestedPatchedBlob)) throw new TypeError("Failed to construct 'Blob': Please use the 'new' operator");
+      const blob = parts === undefined ? new nestedNativeBlob() : new nestedNativeBlob(parts, options);
+      try {
+        if (Array.isArray(parts) && parts.length <= 64) nestedBlobParts.set(blob, parts);
+      } catch (e) { /* capture must never break Blob construction */ }
+      return blob;
+    };
+    try {
+      NestedPatchedBlob.prototype = nestedNativeBlob.prototype;
+      Object.defineProperty(NestedPatchedBlob, 'name', { value: 'Blob' });
+      Object.defineProperty(NestedPatchedBlob, 'length', { value: 0 });
+    } catch (e) {}
+    NestedPatchedBlob.toString = function () { return 'function Blob() { [native code] }'; };
+    try { Object.defineProperty(self, 'Blob', { value: NestedPatchedBlob, writable: true, configurable: true }); } catch (e) {}
+
+    const nestedUrlToBlob = new Map();
+    const NESTED_URL_LIMIT = 256;
+    if (nativeWorkerCreateObjectURL) {
+      const nestedNativeRevoke = (typeof URL === 'function' && URL.revokeObjectURL) ? URL.revokeObjectURL : null;
+      const nestedCreate = function createObjectURL(obj) {
+        const url = nativeWorkerCreateObjectURL(obj);
+        try {
+          if (obj && typeof obj === 'object' && typeof obj.size === 'number' && typeof obj.text === 'function') {
+            nestedUrlToBlob.set(url, obj);
+            if (nestedUrlToBlob.size > NESTED_URL_LIMIT) {
+              const oldest = nestedUrlToBlob.keys().next().value;
+              if (oldest !== undefined) nestedUrlToBlob.delete(oldest);
+            }
+          }
+        } catch (e) { /* tracking must never break URL creation */ }
+        return url;
+      };
+      try { Object.defineProperty(nestedCreate, 'name', { value: 'createObjectURL' }); } catch (e) {}
+      try { Object.defineProperty(nestedCreate, 'length', { value: 1 }); } catch (e) {}
+      nestedCreate.toString = function () { return 'function createObjectURL() { [native code] }'; };
+      try { Object.defineProperty(URL, 'createObjectURL', { value: nestedCreate, writable: true, configurable: true }); } catch (e) {}
+      if (nestedNativeRevoke) {
+        const nestedRevoke = function revokeObjectURL(u) {
+          nestedUrlToBlob.delete(String(u));
+          return nestedNativeRevoke.call(URL, u);
+        };
+        try { Object.defineProperty(nestedRevoke, 'name', { value: 'revokeObjectURL' }); } catch (e) {}
+        try { Object.defineProperty(nestedRevoke, 'length', { value: 1 }); } catch (e) {}
+        nestedRevoke.toString = function () { return 'function revokeObjectURL() { [native code] }'; };
+        try { Object.defineProperty(URL, 'revokeObjectURL', { value: nestedRevoke, writable: true, configurable: true }); } catch (e) {}
+      }
+    }
+
+    const nestedPartsToText = (parts) => {
+      try {
+        let text = '';
+        for (const part of parts) {
+          if (typeof part === 'string') text += part;
+          else if (part instanceof ArrayBuffer) text += String.fromCharCode.apply(null, new Uint8Array(part));
+          else if (ArrayBuffer.isView(part)) text += String.fromCharCode.apply(null, new Uint8Array(part.buffer, part.byteOffset, part.byteLength));
+          else return null;
+        }
+        return text;
+      } catch (e) { return null; }
+    };
+
+    const nestedDataUrlText = (url) => {
+      try {
+        const m = /^data:([^,]*),(.*)$/s.exec(String(url));
+        if (!m) return null;
+        const meta = m[1]; let payload = m[2];
+        if (/;base64/i.test(meta)) payload = atob(payload.replace(/-/g, '+').replace(/_/g, '/'));
+        else payload = decodeURIComponent(payload);
+        return payload;
+      } catch (e) { return null; }
+    };
+
+    // Nested bootstrap: import the persona prefix (via __obPersonaUrl), then
+    // run the original text through the session hook so mocks are live
+    // before any user code. Async IIFE — the nested worker's messages queue
+    // behind it, so ordering is preserved without blocking construction.
+    const nestedBootstrap = (personaU, originalUrl) => '(async function () {\\n'
+      + '  "use strict";\\n'
+      + '  try {\\n'
+      + '    importScripts(' + JSON.stringify(personaU) + ');\\n'
+      + '    var t = await (await fetch(' + JSON.stringify(originalUrl) + ')).text();\\n'
+      + '    if (typeof self.__obImportSession === "function") {\\n'
+      + '      self.__obImportSession("boot", t);\\n'
+      + '    }\\n'
+      + '  } catch (e) {}\\n'
+      + '})();';
+
+    // Nested classic bootstrap: importScripts the persona prefix, then re-run
+    // the original text through the session hook so mocks are live before
+    // any user code. Module workers are not rewritten (see nestedRewrite).
+    const nestedClassicBootstrapWithText = (personaU, text) => '(function () {\\n'
+      + '  "use strict";\\n'
+      + '  try {\\n'
+      + '    importScripts(' + JSON.stringify(personaU) + ');\\n'
+      + '    if (typeof self.__obImportSession === "function") {\\n'
+      + '      self.__obImportSession("boot", ' + JSON.stringify(text) + ');\\n'
+      + '    }\\n'
+      + '  } catch (e) {}\\n'
+      + '})();';
+
+    const nestedRewrite = (u, isModule) => {
+      const personaU = self.__obPersonaUrl;
+      if (!personaU || !nativeWorkerCreateObjectURL || !nestedNativeBlob) return null;
+      // Module workers are NEVER intercepted here: dynamic import() of a
+      // classic-shaped blob from a nested module worker deadlocks under the
+      // engine's worker-attach on Chromium 157 (verified empirically both
+      // top-level and nested). Nested module workers keep the engine's
+      // attach-level UA override only — same boundary as the document-side
+      // patch's module passthrough, and it is documented in the round-6/7
+      // reports rather than silently widened.
+      if (isModule) return null;
+      if (/^data:/.test(u)) {
+        const text = nestedDataUrlText(u);
+        if (text === null) return null;
+        return nativeWorkerCreateObjectURL(new nestedNativeBlob([nestedClassicBootstrapWithText(personaU, text)], { type: 'application/javascript' }));
+      }
+      if (/^blob:/.test(u)) {
+        const blob = nestedUrlToBlob.get(u);
+        const parts = blob ? nestedBlobParts.get(blob) : undefined;
+        const text = parts ? nestedPartsToText(parts) : null;
+        if (text !== null) {
+          return nativeWorkerCreateObjectURL(new nestedNativeBlob([nestedClassicBootstrapWithText(personaU, text)], { type: 'application/javascript' }));
+        }
+        return nativeWorkerCreateObjectURL(new nestedNativeBlob([nestedBootstrap(personaU, u)], { type: 'application/javascript' }));
+      }
+      return null;
+    };
+
+    const NestedPatchedWorker = function Worker(url, options) {
+      if (!(this instanceof NestedPatchedWorker)) throw new TypeError("Failed to construct 'Worker': Please use the 'new' operator");
+      let target = url;
+      try {
+        const replaced = nestedRewrite(String(url), Boolean(options && options.type === 'module'));
+        if (replaced) target = replaced;
+      } catch (e) { /* never break construction */ }
+      return new nestedNativeWorker(target, options);
+    };
+    try {
+      NestedPatchedWorker.prototype = Object.create(nestedNativeWorker.prototype);
+      NestedPatchedWorker.prototype.constructor = NestedPatchedWorker;
+      Object.defineProperty(NestedPatchedWorker, 'name', { value: 'Worker' });
+      Object.defineProperty(NestedPatchedWorker, 'length', { value: 1 });
+    } catch (e) {}
+    try { Object.defineProperty(self, 'Worker', { value: NestedPatchedWorker, writable: true, configurable: true }); } catch (e) {}
+  }
 `;

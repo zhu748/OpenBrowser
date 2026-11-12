@@ -34,6 +34,11 @@ const {
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Full-snapshot body shared by the nested-worker probes: same fields as
+// WORKER_SNAP, delivered without the outer wrapper. Single-quoted with the
+// embedded font name in double quotes (no escape games).
+const NESTED_SNAP_BODY = 'const out = { platform: navigator.platform, cores: navigator.hardwareConcurrency, ua: navigator.userAgent, tz: Intl.DateTimeFormat().resolvedOptions().timeZone }; try { const c = new OffscreenCanvas(200, 60); const ctx = c.getContext("2d"); ctx.font = "13px Arial"; ctx.fillText("probe", 4, 22); out.mtext = ctx.measureText("mmmmmmmmmmlli").width; } catch (e) { out.mtextErr = String(e); } postMessage(JSON.stringify(out));';
+
 const WORKER_SNAP = `(() => {
   const out = { platform: navigator.platform, cores: navigator.hardwareConcurrency,
     ua: navigator.userAgent, tz: Intl.DateTimeFormat().resolvedOptions().timeZone };
@@ -138,11 +143,33 @@ const SHARED_WORKER_SNAP = `(() => {
         } catch (e) { resolve(JSON.stringify({ err: String(e.message) })); }
       });
       const sharedWorker = await sharedRun();
+      // Nested classic worker (worker created INSIDE a blob worker): the
+      // document-side patch does not run in worker scopes, so the worker-scope
+      // nested patch must deliver the persona. Assembled via JSON literal
+      // operands — never spliced inside quotes.
+      const nestedInner = ${JSON.stringify(NESTED_SNAP_BODY)};
+      const nestedOuter = 'const NW = new Worker(URL.createObjectURL(new Blob([' + JSON.stringify(nestedInner) + '], { type: ' + JSON.stringify('application/javascript') + ' })));'
+        + 'NW.onmessage = (e) => postMessage(e.data);'
+        + 'NW.onerror = (e) => postMessage(JSON.stringify({ err: e.message }));'
+        + 'setTimeout(() => postMessage(JSON.stringify({ timeout: true })), 9000);';
+      const nestedWorker = await run(new Worker(URL.createObjectURL(new Blob([nestedOuter], { type: 'application/javascript' }))));
+      // Nested worker that importScripts an inner blob (three delivery levels:
+      // doc patch -> worker prefix -> worker-scope importScripts wrapper).
+      // The inner ISU script is minted in-page (its URL is a page constant);
+      // the middle worker embeds that URL as a JSON literal operand.
+      const isuScript = ${JSON.stringify(NESTED_SNAP_BODY)};
+      const isuUrl = URL.createObjectURL(new Blob([isuScript], { type: 'application/javascript' }));
+      const middleScript = 'var IC = ' + JSON.stringify(isuUrl) + '; importScripts(IC);';
+      const nestedIsOuter = 'const NW = new Worker(URL.createObjectURL(new Blob([' + JSON.stringify(middleScript) + '], { type: ' + JSON.stringify('application/javascript') + ' })));'
+        + 'NW.onmessage = (e) => postMessage(e.data);'
+        + 'NW.onerror = (e) => postMessage(JSON.stringify({ err: e.message }));'
+        + 'setTimeout(() => postMessage(JSON.stringify({ timeout: true })), 9000);';
+      const nestedImportScriptsWorker = await run(new Worker(URL.createObjectURL(new Blob([nestedIsOuter], { type: 'application/javascript' }))));
       const c = document.createElement('canvas');
       const ctx = c.getContext('2d');
       ctx.font = '13px "Arial"';
       const mainMtext = ctx.measureText('mmmmmmmmmmlli').width;
-      return JSON.stringify({ blobWorker, dataWorker, networkWorker, binaryBlobWorker, responseWorker, moduleWorker, importScriptsWorker: importScriptsWorker2, sharedWorker, mainMtext });
+      return JSON.stringify({ blobWorker, dataWorker, networkWorker, binaryBlobWorker, responseWorker, moduleWorker, importScriptsWorker: importScriptsWorker2, sharedWorker, nestedWorker, nestedImportScriptsWorker, mainMtext });
     })()`);
     assert.ok(probe && !probe.err, 'worker probes failed: ' + JSON.stringify(probe));
     const parsed = JSON.parse(probe);
@@ -154,13 +181,16 @@ const SHARED_WORKER_SNAP = `(() => {
     const moduleWorker = JSON.parse(parsed.moduleWorker);
     const importScriptsWorker = JSON.parse(parsed.importScriptsWorker);
     const sharedWorker = JSON.parse(parsed.sharedWorker);
+    const nestedWorker = JSON.parse(parsed.nestedWorker);
+    const nestedImportScriptsWorker = JSON.parse(parsed.nestedImportScriptsWorker);
     assert.ok(!blobWorker.timeout && !blobWorker.err, 'blob worker: ' + parsed.blobWorker);
     assert.ok(!dataWorker.timeout && !dataWorker.err, 'data worker: ' + parsed.dataWorker);
     assert.ok(!networkWorker.timeout && !networkWorker.err, 'network worker: ' + parsed.networkWorker);
 
     for (const [label, worker] of [['blob', blobWorker], ['data', dataWorker], ['network', networkWorker],
       ['binaryBlob', binaryBlobWorker], ['responseBlob', responseWorker], ['module', moduleWorker],
-      ['importScriptsNested', importScriptsWorker], ['shared', sharedWorker]]) {
+      ['importScriptsNested', importScriptsWorker], ['shared', sharedWorker],
+      ['nestedClassic', nestedWorker], ['nestedImportScripts', nestedImportScriptsWorker]]) {
       assert.equal(worker.platform, fingerprint.platform, label + ' worker platform');
       assert.equal(worker.cores, fingerprint.hardwareConcurrency, label + ' worker cores');
       assert.equal(worker.tz, fingerprint.timezone, label + ' worker timezone');
