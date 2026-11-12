@@ -42,7 +42,7 @@ const { platformPreflight } = require('./automation/platform-preflight');
 const { ensureStartPageServer } = require('./automation/start-page-server');
 const { killProcessTree } = require('./automation/protocol/cross-platform');
 const isolation = require('./automation/isolation');
-const { lockPath, releaseProfileLock, scanProcessesUsingProfileAsync, isPidAlive, auditIsolation, isSystemBrowserExecutable, validateDataRootIsolationSecure, assertProfileId, assertSafeProfileChild } = isolation;
+const { lockPath, isProfileLockOwner, releaseProfileLock, scanProcessesUsingProfileAsync, isPidAlive, auditIsolation, isSystemBrowserExecutable, validateDataRootIsolationSecure, assertProfileId, assertSafeProfileChild } = isolation;
 const { BrowserKernelManager } = require('./automation/browser-kernel');
 const STOP_ALL_ITEM_TIMEOUT_MS = process.platform === 'win32' ? 22000 : 12000;
 
@@ -796,6 +796,7 @@ class BrowserEngine {
    */
   cleanupStartupResources(resources = {}) {
     if (resources.cleanupPromise) return resources.cleanupPromise;
+    const ownsSharedResources = () => isProfileLockOwner(resources.root, resources.profileLock);
     const cleanup = async () => {
       const child = resources.child;
       const connection = resources.connection;
@@ -835,14 +836,15 @@ class BrowserEngine {
       }
       await resources.proxyForwarder?.close().catch(() => {});
       await resources.workerMitmProxy?.close().catch(() => {});
-      stopIpcStubForWindow(resources.kernelWindowName).catch(() => {});
+      if (ownsSharedResources()) await stopIpcStubForWindow(resources.kernelWindowName).catch(() => {});
       if (child && !exited) {
         // Startup owns the same profile lock safety rule as running cleanup: a
         // process that may still be alive must keep the lock as a tombstone.
         return { exited: false, lockReleased: false, cleanupBlocked: true };
       }
-      if (resources.root) {
-        await removeSingletonFiles(resources.root, { attempts: 6, delayMs: 40 });
+      // root is recorded before acquireProfileLock(). A rejected acquisition
+      // must not drain the browser that already owns that directory.
+      if (resources.root && ownsSharedResources()) {
         const helperDrain = await this.drainProfileHelpers(resources.root);
         if (!helperDrain.known || helperDrain.pids.length) {
           return {
@@ -852,6 +854,7 @@ class BrowserEngine {
             helperPids: helperDrain.pids,
           };
         }
+        if (ownsSharedResources()) await removeSingletonFiles(resources.root, { attempts: 6, delayMs: 40 });
       }
       if (resources.profileLock && resources.root) {
         const released = await releaseProfileLock(resources.root, resources.profileLock).catch(() => false);
@@ -1315,6 +1318,10 @@ class BrowserEngine {
       try {
         await Promise.race([
           (async () => {
+            if (item.engine === 'firefox' && item.bidiConnection) {
+              await item.bidiConnection.command('browser.close', {}, 5000);
+              return;
+            }
             try {
               await item.cdpConnection?.command?.('Browser.close', {}, { timeout: 5000 });
             } catch (_) {

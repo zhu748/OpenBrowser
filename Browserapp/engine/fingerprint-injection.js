@@ -21,9 +21,10 @@ const { getPlatformFontPayload } = require('../automation/query-local-font-blob-
 const { RequestHeaderRewriter, evaluateFingerprintDelivery } = require('../automation/request-header-rewriter');
 const { WorkerScriptPrefixer, TRANSIENT_ERRORS: TRANSIENT_PREFIX_ERRORS } = require('../automation/worker-script-prefixer');
 const crypto = require('crypto');
-const { buildWorkerDeliveryProbe } = require('../automation/fingerprint/worker-injection');
+const { ServiceWorkerScriptGate } = require('../automation/service-worker-script-gate');
 const { closePageFingerprintConnection } = require('./fingerprint-transport');
 const { FingerprintSession } = require('./fingerprint-session');
+const { applyNetworkConditions } = require('./network-conditions');
 
 // Stable identity of the document-start config. Two inject payloads built from the same
 // fingerprint serialise identically, so this is what decides whether a live tab still matches
@@ -88,9 +89,6 @@ module.exports = {
       logger: (details) => this.emit({ type: details?.type, id: item.profile?.id, url: details?.url }),
     });
     item.workerScriptPrefixer = workerScriptPrefixer;
-    // Kept for cached-SW delivery: sessions that start from the script cache get this
-    // source evaluated directly post-resume (see resumeTarget in onAttached).
-    item.workerFingerprintSource = source;
     const requestHeaderRewriter = new RequestHeaderRewriter({
       profile: item.profile,
       fingerprint,
@@ -192,6 +190,14 @@ module.exports = {
     };
 
     const onAttached = (event, connection) => {
+      if (event?.method === 'Debugger.scriptParsed') {
+        sessionStates.get(event.sessionId)?.serviceWorkerGate?.recordScript(event.params || {});
+        return;
+      }
+      if (event?.method === 'Debugger.paused') {
+        const gate = sessionStates.get(event.sessionId)?.serviceWorkerGate;
+        if (gate) return gate.handlePaused(event.params || {});
+      }
       // Font payload lazy-load host bridge (consumer side)
       if (event?.method === 'Runtime.bindingCalled') {
         const bridge = item?.fontBlobBridge || item?.fingerprint?.fontBlobBridge || fingerprint?.fontBlobBridge;
@@ -253,6 +259,8 @@ module.exports = {
           return;
         }
       }
+      // Failed loads may never produce a response-stage pause.
+      if (event?.method === 'Network.loadingFailed') workerScriptPrefixer.cleanupFailedRequest(event);
       // Fetch.requestPaused at Request stage (responseStatusCode == null) is handled by
       // requestHeaderRewriter to guarantee that main-frame navigations, subresources, and workers
       // carry persona User-Agent, Client Hints (sec-ch-ua*), and Accept-Language without host leaks.
@@ -275,10 +283,14 @@ module.exports = {
       }
 
       // Response-stage pause of a tracked worker script: fulfill with the injected prefix.
-      if (event?.method === 'Fetch.requestPaused' && event.params?.requestId && event.params?.responseStatusCode != null
+      if (event?.method === 'Fetch.requestPaused' && event.params?.requestId
+        && (event.params?.responseStatusCode != null || event.params?.responseErrorReason != null)
         && item.workerScriptPrefixDelivery && workerScriptPrefixer?.hasTracked(event)) {
         workerScriptPrefixer.handlePaused(event, connection).catch((error) => {
           if (!TRANSIENT_PREFIX_ERRORS.test(String(error?.message))) report(error, { type: 'page' });
+          if (error.fatal) this.handleBrowserGone(item.profile.id, item, 'worker-response-failed', {
+            expected: false, error: error.message, kill: true, waitForExit: true,
+          }).catch(() => {});
         });
         return;
       }
@@ -290,6 +302,7 @@ module.exports = {
       // Clean up in-flight requests when a target session detaches or closes
       if (event?.method === 'Target.detachedFromTarget') {
         const detachedSessionId = event.params?.sessionId;
+        item.networkConditionsSessions?.delete(detachedSessionId);
         const detachedTargetId = event.params?.targetId || (detachedSessionId ? workerSessionToTargetId.get(detachedSessionId) : null);
         const detachedState = sessionStates.get(detachedSessionId);
         detachedState?.cancel('detached');
@@ -309,6 +322,7 @@ module.exports = {
           workerSessionToTargetId.delete(detachedSessionId);
           targetSetup.delete(detachedSessionId);
           try { requestHeaderRewriter.cleanupSession(detachedSessionId); } catch (_) {}
+          workerScriptPrefixer.cleanupSession(detachedSessionId);
           try { fontResponseRewriter.cleanupSession?.(detachedSessionId); } catch (_) {}
         }
         if (detachedState?.ready) {
@@ -351,6 +365,28 @@ module.exports = {
       if (!sessionId) return;
       if (targetSetup.has(sessionId)) return targetSetup.get(sessionId);
       const targetId = targetInfo.targetId;
+      const workerOwner = item.workerScriptPrefixDelivery && targetInfo.type === 'service_worker' && targetId
+        ? [...sessionStates.values()].find(other => other.targetId === targetId && !other.reason) : null;
+      if (workerOwner?.serviceWorkerGate) {
+        // Browser and page auto-attach both announce the same SW. A second
+        // Debugger agent can pause the first agent's delivery commands, or
+        // resume its breakpoint. Keep exactly one pre-script delivery owner.
+        // Detaching an extra startup session too early can itself release the
+        // worker. Wait until the owner's ordered breakpoint commands are sent,
+        // release this session's startup latch, then detach after verification.
+        return (async () => {
+          await workerOwner.run(() => workerOwner.serviceWorkerGate.started);
+          await connection.command('Runtime.runIfWaitingForDebugger', {}, { sessionId, timeout: 3000 });
+          await workerOwner.run(() => workerOwner.serviceWorkerGate.completion);
+          await connection.command('Target.detachFromTarget', { sessionId }, { sessionId: event.sessionId, timeout: 3000 });
+        })().catch(error => {
+          if (workerOwner.reason || item.stopping || item.cleanedUp || /No session with given id|Session closed|Target closed/i.test(error.message)) return;
+          report(error, targetInfo);
+          return this.handleBrowserGone(item.profile.id, item, 'duplicate-worker-session', {
+            expected: false, error: error.message, kill: true, waitForExit: true,
+          });
+        });
+      }
       if (targetId) workerSessionToTargetId.set(sessionId, targetId);
       const isInitial = Boolean(targetId && pendingInitialTargets.has(targetId));
       const state = new FingerprintSession({ sessionId, targetId, item, connection });
@@ -369,43 +405,15 @@ module.exports = {
           state.assertActive();
           if (!pausedTargetNeedsResume) return;
           pausedTargetNeedsResume = false;
-          await state.command('Runtime.runIfWaitingForDebugger', {}, { sessionId, timeout: 3000 });
+          if (state.serviceWorkerGate) {
+            await state.serviceWorkerGate.resume();
+            this.emit({ type: 'service-worker-first-script-injected', id: item.profile?.id, targetId, sessionId });
+          }
+          else await state.command('Runtime.runIfWaitingForDebugger', {}, { sessionId, timeout: 3000 });
           // Chrome 157: Network.enable on a PAUSED service worker times out; it works
           // right after the pause is released. Deferred SW network setup lands here.
-          // Cached SW delivery also lands here: the first evaluate of a nontrivial
-          // script on a paused worker deadlocks on Chromium 157 (the whole reason the
-          // prefixer exists), so the direct evaluate runs AFTER runIfWaitingForDebugger.
-          const cachedSwSession = item.pendingCachedSwSessions?.delete(sessionId);
-          if (cachedSwSession && item.workerFingerprintSource) {
-            // Fire-and-forget: an SW is mid-install/activate at this moment (its event
-            // handlers own the thread), so a awaited evaluate here queues behind them and
-            // can hold resumeTarget — and the whole attach pipeline — for seconds.
-            // Scheduled off the critical path with a small delay for the install/activate
-            // handlers to drain; failures (stopped/replaced SW) are events, not errors.
-            const swUrl = String(targetInfo.url || '');
-            const swSource = item.workerFingerprintSource;
-            const profileId = item.profile?.id;
-            const delayedSwInject = setTimeout(() => {
-              (async () => {
-                let needsSource = true;
-                try {
-                  const probe = await state.command('Runtime.evaluate', { expression: buildWorkerDeliveryProbe(fingerprint) }, { sessionId, timeout: 1500 });
-                  needsSource = !(probe && probe.result && probe.result.value === true);
-                } catch (_) { /* stopped or short-lived SW: try the source anyway */ }
-                if (!needsSource) return;
-                const evaluation = await state.command('Runtime.evaluate', { expression: swSource }, { sessionId, timeout: 4000 });
-                if (evaluation?.exceptionDetails) {
-                  this.emit({ type: 'service-worker-cached-evaluate-failed', id: profileId, message: evaluation.exceptionDetails.text || 'exception' });
-                } else {
-                  this.emit({ type: 'service-worker-cached-injected', id: profileId, url: swUrl });
-                }
-              })().catch((error) => {
-                this.emit({ type: 'service-worker-cached-evaluate-failed', id: profileId, message: error.message });
-              });
-            }, 400);
-            delayedSwInject.unref?.();
-          }
-          if (item.serviceWorkerNetSetupSessions?.delete(sessionId)) {
+          if (state.serviceWorkerNeedsNetwork) {
+            state.serviceWorkerNeedsNetwork = false;
             try {
               await state.command('Network.enable', {}, { sessionId, timeout: 3000 });
               const workerUa = requestHeaderRewriter.enabled ? requestHeaderRewriter.persona : null;
@@ -455,6 +463,9 @@ module.exports = {
               autoAttach: true,
               waitForDebuggerOnStart: true,
               flatten: true,
+              // SWs belong to the browser auto-attach owner. Exclude them here
+              // before creation, rather than racing two startup/debugger agents.
+              ...(item.workerScriptPrefixDelivery ? { filter: [{ type: 'service_worker', exclude: true }, {}] } : {}),
             }, { sessionId });
             if (isInitial) {
               // Startup barrier targets are known-ready and must be sanitized before first paint.
@@ -484,20 +495,13 @@ module.exports = {
             // (Chromium >= 143). See the long comment there for the deadlock rationale.
             if (item.workerScriptPrefixDelivery) {
               if (targetInfo.type === 'service_worker') {
+                if (!waitingForDebugger) throw new Error('Cannot verify first-script fingerprint delivery on an already running Service Worker');
+                state.serviceWorkerGate = new ServiceWorkerScriptGate(state, fingerprint);
                 // SW scripts load through the browser process: the browser-level Fetch
                 // domain (armed in startWorkerFingerprintInjection) prefixes them.
                 // Network setup only works AFTER the pause is released on Chrome 157,
                 // so defer it to resumeTarget().
-                item.serviceWorkerNetSetupSessions = item.serviceWorkerNetSetupSessions || new Set();
-                item.serviceWorkerNetSetupSessions.add(sessionId);
-                // A cached SW starts from the script cache with no network request, so
-                // the prefixer never fires for its URL and the SW scope would read host
-                // values (the last P0 delivery hole from the audit). Track the session
-                // for a post-resume evaluate; the fulfilledUrls dedup below keeps a
-                // network-fetched SW (already prefixed in its script bytes) from being
-                // evaluated twice.
-                item.pendingCachedSwSessions = item.pendingCachedSwSessions || new Set();
-                item.pendingCachedSwSessions.add(sessionId);
+                state.serviceWorkerNeedsNetwork = true;
               } else {
                 // Dedicated/Shared workers: script prefixing (page-level Fetch) carries
                 // the JS mocks; the network-layer override below keeps their fetch()
@@ -614,9 +618,6 @@ module.exports = {
         try { requestHeaderRewriter.destroy(); } catch (_) {}
         try { fontResponseRewriter.destroy?.(); } catch (_) {}
         try { workerScriptPrefixer.destroy(); } catch (_) {}
-        item.pendingCachedSwSessions?.clear();
-        item.serviceWorkerNetSetupSessions?.clear();
-        item.workerFingerprintSource = null;
         if (!barrierSettled) {
           settleBarrier(new Error(`CDP connection closed before initial target barrier resolved: ${error?.message || error}`));
         }
@@ -644,9 +645,6 @@ module.exports = {
       try { requestHeaderRewriter.destroy(); } catch (_) {}
       try { fontResponseRewriter.destroy?.(); } catch (_) {}
       try { workerScriptPrefixer.destroy(); } catch (_) {}
-      item.pendingCachedSwSessions?.clear();
-      item.serviceWorkerNetSetupSessions?.clear();
-      item.workerFingerprintSource = null;
       if (!barrierSettled) {
         settleBarrier(new Error('CDP connection closed before initial target barrier resolved'));
       }
@@ -781,18 +779,13 @@ module.exports = {
         throw err;
       }
     };
-    // Roxy 对齐：网络条件模拟（offline/latency/throughput），仅顶层页面会话，失败静默
+    // Apply before resume. A configured offline/throttle policy must succeed.
     const netSim = enriched.privacy?.networkConditions;
-    if (netSim && !isSubframe && (netSim.offline || Number.isFinite(Number(netSim.latency)) || Number.isFinite(Number(netSim.downloadThroughput)) || Number.isFinite(Number(netSim.uploadThroughput)))) {
-      try {
-        await sessionCall('Network.enable', {}).catch(() => {});
-        await sessionCall('Network.emulateNetworkConditions', {
-          offline: Boolean(netSim.offline),
-          latency: Math.max(0, Number(netSim.latency) || 0),
-          downloadThroughput: Number.isFinite(Number(netSim.downloadThroughput)) ? Number(netSim.downloadThroughput) : -1,
-          uploadThroughput: Number.isFinite(Number(netSim.uploadThroughput)) ? Number(netSim.uploadThroughput) : -1,
-        }, 5000).catch(() => {});
-      } catch (_) {}
+    if (!isSubframe && (netSim || item.networkConditionsSessions?.has(sessionId))) {
+      await applyNetworkConditions(sessionCall, netSim);
+      item.networkConditionsSessions ||= new Set();
+      if (netSim) item.networkConditionsSessions.add(sessionId);
+      else item.networkConditionsSessions.delete(sessionId);
     }
     const fontBlobBridge = injectFp?.fontBlobBridge || baseFp?.fontBlobBridge || item?.fontBlobBridge || item?.fingerprint?.fontBlobBridge;
     if (fontBlobBridge?.channelName) {

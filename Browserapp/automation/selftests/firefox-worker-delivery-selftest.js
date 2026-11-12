@@ -37,11 +37,23 @@ const { buildWorkerInjectionScript } = require('../fingerprint');
 const { FirefoxWorkerMitmProxy } = require('../firefox-worker-mitm-proxy');
 const { installFirefoxCa } = require('../firefox-trust-installer');
 
-const delay = (ms) => new Promise((r) => setTimeout(r, ms));
-const SNAP = "({ua:navigator.userAgent,platform:navigator.platform,cores:navigator.hardwareConcurrency,languages:String(navigator.languages),tz:Intl.DateTimeFormat().resolvedOptions().timeZone})";
-const dedicatedSrc = `const first=${SNAP};postMessage(JSON.stringify(first));`;
-const sharedSrc = `const first=${SNAP};self.onconnect=(e)=>{e.ports[0].onmessage=()=>e.ports[0].postMessage(JSON.stringify(first));};`;
-const serviceSrc = `const first=${SNAP};self.addEventListener('install',e=>self.skipWaiting());self.addEventListener('activate',e=>self.clients.claim());self.addEventListener('message',e=>e.ports[0].postMessage(JSON.stringify(first)));`;
+async function stopChild(child) {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Firefox test process did not exit')), 5000);
+    child.once('close', () => { clearTimeout(timer); resolve(); });
+    child.kill('SIGKILL');
+  });
+}
+async function navigate(connection, context, url) {
+  await connection.command('browsingContext.navigate', { context, url, wait: 'complete' }, 20000);
+  assert.equal(await evaluateBidi(connection, { context }, 'document.documentURI'), url,
+    'test origin must finish loading before a relative Worker URL is used');
+}
+const SNAP = "({ua:navigator.userAgent,platform:navigator.platform,cores:navigator.hardwareConcurrency,languages:String(navigator.languages),tz:Intl.DateTimeFormat().resolvedOptions().timeZone,strict:(function(){return this})()===undefined})";
+const dedicatedSrc = `"use strict";const first=${SNAP};postMessage(JSON.stringify(first));`;
+const sharedSrc = `"use strict";const first=${SNAP};self.onconnect=(e)=>{e.ports[0].onmessage=()=>e.ports[0].postMessage(JSON.stringify(first));};`;
+const serviceSrc = `"use strict";const first=${SNAP};self.addEventListener('install',e=>self.skipWaiting());self.addEventListener('activate',e=>self.clients.claim());self.addEventListener('message',e=>e.ports[0].postMessage(JSON.stringify(first)));`;
 
 (async () => {
   const binary = process.env.OPENBROWSER_FIREFOX_BINARY;
@@ -79,8 +91,7 @@ const serviceSrc = `const first=${SNAP};self.addEventListener('install',e=>self.
     await conn.open();
     await conn.command('session.new', { capabilities: { alwaysMatch: {} } });
     const ctx = await conn.command('browsingContext.create', { url: 'about:blank', type: 'tab' });
-    await evaluateBidi(conn, { context: ctx.context }, `location.href = 'http://127.0.0.1:' + ${server.address().port} + '/'; true`);
-    await delay(1500);
+    await navigate(conn, ctx.context, 'http://127.0.0.1:' + server.address().port + '/');
     const raw = await evaluateBidi(conn, { context: ctx.context }, `(async () => {
       const out = {};
       out.dedicated = await new Promise((resolve) => {
@@ -117,6 +128,7 @@ const serviceSrc = `const first=${SNAP};self.addEventListener('install',e=>self.
       assert.equal(w.platform, fp.platform, kind + ' worker platform (via prefs)');
       assert.equal(w.languages, fp.languages.join(','), kind + ' worker languages');
       assert.equal(w.tz, fp.timezone, kind + ' worker timezone');
+      assert.equal(w.strict, true, kind + ' worker strict semantics');
       console.log('PASS ff-worker ' + kind + ' first read: UA/platform/languages/timezone are persona');
       // JS-patch-only field: record the documented gap. The assertion is on the
       // DELIVERED capability set, never relaxed to pretend coverage.
@@ -131,8 +143,7 @@ const serviceSrc = `const first=${SNAP};self.addEventListener('install',e=>self.
 
     // ---- PHASE 2: proxy-delivered JS-only fields over HTTPS ----
     conn.close();
-    child.kill('SIGKILL');
-    await delay(800);
+    await stopChild(child);
 
     const httpsTmp = await fs.mkdtemp(path.join(os.tmpdir(), 'ob-ff-mitm-leaf-'));
     const keyPath = path.join(httpsTmp, 'k.pem');
@@ -140,7 +151,7 @@ const serviceSrc = `const first=${SNAP};self.addEventListener('install',e=>self.
     execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-keyout', keyPath, '-out', certPath,
       '-days', '2', '-nodes', '-subj', '/CN=127.0.0.1',
       '-addext', 'subjectAltName=IP:127.0.0.1,DNS:localhost'], { stdio: ['ignore', 'ignore', 'ignore'], timeout: 15000 });
-    const httpsWorkerBody = `const first=${SNAP};postMessage(JSON.stringify(first));`;
+    const httpsWorkerBody = '#!network-worker\n' + dedicatedSrc;
     const httpsServer = https.createServer({
       key: await fs.readFile(keyPath),
       cert: await fs.readFile(certPath),
@@ -193,8 +204,7 @@ const serviceSrc = `const first=${SNAP};self.addEventListener('install',e=>self.
       await conn2.open();
       await conn2.command('session.new', { capabilities: { alwaysMatch: {} } });
       const ctx2 = await conn2.command('browsingContext.create', { url: 'about:blank', type: 'tab' });
-      await evaluateBidi(conn2, { context: ctx2.context }, `location.href = 'https://localhost:' + ${httpsPort} + '/'; true`);
-      await delay(2500);
+      await navigate(conn2, ctx2.context, 'https://localhost:' + httpsPort + '/');
       const mitmProbe = await evaluateBidi(conn2, { context: ctx2.context }, `(async () => {
         return await new Promise((resolve) => {
           const w = new Worker('/worker.js');
@@ -205,14 +215,14 @@ const serviceSrc = `const first=${SNAP};self.addEventListener('install',e=>self.
       })()`);
       assert.ok(mitmProbe && !mitmProbe.err && !mitmProbe.timeout, 'HTTPS worker through the MITM proxy failed: ' + JSON.stringify(mitmProbe));
       assert.equal(mitmProbe.ua, fp.userAgent, 'MITM worker UA');
+      assert.equal(mitmProbe.strict, true, 'MITM worker strict semantics');
       assert.equal(mitmProbe.platform, fp.platform, 'MITM worker platform');
       assert.equal(mitmProbe.tz, fp.timezone, 'MITM worker timezone');
       assert.equal(mitmProbe.cores, fp.hardwareConcurrency,
         'MITM worker hardwareConcurrency must be the persona value (this is the JS-only field the proxy delivers)');
       console.log('PASS ff-worker dedicated first read over HTTPS via MITM proxy: JS-only fields (hardwareConcurrency) are persona');
       conn2.close();
-      child2.kill('SIGKILL');
-      await delay(800);
+      await stopChild(child2);
 
       // ---- PHASE 3: same delivery through a chained AUTHENTICATED bridge ----
       // The engine chains the MITM forwarder through the authenticated proxy
@@ -292,8 +302,7 @@ const serviceSrc = `const first=${SNAP};self.addEventListener('install',e=>self.
         await conn3.open();
         await conn3.command('session.new', { capabilities: { alwaysMatch: {} } });
         const ctx3 = await conn3.command('browsingContext.create', { url: 'about:blank', type: 'tab' });
-        await evaluateBidi(conn3, { context: ctx3.context }, `location.href = 'https://localhost:' + ${httpsPort} + '/'; true`);
-        await delay(2500);
+        await navigate(conn3, ctx3.context, 'https://localhost:' + httpsPort + '/');
         const chainProbe = await evaluateBidi(conn3, { context: ctx3.context }, `(async () => {
           return await new Promise((resolve) => {
             const w = new Worker('/worker.js');
@@ -305,24 +314,25 @@ const serviceSrc = `const first=${SNAP};self.addEventListener('install',e=>self.
         assert.ok(chainProbe && !chainProbe.err && !chainProbe.timeout, 'HTTPS worker through the chained authenticated bridge failed: ' + JSON.stringify(chainProbe));
         assert.equal(chainProbe.cores, fp.hardwareConcurrency, 'chained worker hardwareConcurrency must be the persona value');
         assert.equal(chainProbe.ua, fp.userAgent, 'chained worker UA');
+        assert.equal(chainProbe.strict, true, 'chained worker strict semantics');
         console.log('PASS ff-worker first read over HTTPS via chained authenticated bridge: JS-only fields are persona behind a real proxy too');
         conn3.close();
       } finally {
-        child3.kill('SIGKILL');
+        await stopChild(child3);
         await chained.close();
         authBridge.close();
         await fs.rm(chainRoot, { recursive: true, force: true }).catch(() => {});
       }
       console.log('firefox-worker-delivery-selftest: OK (prefs fields + proxy-delivered JS-only fields [direct + chained-auth] verified on Firefox ' + version + ')');
     } finally {
-      child2.kill('SIGKILL');
+      await stopChild(child2);
       await proxy.close();
       httpsServer.close();
       await fs.rm(mitmRoot, { recursive: true, force: true }).catch(() => {});
       await fs.rm(httpsTmp, { recursive: true, force: true }).catch(() => {});
     }
   } finally {
-    child.kill('SIGKILL');
+    await stopChild(child);
     server.closeAllConnections?.();
     server.close();
     await fs.rm(root, { recursive: true, force: true }).catch(() => {});

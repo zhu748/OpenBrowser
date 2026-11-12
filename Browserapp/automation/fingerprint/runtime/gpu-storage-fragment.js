@@ -1,4 +1,5 @@
 'use strict';
+const storageEstimate = require('./storage-estimate-fragment');
 
 // M-1/M-2: document-gpu-storage.js and worker-gpu-storage.js were ~450-line
 // verbatim twins drifting apart quote-style-first (128 divergent lines at the
@@ -10,15 +11,14 @@
 //   - guardedNavigator: document requires navigator.gpu before touching
 //     anything (stock parity); the worker realm resolves the prototype from
 //     the instance itself
-//   - subWindowHook: document propagates the StorageManager patch into
-//     same-origin sub-windows via subWindowSyncHooks; workers have no
-//     sub-windows, so the hook body is elided
+// Storage estimate behavior is a separate shared fragment; it registers its
+// same-origin sub-window hook only when the realm exposes that hook registry.
 // Semantics unified on the more correct variant of each pair: the blocked
 // requestAdapter re-raises TypeError (a genuine user error must not be
 // swallowed into "no adapter"), and adapter-info prototype resolution falls
 // back to the live instance's prototype when the global constructor is not
 // exposed in the realm.
-function gpuStorageFragment({ realm, replaceHelper, guardedNavigator, subWindowHook, iifeCloser }) {
+function gpuStorageFragment({ realm, replaceHelper, guardedNavigator, iifeCloser }) {
   const replace = replaceHelper;
   const navigatorGuard = guardedNavigator
     ? `  if (!isIosPersona && CFG.webgpu && typeof navigator !== "undefined" && navigator.gpu) {`
@@ -27,7 +27,6 @@ function gpuStorageFragment({ realm, replaceHelper, guardedNavigator, subWindowH
     ? `      const gpuProto = (typeof GPU !== 'undefined' && GPU.prototype) || (navigator.gpu && Object.getPrototypeOf(navigator.gpu));`
     : `      const navGpu = (() => { try { return navigator.gpu || null; } catch (_) { return null; } })();
       const gpuProto = (typeof GPU !== 'undefined' && GPU.prototype) || (navGpu && Object.getPrototypeOf(navGpu));`;
-  const subWindow = subWindowHook || '';
   return `  // --- WebGPU adapter info (${realm}) ---
   // Modes mirror the profile contract:
   //   real    : do not touch the kernel's adapter or its info
@@ -440,40 +439,7 @@ ${requestTargetDecl}
     } catch (_) {}
   }
 
-  // --- StorageManager.prototype.estimate quota spoofing (N3) ---
-  if (typeof StorageManager !== 'undefined' && StorageManager.prototype && StorageManager.prototype.estimate) {
-    // Quota must match the patch on the other side of the realm boundary (injection-script.js):
-    // reading the flags from the IIFE-top declarations keeps worker and page on the same
-    // personaQuota.
-    try {
-      const origEstimate = StorageManager.prototype.estimate;
-      const isMob = Boolean(CFG.mobile || isIosPersona || isAndroidPersona);
-      const mem = Number(CFG.deviceMemory) || 8;
-      const personaQuota = isMob
-        ? (mem >= 8 ? 16106127360 : 10737418240)
-        : (mem >= 8 ? 64424509440 : 32212254720);
-
-      const patchedEstimate = nativeLike(function estimate() {
-        if (!this || !(this instanceof StorageManager)) {
-          return Promise.reject(new TypeError("Illegal invocation"));
-        }
-        return origEstimate.apply(this, arguments).then((res) => {
-          return {
-            quota: personaQuota,
-            usage: res ? (res.usage || 0) : 0,
-            usageDetails: res ? (res.usageDetails || {}) : {},
-          };
-        });
-      }, origEstimate, "estimate", 0);
-      Object.defineProperty(StorageManager.prototype, "estimate", {
-        configurable: true,
-        enumerable: true,
-        writable: true,
-        value: patchedEstimate,
-      });
-${subWindow}
-    } catch (_) {}
-  }
+${storageEstimate}
 ${iifeCloser}`;
 }
 

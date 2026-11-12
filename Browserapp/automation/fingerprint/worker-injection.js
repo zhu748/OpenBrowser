@@ -11,6 +11,7 @@
 // intentionally divergent leaves (vendor, userAgentMetadata, webgpu, stability caps)
 // stay in this file's literal — see the drift list in injection-config.js.
 const { resolveInjectionStability, injectionOs, injectionTimezone, injectionDeviceMemory, injectionWebgl, stabilityNoiseAmplitude, stabilitySampleStepDivisor, stabilityMaxWidth, stabilityMaxHeight, stabilitySquare } = require('./injection-config');
+const { normalizeNetworkInformation } = require('../../shared/profile-values');
 const { canonicalBridgeToken } = require('./shared');
 const { WORKER_RUNTIME_REVISION } = require('./runtime-revision');
 const { buildWorkerRuntimeFull } = require('./runtime-source');
@@ -40,7 +41,8 @@ function buildWorkerInjectionScript(fp, options = {}) {
     languages: fp.languages,
     timezone: injectionTimezone(fp),
     hardwareConcurrency: fp.hardwareConcurrency,
-    connection: fp.connection || null,
+    connection: normalizeNetworkInformation(fp.connection),
+    ...(options.retiredWorkerIdentities?.length ? { retiredWorkerIdentities: options.retiredWorkerIdentities } : {}),
     // Pass persona's legal quantised tiers (0.25/0.5) through; snap illegal values to the
     // nearest step — same policy as the main-world script, shared in injection-config.js.
     deviceMemory: injectionDeviceMemory(fp),

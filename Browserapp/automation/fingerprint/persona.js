@@ -2,7 +2,7 @@
 
 const { fingerprintVersion, createFingerprintDraw } = require('./generation');
 
-const { normalizeCoordinates } = require('../../shared/profile-values');
+const { normalizeCoordinates, normalizeNetworkInformation, toFiniteNumber } = require('../../shared/profile-values');
 const { normalizeUaOs, parseChromeVersion, osChromeSupportViolation } = require('../user-agent');
 
 /**
@@ -489,7 +489,9 @@ function buildFingerprint(profile = {}) {
     ? fpIn.network
     : (privacy.network && typeof privacy.network === 'object' ? privacy.network : null);
   const NETWORK_EFFECTIVE_TYPES = ['4g', '4g', '4g', '3g'];
-  const NETWORK_DOWNLINK_POOL = [1.45, 2.3, 4.35, 5.6, 8.7, 9.15, 10.1];
+  // Keep the v1 serialized draw for backup replay. Both injection builders
+  // project it onto the native bound; v2 corrects only the formerly invalid slot.
+  const NETWORK_DOWNLINK_POOL = [1.45, 2.3, 4.35, 5.6, 8.7, 9.15, version === 1 ? 10.1 : 10];
   const NETWORK_RTT_POOL = [50, 100, 150, 200, 250];
   // connection.type is Android-only in stock Chrome: a desktop build leaves the field
   // undefined, so a desktop persona reporting ethernet/wifi is a one-read tell — the key is
@@ -511,10 +513,9 @@ function buildFingerprint(profile = {}) {
     contrast: mediaIn?.contrast
       || (draw('media.contrast', 82) % 20 < 19 ? 'no-preference' : (draw('media.contrast', 82) % 40 < 21 ? 'more' : 'less')),
   };
-  // Codec capability matrix per claimed OS (stock-Chrome answers). Deliberately coarse:
-  // only the families detectors probe. true/false are full answers; objects carry
-  // profile-level detail for the H.264 families where it matters. Anything absent
-  // passes through the host answer untouched.
+  // Retained in the persisted identity shape for version-1 replay compatibility.
+  // This historical table is NOT a runtime capability override: a coarse OS
+  // label cannot supply native encoders or keep RTP answers in sync with SDP.
   const CODEC_MATRIX = {
     windows: {
       video: { 'video/mp4': true, 'video/webm': true, 'video/av1': true },
@@ -543,19 +544,20 @@ function buildFingerprint(profile = {}) {
   const codecMatrix = uaOs === 'linux'
     ? CODEC_MATRIX.linux
     : (uaOs === 'macos' || uaOs === 'macos_arm') ? CODEC_MATRIX.macos : CODEC_MATRIX.windows;
-  const connection = networkMode === 'real' ? null : {
+  let connection = networkMode === 'real' ? null : {
     ...(mobileDevice
       ? { type: String(networkIn?.type || (draw('network.type', 56) % 4 === 0 ? 'ethernet' : 'wifi')) }
       : (networkIn?.type ? { type: String(networkIn.type) } : {})),
     effectiveType: String(networkIn?.effectiveType || NETWORK_EFFECTIVE_TYPES[draw('network.effectiveType', 60) % NETWORK_EFFECTIVE_TYPES.length]),
-    downlink: Number.isFinite(Number(networkIn?.downlink))
+    downlink: toFiniteNumber(networkIn?.downlink) !== null
       ? Number(networkIn.downlink)
       : NETWORK_DOWNLINK_POOL[draw('network.downlink', 64) % NETWORK_DOWNLINK_POOL.length],
-    rtt: Number.isFinite(Number(networkIn?.rtt))
+    rtt: toFiniteNumber(networkIn?.rtt) !== null
       ? Number(networkIn.rtt)
       : NETWORK_RTT_POOL[draw('network.rtt', 68) % NETWORK_RTT_POOL.length],
     saveData: false,
   };
+  if (version >= 2) connection = normalizeNetworkInformation(connection);
 
   // Dynamic layer: may change with proxy/exit IP without rebuilding static seeds
   const webrtcAddress = String(
@@ -589,7 +591,7 @@ function buildFingerprint(profile = {}) {
   // outright, 'allow' reports the permission as granted alongside the overridden coordinates,
   // and everything else leaves the native prompt flow. The editor derives geoMode from this
   // switch (deny→disabled / prompt→prompt), so the two stay consistent by construction.
-  const requestedGeoPermission = String(privacy.geoPermission || '') === 'deny'
+  const requestedGeoPermission = privacy.geoMode === 'disabled' || String(privacy.geoPermission || '') === 'deny'
     ? 'denied'
     : (String(privacy.geoPermission || '') === 'allow' ? 'granted' : 'prompt');
   // An allowed permission without deliverable coordinates would expose the host location.
@@ -680,6 +682,8 @@ function buildFingerprint(profile = {}) {
 
   const fingerprint = {
     ...(version >= 2 ? { generationVersion: version } : {}),
+    ...(!uaOverrideStr && String(profile.osVersion || '').trim()
+      ? { osVersion: String(profile.osVersion).trim() } : {}),
     seed: seed.toString('hex').slice(0, 16),
     profileId: profile.id,
     os: uaOs,
@@ -890,6 +894,16 @@ function fingerprintConsistencyIssues(fp) {
   const vendor = String(fp?.webgl?.vendor || '');
 
   const add = (code, message, severity = 'warning') => issues.push({ code, severity, message });
+  if (fp?.connection) {
+    const projected = normalizeNetworkInformation(fp.connection);
+    for (const key of ['downlink', 'rtt']) {
+      if (!Object.prototype.hasOwnProperty.call(fp.connection, key)) continue;
+      if (fp.connection[key] !== projected[key]) {
+        add('network-native-bound', `navigator.connection.${key} must use Chromium's native bounds and buckets (effective value ${projected[key] ?? 'absent'}).`,
+          (fp.generationVersion || 1) === 1 ? 'warning' : 'error');
+      }
+    }
+  }
   if (fp?.platform !== expectedPlatform) {
     add('platform-ua-mismatch', `navigator.platform (${fp?.platform || 'empty'}) does not match the ${uaOs} user agent.`, 'error');
   }
@@ -943,12 +957,17 @@ function fingerprintConsistencyIssues(fp) {
   }
   // OS-version vs Chrome-major support window (Win7/8/8.1 → 109, macOS 10.15 → 138).
   const fpChromeMajor = Number(parseChromeVersion(fp?.userAgent)?.major) || 0;
-  const fpOsVersion = String(fp?.osVersion || '').trim();
+  // Reduced macOS UAs report 10_15_7 on current systems too. Client Hints
+  // carry the actual release; only Windows legacy NT tokens are unambiguous.
+  const windowsRelease = String(fp?.userAgent || '').match(/Windows NT (6\.1|6\.2|6\.3)/i)?.[1];
+  const fpOsVersion = String(fp?.osVersion || (uaOs === 'macos' || uaOs === 'macos_arm'
+    ? String(metadata?.platformVersion || '').split('.').slice(0, 2).join('.')
+    : ({ '6.1': '7', '6.2': '8', '6.3': '8.1' }[windowsRelease] || ''))).trim();
   const osChromeViolation = fpOsVersion && fpChromeMajor
     ? osChromeSupportViolation({ id: uaOs }, fpOsVersion, fpChromeMajor)
     : null;
   if (osChromeViolation) {
-    add('os-chrome-support-mismatch', `Chrome ${fpChromeMajor} never shipped on ${osChromeViolation.osId} ${osChromeViolation.osVersion} (last supporting major: ${osChromeViolation.maxChromeMajor}).`, 'warning');
+    add('os-chrome-support-mismatch', `Chrome ${fpChromeMajor} never shipped on ${osChromeViolation.osId} ${osChromeViolation.osVersion} (last supporting major: ${osChromeViolation.maxChromeMajor}).`, 'error');
   }
   if (uaOs === 'linux' && (/Direct3D|D3D11|Apple M[0-9]/i.test(renderer) || !/Mesa|RADV|OpenGL/i.test(renderer))) {
     add('webgl-ua-mismatch', 'WebGL renderer does not look like a Linux renderer.');

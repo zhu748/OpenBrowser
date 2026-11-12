@@ -27,7 +27,6 @@ const workerSessionBootstrap = require('./runtime/worker-session-bootstrap');
 const networkFragment = require('./runtime/network-fragment');
 const { runtimeSource: nativeArguments } = require('./native-arguments');
 const { runtimeSource: webglCapabilities } = require('./webgl-capabilities');
-const codecMatrixFragment = require('./runtime/codec-matrix-fragment');
 
 // Parse the assembled CFG once (it is a JSON literal produced by
 // injection-script.js), then decide fragment inclusion against it.
@@ -88,8 +87,6 @@ function buildDocumentRuntime(context) {
     // Install inside the document helper closure, before its IIFE closes.
     context.workerSource ? workerConstructorPatch({ workerSource: context.workerSource }) : '',
     documentGpuStorage,
-    // Codec capability matrix: passive unless the CFG carries a matrix.
-    codecMatrixFragment(context),
   ].join('');
 }
 

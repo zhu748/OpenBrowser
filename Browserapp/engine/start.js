@@ -15,6 +15,7 @@ const { buildBaseLaunchArguments, completeLaunchArguments, SECURITY_SWITCH_DENYL
 const { normalizeEnvNumber, prepareMacDockWrapper, prepareMarkerExtension } = require('../automation/env-icon');
 const { buildFingerprint, assertFingerprintConsistency } = require('../automation/fingerprint');
 const { assertUrlAccessPolicySupported } = require('../automation/url-access-policy');
+const { profileWriteGuard } = require('./profile-write-guard');
 const { fpLog, summarizeFp, logPath: fingerprintLogPath } = require('../automation/fingerprint-debug-log');
 const { acquireProfileLock, updateProfileLock, validateProfileRootSecure } = require('../automation/isolation');
 const { fingerprintForNativeKernelInject, isOpenBrowser148, writeOpenBrowserKernelInit } = require('../automation/kernel-init-sync');
@@ -230,39 +231,19 @@ function windowPositionArg(profile) {
 }
 
 /**
- * Commit a mid-start profile snapshot without clobbering concurrent edits.
- * A start can take seconds (proxy probes, kernel bootstrap, CDP attach); a
- * save from the editor during that window updates this.profiles directly.
- * Writing the start-time snapshot back wholesale would revert those edits
- * (proxy, fingerprint, advanced …) on the next persist. Instead, re-read the
- * live value and only merge the launch-computed runtime fields this snapshot
- * actually changed (exit details, resolved locale/timezone, effective proxy).
- * If the profile was deleted mid-start, the write-back is skipped entirely.
+ * Publish a staged launch result only while its source revision is current.
+ * Proxy and locale probes may take seconds. Any intervening edit/deletion
+ * aborts this launch, preserving the user's latest configuration in full.
  */
-function mergeLaunchProfileUpdate(engine, snapshot) {
+function mergeLaunchProfileUpdate(engine, snapshot, assertCurrent) {
   if (!snapshot || typeof snapshot !== 'object') return null;
+  assertCurrent();
   const live = engine.profiles.get(snapshot.id);
-  if (!live || live === snapshot) return live || null;
-  const merged = {
-    ...live,
-    // Exit/network details resolved during launch
-    exitIp: snapshot.exitIp,
-    exitCountryCode: snapshot.exitCountryCode,
-    exitTimezone: snapshot.exitTimezone,
-    exitLatitude: snapshot.exitLatitude,
-    exitLongitude: snapshot.exitLongitude,
-    exitCheckedAt: snapshot.exitCheckedAt,
-    exitLatencyMs: snapshot.exitLatencyMs,
-    exitNetworkType: snapshot.exitNetworkType,
-    // Effective proxy after prepare (backup failover / API extraction)
-    proxy: snapshot.proxy,
-    proxyId: snapshot.proxyId,
-    proxyMeta: snapshot.proxyMeta,
-    // Resolved language / timezone-aligned privacy block
-    language: snapshot.language,
-    privacy: snapshot.privacy,
-  };
-  return engine.sanitizeProfile(merged);
+  if (!live) throw Object.assign(new Error('环境已被删除，已停止启动'), { code: 'PROFILE_STALE_REV' });
+  const next = engine.sanitizeProfile(snapshot);
+  engine.profiles.set(next.id, next);
+  engine.invalidateStatusCache?.();
+  return next;
 }
 
 // A failed migration must be flushed again before a retry can launch, even
@@ -317,6 +298,9 @@ module.exports = {
     const previousExitIp = String(profile.exitIp || '').trim();
     const previousExitCountryCode = String(profile.exitCountryCode || '').trim();
     this.profiles.set(profile.id, profile);
+    let assertLaunchProfileCurrent = profileWriteGuard(this, profile.id);
+    let launchNetwork;
+    const captureNetwork = (network) => { launchNetwork = network; };
     this.assertStartGenerationActive(profile.id, lifecycleGeneration);
     if (this.running.has(profile.id)) {
       return this.publicRunning(profile.id);
@@ -363,12 +347,11 @@ module.exports = {
       connection: null,
     };
     try {
-      profile = await this.prepareProfileProxyForStart(profile);
+      profile = await this.prepareProfileProxyForStart(profile, { publish: false, onNetwork: captureNetwork });
     this.assertStartGenerationActive(profile.id, lifecycleGeneration);
-    // Merge-only write-back: keep editor edits made while the launch was
-    // resolving the effective proxy (see mergeLaunchProfileUpdate).
-    const afterProxy = mergeLaunchProfileUpdate(this, profile);
-    if (afterProxy) profile = afterProxy;
+    profile = mergeLaunchProfileUpdate(this, profile, assertLaunchProfileCurrent);
+    if (launchNetwork) this.networkInfo.set(profile.id, launchNetwork);
+    assertLaunchProfileCurrent = profileWriteGuard(this, profile.id);
     // Roxy 客户端设置对齐：内存使用率超上限 / 磁盘可用空间低于下限 → 停止打开窗口。
     currentStage = 'resources'; this.emitStartProgress(profile.id, 'resources', 8, '正在检测内存与磁盘…');
     await assertResourceGateForLaunch({ diskRoot: this.profileRoot(profile.id) });
@@ -376,20 +359,21 @@ module.exports = {
     // 「网络不通停止打开」：守护开启时强制做一次真实出口检测，失败即阻断启动。
     if (profile.advanced?.stopOpenNet) {
       try {
-        await this.ensureExitNetworkForLocale(profile, { force: true });
+        await this.ensureExitNetworkForLocale(profile, { force: true, publish: false, network: launchNetwork, onNetwork: captureNetwork });
       } catch (error) {
+        if (error.code === 'PROFILE_STALE_REV' || error.code === 'PROFILE_MAINTENANCE') throw error;
         throw Object.assign(new Error('网络不可用，已按「网络不通停止打开」策略停止启动：' + error.message), { code: 'network-unavailable' });
       }
-      if (!String(profile.exitIp || '').trim()) {
+      if (!String(launchNetwork?.ip || '').trim()) {
         throw Object.assign(new Error('网络不可用，已按「网络不通停止打开」策略停止启动'), { code: 'network-unavailable' });
       }
     } else {
-      await this.ensureExitNetworkForLocale(profile).catch(() => {});
+      await this.ensureExitNetworkForLocale(profile, { publish: false, network: launchNetwork, onNetwork: captureNetwork });
     }
-    profile = this.applyResolvedLocale(profile);
-    // Same merge-only write-back after the locale/geo resolution pass.
-    const afterLocale = mergeLaunchProfileUpdate(this, profile);
-    if (afterLocale) profile = afterLocale;
+    profile = this.applyResolvedLocale(profile, launchNetwork);
+    profile = mergeLaunchProfileUpdate(this, profile, assertLaunchProfileCurrent);
+    if (launchNetwork) this.networkInfo.set(profile.id, launchNetwork);
+    assertLaunchProfileCurrent = profileWriteGuard(this, profile.id);
     // IP 变化守护（对齐「IP 发生变化停止打开 / 提醒」）：patch = 默认，重对齐指纹继续；
     // stop = 启动阶段直接阻断；notify = 发出提醒事件但不阻断。仅在本次启动真的做了
     // 出口检测时才可能触发（同会话内的缓存命中不会误报）。
@@ -451,13 +435,16 @@ module.exports = {
     const searchEngineApplied = profile.privacy?.searchEngine
       ? applyDefaultSearchEngine(root, profile.privacy.searchEngine)
       : null;
+    assertLaunchProfileCurrent();
     const seedEnsured = ensureLegacyFingerprintSeed(this, profile);
+    assertLaunchProfileCurrent = profileWriteGuard(this, profile.id);
     await Promise.all([
       launchDataCleared,
       searchEngineApplied,
       seedEnsured,
       removeSingletonFiles(root, { attempts: 6, delayMs: 40 }),
     ]);
+    assertLaunchProfileCurrent();
     const clearedLaunchData = await launchDataCleared;
     if (clearedLaunchData.length) {
       this.emit({ type: 'profile-launch-data-cleared', id: profile.id, removed: clearedLaunchData });
@@ -661,6 +648,7 @@ module.exports = {
       if (effectiveTimezone && !isRealTimezone && process.platform !== 'win32') {
         spawnEnv.TZ = effectiveTimezone;
       }
+      assertLaunchProfileCurrent();
       child = spawn(launchBinary, finalArgs, {
         detached: process.platform !== 'win32',
         windowsHide: headless,
@@ -1072,7 +1060,7 @@ extractTimezoneFromArgs,
 clearProfileLaunchData,
 clearLaunchDataTargets,
 // Reused by the Firefox pipeline (engine/start-firefox.js) so both engines share
-// the same merge-only write-back contract for mid-start profile snapshots.
+// the same revision-checked write-back contract for staged profile snapshots.
 mergeLaunchProfileUpdate,
 // Shared by both launch pipelines: rolls the persistent seed a legacy (unseeded) profile
 // is missing before its fingerprint is built (see the function comment above).

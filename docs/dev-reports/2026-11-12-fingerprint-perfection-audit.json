@@ -1,0 +1,329 @@
+{
+  "date": "2026-11-12",
+  "baseCommit": "81da96d44edd34f2df29169fcbcf4246f3728e2e",
+  "scope": "Additional read-only audit of fingerprint generation and first-instruction delivery on the current uncommitted optimization tree",
+  "conclusion": "Not complete or fully reliable: three additional defects reproduced; none of these three defects is fixed by this audit",
+  "environment": {
+    "platform": "Linux x64",
+    "nativeBrowser": "157.0.8103.78"
+  },
+  "findings": [
+    {
+      "id": "cached-service-worker-first-instruction",
+      "priority": "high",
+      "status": "reproduced-open",
+      "sources": [
+        "Browserapp/engine/fingerprint-injection.js:375",
+        "Browserapp/engine/fingerprint-injection.js:395"
+      ],
+      "setup": "Reuse a single Chromium user-data directory across graceful browser restarts. Register a Service Worker with a top-level hardware/network snapshot under a 2-core persona; restart with the same profile ID, a different seed and a 4-core persona, retrieve the existing registration without explicitly calling register or update, and message the active worker.",
+      "observations": {
+        "firstLaunch": {
+          "expected": {
+            "cores": 2,
+            "downlink": 5.6
+          },
+          "setup": {
+            "active": true
+          },
+          "observed": {
+            "first": {
+              "injectionInstalled": true,
+              "cores": 2,
+              "downlink": 5.6
+            },
+            "now": {
+              "cores": 2,
+              "downlink": 5.6
+            }
+          },
+          "afterDelay": {
+            "first": {
+              "injectionInstalled": true,
+              "cores": 2,
+              "downlink": 5.6
+            },
+            "now": {
+              "cores": 2,
+              "downlink": 5.6
+            }
+          },
+          "newScriptRequests": 1,
+          "events": []
+        },
+        "secondLaunch": {
+          "expected": {
+            "cores": 4,
+            "downlink": 10.1
+          },
+          "setup": {
+            "active": true
+          },
+          "observed": {
+            "first": {
+              "injectionInstalled": true,
+              "cores": 2,
+              "downlink": 5.6
+            },
+            "now": {
+              "cores": 2,
+              "downlink": 5.6
+            }
+          },
+          "afterDelay": {
+            "first": {
+              "injectionInstalled": false,
+              "cores": 5,
+              "downlink": 1.35
+            },
+            "now": {
+              "cores": 4,
+              "downlink": 10.1
+            }
+          },
+          "newScriptRequests": 1,
+          "events": [
+            {
+              "type": "service-worker-cached-injected",
+              "id": "cache-identity",
+              "url": "http://127.0.0.1:37571/sw.js"
+            },
+            {
+              "type": "service-worker-cached-injected",
+              "id": "cache-identity",
+              "url": "http://127.0.0.1:37571/sw.js"
+            },
+            {
+              "type": "service-worker-cached-injected",
+              "id": "cache-identity",
+              "url": "http://127.0.0.1:37571/sw.js"
+            },
+            {
+              "type": "service-worker-cached-injected",
+              "id": "cache-identity",
+              "url": "http://127.0.0.1:37571/sw.js"
+            }
+          ]
+        }
+      },
+      "interpretation": "The first response after the restart still exposes the prior 2-core persona. After the browser background update, the active worker has captured 5 cores with injectionInstalled=false at top level, although its later live read is the requested 4 cores. The delayed post-resume evaluator cannot change values already observed or retained by worker application code.",
+      "qualification": "The registration can update and replace its active worker during the test; the two responses need not come from the same worker instance. They are two distinct delivery failure stages, not a claim that a const binding was mutated. A positive workerInstalled probe denotes the token/runtime revision, not equality of all current persona values.",
+      "recommendedDirection": "Bind persisted Worker delivery to persona identity and runtime revision, and enforce current-persona delivery before application script evaluation. A post-resume timeout is not a first-instruction barrier. Any cache migration must be explicit and preserve user data."
+    },
+    {
+      "id": "network-downlink-native-bound",
+      "priority": "medium",
+      "status": "reproduced-open",
+      "sources": [
+        "Browserapp/automation/fingerprint/persona.js:492",
+        "Browserapp/automation/request-header-rewriter.js:712"
+      ],
+      "sample": {
+        "profileCount": 10000,
+        "version": 2,
+        "os": "Windows",
+        "seedPattern": "seed-N",
+        "idPattern": "audit-network-N",
+        "downlinkAboveNative10MbpsBound": 1430,
+        "fraction": 0.143,
+        "examples": [
+          {
+            "id": 7,
+            "connection": {
+              "effectiveType": "4g",
+              "downlink": 10.1,
+              "rtt": 100,
+              "saveData": false
+            },
+            "consistency": {
+              "ok": true,
+              "issues": []
+            }
+          },
+          {
+            "id": 8,
+            "connection": {
+              "effectiveType": "3g",
+              "downlink": 10.1,
+              "rtt": 200,
+              "saveData": false
+            },
+            "consistency": {
+              "ok": true,
+              "issues": []
+            }
+          },
+          {
+            "id": 13,
+            "connection": {
+              "effectiveType": "3g",
+              "downlink": 10.1,
+              "rtt": 100,
+              "saveData": false
+            },
+            "consistency": {
+              "ok": true,
+              "issues": []
+            }
+          }
+        ]
+      },
+      "nativeReproduction": {
+        "osPersona": "Windows",
+        "expectedConnection": {
+          "effectiveType": "4g",
+          "downlink": 10.1,
+          "rtt": 100,
+          "saveData": false
+        },
+        "consistency": {
+          "ok": true,
+          "issues": []
+        },
+        "pageConnection": {
+          "downlink": 10.1,
+          "rtt": 100
+        },
+        "moduleWorker": {
+          "dependency": {
+            "cores": 2,
+            "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+            "platform": "Win32",
+            "installed": true,
+            "connection": {
+              "rtt": 100,
+              "downlink": 10.1
+            }
+          },
+          "entry": {
+            "cores": 2,
+            "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+            "platform": "Win32",
+            "installed": true,
+            "connection": {
+              "rtt": 100,
+              "downlink": 10.1
+            }
+          }
+        }
+      },
+      "chromiumReference": "https://github.com/chromium/chromium/blob/main/third_party/blink/renderer/platform/network/network_state_notifier.cc#L415",
+      "interpretation": "The generated pool contains 10.1 Mbps; Chromium RoundMbps caps its native exposed result at 10 Mbps. Generation consistency still reports ok and runtime delivery succeeds, so configuration equality is insufficient to establish native plausibility.",
+      "recommendedDirection": "Validate generation and explicit overrides against the target engine bounds and quantization, add native-bound checks to consistency validation, and version any changes that would alter persisted persona replay."
+    },
+    {
+      "id": "battery-zero-null-normalization",
+      "priority": "medium",
+      "status": "reproduced-open",
+      "sources": [
+        "Browserapp/engine/profile-sanitizer.js:193",
+        "Browserapp/engine/profile-sanitizer.js:370",
+        "Browserapp/automation/fingerprint-generators.js:513"
+      ],
+      "input": {
+        "charging": false,
+        "level": 0,
+        "chargingTime": null,
+        "dischargingTime": null
+      },
+      "normalized": {
+        "charging": false,
+        "level": 0.87,
+        "chargingTime": 0,
+        "dischargingTime": 0
+      },
+      "generated": {
+        "mode": "noise",
+        "value": {
+          "charging": false,
+          "chargingTime": 0,
+          "dischargingTime": 0,
+          "level": 0.87
+        }
+      },
+      "pageRead": {
+        "charging": false,
+        "level": 0.87,
+        "chargingTime": "0",
+        "dischargingTime": "0"
+      },
+      "interpretation": "A custom zero battery level is replaced by 0.87 through a falsy fallback. Explicit null durations, documented as the JSON-safe representation of Infinity, are converted to zero through Number(null). The invalid values reach navigator.getBattery(). This reproduces the custom override path and does not imply all default battery snapshots fail.",
+      "recommendedDirection": "Distinguish zero from absent input and null from finite durations throughout normalization and generation, then validate charging/discharging state semantics end to end."
+    }
+  ],
+  "successfulChecks": {
+    "scope": "One-level network module Worker entry and static dependency under Windows and iOS personas",
+    "cases": [
+      {
+        "os": "Windows",
+        "expectedCores": 2,
+        "observed": {
+          "dependency": {
+            "cores": 2,
+            "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+            "platform": "Win32",
+            "installed": true,
+            "connection": {
+              "rtt": 100,
+              "downlink": 10.1
+            }
+          },
+          "entry": {
+            "cores": 2,
+            "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+            "platform": "Win32",
+            "installed": true,
+            "connection": {
+              "rtt": 100,
+              "downlink": 10.1
+            }
+          }
+        }
+      },
+      {
+        "os": "iOS",
+        "expectedCores": 2,
+        "observed": {
+          "dependency": {
+            "cores": 2,
+            "ua": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/157.0.8103.78 Mobile/15E148 Safari/604.1",
+            "platform": "iPhone",
+            "installed": true,
+            "connection": null
+          },
+          "entry": {
+            "cores": 2,
+            "ua": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/157.0.8103.78 Mobile/15E148 Safari/604.1",
+            "platform": "iPhone",
+            "installed": true,
+            "connection": null
+          }
+        }
+      }
+    ],
+    "interpretation": "Both module entry and static dependency reported injection installed and the configured core count. This case did not reproduce module dependency leakage; it does not certify arbitrary module graphs."
+  },
+  "validation": {
+    "generationSampleCount": 10000,
+    "nativeProbes": [
+      "network module entry plus static dependency",
+      "page network and custom battery exposure",
+      "cached Service Worker across browser restart with top-level injection marker"
+    ],
+    "sourceChangesThisAudit": false,
+    "fullSuiteRerunThisAudit": false,
+    "priorSuite": {
+      "passed": 198,
+      "partial": 1,
+      "skipped": 2,
+      "failed": 0,
+      "report": "docs/dev-reports/2026-11-12-fingerprint-optimization-round2-verification.json"
+    },
+    "note": "Prior passing suites describe existing coverage; the new concrete counterexamples invalidate any claim of perfection."
+  },
+  "limitations": [
+    "Native probes in this pass use Chromium on Linux. A Windows or iOS persona is not a native Windows or iOS device.",
+    "This audit does not certify all GPU, font, platform-specific engine, arbitrary module graph, or TLS/HTTP transport behavior.",
+    "The effectiveType/RTT statistical combination observations are not classified here as impossible native states."
+  ]
+}

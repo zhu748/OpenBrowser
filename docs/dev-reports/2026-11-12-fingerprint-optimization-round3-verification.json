@@ -1,0 +1,244 @@
+{
+  "date": "2026-11-12",
+  "baseCommit": "81da96d44edd34f2df29169fcbcf4246f3728e2e",
+  "scope": "Third optimization round: close the three concrete findings in the additional fingerprint audit",
+  "precedingAudit": "docs/dev-reports/2026-11-12-fingerprint-perfection-audit.json",
+  "closedFindings": [
+    {
+      "id": "cached-service-worker-first-instruction",
+      "status": "fixed-and-regression-tested",
+      "changes": [
+        "Replace the 400 ms post-resume injection with a beforeScriptExecution debugger gate; queue enable, breakpoint and startup-resume commands in protocol order to avoid the Chrome 157 startup deadlock",
+        "Verify current UA, platform, core count, timezone and exposed network state at the real script breakpoint before resuming application code; disable Debugger afterward",
+        "Browser auto-attach owns Service Workers; page and iframe filters exclude them. Defensive extra sessions release their startup latch only after owner arming and detach through their real parent after verification",
+        "Parse only recognized historical prefix expressions, collect cached identities across parsed static module dependencies and retire their exact private token/revision checks, preserving registrations and application data",
+        "Reject unverified already-running workers, malformed recognized prefixes, incompatible same-token revisions, failed probes and timeouts. Source/graph limits remain bounded",
+        "Keep deferred network setup on its owning FingerprintSession rather than a global per-item session set"
+      ]
+    },
+    {
+      "id": "network-downlink-native-bound",
+      "status": "fixed-and-regression-tested",
+      "changes": [
+        "Correct the v2 10.1 Mbps pool slot to 10 Mbps without redrawing the seed or unrelated axes",
+        "Share native range/bucket projection between sanitization, document/worker injection and delivery verification: 0-10 Mbps by 0.05 Mbps; 0-3000 ms by 50 ms",
+        "Retain v1 serialized draws and report a legacy warning while delivering the corrected effective native reading; v2 inconsistent runtime configurations fail validation",
+        "Distinguish absent/null/blank/boolean inputs from numeric zero; preserve native API absence"
+      ]
+    },
+    {
+      "id": "battery-zero-null-normalization",
+      "status": "fixed-and-regression-tested",
+      "changes": [
+        "Use a single custom-battery normalizer during save/load and generation; level zero remains zero",
+        "Preserve null as the JSON representation of unknown/Infinity and avoid inventing finite durations when custom values are absent",
+        "Enforce charging/discharging time semantics and zero chargingTime for a fully charged charging battery",
+        "Render unknown durations as blank in the editor and preserve them on save"
+      ]
+    }
+  ],
+  "validation": {
+    "fullSuite": {
+      "registered": 204,
+      "passed": 201,
+      "partial": 1,
+      "skipped": 2,
+      "failed": 0
+    },
+    "partial": [
+      "kernelflagforensics: platform launcher unavailable"
+    ],
+    "skipped": [
+      "cssfontgate: macOS-only",
+      "cssfontrewrite: macOS-only"
+    ],
+    "lint": "npm run lint -- --max-warnings 0: exit 0",
+    "diffCheck": "git diff --check: exit 0",
+    "generatedV2Profiles": {
+      "count": 10000,
+      "invalidDownlinkOrRttBoundsOrBuckets": 0
+    },
+    "unchangedV1ReplayFixtures": 240,
+    "newRegressionSuites": [
+      "fpvalues",
+      "swgate",
+      "swcache"
+    ],
+    "finalAffectedReruns": {
+      "reason": "Add explicit no-refetch cache assertions, retain deferred network state on the owning session, and distinguish application function names from historical prefixes",
+      "passed": [
+        "swgate",
+        "swcache",
+        "fingerprintnative",
+        "fpsessionraces"
+      ]
+    },
+    "nativeServiceWorker": {
+      "browser": "157.0.8103.78",
+      "requests": 4,
+      "results": [
+        {
+          "cores": 2,
+          "type": "classic",
+          "stage": "network",
+          "first": {
+            "revision": 1,
+            "first": {
+              "cores": 2,
+              "timezone": "Asia/Tokyo",
+              "downlink": 5.6
+            },
+            "now": {
+              "cores": 2,
+              "timezone": "Asia/Tokyo",
+              "downlink": 5.6
+            }
+          }
+        },
+        {
+          "cores": 2,
+          "type": "module",
+          "stage": "network",
+          "first": {
+            "revision": 1,
+            "first": {
+              "cores": 2,
+              "timezone": "Asia/Tokyo",
+              "downlink": 5.6
+            },
+            "dependency": {
+              "cores": 2,
+              "timezone": "Asia/Tokyo",
+              "downlink": 5.6
+            },
+            "now": {
+              "cores": 2,
+              "timezone": "Asia/Tokyo",
+              "downlink": 5.6
+            }
+          }
+        },
+        {
+          "cores": 4,
+          "type": "classic",
+          "stage": "cached-restart",
+          "first": {
+            "revision": 1,
+            "first": {
+              "cores": 4,
+              "timezone": "Europe/Paris",
+              "downlink": 2.3
+            },
+            "now": {
+              "cores": 4,
+              "timezone": "Europe/Paris",
+              "downlink": 2.3
+            }
+          }
+        },
+        {
+          "cores": 4,
+          "type": "classic",
+          "stage": "unprefixed-update",
+          "first": {
+            "revision": 2,
+            "first": {
+              "cores": 4,
+              "timezone": "Europe/Paris",
+              "downlink": 2.3
+            },
+            "now": {
+              "cores": 4,
+              "timezone": "Europe/Paris",
+              "downlink": 2.3
+            }
+          }
+        },
+        {
+          "cores": 4,
+          "type": "module",
+          "stage": "cached-restart",
+          "first": {
+            "revision": 1,
+            "first": {
+              "cores": 4,
+              "timezone": "Europe/Paris",
+              "downlink": 2.3
+            },
+            "dependency": {
+              "cores": 4,
+              "timezone": "Europe/Paris",
+              "downlink": 2.3
+            },
+            "now": {
+              "cores": 4,
+              "timezone": "Europe/Paris",
+              "downlink": 2.3
+            }
+          }
+        },
+        {
+          "cores": 4,
+          "type": "module",
+          "stage": "unprefixed-update",
+          "first": {
+            "revision": 3,
+            "first": {
+              "cores": 4,
+              "timezone": "Europe/Paris",
+              "downlink": 2.3
+            },
+            "dependency": {
+              "cores": 4,
+              "timezone": "Europe/Paris",
+              "downlink": 2.3
+            },
+            "now": {
+              "cores": 4,
+              "timezone": "Europe/Paris",
+              "downlink": 2.3
+            }
+          }
+        }
+      ]
+    },
+    "nativeCustomBattery": {
+      "inputLevel": 0,
+      "inputCharging": false,
+      "inputTimes": null,
+      "actualLevel": 0,
+      "actualCharging": false,
+      "actualChargingTime": "Infinity",
+      "actualDischargingTime": "Infinity"
+    },
+    "nativeBrowsers": {
+      "chromium": "157.0.8103.78",
+      "firefox": "160.0",
+      "platform": "Linux x64"
+    },
+    "note": "SW update tests close message ports and wait for native activation state changes rather than repeatedly messaging the old active worker during activation. An isolated raw/attach-only/gated module-worker update probe also activated successfully."
+  },
+  "retainedFailureEvidence": {
+    "priorFullRun": {
+      "passed": 200,
+      "partial": 1,
+      "skipped": 2,
+      "failed": 1
+    },
+    "failingSuite": "fingerprintnative",
+    "symptom": "CDP persistent socket error after the first native browser case",
+    "cause": "Unconfirmed; that run preceded detailed native browser exit telemetry",
+    "followUp": "Added browser exit/signal, engine-event and stderr diagnostics; three consecutive standalone reruns passed, followed by the final full-suite rerun reported above. No automatic retry was added to hide native failures."
+  },
+  "behaviorChanges": [
+    "Affected existing v2 downlink readings change from 10.1 to 10. V1 seeded default replay retains its historical serialized draw (240 fixtures unchanged); invalid live values and custom overrides are normalized to native bounds",
+    "Custom contradictory or unknown battery durations are normalized to valid native state semantics; invalid historical custom values do not retain their former live readings",
+    "Service Worker delivery can reject startup/targets when a pre-script identity cannot be verified; it never automatically deletes user registration or cache data"
+  ],
+  "remainingLimits": [
+    "Native Windows/macOS kernels, GPU/font behavior and arbitrary module graphs are not certified by Linux Chrome tests",
+    "Firefox blob/data, cached/local-bypass Worker first-instruction delivery and native Gecko TLS/HTTP2 transport remain outside this Chromium gate",
+    "Native bounds and deterministic coherence do not constitute an empirically calibrated real-device or network-quality distribution",
+    "No claim of perfect or universally indistinguishable fingerprint emulation"
+  ]
+}

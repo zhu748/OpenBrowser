@@ -18,6 +18,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const vm = require('node:vm');
 
 const {
   buildFingerprint,
@@ -333,8 +334,24 @@ check('release gate and all core fingerprint suites are registered in package.js
   assert.ok(fs.existsSync(path.join(root, 'automation', 'final-release-regression-runner.js')), 'final-release-regression-runner.js must exist on disk');
 });
 
-check('runtime storage and performance APIs remain untouched by injection script', () => {
-  assert.ok(!script.includes('navigator.storage'), 'navigator.storage must not be modified by injection script');
+check('native storage objects/persistence and performance APIs are retained', () => {
+  const scope = vm.createContext({});
+  vm.runInContext(`
+    class StorageManager {
+      estimate(){return Promise.resolve({quota:128*1024**3,usage:0})}
+      persist(){return Promise.resolve(false)}
+      persisted(){return Promise.resolve(false)}
+    }
+    const storage=new StorageManager();
+    class Navigator {get storage(){return storage}}
+    globalThis.StorageManager=StorageManager;globalThis.Navigator=Navigator;
+    globalThis.navigator=new Navigator();globalThis.window=globalThis;globalThis.self=globalThis;
+    globalThis.before={storage,estimate:storage.estimate,persist:storage.persist,persisted:storage.persisted};
+  `, scope);
+  vm.runInContext(script, scope, { timeout: 20000 });
+  assert.equal(vm.runInContext('navigator.storage===before.storage', scope), true, 'preserve the actual native StorageManager object');
+  assert.equal(vm.runInContext('navigator.storage.persist===before.persist&&navigator.storage.persisted===before.persisted', scope), true, 'persistence operations remain native');
+  assert.equal(vm.runInContext('navigator.storage.estimate!==before.estimate', scope), true, 'the complete injection actually reached its bounded estimate patch');
   assert.ok(!script.includes('performance.timeOrigin'), 'performance.timeOrigin must not be modified by injection script');
   assert.ok(!script.includes('performance.now'), 'performance.now must not be modified by injection script');
   assert.ok(!script.includes('crypto.randomUUID'), 'crypto.randomUUID must not be patched by injection script');

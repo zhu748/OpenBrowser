@@ -87,6 +87,7 @@ ${stabilityRuntime}
   const sources = new WeakMap();
   const originalToString = Function.prototype.toString;
   const BRIDGE_TOKEN = ${JSON.stringify(bridgeToken)};
+  const retiredWorkerIdentities = new Map(CFG.retiredWorkerIdentities || []);
   let sharedWorkerRegistry;
   const inspectBridge = (fn) => {
     try {
@@ -229,6 +230,7 @@ ${stabilityRuntime}
         return sharedWorkerRegistry;
       }
       if (secret === BRIDGE_TOKEN && args[1] === 'workerInstalled') return ${WORKER_RUNTIME_REVISION};
+      if (args[1] === 'workerInstalled' && retiredWorkerIdentities.has(secret)) return retiredWorkerIdentities.get(secret);
       if (toStringReentryDepth > 0) {
         if (sources.has(this)) {
           if (secret === BRIDGE_TOKEN) return { bridge: true, token: BRIDGE_TOKEN, nativeText: sources.get(this) };

@@ -8,6 +8,10 @@ Profiles also persist `fingerprintVersion`. Missing versions mean **1**, includi
 
 Version 2 derives random fields using domain-separated SHA-256 (`seed + field name`), replacing version 1's overlapping seed offsets. Its default hardware path selects one coherent CPU/memory/screen/DPR/GPU template; new single-profile creation no longer pins 12 cores/8 GB over that template. Selection is independent of the host OS, while version 1 retains its historical host gating. Configured identity can be reproduced across hosts, but rendering pixels and usable limits still depend on the kernel, driver and fonts. Reusing a common hardware template is expected; this is not a guarantee of globally unique identities.
 
+Network-information values follow Chromium's exposed bounds and buckets: downlink is 0–10 Mbps in 0.05 Mbps steps; RTT is 0–3000 ms in 50 ms steps. Version 2 corrects the old 10.1 Mbps draw to 10 without changing the seed or other draw slots. This changes that field for affected existing V2 profiles. Version 1 retains its serialized historical draw (the 240 replay fixtures remain unchanged), while document/worker delivery projects it onto the native bound and reports a consistency warning. Both versions' live readings can therefore change from 10.1 to 10 after this correction. Explicit overrides use the same bounds/buckets; null, blanks and booleans are not numeric zero. Delivery verification compares the effective values. These bounds do not make an independently sampled network distribution an empirically calibrated network-quality model.
+
+Custom battery snapshots use one normalizer during profile save/load and fingerprint construction. Zero remains zero. JSON null durations remain unknown/Infinity instead of becoming zero; charging batteries have infinite dischargingTime, discharging batteries have infinite chargingTime, and a fully charged charging battery has chargingTime zero. The editor renders null durations as blank and retains their null representation on save. These are deterministic API snapshots, not a simulation of battery drain or charging events.
+
 Document and worker WebGL wrappers query the actual context before applying persona limits. Maximum capabilities are bounded by native values, uniform-buffer alignment retains the native minimum requirement, typed-array range types are preserved, and native invalid-enum/null/receiver behavior is retained. OS constants are not measurements of GPU capability. These corrections apply to **both** versions: affected live readings change after upgrade even when the saved identity stays version 1. This bounds capability claims without virtualizing the driver or making every operation match a different GPU.
 
 Version 2 iOS templates use `Apple Inc.` / `Apple GPU` instead of a desktop ANGLE wrapper. This does not turn Chromium into WebKit or certify a catalogue device as real hardware. Older iOS identities retain their generation behavior and report the wrapper as a consistency warning. Mobile window metrics preserve native outer-window dimensions and layout-viewport rounding, including pages without a viewport meta tag; screen, layout viewport and visual viewport are distinct quantities.
@@ -38,6 +42,12 @@ Inline-worker preparation reads immutable local Blob bytes and uses a private Ac
 
 Child-worker installation is reconstructed from a private named function, including the font-presence layer. Installation checks and runtime revision checks use the private function bridge rather than public WorkerGlobalScope flags or source-passing hooks. Replaying the complete document source checks completion before its UA layer runs; installation-status messages pass through the UA, font and WebRTC layers. This prevents repeated wrapping when the complete source is executed again.
 
+Chromium 143+ Service Workers additionally use a first-script execution gate, including scripts restored from the persistent script cache. Startup queues Debugger.enable, the beforeScriptExecution breakpoint and Runtime.runIfWaitingForDebugger in protocol order; awaiting Debugger.enable before releasing startup deadlocks on Chrome 157. At the actual script breakpoint, the gate installs and verifies the current UA/platform, core count, timezone and exposed network values before resuming application code, then disables Debugger. The old 400 ms post-resume injection is removed.
+
+Only one session owns this gate per Service Worker target. Browser-level auto-attach owns Service Workers; page/iframe auto-attach filters exclude them before creation. If an extra session is nevertheless announced, it releases its startup latch only after the owner's breakpoint commands have been queued, then detaches through its actual parent after verification. Detaching it earlier can release the worker before the owner's breakpoint exists. The gate recognizes complete historical injection-prefix expressions in cached scripts, including parsed static module dependencies, and retires their exact token/revision checks through the private bridge so an old prefix cannot reinstall the previous persona. It does not clear registrations, cookies, application caches or browsing data. An unrecognized cached prefix, incompatible same-token revision, failed probe or timeout rejects delivery and follows target/browser shutdown. Already-running workers whose first execution cannot be verified are rejected rather than labelled protected. The gate bounds individual source at 16 MiB and a parsed graph at 512 scripts/32 MiB.
+
+Native Chrome 157 on Linux covers classic/module Service Workers at network registration, restart with a changed persona using persisted scripts, static dependency first reads and unprefixed background updates. Windows/macOS kernels, arbitrary module graphs and Firefox still need their separate native validation; these results are not a claim of perfect fingerprint emulation.
+
 Related same-origin documents coordinate rewritten SharedWorker Blob URLs through that private bridge, including iframes and opener chains. Only successful native construction publishes a prepared Blob entry; failed constructors cannot displace a live worker. Entries are retained for the original Blob URL's lifetime rather than evicted at an arbitrary thread count. Prepared Blob resources use the original creator's realm and are revoked with the original URL or a non-BFCache pagehide. A revoked canonical URL is retained for native reconnection to an already-live SharedWorker. Data entries are deterministic and need no document cache. Dedicated module helper URLs are released after a private initialization message, native error or termination; entry URLs are released as soon as the native constructor captures them.
 
 The registry covers participating related same-origin documents; unrelated tabs and URLs created in another agent are not globally coordinated. A pure JavaScript registry does not replace the browser's own global SharedWorker identity store. Retaining many original Blob URLs also retains their prepared mappings until those URLs or their creator are released.
@@ -49,6 +59,10 @@ Window metrics retain the native descriptor owner, enumerability, setter and ill
 ## Startup barrier
 
 Both engines launch on `about:blank`. External startup URLs are opened only after document-start injection has been registered and the initial document's identity has been verified. Missing probes, script exceptions, and registration failures are failures. Native-kernel init write failures also stop Chromium startup.
+
+Proxy and locale discovery stage their results before publishing to the saved profile. Publication requires the source revision to remain current, including after seed migration and before spawning either engine. An edit, deletion, recreation or restore during preparation stops that launch with `PROFILE_STALE_REV` or `PROFILE_MAINTENANCE`; retry launches the latest configuration. Successful publication includes the resolved locale and exit metadata in the actual persisted map. Forced connectivity guards bypass both the engine's locale cache and the direct-exit lookup cache.
+
+Cleanup is idempotent per running item. Profile-wide helper draining, singleton removal and named IPC cleanup require current generation and directory-lock ownership. A failed lock acquisition and a late callback from an older generation cannot clean a replacement's resources. Unknown helper scans retain the lock and singleton state until an explicit retry confirms exit; there is no synchronous process-kill fallback. Old private connections and proxies still close independently of directory ownership.
 
 For Chromium, late page/iframe targets finish injection and response setup before resuming. A failed target is closed; when target closure cannot be confirmed, its browser is stopped. Worker evaluation exceptions are inspected instead of being treated as successful protocol calls.
 
@@ -102,6 +116,20 @@ Protocol reference: [Chromium Fetch definitions](https://github.com/ChromeDevToo
 
 ## API contracts and media permissions
 
+Permissions and geolocation now retain their native methods and PermissionStatus objects. The former query wrapper re-read `descriptor.name` after native conversion, so a valid getter could be called twice or turn a successful query into a rejection. The former synthetic deny callbacks also skipped receiver/callback/options validation, returned watch ID zero, did not honor native watch cancellation, and fabricated error dictionaries. Those wrappers are removed; permissions queries, coercion counts, callbacks, watch IDs, error objects and native Permissions-Policy behavior are delegated to the browser. Native permission status and access-policy decisions are compared with an untouched realm rather than assumed to always be the same state.
+
+`geoMode: disabled` implies effective denial even when `geoPermission` is absent or prompt. Allow without valid configured coordinates also remains denied. Chromium must successfully apply Browser.setPermission for both grants and denials before document registration; an unsupported denial command stops setup instead of relying on a JavaScript callback facade.
+
+Firefox writes `geo.enabled=false` for effective denial. Its default-deny permission preference alone does not revoke previously stored site grants; disabling the native feature protects even previously authorized origins and unprepared navigations, with native absence of `navigator.geolocation` as an intentional interface change. Prompt/allow launches explicitly restore the preference to true. Managed HTTP(S) startup origins receive the native BiDi permissions.setPermission grant/deny before navigation; failed setup blocks that navigation and is not cached as success. This does not auto-grant arbitrary redirect destinations, later script-driven origins or cross-origin frames; their native permission behavior is retained. Native position overrides remain required before a configured location can be used.
+
+Storage estimates share one document/child/worker implementation. Native estimate performs receiver and argument validation, so genuine StorageManager objects from another same-origin realm are accepted. The wrapper retains the actual native result dictionary, its realm, property flags, optional-member absence and additional fields. It adjusts only a writable native quota value, never above the quota returned in that call. A persona tier is raised to current reported usage where possible, bounded by native quota; an already overcommitted native result remains native rather than inventing capacity. Native errors propagate. Parent synchronization recognizes an existing same-token patch instead of stacking wrappers.
+
+The reported persona ceiling does not replace the native quota manager or enforce a synthetic disk size. Allocation and persistence behavior remain native.
+
+The former unconditional RAM-based quota could exceed native capacity (the Linux Chrome probe returned about 10 GiB while injection claimed 30 GiB). Corrected live quotas can therefore change on existing identities without changing their saved seed or static generation. Chromium's reported quota also reflects current usage: Service Worker script-cache bytes affect it, so native regression comparisons use remaining space and comparable scopes rather than assuming every realm/profile has identical total quota. The VM quota fixture now owns its class/intrinsics per sandbox instead of patching a shared host Function prototype across profiles.
+
+`MediaRecorder.isTypeSupported`, WebCodecs and RTP capability queries keep their native validation, MIME/codec parsing, function descriptors and complete result dictionaries. An OS-based answer cannot provide missing encoders or remove a codec from actual SDP negotiation. The former codec-matrix hooks are removed; the historical table remains in the generated identity object only for legacy replay compatibility and does not override runtime support. Codec support is consequently an explicit limit of cross-OS emulation. Unsupported legacy OS/browser combinations are rejected by the consistency check, including legacy Windows UAs and macOS releases supplied through Client Hints; reduced macOS UA tokens alone are not treated as an OS version.
+
 Document and worker Client Hints accept iterable hint sequences, reject invalid arguments through rejected promises, preserve receiver checks and return independent dictionaries. Mutating returned brands or version lists cannot modify later responses. Unknown and inherited property names are ignored. Workers use the same metadata fallback as documents. Absent Client Hints and device-memory APIs remain absent in insecure worker and child realms instead of being created by parent-frame synchronization.
 
 Synthetic media enumeration calls the native method first, preserving native errors, document visibility and Permissions Policy decisions. Labels and identifiers are exposed separately for each device kind only when native enumeration exposes that kind; other kinds remain withheld. Host labels and identifiers are not returned by synthetic enumeration. Empty mode returns an empty list and rejects `getUserMedia` with `NotFoundError`; explicit media blocking rejects it with `NotAllowedError`, including when enumeration is configured as real. These settings do not synthesize a working camera or microphone.
@@ -111,6 +139,8 @@ Choosing real media enumeration no longer prunes independent speech, battery, Bl
 Document and worker NetworkInformation accessors now share one implementation and configuration. Real mode and absent native members remain untouched; iOS personas omit the API in both scopes. Duplicate injection does not stack the network getters. The live document probe compares exposed connection members with the launched persona so a failed patch cannot silently pass a network-value mismatch.
 
 Same-origin child synchronization installs the network patch before exposing newly accessed blank iframe windows, including nested frames. It also patches existing child windows. Native member absence and receiver exceptions remain intact in each child realm. VM coverage exercises synchronous access; native cross-origin frame delivery remains a browser gate.
+
+Network-condition simulation is separate from `navigator.connection` reporting. Missing latency/throughput inputs remain unset across save/load and editor normalization; explicit zero remains zero. Chromium's top-level sessions receive `-1` for unlimited throughput, and clearing an applied setting restores the default connection. Required network commands must succeed before target resume. Firefox currently has no simulation backend, so an active offline/throttle configuration rejects its launch with `NETWORK_CONDITIONS_UNSUPPORTED` instead of silently ignoring it. This is browser emulation, not an operating-system traffic policy; worker and non-page traffic need separate verification.
 
 Contract references:
 
@@ -132,10 +162,18 @@ Repeated opens share a single BiDi socket. Firefox liveness checks use BiDi and 
 | Hardware concurrency / screen / Canvas / WebGL / Audio / ClientRects | Shared document-start injection on APIs the browser exposes |
 | Device memory / Client Hints / Chrome namespace | Preserve Firefox's native API shape; no fabricated Chromium interface |
 | Timezone | BiDi override where supported, runtime fallback, and process timezone on non-Windows hosts |
-| Worker realms | Best-effort injection on `script.realmCreated`; execution before the worker's first instruction is **not guaranteed** |
+| Worker realms | Prefs supply UA/platform/languages/timezone; newly fetched HTTP(S) worker scripts routed through the per-profile forwarder receive the JS prefix. Asynchronous realm injection remains best effort |
 | CDP automation / extension hot loading | Remain unsupported on Firefox |
 
-`fingerprintDelivery` and `fingerprintVerification` describe document delivery. `workerFingerprintDelivery` remains false. A successful document probe does not certify every worker, rendering backend, font asset, or network fingerprint.
+`fingerprintDelivery` and `fingerprintVerification` describe document delivery. `workerFingerprintDelivery` is `prefs-fields` after standalone BiDi initialization and `prefs-fields-plus-proxy` only when startup has established the Worker forwarder and imported its CA. This is not a claim of complete worker coverage: blob/data workers, previously cached scripts, static module dependencies and local proxy bypasses are not certified before their first instruction.
+
+Every configured HTTP/HTTPS/SOCKS5 proxy, including unauthenticated proxies, is bridged before the Worker forwarder. Upstream credentials remain at the bridge. Forwarder or CA import failure stops startup before browser spawn. OpenSSL and an NSS `certutil` are required for this Firefox path. Localhost stays outside the forwarder so the managed local start page remains reachable. Normal stop first requests native BiDi `browser.close`; normal stop and failed startup both close the listener and sockets and remove temporary CA files.
+
+The forwarder uses Node's HTTP parser for framing and streams ordinary resources without decoding their content. Worker responses alone are buffered, with separate 16 MiB encoded/decoded limits; gzip, deflate and Brotli are decoded before prefixing. Rewritten responses remove stale validators/digests and use `Cache-Control: no-store`. Native parsing handles close-delimited responses, chunk trailers, HEAD and bodyless statuses. HTTP upgrades remain streamed. TLS interception still uses Node's TLS implementation and does not reproduce a native Gecko TLS/HTTP2 fingerprint.
+
+Network-script injection in both engines preserves the hashbang, original directive prologue and automatic semicolon insertion. It does not wrap the application in a function or repair invalid JavaScript. Chromium rewrites only JavaScript responses classified as worker loads (`Other`), preserving successful 2xx status codes and leaving page scripts, redirects, bodyless/error responses and non-JavaScript resources untouched. Partial Worker scripts are aborted instead of being executed without injection. CSP/CORS and other security headers survive rewriting. The obsolete public `__obPersonaUrl` Blob hook is removed; nested workers use the private closure installer. Duplicate response events share one operation, and target detach or network failure cancels tracking and prevents late fulfillment. Rewrite failures abort the paused request; inability to confirm abort stops the browser. Rewriting does not change static module dependency evaluation order, so arbitrary network-module dependency graphs are not certified by classic-worker first-read checks.
+
+Firefox's production startup and per-host certificate generation use asynchronous OpenSSL calls. Per-profile signing has two concurrent jobs, at most 128 queued hosts and a 128-entry LRU cache; same-host requests share a job. Leaf keys/CSRs are removed after signing, and stop cancels active/queued jobs before removing the CA directory. Synchronous certificate helpers remain only for compatibility fixtures. Client cancellation closes pending CONNECT attempts, and direct socket DNS answers are checked against the existing outbound-address policy before connection. Active uploads retain Node's default request deadline rather than a 30-second total upload cutoff.
 
 Official protocol references:
 
@@ -156,6 +194,21 @@ From `Browserapp/`:
 ```sh
 npm run selftest -- fpreliability
 npm run selftest -- fpgeneration
+npm run selftest -- fpvalues
+npm run selftest -- cleanupownership
+npm run selftest -- launchwriteback
+npm run selftest -- networkconditions
+npm run selftest -- networkconditionsnative
+npm run selftest -- swgate
+npm run selftest -- swcache
+npm run selftest -- fpapicontracts
+npm run selftest -- fpapinat
+npm run selftest -- ffgeonative
+npm run selftest -- ffresponse
+npm run selftest -- firefoxstart
+npm run selftest -- workernetwork
+npm run selftest -- ffcancel
+npm run selftest -- ffcertificates
 npm run selftest -- emittedscriptparse
 npm run selftest -- fpidentity
 npm run selftest -- fprealms
@@ -183,6 +236,8 @@ The capability gate compares unmodified and injected software-driver WebGL1/2 co
 
 ```sh
 OPENBROWSER_CHROMIUM_BINARY=/absolute/path/to/chrome npm run selftest -- fpcapabilitiesnative
+OPENBROWSER_CHROMIUM_BINARY=/absolute/path/to/chrome npm run selftest -- codecnative
+OPENBROWSER_CHROMIUM_BINARY=/absolute/path/to/chrome npm run selftest -- networksemantics
 ```
 
 The native-contract gate compares an unmodified browser with version-1 Windows and version-2 Windows/Android/iOS configurations. It exercises full font protection, Blob iterators/getters/subclasses, Worker URL/options conversion and subclassing, classic/module/shared workers, private state, cross-realm stringification, actual repeated-source execution, and CSP/Trusted Types failures. The harness uses both production launch-argument stages so configured software-driver flags actually reach Chrome.

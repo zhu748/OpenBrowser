@@ -1,0 +1,120 @@
+{
+  "date": "2026-11-12",
+  "baseCommit": "81da96d44edd34f2df29169fcbcf4246f3728e2e",
+  "scope": "Round 5 project audit: lifecycle resource ownership, asynchronous launch persistence, connectivity guards and network-condition simulation",
+  "workspace": "Incremental changes on top of the previous four uncommitted optimization rounds; no commit, push or external publication",
+  "findings": [
+    {
+      "id": "late-generation-shared-resource-cleanup",
+      "severity": "high",
+      "status": "fixed",
+      "before": "A completed cleanup could run again. Late callbacks could perform path-wide helper draining, singleton removal and named IPC cleanup against a replacement generation. They also reset fingerprint verification failures before checking the generation.",
+      "changes": "Return immediately for cleaned items; gate shared resource operations on current generation and exact directory-lock ownership, rechecking after awaits. Keep old private connection/proxy cleanup independent. Reset verification failures only for the current generation."
+    },
+    {
+      "id": "startup-lock-acquisition-failure-cleanup",
+      "severity": "high",
+      "status": "fixed",
+      "before": "Startup recorded the profile root before acquiring its lock. An acquisition failure could enter directory-wide cleanup without ever owning that directory.",
+      "changes": "Startup cleanup checks lock ownership before helper drain, singleton removal and named IPC cleanup. Tests retain the real existing lock and singleton for missing/foreign ownership."
+    },
+    {
+      "id": "unknown-helper-scan-release",
+      "severity": "high",
+      "status": "fixed",
+      "before": "Running cleanup could treat known=false with no returned PIDs as proof of exit and release the profile lock; singleton files were removed before scan confirmation.",
+      "changes": "Unknown helper enumeration blocks cleanup and retains lock/singleton state. Remove the extra synchronous process-kill fallback; the bounded asynchronous drain already owns kill/re-scan attempts. An explicit successful retry can finish cleanup."
+    },
+    {
+      "id": "launch-snapshot-clobber-and-missing-publication",
+      "severity": "high",
+      "status": "fixed",
+      "before": "Proxy preparation and direct-exit discovery could publish stale snapshots over edits or resurrect deleted rows. The outer merge copied the entire old privacy/proxy blocks, while resolved snapshots were not necessarily placed in the persisted map. prepareProfileProxyForStart ignored the applied profile returned by its network patch.",
+      "changes": "Stage proxy and locale results without publishing; verify source revision/content and maintenance ownership at publication, after seed migration and before spawn. Publish the actual sanitized result to the map. Return applied exit metadata from proxy preparation. Changes, deletion, recreation and maintenance reject stale work instead of overwriting it. Both Chromium and Firefox startup functions are exercised directly by deferred-operation tests."
+    },
+    {
+      "id": "forced-connectivity-guard-reuses-cache",
+      "severity": "medium",
+      "status": "fixed",
+      "before": "force=true still returned cached locale/exit evidence, bypassing the requested connectivity check. Direct lookup was not passed force=true.",
+      "changes": "Forced checks bypass the engine locale cache and forward force to direct lookup or proxy probing."
+    },
+    {
+      "id": "missing-coordinate-numeric-coercion",
+      "severity": "medium",
+      "status": "fixed",
+      "before": "Locale resolution accepted Number(null) as a valid coordinate and could turn unknown exit coordinates into (0,0).",
+      "changes": "Use shared strict coordinate normalization; retain genuinely unknown values and valid numeric zero."
+    },
+    {
+      "id": "network-condition-null-and-capability-contract",
+      "severity": "medium",
+      "status": "fixed",
+      "before": "Save/load/editor/runtime paths converted missing throughput to numeric zero; reopening also rounded configured throughput. Required protocol errors were swallowed, and Firefox silently ignored the entire configuration.",
+      "changes": "Share normalization across storage, UI and runtime. Keep unset inputs null, explicit zero intact and fractional KB/s reversible. Send CDP -1 for unlimited throughput; reset previously applied settings; propagate command failure before resume. Firefox rejects active unsupported simulation before allocating launch resources."
+    }
+  ],
+  "verification": {
+    "aggregate": {
+      "command": "source /workspace/work/openbrowser-audit/env.sh && npm run selftest:all",
+      "registered": 211,
+      "passed": 208,
+      "partial": 1,
+      "skipped": 2,
+      "failed": 0,
+      "exitCode": 0
+    },
+    "finalSupplementaryChecks": {
+      "cleanupOwnership": "7/7: completed callback, running/starting replacement, ownership change during wait, foreign lock, unknown scan and retry, actual startup lock acquisition failure",
+      "launchWriteback": "28/28: proxy/locale asynchronous operations, edits/deletion/recreation/maintenance/in-place changes, staged metadata, actual persisted map, forced cache bypass, direct lookup deletion and both real startup functions",
+      "networkConditions": "Save/load/editor normalization, missing and invalid values, numeric zero, unlimited defaults, reset, mandatory-command errors and Firefox capability rejection",
+      "lifecycle": "Concurrent start/stop, restart cycles, lock retention and failed-start recovery passed",
+      "firefoxStart": "15 passed, 0 failed",
+      "deliveryBoundaries": "35/35",
+      "lint": "npm run lint exited 0",
+      "diffWhitespace": "git diff --check exited 0"
+    },
+    "nativeNetwork": {
+      "browser": "Chromium 157.0.8103.78",
+      "origin": "ephemeral loopback HTTP server; other traffic uses an unavailable loopback proxy",
+      "checks": [
+        "Latency-only settings with unset throughput complete a fresh fetch",
+        "Offline mode rejects a fresh uncached fetch",
+        "Clearing simulation restores successful fetching"
+      ],
+      "note": "No claim that the old zero throughput parameters necessarily stalled Chrome; the verified defect was incorrect null/default handling."
+    },
+    "partial": [
+      "selftest:kernelflagforensics: platform kernel launcher unavailable"
+    ],
+    "skipped": [
+      "selftest:cssfontgate: macOS kernel launcher required",
+      "selftest:cssfontrewrite: macOS kernel launcher required"
+    ],
+    "timingNote": "The aggregate passed once. Final additions to cleanup ownership, startup revision checks and Firefox capability tests were then covered by the listed supplementary checks; only affected suites and lint were rerun.",
+    "logDigests": {
+      "cleanup-ownership-final.log": "be5fde64d69983f4a0ecbab90f590d831cbf2566e2852349d7719952898dd635",
+      "delivery-final.log": "2c089cdfa2b80cd29e7af194bc221986db251b3ff92ea2d31aab0efeb81eec7d",
+      "firefox-start-final.log": "40c4bea08e428870342c690c74626affed5f14d927e2656aa84865f9268102fc",
+      "full-selftests.log": "a36e77c8da087e9afdefb8b6c88b4a49cb451b065b682504c18398661e5e607e",
+      "launch-writeback-final.log": "dab0c64a8ad93bd663e902ad48646c8022549d96f49d92215ae0ec79ce9671a2",
+      "lifecycle-final.log": "5862dbf5aae49f3e4df712df244c4be7d84625d39636616785a1a57e4a2cf1ad",
+      "lint-final.log": "ad77710437a37614cfb4eb4d02fa249fd16afae8f6fa344aa4520cc8ef0ce8be",
+      "network-conditions-final.log": "ef6a7ef2f4cc6c3ded27ed0418577fe9b9591758261ba5f6a1f36392c26a9666"
+    }
+  },
+  "behaviorChanges": [
+    "Editing a profile while it is being prepared can stop that launch with PROFILE_STALE_REV; retry uses the latest configuration.",
+    "Unknown process inspection retains profile locks and browser singleton state until cleanup can confirm helper exit.",
+    "Active Firefox offline/throttle configuration now fails explicitly with NETWORK_CONDITIONS_UNSUPPORTED; clearing it or using Chromium is required.",
+    "Missing network-throughput inputs remain unlimited; explicit numeric zero is retained and native command failures are visible."
+  ],
+  "remainingLimits": [
+    "Native Windows/macOS process cleanup, platform kernel launchers, GPU/driver/font behavior still require their native hosts.",
+    "Generation and lock ownership checks coordinate this engine; they do not provide an OS-level transaction against another program forcibly replacing a live lock.",
+    "Network simulation applies to managed Chromium top-level sessions. It is not a firewall or proof of coverage for every worker, Service Worker or non-page network request.",
+    "Firefox has no network-condition simulation backend; startup now exposes this limit explicitly.",
+    "Firefox cached/blob/data/local-bypass Worker first-instruction and native Gecko transport limits from earlier rounds remain.",
+    "Browser fingerprint emulation is not certified perfect or universally indistinguishable."
+  ]
+}

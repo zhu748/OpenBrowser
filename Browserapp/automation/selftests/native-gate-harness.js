@@ -23,6 +23,7 @@ const { buildFingerprint } = require('../fingerprint');
 const { sanitizeProfile } = require('../../engine/profile-sanitizer');
 const { buildBaseLaunchArguments, completeLaunchArguments } = require('../../engine/launch-arguments');
 const injection = require('../../engine/fingerprint-injection');
+const { normalizeNetworkInformation } = require('../../shared/profile-values');
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 class Unavailable extends Error {}
@@ -103,11 +104,23 @@ function buildPersona(id, spec = {}) {
  */
 async function launchPersonaBrowser(browser, persona, options = {}) {
   const { profile, fingerprint } = persona;
-  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'openbrowser-native-gate-'));
+  // A supplied root belongs to the caller, e.g. persistence/restart tests.
+  const root = options.profileRoot || await fsp.mkdtemp(path.join(os.tmpdir(), 'openbrowser-native-gate-'));
   let child, item, closing;
   const close = () => {
     if (closing) return closing;
     closing = (async () => {
+      if (options.gracefulClose && item?.workerFingerprintConnection) {
+        item.stopping = true;
+        await item.workerFingerprintConnection.command('Browser.close', {}, { timeout: 2000 }).catch(() => {});
+        if (child?.exitCode === null && child?.signalCode === null) {
+          await new Promise((resolve) => {
+            const timer = setTimeout(done, 4000);
+            function done() { clearTimeout(timer); child.removeListener('exit', done); resolve(); }
+            child.once('exit', done);
+          });
+        }
+      }
       try { item?.workerFingerprintConnection?.close(); } catch (_) {}
       if (child?.pid && child.exitCode === null && child.signalCode === null) {
         await new Promise((resolve) => {
@@ -118,11 +131,12 @@ async function launchPersonaBrowser(browser, persona, options = {}) {
           try { child.kill('SIGKILL'); } catch (_) { done(); }
         });
       }
-      await fsp.rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      if (!options.profileRoot) await fsp.rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     })();
     return closing;
   };
   try {
+    if (options.profileRoot) await fsp.rm(path.join(root, 'DevToolsActivePort'), { force: true });
     const initialArgs = buildBaseLaunchArguments({ root, fingerprint, profile, hostScaleFactor: options.hostDpr || 1 });
     const args = completeLaunchArguments(initialArgs, { profile, proxyConfig: null,
       proxyEndpoint: 'http://127.0.0.1:9' }).args.filter((arg) => arg !== 'about:blank');
@@ -201,7 +215,7 @@ function verifyIdentity(actual, fp, label = 'identity') {
   assert.equal(actual.memory, fp.deviceMemory, label + ' memory');
   if (fp.timezone) assert.equal(actual.timezone, fp.timezone, label + ' timezone');
   for (const key of ['rtt', 'downlink', 'effectiveType', 'saveData']) {
-    assert.equal(actual.connection?.[key], fp.connection[key], label + ' connection.' + key);
+    assert.equal(actual.connection?.[key], normalizeNetworkInformation(fp.connection)[key], label + ' connection.' + key);
   }
 }
 

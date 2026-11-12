@@ -1,0 +1,57 @@
+{
+  "date": "2026-11-12",
+  "baseCommit": "81da96d44edd34f2df29169fcbcf4246f3728e2e",
+  "scope": "Follow-up review of network Worker script semantics, response ownership, certificate generation and proxy cancellation",
+  "reproducedBeforeFix": {
+    "networkWorkerStrictModeAfterInjection": false,
+    "chromiumResponseSecurityHeadersDropped": true,
+    "publicPersonaBlobHookEmitted": true,
+    "fourSynchronousCertificateJobs": { "milliseconds": 405.83, "eventLoopTicks": 0 }
+  },
+  "changes": [
+    "Both network injection paths share a directive-prologue and hashbang aware inserter; original strict/sloppy mode, ASI and malformed-program rejection remain intact",
+    "Recognize standard and legacy JavaScript MIME types; inject successful Worker 2xx bodies, preserve status codes, and abort partial Worker responses",
+    "Keep ordinary page scripts out of Chromium Worker rewriting, preserve CSP/CORS and remove the public Blob source hook",
+    "Deduplicate paused response events and cancel late fulfillment after target detach, network failure or destruction; abort failed rewrites and close the browser if abort cannot be confirmed",
+    "Move production Firefox CA and leaf generation off the main event loop; deduplicate same-host jobs, bound signing concurrency and LRU storage, remove leaf artifacts and cancel work before CA cleanup",
+    "Close pending upstream CONNECT on client cancellation; validate actual DNS answers for direct sockets and retain Node's default total upload deadline",
+    "Preserve both pinned and system upstream CA bundles when supplied together"
+  ],
+  "validation": {
+    "fullSuite": { "registered": 201, "passed": 198, "partial": 1, "skipped": 2, "failed": 0 },
+    "partial": ["selftest:kernelflagforensics: platform launcher unavailable"],
+    "skipped": ["selftest:cssfontgate: macOS-only", "selftest:cssfontrewrite: macOS-only"],
+    "finalAdditionalCases": {
+      "reason": "Legacy JavaScript MIME and non-200 successful/partial response cases were added after the full suite; affected paths were then revalidated",
+      "passed": ["workernetwork", "ffresponse", "networksemantics", "fingerprintnative", "ffworker"]
+    },
+    "lint": "npm run lint -- --max-warnings 0: exit 0",
+    "diffCheck": "git diff --check: exit 0",
+    "nativeBrowsers": { "chrome": "157.0.8103.78", "firefox": "160.0", "platform": "Linux x64" },
+    "newRegressionSuites": ["workernetwork", "networksemantics", "ffcertificates", "ffcancel"],
+    "certificateProbe": {
+      "fourAsyncJobsMilliseconds": 296.04,
+      "eventLoopTicks": 51,
+      "cacheEntriesWithConfiguredLimitTwo": 2,
+      "sameHostConcurrentRequests": 20,
+      "temporaryLeafArtifactsRemaining": 0,
+      "closeCancelsActiveAndQueuedJobs": true,
+      "measurementNote": "Single local observations of responsiveness, not a statistical throughput benchmark"
+    },
+    "nativeFirefoxFullEngine": {
+      "firstScriptPersonaCores": 4,
+      "stopMilliseconds": 758.16,
+      "listenerClosed": true,
+      "caRemoved": true,
+      "externalExitDiscoveryStubbed": true,
+      "nonLocalUpstream": "unavailable loopback proxy"
+    }
+  },
+  "limits": [
+    "Native Windows/macOS GPU, font and vendor-kernel behavior remains platform-specific and was not certified on Linux",
+    "Network module static dependencies still execute before an entry module body; classic-worker checks do not certify every module graph",
+    "Firefox first-instruction limits for blob/data, cached and local-bypass Worker scripts remain documented",
+    "Firefox interception still uses Node TLS/HTTP1 rather than native Gecko TLS/HTTP2 fingerprints",
+    "Synchronous certificate helpers remain available only for compatibility fixtures; production startup uses the async factory"
+  ]
+}

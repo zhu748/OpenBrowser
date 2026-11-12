@@ -27,23 +27,8 @@ const {
   invokeProxyRefresh = async () => '',
   classifyProxyError = () => 'proxy-unknown',
 } = proxyForwarderModule;
-const { assertProfileNotMaintained } = require('./profile-maintenance');
 const { sameProxyIdentity } = require('./proxy-helpers');
-
-/** Reject a late network result before it can overwrite an edit or deletion. */
-function profileWriteGuard(engine, id) {
-  assertProfileNotMaintained(engine, id);
-  const previous = engine.profiles.get(id);
-  const revision = engine.profiles.revisionOf?.(id);
-  return () => {
-    assertProfileNotMaintained(engine, id);
-    const unchanged = revision === undefined ? engine.profiles.get(id) === previous
-      : engine.profiles.revisionOf(id) === revision;
-    if (!unchanged) throw Object.assign(new Error(`Profile changed during proxy operation: ${id}`), {
-      code: 'PROFILE_STALE_REV', profileId: id,
-    });
-  };
-}
+const { profileWriteGuard } = require('./profile-write-guard');
 
 module.exports = {
   async resolveProfileProxyConfig(profile, { allowExtract = true } = {}) {
@@ -90,7 +75,7 @@ module.exports = {
     }
     throw new Error(errors[0] || '代理配置无效');
   },
-  applyNetworkToProfile(profile, network, { persist = false } = {}) {
+  applyNetworkToProfile(profile, network, { persist = false, publish = true } = {}) {
     const patch = this.fingerprintPatchFromNetwork(network, profile);
     const next = this.sanitizeProfile({
       ...profile,
@@ -100,6 +85,7 @@ module.exports = {
         ...(patch.privacy || {}),
       },
     });
+    if (!publish) return { profile: next, network, patch };
     this.profiles.set(next.id, next);
     this.networkInfo.set(next.id, network);
     if (persist) this.persist().catch(() => {});
@@ -266,7 +252,8 @@ module.exports = {
       extractError: extractError ? String(extractError.message || extractError) : null,
     };
   },
-  async prepareProfileProxyForStart(profile) {
+  async prepareProfileProxyForStart(profile, { publish = true, onNetwork } = {}) {
+    const assertCurrent = profileWriteGuard(this, profile.id);
     let working = this.resolveStoredProxyProfile(this.sanitizeProfile(profile));
     const meta = working.proxyMeta || {};
     if (working.networkMode === 'direct') return working;
@@ -329,10 +316,13 @@ module.exports = {
             proxySource: index === 0 ? 'primary' : 'backup',
           });
           working = this.sanitizeProfile({ ...working, networkMode: 'proxy', proxy: network.proxyRaw || candidate });
-          this.applyNetworkToProfile(working, network, { persist: false });
+          assertCurrent();
+          working = this.applyNetworkToProfile(working, network, { persist: false, publish }).profile;
+          onNetwork?.(network);
           ok = true;
           break;
         } catch (error) {
+          if (error.code === 'PROFILE_STALE_REV' || error.code === 'PROFILE_MAINTENANCE') throw error;
           lastError = error;
         }
       }

@@ -357,79 +357,9 @@ module.exports = `  // --- hide automation (navigator.webdriver / AutomationCont
     });
   }
 
-  // --- permissions consistency (Notification.permission vs permissions.query) ---
-  try {
-    const permProto = typeof Permissions !== "undefined" ? Permissions.prototype : (typeof navigator !== "undefined" && navigator.permissions ? Object.getPrototypeOf(navigator.permissions) : null);
-    if (permProto && typeof permProto.query === "function") {
-      const notificationStatuses = new WeakSet();
-      // Geolocation permission policy (Roxy geoLocation mode 对齐): the editor's geoPermission
-      // switch forces the reported PermissionStatus. 'granted' pairs with the CDP coordinate
-      // override (tab-apply Browser.setPermission is the native layer; this mirrors it for
-      // hosts where that command is unavailable), 'denied' answers denied before any prompt.
-      const geoStatuses = new WeakSet();
-      const forcedGeoState = (CFG.geoPermission === "denied" || CFG.geoPermission === "granted") ? CFG.geoPermission : null;
-      if (typeof PermissionStatus !== "undefined" && PermissionStatus.prototype) {
-        const stateDesc = Object.getOwnPropertyDescriptor(PermissionStatus.prototype, "state");
-        if (stateDesc && typeof stateDesc.get === "function") {
-          const origStateGet = stateDesc.get;
-          const patchedStateGet = nativeLike(function state() {
-            if (forcedGeoState && geoStatuses.has(this)) return forcedGeoState;
-            if (notificationStatuses.has(this) && typeof Notification !== "undefined") {
-              return Notification.permission === "default" ? "prompt" : Notification.permission;
-            }
-            return origStateGet.call(this);
-          }, origStateGet, "get state", 0);
-          Object.defineProperty(PermissionStatus.prototype, "state", {
-            configurable: true,
-            enumerable: true,
-            get: patchedStateGet,
-          });
-        }
-      }
-      replaceMethod(permProto, "query", (origQuery) => async function query(descriptor) {
-        const status = await origQuery.call(this, descriptor);
-        if (descriptor && descriptor.name === 'notifications') {
-          if (status) notificationStatuses.add(status);
-        }
-        if (status && forcedGeoState && descriptor && descriptor.name === 'geolocation') {
-          geoStatuses.add(status);
-        }
-        return status;
-      });
-    }
-  } catch (_) {}
-
-  // --- geolocation API policy ---
-  // 'denied' keeps the native shape: callbacks fire asynchronously, the error object is a
-  // GeolocationPositionError with code 1, watchPosition yields no id. Without this the host
-  // flow would still raise the native prompt and a user click would leak real coordinates.
-  if (CFG.geoPermission === "denied") {
-    try {
-      const geo = typeof navigator !== "undefined" ? navigator.geolocation : null;
-      if (geo && typeof Geolocation !== "undefined" && Geolocation.prototype) {
-        const makeGeoError = () => {
-          const err = (typeof GeolocationPositionError !== "undefined" && GeolocationPositionError.prototype)
-            ? Object.create(GeolocationPositionError.prototype)
-            : {};
-          Object.defineProperty(err, "code", { value: 1, enumerable: true });
-          Object.defineProperty(err, "message", { value: "User denied Geolocation", enumerable: true });
-          return err;
-        };
-        const denyPosition = () => function getCurrentPosition(success, error) {
-          if (typeof error === "function") {
-            setTimeout(() => {
-              try { error.call(undefined, makeGeoError()); } catch (_) {}
-            }, 0);
-          }
-        };
-        replaceMethod(Geolocation.prototype, "getCurrentPosition", (original) => denyPosition());
-        replaceMethod(Geolocation.prototype, "watchPosition", (original) => function watchPosition(success, error) {
-          denyPosition()(success, error);
-          return 0;
-        });
-      }
-    } catch (_) {}
-  }
+  // Permissions and geolocation retain the native methods/status objects.
+  // Native permission policy is installed before managed navigation; JS-only
+  // callbacks cannot enforce it across realms or preserve WebIDL validation.
 
   // --- window.chrome presence ---
   try {

@@ -122,13 +122,26 @@ async function initializeFirefoxFingerprint(connection, fingerprint, profile, op
     const verified = evaluateFingerprintDelivery(profile, fingerprint, live, { strict: true });
     if (!verified.ok) throw new Error('Firefox 指纹交付校验失败：' + verified.mismatches.map((m) => m.message).join('; '));
   }
-  contextEmulation.set(connection, ensureContext);
+  const permissionOrigins = new Set();
+  const prepareNavigation = async (url) => {
+    if (!['granted', 'denied'].includes(fingerprint.geoPermission)) return;
+    const parsed = new URL(url);
+    if (!['http:', 'https:'].includes(parsed.protocol) || permissionOrigins.has(parsed.origin)) return;
+    await connection.command('permissions.setPermission', {
+      descriptor: { name: 'geolocation' }, state: fingerprint.geoPermission, origin: parsed.origin,
+    });
+    permissionOrigins.add(parsed.origin);
+  };
+  contextEmulation.set(connection, { ensureContext, prepareNavigation });
   return {
     context: contexts[0].context, preload: preload.script, warnings,
     capabilities: {
       engine: 'firefox', cdp: false, bidi: true, fingerprintDelivery: true,
       fingerprintVerification: true, runtimeInjection: true, documentStartInjection: true,
-      workerFingerprintDelivery: 'prefs-fields-plus-proxy', workerInjection: 'prefs-delivered fields (UA/platform/languages/timezone) verified; JS-only fields (hardwareConcurrency) delivered by the per-profile worker-script MITM forwarder (automation/firefox-worker-mitm-proxy) on BOTH the direct path and the authenticated-proxy chain (CA trusted via NSS import, automation/firefox-trust-installer) — see firefox-worker-delivery-selftest',
+      workerFingerprintDelivery: options.workerProxyReady === true ? 'prefs-fields-plus-proxy' : 'prefs-fields',
+      workerInjection: options.workerProxyReady === true
+        ? 'Prefs cover UA/platform/languages/timezone. Newly fetched HTTP(S) worker scripts routed through the trusted per-profile forwarder receive JS-only fields; blob/data, cached scripts, static module dependencies and local bypasses are not certified.'
+        : 'Prefs cover UA/platform/languages/timezone; asynchronous realm injection does not guarantee JS-only fields before the first worker instruction.',
       deviceMemoryOverride: false, extensionHotLoad: false, zoomReconcile: false,
       retention: true, startUrls: true,
     },
@@ -136,13 +149,14 @@ async function initializeFirefoxFingerprint(connection, fingerprint, profile, op
 }
 
 async function navigateFirefoxStartup(connection, context, urls) {
-  const ensureContext = contextEmulation.get(connection);
-  if (!ensureContext) throw new Error('Firefox fingerprint initialization is required before navigation');
+  const policy = contextEmulation.get(connection);
+  if (!policy) throw new Error('Firefox fingerprint initialization is required before navigation');
   urls = [...new Set(urls.map(startupNavigationUrl).filter(Boolean))];
   for (let index = 0; index < urls.length; index += 1) {
     const target = index === 0 ? context : (await connection.command('browsingContext.create', { type: 'tab' })).context;
     if (!target) throw new Error('Firefox did not create a browsing context');
-    await ensureContext(target, 'startup');
+    await policy.ensureContext(target, 'startup');
+    await policy.prepareNavigation(urls[index]);
     await connection.command('browsingContext.navigate', { context: target, url: urls[index], wait: 'interactive' }, 15000);
   }
 }

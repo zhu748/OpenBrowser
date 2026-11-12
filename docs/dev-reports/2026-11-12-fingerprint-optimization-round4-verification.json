@@ -1,0 +1,215 @@
+{
+  "date": "2026-11-12",
+  "baseCommit": "81da96d44edd34f2df29169fcbcf4246f3728e2e",
+  "scope": "Fourth fingerprint optimization round: native permission/geolocation contracts, effective privacy policy and storage estimates",
+  "findings": [
+    {
+      "id": "permission-descriptor-replay",
+      "status": "fixed",
+      "before": {
+        "reads": 2,
+        "error": "Error",
+        "message": "name read twice"
+      },
+      "nativeReference": {
+        "reads": 1,
+        "state": "denied"
+      },
+      "changes": "Remove synthetic Permissions.query and PermissionStatus.state overrides. The browser owns dictionary conversion, validation, native states and status objects; no post-query descriptor reads occur."
+    },
+    {
+      "id": "synthetic-geolocation-denial-contract",
+      "status": "fixed",
+      "before": {
+        "missing": "accepted",
+        "receiver": "accepted",
+        "callback": "accepted",
+        "options": "accepted",
+        "watch": {
+          "id": 0,
+          "code": 1,
+          "keys": [
+            "code",
+            "message"
+          ],
+          "proto": true
+        }
+      },
+      "nativeReference": {
+        "missing": "TypeError",
+        "receiver": "TypeError",
+        "callback": "TypeError",
+        "options": "RangeError",
+        "watch": {
+          "id": 1,
+          "code": 1,
+          "keys": [],
+          "proto": true
+        }
+      },
+      "changes": "Remove fake getCurrentPosition/watchPosition denial callbacks; retain native receiver/callback/options validation, real watch IDs, cancellation and genuine native error objects. Chromium native grant and denial setup is mandatory before script registration."
+    },
+    {
+      "id": "disabled-mode-and-existing-grants",
+      "status": "fixed",
+      "evidence": [
+        "geoMode disabled formerly left effective permission at prompt when geoPermission was absent",
+        "Firefox 160 native probe: permissions.default.geo=2 plus an existing geolocation grant still returned permission granted and attempted native position access",
+        "Firefox geo.enabled=false removes native geolocation even for granted origins"
+      ],
+      "changes": [
+        "Resolve disabled mode as denied even without an explicit deny selector; retain deny for allow without valid coordinates",
+        "Firefox writes geo.enabled false for effective denial, true for prompt/allow, and one matching default permission value",
+        "Apply native BiDi grants/denials to managed HTTP(S) startup origins before navigation, cache only successful setup and propagate failures"
+      ]
+    },
+    {
+      "id": "storage-quota-and-foreign-receivers",
+      "status": "fixed",
+      "before": {
+        "main": {
+          "quota": 32212254720,
+          "usage": 0,
+          "usageDetails": {}
+        },
+        "child": {
+          "quota": 32212254720,
+          "usage": 0,
+          "usageDetails": {}
+        },
+        "borrowed": {
+          "ok": false,
+          "error": "TypeError",
+          "message": "Illegal invocation"
+        },
+        "reverse": {
+          "ok": false,
+          "error": "TypeError",
+          "message": "Illegal invocation"
+        }
+      },
+      "nativeReference": {
+        "main": {
+          "quota": 10737418240,
+          "usage": 0,
+          "usageDetails": {}
+        },
+        "child": {
+          "quota": 10737418240,
+          "usage": 0,
+          "usageDetails": {}
+        },
+        "borrowed": {
+          "ok": true,
+          "value": {
+            "quota": 10737418240,
+            "usage": 0,
+            "usageDetails": {}
+          }
+        },
+        "reverse": {
+          "ok": true,
+          "value": {
+            "quota": 10737418240,
+            "usage": 0,
+            "usageDetails": {}
+          }
+        }
+      },
+      "changes": [
+        "Share one estimate patch between documents, same-origin child realms and workers",
+        "Delegate receiver/argument validation to the original native method, accepting genuine foreign-realm managers",
+        "Keep the actual native dictionary, its realm, property flags, optional absence and additional members",
+        "Bound any adjusted quota by the quota returned in that call; consider existing usage without inventing extra native capacity",
+        "Recognize an existing same-token patch to avoid wrapper stacking",
+        "Isolate the VM storage fixture class and intrinsics instead of modifying shared host Function/Object prototypes"
+      ]
+    }
+  ],
+  "validation": {
+    "fullSuite": {
+      "registered": 207,
+      "passed": 204,
+      "partial": 1,
+      "skipped": 2,
+      "failed": 0
+    },
+    "partial": [
+      "kernelflagforensics: platform launcher unavailable"
+    ],
+    "skipped": [
+      "cssfontgate: macOS-only",
+      "cssfontrewrite: macOS-only"
+    ],
+    "lint": "npm run lint -- --max-warnings 0: exit 0",
+    "diffCheck": "git diff --check: exit 0",
+    "newRegressionSuites": [
+      "fpapicontracts",
+      "fpapinat",
+      "ffgeonative"
+    ],
+    "unchangedV1ReplayFixtures": 240,
+    "existingGeneratedV2ValueSamples": 10000,
+    "nativeBrowsers": {
+      "chromium": "157.0.8103.78",
+      "firefox": "160.0",
+      "platform": "Linux x64"
+    },
+    "chromiumChecks": [
+      "Stock and injected descriptor getter/coercion counts, frozen dictionaries and forged receivers",
+      "Missing callbacks, forged receivers and throwing options retain native errors",
+      "Positive watch IDs, genuine errors with no synthetic own fields, and native clearWatch cancellation",
+      "Storage quota bounds, optional members and borrowed-call result realms in the main document and same-origin iframe",
+      "Storage/permission behavior in dedicated, shared and service workers",
+      "Native granted (0,0) position and untouched-realm comparison under Permissions-Policy restrictions"
+    ],
+    "permissionsPolicyReference": {
+      "actual": {
+        "state": "granted",
+        "position": {
+          "code": 1
+        }
+      },
+      "native": {
+        "state": "granted",
+        "position": {
+          "code": 1
+        }
+      }
+    },
+    "firefoxChecks": [
+      "Deny-mode first-script native permission setup overrides a pre-existing origin grant",
+      "An unprepared, separately authorized origin still has no native geolocation API in deny mode",
+      "The same persisted profile restores geolocation in allow mode and returns configured (0,0)",
+      "Storage result shape, native quota bound, result realm and foreign receivers",
+      "Gecko permission conversion counts match its own untouched sandbox"
+    ],
+    "unitChecks": [
+      "Native low/zero quotas",
+      "Reported usage above persona tier",
+      "Absent/frozen/extra dictionary members",
+      "Native brand validation and genuine foreign receivers",
+      "Repeated synchronization is idempotent",
+      "Mandatory Chromium denial failure blocks registration",
+      "Firefox permission setup precedes navigation and failures are not cached"
+    ],
+    "referenceNotes": [
+      "The first aggregate run had one obsolete coverage check that treated any navigator.storage text as mutation. It was replaced with execution of the complete emitted script, preserving manager/persistence identity and verifying that the bounded estimate patch actually ran; the final aggregate run uses this corrected check",
+      "Chromium quota includes current origin usage; cached injected Service Worker bytes change total quota. Worker regression comparisons therefore use available space, with the corresponding stock worker scope as reference",
+      "Under an explicit CDP grant and restrictive Permissions-Policy, Chrome 157 returned permission state granted but blocked location access with code 1 in both injected and untouched realms. The test preserves observed native behavior instead of assuming query must say denied"
+    ]
+  },
+  "behaviorChanges": [
+    "Existing profiles with geoMode disabled and no explicit deny now receive effective native denial",
+    "Firefox deny mode deliberately has native absence of navigator.geolocation; prompt/allow launches restore the feature",
+    "Affected live quota readings can decrease to the actual native bound; saved seeds and the 240 default V1 replay fixtures remain unchanged",
+    "Unsupported required native permission commands reject setup/navigation rather than reporting simulated success"
+  ],
+  "remainingLimits": [
+    "Native Windows/macOS kernels and platform-specific driver/font behavior are not certified on Linux",
+    "Firefox native grants are prepared for managed startup origins; arbitrary redirect destinations, subsequent script-driven origins and cross-origin frames retain their native permission behavior",
+    "The storage reporting ceiling does not replace native allocation/persistence enforcement or synthesize a disk of the reported size",
+    "Firefox cached/blob/data/local-bypass Worker first-instruction and native Gecko transport limits remain documented",
+    "No claim of perfect or universally indistinguishable browser emulation"
+  ]
+}

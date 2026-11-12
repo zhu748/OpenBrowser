@@ -36,6 +36,23 @@ const ROOT = path.join(__dirname, '..');
 // name exists — package.json only keeps entries that a workflow, the release
 // gate or the docs still invoke directly.
 const SUITE = [
+  ['selftest:cleanupownership', 'automation/selftests/lifecycle-resource-ownership-selftest.js'],
+  ['selftest:launchwriteback', 'automation/selftests/launch-profile-writeback-selftest.js'],
+  ['selftest:networkconditions', 'automation/selftests/network-conditions-selftest.js'],
+  ['selftest:networkconditionsnative', 'automation/selftests/network-conditions-native-selftest.js', { nativeOnly: true }],
+  ['selftest:fpapicontracts', 'automation/selftests/fingerprint-api-contracts-selftest.js'],
+  ['selftest:fpapinat', 'automation/selftests/fingerprint-api-native-selftest.js', { nativeOnly: true }],
+  ['selftest:ffgeonative', 'automation/selftests/firefox-geolocation-native-selftest.js', { nativeOnly: true }],
+  ['selftest:fpvalues', 'automation/selftests/fingerprint-value-boundaries-selftest.js'],
+  ['selftest:swgate', 'automation/selftests/service-worker-script-gate-selftest.js'],
+  ['selftest:swcache', 'automation/selftests/service-worker-cache-native-selftest.js', { nativeOnly: true }],
+  ['selftest:ffcancel', 'automation/selftests/firefox-proxy-cancellation-selftest.js'],
+  ['selftest:ffcertificates', 'automation/selftests/firefox-certificate-lifecycle-selftest.js', { nativeOnly: true }],
+  ['selftest:networksemantics', 'automation/selftests/network-worker-semantics-native-selftest.js', { nativeOnly: true }],
+  ['selftest:workernetwork', 'automation/selftests/worker-network-injection-selftest.js'],
+  ['selftest:ffresponse', 'automation/selftests/firefox-worker-response-selftest.js'],
+  ['selftest:firefoxstart', 'automation/selftests/firefox-start-pipeline-selftest.js'],
+  ['selftest:codecnative', 'automation/selftests/codec-native-contract-selftest.js', { nativeOnly: true }],
   ['selftest:appstartup', 'automation/selftests/app-startup-e2e-selftest.js', { nativeOnly: true }],
   ['selftest:restorejournal', 'automation/selftests/restore-journal-selftest.js'],
   ['selftest:diagnosticlauncher', 'automation/selftests/diagnostic-launcher-selftest.js'],

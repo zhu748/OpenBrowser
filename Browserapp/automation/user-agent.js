@@ -173,8 +173,7 @@ function platformVersionParts(value) {
 // 返回 null 表示该版本没有专属覆盖（沿用 OS preset 默认值）。
 // Chrome dropped support for older OSes at known majors; a UA claiming that pairing is a
 // machine that never existed. Win7/8/8.1 topped out at 109, macOS <11 at 138 (10.15 lost
-// support at 129; the last 10.15-capable build was 138 for enterprise). Used as a warning
-// gate, not a rewrite: the caller decides whether to block.
+// support at 139). The caller decides how to handle incompatible profiles.
 const OS_CHROME_SUPPORT_FLOORS = Object.freeze([
   { os: 'windows', maxOsVersion: '8.1', maxChromeMajor: 109 },
   { os: 'windows', maxOsVersion: '7', maxChromeMajor: 109 },
@@ -183,7 +182,9 @@ const OS_CHROME_SUPPORT_FLOORS = Object.freeze([
   { os: 'macos_arm', maxOsVersion: '10.15', maxChromeMajor: 138 },
 ]);
 function osChromeSupportViolation(preset, osVersion, chromeMajor) {
-  const v = String(osVersion || '').trim().toLowerCase();
+  const raw = String(osVersion || '').trim().toLowerCase();
+  const parts = raw.match(/^(\d+)(?:\.(\d+))?(?:\.\d+)*$/);
+  const v = parts ? String(Number(parts[1])) + (Number(parts[2]) ? '.' + Number(parts[2]) : '') : raw;
   const major = Number(chromeMajor) || 0;
   if (!v || !preset || !major) return null;
   const osId = String(preset.id || '').toLowerCase();
@@ -1158,9 +1159,9 @@ function randomUaForSeed(seedU32, options = {}) {
   });
 }
 
-osChromeSupportViolation,
-OS_CHROME_SUPPORT_FLOORS,
 module.exports = {
+  osChromeSupportViolation,
+  OS_CHROME_SUPPORT_FLOORS,
   OS_PRESETS,
   GREASE_BRANDS,
   detectHostOs,

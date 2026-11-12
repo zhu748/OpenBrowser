@@ -463,6 +463,15 @@ async function updateProfileLock(profileRoot, owner = null, patch = {}) {
   }
 }
 
+// Shared directory cleanup needs the same authority as lock release. Missing,
+// malformed and replaced locks do not authorize touching profile-wide resources.
+function isProfileLockOwner(profileRoot, owner = null) {
+  if (!profileRoot || !owner?.token) return false;
+  const existing = readJsonFileSync(lockPath(profileRoot));
+  return Boolean(existing && existing.pid === owner.pid && existing.token === owner.token
+    && (existing.profileRoot == null || normalizedPath(existing.profileRoot) === normalizedPath(profileRoot)));
+}
+
 async function releaseProfileLock(profileRoot, owner = null) {
   const file = lockPath(profileRoot);
   if (!owner?.token) return false;
@@ -772,6 +781,7 @@ module.exports = {
   lockPath,
   acquireProfileLock,
   updateProfileLock,
+  isProfileLockOwner,
   releaseProfileLock,
   scanProcessesUsingProfile,
   scanProcessesUsingProfileAsync,

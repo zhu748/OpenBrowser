@@ -178,14 +178,14 @@ async function main() {
     assert.strictEqual(b.charging, true);
     assert.strictEqual(b.level, 1);
     if (b.chargingTime !== undefined) assert.ok(Number.isFinite(b.chargingTime) && b.chargingTime >= 0);
-    if (b.dischargingTime !== undefined) assert.ok(Number.isFinite(b.dischargingTime) && b.dischargingTime >= 0);
+    assert.strictEqual(b.dischargingTime, null, 'charging batteries have infinite dischargingTime');
     const off = sanitizeProfile(baseProfile({ privacy: { fingerprint: { battery: { charging: false, level: 0.3 } } } }));
-    assert.deepStrictEqual(off.privacy.fingerprint.battery, { charging: false, level: 0.3 });
+    assert.deepStrictEqual(off.privacy.fingerprint.battery, { charging: false, level: 0.3, chargingTime: null, dischargingTime: null });
     // Round-3 fix: the editor writes chargingTime/dischargingTime and the
     // generators consume them (generators.js:518-523) — the old sanitizer
     // silently stripped both on every save. They must now survive.
     const withTimes = sanitizeProfile(baseProfile({ privacy: { fingerprint: { battery: { charging: true, level: 0.5, chargingTime: 60, dischargingTime: 120 } } } }));
-    assert.deepStrictEqual(withTimes.privacy.fingerprint.battery, { charging: true, level: 0.5, chargingTime: 60, dischargingTime: 120 });
+    assert.deepStrictEqual(withTimes.privacy.fingerprint.battery, { charging: true, level: 0.5, chargingTime: 60, dischargingTime: null });
     // Round-3 fix: the STRING form is the battery MODE enum (persona.js:81),
     // previously dropped wholesale; a valid enum value survives, junk drops.
     const junkEnum = sanitizeProfile(baseProfile({ privacy: { fingerprint: { battery: 'noise' } } }));

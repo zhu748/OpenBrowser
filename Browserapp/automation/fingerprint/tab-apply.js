@@ -219,9 +219,9 @@ async function applyToTarget(cdpCall, webSocketDebuggerUrl, fp, profile, options
   }
   // Roxy geoLocation mode: 'allow' auto-grants the permission (coordinates above provide the
   // position), 'deny' blocks it at the browser level so no native prompt can leak host coords.
-  // The injection script mirrors both for hosts where this command is unavailable.
+  // Required native policy owns callbacks, validation, cancellation and error objects.
   if (fp.geoPermission === 'granted' || fp.geoPermission === 'denied') {
-    await (fp.geoPermission === 'granted' ? invoke : softOverride)('Browser.setPermission', {
+    await invoke('Browser.setPermission', {
       permission: { name: 'geolocation' },
       setting: fp.geoPermission,
     });

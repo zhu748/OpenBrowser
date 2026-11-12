@@ -37,18 +37,21 @@ const check = (name, fn) => {
   }
 };
 
-class SandboxStorageManager {
-  constructor() { this.hostQuota = 999999999; this.hostUsage = 12345; }
-  estimate() { return Promise.resolve({ quota: this.hostQuota, usage: this.hostUsage, usageDetails: { indexedDB: 12 } }); }
-}
+const HOST_QUOTA = 128 * 1024 ** 3;
 
 // A worker-realm-shaped sandbox: self/globalThis, a storage-bearing navigator, and the same
 // class set the real WorkerGlobalScope exposes. No DOM: the worker subset must not need one.
 function makeWorkerSandbox() {
+  const instances = new WeakSet();
+  class SandboxStorageManager {
+    constructor() { instances.add(this);this.hostQuota = HOST_QUOTA;this.hostUsage = 12345; }
+    estimate() {
+      if (!instances.has(this)) return Promise.reject(new TypeError('Illegal invocation'));
+      return Promise.resolve({ quota: this.hostQuota, usage: this.hostUsage, usageDetails: { indexedDB: 12 } });
+    }
+  }
   const sandbox = {
-    console, Math, Date, Promise, Object, Array, JSON, Number, String, Boolean, Symbol,
-    WeakMap, Map, Set, Reflect, Intl, TypeError, Error, isNaN, parseInt, parseFloat,
-    Function, Uint8Array, Uint8ClampedArray, WeakSet, setTimeout, clearTimeout,
+    console, setTimeout, clearTimeout,
     Event, EventTarget, StorageManager: SandboxStorageManager,
   };
   sandbox.self = sandbox;
@@ -64,11 +67,11 @@ async function workerEstimate(fp) {
   const sandbox = makeWorkerSandbox();
   const src = buildWorkerInjectionScript(fp);
   vm.runInNewContext(src, sandbox, { timeout: 20000 });
-  // In a vm sandbox the injected script and this file share one StorageManager class object, so
-  // patch detection is behavioural: the slot must answer the persona quota (not the host's).
+  // Every sandbox owns its class and intrinsics; profiles cannot retain a
+  // preceding sandbox's quota wrapper or mutate the host Function prototype.
   const est = sandbox.StorageManager.prototype.estimate;
   const value = await est.call(sandbox.navigator.storage);
-  const hostLeak = value.quota === 999999999;
+  const hostLeak = value.quota === HOST_QUOTA;
   return {
     quota: value.quota, usage: value.usage, usageDetails: value.usageDetails,
     patched: !hostLeak, hostLeak,
@@ -82,7 +85,7 @@ async function mainEstimate(fp) {
   vm.runInNewContext(src, sandbox, { timeout: 20000 });
   const est = sandbox.StorageManager.prototype.estimate;
   const value = await est.call(sandbox.navigator.storage);
-  return { quota: value.quota, usage: value.usage, patched: value.quota !== 999999999 };
+  return { quota: value.quota, usage: value.usage, patched: value.quota !== HOST_QUOTA };
 }
 
 const MOBILE_TIER_LOW = 10737418240;

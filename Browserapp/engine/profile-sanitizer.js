@@ -3,7 +3,7 @@
 const { assertProfileId } = require("../automation/isolation");
 const { normalizeIpLookupChannel } = require("../proxy-forwarder");
 const { profileProxyAssociation, normalizedProxyAssociationId } = require("./proxy-helpers");
-const { normalizeCoordinates, toFiniteNumber: finite } = require("../shared/profile-values");
+const { normalizeCoordinates, normalizeBatterySnapshot, normalizeNetworkInformation, normalizeNetworkConditions, toFiniteNumber: finite } = require("../shared/profile-values");
 
 const { fingerprintVersion } = require("../automation/fingerprint/generation");
 
@@ -190,12 +190,7 @@ function sanitizeProfile(value) {
         audiooutput: String(privacyValue.mediaLabels.audiooutput || privacyValue.mediaLabels.output || "").slice(0, 200),
       } : null,
       battery: allowed(privacyValue.battery, ["real", "noise", "blocked"], privacyValue.battery === "blocked" ? "blocked" : (privacyValue.battery === "real" ? "real" : "noise")),
-      batterySnapshot: privacyValue.batterySnapshot && typeof privacyValue.batterySnapshot === "object" ? {
-        charging: privacyValue.batterySnapshot.charging !== false,
-        level: Math.min(1, Math.max(0, Number(privacyValue.batterySnapshot.level) || 0.87)),
-        chargingTime: Number.isFinite(Number(privacyValue.batterySnapshot.chargingTime)) ? Number(privacyValue.batterySnapshot.chargingTime) : null,
-        dischargingTime: Number.isFinite(Number(privacyValue.batterySnapshot.dischargingTime)) ? Number(privacyValue.batterySnapshot.dischargingTime) : null,
-      } : null,
+      batterySnapshot: normalizeBatterySnapshot(privacyValue.batterySnapshot),
       webrtcPolicy: privacyValue.webrtc === "disabled" ? 0 : (privacyValue.webrtc === "real" ? 1 : 3),
       stabilityMode: allowed(privacyValue.stabilityMode, ["off", "auto", "force"], "auto"),
       stabilityHamming: Math.min(64, Math.max(1, Number(privacyValue.stabilityHamming) || 12)),
@@ -218,15 +213,7 @@ function sanitizeProfile(value) {
       deviceName: String(privacyValue.deviceName || "").slice(0, 120),
       dnt: privacyValue.dnt === true || privacyValue.dnt === "on" ? true : (privacyValue.dnt === false || privacyValue.dnt === "off" ? false : Boolean(privacyValue.dnt)),
       dntMode: allowed(privacyValue.dntMode, ["default", "on", "off"], privacyValue.dnt === true ? "on" : (privacyValue.dnt === false ? "off" : "default")),
-      networkConditions: (() => {
-        const raw = privacyValue.networkConditions;
-        if (!raw || typeof raw !== "object") return null;
-        const out = { offline: Boolean(raw.offline), latency: null, downloadThroughput: null, uploadThroughput: null };
-        if (Number.isFinite(Number(raw.latency))) out.latency = Math.min(60000, Math.max(0, Number(raw.latency)));
-        if (Number.isFinite(Number(raw.downloadThroughput))) out.downloadThroughput = Math.min(1073741824, Math.max(0, Number(raw.downloadThroughput)));
-        if (Number.isFinite(Number(raw.uploadThroughput))) out.uploadThroughput = Math.min(1073741824, Math.max(0, Number(raw.uploadThroughput)));
-        return out;
-      })(),
+      networkConditions: normalizeNetworkConditions(privacyValue.networkConditions),
       portScanProtect: Boolean(privacyValue.portScanProtect),
       portScanAllow: String(privacyValue.portScanAllow || "").slice(0, 500),
       cfOptimize: privacyValue.cfOptimize !== false,
@@ -369,16 +356,8 @@ function sanitizeFingerprintConfig(fp, privacyCores, privacyMemory) {
   };
   const batteryObject = (v) => {
     if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
-    if (!Number.isFinite(Number(v.level))) return undefined;
-    const out = { charging: v.charging !== false, level: Math.min(1, Math.max(0, Number(v.level))) };
-    // The old rule silently stripped these two: the editor writes them
-    // (battery form) and the generators consume them, so every save was
-    // discarding user input on these fields.
-    const ct = Number(v.chargingTime);
-    const dt = Number(v.dischargingTime);
-    if (Number.isFinite(ct) && ct >= 0) out.chargingTime = Math.round(ct);
-    if (Number.isFinite(dt) && dt >= 0) out.dischargingTime = Math.round(dt);
-    return out;
+    if (finite(v.level) === null) return undefined;
+    return normalizeBatterySnapshot(v);
   };
   const clientHintsOf = (v) => {
     if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
@@ -437,10 +416,10 @@ function sanitizeFingerprintConfig(fp, privacyCores, privacyMemory) {
     const out = {};
     const type = oneOf(v.type, ["ethernet", "wifi"]); if (type) out.type = type;
     const et = oneOf(v.effectiveType, ["slow-2g", "2g", "3g", "4g"]); if (et) out.effectiveType = et;
-    const dl = Number(v.downlink);
-    if (Number.isFinite(dl)) out.downlink = Math.min(10, Math.max(0, dl));
-    const rtt = intInRange(v.rtt, 0, 3000); if (rtt !== undefined) out.rtt = rtt;
-    return Object.keys(out).length ? out : undefined;
+    const dl = finite(v.downlink);
+    if (dl !== null) out.downlink = dl;
+    const rtt = finite(v.rtt); if (rtt !== null) out.rtt = rtt;
+    return Object.keys(out).length ? normalizeNetworkInformation(out) : undefined;
   };
 
   const out = {};

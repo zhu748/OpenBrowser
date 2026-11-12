@@ -115,12 +115,7 @@ function normalizeProfileSettings(profile) {
       uiLanguage: String(privacy.uiLanguage || 'profile'),
       languageMode: String(privacy.languageMode || (privacy.langFromIp !== false ? 'ip' : (privacy.uiLanguage && privacy.uiLanguage !== 'profile' ? privacy.uiLanguage : 'ip'))),
       langFromIp: privacy.langFromIp !== false,
-      networkConditions: privacy.networkConditions && typeof privacy.networkConditions === 'object' ? {
-        offline: Boolean(privacy.networkConditions.offline),
-        latency: Number.isFinite(Number(privacy.networkConditions.latency)) ? Number(privacy.networkConditions.latency) : null,
-        downloadThroughput: Number.isFinite(Number(privacy.networkConditions.downloadThroughput)) ? Number(privacy.networkConditions.downloadThroughput) : null,
-        uploadThroughput: Number.isFinite(Number(privacy.networkConditions.uploadThroughput)) ? Number(privacy.networkConditions.uploadThroughput) : null,
-      } : null,
+      networkConditions: window.OpenBrowserProfileValues.normalizeNetworkConditions(privacy.networkConditions),
       timezoneFromIp: privacy.timezoneFromIp !== false,
       geoFromIp: privacy.geoFromIp !== false,
       fontMode: String(privacy.fontMode || 'default'),
@@ -401,8 +396,8 @@ function editorDraft(strict = true) {
           charging: charging !== 'no',
           level: hasLevel ? Math.min(1, Math.max(0, n)) : 0.87,
         };
-        if (ct !== '' && ct != null && Number.isFinite(Number(ct))) snap.chargingTime = Math.max(0, Number(ct));
-        if (dt !== '' && dt != null && Number.isFinite(Number(dt))) snap.dischargingTime = Math.max(0, Number(dt));
+        snap.chargingTime = ct !== '' && ct != null && Number.isFinite(Number(ct)) ? Math.max(0, Number(ct)) : null;
+        snap.dischargingTime = dt !== '' && dt != null && Number.isFinite(Number(dt)) ? Math.max(0, Number(dt)) : null;
         return snap;
       })(),
       uaStrict: Boolean($('#editor-ua-strict')?.checked),
@@ -1172,14 +1167,14 @@ function showProfileEditor(value, revision) {
   const batSnap = privacy.fingerprint?.battery;
   const batteryCharging = $('#editor-battery-charging');
   if (batteryCharging) batteryCharging.value = batSnap ? (batSnap.charging === false ? 'no' : 'yes') : 'auto';
-  editorSet('#editor-battery-charging-time', batSnap && Number.isFinite(Number(batSnap.chargingTime)) ? String(batSnap.chargingTime) : '');
-  editorSet('#editor-battery-discharging-time', batSnap && Number.isFinite(Number(batSnap.dischargingTime)) ? String(batSnap.dischargingTime) : '');
+  editorSet('#editor-battery-charging-time', fpSeedText(batSnap?.chargingTime));
+  editorSet('#editor-battery-discharging-time', fpSeedText(batSnap?.dischargingTime));
   const netSim = privacy.networkConditions;
   const netOffline = $('#editor-net-offline');
   if (netOffline) netOffline.checked = Boolean(netSim?.offline);
-  editorSet('#editor-net-latency', netSim && Number.isFinite(Number(netSim.latency)) ? String(netSim.latency) : '');
-  editorSet('#editor-net-download', netSim && Number.isFinite(Number(netSim.downloadThroughput)) ? String(Math.round(Number(netSim.downloadThroughput) / 1024)) : '');
-  editorSet('#editor-net-upload', netSim && Number.isFinite(Number(netSim.uploadThroughput)) ? String(Math.round(Number(netSim.uploadThroughput) / 1024)) : '');
+  editorSet('#editor-net-latency', fpSeedText(netSim?.latency));
+  editorSet('#editor-net-download', netSim?.downloadThroughput == null ? '' : fpSeedText(netSim.downloadThroughput / 1024));
+  editorSet('#editor-net-upload', netSim?.uploadThroughput == null ? '' : fpSeedText(netSim.uploadThroughput / 1024));
   editorCheck('#editor-ua-strict', Boolean(privacy.fingerprint?.uaStrict));
   editorSet('#editor-font-list', Array.isArray(privacy.fingerprint?.fonts) ? privacy.fingerprint.fonts.join(', ') : (privacy.fingerprint?.fonts || ''));
   editorSet('#editor-ssl-min', privacy.fingerprint?.sslVersionMin || '');

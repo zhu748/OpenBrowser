@@ -12,6 +12,7 @@
 
 const { buildUaProfile, cdpUserAgentOverride, buildAcceptLanguageHeader } = require('./user-agent');
 const { compileUrlAccessPolicy, blockedPageHtml } = require('./url-access-policy');
+const { normalizeNetworkInformation } = require('../shared/profile-values');
 
 const CHROMIUM_CANONICAL_HEADER_ORDER = Object.freeze([
   "host",
@@ -710,11 +711,12 @@ function evaluateFingerprintDelivery(profile = {}, fingerprint = {}, liveProbe =
 
   if (options.strict) {
     if (fingerprint.connection && liveProbe.connection) {
+      const connection = normalizeNetworkInformation(fingerprint.connection);
       for (const key of ['type', 'effectiveType', 'downlink', 'rtt', 'saveData']) {
         // Keep the native API shape: some platforms omit individual members.
         if (!Object.prototype.hasOwnProperty.call(fingerprint.connection, key)
           || !Object.prototype.hasOwnProperty.call(liveProbe.connection, key)) continue;
-        const expected = fingerprint.connection[key], actual = liveProbe.connection[key];
+        const expected = connection[key], actual = liveProbe.connection[key];
         if (expected !== actual) mismatches.push({ field: 'connection.' + key, expected, actual,
           message: `navigator.connection.${key} 未按配置交付` });
       }

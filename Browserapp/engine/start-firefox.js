@@ -17,6 +17,8 @@ const { assertResourceGateForLaunch } = require('./resource-gate');
 // Shared launch-data walker (parameterized target map) from the Chromium
 // startup mixin: start.js does not require this file, so there is no cycle.
 const { clearLaunchDataTargets, mergeLaunchProfileUpdate, ensureLegacyFingerprintSeed } = require('./start');
+const { profileWriteGuard } = require('./profile-write-guard');
+const { normalizeNetworkConditions } = require('../shared/profile-values');
 const { spawn } = require('child_process');
 const path = require('path');
 const { readDeferredSessionUrls, preserveLegacySession } = require('./startup-session');
@@ -33,9 +35,7 @@ try {
   console.warn('[BrowserEngine/start-firefox] Note: proxy-forwarder module load warning:', pfErr.message);
 }
 const {
-  startAuthenticatedProxy = async () => ({ port: 0, close: () => {} }),
-  needsProxyBridge = () => false,
-  chromeProxyEndpoint = () => '',
+  startAuthenticatedProxy = async () => { throw new Error('Proxy forwarder is unavailable'); },
 } = proxyForwarderModule;
 
 /** Resolve the per-profile OS persona for the Firefox UA. */
@@ -132,9 +132,6 @@ function firefoxExtraUserPrefs(profile, fingerprint = null) {
       : /mac/i.test(fingerprint.platform) ? 'Intel Mac OS X 10.15' : 'Linux x86_64';
     prefs.push(['general.oscpu.override', oscpu]);
     prefs.push(['media.peerconnection.enabled', privacy.webrtc !== 'disabled' && !(privacy.webrtc === 'proxy' && !fingerprint.webrtcAddress)]);
-    if (privacy.geoPermission === 'deny' || (privacy.geoPermission === 'allow' && !fingerprint.dynamicConfig?.geoposition)) {
-      prefs.push(['permissions.default.geo', 2]);
-    }
   }
   // --- advanced switches that DO have a Firefox pref ---
   if (advanced.blockImages) prefs.push(['permissions.default.image', 2]);
@@ -146,8 +143,12 @@ function firefoxExtraUserPrefs(profile, fingerprint = null) {
     prefs.push(['permissions.default.microphone', 2]);
     prefs.push(['permissions.default.camera', 2]);
   }
-  if (privacy.geoMode === 'disabled') prefs.push(['permissions.default.geo', 2]);
-  else if (privacy.geoMode === 'prompt') prefs.push(['permissions.default.geo', 0]);
+  const denyLocation = fingerprint ? fingerprint.geoPermission === 'denied'
+    : privacy.geoMode === 'disabled' || privacy.geoPermission === 'deny';
+  // Default permissions do not revoke existing site grants. A native feature
+  // switch protects every realm, including previously authorized origins.
+  // Write both states so changing a profile back to prompt/allow restores it.
+  prefs.push(['geo.enabled', !denyLocation], ['permissions.default.geo', denyLocation ? 2 : 0]);
   // Popups: Firefox blocks by default; "完全禁用弹窗拦截" opens them.
   if (advanced.blockPopups) prefs.push(['dom.disable_open_during_load', false]);
   else prefs.push(['dom.disable_open_during_load', true]);
@@ -180,13 +181,21 @@ module.exports = {
     const previousExitCountryCode = String(profile.exitCountryCode || '').trim();
     // Initial publication of the sanitized candidate (mirrors start.js's first
     // profiles.set): nothing async has elapsed yet, so a plain set is correct —
-    // the merge-only contract applies to the write-backs after async phases.
+    // asynchronous results use revision-checked publication below.
     this.profiles.set(profile.id, profile);
+    let assertLaunchProfileCurrent = profileWriteGuard(this, profile.id);
+    let launchNetwork;
+    const captureNetwork = (network) => { launchNetwork = network; };
     this.assertStartGenerationActive(profile.id, lifecycleGeneration);
     if (this.running.has(profile.id)) {
       return this.publicRunning(profile.id);
     }
     assertUrlAccessPolicySupported(profile, 'firefox');
+    if (normalizeNetworkConditions(profile.privacy?.networkConditions)) {
+      throw Object.assign(new Error('Firefox 暂不支持网络条件模拟，请清空此配置或选择 Chromium 内核。'), {
+        code: 'NETWORK_CONDITIONS_UNSUPPORTED',
+      });
+    }
     this.assertProxyConcurrencyAvailable(profile);
     // Surface cross-platform risks once — same one-shot flag and event as _start,
     // so Chromium and Firefox launches together report exactly one preflight.
@@ -216,16 +225,11 @@ module.exports = {
       connection: null,
     };
     try {
-      profile = await this.prepareProfileProxyForStart(profile);
+      profile = await this.prepareProfileProxyForStart(profile, { publish: false, onNetwork: captureNetwork });
       this.assertStartGenerationActive(profile.id, lifecycleGeneration);
-      // Merge-only write-back (same contract as the Chromium pipeline's
-      // mergeLaunchProfileUpdate): prepareProfileProxyForStart spans async network
-      // roundtrips, during which a concurrent editor save can land in this.profiles.
-      // A wholesale snapshot write-back here would revert that save on the next
-      // persist; if the profile was deleted mid-start, the merge returns null and
-      // the write-back is skipped entirely.
-      const afterProxy = mergeLaunchProfileUpdate(this, profile);
-      if (afterProxy) profile = afterProxy;
+      profile = mergeLaunchProfileUpdate(this, profile, assertLaunchProfileCurrent);
+      if (launchNetwork) this.networkInfo.set(profile.id, launchNetwork);
+      assertLaunchProfileCurrent = profileWriteGuard(this, profile.id);
 
       // --- 启动前守卫段（对齐 _start 的顺序与语义，Firefox 管线不再绕过）---
 
@@ -238,22 +242,21 @@ module.exports = {
       // 「网络不通停止打开」：守护开启时强制做一次真实出口检测，失败即阻断启动。
       if (profile.advanced?.stopOpenNet) {
         try {
-          await this.ensureExitNetworkForLocale(profile, { force: true });
+          await this.ensureExitNetworkForLocale(profile, { force: true, publish: false, network: launchNetwork, onNetwork: captureNetwork });
         } catch (error) {
+          if (error.code === 'PROFILE_STALE_REV' || error.code === 'PROFILE_MAINTENANCE') throw error;
           throw Object.assign(new Error('网络不可用，已按「网络不通停止打开」策略停止启动：' + error.message), { code: 'network-unavailable' });
         }
-        if (!String(profile.exitIp || '').trim()) {
+        if (!String(launchNetwork?.ip || '').trim()) {
           throw Object.assign(new Error('网络不可用，已按「网络不通停止打开」策略停止启动'), { code: 'network-unavailable' });
         }
       } else {
-        await this.ensureExitNetworkForLocale(profile).catch(() => {});
+        await this.ensureExitNetworkForLocale(profile, { publish: false, network: launchNetwork, onNetwork: captureNetwork });
       }
-      profile = this.applyResolvedLocale(profile);
-      // Second merge-only write-back after locale/geo resolution, mirroring the
-      // Chromium pipeline's afterLocale merge (start.js): never a wholesale
-      // snapshot write-back inside the multi-second launch window.
-      const afterLocale = mergeLaunchProfileUpdate(this, profile);
-      if (afterLocale) profile = afterLocale;
+      profile = this.applyResolvedLocale(profile, launchNetwork);
+      profile = mergeLaunchProfileUpdate(this, profile, assertLaunchProfileCurrent);
+      if (launchNetwork) this.networkInfo.set(profile.id, launchNetwork);
+      assertLaunchProfileCurrent = profileWriteGuard(this, profile.id);
 
       // IP 变化守护（对齐「IP 发生变化停止打开 / 提醒」）：与 _start 相同的触发
       // 条件、错误消息与事件类型；仅在本次启动真的做了出口检测时才可能触发。
@@ -315,7 +318,11 @@ module.exports = {
       const pageNetwork = this.networkInfo.get(profile.id) || {};
       // Same one-time migration as the Chromium pipeline: a Firefox profile whose identity
       // still hangs off its sequence id gets its persistent seed rolled before the build.
-      await ensureLegacyFingerprintSeed(this, profile);
+      assertLaunchProfileCurrent();
+      const seedEnsured = ensureLegacyFingerprintSeed(this, profile);
+      assertLaunchProfileCurrent = profileWriteGuard(this, profile.id);
+      await seedEnsured;
+      assertLaunchProfileCurrent();
       const fingerprint = buildFirefoxFingerprint(profile, browser.version);
       let customStartUrls = this.resolveStartupUrls(profile);
       if (profile.advanced.tabMode === 'restore' || profile.advanced.restoreSession) {
@@ -337,24 +344,26 @@ module.exports = {
       const extraStartUrls = customStartUrls.slice(1);
 
       const proxyConfig = this.proxyConfig(profile.proxy);
+      if (profile.networkMode === 'proxy' && !proxyConfig) {
+        throw Object.assign(new Error('代理模式缺少有效上游代理，已停止启动'), { code: 'proxy-required' });
+      }
       let proxy = null;
       let workerMitm = null;
       // Both paths route through the per-profile worker-script MITM forwarder so
       // worker scopes receive the persona JS-only fields (hardwareConcurrency)
       // that no BiDi channel can deliver. With a configured upstream proxy the
-      // forwarder chains THROUGH the authenticated bridge (it speaks plain HTTP
-      // CONNECT to the bridge, which strips/owns the credentials); on the direct
-      // path it is the only proxy. Any MITM failure is a capability downgrade,
-      // never a launch blocker: we keep the plain endpoint and emit an event.
+      // forwarder chains through a bridge for EVERY configured proxy, including
+      // unauthenticated HTTP(S). The bridge owns upstream credentials. Startup
+      // fails if required worker delivery or certificate trust cannot be set up.
       try {
         const { FirefoxWorkerMitmProxy } = require('../automation/firefox-worker-mitm-proxy');
         const { buildWorkerInjectionScript } = require('../automation/fingerprint');
         let chain = null;
-        if (needsProxyBridge(proxyConfig)) {
+        if (proxyConfig) {
           proxyForwarder = await startAuthenticatedProxy(proxyConfig, (value) => this.emit({ type: 'proxy-error', id: profile.id, code: value.code, message: value.message }));
           startupResources.proxyForwarder = proxyForwarder;
-          // The bridge is a loopback HTTP proxy; the MITM forwarder forwards
-          // through it and re-injects Proxy-Authorization from the config.
+          // The bridge is a loopback HTTP proxy and owns authentication;
+          // the Worker forwarder never receives upstream credentials.
           const bridgeUrl = new URL(proxyForwarder.url);
           chain = { host: bridgeUrl.hostname, port: Number(bridgeUrl.port) || 80 };
         }
@@ -363,34 +372,29 @@ module.exports = {
           const caPath = '/etc/ssl/certs/ca-certificates.crt';
           if (require('fs').existsSync(caPath)) upstreamCaBundle = require('fs').readFileSync(caPath);
         } catch (_) { /* optional */ }
-        workerMitm = new FirefoxWorkerMitmProxy({
+        workerMitm = await FirefoxWorkerMitmProxy.create({
           workerSource: buildWorkerInjectionScript(fingerprint),
           ...(upstreamCaBundle ? { upstreamCaBundle } : {}),
           ...(chain ? {
             upstreamProxy: {
               host: chain.host,
               port: chain.port,
-              username: proxyConfig.username,
-              password: proxyConfig.password,
             },
           } : {}),
         });
-        await workerMitm.start();
         startupResources.workerMitmProxy = workerMitm;
+        await workerMitm.start();
+        const { installFirefoxCa } = require('../automation/firefox-trust-installer');
+        const imported = installFirefoxCa(root, workerMitm.ca.cert);
+        if (!imported.ok) {
+          throw Object.assign(new Error('Firefox Worker CA import failed: ' + imported.reason), {
+            code: 'WORKER_MITM_CA_IMPORT_FAILED',
+          });
+        }
         proxy = workerMitm.url;
       } catch (mitmError) {
-        this.emit({ type: 'proxy-error', id: profile.id, code: 'WORKER_MITM_UNAVAILABLE', message: mitmError.message });
-        if (!proxy) proxy = proxyForwarder ? proxyForwarder.url : chromeProxyEndpoint(profile.proxy);
-      }
-      const sysMode = profile.proxyMeta?.systemProxy || 'global';
-      if (profile.networkMode === 'proxy' && (!proxy || proxy === 'direct://')) {
-        throw Object.assign(new Error('代理模式缺少有效路由，已停止启动'), { code: 'proxy-required' });
-      }
-      if (!proxy && sysMode === 'off') {
-        proxy = 'direct://';
-      }
-      if (proxyConfig && !proxy && sysMode !== 'off') {
-        throw new Error('代理已配置但无法生成可用的浏览器代理端点，已按安全策略阻断启动以避免真实 IP 泄漏。');
+        this.emit({ type: 'proxy-error', id: profile.id, code: mitmError.code || 'WORKER_MITM_UNAVAILABLE', message: mitmError.message });
+        throw mitmError;
       }
       // Firefox cannot express a bypass list from a URL string the way Chrome's
       // --proxy-bypass-list does; loopback is always excluded via prefs below.
@@ -404,37 +408,21 @@ module.exports = {
         acceptLanguages,
         locale,
         proxyEndpoint: proxy && proxy !== 'direct://' ? proxy : '',
-        // The MITM forwarder must see loopback traffic too; every other proxy
-        // keeps loopback direct.
-        noProxyHosts: workerMitmActive ? '' : 'localhost, 127.0.0.1',
-        extraPrefs: [...firefoxExtraUserPrefs(profile, fingerprint),
-          ...(workerMitmActive ? [['network.proxy.allow_hijacking_localhost', true]] : [])],
+        // The managed start page and other local services remain local. The
+        // forwarder's external destination policy must not block the start page.
+        noProxyHosts: 'localhost, 127.0.0.1, ::1',
+        extraPrefs: firefoxExtraUserPrefs(profile, fingerprint),
       });
       // user.js wins over prefs.js at every startup, then Firefox copies it to
       // prefs.js. Writing it fresh each launch keeps the proxy/UA/prefs current.
       await fspWriteFile(path.join(root, 'user.js'), userJs, 'utf8');
-      // Trust the MITM CA in the profile's NSS store so intercepted worker
-      // scripts validate on ANY origin. Best-effort: without certutil the launch
-      // proceeds, the browser will refuse the intercepted TLS and the runtime
-      // proxy-error event already tells the surface why.
-      if (workerMitmActive) {
-        try {
-          const { installFirefoxCa } = require('../automation/firefox-trust-installer');
-          const imported = installFirefoxCa(root, workerMitm.ca.cert);
-          if (!imported.ok) {
-            this.emit({ type: 'proxy-error', id: profile.id, code: 'WORKER_MITM_CA_IMPORT_FAILED', message: imported.reason + (imported.detail ? ': ' + imported.detail : '') });
-          }
-        } catch (trustError) {
-          this.emit({ type: 'proxy-error', id: profile.id, code: 'WORKER_MITM_CA_IMPORT_FAILED', message: trustError.message });
-        }
-      }
-
       currentStage = 'spawn'; this.emitStartProgress(profile.id, 'spawn', 62, '正在启动 Firefox…');
       this.assertStartGenerationActive(profile.id, lifecycleGeneration);
       const headless = /^(1|true|new)$/i.test(String(process.env.OPENBROWSER_HEADLESS || '').trim());
       const args = firefoxStartupArgs({ root, startUrl: 'about:blank', headless, remoteDebugging: true });
       const spawnEnv = { ...process.env };
       if (fingerprint.timezone && process.platform !== 'win32') spawnEnv.TZ = fingerprint.timezone;
+      assertLaunchProfileCurrent();
       const child = spawn(browser.path, args, {
         detached: process.platform !== 'win32',
         windowsHide: headless,
@@ -500,6 +488,7 @@ module.exports = {
         child,
         cdpConnection: null,
         proxyForwarder,
+        workerMitmProxy: workerMitm,
         markerProcess: null,
         profileLock,
         pid: child.pid,
@@ -577,6 +566,7 @@ module.exports = {
       item.bidiConnection = connection;
       await connection.open();
       const delivered = await initializeFirefoxFingerprint(connection, fingerprint, profile, {
+        workerProxyReady: workerMitmActive,
         onWorkerError: (error) => {
           item.workerFingerprintError = error.message;
           this.emit({ type: 'worker-fingerprint-injection-failed', id: profile.id, message: error.message });
@@ -598,7 +588,7 @@ module.exports = {
         running: true,
         capabilities: item.capabilities,
         undeliverable: {
-          workerFingerprint: 'Worker 首条脚本身份：UA/语言/时区由 user.js 全局覆盖；hardwareConcurrency 等 JS-only 字段经每 profile 的 worker 脚本 MITM 转发器在代理层前缀注入（直连与认证代理链路均生效——转发器链在认证桥之后；CA 经 NSS 导入 profile 信任，需 kernels/certutil 或 PATH 上的 certutil，缺失时降级为不拦截并发事件）。',
+          workerFingerprint: 'UA/语言/时区由 user.js 覆盖；经过转发器的新 HTTP(S) Worker 脚本前置注入 JS-only 字段。所有配置代理均通过上游桥接，CA 导入失败阻止启动。Blob/data、已有缓存、静态模块依赖及绕过代理的本地 Worker 不保证首条指令覆盖。',
           deviceMemory: '保留 Firefox 原生接口形态，不创建 Chromium 的 deviceMemory 接口。',
           frameFontSurface: '跨 OS persona 下，子帧内 document.fonts 为度量层代理，foreign check 门控与文本栅格可能与主文档存在残差（主文档已验证正确，Chromium 路径无此问题）。',
           intlAppLocale: 'Intl 运行时 locale 跟随内核语言包（en-US 构建即 en-US）——与 persona 语言形成「英文界面 + 母语内容偏好」的真实用户形态；不再用 BiDi locale override（实测会将 Accept-Language 头重写为单条）。',

@@ -9,9 +9,9 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Release tag to create, for example v1.0.27'
+        description: 'Release tag to create, for example v1.0.0'
         required: true
-        default: 'v1.0.27'
+        default: 'v1.0.0'
       prerelease:
         description: 'Mark the GitHub Release as a prerelease'
         required: false
@@ -46,9 +46,11 @@ env:
   # notes can never desync from the dispatch input; ensure-release additionally
   # gates that the constructed notes carry the packaged version tag.
   RELEASE_NOTES: |
-    - 凭据静态加密，环境数据迁移 SQLite 存储（断电安全、旧数据无损迁移）。
-    - Rust 代理核心新增上游连接复用，显著降低二次连接延迟。
-    - 新增真实设备人格库；多项指纹注入与稳定性修复。
+    - 完善版本化指纹生成、原生 API 合约及文档、iframe、Worker 的注入一致性。
+    - 修复 Service Worker 缓存身份更新，强化 Firefox Worker 代理、证书和响应处理。
+    - 修复启动写回覆盖并发编辑、旧实例误清理新实例和进程状态未知时过早释放锁。
+    - 统一网络模拟空值、离线与限速配置处理，修复强制联网检测复用缓存。
+    - 新增回归测试并完成 211 项检查：208 项通过、1 项部分执行、2 项平台跳过、0 项失败。
 
 jobs:
   ensure-release:

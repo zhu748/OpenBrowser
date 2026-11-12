@@ -14,6 +14,8 @@ const { toFileUrl } = require('../automation/protocol/cross-platform');
 const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
+const { profileWriteGuard } = require('./profile-write-guard');
+const { normalizeCoordinates } = require('../shared/profile-values');
 
 // proxy-forwarder is optional: the guarded require keeps a broken optional
 // dependency from taking the exit-network geo lookup down (same pattern as engine.js).
@@ -113,43 +115,41 @@ module.exports = {
   async ensureExitNetworkForLocale(profile, options = {}) {
     // force: 「网络不通停止打开」守护需要一次真实检测并让失败向上抛出。
     if (!options.force && !this.needsExitNetworkForLocale(profile)) return null;
-    let network = this.networkInfo.get(profile.id);
-    if (network?.countryCode || network?.ip) return network;
+    const assertCurrent = profileWriteGuard(this, profile.id);
+    let network = options.network || this.networkInfo.get(profile.id);
+    if (!options.force && (network?.countryCode || network?.ip)) {
+      options.onNetwork?.(network);
+      return network;
+    }
     const proxyRaw = String(profile.proxy || '');
     const isDirect = profile.networkMode === 'direct' || !proxyRaw || /^(direct|offline|none)$/i.test(proxyRaw);
     try {
       if (!isDirect) {
-        network = await this.checkProxy(profile, { allowExtract: false });
+        network = await this.testProxy(profile, { allowExtract: false, force: Boolean(options.force) });
       } else {
         // Local direct exit: geo lookup is best-effort for language/timezone only.
-        network = await lookupDirectCountry();
-        this.networkInfo.set(profile.id, network);
-        this.emit({ type: 'status', id: profile.id, running: this.running.has(profile.id), network });
+        network = await lookupDirectCountry({ force: Boolean(options.force) });
       }
+      assertCurrent();
       if (network) {
-        profile.exitIp = network.ip || profile.exitIp;
-        profile.exitCountryCode = network.countryCode || profile.exitCountryCode;
-        profile.exitTimezone = network.timezone || profile.exitTimezone;
-        profile.exitLatitude = network.latitude ?? profile.exitLatitude;
-        profile.exitLongitude = network.longitude ?? profile.exitLongitude;
-        profile.exitCheckedAt = network.checkedAt || profile.exitCheckedAt;
-        profile.exitLatencyMs = network.latencyMs ?? profile.exitLatencyMs;
-        profile.exitNetworkType = network.networkType || profile.exitNetworkType;
-        this.profiles.set(profile.id, this.sanitizeProfile(profile));
-        await this.persist();
+        if (options.publish !== false) {
+          this.applyNetworkToProfile(profile, network);
+          await this.persist();
+        }
+        options.onNetwork?.(network);
       }
       return network;
     } catch (error) {
       // Direct start succeeded without proxy; geo API failure must not surface as proxy error.
-      if (options.force) throw error;
+      if (options.force || error.code === 'PROFILE_STALE_REV' || error.code === 'PROFILE_MAINTENANCE') throw error;
       if (!isDirect) {
         this.emit({ type: 'proxy-error', id: profile.id, message: '出口信息检测失败（语言/时区可能回退）：' + error.message });
       }
       return this.networkInfo.get(profile.id) || null;
     }
   },
-  applyResolvedLocale(profile) {
-    const network = this.networkInfo.get(profile.id) || {
+  applyResolvedLocale(profile, resolvedNetwork) {
+    const network = resolvedNetwork || this.networkInfo.get(profile.id) || {
       countryCode: profile.exitCountryCode,
       timezone: profile.exitTimezone,
       latitude: profile.exitLatitude,
@@ -173,15 +173,17 @@ module.exports = {
       exitTimezone: tzMode === 'real' ? '' : (resolvedTimezone || network.timezone || profile.exitTimezone || ''),
       exitLatitude: network.latitude ?? profile.exitLatitude,
       exitLongitude: network.longitude ?? profile.exitLongitude,
+      exitCheckedAt: network.checkedAt || profile.exitCheckedAt,
+      exitLatencyMs: network.latencyMs ?? profile.exitLatencyMs,
+      exitNetworkType: network.networkType || profile.exitNetworkType,
     };
     if ((tzMode === 'ip' || tzMode === 'custom') && resolvedTimezone) {
       next.privacy = { ...next.privacy, timezone: resolvedTimezone };
     }
-    if ((privacy.geoMode === 'ip' || privacy.geoMode === 'allow' || !privacy.geoMode)
-      && Number.isFinite(Number(network.latitude))
-      && Number.isFinite(Number(network.longitude))) {
-      next.exitLatitude = Number(network.latitude);
-      next.exitLongitude = Number(network.longitude);
+    const coords = normalizeCoordinates(network.latitude, network.longitude);
+    if ((privacy.geoMode === 'ip' || privacy.geoMode === 'allow' || !privacy.geoMode) && coords.valid) {
+      next.exitLatitude = coords.latitude;
+      next.exitLongitude = coords.longitude;
     }
     return next;
   },

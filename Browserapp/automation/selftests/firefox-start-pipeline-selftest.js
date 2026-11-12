@@ -5,7 +5,7 @@
  * E2E selftest for the Firefox launch pipeline (engine/_startFirefox) on
  * linux/x64 with a stub Firefox binary:
  *
- *   stub "firefox" = a shell script that copies a marker file and sleeps until
+ *   stub "firefox" = a Node script that copies a marker file and waits until
  *   killed, so the pipeline's spawn → watch → stop path runs for real, while
  *   probeBrowserBinary/probeFirefoxBinary are stubbed to pass (the stub is not
  *   a real browser).
@@ -21,6 +21,7 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const os = require('os');
 const path = require('path');
+const net = require('node:net');
 
 let passed = 0;
 let failed = 0;
@@ -36,6 +37,30 @@ async function check(name, fn) {
 }
 const IS_LINUX = process.platform === 'linux';
 
+// Test the production orchestration with loopback resource fixtures. Browser
+// and TLS behavior are covered by the native Firefox gates, not these stubs.
+const proxyModule = require('../../proxy-forwarder');
+const mitmModule = require('../firefox-worker-mitm-proxy');
+const trustModule = require('../firefox-trust-installer');
+const originals = { bridge: proxyModule.startAuthenticatedProxy, mitm: mitmModule.FirefoxWorkerMitmProxy, trust: trustModule.installFirefoxCa };
+const proxyResources = [];
+const bridgeConfigs = [];
+let rejectTrust = false;
+class ProxyFixture {
+  static async create(options) { return new this(options); }
+  constructor(options = {}) { this.options = options; this.ca = { cert: Buffer.from('fixture') }; proxyResources.push(this); }
+  async start() {
+    this.server = net.createServer((socket) => socket.destroy());
+    await new Promise((resolve) => this.server.listen(0, '127.0.0.1', resolve));
+    this.port = this.server.address().port;
+    this.url = 'http://127.0.0.1:' + this.port;
+    return this;
+  }
+  close() { return this.closing ||= new Promise((resolve) => { this.closed = true; this.server.close(resolve); }); }
+}
+proxyModule.startAuthenticatedProxy = async (config) => { bridgeConfigs.push(config); return new ProxyFixture().start(); };
+mitmModule.FirefoxWorkerMitmProxy = ProxyFixture;
+trustModule.installFirefoxCa = () => ({ ok: !rejectTrust, reason: rejectTrust ? 'fixture-import-failed' : undefined });
 const { BrowserEngine } = require('../../engine');
 
 async function makeEngine(tmp) {
@@ -51,18 +76,17 @@ function makeStubFirefox(tmp) {
   fs.mkdirSync(path.dirname(binary), { recursive: true });
   const markerDir = path.join(tmp, 'markers');
   fs.mkdirSync(markerDir, { recursive: true });
-  // Copy prefs out, then idle until killed. Reading user.js proves the
+  // One process with no polling subprocesses. Reading user.js proves the
   // pipeline wrote it before spawn. argv: -profile <root> --no-remote <url>
   fs.writeFileSync(binary, [
-    '#!/bin/sh',
-    'P="$1"',
-    '[ "$P" = "--version" ] && { echo "Mozilla Firefox 141.0"; exit 0; }',
-    'ROOT="$2"',
-    'cp "$ROOT/user.js" "' + markerDir + '/user.js.copy" 2>/dev/null',
-    'echo "$@" > "' + markerDir + '/args.txt"',
-    'echo "WebDriver BiDi listening on ws://127.0.0.1:12345" >&2',
-    'while :; do sleep 0.2; done',
-    'exit 0',
+    '#!/usr/bin/env node',
+    'const fs = require("node:fs");',
+    'if (process.argv.includes("--version")) { console.log("Mozilla Firefox 141.0"); process.exit(0); }',
+    'const root = process.argv[process.argv.indexOf("-profile") + 1];',
+    'fs.copyFileSync(require("node:path").join(root, "user.js"), ' + JSON.stringify(path.join(markerDir, 'user.js.copy')) + ');',
+    'fs.writeFileSync(' + JSON.stringify(path.join(markerDir, 'args.txt')) + ', process.argv.slice(2).join(" "));',
+    'console.error("WebDriver BiDi listening on ws://127.0.0.1:12345");',
+    'setInterval(() => {}, 10000);',
     '',
   ].join('\n'), { mode: 0o755 });
   fs.writeFileSync(path.join(tree, 'kernel.json'), JSON.stringify({
@@ -73,12 +97,14 @@ function makeStubFirefox(tmp) {
 
 (async () => {
   if (!IS_LINUX) {
-    console.log('firefox-start-pipeline-selftest: skipped (linux only)');
+    console.log('SKIP Firefox pipeline fixture requires Linux');
+    process.exitCode = 2;
     return;
   }
   const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'ob-ffstart-'));
   const engine = await makeEngine(tmp);
   engine.ensureExitNetworkForLocale = async () => null;
+  engine.prepareProfileProxyForStart = async (profile) => profile;
   // Exercise the production BiDi client and launch barriers without a network socket.
   const originalWebSocket = global.WebSocket;
   const commands = [];
@@ -95,6 +121,9 @@ function makeStubFirefox(tmp) {
     send(text) {
       const command = JSON.parse(text);
       commands.push(command);
+      if (command.method === 'browser.close') {
+        setImmediate(() => engine.running.get('env-900')?.child.kill('SIGTERM'));
+      }
       let result = {};
       if (command.method === 'script.addPreloadScript') result = { script: 'firefox-preload' };
       if (command.method === 'browsingContext.getTree') result = { contexts: [{ context: 'initial', url: 'about:blank' }] };
@@ -151,7 +180,8 @@ function makeStubFirefox(tmp) {
       assert.strictEqual(item.browser.engine, 'firefox');
       assert.ok(item.bidiConnection);
       assert.strictEqual(started.capabilities.fingerprintDelivery, true);
-      assert.strictEqual(started.capabilities.workerFingerprintDelivery, false);
+      assert.strictEqual(started.capabilities.workerFingerprintDelivery, 'prefs-fields-plus-proxy');
+      assert.ok(item.workerMitmProxy);
       assert.match(item.fingerprint.userAgent, /Firefox\/141\.0$/);
     });
 
@@ -190,16 +220,51 @@ function makeStubFirefox(tmp) {
       let alive = false;
       try { process.kill(stopped.pid, 0); alive = true; } catch (_) {}
       assert.strictEqual(alive, false, 'stub firefox must be dead after stop');
+      assert.strictEqual(item.workerMitmProxy.closed, true, 'worker listener must close on normal stop');
+      assert.ok(commands.some((command) => command.method === 'browser.close'), 'Firefox stop uses native BiDi close');
     });
     await check('status event emitted after stop', () => {
       assert.ok(events.some((e) => e.type === 'status' && e.id === 'env-900' && e.running === false));
     });
+    await check('a local Worker forwarder cannot satisfy a missing upstream proxy', async () => {
+      const before = proxyResources.length;
+      await assert.rejects(engine.start({ ...engine.profiles.get(profile.id), networkMode: 'proxy', proxy: 'Direct' }), { code: 'proxy-required' });
+      assert.equal(proxyResources.length, before, 'invalid route rejected before local forwarder allocation');
+      assert.equal(engine.running.has(profile.id), false);
+    });
+    for (const proxy of ['http://proxy.test:8080', 'https://proxy.test:8443', 'http://user:pass@proxy.test:8080', 'socks5://user:pass@proxy.test:1080']) {
+      await check('upstream route retained: ' + new URL(proxy).protocol, async () => {
+        const before = bridgeConfigs.length;
+        const candidate = { ...engine.profiles.get(profile.id), networkMode: 'proxy', proxy };
+        await engine.start(candidate);
+        const current = engine.running.get(profile.id);
+        assert.equal(bridgeConfigs.length, before + 1, 'every configured proxy must create a bridge');
+        assert.equal(bridgeConfigs.at(-1).host, 'proxy.test');
+        assert.deepEqual(Object.keys(current.workerMitmProxy.options.upstreamProxy).sort(), ['host', 'port'], 'credentials belong to the bridge');
+        assert.equal(current.workerMitmProxy.options.upstreamProxy.host, '127.0.0.1');
+        assert.equal(current.workerMitmProxy.options.upstreamProxy.port, current.proxyForwarder.port);
+        await engine.stop(profile.id);
+        assert.equal(current.workerMitmProxy.closed, true);
+        assert.equal(current.proxyForwarder.closed, true);
+      });
+    }
+    await check('failed CA trust blocks spawn and closes both proxies', async () => {
+      rejectTrust = true;
+      try {
+        const before = commands.length;
+        await assert.rejects(engine.start({ ...engine.profiles.get(profile.id) }), { code: 'WORKER_MITM_CA_IMPORT_FAILED' });
+        assert.equal(commands.length, before, 'no browser commands before CA trust');
+        assert.equal(engine.running.has(profile.id), false);
+        assert.ok(proxyResources.every((resource) => resource.closed));
+      } finally { rejectTrust = false; }
+    });
     rejectPreload = true;
     const beforeFailure = commands.filter((command) => command.method === 'browsingContext.navigate').length;
-    await assert.rejects(engine.start(profile), /test preload rejected/);
+    await assert.rejects(engine.start({ ...engine.profiles.get(profile.id) }), /test preload rejected/);
     await check('failed Firefox preload closes the browser without target navigation', () => {
       assert.equal(engine.running.has(profile.id), false);
       assert.equal(commands.filter((command) => command.method === 'browsingContext.navigate').length, beforeFailure);
+      assert.ok(proxyResources.every((resource) => resource.closed), 'failed preload releases proxy resources');
     });
   } catch (error) {
     failed += 1;
@@ -208,6 +273,9 @@ function makeStubFirefox(tmp) {
     unsubscribe();
     await engine.stopAll().catch(() => {});
     global.WebSocket = originalWebSocket;
+    proxyModule.startAuthenticatedProxy = originals.bridge;
+    mitmModule.FirefoxWorkerMitmProxy = originals.mitm;
+    trustModule.installFirefoxCa = originals.trust;
     await fsp.rm(tmp, { recursive: true, force: true }).catch(() => {});
   }
 

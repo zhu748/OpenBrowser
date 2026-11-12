@@ -1,0 +1,68 @@
+{
+  "date": "2026-11-12",
+  "baseCommit": "81da96d44edd34f2df29169fcbcf4246f3728e2e",
+  "scope": "Fingerprint generation, native media API consistency, Firefox proxy routing, HTTP response rewriting and browser lifecycle",
+  "changes": [
+    "Bridge all configured HTTP/HTTPS/SOCKS5 upstreams, including unauthenticated proxies; reject missing required upstreams before local forwarder allocation",
+    "Keep upstream credentials in the bridge and stop startup before browser spawn when Worker CA trust fails",
+    "Use Node HTTP framing and stream ordinary resources with backpressure; buffer only JavaScript Worker responses",
+    "Decode gzip/deflate/Brotli Worker responses with 16 MiB limits for encoded and decoded stages; remove stale validators and disable caching of rewritten scripts",
+    "Handle close-delimited responses, chunk trailers, empty bodies, HEAD, bodyless statuses, streaming uploads and HTTP upgrades",
+    "Own and close Worker proxy resources on normal stop and failed startup; request Firefox native BiDi browser.close before forced cleanup",
+    "Remove codec-matrix runtime hooks: MediaRecorder, WebCodecs and RTP capabilities remain native and agree with actual SDP negotiation",
+    "Export and activate OS/browser support validation; reject incompatible profiles without changing sampled fingerprint seeds",
+    "Make Firefox Worker native tests await completed navigation and process exit rather than fixed delays"
+  ],
+  "environment": {
+    "platform": "Linux x64, Debian 13",
+    "node": "24.22.1",
+    "electron": "43.8.8",
+    "chrome": "157.0.8103.78",
+    "firefox": "160.0",
+    "rust": "1.99.1",
+    "nativeTestNoSandbox": true
+  },
+  "validation": {
+    "aggregate": {
+      "command": "node scripts/selftest-all.js",
+      "registered": 197,
+      "passed": 194,
+      "partial": 1,
+      "skipped": 2,
+      "failed": 0,
+      "partialSuites": ["selftest:kernelflagforensics: platform launcher unavailable"],
+      "skippedSuites": ["selftest:cssfontgate: macOS-only", "selftest:cssfontrewrite: macOS-only"]
+    },
+    "finalProxyGuardCheck": {
+      "command": "node scripts/selftest-one.js firefoxstart",
+      "assertionGroupsPassed": 15,
+      "failed": 0
+    },
+    "lint": "npm run lint -- --max-warnings 0: exit 0",
+    "diffCheck": "git diff --check: exit 0",
+    "generation": "240 legacy identity digests and 2000 version-2 profiles passed",
+    "emittedScriptParsing": "147 document scripts and 147 worker scripts passed",
+    "nativeCodecGate": "Uninjected Windows baseline and injected Windows/Linux passed function descriptor, WebCodecs validation, recorder MIME, RTP dictionary, SDP and replay checks",
+    "nativeFirefoxFullEngineProbe": {
+      "method": "Actual BrowserEngine.start/stop with an independent copied Firefox kernel, NSS trust installation and loopback first-script observations; external exit discovery stubbed and non-local traffic assigned an unavailable loopback upstream",
+      "passed": true,
+      "firstScriptHardwareConcurrency": 4,
+      "stopMilliseconds": 519.47,
+      "listenerClosed": true,
+      "temporaryCaRemoved": true
+    }
+  },
+  "initialRunFollowup": [
+    "A repeated shell-process fixture stop failed; replaced polling subprocesses with one Node fixture and added native BiDi graceful stop. Final routing and cleanup checks passed.",
+    "One Chromium initial-target attach timed out in the initial aggregate. Isolated and final aggregate native-contract runs passed without changing its timeout.",
+    "An initial Firefox chained Worker test failed after fixed-delay navigation. Tests now require completed native navigation and verify document.documentURI before constructing relative Worker URLs. Final native Worker gate passed.",
+    "An additional native probe reproduced Linux RTP/H264 capability versus SDP disagreement after partial filtering. Removed the incomplete runtime capability hooks; native cross-surface checks passed."
+  ],
+  "limits": [
+    "Linux execution does not certify native Windows/macOS GPU, font, media-device or vendor-kernel behavior.",
+    "Firefox Worker prefixing certifies newly fetched JavaScript HTTP(S) responses that traverse the forwarder; blob/data, previously cached scripts, static module dependencies and local proxy bypasses remain outside the first-instruction guarantee.",
+    "Codec support remains native; no cross-OS codec emulation is claimed.",
+    "Firefox interception uses Node TLS and HTTP/1.1; it does not reproduce native Gecko TLS/HTTP2 fingerprints.",
+    "Native test no-sandbox flags are confined to the local container test environment, not application defaults."
+  ]
+}

@@ -8,6 +8,7 @@
  */
 
 const crypto = require('crypto');
+const { normalizeNetworkInformation } = require('../../shared/profile-values');
 const { buildDocumentRuntime } = require('./runtime-source');
 const { createWebRtcFallbackSource, buildCssFontLocalGateSource, deriveFontPlaceholder, buildQueryLocalFontBlobGateSource, buildUaProfile, buildUaInjectionScript, canonicalBridgeToken, mapPlatformToSubsetKey, loadFontSubsetPayload, buildFontMetricsScript } = require('./shared');
 // Shared CFG layer: the os/timezone/deviceMemory/webgl/stability computations the
@@ -69,9 +70,8 @@ function buildInjectionScript(fp, options = {}) {
     webrtcAddress: fp.webrtcAddress || null,
     webrtcLocalMdns: typeof fp.webrtcLocalMdns === 'string' ? fp.webrtcLocalMdns : '',
     mediaPreferences: fp.mediaPreferences || { colorScheme: 'light', reducedMotion: 'no-preference', forcedColors: 'none', contrast: 'no-preference' },
-    codecMatrix: fp.codecMatrix || null,
     battery: fp.battery || null,
-    connection: fp.connection || null,
+    connection: normalizeNetworkInformation(fp.connection),
     geoPermission: fp.geoPermission || null,
     webgpu: fp.webgpu || null,
     bluetooth: fp.bluetooth || null,

@@ -127,7 +127,7 @@ self.addEventListener('fetch', (e) => {
     assert.equal(snap1.ua, fingerprint.userAgent, 'network SW UA');
 
     // 2. SECOND navigation: the SW starts from the script cache (no network hit
-    //    for sw.js). The direct post-resume evaluate must carry the persona.
+    //    for sw.js). Its first-script execution gate must carry the persona.
     await connection.command('Page.navigate', { url: origin + '/page2.html' });
     await delay(3000); // allow SW start + controller claim
     const second = await evaluate(connection, `(async () => {

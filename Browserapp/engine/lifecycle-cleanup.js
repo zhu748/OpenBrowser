@@ -18,12 +18,11 @@ const HELPER_CLEANUP_TIMEOUT_MS = process.platform === 'win32' ? 14000 : 3000;
 
 const cdp = require('../cdp');
 const isolation = require('../automation/isolation');
-const { isPidAlive, lockPath, releaseProfileLock, scanProcessesUsingProfile } = require('../automation/isolation');
+const { isPidAlive, isProfileLockOwner, lockPath, releaseProfileLock } = require('../automation/isolation');
 const { fingerprintForNativeKernelInject } = require('../automation/kernel-init-sync');
 const { killProcessTree } = require('../automation/protocol/cross-platform');
 const { isChildExited, managedBrowserKillOptions, removeSingletonFiles, stopIpcStubForWindow } = require('./index');
 const fs = require('fs');
-const path = require('path');
 const { saveDeferredSession } = require('./startup-session');
 const { assertUrlAccessPolicySupported } = require('../automation/url-access-policy');
 const { runtimePolicyProfile } = require('./runtime-policy');
@@ -34,6 +33,19 @@ module.exports = {
     if (!item) return Promise.resolve({ id: profileId, running: false });
     if (item.cleanupPromise?.lifecycleSettled) item.cleanupPromise = null;
     if (item.cleanupPromise) return item.cleanupPromise;
+    if (item.cleanedUp) return Promise.resolve({ id: profileId, running: false });
+
+    // Private connections belong to the captured item. The directory, helper
+    // scan and named IPC stub are shared across restarts and require current
+    // generation AND lock ownership. Re-check after awaits, including child exit.
+    const ownsSharedResources = () => {
+      const current = this.running.get(profileId);
+      if (current && current !== item) return false;
+      const latest = Math.max(Number(this.lifecycleGenerations?.get(profileId)) || 0,
+        Number(this.starting.get(profileId)?.lifecycleGeneration) || 0);
+      if (Number(item.lifecycleGeneration) > 0 && latest > Number(item.lifecycleGeneration)) return false;
+      return isProfileLockOwner(item.root, item.profileLock);
+    };
 
     const reason = String(options.reason || 'browser-gone');
     const wasStopping = Boolean(item.stopping);
@@ -46,7 +58,7 @@ module.exports = {
       item.cleanedUp = false;
       item.stopping = true;
       this.clearRunningWatch(item);
-      await saveDeferredSession(item, (url) => this.isStartPageUrl?.(url)).catch(() => {});
+      if (ownsSharedResources()) await saveDeferredSession(item, (url) => this.isStartPageUrl?.(url)).catch(() => {});
       item.bidiConnection?.close();
       item.bidiConnection = null;
       item.workerFingerprintConnection?.close();
@@ -74,7 +86,7 @@ module.exports = {
             try { item.markerProcess.kill(); } catch (_) {}
           }
           // Do not close proxyForwarder while child has not exited to avoid network leak to host
-          stopIpcStubForWindow(item.kernelWindowName).catch(() => {});
+          if (ownsSharedResources()) stopIpcStubForWindow(item.kernelWindowName).catch(() => {});
           item.cleanupFailed = true;
           item.cleanupState = 'blocked';
           const failure = new Error(`Browser child exit was not confirmed for profile ${profileId}; cleanup is fail-closed`);
@@ -87,38 +99,12 @@ module.exports = {
       // The tracked browser process can exit before Chromium's renderer/GPU
       // helpers. Re-scan the exact user-data-dir and terminate only those
       // helpers before releasing the profile lock.
-      if (item.root && isChildExited(item.child)) {
-        let helperDrain = await this.drainProfileHelpers(item.root);
-        if (!helperDrain.known || helperDrain.pids.length) {
-          if (helperDrain.pids?.length) {
-            await isolation.terminateProcessIds?.(helperDrain.pids);
-            helperDrain = await this.drainProfileHelpers(item.root);
-          }
-        }
-        if (!helperDrain.known || helperDrain.pids.length) {
-          try {
-            const remaining = scanProcessesUsingProfile(item.root);
-            if (remaining?.pids?.length) {
-              for (const p of remaining.pids) {
-                if (p && p !== process.pid) {
-                  try {
-                    if (process.platform === 'win32') {
-                      require('child_process').execFileSync('taskkill.exe', ['/PID', String(p), '/T', '/F'], { windowsHide: true, timeout: 3000 });
-                    } else {
-                      process.kill(p, 'SIGKILL');
-                    }
-                  } catch (_) {}
-                }
-              }
-            }
-          } catch (_) {}
-          helperDrain = await this.drainProfileHelpers(item.root);
-        }
-        if (item.root) {
-          await removeSingletonFiles(item.root, { attempts: 6, delayMs: 40 });
-        }
+      if (item.root && isChildExited(item.child) && ownsSharedResources()) {
+        // drainProfileHelpers already performs bounded kill/re-scan attempts.
+        // An unavailable process list is not proof that the directory is idle.
+        const helperDrain = await this.drainProfileHelpers(item.root);
         const activeHelperPids = (helperDrain.pids || []).filter(isPidAlive);
-        if (activeHelperPids.length > 0) {
+        if (!helperDrain.known || activeHelperPids.length > 0) {
           const failure = new Error(`Chromium helper exit was not confirmed for profile ${profileId}; cleanup is fail-closed`);
           failure.code = 'BROWSER_HELPERS_EXIT_UNCONFIRMED';
           failure.pids = activeHelperPids;
@@ -127,6 +113,7 @@ module.exports = {
           item.cleanupError = failure;
           throw failure;
         }
+        if (ownsSharedResources()) await removeSingletonFiles(item.root, { attempts: 6, delayMs: 40 });
       }
 
       try { item.cdpConnection?.close?.(); } catch (_) {}
@@ -134,8 +121,11 @@ module.exports = {
         try { item.markerProcess.kill(); } catch (_) {}
       }
       await item.proxyForwarder?.close().catch(() => {});
-      stopIpcStubForWindow(item.kernelWindowName).catch(() => {});
-      const lockReleased = await releaseProfileLock(item.root, item.profileLock).catch(() => false);
+      await item.workerMitmProxy?.close().catch(() => {});
+      if (ownsSharedResources()) await stopIpcStubForWindow(item.kernelWindowName).catch(() => {});
+      if (ownsSharedResources() && options.markCleanExit !== false) await this.markProfileCleanExit(item.root).catch(() => {});
+      const lockReleased = ownsSharedResources()
+        ? await releaseProfileLock(item.root, item.profileLock).catch(() => false) : false;
       if (!lockReleased && item.profileLock && fs.existsSync(lockPath(item.root))) {
         if (!options.ignoreForeignLock) {
           item.cleanupFailed = true;
@@ -146,10 +136,6 @@ module.exports = {
           throw failure;
         }
       }
-      // Existing behavior intentionally marks the profile clean after watchdog
-      // cleanup as well, preventing Chromium's restore bubble on the next launch.
-      if (options.markCleanExit !== false) await this.markProfileCleanExit(item.root).catch(() => {});
-
       if (this.running.get(profileId) === item) this.running.delete(profileId);
       item.cleanupFailed = false;
       item.cleanupState = 'cleaned';
@@ -202,8 +188,8 @@ module.exports = {
   },
 
   handleBrowserGone(profileId, item, reason = 'browser-gone', options = {}) {
-    if (profileId) this.resetFingerprintVerificationFailures(profileId);
     if (!item) return Promise.resolve({ id: profileId, running: false });
+    if (item.cleanedUp) return Promise.resolve({ id: profileId, running: false });
     const pending = this.stopping.get(profileId);
     if (pending?.lifecycleSettled && this.stopping.get(profileId) === pending) this.stopping.delete(profileId);
     const activePending = this.stopping.get(profileId);
@@ -235,17 +221,11 @@ module.exports = {
         markCleanExit: false,
         emitStatus: false,
         emitProfileClosed: false,
-        ignoreForeignLock: Boolean(
-          current
-          && current !== item
-          && current.profileLock
-          && current.root
-          && item.root
-          && path.resolve(String(current.root || '')) === path.resolve(String(item.root || '')),
-        ),
+        ignoreForeignLock: true,
       });
     }
 
+    if (profileId) this.resetFingerprintVerificationFailures(profileId);
     const cleanupPromise = this.cleanupRunningItem(profileId, item, {
       reason,
       expected: options.expected !== undefined ? options.expected : item.stopping === true,

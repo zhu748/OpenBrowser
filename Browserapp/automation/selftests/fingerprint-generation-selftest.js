@@ -2,7 +2,7 @@
 
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
-const { buildFingerprint } = require('../fingerprint');
+const { buildFingerprint, assertFingerprintConsistency } = require('../fingerprint');
 const { sanitizeProfile } = require('../../engine/profile-sanitizer');
 const { fingerprintVersion, createFingerprintDraw } = require('../fingerprint/generation');
 const { ProfileRoutes } = require('../api/profile-routes');
@@ -16,6 +16,22 @@ function onHost(platform, run) {
 }
 
 async function main() {
+  for (const [os, osVersion, kernelVersion] of [
+    ['Windows', '7', '157.0.8103.78'], ['Windows', '8', '157.0.8103.78'],
+    ['Windows', '8.1', '157.0.8103.78'], ['macos', '10.15', '157.0.8103.78'],
+  ]) {
+    const profile = sanitizeProfile({ id: 'old-os', name: 'old-os', os, osVersion, fingerprintVersion: 2 });
+    const fp = buildFingerprint({ ...profile, kernelVersion });
+    assert.equal(fp.osVersion, osVersion);
+    assert.throws(() => assertFingerprintConsistency(fp), { code: 'FINGERPRINT_CONFIG_INVALID' });
+  }
+  for (const [os, osVersion, kernelVersion] of [
+    ['Windows', '7', '109.0.0.0'], ['macos', '10.15', '138.0.0.0'], ['macos', '14', '157.0.8103.78'],
+  ]) {
+    assert.doesNotThrow(() => assertFingerprintConsistency(buildFingerprint({
+      id: 'supported-os', os, osVersion, kernelVersion, fingerprintVersion: 2,
+    })));
+  }
   assert.equal(sanitizeProfile({ id: 'legacy', name: 'Legacy' }).fingerprintVersion, 1);
   for (const value of [0, 3, true, 'next', {}, []]) {
     assert.throws(() => fingerprintVersion(value), /Unsupported fingerprintVersion/);

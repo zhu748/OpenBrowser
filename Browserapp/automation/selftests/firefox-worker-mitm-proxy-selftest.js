@@ -34,7 +34,11 @@ async function makeHttpsOrigin() {
         res.end(JSON.stringify(req.headers));
       } else {
         res.setHeader('Content-Type', 'application/javascript');
-        res.end(isWorker ? WORKER_SRC : PAGE_SRC);
+        // Exercise decoding through the actual CONNECT/TLS path too.
+        if (isWorker) {
+          res.setHeader('Content-Encoding', 'gzip');
+          res.end(require('node:zlib').gzipSync(WORKER_SRC));
+        } else res.end(PAGE_SRC);
       }
     });
     return new Promise((resolve) => srv.listen(0, '127.0.0.1', () => resolve({ srv, port: srv.address().port, certPem: fs.readFileSync(cert), certPath: cert, dir })));

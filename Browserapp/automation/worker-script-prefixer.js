@@ -1,155 +1,137 @@
 'use strict';
 
-/**
- * Chromium 157+ worker first-instruction delivery.
- *
- * Chrome removed the Fetch domain from worker sessions and introduced a debugger
- * deadlock: Runtime.evaluate of a nontrivial script on a worker held at
- * waitForDebuggerOnStart never returns. The worker injection source can therefore
- * no longer be delivered through the worker's own CDP session on those builds.
- *
- * This rewriter runs on the PAGE-level Fetch domain (still fully available). Worker
- * script requests are transparently continued at the request stage; when the paused
- * request reaches the response stage (Fetch.getResponseBody is only legal there),
- * the original body is re-fulfilled with the persona injection source prepended.
- * The worker's own first instruction then observes the patched globals, preserving
- * the first-read contract the worker-session evaluate used to provide.
- */
-
+// Chromium worker response delivery through the page Fetch domain. Request
+// headers have a separate owner; every response tracked here is released once.
+const { injectWorkerSource, rewrittenScriptHeaders, isJavaScriptMime, MAX_WORKER_BYTES } = require('./worker-source');
 const WORKER_SCRIPT_PATTERN = /\.(?:js|mjs)(?:[?#]|$)/i;
-const TRANSIENT_ERRORS = /Can only get response body|No resource with given identifier|Session (?:closed|with given id not found)|Target closed|Invalid InterceptionId/i;
+const TRANSIENT_ERRORS = /No resource with given identifier|Session (?:closed|with given id not found)|Target closed|Invalid InterceptionId/i;
 
 class WorkerScriptPrefixer {
   constructor(options = {}) {
     this.source = options.source || '';
     this.commandTimeout = Math.max(2000, Math.min(15000, Number(options.commandTimeout) || 8000));
-    this.requestStage = new Set();
-    this.inFlight = new Set();
-    // URLs whose script bodies this prefixer has fulfilled with the persona prefix.
-    // Cached service workers start from the script cache with NO network request, so
-    // their sessions see no prefixing; the engine uses this set to evaluate the source
-    // directly on those sessions exactly once per URL instead.
+    this.requestStage = new Map();
+    this.inFlight = new Map();
     this.fulfilledUrls = new Set();
     this.destroyed = false;
     this.logger = typeof options.logger === 'function' ? options.logger : null;
   }
 
   setSource(source) {
+    if (this.source !== (source || '')) this.fulfilledUrls.clear();
     this.source = source || '';
   }
 
-  /**
-   * True when the paused request is a worker script this prefixer should rewrite.
-   *
-   * The request-stage view of a worker script load is nearly blind: no Sec-Fetch-Dest,
-   * no UA/sec-ch-ua headers (verified empirically — worker script requests expose only
-   * Accept/Referer), and possibly no .js suffix (extensionless endpoints like
-   * /api/worker). The URL suffix therefore only covers the common case; the
-   * extensionless case is discriminated at the RESPONSE stage by
-   * isExtensionlessWorkerResponse() (resourceType "Other" + JavaScript MIME).
-   */
   matches(url) {
-    if (this.destroyed || !this.source) return false;
-    const text = String(url || '');
-    if (!/^https?:/i.test(text)) return false;
-    const path = text.split('?')[0].split('#')[0];
-    return WORKER_SCRIPT_PATTERN.test(path);
+    return !this.destroyed && Boolean(this.source) && /^https?:/i.test(String(url || ''))
+      && WORKER_SCRIPT_PATTERN.test(String(url).split('?')[0].split('#')[0]);
   }
 
-  /**
-   * Response-stage discriminator for extensionless worker scripts: worker loads are
-   * resourceType "Other" (page scripts are "Script", documents "Document") and served
-   * with a JavaScript MIME type. Covers dedicated, shared and service workers alike.
-   */
   isExtensionlessWorkerResponse(event) {
-    if (this.destroyed || !this.source) return false;
     const params = event?.params || {};
-    const url = String(params.request?.url || '');
-    if (!/^https?:/i.test(url)) return false;
-    const path = url.split('?')[0].split('#')[0];
-    if (WORKER_SCRIPT_PATTERN.test(path)) return false; // already matched by suffix
-    if (String(params.resourceType || '') !== 'Other') return false;
-    if (params.responseStatusCode == null) return false;
-    const responseHeaders = params.responseHeaders;
-    if (!Array.isArray(responseHeaders)) return false;
-    const mime = String(responseHeaders.find((h) => String(h.name || '').toLowerCase() === 'content-type')?.value || '').toLowerCase();
-    return /(?:application|text)\/(?:x-)?(?:javascript|ecmascript)/.test(mime);
+    return !this.destroyed && Boolean(this.source) && /^https?:/i.test(String(params.request?.url || ''))
+      && params.resourceType === 'Other' && isJavaScriptMime(this.header(params, 'content-type'));
   }
 
-  /** Track a request-stage pause without continuing it (the header rewriter continues). */
+  key(event) { return JSON.stringify([event.sessionId || '', event.params?.requestId]); }
+  header(params, name) {
+    return params.responseHeaders?.find((h) => String(h.name).toLowerCase() === name)?.value;
+  }
+
   track(event) {
-    const { requestId } = event.params || {};
-    if (!requestId) return;
-    const key = event.sessionId ? `${event.sessionId}:${requestId}` : requestId;
-    this.requestStage.add(key);
+    if (this.destroyed || !this.source || !event.params?.requestId) return;
+    const key = this.key(event);
+    if (!this.requestStage.has(key) && !this.inFlight.has(key)) {
+      this.requestStage.set(key, { sessionId: event.sessionId, networkId: event.params.networkId, canceled: false, source: this.source });
+    }
   }
 
-  /** True when this paused event belongs to a worker script we continued at request stage. */
   hasTracked(event) {
-    if (this.destroyed) return false;
-    const { requestId } = event.params || {};
-    if (!requestId) return false;
-    const key = event.sessionId ? `${event.sessionId}:${requestId}` : requestId;
-    return this.requestStage.has(key);
+    return !this.destroyed && (this.requestStage.has(this.key(event)) || this.inFlight.has(this.key(event)));
+  }
+
+  cleanupSession(sessionId) {
+    this.cancelWhere((state) => state.sessionId === sessionId);
+  }
+
+  cleanupFailedRequest(event) {
+    const networkId = event.params?.requestId;
+    if (networkId) this.cancelWhere((state) => state.sessionId === event.sessionId && state.networkId === networkId);
+  }
+
+  cancelWhere(matches) {
+    for (const map of [this.requestStage, this.inFlight]) {
+      for (const [key, state] of map) if (matches(state)) { state.canceled = true; map.delete(key); }
+    }
   }
 
   destroy() {
     this.destroyed = true;
-    this.requestStage.clear();
-    this.inFlight.clear();
+    for (const map of [this.requestStage, this.inFlight]) {
+      for (const state of map.values()) state.canceled = true;
+      map.clear();
+    }
+    this.fulfilledUrls.clear();
   }
 
-  /**
-   * Handle a paused request. Request stage: remember and continue. Response stage:
-   * read the body, prepend the injection source, fulfill. Both stages must be
-   * intercepted by the caller's Fetch.enable patterns (Request + Response for
-   * Scripts).
-   */
-  async handlePaused(event, connection) {
-    const { requestId, request, responseStatusCode } = event.params || {};
-    if (!requestId) return false;
-    const url = request?.url || '';
-    const key = event.sessionId ? `${event.sessionId}:${requestId}` : requestId;
-    if (responseStatusCode == null) return false; // request stage is tracked via track()
-    if (!this.requestStage.delete(key)) return false;
-    // Extensionless worker scripts were tracked speculatively at the request stage
-    // (no discriminator was visible there); the response stage now decides.
-    if (!WORKER_SCRIPT_PATTERN.test(url.split('?')[0].split('#')[0])
-      && !this.isExtensionlessWorkerResponse(event)) return false;
-    if (this.inFlight.has(key)) return false;
-    this.inFlight.add(key);
+  handlePaused(event, connection) {
+    const params = event.params || {};
+    if (!params.requestId || params.responseStatusCode == null && params.responseErrorReason == null) return Promise.resolve(false);
+    const key = this.key(event);
+    const existing = this.inFlight.get(key);
+    if (existing) return existing.operation;
+    const state = this.requestStage.get(key);
+    if (!state || this.destroyed) return Promise.resolve(false);
+    this.requestStage.delete(key);
+    this.inFlight.set(key, state);
+    state.operation = Promise.resolve().then(() => this.rewrite(event, connection, state)).finally(() => {
+      if (this.inFlight.get(key) === state) this.inFlight.delete(key);
+    });
+    return state.operation;
+  }
+
+  async rewrite(event, connection, state) {
+    const params = event.params;
+    const requestId = params.requestId;
+    const url = params.request?.url || '';
+    const send = async (method, values) => {
+      if (state.canceled || this.destroyed) return null;
+      return connection.command(method, values, { sessionId: event.sessionId, timeout: this.commandTimeout });
+    };
+    // Page scripts, redirects, failed responses, partial bodies and non-JS
+    // extensionless resources must keep their original headers and native errors.
     try {
-      const response = await connection.command('Fetch.getResponseBody', { requestId }, { sessionId: event.sessionId, timeout: this.commandTimeout });
-      const original = response && response.base64Encoded
-        ? Buffer.from(response.body || '', 'base64')
-        : Buffer.from(response?.body || '', 'utf8');
-      await connection.command('Fetch.fulfillRequest', {
-        requestId,
-        responseCode: responseStatusCode,
-        responseHeaders: [
-          { name: 'Content-Type', value: 'application/javascript' },
-          { name: 'Cache-Control', value: 'no-store' },
-        ],
-        // Footer BEFORE the original body: a network worker that synchronously
-        // spawns a nested worker at top level must already observe
-        // self.__obPersonaUrl when the nested rewrite runs. The footer var is
-        // IIFE-scoped so no marker leaks onto the realm global (the pattern
-        // also fires for page scripts, which early-return the source but
-        // would still execute this footer).
-        body: Buffer.concat([
-          Buffer.from(this.source, 'utf8'),
-          Buffer.from('\n;\n', 'utf8'),
-            Buffer.from(';(function(){try{var b=' + JSON.stringify(this.source)
-            + ';Object.defineProperty(self,\'__obPersonaUrl\',{value:URL.createObjectURL(new Blob([b],{type:\'application/javascript\'})),configurable:true,writable:true});}catch(e){}})();\n', 'utf8'),
-          Buffer.from('\n;\n', 'utf8'),
-          original,
-        ]).toString('base64'),
-      }, { sessionId: event.sessionId, timeout: this.commandTimeout });
-      this.fulfilledUrls.add(url);
-      this.logger?.({ type: 'worker-script-prefixed', url });
+      const workerScript = params.resourceType === 'Other' && isJavaScriptMime(this.header(params, 'content-type'));
+      if (workerScript && (params.responseStatusCode === 206 || this.header(params, 'content-range'))) {
+        throw new Error('Partial worker scripts cannot be initialized safely');
+      }
+      if (params.resourceType !== 'Other' || params.request?.method === 'HEAD'
+        || !(params.responseStatusCode >= 200 && params.responseStatusCode < 300)
+        || params.responseStatusCode === 204 || params.responseStatusCode === 205
+        || !isJavaScriptMime(this.header(params, 'content-type'))) {
+        await send('Fetch.continueRequest', { requestId });
+        return true;
+      }
+      if (Number(this.header(params, 'content-length')) > MAX_WORKER_BYTES) throw new Error('Worker response exceeds byte limit');
+      const result = await send('Fetch.getResponseBody', { requestId });
+      if (state.canceled || this.destroyed) return true;
+      if (!result || typeof result.body !== 'string') throw new Error('Worker response body is unavailable');
+      const original = Buffer.from(result.body, result.base64Encoded ? 'base64' : 'utf8');
+      if (original.length > MAX_WORKER_BYTES) throw new Error('Worker response exceeds byte limit');
+      const body = injectWorkerSource(original, state.source);
+      await send('Fetch.fulfillRequest', { requestId, responseCode: params.responseStatusCode,
+        responseHeaders: rewrittenScriptHeaders(params.responseHeaders, body.length), body: body.toString('base64') });
+      if (state.canceled || this.destroyed) return true;
+      if (state.source === this.source) this.fulfilledUrls.add(url);
+      try { this.logger?.({ type: 'worker-script-prefixed', url }); } catch (_) {}
       return true;
-    } finally {
-      this.inFlight.delete(key);
+    } catch (error) {
+      if (state.canceled || this.destroyed || TRANSIENT_ERRORS.test(String(error.message))) return true;
+      try { await send('Fetch.failRequest', { requestId, errorReason: 'Aborted' }); }
+      catch (failure) {
+        if (!TRANSIENT_ERRORS.test(String(failure.message)) && !state.canceled && !this.destroyed) error.fatal = true;
+      }
+      throw error;
     }
   }
 }

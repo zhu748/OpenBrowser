@@ -27,6 +27,7 @@ function fixture(behavior = {}) {
   const connection = { onEvent: behavior.previousEvent, async command(method, params = {}) {
     calls.push({ method, params });
     if (method.startsWith('emulation.')) return behavior.emulate?.(method, params) || {};
+    if (method === 'permissions.setPermission') return behavior.permission?.(params) || {};
     if (method === 'browsingContext.getTree') return { contexts: [{ context: 'initial', url: 'about:blank' }] };
     if (method === 'script.addPreloadScript') return { script: 'preload' };
     if (method === 'script.evaluate') return { type: 'success', result: params.expression.includes('webglVendor: webglVendor') ? remote(live) : { type: 'undefined' } };
@@ -40,12 +41,28 @@ function fixture(behavior = {}) {
     return {};
   } };
   const emit = (method, params) => connection.onEvent({ method, params }, connection);
-  return { connection, calls, notifications, emit, initialize: () => initializeFirefoxFingerprint(connection, fingerprint, profile) };
+  return { connection, calls, notifications, emit, initialize: () => initializeFirefoxFingerprint(connection,
+    behavior.geoPermission ? { ...fingerprint, geoPermission: behavior.geoPermission } : fingerprint, profile) };
 }
 let passed = 0;
 async function test(name, run) { await run();passed += 1;console.log('PASS ' + name); }
 
 (async () => {
+  await test('native permission setup precedes startup navigation and is shared by same-origin tabs', async () => {
+    const h = fixture({ geoPermission: 'granted' });const initialized = await h.initialize();
+    await navigateFirefoxStartup(h.connection, initialized.context, ['https://one.test/a', 'https://one.test/b']);
+    const permissions = h.calls.filter(call => call.method === 'permissions.setPermission');
+    assert.deepEqual(permissions, [{ method: 'permissions.setPermission', params: { descriptor: { name: 'geolocation' }, state: 'granted', origin: 'https://one.test' } }]);
+    assert.ok(h.calls.indexOf(permissions[0]) < h.calls.findIndex(call => call.method === 'browsingContext.navigate'));
+  });
+  await test('failed native permission setup blocks navigation and does not cache success', async () => {
+    let attempts = 0;
+    const h = fixture({ geoPermission: 'denied', permission: () => { if (++attempts === 1) throw new Error('native permission unsupported');return {}; } });
+    const initialized = await h.initialize();
+    await assert.rejects(navigateFirefoxStartup(h.connection, initialized.context, ['https://one.test']), /native permission unsupported/);
+    assert.equal(h.calls.some(call => call.method === 'browsingContext.navigate'), false);
+    await navigateFirefoxStartup(h.connection, initialized.context, ['https://one.test']);assert.equal(attempts, 2);
+  });
   await test('startup waits for the shared native context setup before navigating the new tab', async () => {
     const gate = deferred();
     const h = fixture({ emulate: (method, params) => method === 'emulation.setUserAgentOverride' && params.contexts?.[0] === 'second' ? gate.promise : {} });

@@ -1,4 +1,5 @@
 'use strict';
+const { normalizeNetworkInformation } = require('../../shared/profile-values');
 
 // Portable Chromium gate. It exercises production target setup, HTTP headers,
 // inline first-script reads, CSS metrics and first-instruction worker identity.
@@ -73,7 +74,7 @@ function verifyIdentity(actual, fp) {
   assert.equal(actual.platform, fp.platform);
   assert.equal(actual.cores, fp.hardwareConcurrency);
   assert.equal(actual.memory, fp.deviceMemory);
-  for (const key of ['rtt', 'downlink', 'effectiveType', 'saveData']) assert.equal(actual.connection?.[key], fp.connection[key], key);
+  for (const key of ['rtt', 'downlink', 'effectiveType', 'saveData']) assert.equal(actual.connection?.[key], normalizeNetworkInformation(fp.connection)[key], key);
 }
 function verifyHeaders(headers, fp) {
   assert.equal(headers['user-agent'], fp.userAgent);
@@ -101,6 +102,7 @@ async function runBrowser(browser, server, id, hostDpr, dpr) {
   child.stderr?.on('data', (data) => { stderr = (stderr + data).slice(-12000); });
   child.on('error', (error) => { spawnError = error; });
   let item, connection;
+  const events = [];
   try {
     let port;
     for (let i = 0; i < 150; i += 1) {
@@ -111,9 +113,10 @@ async function runBrowser(browser, server, id, hostDpr, dpr) {
       await delay(100);
     }
     assert.ok(port, 'Chromium did not publish a CDP port: ' + stderr);
-    const events = [];
     const engine = { ...injection, profiles: new Map([[id, profile]]), networkInfo: new Map(),
-      emit: (event) => events.push(event), handleBrowserGone: async () => child.kill() };
+      emit: (event) => events.push(event), handleBrowserGone: async (_id, _item, reason, details) => {
+        events.push({ type: 'native-browser-stop', reason, details });child.kill();
+      } };
     item = { port, profile, fingerprint: fp, kernelVersion: browser.version };
     await engine.startWorkerFingerprintInjection(item, fp);
     const tab = (await cdp.tabs(port))[0];assert.ok(tab, 'initial page');
@@ -155,6 +158,9 @@ async function runBrowser(browser, server, id, hostDpr, dpr) {
     assert.ok(!events.some((event) => /injection-failed/.test(event.type)), JSON.stringify(events));
     console.log('PASS ' + id + ' inline identity, CSS resolution/screen, stable Canvas');
     return live.canvas;
+  } catch (error) {
+    error.message += '\n' + JSON.stringify({ id, exitCode: child.exitCode, signalCode: child.signalCode, events, stderr: stderr.slice(-2500) });
+    throw error;
   } finally {
     connection?.close();item?.workerFingerprintConnection?.close();
     if (child.exitCode === null && child.signalCode === null) {

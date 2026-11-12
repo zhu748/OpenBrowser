@@ -1,6 +1,7 @@
 'use strict';
 
 const { noiseDelta } = require('./fingerprint/noise-policy');
+const { normalizeBatterySnapshot } = require('../shared/profile-values');
 
 /**
  * Seed-derived fingerprint generators and persona data tables.
@@ -511,20 +512,8 @@ function withinHammingThreshold(a, b, threshold = 12) {
 
 /** Deterministic battery snapshot derived from seed. */
 function createBatteryFromSeed(seedInput, override = null, options = {}) {
-  if (override && typeof override === 'object') {
-    const level = Math.min(1, Math.max(0, Number(override.level)));
-    const charging = override.charging !== false && override.charging !== 0 && override.charging !== '0';
-    return {
-      charging,
-      // null means "unknown / Infinity" for JSON-safe transport into injection
-      chargingTime: Number.isFinite(Number(override.chargingTime))
-        ? Math.max(0, Number(override.chargingTime))
-        : (charging ? 0 : null),
-      dischargingTime: Number.isFinite(Number(override.dischargingTime))
-        ? Math.max(0, Number(override.dischargingTime))
-        : (charging ? null : 7200),
-      level: Number.isFinite(level) ? level : 0.87,
-    };
+  if (override && typeof override === 'object' && !Array.isArray(override)) {
+    return normalizeBatterySnapshot(override);
   }
   // Desktop towers without a battery answer getBattery with the AC-power shape: charging,
   // full, zero charging time, Infinity discharge. Giving every desktop persona a laptop-style
