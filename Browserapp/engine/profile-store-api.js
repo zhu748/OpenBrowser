@@ -7,14 +7,14 @@
  * these are the operations the UI and profile-store-sqlite drive.
  */
 
-const { assertProfileId, assertSafeProfileChild, validateProfileRootSecure } = require('../automation/isolation');
+const { assertProfileId, validateProfileRootSecure } = require('../automation/isolation');
 const { prepareProfileSync } = require('./profile-sync');
 const { persistProfileSync } = require('./profile-publication');
 const { assertProfileNotMaintained, acquireProfileMaintenance } = require('./profile-maintenance');
 const { assertProfileRestoreReady } = require('../automation/cloud/file-restore');
+const { FIREFOX_COOKIES, isFirefoxProfile, removeBrowserFiles, clearBrowserCache } = require('../automation/browser-data');
 const fs = require('fs');
 const fsp = require('fs/promises');
-const path = require('path');
 
 module.exports = {
   profileForEdit(id) {
@@ -331,18 +331,10 @@ module.exports = {
     try {
       const root = this.profileRoot(id);
       await assertProfileRestoreReady(root);
-      await this.clearProfileCache(root);
-      const base = path.join(root, 'Default');
-      for (const name of [
-        path.join('Network', 'Cookies'),
-        path.join('Network', 'Cookies-journal'),
-        'Cookies',
-        'Cookies-journal',
-      ]) {
-        const target = await assertSafeProfileChild(root, path.join(base, name));
-        await fsp.rm(target, { recursive: true, force: true }).catch(() => {});
-      }
       const profile = this.profiles.get(id);
+      await clearBrowserCache(root, profile);
+      await removeBrowserFiles(root, isFirefoxProfile(profile)
+        ? FIREFOX_COOKIES : ['Default/Network/Cookies', 'Default/Network/Cookies-journal', 'Default/Network/Cookies-wal', 'Default/Network/Cookies-shm', 'Default/Cookies', 'Default/Cookies-journal']);
       if (profile) {
         // Fresh-object write, same reason as trashProfiles above.
         this.profiles.set(id, { ...profile, cookies: '', updatedAt: new Date().toISOString() });
@@ -353,11 +345,7 @@ module.exports = {
   },
 
   async clearProfileCache(root) {
-    const base = path.join(root, 'Default');
-    for (const name of ['Cache', 'Code Cache', 'GPUCache', path.join('Service Worker', 'CacheStorage')]) {
-      const target = await assertSafeProfileChild(root, path.join(base, name));
-      await fsp.rm(target, { recursive: true, force: true }).catch(() => {});
-    }
+    await clearBrowserCache(root);
   },
 
   /** Export live cookies via CDP for cloud backup on close. */
@@ -375,6 +363,7 @@ module.exports = {
         httpOnly: Boolean(c.httpOnly),
         sameSite: c.sameSite,
         expires: c.expires,
+        ...(c.partitionKey ? { partitionKey: c.partitionKey } : {}),
       }));
       return JSON.stringify(compact);
     } catch (_) {
@@ -392,6 +381,13 @@ module.exports = {
       if (!cookie.url && !cookie.domain) throw new Error('Cookie entry requires url or domain');
       const site = sameSite(item.sameSite ?? item.same_site); if (site) cookie.sameSite = site;
       const expires = Number(item.expires ?? item.expirationDate ?? item.expiration_date); if (Number.isFinite(expires) && expires > 0) cookie.expires = expires > 1e12 ? expires / 1000 : expires;
+      if (item.partitionKey !== undefined) {
+        const key = item.partitionKey;
+        if (!key || typeof key.topLevelSite !== 'string' || typeof key.hasCrossSiteAncestor !== 'boolean') throw new Error('Invalid cookie partition key');
+        const site = new URL(key.topLevelSite);
+        if (!['https:', 'http:'].includes(site.protocol) || site.origin !== key.topLevelSite) throw new Error('Invalid cookie partition site');
+        cookie.partitionKey = { topLevelSite: key.topLevelSite, hasCrossSiteAncestor: key.hasCrossSiteAncestor };
+      }
       return cookie;
     });
     if (cookies.length) await connection.command('Storage.setCookies', { cookies }, 30000); return cookies.length;

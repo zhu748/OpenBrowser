@@ -128,6 +128,9 @@
   // --- Platform Accounts Pool ---
   let platformAccounts = [];
   let accountLoad = null;
+  let accountSelectionGeneration = 0;
+  let editorSessionSequence = 0;
+  let windowImportGeneration = 0;
 
   function accountId() { return 'acc-' + crypto.randomUUID(); }
   function runAction(action) {
@@ -438,6 +441,10 @@
   // --- Editor Mode Switching (Single Create / Batch Create / Window Import / AI Create / Edit) ---
   function openWorkbenchEditorMode(mode = 'single', profileId = null) {
     if (!['edit', 'single', 'batch', 'import', 'ai'].includes(mode)) throw new Error('创建模式无效');
+    if (mode !== 'edit') openProfileEditor.cancel?.();
+    const form = document.getElementById('profile-editor-form');
+    if (form) form.dataset.editorSession = String(++editorSessionSequence);
+    windowImportGeneration += 1;
     if (currentEditorMode === 'edit' && mode !== 'edit') {
       document.getElementById('profile-editor-form')?.reset();
       editorNetworkResult = null;
@@ -499,6 +506,17 @@
   }
 
   function prepareFreshCreateDraft() {
+    // A new creation must not reuse a previous editor's credentials or identity.
+    for (const id of ['editor-cookies', 'editor-platform-user', 'editor-platform-pass', 'editor-platform-2fa', 'editor-account-pool-select', 'editor-user-agent']) {
+      const input = document.getElementById(id); if (input) input.value = '';
+    }
+    document.getElementById('editor-extra-accounts')?.replaceChildren();
+    editorNetworkResult = null;
+    const form = document.getElementById('profile-editor-form');
+    if (form) {
+      for (const key of ['fingerprintSeed', 'resetFingerprint', 'uaProfile']) delete form.dataset[key];
+      form.dataset.fingerprintVersion = '2';
+    }
     const num = typeof nextProfileNumber === 'function' ? nextProfileNumber() : 1;
     const now = new Date();
     const datePrefix = `${String(now.getFullYear()).slice(-2)}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
@@ -510,6 +528,9 @@
     if (osEl && !osEl.value) osEl.value = 'Windows';
     if (typeof fillEditorVersionSelects === 'function') fillEditorVersionSelects({ engineVersion: 'latest' });
     window.refreshEditorKernelVersions?.();
+    for (const id of ['editor-open-workbench', 'editor-ip-change-remind', 'editor-google-login']) {
+      const control = document.getElementById(id); if (control) control.value = '2';
+    }
     autoFillDeviceNameByOs(osEl?.value || 'Windows', true);
 
     const macEl = document.getElementById('editor-mac');
@@ -699,7 +720,7 @@
   }
 
   async function receiveTransferredWindows(rawText) {
-    const clean = String(rawText || '').trim();
+    const clean = window.OpenBrowserProfileCommands.validateImportText(rawText).trim();
     if (!clean) throw new Error('请输入转移码或选择转移包文件');
     if (clean.length > 16 * 1024 * 1024) throw new Error('转移包超过 16 MiB，请分批导入');
     let bundle = null;
@@ -829,18 +850,19 @@
 
   function parseWindowUploadFileContent(text, filename = '') {
     const lower = filename.toLowerCase();
-    const cleaned = String(text || '').replace(/^\uFEFF/, '').trim();
+    const cleaned = window.OpenBrowserProfileCommands.validateImportText(text).replace(/^\uFEFF/, '').trim();
     if (!cleaned) return [];
 
     if (lower.endsWith('.json') || lower.endsWith('.obpack') || cleaned.startsWith('[') || cleaned.startsWith('{')) {
       const parsed = JSON.parse(cleaned);
       const arr = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.profiles) ? parsed.profiles : [parsed]);
+      if (arr.length > window.OpenBrowserProfileCommands.MAX_IMPORT_PROFILES) throw new Error('一次最多导入 5000 个窗口');
       return arr.map((item, i) => ({
         title: item.title || item.name || `导入窗口-${i + 1}`,
-        startUrl: item.startUrl || item.platform?.startUrl || '',
-        username: item.username || item.platform?.username || '',
-        password: item.password || item.platform?.password || '',
-        totpSecret: item.totpSecret || item.platform?.totpSecret || '',
+        startUrl: item.startUrl ?? item.platform?.startUrl ?? '',
+        username: item.username ?? item.platform?.username ?? '',
+        password: item.password ?? item.platform?.password ?? '',
+        totpSecret: item.totpSecret ?? item.platform?.totpSecret ?? '',
         proxy: item.proxy || 'Direct',
         os: item.os || 'Windows',
         cookies: item.cookies || '',
@@ -854,6 +876,7 @@
 
     // TXT pipe/tab format
     if (lower.endsWith('.txt') || (lines[0].includes('|') && !lines[0].includes(','))) {
+      if (lines.length > window.OpenBrowserProfileCommands.MAX_IMPORT_PROFILES) throw new Error('一次最多导入 5000 个窗口');
       return lines.map((line, i) => {
         const parts = line.includes('|') ? line.split('|').map((s) => s.trim()) : line.split(/\t+/).map((s) => s.trim());
         return {
@@ -1141,20 +1164,24 @@
     });
 
     // Account pool select in editor
-    document.getElementById('editor-account-pool-select')?.addEventListener('change', runAction(async (e) => {
-      const id = e.target.value;
+    document.getElementById('editor-account-pool-select')?.addEventListener('change', runAction(async (event) => {
+      const request = ++accountSelectionGeneration;
+      const control = event.target, id = control.value;
+      const session = document.getElementById('profile-editor-form')?.dataset.editorSession;
+      const current = () => request === accountSelectionGeneration && control.value === id
+        && document.getElementById('profile-editor-form')?.dataset.editorSession === session;
       if (!id) return;
-      await loadPlatformAccounts();
-      const acc = await window.ops.accountGet(id);
-      if (e.target.value !== id) return;
-      const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
-      setVal('editor-platform-type', acc.platform || 'other');
-      setVal('editor-start-url', acc.url || '');
-      setVal('editor-platform-name', acc.name || '');
-      setVal('editor-platform-user', acc.username || '');
-      setVal('editor-platform-pass', acc.password || '');
-      setVal('editor-platform-2fa', acc.totpSecret || '');
-      if (typeof toast === 'function') toast(`已填入账号：${acc.username}`, { tone: 'success' });
+      try {
+        await loadPlatformAccounts();
+        if (!current()) return;
+        const account = await window.ops.accountGet(id);
+        if (!current()) return;
+        const fields = { 'editor-platform-type': account.platform || 'other', 'editor-start-url': account.url,
+          'editor-platform-name': account.name, 'editor-platform-user': account.username,
+          'editor-platform-pass': account.password, 'editor-platform-2fa': account.totpSecret };
+        for (const [key, value] of Object.entries(fields)) { const field = document.getElementById(key); if (field) field.value = value || ''; }
+        toast(`已填入账号：${account.username}`, { tone: 'success' });
+      } catch (error) { if (current()) throw error; }
     }));
 
     // Save current editor config as new template
@@ -1203,24 +1230,28 @@
       dropzone.classList.remove('is-dragover');
       const file = e.dataTransfer?.files?.[0];
       if (!file) return;
+      const request = ++windowImportGeneration;
       try {
-        const rows = parseWindowUploadFileContent(await file.text(), file.name);
+        const rows = parseWindowUploadFileContent(await window.OpenBrowserProfileCommands.readImportFile(file), file.name);
+        if (request !== windowImportGeneration) return;
         renderImportPreviewTable(rows);
         if (typeof toast === 'function') toast(`已解析文件 ${file.name}，共 ${rows.length} 个待导入窗口`, { tone: 'success' });
       } catch (err) {
-        if (typeof toast === 'function') toast('文件解析失败：' + err.message, { tone: 'error' });
+        if (request === windowImportGeneration && typeof toast === 'function') toast('文件解析失败：' + err.message, { tone: 'error' });
       }
     });
     fileInput?.addEventListener('change', async (e) => {
       const file = e.target.files?.[0];
       e.target.value = '';
       if (!file) return;
+      const request = ++windowImportGeneration;
       try {
-        const rows = parseWindowUploadFileContent(await file.text(), file.name);
+        const rows = parseWindowUploadFileContent(await window.OpenBrowserProfileCommands.readImportFile(file), file.name);
+        if (request !== windowImportGeneration) return;
         renderImportPreviewTable(rows);
         if (typeof toast === 'function') toast(`已解析文件 ${file.name}，共 ${rows.length} 个待导入窗口`, { tone: 'success' });
       } catch (err) {
-        if (typeof toast === 'function') toast('文件解析失败：' + err.message, { tone: 'error' });
+        if (request === windowImportGeneration && typeof toast === 'function') toast('文件解析失败：' + err.message, { tone: 'error' });
       }
     });
 
@@ -1412,7 +1443,7 @@
       const f = e.target.files?.[0];
       e.target.value = '';
       if (!f) return;
-      const text = await f.text();
+      const text = await window.OpenBrowserProfileCommands.readImportFile(f);
       const inp = document.getElementById('receive-transfer-code');
       if (inp) inp.value = text;
     });
@@ -1456,7 +1487,7 @@
       e.target.value = '';
       if (!f) return;
       try {
-        await receiveTransferredWindows(await f.text());
+        await receiveTransferredWindows(await window.OpenBrowserProfileCommands.readImportFile(f));
         document.getElementById('upload-window-dialog')?.close();
       } catch (err) {
         if (typeof toast === 'function') toast('上传导入失败：' + err.message, { tone: 'error' });
@@ -1949,7 +1980,7 @@
       renderTagsManagerTable();
       if (typeof toast === 'function') toast(`已新增标签「${val}」`, { tone: 'success' });
     });
-    document.getElementById('tags-mgr-tbody')?.addEventListener('click', async (e) => {
+    document.getElementById('tags-mgr-tbody')?.addEventListener('click', runAction(async (e) => {
       const filterTag = e.target.closest('[data-tm-filter]')?.dataset.tmFilter;
       const delTag = e.target.closest('[data-tm-del]')?.dataset.tmDel;
       if (filterTag) {
@@ -1961,15 +1992,13 @@
         document.getElementById('tags-manager-dialog')?.close();
       }
       if (delTag) {
-        saveCustomTags(loadCustomTags().filter((t) => t !== delTag));
-        for (const p of (window.ui?.profiles || [])) {
-          if (p.tag === delTag) p.tag = '';
-        }
-        if (typeof save === 'function') save();
-        if (typeof renderProfiles === 'function') renderProfiles();
+        const patches = (window.ui?.profiles || []).filter((p) => p.tag === delTag).map((p) => ({ id: p.id, patch: { tag: '' } }));
+        if (patches.length) await commitProfilePatches(patches);
+        saveCustomTags(loadCustomTags().filter((tag) => tag !== delTag));
+        renderProfiles();
         renderTagsManagerTable();
       }
-    });
+    }));
 
     // 5. Floating Dark Batch Pill Bar (#roxy-floating-batch-bar)
     const syncFloatingBatchBar = () => {
@@ -2355,7 +2384,7 @@
         if (rows.length >= 5001) throw new Error('一次最多导入 5000 个账号');
         rows.push(row);
       }, { maxFieldChars: 20000, maxColumns: 20 });
-      parser.write(await f.text()); parser.end();
+      parser.write(await window.OpenBrowserProfileCommands.readImportFile(f)); parser.end();
       const encoding = rows[0]?.indexOf('__openbrowser_csv_encoding') ?? -1;
       const records = rows.slice(1).filter((cols) => cols[1]).map((columns) => {
         const cols = encoding >= 0 && columns[encoding] === 'safe-v1'
@@ -2450,14 +2479,14 @@
   // (Project Cards, Extension Market Showcase, Template Cards, Sync Matrix,
   //  Log Filter & Export, and System Settings Category Navigation)
   // =========================================================================
-  const MARKET_EXTENSIONS = [
-    { id: 'ext-metamask', name: 'MetaMask 加密钱包', cat: 'web3', version: 'v12.6.0', icon: '🦊', color: '#f6851b', desc: '全球主流以太坊及多链 Web3 钱包扩展，支持多环境独立助记词隔离。', enabled: true },
-    { id: 'ext-phantom', name: 'Phantom 多链钱包', cat: 'web3', version: 'v24.18.0', icon: '👻', color: '#ab9ff2', desc: 'Solana / Ethereum / Bitcoin 多链钱包，适合空投交互与链上矩阵管理。', enabled: false },
-    { id: 'ext-cookie', name: 'Cookie-Editor Pro', cat: 'ecom', version: 'v1.13.2', icon: '🍪', color: '#2563eb', desc: '在浏览器窗口内实时查看、导入、导出与修改当前站点 Cookie 会话。', enabled: true },
-    { id: 'ext-translate', name: 'Immersive Translate 沉浸式翻译', cat: 'productivity', version: 'v1.11.8', icon: '🌐', color: '#ec4899', desc: '双语对照网页翻译扩展，支持跨境电商后台、海外论坛与社媒实时阅读。', enabled: true },
-    { id: 'ext-capsolver', name: 'CapSolver 验证码自动识别', cat: 'security', version: 'v1.14.0', icon: '🛡️', color: '#10b981', desc: '辅助处理 Cloudflare / reCAPTCHA / hCaptcha 验证挑战，提升自动化流程通过率。', enabled: false },
-    { id: 'ext-keepa', name: 'Keepa - Amazon Price Tracker', cat: 'ecom', version: 'v4.29', icon: '📈', color: '#0ea5e9', desc: '亚马逊卖家必备历史价格曲线、BSR 排名追踪与竞品库存监控插件。', enabled: false },
-  ];
+  function marketApplications() {
+    return (appCenterData.recommended || []).map((app) => ({ ...app,
+      cat: app.category === 'web3' ? 'web3' : ['privacy', 'security'].includes(app.category) ? 'security'
+        : app.tags?.includes('cookie') ? 'ecom' : 'productivity',
+      desc: app.description || '', color: '#2563eb', icon: '🧩',
+      enabled: app.status === 'enabled', version: app.version || '未安装',
+    }));
+  }
 
   function renderProjectCardsGrid() {
     const grid = document.getElementById('groups-card-grid');
@@ -2537,7 +2566,7 @@
     if (!grid) return;
     const activeCat = document.querySelector('#ext-category-bar .group-chip.active')?.dataset.extCat || 'all';
     const query = (document.getElementById('extension-search')?.value || '').trim().toLowerCase();
-    const list = MARKET_EXTENSIONS.filter((item) => {
+    const list = marketApplications().filter((item) => {
       if (activeCat !== 'all' && item.cat !== activeCat) return false;
       if (query && !`${item.name} ${item.desc}`.toLowerCase().includes(query)) return false;
       return true;
@@ -2566,6 +2595,8 @@
       grid.appendChild(card);
     }
   }
+
+  window.renderExtensionMarketShowcase = renderExtensionMarketShowcase;
 
   function initRound6SecondaryViews() {
     renderProjectCardsGrid();
@@ -2644,25 +2675,46 @@
       renderExtensionMarketShowcase();
     });
     document.getElementById('extension-search')?.addEventListener('input', renderExtensionMarketShowcase);
-    document.getElementById('roxy-ext-market-grid')?.addEventListener('change', (e) => {
-      const chk = e.target.closest('input[data-ext-toggle]');
-      if (!chk) return;
-      const ext = MARKET_EXTENSIONS.find((x) => x.id === chk.dataset.extToggle);
-      if (ext) {
-        ext.enabled = chk.checked;
+    document.getElementById('roxy-ext-market-grid')?.addEventListener('change', runAction(async (event) => {
+      const checkbox = event.target.closest('input[data-ext-toggle]');
+      if (!checkbox || checkbox.disabled) return;
+      const app = marketApplications().find((entry) => entry.id === checkbox.dataset.extToggle);
+      if (!app) return;
+      const enabled = checkbox.checked;
+      checkbox.disabled = true;
+      try {
+        let extensionId = app.extension_id;
+        if (enabled && !extensionId) {
+          const installed = await window.ops.addExtensionStore(app.store_url, [], false);
+          extensionId = installed?.extension?.id;
+          if (!extensionId) throw new Error('扩展安装未得到确认');
+        }
+        const result = extensionId ? await window.ops.toggleExtensionAll(extensionId, enabled) : { success: true };
+        if (!result?.success) throw new Error('扩展分配未完成');
+        await refreshExtensions();
+        const message = enabled ? '扩展已安装并分配到环境' : '扩展已停用';
+        toast(message + (result.partial ? '；部分运行环境尚未应用，请手动重启' : ''), { tone: result.partial ? 'warning' : 'success' });
+      } finally {
+        checkbox.disabled = false;
         renderExtensionMarketShowcase();
-        if (typeof toast === 'function') toast(`${ext.name} 已${ext.enabled ? '启用并分发至环境' : '停用'}`, { tone: 'success' });
       }
-    });
+    }));
 
     // 4. Window Sync Custom Matrix Arrangement
-    document.getElementById('sync-apply-matrix-btn')?.addEventListener('click', () => {
-      const r = document.getElementById('sync-grid-rows')?.value || 2;
-      const c = document.getElementById('sync-grid-cols')?.value || 3;
-      const g = document.getElementById('sync-grid-gap')?.value || 8;
-      document.querySelector('[data-window="tile"]')?.click();
-      if (typeof toast === 'function') toast(`已应用 ${r} 行 × ${c} 列（间距 ${g}px）屏幕网格矩阵排列`, { tone: 'success' });
-    });
+    document.getElementById('sync-apply-matrix-btn')?.addEventListener('click', runAction(async () => {
+      const options = {
+        rows: Number(document.getElementById('sync-grid-rows')?.value),
+        cols: Number(document.getElementById('sync-grid-cols')?.value),
+        gap: Number(document.getElementById('sync-grid-gap')?.value),
+      };
+      const button = document.getElementById('sync-apply-matrix-btn');
+      button.disabled = true;
+      try {
+        const result = await window.ops.windowAction(selectedSessionIds(), 'matrix', options);
+        if (!result?.success) throw new Error('矩阵排列未完成');
+        toast(`已排列 ${result.count} 个窗口：${options.rows} 行 × ${options.cols} 列，间距 ${options.gap}px`, { tone: 'success' });
+      } finally { button.disabled = false; }
+    }));
 
     // 5. Operation Logs Filter, Search & Export
     const filterLogs = () => {
@@ -2705,14 +2757,30 @@
       });
     });
 
-    ['global-default-workbench', 'global-default-ip-remind', 'global-default-google-login'].forEach((gid) => {
-      document.getElementById(gid)?.addEventListener('click', (e) => {
-        const b = e.target.closest('button[data-gpref]');
-        if (!b) return;
-        document.querySelectorAll(`#${gid} button`).forEach((x) => x.classList.toggle('active', x === b));
-        if (typeof toast === 'function') toast('全局默认偏好设置已更新', { tone: 'success' });
-      });
-    });
+    const preferenceControls = { 'global-default-workbench': 'openWorkbench', 'global-default-ip-remind': 'ipChangeRemind', 'global-default-google-login': 'googleLogin' };
+    const touchedPreferences = new Set();
+    const renderPreferences = (settings, onlyKey = null) => {
+      for (const [id, key] of Object.entries(preferenceControls)) {
+        if (onlyKey ? key !== onlyKey : touchedPreferences.has(key)) continue;
+        const enabled = settings.defaultPreferences?.[key] ?? (key !== 'googleLogin');
+        document.querySelectorAll(`#${id} button`).forEach((button) => button.classList.toggle('active', (button.dataset.gpref === 'open') === enabled));
+      }
+    };
+    void runAction(async () => renderPreferences(await window.ops.getClientSettings()))();
+    for (const [id, key] of Object.entries(preferenceControls)) {
+      document.getElementById(id)?.addEventListener('click', runAction(async (event) => {
+        const button = event.target.closest('button[data-gpref]');
+        if (!button || button.disabled) return;
+        touchedPreferences.add(key);
+        const buttons = [...document.querySelectorAll(`#${id} button`)];
+        buttons.forEach((entry) => { entry.disabled = true; });
+        try {
+          const saved = await window.ops.saveClientSettings({ defaultPreferences: { [key]: button.dataset.gpref === 'open' } });
+          renderPreferences(saved, key);
+          toast('全局默认偏好设置已更新', { tone: 'success' });
+        } finally { buttons.forEach((entry) => { entry.disabled = false; }); }
+      }));
+    }
   }
 
   const loadTransfers = runAction(loadWindowTransfers);

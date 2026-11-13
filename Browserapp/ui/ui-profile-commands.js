@@ -6,6 +6,45 @@
   'use strict';
 
   const { unwrapIpcResult } = ipc;
+  const MAX_IMPORT_BYTES = 16 * 1024 * 1024;
+  const MAX_IMPORT_PROFILES = 5000;
+
+  function validateImportText(value) {
+    const text = String(value ?? '');
+    if (text.length > MAX_IMPORT_BYTES || new TextEncoder().encode(text).byteLength > MAX_IMPORT_BYTES) {
+      throw new Error('导入文件超过 16 MiB，请分批导入');
+    }
+    return text;
+  }
+
+  async function readImportFile(file) {
+    if (!file || !Number.isSafeInteger(file.size) || file.size < 0 || file.size > MAX_IMPORT_BYTES) {
+      throw new Error('导入文件无效或超过 16 MiB，请分批导入');
+    }
+    return validateImportText(await file.text());
+  }
+
+  /** Import data owns its credentials and routing; defaults supply preferences. */
+  function buildImportedProfile(base, row, { id, number }) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) throw new Error('Invalid imported profile');
+    const ownProxy = Object.hasOwn(row, 'proxy');
+    const proxy = ownProxy ? String(row.proxy ?? '').trim() || 'Direct' : base.proxy;
+    const direct = /^(direct|offline|none)$/i.test(proxy || 'Direct');
+    const startUrl = row.startUrl ?? base.startUrl ?? base.platform?.startUrl ?? '';
+    return {
+      ...base, id, number, name: String(number), title: row.title || `环境-${number}`,
+      os: row.os || base.os || 'Windows', startUrl,
+      networkMode: ownProxy ? (direct ? 'direct' : 'proxy') : base.networkMode, proxy,
+      ...(ownProxy ? { proxyId: null, proxyMeta: { ...(base.proxyMeta || {}), proxyId: null } } : {}),
+      cookies: row.cookies ?? '', username: '', password: '', totpSecret: '', otp: '',
+      tag: row.tag ?? base.tag ?? '', note: row.note ?? base.note ?? '',
+      platform: { ...(base.platform || {}), startUrl, username: row.username ?? '',
+        password: row.password ?? '', totpSecret: row.totpSecret ?? '', otp: '',
+        accounts: Array.isArray(row.accounts) ? structuredClone(row.accounts) : [],
+      },
+      advanced: { ...(base.advanced || {}), ...(Object.hasOwn(row, 'startUrl') ? { startUrls: startUrl } : {}) },
+    };
+  }
 
   function resolveEditorUaDraft({ current = {}, userAgent = '', generatedUa = null, reset = false }) {
     const value = String(userAgent || '').trim();
@@ -157,5 +196,6 @@
     };
   }
 
-  return { commitProfileEdit, commitProfilePatches, createProfileEditorOpener, createProfileEditorSubmit, resolveEditorUaDraft };
+  return { MAX_IMPORT_BYTES, MAX_IMPORT_PROFILES, validateImportText, readImportFile,
+    buildImportedProfile, commitProfileEdit, commitProfilePatches, createProfileEditorOpener, createProfileEditorSubmit, resolveEditorUaDraft };
 });

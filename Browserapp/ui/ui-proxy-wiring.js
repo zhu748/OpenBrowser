@@ -123,7 +123,7 @@ document.addEventListener('change', async (event) => {
   }
   if (event.target.dataset.extensionToggle) {
     const input = event.target; input.disabled = true;
-    try { toast(input.checked ? tx('正在批量启用扩展并重启运行环境...') : tx('正在批量停用扩展并重启运行环境...')); const result = await window.ops.toggleExtensionAll(input.dataset.extensionToggle, input.checked); invalidateViewCache(['extensions', 'profiles', 'sync']); await refreshExtensions(); await refreshStatus(); await refreshSessions(); toast(tx(`已${input.checked ? '启用' : '停用'}，影响 ${result.affected} 个环境，重启 ${result.restarted} 个`)); }
+    try { toast(input.checked ? tx('正在批量启用扩展并重启运行环境...') : tx('正在批量停用扩展并重启运行环境...')); const result = await window.ops.toggleExtensionAll(input.dataset.extensionToggle, input.checked); invalidateViewCache(['extensions', 'profiles', 'sync']); await refreshExtensions(); await refreshStatus(); await refreshSessions(); toast(tx(`已${input.checked ? '启用' : '停用'}，影响 ${result.affected} 个环境，重启 ${result.restarted} 个`) + (result.partial ? tx('；部分运行环境尚未应用，请手动重启') : ''), { tone: result.partial ? 'warning' : 'status' }); }
     catch (error) { input.checked = !input.checked; toast(error.message); } finally { input.disabled = false; }
   }
   if (event.target.dataset.profileSelect) { event.target.checked ? selectedProfiles.add(event.target.dataset.profileSelect) : selectedProfiles.delete(event.target.dataset.profileSelect); updateProfileSelectionUi(); }

@@ -12,6 +12,9 @@ const { sanitizeProfile } = require('../../engine/profile-sanitizer');
 const { firefoxExtraUserPrefs } = require('../../engine/start-firefox');
 const { buildFirefoxUserJs, firefoxStartupArgs } = require('../kernel-versions');
 const { buildFirefoxFingerprint, initializeFirefoxFingerprint, navigateFirefoxStartup } = require('../firefox-fingerprint');
+const { ProfileRoutes } = require('../api/profile-routes');
+const { clearFirefoxPlaces } = require('../browser-data');
+const { DatabaseSync } = require('node:sqlite');
 const { BidiConnection, waitForFirefoxEndpoint, evaluateBidi } = require('../../network/bidi-connection');
 
 async function run(generation) {
@@ -64,6 +67,37 @@ async function run(generation) {
     }
     assert.ok(requests.some((request) => request.path === '/doc' && request.ua === fp.userAgent));
     assert.ok(requests.some((request) => request.path === '/frame' && request.ua === fp.userAgent));
+    const routes = new ProfileRoutes({ engine: {
+      profiles: new Map([[profile.id, profile]]),
+      running: new Map([[profile.id, { engine: 'firefox', bidiConnection: connection, bidiContext: initialized.context }]]),
+      start: async () => { throw new Error('an active Firefox must navigate without restarting'); },
+    } });
+    const navigation = await routes.routeBrowserOpenUrl({ input: { profile_id: profile.id, url: `http://127.0.0.1:${server.address().port}/api-navigation` } });
+    assert.equal(navigation.code, 0); assert.equal(navigation.data.navigated, true);
+    assert.ok(requests.some((request) => request.path === '/api-navigation'));
+    const shot = await routes.routeBrowserScreenshot({ input: { profile_id: profile.id } });
+    assert.equal(shot.code, 0);
+    assert.equal(Buffer.from(shot.data.data, 'base64').subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
+    const exited = new Promise((resolve) => child.once('exit', resolve));
+    await connection.command('browser.close', {}, 3000).catch(() => {});
+    await exited;
+    const placesFile = path.join(root, 'places.sqlite');
+    let places = new DatabaseSync(placesFile);
+    const bookmarksBefore = places.prepare('SELECT count(*) AS n FROM moz_bookmarks').get().n;
+    const historyBefore = places.prepare('SELECT count(*) AS n FROM moz_historyvisits').get().n;
+    places.close();
+    await clearFirefoxPlaces(root, { bookmarks: true });
+    places = new DatabaseSync(placesFile);
+    assert.equal(places.prepare('SELECT count(*) AS n FROM moz_historyvisits').get().n, historyBefore);
+    const permanentRoots = places.prepare('SELECT count(*) AS n FROM moz_bookmarks').get().n;
+    assert.ok(permanentRoots <= bookmarksBefore);
+    places.close();
+    await clearFirefoxPlaces(root, { history: true });
+    places = new DatabaseSync(placesFile);
+    assert.equal(places.prepare('SELECT count(*) AS n FROM moz_bookmarks').get().n, permanentRoots);
+    assert.equal(places.prepare('SELECT count(*) AS n FROM moz_historyvisits').get().n, 0);
+    assert.equal(places.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
+    places.close();
     console.log(`Firefox ${version} generation ${generation}: native document-start, iframe first-script, device fields, timezone and HTTP UA verified`);
     console.log('Workers: not certified by this document/iframe gate; capability remains best-effort.');
   } finally {

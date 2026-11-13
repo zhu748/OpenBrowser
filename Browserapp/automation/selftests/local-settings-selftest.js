@@ -24,6 +24,16 @@ const crypto = require('../../credential-crypto');
     await queuedEdit;
     assert.equal(settings.getLocalSettings().memoryLimit, 80, 'reload cannot overwrite an edit waiting for persistence');
 
+    let replacements = 0;
+    fs.rename = async (...args) => { if (args[0] === file + '.tmp') replacements += 1; return originalRename(...args); };
+    try {
+      const acknowledgements = await Promise.all(Array.from({length:20},(_,n)=>settings.saveLocalSettings({memoryLimit:80+n})));
+      assert.equal(replacements,1,'a burst of settings edits shares one durable replacement');
+      assert.equal(acknowledgements.every(value=>value.memoryLimit===99),true);
+      assert.notEqual(acknowledgements[0],acknowledgements[1]);
+      await settings.saveLocalSettings({memoryLimit:80});
+    } finally { fs.rename = originalRename; }
+
     const originalRead = fs.readFile;
     let reads = 0;
     fs.readFile = async (...args) => { if (args[0] === file) reads += 1; return originalRead(...args); };
@@ -111,11 +121,21 @@ const crypto = require('../../credential-crypto');
     release();
     await flushing;
     const flushed = JSON.parse(crypto.decryptCredential(await fs.readFile(file)));
-    await Promise.all([first, second]);
+    const [acknowledgedFirst, acknowledgedSecond] = await Promise.all([first, second]);
+    assert.equal(acknowledgedFirst.memoryLimit, 81, 'first acknowledgement must not claim the later pending cache value');
+    assert.equal(acknowledgedSecond.memoryLimit, 82);
     await settings.flushSettingsWriter();
     const saved = JSON.parse(crypto.decryptCredential(await fs.readFile(file)));
     assert.equal(saved.memoryLimit, 82, 'an edit during a write must reach disk');
     assert.equal(flushed.memoryLimit, 82, 'quit flush must include edits arriving during its write');
+
+    const groups = [{ id: 'group', name: 'Original' }];
+    const cloneWrite = settings.saveLocalSettings({ uiGroups: groups });
+    groups[0].name = 'Mutated by caller';
+    const acknowledged = await cloneWrite;
+    assert.equal(acknowledged.uiGroups[0].name, 'Original');
+    acknowledged.uiGroups[0].name = 'Mutated acknowledgement';
+    assert.equal(settings.getLocalSettings().uiGroups[0].name, 'Original', 'caller objects and acknowledgements do not alias the settings cache');
 
     // A failed replacement must leave the last good settings readable.
     fs.rename = async (...args) => {

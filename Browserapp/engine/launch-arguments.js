@@ -1,5 +1,6 @@
 'use strict';
 
+const { allowGoogleLogin } = require('../automation/profile-defaults');
 const path = require('node:path');
 const { LIST_VALUE_FLAGS, appendFlagValue, mergeFlags } = require('../automation/command-line-flags');
 const { chromeArgsForFingerprint } = require('../automation/fingerprint');
@@ -64,7 +65,7 @@ function buildBaseLaunchArguments({ root, fingerprint, profile, hostScaleFactor 
 /** Complete policy flags and report rejected overrides to the caller. */
 function completeLaunchArguments(initialArgs, { profile, proxyConfig, proxyEndpoint, windowPosition = null }) {
   let args = initialArgs.slice();
-  if (!profile.advanced.allowSignin) args.push('--disable-sync');
+  if (!allowGoogleLogin(profile)) args.push('--disable-sync');
   if (profile.privacy.webgpu === 'blocked') args.push('--disable-features=WebGPU');
   if (profile.advanced.blockImages) args.push('--blink-settings=imagesEnabled=false');
   // Roxy 对齐：「声音 = 关闭」→ 内核真静音（disablePlaySound）；视频关闭仅能落到 autoplay 闸（内核级

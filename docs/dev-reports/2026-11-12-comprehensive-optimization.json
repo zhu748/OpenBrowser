@@ -1,0 +1,68 @@
+{
+  "date": "2026-11-12",
+  "base_commit": "8a44858eac0e9ca37b3a0ec2a23c94cf328c6d57",
+  "changes": [
+    "Firefox history/bookmark retention uses independent transactional cleanup and preserves original data on incompatible schemas.",
+    "Firefox modern localStorage/cache/cookies use shared browser-data layouts; backups restore root files via a restricted @firefox namespace with WAL checks.",
+    "Firefox local API navigation and screenshots use the active verified BiDi context.",
+    "Cookie import/export retains and validates CHIPS partitionKey.",
+    "Imports preserve explicit Direct and empty credentials, clear account and proxy associations, and apply row startup URLs consistently.",
+    "New creation drafts discard old credentials and fingerprint identities.",
+    "Tag removal uses version-checked profile patches; accepted revisions are published to UI rows.",
+    "Extension market uses the backend catalog and installation/assignment state with failure rollback.",
+    "Matrix dimensions/gaps reach a validated backend planner; success follows actual bounds application.",
+    "Global preferences persist through validated settings IPC and affect browser launch behavior.",
+    "Current status cursors avoid full scans; idle UI rows skip redundant publication; API lists support pagination and optional endpoint lookups.",
+    "CDP target destruction invalidates stale detach snapshots; a second ordered check distinguishes normal worker shutdown from a lost live session.",
+    "Rust stdout uses a bounded nonblocking queue and closes bridge resources on backpressure; saturation and disconnect are unit-tested.",
+    "CI includes native Firefox API/data retention checks."
+  ],
+  "verification": {
+    "javascript_lint": "passed, no warnings",
+    "aggregate_selftest": {
+      "passed": 215,
+      "partial": 1,
+      "skipped": 2,
+      "failed": 0
+    },
+    "partial": "kernel-automation-flag-forensics: macOS launcher checks unavailable on Linux",
+    "skipped": [
+      "css-font-local-gate-e2e (darwin-only)",
+      "css-font-response-rewrite-e2e (darwin-only)"
+    ],
+    "rust_tests_passed": 122,
+    "rust_clippy": "passed with -D warnings",
+    "rust_bridge_parity": "8/8",
+    "rust_bridge_chaos": "5/5",
+    "electron": "43.8.8, real main/preload/IPC/SQLite startup passed in isolated headless Linux session",
+    "chromium": "156.0.8078.79, real DOM and native fingerprint/worker gates",
+    "firefox": "160.0, native API navigation/screenshots and independent Places retention, generations 1 and 2",
+    "worker_shutdown": "deterministic regression plus native Windows/Android persona checks passed",
+    "platform_limits": "Windows/macOS native runtime checks not executed locally; updated CI configuration has not run remotely.",
+    "latest_targeted_checks": [
+      "browser-data regression including persisted global sign-in and Chrome Preferences updates",
+      "profile file consistency",
+      "parallel pre-spawn file preparation",
+      "launch arguments",
+      "expanded real Chromium workbench tests after creation-draft cleanup",
+      "worker detach deterministic regression and repeated native worker gate"
+    ]
+  },
+  "benchmark": {
+    "node": "v24.22.1",
+    "scope": "unchanged statusDelta, 5 samples of 1000 calls, median milliseconds per call",
+    "results": [
+      {
+        "profiles": 1000,
+        "baselineMedianMs": 0.08306747400000003,
+        "optimizedMedianMs": 0.00028938600000003587
+      },
+      {
+        "profiles": 10000,
+        "baselineMedianMs": 1.3536266400000003,
+        "optimizedMedianMs": 0.0001164649999991525
+      }
+    ]
+  },
+  "benchmark_limit": "Measures unchanged statusDelta calls only, not overall application FPS or end-to-end latency."
+}

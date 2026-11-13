@@ -12,7 +12,11 @@ function fixture() {
     profiles, running, starting: new Map([['starting', {}]]),
     listExtensions: () => [{ id: 'ext' }],
     status: () => ids.map((id) => ({ id, running: running.has(id) })),
-    assignExtension: async (...args) => { calls.assignments.push(args); return { success: true }; },
+    assignExtension: async (...args) => { calls.assignments.push(args); return { success: true, restartRequired: args[1].filter((id) => running.has(id)) }; },
+    setExtensionEnabledAll: async (id, enabled) => {
+      const selected = [...profiles.keys()]; calls.assignments.push([id, selected, enabled]);
+      return { affected: selected.length, restartRequired: selected.filter((id) => running.has(id)) };
+    },
     stop: async (id) => {
       calls.stops.push(id);
       calls.maxStops = Math.max(calls.maxStops, ++calls.stopActive);
@@ -64,6 +68,9 @@ async function main() {
   finally { console.warn = warn; }
   assert.equal(result.restarted, 6);
   assert.equal(result.affected, 10);
+  assert.equal(result.partial, true);
+  assert.deepEqual(result.restartFailures.map((entry) => entry.id).sort(), ['bad-stop', 'blocked']);
+  assert.deepEqual(result.restartSkipped.map((entry) => entry.id).sort(), ['missing', 'starting']);
   assert.equal(calls.maxStops, 4);
   assert.equal(calls.maxStarts, 3);
   assert.deepEqual([...calls.starts].sort(), ['a', 'b', 'c', 'd', 'e', 'f']);
@@ -76,6 +83,14 @@ async function main() {
   assert.equal(installed.restarted, 0);
   assert.deepEqual(store.downloads, [['https://example.test/package', 'system']]);
   assert.deepEqual(store.calls.assignments, [['store', ['a'], true]]);
+  const rapid = fixture();
+  console.warn = () => {};
+  try {
+    await Promise.all([rapid.handlers.get('extensions:toggle-all')(null, {extensionId:'ext',enabled:true}),
+      rapid.handlers.get('extensions:toggle-all')(null, {extensionId:'ext',enabled:false})]);
+    assert.equal(rapid.calls.maxStops,4,'rapid toggles share the full stop/restart lane');
+    assert.equal(rapid.calls.maxStarts,3);
+  } finally { console.warn = warn; }
   console.log('EXTENSIONS_IPC_SELFTEST OK (trusted registration, bounded restart, incomplete stop, download fallback)');
 }
 

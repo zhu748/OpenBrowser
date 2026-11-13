@@ -229,9 +229,9 @@ function normalizeProfileSettings(profile) {
       stopOpenNet: Boolean(advanced.stopOpenNet),
       stopOpenIPChange: Boolean(advanced.stopOpenIPChange),
       stopOpenIPCountryChange: Boolean(advanced.stopOpenIPCountryChange),
-      openWorkbench: ['0', '1', '2'].includes(String(advanced.openWorkbench)) ? String(advanced.openWorkbench) : '1',
+      openWorkbench: ['0', '1', '2'].includes(String(advanced.openWorkbench)) ? String(advanced.openWorkbench) : '2',
       ipChangeRemind: ['0', '1', '2'].includes(String(advanced.ipChangeRemind)) ? String(advanced.ipChangeRemind) : '2',
-      googleLogin: ['0', '1', '2'].includes(String(advanced.googleLogin)) ? String(advanced.googleLogin) : '2',
+      googleLogin: ['0', '1', '2'].includes(String(advanced.googleLogin)) ? String(advanced.googleLogin) : (advanced.allowSignin ? '1' : '2'),
       allowUrls: String(advanced.allowUrls || ''),
       syncPasswords: Boolean(advanced.syncPasswords),
       syncExtensionData: Boolean(advanced.syncExtensionData),
@@ -274,7 +274,7 @@ function editorDraft(strict = true) {
   // Roxy 对齐：三段开关（开启/关闭）与隐藏 checkbox 双向同步后的最终值
   const segClose = (name) => document.querySelector(`input[name="${name}"]:checked`)?.value === 'close';
   const promptSavePassword = $('#editor-prompt-save-password')?.checked !== false;
-  const openWorkbench = $('#editor-open-workbench')?.value || '1';
+  const openWorkbench = $('#editor-open-workbench')?.value || '2';
   const ipChangeRemind = $('#editor-ip-change-remind')?.value || '2';
   const geoPermission = $('#editor-geo-permission')?.value || 'allow';
   const geoSource = $('#editor-geo-mode')?.value || 'ip';
@@ -1285,7 +1285,7 @@ function showProfileEditor(value, revision) {
   editorSet('#editor-block-urls', advanced.blockUrls || '');
   editorSet('#editor-allow-urls', advanced.allowUrls || '');
   editorSet('#editor-ip-change-policy', advanced.ipChangePolicy || 'patch');
-  editorSet('#editor-open-workbench', advanced.openWorkbench || '1');
+  editorSet('#editor-open-workbench', advanced.openWorkbench || '2');
   editorSet('#editor-ip-change-remind', advanced.ipChangeRemind || '2');
   editorSet('#editor-google-login', advanced.googleLogin || '2');
   editorCheck('#editor-prompt-save-password', advanced.promptSavePassword !== false);

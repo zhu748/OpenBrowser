@@ -64,7 +64,7 @@ contextBridge.exposeInMainWorld('ops', Object.freeze({
   startSync: (ids) => ipcRenderer.invoke('sync:start', ids),
   stopSync: () => ipcRenderer.invoke('sync:stop'),
   restartSync: () => ipcRenderer.invoke('sync:restart'),
-  windowAction: (ids, action) => ipcRenderer.invoke('sync:window', { ids, action }),
+  windowAction: (ids, action, options) => ipcRenderer.invoke('sync:window', { ids, action, options }),
   textAction: (ids, action, text, delayMin, delayMax) => ipcRenderer.invoke('sync:text', { ids, action, text, delayMin, delayMax }),
   batchTextAction: (ids, texts, delayMin, delayMax) => ipcRenderer.invoke('sync:text-batch', { ids, texts, delayMin, delayMax }),
   tabAction: (ids, action, payload) => ipcRenderer.invoke('sync:tabs', { ids, action, payload }),

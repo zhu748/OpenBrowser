@@ -1,5 +1,7 @@
 'use strict';
 
+const { openWorkbench, ipChangePolicy } = require('../automation/profile-defaults');
+
 /**
  * Startup routine mixin for BrowserEngine (prototype-assigned by engine.js):
  * _start is the full spawn-to-settle pipeline — language/timezone resolution,
@@ -378,9 +380,9 @@ module.exports = {
     // stop = 启动阶段直接阻断；notify = 发出提醒事件但不阻断。仅在本次启动真的做了
     // 出口检测时才可能触发（同会话内的缓存命中不会误报）。
     const currentExitIp = String(profile.exitIp || '').trim();
-    if (previousExitIp && currentExitIp && previousExitIp !== currentExitIp && profile.advanced?.ipChangePolicy && profile.advanced.ipChangePolicy !== 'patch') {
+    if (previousExitIp && currentExitIp && previousExitIp !== currentExitIp && ipChangePolicy(profile) !== 'patch') {
       const message = `出口 IP 已变化：${previousExitIp} → ${currentExitIp}`;
-      if (profile.advanced.ipChangePolicy === 'stop') {
+      if (ipChangePolicy(profile) === 'stop') {
         throw Object.assign(new Error(message + '，已按「IP 变化停止打开」策略阻断启动'), { code: 'ip-changed' });
       }
       this.emit({ type: 'ip-change-notice', id: profile.id, previousExitIp, currentExitIp, message });
@@ -470,7 +472,7 @@ module.exports = {
       if (restoredUrls.length) customStartUrls = restoredUrls;
       else await preserveLegacySession(root, 'chromium');
     }
-    const infoStartUrl = profile.advanced.showInfoPage !== false
+    const infoStartUrl = openWorkbench(profile)
       ? await this.buildStartPageUrl(
         { ...profile, exitIp: pageNetwork.ip || profile.exitIp || '', title: profile.title || profile.name },
         root,

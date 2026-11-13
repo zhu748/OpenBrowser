@@ -1,4 +1,5 @@
 'use strict';
+/* global selectedSessions, refreshExtensions, openAssign, applyAssignment, extensions */
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
@@ -45,6 +46,25 @@ async function main() {
     bridge.syncProfiles=async profiles=>{if(window.__failProfiles)throw Error('PROFILE_WRITE_FAILED');window.__uiAuditSavedProfiles=profiles.map(p=>({...p,rev:1}));return window.__uiAuditSavedProfiles;};
     bridge.startProfile=async p=>{window.__startCalls=(window.__startCalls||0)+1;return p;};
     bridge.stopProfile=async()=>{window.__stopCalls=(window.__stopCalls||0)+1;return {};};
+    window.__marketInstalled=[];window.__settings={defaultPreferences:{openWorkbench:true,ipChangeRemind:true,googleLogin:false}};
+    bridge.extensionList=async()=>structuredClone(window.__marketInstalled);
+    bridge.appCenterList=async()=>({list:{builtin:[],local:[],recommended:[{id:'rec-phantom',name:'Phantom',category:'web3',store_url:'https://chromewebstore.google.com/detail/bfnaelmomeimhlpmgjnjophhpkkoljpa',extension_id:window.__marketInstalled[0]?.id,status:window.__marketInstalled[0]?.enabledAll?'enabled':'available'}]}});
+    bridge.addExtensionStore=async()=>{if(window.__failExtension)throw Error('EXTENSION_INSTALL_FAILED');window.__marketInstalled=[{id:'installed-wallet',name:'Phantom'}];return {extension:window.__marketInstalled[0]};};
+    bridge.toggleExtensionAll=async(id,enabled)=>{window.__marketInstalled.find(e=>e.id===id).enabledAll=enabled;return {success:true};};
+    bridge.getClientSettings=async()=>structuredClone(window.__settings);
+    bridge.saveClientSettings=async patch=>{if(window.__failSettings)throw Error('SETTINGS_WRITE_FAILED');window.__settings={...window.__settings,defaultPreferences:{...window.__settings.defaultPreferences,...patch.defaultPreferences}};return structuredClone(window.__settings);};
+    bridge.windowAction=async(ids,action,options)=>{window.__matrixRequest={ids,action,options};return {success:true,count:ids.length};};
+    const saveSettings=bridge.saveClientSettings;
+    bridge.saveClientSettings=async patch=>{const value=await saveSettings(patch);if(window.__blockPreference&&'openWorkbench' in patch.defaultPreferences){window.__blockPreference=false;await new Promise(r=>window.__releasePreference=r);}return value;};
+    const listExtensions=bridge.extensionList;
+    bridge.extensionList=async()=>{window.__extensionReads=(window.__extensionReads||0)+1;window.__maxExtensionReads=Math.max(window.__maxExtensionReads||0,window.__extensionReads);try{const value=await listExtensions();if(window.__blockExtensionRead){window.__blockExtensionRead=false;await new Promise(r=>window.__releaseExtensionRead=r);}return value;}finally{window.__extensionReads--;}};
+    bridge.assignExtension=async()=>{if(window.__blockAssignment){window.__blockAssignment=false;await new Promise(r=>window.__releaseAssignment=r);}return {restartRequired:[]};};
+    const readEditor=bridge.profileForEdit;
+    bridge.profileForEdit=async id=>{const value=await readEditor(id);if(window.__blockEditor){window.__blockEditor=false;await new Promise(r=>window.__releaseEditor=r);}return value;};
+    const apply=bridge.applyProfileCommands;
+    bridge.applyProfileCommands=async(...args)=>{const value=await apply(...args);if(window.__blockSave){window.__blockSave=false;await new Promise(r=>window.__releaseSave=r);}return value;};
+    const readAccount=bridge.accountGet;
+    bridge.accountGet=async id=>{const value=await readAccount(id);if(window.__blockAccount){window.__blockAccount=false;await new Promise(r=>window.__releaseAccount=r);}return value;};
     // Unknown methods stay undefined, matching the frozen production preload.
     window.ops=Object.freeze({...bridge});
   `;
@@ -186,6 +206,117 @@ async function main() {
     assert.deepEqual(warmup.urls,['https://example.test/']);assert.match(warmup.toast,/cookie-task/);
     const cloud = await evaluate(async () => {document.getElementById('upload-window-cloud-btn').click();await new Promise(r=>setTimeout(r,80));return window.__reviewToasts.at(-1);});
     assert.match(cloud,/REMOTE_UPLOAD_FAILED/);assert.ok(!cloud.includes('已将'));
+    const importPolicy = await evaluate(async () => {
+      window.openWorkbenchEditorMode('import');
+      const radio=document.querySelector('input[name="editor-network"][value="custom"]');radio.checked=true;radio.dispatchEvent(new Event('change',{bubbles:true}));
+      document.getElementById('editor-proxy-host').value='proxy.test';document.getElementById('editor-proxy-port').value='1080';
+      document.getElementById('editor-platform-pass').value='DO_NOT_INHERIT';
+      window.pendingImportedRows.push({title:'explicit-direct',proxy:'Direct',password:'',cookies:'',totpSecret:'',tag:'remove-test'});
+      document.getElementById('profile-editor-form').dispatchEvent(new Event('submit',{cancelable:true,bubbles:true}));await new Promise(r=>setTimeout(r,100));
+      const profile=window.ui.profiles.find(p=>p.title==='explicit-direct');
+      return {proxy:profile.proxy,mode:profile.networkMode,password:profile.platform.password,totp:profile.platform.totpSecret,cookies:profile.cookies};
+    });
+    assert.deepEqual(importPolicy,{proxy:'Direct',mode:'direct',password:'',totp:'',cookies:''});
+    const tags = await evaluate(async () => {
+      document.getElementById('profile-tags-manager-btn').click();document.querySelector('[data-tm-del="remove-test"]').click();await new Promise(r=>setTimeout(r,100));
+      document.getElementById('tags-manager-dialog').close();
+      return {local:window.ui.profiles.find(p=>p.title==='explicit-direct').tag,stored:window.__uiAuditSavedProfiles.find(p=>p.title==='explicit-direct').tag};
+    });
+    assert.deepEqual(tags,{local:'',stored:''});
+    const market = await evaluate(async () => {
+      await refreshExtensions();window.__failExtension=true;const input=document.querySelector('[data-ext-toggle="rec-phantom"]');input.checked=true;input.dispatchEvent(new Event('change',{bubbles:true}));await new Promise(r=>setTimeout(r,100));
+      const failed={checked:document.querySelector('[data-ext-toggle="rec-phantom"]').checked,toast:document.getElementById('toast').textContent};
+      window.__failExtension=false;const next=document.querySelector('[data-ext-toggle="rec-phantom"]');next.checked=true;next.dispatchEvent(new Event('change',{bubbles:true}));await new Promise(r=>setTimeout(r,100));
+      return {failed,enabled:window.__marketInstalled[0]?.enabledAll,checked:document.querySelector('[data-ext-toggle="rec-phantom"]').checked};
+    });
+    assert.equal(market.failed.checked,false);assert.match(market.failed.toast,/EXTENSION_INSTALL_FAILED/);assert.equal(market.enabled,true);assert.equal(market.checked,true);
+    const defaults = await evaluate(async () => {
+      document.querySelector('#global-default-workbench [data-gpref="close"]').click();await new Promise(r=>setTimeout(r,100));
+      window.__failSettings=true;document.querySelector('#global-default-workbench [data-gpref="open"]').click();await new Promise(r=>setTimeout(r,100));window.__failSettings=false;
+      return {stored:window.__settings.defaultPreferences.openWorkbench,selected:document.querySelector('#global-default-workbench .active').dataset.gpref,toast:document.getElementById('toast').textContent};
+    });
+    assert.equal(defaults.stored,false);assert.equal(defaults.selected,'close');assert.match(defaults.toast,/SETTINGS_WRITE_FAILED/);
+    const matrix = await evaluate(async () => {
+      selectedSessions.add('matrix-fixture');
+      document.getElementById('sync-grid-rows').value='1';document.getElementById('sync-grid-cols').value='2';document.getElementById('sync-grid-gap').value='17';
+      document.getElementById('sync-apply-matrix-btn').click();await new Promise(r=>setTimeout(r,100));return window.__matrixRequest;
+    });
+    assert.equal(matrix.action,'matrix');assert.deepEqual(matrix.options,{rows:1,cols:2,gap:17});
+    const fresh = await evaluate(() => {
+      const form=document.getElementById('profile-editor-form');form.dataset.fingerprintSeed='previous-identity';
+      document.getElementById('editor-platform-pass').value='PREVIOUS_ACCOUNT';
+      window.openWorkbenchEditorMode('single');
+      return {password:document.getElementById('editor-platform-pass').value,seed:form.dataset.fingerprintSeed||'',version:form.dataset.fingerprintVersion};
+    });
+    assert.deepEqual(fresh,{password:'',seed:'',version:'2'});
+    const extensionRefresh = await evaluate(async () => {
+      window.__maxExtensionReads=0;window.__blockExtensionRead=true;const first=refreshExtensions();
+      for(let i=0;i<100&&!window.__releaseExtensionRead;i++)await new Promise(r=>setTimeout(r,10));
+      window.__marketInstalled[0].version='latest-visible';const second=refreshExtensions();
+      window.__releaseExtensionRead();await Promise.all([first,second]);
+      return {concurrency:window.__maxExtensionReads,version:extensions[0].version};
+    });
+    assert.deepEqual(extensionRefresh,{concurrency:1,version:'latest-visible'});
+    const assignmentRace = await evaluate(async () => {
+      openAssign('installed-wallet');document.querySelector('#assign-profile-list input').checked=true;
+      window.__blockAssignment=true;const pending=applyAssignment(true);
+      for(let i=0;i<100&&!window.__releaseAssignment;i++)await new Promise(r=>setTimeout(r,10));
+      document.getElementById('assign-dialog').close();openAssign('installed-wallet');
+      window.__releaseAssignment();await pending;
+      const open=document.getElementById('assign-dialog').open;document.getElementById('assign-dialog').close();return open;
+    });
+    assert.equal(assignmentRace,true,'an old assignment reply must not close a reopened dialog');
+    const preferenceRace = await evaluate(async () => {
+      window.__blockPreference=true;document.querySelector('#global-default-workbench [data-gpref="open"]').click();
+      for(let i=0;i<100&&!window.__releasePreference;i++)await new Promise(r=>setTimeout(r,10));
+      document.querySelector('#global-default-ip-remind [data-gpref="close"]').click();await new Promise(r=>setTimeout(r,80));
+      window.__releasePreference();await new Promise(r=>setTimeout(r,80));
+      return {workbench:document.querySelector('#global-default-workbench .active').dataset.gpref,ip:document.querySelector('#global-default-ip-remind .active').dataset.gpref};
+    });
+    assert.deepEqual(preferenceRace,{workbench:'open',ip:'close'});
+    const lateEditor = await evaluate(async () => {
+      const id=window.ui.profiles.find(p=>p.title==='explicit-direct').id;
+      window.__blockEditor=true;const pending=window.openProfileEditor(id);
+      for(let i=0;i<100&&!window.__releaseEditor;i++)await new Promise(r=>setTimeout(r,10));
+      window.openWorkbenchEditorMode('single');window.__releaseEditor();await pending;
+      return {mode:window.currentEditorMode,title:document.getElementById('editor-mode-title').textContent};
+    });
+    assert.equal(lateEditor.mode,'single');
+    const lateSave = await evaluate(async () => {
+      const id=window.ui.profiles.find(p=>p.title==='explicit-direct').id;
+      await window.openProfileEditor(id);window.__blockSave=true;
+      document.getElementById('profile-editor-form').dispatchEvent(new Event('submit',{cancelable:true,bubbles:true}));
+      for(let i=0;i<100&&!window.__releaseSave;i++)await new Promise(r=>setTimeout(r,10));
+      await window.openProfileEditor(id);document.getElementById('editor-title').value='Unsaved new session';
+      window.__releaseSave();await new Promise(r=>setTimeout(r,100));
+      return {view:document.querySelector('.view.active').id,title:document.getElementById('editor-title').value};
+    });
+    assert.deepEqual(lateSave,{view:'view-profile-editor',title:'Unsaved new session'});
+    const accountRace = await evaluate(async () => {
+      window.openWorkbenchEditorMode('single');const selector=document.getElementById('editor-account-pool-select');
+      window.__blockAccount=true;selector.value='legacy';selector.dispatchEvent(new Event('change',{bubbles:true}));
+      for(let i=0;i<100&&!window.__releaseAccount;i++)await new Promise(r=>setTimeout(r,10));
+      window.openWorkbenchEditorMode('single');window.__accounts.get('legacy').password='NEW_ACCOUNT_VALUE';
+      selector.value='legacy';selector.dispatchEvent(new Event('change',{bubbles:true}));await new Promise(r=>setTimeout(r,80));
+      window.__releaseAccount();await new Promise(r=>setTimeout(r,80));
+      return document.getElementById('editor-platform-pass').value;
+    });
+    assert.equal(accountRace,'NEW_ACCOUNT_VALUE');
+    const uploadRace = await evaluate(async () => {
+      window.openWorkbenchEditorMode('import');const api=window.OpenBrowserProfileCommands,read=api.readImportFile;
+      let release;api.readImportFile=async file=>file.name==='slow.json'?new Promise(r=>release=r):read(file);
+      const input=document.getElementById('window-upload-input');const data=new DataTransfer();data.items.add(new File(['[]'],'slow.json'));input.files=data.files;
+      input.dispatchEvent(new Event('change',{bubbles:true}));window.openWorkbenchEditorMode('single');
+      release('[{"title":"Late upload"}]');await new Promise(r=>setTimeout(r,80));api.readImportFile=read;
+      return window.pendingImportedRows.length;
+    });
+    assert.equal(uploadRace,0);
+    const limits = await evaluate(async () => {
+      window.openWorkbenchEditorMode('import');const input=document.getElementById('window-upload-input');
+      const upload=async(content,name)=>{const data=new DataTransfer();data.items.add(new File([content],name));input.files=data.files;input.dispatchEvent(new Event('change',{bubbles:true}));await new Promise(r=>setTimeout(r,80));return {rows:window.pendingImportedRows.length,toast:document.getElementById('toast').textContent};};
+      return [await upload(JSON.stringify(Array.from({length:5001},()=>({title:'oversized'}))),'oversized.json'),await upload(Array(5001).fill('title|https://example.test/').join('\n'),'oversized.txt')];
+    });
+    for(const limit of limits){assert.equal(limit.rows,0);assert.match(limit.toast,/5000/);}
     assert.deepEqual(await evaluate(()=>window.__uiAuditErrors),[]);
     console.log('WORKBENCH_BROWSER_SELFTEST OK (installed kernel selection/reopen/refresh, strict preload, migration, batch, proxy persistence, failure rollback, text escaping, selected export, CSV, real task submission, honest cloud errors)');
   } finally {

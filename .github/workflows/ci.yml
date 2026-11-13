@@ -178,13 +178,13 @@ jobs:
   # playwright-managed cache (pinned, no apt flakiness); the gates exit 2 when a
   # browser is missing, which the runner reports as a skip, never a false pass.
   native-gates:
-    name: Native fingerprint gates (Chromium ${{ matrix.browser }})
+    name: Native browser gates (${{ matrix.browser }})
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        browser: [chromium]
+        browser: [chromium, firefox]
     defaults:
       run:
         working-directory: Browserapp
@@ -201,9 +201,15 @@ jobs:
           cache: npm
           cache-dependency-path: Browserapp/package-lock.json
       - run: npm ci --include=dev --ignore-scripts
-      - name: Install Chromium for Testing
-        run: npx @puppeteer/browsers install chrome@stable --path "$HOME/.cache/ob-browsers"
+      - name: Install stable browser for native gates
+        run: |
+          if [[ "${{ matrix.browser }}" == "firefox" ]]; then
+            npx @puppeteer/browsers install firefox@stable --path "$HOME/.cache/ob-browsers"
+          else
+            npx @puppeteer/browsers install chrome@stable --path "$HOME/.cache/ob-browsers"
+          fi
       - name: Fingerprint native consistency + worker delivery gates (Chromium)
+        if: matrix.browser == 'chromium'
         env:
           OPENBROWSER_NATIVE_NO_SANDBOX: '1'
         run: |
@@ -226,6 +232,18 @@ jobs:
           # Chromium 143+/157+ delivery paths that no static selftest can cover.
           node automation/selftests/fingerprint-blob-worker-identity-gate.js
           node automation/selftests/fingerprint-cached-sw-identity-gate.js
+
+      - name: Firefox native identity, API control and data retention
+        if: matrix.browser == 'firefox'
+        run: |
+          FIREFOX_BIN="$(find "$HOME/.cache/ob-browsers" -type f -name firefox -path '*/firefox/*' | head -n 1)"
+          if [ -z "$FIREFOX_BIN" ] || [ ! -x "$FIREFOX_BIN" ]; then
+            echo "Firefox binary not found under $HOME/.cache/ob-browsers" >&2
+            exit 1
+          fi
+          export OPENBROWSER_FIREFOX_BINARY="$FIREFOX_BIN"
+          node automation/selftests/firefox-fingerprint-e2e-selftest.js
+          node automation/selftests/firefox-geolocation-native-selftest.js
 
   review-boundaries:
     name: Storage and runtime boundaries (${{ matrix.os }}, Node ${{ matrix.node }})

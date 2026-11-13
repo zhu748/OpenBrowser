@@ -95,6 +95,7 @@ module.exports = {
     const caller = typeof watermark === 'string' ? this._statusCursorHistory.get(watermark)
       : (watermark && typeof watermark === 'object' && !Array.isArray(watermark)) ? watermark : null;
     if (!caller) return reply(true, snapshot, []);
+    if (caller === known) return reply(false, [], []);
     const removed = [];
     for (const id of Object.keys(caller)) {
       if (!Object.hasOwn(known, id)) removed.push(id);

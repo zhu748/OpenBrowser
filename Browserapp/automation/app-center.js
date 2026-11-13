@@ -14,6 +14,10 @@
  */
 
 const RECOMMENDED_APPS = [
+  { id: 'rec-metamask', name: 'MetaMask', category: 'web3', description: '以太坊及多链钱包',
+    store_id: 'nkbihfbeogaeaoehlefnkodbefgpgknn', store_url: 'https://chromewebstore.google.com/detail/nkbihfbeogaeaoehlefnkodbefgpgknn', tags: ['wallet'] },
+  { id: 'rec-phantom', name: 'Phantom', category: 'web3', description: '多链钱包',
+    store_id: 'bfnaelmomeimhlpmgjnjophhpkkoljpa', store_url: 'https://chromewebstore.google.com/detail/bfnaelmomeimhlpmgjnjophhpkkoljpa', tags: ['wallet'] },
   {
     id: 'rec-proxy-switchyomega',
     name: 'Proxy SwitchyOmega',

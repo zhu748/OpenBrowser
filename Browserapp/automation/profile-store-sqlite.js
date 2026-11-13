@@ -301,7 +301,7 @@ class ProfileStoreSqlite {
           data = excluded.data
         WHERE extensions.data IS NOT excluded.data;
       `),
-      getAllExtensions: this.db.prepare('SELECT data FROM extensions'),
+      getAllExtensions: this.db.prepare('SELECT id, data FROM extensions'),
       deleteExtension: this.db.prepare('DELETE FROM extensions WHERE id = ?'),
 
       // Extension assignment statements
@@ -867,6 +867,16 @@ class ProfileStoreSqlite {
     });
   }
 
+  replaceExtensions(extensions) {
+    const ids = new Set(extensions.map((extension) => String(extension.id)));
+    this.withTransaction(() => {
+      for (const row of this._statements.getAllExtensions.all()) {
+        if (!ids.has(String(row.id))) this.deleteExtension(row.id);
+      }
+      this.saveExtensions(extensions);
+    });
+  }
+
   listExtensions() {
     const rows = this._statements.getAllExtensions.all();
     const result = [];
@@ -990,7 +1000,7 @@ class ProfileStoreSqlite {
       for (const key of ['kernelPolicyVersion', 'preferIndependentKernel', 'allowSystemBrowserFallback', 'systemBrowserPath']) {
         this.setMeta(key, state[key]);
       }
-      this.saveExtensions(state.extensions);
+      this.replaceExtensions(state.extensions);
       this.saveAssignmentsDiffed(new Map(Object.entries(state.assignments)));
       return this.saveProfilesDiffed(state.profiles);
     });

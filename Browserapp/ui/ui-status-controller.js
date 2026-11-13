@@ -43,7 +43,7 @@
           if (validDelta && getRows() === base && typeof delta?.cursor === 'string') { cursor = delta.cursor; cursorRows = next; }
         } else next = await fetchFull();
         if (getRows() !== base) return false;
-        setRows(next);
+        if (next !== base) setRows(next);
         onRows(next);
         return true;
       })().finally(() => { pending = null; });

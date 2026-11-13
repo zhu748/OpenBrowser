@@ -1,5 +1,7 @@
 'use strict';
 
+const { openWorkbench, ipChangePolicy } = require('../automation/profile-defaults');
+
 const { assertUrlAccessPolicySupported } = require('../automation/url-access-policy');
 
 /**
@@ -16,7 +18,7 @@ const { removeSingletonFiles, writeBrowserStartupDiagnostic, formatBrowserStartu
 const { assertResourceGateForLaunch } = require('./resource-gate');
 // Shared launch-data walker (parameterized target map) from the Chromium
 // startup mixin: start.js does not require this file, so there is no cycle.
-const { clearLaunchDataTargets, mergeLaunchProfileUpdate, ensureLegacyFingerprintSeed } = require('./start');
+const { mergeLaunchProfileUpdate, ensureLegacyFingerprintSeed } = require('./start');
 const { profileWriteGuard } = require('./profile-write-guard');
 const { normalizeNetworkConditions } = require('../shared/profile-values');
 const { spawn } = require('child_process');
@@ -58,59 +60,27 @@ function collectAcceptLanguages(fingerprint, profile) {
   return (fromFp || fromProfile || single || ['en-US']).join(',');
 }
 
-/**
- * Firefox-side retention cleanup, run before every launch (parity with the
- * Chromium enforceDataRetention in engine.js). Firefox keeps its data files
- * directly in the profile root, so the Chromium Default/-relative targets do
- * not exist here and never fire. Deletion is best-effort per file, same as the
- * Chromium version: a stuck file must not abort the launch.
- */
-const FIREFOX_RETENTION_TARGETS = {
-  cookies: ['cookies.sqlite', 'cookies.sqlite-wal', 'cookies.sqlite-shm'],
-  passwords: ['logins.json', 'key4.db', 'logins-backup.json'],
-  bookmarks: ['bookmarks.json', 'places.sqlite', 'places.sqlite-wal', 'places.sqlite-shm'],
-  history: ['places.sqlite', 'places.sqlite-wal', 'places.sqlite-shm', 'history.sqlite'],
-  local_storage: ['webappsstore.sqlite', 'webappsstore.sqlite-wal', 'webappsstore.sqlite-shm'],
-};
+const { FIREFOX_COOKIES, FIREFOX_PASSWORDS, FIREFOX_LOCAL_STORAGE,
+  removeBrowserFiles, clearFirefoxPlaces, clearFirefoxLocalStorage, clearBrowserCache } = require('../automation/browser-data');
 
 async function enforceDataRetentionFirefox(root, profile) {
-  const advanced = profile?.advanced || {};
-  const targets = new Set();
-  const add = (names) => { for (const name of names) targets.add(name); };
-  if (advanced.saveCookies === false) add(FIREFOX_RETENTION_TARGETS.cookies);
-  if (advanced.savePasswords === false) add(FIREFOX_RETENTION_TARGETS.passwords);
-  // bookmarks and history share places.sqlite in Firefox: dropping either
-  // loses both. Keep parity with the UI intent by removing the shared store
-  // when either switch is off — partial retention is not expressible.
-  if (advanced.saveBookmarks === false || advanced.saveHistory === false) {
-    add(FIREFOX_RETENTION_TARGETS.bookmarks);
-    add(FIREFOX_RETENTION_TARGETS.history);
-  }
-  if (advanced.saveLocalStorage === false) add(FIREFOX_RETENTION_TARGETS.local_storage);
-  const fsp = require('fs/promises');
-  for (const name of targets) {
-    await fsp.rm(path.join(root, name), { force: true }).catch(() => {});
-  }
+  const a = profile?.advanced || {};
+  if (a.saveCookies === false) await removeBrowserFiles(root, FIREFOX_COOKIES);
+  if (a.savePasswords === false) await removeBrowserFiles(root, FIREFOX_PASSWORDS);
+  await clearFirefoxPlaces(root, { history: a.saveHistory === false, bookmarks: a.saveBookmarks === false });
+  if (a.saveLocalStorage === false) await clearFirefoxLocalStorage(root);
 }
 
-/**
- * 启动前清理（advanced.clear*OnStart）的 Firefox 目标列表，对应 start.js 的
- * CHROMIUM_LAUNCH_DATA_TARGETS。Firefox 把各存储直接放在 profile 根目录：
- * cookies.sqlite（Cookie）、places.sqlite（历史）、webappsstore.sqlite（站点
- * localStorage）、sessionstore.json（会话恢复状态，对应 Chromium 侧归入
- * clearLocalStorageOnStart 的 Default/Session Storage）。
- * 注意 places.sqlite 同时承载书签与历史（与 enforceDataRetentionFirefox 的
- * 互斥说明一致）：clearHistoryOnStart 会一并丢失书签——Firefox 无部分保留的表达。
- */
-const FIREFOX_LAUNCH_DATA_TARGETS = {
-  cookies: ['cookies.sqlite', 'cookies.sqlite-wal', 'cookies.sqlite-shm'],
-  localStorage: ['webappsstore.sqlite', 'webappsstore.sqlite-wal', 'webappsstore.sqlite-shm', 'sessionstore.json'],
-  history: ['places.sqlite', 'places.sqlite-wal', 'places.sqlite-shm', 'history.sqlite'],
-};
-
-/** Firefox variant of start.js clearProfileLaunchData: shared walker, root-level targets. */
+// Exposed for consumers inspecting launch cleanup capabilities.
+const FIREFOX_LAUNCH_DATA_TARGETS = { cookies: FIREFOX_COOKIES, localStorage: FIREFOX_LOCAL_STORAGE, history: [] };
 async function clearFirefoxProfileLaunchData(root, profile) {
-  return clearLaunchDataTargets(root, profile?.advanced, FIREFOX_LAUNCH_DATA_TARGETS);
+  const a = profile?.advanced || {};
+  const cleared = [];
+  if (a.clearCookiesOnStart) { await removeBrowserFiles(root, FIREFOX_COOKIES); cleared.push('cookies'); }
+  if (a.clearLocalStorageOnStart) { await clearFirefoxLocalStorage(root); cleared.push('localStorage'); }
+  if (a.clearHistoryOnStart) { await clearFirefoxPlaces(root, { history: true }); cleared.push('history'); }
+  if (a.clearCacheOnStart) await clearBrowserCache(root, { engine: 'firefox' });
+  return cleared;
 }
 
 /**
@@ -261,9 +231,9 @@ module.exports = {
       // IP 变化守护（对齐「IP 发生变化停止打开 / 提醒」）：与 _start 相同的触发
       // 条件、错误消息与事件类型；仅在本次启动真的做了出口检测时才可能触发。
       const currentExitIp = String(profile.exitIp || '').trim();
-      if (previousExitIp && currentExitIp && previousExitIp !== currentExitIp && profile.advanced?.ipChangePolicy && profile.advanced.ipChangePolicy !== 'patch') {
+      if (previousExitIp && currentExitIp && previousExitIp !== currentExitIp && ipChangePolicy(profile) !== 'patch') {
         const message = `出口 IP 已变化：${previousExitIp} → ${currentExitIp}`;
-        if (profile.advanced.ipChangePolicy === 'stop') {
+        if (ipChangePolicy(profile) === 'stop') {
           throw Object.assign(new Error(message + '，已按「IP 变化停止打开」策略阻断启动'), { code: 'ip-changed' });
         }
         this.emit({ type: 'ip-change-notice', id: profile.id, previousExitIp, currentExitIp, message });
@@ -329,7 +299,7 @@ module.exports = {
         if (restoredUrls.length) customStartUrls = restoredUrls;
         else await preserveLegacySession(root, 'firefox');
       }
-      const infoStartUrl = profile.advanced.showInfoPage !== false
+      const infoStartUrl = openWorkbench(profile)
         ? await this.buildStartPageUrl(
           { ...profile, exitIp: pageNetwork.ip || profile.exitIp || '', title: profile.title || profile.name },
           root,

@@ -3,6 +3,7 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { assertSafeProfileChild, validateProfileRootSecure } = require('../isolation');
+const { FIREFOX_PREFIX, isFirefoxBackupPath } = require('../browser-data');
 const { MAX_BROWSER_DATA_BYTES, MAX_BROWSER_FILE_BYTES, MAX_BROWSER_DATA_FILES } = require('./limits');
 const RESTORE_PREFIX = '.openbrowser-restore-';
 const SETTLED_MARKER = 'settled.json';
@@ -68,6 +69,11 @@ function destination(profileRoot, relative) {
   if (typeof relative !== 'string' || relative.includes('\0') || /^[a-z]:/i.test(relative)) throw new Error('备份文件路径无效');
   const parts = relative.replace(/\\/g, '/').split('/');
   if (parts.some((part) => !part || part === '.' || part === '..' || part.includes(':'))) throw new Error('备份文件路径无效');
+  if (parts[0] === FIREFOX_PREFIX.slice(0, -1)) {
+    const name = parts.slice(1).join('/');
+    if (!isFirefoxBackupPath(name)) throw new Error('Firefox 备份文件路径无效');
+    return path.join(profileRoot, ...parts.slice(1));
+  }
   return path.join(profileRoot, 'Default', ...parts);
 }
 

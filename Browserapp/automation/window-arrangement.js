@@ -164,6 +164,20 @@ function planStack({ totalWindows, availableWidth, availableHeight, minWidth, st
  * Caller-driven layout: fixed row count (and optionally fixed size).
  * Overflow flags allow windows to extend past the screen instead of shrinking.
  */
+function planMatrix({ totalWindows, workArea, rows, cols, gap = 8, minWidth = 320, minHeight = 240 }) {
+  if (![rows, cols, gap].every(Number.isSafeInteger) || rows < 1 || cols < 1 || rows > 6 || cols > 6 || gap < 0 || gap > 200) {
+    throw new Error('矩阵行列需为 1–6，间距需为 0–200 像素');
+  }
+  if (totalWindows > rows * cols) throw new Error('所选窗口数量超过矩阵容量');
+  const width = Math.floor((workArea.width - gap * (cols - 1)) / cols);
+  const height = Math.floor((workArea.height - gap * (rows - 1)) / rows);
+  if (width < minWidth || height < minHeight) throw new Error('屏幕空间不足以应用此矩阵，请减少行列数或间距');
+  return Array.from({ length: totalWindows }, (_, index) => ({
+    left: workArea.x + (index % cols) * (width + gap),
+    top: workArea.y + Math.floor(index / cols) * (height + gap), width, height,
+  }));
+}
+
 function planCustom({
   totalWindows, availableWidth, availableHeight,
   minWidth, minHeight, rowNum, width, height,
@@ -379,6 +393,7 @@ module.exports = {
   planTile,
   planStack,
   planCustom,
+  planMatrix,
   planGridFor,
   placeWindows,
   distributeAcrossDisplays,

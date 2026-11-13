@@ -1,0 +1,147 @@
+{
+  "date": "2026-11-13",
+  "round": 2,
+  "base_commit": "8a44858eac0e9ca37b3a0ec2a23c94cf328c6d57",
+  "scope": [
+    "extension metadata and assignments",
+    "SQLite atomic state persistence",
+    "Electron extension IPC lifecycle",
+    "renderer async editor and dialog sessions",
+    "file import bounds",
+    "durable settings acknowledgements"
+  ],
+  "findings_fixed": [
+    {
+      "id": "extension-write-rollback",
+      "trigger": "Persistence fails after publishing extension metadata or assignment changes, including an overlapping profile write.",
+      "fix": "Fresh assignment Sets and shared publication provenance restore the last valid state without overwriting independent newer publications. Extension mutations use a serial lane.",
+      "files": [
+        "Browserapp/engine/map-publication.js",
+        "Browserapp/engine/profile-publication.js",
+        "Browserapp/engine/extensions-api.js"
+      ],
+      "validation": [
+        "failed assignment and removal rollback",
+        "overlapping failed profile and extension writes",
+        "immutable assignment Sets",
+        "rejected profile maintenance and missing profile requests"
+      ]
+    },
+    {
+      "id": "atomic-extension-removal",
+      "trigger": "A later engine-state write fails after extension deletion has already reached SQLite.",
+      "fix": "Authoritative extension replacement, assignment changes and profile state now share the engine-state SQLite transaction.",
+      "files": [
+        "Browserapp/automation/profile-store-sqlite.js"
+      ],
+      "validation": [
+        "real SQLite failure after deletion preserves extension and assignments",
+        "successful deletion removes both durable and live state"
+      ]
+    },
+    {
+      "id": "extension-fleet-and-reload",
+      "trigger": "Global toggle exceeds the public 1000-profile batch limit, an empty fleet is globally enabled, or reload derives a new id and loses store metadata.",
+      "fix": "Dedicated global toggle snapshots the fleet inside its mutation lane and persists future-profile defaults. Reload preserves stable ids and metadata; reload-all reads at most four files concurrently and publishes once. Built-in removal protection remains sticky when re-adding the folder.",
+      "validation": [
+        "1201-profile fixture, one save",
+        "empty-fleet global enable inherited by first profile",
+        "no-op assignment skips persistence",
+        "multiple-extension reload uses one save",
+        "legacy stable id and store metadata retained",
+        "built-in protection cannot be downgraded"
+      ]
+    },
+    {
+      "id": "extension-restart-overlap",
+      "trigger": "Rapid toggles interleave browser stop/start operations, or one browser fails to stop or restart.",
+      "fix": "IPC mutations serialize across assignment and restart. Bounded stop/start workers use numeric cursors. Responses include failures and skipped ids; the UI warns on partial application.",
+      "files": [
+        "Browserapp/main/extensions-ipc.js",
+        "Browserapp/ui/ui-workbench.js",
+        "Browserapp/ui/ui-proxy-wiring.js"
+      ],
+      "validation": [
+        "concurrent on/off requests",
+        "at most four stops and three starts",
+        "explicit stop failure, blocked stop and skipped restart responses"
+      ]
+    },
+    {
+      "id": "renderer-stale-responses",
+      "trigger": "Profile reads or saves, account secrets, file reads or extension assignment replies arrive after reopening or switching the editor/dialog.",
+      "fix": "Editor and assignment session tokens plus request generations suppress stale updates. Extension refreshes share a single request lane and trailing refresh. Preference acknowledgements update only their own control.",
+      "files": [
+        "Browserapp/ui/ui-workbench.js",
+        "Browserapp/renderer.js",
+        "Browserapp/renderer-platform-install.js"
+      ],
+      "validation": [
+        "real Chromium late profile read and save",
+        "same account selected in a newer session",
+        "late file read after editor mode switch",
+        "old assignment reply preserves reopened same-extension dialog",
+        "refresh concurrency one with latest visible version",
+        "out-of-order preference replies preserve both controls"
+      ]
+    },
+    {
+      "id": "import-and-pagination-bounds",
+      "trigger": "JSON/TXT imports bypass CSV row caps, Unicode text exceeds byte limits, or explicit page_size=0 is accepted for an empty fleet.",
+      "fix": "Shared import helpers reject files over 16 MiB before reading and validate actual UTF-8 bytes. JSON/TXT imports cap profiles at 5000. Explicit empty credential aliases remain empty. API rejects explicit zero page sizes.",
+      "files": [
+        "Browserapp/ui/ui-profile-commands.js",
+        "Browserapp/ui/ui-workbench.js",
+        "Browserapp/automation/api/profile-routes.js"
+      ],
+      "validation": [
+        "oversized file rejected before file.text",
+        "multibyte UTF-8 limit",
+        "real Chromium JSON and TXT 5001-row rejection",
+        "API pagination boundary"
+      ]
+    },
+    {
+      "id": "settings-durable-acknowledgement",
+      "trigger": "A newer cache edit arrives while the previous save is in flight, or caller-owned nested settings are mutated before persistence.",
+      "fix": "Clone submitted nested settings, await the disk barrier, and return an independent durable snapshot. Client-settings IPC responds with that snapshot.",
+      "files": [
+        "Browserapp/automation/local-settings.js",
+        "Browserapp/main.js"
+      ],
+      "validation": [
+        "first acknowledgement reports persisted 81 while later 82 is pending",
+        "caller and acknowledgement objects cannot mutate the cache",
+        "20 consecutive edits coalesce into exactly one file replacement",
+        "reload/write race, retry and quit flush regressions"
+      ]
+    }
+  ],
+  "verification": {
+    "javascript_lint": "passed, no warnings",
+    "git_diff_check": "passed",
+    "aggregate_selftest": {
+      "passed": 216,
+      "partial": 1,
+      "skipped": 2,
+      "failed": 0
+    },
+    "selftest_scripts": 219,
+    "aggregate_command": "OPENBROWSER_FIREFOX_BINARY=/workspace/work/firefox/firefox OPENBROWSER_TEST_ELECTRON_HEADLESS=1 node scripts/selftest-all.js",
+    "native_runtime": {
+      "electron": "43.8.8, isolated headless Linux main/preload/IPC/SQLite startup",
+      "chromium": "156.0.8078.79, real workbench DOM plus native browser regressions",
+      "firefox": "160.0, native API, retention and worker regressions"
+    },
+    "partial": "kernel-automation-flag-forensics: macOS launcher unavailable on Linux",
+    "skipped": [
+      "css-font-local-gate-e2e: darwin-only",
+      "css-font-response-rewrite-e2e: darwin-only"
+    ],
+    "limits": [
+      "Windows/macOS native execution not performed locally.",
+      "Rust source was unchanged in round 2; round 1 Rust verification is recorded separately.",
+      "Fleet-size and write-count checks use deterministic fixtures and do not represent a 1201-browser runtime benchmark."
+    ]
+  }
+}

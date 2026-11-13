@@ -8,6 +8,8 @@ const crypto = require('crypto');
 const { pathToFileURL } = require('url');
 const { addChromeStoreExtension } = require('../store-extension');
 const { assertProfileId, isPathInsideOrEqual } = require('../automation/isolation');
+const { assertProfileNotMaintained } = require('./profile-maintenance');
+const { serializeExtensionMutation, persistExtensionChanges } = require('./map-publication');
 const { assertExtensionTreeSafe } = require('./index');
 
 module.exports = {
@@ -69,19 +71,23 @@ module.exports = {
 
   async addExtension(directory) {
     const value = await this.readExtension(directory, false);
-    this.extensions.set(value.id, value);
-    await this.persist();
-    this.emit({ type: 'extensions' });
-    return value;
+    return serializeExtensionMutation(this, async () => {
+      const previous = this.extensions.get(value.id);
+      const next = { ...previous, ...value, builtIn: Boolean(previous?.builtIn || value.builtIn) };
+      await persistExtensionChanges(this, [[next.id, next]]);
+      return next;
+    });
   },
 
   async addStoreExtension(url, fetchPackage) {
     const value = await addChromeStoreExtension(url, this.app.getPath('userData'),
       (directory, builtIn) => this.readExtension(directory, builtIn), fetchPackage);
-    this.extensions.set(value.id, value);
-    await this.persist();
-    this.emit({ type: 'extensions' });
-    return value;
+    return serializeExtensionMutation(this, async () => {
+      const previous = this.extensions.get(value.id);
+      const next = { ...previous, ...value, builtIn: Boolean(previous?.builtIn || value.builtIn) };
+      await persistExtensionChanges(this, [[next.id, next]]);
+      return next;
+    });
   },
   listExtensions() {
     // Invert the sparse assignment relation once. Preserve profile insertion
@@ -94,23 +100,37 @@ module.exports = {
     }
     return [...this.extensions.values()].map((item) => {
       const assignedProfileIds = byExtension.get(item.id) || [];
-      return { ...item, assignedProfiles: assignedProfileIds.length, assignedProfileIds, enabledAll: this.profiles.size > 0 && assignedProfileIds.length === this.profiles.size };
+      return { ...item, assignedProfiles: assignedProfileIds.length, assignedProfileIds, enabledAll: this.profiles.size ? assignedProfileIds.length === this.profiles.size : item.enabledByDefault === true };
     });
   },
   async assignExtension(extensionId, profileIds, enabled) {
-    if (!this.extensions.has(extensionId)) throw new Error('Unknown extension');
     if (!Array.isArray(profileIds) || profileIds.length > 1000) throw new Error('Invalid profile list');
-    const safeIds = profileIds.map(assertProfileId);
-    this.invalidateStatusCache();
+    const safeIds = [...new Set(profileIds.map(assertProfileId))];
+    return serializeExtensionMutation(this, () => this.publishExtensionAssignment(extensionId, safeIds, enabled));
+  },
+
+  async setExtensionEnabledAll(extensionId, enabled) {
+    return serializeExtensionMutation(this, () => this.publishExtensionAssignment(extensionId, [...this.profiles.keys()], enabled, true));
+  },
+
+  async publishExtensionAssignment(extensionId, safeIds, enabled, global = false) {
+    const extension = this.extensions.get(extensionId);
+    if (!extension) throw new Error('Unknown extension');
+    const changes = [];
     for (const id of safeIds) {
-      const assigned = this.assignments.get(id) || new Set();
-      if (enabled) assigned.add(extensionId);
-      else assigned.delete(extensionId);
-      this.assignments.set(id, assigned);
+      if (!this.profiles.has(id)) throw Object.assign(new Error('Profile not found: ' + id), { code: 'PROFILE_NOT_FOUND' });
+      assertProfileNotMaintained(this, id);
+      if (this.deletingProfiles?.has(id)) throw Object.assign(new Error('Profile is being deleted: ' + id), { code: 'PROFILE_DELETING' });
+      const before = this.assignments.get(id) || new Set();
+      if (before.has(extensionId) === Boolean(enabled)) continue;
+      const next = new Set(before);
+      if (enabled) next.add(extensionId); else next.delete(extensionId);
+      changes.push([id, next]);
     }
-    await this.persist();
-    this.emit({ type: 'extensions' });
-    return { success: true, restartRequired: safeIds.filter((id) => this.running.has(id)) };
+    const metadata = global && extension.enabledByDefault !== Boolean(enabled)
+      ? [[extensionId, { ...extension, enabledByDefault: Boolean(enabled) }]] : [];
+    if (changes.length || metadata.length) await persistExtensionChanges(this, metadata, changes);
+    return { success: true, affected: safeIds.length, restartRequired: changes.map(([id]) => id).filter((id) => this.running.has(id)) };
   },
   async reloadExtension(id) {
     const existing = this.extensions.get(id);
@@ -118,40 +138,47 @@ module.exports = {
     if (!fs.existsSync(existing.path)) throw new Error('Extension path does not exist');
     const updated = await this.readExtension(existing.path, Boolean(existing.builtIn));
     updated.addedAt = existing.addedAt || updated.addedAt;
-    this.extensions.set(id, updated);
-    await this.persist();
-    this.emit({ type: 'extensions' });
-    return updated;
+    return serializeExtensionMutation(this, async () => {
+      const current = this.extensions.get(id);
+      if (!current) throw new Error('Unknown extension');
+      const next = { ...current, ...updated, id, addedAt: current.addedAt || updated.addedAt };
+      await persistExtensionChanges(this, [[id, next]]);
+      return next;
+    });
   },
   async reloadAllExtensions() {
-    const results = [];
-    for (const [id, ext] of this.extensions.entries()) {
-      if (fs.existsSync(ext.path)) {
-        try {
-          const updated = await this.readExtension(ext.path, Boolean(ext.builtIn));
-          updated.addedAt = ext.addedAt || updated.addedAt;
-          this.extensions.set(id, updated);
-          results.push(updated);
-        } catch (e) {
-          console.warn('[extensions] Failed to reload extension ' + id + ':', e.message);
-        }
-      }
+    const entries = [...this.extensions].filter(([, extension]) => fs.existsSync(extension.path));
+    const loaded = [];
+    for (let offset = 0; offset < entries.length; offset += 4) {
+      const chunk = entries.slice(offset, offset + 4);
+      const results = await Promise.allSettled(chunk.map(([, extension]) => this.readExtension(extension.path, Boolean(extension.builtIn))));
+      results.forEach((result, index) => {
+        if (result.status === 'fulfilled') loaded.push([chunk[index][0], result.value]);
+        else console.warn('[extensions] Failed to reload extension ' + chunk[index][0] + ':', result.reason.message);
+      });
     }
-    await this.persist();
-    this.emit({ type: 'extensions' });
-    return results;
+    return serializeExtensionMutation(this, async () => {
+      const changes = loaded.filter(([id]) => this.extensions.has(id)).map(([id, value]) => {
+        const previous = this.extensions.get(id);
+        return [id, { ...previous, ...value, id, addedAt: previous.addedAt || value.addedAt }];
+      });
+      if (changes.length) await persistExtensionChanges(this, changes);
+      return changes.map(([, value]) => value);
+    });
   },
+
   async removeExtension(id) {
-    const value = this.extensions.get(id);
-    if (!value || value.builtIn) throw new Error('Built-in extension cannot be removed');
-    if (this.usingSqlite && this.sqliteStore) {
-      this.sqliteStore.deleteExtension(id);
-    }
-    this.extensions.delete(id);
-    for (const set of this.assignments.values()) set.delete(id);
-    this.invalidateStatusCache();
-    await this.persist();
-    this.emit({ type: 'extensions' });
-    return { success: true };
+    return serializeExtensionMutation(this, async () => {
+      const value = this.extensions.get(id);
+      if (!value || value.builtIn) throw new Error('Built-in extension cannot be removed');
+      const assignments = [];
+      for (const [profileId, assigned] of this.assignments) {
+        if (!assigned.has(id)) continue;
+        if (this.profiles.has(profileId)) assertProfileNotMaintained(this, profileId);
+        const next = new Set(assigned); next.delete(id); assignments.push([profileId, next]);
+      }
+      await persistExtensionChanges(this, [[id, undefined]], assignments);
+      return { success: true };
+    });
   },
 };

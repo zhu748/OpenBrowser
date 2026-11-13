@@ -4,6 +4,7 @@ const path = require('path');
 const os = require('os');
 const { spawn } = require('child_process');
 const cdp = require('./cdp');
+const { allowGoogleLogin } = require('./automation/profile-defaults');
 const { compareKernelVersions } = require('./automation/kernel-versions');
 let proxyForwarderModule = {};
 try {
@@ -646,7 +647,7 @@ class BrowserEngine {
     const allowPasswords = Boolean(profile.advanced.savePasswords) && !profile.advanced.blockPasswordPrompt;
     prefs.credentials_enable_service = allowPasswords;
     prefs.profile.password_manager_enabled = allowPasswords;
-    prefs.signin ||= {}; prefs.signin.allowed = Boolean(profile.advanced.allowSignin);
+    prefs.signin ||= {}; prefs.signin.allowed = allowGoogleLogin(profile);
     applyLanguagePreferences(prefs, profile);
     prefs.webkit ||= {}; prefs.webkit.webprefs ||= {};
     if (profile.privacy.fontMode === 'custom') prefs.webkit.webprefs.default_font_size = profile.privacy.fontSize;

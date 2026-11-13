@@ -19,7 +19,7 @@ async function harness(type, behavior = {}) {
   const item = { port: 12345, profile, fingerprint: fp };
   const connection = { closed: false, close() { this.closed = true; }, async command(method, params = {}, options = {}) {
     commands.push({ method, params, sessionId: options.sessionId });
-    if (method === 'Target.getTargets') return { targetInfos: exists ? [target] : [] };
+    if (method === 'Target.getTargets') return behavior.targets?.(target) || { targetInfos: exists ? [target] : [] };
     if (method === 'Target.setAutoAttach' && !options.sessionId && behavior.initial !== false) queueMicrotask(() => { onEvent(attach('old'), connection); });
     if (method === 'Runtime.evaluate') {
       evaluations.set(options.sessionId, (evaluations.get(options.sessionId) || 0) + 1);
@@ -101,6 +101,22 @@ async function harness(type, behavior = {}) {
         assert.equal(h.engine.stopped, undefined);
       } finally { h.cleanup(); }
     }
+  });
+  await test('worker destruction wins over an earlier still-live CDP snapshot', async () => {
+    const behavior = {}, h = await harness('worker', behavior);
+    try {
+      await h.startup;
+      let reads = 0;
+      behavior.targets = (target) => {
+        reads += 1;
+        if (reads === 2) h.dispatch('Target.targetDestroyed', { targetId: 'target' });
+        return { targetInfos: [target] }; // both snapshots were taken before destruction
+      };
+      h.dispatch('Target.detachedFromTarget', { sessionId: 'old', targetId: 'target' });
+      await turn();
+      assert.equal(reads, 2);
+      assert.equal(h.engine.stopped, undefined);
+    } finally { h.cleanup(); }
   });
   await test('detach during Fetch registration prevents resume and later interception commands', async () => {
     for (const type of ['worker', 'page']) {

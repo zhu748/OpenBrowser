@@ -329,7 +329,7 @@ const keepAlive = setInterval(() => {}, 250);
     check('settings go through the coalescing writer', () => {
       assert.ok(/require\('\.\/coalesced-writer'\)/.test(source), 'writer is not required');
       assert.ok(/const localSettingsWriter = createCoalescedWriter\(/.test(source), 'writer is not created');
-      assert.ok(/return localSettingsWriter\.request\(\);/.test(source), 'saveLocalSettings does not use it');
+      assert.ok(/(?:return|await) localSettingsWriter\.request\(\);/.test(source), 'saveLocalSettings does not use it');
     });
     check('the previous ad-hoc write body is gone from saveLocalSettings', () => {
       const body = source.match(/async function saveLocalSettings\(value\) \{[\s\S]*?\n\}/);

@@ -2324,7 +2324,7 @@ async function commitProfilePatches(patches) {
           const command = byCommand.get(profile.id);
           if (!command) return profile;
           const row = byId.get(profile.id);
-          return { ...profile, ...Object.fromEntries(Object.keys(command.patch).map((key) => [key, row[key]])) };
+          return { ...profile, rev: row.rev, ...Object.fromEntries(Object.keys(command.patch).map((key) => [key, row[key]])) };
         });
         save();
         invalidateViewCache(['profiles', 'groups', 'sync']);
@@ -2871,7 +2871,7 @@ const statusController = window.OpenBrowserStatusController.createStatusControll
   setRows: (rows) => { engineProfiles = rows; mergeEngineExitState(rows); },
   fetchDelta: (watermark) => window.ops.profileStatusDelta(watermark),
   fetchFull: () => window.ops.profileStatus(),
-  onRows: (rows) => mergeEngineExitState(rows),
+
 });
 const __statusRefresher = window.OpenBrowserRefreshScheduler.createRefreshScheduler({
   isPaused: () => document.hidden,
@@ -3738,7 +3738,7 @@ document.getElementById('editor-clear-cache-cookie')?.addEventListener('click', 
   } catch (error) { toast(error.message); }
 });
 const __baseEditorSubmitHandler = window.OpenBrowserProfileCommands.createProfileEditorSubmit({
-  getSession: () => ({ id: editingProfileId, baseRev: editingProfileBaseRev, networkResult: editorNetworkResult,
+  getSession: () => ({ id: editingProfileId, token: $('#profile-editor-form')?.dataset.editorSession, baseRev: editingProfileBaseRev, networkResult: editorNetworkResult,
     saveProxy: Boolean($('#editor-proxy-save-to-library')?.checked), proxyType: $('#editor-proxy-type')?.value || 'socks5' }),
   getProfiles: () => ui.profiles,
   readDraft: () => editorDraft(true),
@@ -3765,7 +3765,7 @@ const __baseEditorSubmitHandler = window.OpenBrowserProfileCommands.createProfil
   afterProxy: (_draft, session) => session.saveProxy ? refreshProxies() : undefined,
   onSaved(draft, session) {
     log('Profile', '已更新环境 ' + displayProfileNumber(draft));
-    if (editingProfileId === session.id) {
+    if (editingProfileId === session.id && $('#profile-editor-form')?.dataset.editorSession === session.token) {
       editingProfileId = null;
       editorNetworkResult = null;
       switchView('profiles');
@@ -3800,26 +3800,7 @@ $('#profile-editor-form').addEventListener('submit', async (event) => {
         const number = startNum + idx;
         const id = createInternalProfileId(number, usedIds);
         usedIds.add(id);
-        createdList.push(normalizeProfileSettings({
-          ...baseDraft,
-          id,
-          number,
-          name: String(number),
-          title: r.title || `环境-${number}`,
-          os: r.os || baseDraft.os || 'Windows',
-          networkMode: r.proxy && r.proxy !== 'Direct' ? 'proxy' : baseDraft.networkMode,
-          proxy: r.proxy && r.proxy !== 'Direct' ? r.proxy : baseDraft.proxy,
-          cookies: r.cookies || baseDraft.cookies || '',
-          tag: r.tag || baseDraft.tag || '',
-          note: r.note || baseDraft.note || '',
-          platform: {
-            ...(baseDraft.platform || {}),
-            startUrl: r.startUrl || baseDraft.platform?.startUrl || '',
-            username: r.username || baseDraft.platform?.username || '',
-            password: r.password || baseDraft.platform?.password || '',
-            totpSecret: r.totpSecret || baseDraft.platform?.totpSecret || '',
-          },
-        }));
+        createdList.push(normalizeProfileSettings(window.OpenBrowserProfileCommands.buildImportedProfile(baseDraft, r, { id, number })));
       });
     } else {
       const count = mode === 'batch' ? Math.min(200, Math.max(1, Number(document.getElementById('editor-batch-count')?.value) || 1)) : 1;

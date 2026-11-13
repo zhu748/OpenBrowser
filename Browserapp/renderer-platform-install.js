@@ -141,32 +141,52 @@ function renderExtensions() {
   if (!visible.length) $('#extension-empty').textContent = appCenterTab === 'builtin' ? tx('暂无自带应用') : tx('尚未添加扩展');
 }
 
-async function refreshExtensions() {
-  extensions = await window.ops.extensionList();
-  try {
-    const payload = await window.ops.appCenterList({ tab: 'all' });
-    if (payload?.list && !Array.isArray(payload.list)) {
-      appCenterData = {
-        builtin: payload.list.builtin || [],
-        recommended: payload.list.recommended || [],
-        local: payload.list.local || [],
-        counts: payload.counts || {},
-      };
-    } else {
-      appCenterData = { builtin: [], recommended: [], local: extensions, counts: { builtin: 0, recommended: 0, local: extensions.length, installed: extensions.length } };
-    }
-  } catch (_) {
-    appCenterData = {
-      builtin: extensions.filter((item) => item.builtIn),
-      recommended: [],
-      local: extensions,
-      counts: { builtin: 0, recommended: 0, local: extensions.length, installed: extensions.length },
-    };
+const refreshExtensions = (() => {
+  let running = false;
+  let waiters = [];
+  async function drain() {
+    running = true;
+    try {
+      while (waiters.length) {
+        const batch = waiters; waiters = [];
+        try { await readAndRender(); for (const waiter of batch) waiter.resolve(); }
+        catch (error) { for (const waiter of batch) waiter.reject(error); }
+      }
+    } finally { running = false; }
   }
-  renderExtensions();
-  hydrateAppCenterIcons().catch(() => {});
-  loadedViews.add('extensions');
-}
+  async function readAndRender() {
+    extensions = await window.ops.extensionList();
+    try {
+      const payload = await window.ops.appCenterList({ tab: 'all' });
+      if (payload?.list && !Array.isArray(payload.list)) {
+        appCenterData = {
+          builtin: payload.list.builtin || [],
+          recommended: payload.list.recommended || [],
+          local: payload.list.local || [],
+          counts: payload.counts || {},
+        };
+      } else {
+        appCenterData = { builtin: [], recommended: [], local: extensions, counts: { builtin: 0, recommended: 0, local: extensions.length, installed: extensions.length } };
+      }
+    } catch (_) {
+      appCenterData = {
+        builtin: extensions.filter((item) => item.builtIn),
+        recommended: [],
+        local: extensions,
+        counts: { builtin: 0, recommended: 0, local: extensions.length, installed: extensions.length },
+      };
+    }
+    renderExtensions();
+    window.renderExtensionMarketShowcase?.();
+    hydrateAppCenterIcons().catch(() => {});
+    loadedViews.add('extensions');
+  }
+
+  return () => new Promise((resolve, reject) => {
+    waiters.push({ resolve, reject });
+    if (!running) void drain();
+  });
+})();
 
 async function hydrateAppCenterIcons() {
   const items = [...(appCenterData.recommended || []), ...(appCenterData.local || []), ...(appCenterData.builtin || [])];
@@ -212,6 +232,7 @@ async function hydrateAppCenterIcons() {
 
 function openAssign(id) {
   currentExtension = extensions.find((item) => item.id === id); if (!currentExtension) return;
+  $('#assign-dialog').dataset.assignmentSession = crypto.randomUUID();
   $('#assign-extension-name').textContent = tx(`${currentExtension.name} · 运行中的环境需重启后生效`);
   const list = $('#assign-profile-list'); list.replaceChildren();
   const assigned = new Set(currentExtension.assignedProfileIds || []);
@@ -223,10 +244,12 @@ let assignmentInFlight = false;
 async function applyAssignment(enabled) {
   if (assignmentInFlight) return;
   const ids = $$('#assign-profile-list input:checked').map((input) => input.value); if (!ids.length) return toast(tx('请先选择环境'));
+  const extension = currentExtension;
+  const session = $('#assign-dialog').dataset.assignmentSession;
   assignmentInFlight = true;
   try {
-    const result = await window.ops.assignExtension(currentExtension.id, ids, enabled); $('#assign-dialog').close(); invalidateViewCache(['extensions', 'profiles', 'sync']); await refreshExtensions(); await refreshStatus();
-    log('Extension', `${currentExtension.name} ${enabled ? '添加到' : '移出'} ${ids.length} 个环境`);
+    const result = await window.ops.assignExtension(extension.id, ids, enabled); if ($('#assign-dialog').dataset.assignmentSession === session) $('#assign-dialog').close(); invalidateViewCache(['extensions', 'profiles', 'sync']); await refreshExtensions(); await refreshStatus();
+    log('Extension', `${extension.name} ${enabled ? '添加到' : '移出'} ${ids.length} 个环境`);
     toast(result.restartRequired?.length ? tx('已保存；') + result.restartRequired.length + tx(' 个运行环境需重启') : tx('批量分配已生效'));
   } catch (error) {
     toast(String(error?.message || error)); log('Error', String(error?.message || error));

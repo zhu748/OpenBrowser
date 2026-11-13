@@ -369,7 +369,7 @@ async function main() {
     'applyDefaultSearchEngine(root, profile.privacy.searchEngine)',
     'clearProfileLaunchData(root, profile)',
     'windowPositionArg(profile)',
-    "profile.advanced.ipChangePolicy === 'stop'",
+    "ipChangePolicy(profile) === 'stop'",
     'ip-change-notice',
     'hostScreen: hostScreenSummary()',
   ]) {

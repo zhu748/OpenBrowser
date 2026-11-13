@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const { navigateFirefox, screenshotFirefox } = require('../browser-control');
 const { CURRENT_FINGERPRINT_VERSION } = require('../fingerprint/generation');
 const { resolveWebSocketDebuggerUrl } = require('./devtools');
 const { booleanValue, firstDefined, firstArray, firstString, normalizeProfileInput, readProxyAssociation } = require('./input');
@@ -14,8 +15,15 @@ class ProfileRoutes {
     this.proxyStore = proxyStore;
   }
 
-  async routeProfileList() {
-    const list = await Promise.all(this.engine.status().map(async (item) => ({
+  async routeProfileList({ input = {} } = {}) {
+    const all = this.engine.status();
+    const page = Number(input.page ?? 1);
+    const size = Number(input.page_size ?? input.pageSize ?? all.length);
+    if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(size) || size < ((all.length || input.page_size !== undefined || input.pageSize !== undefined) ? 1 : 0)
+      || size > 1000 && (input.page_size !== undefined || input.pageSize !== undefined)) return fail('invalid pagination (page_size: 1-1000)', 400);
+    const withEndpoints = booleanValue(input.include_debug_endpoints ?? input.includeDebugEndpoints, true);
+    const selected = all.slice((page - 1) * size, page * size);
+    const list = await Promise.all(selected.map(async (item) => ({
       id: item.id,
       user_id: item.id,
       profile_id: item.id,
@@ -23,11 +31,11 @@ class ProfileRoutes {
       title: item.title || item.name,
       number: item.number,
       status: item.running ? 'Active' : 'Inactive',
-      ws: item.port ? { puppeteer: await this.resolveProfileEndpoint(item), selenium: `127.0.0.1:${item.port}` } : null,
+      ws: withEndpoints && item.port ? { puppeteer: await this.resolveProfileEndpoint(item), selenium: `127.0.0.1:${item.port}` } : null,
       debug_port: item.port || null,
       ...proxySummary(item, this.proxyStore),
     })));
-    return ok({ list, page: 1, page_size: list.length });
+    return ok({ list, page, page_size: size, total: all.length });
   }
 
   async routeProfileCreate({ input }) {
@@ -46,7 +54,7 @@ class ProfileRoutes {
     if (!/^[A-Za-z0-9_-]{1,64}$/.test(id)) return fail('invalid profile id', 400);
     if (existingIds.has(id)) return fail('profile already exists', 409);
     const numbers = this.engine.profiles ? [...this.engine.profiles.values()].map((item) => Number(item.number)).filter((n) => Number.isInteger(n) && n > 0) : [];
-    const number = Number.isInteger(Number(body.number)) && Number(body.number) > 0 ? Number(body.number) : ((Math.max(0, ...numbers) || 0) + 1);
+    const number = Number.isInteger(Number(body.number)) && Number(body.number) > 0 ? Number(body.number) : ((numbers.reduce((maximum, value) => Math.max(maximum, value), 0) || 0) + 1);
     const rawProxy = String(body.proxy || '').trim();
     const userProxy = body.user_proxy_config && typeof body.user_proxy_config === 'object' ? body.user_proxy_config : {};
     const proxyType = String(userProxy.proxy_type || 'http').toLowerCase();
@@ -202,7 +210,7 @@ class ProfileRoutes {
     const source = this.engine.profiles.get(sourceId);
     if (!source) return fail('source profile not found', 404);
     const numbers = [...this.engine.profiles.values()].map((item) => Number(item.number)).filter((n) => Number.isInteger(n) && n > 0);
-    const number = (Math.max(0, ...numbers) || 0) + 1;
+    const number = (numbers.reduce((maximum, value) => Math.max(maximum, value), 0) || 0) + 1;
     const id = 'ob-' + Date.now().toString(36) + '-' + crypto.randomBytes(5).toString('hex');
     const base = this.engine.sanitizeProfile(source);
     const requestedStartUrl = duplicateInput.startUrl !== undefined
@@ -340,6 +348,12 @@ class ProfileRoutes {
     }
     const runningItem = this.engine.running?.get(id);
     const cdp = require('../../cdp');
+    if (runningItem?.engine === 'firefox') {
+      try {
+        await navigateFirefox(runningItem, targetUrl);
+        return ok({ profile_id: id, url: targetUrl, navigated: true });
+      } catch (error) { return fail('navigate failed: ' + error.message, 500); }
+    }
     if (runningItem?.port) {
       try {
         await cdp.navigate(runningItem.port, targetUrl);
@@ -367,7 +381,13 @@ class ProfileRoutes {
     const id = firstString(input, ['profile_id', 'profileId', 'user_id', 'userId', 'id']);
     if (!id) return fail('profile id required', 400);
     const runningItem = this.engine.running?.get(id);
-    if (!runningItem?.port) return fail('profile is not running', 400);
+    if (!runningItem) return fail('profile is not running', 400);
+    if (runningItem.engine === 'firefox') {
+      const format = String(input.format || 'png').toLowerCase() === 'jpeg' ? 'jpeg' : 'png';
+      try { return ok({ profile_id: id, format, data: await screenshotFirefox(runningItem, format) }); }
+      catch (error) { return fail('screenshot failed: ' + error.message, 500); }
+    }
+    if (!runningItem.port) return fail('browser control unavailable', 503);
     const cdp = require('../../cdp');
     try {
       const tab = await cdp.firstTab(runningItem.port);

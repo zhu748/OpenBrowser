@@ -15,6 +15,7 @@ const path = require('path');
 const cloudSync = require('./cloud-sync');
 const credentialCrypto = require('../credential-crypto');
 const { createCoalescedWriter } = require('./coalesced-writer');
+const { normalizeDefaultPreferences } = require('./profile-defaults');
 const { deepEqual } = require('./object-utils');
 const { validateDataRootIsolationSecure } = require('./isolation');
 
@@ -66,6 +67,7 @@ function defaultCache() {
     closeAction: 'ask',
     memoryLimit: 95,
     diskLimit: 8,
+    defaultPreferences: normalizeDefaultPreferences(),
   };
 }
 
@@ -118,6 +120,7 @@ async function readLocalSettings(revision) {
       closeAction: normalizeCloseAction(saved.closeAction),
       memoryLimit: clampMemoryLimit(saved.memoryLimit),
       diskLimit: clampDiskLimit(saved.diskLimit),
+      defaultPreferences: normalizeDefaultPreferences(saved.defaultPreferences),
     };
     if (needsMigration) {
       persistedSettingsSnapshot = null;
@@ -199,16 +202,20 @@ const localSettingsWriter = createCoalescedWriter({
 
 async function saveLocalSettings(value) {
   ensureInitialized();
-  localSettingsCache = {
+  localSettingsCache = structuredClone({
     profileDataRoot: normalizeProfileDataRoot(value.profileDataRoot || localSettingsCache.profileDataRoot),
     cloud: value.cloud || localSettingsCache.cloud || cloudSync.defaultCloudConfig(),
     uiGroups: Array.isArray(value.uiGroups) ? value.uiGroups : (localSettingsCache.uiGroups || []),
     closeAction: normalizeCloseAction(value.closeAction || localSettingsCache.closeAction),
     memoryLimit: clampMemoryLimit(value.memoryLimit !== undefined ? value.memoryLimit : localSettingsCache.memoryLimit),
     diskLimit: clampDiskLimit(value.diskLimit !== undefined ? value.diskLimit : localSettingsCache.diskLimit),
-  };
+    defaultPreferences: normalizeDefaultPreferences(value.defaultPreferences, localSettingsCache.defaultPreferences),
+  });
   settingsRevision += 1;
-  return localSettingsWriter.request();
+  await localSettingsWriter.request();
+  // A newer cache value may still be waiting for its own write. Acknowledge
+  // only a snapshot which has passed the disk barrier.
+  return structuredClone(persistedSettingsSnapshot);
 }
 
 /** Flush a pending quiet-period write; called from the quit chain. */

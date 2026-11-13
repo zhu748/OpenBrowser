@@ -56,7 +56,7 @@ fn control_lines() -> mpsc::Receiver<Result<Vec<u8>>> {
 // Writing synchronously there means a parent that stops reading stdout (full
 // pipe) wedges stop/exit handling: the async task blocks inside write(). A
 // dedicated OS writer thread mirrors the control_lines() stdin pattern above
-// instead — an unbounded channel so emit() NEVER blocks the async loop no
+// instead — a bounded channel so emit() never blocks the async loop no
 // matter how backlogged the pipe is; a single writer thread plus a FIFO
 // channel preserves per-line ordering.
 //
@@ -65,7 +65,7 @@ fn control_lines() -> mpsc::Receiver<Result<Vec<u8>>> {
 // and join_stdout_writer() (called once at the end of main) waits for every
 // emitted line to reach the pipe BEFORE process exit — without that, the
 // runtime would kill the still-queued writer thread and lose final lines.
-static STDOUT_TX: std::sync::Mutex<Option<std::sync::mpsc::Sender<Vec<u8>>>> =
+static STDOUT_TX: std::sync::Mutex<Option<std::sync::mpsc::SyncSender<Vec<u8>>>> =
     std::sync::Mutex::new(None);
 static STDOUT_ERR: std::sync::Mutex<Option<std::io::Error>> = std::sync::Mutex::new(None);
 
@@ -80,10 +80,10 @@ static STDOUT_DONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBoo
 // full 2s drain deadline for a thread that does not exist.
 static STDOUT_CREATED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-fn stdout_sender() -> Option<std::sync::mpsc::Sender<Vec<u8>>> {
+fn stdout_sender() -> Option<std::sync::mpsc::SyncSender<Vec<u8>>> {
     let mut guard = STDOUT_TX.lock().unwrap_or_else(|p| p.into_inner());
     if guard.is_none() {
-        let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+        let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<u8>>(256);
         STDOUT_CREATED.store(true, std::sync::atomic::Ordering::Release);
         std::thread::spawn(move || {
             let stdout = std::io::stdout();
@@ -169,15 +169,21 @@ fn join_stdout_writer() -> Result<()> {
 fn emit(value: serde_json::Value) -> Result<()> {
     let mut line = Vec::with_capacity(128);
     serde_json::to_writer(&mut line, &value)?;
-    // send() on an unbounded channel never blocks; the only failure mode is
-    // the writer having died on a stdout error, which join_stdout_writer()
-    // reports at exit. An emit after shutdown is a caller bug: refuse it.
+    // try_send never blocks the control loop. A stalled parent cannot grow an
+    // unbounded queue: overflow aborts the command and closes its resources.
     match stdout_sender() {
-        Some(tx) => tx
-            .send(line)
-            .map_err(|_| invalid("stdout writer is closed")),
+        Some(tx) => enqueue_stdout(&tx, line),
         None => Err(invalid("stdout writer is closed")),
     }
+}
+
+fn enqueue_stdout(tx: &std::sync::mpsc::SyncSender<Vec<u8>>, line: Vec<u8>) -> Result<()> {
+    tx.try_send(line).map_err(|error| match error {
+        std::sync::mpsc::TrySendError::Full(_) => {
+            invalid("stdout buffer is full; parent is not reading")
+        }
+        std::sync::mpsc::TrySendError::Disconnected(_) => invalid("stdout writer is closed"),
+    })
 }
 
 #[tokio::main]
@@ -365,4 +371,29 @@ fn run_layout(args: &[String]) -> Result<()> {
         json!({"screen":{"width":screen.width,"height":screen.height,"taskbar":screen.taskbar_height},
         "count":count,"windows":windows}),
     )
+}
+
+#[cfg(test)]
+mod stdout_tests {
+    use super::enqueue_stdout;
+
+    #[test]
+    fn a_stalled_or_closed_reader_never_blocks_the_control_loop() {
+        let (tx, rx) = std::sync::mpsc::sync_channel(2);
+        enqueue_stdout(&tx, vec![1]).unwrap();
+        enqueue_stdout(&tx, vec![2]).unwrap();
+        assert!(enqueue_stdout(&tx, vec![3])
+            .unwrap_err()
+            .to_string()
+            .contains("buffer is full"));
+        assert_eq!(rx.recv().unwrap(), vec![1]);
+        enqueue_stdout(&tx, vec![3]).unwrap();
+        assert_eq!(rx.recv().unwrap(), vec![2]);
+        assert_eq!(rx.recv().unwrap(), vec![3]);
+        drop(rx);
+        assert!(enqueue_stdout(&tx, vec![4])
+            .unwrap_err()
+            .to_string()
+            .contains("writer is closed"));
+    }
 }

@@ -180,13 +180,24 @@ module.exports = {
         return snapshot.targetInfos.some((target) => (target.targetId || target.id) === targetId);
       } catch (_) { return null; }
     };
+    const pendingDetachChecks = new Set();
     const confirmLostReadySession = async (state, connection) => {
       if (item.stopping || item.cleanedUp || replacementFor(state)) return;
-      const exists = await targetStillExists(connection, state.targetId);
-      if (item.stopping || item.cleanedUp || replacementFor(state) || exists === false) return;
-      await this.handleBrowserGone(item.profile.id, item, 'fingerprint-session-detached', {
-        expected: false, error: 'A live target lost its verified fingerprint session', kill: true, waitForExit: true,
-      });
+      const check = { targetId: state.targetId, destroyed: false };
+      pendingDetachChecks.add(check);
+      const obsolete = () => check.destroyed || item.stopping || item.cleanedUp || replacementFor(state);
+      try {
+        const exists = await targetStillExists(connection, state.targetId);
+        if (obsolete() || exists === false) return;
+        // A closing worker can still be in a snapshot generated before its
+        // targetDestroyed event. A second ordered round trip lets that event
+        // invalidate even a stale reply; no timer or permanent tombstones.
+        const confirmed = await targetStillExists(connection, state.targetId);
+        if (obsolete() || confirmed === false) return;
+        await this.handleBrowserGone(item.profile.id, item, 'fingerprint-session-detached', {
+          expected: false, error: 'A live target lost its verified fingerprint session', kill: true, waitForExit: true,
+        });
+      } finally { pendingDetachChecks.delete(check); }
     };
 
     const onAttached = (event, connection) => {
@@ -334,6 +345,7 @@ module.exports = {
       // If an initial target closes before attaching, unblock barrier without hanging
       if (event?.method === 'Target.targetDestroyed') {
         const destroyedId = event.params?.targetId;
+        for (const check of pendingDetachChecks) if (check.targetId === destroyedId) check.destroyed = true;
         forgetTargetRuntimePolicy(item, destroyedId);
         forgetFingerprintTarget(connection, `target:${destroyedId}`);
         closePageFingerprintConnection(item, destroyedId);

@@ -40,12 +40,13 @@ async function main() {
   engine.invalidateStatusCache();
   const cached = engine.status();
   engine.usingSqlite = true;
-  engine.sqliteStore = { deleteExtension() { throw new Error('synthetic SQL failure'); } };
+  engine.persist = async () => { throw new Error('synthetic SQL failure'); };
   await assert.rejects(engine.removeExtension('a'), /synthetic SQL failure/);
   assert.equal(engine.extensions.has('a'), true, 'database failure retains the extension');
   assert.equal(engine.assignments.get('env-002').has('a'), true, 'database failure retains assignments');
-  assert.equal(engine.status(), cached, 'failed removal does not change the cached public state');
+  assert.deepEqual(engine.status(), cached, 'failed removal restores the public state');
   engine.usingSqlite = false;
+  engine.persist = async () => {};
   events.length = 0;
   await engine.removeExtension('a');
   assert.deepEqual(engine.status()[0].assignedExtensions, [], 'removal invalidates the status snapshot');

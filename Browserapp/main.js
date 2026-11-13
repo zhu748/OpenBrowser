@@ -367,7 +367,7 @@ function normalizeBounds(bounds) {
   };
 }
 
-async function tile(ids, cascade = false) {
+async function tile(ids, cascade = false, matrix = null) {
   const entries = engine.runningWithCdp(sanitizeIds(ids));
   if (!entries.length) throw new Error('No selected browser has a CDP session');
   const work = pickWorkArea();
@@ -377,7 +377,13 @@ async function tile(ids, cascade = false) {
   let overcrowded = false;
   liveSync?.pauseGeometrySync?.(3500, cascade ? 'manual-cascade' : 'manual-tile');
   if (liveSync) liveSync.lastWindowSync = Date.now();
-  if (cascade) {
+  if (matrix) {
+    const { planMatrix } = require('./automation/window-arrangement');
+    const bounds = planMatrix({ totalWindows: entries.length, workArea: work,
+      rows: matrix.rows, cols: matrix.cols, gap: matrix.gap,
+      minWidth: 320, minHeight: Math.max(240, minHeightFor(process.platform)) });
+    await Promise.all(entries.map(({ item }, index) => cdp.setWindowBounds(item.port, bounds[index])));
+  } else if (cascade) {
     // Cascade layout: left + vs * index
     const { computeCascadeBounds } = require('./automation/protocol/window-sync-protocol');
     const width = Math.max(760, work.width - 220);
@@ -435,7 +441,7 @@ async function tile(ids, cascade = false) {
   return {
     success: true,
     count: entries.length,
-    mode: cascade ? 'cascade' : 'tile',
+    mode: matrix ? 'matrix' : cascade ? 'cascade' : 'tile',
     platform: process.platform,
     workArea: work,
     // True when the selected layout cannot give every window its minimum
@@ -1002,7 +1008,7 @@ app.whenReady().then(async () => {
   });
   // 启动保护（Roxy 客户端设置对齐）：内存使用率上限 / 磁盘可用空间下限。
   registerTrustedIpc('system:get-client-settings', () => settingsStore.getLocalSettings());
-  // 白名单三键 + 类型/范围校验：renderer 的 patch 不再整个浅合并进设置。
+  // 设置字段白名单 + 类型/范围校验：renderer 的 patch 不再整个浅合并进设置。
   // 旧实现把任意键一并并入并持久化（cloud/uiGroups/profileDataRoot 可被一次
   // IPC 覆盖，或注入任意未知键）；此处镜像 system:set-close-action 的做法——
   // 归一化一律走 settingsStore 自身的 clamp（clampMemoryLimit 1-100、
@@ -1012,7 +1018,7 @@ app.whenReady().then(async () => {
   let warnedClientSettingsDrops = false;
   registerTrustedIpc('system:save-client-settings', async (_event, payload) => {
     const patch = payload && typeof payload === 'object' ? payload : {};
-    const known = new Set(['memoryLimit', 'diskLimit', 'closeAction']);
+    const known = new Set(['memoryLimit', 'diskLimit', 'closeAction', 'defaultPreferences']);
     const dropped = [];
     const next = {};
     if (patch.memoryLimit !== undefined) {
@@ -1031,14 +1037,20 @@ app.whenReady().then(async () => {
       if (patch.closeAction === 'ask' || patch.closeAction === 'tray' || patch.closeAction === 'exit') next.closeAction = patch.closeAction;
       else dropped.push(`closeAction:${JSON.stringify(patch.closeAction)}`);
     }
+    if (patch.defaultPreferences && typeof patch.defaultPreferences === 'object') {
+      const { DEFAULT_PREFERENCES, normalizeDefaultPreferences } = require('./automation/profile-defaults');
+      const valid = Object.fromEntries(Object.entries(patch.defaultPreferences)
+        .filter(([key, value]) => Object.hasOwn(DEFAULT_PREFERENCES, key) && typeof value === 'boolean'));
+      next.defaultPreferences = normalizeDefaultPreferences(valid, settingsStore.getLocalSettings().defaultPreferences);
+    }
     for (const key of Object.keys(patch)) if (!known.has(key)) dropped.push(`unknown:${key}`);
     if (dropped.length && !warnedClientSettingsDrops) {
       warnedClientSettingsDrops = true;
       console.warn('[client-settings] dropped untrusted keys/values:', dropped.join(', '), '(further drops are silent for this process)');
     }
-    await settingsStore.saveLocalSettings({ ...settingsStore.getLocalSettings(), ...next });
-    if (settingsStore.getLocalSettings().closeAction === 'exit') destroyTray();
-    return settingsStore.getLocalSettings();
+    const saved = await settingsStore.saveLocalSettings({ ...settingsStore.getLocalSettings(), ...next });
+    if (saved.closeAction === 'exit') destroyTray();
+    return saved;
   });
   registerTrustedIpc('app:update-check', async () => {
     const payload = await appUpdate.pushAppUpdateStatus({ check: true });
@@ -1147,6 +1159,7 @@ app.whenReady().then(async () => {
   registerTrustedIpc('sync:restart', () => restartSync());
   registerTrustedIpc('sync:window', async (_event, payload) => {
     const ids = sanitizeIds(payload.ids); const entries = engine.runningWithCdp(ids); const action = String(payload.action);
+    if (action === 'matrix') return tile(ids, false, payload.options || {});
     if (action === 'tile') return tile(ids, false);
     if (action === 'cascade') return tile(ids, true);
     if (!['minimized', 'normal', 'maximized', 'fullscreen'].includes(action)) throw new Error('Unknown window action');

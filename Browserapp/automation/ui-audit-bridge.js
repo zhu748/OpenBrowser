@@ -29,11 +29,12 @@ const bridge = {
   applyProfileCommands: async (commands = []) => {
     window.__uiAuditCommandRevs ||= {};
     for (const command of commands || []) {
-      if (command?.kind === 'modify' && command?.profile?.id) {
-        const id = command.profile.id;
+      if (['modify', 'patch'].includes(command?.kind) && command?.id) {
+        const id = command.id;
         window.__uiAuditCommandRevs[id] = Math.max(Number(command.baseRev) || 0, window.__uiAuditCommandRevs[id] || 0) + 1;
         const index = (window.__uiAuditSavedProfiles || []).findIndex((profile) => profile.id === id);
-        if (index >= 0) window.__uiAuditSavedProfiles[index] = command.profile;
+        if (index >= 0) window.__uiAuditSavedProfiles[index] = command.kind === 'patch'
+          ? { ...window.__uiAuditSavedProfiles[index], ...command.patch } : command.profile;
         else (window.__uiAuditSavedProfiles ||= []).push(command.profile);
       }
     }

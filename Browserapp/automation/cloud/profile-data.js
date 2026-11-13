@@ -3,6 +3,7 @@
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 const { assertSafeProfileChild } = require('../isolation');
+const { browserBackupCandidates } = require('../browser-data');
 const { MAX_BROWSER_DATA_BYTES, MAX_BROWSER_FILE_BYTES, MAX_BROWSER_DATA_FILES } = require('./limits');
 
 async function collectProfileDataFiles(profileRoot, profile, limits = {}) {
@@ -11,27 +12,7 @@ async function collectProfileDataFiles(profileRoot, profile, limits = {}) {
   if (!profileRoot) return files;
   // Only pack browser data when this environment opts into cloud backup
   if (!advanced.cloudBackup) return files;
-  const defaultDir = path.join(profileRoot, 'Default');
-  const candidates = [];
-  // Cookies always included when cloud backup is on (close-time Cookie sync)
-  if (advanced.syncCookiesOnClose !== false || advanced.saveCookies !== false) {
-    candidates.push(['Network/Cookies', path.join(defaultDir, 'Network', 'Cookies')]);
-    candidates.push(['Network/Cookies-journal', path.join(defaultDir, 'Network', 'Cookies-journal')]);
-  }
-  if (advanced.syncLocalStorage) {
-    candidates.push(['Local Storage', path.join(defaultDir, 'Local Storage')]);
-  }
-  if (advanced.syncIndexedDB) {
-    candidates.push(['IndexedDB', path.join(defaultDir, 'IndexedDB')]);
-  }
-  if (advanced.syncPasswords) {
-    candidates.push(['Login Data', path.join(defaultDir, 'Login Data')]);
-    candidates.push(['Login Data-journal', path.join(defaultDir, 'Login Data-journal')]);
-  }
-  if (advanced.syncExtensionData) {
-    candidates.push(['Local Extension Settings', path.join(defaultDir, 'Local Extension Settings')]);
-    candidates.push(['Extension State', path.join(defaultDir, 'Extension State')]);
-  }
+  const candidates = await browserBackupCandidates(profileRoot, profile);
   const maxFile = limits.maxFileBytes ?? MAX_BROWSER_FILE_BYTES;
   const maxTotal = limits.maxTotalBytes ?? MAX_BROWSER_DATA_BYTES;
   // Match the restore limit so every newly produced package is restorable.
@@ -48,7 +29,7 @@ async function collectProfileDataFiles(profileRoot, profile, limits = {}) {
     if (st.isSymbolicLink()) { skip(rel, 'symbolic-link'); return; }
     if (st.isFile()) {
       if (st.size > maxFile || total + st.size > maxTotal) { skip(rel, 'size-limit'); return; }
-      if (['Network/Cookies', 'Login Data'].includes(rel.replace(/\\/g, '/'))) {
+      if (['Network/Cookies', 'Login Data'].includes(rel.replace(/\\/g, '/')) || /\.sqlite$|\.db$/.test(rel)) {
         // Copying the main DB alone silently loses uncheckpointed rows.
         // Host-backed builds hold a stopped-profile lease; orphan WALs after
         // a crash still require a clean browser shutdown before a raw backup.
