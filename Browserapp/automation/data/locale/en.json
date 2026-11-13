@@ -36,7 +36,7 @@
   "editor.sslHint": "0x0004 / 0x0005 = RC4, 0x000a = 3DES; modern kernels already disable RC4 / 3DES — for sites that require stricter settings.",
   "editor.sslCardDesc": "Hardware acceleration, sandbox, default search engine and custom launch args",
   "theme.modern.name": "Default UI",
-  "theme.modern.desc": "Refactored default light workspace",
+  "theme.modern.desc": "Clean modern workspace with light & dark mode support",
   "theme.auto": "Auto",
   "theme.dark": "Dark",
   "theme.light": "Light",
@@ -321,7 +321,7 @@
   "system.update.unsupported": "No published installer is available for this platform.",
   "system.update.error": "Update check failed: {message}",
   "system.launchgate.title": "Launch protection",
-  "system.launchgate.desc": "Stop opening windows when memory usage or free disk space exceeds its limit (Roxy client settings, defaults 95% / 8GB).",
+  "system.launchgate.desc": "Stop opening windows when memory usage or free disk space exceeds its limit (defaults: 95% / 8GB).",
   "system.launchgate.memory": "Memory usage limit (%)",
   "system.launchgate.disk": "Free disk space floor (GB)",
   "system.launchgate.save": "Save settings",
@@ -748,5 +748,13 @@
   "transfer.recipientNote": "Recipient note",
   "transfer.includeCookies": "Include cookies",
   "transfer.generateOfflineCode": "Generate offline sharing code",
-  "cookie.blockCommonVideo": "Block common video resources"
+  "cookie.blockCommonVideo": "Block common video resources",
+  "view.templates": "Profile Templates",
+  "view.templates.sub": "Manage OS profiles, window dimensions and launch defaults",
+  "view.accounts": "Platform Accounts",
+  "view.accounts.sub": "Centralized login credentials with one-click bound profile creation & export",
+  "view.proxy-add": "Add Proxy IP",
+  "view.proxy-add.sub": "Smart single-entry parsing, bulk text import and batch proxy verification",
+  "view.account-add": "Add Platform Account",
+  "view.account-add.sub": "Single entry, batch line parsing and Excel / CSV / TXT template import"
 }

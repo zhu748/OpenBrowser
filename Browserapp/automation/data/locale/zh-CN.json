@@ -36,7 +36,7 @@
   "editor.sslHint": "0x0004 / 0x0005 = RC4，0x000a = 3DES；现代内核默认已禁 RC4 / 3DES，此处用于满足更严格的目标站点要求。",
   "editor.sslCardDesc": "硬件加速、沙盒、默认搜索引擎与自定义启动参数",
   "theme.modern.name": "默认界面",
-  "theme.modern.desc": "界面重构后的默认浅色工作台",
+  "theme.modern.desc": "现代简洁工作台（支持浅色与深色模式）",
   "theme.auto": "跟随系统",
   "theme.dark": "深色",
   "theme.light": "浅色",
@@ -321,7 +321,7 @@
   "system.update.unsupported": "当前平台没有可用的发布安装包。",
   "system.update.error": "检查更新失败：{message}",
   "system.launchgate.title": "启动保护",
-  "system.launchgate.desc": "内存使用率或磁盘可用空间超出限制时停止打开窗口（对齐 Roxy 客户端设置，默认 95% / 8GB）。",
+  "system.launchgate.desc": "内存使用率或磁盘可用空间超出限制时停止打开窗口（默认 95% / 8GB）。",
   "system.launchgate.memory": "内存使用率上限（%）",
   "system.launchgate.disk": "磁盘可用空间下限（GB）",
   "system.launchgate.save": "保存设置",
@@ -745,5 +745,13 @@
   "transfer.recipientNote": "接收方备注",
   "transfer.includeCookies": "包含 Cookies",
   "transfer.generateOfflineCode": "生成离线分享凭证",
-  "cookie.blockCommonVideo": "拦截常见视频资源"
+  "cookie.blockCommonVideo": "拦截常见视频资源",
+  "view.templates": "窗口模板",
+  "view.templates.sub": "管理常用系统画像、窗口尺寸与启动默认模板",
+  "view.accounts": "平台账号",
+  "view.accounts.sub": "集中管理跨境与社媒登录凭证，支持创建绑定窗口与批量导出",
+  "view.proxy-add": "添加代理 IP",
+  "view.proxy-add.sub": "支持单个智能识别、批量文本解析与批量导入代理库",
+  "view.account-add": "添加平台账号",
+  "view.account-add.sub": "支持单个添加、批量文本解析与 Excel / CSV / TXT 模板导入"
 }

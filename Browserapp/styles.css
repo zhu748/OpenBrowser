@@ -50,7 +50,7 @@
 /* =========================================================
    RETRO DESKTOP UI SKIN (layout, typography, controls and color)
    ========================================================= */
-@import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=Pixelify+Sans:wght@400;500;600;700&display=swap');
+/* Font families are served locally (no external Google Fonts network import under strict CSP). */
 
 
 .env-badge,

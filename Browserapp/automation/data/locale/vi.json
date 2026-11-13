@@ -36,7 +36,7 @@
   "editor.sslHint": "0x0004 / 0x0005 = RC4, 0x000a = 3DES; nhân hiện đại đã tắt RC4 / 3DES mặc định — dành cho trang web yêu cầu nghiêm ngặt hơn.",
   "editor.sslCardDesc": "Tăng tốc phần cứng, sandbox, công cụ tìm kiếm mặc định và tham số khởi chạy tùy chỉnh",
   "theme.modern.name": "Giao diện mặc định",
-  "theme.modern.desc": "Không gian làm việc sáng mặc định sau tái cấu trúc",
+  "theme.modern.desc": "Không gian làm việc hiện đại hỗ trợ chế độ sáng & tối",
   "theme.auto": "Tự động",
   "theme.dark": "Tối",
   "theme.light": "Sáng",
@@ -321,7 +321,7 @@
   "system.update.unsupported": "No published installer is available for this platform.",
   "system.update.error": "Update check failed: {message}",
   "system.launchgate.title": "Launch protection",
-  "system.launchgate.desc": "Stop opening windows when memory usage or free disk space exceeds its limit (Roxy client settings, defaults 95% / 8GB).",
+  "system.launchgate.desc": "Ngừng mở cửa sổ khi mức sử dụng bộ nhớ hoặc dung lượng đĩa trống vượt giới hạn (mặc định 95% / 8GB).",
   "system.launchgate.memory": "Memory usage limit (%)",
   "system.launchgate.disk": "Free disk space floor (GB)",
   "system.launchgate.save": "Save settings",
@@ -748,5 +748,13 @@
   "transfer.recipientNote": "Ghi chú người nhận",
   "transfer.includeCookies": "Bao gồm cookie",
   "transfer.generateOfflineCode": "Tạo mã chia sẻ ngoại tuyến",
-  "cookie.blockCommonVideo": "Chặn tài nguyên video phổ biến"
+  "cookie.blockCommonVideo": "Chặn tài nguyên video phổ biến",
+  "view.templates": "Mẫu cửa sổ",
+  "view.templates.sub": "Quản lý cấu hình OS, kích thước cửa sổ và mặc định khởi chạy",
+  "view.accounts": "Tài khoản nền tảng",
+  "view.accounts.sub": "Quản lý thông tin đăng nhập tập trung, tạo cửa sổ liên kết & xuất hàng loạt",
+  "view.proxy-add": "Thêm Proxy IP",
+  "view.proxy-add.sub": "Nhận diện thông minh đơn lẻ, nhập hàng loạt & kiểm tra đồng loạt",
+  "view.account-add": "Thêm tài khoản",
+  "view.account-add.sub": "Thêm đơn lẻ, phân tích theo dòng và nhập mẫu Excel / CSV / TXT"
 }

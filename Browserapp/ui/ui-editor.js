@@ -628,9 +628,16 @@ function renderEditorSummary() {
     geoMode: { ip: t('editor.basedOnIp'), disabled: t('editor.summary.geoBlocked'), custom: t('editor.summary.customGeo') }, canvas: { real: t('editor.summary.real'), blocked: t('editor.summary.blockedRead') }, webgl: { real: t('editor.summary.real'), blocked: t('editor.summary.disabled') },
     audio: { real: t('editor.summary.real'), muted: t('editor.summary.muted') }, media: { real: t('editor.summary.askSite'), blocked: t('editor.summary.geoBlocked') }, speech: { real: t('editor.summary.real'), blocked: t('editor.summary.disabled') }, bluetooth: { real: t('editor.summary.real'), blocked: t('editor.summary.off') }
   };
+  const osDisplay = (() => {
+    const base = String(draft.os || '').trim();
+    const ver = String(draft.osVersion || '').trim();
+    if (!ver) return base;
+    if (!base) return ver;
+    return ver.toLowerCase().startsWith(base.toLowerCase()) ? ver : `${base} ${ver}`;
+  })();
   const values = [
-    // Roxy 概要 canonical 行顺序：操作系统 → 内核类型 → UA → 语言 → 时区 → 地理位置提示 → 地理位置 → …
-    [tx('操作系统'), draft.os + (draft.osVersion ? ' ' + draft.osVersion : '')],
+    // 概要行顺序：操作系统 → 内核类型 → UA → 语言 → 时区 → 地理位置提示 → 地理位置 → …
+    [tx('操作系统'), osDisplay],
     [tx('内核类型'), (draft.engine === 'firefox' ? 'Firefox' : 'Chrome') + (draft.engineVersion && draft.engineVersion !== 'latest' ? ' ' + draft.engineVersion : ' ' + tx('默认'))],
     ['User-Agent', draft.userAgent || t('editor.summary.defaultUA')],
     [tx('语言'), draft.language], [tx('界面语言'), privacy.uiLanguage === 'profile' ? t('editor.summary.followLanguage') : privacy.uiLanguage],
@@ -1040,7 +1047,7 @@ function showProfileEditor(value, revision) {
   editorSet('#editor-id', profile.id);
   $('#editor-profile-id').textContent = displayProfileNumber(profile);
   editorSet('#editor-name', displayProfileNumber(profile));
-  editorSet('#editor-id-text', profile.id);
+  if ($('#editor-id-text')) $('#editor-id-text').textContent = profile.id || '';
   editorSet('#editor-title', profile.title || '');
   editorSet('#editor-platform-name', profile.platform?.name || '');
   editorSet('#editor-browser', 'Google Chrome');

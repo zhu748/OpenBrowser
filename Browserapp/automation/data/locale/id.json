@@ -36,7 +36,7 @@
   "editor.sslHint": "0x0004 / 0x0005 = RC4, 0x000a = 3DES; kernel modern sudah menonaktifkan RC4 / 3DES — untuk situs yang lebih ketat.",
   "editor.sslCardDesc": "Akselerasi perangkat keras, sandbox, mesin pencari bawaan, dan argumen peluncuran kustom",
   "theme.modern.name": "UI Default",
-  "theme.modern.desc": "Ruang kerja terang bawaan hasil restukturasi",
+  "theme.modern.desc": "Ruang kerja modern dengan dukungan mode terang & gelap",
   "theme.auto": "Otomatis",
   "theme.dark": "Gelap",
   "theme.light": "Terang",
@@ -321,7 +321,7 @@
   "system.update.unsupported": "No published installer is available for this platform.",
   "system.update.error": "Update check failed: {message}",
   "system.launchgate.title": "Launch protection",
-  "system.launchgate.desc": "Stop opening windows when memory usage or free disk space exceeds its limit (Roxy client settings, defaults 95% / 8GB).",
+  "system.launchgate.desc": "Hentikan pembukaan jendela saat penggunaan memori atau ruang disk kosong melampaui batas (bawaan 95% / 8GB).",
   "system.launchgate.memory": "Memory usage limit (%)",
   "system.launchgate.disk": "Free disk space floor (GB)",
   "system.launchgate.save": "Save settings",
@@ -748,5 +748,13 @@
   "transfer.recipientNote": "Catatan penerima",
   "transfer.includeCookies": "Sertakan cookie",
   "transfer.generateOfflineCode": "Buat kode berbagi offline",
-  "cookie.blockCommonVideo": "Blokir sumber video umum"
+  "cookie.blockCommonVideo": "Blokir sumber video umum",
+  "view.templates": "Templat Profil",
+  "view.templates.sub": "Kelola profil OS, ukuran jendela, dan pengaturan peluncuran bawaan",
+  "view.accounts": "Akun Platform",
+  "view.accounts.sub": "Kredensial terpusat, buat profil tertaut sekali klik & ekspor massal",
+  "view.proxy-add": "Tambah Proxy IP",
+  "view.proxy-add.sub": "Deteksi cerdas satu entri, impor teks massal, dan uji proxy serentak",
+  "view.account-add": "Tambah Akun Platform",
+  "view.account-add.sub": "Entri tunggal, parsing baris massal, dan impor templat Excel / CSV / TXT"
 }

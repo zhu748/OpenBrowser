@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light">
+  <meta name="color-scheme" content="light dark">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://lh3.googleusercontent.com https://*.ggpht.com https://*.googleusercontent.com; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; worker-src 'none'">
   <title>OpenBrowser</title>
   <script src="automation/data/locale/i18n-data.js?v=20261109-aqua"></script>
@@ -24,7 +24,7 @@
       <nav>
         <button class="nav active" data-view="profiles"><i data-lucide="layers-3"></i><span data-i18n="nav.profiles">窗口管理</span></button>
         <button class="nav" data-view="groups"><i data-lucide="folder-kanban"></i><span data-i18n="nav.groups">项目管理</span></button>
-        <button class="nav" data-view="proxies"><i data-lucide="network"></i><span data-i18n="nav.proxies">代理 IP</span><span class="nav-hot-badge">本地池</span></button>
+        <button class="nav" data-view="proxies"><i data-lucide="network"></i><span data-i18n="nav.proxies">代理 IP</span></button>
         <button class="nav" data-view="accounts"><i data-lucide="user-round-check"></i><span>平台账号</span></button>
         <button class="nav" data-view="extensions"><i data-lucide="blocks"></i><span data-i18n="nav.extensions">应用中心</span></button>
         <div class="nav-label" data-i18n="nav.automation">自动化</div>
@@ -43,11 +43,6 @@
         <button class="nav" data-view="kernels"><i data-lucide="hard-drive-download"></i><span data-i18n="nav.kernels">内核管理</span></button>
         <button class="nav" data-view="system"><i data-lucide="settings-2"></i><span data-i18n="nav.system">本地设置</span></button>
       </nav>
-      <div class="sidebar-quota-card">
-        <div class="quota-top"><span class="quota-free-pill">免费版</span><span class="quota-label">本地无限多开</span></div>
-        <div class="quota-row"><span>窗口用量</span><strong id="sidebar-quota-count">1 / ∞</strong></div>
-        <div class="quota-bar"><div class="quota-bar-fill" id="sidebar-quota-fill" style="width:20%"></div></div>
-      </div>
       <div class="sidebar-footer">
         <a id="github-link" href="https://github.com/sheying2013/OpenBrowser" data-i18n-title="footer.githubTitle" aria-label="GitHub" rel="noreferrer">
           <i data-lucide="github" aria-hidden="true"></i>
@@ -64,11 +59,17 @@
       <header>
         <div><!-- switchView is the single writer here: a static data-i18n key made every locale pass reset the title to the profiles view (visible on the system view after refreshLocaleChrome). -->
         <h1 id="page-title" data-i18n-dynamic>环境管理</h1><p id="page-subtitle" data-i18n-dynamic></p></div>
-        <div class="header-right" style="display: flex; align-items: center; gap: 10px; z-index: 100;">
+        <div class="header-right">
           <span class="header-ip-pill" id="header-exit-pill" title="当前网络出口 IP">
-            <i data-lucide="map-pin" aria-hidden="true"></i>
-            <span id="header-exit-ip-text">CN/Local (127.0.0.1)</span>
+            <i data-lucide="globe" aria-hidden="true"></i>
+            <span id="header-exit-ip-text" data-i18n-dynamic>本地直连</span>
           </span>
+          <button class="color-mode-cycle-btn" id="color-mode-cycle-btn" type="button" data-i18n-dynamic title="跟随系统" aria-label="跟随系统">
+            <span class="color-mode-icon" data-mode-icon="auto" aria-hidden="true"><i data-lucide="monitor"></i></span>
+            <span class="color-mode-icon" data-mode-icon="light" hidden aria-hidden="true"><i data-lucide="sun"></i></span>
+            <span class="color-mode-icon" data-mode-icon="dark" hidden aria-hidden="true"><i data-lucide="moon"></i></span>
+            <span class="color-mode-label" id="color-mode-cycle-label">跟随系统</span>
+          </button>
           <button class="outline mini-btn" type="button" id="header-receive-transfer" title="凭转移码或转移包接收他人转入的窗口">
             <i data-lucide="download" aria-hidden="true"></i>
             <span>接收窗口</span>
@@ -187,7 +188,7 @@
             </div>
           </div>
           <div class="project-cards-grid" id="groups-card-grid"></div>
-          <div class="table-card" id="groups-table-card">
+          <div class="table-card" id="groups-table-card" hidden>
             <table>
               <thead>
                 <tr><th style="width:56px" data-i18n="groups.col.color">颜色</th><th data-i18n="groups.col.name">分组名称</th><th data-i18n="groups.col.count">环境数</th><th data-i18n="groups.col.created">创建时间</th><th data-i18n="groups.col.actions">操作</th></tr>
@@ -206,10 +207,14 @@
               <p class="editor-id-row"><span class="editor-id-label" data-i18n="editor.idLabel">ID:</span><span id="editor-id-text" class="editor-id-value"></span><button class="outline mini-btn" id="editor-id-copy" type="button" data-i18n="editor.copyId">复制</button></p>
               <p data-i18n="editor.pageDesc">管理账号、网络、指纹与启动设置</p>
             </div>
-            <div class="editor-tpl-picker-wrap" id="editor-tpl-picker-wrap">
-              <select id="editor-template-select" title="选择窗口模板">
-                <option value="">不使用模板</option>
-              </select>
+            <div class="editor-head-tools">
+              <div class="editor-tpl-picker-wrap" id="editor-tpl-picker-wrap">
+                <select id="editor-template-select" title="选择窗口模板">
+                  <option value="">不使用模板</option>
+                </select>
+              </div>
+              <button type="button" class="outline mini-btn editor-expand-all-btn" id="editor-expand-all-btn" title="展开或折叠所有设置分区"><i data-lucide="chevrons-up-down"></i><span>展开全部</span></button>
+              <button type="button" class="outline mini-btn editor-summary-toggle-btn" id="editor-summary-toggle-btn" title="展开/收起右侧概要面板"><i data-lucide="panel-right"></i><span>收起概要</span></button>
             </div>
           </div>
           <div class="editor-create-mode-bar" id="editor-create-mode-bar" hidden>
@@ -300,7 +305,7 @@
                   <div class="editor-card-desc">描述您的业务场景、数量、目标系统与平台，AI 将自动生成防关联指纹矩阵与窗口列表</div>
                 </div>
                 <label>自然语言需求
-                  <textarea id="ai-batch-prompt" rows="3" placeholder="例如：创建 6 个美区 TikTok 养号窗口，系统用 Android 16，Chrome 156 内核，开启端口扫描保护">创建 5 个美区跨境电商窗口，使用 Windows 11 系统与 Chrome 156 内核</textarea>
+                  <textarea id="ai-batch-prompt" rows="3" placeholder="例如：创建 6 个美区 TikTok 养号窗口，系统用 Android 16，Chromium 内核，开启端口扫描保护">创建 5 个美区跨境电商窗口，使用 Windows 11 系统与 Chromium 内核</textarea>
                 </label>
                 <div class="storage-actions" style="margin-top:8px">
                   <button type="button" class="primary" id="ai-batch-generate-btn"><i data-lucide="sparkles"></i><span>AI 生成窗口矩阵预览</span></button>
@@ -318,7 +323,7 @@
                     <div class="editor-card-desc">选择平台及默认打开的页面</div>
                   </div>
                   <div class="form-two platform-row">
-                    <label class="platform-select-label">* <span data-i18n="editor.platformField">业务平台</span>
+                    <label class="platform-select-label"><span class="label-title-row"><em class="req-mark">*</em> <span data-i18n="editor.platformField">业务平台</span></span>
                       <select id="editor-platform-type" class="platform-select">
                         <option value="blank" data-url="">空白页</option>
                         <option value="other" data-url="" selected>其他平台</option>
@@ -349,7 +354,7 @@
                         <option value="google" data-url="https://www.google.com">google.com</option>
                       </select>
                     </label>
-                    <label class="platform-url-label">* <span data-i18n="editor.startWebPage">启动网页</span>
+                    <label class="platform-url-label"><span class="label-title-row"><em class="req-mark">*</em> <span data-i18n="editor.startWebPage">启动网页</span></span>
                       <textarea id="editor-start-url" rows="2" placeholder="必须以 http:// 或 https:// 开头&#10;每行一个 URL，换行以添加多个" data-i18n-placeholder="editor.startUrlPh" autocomplete="off"></textarea>
                     </label>
                   </div>
@@ -557,8 +562,8 @@
                         <div class="roxy-icon-seg" id="editor-os-visual" role="radiogroup" aria-label="操作系统">
                           <button type="button" class="os-seg-btn active" data-os-val="Windows" title="Windows"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="#0078D4" d="M3 3h8.5v8.5H3V3zm9.5 0H21v8.5h-8.5V3zM3 12.5h8.5V21H3v-8.5zm9.5 0H21V21h-8.5v-8.5z"/></svg><span>Windows</span></button>
                           <button type="button" class="os-seg-btn" data-os-val="macOS" title="macOS"><span class="os-badge-mac">OS</span><span>macOS</span></button>
-                          <button type="button" class="os-seg-btn" data-os-val="Linux" title="Linux"><span>🐧</span><span>Linux</span></button>
-                          <button type="button" class="os-seg-btn" data-os-val="Android" title="Android"><span>🤖</span><span>Android</span></button>
+                          <button type="button" class="os-seg-btn" data-os-val="Linux" title="Linux"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9.5" fill="#334155"/><ellipse cx="12" cy="14" rx="4.5" ry="5" fill="#f8fafc"/><circle cx="10.4" cy="9.6" r="1" fill="#f8fafc"/><circle cx="13.6" cy="9.6" r="1" fill="#f8fafc"/><polygon points="12,10.8 10.3,12.5 13.7,12.5" fill="#f59e0b"/></svg><span>Linux</span></button>
+                          <button type="button" class="os-seg-btn" data-os-val="Android" title="Android"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true"><path d="M6 11.5a6 6 0 0112 0v5.5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 016 17v-5.5z" fill="#3ddc84"/><line x1="8.5" y1="6.8" x2="7" y2="4.2" stroke="#3ddc84" stroke-width="1.6" stroke-linecap="round"/><line x1="15.5" y1="6.8" x2="17" y2="4.2" stroke="#3ddc84" stroke-width="1.6" stroke-linecap="round"/><circle cx="9.8" cy="10" r="0.9" fill="#ffffff"/><circle cx="14.2" cy="10" r="0.9" fill="#ffffff"/></svg><span>Android</span></button>
                           <button type="button" class="os-seg-btn" data-os-val="iOS" title="iOS"><span class="os-badge-ios">iOS</span><span>iOS</span></button>
                         </div>
                         <select id="editor-os" hidden>
@@ -669,7 +674,7 @@
                         <option value="ar-SA">العربية</option>
                       </select>
                     </label>
-                    <label class="check-row" style="margin-top:22px"><input id="editor-lang-from-ip" type="checkbox" checked hidden> </label>
+                    <input id="editor-lang-from-ip" type="checkbox" checked hidden>
                   </div>
                 </div>
                 <div class="editor-section-card">
@@ -769,11 +774,11 @@
                         <button type="button" data-pill-val="bing"><span class="se-dot se-bing">b</span>Microsoft Bing</button>
                         <button type="button" data-pill-val="yahoo"><span class="se-dot se-yahoo">Y!</span>Yahoo</button>
                         <button type="button" data-pill-val="yandex"><span class="se-dot se-yandex">Я</span>Yandex</button>
-                        <button type="button" data-pill-val="duckduckgo"><span class="se-dot se-ddg">🦆</span>DuckDuckGo</button>
+                        <button type="button" data-pill-val="duckduckgo"><span class="se-dot se-ddg">D</span>DuckDuckGo</button>
                       </div>
                       <select id="editor-search-engine" hidden><option value="google">Google</option><option value="bing">Microsoft Bing</option><option value="yahoo">Yahoo</option><option value="yandex">Yandex</option><option value="duckduckgo">DuckDuckGo</option></select>
                     </div>
-                    <label></label>
+                    <div aria-hidden="true"></div>
                   </div>
                 </div>
 
@@ -937,7 +942,7 @@
                     </div>
                   </div>
                   <div class="roxy-mobile-sim-card" id="editor-mobile-sim-card">
-                    <div class="mobile-sim-group-title">⚡ 电池 / 🌐 网络 / 🦷 蓝牙模拟（移动设备专属增强）</div>
+                    <div class="mobile-sim-group-title"><i data-lucide="smartphone" aria-hidden="true"></i><span>电池 / 网络 / 蓝牙模拟（移动设备专属增强）</span></div>
                     <div class="roxy-field-row">
                       <span class="roxy-field-label">电池模拟</span>
                       <div class="roxy-pill-group" data-sync-select="#editor-battery">
@@ -1021,7 +1026,7 @@
                     <label><span data-i18n="editor.hwAccel">硬件加速模式
                       </span><select id="editor-gpu-mode"><option value="on">开启（使用宿主 GPU）</option><option value="off">关闭（软件渲染）</option></select>
                     </label>
-                    <label></label>
+                    <div aria-hidden="true"></div>
                   </div>
                   <label class="check-row" style="margin-top:12px"><input id="editor-no-sandbox" type="checkbox"> 禁用沙盒 — 容器/无特权 Linux 环境需要；会降低隔离强度</label>
                   <label style="margin-top:12px">自定义启动参数（高级，分号分隔）<input id="editor-custom-args" placeholder="例如 --mute；--disable-features=Translate"></label>
@@ -1080,7 +1085,7 @@
                 <label class="check-row"><input id="editor-dnt" type="checkbox" hidden> </label>
                 <label class="check-row"><input id="editor-port-scan" type="checkbox"> 端口扫描保护 — 阻止网站探测本机端口</label>
                 <label>允许被扫描的端口（可选，逗号分隔）<input id="editor-port-scan-allow" placeholder="例如：4000,4001（1–65535）"></label>
-                <label class="check-row"><input id="editor-ignore-https" type="checkbox"> 忽略 HTTPS 证书错误 — 过期/自签名证书不再拦截（对齐 Roxy「ignoreHttpsError」，注意中间人风险）</label>
+                <label class="check-row"><input id="editor-ignore-https" type="checkbox"> 忽略 HTTPS 证书错误 — 过期或自签名证书不再拦截（注意中间人风险）</label>
                 <label class="check-row"><input id="editor-cf-optimize" type="checkbox" checked> Cloudflare 验证优化 — 减少五秒盾卡住（可能略增被识别概率）</label>
               </section>
               <section class="editor-panel roxy-accordion-card" data-editor-panel="advanced">
@@ -1323,7 +1328,7 @@
                   <label class="check-row"><input id="editor-clear-cache" type="checkbox"> 启动时清除缓存</label>
                   <label class="check-row"><input id="editor-clear-cookies" type="checkbox"> 启动时清除 Cookies</label>
                   <label class="check-row"><input id="editor-clear-localstorage" type="checkbox"> 启动时清除 Local Storage / IndexedDB</label>
-                  <label class="check-row"><input id="editor-clear-history" type="checkbox"> 启动时清除历史记录（对齐 Roxy「启动浏览器前删除历史记录」）</label>
+                  <label class="check-row"><input id="editor-clear-history" type="checkbox"> 启动时清除历史记录（启动浏览器前清空浏览历史）</label>
                 </div>
                 <div class="advanced-card">
                   <strong data-i18n="editor.startupGuard">启动与网络守护</strong>
@@ -1345,9 +1350,8 @@
                     <label><span data-i18n="editor.googleLogin">是否开启谷歌登录
                       </span><select id="editor-google-login"><option value="1" data-i18n="editor.sizeOpen">开启</option><option value="0" data-i18n="editor.sizeClose">关闭</option><option value="2" selected data-i18n="editor.followSoftware">跟随软件设置</option></select>
                     </label>
-                    <label></label>
+                    <div aria-hidden="true"></div>
                   </div>
-                  <label class="check-row" hidden><input id="editor-allow-signin" type="checkbox"> 允许登录 Chrome</label>
                   <label data-i18n="editor.sessionStorageSyncPh" hidden><textarea id="editor-session-storages" rows="3"></textarea></label>
                 </div>
                 <div class="advanced-card">
@@ -1381,7 +1385,8 @@
               </section>
               <div class="editor-actions editor-sticky-footer">
                 <div class="footer-left-quick">
-                  <select id="editor-footer-group" title="所属项目/分组" onchange="const g=document.getElementById('editor-group');if(g){g.value=this.value;g.dispatchEvent(new Event('change',{bubbles:true}));}"></select>
+                  <span class="footer-group-label" data-i18n="editor.group">归属分组</span>
+                  <select id="editor-footer-group" title="所属项目/分组"></select>
                 </div>
                 <div class="footer-right-btns">
                   <button class="outline" id="editor-save-as-template" type="button"><i data-lucide="bookmark-plus"></i><span>存为新模板</span></button>
@@ -1390,7 +1395,6 @@
                 </div>
               </div>
             </form>
-            <button type="button" class="outline mini-btn editor-summary-toggle-btn" id="editor-summary-toggle-btn" title="展开/收起右侧概要面板"><i data-lucide="panel-right"></i><span>收起概要</span></button>
             <aside class="profile-summary" id="editor-profile-summary-rail">
               <div class="rail-tutorial" id="editor-rail-tutorial">
                 <strong data-i18n="editor.tutorial">窗口教程</strong>
@@ -1486,7 +1490,7 @@
               <span><i class="partial" aria-hidden="true"></i>部分环境已启用</span>
             </span>
           </div>
-          <div class="ext-category-bar" id="ext-category-bar">
+          <div class="ext-category-bar" id="ext-category-bar" hidden>
             <button type="button" class="group-chip active" data-ext-cat="all">全部扩展</button>
             <button type="button" class="group-chip" data-ext-cat="ecom">跨境电商</button>
             <button type="button" class="group-chip" data-ext-cat="social">社媒运营</button>
@@ -1494,7 +1498,7 @@
             <button type="button" class="group-chip" data-ext-cat="productivity">效率与翻译</button>
             <button type="button" class="group-chip" data-ext-cat="security">隐私与验证码</button>
           </div>
-          <div class="roxy-ext-market-grid" id="roxy-ext-market-grid"></div>
+          <div class="roxy-ext-market-grid" id="roxy-ext-market-grid" hidden></div>
           <div class="extension-grid" id="extension-grid"></div>
           <div class="empty" id="extension-empty" hidden>尚未添加扩展</div>
         </section>
@@ -1557,7 +1561,7 @@
               <span class="rpa-toolbar-right">流程数: <b id="rpa-flow-count">0</b></span>
             </div>
             <div class="rpa-empty-card" id="rpa-flow-empty">
-              <div class="rpa-empty-art">🤖</div>
+              <div class="rpa-empty-art"><i data-lucide="bot" aria-hidden="true"></i></div>
               <p>暂无流程，创建后可在此管理与运行；也可从「模板仓库」一键安装</p>
               <button class="primary" type="button" id="rpa-new-plan-2"><i data-lucide="plus"></i>创建任务流程</button>
             </div>
@@ -1576,6 +1580,7 @@
                 <label class="rpa-field">流程名称<input id="rpa-plan-name" placeholder="输入流程名称"></label>
                 <label class="rpa-field">运行环境（多选，需已启动）
                   <select id="rpa-profile-ids" multiple size="5"></select>
+                  <small class="field-hint rpa-profile-hint">若列表为空，请先在「窗口管理」启动至少一个浏览器环境</small>
                 </label>
                 <label class="rpa-field">步骤 JSON
                   <textarea id="rpa-steps-json" rows="14" spellcheck="false"></textarea>
@@ -1864,7 +1869,7 @@
             <div class="kernel-engine-hero-card is-chrome">
               <div class="keh-icon"><svg viewBox="0 0 256 256" width="36" height="36"><circle cx="128" cy="128" r="64" fill="#fff"/><path fill="#34a853" d="M96 183.4A63.7 63.7 0 0 1 72.6 160L17.2 64A128 128 0 0 0 128 256l55.4-96A64 64 0 0 1 96 183.4Z"/><path fill="#fbbc04" d="M192 128a63.7 63.7 0 0 1-8.6 32L128 256A128 128 0 0 0 238.9 64h-111a64 64 0 0 1 64 64Z"/><circle cx="128" cy="128" r="52" fill="#1a73e8"/><path fill="#ea4335" d="M96 72.6a63.7 63.7 0 0 1 32-8.6h110.8a128 128 0 0 0-221.7 0l55.5 96A64 64 0 0 1 96 72.6Z"/></svg></div>
               <div class="keh-body">
-                <div class="keh-title-row"><strong>Chromium 156 官方防关联内核</strong><span class="kernel-badge-pill kernel-badge-default">主力推荐</span></div>
+                <div class="keh-title-row"><strong>Chromium 官方防关联内核</strong><span class="kernel-badge-pill kernel-badge-default">主力推荐</span></div>
                 <p>支持 TLS JA3/JA4 指纹对齐、WebGPU 拓扑伪装、Canvas/Audio 硬件级噪声注入与 Chrome 扩展生态。</p>
               </div>
             </div>
@@ -1931,6 +1936,23 @@
             <button type="button" class="group-chip" data-sys-cat="storage">缓存目录与运行时</button>
           </div>
           <div class="settings-grid">
+<article class="storage-settings-card" id="ui-appearance-card" data-sys-group="general">
+  <div class="storage-settings-head">
+    <div>
+      <h3 data-i18n="theme.modern.name">默认界面</h3>
+      <p data-i18n="theme.modern.desc">现代简洁工作台（支持浅色与深色模式）</p>
+    </div>
+    <span id="theme-current" class="kernel-badge-pill kernel-badge-default" data-i18n="theme.modern.name">默认界面</span>
+  </div>
+  <div class="settings-row" style="margin-top:10px">
+    <span>外观模式</span>
+    <div class="theme-appearance-seg" id="theme-appearance" role="group" aria-label="Appearance mode">
+      <button type="button" data-color-mode="auto" data-i18n="theme.auto">跟随系统</button>
+      <button type="button" data-color-mode="light" data-i18n="theme.light">浅色</button>
+      <button type="button" data-color-mode="dark" data-i18n="theme.dark">深色</button>
+    </div>
+  </div>
+</article>
 <article class="storage-settings-card" id="global-workbench-defaults-card" data-sys-group="general">
   <div class="storage-settings-head">
     <div>
@@ -1963,7 +1985,7 @@
     </div>
   </div>
 </article>
-<article class="storage-settings-card" id="ui-locale-card">
+<article class="storage-settings-card" id="ui-locale-card" data-sys-group="general">
   <div class="storage-settings-head">
     <div>
       <h3 data-i18n="system.locale.title">界面语言</h3>
@@ -1977,7 +1999,7 @@
   </div>
   <p class="network-mode-hint" id="ui-locale-current" style="margin-top:8px"></p>
 </article>
-<article class="local-status-card" id="local-status-card">
+<article class="local-status-card" id="local-status-card" data-sys-group="storage">
   <div class="local-status-row">
     <i class="local-status-dot" aria-hidden="true"></i>
     <div>
@@ -1987,7 +2009,7 @@
   </div>
   <p class="local-status-desc" data-i18n="system.controlDesc">本机控制服务运行状态。</p>
 </article>
-<article class="storage-settings-card" id="app-update-card">
+<article class="storage-settings-card" id="app-update-card" data-sys-group="general">
   <div class="storage-settings-head">
     <div>
       <h3 data-i18n="system.update.title">检查更新</h3>
@@ -2001,11 +2023,11 @@
   </div>
   <p class="storage-warning" id="app-update-status" role="status" data-i18n="system.update.idle">尚未检查更新。</p>
 </article>
-<article class="storage-settings-card" id="launch-gate-card">
+<article class="storage-settings-card" id="launch-gate-card" data-sys-group="guard">
   <div class="storage-settings-head">
     <div>
       <h3 data-i18n="system.launchgate.title">启动保护</h3>
-      <p data-i18n="system.launchgate.desc">内存使用率或磁盘可用空间超出限制时停止打开窗口（对齐 Roxy 客户端设置，默认 95% / 8GB）。</p>
+      <p data-i18n="system.launchgate.desc">内存使用率或磁盘可用空间超出限制时停止打开窗口（默认 95% / 8GB）。</p>
     </div>
     <span id="launch-gate-badge">—</span>
   </div>
@@ -2018,7 +2040,7 @@
   </div>
   <p class="storage-warning" id="launch-gate-status" role="status" data-i18n="system.launchgate.idle">尚未保存。</p>
 </article>
-<article class="storage-settings-card" id="cloud-backup-card">
+<article class="storage-settings-card" id="cloud-backup-card" data-sys-group="cloud">
   <div class="storage-settings-head">
     <div>
       <h3>云同步（设置）</h3>
@@ -2060,7 +2082,7 @@
   </div>
   <div class="form-two" style="margin-top:10px">
     <label>加密密码（可选）<input id="cloud-passphrase" type="password" autocomplete="new-password" placeholder="设置后备份 AES 加密"></label>
-    <label>&nbsp;<span class="network-mode-hint" style="display:block;margin:8px 0 0">合并：同 ID 比 updatedAt，较新者胜；本地独有环境保留。</span></label>
+    <div class="cloud-merge-hint"><span class="network-mode-hint">合并：同 ID 比 updatedAt，较新者胜；本地独有环境保留。</span></div>
   </div>
   <div id="cloud-fields-local" class="cloud-provider-fields">
     <label>备份目录<code id="cloud-local-dir">未选择</code></label>
@@ -2134,23 +2156,29 @@
   </div>
   <p class="storage-warning" id="cloud-sync-status">尚未同步。单环境是否同步请在「编辑环境 → 偏好设置 → 云备份」中开关，主列表不放同步开关。</p>
 </article>
-<article><h3>运行时</h3><dl id="runtime-info"></dl></article><article><h3>能力状态</h3><dl><div><dt>真实浏览器进程</dt><dd class="ok">已启用</dd></div><div><dt>独立用户目录</dt><dd class="ok">已启用</dd></div><div><dt>扩展批量加载</dt><dd class="ok">已启用</dd></div><div><dt>Chrome DevTools Protocol</dt><dd class="ok">已启用</dd></div><div><dt>运行模式</dt><dd class="ok">纯本地</dd></div><div><dt>本机接口</dt><dd class="ok">127.0.0.1:50325</dd></div></dl></article>
-<article class="storage-settings-card" id="close-action-card"><div class="storage-settings-head"><div><h3 data-i18n="system.close.title">关闭窗口行为</h3><p data-i18n="system.close.desc">控制点击主窗口右上角关闭按钮时，是将程序最小化到系统托盘继续运行后台代理，还是完全退出程序。</p></div><span data-i18n="system.close.label">托盘常驻</span></div><div class="form-row" style="margin-top:12px;display:flex;gap:16px;align-items:center;flex-wrap:wrap;"><label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="radio" name="close-action-radio" value="ask"> <span data-i18n="system.close.ask">每次询问</span></label><label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="radio" name="close-action-radio" value="tray" checked> <span data-i18n="system.close.tray">最小化到系统托盘（保持浏览器与代理运行）</span></label><label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="radio" name="close-action-radio" value="exit"> <span data-i18n="system.close.exit">退出程序（停止所有运行中的环境）</span></label></div><p class="storage-warning" style="margin-top:10px;" data-i18n="system.close.hint">保持后台运行可保证各个浏览器环境的代理链路不中断。如需完全退出，可在系统托盘图标右键选择「彻底退出」。</p></article>
-<article class="storage-settings-card"><div class="storage-settings-head"><div><h3>环境缓存与数据位置</h3><p>各环境的 Chrome 用户目录、Cookie、缓存、本地存储、IndexedDB 和会话数据都会保存在这里。</p></div><span>本地保存</span></div><div class="storage-path-box"><small>当前目录</small><code id="profile-storage-path">正在读取...</code></div><div class="storage-actions"><button class="primary" id="choose-profile-storage" type="button">选择新目录</button><button class="outline" id="open-profile-storage" type="button">打开目录</button><button class="outline" id="reset-profile-storage" type="button">恢复默认位置</button></div><p class="storage-warning">修改前请先停止所有环境。新位置在环境下次启动时生效；旧目录中的数据不会自动移动或删除。</p></article></div></section>
+<article id="runtime-info-card" data-sys-group="storage"><h3>运行时</h3><dl id="runtime-info"></dl></article><article id="capability-status-card" data-sys-group="storage"><h3>能力状态</h3><dl><div><dt>真实浏览器进程</dt><dd class="ok">已启用</dd></div><div><dt>独立用户目录</dt><dd class="ok">已启用</dd></div><div><dt>扩展批量加载</dt><dd class="ok">已启用</dd></div><div><dt>Chrome DevTools Protocol</dt><dd class="ok">已启用</dd></div><div><dt>运行模式</dt><dd class="ok">纯本地</dd></div><div><dt>本机接口</dt><dd class="ok" id="system-local-api-endpoint">127.0.0.1:50325</dd></div></dl></article>
+<article class="storage-settings-card" id="close-action-card" data-sys-group="guard"><div class="storage-settings-head"><div><h3 data-i18n="system.close.title">关闭窗口行为</h3><p data-i18n="system.close.desc">控制点击主窗口右上角关闭按钮时，是将程序最小化到系统托盘继续运行后台代理，还是完全退出程序。</p></div><span data-i18n="system.close.label">托盘常驻</span></div><div class="form-row" style="margin-top:12px;display:flex;gap:16px;align-items:center;flex-wrap:wrap;"><label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="radio" name="close-action-radio" value="ask"> <span data-i18n="system.close.ask">每次询问</span></label><label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="radio" name="close-action-radio" value="tray" checked> <span data-i18n="system.close.tray">最小化到系统托盘（保持浏览器与代理运行）</span></label><label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="radio" name="close-action-radio" value="exit"> <span data-i18n="system.close.exit">退出程序（停止所有运行中的环境）</span></label></div><p class="storage-warning" style="margin-top:10px;" data-i18n="system.close.hint">保持后台运行可保证各个浏览器环境的代理链路不中断。如需完全退出，可在系统托盘图标右键选择「彻底退出」。</p></article>
+<article class="storage-settings-card" id="profile-storage-card" data-sys-group="storage"><div class="storage-settings-head"><div><h3>环境缓存与数据位置</h3><p>各环境的 Chrome 用户目录、Cookie、缓存、本地存储、IndexedDB 和会话数据都会保存在这里。</p></div><span>本地保存</span></div><div class="storage-path-box"><small>当前目录</small><code id="profile-storage-path">正在读取...</code></div><div class="storage-actions"><button class="primary" id="choose-profile-storage" type="button">选择新目录</button><button class="outline" id="open-profile-storage" type="button">打开目录</button><button class="outline" id="reset-profile-storage" type="button">恢复默认位置</button></div><p class="storage-warning">修改前请先停止所有环境。新位置在环境下次启动时生效；旧目录中的数据不会自动移动或删除。</p></article></div></section>
         <section class="view" id="view-templates">
           <div class="toolbar">
             <div class="toolbar-left">
-              <button class="primary" type="button" onclick="window.openWorkbenchEditorMode && window.openWorkbenchEditorMode('single')"><i data-lucide="plus"></i><span>新建窗口模板</span></button>
+              <button class="primary" id="templates-new-btn" type="button"><i data-lucide="plus"></i><span>新建窗口模板</span></button>
               <label class="search"><i data-lucide="search"></i><input id="templates-search-input" placeholder="搜索模板名称 / 分类 / 系统"></label>
               <span class="profile-total"><span>模板总数：</span><strong id="templates-total-count">0</strong></span>
             </div>
+            <div class="toolbar-right">
+              <div class="roxy-pill-group" id="templates-view-mode-switch">
+                <button type="button" class="active" data-tview="cards">卡片视图</button>
+                <button type="button" data-tview="table">列表视图</button>
+              </div>
+            </div>
           </div>
-          <div class="project-cards-grid" id="templates-card-grid" style="margin-bottom:14px"></div>
           <div class="extension-note">
             <strong>我的窗口模板</strong>
             <span>保存常用的操作系统、内核版本、User-Agent、分辨率、高级指纹与偏好设置；在「创建窗口」时可一键套用。</span>
           </div>
-          <div class="table-card">
+          <div class="project-cards-grid" id="templates-card-grid" style="margin-bottom:14px"></div>
+          <div class="table-card" id="templates-table-card" hidden>
             <table>
               <thead>
                 <tr><th>模板名称</th><th>分类</th><th>操作系统</th><th>内核</th><th>分辨率</th><th>默认启动页</th><th>创建时间</th><th>操作</th></tr>
@@ -2990,7 +3018,7 @@ USERNAME2:PASSWORD2:2FA{备注}
     <form method="dialog" id="cookie-robot-form">
       <div class="cookie-robot-hero">
         <div>
-          <h2>Cookie 机器人 🤖</h2>
+          <h2><i data-lucide="bot" aria-hidden="true"></i><span>Cookie 机器人</span></h2>
           <p>帮助新窗口生成浏览记录，降低被网站识别为异常环境的风险。</p>
         </div>
         <button value="cancel" type="submit" class="cr-close-btn" aria-label="关闭">×</button>

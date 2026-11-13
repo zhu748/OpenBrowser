@@ -51,34 +51,21 @@ function renderExtensions() {
   renderAppCenterTabs();
   const query = $('#extension-search').value.trim().toLowerCase();
   const grid = $('#extension-grid');
+  const marketBar = document.getElementById('ext-category-bar');
+  const marketGrid = document.getElementById('roxy-ext-market-grid');
+  const isRecommended = appCenterTab === 'recommended';
+  if (marketBar) marketBar.hidden = !isRecommended;
+  if (marketGrid) marketGrid.hidden = !isRecommended;
+  if (grid) grid.hidden = isRecommended;
+  if (typeof window.renderExtensionMarketShowcase === 'function') {
+    window.renderExtensionMarketShowcase();
+  }
   grid.replaceChildren();
 
-  if (appCenterTab === 'recommended') {
-    const list = (appCenterData.recommended || []).filter((item) => [item.name, item.description, item.category, ...(item.tags || [])].join(' ').toLowerCase().includes(query));
-    for (const app of list) {
-      const card = element('article', 'extension-card recommended');
-      const top = element('div', 'extension-top');
-      top.append(createExtensionIcon(app));
-      if (app.installed) top.append(element('span', 'status running', tx('已安装')));
-      card.append(top, element('h3', '', app.name), element('p', '', app.description || 'Chrome Web Store'));
-      const meta = element('div', 'extension-meta');
-      meta.append(element('span', '', app.category || 'app'), element('span', '', app.installed ? tx('已启用环境 ') + (app.assigned_profiles || 0) : tx('商店安装')));
-      card.append(meta);
-      const actions = element('div', 'card-actions');
-      if (app.installed && app.extension_id) {
-        const assign = element('button', 'primary', tx('批量分配'));
-        assign.dataset.extensionAssign = app.extension_id;
-        actions.append(assign);
-      } else {
-        const install = element('button', 'primary', tx('安装'));
-        install.dataset.storeInstall = app.store_url || app.store_id;
-        actions.append(install);
-      }
-      card.append(actions);
-      grid.append(card);
-    }
-    $('#extension-empty').hidden = list.length !== 0;
-    if (!list.length) $('#extension-empty').textContent = query ? tx('没有匹配的推荐应用') : tx('暂无推荐应用');
+  if (isRecommended) {
+    const visibleMarketCount = marketGrid ? marketGrid.children.length : (appCenterData.recommended || []).length;
+    $('#extension-empty').hidden = visibleMarketCount !== 0;
+    if (!visibleMarketCount) $('#extension-empty').textContent = query ? tx('没有匹配的推荐应用') : tx('暂无推荐应用');
     return;
   }
 

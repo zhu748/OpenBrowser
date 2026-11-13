@@ -13,7 +13,7 @@
 const UI_THEME_KEY = 'openbrowser-ui-skin-v1';
 const UI_COLOR_MODE_KEY = 'openbrowser-ui-color-mode-v1';
 const UI_THEMES = Object.freeze({
-  'modern': { nameKey: 'theme.modern.name', colorScheme: 'light' },
+  'modern': { nameKey: 'theme.modern.name', colorScheme: 'light', supportsColorMode: true },
 });
 
 function themeDisplayName(theme) {
@@ -54,37 +54,76 @@ try {
 } catch (_) {}
 
 function syncAppearanceControls(theme) {
-  const panel = $('#theme-appearance');
-  if (!panel) return;
   const definition = UI_THEMES[theme];
   const show = Boolean(definition?.supportsColorMode);
-  panel.hidden = !show;
-  panel.classList.toggle('is-visible', show);
-  panel.querySelectorAll('[data-color-mode]').forEach((button) => {
-    // Highlight by the user's preference (light/dark/auto), not the resolved mode.
-    const active = button.dataset.colorMode === uiColorPreference;
-    button.classList.toggle('active', active);
-    button.setAttribute('aria-pressed', String(active));
-  });
+  const tr = (key) => (typeof t === 'function' ? t(key) : key);
+  const modeLabel = uiColorPreference === 'auto'
+    ? tr('theme.auto')
+    : (uiColorMode === 'dark' ? tr('theme.dark') : tr('theme.light'));
+
+  const panel = document.getElementById('theme-appearance');
+  if (panel) {
+    panel.hidden = !show;
+    panel.classList.toggle('is-visible', show);
+    panel.querySelectorAll('[data-color-mode]').forEach((button) => {
+      // Highlight by the user's preference (light/dark/auto), not the resolved mode.
+      const active = button.dataset.colorMode === uiColorPreference;
+      button.classList.toggle('active', active);
+      button.classList.toggle('on', active);
+      button.setAttribute('aria-pressed', String(active));
+    });
+  }
+
+  const cycleBtn = document.getElementById('color-mode-cycle-btn');
+  if (cycleBtn) {
+    cycleBtn.hidden = !show;
+    cycleBtn.dataset.colorPref = uiColorPreference;
+    cycleBtn.dataset.colorMode = uiColorMode;
+    cycleBtn.setAttribute('aria-label', modeLabel);
+    cycleBtn.setAttribute('title', modeLabel);
+    const labelEl = cycleBtn.querySelector('.color-mode-label');
+    if (labelEl) labelEl.textContent = modeLabel;
+    cycleBtn.querySelectorAll('[data-mode-icon]').forEach((iconEl) => {
+      iconEl.hidden = iconEl.dataset.modeIcon !== uiColorPreference;
+    });
+  }
+}
+
+function cycleColorModePreference() {
+  const order = systemPrefersDark() ? ['auto', 'light', 'dark'] : ['auto', 'dark', 'light'];
+  const idx = order.indexOf(uiColorPreference);
+  const next = order[(idx + 1) % order.length];
+  applyColorMode(next, true);
+}
+
+function syncDocumentColorScheme(effectiveScheme) {
+  const rootEl = typeof document !== 'undefined' ? document.documentElement : null;
+  if (rootEl) {
+    if (rootEl.style) rootEl.style.colorScheme = effectiveScheme;
+    if (rootEl.dataset) rootEl.dataset.colorMode = effectiveScheme;
+  }
+  const meta = typeof document !== 'undefined' && typeof document.querySelector === 'function'
+    ? document.querySelector('meta[name="color-scheme"]')
+    : null;
+  if (meta) meta.setAttribute('content', effectiveScheme === 'dark' ? 'dark light' : 'light dark');
 }
 
 function applyColorMode(pref, persist = true) {
   uiColorPreference = (pref === 'dark' || pref === 'light' || pref === 'auto') ? pref : 'auto';
   uiColorMode = resolveColorMode(uiColorPreference);
-  document.documentElement.dataset.colorMode = uiColorMode;
   if (persist) {
     try { localStorage.setItem(UI_COLOR_MODE_KEY, uiColorPreference); } catch (_) {}
   }
-  const theme = document.documentElement.dataset.uiTheme || 'modern';
+  const theme = document.documentElement?.dataset?.uiTheme || 'modern';
   const definition = UI_THEMES[theme];
   const effectiveScheme = definition?.supportsColorMode ? uiColorMode : (definition?.colorScheme || 'dark');
-  document.documentElement.style.colorScheme = effectiveScheme;
-  document.documentElement.dataset.colorMode = effectiveScheme;
+  syncDocumentColorScheme(effectiveScheme);
 
-  const current = $('#theme-current');
+  const current = document.getElementById('theme-current');
+  const tr = (key) => (typeof t === 'function' ? t(key) : key);
   if (current) {
     current.textContent = definition?.supportsColorMode
-      ? `${themeDisplayName(theme)} · ${uiColorPreference === 'auto' ? t('theme.auto') : (uiColorMode === 'dark' ? t('theme.dark') : t('theme.light'))}`
+      ? `${themeDisplayName(theme)} · ${uiColorPreference === 'auto' ? tr('theme.auto') : (uiColorMode === 'dark' ? tr('theme.dark') : tr('theme.light'))}`
       : themeDisplayName(theme);
   }
 
@@ -95,27 +134,29 @@ function applyColorMode(pref, persist = true) {
       colorMode: effectiveScheme
     });
   } catch (_) {}
-  requestAnimationFrame(() => {
-    refreshIcons();
-    if (typeof renderProfiles === 'function') renderProfiles();
-    if (typeof renderSessions === 'function') renderSessions();
-  });
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(() => {
+      if (typeof refreshIcons === 'function') refreshIcons();
+      if (typeof renderProfiles === 'function') renderProfiles();
+      if (typeof renderSessions === 'function') renderSessions();
+    });
+  }
 }
 
 function applyUiTheme(value, persist = true) {
-  closeSelectMenu();
+  if (typeof closeSelectMenu === 'function') closeSelectMenu();
   // The refactored default UI is the only skin; stale saved selections fall back to it.
   const theme = Object.hasOwn(UI_THEMES, value) ? value : 'modern';
   const definition = UI_THEMES[theme];
-  document.documentElement.dataset.uiTheme = theme;
+  if (document.documentElement?.dataset) document.documentElement.dataset.uiTheme = theme;
   const effectiveScheme = definition?.supportsColorMode ? uiColorMode : definition.colorScheme;
-  document.documentElement.style.colorScheme = effectiveScheme;
-  document.documentElement.dataset.colorMode = effectiveScheme;
+  syncDocumentColorScheme(effectiveScheme);
   if (persist) { try { localStorage.setItem(UI_THEME_KEY, theme); } catch (_) {} }
-  const current = $('#theme-current');
+  const current = document.getElementById('theme-current');
+  const tr = (key) => (typeof t === 'function' ? t(key) : key);
   if (current) {
     current.textContent = definition?.supportsColorMode
-      ? `${themeDisplayName(theme)} · ${uiColorPreference === 'auto' ? t('theme.auto') : (uiColorMode === 'dark' ? t('theme.dark') : t('theme.light'))}`
+      ? `${themeDisplayName(theme)} · ${uiColorPreference === 'auto' ? tr('theme.auto') : (uiColorMode === 'dark' ? tr('theme.dark') : tr('theme.light'))}`
       : themeDisplayName(theme);
   }
   syncAppearanceControls(theme);
@@ -127,11 +168,39 @@ function applyUiTheme(value, persist = true) {
     });
   } catch (_) {}
   // Re-apply Lucide after theme CSS (stroke / currentColor) is in effect
-  requestAnimationFrame(() => {
-    refreshIcons();
-    if (typeof renderProfiles === 'function') renderProfiles();
-    if (typeof renderSessions === 'function') renderSessions();
-  });
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(() => {
+      if (typeof refreshIcons === 'function') refreshIcons();
+      if (typeof renderProfiles === 'function') renderProfiles();
+      if (typeof renderSessions === 'function') renderSessions();
+    });
+  }
+}
+
+function initAppearanceEventWiring() {
+  if (typeof document === 'undefined') return;
+  if (typeof document.addEventListener === 'function') {
+    document.addEventListener('click', (event) => {
+      const cycleBtn = event.target?.closest?.('#color-mode-cycle-btn');
+      if (cycleBtn) {
+        cycleColorModePreference();
+        return;
+      }
+      const modeBtn = event.target?.closest?.('#theme-appearance [data-color-mode]');
+      if (modeBtn) {
+        applyColorMode(modeBtn.dataset.colorMode, true);
+      }
+    });
+  }
+  syncAppearanceControls(document.documentElement?.dataset?.uiTheme || 'modern');
+}
+
+if (typeof document !== 'undefined') {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initAppearanceEventWiring, { once: true });
+  } else {
+    initAppearanceEventWiring();
+  }
 }
 
 let savedUiTheme = 'modern';

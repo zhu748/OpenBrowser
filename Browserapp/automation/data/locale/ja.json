@@ -36,7 +36,7 @@
   "editor.sslHint": "0x0004 / 0x0005 = RC4、0x000a = 3DES。最新カーネルは既定でRC4 / 3DESを無効化しており、より厳しいサイト要件への対応用です。",
   "editor.sslCardDesc": "ハードウェアアクセラレーション、サンドボックス、既定検索エンジン、カスタム起動パラメータ",
   "theme.modern.name": "デフォルトUI",
-  "theme.modern.desc": "刷新した標準ライトワークスペース",
+  "theme.modern.desc": "ライト/ダーク両モード対応のモダンワークスペース",
   "theme.auto": "システムに従う",
   "theme.dark": "ダーク",
   "theme.light": "ライト",
@@ -321,7 +321,7 @@
   "system.update.unsupported": "No published installer is available for this platform.",
   "system.update.error": "Update check failed: {message}",
   "system.launchgate.title": "Launch protection",
-  "system.launchgate.desc": "Stop opening windows when memory usage or free disk space exceeds its limit (Roxy client settings, defaults 95% / 8GB).",
+  "system.launchgate.desc": "メモリ使用率または空きディスク容量が上限を超えた場合、ウィンドウの起動を停止します（既定値 95% / 8GB）。",
   "system.launchgate.memory": "Memory usage limit (%)",
   "system.launchgate.disk": "Free disk space floor (GB)",
   "system.launchgate.save": "Save settings",
@@ -748,5 +748,13 @@
   "transfer.recipientNote": "受取人のメモ",
   "transfer.includeCookies": "Cookie を含める",
   "transfer.generateOfflineCode": "オフライン共有コードを生成",
-  "cookie.blockCommonVideo": "一般的な動画リソースをブロック"
+  "cookie.blockCommonVideo": "一般的な動画リソースをブロック",
+  "view.templates": "テンプレート",
+  "view.templates.sub": "OSプロファイル・ウィンドウサイズ・起動デフォルトの管理",
+  "view.accounts": "アカウント管理",
+  "view.accounts.sub": "ログイン資格情報の一元管理、連携ウィンドウ作成と一括エクスポート",
+  "view.proxy-add": "プロキシ追加",
+  "view.proxy-add.sub": "単体自動解析・テキスト一括インポート・一括接続テスト",
+  "view.account-add": "アカウント追加",
+  "view.account-add.sub": "単体追加・行単位の一括解析・Excel / CSV / TXT テンプレート読込"
 }

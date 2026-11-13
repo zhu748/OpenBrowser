@@ -25,7 +25,7 @@
   grid-template-columns: 8px 1fr;
   gap: 8px;
   padding: 8px 0;
-  border-bottom: 1px solid #f0f2f6;
+  border-bottom: 1px solid var(--border);
 }
 .audit-row i {
   width: 7px;
@@ -38,11 +38,11 @@
 .audit-row.warn i { background: #e69a18; }
 .audit-row strong,
 .audit-row small { display: block; }
-.audit-row strong { color: #344158; font-size: 9px; }
+.audit-row strong { color: var(--theme-text); font-size: 11px; }
 .audit-row small {
   margin-top: 3px;
-  color: #7b8799;
-  font-size: 8px;
+  color: var(--theme-muted);
+  font-size: 10px;
   line-height: 1.45;
 }
 
@@ -51,13 +51,13 @@
 @media (max-width:1200px){.rpa-layout{grid-template-columns:1fr}}
 .rpa-plan-list{max-height:420px;overflow:auto}
 .rpa-plan-list tr{cursor:pointer}
-.rpa-plan-list tr.active{background:#edf2ff}
-.rpa-main label{display:block;font-size:13px;color:#52617a}
-.rpa-main input,.rpa-main select,.rpa-main textarea{margin-top:6px;width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:8px;padding:10px 12px;font:inherit;color:inherit;background:#fff}
-.api-code-block{background:#0f172a;color:#e2e8f0;border-radius:10px;padding:12px 14px;font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;word-break:break-all}
-.api-endpoint-list{margin:0;padding-left:18px;color:#334155;line-height:1.8;font-size:13px}
-.api-endpoint-list code{font-size:12px;background:#f1f5f9;padding:2px 6px;border-radius:4px}
-.api-endpoint-list small{color:#94a3b8;margin-left:6px}
+.rpa-plan-list tr.active{background:var(--theme-active)}
+.rpa-main label{display:block;font-size:13px;color:var(--theme-muted)}
+.rpa-main input,.rpa-main select,.rpa-main textarea{margin-top:6px;width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:8px;padding:10px 12px;font:inherit;color:var(--theme-text);background:var(--theme-input)}
+.api-code-block{background:#0f172a;color:#e2e8f0;border:1px solid var(--border);border-radius:10px;padding:12px 14px;font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;word-break:break-all}
+.api-endpoint-list{margin:0;padding-left:18px;color:var(--theme-text);line-height:1.85;font-size:13px}
+.api-endpoint-list code{font-size:12px;background:var(--theme-surface-alt);color:var(--theme-text);padding:2px 6px;border-radius:4px}
+.api-endpoint-list small{color:var(--theme-muted);margin-left:6px}
 
 /* ===== RPA / API pages — follow app theme tokens ===== */
 .view.rpa-view{
@@ -65,13 +65,13 @@
   color:var(--theme-text);
   min-height:calc(100vh - 120px);
 }
-/* Dark polish for RPA on dark themes */
-html[data-theme-mode="dark"] .rpa-banner{
+/* Dark polish for RPA on dark color mode */
+html[data-color-mode="dark"] .rpa-banner{
   background:var(--theme-soft);
   border-color:var(--border);
   color:var(--theme-accent-strong);
 }
-html[data-theme-mode="dark"] .rpa-store-card:hover{
+html[data-color-mode="dark"] .rpa-store-card:hover{
   box-shadow:0 0 0 1px var(--blue), 0 16px 40px rgba(0,0,0,.35);
 }
 .rpa-banner{

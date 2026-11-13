@@ -46,7 +46,7 @@
     return [
       {
         id: 'tpl-win11-ecom',
-        name: '美区跨境电商主力模板 (Win11 + Chrome 156)',
+        name: '美区跨境电商主力模板 (Win11 + Chromium)',
         category: '跨境电商',
         os: 'Windows',
         osVersion: 'Windows 11',
@@ -61,7 +61,7 @@
       },
       {
         id: 'tpl-mac-social',
-        name: '海外社媒矩阵防关联模板 (macOS + Chrome 156)',
+        name: '海外社媒矩阵防关联模板 (macOS + Chromium)',
         category: '社媒运营',
         os: 'macOS',
         osVersion: 'macOS 15',
@@ -420,6 +420,13 @@
           card.classList.toggle('is-collapsed');
           const icon = accToggle.querySelector('.roxy-acc-symbol');
           if (icon) icon.textContent = card.classList.contains('is-collapsed') ? '+' : '−';
+          const toggleBtn = document.getElementById('editor-expand-all-btn');
+          if (toggleBtn) {
+            const allExpanded = [...document.querySelectorAll('#view-profile-editor .roxy-accordion-card')].every((c) => !c.classList.contains('is-collapsed'));
+            toggleBtn.dataset.expanded = allExpanded ? '1' : '0';
+            const span = toggleBtn.querySelector('span');
+            if (span) span.textContent = typeof tx === 'function' ? tx(allExpanded ? '折叠次要项' : '展开全部') : (allExpanded ? '折叠次要项' : '展开全部');
+          }
         }
       }
     });
@@ -438,8 +445,26 @@
     input.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
+  function syncEditorAccordionsState(collapseSecondary = true) {
+    for (const key of ['basic', 'proxy', 'privacy', 'advanced']) {
+      const card = document.querySelector(`#view-profile-editor .editor-panel[data-editor-panel="${key}"]`);
+      if (!card) continue;
+      const shouldCollapse = Boolean(collapseSecondary && key !== 'basic');
+      card.classList.toggle('is-collapsed', shouldCollapse);
+      const sym = card.querySelector('.roxy-acc-symbol');
+      if (sym) sym.textContent = shouldCollapse ? '+' : '−';
+    }
+    const toggleBtn = document.getElementById('editor-expand-all-btn');
+    if (toggleBtn) {
+      const allOpen = !collapseSecondary;
+      toggleBtn.dataset.expanded = allOpen ? '1' : '0';
+      const span = toggleBtn.querySelector('span');
+      if (span) span.textContent = typeof tx === 'function' ? tx(allOpen ? '折叠次要项' : '展开全部') : (allOpen ? '折叠次要项' : '展开全部');
+    }
+  }
+
   // --- Editor Mode Switching (Single Create / Batch Create / Window Import / AI Create / Edit) ---
-  function openWorkbenchEditorMode(mode = 'single', profileId = null) {
+  function openWorkbenchEditorMode(mode = 'single', profileId = null, options = {}) {
     if (!['edit', 'single', 'batch', 'import', 'ai'].includes(mode)) throw new Error('创建模式无效');
     if (mode !== 'edit') openProfileEditor.cancel?.();
     const form = document.getElementById('profile-editor-form');
@@ -474,6 +499,7 @@
       if (aiCard) aiCard.hidden = true;
       if (idRow) idRow.hidden = false;
       if (submitBtn) submitBtn.textContent = typeof tx === 'function' ? tx('保存') : '保存';
+      syncEditorAccordionsState(options.collapseSecondary !== false);
       setTimeout(syncAllPillBarsFromControls, 60);
       return;
     }
@@ -501,6 +527,7 @@
 
     // Prepare a fresh draft in the editor form for creation
     prepareFreshCreateDraft();
+    syncEditorAccordionsState(options.collapseSecondary !== false);
     setTimeout(syncAllPillBarsFromControls, 50);
     if (typeof switchView === 'function') switchView('profile-editor');
   }
@@ -961,7 +988,7 @@
     sel.replaceChildren();
     sel.appendChild(new Option('不使用模板', ''));
     for (const tpl of windowTemplates) {
-      sel.appendChild(new Option(`📋 ${tpl.name}`, tpl.id));
+      sel.appendChild(new Option(tpl.name, tpl.id));
     }
     if (prev && [...sel.options].some((o) => o.value === prev)) sel.value = prev;
     if (typeof syncThemedSelect === 'function') syncThemedSelect(sel);
@@ -1000,6 +1027,14 @@
     if (typeof toast === 'function') toast(`已应用模板「${tpl.name}」`, { tone: 'success' });
   }
 
+  function formatOsLabel(os, osVersion) {
+    const base = String(os || '').trim();
+    const ver = String(osVersion || '').trim();
+    if (!ver) return base;
+    if (!base) return ver;
+    return ver.toLowerCase().startsWith(base.toLowerCase()) ? ver : `${base} ${ver}`;
+  }
+
   function renderTemplatesView() {
     const tbody = document.getElementById('templates-table-tbody');
     const countEl = document.getElementById('templates-total-count');
@@ -1011,8 +1046,8 @@
       tr.innerHTML = `
         <td><strong>${escapeHtml(tpl.name)}</strong></td>
         <td><span class="group-badge group-badge-compact">${escapeHtml(tpl.category || '通用模板')}</span></td>
-        <td>${getOsIconSvg(tpl.os)} ${escapeHtml(tpl.os)} ${escapeHtml(tpl.osVersion || '')}</td>
-        <td>${(tpl.engine === 'firefox' ? 'Firefox' : 'Chrome 156')}</td>
+        <td>${getOsIconSvg(tpl.os)} ${escapeHtml(formatOsLabel(tpl.os, tpl.osVersion))}</td>
+        <td>${(tpl.engine === 'firefox' ? 'Firefox' : 'Chromium')}</td>
         <td>${escapeHtml(tpl.width || 1280)} × ${escapeHtml(tpl.height || 820)}</td>
         <td>${escapeHtml(tpl.platform?.startUrl || '空白页')}</td>
         <td>${escapeHtml(new Date(tpl.createdAt || Date.now()).toLocaleDateString())}</td>
@@ -1071,7 +1106,7 @@
         <td>
           <div class="acc-pass-cell">
             <code class="acc-pass-val" data-masked="1">••••••••</code>
-            <button type="button" class="acc-eye-toggle" data-acc-id="${escapeHtml(acc.id)}" title="显示/隐藏密码">👁</button>
+            <button type="button" class="acc-eye-toggle" data-acc-id="${escapeHtml(acc.id)}" title="显示/隐藏密码" aria-label="显示/隐藏密码"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button>
           </div>
         </td>
         <td>${escapeHtml(acc.remark || '—')}</td>
@@ -1095,7 +1130,7 @@
     if (sampleWithIp) {
       pillText.textContent = `${sampleWithIp.exitCountryCode || 'CN'} (${sampleWithIp.exitIp})`;
     } else {
-      pillText.textContent = 'CN/Local (127.0.0.1)';
+      pillText.textContent = typeof t === 'function' ? t('profiles.direct') : '本地直连';
     }
   }
 
@@ -1124,6 +1159,7 @@
     document.querySelectorAll('#view-profile-editor .editor-tabs button[data-editor-tab]').forEach((tabBtn) => {
       tabBtn.addEventListener('click', () => {
         const key = tabBtn.dataset.editorTab;
+        if (typeof setEditorTab === 'function') setEditorTab(key);
         const panel = document.querySelector(`#view-profile-editor .editor-panel[data-editor-panel="${key}"]`);
         if (panel) {
           panel.classList.remove('is-collapsed');
@@ -1134,11 +1170,17 @@
       });
     });
 
-    // Quick Create / Sidebar Create -> Open full-page 1:1 Create Window view
+    document.getElementById('editor-expand-all-btn')?.addEventListener('click', () => {
+      const btn = document.getElementById('editor-expand-all-btn');
+      const expandAll = btn?.dataset.expanded !== '1';
+      syncEditorAccordionsState(!expandAll);
+    });
+
+    // Full Create (#quick-create-fullpage) -> open full-page create mode with all 4 accordions expanded
     document.getElementById('quick-create-fullpage')?.addEventListener('click', (e) => {
       e.preventDefault();
       editingProfileId = null;
-      openWorkbenchEditorMode('single');
+      openWorkbenchEditorMode('single', null, { collapseSecondary: false });
     });
 
     // Create Mode Sub-tab clicks (单个创建 / 批量创建 / 窗口导入 / AI 批量创建)
@@ -1210,6 +1252,7 @@
       saveWindowTemplates([tpl, ...windowTemplates]);
       populateTemplateSelects();
       renderTemplatesView();
+      renderTemplateCardsGrid();
       if (typeof toast === 'function') toast(`已保存为新模板：「${tpl.name}」`, { tone: 'success' });
     }));
 
@@ -1569,6 +1612,7 @@
       if (delId) {
         saveWindowTemplates(windowTemplates.filter((t) => t.id !== delId));
         renderTemplatesView();
+        renderTemplateCardsGrid();
         populateTemplateSelects();
         if (typeof toast === 'function') toast('模板已删除');
       }
@@ -1598,7 +1642,7 @@
     }));
 
     document.getElementById('account-create-btn')?.addEventListener('click', () => {
-      document.getElementById('account-pool-dialog')?.showModal();
+      if (typeof switchView === 'function') switchView('account-add');
     });
     document.getElementById('account-pool-form')?.addEventListener('submit', runAction(async (e) => {
       e.preventDefault();
@@ -1895,7 +1939,18 @@
       }
     });
 
-    // 2. Editor Summary Rail Toggle (展开/收起概要)
+    // 2. Editor Summary Rail Toggle (展开/收起概要) & CSP-clean form wiring
+    document.getElementById('editor-footer-group')?.addEventListener('change', (e) => {
+      const mainGroup = document.getElementById('editor-group');
+      if (mainGroup) {
+        mainGroup.value = e.target.value;
+        mainGroup.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    });
+    document.getElementById('templates-new-btn')?.addEventListener('click', () => {
+      openWorkbenchEditorMode('single');
+    });
+
     const sumToggleBtn = document.getElementById('editor-summary-toggle-btn');
     const sumRail = document.getElementById('editor-profile-summary-rail');
     const envEditor = document.querySelector('#view-profile-editor .environment-editor');
@@ -1952,7 +2007,7 @@
       for (const [tag, count] of entries) {
         const tr = document.createElement('tr');
         tr.innerHTML = `
-          <td><span class="group-badge group-badge-compact">🏷️ ${escapeHtml(tag)}</span></td>
+          <td><span class="group-badge group-badge-compact"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"/><path d="M7 7h.01"/></svg><span>${escapeHtml(tag)}</span></span></td>
           <td>${escapeHtml(count)} 个窗口</td>
           <td>
             <div class="actions">
@@ -2000,34 +2055,7 @@
       }
     }));
 
-    // 5. Floating Dark Batch Pill Bar (#roxy-floating-batch-bar)
-    const syncFloatingBatchBar = () => {
-      const bar = document.getElementById('roxy-floating-batch-bar');
-      const txt = document.getElementById('fbb-selected-text');
-      if (!bar || !txt) return;
-      const selectedCount = window.selectedProfiles?.size || 0;
-      const total = (window.ui?.profiles || []).filter((p) => !p.trashed).length;
-      bar.hidden = selectedCount === 0;
-      txt.textContent = `${selectedCount}/${total} 已选中`;
-    };
-    document.getElementById('profile-table')?.addEventListener('change', () => setTimeout(syncFloatingBatchBar, 20));
-    document.getElementById('select-all-profiles')?.addEventListener('change', () => setTimeout(syncFloatingBatchBar, 20));
-    document.getElementById('fbb-clear-btn')?.addEventListener('click', () => {
-      window.selectedProfiles?.clear();
-      if (typeof renderProfiles === 'function') renderProfiles();
-      syncFloatingBatchBar();
-    });
-    document.getElementById('fbb-open-btn')?.addEventListener('click', () => document.getElementById('start-selected')?.click());
-    document.getElementById('fbb-close-btn')?.addEventListener('click', () => document.getElementById('stop-selected')?.click());
-    document.getElementById('fbb-delete-btn')?.addEventListener('click', () => document.getElementById('delete-selected')?.click());
-    document.getElementById('fbb-transfer-btn')?.addEventListener('click', () => openTransferWindowDialog());
-    document.getElementById('fbb-upload-btn')?.addEventListener('click', () => document.getElementById('upload-window-dialog')?.showModal());
-    document.getElementById('fbb-proxy-btn')?.addEventListener('click', () => {
-      const firstId = [...(window.selectedProfiles || [])][0];
-      if (firstId) openQuickProxyDrawer(firstId);
-    });
-
-    // 6. Full-Page Add Proxy IP Workbench (#view-proxy-add)
+    // 5. Full-Page Add Proxy IP Workbench (#view-proxy-add)
     const parseSmartProxyLine = (line, defaultProto = 'socks5') => {
       let raw = String(line || '').trim();
       if (!raw) return null;
@@ -2211,16 +2239,7 @@
       toast(failed.length ? `已保存 ${saved} 条，${failed.length} 条失败；失败记录已保留，可重试：${failed[0].saveError}` : `成功批量保存 ${saved} 条代理 IP`, { tone: failed.length ? 'error' : 'success' });
     }));
 
-    // 7. Full-Page Add Platform Account Workbench (#view-account-add)
-    const accBtn = document.getElementById('account-create-btn');
-    if (accBtn) {
-      // Replace modal open with full-page 1:1 Add Account view
-      const newAccBtn = accBtn.cloneNode(true);
-      accBtn.parentNode.replaceChild(newAccBtn, accBtn);
-      newAccBtn.addEventListener('click', () => {
-        if (typeof switchView === 'function') switchView('account-add');
-      });
-    }
+    // 6. Full-Page Add Platform Account Workbench (#view-account-add)
     document.getElementById('acc-add-back')?.addEventListener('click', () => {
       if (typeof switchView === 'function') switchView('accounts');
     });
@@ -2439,53 +2458,31 @@
       if (masked) setTimeout(() => { if (cell.isConnected) { cell.textContent = '••••••••'; cell.dataset.masked = '1'; } }, 10000);
       cell.dataset.masked = masked ? '0' : '1';
     }));
-
-    // Quick Create (#create-profile) -> open workbench editor with secondary accordions collapsed (1:1 Roxy Quick Create)
-    const cpBtn = document.getElementById('create-profile');
-    if (cpBtn) {
-      const clonedCp = cpBtn.cloneNode(true);
-      cpBtn.parentNode.replaceChild(clonedCp, cpBtn);
-      clonedCp.addEventListener('click', () => {
-        editingProfileId = null;
-        openWorkbenchEditorMode('single');
-        setTimeout(() => {
-          ['proxy', 'privacy', 'advanced'].forEach((panelKey) => {
-            const card = document.querySelector(`#view-profile-editor .editor-panel[data-editor-panel="${panelKey}"]`);
-            if (card) {
-              card.classList.add('is-collapsed');
-              const sym = card.querySelector('.roxy-acc-symbol');
-              if (sym) sym.textContent = '+';
-            }
-          });
-        }, 40);
-      });
-    }
-
-    // Full Create (#quick-create-fullpage) -> ensure all 4 accordions are expanded
-    document.getElementById('quick-create-fullpage')?.addEventListener('click', () => {
-      setTimeout(() => {
-        document.querySelectorAll('#view-profile-editor .roxy-accordion-card').forEach((card) => {
-          card.classList.remove('is-collapsed');
-          const sym = card.querySelector('.roxy-acc-symbol');
-          if (sym) sym.textContent = '−';
-        });
-      }, 40);
-    });
   }
+
+  const MARKET_PUZZLE_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19.439 7.85c-.049.322.059.648.289.878l1.568 1.568c.47.47.706 1.087.706 1.704s-.235 1.233-.706 1.704l-1.611 1.611a.98.98 0 0 1-.837.276c-.47-.07-.802-.48-.968-.925a2.501 2.501 0 1 0-3.214 3.214c.446.166.855.497.925.968a.979.979 0 0 1-.276.837l-1.61 1.61a2.404 2.404 0 0 1-1.705.707 2.402 2.402 0 0 1-1.704-.706l-1.568-1.568a1.026 1.026 0 0 0-.877-.29c-.493.074-.84.504-1.02.968a2.5 2.5 0 1 1-3.237-3.237c.464-.18.894-.527.967-1.02a1.026 1.026 0 0 0-.289-.877l-1.568-1.568A2.402 2.402 0 0 1 1.998 12c0-.617.236-1.234.706-1.704L4.23 8.77c.24-.24.581-.353.917-.303.515.077.877.528 1.073 1.01a2.5 2.5 0 1 0 3.259-3.259c-.482-.196-.933-.558-1.01-1.073-.05-.336.062-.676.303-.917l1.525-1.525A2.402 2.402 0 0 1 12 1.998c.617 0 1.234.236 1.704.706l1.568 1.568c.23.23.556.338.877.29.493-.074.84-.504 1.02-.968a2.5 2.5 0 1 1 3.237 3.237c-.464.18-.894.527-.967 1.02Z"/></svg>';
 
 
   // =========================================================================
-  // Round 6: Autonomous Completion of All Remaining Secondary Views
+  // Secondary Views Completion
   // (Project Cards, Extension Market Showcase, Template Cards, Sync Matrix,
   //  Log Filter & Export, and System Settings Category Navigation)
   // =========================================================================
   function marketApplications() {
-    return (appCenterData.recommended || []).map((app) => ({ ...app,
-      cat: app.category === 'web3' ? 'web3' : ['privacy', 'security'].includes(app.category) ? 'security'
-        : app.tags?.includes('cookie') ? 'ecom' : 'productivity',
-      desc: app.description || '', color: '#2563eb', icon: '🧩',
-      enabled: app.status === 'enabled', version: app.version || '未安装',
-    }));
+    const palette = { web3: '#7c3aed', security: '#0ea5e9', ecom: '#2563eb', productivity: '#059669' };
+    return (appCenterData.recommended || []).map((app) => {
+      const cat = app.category === 'web3' ? 'web3' : ['privacy', 'security'].includes(app.category) ? 'security'
+        : app.tags?.includes('cookie') ? 'ecom' : 'productivity';
+      return {
+        ...app,
+        cat,
+        desc: app.description || '',
+        color: palette[cat] || '#2563eb',
+        iconUrl: app.icon_url || app.iconUrl || '',
+        enabled: app.status === 'enabled',
+        version: app.version || (typeof t === 'function' ? t('system.kernel.badgeNone') : '未安装'),
+      };
+    });
   }
 
   function renderProjectCardsGrid() {
@@ -2544,10 +2541,10 @@
       card.className = 'roxy-project-card';
       card.innerHTML = `
         <div class="rpc-head">
-          <span class="rpc-mark" style="background:#eff6ff;color:#2563eb">${getOsIconSvg(tpl.os)}</span>
+          <span class="rpc-mark tpl-card-icon">${getOsIconSvg(tpl.os)}</span>
           <div class="rpc-title-wrap">
             <strong>${escapeHtml(tpl.name)}</strong>
-            <small>${escapeHtml(tpl.os)} ${escapeHtml(tpl.osVersion || '')} · ${(tpl.engine === 'firefox' ? 'Firefox' : 'Chrome 156')} · ${escapeHtml(tpl.width || 1280)}×${escapeHtml(tpl.height || 820)}</small>
+            <small>${escapeHtml(formatOsLabel(tpl.os, tpl.osVersion))} · ${(tpl.engine === 'firefox' ? 'Firefox' : 'Chromium')} · ${escapeHtml(tpl.width || 1280)}×${escapeHtml(tpl.height || 820)}</small>
           </div>
           <span class="group-badge group-badge-compact">${escapeHtml(tpl.category || '通用模板')}</span>
         </div>
@@ -2576,9 +2573,13 @@
     for (const item of list) {
       const card = document.createElement('article');
       card.className = 'roxy-ext-card';
+      const hasValidImg = /^(https:|file:|data:)/i.test(String(item.iconUrl || ''));
+      const iconMarkup = hasValidImg
+        ? `<img src="${escapeHtml(item.iconUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
+        : MARKET_PUZZLE_SVG;
       card.innerHTML = `
         <div class="rec-top">
-          <span class="rec-icon" style="background:${escapeHtml(item.color)}18;color:${escapeHtml(item.color)}">${escapeHtml(item.icon)}</span>
+          <span class="rec-icon" style="background:${escapeHtml(item.color)}18;color:${escapeHtml(item.color)}">${iconMarkup}</span>
           <div class="rec-meta">
             <div class="rec-name-row"><strong>${escapeHtml(item.name)}</strong><span class="rec-ver">${escapeHtml(item.version)}</span></div>
             <p>${escapeHtml(item.desc)}</p>
@@ -2592,7 +2593,18 @@
           </label>
         </div>
       `;
+      if (hasValidImg) {
+        const iconSpan = card.querySelector('.rec-icon');
+        iconSpan?.querySelector('img')?.addEventListener('error', () => {
+          iconSpan.innerHTML = MARKET_PUZZLE_SVG;
+        }, { once: true });
+      }
       grid.appendChild(card);
+    }
+    const emptyEl = document.getElementById('extension-empty');
+    if (emptyEl && typeof appCenterTab !== 'undefined' && appCenterTab === 'recommended') {
+      emptyEl.hidden = list.length > 0;
+      if (!list.length) emptyEl.textContent = query ? '没有匹配的推荐应用' : '暂无推荐应用';
     }
   }
 
@@ -2604,6 +2616,11 @@
     renderExtensionMarketShowcase();
 
     // 1. Project Management interactions
+    const activeGroupViewMode = document.querySelector('#groups-view-mode-switch button.active')?.dataset.gview || 'cards';
+    const initialCardsEl = document.getElementById('groups-card-grid');
+    const initialTableEl = document.getElementById('groups-table-card');
+    if (initialCardsEl) initialCardsEl.hidden = activeGroupViewMode === 'table';
+    if (initialTableEl) initialTableEl.hidden = activeGroupViewMode === 'cards';
     document.getElementById('group-search-input')?.addEventListener('input', renderProjectCardsGrid);
     document.getElementById('group-refresh')?.addEventListener('click', () => setTimeout(renderProjectCardsGrid, 40));
     document.getElementById('groups-view-mode-switch')?.addEventListener('click', (e) => {
@@ -2638,7 +2655,20 @@
       }
     });
 
-    // 2. Templates Card Grid & Search
+    // 2. Templates Card Grid, View Mode Switch & Search
+    const activeTplViewMode = document.querySelector('#templates-view-mode-switch button.active')?.dataset.tview || 'cards';
+    const tplCardsEl = document.getElementById('templates-card-grid');
+    const tplTableEl = document.getElementById('templates-table-card');
+    if (tplCardsEl) tplCardsEl.hidden = activeTplViewMode === 'table';
+    if (tplTableEl) tplTableEl.hidden = activeTplViewMode === 'cards';
+    document.getElementById('templates-view-mode-switch')?.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-tview]');
+      if (!btn) return;
+      document.querySelectorAll('#templates-view-mode-switch button').forEach((b) => b.classList.toggle('active', b === btn));
+      const mode = btn.dataset.tview;
+      if (tplCardsEl) tplCardsEl.hidden = mode === 'table';
+      if (tplTableEl) tplTableEl.hidden = mode === 'cards';
+    });
     document.getElementById('templates-search-input')?.addEventListener('input', renderTemplateCardsGrid);
     document.getElementById('templates-card-grid')?.addEventListener('click', runAction((e) => {
       const useId = e.target.closest('[data-tpl-card-use]')?.dataset.tplCardUse;
@@ -2748,12 +2778,7 @@
       const cards = document.querySelectorAll('#view-system .settings-grid > article');
       cards.forEach((card) => {
         if (cat === 'all') { card.hidden = false; return; }
-        const id = card.id || '';
-        const match = (cat === 'general' && (id.includes('locale') || id.includes('workbench') || id.includes('update')))
-          || (cat === 'guard' && (id.includes('launch-gate') || id.includes('close-action')))
-          || (cat === 'cloud' && id.includes('cloud'))
-          || (cat === 'storage' && (!id || id.includes('local-status')));
-        card.hidden = !match;
+        card.hidden = card.dataset.sysGroup !== cat;
       });
     });
 

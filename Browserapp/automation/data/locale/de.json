@@ -36,7 +36,7 @@
   "editor.sslHint": "0x0004 / 0x0005 = RC4, 0x000a = 3DES; moderne Kernel deaktivieren RC4 / 3DES bereits — für strengere Site-Anforderungen.",
   "editor.sslCardDesc": "Hardwarebeschleunigung, Sandbox, Standardsuchmaschine und eigene Startparameter",
   "theme.modern.name": "Standard-UI",
-  "theme.modern.desc": "Neu gestaltete helle Standard-Oberfläche",
+  "theme.modern.desc": "Moderner Arbeitsbereich mit hellem und dunklem Modus",
   "theme.auto": "Automatisch",
   "theme.dark": "Dunkel",
   "theme.light": "Hell",
@@ -321,7 +321,7 @@
   "system.update.unsupported": "No published installer is available for this platform.",
   "system.update.error": "Update check failed: {message}",
   "system.launchgate.title": "Launch protection",
-  "system.launchgate.desc": "Stop opening windows when memory usage or free disk space exceeds its limit (Roxy client settings, defaults 95% / 8GB).",
+  "system.launchgate.desc": "Öffnen von Fenstern stoppen, wenn Speicherauslastung oder freier Speicherplatz das Limit überschreiten (Standard: 95 % / 8 GB).",
   "system.launchgate.memory": "Memory usage limit (%)",
   "system.launchgate.disk": "Free disk space floor (GB)",
   "system.launchgate.save": "Save settings",
@@ -748,5 +748,13 @@
   "transfer.recipientNote": "Empfängernotiz",
   "transfer.includeCookies": "Cookies einschließen",
   "transfer.generateOfflineCode": "Offline-Freigabecode erstellen",
-  "cookie.blockCommonVideo": "Gängige Videoressourcen blockieren"
+  "cookie.blockCommonVideo": "Gängige Videoressourcen blockieren",
+  "view.templates": "Profilvorlagen",
+  "view.templates.sub": "OS-Profile, Fenstergrößen und Start-Standards verwalten",
+  "view.accounts": "Plattformkonten",
+  "view.accounts.sub": "Zentrale Zugangsdaten, verknüpfte Profilerstellung & Massenexport",
+  "view.proxy-add": "Proxy hinzufügen",
+  "view.proxy-add.sub": "Intelligente Einzel-Erkennung, Text-Massenimport & Batch-Prüfung",
+  "view.account-add": "Konto hinzufügen",
+  "view.account-add.sub": "Einzeleintrag, Zeilen-Analyse und Excel / CSV / TXT Vorlagenimport"
 }

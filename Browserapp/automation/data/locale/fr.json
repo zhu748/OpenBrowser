@@ -36,7 +36,7 @@
   "editor.sslHint": "0x0004 / 0x0005 = RC4, 0x000a = 3DES ; les noyaux modernes les désactivent déjà — pour les sites exigeant plus de rigueur.",
   "editor.sslCardDesc": "Accélération matérielle, sandbox, moteur de recherche par défaut et arguments de lancement personnalisés",
   "theme.modern.name": "Interface par défaut",
-  "theme.modern.desc": "Espace de travail clair par défaut après refonte",
+  "theme.modern.desc": "Espace de travail moderne prenant en charge les modes clair et sombre",
   "theme.auto": "Automatique",
   "theme.dark": "Sombre",
   "theme.light": "Clair",
@@ -321,7 +321,7 @@
   "system.update.unsupported": "No published installer is available for this platform.",
   "system.update.error": "Update check failed: {message}",
   "system.launchgate.title": "Launch protection",
-  "system.launchgate.desc": "Stop opening windows when memory usage or free disk space exceeds its limit (Roxy client settings, defaults 95% / 8GB).",
+  "system.launchgate.desc": "Bloquer l’ouverture de fenêtres si l’utilisation mémoire ou l’espace disque libre dépasse le seuil (par défaut 95 % / 8 Go).",
   "system.launchgate.memory": "Memory usage limit (%)",
   "system.launchgate.disk": "Free disk space floor (GB)",
   "system.launchgate.save": "Save settings",
@@ -748,5 +748,13 @@
   "transfer.recipientNote": "Note du destinataire",
   "transfer.includeCookies": "Inclure les cookies",
   "transfer.generateOfflineCode": "Créer un code de partage hors ligne",
-  "cookie.blockCommonVideo": "Bloquer les ressources vidéo courantes"
+  "cookie.blockCommonVideo": "Bloquer les ressources vidéo courantes",
+  "view.templates": "Modèles de profil",
+  "view.templates.sub": "Gérer les profils OS, tailles de fenêtre et paramètres par défaut",
+  "view.accounts": "Comptes plateforme",
+  "view.accounts.sub": "Gestion centralisée des identifiants, création de profils liés et export",
+  "view.proxy-add": "Ajouter un proxy",
+  "view.proxy-add.sub": "Analyse intelligente, import texte en masse et test par lot",
+  "view.account-add": "Ajouter un compte",
+  "view.account-add.sub": "Ajout individuel, analyse en lot et import Excel / CSV / TXT"
 }

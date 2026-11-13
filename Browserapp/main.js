@@ -721,7 +721,15 @@ const THEME_CHROME = {
   default: { bg: '#ffffff', overlay: '#f5fbff', symbol: '#111213' },
 };
 
-function chromeForTheme(themeId, _colorMode) {
+const THEME_CHROME_DARK = {
+  'modern': { bg: '#0c111b', overlay: '#111827', symbol: '#eef2f7' },
+  default: { bg: '#0c111b', overlay: '#111827', symbol: '#eef2f7' },
+};
+
+function chromeForTheme(themeId, colorMode) {
+  if (colorMode === 'dark') {
+    return THEME_CHROME_DARK[themeId] || THEME_CHROME_DARK.default;
+  }
   return THEME_CHROME[themeId] || THEME_CHROME.default;
 }
 

@@ -36,7 +36,7 @@
   "editor.sslHint": "0x0004 / 0x0005 = RC4, 0x000a = 3DES; เคอร์เนลสมัยใหม่ปิด RC4 / 3DES อยู่แล้ว — สำหรับไซต์ที่ต้องการเข้มงวดขึ้น",
   "editor.sslCardDesc": "การเร่งด้วยฮาร์ดแวร์, sandbox, เสิร์ชเอนจินเริ่มต้น และพารามิเตอร์เริ่มระบบแบบกำหนดเอง",
   "theme.modern.name": "UI เริ่มต้น",
-  "theme.modern.desc": "พื้นที่ทำงานสว่างเริ่มต้นหลังปรับโครงสร้างใหม่",
+  "theme.modern.desc": "พื้นที่ทำงานสมัยใหม่รองรับทั้งโหมดสว่างและโหมดมืด",
   "theme.auto": "อัตโนมัติ",
   "theme.dark": "มืด",
   "theme.light": "สว่าง",
@@ -321,7 +321,7 @@
   "system.update.unsupported": "No published installer is available for this platform.",
   "system.update.error": "Update check failed: {message}",
   "system.launchgate.title": "Launch protection",
-  "system.launchgate.desc": "Stop opening windows when memory usage or free disk space exceeds its limit (Roxy client settings, defaults 95% / 8GB).",
+  "system.launchgate.desc": "หยุดเปิดหน้าต่างเมื่อการใช้หน่วยความจำหรือพื้นที่ดิสก์ว่างเกินขีดจำกัด (ค่าเริ่มต้น 95% / 8GB)",
   "system.launchgate.memory": "Memory usage limit (%)",
   "system.launchgate.disk": "Free disk space floor (GB)",
   "system.launchgate.save": "Save settings",
@@ -748,5 +748,13 @@
   "transfer.recipientNote": "บันทึกผู้รับ",
   "transfer.includeCookies": "รวมคุกกี้",
   "transfer.generateOfflineCode": "สร้างรหัสแชร์แบบออฟไลน์",
-  "cookie.blockCommonVideo": "บล็อกทรัพยากรวิดีโอทั่วไป"
+  "cookie.blockCommonVideo": "บล็อกทรัพยากรวิดีโอทั่วไป",
+  "view.templates": "เทมเพลตโปรไฟล์",
+  "view.templates.sub": "จัดการโปรไฟล์ระบบ ขนาดหน้าต่าง และค่าเริ่มต้นการเปิดใช้งาน",
+  "view.accounts": "บัญชีแพลตฟอร์ม",
+  "view.accounts.sub": "จัดการข้อมูลเข้าสู่ระบบแบบรวมศูนย์ สร้างหน้าต่างที่ผูกไว้ และส่งออกจำนวนมาก",
+  "view.proxy-add": "เพิ่ม Proxy IP",
+  "view.proxy-add.sub": "ตรวจจับอัจฉริยะแบบเดี่ยว นำเข้าข้อความจำนวนมาก และทดสอบพร้อมกัน",
+  "view.account-add": "เพิ่มบัญชีแพลตฟอร์ม",
+  "view.account-add.sub": "เพิ่มรายการเดียว วิเคราะห์หลายบรรทัด และนำเข้าไฟล์ Excel / CSV / TXT"
 }

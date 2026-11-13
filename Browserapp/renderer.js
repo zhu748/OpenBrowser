@@ -226,6 +226,18 @@ function refreshLocaleChrome() {
   }
   if (typeof syncThemedSelects === 'function') syncThemedSelects();
   if (typeof refreshIcons === 'function') refreshIcons();
+  if (typeof syncAppearanceControls === 'function') {
+    syncAppearanceControls(document.documentElement?.dataset?.uiTheme || 'modern');
+  }
+  const themeCurrentEl = document.getElementById('theme-current');
+  if (themeCurrentEl && typeof themeDisplayName === 'function') {
+    const activeTheme = document.documentElement?.dataset?.uiTheme || 'modern';
+    const modeLabel = uiColorPreference === 'auto'
+      ? t('theme.auto')
+      : (uiColorMode === 'dark' ? t('theme.dark') : t('theme.light'));
+    themeCurrentEl.textContent = `${themeDisplayName(activeTheme)} · ${modeLabel}`;
+  }
+  if (typeof window.refreshHeaderExitIpPill === 'function') window.refreshHeaderExitIpPill();
   renderAppUpdateState();
 }
 
@@ -719,6 +731,15 @@ function buildEnvIdentity(profile) {
   text.title = [titleText, sub].filter(Boolean).join(' · ');
   box.append(text);
   return box;
+}
+
+function buildOsIconSvg(osName) {
+  const s = String(osName || 'Windows');
+  if (/mac/i.test(s)) return '<svg viewBox="0 0 24 24" width="16" height="16" fill="none"><rect x="2" y="4" width="20" height="16" rx="4" fill="#1e293b"/><text x="12" y="15" text-anchor="middle" fill="#fff" font-size="9" font-weight="700" font-family="-apple-system,BlinkMacSystemFont,sans-serif">OS</text></svg>';
+  if (/linux|ubuntu|debian|fedora/i.test(s)) return '<svg viewBox="0 0 24 24" width="16" height="16" fill="none"><circle cx="12" cy="12" r="9" fill="#334155"/><ellipse cx="12" cy="14" rx="5" ry="5.5" fill="#f8fafc"/><circle cx="10.2" cy="9.5" r="1.1" fill="#fff"/><circle cx="13.8" cy="9.5" r="1.1" fill="#fff"/><circle cx="10.2" cy="9.5" r="0.5" fill="#0f172a"/><circle cx="13.8" cy="9.5" r="0.5" fill="#0f172a"/><polygon points="12,10.8 10.3,12.5 13.7,12.5" fill="#f59e0b"/></svg>';
+  if (/android/i.test(s)) return '<svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path d="M6 11a6 6 0 0112 0v6a2 2 0 01-2 2H8a2 2 0 01-2-2v-6z" fill="#3ddc84"/><line x1="8.5" y1="6.5" x2="7" y2="4" stroke="#3ddc84" stroke-width="1.6" stroke-linecap="round"/><line x1="15.5" y1="6.5" x2="17" y2="4" stroke="#3ddc84" stroke-width="1.6" stroke-linecap="round"/><circle cx="9.8" cy="9.5" r="0.9" fill="#fff"/><circle cx="14.2" cy="9.5" r="0.9" fill="#fff"/></svg>';
+  if (/ios|iphone|ipad/i.test(s)) return '<svg viewBox="0 0 24 24" width="16" height="16" fill="none"><rect x="6" y="2.5" width="12" height="19" rx="3" fill="#0ea5e9" stroke="#0284c7" stroke-width="1.2"/><rect x="9.5" y="4.5" width="5" height="1.4" rx="0.7" fill="#fff"/><text x="12" y="14.5" text-anchor="middle" fill="#fff" font-size="6.8" font-weight="700" font-family="-apple-system,BlinkMacSystemFont,sans-serif">iOS</text></svg>';
+  return '<svg viewBox="0 0 24 24" width="16" height="16" fill="none"><path fill="#0078D4" d="M3 3h8.5v8.5H3V3zm9.5 0H21v8.5h-8.5V3zM3 12.5h8.5V21H3v-8.5zm9.5 0H21V21h-8.5v-8.5z"/></svg>';
 }
 
 /** Vector browser engine icons for Chromium and Microsoft Edge */
@@ -1248,7 +1269,17 @@ function buildProxyUiValue({ protocol, host, port, username = '', password = '',
 }
 
 
-function editorSet(id, value) { const field = $(id); if (field) { field.value = value ?? ''; if (field instanceof HTMLSelectElement && typeof syncThemedSelect === 'function') syncThemedSelect(field); } }
+function editorSet(id, value) {
+  const field = $(id);
+  if (!field) return;
+  const nextValue = value ?? '';
+  if ('value' in field && !(field instanceof HTMLButtonElement)) {
+    field.value = nextValue;
+    if (field instanceof HTMLSelectElement && typeof syncThemedSelect === 'function') syncThemedSelect(field);
+  } else {
+    field.textContent = String(nextValue);
+  }
+}
 function editorCheck(id, value) { const field = $(id); if (field) field.checked = Boolean(value); }
 function editorSelectedNetwork() { return document.querySelector('input[name="editor-network"]:checked')?.value || 'direct'; }
 
@@ -1381,7 +1412,15 @@ function setEditorTab(tab, focus = false) {
       try { button.focus(); } catch (_) {}
     }
   });
-  $$('[data-editor-panel]').forEach((panel) => panel.classList.toggle('active', panel.dataset.editorPanel === tab));
+  $$('[data-editor-panel]').forEach((panel) => {
+    const isTarget = panel.dataset.editorPanel === tab;
+    panel.classList.toggle('active', isTarget);
+    if (isTarget && panel.classList.contains('roxy-accordion-card')) {
+      panel.classList.remove('is-collapsed');
+      const sym = panel.querySelector('.roxy-acc-symbol');
+      if (sym) sym.textContent = '−';
+    }
+  });
 }
 
 
@@ -1703,8 +1742,10 @@ function viewMetaFor(view) {
     'rpa-guide': ['view.rpa.guide', 'view.rpa.guide.sub'],
     'api-mcp': ['view.api-mcp', 'view.api-mcp.sub'],
     logs: ['view.logs', 'view.logs.sub'],
-    templates: ['我的模板', '管理窗口配置模板，创建窗口时可一键套用'],
-    accounts: ['平台账号', '集中管理多平台业务账号池、密码与 2FA 密钥'],
+    templates: ['view.templates', 'view.templates.sub'],
+    accounts: ['view.accounts', 'view.accounts.sub'],
+    'proxy-add': ['view.proxy-add', 'view.proxy-add.sub'],
+    'account-add': ['view.account-add', 'view.account-add.sub'],
     kernels: ['view.kernels', 'view.kernels.sub'],
     system: ['view.system', 'view.system.sub'],
   };
@@ -1791,7 +1832,7 @@ function switchView(view) {
     }
     if (button.classList.contains('nav-child') && button.dataset.view === 'rpa') {
       // child active state is refined in showRpaPanel
-      button.classList.toggle('active', view === 'rpa' && button.dataset.rpaTab === (currentRpaTab || 'flows'));
+      button.classList.toggle('active', view === 'rpa' && button.dataset.rpaTab === (window.currentRpaTab || 'flows'));
       return;
     }
     button.classList.toggle('active', button.dataset.view === view);
@@ -2397,22 +2438,22 @@ const PROFILE_COL_DEFS = [
 let hiddenProfileCols = new Set((() => {
   try {
     const raw = localStorage.getItem('openbrowser-profile-cols-v1');
-    // Roxy 默认不展示 创建时间/更新时间（保存过列配置则按用户配置）
-    if (raw == null) return ['created', 'updated'];
+    if (raw == null) return ['created', 'updated', 'remaining'];
     return JSON.parse(raw);
-  } catch (_) { return ['created', 'updated']; }
+  } catch (_) { return ['created', 'updated', 'remaining']; }
 })());
 function applyProfileColumnVisibility(inTrash = false) {
   const table = document.querySelector('.profile-table-compact');
   if (!table) return;
   for (const [col] of PROFILE_COL_DEFS) {
+    const isHidden = col === 'remaining' ? (!inTrash && hiddenProfileCols.has('remaining')) : hiddenProfileCols.has(col);
     const th = table.querySelector(`th.col-${col}`);
-    if (th) th.hidden = hiddenProfileCols.has(col);
-    table.classList.toggle(`hide-${col}`, hiddenProfileCols.has(col));
+    if (th) th.hidden = isHidden;
+    table.classList.toggle(`hide-${col}`, isHidden);
   }
   table.classList.toggle('cols-created', !hiddenProfileCols.has('created'));
   table.classList.toggle('cols-updated', !hiddenProfileCols.has('updated'));
-  table.classList.toggle('cols-remaining', !hiddenProfileCols.has('remaining') || inTrash);
+  table.classList.toggle('cols-remaining', inTrash || !hiddenProfileCols.has('remaining'));
 }
 function renderProfileColsMenu() {
   const menuEl = $('#profile-cols-menu');
@@ -2578,6 +2619,26 @@ function exportProfile(id) {
   toast(tx('窗口已导出'));
 }
 
+function buildLucideInlineSvg(paths) {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('width', '12');
+  svg.setAttribute('height', '12');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '2');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('aria-hidden', 'true');
+  for (const d of paths) {
+    const p = document.createElementNS(ns, 'path');
+    p.setAttribute('d', d);
+    svg.appendChild(p);
+  }
+  return svg;
+}
+
 // One <tr> for the profile table. Pure builder — no caching, no diffing;
 // renderProfiles decides whether an existing row can be reused and only
 // calls this when the row's render key actually changed.
@@ -2591,20 +2652,27 @@ function buildProfileRow(profile) {
   const numSpan = element('span', 'roxy-num-text', displayProfileNumber(profile));
   const osBadge = element('span', 'roxy-os-mini');
   osBadge.title = (profile.os || 'Windows') + (profile.osVersion ? ' ' + profile.osVersion : '');
-  if (typeof window.getOsIconSvg === 'function') osBadge.innerHTML = window.getOsIconSvg(profile.os);
+  osBadge.innerHTML = typeof window.getOsIconSvg === 'function' ? window.getOsIconSvg(profile.os) : buildOsIconSvg(profile.os);
   const proxyTrigger = element('button', 'roxy-proxy-trigger', '');
   proxyTrigger.type = 'button';
   proxyTrigger.dataset.quickProxyId = profile.id;
+  const globeSvg = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M2.5 8h11M8 2a9 9 0 0 1 0 12M8 2a9 9 0 0 0 0 12"/></svg>';
+  const globeDot = document.createElement('span');
+  globeDot.className = 'proxy-globe-dot';
+  globeDot.innerHTML = globeSvg;
+  const triggerLabel = document.createElement('span');
   const hasProxy = profile.networkMode === 'proxy' && profile.proxy && !isDirectProxy(profile.proxy);
   if (hasProxy) {
-    const cc = String(profile.exitCountryCode || '').toUpperCase();
+    const cc = String(profile.exitCountryCode || '').toUpperCase().replace(/[^A-Z0-9-]/g, '');
     proxyTrigger.className = 'roxy-proxy-trigger is-bound';
-    proxyTrigger.textContent = (cc ? countryFlag(cc) + ' ' : '🌐 ') + (cc || '代理') + ' +';
-    proxyTrigger.title = maskProxy(profile.proxy) + (profile.exitIp ? ' · ' + profile.exitIp : '') + '（点击编辑代理 IP）';
+    triggerLabel.textContent = (cc || tx('代理')) + ' +';
+    proxyTrigger.replaceChildren(globeDot, triggerLabel);
+    proxyTrigger.title = maskProxy(profile.proxy) + (profile.exitIp ? ' · ' + profile.exitIp : '') + '（' + tx('点击编辑代理 IP') + '）';
   } else {
     proxyTrigger.className = 'roxy-proxy-trigger is-direct';
-    proxyTrigger.innerHTML = '<span class="proxy-globe-dot">🌐</span><span>+</span>';
-    proxyTrigger.title = '未配置代理，点击快速添加代理 IP';
+    triggerLabel.textContent = '+';
+    proxyTrigger.replaceChildren(globeDot, triggerLabel);
+    proxyTrigger.title = tx('未配置代理，点击快速添加代理 IP');
   }
   numWrap.append(numSpan, osBadge, proxyTrigger);
   idCell.append(numWrap);
@@ -2618,7 +2686,7 @@ function buildProfileRow(profile) {
   const exitInfo = info.network || (profile.exitIp ? { ip: profile.exitIp, countryCode: profile.exitCountryCode } : null);
   if (exitInfo?.ip) {
     const code = String(exitInfo.countryCode || '').toUpperCase();
-    const exitChip = element('small', 'exit-compact', (code ? countryFlag(code) + ' ' + code : '🌐') + ' · ' + String(exitInfo.ip).replace(/^(\d+\.\d+)\.\d+\.\d+$/, '$1.*.*'));
+    const exitChip = element('small', 'exit-compact', (code ? code + ' · ' : '') + String(exitInfo.ip).replace(/^(\d+\.\d+)\.\d+\.\d+$/, '$1.*.*'));
     exitChip.title = (exitInfo.ip || '') + (code ? ' · ' + countryName(code) : '');
     nameCell.append(exitChip);
   }
@@ -2639,8 +2707,9 @@ function buildProfileRow(profile) {
     openBtn.dataset.action = info.running ? 'stop' : 'start';
     openBtn.dataset.id = profile.id;
     const isFx = String(profile.engine || '').toLowerCase() === 'firefox';
-    const engineSvg = isFx && window.KERNEL_SVG_ICONS?.firefox ? window.KERNEL_SVG_ICONS.firefox : buildBrowserEngineIcon('Chrome', 15);
-    const pillSpan = element('span', 'roxy-open-pill-label', info.running ? '关闭窗口' : (startingProfiles.has(profile.id) ? '启动中' : '打开窗口'));
+    const fxFallbackSvg = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none"><circle cx="12" cy="12" r="10.5" fill="#ff7139"/><path d="M12.6 5.1c2.5 1.5 3.7 3.9 3.4 6.5-.1 1.2-.7 2.1-1.6 2.7 1.5-.2 2.6-1.2 3-2.7.5 2.6-.5 4.9-2.7 6.3-1.9 1.2-4 1.5-6.2.9C6 18.1 4.4 15.9 4.5 13.2c.1-2.1 1.2-3.8 3-4.9-.2.6-.2 1.2 0 1.7.4-1.9 1.7-3.2 3.6-3.7-.8-.6-1.7-.8-2.7-.7 1.4-1.1 3-1.5 4.2-1.2-.2-.9-1-1.6-2.1-1.9 1.6-.4 2.9-.1 4.1.6Z" fill="#fff" opacity=".92"/></svg>';
+    const engineSvg = isFx ? (window.KERNEL_SVG_ICONS?.firefox || fxFallbackSvg) : buildBrowserEngineIcon('Chrome', 15);
+    const pillSpan = element('span', 'roxy-open-pill-label', openLabel);
     const iconSpan = element('span', 'roxy-open-pill-engine');
     iconSpan.innerHTML = engineSvg;
     openBtn.prepend(iconSpan);
@@ -2660,7 +2729,9 @@ function buildProfileRow(profile) {
   noteBtn.dataset.action = 'note';
   noteBtn.dataset.id = profile.id;
   noteBtn.title = profile.note || (t('profiles.addNote') || '添加备注');
-  const noteIcon = element('span', 'cell-inline-icon', '📝');
+  const noteIcon = element('span', 'cell-inline-icon');
+  noteIcon.setAttribute('aria-hidden', 'true');
+  noteIcon.append(buildLucideInlineSvg(['M12 20h9', 'M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z']));
   const noteText = element('span', 'cell-inline-text', profile.note ? String(profile.note).slice(0, 32) : '');
   noteBtn.append(noteIcon, noteText);
   noteCell.append(noteBtn);
@@ -2671,7 +2742,9 @@ function buildProfileRow(profile) {
   tagBtn.dataset.action = 'tag';
   tagBtn.dataset.id = profile.id;
   tagBtn.title = profile.tag || (t('profiles.menuTag') || '添加标签');
-  const tagIcon = element('span', 'cell-inline-icon', '🏷️');
+  const tagIcon = element('span', 'cell-inline-icon');
+  tagIcon.setAttribute('aria-hidden', 'true');
+  tagIcon.append(buildLucideInlineSvg(['M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z', 'M7 7h.01']));
   const tagText = element('span', 'cell-inline-text', profile.tag ? localizeSystemLabel(profile.tag) : '');
   tagBtn.append(tagIcon, tagText);
   tagCell.append(tagBtn);
@@ -3026,7 +3099,8 @@ function renderSessions() {
     nameCell.append(element('strong', '', (profile.title && String(profile.title) !== String(number)) ? profile.title : (t('profiles.envName', { n: number }))));
     const browserCell = document.createElement('td');
     browserCell.append(buildEnvBrowserCell(profile));
-    row.append(selectCell, idCell, nameCell, browserCell, element('td', '', String(value.tabs.length)), statusCell, actionCell); table.append(row);
+    const tabList = Array.isArray(value.tabs) ? value.tabs : [];
+    row.append(selectCell, idCell, nameCell, browserCell, element('td', '', String(tabList.length)), statusCell, actionCell); table.append(row);
   }
   $('#session-empty').style.display = visible.length ? 'none' : 'block';
   $('#selected-count').textContent = t('profiles.selected', { n: selectedSessions.size });
@@ -3058,7 +3132,13 @@ function pushSyncSelection() {
 
 function renderTabInventory() {
   const target = $('#tab-inventory'); target.replaceChildren();
-  for (const value of sessions.filter((item) => selectedSessions.has(item.id))) { const group = element('div', 'tab-group'); group.append(element('strong', '', `${t('profiles.envName', { n: displayProfileNumber(value.profile || { id: value.id }) })} · ${value.tabs.length} ${t('common.tabs')}`)); for (const tab of value.tabs.slice(0, 6)) group.append(element('span', '', `${tab.title || 'Untitled'} — ${tab.url}`)); target.append(group); }
+  for (const value of sessions.filter((item) => selectedSessions.has(item.id))) {
+    const tabs = Array.isArray(value.tabs) ? value.tabs : [];
+    const group = element('div', 'tab-group');
+    group.append(element('strong', '', `${t('profiles.envName', { n: displayProfileNumber(value.profile || { id: value.id }) })} · ${tabs.length} ${t('common.tabs')}`));
+    for (const tab of tabs.slice(0, 6)) group.append(element('span', '', `${tab.title || 'Untitled'} — ${tab.url}`));
+    target.append(group);
+  }
 }
 
 const sessionController = window.OpenBrowserSessionController.createSessionController({
@@ -3418,7 +3498,15 @@ $('#profile-page-size').addEventListener('change', (event) => { const value = Nu
 $('#profile-prev').addEventListener('click', () => { profilePage = Math.max(1, profilePage - 1); renderProfiles(); });
 $('#profile-next').addEventListener('click', () => { profilePage += 1; renderProfiles(); });
 $('#profile-page').addEventListener('change', (event) => { profilePage = Math.max(1, Number.parseInt(event.target.value, 10) || 1); renderProfiles(); });
-$('#create-profile').addEventListener('click', openCreateProfileDialog); $('#quick-create').addEventListener('click', openCreateProfileDialog);
+$('#create-profile').addEventListener('click', () => {
+  if (typeof window.openWorkbenchEditorMode === 'function') {
+    editingProfileId = null;
+    window.openWorkbenchEditorMode('single', null, { collapseSecondary: true });
+  } else {
+    openCreateProfileDialog();
+  }
+});
+$('#quick-create').addEventListener('click', openCreateProfileDialog);
 
 // group filter chips
 document.getElementById('profile-group-chips')?.addEventListener('click', (event) => {

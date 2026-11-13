@@ -36,6 +36,8 @@ async function refreshApiMcpPage() {
       pill.classList.toggle('off', !info);
     }
     if (urlEl) urlEl.textContent = base.replace(/\/$/, '');
+    const sysEndpointEl = document.getElementById('system-local-api-endpoint');
+    if (sysEndpointEl) sysEndpointEl.textContent = '127.0.0.1:' + port;
     if (keyEl) keyEl.value = apiKey;
     if (keyEl && !apiKey) keyEl.placeholder = tx('未设置（可选环境变量 OPENBROWSER_API_KEY）');
     const mcpScript = paths?.mcpScript || '';
