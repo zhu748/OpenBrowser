@@ -10,11 +10,11 @@
   <script src="i18n.js?v=20261109-aqua"></script>
   <link rel="icon" type="image/png" href="assets/logo-pixel.png?v=20261002-flat">
   <link rel="stylesheet" href="assets/fonts/pixelify-sans.css?v=20260720-ark">
-  <link rel="stylesheet" href="styles.css?v=20260720-pixelfont">
+  <link rel="stylesheet" href="styles.css?v=20261114-roxy">
   <link rel="stylesheet" href="themes.css?v=20260720-start-progress">
   <link rel="stylesheet" href="environment-audit.css?v=20260719-readable-scale">
-  <link rel="stylesheet" href="ui-shell.css?v=20260720-start-progress">
-  <link rel="stylesheet" href="modern.css?v=20261108-refactor">
+  <link rel="stylesheet" href="ui-shell.css?v=20261114-roxy">
+  <link rel="stylesheet" href="modern.css?v=20261114-roxy">
 </head>
 <body>
   <div class="app-shell">
@@ -104,11 +104,30 @@
           </div>
           <div class="group-chip-row" id="profile-group-chips"></div>
           <div class="toolbar profile-primary-toolbar">
-            <div class="toolbar-left"><div class="split-create-group"><button class="primary" id="create-profile"><i data-lucide="zap"></i><span data-i18n="profiles.create">新建环境</span></button><button class="primary split-gear-btn" type="button" id="quick-create-fullpage" title="打开一比一完整创建窗口页面（含模板/系统/内核/导入/AI）"><i data-lucide="sliders-horizontal"></i><span>完整创建</span></button></div><button class="outline" id="batch-add"><i data-lucide="copy-plus"></i><span data-i18n="profiles.batchAdd">批量新增</span></button><button class="outline" id="batch-import"><i data-lucide="file-down"></i><span data-i18n="profiles.batchImport">批量导入</span></button><button class="outline" id="toolbar-upload-window" type="button"><i data-lucide="upload"></i><span>上传窗口</span></button><button class="outline" id="toolbar-transfer-window" type="button"><i data-lucide="send"></i><span>转移窗口</span></button><input id="batch-import-file" type="file" accept=".csv,.json" hidden><button class="outline" id="renumber-profiles" type="button" title="将所有环境按列表顺序重新编号为 1..N" data-i18n-title="profiles.renumberTitle"><i data-lucide="hash"></i><span data-i18n="profiles.renumber">重排编号</span></button><button class="outline" id="batch-export" type="button" title="导出当前选中/筛选的环境配置（不含密码与2FA密钥）" data-i18n-title="profiles.exportTitle"><i data-lucide="file-up"></i><span data-i18n="profiles.batchExport">批量导出</span></button><button class="outline" id="test-all-proxies" type="button" title="逐个检测所有环境的代理IP可用性"><i data-lucide="radar"></i><span data-i18n="profiles.testAllProxy">测试全部代理IP</span></button><button class="outline" id="adv-filter-btn" type="button"><i data-lucide="filter"></i><span data-i18n="profiles.advFilter">高级筛选</span></button><button class="outline danger" id="empty-trash-btn" type="button" hidden><i data-lucide="trash"></i><span data-i18n="trash.empty">清空回收站</span></button></div>
-            <label class="search"><i data-lucide="search"></i><input id="profile-search" placeholder="搜索环境 / 分组 / 标签" data-i18n-placeholder="profiles.search"></label>
-            <div class="cols-config-wrap" id="profile-cols-wrap">
-              <button class="outline mini-btn" type="button" id="profile-cols-btn" data-i18n="profiles.customHeader">自定义表头</button>
-              <div class="row-more-menu cols-menu" id="profile-cols-menu" hidden></div>
+            <div class="toolbar-left">
+              <div class="split-create-group"><button class="primary" id="create-profile"><i data-lucide="zap"></i><span data-i18n="profiles.create">新建环境</span></button><button class="primary split-gear-btn" type="button" id="quick-create-fullpage" title="打开一比一完整创建窗口页面（含模板/系统/内核/导入/AI）"><i data-lucide="sliders-horizontal"></i><span>完整创建</span></button></div>
+              <button class="outline" id="batch-add"><i data-lucide="copy-plus"></i><span data-i18n="profiles.batchAdd">批量新增</span></button>
+              <button class="outline" id="adv-filter-btn" type="button"><i data-lucide="filter"></i><span data-i18n="profiles.advFilter">高级筛选</span></button>
+              <div class="toolbar-more-wrap" id="profile-more-wrap">
+                <button class="outline toolbar-more-btn" type="button" id="profile-more-btn" aria-haspopup="true" aria-expanded="false" title="更多操作"><i data-lucide="ellipsis"></i><span>更多操作</span></button>
+                <div class="toolbar-more-menu" id="profile-more-menu" hidden>
+                  <button class="outline" id="batch-import" type="button"><i data-lucide="file-down"></i><span data-i18n="profiles.batchImport">批量导入</span></button>
+                  <button class="outline" id="toolbar-upload-window" type="button"><i data-lucide="upload"></i><span>上传窗口</span></button>
+                  <button class="outline" id="toolbar-transfer-window" type="button"><i data-lucide="send"></i><span>转移窗口</span></button>
+                  <button class="outline" id="renumber-profiles" type="button" title="将所有环境按列表顺序重新编号为 1..N" data-i18n-title="profiles.renumberTitle"><i data-lucide="hash"></i><span data-i18n="profiles.renumber">重排编号</span></button>
+                  <button class="outline" id="batch-export" type="button" title="导出当前选中/筛选的环境配置（不含密码与2FA密钥）" data-i18n-title="profiles.exportTitle"><i data-lucide="file-up"></i><span data-i18n="profiles.batchExport">批量导出</span></button>
+                  <button class="outline" id="test-all-proxies" type="button" title="逐个检测所有环境的代理IP可用性"><i data-lucide="radar"></i><span data-i18n="profiles.testAllProxy">测试全部代理IP</span></button>
+                  <button class="outline danger" id="empty-trash-btn" type="button" hidden><i data-lucide="trash"></i><span data-i18n="trash.empty">清空回收站</span></button>
+                </div>
+              </div>
+              <input id="batch-import-file" type="file" accept=".csv,.json" hidden>
+            </div>
+            <div class="toolbar-right">
+              <label class="search"><i data-lucide="search"></i><input id="profile-search" placeholder="搜索环境 / 分组 / 标签" data-i18n-placeholder="profiles.search"></label>
+              <div class="cols-config-wrap" id="profile-cols-wrap">
+                <button class="outline mini-btn" type="button" id="profile-cols-btn" data-i18n="profiles.customHeader">自定义表头</button>
+                <div class="row-more-menu cols-menu" id="profile-cols-menu" hidden></div>
+              </div>
             </div>
             <div class="adv-filter-panel" id="adv-filter-panel" hidden>
               <div class="adv-grid">

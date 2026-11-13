@@ -626,8 +626,21 @@ body {
 #view-profiles .group-chip { flex: 0 0 auto; min-height: 30px; border-radius: 999px !important; }
 
 #view-profiles .toolbar { margin-bottom: 10px; }
-.profile-primary-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.profile-primary-toolbar .toolbar-left { display: flex; flex-wrap: wrap; gap: 7px; }
+.profile-primary-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.profile-primary-toolbar .toolbar-left { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.profile-primary-toolbar .toolbar-right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+/* 「更多操作」下拉把批量导入/上传/转移/重排/导出/测全部代理收进一级菜单，
+   主行只留新建环境、批量新增、高级筛选，避免工具栏变成一排十几颗按钮。 */
+.toolbar-more-wrap { position: relative; display: inline-flex; }
+.toolbar-more-menu {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 70;
+  display: flex; flex-direction: column; gap: 2px; min-width: 204px; padding: 6px;
+  border: 1px solid var(--ui-border); border-radius: var(--ui-radius-sm);
+  background: var(--ui-surface); box-shadow: var(--ui-shadow);
+}
+.toolbar-more-menu[hidden] { display: none !important; }
+#view-profiles .toolbar-more-menu button { width: 100%; justify-content: flex-start; border-radius: var(--ui-radius-sm) !important; }
+#view-profiles .toolbar-more-menu button.danger { color: #c43a49; border-color: rgba(196, 58, 73, .28); background: rgba(196, 58, 73, .06); }
 #view-profiles button svg, #view-profiles .search svg { width: 15px; height: 15px; flex: 0 0 15px; }
 #view-profiles .primary, #view-profiles .outline, #view-profiles .danger {
   display: inline-flex; align-items: center; justify-content: center; gap: 4px;

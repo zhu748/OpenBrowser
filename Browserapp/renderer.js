@@ -2225,8 +2225,26 @@ function switchListTab(tab) {
   profilePage = 1;
   renderProfiles();
 }
+// Row "⋮" menu state. The popup lives on <body> with position:fixed because
+// #view-profiles .table-card is an overflow:auto scroll container — an absolutely
+// positioned menu inside the cell was clipped by it (and scrolled with the table).
+let activeRowMoreMenu = null;
 function closeRowMoreMenu() {
-  document.querySelectorAll('.row-more-menu').forEach((menu) => menu.remove());
+  if (activeRowMoreMenu) {
+    const handle = activeRowMoreMenu;
+    activeRowMoreMenu = null;
+    try { handle.menu.remove(); } catch (_) {}
+    document.removeEventListener('click', handle.onClick, true);
+    document.removeEventListener('keydown', handle.onKeydown, true);
+    window.removeEventListener('resize', handle.onReposition);
+    window.removeEventListener('scroll', handle.onReposition, true);
+  }
+  // #profile-cols-menu is a static element declared in index.html that shares the
+  // .row-more-menu class for styling; never delete it, only hide it.
+  document.querySelectorAll('.row-more-menu').forEach((menu) => {
+    if (menu.id === 'profile-cols-menu') { menu.hidden = true; return; }
+    menu.remove();
+  });
 }
 // Roxy 对齐：行菜单全集（查看/编辑/开关/重启/收藏/复制ID/备注/标签/测代理/导出/克隆/清缓存 + 删除）
 function rowMenuItemsFor(profile, info) {
@@ -2277,19 +2295,82 @@ function fillRowMenu(menu, profile, info) {
   danger.querySelector('span').textContent = t('profiles.menuDelete') || '删除窗口';
   menu.append(danger);
 }
+function placeRowMoreMenu(handle) {
+  const { menu, button } = handle || {};
+  if (!menu || !button) return;
+  if (!button.isConnected) { closeRowMoreMenu(); return; }
+  const anchor = button.getBoundingClientRect();
+  if (anchor.bottom < 0 || anchor.top > window.innerHeight) { closeRowMoreMenu(); return; }
+  const width = menu.offsetWidth || 200;
+  const height = menu.offsetHeight || 260;
+  const margin = 8;
+  let left = anchor.right - width;
+  left = Math.max(margin, Math.min(left, window.innerWidth - width - margin));
+  let top = anchor.bottom + 6;
+  if (top + height > window.innerHeight - margin) {
+    const above = anchor.top - height - 6;
+    top = above >= margin ? above : Math.max(margin, window.innerHeight - height - margin);
+  }
+  handle.anchorRect = { left, top };
+  menu.style.left = `${Math.round(left)}px`;
+  menu.style.top = `${Math.round(top)}px`;
+}
+// Toggle the row "⋮" menu. Previously this read `existing` before
+// closeRowMoreMenu() and returned whenever it was non-null, so the popup never
+// opened on a first click (the node it referenced was the one just removed).
+// It is now a real toggle, and the popup is mounted on <body> so the scrollable
+// table card cannot clip it.
 function toggleRowMoreMenu(button) {
-  const wrap = button.closest('.row-more-wrap');
-  if (!wrap) return;
-  const existing = wrap.querySelector('.row-more-menu');
+  const profileId = button?.dataset?.id;
+  if (!profileId) return;
+  if (activeRowMoreMenu && activeRowMoreMenu.profileId === profileId) {
+    closeRowMoreMenu();
+    return;
+  }
   closeRowMoreMenu();
-  if (existing) return;
-  const profile = ui.profiles.find((item) => item.id === button.dataset.id);
+  const profile = ui.profiles.find((item) => item.id === profileId);
   if (!profile) return;
   const info = profileEngine(profile.id);
   const menu = element('div', 'row-more-menu');
+  menu.dataset.id = profileId;
+  menu.style.position = 'fixed';
+  menu.style.right = 'auto';
+  menu.style.bottom = 'auto';
+  menu.style.zIndex = '90';
+  menu.style.maxHeight = 'min(70vh, 460px)';
+  menu.style.overflowY = 'auto';
   fillRowMenu(menu, profile, info);
-  wrap.append(menu);
+  document.body.append(menu);
   refreshIcons(menu);
+  const handle = {
+    menu,
+    button,
+    profileId,
+    anchorRect: null,
+    onClick: null,
+    onKeydown: null,
+    onReposition: null,
+  };
+  handle.onClick = (event) => {
+    if (event.target.closest('.row-more-menu')) return;
+    if (event.target.closest('[data-action="more"]')) return;
+    closeRowMoreMenu();
+  };
+  handle.onKeydown = (event) => {
+    if (event.key === 'Escape') closeRowMoreMenu();
+  };
+  handle.onReposition = () => placeRowMoreMenu(handle);
+  placeRowMoreMenu(handle);
+  activeRowMoreMenu = handle;
+  // Defer so the click that opened the menu does not immediately close it.
+  setTimeout(() => {
+    if (activeRowMoreMenu !== handle) return;
+    placeRowMoreMenu(handle);
+    document.addEventListener('click', handle.onClick, true);
+    document.addEventListener('keydown', handle.onKeydown, true);
+    window.addEventListener('resize', handle.onReposition);
+    window.addEventListener('scroll', handle.onReposition, true);
+  }, 0);
 }
 // Roxy 对齐：整行右键弹出与「其他」一致的动作菜单
 // Single module-level closer so repeated right-clicks cannot stack listeners.
@@ -2513,6 +2594,33 @@ document.addEventListener('click', (event) => {
   if (event.target.closest('#profile-cols-wrap')) return;
   const menuEl = $('#profile-cols-menu');
   if (menuEl) menuEl.hidden = true;
+});
+// 「更多操作」下拉：批量导入/上传/转移/重排编号/批量导出/测试全部代理IP 收进这里，
+// 主工具栏只留下新建环境、批量新增、高级筛选，避免一行堆十几个按钮。
+function setToolbarMoreOpen(open) {
+  const btn = $('#profile-more-btn');
+  const menu = $('#profile-more-menu');
+  if (!btn || !menu) return;
+  menu.hidden = !open;
+  btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  btn.classList.toggle('active', open);
+}
+$('#profile-more-btn')?.addEventListener('click', (event) => {
+  event.stopPropagation();
+  const menu = $('#profile-more-menu');
+  if (!menu) return;
+  setToolbarMoreOpen(menu.hidden);
+});
+$('#profile-more-menu')?.addEventListener('click', (event) => {
+  // 菜单里的按钮各自有监听器；点完就收起，避免挡住表格。
+  if (event.target.closest('button')) setToolbarMoreOpen(false);
+});
+document.addEventListener('click', (event) => {
+  if (event.target.closest('#profile-more-wrap')) return;
+  setToolbarMoreOpen(false);
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') setToolbarMoreOpen(false);
 });
 // Roxy 对齐：编号/名称/最后打开/创建/更新 点击表头排序
 document.querySelector('#view-profiles thead')?.addEventListener('click', (event) => {

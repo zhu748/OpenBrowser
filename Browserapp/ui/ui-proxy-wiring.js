@@ -93,7 +93,9 @@ document.addEventListener('click', async (event) => {
   if (action?.dataset.action === 'tag') { openBatchQuickDialog('tag', action.dataset.id); }
   if (action?.dataset.action === 'clear-cache') { closeRowMoreMenu(); clearProfileCache(action.dataset.id); }
   if (action?.dataset.action === 'trash') { closeRowMoreMenu(); trashProfile(action.dataset.id); }
-  if (!action && !event.target.closest('.row-more-wrap')) closeRowMoreMenu();
+  // The row "⋮" popup is mounted on <body> (so the scrolling table cannot clip
+  // it), therefore a click inside it is not inside .row-more-wrap anymore.
+  if (!action && !event.target.closest('.row-more-wrap') && !event.target.closest('.row-more-menu')) closeRowMoreMenu();
 
   const assign = event.target.closest('[data-extension-assign]'); if (assign) openAssign(assign.dataset.extensionAssign);
   const reload = event.target.closest('[data-extension-reload]'); if (reload) { try { const updated = await window.ops.reloadExtension(reload.dataset.extensionReload); toast(tx('扩展已重新加载：') + (updated?.name || '') + ' v' + (updated?.version || '')); invalidateViewCache('extensions'); await refreshExtensions(); } catch (error) { toast(tx('重新加载失败：') + error.message); } }

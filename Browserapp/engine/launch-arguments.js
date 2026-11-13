@@ -36,7 +36,15 @@ function buildBaseLaunchArguments({ root, fingerprint, profile, hostScaleFactor 
     '--disable-session-crashed-bubble',
     '--disable-background-mode',
     '--enable-unsafe-extension-debugging',
-    '--extensions-on-chrome-urls',
+    // --extensions-on-chrome-urls was dropped: it is in Chromium's kBadFlags table
+    // (bad_flags_prompt.cc) and produced the "unsupported command-line flag" infobar.
+    // The bundled extension only matches http/https, so chrome:// access is unused.
+    // --test-type=gpu suppresses both startup infobars without touching the binary:
+    //   * infobar_utils.cc skips ChromeForTestingInfoBarDelegate when IsGpuTest()
+    //   * the same function returns early on any --test-type, before ShowBadFlagsPrompt
+    // It is not a kBadFlag, so it never introduces a new warning, and it has nothing
+    // to do with --enable-automation (deleted in kernel-init-sync.js).
+    '--test-type=gpu',
     '--enable-features=AutomaticFullscreenContentSetting,WindowPlacement,WindowManagement',
     '--disable-gesture-requirement-for-presentation',
     '--disable-fullscreen-low-power-mode',

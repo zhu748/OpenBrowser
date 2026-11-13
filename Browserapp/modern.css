@@ -2181,7 +2181,7 @@ html[data-ui-theme="modern"] dialog[open] textarea {
   min-height: 32px !important;
 }
 
-html[data-ui-theme="modern"] #view-profile-editor button:not(.roxy-acc-btn):not(#editor-tutorial-dismiss),
+html[data-ui-theme="modern"] #view-profile-editor button:not(.roxy-acc-btn):not(#editor-tutorial-dismiss):not([data-editor-tab]):not([data-create-mode]),
 html[data-ui-theme="modern"] dialog[open] button:not(.cr-close-btn) {
   font-size: 12.5px !important;
   padding: 5px 12px !important;
@@ -2398,8 +2398,10 @@ html[data-ui-theme="modern"] .row-menu-divider {
 }
 
 /* Keep #view-profiles top toolbar clean & single-line by hiding redundant secondary buttons that already exist in batch bar / import tab */
-html[data-ui-theme="modern"] #view-profiles .toolbar-left #renumber-profiles,
-html[data-ui-theme="modern"] #view-profiles .toolbar-left #batch-export {
+/* 这两个按钮已收进「更多操作」下拉（.toolbar-more-menu），不再是 .toolbar-left 的直接子元素；
+   用 `>` 限定，避免把下拉里的入口一起隐藏掉。 */
+html[data-ui-theme="modern"] #view-profiles .toolbar-left > #renumber-profiles,
+html[data-ui-theme="modern"] #view-profiles .toolbar-left > #batch-export {
   display: none !important;
 }
 
@@ -4400,4 +4402,758 @@ html[data-ui-theme="modern"] #view-rpa .rpa-profile-hint {
   margin-top: 6px;
   font-size: 11.5px;
   color: var(--modern-neutral-500);
+}
+
+/* ==========================================================================
+   Editor skin — "rx" component layer (adapted from a third-party Chromium
+   shell 4.1.0 real frontend build).
+   Source assets: create-*.css / createDefaultAccordions-*.css /
+   profile-info-*.css / rx-button-*.css / m-input-text-*.css /
+   rx-input-radio-*.css.
+   Only the neutral + layout parts are ported. All paid/commercial modules
+   (buy-proxy-alert, badge-discount, quota bar, upgrade CTA, pay modal,
+   referral / team / task-center) are intentionally NOT ported.
+   Tokens map 1:1: --primitives-blue-500 == --modern-blue-500 (#11a3fd)
+   ========================================================================== */
+
+html[data-ui-theme="modern"] {
+  --rx-radius-card: 6px;
+  --rx-radius-input: 6px;
+  --rx-radius-button: 8px;
+  --rx-shadow-card: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --rx-shadow-button: 0 4px 4px -1px rgba(0, 0, 0, 0.02), 0 1px 1px rgba(0, 0, 0, 0.06);
+  --rx-border: var(--modern-neutral-200);
+  --rx-border-soft: var(--modern-neutral-100);
+  --rx-panel-bg: var(--modern-neutral-0);
+  --rx-block-bg: var(--modern-neutral-50);
+  --rx-label-width: 108px;
+  --rx-input-height: 36px;
+  --rx-font-mono: ui-monospace, "Cascadia Mono", "Segoe UI Mono", Consolas, monospace;
+  --pattern-editor-key: #005cc5;
+  --pattern-editor-value: #032f62;
+}
+html[data-ui-theme="modern"][data-color-mode="dark"] {
+  --rx-border: var(--modern-neutral-200);
+  --rx-border-soft: var(--modern-neutral-100);
+  --pattern-editor-key: #79c0ff;
+  --pattern-editor-value: #a5d6ff;
+}
+
+/* ---------- 1. Page frame ---------------------------------------------- */
+html[data-ui-theme="modern"] #view-profile-editor {
+  background: var(--modern-canvas);
+}
+html[data-ui-theme="modern"] #view-profile-editor .profile-editor-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 24px 10px;
+  background: transparent;
+  border-bottom: 1px solid var(--rx-border-soft);
+}
+html[data-ui-theme="modern"] #view-profile-editor .profile-editor-head h2 {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--modern-neutral-900);
+}
+html[data-ui-theme="modern"] #view-profile-editor .profile-editor-head p {
+  color: var(--modern-neutral-600);
+  font-size: 12px;
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-back {
+  height: 32px;
+  padding: 0 12px !important;
+  border: 1px solid var(--rx-border-soft);
+  border-radius: var(--rx-radius-input);
+  background: var(--rx-panel-bg);
+  color: var(--modern-neutral-700) !important;
+  font-size: 13px !important;
+  box-shadow: var(--rx-shadow-card);
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-back:hover {
+  border-color: var(--rx-border);
+  color: var(--modern-blue-600) !important;
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-id-value {
+  font-family: var(--rx-font-mono);
+  font-size: 11.5px;
+  color: var(--modern-neutral-600) !important;
+  background: var(--rx-block-bg);
+  border: 1px solid var(--rx-border-soft);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-head-tools select,
+html[data-ui-theme="modern"] #view-profile-editor .editor-head-tools button {
+  height: 32px !important;
+  min-height: 32px !important;
+  border-radius: var(--rx-radius-input) !important;
+  border: 1px solid var(--rx-border-soft) !important;
+  background: var(--rx-panel-bg) !important;
+  box-shadow: var(--rx-shadow-card);
+}
+
+/* ---------- 2. Head tabs (Roxy .head-tabs) ------------------------------ */
+html[data-ui-theme="modern"] #view-profile-editor .editor-tabs,
+html[data-ui-theme="modern"] #view-profile-editor .editor-create-mode-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0 24px;
+  background: transparent;
+  border-bottom: 1px solid var(--rx-border-soft);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-tabs::-webkit-scrollbar,
+html[data-ui-theme="modern"] #view-profile-editor .editor-create-mode-bar::-webkit-scrollbar {
+  display: none;
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-tabs button,
+html[data-ui-theme="modern"] #view-profile-editor .create-mode-tab {
+  position: relative;
+  flex: 0 0 auto;
+  height: 40px !important;
+  padding: 0 8px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--modern-neutral-600) !important;
+  font-size: 13px !important;
+  font-weight: 500;
+  white-space: nowrap;
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-tabs button::after,
+html[data-ui-theme="modern"] #view-profile-editor .create-mode-tab::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: transparent;
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-tabs button:hover,
+html[data-ui-theme="modern"] #view-profile-editor .create-mode-tab:hover {
+  color: var(--modern-neutral-900) !important;
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-tabs button.active,
+html[data-ui-theme="modern"] #view-profile-editor .create-mode-tab.active {
+  color: var(--modern-neutral-900) !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-tabs button.active::after,
+html[data-ui-theme="modern"] #view-profile-editor .create-mode-tab.active::after {
+  background: var(--modern-blue-500);
+}
+html[data-ui-theme="modern"] #view-profile-editor .create-mode-tab.is-ai {
+  color: var(--modern-neutral-600) !important;
+}
+
+/* ---------- 3. Two-column canvas (Roxy flex + gap-8) -------------------- */
+html[data-ui-theme="modern"] #view-profile-editor .environment-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 288px;
+  gap: 24px;
+  align-items: start;
+  padding: 16px 24px 96px;
+}
+
+/* ---------- 4. Panels (Roxy .panel) ------------------------------------ */
+html[data-ui-theme="modern"] #view-profile-editor .roxy-accordion-card {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  margin-bottom: 20px;
+  box-shadow: none;
+}
+html[data-ui-theme="modern"] #view-profile-editor .roxy-accordion-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 0 2px;
+  border-bottom: 0;
+  cursor: pointer;
+  user-select: none;
+}
+html[data-ui-theme="modern"] #view-profile-editor .roxy-accordion-header strong {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 20px;
+  color: var(--modern-neutral-900);
+}
+html[data-ui-theme="modern"] #view-profile-editor .roxy-acc-desc {
+  margin-left: 2px;
+  color: var(--modern-neutral-500);
+  font-size: 12px;
+  line-height: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+html[data-ui-theme="modern"] #view-profile-editor .roxy-acc-symbol {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  background: var(--rx-block-bg);
+  color: var(--modern-neutral-700);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+}
+html[data-ui-theme="modern"] #view-profile-editor .roxy-accordion-header:hover .roxy-acc-symbol {
+  background: var(--modern-blue-50);
+  color: var(--modern-blue-600);
+}
+html[data-ui-theme="modern"] #view-profile-editor .roxy-accordion-card.is-collapsed .roxy-accordion-header {
+  margin-bottom: 0;
+  padding-bottom: 10px;
+  border-bottom: 0;
+}
+
+/* ---------- 5. Inner cards (Roxy card: border + shadow 0 1px 2px) ------ */
+html[data-ui-theme="modern"] #view-profile-editor .editor-section-card {
+  background: var(--rx-panel-bg);
+  border: 1px solid var(--rx-border-soft);
+  border-radius: var(--rx-radius-card);
+  padding: 16px;
+  margin-bottom: 12px;
+  box-shadow: var(--rx-shadow-card);
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-card-header {
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed var(--modern-neutral-200);
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--modern-neutral-900);
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-card-desc {
+  margin-top: 2px;
+  color: var(--modern-neutral-500);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+/* ---------- 6. Row fields (Roxy .rx-label right-aligned 100px) --------- */
+html[data-ui-theme="modern"] #view-profile-editor .editor-form label {
+  grid-template-columns: var(--rx-label-width) minmax(0, 1fr);
+  align-items: center;
+  gap: 6px 12px;
+  margin-bottom: 12px;
+  color: var(--modern-neutral-700) !important;
+  font-size: 12.5px !important;
+  font-weight: 500;
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-form label:has(> textarea) {
+  align-items: start;
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-form .check-row {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-form .storage-actions {
+  margin-left: calc(var(--rx-label-width) + 12px);
+}
+
+/* ---------- 7. Inputs / selects / textareas (Roxy .p-inputtext) -------- */
+html[data-ui-theme="modern"] #view-profile-editor input:not([type="checkbox"]):not([type="radio"]),
+html[data-ui-theme="modern"] #view-profile-editor select,
+html[data-ui-theme="modern"] #view-profile-editor textarea {
+  min-height: var(--rx-input-height) !important;
+  padding: 6px 10px !important;
+  border: 1px solid var(--rx-border) !important;
+  border-radius: var(--rx-radius-input) !important;
+  background: var(--rx-panel-bg);
+  color: var(--modern-neutral-900);
+  font-size: 13px !important;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+html[data-ui-theme="modern"] #view-profile-editor textarea {
+  padding: 8px 10px !important;
+  line-height: 1.5;
+}
+html[data-ui-theme="modern"] #view-profile-editor input:not([type="checkbox"]):not([type="radio"]):hover,
+html[data-ui-theme="modern"] #view-profile-editor select:hover,
+html[data-ui-theme="modern"] #view-profile-editor textarea:hover {
+  border-color: var(--modern-neutral-300) !important;
+}
+html[data-ui-theme="modern"] #view-profile-editor input:not([type="checkbox"]):not([type="radio"]):focus,
+html[data-ui-theme="modern"] #view-profile-editor select:focus,
+html[data-ui-theme="modern"] #view-profile-editor textarea:focus {
+  border-color: var(--modern-blue-500) !important;
+  box-shadow: 0 0 0 3px rgba(17, 163, 253, 0.16) !important;
+  outline: none;
+}
+html[data-ui-theme="modern"] #view-profile-editor .network-mode-hint {
+  color: var(--modern-neutral-500);
+  font-size: 11.5px;
+  line-height: 16px;
+}
+
+/* ---------- 8. Segmented radios (Roxy .rx-radio-group-item) ------------ */
+html[data-ui-theme="modern"] #view-profile-editor .segmented {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 12px;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  border: 0;
+}
+html[data-ui-theme="modern"] #view-profile-editor .segmented label {
+  flex: 1 1 0;
+  min-width: 0;
+  justify-content: center;
+  padding: 0 12px;
+  height: 32px;
+  border: 1px solid var(--rx-border) !important;
+  border-radius: var(--rx-radius-input);
+  background: var(--rx-panel-bg);
+  color: var(--modern-neutral-800) !important;
+  font-size: 12.5px;
+  font-weight: 500;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+}
+html[data-ui-theme="modern"] #view-profile-editor .segmented label:hover {
+  border-color: var(--modern-neutral-300) !important;
+}
+html[data-ui-theme="modern"] #view-profile-editor .segmented label:has(input:checked) {
+  border-color: var(--modern-blue-500) !important;
+  color: var(--modern-blue-600) !important;
+  background: var(--modern-blue-25);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+}
+html[data-ui-theme="modern"] #view-profile-editor .form-three .labeled-block .segmented {
+  width: 100%;
+  gap: 6px;
+}
+html[data-ui-theme="modern"] #view-profile-editor .form-three .labeled-block .segmented label {
+  height: 30px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+/* ---------- 9. Pills (advanced preference rows) ------------------------ */
+html[data-ui-theme="modern"] #view-profile-editor .roxy-field-row {
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 6px 12px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed var(--modern-neutral-100);
+}
+html[data-ui-theme="modern"] #view-profile-editor .roxy-field-row:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+html[data-ui-theme="modern"] #view-profile-editor .roxy-field-label {
+  color: var(--modern-neutral-600);
+  font-size: 12px;
+  font-weight: 500;
+}
+html[data-ui-theme="modern"] #view-profile-editor .roxy-pill-group {
+  gap: 6px;
+}
+html[data-ui-theme="modern"] #view-profile-editor .roxy-pill-group button,
+html[data-ui-theme="modern"] #view-profile-editor .roxy-icon-seg button {
+  height: 26px !important;
+  min-height: 26px !important;
+  padding: 0 12px !important;
+  border: 1px solid var(--rx-border) !important;
+  border-radius: 13px !important;
+  background: var(--rx-panel-bg) !important;
+  color: var(--modern-neutral-700) !important;
+  font-size: 12px !important;
+  font-weight: 500;
+  box-shadow: none !important;
+}
+html[data-ui-theme="modern"] #view-profile-editor .roxy-pill-group button.active,
+html[data-ui-theme="modern"] #view-profile-editor .roxy-icon-seg button.active {
+  border-color: var(--modern-blue-500) !important;
+  background: var(--modern-blue-25) !important;
+  color: var(--modern-blue-600) !important;
+  font-weight: 600;
+}
+
+/* ---------- 10. Summary rail (Roxy profile-info) ----------------------- */
+html[data-ui-theme="modern"] #view-profile-editor #editor-profile-summary-rail.profile-summary {
+  position: sticky;
+  top: 12px;
+  padding: 14px;
+  border: 1px solid var(--rx-border-soft);
+  border-radius: var(--rx-radius-card);
+  background: var(--rx-panel-bg);
+  box-shadow: var(--rx-shadow-card);
+}
+html[data-ui-theme="modern"] #view-profile-editor #editor-profile-summary-rail .summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 10px;
+  margin-bottom: 8px;
+  border-bottom: 1px dashed var(--modern-neutral-200);
+}
+html[data-ui-theme="modern"] #view-profile-editor #editor-profile-summary-rail .summary-head strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--modern-neutral-900);
+}
+html[data-ui-theme="modern"] #view-profile-editor #editor-profile-summary-rail .summary-head button {
+  height: 26px !important;
+  min-height: 26px !important;
+  padding: 0 8px !important;
+  border: 1px solid var(--rx-border) !important;
+  border-radius: var(--rx-radius-input) !important;
+  background: var(--rx-panel-bg) !important;
+  color: var(--modern-neutral-700) !important;
+  font-size: 11.5px !important;
+  box-shadow: none !important;
+}
+html[data-ui-theme="modern"] #view-profile-editor #editor-profile-summary-rail .summary-head button:hover {
+  border-color: var(--modern-blue-500) !important;
+  color: var(--modern-blue-600) !important;
+}
+html[data-ui-theme="modern"] #view-profile-editor #editor-summary {
+  margin: 0;
+}
+html[data-ui-theme="modern"] #view-profile-editor #editor-summary > div {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--modern-neutral-100);
+}
+html[data-ui-theme="modern"] #view-profile-editor #editor-summary > div:last-child {
+  border-bottom: 0;
+}
+html[data-ui-theme="modern"] #view-profile-editor #editor-summary dt {
+  color: var(--pattern-editor-key);
+  font-family: var(--rx-font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: -0.12px;
+}
+html[data-ui-theme="modern"] #view-profile-editor #editor-summary dd {
+  margin: 0;
+  color: var(--pattern-editor-value);
+  font-family: var(--rx-font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: -0.12px;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+html[data-ui-theme="modern"] #view-profile-editor #editor-random-fp-rail {
+  width: 100%;
+  height: 32px !important;
+  margin-top: 10px;
+  border: 1px solid var(--modern-blue-500) !important;
+  border-radius: var(--rx-radius-input) !important;
+  background: var(--rx-panel-bg) !important;
+  color: var(--modern-blue-600) !important;
+  font-size: 12.5px !important;
+  font-weight: 600;
+  justify-content: center;
+  box-shadow: none !important;
+}
+html[data-ui-theme="modern"] #view-profile-editor #editor-random-fp-rail:hover {
+  background: var(--modern-blue-25) !important;
+}
+html[data-ui-theme="modern"] #view-profile-editor #editor-profile-summary-rail .rail-tutorial {
+  margin: 0 0 10px;
+  padding: 10px 32px 10px 12px;
+  border: 1px solid var(--modern-blue-200);
+  border-radius: var(--rx-radius-input);
+  background: linear-gradient(180deg, rgba(17, 163, 253, 0.12) 0%, rgba(17, 163, 253, 0.04) 100%);
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-device-mockup .device-mockup-stage {
+  border-radius: var(--rx-radius-input);
+  background: linear-gradient(180deg, #ebf7ff 0%, #f6f6fd 100%);
+  border: 1px solid var(--rx-border-soft);
+}
+html[data-ui-theme="modern"][data-color-mode="dark"] #view-profile-editor .editor-device-mockup .device-mockup-stage {
+  background: linear-gradient(180deg, rgba(17, 163, 253, 0.14) 0%, rgba(17, 163, 253, 0.04) 100%);
+}
+html[data-ui-theme="modern"] #view-profile-editor #editor-profile-summary-rail > p {
+  margin: 10px 0 0;
+  color: var(--modern-neutral-500);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+/* ---------- 11. Sticky footer (Roxy .footer) -------------------------- */
+html[data-ui-theme="modern"] #view-profile-editor .editor-actions.editor-sticky-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  position: sticky;
+  bottom: 0;
+  z-index: 30;
+  margin: 8px 0 0;
+  padding: 10px 14px !important;
+  border: 1px solid var(--rx-border-soft) !important;
+  border-radius: var(--rx-radius-card) !important;
+  background: var(--rx-panel-bg) !important;
+  box-shadow: 0 -2px 12px rgba(15, 23, 42, 0.06) !important;
+}
+html[data-ui-theme="modern"] #view-profile-editor .footer-left-quick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+html[data-ui-theme="modern"] #view-profile-editor .footer-group-label {
+  color: var(--modern-neutral-600);
+  font-size: 12px;
+  white-space: nowrap;
+}
+html[data-ui-theme="modern"] #view-profile-editor #editor-footer-group {
+  height: 32px !important;
+  min-height: 32px !important;
+  min-width: 148px;
+  max-width: 220px;
+}
+html[data-ui-theme="modern"] #view-profile-editor .footer-right-btns {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+html[data-ui-theme="modern"] #view-profile-editor .footer-right-btns .outline {
+  height: 36px !important;
+  min-height: 36px !important;
+  padding: 0 14px !important;
+  border: 1px solid var(--rx-border) !important;
+  border-radius: var(--rx-radius-button) !important;
+  background: var(--rx-panel-bg) !important;
+  color: var(--modern-neutral-800) !important;
+  font-size: 13px !important;
+  box-shadow: var(--rx-shadow-button) !important;
+}
+html[data-ui-theme="modern"] #view-profile-editor .footer-right-btns .outline:hover {
+  border-color: var(--modern-blue-500) !important;
+  color: var(--modern-blue-600) !important;
+}
+html[data-ui-theme="modern"] #view-profile-editor .footer-right-btns .primary {
+  height: 36px !important;
+  min-height: 36px !important;
+  min-width: 96px;
+  padding: 0 18px !important;
+  border: 0 !important;
+  border-radius: var(--rx-radius-button) !important;
+  background: var(--modern-blue-500) !important;
+  color: #ffffff !important;
+  font-size: 13px !important;
+  font-weight: 600;
+  box-shadow: 0 4px 10px rgba(17, 163, 253, 0.28) !important;
+}
+html[data-ui-theme="modern"] #view-profile-editor .footer-right-btns .primary:hover {
+  background: var(--modern-blue-600) !important;
+}
+html[data-ui-theme="modern"] #view-profile-editor .footer-right-btns .primary:disabled {
+  background: var(--modern-neutral-200) !important;
+  color: var(--modern-neutral-500) !important;
+  box-shadow: none !important;
+}
+
+/* ---------- 12. Direct-network notice (neutral, no promo) ------------- */
+html[data-ui-theme="modern"] #view-profile-editor .editor-direct-banner {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--modern-blue-200);
+  border-radius: var(--rx-radius-input);
+  background: var(--modern-blue-25);
+  color: var(--modern-neutral-800);
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-direct-banner .direct-banner-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-direct-banner p {
+  margin: 4px 0 0;
+  color: var(--modern-neutral-600);
+  font-size: 11.5px;
+  line-height: 16px;
+}
+html[data-ui-theme="modern"][data-color-mode="dark"] #view-profile-editor .editor-direct-banner {
+  border-color: rgba(17, 163, 253, 0.32);
+  background: rgba(17, 163, 253, 0.1);
+  color: var(--modern-neutral-100);
+}
+html[data-ui-theme="modern"][data-color-mode="dark"] #view-profile-editor .editor-direct-banner p {
+  color: var(--modern-neutral-400);
+}
+
+/* ---------- 13. Misc editor widgets ----------------------------------- */
+html[data-ui-theme="modern"] #view-profile-editor .editor-random-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px dashed var(--rx-border);
+  border-radius: var(--rx-radius-input);
+  background: var(--rx-block-bg);
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-random-toolbar .outline {
+  height: 30px !important;
+  padding: 0 12px !important;
+  border: 1px solid var(--modern-blue-500) !important;
+  border-radius: var(--rx-radius-input) !important;
+  background: var(--rx-panel-bg) !important;
+  color: var(--modern-blue-600) !important;
+  font-size: 12px !important;
+}
+html[data-ui-theme="modern"] #view-profile-editor .advanced-card,
+html[data-ui-theme="modern"] #view-profile-editor .privacy-grid {
+  padding: 14px 16px;
+  border: 1px solid var(--rx-border-soft);
+  border-radius: var(--rx-radius-card);
+  background: var(--rx-panel-bg);
+  box-shadow: var(--rx-shadow-card);
+}
+html[data-ui-theme="modern"] #view-profile-editor .advanced-card > h4,
+html[data-ui-theme="modern"] #view-profile-editor .advanced-card > .advanced-card-title {
+  margin: 0 0 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed var(--modern-neutral-200);
+  color: var(--modern-neutral-900);
+  font-size: 13px;
+  font-weight: 600;
+}
+html[data-ui-theme="modern"] #view-profile-editor .storage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+html[data-ui-theme="modern"] #view-profile-editor .storage-actions button {
+  height: 30px !important;
+  min-height: 30px !important;
+  padding: 0 12px !important;
+  border: 1px solid var(--rx-border) !important;
+  border-radius: var(--rx-radius-input) !important;
+  background: var(--rx-panel-bg) !important;
+  color: var(--modern-neutral-800) !important;
+  font-size: 12px !important;
+  box-shadow: none !important;
+}
+html[data-ui-theme="modern"] #view-profile-editor .storage-actions button:hover {
+  border-color: var(--modern-blue-500) !important;
+  color: var(--modern-blue-600) !important;
+}
+
+/* ---------- 14. Collapsed-summary layout ------------------------------ */
+html[data-ui-theme="modern"] #view-profile-editor .environment-editor.is-summary-collapsed {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* ---------- 15. Responsive ------------------------------------------- */
+@media (max-width: 1360px) {
+  html[data-ui-theme="modern"] #view-profile-editor .environment-editor {
+    grid-template-columns: minmax(0, 1fr) 264px;
+    gap: 20px;
+  }
+}
+@media (max-width: 1120px) {
+  html[data-ui-theme="modern"] #view-profile-editor .environment-editor {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  html[data-ui-theme="modern"] #view-profile-editor #editor-profile-summary-rail.profile-summary {
+    position: static;
+  }
+  html[data-ui-theme="modern"] #view-profile-editor .editor-form label {
+    grid-template-columns: 100px minmax(0, 1fr);
+  }
+}
+
+/* ---------- 16. Roxy row-label alignment refinements ------------------- */
+/* Roxy 行式表单：标签在左、控件在右（两列网格），标签右对齐贴住控件 */
+html[data-ui-theme="modern"] #view-profile-editor .editor-form .form-two > label:not(.platform-select-label):not(.platform-url-label):not(.check-row),
+html[data-ui-theme="modern"] #view-profile-editor .editor-form .platform-select-label,
+html[data-ui-theme="modern"] #view-profile-editor .editor-form .platform-url-label {
+  display: grid;
+  grid-template-columns: var(--rx-label-width) minmax(0, 1fr);
+  align-items: center !important;
+  gap: 6px 12px;
+  margin-bottom: 12px;
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-form .form-two > label:has(> textarea),
+html[data-ui-theme="modern"] #view-profile-editor .editor-form .platform-url-label {
+  align-items: start !important;
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-form .form-two > label > .label-title-row,
+html[data-ui-theme="modern"] #view-profile-editor .editor-form .platform-select-label > .label-title-row,
+html[data-ui-theme="modern"] #view-profile-editor .editor-form .platform-url-label > .label-title-row,
+html[data-ui-theme="modern"] #view-profile-editor .editor-form .form-two > label > span:first-child:not(.themed-select):not(.field-inline-group),
+html[data-ui-theme="modern"] #view-profile-editor .editor-form .form-two > label > strong:first-child {
+  justify-self: end;
+  text-align: right;
+  color: var(--modern-neutral-700);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 18px;
+  white-space: nowrap;
+}
+/* 三列网格（用户名/密码/2FA）标签保持在上方、左对齐 */
+html[data-ui-theme="modern"] #view-profile-editor .editor-form .form-three > label:not(.check-row) {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 5px;
+  margin-bottom: 12px;
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-form .form-three > label > span:first-child {
+  color: var(--modern-neutral-700);
+  font-size: 12.5px;
+  font-weight: 500;
+  text-align: left;
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-form .platform-select-label > .label-title-row,
+html[data-ui-theme="modern"] #view-profile-editor .editor-form .platform-url-label > .label-title-row {
+  padding-top: 9px;
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-form .labeled-block-title {
+  color: var(--modern-neutral-700);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-form .req-mark {
+  color: var(--modern-red-500);
+  font-style: normal;
+  margin-right: 2px;
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-form .form-two,
+html[data-ui-theme="modern"] #view-profile-editor .editor-form .form-three {
+  gap: 10px 20px;
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-form .form-two > label:not(.platform-select-label):not(.platform-url-label),
+html[data-ui-theme="modern"] #view-profile-editor .editor-form .form-three > label:not(.check-row) {
+  gap: 5px;
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-form label > small {
+  align-self: end;
+  color: var(--modern-neutral-500);
+  font-size: 11px;
 }
