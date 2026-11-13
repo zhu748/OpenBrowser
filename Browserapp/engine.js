@@ -4,6 +4,7 @@ const path = require('path');
 const os = require('os');
 const { spawn } = require('child_process');
 const cdp = require('./cdp');
+const { compareKernelVersions } = require('./automation/kernel-versions');
 let proxyForwarderModule = {};
 try {
   proxyForwarderModule = require('./proxy-forwarder');
@@ -345,7 +346,10 @@ class BrowserEngine {
   }
 
   async ensureKernelBootstrap() {
-    if (this.kernelStatus().installed) return this.kernelStatus().kernel;
+    const installed = this.kernelStatus().kernel || this.candidates().find((item) => item.independent);
+    // Per-version downloads are usable before they are made the global
+    // default. Do not download Chrome again when either family is installed.
+    if (installed) return installed;
     if (!this.kernelBootstrapPromise) {
       this.emit({ type: 'kernel-progress', phase: 'bootstrap', message: '正在检查独立浏览器内核，未安装时将下载 Chrome Stable…' });
       this.kernelBootstrapPromise = this.ensureIndependentKernel(false)
@@ -452,10 +456,26 @@ class BrowserEngine {
 
   profileRoot(id) { return path.join(this.profileDataRootPath, assertProfileId(id)); }
 
-  browserSelection(preferredEngine = null) {
+  browserSelection(preferredEngine = null, preferredVersion = null) {
     const list = this.candidates();
     const wantEngine = preferredEngine === 'firefox' || preferredEngine === 'chromium' ? preferredEngine : null;
     const scoped = wantEngine ? list.filter((item) => (item.engine || 'chromium') === wantEngine) : list;
+    const wantedVersion = String(preferredVersion || '').trim();
+    if (wantedVersion && wantedVersion !== 'latest') {
+      // A saved full version is exact. Older editor profiles stored a major
+      // only; keep those working by choosing the newest installed patch in
+      // that major, never a different major or a system-browser fallback.
+      const matches = scoped.filter((item) => item.independent && (
+        String(item.version) === wantedVersion
+        || (/^\d+$/.test(wantedVersion) && String(item.version).split('.')[0] === wantedVersion)
+      ));
+      matches.sort((a, b) => compareKernelVersions(b.version, a.version));
+      if (matches[0]) return { mode: 'independent', browser: matches[0] };
+      return {
+        mode: 'blocked', browser: null, code: 'KERNEL_VERSION_NOT_INSTALLED',
+        message: `未安装所选的 ${wantEngine === 'firefox' ? 'Firefox' : 'Chrome'} ${wantedVersion} 内核。请在「内核管理」下载该版本，或在环境设置中选择已安装的版本。`,
+      };
+    }
     const independent = scoped.find((item) => item.independent);
     if (this.allowSystemBrowserFallback && this.systemBrowserPath) {
       const manual = scoped.find((item) => !item.independent && item.path === this.systemBrowserPath);
@@ -467,8 +487,8 @@ class BrowserEngine {
         mode: 'blocked',
         browser: null,
         message: wantEngine === 'firefox'
-          ? '未找到可用的 Firefox 内核。请在「本地设置」下载 Firefox。'
-          : '未找到内置独立浏览器内核。请确认安装包包含 kernels/，或在「本地设置」选择自定义内核。',
+          ? '未找到可用的 Firefox 内核。请在「内核管理」下载 Firefox。'
+          : '未找到可用的 Chrome 内核。请在「内核管理」下载 Chrome 或选择自定义内核。',
       };
     }
     const browser = independent || scoped[0];
@@ -483,7 +503,7 @@ class BrowserEngine {
     const engine = preferredEngine === 'firefox' || preferredEngine === 'chromium'
       ? preferredEngine
       : (profile ? this.profileEngine(profile) : null);
-    const selection = this.browserSelection(engine);
+    const selection = this.browserSelection(engine, profile?.engineVersion);
     if (selection.browser) {
       if (isSystemBrowserExecutable(selection.browser.path) && !this.allowSystemBrowserFallback) {
         throw new Error('已阻止使用本机浏览器。请安装或选择独立 Chromium 内核。');
@@ -493,7 +513,7 @@ class BrowserEngine {
       }
       return selection.browser;
     }
-    throw new Error(selection.message);
+    throw Object.assign(new Error(selection.message), selection.code ? { code: selection.code } : {});
   }
 
   proxyConfig(value) { return parseProxy(value); }

@@ -508,7 +508,8 @@
     if (titleEl && !editingProfileId) titleEl.value = defaultTitle;
     const osEl = document.getElementById('editor-os');
     if (osEl && !osEl.value) osEl.value = 'Windows';
-    if (typeof fillEditorVersionSelects === 'function') fillEditorVersionSelects();
+    if (typeof fillEditorVersionSelects === 'function') fillEditorVersionSelects({ engineVersion: 'latest' });
+    window.refreshEditorKernelVersions?.();
     autoFillDeviceNameByOs(osEl?.value || 'Windows', true);
 
     const macEl = document.getElementById('editor-mac');
@@ -952,10 +953,10 @@
       if (el && val !== undefined) el.value = val;
     };
     setVal('editor-os', tpl.os || 'Windows');
-    if (typeof fillEditorVersionSelects === 'function') fillEditorVersionSelects();
-    setVal('editor-os-version', tpl.osVersion || '');
     setVal('editor-engine', tpl.engine || 'chromium');
-    setVal('editor-engine-version', tpl.engineVersion || 'latest');
+    if (typeof fillEditorVersionSelects === 'function') fillEditorVersionSelects({ engineVersion: tpl.engineVersion || 'latest' });
+    setVal('editor-os-version', tpl.osVersion || '');
+    window.refreshEditorKernelVersions?.();
     setVal('editor-language', tpl.language || 'en-US');
     setVal('editor-width', tpl.width || 1280);
     setVal('editor-height', tpl.height || 820);

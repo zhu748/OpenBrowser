@@ -84,6 +84,7 @@ function registerBootIpc() {
   guard('extensions:list', () => state._engine.listExtensions());
   guard('accounts:list', () => []);
   guard('transfers:list', () => []);
+  guard('kernel:list-installed', () => state._engine.kernelManager.listInstalledKernels());
   // Lenient catch-all: the UI may probe optional surfaces on interaction;
   // those never run during the measurement and must not crash it.
   for (const channel of [

@@ -399,8 +399,10 @@ module.exports = {
     await this.persist();
     const extensions = this.assignedExtensions(profile.id);
     currentStage = 'kernel'; this.emitStartProgress(profile.id, 'kernel', 30, '正在准备浏览器内核…');
-    if (!this.kernelStatus().installed && this.preferIndependentKernel) {
-      // Resolve integrated seed only — never download a remote kernel at start time.
+    if (!this.kernelStatus().installed && this.preferIndependentKernel
+        && (!profile.engineVersion || profile.engineVersion === 'latest')) {
+      // Default profiles retain first-run bootstrap; a fixed selection must
+      // fail if missing instead of downloading a different Chrome version.
       await this.ensureKernelBootstrap();
     }
     this.assertStartGenerationActive(profile.id, lifecycleGeneration);

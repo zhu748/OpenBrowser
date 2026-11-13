@@ -309,7 +309,7 @@ module.exports = {
         }
         return buildFingerprint({
           ...profile,
-          kernelVersion: this.kernelStatus()?.kernel?.version || profile.kernelVersion,
+          kernelVersion: this.chooseBrowser(profile, 'chromium').version,
           exitTimezone: timezone,
           exitLatitude: pageNetwork?.latitude ?? profile.exitLatitude,
           exitLongitude: pageNetwork?.longitude ?? profile.exitLongitude,

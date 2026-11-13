@@ -10,7 +10,8 @@ function buildEditorUa(engine, payload = {}) {
   const family = (payload.engine || saved.engine) === 'firefox' ? 'firefox' : 'chromium';
   const profile = { ...saved, engine: family, engineVersion: payload.engineVersion || saved.engineVersion };
   let browser;
-  try { browser = engine.chooseBrowser(profile, family); } catch (error) { if (family === 'firefox') throw error; }
+  try { browser = engine.chooseBrowser(profile, family); }
+  catch (error) { if (family === 'firefox' || error.code === 'KERNEL_VERSION_NOT_INSTALLED') throw error; }
   const os = normalizeUaOs(payload.os || saved.os) || (payload.userAgent ? parseOsFromUa(payload.userAgent) : 'windows');
   if (family === 'firefox') {
     const osName = os.startsWith('mac') ? 'mac' : os.startsWith('win') ? 'win' : 'linux';

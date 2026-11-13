@@ -631,7 +631,7 @@ function renderEditorSummary() {
   const values = [
     // Roxy 概要 canonical 行顺序：操作系统 → 内核类型 → UA → 语言 → 时区 → 地理位置提示 → 地理位置 → …
     [tx('操作系统'), draft.os + (draft.osVersion ? ' ' + draft.osVersion : '')],
-    [tx('内核类型'), (draft.engine === 'firefox' ? 'Firefox' : 'Chrome') + (draft.engineVersion && draft.engineVersion !== 'latest' ? ' ' + draft.engineVersion : ' ' + tx('保持最新'))],
+    [tx('内核类型'), (draft.engine === 'firefox' ? 'Firefox' : 'Chrome') + (draft.engineVersion && draft.engineVersion !== 'latest' ? ' ' + draft.engineVersion : ' ' + tx('默认'))],
     ['User-Agent', draft.userAgent || t('editor.summary.defaultUA')],
     [tx('语言'), draft.language], [tx('界面语言'), privacy.uiLanguage === 'profile' ? t('editor.summary.followLanguage') : privacy.uiLanguage],
     [tx('时区'), labels.timezoneMode[privacy.timezoneMode]],
@@ -679,7 +679,7 @@ function renderEditorSummary() {
     [tx('硬件加速'), privacy.hardwareAcceleration === 'off' ? t('editor.summary.off') : t('editor.summary.on')],
     [tx('禁用沙盒'), privacy.noSandbox ? t('editor.summary.on') : t('editor.summary.off')],
     // —— 本项目自有扩展行（保留） ——
-    [tx('浏览器'), 'Google Chrome'], [tx('分组'), groupNameOf(draft)], [tx('网络'), maskProxy(draft.proxy)],
+    [tx('浏览器'), draft.engine === 'firefox' ? 'Firefox' : 'Google Chrome'], [tx('分组'), groupNameOf(draft)], [tx('网络'), maskProxy(draft.proxy)],
     ['WebGPU', privacy.webgpu === 'blocked' ? t('editor.summary.disabled') : (privacy.webgpu === 'webgl' ? t('editor.summary.basedOnWebgl') : t('editor.summary.real'))],
     [tx('电池'), privacy.battery === 'blocked' ? t('editor.summary.off') : (privacy.battery === 'real' ? t('editor.summary.real') : t('editor.summary.random'))],
     [tx('蓝牙'), labels.bluetooth[privacy.bluetooth || 'real']],
@@ -719,15 +719,51 @@ const EDITOR_OS_VERSIONS = {
   Android: ['Android 16', 'Android 15', 'Android 14', 'Android 13', 'Android 12', '16', '15', '14', '13', '12', '11'],
   iOS: ['iOS 26', 'iOS 18', 'iOS 17', 'iOS 16', 'iOS 15'],
 };
-const EDITOR_KERNEL_VERSIONS = {
-  chromium: ['latest', '156', '154', '153', '148', '131', '130', '129', '126', '120', '116', '109'],
-  firefox: ['latest', '146', '128', '115'],
-};
-// 内核 'latest' → 保持最新；其余为固定版本号（供未来内核钉选使用）
-function fillEditorVersionSelects() {
+let editorInstalledKernels = [];
+let editorKernelRefreshSequence = 0;
+
+function fillEditorKernelVersionSelect(selectedVersion) {
+  const engine = $('#editor-engine')?.value === 'firefox' ? 'firefox' : 'chromium';
+  const select = $('#editor-engine-version');
+  if (!select) return;
+  const selected = selectedVersion || (select.dataset.engine === engine ? select.value : 'latest') || 'latest';
+  const name = engine === 'firefox' ? 'Firefox' : 'Chrome';
+  const versions = [...new Set(editorInstalledKernels
+    .filter((kernel) => (kernel.engine || 'chromium') === engine)
+    .map((kernel) => String(kernel.version || '')).filter(Boolean))];
+  select.replaceChildren(new Option(`${name} (${tx('默认')})`, 'latest'));
+  for (const version of versions) select.add(new Option(`${name} ${version}`, version));
+  // Keep a saved selection visible when its kernel has been removed. A major
+  // from an older profile remains usable when that major is installed.
+  if (selected !== 'latest' && !versions.includes(selected)) {
+    const available = /^\d+$/.test(selected) && versions.some((version) => version.split('.')[0] === selected);
+    select.add(new Option(`${name} ${selected}${available ? '' : ' (' + tx('未安装') + ')'}`, selected));
+  }
+  select.dataset.engine = engine;
+  select.value = selected;
+  syncThemedSelects?.();
+}
+
+async function refreshEditorKernelVersions() {
+  const sequence = ++editorKernelRefreshSequence;
+  try {
+    const [installed, info] = await Promise.all([window.ops.kernelListInstalled(), window.ops.getInfo()]);
+    if (sequence !== editorKernelRefreshSequence) return;
+    // getInfo includes bundled, stable and custom kernels; listInstalled also
+    // includes every per-version download, even when it is not the default.
+    editorInstalledKernels = [
+      ...(Array.isArray(info?.browsers) ? info.browsers.filter((kernel) => kernel.independent) : []),
+      ...(Array.isArray(installed) ? installed.filter((kernel) => kernel.binaryExists !== false) : []),
+    ];
+    fillEditorKernelVersionSelect();
+  } catch (_) { /* Keep the current selection if IPC is temporarily unavailable. */ }
+}
+
+function fillEditorVersionSelects(options = {}) {
   const os = $('#editor-os')?.value || 'Windows';
   const osSelect = $('#editor-os-version');
   if (osSelect) {
+    const selected = osSelect.dataset.os === os ? osSelect.value : '';
     const versions = EDITOR_OS_VERSIONS[os] || [];
     osSelect.replaceChildren();
     const auto = document.createElement('option');
@@ -740,18 +776,10 @@ function fillEditorVersionSelects() {
       opt.textContent = v;
       osSelect.appendChild(opt);
     }
+    osSelect.dataset.os = os;
+    osSelect.value = selected;
   }
-  const engine = $('#editor-engine')?.value || 'chromium';
-  const engSelect = $('#editor-engine-version');
-  if (engSelect) {
-    engSelect.replaceChildren();
-    for (const v of EDITOR_KERNEL_VERSIONS[engine] || ['latest']) {
-      const opt = document.createElement('option');
-      opt.value = v;
-      opt.textContent = v === 'latest' ? (engine === 'firefox' ? 'Firefox 146 (' + tx('保持最新') + ')' : 'Chrome 156 (' + tx('保持最新') + ')') : ((engine === 'firefox' ? 'Firefox ' : 'Chrome ') + v);
-      engSelect.appendChild(opt);
-    }
-  }
+  fillEditorKernelVersionSelect(options.engineVersion);
 }
 const EDITOR_POS_VALUES = ['tl', 'tm', 'tr', 'ml', 'mm', 'mr', 'bl', 'bm', 'br'];
 function buildEditorPosGrid() {
@@ -873,7 +901,11 @@ function wireEditorAlignmentControls() {
     $('#editor-extra-accounts')?.append(buildExtraAccountRow());
   });
   $('#editor-os')?.addEventListener('change', fillEditorVersionSelects);
-  $('#editor-engine')?.addEventListener('change', () => { fillEditorVersionSelects(); updateEditorVisibility(); });
+  $('#editor-engine')?.addEventListener('change', () => {
+    fillEditorKernelVersionSelect('latest');
+    refreshEditorKernelVersions();
+    updateEditorVisibility();
+  });
   $('#editor-id-copy')?.addEventListener('click', async () => {
     const id = $('#editor-id-text')?.textContent || '';
     try { await navigator.clipboard.writeText(id); toast(tx('复制成功')); } catch (_) {}
@@ -1013,10 +1045,10 @@ function showProfileEditor(value, revision) {
   editorSet('#editor-platform-name', profile.platform?.name || '');
   editorSet('#editor-browser', 'Google Chrome');
   editorSet('#editor-os', profile.os);
-  fillEditorVersionSelects();
-  editorSet('#editor-os-version', profile.osVersion || '');
   editorSet('#editor-engine', profile.engine === 'firefox' ? 'firefox' : 'chromium');
-  editorSet('#editor-engine-version', profile.engineVersion || 'latest');
+  fillEditorVersionSelects({ engineVersion: profile.engineVersion || 'latest' });
+  editorSet('#editor-os-version', profile.osVersion || '');
+  refreshEditorKernelVersions();
   editorSet('#editor-user-agent', profile.privacy?.fingerprint?.userAgent || profile.userAgent);
   editorSet('#editor-cookies', (() => {
     if (!profile.cookies) return '';
@@ -1394,6 +1426,7 @@ Object.assign(window, {
   setupPlatformPresets,
   randomizeFingerprintDraft,
   fillEditorVersionSelects,
+  refreshEditorKernelVersions,
   syncEditorSegmented,
   syncEditorPosGrid,
   renderDirectBanner,

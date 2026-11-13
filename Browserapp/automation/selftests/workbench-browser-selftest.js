@@ -22,6 +22,11 @@ async function main() {
   const fixture = await fs.readFile(path.join(appRoot, 'automation/ui-audit-bridge.js'), 'utf8');
   const script = fixture + `
     window.__reviewToasts=[];window.__accounts=new Map();window.__proxies=[];
+    window.__kernels=[
+      {engine:'chromium',version:'156.0.8078.80',name:'Chrome for Testing 156.0.8078.80',path:'/fixture/chrome',binaryExists:true},
+      {engine:'firefox',version:'160.0',name:'Firefox 160.0',path:'/fixture/firefox',binaryExists:true}
+    ];
+    bridge.kernelListInstalled=async()=>structuredClone(window.__kernels);
     localStorage.setItem('openbrowser-platform-accounts-v1',JSON.stringify([{id:'legacy',username:'legacy@example.test',password:'LEGACY_PASSWORD',totpSecret:'LEGACY_TOTP'}]));
     const metadata=a=>{const {password,totpSecret,...rest}=a;return {...rest,hasPassword:!!password,hasTotpSecret:!!totpSecret};};
     bridge.accountList=async()=>[...window.__accounts.values()].map(metadata);
@@ -87,6 +92,43 @@ async function main() {
     assert.equal(ready.migrated, true);
     assert.equal(ready.migratedTransfers, true);
     assert.equal(ready.passwordAttribute, false);
+    const kernels = await evaluate(async () => {
+      const sleep = () => new Promise((resolve) => setTimeout(resolve, 80));
+      window.openWorkbenchEditorMode('single');
+      document.querySelector('#editor-engine-visual button[data-engine-val="firefox"]').click();
+      await window.refreshEditorKernelVersions();
+      const select = document.getElementById('editor-engine-version');
+      const firefoxOptions = [...select.options].map((option) => option.value);
+      select.value = '160.0';
+      // An OS change must not reset the independently selected kernel version.
+      const os = document.getElementById('editor-os');
+      os.value = 'Linux'; os.dispatchEvent(new Event('change', { bubbles: true }));
+      const afterOsChange = select.value;
+      document.getElementById('editor-title').value = 'Selected Firefox kernel';
+      document.getElementById('profile-editor-form').dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+      await sleep();
+      const profile = window.ui.profiles.find((item) => item.title === 'Selected Firefox kernel');
+      // Reopen Firefox while the form currently contains Chrome options.
+      document.querySelector('#editor-engine-visual button[data-engine-val="chromium"]').click();
+      await window.openProfileEditor(profile.id);
+      await window.refreshEditorKernelVersions();
+      const reopened = { engine: document.getElementById('editor-engine').value, version: select.value };
+      window.__kernels.push({ engine: 'firefox', version: '161.0', name: 'Firefox 161.0', path: '/fixture/new-firefox', binaryExists: true });
+      await window.refreshEditorKernelVersions();
+      const installedAppeared = [...select.options].some((option) => option.value === '161.0');
+      select.value = '160.0';
+      window.__kernels = window.__kernels.filter((item) => item.version !== '160.0');
+      await window.refreshEditorKernelVersions();
+      return { firefoxOptions, afterOsChange, saved: profile.engineVersion, reopened, installedAppeared,
+        deleted: { value: select.value, label: select.selectedOptions[0].textContent } };
+    });
+    assert.deepEqual(kernels.firefoxOptions, ['latest', '160.0']);
+    assert.equal(kernels.afterOsChange, '160.0');
+    assert.equal(kernels.saved, '160.0');
+    assert.deepEqual(kernels.reopened, { engine: 'firefox', version: '160.0' });
+    assert.equal(kernels.installedAppeared, true);
+    assert.equal(kernels.deleted.value, '160.0');
+    assert.match(kernels.deleted.label, /未安装|Not installed/i);
     const batch = await evaluate(async () => {
       const before = window.ui.profiles.length;window.openWorkbenchEditorMode('batch');document.getElementById('editor-batch-count').value='3';
       document.getElementById('profile-editor-form').dispatchEvent(new Event('submit',{cancelable:true,bubbles:true}));await new Promise(r=>setTimeout(r,80));
@@ -145,7 +187,7 @@ async function main() {
     const cloud = await evaluate(async () => {document.getElementById('upload-window-cloud-btn').click();await new Promise(r=>setTimeout(r,80));return window.__reviewToasts.at(-1);});
     assert.match(cloud,/REMOTE_UPLOAD_FAILED/);assert.ok(!cloud.includes('已将'));
     assert.deepEqual(await evaluate(()=>window.__uiAuditErrors),[]);
-    console.log('WORKBENCH_BROWSER_SELFTEST OK (strict preload, migration, batch, proxy persistence, failure rollback, text escaping, selected export, CSV, real task submission, honest cloud errors)');
+    console.log('WORKBENCH_BROWSER_SELFTEST OK (installed kernel selection/reopen/refresh, strict preload, migration, batch, proxy persistence, failure rollback, text escaping, selected export, CSV, real task submission, honest cloud errors)');
   } finally {
     connection?.close();
     if (child && child.exitCode === null) { child.kill('SIGKILL'); await new Promise((resolve) => child.once('close', resolve)); }

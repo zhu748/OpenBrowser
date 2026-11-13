@@ -279,9 +279,8 @@ module.exports = {
       await this.persist();
 
       currentStage = 'kernel'; this.emitStartProgress(profile.id, 'kernel', 30, '正在准备 Firefox 内核…');
-      if (!this.kernelStatus().installed && this.preferIndependentKernel) {
-        await this.ensureKernelBootstrap();
-      }
+      // The global bootstrap downloads Chrome. Firefox must use a downloaded
+      // Firefox tree and report a missing selection directly.
       this.assertStartGenerationActive(profile.id, lifecycleGeneration);
       browser = this.chooseBrowser(profile, 'firefox');
       root = this.profileRoot(profile.id);

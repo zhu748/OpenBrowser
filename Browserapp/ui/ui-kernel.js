@@ -125,6 +125,7 @@ function handleKernelProgressEvent(value) {
   }
   if (phase === 'done') {
     hideProgress();
+    window.refreshEditorKernelVersions?.();
   }
 }
 
@@ -132,6 +133,7 @@ async function refreshAfterKernelChange() {
   await Promise.all([
     refreshKernelInstalledList(),
     refreshKernelPanel(),
+    window.refreshEditorKernelVersions?.(),
     loadKernelVersionOptions('chromium', false).catch(() => {}),
     loadKernelVersionOptions('firefox', false).catch(() => {}),
   ]);
