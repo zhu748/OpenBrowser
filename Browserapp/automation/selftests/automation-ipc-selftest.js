@@ -16,7 +16,7 @@ async function main() {
     app: { getPath: () => '/test-user-data' }, dialog: {},
   });
   const call = (channel, payload) => handlers.get(channel)({}, payload);
-  assert.equal(handlers.size, 22);
+  assert.equal(handlers.size, 30);
   assert.deepEqual(call('automation:rpa-status'), { running: [], count: 0 });
   await assert.rejects(call('automation:rpa-run', { steps: [{ type: 'wait' }] }), /not ready/);
   automation = { apiKey: '', info: { port: 1234 }, rpaEngine: {

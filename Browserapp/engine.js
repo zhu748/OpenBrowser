@@ -1020,7 +1020,8 @@ class BrowserEngine {
     return item;
   }
 
-  async start(raw) {
+  async start(raw, launchOptions = {}) {
+    launchOptions = { headless: launchOptions?.headless === true, blockImages: launchOptions?.blockImages === true };
     const candidate = this.restoreStoredProxyCredentials(
       this.resolveStoredProxyProfile(this.sanitizeProfile(raw)),
       raw,
@@ -1031,6 +1032,9 @@ class BrowserEngine {
       throw Object.assign(new Error(`Profile ${id} is being deleted`), { code: 'PROFILE_DELETING' });
     }
     const pendingStart = this.starting.get(id);
+    if ((launchOptions.headless || launchOptions.blockImages) && (pendingStart || (this.running.has(id) && !this.stopping.has(id)))) {
+      throw Object.assign(new Error('请先停止环境，再应用临时启动选项'), { code: 'PROFILE_BUSY', profileId: id });
+    }
     if (pendingStart) return pendingStart;
     if (this.stopAllInProgress) {
       const error = new Error('Browser engine is stopping all environments');
@@ -1043,7 +1047,7 @@ class BrowserEngine {
     if (this.profilePrefersFirefox(candidate)) {
       return this.startManaged(id, candidate, (generation) => this._startFirefox(candidate, generation));
     }
-    return this.startManaged(id, candidate, (generation) => this._start(candidate, generation));
+    return this.startManaged(id, candidate, (generation) => this._start(candidate, generation, launchOptions));
   }
 
   /**

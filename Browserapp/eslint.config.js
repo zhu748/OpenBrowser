@@ -181,6 +181,7 @@ module.exports = [
         editorResolution: 'writable',
         editorSelectedNetwork: 'writable',
         fillGroupSelect: 'writable',
+        fillEditorVersionSelects: 'readonly',
         groupNameOf: 'writable',
         isDirectProxy: 'writable',
         listGroups: 'writable',

@@ -36,6 +36,10 @@ const ROOT = path.join(__dirname, '..');
 // name exists — package.json only keeps entries that a workflow, the release
 // gate or the docs still invoke directly.
 const SUITE = [
+  ['selftest:accountstore', 'automation/selftests/account-store-selftest.js'],
+  ['selftest:workbenchboundaries', 'automation/selftests/workbench-boundaries-selftest.js'],
+  ['selftest:workbenchbrowser', 'automation/selftests/workbench-browser-selftest.js', { nativeOnly: true }],
+  ['selftest:cookiewarmupnative', 'automation/selftests/cookie-warmup-native-selftest.js', { nativeOnly: true }],
   ['selftest:onlinepackage', 'automation/selftests/online-package-policy-selftest.js'],
   ['selftest:cleanupownership', 'automation/selftests/lifecycle-resource-ownership-selftest.js'],
   ['selftest:launchwriteback', 'automation/selftests/launch-profile-writeback-selftest.js'],

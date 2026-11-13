@@ -353,6 +353,28 @@ async function syncUiProfiles(profiles) {
   return engineProfiles;
 }
 
+async function createUiProfiles(profiles) {
+  if (!Array.isArray(profiles) || profiles.length === 0 || profiles.length > 5000) throw new Error('创建数量必须在 1–5000 之间');
+  const existingIds = new Set(ui.profiles.map((profile) => profile.id));
+  if (new Set(profiles.map((profile) => profile.id)).size !== profiles.length
+    || profiles.some((profile) => existingIds.has(profile.id))) throw new Error('环境 ID 已存在或重复');
+  // Engine publication is atomic. Nothing enters local UI storage before its
+  // persistence barrier confirms the entire submitted set.
+  const rows = await window.ops.syncProfiles(profiles, { delta: true });
+  const accepted = new Map(Array.isArray(rows) ? rows.map((profile) => [profile.id, profile]) : []);
+  if (accepted.size !== profiles.length || profiles.some((profile) => !accepted.has(profile.id))) throw new Error('创建结果未得到完整确认，请刷新环境列表');
+  engineProfiles = window.OpenBrowserStatusController.mergeStatusDelta(engineProfiles, { full: false, rows, removed: [] });
+  // Status events may already have published these IDs while IPC was pending.
+  ui.profiles = ui.profiles.filter((profile) => !accepted.has(profile.id));
+  ui.profiles.push(...profiles.map((profile) => ({ ...profile, rev: accepted.get(profile.id)?.rev })));
+  mergeEngineExitState(rows);
+  ui.nextProfileNumber = Math.max(ui.nextProfileNumber || 1, ...profiles.map((profile) => Number(profile.number) + 1));
+  save();
+  invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies']);
+  renderProfiles();
+  return profiles;
+}
+
 async function readUiProfiles() {
   const rows = await window.ops.profileStatus();
   mergeEngineExitState(rows);
@@ -1681,6 +1703,8 @@ function viewMetaFor(view) {
     'rpa-guide': ['view.rpa.guide', 'view.rpa.guide.sub'],
     'api-mcp': ['view.api-mcp', 'view.api-mcp.sub'],
     logs: ['view.logs', 'view.logs.sub'],
+    templates: ['我的模板', '管理窗口配置模板，创建窗口时可一键套用'],
+    accounts: ['平台账号', '集中管理多平台业务账号池、密码与 2FA 密钥'],
     kernels: ['view.kernels', 'view.kernels.sub'],
     system: ['view.system', 'view.system.sub'],
   };
@@ -2120,6 +2144,16 @@ function switchListTab(tab) {
   activeListTab = tab;
   if (tab === 'trash') { if (activeGroupFilter !== 'trash') { activeGroupFilter = 'trash'; } }
   else if (activeGroupFilter === 'trash') { activeGroupFilter = 'all'; }
+  const trfPanel = document.getElementById('profile-transfer-panel');
+  const mainTableCard = document.querySelector('#view-profiles > .table-card');
+  const mainPagination = document.getElementById('profile-pagination');
+  if (trfPanel) {
+    const isTrf = tab === 'transfer';
+    trfPanel.hidden = !isTrf;
+    if (mainTableCard) mainTableCard.hidden = isTrf;
+    if (mainPagination) mainPagination.hidden = isTrf;
+    if (isTrf && typeof window.renderTransfersTable === 'function') window.renderTransfersTable();
+  }
   profilePage = 1;
   renderProfiles();
 }
@@ -2129,15 +2163,25 @@ function closeRowMoreMenu() {
 // Roxy 对齐：行菜单全集（查看/编辑/开关/重启/收藏/复制ID/备注/标签/测代理/导出/克隆/清缓存 + 删除）
 function rowMenuItemsFor(profile, info) {
   return [
-    ['view', t('profiles.menuView') || '查看窗口', 'eye'],
     ['edit', t('profiles.menuEdit') || '编辑窗口', 'pencil'],
+    ['quick-proxy', '添加代理 IP', 'network'],
+    ['transfer-profile', '转移窗口', 'send'],
+    ['upload-profile', '上传窗口', 'upload'],
+    ['---', '', ''],
     [info.running ? 'stop' : 'start', info.running ? (t('action.stop')) : (t('profiles.openProfile') || '打开窗口'), 'play'],
     ...(info.running ? [['restart', t('profiles.menuRestart') || '重启窗口', 'rotate-cw']] : []),
-    ['fav', profile.favorite ? (t('profiles.unfavorite') || '取消收藏') : (t('profiles.favorite') || '收藏'), 'star'],
-    ['copy-id', t('profiles.copyId') || '复制窗口 ID', 'copy'],
+    ['view', t('profiles.menuView') || '查看窗口', 'eye'],
+    ['check-proxy', t('profiles.menuCheckProxy') || '测试代理 IP', 'radar'],
+    ['---', '', ''],
+    ['set-default-browser', '设为默认浏览器', 'monitor'],
+    ['create-desktop-shortcut', '创建桌面快捷方式', 'external-link'],
+    ['---', '', ''],
     ['note', profile.note ? (t('profiles.editNote') || '修改备注') : (t('profiles.addNote') || '添加备注'), 'sticky-note'],
     ['tag', t('profiles.menuTag') || '添加标签', 'tags'],
-    ['check-proxy', t('profiles.menuCheckProxy') || '测试代理 IP', 'radar'],
+    ['fav', profile.favorite ? (t('profiles.unfavorite') || '取消收藏') : (t('profiles.favorite') || '收藏'), 'star'],
+    ['edit-cookies', '编辑 Cookies', 'cookie'],
+    ['cookie-robot', 'Cookie 机器人', 'bot'],
+    ['copy-id', t('profiles.copyId') || '复制窗口 ID', 'copy'],
     ['export-profile', t('profiles.exportProfile') || '导出窗口', 'download'],
     ['clone', t('action.clone') || '克隆', 'copy-plus'],
     ['clear-cache', t('profiles.menuClearCache') || '清除缓存', 'eraser'],
@@ -2145,6 +2189,11 @@ function rowMenuItemsFor(profile, info) {
 }
 function fillRowMenu(menu, profile, info) {
   for (const [act, label, icon] of rowMenuItemsFor(profile, info)) {
+    if (act === '---') {
+      const div = element('div', 'row-menu-divider', '');
+      menu.append(div);
+      continue;
+    }
     const btn = element('button', '', '');
     btn.dataset.action = act;
     btn.dataset.id = profile.id;
@@ -2537,7 +2586,28 @@ function buildProfileRow(profile) {
   row.dataset.profileId = profile.id;
   const selectCell = document.createElement('td'); const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = selectedProfiles.has(profile.id); checkbox.dataset.profileSelect = profile.id; selectCell.append(checkbox);
   checkbox.setAttribute('aria-label', t('profiles.selectOne', { n: displayProfileNumber(profile) }));
-  const idCell = element('td', 'col-num', displayProfileNumber(profile));
+  const idCell = element('td', 'col-num', '');
+  const numWrap = element('div', 'roxy-num-cell');
+  const numSpan = element('span', 'roxy-num-text', displayProfileNumber(profile));
+  const osBadge = element('span', 'roxy-os-mini');
+  osBadge.title = (profile.os || 'Windows') + (profile.osVersion ? ' ' + profile.osVersion : '');
+  if (typeof window.getOsIconSvg === 'function') osBadge.innerHTML = window.getOsIconSvg(profile.os);
+  const proxyTrigger = element('button', 'roxy-proxy-trigger', '');
+  proxyTrigger.type = 'button';
+  proxyTrigger.dataset.quickProxyId = profile.id;
+  const hasProxy = profile.networkMode === 'proxy' && profile.proxy && !isDirectProxy(profile.proxy);
+  if (hasProxy) {
+    const cc = String(profile.exitCountryCode || '').toUpperCase();
+    proxyTrigger.className = 'roxy-proxy-trigger is-bound';
+    proxyTrigger.textContent = (cc ? countryFlag(cc) + ' ' : '🌐 ') + (cc || '代理') + ' +';
+    proxyTrigger.title = maskProxy(profile.proxy) + (profile.exitIp ? ' · ' + profile.exitIp : '') + '（点击编辑代理 IP）';
+  } else {
+    proxyTrigger.className = 'roxy-proxy-trigger is-direct';
+    proxyTrigger.innerHTML = '<span class="proxy-globe-dot">🌐</span><span>+</span>';
+    proxyTrigger.title = '未配置代理，点击快速添加代理 IP';
+  }
+  numWrap.append(numSpan, osBadge, proxyTrigger);
+  idCell.append(numWrap);
   const nameCell = document.createElement('td');
   nameCell.append(buildEnvIdentity(profile));
   if (profile.favorite) {
@@ -2564,9 +2634,17 @@ function buildProfileRow(profile) {
     purge.dataset.id = profile.id;
     actions.append(restore, purge);
   } else {
-    const openBtn = iconActionButton(info.running ? 'square' : 'play', info.running ? t('action.stop') : (startingProfiles.has(profile.id) ? t('status.starting') : (t('profiles.openProfile') || '打开窗口')), 'mini primary-outline');
+    const openLabel = info.running ? t('action.stop') : (startingProfiles.has(profile.id) ? t('status.starting') : (t('profiles.openProfile') || '打开窗口'));
+    const openBtn = iconActionButton(info.running ? 'square' : 'play', openLabel, 'mini primary-outline roxy-open-pill');
     openBtn.dataset.action = info.running ? 'stop' : 'start';
     openBtn.dataset.id = profile.id;
+    const isFx = String(profile.engine || '').toLowerCase() === 'firefox';
+    const engineSvg = isFx && window.KERNEL_SVG_ICONS?.firefox ? window.KERNEL_SVG_ICONS.firefox : buildBrowserEngineIcon('Chrome', 15);
+    const pillSpan = element('span', 'roxy-open-pill-label', info.running ? '关闭窗口' : (startingProfiles.has(profile.id) ? '启动中' : '打开窗口'));
+    const iconSpan = element('span', 'roxy-open-pill-engine');
+    iconSpan.innerHTML = engineSvg;
+    openBtn.prepend(iconSpan);
+    openBtn.append(pillSpan);
     if (startingProfiles.has(profile.id)) {
       openBtn.disabled = true;
       openBtn.classList.add('is-starting');
@@ -2575,9 +2653,28 @@ function buildProfileRow(profile) {
     actions.append(openBtn);
   }
   actionCell.append(actions);
-  const noteCell = element('td', 'col-note', profile.note ? String(profile.note).slice(0, 40) : '');
-  noteCell.title = profile.note || '';
-  const tagCell = element('td', 'col-tag', profile.tag ? localizeSystemLabel(profile.tag) : '');
+  const noteCell = document.createElement('td');
+  noteCell.className = 'col-note';
+  const noteBtn = element('button', 'cell-inline-trigger', '');
+  noteBtn.type = 'button';
+  noteBtn.dataset.action = 'note';
+  noteBtn.dataset.id = profile.id;
+  noteBtn.title = profile.note || (t('profiles.addNote') || '添加备注');
+  const noteIcon = element('span', 'cell-inline-icon', '📝');
+  const noteText = element('span', 'cell-inline-text', profile.note ? String(profile.note).slice(0, 32) : '');
+  noteBtn.append(noteIcon, noteText);
+  noteCell.append(noteBtn);
+  const tagCell = document.createElement('td');
+  tagCell.className = 'col-tag';
+  const tagBtn = element('button', 'cell-inline-trigger', '');
+  tagBtn.type = 'button';
+  tagBtn.dataset.action = 'tag';
+  tagBtn.dataset.id = profile.id;
+  tagBtn.title = profile.tag || (t('profiles.menuTag') || '添加标签');
+  const tagIcon = element('span', 'cell-inline-icon', '🏷️');
+  const tagText = element('span', 'cell-inline-text', profile.tag ? localizeSystemLabel(profile.tag) : '');
+  tagBtn.append(tagIcon, tagText);
+  tagCell.append(tagBtn);
   const projectCell = document.createElement('td');
   projectCell.className = 'col-group';
   const badge = element('span', 'group-badge group-badge-compact', groupNameOf(profile));
@@ -2712,6 +2809,9 @@ function renderProfiles() {
     afterUiRender(profilesScope);
     freshRows.forEach((row) => { delete row.dataset.i18nPending; });
   }
+  if (typeof window.updateSidebarQuotaBar === 'function') window.updateSidebarQuotaBar();
+  if (typeof window.refreshHeaderExitIpPill === 'function') window.refreshHeaderExitIpPill();
+  if (typeof window.renderTransfersTable === 'function') window.renderTransfersTable();
   if (typeof refreshIcons === 'function') refreshIcons();
   loadedViews.add('profiles');
 }
@@ -3637,7 +3737,7 @@ document.getElementById('editor-clear-cache-cookie')?.addEventListener('click', 
     toast(tx('缓存及 Cookie 已清除'));
   } catch (error) { toast(error.message); }
 });
-$('#profile-editor-form').addEventListener('submit', window.OpenBrowserProfileCommands.createProfileEditorSubmit({
+const __baseEditorSubmitHandler = window.OpenBrowserProfileCommands.createProfileEditorSubmit({
   getSession: () => ({ id: editingProfileId, baseRev: editingProfileBaseRev, networkResult: editorNetworkResult,
     saveProxy: Boolean($('#editor-proxy-save-to-library')?.checked), proxyType: $('#editor-proxy-type')?.value || 'socks5' }),
   getProfiles: () => ui.profiles,
@@ -3675,7 +3775,80 @@ $('#profile-editor-form').addEventListener('submit', window.OpenBrowserProfileCo
   onError: (error) => toast('保存失败：' + tx(error.message)),
   onConflict: () => toast(tx('环境已被其他操作更新，请重新打开编辑器后保存；当前草稿未提交。')),
   onWarning: (error) => log('Error', '更新环境关联数据失败：' + error.message),
-}));
+});
+let profileCreationPending = false;
+$('#profile-editor-form').addEventListener('submit', async (event) => {
+  if (editingProfileId && (!window.currentEditorMode || window.currentEditorMode === 'edit')) {
+    return __baseEditorSubmitHandler(event);
+  }
+  event.preventDefault();
+  if (profileCreationPending) return;
+  profileCreationPending = true;
+  const createButton = event.submitter;
+  if (createButton) createButton.disabled = true;
+  try {
+    const baseDraft = editorDraft(false);
+    const mode = window.currentEditorMode || 'single';
+    const startNum = nextProfileNumber();
+    const usedIds = new Set(ui.profiles.map((p) => p.id));
+    const createdList = [];
+    if (mode === 'import' || mode === 'ai') {
+      const rows = Array.isArray(window.pendingImportedRows) && window.pendingImportedRows.length
+        ? window.pendingImportedRows
+        : [{ title: baseDraft.title || `${startNum}`, os: baseDraft.os, startUrl: baseDraft.platform?.startUrl || '', proxy: baseDraft.proxy }];
+      rows.forEach((r, idx) => {
+        const number = startNum + idx;
+        const id = createInternalProfileId(number, usedIds);
+        usedIds.add(id);
+        createdList.push(normalizeProfileSettings({
+          ...baseDraft,
+          id,
+          number,
+          name: String(number),
+          title: r.title || `环境-${number}`,
+          os: r.os || baseDraft.os || 'Windows',
+          networkMode: r.proxy && r.proxy !== 'Direct' ? 'proxy' : baseDraft.networkMode,
+          proxy: r.proxy && r.proxy !== 'Direct' ? r.proxy : baseDraft.proxy,
+          cookies: r.cookies || baseDraft.cookies || '',
+          tag: r.tag || baseDraft.tag || '',
+          note: r.note || baseDraft.note || '',
+          platform: {
+            ...(baseDraft.platform || {}),
+            startUrl: r.startUrl || baseDraft.platform?.startUrl || '',
+            username: r.username || baseDraft.platform?.username || '',
+            password: r.password || baseDraft.platform?.password || '',
+            totpSecret: r.totpSecret || baseDraft.platform?.totpSecret || '',
+          },
+        }));
+      });
+    } else {
+      const count = mode === 'batch' ? Math.min(200, Math.max(1, Number(document.getElementById('editor-batch-count')?.value) || 1)) : 1;
+      for (let i = 0; i < count; i++) {
+        const number = startNum + i;
+        const id = createInternalProfileId(number, usedIds);
+        usedIds.add(id);
+        const title = count > 1
+          ? `${baseDraft.title || '窗口'}-${String(i + 1).padStart(2, '0')}`
+          : (baseDraft.title || `窗口-${number}`);
+        createdList.push(normalizeProfileSettings({
+          ...baseDraft,
+          id,
+          number,
+          name: String(number),
+          title,
+        }));
+      }
+    }
+    await createUiProfiles(createdList);
+    switchView('profiles');
+    toast(createdList.length > 1 ? `已批量创建 ${createdList.length} 个窗口` : '窗口已创建', { tone: 'success' });
+  } catch (err) {
+    toast('创建失败：' + err.message, { tone: 'error' });
+  } finally {
+    profileCreationPending = false;
+    if (createButton) createButton.disabled = false;
+  }
+});
 
 $('#batch-add').addEventListener('click', () => {
   $('#batch-add-start').value = String(nextProfileNumber());
@@ -4674,6 +4847,8 @@ window.OpenBrowserApp = {
   get editingProfileId() { return editingProfileId; },
   get editingProfileBaseRev() { return editingProfileBaseRev; },
   syncProfiles: syncUiProfiles,
+  createProfiles: createUiProfiles,
+  createInternalProfileId,
   saveEditorDraftForCloud,
   get loadedViews() { return loadedViews; },
   invalidateViewCache,
@@ -4694,6 +4869,7 @@ window.OpenBrowserApp = {
   openProfileEditor,
   renderProfiles,
 };
+Object.defineProperty(window, 'selectedProfiles', { configurable: true, get: () => selectedProfiles });
 window.ui = ui;
 window.save = save;
 window.toast = toast;

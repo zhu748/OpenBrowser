@@ -308,7 +308,20 @@ module.exports = {
     const trashedIds = [...this.profiles.values()]
       .filter((p) => Boolean(p.trashed))
       .map((p) => p.id);
-    return this.purgeProfiles(trashedIds, deleteData);
+    const result = { success: true, deleted: 0, stopped: 0, dataDeleted: Boolean(deleteData), ids: [] };
+    for (let offset = 0; offset < trashedIds.length; offset += 200) {
+      try {
+        const batch = await this.purgeProfiles(trashedIds.slice(offset, offset + 200), deleteData);
+        result.deleted += batch.deleted || 0;
+        result.stopped += batch.stopped || 0;
+        result.ids.push(...(batch.ids || []));
+      } catch (error) {
+        error.completed = result.deleted;
+        error.remainingIds = trashedIds.slice(offset);
+        throw error;
+      }
+    }
+    return result;
   },
 
   /** Clear cache + cookies on disk for a stopped profile. */

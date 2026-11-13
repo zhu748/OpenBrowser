@@ -24,7 +24,8 @@
       <nav>
         <button class="nav active" data-view="profiles"><i data-lucide="layers-3"></i><span data-i18n="nav.profiles">窗口管理</span></button>
         <button class="nav" data-view="groups"><i data-lucide="folder-kanban"></i><span data-i18n="nav.groups">项目管理</span></button>
-        <button class="nav" data-view="proxies"><i data-lucide="network"></i><span data-i18n="nav.proxies">代理 IP</span></button>
+        <button class="nav" data-view="proxies"><i data-lucide="network"></i><span data-i18n="nav.proxies">代理 IP</span><span class="nav-hot-badge">本地池</span></button>
+        <button class="nav" data-view="accounts"><i data-lucide="user-round-check"></i><span>平台账号</span></button>
         <button class="nav" data-view="extensions"><i data-lucide="blocks"></i><span data-i18n="nav.extensions">应用中心</span></button>
         <div class="nav-label" data-i18n="nav.automation">自动化</div>
         <button class="nav" data-view="sync"><i data-lucide="panels-top-left"></i><span data-i18n="nav.sync">窗口同步</span></button>
@@ -36,11 +37,17 @@
           <button class="nav nav-child" data-view="rpa" data-rpa-tab="store"><i data-lucide="store"></i><span data-i18n="nav.rpa.store">模板仓库</span></button>
           <button class="nav nav-child" data-view="rpa-guide"><i data-lucide="book-open"></i><span data-i18n="nav.rpa.guide">说明文档</span></button>
         </div>
-                <button class="nav" data-view="api-mcp"><i data-lucide="braces"></i><span data-i18n="nav.api">API & MCP</span></button>
+                <button class="nav" data-view="templates"><i data-lucide="layout-template"></i><span>我的模板</span></button>
+        <button class="nav" data-view="api-mcp"><i data-lucide="braces"></i><span data-i18n="nav.api">API & MCP</span></button>
         <button class="nav" data-view="logs"><i data-lucide="scroll-text"></i><span data-i18n="nav.logs">操作日志</span></button>
         <button class="nav" data-view="kernels"><i data-lucide="hard-drive-download"></i><span data-i18n="nav.kernels">内核管理</span></button>
         <button class="nav" data-view="system"><i data-lucide="settings-2"></i><span data-i18n="nav.system">本地设置</span></button>
       </nav>
+      <div class="sidebar-quota-card">
+        <div class="quota-top"><span class="quota-free-pill">免费版</span><span class="quota-label">本地无限多开</span></div>
+        <div class="quota-row"><span>窗口用量</span><strong id="sidebar-quota-count">1 / ∞</strong></div>
+        <div class="quota-bar"><div class="quota-bar-fill" id="sidebar-quota-fill" style="width:20%"></div></div>
+      </div>
       <div class="sidebar-footer">
         <a id="github-link" href="https://github.com/sheying2013/OpenBrowser" data-i18n-title="footer.githubTitle" aria-label="GitHub" rel="noreferrer">
           <i data-lucide="github" aria-hidden="true"></i>
@@ -57,7 +64,15 @@
       <header>
         <div><!-- switchView is the single writer here: a static data-i18n key made every locale pass reset the title to the profiles view (visible on the system view after refreshLocaleChrome). -->
         <h1 id="page-title" data-i18n-dynamic>环境管理</h1><p id="page-subtitle" data-i18n-dynamic></p></div>
-        <div class="header-right" style="display: flex; align-items: center; gap: 12px; z-index: 100;">
+        <div class="header-right" style="display: flex; align-items: center; gap: 10px; z-index: 100;">
+          <span class="header-ip-pill" id="header-exit-pill" title="当前网络出口 IP">
+            <i data-lucide="map-pin" aria-hidden="true"></i>
+            <span id="header-exit-ip-text">CN/Local (127.0.0.1)</span>
+          </span>
+          <button class="outline mini-btn" type="button" id="header-receive-transfer" title="凭转移码或转移包接收他人转入的窗口">
+            <i data-lucide="download" aria-hidden="true"></i>
+            <span>接收窗口</span>
+          </button>
           <span class="engine-badge engine-badge-checking" id="engine-badge" title="正在检测浏览器…">
             <i class="engine-badge-dot" aria-hidden="true"></i>
             <span class="engine-badge-text" data-i18n="header.detecting">检测中</span>
@@ -71,11 +86,24 @@
             <button class="list-tab active" type="button" data-list-tab="all"><span data-i18n="profiles.tabAll">全部窗口</span></button>
             <button class="list-tab" type="button" data-list-tab="fav"><span data-i18n="profiles.tabFav">收藏</span></button>
             <button class="list-tab" type="button" data-list-tab="open"><span data-i18n="profiles.tabOpen">已打开</span></button>
+            <button class="list-tab" type="button" data-list-tab="transfer"><span>转移中</span></button>
             <button class="list-tab" type="button" data-list-tab="trash"><span data-i18n="profiles.tabTrash">回收站</span></button>
+            <div class="list-tab-tools">
+              <div class="tab-config-wrap">
+                <button type="button" class="tab-tool-icon-btn" id="profile-tabs-config-btn" title="标签页显示设置"><i data-lucide="settings"></i></button>
+                <div class="tab-config-popover" id="profile-tabs-config-menu" hidden>
+                  <label><input type="checkbox" data-toggle-tab="fav" checked><span>收藏</span></label>
+                  <label><input type="checkbox" data-toggle-tab="open" checked><span>已打开</span></label>
+                  <label><input type="checkbox" data-toggle-tab="transfer" checked><span>转移中</span></label>
+                  <label><input type="checkbox" data-toggle-tab="trash" checked><span>回收站</span></label>
+                </div>
+              </div>
+              <button type="button" class="tab-tool-icon-btn" id="profile-tags-manager-btn" title="标签管理"><i data-lucide="tag"></i></button>
+            </div>
           </div>
           <div class="group-chip-row" id="profile-group-chips"></div>
           <div class="toolbar profile-primary-toolbar">
-            <div class="toolbar-left"><button class="primary" id="create-profile"><i data-lucide="plus"></i><span data-i18n="profiles.create">新建环境</span></button><button class="outline" id="batch-add"><i data-lucide="copy-plus"></i><span data-i18n="profiles.batchAdd">批量新增</span></button><button class="outline" id="batch-import"><i data-lucide="file-down"></i><span data-i18n="profiles.batchImport">批量导入</span></button><input id="batch-import-file" type="file" accept=".csv,.json" hidden><button class="outline" id="renumber-profiles" type="button" title="将所有环境按列表顺序重新编号为 1..N" data-i18n-title="profiles.renumberTitle"><i data-lucide="hash"></i><span data-i18n="profiles.renumber">重排编号</span></button><button class="outline" id="batch-export" type="button" title="导出当前选中/筛选的环境配置（不含密码与2FA密钥）" data-i18n-title="profiles.exportTitle"><i data-lucide="file-up"></i><span data-i18n="profiles.batchExport">批量导出</span></button><button class="outline" id="test-all-proxies" type="button" title="逐个检测所有环境的代理IP可用性"><i data-lucide="radar"></i><span data-i18n="profiles.testAllProxy">测试全部代理IP</span></button><button class="outline" id="adv-filter-btn" type="button"><i data-lucide="filter"></i><span data-i18n="profiles.advFilter">高级筛选</span></button><button class="outline danger" id="empty-trash-btn" type="button" hidden><i data-lucide="trash"></i><span data-i18n="trash.empty">清空回收站</span></button></div>
+            <div class="toolbar-left"><div class="split-create-group"><button class="primary" id="create-profile"><i data-lucide="zap"></i><span data-i18n="profiles.create">新建环境</span></button><button class="primary split-gear-btn" type="button" id="quick-create-fullpage" title="打开一比一完整创建窗口页面（含模板/系统/内核/导入/AI）"><i data-lucide="sliders-horizontal"></i><span>完整创建</span></button></div><button class="outline" id="batch-add"><i data-lucide="copy-plus"></i><span data-i18n="profiles.batchAdd">批量新增</span></button><button class="outline" id="batch-import"><i data-lucide="file-down"></i><span data-i18n="profiles.batchImport">批量导入</span></button><button class="outline" id="toolbar-upload-window" type="button"><i data-lucide="upload"></i><span>上传窗口</span></button><button class="outline" id="toolbar-transfer-window" type="button"><i data-lucide="send"></i><span>转移窗口</span></button><input id="batch-import-file" type="file" accept=".csv,.json" hidden><button class="outline" id="renumber-profiles" type="button" title="将所有环境按列表顺序重新编号为 1..N" data-i18n-title="profiles.renumberTitle"><i data-lucide="hash"></i><span data-i18n="profiles.renumber">重排编号</span></button><button class="outline" id="batch-export" type="button" title="导出当前选中/筛选的环境配置（不含密码与2FA密钥）" data-i18n-title="profiles.exportTitle"><i data-lucide="file-up"></i><span data-i18n="profiles.batchExport">批量导出</span></button><button class="outline" id="test-all-proxies" type="button" title="逐个检测所有环境的代理IP可用性"><i data-lucide="radar"></i><span data-i18n="profiles.testAllProxy">测试全部代理IP</span></button><button class="outline" id="adv-filter-btn" type="button"><i data-lucide="filter"></i><span data-i18n="profiles.advFilter">高级筛选</span></button><button class="outline danger" id="empty-trash-btn" type="button" hidden><i data-lucide="trash"></i><span data-i18n="trash.empty">清空回收站</span></button></div>
             <label class="search"><i data-lucide="search"></i><input id="profile-search" placeholder="搜索环境 / 分组 / 标签" data-i18n-placeholder="profiles.search"></label>
             <div class="cols-config-wrap" id="profile-cols-wrap">
               <button class="outline mini-btn" type="button" id="profile-cols-btn" data-i18n="profiles.customHeader">自定义表头</button>
@@ -104,7 +132,7 @@
           </div>
           <div class="profile-selection-bar" id="profile-selection-bar" hidden>
             <strong id="profile-selection-count">已选择 0 个环境</strong>
-            <div class="selection-actions"><button class="outline" id="start-selected"><i data-lucide="play"></i><span data-i18n="profiles.startSelected">启动选中</span></button><button class="outline" id="stop-selected"><i data-lucide="square"></i><span data-i18n="profiles.stopSelected">停止选中</span></button><button class="outline" id="copy-selected" type="button" title="复制选中环境的配置，不复制 Cookie 和账号密码" data-i18n-title="profiles.copyTitle"><i data-lucide="copy"></i><span data-i18n="profiles.copySelected">复制环境</span></button><button class="outline" id="batch-edit-preferences" type="button" title="批量修改选中环境的启动页、系统和高级偏好" data-i18n-title="profiles.batchPrefTitle"><i data-lucide="sliders-horizontal"></i><span data-i18n="profiles.batchPrefs">批量偏好</span></button><button class="outline" id="batch-note" type="button"><i data-lucide="sticky-note"></i><span data-i18n="profiles.batchNote">批量备注</span></button><button class="outline" id="batch-tag" type="button"><i data-lucide="tags"></i><span data-i18n="profiles.batchTag">批量标签</span></button><button class="outline" id="batch-update"><i data-lucide="refresh-cw"></i><span data-i18n="profiles.batchNetwork">切换网络/IP</span></button><button class="outline" id="batch-set-direct" type="button" title="将选中环境改为本地直连" data-i18n-title="profiles.directTitle"><i data-lucide="wifi"></i><span data-i18n="profiles.direct">本地直连</span></button>
+            <div class="selection-actions"><button class="outline" id="start-selected"><i data-lucide="play"></i><span data-i18n="profiles.startSelected">启动选中</span></button><button class="outline" id="stop-selected"><i data-lucide="square"></i><span data-i18n="profiles.stopSelected">停止选中</span></button><button class="outline" id="batch-transfer-btn" type="button"><i data-lucide="send"></i><span>转移窗口</span></button><button class="outline" id="batch-upload-btn" type="button"><i data-lucide="upload"></i><span>上传窗口</span></button><button class="outline" id="copy-selected" type="button" title="复制选中环境的配置，不复制 Cookie 和账号密码" data-i18n-title="profiles.copyTitle"><i data-lucide="copy"></i><span data-i18n="profiles.copySelected">复制环境</span></button><button class="outline" id="batch-edit-preferences" type="button" title="批量修改选中环境的启动页、系统和高级偏好" data-i18n-title="profiles.batchPrefTitle"><i data-lucide="sliders-horizontal"></i><span data-i18n="profiles.batchPrefs">批量偏好</span></button><button class="outline" id="batch-note" type="button"><i data-lucide="sticky-note"></i><span data-i18n="profiles.batchNote">批量备注</span></button><button class="outline" id="batch-tag" type="button"><i data-lucide="tags"></i><span data-i18n="profiles.batchTag">批量标签</span></button><button class="outline" id="batch-update"><i data-lucide="refresh-cw"></i><span data-i18n="profiles.batchNetwork">切换网络/IP</span></button><button class="outline" id="batch-set-direct" type="button" title="将选中环境改为本地直连" data-i18n-title="profiles.directTitle"><i data-lucide="wifi"></i><span data-i18n="profiles.direct">本地直连</span></button>
               <label class="batch-group-assign"><span data-i18n="profiles.moveGroup">移到分组</span>
                 <select id="batch-assign-group"></select>
               </label>
@@ -120,6 +148,25 @@
               <button class="primary" id="profile-empty-create" type="button" data-i18n="profiles.create" hidden>新建环境</button>
             </div>
           </div>
+          <div class="table-card" id="profile-transfer-panel" hidden>
+            <div class="transfer-panel-toolbar">
+              <div>
+                <strong>窗口转移管理（转出与接收记录）</strong>
+                <span class="network-mode-hint">可将窗口配置、Cookie 与代理一键打包转移给其他团队成员，或凭转移码接收他人转入的窗口。</span>
+              </div>
+              <div class="actions">
+                <button type="button" class="outline" id="transfer-banner-receive-btn"><i data-lucide="download"></i><span>接收转入窗口</span></button>
+                <button type="button" class="primary" id="transfer-banner-send-btn"><i data-lucide="send"></i><span>发起窗口转移</span></button>
+              </div>
+            </div>
+            <table>
+              <thead>
+                <tr><th>窗口编号/系统</th><th>窗口名称</th><th>接收方账号/备注</th><th>包含数据</th><th>转移时间</th><th>状态</th><th>操作</th></tr>
+              </thead>
+              <tbody id="transfer-records-tbody"></tbody>
+            </table>
+            <div class="empty" id="transfer-records-empty">暂无转移中的窗口，可在窗口列表勾选窗口后点击「转移窗口」或行菜单「转移窗口」发起</div>
+          </div>
           <div class="profile-pagination toolbar-pagination" id="profile-pagination"><span class="profile-total"><span data-i18n="profiles.totalLabel">总计</span><strong id="profile-total">0</strong><span data-i18n="profiles.totalUnit">个</span></span><div class="profile-page-nav"><button type="button" id="profile-prev" aria-label="&#19978;&#19968;&#39029;">&#8249;</button><label><span data-i18n="profiles.jumpTo">跳转页数至</span> <input id="profile-page" type="number" min="1" value="1" aria-label="&#24403;&#21069;&#39029;"> / <span id="profile-pages">1</span></label><button type="button" id="profile-next" aria-label="&#19979;&#19968;&#39029;">&#8250;</button></div><label class="profile-page-size"><select id="profile-page-size" aria-label="&#27599;&#39029;&#25968;&#37327;"><option value="10">10&#26465;/&#39029;</option><option value="20">20&#26465;/&#39029;</option><option value="50">50&#26465;/&#39029;</option><option value="100">100&#26465;/&#39029;</option></select></label></div>
 
         </section>
@@ -129,10 +176,18 @@
             <div class="toolbar-left">
               <button class="primary" type="button" id="group-create"><i data-lucide="plus"></i><span data-i18n="groups.create">新建分组</span></button>
               <button class="outline" type="button" id="group-refresh"><i data-lucide="refresh-cw"></i><span data-i18n="groups.refresh">刷新</span></button>
+              <label class="search"><i data-lucide="search"></i><input id="group-search-input" placeholder="搜索项目 / 分组名称"></label>
               <span class="profile-total"><span data-i18n="groups.count">分组数：</span><strong id="group-count">0</strong></span>
             </div>
+            <div class="toolbar-right">
+              <div class="roxy-pill-group" id="groups-view-mode-switch">
+                <button type="button" class="active" data-gview="cards">卡片视图</button>
+                <button type="button" data-gview="table">列表视图</button>
+              </div>
+            </div>
           </div>
-          <div class="table-card">
+          <div class="project-cards-grid" id="groups-card-grid"></div>
+          <div class="table-card" id="groups-table-card">
             <table>
               <thead>
                 <tr><th style="width:56px" data-i18n="groups.col.color">颜色</th><th data-i18n="groups.col.name">分组名称</th><th data-i18n="groups.col.count">环境数</th><th data-i18n="groups.col.created">创建时间</th><th data-i18n="groups.col.actions">操作</th></tr>
@@ -146,21 +201,117 @@
         <section class="view" id="view-profile-editor">
           <div class="profile-editor-head">
             <button class="editor-back" id="editor-back" type="button">‹ 返回</button>
-            <div><h2><span data-i18n="editor.pageTitle">编辑窗口</span><span id="editor-profile-id" hidden></span></h2>
+            <div class="editor-head-main">
+              <h2><span id="editor-mode-title" data-i18n="editor.pageTitle">编辑窗口</span><span id="editor-profile-id" hidden></span></h2>
               <p class="editor-id-row"><span class="editor-id-label" data-i18n="editor.idLabel">ID:</span><span id="editor-id-text" class="editor-id-value"></span><button class="outline mini-btn" id="editor-id-copy" type="button" data-i18n="editor.copyId">复制</button></p>
-              <p data-i18n="editor.pageDesc">管理账号、网络、指纹与启动设置</p></div>
+              <p data-i18n="editor.pageDesc">管理账号、网络、指纹与启动设置</p>
+            </div>
+            <div class="editor-tpl-picker-wrap" id="editor-tpl-picker-wrap">
+              <select id="editor-template-select" title="选择窗口模板">
+                <option value="">不使用模板</option>
+              </select>
+            </div>
+          </div>
+          <div class="editor-create-mode-bar" id="editor-create-mode-bar" hidden>
+            <button type="button" class="create-mode-tab active" data-create-mode="single">单个创建</button>
+            <button type="button" class="create-mode-tab" data-create-mode="batch">批量创建</button>
+            <button type="button" class="create-mode-tab" data-create-mode="import">窗口导入</button>
+            <button type="button" class="create-mode-tab is-ai" data-create-mode="ai">AI 批量创建</button>
           </div>
           <div class="editor-tabs" role="tablist">
-            <button class="active" type="button" data-editor-tab="basic" data-i18n="editor.tab.basic">平台账号配置</button>
+            <button class="active" type="button" data-editor-tab="basic" data-i18n="editor.tab.basic">窗口基础信息</button>
             <button type="button" data-editor-tab="proxy" data-i18n="editor.tab.proxy">代理配置</button>
-            <button type="button" data-editor-tab="privacy" data-i18n="editor.tab.privacy">指纹配置</button>
+            <button type="button" data-editor-tab="privacy" data-i18n="editor.tab.privacy">基础与高级指纹设置</button>
             <button type="button" data-editor-tab="advanced" data-i18n="editor.tab.advanced">偏好设置</button>
           </div>
           <div class="environment-editor">
-            <form id="profile-editor-form" class="editor-form">
+            <form id="profile-editor-form" class="editor-form roxy-unified-form">
               <input id="editor-id" type="hidden">
               <input id="editor-name" type="hidden">
-              <section class="editor-panel active" data-editor-panel="basic">
+
+              <!-- 批量创建专属卡片（复刻截图 29） -->
+              <div class="editor-section-card roxy-mode-card" id="create-mode-batch-card" hidden>
+                <div class="editor-card-header">
+                  <div class="editor-card-title">窗口数量与批量分配</div>
+                  <div class="editor-card-desc">设置一次批量创建的窗口数量，下方基础设置、内核、指纹与偏好将统一应用到每个新窗口</div>
+                </div>
+                <label>窗口数量
+                  <div class="field-inline-group">
+                    <div class="roxy-number-stepper">
+                      <button type="button" id="editor-batch-minus">−</button>
+                      <input id="editor-batch-count" type="number" min="1" max="200" value="1">
+                      <button type="button" id="editor-batch-plus">+</button>
+                    </div>
+                    <span class="network-mode-hint">* 最多一次可批量创建 200 个独立指纹窗口</span>
+                  </div>
+                </label>
+                <label>平台账号分配
+                  <div class="field-inline-group">
+                    <select id="editor-batch-account-mode" style="max-width:180px">
+                      <option value="seq">顺序分配</option>
+                      <option value="random">随机分配</option>
+                    </select>
+                    <span class="network-mode-hint">从「平台账号」池按顺序或随机绑定到新建窗口</span>
+                  </div>
+                </label>
+              </div>
+
+              <!-- 窗口导入 / 上传窗口专属卡片（1:1 复刻截图 30, 31） -->
+              <div class="editor-section-card roxy-mode-card" id="create-mode-import-card" hidden>
+                <div class="roxy-upload-dropzone" id="window-upload-dropzone">
+                  <div class="upload-doc-icon">
+                    <svg viewBox="0 0 48 48" width="44" height="44" fill="none"><path d="M12 6h16l10 10v26a2 2 0 01-2 2H12a2 2 0 01-2-2V8a2 2 0 012-2z" fill="#cbd5e1"/><path d="M28 6v10h10L28 6z" fill="#94a3b8"/></svg>
+                  </div>
+                  <strong>请拖拽到此区域或点击上传</strong>
+                  <p>请将编辑好的文件在此处上传，支持 .xlsx, .csv, .txt, .json 类型文件，最大不超过 5MB</p>
+                  <button type="button" class="outline upload-trigger-btn" id="window-upload-trigger"><i data-lucide="upload"></i><span>上传文件</span></button>
+                  <input id="window-upload-input" type="file" accept=".xlsx,.csv,.txt,.json,.obpack" hidden>
+                </div>
+                <div class="roxy-tpl-download-row">
+                  <span>请点击下载 </span>
+                  <div class="tpl-dropdown-container">
+                    <button type="button" class="tpl-link-btn" id="window-tpl-download-btn">窗口导入模板 ▾</button>
+                    <div class="tpl-dropdown-menu" id="window-tpl-download-menu" hidden>
+                      <button type="button" data-tpl-format="excel">excel 模板</button>
+                      <button type="button" data-tpl-format="txt">txt 模板</button>
+                      <button type="button" data-tpl-format="json">json 模板</button>
+                    </div>
+                  </div>
+                  <span>，本次最多可导入 200 个窗口。</span>
+                </div>
+                <div id="window-upload-preview-wrap" hidden style="margin-top:12px">
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                    <strong>已解析待导入窗口（共 <span id="window-upload-preview-count">0</span> 个）</strong>
+                    <span class="network-mode-hint">下方基础设置与指纹配置将作为默认模板赋予导入窗口</span>
+                  </div>
+                  <div class="table-card" style="max-height:200px;overflow:auto">
+                    <table>
+                      <thead><tr><th>#</th><th>窗口名称</th><th>系统</th><th>启动网页</th><th>平台账号</th><th>代理</th><th>备注</th></tr></thead>
+                      <tbody id="window-upload-preview-tbody"></tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              <!-- AI 批量创建专属卡片 -->
+              <div class="editor-section-card roxy-mode-card" id="create-mode-ai-card" hidden>
+                <div class="editor-card-header">
+                  <div class="editor-card-title">AI 智能批量创建窗口</div>
+                  <div class="editor-card-desc">描述您的业务场景、数量、目标系统与平台，AI 将自动生成防关联指纹矩阵与窗口列表</div>
+                </div>
+                <label>自然语言需求
+                  <textarea id="ai-batch-prompt" rows="3" placeholder="例如：创建 6 个美区 TikTok 养号窗口，系统用 Android 16，Chrome 156 内核，开启端口扫描保护">创建 5 个美区跨境电商窗口，使用 Windows 11 系统与 Chrome 156 内核</textarea>
+                </label>
+                <div class="storage-actions" style="margin-top:8px">
+                  <button type="button" class="primary" id="ai-batch-generate-btn"><i data-lucide="sparkles"></i><span>AI 生成窗口矩阵预览</span></button>
+                </div>
+              </div>
+              <section class="editor-panel active roxy-accordion-card" data-editor-panel="basic">
+                <div class="roxy-accordion-header" data-accordion-toggle="1">
+                  <span class="roxy-acc-symbol">−</span>
+                  <strong>窗口基础信息</strong>
+                  <span class="roxy-acc-desc">窗口名称、归属项目、平台账号、Cookie 与备注</span>
+                </div>
                 <div class="editor-section-card">
                   <div class="editor-card-header">
                     <div class="editor-card-title">平台与启动页</div>
@@ -253,8 +404,11 @@
                     <label>2FA 密钥 (TOTP)<input id="editor-platform-2fa" autocomplete="off" placeholder="双重验证密钥（可选）" data-i18n-placeholder="editor.totpPh" type="password"></label>
                   </div>
                   <div id="editor-extra-accounts"></div>
-                  <div class="storage-actions" style="margin:2px 0 8px">
+                  <div class="storage-actions" style="margin:2px 0 8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
                     <button class="outline" type="button" id="editor-add-account"><i data-lucide="user-plus"></i><span data-i18n="editor.addAccount">添加账号</span></button>
+                    <select id="editor-account-pool-select" style="max-width:240px">
+                      <option value="">选择已有账号</option>
+                    </select>
                   </div>
                   <label><span data-i18n="editor.cookies">Cookies
                     </span><textarea id="editor-cookies" rows="4" placeholder="选填&#10;支持格式: JSON、Netscape、Name=Value&#10;Name=Value 未写 domain 时，将按行从平台账号的网址自动填充" data-i18n-placeholder="editor.cookiesPh"></textarea>
@@ -262,6 +416,7 @@
                   <div class="storage-actions" style="margin-top:8px;margin-bottom:4px">
                     <button class="outline" type="button" id="editor-cookie-export">导出 Cookie</button>
                     <button class="outline" type="button" id="editor-cookie-import-file">从文件导入 Cookie</button>
+                    <button class="outline" type="button" id="editor-cookie-robot-btn"><i data-lucide="bot"></i><span>Cookie 机器人</span></button>
                     <button class="outline" type="button" id="editor-clear-cache-cookie">清除缓存及 Cookie</button>
                   </div>
                   <input id="editor-cookie-file" type="file" accept=".json,.txt" hidden>
@@ -278,8 +433,13 @@
                   </div>
                 </div>
               </section>
-              <section class="editor-panel" data-editor-panel="proxy">
-                <h3>代理配置</h3>
+              <section class="editor-panel roxy-accordion-card" data-editor-panel="proxy">
+                <div class="roxy-accordion-header" data-accordion-toggle="1">
+                  <span class="roxy-acc-symbol">−</span>
+                  <strong>代理 IP 配置</strong>
+                  <span class="roxy-acc-desc">支持本地直连、单窗口自定义代理（智能粘贴解析 IPv4/IPv6）与本地代理库绑定</span>
+                </div>
+                <h3 hidden>代理配置</h3>
                 <label class="check-row"><input id="editor-proxy-check-start" type="checkbox"> 每次启动检测出口 IP（动态代理建议开启）</label>
                 <p class="network-mode-hint" data-i18n="editor.networkHint">本地直连 = 本机网络；代理模式 = HTTP / HTTPS / SOCKS5。</p>
                 <div class="editor-direct-banner" id="editor-direct-banner" hidden>
@@ -309,7 +469,11 @@
                     </div>
                   </label>
                   <label class="check-row" style="margin-top:-4px;margin-bottom:8px;"><input id="editor-proxy-save-to-library" type="checkbox"> 同时保存到代理库（方便其他环境复用）</label>
-                  <p class="network-mode-hint" data-i18n="editor.ipv6Hint" style="margin:0 0 8px">2. IPv6 的代理 IP 主机需填写在 [ ] 内</p>
+                  <div class="proxy-ipver-row" style="margin:4px 0 6px">
+                    <label class="radio-inline"><input type="radio" name="editor-ip-version" value="ipv4" checked><span>IPv4</span></label>
+                    <label class="radio-inline"><input type="radio" name="editor-ip-version" value="ipv6"><span>IPv6</span></label>
+                    <span class="network-mode-hint" data-i18n="editor.ipv6Hint" style="margin:0">2. IPv6 的代理 IP 主机需填写在 [ ] 内</span>
+                  </div>
                   <div class="form-two">
                     <label>代理类型<select id="editor-proxy-type"><option value="socks5">SOCKS5</option><option value="http">HTTP</option><option value="https">HTTPS</option></select></label>
                     <label>IP 查询通道<select id="editor-ip-channel" data-i18n-title="editor.ipChannelTip"><option value="ip-api">IP-API</option><option value="ip2location">IP2Location</option><option value="ifconfig-me">ifconfig.me（HTTPS）</option></select></label>
@@ -371,7 +535,12 @@
                   <div class="proxy-test-result" id="editor-proxy-result">尚未检测</div>
                 </div>
               </section>
-              <section class="editor-panel" data-editor-panel="privacy">
+              <section class="editor-panel roxy-accordion-card" data-editor-panel="privacy">
+                <div class="roxy-accordion-header" data-accordion-toggle="1">
+                  <span class="roxy-acc-symbol">−</span>
+                  <strong>基础设置与高级指纹设置</strong>
+                  <span class="roxy-acc-desc">系统、内核、UA、语言时区、WebRTC、WebGL、Canvas、设备名称与 MAC 防关联参数</span>
+                </div>
                 <div class="editor-random-toolbar">
                   <button type="button" class="outline" id="editor-random-fp">一键随机指纹</button>
                   <span class="network-mode-hint">把 Canvas / WebGL / 音频 / 字体等全部切到随机档并清除手填标识，点「立即保存」后生效。</span>
@@ -381,30 +550,43 @@
                     <div class="editor-card-title">操作系统与浏览器</div>
                     <div class="editor-card-desc">选择系统标识、内核与 User-Agent</div>
                   </div>
-                  <div class="form-two">
-                    <label><span data-i18n="editor.os">系统
-                      </span><div class="field-inline-group">
-                        <select id="editor-os">
+                  <div class="roxy-os-kernel-rows">
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label" data-i18n="editor.os">系统</span>
+                      <div class="roxy-field-control">
+                        <div class="roxy-icon-seg" id="editor-os-visual" role="radiogroup" aria-label="操作系统">
+                          <button type="button" class="os-seg-btn active" data-os-val="Windows" title="Windows"><svg viewBox="0 0 24 24" width="16" height="16"><path fill="#0078D4" d="M3 3h8.5v8.5H3V3zm9.5 0H21v8.5h-8.5V3zM3 12.5h8.5V21H3v-8.5zm9.5 0H21V21h-8.5v-8.5z"/></svg><span>Windows</span></button>
+                          <button type="button" class="os-seg-btn" data-os-val="macOS" title="macOS"><span class="os-badge-mac">OS</span><span>macOS</span></button>
+                          <button type="button" class="os-seg-btn" data-os-val="Linux" title="Linux"><span>🐧</span><span>Linux</span></button>
+                          <button type="button" class="os-seg-btn" data-os-val="Android" title="Android"><span>🤖</span><span>Android</span></button>
+                          <button type="button" class="os-seg-btn" data-os-val="iOS" title="iOS"><span class="os-badge-ios">iOS</span><span>iOS</span></button>
+                        </div>
+                        <select id="editor-os" hidden>
                           <option value="Windows">Windows</option>
                           <option value="macOS">macOS</option>
                           <option value="Linux">Linux</option>
                           <option value="Android">Android</option>
                           <option value="iOS">iOS</option>
                         </select>
-                        <select id="editor-os-version" title="系统版本"></select>
+                        <select id="editor-os-version" title="系统版本" style="max-width:200px"></select>
                       </div>
-                    </label>
-                    <label><span data-i18n="editor.kernel">内核
-                      </span><div class="field-inline-group">
-                        <select id="editor-engine">
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label" data-i18n="editor.kernel">内核</span>
+                      <div class="roxy-field-control">
+                        <div class="roxy-icon-seg" id="editor-engine-visual" role="radiogroup" aria-label="浏览器内核">
+                          <button type="button" class="kernel-seg-btn active" data-engine-val="chromium"><svg viewBox="0 0 256 256" width="16" height="16"><circle cx="128" cy="128" r="64" fill="#fff"/><path fill="#34a853" d="M96 183.4A63.7 63.7 0 0 1 72.6 160L17.2 64A128 128 0 0 0 128 256l55.4-96A64 64 0 0 1 96 183.4Z"/><path fill="#fbbc04" d="M192 128a63.7 63.7 0 0 1-8.6 32L128 256A128 128 0 0 0 238.9 64h-111a64 64 0 0 1 64 64Z"/><circle cx="128" cy="128" r="52" fill="#1a73e8"/><path fill="#ea4335" d="M96 72.6a63.7 63.7 0 0 1 32-8.6h110.8a128 128 0 0 0-221.7 0l55.5 96A64 64 0 0 1 96 72.6Z"/></svg><span>Chrome</span></button>
+                          <button type="button" class="kernel-seg-btn" data-engine-val="firefox"><svg viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="10.5" fill="#ff7139"/><path d="M12.6 5.1c2.5 1.5 3.7 3.9 3.4 6.5-.1 1.2-.7 2.1-1.6 2.7 1.5-.2 2.6-1.2 3-2.7.5 2.6-.5 4.9-2.7 6.3-1.9 1.2-4 1.5-6.2.9C6 18.1 4.4 15.9 4.5 13.2c.1-2.1 1.2-3.8 3-4.9-.2.6-.2 1.2 0 1.7.4-1.9 1.7-3.2 3.6-3.7-.8-.6-1.7-.8-2.7-.7 1.4-1.1 3-1.5 4.2-1.2-.2-.9-1-1.6-2.1-1.9 1.6-.4 2.9-.1 4.1.6Z" fill="#fff"/></svg><span>Firefox</span></button>
+                        </div>
+                        <select id="editor-engine" hidden>
                           <option value="chromium" selected>Chrome</option>
                           <option value="firefox">Firefox</option>
                         </select>
-                        <select id="editor-engine-version" title="内核版本"></select>
+                        <select id="editor-engine-version" title="内核版本" style="max-width:200px"></select>
                       </div>
                       <small class="field-warn" id="editor-engine-warn" hidden data-i18n="editor.engineWarn">修改内核可能导致缓存不兼容，从而使账号登录信息失效，请谨慎操作。</small>
-                    </label>
-                    <label class="check-row" style="margin-top:24px"><input id="editor-refresh-fingerprint" type="checkbox"> 每次打开自动刷新随机指纹</label>
+                    </div>
+                    <label class="check-row" style="margin-top:6px"><input id="editor-refresh-fingerprint" type="checkbox"> 每次打开自动刷新随机指纹</label>
                   </div>
                   <label>User-Agent
                     <textarea id="editor-user-agent" rows="2" placeholder="留空 = 按环境 ID 自动生成真实对应系统的 UA"></textarea>
@@ -575,24 +757,203 @@
                       <span class="labeled-block-title" data-i18n="editor.position">窗口位置</span>
                       <div class="field-inline-group">
                         <select id="editor-window-pos" hidden><option value="">默认位置</option><option value="tl">左上</option><option value="tm">上中</option><option value="tr">右上</option><option value="ml">左中</option><option value="mm">屏幕居中</option><option value="mr">右中</option><option value="bl">左下</option><option value="bm">下中</option><option value="br">右下</option></select>
-                        <div class="pos-grid" id="editor-window-pos-grid" role="group" data-i18n-aria="editor.position"></div>
+                        <div class="pos-grid" id="editor-window-pos-grid" role="group" data-i18n-aria="editor.position"></div><span id="editor-window-pos-label" class="pos-grid-badge">默认位置</span>
                       </div>
                     </div>
                   </div>
                   <div class="form-two" style="margin-top:12px">
-                    <label><span data-i18n="editor.searchEngine">搜索引擎
-                      </span><select id="editor-search-engine"><option value="google">Google</option><option value="bing">Microsoft Bing</option><option value="yahoo">Yahoo</option><option value="yandex">Yandex</option><option value="duckduckgo">DuckDuckGo</option></select>
-                    </label>
+                    <div class="labeled-block" style="grid-column: 1 / -1">
+                      <span class="labeled-block-title" data-i18n="editor.searchEngine">搜索引擎</span>
+                      <div class="roxy-pill-group se-brand-pills" data-sync-select="#editor-search-engine">
+                        <button type="button" data-pill-val="google"><span class="se-dot se-google">G</span>Google</button>
+                        <button type="button" data-pill-val="bing"><span class="se-dot se-bing">b</span>Microsoft Bing</button>
+                        <button type="button" data-pill-val="yahoo"><span class="se-dot se-yahoo">Y!</span>Yahoo</button>
+                        <button type="button" data-pill-val="yandex"><span class="se-dot se-yandex">Я</span>Yandex</button>
+                        <button type="button" data-pill-val="duckduckgo"><span class="se-dot se-ddg">🦆</span>DuckDuckGo</button>
+                      </div>
+                      <select id="editor-search-engine" hidden><option value="google">Google</option><option value="bing">Microsoft Bing</option><option value="yahoo">Yahoo</option><option value="yandex">Yandex</option><option value="duckduckgo">DuckDuckGo</option></select>
+                    </div>
                     <label></label>
                   </div>
                 </div>
 
                 <div class="editor-section-card">
                   <div class="editor-card-header">
-                    <div class="editor-card-title">硬件与渲染</div>
-                    <div class="editor-card-desc">设置图形、音频、设备及传感器行为</div>
+                    <div class="editor-card-title">高级指纹设置（硬件与渲染）</div>
+                    <div class="editor-card-desc">1:1 胶囊切换图形、音频、设备名、MAC、并发核数与传感器指纹行为</div>
                   </div>
-                  <div class="privacy-grid">
+                  <div class="roxy-fp-pill-list">
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">分辨率</span>
+                      <div class="roxy-pill-group" data-sync-select="#editor-resolution">
+                        <button type="button" data-pill-val="real">跟随系统</button>
+                        <button type="button" data-pill-val="1280x820">1280×820</button>
+                        <button type="button" data-pill-val="1920x1080">1920×1080</button>
+                        <button type="button" data-pill-val="custom">自定义</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">字体指纹</span>
+                      <div class="roxy-pill-group" data-sync-select="#editor-font-list-mode">
+                        <button type="button" data-pill-val="real">跟随系统</button>
+                        <button type="button" data-pill-val="noise">随机</button>
+                        <button type="button" data-pill-val="custom">自定义</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">WebRTC</span>
+                      <div class="roxy-pill-group" data-sync-select="#editor-webrtc">
+                        <button type="button" data-pill-val="proxy">替换</button>
+                        <button type="button" data-pill-val="real">真实</button>
+                        <button type="button" data-pill-val="disabled">禁止</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">WebGL 图像</span>
+                      <div class="roxy-pill-group" data-sync-select="#editor-webgl">
+                        <button type="button" data-pill-val="noise">随机</button>
+                        <button type="button" data-pill-val="real">真实</button>
+                        <button type="button" data-pill-val="blocked">禁止</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">WebGL Info</span>
+                      <div class="roxy-pill-group" data-sync-select="#editor-webgl-meta">
+                        <button type="button" data-pill-val="real">真实</button>
+                        <button type="button" data-pill-val="noise">随机</button>
+                        <button type="button" data-pill-val="custom">自定义</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">WebGpu</span>
+                      <div class="roxy-pill-group" data-sync-select="#editor-webgpu">
+                        <button type="button" data-pill-val="webgl">基于WebGL匹配</button>
+                        <button type="button" data-pill-val="real">真实</button>
+                        <button type="button" data-pill-val="blocked">禁止</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">Canvas</span>
+                      <div class="roxy-pill-group" data-sync-select="#editor-canvas">
+                        <button type="button" data-pill-val="noise">随机</button>
+                        <button type="button" data-pill-val="real">真实</button>
+                        <button type="button" data-pill-val="blocked">禁止</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">AudioContext</span>
+                      <div class="roxy-pill-group" data-sync-select="#editor-audio">
+                        <button type="button" data-pill-val="noise">随机</button>
+                        <button type="button" data-pill-val="real">真实</button>
+                        <button type="button" data-pill-val="muted">禁止</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">Speech Voices</span>
+                      <div class="roxy-pill-group" data-sync-select="#editor-speech">
+                        <button type="button" data-pill-val="noise">随机</button>
+                        <button type="button" data-pill-val="real">真实</button>
+                        <button type="button" data-pill-val="blocked">禁止</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">Do Not Track</span>
+                      <div class="roxy-pill-group" data-sync-select="#editor-dnt-mode">
+                        <button type="button" data-pill-val="on">开启</button>
+                        <button type="button" data-pill-val="off">关闭</button>
+                        <button type="button" data-pill-val="default">默认</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">Client Rects</span>
+                      <div class="roxy-pill-group" data-sync-select="#editor-client-rects">
+                        <button type="button" data-pill-val="noise">随机</button>
+                        <button type="button" data-pill-val="real">真实</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">媒体设备</span>
+                      <div class="roxy-pill-group" data-sync-select="#editor-media">
+                        <button type="button" data-pill-val="noise">随机</button>
+                        <button type="button" data-pill-val="real">真实</button>
+                        <button type="button" data-pill-val="blocked">禁止</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">设备名称</span>
+                      <div class="roxy-pill-group" data-sync-select="#editor-device-name-mode">
+                        <button type="button" data-pill-val="noise">随机</button>
+                        <button type="button" data-pill-val="real">真实</button>
+                        <button type="button" data-pill-val="custom">自定义</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">MAC地址</span>
+                      <div class="roxy-pill-group" data-sync-select="#editor-mac-mode">
+                        <button type="button" data-pill-val="real">真实</button>
+                        <button type="button" data-pill-val="custom">自定义</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">端口扫描保护</span>
+                      <div class="roxy-pill-group" data-sync-check="#editor-port-scan">
+                        <button type="button" data-pill-bool="true">开启</button>
+                        <button type="button" data-pill-bool="false">关闭</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">硬件加速模式</span>
+                      <div class="roxy-pill-group" data-sync-select="#editor-gpu-mode">
+                        <button type="button" data-pill-val="on">开启</button>
+                        <button type="button" data-pill-val="off">关闭</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">硬件并发数</span>
+                      <div class="roxy-pill-group" data-sync-select="#editor-cores">
+                        <button type="button" data-pill-val="">自动</button>
+                        <button type="button" data-pill-val="4">4核</button>
+                        <button type="button" data-pill-val="8">8核</button>
+                        <button type="button" data-pill-val="12">12核</button>
+                        <button type="button" data-pill-val="16">16核</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">设备内存</span>
+                      <div class="roxy-pill-group" data-sync-select="#editor-memory">
+                        <button type="button" data-pill-val="">自动</button>
+                        <button type="button" data-pill-val="2">2G</button>
+                        <button type="button" data-pill-val="4">4G</button>
+                        <button type="button" data-pill-val="6">6G</button>
+                        <button type="button" data-pill-val="8">8G</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">禁用沙盒</span>
+                      <div class="roxy-pill-group" data-sync-check="#editor-no-sandbox">
+                        <button type="button" data-pill-bool="true">开启</button>
+                        <button type="button" data-pill-bool="false">关闭</button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="roxy-mobile-sim-card" id="editor-mobile-sim-card">
+                    <div class="mobile-sim-group-title">⚡ 电池 / 🌐 网络 / 🦷 蓝牙模拟（移动设备专属增强）</div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">电池模拟</span>
+                      <div class="roxy-pill-group" data-sync-select="#editor-battery">
+                        <button type="button" data-pill-val="noise">开启</button>
+                        <button type="button" data-pill-val="blocked">关闭</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">蓝牙模拟</span>
+                      <div class="roxy-pill-group" data-sync-select="#editor-bluetooth">
+                        <button type="button" data-pill-val="real">开启</button>
+                        <button type="button" data-pill-val="blocked">关闭</button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="privacy-grid is-pill-consolidated">
                     <label title="真实机型：CPU 核数、内存、GPU、屏幕与像素比取自同一台真实机器，避免出现现实中不存在的硬件组合">设备档案<select id="editor-device-profile"><option value="persona">真实机型</option><option value="default">独立随机</option></select></label>
                     <label>Canvas 噪声<select id="editor-canvas"><option value="noise">随机混淆</option><option value="real">真实直通</option><option value="blocked">阻断关闭</option></select></label>
                     <label>WebGL 图像<select id="editor-webgl"><option value="noise">随机混淆</option><option value="real">真实直通</option><option value="blocked">阻断关闭</option></select></label>
@@ -612,7 +973,12 @@
                     <label><span data-i18n="editor.hwConcurrency">硬件并发数</span><select id="editor-cores"><option value="">自动</option><option value="0">真实</option><option value="2">2核</option><option value="4">4核</option><option value="6">6核</option><option value="8">8核</option><option value="10">10核</option><option value="12" selected>12核</option><option value="16">16核</option><option value="20">20核</option><option value="24">24核</option></select></label>
                     <label><span data-i18n="editor.deviceMemory">设备内存</span><select id="editor-memory"><option value="">自动</option><option value="0">真实</option><option value="2">2G</option><option value="4">4G</option><option value="6">6G</option><option value="8" selected>8G</option></select></label>
                     <label><span data-i18n="editor.deviceNameMode">设备名称</span><select id="editor-device-name-mode"><option value="noise">随机</option><option value="real">真实</option><option value="custom">自定义</option></select></label>
-                    <label>自定义设备名<input id="editor-device-name" placeholder="自定义设备名" maxlength="30" data-i18n-title="editor.deviceNameTip" title="设备名称最多支持 30 个字符；选填，Android 9/11 不支持"></label>
+                    <label>自定义设备名
+                      <div class="field-inline-group">
+                        <input id="editor-device-name" placeholder="DESKTOP-Z98KE478" maxlength="30" data-i18n-title="editor.deviceNameTip" title="设备名称最多支持 30 个字符；选填，Android 9/11 不支持">
+                        <button type="button" class="outline" id="editor-device-name-shuffle" style="max-width:64px">随机</button>
+                      </div>
+                    </label>
                     <label>MAC 地址模式<select id="editor-mac-mode"><option value="real">真实</option><option value="custom">自定义</option></select></label>
                     <label>MAC 地址
                       <div class="field-inline-group">
@@ -717,8 +1083,188 @@
                 <label class="check-row"><input id="editor-ignore-https" type="checkbox"> 忽略 HTTPS 证书错误 — 过期/自签名证书不再拦截（对齐 Roxy「ignoreHttpsError」，注意中间人风险）</label>
                 <label class="check-row"><input id="editor-cf-optimize" type="checkbox" checked> Cloudflare 验证优化 — 减少五秒盾卡住（可能略增被识别概率）</label>
               </section>
-              <section class="editor-panel" data-editor-panel="advanced">
-                <h3>偏好设置</h3>
+              <section class="editor-panel roxy-accordion-card" data-editor-panel="advanced">
+                <div class="roxy-accordion-header" data-accordion-toggle="1">
+                  <span class="roxy-acc-symbol">−</span>
+                  <strong>偏好设置</strong>
+                  <span class="roxy-acc-desc">书签与数据同步、启动前清理、网络与 IP 变化守护、工作台与网址黑白名单</span>
+                </div>
+                <h3 hidden>偏好设置</h3>
+                <div class="editor-section-card roxy-pref-pill-card">
+                  <div class="roxy-fp-pill-list roxy-pref-pill-list">
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">自定义书签</span>
+                      <div class="roxy-pill-group" data-sync-check="#editor-load-global-bookmarks">
+                        <button type="button" data-pill-bool="true">开启</button>
+                        <button type="button" data-pill-bool="false">关闭</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">显示书签栏</span>
+                      <div class="roxy-pill-group" data-sync-check="#editor-show-bookmark-bar">
+                        <button type="button" data-pill-bool="true">开启</button>
+                        <button type="button" data-pill-bool="false">关闭</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">同步书签</span>
+                      <div class="roxy-pill-group" data-sync-check="#editor-upload-bookmarks">
+                        <button type="button" data-pill-bool="true">开启</button>
+                        <button type="button" data-pill-bool="false">关闭</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">同步历史记录</span>
+                      <div class="roxy-pill-group" data-sync-check="#editor-sync-history">
+                        <button type="button" data-pill-bool="true">开启</button>
+                        <button type="button" data-pill-bool="false">关闭</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">同步标签页</span>
+                      <div class="roxy-pill-group" data-sync-check="#editor-sync-tab">
+                        <button type="button" data-pill-bool="true">开启</button>
+                        <button type="button" data-pill-bool="false">关闭</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">同步Cookie</span>
+                      <div class="roxy-pill-group" data-sync-check="#editor-sync-cookies-close">
+                        <button type="button" data-pill-bool="true">开启</button>
+                        <button type="button" data-pill-bool="false">关闭</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">同步扩展应用程序</span>
+                      <div class="roxy-pill-group" data-sync-check="#editor-sync-ext">
+                        <button type="button" data-pill-bool="true">开启</button>
+                        <button type="button" data-pill-bool="false">关闭</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">同步已保存的用户名密码</span>
+                      <div class="roxy-pill-group" data-sync-check="#editor-sync-passwords">
+                        <button type="button" data-pill-bool="true">开启</button>
+                        <button type="button" data-pill-bool="false">关闭</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">同步IndexedDB</span>
+                      <div class="roxy-pill-group" data-sync-check="#editor-sync-idb">
+                        <button type="button" data-pill-bool="true">开启</button>
+                        <button type="button" data-pill-bool="false">关闭</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">同步Local Storage</span>
+                      <div class="roxy-pill-group" data-sync-check="#editor-sync-ls">
+                        <button type="button" data-pill-bool="true">开启</button>
+                        <button type="button" data-pill-bool="false">关闭</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">同步Session Storage</span>
+                      <div class="roxy-pill-group" data-sync-check="#editor-sync-session-storage">
+                        <button type="button" data-pill-bool="true">开启</button>
+                        <button type="button" data-pill-bool="false">关闭</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">启动浏览器前删除缓存文件</span>
+                      <div class="roxy-pill-group" data-sync-check="#editor-clear-cache">
+                        <button type="button" data-pill-bool="true">开启</button>
+                        <button type="button" data-pill-bool="false">关闭</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">启动浏览器前删除Cookie</span>
+                      <div class="roxy-pill-group" data-sync-check="#editor-clear-cookies">
+                        <button type="button" data-pill-bool="true">开启</button>
+                        <button type="button" data-pill-bool="false">关闭</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">启动浏览器前删除Local Storage</span>
+                      <div class="roxy-pill-group" data-sync-check="#editor-clear-localstorage">
+                        <button type="button" data-pill-bool="true">开启</button>
+                        <button type="button" data-pill-bool="false">关闭</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">启动浏览器前删除历史记录</span>
+                      <div class="roxy-pill-group" data-sync-check="#editor-clear-history">
+                        <button type="button" data-pill-bool="true">开启</button>
+                        <button type="button" data-pill-bool="false">关闭</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">弹出保存密码提示</span>
+                      <div class="roxy-pill-group" data-sync-check="#editor-prompt-save-password">
+                        <button type="button" data-pill-bool="true">开启</button>
+                        <button type="button" data-pill-bool="false">关闭</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">禁止恢复页面弹框</span>
+                      <div class="roxy-pill-group" data-sync-check="#editor-block-restore-dialog">
+                        <button type="button" data-pill-bool="true">开启</button>
+                        <button type="button" data-pill-bool="false">关闭</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">禁止显示通知弹框</span>
+                      <div class="roxy-pill-group" data-sync-check="#editor-block-notifications">
+                        <button type="button" data-pill-bool="true">开启</button>
+                        <button type="button" data-pill-bool="false">关闭</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">网络不通停止打开</span>
+                      <div class="roxy-pill-group" data-sync-check="#editor-stop-open-net">
+                        <button type="button" data-pill-bool="true">开启</button>
+                        <button type="button" data-pill-bool="false">关闭</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">IP发生变化停止打开</span>
+                      <div class="roxy-pill-group" data-sync-check="#editor-stop-open-ip">
+                        <button type="button" data-pill-bool="true">开启</button>
+                        <button type="button" data-pill-bool="false">关闭</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">IP对应国家/地区发生改变停止打开</span>
+                      <div class="roxy-pill-group" data-sync-check="#editor-stop-open-ip-country">
+                        <button type="button" data-pill-bool="true">开启</button>
+                        <button type="button" data-pill-bool="false">关闭</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">打开工作台</span>
+                      <div class="roxy-pill-group" data-sync-select="#editor-open-workbench">
+                        <button type="button" data-pill-val="1">开启</button>
+                        <button type="button" data-pill-val="0">关闭</button>
+                        <button type="button" data-pill-val="2">跟随软件设置</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">IP 变化提醒</span>
+                      <div class="roxy-pill-group" data-sync-select="#editor-ip-change-remind">
+                        <button type="button" data-pill-val="1">开启</button>
+                        <button type="button" data-pill-val="0">关闭</button>
+                        <button type="button" data-pill-val="2">跟随软件设置</button>
+                      </div>
+                    </div>
+                    <div class="roxy-field-row">
+                      <span class="roxy-field-label">是否开启谷歌登录</span>
+                      <div class="roxy-pill-group" data-sync-select="#editor-google-login">
+                        <button type="button" data-pill-val="1">开启</button>
+                        <button type="button" data-pill-val="0">关闭</button>
+                        <button type="button" data-pill-val="2">跟随软件设置</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
                 <div class="advanced-card">
                   <strong>云备份</strong>
                   <p class="network-mode-hint" data-i18n="editor.cloudBackupScopeHint">全局网盘在「本地设置 → 云同步」配置；此处仅控制本环境是否参与。</p>
@@ -833,15 +1379,26 @@
                   </label>
                 </div>
               </section>
-              <div class="editor-actions"><button class="outline" id="editor-cancel" type="button">取消</button><button class="primary" type="submit">立即保存</button></div>
+              <div class="editor-actions editor-sticky-footer">
+                <div class="footer-left-quick">
+                  <select id="editor-footer-group" title="所属项目/分组" onchange="const g=document.getElementById('editor-group');if(g){g.value=this.value;g.dispatchEvent(new Event('change',{bubbles:true}));}"></select>
+                </div>
+                <div class="footer-right-btns">
+                  <button class="outline" id="editor-save-as-template" type="button"><i data-lucide="bookmark-plus"></i><span>存为新模板</span></button>
+                  <button class="outline" id="editor-cancel" type="button">取消</button>
+                  <button class="primary" id="editor-submit-btn" type="submit">立即保存</button>
+                </div>
+              </div>
             </form>
-            <aside class="profile-summary">
+            <button type="button" class="outline mini-btn editor-summary-toggle-btn" id="editor-summary-toggle-btn" title="展开/收起右侧概要面板"><i data-lucide="panel-right"></i><span>收起概要</span></button>
+            <aside class="profile-summary" id="editor-profile-summary-rail">
               <div class="rail-tutorial" id="editor-rail-tutorial">
                 <strong data-i18n="editor.tutorial">窗口教程</strong>
                 <p data-i18n="editor.tutorialDesc">了解窗口和窗口指纹</p>
                 <button class="outline mini-btn" id="editor-tutorial-dismiss" type="button" aria-label="关闭">×</button>
               </div>
               <div class="summary-head"><strong data-i18n="editor.summaryTitle">概要</strong><button id="editor-system-defaults" type="button"><i data-lucide="refresh-cw"></i>读取本机默认值</button></div>
+              <div id="editor-device-mockup" class="editor-device-mockup"></div>
               <dl id="editor-summary"></dl>
               <button class="outline rail-random-fp" id="editor-random-fp-rail" type="button"><i data-lucide="shuffle"></i><span data-i18n="editor.randomFingerprint">一键随机指纹</span></button>
               <section class="environment-audit" id="editor-audit"></section>
@@ -854,6 +1411,7 @@
           <div class="toolbar">
             <div class="toolbar-left">
               <button class="primary" id="proxy-create" type="button"><i data-lucide="plus"></i>新建代理</button>
+              <button class="outline" id="proxy-open-add-page" type="button"><i data-lucide="sparkles"></i>工作台添加代理</button>
               <button class="outline" id="proxy-batch-import-btn" type="button"><i data-lucide="folder-input"></i>批量导入</button>
               <button class="outline" id="proxy-refresh" type="button"><i data-lucide="refresh-cw"></i>刷新</button>
               <button class="outline" id="proxy-check-selected" type="button"><i data-lucide="activity"></i>检测选中</button>
@@ -928,6 +1486,15 @@
               <span><i class="partial" aria-hidden="true"></i>部分环境已启用</span>
             </span>
           </div>
+          <div class="ext-category-bar" id="ext-category-bar">
+            <button type="button" class="group-chip active" data-ext-cat="all">全部扩展</button>
+            <button type="button" class="group-chip" data-ext-cat="ecom">跨境电商</button>
+            <button type="button" class="group-chip" data-ext-cat="social">社媒运营</button>
+            <button type="button" class="group-chip" data-ext-cat="web3">Web3 钱包</button>
+            <button type="button" class="group-chip" data-ext-cat="productivity">效率与翻译</button>
+            <button type="button" class="group-chip" data-ext-cat="security">隐私与验证码</button>
+          </div>
+          <div class="roxy-ext-market-grid" id="roxy-ext-market-grid"></div>
           <div class="extension-grid" id="extension-grid"></div>
           <div class="empty" id="extension-empty" hidden>尚未添加扩展</div>
         </section>
@@ -943,7 +1510,16 @@
               <div class="console-tabs"><button class="active sync-tab" data-console="window"><i data-lucide="panels-top-left"></i><span>窗口管理</span></button><button class="sync-tab" data-console="text"><i data-lucide="text-cursor-input"></i><span>文本管理</span></button><button class="sync-tab" data-console="tabs"><i data-lucide="layers-2"></i><span>标签页管理</span></button></div>
               <div class="console-panel active" id="console-window">
                 <div class="action-grid"><button class="sync-command" data-window="tile"><i data-lucide="layout-grid"></i><span>平铺窗口</span></button><button class="sync-command" data-window="cascade"><i data-lucide="layers-2"></i><span>层叠窗口</span></button><button class="sync-command" data-window="maximized"><i data-lucide="maximize-2"></i><span>最大化</span></button><button class="sync-command" data-window="minimized"><i data-lucide="minus"></i><span>最小化</span></button><button class="sync-command" data-window="normal"><i data-lucide="minimize-2"></i><span>恢复窗口</span></button></div>
-                <div class="help-box"><strong>启动同步</strong><p>第一个选中环境作为主控，自动同步当前标签页 URL，并将所有窗口平铺排列。</p></div>
+                <div class="sync-matrix-box">
+                  <strong>自定义网格排列矩阵</strong>
+                  <div class="sync-matrix-row">
+                    <label>行数<input id="sync-grid-rows" type="number" min="1" max="6" value="2"></label>
+                    <label>列数<input id="sync-grid-cols" type="number" min="1" max="6" value="3"></label>
+                    <label>间距(px)<input id="sync-grid-gap" type="number" min="0" max="40" value="8"></label>
+                  </div>
+                  <button type="button" class="outline block" id="sync-apply-matrix-btn" style="margin-top:8px"><i data-lucide="grid"></i><span>应用矩阵排列</span></button>
+                </div>
+                <div class="help-box"><strong>启动同步</strong><p>第一个选中环境作为主控，自动同步鼠标点击、滚动、键盘输入与标签页导航。</p></div>
               </div>
               <div class="console-panel" id="console-text">
                 <div class="row-actions"><button class="outline sync-command" id="clear-text"><i data-lucide="eraser"></i><span>&#28165;&#31354;&#20869;&#23481;</span></button></div>
@@ -1265,14 +1841,42 @@
           <div class="retro-log-window">
             <div class="retro-log-titlebar">
               <div class="retro-log-title"><i data-lucide="scroll-text" aria-hidden="true"></i><strong>操作日志</strong><span>OPENBROWSER.LOG</span></div>
-              <button class="outline" id="clear-logs" type="button"><i data-lucide="trash-2" aria-hidden="true"></i>清空日志</button>
+              <div class="log-toolbar-actions">
+                <input id="log-search-input" class="log-filter-input" placeholder="搜索日志关键字...">
+                <select id="log-module-filter" class="log-filter-select">
+                  <option value="all">全部模块</option>
+                  <option value="Profile">窗口环境</option>
+                  <option value="Proxy">代理网络</option>
+                  <option value="Sync">窗口同步</option>
+                  <option value="Group">项目管理</option>
+                </select>
+                <button class="outline" id="export-logs-btn" type="button"><i data-lucide="download" aria-hidden="true"></i>导出日志</button>
+                <button class="outline" id="clear-logs" type="button"><i data-lucide="trash-2" aria-hidden="true"></i>清空日志</button>
+              </div>
             </div>
             <div class="log-runtime-note"><i data-lucide="folder-cog" aria-hidden="true"></i><span>真实 Chrome / Edge 独立用户目录</span></div>
             <div class="retro-log-columns" aria-hidden="true"><span>时间</span><span>模块</span><span>记录</span></div>
             <div class="log-card" id="log-list"></div>
           </div>
         </section>
-        <section class="view" id="view-kernels"><div class="settings-grid">
+        <section class="view" id="view-kernels">
+          <div class="kernel-hero-grid">
+            <div class="kernel-engine-hero-card is-chrome">
+              <div class="keh-icon"><svg viewBox="0 0 256 256" width="36" height="36"><circle cx="128" cy="128" r="64" fill="#fff"/><path fill="#34a853" d="M96 183.4A63.7 63.7 0 0 1 72.6 160L17.2 64A128 128 0 0 0 128 256l55.4-96A64 64 0 0 1 96 183.4Z"/><path fill="#fbbc04" d="M192 128a63.7 63.7 0 0 1-8.6 32L128 256A128 128 0 0 0 238.9 64h-111a64 64 0 0 1 64 64Z"/><circle cx="128" cy="128" r="52" fill="#1a73e8"/><path fill="#ea4335" d="M96 72.6a63.7 63.7 0 0 1 32-8.6h110.8a128 128 0 0 0-221.7 0l55.5 96A64 64 0 0 1 96 72.6Z"/></svg></div>
+              <div class="keh-body">
+                <div class="keh-title-row"><strong>Chromium 156 官方防关联内核</strong><span class="kernel-badge-pill kernel-badge-default">主力推荐</span></div>
+                <p>支持 TLS JA3/JA4 指纹对齐、WebGPU 拓扑伪装、Canvas/Audio 硬件级噪声注入与 Chrome 扩展生态。</p>
+              </div>
+            </div>
+            <div class="kernel-engine-hero-card is-firefox">
+              <div class="keh-icon"><svg viewBox="0 0 24 24" width="36" height="36"><circle cx="12" cy="12" r="10.5" fill="#ff7139"/><path d="M12.6 5.1c2.5 1.5 3.7 3.9 3.4 6.5-.1 1.2-.7 2.1-1.6 2.7 1.5-.2 2.6-1.2 3-2.7.5 2.6-.5 4.9-2.7 6.3-1.9 1.2-4 1.5-6.2.9C6 18.1 4.4 15.9 4.5 13.2c.1-2.1 1.2-3.8 3-4.9-.2.6-.2 1.2 0 1.7.4-1.9 1.7-3.2 3.6-3.7-.8-.6-1.7-.8-2.7-.7 1.4-1.1 3-1.5 4.2-1.2-.2-.9-1-1.6-2.1-1.9 1.6-.4 2.9-.1 4.1.6Z" fill="#fff"/></svg></div>
+              <div class="keh-body">
+                <div class="keh-title-row"><strong>Firefox 多代独立隐私内核</strong><span class="kernel-badge-pill kernel-badge-use">异构隔离</span></div>
+                <p>基于 Gecko 独立渲染管线，适合与 Chromium 窗口混排部署，进一步降低跨平台同源指纹特征相关性。</p>
+              </div>
+            </div>
+          </div>
+          <div class="settings-grid">
 <article class="storage-settings-card kernel-card" id="kernel-settings-card">
   <div class="storage-settings-head"><div><h3 data-i18n="system.kernel.title">内核管理</h3><p data-i18n="system.kernel.desc">独立浏览器内核下载与管理。每个大版本只提供最新构建（Chrome for Testing 各版本、Firefox 各代），每个环境可单独选择内核；已安装版本可设为所有环境的默认内核。</p></div><span id="kernel-status-badge" class="kernel-badge">检测中</span></div>
   <div class="kernel-sync-banner" id="kernel-sync-banner"><i data-lucide="shield-check" aria-hidden="true"></i><span id="kernel-sync-note">内核始终与谷歌官方保持一致，安全性领先同行。</span></div>
@@ -1318,7 +1922,47 @@
   <p class="storage-warning" data-i18n="system.kernel.hint">点击下载会获取 Google Chrome Stable 正式包并校验，不使用 Chrome for Testing 包。默认不会自动回退到本机浏览器。</p>
 </article>
 </div></section>
-        <section class="view" id="view-system"><div class="settings-grid">
+        <section class="view" id="view-system">
+          <div class="system-nav-pills" id="system-category-pills">
+            <button type="button" class="group-chip active" data-sys-cat="all">全部设置</button>
+            <button type="button" class="group-chip" data-sys-cat="general">常规与工作台</button>
+            <button type="button" class="group-chip" data-sys-cat="guard">启动保护与托盘</button>
+            <button type="button" class="group-chip" data-sys-cat="cloud">云同步与备份</button>
+            <button type="button" class="group-chip" data-sys-cat="storage">缓存目录与运行时</button>
+          </div>
+          <div class="settings-grid">
+<article class="storage-settings-card" id="global-workbench-defaults-card" data-sys-group="general">
+  <div class="storage-settings-head">
+    <div>
+      <h3>工作台与全局默认偏好</h3>
+      <p>当单窗口「偏好设置」选择「跟随软件设置」时，将默认采用此处配置的全局开关行为。</p>
+    </div>
+    <span class="kernel-badge-pill kernel-badge-default">全局生效</span>
+  </div>
+  <div class="roxy-fp-pill-list" style="margin-top:8px">
+    <div class="roxy-field-row">
+      <span class="roxy-field-label">默认打开工作台启动页</span>
+      <div class="roxy-pill-group" id="global-default-workbench">
+        <button type="button" class="active" data-gpref="open">开启</button>
+        <button type="button" data-gpref="close">关闭</button>
+      </div>
+    </div>
+    <div class="roxy-field-row">
+      <span class="roxy-field-label">出口 IP 变化弹窗提醒</span>
+      <div class="roxy-pill-group" id="global-default-ip-remind">
+        <button type="button" class="active" data-gpref="open">开启</button>
+        <button type="button" data-gpref="close">关闭</button>
+      </div>
+    </div>
+    <div class="roxy-field-row">
+      <span class="roxy-field-label">默认允许谷歌账号登录</span>
+      <div class="roxy-pill-group" id="global-default-google-login">
+        <button type="button" class="active" data-gpref="open">开启</button>
+        <button type="button" data-gpref="close">关闭</button>
+      </div>
+    </div>
+  </div>
+</article>
 <article class="storage-settings-card" id="ui-locale-card">
   <div class="storage-settings-head">
     <div>
@@ -1493,6 +2137,311 @@
 <article><h3>运行时</h3><dl id="runtime-info"></dl></article><article><h3>能力状态</h3><dl><div><dt>真实浏览器进程</dt><dd class="ok">已启用</dd></div><div><dt>独立用户目录</dt><dd class="ok">已启用</dd></div><div><dt>扩展批量加载</dt><dd class="ok">已启用</dd></div><div><dt>Chrome DevTools Protocol</dt><dd class="ok">已启用</dd></div><div><dt>运行模式</dt><dd class="ok">纯本地</dd></div><div><dt>本机接口</dt><dd class="ok">127.0.0.1:50325</dd></div></dl></article>
 <article class="storage-settings-card" id="close-action-card"><div class="storage-settings-head"><div><h3 data-i18n="system.close.title">关闭窗口行为</h3><p data-i18n="system.close.desc">控制点击主窗口右上角关闭按钮时，是将程序最小化到系统托盘继续运行后台代理，还是完全退出程序。</p></div><span data-i18n="system.close.label">托盘常驻</span></div><div class="form-row" style="margin-top:12px;display:flex;gap:16px;align-items:center;flex-wrap:wrap;"><label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="radio" name="close-action-radio" value="ask"> <span data-i18n="system.close.ask">每次询问</span></label><label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="radio" name="close-action-radio" value="tray" checked> <span data-i18n="system.close.tray">最小化到系统托盘（保持浏览器与代理运行）</span></label><label style="display:flex;gap:6px;align-items:center;cursor:pointer;"><input type="radio" name="close-action-radio" value="exit"> <span data-i18n="system.close.exit">退出程序（停止所有运行中的环境）</span></label></div><p class="storage-warning" style="margin-top:10px;" data-i18n="system.close.hint">保持后台运行可保证各个浏览器环境的代理链路不中断。如需完全退出，可在系统托盘图标右键选择「彻底退出」。</p></article>
 <article class="storage-settings-card"><div class="storage-settings-head"><div><h3>环境缓存与数据位置</h3><p>各环境的 Chrome 用户目录、Cookie、缓存、本地存储、IndexedDB 和会话数据都会保存在这里。</p></div><span>本地保存</span></div><div class="storage-path-box"><small>当前目录</small><code id="profile-storage-path">正在读取...</code></div><div class="storage-actions"><button class="primary" id="choose-profile-storage" type="button">选择新目录</button><button class="outline" id="open-profile-storage" type="button">打开目录</button><button class="outline" id="reset-profile-storage" type="button">恢复默认位置</button></div><p class="storage-warning">修改前请先停止所有环境。新位置在环境下次启动时生效；旧目录中的数据不会自动移动或删除。</p></article></div></section>
+        <section class="view" id="view-templates">
+          <div class="toolbar">
+            <div class="toolbar-left">
+              <button class="primary" type="button" onclick="window.openWorkbenchEditorMode && window.openWorkbenchEditorMode('single')"><i data-lucide="plus"></i><span>新建窗口模板</span></button>
+              <label class="search"><i data-lucide="search"></i><input id="templates-search-input" placeholder="搜索模板名称 / 分类 / 系统"></label>
+              <span class="profile-total"><span>模板总数：</span><strong id="templates-total-count">0</strong></span>
+            </div>
+          </div>
+          <div class="project-cards-grid" id="templates-card-grid" style="margin-bottom:14px"></div>
+          <div class="extension-note">
+            <strong>我的窗口模板</strong>
+            <span>保存常用的操作系统、内核版本、User-Agent、分辨率、高级指纹与偏好设置；在「创建窗口」时可一键套用。</span>
+          </div>
+          <div class="table-card">
+            <table>
+              <thead>
+                <tr><th>模板名称</th><th>分类</th><th>操作系统</th><th>内核</th><th>分辨率</th><th>默认启动页</th><th>创建时间</th><th>操作</th></tr>
+              </thead>
+              <tbody id="templates-table-tbody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="view" id="view-accounts">
+          <div class="toolbar">
+            <div class="toolbar-left">
+              <button class="primary" type="button" id="account-create-btn"><i data-lucide="user-plus"></i><span>添加账号</span></button>
+              <label class="search"><i data-lucide="search"></i><input id="accounts-search-input" placeholder="搜索平台 / 账号 / 备注 (Ctrl+F)"></label>
+              <span class="profile-total"><span>账号池总数：</span><strong id="accounts-total-count">0</strong></span>
+            </div>
+            <div class="toolbar-right">
+              <button class="outline" type="button" id="accounts-export-btn"><i data-lucide="upload"></i><span>导出数据</span></button>
+            </div>
+          </div>
+          <div class="table-card" id="accounts-table-card">
+            <table>
+              <thead>
+                <tr><th>平台</th><th>账号</th><th>密码</th><th>备注</th><th>2FA 状态</th><th>操作</th></tr>
+              </thead>
+              <tbody id="accounts-table-tbody"></tbody>
+            </table>
+          </div>
+          <div class="accounts-empty-showcase" id="accounts-empty-card" hidden>
+            <div class="aes-left">
+              <div class="aes-icon"><i data-lucide="user-round-check"></i></div>
+              <h3>暂无平台账号</h3>
+              <p>在此添加平台账号以管理，并更方便地与窗口进行绑定。</p>
+              <div class="aes-actions">
+                <button type="button" class="outline" id="accounts-empty-add-btn"><i data-lucide="user-plus"></i><span>添加账号</span></button>
+              </div>
+            </div>
+            <div class="aes-right" aria-hidden="true">
+              <div class="aes-mock-head">Accounts</div>
+              <div class="aes-mock-search">Search</div>
+              <div class="aes-mock-row"><span class="aes-dot" style="background:#1877f2">f</span><div><strong>https://www.facebook.com/</strong><small>support@example.com <span class="aes-2fa">2FA</span></small></div></div>
+              <div class="aes-mock-row is-hl"><span class="aes-dot" style="background:#10a37f">◎</span><div><strong>https://www.chatgpt.com/</strong><small>support@example.com</small></div></div>
+              <div class="aes-mock-row"><span class="aes-dot" style="background:#4285f4">✦</span><div><strong>https://gemini.google.com/app</strong><small>support@example.com</small></div></div>
+              <div class="aes-mock-row"><span class="aes-dot" style="background:#111827">𝕏</span><div><strong>https://x.ai</strong><small>support@example.com</small></div></div>
+              <div class="aes-mock-row"><span class="aes-dot" style="background:#95bf47">S</span><div><strong>https://www.shopify.com/</strong><small>support@example.com</small></div></div>
+            </div>
+          </div>
+        </section>
+        <section class="view" id="view-proxy-add">
+          <div class="profile-editor-head">
+            <button class="editor-back" id="proxy-add-back" type="button">‹ 返回</button>
+            <div class="editor-head-main">
+              <h2>添加代理 IP</h2>
+              <p>支持智能粘贴识别、IPv4/IPv6、SOCKS5/HTTP/HTTPS/SSH 与批量 500 条解析测试</p>
+            </div>
+          </div>
+          <div class="workbench-subtabs" id="proxy-add-mode-tabs">
+            <button type="button" class="active" data-pa-tab="single">单个添加</button>
+            <button type="button" data-pa-tab="batch">批量添加</button>
+          </div>
+          <div class="workbench-subpanel active" data-pa-panel="single">
+            <div class="pa-single-card">
+              <div class="rail-tutorial pa-tutorial-banner" id="pa-tutorial-banner">
+                <strong>代理 IP 教程</strong>
+                <p>了解如何导入和配置动态/静态代理 IP（支持智能识别格式）</p>
+                <button class="outline mini-btn" id="pa-tutorial-close" type="button" aria-label="关闭">×</button>
+              </div>
+              <label>智能识别（支持动态/静态代理 IP）
+                <textarea id="pa-smart-input" rows="3" placeholder="示例（动态代理 IP 刷新 URL 与备注为选填）：&#10;192.168.0.1:8000:代理 IP 用户名:代理 IP 密码[动态代理 IP 刷新 URL]{备注}&#10;代理 IP 用户名:代理 IP 密码@192.168.0.1:8000[动态代理 IP 刷新 URL]{备注}"></textarea>
+              </label>
+              <div class="pa-field-block">
+                <span class="pa-label">代理 IP 类型</span>
+                <div class="pa-ipver-cards">
+                  <label class="pa-radio-card"><input type="radio" name="pa-ip-ver" value="ipv4" checked><span>IPv4</span></label>
+                  <label class="pa-radio-card"><input type="radio" name="pa-ip-ver" value="ipv6"><span>IPv6</span></label>
+                </div>
+              </div>
+              <div class="pa-field-block">
+                <span class="pa-label">代理 IP 信息</span>
+                <div class="pa-host-combo">
+                  <select id="pa-protocol">
+                    <option value="socks5">SOCKS5</option>
+                    <option value="http">HTTP</option>
+                    <option value="https">HTTPS</option>
+                  </select>
+                  <input id="pa-host" placeholder="代理 IP 主机">
+                  <span class="pa-colon">:</span>
+                  <input id="pa-port" type="number" min="1" max="65535" placeholder="代理 IP 端口">
+                </div>
+              </div>
+              <label>代理 IP 用户名<input id="pa-user" placeholder="请输入代理 IP 账号" autocomplete="off"></label>
+              <label>代理 IP 密码<input id="pa-pass" type="password" placeholder="请输入代理 IP 密码" autocomplete="new-password"></label>
+              <label>刷新 URL<input id="pa-refresh-url" type="url" placeholder="动态代理 IP 专用，静态代理 IP 无需填写"></label>
+              <label>备注<input id="pa-remark" placeholder="选填，例如：美区住宅-01"></label>
+              <div class="pa-field-block">
+                <span class="pa-label">代理 IP 检测</span>
+                <div class="pa-test-row">
+                  <select id="pa-ip-channel">
+                    <option value="ip2location">IP2Location</option>
+                    <option value="ip-api">IP-API</option>
+                    <option value="ifconfig-me">ifconfig.me</option>
+                  </select>
+                  <button type="button" class="outline" id="pa-test-btn"><i data-lucide="radar"></i><span>测试代理 IP</span></button>
+                </div>
+                <div class="proxy-test-result" id="pa-test-result" style="margin-top:8px">尚未检测</div>
+              </div>
+              <div class="pa-footer-actions">
+                <button type="button" class="outline" id="pa-cancel-btn">取消</button>
+                <button type="button" class="primary" id="pa-save-single-btn">保存</button>
+              </div>
+            </div>
+          </div>
+          <div class="workbench-subpanel" data-pa-panel="batch" hidden>
+            <div class="batch-split-grid">
+              <div class="batch-editor-box">
+                <div class="batch-box-head">
+                  <strong>代理 IP 信息</strong>
+                  <div class="batch-head-controls">
+                    <select id="pa-batch-ipver"><option value="ipv4">IPv4</option><option value="ipv6">IPv6</option></select>
+                    <select id="pa-batch-proto"><option value="socks5">SOCKS5</option><option value="http">HTTP</option><option value="https">HTTPS</option></select>
+                  </div>
+                </div>
+                <div class="code-textarea-wrap">
+                  <div class="code-line-nums">01</div>
+                  <textarea id="pa-batch-textarea" rows="10" placeholder="请在此处输入代理 IP 信息，每行一条"></textarea>
+                </div>
+                <div class="batch-box-foot">
+                  <div class="batch-foot-left">
+                    <select id="pa-batch-channel"><option value="ip2location">IP2Location</option><option value="ip-api">IP-API</option></select>
+                    <label class="check-row" style="margin:0"><input id="pa-batch-dedup" type="checkbox" checked><span>自动去重</span></label>
+                  </div>
+                  <button type="button" class="outline" id="pa-batch-parse-btn"><i data-lucide="play"></i><span>解析并测试</span></button>
+                </div>
+              </div>
+              <div class="batch-rules-box">
+                <strong>导入规则（支持动态/静态代理 IP）</strong>
+                <pre class="batch-rules-pre">示例（动态代理 IP 刷新 URL 与备注为选填）：
+192.168.0.1:8000{备注}
+192.168.0.1:8000:用户名:密码
+192.168.0.1:8000:用户名:密码[刷新 URL]{备注}
+用户名:密码@192.168.0.1:8000
+用户名:密码@192.168.0.1:8000[刷新 URL]{备注}
+
+一行一个代理 IP，一次最多添加 500 个；</pre>
+              </div>
+            </div>
+            <div class="parsed-preview-section">
+              <div class="parsed-preview-head">
+                <strong>已解析代理 IP（<span id="pa-batch-parsed-count">0</span>）</strong>
+                <div class="parsed-preview-actions">
+                  <button type="button" class="outline mini-btn" id="pa-batch-clear-btn">清空代理 IP</button>
+                  <button type="button" class="outline mini-btn" id="pa-batch-del-fail-btn">删除失败</button>
+                  <button type="button" class="outline mini-btn" id="pa-batch-test-all-btn">测试全部</button>
+                </div>
+              </div>
+              <div class="table-card">
+                <table>
+                  <thead><tr><th>代理类型</th><th>主机</th><th>端口</th><th>用户名</th><th>密码</th><th>刷新 URL</th><th>备注</th><th>出口 IP</th><th>操作</th></tr></thead>
+                  <tbody id="pa-batch-tbody"></tbody>
+                </table>
+                <div class="empty" id="pa-batch-empty">暂未添加代理 IP</div>
+              </div>
+              <div class="pa-footer-actions" style="margin-top:12px">
+                <button type="button" class="primary" id="pa-batch-save-btn">保存全部解析代理</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="view-account-add">
+          <div class="profile-editor-head">
+            <button class="editor-back" id="acc-add-back" type="button">‹ 返回</button>
+            <div class="editor-head-main">
+              <h2>添加账号</h2>
+              <p>支持单个智能识别添加、批量文本解析（最多 500 个）与 Excel/TXT 模板导入</p>
+            </div>
+          </div>
+          <div class="workbench-subtabs" id="acc-add-mode-tabs">
+            <button type="button" class="active" data-aa-tab="single">单个添加</button>
+            <button type="button" data-aa-tab="batch">批量添加</button>
+            <button type="button" data-aa-tab="import">模板导入</button>
+          </div>
+          <div class="workbench-subpanel active" data-aa-panel="single">
+            <div class="pa-single-card">
+              <label>智能识别
+                <textarea id="aa-smart-input" rows="2" placeholder="账号:密码:2FA{备注}"></textarea>
+              </label>
+              <label>平台
+                <select id="aa-platform-select">
+                  <option value="https://www.facebook.com/">facebook.com</option>
+                  <option value="https://www.tiktok.com/">tiktok.com</option>
+                  <option value="https://www.youtube.com/">youtube.com</option>
+                  <option value="https://x.com/">x.com</option>
+                  <option value="https://www.instagram.com/">instagram.com</option>
+                  <option value="https://www.linkedin.com/">linkedin.com</option>
+                  <option value="https://www.reddit.com/">reddit.com</option>
+                  <option value="https://www.discord.com/">discord.com</option>
+                  <option value="https://web.whatsapp.com/">web.whatsapp.com</option>
+                  <option value="https://web.telegram.org/">web.telegram.org</option>
+                  <option value="https://www.amazon.com/">amazon.com</option>
+                  <option value="https://admin.shopify.com/">admin.shopify.com</option>
+                  <option value="https://www.ebay.com/">ebay.com</option>
+                  <option value="https://www.aliexpress.com/">aliexpress.com</option>
+                  <option value="https://www.alibaba.com/">alibaba.com</option>
+                  <option value="https://www.walmart.com/">walmart.com</option>
+                  <option value="https://www.shopee.com/">shopee.com</option>
+                  <option value="https://www.etsy.com/">etsy.com</option>
+                  <option value="https://accounts.google.com/">accounts.google.com</option>
+                  <option value="https://outlook.live.com/">outlook.live.com</option>
+                  <option value="https://mail.proton.me/">mail.proton.me</option>
+                  <option value="https://www.netflix.com/">netflix.com</option>
+                </select>
+              </label>
+              <label>平台登录账号<input id="aa-username" placeholder="请输入账号" autocomplete="off"></label>
+              <label>平台登录密码
+                <div class="pass-eye-wrap">
+                  <input id="aa-password" type="password" placeholder="请输入密码" autocomplete="new-password">
+                  <button type="button" class="pass-eye-btn" id="aa-pass-eye" title="显示/隐藏密码"><i data-lucide="eye"></i></button>
+                </div>
+              </label>
+              <label>2FA 密钥<input id="aa-2fa" placeholder="请输入 2FA 密钥（选填）" autocomplete="off"></label>
+              <label>备注<textarea id="aa-remark" rows="2" placeholder="请输入备注"></textarea></label>
+              <div class="pa-footer-actions">
+                <button type="button" class="outline" id="aa-save-continue-btn">保存 &amp; 继续添加</button>
+                <button type="button" class="primary" id="aa-save-btn">保存</button>
+              </div>
+            </div>
+          </div>
+          <div class="workbench-subpanel" data-aa-panel="batch" hidden>
+            <div class="batch-split-grid">
+              <div class="batch-editor-box">
+                <div class="batch-box-head">
+                  <strong>账号信息</strong>
+                  <select id="aa-batch-platform">
+                    <option value="https://www.amazon.com/">amazon.com</option>
+                    <option value="https://www.tiktok.com/">tiktok.com</option>
+                    <option value="https://www.facebook.com/">facebook.com</option>
+                    <option value="https://outlook.live.com/">outlook.live.com</option>
+                    <option value="https://accounts.google.com/">accounts.google.com</option>
+                  </select>
+                </div>
+                <div class="code-textarea-wrap">
+                  <div class="code-line-nums">01</div>
+                  <textarea id="aa-batch-textarea" rows="10" placeholder="请在此处输入账号信息，每行一个"></textarea>
+                </div>
+                <div class="batch-box-foot">
+                  <span></span>
+                  <button type="button" class="outline" id="aa-batch-parse-btn"><i data-lucide="play"></i><span>解析</span></button>
+                </div>
+              </div>
+              <div class="batch-rules-box">
+                <strong>导入规则</strong>
+                <pre class="batch-rules-pre">USERNAME1:PASSWORD1
+USERNAME2:PASSWORD2:2FA{备注}
+
+1. 支持已有平台和其他平台；
+2. 每行一个账号，一次最多添加 500 个账号。</pre>
+              </div>
+            </div>
+            <div class="parsed-preview-section">
+              <div class="parsed-preview-head">
+                <strong>已解析账号（<span id="aa-batch-parsed-count">0</span>）</strong>
+                <button type="button" class="outline mini-btn" id="aa-batch-clear-btn">清空账号</button>
+              </div>
+              <div class="table-card">
+                <table>
+                  <thead><tr><th>平台</th><th>平台登录账号</th><th>平台登录密码</th><th>2FA 密钥</th><th>备注</th><th>操作</th></tr></thead>
+                  <tbody id="aa-batch-tbody"></tbody>
+                </table>
+                <div class="empty" id="aa-batch-empty">暂未添加账号</div>
+              </div>
+              <div class="pa-footer-actions" style="margin-top:12px">
+                <button type="button" class="primary" id="aa-batch-save-btn">保存全部解析账号</button>
+              </div>
+            </div>
+          </div>
+          <div class="workbench-subpanel" data-aa-panel="import" hidden>
+            <div class="roxy-upload-dropzone" id="aa-import-dropzone" style="max-width:760px;margin:20px auto">
+              <div class="upload-doc-icon"><i data-lucide="file-spreadsheet" style="width:42px;height:42px;color:#94a3b8"></i></div>
+              <strong>选择文件并拖拽到此处</strong>
+              <p>在此上传编辑后的文件，支持 .xlsx .csv .txt .json 文件，最大 5MB。</p>
+              <button type="button" class="outline" id="aa-import-trigger"><i data-lucide="upload"></i><span>上传文件</span></button>
+              <input id="aa-import-file-input" type="file" accept=".xlsx,.csv,.txt,.json" hidden>
+            </div>
+            <div class="roxy-tpl-download-row" style="text-align:center">
+              <span>点击下载 </span>
+              <button type="button" class="tpl-link-btn" id="aa-download-tpl-btn">账号导入模板</button>
+              <span>。一次最多可导入 200 个账号。</span>
+            </div>
+          </div>
+        </section>
       </main>
     </div>
   </div>
@@ -1875,6 +2824,311 @@
   <script src="ui/ui-rpa.js"></script>
   <script src="ui/ui-api-mcp.js"></script>
   <script src="ui/ui-kernel.js"></script>
+  <!-- 右侧滑出式代理编辑抽屉（1:1 复刻截图 12） -->
+  <div class="quick-proxy-backdrop" id="quick-proxy-backdrop" hidden></div>
+  <aside class="quick-proxy-drawer" id="quick-proxy-drawer" hidden aria-label="编辑代理 IP">
+    <form id="quick-proxy-form" class="quick-proxy-form">
+      <div class="qp-drawer-head">
+        <strong id="quick-proxy-drawer-title">为 [1] 编辑代理 IP</strong>
+        <button type="button" class="qp-close-btn" id="quick-proxy-close" aria-label="关闭">×</button>
+      </div>
+      <div class="qp-drawer-body">
+        <div class="qp-promo-banner">
+          <div>
+            <strong>让浏览器环境从代理 IP 开始更稳定</strong>
+            <p>支持 SOCKS5 / HTTP / HTTPS 独立住宅与数据中心代理，智能识别一键填入</p>
+          </div>
+        </div>
+        <div class="qp-tutorial-bar">
+          <span>▶ 代理 IP 配置指南：了解如何导入和配置代理 IP</span>
+        </div>
+        <label class="qp-block-label">智能识别（支持动态/静态代理 IP）
+          <textarea id="qp-smart-raw" rows="3" placeholder="示例（动态代理 IP 刷新 URL 与备注为选填）：&#10;192.168.0.1:8000:代理 IP 用户名:代理 IP 密码[动态代理 IP 刷新 URL]{备注}&#10;socks5://user:pass@192.168.0.1:8000#备注"></textarea>
+        </label>
+        <div class="qp-block-label">
+          <span>代理 IP 类型</span>
+          <div class="qp-radio-row">
+            <label><input type="radio" name="qp-ip-version" value="ipv4" checked> IPv4</label>
+            <label><input type="radio" name="qp-ip-version" value="ipv6"> IPv6</label>
+          </div>
+        </div>
+        <div class="qp-block-label">
+          <span>代理 IP 信息</span>
+          <div class="qp-endpoint-row">
+            <select id="qp-protocol">
+              <option value="socks5">SOCKS5</option>
+              <option value="http">HTTP</option>
+              <option value="https">HTTPS</option>
+            </select>
+            <input id="qp-host" placeholder="96.62.118.47">
+            <span class="qp-colon">:</span>
+            <input id="qp-port" type="number" min="1" max="65535" placeholder="9285">
+          </div>
+        </div>
+        <label class="qp-block-label">代理 IP 用户名
+          <input id="qp-username" autocomplete="off" placeholder="选填，代理认证账号">
+        </label>
+        <label class="qp-block-label">代理 IP 密码
+          <input id="qp-password" type="password" autocomplete="new-password" placeholder="选填，代理认证密码">
+        </label>
+        <label class="qp-block-label">刷新 URL
+          <input id="qp-refresh-url" placeholder="动态代理 IP 专用，静态代理 IP 无需填写">
+        </label>
+        <div class="qp-block-label">
+          <span>代理 IP 检测</span>
+          <div class="qp-test-row">
+            <select id="qp-ip-channel">
+              <option value="ip2location">IP2Location</option>
+              <option value="ip-api">IP-API</option>
+              <option value="ifconfig-me">ifconfig.me</option>
+            </select>
+            <button type="button" class="outline" id="qp-test-btn"><i data-lucide="radar"></i><span>测试代理 IP</span></button>
+          </div>
+        </div>
+        <div class="proxy-test-result" id="qp-test-result">尚未检测</div>
+      </div>
+      <div class="qp-drawer-foot">
+        <button type="button" class="outline" id="quick-proxy-cancel">取消</button>
+        <button type="submit" class="primary">保存</button>
+      </div>
+    </form>
+  </aside>
+
+  <!-- 转移窗口弹窗 -->
+  <dialog id="transfer-window-dialog">
+    <form method="dialog" id="transfer-window-form">
+      <div class="dialog-head">
+        <div>
+          <h2>转移窗口</h2>
+          <p id="transfer-window-summary">分享所选窗口配置到其他设备</p>
+        </div>
+        <button value="cancel" type="submit" aria-label="关闭">×</button>
+      </div>
+      <p data-i18n="transfer.offlineNotice">这是离线配置分享：接收方仅作备注，转移码持有人可重复导入，移除本机记录不会使已分享的凭证失效。需要加密迁移凭据时，请使用云备份导出。</p>
+      <label><span data-i18n="transfer.recipientNote">接收方备注</span>
+        <input id="transfer-recipient" placeholder="例如：teammate@example.com 或 运营二组" required>
+      </label>
+      <div class="check-grid" style="margin:8px 0">
+        <label class="check-row"><input id="transfer-inc-cookies" type="checkbox"> <span data-i18n="transfer.includeCookies">包含 Cookies</span></label>
+        <label class="check-row"><input id="transfer-inc-proxy" type="checkbox" checked> 包含代理 IP 配置</label>
+        <label class="check-row"><input id="transfer-inc-accounts" type="checkbox"> 包含平台账号信息</label>
+      </div>
+      <label>转移交接说明（可选）
+        <textarea id="transfer-note" rows="2" placeholder="填写窗口用途或注意事项"></textarea>
+      </label>
+      <div id="transfer-generated-box" hidden style="margin-top:8px;padding:10px;background:var(--modern-blue-25,#f5fbff);border:1px solid var(--modern-blue-200,#9adbfe);border-radius:8px">
+        <strong style="display:block;margin-bottom:4px">已生成窗口转移码（接收方点击顶栏「接收窗口」粘贴即可还原）：</strong>
+        <div style="display:flex;gap:6px">
+          <input id="transfer-generated-code" readonly style="flex:1">
+          <button type="button" class="outline mini-btn" id="transfer-copy-code-btn">复制转移码</button>
+        </div>
+      </div>
+      <div class="dialog-actions">
+        <button value="cancel" class="outline" type="submit">关闭</button>
+        <button value="default" class="outline" type="submit" data-export-file="1">生成并下载转移包 (.obtransfer)</button>
+        <button value="default" class="primary" type="submit" data-i18n="transfer.generateOfflineCode">生成离线分享凭证</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- 接收转入窗口弹窗 -->
+  <dialog id="receive-transfer-dialog">
+    <form method="dialog" id="receive-transfer-form">
+      <div class="dialog-head">
+        <div>
+          <h2>接收转入窗口</h2>
+          <p>粘贴他人分享的「窗口转移码」或上传 .obtransfer 转移文件包一键还原窗口</p>
+        </div>
+        <button value="cancel" type="submit" aria-label="关闭">×</button>
+      </div>
+      <label>窗口转移码 / JSON 内容
+        <textarea id="receive-transfer-code" rows="5" placeholder="粘贴 OBTRF1:... 转移码或选择下方转移包文件"></textarea>
+      </label>
+      <label>或从本地上传转移包文件 (.obtransfer / .json)
+        <input id="receive-transfer-file" type="file" accept=".json,.obtransfer">
+      </label>
+      <div class="dialog-actions">
+        <button value="cancel" class="outline" type="submit">取消</button>
+        <button value="default" class="primary" type="submit">立即接收并导入</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- 上传窗口（同步/打包上传）弹窗 -->
+  <dialog id="upload-window-dialog">
+    <form method="dialog">
+      <div class="dialog-head">
+        <div>
+          <h2>上传窗口</h2>
+          <p>将本地窗口环境（含指纹、Cookie、代理与账号配置）上传至云端工作区，或从外部文件上传导入窗口</p>
+        </div>
+        <button value="cancel" type="submit" aria-label="关闭">×</button>
+      </div>
+      <div style="display:grid;gap:10px;padding:12px 0">
+        <div class="editor-section-card" style="margin:0;padding:12px">
+          <strong>1. 上传当前选中窗口到云端 / 导出镜像包</strong>
+          <p class="network-mode-hint">支持一键同步至已配置的 WebDAV / GitHub / 网盘，或打包生成 .obpack 完整窗口镜像文件。</p>
+          <div class="storage-actions" style="margin:8px 0 0;display:flex;gap:8px">
+            <button type="button" class="primary" id="upload-window-cloud-btn"><i data-lucide="cloud-upload"></i><span>上传同步至云端</span></button>
+            <button type="button" class="outline" id="upload-window-pack-btn"><i data-lucide="package"></i><span>打包导出窗口镜像 (.obpack)</span></button>
+          </div>
+        </div>
+        <div class="editor-section-card" style="margin:0;padding:12px">
+          <strong>2. 从本地上传窗口包 (.obpack / .json / .csv / .txt)</strong>
+          <p class="network-mode-hint">选择已有的窗口备份包或批量导入表格，立即上传恢复到当前工作区。</p>
+          <input id="upload-window-file-input" type="file" accept=".json,.obpack,.csv,.txt" style="margin-top:6px">
+        </div>
+      </div>
+      <div class="dialog-actions">
+        <button value="cancel" class="outline" type="submit">关闭</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Cookie 机器人弹窗 -->
+  <dialog id="cookie-robot-dialog" class="cookie-robot-modal">
+    <form method="dialog" id="cookie-robot-form">
+      <div class="cookie-robot-hero">
+        <div>
+          <h2>Cookie 机器人 🤖</h2>
+          <p>帮助新窗口生成浏览记录，降低被网站识别为异常环境的风险。</p>
+        </div>
+        <button value="cancel" type="submit" class="cr-close-btn" aria-label="关闭">×</button>
+      </div>
+      <div class="cookie-robot-body">
+        <div class="cr-row">
+          <span class="cr-label">编号</span>
+          <span class="cr-profile-pill" id="cookie-robot-profile-badge">未选择</span>
+        </div>
+        <div class="cr-row cr-row-top">
+          <span class="cr-label">目标网站</span>
+          <div class="cr-field-col">
+            <textarea id="cookie-robot-urls" rows="5" placeholder="示例：&#10;https://www.google.com&#10;https://www.facebook.com">https://www.google.com
+https://www.amazon.com</textarea>
+            <small class="cr-hint">1、请输入完整的网址，需要包括 https:// 或 http://</small>
+            <small class="cr-hint">2、如需要打开多个网址，请按每行一个特定的网址的格式填写</small>
+          </div>
+        </div>
+        <button type="button" class="cr-more-toggle" id="cookie-robot-more-toggle">更多设置 ⌄</button>
+        <div class="cr-more-panel" id="cookie-robot-more-panel" hidden>
+          <div class="cr-section-title">滚动速度</div>
+          <div class="cr-range-row">
+            <span class="cr-label">单次滚动范围</span>
+            <div class="cr-range-inputs">
+              <div class="cr-unit-input"><input id="cookie-robot-scroll-min" type="number" min="50" max="2000" value="100"><span>px</span></div>
+              <span>~</span>
+              <div class="cr-unit-input"><input id="cookie-robot-scroll-max" type="number" min="50" max="3000" value="500"><span>px</span></div>
+            </div>
+          </div>
+          <div class="cr-range-row">
+            <span class="cr-label">停留时长</span>
+            <div class="cr-range-inputs">
+              <div class="cr-unit-input"><input id="cookie-robot-stay-min" type="number" min="0" max="60000" value="0"><span>ms</span></div>
+              <span>~</span>
+              <div class="cr-unit-input"><input id="cookie-robot-stay-max" type="number" min="100" max="120000" value="500"><span>ms</span></div>
+            </div>
+          </div>
+          <div class="cr-section-title">更多设置</div>
+          <label class="cr-switch-row">
+            <span class="cr-label">不加载图片</span>
+            <input id="cookie-robot-no-img" type="checkbox" class="ob-switch-input">
+            <span class="ob-switch-track"></span>
+            <span class="cr-switch-desc">开启</span>
+          </label>
+          <label class="cr-switch-row">
+            <span class="cr-label" data-i18n="cookie.blockCommonVideo">拦截常见视频资源</span>
+            <input id="cookie-robot-no-video" type="checkbox" class="ob-switch-input">
+            <span class="ob-switch-track"></span>
+            <span class="cr-switch-desc">开启</span>
+          </label>
+          <label class="cr-switch-row">
+            <span class="cr-label">关闭窗口</span>
+            <input id="cookie-robot-auto-close" type="checkbox" class="ob-switch-input">
+            <span class="ob-switch-track"></span>
+            <span class="cr-switch-desc">开启后，执行完成或出现异常时自动关闭窗口</span>
+          </label>
+          <label class="cr-switch-row">
+            <span class="cr-label">无头模式</span>
+            <input id="cookie-robot-headless" type="checkbox" class="ob-switch-input">
+            <span class="ob-switch-track"></span>
+            <span class="cr-switch-desc">开启后不显示浏览器界面，后台自动操作网页</span>
+          </label>
+        </div>
+        <button value="default" class="primary cr-submit-full" type="submit">开始生成 Cookie</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- 标签管理弹窗 -->
+  <dialog id="tags-manager-dialog">
+    <form method="dialog" id="tags-manager-form">
+      <div class="dialog-head">
+        <div>
+          <h2>标签管理</h2>
+          <p>集中管理环境标签，支持一键新增、重命名、按标签筛选或清理</p>
+        </div>
+        <button value="cancel" type="submit" aria-label="关闭">×</button>
+      </div>
+      <div class="tags-mgr-add-row">
+        <input id="tags-mgr-new-input" placeholder="输入新标签名称，例如：主力店、TikTok">
+        <button type="button" class="primary" id="tags-mgr-add-btn">+ 新增标签</button>
+      </div>
+      <div class="table-card" style="max-height:280px;overflow:auto;margin-top:10px">
+        <table>
+          <thead><tr><th>标签</th><th>已关联窗口</th><th>操作</th></tr></thead>
+          <tbody id="tags-mgr-tbody"></tbody>
+        </table>
+        <div class="empty" id="tags-mgr-empty">暂无标签</div>
+      </div>
+      <div class="dialog-actions">
+        <button value="cancel" class="outline" type="submit">关闭</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- 添加平台账号弹窗 -->
+  <dialog id="account-pool-dialog">
+    <form method="dialog" id="account-pool-form">
+      <div class="dialog-head">
+        <div>
+          <h2>添加平台账号</h2>
+          <p>保存到本地平台账号池，创建或编辑窗口时可一键选用</p>
+        </div>
+        <button value="cancel" type="submit" aria-label="关闭">×</button>
+      </div>
+      <div class="form-two">
+        <label>业务平台
+          <select id="acc-pool-platform">
+            <option value="amazon">amazon.com</option>
+            <option value="tiktok">tiktok.com</option>
+            <option value="facebook">facebook.com</option>
+            <option value="google">google.com</option>
+            <option value="gmail">gmail.com</option>
+            <option value="outlook">outlook.com</option>
+            <option value="twitter">x.com</option>
+            <option value="discord">discord.com</option>
+            <option value="paypal">paypal.com</option>
+            <option value="other">其他平台</option>
+          </select>
+        </label>
+        <label>账号备注名称<input id="acc-pool-name" placeholder="例如：美区主力号-01" required></label>
+      </div>
+      <label>平台网址<input id="acc-pool-url" placeholder="https://www.amazon.com"></label>
+      <div class="form-two">
+        <label>用户名 / 邮箱<input id="acc-pool-user" required placeholder="user@example.com"></label>
+        <label>登录密码<input id="acc-pool-pass" type="password" placeholder="选填"></label>
+      </div>
+      <label>2FA 密钥 (TOTP)<input id="acc-pool-2fa" placeholder="选填，Base32 密钥"></label>
+      <label>备注说明<input id="acc-pool-remark" placeholder="选填"></label>
+      <div class="dialog-actions">
+        <button value="cancel" class="outline" type="submit">取消</button>
+        <button value="default" class="primary" type="submit">保存账号</button>
+      </div>
+    </form>
+  </dialog>
+
   <script src="ui/ui-cloud.js"></script>
+  <script src="shared/csv.js"></script>
+  <script src="ui/ui-workbench.js"></script>
 </body>
 </html>

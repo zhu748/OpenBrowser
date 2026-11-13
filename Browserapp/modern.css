@@ -1050,3 +1050,2270 @@ html[data-ui-theme="modern"] #view-profile-editor .editor-form .form-three .labe
   text-align: center;
   white-space: nowrap;
 }
+
+/* ==========================================================================
+   1:1 Modern Workbench & Feature Extensions (Templates / Kernel & OS Pickers /
+   Device Mockup / Quick Proxy Drawer / Transfer & Upload Window)
+   ========================================================================== */
+
+/* 侧栏：本地池徽标与底部窗口用量卡 */
+html[data-ui-theme="modern"] .nav-hot-badge {
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #f53838;
+  background: #fee9e7;
+  border: 1px solid rgba(245, 56, 56, 0.25);
+}
+
+html[data-ui-theme="modern"] .sidebar-quota-card {
+  margin: 8px 10px 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #f5fbff 0%, #ffffff 100%);
+  border: 1px solid var(--modern-blue-100);
+}
+html[data-ui-theme="modern"] .sidebar-quota-card .quota-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+html[data-ui-theme="modern"] .sidebar-quota-card .quota-free-pill {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--modern-green-50);
+  color: #17a143;
+  font-size: 10px;
+  font-weight: 700;
+}
+html[data-ui-theme="modern"] .sidebar-quota-card .quota-label {
+  font-size: 10px;
+  color: var(--modern-neutral-500);
+}
+html[data-ui-theme="modern"] .sidebar-quota-card .quota-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--modern-neutral-700);
+  margin-bottom: 5px;
+}
+html[data-ui-theme="modern"] .sidebar-quota-card .quota-bar {
+  height: 5px;
+  border-radius: 999px;
+  background: var(--modern-neutral-100);
+  overflow: hidden;
+}
+html[data-ui-theme="modern"] .sidebar-quota-card .quota-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--modern-blue-400), var(--modern-blue-500));
+}
+
+/* 顶栏：实时出口 IP 胶囊 */
+html[data-ui-theme="modern"] .header-ip-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--modern-neutral-50);
+  border: 1px solid var(--modern-neutral-100);
+  color: var(--modern-neutral-700);
+  font-size: 12px;
+  font-weight: 500;
+}
+html[data-ui-theme="modern"] .header-ip-pill svg {
+  width: 13px;
+  height: 13px;
+  color: var(--modern-blue-500);
+}
+
+/* 窗口管理：分体式快速创建按钮 + 行内编号/系统图标/代理触发器 + 打开窗口胶囊按钮 */
+html[data-ui-theme="modern"] .split-create-group {
+  display: inline-flex;
+  align-items: stretch;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 6px rgba(17, 163, 253, 0.18);
+}
+html[data-ui-theme="modern"] .split-create-group > button {
+  border-radius: 0 !important;
+  margin: 0 !important;
+}
+html[data-ui-theme="modern"] .split-create-group > .split-gear-btn {
+  border-left: 1px solid rgba(255, 255, 255, 0.35) !important;
+  padding: 0 9px !important;
+}
+
+html[data-ui-theme="modern"] #view-profiles .table-card th.col-num,
+html[data-ui-theme="modern"] #view-profiles .table-card td.col-num {
+  width: 132px !important;
+  min-width: 132px !important;
+  text-align: left !important;
+}
+html[data-ui-theme="modern"] .roxy-num-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+html[data-ui-theme="modern"] .roxy-num-text {
+  font-weight: 600;
+  color: var(--modern-neutral-800);
+  min-width: 18px;
+}
+html[data-ui-theme="modern"] .roxy-os-mini {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  background: var(--modern-neutral-50);
+  border: 1px solid var(--modern-neutral-100);
+}
+html[data-ui-theme="modern"] .roxy-proxy-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  min-height: 22px;
+  border-radius: 6px;
+  border: 1px solid var(--modern-neutral-200);
+  background: #fff;
+  color: var(--modern-neutral-600);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+html[data-ui-theme="modern"] .roxy-proxy-trigger:hover {
+  border-color: var(--modern-blue-400);
+  color: var(--modern-blue-600);
+  background: var(--modern-blue-25);
+}
+html[data-ui-theme="modern"] .roxy-proxy-trigger.is-bound {
+  border-color: var(--modern-blue-200);
+  background: var(--modern-blue-25);
+  color: var(--modern-blue-600);
+  font-weight: 500;
+}
+
+/* 操作列「打开窗口」胶囊按钮（对标参考截图 09, 11） */
+html[data-ui-theme="modern"] #view-profiles .table-card .actions button.roxy-open-pill {
+  width: auto !important;
+  min-width: 92px !important;
+  max-width: none !important;
+  height: 28px !important;
+  padding: 0 11px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  border-radius: 8px !important;
+  border: 1px solid var(--modern-neutral-200) !important;
+  background: #ffffff !important;
+  color: var(--modern-neutral-800) !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  flex: 0 0 auto !important;
+}
+html[data-ui-theme="modern"] #view-profiles .table-card .actions button.roxy-open-pill:hover {
+  border-color: var(--modern-blue-400) !important;
+  color: var(--modern-blue-600) !important;
+  background: var(--modern-blue-25) !important;
+}
+html[data-ui-theme="modern"] #view-profiles .table-card .actions button.roxy-open-pill > svg.lucide {
+  display: none !important;
+}
+html[data-ui-theme="modern"] .roxy-open-pill-engine {
+  display: inline-flex;
+  align-items: center;
+  width: 15px;
+  height: 15px;
+}
+html[data-ui-theme="modern"] .roxy-open-pill-engine svg {
+  width: 15px !important;
+  height: 15px !important;
+}
+
+/* 转移中面板 */
+html[data-ui-theme="modern"] .transfer-panel-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--modern-neutral-100);
+  background: var(--modern-neutral-25);
+}
+html[data-ui-theme="modern"] .transfer-panel-toolbar strong {
+  display: block;
+  font-size: 13px;
+  color: var(--modern-neutral-900);
+}
+
+/* 创建窗口 / 编辑窗口：单页全流式布局 + 4大创建模式切换条 */
+html[data-ui-theme="modern"] #view-profile-editor .profile-editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 26px 10px;
+}
+html[data-ui-theme="modern"] #view-profile-editor .editor-head-main {
+  flex: 1 1 auto;
+}
+html[data-ui-theme="modern"] .editor-tpl-picker-wrap {
+  min-width: 210px;
+}
+html[data-ui-theme="modern"] .editor-create-mode-bar {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 0 26px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--modern-neutral-100);
+}
+html[data-ui-theme="modern"] .editor-create-mode-bar[hidden] {
+  display: none !important;
+}
+html[data-ui-theme="modern"] .create-mode-tab {
+  position: relative;
+  padding: 10px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--modern-neutral-600);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+html[data-ui-theme="modern"] .create-mode-tab.is-ai {
+  color: #a855f7;
+}
+html[data-ui-theme="modern"] .create-mode-tab.active {
+  color: var(--modern-blue-600);
+  font-weight: 600;
+}
+html[data-ui-theme="modern"] .create-mode-tab.active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--modern-blue-500);
+}
+
+/* 单页统一展示 4 大配置区，对齐参考截图 00-08, 16-28 */
+html[data-ui-theme="modern"] #view-profile-editor .roxy-unified-form .editor-panel {
+  display: block !important;
+  margin-bottom: 14px;
+}
+
+/* 可视化系统 (5 OS) 与内核 (Chrome / Firefox) 图标切换按钮组 */
+html[data-ui-theme="modern"] .roxy-os-kernel-rows {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+html[data-ui-theme="modern"] .roxy-field-row {
+  display: grid;
+  grid-template-columns: 136px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 8px;
+}
+html[data-ui-theme="modern"] .roxy-field-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--modern-neutral-700);
+}
+html[data-ui-theme="modern"] .roxy-field-control {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+html[data-ui-theme="modern"] .roxy-icon-seg {
+  display: inline-flex;
+  align-items: center;
+  background: var(--modern-neutral-50);
+  padding: 3px;
+  border-radius: 9px;
+  border: 1px solid var(--modern-neutral-100);
+  gap: 4px;
+}
+html[data-ui-theme="modern"] .roxy-icon-seg button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--modern-neutral-700);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+html[data-ui-theme="modern"] .roxy-icon-seg button:hover {
+  color: var(--modern-blue-600);
+  background: #ffffff;
+}
+html[data-ui-theme="modern"] .roxy-icon-seg button.active {
+  background: var(--modern-blue-50);
+  border-color: var(--modern-blue-400);
+  color: var(--modern-blue-600);
+  font-weight: 600;
+}
+html[data-ui-theme="modern"] .os-badge-mac,
+html[data-ui-theme="modern"] .os-badge-ios {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--modern-neutral-800);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+}
+html[data-ui-theme="modern"] .os-badge-ios {
+  background: var(--modern-blue-500);
+}
+
+/* 1:1 胶囊切换器 (.roxy-pill-group) */
+html[data-ui-theme="modern"] .roxy-fp-pill-list {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--modern-neutral-25);
+  border: 1px solid var(--modern-neutral-100);
+}
+html[data-ui-theme="modern"] .roxy-pill-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 8px;
+  background: var(--modern-neutral-50);
+  border: 1px solid var(--modern-neutral-100);
+  width: max-content;
+}
+html[data-ui-theme="modern"] .roxy-pill-group button {
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--modern-neutral-600);
+  font-size: 12px;
+  font-weight: 400;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+html[data-ui-theme="modern"] .roxy-pill-group button:hover {
+  color: var(--modern-blue-600);
+}
+html[data-ui-theme="modern"] .roxy-pill-group button.active {
+  background: #ffffff;
+  border-color: var(--modern-blue-400);
+  color: var(--modern-blue-600);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(17, 163, 253, 0.12);
+}
+
+/* 移动端模拟卡片（Android / iOS 高亮） */
+html[data-ui-theme="modern"] .roxy-mobile-sim-card {
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px dashed var(--modern-neutral-200);
+}
+html[data-ui-theme="modern"] .roxy-mobile-sim-card.is-mobile-highlighted {
+  background: var(--modern-blue-25);
+  border-style: solid;
+  border-color: var(--modern-blue-300);
+}
+html[data-ui-theme="modern"] .mobile-sim-group-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--modern-blue-700);
+  margin-bottom: 8px;
+}
+
+/* 批量创建步进器 & 窗口导入拖拽上传框（复刻截图 29, 30, 31） */
+html[data-ui-theme="modern"] .roxy-number-stepper {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--modern-neutral-200);
+  border-radius: 8px;
+  background: #fff;
+  overflow: hidden;
+}
+html[data-ui-theme="modern"] .roxy-number-stepper button {
+  width: 34px;
+  height: 32px;
+  border: 0;
+  background: var(--modern-neutral-50);
+  color: var(--modern-neutral-700);
+  font-size: 15px;
+  cursor: pointer;
+}
+html[data-ui-theme="modern"] .roxy-number-stepper input {
+  width: 72px;
+  text-align: center;
+  border: 0 !important;
+  box-shadow: none !important;
+  font-weight: 600;
+}
+
+html[data-ui-theme="modern"] .roxy-upload-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 36px 24px;
+  border: 1.5px dashed var(--modern-neutral-200);
+  border-radius: 12px;
+  background: var(--modern-neutral-25);
+  text-align: center;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+html[data-ui-theme="modern"] .roxy-upload-dropzone:hover,
+html[data-ui-theme="modern"] .roxy-upload-dropzone.is-dragover {
+  border-color: var(--modern-blue-500);
+  background: var(--modern-blue-25);
+}
+html[data-ui-theme="modern"] .roxy-upload-dropzone strong {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--modern-neutral-900);
+}
+html[data-ui-theme="modern"] .roxy-upload-dropzone p {
+  margin: 6px 0 14px;
+  font-size: 12px;
+  color: var(--modern-neutral-500);
+}
+html[data-ui-theme="modern"] .roxy-tpl-download-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--modern-neutral-600);
+}
+html[data-ui-theme="modern"] .tpl-dropdown-container {
+  position: relative;
+  display: inline-block;
+}
+html[data-ui-theme="modern"] .tpl-link-btn {
+  border: 0;
+  padding: 2px 4px;
+  background: transparent;
+  color: var(--modern-blue-600);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+html[data-ui-theme="modern"] .tpl-dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 60;
+  min-width: 120px;
+  padding: 4px;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid var(--modern-neutral-100);
+  box-shadow: 0 10px 24px rgba(5, 5, 5, 0.12);
+}
+html[data-ui-theme="modern"] .tpl-dropdown-menu button {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+  font-size: 12px;
+  color: var(--modern-neutral-800);
+  cursor: pointer;
+}
+html[data-ui-theme="modern"] .tpl-dropdown-menu button:hover {
+  background: var(--modern-blue-25);
+  color: var(--modern-blue-600);
+}
+
+/* 右侧概要栏：动态笔记本电脑 / 智能手机设备画布预览（1:1 复刻截图 00-05, 18-21） */
+html[data-ui-theme="modern"] .editor-device-mockup {
+  margin: 10px 0 14px;
+}
+html[data-ui-theme="modern"] .device-mockup-stage {
+  border-radius: 10px;
+  background: linear-gradient(180deg, #f1f6fb 0%, #e6eff8 100%);
+  border: 1px solid var(--modern-neutral-100);
+  padding: 8px 12px 14px;
+  text-align: center;
+}
+html[data-ui-theme="modern"] .device-mockup-tabbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(17, 163, 253, 0.12);
+}
+html[data-ui-theme="modern"] .device-tab-active {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 12px;
+  border-radius: 6px 6px 0 0;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(5, 5, 5, 0.06);
+}
+html[data-ui-theme="modern"] .device-tab-plus {
+  color: var(--modern-neutral-500);
+  font-size: 13px;
+  font-weight: 600;
+}
+html[data-ui-theme="modern"] .device-laptop-frame {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+}
+html[data-ui-theme="modern"] .device-laptop-lid {
+  width: 176px;
+  height: 108px;
+  padding: 6px;
+  border-radius: 8px 8px 3px 3px;
+  background: #1e293b;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.18);
+  position: relative;
+}
+html[data-ui-theme="modern"] .device-laptop-camera {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #475569;
+  margin: 0 auto 3px;
+}
+html[data-ui-theme="modern"] .device-laptop-screen {
+  width: 100%;
+  height: 90px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+html[data-ui-theme="modern"] .device-laptop-base {
+  width: 204px;
+  height: 8px;
+  border-radius: 0 0 8px 8px;
+  background: linear-gradient(90deg, #94a3b8, #cbd5e1 50%, #94a3b8);
+  display: flex;
+  justify-content: center;
+}
+html[data-ui-theme="modern"] .device-laptop-lip {
+  width: 34px;
+  height: 3px;
+  border-radius: 0 0 4px 4px;
+  background: #64748b;
+}
+html[data-ui-theme="modern"] .device-phone-frame {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  width: 88px;
+  height: 152px;
+  padding: 5px;
+  border-radius: 16px;
+  background: #1e293b;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.22);
+  position: relative;
+}
+html[data-ui-theme="modern"] .device-phone-notch {
+  width: 26px;
+  height: 5px;
+  border-radius: 999px;
+  background: #0f172a;
+  margin: 2px auto 4px;
+}
+html[data-ui-theme="modern"] .device-phone-screen {
+  width: 100%;
+  flex: 1;
+  border-radius: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+html[data-ui-theme="modern"] .device-phone-home {
+  width: 28px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.45);
+  margin-top: 4px;
+}
+html[data-ui-theme="modern"] .screen-windows {
+  background: radial-gradient(circle at 30% 30%, #3b82f6 0%, #1d4ed8 48%, #0f172a 100%);
+}
+html[data-ui-theme="modern"] .screen-macos {
+  background: linear-gradient(135deg, #f97316 0%, #ec4899 42%, #2563eb 100%);
+}
+html[data-ui-theme="modern"] .screen-linux {
+  background: linear-gradient(135deg, #4c1d95 0%, #be185d 52%, #1e1b4b 100%);
+}
+html[data-ui-theme="modern"] .screen-android {
+  background: linear-gradient(145deg, #312e81 0%, #6d28d9 50%, #111827 100%);
+}
+html[data-ui-theme="modern"] .screen-ios {
+  background: linear-gradient(145deg, #7c3aed 0%, #db2777 52%, #1e1b4b 100%);
+}
+html[data-ui-theme="modern"] .device-screen-label {
+  position: relative;
+  z-index: 1;
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+/* 底部悬浮操作栏 (.editor-sticky-footer) */
+html[data-ui-theme="modern"] .editor-sticky-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px !important;
+  background: rgba(255, 255, 255, 0.96) !important;
+  border-top: 1px solid var(--modern-neutral-100) !important;
+  box-shadow: 0 -4px 16px rgba(5, 5, 5, 0.05);
+}
+html[data-ui-theme="modern"] .footer-left-quick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+html[data-ui-theme="modern"] .footer-right-btns {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 右侧滑出式代理编辑抽屉（1:1 复刻截图 12） */
+html[data-ui-theme="modern"] .quick-proxy-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  background: rgba(15, 23, 42, 0.28);
+  backdrop-filter: blur(2px);
+}
+html[data-ui-theme="modern"] .quick-proxy-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 910;
+  width: min(460px, 92vw);
+  background: #ffffff;
+  border-left: 1px solid var(--modern-neutral-100);
+  box-shadow: -12px 0 36px rgba(5, 5, 5, 0.14);
+  display: flex;
+  flex-direction: column;
+}
+html[data-ui-theme="modern"] .quick-proxy-form {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+html[data-ui-theme="modern"] .qp-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--modern-neutral-100);
+}
+html[data-ui-theme="modern"] .qp-drawer-head strong {
+  font-size: 15px;
+  color: var(--modern-neutral-900);
+}
+html[data-ui-theme="modern"] .qp-close-btn {
+  border: 0;
+  background: transparent;
+  font-size: 20px;
+  color: var(--modern-neutral-500);
+  cursor: pointer;
+}
+html[data-ui-theme="modern"] .qp-drawer-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+html[data-ui-theme="modern"] .qp-promo-banner {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: linear-gradient(90deg, #def3ff 0%, #f5fbff 100%);
+  border: 1px solid var(--modern-blue-200);
+}
+html[data-ui-theme="modern"] .qp-promo-banner strong {
+  display: block;
+  font-size: 13px;
+  color: var(--modern-neutral-900);
+}
+html[data-ui-theme="modern"] .qp-promo-banner p {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--modern-blue-600);
+}
+html[data-ui-theme="modern"] .qp-tutorial-bar {
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: #fdf2f8;
+  color: #be185d;
+  font-size: 12px;
+  font-weight: 500;
+}
+html[data-ui-theme="modern"] .qp-block-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--modern-neutral-700);
+}
+html[data-ui-theme="modern"] .qp-radio-row {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+html[data-ui-theme="modern"] .qp-endpoint-row {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr) auto 92px;
+  align-items: center;
+  gap: 6px;
+}
+html[data-ui-theme="modern"] .qp-test-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+html[data-ui-theme="modern"] .qp-drawer-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--modern-neutral-100);
+  background: var(--modern-neutral-25);
+}
+
+/* Hide themed-select wrappers when the underlying native select is hidden */
+html[data-ui-theme="modern"] .themed-select:has(> select[hidden]),
+html[data-ui-theme="modern"] select[hidden] + .themed-select-button {
+  display: none !important;
+}
+
+/* Keep right summary sidebar sticky while scrolling the unified editor form */
+html[data-ui-theme="modern"] #view-profile-editor .profile-summary {
+  position: sticky;
+  top: 14px;
+  max-height: calc(100vh - 110px);
+  overflow-y: auto;
+}
+
+html[data-ui-theme="modern"] .roxy-field-control > .themed-select {
+  width: 210px !important;
+  flex: 0 0 210px !important;
+}
+
+
+/* === Round 2 Deep Polish & De-duplication Overrides === */
+
+/* 1. Fix cramped 9px / 10px typography overrides from ui-shell.css */
+html[data-ui-theme="modern"] #view-profile-editor label,
+html[data-ui-theme="modern"] dialog[open] label {
+  font-size: 12.5px !important;
+  line-height: 1.45 !important;
+  gap: 5px !important;
+}
+
+html[data-ui-theme="modern"] #view-profile-editor input:not([type="checkbox"]):not([type="radio"]),
+html[data-ui-theme="modern"] #view-profile-editor select,
+html[data-ui-theme="modern"] #view-profile-editor textarea,
+html[data-ui-theme="modern"] dialog[open] input:not([type="checkbox"]):not([type="radio"]),
+html[data-ui-theme="modern"] dialog[open] select,
+html[data-ui-theme="modern"] dialog[open] textarea {
+  font-size: 12.5px !important;
+  padding: 6px 10px !important;
+  min-height: 32px !important;
+}
+
+html[data-ui-theme="modern"] #view-profile-editor button:not(.roxy-acc-btn),
+html[data-ui-theme="modern"] dialog[open] button {
+  font-size: 12.5px !important;
+  padding: 5px 12px !important;
+}
+
+html[data-ui-theme="modern"] .group-badge-compact,
+html[data-ui-theme="modern"] .status-compact,
+html[data-ui-theme="modern"] .exit-compact,
+html[data-ui-theme="modern"] .net-badge {
+  font-size: 11.5px !important;
+  padding: 2px 8px !important;
+  border-radius: 6px !important;
+}
+
+/* 2. Collapsible Accordion Section Headers (− / +) */
+html[data-ui-theme="modern"] .roxy-accordion-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 14px 18px;
+  margin-bottom: 14px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03);
+}
+
+html[data-ui-theme="modern"] .roxy-accordion-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 2px 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid #f1f5f9;
+  cursor: pointer;
+  user-select: none;
+}
+
+html[data-ui-theme="modern"] .roxy-accordion-card.is-collapsed .roxy-accordion-header {
+  margin-bottom: 0;
+  padding-bottom: 2px;
+  border-bottom-color: transparent;
+}
+
+html[data-ui-theme="modern"] .roxy-accordion-card.is-collapsed > :not(.roxy-accordion-header) {
+  display: none !important;
+}
+
+html[data-ui-theme="modern"] .roxy-acc-symbol {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: #eff6ff;
+  color: #2563eb;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+html[data-ui-theme="modern"] .roxy-accordion-header:hover .roxy-acc-symbol {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+html[data-ui-theme="modern"] .roxy-accordion-header strong {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+html[data-ui-theme="modern"] .roxy-acc-desc {
+  font-size: 12px;
+  color: #64748b;
+  margin-left: 4px;
+}
+
+/* 3. Eliminate Dual-Control Redundancy in .privacy-grid.is-pill-consolidated */
+html[data-ui-theme="modern"] .privacy-grid.is-pill-consolidated > label:has(#editor-canvas),
+html[data-ui-theme="modern"] .privacy-grid.is-pill-consolidated > label:has(#editor-webgl),
+html[data-ui-theme="modern"] .privacy-grid.is-pill-consolidated > label:has(#editor-webgl-meta),
+html[data-ui-theme="modern"] .privacy-grid.is-pill-consolidated > label:has(#editor-webgpu),
+html[data-ui-theme="modern"] .privacy-grid.is-pill-consolidated > label:has(#editor-audio),
+html[data-ui-theme="modern"] .privacy-grid.is-pill-consolidated > label:has(#editor-media),
+html[data-ui-theme="modern"] .privacy-grid.is-pill-consolidated > label:has(#editor-battery),
+html[data-ui-theme="modern"] .privacy-grid.is-pill-consolidated > label:has(#editor-bluetooth),
+html[data-ui-theme="modern"] .privacy-grid.is-pill-consolidated > label:has(#editor-client-rects),
+html[data-ui-theme="modern"] .privacy-grid.is-pill-consolidated > label:has(#editor-speech),
+html[data-ui-theme="modern"] .privacy-grid.is-pill-consolidated > label:has(#editor-cores),
+html[data-ui-theme="modern"] .privacy-grid.is-pill-consolidated > label:has(#editor-memory),
+html[data-ui-theme="modern"] .privacy-grid.is-pill-consolidated > label:has(#editor-device-name-mode),
+html[data-ui-theme="modern"] .privacy-grid.is-pill-consolidated > label:has(#editor-mac-mode),
+html[data-ui-theme="modern"] .privacy-grid.is-pill-consolidated > label:has(#editor-dnt-mode) {
+  display: none !important;
+}
+
+html[data-ui-theme="modern"] .privacy-grid.is-pill-consolidated {
+  margin-top: 12px !important;
+  padding-top: 12px !important;
+  border-top: 1px dashed #e2e8f0 !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 10px 16px !important;
+}
+
+/* Hide redundant legacy checkbox rows in [data-editor-panel="advanced"] that are now in .roxy-pref-pill-list */
+html[data-ui-theme="modern"] .editor-panel[data-editor-panel="advanced"] .advanced-card:has(#editor-save-cookies),
+html[data-ui-theme="modern"] .editor-panel[data-editor-panel="advanced"] .advanced-card:has(#editor-load-global-bookmarks),
+html[data-ui-theme="modern"] .editor-panel[data-editor-panel="advanced"] .advanced-card:has(#editor-prompt-save-password),
+html[data-ui-theme="modern"] .editor-panel[data-editor-panel="advanced"] .advanced-card:has(#editor-stop-open-net) {
+  display: none !important;
+}
+
+html[data-ui-theme="modern"] .editor-panel[data-editor-panel="advanced"] .advanced-card:has(#editor-cloud-backup) > label.check-row {
+  display: none !important;
+}
+
+/* 4. Search Engine Brand Pills */
+html[data-ui-theme="modern"] .se-brand-pills button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+html[data-ui-theme="modern"] .se-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+html[data-ui-theme="modern"] .se-google { background: #4285F4; }
+html[data-ui-theme="modern"] .se-bing { background: #008373; }
+html[data-ui-theme="modern"] .se-yahoo { background: #6001D2; }
+html[data-ui-theme="modern"] .se-yandex { background: #FC3F1D; }
+html[data-ui-theme="modern"] .se-ddg { background: #DE5833; }
+
+/* 5. Window Management Table Inline Cell Triggers & Categorized Context Menu */
+html[data-ui-theme="modern"] .cell-inline-trigger {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  background: transparent !important;
+  border: 1px dashed transparent !important;
+  border-radius: 6px !important;
+  padding: 3px 7px !important;
+  color: #334155 !important;
+  font-size: 12px !important;
+  cursor: pointer !important;
+  max-width: 180px !important;
+  transition: all 0.14s ease !important;
+}
+
+html[data-ui-theme="modern"] .cell-inline-trigger:hover {
+  background: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+  color: #2563eb !important;
+}
+
+html[data-ui-theme="modern"] .cell-inline-icon {
+  font-size: 12px;
+  opacity: 0.65;
+  flex-shrink: 0;
+}
+
+html[data-ui-theme="modern"] .cell-inline-trigger:hover .cell-inline-icon {
+  opacity: 1;
+}
+
+html[data-ui-theme="modern"] .cell-inline-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-ui-theme="modern"] .row-menu-divider {
+  height: 1px;
+  background: #e2e8f0;
+  margin: 4px 6px;
+}
+
+/* Keep #view-profiles top toolbar clean & single-line by hiding redundant secondary buttons that already exist in batch bar / import tab */
+html[data-ui-theme="modern"] #view-profiles .toolbar-left #renumber-profiles,
+html[data-ui-theme="modern"] #view-profiles .toolbar-left #batch-export {
+  display: none !important;
+}
+
+
+/* === Round 3 Micro-Animation System & Final Detail Polish === */
+
+/* 1. Fix Button Padding Specificity for 9-Grid & Compact Steppers inside #view-profile-editor */
+html[data-ui-theme="modern"] #view-profile-editor .pos-grid {
+  display: inline-grid !important;
+  grid-template-columns: repeat(3, 24px) !important;
+  grid-auto-rows: 16px !important;
+  gap: 3px !important;
+  padding: 5px !important;
+  border: 1.5px solid #cbd5e1 !important;
+  border-radius: 8px !important;
+  background: #f8fafc !important;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.05) !important;
+}
+
+html[data-ui-theme="modern"] #view-profile-editor .pos-grid button {
+  padding: 0 !important;
+  min-height: 0 !important;
+  width: 24px !important;
+  height: 16px !important;
+  border-radius: 3px !important;
+  border: 1px solid #cbd5e1 !important;
+  background: #e2e8f0 !important;
+  transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease !important;
+}
+
+html[data-ui-theme="modern"] #view-profile-editor .pos-grid button:hover {
+  background: #bae6fd !important;
+  border-color: #38bdf8 !important;
+  transform: scale(1.08);
+}
+
+html[data-ui-theme="modern"] #view-profile-editor .pos-grid button.active {
+  background: linear-gradient(135deg, #11a3fd 0%, #2563eb 100%) !important;
+  border-color: #1d4ed8 !important;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.35) !important;
+  transform: scale(1.08);
+}
+
+html[data-ui-theme="modern"] .pos-grid-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #2563eb;
+  font-size: 11.5px;
+  font-weight: 600;
+  border: 1px solid #bfdbfe;
+}
+
+html[data-ui-theme="modern"] #view-profile-editor .roxy-number-stepper button,
+html[data-ui-theme="modern"] #view-profile-editor #editor-tutorial-dismiss {
+  padding: 0 !important;
+  min-height: 26px !important;
+}
+
+/* 2. Editor Form Vertical Ordering: Basic Info -> Proxy IP -> Fingerprint -> Preferences -> Sticky Footer */
+html[data-ui-theme="modern"] #profile-editor-form.roxy-unified-form {
+  display: flex !important;
+  flex-direction: column !important;
+}
+html[data-ui-theme="modern"] #profile-editor-form .roxy-mode-card { order: 0; }
+html[data-ui-theme="modern"] #profile-editor-form .editor-panel[data-editor-panel="basic"] { order: 1; }
+html[data-ui-theme="modern"] #profile-editor-form .editor-panel[data-editor-panel="proxy"] { order: 2; }
+html[data-ui-theme="modern"] #profile-editor-form .editor-panel[data-editor-panel="privacy"] { order: 3; }
+html[data-ui-theme="modern"] #profile-editor-form .editor-panel[data-editor-panel="advanced"] { order: 4; }
+html[data-ui-theme="modern"] #profile-editor-form .editor-sticky-footer { order: 5; }
+
+/* 3. Pointer-Coordinate Radial Click Ripple & Tactile Spring Press Physics */
+html[data-ui-theme="modern"] button.primary,
+html[data-ui-theme="modern"] button.outline,
+html[data-ui-theme="modern"] button.new-browser,
+html[data-ui-theme="modern"] button.roxy-open-pill,
+html[data-ui-theme="modern"] .os-seg-btn,
+html[data-ui-theme="modern"] .kernel-seg-btn,
+html[data-ui-theme="modern"] .roxy-pill-group button,
+html[data-ui-theme="modern"] .create-mode-tab,
+html[data-ui-theme="modern"] .sidebar .nav {
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1),
+              background-color 0.16s ease,
+              border-color 0.16s ease,
+              color 0.16s ease,
+              box-shadow 0.18s ease !important;
+}
+
+html[data-ui-theme="modern"] button.primary:active:not(:disabled),
+html[data-ui-theme="modern"] button.outline:active:not(:disabled),
+html[data-ui-theme="modern"] button.new-browser:active:not(:disabled),
+html[data-ui-theme="modern"] button.roxy-open-pill:active:not(:disabled),
+html[data-ui-theme="modern"] .os-seg-btn:active,
+html[data-ui-theme="modern"] .kernel-seg-btn:active,
+html[data-ui-theme="modern"] .roxy-pill-group button:active {
+  transform: scale(0.95) !important;
+}
+
+html[data-ui-theme="modern"] .ob-ripple-wave {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(17, 163, 253, 0.28) 0%, rgba(37, 99, 235, 0.08) 65%, transparent 100%);
+  transform: translate(-50%, -50%) scale(0);
+  animation: ob-ripple-expand 0.52s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  z-index: 0;
+}
+
+html[data-ui-theme="modern"] button.primary .ob-ripple-wave,
+html[data-ui-theme="modern"] button.new-browser .ob-ripple-wave {
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.42) 0%, rgba(255, 255, 255, 0.12) 65%, transparent 100%);
+}
+
+@keyframes ob-ripple-expand {
+  0% { transform: translate(-50%, -50%) scale(0); opacity: 0.95; }
+  100% { transform: translate(-50%, -50%) scale(2.4); opacity: 0; }
+}
+
+/* 4. OS & Kernel Selector + Pill Bar Spring Activation & Icon Bounce */
+html[data-ui-theme="modern"] .os-seg-btn.active,
+html[data-ui-theme="modern"] .kernel-seg-btn.active,
+html[data-ui-theme="modern"] .roxy-pill-group button.active,
+html[data-ui-theme="modern"] .create-mode-tab.active {
+  animation: ob-pill-spring 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+html[data-ui-theme="modern"] .os-seg-btn.active svg,
+html[data-ui-theme="modern"] .os-seg-btn.active .os-badge-mac,
+html[data-ui-theme="modern"] .os-seg-btn.active .os-badge-ios,
+html[data-ui-theme="modern"] .kernel-seg-btn.active svg {
+  animation: ob-icon-bounce 0.36s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes ob-pill-spring {
+  0% { transform: scale(0.92); }
+  60% { transform: scale(1.035); }
+  100% { transform: scale(1); }
+}
+
+@keyframes ob-icon-bounce {
+  0% { transform: translateY(0) scale(0.85) rotate(-8deg); }
+  55% { transform: translateY(-2px) scale(1.15) rotate(4deg); }
+  100% { transform: translateY(0) scale(1) rotate(0deg); }
+}
+
+/* 5. 3D Device Mockup Morph & Screen Boot Light-Sweep Animation on OS/Kernel Switch */
+html[data-ui-theme="modern"] .device-mockup-stage {
+  perspective: 750px;
+  overflow: hidden;
+}
+
+html[data-ui-theme="modern"] .device-mockup-stage.is-morphing-3d .device-laptop-frame,
+html[data-ui-theme="modern"] .device-mockup-stage.is-morphing-3d .device-phone-frame {
+  animation: ob-device-morph-3d 0.46s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+html[data-ui-theme="modern"] .device-mockup-stage.is-screen-booting .device-laptop-screen,
+html[data-ui-theme="modern"] .device-mockup-stage.is-screen-booting .device-phone-screen {
+  animation: ob-screen-pop 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+html[data-ui-theme="modern"] .device-screen-sweep {
+  position: absolute;
+  inset: -40% -120%;
+  background: linear-gradient(115deg, transparent 40%, rgba(255, 255, 255, 0.36) 50%, transparent 60%);
+  pointer-events: none;
+  transform: translateX(-60%);
+}
+
+html[data-ui-theme="modern"] .device-mockup-stage.is-screen-booting .device-screen-sweep,
+html[data-ui-theme="modern"] .device-mockup-stage.is-morphing-3d .device-screen-sweep {
+  animation: ob-screen-boot-sweep 0.58s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+html[data-ui-theme="modern"] .device-screen-glow {
+  animation: ob-screen-glow-breathe 4.5s ease-in-out infinite alternate;
+}
+
+html[data-ui-theme="modern"] .device-screen-sub {
+  position: relative;
+  z-index: 1;
+  display: block;
+  margin-top: 3px;
+  font-size: 9.5px;
+  color: rgba(255, 255, 255, 0.78);
+  letter-spacing: 0.02em;
+}
+
+html[data-ui-theme="modern"] .is-badge-popping {
+  animation: ob-badge-pop 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes ob-device-morph-3d {
+  0% { opacity: 0.25; transform: rotateY(-22deg) rotateX(10deg) scale(0.86) translateY(8px); }
+  65% { opacity: 1; transform: rotateY(4deg) rotateX(-2deg) scale(1.02) translateY(-2px); }
+  100% { opacity: 1; transform: rotateY(0deg) rotateX(0deg) scale(1) translateY(0); }
+}
+
+@keyframes ob-screen-pop {
+  0% { filter: brightness(1.35) saturate(1.2); transform: scale(0.97); }
+  100% { filter: brightness(1) saturate(1); transform: scale(1); }
+}
+
+@keyframes ob-screen-boot-sweep {
+  0% { transform: translateX(-55%); opacity: 1; }
+  100% { transform: translateX(55%); opacity: 0; }
+}
+
+@keyframes ob-screen-glow-breathe {
+  0% { transform: scale(0.92); opacity: 0.75; }
+  100% { transform: scale(1.12); opacity: 1; }
+}
+
+@keyframes ob-badge-pop {
+  0% { transform: scale(0.84); }
+  60% { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}
+
+/* 6. Random Fingerprint Dice Spin, Input Flash & Staggered Row Cascade */
+html[data-ui-theme="modern"] .is-spinning-dice svg,
+html[data-ui-theme="modern"] button.is-spinning-dice {
+  animation: ob-dice-spin 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+html[data-ui-theme="modern"] .is-field-flashed {
+  animation: ob-field-flash 0.65s ease-out;
+}
+
+html[data-ui-theme="modern"] .roxy-field-row.is-row-cascading {
+  animation: ob-row-cascade-flash 0.48s ease-out both;
+}
+
+html[data-ui-theme="modern"] #editor-summary > div.is-summary-updated {
+  animation: ob-summary-pulse 0.7s ease-out;
+  border-radius: 6px;
+}
+
+@keyframes ob-dice-spin {
+  0% { transform: scale(0.92) rotate(0deg); }
+  50% { transform: scale(1.06) rotate(-12deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+
+@keyframes ob-field-flash {
+  0% { border-color: #11a3fd !important; box-shadow: 0 0 0 4px rgba(17, 163, 253, 0.25) !important; background-color: #f0f9ff !important; }
+  100% { border-color: #cbd5e1; box-shadow: none; background-color: #ffffff; }
+}
+
+@keyframes ob-row-cascade-flash {
+  0% { background-color: rgba(17, 163, 253, 0.14); transform: translateX(4px); border-radius: 8px; }
+  100% { background-color: transparent; transform: translateX(0); }
+}
+
+@keyframes ob-summary-pulse {
+  0% { background-color: rgba(17, 163, 253, 0.18); padding-left: 6px; padding-right: 6px; }
+  100% { background-color: transparent; padding-left: 0; padding-right: 0; }
+}
+
+/* 7. Window List Open Pill Hover Tilt, Running Status Radar Pulse & Menu/View Transitions */
+html[data-ui-theme="modern"] #view-profiles .table-card .actions button.roxy-open-pill:hover .roxy-open-pill-engine svg {
+  transform: rotate(-10deg) scale(1.14);
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+html[data-ui-theme="modern"] .status.running::before {
+  box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.55);
+  animation: ob-status-radar 1.8s infinite;
+}
+
+@keyframes ob-status-radar {
+  0% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.55); }
+  70% { box-shadow: 0 0 0 6px rgba(22, 163, 74, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); }
+}
+
+html[data-ui-theme="modern"] .view.active {
+  animation: ob-view-enter 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html[data-ui-theme="modern"] .row-more-menu {
+  transform-origin: top right;
+  animation: ob-menu-pop 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html[data-ui-theme="modern"] .row-more-menu button {
+  transition: transform 0.14s ease, background-color 0.14s ease, color 0.14s ease !important;
+}
+
+html[data-ui-theme="modern"] .row-more-menu button:hover {
+  transform: translateX(3px);
+}
+
+html[data-ui-theme="modern"] .roxy-accordion-header .roxy-acc-symbol {
+  transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.15s ease, color 0.15s ease;
+}
+
+html[data-ui-theme="modern"] .roxy-accordion-card.is-collapsed .roxy-accordion-header .roxy-acc-symbol {
+  transform: rotate(90deg);
+}
+
+html[data-ui-theme="modern"] .profile-selection-bar:not([hidden]) {
+  animation: ob-bar-slide-up 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes ob-view-enter {
+  0% { opacity: 0; transform: translateY(5px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes ob-menu-pop {
+  0% { opacity: 0; transform: scale(0.92) translateY(-4px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes ob-bar-slide-up {
+  0% { opacity: 0; transform: translateY(8px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-ui-theme="modern"] *,
+  html[data-ui-theme="modern"] *::before,
+  html[data-ui-theme="modern"] *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+
+/* === Round 4: Add Proxy / Add Account Workbenches, Cookie Robot 1:1 & Floating Batch Bar === */
+
+html[data-ui-theme="modern"] #profile-list-tabs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+html[data-ui-theme="modern"] .list-tab-tools {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+html[data-ui-theme="modern"] .tab-config-wrap {
+  position: relative;
+}
+
+html[data-ui-theme="modern"] .tab-tool-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+}
+
+html[data-ui-theme="modern"] .tab-tool-icon-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+html[data-ui-theme="modern"] .tab-config-popover {
+  position: absolute;
+  top: 34px;
+  right: 0;
+  z-index: 30;
+  min-width: 150px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 6px;
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.12);
+}
+
+html[data-ui-theme="modern"] .tab-config-popover label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  font-size: 12.5px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+html[data-ui-theme="modern"] .tab-config-popover label:hover {
+  background: #f8fafc;
+}
+
+/* Floating Dark Batch Pill Bar */
+html[data-ui-theme="modern"] .floating-batch-bar {
+  position: fixed;
+  bottom: 20px;
+  left: 54%;
+  transform: translateX(-50%);
+  z-index: 45;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 12px;
+  background: rgba(24, 28, 36, 0.94);
+  backdrop-filter: blur(10px);
+  color: #f8fafc;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.28);
+  animation: ob-bar-slide-up 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html[data-ui-theme="modern"] .floating-batch-bar[hidden] {
+  display: none !important;
+}
+
+html[data-ui-theme="modern"] .fbb-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: #e2e8f0;
+}
+
+html[data-ui-theme="modern"] .fbb-clear {
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  border: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  cursor: pointer;
+  line-height: 1;
+}
+
+html[data-ui-theme="modern"] .fbb-divider {
+  width: 1px;
+  height: 18px;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+html[data-ui-theme="modern"] .fbb-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f8fafc;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.14s ease, transform 0.14s ease;
+}
+
+html[data-ui-theme="modern"] .fbb-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+  transform: translateY(-1px);
+}
+
+html[data-ui-theme="modern"] .fbb-btn.is-danger:hover {
+  background: #dc2626;
+}
+
+/* Editor Summary Toggle Button */
+html[data-ui-theme="modern"] #view-profile-editor .environment-editor {
+  position: relative;
+}
+
+html[data-ui-theme="modern"] .editor-summary-toggle-btn {
+  position: fixed;
+  top: 76px;
+  right: 26px;
+  z-index: 20;
+  background: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+}
+
+html[data-ui-theme="modern"] #view-profile-editor .environment-editor.is-summary-collapsed {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
+/* Workbench Subtabs (Add Proxy / Add Account) */
+html[data-ui-theme="modern"] .workbench-subtabs {
+  display: flex;
+  gap: 20px;
+  border-bottom: 1px solid #e2e8f0;
+  margin: 0 24px 16px;
+}
+
+html[data-ui-theme="modern"] .workbench-subtabs button {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 10px 4px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+}
+
+html[data-ui-theme="modern"] .workbench-subtabs button.active {
+  color: #2563eb;
+  border-bottom-color: #2563eb;
+}
+
+html[data-ui-theme="modern"] .pa-single-card {
+  max-width: 720px;
+  margin: 0 auto 30px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+html[data-ui-theme="modern"] .pa-label {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #334155;
+  margin-bottom: 6px;
+}
+
+html[data-ui-theme="modern"] .pa-ipver-cards {
+  display: flex;
+  gap: 10px;
+}
+
+html[data-ui-theme="modern"] .pa-radio-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  background: #ffffff;
+}
+
+html[data-ui-theme="modern"] .pa-radio-card:has(input:checked) {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #2563eb;
+  font-weight: 600;
+}
+
+html[data-ui-theme="modern"] .pa-host-combo {
+  display: grid;
+  grid-template-columns: 120px 1fr auto 110px;
+  align-items: center;
+  gap: 6px;
+}
+
+html[data-ui-theme="modern"] .pa-test-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+html[data-ui-theme="modern"] .pa-footer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 8px;
+}
+
+html[data-ui-theme="modern"] .batch-split-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 16px;
+  margin: 0 24px 16px;
+}
+
+html[data-ui-theme="modern"] .batch-editor-box,
+html[data-ui-theme="modern"] .batch-rules-box {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+
+html[data-ui-theme="modern"] .batch-box-head,
+html[data-ui-theme="modern"] .batch-box-foot,
+html[data-ui-theme="modern"] .parsed-preview-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+html[data-ui-theme="modern"] .batch-box-head { margin-bottom: 10px; }
+html[data-ui-theme="modern"] .batch-box-foot { margin-top: 10px; }
+
+html[data-ui-theme="modern"] .code-textarea-wrap {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+html[data-ui-theme="modern"] .code-line-nums {
+  background: #f8fafc;
+  color: #94a3b8;
+  font-family: monospace;
+  font-size: 12px;
+  text-align: center;
+  padding-top: 8px;
+  border-right: 1px solid #e2e8f0;
+}
+
+html[data-ui-theme="modern"] .code-textarea-wrap textarea {
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+html[data-ui-theme="modern"] .batch-rules-pre {
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 12px;
+  color: #475569;
+  white-space: pre-wrap;
+  line-height: 1.65;
+  margin-top: 10px;
+}
+
+html[data-ui-theme="modern"] .parsed-preview-section {
+  margin: 0 24px 30px;
+}
+
+html[data-ui-theme="modern"] .pass-eye-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+html[data-ui-theme="modern"] .pass-eye-wrap input {
+  width: 100%;
+  padding-right: 36px !important;
+}
+
+html[data-ui-theme="modern"] .pass-eye-btn {
+  position: absolute;
+  right: 8px;
+  background: transparent;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+}
+
+/* Cookie Robot 1:1 Modal */
+html[data-ui-theme="modern"] dialog.cookie-robot-modal {
+  padding: 0 !important;
+  border-radius: 14px !important;
+  width: min(540px, 94vw) !important;
+  overflow: hidden !important;
+}
+
+html[data-ui-theme="modern"] .cookie-robot-hero {
+  background: linear-gradient(135deg, #e0f2fe 0%, #f0f9ff 60%, #ffffff 100%);
+  padding: 18px 22px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+html[data-ui-theme="modern"] .cookie-robot-hero h2 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+html[data-ui-theme="modern"] .cookie-robot-hero p {
+  margin: 0;
+  font-size: 12.5px;
+  color: #64748b;
+}
+
+html[data-ui-theme="modern"] .cr-close-btn {
+  background: transparent;
+  border: none;
+  font-size: 20px;
+  color: #64748b;
+  cursor: pointer;
+}
+
+html[data-ui-theme="modern"] .cookie-robot-body {
+  padding: 18px 22px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+html[data-ui-theme="modern"] .cr-row {
+  display: grid;
+  grid-template-columns: 76px 1fr;
+  align-items: center;
+  gap: 10px;
+}
+
+html[data-ui-theme="modern"] .cr-row-top {
+  align-items: start;
+}
+
+html[data-ui-theme="modern"] .cr-label {
+  font-size: 12.5px;
+  color: #475569;
+  font-weight: 500;
+}
+
+html[data-ui-theme="modern"] .cr-profile-pill {
+  display: inline-block;
+  width: fit-content;
+  padding: 3px 10px;
+  background: #f1f5f9;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+}
+
+html[data-ui-theme="modern"] .cr-field-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+html[data-ui-theme="modern"] .cr-hint {
+  font-size: 11.5px;
+  color: #94a3b8;
+}
+
+html[data-ui-theme="modern"] .cr-more-toggle {
+  align-self: center;
+  background: transparent;
+  border: none;
+  color: #334155;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 10px;
+}
+
+html[data-ui-theme="modern"] .cr-more-panel {
+  border-top: 1px dashed #e2e8f0;
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+html[data-ui-theme="modern"] .cr-more-panel[hidden] {
+  display: none !important;
+}
+
+html[data-ui-theme="modern"] .cr-section-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+html[data-ui-theme="modern"] .cr-range-row {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  align-items: center;
+  gap: 10px;
+}
+
+html[data-ui-theme="modern"] .cr-range-inputs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+html[data-ui-theme="modern"] .cr-unit-input {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  padding-right: 8px;
+  background: #ffffff;
+}
+
+html[data-ui-theme="modern"] .cr-unit-input input {
+  width: 72px !important;
+  border: none !important;
+  box-shadow: none !important;
+  min-height: 28px !important;
+}
+
+html[data-ui-theme="modern"] .cr-unit-input span {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+html[data-ui-theme="modern"] .cr-switch-row {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  cursor: pointer;
+}
+
+html[data-ui-theme="modern"] .cr-switch-row .cr-label {
+  width: 86px;
+}
+
+html[data-ui-theme="modern"] .ob-switch-input {
+  display: none !important;
+}
+
+html[data-ui-theme="modern"] .ob-switch-track {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border-radius: 999px;
+  background: #cbd5e1;
+  transition: background 0.18s ease;
+  flex-shrink: 0;
+}
+
+html[data-ui-theme="modern"] .ob-switch-track::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+html[data-ui-theme="modern"] .ob-switch-input:checked + .ob-switch-track {
+  background: #11a3fd;
+}
+
+html[data-ui-theme="modern"] .ob-switch-input:checked + .ob-switch-track::after {
+  transform: translateX(16px);
+}
+
+html[data-ui-theme="modern"] .cr-switch-desc {
+  font-size: 12px;
+  color: #64748b;
+}
+
+html[data-ui-theme="modern"] .cr-submit-full {
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px 16px !important;
+  font-size: 13.5px !important;
+}
+
+html[data-ui-theme="modern"] .tags-mgr-add-row {
+  display: flex;
+  gap: 8px;
+}
+
+html[data-ui-theme="modern"] .tags-mgr-add-row input {
+  flex: 1;
+}
+
+
+/* === Round 5: Accounts Showcase, Password Eye & Empty Funnel Polish === */
+
+html[data-ui-theme="modern"] .accounts-empty-showcase {
+  display: grid;
+  grid-template-columns: 1fr 1.15fr;
+  gap: 28px;
+  align-items: center;
+  max-width: 820px;
+  margin: 34px auto;
+  padding: 28px 32px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.05);
+}
+
+html[data-ui-theme="modern"] .accounts-empty-showcase[hidden] {
+  display: none !important;
+}
+
+html[data-ui-theme="modern"] .aes-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: #eff6ff;
+  color: #2563eb;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 12px;
+}
+
+html[data-ui-theme="modern"] .aes-left h3 {
+  margin: 0 0 8px;
+  font-size: 17px;
+  color: #0f172a;
+}
+
+html[data-ui-theme="modern"] .aes-left p {
+  margin: 0 0 18px;
+  font-size: 13px;
+  color: #64748b;
+  line-height: 1.6;
+}
+
+html[data-ui-theme="modern"] .aes-right {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+html[data-ui-theme="modern"] .aes-mock-head {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+html[data-ui-theme="modern"] .aes-mock-search {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  padding: 5px 10px;
+  font-size: 11.5px;
+  color: #94a3b8;
+}
+
+html[data-ui-theme="modern"] .aes-mock-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid #f1f5f9;
+}
+
+html[data-ui-theme="modern"] .aes-mock-row.is-hl {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+html[data-ui-theme="modern"] .aes-dot,
+html[data-ui-theme="modern"] .acc-platform-dot {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+html[data-ui-theme="modern"] .aes-mock-row strong,
+html[data-ui-theme="modern"] .acc-platform-cell strong {
+  display: block;
+  font-size: 12px;
+  color: #0f172a;
+}
+
+html[data-ui-theme="modern"] .aes-mock-row small,
+html[data-ui-theme="modern"] .acc-sub-url {
+  display: block;
+  font-size: 11px;
+  color: #64748b;
+}
+
+html[data-ui-theme="modern"] .aes-2fa {
+  display: inline-block;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 10px;
+  font-weight: 700;
+  margin-left: 4px;
+}
+
+html[data-ui-theme="modern"] .acc-platform-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+html[data-ui-theme="modern"] .acc-pass-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+html[data-ui-theme="modern"] .acc-eye-toggle {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  opacity: 0.65;
+  padding: 2px 4px;
+}
+
+html[data-ui-theme="modern"] .acc-eye-toggle:hover {
+  opacity: 1;
+}
+
+
+/* === Round 6: Project Cards, Extension Showcase, Kernel Hero & Settings Nav === */
+
+html[data-ui-theme="modern"] .project-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+html[data-ui-theme="modern"] .roxy-project-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 14px;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.03);
+  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+}
+
+html[data-ui-theme="modern"] .roxy-project-card:hover {
+  transform: translateY(-2px);
+  border-color: #bae6fd;
+  box-shadow: 0 8px 22px rgba(17, 163, 253, 0.09);
+}
+
+html[data-ui-theme="modern"] .rpc-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+html[data-ui-theme="modern"] .rpc-mark {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+html[data-ui-theme="modern"] .rpc-title-wrap {
+  flex: 1;
+  min-width: 0;
+}
+
+html[data-ui-theme="modern"] .rpc-title-wrap strong {
+  display: block;
+  font-size: 13.5px;
+  color: #0f172a;
+  margin-bottom: 3px;
+}
+
+html[data-ui-theme="modern"] .rpc-title-wrap small {
+  display: block;
+  font-size: 11.5px;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+html[data-ui-theme="modern"] .rpc-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px dashed #f1f5f9;
+}
+
+/* Extension Market Showcase Grid */
+html[data-ui-theme="modern"] .ext-category-bar,
+html[data-ui-theme="modern"] .system-nav-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+html[data-ui-theme="modern"] .roxy-ext-market-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+html[data-ui-theme="modern"] .roxy-ext-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 14px;
+  transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+html[data-ui-theme="modern"] .roxy-ext-card:hover {
+  transform: translateY(-2px);
+  border-color: #bae6fd;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+}
+
+html[data-ui-theme="modern"] .rec-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+html[data-ui-theme="modern"] .rec-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  font-size: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+html[data-ui-theme="modern"] .rec-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+html[data-ui-theme="modern"] .rec-name-row strong {
+  font-size: 13.5px;
+  color: #0f172a;
+}
+
+html[data-ui-theme="modern"] .rec-ver {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+html[data-ui-theme="modern"] .rec-meta p {
+  margin: 0;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+html[data-ui-theme="modern"] .rec-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 10px;
+  border-top: 1px dashed #f1f5f9;
+}
+
+/* Sync Matrix Box */
+html[data-ui-theme="modern"] .sync-matrix-box {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px;
+  margin: 10px 0;
+}
+
+html[data-ui-theme="modern"] .sync-matrix-box strong {
+  display: block;
+  font-size: 12.5px;
+  margin-bottom: 8px;
+  color: #0f172a;
+}
+
+html[data-ui-theme="modern"] .sync-matrix-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+/* Kernel Hero Cards */
+html[data-ui-theme="modern"] .kernel-hero-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+html[data-ui-theme="modern"] .kernel-engine-hero-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px 20px;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.03);
+}
+
+html[data-ui-theme="modern"] .keh-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+html[data-ui-theme="modern"] .keh-body p {
+  margin: 0;
+  font-size: 12.5px;
+  color: #64748b;
+  line-height: 1.55;
+}
+
+/* Log Toolbar Actions */
+html[data-ui-theme="modern"] .log-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+html[data-ui-theme="modern"] .log-filter-input {
+  width: 180px !important;
+  min-height: 30px !important;
+  padding: 4px 10px !important;
+  font-size: 12px !important;
+}
+
+html[data-ui-theme="modern"] .log-filter-select {
+  width: 120px !important;
+  min-height: 30px !important;
+  padding: 4px 8px !important;
+  font-size: 12px !important;
+}

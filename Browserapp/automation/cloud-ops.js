@@ -49,6 +49,14 @@ function mergeCloudIntoSettings(currentSettings, cloud) {
   return { ...currentSettings, cloud: { ...existing, ...cloud } };
 }
 
+// Operations own their completion status, not a snapshot of editable settings.
+function mergeCloudCompletion(currentSettings, cloud) {
+  return mergeCloudIntoSettings(currentSettings, {
+    lastSyncAt: cloud.lastSyncAt,
+    lastError: cloud.lastError,
+  });
+}
+
 function initCloudOps({ getEngine, getAutomation, emit, getSettings, saveSettings }) {
   deps = {
     getEngine: getEngine || (() => null),
@@ -167,9 +175,9 @@ async function runCloudBackupExclusive(payload = {}) {
   const result = await cloudSync.upload(cloud.provider, providerConfigFromCloud(cloud), buffer, remoteName);
   cloud.lastSyncAt = new Date().toISOString();
   cloud.lastError = '';
-  await saveSettings(mergeCloudIntoSettings(getSettings(), cloud));
+  await saveSettings(mergeCloudCompletion(getSettings(), cloud));
   emit({ type: 'cloud-sync', action: 'backup', ...meta, ...result });
-  return { success: true, meta, result, cloud };
+  return { success: true, meta, result, cloud: getSettings().cloud };
 }
 
 async function applyBackupBody(body, options = {}) {
@@ -321,7 +329,7 @@ async function runCloudRestoreExclusive(payload = {}) {
   cloud.lastSyncAt = new Date().toISOString();
   cloud.lastError = '';
   cloud.restoreMode = mode;
-  await saveSettings({ ...mergeCloudIntoSettings(getSettings(), cloud), uiGroups: applied.groups });
+  await saveSettings(mergeCloudCompletion(getSettings(), cloud));
   emit({
     type: 'cloud-sync',
     action: 'restore',
@@ -330,7 +338,7 @@ async function runCloudRestoreExclusive(payload = {}) {
     restoredFiles: applied.restoredFiles,
     mergeStats: applied.mergeStats,
   });
-  return { success: true, mode, ...applied, cloud };
+  return { success: true, mode, ...applied, cloud: getSettings().cloud };
 }
 
 /** Push one or more environments as individual remote packs + refresh full pack optional */
@@ -376,7 +384,7 @@ async function runCloudProfilePushExclusive(payload = {}) {
   if (failures.length) {
     const summary = failures.map(({ id, error }) => `${id}: ${error.message}`).join('；');
     cloud.lastError = summary;
-    await saveSettings(mergeCloudIntoSettings(getSettings(), cloud));
+    await saveSettings(mergeCloudCompletion(getSettings(), cloud));
     emit({ type: 'cloud-sync', action: 'profile-push', count: results.length, ids, failedIds: failures.map((f) => f.id) });
     if (!results.length) throw new Error('云推送全部失败：' + summary);
     const error = new Error(`云推送部分失败（成功 ${results.length}/${ids.length}）：${summary}`);
@@ -385,9 +393,9 @@ async function runCloudProfilePushExclusive(payload = {}) {
     throw error;
   }
   cloud.lastError = '';
-  await saveSettings(mergeCloudIntoSettings(getSettings(), cloud));
+  await saveSettings(mergeCloudCompletion(getSettings(), cloud));
   emit({ type: 'cloud-sync', action: 'profile-push', count: results.length, ids });
-  return { success: true, results, cloud };
+  return { success: true, results, cloud: getSettings().cloud };
 }
 
 async function runCloudProfilePull(payload = {}) {
@@ -422,9 +430,9 @@ async function runCloudProfilePullExclusive(payload = {}) {
   restoredFiles = applied.restoredFiles;
   cloud.lastSyncAt = new Date().toISOString();
   cloud.lastError = '';
-  await saveSettings({ ...mergeCloudIntoSettings(getSettings(), cloud), uiGroups: applied.groups });
+  await saveSettings(mergeCloudCompletion(getSettings(), cloud));
   emit({ type: 'cloud-sync', action: 'profile-pull', count: ids.length, mode, mergeStats: applied.mergeStats });
-  return { success: true, mode, ...applied, per, restoredFiles, cloud };
+  return { success: true, mode, ...applied, per, restoredFiles, cloud: getSettings().cloud };
 }
 
 module.exports = {

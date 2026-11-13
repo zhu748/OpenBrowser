@@ -743,5 +743,10 @@
   "storage.warning.profiles": "{count} 件のプロファイルを復号できません。元のデータは保持されています。復元前にキーを確認してください。",
   "storage.warning.recovered": "バックアップから設定を復元しました。最近の変更を確認してください。",
   "storage.warning.rpa": "RPA データが破損しています。元のファイルは保持されています。プランと履歴を復元してください。",
-  "storage.warning.proxies": "{count} 件のプロキシデータが無効です。設定を確認してください。"
+  "storage.warning.proxies": "{count} 件のプロキシデータが無効です。設定を確認してください。",
+  "transfer.offlineNotice": "これはオフラインの設定共有です。受取人はメモとしてのみ使われ、コードの所持者は繰り返しインポートできます。この端末の履歴を削除しても共有済みコードは無効になりません。認証情報を暗号化して移行するには、クラウドバックアップのエクスポートを使用してください。",
+  "transfer.recipientNote": "受取人のメモ",
+  "transfer.includeCookies": "Cookie を含める",
+  "transfer.generateOfflineCode": "オフライン共有コードを生成",
+  "cookie.blockCommonVideo": "一般的な動画リソースをブロック"
 }

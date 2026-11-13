@@ -743,5 +743,10 @@
   "storage.warning.profiles": "Could not decode {count} profile(s). Original data was preserved; check the key before restoring.",
   "storage.warning.recovered": "Profile settings were recovered from a backup. Check your recent changes.",
   "storage.warning.rpa": "The RPA store was damaged. The original file was preserved; restore plans and task history.",
-  "storage.warning.proxies": "{count} proxy record(s) have invalid data. Review proxy settings."
+  "storage.warning.proxies": "{count} proxy record(s) have invalid data. Review proxy settings.",
+  "transfer.offlineNotice": "This is offline configuration sharing. The recipient is a note; anyone holding the code can import it repeatedly. Removing local history does not revoke a shared code. Use cloud backup export to migrate encrypted credentials.",
+  "transfer.recipientNote": "Recipient note",
+  "transfer.includeCookies": "Include cookies",
+  "transfer.generateOfflineCode": "Generate offline sharing code",
+  "cookie.blockCommonVideo": "Block common video resources"
 }

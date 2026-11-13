@@ -11,6 +11,8 @@ const { AppCenter } = require('./app-center');
 const { ProxyStore } = require('./proxy-store');
 
 const { ApiKeyStore } = require('./api-key-store');
+const { AccountStore } = require('./account-store');
+const { TransferStore } = require('./transfer-store');
 
 /**
  * Mount automation stack (Local API + RPA + window-sync + app center + proxy library).
@@ -44,6 +46,14 @@ async function startAutomation(context = {}) {
   const proxyStore = new ProxyStore(path.join(userDataPath, 'proxy-library.json'));
   await proxyStore.load();
   await context.beforeApiStart?.(proxyStore);
+  const accountStore = new AccountStore(path.join(userDataPath, 'platform-accounts.enc'));
+  const transferStore = new TransferStore(path.join(userDataPath, 'window-transfers.enc'));
+  // A damaged optional store locks that feature without preventing recovery,
+  // the local API, or RPA from starting. Writes remain blocked in the store.
+  for (const [feature, store] of [['accounts', accountStore], ['transfers', transferStore]]) {
+    try { await store.load(); }
+    catch (error) { emit({ type: 'storage-error', feature, message: error.message }); }
+  }
   await engine?.setProxyStore?.(proxyStore);
 
   const rpaEngine = new RpaEngine({
@@ -94,6 +104,8 @@ async function startAutomation(context = {}) {
     appCenter,
     proxyStore,
     keyStore,
+    accountStore,
+    transferStore,
     info,
     apiKey: effectiveApiKey,
     apiKeyFile: keyFilePath,
@@ -109,6 +121,8 @@ async function startAutomation(context = {}) {
       // Proxy credentials are written through a serialized queue. Wait for the
       // queue before Electron is allowed to tear down the main process.
       await proxyStore.flush?.();
+      await accountStore.flush();
+      await transferStore.flush();
       // RPA task/template updates coalesce into one quiet-period write; flush
       // it so the final task status is on disk before teardown.
       await rpaStore.flush?.();

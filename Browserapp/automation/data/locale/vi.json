@@ -743,5 +743,10 @@
   "storage.warning.profiles": "Không thể giải mã {count} hồ sơ. Dữ liệu gốc được giữ lại; hãy kiểm tra khóa trước khi khôi phục.",
   "storage.warning.recovered": "Đã khôi phục cấu hình từ bản sao lưu. Hãy kiểm tra các thay đổi gần đây.",
   "storage.warning.rpa": "Dữ liệu RPA bị hỏng. Tệp gốc được giữ lại; hãy khôi phục kế hoạch và lịch sử tác vụ.",
-  "storage.warning.proxies": "Có {count} bản ghi proxy không hợp lệ. Hãy kiểm tra cài đặt proxy."
+  "storage.warning.proxies": "Có {count} bản ghi proxy không hợp lệ. Hãy kiểm tra cài đặt proxy.",
+  "transfer.offlineNotice": "Đây là chia sẻ cấu hình ngoại tuyến. Người nhận chỉ là ghi chú; ai có mã đều có thể nhập nhiều lần. Xóa lịch sử trên máy này không vô hiệu hóa mã đã chia sẻ. Để di chuyển thông tin đăng nhập có mã hóa, hãy xuất bản sao lưu đám mây.",
+  "transfer.recipientNote": "Ghi chú người nhận",
+  "transfer.includeCookies": "Bao gồm cookie",
+  "transfer.generateOfflineCode": "Tạo mã chia sẻ ngoại tuyến",
+  "cookie.blockCommonVideo": "Chặn tài nguyên video phổ biến"
 }

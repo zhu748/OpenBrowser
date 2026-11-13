@@ -743,5 +743,10 @@
   "storage.warning.profiles": "Tidak dapat mendekode {count} profil. Data asli disimpan; periksa kunci sebelum memulihkan.",
   "storage.warning.recovered": "Pengaturan dipulihkan dari cadangan. Periksa perubahan terbaru.",
   "storage.warning.rpa": "Penyimpanan RPA rusak. Berkas asli disimpan; pulihkan rencana dan riwayat tugas.",
-  "storage.warning.proxies": "Ada {count} catatan proxy yang tidak valid. Periksa pengaturan proxy."
+  "storage.warning.proxies": "Ada {count} catatan proxy yang tidak valid. Periksa pengaturan proxy.",
+  "transfer.offlineNotice": "Ini adalah berbagi konfigurasi secara offline. Penerima hanya berupa catatan; siapa pun yang memiliki kode dapat mengimpor berulang kali. Menghapus riwayat lokal tidak membatalkan kode yang sudah dibagikan. Untuk memindahkan kredensial secara terenkripsi, ekspor cadangan cloud.",
+  "transfer.recipientNote": "Catatan penerima",
+  "transfer.includeCookies": "Sertakan cookie",
+  "transfer.generateOfflineCode": "Buat kode berbagi offline",
+  "cookie.blockCommonVideo": "Blokir sumber video umum"
 }

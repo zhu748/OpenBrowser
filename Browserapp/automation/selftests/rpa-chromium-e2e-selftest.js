@@ -48,7 +48,10 @@ async function main() {
       return Number(raw.split('\n')[0]);
     });
     await until(async () => (await cdp.tabs(port)).length);
-    await cdp.newTab(port, origin + '/second');
+    const second = await cdp.newTab(port, origin + '/second');
+    // Target creation can precede navigation: an empty initial URL is not a
+    // stable baseline for asserting that another tab stayed untouched.
+    await until(async () => (await cdp.tabs(port)).some((tab) => tab.id === second.id && tab.url === origin + '/second'));
     const tabs = await cdp.tabs(port);
     assert.equal(tabs.length, 2);
     // Choose the non-first tab explicitly so a firstTab implementation cannot
@@ -92,7 +95,7 @@ async function main() {
     }
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
-    await fs.rm(dir, { recursive: true, force: true });
+    await fs.rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 }
 

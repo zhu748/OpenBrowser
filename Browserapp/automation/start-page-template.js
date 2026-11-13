@@ -210,6 +210,7 @@ function buildStartPageHtml(data = {}) {
     .key{color:var(--muted);font-size:12.5px}
     .value{font-size:13px;font-weight:500;overflow-wrap:anywhere;min-height:18px}
     .muted{color:var(--muted);font-weight:400}
+    .diag-collapse{margin-bottom:16px}.diag-collapse-summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:999px;background:var(--card);border:1px solid var(--line);color:var(--blue);font-size:13px;font-weight:600;box-shadow:var(--shadow);user-select:none}.diag-collapse-summary::-webkit-details-marker{display:none}.diag-collapse-body{margin-top:14px}
     .page-footer{display:flex;align-items:center;justify-content:space-between;gap:6px 16px;flex-wrap:wrap;color:var(--muted);font-size:12.5px;padding:6px 6px 44px}
     .page-footer a{color:var(--blue);text-decoration:none}
     .page-footer a:hover{text-decoration:underline}
@@ -266,6 +267,9 @@ function buildStartPageHtml(data = {}) {
       </dl>
     </section>
 
+    <details class="diag-collapse">
+      <summary class="diag-collapse-summary">展开完整环境检测与指纹安全报告 ▾</summary>
+      <div class="diag-collapse-body">
     <section class="card">
       <div class="sec-head"><h2>IP 健康评分</h2><span class="sec-note">本地综合评估；仅供参考</span></div>
       <div class="health-score-card unknown" id="health-score-card">
@@ -338,6 +342,8 @@ function buildStartPageHtml(data = {}) {
       </div>
     </section>
 
+      </div>
+    </details>
     <footer class="page-footer">
       <span>IP 查询数据来源: <a href="https://ip123.in/" target="_blank" rel="noopener noreferrer">ip123.in</a></span>
       <span>version ${version}</span>

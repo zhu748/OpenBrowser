@@ -137,9 +137,9 @@ function makeRpa(engine, options = {}) {
 
   check('the engine goes through the queue instead of calling start directly', () => {
     const source = fs.readFileSync(path.join(__dirname, '../rpa-engine.js'), 'utf8');
-    assert.ok(/this\.openScheduler\s*\n?\s*\.schedule\(\(\) => this\.engine\.start\(profile\)/.test(source),
+    assert.ok(/this\.openScheduler\s*\n?\s*\.schedule\(\(\) => this\.engine\.start\(profile(?:,\s*launchOptions)?\)/.test(source),
       'the launch does not go through the scheduler');
-    assert.ok(!/\.then\(\(\) => this\.engine\.start\(profile\)\)/.test(source),
+    assert.ok(!/\.then\(\(\) => this\.engine\.start\(profile(?:,\s*launchOptions)?\)\)/.test(source),
       'an unbounded launch path is still present');
     assert.ok(/new TaskScheduler\(\{[\s\S]{0,120}name: 'rpa-open'/.test(source), 'the named scheduler is missing');
   });

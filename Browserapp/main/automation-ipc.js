@@ -3,12 +3,32 @@
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 const { findUnsupportedSteps } = require('../automation/rpa/step-registry');
+const { startCookieWarmup } = require('../automation/cookie-warmup');
 const APP_ROOT = path.join(__dirname, '..');
 
 /** Trusted IPC registration with live stack/window access, isolated from bootstrap. */
 function registerAutomationControlIpc({ registerTrustedIpc, getAutomation, getMainWindow, app, dialog }) {
   const register = (channel, handler) => registerTrustedIpc(channel, (...args) =>
     handler({ automation: getAutomation(), mainWindow: getMainWindow() }, ...args));
+  const accounts = (automation) => {
+    if (!automation?.accountStore) throw new Error('账号库尚未就绪');
+    return automation.accountStore;
+  };
+  register('accounts:list', ({ automation }) => accounts(automation).list());
+  register('accounts:get', ({ automation }, _event, id) => accounts(automation).get(id));
+  register('accounts:import', ({ automation }, _event, values) => accounts(automation).import(values));
+  register('accounts:delete', ({ automation }, _event, id) => accounts(automation).remove(id));
+  const transfers = (automation) => {
+    if (!automation?.transferStore) throw new Error('转移记录尚未就绪');
+    return automation.transferStore;
+  };
+  register('transfers:list', ({ automation }) => transfers(automation).list());
+  register('transfers:import', ({ automation }, _event, values) => transfers(automation).import(values));
+  register('transfers:delete', ({ automation }, _event, id) => transfers(automation).remove(id));
+  register('automation:cookie-warmup', ({ automation }, _event, payload) => {
+    if (!automation) throw new Error('自动化服务尚未就绪');
+    return startCookieWarmup({ engine: automation.rpaEngine.engine, rpaStore: automation.rpaStore, rpaEngine: automation.rpaEngine }, payload);
+  });
   register('automation:rpa-status', ({ automation }) => automation?.rpaEngine?.getStatus?.() || { running: [], count: 0 });
   register('automation:rpa-plans', ({ automation }) => automation?.rpaStore?.listPlans?.() || []);
   register('automation:rpa-tasks', ({ automation }, _event, filter) => automation?.rpaStore?.listTasks?.(filter || {}) || []);

@@ -20,6 +20,13 @@ const expectedModules = [
   'ui/ui-cloud.js',
 ];
 const scripts = [...index.matchAll(/<script\s+src="([^"]+)"/g)].map((match) => match[1].split('?')[0]);
+for (const script of scripts) {
+  new vm.Script(fs.readFileSync(path.join(root, script), 'utf8'), { filename: script });
+}
+const preloadMethods = new Set([...fs.readFileSync(path.join(root, 'preload.js'), 'utf8').matchAll(/^  (\w+):/gm)].map((match) => match[1]));
+for (const match of fs.readFileSync(path.join(root, 'ui/ui-workbench.js'), 'utf8').matchAll(/window\.ops\??\.(\w+)/g)) {
+  assert.ok(preloadMethods.has(match[1]), 'workbench calls missing preload method: ' + match[1]);
+}
 const rendererIndex = scripts.indexOf('renderer.js');
 
 assert.ok(rendererIndex >= 0, 'index.html loads renderer.js');

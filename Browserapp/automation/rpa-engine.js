@@ -448,10 +448,11 @@ class RpaEngine {
         const issue = unsupported[0];
         throw Object.assign(new Error('Invalid RPA steps: ' + (issue.reason || issue.type)), { code: 'RPA_INVALID_STEPS' });
       }
-      const entry = await this.ensureProfileRunning(task.profile_id, { log });
-      this.assertTaskAlive(execution);
+      const entry = await this.ensureProfileRunning(task.profile_id, { log,
+        launchOptions: options.warmup ? { headless: options.warmup.headless, blockImages: options.warmup.blockImages } : undefined });
       const port = entry.port;
       context.port = port;
+      this.assertTaskAlive(execution);
       await log(`start task on profile ${task.profile_id}, steps=${steps.length}`);
 
       // Optional task-level budget: OPENBROWSER_RPA_TASK_TIMEOUT_MS (or a
@@ -475,6 +476,8 @@ class RpaEngine {
         }
       }
 
+      ensureTaskAlive();
+      await this.finishTaskResources(context);
       ensureTaskAlive();
       const snapshot = snapshotVariables(context.variables);
       const result = {
@@ -544,15 +547,27 @@ class RpaEngine {
       this.emit({ type: 'rpa-task', taskId, status, profileId: task.profile_id, message });
       return { success: false, taskId, error: message, status, result: failureResult };
     } finally {
+      try { await this.finishTaskResources(context); }
+      catch (error) { this.emit({ type: 'sync-error', action: 'cookie-warmup-cleanup', id: task.profile_id, message: error.message }); }
       this.running.delete(taskId);
       this.cancelled.delete(taskId);
     }
   }
 
-  async ensureProfileRunning(profileId, { log } = {}) {
+  async finishTaskResources(ctx) {
+    if (!ctx?.options?.warmup || ctx.warmupCleaned) return;
+    for (const ws of ctx.warmupBlockedSockets || []) {
+      await cdp.call(ws, 'Network.setBlockedURLs', { urls: [] }, 3000).catch(() => {});
+    }
+    if (ctx.options.warmup.autoClose && ctx.port) await this.engine.stop(ctx.activeProfileId);
+    ctx.warmupCleaned = true;
+  }
+
+  async ensureProfileRunning(profileId, { log, launchOptions } = {}) {
     const id = String(profileId || '').trim();
     if (!id) throw new Error('RPA task missing profile_id');
     const current = this.engine?.running?.get?.(id);
+    if ((launchOptions?.headless || launchOptions?.blockImages) && current) throw new Error('请先停止环境，再启用无头模式或不加载图片');
     if (current?.port) return current;
     // RPA drives browsers through CDP; Firefox kernels cannot serve it.
     const engineFamily = (current?.engine)
@@ -575,7 +590,7 @@ class RpaEngine {
       // Publish the barrier before logging can yield or re-enter this method.
       startPromise = Promise.resolve().then(async () => {
         if (log) await log('profile is not running; starting before RPA: ' + id);
-        return this.openScheduler.schedule(() => this.engine.start(profile), undefined, { stepName: 'open' });
+        return this.openScheduler.schedule(() => this.engine.start(profile, launchOptions), undefined, { stepName: 'open' });
       }).finally(() => {
         if (this.profileStarts.get(id) === startPromise) this.profileStarts.delete(id);
       });
@@ -645,7 +660,7 @@ class RpaEngine {
     if (params.timeoutType === 'randomInterval' || params.timeoutType === 'random') {
       ms = randomBetween(params.timeoutMin ?? params.minMs ?? 300, params.timeoutMax ?? params.maxMs ?? 800);
     }
-    ms = Math.max(0, Math.min(120000, ms || 1000));
+    ms = Number.isFinite(ms) ? Math.max(0, Math.min(120000, ms)) : 1000;
     // Slice the sleep so stop(taskId) takes effect within ~250ms instead of
     // after the full 120s cap.
     const deadline = Date.now() + ms;
@@ -1656,6 +1671,14 @@ class RpaEngine {
       if (ctx) ctx.activeTabId = tab.id;
     }
     if (!tab?.webSocketDebuggerUrl) throw new Error('No page tab for CDP port ' + port);
+    if (ctx?.options?.warmup?.blockVideo) {
+      ctx.warmupBlockedSockets ||= new Set();
+      if (!ctx.warmupBlockedSockets.has(tab.webSocketDebuggerUrl)) {
+        await cdp.call(tab.webSocketDebuggerUrl, 'Network.enable', {});
+        await cdp.call(tab.webSocketDebuggerUrl, 'Network.setBlockedURLs', { urls: ['*.mp4*', '*.webm*', '*.m3u8*', '*.mov*', '*.avi*'] });
+        ctx.warmupBlockedSockets.add(tab.webSocketDebuggerUrl);
+      }
+    }
     return fn(tab.webSocketDebuggerUrl);
   }
 

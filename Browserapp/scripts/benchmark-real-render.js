@@ -82,6 +82,8 @@ function registerBootIpc() {
   guard('sync:state', () => ({ active: false, master: null, selected: [] }));
   guard('sync:sessions', () => state._engine ? state._engine.sessions() : []);
   guard('extensions:list', () => state._engine.listExtensions());
+  guard('accounts:list', () => []);
+  guard('transfers:list', () => []);
   // Lenient catch-all: the UI may probe optional surfaces on interaction;
   // those never run during the measurement and must not crash it.
   for (const channel of [

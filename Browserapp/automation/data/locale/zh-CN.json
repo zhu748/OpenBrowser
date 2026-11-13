@@ -740,5 +740,10 @@
   "storage.warning.profiles": "{count} 个环境无法解码，原始数据已保留，请检查密钥并恢复。",
   "storage.warning.recovered": "环境配置已从备份恢复，请检查最近的修改是否完整。",
   "storage.warning.rpa": "RPA 数据文件损坏，原文件已保留，请恢复计划和任务历史。",
-  "storage.warning.proxies": "{count} 条代理记录格式异常，请检查代理管理。"
+  "storage.warning.proxies": "{count} 条代理记录格式异常，请检查代理管理。",
+  "transfer.offlineNotice": "这是离线配置分享：接收方仅作备注，转移码持有人可重复导入，移除本机记录不会使已分享的凭证失效。需要加密迁移凭据时，请使用云备份导出。",
+  "transfer.recipientNote": "接收方备注",
+  "transfer.includeCookies": "包含 Cookies",
+  "transfer.generateOfflineCode": "生成离线分享凭证",
+  "cookie.blockCommonVideo": "拦截常见视频资源"
 }

@@ -743,5 +743,10 @@
   "storage.warning.profiles": "{count} Profile konnten nicht entschlüsselt werden. Die Originaldaten bleiben erhalten. Prüfen Sie den Schlüssel.",
   "storage.warning.recovered": "Die Einstellungen wurden aus einer Sicherung wiederhergestellt. Prüfen Sie die letzten Änderungen.",
   "storage.warning.rpa": "Der RPA-Speicher ist beschädigt. Die Originaldatei bleibt erhalten. Stellen Sie Pläne und Aufgabenverlauf wieder her.",
-  "storage.warning.proxies": "{count} Proxy-Einträge sind ungültig. Prüfen Sie die Einstellungen."
+  "storage.warning.proxies": "{count} Proxy-Einträge sind ungültig. Prüfen Sie die Einstellungen.",
+  "transfer.offlineNotice": "Offline-Freigabe von Einstellungen: Der Empfänger ist nur eine Notiz. Wer den Code besitzt, kann ihn mehrfach importieren. Das Löschen des lokalen Verlaufs macht geteilte Codes nicht ungültig. Verwenden Sie für verschlüsselte Zugangsdaten den Cloud-Backup-Export.",
+  "transfer.recipientNote": "Empfängernotiz",
+  "transfer.includeCookies": "Cookies einschließen",
+  "transfer.generateOfflineCode": "Offline-Freigabecode erstellen",
+  "cookie.blockCommonVideo": "Gängige Videoressourcen blockieren"
 }

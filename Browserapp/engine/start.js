@@ -289,7 +289,7 @@ async function ensureLegacyFingerprintSeed(engine, profile) {
 }
 
 module.exports = {
-  async _start(raw, lifecycleGeneration = null) {
+  async _start(raw, lifecycleGeneration = null, launchOptions = {}) {
     // let: language/timezone resolution reassigns profile via applyResolvedLocale
     // start() already applied redaction recovery exactly once. Repeating it here
     // would undo an explicit proxyAuthAction=clear before launch.
@@ -607,7 +607,10 @@ module.exports = {
       this.assertStartGenerationActive(profile.id, lifecycleGeneration);
       await ensureKernelReadyForLaunch(browser);
       this.assertStartGenerationActive(profile.id, lifecycleGeneration);
-      const headless = /^(1|true|new)$/i.test(String(process.env.OPENBROWSER_HEADLESS || '').trim());
+      const headless = launchOptions.headless === true || /^(1|true|new)$/i.test(String(process.env.OPENBROWSER_HEADLESS || '').trim());
+      if (launchOptions.blockImages === true && !finalArgs.some((arg) => /imagesEnabled=false/.test(String(arg)))) {
+        finalArgs.push('--blink-settings=imagesEnabled=false');
+      }
       if (headless && !finalArgs.some((arg) => /^--headless(?:=|$)/i.test(String(arg)))) {
         finalArgs.push('--headless=new');
         if (!finalArgs.some((arg) => String(arg).split('=')[0] === '--disable-gpu')) finalArgs.push('--disable-gpu');

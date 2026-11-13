@@ -218,6 +218,8 @@ jobs:
           fi
           echo "CHROME_BIN=$CHROME_BIN"
           export OPENBROWSER_CHROMIUM_BINARY="$CHROME_BIN"
+          node automation/selftests/workbench-browser-selftest.js
+          node automation/selftests/cookie-warmup-native-selftest.js
           node automation/selftests/fingerprint-native-consistency-selftest.js
           # Worker-delivery behavior gates: blob/data/extensionless/nested worker
           # identity, and cached-service-worker scope identity. Both exercise the
@@ -263,6 +265,8 @@ jobs:
           node scripts/selftest-one.js restorejournal
           node scripts/selftest-one.js diagnosticlauncher
           node scripts/selftest-one.js mcptransport
+          node scripts/selftest-one.js accountstore
+          node scripts/selftest-one.js workbenchboundaries
 
   desktop-gates:
     name: Electron desktop behavior (${{ matrix.os }})

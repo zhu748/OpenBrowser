@@ -618,7 +618,7 @@ function editorDraft(strict = true) {
 }
 
 function renderEditorSummary() {
-  if (!editingProfileId) return;
+  if (!editingProfileId && !window.currentEditorMode) return;
   const draft = editorDraft(false); const privacy = draft.privacy; const summary = $('#editor-summary'); summary.replaceChildren();
   // Summary values go through t() keys (editor.summary.*) plus existing
   // editor.* keys; bare zh literals here used to rely on the runtime phrase
@@ -713,14 +713,15 @@ function renderEditorSummary() {
 
 // ===== Roxy 4.1.0 对齐辅助：系统/内核版本下拉、窗口位置九宫格、三段开关同步、本机网络横幅 =====
 const EDITOR_OS_VERSIONS = {
-  Windows: ['11', '10', '8.1', '8', '7'],
-  macOS: ['15', '14', '13', '12', '11', '10.15'],
-  Linux: ['Ubuntu 24.04', 'Ubuntu 22.04', 'Debian 12', 'Fedora 40'],
-  Android: ['16', '15', '14', '13', '12', '11'],
+  Windows: ['Windows 11', 'Windows 10', 'Windows 8.1', 'Windows 7', '11', '10', '8.1', '8', '7'],
+  macOS: ['macOS 26', 'macOS 15', 'macOS 14', 'macOS 13', 'macOS 12', '15', '14', '13', '12', '11', '10.15'],
+  Linux: ['Linux ALL', 'Ubuntu 24.04', 'Ubuntu 22.04', 'Debian 12', 'Fedora 40'],
+  Android: ['Android 16', 'Android 15', 'Android 14', 'Android 13', 'Android 12', '16', '15', '14', '13', '12', '11'],
+  iOS: ['iOS 26', 'iOS 18', 'iOS 17', 'iOS 16', 'iOS 15'],
 };
 const EDITOR_KERNEL_VERSIONS = {
-  chromium: ['latest', '131', '130', '129', '126', '120', '116', '109'],
-  firefox: ['latest', '128', '115'],
+  chromium: ['latest', '156', '154', '153', '148', '131', '130', '129', '126', '120', '116', '109'],
+  firefox: ['latest', '146', '128', '115'],
 };
 // 内核 'latest' → 保持最新；其余为固定版本号（供未来内核钉选使用）
 function fillEditorVersionSelects() {
@@ -747,7 +748,7 @@ function fillEditorVersionSelects() {
     for (const v of EDITOR_KERNEL_VERSIONS[engine] || ['latest']) {
       const opt = document.createElement('option');
       opt.value = v;
-      opt.textContent = v === 'latest' ? tx('保持最新') : v;
+      opt.textContent = v === 'latest' ? (engine === 'firefox' ? 'Firefox 146 (' + tx('保持最新') + ')' : 'Chrome 156 (' + tx('保持最新') + ')') : ((engine === 'firefox' ? 'Firefox ' : 'Chrome ') + v);
       engSelect.appendChild(opt);
     }
   }
@@ -1266,6 +1267,9 @@ function showProfileEditor(value, revision) {
   renderDirectBanner();
   setEditorTab('basic');
   updateEditorVisibility();
+  if (typeof window.openWorkbenchEditorMode === 'function') window.openWorkbenchEditorMode('edit', profile.id);
+  if (typeof window.syncAllPillBarsFromControls === 'function') window.syncAllPillBarsFromControls();
+  if (typeof window.renderDeviceMockupPreview === 'function') window.renderDeviceMockupPreview();
   if (typeof syncThemedSelects === 'function') syncThemedSelects($('#view-profile-editor'));
   renderEditorSummary();
   switchView('profile-editor');

@@ -743,5 +743,10 @@
   "storage.warning.profiles": "Impossible de décoder {count} profils. Les données sont conservées ; vérifiez la clé avant la restauration.",
   "storage.warning.recovered": "Les paramètres ont été restaurés depuis une sauvegarde. Vérifiez vos modifications récentes.",
   "storage.warning.rpa": "Le stockage RPA est endommagé. Le fichier original est conservé ; restaurez les plans et l’historique.",
-  "storage.warning.proxies": "{count} entrées proxy sont invalides. Vérifiez leurs paramètres."
+  "storage.warning.proxies": "{count} entrées proxy sont invalides. Vérifiez leurs paramètres.",
+  "transfer.offlineNotice": "Partage de configuration hors ligne : le destinataire est une note. Toute personne disposant du code peut l’importer plusieurs fois. Supprimer l’historique local ne révoque pas le code partagé. Pour migrer des identifiants chiffrés, exportez une sauvegarde cloud.",
+  "transfer.recipientNote": "Note du destinataire",
+  "transfer.includeCookies": "Inclure les cookies",
+  "transfer.generateOfflineCode": "Créer un code de partage hors ligne",
+  "cookie.blockCommonVideo": "Bloquer les ressources vidéo courantes"
 }
