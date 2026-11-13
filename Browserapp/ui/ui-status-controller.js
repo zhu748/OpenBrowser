@@ -1,13 +1,28 @@
 (() => {
   'use strict';
 
+  function validateStatusRows(rows) {
+    if (!Array.isArray(rows)) throw new Error('Invalid status response');
+    const ids = new Set();
+    for (const row of rows) {
+      if (!row || typeof row !== 'object' || Array.isArray(row)
+        || typeof row.id !== 'string' || !row.id.trim() || ids.has(row.id)) throw new Error('Invalid status row');
+      ids.add(row.id);
+    }
+    return rows;
+  }
+
   function mergeStatusDelta(rows, delta) {
-    if (!delta || !Array.isArray(delta.rows)) throw new Error('Invalid status response');
+    if (!delta) throw new Error('Invalid status response');
+    validateStatusRows(delta.rows);
     if (delta.full === true) return delta.rows;
     if (delta.full !== false || (delta.removed != null && !Array.isArray(delta.removed))) throw new Error('Invalid status delta');
     if (!delta.rows.length && !delta.removed?.length) return rows;
     const changed = new Map(delta.rows.map((row) => [row.id, row]));
     const removed = new Set(delta.removed || []);
+    for (const id of removed) {
+      if (typeof id !== 'string' || !id.trim() || changed.has(id)) throw new Error('Invalid status removal');
+    }
     const result = [];
     for (const row of rows) {
       if (!removed.has(row.id)) result.push(changed.get(row.id) || row);
@@ -34,14 +49,15 @@
         watermark = base.length ? Object.freeze(Object.fromEntries(base.map((row) => [row.id, row.statusRev ?? row.rev ?? 0]))) : null;
       }
       pending = (async () => {
+        const readFull = async () => validateStatusRows(await fetchFull());
         let next;
         if (typeof fetchDelta === 'function') {
           const delta = await fetchDelta(cursorRows === base ? cursor : watermark);
           let validDelta = false;
           try { next = mergeStatusDelta(base, delta); validDelta = true; }
-          catch (_) { next = await fetchFull(); }
+          catch (_) { cursor = cursorRows = null; next = await readFull(); }
           if (validDelta && getRows() === base && typeof delta?.cursor === 'string') { cursor = delta.cursor; cursorRows = next; }
-        } else next = await fetchFull();
+        } else next = await readFull();
         if (getRows() !== base) return false;
         if (next !== base) setRows(next);
         onRows(next);

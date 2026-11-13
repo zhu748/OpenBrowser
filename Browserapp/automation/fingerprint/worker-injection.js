@@ -16,11 +16,26 @@ const { canonicalBridgeToken } = require('./shared');
 const { WORKER_RUNTIME_REVISION } = require('./runtime-revision');
 const { buildWorkerRuntimeFull } = require('./runtime-source');
 const { buildWorkerFontPresenceSource } = require('../worker-font-presence-fallback');
+const { BoundedLru } = require('../bounded-lru');
 
+const WORKER_CACHE_LIMIT = 64;
+const WORKER_CACHE_BYTES = 16 * 1024 * 1024;
+const workerScripts = new BoundedLru({ maxEntries: WORKER_CACHE_LIMIT, maxBytes: WORKER_CACHE_BYTES,
+  sizeOf: (source) => source.length * 2 });
+
+function rememberWorkerScript(key, source) {
+  workerScripts.set(key, source);
+  return source;
+}
 
 /** Worker-safe subset injected before attached workers are resumed. */
 function buildWorkerInjectionScript(fp, options = {}) {
   const bridgeToken = canonicalBridgeToken(fp);
+  const cacheKey = JSON.stringify([bridgeToken, Boolean(options.coreOnly), options.retiredWorkerIdentities || []]);
+  const cached = workerScripts.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
   const stability = resolveInjectionStability(fp);
   const json = JSON.stringify({
     platform: fp.platform,
@@ -74,9 +89,9 @@ function buildWorkerInjectionScript(fp, options = {}) {
   // The private Function bridge in worker-bootstrap owns idempotency.
   // The entire prefix returns before any fragment can be installed twice.
   const core = buildWorkerRuntimeFull({ json, bridgeToken, fontPresenceSource: buildWorkerFontPresenceSource(fp) });
-  if (options.coreOnly) return core;
+  if (options.coreOnly) return rememberWorkerScript(cacheKey, core);
   const { installerSource } = require('./runtime/worker-constructor-patch');
-  return core + '(undefined, (' + installerSource + '));';
+  return rememberWorkerScript(cacheKey, core + '(undefined, (' + installerSource + '));');
 
 }
 

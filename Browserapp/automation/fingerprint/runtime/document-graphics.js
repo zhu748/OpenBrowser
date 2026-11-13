@@ -30,8 +30,7 @@ module.exports = `  // --- canvas ---
   } else if (CFG.canvas && CFG.canvas.mode === 'noise') {
     const mark = Number(CFG.canvas.mark) || 1;
     const rawGetMap = new WeakMap();
-    const noisedImageDataMap = new WeakMap();
-    const ctxLastPutMap = new WeakMap();
+    const readback = createCanvasReadbackCache();
 
     const patchedCanvasWindows = new WeakSet();
     const patchCanvasForWindow = (targetWin) => {
@@ -42,100 +41,54 @@ module.exports = `  // --- canvas ---
       }
       try { patchedCanvasWindows.add(targetWin); } catch (_) {}
       try {
+        const measureJitterCache = createTextMetricJitterCache(
+          String(targetWin?.location?.origin || globalThis.location?.origin || ''),
+          String(CFG.seed || CFG.canvas?.mark || '1'));
         const hookGetAndPut = (proto) => {
           if (!proto) return;
           if (proto.getImageData) {
             const originalGet = replaceMethod(proto, 'getImageData', (original) => function getImageData(...args) {
               const result = original.apply(this, args);
               try {
-                const lastPut = ctxLastPutMap.get(this);
-                if (lastPut && lastPut.data && result && result.data && result.data.length === lastPut.data.length) {
-                  const sx = args[0] || 0;
-                  const sy = args[1] || 0;
-                  const sw = args[2] || 0;
-                  const sh = args[3] || 0;
-                  if (sx === lastPut.dx && sy === lastPut.dy && sw === lastPut.w && sh === lastPut.h) {
-                    result.data.set(lastPut.data);
-                    noisedImageDataMap.set(result, true);
-                    return result;
-                  }
-                }
+                if (readback.matches(this, result, args)) return readback.tag(result);
               } catch (_) {}
               const noised = applyCanvasNoise(result, mark);
-              try { noisedImageDataMap.set(noised, true); } catch (_) {}
+              try { readback.tag(noised); } catch (_) {}
               return noised;
             });
             if (originalGet) rawGetMap.set(proto, originalGet);
           }
           if (proto.putImageData) {
-            replaceMethod(proto, 'putImageData', (origPut) => function putImageData(imgData, dx, dy, ...rest) {
-              try {
-                if (noisedImageDataMap.has(imgData)) {
-                  ctxLastPutMap.set(this, {
-                    data: imgData.data,
-                    dx: dx | 0,
-                    dy: dy | 0,
-                    w: imgData.width | 0,
-                    h: imgData.height | 0,
-                  });
-                } else {
-                  ctxLastPutMap.delete(this);
-                }
-              } catch (_) {}
-              return origPut.call(this, imgData, dx, dy, ...rest);
+            replaceMethod(proto, 'putImageData', (origPut) => function putImageData(...args) {
+              const result = origPut.apply(this, args);
+              try { readback.wrote(this, args); } catch (_) {}
+              return result;
             });
           }
           if (proto.measureText) {
-            // F-5: the jitter and the Proxy wrapper depend only on
-            // (origin, seed, font, text) — the same tuple used to produce
-            // them. Pages measure the same strings repeatedly (layout
-            // libraries, virtual scrolling), and each call used to rebuild
-            // the hash AND allocate a fresh Proxy. Cache both, keyed by the
-            // text only (origin/seed/font change rarely; font is part of the
-            // key because one context can be re-fonted).
-            const measureJitterCache = new Map();
-            const MEASURE_JITTER_CACHE_MAX = 512;
-            const jitterFor = (font, text) => {
-              const key = font + '\\u0000' + text;
-              let cached = measureJitterCache.get(key);
-              if (!cached) {
-                const originStr = String(targetWin?.location?.origin || globalThis.location?.origin || '');
-                const seedStr = String(CFG.seed || CFG.canvas?.mark || '1');
-                const hashKey = originStr + ':' + seedStr + ':' + font + ':' + text;
-                let h = 0;
-                for (let i = 0; i < hashKey.length; i++) h = ((h << 5) - h + hashKey.charCodeAt(i)) | 0;
-                const jitter = ((h % 100) / 10000);
-                const widthJitter = (((h % 200) - 100) / 10000);
-                if (measureJitterCache.size >= MEASURE_JITTER_CACHE_MAX) {
-                  const oldest = measureJitterCache.keys().next().value;
-                  if (oldest !== undefined) measureJitterCache.delete(oldest);
-                }
-                cached = { jitter, widthJitter };
-                measureJitterCache.set(key, cached);
-              }
-              return cached;
-            };
             replaceMethod(proto, 'measureText', (origMeasure) => function measureText(text, ...args) {
               const currentFont = String(this.font || '');
               const cleanFont = sanitizeCanvasFontShorthand(currentFont);
               let fontSwapped = false;
+              let temporaryFont;
               if (cleanFont !== currentFont) {
                 try {
                   this.font = cleanFont;
+                  temporaryFont = String(this.font || '');
                   fontSwapped = true;
                 } catch (_) {}
               }
-              let tm;
+              let call;
               try {
-                tm = origMeasure.call(this, text, ...args);
+                call = invokeNativeText(origMeasure, this, arguments);
               } finally {
                 if (fontSwapped) {
-                  try { this.font = currentFont; } catch (_) {}
+                  try { if (String(this.font || '') === temporaryFont) this.font = currentFont; } catch (_) {}
                 }
               }
+              const tm = call.value;
               try {
-                const s = String(text || '');
-                const { jitter, widthJitter } = jitterFor(currentFont, s);
+                const { jitter, widthJitter } = measureJitterCache.get(String(this.font || ''), call.text);
                 return new Proxy(tm, {
                   get(target, prop, receiver) {
                     if (prop === 'constructor') return target.constructor;
@@ -263,93 +216,26 @@ module.exports = `  // --- canvas ---
                 }
               }
             } catch (_) {}
-            const blob = await original.call(this, options);
+            const captured = captureImageEncodeOptions(options);
+            const blob = await original.call(this, captured.options);
+            let bitmap;
             try {
-              const w = Number(this.width) || 0;
-              const h = Number(this.height) || 0;
-              if (w <= 0 || h <= 0) return blob;
-              const bitmap = await createImageBitmap(blob);
+              bitmap = await createImageBitmap(blob);
+              const w = bitmap.width, h = bitmap.height;
               const TargetOffscreen = targetWin.OffscreenCanvas || OffscreenCanvas;
               const copy = new TargetOffscreen(w, h);
               const context = copy.getContext('2d');
               if (!context) return blob;
               context.drawImage(bitmap, 0, 0);
-              bitmap.close?.();
               const image = context.getImageData(0, 0, w, h);
               context.putImageData(image, 0, 0);
-              return original.call(copy, options);
+              return original.call(copy, captured.replay);
             } catch (_) { return blob; }
+            finally { try { bitmap?.close(); } catch (_) {} }
           });
         }
 
-        const videoFrameProto = targetWin.VideoFrame ? targetWin.VideoFrame.prototype : null;
-        if (videoFrameProto && typeof videoFrameProto.copyTo === 'function') {
-          const packedRedOffset = (format) => {
-            const name = String(format || '');
-            if (name === 'RGBA' || name === 'RGBX') return 0;
-            if (name === 'BGRA' || name === 'BGRX') return 2;
-            return -1;
-          };
-          const perturbCopiedFrame = (frame, destination, options) => {
-            try {
-              const settings = options || {};
-              const redOffset = packedRedOffset(settings.format || frame.format);
-              if (redOffset < 0) return;
-              const view = destination instanceof ArrayBuffer
-                ? new Uint8Array(destination)
-                : (ArrayBuffer.isView(destination)
-                  ? new Uint8Array(destination.buffer, destination.byteOffset, destination.byteLength)
-                  : null);
-              if (!view) return;
-              const frameWidth = Number(frame.codedWidth || frame.displayWidth || 0) || 0;
-              const frameHeight = Number(frame.codedHeight || frame.displayHeight || 0) || 0;
-              if (!frameWidth || !frameHeight) return;
-              const layout = settings.layout || null;
-              const base = Number(layout && layout.offset) || 0;
-              const rowBytes = Number(layout && layout.bytesPerRow) >= frameWidth * 4
-                ? Number(layout.bytesPerRow)
-                : frameWidth * 4;
-              const rect = settings.rect || null;
-              const rx = Number(rect && rect.x) || 0;
-              const ry = Number(rect && rect.y) || 0;
-              const rw = Number(rect && rect.width) || frameWidth;
-              const rh = Number(rect && rect.height) || frameHeight;
-              if (!(rw > 0) || !(rh > 0)) return;
-              const temp = new Uint8ClampedArray(rw * rh * 4);
-              for (let y = 0; y < rh; y += 1) {
-                for (let x = 0; x < rw; x += 1) {
-                  const from = base + (ry + y) * rowBytes + (rx + x) * 4;
-                  if (from + 3 >= view.length) return;
-                  const to = (y * rw + x) * 4;
-                  temp[to] = view[from + redOffset];
-                  temp[to + 1] = view[from + 1];
-                  temp[to + 2] = view[from + (redOffset === 0 ? 2 : 0)];
-                  temp[to + 3] = view[from + 3];
-                }
-              }
-              applyCanvasNoise({ data: temp, width: rw, height: rh }, mark);
-              for (let y = 0; y < rh; y += 1) {
-                for (let x = 0; x < rw; x += 1) {
-                  const from = base + (ry + y) * rowBytes + (rx + x) * 4;
-                  const to = (y * rw + x) * 4;
-                  if (from + 3 >= view.length) return;
-                  if (temp[to] === view[from + redOffset]) continue;
-                  view[from + redOffset] = temp[to];
-                }
-              }
-            } catch (_) {}
-          };
-          replaceMethod(videoFrameProto, 'copyTo', (original) => function copyTo(destination, options) {
-            const result = original.apply(this, arguments);
-            try {
-              if (result && typeof result.then === 'function') {
-                return result.then((value) => { perturbCopiedFrame(this, destination, options); return value; });
-              }
-              perturbCopiedFrame(this, destination, options);
-            } catch (_) {}
-            return result;
-          });
-        }
+        installVideoFrameCopy(targetWin.VideoFrame?.prototype, replaceMethod, (image) => applyCanvasNoise(image, mark));
 
         const gpuQueueProto = targetWin.GPUQueue ? targetWin.GPUQueue.prototype : null;
         if (gpuQueueProto && typeof gpuQueueProto.copyExternalImageToTexture === 'function') {

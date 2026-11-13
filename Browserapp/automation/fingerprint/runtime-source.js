@@ -25,6 +25,10 @@ const workerGraphics = require('./runtime/worker-graphics');
 const workerGpuStorage = require('./runtime/worker-gpu-storage');
 const workerSessionBootstrap = require('./runtime/worker-session-bootstrap');
 const networkFragment = require('./runtime/network-fragment');
+const canvasReadback = require('./runtime/canvas-readback');
+const textMetricsCache = require('./runtime/text-metrics-cache').runtimeSource;
+const audioWriteTracker = require('./runtime/audio-write-tracker').runtimeSource;
+const videoFrameReadback = require('./runtime/video-frame-readback').runtimeSource;
 const { runtimeSource: nativeArguments } = require('./native-arguments');
 const { runtimeSource: webglCapabilities } = require('./webgl-capabilities');
 
@@ -77,10 +81,14 @@ function buildDocumentRuntime(context) {
     nativeArguments,
     documentNavigator,
     networkFragment,
+    audioWriteTracker,
     documentTimezoneAudio,
     drop(keepFonts) ?? documentFonts,
     documentScreen,
     webglCapabilities,
+    canvasReadback,
+    textMetricsCache,
+    videoFrameReadback,
     documentGraphics,
     drop(keepWebrtc) ?? documentWebrtc,
     drop(keepMedia) ?? documentMedia,
@@ -98,6 +106,9 @@ function buildWorkerRuntime(context) {
     nativeArguments,
     networkFragment,
     workerTimezone,
+    canvasReadback,
+    textMetricsCache,
+    videoFrameReadback,
     webglCapabilities,
     workerGraphics,
     workerGpuStorage,

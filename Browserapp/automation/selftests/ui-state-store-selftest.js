@@ -67,6 +67,24 @@ const renamed = reconcileProfiles({ localProfiles: [{ id: 'b', proxyMeta: { back
   normalizeProfile: (value) => value, mergeProxy: (_local, remote) => remote });
 assert.equal(renamed[0].proxyMeta.backupProxies[0], 'http://user:secret@backup:8080/#new-note', 'remarks do not change backup endpoint identity');
 assert.equal(stored.profiles[0].id, 'a');
+const degraded = createUiStateStore({ ...options,
+  read: () => JSON.stringify({ degraded: true, profiles: [{ id: 'unsafe-trimmed' }], logs: [],
+    groups: [{ id: 'custom', name: 'Saved group', color: '#123456' }], pane: 'wide' }),
+  fallback: () => ({ profiles: [], groups: [{ id: 'default' }], logs: [] }),
+}).load();
+assert.deepEqual(degraded.groups, [{ id: 'custom', name: 'Saved group', color: '#123456' }]);
+assert.deepEqual(degraded.profiles, [], 'trimmed profile data must remain excluded');
+assert.equal(degraded.pane, 'wide', 'quota recovery preserves non-profile UI metadata');
+let clock = 0, scheduledDelay, callback;
+const busy = createUiStateStore({ ...options, delayMs: 500, maxWaitMs: 2000, now: () => clock,
+  setTimer(fn, delay) { callback = fn; scheduledDelay = delay; return 0; }, clearTimer() {},
+});
+busy.request(); assert.equal(scheduledDelay, 500);
+for (clock = 400; clock <= 2000; clock += 400) busy.request();
+assert.equal(scheduledDelay, 0, 'continuous events cannot move the initial persistence deadline');
+callback(); clock = 2100; busy.request();
+assert.equal(scheduledDelay, 500, 'a successful write starts a fresh coalescing interval');
+busy.dispose();
 
 const fleet = Array.from({ length: 10000 }, (_, i) => ({ id: String(i), exitIp: '192.0.2.1', exitLatitude: 10, proxy: 'Direct' }));
 const config = { profiles: fleet, engineProfiles: fleet, hasCredentials: () => false };

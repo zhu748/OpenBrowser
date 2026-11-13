@@ -32,6 +32,7 @@ class MockSocket {
       queueMicrotask(() => this.emit('error', {}));
       return;
     }
+    if (behavior.manualOpen) return;
     queueMicrotask(() => {
       if (this.readyState === 'closed') return;
       this.readyState = 'open';
@@ -110,6 +111,66 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const URL = (n) => `ws://127.0.0.1:5000/devtools/page/AAA${String(n).padStart(3, '0')}`;
 
   try {
+    await checkAsync('short callers time out without closing a shared pending handshake', async () => {
+      const url = URL(900);
+      MockSocket.behaviors.set(url, { manualOpen: true });
+      const long = cdp.call(url, 'Long.waiter', {}, 1000);
+      const observed = long.then((value) => ({ value }), (error) => ({ error }));
+      await assert.rejects(cdp.call(url, 'Short.expired', {}, 15), /timeout/i);
+      const socket = MockSocket.socketsFor(url)[0];
+      assert.equal(socket.readyState, 'connecting', 'the long waiter still owns the handshake');
+      assert.equal(socket.received.length, 0);
+      socket.readyState = 'open'; socket.emit('open', {});
+      const result = await observed;
+      assert.equal(result.value?.echoed, 'Long.waiter');
+      assert.deepEqual(socket.received.map((message) => message.method), ['Long.waiter'], 'expired commands must never be dispatched later');
+    });
+    await checkAsync('connection setup and command execution share one monotonic budget', async () => {
+      const url = URL(901), original = Object.getOwnPropertyDescriptor(globalThis, 'performance');
+      let clock = 0, commandBudget;
+      Object.defineProperty(globalThis, 'performance', { configurable: true, value: { now: () => clock } });
+      try {
+        MockSocket.behaviors.set(url, { manualOpen: true });
+        const pending = cdp.call(url, 'Budget.command', {}, 50);
+        callPool.get(url).conn.command = async (_method, _params, options) => { commandBudget = options.timeout; return {}; };
+        clock = 35;
+        const socket = MockSocket.socketsFor(url)[0]; socket.readyState = 'open'; socket.emit('open', {});
+        await pending;
+        assert.equal(commandBudget, 15, 'the handshake must consume the command budget');
+      } finally { Object.defineProperty(globalThis, 'performance', original); }
+    });
+    await checkAsync('a short first caller cannot cut off later long handshake waiters', async () => {
+      const url = URL(904);
+      MockSocket.behaviors.set(url, { manualOpen: true });
+      const short = assert.rejects(cdp.call(url, 'Short.first', {}, 15), /timeout/i);
+      const long = cdp.call(url, 'Long.second', {}, 1000);
+      const observed = long.then((value) => ({ value }), (error) => ({ error }));
+      await short;
+      const socket = MockSocket.socketsFor(url)[0];
+      assert.equal(socket.readyState, 'connecting', 'the short caller cannot close the shared socket');
+      socket.readyState = 'open'; socket.emit('open', {});
+      assert.equal((await observed).value?.echoed, 'Long.second');
+      assert.deepEqual(socket.received.map((message) => message.method), ['Long.second']);
+    });
+    await checkAsync('a dedicated socket cannot send after timing out during its handshake', async () => {
+      const url = URL(902);
+      MockSocket.behaviors.set(url, { manualOpen: true });
+      await assert.rejects(cdp.__test.callDedicated(url, 'Input.expired', {}, 5), /timeout/i);
+      const socket = MockSocket.socketsFor(url)[0]; socket.emit('open', {});
+      assert.equal(socket.received.length, 0);
+    });
+    await checkAsync('late open events cannot beat an expired deadline while timers are delayed', async () => {
+      const url = URL(903), original = Object.getOwnPropertyDescriptor(globalThis, 'performance');
+      let clock = 0;
+      Object.defineProperty(globalThis, 'performance', { configurable: true, value: { now: () => clock } });
+      try {
+        MockSocket.behaviors.set(url, { manualOpen: true });
+        const rejection = assert.rejects(cdp.__test.callDedicated(url, 'Input.lateOpen', {}, 50), /timeout/i);
+        clock = 51;
+        const socket = MockSocket.socketsFor(url)[0]; socket.emit('open', {});
+        await rejection; assert.equal(socket.received.length, 0);
+      } finally { Object.defineProperty(globalThis, 'performance', original); }
+    });
     await checkAsync('sequential calls reuse one pooled socket', async () => {
       MockSocket.reset();
       const url = URL(1);
@@ -261,6 +322,15 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
       assert.strictEqual(callPool.has(overflowUrl), false, 'dedicated socket was not pooled');
       const overflowSocket = MockSocket.socketsFor(overflowUrl)[0];
       assert.strictEqual(overflowSocket.readyState, 'closed', 'dedicated socket closed after settle');
+      // Expiry during pool acquisition must not restart the budget on fallback.
+      const original = Object.getOwnPropertyDescriptor(globalThis, 'performance');
+      let reads = 0;
+      Object.defineProperty(globalThis, 'performance', { configurable: true, value: { now: () => (++reads >= 4 ? 51 : 0) } });
+      try {
+        const expiredUrl = URL(401);
+        await assert.rejects(cdp.call(expiredUrl, 'Input.expiredOverflow', {}, 50), /timeout/i);
+        assert.equal(MockSocket.socketsFor(expiredUrl).length, 0, 'expired overflow must not open a dedicated socket');
+      } finally { Object.defineProperty(globalThis, 'performance', original); }
       // Release the held commands.
       for (const { url, promise } of held) {
         const socket = MockSocket.socketsFor(url)[0];

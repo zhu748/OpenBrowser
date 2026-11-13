@@ -168,6 +168,39 @@ function networkRealm(fp, worker, expose = true) {
     }, null, buildFingerprint(p), p), /metrics unavailable/);
     assert.equal(registered, false);
   });
+  await test('profile-only overrides update independently of JS registration and restore native defaults', async () => {
+    const p = profile('native-override-key', { geoMode: 'custom', latitude: 12, longitude: 34,
+      geoPermission: 'allow', timezoneMode: 'custom', timezone: 'America/New_York' });
+    const fp = buildFingerprint(p), calls = [];
+    const invoke = async (method, params) => {
+      calls.push({ method, params });
+      return method === 'Page.addScriptToEvaluateOnNewDocument' ? { identifier: 'override-source' } : {};
+    };
+    const options = { applyKey: 'overrides' };
+    await applyFingerprintToTab(invoke, null, fp, p, options);
+    calls.length = 0;
+    await applyFingerprintToTab(invoke, null, fp, { ...p, privacy: { ...p.privacy, latitude: 15 } }, options);
+    assert.equal(calls.find((c) => c.method === 'Emulation.setGeolocationOverride').params.latitude, 15);
+    assert.equal(calls.length, 1, 'a coordinate-only edit needs exactly one native command');
+    assert.equal(calls.some((c) => /Runtime.evaluate|Page.addScript/.test(c.method)), false, 'native-only changes do not resend the JS payload');
+    calls.length = 0;
+    const reset = { ...p, privacy: { ...p.privacy, timezoneMode: 'real', geoMode: 'prompt', geoPermission: 'prompt' } };
+    await applyFingerprintToTab(invoke, null, buildFingerprint(reset), reset, options);
+    assert.equal(calls.find((c) => c.method === 'Emulation.setTimezoneOverride').params.timezoneId, '');
+    assert.ok(calls.some((c) => c.method === 'Emulation.clearGeolocationOverride'));
+    assert.equal(calls.find((c) => c.method === 'Browser.setPermission').params.setting, 'prompt');
+  });
+  await test('desktop profiles clear touch emulation left by a mobile identity', async () => {
+    const calls = [], invoke = async (method, params) => {
+      calls.push({ method, params }); return method === 'Page.addScriptToEvaluateOnNewDocument' ? { identifier: 'touch-source' } : {};
+    };
+    const mobile = { ...profile('touch-reset'), os: 'Android' };
+    await applyFingerprintToTab(invoke, null, buildFingerprint(mobile), mobile, { applyKey: 'touch' });
+    calls.length = 0;
+    const desktop = profile('touch-reset');
+    await applyFingerprintToTab(invoke, null, buildFingerprint(desktop), desktop, { applyKey: 'touch' });
+    assert.ok(calls.some((c) => c.method === 'Emulation.setTouchEmulationEnabled' && c.params.enabled === false));
+  });
   await test('subframes do not receive top-level layout commands; mobile geometry stays pinned', async () => {
     for (const os of ['Windows', 'Android']) {
       for (const subframe of [false, true]) {

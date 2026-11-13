@@ -175,6 +175,11 @@ function applyCloudForm(cloud) {
   writeBridgeFields('onedrive', c.onedrive || {});
   writeBridgeFields('quark', c.quark || {});
   writeBridgeFields('baidu', c.baidu || {});
+  applyCloudStatus(c);
+  cloudProviderFieldsVisibility();
+}
+
+function applyCloudStatus(c = {}) {
   const badge = $('#cloud-sync-badge');
   if (badge) badge.textContent = c.enabled ? (c.lastSyncAt ? tx('已同步') : tx('已启用')) : tx('未配置');
   const status = $('#cloud-sync-status');
@@ -190,19 +195,36 @@ function applyCloudForm(cloud) {
         ? (tx('上次同步：') + c.lastSyncAt + ' · ' + providerLabel + tx(' · 恢复策略：') + modeLabel)
         : tx('尚未同步。当前：') + providerLabel + tx(' · 恢复策略：') + modeLabel + tx('（默认不会删除本地独有环境）。'));
   }
-  cloudProviderFieldsVisibility();
 }
 
-async function refreshCloudPanel() {
+let cloudFormSequence = 0;
+function captureCloudFormRequest(cloud = readCloudForm()) {
+  const sequence = ++cloudFormSequence, snapshot = JSON.stringify(cloud);
+  const isCurrent = () => sequence === cloudFormSequence && snapshot === JSON.stringify(readCloudForm());
+  return { cloud, isCurrent,
+    publish(value) {
+      if (sequence !== cloudFormSequence) return false;
+      if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid cloud configuration');
+      if (isCurrent()) applyCloudForm(value);
+      else applyCloudStatus(value);
+      return true;
+    },
+  };
+}
+
+async function refreshCloudPanel(request = captureCloudFormRequest()) {
   if (!window.ops?.cloudGetConfig) return;
   try {
     const cloud = await window.ops.cloudGetConfig();
-    applyCloudForm(cloud);
+    if (!request.publish(cloud)) return false;
   } catch (error) {
+    if (!request.isCurrent()) return false;
     const status = $('#cloud-sync-status');
     if (status) status.textContent = tx('读取云配置失败：') + error.message;
+    return false;
   }
   afterUiRender(document.getElementById('view-system') || document);
+  return true;
 }
 
 function formatMergeStats(stats) {
@@ -235,7 +257,7 @@ function cloudEnabledProfiles(ids) {
 async function pushProfilesToCloud(ids) {
   const enabled = cloudEnabledProfiles(ids);
   if (!enabled.length) throw new Error(tx('所选环境均未开启云备份。请到「编辑 → 偏好设置」开启。'));
-  const cloud = readCloudForm();
+  const request = captureCloudFormRequest(), cloud = request.cloud;
   if (!cloud.enabled) throw new Error(tx('请先在「本地设置 → 云同步」启用云同步服务并保存配置'));
   await window.ops.cloudSetConfig(cloud);
   const list = enabled.map((p) => p.id);
@@ -245,7 +267,7 @@ async function pushProfilesToCloud(ids) {
     groups: ui.groups || [],
     cloud,
   });
-  applyCloudForm(result.cloud || cloud);
+  request.publish(result.cloud || cloud);
   toast(tx('已推送 ') + (result.results?.length || list.length) + tx(' 个环境到云端'));
   for (const item of result.results || []) reportBackupWarnings(item.meta);
   log('Cloud', '单环境推送 · ' + list.join(','));
@@ -255,7 +277,7 @@ async function pushProfilesToCloud(ids) {
 async function pullProfilesFromCloud(ids) {
   const list = (ids || []).filter(Boolean);
   if (!list.length) throw new Error(tx('请先选择环境'));
-  const cloud = readCloudForm();
+  const request = captureCloudFormRequest(), cloud = request.cloud;
   if (!cloud.enabled) throw new Error(tx('请先在「本地设置 → 云同步」启用云同步服务并保存配置'));
   const mode = cloud.restoreMode || 'merge';
   await window.ops.cloudSetConfig(cloud);
@@ -268,7 +290,7 @@ async function pullProfilesFromCloud(ids) {
     cloud,
   });
   applyRestoredProfiles(result);
-  applyCloudForm(result.cloud || cloud);
+  request.publish(result.cloud || cloud);
   const detail = formatMergeStats(result.mergeStats);
   toast(tx('拉取完成') + (detail ? tx(' · ') + detail : ''));
   log('Cloud', '单环境拉取 · ' + list.join(',') + (detail ? ' · ' + detail : ''));
@@ -308,21 +330,22 @@ $('#cloud-choose-dir')?.addEventListener('click', (event) => withCloudGuard(even
 }));
 $('#cloud-save-cfg')?.addEventListener('click', (event) => withCloudGuard(event.currentTarget, async () => {
   try {
-    const cloud = await window.ops.cloudSetConfig(readCloudForm());
-    applyCloudForm(cloud);
+    const request = captureCloudFormRequest();
+    const cloud = await window.ops.cloudSetConfig(request.cloud);
+    request.publish(cloud);
     toast(tx('云备份配置已保存'));
   } catch (error) { toast(error.message); }
 }));
 $('#cloud-backup-now')?.addEventListener('click', (event) => withCloudGuard(event.currentTarget, async () => {
   try {
-    const cloud = readCloudForm();
+    const request = captureCloudFormRequest(), cloud = request.cloud;
     await window.ops.cloudSetConfig(cloud);
     toast(tx('正在全量备份…'));
     const result = await window.ops.cloudBackup({
         groups: ui.groups || [],
       cloud,
     });
-    applyCloudForm(result.cloud || cloud);
+    request.publish(result.cloud || cloud);
     toast(tx('备份完成 · ') + (result.meta?.profileCount || 0) + tx(' 个环境 · ') + Math.round((result.meta?.bytes || 0) / 1024) + ' KB');
     log('Cloud', '全量备份 · ' + (result.meta?.profileCount || 0) + ' 环境');
     reportBackupWarnings(result.meta);
@@ -344,6 +367,7 @@ $('#cloud-restore-now')?.addEventListener('click', (event) => withCloudGuard(eve
   });
   if (!approved) return;
   try {
+    const request = captureCloudFormRequest(cloud);
     await window.ops.cloudSetConfig(cloud);
     toast(tx('正在恢复…'));
     const result = await window.ops.cloudRestore({
@@ -353,7 +377,7 @@ $('#cloud-restore-now')?.addEventListener('click', (event) => withCloudGuard(eve
       localGroups: ui.groups || [],
     });
     applyRestoredProfiles(result);
-    await refreshCloudPanel();
+    await refreshCloudPanel(request);
     const detail = formatMergeStats(result.mergeStats);
     toast(tx('恢复完成 · ') + (result.profiles?.length || 0) + tx(' 个环境') + (detail ? tx(' · ') + detail : ''));
     log('Cloud', '恢复 · ' + mode + ' · ' + (result.profiles?.length || 0) + (detail ? ' · ' + detail : ''));
@@ -423,7 +447,7 @@ $('#cloud-push-selected')?.addEventListener('click', (event) => withCloudGuard(e
 $('#cloud-pull-selected')?.addEventListener('click', (event) => withCloudGuard(event.currentTarget, async () => {
   try {
     // pull merge from full remote pack (all remote profiles), not homepage selection
-    const cloud = readCloudForm();
+    const request = captureCloudFormRequest(), cloud = request.cloud;
     if (!cloud.enabled) throw new Error(tx('请先启用云同步服务'));
     await window.ops.cloudSetConfig(cloud);
     toast(tx('正在按策略从云端恢复…'));
@@ -434,7 +458,7 @@ $('#cloud-pull-selected')?.addEventListener('click', (event) => withCloudGuard(e
       localGroups: ui.groups || [],
     });
     applyRestoredProfiles(result);
-    await refreshCloudPanel();
+    await refreshCloudPanel(request);
     toast(tx('恢复完成 · ') + formatMergeStats(result.mergeStats));
   } catch (error) { toast(error.message); }
 }));

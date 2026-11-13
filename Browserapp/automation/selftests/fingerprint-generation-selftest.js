@@ -7,6 +7,8 @@ const { sanitizeProfile } = require('../../engine/profile-sanitizer');
 const { fingerprintVersion, createFingerprintDraw } = require('../fingerprint/generation');
 const { ProfileRoutes } = require('../api/profile-routes');
 const { WINDOWS_PERSONAS } = require('../device-personas');
+const { canonicalBridgeToken } = require('../fingerprint/shared');
+const { deriveBridgeToken } = require('../font-placeholder');
 const legacy = require('./fixtures/fingerprint-v1-linux.json');
 
 function onHost(platform, run) {
@@ -43,6 +45,18 @@ async function main() {
         fingerprintSeed: `seed-${i}`, privacy: { deviceProfile } });
       const fp = buildFingerprint({ ...profile, kernelVersion: '157.0.8103.78' });
       delete fp.consistency;
+      // Golden v1 records also contain private transport metadata. Assert the
+      // current channel separately, then reconstruct ONLY its historical token
+      // and name for the original fixture hash. Every persona value and every
+      // other field remains covered by the unchanged golden records.
+      if (fp.fontBlobBridge) {
+        assert.equal(fp.fontBlobBridge.token, canonicalBridgeToken(fp));
+        assert.equal(fp.fontBlobBridge.channelName, '_' + canonicalBridgeToken(fp).slice(0, 16));
+        const { fontBlobBridge: _bridge, ...declared } = fp;
+        const historicalToken = deriveBridgeToken(declared);
+        fp.fontBlobBridge = { ...fp.fontBlobBridge, token: historicalToken,
+          channelName: '_' + historicalToken.slice(0, 16) };
+      }
       assert.equal(crypto.createHash('sha256').update(JSON.stringify(fp)).digest('hex'), expected,
         `v1 identity changed: ${os}/${deviceProfile}/${i}`);
     }

@@ -45,7 +45,11 @@ async function json(url, method = 'GET', options = {}) {
 
 // One-shot transport: opens a dedicated socket per command and closes it on settle.
 // Kept as the fallback for pool overflow and as a reference for behaviour parity.
-function callDedicated(webSocketUrl, method, params = {}, timeout = 6000) {
+function callDedicated(webSocketUrl, method, params = {}, timeout = 6000, __deadline = null) {
+  const parsed = Number(timeout);
+  const budget = Number.isFinite(parsed) && parsed > 0 ? parsed : 6000;
+  const deadline = __deadline ?? performance.now() + budget;
+  if (performance.now() >= deadline) return Promise.reject(new Error(`CDP timeout: ${method}`));
   return new Promise((resolve, reject) => {
     if (typeof WebSocket !== 'function') return reject(new Error('WebSocket API is unavailable in this host runtime'));
     const id = Math.floor(Math.random() * 1_000_000_000);
@@ -58,8 +62,10 @@ function callDedicated(webSocketUrl, method, params = {}, timeout = 6000) {
       try { socket.close(); } catch (_) {}
       fn(arg);
     };
-    const timer = setTimeout(() => finish(reject, new Error(`CDP timeout: ${method}`)), timeout);
+    const timer = setTimeout(() => finish(reject, new Error(`CDP timeout: ${method}`)), Math.max(0, Math.ceil(deadline - performance.now())));
     socket.addEventListener('open', () => {
+      if (settled) return;
+      if (performance.now() >= deadline) return finish(reject, new Error(`CDP timeout: ${method}`));
       try { socket.send(JSON.stringify({ id, method, params })); }
       catch (error) { finish(reject, error instanceof Error ? error : new Error(`CDP send failed: ${method}`)); }
     });
@@ -68,6 +74,7 @@ function callDedicated(webSocketUrl, method, params = {}, timeout = 6000) {
       try { value = JSON.parse(String(event.data)); } catch (_) { return; }
       if (!value || typeof value !== 'object') return;
       if (value.id !== id) return;
+      if (performance.now() >= deadline) return finish(reject, new Error(`CDP timeout: ${method}`));
       if (value.error) finish(reject, new Error(value.error.message || `CDP error: ${method}`));
       else finish(resolve, value.result || {});
     });
@@ -162,7 +169,9 @@ function poolAcquire(webSocketUrl, timeout) {
     onDisconnect: (error) => poolEntryDead(webSocketUrl, entry, error),
   });
   entry.conn = conn;
-  entry.openPromise = conn.open(Number(timeout) || 6000).catch((error) => {
+  // The physical handshake outlives short callers. Their own deadline races
+  // the shared promise; a later long waiter must not inherit a 15ms socket.
+  entry.openPromise = conn.open(Math.max(6000, Number(timeout) || 6000)).catch((error) => {
     poolEntryDead(webSocketUrl, entry, error);
     throw error;
   });
@@ -170,35 +179,42 @@ function poolAcquire(webSocketUrl, timeout) {
   return entry;
 }
 
-async function call(webSocketUrl, method, params = {}, timeout = 6000, __retried = false) {
+async function call(webSocketUrl, method, params = {}, timeout = 6000, __retried = false, __deadline = null) {
   if (typeof WebSocket !== 'function') {
     return Promise.reject(new Error('WebSocket API is unavailable in this host runtime'));
   }
-  const entry = poolAcquire(webSocketUrl, timeout);
-  if (!entry) return callDedicated(webSocketUrl, method, params, timeout);
+  const parsed = Number(timeout);
+  const budget = Number.isFinite(parsed) && parsed > 0 ? parsed : 6000;
+  const deadline = __deadline ?? performance.now() + budget;
+  const remaining = () => Math.ceil(deadline - performance.now());
+  const expired = () => new Error(`CDP timeout: ${method}`);
+  if (remaining() <= 0) throw expired();
+  const entry = poolAcquire(webSocketUrl, remaining());
+  if (!entry) return callDedicated(webSocketUrl, method, params, budget, deadline);
 
   // Counts the open phase too: an entry mid-handshake must not look idle to the
   // LRU overflow path below (evicting it would strand the waiter on a 6s timeout).
   entry.inFlight += 1;
-  let conn;
+  let timer;
   try {
-    conn = await entry.openPromise;
-  } catch (error) {
-    entry.inFlight -= 1;
-    return Promise.reject(error);
-  }
-  if (entry.dead && !__retried) {
-    // Raced with a disconnect between open and command: the command never left this
-    // host, so a single fresh retry is safe even for non-idempotent input dispatches.
-    entry.inFlight -= 1;
-    poolEvict(webSocketUrl, entry);
-    return call(webSocketUrl, method, params, timeout, true);
-  }
-
-  entry.lastUsed = Date.now();
-  try {
-    return await conn.command(method, params, { timeout });
+    // Each waiter owns its deadline. Timing out a short waiter must neither
+    // close a shared handshake nor dispatch its command after that deadline.
+    const conn = await Promise.race([entry.openPromise, new Promise((_resolve, reject) => {
+      timer = setTimeout(() => reject(expired()), Math.max(0, remaining()));
+    })]);
+    clearTimeout(timer);
+    if (entry.dead && !__retried) {
+      poolEvict(webSocketUrl, entry);
+      return call(webSocketUrl, method, params, budget, true, deadline);
+    }
+    const commandBudget = remaining();
+    if (commandBudget <= 0) throw expired();
+    entry.lastUsed = Date.now();
+    const result = await conn.command(method, params, { timeout: commandBudget });
+    if (remaining() <= 0) throw expired();
+    return result;
   } finally {
+    clearTimeout(timer);
     entry.inFlight -= 1;
     entry.lastUsed = Date.now();
     if (!entry.dead) armIdleTimer(webSocketUrl, entry);

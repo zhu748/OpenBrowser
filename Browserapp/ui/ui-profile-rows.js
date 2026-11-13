@@ -10,6 +10,7 @@
       profile.platform?.startUrl || '', profile.platform?.type || '',
       group ? [group.name, group.color] : null,
       profile.browser || '', profile.engine || '', profile.proxy || '', profile.exitIp || '', profile.exitCountryCode || '',
+      profile.os || '', profile.osVersion || '', profile.networkMode || '',
       info.running, info.port || '', info.cdpError || '', info.verificationBlocked || false,
       info.assignedExtensions?.length ?? 0, starting ? [starting.phase, starting.percent, starting.message] : null,
       info.network?.ip || '', info.network?.countryCode || '', info.network?.checkedAt || '',

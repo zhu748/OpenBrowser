@@ -15,7 +15,7 @@
  * inside the renderer process, plus the renderer's own memory and the main
  * process's event-loop percentiles while re-rendering.
  *
- * Usage (needs a display):
+ * Usage (display or Linux --headless):
  *   xvfb-run -a node_modules/.bin/electron scripts/benchmark-real-render.js [--sizes 10,100,1000] [--json]
  */
 
@@ -34,7 +34,10 @@ const { ensureDataRootIsolationSecure } = require('../automation/isolation');
 function argValue(name) { const i = process.argv.indexOf(name); return i >= 0 ? process.argv[i + 1] : null; }
 const SIZES = (argValue('--sizes') || '10,100,1000').split(',').map(Number);
 const JSON_MODE = process.argv.includes('--json');
+const HEADLESS = process.argv.includes('--headless');
+const RENDER_BUDGET_MS = argValue('--render-budget-ms') === null ? null : Number(argValue('--render-budget-ms'));
 const APP = path.resolve(__dirname, '..');
+if (HEADLESS && process.platform === 'linux') app.commandLine.appendSwitch('ozone-platform', 'headless');
 
 
 
@@ -79,6 +82,8 @@ function registerBootIpc() {
     kernel: { engine: 'chromium' },
     ready: true,
   }));
+  guard('system:get-storage', () => ({ profileRoot: state._engine.getProfileDataRoot(),
+    defaultProfileRoot: state.profileRoot, running: state._engine.running.size, warnings: [] }));
   guard('sync:state', () => ({ active: false, master: null, selected: [] }));
   guard('sync:sessions', () => state._engine ? state._engine.sessions() : []);
   guard('extensions:list', () => state._engine.listExtensions());
@@ -136,7 +141,8 @@ const RENDERER_MEASURE = `(async (size) => {
     renderProfiles(); // warm-up with this page size
     const rows = [];
     const filterSamples = [];
-    for (let r = 0; r < 5; r += 1) {
+    const stableIcon = document.querySelector('svg[data-lucide]');
+    for (let r = 0; r < 20; r += 1) {
       const f0 = performance.now();
       const summary = window.OpenBrowserProfileList.summarizeProfiles(ui.profiles, () => false);
       const filtered = window.OpenBrowserProfileList.filterProfiles({ profiles: ui.profiles, summary, search: '', groupFilter: '', trash: 'active' });
@@ -160,9 +166,34 @@ const RENDERER_MEASURE = `(async (size) => {
       domNodes: document.querySelectorAll('*').length,
       profileRows: document.querySelectorAll('#profile-table tr[data-profile-id]').length,
     };
+    if (stableIcon && !stableIcon.isConnected) throw new Error('No-op rendering replaced an existing icon');
     if (out.pageSizes[pageSize].profileRows !== Math.min(size, pageSize)) throw new Error('Benchmark fleet/page mismatch: ' + JSON.stringify({ size, pageSize, profilePageSize, uiRows: ui.profiles.length, actualRows: out.pageSizes[pageSize].profileRows, filtered: filteredProfilesForCurrentView().length }));
   }
   out.domNodes = out.pageSizes[100].domNodes;
+  // Exercise the same cached query/sort path used by paging and selection.
+  out.queryScenarios = {};
+  const search = document.getElementById('profile-search');
+  const oldQuery = search.value, oldSort = profileSort;
+  try {
+    for (const [name, query, sort] of [
+      ['text', 'render-', { key: 'number', dir: 1 }],
+      ['account', 'account::user', { key: 'name', dir: -1 }],
+      ['tag', 'tag::work', { key: 'updated', dir: -1 }],
+    ]) {
+      search.value = query; profileSort = sort;
+      const started = performance.now();
+      const result = filteredProfilesForCurrentView();
+      const coldFilterMs = performance.now() - started;
+      const samples = [];
+      for (let r = 0; r < 20; r++) {
+        const start = performance.now(); renderProfiles(); samples.push(performance.now() - start);
+        if (filteredProfilesForCurrentView() !== result) throw new Error('Unchanged query rebuilt the fleet projection');
+      }
+      samples.sort((a, b) => a - b);
+      out.queryScenarios[name] = { coldFilterMs: +coldFilterMs.toFixed(2), count: result.length,
+        renderP95Ms: +p(samples, 95).toFixed(2) };
+    }
+  } finally { search.value = oldQuery; profileSort = oldSort; renderProfiles(); }
   // Drive the actual renderer command helper and group action through preload,
   // trusted IPC, the engine and SQLite, rather than only timing their stubs.
   await commitProfilePatches([{ id: 'render-0', patch: { tag: 'desktop-tag', note: 'desktop-note' } }]);
@@ -277,7 +308,7 @@ async function measureSize(size) {
   };
 }
 
-const state = { _engine: null, profileRoot: null, dbRoot: null };
+const state = { _engine: null, profileRoot: null, dbRoot: null, dataRoot: null };
 
 /**
  * Real-kernel session phase (R2): spawn REAL Chrome Stable kernels (one per
@@ -368,12 +399,16 @@ async function ensureEngine() {
 }
 
 async function main() {
-  if (process.platform === 'linux' && !process.env.DISPLAY) {
+  if (RENDER_BUDGET_MS !== null && (!Number.isFinite(RENDER_BUDGET_MS) || RENDER_BUDGET_MS <= 0)) {
+    throw new Error('--render-budget-ms requires a finite positive number');
+  }
+  if (process.platform === 'linux' && !process.env.DISPLAY && !HEADLESS) {
     console.error('real-render benchmark needs a display (run under xvfb-run -a).');
     app.exit(2);
     return;
   }
   const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ob-real-render-'));
+  state.dataRoot = dataRoot;
   app.setPath('userData', dataRoot);
   const profileDataRoot = path.join(dataRoot, 'profiles');
   fs.mkdirSync(profileDataRoot, { recursive: true });
@@ -412,6 +447,16 @@ async function main() {
     if (report.editorConflict?.error || report.editorConflict?.staleSave !== 'PROFILE_STALE_REV' || report.pollLane?.error) {
       throw new Error('Desktop behavior gate failed: ' + JSON.stringify({ editorConflict: report.editorConflict, pollLane: report.pollLane }));
     }
+    for (const [pageSize, measurement] of Object.entries(report.pageSizes)) {
+      if (RENDER_BUDGET_MS !== null && measurement.renderP95Ms > RENDER_BUDGET_MS) {
+        throw new Error(`Render budget exceeded: N=${size}, page=${pageSize}, p95=${measurement.renderP95Ms}ms, budget=${RENDER_BUDGET_MS}ms`);
+      }
+    }
+    for (const [name, measurement] of Object.entries(report.queryScenarios)) {
+      if (RENDER_BUDGET_MS !== null && measurement.renderP95Ms > RENDER_BUDGET_MS) {
+        throw new Error(`Query render budget exceeded: N=${size}, query=${name}, p95=${measurement.renderP95Ms}ms, budget=${RENDER_BUDGET_MS}ms`);
+      }
+    }
     reports.push(report);
   }
 
@@ -430,7 +475,7 @@ async function main() {
   if (process.argv.includes('--require-kernel') && kernel?.error) throw new Error('Real kernel gate failed: ' + kernel.error);
 
   if (JSON_MODE) {
-    console.log(JSON.stringify({ node: process.version, electron: process.versions.electron, reports, kernel }, null, 1));
+    console.log(JSON.stringify({ node: process.version, electron: process.versions.electron, headless: HEADLESS, renderBudgetMs: RENDER_BUDGET_MS, reports, kernel }, null, 1));
   } else {
     console.log(`real-render benchmark — Electron ${process.versions.electron}, Chromium ${process.versions.chrome}, window 1440x900`);
     for (const r of reports) {
@@ -477,5 +522,9 @@ main().catch(async (error) => {
   try { await state._engine?.stopAll?.(); } catch (_) {}
   try { await state._engine?.startPageServer?.stop?.(); } catch (_) {}
   try { state._engine?.sqliteStore?.close?.(); } catch (_) {}
+  try { win?.destroy(); } catch (_) {}
+  for (const root of [state.dataRoot, state.dbRoot]) {
+    if (root) { try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {} }
+  }
   app.exit(1);
 });

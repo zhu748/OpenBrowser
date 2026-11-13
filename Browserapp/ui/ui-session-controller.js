@@ -23,7 +23,9 @@
       }
       active = (async () => {
         const sessions = await fetchSessions();
-        if (!Array.isArray(sessions)) throw new Error('Invalid session inventory');
+        if (!Array.isArray(sessions) || sessions.some((row) => !row || typeof row !== 'object'
+          || Array.isArray(row) || typeof row.id !== 'string' || !row.id.trim())
+          || new Set(sessions.map((row) => row.id)).size !== sessions.length) throw new Error('Invalid session inventory');
         setState(reconcileSessions(sessions, getState()));
         onRows();
         return true;

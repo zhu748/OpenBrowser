@@ -53,8 +53,8 @@ async function main() {
   assert.notEqual(engine.status()[0].statusRev, oldToken, 'a new engine incarnation cannot share an old watermark');
 
   let reads = 0;
-  const rows = Array.from({ length: 10000 }, (_, id) => ({ get id() { reads += 1; return id; } }));
-  const delta = { full: false, rows: Array.from({ length: 1000 }, (_, i) => ({ id: 10000 + i })), removed: [] };
+  const rows = Array.from({ length: 10000 }, (_, id) => ({ get id() { reads += 1; return String(id); } }));
+  const delta = { full: false, rows: Array.from({ length: 1000 }, (_, i) => ({ id: String(10000 + i) })), removed: [] };
   assert.equal(mergeStatusDelta(rows, delta).length, 11000);
   assert.ok(reads < 5 * rows.length, 'delta append must not scan the whole fleet per new row');
   assert.equal(mergeStatusDelta(rows, { full: false, rows: [] }), rows);
@@ -109,6 +109,25 @@ async function main() {
   current = [{ id: 'local-edit', statusRev: 'local' }];
   await cursorClient.refresh();
   assert.equal(typeof requests.at(-1), 'object', 'a local row replacement invalidates the cursor');
+  for (const bad of [[null], [{ id: '' }], [{ id: 'a' }, { id: 'a' }], [['a']]]) {
+    assert.throws(() => mergeStatusDelta([], { full: true, rows: bad }), /Invalid status/);
+    assert.throws(() => mergeStatusDelta([], { full: false, rows: bad }), /Invalid status/);
+  }
+  assert.throws(() => mergeStatusDelta([], { full: false, rows: [{ id: 'same' }], removed: ['same'] }), /Invalid status/);
+  current = [{ id: 'safe', statusRev: 'safe-token' }];
+  const safe = current, fallbackRequests = [];
+  let nextDelta = { full: false, rows: [], cursor: 'old-cursor' }, fullReply = safe;
+  const recovery = createStatusController({ getRows: () => current, setRows: (next) => { current = next; },
+    fetchDelta: async (watermark) => { fallbackRequests.push(watermark); return nextDelta; }, fetchFull: async () => fullReply });
+  await recovery.refresh();
+  nextDelta = { full: false, rows: [null], cursor: 'bad-cursor' };
+  await recovery.refresh();
+  assert.equal(current, safe, 'a validated full fallback may reuse the exact current array');
+  nextDelta = { full: false, rows: [] }; await recovery.refresh();
+  assert.equal(typeof fallbackRequests.at(-1), 'object', 'a malformed delta clears the old cursor even when fallback reuses rows');
+  fullReply = [null]; nextDelta = { full: true, rows: [null] };
+  await assert.rejects(recovery.refresh(), /Invalid status/);
+  assert.equal(current, safe, 'invalid delta and full replies leave the last good rows intact');
   console.log('STATUS_REFRESH_SELFTEST OK (runtime delta, stable edit revisions, restart tokens, cache lifetime, linear merge, IPC races)');
 }
 main().catch((error) => { console.error(error); process.exitCode = 1; });

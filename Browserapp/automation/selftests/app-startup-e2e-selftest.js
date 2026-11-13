@@ -61,11 +61,15 @@ async function main() {
         try { await window.ops.syncProfiles([row],{delta:true}); } catch (_) { staleRejected=true; }
         const first=await window.ops.profileStatusDelta(null);
         const idle=await window.ops.profileStatusDelta(first.cursor);
+        await window.refreshApiMcpPage();
+        const apiInfo=await window.ops.localApiInfo(),mcp=JSON.parse(document.getElementById('mcp-config-json').textContent);
+        const apiConfigConsistent=Number(mcp.mcpServers['openbrowser-local-api'].env.OPENBROWSER_API_PORT)===apiInfo.port
+          && apiInfo.port>0&&!document.getElementById('mcp-copy-config').disabled;
         const accounts=await window.ops.accountImport([{id:'startup-account',username:'startup@example.test',password:'STARTUP_PASSWORD_SENTINEL',totpSecret:'STARTUP_TOTP_SENTINEL'}]);
         const revealed=await window.ops.accountGet('startup-account');
         const transfers=await window.ops.transferImport([{id:'startup-transfer',transferCode:'OBTRF1:STARTUP_TRANSFER_SENTINEL',status:'pending',createdAt:new Date().toISOString()}]);
         for(let i=0;i<50&&!window.OpenBrowserApp.ui.profiles.some(p=>p.id==='startup-test'&&p.title==='Saved after boot');i++)await new Promise(r=>setTimeout(r,20));
-        return {ready,created:created.length,staleRejected,cursor:typeof first.cursor,idleRows:idle.rows.length,
+        return {ready,created:created.length,staleRejected,cursor:typeof first.cursor,idleRows:idle.rows.length,apiConfigConsistent,
           uiBatchCreated,uiBatchPersisted,uiUnique:new Set(uiIds).size===uiIds.length,
           accountRoundTrip:accounts.length===1&&!('password' in accounts[0])&&accounts[0].hasPassword&&revealed.password==='STARTUP_PASSWORD_SENTINEL',
           transferRoundTrip:transfers.length===1&&transfers[0].id==='startup-transfer',
@@ -73,9 +77,25 @@ async function main() {
       })()`, awaitPromise: true, returnByValue: true,
     }, { timeout: 30000 });
     assert.equal(evaluated.exceptionDetails, undefined, JSON.stringify(evaluated.exceptionDetails));
-    assert.deepEqual(evaluated.result.value, { ready: true, created: 1, staleRejected: true, cursor: 'string', idleRows: 0,
+    assert.deepEqual(evaluated.result.value, { ready: true, created: 1, staleRejected: true, cursor: 'string', idleRows: 0, apiConfigConsistent: true,
       uiBatchCreated: 2, uiBatchPersisted: true, uiUnique: true,
       accountRoundTrip: true, transferRoundTrip: true, visible: true });
+    await delay(300);
+    await connection.command('Runtime.evaluate', { expression: `uiStateStore.flush();localStorage.setItem('openbrowser-ui-state',JSON.stringify({
+      degraded:true,profiles:[{id:'startup-test',title:'UNSAFE_TRIMMED'}],logs:[],
+      groups:[{id:'quota-custom',name:'Quota preserved group',color:'#123456'}],pane:'wide'
+    }));`, returnByValue: true });
+    await connection.command('Page.reload'); await delay(300);
+    const restored = await connection.command('Runtime.evaluate', { expression: `(async()=>{
+      while(!window.OpenBrowserApp?.whenReady)await new Promise(r=>setTimeout(r,20));
+      await window.OpenBrowserApp.whenReady();
+      const state=window.OpenBrowserApp.ui;
+      return {group:state.groups.some(g=>g.id==='quota-custom'&&g.name==='Quota preserved group'),
+        title:state.profiles.find(p=>p.id==='startup-test')?.title,pane:state.pane};
+    })()`, awaitPromise: true, returnByValue: true }, { timeout: 20000 });
+    assert.equal(restored.exceptionDetails, undefined, JSON.stringify(restored.exceptionDetails));
+    assert.deepEqual(restored.result.value, { group: true, title: 'Saved after boot', pane: 'wide' },
+      'a quota snapshot preserves UI metadata while rehydrating profiles from the real engine');
     const credentialCrypto = require('../../credential-crypto');
     for (const file of ['platform-accounts.enc', 'window-transfers.enc']) {
       const bytes = await fs.readFile(path.join(root, file));

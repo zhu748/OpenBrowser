@@ -140,7 +140,47 @@ function paginate(items = [], page = 1, pageSize = 10) {
   };
 }
 
-  const api = { ADV_FIELDS, filterProfiles, summarizeProfiles, paginate };
+// Explicitly invalidated by persisted UI edits; array/runtime identities cover
+// server deltas. Keep only the current projection so old query results cannot
+// retain an unbounded fleet. Pagination and selection reuse it without scans.
+function createProfileListCache() {
+  let summaryKey, summary, filterKey, filtered, idsKey, ids, exitKey, exit;
+  const same = (a, b) => a && a.length === b.length && b.every((value, index) => Object.is(value, a[index]));
+  return {
+    invalidate() { summaryKey = filterKey = summary = filtered = idsKey = ids = exitKey = exit = undefined; },
+    ids(profiles) {
+      const key = [profiles, profiles.length];
+      if (!same(idsKey, key)) { ids = new Set(profiles.map((profile) => profile.id)); idsKey = key; }
+      return ids;
+    },
+    firstExit(profiles) {
+      const key = [profiles, profiles.length];
+      if (!same(exitKey, key)) { exit = profiles.find((profile) => profile.exitIp); exitKey = key; }
+      return exit;
+    },
+    summarize(profiles, isRunning, runtimeVersion) {
+      const key = [profiles, profiles.length, isRunning, runtimeVersion];
+      if (!same(summaryKey, key)) {
+        summary = summarizeProfiles(profiles, isRunning);
+        summaryKey = key;
+      }
+      return summary;
+    },
+    filter(options, { runtimeVersion, groups, locale } = {}) {
+      const key = [options.profiles, options.profiles.length, runtimeVersion, groups, locale,
+        options.activeGroupFilter, options.activeListTab, options.query,
+        JSON.stringify(options.advancedFilter), options.sort?.key, options.sort?.dir,
+        options.isRunning, options.displayProfileNumber, options.groupNameOf];
+      if (!same(filterKey, key)) {
+        filtered = filterProfiles(options);
+        filterKey = key;
+      }
+      return filtered;
+    },
+  };
+}
+
+  const api = { ADV_FIELDS, filterProfiles, summarizeProfiles, paginate, createProfileListCache };
   if (typeof module === 'object' && module.exports) {
     module.exports = api;
   } else if (typeof window !== 'undefined') {

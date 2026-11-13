@@ -9,6 +9,39 @@
 //   editorDraft / renderEditorSummary — draft collection and summary rendering
 //   openProfileEditor / refreshUaMetaPreview — editor dialog + UA meta preview
 //   openCreateProfileDialog / setupPlatformPresets — create flow + platform presets
+function editorRequestInputs(ids) {
+  return JSON.stringify(ids.map((id) => {
+    const field = document.getElementById('editor-' + id);
+    return [field?.value, field?.checked];
+  }));
+}
+
+function editorUaRequestInputs() {
+  return editorRequestInputs(['user-agent', 'engine', 'engine-version', 'os', 'os-version', 'ua-chrome-major', 'ua-strict']);
+}
+
+function editorNetworkRequestInputs() {
+  return JSON.stringify([editorSelectedNetwork(), editorRequestInputs([
+    'proxy-type', 'proxy-host', 'proxy-port', 'proxy-user', 'proxy-password', 'proxy-raw', 'proxy-library',
+    'ip-channel', 'refresh-url', 'api-extract-url', 'proxy-fill-fingerprint',
+    'timezone-mode', 'timezone', 'language-mode', 'language', 'geo-mode', 'geo-permission', 'latitude', 'longitude', 'accuracy',
+  ])]);
+}
+
+function setEditorNetworkBusy(busy) {
+  $('#editor-proxy-result')?.setAttribute('aria-busy', String(busy));
+  for (const id of ['editor-test-proxy', 'editor-apply-proxy-fp', 'editor-refresh-proxy']) {
+    const button = document.getElementById(id);
+    if (button) button.disabled = busy;
+  }
+}
+
+function resetEditorAsyncRequests() {
+  editorRequests.cancel();
+  clearTimeout(window.__uaPreviewTimer);
+  setEditorNetworkBusy(false);
+}
+
 // Blank-tolerant numeric seed parse: '' / null / NaN → undefined (drop the override).
 function numberOrUndefined(value) {
   if (value === '' || value == null) return undefined;
@@ -1015,6 +1048,9 @@ const profileEditorOpener = window.OpenBrowserProfileCommands.createProfileEdito
   readSnapshot: (id) => window.ops.profileForEdit(id),
   show: ({ profile, rev }) => showProfileEditor(profile, rev),
 });
+const editorRequests = window.OpenBrowserProfileCommands.createEditorRequestGuard({
+  getSession: () => JSON.stringify([editingProfileId, $('#profile-editor-form')?.dataset.editorSession]),
+});
 
 async function openProfileEditor(id) {
   try {
@@ -1029,8 +1065,9 @@ openProfileEditor.cancel = () => profileEditorOpener.cancel();
 function showProfileEditor(value, revision) {
   const profile = normalizeProfileSettings(value); if (!profile?.id) return;
   const currentIndex = ui.profiles.findIndex((item) => item.id === profile.id);
-  if (currentIndex >= 0) ui.profiles[currentIndex] = profile;
-  else ui.profiles.push(profile);
+  ui.profiles = currentIndex >= 0
+    ? ui.profiles.map((item, index) => index === currentIndex ? profile : item)
+    : [...ui.profiles, profile];
   const editorForm = $('#profile-editor-form');
   if (editorForm) {
     editorForm.dataset.fingerprintSeed = profile.fingerprintSeed || '';
@@ -1312,9 +1349,11 @@ function showProfileEditor(value, revision) {
   if (typeof syncThemedSelects === 'function') syncThemedSelects($('#view-profile-editor'));
   renderEditorSummary();
   switchView('profile-editor');
+  refreshUaMetaPreview().catch(() => {});
 }
 
 async function refreshUaMetaPreview() {
+  const request = editorRequests.begin('ua', editorUaRequestInputs);
   const raw = document.getElementById('editor-user-agent')?.value?.trim() || '';
   if (!raw) {
     const el = document.getElementById('editor-ua-meta');
@@ -1333,6 +1372,7 @@ async function refreshUaMetaPreview() {
       os: editorOsToUaKey($('#editor-os')?.value),
       chromeMajor: Number($('#editor-ua-chrome-major')?.value) || undefined,
     });
+    if (!request.current()) return;
     await showUaMetaPreview(ua);
   } catch (_) {}
 }
@@ -1427,6 +1467,8 @@ function setupPlatformPresets(selectId, chipsId, inputId) {
 // them as used. Function declarations are already script globals; this only
 // makes that intent explicit.
 Object.assign(window, {
+  editorNetworkRequestInputs,
+  resetEditorAsyncRequests,
   openProfileEditor,
   refreshUaMetaPreview,
   openCreateProfileDialog,

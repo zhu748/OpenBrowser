@@ -131,6 +131,11 @@ function buildSandbox(info, paths) {
 
 const LIVE_PORT = 51423;
 const BUSY_PORT = 50325;
+const deferred = () => {
+  let resolve, reject;
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+};
 
 (async () => {
   // ---- default port, no fallback ----
@@ -207,6 +212,97 @@ const BUSY_PORT = 50325;
     case_('a missing API marks the panel as stopped without throwing', () => {
       assert.strictEqual(elements.get('api-conn-pill').textContent, '未启动');
       assert.strictEqual(elements.get('api-conn-pill').classList.contains('off'), true);
+    });
+  }
+
+  {
+    const info = { port: LIVE_PORT, url: `http://127.0.0.1:${LIVE_PORT}/` };
+    const paths = { port: LIVE_PORT, mcpScript: '/app/mcp.js', apiKey: 'old-key' };
+    const { window, elements } = buildSandbox(info, paths);
+    const first = deferred(); let pathsRead = false;
+    window.ops.localApiInfo = () => first.promise;
+    window.ops.mcpPaths = async () => { pathsRead = true; return paths; };
+    const slow = window.refreshApiMcpPage();
+    case_('independent configuration reads start in parallel', () => assert.equal(pathsRead, true));
+    window.ops.localApiInfo = async () => info;
+    window.ops.mcpPaths = async () => ({ ...paths, apiKey: 'new-key' });
+    await window.refreshApiMcpPage(); first.resolve(info); await slow;
+    case_('late refreshes cannot roll back credentials or generated configs', () => {
+      assert.equal(elements.get('api-key-display').value, 'new-key');
+      assert.ok(elements.get('mcp-config-json').textContent.includes('new-key'));
+      assert.ok(!elements.get('mcp-config-json').textContent.includes('old-key'));
+    });
+    const stale = deferred(); window.ops.localApiInfo = () => stale.promise;
+    const staleRead = window.refreshApiMcpPage();
+    window.ops.localApiInfo = async () => info; await window.refreshApiMcpPage();
+    stale.reject(new Error('late failure')); await staleRead;
+    case_('late failures cannot disable a newer valid configuration', () => {
+      assert.equal(elements.get('api-conn-pill').classList.contains('off'), false);
+      assert.equal(elements.get('mcp-copy-config').disabled, false);
+    });
+    window.ops.mcpPaths = async () => ({ ...paths, port: BUSY_PORT });
+    await window.refreshApiMcpPage();
+    case_('mixed-port snapshots clear stale credentials and disable copying', () => {
+      assert.equal(elements.get('api-key-display').value, '');
+      assert.equal(elements.get('mcp-config-json').textContent, '');
+      assert.equal(window.__mcpConfigCommon, null);
+      assert.equal(elements.get('mcp-copy-config').disabled, true);
+      assert.equal(elements.get('api-conn-pill').textContent, '读取失败');
+      assert.equal(elements.get('sidebar-api-hint').textContent, '状态未知', 'a failed read does not claim that the service stopped');
+    });
+
+    window.ops.mcpPaths = async () => paths; await window.refreshApiMcpPage();
+    const rotation = deferred(); let rotations = 0;
+    window.confirmAction = async () => true;
+    window.ops.rotateApiKey = () => { rotations++; return rotation.promise; };
+    const oldInfo = deferred(); window.ops.localApiInfo = () => oldInfo.promise;
+    const oldRefresh = window.refreshApiMcpPage();
+    const button = elements.get('api-key-rotate'), rotate = button.listeners.click[0];
+    const rotating = rotate({ currentTarget: button });
+    await Promise.resolve(); await Promise.resolve();
+    await rotate({ currentTarget: button });
+    case_('key rotation is single-flight and clears old copyable credentials', () => {
+      assert.equal(rotations, 1); assert.equal(button.disabled, true);
+      assert.equal(elements.get('mcp-copy-config').disabled, true);
+      assert.equal(elements.get('api-key-display').value, '');
+    });
+    oldInfo.resolve(info); await oldRefresh;
+    case_('a pre-rotation refresh cannot republish the old key', () => assert.equal(elements.get('api-key-display').value, ''));
+    let blockedReads = 0;
+    window.ops.localApiInfo = async () => { blockedReads++; return info; };
+    const paused = await window.refreshApiMcpPage();
+    case_('reads stay paused while the key is changing', () => { assert.equal(paused, false); assert.equal(blockedReads, 0); });
+    window.ops.localApiInfo = async () => info;
+    window.ops.mcpPaths = async () => ({ ...paths, apiKey: 'rotated-key' });
+    rotation.resolve({ apiKey: 'rotated-key' }); await rotating;
+    case_('rotation publishes one complete fresh configuration and releases controls', () => {
+      assert.equal(button.disabled, false); assert.equal(elements.get('api-key-display').value, 'rotated-key');
+      assert.equal(elements.get('mcp-copy-config').disabled, false);
+      assert.ok(elements.get('mcp-config-json').textContent.includes('rotated-key'));
+    });
+    window.ops.rotateApiKey = async () => { throw new Error('ROTATE_FAILED'); };
+    await rotate({ currentTarget: button });
+    case_('failed rotation releases controls and ends the pending message', () => {
+      assert.equal(button.disabled, false); assert.equal(elements.get('api-key-display').value, '');
+      assert.ok(!elements.get('mcp-key-note').textContent.includes('正在'));
+      assert.equal(elements.get('mcp-copy-config').disabled, true);
+    });
+    await window.refreshApiMcpPage();
+    case_('refresh recovers after a rotation failure', () => {
+      assert.equal(elements.get('api-key-display').value, 'rotated-key');
+      assert.equal(elements.get('mcp-copy-config').disabled, false);
+    });
+    window.confirmAction = async () => false;
+    await rotate({ currentTarget: button });
+    case_('cancelled rotations preserve valid configuration and release controls', () => {
+      assert.equal(button.disabled, false); assert.equal(elements.get('api-key-display').value, 'rotated-key');
+      assert.equal(elements.get('mcp-copy-config').disabled, false);
+    });
+    window.ops.localApiInfo = async () => null; await window.refreshApiMcpPage();
+    case_('stopped services clear copyable commands and cached variants', () => {
+      assert.equal(elements.get('api-curl-hint').textContent, '');
+      assert.equal(elements.get('mcp-cmd-hint').textContent, '');
+      assert.equal(window.__mcpConfigPlatform, null);
     });
   }
 

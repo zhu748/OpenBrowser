@@ -9,26 +9,34 @@ module.exports = `  const canvasMark = Number(CFG.canvas?.mark) || 1;
       return Promise.reject(new DOMException('Canvas reading is disabled by permissions policy', 'SecurityError'));
     });
   } else if (CFG.canvas?.mode === 'noise') {
+    const readback = createCanvasReadbackCache();
     replace(globalThis.OffscreenCanvasRenderingContext2D?.prototype, 'getImageData', (original) => function(...args) {
-      return applyNoise(original.apply(this, args), canvasMark);
+      const image = original.apply(this, args);
+      return readback.tag(readback.matches(this, image, args) ? image : applyNoise(image, canvasMark));
+    });
+    replace(globalThis.OffscreenCanvasRenderingContext2D?.prototype, 'putImageData', (original) => function(...args) {
+      const result = original.apply(this, args);
+      try { readback.wrote(this, args); } catch (_) {}
+      return result;
     });
     replace(globalThis.OffscreenCanvas?.prototype, 'convertToBlob', (original) => async function convertToBlob(options) {
-      const blob = await original.call(this, options);
+      const captured = captureImageEncodeOptions(options);
+      const blob = await original.call(this, captured.options);
+      let bitmap;
       try {
-        const w = Number(this.width) || 0;
-        const h = Number(this.height) || 0;
-        if (w <= 0 || h <= 0) return blob;
-        const bitmap = await createImageBitmap(blob);
+        bitmap = await createImageBitmap(blob);
+        const w = bitmap.width, h = bitmap.height;
         const copy = new OffscreenCanvas(w, h);
         const context = copy.getContext('2d');
         if (!context) return blob;
         context.drawImage(bitmap, 0, 0);
-        bitmap.close?.();
         const image = context.getImageData(0, 0, copy.width, copy.height);
         context.putImageData(image, 0, 0);
-        return original.call(copy, options);
+        return original.call(copy, captured.replay);
       } catch (_) { return blob; }
+      finally { try { bitmap?.close(); } catch (_) {} }
     });
+    installVideoFrameCopy(globalThis.VideoFrame?.prototype, replace, (image) => applyNoise(image, canvasMark));
   }
   // Worker measureText parity: the main thread jitters TextMetrics by a
   // (origin, seed, font, text) hash (document-graphics F-5); without the same
@@ -126,45 +134,27 @@ module.exports = `  const canvasMark = Number(CFG.canvas?.mark) || 1;
             const cleanFont = sanitizeFontShorthand(currentFont);
             if (cleanFont !== currentFont) {
               try { this.font = cleanFont; } catch (_) {}
-              try { return originalMeasureForSanitize.call(this, text); }
-              finally { try { this.font = currentFont; } catch (_) {} }
+              const temporaryFont = String(this.font || '');
+              try { return originalMeasureForSanitize.apply(this, arguments); }
+              finally { try { if (String(this.font || '') === temporaryFont) this.font = currentFont; } catch (_) {} }
             }
-            return originalMeasureForSanitize.call(this, text);
+            return originalMeasureForSanitize.apply(this, arguments);
           }, originalMeasureForSanitize, 'measureText', 1),
         });
       }
     } catch (_) {}
   }
-  if (globalThis.OffscreenCanvasRenderingContext2D?.prototype?.measureText) {
-    const measureJitterCache = new Map();
-    const MEASURE_JITTER_CACHE_MAX = 512;
-    const jitterFor = (font, text) => {
-      const key = font + '\u0000' + text;
-      let cached = measureJitterCache.get(key);
-      if (!cached) {
-        const originStr = String(globalThis.location?.origin || '');
-        const seedStr = String(CFG.seed || CFG.canvas?.mark || '1');
-        const hashKey = originStr + ':' + seedStr + ':' + font + ':' + text;
-        let h = 0;
-        for (let i = 0; i < hashKey.length; i++) h = ((h << 5) - h + hashKey.charCodeAt(i)) | 0;
-        const jitter = ((h % 100) / 10000);
-        const widthJitter = (((h % 200) - 100) / 10000);
-        if (measureJitterCache.size >= MEASURE_JITTER_CACHE_MAX) {
-          const oldest = measureJitterCache.keys().next().value;
-          if (oldest !== undefined) measureJitterCache.delete(oldest);
-        }
-        cached = { jitter, widthJitter };
-        measureJitterCache.set(key, cached);
-      }
-      return cached;
-    };
+  if (CFG.canvas?.mode === 'noise' && globalThis.OffscreenCanvasRenderingContext2D?.prototype?.measureText) {
+    const measureJitterCache = createTextMetricJitterCache(String(globalThis.location?.origin || ''),
+      String(CFG.seed || CFG.canvas?.mark || '1'));
     replace(globalThis.OffscreenCanvasRenderingContext2D.prototype, 'measureText', (original) => function measureText(text, ...args) {
-      const tm = original.call(this, text, ...args);
+      const call = invokeNativeText(original, this, arguments);
+      const tm = call.value;
       try {
-        const s = String(text || '');
-        const { jitter, widthJitter } = jitterFor(String(this.font || ''), s);
+        const { jitter, widthJitter } = measureJitterCache.get(String(this.font || ''), call.text);
         return new Proxy(tm, {
           get(target, prop) {
+            if (prop === 'constructor') return target.constructor;
             const val = Reflect.get(target, prop, target);
             if (typeof val === 'number') {
               if (prop === 'width') return val === 0 ? 0 : Math.max(0, val + widthJitter);

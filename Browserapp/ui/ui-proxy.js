@@ -507,17 +507,28 @@ function updateProxySelectedChip() {
 }
 
 async function refreshProxies() {
+  const request = {};
+  refreshProxies.currentRequest = request;
   try {
-    proxyLibrary = await window.ops.proxyList({ q: $('#proxy-search')?.value || '' });
-    if (!Array.isArray(proxyLibrary)) proxyLibrary = [];
+    // The shared library also feeds editor selectors and profile associations.
+    // Search belongs to visibleProxies(), never to this authoritative snapshot.
+    const rows = await window.ops.proxyList();
+    if (refreshProxies.currentRequest !== request) return false;
+    if (!Array.isArray(rows) || rows.some((row) => !row || typeof row !== 'object' || typeof row.id !== 'string')) {
+      throw new Error('Invalid proxy inventory');
+    }
+    proxyLibrary = rows;
   } catch (error) {
-    proxyLibrary = [];
+    if (refreshProxies.currentRequest !== request) return false;
+    loadedViews.delete('proxies');
     toast(tx('加载代理库失败：') + error.message);
+    return false;
   }
   renderProxyLibrarySelectors();
   renderProxies();
   afterUiRender(document.getElementById('view-proxies') || document);
   loadedViews.add('proxies');
+  return true;
 }
 
 function openProxyDialog(item = null) {

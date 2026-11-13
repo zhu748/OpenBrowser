@@ -136,6 +136,49 @@ npm run selftest:protocol
 npm run selftest:kernel
 ```
 
+可通过指定 Chromium 内核运行跨平台 Canvas/字体回归，覆盖页面和 Worker 的实际注入：
+
+```bash
+OPENBROWSER_CHROMIUM_BINARY=/path/to/chrome npm run selftest -- canvasfontsemantics
+```
+
+Electron 真实渲染、IPC 和 SQLite 基准支持在 Linux 无 X11 环境下使用 `--headless`，
+并通过 `--render-budget-ms` 对热渲染 P95 设置失败阈值：
+
+```bash
+node node_modules/electron/cli.js scripts/benchmark-real-render.js --headless --sizes 10,100,1000 --skip-kernel --render-budget-ms 50 --json
+```
+
+“跟随系统字体”保留 HTML/CSS 流式加载和本地字体来源。字体隔离模式需要在解析前处理静态 HTML/CSS，
+目前仍会缓冲这些响应，因此流式页面可能等待响应结束后才开始执行。
+样式表改写结果按内容和字体策略做有界缓存，其中不保存 HTML 文档和请求头；解析器保留脚本、
+文本框原文，并同步更新 HTTP 头和 meta CSP 中的样式哈希。可运行
+`npm run selftest -- injectioncache` 检查冷热缓存桥接一致性及缓存上限。
+前端筛选、统计和环境 ID 索引在数据保存或读取编辑器权威快照时失效，分页和选择操作复用已有投影。
+存储降级恢复会保留分组等界面元数据，并从引擎恢复完整环境；后台界面保存的合并等待时间最长为两秒。
+代理搜索只过滤视图，不缩减共享代理库；代理库刷新保留编辑器中未保存的选择。
+编辑器的网络检测、刷新、指纹对齐和 UA 响应必须匹配当前会话、最新请求和相关表单内容；
+迟到的结果或错误不会改写新会话的字段、提示和忙碌状态。
+CDP/BiDi 长连接在握手和响应事件中校验单调时钟截止时间，参数序列化也计入命令预算，
+避免定时器延迟时接收过期响应或发送过期命令。`canvasfontsemantics` 同时验证音频数组尾部、
+重复读取和应用写入数据的语义。
+`overridelifecycle` 自测通过原生浏览器上下文检查时区和定位覆盖的清理，不依赖页面侧 JS 包装结果。
+Canvas 文本测量保留原生参数数量检查和类型转换语义，页面与 Worker 在真实和噪声模式下保持一致。
+文本扰动缓存同时限制条数（512 条）和保留键值字节数（256 KiB）；超长文本只计算而不缓存，
+页面的 2D/Offscreen 上下文共享缓存。状态或会话列表异常时保留最后有效快照，异常增量恢复时清除旧游标。
+云配置读取、保存及备份/恢复完成后保留等待期间修改的表单，任务完成状态可独立更新；
+`npm run selftest -- cloudui` 覆盖相关竞态。
+OffscreenCanvas 导出保留原生像素快照，编码选项（含冻结对象和有副作用的转换钩子）只读取一次；
+辅助 ImageBitmap 在绘制成功及失败时均释放。音频写入保护会合并重叠区间、用二分查询判断范围，
+首次处理后释放记录，后续写入不再累计历史。API/MCP 面板只发布最新且端口一致的配置快照，
+配置不可用时禁用复制；API Key 重新生成期间防止重复提交，并使操作前的读取结果失效。
+页面与 Worker 的打包格式 VideoFrame 复制按原生 PlaneLayout 的 offset/stride 及裁剪尺寸处理，
+保留关闭帧和选项转换的原生行为；扰动通过零字节像素映射访问目标，不再分配整帧临时数组。
+`npm run selftest -- videoframecopy` 检查布局、填充字节、跨上下文缓冲区及 48 MB 逻辑帧的零像素暂存。
+RPA 列表刷新保留编辑草稿，并隔离保存确认和流程选择的迟到结果；任务刷新只保留一个在途请求和
+一个尾随请求，搜索和状态筛选复用当前快照，进度更新保留勾选。任务或模板读取失败时保留有效视图，
+环境选择器用线性索引标记运行状态和已选项。
+
 ## 项目结构
 
 ```text

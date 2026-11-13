@@ -8,6 +8,7 @@
  */
 
 const crypto = require('crypto');
+const { BoundedLru } = require('../bounded-lru');
 const { normalizeNetworkInformation } = require('../../shared/profile-values');
 const { buildDocumentRuntime } = require('./runtime-source');
 const { createWebRtcFallbackSource, buildCssFontLocalGateSource, deriveFontPlaceholder, buildQueryLocalFontBlobGateSource, buildUaProfile, buildUaInjectionScript, canonicalBridgeToken, mapPlatformToSubsetKey, loadFontSubsetPayload, buildFontMetricsScript } = require('./shared');
@@ -33,13 +34,14 @@ function buildInjectionScript(fp, options = {}) {
   // so transmitting the payload a second time for the throwaway document only doubles
   // the CDP transfer and the renderer parse cost on the startup critical path.
   const livePatch = options.livePatch === true;
-  const injectionCacheKey = bridgeToken + '|' + String((fp && fp.bridgeChannel) || '') + (livePatch ? '|live' : '');
+  const injectionCacheKey = injectionCacheKeyFor(fp, bridgeToken) + (livePatch ? '|live' : '');
   if (injectionCacheKey) {
     const cached = injectionScriptCache.get(injectionCacheKey);
-    if (typeof cached === 'string') {
-      injectionScriptCache.delete(injectionCacheKey);
-      injectionScriptCache.set(injectionCacheKey, cached);
-      return cached;
+    if (cached) {
+      if (!livePatch && cached.hasBridgePolicy) {
+        fp.fontBlobBridge = cached.fontBlobBridge ? { ...cached.fontBlobBridge } : null;
+      }
+      return cached.source;
     }
   }
   const stability = resolveInjectionStability(fp);
@@ -233,61 +235,43 @@ function buildInjectionScript(fp, options = {}) {
     ? 'const ' + SHARED_FONT_PAYLOAD_VAR + ' = ' + JSON.stringify(sharedFontPayloadForOutput) + ';\n'
     : '';
   const output = '(() => {\n' + replayGuard + payload + composed + complete + '\n})();';
-  return rememberInjectionScript(injectionCacheKey, output);
+  injectionScriptCache.set(injectionCacheKey, {
+    source: output,
+    hasBridgePolicy: !livePatch && Boolean(fp?.fonts?.list?.length),
+    fontBlobBridge: fp.fontBlobBridge ? { ...fp.fontBlobBridge } : null,
+  });
+  return output;
 }
 
 // Name of the single hoisted platform-payload binding inside the composed document-start script.
 // It lives inside an outer IIFE, so nothing about it is reachable from the page.
 const SHARED_FONT_PAYLOAD_VAR = '__obPlatformFontPayload';
 
-// Composing a document-start script serialises the font payload, so repeating it for every
-// iframe/worker of one profile costs tens of milliseconds of main-process CPU and a fresh
-// multi-megabyte string. The cache keeps at least the previous 4 entries and additionally a
-// 64 MB byte budget, so font-heavy personas keep their behaviour while light personas stop
-// thrashing the moment more than 4 profiles are alternately active.
-const INJECTION_SCRIPT_CACHE_MIN_ENTRIES = 4;
+// Account conservatively for two-byte JS strings and bridge metadata. Neither
+// a few giant personas nor many tiny ones may bypass the retained-memory limit.
 const INJECTION_SCRIPT_CACHE_BUDGET_BYTES = 64 * 1024 * 1024;
-const injectionScriptCache = new Map();
-const injectionScriptCacheBytes = { total: 0 };
-const rememberInjectionScript = (key, value) => {
-  if (!key) return value;
-  const size = typeof value === 'string' ? value.length : 0;
-  if (injectionScriptCache.has(key)) {
-    const prev = injectionScriptCache.get(key);
-    injectionScriptCacheBytes.total -= typeof prev === 'string' ? prev.length : 0;
-    injectionScriptCache.delete(key);
-  }
-  injectionScriptCache.set(key, value);
-  injectionScriptCacheBytes.total += size;
-  while (injectionScriptCache.size > INJECTION_SCRIPT_CACHE_MIN_ENTRIES
-      && injectionScriptCacheBytes.total > INJECTION_SCRIPT_CACHE_BUDGET_BYTES) {
-    const oldest = injectionScriptCache.keys().next().value;
-    const prev = injectionScriptCache.get(oldest);
-    injectionScriptCacheBytes.total -= typeof prev === 'string' ? prev.length : 0;
-    injectionScriptCache.delete(oldest);
-  }
-  return value;
-};
+const injectionScriptCache = new BoundedLru({ maxEntries: 128,
+  maxBytes: INJECTION_SCRIPT_CACHE_BUDGET_BYTES,
+  sizeOf: (entry) => entry.source.length * 2 + JSON.stringify(entry.fontBlobBridge).length * 2,
+});
 
 const injectSourceKey = (source) => crypto.createHash('sha1').update(source).digest('hex').slice(0, 16);
 
 // applyFingerprintToTab runs on every tab, watch sweep and reload recovery, and hashing the
 // multi-megabyte source each time is pure waste: the script is already cached per
 // injectionCacheKey, so the derived key is cached alongside it.
-const injectionSourceKeyCache = new Map();
-const injectionSourceKeyCacheLimit = 256;
 const injectSourceKeyCached = (injectionCacheKey, source) => {
-  if (!injectionCacheKey) return injectSourceKey(source);
-  const hit = injectionSourceKeyCache.get(injectionCacheKey);
-  if (hit) return hit;
-  const key = injectSourceKey(source);
-  if (injectionSourceKeyCache.size >= injectionSourceKeyCacheLimit) {
-    injectionSourceKeyCache.delete(injectionSourceKeyCache.keys().next().value);
+  const entry = injectionCacheKey && injectionScriptCache.get(injectionCacheKey);
+  if (entry && entry.source === source) {
+    entry.digest ||= injectSourceKey(source);
+    return entry.digest;
   }
-  injectionSourceKeyCache.set(injectionCacheKey, key);
-  return key;
+  return injectSourceKey(source);
 };
-const injectionCacheKeyFor = (fp) => canonicalBridgeToken(fp) + '|' + String((fp && fp.bridgeChannel) || '');
+const injectionCacheKeyFor = (fp, token = canonicalBridgeToken(fp)) => JSON.stringify([
+  token, String(fp?.bridgeChannel || fp?.fontBlobBridge?.channelName || ('_' + token.slice(0, 16))),
+  process.platform, process.env.OPENBROWSER_FP_TELEMETRY === '1',
+]);
 
 module.exports = {
   buildInjectionScript,

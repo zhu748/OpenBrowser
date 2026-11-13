@@ -139,6 +139,67 @@ npm run selftest:protocol
 npm run selftest:kernel
 ```
 
+The portable Canvas/font/audio regression uses an explicitly selected Chromium
+binary and exercises production injection in pages and Workers, including audio
+array tails, repeated reads and application-authored samples:
+
+```bash
+OPENBROWSER_CHROMIUM_BINARY=/path/to/chrome npm run selftest -- canvasfontsemantics
+```
+
+The real Electron renderer/IPC/SQLite benchmark supports `--headless` on Linux
+without X11. `--render-budget-ms` fails on a warm-render P95 regression:
+
+```bash
+node node_modules/electron/cli.js scripts/benchmark-real-render.js --headless --sizes 10,100,1000 --skip-kernel --render-budget-ms 50 --json
+```
+
+Follow-system font mode preserves HTML/CSS streaming and local font sources.
+Font isolation mode sanitizes static HTML/CSS before parsing and currently buffers
+those responses; streamed pages can therefore wait for the response to finish.
+Stylesheet transforms use a bounded cache keyed by content and font policy; HTML
+documents and request headers are not retained in that cache. The parser preserves
+script/textarea text and updates style hashes in both HTTP and meta CSP policies.
+`npm run selftest -- injectioncache` checks cold/warm bridge consistency and cache
+limits; saved edits and authoritative editor snapshots invalidate cached fleet
+projections.
+UI quota recovery retains groups and other UI metadata while restoring profiles
+from engine storage. Background UI saves have a two-second maximum coalescing
+window. Proxy searches filter the view without narrowing the shared inventory.
+Inventory refreshes preserve unsaved proxy selections. Editor network/UA replies
+must still match the editor session, latest request and relevant form inputs;
+stale failures cannot change the new session's busy controls or messages.
+CDP/BiDi transports check monotonic deadlines on handshake and response events,
+including parameter serialization time, so delayed timers cannot accept expired
+replies or dispatch expired commands. The `overridelifecycle` selftest verifies native
+timezone/geolocation resets independently of page-side JavaScript wrappers.
+Canvas text arguments retain native arity and coercion behavior. Document and
+worker text metrics agree in real and noise modes; their jitter cache is limited
+by both entry count (512) and retained key/value bytes (256 KiB). Oversized texts
+are calculated without retention, and document 2D/Offscreen contexts share a cache.
+Malformed status/session inventories preserve the last valid snapshot; invalid
+deltas resynchronize without reusing an obsolete cursor. Cloud reads, saves and
+backup/restore completions preserve fields edited while waiting and can update
+completion status independently. `npm run selftest -- cloudui` covers those races.
+OffscreenCanvas export retains the native pixel snapshot and reads encoding
+options only once, including frozen dictionaries and stateful coercion hooks.
+Decoded helper bitmaps close on both successful and failed copy paths. Audio
+write protection merges overlapping ranges, uses binary searches and releases
+ranges after the first processed read; later writes create no tracking history.
+The API/MCP panel publishes the latest coherent port/key snapshot, disables
+copying unavailable configurations, and serializes API key rotations while
+invalidating reads from before the rotation.
+Packed VideoFrame copies in documents and workers follow native plane offsets,
+strides and cropped dimensions. Closed-frame handling and option conversion stay
+native; the noise policy operates through a zero-byte pixel facade instead of a
+second full-frame allocation. `npm run selftest -- videoframecopy` checks layouts,
+padding, cross-realm buffers and a 48 MB logical frame without a scratch frame.
+RPA inventory refreshes preserve editor drafts and in-flight save/selection
+ownership. Task refreshes share one active and one trailing request; searches and
+status filters use the current snapshot, and progress updates retain checked rows.
+Failed task/template reads preserve the last valid view. Environment selection
+uses linear indexes for running and selected profiles.
+
 ## Project layout
 
 ```text

@@ -66,6 +66,7 @@ module.exports = {
     // Response rewriting runs below the parser, before static HTML/CSS is turned into a
     // stylesheet. It complements the document gate, which only sees dynamic DOM/CSSOM writes.
     const fontResponseRewriter = createCssFontResponseRewriter({
+      enabled: Boolean(fingerprint?.fonts && Array.isArray(fingerprint.fonts.list)),
       personaFonts: fingerprint?.fonts?.list || [],
       fingerprint,
       blockedFont: deriveFontPlaceholder(fingerprint),
@@ -449,8 +450,10 @@ module.exports = {
           await state.command('Fetch.enable', {
             patterns: [
               { urlPattern: '*', requestStage: 'Request' },
-              { urlPattern: '*', requestStage: 'Response', resourceType: 'Document' },
-              { urlPattern: '*', requestStage: 'Response', resourceType: 'Stylesheet' },
+              ...(fontResponseRewriter.enabled ? [
+                { urlPattern: '*', requestStage: 'Response', resourceType: 'Document' },
+                { urlPattern: '*', requestStage: 'Response', resourceType: 'Stylesheet' },
+              ] : []),
               // Chromium 157+ worker delivery: the page-level Fetch prefixer needs the
               // response stage of worker scripts. Their resourceType is "Other" (not
               // "Script"), so the patterns must be URL-based, not resourceType-based.

@@ -16,7 +16,34 @@ function shellQuote(value) {
   return "'" + String(value ?? '').replace(/'/g, "'\\''") + "'";
 }
 
+let apiRefreshSequence = 0;
+let apiKeyRotationInFlight = false;
+let apiKeyRotationPending = false;
+const apiCopyButtons = ['api-copy-base', 'api-copy-curl', 'mcp-copy-config', 'mcp-copy-cmd'];
+function setApiCopyEnabled(enabled) {
+  for (const id of apiCopyButtons) {
+    const button = document.getElementById(id);
+    if (button) button.disabled = !enabled;
+  }
+}
+function clearApiMcpConfig(message) {
+  window.__mcpConfigCommon = window.__mcpConfigPlatform = null;
+  for (const id of ['api-status-url', 'mcp-config-json', 'mcp-cmd-hint', 'api-curl-hint']) {
+    const element = document.getElementById(id);
+    if (element) element.textContent = '';
+  }
+  const key = document.getElementById('api-key-display');
+  if (key) key.value = '';
+  const note = document.getElementById('mcp-key-note');
+  if (note) note.textContent = tx(message);
+  const endpoint = document.getElementById('system-local-api-endpoint');
+  if (endpoint) endpoint.textContent = '—';
+  setApiCopyEnabled(false);
+}
+
 async function refreshApiMcpPage() {
+  if (apiKeyRotationPending) return false;
+  const sequence = ++apiRefreshSequence;
   const pill = document.getElementById('api-conn-pill');
   const urlEl = document.getElementById('api-status-url');
   const keyEl = document.getElementById('api-key-display');
@@ -25,9 +52,17 @@ async function refreshApiMcpPage() {
   const curlHint = document.getElementById('api-curl-hint');
   const keyNote = document.getElementById('mcp-key-note');
   try {
-    const info = await window.ops.localApiInfo();
-    const paths = await window.ops.mcpPaths();
-    const port = info?.port || paths?.port || 50325;
+    const [info, paths] = await Promise.all([window.ops.localApiInfo(), window.ops.mcpPaths()]);
+    if (sequence !== apiRefreshSequence) return false;
+    if (!info) {
+      clearApiMcpConfig('本地 API 未启动，请启动服务后刷新。');
+      if (pill) { pill.textContent = tx('未启动'); pill.classList.add('off'); }
+      setLocalApiStatus(false);
+      return false;
+    }
+    const port = Number(info.port);
+    if (!Number.isInteger(port) || port < 1 || port > 65535 || !paths || typeof paths.mcpScript !== 'string' || !paths.mcpScript
+      || (paths.port != null && Number(paths.port) !== port)) throw new Error('Invalid local API configuration');
     const base = (info?.url || ('http://127.0.0.1:' + port + '/')).replace(/\/?$/, '/');
     const apiKey = paths?.apiKey || '';
     const apiKeyFile = paths?.apiKeyFile || '';
@@ -95,18 +130,23 @@ async function refreshApiMcpPage() {
       mcpHint.textContent = 'OPENBROWSER_API_PORT=' + shellQuote(port) + keyEnv + ' node ' + shellQuote(mcpScript);
     }
     if (curlHint) curlHint.textContent = 'curl -s -H ' + shellQuote('api-key: ' + keyPlaceholder) + ' ' + shellQuote(base + 'api/getVersion');
+    setApiCopyEnabled(true);
     setLocalApiStatus(!!info);
   } catch (_error) {
-    if (pill) { pill.textContent = tx('未启动'); pill.classList.add('off'); }
-    setLocalApiStatus(false);
+    if (sequence !== apiRefreshSequence) return false;
+    clearApiMcpConfig('读取本地 API 配置失败，请刷新重试。');
+    if (pill) { pill.textContent = tx('读取失败'); pill.classList.add('off'); }
+    setLocalApiStatus(null);
+    return false;
   }
   afterUiRender(document.getElementById('view-api-mcp') || document);
+  return true;
 }
 
 function setLocalApiStatus(running) {
   const hint = document.getElementById('sidebar-api-hint');
   const card = document.getElementById('local-status-card');
-  if (hint) hint.textContent = running ? tx('本地运行中') : tx('服务未启动');
+  if (hint) hint.textContent = running === null ? tx('状态未知') : (running ? tx('本地运行中') : tx('服务未启动'));
   if (card) card.classList.toggle('is-off', !running);
 }
 
@@ -138,24 +178,36 @@ document.getElementById('mcp-copy-cmd')?.addEventListener('click', async () => {
   const text = document.getElementById('mcp-cmd-hint')?.textContent || '';
   try { await navigator.clipboard.writeText(text); toast(tx('已复制命令')); } catch (_) {}
 });
-document.getElementById('api-key-rotate')?.addEventListener('click', async () => {
-  const approved = await app.confirmAction?.({
-    title: tx('重新生成 API Key'),
-    message: tx('重新生成 API Key？本地 mcp-key.json 会立即更新，使用此 Key 的 MCP 客户端需要同步更新。'),
-    confirmLabel: tx('重新生成'),
-    tone: 'danger',
-  });
-  if (!approved) return;
+document.getElementById('api-key-rotate')?.addEventListener('click', async (event) => {
+  if (apiKeyRotationInFlight) return false;
+  apiKeyRotationInFlight = true;
+  const button = event.currentTarget;
+  if (button) button.disabled = true;
+  let started = false;
   try {
-    const res = await window.ops.rotateApiKey();
-    if (res?.apiKey) {
-      const keyInput = document.getElementById('api-key-display');
-      if (keyInput) keyInput.value = res.apiKey;
-      toast(tx('已重新生成，请把新 Key 同步到 MCP 客户端配置'));
-      if (typeof refreshApiMcpPage === 'function') await refreshApiMcpPage();
-    }
+    const approved = await app.confirmAction?.({
+      title: tx('重新生成 API Key'),
+      message: tx('重新生成 API Key？本地 mcp-key.json 会立即更新，使用此 Key 的 MCP 客户端需要同步更新。'),
+      confirmLabel: tx('重新生成'),
+      tone: 'danger',
+    });
+    if (!approved) return false;
+    started = true;
+    ++apiRefreshSequence;
+    clearApiMcpConfig('正在重新生成 API Key…');
+    apiKeyRotationPending = true;
+    let res;
+    try { res = await window.ops.rotateApiKey(); }
+    finally { apiKeyRotationPending = false; }
+    if (typeof res?.apiKey !== 'string' || !res.apiKey) throw new Error('Invalid API key rotation result');
+    toast(tx('已重新生成，请把新 Key 同步到 MCP 客户端配置'));
+    await refreshApiMcpPage();
   } catch (err) {
+    if (started) clearApiMcpConfig('API Key 重新生成未完成，请刷新检查当前配置。');
     toast(tx('重新生成失败：') + err.message);
+  } finally {
+    apiKeyRotationInFlight = false;
+    if (button) button.disabled = false;
   }
 });
 document.getElementById('mcp-config-tabs')?.addEventListener('click', (event) => {
@@ -164,7 +216,8 @@ document.getElementById('mcp-config-tabs')?.addEventListener('click', (event) =>
   document.querySelectorAll('#mcp-config-tabs button').forEach((b) => b.classList.toggle('active', b === btn));
   const tab = btn.dataset.mcpTab;
   const mcpTa = document.getElementById('mcp-config-json');
-  if (mcpTa) mcpTa.textContent = JSON.stringify(tab === 'platform' ? window.__mcpConfigPlatform : window.__mcpConfigCommon, null, 2);
+  const config = tab === 'platform' ? window.__mcpConfigPlatform : window.__mcpConfigCommon;
+  if (mcpTa) mcpTa.textContent = config ? JSON.stringify(config, null, 2) : '';
 });
 
 // F-8: a multi-step RPA run emits a rpa-task event per step transition; a
@@ -183,9 +236,7 @@ function queueRpaTaskRefresh() {
     rpaTaskRefreshInFlight = true;
     try {
       // One IPC fetch feeds both tables; each refresh used to issue its own call.
-      const tasks = await window.ops.rpaTasks({});
-      window.refreshRpaTasks?.(tasks);
-      window.refreshRpaRuns?.(tasks);
+      await window.refreshRpaTables?.();
     } catch (_) {}
     finally { rpaTaskRefreshInFlight = false; }
   }, 100);

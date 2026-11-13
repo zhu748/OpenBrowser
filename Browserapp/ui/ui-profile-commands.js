@@ -9,6 +9,22 @@
   const MAX_IMPORT_BYTES = 16 * 1024 * 1024;
   const MAX_IMPORT_PROFILES = 5000;
 
+  // An editor ID can be reopened before a reply arrives. The session token,
+  // request lane and input snapshot must all still belong to this request.
+  function createEditorRequestGuard({ getSession }) {
+    const latest = new Map();
+    return {
+      cancel() { latest.clear(); },
+      begin(lane, readInputs = () => null) {
+        const session = getSession(), inputs = readInputs(), token = {};
+        latest.set(lane, token);
+        const owns = () => latest.get(lane) === token && Object.is(session, getSession());
+        return { owns, current: () => owns() && Object.is(inputs, readInputs()),
+          finish() { if (owns()) latest.delete(lane); } };
+      },
+    };
+  }
+
   function validateImportText(value) {
     const text = String(value ?? '');
     if (text.length > MAX_IMPORT_BYTES || new TextEncoder().encode(text).byteLength > MAX_IMPORT_BYTES) {
@@ -92,7 +108,9 @@
     const rows = unwrapIpcResult(await applyCommands([{
       kind: 'modify', id: profile.id, baseRev, profile: payload,
     }]));
-    if (!Array.isArray(rows) || !rows.some((row) => row?.id === profile.id && Number.isSafeInteger(row.rev) && row.rev > 0)) {
+    const accepted = Array.isArray(rows) ? rows.filter((row) => row?.id === profile.id) : [];
+    if (accepted.length !== 1 || !Number.isSafeInteger(accepted[0].rev) || accepted[0].rev < 1
+      || !Number.isSafeInteger(baseRev) || baseRev < 1 || accepted[0].rev < baseRev) {
       throw Object.assign(new Error('Invalid profile command result'), { code: 'PROFILE_COMMAND_RESULT_INVALID' });
     }
     // A conflict is deliberately propagated. Replacing baseRev with a fresh
@@ -197,5 +215,5 @@
   }
 
   return { MAX_IMPORT_BYTES, MAX_IMPORT_PROFILES, validateImportText, readImportFile,
-    buildImportedProfile, commitProfileEdit, commitProfilePatches, createProfileEditorOpener, createProfileEditorSubmit, resolveEditorUaDraft };
+    buildImportedProfile, commitProfileEdit, commitProfilePatches, createProfileEditorOpener, createProfileEditorSubmit, resolveEditorUaDraft, createEditorRequestGuard };
 });

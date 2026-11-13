@@ -108,17 +108,26 @@ async function applyToTarget(cdpCall, webSocketDebuggerUrl, fp, profile, options
     : null;
   const source = buildInjectionScript(fp);
   const fpKey = injectSourceKeyCached(injectionCacheKeyFor(fp), source);
+  // CDP overrides also depend on profile-only fields absent from the JS
+  // payload, notably custom coordinates and whether the real timezone wins.
+  const roleKey = JSON.stringify([Boolean(options.isSubframe), options.targetType || '']);
+  const nativeKey = JSON.stringify([timezone, latitude, longitude, privacy.accuracy || 100, fp.geoPermission, roleKey]);
+  const native = state.native || (state.native = {});
   const forceInject = options.force === true;
   const injectState = state.applied;
   const sameConfig = Boolean(injectState && injectState.fpKey === fpKey);
-  const alreadyPatched = Boolean(sameConfig && injectState.documentStartOk && injectState.evaluated);
+  const alreadyPatched = Boolean(sameConfig && injectState.nativeKey === nativeKey && injectState.documentStartOk && injectState.evaluated);
+  const refreshDocument = !sameConfig || !injectState.documentStartOk || !injectState.evaluated
+    || injectState.roleKey !== roleKey || forceInject;
   // Nothing left to do for this target: the live document already carries this exact config and the
   // document-start registration covers every later navigation.
   if (alreadyPatched && !forceInject) return { documentStartOk: true, evaluated: true };
 
   // Page domain must be enabled or addScriptToEvaluateOnNewDocument is a no-op on some hosts.
-  await invoke('Page.enable', {}).catch(() => {});
-  await invoke('Runtime.enable', {}).catch(() => {});
+  if (refreshDocument) {
+    await invoke('Page.enable', {}).catch(() => {});
+    await invoke('Runtime.enable', {}).catch(() => {});
+  }
 
   // Soft overrides: CDP rejects a second setLocale/setTimezone with
   // "Another locale override is already in effect" — must not abort the whole inject.
@@ -136,7 +145,7 @@ async function applyToTarget(cdpCall, webSocketDebuggerUrl, fp, profile, options
   // color-scheme and prefers-* answers agree for CSS `@media` blocks and
   // :root color-scheme rendering, complementing the document-side matchMedia
   // rewrite (which covers JS MediaQueryList reads). Cheap and per-tab.
-  if (fp.mediaPreferences) {
+  if (refreshDocument && fp.mediaPreferences) {
     const prefs = fp.mediaPreferences;
     await softOverride('Emulation.setEmulatedMedia', {
       features: [
@@ -148,7 +157,7 @@ async function applyToTarget(cdpCall, webSocketDebuggerUrl, fp, profile, options
     });
   }
   // Network/Emulation.setUserAgentOverride + UserAgentMetadata (Client Hints)
-  if (fp.userAgent || fp.uaProfile) {
+  if (refreshDocument && (fp.userAgent || fp.uaProfile)) {
     const isIos = Boolean((fp.mobileDevice && fp.mobileDevice.os === 'ios') || fp.uaProfile?.os === 'ios' || (fp.platform && /iphone|ipad|ipod/i.test(fp.platform)));
     const uaProfile = fp.uaProfile || buildUaProfile({
       userAgent: fp.userAgent,
@@ -176,7 +185,7 @@ async function applyToTarget(cdpCall, webSocketDebuggerUrl, fp, profile, options
   // it is what makes innerWidth, screen.*, the pixel ratio and pointer type agree inside a
   // desktop window. Emulated touch goes with it, or a phone that cannot answer touch probes is
   // immediately suspicious.
-  if (fp.mobile && fp.screen && !options.isSubframe && options.targetType !== 'iframe') {
+  if (refreshDocument && fp.mobile && fp.screen && !options.isSubframe && options.targetType !== 'iframe') {
     const viewport = fp.mobileDevice?.viewport || {};
     const mobileWidth = Math.round(Number(viewport.width) || Number(fp.screen.width) || 360);
     const mobileHeight = Math.round(Number(viewport.height) || Number(fp.screen.height) || 640);
@@ -195,7 +204,8 @@ async function applyToTarget(cdpCall, webSocketDebuggerUrl, fp, profile, options
       enabled: true,
       maxTouchPoints: Number(fp.maxTouchPoints) || 5,
     });
-  } else if (fp.screen && !options.isSubframe && options.targetType !== 'iframe') {
+    native.touch = true;
+  } else if (refreshDocument && fp.screen && !options.isSubframe && options.targetType !== 'iframe') {
     // DPR=1 is an override too: clearing metrics would restore a 1.5x/2x host.
     // This command is required; failure must prevent publishing the target.
     await invoke('Emulation.setDeviceMetricsOverride', {
@@ -206,9 +216,14 @@ async function applyToTarget(cdpCall, webSocketDebuggerUrl, fp, profile, options
       screenWidth: Math.round(Number(fp.screen.width)),
       screenHeight: Math.round(Number(fp.screen.height)),
     });
+    if (native.touch) {
+      await invoke('Emulation.setTouchEmulationEnabled', { enabled: false });
+      native.touch = false;
+    }
   }
-  if (timezone) {
+  if ((timezone || native.timezone) && (refreshDocument || timezone !== native.timezone)) {
     await softOverride('Emulation.setTimezoneOverride', { timezoneId: timezone });
+    native.timezone = timezone;
   }
   if (latitude !== null && longitude !== null && Number.isFinite(latitude) && Number.isFinite(longitude)) {
     await invoke('Emulation.setGeolocationOverride', {
@@ -216,17 +231,25 @@ async function applyToTarget(cdpCall, webSocketDebuggerUrl, fp, profile, options
       longitude,
       accuracy: privacy.accuracy || 100,
     });
+    native.geolocation = true;
+  } else if (native.geolocation) {
+    await invoke('Emulation.clearGeolocationOverride', {});
+    native.geolocation = false;
   }
   // Roxy geoLocation mode: 'allow' auto-grants the permission (coordinates above provide the
   // position), 'deny' blocks it at the browser level so no native prompt can leak host coords.
   // Required native policy owns callbacks, validation, cancellation and error objects.
-  if (fp.geoPermission === 'granted' || fp.geoPermission === 'denied') {
+  if ((fp.geoPermission === 'granted' || fp.geoPermission === 'denied'
+    || (fp.geoPermission === 'prompt' && native.permissionOverride))
+    && (refreshDocument || fp.geoPermission !== native.permission)) {
     await invoke('Browser.setPermission', {
       permission: { name: 'geolocation' },
       setting: fp.geoPermission,
     });
+    native.permissionOverride = true;
+    native.permission = fp.geoPermission;
   }
-  if (fp.languages?.[0]) {
+  if (refreshDocument && fp.languages?.[0]) {
     await softOverride('Emulation.setLocaleOverride', { locale: fp.languages[0] });
   }
 
@@ -264,9 +287,9 @@ async function applyToTarget(cdpCall, webSocketDebuggerUrl, fp, profile, options
     if (registrationError) throw registrationError;
   }
   if (state.closed) throw closedTargetError();
-  state.applied = { fpKey, identifier: scriptIdentifier, documentStartOk, evaluated: false };
+  state.applied = { fpKey, nativeKey, roleKey, identifier: scriptIdentifier, documentStartOk, evaluated: false };
   let evaluatedOk = Boolean(sameConfig && injectState.evaluated);
-  if (!options.skipEvaluate && !options.isWaiting) {
+  if (!options.skipEvaluate && !options.isWaiting && (!evaluatedOk || forceInject)) {
     const evaluated = await invoke('Runtime.evaluate', {
       expression: livePatchSource || source,
       returnByValue: false,
@@ -282,7 +305,7 @@ async function applyToTarget(cdpCall, webSocketDebuggerUrl, fp, profile, options
     evaluatedOk = true;
   }
   if (state.closed) throw closedTargetError();
-  state.applied = { fpKey, identifier: scriptIdentifier, documentStartOk, evaluated: evaluatedOk };
+  state.applied = { fpKey, nativeKey, roleKey, identifier: scriptIdentifier, documentStartOk, evaluated: evaluatedOk };
   return { documentStartOk, evaluated: evaluatedOk };
 }
 

@@ -38,11 +38,13 @@
    */
   function createUiStateStore({ read, write, getState, normalizeProfile, fallback,
     onQuota = () => {}, onFailure = () => {}, delayMs = 500,
+    maxWaitMs = Math.max(delayMs, 2000), now = () => globalThis.performance?.now?.() ?? Date.now(),
     setTimer = setTimeout, clearTimer = clearTimeout }) {
     let timer = null;
+    let requestedAt = null;
     let disposed = false;
     const notify = (observer, error) => { try { observer(error); } catch (_) { /* observer */ } };
-    const cancel = () => { if (timer !== null) { clearTimer(timer); timer = null; } };
+    const cancel = () => { if (timer !== null) { clearTimer(timer); timer = null; } requestedAt = null; };
     function load() {
       try {
         const value = JSON.parse(read());
@@ -51,7 +53,11 @@
           // fields. Merging it over the engine's authoritative state would
           // strip fingerprints and proxy settings on the next sync, so keep
           // only the non-profile parts (window geometry etc.).
-          if (value.degraded) return { ...fallback(), degraded: true };
+          if (value.degraded) {
+            const base = fallback();
+            const { profiles: _profiles, logs: _logs, ...metadata } = value;
+            return { ...base, ...metadata, profiles: base.profiles, logs: [], degraded: true };
+          }
           return { ...value, logs: Array.isArray(value.logs) ? value.logs : [] };
         }
       } catch (_) { /* Missing, corrupt or blocked storage starts with defaults. */ }
@@ -85,8 +91,13 @@
     }
     function request() {
       if (disposed) return;
-      cancel();
-      timer = setTimer(() => { timer = null; save(); }, delayMs);
+      const timestamp = now();
+      if (requestedAt === null) requestedAt = timestamp;
+      if (timer !== null) clearTimer(timer);
+      // Preserve the first deadline during a continuous log/status stream.
+      const ceiling = Number.isFinite(maxWaitMs) ? Math.max(delayMs, maxWaitMs) : Math.max(delayMs, 2000);
+      const delay = Math.max(0, Math.min(delayMs, requestedAt + ceiling - timestamp));
+      timer = setTimer(() => { timer = null; save(); }, delay);
     }
     function flush() { return timer !== null ? save() : { ok: true, skipped: true }; }
     function dispose() { const result = flush(); disposed = true; cancel(); return result; }

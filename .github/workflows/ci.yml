@@ -227,6 +227,8 @@ jobs:
           node automation/selftests/workbench-browser-selftest.js
           node automation/selftests/cookie-warmup-native-selftest.js
           node automation/selftests/fingerprint-native-consistency-selftest.js
+          node automation/selftests/fingerprint-canvas-font-semantics-selftest.js
+          node automation/selftests/fingerprint-override-lifecycle-selftest.js
           # Worker-delivery behavior gates: blob/data/extensionless/nested worker
           # identity, and cached-service-worker scope identity. Both exercise the
           # Chromium 143+/157+ delivery paths that no static selftest can cover.
@@ -317,10 +319,10 @@ jobs:
           OPENBROWSER_MASTER_KEY_FILE: ${{ runner.temp }}/openbrowser-desktop.key
         run: |
           if [[ "$RUNNER_OS" == "Linux" ]]; then
-            xvfb-run -a node node_modules/electron/cli.js --no-sandbox scripts/benchmark-real-render.js --sizes 10,100,1000 --skip-kernel --json
+            xvfb-run -a node node_modules/electron/cli.js --no-sandbox scripts/benchmark-real-render.js --sizes 10,100,1000 --skip-kernel --render-budget-ms 50 --json
             xvfb-run -a node automation/selftests/app-startup-e2e-selftest.js
           else
-            node node_modules/electron/cli.js scripts/benchmark-real-render.js --sizes 10,100,1000 --skip-kernel --json
+            node node_modules/electron/cli.js scripts/benchmark-real-render.js --sizes 10,100,1000 --skip-kernel --render-budget-ms 50 --json
           fi
 
   # ~200 lines of Windows FFI (process/lock.rs, guardian.rs) compile to nothing

@@ -48,6 +48,12 @@ async function main() {
   assert.deepEqual(errors, ['offline']);
   const invalid = controller.refresh(); replies.shift().resolve(null);
   assert.equal(await invalid, false, 'invalid responses do not overwrite state');
+  const previous = state;
+  for (const bad of [[null], [{ id: '' }], [{ id: 'one' }, { id: 'one' }]]) {
+    const request = controller.refresh(); replies.shift().resolve(bad);
+    assert.equal(await request, false);
+    assert.equal(state, previous, 'malformed inventory preserves selection and master state');
+  }
   console.log('SESSION_CONTROLLER_SELFTEST OK (late selection, sync state, trailing promise, single lane, failure recovery)');
 }
 main().catch((error) => { console.error(error); process.exitCode = 1; });

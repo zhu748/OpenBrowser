@@ -12,9 +12,16 @@
 
 const crypto = require('crypto');
 const { deriveFontPlaceholder } = require('./font-placeholder');
+const { sanitizeFontCss } = require('./css-font-parser');
+const { rewriteHtmlStyles } = require('./html-font-parser');
+const { BoundedLru } = require('./bounded-lru');
 
 const DEFAULT_BLOCKED_FONT = deriveFontPlaceholder('response-rewrite-default');
 const DEFAULT_MAX_BODY_SIZE = 10 * 1024 * 1024; // 10 MB limit to prevent excessive memory usage
+// Static stylesheet transforms can be shared across tabs. Cache only CSS, not
+// HTML documents or request headers, with policy+content isolation and a hard cap.
+const stylesheetTransforms = new BoundedLru({ maxEntries: 128, maxBytes: 8 * 1024 * 1024,
+  sizeOf: (entry) => 32 + (entry.source?.length || 0) * 2 });
 
 /**
  * Extract case-insensitive font family whitelist set from persona options or fingerprint.
@@ -54,23 +61,7 @@ function normalizePersonaFontSet(personaFonts) {
  * @returns {string} - Sanitized CSS content.
  */
 function sanitizeCss(css, allowedFamilies, blockedFont = DEFAULT_BLOCKED_FONT) {
-  if (typeof css !== 'string') return css;
-  if (!css.includes('@font-face') && !css.includes('@FONT-FACE')) {
-    return css;
-  }
-
-  // Match @font-face blocks and sanitize their local() declarations
-  return css.replace(/@font-face\b[^{]*\{([^{}]*)\}/gi, (match, inner) => {
-    const prefix = match.slice(0, match.indexOf('{') + 1);
-    const sanitizedInner = inner.replace(/local\s*\(\s*(["']?)([^"')]+)\1\s*\)/gi, (localMatch, quote, fontName) => {
-      const cleanName = fontName.trim().replace(/\s+/g, ' ').toLowerCase();
-      if (allowedFamilies.has(cleanName)) {
-        return localMatch;
-      }
-      return `local("${blockedFont}")`;
-    });
-    return prefix + sanitizedInner + '}';
-  });
+  return sanitizeFontCss(css, allowedFamilies, blockedFont);
 }
 
 /**
@@ -84,49 +75,24 @@ function sanitizeCss(css, allowedFamilies, blockedFont = DEFAULT_BLOCKED_FONT) {
  */
 function sanitizeHtml(html, allowedFamilies, blockedFont = DEFAULT_BLOCKED_FONT, onStyleReplaced = null) {
   if (typeof html !== 'string') return html;
-
-  // 1. Sanitize inline <style> elements
-  let result = html.replace(/(<style\b[^>]*>)([\s\S]*?)(<\/style>)/gi, (match, openTag, content, closeTag) => {
-    const sanitized = sanitizeCss(content, allowedFamilies, blockedFont);
-    if (sanitized !== content && typeof onStyleReplaced === 'function') {
-      onStyleReplaced(content, sanitized);
-    }
-    return openTag + sanitized + closeTag;
-  });
-
-  // 2. Sanitize static data:text/css stylesheets declared in <link> tags
-  result = result.replace(/(<link\b[^>]*href=["'])(data:text\/css[^"']*)(["'][^>]*>)/gi, (match, openTag, dataUri, closeTag) => {
-    const commaIdx = dataUri.indexOf(',');
-    if (commaIdx === -1) return match;
-    const meta = dataUri.slice(0, commaIdx);
-    const rawData = dataUri.slice(commaIdx + 1);
-    const isBase64 = meta.toLowerCase().includes(';base64');
-    try {
-      const decoded = isBase64 ? Buffer.from(rawData, 'base64').toString('utf8') : decodeURIComponent(rawData);
-      const sanitized = sanitizeCss(decoded, allowedFamilies, blockedFont);
-      if (sanitized === decoded) return match;
-      const reencoded = isBase64 ? Buffer.from(sanitized, 'utf8').toString('base64') : encodeURIComponent(sanitized);
-      return openTag + meta + ',' + reencoded + closeTag;
-    } catch (_) {
-      return match;
-    }
-  });
-
-  return result;
+  const result = rewriteHtmlStyles(html, (css) => sanitizeCss(css, allowedFamilies, blockedFont),
+    (policy, replacements) => updateCspHeaders([{ name: 'content-security-policy', value: policy }], replacements)[0].value);
+  for (const pair of result.replacements) if (typeof onStyleReplaced === 'function') onStyleReplaced(pair.oldContent, pair.newContent);
+  return result.html;
 }
 
 /**
  * Calculate SHA-256 base64 digest of a string or buffer.
  */
-function sha256Base64(data) {
-  return crypto.createHash('sha256').update(data).digest('base64');
+function styleDigest(data, algorithm) {
+  return crypto.createHash(algorithm).update(data.replace(/\r\n?/g, '\n')).digest('base64');
 }
 
 /**
  * Update Content-Security-Policy headers when inline <style> elements are modified.
  *
- * If the original CSP specified sha256 hashes for inline styles, updates matching
- * hashes to the new rewritten style hashes so CSP validation does not fail.
+ * Add rewritten style hashes to their original style directives. Keep existing
+ * authorization and unrelated script directives unchanged.
  *
  * @param {Array<{name: string, value: string}>} headers
  * @param {Array<{oldContent: string, newContent: string}>} styleReplacements
@@ -137,23 +103,49 @@ function updateCspHeaders(headers, styleReplacements) {
     return headers;
   }
 
-  const hashPairs = styleReplacements.map((pair) => ({
-    oldHash: sha256Base64(pair.oldContent),
-    newHash: sha256Base64(pair.newContent),
-  })).filter((pair) => pair.oldHash !== pair.newHash);
+  const algorithms = new Set();
+  for (const header of headers) {
+    if (!/^content-security-policy(?:-report-only)?$/i.test(header.name)) continue;
+    for (const match of header.value.matchAll(/'sha(256|384|512)-[A-Za-z\d+/=]+'/gi)) algorithms.add('sha' + match[1]);
+  }
+  // Nonce-only and unsafe-inline policies need no hash work at all.
+  if (!algorithms.size) return headers;
+  const hashPairs = styleReplacements.flatMap((pair) => [...algorithms].map((algorithm) => ({
+    oldHash: `'${algorithm}-${styleDigest(pair.oldContent, algorithm)}'`,
+    newHash: `'${algorithm}-${styleDigest(pair.newContent, algorithm)}'`,
+  }))).filter((pair) => pair.oldHash !== pair.newHash);
 
   if (!hashPairs.length) return headers;
 
   return headers.map((header) => {
     const name = header.name.toLowerCase();
     if (name === 'content-security-policy' || name === 'content-security-policy-report-only') {
-      let updatedVal = header.value;
-      for (const { oldHash, newHash } of hashPairs) {
-        if (updatedVal.includes(oldHash)) {
-          updatedVal = updatedVal.replace(new RegExp(oldHash.replace(/[/\\^$*+?.()|[\]{}]/g, '\\$&'), 'g'), newHash);
+      const directives = header.value.split(';');
+      const hasStyle = directives.some((part) => /^\s*style-src(?:\s|$)/i.test(part));
+      const hasStyleElem = directives.some((part) => /^\s*style-src-elem(?:\s|$)/i.test(part));
+      const extendStyle = (part) => {
+        const tokens = new Set(part.trim().split(/\s+/).map((token) => token.replace(/^'sha(256|384|512)-/i, (prefix) => prefix.toLowerCase())));
+        for (const { oldHash, newHash } of hashPairs) {
+          if (tokens.has(oldHash) && !tokens.has(newHash)) { part += ' ' + newHash; tokens.add(newHash); }
         }
-      }
-      return { name: header.name, value: updatedVal };
+        return part;
+      };
+      let fallbackStyle = '', sawDefault = false;
+      const updatedVal = directives.map((part) => {
+        const directive = /^\s*([^\s]+)/.exec(part)?.[1]?.toLowerCase();
+        if (directive === 'style-src' || directive === 'style-src-elem') return extendStyle(part);
+        if (directive === 'default-src' && !sawDefault) {
+          sawDefault = true;
+          if (!hasStyle && !hasStyleElem) {
+            const style = part.replace(/^(\s*)default-src\b/i, '$1style-src');
+            const rewritten = extendStyle(style);
+            if (rewritten !== style) fallbackStyle = rewritten;
+          }
+        }
+        // Keep the default policy intact for scripts and every other resource.
+        return part;
+      }).join(';');
+      return { name: header.name, value: updatedVal + (fallbackStyle ? ';' + fallbackStyle : '') };
     }
     return header;
   });
@@ -172,12 +164,15 @@ class CssFontResponseRewriter {
     this.allowedFamilies = normalizePersonaFontSet(options.personaFonts);
     this.maxBodySize = Number(options.maxBodySize) || DEFAULT_MAX_BODY_SIZE;
     this.blockedFont = options.blockedFont || deriveFontPlaceholder(options.fingerprint || options.seed || options.personaFonts || DEFAULT_BLOCKED_FONT);
+    this.policyCacheKey = JSON.stringify([[...this.allowedFamilies].sort(), this.blockedFont]);
     this.enabled = options.enabled !== false;
     this.logger = typeof options.logger === 'function' ? options.logger : null;
     this.inFlightRequests = new Set();
     // requestId -> owning CDP session, so a detached iframe/worker can only release its own
     // bookkeeping instead of clearing ids that still belong to live tabs.
     this.inFlightBySession = new Map();
+    this.operations = new Map();
+    this.destroyed = false;
   }
 
   /**
@@ -186,6 +181,16 @@ class CssFontResponseRewriter {
    */
   setPersonaFonts(personaFonts) {
     this.allowedFamilies = normalizePersonaFontSet(personaFonts);
+    this.policyCacheKey = JSON.stringify([[...this.allowedFamilies].sort(), this.blockedFont]);
+  }
+
+  rewriteStylesheet(body) {
+    const key = crypto.createHash('sha256').update(this.policyCacheKey).update('\0').update(body).digest('hex');
+    const cached = stylesheetTransforms.get(key);
+    if (cached) return cached.source ?? body;
+    const source = sanitizeCss(body, this.allowedFamilies, this.blockedFont);
+    stylesheetTransforms.set(key, { source: source === body ? null : source });
+    return source;
   }
 
   /**
@@ -195,6 +200,7 @@ class CssFontResponseRewriter {
    * @param {Object} [options] - Options including sessionId
    */
   async enable(connection, options = {}) {
+    if (!this.enabled) return;
     const params = {
       patterns: [
         { requestStage: 'Response', resourceType: 'Document' },
@@ -253,19 +259,24 @@ class CssFontResponseRewriter {
     const { requestId, request, resourceType, responseStatusCode, responseHeaders, responseStatusText } = event.params;
     const sessionId = event.sessionId;
 
-    if (!requestId) return;
+    if (!requestId || this.destroyed) return;
+    const key = JSON.stringify([sessionId || '', requestId]);
+    const pending = this.operations.get(key);
+    if (pending) return pending.promise;
+    const state = { cancelled: false, cleanup: null, promise: null };
+    this.operations.set(key, state);
 
-    this.inFlightRequests.add(requestId);
+    this.inFlightRequests.add(key);
     if (sessionId) {
       let sessionRequests = this.inFlightBySession.get(sessionId);
       if (!sessionRequests) {
         sessionRequests = new Set();
         this.inFlightBySession.set(sessionId, sessionRequests);
       }
-      sessionRequests.add(requestId);
+      sessionRequests.add(key);
     }
 
-    (async () => {
+    state.promise = (async () => {
       let settled = false;
       let safetyTimer = null;
       const clearSafety = () => {
@@ -275,10 +286,11 @@ class CssFontResponseRewriter {
         }
       };
       const forget = () => {
-        this.inFlightRequests.delete(requestId);
+        if (this.operations.get(key) !== state) return;
+        this.inFlightRequests.delete(key);
         const tracked = sessionId ? this.inFlightBySession.get(sessionId) : null;
         if (tracked) {
-          tracked.delete(requestId);
+          tracked.delete(key);
           if (!tracked.size) this.inFlightBySession.delete(sessionId);
         }
       };
@@ -287,6 +299,7 @@ class CssFontResponseRewriter {
         clearSafety();
         forget();
       };
+      state.cleanup = release;
       // Fail-open backstop. Every awaited CDP call already carries its own timeout, so the only
       // way this handler can strand a paused response is a send() that never settles at all.
       // The backstop is therefore armed per send and sized to that send's own budget: one absolute
@@ -294,12 +307,15 @@ class CssFontResponseRewriter {
       // release requests that were merely slow, which the page sees as a half-rewritten document
       // and a tab that stops responding — exactly the symptom this guard exists to prevent.
       const guardedSend = async (method, params = {}, options = {}) => {
+        if (state.cancelled || this.destroyed) return null;
         const budget = Number(options.timeout) || 6000;
         clearSafety();
         safetyTimer = setTimeout(() => {
-          if (settled) return;
+          if (settled || state.cancelled || this.destroyed) return;
           settled = true;
+          state.cancelled = true;
           forget();
+          if (this.operations.get(key) === state) this.operations.delete(key);
           this._log('stuck-failopen', { method, url: request?.url, budget });
           this._sendCommand(connection, 'Fetch.continueRequest', { requestId }, { sessionId, timeout: 4000 }).catch(() => {});
         }, budget + 2000);
@@ -311,7 +327,7 @@ class CssFontResponseRewriter {
         }
       };
       const doContinue = async () => {
-        if (settled) return;
+        if (settled || state.cancelled || this.destroyed) return;
         release();
         try {
           await guardedSend('Fetch.continueRequest', { requestId }, { sessionId, timeout: 6000 });
@@ -328,6 +344,8 @@ class CssFontResponseRewriter {
         if (responseStatusCode == null) {
           return await doContinue();
         }
+        if (request?.method === 'HEAD' || [204, 205, 304].includes(responseStatusCode)
+          || (responseStatusCode >= 300 && responseStatusCode < 400)) return await doContinue();
 
         // 3. Skip 206 Partial Content and Range responses
         if (responseStatusCode === 206 || this._hasHeader(responseHeaders, 'content-range')) {
@@ -336,8 +354,9 @@ class CssFontResponseRewriter {
 
         // 4. Validate Content-Type / ResourceType whitelist (only HTML and CSS)
         const contentType = (this._getHeaderValue(responseHeaders, 'content-type') || '').toLowerCase();
-        const isHtml = resourceType === 'Document' || contentType.includes('text/html');
-        const isCss = resourceType === 'Stylesheet' || contentType.includes('text/css');
+        const mime = contentType.split(';')[0].trim();
+        const isHtml = mime ? mime === 'text/html' || mime === 'application/xhtml+xml' : resourceType === 'Document';
+        const isCss = mime ? mime === 'text/css' : resourceType === 'Stylesheet';
 
         if (!isHtml && !isCss) {
           return await doContinue();
@@ -359,16 +378,28 @@ class CssFontResponseRewriter {
           { requestId },
           { sessionId, timeout: 8000 }
         );
+        if (settled || state.cancelled || this.destroyed) return;
 
         const bodyData = bodyMessage?.result || bodyMessage;
         if (!bodyData || bodyData.body == null) {
           return await doContinue();
         }
 
+        // Content-Length can be absent or describe compressed bytes. Bound
+        // decoded data before allocating another buffer or scanning CSS.
+        const bodyBytes = bodyData.base64Encoded
+          ? Buffer.byteLength(bodyData.body, 'base64')
+          : Buffer.byteLength(String(bodyData.body), 'utf8');
+        if (bodyBytes > this.maxBodySize) {
+          this._log('skip-decoded-oversized', { url: request?.url, size: bodyBytes });
+          return await doContinue();
+        }
+
         // 7. Decode body to UTF-8 text
         let bodyText = '';
         if (bodyData.base64Encoded) {
-          bodyText = Buffer.from(bodyData.body, 'base64').toString('utf8');
+          const charset = /charset\s*=\s*["']?([^\s;"']+)/i.exec(contentType)?.[1] || 'utf-8';
+          bodyText = new TextDecoder(charset).decode(Buffer.from(bodyData.body, 'base64'));
         } else {
           bodyText = String(bodyData.body);
         }
@@ -383,7 +414,7 @@ class CssFontResponseRewriter {
         if (isHtml) {
           rewritten = sanitizeHtml(bodyText, this.allowedFamilies, this.blockedFont, onStyleReplaced);
         } else if (isCss) {
-          rewritten = sanitizeCss(bodyText, this.allowedFamilies, this.blockedFont, onStyleReplaced);
+          rewritten = this.rewriteStylesheet(bodyText);
         }
 
         // If nothing was modified, continue original request to preserve network streaming
@@ -402,6 +433,9 @@ class CssFontResponseRewriter {
           const lower = h.name.toLowerCase();
           return lower !== 'content-length' && lower !== 'content-encoding' && lower !== 'transfer-encoding';
         });
+        fulfilledHeaders = fulfilledHeaders.map((header) => header.name.toLowerCase() === 'content-type'
+          ? { name: header.name, value: header.value.replace(/;\s*charset\s*=\s*(?:"[^"]*"|'[^']*'|[^;\s]*)/ig, '') + '; charset=utf-8' }
+          : header);
         fulfilledHeaders.push({ name: 'Content-Length', value: String(newBodyBuffer.length) });
 
         if (styleReplacements.length > 0) {
@@ -447,8 +481,13 @@ class CssFontResponseRewriter {
       } catch (err) {
         this._log('handle-error', { error: err.message, url: request?.url });
         await doContinue();
+      } finally {
+        clearSafety();
+        forget();
+        if (this.operations.get(key) === state) this.operations.delete(key);
       }
     })();
+    return state.promise;
   }
 
   /**
@@ -461,11 +500,17 @@ class CssFontResponseRewriter {
     if (!tracked) return;
     // Only this session's ids are dropped. A detached iframe/worker must never clear bookkeeping
     // that still belongs to a live tab, which would hide that tab's requests from the counters.
-    for (const requestId of tracked) this.inFlightRequests.delete(requestId);
+    for (const key of [...tracked]) {
+      const state = this.operations.get(key);
+      if (state) { state.cancelled = true; state.cleanup?.(); this.operations.delete(key); }
+    }
     this.inFlightBySession.delete(sessionId);
   }
 
   destroy() {
+    this.destroyed = true;
+    for (const state of this.operations.values()) { state.cancelled = true; state.cleanup?.(); }
+    this.operations.clear();
     this.inFlightRequests.clear();
     this.inFlightBySession.clear();
   }

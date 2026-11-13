@@ -23,6 +23,7 @@ const { createWebRtcFallbackSource } = require('../webrtc-fallback');
 const { mobilePersona, supportsRuntimePersona } = require('../mobile-personas');
 const { buildCssFontLocalGateSource } = require('../css-font-local-gate');
 const { deriveFontPlaceholder, deriveBridgeToken } = require('../font-placeholder');
+const { WORKER_RUNTIME_REVISION } = require('./runtime-revision');
 const { buildQueryLocalFontBlobGateSource } = require('../query-local-font-blob-gate');
 const {
   buildUaProfile,
@@ -54,7 +55,10 @@ const {
 function canonicalBridgeToken(fp) {
   if (!fp || typeof fp !== 'object') return deriveBridgeToken(fp);
   const { fontBlobBridge: _fontBlobBridge, consistency: _consistency, ...declared } = fp;
-  return deriveBridgeToken(declared);
+  // A cached Service Worker may contain the previous runtime for the same
+  // persona. Give each runtime revision a distinct private channel so the
+  // delivery gate can retire its old prefix without changing fingerprint data.
+  return deriveBridgeToken({ runtimeRevision: WORKER_RUNTIME_REVISION, configuration: declared });
 }
 
 const { FONT_SUBSET_ROOT, mapPlatformToSubsetKey, loadFontSubsetPayload, buildFontMetricsScript } = require('../font-metrics');

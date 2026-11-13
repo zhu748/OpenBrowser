@@ -59,6 +59,9 @@ const context = { profile: { id: 'a', updatedAt: 'unchanged' }, info: { running:
 const key = profileRenderKey(context);
 for (const patch of [
   { profile: { ...context.profile, createdAt: 'new-time' } },
+  { profile: { ...context.profile, os: 'macOS' } },
+  { profile: { ...context.profile, osVersion: '15' } },
+  { profile: { ...context.profile, networkMode: 'proxy' } },
   { profile: { ...context.profile, platform: { startUrl: 'https://example.test/' } } },
   { profile: { ...context.profile, platform: { type: 'Website' } } },
   { starting: { ...context.starting, message: 'after' } },

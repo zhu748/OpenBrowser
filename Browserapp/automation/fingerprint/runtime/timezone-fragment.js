@@ -442,36 +442,10 @@ const AUDIO_CORE = `  // --- audio ---
     try {
       const mark = Number(CFG.audio.mark) || 1;
       const renderedBuffers = new WeakSet();
-      const authoredSpans = new WeakMap();
+      const writes = createAudioWriteTracker();
       const markRendered = (value) => {
         try { if (value && typeof value === 'object') renderedBuffers.add(value); } catch (_) {}
         return value;
-      };
-      const spanFor = (buffer, channel) => {
-        try {
-          const channels = authoredSpans.get(buffer);
-          if (!channels) return null;
-          return channels.get(channel) || null;
-        } catch (_) { return null; }
-      };
-      const recordSpan = (buffer, channelNumber, start, length) => {
-        try {
-          if (!buffer || typeof buffer !== 'object' || !renderedBuffers.has(buffer)) return;
-          const channel = Number(channelNumber) || 0;
-          const from = Math.max(0, Number(start) || 0);
-          const cover = Number(length) || 0;
-          if (cover <= 0) return;
-          let channels = authoredSpans.get(buffer);
-          if (!channels) { channels = new Map(); authoredSpans.set(buffer, channels); }
-          const spans = channels.get(channel) || [];
-          spans.push([from, from + cover]);
-          channels.set(channel, spans);
-        } catch (_) {}
-      };
-      const inAuthoredSpan = (spans, index) => {
-        if (!spans) return false;
-        for (const span of spans) { if (index >= span[0] && index < span[1]) return true; }
-        return false;
       };
       const hookOwn = (proto, key, factory) => {
         try {
@@ -577,34 +551,34 @@ const AUDIO_CORE = `  // --- audio ---
           }
         } catch (_) {}
         if (targetWin.AudioBuffer && targetWin.AudioBuffer.prototype.getChannelData) {
-          const processed = new WeakMap();
           const nativeGetChannel = targetWin.AudioBuffer.prototype.getChannelData;
+          const bufferLength = Object.getOwnPropertyDescriptor(targetWin.AudioBuffer.prototype, 'length')?.get;
           const nativeLength = targetWin.Float32Array
             ? Object.getOwnPropertyDescriptor(Object.getPrototypeOf(targetWin.Float32Array.prototype), 'length')?.get
             : null;
           const applyRenderedNoise = (buffer, channel, data) => {
             if (!renderedBuffers.has(buffer)) return data;
-            let channels = processed.get(buffer);
-            if (!channels) { channels = new Set(); processed.set(buffer, channels); }
-            if (channels.has(channel)) return data;
+            if (writes.isProcessed(buffer, channel)) return data;
             let silent = true;
             for (let i = 0; i < data.length; i++) if (data[i] !== 0) { silent = false; break; }
             if (!silent) {
-              const spans = spanFor(buffer, channel);
+              const spans = writes.spansFor(buffer, channel);
               for (let i = 0; i < data.length; i++) {
-                if (inAuthoredSpan(spans, i)) continue;
+                if (writes.contains(spans, i)) continue;
                 data[i] += (noise(i + channel * 4099 + mark) - 0.5) * 1e-7;
               }
             }
-            channels.add(channel);
+            writes.finish(buffer, channel);
             return data;
           };
           if (targetWin.AudioBuffer.prototype.copyToChannel) {
             hookOwn(targetWin.AudioBuffer.prototype, 'copyToChannel', (original) => function copyToChannel(source, channelNumber, startInChannel) {
               const call = invokeNativeUnsigned(original, this, arguments, [1, 2]);
               try {
-                const length = nativeLength ? nativeLength.call(source) : source.length;
-                recordSpan(this, call.values[1], call.values[2], length);
+                if (renderedBuffers.has(this) && !writes.isProcessed(this, call.values[1])) {
+                  const length = nativeLength ? nativeLength.call(source) : source.length;
+                  writes.record(this, call.values[1], call.values[2] ?? 0, length, bufferLength.call(this));
+                }
               } catch (_) {}
               return call.value;
             });
@@ -631,16 +605,25 @@ const AUDIO_CORE = `  // --- audio ---
 
         }
         if (targetWin.AnalyserNode) {
+          const analyserProto = targetWin.AnalyserNode.prototype;
+          const frequencySize = Object.getOwnPropertyDescriptor(analyserProto, 'frequencyBinCount')?.get;
+          const timeSize = Object.getOwnPropertyDescriptor(analyserProto, 'fftSize')?.get;
+          const typedLength = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(targetWin.Float32Array.prototype), 'length')?.get;
           const patchFreq = (name) => {
             if (!targetWin.AnalyserNode.prototype || !targetWin.AnalyserNode.prototype[name]) return;
             __REPLACE_HELPER__(targetWin.AnalyserNode.prototype, name, (original) => function(...args) {
               const res = original.apply(this, args);
               try {
                 const array = args[0];
-                if (array && array.length) {
-                  const step = Math.max(1, Math.floor(array.length / 32));
+                const size = name.includes('Frequency') ? frequencySize : timeSize;
+                // Native analysers leave oversized destinations' tails alone.
+                // Use intrinsic getters so shadowed properties cannot expand
+                // the written range or change how the prefix is perturbed.
+                const filled = Math.min(typedLength.call(array), size.call(this));
+                if (filled) {
+                  const step = Math.max(1, Math.floor(filled / 32));
                   if (name.includes('Byte')) {
-                    for (let i = 0; i < array.length; i += step) {
+                    for (let i = 0; i < filled; i += step) {
                       if (array[i] > 0 && array[i] < 255) {
                         const delta = noise(i + mark) > 0.5 ? 1 : -1;
                         array[i] = Math.max(0, Math.min(255, array[i] + delta));
@@ -648,7 +631,7 @@ const AUDIO_CORE = `  // --- audio ---
                     }
                   } else {
                     const amp = 1e-5;
-                    for (let i = 0; i < array.length; i += step) {
+                    for (let i = 0; i < filled; i += step) {
                       if (array[i] !== 0 && !isNaN(array[i]) && isFinite(array[i])) {
                         array[i] += (noise(i + mark) - 0.5) * amp;
                       }

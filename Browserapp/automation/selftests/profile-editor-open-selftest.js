@@ -10,6 +10,23 @@ const deferred = () => { let resolve; let reject; const promise = new Promise((a
 const snapshot = (id, rev, note = 'Engine') => ({ ipcResult: 1, ok: true, value: { profile: { id, name: id, note }, rev } });
 
 async function main() {
+  let session = 'edit:a:1', input = 'proxy-A';
+  const guard = commands.createEditorRequestGuard({ getSession: () => session });
+  const network = guard.begin('network', () => input);
+  const ua = guard.begin('ua', () => input);
+  assert.equal(network.current(), true, 'UA and network requests use independent lanes');
+  input = 'proxy-B';
+  assert.equal(network.current(), false, 'changed inputs cannot receive old results');
+  assert.equal(network.owns(), true, 'the request can still release its busy controls');
+  const replacement = guard.begin('network', () => input);
+  network.finish();
+  assert.equal(replacement.current(), true, 'an old completion cannot release a newer request');
+  assert.equal(network.owns(), false);
+  session = 'edit:a:2';
+  assert.equal(replacement.current(), false, 'reopening the same ID creates a new session');
+  assert.equal(ua.current(), false);
+  const cancelledRequest = guard.begin('network'); guard.cancel();
+  assert.equal(cancelledRequest.current(), false, 'leaving the editor cancels pending result ownership');
   const a = deferred(); const b = deferred(); const shown = [];
   const opener = commands.createProfileEditorOpener({ readSnapshot: (id) => id === 'a' ? a.promise : b.promise, show: (value) => shown.push(value) });
   const first = opener.open('a'); const second = opener.open('b');

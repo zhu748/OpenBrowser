@@ -55,6 +55,14 @@ async function main() {
   complete(await captureIpcResult(() => [{ id: 'a', rev: 2 }]));
   await saving;
   assert.equal(commits, 1);
+  for (const rows of [[{ id: 'a', rev: 1 }], [{ id: 'a', rev: 3 }, { id: 'a', rev: 4 }]]) {
+    await assert.rejects(commitProfileEdit({ profile, baseRev: 2, applyCommands: async () => rows,
+      commit: () => { throw new Error('invalid acknowledgement must never publish'); } }), { code: 'PROFILE_COMMAND_RESULT_INVALID' });
+  }
+  let noOpPublished = false;
+  await commitProfileEdit({ profile, baseRev: 2, applyCommands: async () => [{ id: 'a', rev: 2 }],
+    commit: () => { noOpPublished = true; } });
+  assert.equal(noOpPublished, true, 'content-identical writes legitimately retain their revision');
   console.log('PROFILE_COMMAND_CLIENT_SELFTEST OK (preload round trip, error fields, conflict, failure, commit ordering)');
 }
 

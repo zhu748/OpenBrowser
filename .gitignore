@@ -34,3 +34,5 @@ Browserapp/core
 .env.*
 **/*signing-private*.pem
 /signing-keys/
+# Local optimization probes and validation logs.
+/work/

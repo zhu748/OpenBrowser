@@ -19,6 +19,15 @@ const ui = app.ui || { profiles: [] };
 // ========== Automation scripts (local-only panels) ==========
 let rpaPlans = [];
 let rpaSelectedId = null;
+let rpaEditorSession = 0;
+let rpaSelectionSequence = 0;
+let rpaPageSequence = 0;
+let rpaTaskRows = null;
+let rpaTaskSnapshotVersion = 0;
+let rpaTaskRefresh = null;
+let rpaTaskTrailing = null;
+let rpaBadgeSequence = 0;
+let rpaStoreSequence = 0;
 let currentRpaTab = 'flows';
 const RPA_TEMPLATE = `[
   { "type": "gotoUrl", "url": "https://www.baidu.com" },
@@ -28,6 +37,16 @@ const RPA_TEMPLATE = `[
   { "type": "click", "selector": "#su" },
   { "type": "waitTime", "timeout": 2000 }
 ]`;
+
+function validRpaInventory(rows) {
+  if (!Array.isArray(rows)) return false;
+  const ids = new Set();
+  for (const row of rows) {
+    if (!row || typeof row !== 'object' || Array.isArray(row) || typeof row.id !== 'string' || !row.id.trim() || ids.has(row.id)) return false;
+    ids.add(row.id);
+  }
+  return true;
+}
 
 let rpaStoreTemplates = [];
 let rpaStoreCategories = ['全部'];
@@ -118,14 +137,15 @@ function setRpaEditorVisible(show) {
 function fillRpaProfileSelect(selectedIds = []) {
   const sel = document.getElementById('rpa-profile-ids');
   if (!sel) return;
-  const running = (app.engineProfiles || []).filter((p) => p.running);
+  const running = new Set((app.engineProfiles || []).filter((p) => p.running).map((p) => p.id));
+  const selected = new Set(selectedIds);
   sel.replaceChildren();
   for (const profile of (ui.profiles || [])) {
     const opt = document.createElement('option');
     opt.value = profile.id;
-    const live = running.some((r) => r.id === profile.id);
+    const live = running.has(profile.id);
     opt.textContent = (live ? '● ' : '○ ') + displayProfileNumber(profile) + ' · ' + (profile.name || profile.id);
-    if (selectedIds.includes(profile.id)) opt.selected = true;
+    if (selected.has(profile.id)) opt.selected = true;
     sel.append(opt);
   }
 }
@@ -133,7 +153,28 @@ function fillRpaProfileSelect(selectedIds = []) {
 function selectedRpaProfileIds() {
   const sel = document.getElementById('rpa-profile-ids');
   if (!sel) return [];
-  return [...sel.selectedOptions].map((o) => o.value);
+  return [...(sel.selectedOptions || [])].map((o) => o.value);
+}
+
+function rpaEditorSnapshot() {
+  return JSON.stringify([rpaSelectedId, document.getElementById('rpa-plan-name')?.value,
+    document.getElementById('rpa-steps-json')?.value, selectedRpaProfileIds()]);
+}
+
+function captureRpaEditor() {
+  const session = rpaEditorSession, snapshot = rpaEditorSnapshot();
+  return { owns: () => session === rpaEditorSession,
+    current: () => session === rpaEditorSession && snapshot === rpaEditorSnapshot() };
+}
+
+function acceptRpaEditorSave(plan, editor) {
+  if (!editor.owns()) return;
+  if (editor.current()) loadRpaPlanToEditor(plan);
+  else {
+    // A newly saved draft still needs its ID, while later typing stays intact.
+    rpaSelectedId = plan.id;
+    rpaEditorSession += 1; rpaSelectionSequence += 1;
+  }
 }
 
 function renderRpaPlans() {
@@ -170,6 +211,8 @@ function renderRpaPlans() {
 }
 
 function loadRpaPlanToEditor(plan) {
+  rpaEditorSession += 1;
+  rpaSelectionSequence += 1;
   rpaSelectedId = plan?.id || null;
   const title = document.getElementById('rpa-editor-title');
   if (!plan) {
@@ -236,8 +279,10 @@ function appendRpaLog(line) {
 }
 
 async function refreshRpaStatusBadge() {
+  const sequence = ++rpaBadgeSequence;
   try {
     const st = await window.ops.rpaStatus();
+    if (sequence !== rpaBadgeSequence || !Number.isSafeInteger(st?.count) || st.count < 0) return false;
     const el = document.getElementById('rpa-run-status');
     if (el) el.textContent = st.count ? (tx('运行中 ') + st.count) : tx('空闲');
   } catch (_) {}
@@ -245,15 +290,14 @@ async function refreshRpaStatusBadge() {
 
 // preloaded: share one rpaTasks IPC fetch between both tables (the rpa-task
 // event handler used to issue two identical calls per progress event).
-async function refreshRpaTasks(preloaded) {
+function renderRpaTasks(tasks) {
   const table = document.getElementById('rpa-task-table');
   const empty = document.getElementById('rpa-task-empty');
   const selectAll = document.getElementById('rpa-task-select-all');
   const deleteCheckedBtn = document.getElementById('rpa-task-delete-checked');
   if (!table) return;
-  let tasks = [];
-  try { tasks = preloaded ?? await window.ops.rpaTasks({}); } catch (_) { tasks = []; }
   const q = (document.getElementById('rpa-task-search')?.value || '').trim().toLowerCase();
+  const checkedIds = new Set([...table.querySelectorAll('.rpa-task-checkbox:checked')].map((box) => box.dataset.taskId));
   table.replaceChildren();
   if (selectAll) selectAll.checked = false;
   if (deleteCheckedBtn) deleteCheckedBtn.style.display = 'none';
@@ -270,6 +314,7 @@ async function refreshRpaTasks(preloaded) {
     cb.type = 'checkbox';
     cb.className = 'rpa-task-checkbox';
     cb.dataset.taskId = t.id;
+    cb.checked = checkedIds.has(t.id);
     const taskName = t.process_name || t.id;
     cb.title = taskName;
     cb.setAttribute('aria-label', taskName);
@@ -279,6 +324,7 @@ async function refreshRpaTasks(preloaded) {
         const total = table.querySelectorAll('.rpa-task-checkbox').length;
         const checked = table.querySelectorAll('.rpa-task-checkbox:checked').length;
         selectAll.checked = total > 0 && total === checked;
+        selectAll.indeterminate = checked > 0 && checked < total;
       }
     };
     const td0 = document.createElement('td'); td0.append(cb);
@@ -308,8 +354,7 @@ async function refreshRpaTasks(preloaded) {
       try {
         await window.ops.rpaTaskDelete([t.id]);
         toast(tx('任务已删除'));
-        await refreshRpaTasks();
-        await refreshRpaRuns();
+        await refreshRpaTables();
       } catch (err) {
         toast(tx('删除失败：') + err.message);
       }
@@ -332,15 +377,19 @@ async function refreshRpaTasks(preloaded) {
   if (empty) {
     empty.style.display = list.length ? 'none' : 'grid';
   }
+  const checkedCount = table.querySelectorAll('.rpa-task-checkbox:checked').length;
+  if (selectAll) {
+    selectAll.checked = list.length > 0 && checkedCount === list.length;
+    selectAll.indeterminate = checkedCount > 0 && checkedCount < list.length;
+  }
+  updateDeleteCheckedBtnVisibility();
   rpaApplyLocalUi(table);
 }
 
-async function refreshRpaRuns(preloaded) {
+function renderRpaRuns(tasks) {
   const table = document.getElementById('rpa-run-table');
   const empty = document.getElementById('rpa-run-empty');
   if (!table) return;
-  let tasks = [];
-  try { tasks = preloaded ?? await window.ops.rpaTasks({}); } catch (_) { tasks = []; }
   const filter = document.getElementById('rpa-run-filter')?.value || 'all';
   const q = (document.getElementById('rpa-run-search')?.value || '').trim().toLowerCase();
   table.replaceChildren();
@@ -421,21 +470,31 @@ function rpaStepSummary(steps, max = 12) {
 }
 
 async function refreshRpaStore() {
+  const sequence = ++rpaStoreSequence;
   const q = (document.getElementById('rpa-store-search')?.value || '').trim();
   const cat = rpaStoreActiveCat || '全部';
   const sort = document.getElementById('rpa-store-sort')?.value || 'use_num';
   const source = document.getElementById('rpa-store-source')?.value || '';
+  const current = () => sequence === rpaStoreSequence
+    && q === (document.getElementById('rpa-store-search')?.value || '').trim()
+    && cat === (rpaStoreActiveCat || '全部')
+    && sort === (document.getElementById('rpa-store-sort')?.value || 'use_num')
+    && source === (document.getElementById('rpa-store-source')?.value || '');
   try {
     const result = await window.ops.rpaTemplates({ q, cat, sort, source });
-    rpaStoreTemplates = Array.isArray(result?.list) ? result.list : [];
+    if (!current()) return false;
+    if (!validRpaInventory(result?.list)) throw new Error('Invalid RPA template inventory');
+    rpaStoreTemplates = result.list;
     syncRpaStoreCategoryUi(result?.categories);
     const meta = document.getElementById('rpa-store-sync-meta');
     if (meta) meta.textContent = t('rpa.store.localMeta');
   } catch (error) {
-    rpaStoreTemplates = [];
+    if (!current()) return false;
     toast(tx('加载模板仓库失败：') + error.message);
+    return false;
   }
   renderRpaStore();
+  return true;
 }
 
 function renderRpaStore() {
@@ -580,13 +639,12 @@ function renderRpaStore() {
 }
 
 async function installRpaTemplate(id) {
+  const editor = captureRpaEditor();
   const result = await window.ops.rpaTemplateInstall({ id });
   const plan = result?.plan;
   if (!plan) throw new Error(tx('安装模板失败'));
-  rpaSelectedId = plan.id;
-  showRpaPanel('flows');
+  if (editor.current()) { loadRpaPlanToEditor(plan); showRpaPanel('flows'); }
   await refreshRpaPage();
-  loadRpaPlanToEditor(plan);
   // Template = code (finding 7-5): installing a template grants it the page's
   // own privileges. Disclose the sensitive step census on every install.
   const sensitiveSummary = String(result?.sensitive_summary || '').trim();
@@ -667,26 +725,58 @@ function rpaOnce(fn) {
 // Single rpaTasks fetch feeding both tables: the task table and the run table
 // render from the same dataset, so manual refresh buttons must not pay for two
 // identical IPC round-trips.
-async function refreshRpaTables() {
-  let tasks = null;
-  try { tasks = await window.ops.rpaTasks({}); } catch (_) { tasks = []; }
-  await Promise.all([refreshRpaTasks(tasks), refreshRpaRuns(tasks)]);
+function refreshRpaTables() {
+  if (rpaTaskRefresh) {
+    if (!rpaTaskTrailing) rpaTaskTrailing = rpaTaskRefresh.then(() => { rpaTaskTrailing = null; return refreshRpaTables(); });
+    return rpaTaskTrailing;
+  }
+  const version = rpaTaskSnapshotVersion;
+  rpaTaskRefresh = (async () => {
+    const tasks = await window.ops.rpaTasks({});
+    if (version !== rpaTaskSnapshotVersion) return false;
+    if (!validRpaInventory(tasks)) throw new Error('Invalid RPA task inventory');
+    rpaTaskRows = tasks;
+    renderRpaTasks(tasks); renderRpaRuns(tasks);
+    rpaTaskSnapshotVersion += 1;
+    return true;
+  })().catch((error) => {
+    if (version === rpaTaskSnapshotVersion) toast(tx('加载任务失败：') + error.message);
+    return false;
+  })
+    .finally(() => { rpaTaskRefresh = null; });
+  return rpaTaskRefresh;
+}
+
+function refreshRpaTasks(preloaded) {
+  if (Array.isArray(preloaded)) {
+    if (!validRpaInventory(preloaded)) return Promise.resolve(false);
+    rpaTaskRows = preloaded; rpaTaskSnapshotVersion += 1;
+    renderRpaTasks(preloaded); return Promise.resolve(true);
+  }
+  return refreshRpaTables();
+}
+function refreshRpaRuns(preloaded) {
+  if (Array.isArray(preloaded)) {
+    if (!validRpaInventory(preloaded)) return Promise.resolve(false);
+    rpaTaskRows = preloaded; rpaTaskSnapshotVersion += 1;
+    renderRpaRuns(preloaded); return Promise.resolve(true);
+  }
+  return refreshRpaTables();
 }
 
 async function refreshRpaPage() {
+  const sequence = ++rpaPageSequence;
   try {
-    await refreshStatus();
-    rpaPlans = await window.ops.rpaPlans();
-    if (!Array.isArray(rpaPlans)) rpaPlans = [];
+    const [, plans] = await Promise.all([refreshStatus(), window.ops.rpaPlans()]);
+    if (sequence !== rpaPageSequence) return false;
+    if (!validRpaInventory(plans)) throw new Error('Invalid RPA plan inventory');
+    rpaPlans = plans;
   } catch (error) {
-    rpaPlans = [];
+    if (sequence !== rpaPageSequence) return false;
     toast(tx('加载自动脚本失败：') + error.message);
   }
-  if (rpaSelectedId) {
-    const plan = rpaPlans.find((p) => p.id === rpaSelectedId) || await window.ops.rpaGetPlan(rpaSelectedId);
-    if (plan) loadRpaPlanToEditor(plan);
-    else { rpaSelectedId = null; renderRpaPlans(); }
-  } else renderRpaPlans();
+  // Inventory refreshes never replace the user's editor draft.
+  renderRpaPlans();
   // The five IPC fetches are independent: run them concurrently instead of
   // paying their latencies back-to-back on every page refresh.
   await Promise.all([
@@ -694,20 +784,21 @@ async function refreshRpaPage() {
     refreshRpaTables(),
     refreshRpaStore(),
   ]);
+  if (sequence !== rpaPageSequence) return false;
   const rpaView = document.getElementById('view-rpa');
   rpaApplyLocalUi(rpaView);
+  return true;
 }
 
 async function createRpaPlan(name) {
+  const editor = captureRpaEditor();
   const plan = await window.ops.rpaSavePlan({
     plan_name: name || ('新流程 ' + new Date().toLocaleString()),
     profile_ids: [],
     steps: JSON.parse(RPA_TEMPLATE),
   });
-  rpaSelectedId = plan.id;
-  showRpaPanel('flows');
+  if (editor.current()) { loadRpaPlanToEditor(plan); showRpaPanel('flows'); }
   await refreshRpaPage();
-  loadRpaPlanToEditor(plan);
   toast(tx('已创建流程'));
 }
 
@@ -718,6 +809,7 @@ document.getElementById('rpa-refresh')?.addEventListener('click', () => refreshR
 document.getElementById('rpa-task-refresh')?.addEventListener('click', () => refreshRpaTables());
 document.getElementById('rpa-task-select-all')?.addEventListener('change', (event) => {
   const checked = event.target.checked;
+  event.target.indeterminate = false;
   const table = document.getElementById('rpa-task-table');
   if (!table) return;
   table.querySelectorAll('.rpa-task-checkbox').forEach((cb) => { cb.checked = checked; });
@@ -741,8 +833,7 @@ document.getElementById('rpa-task-delete-checked')?.addEventListener('click', as
   try {
     const res = await window.ops.rpaTaskDelete(ids);
     toast(tx('已删除 ') + (res?.deleted?.length || ids.length) + tx(' 个任务'));
-    await refreshRpaTasks();
-    await refreshRpaRuns();
+    await refreshRpaTables();
   } catch (err) {
     toast(tx('删除失败：') + err.message);
   }
@@ -751,13 +842,15 @@ document.getElementById('rpa-run-refresh')?.addEventListener('click', () => refr
 document.getElementById('rpa-flow-search')?.addEventListener('input', renderRpaPlans);
 document.getElementById('rpa-task-search')?.addEventListener('input', () => {
   clearTimeout(window.__rpaTaskSearchTimer);
-  window.__rpaTaskSearchTimer = setTimeout(() => refreshRpaTasks().catch(() => {}), 280);
+  window.__rpaTaskSearchTimer = setTimeout(() => { if (rpaTaskRows) renderRpaTasks(rpaTaskRows); else refreshRpaTables(); }, 280);
 });
 document.getElementById('rpa-run-search')?.addEventListener('input', () => {
   clearTimeout(window.__rpaRunSearchTimer);
-  window.__rpaRunSearchTimer = setTimeout(() => refreshRpaRuns().catch(() => {}), 280);
+  window.__rpaRunSearchTimer = setTimeout(() => { if (rpaTaskRows) renderRpaRuns(rpaTaskRows); else refreshRpaTables(); }, 280);
 });
-document.getElementById('rpa-run-filter')?.addEventListener('change', refreshRpaRuns);
+document.getElementById('rpa-run-filter')?.addEventListener('change', () => {
+  if (rpaTaskRows) renderRpaRuns(rpaTaskRows); else refreshRpaTables();
+});
 document.getElementById('rpa-store-search')?.addEventListener('input', () => {
   // debounce refetch with filters
   clearTimeout(window.__rpaStoreSearchTimer);
@@ -840,11 +933,15 @@ document.getElementById('rpa-preview-use')?.addEventListener('click', async () =
 document.getElementById('rpa-plan-table')?.addEventListener('click', async (event) => {
   const tr = event.target.closest('[data-rpa-plan]');
   if (!tr || event.target.closest('input')) return;
-  const plan = rpaPlans.find((p) => p.id === tr.dataset.rpaPlan) || await window.ops.rpaGetPlan(tr.dataset.rpaPlan);
-  if (plan) loadRpaPlanToEditor(plan);
+  const sequence = ++rpaSelectionSequence, editor = captureRpaEditor();
+  try {
+    const plan = rpaPlans.find((p) => p.id === tr.dataset.rpaPlan) || await window.ops.rpaGetPlan(tr.dataset.rpaPlan);
+    if (sequence === rpaSelectionSequence && editor.current() && plan) loadRpaPlanToEditor(plan);
+  } catch (error) { if (sequence === rpaSelectionSequence && editor.current()) toast(error.message); }
 });
 
-document.getElementById('rpa-save')?.addEventListener('click', async () => {
+document.getElementById('rpa-save')?.addEventListener('click', () => rpaOnce(async () => {
+  const editor = captureRpaEditor();
   try {
     let steps;
     try { steps = JSON.parse(document.getElementById('rpa-steps-json').value || '[]'); }
@@ -856,12 +953,12 @@ document.getElementById('rpa-save')?.addEventListener('click', async () => {
       profile_ids: selectedRpaProfileIds(),
       steps,
     });
-    rpaSelectedId = plan.id;
+    acceptRpaEditorSave(plan, editor);
     await refreshRpaPage();
     toast(tx('已保存'));
     log('自动脚本', '保存流程 ' + plan.plan_name);
   } catch (error) { toast(error.message); }
-});
+}));
 
 document.getElementById('rpa-delete')?.addEventListener('click', async () => {
   const checked = [...document.querySelectorAll('[data-rpa-plan-check]:checked')].map((el) => el.dataset.rpaPlanCheck);
@@ -877,7 +974,7 @@ document.getElementById('rpa-delete')?.addEventListener('click', async () => {
   if (!ok) return;
   try {
     for (const id of ids) await window.ops.rpaDeletePlan(id);
-    if (ids.includes(rpaSelectedId)) rpaSelectedId = null;
+    if (ids.includes(rpaSelectedId)) loadRpaPlanToEditor(null);
     await refreshRpaPage();
     toast(tx('已删除'));
   } catch (error) { toast(error.message); }
@@ -886,6 +983,7 @@ document.getElementById('rpa-delete')?.addEventListener('click', async () => {
 document.getElementById('rpa-run')?.addEventListener('click', async () => {
   if (rpaOpInFlight) return;
   rpaOpInFlight = true;
+  const editor = captureRpaEditor();
   try {
     let steps;
     try { steps = JSON.parse(document.getElementById('rpa-steps-json').value || '[]'); }
@@ -898,15 +996,14 @@ document.getElementById('rpa-run')?.addEventListener('click', async () => {
       profile_ids: profileIds,
       steps,
     });
-    rpaSelectedId = plan.id;
+    acceptRpaEditorSave(plan, editor);
     appendRpaLog('开始运行：' + plan.plan_name + ' → ' + profileIds.join(','));
     toast(tx('自动脚本运行中…'));
     const result = await window.ops.rpaRun({ plan_id: plan.id, profile_ids: profileIds });
     appendRpaLog('完成：' + JSON.stringify(result));
     toast(result.success === false ? tx('自动脚本有失败任务') : tx('自动脚本完成'));
     await refreshRpaStatusBadge();
-    await refreshRpaTasks();
-    await refreshRpaRuns();
+    await refreshRpaTables();
     log('自动脚本', '运行 ' + plan.plan_name);
   } catch (error) {
     appendRpaLog('错误：' + error.message);
@@ -983,6 +1080,7 @@ window.appendRpaLog = appendRpaLog;
 window.refreshRpaStatusBadge = refreshRpaStatusBadge;
 window.refreshRpaTasks = refreshRpaTasks;
 window.refreshRpaRuns = refreshRpaRuns;
+window.refreshRpaTables = refreshRpaTables;
 window.renderRpaStore = renderRpaStore;
 window.confirmRpaAction = confirmRpaAction;
 })();

@@ -32,6 +32,9 @@ class BidiConnection {
   }
 
   async _open(timeout) {
+    const parsed = Number(timeout);
+    const budget = Number.isFinite(parsed) && parsed > 0 ? parsed : 8000;
+    const deadline = performance.now() + budget;
     try { this.socket = this.socketFactory(this.endpoint); }
     catch (error) { this.terminate(error); throw error; }
     this.socket.addEventListener('message', (event) => {
@@ -44,6 +47,7 @@ class BidiConnection {
       if (message.id !== undefined) {
         const pending = this.pending.get(message.id);
         if (!pending) return;
+        if (performance.now() >= pending.deadline) { this.expireCommand(message.id); return; }
         this.pending.delete(message.id);
         clearTimeout(pending.timer);
         if (message.type === 'error' || message.error) {
@@ -58,9 +62,12 @@ class BidiConnection {
     this.socket.addEventListener('close', () => this.terminate(new Error('Firefox BiDi connection closed')));
     this.socket.addEventListener('error', () => this.terminate(new Error('Firefox BiDi socket error')));
     await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { this.terminate(new Error('Firefox BiDi connection timeout')); }, timeout);
+      const timer = setTimeout(() => { this.terminate(new Error('Firefox BiDi connection timeout')); }, Math.max(0, Math.ceil(deadline - performance.now())));
       this.opening = { resolve: () => { clearTimeout(timer); this.opening = null; resolve(); }, reject: (error) => { clearTimeout(timer); this.opening = null; reject(error); } };
-      this.socket.addEventListener('open', () => this.opening?.resolve(), { once: true });
+      this.socket.addEventListener('open', () => {
+        if (performance.now() >= deadline) this.terminate(new Error('Firefox BiDi connection timeout'));
+        else this.opening?.resolve();
+      }, { once: true });
     });
     return this;
   }
@@ -69,15 +76,27 @@ class BidiConnection {
     if (this.closed || !this.socket || this.socket.readyState !== 1) return Promise.reject(new Error('BiDi connection is not open'));
     if (this.pending.size >= 256) return Promise.reject(new Error('Too many pending BiDi commands'));
     const id = this.nextId++;
+    const parsed = Number(timeout);
+    const budget = Number.isFinite(parsed) && parsed > 0 ? parsed : 8000;
+    const deadline = performance.now() + budget;
     let payload;
     try { payload = JSON.stringify({ id, method, params }); }
     catch (error) { return Promise.reject(error); }
+    if (performance.now() >= deadline) return Promise.reject(new Error(`BiDi timeout: ${method}`));
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { this.pending.delete(id); reject(new Error(`BiDi timeout: ${method}`)); }, timeout);
-      this.pending.set(id, { resolve, reject, timer });
+      const timer = setTimeout(() => this.expireCommand(id), Math.max(0, Math.ceil(deadline - performance.now())));
+      this.pending.set(id, { resolve, reject, timer, method, deadline });
       try { this.socket.send(payload); }
       catch (error) { this.terminate(error); }
     });
+  }
+
+  expireCommand(id) {
+    const pending = this.pending.get(id);
+    if (!pending) return;
+    this.pending.delete(id);
+    clearTimeout(pending.timer);
+    pending.reject(new Error(`BiDi timeout: ${pending.method}`));
   }
 
   terminate(error) {

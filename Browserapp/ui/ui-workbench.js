@@ -185,6 +185,10 @@
   // --- Window Transfers Store ---
   let windowTransfers = [];
   let transferLoad = null;
+  let countedTransfers = null;
+  let pendingTransferCount = 0;
+  let renderedTransfers = null;
+  let renderedTransferLocale = null;
 
   function loadWindowTransfers() {
     if (transferLoad) return transferLoad;
@@ -469,6 +473,7 @@
     if (mode !== 'edit') openProfileEditor.cancel?.();
     const form = document.getElementById('profile-editor-form');
     if (form) form.dataset.editorSession = String(++editorSessionSequence);
+    resetEditorAsyncRequests();
     windowImportGeneration += 1;
     if (currentEditorMode === 'edit' && mode !== 'edit') {
       document.getElementById('profile-editor-form')?.reset();
@@ -527,6 +532,7 @@
 
     // Prepare a fresh draft in the editor form for creation
     prepareFreshCreateDraft();
+    refreshUaMetaPreview().catch(() => {});
     syncEditorAccordionsState(options.collapseSecondary !== false);
     setTimeout(syncAllPillBarsFromControls, 50);
     if (typeof switchView === 'function') switchView('profile-editor');
@@ -790,21 +796,32 @@
       count.className = 'list-tab-count';
       tab.appendChild(count);
     }
-    const activeCount = windowTransfers.filter((t) => t.status === 'pending').length;
-    count.textContent = String(activeCount);
+    if (countedTransfers !== windowTransfers) {
+      countedTransfers = windowTransfers;
+      pendingTransferCount = windowTransfers.reduce((sum, item) => sum + Number(item.status === 'pending'), 0);
+    }
+    const label = String(pendingTransferCount);
+    if (count.textContent !== label) count.textContent = label;
   }
 
   function renderTransfersTable() {
     updateTransferTabCount();
+    const panel = document.getElementById('profile-transfer-panel');
+    if (panel && (panel.hidden || !panel.closest('.view')?.classList.contains('active'))) return;
     const tbody = document.getElementById('transfer-records-tbody');
     const empty = document.getElementById('transfer-records-empty');
     if (!tbody) return;
+    const locale = window.OpenBrowserI18n?.getLocale?.() || '';
+    if (renderedTransfers === windowTransfers && renderedTransferLocale === locale) return;
+    renderedTransfers = windowTransfers;
+    renderedTransferLocale = locale;
     tbody.replaceChildren();
     if (!windowTransfers.length) {
       if (empty) empty.hidden = false;
       return;
     }
     if (empty) empty.hidden = true;
+    const fragment = document.createDocumentFragment();
     for (const item of windowTransfers) {
       const tr = document.createElement('tr');
       const statusBadge = item.status === 'pending'
@@ -825,8 +842,10 @@
           </div>
         </td>
       `;
-      tbody.appendChild(tr);
+      fragment.appendChild(tr);
     }
+    tbody.appendChild(fragment);
+    if (typeof afterUiRender === 'function') afterUiRender(tbody);
   }
 
   // --- Window Upload / Import & Template Download (1:1 Roxy Screenshots [30][31]) ---
@@ -1123,10 +1142,10 @@
   }
 
   // --- Header Live Local Exit IP Pill ---
-  function refreshHeaderExitIpPill() {
+  function refreshHeaderExitIpPill(sample) {
     const pillText = document.getElementById('header-exit-ip-text');
     if (!pillText) return;
-    const sampleWithIp = (window.ui?.profiles || []).find((p) => p.exitIp);
+    const sampleWithIp = arguments.length ? sample : (window.ui?.profiles || []).find((p) => p.exitIp);
     if (sampleWithIp) {
       pillText.textContent = `${sampleWithIp.exitCountryCode || 'CN'} (${sampleWithIp.exitIp})`;
     } else {
@@ -1134,10 +1153,11 @@
     }
   }
 
-  function updateSidebarQuotaBar() {
+  function updateSidebarQuotaBar(summary) {
     const countEl = document.getElementById('sidebar-quota-count');
     const fillEl = document.getElementById('sidebar-quota-fill');
-    const total = (window.ui?.profiles || []).filter((p) => !p.trashed).length;
+    const total = Number.isSafeInteger(summary?.all) ? summary.all
+      : (window.ui?.profiles || []).reduce((count, profile) => count + Number(!profile.trashed), 0);
     if (countEl) countEl.textContent = `${total} / ∞`;
     if (fillEl) fillEl.style.width = `${Math.min(100, Math.max(12, total * 8))}%`;
   }

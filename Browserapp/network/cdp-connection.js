@@ -20,6 +20,9 @@ class PersistentConnection {
     if (this.closed) return Promise.reject(new Error('CDP persistent connection is closed'));
     if (this.openPromise) return this.openPromise;
     if (typeof WebSocket !== 'function') return Promise.reject(new Error('WebSocket API is unavailable in this host runtime'));
+    const parsed = Number(timeout);
+    const budget = Number.isFinite(parsed) && parsed > 0 ? parsed : 6000;
+    const deadline = performance.now() + budget;
     this.openPromise = new Promise((resolve, reject) => {
       const opening = { resolve, reject, timer: null };
       this.opening = opening;
@@ -28,9 +31,10 @@ class PersistentConnection {
       catch (error) { this.terminate(error); return; }
       this.socket = socket;
       const isCurrent = () => !this.closed && this.socket === socket;
-      opening.timer = setTimeout(() => this.terminate(new Error('CDP connection timeout')), timeout);
+      opening.timer = setTimeout(() => this.terminate(new Error('CDP connection timeout')), Math.max(0, Math.ceil(deadline - performance.now())));
       socket.addEventListener('open', () => {
         if (!isCurrent() || this.opening !== opening) return;
+        if (performance.now() >= deadline) { this.terminate(new Error('CDP connection timeout')); return; }
         clearTimeout(opening.timer);
         this.opening = null;
         this.opened = true;
@@ -55,6 +59,7 @@ class PersistentConnection {
     if (value.id != null) {
       const pending = this.pending.get(value.id);
       if (!pending) return;
+      if (performance.now() >= pending.deadline) { this.expireCommand(value.id); return; }
       this.pending.delete(value.id);
       clearTimeout(pending.timer);
       if (value.error) pending.reject(new Error(value.error.message || 'CDP command failed'));
@@ -69,27 +74,35 @@ class PersistentConnection {
   command(method, params = {}, options = {}) {
     if (this.closed || !this.socket) return Promise.reject(new Error('CDP persistent connection is closed'));
     const id = this.nextId++;
-    const timeout = Number(options.timeout) || 6000;
+    const parsed = Number(options.timeout);
+    const timeout = Number.isFinite(parsed) && parsed > 0 ? parsed : 6000;
+    const deadline = performance.now() + timeout;
     const message = { id, method, params };
     if (options.sessionId) message.sessionId = options.sessionId;
     let payload;
     try { payload = JSON.stringify(message); }
     catch (error) { return Promise.reject(error); }
+    if (performance.now() >= deadline) return Promise.reject(new Error(`CDP timeout: ${method}`));
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        this.consecutiveTimeouts = (this.consecutiveTimeouts || 0) + 1;
-        const error = new Error(`CDP timeout: ${method}`);
-        reject(error);
-        // Retire hung transports even when close() produces no socket event.
-        if (this.consecutiveTimeouts >= 3) this.terminate(error, true);
-      }, timeout);
+      const timer = setTimeout(() => this.expireCommand(id), Math.max(0, Math.ceil(deadline - performance.now())));
       this.pending.set(id, {
-        resolve: (value) => { this.consecutiveTimeouts = 0; resolve(value); }, reject, timer,
+        resolve: (value) => { this.consecutiveTimeouts = 0; resolve(value); }, reject, timer, method, deadline,
       });
       try { this.socket.send(payload); }
       catch (error) { this.terminate(error, true); }
     });
+  }
+
+  expireCommand(id) {
+    const pending = this.pending.get(id);
+    if (!pending) return;
+    this.pending.delete(id);
+    clearTimeout(pending.timer);
+    this.consecutiveTimeouts = (this.consecutiveTimeouts || 0) + 1;
+    const error = new Error(`CDP timeout: ${pending.method}`);
+    pending.reject(error);
+    // Timer and late-response expiry share the same retirement policy.
+    if (this.consecutiveTimeouts >= 3) this.terminate(error, true);
   }
 
   failAll(error) {

@@ -22,6 +22,9 @@ env:
   OPENBROWSER_PACKAGE_VARIANT: without-kernel
   OPENBROWSER_BUNDLE_KERNEL: 'false'
   RELEASE_NOTES: |
+    - 优化前端列表、RPA、云配置及 API/MCP 的异步状态与性能。
+    - 修复 Canvas、音频、VideoFrame 及 Worker 指纹注入的原生语义和资源释放。
+    - 增加有界缓存、CDP/BiDi 超时预算与完整回归检查。
     - 不再使用 Git LFS 或内置内核；首次使用时在程序内下载官方内核。
     - 修复四平台在线安装包的应用内更新识别。
     - 发布任务自动签名并验证 SHA256SUMS.txt，验证失败时保留草稿。
@@ -214,7 +217,17 @@ jobs:
 
           提供 Windows x86_64、macOS Intel、macOS ARM 和 Linux x86_64 安装包。
           安装包不预装浏览器内核；首次启动后可在程序中联网下载官方 Chrome Stable，或选择自定义内核。
+
+          ### 本次更新
+
+          - 前端列表缓存、增量状态与界面持久化优化；修复代理、云配置和 API/MCP 的迟到响应覆盖。
+          - RPA 保留未保存草稿和勾选，任务请求合并，搜索与筛选复用快照。
+          - Canvas、音频和 VideoFrame 原生参数、布局、快照与资源释放修复，统一页面和 Worker 行为。
+          - 注入缓存增加条数和字节上限；CDP/BiDi 使用完整超时预算，避免过期命令补发。
+
+          ### 安装与验证
+
           所有安装包均验证应用与 Rust 核心版本、确认不含内核占位文件，并提供 SHA256SUMS.txt 及其 Ed25519 签名。
-          旧版 1.0.0 的更新信任根不同，请手动安装本次重发的安装包一次，以接入新的更新签名。
+          本次为同版本重新发布，请手动下载安装新的安装包；旧构建将被替换。
           EOF
           gh release edit "$RELEASE_TAG" --repo "$GH_REPO" --draft=false --title "OpenBrowser $RELEASE_TAG" --notes-file "$notes"

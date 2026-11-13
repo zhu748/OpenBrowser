@@ -17,8 +17,11 @@ function tx(s) {
 
 const loadedViews = new Set();
 const viewScrollPositions = new Map();
+const profileListCache = window.OpenBrowserProfileList.createProfileListCache();
 
 function invalidateViewCache(views) {
+  if (!views || views === 'profiles' || views === 'groups'
+    || (Array.isArray(views) && views.some((view) => view === 'profiles' || view === 'groups'))) profileListCache.invalidate();
   if (!views) {
     loadedViews.clear();
     return;
@@ -252,29 +255,29 @@ function applyPlatformClass() {
 }
 
 function refreshIcons(root = document) {
-  if (!window.lucide?.createIcons) return;
+  if (!window.lucide?.createElement) return;
   try {
     const icons = window.lucide.icons || window.lucide;
     if (!icons || !Object.keys(icons).length) {
       console.warn('Lucide icons map is empty');
       return;
     }
-    // Lucide replaces <i data-lucide="..."> elements with SVGs, so re-running
-    // it over the whole document re-parses every already-converted node.
-    // Scope to elements that still carry the marker attribute.
+    // createIcons always scans document and also replaces generated SVGs.
+    // Convert only new placeholders in this subtree; preserve SVG identity.
     const rootEl = root && root.querySelectorAll ? root : document;
-    if (rootEl !== document && !rootEl.querySelector('[data-lucide]')) return;
-    if (rootEl === document && !document.querySelector('[data-lucide]')) return;
-    window.lucide.createIcons({
-      icons,
-      nameAttr: 'data-lucide',
-      attrs: {
-        'aria-hidden': 'true',
-        'stroke-width': '1.75',
-        stroke: 'currentColor',
-        fill: 'none',
-      },
-    });
+    const placeholders = [...rootEl.querySelectorAll('[data-lucide]:not(svg)')];
+    if (rootEl.matches?.('[data-lucide]:not(svg)')) placeholders.unshift(rootEl);
+    for (const node of placeholders) {
+      const name = node.getAttribute('data-lucide');
+      const key = name.replace(/(\w)(\w*)(_|-|\s*)/g, (_match, first, rest) => first.toUpperCase() + rest.toLowerCase());
+      const definition = icons[key];
+      if (!definition) continue;
+      const [tag, defaults, children] = definition;
+      const attrs = { ...defaults, 'aria-hidden': 'true', 'stroke-width': '1.75',
+        ...Object.fromEntries([...node.attributes].map((attr) => [attr.name, attr.value])) };
+      attrs.class = [...new Set(['lucide', `lucide-${name}`, ...(attrs.class || '').split(/\s+/)])].filter(Boolean).join(' ');
+      node.replaceWith(window.lucide.createElement([tag, attrs, children]));
+    }
   } catch (error) {
     console.warn('Lucide icons failed to render:', error?.message || error);
   }
@@ -579,7 +582,7 @@ function groupColorOf(profile) {
 // scan per group on every render.
 let __groupCountsCache = null;
 function rebuildGroupCounts() {
-  const summary = window.OpenBrowserProfileList.summarizeProfiles(ui.profiles, (id) => profileEngine(id).running);
+  const summary = profileListCache.summarize(ui.profiles, isProfileRunning, engineProfiles);
   __groupCountsCache = summary.groups;
   return summary;
 }
@@ -1023,6 +1026,8 @@ function save() {
   if (!Array.isArray(ui.groups)) ui.groups = defaultGroups();
   __groupListCache = null;
   __groupMapCache = null;
+  __groupCountsCache = null;
+  profileListCache.invalidate();
   return uiStateStore.save();
 }
 // All state/cache bindings are initialized before the first migration write.
@@ -1455,10 +1460,8 @@ function applyEditorNetworkResult(result = {}, { fillFingerprint = true } = {}) 
 async function testEditorProxy() {
   const output = $('#editor-proxy-result');
   if (output.getAttribute('aria-busy') === 'true') return;
-  const profileId = editingProfileId;
-  output.setAttribute('aria-busy', 'true');
-  const button = $('#editor-test-proxy');
-  if (button) button.disabled = true;
+  const request = editorRequests.begin('network', editorNetworkRequestInputs);
+  setEditorNetworkBusy(true);
   // Direct-exit banner re-check hook (ui-editor.js #editor-direct-refresh). The
   // banner has no output element of its own, so the direct path borrows the
   // proxy result line and a toast for feedback.
@@ -1470,22 +1473,20 @@ async function testEditorProxy() {
     output.className = 'proxy-test-result';
     output.textContent = tx(directRefresh ? '正在检测出口 IP...' : '正在检测代理出口...');
     const result = await window.ops.testProfileProxy(draft);
-    if (editingProfileId !== profileId) return;
+    if (!request.current()) return false;
     const fill = $('#editor-proxy-fill-fingerprint')?.checked !== false;
     applyEditorNetworkResult(result, { fillFingerprint: fill });
     if (directRefresh) renderDirectBanner();
     output.className = 'proxy-test-result success';
     output.textContent = tx('连接成功 · ') + formatProxyCheckResult(result);
   } catch (error) {
+    if (!request.current()) return false;
     output.className = 'proxy-test-result error';
     const cls = error?.errorClass ? ` [${error.errorClass}]` : '';
-    if (editingProfileId === profileId) {
-      output.textContent = tx('检测失败 · ') + error.message + cls;
-      if (directRefresh) toast(tx('检测失败：') + error.message);
-    }
+    output.textContent = tx('检测失败 · ') + error.message + cls;
+    if (directRefresh) toast(tx('检测失败：') + error.message);
   } finally {
-    output.setAttribute('aria-busy', 'false');
-    if (button) button.disabled = false;
+    if (request.owns()) { setEditorNetworkBusy(false); request.finish(); }
   }
 }
 // Window-scoped hook for the direct-exit banner's re-check button; ui-editor.js
@@ -1494,25 +1495,35 @@ window.__editorTestProxy = testEditorProxy;
 
 async function applyEditorProxyFingerprint() {
   const output = $('#editor-proxy-result');
+  if (output.getAttribute('aria-busy') === 'true') return;
+  const request = editorRequests.begin('network', editorNetworkRequestInputs);
+  setEditorNetworkBusy(true);
   try {
     const draft = editorDraft(true);
     if (/^Direct$/i.test(draft.proxy) && !draft.proxyMeta?.apiExtractUrl) throw new Error(tx('本地直连无需代理检测'));
     output.className = 'proxy-test-result';
     output.textContent = tx('正在用代理对齐指纹...');
     const result = await window.ops.applyProxyFingerprint(draft);
+    if (!request.current()) return false;
     applyEditorNetworkResult(result, { fillFingerprint: true });
     output.className = 'proxy-test-result success';
     output.textContent = tx('已对齐指纹 · ') + formatProxyCheckResult(result);
     toast(tx('已按出口 IP 填充时区 / 语言 / 定位'));
   } catch (error) {
+    if (!request.current()) return false;
     output.className = 'proxy-test-result error';
     output.textContent = tx('对齐失败 · ') + error.message;
     toast(tx('对齐失败：') + error.message);
+  } finally {
+    if (request.owns()) { setEditorNetworkBusy(false); request.finish(); }
   }
 }
 
 async function refreshEditorProxy() {
   const output = $('#editor-proxy-result');
+  if (output.getAttribute('aria-busy') === 'true') return;
+  const request = editorRequests.begin('network', editorNetworkRequestInputs);
+  setEditorNetworkBusy(true);
   try {
     const draft = editorDraft(true);
     if (!draft.proxyMeta?.refreshUrl && !draft.proxyMeta?.apiExtractUrl) {
@@ -1521,6 +1532,7 @@ async function refreshEditorProxy() {
     output.className = 'proxy-test-result';
     output.textContent = tx('正在刷新代理...');
     const result = await window.ops.refreshProfileProxy(draft);
+    if (!request.current()) return false;
     const network = result.network || result;
     if (result.profile?.proxy) {
       try {
@@ -1542,9 +1554,12 @@ async function refreshEditorProxy() {
     output.textContent = msg;
     toast(result.extractError ? (tx('代理已刷新（提取有警告）')) : tx('代理已刷新'));
   } catch (error) {
+    if (!request.current()) return false;
     output.className = 'proxy-test-result error';
     output.textContent = tx('刷新失败 · ') + error.message;
     toast(tx('刷新失败：') + error.message);
+  } finally {
+    if (request.owns()) { setEditorNetworkBusy(false); request.finish(); }
   }
 }
 
@@ -1570,7 +1585,11 @@ function editorOsToUaKey(osLabel) {
 
 async function applyBuiltUa(payload) {
   if (!window.ops?.buildUa) throw new Error(tx('UA 生成接口不可用，请重启应用'));
-  const ua = await window.ops.buildUa(payload);
+  const request = editorRequests.begin('ua', editorUaRequestInputs);
+  let ua;
+  try { ua = await window.ops.buildUa(payload); }
+  catch (error) { if (request.current()) throw error; return null; }
+  if (!request.current()) return null;
   const form = $('#profile-editor-form');
   if (form) form.dataset.uaProfile = JSON.stringify(ua);
   editorSet('#editor-user-agent', ua.userAgent || '');
@@ -1612,7 +1631,7 @@ async function showUaMetaPreview(ua) {
 
 document.getElementById('editor-ua-generate')?.addEventListener('click', async () => {
   try {
-    await applyBuiltUa({
+    const ua = await applyBuiltUa({
       profileId: editingProfileId,
       engine: $('#editor-engine')?.value,
       engineVersion: $('#editor-engine-version')?.value,
@@ -1620,12 +1639,12 @@ document.getElementById('editor-ua-generate')?.addEventListener('click', async (
       osVersion: $('#editor-os-version')?.value,
       chromeMajor: Number($('#editor-ua-chrome-major')?.value) || undefined,
     });
-    toast(tx('已按系统生成 UA + Client Hints'));
+    if (ua) toast(tx('已按系统生成 UA + Client Hints'));
   } catch (e) { toast(e.message); }
 });
 document.getElementById('editor-ua-random')?.addEventListener('click', async () => {
   try {
-    await applyBuiltUa({
+    const ua = await applyBuiltUa({
       profileId: editingProfileId,
       engine: $('#editor-engine')?.value,
       engineVersion: $('#editor-engine-version')?.value,
@@ -1634,7 +1653,7 @@ document.getElementById('editor-ua-random')?.addEventListener('click', async () 
       osVersion: $('#editor-os-version')?.value,
       chromeMajor: Number($('#editor-ua-chrome-major')?.value) || undefined,
     });
-    toast(tx('已随机生成 UA'));
+    if (ua) toast(tx('已随机生成 UA'));
   } catch (e) { toast(e.message); }
 });
 document.getElementById('editor-ua-clear')?.addEventListener('click', () => {
@@ -1730,6 +1749,8 @@ function profileEngine(id) {
   return __engineProfilesById.get(id) || { running: false, assignedExtensions: [] };
 }
 
+function isProfileRunning(id) { return profileEngine(id).running; }
+
 function viewMetaFor(view) {
   const map = {
     profiles: ['view.profiles', 'view.profiles.sub'],
@@ -1811,12 +1832,12 @@ function renderProxyLibrarySelect(select, selectedId = '', { includeManual = tru
 
 function renderProxyLibrarySelectors() {
   renderProxyLibrarySelect($('#create-proxy-library'), $('#create-proxy-library')?.value || '');
-  renderProxyLibrarySelect($('#editor-proxy-library'), profileProxyId(ui.profiles.find((item) => item.id === editingProfileId)));
+  renderProxyLibrarySelect($('#editor-proxy-library'), $('#editor-proxy-library')?.value || '');
   renderProxyLibrarySelect($('#batch-add-proxy-library'), $('#batch-add-proxy-library')?.value || '');
 }
 
 function switchView(view) {
-  if (view !== 'profile-editor') openProfileEditor.cancel?.();
+  if (view !== 'profile-editor') { openProfileEditor.cancel?.(); resetEditorAsyncRequests(); }
   try {
     const currentActive = document.querySelector('.view.active')?.id?.replace(/^view-/, '');
     if (currentActive) {
@@ -1950,8 +1971,10 @@ function renderGroupFilterChips(summary = rebuildGroupCounts()) {
 }
 
 function updateProfileSelectionUi() {
-  const currentIds = new Set(ui.profiles.map((profile) => profile.id));
-  for (const id of selectedProfiles) if (!currentIds.has(id)) selectedProfiles.delete(id);
+  if (selectedProfiles.size) {
+    const currentIds = profileListCache.ids(ui.profiles);
+    for (const id of selectedProfiles) if (!currentIds.has(id)) selectedProfiles.delete(id);
+  }
   const count = selectedProfiles.size;
   const bar = $('#profile-selection-bar');
   const label = $('#profile-selection-count');
@@ -2015,8 +2038,11 @@ function setStartingProgress(id, progress = {}) {
 }
 
 function clearStartingProgress(id) {
-  if (id) startingProfiles.delete(id);
-  else startingProfiles.clear();
+  const changed = id ? startingProfiles.delete(id) : startingProfiles.size > 0;
+  if (!id) startingProfiles.clear();
+  // A failed launch may leave engine rows unchanged. Clear its local spinner
+  // independently of the no-op status refresh optimization.
+  if (changed) scheduleRenderProfiles();
 }
 
 function startProgressLabel(progress) {
@@ -2155,7 +2181,7 @@ async function purgeProfile(id) {
 }
 
 function filteredProfilesForCurrentView() {
-  return window.OpenBrowserProfileList.filterProfiles({
+  return profileListCache.filter({
     profiles: ui.profiles,
     activeGroupFilter,
     query: $('#profile-search')?.value || '',
@@ -2163,9 +2189,9 @@ function filteredProfilesForCurrentView() {
     groupNameOf,
     activeListTab,
     advancedFilter: advancedFilterState,
-    isRunning: (id) => profileEngine(id).running,
+    isRunning: isProfileRunning,
     sort: profileSort,
-  });
+  }, { runtimeVersion: engineProfiles, groups: ui.groups, locale: window.OpenBrowserI18n?.getLocale?.() || '' });
 }
 
 // ===== Roxy 对齐：列表标签条 / 行更多菜单 / 收藏 / 导出窗口 =====
@@ -2178,7 +2204,8 @@ function renderListTabs(counts = rebuildGroupCounts()) {
     tab.classList.toggle('active', key === (key === 'trash' ? (activeGroupFilter === 'trash' ? 'trash' : activeListTab) : activeListTab));
     let count = tab.querySelector('.list-tab-count');
     if (!count) { count = element('span', 'list-tab-count'); tab.append(count); }
-    count.textContent = String(counts[key] ?? 0);
+    // Transfer history owns this count; profile refreshes must not reset it.
+    if (key !== 'transfer') count.textContent = String(counts[key] ?? 0);
   });
 }
 function switchListTab(tab) {
@@ -2882,8 +2909,8 @@ function renderProfiles() {
     afterUiRender(profilesScope);
     freshRows.forEach((row) => { delete row.dataset.i18nPending; });
   }
-  if (typeof window.updateSidebarQuotaBar === 'function') window.updateSidebarQuotaBar();
-  if (typeof window.refreshHeaderExitIpPill === 'function') window.refreshHeaderExitIpPill();
+  if (typeof window.updateSidebarQuotaBar === 'function') window.updateSidebarQuotaBar(summary);
+  if (typeof window.refreshHeaderExitIpPill === 'function') window.refreshHeaderExitIpPill(profileListCache.firstExit(ui.profiles));
   if (typeof window.renderTransfersTable === 'function') window.renderTransfersTable();
   if (typeof refreshIcons === 'function') refreshIcons();
   loadedViews.add('profiles');
@@ -2910,8 +2937,13 @@ async function refreshStatus() {
 // callers (button handlers that render then read the DOM) keep the direct functions.
 let __rafPending = 0;
 function scheduleRenderProfiles() {
+  loadedViews.delete('profiles');
+  if (!document.querySelector('#view-profiles.view.active')) return;
   if (__rafPending) return;
-  __rafPending = requestAnimationFrame(() => { __rafPending = 0; renderProfiles(); });
+  __rafPending = requestAnimationFrame(() => {
+    __rafPending = 0;
+    if (document.querySelector('#view-profiles.view.active')) renderProfiles();
+  });
 }
 let __profileSearchTimer = 0;
 function scheduleProfileSearchRender() {
@@ -2949,7 +2981,9 @@ const statusController = window.OpenBrowserStatusController.createStatusControll
 const __statusRefresher = window.OpenBrowserRefreshScheduler.createRefreshScheduler({
   isPaused: () => document.hidden,
   refresh: async () => {
+    const previous = engineProfiles;
     await statusController.refresh();
+    if (engineProfiles === previous) return;
     scheduleRenderProfiles();
     if (document.querySelector('#view-proxies.view.active')) scheduleProxySearchRender();
   },
