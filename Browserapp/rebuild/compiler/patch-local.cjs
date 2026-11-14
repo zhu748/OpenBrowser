@@ -469,7 +469,7 @@ for (const file of ["rx-ic-logo-Bi20vHBm", "logo-BtJ5ZiSc"]) {
 // Preserve the original delete-confirm container (including permanent-delete checkbox).
 {
   const source = fs.readFileSync(
-    (process.env.ROXY_SOURCE || "/workspace/roxy-src") +
+    require("./source.cjs").resolveBuildSource() +
       "/web/assets/global-component-Hns640q-.js",
     "utf8",
   );

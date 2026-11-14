@@ -1,0 +1,1 @@
+import{C as e,St as t,V as n,W as r,jt as i,m as a,p as o}from"./runtime-core.esm-bundler-CBj16o9G.js";import{t as s}from"./workspaceContext-DAz44Mqd.js";import{t as c}from"./shop-v2DtsxR2.js";var l=e({__name:`index`,setup(e){let l=t(!1);return n(async()=>{await s(),l.value=!0}),(e,t)=>i(l)?(r(),o(c,{key:0})):a(``,!0)}});export{l as default};

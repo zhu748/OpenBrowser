@@ -2,7 +2,7 @@ const fs = require("fs"),
   path = require("path"),
   acorn = require("acorn"),
   walk = require("acorn-walk");
-const src = (process.env.ROXY_SOURCE || "/workspace/roxy-src") + "/web",
+const src = path.join(require("./source.cjs").resolveBuildSource(), "web"),
   dst = path.resolve("work/rebuild/stage");
 fs.cpSync(src, dst, { recursive: true });
 function patch(name, vars = {}, funcs = {}) {

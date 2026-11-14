@@ -24,6 +24,8 @@ module.exports = [
       'automation/vendor/**',
       // Generated Vue modules have independent syntax and import/export audits.
       'roxy-ui/**',
+      // Immutable build inputs use checksums and the compiler's own AST audits.
+      'rebuild/compiler/vendor/**',
     ],
   },
   {

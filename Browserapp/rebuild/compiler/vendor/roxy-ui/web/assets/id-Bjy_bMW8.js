@@ -1,0 +1,1 @@
+function e(e){if(typeof e==`number`)return!Number.isSafeInteger(e)||e<=0?null:String(e);if(typeof e!=`string`)return null;let t=e.trim();return/^[1-9]\d*$/.test(t)?t:null}function t(t,n){let r=e(t),i=e(n);return r!=null&&r===i}function n(t){let n=e(t);if(!n)return;let r=Number(n);return Number.isSafeInteger(r)&&String(r)===n?r:n}export{n,t as r,e as t};

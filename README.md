@@ -272,3 +272,13 @@ Installers contain the desktop application and Rust core only. Browser kernels a
 If OpenBrowser is useful to you, a Star is appreciated ⭐
 
 </div>
+
+## Rebuilding the frontend
+
+```bash
+cd Browserapp
+npm ci
+npm run rebuild:ui
+```
+
+The required frontend build inputs and their SHA256 manifest are included in this repository. No external `/workspace/roxy-src` directory or uploaded archives are required. See [the reproducible build guide](docs/rebuild/BUILD-REPRODUCIBILITY.md).

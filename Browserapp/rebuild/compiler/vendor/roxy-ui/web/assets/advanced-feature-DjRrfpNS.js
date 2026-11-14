@@ -1,0 +1,1 @@
+import{t as e}from"./locales-BfKu2SD4.js";function t(){return[e(`创建窗口模板`),e(`无限项目数量`),e(`窗口同步`),e(`窗口转移`),e(`频道权限（即将推出）`),e(`额外 API 请求次数`),e(`额外日志保留时长`),e(`专属技术支持`),e(`创建/打开额度大幅提升`)]}export{t};

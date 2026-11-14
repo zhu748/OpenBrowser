@@ -7,7 +7,7 @@ const fs = require("node:fs"),
 const repo = path.resolve(__dirname, "../../..");
 process.chdir(repo);
 const root = process.env.REBUILD_OUTPUT || "Browserapp/roxy-ui",
-  source = process.env.ROXY_SOURCE || "/workspace/roxy-src";
+  source = require("./source.cjs").resolveBuildSource();
 const files = [];
 function scan(dir) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {

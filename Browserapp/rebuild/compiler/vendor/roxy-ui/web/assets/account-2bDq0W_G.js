@@ -1,0 +1,1 @@
+var e=function(e){return e[e.Order=1]=`Order`,e[e.MultiWindow=2]=`MultiWindow`,e}({}),t=function(e){return e.Code=`code`,e.Email=`email`,e}({});export{t as n,e as t};

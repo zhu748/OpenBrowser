@@ -1,0 +1,6 @@
+# Preserve the exact input/output bytes used by frontend integrity checks.
+/Browserapp/rebuild/compiler/** text eol=lf
+/Browserapp/rebuild/*.js text eol=lf
+/Browserapp/rebuild/*.css text eol=lf
+/Browserapp/rebuild/compiler/vendor/roxy-ui/** -text
+/Browserapp/roxy-ui/** -text

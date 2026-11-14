@@ -1,0 +1,9 @@
+{
+  "status": "PASS",
+  "source": "Browserapp/rebuild/compiler/vendor/roxy-ui",
+  "snapshot": {
+    "files": 1875,
+    "bytes": 96883257,
+    "sha256": "5eddfd002608654baa7f9a7df2048040f4ec915e1c6074cdda56f191f5867eb2"
+  }
+}

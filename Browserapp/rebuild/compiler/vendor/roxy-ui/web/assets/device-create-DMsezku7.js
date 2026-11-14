@@ -1,0 +1,1 @@
+import{C as e,W as t,p as n}from"./runtime-core.esm-bundler-CBj16o9G.js";import{t as r}from"./create-Bs68oonD.js";var i=e({__name:`device-create`,setup(e){return(e,i)=>(t(),n(r,{mode:`device`}))}});export{i as default};

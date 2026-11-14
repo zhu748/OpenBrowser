@@ -24,41 +24,14 @@ process.on("exit", () => {
   fs.rmSync(lock, { force: true });
 });
 
-const src = process.env.ROXY_SOURCE || "/workspace/roxy-src";
-if (!fs.existsSync(path.join(src, "web/index.html")))
-  throw Error("Missing ROXY_SOURCE/web/index.html");
-function countFiles(dir) {
-  return fs
-    .readdirSync(dir, { withFileTypes: true })
-    .reduce(
-      (sum, item) =>
-        sum + (item.isDirectory() ? countFiles(path.join(dir, item.name)) : 1),
-      0,
-    );
-}
-const archive = {
-  total: countFiles(src),
-  web: countFiles(path.join(src, "web")),
-  main: countFiles(path.join(src, "main")),
-  agent: countFiles(path.join(src, "agent")),
-  tools: countFiles(path.join(src, "tools")),
-  javascript: fs
-    .readdirSync(path.join(src, "web/assets"))
-    .filter((file) => file.endsWith(".js")).length,
-};
-if (
-  archive.total !== 2063 ||
-  archive.web !== 1874 ||
-  archive.main !== 113 ||
-  archive.agent !== 71 ||
-  archive.tools !== 3 ||
-  archive.javascript !== 1162
-)
-  throw Error("归档数量校验失败: " + JSON.stringify(archive));
+const { resolveBuildSource, manifest } = require("./source.cjs");
+const src = resolveBuildSource();
+// All child steps read the same validated checkout-local source.
+process.env.ROXY_SOURCE = src;
 fs.mkdirSync(path.join(repo, "docs/rebuild/evidence"), { recursive: true });
 fs.writeFileSync(
-  path.join(repo, "docs/rebuild/evidence/archive-check.json"),
-  JSON.stringify(archive, null, 2),
+  path.join(repo, "docs/rebuild/evidence/build-source-check.json"),
+  JSON.stringify({ status: "PASS", source: path.relative(repo, src).split(path.sep).join("/"), snapshot: manifest.snapshot }, null, 2),
 );
 fs.rmSync(path.join(repo, "work/rebuild/stage"), {
   recursive: true,

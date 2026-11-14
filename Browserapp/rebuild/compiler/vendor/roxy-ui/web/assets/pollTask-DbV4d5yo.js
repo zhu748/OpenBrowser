@@ -1,0 +1,1 @@
+async function e(e,t,n={}){let r=n.intervalMs??1500,i=n.timeoutMs??3e4,a=Date.now();for(;Date.now()-a<i;){let n=await e(t),i=n.data?.status;if(i!==void 0&&i!==0)return n;await new Promise(e=>{window.setTimeout(e,r)})}throw Error(`Cloud phone async task timed out`)}export{e as t};

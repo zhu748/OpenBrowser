@@ -1,7 +1,7 @@
 const fs = require("fs"),
   a = require("acorn"),
   w = require("acorn-walk");
-const src = (process.env.ROXY_SOURCE || "/workspace/roxy-src") + "/web",
+const src = require("node:path").join(require("./source.cjs").resolveBuildSource(), "web"),
   dst = process.env.REBUILD_OUTPUT || "Browserapp/roxy-ui";
 const css = new Set();
 function deps(file, condition) {

@@ -182,3 +182,7 @@
 | 异常退出后的历史仍显示运行中，检查点无法清楚呈现中断 | 只改 Native 状态 interrupted，没有原界面支持的终态事件 | 启动恢复补 run_cancelled/process_exit，保留检查点；DTO 映射 cancelled 并带 interrupted=true，不宣称成功 | Browserapp/rebuild/agent-events.js:24 | 模拟进程遗留运行数据、重新实例化、事件/日志终止及权限检查点保持 |
 | 迁移写盘暂时失败后重连永久失败 | loadPromise 缓存拒绝，后续 info 始终读取失败 Promise | 加载失败释放 Promise 和未提交 data，后续重新读盘；失败不覆盖原文件 | Browserapp/rebuild/agent-service.js:91 | 实际 rename 首次失败、第二次 info 成功；失败后旧事件格式仍在磁盘 |
 | 会话菜单键盘无法进入，Tab 过渡又可能使触发器被卸载 | 菜单仅由 hover/子触发器 focus 揭示；行缺焦点事件，直接 blur 清除会删掉即将获得焦点的子节点 | 行复用原 focus 回调；blur 仅在 relatedTarget 离开整行时清理，不改样式或 DOM 结构 | Browserapp/rebuild/compiler/patch-local.cjs:1469 | 真实已结束会话聚焦→Tab→Enter→原菜单与删除确认；原 RGB 对照另行重跑 |
+
+## 前端独立构建修复
+
+症状：干净仓库缺少 `/workspace/roxy-src` 时 `npm run rebuild:ui` 直接失败。根因：8 个编译/审计入口各自硬编码外部默认路径，build 还把无关主进程、Agent 和工具的全镜像数量作为构建前提。修法：仓库内保存实际必需的 1875 个原字节输入，所有入口共用解析和逐文件 SHA256 校验，保留失败预检、构建锁与原审计断言。位置：Browserapp/rebuild/compiler/source.cjs:1、build.cjs:27。10 项输入与失败路径检查已通过；独立检出及产物比较见 [构建报告](BUILD-REPRODUCIBILITY.md)。

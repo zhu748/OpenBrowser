@@ -1,0 +1,3 @@
+import{St as e}from"./runtime-core.esm-bundler-CBj16o9G.js";import{i as t,n}from"./agent-BmSFI9WH.js";var r=t(`cloud-phone-ui`,()=>{let[t]=n(),r=e(!1),i=e({title:``}),a=e(``),o=e({}),s;function c(e,n,r){let i=typeof r==`number`?{life:r}:r;if(typeof n==`string`&&n.trim()&&i?.summary==null){let[r,...a]=n.split(`
+`);t(e,a.join(`
+`).trim(),{...i,summary:r})}else t(e,n,i)}function l(e,t,n={},c){a.value=e,i.value=t,o.value=n,s=c,r.value=!0}function u(){r.value=!1,a.value=``,s=void 0}function d(e){s=e}async function f(){s?await s():u()}return{toast:c,modalOpen:r,modalOptions:i,modalBodyKey:a,modalPayload:o,openModal:l,closeModal:u,confirmModal:f,bindModalOk:d}});export{r as t};

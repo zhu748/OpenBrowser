@@ -2,7 +2,7 @@
 // Independent visual baseline: original compiled render functions, with the
 // same local data/lifecycle adapters as the app. Never ship this test harness.
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),{spawnSync}=require('node:child_process'),acorn=require('acorn'),walk=require('acorn-walk'),scope=require('eslint-scope');
-const repo=path.resolve(__dirname,'../../..'),raw=process.env.ROXY_SOURCE||'/workspace/roxy-src',root=path.join(repo,'work/rebuild/reference-baseline'),original=path.join(root,'work/rebuild/stage/assets'),runtime=path.join(repo,'Browserapp/roxy-ui/assets'),out=path.join(root,'grafted');
+const repo=path.resolve(__dirname,'../../..'),raw=require('./source.cjs').resolveBuildSource(),root=path.join(repo,'work/rebuild/reference-baseline'),original=path.join(root,'work/rebuild/stage/assets'),runtime=path.join(repo,'Browserapp/roxy-ui/assets'),out=path.join(root,'grafted');
 const hash=text=>crypto.createHash('sha256').update(text).digest('hex'),parse=text=>acorn.parse(text,{sourceType:'module',ecmaVersion:'latest',ranges:true});
 fs.rmSync(root,{recursive:true,force:true});fs.mkdirSync(original,{recursive:true});fs.mkdirSync(out,{recursive:true});fs.cpSync(path.join(raw,'web/assets'),original,{recursive:true});
 for(const script of ['patch-extensions.cjs','patch-projects.cjs','commerce.cjs']){

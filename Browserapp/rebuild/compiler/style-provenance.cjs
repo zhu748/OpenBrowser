@@ -1,6 +1,6 @@
 "use strict";
 const fs=require('node:fs'),path=require('node:path'),postcss=require('postcss'),crypto=require('node:crypto');
-const repo=path.resolve(__dirname,'../../..'),raw=path.join(process.env.ROXY_SOURCE||'/workspace/roxy-src','web/assets'),runtime=path.join(repo,'Browserapp/roxy-ui/assets'),failures=[],files=[];
+const repo=path.resolve(__dirname,'../../..'),raw=path.join(require('./source.cjs').resolveBuildSource(),'web/assets'),runtime=path.join(repo,'Browserapp/roxy-ui/assets'),failures=[],files=[];
 function declarations(text){
  const rows=[];postcss.parse(text).walkDecls(node=>{let parent=node.parent,selector=parent.type==='rule'?parent.selector:'',conditions=[];for(let current=parent;current;current=current.parent)if(current.type==='atrule')conditions.unshift('@'+current.name+' '+current.params);
   for(const part of selector?postcss.list.comma(selector):[''])rows.push({selector:part,context:conditions.join('/'),property:node.prop,value:node.value,important:Boolean(node.important)});

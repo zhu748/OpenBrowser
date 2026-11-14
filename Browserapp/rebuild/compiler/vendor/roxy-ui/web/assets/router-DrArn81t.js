@@ -1,0 +1,1 @@
+export{t as router}from"./router-D18B5Fz5.js";

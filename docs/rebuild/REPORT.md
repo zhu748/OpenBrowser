@@ -67,7 +67,7 @@
 - 运行产物物理删除登录、付费墙、购买/结算/积分/团队/推荐、营销资源与原 SDK HTTP 工厂；332 个 `/user_*` 云端端点工厂不在默认运行树。共清理 133 项资源，包含无用通用资源，不把它们全部说成付费资源。[清单](evidence/removed-resources.json)。
 - [grep 原命令与范围](evidence/commerce-grep.txt)：`pay-wall`、`last-pay-modal`、`/user_*` 等黑名单 **0 匹配文件**。按要求保留的翻译键、不可变原归档和逆向编译器不冒充全仓 0 命中。
 - 生成前端直接 fetch/XHR/WebSocket/EventSource/sendBeacon 为 **0**；`_2.fetch` 为本地回调。[AST 传输审计](evidence/renderer-transports.json)。CSP `connect-src 'none'`、请求过滤、精确文档 IPC 和协议 realpath 边界均有实际探针；界面测试外部请求数组为空。代理/模型/用户配置 MCP/内核维护由主进程执行，被管理浏览器正常上网。
-- 五卷完整镜像 2063 文件、web 1874 / main 113 / agent 71 / tools 3 / 根 2，原 JS 1162；镜像未改、不打包。`obui://app/index.html` 支持绝对 import，无需逐 chunk 改路径。[归档](evidence/archive-check.json)。
+- 原五卷完整镜像 2063 文件、web 1874 / main 113 / agent 71 / tools 3 / 根 2，原 JS 1162；这是原始归档的历史校验。前端构建现已将真正需要的 1875 个输入内置仓库并锁定 SHA256，整个编译器和输入均不进入生产包。`obui://app/index.html` 支持绝对 import，无需逐 chunk 改路径。[原归档](evidence/archive-check.json) · [独立构建](BUILD-REPRODUCIBILITY.md)。
 - 当前产物 1556 文件、973 JS。原非商业主题 1006 声明值未改，商业变量删除 48；三语言每种 4892 原键保留，品牌改值；Logo 来自 Browserapp/assets。[UI 审计](evidence/ui-audit.json)、[模块/自由绑定](evidence/module-links.json)。
 
 ## 验收边界与还剩什么
@@ -97,7 +97,7 @@ node rebuild/compiler/audit-native.cjs
 npm run verify:rebuild:evidence
 ```
 
-重新构建使用 `npm run rebuild:ui`，需完整 `/workspace/roxy-src`。真实桌面用例需要 Xvfb/xdotool/ImageMagick/xwininfo/Python Pillow，可使用 `OPENBROWSER_TEST_DISPLAY` 和 `OPENBROWSER_TEST_XDOTOOL` 指定；本环境使用独立 :91 及工作目录解包的 Debian 工具，运行时设置相应 LD_LIBRARY_PATH。其余 Electron 用例使用自身 headless 参数。`OPENBROWSER_ROXY_UI=0` 仅保留旧开发界面排查入口。
+重新构建使用 `npm ci` 和 `npm run rebuild:ui`，默认读取当前仓库内的锁定输入，无需外部镜像；样式审计和视觉基线也使用相同解析入口。真实桌面用例需要 Xvfb/xdotool/ImageMagick/xwininfo/Python Pillow，可使用 `OPENBROWSER_TEST_DISPLAY` 和 `OPENBROWSER_TEST_XDOTOOL` 指定；此前完整验收使用独立 :91 及工作目录解包的 Debian 工具。其余 Electron 用例使用自身 headless 参数。`OPENBROWSER_ROXY_UI=0` 仅保留旧开发界面排查入口。
 
 [最终证据核对](evidence/final-verification.json) 核对 72 份指定证据记录（含历史阶段记录，当前执行以 phase4-command-results 为准）、当前 1556 个前端文件、341 个 Native/开发入口代码文件、56 个实际执行测试的 hash，以及整轮 2376 运行文件摘要和文档链接；它不重跑测试。历史失败日志与混合来源失败运行均在 [尝试目录](evidence/acceptance-attempts/) 留档。全仓 lint 通过。提交前将新增文件加入索引后，git diff --cached --check 检出原模板字符串及 Skill 文档继承的行尾空白，原值保留；此格式检查不声称通过，详见 [提交说明](PUBLISH-NOTES.md)。
 

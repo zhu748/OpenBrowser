@@ -7,7 +7,7 @@ const fs = require("node:fs"),
   postcss = require("postcss");
 const repo = path.resolve(__dirname, "../../..");
 process.chdir(repo);
-const source = process.env.ROXY_SOURCE || "/workspace/roxy-src",
+const source = require("./source.cjs").resolveBuildSource(),
   root = process.env.REBUILD_OUTPUT || "Browserapp/roxy-ui";
 const failures = [],
   transports = [],

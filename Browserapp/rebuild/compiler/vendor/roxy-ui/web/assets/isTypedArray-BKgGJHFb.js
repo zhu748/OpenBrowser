@@ -1,0 +1,1 @@
+function e(e){return ArrayBuffer.isView(e)&&!(e instanceof DataView)}export{e as t};

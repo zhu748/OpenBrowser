@@ -259,3 +259,13 @@ OpenBrowser/
 如果 OpenBrowser 对你有用，欢迎 Star ⭐
 
 </div>
+
+## 独立重建前端
+
+```bash
+cd Browserapp
+npm ci
+npm run rebuild:ui
+```
+
+必需构建输入及 SHA256 清单已随仓库保存，不需要外部 `/workspace/roxy-src` 或上传分卷。[构建说明与验证](docs/rebuild/BUILD-REPRODUCIBILITY.md)。
