@@ -1,0 +1,498 @@
+
+> openbrowser@1.0.0 rebuild:ui
+> node rebuild/compiler/build.cjs
+
+Retained modules 973
+CSS 126
+Deleted commercial resources 133
+{
+  "status": "PASS",
+  "modules": 973,
+  "compatibilityReferences": [
+    {
+      "file": "ScriptSchemaForm-z_48GvPJ.js",
+      "name": "global",
+      "line": 38,
+      "reason": "typeof feature detection"
+    },
+    {
+      "file": "ScriptSchemaForm-z_48GvPJ.js",
+      "name": "global",
+      "line": 38,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "ScriptSchemaForm-z_48GvPJ.js",
+      "name": "global",
+      "line": 38,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "ScriptSchemaForm-z_48GvPJ.js",
+      "name": "global",
+      "line": 38,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "api-keys-qLZdcspG.js",
+      "name": "process",
+      "line": 9834,
+      "reason": "typeof feature detection"
+    },
+    {
+      "file": "dist-NctnpPRe.js",
+      "name": "global",
+      "line": 3,
+      "reason": "typeof feature detection"
+    },
+    {
+      "file": "dist-NctnpPRe.js",
+      "name": "global",
+      "line": 3,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "dist-NctnpPRe.js",
+      "name": "global",
+      "line": 109,
+      "reason": "typeof feature detection"
+    },
+    {
+      "file": "dist-NctnpPRe.js",
+      "name": "global",
+      "line": 109,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "define",
+      "line": 4,
+      "reason": "typeof feature detection"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "define",
+      "line": 4,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "define",
+      "line": 4,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 4,
+      "reason": "typeof feature detection"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 4,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 2671,
+      "reason": "typeof feature detection"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 2671,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "Deno",
+      "line": 11694,
+      "reason": "typeof feature detection"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "Deno",
+      "line": 11694,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "Deno",
+      "line": 11694,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "Pebble",
+      "line": 11697,
+      "reason": "typeof feature detection"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 11833,
+      "reason": "typeof feature detection"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 11833,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "ActiveXObject",
+      "line": 12169,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 17542,
+      "reason": "typeof feature detection"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 17542,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 17562,
+      "reason": "typeof feature detection"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 17562,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 18044,
+      "reason": "typeof feature detection"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 18044,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 18423,
+      "reason": "typeof feature detection"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 18423,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 18451,
+      "reason": "typeof feature detection"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 18451,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 18628,
+      "reason": "typeof feature detection"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 18628,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 18916,
+      "reason": "typeof feature detection"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 18916,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 18922,
+      "reason": "typeof feature detection"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 18922,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 19188,
+      "reason": "typeof feature detection"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 19188,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 19231,
+      "reason": "typeof feature detection"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 19231,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 19572,
+      "reason": "typeof feature detection"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 19572,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 19779,
+      "reason": "typeof feature detection"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 19779,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "regeneratorRuntime",
+      "line": 20335,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 21648,
+      "reason": "typeof feature detection"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 21648,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 21854,
+      "reason": "typeof feature detection"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 21854,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 21978,
+      "reason": "typeof feature detection"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 21978,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 22190,
+      "reason": "typeof feature detection"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "global",
+      "line": 22190,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "msCrypto",
+      "line": 22282,
+      "reason": "typeof feature detection"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "msCrypto",
+      "line": 22282,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "msCrypto",
+      "line": 22282,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "exceljs.min-DfecxsXL.js",
+      "name": "msCrypto",
+      "line": 22282,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "locales-BfKu2SD4.js",
+      "name": "global",
+      "line": 15,
+      "reason": "typeof feature detection"
+    },
+    {
+      "file": "locales-BfKu2SD4.js",
+      "name": "global",
+      "line": 15,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "rolldown-runtime-BCiCTKAo.js",
+      "name": "require",
+      "line": 27,
+      "reason": "typeof feature detection"
+    },
+    {
+      "file": "rolldown-runtime-BCiCTKAo.js",
+      "name": "require",
+      "line": 27,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "rolldown-runtime-BCiCTKAo.js",
+      "name": "require",
+      "line": 27,
+      "reason": "typeof feature detection"
+    },
+    {
+      "file": "rolldown-runtime-BCiCTKAo.js",
+      "name": "require",
+      "line": 27,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "rolldown-runtime-BCiCTKAo.js",
+      "name": "require",
+      "line": 28,
+      "reason": "typeof feature detection"
+    },
+    {
+      "file": "rolldown-runtime-BCiCTKAo.js",
+      "name": "require",
+      "line": 28,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "runtime-core.esm-bundler-CBj16o9G.js",
+      "name": "global",
+      "line": 62,
+      "reason": "typeof feature detection"
+    },
+    {
+      "file": "runtime-core.esm-bundler-CBj16o9G.js",
+      "name": "global",
+      "line": 62,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "utils-BIWenCnY.js",
+      "name": "define",
+      "line": 396,
+      "reason": "typeof feature detection"
+    },
+    {
+      "file": "utils-BIWenCnY.js",
+      "name": "define",
+      "line": 396,
+      "reason": "reviewed vendor compatibility branch"
+    },
+    {
+      "file": "utils-BIWenCnY.js",
+      "name": "define",
+      "line": 396,
+      "reason": "reviewed vendor compatibility branch"
+    }
+  ],
+  "failures": []
+}
+{
+  "status": "PASS",
+  "directTransports": 0,
+  "retainedTheme": 1006,
+  "failures": []
+}
+{
+  "status": "PASS",
+  "files": 1556,
+  "javascript": 973,
+  "syntaxErrors": [],
+  "commercialMatches": [],
+  "rawChannels": 275,
+  "distinctRawChannels": 144,
+  "cloudEndpoints": 332
+}
+{
+  "apiAdapters": 89,
+  "channelAdapters": 77,
+  "retainedApiCalls": 159,
+  "unmappedApi": [],
+  "unmappedChannels": [],
+  "dynamicChannels": [
+    {
+      "file": "window-list-C-MAmr_C.js",
+      "line": 86,
+      "channel": "X.value ? \"syncControl:getAllSyncingWindows\" : \"browser:getOpenedBrowser\""
+    }
+  ]
+}
+{
+  "status": "PASS",
+  "scope": "仅对可静态解析调用证明存在精确分发分支；动态转发单列，不等于参数、返回值或所有交互已验收。脚本沙箱明确列为未迁移。",
+  "staticCalls": 305,
+  "uniqueCalls": 169,
+  "uses": 305,
+  "dynamic": 11,
+  "unsupported": {
+    "agent:scriptSelfDescription": "原脚本沙箱未移植，明确拒绝；不是已接通功能",
+    "agent:officialScripts.getOfficialScript": "原脚本沙箱未移植，明确拒绝；不是已接通功能",
+    "agent:userTemplates.uploadUserTemplateScript": "原脚本沙箱未移植，明确拒绝；不是已接通功能"
+  },
+  "missing": [],
+  "sources": 5
+}
+Validated local UI installed

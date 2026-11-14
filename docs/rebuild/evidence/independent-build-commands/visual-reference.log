@@ -1,0 +1,5 @@
+
+> openbrowser@1.0.0 rebuild:visual-reference
+> node rebuild/compiler/visual-reference.cjs
+
+{"status":"READY","files":152,"originalRendererCount":413,"changedRendererCount":12,"excluded":3}

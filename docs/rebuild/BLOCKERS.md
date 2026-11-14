@@ -21,3 +21,7 @@
 - 一个旧内核模板自测依赖仓库外未提供的 macOS 私有内核 init_template.json/init_clean_standalone.json，原失败日志保留在 work/rebuild/fp-invariants-current.log；它不计入本次通过的 15 项原生专项。没有伪造缺失文件或把跳过记为通过。
 
 商业/端点/前端传输/资源与绑定审计通过。`pay-wall`、`last-pay-modal`、`/user_*` 黑名单在明示运行范围内 0 命中。首次功能失败、差分、探针条件错误和混合版本运行均留档；最新结论见 [REPORT.md](REPORT.md) 和 [final-verification.json](evidence/final-verification.json)。
+
+## 已关闭：外部前端构建输入依赖
+
+默认构建、静态/样式审计及视觉基线不再依赖仓库外目录。全新 Git 检出、独立 npm 缓存、删除旧产物后的构建通过，1556 文件逐字节一致；10 项负例与输入完整性检查通过。没有因此宣称重跑整套 UI 回归或验证 Windows 真机，详见 [独立构建记录](BUILD-REPRODUCIBILITY.md)。

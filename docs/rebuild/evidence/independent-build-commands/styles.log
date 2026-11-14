@@ -1,0 +1,5 @@
+
+> openbrowser@1.0.0 audit:rebuild:styles
+> node rebuild/compiler/style-provenance.cjs
+
+{"status":"PASS","checked":20504,"failures":[]}

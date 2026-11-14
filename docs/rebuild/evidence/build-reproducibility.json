@@ -1,0 +1,209 @@
+{
+  "status": "PASS",
+  "commands": [
+    {
+      "name": "clone",
+      "argv": [
+        "git",
+        "clone",
+        "--quiet",
+        "--no-hardlinks",
+        "--config",
+        "core.autocrlf=true",
+        "/workspace/OpenBrowser",
+        "/tmp/ob-independent-checkout-ais6lqrl/checkout"
+      ],
+      "exitCode": 0,
+      "log": "docs/rebuild/evidence/independent-build-commands/clone.log"
+    },
+    {
+      "name": "npm-ci",
+      "argv": [
+        "npm",
+        "ci",
+        "--no-audit",
+        "--no-fund"
+      ],
+      "exitCode": 0,
+      "log": "docs/rebuild/evidence/independent-build-commands/npm-ci.log"
+    },
+    {
+      "name": "build",
+      "argv": [
+        "npm",
+        "run",
+        "rebuild:ui"
+      ],
+      "exitCode": 0,
+      "log": "docs/rebuild/evidence/independent-build-commands/build.log"
+    },
+    {
+      "name": "static-audit",
+      "argv": [
+        "npm",
+        "run",
+        "audit:rebuild"
+      ],
+      "exitCode": 0,
+      "log": "docs/rebuild/evidence/independent-build-commands/static-audit.log"
+    },
+    {
+      "name": "styles",
+      "argv": [
+        "npm",
+        "run",
+        "audit:rebuild:styles"
+      ],
+      "exitCode": 0,
+      "log": "docs/rebuild/evidence/independent-build-commands/styles.log"
+    },
+    {
+      "name": "visual-reference",
+      "argv": [
+        "npm",
+        "run",
+        "rebuild:visual-reference"
+      ],
+      "exitCode": 0,
+      "log": "docs/rebuild/evidence/independent-build-commands/visual-reference.log"
+    }
+  ],
+  "comparison": {
+    "missing": [],
+    "extra": [],
+    "changed": []
+  },
+  "verifiedCodeCommit": "8d3645de8bc080af6b48c6bbfbb6ea08343535e1",
+  "legacyMirrorPresent": false,
+  "sourceOverrideSet": false,
+  "freshDependencyInstall": true,
+  "isolatedNpmCache": true,
+  "prebuiltOutputRemoved": true,
+  "output": {
+    "files": 1556,
+    "sha256": "c8bab80626c572ced9360b1a2f9ef9dfc383b51ecebd58cfd2a6067bcf01c8fa"
+  },
+  "sourceSnapshot": {
+    "files": 1875,
+    "bytes": 96883257,
+    "sha256": "5eddfd002608654baa7f9a7df2048040f4ec915e1c6074cdda56f191f5867eb2"
+  },
+  "sourceLocation": "Browserapp/rebuild/compiler/vendor/roxy-ui",
+  "visualReference": {
+    "status": "READY",
+    "originalRendererCount": 413,
+    "files": 152
+  },
+  "compilerSources": [
+    {
+      "file": "Browserapp/rebuild/compiler/audit-components.cjs",
+      "sha256": "9798abd87717fcf7e9460d723d331c996fcd44a5abf740539e6624d4fbf6266e"
+    },
+    {
+      "file": "Browserapp/rebuild/compiler/audit-native.cjs",
+      "sha256": "07e0564a3ee1003e62ab7fe31bbdc45775c37dd4df3cc352e6760ac1607e9b88"
+    },
+    {
+      "file": "Browserapp/rebuild/compiler/audit.cjs",
+      "sha256": "f9da128d18bb9aaf334c6bf95d7d2cedd20f46e9d4a30c2bfd8ddb02ff7a48d0"
+    },
+    {
+      "file": "Browserapp/rebuild/compiler/backend-contract-audit.cjs",
+      "sha256": "57fd2d3f9ea36916c0e07b7e17f9309fd31aa384b4738a8649778bb7e670d8c9"
+    },
+    {
+      "file": "Browserapp/rebuild/compiler/build.cjs",
+      "sha256": "5917c5e496b58abecc4615530910cfe8de39969ecbd00366158299b3a0bb2e0e"
+    },
+    {
+      "file": "Browserapp/rebuild/compiler/channel-audit.cjs",
+      "sha256": "a87a4383942853aee292fcaa1a239e5480a653106038e576afedd27c00324e81"
+    },
+    {
+      "file": "Browserapp/rebuild/compiler/commerce.cjs",
+      "sha256": "e05af41adcbd2c783fc9c7089b0f3714344797e24fb379a112d54805c57c5d1d"
+    },
+    {
+      "file": "Browserapp/rebuild/compiler/link-audit.cjs",
+      "sha256": "eebd65c56d6dc546603ea534f6d3bf480d429588d4ac7aa3bf33d2cbec15bb6a"
+    },
+    {
+      "file": "Browserapp/rebuild/compiler/offline-boundaries.cjs",
+      "sha256": "eb136576c9bb98b7654497aca5f86113b70c2c0bb51b5bd91a31ceb9395c4fb3"
+    },
+    {
+      "file": "Browserapp/rebuild/compiler/patch-api.cjs",
+      "sha256": "0ddec1d45a4cde44013ce07cbe252c292f0b29621d19278d9f1362c7da4a5168"
+    },
+    {
+      "file": "Browserapp/rebuild/compiler/patch-extensions.cjs",
+      "sha256": "5116971e2a86863e87b02fcb6c3df72b5465e0652fe130f2917aa6ffbbfd9e29"
+    },
+    {
+      "file": "Browserapp/rebuild/compiler/patch-host.cjs",
+      "sha256": "fe486393a5f85a2aaccbdb44c3eb28af4fa00fe89639c908fc8d3220b0e33fd3"
+    },
+    {
+      "file": "Browserapp/rebuild/compiler/patch-local.cjs",
+      "sha256": "4a1603ee5df62b08a7eee260f9c1e1fb7db0ca1d7f34695c51062c6c3bc24922"
+    },
+    {
+      "file": "Browserapp/rebuild/compiler/patch-mcp.cjs",
+      "sha256": "039729de1beb6a8ec9b0acec03e2a4352ef302b04a49cb0297c77bcececb92bc"
+    },
+    {
+      "file": "Browserapp/rebuild/compiler/patch-profile-menu.cjs",
+      "sha256": "545f071270842b4b093f81af15ac8573090b24bc879bed04618e1274839c1d6f"
+    },
+    {
+      "file": "Browserapp/rebuild/compiler/patch-projects.cjs",
+      "sha256": "7caecca39ac1fdcbcc822572f82f2a9ef0b1d2ea410077069930af588d20d910"
+    },
+    {
+      "file": "Browserapp/rebuild/compiler/patch-workbench.cjs",
+      "sha256": "b3a67e567fdd3ca35078831df619e6af320739a5c66480d20a64069b06b0af08"
+    },
+    {
+      "file": "Browserapp/rebuild/compiler/prepare.cjs",
+      "sha256": "ec494fcb737644c2c2b5b7472c96a1a21c1efd7d1d59e83819cbe1e94e0801e8"
+    },
+    {
+      "file": "Browserapp/rebuild/compiler/purge-resources.cjs",
+      "sha256": "0f308632d88d312f0612e9fb8ea04c5d15ff039d26483293563d2a785a9f4025"
+    },
+    {
+      "file": "Browserapp/rebuild/compiler/resources.cjs",
+      "sha256": "d1a0cf324e1096926478a9a828ad548cd8c73ea9755b57dfd8dea90766ee6229"
+    },
+    {
+      "file": "Browserapp/rebuild/compiler/runtime-snapshot.cjs",
+      "sha256": "b5af6643da6d3b88b618901dd6410695d20fce25b7cf106e6315b0f22bd50afb"
+    },
+    {
+      "file": "Browserapp/rebuild/compiler/slice.cjs",
+      "sha256": "feec4e4eecd97daeb64de10dfc9fdd4f38c90007d6163c17f8849c3ff4abe8cb"
+    },
+    {
+      "file": "Browserapp/rebuild/compiler/source-selftest.cjs",
+      "sha256": "b3b934022cd4f4d0581a7d3ab47c5d48395931717cc1623c3b0a0c7950691e6b"
+    },
+    {
+      "file": "Browserapp/rebuild/compiler/source.cjs",
+      "sha256": "5bd45cf7c9056f7aa91c87d11decec1dc3d38adbd9878aeed14299a588af8ae3"
+    },
+    {
+      "file": "Browserapp/rebuild/compiler/style-provenance.cjs",
+      "sha256": "b0cc329cf12f871594dd0448ba4a6dac005bb0d31159647f7711bcc0c56da426"
+    },
+    {
+      "file": "Browserapp/rebuild/compiler/ui-audit.cjs",
+      "sha256": "21d922ac451672f09690d20db975cd738e4361993b9d8394863430733c558e16"
+    },
+    {
+      "file": "Browserapp/rebuild/compiler/visual-reference.cjs",
+      "sha256": "c358b1883ae0023a39e3852e22e08f0a3a9b23983ca3585e9c6d65f6f3cc1895"
+    }
+  ],
+  "manifestSha256": "550bc2e56fd2ab15e78f6975cfb31df3394ca3fbb9c3fece77f29fd6cad02ecf",
+  "attributesSha256": "7f13d798c83666d06737dc9ae3545079a726b04f7a856d85449fe7b05f87f41f"
+}
