@@ -128,3 +128,12 @@ contextBridge.exposeInMainWorld('ops', Object.freeze({
     return () => ipcRenderer.removeListener('engine:event', handler);
   }
 }));
+
+contextBridge.exposeInMainWorld('rebuild', Object.freeze({
+  request: (method, payload) => ipcRenderer.invoke('rebuild:request', method, payload),
+  onEvent: (callback) => {
+    const listener = (_event, value) => callback(value);
+    ipcRenderer.on('engine:event', listener);
+    return () => ipcRenderer.removeListener('engine:event', listener);
+  },
+}));

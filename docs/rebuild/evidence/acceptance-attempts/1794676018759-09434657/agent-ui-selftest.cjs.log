@@ -1,0 +1,11 @@
+{
+  "passed": true,
+  "errors": [],
+  "externalRequests": [],
+  "checks": [
+    "本地设置页使用原主题组件填写 LLM 地址、模型和 key，经真实 IPC 加密保存",
+    "原聊天输入框发送，主进程请求本地 SSE 端点，原聊天组件显示真实返回文本",
+    "渲染进程无 HTTP/WebSocket 请求与页面错误"
+  ],
+  "editorCount": 1
+}

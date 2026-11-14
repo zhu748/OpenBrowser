@@ -57,6 +57,12 @@ function buildBaseLaunchArguments({ root, fingerprint, profile, hostScaleFactor 
   args = mergeFlags(args, chromeArgsForFingerprint(fingerprint, profile, { hostScaleFactor }), {
     listFlags: LIST_VALUE_FLAGS,
   });
+  // Expose Chromium's own optional NetworkInformation type/downlinkMax
+  // getters for an explicit network form. The injector then wraps native
+  // accessors, including receiver checks, in documents and workers alike.
+  if (profile.privacy?.fingerprint?.networkMode === 'noise') {
+    args = appendFlagValue(args, 'enable-blink-features', 'NetInfoDownlinkMax');
+  }
   const langList = (Array.isArray(fingerprint?.languages) && fingerprint.languages.length)
     ? fingerprint.languages
     : (Array.isArray(profile?.languages) && profile.languages.length)
@@ -79,7 +85,7 @@ function completeLaunchArguments(initialArgs, { profile, proxyConfig, proxyEndpo
   // Roxy 对齐：「声音 = 关闭」→ 内核真静音（disablePlaySound）；视频关闭仅能落到 autoplay 闸（内核级
   // disablePlayVideo 是 Roxy 自研内核能力，Chromium 无等价开关，见对齐矩阵）。
   if (profile.advanced.blockSound) args.push('--mute-audio');
-  if (profile.advanced.blockVideo || profile.advanced.blockSound) args.push('--autoplay-policy=user-gesture-required');
+  if (profile.advanced.blockVideo) args.push('--autoplay-policy=user-gesture-required');
   else args.push('--autoplay-policy=no-user-gesture-required');
   // Roxy 对齐：「忽略 HTTPS 证书错误」（ignoreHttpsError）
   if (profile.advanced.ignoreHttpsError) args.push('--ignore-certificate-errors');

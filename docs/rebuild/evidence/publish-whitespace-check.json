@@ -1,0 +1,213 @@
+{
+  "status": "WARN",
+  "command": [
+    "git",
+    "diff",
+    "--cached",
+    "--check"
+  ],
+  "exitCode": 2,
+  "scope": "新增文件加入索引后首次纳入 diff 检查。仅记录原产物模板字符串和原 Skill 文档继承的行尾空白；不改变已验收运行文件，不声称本检查通过。",
+  "diagnostics": [
+    {
+      "file": "Browserapp/rebuild/skills/automation-script-writing/examples/facebook-05-network-monitor-csv.md",
+      "line": 17,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/rebuild/skills/automation-script-writing/references/legacy-SKILL.md",
+      "line": 12,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/rebuild/skills/automation-script-writing/references/legacy-SKILL.md",
+      "line": 52,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/rebuild/skills/automation-script-writing/references/sandbox-api.d.ts",
+      "line": 160,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/rebuild/skills/roxybrowser-playwright-skills/references/legacy-SKILL.md",
+      "line": 42,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/dist-BAPiYeUN.js",
+      "line": 9987,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/en-D33DiJcZ.js",
+      "line": 2741,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/en-D33DiJcZ.js",
+      "line": 2771,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/en-D33DiJcZ.js",
+      "line": 2772,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/en-D33DiJcZ.js",
+      "line": 2776,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/en-D33DiJcZ.js",
+      "line": 2777,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/exceljs.min-DfecxsXL.js",
+      "line": 22437,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/open-sites-BUgaXFNX.js",
+      "line": 29,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/open-sites-BUgaXFNX.js",
+      "line": 30,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/primevue-3KC3oRok.js",
+      "line": 5238,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/ru-Bo9bnzty.js",
+      "line": 2741,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/ru-Bo9bnzty.js",
+      "line": 2772,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/ru-Bo9bnzty.js",
+      "line": 2773,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/ru-Bo9bnzty.js",
+      "line": 2777,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/ru-Bo9bnzty.js",
+      "line": 2778,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/style-CuLi6QSy.js",
+      "line": 79,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/style-DVUKTuRI.js",
+      "line": 40,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/style-DXn2Xqzj.js",
+      "line": 84,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/style-DxhTHPhb.js",
+      "line": 193,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/toast-CjMybmc4.js",
+      "line": 461,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/utils-BIWenCnY.js",
+      "line": 1949,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/utils-BIWenCnY.js",
+      "line": 1957,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/utils-BIWenCnY.js",
+      "line": 1965,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/utils-BIWenCnY.js",
+      "line": 1973,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/utils-CnUy4XUk.js",
+      "line": 41,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/utils-CnUy4XUk.js",
+      "line": 56,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/utils-CnUy4XUk.js",
+      "line": 62,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/utils-CnUy4XUk.js",
+      "line": 64,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/utils-CnUy4XUk.js",
+      "line": 68,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/utils-CnUy4XUk.js",
+      "line": 126,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/utils-CnUy4XUk.js",
+      "line": 127,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/zh-CN-CKEkLKpn.js",
+      "line": 2772,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/zh-CN-CKEkLKpn.js",
+      "line": 2773,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/zh-CN-CKEkLKpn.js",
+      "line": 2777,
+      "diagnostic": "trailing whitespace."
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/zh-CN-CKEkLKpn.js",
+      "line": 2778,
+      "diagnostic": "trailing whitespace."
+    }
+  ]
+}

@@ -18,9 +18,17 @@ function prepareProfileSync(engine, values, { maintenanceToken, checkRevisions =
   // Transport limits bound external requests; full trusted UI snapshots must
   // accept every loaded profile, including fleets larger than 5000 records.
   if (!Array.isArray(values)) throw new Error('Invalid profile list');
-  const globallyEnabled = engine.listExtensions().filter((extension) => extension.enabledAll || extension.enabledByDefault).map((extension) => extension.id);
+  const globallyEnabled = engine.listExtensions().filter((extension) => !Array.isArray(extension.assignedGroupIds) && (extension.enabledAll || extension.enabledByDefault)).map((extension) => extension.id);
   // Hoisted out of the per-profile loop: O(N × E) → O(N + E) for first syncs.
   const builtInIds = [...engine.extensions.values()].filter((extension) => extension.builtIn).map((extension) => extension.id);
+  const managedIds = [], projectExtensions = new Map();
+  for (const extension of engine.extensions.values()) if (Array.isArray(extension.assignedGroupIds)) {
+    managedIds.push(extension.id);
+    for (const group of extension.assignedGroupIds) {
+      if (!projectExtensions.has(group)) projectExtensions.set(group, []);
+      projectExtensions.get(group).push(extension.id);
+    }
+  }
   for (const value of values) {
     // Inputs are mutable, and IPC creates fresh objects anyway. Reference
     // equality cannot prove that this profile (or a nested field) is unchanged.
@@ -125,9 +133,11 @@ function prepareProfileSync(engine, values, { maintenanceToken, checkRevisions =
     if (previous && previous.proxy !== merged.proxy) networkInvalidations.add(profile.id);
     profiles.set(merged.id, merged);
     const hasSavedAssignment = (assignments.has(merged.id) || engine.assignments.has(merged.id));
-    if (isNew || !hasSavedAssignment) {
+    if (isNew || !hasSavedAssignment || previous.groupId !== merged.groupId) {
       const assigned = new Set(assignments.get(merged.id) || engine.assignments.get(merged.id));
       for (const extensionId of globallyEnabled) assigned.add(extensionId);
+      for (const extensionId of managedIds) assigned.delete(extensionId);
+      for (const extensionId of projectExtensions.get(merged.groupId || 'local-default') || []) assigned.add(extensionId);
       // The bundled marker is part of the environment contract.
       for (const extensionId of builtInIds) assigned.add(extensionId);
       assignments.set(merged.id, assigned);

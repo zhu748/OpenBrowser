@@ -1,0 +1,10 @@
+{
+  "passed": false,
+  "checks": [],
+  "errors": [],
+  "expectedErrors": [
+    "Error: review connection fixture info\n    at obui://app/assets/local-api.js:20:48"
+  ],
+  "externalRequests": [],
+  "failure": "AssertionError [ERR_ASSERTION]: 重连必须重新请求真实后端并恢复连接\n\nfalse !== true\n\n    at /workspace/OpenBrowser/Browserapp/rebuild/review-agent-reconnect-selftest.cjs:8:227"
+}

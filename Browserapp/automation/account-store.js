@@ -75,9 +75,16 @@ class AccountStore {
     const operation = this.queue.then(async () => {
       if (this.loadError) throw this.loadError;
       const next = new Map(this.accounts);
-      change(next);
-      if (next.size > MAX_ACCOUNTS) throw new Error('账号数量超过 5000 条');
-      await writeJsonAtomically(this.file, { version: 1, accounts: [...next.values()] });
+      const transaction = await change(next);
+      try {
+        if (next.size > MAX_ACCOUNTS) throw new Error('账号数量超过 5000 条');
+        await writeJsonAtomically(this.file, { version: 1, accounts: [...next.values()] });
+      }
+      catch (error) {
+        try { await transaction?.rollback?.(); }
+        catch (rollbackError) { throw new AggregateError([error, rollbackError], '账号保存失败且窗口关联回滚失败，请检查关联状态'); }
+        throw error;
+      }
       this.accounts = next;
       return this.list();
     });

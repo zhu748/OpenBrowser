@@ -1,0 +1,8 @@
+{
+  "passed": false,
+  "checks": [],
+  "errors": [],
+  "externalRequests": [],
+  "data": "/workspace/OpenBrowser/work/rebuild/cookie-robot-ui-CEvZ9h",
+  "failure": "Error: ENOENT: no such file or directory, open '/workspace/OpenBrowser/work/rebuild/kernel-ui-vnqmVf/kernels/firefox-160.0-linux-x86_64.tar.xz'\n    at async open (node:internal/fs/promises:1345:25)\n    at async Object.readFile (node:internal/fs/promises:2003:14)\n    at async /workspace/OpenBrowser/Browserapp/rebuild/cookie-robot-ui-selftest.cjs:62:17"
+}

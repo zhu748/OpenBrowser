@@ -1,0 +1,9 @@
+{
+  "passed": true,
+  "checks": [
+    "原声音/视频字段独立保存回读；真实 Chrome 静音参数不再拦截视频网址，而关闭视频真实阻止 .webm 请求；Firefox 生成全局音量 0 且不附带视频 autoplay 禁止"
+  ],
+  "limitations": [
+    "本测试不测量实际扬声器输出；Firefox 音量配置生成已验证，真实物理声音未验收。"
+  ]
+}

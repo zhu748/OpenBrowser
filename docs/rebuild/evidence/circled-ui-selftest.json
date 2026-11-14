@@ -1,0 +1,291 @@
+{
+  "passed": true,
+  "errors": [],
+  "externalRequests": [],
+  "checks": [
+    "窗口列表及创建页保留原侧栏 active 状态，真实点击返回列表",
+    "截图圈出的 5 个标签、AI 分组与 5 个入口、顶部定位/更新/通知/刷新、底部不限量卡片均存在",
+    "更新弹层显示真实已安装内核；本地通知弹层与全部已读真实持久化",
+    "真实 21 条窗口：下一页到 11、跳转第三页仅剩 21、返回第一页；不是静态分页",
+    "列表搜索改变真实后端查询结果，清空恢复 21 条",
+    "原分组折叠/展开、浅色/深色切换与真实截图",
+    "侧栏窗口同步、模板商城、任务管理、我的模板均由真实点击进入对应原组件路由",
+    "不限量卡片按钮进入真实本地内核管理"
+  ],
+  "rowState": {
+    "opacity": "1",
+    "buttons": [
+      {
+        "label": "打开窗口",
+        "disabled": false
+      },
+      {
+        "label": "",
+        "disabled": false
+      }
+    ]
+  },
+  "body": "创建窗口\n窗口管理\n项目管理\n代理 IP\n平台账号\n扩展中心\nAI & 自动化\n窗口同步\nAI Agent\n自动化\n模板商城\n任务管理\n我的模板\nAPI & AI MCP\nSkill 管理\n本地\n窗口用量\n21 / ∞\n内核升级\n本地网络\n(172.26.91.242)\nOP\nOpenBrowser\n全部窗口\n收藏\n已打开\n转移中\n回收站\n快速创建\n筛选\nAI 自动化\n测试全部代理 IP\n\t\n编号\n\t\n窗口名称\n\t\n操作\n\t\n备注\n\t\n标签\n\t\n项目\n\t\n最后打开\n\t\n其他\n\n\n\t\nOPE-1\n\t\n截图验收 1\n\t\n打开窗口\n\t\n\t\n\t\n默认项目\n\t\n--\n\t\n\n\n\t\nOPE-2\n\t\n截图验收 2\n\t\n打开窗口\n\t\n\t\n\t\n默认项目\n\t\n--\n\t\n\n\n\t\nOPE-3\n\t\n截图验收 3\n\t\n打开窗口\n\t\n\t\n\t\n默认项目\n\t\n--\n\t\n\n\n\t\nOPE-4\n\t\n截图验收 4\n\t\n打开窗口\n\t\n\t\n\t\n默认项目\n\t\n--\n\t\n\n\n\t\nOPE-5\n\t\n截图验收 5\n\t\n打开窗口\n\t\n\t\n\t\n默认项目\n\t\n--\n\t\n\n\n\t\nOPE-6\n\t\n截图验收 6\n\t\n打开窗口\n\t\n\t\n\t\n默认项目\n\t\n--\n\t\n\n\n\t\nOPE-7\n\t\n截图验收 7\n\t\n打开窗口\n\t\n\t\n\t\n默认项目\n\t\n--\n\t\n\n\n\t\nOPE-8\n\t\n截图验收 8\n\t\n打开窗口\n\t\n\t\n\t\n默认项目\n\t\n--\n\t\n\n\n\t\nOPE-9\n\t\n截图验收 9\n\t\n打开窗口\n\t\n\t\n\t\n默认项目\n\t\n--\n\t\n\n\n\t\nOPE-10\n\t\n截图验收 10\n\t\n打开窗口\n\t\n\t\n\t\n默认项目\n\t\n--\n\t\n\n\n总计 21 个\n10 条/页\n跳转页数至\n1\n2\n3\n本地工作区\n设置\nAPI & AI MCP\n语言\n主题模式\n跟随系统\n浅色模式\n深色模式",
+  "buttons": [
+    {
+      "text": "创建窗口",
+      "label": "创建窗口",
+      "title": ""
+    },
+    {
+      "text": "AI & 自动化",
+      "label": null,
+      "title": ""
+    },
+    {
+      "text": "内核升级",
+      "label": "内核升级",
+      "title": ""
+    },
+    {
+      "text": "",
+      "label": "刷新网络定位",
+      "title": ""
+    },
+    {
+      "text": "",
+      "label": "更新",
+      "title": ""
+    },
+    {
+      "text": "",
+      "label": "通知",
+      "title": ""
+    },
+    {
+      "text": "",
+      "label": "刷新界面",
+      "title": ""
+    },
+    {
+      "text": "OP\nOpenBrowser",
+      "label": "本地工作区菜单",
+      "title": ""
+    },
+    {
+      "text": "",
+      "label": null,
+      "title": ""
+    },
+    {
+      "text": "",
+      "label": null,
+      "title": ""
+    },
+    {
+      "text": "快速创建",
+      "label": "快速创建",
+      "title": ""
+    },
+    {
+      "text": "",
+      "label": null,
+      "title": ""
+    },
+    {
+      "text": "筛选",
+      "label": "筛选",
+      "title": ""
+    },
+    {
+      "text": "AI 自动化",
+      "label": "AI 自动化",
+      "title": ""
+    },
+    {
+      "text": "测试全部代理 IP",
+      "label": "测试全部代理 IP",
+      "title": ""
+    },
+    {
+      "text": "",
+      "label": null,
+      "title": ""
+    },
+    {
+      "text": "",
+      "label": null,
+      "title": ""
+    },
+    {
+      "text": "截图验收 1",
+      "label": null,
+      "title": ""
+    },
+    {
+      "text": "打开窗口",
+      "label": null,
+      "title": ""
+    },
+    {
+      "text": "",
+      "label": null,
+      "title": ""
+    },
+    {
+      "text": "截图验收 2",
+      "label": null,
+      "title": ""
+    },
+    {
+      "text": "打开窗口",
+      "label": null,
+      "title": ""
+    },
+    {
+      "text": "",
+      "label": null,
+      "title": ""
+    },
+    {
+      "text": "截图验收 3",
+      "label": null,
+      "title": ""
+    },
+    {
+      "text": "打开窗口",
+      "label": null,
+      "title": ""
+    },
+    {
+      "text": "",
+      "label": null,
+      "title": ""
+    },
+    {
+      "text": "截图验收 4",
+      "label": null,
+      "title": ""
+    },
+    {
+      "text": "打开窗口",
+      "label": null,
+      "title": ""
+    },
+    {
+      "text": "",
+      "label": null,
+      "title": ""
+    },
+    {
+      "text": "截图验收 5",
+      "label": null,
+      "title": ""
+    },
+    {
+      "text": "打开窗口",
+      "label": null,
+      "title": ""
+    },
+    {
+      "text": "",
+      "label": null,
+      "title": ""
+    },
+    {
+      "text": "截图验收 6",
+      "label": null,
+      "title": ""
+    },
+    {
+      "text": "打开窗口",
+      "label": null,
+      "title": ""
+    },
+    {
+      "text": "",
+      "label": null,
+      "title": ""
+    },
+    {
+      "text": "截图验收 7",
+      "label": null,
+      "title": ""
+    },
+    {
+      "text": "打开窗口",
+      "label": null,
+      "title": ""
+    },
+    {
+      "text": "",
+      "label": null,
+      "title": ""
+    },
+    {
+      "text": "截图验收 8",
+      "label": null,
+      "title": ""
+    },
+    {
+      "text": "打开窗口",
+      "label": null,
+      "title": ""
+    },
+    {
+      "text": "",
+      "label": null,
+      "title": ""
+    },
+    {
+      "text": "截图验收 9",
+      "label": null,
+      "title": ""
+    },
+    {
+      "text": "打开窗口",
+      "label": null,
+      "title": ""
+    },
+    {
+      "text": "",
+      "label": null,
+      "title": ""
+    },
+    {
+      "text": "截图验收 10",
+      "label": null,
+      "title": ""
+    },
+    {
+      "text": "打开窗口",
+      "label": null,
+      "title": ""
+    },
+    {
+      "text": "",
+      "label": null,
+      "title": ""
+    },
+    {
+      "text": "",
+      "label": "Previous Page",
+      "title": ""
+    },
+    {
+      "text": "1",
+      "label": "Page 1",
+      "title": ""
+    },
+    {
+      "text": "2",
+      "label": "Page 2",
+      "title": ""
+    },
+    {
+      "text": "3",
+      "label": "Page 3",
+      "title": ""
+    },
+    {
+      "text": "",
+      "label": "Next Page",
+      "title": ""
+    }
+  ]
+}

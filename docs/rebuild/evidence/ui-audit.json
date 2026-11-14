@@ -1,0 +1,88 @@
+{
+  "status": "PASS",
+  "directTransports": [],
+  "commercialComponents": [],
+  "localFetchCallbacks": [
+    {
+      "file": "dist-BAPiYeUN.js",
+      "line": 9707,
+      "callee": "_2.fetch"
+    }
+  ],
+  "theme": {
+    "originalDeclarations": 1054,
+    "retainedDeclarations": 1006,
+    "changed": [],
+    "removed": [
+      ":root[data-theme=light]::--pattern-dashboard-card-bg-card-referral-1",
+      ":root[data-theme=light]::--pattern-dashboard-card-bg-card-referral-2",
+      ":root[data-theme=light]::--pattern-dashboard-card-border-card-referral",
+      ":root[data-theme=light]::--pattern-pay-wallet-bg-start",
+      ":root[data-theme=light]::--pattern-pay-wallet-bg-end",
+      ":root[data-theme=light]::--pattern-pay-wallet-cover-bg",
+      ":root[data-theme=light]::--pattern-pay-wallet-cover-border",
+      ":root[data-theme=light]::--pattern-wallet-founding-bg-tint",
+      ":root[data-theme=light]::--pattern-wallet-founding-bg-shade",
+      ":root[data-theme=light]::--pattern-wallet-founding-border-tint",
+      ":root[data-theme=light]::--pattern-wallet-founding-border-shade",
+      ":root[data-theme=light]::--pattern-wallet-vip-bg-tint",
+      ":root[data-theme=light]::--pattern-wallet-vip-bg-shade",
+      ":root[data-theme=light]::--pattern-wallet-vip-border-tint",
+      ":root[data-theme=light]::--pattern-wallet-vip-border-shade",
+      ":root[data-theme=light]::--pattern-wallet-prime-border-orange",
+      ":root[data-theme=light]::--pattern-wallet-prime-border-blue",
+      ":root[data-theme=light]::--pattern-wallet-prime-border-purple",
+      ":root[data-theme=light]::--pattern-wallet-cover",
+      ":root[data-theme=light]::--pattern-wallet-cover-border",
+      ":root[data-theme=light]::--pattern-wallet-free-bg",
+      ":root[data-theme=light]::--pattern-referral-gradient-01",
+      ":root[data-theme=light]::--pattern-referral-gradient-02",
+      ":root[data-theme=light]::--pattern-referral-gradient-03",
+      ":root[data-theme=dark]::--pattern-dashboard-card-bg-card-referral-1",
+      ":root[data-theme=dark]::--pattern-dashboard-card-bg-card-referral-2",
+      ":root[data-theme=dark]::--pattern-dashboard-card-border-card-referral",
+      ":root[data-theme=dark]::--pattern-pay-wallet-bg-start",
+      ":root[data-theme=dark]::--pattern-pay-wallet-bg-end",
+      ":root[data-theme=dark]::--pattern-pay-wallet-cover-bg",
+      ":root[data-theme=dark]::--pattern-pay-wallet-cover-border",
+      ":root[data-theme=dark]::--pattern-wallet-founding-bg-tint",
+      ":root[data-theme=dark]::--pattern-wallet-founding-bg-shade",
+      ":root[data-theme=dark]::--pattern-wallet-founding-border-tint",
+      ":root[data-theme=dark]::--pattern-wallet-founding-border-shade",
+      ":root[data-theme=dark]::--pattern-wallet-vip-bg-tint",
+      ":root[data-theme=dark]::--pattern-wallet-vip-bg-shade",
+      ":root[data-theme=dark]::--pattern-wallet-vip-border-tint",
+      ":root[data-theme=dark]::--pattern-wallet-vip-border-shade",
+      ":root[data-theme=dark]::--pattern-wallet-prime-border-orange",
+      ":root[data-theme=dark]::--pattern-wallet-prime-border-blue",
+      ":root[data-theme=dark]::--pattern-wallet-prime-border-purple",
+      ":root[data-theme=dark]::--pattern-wallet-cover",
+      ":root[data-theme=dark]::--pattern-wallet-cover-border",
+      ":root[data-theme=dark]::--pattern-wallet-free-bg",
+      ":root[data-theme=dark]::--pattern-referral-gradient-01",
+      ":root[data-theme=dark]::--pattern-referral-gradient-02",
+      ":root[data-theme=dark]::--pattern-referral-gradient-03"
+    ]
+  },
+  "locale": [
+    {
+      "file": "zh-CN-CKEkLKpn.js",
+      "original": 4892,
+      "retained": 4892,
+      "lost": []
+    },
+    {
+      "file": "en-D33DiJcZ.js",
+      "original": 4892,
+      "retained": 4892,
+      "lost": []
+    },
+    {
+      "file": "ru-Bo9bnzty.js",
+      "original": 4892,
+      "retained": 4892,
+      "lost": []
+    }
+  ],
+  "failures": []
+}

@@ -1,0 +1,12 @@
+Starting Live-Sync Internal Pages Degradation Selftest...
+
+  PASS  ALLOWED_INTERNAL_HOSTS contains exactly 19 hosts matching main.js
+  PASS  Blocked and dangerous URLs are rejected from mirroring
+  PASS  Privilege separation: internal pages are mirror-only (canMirrorTabUrl true, canDomLiveSyncTabUrl false)
+  PASS  LiveSyncController.attach strictly skips privileged internal pages
+  PASS  LiveSyncController.markSlave strictly skips privileged internal pages
+  PASS  refreshMasterTabs cleans up connections when tab navigates to internal page
+  PASS  forward and enqueueForward block DOM events on internal pages
+
+======================================================================
+live-sync-internal-pages-selftest: OK 7/7

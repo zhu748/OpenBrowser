@@ -1,0 +1,3 @@
+import {c as e} from "./dist-DPswMdzV.js";
+var t = e();
+export {t as t};

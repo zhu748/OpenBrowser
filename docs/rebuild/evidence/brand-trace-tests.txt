@@ -1,0 +1,26 @@
+=== Running Page-Visible Brand Trace Remediation Selftest ===
+
+--- Section 1: live-sync document & window property cleanliness ---
+  PASS  live-sync-v5.js does not contain literal __obFsInstalled anywhere
+  PASS  live-sync-v5.js fullscreenInjection uses WeakSet without document own properties
+
+--- Section 2: DOM product markers isolation ---
+  PASS  masterMarker does not inject on standard web pages or localhost without test harness
+  PASS  masterMarker installs on test harness pages (data-page="tab1")
+
+--- Section 3: Bundled extension content script DOM isolation ---
+  PASS  bundled-extension/manifest.json does not contain OpenBrowser brand name
+  PASS  bundled-extension/marker.js does not inject any DOM nodes
+
+--- Section 4: CSS font fallback placeholder name ---
+  PASS  deriveFontPlaceholder in audit/production mode returns neutral SysFallback name
+
+--- Section 5: Port scan protection error fidelity ---
+  PASS  port scan protection script does not contain literal "local port probe blocked"
+  PASS  port scan protection throws standard SecurityError with native phrasing
+
+--- Section 6: Start page server brand hygiene ---
+  PASS  start-page-server /health response does not expose OpenBrowser brand name
+
+===============================================================
+page-visible-trace-remediation-selftest: ALL 10/10 PASS

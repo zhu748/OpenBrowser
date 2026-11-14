@@ -20,7 +20,14 @@ const { pageFingerprintConnection, pageFingerprintRegistration, closePageFingerp
 module.exports = {
   async applyRuntimeSettings(port, profile, fingerprint = null, options = {}) {
     const phase = String(options.phase || 'applyRuntimeSettings');
-    const tabs = await cdp.tabs(port);
+    const observedTabs = await cdp.tabs(port);
+    const isPendingTarget = targetId => phase === 'watch-ensure'
+      && [...(options.trackOn?.fingerprintSessionStates?.values() || [])]
+        .some(state => state.targetId === targetId && !state.ready && !state.reason);
+    // Auto-attach owns these paused documents until verified and resumed.
+    // Check the live map again after awaits: an attach owner can appear after
+    // the HTTP target snapshot, before policy or fingerprint commands run.
+    const tabs = observedTabs.filter(tab => !isPendingTarget(tab.id));
     if (phase === 'pre-startpage' && !tabs.length) throw new Error('No page target available for fingerprint delivery');
     const network = this.networkInfo.get(profile.id) || {};
     // merge IP-detected geo/tz into profile for fingerprint apply
@@ -61,8 +68,9 @@ module.exports = {
     for (const id of sessionTargets.keys()) policyIds.add(id);
     pruneRuntimePolicyPages(policyOwner, policyIds);
     const policyTargets = new Map(tabs.map((tab) => [tab.id, { targetType: 'page', tab }]));
-    for (const [id, target] of sessionTargets) policyTargets.set(id, { targetType: target.type, sessionId: target.sessionId });
+    for (const [id, target] of sessionTargets) if (!isPendingTarget(id)) policyTargets.set(id, { targetType: target.type, sessionId: target.sessionId });
     for (const [targetId, target] of policyTargets) {
+      if (isPendingTarget(targetId)) continue;
       try {
         await applyTargetRuntimePolicy({ owner: policyOwner, targetId, profile: policyProfile, targetType: target.targetType,
           registrationOwner: target.sessionId ? options.trackOn.workerFingerprintConnection : pageFingerprintRegistration(policyOwner, target.tab),
@@ -72,6 +80,7 @@ module.exports = {
             : async (method, params) => (await pageFingerprintConnection(this, policyOwner, target.tab)).command(method, params),
         });
       } catch (error) {
+        if (isPendingTarget(targetId)) continue;
         if (target.sessionId && !sessions.has(target.sessionId)) continue;
         const current = target.tab ? await cdp.tabs(port).catch(() => null) : null;
         if (current && !current.some((tab) => tab.id === targetId)) continue;
@@ -112,6 +121,7 @@ module.exports = {
     });
 
     for (const tab of tabs) {
+      if (isPendingTarget(tab.id)) continue;
       if (!force && !options.verifyApplied && applied.has(tab.id)) {
         await fpLog('inject.skip-tab', { phase, profileId: profile.id, tabId: tab.id, url: tab.url, reason: 'already-applied' });
         continue;
@@ -158,6 +168,11 @@ module.exports = {
         });
         applied.add(tab.id);
       } catch (error) {
+        if (isPendingTarget(tab.id)) {
+          applied.delete(tab.id);
+          await fpLog('inject.defer-tab', { phase, profileId: profile.id, tabId: tab.id, reason: 'auto-attach-owner' });
+          continue;
+        }
         await fpLog('inject.tab-fail', {
           phase,
           profileId: profile.id,

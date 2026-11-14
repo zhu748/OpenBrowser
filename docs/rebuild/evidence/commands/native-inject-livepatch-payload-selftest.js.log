@@ -1,0 +1,17 @@
+Running livePatch injection variant self-tests...
+
+  PASS  test persona carries a font list so the payload path is active
+  PASS  full source embeds the shared font payload binding
+  PASS  livePatch source drops the font payload binding entirely
+  PASS  livePatch source is a small fraction of the full source
+  PASS  full source is multi-megabyte when the platform payload exists
+  PASS  livePatch source compiles as a function body
+  PASS  script cache keeps the full and live variants separate
+  PASS  document-start registration carries the full payload source
+  PASS  live evaluate carries the stripped source
+  PASS  without the opt-in, evaluate reuses the full source
+  PASS  non-lazy persona keeps fontBlobBridge unset (warm cache, full build wins)
+  PASS  non-lazy persona keeps fontBlobBridge unset (cold cache, full build writes null)
+  PASS  lazy persona still advertises the font blob bridge
+
+INJECT_LIVEPATCH_SELFTEST OK 13/13

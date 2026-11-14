@@ -613,6 +613,20 @@ class BrowserEngine {
   async applyProfilePreferences(root, profile) {
     const defaultRoot = path.join(root, 'Default'); const file = path.join(defaultRoot, 'Preferences'); await fsp.mkdir(defaultRoot, { recursive: true });
     let prefs = {}; try { prefs = JSON.parse(await fsp.readFile(file, 'utf8')); } catch (_) {}
+    // Native extension identity follows Chromium's manifest key/path rules.
+    // Save pins before process launch so Chrome does not overwrite live prefs.
+    prefs.extensions ||= {};
+    let pinned = new Set(Array.isArray(prefs.extensions.pinned_extensions) ? prefs.extensions.pinned_extensions : []);
+    for (const id of this.assignments.get(profile.id) || []) {
+      const extension = this.extensions.get(id);
+      if (!extension || !['pin', 'unpin'].includes(extension.fixedPlugin)) continue;
+      const manifest = JSON.parse(await fsp.readFile(path.join(extension.path, 'manifest.json'), 'utf8'));
+      const runtimeId = manifest.key
+        ? require('./automation/crx-reader').extensionIdFromPublicKey(Buffer.from(manifest.key, 'base64'))
+        : require('./automation/extension-identity').extensionIdFromPath(extension.path);
+      if (extension.fixedPlugin === 'pin') pinned.add(runtimeId); else pinned.delete(runtimeId);
+    }
+    prefs.extensions.pinned_extensions = [...pinned];
     prefs.profile ||= {}; prefs.profile.default_content_setting_values ||= {};
     prefs.profile.exit_type = 'Normal'; prefs.profile.exited_cleanly = true;
     prefs.devtools ||= {};
@@ -857,6 +871,7 @@ class BrowserEngine {
       }
       await resources.proxyForwarder?.close().catch(() => {});
       await resources.workerMitmProxy?.close().catch(() => {});
+      await resources.firefoxImageFilter?.close();
       if (ownsSharedResources()) await stopIpcStubForWindow(resources.kernelWindowName).catch(() => {});
       if (child && !exited) {
         // Startup owns the same profile lock safety rule as running cleanup: a
@@ -1009,6 +1024,7 @@ class BrowserEngine {
       cdpConnection: resources.connection || null,
       proxyForwarder: resources.proxyForwarder || null,
       workerMitmProxy: resources.workerMitmProxy || null,
+      firefoxImageFilter: resources.firefoxImageFilter || null,
       markerProcess: resources.markerProcess || null,
       profileLock: resources.profileLock || null,
       pid: resources.child?.pid || null,
@@ -1066,7 +1082,7 @@ class BrowserEngine {
     // Firefox kernels have no CDP; they take the dedicated launch pipeline.
     // The decision lives here so every caller (UI, local API, RPA) gets it.
     if (this.profilePrefersFirefox(candidate)) {
-      return this.startManaged(id, candidate, (generation) => this._startFirefox(candidate, generation));
+      return this.startManaged(id, candidate, (generation) => this._startFirefox(candidate, generation, launchOptions));
     }
     return this.startManaged(id, candidate, (generation) => this._start(candidate, generation, launchOptions));
   }

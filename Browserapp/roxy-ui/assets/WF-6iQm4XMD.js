@@ -1,0 +1,7 @@
+import {W as e,h as t,y as n} from "./runtime-core.esm-bundler-CBj16o9G.js";
+var r = { width: "1em", height: "1em", viewBox: "0 0 40 40", fill: "none", xmlns: "http://www.w3.org/2000/svg" };
+function i(i2, a2) {
+  return e(), t("svg", r, [...a2[0] ||= [n('<g clip-path="url(#clip0_16699_279328)"><mask id="mask0_16699_279328" style="mask-type:luminance;" maskUnits="userSpaceOnUse" x="0" y="0" width="40" height="40"><path d="M40 20C40 8.95431 31.0457 0 20 0C8.95431 0 0 8.95431 0 20C0 31.0457 8.95431 40 20 40C31.0457 40 40 31.0457 40 20Z" fill="white"></path></mask><g mask="url(#mask0_16699_279328)"><mask id="mask1_16699_279328" style="mask-type:luminance;" maskUnits="userSpaceOnUse" x="0" y="0" width="54" height="40"><path d="M0 0H53.3333V40H0V0Z" fill="white"></path></mask><g mask="url(#mask1_16699_279328)"><path fill-rule="evenodd" clip-rule="evenodd" d="M0 0H53.3333V40H0V0Z" fill="white"></path><path fill-rule="evenodd" clip-rule="evenodd" d="M0 13.3336H53.3333V40H0V13.3336Z" fill="#0039A6"></path><path fill-rule="evenodd" clip-rule="evenodd" d="M0 26.6664H53.3333V40H0V26.6664Z" fill="#D52B1E"></path></g></g></g><defs><clipPath id="clip0_16699_279328"><rect width="40" height="40" fill="white"></rect></clipPath></defs>', 2)]]);
+}
+var a = { render: i };
+export {a as default,i as render};

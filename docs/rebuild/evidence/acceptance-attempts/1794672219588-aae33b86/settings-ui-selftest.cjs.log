@@ -1,0 +1,9 @@
+{
+  "passed": true,
+  "checks": [
+    "真实原 SDK 保存后 Pinia 即时发布，重载初始化完整已保存配置；原 getUserConfig 主动刷新 Native 修改并保留未改字段"
+  ],
+  "errors": [],
+  "externalRequests": [],
+  "data": "/workspace/OpenBrowser/work/rebuild/settings-ui-Y3M7Md"
+}

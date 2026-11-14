@@ -10,7 +10,7 @@ module.exports = `
       if (!realConnection) return;
       const netProto = Object.getPrototypeOf(realConnection);
       const netState = CFG.connection;
-      for (const key of ['type', 'effectiveType', 'downlink', 'rtt', 'saveData']) {
+      for (const key of ['type', 'effectiveType', 'downlink', 'downlinkMax', 'rtt', 'saveData']) {
         const descriptor = Object.getOwnPropertyDescriptor(netProto, key);
         if (!descriptor || typeof descriptor.get !== 'function' || !descriptor.configurable) continue;
         const nativeGet = descriptor.get;

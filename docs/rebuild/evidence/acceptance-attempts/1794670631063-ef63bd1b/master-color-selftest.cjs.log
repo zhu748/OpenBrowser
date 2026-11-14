@@ -1,0 +1,19 @@
+{
+  "passed": true,
+  "checks": [
+    "真实第三方扩展主题、灰色默认主题恢复；注入一次安装拒绝后，实际浏览器主题与磁盘恢复记录回滚",
+    "标准 Chrome 实际载入本地主控主题，连续改色身份不变，清除恢复默认；原种子颜色和 variant 恢复，临时控制页无遗留",
+    "六位/八位原颜色值验证；特权页面不注入网页脚本，后续普通网页仍有原内核身份"
+  ],
+  "events": [],
+  "applied": {
+    "backend": "local-theme",
+    "color": "#FCFF12A3",
+    "id": "oeolbdjgecmoanicdkmfekhchdgcpjno"
+  },
+  "recolored": {
+    "backend": "local-theme",
+    "color": "#1246D2FF",
+    "id": "oeolbdjgecmoanicdkmfekhchdgcpjno"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "passed": false,
+  "checks": [],
+  "errors": [],
+  "externalRequests": [],
+  "failure": "page.evaluate: Error: ERR101: 启动失败，磁盘空间不足，请清理磁盘空间（当前可用 7.3GB，限制 8GB）\n    at obui://app/assets/local-api.js:20:48\n    at async <anonymous>:381:23\n    at /workspace/OpenBrowser/Browserapp/rebuild/sync-dialogs-ui-selftest.cjs:107:18",
+  "body": "创建窗口\n窗口管理\n项目管理\n代理 IP\n平台账号\n扩展中心\nAI & 自动化\n窗口同步\nAI Agent\n自动化\n模板商城\n任务管理\n我的模板\nAPI & AI MCP\nSkill 管理\n本地\n窗口用量\n1 / ∞\n内核升级\n本地网络\n(172.26.91.242)\nOP\nOpenBrowser\n全部窗口\n收藏\n已打开\n转移中\n回收站\n快速创建\n筛选\nAI 自动化\n测试全部代理 IP\n\t\n编号\n\t\n窗口名称\n\t\n操作\n\t\n备注\n\t\n标签\n\t\n项目\n\t\n最后打开\n\t\n其他\n\n\n\t\nOPE-1\n\t\n弹窗真实窗口 1\n\t\n打开窗口\n\t\n\t\n\t\n默认项目\n\t\n--\n\t\n\n\n总计 1 个\n10 条/页\n跳转页数至\n1"
+}

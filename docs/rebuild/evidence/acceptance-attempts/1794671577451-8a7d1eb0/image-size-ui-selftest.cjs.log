@@ -1,0 +1,9 @@
+{
+  "passed": true,
+  "checks": [
+    "原图片开关显示原 KB 输入，键盘输入/Tab、原创建按钮写 Native 阈值；原编辑回填与暗色截图；重新开启图片清除活动限制"
+  ],
+  "errors": [],
+  "externalRequests": [],
+  "data": "/workspace/OpenBrowser/work/rebuild/image-size-ui-gnWzF8"
+}

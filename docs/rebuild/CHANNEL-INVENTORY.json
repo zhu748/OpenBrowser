@@ -1,0 +1,2689 @@
+{
+  "channels": [
+    {
+      "file": "AppLayout-P1XUMshN.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:saveSoftConfig`",
+      "arguments": [
+        "{language:e.locale}"
+      ]
+    },
+    {
+      "file": "CloudPhoneSettingsPopup-BJhguAAX.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`cloudPhone:setArrangeShortcutRecording`",
+      "arguments": [
+        "e"
+      ]
+    },
+    {
+      "file": "CloudPhoneSettingsPopup-BJhguAAX.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`util:checkShortcutKeysIsOccupied`",
+      "arguments": [
+        "B(e)"
+      ]
+    },
+    {
+      "file": "CloudPhoneSettingsPopup-BJhguAAX.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`cloudPhone:isHwAccelApplied`",
+      "arguments": []
+    },
+    {
+      "file": "CreateTemplateDialog-Bpq9OLTG.js",
+      "line": 9,
+      "transport": "send",
+      "channel": "`browser:getOpenedBrowser`",
+      "arguments": []
+    },
+    {
+      "file": "CreateTemplateDialog-Bpq9OLTG.js",
+      "line": 331,
+      "transport": "send",
+      "channel": "`app:downloadLocalFile`",
+      "arguments": [
+        "{filePath:r,fileName:t.getAttribute(`download`)||t.textContent?.trim()||void 0}"
+      ]
+    },
+    {
+      "file": "CreateTemplateDialog-Bpq9OLTG.js",
+      "line": 331,
+      "transport": "send",
+      "channel": "`dialog:selectFileOrDirInfo`",
+      "arguments": []
+    },
+    {
+      "file": "account-list-BN-X2pJ8.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`browser:setAsDefaultBrowser`",
+      "arguments": [
+        "{...S(e),__orderName:`${J.value}-${t}`}"
+      ]
+    },
+    {
+      "file": "account-list-BN-X2pJ8.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`browser:createDesktopShortcut`",
+      "arguments": [
+        "{...S(e),__orderName:`${J.value}-${t}`}"
+      ]
+    },
+    {
+      "file": "account-list-BN-X2pJ8.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`browser:clearCache`",
+      "arguments": [
+        "{clearType:n.all,dirIds:r}"
+      ]
+    },
+    {
+      "file": "account-list-BN-X2pJ8.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`browser:clearCache`",
+      "arguments": [
+        "{clearType:t,dirIds:r}"
+      ]
+    },
+    {
+      "file": "account-list-BN-X2pJ8.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`browser:batchRemove`",
+      "arguments": [
+        "e.map(e=>e.dirId)"
+      ]
+    },
+    {
+      "file": "action-bar-50RAQCsf.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:doLayout`",
+      "arguments": [
+        "{type:`grid`}"
+      ]
+    },
+    {
+      "file": "action-bar-50RAQCsf.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:doLayout`",
+      "arguments": [
+        "{type:`stack`}"
+      ]
+    },
+    {
+      "file": "action-bar-50RAQCsf.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:openPreferencesDialog`",
+      "arguments": [
+        "{tab:`customLayout`}"
+      ]
+    },
+    {
+      "file": "action-bar-50RAQCsf.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:openBatchInputsDialog`",
+      "arguments": []
+    },
+    {
+      "file": "action-bar-50RAQCsf.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:unifyTabs`",
+      "arguments": []
+    },
+    {
+      "file": "action-bar-50RAQCsf.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:closeOtherTabs`",
+      "arguments": []
+    },
+    {
+      "file": "action-bar-50RAQCsf.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:closeCurrentTab`",
+      "arguments": []
+    },
+    {
+      "file": "action-bar-50RAQCsf.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:closeBlankTabs`",
+      "arguments": []
+    },
+    {
+      "file": "action-bar-50RAQCsf.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:openOpenSitesDialog`",
+      "arguments": []
+    },
+    {
+      "file": "action-bar-50RAQCsf.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:openPreferencesDialog`",
+      "arguments": [
+        "{tab:`simulate`}"
+      ]
+    },
+    {
+      "file": "action-bar-50RAQCsf.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:startMoveWindow`",
+      "arguments": []
+    },
+    {
+      "file": "action-bar-50RAQCsf.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:stopMoveWindow`",
+      "arguments": []
+    },
+    {
+      "file": "action-bar-50RAQCsf.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:set-ignore-mouse-events`",
+      "arguments": [
+        "!1"
+      ]
+    },
+    {
+      "file": "action-bar-50RAQCsf.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:set-ignore-mouse-events`",
+      "arguments": [
+        "!0",
+        "{forward:!0}"
+      ]
+    },
+    {
+      "file": "action-bar-50RAQCsf.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:showAll`",
+      "arguments": []
+    },
+    {
+      "file": "action-bar-50RAQCsf.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:set-ignore-mouse-events`",
+      "arguments": [
+        "!1"
+      ]
+    },
+    {
+      "file": "action-bar-50RAQCsf.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:stop`",
+      "arguments": []
+    },
+    {
+      "file": "action-bar-50RAQCsf.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:pause`",
+      "arguments": []
+    },
+    {
+      "file": "action-bar-50RAQCsf.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:resume`",
+      "arguments": []
+    },
+    {
+      "file": "action-bar-50RAQCsf.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:openPreferencesDialog`",
+      "arguments": []
+    },
+    {
+      "file": "action-bar-50RAQCsf.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:openSyncingWindowListDialog`",
+      "arguments": []
+    },
+    {
+      "file": "action-bar-50RAQCsf.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:getAllSyncingWindows`",
+      "arguments": []
+    },
+    {
+      "file": "action-bar-50RAQCsf.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:getSyncWindowCount`",
+      "arguments": []
+    },
+    {
+      "file": "action-bar-50RAQCsf.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:showCurrentWebviewWindow`",
+      "arguments": []
+    },
+    {
+      "file": "agent-BmSFI9WH.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`mcp:ensureServer`",
+      "arguments": []
+    },
+    {
+      "file": "api-BToUsmQq.js",
+      "line": 2,
+      "transport": "send",
+      "channel": "`util:getCommonRequestHeaders`",
+      "arguments": []
+    },
+    {
+      "file": "api-BToUsmQq.js",
+      "line": 2,
+      "transport": "send",
+      "channel": "`util:getInviteCode`",
+      "arguments": []
+    },
+    {
+      "file": "api-keys-qLZdcspG.js",
+      "line": 32,
+      "transport": "send",
+      "channel": "`app:restartAPIServer`",
+      "arguments": []
+    },
+    {
+      "file": "api-keys-qLZdcspG.js",
+      "line": 32,
+      "transport": "send",
+      "channel": "`util:checkPort`",
+      "arguments": [
+        "t.value"
+      ]
+    },
+    {
+      "file": "api-keys-qLZdcspG.js",
+      "line": 32,
+      "transport": "send",
+      "channel": "`util:checkPort`",
+      "arguments": [
+        "n"
+      ]
+    },
+    {
+      "file": "api-keys-qLZdcspG.js",
+      "line": 32,
+      "transport": "send",
+      "channel": "`util:genApiKey`",
+      "arguments": []
+    },
+    {
+      "file": "api-keys-qLZdcspG.js",
+      "line": 32,
+      "transport": "send",
+      "channel": "`util:genApiKey`",
+      "arguments": []
+    },
+    {
+      "file": "app-CKyKZ90q.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`user:logout`",
+      "arguments": []
+    },
+    {
+      "file": "app-CKyKZ90q.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:getAppVersion`",
+      "arguments": []
+    },
+    {
+      "file": "app-CKyKZ90q.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`browser:closeAll`",
+      "arguments": []
+    },
+    {
+      "file": "app-CKyKZ90q.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:restoreWindow`",
+      "arguments": []
+    },
+    {
+      "file": "app-CKyKZ90q.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:cancelRestoreWindow`",
+      "arguments": []
+    },
+    {
+      "file": "app-CKyKZ90q.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:checkRestoreClientNetworkChanged`",
+      "arguments": []
+    },
+    {
+      "file": "app-CKyKZ90q.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:getAppVersion`",
+      "arguments": []
+    },
+    {
+      "file": "app-CKyKZ90q.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:restoreLastWindowOpenStatusReady`",
+      "arguments": []
+    },
+    {
+      "file": "app-CKyKZ90q.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:checkNeedRestoreWindow`",
+      "arguments": []
+    },
+    {
+      "file": "app-CKyKZ90q.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:getSoftConfig`",
+      "arguments": []
+    },
+    {
+      "file": "app-CKyKZ90q.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`user:setWorkspaceId`",
+      "arguments": [
+        "i",
+        "e.currentWorkspace.workspaceType"
+      ]
+    },
+    {
+      "file": "app-CKyKZ90q.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`mcp:close`",
+      "arguments": []
+    },
+    {
+      "file": "app-CKyKZ90q.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`user:workspace-select-result`",
+      "arguments": [
+        "{requestId:n,workspaceId:i,success:!0}"
+      ]
+    },
+    {
+      "file": "app-CKyKZ90q.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`user:workspace-select-result`",
+      "arguments": [
+        "{requestId:n,workspaceId:r,success:!1,error:ot(e)}"
+      ]
+    },
+    {
+      "file": "app-CKyKZ90q.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:restartAPIServer`",
+      "arguments": []
+    },
+    {
+      "file": "apps-CwXmXyWS.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`user:uploadOssFile`",
+      "arguments": [
+        "{localPath:t,objectKey:i,mime:ft.mime,headers:{...ft.headers}}"
+      ]
+    },
+    {
+      "file": "base-dialog-Bet1oNF8.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:showCurrentWebviewWindow`",
+      "arguments": []
+    },
+    {
+      "file": "batch-inputs-B_HNTlr8.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:resizeBatchInputsDialog`",
+      "arguments": [
+        "{width:480,height:Math.min(60*h+220,660)}"
+      ]
+    },
+    {
+      "file": "batch-inputs-B_HNTlr8.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:resizeBatchInputsDialog`",
+      "arguments": [
+        "{width:480,height:340}"
+      ]
+    },
+    {
+      "file": "batch-inputs-B_HNTlr8.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:resizeBatchInputsDialog`",
+      "arguments": [
+        "{width:480,height:366}"
+      ]
+    },
+    {
+      "file": "batch-inputs-B_HNTlr8.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:closeBatchInputsDialog`",
+      "arguments": []
+    },
+    {
+      "file": "batch-inputs-B_HNTlr8.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:batchInputText`",
+      "arguments": [
+        "n"
+      ]
+    },
+    {
+      "file": "batch-inputs-B_HNTlr8.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:getAllSyncingWindows`",
+      "arguments": []
+    },
+    {
+      "file": "batch-proxies-wPSH-NmI.js",
+      "line": 2,
+      "transport": "send",
+      "channel": "`proxy:detect`",
+      "arguments": [
+        "{}"
+      ]
+    },
+    {
+      "file": "batch-proxies-wPSH-NmI.js",
+      "line": 2,
+      "transport": "send",
+      "channel": "`proxy:refreshUrl`",
+      "arguments": [
+        "e.refreshUrl"
+      ]
+    },
+    {
+      "file": "batch-proxies-wPSH-NmI.js",
+      "line": 2,
+      "transport": "send",
+      "channel": "`proxy:detect`",
+      "arguments": [
+        "{}"
+      ]
+    },
+    {
+      "file": "before-enter-BKdeOMBO.js",
+      "line": 3,
+      "transport": "send",
+      "channel": "`proxy:detect`",
+      "arguments": [
+        "{}"
+      ]
+    },
+    {
+      "file": "choose-panel-CC3iR_nA.js",
+      "line": 2,
+      "transport": "send",
+      "channel": "`proxy:refreshUrl`",
+      "arguments": [
+        "e"
+      ]
+    },
+    {
+      "file": "choose-panel-CC3iR_nA.js",
+      "line": 2,
+      "transport": "send",
+      "channel": "`proxy:detect`",
+      "arguments": [
+        "{}"
+      ]
+    },
+    {
+      "file": "choose-panel-CC3iR_nA.js",
+      "line": 2,
+      "transport": "send",
+      "channel": "`proxy:detect`",
+      "arguments": [
+        "{}"
+      ]
+    },
+    {
+      "file": "create-D5qE6cG4.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:getSoftConfig`",
+      "arguments": []
+    },
+    {
+      "file": "create-HSjma60V.js",
+      "line": 2,
+      "transport": "send",
+      "channel": "`util:genRandomFingerprint`",
+      "arguments": [
+        "{fontType:o,canvas:u,webGL:d,audioContext:h,speechVoices:g,clientRects:_,macInfo:v,os:y,osVersion:b,coreVersion:t,coreType:e}",
+        "n.length"
+      ]
+    },
+    {
+      "file": "createDefaultAccordions-CO1KkbkO.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:getSoftConfig`",
+      "arguments": []
+    },
+    {
+      "file": "createDefaultAccordions-CO1KkbkO.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`proxy:detectNetwork`",
+      "arguments": [
+        "e.networkMode"
+      ]
+    },
+    {
+      "file": "createDefaultAccordions-CO1KkbkO.js",
+      "line": 3,
+      "transport": "send",
+      "channel": "`proxy:detect`",
+      "arguments": [
+        "{}"
+      ]
+    },
+    {
+      "file": "custom-layout-C32t9VHy.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:getMainControlBrowserSize`",
+      "arguments": []
+    },
+    {
+      "file": "detectProxy-q2-FQDXD.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`proxy:detect`",
+      "arguments": [
+        "n"
+      ]
+    },
+    {
+      "file": "detectProxy-q2-FQDXD.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`proxy:delRoxynetProxy`",
+      "arguments": [
+        "o"
+      ]
+    },
+    {
+      "file": "devices-BOw5TCzh.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`proxy:refreshUrl`",
+      "arguments": [
+        "t.refreshUrl"
+      ]
+    },
+    {
+      "file": "devices-BOw5TCzh.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`proxy:refreshUrl`",
+      "arguments": [
+        "t.refreshUrl"
+      ]
+    },
+    {
+      "file": "env-2iD_YuDA.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`proxy:refreshUrl`",
+      "arguments": [
+        "o"
+      ]
+    },
+    {
+      "file": "extensions-BlF5aO92.js",
+      "line": 5,
+      "transport": "send",
+      "channel": "`extension:download`",
+      "arguments": [
+        "[o(e)]"
+      ]
+    },
+    {
+      "file": "extensions-BlF5aO92.js",
+      "line": 5,
+      "transport": "send",
+      "channel": "`extension:getSelectedExtensionInfo`",
+      "arguments": [
+        "e"
+      ]
+    },
+    {
+      "file": "extensions-BlF5aO92.js",
+      "line": 5,
+      "transport": "send",
+      "channel": "`extension:uploadExtensionToOSS`",
+      "arguments": [
+        "{pluginDir:i,pluginPath:e,pluginIconPath:n,localKey:r}"
+      ]
+    },
+    {
+      "file": "extensions-BlF5aO92.js",
+      "line": 5,
+      "transport": "send",
+      "channel": "`extension:getExtensionInfo`",
+      "arguments": [
+        "t.extensionInfo.pluginDir"
+      ]
+    },
+    {
+      "file": "extensions-BlF5aO92.js",
+      "line": 5,
+      "transport": "send",
+      "channel": "`extension:download`",
+      "arguments": [
+        "[o(t.extensionInfo)]"
+      ]
+    },
+    {
+      "file": "extensions-BlF5aO92.js",
+      "line": 5,
+      "transport": "send",
+      "channel": "`extension:showExtensionDir`",
+      "arguments": [
+        "t.extensionInfo.pluginDir"
+      ]
+    },
+    {
+      "file": "extensions-BlF5aO92.js",
+      "line": 5,
+      "transport": "send",
+      "channel": "`extension:download`",
+      "arguments": [
+        "[o(e)]"
+      ]
+    },
+    {
+      "file": "extensions-BlF5aO92.js",
+      "line": 5,
+      "transport": "send",
+      "channel": "`extension:remove`",
+      "arguments": [
+        "e.map(e=>e.pluginDir)"
+      ]
+    },
+    {
+      "file": "form-inputs-CnnG6T0O.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`util:genRandomFingerprint`",
+      "arguments": [
+        "{fontType:r,canvas:i,webGL:o,audioContext:s,speechVoices:c,clientRects:l,macInfo:u,os:d,osVersion:f,coreVersion:p,coreType:m}",
+        "_"
+      ]
+    },
+    {
+      "file": "form-inputs-CnnG6T0O.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:getCoreList`",
+      "arguments": []
+    },
+    {
+      "file": "form-inputs-CnnG6T0O.js",
+      "line": 3,
+      "transport": "send",
+      "channel": "`util:callRandomFingerprintFunc`",
+      "arguments": [
+        "{getAllowFontList:[]}"
+      ]
+    },
+    {
+      "file": "form-inputs-CnnG6T0O.js",
+      "line": 3,
+      "transport": "send",
+      "channel": "`util:genRandomFonts`",
+      "arguments": []
+    },
+    {
+      "file": "form-inputs-CnnG6T0O.js",
+      "line": 3,
+      "transport": "send",
+      "channel": "`util:callRandomFingerprintFunc`",
+      "arguments": [
+        "{getwebGLNoiseValue:[]}"
+      ]
+    },
+    {
+      "file": "form-inputs-CnnG6T0O.js",
+      "line": 3,
+      "transport": "send",
+      "channel": "`util:callRandomFingerprintFunc`",
+      "arguments": [
+        "{getCanvasContextNoiseValue:[]}"
+      ]
+    },
+    {
+      "file": "form-inputs-CnnG6T0O.js",
+      "line": 3,
+      "transport": "send",
+      "channel": "`util:callRandomFingerprintFunc`",
+      "arguments": [
+        "{getSpeechSynthesis:[Y.os||e?.value?.value,R(Z)]}"
+      ]
+    },
+    {
+      "file": "form-inputs-CnnG6T0O.js",
+      "line": 3,
+      "transport": "send",
+      "channel": "`util:callRandomFingerprintFunc`",
+      "arguments": [
+        "{getClientRectsValue:[]}"
+      ]
+    },
+    {
+      "file": "form-inputs-CnnG6T0O.js",
+      "line": 3,
+      "transport": "send",
+      "channel": "`app:getMacAddress`",
+      "arguments": []
+    },
+    {
+      "file": "form-inputs-CnnG6T0O.js",
+      "line": 7,
+      "transport": "send",
+      "channel": "`util:callRandomFingerprintFunc`",
+      "arguments": [
+        "{getSpeechSynthesis:[r,e]}"
+      ]
+    },
+    {
+      "file": "form-inputs-CnnG6T0O.js",
+      "line": 7,
+      "transport": "send",
+      "channel": "`util:genRandomFingerprint`",
+      "arguments": [
+        "a",
+        "e"
+      ]
+    },
+    {
+      "file": "global-component-Hns640q-.js",
+      "line": 2,
+      "transport": "send",
+      "channel": "`deep-link:takePendingOpenPage`",
+      "arguments": []
+    },
+    {
+      "file": "global-component-Hns640q-.js",
+      "line": 2,
+      "transport": "send",
+      "channel": "`deep-link:takePendingOpenPage`",
+      "arguments": []
+    },
+    {
+      "file": "global-component-Hns640q-.js",
+      "line": 2,
+      "transport": "send",
+      "channel": "`app:getSoftConfig`",
+      "arguments": []
+    },
+    {
+      "file": "global-component-Hns640q-.js",
+      "line": 3,
+      "transport": "send",
+      "channel": "`web:ready`",
+      "arguments": []
+    },
+    {
+      "file": "global-component-Hns640q-.js",
+      "line": 3,
+      "transport": "send",
+      "channel": "`app:getAppVersion`",
+      "arguments": []
+    },
+    {
+      "file": "global-component-Hns640q-.js",
+      "line": 3,
+      "transport": "send",
+      "channel": "`app:quitAndInstall`",
+      "arguments": [
+        "r||{type:`app`}"
+      ]
+    },
+    {
+      "file": "global-component-Hns640q-.js",
+      "line": 3,
+      "transport": "send",
+      "channel": "`app:hideNewFeatureTips`",
+      "arguments": []
+    },
+    {
+      "file": "groups-Bx1BV3Va.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`util:removeProject`",
+      "arguments": [
+        "{workspaceId:ce?.id,projectId:e.project_id}"
+      ]
+    },
+    {
+      "file": "hook-CnJE4hRq.js",
+      "line": 8,
+      "transport": "send",
+      "channel": "`mcp:triggerAgentUpdate`",
+      "arguments": [
+        "{route:e}"
+      ]
+    },
+    {
+      "file": "hook-CnJE4hRq.js",
+      "line": 8,
+      "transport": "send",
+      "channel": "`mcp:restartAgentForUpdate`",
+      "arguments": [
+        "{route:e}"
+      ]
+    },
+    {
+      "file": "hook-CnJE4hRq.js",
+      "line": 8,
+      "transport": "send",
+      "channel": "`mcp:checkAgentForUpdates`",
+      "arguments": []
+    },
+    {
+      "file": "hook-CnJE4hRq.js",
+      "line": 8,
+      "transport": "send",
+      "channel": "`mcp:getAgentUpdateInfo`",
+      "arguments": []
+    },
+    {
+      "file": "hook-CnJE4hRq.js",
+      "line": 8,
+      "transport": "send",
+      "channel": "`app:getAppVersion`",
+      "arguments": []
+    },
+    {
+      "file": "hook-CnJE4hRq.js",
+      "line": 44,
+      "transport": "send",
+      "channel": "`syncControl:open`",
+      "arguments": [
+        "n(`Cost_Center_all`)"
+      ]
+    },
+    {
+      "file": "hook-CnJE4hRq.js",
+      "line": 44,
+      "transport": "send",
+      "channel": "`app:launchAppMode`",
+      "arguments": [
+        "`cloud-phone`"
+      ]
+    },
+    {
+      "file": "hook-CnJE4hRq.js",
+      "line": 44,
+      "transport": "send",
+      "channel": "`app:restartAPIServer`",
+      "arguments": []
+    },
+    {
+      "file": "hook-CnJE4hRq.js",
+      "line": 44,
+      "transport": "send",
+      "channel": "`util:checkPort`",
+      "arguments": [
+        "n"
+      ]
+    },
+    {
+      "file": "hook-CnJE4hRq.js",
+      "line": 44,
+      "transport": "send",
+      "channel": "`mcp:open`",
+      "arguments": [
+        "{route:r}"
+      ]
+    },
+    {
+      "file": "hooks-Jw3GridD.js",
+      "line": 3,
+      "transport": "send",
+      "channel": "`proxy:detect`",
+      "arguments": [
+        "o"
+      ]
+    },
+    {
+      "file": "hooks-Jw3GridD.js",
+      "line": 3,
+      "transport": "send",
+      "channel": "`proxy:delRoxynetProxy`",
+      "arguments": [
+        "o.dirId"
+      ]
+    },
+    {
+      "file": "identity-verification-dialog-TMtWaZev.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`user:uploadOssFile`",
+      "arguments": [
+        "{localPath:n,objectKey:t}"
+      ]
+    },
+    {
+      "file": "identity-verification-entry-B8EzLOCj.js",
+      "line": 101,
+      "transport": "send",
+      "channel": "`app:checkForUpdates`",
+      "arguments": []
+    },
+    {
+      "file": "identity-verification-entry-B8EzLOCj.js",
+      "line": 101,
+      "transport": "send",
+      "channel": "`app:getLastUpdateFeature`",
+      "arguments": []
+    },
+    {
+      "file": "identity-verification-entry-B8EzLOCj.js",
+      "line": 101,
+      "transport": "send",
+      "channel": "`browser:usingCores`",
+      "arguments": []
+    },
+    {
+      "file": "identity-verification-entry-B8EzLOCj.js",
+      "line": 101,
+      "transport": "send",
+      "channel": "`app:download-chrome-core`",
+      "arguments": [
+        "e.coreVersion",
+        "e.coreType??d.Chrome"
+      ]
+    },
+    {
+      "file": "identity-verification-entry-B8EzLOCj.js",
+      "line": 101,
+      "transport": "send",
+      "channel": "`app:cancel-download-chrome-core`",
+      "arguments": [
+        "t.coreVersion",
+        "t.coreType??d.Chrome"
+      ]
+    },
+    {
+      "file": "identity-verification-entry-B8EzLOCj.js",
+      "line": 101,
+      "transport": "send",
+      "channel": "`app:download-chrome-core`",
+      "arguments": [
+        "t.coreVersion",
+        "t.coreType??d.Chrome"
+      ]
+    },
+    {
+      "file": "identity-verification-entry-B8EzLOCj.js",
+      "line": 101,
+      "transport": "send",
+      "channel": "`app:delete-chrome-core`",
+      "arguments": [
+        "t.coreVersion",
+        "t.coreType??d.Chrome"
+      ]
+    },
+    {
+      "file": "identity-verification-entry-B8EzLOCj.js",
+      "line": 101,
+      "transport": "send",
+      "channel": "`app:checkForUpdates`",
+      "arguments": []
+    },
+    {
+      "file": "identity-verification-entry-B8EzLOCj.js",
+      "line": 101,
+      "transport": "send",
+      "channel": "`app:reGetUpdateInfo`",
+      "arguments": [
+        "`kernel`",
+        "d.Chrome"
+      ]
+    },
+    {
+      "file": "identity-verification-entry-B8EzLOCj.js",
+      "line": 101,
+      "transport": "send",
+      "channel": "`app:reGetUpdateInfo`",
+      "arguments": [
+        "`kernel`",
+        "d.Firefox"
+      ]
+    },
+    {
+      "file": "identity-verification-entry-B8EzLOCj.js",
+      "line": 101,
+      "transport": "send",
+      "channel": "`app:getCoreList`",
+      "arguments": []
+    },
+    {
+      "file": "identity-verification-entry-B8EzLOCj.js",
+      "line": 101,
+      "transport": "send",
+      "channel": "`browser:usingCores`",
+      "arguments": []
+    },
+    {
+      "file": "identity-verification-entry-B8EzLOCj.js",
+      "line": 101,
+      "transport": "send",
+      "channel": "`app:download-chrome-core`",
+      "arguments": [
+        "e.coreVersion",
+        "d.Chrome"
+      ]
+    },
+    {
+      "file": "identity-verification-entry-B8EzLOCj.js",
+      "line": 101,
+      "transport": "send",
+      "channel": "`app:download-chrome-core`",
+      "arguments": [
+        "t.coreVersion",
+        "d.Firefox"
+      ]
+    },
+    {
+      "file": "lark-config-DhtK7GLS.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:getAppVersion`",
+      "arguments": []
+    },
+    {
+      "file": "layout-C916OUcf.js",
+      "line": 4,
+      "transport": "send",
+      "channel": "`app:getSoftConfig`",
+      "arguments": []
+    },
+    {
+      "file": "layout-C916OUcf.js",
+      "line": 4,
+      "transport": "send",
+      "channel": "`proxy:detectNetwork`",
+      "arguments": [
+        "e.networkMode"
+      ]
+    },
+    {
+      "file": "layout-C916OUcf.js",
+      "line": 4,
+      "transport": "send",
+      "channel": "`util:getDeviceInfo`",
+      "arguments": []
+    },
+    {
+      "file": "layout-C916OUcf.js",
+      "line": 4,
+      "transport": "send",
+      "channel": "`proxy:detectNetwork`",
+      "arguments": []
+    },
+    {
+      "file": "layout-C916OUcf.js",
+      "line": 4,
+      "transport": "send",
+      "channel": "`app:getSoftConfig`",
+      "arguments": []
+    },
+    {
+      "file": "layout-C916OUcf.js",
+      "line": 11,
+      "transport": "send",
+      "channel": "`browser:getOpenedBrowser`",
+      "arguments": []
+    },
+    {
+      "file": "layout-C916OUcf.js",
+      "line": 11,
+      "transport": "send",
+      "channel": "`dialog:selectDir`",
+      "arguments": [
+        "t.value"
+      ]
+    },
+    {
+      "file": "layout-C916OUcf.js",
+      "line": 11,
+      "transport": "send",
+      "channel": "`app:ensureBrowserCacheRootDir`",
+      "arguments": [
+        "n"
+      ]
+    },
+    {
+      "file": "layout-C916OUcf.js",
+      "line": 11,
+      "transport": "send",
+      "channel": "`app:showCacheDir`",
+      "arguments": []
+    },
+    {
+      "file": "layout-C916OUcf.js",
+      "line": 11,
+      "transport": "send",
+      "channel": "`app:getRoxyCacheSize`",
+      "arguments": []
+    },
+    {
+      "file": "layout-C916OUcf.js",
+      "line": 15,
+      "transport": "send",
+      "channel": "`util:checkShortcutKeysIsOccupied`",
+      "arguments": [
+        "e"
+      ]
+    },
+    {
+      "file": "layout-C916OUcf.js",
+      "line": 15,
+      "transport": "send",
+      "channel": "`app:getRoxyCacheSize`",
+      "arguments": []
+    },
+    {
+      "file": "layout-C916OUcf.js",
+      "line": 15,
+      "transport": "send",
+      "channel": "`browser:clearCacheByTimestamp`",
+      "arguments": [
+        "{days:a.value,clearType:o.value}"
+      ]
+    },
+    {
+      "file": "layout-C916OUcf.js",
+      "line": 15,
+      "transport": "send",
+      "channel": "`app:getSoftConfig`",
+      "arguments": []
+    },
+    {
+      "file": "layout-C916OUcf.js",
+      "line": 15,
+      "transport": "send",
+      "channel": "`app:getRoxyCacheDiskInfo`",
+      "arguments": []
+    },
+    {
+      "file": "layout-C916OUcf.js",
+      "line": 15,
+      "transport": "send",
+      "channel": "`app:showLogDir`",
+      "arguments": []
+    },
+    {
+      "file": "layout-C916OUcf.js",
+      "line": 16,
+      "transport": "send",
+      "channel": "`util:toMediaPath`",
+      "arguments": [
+        "t"
+      ]
+    },
+    {
+      "file": "layout-C916OUcf.js",
+      "line": 16,
+      "transport": "send",
+      "channel": "`user:uploadAvatar`",
+      "arguments": [
+        "t"
+      ]
+    },
+    {
+      "file": "layout-C916OUcf.js",
+      "line": 731,
+      "transport": "send",
+      "channel": "`dialog:selectFile`",
+      "arguments": [
+        "[{name:$t(`图片`),extensions:[`png`,`jpg`,`jpeg`,`bmp`]}]"
+      ]
+    },
+    {
+      "file": "layout-C916OUcf.js",
+      "line": 731,
+      "transport": "send",
+      "channel": "`util:toMediaPath`",
+      "arguments": [
+        "e"
+      ]
+    },
+    {
+      "file": "layout-C916OUcf.js",
+      "line": 731,
+      "transport": "send",
+      "channel": "`user:uploadWorkspaceImage`",
+      "arguments": [
+        "m.value",
+        "e"
+      ]
+    },
+    {
+      "file": "layout-C916OUcf.js",
+      "line": 731,
+      "transport": "send",
+      "channel": "`util:removeWorkspace`",
+      "arguments": [
+        "n"
+      ]
+    },
+    {
+      "file": "layout-C916OUcf.js",
+      "line": 731,
+      "transport": "send",
+      "channel": "`mcp:close`",
+      "arguments": []
+    },
+    {
+      "file": "layout-C916OUcf.js",
+      "line": 731,
+      "transport": "send",
+      "channel": "`mcp:close`",
+      "arguments": []
+    },
+    {
+      "file": "layout-C916OUcf.js",
+      "line": 731,
+      "transport": "send",
+      "channel": "`app:saveSoftConfig`",
+      "arguments": [
+        "{language:e.locale}"
+      ]
+    },
+    {
+      "file": "layout-C916OUcf.js",
+      "line": 731,
+      "transport": "send",
+      "channel": "`app:open-external-url`",
+      "arguments": [
+        "e"
+      ]
+    },
+    {
+      "file": "layout-C916OUcf.js",
+      "line": 731,
+      "transport": "send",
+      "channel": "`browser:getOpenedBrowser`",
+      "arguments": []
+    },
+    {
+      "file": "layout-C916OUcf.js",
+      "line": 731,
+      "transport": "send",
+      "channel": "`user:logout`",
+      "arguments": []
+    },
+    {
+      "file": "layout-C916OUcf.js",
+      "line": 731,
+      "transport": "send",
+      "channel": "`mcp:close`",
+      "arguments": []
+    },
+    {
+      "file": "list-ByevuXQD.js",
+      "line": 2,
+      "transport": "send",
+      "channel": "`browser:batchRemove`",
+      "arguments": [
+        "e.map(e=>e.dirId)"
+      ]
+    },
+    {
+      "file": "login-DUMZKRuO.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`util:clearInstallerPath`",
+      "arguments": []
+    },
+    {
+      "file": "login-DUMZKRuO.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`util:clearInstallerPath`",
+      "arguments": []
+    },
+    {
+      "file": "login-DUMZKRuO.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:getGPUFeatureStatus`",
+      "arguments": []
+    },
+    {
+      "file": "login-DUMZKRuO.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:isShowLongTimeNotLoginTips`",
+      "arguments": []
+    },
+    {
+      "file": "login-DUMZKRuO.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:checkForUpdates`",
+      "arguments": []
+    },
+    {
+      "file": "mac-ownership-fix-EuX9Uce7.js",
+      "line": 2,
+      "transport": "send",
+      "channel": "`app:getMacOwnershipFixStatus`",
+      "arguments": []
+    },
+    {
+      "file": "mac-ownership-fix-EuX9Uce7.js",
+      "line": 2,
+      "transport": "send",
+      "channel": "`app:confirmMacOwnershipFix`",
+      "arguments": []
+    },
+    {
+      "file": "main-CWmwdLIL.js",
+      "line": 2,
+      "transport": "send",
+      "channel": "`app:getAppVersion`",
+      "arguments": []
+    },
+    {
+      "file": "main-CWmwdLIL.js",
+      "line": 2,
+      "transport": "send",
+      "channel": "`app:getSoftConfig`",
+      "arguments": []
+    },
+    {
+      "file": "open-sites-BUgaXFNX.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:closeOpenSitesDialog`",
+      "arguments": []
+    },
+    {
+      "file": "open-sites-BUgaXFNX.js",
+      "line": 2,
+      "transport": "send",
+      "channel": "`syncControl:openSites`",
+      "arguments": [
+        "e"
+      ]
+    },
+    {
+      "file": "operationHandlers-Db52Gyo7.js",
+      "line": 6,
+      "transport": "send",
+      "channel": "`browser:startCookieRobot`",
+      "arguments": [
+        "{dirIds:i,...r}"
+      ]
+    },
+    {
+      "file": "operationHandlers-Db52Gyo7.js",
+      "line": 6,
+      "transport": "send",
+      "channel": "`browser:getOpenedBrowser`",
+      "arguments": []
+    },
+    {
+      "file": "operationHandlers-Db52Gyo7.js",
+      "line": 6,
+      "transport": "send",
+      "channel": "`browser:batchRelaunch`",
+      "arguments": [
+        "t"
+      ]
+    },
+    {
+      "file": "operationHandlers-Db52Gyo7.js",
+      "line": 6,
+      "transport": "send",
+      "channel": "`browser:batchClose`",
+      "arguments": [
+        "e.datas.map(e=>e.dirId)"
+      ]
+    },
+    {
+      "file": "phone-Wxy6wiXc.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`cloudPhone:closePlayer`",
+      "arguments": [
+        "n"
+      ]
+    },
+    {
+      "file": "phone-Wxy6wiXc.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`cloudPhone:openPlayer`",
+      "arguments": [
+        "{phoneId:t,...He(e),userId:n?.userId||``,teamId:n?.teamId||``,url:``}"
+      ]
+    },
+    {
+      "file": "phone-Wxy6wiXc.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`cloudPhone:openPlayer`",
+      "arguments": [
+        "{...e,userId:n.userId||``,teamId:n.teamId||``}"
+      ]
+    },
+    {
+      "file": "preferences--734d_2_.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:checkShortcutKeysIsOccupied`",
+      "arguments": [
+        "{[u]:{[t]:n}}"
+      ]
+    },
+    {
+      "file": "preferences--734d_2_.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:checkShortcutKeysIsOccupied`",
+      "arguments": [
+        "r(l.value)"
+      ]
+    },
+    {
+      "file": "preferences--734d_2_.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:doLayout`",
+      "arguments": [
+        "r(C.value.customLayout)"
+      ]
+    },
+    {
+      "file": "preferences--734d_2_.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:registerShortcut`",
+      "arguments": [
+        "r(C.value.shortcutKey)"
+      ]
+    },
+    {
+      "file": "preferences--734d_2_.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:closePreferencesDialog`",
+      "arguments": []
+    },
+    {
+      "file": "preferences--734d_2_.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:closePreferencesDialog`",
+      "arguments": []
+    },
+    {
+      "file": "preferences--734d_2_.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:resizeWindow`",
+      "arguments": [
+        "{width:window.innerWidth+e?.scrollWidth-e?.clientWidth,height:window.innerHeight}"
+      ]
+    },
+    {
+      "file": "profile-info-ExiJC1su.js",
+      "line": 2,
+      "transport": "send",
+      "channel": "`proxy:refreshUrl`",
+      "arguments": [
+        "e.refreshUrl"
+      ]
+    },
+    {
+      "file": "projects-CN6_vL2j.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`util:removeProject`",
+      "arguments": [
+        "{workspaceId:K?.id,projectId:e.project_id}"
+      ]
+    },
+    {
+      "file": "proxy-cE263mR5.js",
+      "line": 4,
+      "transport": "send",
+      "channel": "`proxy:refreshUrl`",
+      "arguments": [
+        "e.refreshUrl"
+      ]
+    },
+    {
+      "file": "renewal-reminder-drawer-C9_4HaAB.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:getCoreList`",
+      "arguments": []
+    },
+    {
+      "file": "renewal-reminder-drawer-C9_4HaAB.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`browser:setAsDefaultBrowser`",
+      "arguments": [
+        "{...ie(e),__orderName:`${Z.value}-${t}`}"
+      ]
+    },
+    {
+      "file": "renewal-reminder-drawer-C9_4HaAB.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`browser:createDesktopShortcut`",
+      "arguments": [
+        "{...ie(e),__orderName:`${Z.value}-${t}`}"
+      ]
+    },
+    {
+      "file": "renewal-reminder-drawer-C9_4HaAB.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`browser:clearCache`",
+      "arguments": [
+        "{clearType:n.all,dirIds:r}"
+      ]
+    },
+    {
+      "file": "renewal-reminder-drawer-C9_4HaAB.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`browser:clearCache`",
+      "arguments": [
+        "{clearType:t,dirIds:r}"
+      ]
+    },
+    {
+      "file": "renewal-reminder-drawer-C9_4HaAB.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`browser:batchRemove`",
+      "arguments": [
+        "e.map(e=>e.dirId)"
+      ]
+    },
+    {
+      "file": "score-Dw2TbdnX.js",
+      "line": 4,
+      "transport": "send",
+      "channel": "`util:toMediaPath`",
+      "arguments": [
+        "t"
+      ]
+    },
+    {
+      "file": "score-Dw2TbdnX.js",
+      "line": 4,
+      "transport": "send",
+      "channel": "`user:uploadReviewImage`",
+      "arguments": [
+        "e.localPath"
+      ]
+    },
+    {
+      "file": "settings-1NOx2QvV.js",
+      "line": 3,
+      "transport": "send",
+      "channel": "`cloudPhone:setHwAccel`",
+      "arguments": [
+        "l.value"
+      ]
+    },
+    {
+      "file": "settings-1NOx2QvV.js",
+      "line": 3,
+      "transport": "send",
+      "channel": "`cloudPhone:setExitBehavior`",
+      "arguments": [
+        "{closePhone:p.value,closeClient:m.value,closeWindow:w.value}"
+      ]
+    },
+    {
+      "file": "settings-1NOx2QvV.js",
+      "line": 3,
+      "transport": "send",
+      "channel": "`cloudPhone:setArrangeShortcut`",
+      "arguments": [
+        "C.value||``"
+      ]
+    },
+    {
+      "file": "settings-1NOx2QvV.js",
+      "line": 3,
+      "transport": "send",
+      "channel": "`app:saveSoftConfig`",
+      "arguments": [
+        "{taskbarIconDisplay:b.value}"
+      ]
+    },
+    {
+      "file": "shop-v2DtsxR2.js",
+      "line": 2,
+      "transport": "send",
+      "channel": "`proxy:refreshUrl`",
+      "arguments": [
+        "t.refreshUrl"
+      ]
+    },
+    {
+      "file": "shop-v2DtsxR2.js",
+      "line": 2,
+      "transport": "send",
+      "channel": "`proxy:refreshUrl`",
+      "arguments": [
+        "t.refreshUrl"
+      ]
+    },
+    {
+      "file": "single-proxies-C7CAMkyq.js",
+      "line": 5,
+      "transport": "send",
+      "channel": "`proxy:refreshUrl`",
+      "arguments": [
+        "e"
+      ]
+    },
+    {
+      "file": "single-proxies-C7CAMkyq.js",
+      "line": 5,
+      "transport": "send",
+      "channel": "`proxy:detect`",
+      "arguments": [
+        "{}"
+      ]
+    },
+    {
+      "file": "synchronizer-mUJbzl7S.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:close`",
+      "arguments": []
+    },
+    {
+      "file": "synchronizer-mUJbzl7S.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:showCurrentWebviewWindow`",
+      "arguments": []
+    },
+    {
+      "file": "syncing-window-list-g5VmUz_T.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:closeSyncingWindowListDialog`",
+      "arguments": []
+    },
+    {
+      "file": "syncing-window-list-g5VmUz_T.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:getMainControlDirId`",
+      "arguments": []
+    },
+    {
+      "file": "theme-mq6SsndU.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:setSystemTheme`",
+      "arguments": [
+        "c.value"
+      ]
+    },
+    {
+      "file": "try-show-pre-upgrade-tips-BjobRQpO.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:quitAndInstall`",
+      "arguments": [
+        "r"
+      ]
+    },
+    {
+      "file": "try-show-pre-upgrade-tips-BjobRQpO.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:getAppVersion`",
+      "arguments": []
+    },
+    {
+      "file": "try-show-pre-upgrade-tips-BjobRQpO.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:hideNewFeatureTips`",
+      "arguments": []
+    },
+    {
+      "file": "try-show-pre-upgrade-tips-BjobRQpO.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:getNewFeatureTips`",
+      "arguments": []
+    },
+    {
+      "file": "try-show-pre-upgrade-tips-BjobRQpO.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:hideNewFeatureTips`",
+      "arguments": []
+    },
+    {
+      "file": "try-show-pre-upgrade-tips-BjobRQpO.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:getAppVersion`",
+      "arguments": []
+    },
+    {
+      "file": "try-show-pre-upgrade-tips-BjobRQpO.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:getLastUpdateFeature`",
+      "arguments": []
+    },
+    {
+      "file": "useCommonUtil-C7F4fHRj.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:saveSoftConfig`",
+      "arguments": [
+        "{[t.name]:i(n)?r(n):n}"
+      ]
+    },
+    {
+      "file": "useCommonUtil-C7F4fHRj.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:saveSoftConfig`",
+      "arguments": [
+        "t"
+      ]
+    },
+    {
+      "file": "useCommonUtil-C7F4fHRj.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:saveSoftConfig`",
+      "arguments": [
+        "r"
+      ]
+    },
+    {
+      "file": "useCommonUtil-C7F4fHRj.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`proxy:detectNetwork`",
+      "arguments": [
+        "`local`"
+      ]
+    },
+    {
+      "file": "useCommonUtil-C7F4fHRj.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`proxy:detectNetwork`",
+      "arguments": [
+        "`system`"
+      ]
+    },
+    {
+      "file": "useProfileOpenState-GCrr7PDa.js",
+      "line": 3,
+      "transport": "send",
+      "channel": "`browser:chunkBrowsersByScreen`",
+      "arguments": [
+        "t"
+      ]
+    },
+    {
+      "file": "useProfileOpenState-GCrr7PDa.js",
+      "line": 3,
+      "transport": "send",
+      "channel": "`browser:openBatchLayout`",
+      "arguments": [
+        "{dirIds:t,layout:`minimize`}"
+      ]
+    },
+    {
+      "file": "useProfileOpenState-GCrr7PDa.js",
+      "line": 3,
+      "transport": "send",
+      "channel": "`browser:openBatchLayout`",
+      "arguments": [
+        "{dirIds:t,layout:n}"
+      ]
+    },
+    {
+      "file": "useProfileOpenState-GCrr7PDa.js",
+      "line": 3,
+      "transport": "send",
+      "channel": "`browser:batchLaunch`",
+      "arguments": [
+        "t"
+      ]
+    },
+    {
+      "file": "useProfileOpenState-GCrr7PDa.js",
+      "line": 3,
+      "transport": "send",
+      "channel": "`browser:batchLaunch`",
+      "arguments": [
+        "i",
+        "he(r)"
+      ]
+    },
+    {
+      "file": "useProfileOpenState-GCrr7PDa.js",
+      "line": 3,
+      "transport": "send",
+      "channel": "`browser:batchRelaunch`",
+      "arguments": [
+        "[]"
+      ]
+    },
+    {
+      "file": "useProfileOpenState-GCrr7PDa.js",
+      "line": 3,
+      "transport": "send",
+      "channel": "`browser:isProcessExists`",
+      "arguments": [
+        "e.map(e=>e.dirId)"
+      ]
+    },
+    {
+      "file": "useProfileOpenState-GCrr7PDa.js",
+      "line": 3,
+      "transport": "send",
+      "channel": "`browser:getOpenedBrowserMessage`",
+      "arguments": []
+    },
+    {
+      "file": "useProfileProxy-Cbqapbxb.js",
+      "line": 2,
+      "transport": "send",
+      "channel": "`proxy:detect`",
+      "arguments": [
+        "{}"
+      ]
+    },
+    {
+      "file": "useWindowArrange-C8-E01qc.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`cloudPhone:listArrangeDisplays`",
+      "arguments": []
+    },
+    {
+      "file": "useWindowArrange-C8-E01qc.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`cloudPhone:arrangeWindows`",
+      "arguments": [
+        "{...n,apply:t}"
+      ]
+    },
+    {
+      "file": "useWindowArrange-C8-E01qc.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`cloudPhone:arrangeWindows`",
+      "arguments": [
+        "{...t,sort:e.sort,displayId:e.displayId,apply:!0,adaptive:!0}"
+      ]
+    },
+    {
+      "file": "util-C5rl6Moc.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:changeSyncSettings`",
+      "arguments": [
+        "e"
+      ]
+    },
+    {
+      "file": "utils-BIWenCnY.js",
+      "line": 2,
+      "transport": "send",
+      "channel": "`app:isMainWindow`",
+      "arguments": []
+    },
+    {
+      "file": "utils-BIWenCnY.js",
+      "line": 74,
+      "transport": "send",
+      "channel": "`util:getCommonRequestHeaders`",
+      "arguments": []
+    },
+    {
+      "file": "utils-BIWenCnY.js",
+      "line": 74,
+      "transport": "send",
+      "channel": "`util:getInviteCode`",
+      "arguments": []
+    },
+    {
+      "file": "utils-BIWenCnY.js",
+      "line": 74,
+      "transport": "send",
+      "channel": "`util:getDeviceId`",
+      "arguments": []
+    },
+    {
+      "file": "utils-BIWenCnY.js",
+      "line": 74,
+      "transport": "send",
+      "channel": "`app:saveSoftConfig`",
+      "arguments": [
+        "{language:t}"
+      ]
+    },
+    {
+      "file": "utils-BIWenCnY.js",
+      "line": 166,
+      "transport": "send",
+      "channel": "`user:setWorkspaceId`",
+      "arguments": [
+        "e",
+        "t"
+      ]
+    },
+    {
+      "file": "utils-BIWenCnY.js",
+      "line": 166,
+      "transport": "send",
+      "channel": "`app:restartAPIServer`",
+      "arguments": []
+    },
+    {
+      "file": "utils-BIWenCnY.js",
+      "line": 166,
+      "transport": "send",
+      "channel": "`user:setAllWorkspaceId`",
+      "arguments": [
+        "l.value.map(e=>e.id).filter(Boolean)"
+      ]
+    },
+    {
+      "file": "utils-BIWenCnY.js",
+      "line": 166,
+      "transport": "send",
+      "channel": "`user:setSharedWorkspaceList`",
+      "arguments": [
+        "[]"
+      ]
+    },
+    {
+      "file": "utils-BIWenCnY.js",
+      "line": 166,
+      "transport": "send",
+      "channel": "`app:getSoftConfig`",
+      "arguments": []
+    },
+    {
+      "file": "utils-BIWenCnY.js",
+      "line": 166,
+      "transport": "send",
+      "channel": "`user:setUserInfo`",
+      "arguments": [
+        "{token:g.value,userId:d.value.id,lastUserId:d.value.id,workspaceId:d.value.workspaceId,userName:d.value.userName,email:d.value.email}"
+      ]
+    },
+    {
+      "file": "utils-BIWenCnY.js",
+      "line": 166,
+      "transport": "send",
+      "channel": "`proxy:detectNetwork`",
+      "arguments": [
+        "`local`"
+      ]
+    },
+    {
+      "file": "utils-BIWenCnY.js",
+      "line": 166,
+      "transport": "send",
+      "channel": "`user:logout`",
+      "arguments": []
+    },
+    {
+      "file": "utils-BIWenCnY.js",
+      "line": 166,
+      "transport": "send",
+      "channel": "`app:saveSoftConfig`",
+      "arguments": [
+        "{subLevel:o.subLevel}"
+      ]
+    },
+    {
+      "file": "utils-BIWenCnY.js",
+      "line": 166,
+      "transport": "send",
+      "channel": "`syncControl:close`",
+      "arguments": []
+    },
+    {
+      "file": "utils-BIWenCnY.js",
+      "line": 166,
+      "transport": "send",
+      "channel": "`syncControl:stop`",
+      "arguments": [
+        "!1"
+      ]
+    },
+    {
+      "file": "utils-BIWenCnY.js",
+      "line": 166,
+      "transport": "send",
+      "channel": "`app:getAppVersion`",
+      "arguments": []
+    },
+    {
+      "file": "utils-BIWenCnY.js",
+      "line": 166,
+      "transport": "send",
+      "channel": "`app:getAppVersion`",
+      "arguments": []
+    },
+    {
+      "file": "utils-BIWenCnY.js",
+      "line": 166,
+      "transport": "send",
+      "channel": "`app:reGetUpdateInfo`",
+      "arguments": [
+        "`app`"
+      ]
+    },
+    {
+      "file": "utils-BIWenCnY.js",
+      "line": 166,
+      "transport": "send",
+      "channel": "`app:reGetUpdateInfo`",
+      "arguments": [
+        "`kernel`",
+        "EJ.Chrome"
+      ]
+    },
+    {
+      "file": "utils-BIWenCnY.js",
+      "line": 166,
+      "transport": "send",
+      "channel": "`app:reGetUpdateInfo`",
+      "arguments": [
+        "`kernel`",
+        "EJ.Firefox"
+      ]
+    },
+    {
+      "file": "utils-BIWenCnY.js",
+      "line": 166,
+      "transport": "send",
+      "channel": "`app:fetchSoftConfig`",
+      "arguments": []
+    },
+    {
+      "file": "utils-BIWenCnY.js",
+      "line": 166,
+      "transport": "send",
+      "channel": "`browser:closeByWorkspace`",
+      "arguments": [
+        "e"
+      ]
+    },
+    {
+      "file": "utils-BIWenCnY.js",
+      "line": 166,
+      "transport": "send",
+      "channel": "`browser:getOpenedBrowser`",
+      "arguments": []
+    },
+    {
+      "file": "utils-BIWenCnY.js",
+      "line": 166,
+      "transport": "send",
+      "channel": "`browser:batchClose`",
+      "arguments": [
+        "t"
+      ]
+    },
+    {
+      "file": "utils-BIWenCnY.js",
+      "line": 166,
+      "transport": "send",
+      "channel": "`mcp:close`",
+      "arguments": []
+    },
+    {
+      "file": "utils-BIWenCnY.js",
+      "line": 166,
+      "transport": "send",
+      "channel": "`dict:update`",
+      "arguments": [
+        "Object.keys(n)"
+      ]
+    },
+    {
+      "file": "window-list-C-MAmr_C.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`app:resizeWindow`",
+      "arguments": [
+        "{width:window.innerWidth+(e?.scrollWidth??0)-(e?.clientWidth??0),height:window.innerHeight}"
+      ]
+    },
+    {
+      "file": "window-list-C-MAmr_C.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "X.value?`syncControl:getAllSyncingWindows`:`browser:getOpenedBrowser`",
+      "arguments": []
+    },
+    {
+      "file": "window-list-C-MAmr_C.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`browser:batchLaunch`",
+      "arguments": [
+        "[e]"
+      ]
+    },
+    {
+      "file": "window-list-C-MAmr_C.js",
+      "line": 1,
+      "transport": "send",
+      "channel": "`syncControl:start`",
+      "arguments": [
+        "n"
+      ]
+    }
+  ],
+  "network": [
+    {
+      "file": "AgentSettingsRoute-BB9ba93X.js",
+      "line": 1,
+      "call": "fetch",
+      "argument": "`${t.value}${e}`"
+    },
+    {
+      "file": "TaskStatusBadge-fl9VE7c_.js",
+      "line": 1,
+      "call": "fetch",
+      "argument": "n"
+    },
+    {
+      "file": "aliyun-oss-sdk-A66gQQMW.js",
+      "line": 67,
+      "call": "r.fetch",
+      "argument": "e._opts.url"
+    },
+    {
+      "file": "api-extract-BlmYcIz7.js",
+      "line": 1,
+      "call": "fetch",
+      "argument": "o"
+    },
+    {
+      "file": "dist-BAPiYeUN.js",
+      "line": 105,
+      "call": "_.fetch",
+      "argument": "re.query||``"
+    },
+    {
+      "file": "layout-C916OUcf.js",
+      "line": 16,
+      "call": "fetch",
+      "argument": "e"
+    },
+    {
+      "file": "modulepreload-polyfill-P2Xu9kJm.js",
+      "line": 1,
+      "call": "fetch",
+      "argument": "e.href"
+    },
+    {
+      "file": "roxy-claw-1j3mqM_d.js",
+      "line": 1,
+      "call": "fetch",
+      "argument": "`${o.serverUrl}/api/roxy-claw${e}`"
+    },
+    {
+      "file": "rx-image-YAOeIJXi.js",
+      "line": 1,
+      "call": "fetch",
+      "argument": "t.downloadLink||x.value"
+    },
+    {
+      "file": "utils-BIWenCnY.js",
+      "line": 3,
+      "call": "fetch",
+      "argument": "e"
+    },
+    {
+      "file": "utils-BIWenCnY.js",
+      "line": 3,
+      "call": "fetch",
+      "argument": "ap"
+    },
+    {
+      "file": "utils-BIWenCnY.js",
+      "line": 74,
+      "call": "fetch",
+      "argument": "t"
+    },
+    {
+      "file": "utils-BIWenCnY.js",
+      "line": 166,
+      "call": "P.fetch",
+      "argument": "a+`/`+this._getApiRoute()+`?`+new URLSearchParams(t)"
+    },
+    {
+      "file": "utils-BIWenCnY.js",
+      "line": 166,
+      "call": "P.fetch",
+      "argument": "o"
+    },
+    {
+      "file": "utils-BIWenCnY.js",
+      "line": 166,
+      "call": "fetch",
+      "argument": "`${e.serverUrl}${t}`"
+    },
+    {
+      "file": "web-auto-updater-DRxZmR1d.js",
+      "line": 1,
+      "call": "fetch",
+      "argument": "`/version?t=${Date.now()}`"
+    }
+  ],
+  "endpoints": [
+    "/user_activate_cloud_browser",
+    "/user_add_label_info",
+    "/user_add_platform_info",
+    "/user_add_platform_info_batch",
+    "/user_add_plugin_to_window",
+    "/user_add_project_info",
+    "/user_add_proxy_module",
+    "/user_add_proxy_module_v",
+    "/user_add_proxy_template",
+    "/user_add_quick_create_template",
+    "/user_add_system_plugin",
+    "/user_add_team_nickname",
+    "/user_add_team_workspace_nickname",
+    "/user_add_user_by_project_info",
+    "/user_add_window_filter_name",
+    "/user_add_window_info_v",
+    "/user_add_window_template_info",
+    "/user_add_workspace_info",
+    "/user_agent_transfer_window",
+    "/user_agree_transfer_window",
+    "/user_analysis_window_info",
+    "/user_app_rating",
+    "/user_auto_renew_upgrade",
+    "/user_batch_check_proxy_import",
+    "/user_batch_del_plugin_info",
+    "/user_batch_invite",
+    "/user_batch_mdf_proxy_module_check",
+    "/user_batch_set_proxy_auto_renewal",
+    "/user_batch_window_info_v",
+    "/user_bind_card",
+    "/user_bind_email",
+    "/user_bind_email_list",
+    "/user_bind_email_verify_code",
+    "/user_bind_phone",
+    "/user_buy_proxy_settlement",
+    "/user_calc_llm_token_cost",
+    "/user_calculate_price_difference",
+    "/user_calculate_price_difference_v",
+    "/user_calculate_window_months_price",
+    "/user_cancel_subscription",
+    "/user_change_account",
+    "/user_change_email",
+    "/user_change_pwd",
+    "/user_change_username",
+    "/user_check_all_plugins_version",
+    "/user_check_proxy",
+    "/user_check_proxy_bind_risk",
+    "/user_check_team_user_rights",
+    "/user_check_window_proxy_status",
+    "/user_check_window_total_count",
+    "/user_clear_transfer_workspace",
+    "/user_clear_window_cache",
+    "/user_clear_window_cache_api_v",
+    "/user_close_validator",
+    "/user_cloudphone_plan_change",
+    "/user_cloudphone_plan_renew",
+    "/user_cloudphone_quote",
+    "/user_cloudphone_settlement",
+    "/user_create_window_inspect",
+    "/user_del_label_info",
+    "/user_del_platform_info",
+    "/user_del_plugin_info",
+    "/user_del_project_info",
+    "/user_del_project_member",
+    "/user_del_proxy_module_v",
+    "/user_del_team_info",
+    "/user_del_window_info",
+    "/user_del_window_info_api_v",
+    "/user_del_window_info_recycle",
+    "/user_del_workspace_info",
+    "/user_delete_proxy_template",
+    "/user_delete_quick_create_template",
+    "/user_delete_window_filter_name",
+    "/user_delete_window_template_info",
+    "/user_downgrade_subscription",
+    "/user_downgrade_subscription_v",
+    "/user_export_proxy_device_info",
+    "/user_fixed_plugin_to_window",
+    "/user_get_agent_delivery_duration_list",
+    "/user_get_agent_transfer_window_status",
+    "/user_get_annt_list",
+    "/user_get_app_feature_tips",
+    "/user_get_app_upgrade",
+    "/user_get_auto_subscription_info",
+    "/user_get_banner_picture_list",
+    "/user_get_banner_picture_list_v",
+    "/user_get_bind_card_list",
+    "/user_get_browser",
+    "/user_get_check_old_email_ver_code",
+    "/user_get_check_phone_ver_code",
+    "/user_get_cloud_browser_experience_proxy",
+    "/user_get_cloud_browser_info",
+    "/user_get_cloudphone_plan_options",
+    "/user_get_core_upgrade",
+    "/user_get_def_config",
+    "/user_get_device_name_v",
+    "/user_get_dict_version",
+    "/user_get_downgrade_subscription_info",
+    "/user_get_duration_discounts",
+    "/user_get_duration_discounts_by_days",
+    "/user_get_exclusive_coupons",
+    "/user_get_exclusive_reward_contact",
+    "/user_get_exclusive_reward_detail",
+    "/user_get_guide_videos_by_type",
+    "/user_get_influencer_ranking",
+    "/user_get_invite_code",
+    "/user_get_invite_link",
+    "/user_get_invite_notify",
+    "/user_get_invite_user_list_v",
+    "/user_get_label_info",
+    "/user_get_label_info_api",
+    "/user_get_llm_info",
+    "/user_get_login_info",
+    "/user_get_login_log",
+    "/user_get_mac_addr_v",
+    "/user_get_member_info_by_project_id",
+    "/user_get_member_info_by_workspace",
+    "/user_get_message_tips",
+    "/user_get_my_coupon_list",
+    "/user_get_new_user_benefit_config",
+    "/user_get_notify",
+    "/user_get_operate_log",
+    "/user_get_oss_credential_v",
+    "/user_get_pay_channel_fees",
+    "/user_get_pay_link",
+    "/user_get_pending_payment_list",
+    "/user_get_phone",
+    "/user_get_platform_info",
+    "/user_get_platform_info_v",
+    "/user_get_platform_table_rows",
+    "/user_get_platform_table_sort_order",
+    "/user_get_platform_url_tree",
+    "/user_get_plugin_category",
+    "/user_get_plugin_info_by_id",
+    "/user_get_plugin_list",
+    "/user_get_plugin_window",
+    "/user_get_project_info_by_workspace",
+    "/user_get_promotion_info",
+    "/user_get_promotion_info_by_type",
+    "/user_get_promotion_link_list",
+    "/user_get_promotion_redeem_code_list",
+    "/user_get_prompt_template_list",
+    "/user_get_proxy_all_countries",
+    "/user_get_proxy_bandwidth_upgrade_price_list",
+    "/user_get_proxy_business_scene_list",
+    "/user_get_proxy_business_use_list",
+    "/user_get_proxy_country_list_by_business_scene",
+    "/user_get_proxy_country_list_by_continent",
+    "/user_get_proxy_country_price_list",
+    "/user_get_proxy_detail_merged",
+    "/user_get_proxy_device_bound_accounts",
+    "/user_get_proxy_device_detail",
+    "/user_get_proxy_duration_discounts_by_days",
+    "/user_get_proxy_expiring_soon_list",
+    "/user_get_proxy_list_merged",
+    "/user_get_proxy_module",
+    "/user_get_proxy_operate_record_list",
+    "/user_get_proxy_provider_list",
+    "/user_get_proxy_providers_by_business_scene",
+    "/user_get_proxy_providers_by_business_scene_country",
+    "/user_get_proxy_providers_type",
+    "/user_get_proxy_purchase_country_list",
+    "/user_get_proxy_purchase_time_price",
+    "/user_get_proxy_recommend_info",
+    "/user_get_proxy_refund_info",
+    "/user_get_proxy_renew_price_list",
+    "/user_get_proxy_store_list",
+    "/user_get_proxy_table_rows",
+    "/user_get_proxy_table_sort_order",
+    "/user_get_proxy_template",
+    "/user_get_proxy_vendor_jump_info",
+    "/user_get_proxy_vendor_list",
+    "/user_get_public_workspace_list",
+    "/user_get_purchase_records_info",
+    "/user_get_quick_create_template",
+    "/user_get_random_available_proxy_merged",
+    "/user_get_rating_reward",
+    "/user_get_reward_record_list",
+    "/user_get_role_permissions",
+    "/user_get_roxy_claw",
+    "/user_get_rpa_script_library_list",
+    "/user_get_search_engines",
+    "/user_get_stablecoin_info",
+    "/user_get_stripe_pk_key",
+    "/user_get_support_pay_type",
+    "/user_get_system_dict_v",
+    "/user_get_system_plugin",
+    "/user_get_team_permission_verify_status",
+    "/user_get_team_permissions",
+    "/user_get_timezone_by_coordinates_info",
+    "/user_get_timezone_by_ip",
+    "/user_get_top_project_info",
+    "/user_get_transfer_receive_window_list",
+    "/user_get_transfer_record_list",
+    "/user_get_transfer_task_details",
+    "/user_get_transfer_workspace_list",
+    "/user_get_ua_webgl_v",
+    "/user_get_uninstall_reason_question_list",
+    "/user_get_user_api",
+    "/user_get_user_buy_proxy_list",
+    "/user_get_user_config",
+    "/user_get_user_info",
+    "/user_get_user_pay_info",
+    "/user_get_validator_bind_info",
+    "/user_get_validator_info",
+    "/user_get_window_filter_name_list",
+    "/user_get_window_info_detail",
+    "/user_get_window_info_list",
+    "/user_get_window_info_v",
+    "/user_get_window_one_click_config_list",
+    "/user_get_window_one_click_proxy_info_list",
+    "/user_get_window_platform_account_list",
+    "/user_get_window_pricing_rules_list",
+    "/user_get_window_rows_sort",
+    "/user_get_window_sort_num",
+    "/user_get_window_status_info",
+    "/user_get_window_subscription_upgrade_message",
+    "/user_get_window_table_sort_order",
+    "/user_get_window_template_list",
+    "/user_get_withdraw_record_list",
+    "/user_get_workspace_list",
+    "/user_get_workspace_list_api",
+    "/user_import_window_info_v",
+    "/user_invite",
+    "/user_is_naifei_user",
+    "/user_leave_workspace",
+    "/user_logout",
+    "/user_manage_subscription",
+    "/user_may_freedom_result",
+    "/user_mdf_cloud_browser_activate_info",
+    "/user_mdf_label_info",
+    "/user_mdf_platform_bind_window",
+    "/user_mdf_platform_info",
+    "/user_mdf_project_info",
+    "/user_mdf_project_sort",
+    "/user_mdf_proxy_bind_window",
+    "/user_mdf_proxy_module",
+    "/user_mdf_proxy_template",
+    "/user_mdf_quick_create_template",
+    "/user_mdf_team_info_v",
+    "/user_mdf_user_buy_proxy_remark",
+    "/user_mdf_window_data_batch",
+    "/user_mdf_window_info_batch_v",
+    "/user_mdf_window_info_random_v",
+    "/user_mdf_window_info_single_v",
+    "/user_mdf_window_proxy_check_batch",
+    "/user_mdf_window_sync_v",
+    "/user_mdf_window_template_info",
+    "/user_mdf_workspace_info",
+    "/user_mdf_workspace_tip_info",
+    "/user_mdf_workspace_type",
+    "/user_mid_autumn_claim_captcha_trigger",
+    "/user_mid_autumn_lottery_draw",
+    "/user_mid_autumn_lottery_prizes",
+    "/user_migrate_data",
+    "/user_modify_promotion_link",
+    "/user_modify_remark_display_status",
+    "/user_modify_window_report_time",
+    "/user_pay_captcha_trigger",
+    "/user_pay_settlement",
+    "/user_permanent_window_settlement",
+    "/user_proxy_refund_or_replace",
+    "/user_query_order_status",
+    "/user_query_redeem_code",
+    "/user_read_notify",
+    "/user_recharge_settlement",
+    "/user_record_plugin_upload_v",
+    "/user_redeem_code_list",
+    "/user_redeem_proxy_code",
+    "/user_redeem_window_code",
+    "/user_reg_gift",
+    "/user_register_gift_config",
+    "/user_register_proxy_provider_user",
+    "/user_register_proxy_provider_user_v",
+    "/user_reject_transfer_window",
+    "/user_renew_device_proxy_settlement",
+    "/user_report_app_event",
+    "/user_report_proxy_out_of_stock",
+    "/user_report_system_plugin_error",
+    "/user_save_llm_data",
+    "/user_save_platform_table_sort_order",
+    "/user_save_proxy_table_sort_order",
+    "/user_save_window_rows_sort",
+    "/user_save_window_table_sort_order",
+    "/user_select_onboarding_workspace_type",
+    "/user_send_account_password_verify_code",
+    "/user_send_email_verify_code",
+    "/user_send_team_permission_verify_code",
+    "/user_send_validator_verify_code",
+    "/user_sentry_client",
+    "/user_set_auto_recharge_status",
+    "/user_set_auto_renewal_status",
+    "/user_set_main_card",
+    "/user_set_promotion_link_show",
+    "/user_set_proxy_auto_renewal",
+    "/user_set_roxy_claw",
+    "/user_set_team_cost_center_viewer_editor_allow",
+    "/user_set_user_api",
+    "/user_set_user_config",
+    "/user_setting_account_password",
+    "/user_setting_password",
+    "/user_setting_password_verify_code",
+    "/user_seven_day_trial",
+    "/user_show_invitation_link_status",
+    "/user_submit_exclusive_reward_phone",
+    "/user_submit_survey_answer",
+    "/user_transfer_window",
+    "/user_transfer_window_by_workspace_id",
+    "/user_transfer_window_verify_code",
+    "/user_unbind_card",
+    "/user_unbind_email",
+    "/user_update_device_name",
+    "/user_update_gift_tips",
+    "/user_update_onboarding_task_status",
+    "/user_update_pay_tips",
+    "/user_update_platform_table_rows",
+    "/user_update_proxy_table_rows",
+    "/user_update_team_permissions",
+    "/user_update_validator_token",
+    "/user_update_window_filter_name",
+    "/user_update_window_filter_sort",
+    "/user_upgrade_plugins",
+    "/user_upgrade_proxy_bandwidth_settlement",
+    "/user_upload_avatar",
+    "/user_upload_chrome_plugins_v",
+    "/user_upload_plugin_info",
+    "/user_verify_email",
+    "/user_verify_validator_verify_code",
+    "/user_wallet_settlement",
+    "/user_withdraw",
+    "/user_withdraw_verify_code",
+    "/user_write_invite_code"
+  ]
+}

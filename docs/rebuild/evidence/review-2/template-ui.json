@@ -1,0 +1,11 @@
+{
+  "passed": true,
+  "checks": [
+    "原版弹窗选择 ZIP，保留多文件 Skill 并保存；原版更多操作置顶/取消置顶及重载持久化；明暗截图",
+    "原版模板 API 的 numeric ID、templateIdOrSlug、列表 paramsSerializer 与置顶返回形状实际 IPC 验证",
+    "导入模板实际启动 Agent 任务，后端读取磁盘 Skill，真实 SSE 模型收到内容并完成日志",
+    "原去对话运行发送正确本地 slug；任务引用拒绝删除且 Skill 不丢；原确认框删除模板后共享 Skill 保留，再显式删除 Skill 库"
+  ],
+  "errors": [],
+  "externalRequests": []
+}

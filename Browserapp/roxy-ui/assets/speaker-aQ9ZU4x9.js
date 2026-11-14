@@ -1,0 +1,7 @@
+import {W as e,f as t,h as n} from "./runtime-core.esm-bundler-CBj16o9G.js";
+var r = { width: "1em", height: "1em", viewBox: "0 0 20 20", fill: "none", xmlns: "http://www.w3.org/2000/svg" };
+function i(i2, a2) {
+  return e(), n("svg", r, [...a2[0] ||= [t("g", { "clip-path": "url(#clip0_638_5876)" }, [t("path", { "fill-rule": "evenodd", "clip-rule": "evenodd", d: "M8.25 6.50006L14.9563 3.79482C15.9396 3.41243 17 4.13779 17 5.19283V13.4189C17 14.4427 15.997 15.1657 15.0257 14.8419L8.25 12.5001V6.50006ZM6 6.50012H7V13.5001C7 14.0524 7.44772 14.5001 8 14.5001H8.5C9.05228 14.5001 9.5 14.9478 9.5 15.5001C9.5 16.0524 9.05228 16.5001 8.5 16.5001H8C6.34315 16.5001 5 15.157 5 13.5001V12.3294C3.83481 11.9176 3 10.8063 3 9.50012C3 7.84327 4.34315 6.50012 6 6.50012Z", fill: "#11A3FD" })], -1), t("defs", null, [t("clipPath", { id: "clip0_638_5876" }, [t("rect", { width: "14", height: "14", fill: "white", transform: "translate(3 3)" })])], -1)]]);
+}
+var a = { render: i };
+export {a as default,i as render};

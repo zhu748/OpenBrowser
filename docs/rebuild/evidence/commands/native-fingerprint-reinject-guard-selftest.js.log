@@ -1,0 +1,18 @@
+  PASS  first pass injects every live tab
+  PASS  first pass records the config hash
+  PASS  first pass records every tab
+  PASS  identical config after the start page does not re-inject
+  PASS  re-inject guard still refreshes tracked state
+  PASS  a caller that records no hash keeps the tracked cache
+  PASS  a different config re-applies every live tab
+  PASS  a different config replaces the recorded hash
+  PASS  the re-applied config is trusted on the next sweep
+  PASS  watch does not compete with the auto-attach owner of a paused document
+  PASS  pending document remains unverified in the applied set
+  PASS  a ready target still receives fallback injection and verification when needed
+  PASS  an attach owner appearing after the target snapshot also prevents competing injection
+  PASS  real errors on ready live documents still reject
+  PASS  a failed attach owner cannot suppress a real delivery error
+  PASS  guard passes stay out of the diagnostic log
+
+fingerprint-reinject-guard-selftest: 16 checks passed.

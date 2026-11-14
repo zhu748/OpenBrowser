@@ -1,0 +1,527 @@
+{
+  "status": "PASS",
+  "startedAt": "2026-11-14T16:03:39.585Z",
+  "scope": "按当前运行目录逐项真实回归；所有进程独立测试数据目录。日志保留，失败继续收集其余结果。",
+  "results": [
+    {
+      "name": "electron-smoke.cjs",
+      "command": "node rebuild/electron-smoke.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/electron-smoke.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 27452,
+      "testSha256": "a8c7ec0c9785b6623216cd036e31721f1745fb8e44cb232822d0b90bcc8a6114",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "circled-ui-selftest.cjs",
+      "command": "node rebuild/circled-ui-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/circled-ui-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 19315,
+      "testSha256": "66e2a3992cfac45ccdf091a8deef3049826360ca29b6b067a49767369e1934f1",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "management-ui-selftest.cjs",
+      "command": "node rebuild/management-ui-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/management-ui-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 18226,
+      "testSha256": "b7cfcd05008bc7b15ac93e5b13e3654ca3d8e7a6d117cdb99e93cea59ac87f11",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "agent-selftest.cjs",
+      "command": "node rebuild/agent-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/agent-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 373,
+      "testSha256": "e7c55efbc50835bd3bd39b7564b90a1ec37cffdc034c0ff50af6eec3bb86cd7b",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "agent-ui-selftest.cjs",
+      "command": "node rebuild/agent-ui-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/agent-ui-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 8618,
+      "testSha256": "eecd28dfffe17ee28b0871b703e7963b4ee4636c9b63f914ebd07a27ae62621b",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "agent-browser-selftest.cjs",
+      "command": "node rebuild/agent-browser-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/agent-browser-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 9264,
+      "testSha256": "084f0553c2c14422ec37719b07e74803a061c18441cd8016ffda6d5cc1cfd796",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "agent-tasks-ui-selftest.cjs",
+      "command": "node rebuild/agent-tasks-ui-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/agent-tasks-ui-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 8673,
+      "testSha256": "0ce65be005951409859fa75d147260dbabbe232635afd2b1f2805edf2ba320a0",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "skill-packages-selftest.cjs",
+      "command": "node rebuild/skill-packages-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/skill-packages-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 51,
+      "testSha256": "a982689b7cab7f32abe6abaa1b6ad2b9733adb0a5a7401f97da6144f06974f7a",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "sync-browser-ui-selftest.cjs",
+      "command": "node rebuild/sync-browser-ui-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/sync-browser-ui-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 15426,
+      "testSha256": "31cc3649961057398c3d0a5fb3ccc5876f0e6163c552a9d06f2531b0eec0a324",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "synchronizer-ui-selftest.cjs",
+      "command": "node rebuild/synchronizer-ui-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/synchronizer-ui-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 8962,
+      "testSha256": "a6578b8a4f753d6ef4d8042da33a108348b3bb86dbb2cf566b6787a27b4c1e79",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "network-ui-selftest.cjs",
+      "command": "node rebuild/network-ui-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/network-ui-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 9052,
+      "testSha256": "688ceadd35d316aac63c26f979307c50fcd25769caf0dc9905f3f5468f249573",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "kernels-ui-selftest.cjs",
+      "command": "node rebuild/kernels-ui-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/kernels-ui-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 25047,
+      "testSha256": "742fbe8192cb4616ee7bc6efa37b539d763924f9e3f354977111a5963a715acd",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "packaging-selftest.cjs",
+      "command": "node rebuild/packaging-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/packaging-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 3784,
+      "testSha256": "80d0b9af5d0266ed8b3db60493740a9352373676e64ea219850cffb2f42eeb16",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "sync-service-selftest.cjs",
+      "command": "node rebuild/sync-service-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/sync-service-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 662,
+      "testSha256": "cbe264af3daee193b0f7b250f6d6ae1297adddb6a6e9a4f9b5af14ead4ecebe3",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "sync-dialogs-ui-selftest.cjs",
+      "command": "node rebuild/sync-dialogs-ui-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/sync-dialogs-ui-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 27441,
+      "testSha256": "78bf01afda052ceead1cff61c04031f5219381a29dc0256942cc51b6a91655ef",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "dialog-security-selftest.cjs",
+      "command": "node rebuild/dialog-security-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/dialog-security-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 9347,
+      "testSha256": "4bc64b3451c93aa09e013f30fc42516a3e429ddd7cfe0c5e59fcc44e1f11218b",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "import-selftest.cjs",
+      "command": "node rebuild/import-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/import-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 338,
+      "testSha256": "797fcc0e9f7ff7e7d3dcf3d19fc65274b5edbc3103c5305a88cf43d45f668a9a",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "import-ui-selftest.cjs",
+      "command": "node rebuild/import-ui-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/import-ui-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 14612,
+      "testSha256": "dab5a537fc9fad9f114495ccdf24be54678b41e902343b1a8a3916a7444843e9",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "profile-cache-selftest.cjs",
+      "command": "node rebuild/profile-cache-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/profile-cache-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 382,
+      "testSha256": "d54e12fd12cf8c1fc83ff6ecda8cff9a28cb56d7b23e0f137060f1aacec42f70",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "profile-cache-ui-selftest.cjs",
+      "command": "node rebuild/profile-cache-ui-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/profile-cache-ui-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 9119,
+      "testSha256": "6a15b41b1566049d0b9a7c75893bcfb13fb1094b6c96bca09eec6a0cb28e8a26",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "quit-failure-selftest.cjs",
+      "command": "node rebuild/quit-failure-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/quit-failure-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 9598,
+      "testSha256": "194a06c6d98b4ecba2f3861c511fce88d709dab0c234bee59c2334007cab6e69",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "unavailable-ui-selftest.cjs",
+      "command": "node rebuild/unavailable-ui-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/unavailable-ui-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 8714,
+      "testSha256": "b8693d16ad78c90a581b63350af8e785abb6f94cd260d3fedf9040bcc5bb8f82",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "cookie-robot-selftest.cjs",
+      "command": "node rebuild/cookie-robot-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/cookie-robot-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 317,
+      "testSha256": "db5965d862af850e1ca9d295106b0931cbb07b5e801160fd9d6d62d50bf8f2d2",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "cookie-robot-ui-selftest.cjs",
+      "command": "node rebuild/cookie-robot-ui-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/cookie-robot-ui-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 29726,
+      "testSha256": "7dd4b4ad7c2b770b8deb60f15e71071a3ed5ec0fc067fbed8deff3e3afce8e91",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "agent-files-selftest.cjs",
+      "command": "node rebuild/agent-files-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/agent-files-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 780,
+      "testSha256": "5264f9fec26accee8fde18da0e0b4d36452612b4b9a93682ce1db1e18ff7f8f0",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "agent-files-ui-selftest.cjs",
+      "command": "node rebuild/agent-files-ui-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/agent-files-ui-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 3834,
+      "testSha256": "87e5d072d54ab1e675f273d7ae89aecdf8a3582f6e579606d2c4360e9026afc7",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "accounts-selftest.cjs",
+      "command": "node rebuild/accounts-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/accounts-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 1018,
+      "testSha256": "d8d0846e9f141c751c0bfca3df593878f1e92d3367dc8de948250b2a0ae67ba9",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "accounts-ui-selftest.cjs",
+      "command": "node rebuild/accounts-ui-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/accounts-ui-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 13890,
+      "testSha256": "fa018029d86ab28178e1d6d494debfb1846135136541bcfe03cf4bfb8857637e",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "extensions-selftest.cjs",
+      "command": "node rebuild/extensions-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/extensions-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 1077,
+      "testSha256": "3b0b84a0258ce01d12970cf7f63fceea621b3edf0e1cf4d177b1d0557fe658b9",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "extensions-ui-selftest.cjs",
+      "command": "node rebuild/extensions-ui-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/extensions-ui-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 21567,
+      "testSha256": "2285ab032e81f60bbca3e6fab760ec23bc0f43c09135a4ea555e9b80ed3d01a7",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "host-actions-selftest.cjs",
+      "command": "node rebuild/host-actions-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/host-actions-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 370,
+      "testSha256": "127ce9c9f88a371da28cbe1e1fb6d9b7c8ad0066c7d9dd8503b23c7522bb93c4",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "host-actions-ui-selftest.cjs",
+      "command": "node rebuild/host-actions-ui-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/host-actions-ui-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 21971,
+      "testSha256": "18785015e88344abff7f6ccda59c205866e266b64c259c6e78899b7381e039cf",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "local-api-selftest.cjs",
+      "command": "node rebuild/local-api-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/local-api-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 372,
+      "testSha256": "1f5f0085ea888c2139358241bb9c9cc632393a053c30bc090a0043fc55d23a0d",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "local-api-ui-selftest.cjs",
+      "command": "node rebuild/local-api-ui-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/local-api-ui-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 12265,
+      "testSha256": "894d0704e877a722323ab323e358a62971bbd3461444f0b92472fd80d3f95322",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "agent-approval-selftest.cjs",
+      "command": "node rebuild/agent-approval-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/agent-approval-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 2100,
+      "testSha256": "6f85a3c5e26cad277dc9d4cf9c3dd57c934a7d70d8abd773deb1064c8498ca8c",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "agent-approval-ui-selftest.cjs",
+      "command": "node rebuild/agent-approval-ui-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/agent-approval-ui-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 9023,
+      "testSha256": "38bd80e095385a71fa1c3bd7ec0645a37477cc9e17740ebca46e883569e00c78",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "projects-ui-selftest.cjs",
+      "command": "node rebuild/projects-ui-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/projects-ui-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 13866,
+      "testSha256": "e5050c56cadb17e8eb9638f08382d4c18f946b1e269880455fa8dd0789da0976",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "agent-mcp-selftest.cjs",
+      "command": "node rebuild/agent-mcp-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/agent-mcp-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 809,
+      "testSha256": "4b746c02df920b308829f190eea770118e8d0a42ba5c13a522ae5ce073ba58d3",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "agent-mcp-ui-selftest.cjs",
+      "command": "node rebuild/agent-mcp-ui-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/agent-mcp-ui-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 8709,
+      "testSha256": "489959c0c5a694f09dd5d64bebdc17daf2f8b90581445e91d087cddef55daa66",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "settings-ui-selftest.cjs",
+      "command": "node rebuild/settings-ui-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/settings-ui-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 8695,
+      "testSha256": "f19cc07389bcfcd1d458baafa6b60501e8adf294968bd7c367da2c3c1f2dfb8f",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "environment-network-selftest.cjs",
+      "command": "node rebuild/environment-network-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/environment-network-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 82,
+      "testSha256": "324a46d716f1f3c44e86b72fff86df6be11d9ca976a88cb6150db197d6dc2043",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "network-form-selftest.cjs",
+      "command": "node rebuild/network-form-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/network-form-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 24799,
+      "testSha256": "ca30a4734cde320f578fb7f226048701d22d265c24cb95560a93d391308cd6dc",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "image-size-selftest.cjs",
+      "command": "node rebuild/image-size-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/image-size-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 18966,
+      "testSha256": "eb5e4c7c9d305acecf39a978892e9a8f2d3255faf372ff5ec4a80867399b3c65",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "image-size-ui-selftest.cjs",
+      "command": "node rebuild/image-size-ui-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/image-size-ui-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 8730,
+      "testSha256": "9eb74f8bae14274c65601085f1bc6cc948804de0ada82b1cb972f6d7383237a5",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "media-preferences-selftest.cjs",
+      "command": "node rebuild/media-preferences-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/media-preferences-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 28634,
+      "testSha256": "a9db61651087958ab2e81b4712a660dd56210ace0f279e6158ff8a43c4911cea",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "kernel-upgrade-ui-selftest.cjs",
+      "command": "node rebuild/kernel-upgrade-ui-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/kernel-upgrade-ui-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 16070,
+      "testSha256": "8b2f5752ad1da3bdabbc180990244809741a09bbee0b23e2bed16c3546ae3a86",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "template-catalog-selftest.cjs",
+      "command": "node rebuild/template-catalog-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/template-catalog-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 133,
+      "testSha256": "81acbbe082d31082c201ce8eb86d7b97a9f4b8bcb559aed62d7e8f0c2d58893a",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "template-catalog-ui-selftest.cjs",
+      "command": "node rebuild/template-catalog-ui-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/template-catalog-ui-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 8741,
+      "testSha256": "02e7dfd1b86507edf8618106c6d42e5f49cc3e6f61c97b4d80469c2cdf38708d",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "firefox-image-size-selftest.cjs",
+      "command": "node rebuild/firefox-image-size-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/firefox-image-size-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 32865,
+      "testSha256": "a7e45c7882d0e99575c2a9617ead82cbe5678558aa655144911ec7886a656c8c",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "master-color-selftest.cjs",
+      "command": "node rebuild/master-color-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/master-color-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 24036,
+      "testSha256": "579ba5da8230d906072c1dd395fba7df3a49d7ad8ee0863fd9fb41fd85f7bbe4",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "master-color-visual-selftest.cjs",
+      "command": "node rebuild/master-color-visual-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676018759-09434657/master-color-visual-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 27045,
+      "testSha256": "654c130b8fe1b1efa9a0022f0d7c008519cae739018ec920d978d651ce049c15",
+      "testSourceUnchanged": true
+    }
+  ],
+  "runtimeAtStart": {
+    "files": 2372,
+    "sha256": "931f99687a43f9691fb4be8f3538ccd7e50450f3b7b571592ca375ee3044895d"
+  },
+  "endedAt": "2026-11-14T16:13:15.008Z",
+  "runtimeAtEnd": {
+    "files": 2372,
+    "sha256": "931f99687a43f9691fb4be8f3538ccd7e50450f3b7b571592ca375ee3044895d"
+  },
+  "runtimeUnchanged": true
+}

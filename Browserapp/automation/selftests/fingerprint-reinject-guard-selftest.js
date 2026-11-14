@@ -105,6 +105,37 @@ const ok = (name, cond) => { assert.ok(cond, name); console.log('  PASS  ' + nam
     });
     ok('the re-applied config is trusted on the next sweep', injectCalls.length === 0);
 
+    injectCalls.length = 0;
+    const pendingState = { targetId: 'T1', ready: false, reason: null };
+    const pendingOwner = { fingerprintSessionStates: new Map([['pending-session', pendingState]]) };
+    const ownedApplied = new Set(['T2']);
+    await run(fpB, { appliedTargetIds: ownedApplied, trackOn: pendingOwner, phase: 'watch-ensure' });
+    ok('watch does not compete with the auto-attach owner of a paused document', injectCalls.length === 0);
+    ok('pending document remains unverified in the applied set', !ownedApplied.has('T1'));
+    pendingState.ready = true;
+    await run(fpB, { appliedTargetIds: ownedApplied, trackOn: pendingOwner, phase: 'watch-ensure' });
+    ok('a ready target still receives fallback injection and verification when needed', injectCalls.length === 1 && ownedApplied.has('T1'));
+
+    injectCalls.length = 0;
+    const laterState = { targetId: 'T1', ready: true, reason: null };
+    const laterOwner = { fingerprintSessionStates: new Map([['late-session', laterState]]) };
+    const steadyTabs = cdp.tabs;
+    cdp.tabs = async () => { queueMicrotask(() => queueMicrotask(() => { laterState.ready = false; }));return tabs; };
+    try {
+      await run(fpB, { appliedTargetIds: new Set(['T2']), trackOn: laterOwner, phase: 'watch-ensure' });
+      ok('an attach owner appearing after the target snapshot also prevents competing injection', injectCalls.length === 0);
+    } finally { cdp.tabs = steadyTabs; }
+
+    const healthyCall = cdp.call;
+    cdp.call = async (url, method, ...args) => { if (method === 'Runtime.evaluate') throw Error('intentional live delivery failure');return healthyCall(url, method, ...args); };
+    try {
+      for (const failed of [false, true]) {
+        const state = { targetId: 'T1', ready: !failed, reason: failed ? 'failed' : null };
+        await assert.rejects(run(fpB, { appliedTargetIds: new Set(['T2']), trackOn: { fingerprintSessionStates: new Map([['state', state]]) }, phase: 'watch-ensure' }), /intentional live delivery failure/);
+        ok(failed ? 'a failed attach owner cannot suppress a real delivery error' : 'real errors on ready live documents still reject', true);
+      }
+    } finally { cdp.call = healthyCall; }
+
     const log = fs.existsSync(process.env.OPENBROWSER_FP_LOG)
       ? await fsp.readFile(process.env.OPENBROWSER_FP_LOG, 'utf8')
       : '';

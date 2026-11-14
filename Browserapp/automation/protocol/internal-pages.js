@@ -105,6 +105,7 @@ function createTabUrlPolicy({ isEnvironmentStartUrl } = {}) {
     const trimmed = url.trim();
     if (isDangerousOrBlockedInternalUrl(trimmed)) return false;
     const lower = trimmed.toLowerCase();
+    if (/^chrome:\/\/extensions\//i.test(trimmed) && new URL(trimmed).searchParams.has('openbrowser-native-control')) return false;
     if (lower.startsWith('http://') || lower.startsWith('https://')) return true;
     if (lower === 'about:blank' || isStartUrl(trimmed)) return true;
     if (isNavigableInternalUrl(trimmed)) return true;

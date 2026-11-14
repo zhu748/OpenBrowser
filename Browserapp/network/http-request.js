@@ -8,6 +8,7 @@ function requestBuffer(url, {
   method = 'GET', headers = {}, body = null, timeoutMs = 15000, maxBytes,
   lookup, validateUrl = (value) => new URL(value), validateStatus,
   followRedirects = false, maxRedirects = 3, signal,
+  environmentProxy = false,
   timeoutMessage = 'HTTP request timed out', tooLargeMessage = 'Response body exceeds size limit',
   redirectMessage = 'Too many HTTP redirects',
 } = {}) {
@@ -42,7 +43,8 @@ function requestBuffer(url, {
         const target = validateUrl(value);
         if (!(target instanceof URL) || !['http:', 'https:'].includes(target.protocol)) throw new Error('Only HTTP/HTTPS URLs are supported');
         const transport = target.protocol === 'https:' ? https : http;
-        request = transport.request(target.toString(), { method, headers: outgoingHeaders, timeout: timeoutMs, lookup }, (response) => {
+        const agent=environmentProxy?require('./environment-agent').environmentAgent(target):undefined;
+        request = transport.request(target.toString(), { method, headers: outgoingHeaders, timeout: timeoutMs, lookup,agent }, (response) => {
           if (settled || superseded) { response.on('error', () => {}); response.destroy(); return; }
           receivedResponse = true;
           activeResponse = response;

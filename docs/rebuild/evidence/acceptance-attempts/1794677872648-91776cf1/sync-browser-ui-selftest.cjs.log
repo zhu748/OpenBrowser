@@ -1,0 +1,39 @@
+{
+  "passed": true,
+  "errors": [],
+  "externalRequests": [],
+  "checks": [
+    "两个独立 Chrome 真实进程及 CDP 端口存在",
+    "原同步选择页全选并点击开始，现有后端进入真实 active 状态，原操作条显示",
+    "真实主控窗口键盘输入经原同步后端到达从控窗口",
+    "原操作条暂停后输入不再镜像，恢复后真实输入再次到达从控",
+    "原操作条停止真实同步会话"
+  ],
+  "processes": [
+    {
+      "id": "452fb4c5-3af4-41af-98d1-d6302554eea2",
+      "pid": 171985,
+      "port": 45537
+    },
+    {
+      "id": "5243de02-d9af-4b48-83cb-cb433dc562a5",
+      "pid": 172135,
+      "port": 40307
+    }
+  ],
+  "state": {
+    "active": true,
+    "master": "452fb4c5-3af4-41af-98d1-d6302554eea2",
+    "selected": [
+      "452fb4c5-3af4-41af-98d1-d6302554eea2",
+      "5243de02-d9af-4b48-83cb-cb433dc562a5"
+    ]
+  },
+  "bindingState": {
+    "type": "undefined",
+    "focused": true,
+    "url": "http://127.0.0.1:40403/"
+  },
+  "browserErrors": [],
+  "resumedBinding": "undefined"
+}

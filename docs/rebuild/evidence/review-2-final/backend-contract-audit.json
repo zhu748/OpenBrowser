@@ -1,0 +1,3952 @@
+{
+  "status": "PASS",
+  "scope": "仅对可静态解析调用证明存在精确分发分支；动态转发单列，不等于参数、返回值或所有交互已验收。脚本沙箱明确列为未迁移。",
+  "staticCalls": 305,
+  "uniqueCalls": 169,
+  "uses": [
+    {
+      "kind": "local RPC",
+      "name": "agent:mcp:list",
+      "file": "AgentSettingsRoute-BB9ba93X.js",
+      "line": 9,
+      "backend": [
+        {
+          "file": "rebuild/agent-mcp.js",
+          "line": 113
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:mcp:upsert",
+      "file": "AgentSettingsRoute-BB9ba93X.js",
+      "line": 9,
+      "backend": [
+        {
+          "file": "rebuild/agent-mcp.js",
+          "line": 119
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:mcp:import",
+      "file": "AgentSettingsRoute-BB9ba93X.js",
+      "line": 9,
+      "backend": [
+        {
+          "file": "rebuild/agent-mcp.js",
+          "line": 122
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:mcp:delete",
+      "file": "AgentSettingsRoute-BB9ba93X.js",
+      "line": 9,
+      "backend": [
+        {
+          "file": "rebuild/agent-mcp.js",
+          "line": 126
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:mcp:enable",
+      "file": "AgentSettingsRoute-BB9ba93X.js",
+      "line": 9,
+      "backend": [
+        {
+          "file": "rebuild/agent-mcp.js",
+          "line": 128
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:mcp:disable",
+      "file": "AgentSettingsRoute-BB9ba93X.js",
+      "line": 9,
+      "backend": [
+        {
+          "file": "rebuild/agent-mcp.js",
+          "line": 127
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:mcp:test",
+      "file": "AgentSettingsRoute-BB9ba93X.js",
+      "line": 9,
+      "backend": [
+        {
+          "file": "rebuild/agent-mcp.js",
+          "line": 114
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:templates.topOfficialTemplate",
+      "file": "CreateTemplateDialog-Bpq9OLTG.js",
+      "line": 3029,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:templates.untopOfficialTemplate",
+      "file": "CreateTemplateDialog-Bpq9OLTG.js",
+      "line": 3029,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:userTemplates.topUserTemplate",
+      "file": "CreateTemplateDialog-Bpq9OLTG.js",
+      "line": 3029,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:userTemplates.untopUserTemplate",
+      "file": "CreateTemplateDialog-Bpq9OLTG.js",
+      "line": 3029,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:skillPathInfo",
+      "file": "CreateTemplateDialog-Bpq9OLTG.js",
+      "line": 3195,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 236
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:templates.listOfficialTemplates",
+      "file": "CreateTemplateDialog-Bpq9OLTG.js",
+      "line": 3216,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:userTemplates.listUserTemplates",
+      "file": "CreateTemplateDialog-Bpq9OLTG.js",
+      "line": 3221,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:scriptSelfDescription",
+      "file": "CreateTemplateDialog-Bpq9OLTG.js",
+      "line": 3849,
+      "backend": [],
+      "unsupported": "原脚本沙箱未移植，明确拒绝；不是已接通功能"
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:userTemplates.getUserTemplate",
+      "file": "CreateTemplateDialog-Bpq9OLTG.js",
+      "line": 3987,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:templates.listOfficialTemplates",
+      "file": "CreateTemplateDialog-Bpq9OLTG.js",
+      "line": 4007,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:userTemplates.uploadUserTemplateScript",
+      "file": "CreateTemplateDialog-Bpq9OLTG.js",
+      "line": 4029,
+      "backend": [],
+      "unsupported": "原脚本沙箱未移植，明确拒绝；不是已接通功能"
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:userTemplates.uploadUserTemplateSkill",
+      "file": "CreateTemplateDialog-Bpq9OLTG.js",
+      "line": 4043,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:userTemplates.createUserTemplate",
+      "file": "MyTemplatesRoute-Eq3HlS6M.js",
+      "line": 117,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:userTemplates.updateUserTemplate",
+      "file": "MyTemplatesRoute-Eq3HlS6M.js",
+      "line": 132,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:skillPathInfo",
+      "file": "MyTemplatesRoute-Eq3HlS6M.js",
+      "line": 160,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 236
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:userTemplates.topUserTemplate",
+      "file": "MyTemplatesRoute-Eq3HlS6M.js",
+      "line": 180,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:userTemplates.untopUserTemplate",
+      "file": "MyTemplatesRoute-Eq3HlS6M.js",
+      "line": 180,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:userTemplates.deleteUserTemplate",
+      "file": "MyTemplatesRoute-Eq3HlS6M.js",
+      "line": 193,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:userTemplates.listUserTemplates",
+      "file": "MyTemplatesRoute-Eq3HlS6M.js",
+      "line": 221,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:skillPathInfo",
+      "file": "MyTemplatesRoute-Eq3HlS6M.js",
+      "line": 236,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 236
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:userTasks.listUserTasks",
+      "file": "TaskManagerRoute-iC4ANt4w.js",
+      "line": 280,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:userTemplates.listUserTemplates",
+      "file": "TaskManagerRoute-iC4ANt4w.js",
+      "line": 288,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:userTasks.updateUserTask",
+      "file": "TaskManagerRoute-iC4ANt4w.js",
+      "line": 459,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:userTasks.createUserTask",
+      "file": "TaskManagerRoute-iC4ANt4w.js",
+      "line": 462,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:userTasks.updateUserTask",
+      "file": "TaskManagerRoute-iC4ANt4w.js",
+      "line": 485,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:userTasks.updateUserTask",
+      "file": "TaskManagerRoute-iC4ANt4w.js",
+      "line": 499,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:userTasks.deleteUserTask",
+      "file": "TaskManagerRoute-iC4ANt4w.js",
+      "line": 509,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:syncTasks",
+      "file": "TaskManagerRoute-iC4ANt4w.js",
+      "line": 536,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 241
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:stopTaskLog",
+      "file": "TaskManagerRoute-iC4ANt4w.js",
+      "line": 639,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 247
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:stopTaskLog",
+      "file": "TaskManagerRoute-iC4ANt4w.js",
+      "line": 653,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 247
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:deleteTaskLog",
+      "file": "TaskManagerRoute-iC4ANt4w.js",
+      "line": 666,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 252
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:templates.listOfficialTemplates",
+      "file": "TemplateStoreRoute-vzcUC0bD.js",
+      "line": 197,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:templates.listTemplateLabelCategories",
+      "file": "TemplateStoreRoute-vzcUC0bD.js",
+      "line": 209,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:templates.listTemplateLabels",
+      "file": "TemplateStoreRoute-vzcUC0bD.js",
+      "line": 209,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:userTemplates.listUserTemplates",
+      "file": "TemplateStoreRoute-vzcUC0bD.js",
+      "line": 221,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:userTemplates.createUserTemplate",
+      "file": "TemplateStoreRoute-vzcUC0bD.js",
+      "line": 238,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:info",
+      "file": "agent-BmSFI9WH.js",
+      "line": 158,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 170
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:activeEvents",
+      "file": "agent-channel.js",
+      "line": 70,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 168
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:info",
+      "file": "agent-channel.js",
+      "line": 79,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 170
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:taskLogs:list",
+      "file": "agent-channel.js",
+      "line": 80,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 239
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:activeEvents",
+      "file": "agent-channel.js",
+      "line": 80,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 168
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:channel:send",
+      "file": "agent-channel.js",
+      "line": 130,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 209
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "api:mcp-config",
+      "file": "api-keys-qLZdcspG.js",
+      "line": 10678,
+      "backend": [
+        {
+          "file": "rebuild/local-api.js",
+          "line": 17
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "api:reference",
+      "file": "api-keys-qLZdcspG.js",
+      "line": 10681,
+      "backend": [
+        {
+          "file": "rebuild/local-api.js",
+          "line": 21
+        }
+      ]
+    },
+    {
+      "kind": "ops",
+      "name": "getInfo",
+      "file": "bootstrap.js",
+      "line": 15,
+      "backend": {
+        "file": "preload.js",
+        "line": 7,
+        "channels": [
+          "system:info"
+        ]
+      }
+    },
+    {
+      "kind": "local RPC",
+      "name": "settings:get",
+      "file": "bootstrap.js",
+      "line": 17,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1169
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "ui:dialog:show",
+      "file": "bootstrap.js",
+      "line": 31,
+      "backend": [
+        {
+          "file": "rebuild/dialog-windows.js",
+          "line": 104
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:choose-import",
+      "file": "create-HSjma60V.js",
+      "line": 115,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 735
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:templates.getOfficialTemplate",
+      "file": "hook-CnJE4hRq.js",
+      "line": 691,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:userTemplates.getUserTemplate",
+      "file": "hook-CnJE4hRq.js",
+      "line": 694,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:officialScripts.getOfficialScript",
+      "file": "hook-CnJE4hRq.js",
+      "line": 788,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ],
+      "unsupported": "原脚本沙箱未移植，明确拒绝；不是已接通功能"
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:templates.listOfficialTemplates",
+      "file": "hook-CnJE4hRq.js",
+      "line": 1898,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:markConversationRead",
+      "file": "hook-CnJE4hRq.js",
+      "line": 1954,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 207
+        },
+        {
+          "file": "rebuild/agent-conversations.js",
+          "line": 59
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:conversationList",
+      "file": "hook-CnJE4hRq.js",
+      "line": 2065,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 207
+        },
+        {
+          "file": "rebuild/agent-conversations.js",
+          "line": 27
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:conversationList",
+      "file": "hook-CnJE4hRq.js",
+      "line": 2082,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 207
+        },
+        {
+          "file": "rebuild/agent-conversations.js",
+          "line": 27
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:conversationDetail",
+      "file": "hook-CnJE4hRq.js",
+      "line": 2111,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 207
+        },
+        {
+          "file": "rebuild/agent-conversations.js",
+          "line": 35
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:conversationDetail",
+      "file": "hook-CnJE4hRq.js",
+      "line": 2141,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 207
+        },
+        {
+          "file": "rebuild/agent-conversations.js",
+          "line": 35
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:deleteConversation",
+      "file": "hook-CnJE4hRq.js",
+      "line": 2389,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 207
+        },
+        {
+          "file": "rebuild/agent-conversations.js",
+          "line": 72
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:updateConversation",
+      "file": "hook-CnJE4hRq.js",
+      "line": 2404,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 207
+        },
+        {
+          "file": "rebuild/agent-conversations.js",
+          "line": 46
+        }
+      ]
+    },
+    {
+      "kind": "renderer helper",
+      "name": "fileToBase64",
+      "file": "hook-CnJE4hRq.js",
+      "line": 2486,
+      "backend": "renderer-bridge.js agentCall / Proxy"
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:uploadFile",
+      "file": "hook-CnJE4hRq.js",
+      "line": 2486,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 167
+        }
+      ]
+    },
+    {
+      "kind": "renderer helper",
+      "name": "getFileUrl",
+      "file": "hook-CnJE4hRq.js",
+      "line": 2487,
+      "backend": "renderer-bridge.js agentCall / Proxy"
+    },
+    {
+      "kind": "renderer helper",
+      "name": "getFileUrl",
+      "file": "hook-CnJE4hRq.js",
+      "line": 2487,
+      "backend": "renderer-bridge.js agentCall / Proxy"
+    },
+    {
+      "kind": "renderer helper",
+      "name": "fileToBase64",
+      "file": "hook-CnJE4hRq.js",
+      "line": 2499,
+      "backend": "renderer-bridge.js agentCall / Proxy"
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:uploadFile",
+      "file": "hook-CnJE4hRq.js",
+      "line": 2499,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 167
+        }
+      ]
+    },
+    {
+      "kind": "renderer helper",
+      "name": "getFileUrl",
+      "file": "hook-CnJE4hRq.js",
+      "line": 2499,
+      "backend": "renderer-bridge.js agentCall / Proxy"
+    },
+    {
+      "kind": "renderer helper",
+      "name": "getFileUrl",
+      "file": "hook-CnJE4hRq.js",
+      "line": 2499,
+      "backend": "renderer-bridge.js agentCall / Proxy"
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:createConversation",
+      "file": "hook-CnJE4hRq.js",
+      "line": 2517,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 207
+        },
+        {
+          "file": "rebuild/agent-conversations.js",
+          "line": 19
+        }
+      ]
+    },
+    {
+      "kind": "renderer helper",
+      "name": "initializeAgentBackendAuth",
+      "file": "hook-CnJE4hRq.js",
+      "line": 2933,
+      "backend": "renderer-bridge.js agentCall / Proxy"
+    },
+    {
+      "kind": "renderer helper",
+      "name": "getFileUrl",
+      "file": "hook-CnJE4hRq.js",
+      "line": 3735,
+      "backend": "renderer-bridge.js agentCall / Proxy"
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:templates.listOfficialTemplates",
+      "file": "hook-CnJE4hRq.js",
+      "line": 4138,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:skillPathInfo",
+      "file": "hook-CnJE4hRq.js",
+      "line": 4151,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 236
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:userTemplates.listUserTemplates",
+      "file": "hook-CnJE4hRq.js",
+      "line": 4167,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:userTemplates.createUserTemplate",
+      "file": "hook-CnJE4hRq.js",
+      "line": 4190,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:templates.listOfficialTemplates",
+      "file": "hook-CnJE4hRq.js",
+      "line": 4343,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "settings:get",
+      "file": "hooks-BozaoB_u.js",
+      "line": 25,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1169
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "settings:set",
+      "file": "hooks-BozaoB_u.js",
+      "line": 25,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1170
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "proxies:detect",
+      "file": "hooks-Jw3GridD.js",
+      "line": 197,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1296
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "notifications:list",
+      "file": "identity-verification-entry-B8EzLOCj.js",
+      "line": 115,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1232
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "notifications:read",
+      "file": "identity-verification-entry-B8EzLOCj.js",
+      "line": 123,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1254
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "notifications:read",
+      "file": "identity-verification-entry-B8EzLOCj.js",
+      "line": 126,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1254
+        }
+      ]
+    },
+    {
+      "kind": "ops",
+      "name": "kernelInstallVersion",
+      "file": "identity-verification-entry-B8EzLOCj.js",
+      "line": 246,
+      "backend": {
+        "file": "preload.js",
+        "line": 23,
+        "channels": [
+          "kernel:install-version"
+        ]
+      }
+    },
+    {
+      "kind": "ops",
+      "name": "kernelDelete",
+      "file": "identity-verification-entry-B8EzLOCj.js",
+      "line": 254,
+      "backend": {
+        "file": "preload.js",
+        "line": 27,
+        "channels": [
+          "kernel:delete"
+        ]
+      }
+    },
+    {
+      "kind": "local RPC",
+      "name": "kernels:list",
+      "file": "identity-verification-entry-B8EzLOCj.js",
+      "line": 268,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1325
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "host:network",
+      "file": "layout-C916OUcf.js",
+      "line": 99,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1261
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "host:network",
+      "file": "layout-C916OUcf.js",
+      "line": 104,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1261
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "settings:get",
+      "file": "layout-C916OUcf.js",
+      "line": 115,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1169
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "accounts:list",
+      "file": "list-CkXy4JN3.js",
+      "line": 216,
+      "backend": [
+        {
+          "file": "rebuild/accounts.js",
+          "line": 143
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "accounts:list",
+      "file": "list-CkXy4JN3.js",
+      "line": 234,
+      "backend": [
+        {
+          "file": "rebuild/accounts.js",
+          "line": 143
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "accounts:list",
+      "file": "list-CkXy4JN3.js",
+      "line": 248,
+      "backend": [
+        {
+          "file": "rebuild/accounts.js",
+          "line": 143
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "accounts:list",
+      "file": "list-CkXy4JN3.js",
+      "line": 262,
+      "backend": [
+        {
+          "file": "rebuild/accounts.js",
+          "line": 143
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "settings:get",
+      "file": "local-api.js",
+      "line": 26,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1169
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "host:dictionary",
+      "file": "local-api.js",
+      "line": 71,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1223
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:stop",
+      "file": "local-api.js",
+      "line": 101,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 941
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:start",
+      "file": "local-api.js",
+      "line": 102,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 873
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "proxies:list",
+      "file": "local-api.js",
+      "line": 145,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1338
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "activity:append",
+      "file": "local-api.js",
+      "line": 149,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1148
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:analyse-import",
+      "file": "local-api.js",
+      "line": 151,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 760
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 792
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:import",
+      "file": "local-api.js",
+      "line": 152,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 760
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:trash",
+      "file": "local-api.js",
+      "line": 154,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 992
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:list",
+      "file": "local-api.js",
+      "line": 154,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 797
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:read",
+      "file": "local-api.js",
+      "line": 223,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 802
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:read",
+      "file": "local-api.js",
+      "line": 228,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 802
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:create",
+      "file": "local-api.js",
+      "line": 229,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 807
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:update",
+      "file": "local-api.js",
+      "line": 230,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 858
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:patch",
+      "file": "local-api.js",
+      "line": 230,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 921
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:delete",
+      "file": "local-api.js",
+      "line": 231,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 980
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:list",
+      "file": "local-api.js",
+      "line": 233,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 797
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:edit-data",
+      "file": "local-api.js",
+      "line": 240,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 942
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:purge",
+      "file": "local-api.js",
+      "line": 241,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 987
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:purge",
+      "file": "local-api.js",
+      "line": 242,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 987
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "fingerprint:preview",
+      "file": "local-api.js",
+      "line": 243,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1199
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "fingerprint:preview",
+      "file": "local-api.js",
+      "line": 244,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1199
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "fingerprint:preview",
+      "file": "local-api.js",
+      "line": 245,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1199
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "kernels:list",
+      "file": "local-api.js",
+      "line": 246,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1325
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:list",
+      "file": "local-api.js",
+      "line": 247,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 797
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:restore",
+      "file": "local-api.js",
+      "line": 248,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 985
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:clone",
+      "file": "local-api.js",
+      "line": 249,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 900
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:create-batch",
+      "file": "local-api.js",
+      "line": 250,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 815
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:list",
+      "file": "local-api.js",
+      "line": 252,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 797
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "filters:list",
+      "file": "local-api.js",
+      "line": 254,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1176
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "filters:save",
+      "file": "local-api.js",
+      "line": 255,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1181
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "filters:save",
+      "file": "local-api.js",
+      "line": 256,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1181
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "filters:delete",
+      "file": "local-api.js",
+      "line": 257,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1192
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "settings:set",
+      "file": "local-api.js",
+      "line": 258,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1170
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "templates:list",
+      "file": "local-api.js",
+      "line": 259,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1122
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "templates:save",
+      "file": "local-api.js",
+      "line": 260,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1123
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "templates:save",
+      "file": "local-api.js",
+      "line": 261,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1123
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "templates:delete",
+      "file": "local-api.js",
+      "line": 262,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1140
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "settings:set",
+      "file": "local-api.js",
+      "line": 264,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1170
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "api:get",
+      "file": "local-api.js",
+      "line": 265,
+      "backend": [
+        {
+          "file": "rebuild/local-api.js",
+          "line": 16
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "api:set",
+      "file": "local-api.js",
+      "line": 266,
+      "backend": [
+        {
+          "file": "rebuild/local-api.js",
+          "line": 28
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "settings:set",
+      "file": "local-api.js",
+      "line": 269,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1170
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "groups:list",
+      "file": "local-api.js",
+      "line": 272,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1004
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "extensions:list",
+      "file": "local-api.js",
+      "line": 275,
+      "backend": [
+        {
+          "file": "rebuild/extensions.js",
+          "line": 136
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "extensions:pin",
+      "file": "local-api.js",
+      "line": 276,
+      "backend": [
+        {
+          "file": "rebuild/extensions.js",
+          "line": 169
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "extensions:store",
+      "file": "local-api.js",
+      "line": 277,
+      "backend": [
+        {
+          "file": "rebuild/extensions.js",
+          "line": 145
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "extensions:finish",
+      "file": "local-api.js",
+      "line": 278,
+      "backend": [
+        {
+          "file": "rebuild/extensions.js",
+          "line": 144
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "extensions:assign",
+      "file": "local-api.js",
+      "line": 279,
+      "backend": [
+        {
+          "file": "rebuild/extensions.js",
+          "line": 148
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "extensions:read",
+      "file": "local-api.js",
+      "line": 280,
+      "backend": [
+        {
+          "file": "rebuild/extensions.js",
+          "line": 141
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "extensions:reload",
+      "file": "local-api.js",
+      "line": 281,
+      "backend": [
+        {
+          "file": "rebuild/extensions.js",
+          "line": 173
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "extensions:reload",
+      "file": "local-api.js",
+      "line": 282,
+      "backend": [
+        {
+          "file": "rebuild/extensions.js",
+          "line": 173
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "extensions:remove",
+      "file": "local-api.js",
+      "line": 283,
+      "backend": [
+        {
+          "file": "rebuild/extensions.js",
+          "line": 178
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "groups:list",
+      "file": "local-api.js",
+      "line": 285,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1004
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "groups:save",
+      "file": "local-api.js",
+      "line": 288,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1023
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "groups:save",
+      "file": "local-api.js",
+      "line": 289,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1023
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "groups:delete",
+      "file": "local-api.js",
+      "line": 290,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1094
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "groups:sort",
+      "file": "local-api.js",
+      "line": 291,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1110
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "proxies:list",
+      "file": "local-api.js",
+      "line": 295,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1338
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "proxies:list",
+      "file": "local-api.js",
+      "line": 301,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1338
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "settings:get",
+      "file": "local-api.js",
+      "line": 304,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1169
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "settings:set",
+      "file": "local-api.js",
+      "line": 305,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1170
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "proxies:read",
+      "file": "local-api.js",
+      "line": 309,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1352
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "proxies:list",
+      "file": "local-api.js",
+      "line": 311,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1338
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "proxies:duplicates",
+      "file": "local-api.js",
+      "line": 314,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1357
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "proxies:bind",
+      "file": "local-api.js",
+      "line": 315,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1380
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "proxies:save-results",
+      "file": "local-api.js",
+      "line": 316,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1408
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:proxy-results",
+      "file": "local-api.js",
+      "line": 317,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1424
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "proxies:create-many",
+      "file": "local-api.js",
+      "line": 318,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1376
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "proxies:update",
+      "file": "local-api.js",
+      "line": 321,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1379
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "proxies:update",
+      "file": "local-api.js",
+      "line": 326,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1379
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "proxies:delete",
+      "file": "local-api.js",
+      "line": 327,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1450
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:delete",
+      "file": "local-api.js",
+      "line": 328,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 980
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:restore",
+      "file": "local-api.js",
+      "line": 328,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 985
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:patch",
+      "file": "local-api.js",
+      "line": 330,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 921
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "groups:list",
+      "file": "local-api.js",
+      "line": 331,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1004
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "labels:list",
+      "file": "local-api.js",
+      "line": 333,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1046
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "labels:save",
+      "file": "local-api.js",
+      "line": 336,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1057
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "labels:save",
+      "file": "local-api.js",
+      "line": 337,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1057
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "labels:delete",
+      "file": "local-api.js",
+      "line": 338,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1077
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:list",
+      "file": "local-api.js",
+      "line": 342,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 797
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "accounts:list",
+      "file": "local-api.js",
+      "line": 363,
+      "backend": [
+        {
+          "file": "rebuild/accounts.js",
+          "line": 143
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "accounts:create",
+      "file": "local-api.js",
+      "line": 364,
+      "backend": [
+        {
+          "file": "rebuild/accounts.js",
+          "line": 178
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "accounts:create",
+      "file": "local-api.js",
+      "line": 365,
+      "backend": [
+        {
+          "file": "rebuild/accounts.js",
+          "line": 178
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "accounts:update",
+      "file": "local-api.js",
+      "line": 368,
+      "backend": [
+        {
+          "file": "rebuild/accounts.js",
+          "line": 221
+        },
+        {
+          "file": "rebuild/accounts.js",
+          "line": 223
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "accounts:bind",
+      "file": "local-api.js",
+      "line": 369,
+      "backend": [
+        {
+          "file": "rebuild/accounts.js",
+          "line": 186
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "accounts:delete",
+      "file": "local-api.js",
+      "line": 370,
+      "backend": [
+        {
+          "file": "rebuild/accounts.js",
+          "line": 221
+        },
+        {
+          "file": "rebuild/accounts.js",
+          "line": 240
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "settings:get",
+      "file": "local-api.js",
+      "line": 383,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1169
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "settings:set",
+      "file": "local-api.js",
+      "line": 384,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1170
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "settings:get",
+      "file": "local-api.js",
+      "line": 386,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1169
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "settings:set",
+      "file": "local-api.js",
+      "line": 387,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1170
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "settings:set",
+      "file": "local-api.js",
+      "line": 388,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1170
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "api:status",
+      "file": "local-api.js",
+      "line": 406,
+      "backend": [
+        {
+          "file": "rebuild/local-api.js",
+          "line": 22
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "api:check-port",
+      "file": "local-api.js",
+      "line": 407,
+      "backend": [
+        {
+          "file": "rebuild/local-api.js",
+          "line": 23
+        }
+      ]
+    },
+    {
+      "kind": "ops",
+      "name": "rotateApiKey",
+      "file": "local-api.js",
+      "line": 408,
+      "backend": {
+        "file": "preload.js",
+        "line": 73,
+        "channels": [
+          "automation:api-key-rotate"
+        ]
+      }
+    },
+    {
+      "kind": "local RPC",
+      "name": "host:shortcut",
+      "file": "local-api.js",
+      "line": 409,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 727
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "host:default-browser",
+      "file": "local-api.js",
+      "line": 410,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 728
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "extensions:select",
+      "file": "local-api.js",
+      "line": 412,
+      "backend": [
+        {
+          "file": "rebuild/extensions.js",
+          "line": 142
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "extensions:stage",
+      "file": "local-api.js",
+      "line": 413,
+      "backend": [
+        {
+          "file": "rebuild/extensions.js",
+          "line": 143
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "extensions:exists",
+      "file": "local-api.js",
+      "line": 414,
+      "backend": [
+        {
+          "file": "rebuild/extensions.js",
+          "line": 127
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "extensions:show",
+      "file": "local-api.js",
+      "line": 415,
+      "backend": [
+        {
+          "file": "rebuild/extensions.js",
+          "line": 128
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "extensions:verify",
+      "file": "local-api.js",
+      "line": 416,
+      "backend": [
+        {
+          "file": "rebuild/extensions.js",
+          "line": 129
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "extensions:verify-removed",
+      "file": "local-api.js",
+      "line": 418,
+      "backend": [
+        {
+          "file": "rebuild/extensions.js",
+          "line": 133
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:files:choose",
+      "file": "local-api.js",
+      "line": 420,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 165
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:files:export",
+      "file": "local-api.js",
+      "line": 423,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 166
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "settings:get",
+      "file": "local-api.js",
+      "line": 424,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1169
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "sync:restore",
+      "file": "local-api.js",
+      "line": 424,
+      "backend": [
+        {
+          "file": "rebuild/sync-service.js",
+          "line": 111
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "sync:shortcuts:clear",
+      "file": "local-api.js",
+      "line": 425,
+      "backend": [
+        {
+          "file": "rebuild/sync-service.js",
+          "line": 128
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "settings:get",
+      "file": "local-api.js",
+      "line": 427,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1169
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "sync:restore",
+      "file": "local-api.js",
+      "line": 427,
+      "backend": [
+        {
+          "file": "rebuild/sync-service.js",
+          "line": 111
+        }
+      ]
+    },
+    {
+      "kind": "ops",
+      "name": "startSync",
+      "file": "local-api.js",
+      "line": 428,
+      "backend": {
+        "file": "preload.js",
+        "line": 64,
+        "channels": [
+          "sync:start"
+        ]
+      }
+    },
+    {
+      "kind": "ops",
+      "name": "stopSync",
+      "file": "local-api.js",
+      "line": 432,
+      "backend": {
+        "file": "preload.js",
+        "line": 65,
+        "channels": [
+          "sync:stop"
+        ]
+      }
+    },
+    {
+      "kind": "local RPC",
+      "name": "sync:shortcuts:clear",
+      "file": "local-api.js",
+      "line": 435,
+      "backend": [
+        {
+          "file": "rebuild/sync-service.js",
+          "line": 128
+        }
+      ]
+    },
+    {
+      "kind": "ops",
+      "name": "stopSync",
+      "file": "local-api.js",
+      "line": 435,
+      "backend": {
+        "file": "preload.js",
+        "line": 65,
+        "channels": [
+          "sync:stop"
+        ]
+      }
+    },
+    {
+      "kind": "local RPC",
+      "name": "settings:get",
+      "file": "local-api.js",
+      "line": 436,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1169
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "sync:restore",
+      "file": "local-api.js",
+      "line": 436,
+      "backend": [
+        {
+          "file": "rebuild/sync-service.js",
+          "line": 111
+        }
+      ]
+    },
+    {
+      "kind": "ops",
+      "name": "getSyncState",
+      "file": "local-api.js",
+      "line": 437,
+      "backend": {
+        "file": "preload.js",
+        "line": 61,
+        "channels": [
+          "sync:state"
+        ]
+      }
+    },
+    {
+      "kind": "ops",
+      "name": "startSync",
+      "file": "local-api.js",
+      "line": 436,
+      "backend": {
+        "file": "preload.js",
+        "line": 64,
+        "channels": [
+          "sync:start"
+        ]
+      }
+    },
+    {
+      "kind": "ops",
+      "name": "getSyncState",
+      "file": "local-api.js",
+      "line": 440,
+      "backend": {
+        "file": "preload.js",
+        "line": 61,
+        "channels": [
+          "sync:state"
+        ]
+      }
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:list",
+      "file": "local-api.js",
+      "line": 441,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 797
+        }
+      ]
+    },
+    {
+      "kind": "ops",
+      "name": "getSyncState",
+      "file": "local-api.js",
+      "line": 446,
+      "backend": {
+        "file": "preload.js",
+        "line": 61,
+        "channels": [
+          "sync:state"
+        ]
+      }
+    },
+    {
+      "kind": "ops",
+      "name": "windowAction",
+      "file": "local-api.js",
+      "line": 445,
+      "backend": {
+        "file": "preload.js",
+        "line": 67,
+        "channels": [
+          "sync:window"
+        ]
+      }
+    },
+    {
+      "kind": "local RPC",
+      "name": "sync:layout",
+      "file": "local-api.js",
+      "line": 450,
+      "backend": [
+        {
+          "file": "rebuild/sync-service.js",
+          "line": 139
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "ui:dialog:open",
+      "file": "local-api.js",
+      "line": 451,
+      "backend": [
+        {
+          "file": "rebuild/dialog-windows.js",
+          "line": 37
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "ui:dialog:open",
+      "file": "local-api.js",
+      "line": 452,
+      "backend": [
+        {
+          "file": "rebuild/dialog-windows.js",
+          "line": 37
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "ui:dialog:open",
+      "file": "local-api.js",
+      "line": 453,
+      "backend": [
+        {
+          "file": "rebuild/dialog-windows.js",
+          "line": 37
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "ui:dialog:open",
+      "file": "local-api.js",
+      "line": 454,
+      "backend": [
+        {
+          "file": "rebuild/dialog-windows.js",
+          "line": 37
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "ui:dialog:close",
+      "file": "local-api.js",
+      "line": 455,
+      "backend": [
+        {
+          "file": "rebuild/dialog-windows.js",
+          "line": 108
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "ui:dialog:close",
+      "file": "local-api.js",
+      "line": 456,
+      "backend": [
+        {
+          "file": "rebuild/dialog-windows.js",
+          "line": 108
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "ui:dialog:close",
+      "file": "local-api.js",
+      "line": 457,
+      "backend": [
+        {
+          "file": "rebuild/dialog-windows.js",
+          "line": 108
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "ui:dialog:close",
+      "file": "local-api.js",
+      "line": 458,
+      "backend": [
+        {
+          "file": "rebuild/dialog-windows.js",
+          "line": 108
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "ui:dialog:resize",
+      "file": "local-api.js",
+      "line": 459,
+      "backend": [
+        {
+          "file": "rebuild/dialog-windows.js",
+          "line": 115
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "ui:dialog:resize",
+      "file": "local-api.js",
+      "line": 460,
+      "backend": [
+        {
+          "file": "rebuild/dialog-windows.js",
+          "line": 115
+        }
+      ]
+    },
+    {
+      "kind": "ops",
+      "name": "getSyncState",
+      "file": "local-api.js",
+      "line": 462,
+      "backend": {
+        "file": "preload.js",
+        "line": 61,
+        "channels": [
+          "sync:state"
+        ]
+      }
+    },
+    {
+      "kind": "local RPC",
+      "name": "sync:master-bounds",
+      "file": "local-api.js",
+      "line": 465,
+      "backend": [
+        {
+          "file": "rebuild/sync-service.js",
+          "line": 132
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "sync:batch-text",
+      "file": "local-api.js",
+      "line": 466,
+      "backend": [
+        {
+          "file": "rebuild/sync-service.js",
+          "line": 186
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "sync:open-sites",
+      "file": "local-api.js",
+      "line": 467,
+      "backend": [
+        {
+          "file": "rebuild/sync-service.js",
+          "line": 301
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "sync:shortcuts:check",
+      "file": "local-api.js",
+      "line": 468,
+      "backend": [
+        {
+          "file": "rebuild/sync-service.js",
+          "line": 348
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "sync:shortcuts:register",
+      "file": "local-api.js",
+      "line": 469,
+      "backend": [
+        {
+          "file": "rebuild/sync-service.js",
+          "line": 349
+        }
+      ]
+    },
+    {
+      "kind": "ops",
+      "name": "getSyncState",
+      "file": "local-api.js",
+      "line": 479,
+      "backend": {
+        "file": "preload.js",
+        "line": 61,
+        "channels": [
+          "sync:state"
+        ]
+      }
+    },
+    {
+      "kind": "ops",
+      "name": "tabAction",
+      "file": "local-api.js",
+      "line": 478,
+      "backend": {
+        "file": "preload.js",
+        "line": 70,
+        "channels": [
+          "sync:tabs"
+        ]
+      }
+    },
+    {
+      "kind": "local RPC",
+      "name": "sync:settings",
+      "file": "local-api.js",
+      "line": 485,
+      "backend": [
+        {
+          "file": "rebuild/sync-service.js",
+          "line": 91
+        }
+      ]
+    },
+    {
+      "kind": "ops",
+      "name": "getSyncState",
+      "file": "local-api.js",
+      "line": 487,
+      "backend": {
+        "file": "preload.js",
+        "line": 61,
+        "channels": [
+          "sync:state"
+        ]
+      }
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:list",
+      "file": "local-api.js",
+      "line": 488,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 797
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "host:mac",
+      "file": "local-api.js",
+      "line": 495,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1289
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "proxies:detect",
+      "file": "local-api.js",
+      "line": 496,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1296
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "host:network",
+      "file": "local-api.js",
+      "line": 497,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1261
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "proxies:refresh",
+      "file": "local-api.js",
+      "line": 498,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1319
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "proxies:extract",
+      "file": "local-api.js",
+      "line": 499,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1321
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "proxies:export",
+      "file": "local-api.js",
+      "line": 500,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1459
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:purge",
+      "file": "local-api.js",
+      "line": 502,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 987
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:clear-cache",
+      "file": "local-api.js",
+      "line": 503,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 733
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "transfer:export",
+      "file": "local-api.js",
+      "line": 504,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1478
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "fingerprint:preview",
+      "file": "local-api.js",
+      "line": 505,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1199
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "fingerprint:preview",
+      "file": "local-api.js",
+      "line": 507,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1199
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "fingerprint:preview",
+      "file": "local-api.js",
+      "line": 520,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1199
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "ui:dialog:show",
+      "file": "local-api.js",
+      "line": 522,
+      "backend": [
+        {
+          "file": "rebuild/dialog-windows.js",
+          "line": 104
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "ui:dialog:resize",
+      "file": "local-api.js",
+      "line": 523,
+      "backend": [
+        {
+          "file": "rebuild/dialog-windows.js",
+          "line": 115
+        }
+      ]
+    },
+    {
+      "kind": "ops",
+      "name": "getInfo",
+      "file": "local-api.js",
+      "line": 524,
+      "backend": {
+        "file": "preload.js",
+        "line": 7,
+        "channels": [
+          "system:info"
+        ]
+      }
+    },
+    {
+      "kind": "local RPC",
+      "name": "settings:get",
+      "file": "local-api.js",
+      "line": 525,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1169
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "settings:set",
+      "file": "local-api.js",
+      "line": 526,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1170
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "kernels:list",
+      "file": "local-api.js",
+      "line": 528,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1325
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "settings:set",
+      "file": "local-api.js",
+      "line": 542,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1170
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:list",
+      "file": "local-api.js",
+      "line": 543,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 797
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:list",
+      "file": "local-api.js",
+      "line": 548,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 797
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "cookie-robot:start",
+      "file": "local-api.js",
+      "line": 550,
+      "backend": [
+        {
+          "file": "rebuild/cookie-robot.js",
+          "line": 272
+        }
+      ]
+    },
+    {
+      "kind": "ops",
+      "name": "windowAction",
+      "file": "local-api.js",
+      "line": 553,
+      "backend": {
+        "file": "preload.js",
+        "line": 67,
+        "channels": [
+          "sync:window"
+        ]
+      }
+    },
+    {
+      "kind": "ops",
+      "name": "windowAction",
+      "file": "local-api.js",
+      "line": 557,
+      "backend": {
+        "file": "preload.js",
+        "line": 67,
+        "channels": [
+          "sync:window"
+        ]
+      }
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:stop",
+      "file": "local-api.js",
+      "line": 564,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 941
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:list",
+      "file": "local-api.js",
+      "line": 566,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 797
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:start",
+      "file": "local-api.js",
+      "line": 569,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 873
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:stop",
+      "file": "local-api.js",
+      "line": 570,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 941
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:info",
+      "file": "local-api.js",
+      "line": 631,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 170
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "kernels:list",
+      "file": "local-pages.js",
+      "line": 65,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1325
+        }
+      ]
+    },
+    {
+      "kind": "ops",
+      "name": "onEvent",
+      "file": "local-pages.js",
+      "line": 68,
+      "backend": {
+        "file": "preload.js",
+        "line": 125,
+        "channels": []
+      }
+    },
+    {
+      "kind": "ops",
+      "name": "kernelDownload",
+      "file": "local-pages.js",
+      "line": 83,
+      "backend": {
+        "file": "preload.js",
+        "line": 17,
+        "channels": [
+          "kernel:download"
+        ]
+      }
+    },
+    {
+      "kind": "ops",
+      "name": "kernelCancelDownload",
+      "file": "local-pages.js",
+      "line": 87,
+      "backend": {
+        "file": "preload.js",
+        "line": 29,
+        "channels": [
+          "kernel:cancel-download"
+        ]
+      }
+    },
+    {
+      "kind": "ops",
+      "name": "kernelChooseCustom",
+      "file": "local-pages.js",
+      "line": 101,
+      "backend": {
+        "file": "preload.js",
+        "line": 21,
+        "channels": [
+          "kernel:choose-custom"
+        ]
+      }
+    },
+    {
+      "kind": "ops",
+      "name": "kernelSetCustom",
+      "file": "local-pages.js",
+      "line": 107,
+      "backend": {
+        "file": "preload.js",
+        "line": 19,
+        "channels": [
+          "kernel:set-custom"
+        ]
+      }
+    },
+    {
+      "kind": "ops",
+      "name": "kernelListVersions",
+      "file": "local-pages.js",
+      "line": 130,
+      "backend": {
+        "file": "preload.js",
+        "line": 22,
+        "channels": [
+          "kernel:list-versions"
+        ]
+      }
+    },
+    {
+      "kind": "ops",
+      "name": "kernelInstallVersion",
+      "file": "local-pages.js",
+      "line": 156,
+      "backend": {
+        "file": "preload.js",
+        "line": 23,
+        "channels": [
+          "kernel:install-version"
+        ]
+      }
+    },
+    {
+      "kind": "ops",
+      "name": "kernelCheck",
+      "file": "local-pages.js",
+      "line": 173,
+      "backend": {
+        "file": "preload.js",
+        "line": 28,
+        "channels": [
+          "kernel:check"
+        ]
+      }
+    },
+    {
+      "kind": "ops",
+      "name": "kernelPin",
+      "file": "local-pages.js",
+      "line": 178,
+      "backend": {
+        "file": "preload.js",
+        "line": 25,
+        "channels": [
+          "kernel:pin"
+        ]
+      }
+    },
+    {
+      "kind": "ops",
+      "name": "kernelDelete",
+      "file": "local-pages.js",
+      "line": 185,
+      "backend": {
+        "file": "preload.js",
+        "line": 27,
+        "channels": [
+          "kernel:delete"
+        ]
+      }
+    },
+    {
+      "kind": "local RPC",
+      "name": "templates:list",
+      "file": "local-pages.js",
+      "line": 202,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1122
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "transfer:import",
+      "file": "local-pages.js",
+      "line": 224,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1514
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "templates:delete",
+      "file": "local-pages.js",
+      "line": 240,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1140
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:config:get",
+      "file": "local-pages.js",
+      "line": 259,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 172
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:config:set",
+      "file": "local-pages.js",
+      "line": 268,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 176
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:config:set",
+      "file": "local-pages.js",
+      "line": 324,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 176
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:skills:list",
+      "file": "local-pages.js",
+      "line": 338,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 267
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:skills:import",
+      "file": "local-pages.js",
+      "line": 366,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 305
+        },
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 335
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:skills:save",
+      "file": "local-pages.js",
+      "line": 370,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 305
+        },
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 345
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:skills:save",
+      "file": "local-pages.js",
+      "line": 392,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 305
+        },
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 345
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:skills:delete",
+      "file": "local-pages.js",
+      "line": 400,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 305
+        },
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 366
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:list",
+      "file": "local-pages.js",
+      "line": 410,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 797
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "transfer:import",
+      "file": "local-pages.js",
+      "line": 433,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1514
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "transfer:export",
+      "file": "local-pages.js",
+      "line": 436,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1478
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:read",
+      "file": "profile-info-ExiJC1su.js",
+      "line": 208,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 802
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "groups:list",
+      "file": "project-item-Dd4vT7Wq.js",
+      "line": 36,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1004
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:userTasks.createUserTask",
+      "file": "useCustomTemplateDialog-2nSs2D8n.js",
+      "line": 10,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:syncTasks",
+      "file": "useCustomTemplateDialog-2nSs2D8n.js",
+      "line": 13,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 241
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:userTasks.listUserTasks",
+      "file": "useTemplateTaskExecution-yGKXS9Rw.js",
+      "line": 353,
+      "backend": [
+        {
+          "file": "rebuild/agent-records.js",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:runTask",
+      "file": "useTemplateTaskExecution-yGKXS9Rw.js",
+      "line": 362,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 245
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:skillPathInfo",
+      "file": "useTemplateTaskExecution-yGKXS9Rw.js",
+      "line": 364,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 236
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "settings:get",
+      "file": "utils-BIWenCnY.js",
+      "line": 3951,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1169
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:list",
+      "file": "workbench-chrome.js",
+      "line": 23,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 691
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 797
+        }
+      ]
+    },
+    {
+      "kind": "ops",
+      "name": "onEvent",
+      "file": "workbench-chrome.js",
+      "line": 26,
+      "backend": {
+        "file": "preload.js",
+        "line": 125,
+        "channels": []
+      }
+    }
+  ],
+  "dynamic": [
+    {
+      "file": "AgentSettingsRoute-BB9ba93X.js",
+      "line": 8,
+      "expression": "globalThis.__agentRequest(\"mcp:\" + method, p2)"
+    },
+    {
+      "file": "local-api.js",
+      "line": 589,
+      "expression": "request(\"agent:\" + method, payload)"
+    },
+    {
+      "file": "local-api.js",
+      "line": 595,
+      "expression": "globalThis.__agentRequest(method, { id: args[0], runId: args[1] })"
+    },
+    {
+      "file": "local-api.js",
+      "line": 595,
+      "expression": "globalThis.__agentRequest(method, {\n  data: args[0],\n  mimeType: args[1],\n  fileName: args[2],\n  conversationId: args[3]\n})"
+    },
+    {
+      "file": "local-api.js",
+      "line": 607,
+      "expression": "globalThis.__agentRequest(method, { id: args[0], ...args[1] })"
+    },
+    {
+      "file": "local-api.js",
+      "line": 607,
+      "expression": "globalThis.__agentRequest(method, { id: args[0], title: args[1] })"
+    },
+    {
+      "file": "local-api.js",
+      "line": 607,
+      "expression": "globalThis.__agentRequest(method, args[0] || {})"
+    },
+    {
+      "file": "local-api.js",
+      "line": 625,
+      "expression": "globalThis.__agentRequest(key + \".\" + method, { filename: file.name, data })"
+    },
+    {
+      "file": "local-api.js",
+      "line": 627,
+      "expression": "globalThis.__agentRequest(key + \".\" + method, payload)"
+    },
+    {
+      "file": "local-pages.js",
+      "line": 5,
+      "expression": "globalThis.__localRequest(method, payload)"
+    },
+    {
+      "file": "workbench-chrome.js",
+      "line": 5,
+      "expression": "globalThis.__localRequest(method, payload)"
+    }
+  ],
+  "unsupported": {
+    "agent:scriptSelfDescription": "原脚本沙箱未移植，明确拒绝；不是已接通功能",
+    "agent:officialScripts.getOfficialScript": "原脚本沙箱未移植，明确拒绝；不是已接通功能",
+    "agent:userTemplates.uploadUserTemplateScript": "原脚本沙箱未移植，明确拒绝；不是已接通功能"
+  },
+  "missing": [],
+  "sources": [
+    {
+      "file": "preload.js",
+      "sha256": "894549cddadeae02a9ca9b4042f091580367318f52ad1441181e31e2fd8d4c55"
+    },
+    {
+      "file": "rebuild/local-service.js",
+      "sha256": "8b895b5dd8dfaee6ca03edbad6645010c674066fe5f3e58d37f0d5c0f8aea3f5"
+    },
+    {
+      "file": "rebuild/agent-service.js",
+      "sha256": "a66a61e0aedb800138d97e89bcc8d1e8ee72223b382e3aa148ec39dac0410ddd"
+    },
+    {
+      "file": "rebuild/agent-conversations.js",
+      "sha256": "a4be459dc21e3f3d655c7c890a0167b2ed7af204272d69f99db75b639fa0d7b4"
+    },
+    {
+      "file": "rebuild/renderer-bridge.js",
+      "sha256": "186e23e4eeabaecb8e28078ba1cde225a7cf943577883fa82c9eb8d43c57e624"
+    }
+  ]
+}

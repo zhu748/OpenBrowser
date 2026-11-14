@@ -1,0 +1,57 @@
+{
+  "passed": true,
+  "cases": [
+    {
+      "name": "Agent 模板 ID 删除/重启后不复用",
+      "status": "PASS"
+    },
+    {
+      "name": "新任务不得继承已删除任务的历史 ID",
+      "status": "PASS"
+    },
+    {
+      "name": "窗口模板删除后不复用旧 ID",
+      "status": "PASS"
+    },
+    {
+      "name": "标签删除后不复用已保存筛选器中的 ID",
+      "status": "PASS"
+    },
+    {
+      "name": "groups 元数据保存失败恢复窗口关联且保留并发备注",
+      "status": "PASS"
+    },
+    {
+      "name": "labels 元数据保存失败恢复窗口关联且保留并发备注",
+      "status": "PASS"
+    },
+    {
+      "name": "项目分页重排只替换所选位置",
+      "status": "PASS"
+    },
+    {
+      "name": "筛选器读取应用已保存的排序",
+      "status": "PASS"
+    },
+    {
+      "name": "旧数据引用迁移、未知操作与失败计数回滚",
+      "status": "PASS"
+    },
+    {
+      "name": "201 个窗口关联分批删除成功",
+      "status": "PASS"
+    },
+    {
+      "name": "201 个窗口关联分批删除中途失败完整回滚",
+      "status": "PASS"
+    },
+    {
+      "name": "关联回滚冲突明确报错并保留用户新关联",
+      "status": "PASS"
+    },
+    {
+      "name": "Skill 包和元数据提交失败共同恢复",
+      "status": "PASS"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "status": "PASS",
+  "scope": "仅记录手动检视的原始契约片段，不代表整个 Agent 已读懂或兼容",
+  "agentSha256": "ef9369fd6b89b8a5e78196a6da36781f6e89c4f41d508644d58b66523df9115f",
+  "markReadSqlMatchesLatestRunId": true,
+  "observations": [
+    "原 Skill 编辑 metadata 仅含 prompt",
+    "原 TaskManager 按 created_at 排序",
+    "原聊天 detail 每页 limit=5，hasMore/nextCursor",
+    "原历史附件读 metadata.attachments",
+    "原 Jl 校验 startSequence 连续，原子事件应 startSequence=sequence"
+  ]
+}

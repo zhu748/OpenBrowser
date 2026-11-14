@@ -1,0 +1,9 @@
+{
+  "passed": true,
+  "checks": [
+    "未映射 channel 明确拒绝并显示原 Toast，不伪造成功",
+    "Cookie Robot 拒绝已经移入回收站的窗口，原表单与输入保留；机器人与 RPA 任务均为零、没有启动浏览器"
+  ],
+  "errors": [],
+  "externalRequests": []
+}

@@ -107,6 +107,12 @@ async function run() {
     }
   });
 
+  check('Native temporary theme control pages never become slave tabs', () => {
+    assert.equal(canMirrorTabUrl('chrome://extensions/?openbrowser-native-control=test'), false);
+    assert.equal(canMirrorTabUrl('chrome://customize-chrome-side-panel.top-chrome/'), false);
+    assert.equal(canMirrorTabUrl('chrome://extensions/?id=user-extension'), true);
+  });
+
   // 4. LiveSyncController.attach 对特权内部页不得注入任何脚本、不得调用 Runtime.addBinding
   await checkAsync('LiveSyncController.attach strictly skips privileged internal pages', async () => {
     const mockEngine = {
@@ -183,6 +189,7 @@ async function run() {
     });
 
     const origTargets = require('../../cdp').targets;
+    const origTabs = require('../../cdp').tabs;
     require('../../cdp').targets = async (port) => {
       if (port === 9222) {
         return [{ id: 'tab-1', type: 'page', url: 'chrome://gpu' }];
@@ -190,12 +197,14 @@ async function run() {
       return [{ id: 'slave-tab-1', type: 'page', url: 'chrome://gpu' }];
     };
 
+    require('../../cdp').tabs = async port => require('../../cdp').targets(port);
     try {
       await controller.refreshMasterTabs();
       assert.strictEqual(closed, true, 'Existing connection must be closed when navigating to chrome://gpu');
       assert.strictEqual(controller.connections.has('tab-1'), false, 'Connection must be removed from connections map');
     } finally {
       require('../../cdp').targets = origTargets;
+      require('../../cdp').tabs = origTabs;
     }
   });
 

@@ -1,0 +1,26 @@
+{
+  "passed": true,
+  "checks": [
+    "原表单 saveFlowMode/maxDownloadSpeed 双向映射到 Native 网络指纹；真实 Chrome 文档/worker 的 saveData、downlink、rtt，启用原生 NetInfoDownlinkMax 后最大速率/连接类型在文档与 worker 均实际生效，保留原生 getter/receiver；出口时区不被本机 UTC 覆盖"
+  ],
+  "document": {
+    "present": true,
+    "effectiveType": "4g",
+    "downlink": 3.1,
+    "rtt": 150,
+    "saveData": true,
+    "hasDownlinkMax": true,
+    "downlinkMax": 3000,
+    "type": "wifi"
+  },
+  "worker": {
+    "present": true,
+    "effectiveType": "4g",
+    "downlink": 3.1,
+    "rtt": 150,
+    "saveData": true,
+    "downlinkMax": 3000,
+    "type": "wifi"
+  },
+  "limitations": []
+}

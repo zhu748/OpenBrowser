@@ -22,6 +22,8 @@ module.exports = [
       'bundled-extension/**',
       'automation/data/**',
       'automation/vendor/**',
+      // Generated Vue modules have independent syntax and import/export audits.
+      'roxy-ui/**',
     ],
   },
   {
@@ -314,7 +316,7 @@ module.exports = [
     },
   },
   {
-    files: ['**/*.js'],
+    files: ['**/*.js', '**/*.cjs'],
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: 'commonjs',
@@ -355,6 +357,10 @@ module.exports = [
       }],
       'no-empty': 'off', // ~300 intentional empty catches; needs a sweep first
     },
+  },
+  {
+    files: ['rebuild/agent-channel.js', 'rebuild/local-pages.js', 'rebuild/renderer-bridge.js', 'rebuild/workbench-chrome.js'],
+    languageOptions: { sourceType: 'module' },
   },
   {
     // index.html loads this as a classic script. Its existing public function

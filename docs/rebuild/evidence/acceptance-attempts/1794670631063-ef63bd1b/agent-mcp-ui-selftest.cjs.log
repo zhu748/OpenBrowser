@@ -1,0 +1,10 @@
+{
+  "passed": true,
+  "checks": [
+    "设置入口打开原 AgentSettingsRoute，原 HTTP 表单连接真实服务并验证、保存、启用；测试连接已释放，保存未额外出网",
+    "原编辑/改名、重载保留且不自动重连、暗色样式、停用与删除都对应真实加密存储；renderer HTTP/WebSocket 请求为零"
+  ],
+  "errors": [],
+  "externalRequests": [],
+  "data": "/workspace/OpenBrowser/work/rebuild/mcp-ui-YcPicp"
+}

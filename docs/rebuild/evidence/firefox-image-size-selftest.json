@@ -1,0 +1,40 @@
+{
+  "passed": true,
+  "checks": [
+    "原 KB 字段经真实 Firefox 原生响应过滤：已知长度、未知长度、gzip 解码后大小、重定向；Cookie 保留且无 Node 重放请求",
+    "旧缓存大图重新检查、随机能力路径拒绝错误来源、就绪回执、流读取中停止并关闭诊断端口/缓冲"
+  ],
+  "errors": [],
+  "images": {
+    "small.png": {
+      "loaded": true,
+      "width": 1
+    },
+    "large.png": {
+      "loaded": false
+    },
+    "small-chunked.png": {
+      "loaded": true,
+      "width": 1
+    },
+    "large-chunked.png": {
+      "loaded": false
+    },
+    "small-gzip.png": {
+      "loaded": true,
+      "width": 1
+    },
+    "large-gzip.png": {
+      "loaded": false
+    },
+    "large-cache.png": {
+      "loaded": false
+    },
+    "redirect.png": {
+      "loaded": false
+    }
+  },
+  "limitations": [
+    "网络图片；data/blob 与本地文件不计入此网络响应阈值。"
+  ]
+}

@@ -1,0 +1,853 @@
+{
+  "status": "PASS",
+  "scope": "逐项核对每个保留声明的原文件、选择器、条件、属性、值与 important；仅归一化已记录的同步 CSS 路由隔离前缀。商业删除允许为原声明子集，本地新增样式单列，不是全页面像素验收。",
+  "checked": 20504,
+  "files": [
+    {
+      "file": "AgentConsolePageLayout-BB5HEnzR.css",
+      "sourceSha256": "66e1eb3899dc92c80a1b2edf6f0e12865aa31e100c5a0b6300e842932dc9d489",
+      "declarations": 176,
+      "sourceMatches": 176,
+      "mismatches": []
+    },
+    {
+      "file": "AgentInput-D5Hb9LbL.css",
+      "sourceSha256": "f8dcdba963353af91bced4bb9100a9435f5ae93b4d235f11e12e96b58712d08c",
+      "declarations": 39,
+      "sourceMatches": 39,
+      "mismatches": []
+    },
+    {
+      "file": "AgentPopover-DNtjp8Ky.css",
+      "sourceSha256": "695b84fd6d44f05f474c51e4ed1ae535f900ce9f9268e1861c3af83b57d2f903",
+      "declarations": 4,
+      "sourceMatches": 4,
+      "mismatches": []
+    },
+    {
+      "file": "AgentSettingsRoute-CjUsolZT.css",
+      "sourceSha256": "3c12ac2108b0fd88324fce58ad8ea9c0337695887f41c48d66e8d394364bbcd6",
+      "declarations": 246,
+      "sourceMatches": 246,
+      "mismatches": []
+    },
+    {
+      "file": "CreateTemplateDialog-fkmAdJVO.css",
+      "sourceSha256": "ef4f42324363a1d52e89e1c16d00492b3e3f782f708c0ad70511b4ecf269fcf0",
+      "declarations": 2334,
+      "sourceMatches": 2334,
+      "mismatches": []
+    },
+    {
+      "file": "MyTemplatesRoute-ZviMCbe7.css",
+      "sourceSha256": "d3a55bf044eea0d9baed80d9bcdebdce7aedd01d54c756df960a8c64eaa00787",
+      "declarations": 332,
+      "sourceMatches": 332,
+      "mismatches": []
+    },
+    {
+      "file": "ScriptSchemaForm-qvVM2mCo.css",
+      "sourceSha256": "e3f23b67bb8a55059092ab046ce5f871cf1a787f0601ef1853d5e72bf26e3614",
+      "declarations": 564,
+      "sourceMatches": 564,
+      "mismatches": []
+    },
+    {
+      "file": "TaskManagerRoute-BnImHb6A.css",
+      "sourceSha256": "cc57cb64a0dbb7ba53d114b34add18123b03c6254c31d0f54e49ea8b5a35aa29",
+      "declarations": 747,
+      "sourceMatches": 747,
+      "mismatches": []
+    },
+    {
+      "file": "TaskStatusBadge-BetC7MAN.css",
+      "sourceSha256": "2de46ddc14d9defe0b20795f8200f176249ceda855dd8a4e145d445e703459fa",
+      "declarations": 100,
+      "sourceMatches": 100,
+      "mismatches": []
+    },
+    {
+      "file": "TemplateStoreRoute-D5eVLN2a.css",
+      "sourceSha256": "4a463d71333f76593b352eaea93932f88d06436680e03e0a0159f2e959c3833d",
+      "declarations": 413,
+      "sourceMatches": 413,
+      "mismatches": []
+    },
+    {
+      "file": "__uno-Bewab8Nc.css",
+      "sourceSha256": "44e4a46c083b60c82d0031c38906f49612534179a5a150d2808cd8f669192f3b",
+      "declarations": 2278,
+      "sourceMatches": 2278,
+      "mismatches": []
+    },
+    {
+      "file": "action-bar-wpLLnkNt.css",
+      "sourceSha256": "c4451b0d639c1aa1c209c82b16d8e61bc1fdd6a9d2b62a66d46f5d691f8740e2",
+      "declarations": 129,
+      "sourceMatches": 129,
+      "mismatches": []
+    },
+    {
+      "file": "animation-border-CvJzVjTk.css",
+      "sourceSha256": "c797bf9e5816e794d48656047706d611d2216d2345b8460b420952ada0f0cee0",
+      "declarations": 8,
+      "sourceMatches": 8,
+      "mismatches": []
+    },
+    {
+      "file": "api-keys-Cvp15bpU.css",
+      "sourceSha256": "ef5d962ef7117310322f44803eee46628b3f2a3717da7187ccb642fc1b2803c6",
+      "declarations": 114,
+      "sourceMatches": 114,
+      "mismatches": []
+    },
+    {
+      "file": "app-CZQdYwDM.css",
+      "sourceSha256": "e49779a7b9274b6b3db09d4edc887c1df4321b365a8637a6a1586183f8b0d2f7",
+      "declarations": 85,
+      "sourceMatches": 85,
+      "mismatches": []
+    },
+    {
+      "file": "base-dialog-CVdM7Cnu.css",
+      "sourceSha256": "7ff90aac6baac2e928f96548b0c798263f2a829160925a2e4777f7647f01a9a3",
+      "declarations": 41,
+      "sourceMatches": 41,
+      "mismatches": []
+    },
+    {
+      "file": "basecomponent-Mvi8h6e2.css",
+      "sourceSha256": "0a4f666b639957a986269abd7da99c49e727f4e0f3ce0ffe47ab9a9ed0e9ca93",
+      "declarations": 3,
+      "sourceMatches": 3,
+      "mismatches": []
+    },
+    {
+      "file": "batch-inputs-D36ClwFU.css",
+      "sourceSha256": "8dcb1057a3b7cf72d10b4c52912467e694da0627dc19fa8f1e7ef23ee556c4e3",
+      "declarations": 61,
+      "sourceMatches": 61,
+      "mismatches": []
+    },
+    {
+      "file": "batch-proxies-BH-IfBu1.css",
+      "sourceSha256": "9460e499a5ed4647142476bbe94011cb7fdd9cb45b519dccc12bb3f382602b93",
+      "declarations": 60,
+      "sourceMatches": 60,
+      "mismatches": []
+    },
+    {
+      "file": "choose-panel-1gHc8b5C.css",
+      "sourceSha256": "6e49c0a99965ea7faf3ca09be349359dc2de19c8372a473ef293078aac945741",
+      "declarations": 40,
+      "sourceMatches": 40,
+      "mismatches": []
+    },
+    {
+      "file": "contextmenu-_wkelCbU.css",
+      "sourceSha256": "096bb9213146274a289b69f10c791dec21e49cc85739b6157fd4c69519c61928",
+      "declarations": 50,
+      "sourceMatches": 50,
+      "mismatches": []
+    },
+    {
+      "file": "create-Cg-Dpis0.css",
+      "sourceSha256": "b87bad3dbc9ff915f000c9abbafb429df13fb50b16a86e506bb29356006380d8",
+      "declarations": 167,
+      "sourceMatches": 167,
+      "mismatches": []
+    },
+    {
+      "file": "create-DfI1h-Tp.css",
+      "sourceSha256": "2504c15dadb8001c48d058f1a190b6f12ef44694039491d3b784a00cda111f81",
+      "declarations": 95,
+      "sourceMatches": 95,
+      "mismatches": []
+    },
+    {
+      "file": "create-sV6q3jXH.css",
+      "sourceSha256": "ada152c1b9321da45177e250461bf35c37b13438b77c1b02defd09f24e83e644",
+      "declarations": 14,
+      "sourceMatches": 14,
+      "mismatches": []
+    },
+    {
+      "file": "createDefaultAccordions-C8TxFuLo.css",
+      "sourceSha256": "70333baee35a77641eedafebee761871a142f8d17219148710fdba09ba8215d9",
+      "declarations": 88,
+      "sourceMatches": 88,
+      "mismatches": []
+    },
+    {
+      "file": "custom-empty-BGaxO1Zk.css",
+      "sourceSha256": "f5da1509c0b3ac9062217fbae5fdfbae3984783e6d166c41c3953fe3c54667e0",
+      "declarations": 28,
+      "sourceMatches": 28,
+      "mismatches": []
+    },
+    {
+      "file": "custom-filters-DzGuEkSw.css",
+      "sourceSha256": "7c4b391e7ed410e80ef4c5711874e6b26b343e9198bbde48aedbe9dd0c7c3d85",
+      "declarations": 35,
+      "sourceMatches": 35,
+      "mismatches": []
+    },
+    {
+      "file": "custom-layout-D-VgojT8.css",
+      "sourceSha256": "d7a73f689aa3721a91edbc78cd55b1a58d5a87d3653661bf6ca724cbb3193482",
+      "declarations": 9,
+      "sourceMatches": 9,
+      "mismatches": []
+    },
+    {
+      "file": "custom-new-empty-B3PxPaFA.css",
+      "sourceSha256": "77a5a235bcfbfaca2d096983f4565c61393580a139ee469dfbc30cca0d6fcd55",
+      "declarations": 10,
+      "sourceMatches": 10,
+      "mismatches": []
+    },
+    {
+      "file": "detail-D_OCK2nY.css",
+      "sourceSha256": "cd54e4edca9fbcbc6acb5d5df795ebb600136140de177a7084c616e760762756",
+      "declarations": 12,
+      "sourceMatches": 12,
+      "mismatches": []
+    },
+    {
+      "file": "device-detect-result-modal-CWIz-8QR.css",
+      "sourceSha256": "fae3168e60a62c955b6e713e6fda88052e87fa4cd57e3daf891064af8c09bbcb",
+      "declarations": 3,
+      "sourceMatches": 3,
+      "mismatches": []
+    },
+    {
+      "file": "driver-B3l7mx48.css",
+      "sourceSha256": "df5e188ec0a8e3ad09767818b8bf6e58213a3b7f3e89442defaf80e8a5f40c86",
+      "declarations": 122,
+      "sourceMatches": 122,
+      "mismatches": []
+    },
+    {
+      "file": "earth-aqhWgZYN.css",
+      "sourceSha256": "b52a5fcb9b8f14927cfbc769bd06610878ede6c68c975825158d0d360516cae4",
+      "declarations": 18,
+      "sourceMatches": 18,
+      "mismatches": []
+    },
+    {
+      "file": "edit-5ET1McHt.css",
+      "sourceSha256": "5cb4bdfc96acf90714cf0731e1061af490de9de0e4168e0a53bdc01381ed266f",
+      "declarations": 5,
+      "sourceMatches": 5,
+      "mismatches": []
+    },
+    {
+      "file": "edit-RQ4Q31a8.css",
+      "sourceSha256": "c5dc73ca2d7ffb9f582f17073fd62ecd71761b279f142cb67af62255c9bc00f5",
+      "declarations": 6,
+      "sourceMatches": 6,
+      "mismatches": []
+    },
+    {
+      "file": "extensions-DPs3zrq9.css",
+      "sourceSha256": "7758155ea3f1684b0b61c2e340d20cd69f552e665748e8597cbbb69b93f28345",
+      "declarations": 365,
+      "sourceMatches": 365,
+      "mismatches": []
+    },
+    {
+      "file": "form-C9FJViln.css",
+      "sourceSha256": "05e5a93f593da6f3bb3fc2f85991de22907adec09518b645558d712225a998db",
+      "declarations": 320,
+      "sourceMatches": 320,
+      "mismatches": []
+    },
+    {
+      "file": "global-component-C-H1nIMa.css",
+      "sourceSha256": "2d103e96f9a331e2bdda540cc0af7ac91bd91348419326f16f467d9faa4199cc",
+      "declarations": 31,
+      "sourceMatches": 31,
+      "mismatches": []
+    },
+    {
+      "file": "hook-fIhtIW1P.css",
+      "sourceSha256": "cd36e26b0a99b979443b59694041f345bfc9c19009811e039eea362b4316f181",
+      "declarations": 4755,
+      "sourceMatches": 4755,
+      "mismatches": []
+    },
+    {
+      "file": "hooks-Co33PFFA.css",
+      "sourceSha256": "f909e7e3b77340e9904c47f6f623a9a7b3a1ad2e9ef6dffa92c0828ad37fdd26",
+      "declarations": 219,
+      "sourceMatches": 219,
+      "mismatches": []
+    },
+    {
+      "file": "hooks-phTu3k4s.css",
+      "sourceSha256": "5ca16525b3a92235017e5abba13b046b531bae50ad3c7f8b37611ffc6c43ef0e",
+      "declarations": 7,
+      "sourceMatches": 7,
+      "mismatches": []
+    },
+    {
+      "file": "identity-verification-entry-DCy7p-uC.css",
+      "sourceSha256": "4ac480adb0657544179f0f2ca325b9f051d6b3907f3dc2d8f7b5c2ffd02fa9f6",
+      "declarations": 249,
+      "sourceMatches": 249,
+      "mismatches": []
+    },
+    {
+      "file": "input-label-9Hxm_1IX.css",
+      "sourceSha256": "0a594878c0aacfb9c7882b5f28b900555fd0492f732faef5d674c28ac14bbe7f",
+      "declarations": 7,
+      "sourceMatches": 7,
+      "mismatches": []
+    },
+    {
+      "file": "layout-CsWw6Q6g.css",
+      "sourceSha256": "074e60a542f474faa07d64294f4324cb11e19f71a2f536f8b2bc7443edd3dd9a",
+      "declarations": 1072,
+      "sourceMatches": 1072,
+      "mismatches": []
+    },
+    {
+      "file": "list-BOHYnQBX.css",
+      "sourceSha256": "47afd24916d5d190f25b2745d5f626f309148de2f23148ff38bd32c8f61798bf",
+      "declarations": 26,
+      "sourceMatches": 26,
+      "mismatches": []
+    },
+    {
+      "file": "list-BP9D8vHT.css",
+      "sourceSha256": "5c2f88db8a492b41464f2b7d061b4bc34c3cb60f3e6e63ab2d9268bf8369dcca",
+      "declarations": 88,
+      "sourceMatches": 88,
+      "mismatches": []
+    },
+    {
+      "file": "m-input-date-picker-ke8g680r.css",
+      "sourceSha256": "2347d40522bad7fd97101d204655b6120a53ec7937f26de90003668e370b2ae4",
+      "declarations": 42,
+      "sourceMatches": 42,
+      "mismatches": []
+    },
+    {
+      "file": "m-input-multi-select-19Urjt-l.css",
+      "sourceSha256": "cab9cbae2796f0bc0530e7bcca461dee1151d3d4a102cff86b9c3459956cc58e",
+      "declarations": 55,
+      "sourceMatches": 55,
+      "mismatches": []
+    },
+    {
+      "file": "m-input-number-B7bCpOnR.css",
+      "sourceSha256": "b01816e45eb2ccd052bf27630c4e8326996ac98c827d53ff0beaf3bda4343a78",
+      "declarations": 42,
+      "sourceMatches": 42,
+      "mismatches": []
+    },
+    {
+      "file": "m-input-password-C_yRbo7w.css",
+      "sourceSha256": "09f1613a2d6909b445887a24a1128900e2ed7c017588eb2df9a17c59e62612fb",
+      "declarations": 46,
+      "sourceMatches": 46,
+      "mismatches": []
+    },
+    {
+      "file": "m-input-select-f2WWD4tN.css",
+      "sourceSha256": "03458e116f9c6eb15c61a8b66d52c77076da6076ae86355f0470fc51e95a0497",
+      "declarations": 252,
+      "sourceMatches": 252,
+      "mismatches": []
+    },
+    {
+      "file": "m-input-text-BVOqevAm.css",
+      "sourceSha256": "df0c6145e6accbfe874f00ae318f6af08ce47c2d696ceb0ca7649aef6f3213ed",
+      "declarations": 62,
+      "sourceMatches": 62,
+      "mismatches": []
+    },
+    {
+      "file": "m-input-textarea-8SbMbgiL.css",
+      "sourceSha256": "38c558180123f8f7afd5ea13a96e037bdf8f4402739a5351e23e5b2e01ca53cc",
+      "declarations": 71,
+      "sourceMatches": 71,
+      "mismatches": []
+    },
+    {
+      "file": "mate-group-Cj_DJD1R.css",
+      "sourceSha256": "4c07b046613ad752498c40f72258f4ed94f88222337590779bbb20e6752fad4f",
+      "declarations": 10,
+      "sourceMatches": 10,
+      "mismatches": []
+    },
+    {
+      "file": "member-dropdown-list-DDNqIOsO.css",
+      "sourceSha256": "239cc592a09165326c96ced477252b098649b58beeaed1271034e337e154e948",
+      "declarations": 38,
+      "sourceMatches": 38,
+      "mismatches": []
+    },
+    {
+      "file": "member-info-QF2tpadc.css",
+      "sourceSha256": "38b438a7b61b498a872964300617524dbe663c32199409461dc4677911130c19",
+      "declarations": 2,
+      "sourceMatches": 2,
+      "mismatches": []
+    },
+    {
+      "file": "normalize-Cpp9jJFS.css",
+      "sourceSha256": "5d3093bd1dc129bd54d25c114ad26eda66ce19aadb6256edb015b641e95693ac",
+      "declarations": 46,
+      "sourceMatches": 46,
+      "mismatches": []
+    },
+    {
+      "file": "open-sites-BB547REz.css",
+      "sourceSha256": "731c47f40ef51f5b9447498991a66030431ce53de5e5cad6807cf6543dbe70c3",
+      "declarations": 8,
+      "sourceMatches": 8,
+      "mismatches": []
+    },
+    {
+      "file": "operation-xhm181G6.css",
+      "sourceSha256": "bbf7750663fa46449ba523441caf454f75a318ee42faa865caf79ae317816263",
+      "declarations": 38,
+      "sourceMatches": 38,
+      "mismatches": []
+    },
+    {
+      "file": "operationHandlers-BwbO1zkI.css",
+      "sourceSha256": "dd29d889546accccb75c86078f1789e5cd32c93c26e9b989da0019ca88653ab6",
+      "declarations": 214,
+      "sourceMatches": 214,
+      "mismatches": []
+    },
+    {
+      "file": "os-switch-CVDr3Phf.css",
+      "sourceSha256": "a6bec2952bc8af3428e2df71481559c295b61cca3aba400b748fd7d716a0951e",
+      "declarations": 15,
+      "sourceMatches": 15,
+      "mismatches": []
+    },
+    {
+      "file": "parse-textarea-txC4T-yV.css",
+      "sourceSha256": "bd2dcbe626009830df8c54ecfd66dec6ad4c517719886948ab7d10759752e12f",
+      "declarations": 29,
+      "sourceMatches": 29,
+      "mismatches": []
+    },
+    {
+      "file": "phone-JQ1Kfxny.css",
+      "sourceSha256": "6a6465a500f61102c5bdd5e5456dff1ba776283dd895fa66662bbe8345b435a1",
+      "declarations": 8,
+      "sourceMatches": 8,
+      "mismatches": []
+    },
+    {
+      "file": "preferences-CL1kBob1.css",
+      "sourceSha256": "feea518737306b0b5096fd6166c8c72758fc6ba1863882317c23cbc5bb5093de",
+      "declarations": 63,
+      "sourceMatches": 63,
+      "mismatches": []
+    },
+    {
+      "file": "primeicons-DwwBztWV.css",
+      "sourceSha256": "a08480018ce7c6552944f465f82ed2dd56658bed43a96ded0489159bab2f6287",
+      "declarations": 341,
+      "sourceMatches": 341,
+      "mismatches": []
+    },
+    {
+      "file": "profile-info-BwzXFTHP.css",
+      "sourceSha256": "fa0d5cbdd1bec833b6e1b20dde131235572d48aaaaf2e9dc5586476696156d72",
+      "declarations": 68,
+      "sourceMatches": 68,
+      "mismatches": []
+    },
+    {
+      "file": "profile-select-CdlqPIMN.css",
+      "sourceSha256": "0c8d4259aeefbe03a60afce09ee4284952267dade09d98323fc1be5687e74aa5",
+      "declarations": 38,
+      "sourceMatches": 38,
+      "mismatches": []
+    },
+    {
+      "file": "project-item-BpIQQ6YI.css",
+      "sourceSha256": "12a8e4f8e64c9d0042a13909e189e5134b5a6da1b73e50280192ddae1270b366",
+      "declarations": 3,
+      "sourceMatches": 3,
+      "mismatches": []
+    },
+    {
+      "file": "projects-Dwta7dxA.css",
+      "sourceSha256": "fc77d194e73fd77079a400ad5e8887dbffb60efc4e3e31405584e60886d95095",
+      "declarations": 2,
+      "sourceMatches": 2,
+      "mismatches": []
+    },
+    {
+      "file": "proxy-create-mode-D4Xz-JSw.css",
+      "sourceSha256": "b27a2a21f0c24a7aca8965503e2d5c46deb2dba9f8ed4931b003d52aaf0f7799",
+      "declarations": 3,
+      "sourceMatches": 3,
+      "mismatches": []
+    },
+    {
+      "file": "proxy-filter-nTnEOoiC.css",
+      "sourceSha256": "80dedf58058eba88ff4f2f9cb16ec350cdafcf5b1cb0e6fb12d87e4569dbeab7",
+      "declarations": 88,
+      "sourceMatches": 88,
+      "mismatches": []
+    },
+    {
+      "file": "proxy-traffic-unlocked-modal-SHQpb_av.css",
+      "sourceSha256": "34b154783fdd4e513bb1bbe970f6dfa83d694a07e18588155cd23bd437ea05e4",
+      "declarations": 5,
+      "sourceMatches": 5,
+      "mismatches": []
+    },
+    {
+      "file": "quick-B2L_ldyc.css",
+      "sourceSha256": "871824e71a88ee3cd5c74109051301a90a0c2eee4ad42fba7b7b12bffaaef7aa",
+      "declarations": 33,
+      "sourceMatches": 33,
+      "mismatches": []
+    },
+    {
+      "file": "quick-B_dbDvPO.css",
+      "sourceSha256": "77c7989cc0b4d5c9750e6d3eae85a13866e45e2eba8eb5cf72959fb42ddb7638",
+      "declarations": 30,
+      "sourceMatches": 30,
+      "mismatches": []
+    },
+    {
+      "file": "record-BfFlzPwM.css",
+      "sourceSha256": "a129702b32e83d6119b5f953fc61694a64f6fe6812f113bb54542c9123e747c4",
+      "declarations": 39,
+      "sourceMatches": 39,
+      "mismatches": []
+    },
+    {
+      "file": "remark-cell-CAGogmOm.css",
+      "sourceSha256": "05aee3af3a1f923a9a697a75e0f263306fb4f6c2536a631895575662b02bfe52",
+      "declarations": 13,
+      "sourceMatches": 13,
+      "mismatches": []
+    },
+    {
+      "file": "renewal-reminder-drawer-BEulm-5c.css",
+      "sourceSha256": "772dee7c7fb658cd31f1a17414c11087e3d64f4b9e653c6b0d1b932b026ea0c9",
+      "declarations": 78,
+      "sourceMatches": 78,
+      "mismatches": []
+    },
+    {
+      "file": "rx-alert-nkzOZ-l5.css",
+      "sourceSha256": "960ca42451edb8ba0fdd87bca42a60076b6186698a5cbdddf0aae0003eca9ce7",
+      "declarations": 81,
+      "sourceMatches": 81,
+      "mismatches": []
+    },
+    {
+      "file": "rx-avatar-DZO-TuNb.css",
+      "sourceSha256": "7095db49fb46a14a9738ac13511aebd35205119468b422e4bb843e1889ce79b4",
+      "declarations": 11,
+      "sourceMatches": 11,
+      "mismatches": []
+    },
+    {
+      "file": "rx-button-CKFeYcgT.css",
+      "sourceSha256": "0af1c959bedf9230c200b8414b2ee3124f3579ce0e7b74356206560d89f24022",
+      "declarations": 99,
+      "sourceMatches": 99,
+      "mismatches": []
+    },
+    {
+      "file": "rx-card-C5AIEtyn.css",
+      "sourceSha256": "f64e24c22cafc0b399467cbae92ba71fdaff1bb607bc64b24b20afd0178adafa",
+      "declarations": 14,
+      "sourceMatches": 14,
+      "mismatches": []
+    },
+    {
+      "file": "rx-divider-B4AJqJ6z.css",
+      "sourceSha256": "d3fe1f981256c27a0ceb4953e29e15a6183b5b1e71ba5faeab65a1757bc45104",
+      "declarations": 34,
+      "sourceMatches": 34,
+      "mismatches": []
+    },
+    {
+      "file": "rx-form-8ueeQ5jW.css",
+      "sourceSha256": "42f439aecb53ea220c1d29f6f02b120aa368c66b7dcf6e1cf8f17327435eb8f4",
+      "declarations": 30,
+      "sourceMatches": 30,
+      "mismatches": []
+    },
+    {
+      "file": "rx-input-group-Ba4WmW55.css",
+      "sourceSha256": "d7c642232ce5bf5acd263bb5e355f2ae389492ab3a58cab5edd1abe275d5c090",
+      "declarations": 38,
+      "sourceMatches": 38,
+      "mismatches": []
+    },
+    {
+      "file": "rx-input-number-BSMNGCTA.css",
+      "sourceSha256": "5461d9c50d8f55f9160e5404ef8cd743bc2c0cac6ca067cac2b263a60161dc89",
+      "declarations": 35,
+      "sourceMatches": 35,
+      "mismatches": []
+    },
+    {
+      "file": "rx-input-number-F0t8ZkWb.css",
+      "sourceSha256": "1a90b45cebbe4e60b8e4df0ec5a0e16fad19d547df699c9c802e75abd18a5919",
+      "declarations": 12,
+      "sourceMatches": 12,
+      "mismatches": []
+    },
+    {
+      "file": "rx-input-radio-CFxXLK4J.css",
+      "sourceSha256": "cf2da9879b6868116a664446790ac7a408a467da20a009363813204c67df8bdd",
+      "declarations": 44,
+      "sourceMatches": 44,
+      "mismatches": []
+    },
+    {
+      "file": "rx-input-text-DJi2f0JE.css",
+      "sourceSha256": "ff966625d88c8653d3d451f05417fc59f4d9681c5dc0e5c59b1c0ff9f8719e8b",
+      "declarations": 50,
+      "sourceMatches": 50,
+      "mismatches": []
+    },
+    {
+      "file": "rx-input-textarea-BMYXQh5C.css",
+      "sourceSha256": "45f1a72780e23cf7a99e55c42dec8c11d3d37c46c2c741b66982ee15a472199a",
+      "declarations": 67,
+      "sourceMatches": 67,
+      "mismatches": []
+    },
+    {
+      "file": "rx-select-button-Cl2VgNYc.css",
+      "sourceSha256": "3ea0b10439eb27e725def0e3962571a29c8166565699be97ee53577cf81fbcfe",
+      "declarations": 60,
+      "sourceMatches": 60,
+      "mismatches": []
+    },
+    {
+      "file": "rx-tabs-Dq63M3j8.css",
+      "sourceSha256": "ee1782f9dc6d269718f9caa3e85e5ff9d112ddf4e80040fd0aaaecaa5fe9ff4a",
+      "declarations": 7,
+      "sourceMatches": 7,
+      "mismatches": []
+    },
+    {
+      "file": "rx-tag-B9fXuQnE.css",
+      "sourceSha256": "44bbf8314535b53560ab37b4ddc759c001280b33da016b61ea35db77d7e1d1ef",
+      "declarations": 17,
+      "sourceMatches": 17,
+      "mismatches": []
+    },
+    {
+      "file": "rx-toast-headless-CsWBIeep.css",
+      "sourceSha256": "61363c4d78b14659e8eca32247cb33d33def6fe16606a63c1ae10cc22f567594",
+      "declarations": 62,
+      "sourceMatches": 62,
+      "mismatches": []
+    },
+    {
+      "file": "rx-toggle-switch-KeqpJ47d.css",
+      "sourceSha256": "723a4d3d0fd011b9d6b58540fadec2d3602c6096fe83e3532eb351f0372eda98",
+      "declarations": 3,
+      "sourceMatches": 3,
+      "mismatches": []
+    },
+    {
+      "file": "rx-tooltip-D0HRwVmF.css",
+      "sourceSha256": "203f75a331297519f6610c0301e9b86367e87a91faaa503b421599d46229d02d",
+      "declarations": 6,
+      "sourceMatches": 6,
+      "mismatches": []
+    },
+    {
+      "file": "ry-table-DiuLwd6c.css",
+      "sourceSha256": "c18501463a28a9bde126b2bc78229fcc44f805fbd4806a20cad2cd7c1a39282b",
+      "declarations": 210,
+      "sourceMatches": 210,
+      "mismatches": []
+    },
+    {
+      "file": "schemas-Bn-6FgnU.css",
+      "sourceSha256": "363a7f70a85ebf3739fd3d0c6be63a63adf99fec4d13870ed5ff0951cf747382",
+      "declarations": 11,
+      "sourceMatches": 11,
+      "mismatches": []
+    },
+    {
+      "file": "setps-2fa-CyGiTKqs.css",
+      "sourceSha256": "491c6997190eee7c2aff08baecb83896085c725d42bb537491fb98d9a97e910e",
+      "declarations": 83,
+      "sourceMatches": 83,
+      "mismatches": []
+    },
+    {
+      "file": "shop-BE0O8dxy.css",
+      "sourceSha256": "b9fd30da946265ea1cb463bf0dff2caa5f66414a43cf678f2377c4bad77f13a9",
+      "declarations": 26,
+      "sourceMatches": 26,
+      "mismatches": []
+    },
+    {
+      "file": "simple-SqcWCUeX.css",
+      "sourceSha256": "bff736f57e6cc84b78e5b3b0101b961f4848f8699e3c8bb877f7494077022c92",
+      "declarations": 33,
+      "sourceMatches": 33,
+      "mismatches": []
+    },
+    {
+      "file": "simplePopup-DDnnFIvx.css",
+      "sourceSha256": "f82d9249dab4d5affc720a9493487cf3433f1a80b84c404fb2c5882adc0ea3f7",
+      "declarations": 10,
+      "sourceMatches": 10,
+      "mismatches": []
+    },
+    {
+      "file": "single-proxies-DVuXx18A.css",
+      "sourceSha256": "444539c382c636040cfdb89c222117f925490e5693c362708237ccdf055694c6",
+      "declarations": 19,
+      "sourceMatches": 19,
+      "mismatches": []
+    },
+    {
+      "file": "styles-DhEz4BM4.css",
+      "sourceSha256": "ed6fa7ff4d41d30abfa7615e97e23a4adf8ac224bb77cfcccaec56455de975c1",
+      "declarations": 129,
+      "sourceMatches": 129,
+      "mismatches": []
+    },
+    {
+      "file": "synchronizer-Dvr2NSvU.css",
+      "sourceSha256": "e94bfbb3f318b5733a7e916619fb399121475b0681d36a9159d906f56038a9fe",
+      "declarations": 56,
+      "sourceMatches": 56,
+      "mismatches": []
+    },
+    {
+      "file": "syncing-window-list-DGi17PrZ.css",
+      "sourceSha256": "650221c307a771cfe1b72301710ee37ca85c3119b20362d2e2082f6049b0b98e",
+      "declarations": 1,
+      "sourceMatches": 1,
+      "mismatches": []
+    },
+    {
+      "file": "table-DZCQ_6gS.css",
+      "sourceSha256": "b0cb93a0acb83ee2619f9e581f3912bd54ca6be6be8e87f74d23924f6524797a",
+      "declarations": 94,
+      "sourceMatches": 94,
+      "mismatches": []
+    },
+    {
+      "file": "table-paginator-Ba3PyMmU.css",
+      "sourceSha256": "f93780a3e3ce62f1b5a2da5dc50fdb35a0304df1599875e10e8eac3ffcab6821",
+      "declarations": 50,
+      "sourceMatches": 50,
+      "mismatches": []
+    },
+    {
+      "file": "tags-icon-DV__UBD7.css",
+      "sourceSha256": "e9c0fb4a35f05103ee6084c3e358602dd973db1d37c04102dee471882e2e18c6",
+      "declarations": 15,
+      "sourceMatches": 15,
+      "mismatches": []
+    },
+    {
+      "file": "tags-l2oxbRYK.css",
+      "sourceSha256": "c6e6321edff307018ea29cac756505ffeb782582586b1b8b74f33542d3ac8a66",
+      "declarations": 10,
+      "sourceMatches": 10,
+      "mismatches": []
+    },
+    {
+      "file": "task-progress-BdzJF7eY.css",
+      "sourceSha256": "bd898d0ade76065159ffc3a6053d5caad2b5ef075196ae7b8b7ca5c21f5109d6",
+      "declarations": 10,
+      "sourceMatches": 10,
+      "mismatches": []
+    },
+    {
+      "file": "theme-sp0uFzH4.css",
+      "sourceSha256": "c65c38d4d620f1e89bc4dbd26aec5c700b22b03f959d6ad29fb2919b2ee3313b",
+      "declarations": 1006,
+      "sourceMatches": 1006,
+      "mismatches": []
+    },
+    {
+      "file": "useAsyncGate-DZHPAmL8.css",
+      "sourceSha256": "0d064f7256e3648cbe7571b920a9dacb43431632b8060b96e8471e151e02df01",
+      "declarations": 278,
+      "sourceMatches": 278,
+      "mismatches": []
+    },
+    {
+      "file": "useCustomTemplateDialog-CxVyylYj.css",
+      "sourceSha256": "1a62e8402da885d6b26b479e026bc7479cfc12c37691220eaf6d0815b887505f",
+      "declarations": 0,
+      "sourceMatches": 0,
+      "mismatches": []
+    },
+    {
+      "file": "usePopupMenu-Cq8y3Jng.css",
+      "sourceSha256": "580e3a60a58f066265baf8c64c65634ffd71d22eb88939d33d04665c146e673b",
+      "declarations": 10,
+      "sourceMatches": 10,
+      "mismatches": []
+    },
+    {
+      "file": "useProfileOpenState-DU5FSUn2.css",
+      "sourceSha256": "350e271dd0dc0312e1a843acaa6b1e08a75538d832eb0addbcf34b2697cea6ba",
+      "declarations": 27,
+      "sourceMatches": 27,
+      "mismatches": []
+    },
+    {
+      "file": "useProxyFormDrawer-BPGQiaTr.css",
+      "sourceSha256": "969b8d2958aa01d7374215f10a15afdeff96eb519b6383c4a207193d3ebc5b1b",
+      "declarations": 29,
+      "sourceMatches": 29,
+      "mismatches": []
+    },
+    {
+      "file": "useQuickCreate-DhhS5uCl.css",
+      "sourceSha256": "70d1b7a6738c146f4f5e5c7854915c08a43363246b845b9910d17f21284c70cc",
+      "declarations": 43,
+      "sourceMatches": 43,
+      "mismatches": []
+    },
+    {
+      "file": "useTemplateTaskExecution-CTLUlurC.css",
+      "sourceSha256": "d35f9a802c2f02996bfb3463cc21d1e277cc384a9f9bba4ec69d76d6fae8182e",
+      "declarations": 261,
+      "sourceMatches": 261,
+      "mismatches": []
+    },
+    {
+      "file": "views-header-CcpbJZgp.css",
+      "sourceSha256": "933b4d808980ab2758f6a4df3ec212848ccdde25cd11e7f034fe5d0532df658b",
+      "declarations": 7,
+      "sourceMatches": 7,
+      "mismatches": []
+    },
+    {
+      "file": "window-list-DVlbVHdg.css",
+      "sourceSha256": "504e50101a804fe2131040ae2f54e34ba60c71d0a5afcc4da1e064d92746c829",
+      "declarations": 59,
+      "sourceMatches": 59,
+      "mismatches": []
+    },
+    {
+      "file": "workbench-chrome.css",
+      "status": "local-extension",
+      "reason": "本地新增内容样式，无原始 CSS 对应；不计入原样式通过数"
+    }
+  ],
+  "failures": []
+}

@@ -1,0 +1,103 @@
+{
+  "status": "PASS",
+  "scope": "仅删除同项目工具创建、超过一小时、非活动进程使用、每类保留最新五份的 cookie-robot-ui/kernel-ui 随机临时目录；源码、只读镜像、生产内核、截图、日志和证据全部保留；原 8GB 启动门槛未修改。",
+  "freeBefore": 7447539712,
+  "freeAfter": 13741117440,
+  "removed": [
+    {
+      "directory": "work/rebuild/cookie-robot-ui-4Dxu9Z",
+      "logicalBytes": 394451029
+    },
+    {
+      "directory": "work/rebuild/cookie-robot-ui-uJ9wHM",
+      "logicalBytes": 394484476
+    },
+    {
+      "directory": "work/rebuild/cookie-robot-ui-U8Pu7D",
+      "logicalBytes": 394213129
+    },
+    {
+      "directory": "work/rebuild/cookie-robot-ui-yRhefs",
+      "logicalBytes": 394452973
+    },
+    {
+      "directory": "work/rebuild/cookie-robot-ui-8xfzkF",
+      "logicalBytes": 394252923
+    },
+    {
+      "directory": "work/rebuild/cookie-robot-ui-YGXyi9",
+      "logicalBytes": 394049512
+    },
+    {
+      "directory": "work/rebuild/cookie-robot-ui-1hT3w3",
+      "logicalBytes": 394117294
+    },
+    {
+      "directory": "work/rebuild/cookie-robot-ui-GHWBxM",
+      "logicalBytes": 394406712
+    },
+    {
+      "directory": "work/rebuild/cookie-robot-ui-H5Xx8P",
+      "logicalBytes": 355743312
+    },
+    {
+      "directory": "work/rebuild/cookie-robot-ui-CEqGSY",
+      "logicalBytes": 355742120
+    },
+    {
+      "directory": "work/rebuild/cookie-robot-ui-4EqhRm",
+      "logicalBytes": 353033153
+    },
+    {
+      "directory": "work/rebuild/cookie-robot-ui-Ejth39",
+      "logicalBytes": 353033153
+    },
+    {
+      "directory": "work/rebuild/kernel-ui-UPXRlw",
+      "logicalBytes": 390586528
+    },
+    {
+      "directory": "work/rebuild/kernel-ui-Vr1t3q",
+      "logicalBytes": 390525503
+    },
+    {
+      "directory": "work/rebuild/kernel-ui-5cq2To",
+      "logicalBytes": 390534721
+    },
+    {
+      "directory": "work/rebuild/kernel-ui-8Z2eYa",
+      "logicalBytes": 390555317
+    },
+    {
+      "directory": "work/rebuild/kernel-ui-oqaTNR",
+      "logicalBytes": 6979044
+    },
+    {
+      "directory": "work/rebuild/kernel-ui-vnqmVf",
+      "logicalBytes": 135473786
+    },
+    {
+      "directory": "work/rebuild/kernel-ui-WmZX0b",
+      "logicalBytes": 6979129
+    },
+    {
+      "directory": "work/rebuild/kernel-ui-rfhauT",
+      "logicalBytes": 6979105
+    },
+    {
+      "directory": "work/rebuild/kernel-ui-hDLX3b",
+      "logicalBytes": 6979110
+    },
+    {
+      "directory": "work/rebuild/kernel-ui-eMObvv",
+      "logicalBytes": 6979110
+    }
+  ],
+  "followup": {
+    "symptom": "Cookie Robot UI 测试硬编码引用已清理的旧 kernel-ui-vnqmVf 下载包",
+    "fix": "改用稳定 work/rebuild/fixtures/firefox-160.0；缺失时下载相同官方 URL 并核对原 SHA256",
+    "verifiedSha256": "fde774e9757c8878534c05ec210db592bf6a1b244c57941ffb2e364c04f35fcd",
+    "before": "review-3/cookie-fixture-before.json",
+    "after": "cookie-robot-ui-selftest.json"
+  }
+}

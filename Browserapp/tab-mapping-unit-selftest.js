@@ -70,7 +70,37 @@ async function main() {
     await controller.refreshMasterTabs();
     assert(reattached === 2 && controller.connections.has('m3'), 'evicted persistent connection was not reattached on the next refresh');
 
-    process.stdout.write(JSON.stringify({ success: true, staleTabsClosed: closed.length, nativeTabsAdopted: 3, generatedTabs: generated, repairedMapping: controller.tabMap.get('m2').get('slave-2'), reattachedConnections: reattached, evictedFailedConnections: events.filter((event) => event.type === 'live-sync-reattach').length, connectionCloses, finalCounts: controller.slaves.map((slave) => lists.get(slave.port).length), reconciliationEvents: events.filter((event) => event.type === 'live-sync-tab-reconcile').length, navigated }, null, 2));
+    // Hold a real asynchronous allocation open while a forwarded event asks
+    // for the same master tab. Both callers must reserve one slave target.
+    const racedMaster=tab('m-race','https://example.test/race');lists.get(1).push(racedMaster);controller.masterTabs.push(racedMaster);
+    const originalNew=cdp.newTab;let releaseAllocation,allocationStarted;
+    const entered=new Promise(resolve=>allocationStarted=resolve),gate=new Promise(resolve=>releaseAllocation=resolve);
+    cdp.newTab=async(port,url)=>{allocationStarted();await gate;return originalNew(port,url);};
+    const beforeRace=generated,staleLists=new Map(controller.slaves.map(slave=>[slave.id,[]]));
+    const mappingRequest=controller.ensureMapping(racedMaster,-1,staleLists);await entered;
+    const forwardedRequest=controller.slaveTab(controller.slaves[0],racedMaster.id);releaseAllocation();
+    const [,forwarded]=await Promise.all([mappingRequest,forwardedRequest]);
+    assert(generated-beforeRace===controller.slaves.length,'concurrent forwarded event created duplicate mapped targets');
+    assert(forwarded.id===controller.tabMap.get(racedMaster.id).get(controller.slaves[0].id),'forwarded event used different reservation');
+    cdp.newTab=originalNew;
+    const preservedIds=controller.slaves.flatMap(slave=>lists.get(slave.port).map(value=>value.id));
+    await controller.ensureMapping(racedMaster,-1,staleLists);
+    assert(controller.slaves.flatMap(slave=>lists.get(slave.port).map(value=>value.id)).join(',')===preservedIds.join(','),'stale refresh snapshot discarded new target reservation');
+    const laterMaster=tab('m-after-snapshot','https://example.test/later');lists.get(1).push(laterMaster);
+    const closedBeforeSnapshot=closed.length;await controller.reconcileSlaveTabs(controller.masterTabs,new Map(controller.slaves.map(slave=>[slave.id,lists.get(slave.port)])));
+    assert(closed.length===closedBeforeSnapshot,'cleanup closed tabs using a stale master snapshot');
+
+    const stopped=new LiveSyncController({running:new Map(),on:()=>()=>{}},()=>{});stopped.master={id:'stop-master',item:{port:1}};stopped.slaves=[{id:'stop-slave',port:2}];
+    let allocationEntered,finishStoppedAllocation,queuedAfterStop=false;
+    const stoppedEntered=new Promise(resolve=>allocationEntered=resolve),stoppedGate=new Promise(resolve=>finishStoppedAllocation=resolve);
+    const beforeStoppedIds=lists.get(2).map(value=>value.id).join(',');
+    cdp.newTab=async(port,url)=>{allocationEntered();await stoppedGate;return originalNew(port,url);};
+    const stoppedAllocation=stopped.ensureMapping(tab('m-stopped','https://example.test/stopped'),-1,new Map([['stop-slave',[]]]));await stoppedEntered;
+    const cancelledQueue=stopped.serializeTabMapping(()=>{queuedAfterStop=true;});stopped.stop();finishStoppedAllocation();await Promise.all([stoppedAllocation,cancelledQueue]);cdp.newTab=originalNew;
+    assert(stopped.tabMap.size===0&&!queuedAfterStop,'stop resurrected mapping or executed queued session work');
+    assert(lists.get(2).map(value=>value.id).join(',')===beforeStoppedIds,'cancelled allocation left an unowned browser tab');
+
+    process.stdout.write(JSON.stringify({ status: 'PASS', success: true, staleTabsClosed: closed.length, nativeTabsAdopted: 3, generatedTabs: generated, repairedMapping: controller.tabMap.get('m2').get('slave-2'), reattachedConnections: reattached, evictedFailedConnections: events.filter((event) => event.type === 'live-sync-reattach').length, connectionCloses, finalCounts: controller.slaves.map((slave) => lists.get(slave.port).length), reconciliationEvents: events.filter((event) => event.type === 'live-sync-tab-reconcile').length, navigated }, null, 2));
   } finally {
     for (const [name, value] of Object.entries(originals)) cdp[name] = value;
   }

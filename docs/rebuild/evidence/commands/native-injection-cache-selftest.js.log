@@ -1,0 +1,1 @@
+INJECTION_CACHE_SELFTEST OK (bounded LRU, warm metadata, caller isolation, opt-outs, live variants, telemetry, source digests)

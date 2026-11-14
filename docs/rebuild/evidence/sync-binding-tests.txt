@@ -1,0 +1,1 @@
+PASS: input reaches captured CDP binding after fullscreen bridge removes its global; global stays absent

@@ -1,0 +1,1 @@
+PASS: real engine CRUD, secrets, stale edits, restart, trash, template concurrency, local transfer, field mapping, rejection recovery, protocol/realpath confinement

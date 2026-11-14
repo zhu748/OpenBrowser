@@ -11,6 +11,7 @@
 
 const cdp = require('../cdp');
 const { createCssFontResponseRewriter } = require('../automation/css-font-response-rewrite');
+const { ImageSizeFilter } = require('../automation/image-size-filter');
 const { applyFingerprintToTab, buildFingerprint, buildWorkerInjectionScript, forgetFingerprintOwner, forgetFingerprintTarget } = require('../automation/fingerprint');
 const { LIVE_PROBE_EXPRESSION, fpLog } = require('../automation/fingerprint-debug-log');
 const { deriveFontPlaceholder } = require('../automation/font-placeholder');
@@ -82,6 +83,9 @@ module.exports = {
       },
     });
     item.cssFontResponseRewriter = fontResponseRewriter;
+    const imageError=error=>{if(!item.stopping&&!item.cleanedUp)this.emit({type:'image-size-filter-error',id:item.profile?.id,message:error.message,channel:'local:error',payload:'图片过滤失败：'+error.message});};
+    const imageSizeFilter=new ImageSizeFilter({limit:item.profile?.advanced?.imageMaxBytes||0,onError:imageError});
+    item.imageSizeFilter=imageSizeFilter;
     // Chromium 157+ worker delivery: page-level Fetch prefixing of worker scripts.
     // Created up front with the full source; only consulted when the runtime probe
     // marks the browser as requiring prefix delivery (item.workerScriptPrefixDelivery).
@@ -113,7 +117,11 @@ module.exports = {
     const workerTypes = new Set(['worker', 'shared_worker', 'service_worker']);
     const targetSetup = new Map();
     const sessionStates = new Map();
-    const internalUrl = /^(chrome|chrome-extension|edge|edge-extension|devtools):/i;
+    // The watch fallback must not compete with this paused-target owner.
+    // This live map is cleared by cancellation/detach and never marks a
+    // pending document as delivered.
+    item.fingerprintSessionStates = sessionStates;
+    const internalUrl = /^(chrome|chrome-untrusted|chrome-extension|chrome-search|edge|edge-untrusted|edge-extension|devtools):/i;
     const report = (error, targetInfo = {}) => {
       item.workerFingerprintError = error.message;
       this.emit({
@@ -307,6 +315,14 @@ module.exports = {
         return;
       }
 
+      if(imageSizeFilter.matches(event)){
+        imageSizeFilter.handlePaused(event,connection).catch(error=>{
+          if(item.stopping||item.cleanedUp)return;
+          imageError(error);if(error.released)return;
+          report(error,{type:'page'});
+          this.handleBrowserGone(item.profile.id,item,'image-filter-failed',{expected:false,error:error.message,kill:true,waitForExit:true}).catch(failure=>this.emit({type:'image-size-filter-error',id:item.profile?.id,message:failure.message}));
+        });return;
+      }
       // Fetch.requestPaused is delivered on this same browser connection. It must be dispatched
       // before the Target branch below, otherwise a paused parser response can wait forever.
       try { fontResponseRewriter.handleEvent(event, connection); } catch (_) {}
@@ -336,6 +352,7 @@ module.exports = {
           try { requestHeaderRewriter.cleanupSession(detachedSessionId); } catch (_) {}
           workerScriptPrefixer.cleanupSession(detachedSessionId);
           try { fontResponseRewriter.cleanupSession?.(detachedSessionId); } catch (_) {}
+          imageSizeFilter.cleanupSession(detachedSessionId);
         }
         if (detachedState?.ready) {
           confirmLostReadySession(detachedState, connection).catch((error) => report(error, { targetId: detachedTargetId }));
@@ -363,6 +380,7 @@ module.exports = {
           targetSetup.delete(session);
           requestHeaderRewriter.cleanupSession(session);
           fontResponseRewriter.cleanupSession?.(session);
+          imageSizeFilter.cleanupSession(session);
         }
         if (destroyedId && pendingInitialTargets.has(destroyedId)) {
           pendingInitialTargets.delete(destroyedId);
@@ -450,6 +468,7 @@ module.exports = {
           await state.command('Fetch.enable', {
             patterns: [
               { urlPattern: '*', requestStage: 'Request' },
+              ...(imageSizeFilter.enabled?[{urlPattern:'*',requestStage:'Response',resourceType:'Image'}]:[]),
               ...(fontResponseRewriter.enabled ? [
                 { urlPattern: '*', requestStage: 'Response', resourceType: 'Document' },
                 { urlPattern: '*', requestStage: 'Response', resourceType: 'Stylesheet' },
@@ -632,6 +651,7 @@ module.exports = {
         policySessions.clear();
         try { requestHeaderRewriter.destroy(); } catch (_) {}
         try { fontResponseRewriter.destroy?.(); } catch (_) {}
+        imageSizeFilter.destroy();
         try { workerScriptPrefixer.destroy(); } catch (_) {}
         if (!barrierSettled) {
           settleBarrier(new Error(`CDP connection closed before initial target barrier resolved: ${error?.message || error}`));
@@ -659,6 +679,7 @@ module.exports = {
       policySessions.clear();
       try { requestHeaderRewriter.destroy(); } catch (_) {}
       try { fontResponseRewriter.destroy?.(); } catch (_) {}
+      imageSizeFilter.destroy();
       try { workerScriptPrefixer.destroy(); } catch (_) {}
       if (!barrierSettled) {
         settleBarrier(new Error('CDP connection closed before initial target barrier resolved'));

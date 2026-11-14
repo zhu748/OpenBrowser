@@ -1,0 +1,11 @@
+{
+  "passed": false,
+  "checks": [
+    "原版 Skill 编辑只提交 prompt，包/文件/slug 保留，实际任务仍读取包正文",
+    "22 个真实模型回合；刷新后后台未读保留；选择会话触发真实已读 DTO；原向上滚动按游标加载全部 44 条消息，无重复"
+  ],
+  "errors": [],
+  "externalRequests": [],
+  "failure": "locator.waitFor: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.conversation-item').filter({ hasText: '已重命名的历史' }).locator('.conversation-delete') to be visible\u001b[22m\n\n    at /workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-ui-selftest.cjs:98:51",
+  "body": "OpenBrowser AI Agent\n新建对话\n模板商城\n任务管理\n我的模板\n对话\n已重命名的历史\n修改后的任务提示词 参考 Skill：--- name: contract-edit\n窗口管理\n设置\n已重命名的历史\n任务耗时 1s\n\nreply:history-19\n\n11/14 13:19\n\nhistory-20\n\n11/14 13:19\n任务耗时 1s\n\nreply:history-20\n\n11/14 13:19\n\nhistory-21\n\n11/14 13:19\n任务耗时 1s\n\nreply:history-21\n\n11/14 13:19\n直接对我说出您的需求，输入 @ 选择窗口，/ 使用模板\n\n\n\n\n选窗口\n选模板\n传文件\n完全访问权限"
+}

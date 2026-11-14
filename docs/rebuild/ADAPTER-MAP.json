@@ -1,0 +1,1541 @@
+{
+  "adapters": {
+    "methods": [
+      {
+        "name": "userAnalysisWindowInfoCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 193,
+        "backend": [
+          "profiles:analyse-import"
+        ]
+      },
+      {
+        "name": "userImportWindowInfoV2Create",
+        "parameters": [
+          "p"
+        ],
+        "line": 194,
+        "backend": [
+          "profiles:import"
+        ]
+      },
+      {
+        "name": "userGetWindowInfoListList",
+        "parameters": [
+          "p = {}"
+        ],
+        "line": 195,
+        "backend": []
+      },
+      {
+        "name": "userGetWindowInfoV2List",
+        "parameters": [
+          "p"
+        ],
+        "line": 301,
+        "backend": [
+          "profiles:read"
+        ]
+      },
+      {
+        "name": "userGetWindowInfoList",
+        "parameters": [
+          "p"
+        ],
+        "line": 312,
+        "backend": [
+          "profiles:read"
+        ]
+      },
+      {
+        "name": "userAddWindowInfoV2Create",
+        "parameters": [
+          "p"
+        ],
+        "line": 314,
+        "backend": [
+          "profiles:create"
+        ]
+      },
+      {
+        "name": "userMdfWindowInfoSingleV2Create",
+        "parameters": [
+          "p"
+        ],
+        "line": 315,
+        "backend": [
+          "profiles:update",
+          "profiles:patch"
+        ]
+      },
+      {
+        "name": "userDelWindowInfoBatchCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 319,
+        "backend": [
+          "profiles:delete"
+        ]
+      },
+      {
+        "name": "userMdfWindowSyncV2Create",
+        "parameters": [
+          "p"
+        ],
+        "line": 320,
+        "backend": [
+          "profiles:list"
+        ]
+      },
+      {
+        "name": "userMdfWindowDataBatchCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 328,
+        "backend": [
+          "profiles:edit-data"
+        ]
+      },
+      {
+        "name": "userDelWindowInfoCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 329,
+        "backend": [
+          "profiles:purge"
+        ]
+      },
+      {
+        "name": "userDelWindowInfoRecycleCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 330,
+        "backend": [
+          "profiles:purge"
+        ]
+      },
+      {
+        "name": "userGetUaWebglV2List",
+        "parameters": [
+          "p"
+        ],
+        "line": 331,
+        "backend": [
+          "fingerprint:preview"
+        ]
+      },
+      {
+        "name": "userGetDeviceNameV2List",
+        "parameters": [
+          "p"
+        ],
+        "line": 332,
+        "backend": [
+          "fingerprint:preview"
+        ]
+      },
+      {
+        "name": "userGetMacAddrV2List",
+        "parameters": [
+          "p"
+        ],
+        "line": 333,
+        "backend": [
+          "fingerprint:preview"
+        ]
+      },
+      {
+        "name": "userGetBrowserVersionInfoList",
+        "parameters": [],
+        "line": 334,
+        "backend": [
+          "kernels:list"
+        ]
+      },
+      {
+        "name": "userGetWindowStatusInfoCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 338,
+        "backend": [
+          "profiles:list"
+        ]
+      },
+      {
+        "name": "userRestoreWindowInfoCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 340,
+        "backend": [
+          "profiles:restore"
+        ]
+      },
+      {
+        "name": "userCopyWindowInfoCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 341,
+        "backend": [
+          "profiles:clone"
+        ]
+      },
+      {
+        "name": "userBatchWindowInfoV2Create",
+        "parameters": [
+          "p"
+        ],
+        "line": 342,
+        "backend": [
+          "profiles:create-batch"
+        ]
+      },
+      {
+        "name": "userGetWindowSortNumList",
+        "parameters": [],
+        "line": 343,
+        "backend": [
+          "profiles:list"
+        ]
+      },
+      {
+        "name": "userGetWindowFilterNameListList",
+        "parameters": [],
+        "line": 346,
+        "backend": [
+          "filters:list"
+        ]
+      },
+      {
+        "name": "userUpdateWindowFilterNameCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 347,
+        "backend": [
+          "filters:save"
+        ]
+      },
+      {
+        "name": "userAddWindowFilterNameCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 348,
+        "backend": [
+          "filters:save"
+        ]
+      },
+      {
+        "name": "userDeleteWindowFilterNameCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 349,
+        "backend": [
+          "filters:delete"
+        ]
+      },
+      {
+        "name": "userUpdateWindowFilterSortCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 350,
+        "backend": [
+          "settings:set"
+        ]
+      },
+      {
+        "name": "userGetWindowTemplateListList",
+        "parameters": [],
+        "line": 352,
+        "backend": [
+          "templates:list"
+        ]
+      },
+      {
+        "name": "userAddWindowTemplateInfoCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 353,
+        "backend": [
+          "templates:save"
+        ]
+      },
+      {
+        "name": "userMdfWindowTemplateInfoCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 354,
+        "backend": [
+          "templates:save"
+        ]
+      },
+      {
+        "name": "userDeleteWindowTemplateInfoCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 355,
+        "backend": [
+          "templates:delete"
+        ]
+      },
+      {
+        "name": "userGetUserConfigList",
+        "line": 357,
+        "backend": []
+      },
+      {
+        "name": "userSetUserConfigCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 358,
+        "backend": [
+          "settings:set"
+        ]
+      },
+      {
+        "name": "userGetUserApiList",
+        "parameters": [],
+        "line": 359,
+        "backend": [
+          "api:get"
+        ]
+      },
+      {
+        "name": "userSetUserApiCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 360,
+        "backend": [
+          "api:set"
+        ]
+      },
+      {
+        "name": "userChangeUsernameCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 361,
+        "backend": [
+          "settings:set"
+        ]
+      },
+      {
+        "name": "userGetProjectInfoByWorkspaceList",
+        "parameters": [
+          "p = {}"
+        ],
+        "line": 365,
+        "backend": [
+          "groups:list"
+        ]
+      },
+      {
+        "name": "userGetPluginListList",
+        "parameters": [
+          "p"
+        ],
+        "line": 369,
+        "backend": [
+          "extensions:list"
+        ]
+      },
+      {
+        "name": "userFixedPluginToWindowCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 370,
+        "backend": [
+          "extensions:pin"
+        ]
+      },
+      {
+        "name": "userUploadChromePluginsV2Create",
+        "parameters": [
+          "p"
+        ],
+        "line": 371,
+        "backend": [
+          "extensions:store"
+        ]
+      },
+      {
+        "name": "userUploadPluginInfoCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 372,
+        "backend": [
+          "extensions:finish"
+        ]
+      },
+      {
+        "name": "userAddPluginToWindowCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 373,
+        "backend": [
+          "extensions:assign"
+        ]
+      },
+      {
+        "name": "userGetPluginInfoByIdList",
+        "parameters": [
+          "p"
+        ],
+        "line": 374,
+        "backend": [
+          "extensions:read"
+        ]
+      },
+      {
+        "name": "userCheckAllPluginsVersionList",
+        "parameters": [
+          "p"
+        ],
+        "line": 375,
+        "backend": [
+          "extensions:reload"
+        ]
+      },
+      {
+        "name": "userUpgradePluginsCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 376,
+        "backend": [
+          "extensions:reload"
+        ]
+      },
+      {
+        "name": "userBatchDelPluginInfoCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 377,
+        "backend": [
+          "extensions:remove"
+        ]
+      },
+      {
+        "name": "userGetTopProjectInfoList",
+        "parameters": [],
+        "line": 378,
+        "backend": [
+          "groups:list"
+        ]
+      },
+      {
+        "name": "userAddProjectInfoCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 379,
+        "backend": [
+          "groups:save"
+        ]
+      },
+      {
+        "name": "userMdfProjectInfoCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 380,
+        "backend": [
+          "groups:save"
+        ]
+      },
+      {
+        "name": "userDelProjectInfoCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 381,
+        "backend": [
+          "groups:delete"
+        ]
+      },
+      {
+        "name": "userMdfProjectSortCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 383,
+        "backend": [
+          "groups:sort"
+        ]
+      },
+      {
+        "name": "userGetProxyListMergedList",
+        "line": 384,
+        "backend": []
+      },
+      {
+        "name": "userGetProxyAllCountriesList",
+        "parameters": [],
+        "line": 385,
+        "backend": [
+          "proxies:list"
+        ]
+      },
+      {
+        "name": "userGetProxyProvidersTypeList",
+        "parameters": [],
+        "line": 393,
+        "backend": []
+      },
+      {
+        "name": "userGetProxyVendorListList",
+        "parameters": [],
+        "line": 394,
+        "backend": [
+          "proxies:list"
+        ]
+      },
+      {
+        "name": "userGetProxyTableSortOrderList",
+        "parameters": [],
+        "line": 400,
+        "backend": [
+          "settings:get"
+        ]
+      },
+      {
+        "name": "userSaveProxyTableSortOrderCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 402,
+        "backend": [
+          "settings:set"
+        ]
+      },
+      {
+        "name": "userGetProxyModuleListList",
+        "line": 404,
+        "backend": []
+      },
+      {
+        "name": "userGetProxyModuleV2List",
+        "line": 405,
+        "backend": []
+      },
+      {
+        "name": "userGetProxyModuleList",
+        "line": 406,
+        "backend": []
+      },
+      {
+        "name": "userGetProxyDetailMergedList",
+        "parameters": [
+          "p"
+        ],
+        "line": 407,
+        "backend": [
+          "proxies:read"
+        ]
+      },
+      {
+        "name": "userGetRandomAvailableProxyMergedList",
+        "parameters": [],
+        "line": 409,
+        "backend": [
+          "proxies:list"
+        ]
+      },
+      {
+        "name": "userBatchCheckProxyImportCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 415,
+        "backend": [
+          "proxies:duplicates"
+        ]
+      },
+      {
+        "name": "userMdfProxyBindWindowCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 416,
+        "backend": [
+          "proxies:bind"
+        ]
+      },
+      {
+        "name": "userBatchMdfProxyModuleCheckCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 417,
+        "backend": [
+          "proxies:save-results"
+        ]
+      },
+      {
+        "name": "userMdfWindowProxyCheckBatchCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 418,
+        "backend": [
+          "profiles:proxy-results"
+        ]
+      },
+      {
+        "name": "userAddProxyModuleV2Create",
+        "parameters": [
+          "p"
+        ],
+        "line": 420,
+        "backend": [
+          "proxies:create-many"
+        ]
+      },
+      {
+        "name": "userMdfProxyModuleCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 422,
+        "backend": [
+          "proxies:update"
+        ]
+      },
+      {
+        "name": "userDelProxyModuleV2Create",
+        "parameters": [
+          "p"
+        ],
+        "line": 433,
+        "backend": [
+          "proxies:delete"
+        ]
+      },
+      {
+        "name": "userMdfWindowInfoBatchV2Create",
+        "parameters": [
+          "p"
+        ],
+        "line": 435,
+        "backend": [
+          "profiles:patch"
+        ]
+      },
+      {
+        "name": "userGetProjectListList",
+        "parameters": [],
+        "line": 441,
+        "backend": [
+          "groups:list"
+        ]
+      },
+      {
+        "name": "userGetLabelInfoList",
+        "parameters": [],
+        "line": 442,
+        "backend": [
+          "labels:list"
+        ]
+      },
+      {
+        "name": "userAddLabelInfoCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 446,
+        "backend": [
+          "labels:save"
+        ]
+      },
+      {
+        "name": "userMdfLabelInfoCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 447,
+        "backend": [
+          "labels:save"
+        ]
+      },
+      {
+        "name": "userDelLabelInfoCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 448,
+        "backend": [
+          "labels:delete"
+        ]
+      },
+      {
+        "name": "userGetWindowPlatformAccountListList",
+        "parameters": [],
+        "line": 449,
+        "backend": [
+          "profiles:list"
+        ]
+      },
+      {
+        "name": "userGetPlatformInfoList",
+        "parameters": [],
+        "line": 462,
+        "backend": []
+      },
+      {
+        "name": "userGetPlatformInfoV2List",
+        "parameters": [
+          "p = {}"
+        ],
+        "line": 476,
+        "backend": [
+          "accounts:list"
+        ]
+      },
+      {
+        "name": "userAddPlatformInfoCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 477,
+        "backend": [
+          "accounts:create"
+        ]
+      },
+      {
+        "name": "userAddPlatformInfoBatchCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 478,
+        "backend": [
+          "accounts:create"
+        ]
+      },
+      {
+        "name": "userMdfPlatformInfoCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 482,
+        "backend": [
+          "accounts:update"
+        ]
+      },
+      {
+        "name": "userMdfPlatformBindWindowCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 483,
+        "backend": [
+          "accounts:bind"
+        ]
+      },
+      {
+        "name": "userDelPlatformInfoCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 484,
+        "backend": [
+          "accounts:delete"
+        ]
+      },
+      {
+        "name": "userGetSearchEnginesList",
+        "parameters": [],
+        "line": 485,
+        "backend": []
+      },
+      {
+        "name": "userGetWindowTableSortOrderList",
+        "parameters": [],
+        "line": 497,
+        "backend": [
+          "settings:get"
+        ]
+      },
+      {
+        "name": "userSaveWindowTableSortOrderCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 499,
+        "backend": [
+          "settings:set"
+        ]
+      },
+      {
+        "name": "userCheckWindowTotalCountList",
+        "parameters": [],
+        "line": 501,
+        "backend": []
+      },
+      {
+        "name": "userGetQuickCreateTemplateList",
+        "parameters": [],
+        "line": 502,
+        "backend": [
+          "settings:get"
+        ]
+      },
+      {
+        "name": "userAddQuickCreateTemplateCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 504,
+        "backend": [
+          "settings:set"
+        ]
+      },
+      {
+        "name": "userMdfQuickCreateTemplateCreate",
+        "parameters": [
+          "p"
+        ],
+        "line": 506,
+        "backend": [
+          "settings:set"
+        ]
+      }
+    ],
+    "sends": [
+      {
+        "name": "api:getStatus",
+        "parameters": [],
+        "line": 534,
+        "backend": [
+          "api:status"
+        ]
+      },
+      {
+        "name": "util:checkPort",
+        "parameters": [
+          "port"
+        ],
+        "line": 535,
+        "backend": [
+          "api:check-port"
+        ]
+      },
+      {
+        "name": "util:genApiKey",
+        "parameters": [],
+        "line": 536,
+        "backend": [
+          "ops.rotateApiKey"
+        ]
+      },
+      {
+        "name": "browser:createDesktopShortcut",
+        "parameters": [
+          "p"
+        ],
+        "line": 537,
+        "backend": [
+          "host:shortcut"
+        ]
+      },
+      {
+        "name": "browser:setAsDefaultBrowser",
+        "parameters": [
+          "p"
+        ],
+        "line": 538,
+        "backend": [
+          "host:default-browser"
+        ]
+      },
+      {
+        "name": "util:getCommonRequestHeaders",
+        "parameters": [],
+        "line": 539,
+        "backend": []
+      },
+      {
+        "name": "extension:getSelectedExtensionInfo",
+        "parameters": [
+          "kind"
+        ],
+        "line": 540,
+        "backend": [
+          "extensions:select"
+        ]
+      },
+      {
+        "name": "extension:stageLocal",
+        "parameters": [
+          "p"
+        ],
+        "line": 541,
+        "backend": [
+          "extensions:stage"
+        ]
+      },
+      {
+        "name": "extension:getExtensionInfo",
+        "parameters": [
+          "id"
+        ],
+        "line": 542,
+        "backend": [
+          "extensions:exists"
+        ]
+      },
+      {
+        "name": "extension:showExtensionDir",
+        "parameters": [
+          "id"
+        ],
+        "line": 543,
+        "backend": [
+          "extensions:show"
+        ]
+      },
+      {
+        "name": "extension:download",
+        "parameters": [
+          "rows"
+        ],
+        "line": 544,
+        "backend": [
+          "extensions:verify"
+        ]
+      },
+      {
+        "name": "extension:remove",
+        "parameters": [
+          "ids"
+        ],
+        "line": 546,
+        "backend": [
+          "extensions:verify-removed"
+        ]
+      },
+      {
+        "name": "dialog:selectFileOrDirInfo",
+        "parameters": [],
+        "line": 547,
+        "backend": [
+          "agent:files:choose"
+        ]
+      },
+      {
+        "name": "app:downloadLocalFile",
+        "parameters": [
+          "payload"
+        ],
+        "line": 553,
+        "backend": [
+          "agent:files:export"
+        ]
+      },
+      {
+        "name": "syncControl:open",
+        "parameters": [],
+        "line": 554,
+        "backend": [
+          "settings:get",
+          "sync:restore"
+        ]
+      },
+      {
+        "name": "syncControl:close",
+        "parameters": [],
+        "line": 558,
+        "backend": [
+          "sync:shortcuts:clear"
+        ]
+      },
+      {
+        "name": "syncControl:start",
+        "parameters": [
+          "ids"
+        ],
+        "line": 562,
+        "backend": [
+          "settings:get",
+          "sync:restore",
+          "ops.startSync"
+        ]
+      },
+      {
+        "name": "syncControl:stop",
+        "parameters": [],
+        "line": 568,
+        "backend": [
+          "ops.stopSync"
+        ]
+      },
+      {
+        "name": "syncControl:pause",
+        "parameters": [],
+        "line": 573,
+        "backend": [
+          "sync:shortcuts:clear",
+          "ops.stopSync"
+        ]
+      },
+      {
+        "name": "syncControl:resume",
+        "parameters": [],
+        "line": 577,
+        "backend": [
+          "settings:get",
+          "sync:restore",
+          "ops.getSyncState",
+          "ops.startSync"
+        ]
+      },
+      {
+        "name": "syncControl:getSyncWindowCount",
+        "parameters": [],
+        "line": 583,
+        "backend": [
+          "ops.getSyncState",
+          "profiles:list"
+        ]
+      },
+      {
+        "name": "syncControl:showAll",
+        "parameters": [],
+        "line": 589,
+        "backend": [
+          "ops.getSyncState",
+          "ops.windowAction"
+        ]
+      },
+      {
+        "name": "syncControl:doLayout",
+        "parameters": [
+          "p"
+        ],
+        "line": 595,
+        "backend": [
+          "sync:layout"
+        ]
+      },
+      {
+        "name": "syncControl:openPreferencesDialog",
+        "parameters": [
+          "p"
+        ],
+        "line": 596,
+        "backend": [
+          "ui:dialog:open"
+        ]
+      },
+      {
+        "name": "syncControl:openBatchInputsDialog",
+        "parameters": [
+          "p"
+        ],
+        "line": 598,
+        "backend": [
+          "ui:dialog:open"
+        ]
+      },
+      {
+        "name": "syncControl:openOpenSitesDialog",
+        "parameters": [],
+        "line": 600,
+        "backend": [
+          "ui:dialog:open"
+        ]
+      },
+      {
+        "name": "syncControl:openSyncingWindowListDialog",
+        "parameters": [],
+        "line": 602,
+        "backend": [
+          "ui:dialog:open"
+        ]
+      },
+      {
+        "name": "syncControl:closePreferencesDialog",
+        "parameters": [],
+        "line": 604,
+        "backend": [
+          "ui:dialog:close"
+        ]
+      },
+      {
+        "name": "syncControl:closeBatchInputsDialog",
+        "parameters": [],
+        "line": 605,
+        "backend": [
+          "ui:dialog:close"
+        ]
+      },
+      {
+        "name": "syncControl:closeOpenSitesDialog",
+        "parameters": [],
+        "line": 606,
+        "backend": [
+          "ui:dialog:close"
+        ]
+      },
+      {
+        "name": "syncControl:closeSyncingWindowListDialog",
+        "parameters": [],
+        "line": 607,
+        "backend": [
+          "ui:dialog:close"
+        ]
+      },
+      {
+        "name": "syncControl:resizePreferencesDialog",
+        "parameters": [
+          "p"
+        ],
+        "line": 608,
+        "backend": [
+          "ui:dialog:resize"
+        ]
+      },
+      {
+        "name": "syncControl:resizeBatchInputsDialog",
+        "parameters": [
+          "p"
+        ],
+        "line": 609,
+        "backend": [
+          "ui:dialog:resize"
+        ]
+      },
+      {
+        "name": "syncControl:getMainControlDirId",
+        "parameters": [],
+        "line": 610,
+        "backend": [
+          "ops.getSyncState"
+        ]
+      },
+      {
+        "name": "syncControl:getMainControlBrowserSize",
+        "parameters": [],
+        "line": 614,
+        "backend": [
+          "sync:master-bounds"
+        ]
+      },
+      {
+        "name": "syncControl:batchInputText",
+        "parameters": [
+          "p"
+        ],
+        "line": 615,
+        "backend": [
+          "sync:batch-text"
+        ]
+      },
+      {
+        "name": "syncControl:openSites",
+        "parameters": [
+          "p"
+        ],
+        "line": 616,
+        "backend": [
+          "sync:open-sites"
+        ]
+      },
+      {
+        "name": "syncControl:checkShortcutKeysIsOccupied",
+        "parameters": [
+          "p"
+        ],
+        "line": 617,
+        "backend": [
+          "sync:shortcuts:check"
+        ]
+      },
+      {
+        "name": "syncControl:registerShortcut",
+        "parameters": [
+          "p"
+        ],
+        "line": 619,
+        "backend": [
+          "sync:shortcuts:register"
+        ]
+      },
+      {
+        "name": "syncControl:changeSyncSettings",
+        "parameters": [
+          "p"
+        ],
+        "line": 636,
+        "backend": [
+          "sync:settings"
+        ]
+      },
+      {
+        "name": "syncControl:getAllSyncingWindows",
+        "parameters": [],
+        "line": 637,
+        "backend": [
+          "ops.getSyncState",
+          "profiles:list"
+        ]
+      },
+      {
+        "name": "app:getMacAddress",
+        "parameters": [],
+        "line": 649,
+        "backend": [
+          "host:mac"
+        ]
+      },
+      {
+        "name": "proxy:detect",
+        "parameters": [
+          "p"
+        ],
+        "line": 650,
+        "backend": [
+          "proxies:detect"
+        ]
+      },
+      {
+        "name": "proxy:detectNetwork",
+        "parameters": [],
+        "line": 651,
+        "backend": [
+          "host:network"
+        ]
+      },
+      {
+        "name": "proxy:refreshUrl",
+        "parameters": [
+          "url"
+        ],
+        "line": 652,
+        "backend": [
+          "proxies:refresh"
+        ]
+      },
+      {
+        "name": "proxy:extract",
+        "parameters": [
+          "url"
+        ],
+        "line": 653,
+        "backend": [
+          "proxies:extract"
+        ]
+      },
+      {
+        "name": "proxy:export",
+        "parameters": [
+          "p"
+        ],
+        "line": 654,
+        "backend": [
+          "proxies:export"
+        ]
+      },
+      {
+        "name": "util:removeProject",
+        "parameters": [],
+        "line": 656,
+        "backend": []
+      },
+      {
+        "name": "browser:batchRemove",
+        "parameters": [
+          "ids"
+        ],
+        "line": 657,
+        "backend": [
+          "profiles:purge"
+        ]
+      },
+      {
+        "name": "browser:clearCache",
+        "parameters": [
+          "p"
+        ],
+        "line": 658,
+        "backend": [
+          "profiles:clear-cache"
+        ]
+      },
+      {
+        "name": "browser:exportProfiles",
+        "parameters": [
+          "payload"
+        ],
+        "line": 659,
+        "backend": [
+          "transfer:export"
+        ]
+      },
+      {
+        "name": "util:genRandomFingerprint",
+        "parameters": [
+          "p",
+          "count"
+        ],
+        "line": 660,
+        "backend": [
+          "fingerprint:preview"
+        ]
+      },
+      {
+        "name": "util:callRandomFingerprintFunc",
+        "parameters": [
+          "functions"
+        ],
+        "line": 662,
+        "backend": [
+          "fingerprint:preview"
+        ]
+      },
+      {
+        "name": "util:genRandomFonts",
+        "parameters": [],
+        "line": 678,
+        "backend": [
+          "fingerprint:preview"
+        ]
+      },
+      {
+        "name": "app:isMainWindow",
+        "parameters": [],
+        "line": 680,
+        "backend": []
+      },
+      {
+        "name": "app:showCurrentWebviewWindow",
+        "parameters": [],
+        "line": 681,
+        "backend": [
+          "ui:dialog:show"
+        ]
+      },
+      {
+        "name": "app:resizeWindow",
+        "parameters": [
+          "p"
+        ],
+        "line": 682,
+        "backend": [
+          "ui:dialog:resize"
+        ]
+      },
+      {
+        "name": "app:getAppVersion",
+        "parameters": [],
+        "line": 683,
+        "backend": [
+          "ops.getInfo"
+        ]
+      },
+      {
+        "name": "app:getSoftConfig",
+        "parameters": [],
+        "line": 684,
+        "backend": [
+          "settings:get"
+        ]
+      },
+      {
+        "name": "app:saveSoftConfig",
+        "parameters": [
+          "p"
+        ],
+        "line": 685,
+        "backend": [
+          "settings:set"
+        ]
+      },
+      {
+        "name": "app:getCoreList",
+        "parameters": [],
+        "line": 686,
+        "backend": [
+          "kernels:list"
+        ]
+      },
+      {
+        "name": "app:setSystemTheme",
+        "parameters": [
+          "p"
+        ],
+        "line": 704,
+        "backend": [
+          "settings:set"
+        ]
+      },
+      {
+        "name": "browser:getOpenedBrowser",
+        "parameters": [],
+        "line": 705,
+        "backend": [
+          "profiles:list"
+        ]
+      },
+      {
+        "name": "browser:getOpenedBrowserMessage",
+        "parameters": [],
+        "line": 713,
+        "backend": [
+          "profiles:list"
+        ]
+      },
+      {
+        "name": "browser:batchLaunch",
+        "parameters": [
+          "ids"
+        ],
+        "line": 715,
+        "backend": []
+      },
+      {
+        "name": "browser:startCookieRobot",
+        "parameters": [
+          "payload"
+        ],
+        "line": 716,
+        "backend": [
+          "cookie-robot:start"
+        ]
+      },
+      {
+        "name": "browser:chunkBrowsersByScreen",
+        "parameters": [
+          "ids"
+        ],
+        "line": 718,
+        "backend": [
+          "ops.windowAction"
+        ]
+      },
+      {
+        "name": "browser:openBatchLayout",
+        "parameters": [
+          "p"
+        ],
+        "line": 724,
+        "backend": [
+          "ops.windowAction"
+        ]
+      },
+      {
+        "name": "browser:batchRelaunch",
+        "parameters": [
+          "ids"
+        ],
+        "line": 739,
+        "backend": []
+      },
+      {
+        "name": "browser:batchClose",
+        "parameters": [
+          "ids"
+        ],
+        "line": 740,
+        "backend": [
+          "profiles:stop"
+        ]
+      },
+      {
+        "name": "browser:isProcessExists",
+        "parameters": [
+          "ids"
+        ],
+        "line": 742,
+        "backend": [
+          "profiles:list"
+        ]
+      },
+      {
+        "name": "browser:open",
+        "parameters": [
+          "p"
+        ],
+        "line": 746,
+        "backend": [
+          "profiles:start"
+        ]
+      },
+      {
+        "name": "browser:close",
+        "parameters": [
+          "p"
+        ],
+        "line": 748,
+        "backend": [
+          "profiles:stop"
+        ]
+      },
+      {
+        "name": "syncControl:unifyTabs",
+        "parameters": [],
+        "line": 620,
+        "backend": [
+          "ops.tabAction"
+        ],
+        "note": "Object.fromEntries 映射"
+      },
+      {
+        "name": "syncControl:closeOtherTabs",
+        "parameters": [],
+        "line": 620,
+        "backend": [
+          "ops.tabAction"
+        ],
+        "note": "Object.fromEntries 映射"
+      },
+      {
+        "name": "syncControl:closeCurrentTab",
+        "parameters": [],
+        "line": 620,
+        "backend": [
+          "ops.tabAction"
+        ],
+        "note": "Object.fromEntries 映射"
+      },
+      {
+        "name": "syncControl:closeBlankTabs",
+        "parameters": [],
+        "line": 620,
+        "backend": [
+          "ops.tabAction"
+        ],
+        "note": "Object.fromEntries 映射"
+      }
+    ]
+  },
+  "retainedApiCalls": 159,
+  "unmappedApi": [],
+  "unmappedChannels": [],
+  "dynamicChannels": [
+    {
+      "file": "window-list-C-MAmr_C.js",
+      "line": 86,
+      "channel": "X.value ? \"syncControl:getAllSyncingWindows\" : \"browser:getOpenedBrowser\""
+    }
+  ]
+}

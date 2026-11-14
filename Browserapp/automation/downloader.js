@@ -76,7 +76,7 @@ function fileNameFromUrl(rawUrl) {
 }
 
 /** Open a readable stream for url, following redirects. */
-function openRequest(url, { headers = {}, maxRedirects = DEFAULT_MAX_REDIRECTS, timeoutMs, validateUrl, signal } = {}) {
+function openRequest(url, { headers = {}, maxRedirects = DEFAULT_MAX_REDIRECTS, timeoutMs, validateUrl, signal, environmentProxy=false } = {}) {
   return new Promise((resolve, reject) => {
     let redirects = 0;
     let initialOrigin = null;
@@ -131,7 +131,8 @@ function openRequest(url, { headers = {}, maxRedirects = DEFAULT_MAX_REDIRECTS, 
 
       let discarded = false;
       const fail = (error) => { if (!discarded) reject(error); };
-      const req = transport.get(target, { headers: hopHeaders, signal }, (res) => {
+      const agent=environmentProxy?require('../network/environment-agent').environmentAgent(target):undefined;
+      const req = transport.get(target, { headers: hopHeaders, signal,agent }, (res) => {
         res.on('error', fail);
         const discard = () => {
           // Ignored bodies have no size or time bound. Do not keep draining
@@ -314,6 +315,7 @@ class Downloader extends EventEmitter {
       maxRedirects: this.options.maxRedirects,
       timeoutMs: this.timeoutMs,
       validateUrl: this.options.validateUrl,
+      environmentProxy:this.options.environmentProxy===true,
       signal: this._abortController.signal,
     });
     this._activeRes = res;

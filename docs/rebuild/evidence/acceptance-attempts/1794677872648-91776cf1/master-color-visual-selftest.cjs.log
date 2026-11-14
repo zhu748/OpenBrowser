@@ -1,0 +1,59 @@
+{
+  "passed": false,
+  "checks": [],
+  "errors": [],
+  "pixels": [
+    [
+      [
+        211,
+        227,
+        253
+      ],
+      [
+        211,
+        227,
+        253
+      ],
+      [
+        211,
+        227,
+        253
+      ]
+    ],
+    [
+      [
+        28,
+        106,
+        211
+      ],
+      [
+        28,
+        106,
+        211
+      ],
+      [
+        28,
+        106,
+        211
+      ]
+    ],
+    [
+      [
+        211,
+        227,
+        253
+      ],
+      [
+        211,
+        227,
+        253
+      ],
+      [
+        211,
+        227,
+        253
+      ]
+    ]
+  ],
+  "failure": "AssertionError [ERR_ASSERTION]: 配色后恢复原活动标签\n+ actual - expected\n\n+ 'hidden'\n- 'visible'\n\n    at /workspace/OpenBrowser/Browserapp/rebuild/master-color-visual-selftest.cjs:12:717"
+}

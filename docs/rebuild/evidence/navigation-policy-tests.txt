@@ -1,0 +1,29 @@
+ok    hostMatches compares case-insensitively
+ok    hostMatches supports a leading wildcard
+ok    hostMatches rejects empty input
+ok    originOf parses or returns null
+ok    development mode allows everything
+ok    allow-listed urls pass
+ok    allow-listed protocols pass
+ok    per-window host allow-list passes
+ok    wildcard window allow-list passes
+ok    host allow-list is scoped to its own window
+ok    same-origin navigation passes
+ok    cross-origin navigation is blocked
+ok    opaque-origin targets cannot ride the same-origin rule
+ok    malformed urls are blocked
+ok    missing policy blocks everything
+ok    file protocol is blocked when not allow-listed
+ok    about:blank is blocked when urls are not allow-listed
+ok    window open is allowed for allow-listed targets
+ok    disallowed external target is flagged for the system browser
+ok    disallowed non-http target is not marked external
+ok    guard blocks a disallowed will-navigate
+ok    guard allows a same-origin will-navigate
+ok    guard reports blocked navigations to the hook
+ok    guard denies new windows and forwards http targets externally
+ok    detach removes the navigation listener
+ok    guard rejects a webContents without .on
+ok    policy copies host lists so later mutation does not leak
+
+NAVIGATION_POLICY_SELFTEST OK 27/27

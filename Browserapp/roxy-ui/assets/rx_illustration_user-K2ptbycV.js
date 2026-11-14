@@ -1,0 +1,7 @@
+import {W as e,h as t,y as n} from "./runtime-core.esm-bundler-CBj16o9G.js";
+var r = { width: "1em", height: "1em", viewBox: "0 0 168 168", fill: "none", xmlns: "http://www.w3.org/2000/svg" };
+function i(i2, a2) {
+  return e(), t("svg", r, [...a2[0] ||= [n('<g opacity="0.6"><path d="M43.8634 106.632C46.4256 85.5757 62.294 68.5853 83.1261 64.5927C103.958 68.5853 119.935 85.5757 122.497 106.632L124.486 122.976C124.76 124.097 124.897 125.228 124.897 126.358C124.897 132.515 120.83 138.671 112.694 143.367C96.424 152.761 70.0443 152.761 53.7738 143.367C45.6386 138.671 41.5709 132.515 41.5709 126.358H41.4629L43.8634 106.632Z" fill="url(#paint0_linear_2416_9516)"></path><path d="M116.629 49.5161C116.629 68.0196 101.629 83.0196 83.1259 83.0196C64.6225 83.0196 49.6225 68.0196 49.6225 49.5161C49.6225 31.0127 64.6225 16.0127 83.1259 16.0127C101.629 16.0127 116.629 31.0127 116.629 49.5161Z" fill="url(#paint1_linear_2416_9516)"></path></g><defs><linearGradient id="paint0_linear_2416_9516" x1="183.182" y1="136.691" x2="24.4112" y2="78.8653" gradientUnits="userSpaceOnUse"><stop stop-color="#7ECCFC"></stop><stop offset="1" stop-color="#F0F9FE"></stop></linearGradient><linearGradient id="paint1_linear_2416_9516" x1="39.4527" y1="16.0127" x2="172.126" y2="90.3903" gradientUnits="userSpaceOnUse"><stop stop-color="#F9FCFF"></stop><stop offset="1" stop-color="#7ECCFC"></stop></linearGradient></defs>', 2)]]);
+}
+var a = { render: i };
+export {a as default,i as render};

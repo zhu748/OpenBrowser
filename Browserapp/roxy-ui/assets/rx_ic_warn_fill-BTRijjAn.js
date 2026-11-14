@@ -1,0 +1,7 @@
+import {W as e,f as t,h as n} from "./runtime-core.esm-bundler-CBj16o9G.js";
+var r = { width: "1em", height: "1em", viewBox: "0 0 12 12", fill: "none", xmlns: "http://www.w3.org/2000/svg" };
+function i(i2, a2) {
+  return e(), n("svg", r, [...a2[0] ||= [t("g", { id: "rx_ic_warn_fill", "clip-path": "url(#clip0_23442_4337)" }, [t("path", { id: "Outlined", "fill-rule": "evenodd", "clip-rule": "evenodd", d: "M6 11.5C9.03754 11.5 11.5 9.03754 11.5 6C11.5 2.96243 9.03754 0.5 6 0.5C2.96243 0.5 0.5 2.96243 0.5 6C0.5 9.03754 2.96243 11.5 6 11.5ZM6.00488 8.5C6.28103 8.5 6.50488 8.27614 6.50488 8C6.50488 7.72386 6.28103 7.5 6.00488 7.5H5.99988C5.72374 7.5 5.49988 7.72386 5.49988 8C5.49988 8.27614 5.72374 8.5 5.99988 8.5H6.00488ZM5.50488 6C5.50488 6.27614 5.72874 6.5 6.00488 6.5C6.28103 6.5 6.50488 6.27614 6.50488 6L6.50488 4C6.50488 3.72386 6.28103 3.5 6.00488 3.5C5.72874 3.5 5.50488 3.72386 5.50488 4L5.50488 6Z", fill: "#A3A9AD" })], -1), t("defs", null, [t("clipPath", { id: "clip0_23442_4337" }, [t("rect", { width: "12", height: "12", fill: "white" })])], -1)]]);
+}
+var a = { render: i };
+export {a as default,i as render};

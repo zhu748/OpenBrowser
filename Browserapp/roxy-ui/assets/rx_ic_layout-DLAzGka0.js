@@ -1,0 +1,7 @@
+import {W as e,f as t,h as n} from "./runtime-core.esm-bundler-CBj16o9G.js";
+var r = { xmlns: "http://www.w3.org/2000/svg", width: "1em", height: "1em", fill: "currentColor", viewBox: "0 0 24 24" };
+function i(i2, a2) {
+  return e(), n("svg", r, [...a2[0] ||= [t("path", { "fill-rule": "evenodd", d: "M2 5.6A2.6 2.6 0 0 1 4.6 3h4.8A2.6 2.6 0 0 1 12 5.6v4.8A2.6 2.6 0 0 1 9.4 13H4.6A2.6 2.6 0 0 1 2 10.4V5.6ZM4.6 5a.6.6 0 0 0-.6.6v4.8a.6.6 0 0 0 .6.6h4.8a.6.6 0 0 0 .6-.6V5.6a.6.6 0 0 0-.6-.6H4.6Zm8.4.6A2.6 2.6 0 0 1 15.6 3h3.8A2.6 2.6 0 0 1 22 5.6v12.8a2.6 2.6 0 0 1-2.6 2.6h-3.8a2.6 2.6 0 0 1-2.6-2.6V5.6Zm2.6-.6a.6.6 0 0 0-.6.6v12.8a.6.6 0 0 0 .6.6h3.8a.6.6 0 0 0 .6-.6V5.6a.6.6 0 0 0-.6-.6h-3.8Zm-11 9A2.6 2.6 0 0 0 2 16.6v1.8A2.6 2.6 0 0 0 4.6 21h4.8a2.6 2.6 0 0 0 2.6-2.6v-1.8A2.6 2.6 0 0 0 9.4 14H4.6ZM4 16.6a.6.6 0 0 1 .6-.6h4.8a.6.6 0 0 1 .6.6v1.8a.6.6 0 0 1-.6.6H4.6a.6.6 0 0 1-.6-.6v-1.8Z", "clip-rule": "evenodd" }, null, -1)]]);
+}
+var a = { render: i };
+export {a as default,i as render};

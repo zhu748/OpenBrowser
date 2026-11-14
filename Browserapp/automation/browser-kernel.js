@@ -443,6 +443,7 @@ function downloadFile(url, dest, onProgress, options = {}) {
     expectedSha256: options.expectedSha256 || '',
     expectedMd5: options.expectedMd5 || '',
     computeSha256: true,
+    environmentProxy: true,
   });
 
   if (typeof options.register === 'function') options.register(downloader);
@@ -2057,6 +2058,9 @@ class BrowserKernelManager {
         `--disk-cache-dir=${path.join(probeRoot, 'OpenBrowserCache')}`,
         `--crash-dumps-dir=${path.join(probeRoot, 'OpenBrowserCrashReports')}`,
         '--remote-debugging-port=0',
+        // A compatibility probe has no interactive window. This also makes
+        // custom kernels usable from a Linux session without an X server.
+        '--headless=new',
         '--no-first-run',
         '--no-default-browser-check',
         '--disable-background-mode',

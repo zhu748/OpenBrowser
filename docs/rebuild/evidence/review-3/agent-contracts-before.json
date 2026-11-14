@@ -1,0 +1,65 @@
+{
+  "passed": false,
+  "cases": [
+    {
+      "name": "编辑 Skill 提示词保留原包元数据",
+      "status": "FAIL",
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n\n  {\n-   files: [\n-     'SKILL.md',\n-     'references/a.md'\n-   ],\n-   packageSlug: 'contract-skill',\n    prompt: 'edited',\n-   skillMetadata: {\n-     name: 'contract-skill'\n-   },\n-   slug: 'contract-skill'\n  }\n\n    at /workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:21:12\n    at async check (/workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:10:31)\n    at async /workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:17:3"
+    },
+    {
+      "name": "任务列表按 created_at 排序，不随开关更新而跳位",
+      "status": "FAIL",
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n\n  [\n+   1,\n    2,\n-   1\n  ]\n\n    at /workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:30:12\n    at async check (/workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:10:31)\n    at async /workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:23:3"
+    },
+    {
+      "name": "已读接口返回原界面所需的会话 DTO",
+      "status": "FAIL",
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n+ actual - expected\n\n+ undefined\n- 'e5113fda-ccfa-45cf-b844-d22654f06c84'\n\n    at /workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:35:12\n    at async check (/workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:10:31)\n    at async /workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:32:3"
+    },
+    {
+      "name": "旧轮次已读请求不得清掉新轮次未读",
+      "status": "FAIL",
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\nfalse !== true\n\n    at /workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:40:12\n    at async check (/workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:10:31)\n    at async /workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:37:3"
+    },
+    {
+      "name": "刷新历史消息后附件仍在 metadata.attachments 中",
+      "status": "FAIL",
+      "error": "TypeError: Cannot read properties of undefined (reading 'attachments')\n    at /workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:46:50\n    at async check (/workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:10:31)\n    at async /workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:42:3"
+    },
+    {
+      "name": "历史游标分页在追加新消息后不重复、不漏旧消息",
+      "status": "FAIL",
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n\n  [\n+   'message-0',\n+   'message-1',\n+   'message-2',\n+   'message-3',\n    'message-4',\n    'message-5'\n  ]\n\n    at /workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:52:12\n    at async check (/workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:10:31)\n    at async /workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:48:3"
+    },
+    {
+      "name": "config:set 写盘失败不改变已提交内存状态",
+      "status": "FAIL",
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n\n  {\n    config: {\n      apiKey: '',\n      baseUrl: 'http://127.0.0.1:11434',\n      maxContext: 24000,\n+     model: 'unsaved',\n-     model: '',\n      provider: 'ollama'\n    },\n    conversations: [\n      {\n        createdAt: '2026-11-14T18:00:28.016Z',\n\n    at /workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:67:14\n    at async check (/workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:10:31)\n    at async /workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:61:5"
+    },
+    {
+      "name": "createConversation 写盘失败不改变已提交内存状态",
+      "status": "FAIL",
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n... Skipped lines\n\n  {\n    config: {\n      apiKey: '',\n      baseUrl: 'http://127.0.0.1:11434',\n      maxContext: 24000,\n...\n      {\n+       createdAt: '2026-11-14T18:00:28.020Z',\n+       id: '8c6e86f6-029c-4345-988e-eaa0532483e8',\n+       messages: [],\n+       title: 'New conversation',\n+       unread: false,\n+       updatedAt: '2026-11-14T18:00:28.020Z'\n+     },\n+     {\n        createdAt: '2026-11-14T18:00:28.019Z',\n        id: '13c1d1c6-11e9-4b8b-8211-65dd97894f71',\n        latestRunId: 'current',\n        latestRunStatus: 'completed',\n        messages: [],\n\n    at /workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:67:14\n    at async check (/workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:10:31)\n    at async /workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:61:5"
+    },
+    {
+      "name": "updateConversation 写盘失败不改变已提交内存状态",
+      "status": "FAIL",
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n... Skipped lines\n\n  {\n    config: {\n      apiKey: '',\n      baseUrl: 'http://127.0.0.1:11434',\n      maxContext: 24000,\n...\n        messages: [],\n+       title: 'unsaved',\n-       title: 'New conversation',\n        unread: true,\n        updatedAt: '2026-11-14T18:00:28.021Z'\n      }\n    ],\n    logs: [],\n\n    at /workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:67:14\n    at async check (/workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:10:31)\n    at async /workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:61:5"
+    },
+    {
+      "name": "markConversationRead 写盘失败不改变已提交内存状态",
+      "status": "FAIL",
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n... Skipped lines\n\n  {\n    config: {\n      apiKey: '',\n      baseUrl: 'http://127.0.0.1:11434',\n      maxContext: 24000,\n...\n        title: 'New conversation',\n+       unread: false,\n-       unread: true,\n        updatedAt: '2026-11-14T18:00:28.023Z'\n      }\n    ],\n    logs: [],\n    skills: [],\n\n    at /workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:67:14\n    at async check (/workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:10:31)\n    at async /workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:61:5"
+    },
+    {
+      "name": "deleteConversation 写盘失败不改变已提交内存状态",
+      "status": "FAIL",
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n... Skipped lines\n\n  {\n    config: {\n      apiKey: '',\n      baseUrl: 'http://127.0.0.1:11434',\n      maxContext: 24000,\n...\n    },\n+   conversations: [],\n-   conversations: [\n-     {\n-       createdAt: '2026-11-14T18:00:28.025Z',\n-       id: '18e79f1b-5499-469d-ae56-9d2b81fc836b',\n-       latestRunId: 'current',\n-       latestRunStatus: 'completed',\n-       messages: [],\n-       title: 'New conversation',\n-       unread: true,\n-       updatedAt: '2026-11-14T18:00:28.025Z'\n-     }\n-   ],\n    logs: [],\n    skills: [],\n    tasks: [],\n    templates: [],\n    version: 1\n\n    at /workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:67:14\n    at async check (/workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:10:31)\n    at async /workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:61:5"
+    },
+    {
+      "name": "真实模型结束持久化未读，最近会话按实际更新时间排序",
+      "status": "FAIL",
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\nfalse !== true\n\n    at /workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:77:60\n    at async check (/workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:10:31)\n    at async /workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:69:3"
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "passed": true,
+  "checks": [
+    "原侧栏、空态、单个添加表单真实保存到原加密账号库",
+    "原编辑抽屉读取真实密码，修改用户名不清空密码；关联由真实 IPC 固定数据，原列表显示实际窗口编号；原暗色样式可见"
+  ],
+  "errors": [],
+  "externalRequests": [],
+  "inputs": [
+    {
+      "name": "",
+      "type": "hidden",
+      "placeholder": ""
+    },
+    {
+      "name": "",
+      "type": "text",
+      "placeholder": "请输入或选择平台网址"
+    },
+    {
+      "name": "platformUserName",
+      "type": "text",
+      "placeholder": "请输入账号"
+    },
+    {
+      "name": "platformPassword",
+      "type": "password",
+      "placeholder": "请输入密码"
+    },
+    {
+      "name": "platformEfa",
+      "type": "text",
+      "placeholder": "请输入 2FA 密钥"
+    },
+    {
+      "name": "",
+      "type": "text",
+      "placeholder": "请输入或选择平台网址"
+    }
+  ]
+}

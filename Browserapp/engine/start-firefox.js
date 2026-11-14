@@ -106,8 +106,9 @@ function firefoxExtraUserPrefs(profile, fingerprint = null) {
   // --- advanced switches that DO have a Firefox pref ---
   if (advanced.blockImages) prefs.push(['permissions.default.image', 2]);
   else prefs.push(['permissions.default.image', 1]);
-  // Roxy 对齐：声音关闭 → Firefox 只能落 autoplay 闸（disablePlaySound 是 Roxy 内核能力）。
-  if (advanced.blockSound || advanced.blockVideo) prefs.push(['media.block-autoplay-until-user-interaction', true]);
+  // Keep mute independent of the autoplay gate; otherwise muting also blocks video.
+  if (advanced.blockVideo) prefs.push(['media.block-autoplay-until-user-interaction', true]);
+  if (advanced.blockSound) prefs.push(['media.volume_scale', '0.0']);
   if (advanced.blockNotifications) prefs.push(['permissions.default.desktop-notification', 2]);
   if (privacy.media === 'blocked') {
     prefs.push(['permissions.default.microphone', 2]);
@@ -144,7 +145,7 @@ module.exports = {
    * returns publicRunning(profile.id) and emits the same event stream
    * (profile-start-progress phases, status, kernel progress).
    */
-  async _startFirefox(raw, lifecycleGeneration = null) {
+  async _startFirefox(raw, lifecycleGeneration = null, launchOptions = {}) {
     let profile = this.resolveStoredProxyProfile(this.sanitizeProfile(raw));
     // 记录本次启动前的出口 IP（上次运行持久化的值），供 ipChangePolicy 比对。
     const previousExitIp = String(profile.exitIp || '').trim();
@@ -380,14 +381,14 @@ module.exports = {
         // The managed start page and other local services remain local. The
         // forwarder's external destination policy must not block the start page.
         noProxyHosts: 'localhost, 127.0.0.1, ::1',
-        extraPrefs: firefoxExtraUserPrefs(profile, fingerprint),
+        extraPrefs: firefoxExtraUserPrefs(launchOptions.blockImages ? { ...profile, advanced: { ...profile.advanced, blockImages: true } } : profile, fingerprint),
       });
       // user.js wins over prefs.js at every startup, then Firefox copies it to
       // prefs.js. Writing it fresh each launch keeps the proxy/UA/prefs current.
       await fspWriteFile(path.join(root, 'user.js'), userJs, 'utf8');
       currentStage = 'spawn'; this.emitStartProgress(profile.id, 'spawn', 62, '正在启动 Firefox…');
       this.assertStartGenerationActive(profile.id, lifecycleGeneration);
-      const headless = /^(1|true|new)$/i.test(String(process.env.OPENBROWSER_HEADLESS || '').trim());
+      const headless = launchOptions.headless === true || /^(1|true|new)$/i.test(String(process.env.OPENBROWSER_HEADLESS || '').trim());
       const args = firefoxStartupArgs({ root, startUrl: 'about:blank', headless, remoteDebugging: true });
       const spawnEnv = { ...process.env };
       if (fingerprint.timezone && process.platform !== 'win32') spawnEnv.TZ = fingerprint.timezone;
@@ -541,6 +542,17 @@ module.exports = {
           this.emit({ type: 'worker-fingerprint-injection-failed', id: profile.id, message: error.message });
         },
       });
+      if(profile.advanced?.imageMaxBytes>0&&!launchOptions.blockImages){
+        const {FirefoxImageFilter}=require('../automation/firefox-image-filter');
+        const filter=new FirefoxImageFilter({limit:profile.advanced.imageMaxBytes,onError:error=>{
+          if(item.stopping||item.cleanedUp)return;
+          this.emit({type:'image-size-filter-error',id:profile.id,message:error.message});
+          if(error.fatal)this.handleBrowserGone(profile.id,item,'image-filter-failed',{expected:false,error:error.message,kill:true,waitForExit:true}).catch(cleanupError=>this.emit({type:'sync-error',id:profile.id,message:cleanupError.message}));
+        }});
+        item.firefoxImageFilter=filter;startupResources.firefoxImageFilter=filter;
+        await filter.install(connection,root);
+        delivered.capabilities.imageSizeFilter=true;
+      }
       this.assertStartGenerationActive(profile.id, lifecycleGeneration);
       item.capabilities = delivered.capabilities;
       item.bidiContext = delivered.context;

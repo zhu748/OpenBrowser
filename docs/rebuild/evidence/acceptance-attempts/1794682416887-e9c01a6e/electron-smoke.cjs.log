@@ -1,0 +1,12 @@
+{
+  "passed": false,
+  "checks": [
+    "真实 Electron 加载本地原版窗口列表，无登录页",
+    "真实深色主题切换",
+    "真实 Electron IPC 保留过期编辑错误码 PROFILE_STALE_REV",
+    "真实 IPC 新增的数据能在原版列表显示（不是表单端到端创建验收）",
+    "原版创建表单通过真实按钮保存名称和 Cookie，并在原列表显示"
+  ],
+  "errors": [],
+  "failure": "状态未在期限内达到预期"
+}

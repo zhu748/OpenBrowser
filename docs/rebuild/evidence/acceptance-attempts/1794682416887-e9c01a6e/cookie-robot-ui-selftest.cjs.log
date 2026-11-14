@@ -1,0 +1,41 @@
+{
+  "passed": false,
+  "checks": [],
+  "errors": [
+    "Error"
+  ],
+  "externalRequests": [],
+  "data": "/workspace/OpenBrowser/work/rebuild/cookie-robot-ui-h3Ozd0",
+  "switches": 4,
+  "failure": "Error: 状态未在期限内达到预期\n    at waitUntil (/workspace/OpenBrowser/Browserapp/rebuild/selftest-helpers.cjs:13:9)\n    at async /workspace/OpenBrowser/Browserapp/rebuild/cookie-robot-ui-selftest.cjs:193:7",
+  "body": "创建窗口\n窗口管理\n项目管理\n代理 IP\n平台账号\n扩展中心\nAI & 自动化\n窗口同步\nAI Agent\n自动化\n模板商城\n任务管理\n我的模板\nAPI & AI MCP\nSkill 管理\n本地\n窗口用量\n2 / ∞\n内核升级\n本地网络\n(172.26.91.242)\nOP\nOpenBrowser\n全部窗口\n收藏\n已打开\n转移中\n回收站\n快速创建\n筛选\nAI 自动化\n测试全部代理 IP\n\t\n编号\n\t\n窗口名称\n\t\n操作\n\t\n备注\n\t\n标签\n\t\n项目\n\t\n最后打开\n\t\n其他\n\n\n\t\nOPE-1\n\t\nCookie Robot Chrome\n\t\n打开窗口\n\t\n\t\n\t\n默认项目\n\t\n--\n\t\n\n\n\t\nOPE-2\n\t\nCookie Robot Firefox\n\t\n打开窗口\n\t\n\t\n\t\n默认项目\n\t\n--\n\t\n\n\n总计 2 个\n10 条/页\n跳转页数至\n1",
+  "jobs": [
+    {
+      "id": "4c534127-82a4-4972-9854-b747d17f9b02",
+      "profileId": "de3e773c-531d-4f35-9122-8c3deb737acb",
+      "status": "failed",
+      "createdAt": "2026-11-14T18:42:58.773Z",
+      "pages": [],
+      "options": {
+        "urls": [
+          "http://127.0.0.1:44219/chrome"
+        ],
+        "scrollRange": [
+          1000,
+          1000
+        ],
+        "delayRange": [
+          0,
+          0
+        ],
+        "pageLoadTimeout": 60000,
+        "closeProfile": false,
+        "headless": true,
+        "blockImages": true,
+        "blockMedia": true
+      },
+      "error": "ERR101: 启动失败，磁盘空间不足，请清理磁盘空间（当前可用 6.9GB，限制 8GB）",
+      "finishedAt": "2026-11-14T18:42:58.803Z"
+    }
+  ]
+}

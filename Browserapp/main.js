@@ -1,5 +1,8 @@
 const { app, BrowserWindow, Menu, clipboard, dialog, globalShortcut, ipcMain, nativeImage, screen, session, shell, Tray } = require('./host-bridge');
 const path = require('path');
+const roxyPreview = process.env.OPENBROWSER_ROXY_UI !== '0';
+const rebuildProtocol = require('./rebuild/protocol');
+if (roxyPreview) rebuildProtocol.registerUiScheme(require('./host-bridge').protocol);
 const fs = require('fs');
 const fsp = require('fs/promises');
 const { pathToFileURL } = require('url');
@@ -25,7 +28,7 @@ try {
 } catch (_) {}
 
 const { planGridFor, minHeightFor } = require('./automation/window-arrangement');
-const { attachShellNavigationGuard } = require('./automation/shell-guard');
+const { attachShellNavigationGuard, createShellNavigationPolicy } = require('./automation/shell-guard');
 const { fetchStoreEntries } = require('./automation/store-fetch');
 const { fetchStorePackage, fetchChromeStoreIcon, fetchChromeStoreMetadata, validChromeStoreId } = require('./chrome-store-metadata');
 const { startAutomation } = require('./automation');
@@ -40,7 +43,8 @@ const cloudOps = require('./automation/cloud-ops');
 const { lifecycleTimeout } = require('./engine/browser-candidates');
 
 const appDataRoot = app.getPath('appData');
-const userDataRoot = process.env.OPENBROWSER_USER_DATA
+const cliDataRoot = process.argv.find(arg => arg.startsWith('--openbrowser-user-data='))?.slice(24);
+const userDataRoot = cliDataRoot ? path.resolve(cliDataRoot) : process.env.OPENBROWSER_USER_DATA
   ? path.resolve(process.env.OPENBROWSER_USER_DATA) : path.join(appDataRoot, 'openbrowser');
 app.setName('OpenBrowser');
 try { process.title = 'OpenBrowser'; } catch (_) { /* ignore */ }
@@ -62,8 +66,9 @@ const gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   app.quit();
 } else {
-  app.on('second-instance', () => showMainWindow());
+  app.on('second-instance', (_event, argv) => { showMainWindow(); handleProfileLaunch(argv); });
 }
+app.on('open-url', (event, url) => { event.preventDefault(); handleProfileLaunch([url]); });
 
 const defaultProfileDataRoot = path.join(app.getPath('userData'), 'browser-profiles-v2');
 const localSettingsFile = path.join(app.getPath('userData'), 'openbrowser-local-settings.json');
@@ -122,11 +127,35 @@ const startupReady = new Promise((resolve, reject) => { resolveStartupReady = re
 startupReady.catch(() => {});
 let quitting = false;
 let quitCleanupPromise = null;
+let localUiService;
+let localUiDialogs;
+let localUiSync;
 let quitCleanupSettled = false;
 let syncSelection = [];
 let syncState = { active: false, master: null, selected: [] };
 const windows = new Set();
 let mainWindow = null;
+async function handleProfileLaunch(argv) {
+  try {
+    const request = require('./rebuild/host-actions').parseLaunch(argv);
+    if (!request.id && !request.urls.length) return;
+    await startupReady;
+    if (quitting) throw Error('应用正在退出');
+    let defaultId;
+    if (!request.id) {
+      if (localUiService) defaultId = (await localUiService.request('settings:get')).defaultProfileId;
+      else {
+        const saved = JSON.parse(await fsp.readFile(path.join(app.getPath('userData'), 'rebuild-local.json'), 'utf8'));
+        if (saved.version !== 1) throw Error('不支持的本地设置版本');
+        defaultId = saved.settings?.defaultProfileId;
+      }
+    }
+    await require('./rebuild/host-actions').openLaunch(engine, request, defaultId);
+  } catch (error) {
+    console.error('[OpenBrowser] profile launcher:', error.message);
+    try { dialog.showErrorBox('OpenBrowser', error.message); } catch (_) {}
+  }
+}
 
 function trustedAppIndexUrl() {
   // Canonical UI document: only this exact file:// path may call registerTrustedIpc.
@@ -136,6 +165,7 @@ function trustedAppIndexUrl() {
 
 /** Windows file: URLs may differ only by drive-letter case (C: vs c:). Compare paths case-insensitively. */
 function isTrustedAppIndexUrl(senderUrl) {
+  if (roxyPreview) return rebuildProtocol.isUiDocument(senderUrl);
   const expected = trustedAppIndexUrl();
   const raw = String(senderUrl || '');
   if (raw === expected || raw.startsWith(expected + '?') || raw.startsWith(expected + '#')) return true;
@@ -146,13 +176,22 @@ function isTrustedAppIndexUrl(senderUrl) {
 }
 
 function assertTrustedIpcSender(event) {
-  if (!mainWindow || mainWindow.isDestroyed() || event?.sender !== mainWindow.webContents) {
+  const isMain = mainWindow && !mainWindow.isDestroyed() && event?.sender === mainWindow.webContents;
+  if (!isMain && !localUiDialogs?.owns(event?.sender)) {
     throw new Error('untrusted IPC sender');
   }
   const senderUrl = String(event.sender.getURL?.() || '');
   if (!isTrustedAppIndexUrl(senderUrl)) {
     throw new Error('untrusted IPC document');
   }
+}
+
+async function beforeProfileRemoval(ids) {
+  const removed = new Set(ids);
+  if (syncState.active && syncState.selected.some((id) => removed.has(id))) await endSync();
+  syncSelection = syncSelection.filter((id) => !removed.has(id));
+  syncState = { ...syncState, selected: syncState.selected.filter((id) => !removed.has(id)) };
+  emit({ type: 'sync-state', ...syncSnapshot() });
 }
 
 function registerTrustedIpc(channel, handler) {
@@ -581,19 +620,21 @@ async function beginSync(ids = syncSelection) {
   const tabs = await syncTabsFromMaster(selected);
   await liveSync.start(selected);
   syncState = { active: true, master: selected[0], selected };
+  try{await localUiSync?.request('sync:apply-color');}catch(error){await endSync();throw error;}
   emit({ type: 'sync-state', ...syncSnapshot() });
   return { success: true, ...tabs, state: syncSnapshot() };
 }
 
-function endSync() {
+async function endSync() {
   liveSync?.stop();
+  await localUiSync?.request('sync:reset-color');
   syncState = { active: false, master: null, selected: [...syncSelection] };
   emit({ type: 'sync-state', ...syncSnapshot() });
   return { success: true, state: syncSnapshot() };
 }
 
 async function restartSync() {
-  endSync();
+  await endSync();
   return beginSync(syncSelection);
 }
 
@@ -603,7 +644,7 @@ async function runShortcut(action) {
   emit({ type: 'shortcut-triggered', action });
   try {
     if (action === 'start') await beginSync(syncSelection);
-    else if (action === 'stop') endSync();
+    else if (action === 'stop') await endSync();
     else await restartSync();
   } catch (error) {
     emit({ type: 'sync-error', action, message: error.message });
@@ -807,7 +848,7 @@ async function createWindow() {
   const win = new BrowserWindow(options);
   mainWindow = win;
   windows.add(win);
-  win.on('closed', () => { windows.delete(win); if (mainWindow === win) mainWindow = null; });
+  win.on('closed', () => { windows.delete(win); if (mainWindow === win) { localUiDialogs?.closeAll(); mainWindow = null; } });
   win.on('close', (event) => {
     // macOS keeps the standard close-to-Dock convention; quitting paths bypass this.
     if (quitting || process.platform === 'darwin') return;
@@ -841,9 +882,11 @@ async function createWindow() {
   // The shell renders local files only: block navigation away from them and
   // keep child windows denied (a child would inherit this window's preload).
   attachShellNavigationGuard(win.webContents, {
+    policy: createShellNavigationPolicy({ localUi: roxyPreview }),
     onBlocked: ({ url, reason }) => console.warn('[shell] blocked navigation:', url, reason),
   });
-  await win.loadFile('index.html');
+  if (roxyPreview) await win.loadURL(rebuildProtocol.DOCUMENT);
+  else await win.loadFile('index.html');
   if (!win.isVisible()) win.show();
   if (win.isMinimized()) win.restore();
   win.focus();
@@ -876,8 +919,21 @@ app.whenReady().then(async () => {
       }
     }
   }
+  if (roxyPreview) {
+    const host = require('./host-bridge');
+    rebuildProtocol.installUiProtocol(host.protocol, host.net, path.join(__dirname, 'roxy-ui'), {
+      agentFile: (id) => { if (!localUiService?.agent) throw Error('附件服务尚未就绪'); return localUiService.agent.files.get(id); },
+    });
+    const { DialogWindows } = require('./rebuild/dialog-windows');
+    localUiDialogs = new DialogWindows({ BrowserWindow, parent: () => mainWindow, windows });
+  }
   session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
     const url = String(details.url || '');
+    if (roxyPreview) {
+      const local = rebuildProtocol.isUiRequest(url);
+      callback({ cancel: !local });
+      return;
+    }
     const allowed = url.startsWith('file:') || url.startsWith('data:') || url.startsWith('devtools:')
       || /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//i.test(url);
     callback({ cancel: !allowed });
@@ -898,6 +954,22 @@ app.whenReady().then(async () => {
   // so that handler (and only it) must be registered BEFORE createWindow();
   // awaiting it earlier in the chain left a window where the first invoke
   // rejected with "No handler registered" and the profile list never rendered.
+  if (roxyPreview) {
+    registerTrustedIpc('rebuild:request', async (_event, method, payload) => {
+      await startupReady;
+      const { captureIpcResult } = require('./shared/ipc-result');
+      if (typeof method === 'string' && method.startsWith('ui:dialog:'))
+        return captureIpcResult(() => localUiDialogs.request(method, payload, _event.sender));
+      if (typeof method === 'string' && method.startsWith('sync:'))
+        return captureIpcResult(() => localUiSync.request(method, payload));
+      if (!localUiService) {
+        const { LocalService } = require('./rebuild/local-service');
+        localUiService = new LocalService({ engine, root: app.getPath('userData'), dialog, window: () => mainWindow, proxyStore, accountStore: () => automation?.accountStore, automation: () => automation, beforeRemove: beforeProfileRemoval,
+          isSynchronizing: (id) => syncState.active && syncState.selected.includes(id) });
+      }
+      return captureIpcResult(() => localUiService.request(method, payload));
+    });
+  }
   registerTrustedIpc('system:info', async () => {
     // The first frame may paint while storage and automation initialize, but
     // renderer initialization must wait until its whole IPC surface exists.
@@ -975,10 +1047,18 @@ app.whenReady().then(async () => {
   engine.kernelIntegrityCheck?.().then((summary) => {
     if (summary && summary.status === 'mismatch') console.warn('[kernel] integrity mismatch', summary);
   }).catch((error) => console.warn('[kernel] integrity check skipped:', error.message));
-  startShortcutBridge();
-  registerTextShortcuts();
+  if (!roxyPreview) {
+    startShortcutBridge();
+    registerTextShortcuts();
+  } else {
+    const { SyncService } = require('./rebuild/sync-service');
+    localUiSync = new SyncService({ engine, controller: liveSync, state: syncSnapshot, workArea: pickWorkArea,
+      textAssignments: runTextAssignments, windowAction: runSyncWindowAction, tabAction: runSyncTabAction,
+      shortcuts: globalShortcut, shortcutAction: runLocalSyncShortcut });
+  }
 
   try {
+    const apiConfig = await require('./rebuild/local-api').startupConfig(app.getPath('userData'));
     automation = await startAutomation({
       beforeApiStart: (proxyStore) => cloudOps.recoverPendingRestore({ proxyStore }),
       app,
@@ -995,7 +1075,9 @@ app.whenReady().then(async () => {
       },
       tile,
       emit,
-      port: Number(process.env.OPENBROWSER_API_PORT || 50325),
+      port: Number(process.env.OPENBROWSER_API_PORT || apiConfig.port || 50325),
+      apiHost: apiConfig.apiAllowLan ? '0.0.0.0' : '127.0.0.1',
+      apiEnabled: apiConfig.open !== false,
       apiKey: process.env.OPENBROWSER_API_KEY || undefined,
     });
   } catch (error) {
@@ -1147,13 +1229,7 @@ app.whenReady().then(async () => {
   });
   registerProfileIpc({
     registerTrustedIpc, engine, sanitizeIds,
-    beforeRemove(ids) {
-      const removed = new Set(ids);
-      if (syncState.active && syncState.selected.some((id) => removed.has(id))) endSync();
-      syncSelection = syncSelection.filter((id) => !removed.has(id));
-      syncState = { ...syncState, selected: syncState.selected.filter((id) => !removed.has(id)) };
-      emit({ type: 'sync-state', ...syncSnapshot() });
-    },
+    beforeRemove: beforeProfileRemoval,
   });
 
   registerExtensionIpc({ registerTrustedIpc, engine, dialog, sanitizeIds, fetchStorePackage });
@@ -1165,7 +1241,7 @@ app.whenReady().then(async () => {
   registerTrustedIpc('sync:start', (_event, ids) => beginSync(ids));
   registerTrustedIpc('sync:stop', () => endSync());
   registerTrustedIpc('sync:restart', () => restartSync());
-  registerTrustedIpc('sync:window', async (_event, payload) => {
+  async function runSyncWindowAction(payload) {
     const ids = sanitizeIds(payload.ids); const entries = engine.runningWithCdp(ids); const action = String(payload.action);
     if (action === 'matrix') return tile(ids, false, payload.options || {});
     if (action === 'tile') return tile(ids, false);
@@ -1175,7 +1251,8 @@ app.whenReady().then(async () => {
       ? { verify: true, fallbackState: 'maximized' }
       : {})));
     return { success: true, count: entries.length, degraded: transitions.filter((value) => value?.degraded).length };
-  });
+  }
+  registerTrustedIpc('sync:window', (_event, payload) => runSyncWindowAction(payload));
   // Shared text-assignment runner for sync:text and sync:text-batch: the two
   // used to carry near-identical copies of the delay clamp, concurrency and
   // failure-aggregation logic, so any fix had to be applied twice.
@@ -1220,7 +1297,7 @@ app.whenReady().then(async () => {
     const assignments = new Map(ids.map((id, index) => [id, texts[index]]));
     return runTextAssignments({ ids, resolveText: (id) => assignments.get(id) || '', delayMin: payload.delayMin, delayMax: payload.delayMax });
   });
-  registerTrustedIpc('sync:tabs', async (_event, payload) => {
+  async function runSyncTabAction(payload) {
     const ids = sanitizeIds(payload.ids); const entries = engine.runningWithCdp(ids); const action = String(payload.action); const value = payload.payload || {};
     if (action === 'sync') return syncTabsFromMaster(ids);
     if (action === 'list') return engine.sessions();
@@ -1228,7 +1305,11 @@ app.whenReady().then(async () => {
     const isBlankTab = (url) => /^(about:blank|chrome:\/\/(newtab|new-tab-page)\/?)/i.test(String(url || ''));
     for (const { item } of entries) {
       if (action === 'new') await cdp.newTab(item.port, String(value.url || 'about:blank'));
-      else if (action === 'navigate') await cdp.navigate(item.port, String(value.url || 'about:blank'));
+      else if (action === 'navigate') {
+        const current = await cdp.activeTab(item.port);
+        if (current) await cdp.call(current.webSocketDebuggerUrl, 'Page.navigate', { url: String(value.url || 'about:blank') });
+        else await cdp.newTab(item.port, String(value.url || 'about:blank'));
+      }
       else if (action === 'reload') await cdp.reload(item.port);
       else if (action === 'close') { const tab = await cdp.activeTab(item.port); if (tab) await cdp.closeTab(item.port, tab.id); }
       else if (action === 'closeOthers') {
@@ -1247,7 +1328,25 @@ app.whenReady().then(async () => {
       else throw new Error('Unknown tab action');
     }
     return { success: true, count: entries.length };
-  });
+  }
+  registerTrustedIpc('sync:tabs', (_event, payload) => runSyncTabAction(payload));
+
+  async function runLocalSyncShortcut(action) {
+    if (quitting) return;
+    try {
+      const ids = syncSnapshot().selected;
+      const openDialog = (kind) => localUiDialogs.request('ui:dialog:open', { kind });
+      if (action === 'startSync') { await beginSync(ids); emit({ channel: 'local:navigate', payload: '/synchronizer/active' }); }
+      else if (action === 'stopSync') { await endSync(); emit({ channel: 'local:navigate', payload: '/synchronizer' }); }
+      else if (action === 'showAllWindows') await runSyncWindowAction({ ids, action: 'normal' });
+      else if (action === 'gridLayout' || action === 'stackLayout') await runSyncWindowAction({ ids, action: action === 'gridLayout' ? 'tile' : 'cascade' });
+      else if (action === 'openBatchInputDialog') await openDialog('batch-inputs');
+      else if (action === 'openSites') await openDialog('open-sites');
+      else if (action === 'openSyncWindowList') await openDialog('syncing-window-list');
+      else if (action === 'openPreferenceSettings') await openDialog('preferences');
+      else await runSyncTabAction({ ids, action: ({ unifiedTabs: 'sync', closeOtherTabs: 'closeOthers', closeCurrentTab: 'close', closeBlankTabs: 'closeBlank' })[action] });
+    } catch (error) { emit({ channel: 'local:error', payload: error.message }); }
+  }
 
   registerTrustedIpc('automation:local-api', () => automation?.info || null);
   registerTrustedIpc('automation:local-api-version', async () => {
@@ -1386,6 +1485,7 @@ app.whenReady().then(async () => {
   // createWindow() has either resolved or thrown, and awaiting it again is free.
   await windowPromise;
   resolveStartupReady();
+  handleProfileLaunch(process.argv);
   appUpdate.startAppUpdateWatcher();
 })
   .catch((error) => {
@@ -1454,6 +1554,23 @@ function beginQuitCleanup() {
   let stopResult = { stopped: true, remaining: [], errors: [] };
   let persistenceFailed = false;
   quitCleanupPromise = Promise.resolve()
+    .then(async () => {
+      const names = ['local-sync', 'local-agent', 'cookie-robot', 'local-extensions'];
+      const localShutdown = await Promise.allSettled([
+        Promise.resolve().then(() => localUiSync?.shutdown()),
+        Promise.resolve().then(() => localUiService?.agent?.shutdown()),
+        Promise.resolve().then(() => localUiService?.robot?.shutdown()),
+        Promise.resolve().then(async () => { await localUiService?.queue; await localUiService?.extensions?.shutdown(); }),
+      ]);
+      for (const [index, result] of localShutdown.entries()) {
+        if (result.status !== 'rejected') continue;
+        persistenceFailed = true;
+        const message = result.reason?.message || String(result.reason);
+        console.warn('OpenBrowser quit local service failed:', names[index], message);
+        try { await writeBrowserStartupDiagnostic(app.getPath('userData'), { type: 'local-service-shutdown-error', service: names[index], message }); }
+        catch (error) { console.warn('OpenBrowser quit diagnostic failed:', error.message); }
+      }
+    })
     .then(async () => { stopResult = await stopAllForQuit(); })
     .then(() => engine?.flushPersistence?.())
     .catch((error) => {

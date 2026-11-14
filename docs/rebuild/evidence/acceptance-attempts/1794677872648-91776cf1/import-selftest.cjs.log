@@ -1,0 +1,9 @@
+{
+  "status": "PASS",
+  "checks": [
+    "real BrowserEngine: analysis has no writes, invalid second row rejects entire batch",
+    "proxy auth/refresh, accounts/URLs, Cookie, Chrome/Firefox and explicit major version persist across restart",
+    "fresh IDs and direct mode; row/count validation",
+    "native picker cancellation and bounded file bytes"
+  ]
+}

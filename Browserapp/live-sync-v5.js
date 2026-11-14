@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const { spawn } = require('child_process');
+const { AsyncLocalStorage } = require('node:async_hooks');
 const cdp = require('./cdp');
 const { createExtensionSyncMethods, extensionPages } = require('./automation/sync/extension-pages');
 const { LiveSyncController: LiveSyncV4, injection } = require('./live-sync-v4');
@@ -656,6 +657,7 @@ function environmentNumber(engine, id) {
 class LiveSyncController extends LiveSyncV4 {
   constructor(engine, emit) {
     super(engine, emit);
+    this.fanoutDelays = new AsyncLocalStorage();
     this.tabMap = new Map();
     this.desiredUrlMap = new Map();
     this.extensionMap = new Map(); this.extensionConnections = new Map();
@@ -680,7 +682,7 @@ class LiveSyncController extends LiveSyncV4 {
     // browser-close disconnect can clear `master` before the engine emits its
     // final status event, but the controlled environments still need closing.
     this.syncSession = null; this.syncGeneration = 0; this.masterClosePromise = null; this.masterCloseGeneration = null;
-    this.syncSettings = { keyboard: true, click: true, scroll: true, track: true, delayClick: false, delayInput: false, inputMinMs: 300, inputMaxMs: 300, clickMinMs: 100, clickMaxMs: 300 };
+    this.syncSettings = { keyboard: true, click: true, scroll: true, track: true, delayClick: false, delayInput: false, inputMinMs: 300, inputMaxMs: 300, clickMinMs: 100, clickMaxMs: 300, delayMode: 1 };
   }
 
   updateSettings(value = {}) {
@@ -698,6 +700,10 @@ class LiveSyncController extends LiveSyncV4 {
     const next = { ...this.syncSettings, keyboard: boolean('keyboard'), click: boolean('click'), scroll: boolean('scroll'), track: boolean('track'), delayClick: boolean('delayClick'), delayInput: boolean('delayInput') };
     next.inputMinMs = range('inputMinMs', next.inputMinMs); next.inputMaxMs = Math.max(next.inputMinMs, range('inputMaxMs', next.inputMaxMs));
     next.clickMinMs = range('clickMinMs', next.clickMinMs); next.clickMaxMs = Math.max(next.clickMinMs, range('clickMaxMs', next.clickMaxMs));
+    if (value.delayMode !== undefined) {
+      if (![0, 1].includes(value.delayMode)) throw new Error('Invalid synchronization delay mode');
+      next.delayMode = value.delayMode;
+    }
     this.syncSettings = next;
     if (this.master) this.startNativeInputMirror();
     this.emit({ type: 'sync-settings', settings: { ...next }, operate: settingsToOperateList(next), capabilities: syncCapabilities() });
@@ -988,17 +994,22 @@ class LiveSyncController extends LiveSyncV4 {
       this.pauseGeometrySync(1500, 'page-interaction');
       this.browserOwnedUntil = Math.max(this.browserOwnedUntil || 0, Date.now() + 2000);
     }
-    if (action === 'forward') {
-      if (!this.syncSettings.keyboard && ['key', 'input', 'beforeinput'].includes(type)) return;
-      if (!this.syncSettings.click && (type === 'click' || type === 'focus' || type === 'change' || (type === 'mouse' && payload?.phase !== 'move'))) return;
-      if (!this.syncSettings.track && type === 'mouse' && payload?.phase === 'move') return;
-      if (!this.syncSettings.scroll && ['wheel', 'scroll'].includes(type)) return;
-      if (this.nativeDevToolsMode && ['click', 'mouse', 'wheel', 'scroll', 'change'].includes(type)) return;
-    }
+    if (action === 'forward' && !this.acceptsInputPayload(payload)) return;
     return super.enqueueForward(tabId, payload, action);
   }
 
+  acceptsInputPayload(payload) {
+    const type = payload?.type;
+    if (!this.syncSettings.keyboard && ['key', 'input', 'beforeinput'].includes(type)) return false;
+    if (!this.syncSettings.click && (type === 'click' || type === 'focus' || type === 'change' || (type === 'mouse' && payload?.phase !== 'move'))) return false;
+    if (!this.syncSettings.track && type === 'mouse' && payload?.phase === 'move') return false;
+    if (!this.syncSettings.scroll && ['wheel', 'scroll'].includes(type)) return false;
+    if (this.nativeDevToolsMode && ['click', 'mouse', 'wheel', 'scroll', 'change'].includes(type)) return false;
+    return true;
+  }
+
   async forward(tabId, payload) {
+    if (!this.acceptsInputPayload(payload)) return;
     const generation = this.syncGeneration;
     const session = this.syncSession;
     const sessionIsCurrent = () => generation === this.syncGeneration
@@ -1010,18 +1021,25 @@ class LiveSyncController extends LiveSyncV4 {
     // Protocol gate: operate flags (click+move / scroll+move / keyboard)
     const plan = this.planProtocolFanout(payload);
     if (plan.skip && plan.reason === 'operate-gate') return;
-    if (plan.delayMs > 0) await new Promise((resolve) => setTimeout(resolve, plan.delayMs));
-    else {
-      const type = payload?.type;
-      const clickEvent = type === 'click';
-      const inputEvent = type === 'beforeinput' || (type === 'key' && payload?.phase === 'down');
-      if (clickEvent && this.syncSettings.delayClick) await new Promise((resolve) => setTimeout(resolve, this.randomDelay(this.syncSettings.clickMinMs, this.syncSettings.clickMaxMs)));
-      if (inputEvent && this.syncSettings.delayInput) await new Promise((resolve) => setTimeout(resolve, this.randomDelay(this.syncSettings.inputMinMs, this.syncSettings.inputMaxMs)));
+    const type = payload?.type;
+    const delaySettings = { ...this.syncSettings };
+    const delayForInput = delaySettings.delayInput && (type === 'beforeinput' || (type === 'key' && payload?.phase === 'down'));
+    const delayForClick = delaySettings.delayClick && type === 'click';
+    const serial = delaySettings.delayMode === 0 && (delayForInput || delayForClick);
+    if (!serial) {
+      if (plan.delayMs > 0) await new Promise((resolve) => setTimeout(resolve, plan.delayMs));
+      else if (delayForClick) await new Promise((resolve) => setTimeout(resolve, this.randomDelay(delaySettings.clickMinMs, delaySettings.clickMaxMs)));
+      else if (delayForInput) await new Promise((resolve) => setTimeout(resolve, this.randomDelay(delaySettings.inputMinMs, delaySettings.inputMaxMs)));
     }
-    if (!sessionIsCurrent()) return;
+    if (!sessionIsCurrent() || !this.acceptsInputPayload(payload)) return;
     // Semantic selector-based forward remains in v4 (more accurate than raw x/y on multi-resolution slaves).
     // Protocol plan is retained for Local API telemetry / debugging.
-    const result = await super.forward(tabId, payload);
+    const result = serial ? await this.fanoutDelays.run({
+      delay: () => plan.delayMs > 0 ? plan.delayMs : this.randomDelay(
+        delayForInput ? delaySettings.inputMinMs : delaySettings.clickMinMs,
+        delayForInput ? delaySettings.inputMaxMs : delaySettings.clickMaxMs),
+      isCurrent: () => sessionIsCurrent() && this.acceptsInputPayload(payload),
+    }, () => super.forward(tabId, payload)) : await super.forward(tabId, payload);
     if (plan && !plan.skip && this.emit) {
       this.lastProtocolPlan = { eventType: plan.eventType, proprietary: plan.proprietary?.command, standardCount: plan.standard?.length || 0, at: Date.now() };
     }
@@ -1215,7 +1233,8 @@ class LiveSyncController extends LiveSyncV4 {
       const contextId = context?.id;
       if (context?.auxData?.isDefault !== false && contextId && connection) connection.command(
         'Runtime.evaluate',
-        { expression: fullscreenInjection, contextId },
+        // Input must capture the CDP binding before fullscreen hides its global.
+        { expression: injection + '\n' + fullscreenInjection, contextId },
         event.sessionId ? { sessionId: event.sessionId } : {},
       ).catch(() => {});
     }
@@ -1453,8 +1472,25 @@ class LiveSyncController extends LiveSyncV4 {
     this.reportUnreachableSlaves([{ id: slave.id, message: String(error?.message || error) }]);
   }
 
-  async ensureMapping(masterTab, index = -1, initialLists = null) {
+  serializeTabMapping(operation) {
+    const generation=this.syncGeneration,master=this.master;
+    const pending=(this.tabMappingQueue||Promise.resolve()).then(()=>{
+      if(this.syncGeneration!==generation||this.master!==master)return null;
+      return operation();
+    });
+    this.tabMappingQueue=pending.catch(()=>{});
+    return pending;
+  }
+
+  ensureMapping(masterTab,index=-1,initialLists=null) {
+    return this.serializeTabMapping(()=>this.ensureMappingLocked(masterTab,index,initialLists));
+  }
+
+  async ensureMappingLocked(masterTab, index = -1, initialLists = null) {
+    const generation=this.syncGeneration,master=this.master;
+    const current=()=>this.syncGeneration===generation&&this.master===master;
     const mapping = this.tabMap.get(masterTab.id) || new Map();
+    this.tabMap.set(masterTab.id,mapping);
     if (!this.desiredUrlMap) this.desiredUrlMap = new Map();
     // Engine-aware start-page test: delegates to this.engine.isStartPageUrl
     // (live port + registered sessions) so mapping cannot classify a
@@ -1470,10 +1506,15 @@ class LiveSyncController extends LiveSyncV4 {
       // hit the debug port again. Isolate each slave so one death remaps only
       // that slave instead of aborting the refresh pass.
       try {
-        const available = initialLists?.has(slave.id)
+        let available = initialLists?.has(slave.id)
           ? initialLists.get(slave.id)
           : normalTabs(await cdp.tabs(slave.port));
+        if(!current())return;
         const mappedId = mapping.get(slave.id);
+        // A forwarded event can create a mapping after the refresh snapshot.
+        // Never discard that reservation just because its snapshot is older.
+        if(mappedId&&!available.some(tab=>tab.id===mappedId))available=normalTabs(await cdp.tabs(slave.port));
+        if(!current())return;
         const alreadyMapped = mappedId && available.some((tab) => tab.id === mappedId);
         let target = alreadyMapped ? available.find((tab) => tab.id === mappedId) : null;
         if (!alreadyMapped) {
@@ -1487,9 +1528,14 @@ class LiveSyncController extends LiveSyncV4 {
           if (!target && candidates.length) target = candidates.find((tab) => isBlank(tab.url)) || candidates[candidates.length - 1];
         }
         const desiredUrl = isStart(masterTab.url) ? (environmentStartUrl(this.engine, slave.id) || masterTab.url) : masterTab.url;
-        if (!target) { target = await cdp.newTab(slave.port, desiredUrl || 'about:blank'); this.slaveTabLists.delete(slave.id); }
+        if (!target) {
+          target = await cdp.newTab(slave.port, desiredUrl || 'about:blank');
+          if(!current()){await cdp.closeTab(slave.port,target.id);return;}
+          this.slaveTabLists.delete(slave.id);
+        }
         mapping.set(slave.id, target.id);
         if (!alreadyMapped) await this.markSlave(target, slave.id);
+        if(!current())return;
         // Only navigate when the *master* desired URL changed. Re-driving navigation every tick
         // (e.g. after a redirect) causes continuous slave reloads.
         const desireKey = `${masterTab.id}:${slave.id}`;
@@ -1497,18 +1543,21 @@ class LiveSyncController extends LiveSyncV4 {
         const masterDesiredChanged = previousDesired !== this.urlKey(desiredUrl);
         const needsNavigation = desiredUrl && !equivalent(target.url, desiredUrl) && (masterDesiredChanged || !alreadyMapped);
         if (needsNavigation) {
-          await cdp.call(target.webSocketDebuggerUrl, 'Page.navigate', { url: desiredUrl }).catch(() => {});
+          await cdp.call(target.webSocketDebuggerUrl, 'Page.navigate', { url: desiredUrl });
+          if(!current())return;
           this.desiredUrlMap.set(desireKey, this.urlKey(desiredUrl));
         } else if (desiredUrl) {
           this.desiredUrlMap.set(desireKey, this.urlKey(desiredUrl));
         }
       } catch (error) {
+        if(!current())return;
         // The half-written mapping entry must go: the next refresh tick would
         // treat the dead target id as mapped and skip remapping this slave.
         mapping.delete(slave.id);
         unreachable.push({ id: slave.id, message: String(error?.message || error) });
       }
     }));
+    if(!current())return;
     if (unreachable.length) {
       for (const failure of unreachable) this.unreachableSlaves.add(failure.id);
       this.reportUnreachableSlaves(unreachable);
@@ -1516,8 +1565,22 @@ class LiveSyncController extends LiveSyncV4 {
     this.tabMap.set(masterTab.id, mapping);
   }
 
-  async reconcileSlaveTabs(masterTabs, knownLists = null) {
+  reconcileSlaveTabs(masterTabs,knownLists=null) {
+    return this.serializeTabMapping(()=>this.reconcileSlaveTabsLocked(masterTabs,knownLists));
+  }
+
+  async reconcileSlaveTabsLocked(masterTabs, knownLists = null) {
     if (!masterTabs.length) return;
+    const generation=this.syncGeneration,master=this.master;
+    const isCurrent=()=>this.syncGeneration===generation&&this.master===master;
+    // Master/slave target lists are not one atomic browser snapshot. If the
+    // master changed meanwhile, cleanup must wait for the next stable pass.
+    if(this.master?.item?.port){
+      const expected=new Set(masterTabs.map(tab=>tab.id));
+      const current=(await cdp.tabs(this.master.item.port)).filter(tab=>expected.has(tab.id)||normalTabs([tab]).length);
+      if(!isCurrent())return;
+      if(current.length!==expected.size||current.some(tab=>!expected.has(tab.id)))return;
+    }
     let closed = 0;
     await Promise.all(this.slaves.map(async (slave) => {
       if (!this.isSlaveAvailable(slave) || (knownLists && !knownLists.has(slave.id))) return;
@@ -1527,7 +1590,7 @@ class LiveSyncController extends LiveSyncV4 {
         : normalTabs(await cdp.tabs(slave.port));
       const extras = current.filter((tab) => !allowed.has(tab.id));
       if (extras.length) this.slaveTabLists.delete(slave.id);
-      for (const tab of extras) { await cdp.closeTab(slave.port, tab.id).catch(() => {}); closed += 1; }
+      for (const tab of extras) { if(!isCurrent())return;await cdp.closeTab(slave.port, tab.id).catch(() => {}); closed += 1; }
     }));
     if (closed) this.emit({ type: 'live-sync-tab-reconcile', masterTabs: masterTabs.length, closed });
   }
@@ -1548,17 +1611,26 @@ class LiveSyncController extends LiveSyncV4 {
     }));
   }
 
-  async slaveTab(slave, masterTabId) {
+  slaveTab(slave,masterTabId) {
+    return this.serializeTabMapping(()=>this.slaveTabLocked(slave,masterTabId));
+  }
+
+  async slaveTabLocked(slave, masterTabId) {
     if (!this.isSlaveAvailable(slave)) return null;
+    const generation=this.syncGeneration,master=this.master;
+    const current=()=>this.syncGeneration===generation&&this.master===master;
     const masterTab = this.masterTabs.find((tab) => tab.id === masterTabId);
-    if (!this.tabMap.has(masterTabId)) await this.ensureMapping(masterTab || { id: masterTabId, url: 'about:blank' });
+    if (!this.tabMap.has(masterTabId)) await this.ensureMappingLocked(masterTab || { id: masterTabId, url: 'about:blank' });
+    if(!current())return null;
     const mapping = this.tabMap.get(masterTabId); let targetId = mapping?.get(slave.id);
     // Reuse the refresh tick's list (≤1s old) instead of one HTTP /json/list
     // fetch per forwarded event; the tick below keeps it fresh.
     let tabs = await this.slaveTabsFor(slave); let tab = tabs.find((item) => item.id === targetId);
+    if(!current())return null;
     if (!tab) {
       const desiredUrl = isEnvironmentStartUrl(masterTab?.url, this.engine) ? (environmentStartUrl(this.engine, slave.id) || masterTab.url) : masterTab?.url;
       tab = await cdp.newTab(slave.port, desiredUrl || 'about:blank'); targetId = tab.id;
+      if(!current()){await cdp.closeTab(slave.port,targetId);return null;}
       this.slaveTabLists.delete(slave.id);
       if (!mapping) this.tabMap.set(masterTabId, new Map([[slave.id, targetId]])); else mapping.set(slave.id, targetId);
     }
@@ -1576,19 +1648,19 @@ class LiveSyncController extends LiveSyncV4 {
 
   async eachSlave(masterTabId, action) {
     const extensionTargets = this.extensionMap.get(masterTabId);
-    if (extensionTargets) {
-      await Promise.all(this.slaves.map(async (slave) => {
-        if (!this.isSlaveAvailable(slave)) return;
-        const target = extensionTargets.get(slave.id);
-        if (target) await action(target, slave);
-      }));
-      return;
-    }
-    await Promise.all(this.slaves.map(async (slave) => {
+    const serial = this.fanoutDelays?.getStore();
+    const apply = async (slave) => {
       if (!this.isSlaveAvailable(slave)) return;
-      const tab = await this.slaveTab(slave, masterTabId);
+      if (serial) {
+        const delay = serial.delay();
+        if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay));
+        if (!serial.isCurrent() || !this.isSlaveAvailable(slave)) return;
+      }
+      const tab = extensionTargets ? extensionTargets.get(slave.id) : await this.slaveTab(slave, masterTabId);
       if (tab) await action(tab, slave);
-    }));
+    };
+    if (serial) { for (const slave of [...this.slaves]) await apply(slave); }
+    else await Promise.all(this.slaves.map(apply));
   }
 
   async activateMapped(masterTabId) {

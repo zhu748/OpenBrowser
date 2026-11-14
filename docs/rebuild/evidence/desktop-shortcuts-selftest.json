@@ -1,0 +1,19 @@
+{
+  "passed": true,
+  "checks": [
+    "X11 XTEST 实际 Ctrl+Alt+P 触发 Electron 全局快捷键并打开原独立设置弹窗；截图记录真实桌面",
+    "第二个真实应用检测系统占用；首进程退出后接管同一按键并再次打开原弹窗；清空配置释放系统键"
+  ],
+  "errors": [],
+  "externalRequests": [],
+  "sourceSha256": "e23ea673d5d3319babdac60a152cc9a68c8533d8e8c4c041a3455c564a973d6e",
+  "runtimeAtStart": {
+    "files": 2376,
+    "sha256": "458ef29a988f22a20899fbe795cef60c2a78c47735f55947e8369a37b0b36d35"
+  },
+  "runtimeAtEnd": {
+    "files": 2376,
+    "sha256": "458ef29a988f22a20899fbe795cef60c2a78c47735f55947e8369a37b0b36d35"
+  },
+  "sourceUnchanged": true
+}

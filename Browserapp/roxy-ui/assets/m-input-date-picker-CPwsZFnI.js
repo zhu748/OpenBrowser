@@ -1,0 +1,12 @@
+import {C as e,W as t,en as n,lt as r,p as i,x as a} from "./runtime-core.esm-bundler-CBj16o9G.js";
+import {m as o} from "./runtime-dom.esm-bundler-_WxS4Zar.js";
+import {Z as s} from "./basecomponent-ClhuVxJN.js";
+import {t as c} from "./_plugin-vue_export-helper-BDNMzG2s.js";
+import {t as l} from "./datepicker-Bd-h5Ks4.js";
+var u = c(e({ __name: "m-input-date-picker", props: { size: { default: "sm" }, dateFormat: { default: "yy/mm/dd" }, showIcon: { type: Boolean, default: !0 }, iconDisplay: { default: "input" }, showButtonBar: { type: Boolean, default: !0 }, manualInput: { type: Boolean, default: !1 } }, setup(e2) {
+  return (c2, u2) => {
+    let d = s, f = l;
+    return t(), i(f, { class: n(e2.size), dateFormat: e2.dateFormat, showIcon: e2.showIcon, iconDisplay: e2.iconDisplay, showButtonBar: e2.showButtonBar, manualInput: e2.manualInput }, { inputicon: r((e3) => [a(d, { name: "base/rx_ic_calendar", class: n(e3.class), onClick: o(e3.clickCallback, ["stop"]) }, null, 8, ["class", "onClick"])]), _: 1 }, 8, ["class", "dateFormat", "showIcon", "iconDisplay", "showButtonBar", "manualInput"]);
+  };
+} }), [["__scopeId", "data-v-94cc9581"]]);
+export {u as t};

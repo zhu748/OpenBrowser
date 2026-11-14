@@ -1,0 +1,9 @@
+{
+  "status": "PASS",
+  "scope": "当前产物解码后的组件名称人工关注清单，不能替代商业语义检查",
+  "retained": [],
+  "snapshot": {
+    "files": 2376,
+    "sha256": "27741fd7eeadd3d82210c07f956642d6327a325a4557eb85201b0fe237f6bb5e"
+  }
+}

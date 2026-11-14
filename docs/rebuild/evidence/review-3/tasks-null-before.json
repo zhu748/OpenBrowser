@@ -1,0 +1,21 @@
+{
+  "passed": false,
+  "errors": [
+    {
+      "phase": "task-run",
+      "error": "Failed to execute template task TypeError: Cannot read properties of null (reading 'prompt')\n    at ft (obui://app/assets/useTemplateTaskExecution-yGKXS9Rw.js:344:31)\n    at c2 (obui://app/assets/useTemplateTaskExecution-yGKXS9Rw.js:369:16)\n    at Hr (obui://app/assets/TaskManagerRoute-iC4ANt4w.js:570:15)\n    at onClick (obui://app/assets/TaskManagerRoute-iC4ANt4w.js:685:5045)\n    at Sn (obui://app/assets/runtime-core.esm-bundler-CBj16o9G.js:979:17)\n    at z (obui://app/assets/runtime-core.esm-bundler-CBj16o9G.js:986:14)\n    at HTMLButtonElement.n2 (obui://app/assets/runtime-dom.esm-bundler-_WxS4Zar.js:319:12)"
+    }
+  ],
+  "externalRequests": [],
+  "checks": [
+    "原版 Agent 模板弹窗创建提示词模板，经真实 IPC 落盘",
+    "原任务弹窗选择本地模板及真实窗口后保存本地任务"
+  ],
+  "failure": {
+    "phase": "task-run",
+    "error": "locator.waitFor: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[contenteditable=\"true\"]').first() to be visible\u001b[22m\n\n    at /workspace/OpenBrowser/Browserapp/rebuild/agent-tasks-ui-selftest.cjs:154:60"
+  },
+  "body": "OpenBrowser AI Agent\n新建对话\n模板商城\n任务管理\n我的模板\n对话\n窗口管理\n设置\n任务管理\n任务列表\n执行日志\n\n任务与执行日志保存在本机；应用运行时按计划执行。\n\n共 1 个任务\n\n创建任务\n任务名称\t任务模板\t关联窗口\t创建时间\t执行计划\t状态\t操作\n\n本地任务执行验收\n\t\n本地提示词任务验收\n\t\nOPE-1\n\t2026-11-14 13:45:10\t\n手动执行\n\t\n添加计划\n\t\n立即执行",
+  "inputs": [],
+  "modelRequests": 0
+}

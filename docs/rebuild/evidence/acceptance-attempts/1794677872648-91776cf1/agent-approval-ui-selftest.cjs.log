@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "checks": [
+    "待授权刷新后原卡恢复，模型请求数仍为 1、窗口仍为 0，没有重放执行",
+    "原聊天输入与原授权卡：确认前 0 写入，点击原“允许”后才由真实模型工具创建原生窗口",
+    "原拒绝按钮不执行操作，模型实际收到拒绝结果",
+    "原完全访问按钮生成真实 fullAccess 决定，后续工具继续完成，3 个原生窗口及授权检查点读回"
+  ],
+  "errors": [],
+  "externalRequests": [],
+  "data": "/workspace/OpenBrowser/work/rebuild/approval-ui-xUZE8W"
+}

@@ -1,0 +1,39 @@
+template-create
+task-create
+{
+  "passed": false,
+  "errors": [
+    {
+      "phase": "task-create",
+      "error": "Failed to save user task Error: 模板/任务 metadata 必须为对象\n    at obui://app/assets/local-api.js:20:48\n    at async Proxy.<anonymous> (obui://app/assets/local-api.js:627:207)\n    at async kr (obui://app/assets/TaskManagerRoute-iC4ANt4w.js:462:248)\n    at async ut2 (obui://app/assets/useTemplateTaskExecution-yGKXS9Rw.js:307:9)"
+    }
+  ],
+  "externalRequests": [],
+  "checks": [
+    "原版 Agent 模板弹窗创建提示词模板，经真实 IPC 落盘"
+  ],
+  "failure": {
+    "phase": "task-create",
+    "error": "locator.waitFor: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByText('本地任务执行验收', { exact: true }).first() to be visible\u001b[22m\n\n    at /workspace/OpenBrowser/Browserapp/rebuild/agent-tasks-ui-selftest.cjs:137:63"
+  },
+  "body": "OpenBrowser AI Agent\n新建对话\n模板商城\n任务管理\n我的模板\n对话\n窗口管理\n设置\n任务管理\n任务列表\n执行日志\n\n任务与执行日志保存在本机；应用运行时按计划执行。\n\n共 0 个任务\n\n创建任务\n暂无任务\n创建任务后，可在此统一管理任务定义与执行计划。\n创建任务\n任务名称\n任务模板\n本地提示词任务验收\n更多模板\n关联窗口\n全部项目\nOPE-1 · 任务关联窗口\n计划执行 （可选）\n取消\n保存",
+  "inputs": [
+    {
+      "placeholder": "请输入任务名称",
+      "name": ""
+    },
+    {
+      "placeholder": "搜索窗口",
+      "name": ""
+    },
+    {
+      "placeholder": "",
+      "name": ""
+    },
+    {
+      "placeholder": "",
+      "name": ""
+    }
+  ],
+  "modelRequests": 0
+}

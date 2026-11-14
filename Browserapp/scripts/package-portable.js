@@ -568,6 +568,7 @@ function copyAppResources(resourceApp) {
     copyRecursive(path.join(appRoot, entry), path.join(resourceApp, entry),
       (source) => isRuntimeResource(path.relative(appRoot, source)));
   }
+  require('../main/production-dependencies').copyProductionDependencies(appRoot,resourceApp);
   pruneForeignKernelSeeds(resourceApp);
   // Never ship local-only kernel notes / backups / private markers
   (function stripLocalKernelNotes(root) {

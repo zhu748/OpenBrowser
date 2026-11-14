@@ -1,0 +1,7 @@
+{
+  "passed": true,
+  "checks": [
+    "真实桌面文件通过 desktop-file-validate，执行位、换行、空格和百分号转义以及窗口/数据目录参数正确",
+    "真实 xdg-mime 在独立 XDG 目录注册并查询 HTTP/HTTPS 默认应用，目标窗口落盘先于 OS 变更"
+  ]
+}

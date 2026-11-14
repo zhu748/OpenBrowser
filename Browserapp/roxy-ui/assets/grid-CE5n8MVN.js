@@ -1,0 +1,7 @@
+import {W as e,h as t,y as n} from "./runtime-core.esm-bundler-CBj16o9G.js";
+var r = { xmlns: "http://www.w3.org/2000/svg", width: "1em", height: "1em", fill: "currentColor", viewBox: "0 0 130 90" };
+function i(i2, a2) {
+  return e(), t("svg", r, [...a2[0] ||= [n('<rect width="30" height="25" x="15" y="18" rx="2.5"></rect><rect width="30" height="25" x="50" y="18" opacity=".9" rx="2.5"></rect><rect width="30" height="25" x="85" y="18" opacity=".5" rx="2.5"></rect><rect width="30" height="25" x="50" y="48" opacity=".6" rx="2.5"></rect><rect width="30" height="25" x="15" y="48" opacity=".5" rx="2.5"></rect>', 5)]]);
+}
+var a = { render: i };
+export {a as default,i as render};

@@ -26,7 +26,7 @@ const LOCAL_HOSTS = ['127.0.0.1', 'localhost'];
 /** Build the policy used for the shell window. */
 function createShellNavigationPolicy(options = {}) {
   return createPolicy({
-    allowedProtocols: SHELL_ALLOWED_PROTOCOLS,
+    allowedProtocols: options.localUi ? [...SHELL_ALLOWED_PROTOCOLS, 'obui:'] : SHELL_ALLOWED_PROTOCOLS,
     allowedUrls: SHELL_ALLOWED_URLS,
     hostsByWindow: { [SHELL_WINDOW]: LOCAL_HOSTS.slice() },
     developmentMode: options.developmentMode === true,

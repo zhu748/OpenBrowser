@@ -1,0 +1,20 @@
+"use strict";
+const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),http=require('node:http'),assert=require('node:assert/strict');
+const {BrowserEngine}=require('../engine'),{LocalApiServer}=require('../automation/local-api-server'),{LocalService}=require('./local-service'),{findFreePort}=require('../automation/port-utils');
+(async()=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'ob-api-config-')),engine=new BrowserEngine({getPath:()=>root}),result={passed:false,checks:[]};let service,localApi,occupied;
+ try{
+  await engine.init(null);localApi=new LocalApiServer({engine,port:0,apiKey:'config-test-secret'});const automation={localApi,apiKey:'config-test-secret',info:await localApi.start()};service=new LocalService({engine,root,automation:()=>automation});
+  const row=await service.request('profiles:create',{windowName:'API config fixture',os:'Linux'}),info=await service.request('api:get');assert.equal(info.open,true);assert.equal(info.apiKey,automation.apiKey);
+  let response=await fetch('http://127.0.0.1:'+info.port+'/api/v1/user/list',{headers:{Authorization:'Bearer '+automation.apiKey}});assert.equal(response.status,200);assert.ok(JSON.stringify(await response.json()).includes(row.id));response=await fetch('http://127.0.0.1:'+info.port+'/api/v1/user/list');assert.equal(response.status,401);
+  const next=await findFreePort(),changed=await service.request('api:set',{...info,port:next});assert.equal(changed.port,next);assert.equal((await service.request('api:check-port',{port:next})),next);await assert.rejects(fetch('http://127.0.0.1:'+info.port+'/api/v1/user/list'));
+  response=await fetch('http://127.0.0.1:'+next+'/api/v1/user/list',{headers:{Authorization:'Bearer '+automation.apiKey}});assert.equal(response.status,200);result.checks.push('原生 Local API 鉴权与真实窗口列表，端口修改关闭旧监听并在新端口提供相同原后端');
+  occupied=http.createServer();await new Promise(resolve=>occupied.listen(0,'127.0.0.1',resolve));const busy=occupied.address().port;assert.equal(await service.request('api:check-port',{port:busy}),0);
+  await assert.rejects(service.request('api:set',{...changed,port:busy}),/EADDRINUSE/);assert.equal((await service.request('api:get')).port,next);assert.equal((await fetch('http://127.0.0.1:'+next+'/api/v1/user/list',{headers:{Authorization:'Bearer '+automation.apiKey}})).status,200);
+  const save=service.save.bind(service);service.save=async()=>{throw Error('injected API disk failure');};await assert.rejects(service.request('api:set',{...changed,port:await findFreePort()}),/disk failure/);service.save=save;assert.equal((await service.request('api:get')).port,next);assert.equal(service.data.settings.localApi.port,next);result.checks.push('真实端口占用及设置文件失败均回滚原监听和内存设置，原服务继续可用');
+  const off=await service.request('api:set',{...changed,open:false});assert.equal(off.open,false);await assert.rejects(fetch('http://127.0.0.1:'+next+'/api/v1/user/list'));
+  assert.deepEqual(await require('./local-api').startupConfig(root),{open:false,port:next,apiAllowLan:false});
+  await service.request('api:set',{...off,open:true,apiAllowLan:true});assert.equal(localApi.host,'0.0.0.0');assert.equal((await fetch('http://127.0.0.1:'+next+'/api/v1/user/list',{headers:{Authorization:'Bearer '+automation.apiKey}})).status,200);await service.request('api:set',{...off,open:true,apiAllowLan:false});
+  const config=await service.request('api:mcp-config');assert.equal(config.mcpServers.openbrowser.env.OPENBROWSER_API_PORT,String(next));assert.ok(!JSON.stringify(config).includes('@roxybrowser'));assert.ok((await service.request('api:reference')).includes('mcp-server.js'));result.checks.push('真实关闭/开启、LAN 绑定/还原，重启配置读回；原 Native MCP 路径、实际端口、密钥与本地参考文档');result.passed=true;
+ }catch(error){result.failure=error.stack;process.exitCode=1;}finally{await localApi?.stop();if(occupied)await new Promise(resolve=>occupied.close(resolve));await engine.stopAll?.();await fs.writeFile(path.resolve(__dirname,'../../docs/rebuild/evidence/local-api-selftest.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));}
+})().catch(error=>{console.error(error);process.exitCode=1;});

@@ -1,0 +1,3338 @@
+{
+  "passed": true,
+  "scope": "Linux Electron 43，相同本地数据、1536×960、相同字体/缩放，原归档独立 render 与当前 render 在同一 Vue 实例切换、各自独立 VNode 缓存；比较原主内容区，品牌与本地外壳有单独边界说明。没有独立 render 的组件不能凭本结果宣布通过。",
+  "data": "/workspace/OpenBrowser/work/rebuild/visual-ui-RZA4Ml",
+  "cases": [
+    {
+      "id": "windows",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/windows-light-production.png",
+          "full": "visual/windows-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "0c36d2aedb1a3e4a189559ad23d8a7811c094a1eed6e8cf77ebac8100141a039",
+              "0c36d2aedb1a3e4a189559ad23d8a7811c094a1eed6e8cf77ebac8100141a039",
+              "0c36d2aedb1a3e4a189559ad23d8a7811c094a1eed6e8cf77ebac8100141a039"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/windows-light-reference.png",
+          "full": "visual/windows-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "0c36d2aedb1a3e4a189559ad23d8a7811c094a1eed6e8cf77ebac8100141a039",
+              "0c36d2aedb1a3e4a189559ad23d8a7811c094a1eed6e8cf77ebac8100141a039",
+              "0c36d2aedb1a3e4a189559ad23d8a7811c094a1eed6e8cf77ebac8100141a039"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/windows-light-diff.png"
+    },
+    {
+      "id": "windows",
+      "theme": "dark",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/windows-dark-production.png",
+          "full": "visual/windows-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "2c5f75a2725afce907a9556943c94ac5efdc86ae97aef6cae46edf96c6b69832",
+              "fad73744da8f76cb621650c1ee3ad7202df123220f54c1ef836b2332ccd0ebcd",
+              "fad73744da8f76cb621650c1ee3ad7202df123220f54c1ef836b2332ccd0ebcd",
+              "fad73744da8f76cb621650c1ee3ad7202df123220f54c1ef836b2332ccd0ebcd"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/windows-dark-reference.png",
+          "full": "visual/windows-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "fad73744da8f76cb621650c1ee3ad7202df123220f54c1ef836b2332ccd0ebcd",
+              "fad73744da8f76cb621650c1ee3ad7202df123220f54c1ef836b2332ccd0ebcd",
+              "fad73744da8f76cb621650c1ee3ad7202df123220f54c1ef836b2332ccd0ebcd"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/windows-dark-diff.png"
+    },
+    {
+      "id": "window-hover",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/window-hover-light-production.png",
+          "full": "visual/window-hover-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "9ffc3b45c78c7c90ffd65594673c3db3822462182f61aa40439f40c09206774c",
+              "a4e73e9b14a7f145109ba3c8ce13befe681b21a43d5cf9901f5942787c74f5b4",
+              "a4e73e9b14a7f145109ba3c8ce13befe681b21a43d5cf9901f5942787c74f5b4",
+              "a4e73e9b14a7f145109ba3c8ce13befe681b21a43d5cf9901f5942787c74f5b4"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/window-hover-light-reference.png",
+          "full": "visual/window-hover-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "a4e73e9b14a7f145109ba3c8ce13befe681b21a43d5cf9901f5942787c74f5b4",
+              "a4e73e9b14a7f145109ba3c8ce13befe681b21a43d5cf9901f5942787c74f5b4",
+              "a4e73e9b14a7f145109ba3c8ce13befe681b21a43d5cf9901f5942787c74f5b4"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/window-hover-light-diff.png"
+    },
+    {
+      "id": "window-hover",
+      "theme": "dark",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/window-hover-dark-production.png",
+          "full": "visual/window-hover-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "2137f7846ed6ac84b9dd524cdcbd166a6d7bd3c957aeed31dafad102f1de10cb",
+              "682cfc4683df580f242fc76ffb39412d45070b4b9ca015f0e6f3d2e00eea1256",
+              "682cfc4683df580f242fc76ffb39412d45070b4b9ca015f0e6f3d2e00eea1256",
+              "682cfc4683df580f242fc76ffb39412d45070b4b9ca015f0e6f3d2e00eea1256"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/window-hover-dark-reference.png",
+          "full": "visual/window-hover-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "682cfc4683df580f242fc76ffb39412d45070b4b9ca015f0e6f3d2e00eea1256",
+              "682cfc4683df580f242fc76ffb39412d45070b4b9ca015f0e6f3d2e00eea1256",
+              "682cfc4683df580f242fc76ffb39412d45070b4b9ca015f0e6f3d2e00eea1256"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/window-hover-dark-diff.png"
+    },
+    {
+      "id": "window-selected",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/window-selected-light-production.png",
+          "full": "visual/window-selected-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "6c9a3b53ab2f50aee3733150c46354ca3db5f6c4e29da177a76aba9e7b891b89",
+              "16e95c10a40a92093b55bb346e901117290672b31f2e556cf77953f618222058",
+              "16e95c10a40a92093b55bb346e901117290672b31f2e556cf77953f618222058",
+              "16e95c10a40a92093b55bb346e901117290672b31f2e556cf77953f618222058"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/window-selected-light-reference.png",
+          "full": "visual/window-selected-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "16e95c10a40a92093b55bb346e901117290672b31f2e556cf77953f618222058",
+              "16e95c10a40a92093b55bb346e901117290672b31f2e556cf77953f618222058",
+              "16e95c10a40a92093b55bb346e901117290672b31f2e556cf77953f618222058"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/window-selected-light-diff.png"
+    },
+    {
+      "id": "window-selected",
+      "theme": "dark",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/window-selected-dark-production.png",
+          "full": "visual/window-selected-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "a1e9979e6ba34322171caaca6440bcceaafd8e2f1dd413e0bb953792f5e8ea8d",
+              "dd95f524f27438b0f0b4af01608e377a01fffc1655b1a97ecf9fba4dce3dbb40",
+              "dd95f524f27438b0f0b4af01608e377a01fffc1655b1a97ecf9fba4dce3dbb40",
+              "dd95f524f27438b0f0b4af01608e377a01fffc1655b1a97ecf9fba4dce3dbb40"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/window-selected-dark-reference.png",
+          "full": "visual/window-selected-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "dd95f524f27438b0f0b4af01608e377a01fffc1655b1a97ecf9fba4dce3dbb40",
+              "dd95f524f27438b0f0b4af01608e377a01fffc1655b1a97ecf9fba4dce3dbb40",
+              "dd95f524f27438b0f0b4af01608e377a01fffc1655b1a97ecf9fba4dce3dbb40"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/window-selected-dark-diff.png"
+    },
+    {
+      "id": "window-favorites-empty",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/window-favorites-empty-light-production.png",
+          "full": "visual/window-favorites-empty-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "a9f78af6ed947284a85d70d838c54879ac75a7408ed1cb3ef64ab44351ac3f88",
+              "fc9f5106917e4f8161cc0d354e9d72f31429d6a796fb5013459878e86362091e",
+              "fc9f5106917e4f8161cc0d354e9d72f31429d6a796fb5013459878e86362091e",
+              "fc9f5106917e4f8161cc0d354e9d72f31429d6a796fb5013459878e86362091e"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/window-favorites-empty-light-reference.png",
+          "full": "visual/window-favorites-empty-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "fc9f5106917e4f8161cc0d354e9d72f31429d6a796fb5013459878e86362091e",
+              "fc9f5106917e4f8161cc0d354e9d72f31429d6a796fb5013459878e86362091e",
+              "fc9f5106917e4f8161cc0d354e9d72f31429d6a796fb5013459878e86362091e"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/window-favorites-empty-light-diff.png"
+    },
+    {
+      "id": "window-favorites-empty",
+      "theme": "dark",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/window-favorites-empty-dark-production.png",
+          "full": "visual/window-favorites-empty-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "7513da6d5724a9355315dd3c37c4fb25df39b92d770d90463ed82fd841152da1",
+              "fde73ab3e00cb7b580f028ed8bc9ba469b7b1be8054b30fdb446e3e8e360c004",
+              "fde73ab3e00cb7b580f028ed8bc9ba469b7b1be8054b30fdb446e3e8e360c004",
+              "fde73ab3e00cb7b580f028ed8bc9ba469b7b1be8054b30fdb446e3e8e360c004"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/window-favorites-empty-dark-reference.png",
+          "full": "visual/window-favorites-empty-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "fde73ab3e00cb7b580f028ed8bc9ba469b7b1be8054b30fdb446e3e8e360c004",
+              "fde73ab3e00cb7b580f028ed8bc9ba469b7b1be8054b30fdb446e3e8e360c004",
+              "fde73ab3e00cb7b580f028ed8bc9ba469b7b1be8054b30fdb446e3e8e360c004"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/window-favorites-empty-dark-diff.png"
+    },
+    {
+      "id": "delete-confirm-dialog",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/delete-confirm-dialog-light-production.png",
+          "full": "visual/delete-confirm-dialog-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "2ac643a878c42398f0b2d42251e467ae41d2ceeb87f0e00f87d107c2b50b08aa",
+              "73eeaa28d024b460adb9641f4a233e9b1c7773c0c08e89551e8c7d8db03e0cf5",
+              "73eeaa28d024b460adb9641f4a233e9b1c7773c0c08e89551e8c7d8db03e0cf5",
+              "73eeaa28d024b460adb9641f4a233e9b1c7773c0c08e89551e8c7d8db03e0cf5"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/delete-confirm-dialog-light-reference.png",
+          "full": "visual/delete-confirm-dialog-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "73eeaa28d024b460adb9641f4a233e9b1c7773c0c08e89551e8c7d8db03e0cf5",
+              "73eeaa28d024b460adb9641f4a233e9b1c7773c0c08e89551e8c7d8db03e0cf5",
+              "73eeaa28d024b460adb9641f4a233e9b1c7773c0c08e89551e8c7d8db03e0cf5"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/delete-confirm-dialog-light-diff.png"
+    },
+    {
+      "id": "delete-confirm-dialog",
+      "theme": "dark",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/delete-confirm-dialog-dark-production.png",
+          "full": "visual/delete-confirm-dialog-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "3bb29d8b8ae7e60fbd1d3f485f01d55599a69ca1bd8c82dcf7e81cbcff8429ee",
+              "3bb29d8b8ae7e60fbd1d3f485f01d55599a69ca1bd8c82dcf7e81cbcff8429ee",
+              "3bb29d8b8ae7e60fbd1d3f485f01d55599a69ca1bd8c82dcf7e81cbcff8429ee"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/delete-confirm-dialog-dark-reference.png",
+          "full": "visual/delete-confirm-dialog-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "95b15c54fd48d14a99ce0682da84cad6cc62cd3db4c5a62234daed743f656052",
+              "95b15c54fd48d14a99ce0682da84cad6cc62cd3db4c5a62234daed743f656052",
+              "95b15c54fd48d14a99ce0682da84cad6cc62cd3db4c5a62234daed743f656052"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/delete-confirm-dialog-dark-diff.png"
+    },
+    {
+      "id": "create",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/create-light-production.png",
+          "full": "visual/create-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "ce6032d1cc867be1e78810ee091660cdac95e464c4e7907b0e115739463ec639",
+              "1d297a94a798614a767ac8ae6836a4e6371860762cdd12b43d6e5277aec17431",
+              "1d297a94a798614a767ac8ae6836a4e6371860762cdd12b43d6e5277aec17431",
+              "1d297a94a798614a767ac8ae6836a4e6371860762cdd12b43d6e5277aec17431"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/create-light-reference.png",
+          "full": "visual/create-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "5617693b6983d108d57e5c063fb27d9a5299989c5e4614a6cdd83bc0af533b81",
+              "5617693b6983d108d57e5c063fb27d9a5299989c5e4614a6cdd83bc0af533b81",
+              "5617693b6983d108d57e5c063fb27d9a5299989c5e4614a6cdd83bc0af533b81"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/create-light-diff.png"
+    },
+    {
+      "id": "create",
+      "theme": "dark",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/create-dark-production.png",
+          "full": "visual/create-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "155a6e33c752296ff597dcf0e88bba95d9f6ab8f6c3c99367b7a82be879175c6",
+              "155a6e33c752296ff597dcf0e88bba95d9f6ab8f6c3c99367b7a82be879175c6",
+              "155a6e33c752296ff597dcf0e88bba95d9f6ab8f6c3c99367b7a82be879175c6"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/create-dark-reference.png",
+          "full": "visual/create-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "9db968dd05da04008ac826c32974a178a11992ef866b3cd78a9818f5bf0cb0f6",
+              "9db968dd05da04008ac826c32974a178a11992ef866b3cd78a9818f5bf0cb0f6",
+              "9db968dd05da04008ac826c32974a178a11992ef866b3cd78a9818f5bf0cb0f6"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/create-dark-diff.png"
+    },
+    {
+      "id": "create-basic",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/create-basic-light-production.png",
+          "full": "visual/create-basic-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "2c732680f94685c6911d95ab9fa463e0c79e33ed341b405107ab62e8668dccc0",
+              "de2721963a0257d6395cf8caa9eb20b8577ea66e736f53ee862e0cbc94ca88d1",
+              "de2721963a0257d6395cf8caa9eb20b8577ea66e736f53ee862e0cbc94ca88d1",
+              "de2721963a0257d6395cf8caa9eb20b8577ea66e736f53ee862e0cbc94ca88d1"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/create-basic-light-reference.png",
+          "full": "visual/create-basic-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "c7549ffb244820db9f7c080fd4cb8a78a2e402616ebc6a52a2c702cf6ca273c4",
+              "c7549ffb244820db9f7c080fd4cb8a78a2e402616ebc6a52a2c702cf6ca273c4",
+              "c7549ffb244820db9f7c080fd4cb8a78a2e402616ebc6a52a2c702cf6ca273c4"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/create-basic-light-diff.png"
+    },
+    {
+      "id": "create-basic",
+      "theme": "dark",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/create-basic-dark-production.png",
+          "full": "visual/create-basic-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "e5c7079c95d9db76a8a27f9fbea324ecd177984a8d56b980c2cc7221822eeff3",
+              "24bb00de8e3173e1652a623ede8480d982b778a86cc084f6ba7421a544665044",
+              "24bb00de8e3173e1652a623ede8480d982b778a86cc084f6ba7421a544665044",
+              "24bb00de8e3173e1652a623ede8480d982b778a86cc084f6ba7421a544665044"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/create-basic-dark-reference.png",
+          "full": "visual/create-basic-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "e3a3d6ac3c82404ee3c5a39258db48886e423b71f3c6fc4dad71cd82559b2673",
+              "e3a3d6ac3c82404ee3c5a39258db48886e423b71f3c6fc4dad71cd82559b2673",
+              "e3a3d6ac3c82404ee3c5a39258db48886e423b71f3c6fc4dad71cd82559b2673"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/create-basic-dark-diff.png"
+    },
+    {
+      "id": "image-threshold-form",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/image-threshold-form-light-production.png",
+          "full": "visual/image-threshold-form-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "61d2edd1fb1607c7b7354c1b8bead0bef6a51b3be93e71ae324d78d9138e78d9",
+              "e6f0d3d1caa5bbe4cb9b1ee20cf1d60c388498c9256644b406ca4ae21e0cddd9",
+              "e6f0d3d1caa5bbe4cb9b1ee20cf1d60c388498c9256644b406ca4ae21e0cddd9",
+              "e6f0d3d1caa5bbe4cb9b1ee20cf1d60c388498c9256644b406ca4ae21e0cddd9"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/image-threshold-form-light-reference.png",
+          "full": "visual/image-threshold-form-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "5e4d4933256aae1fbeec7ab6ff2b75ae50d8095790ed10f3443eac15110a9eac",
+              "5e4d4933256aae1fbeec7ab6ff2b75ae50d8095790ed10f3443eac15110a9eac",
+              "5e4d4933256aae1fbeec7ab6ff2b75ae50d8095790ed10f3443eac15110a9eac"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/image-threshold-form-light-diff.png"
+    },
+    {
+      "id": "image-threshold-form",
+      "theme": "dark",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/image-threshold-form-dark-production.png",
+          "full": "visual/image-threshold-form-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "4f22e22dcbfbda5b30e3bae6919fba101f0276deafe4fc47f13d82cb235eed3c",
+              "4f22e22dcbfbda5b30e3bae6919fba101f0276deafe4fc47f13d82cb235eed3c",
+              "4f22e22dcbfbda5b30e3bae6919fba101f0276deafe4fc47f13d82cb235eed3c"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/image-threshold-form-dark-reference.png",
+          "full": "visual/image-threshold-form-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "31aac98c137f9f77b675469419a796051dca582ef46e08a7aa5361c5605aaf37",
+              "31aac98c137f9f77b675469419a796051dca582ef46e08a7aa5361c5605aaf37",
+              "31aac98c137f9f77b675469419a796051dca582ef46e08a7aa5361c5605aaf37"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/image-threshold-form-dark-diff.png"
+    },
+    {
+      "id": "network-fingerprint-form",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/network-fingerprint-form-light-production.png",
+          "full": "visual/network-fingerprint-form-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "c9d5d712aed3761ecb6b6df2813e7f629f3a3beb59bce7a6395f690e92d7d95c",
+              "c9d5d712aed3761ecb6b6df2813e7f629f3a3beb59bce7a6395f690e92d7d95c",
+              "c9d5d712aed3761ecb6b6df2813e7f629f3a3beb59bce7a6395f690e92d7d95c"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/network-fingerprint-form-light-reference.png",
+          "full": "visual/network-fingerprint-form-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "4b8b6ac959d0e823bad153122c828c2912956857a8507f828750d78314b3adfd",
+              "4b8b6ac959d0e823bad153122c828c2912956857a8507f828750d78314b3adfd",
+              "4b8b6ac959d0e823bad153122c828c2912956857a8507f828750d78314b3adfd"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/network-fingerprint-form-light-diff.png"
+    },
+    {
+      "id": "network-fingerprint-form",
+      "theme": "dark",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/network-fingerprint-form-dark-production.png",
+          "full": "visual/network-fingerprint-form-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "c4776d04eb38cea72c3f79f4d64e21b66de4c6ef5f51f05fedf33980971de8af",
+              "c4776d04eb38cea72c3f79f4d64e21b66de4c6ef5f51f05fedf33980971de8af",
+              "c4776d04eb38cea72c3f79f4d64e21b66de4c6ef5f51f05fedf33980971de8af"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/network-fingerprint-form-dark-reference.png",
+          "full": "visual/network-fingerprint-form-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "823694fdb523c0310f3c7b285b64d892b75be6415bce71dcb6f36e03909c0e8d",
+              "823694fdb523c0310f3c7b285b64d892b75be6415bce71dcb6f36e03909c0e8d",
+              "823694fdb523c0310f3c7b285b64d892b75be6415bce71dcb6f36e03909c0e8d"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/network-fingerprint-form-dark-diff.png"
+    },
+    {
+      "id": "edit",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/edit-light-production.png",
+          "full": "visual/edit-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "9430e49f8a75a4aca0376c1c1204f8c66c17780ea06e653d1d4975f366bb3251",
+              "9430e49f8a75a4aca0376c1c1204f8c66c17780ea06e653d1d4975f366bb3251",
+              "9430e49f8a75a4aca0376c1c1204f8c66c17780ea06e653d1d4975f366bb3251"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/edit-light-reference.png",
+          "full": "visual/edit-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "0db438ed070b457c5cfdf50636770d02575511a56f3061b36cb8df1dcd04785e",
+              "0db438ed070b457c5cfdf50636770d02575511a56f3061b36cb8df1dcd04785e",
+              "0db438ed070b457c5cfdf50636770d02575511a56f3061b36cb8df1dcd04785e"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/edit-light-diff.png"
+    },
+    {
+      "id": "edit",
+      "theme": "dark",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/edit-dark-production.png",
+          "full": "visual/edit-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "d521fe4e71c569df4248f252df9cf0b7427e49f1f30297bf1c29c8c4b1c093c4",
+              "d521fe4e71c569df4248f252df9cf0b7427e49f1f30297bf1c29c8c4b1c093c4",
+              "d521fe4e71c569df4248f252df9cf0b7427e49f1f30297bf1c29c8c4b1c093c4"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/edit-dark-reference.png",
+          "full": "visual/edit-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "255b38a412da7f43fa1c9290f5baa07feb0f05b597be5500a475cb98d0c26327",
+              "255b38a412da7f43fa1c9290f5baa07feb0f05b597be5500a475cb98d0c26327",
+              "255b38a412da7f43fa1c9290f5baa07feb0f05b597be5500a475cb98d0c26327"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/edit-dark-diff.png"
+    },
+    {
+      "id": "window-template-dialog",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/window-template-dialog-light-production.png",
+          "full": "visual/window-template-dialog-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "5e047eb7b7c82b81bb9ed14b57038c607b94131ffde10aaafa4e69b2718998b1",
+              "cde99d4f24fbe7ea4ccac74b33e414563cbdd705871813b99517c98358e9a7f7",
+              "cde99d4f24fbe7ea4ccac74b33e414563cbdd705871813b99517c98358e9a7f7",
+              "cde99d4f24fbe7ea4ccac74b33e414563cbdd705871813b99517c98358e9a7f7"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/window-template-dialog-light-reference.png",
+          "full": "visual/window-template-dialog-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "0afeb73dd6538337638b1ed68420ba18eeba9e7ec401c437ddccd643079f4dfd",
+              "0afeb73dd6538337638b1ed68420ba18eeba9e7ec401c437ddccd643079f4dfd",
+              "0afeb73dd6538337638b1ed68420ba18eeba9e7ec401c437ddccd643079f4dfd"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/window-template-dialog-light-diff.png"
+    },
+    {
+      "id": "window-template-dialog",
+      "theme": "dark",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/window-template-dialog-dark-production.png",
+          "full": "visual/window-template-dialog-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "35c5e8f7dc1cb95f86122829af0312a0da97ed200e4fb116429c9d1e071ca99e",
+              "dc814a6c06be34c87ff50313031ce3b769dd286b91bd22b420a0faae4961c125",
+              "dc814a6c06be34c87ff50313031ce3b769dd286b91bd22b420a0faae4961c125",
+              "dc814a6c06be34c87ff50313031ce3b769dd286b91bd22b420a0faae4961c125"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/window-template-dialog-dark-reference.png",
+          "full": "visual/window-template-dialog-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "26fe47946b3319e343561c76b7363e4b8cd68f96f7bfbf417659042ab6e8e5ff",
+              "26fe47946b3319e343561c76b7363e4b8cd68f96f7bfbf417659042ab6e8e5ff",
+              "26fe47946b3319e343561c76b7363e4b8cd68f96f7bfbf417659042ab6e8e5ff"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/window-template-dialog-dark-diff.png"
+    },
+    {
+      "id": "projects",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/projects-light-production.png",
+          "full": "visual/projects-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "010a431caf36dacecc361ea0bd210584a419c25f0be90e3b4d5dba5b59dffdb1",
+              "010a431caf36dacecc361ea0bd210584a419c25f0be90e3b4d5dba5b59dffdb1",
+              "010a431caf36dacecc361ea0bd210584a419c25f0be90e3b4d5dba5b59dffdb1"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/projects-light-reference.png",
+          "full": "visual/projects-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "01112927d282dff784800f78195508342783071e986129d2b38bec1dda2375c7",
+              "01112927d282dff784800f78195508342783071e986129d2b38bec1dda2375c7",
+              "01112927d282dff784800f78195508342783071e986129d2b38bec1dda2375c7"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/projects-light-diff.png"
+    },
+    {
+      "id": "projects",
+      "theme": "dark",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/projects-dark-production.png",
+          "full": "visual/projects-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "c52b02cf3b89a3cae41b00246543950093f2778643407153e625795c4bfaaf96",
+              "c52b02cf3b89a3cae41b00246543950093f2778643407153e625795c4bfaaf96",
+              "c52b02cf3b89a3cae41b00246543950093f2778643407153e625795c4bfaaf96"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/projects-dark-reference.png",
+          "full": "visual/projects-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "9a25de5d3f867d03bbc196a68acca598b274e9aa3a67819ef16026f4f7041327",
+              "9a25de5d3f867d03bbc196a68acca598b274e9aa3a67819ef16026f4f7041327",
+              "9a25de5d3f867d03bbc196a68acca598b274e9aa3a67819ef16026f4f7041327"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/projects-dark-diff.png"
+    },
+    {
+      "id": "project-create-dialog",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/project-create-dialog-light-production.png",
+          "full": "visual/project-create-dialog-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "4ecff09bfa01bda44f34e042496d5ab0e52fb71fa2d3b6cc5efdf2c824122dff",
+              "3663856325930e3c0a089cba93885c9ba1cd78b716819b245ed38f85acc290dd",
+              "3663856325930e3c0a089cba93885c9ba1cd78b716819b245ed38f85acc290dd",
+              "3663856325930e3c0a089cba93885c9ba1cd78b716819b245ed38f85acc290dd"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/project-create-dialog-light-reference.png",
+          "full": "visual/project-create-dialog-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "4596e44f5ef4f65477ecd8d0be7c96c13f72a12568d10807a9c5aabbf3d892b6",
+              "4596e44f5ef4f65477ecd8d0be7c96c13f72a12568d10807a9c5aabbf3d892b6",
+              "4596e44f5ef4f65477ecd8d0be7c96c13f72a12568d10807a9c5aabbf3d892b6"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/project-create-dialog-light-diff.png"
+    },
+    {
+      "id": "project-create-dialog",
+      "theme": "dark",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/project-create-dialog-dark-production.png",
+          "full": "visual/project-create-dialog-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "2ccef5c969565fd607a5e439e9f1762774690f10c63d79b48d91e978634490b4",
+              "2ccef5c969565fd607a5e439e9f1762774690f10c63d79b48d91e978634490b4",
+              "2ccef5c969565fd607a5e439e9f1762774690f10c63d79b48d91e978634490b4"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/project-create-dialog-dark-reference.png",
+          "full": "visual/project-create-dialog-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "fc1ba2fb30492c4f2c41a4c06c896ee07df4204bf66f66b24e166aef2033ff7c",
+              "fc1ba2fb30492c4f2c41a4c06c896ee07df4204bf66f66b24e166aef2033ff7c",
+              "fc1ba2fb30492c4f2c41a4c06c896ee07df4204bf66f66b24e166aef2033ff7c"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/project-create-dialog-dark-diff.png"
+    },
+    {
+      "id": "project-detail",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/project-detail-light-production.png",
+          "full": "visual/project-detail-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "43b1941edf51314200224dfe6394aa651ed83f42b7ee2e4a3ea14afc86bb5345",
+              "43b1941edf51314200224dfe6394aa651ed83f42b7ee2e4a3ea14afc86bb5345",
+              "43b1941edf51314200224dfe6394aa651ed83f42b7ee2e4a3ea14afc86bb5345"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/project-detail-light-reference.png",
+          "full": "visual/project-detail-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "4c0230458a69649bebf3e294b2747d9e95887e7413121bebe431c744b9d5f1d5",
+              "4c0230458a69649bebf3e294b2747d9e95887e7413121bebe431c744b9d5f1d5",
+              "4c0230458a69649bebf3e294b2747d9e95887e7413121bebe431c744b9d5f1d5"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/project-detail-light-diff.png"
+    },
+    {
+      "id": "project-detail",
+      "theme": "dark",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/project-detail-dark-production.png",
+          "full": "visual/project-detail-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "73c4a2a1445e41ca04ee5a400ab4f6763e519f6d68995d66709f1e69b924407f",
+              "b5e96b7f44033311cc5e924d800c731d56a2b37f7ac60210d31cc5392f25903e",
+              "b5e96b7f44033311cc5e924d800c731d56a2b37f7ac60210d31cc5392f25903e",
+              "b5e96b7f44033311cc5e924d800c731d56a2b37f7ac60210d31cc5392f25903e"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/project-detail-dark-reference.png",
+          "full": "visual/project-detail-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "bff0dacc6239149146a935d004d059de9ad832193e12f119bac206932563923f",
+              "bff0dacc6239149146a935d004d059de9ad832193e12f119bac206932563923f",
+              "bff0dacc6239149146a935d004d059de9ad832193e12f119bac206932563923f"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/project-detail-dark-diff.png"
+    },
+    {
+      "id": "proxy",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/proxy-light-production.png",
+          "full": "visual/proxy-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "7a9bcbe27063fd7296232b9a352699a60957dc377d99b8735567d348ccaedd66",
+              "7a9bcbe27063fd7296232b9a352699a60957dc377d99b8735567d348ccaedd66",
+              "7a9bcbe27063fd7296232b9a352699a60957dc377d99b8735567d348ccaedd66"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/proxy-light-reference.png",
+          "full": "visual/proxy-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "34aae249e445953ce456c2eaa78024ea06c2466ea5c1f24ea5c08178fd3ce018",
+              "34aae249e445953ce456c2eaa78024ea06c2466ea5c1f24ea5c08178fd3ce018",
+              "34aae249e445953ce456c2eaa78024ea06c2466ea5c1f24ea5c08178fd3ce018"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/proxy-light-diff.png"
+    },
+    {
+      "id": "proxy",
+      "theme": "dark",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/proxy-dark-production.png",
+          "full": "visual/proxy-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "f6f0643c27bb11a7de309c477ca1904d2c887c0696b77e40e57535df71655b42",
+              "f6f0643c27bb11a7de309c477ca1904d2c887c0696b77e40e57535df71655b42",
+              "f6f0643c27bb11a7de309c477ca1904d2c887c0696b77e40e57535df71655b42"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/proxy-dark-reference.png",
+          "full": "visual/proxy-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "b00ee48123f5f9ee389afd01e2f59ff3be89f8742e628f8339d746abbd02cdff",
+              "b00ee48123f5f9ee389afd01e2f59ff3be89f8742e628f8339d746abbd02cdff",
+              "b00ee48123f5f9ee389afd01e2f59ff3be89f8742e628f8339d746abbd02cdff"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/proxy-dark-diff.png"
+    },
+    {
+      "id": "accounts",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/accounts-light-production.png",
+          "full": "visual/accounts-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "4e4ed285f8afd3ac30060ae69b8de818ccc14f770e92e70c640ad6c0a798b5d1",
+              "4e4ed285f8afd3ac30060ae69b8de818ccc14f770e92e70c640ad6c0a798b5d1",
+              "4e4ed285f8afd3ac30060ae69b8de818ccc14f770e92e70c640ad6c0a798b5d1"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/accounts-light-reference.png",
+          "full": "visual/accounts-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "89547f035d89a2270b087cafb4c33d915c121fbc07298de97b8ebd704c8d2c7d",
+              "89547f035d89a2270b087cafb4c33d915c121fbc07298de97b8ebd704c8d2c7d",
+              "89547f035d89a2270b087cafb4c33d915c121fbc07298de97b8ebd704c8d2c7d"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/accounts-light-diff.png"
+    },
+    {
+      "id": "accounts",
+      "theme": "dark",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/accounts-dark-production.png",
+          "full": "visual/accounts-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "286912294525dffaca310c01739cd858d676cd80315d36d931b6165af9fba5f2",
+              "ff3dca79c6d8da4e8d45d7599f931db7f3d80d671debaf8ff418c2b7d9865660",
+              "ff3dca79c6d8da4e8d45d7599f931db7f3d80d671debaf8ff418c2b7d9865660",
+              "ff3dca79c6d8da4e8d45d7599f931db7f3d80d671debaf8ff418c2b7d9865660"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/accounts-dark-reference.png",
+          "full": "visual/accounts-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "f4c6a3ef1b938ec58bf59460231899d1a40328014209df65e898aac7c34610e7",
+              "f4c6a3ef1b938ec58bf59460231899d1a40328014209df65e898aac7c34610e7",
+              "f4c6a3ef1b938ec58bf59460231899d1a40328014209df65e898aac7c34610e7"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/accounts-dark-diff.png"
+    },
+    {
+      "id": "account-create",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/account-create-light-production.png",
+          "full": "visual/account-create-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "85b0678bb34619f7969965d21ec22490ccf98dc7e6e244f7ae6d6b58f4a9c69d",
+              "85b0678bb34619f7969965d21ec22490ccf98dc7e6e244f7ae6d6b58f4a9c69d",
+              "85b0678bb34619f7969965d21ec22490ccf98dc7e6e244f7ae6d6b58f4a9c69d"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/account-create-light-reference.png",
+          "full": "visual/account-create-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "13e2e08e8b8bc99f9ea9f926863d01de2cd931b068dc2f562d0392255bdc12e8",
+              "13e2e08e8b8bc99f9ea9f926863d01de2cd931b068dc2f562d0392255bdc12e8",
+              "13e2e08e8b8bc99f9ea9f926863d01de2cd931b068dc2f562d0392255bdc12e8"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/account-create-light-diff.png"
+    },
+    {
+      "id": "account-create",
+      "theme": "dark",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/account-create-dark-production.png",
+          "full": "visual/account-create-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "66c18e07d26d4c6d4f55127a12a34b3d235881e533d86ce8dd28d102e5ab0f40",
+              "01f4948fdd0f367b8156599aebca93960f69724e87a014229ebcfc6611a47662",
+              "01f4948fdd0f367b8156599aebca93960f69724e87a014229ebcfc6611a47662",
+              "01f4948fdd0f367b8156599aebca93960f69724e87a014229ebcfc6611a47662"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/account-create-dark-reference.png",
+          "full": "visual/account-create-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "d1bb5277822fb78eef828bfa6d5b9c778656175dfef66d73b9fbddac879426a9",
+              "d1bb5277822fb78eef828bfa6d5b9c778656175dfef66d73b9fbddac879426a9",
+              "d1bb5277822fb78eef828bfa6d5b9c778656175dfef66d73b9fbddac879426a9"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/account-create-dark-diff.png"
+    },
+    {
+      "id": "extensions",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/extensions-light-production.png",
+          "full": "visual/extensions-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "5c4fb9cfaff215c1783e5de62a92689bf7c9883ba052bf52cb2aabe2f4c6360a",
+              "977ac26e1415fd43931c05e30b2597c255943910bbdcf8f48d9f429aec7ed603",
+              "977ac26e1415fd43931c05e30b2597c255943910bbdcf8f48d9f429aec7ed603",
+              "977ac26e1415fd43931c05e30b2597c255943910bbdcf8f48d9f429aec7ed603"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/extensions-light-reference.png",
+          "full": "visual/extensions-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "37530172cca183eaa5ead26aa81dd3d6416b8a7cdf95aef00315c68ccfb18449",
+              "37530172cca183eaa5ead26aa81dd3d6416b8a7cdf95aef00315c68ccfb18449",
+              "37530172cca183eaa5ead26aa81dd3d6416b8a7cdf95aef00315c68ccfb18449"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/extensions-light-diff.png"
+    },
+    {
+      "id": "extensions",
+      "theme": "dark",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/extensions-dark-production.png",
+          "full": "visual/extensions-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "a88b229733370d96d914da8e308a799454ba3363ca46032a9b9b8ce0ab7bd46c",
+              "d8d72bbcbdff8ee1fe70a371e226def7d81c979a992a9df913aff2bc91ece78c",
+              "d8d72bbcbdff8ee1fe70a371e226def7d81c979a992a9df913aff2bc91ece78c",
+              "d8d72bbcbdff8ee1fe70a371e226def7d81c979a992a9df913aff2bc91ece78c"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/extensions-dark-reference.png",
+          "full": "visual/extensions-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "8d4fce21e33c4009eeeec12df8a8dc14c1a4058a4e24cefb1e970548057c1202",
+              "8d4fce21e33c4009eeeec12df8a8dc14c1a4058a4e24cefb1e970548057c1202",
+              "8d4fce21e33c4009eeeec12df8a8dc14c1a4058a4e24cefb1e970548057c1202"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/extensions-dark-diff.png"
+    },
+    {
+      "id": "extension-upload-dialog",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/extension-upload-dialog-light-production.png",
+          "full": "visual/extension-upload-dialog-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "0fea20bf57c0655402953651b429b548706f4665f6320d5f96ee9e32cf20d4e0",
+              "8c78666467861b0b421b31fb64fbc59b0b73cb3170be898967e56e51d17d9a7f",
+              "8c78666467861b0b421b31fb64fbc59b0b73cb3170be898967e56e51d17d9a7f",
+              "8c78666467861b0b421b31fb64fbc59b0b73cb3170be898967e56e51d17d9a7f"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/extension-upload-dialog-light-reference.png",
+          "full": "visual/extension-upload-dialog-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "bd61d910f93793c894581da426a5621945a1182bcb6df998b8ed9c05eec42933",
+              "bd61d910f93793c894581da426a5621945a1182bcb6df998b8ed9c05eec42933",
+              "bd61d910f93793c894581da426a5621945a1182bcb6df998b8ed9c05eec42933"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/extension-upload-dialog-light-diff.png"
+    },
+    {
+      "id": "extension-upload-dialog",
+      "theme": "dark",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/extension-upload-dialog-dark-production.png",
+          "full": "visual/extension-upload-dialog-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "bbbfb58e6dada17a4141b6936a43325168d3cf210345bda9d9f9e4a8f6f756c2",
+              "fd303754c4dfcc574ddbf2564e3ee7211b510b0650dca642058c8087a804c45d",
+              "fd303754c4dfcc574ddbf2564e3ee7211b510b0650dca642058c8087a804c45d",
+              "fd303754c4dfcc574ddbf2564e3ee7211b510b0650dca642058c8087a804c45d"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/extension-upload-dialog-dark-reference.png",
+          "full": "visual/extension-upload-dialog-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "d330f2de88c612a939eb5503a63ea87bf068e35b3637d94b10452a7123454a4a",
+              "d330f2de88c612a939eb5503a63ea87bf068e35b3637d94b10452a7123454a4a",
+              "d330f2de88c612a939eb5503a63ea87bf068e35b3637d94b10452a7123454a4a"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/extension-upload-dialog-dark-diff.png"
+    },
+    {
+      "id": "api",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/api-light-production.png",
+          "full": "visual/api-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "4b7fc348e6a00e86fa81f77fc1ff6e12df455b7950c1f200b420dab800277942",
+              "bca9cc622f0144cc846f807d7e0e4d7ece6cec8221f944529c003dd00e49978b",
+              "bca9cc622f0144cc846f807d7e0e4d7ece6cec8221f944529c003dd00e49978b",
+              "bca9cc622f0144cc846f807d7e0e4d7ece6cec8221f944529c003dd00e49978b"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/api-light-reference.png",
+          "full": "visual/api-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "81a99e8c38bd1e0485e7b63a5d5b6db29505d93b8502191d6a8c9409143b9e4e",
+              "81a99e8c38bd1e0485e7b63a5d5b6db29505d93b8502191d6a8c9409143b9e4e",
+              "81a99e8c38bd1e0485e7b63a5d5b6db29505d93b8502191d6a8c9409143b9e4e"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/api-light-diff.png"
+    },
+    {
+      "id": "api",
+      "theme": "dark",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/api-dark-production.png",
+          "full": "visual/api-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "d927732072af8c78b4b088b6be6fe543673a7f832ef7ca56413c484db96b0409",
+              "7f381d3ba68a6bd8bd6fcc3e4847bd10faf5e7c0583ce93511675e9af128cfec",
+              "7f381d3ba68a6bd8bd6fcc3e4847bd10faf5e7c0583ce93511675e9af128cfec",
+              "7f381d3ba68a6bd8bd6fcc3e4847bd10faf5e7c0583ce93511675e9af128cfec"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/api-dark-reference.png",
+          "full": "visual/api-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "b0c99d25294d60b01893f92f740161ef1c959697e89127723dbaae72bf104804",
+              "b0c99d25294d60b01893f92f740161ef1c959697e89127723dbaae72bf104804",
+              "b0c99d25294d60b01893f92f740161ef1c959697e89127723dbaae72bf104804"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/api-dark-diff.png"
+    },
+    {
+      "id": "agent",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/agent-light-production.png",
+          "full": "visual/agent-light-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "3fd3e96db2248bf070163bc6f0c2915e51273b6d24ecd51e7c7f9b35acbc186b",
+              "3fd3e96db2248bf070163bc6f0c2915e51273b6d24ecd51e7c7f9b35acbc186b",
+              "3fd3e96db2248bf070163bc6f0c2915e51273b6d24ecd51e7c7f9b35acbc186b"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/agent-light-reference.png",
+          "full": "visual/agent-light-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "3fd3e96db2248bf070163bc6f0c2915e51273b6d24ecd51e7c7f9b35acbc186b",
+              "3fd3e96db2248bf070163bc6f0c2915e51273b6d24ecd51e7c7f9b35acbc186b",
+              "3fd3e96db2248bf070163bc6f0c2915e51273b6d24ecd51e7c7f9b35acbc186b"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/agent-light-diff.png"
+    },
+    {
+      "id": "agent",
+      "theme": "dark",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/agent-dark-production.png",
+          "full": "visual/agent-dark-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "edb8228539851dc67438ad6c4fda9971c88a442327bd4494dcf1fc13b6381294",
+              "edb8228539851dc67438ad6c4fda9971c88a442327bd4494dcf1fc13b6381294",
+              "edb8228539851dc67438ad6c4fda9971c88a442327bd4494dcf1fc13b6381294"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/agent-dark-reference.png",
+          "full": "visual/agent-dark-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "edb8228539851dc67438ad6c4fda9971c88a442327bd4494dcf1fc13b6381294",
+              "edb8228539851dc67438ad6c4fda9971c88a442327bd4494dcf1fc13b6381294",
+              "edb8228539851dc67438ad6c4fda9971c88a442327bd4494dcf1fc13b6381294"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/agent-dark-diff.png"
+    },
+    {
+      "id": "tasks",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/tasks-light-production.png",
+          "full": "visual/tasks-light-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "04a99ed8cf21776a36f445faa6df301646e6ffff7b0ea31a1df4d8ecaaebcca2",
+              "04a99ed8cf21776a36f445faa6df301646e6ffff7b0ea31a1df4d8ecaaebcca2",
+              "04a99ed8cf21776a36f445faa6df301646e6ffff7b0ea31a1df4d8ecaaebcca2"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/tasks-light-reference.png",
+          "full": "visual/tasks-light-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "04a99ed8cf21776a36f445faa6df301646e6ffff7b0ea31a1df4d8ecaaebcca2",
+              "04a99ed8cf21776a36f445faa6df301646e6ffff7b0ea31a1df4d8ecaaebcca2",
+              "04a99ed8cf21776a36f445faa6df301646e6ffff7b0ea31a1df4d8ecaaebcca2"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/tasks-light-diff.png"
+    },
+    {
+      "id": "tasks",
+      "theme": "dark",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/tasks-dark-production.png",
+          "full": "visual/tasks-dark-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "3499b291c5ab25b7797ad1a6d5005f809e1306309dad65551cc3df5b492145f4",
+              "3499b291c5ab25b7797ad1a6d5005f809e1306309dad65551cc3df5b492145f4",
+              "3499b291c5ab25b7797ad1a6d5005f809e1306309dad65551cc3df5b492145f4"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/tasks-dark-reference.png",
+          "full": "visual/tasks-dark-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "3499b291c5ab25b7797ad1a6d5005f809e1306309dad65551cc3df5b492145f4",
+              "3499b291c5ab25b7797ad1a6d5005f809e1306309dad65551cc3df5b492145f4",
+              "3499b291c5ab25b7797ad1a6d5005f809e1306309dad65551cc3df5b492145f4"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/tasks-dark-diff.png"
+    },
+    {
+      "id": "task-create-dialog",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/task-create-dialog-light-production.png",
+          "full": "visual/task-create-dialog-light-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "8f6fa4561f0589a7aace28c6c338e4bd1a708e498f07ecc4bfb079f6f80512a8",
+              "8f6fa4561f0589a7aace28c6c338e4bd1a708e498f07ecc4bfb079f6f80512a8",
+              "8f6fa4561f0589a7aace28c6c338e4bd1a708e498f07ecc4bfb079f6f80512a8"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/task-create-dialog-light-reference.png",
+          "full": "visual/task-create-dialog-light-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "8f6fa4561f0589a7aace28c6c338e4bd1a708e498f07ecc4bfb079f6f80512a8",
+              "8f6fa4561f0589a7aace28c6c338e4bd1a708e498f07ecc4bfb079f6f80512a8",
+              "8f6fa4561f0589a7aace28c6c338e4bd1a708e498f07ecc4bfb079f6f80512a8"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/task-create-dialog-light-diff.png"
+    },
+    {
+      "id": "task-create-dialog",
+      "theme": "dark",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/task-create-dialog-dark-production.png",
+          "full": "visual/task-create-dialog-dark-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "0f4786ae9872c1461f3879f125f5c11c913140c1631a46941c5e136ef946cf3e",
+              "0f4786ae9872c1461f3879f125f5c11c913140c1631a46941c5e136ef946cf3e",
+              "0f4786ae9872c1461f3879f125f5c11c913140c1631a46941c5e136ef946cf3e"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/task-create-dialog-dark-reference.png",
+          "full": "visual/task-create-dialog-dark-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "0f4786ae9872c1461f3879f125f5c11c913140c1631a46941c5e136ef946cf3e",
+              "0f4786ae9872c1461f3879f125f5c11c913140c1631a46941c5e136ef946cf3e",
+              "0f4786ae9872c1461f3879f125f5c11c913140c1631a46941c5e136ef946cf3e"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/task-create-dialog-dark-diff.png"
+    },
+    {
+      "id": "templates",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/templates-light-production.png",
+          "full": "visual/templates-light-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "b722aebfff987246a4a63b14ede32a6a1cdf348224f0f303f40423adee088f2c",
+              "b722aebfff987246a4a63b14ede32a6a1cdf348224f0f303f40423adee088f2c",
+              "b722aebfff987246a4a63b14ede32a6a1cdf348224f0f303f40423adee088f2c"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/templates-light-reference.png",
+          "full": "visual/templates-light-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "b722aebfff987246a4a63b14ede32a6a1cdf348224f0f303f40423adee088f2c",
+              "b722aebfff987246a4a63b14ede32a6a1cdf348224f0f303f40423adee088f2c",
+              "b722aebfff987246a4a63b14ede32a6a1cdf348224f0f303f40423adee088f2c"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/templates-light-diff.png"
+    },
+    {
+      "id": "templates",
+      "theme": "dark",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/templates-dark-production.png",
+          "full": "visual/templates-dark-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "8fe4158c2598d1c49193556a220519f336d0d4cb4613feb382de10dbe5e80da3",
+              "8fe4158c2598d1c49193556a220519f336d0d4cb4613feb382de10dbe5e80da3",
+              "8fe4158c2598d1c49193556a220519f336d0d4cb4613feb382de10dbe5e80da3"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/templates-dark-reference.png",
+          "full": "visual/templates-dark-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "8fe4158c2598d1c49193556a220519f336d0d4cb4613feb382de10dbe5e80da3",
+              "8fe4158c2598d1c49193556a220519f336d0d4cb4613feb382de10dbe5e80da3",
+              "8fe4158c2598d1c49193556a220519f336d0d4cb4613feb382de10dbe5e80da3"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/templates-dark-diff.png"
+    },
+    {
+      "id": "agent-template-dialog",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/agent-template-dialog-light-production.png",
+          "full": "visual/agent-template-dialog-light-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "3aba1946214fb21cbe9930780373164a6d4b2c4923d5601e29f13515de08abbe",
+              "3aba1946214fb21cbe9930780373164a6d4b2c4923d5601e29f13515de08abbe",
+              "3aba1946214fb21cbe9930780373164a6d4b2c4923d5601e29f13515de08abbe"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/agent-template-dialog-light-reference.png",
+          "full": "visual/agent-template-dialog-light-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "3aba1946214fb21cbe9930780373164a6d4b2c4923d5601e29f13515de08abbe",
+              "3aba1946214fb21cbe9930780373164a6d4b2c4923d5601e29f13515de08abbe",
+              "3aba1946214fb21cbe9930780373164a6d4b2c4923d5601e29f13515de08abbe"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/agent-template-dialog-light-diff.png"
+    },
+    {
+      "id": "agent-template-dialog",
+      "theme": "dark",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/agent-template-dialog-dark-production.png",
+          "full": "visual/agent-template-dialog-dark-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "3c167a957cac3d43808b7946148a719bf08ff46dd191feb55c23418a65e2e7ee",
+              "3c167a957cac3d43808b7946148a719bf08ff46dd191feb55c23418a65e2e7ee",
+              "3c167a957cac3d43808b7946148a719bf08ff46dd191feb55c23418a65e2e7ee"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/agent-template-dialog-dark-reference.png",
+          "full": "visual/agent-template-dialog-dark-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "3c167a957cac3d43808b7946148a719bf08ff46dd191feb55c23418a65e2e7ee",
+              "3c167a957cac3d43808b7946148a719bf08ff46dd191feb55c23418a65e2e7ee",
+              "3c167a957cac3d43808b7946148a719bf08ff46dd191feb55c23418a65e2e7ee"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/agent-template-dialog-dark-diff.png"
+    },
+    {
+      "id": "template-store",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/template-store-light-production.png",
+          "full": "visual/template-store-light-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "35c76a2157a87ce5cff8d4af9ac94f0efadec6243c3183713ac53cf177cd06f9",
+              "35c76a2157a87ce5cff8d4af9ac94f0efadec6243c3183713ac53cf177cd06f9",
+              "35c76a2157a87ce5cff8d4af9ac94f0efadec6243c3183713ac53cf177cd06f9"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/template-store-light-reference.png",
+          "full": "visual/template-store-light-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "35c76a2157a87ce5cff8d4af9ac94f0efadec6243c3183713ac53cf177cd06f9",
+              "35c76a2157a87ce5cff8d4af9ac94f0efadec6243c3183713ac53cf177cd06f9",
+              "35c76a2157a87ce5cff8d4af9ac94f0efadec6243c3183713ac53cf177cd06f9"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/template-store-light-diff.png"
+    },
+    {
+      "id": "template-store",
+      "theme": "dark",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/template-store-dark-production.png",
+          "full": "visual/template-store-dark-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "9a72380d6d35ae0db325f4e7566c75f9b5cdaedae2e35445433d29badc5431f7",
+              "9a72380d6d35ae0db325f4e7566c75f9b5cdaedae2e35445433d29badc5431f7",
+              "9a72380d6d35ae0db325f4e7566c75f9b5cdaedae2e35445433d29badc5431f7"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/template-store-dark-reference.png",
+          "full": "visual/template-store-dark-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "9a72380d6d35ae0db325f4e7566c75f9b5cdaedae2e35445433d29badc5431f7",
+              "9a72380d6d35ae0db325f4e7566c75f9b5cdaedae2e35445433d29badc5431f7",
+              "9a72380d6d35ae0db325f4e7566c75f9b5cdaedae2e35445433d29badc5431f7"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/template-store-dark-diff.png"
+    },
+    {
+      "id": "kernel-upgrade-dialog",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/kernel-upgrade-dialog-light-production.png",
+          "full": "visual/kernel-upgrade-dialog-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "514ce4e39e087bda69cbf9ac0d9ea1898f8c5e0ca426250ee6c9756b217d3deb",
+              "514ce4e39e087bda69cbf9ac0d9ea1898f8c5e0ca426250ee6c9756b217d3deb",
+              "514ce4e39e087bda69cbf9ac0d9ea1898f8c5e0ca426250ee6c9756b217d3deb"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/kernel-upgrade-dialog-light-reference.png",
+          "full": "visual/kernel-upgrade-dialog-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "8aefd038740a2026cbcc10fde3e6ec0b2783e988f5795e63cb878065b114052c",
+              "8aefd038740a2026cbcc10fde3e6ec0b2783e988f5795e63cb878065b114052c",
+              "8aefd038740a2026cbcc10fde3e6ec0b2783e988f5795e63cb878065b114052c"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/kernel-upgrade-dialog-light-diff.png"
+    },
+    {
+      "id": "kernel-upgrade-dialog",
+      "theme": "dark",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/kernel-upgrade-dialog-dark-production.png",
+          "full": "visual/kernel-upgrade-dialog-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "648f08810d1b77539352b9486637b44fc4b7bccfecb4e3a130c6fbc4b05462af",
+              "efe6aecb312998dbceb7f359bff5e5a137dd8510597f5fe6f96edb9e5df2d1ca",
+              "efe6aecb312998dbceb7f359bff5e5a137dd8510597f5fe6f96edb9e5df2d1ca",
+              "efe6aecb312998dbceb7f359bff5e5a137dd8510597f5fe6f96edb9e5df2d1ca"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/kernel-upgrade-dialog-dark-reference.png",
+          "full": "visual/kernel-upgrade-dialog-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "a27f07e18c441ab18c583d8e2d1432e68510ae2212e39e2bdc6ec43fa047fd26",
+              "a27f07e18c441ab18c583d8e2d1432e68510ae2212e39e2bdc6ec43fa047fd26",
+              "a27f07e18c441ab18c583d8e2d1432e68510ae2212e39e2bdc6ec43fa047fd26"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/kernel-upgrade-dialog-dark-diff.png"
+    },
+    {
+      "id": "mcp-list",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/mcp-list-light-production.png",
+          "full": "visual/mcp-list-light-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "a5b6962ae667da34b8b606a2e72809507c4ad1bf2ef171d48339ac9a0dba9586",
+              "a5b6962ae667da34b8b606a2e72809507c4ad1bf2ef171d48339ac9a0dba9586",
+              "a5b6962ae667da34b8b606a2e72809507c4ad1bf2ef171d48339ac9a0dba9586"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/mcp-list-light-reference.png",
+          "full": "visual/mcp-list-light-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "a5b6962ae667da34b8b606a2e72809507c4ad1bf2ef171d48339ac9a0dba9586",
+              "a5b6962ae667da34b8b606a2e72809507c4ad1bf2ef171d48339ac9a0dba9586",
+              "a5b6962ae667da34b8b606a2e72809507c4ad1bf2ef171d48339ac9a0dba9586"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/mcp-list-light-diff.png"
+    },
+    {
+      "id": "mcp-list",
+      "theme": "dark",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/mcp-list-dark-production.png",
+          "full": "visual/mcp-list-dark-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "259f512fa2baa0de994eb542bc84e2637cfc81234762275f607f3049b21c8847",
+              "259f512fa2baa0de994eb542bc84e2637cfc81234762275f607f3049b21c8847",
+              "259f512fa2baa0de994eb542bc84e2637cfc81234762275f607f3049b21c8847"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/mcp-list-dark-reference.png",
+          "full": "visual/mcp-list-dark-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "259f512fa2baa0de994eb542bc84e2637cfc81234762275f607f3049b21c8847",
+              "259f512fa2baa0de994eb542bc84e2637cfc81234762275f607f3049b21c8847",
+              "259f512fa2baa0de994eb542bc84e2637cfc81234762275f607f3049b21c8847"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/mcp-list-dark-diff.png"
+    },
+    {
+      "id": "mcp-create",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/mcp-create-light-production.png",
+          "full": "visual/mcp-create-light-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "d69e3664f25c5e3b62c3c90e2f14dba8c0fca926ab2c7a0b6ce944a8adde50a5",
+              "d69e3664f25c5e3b62c3c90e2f14dba8c0fca926ab2c7a0b6ce944a8adde50a5",
+              "d69e3664f25c5e3b62c3c90e2f14dba8c0fca926ab2c7a0b6ce944a8adde50a5"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/mcp-create-light-reference.png",
+          "full": "visual/mcp-create-light-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "d69e3664f25c5e3b62c3c90e2f14dba8c0fca926ab2c7a0b6ce944a8adde50a5",
+              "d69e3664f25c5e3b62c3c90e2f14dba8c0fca926ab2c7a0b6ce944a8adde50a5",
+              "d69e3664f25c5e3b62c3c90e2f14dba8c0fca926ab2c7a0b6ce944a8adde50a5"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/mcp-create-light-diff.png"
+    },
+    {
+      "id": "mcp-create",
+      "theme": "dark",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/mcp-create-dark-production.png",
+          "full": "visual/mcp-create-dark-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "563a6d25c65e8a892bbfccc2b8cfe3013433466c9a24aa39881f5a2f622c9f31",
+              "563a6d25c65e8a892bbfccc2b8cfe3013433466c9a24aa39881f5a2f622c9f31",
+              "563a6d25c65e8a892bbfccc2b8cfe3013433466c9a24aa39881f5a2f622c9f31"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/mcp-create-dark-reference.png",
+          "full": "visual/mcp-create-dark-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "563a6d25c65e8a892bbfccc2b8cfe3013433466c9a24aa39881f5a2f622c9f31",
+              "563a6d25c65e8a892bbfccc2b8cfe3013433466c9a24aa39881f5a2f622c9f31",
+              "563a6d25c65e8a892bbfccc2b8cfe3013433466c9a24aa39881f5a2f622c9f31"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/mcp-create-dark-diff.png"
+    },
+    {
+      "id": "mcp-http",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/mcp-http-light-production.png",
+          "full": "visual/mcp-http-light-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "7e9a7b646b294522d2f80870ac10d04c92aa0537be32d3d33f043cafb2566ea2",
+              "7e9a7b646b294522d2f80870ac10d04c92aa0537be32d3d33f043cafb2566ea2",
+              "7e9a7b646b294522d2f80870ac10d04c92aa0537be32d3d33f043cafb2566ea2"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/mcp-http-light-reference.png",
+          "full": "visual/mcp-http-light-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "7e9a7b646b294522d2f80870ac10d04c92aa0537be32d3d33f043cafb2566ea2",
+              "7e9a7b646b294522d2f80870ac10d04c92aa0537be32d3d33f043cafb2566ea2",
+              "7e9a7b646b294522d2f80870ac10d04c92aa0537be32d3d33f043cafb2566ea2"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/mcp-http-light-diff.png"
+    },
+    {
+      "id": "mcp-http",
+      "theme": "dark",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/mcp-http-dark-production.png",
+          "full": "visual/mcp-http-dark-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "6386e9e7e979151c6db3dc16ef3423b025ac7d69b1e868fcc36ac56d5be6dbc4",
+              "6386e9e7e979151c6db3dc16ef3423b025ac7d69b1e868fcc36ac56d5be6dbc4",
+              "6386e9e7e979151c6db3dc16ef3423b025ac7d69b1e868fcc36ac56d5be6dbc4"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/mcp-http-dark-reference.png",
+          "full": "visual/mcp-http-dark-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "6386e9e7e979151c6db3dc16ef3423b025ac7d69b1e868fcc36ac56d5be6dbc4",
+              "6386e9e7e979151c6db3dc16ef3423b025ac7d69b1e868fcc36ac56d5be6dbc4",
+              "6386e9e7e979151c6db3dc16ef3423b025ac7d69b1e868fcc36ac56d5be6dbc4"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/mcp-http-dark-diff.png"
+    }
+  ],
+  "errors": [],
+  "externalRequests": [],
+  "fixtureNormalizations": [
+    "fingerprint:preview 以真实后端首次返回值固定相同参数的视觉数据",
+    "两种 render 均使用 hasPassword 对应的等宽八星掩码保持相同视觉数据；不返回真实机密"
+  ]
+}

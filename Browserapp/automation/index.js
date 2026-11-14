@@ -80,7 +80,7 @@ async function startAutomation(context = {}) {
   const appCenter = new AppCenter({ engine });
 
   const localApi = new LocalApiServer({
-    host: '127.0.0.1',
+    host: context.apiHost || '127.0.0.1',
     port,
     apiKey: effectiveApiKey,
     userDataPath,
@@ -93,7 +93,7 @@ async function startAutomation(context = {}) {
     getVersion: () => app.getVersion(),
   });
 
-  const info = await localApi.start();
+  const info = context.apiEnabled === false ? { ...localApi.info(), enabled: false } : { ...await localApi.start(), enabled: true };
   emit({ type: 'local-api', ...info });
 
   return {

@@ -1,0 +1,9 @@
+{
+  "status": "PASS",
+  "checks": [
+    "actual Chromium and Firefox cache directories removed via native helpers",
+    "partial preserves extension state; all clears extension state while preserving Cookies/Login Data and profile Cookie",
+    "whole-selection busy/realpath checks prevent partial deletion and path escape",
+    "cloud mode rejected; no cloud cleanup implementation"
+  ]
+}

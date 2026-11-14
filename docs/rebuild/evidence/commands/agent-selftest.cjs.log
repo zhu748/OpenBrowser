@@ -1,0 +1,18 @@
+{
+  "status": "PASS",
+  "checks": [
+    "OpenAI SSE tool round trip with local HTTP fixture",
+    "real tool result enters second model request",
+    "encrypted key and restart persistence",
+    "checkpoint and log replay",
+    "cancel aborts streaming request",
+    "skill CRUD and path validation",
+    "Skill reference read, traversal rejection and root whitelist",
+    "local template/task execution and task log",
+    "cron timezone calculation",
+    "bounded LLM response and invalid tool index rejection",
+    "context compaction keeps latest turn and tool pairing",
+    "Ollama native NDJSON and object tool arguments"
+  ],
+  "events": 28
+}

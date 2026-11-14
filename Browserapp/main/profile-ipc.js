@@ -4,9 +4,9 @@ const { captureIpcResult } = require('../shared/ipc-result');
 
 /** Profile IPC; sync selection remains owned by the host and is injected here. */
 function registerProfileIpc({ registerTrustedIpc, engine, sanitizeIds, beforeRemove }) {
-  function removalIds(payload) {
+  async function removalIds(payload) {
     const ids = sanitizeIds(payload?.ids || []);
-    beforeRemove(ids);
+    await beforeRemove(ids);
     return ids;
   }
   registerTrustedIpc('profiles:sync', (_event, profiles, options) => engine.syncProfiles(profiles, {
@@ -14,10 +14,10 @@ function registerProfileIpc({ registerTrustedIpc, engine, sanitizeIds, beforeRem
   }));
   registerTrustedIpc('profiles:apply-commands', (_event, commands, options) => captureIpcResult(() => engine.applyProfileCommands(commands, options)));
   registerTrustedIpc('profiles:editor-state', (_event, id) => captureIpcResult(() => engine.profileForEdit(id)));
-  registerTrustedIpc('profiles:delete', (_event, payload) => engine.deleteProfiles(removalIds(payload), payload?.deleteData !== false));
-  registerTrustedIpc('profiles:trash', (_event, payload) => engine.trashProfiles(removalIds(payload)));
+  registerTrustedIpc('profiles:delete', async (_event, payload) => engine.deleteProfiles(await removalIds(payload), payload?.deleteData !== false));
+  registerTrustedIpc('profiles:trash', async (_event, payload) => engine.trashProfiles(await removalIds(payload)));
   registerTrustedIpc('profiles:restore', (_event, payload) => engine.restoreProfiles(sanitizeIds(payload?.ids || [])));
-  registerTrustedIpc('profiles:purge', (_event, payload) => engine.purgeProfiles(removalIds(payload), payload?.deleteData !== false));
+  registerTrustedIpc('profiles:purge', async (_event, payload) => engine.purgeProfiles(await removalIds(payload), payload?.deleteData !== false));
   registerTrustedIpc('profiles:empty-trash', (_event, payload) => engine.emptyTrash(payload?.deleteData !== false));
   registerTrustedIpc('profiles:start', (_event, profile) => engine.start(profile));
   registerTrustedIpc('profiles:stop', (_event, id) => engine.stop(id));

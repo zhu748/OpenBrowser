@@ -1,0 +1,17 @@
+  ok  start() launches via the firefox pipeline
+  ok  running item shape for firefox
+  ok  user.js written before spawn with proxy/UA/telemetry prefs
+  ok  launch args used -profile and --no-remote
+  ok  BiDi registers and verifies before both startup URLs navigate
+  ok  progress events were emitted
+  ok  stop() kills the firefox process and clears running
+  ok  status event emitted after stop
+  ok  a local Worker forwarder cannot satisfy a missing upstream proxy
+  ok  upstream route retained: http:
+  ok  upstream route retained: https:
+  ok  upstream route retained: http:
+  ok  upstream route retained: socks5:
+  ok  failed CA trust blocks spawn and closes both proxies
+  ok  failed Firefox preload closes the browser without target navigation
+
+firefox-start-pipeline-selftest: 15 passed, 0 failed

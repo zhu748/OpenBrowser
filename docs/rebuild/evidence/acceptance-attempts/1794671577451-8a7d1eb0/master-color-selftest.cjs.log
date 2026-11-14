@@ -1,0 +1,23 @@
+{
+  "passed": false,
+  "checks": [
+    "真实第三方扩展主题、灰色默认主题恢复；注入一次安装拒绝后，实际浏览器主题与磁盘恢复记录回滚"
+  ],
+  "events": [
+    {
+      "type": "fingerprint-injection-failed",
+      "message": "Inspected target navigated or closed"
+    }
+  ],
+  "applied": {
+    "backend": "local-theme",
+    "color": "#FCFF12A3",
+    "id": "caigbbipcdcpnjfokekflchogcopdfko"
+  },
+  "recolored": {
+    "backend": "local-theme",
+    "color": "#1246D2FF",
+    "id": "caigbbipcdcpnjfokekflchogcopdfko"
+  },
+  "failure": "page.goto: Target page, context or browser has been closed\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:39227/beta\", waiting until \"load\"\u001b[22m\n\n    at /workspace/OpenBrowser/Browserapp/rebuild/master-color-selftest.cjs:14:175"
+}

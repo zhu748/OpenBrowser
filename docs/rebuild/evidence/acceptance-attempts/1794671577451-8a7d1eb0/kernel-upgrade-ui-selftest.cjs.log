@@ -1,0 +1,9 @@
+{
+  "passed": true,
+  "checks": [
+    "原批量升级入口与原确认弹窗按 Chrome/Firefox 分组，实际安装目录提供目标版本，批量刷新 UA/指纹并落原 ProfileStore"
+  ],
+  "errors": [],
+  "externalRequests": [],
+  "data": "/workspace/OpenBrowser/work/rebuild/kernel-upgrade-CsOt2F"
+}

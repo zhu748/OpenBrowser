@@ -7,6 +7,7 @@ const path = require('node:path');
 // must be declared here; developer tools cannot enter installers by accident.
 const RUNTIME_DIRECTORIES = new Set([
   'assets', 'automation', 'bundled-extension', 'engine', 'kernels', 'main', 'network', 'shared', 'ui',
+  'rebuild', 'roxy-ui',
 ]);
 const RUNTIME_ROOT_FILES = new Set([
   'package.json', 'index.html', 'main.js', 'preload.js', 'host-bridge.js',
@@ -28,6 +29,8 @@ function isRuntimeResource(relativePath) {
   const normalized = String(relativePath || '').replace(/\\/g, '/');
   const parts = normalized.split('/');
   if (parts.some((part) => !part || part === '.' || part === '..')) return false;
+  if(parts[0]==='rebuild'&&parts[1]==='compiler')return false;
+  if(parts[0]==='rebuild'&&['acceptance-runner.cjs','acceptance-manifest.json','verify-evidence.cjs','visual-pixel-diff.py','build-evidence-gallery.cjs'].includes(parts[1]))return false;
   // Preserve vendor trees as supplied, including signed browser bundles.
   if (['kernels', 'assets', 'bundled-extension'].includes(parts[0])) return true;
   if (parts.some((part) => ['selftests', 'scripts', 'node_modules', 'reports', '__pycache__'].includes(part.toLowerCase()))) return false;
@@ -44,6 +47,10 @@ function assertRuntimeResourceTree(root) {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
       const relative = path.relative(root, full);
+      if(dir===root&&entry.name==='node_modules'){
+        require('../main/production-dependencies').assertProductionDependencies(root);
+        continue;
+      }
       if (!isRuntimeResource(relative)) throw new Error('[package] Non-runtime resource in app: ' + relative);
       if (entry.isDirectory()) pending.push(full);
     }

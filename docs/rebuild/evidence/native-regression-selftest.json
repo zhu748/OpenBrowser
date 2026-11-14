@@ -1,0 +1,128 @@
+{
+  "passed": true,
+  "checks": [
+    "Native 通知逐条已读只修改指定项，非法参数拒绝且无变更，全部已读真实保存"
+  ],
+  "results": [
+    {
+      "name": "rebuild/local-service-selftest.js",
+      "exitCode": 0,
+      "status": "PASS",
+      "sha256": "1e8d42a8a1e83cec937a14bae8cff12e4635729ea365e491014fa5504d5357be",
+      "durationMs": 1656,
+      "log": "commands/native-local-service-selftest.js.log"
+    },
+    {
+      "name": "automation/selftests/profile-ipc-selftest.js",
+      "exitCode": 0,
+      "status": "PASS",
+      "sha256": "06db065e51200fdabfde8510060a0ffeaaefb87045368378dd77d4f6c15f8a91",
+      "durationMs": 100,
+      "log": "commands/native-profile-ipc-selftest.js.log"
+    },
+    {
+      "name": "automation/selftests/profile-metadata-patches-selftest.js",
+      "exitCode": 0,
+      "status": "PASS",
+      "sha256": "77d790f143282ee46edf365a091e42b6963b3455cbd14b276208db92800fcaeb",
+      "durationMs": 1401,
+      "log": "commands/native-profile-metadata-patches-selftest.js.log"
+    },
+    {
+      "name": "automation/selftests/profile-revisions-selftest.js",
+      "exitCode": 0,
+      "status": "PASS",
+      "sha256": "1f2fa1025073608fa7808dd99aa73d1d6930c6737d95e903a20efb567b6bb250",
+      "durationMs": 919,
+      "log": "commands/native-profile-revisions-selftest.js.log"
+    },
+    {
+      "name": "automation/selftests/engine-dual-engine-selftest.js",
+      "exitCode": 0,
+      "status": "PASS",
+      "sha256": "be45e3d910b786e6a89914f653799a323e12e5142fa06d80e17fd3470e772ff6",
+      "durationMs": 644,
+      "log": "commands/native-engine-dual-engine-selftest.js.log"
+    },
+    {
+      "name": "automation/selftests/firefox-start-pipeline-selftest.js",
+      "exitCode": 0,
+      "status": "PASS",
+      "sha256": "0f96d3f1c7b21e6ec8a348f5a3018b04e95f3117f3d90dc43cc8507bc628017c",
+      "durationMs": 8378,
+      "log": "commands/native-firefox-start-pipeline-selftest.js.log"
+    },
+    {
+      "name": "automation/selftests/crx-reader-selftest.js",
+      "exitCode": 0,
+      "status": "PASS",
+      "sha256": "eb16be1a441de280bae430908eb3e41110a9bd2ca0816234091c001727927ddb",
+      "durationMs": 106,
+      "log": "commands/native-crx-reader-selftest.js.log"
+    },
+    {
+      "name": "automation/selftests/command-line-flags-selftest.js",
+      "exitCode": 0,
+      "status": "PASS",
+      "sha256": "e26e31c5c54895bcd7ffab5fd9bbcc6c2d29480b93aac233a121b20d24a635b1",
+      "durationMs": 91,
+      "log": "commands/native-command-line-flags-selftest.js.log"
+    },
+    {
+      "name": "automation/selftests/live-sync-internal-pages-selftest.js",
+      "exitCode": 0,
+      "status": "PASS",
+      "sha256": "178958815442fe6568487064fd74614a83241e0c54b632116f9d293c90029a39",
+      "durationMs": 70,
+      "log": "commands/native-live-sync-internal-pages-selftest.js.log"
+    },
+    {
+      "name": "tab-mapping-unit-selftest.js",
+      "exitCode": 0,
+      "status": "PASS",
+      "sha256": "29b073a768e5568604bdd87c4f3abbb1433205681e09a7f4f60b5f8b90768688",
+      "durationMs": 90,
+      "log": "commands/native-tab-mapping-unit-selftest.js.log"
+    },
+    {
+      "name": "automation/selftests/injection-cache-selftest.js",
+      "exitCode": 0,
+      "status": "PASS",
+      "sha256": "5a431cf0a2d594e79900d1811f8da40a1173f11bcd05712cd81417d85b6f61d8",
+      "durationMs": 319,
+      "log": "commands/native-injection-cache-selftest.js.log"
+    },
+    {
+      "name": "automation/selftests/worker-network-injection-selftest.js",
+      "exitCode": 0,
+      "status": "PASS",
+      "sha256": "85974f8aad62104461affb13e506ca7057205c803cc89641db079eb74b950e4b",
+      "durationMs": 54,
+      "log": "commands/native-worker-network-injection-selftest.js.log"
+    },
+    {
+      "name": "fingerprint-inject-order-selftest.js",
+      "exitCode": 0,
+      "status": "PASS",
+      "sha256": "13b38e86e9780582e209e519d23bb7bdeeb775648c2e63d8170f2f62b8f5eb51",
+      "durationMs": 94,
+      "log": "commands/native-fingerprint-inject-order-selftest.js.log"
+    },
+    {
+      "name": "automation/selftests/fingerprint-reinject-guard-selftest.js",
+      "exitCode": 0,
+      "status": "PASS",
+      "sha256": "8b2a707b2d09607eaa9eefa82eb24f92c0b539dc284168c3507fa5386a89d230",
+      "durationMs": 144,
+      "log": "commands/native-fingerprint-reinject-guard-selftest.js.log"
+    },
+    {
+      "name": "automation/selftests/inject-livepatch-payload-selftest.js",
+      "exitCode": 0,
+      "status": "PASS",
+      "sha256": "e3fb2ac53ce7391528f52fa59b57cf3cf53d678f859ea395c389b5573ae22760",
+      "durationMs": 305,
+      "log": "commands/native-inject-livepatch-payload-selftest.js.log"
+    }
+  ]
+}

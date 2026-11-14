@@ -27,7 +27,9 @@ const injection = String.raw`(() => {
       value: true, writable: true, configurable: true, enumerable: false,
     });
   } catch (_) { return; }
-  const send = (type, data) => { try { window.openBrowserSync(JSON.stringify({ type, ...data })); } catch (_) {} };
+  // The fullscreen bridge removes the global after capturing it. Keep this
+  // listener's captured binding alive too, so input still reaches CDP.
+  const send = (type, data) => { try { binding(JSON.stringify({ type, ...data })); } catch (_) {} };
   const localSelector = (element) => {
     if (!(element instanceof Element)) return ''; if (element.id) return '#' + CSS.escape(element.id);
     const parts = []; let current = element; while (current && current.nodeType === 1 && parts.length < 8) { let part = current.tagName.toLowerCase(); if (current.name) part += '[name="' + CSS.escape(current.name) + '"]'; else if (current.parentElement) { const siblings = [...current.parentElement.children].filter((item) => item.tagName === current.tagName); if (siblings.length > 1) part += ':nth-of-type(' + (siblings.indexOf(current) + 1) + ')'; } parts.unshift(part); current = current.parentElement; } return parts.join(' > ');

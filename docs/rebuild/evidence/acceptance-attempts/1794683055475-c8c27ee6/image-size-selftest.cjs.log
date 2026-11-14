@@ -1,0 +1,33 @@
+{
+  "passed": true,
+  "checks": [
+    "原 KB 表单映射为字节，正阈值不再误开全部图片屏蔽；真实 Chrome 小图放行/大图阻止，chunked 未知长度与 gzip 解码后大小均检查，退出无遗留操作；Firefox 正阈值保存往返，真实 Firefox 过滤由独立回归验收"
+  ],
+  "events": [],
+  "images": {
+    "small.png": {
+      "loaded": true,
+      "width": 1
+    },
+    "large.png": {
+      "loaded": false
+    },
+    "small-chunked.png": {
+      "loaded": true,
+      "width": 1
+    },
+    "large-chunked.png": {
+      "loaded": false
+    },
+    "gzip-small.svg": {
+      "loaded": true,
+      "width": 12
+    },
+    "gzip-large.svg": {
+      "loaded": false
+    }
+  },
+  "limitations": [
+    "本测试验收 Chromium 网络 Image 响应；Firefox 有独立真实浏览器回归，data/blob、本地资源不计入网络图片阈值验收。"
+  ]
+}

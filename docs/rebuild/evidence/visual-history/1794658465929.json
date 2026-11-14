@@ -1,0 +1,733 @@
+{
+  "passed": false,
+  "scope": "Linux Electron 43，相同本地数据、1536×960、相同字体/缩放，原归档独立 render 与当前 render 在同一 Vue 实例切换、各自独立 VNode 缓存；比较原主内容区，品牌与本地外壳有单独边界说明。没有独立 render 的组件不能凭本结果宣布通过。",
+  "data": "/workspace/OpenBrowser/work/rebuild/visual-ui-HyP5qr",
+  "cases": [
+    {
+      "id": "windows",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/windows-light-production.png",
+          "full": "visual/windows-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "49f55b47a6dce693a9e459a12bcc2ac5daf921ca734b554738ad83acf06e41a3",
+              "49f55b47a6dce693a9e459a12bcc2ac5daf921ca734b554738ad83acf06e41a3",
+              "49f55b47a6dce693a9e459a12bcc2ac5daf921ca734b554738ad83acf06e41a3"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/windows-light-reference.png",
+          "full": "visual/windows-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "49f55b47a6dce693a9e459a12bcc2ac5daf921ca734b554738ad83acf06e41a3",
+              "49f55b47a6dce693a9e459a12bcc2ac5daf921ca734b554738ad83acf06e41a3",
+              "49f55b47a6dce693a9e459a12bcc2ac5daf921ca734b554738ad83acf06e41a3"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/windows-light-diff.png"
+    },
+    {
+      "id": "windows",
+      "theme": "dark",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/windows-dark-production.png",
+          "full": "visual/windows-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "a710e7d79108306201d8ff79c9e22ba0f9c966cdeb6845f2db00927a309dc9e4",
+              "a710e7d79108306201d8ff79c9e22ba0f9c966cdeb6845f2db00927a309dc9e4",
+              "a710e7d79108306201d8ff79c9e22ba0f9c966cdeb6845f2db00927a309dc9e4"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/windows-dark-reference.png",
+          "full": "visual/windows-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "a710e7d79108306201d8ff79c9e22ba0f9c966cdeb6845f2db00927a309dc9e4",
+              "a710e7d79108306201d8ff79c9e22ba0f9c966cdeb6845f2db00927a309dc9e4",
+              "a710e7d79108306201d8ff79c9e22ba0f9c966cdeb6845f2db00927a309dc9e4"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/windows-dark-diff.png"
+    },
+    {
+      "id": "window-hover",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/window-hover-light-production.png",
+          "full": "visual/window-hover-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "fe2794f9458a08ee8a3bba350fc3931ab88ae0769f69d8835a6bd682dc0f6ea1",
+              "fe2794f9458a08ee8a3bba350fc3931ab88ae0769f69d8835a6bd682dc0f6ea1",
+              "fe2794f9458a08ee8a3bba350fc3931ab88ae0769f69d8835a6bd682dc0f6ea1"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/window-hover-light-reference.png",
+          "full": "visual/window-hover-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "fe2794f9458a08ee8a3bba350fc3931ab88ae0769f69d8835a6bd682dc0f6ea1",
+              "fe2794f9458a08ee8a3bba350fc3931ab88ae0769f69d8835a6bd682dc0f6ea1",
+              "fe2794f9458a08ee8a3bba350fc3931ab88ae0769f69d8835a6bd682dc0f6ea1"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/window-hover-light-diff.png"
+    },
+    {
+      "id": "window-hover",
+      "theme": "dark",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/window-hover-dark-production.png",
+          "full": "visual/window-hover-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "b9d834ef32f8076d356501e57e5c60a79edf012faea9c7688ee048826cee3fb5",
+              "b9d834ef32f8076d356501e57e5c60a79edf012faea9c7688ee048826cee3fb5",
+              "b9d834ef32f8076d356501e57e5c60a79edf012faea9c7688ee048826cee3fb5"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/window-hover-dark-reference.png",
+          "full": "visual/window-hover-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "b9d834ef32f8076d356501e57e5c60a79edf012faea9c7688ee048826cee3fb5",
+              "b9d834ef32f8076d356501e57e5c60a79edf012faea9c7688ee048826cee3fb5",
+              "b9d834ef32f8076d356501e57e5c60a79edf012faea9c7688ee048826cee3fb5"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/window-hover-dark-diff.png"
+    },
+    {
+      "id": "window-selected",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/window-selected-light-production.png",
+          "full": "visual/window-selected-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "ff7bfde807c6cb9e43a50f737a686d0152e1b62b0455b62dd0a513e5a9fbd470",
+              "ff7bfde807c6cb9e43a50f737a686d0152e1b62b0455b62dd0a513e5a9fbd470",
+              "ff7bfde807c6cb9e43a50f737a686d0152e1b62b0455b62dd0a513e5a9fbd470"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/window-selected-light-reference.png",
+          "full": "visual/window-selected-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "ff7bfde807c6cb9e43a50f737a686d0152e1b62b0455b62dd0a513e5a9fbd470",
+              "ff7bfde807c6cb9e43a50f737a686d0152e1b62b0455b62dd0a513e5a9fbd470",
+              "ff7bfde807c6cb9e43a50f737a686d0152e1b62b0455b62dd0a513e5a9fbd470"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/window-selected-light-diff.png"
+    },
+    {
+      "id": "window-selected",
+      "theme": "dark",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/window-selected-dark-production.png",
+          "full": "visual/window-selected-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "c41dd45412fa9c2d2b3f2954f07ad33465b29822fa1102410d348ac1fd9fee04",
+              "c41dd45412fa9c2d2b3f2954f07ad33465b29822fa1102410d348ac1fd9fee04",
+              "c41dd45412fa9c2d2b3f2954f07ad33465b29822fa1102410d348ac1fd9fee04"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/window-selected-dark-reference.png",
+          "full": "visual/window-selected-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "c41dd45412fa9c2d2b3f2954f07ad33465b29822fa1102410d348ac1fd9fee04",
+              "c41dd45412fa9c2d2b3f2954f07ad33465b29822fa1102410d348ac1fd9fee04",
+              "c41dd45412fa9c2d2b3f2954f07ad33465b29822fa1102410d348ac1fd9fee04"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/window-selected-dark-diff.png"
+    },
+    {
+      "id": "window-favorites-empty",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/window-favorites-empty-light-production.png",
+          "full": "visual/window-favorites-empty-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "2acdccad065bf5708fa5e8a5d447529a5f6b745dfe0bf3754293017647d3822d",
+              "2acdccad065bf5708fa5e8a5d447529a5f6b745dfe0bf3754293017647d3822d",
+              "2acdccad065bf5708fa5e8a5d447529a5f6b745dfe0bf3754293017647d3822d"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/window-favorites-empty-light-reference.png",
+          "full": "visual/window-favorites-empty-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "2acdccad065bf5708fa5e8a5d447529a5f6b745dfe0bf3754293017647d3822d",
+              "2acdccad065bf5708fa5e8a5d447529a5f6b745dfe0bf3754293017647d3822d",
+              "2acdccad065bf5708fa5e8a5d447529a5f6b745dfe0bf3754293017647d3822d"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/window-favorites-empty-light-diff.png"
+    },
+    {
+      "id": "window-favorites-empty",
+      "theme": "dark",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/window-favorites-empty-dark-production.png",
+          "full": "visual/window-favorites-empty-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "0e896e11d20bd53df50a2159bec45b2b15ba148bdc39eed1c461de410f557c0a",
+              "0e896e11d20bd53df50a2159bec45b2b15ba148bdc39eed1c461de410f557c0a",
+              "0e896e11d20bd53df50a2159bec45b2b15ba148bdc39eed1c461de410f557c0a"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/window-favorites-empty-dark-reference.png",
+          "full": "visual/window-favorites-empty-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "0e896e11d20bd53df50a2159bec45b2b15ba148bdc39eed1c461de410f557c0a",
+              "0e896e11d20bd53df50a2159bec45b2b15ba148bdc39eed1c461de410f557c0a",
+              "0e896e11d20bd53df50a2159bec45b2b15ba148bdc39eed1c461de410f557c0a"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/window-favorites-empty-dark-diff.png"
+    },
+    {
+      "id": "create",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/create-light-production.png",
+          "full": "visual/create-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "5fa0b50830d2e5a8c63c64d51ce4d0d21aa2e08349f8cf91b7adda7f6440a05f",
+              "5fa0b50830d2e5a8c63c64d51ce4d0d21aa2e08349f8cf91b7adda7f6440a05f",
+              "5fa0b50830d2e5a8c63c64d51ce4d0d21aa2e08349f8cf91b7adda7f6440a05f"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/create-light-reference.png",
+          "full": "visual/create-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "5fa0b50830d2e5a8c63c64d51ce4d0d21aa2e08349f8cf91b7adda7f6440a05f",
+              "5fa0b50830d2e5a8c63c64d51ce4d0d21aa2e08349f8cf91b7adda7f6440a05f",
+              "5fa0b50830d2e5a8c63c64d51ce4d0d21aa2e08349f8cf91b7adda7f6440a05f"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/create-light-diff.png"
+    },
+    {
+      "id": "create",
+      "theme": "dark",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/create-dark-production.png",
+          "full": "visual/create-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "b638138804912dc810ad50465709a68a67f73164dff248ecb752e6af6cf1a04f",
+              "b2670c656e6ddf80fad73b0744f4a3d49471fa26bacd91af8be2172d4f2707d1",
+              "b2670c656e6ddf80fad73b0744f4a3d49471fa26bacd91af8be2172d4f2707d1",
+              "b2670c656e6ddf80fad73b0744f4a3d49471fa26bacd91af8be2172d4f2707d1"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/create-dark-reference.png",
+          "full": "visual/create-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "b2670c656e6ddf80fad73b0744f4a3d49471fa26bacd91af8be2172d4f2707d1",
+              "b2670c656e6ddf80fad73b0744f4a3d49471fa26bacd91af8be2172d4f2707d1",
+              "b2670c656e6ddf80fad73b0744f4a3d49471fa26bacd91af8be2172d4f2707d1"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/create-dark-diff.png"
+    },
+    {
+      "id": "edit",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/edit-light-production.png",
+          "full": "visual/edit-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "6c7d38d579c0633edbcbe6ea27f7eec1b4a72a14003a815df4fd0aeddcbb1cca",
+              "6c7d38d579c0633edbcbe6ea27f7eec1b4a72a14003a815df4fd0aeddcbb1cca",
+              "6c7d38d579c0633edbcbe6ea27f7eec1b4a72a14003a815df4fd0aeddcbb1cca"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/edit-light-reference.png",
+          "full": "visual/edit-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "6c7d38d579c0633edbcbe6ea27f7eec1b4a72a14003a815df4fd0aeddcbb1cca",
+              "6c7d38d579c0633edbcbe6ea27f7eec1b4a72a14003a815df4fd0aeddcbb1cca",
+              "6c7d38d579c0633edbcbe6ea27f7eec1b4a72a14003a815df4fd0aeddcbb1cca"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/edit-light-diff.png"
+    },
+    {
+      "id": "edit",
+      "theme": "dark",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/edit-dark-production.png",
+          "full": "visual/edit-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "67b861b6e0fea94566a803b373fc8c4e43555275e329c1b560ec2710c2485411",
+              "90c9570fab52b22b314b0e32a006e70e6171945f42e27f5d41fd2bdabb7976a9",
+              "90c9570fab52b22b314b0e32a006e70e6171945f42e27f5d41fd2bdabb7976a9",
+              "90c9570fab52b22b314b0e32a006e70e6171945f42e27f5d41fd2bdabb7976a9"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/edit-dark-reference.png",
+          "full": "visual/edit-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "90c9570fab52b22b314b0e32a006e70e6171945f42e27f5d41fd2bdabb7976a9",
+              "90c9570fab52b22b314b0e32a006e70e6171945f42e27f5d41fd2bdabb7976a9",
+              "90c9570fab52b22b314b0e32a006e70e6171945f42e27f5d41fd2bdabb7976a9"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/edit-dark-diff.png"
+    },
+    {
+      "id": "window-template-dialog",
+      "theme": "light",
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/window-template-dialog-light-production.png",
+          "full": "visual/window-template-dialog-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "92b2a8efc8091fe13bab144899872424a6c8d2c4ad785dd5b545bf6d3c840cfe",
+              "91cb4b0a56f1e6b4b46b59c9573012cda2b675655a2b5c83c9552d1c0a881bdf",
+              "91cb4b0a56f1e6b4b46b59c9573012cda2b675655a2b5c83c9552d1c0a881bdf",
+              "91cb4b0a56f1e6b4b46b59c9573012cda2b675655a2b5c83c9552d1c0a881bdf"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/window-template-dialog-light-reference.png",
+          "full": "visual/window-template-dialog-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "91cb4b0a56f1e6b4b46b59c9573012cda2b675655a2b5c83c9552d1c0a881bdf",
+              "91cb4b0a56f1e6b4b46b59c9573012cda2b675655a2b5c83c9552d1c0a881bdf",
+              "91cb4b0a56f1e6b4b46b59c9573012cda2b675655a2b5c83c9552d1c0a881bdf"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/window-template-dialog-light-diff.png"
+    }
+  ],
+  "errors": [],
+  "externalRequests": [],
+  "fixtureNormalizations": [
+    "fingerprint:preview 以真实后端首次返回值固定相同参数的视觉数据",
+    "两种 render 均使用 hasPassword 对应的等宽八星掩码保持相同视觉数据；不返回真实机密"
+  ],
+  "failure": "locator.click: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('button', { name: '存为新模板', exact: true })\u001b[22m\n\u001b[2m    - locator resolved to <button data-p=\"\" pc1296=\"\" type=\"button\" aria-label=\"存为新模板\" data-pd-ripple=\"true\" data-pc-section=\"root\" data-pc-name=\"pcbutton\" data-p-disabled=\"false\" data-pc-extend=\"button\" data-p-severity=\"secondary\" class=\"p-button p-component p-button-secondary p-splitbutton-button\">…</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div data-p=\"modal\" data-pc-section=\"mask\" class=\"p-dialog-mask p-overlay-mask p-overlay-mask-enter-active\">…</div> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div data-p=\"modal\" data-pc-section=\"mask\" class=\"p-dialog-mask p-overlay-mask p-overlay-mask-enter-active\">…</div> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    29 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is visible, enabled and stable\u001b[22m\n\u001b[2m       - scrolling into view if needed\u001b[22m\n\u001b[2m       - done scrolling\u001b[22m\n\u001b[2m       - <div data-p=\"modal\" data-pc-section=\"mask\" class=\"p-dialog-mask p-overlay-mask p-overlay-mask-enter-active\">…</div> intercepts pointer events\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n\n    at Object.ready (/workspace/OpenBrowser/Browserapp/rebuild/visual-parity-selftest.cjs:25:130)\n    at /workspace/OpenBrowser/Browserapp/rebuild/visual-parity-selftest.cjs:46:117",
+  "body": "创建窗口\n窗口管理\n项目管理\n代理 IP\n平台账号\n扩展中心\nAI & 自动化\n窗口同步\nAI Agent\n自动化\n模板商城\n任务管理\n我的模板\nAPI & AI MCP\nSkill 管理\n本地\n窗口用量\n5 / ∞\n内核升级\n本地网络\n(172.26.91.242)\nOP\nOpenBrowser\n创建窗口\n单个创建\n批量创建\n窗口导入\nAI 批量创建\n窗口基础信息\n不使用模板\n窗口名称\n* 系统自动生成窗口名称，也可手动修改。\n代理 IP\n不使用\n添加代理 IP\n选择代理 IP\n当前环境使用本机网络：\n--\n--\n* 多个窗口或业务账号共用同一出口 IP，可能增加账号关联或平台风控风险。\n* 建议为每个窗口配置独立代理 IP。\n平台账号\n添加账号\n选择已有账号\nCookies\n基础设置\n高级指纹设置\n偏好设置\n默认项目\n \n存为新模板\n创建窗口\n窗口教程\n了解窗口和窗口指纹\n概要\n操作系统\nLinux\n内核类型\nChrome\nUser Agent\nMozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36\n语言\n基于 IP 匹配\n时区\n基于 IP 匹配\n地理位置提示\n允许\n地理位置\n基于 IP 匹配\n分辨率\n跟随系统\n字体指纹\n跟随系统\nWebRTC\n禁止\nWebGL 图像\n随机\nWebGL Info\n随机\nCanvas\n随机\nAudioContext\n随机\nSpeech Voices\n随机\nDo Not Track\n开启\nClient Rects\n随机\n媒体设备\n随机\n设备名称\n随机\nMAC地址\n自定义\n硬件并发数\n12\n设备内存\n8\nSSL指纹设置\n关闭\n端口扫描保护\n开启\n硬件加速模式\n开启\n一键随机指纹\n保存模板\n取消\n保存"
+}

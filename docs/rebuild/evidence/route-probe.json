@@ -1,0 +1,44 @@
+[
+  {
+    "route": "/projects/list",
+    "url": "obui://app/index.html#/projects/list",
+    "text": "创建窗口\n窗口管理\n项目管理\n代理 IP\n内核管理\n窗口模板\nAI Agent\n项目管理\n创建项目\n\t\n项目信息\n\t\n操作\n\t\n窗口数量\n\t\n成员\n\t\n其他\n\n\n暂无项目\n项目功能可以帮助您将窗口或团队成员进行分配，并更高效地管理。\n创建项目\n总计 0 个\n10 条/页\n跳转页数至",
+    "errors": []
+  },
+  {
+    "route": "/agent",
+    "url": "obui://app/index.html#/agent",
+    "text": "创建窗口\n窗口管理\n项目管理\n代理 IP\n内核管理\n窗口模板\nAI Agent\n添加\n筛选\n测试全部代理 IP\n\t\n出口 IP\n\t\n代理 IP 信息\n\t\n备注\n\t\n已关联窗口\n\t\nIP 用途\n\t\nIP 查询渠道\n\t\n来源\n\t\n操作\n\n\n暂无代理 IP\n在此购买代理 IP，并更方便地与窗口进行绑定。\n添加\n\n\n总计 0 个\n10 条/页\n跳转页数至",
+    "errors": []
+  },
+  {
+    "route": "/kernels",
+    "url": "obui://app/index.html#/kernels",
+    "text": "创建窗口\n窗口管理\n项目管理\n代理 IP\n内核管理\n窗口模板\nAI Agent\n内核管理\n刷新\n下载 Chrome Stable\n取消下载\n选择文件\n使用此内核\nChrome\nFirefox\n获取可下载版本\n安装所选版本\n类型\t版本\t来源\t操作\nChrome\t157.0.8103.78-1\tchrome-stable\t\n检测\n设为默认\n删除",
+    "errors": []
+  },
+  {
+    "route": "/templates",
+    "url": "obui://app/index.html#/templates",
+    "text": "创建窗口\n窗口管理\n项目管理\n代理 IP\n内核管理\n窗口模板\nAI Agent\n窗口模板\n\n在创建窗口的完整表单中设置配置并存为模板。\n\n创建模板\n导入窗口文件\n名称\t操作\n\n暂无模板",
+    "errors": []
+  },
+  {
+    "route": "/agent-console",
+    "url": "obui://app/index.html#/agent-console",
+    "text": "OpenBrowser AI Agent\n新建对话\n模板商城\n任务管理\n我的模板\n对话\n设置窗口管理\n?\n新手引导\n有什么我能帮你的吗？\n\n直接与我聊天，或选择模板一键开始。\n\n更多模板\n直接对我说出您的需求，输入 @ 选择窗口，/ 使用模板\n\n\n\n\n选窗口\n选模板\n传文件\n完全访问权限",
+    "errors": []
+  },
+  {
+    "route": "/agent-console/settings",
+    "url": "obui://app/index.html#/agent-console/settings",
+    "text": "返回应用\nAgent 设置\nMCP 服务\nAgent 设置\n模型服务\nOllama\nOpenAI 兼容接口\n服务地址\n模型名称\nAPI key\n保存设置\n清除 API key\nSkill 管理\n返回对话",
+    "errors": []
+  },
+  {
+    "route": "/agent-console/skills",
+    "url": "obui://app/index.html#/agent-console/skills",
+    "text": "OpenBrowser AI Agent\n新建对话\n模板商城\n任务管理\n我的模板\n对话\n设置窗口管理\nSkill 管理\n保存 Skill\n返回对话\n名称\t状态\t操作\nautomation-script-writing\t已启用\t\n查看\n停用\n\nplaywright-rpa-enhance-skills\t已启用\t\n查看\n停用\n\nroxybrowser-openapi-skills\t已启用\t\n查看\n停用\n\nroxybrowser-playwright-skills\t已启用\t\n查看\n停用",
+    "errors": []
+  }
+]

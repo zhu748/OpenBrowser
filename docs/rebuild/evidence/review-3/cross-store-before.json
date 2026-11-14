@@ -1,0 +1,83 @@
+{
+  "passed": false,
+  "cases": [
+    {
+      "name": "编辑 Skill 提示词保留原包元数据",
+      "status": "PASS"
+    },
+    {
+      "name": "任务列表按 created_at 排序，不随开关更新而跳位",
+      "status": "PASS"
+    },
+    {
+      "name": "已读接口返回原界面所需的会话 DTO",
+      "status": "PASS"
+    },
+    {
+      "name": "旧轮次已读请求不得清掉新轮次未读",
+      "status": "PASS"
+    },
+    {
+      "name": "刷新历史消息后附件仍在 metadata.attachments 中",
+      "status": "PASS"
+    },
+    {
+      "name": "历史游标分页在追加新消息后不重复、不漏旧消息",
+      "status": "PASS"
+    },
+    {
+      "name": "config:set 写盘失败不改变已提交内存状态",
+      "status": "PASS"
+    },
+    {
+      "name": "createConversation 写盘失败不改变已提交内存状态",
+      "status": "PASS"
+    },
+    {
+      "name": "updateConversation 写盘失败不改变已提交内存状态",
+      "status": "PASS"
+    },
+    {
+      "name": "markConversationRead 写盘失败不改变已提交内存状态",
+      "status": "PASS"
+    },
+    {
+      "name": "deleteConversation 写盘失败不改变已提交内存状态",
+      "status": "PASS"
+    },
+    {
+      "name": "真实模型结束持久化未读，最近会话按实际更新时间排序",
+      "status": "PASS"
+    },
+    {
+      "name": "配置并发部分更新及实际 rename 故障保持磁盘/内存一致",
+      "status": "PASS"
+    },
+    {
+      "name": "删除写盘期间禁止新运行，提交前不提前删除会话",
+      "status": "PASS"
+    },
+    {
+      "name": "不可用 Skill 任务失败不遗留空会话",
+      "status": "PASS"
+    },
+    {
+      "name": "关闭标记后内部 start 同样拒绝新运行",
+      "status": "PASS"
+    },
+    {
+      "name": "template 保存失败不得借并发配置写入落盘",
+      "status": "FAIL",
+      "error": "AssertionError [ERR_ASSERTION]: 其他请求不能把尚未提交的记录带入自己的快照\n+ actual - expected\n... Skipped lines\n\n  {\n    config: {\n      apiKey: '',\n      baseUrl: 'http://127.0.0.1:11434',\n      maxContext: 24000,\n...\n    logs: [],\n+   recordIds: {\n+     templates: 1\n+   },\n    skills: [],\n    tasks: [],\n+   templates: [\n+     {\n+       createdAt: '2026-11-14T18:13:50.729Z',\n+       creatorUserId: 'local',\n+       id: 1,\n+       metadata: {\n+         prompt: 'test'\n+       },\n+       name: 'must not persist',\n+       source: 'custom',\n+       templateType: 'prompt',\n+       updatedAt: '2026-11-14T18:13:50.729Z',\n+       workspaceId: 'local'\n+     }\n+   ],\n-   templates: [],\n    version: 1\n  }\n\n    at /workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:137:14\n    at async check (/workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:10:31)\n    at async /workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:116:60"
+    },
+    {
+      "name": "skill 保存失败不得借并发配置写入落盘",
+      "status": "FAIL",
+      "error": "AssertionError [ERR_ASSERTION]: 其他请求不能把尚未提交的记录带入自己的快照\n+ actual - expected\n... Skipped lines\n\n  {\n    config: {\n      apiKey: '',\n      baseUrl: 'http://127.0.0.1:11434',\n      maxContext: 24000,\n...\n        content: 'name: stable-skill',\n+       enabled: false,\n-       enabled: true,\n        slug: 'stable-skill'\n      }\n    ],\n    tasks: [],\n    templates: [],\n\n    at /workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:137:14\n    at async check (/workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:10:31)\n    at async /workspace/OpenBrowser/Browserapp/rebuild/review-agent-contracts-selftest.cjs:116:60"
+    },
+    {
+      "name": "catalog-pin 保存失败不得借并发配置写入落盘",
+      "status": "PASS"
+    }
+  ]
+}

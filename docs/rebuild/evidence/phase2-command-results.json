@@ -1,0 +1,59 @@
+{
+  "status": "PASS",
+  "results": [
+    {
+      "name": "sync-service",
+      "command": "node rebuild/sync-service-selftest.cjs",
+      "exitCode": 0,
+      "status": "PASS"
+    },
+    {
+      "name": "import",
+      "command": "node rebuild/import-selftest.cjs",
+      "exitCode": 0,
+      "status": "PASS"
+    },
+    {
+      "name": "cache",
+      "command": "node rebuild/profile-cache-selftest.cjs",
+      "exitCode": 0,
+      "status": "PASS"
+    },
+    {
+      "name": "local-service",
+      "command": "node rebuild/local-service-selftest.js",
+      "exitCode": 0,
+      "status": "PASS"
+    },
+    {
+      "name": "security",
+      "command": "node security-hardening-selftest.js",
+      "exitCode": 0,
+      "status": "PASS"
+    },
+    {
+      "name": "sync-internal",
+      "command": "node automation/selftests/live-sync-internal-pages-selftest.js",
+      "exitCode": 0,
+      "status": "PASS"
+    },
+    {
+      "name": "brand-trace",
+      "command": "node automation/selftests/page-visible-trace-remediation-selftest.js",
+      "exitCode": 0,
+      "status": "PASS"
+    },
+    {
+      "name": "extension-sync",
+      "command": "node automation/selftests/extension-sync-boundaries-selftest.js",
+      "exitCode": 0,
+      "status": "PASS"
+    },
+    {
+      "name": "sync-text",
+      "command": "node automation/selftests/sync-text-model-selftest.js",
+      "exitCode": 0,
+      "status": "PASS"
+    }
+  ]
+}

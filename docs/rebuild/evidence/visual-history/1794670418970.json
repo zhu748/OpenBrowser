@@ -1,0 +1,3353 @@
+{
+  "passed": false,
+  "scope": "Linux Electron 43，相同本地数据；主窗 1536×960、独立子窗原尺寸，详见逐例 clip；相同字体/缩放，原归档独立 render 与当前 render 在同一 Vue 实例切换、各自独立 VNode 缓存；比较原主内容区，品牌与本地外壳有单独边界说明。没有独立 render 的组件不能凭本结果宣布通过。",
+  "data": "/workspace/OpenBrowser/work/rebuild/visual-ui-saaSKN",
+  "cases": [
+    {
+      "id": "workbench-full",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": true,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/workbench-full-light-production.png",
+          "full": "visual/workbench-full-light-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "0ac40a959a7bfe9da7ad27ef74a14d38f0819524ad0db644f27e808bf0741264",
+              "0ac40a959a7bfe9da7ad27ef74a14d38f0819524ad0db644f27e808bf0741264",
+              "0ac40a959a7bfe9da7ad27ef74a14d38f0819524ad0db644f27e808bf0741264"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/workbench-full-light-reference.png",
+          "full": "visual/workbench-full-light-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "0ac40a959a7bfe9da7ad27ef74a14d38f0819524ad0db644f27e808bf0741264",
+              "0ac40a959a7bfe9da7ad27ef74a14d38f0819524ad0db644f27e808bf0741264",
+              "0ac40a959a7bfe9da7ad27ef74a14d38f0819524ad0db644f27e808bf0741264"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/workbench-full-light-diff.png"
+    },
+    {
+      "id": "workbench-full",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": true,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/workbench-full-dark-production.png",
+          "full": "visual/workbench-full-dark-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "d1e72b9b9cf87e924ee5a48f4f2518440d590a73669fd82d713b70aa5120fed7",
+              "d1e72b9b9cf87e924ee5a48f4f2518440d590a73669fd82d713b70aa5120fed7",
+              "d1e72b9b9cf87e924ee5a48f4f2518440d590a73669fd82d713b70aa5120fed7"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/workbench-full-dark-reference.png",
+          "full": "visual/workbench-full-dark-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "d1e72b9b9cf87e924ee5a48f4f2518440d590a73669fd82d713b70aa5120fed7",
+              "d1e72b9b9cf87e924ee5a48f4f2518440d590a73669fd82d713b70aa5120fed7",
+              "d1e72b9b9cf87e924ee5a48f4f2518440d590a73669fd82d713b70aa5120fed7"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/workbench-full-dark-diff.png"
+    },
+    {
+      "id": "workbench-updates",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": true,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/workbench-updates-light-production.png",
+          "full": "visual/workbench-updates-light-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "4d3f2f3ffecf6b9d6f4f7d816940a5edc3c1dcc7626ceaea9649278efb0cfa7a",
+              "8bfb7cca744b08fe35009d3fee7e003e310e157c4109e5f096a9524d4e0f2b23",
+              "8bfb7cca744b08fe35009d3fee7e003e310e157c4109e5f096a9524d4e0f2b23",
+              "8bfb7cca744b08fe35009d3fee7e003e310e157c4109e5f096a9524d4e0f2b23"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/workbench-updates-light-reference.png",
+          "full": "visual/workbench-updates-light-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "8bfb7cca744b08fe35009d3fee7e003e310e157c4109e5f096a9524d4e0f2b23",
+              "8bfb7cca744b08fe35009d3fee7e003e310e157c4109e5f096a9524d4e0f2b23",
+              "8bfb7cca744b08fe35009d3fee7e003e310e157c4109e5f096a9524d4e0f2b23"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/workbench-updates-light-diff.png"
+    },
+    {
+      "id": "workbench-updates",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": true,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/workbench-updates-dark-production.png",
+          "full": "visual/workbench-updates-dark-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "6cbe52c17076e5ae0c2620dc1a57cdc6e79cd906af73fb9aba86cb024dcf6f8a",
+              "af26eadc891be752172c3d7c0eaa4dc29e15756772e00fb01e14df37ff598ff7",
+              "af26eadc891be752172c3d7c0eaa4dc29e15756772e00fb01e14df37ff598ff7",
+              "af26eadc891be752172c3d7c0eaa4dc29e15756772e00fb01e14df37ff598ff7"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/workbench-updates-dark-reference.png",
+          "full": "visual/workbench-updates-dark-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "af26eadc891be752172c3d7c0eaa4dc29e15756772e00fb01e14df37ff598ff7",
+              "af26eadc891be752172c3d7c0eaa4dc29e15756772e00fb01e14df37ff598ff7",
+              "af26eadc891be752172c3d7c0eaa4dc29e15756772e00fb01e14df37ff598ff7"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/workbench-updates-dark-diff.png"
+    },
+    {
+      "id": "workbench-client-update",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": true,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/workbench-client-update-light-production.png",
+          "full": "visual/workbench-client-update-light-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "f6093a487b4c94f831c993a25c52686bb113fbe94022ef8d2403249c83b511f7",
+              "59cfe521bbdb6343afc997a6f92f43a434fc1b7721ff56c1f9371e63977dadff",
+              "59cfe521bbdb6343afc997a6f92f43a434fc1b7721ff56c1f9371e63977dadff",
+              "59cfe521bbdb6343afc997a6f92f43a434fc1b7721ff56c1f9371e63977dadff"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/workbench-client-update-light-reference.png",
+          "full": "visual/workbench-client-update-light-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "59cfe521bbdb6343afc997a6f92f43a434fc1b7721ff56c1f9371e63977dadff",
+              "59cfe521bbdb6343afc997a6f92f43a434fc1b7721ff56c1f9371e63977dadff",
+              "59cfe521bbdb6343afc997a6f92f43a434fc1b7721ff56c1f9371e63977dadff"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/workbench-client-update-light-diff.png"
+    },
+    {
+      "id": "workbench-client-update",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": true,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/workbench-client-update-dark-production.png",
+          "full": "visual/workbench-client-update-dark-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "6b392119b67c3d4a100795b23fab6ad3660f11e1881c597db2d037f5e8ee36e2",
+              "6b392119b67c3d4a100795b23fab6ad3660f11e1881c597db2d037f5e8ee36e2",
+              "6b392119b67c3d4a100795b23fab6ad3660f11e1881c597db2d037f5e8ee36e2"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/workbench-client-update-dark-reference.png",
+          "full": "visual/workbench-client-update-dark-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "6b392119b67c3d4a100795b23fab6ad3660f11e1881c597db2d037f5e8ee36e2",
+              "6b392119b67c3d4a100795b23fab6ad3660f11e1881c597db2d037f5e8ee36e2",
+              "6b392119b67c3d4a100795b23fab6ad3660f11e1881c597db2d037f5e8ee36e2"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/workbench-client-update-dark-diff.png"
+    },
+    {
+      "id": "workbench-notifications",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": true,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/workbench-notifications-light-production.png",
+          "full": "visual/workbench-notifications-light-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "d03b5220e9d9ba063e167ba8606e094a9f76c1da24c8e9e3c5998e81acbd5c35",
+              "d03b5220e9d9ba063e167ba8606e094a9f76c1da24c8e9e3c5998e81acbd5c35",
+              "d03b5220e9d9ba063e167ba8606e094a9f76c1da24c8e9e3c5998e81acbd5c35"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/workbench-notifications-light-reference.png",
+          "full": "visual/workbench-notifications-light-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "d03b5220e9d9ba063e167ba8606e094a9f76c1da24c8e9e3c5998e81acbd5c35",
+              "d03b5220e9d9ba063e167ba8606e094a9f76c1da24c8e9e3c5998e81acbd5c35",
+              "d03b5220e9d9ba063e167ba8606e094a9f76c1da24c8e9e3c5998e81acbd5c35"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/workbench-notifications-light-diff.png"
+    },
+    {
+      "id": "workbench-notifications",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": true,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/workbench-notifications-dark-production.png",
+          "full": "visual/workbench-notifications-dark-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "599f63fdff3fc48bbafd095c922cf32e09be28a371aec8ee06e77432a9e53b62",
+              "599f63fdff3fc48bbafd095c922cf32e09be28a371aec8ee06e77432a9e53b62",
+              "599f63fdff3fc48bbafd095c922cf32e09be28a371aec8ee06e77432a9e53b62"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/workbench-notifications-dark-reference.png",
+          "full": "visual/workbench-notifications-dark-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "599f63fdff3fc48bbafd095c922cf32e09be28a371aec8ee06e77432a9e53b62",
+              "599f63fdff3fc48bbafd095c922cf32e09be28a371aec8ee06e77432a9e53b62",
+              "599f63fdff3fc48bbafd095c922cf32e09be28a371aec8ee06e77432a9e53b62"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/workbench-notifications-dark-diff.png"
+    },
+    {
+      "id": "workbench-profile-menu",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": true,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/workbench-profile-menu-light-production.png",
+          "full": "visual/workbench-profile-menu-light-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "24b09bf7f91b0cfdaab94a4d9fbfa48d55b4b67db478ee4834bb1609bb5421b9",
+              "24b09bf7f91b0cfdaab94a4d9fbfa48d55b4b67db478ee4834bb1609bb5421b9",
+              "24b09bf7f91b0cfdaab94a4d9fbfa48d55b4b67db478ee4834bb1609bb5421b9"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/workbench-profile-menu-light-reference.png",
+          "full": "visual/workbench-profile-menu-light-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "24b09bf7f91b0cfdaab94a4d9fbfa48d55b4b67db478ee4834bb1609bb5421b9",
+              "24b09bf7f91b0cfdaab94a4d9fbfa48d55b4b67db478ee4834bb1609bb5421b9",
+              "24b09bf7f91b0cfdaab94a4d9fbfa48d55b4b67db478ee4834bb1609bb5421b9"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/workbench-profile-menu-light-diff.png"
+    },
+    {
+      "id": "workbench-profile-menu",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": true,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/workbench-profile-menu-dark-production.png",
+          "full": "visual/workbench-profile-menu-dark-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "09d8a522e119abc3297ce5148d4090030c67aecfadfe4c45e89627381b581728",
+              "09d8a522e119abc3297ce5148d4090030c67aecfadfe4c45e89627381b581728",
+              "09d8a522e119abc3297ce5148d4090030c67aecfadfe4c45e89627381b581728"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/workbench-profile-menu-dark-reference.png",
+          "full": "visual/workbench-profile-menu-dark-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "09d8a522e119abc3297ce5148d4090030c67aecfadfe4c45e89627381b581728",
+              "09d8a522e119abc3297ce5148d4090030c67aecfadfe4c45e89627381b581728",
+              "09d8a522e119abc3297ce5148d4090030c67aecfadfe4c45e89627381b581728"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/workbench-profile-menu-dark-diff.png"
+    },
+    {
+      "id": "workbench-compact-sidebar",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": true,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/workbench-compact-sidebar-light-production.png",
+          "full": "visual/workbench-compact-sidebar-light-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "6ea0d1818087b5a0e2a9b87b9c319ec2a4118e8ddf6486e8ad630107375d2ba0",
+              "6ea0d1818087b5a0e2a9b87b9c319ec2a4118e8ddf6486e8ad630107375d2ba0",
+              "6ea0d1818087b5a0e2a9b87b9c319ec2a4118e8ddf6486e8ad630107375d2ba0"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/workbench-compact-sidebar-light-reference.png",
+          "full": "visual/workbench-compact-sidebar-light-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "6ea0d1818087b5a0e2a9b87b9c319ec2a4118e8ddf6486e8ad630107375d2ba0",
+              "6ea0d1818087b5a0e2a9b87b9c319ec2a4118e8ddf6486e8ad630107375d2ba0",
+              "6ea0d1818087b5a0e2a9b87b9c319ec2a4118e8ddf6486e8ad630107375d2ba0"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/workbench-compact-sidebar-light-diff.png"
+    },
+    {
+      "id": "workbench-compact-sidebar",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": true,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/workbench-compact-sidebar-dark-production.png",
+          "full": "visual/workbench-compact-sidebar-dark-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "61b79f3ec33ec3fddbcbd1fd0f9457a539e65541f92886fb785d911da17fa4de",
+              "7851124804a4daca859fc5fbf0eedbe11e9354652df375e7b0fdcd79156ded85",
+              "7851124804a4daca859fc5fbf0eedbe11e9354652df375e7b0fdcd79156ded85",
+              "7851124804a4daca859fc5fbf0eedbe11e9354652df375e7b0fdcd79156ded85"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/workbench-compact-sidebar-dark-reference.png",
+          "full": "visual/workbench-compact-sidebar-dark-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "7851124804a4daca859fc5fbf0eedbe11e9354652df375e7b0fdcd79156ded85",
+              "7851124804a4daca859fc5fbf0eedbe11e9354652df375e7b0fdcd79156ded85",
+              "7851124804a4daca859fc5fbf0eedbe11e9354652df375e7b0fdcd79156ded85"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/workbench-compact-sidebar-dark-diff.png"
+    },
+    {
+      "id": "workbench-zoom125",
+      "theme": "light",
+      "zoom": 1.25,
+      "fullClip": true,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/workbench-zoom125-light-production.png",
+          "full": "visual/workbench-zoom125-light-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1229,
+            "height": 768
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "53f6dd7b176bfbe8c04b9c218334d016139d943c6a1d8df3923e9ebe63742193",
+              "53f6dd7b176bfbe8c04b9c218334d016139d943c6a1d8df3923e9ebe63742193",
+              "53f6dd7b176bfbe8c04b9c218334d016139d943c6a1d8df3923e9ebe63742193"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/workbench-zoom125-light-reference.png",
+          "full": "visual/workbench-zoom125-light-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1229,
+            "height": 768
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "53f6dd7b176bfbe8c04b9c218334d016139d943c6a1d8df3923e9ebe63742193",
+              "53f6dd7b176bfbe8c04b9c218334d016139d943c6a1d8df3923e9ebe63742193",
+              "53f6dd7b176bfbe8c04b9c218334d016139d943c6a1d8df3923e9ebe63742193"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1229,
+        "height": 768,
+        "changedPixels": 0,
+        "totalPixels": 943872,
+        "bbox": null
+      },
+      "diff": "visual/workbench-zoom125-light-diff.png"
+    },
+    {
+      "id": "workbench-zoom125",
+      "theme": "dark",
+      "zoom": 1.25,
+      "fullClip": true,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/workbench-zoom125-dark-production.png",
+          "full": "visual/workbench-zoom125-dark-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1229,
+            "height": 768
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "0f82ed2492b17b95ca2cabafc893c52249dd964b34e51cf97a1b26e8379722aa",
+              "0f82ed2492b17b95ca2cabafc893c52249dd964b34e51cf97a1b26e8379722aa",
+              "0f82ed2492b17b95ca2cabafc893c52249dd964b34e51cf97a1b26e8379722aa"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/workbench-zoom125-dark-reference.png",
+          "full": "visual/workbench-zoom125-dark-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1229,
+            "height": 768
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "0f82ed2492b17b95ca2cabafc893c52249dd964b34e51cf97a1b26e8379722aa",
+              "0f82ed2492b17b95ca2cabafc893c52249dd964b34e51cf97a1b26e8379722aa",
+              "0f82ed2492b17b95ca2cabafc893c52249dd964b34e51cf97a1b26e8379722aa"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1229,
+        "height": 768,
+        "changedPixels": 0,
+        "totalPixels": 943872,
+        "bbox": null
+      },
+      "diff": "visual/workbench-zoom125-dark-diff.png"
+    },
+    {
+      "id": "create-advanced",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/create-advanced-light-production.png",
+          "full": "visual/create-advanced-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "ccddd39c94d42049280f5a792a5faaafa69a3722e6e49da999d089b05930f239",
+              "ccddd39c94d42049280f5a792a5faaafa69a3722e6e49da999d089b05930f239",
+              "ccddd39c94d42049280f5a792a5faaafa69a3722e6e49da999d089b05930f239"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/create-advanced-light-reference.png",
+          "full": "visual/create-advanced-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "b697c94c0299aeaef994001d95aacbcfb913027b5ac61f87acf3f3ffda425096",
+              "b697c94c0299aeaef994001d95aacbcfb913027b5ac61f87acf3f3ffda425096",
+              "b697c94c0299aeaef994001d95aacbcfb913027b5ac61f87acf3f3ffda425096"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/create-advanced-light-diff.png"
+    },
+    {
+      "id": "create-advanced",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/create-advanced-dark-production.png",
+          "full": "visual/create-advanced-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "c3d6122219e6a0f47faf67ea9d313f8df9276c1dd828c8acade296376db82c5e",
+              "c3d6122219e6a0f47faf67ea9d313f8df9276c1dd828c8acade296376db82c5e",
+              "c3d6122219e6a0f47faf67ea9d313f8df9276c1dd828c8acade296376db82c5e"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/create-advanced-dark-reference.png",
+          "full": "visual/create-advanced-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "ed499bbfce32c97822d793f23798b40b86a9b356c364ec6a86622220202d12b0",
+              "ed499bbfce32c97822d793f23798b40b86a9b356c364ec6a86622220202d12b0",
+              "ed499bbfce32c97822d793f23798b40b86a9b356c364ec6a86622220202d12b0"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/create-advanced-dark-diff.png"
+    },
+    {
+      "id": "create-search-focus",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/create-search-focus-light-production.png",
+          "full": "visual/create-search-focus-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "5c76c0e8350a8abf66fcfce96be1fc80ff0d1ce5325d9ae5397e4d5d0d966661",
+              "5c76c0e8350a8abf66fcfce96be1fc80ff0d1ce5325d9ae5397e4d5d0d966661",
+              "5c76c0e8350a8abf66fcfce96be1fc80ff0d1ce5325d9ae5397e4d5d0d966661"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/create-search-focus-light-reference.png",
+          "full": "visual/create-search-focus-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "eda1e4e9d777da4c889bc0060e26fbbbca68ba98ca077ca63aaa92671bfbbe6e",
+              "eda1e4e9d777da4c889bc0060e26fbbbca68ba98ca077ca63aaa92671bfbbe6e",
+              "eda1e4e9d777da4c889bc0060e26fbbbca68ba98ca077ca63aaa92671bfbbe6e"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/create-search-focus-light-diff.png"
+    },
+    {
+      "id": "create-search-focus",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/create-search-focus-dark-production.png",
+          "full": "visual/create-search-focus-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "7f4f04870553d95ec7e549ea08625ab62373aef885b74979361c83518a1cc852",
+              "7f4f04870553d95ec7e549ea08625ab62373aef885b74979361c83518a1cc852",
+              "7f4f04870553d95ec7e549ea08625ab62373aef885b74979361c83518a1cc852"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/create-search-focus-dark-reference.png",
+          "full": "visual/create-search-focus-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "41d585c09c4590a55bb423b3ede3c3513d4deaa028f3d2e1903805125bdc2a7b",
+              "41d585c09c4590a55bb423b3ede3c3513d4deaa028f3d2e1903805125bdc2a7b",
+              "41d585c09c4590a55bb423b3ede3c3513d4deaa028f3d2e1903805125bdc2a7b"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/create-search-focus-dark-diff.png"
+    },
+    {
+      "id": "windows",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/windows-light-production.png",
+          "full": "visual/windows-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "cc86b66d45360f388bada3c27bb50e464b509dd0d51e08849d33c94ca53ee45a",
+              "b49d85f710514c9cb3466ec71b02edff3105f51dc9317fba650eff1cca04b765",
+              "b49d85f710514c9cb3466ec71b02edff3105f51dc9317fba650eff1cca04b765",
+              "b49d85f710514c9cb3466ec71b02edff3105f51dc9317fba650eff1cca04b765"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/windows-light-reference.png",
+          "full": "visual/windows-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "6d39683898c70a37d0cbb088a9ac6a2f71b1b57ada1f58dcae15143649b30154",
+              "6d39683898c70a37d0cbb088a9ac6a2f71b1b57ada1f58dcae15143649b30154",
+              "6d39683898c70a37d0cbb088a9ac6a2f71b1b57ada1f58dcae15143649b30154"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/windows-light-diff.png"
+    },
+    {
+      "id": "windows",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/windows-dark-production.png",
+          "full": "visual/windows-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "4bff7825957c33a8edfa6820f6ccdc23248f0cf0735c39c232a95cc9ba3b75f5",
+              "4bff7825957c33a8edfa6820f6ccdc23248f0cf0735c39c232a95cc9ba3b75f5",
+              "4bff7825957c33a8edfa6820f6ccdc23248f0cf0735c39c232a95cc9ba3b75f5"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/windows-dark-reference.png",
+          "full": "visual/windows-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "d9fd4cd122ca6c3fbbd3917159881dd126e65c7eed67995c349fbad3ecee3ebd",
+              "d9fd4cd122ca6c3fbbd3917159881dd126e65c7eed67995c349fbad3ecee3ebd",
+              "d9fd4cd122ca6c3fbbd3917159881dd126e65c7eed67995c349fbad3ecee3ebd"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/windows-dark-diff.png"
+    },
+    {
+      "id": "window-hover",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/window-hover-light-production.png",
+          "full": "visual/window-hover-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "32029dc48e2aa376e20a85605cc17f8c268bbed056ab9ef0b04f467a465a895e",
+              "101a4da4ebff487da30af7aad995ed865607b18e59ac25b1466da83fab1ea452",
+              "101a4da4ebff487da30af7aad995ed865607b18e59ac25b1466da83fab1ea452",
+              "101a4da4ebff487da30af7aad995ed865607b18e59ac25b1466da83fab1ea452"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/window-hover-light-reference.png",
+          "full": "visual/window-hover-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "ca8c3e60b7f5a2d8ab7df892a951eb973162ff9e694cfca7f42a1b56fabb70eb",
+              "ca8c3e60b7f5a2d8ab7df892a951eb973162ff9e694cfca7f42a1b56fabb70eb",
+              "ca8c3e60b7f5a2d8ab7df892a951eb973162ff9e694cfca7f42a1b56fabb70eb"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/window-hover-light-diff.png"
+    },
+    {
+      "id": "window-hover",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/window-hover-dark-production.png",
+          "full": "visual/window-hover-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "42152d10d805f3154957feee1466afc4014655b6111e987ed79d4ea35cc9c622",
+              "c27b7ad8faed8a3d18a53901e4866b81e05d59c48fc647c7012e69e1ccd31547",
+              "c27b7ad8faed8a3d18a53901e4866b81e05d59c48fc647c7012e69e1ccd31547",
+              "c27b7ad8faed8a3d18a53901e4866b81e05d59c48fc647c7012e69e1ccd31547"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/window-hover-dark-reference.png",
+          "full": "visual/window-hover-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "b861c6fd6ddec7a85591e4f151bc0fced779a0fb02ec701933dd456498ea498f",
+              "b861c6fd6ddec7a85591e4f151bc0fced779a0fb02ec701933dd456498ea498f",
+              "b861c6fd6ddec7a85591e4f151bc0fced779a0fb02ec701933dd456498ea498f"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/window-hover-dark-diff.png"
+    },
+    {
+      "id": "window-selected",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/window-selected-light-production.png",
+          "full": "visual/window-selected-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "9b8d5c6853424a2fc6066df8f436eded9a425d2c13652500b79a9838ce3afd3f",
+              "9b8d5c6853424a2fc6066df8f436eded9a425d2c13652500b79a9838ce3afd3f",
+              "9b8d5c6853424a2fc6066df8f436eded9a425d2c13652500b79a9838ce3afd3f"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/window-selected-light-reference.png",
+          "full": "visual/window-selected-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "1ca8f193b157d54850bbe56ed691101f94a543eabb10b39edd6e082ac0136131",
+              "1ca8f193b157d54850bbe56ed691101f94a543eabb10b39edd6e082ac0136131",
+              "1ca8f193b157d54850bbe56ed691101f94a543eabb10b39edd6e082ac0136131"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/window-selected-light-diff.png"
+    },
+    {
+      "id": "window-selected",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/window-selected-dark-production.png",
+          "full": "visual/window-selected-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "0d9df8a9e19c87627e9c987f233a90fc479cef79df69cdf9c5a2279276ecd79d",
+              "0d9df8a9e19c87627e9c987f233a90fc479cef79df69cdf9c5a2279276ecd79d",
+              "0d9df8a9e19c87627e9c987f233a90fc479cef79df69cdf9c5a2279276ecd79d"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/window-selected-dark-reference.png",
+          "full": "visual/window-selected-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "60e0059876592fd659655983adb2aa9c9c2eca632423e6496aa3114054dac46a",
+              "60e0059876592fd659655983adb2aa9c9c2eca632423e6496aa3114054dac46a",
+              "60e0059876592fd659655983adb2aa9c9c2eca632423e6496aa3114054dac46a"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/window-selected-dark-diff.png"
+    },
+    {
+      "id": "window-favorites-empty",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/window-favorites-empty-light-production.png",
+          "full": "visual/window-favorites-empty-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "06024d06524c175317711e57bc774da27b64b336b265383a1a6a87a4412898cc",
+              "186846e88620b0e34bf780d5fcc636a188fbd6d669926bbbe73afd3187108985",
+              "186846e88620b0e34bf780d5fcc636a188fbd6d669926bbbe73afd3187108985",
+              "186846e88620b0e34bf780d5fcc636a188fbd6d669926bbbe73afd3187108985"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/window-favorites-empty-light-reference.png",
+          "full": "visual/window-favorites-empty-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "b4675277cef3eb44fd72080fe2cf46ee8234c1c56debce9ed1dcdf6929fed137",
+              "b4675277cef3eb44fd72080fe2cf46ee8234c1c56debce9ed1dcdf6929fed137",
+              "b4675277cef3eb44fd72080fe2cf46ee8234c1c56debce9ed1dcdf6929fed137"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": false,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 136,
+        "totalPixels": 1157000,
+        "bbox": [
+          1051,
+          59,
+          1075,
+          83
+        ]
+      },
+      "diff": "visual/window-favorites-empty-light-diff.png"
+    },
+    {
+      "id": "window-favorites-empty",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/window-favorites-empty-dark-production.png",
+          "full": "visual/window-favorites-empty-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "a7445331784d9848a52f2fb5f86fbcc6d8ff54d9481870a963fed7a2b18433ff",
+              "18d12c10231a188377b199d5846f1532f7040cc8eb7ce46b9394d06062de08fa",
+              "18d12c10231a188377b199d5846f1532f7040cc8eb7ce46b9394d06062de08fa",
+              "18d12c10231a188377b199d5846f1532f7040cc8eb7ce46b9394d06062de08fa"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/window-favorites-empty-dark-reference.png",
+          "full": "visual/window-favorites-empty-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "b324f687c019d95e2b893deeaaae05934d141f1d6630fce523050d6b0f1b47c7",
+              "b324f687c019d95e2b893deeaaae05934d141f1d6630fce523050d6b0f1b47c7",
+              "b324f687c019d95e2b893deeaaae05934d141f1d6630fce523050d6b0f1b47c7"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/window-favorites-empty-dark-diff.png"
+    },
+    {
+      "id": "delete-confirm-dialog",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/delete-confirm-dialog-light-production.png",
+          "full": "visual/delete-confirm-dialog-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "e749b0e92254f2f3b8c041092f59bad8d012286c08fba32eeeb44fbbd16957b3",
+              "e749b0e92254f2f3b8c041092f59bad8d012286c08fba32eeeb44fbbd16957b3",
+              "e749b0e92254f2f3b8c041092f59bad8d012286c08fba32eeeb44fbbd16957b3"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/delete-confirm-dialog-light-reference.png",
+          "full": "visual/delete-confirm-dialog-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "a24d64a15a14899d6d5bcd4ad74551c25d52bf2cae62ae1383e6a4124226b600",
+              "a24d64a15a14899d6d5bcd4ad74551c25d52bf2cae62ae1383e6a4124226b600",
+              "a24d64a15a14899d6d5bcd4ad74551c25d52bf2cae62ae1383e6a4124226b600"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/delete-confirm-dialog-light-diff.png"
+    },
+    {
+      "id": "delete-confirm-dialog",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/delete-confirm-dialog-dark-production.png",
+          "full": "visual/delete-confirm-dialog-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "2375acdb41d19c76e84e61f3d7a5f66d9ea2c4691036dd2083f8909abfad073c",
+              "2375acdb41d19c76e84e61f3d7a5f66d9ea2c4691036dd2083f8909abfad073c",
+              "2375acdb41d19c76e84e61f3d7a5f66d9ea2c4691036dd2083f8909abfad073c"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/delete-confirm-dialog-dark-reference.png",
+          "full": "visual/delete-confirm-dialog-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "9348c7fb06b675f96372f6e4e68cc77393fcb70ffcb18aea22580e66951fcf80",
+              "9348c7fb06b675f96372f6e4e68cc77393fcb70ffcb18aea22580e66951fcf80",
+              "9348c7fb06b675f96372f6e4e68cc77393fcb70ffcb18aea22580e66951fcf80"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/delete-confirm-dialog-dark-diff.png"
+    },
+    {
+      "id": "create",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/create-light-production.png",
+          "full": "visual/create-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "f2c54cad495371caa1dfe8fb579e4210a00a5877e3cae0e93725a37f4c38f498",
+              "0ac0a78017ed88493730a85f3e27f4509ea51ef1e1257738c9e74789afd6fd8d",
+              "0ac0a78017ed88493730a85f3e27f4509ea51ef1e1257738c9e74789afd6fd8d",
+              "0ac0a78017ed88493730a85f3e27f4509ea51ef1e1257738c9e74789afd6fd8d"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/create-light-reference.png",
+          "full": "visual/create-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "9e720476cbcec8dc58ca26458da1a09879084613f5ce3c6ed94e9d6af11d3d8b",
+              "9e720476cbcec8dc58ca26458da1a09879084613f5ce3c6ed94e9d6af11d3d8b",
+              "9e720476cbcec8dc58ca26458da1a09879084613f5ce3c6ed94e9d6af11d3d8b"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/create-light-diff.png"
+    },
+    {
+      "id": "create",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/create-dark-production.png",
+          "full": "visual/create-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "9bc17190db1e5ff19d30a01eabe07f6de2fd980087dab846de8a0b37b149fd7c",
+              "4fd7902fd7be032f4003a3b192324633290e7dcd010c3f1baa82af7f011d2153",
+              "4fd7902fd7be032f4003a3b192324633290e7dcd010c3f1baa82af7f011d2153",
+              "4fd7902fd7be032f4003a3b192324633290e7dcd010c3f1baa82af7f011d2153"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/create-dark-reference.png",
+          "full": "visual/create-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "cd34a7c06f08a82811bc0bfa076aaf177f841e6a7f1b56f2fc393e11219f061e",
+              "cd34a7c06f08a82811bc0bfa076aaf177f841e6a7f1b56f2fc393e11219f061e",
+              "cd34a7c06f08a82811bc0bfa076aaf177f841e6a7f1b56f2fc393e11219f061e"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/create-dark-diff.png"
+    },
+    {
+      "id": "create-basic",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/create-basic-light-production.png",
+          "full": "visual/create-basic-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "6e42dfd534aba808d70f2560e2e304de6507f0addded22f79445594723ae521a",
+              "74e3714e36c03375332f459c45699f965387a49132e4b66ac16aa876644ab8f8",
+              "74e3714e36c03375332f459c45699f965387a49132e4b66ac16aa876644ab8f8",
+              "74e3714e36c03375332f459c45699f965387a49132e4b66ac16aa876644ab8f8"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/create-basic-light-reference.png",
+          "full": "visual/create-basic-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "b66ef22662417211ec6eede16943997b0e01e528c8453d56487d39c5a35989d6",
+              "b66ef22662417211ec6eede16943997b0e01e528c8453d56487d39c5a35989d6",
+              "b66ef22662417211ec6eede16943997b0e01e528c8453d56487d39c5a35989d6"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/create-basic-light-diff.png"
+    },
+    {
+      "id": "create-basic",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/create-basic-dark-production.png",
+          "full": "visual/create-basic-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "5e3702fa8b203afa6573c6551cfedbe7fbb515ced1440367ac84e37119045110",
+              "5e3702fa8b203afa6573c6551cfedbe7fbb515ced1440367ac84e37119045110",
+              "5e3702fa8b203afa6573c6551cfedbe7fbb515ced1440367ac84e37119045110"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/create-basic-dark-reference.png",
+          "full": "visual/create-basic-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "cfb8d42c4ba54693b3ea502ff740bb96af7e8406945171eca0503755af632ca0",
+              "cfb8d42c4ba54693b3ea502ff740bb96af7e8406945171eca0503755af632ca0",
+              "cfb8d42c4ba54693b3ea502ff740bb96af7e8406945171eca0503755af632ca0"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/create-basic-dark-diff.png"
+    },
+    {
+      "id": "image-threshold-form",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/image-threshold-form-light-production.png",
+          "full": "visual/image-threshold-form-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "94d4026afc683a5674501fafe7f9ade907e8c1d169de2676c8f33ebfb22553ef",
+              "94d4026afc683a5674501fafe7f9ade907e8c1d169de2676c8f33ebfb22553ef",
+              "94d4026afc683a5674501fafe7f9ade907e8c1d169de2676c8f33ebfb22553ef"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/image-threshold-form-light-reference.png",
+          "full": "visual/image-threshold-form-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "8cf7e9f7727811b1cc0860caba325b8944a1911e7e2b559535d67388484b7293",
+              "8cf7e9f7727811b1cc0860caba325b8944a1911e7e2b559535d67388484b7293",
+              "8cf7e9f7727811b1cc0860caba325b8944a1911e7e2b559535d67388484b7293"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/image-threshold-form-light-diff.png"
+    },
+    {
+      "id": "image-threshold-form",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/image-threshold-form-dark-production.png",
+          "full": "visual/image-threshold-form-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "717508d81ab7f372649b63ed38e808f1e88205554edaddba77384a07a2baa9c2",
+              "56580c0265e89d999915166a6873c6a7c15a944859ba45ecd4fdb4381aaebcc1",
+              "56580c0265e89d999915166a6873c6a7c15a944859ba45ecd4fdb4381aaebcc1",
+              "56580c0265e89d999915166a6873c6a7c15a944859ba45ecd4fdb4381aaebcc1"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/image-threshold-form-dark-reference.png",
+          "full": "visual/image-threshold-form-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "b4b0c456de2467475a1912b03f2abec61cc0d5fbc76c90edf7e18b83546a98aa",
+              "b4b0c456de2467475a1912b03f2abec61cc0d5fbc76c90edf7e18b83546a98aa",
+              "b4b0c456de2467475a1912b03f2abec61cc0d5fbc76c90edf7e18b83546a98aa"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/image-threshold-form-dark-diff.png"
+    },
+    {
+      "id": "network-fingerprint-form",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/network-fingerprint-form-light-production.png",
+          "full": "visual/network-fingerprint-form-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "7c0d25081ca863db056ba53b2a7bbe89ec17f7bf323626ef7c9b450779713f59",
+              "27bc2e3b82f54268301422b6cdf0d3ebe8f4663e1d7a30c0484d62acd3a926d1",
+              "27bc2e3b82f54268301422b6cdf0d3ebe8f4663e1d7a30c0484d62acd3a926d1",
+              "27bc2e3b82f54268301422b6cdf0d3ebe8f4663e1d7a30c0484d62acd3a926d1"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/network-fingerprint-form-light-reference.png",
+          "full": "visual/network-fingerprint-form-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "da9721c16187383a709910a98d959ce7fb417efd798451c689debab0f2943185",
+              "da9721c16187383a709910a98d959ce7fb417efd798451c689debab0f2943185",
+              "da9721c16187383a709910a98d959ce7fb417efd798451c689debab0f2943185"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/network-fingerprint-form-light-diff.png"
+    },
+    {
+      "id": "network-fingerprint-form",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/network-fingerprint-form-dark-production.png",
+          "full": "visual/network-fingerprint-form-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "3220938d1c598f41d062d8007da0f1dffca97497a55a9f47abf017873b033feb",
+              "3220938d1c598f41d062d8007da0f1dffca97497a55a9f47abf017873b033feb",
+              "3220938d1c598f41d062d8007da0f1dffca97497a55a9f47abf017873b033feb"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/network-fingerprint-form-dark-reference.png",
+          "full": "visual/network-fingerprint-form-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "3d1103d595cd97164974236d8f4362737a59b8efc7c8be5be66685cbfe255587",
+              "3d1103d595cd97164974236d8f4362737a59b8efc7c8be5be66685cbfe255587",
+              "3d1103d595cd97164974236d8f4362737a59b8efc7c8be5be66685cbfe255587"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/network-fingerprint-form-dark-diff.png"
+    },
+    {
+      "id": "edit",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/edit-light-production.png",
+          "full": "visual/edit-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "2bbb24599324f12e09b3ce744938fdd13b7099b428b4b2a9c26fb86c6795d7d0",
+              "0493189fbb255f8f13284c81306b4f61a3f2e5b01088d61632b1b58a325e6c23",
+              "0493189fbb255f8f13284c81306b4f61a3f2e5b01088d61632b1b58a325e6c23",
+              "0493189fbb255f8f13284c81306b4f61a3f2e5b01088d61632b1b58a325e6c23"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/edit-light-reference.png",
+          "full": "visual/edit-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "c066695635c43dcfcdbcc67d1c203ba749ce68f39f631ea6ebe105353c6b529b",
+              "c066695635c43dcfcdbcc67d1c203ba749ce68f39f631ea6ebe105353c6b529b",
+              "c066695635c43dcfcdbcc67d1c203ba749ce68f39f631ea6ebe105353c6b529b"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/edit-light-diff.png"
+    },
+    {
+      "id": "edit",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/edit-dark-production.png",
+          "full": "visual/edit-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "d056b08d69d9f44f1a5b82182a4cf05497c5417ed5b0caf90ac70ca9b820dac3",
+              "d056b08d69d9f44f1a5b82182a4cf05497c5417ed5b0caf90ac70ca9b820dac3",
+              "d056b08d69d9f44f1a5b82182a4cf05497c5417ed5b0caf90ac70ca9b820dac3"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/edit-dark-reference.png",
+          "full": "visual/edit-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "b6a5226cd3e0bf350e8de3c9b45ace52f3523f9382b94923c932b0ce02e91944",
+              "b6a5226cd3e0bf350e8de3c9b45ace52f3523f9382b94923c932b0ce02e91944",
+              "b6a5226cd3e0bf350e8de3c9b45ace52f3523f9382b94923c932b0ce02e91944"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/edit-dark-diff.png"
+    },
+    {
+      "id": "window-template-dialog",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/window-template-dialog-light-production.png",
+          "full": "visual/window-template-dialog-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "bb4e72a42fdf61f5f0669e4e10922590777f24649482d795b89448d3ec3f9a76",
+              "781d38678ca187dfb2fd464b883b069fa94632fca916dba11789f43b05b1f443",
+              "781d38678ca187dfb2fd464b883b069fa94632fca916dba11789f43b05b1f443",
+              "781d38678ca187dfb2fd464b883b069fa94632fca916dba11789f43b05b1f443"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/window-template-dialog-light-reference.png",
+          "full": "visual/window-template-dialog-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "ce9de3a7dca3a984f5c13fa4e63cad057f8253c3664dba0e5937701df51dea17",
+              "ce9de3a7dca3a984f5c13fa4e63cad057f8253c3664dba0e5937701df51dea17",
+              "ce9de3a7dca3a984f5c13fa4e63cad057f8253c3664dba0e5937701df51dea17"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/window-template-dialog-light-diff.png"
+    },
+    {
+      "id": "window-template-dialog",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/window-template-dialog-dark-production.png",
+          "full": "visual/window-template-dialog-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "7b21a6428faa2c7d90d870ca8b8b6df04b5b08e225a8750d055aa3b655eb2368",
+              "a8d459757289097acab2de1aeeebe5909bd04516208c840851ca92f6f4be24c5",
+              "a8d459757289097acab2de1aeeebe5909bd04516208c840851ca92f6f4be24c5",
+              "a8d459757289097acab2de1aeeebe5909bd04516208c840851ca92f6f4be24c5"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/window-template-dialog-dark-reference.png",
+          "full": "visual/window-template-dialog-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "39ac821316d77ce29b70cccdcd8c86220e457f7d5404b0c266d2c6031ec7382a",
+              "39ac821316d77ce29b70cccdcd8c86220e457f7d5404b0c266d2c6031ec7382a",
+              "39ac821316d77ce29b70cccdcd8c86220e457f7d5404b0c266d2c6031ec7382a"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/window-template-dialog-dark-diff.png"
+    },
+    {
+      "id": "projects",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/projects-light-production.png",
+          "full": "visual/projects-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "c10224c7a0b9282620e2c4c44fe7dc4a0a788d1e976f8041fab1d7d622bc3728",
+              "c10224c7a0b9282620e2c4c44fe7dc4a0a788d1e976f8041fab1d7d622bc3728",
+              "c10224c7a0b9282620e2c4c44fe7dc4a0a788d1e976f8041fab1d7d622bc3728"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/projects-light-reference.png",
+          "full": "visual/projects-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "f0ce51effa7399450ce2a93ff9ff515fe21068e298b018f2b070afad54a9a717",
+              "f0ce51effa7399450ce2a93ff9ff515fe21068e298b018f2b070afad54a9a717",
+              "f0ce51effa7399450ce2a93ff9ff515fe21068e298b018f2b070afad54a9a717"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/projects-light-diff.png"
+    },
+    {
+      "id": "projects",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/projects-dark-production.png",
+          "full": "visual/projects-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "b596179f1757a50dd9040ed790c2dce5a5d35b2baf91cd2128d25711380109c0",
+              "b596179f1757a50dd9040ed790c2dce5a5d35b2baf91cd2128d25711380109c0",
+              "b596179f1757a50dd9040ed790c2dce5a5d35b2baf91cd2128d25711380109c0"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/projects-dark-reference.png",
+          "full": "visual/projects-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "bc8b833e99dffaa1be67ebc2ded4e409ce65349b2f8547e835928d49d3734a30",
+              "bc8b833e99dffaa1be67ebc2ded4e409ce65349b2f8547e835928d49d3734a30",
+              "bc8b833e99dffaa1be67ebc2ded4e409ce65349b2f8547e835928d49d3734a30"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/projects-dark-diff.png"
+    },
+    {
+      "id": "project-create-dialog",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/project-create-dialog-light-production.png",
+          "full": "visual/project-create-dialog-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 5,
+            "consecutive": 3,
+            "sha256": [
+              "468c9fde08a2ce77730cb63be96b5db6ef9ffcedc361a542b04fb55b242895a8",
+              "e7f9576043d6adfbb840efd190c1daddd9600f22f6ff15fcaa6fe79b08c29799",
+              "dc0a3fd51ccb50d797842603de2c86f19d4da472064a22f0d23c470e9aa85caa",
+              "dc0a3fd51ccb50d797842603de2c86f19d4da472064a22f0d23c470e9aa85caa",
+              "dc0a3fd51ccb50d797842603de2c86f19d4da472064a22f0d23c470e9aa85caa"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/project-create-dialog-light-reference.png",
+          "full": "visual/project-create-dialog-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "dec389a27b494d6b6d056043fea177262d84359470508379730ee4a9de9b0392",
+              "dec389a27b494d6b6d056043fea177262d84359470508379730ee4a9de9b0392",
+              "dec389a27b494d6b6d056043fea177262d84359470508379730ee4a9de9b0392"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/project-create-dialog-light-diff.png"
+    },
+    {
+      "id": "project-create-dialog",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/project-create-dialog-dark-production.png",
+          "full": "visual/project-create-dialog-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "79f50cae416992abda8f82f6f9ef6cab8208f8ba6afc3d77f848e8786865c18d",
+              "79f50cae416992abda8f82f6f9ef6cab8208f8ba6afc3d77f848e8786865c18d",
+              "79f50cae416992abda8f82f6f9ef6cab8208f8ba6afc3d77f848e8786865c18d"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/project-create-dialog-dark-reference.png",
+          "full": "visual/project-create-dialog-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "f40e81fa596d08d8d9d0cbc719619dc950c06f1dbd92b6a695ccc508c4b41a27",
+              "f40e81fa596d08d8d9d0cbc719619dc950c06f1dbd92b6a695ccc508c4b41a27",
+              "f40e81fa596d08d8d9d0cbc719619dc950c06f1dbd92b6a695ccc508c4b41a27"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/project-create-dialog-dark-diff.png"
+    },
+    {
+      "id": "project-detail",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/project-detail-light-production.png",
+          "full": "visual/project-detail-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "9a8633923629f766fdaf0805235eeba9d2bba769b14634f0663401663c918f35",
+              "9a8633923629f766fdaf0805235eeba9d2bba769b14634f0663401663c918f35",
+              "9a8633923629f766fdaf0805235eeba9d2bba769b14634f0663401663c918f35"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/project-detail-light-reference.png",
+          "full": "visual/project-detail-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "7dad816136ab6cb971165e382f500d4ffed0f9f6714cace6e7db58a5b412f813",
+              "7dad816136ab6cb971165e382f500d4ffed0f9f6714cace6e7db58a5b412f813",
+              "7dad816136ab6cb971165e382f500d4ffed0f9f6714cace6e7db58a5b412f813"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/project-detail-light-diff.png"
+    },
+    {
+      "id": "project-detail",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/project-detail-dark-production.png",
+          "full": "visual/project-detail-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "1ca0953e104c5990a80a206ff085ad0f7b800dc3b8106f90fb2e29373ecf17b3",
+              "1ca0953e104c5990a80a206ff085ad0f7b800dc3b8106f90fb2e29373ecf17b3",
+              "1ca0953e104c5990a80a206ff085ad0f7b800dc3b8106f90fb2e29373ecf17b3"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/project-detail-dark-reference.png",
+          "full": "visual/project-detail-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "d6d232be0b1d3d8ac38ee5d7e050949677eac5efd750cdd5c2c55fe2448cecd7",
+              "d6d232be0b1d3d8ac38ee5d7e050949677eac5efd750cdd5c2c55fe2448cecd7",
+              "d6d232be0b1d3d8ac38ee5d7e050949677eac5efd750cdd5c2c55fe2448cecd7"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/project-detail-dark-diff.png"
+    },
+    {
+      "id": "proxy",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/proxy-light-production.png",
+          "full": "visual/proxy-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "56bb5ab06a83955eafe84ca38fb3f1c76071077e70c6a353d703bb34ee539620",
+              "56bb5ab06a83955eafe84ca38fb3f1c76071077e70c6a353d703bb34ee539620",
+              "56bb5ab06a83955eafe84ca38fb3f1c76071077e70c6a353d703bb34ee539620"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/proxy-light-reference.png",
+          "full": "visual/proxy-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "8ced486242e4c261b297cd7b94898ae92ce21919e2d5958762d7de2306d4a4e3",
+              "8ced486242e4c261b297cd7b94898ae92ce21919e2d5958762d7de2306d4a4e3",
+              "8ced486242e4c261b297cd7b94898ae92ce21919e2d5958762d7de2306d4a4e3"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/proxy-light-diff.png"
+    },
+    {
+      "id": "proxy",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/proxy-dark-production.png",
+          "full": "visual/proxy-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "bf77e767c68363d01209a282e56a6db262200fdde70fdae94b0c4120067d550f",
+              "54cd8cf57ec4bf806dd0b83a0e49cabeeabecb7b308f81a7bcebf9ac73156c82",
+              "54cd8cf57ec4bf806dd0b83a0e49cabeeabecb7b308f81a7bcebf9ac73156c82",
+              "54cd8cf57ec4bf806dd0b83a0e49cabeeabecb7b308f81a7bcebf9ac73156c82"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/proxy-dark-reference.png",
+          "full": "visual/proxy-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "f5037a1fbd48cdae66ff25d5877b248c87254cbf6cf736b1b7a0cdb2d2c5e638",
+              "f5037a1fbd48cdae66ff25d5877b248c87254cbf6cf736b1b7a0cdb2d2c5e638",
+              "f5037a1fbd48cdae66ff25d5877b248c87254cbf6cf736b1b7a0cdb2d2c5e638"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/proxy-dark-diff.png"
+    },
+    {
+      "id": "accounts",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/accounts-light-production.png",
+          "full": "visual/accounts-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "9a94a6db396989d8c4bb71eeb37e258006311cb0a6033be9377d9769471d95e9",
+              "2660e2bb33e506cd4e286785c4f768c97047614389e9efdbdd5d03a23f7ee126",
+              "2660e2bb33e506cd4e286785c4f768c97047614389e9efdbdd5d03a23f7ee126",
+              "2660e2bb33e506cd4e286785c4f768c97047614389e9efdbdd5d03a23f7ee126"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/accounts-light-reference.png",
+          "full": "visual/accounts-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "20b32f2028ecf709c3d94ffe3953aa78529d418e3222690f9f8a727fc45d32e0",
+              "20b32f2028ecf709c3d94ffe3953aa78529d418e3222690f9f8a727fc45d32e0",
+              "20b32f2028ecf709c3d94ffe3953aa78529d418e3222690f9f8a727fc45d32e0"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/accounts-light-diff.png"
+    },
+    {
+      "id": "accounts",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/accounts-dark-production.png",
+          "full": "visual/accounts-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "ae052f7cbd5af6e9305bfd45bb55831f535fc3c43c0709543cb3f0d218bb66fa",
+              "46b2d7c64fe05f190fe38ef6941db79c47e0aa1f6a4fc0a0960dc18b165faab9",
+              "46b2d7c64fe05f190fe38ef6941db79c47e0aa1f6a4fc0a0960dc18b165faab9",
+              "46b2d7c64fe05f190fe38ef6941db79c47e0aa1f6a4fc0a0960dc18b165faab9"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/accounts-dark-reference.png",
+          "full": "visual/accounts-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "f06fff9cc70a7fea0f053e32024d5f6b2f0e56b2db64b7bb17bf4e5723e643c4",
+              "f06fff9cc70a7fea0f053e32024d5f6b2f0e56b2db64b7bb17bf4e5723e643c4",
+              "f06fff9cc70a7fea0f053e32024d5f6b2f0e56b2db64b7bb17bf4e5723e643c4"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/accounts-dark-diff.png"
+    },
+    {
+      "id": "account-create",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/account-create-light-production.png",
+          "full": "visual/account-create-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 5,
+            "consecutive": 3,
+            "sha256": [
+              "bf036b97601ac5c1e72dd8b0f0498582803f4924954b1467c6ff49b9b0f3cd86",
+              "635271ebfc77a00a76dda37ea9922f81a013f0ce4c7860532eaff0e715f5bf21",
+              "ebb64ad3ae0acac10c8517c1ee7893d00e0ee986363ba40435860af083382c9c",
+              "ebb64ad3ae0acac10c8517c1ee7893d00e0ee986363ba40435860af083382c9c",
+              "ebb64ad3ae0acac10c8517c1ee7893d00e0ee986363ba40435860af083382c9c"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/account-create-light-reference.png",
+          "full": "visual/account-create-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "22aacf561108aceb489488acb282615fface40aa8349b4e1f04428fd4970166d",
+              "22aacf561108aceb489488acb282615fface40aa8349b4e1f04428fd4970166d",
+              "22aacf561108aceb489488acb282615fface40aa8349b4e1f04428fd4970166d"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/account-create-light-diff.png"
+    },
+    {
+      "id": "account-create",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/account-create-dark-production.png",
+          "full": "visual/account-create-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "10919bbe73874c198b166789222a9a04ec5f33d4ce4035af004829258519fd6f",
+              "b00887ba9e9ef655acca13d02070131db9af34af89b21b67e62dc4b5d1830149",
+              "b00887ba9e9ef655acca13d02070131db9af34af89b21b67e62dc4b5d1830149",
+              "b00887ba9e9ef655acca13d02070131db9af34af89b21b67e62dc4b5d1830149"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/account-create-dark-reference.png",
+          "full": "visual/account-create-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "33551b838ee8ab9bae822622040c60a0177f45bb9130f9418f2340cef206f6f5",
+              "33551b838ee8ab9bae822622040c60a0177f45bb9130f9418f2340cef206f6f5",
+              "33551b838ee8ab9bae822622040c60a0177f45bb9130f9418f2340cef206f6f5"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/account-create-dark-diff.png"
+    },
+    {
+      "id": "extensions",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/extensions-light-production.png",
+          "full": "visual/extensions-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "5851e4b8eae238d7538b320fe8c1f386ae2934a5fcc058ef47daba3c2b487409",
+              "5851e4b8eae238d7538b320fe8c1f386ae2934a5fcc058ef47daba3c2b487409",
+              "5851e4b8eae238d7538b320fe8c1f386ae2934a5fcc058ef47daba3c2b487409"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/extensions-light-reference.png",
+          "full": "visual/extensions-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "7d09a222825d1af9dbe14c310e193a79ec11825631ac6f7fbc0af054ecd33f4d",
+              "7d09a222825d1af9dbe14c310e193a79ec11825631ac6f7fbc0af054ecd33f4d",
+              "7d09a222825d1af9dbe14c310e193a79ec11825631ac6f7fbc0af054ecd33f4d"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/extensions-light-diff.png"
+    },
+    {
+      "id": "extensions",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/extensions-dark-production.png",
+          "full": "visual/extensions-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "10dbb29ca9841672a96613722a1b63808df44329920dc19d35c266617809a73a",
+              "10dbb29ca9841672a96613722a1b63808df44329920dc19d35c266617809a73a",
+              "10dbb29ca9841672a96613722a1b63808df44329920dc19d35c266617809a73a"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/extensions-dark-reference.png",
+          "full": "visual/extensions-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "4a8f914587fd894f96917e6d2363340f27cc606c3d5c922aaaee833c8fffc33e",
+              "4a8f914587fd894f96917e6d2363340f27cc606c3d5c922aaaee833c8fffc33e",
+              "4a8f914587fd894f96917e6d2363340f27cc606c3d5c922aaaee833c8fffc33e"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/extensions-dark-diff.png"
+    },
+    {
+      "id": "extension-upload-dialog",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/extension-upload-dialog-light-production.png",
+          "full": "visual/extension-upload-dialog-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "78402302957924021e638d1c8da0b0018d0c3acc67de6f1378d9e335fc4d6214",
+              "78402302957924021e638d1c8da0b0018d0c3acc67de6f1378d9e335fc4d6214",
+              "78402302957924021e638d1c8da0b0018d0c3acc67de6f1378d9e335fc4d6214"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/extension-upload-dialog-light-reference.png",
+          "full": "visual/extension-upload-dialog-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "28dd1f570b7cb81d3adb206f326b7dc4f858aaa8c52ea0dd8ef013ffe5ed0797",
+              "28dd1f570b7cb81d3adb206f326b7dc4f858aaa8c52ea0dd8ef013ffe5ed0797",
+              "28dd1f570b7cb81d3adb206f326b7dc4f858aaa8c52ea0dd8ef013ffe5ed0797"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/extension-upload-dialog-light-diff.png"
+    },
+    {
+      "id": "extension-upload-dialog",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/extension-upload-dialog-dark-production.png",
+          "full": "visual/extension-upload-dialog-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "ffa18123905f881fd60c0cb4a2b4932110fb743bea35d738e0fea3921a382a42",
+              "ffa18123905f881fd60c0cb4a2b4932110fb743bea35d738e0fea3921a382a42",
+              "ffa18123905f881fd60c0cb4a2b4932110fb743bea35d738e0fea3921a382a42"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/extension-upload-dialog-dark-reference.png",
+          "full": "visual/extension-upload-dialog-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "9d23898a98eaa933087b1203aa793f19866753a6088d4f77053fec4cc41af7af",
+              "9d23898a98eaa933087b1203aa793f19866753a6088d4f77053fec4cc41af7af",
+              "9d23898a98eaa933087b1203aa793f19866753a6088d4f77053fec4cc41af7af"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/extension-upload-dialog-dark-diff.png"
+    },
+    {
+      "id": "api",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/api-light-production.png",
+          "full": "visual/api-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "876a3958cc4d81b06129c5b2f2cc4172c0c2186f0b6efceaf58d6507f506d52f",
+              "d3381c02b7d8d992d6044b644c1d46a7e44250805c78ee4dc6fc9acb3f287c22",
+              "d3381c02b7d8d992d6044b644c1d46a7e44250805c78ee4dc6fc9acb3f287c22",
+              "d3381c02b7d8d992d6044b644c1d46a7e44250805c78ee4dc6fc9acb3f287c22"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/api-light-reference.png",
+          "full": "visual/api-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "cc269333c4384388a4d6bca00b064a2c35a3f274eee6d5db87d2128ff8a9eb98",
+              "cc269333c4384388a4d6bca00b064a2c35a3f274eee6d5db87d2128ff8a9eb98",
+              "cc269333c4384388a4d6bca00b064a2c35a3f274eee6d5db87d2128ff8a9eb98"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/api-light-diff.png"
+    },
+    {
+      "id": "api",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/api-dark-production.png",
+          "full": "visual/api-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "7c64bde6579e4b0d05b8120b6b4361600c29d2c312aa8cdc2bc1aa96835b9a54",
+              "b9f07d5d361f51e85f07d411c472d72f1cce6e776379cdc86d8bc45b540a0d51",
+              "b9f07d5d361f51e85f07d411c472d72f1cce6e776379cdc86d8bc45b540a0d51",
+              "b9f07d5d361f51e85f07d411c472d72f1cce6e776379cdc86d8bc45b540a0d51"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/api-dark-reference.png",
+          "full": "visual/api-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "14fb6ee773f474e922e0845904668ed2081b9e8aff246eef3b6e420e92c09482",
+              "14fb6ee773f474e922e0845904668ed2081b9e8aff246eef3b6e420e92c09482",
+              "14fb6ee773f474e922e0845904668ed2081b9e8aff246eef3b6e420e92c09482"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/api-dark-diff.png"
+    }
+  ],
+  "errors": [],
+  "externalRequests": [],
+  "fixtureNormalizations": [
+    "fingerprint:preview 以真实后端首次返回值固定相同参数的视觉数据",
+    "两种 render 均使用 hasPassword 对应的等宽八星掩码保持相同视觉数据；不返回真实机密"
+  ],
+  "failure": "locator.waitFor: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.rx-side') to be visible\u001b[22m\n\n    at /workspace/OpenBrowser/Browserapp/rebuild/visual-parity-selftest.cjs:66:35",
+  "body": "OpenBrowser AI Agent\n新建对话\n模板商城\n任务管理\n我的模板\n对话\n窗口管理\n设置\n?\n新手引导\n有什么我能帮你的吗？\n\n直接与我聊天，或选择模板一键开始。\n\nOpenBrowser 自动化流程参考\n\n当前本地运行时提供结构化浏览器工具，未移植旧版任意脚本沙箱。可依据引用材料设计流程，通过已提供的工具逐步执行；不要调用旧脚本上传、执行或 SDK 接口。\n\n使用\nOpenBrowser 稳定交互参考\n\n先 read_page 确认页面，再执行 click / fill。每步检查工具返回；失败时记录原因，使用有限次数重试。复杂流程可拆成多个本地任务，不伪造成功或执行结果。\n\n使用\nOpenBrowser 本地环境管理\n\n用 list_profiles 查找窗口，create_profile 创建窗口，start_profile / stop_profile 控制真实内核。所有数据来自本机 BrowserEngine。当前工具不提供云端工作区、额度、付费代理或服务器缓存。\n\n使用\nOpenBrowser 浏览器自动化\n\n先 list_profiles 确认窗口；start_profile 后使用 list_tabs、navigate、read_page、click、fill。当前页面工具连接已运行的 Chrome CDP；Firefox 的页面自动化桥尚未移植。\n\n使用\n更多模板\n直接对我说出您的需求，输入 @ 选择窗口，/ 使用模板\n\n\n\n\n选窗口\n选模板\n传文件\n完全访问权限"
+}

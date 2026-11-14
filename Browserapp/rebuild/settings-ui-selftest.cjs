@@ -1,0 +1,14 @@
+"use strict";
+const {_electron:electron}=require('playwright'),fs=require('node:fs/promises'),path=require('node:path'),assert=require('node:assert/strict');
+const repo=path.resolve(__dirname,'../..');
+(async()=>{
+ const data=await fs.mkdtemp(path.join(repo,'work/rebuild/settings-ui-')),evidence=path.join(repo,'docs/rebuild/evidence'),result={passed:false,checks:[],errors:[],externalRequests:[],data};let app,page;
+ try{
+  app=await electron.launch({executablePath:require('electron'),args:['--no-sandbox','--ozone-platform=headless','--disable-gpu',path.join(repo,'Browserapp')],env:{...process.env,OPENBROWSER_USER_DATA:data,OPENBROWSER_API_PORT:'0'}});page=await app.firstWindow();page.on('pageerror',error=>result.errors.push(error.message));page.on('console',message=>{if(message.type()==='error')result.errors.push(message.text());});page.on('request',request=>{if(/^https?:|^wss?:/.test(request.url()))result.externalRequests.push(request.url());});await page.getByText('暂无窗口',{exact:true}).waitFor();
+  const saved=await page.evaluate(async()=>{const store=(await import('/assets/utils-BIWenCnY.js')).v();await globalThis.__localApi.base.userSetUserConfigCreate({batchOpenLayout:'tile',remarkDisplayStatus:true,preferenceSettings:{base:{copy:true},simulate:{serial:true,serialTime:113}}});return {store:JSON.parse(JSON.stringify(store.userConfig)),disk:await globalThis.__localRequest('settings:get')};});
+  assert.equal(saved.store.batchOpenLayout,'tile');assert.equal(saved.store.remarkDisplayStatus,true);assert.equal(saved.store.preferenceSettings.simulate.serialTime,113);assert.equal(saved.disk.batchOpenLayout,'tile');
+  await page.reload();await page.getByText('暂无窗口',{exact:true}).waitFor();const restored=await page.evaluate(async()=>({...((await import('/assets/utils-BIWenCnY.js')).v().userConfig)}));assert.equal(restored.batchOpenLayout,'tile');assert.equal(restored.remarkDisplayStatus,true);assert.equal(restored.preferenceSettings.simulate.serial,true);
+  const refreshed=await page.evaluate(async()=>{await globalThis.__localRequest('settings:set',{remarkDisplayStatus:false});const store=(await import('/assets/utils-BIWenCnY.js')).v();await store.getUserConfig();return {remark:store.userConfig.remarkDisplayStatus,serial:store.userConfig.preferenceSettings.simulate.serialTime};});assert.equal(refreshed.remark,false);assert.equal(refreshed.serial,113);
+  result.checks.push('真实原 SDK 保存后 Pinia 即时发布，重载初始化完整已保存配置；原 getUserConfig 主动刷新 Native 修改并保留未改字段');assert.deepEqual(result.errors,[]);assert.deepEqual(result.externalRequests,[]);result.passed=true;
+ }catch(error){result.failure=error.stack;}finally{await app?.close();await fs.writeFile(path.join(evidence,'settings-ui-selftest.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));if(!result.passed)process.exitCode=1;}
+})().catch(error=>{console.error(error);process.exitCode=1;});

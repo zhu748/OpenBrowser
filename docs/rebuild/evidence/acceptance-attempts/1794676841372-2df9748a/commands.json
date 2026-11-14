@@ -1,0 +1,73 @@
+{
+  "status": "FAIL",
+  "startedAt": "2026-11-14T17:06:58.758Z",
+  "scope": "按当前运行目录逐项真实回归；所有进程独立测试数据目录。日志保留，失败继续收集其余结果。",
+  "results": [
+    {
+      "name": "electron-smoke.cjs",
+      "command": "node rebuild/electron-smoke.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676841372-2df9748a/electron-smoke.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 28903,
+      "testSha256": "a8c7ec0c9785b6623216cd036e31721f1745fb8e44cb232822d0b90bcc8a6114",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "circled-ui-selftest.cjs",
+      "command": "node rebuild/circled-ui-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676841372-2df9748a/circled-ui-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 19335,
+      "testSha256": "66e2a3992cfac45ccdf091a8deef3049826360ca29b6b067a49767369e1934f1",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "management-ui-selftest.cjs",
+      "command": "node rebuild/management-ui-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676841372-2df9748a/management-ui-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 17561,
+      "testSha256": "b7cfcd05008bc7b15ac93e5b13e3654ca3d8e7a6d117cdb99e93cea59ac87f11",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "agent-selftest.cjs",
+      "command": "node rebuild/agent-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676841372-2df9748a/agent-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 380,
+      "testSha256": "e7c55efbc50835bd3bd39b7564b90a1ec37cffdc034c0ff50af6eec3bb86cd7b",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "agent-ui-selftest.cjs",
+      "command": "node rebuild/agent-ui-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676841372-2df9748a/agent-ui-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 9001,
+      "testSha256": "eecd28dfffe17ee28b0871b703e7963b4ee4636c9b63f914ebd07a27ae62621b",
+      "testSourceUnchanged": true
+    },
+    {
+      "name": "agent-browser-selftest.cjs",
+      "command": "node rebuild/agent-browser-selftest.cjs",
+      "log": "docs/rebuild/evidence/acceptance-attempts/1794676841372-2df9748a/agent-browser-selftest.cjs.log",
+      "exitCode": 0,
+      "status": "PASS",
+      "durationMs": 9730,
+      "testSha256": "084f0553c2c14422ec37719b07e74803a061c18441cd8016ffda6d5cc1cfd796",
+      "testSourceUnchanged": true
+    }
+  ],
+  "runtimeAtStart": {
+    "files": 2375,
+    "sha256": "8bf83573cbef8adf881e1202f96503c6ed30adcd715c6630831cdcd44498b381"
+  },
+  "failure": "审查发现仍有定制模板商业客服二维码，停止本轮验收，修改后必须冻结重跑",
+  "endedAt": "2026-11-14T17:08:32Z"
+}

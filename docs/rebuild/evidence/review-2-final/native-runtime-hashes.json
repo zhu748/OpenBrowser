@@ -1,0 +1,1358 @@
+{
+  "status": "PASS",
+  "scope": "当前运行树中 Native/legacy 开发入口代码、JSON 与 C# 源码；排除内核二进制、生产依赖、assets 和已有独立哈希的 roxy-ui。不是安装包签名或跨平台运行证明。",
+  "files": [
+    {
+      "file": "Browserapp/automation/account-store.js",
+      "sha256": "04e6ee17060eff12bc3a7dabc4a97f440dd6c9f6551229c69dce21503aff760e"
+    },
+    {
+      "file": "Browserapp/automation/api-key-store.js",
+      "sha256": "ec884a715fd1b51debe245ad65f5b12a9a111398829b8fceacbf48d647c3183d"
+    },
+    {
+      "file": "Browserapp/automation/api-key.js",
+      "sha256": "5ff6e12f6b3c3fa765ba77e07dc68966aafab07d5d21375df8b51e2a9e2e7f91"
+    },
+    {
+      "file": "Browserapp/automation/api/catalog-routes.js",
+      "sha256": "da6fa3effb751a5f140dae3c3904ef31fbb9baeee125347cb6f2afd9eee0ad82"
+    },
+    {
+      "file": "Browserapp/automation/api/controllers.js",
+      "sha256": "1c52ec4aeb6aa0484e2db882bcbe3a76f2648312683f3c743b1642d4cd3d1184"
+    },
+    {
+      "file": "Browserapp/automation/api/devtools.js",
+      "sha256": "87e2405593eabf4c58a32dd9158e9ddddebbd935a81d214787d6a6adeedafb2d"
+    },
+    {
+      "file": "Browserapp/automation/api/input.js",
+      "sha256": "b9f9daa394a957f04df6a7c3ca3742a6b51d93290e989b36c92c140672fe6692"
+    },
+    {
+      "file": "Browserapp/automation/api/profile-ids.js",
+      "sha256": "624c9e6cc66b3a5cc74e48ae6dabfc3afdce77b6588b4eb31c1820173c4ca258"
+    },
+    {
+      "file": "Browserapp/automation/api/profile-routes.js",
+      "sha256": "d31547064d3f62232f92c3ad5a4bb554386f7f3d1a9030d0b3dbc70bd9ec96a1"
+    },
+    {
+      "file": "Browserapp/automation/api/proxy-routes.js",
+      "sha256": "5554ef7ad472db14f0541dde568f1fadbbf0a09048904b41f4193f9ebc289ea9"
+    },
+    {
+      "file": "Browserapp/automation/api/responses.js",
+      "sha256": "42f11c22d5e3ba1748dfaaeb799b30b4971c347a231d8ed11866ef80ba1a8fc9"
+    },
+    {
+      "file": "Browserapp/automation/api/route-registry.js",
+      "sha256": "a553150082cc36411b30d9ec7731e37d810510519846d258535b4ee0d70ae9fa"
+    },
+    {
+      "file": "Browserapp/automation/api/rpa-routes.js",
+      "sha256": "3d9d009d097acbb340d0ffd5c54913a09a67aa168b4f8e3089a950a3ab4cde28"
+    },
+    {
+      "file": "Browserapp/automation/api/sync-routes.js",
+      "sha256": "01bea025efa35223a5cb17a628c8df238ec822cdfabfa2e77d36ade4d583db20"
+    },
+    {
+      "file": "Browserapp/automation/app-center.js",
+      "sha256": "0d8929811eb08869d2da4797a9575264bc5d13792af74d501264829cba3dc7d3"
+    },
+    {
+      "file": "Browserapp/automation/app-update.js",
+      "sha256": "4670f97290fd6905ceafba010fbc6381558d741cdaa3c30aad9a56e9a4c8a5a0"
+    },
+    {
+      "file": "Browserapp/automation/aspect-manager.js",
+      "sha256": "3f1ca0f70f4406e00a36d3fef0737cd5d1f4fc8894a05b4b3e11fe264a7a9ed1"
+    },
+    {
+      "file": "Browserapp/automation/asset-integrity.js",
+      "sha256": "788857cc51079c3ff42045b509eef85f291f28eab375b771cabdc12dae1b177c"
+    },
+    {
+      "file": "Browserapp/automation/bounded-lru.js",
+      "sha256": "18ffe8d3e68dc20aeac8b121e592acc3dda2176d9247c84f120309a900e06f81"
+    },
+    {
+      "file": "Browserapp/automation/browser-control.js",
+      "sha256": "cc6a308b749f92eedaf1658a4bbd84364e213cf692328ba216882787c1470df4"
+    },
+    {
+      "file": "Browserapp/automation/browser-data.js",
+      "sha256": "1bfcc79585ce5939bc9509658fe686772a83ad25a7b23f7cd5f9202ed6e2c246"
+    },
+    {
+      "file": "Browserapp/automation/browser-kernel.js",
+      "sha256": "b25cde8ba677aea91de8730ea14e54064d4111e048980d15d61d808cca74fca9"
+    },
+    {
+      "file": "Browserapp/automation/cloud-ops.js",
+      "sha256": "b5109d7786e2241a4483136ca3fecf2108843b40fef8bbfd55e3752e3aa53d6e"
+    },
+    {
+      "file": "Browserapp/automation/cloud-sync.js",
+      "sha256": "d84ad3471cc47b45a192bcb26fae9f8f4561a20c1d47b33a7c4c3db0eb0899af"
+    },
+    {
+      "file": "Browserapp/automation/cloud/file-restore.js",
+      "sha256": "e0f3f19cc60ff6d930fbab8374d5c4fd020b1649f8d1e9715a83a5515fe32876"
+    },
+    {
+      "file": "Browserapp/automation/cloud/limits.js",
+      "sha256": "ddc6751c115c7d81e7aeb857c4bb856275083c6f9665ef5281265e3209141fae"
+    },
+    {
+      "file": "Browserapp/automation/cloud/merge.js",
+      "sha256": "2b12e4cefbd62b13a1df94fec19af87acb3d26e3653456dc5def0255899b5eea"
+    },
+    {
+      "file": "Browserapp/automation/cloud/package-crypto.js",
+      "sha256": "eef837fb4fb8545e135aca8f26e9bf3b5aa4359a1183a457e68e31d51bae7dee"
+    },
+    {
+      "file": "Browserapp/automation/cloud/profile-data.js",
+      "sha256": "5f9b8355d56fd0a463c08ae2d1de85405c830b818770b9a2933e80f9d53652fa"
+    },
+    {
+      "file": "Browserapp/automation/cloud/restore-state.js",
+      "sha256": "72ed4358a7ae13d17385f0167612f1b7c400edf4f2f32abaf7cfe2553976173d"
+    },
+    {
+      "file": "Browserapp/automation/cloud/transport.js",
+      "sha256": "564b272e57a720a0c099da4ce1b8c5e20227c550286336670fdc4d897abf7e2d"
+    },
+    {
+      "file": "Browserapp/automation/coalesced-writer.js",
+      "sha256": "21011694d2240aefeba1677a0bba51787608181f4fa1eeb6ea3d173d113ba00c"
+    },
+    {
+      "file": "Browserapp/automation/command-line-flags.js",
+      "sha256": "121ec5afeee917bab1901e9704999eab05085c58ef2ed4cce346fc565e1a50b7"
+    },
+    {
+      "file": "Browserapp/automation/cookie-warmup.js",
+      "sha256": "30f609947f8c0d9b0d0e5a554548ebf42f70b110486fadd77ca22931798db8a7"
+    },
+    {
+      "file": "Browserapp/automation/crash-report.js",
+      "sha256": "9507a7db522cf285bd027086ec3738d2179039759b74f6e240d09d83a53d6641"
+    },
+    {
+      "file": "Browserapp/automation/credential-crypto.js",
+      "sha256": "b2a36c25611374865c3ef361f96f3077608b3ce19b4713ee1d5a34e7aeefa365"
+    },
+    {
+      "file": "Browserapp/automation/crx-fixtures.js",
+      "sha256": "50603d881de53ca622f99aea4105bdd1e45d1378b75a3d2b33b3aa1d6e5bf16a"
+    },
+    {
+      "file": "Browserapp/automation/crx-reader.js",
+      "sha256": "fde0a9dd3f3f5aaeb4616941b7756c77aedbdb5f4d9f2fa50ca54e6dde812b5d"
+    },
+    {
+      "file": "Browserapp/automation/css-font-local-gate.js",
+      "sha256": "f8644bbac640aa4e1839110498eb458c2efb663e178c6ed4042c6e7d702e971b"
+    },
+    {
+      "file": "Browserapp/automation/css-font-parser.js",
+      "sha256": "5de2eef81235f845cacb07c2ba65e89f9d991215445d95beec65da2d930dda56"
+    },
+    {
+      "file": "Browserapp/automation/css-font-response-rewrite.js",
+      "sha256": "f7818eabdafbd07eff7c0003004bf6f24a1d18a11086a8fe85dcca4bbd129455"
+    },
+    {
+      "file": "Browserapp/automation/data/catalog-templates.json",
+      "sha256": "bd0bb8ef628d4e77da86b41d0979613906458432ca463d630282c5a0678b15fe"
+    },
+    {
+      "file": "Browserapp/automation/data/font-metric-families.json",
+      "sha256": "fcf6f67ac9bbd01fb44a49ff1a8153bf8612d53f77acf7dce60262f37f2e766b"
+    },
+    {
+      "file": "Browserapp/automation/data/locale/de.json",
+      "sha256": "b10cf2ededfe2b9d05e17a575d7f4ac879dfead62ea61836bbd559b1c1c28ff1"
+    },
+    {
+      "file": "Browserapp/automation/data/locale/en.json",
+      "sha256": "6494eeefaf1261a8b1dcfe9dcb4e4c4a69525a4281cffe1ac5d08d9a895e46f5"
+    },
+    {
+      "file": "Browserapp/automation/data/locale/fr.json",
+      "sha256": "c252feea0e8941dcea9843ae4d3b86297ff6034127c0c2018daf198f61dd6b2e"
+    },
+    {
+      "file": "Browserapp/automation/data/locale/i18n-data.js",
+      "sha256": "185cb53f305d9b9b5af9ad426550971feaea0cb6c818b66e7d51f279a3013769"
+    },
+    {
+      "file": "Browserapp/automation/data/locale/id.json",
+      "sha256": "0fbc0d3dcda609655d64afabd5eeddff0a78181478cc15e1d9a3f4840c2755cc"
+    },
+    {
+      "file": "Browserapp/automation/data/locale/ja.json",
+      "sha256": "2ac3c8d5a1dd384086be59e612497019b78da5736dcea1723ca094f10e76eacf"
+    },
+    {
+      "file": "Browserapp/automation/data/locale/runtime-zh-en.json",
+      "sha256": "57dc770b394eb5727a13f9a0d39da9e68bb62b237d176d766df51571df9f1e5d"
+    },
+    {
+      "file": "Browserapp/automation/data/locale/th.json",
+      "sha256": "2313b1b1f59920e7fd4d2951486e2f4975945fc8162fcb4e4645fc09bf22e94a"
+    },
+    {
+      "file": "Browserapp/automation/data/locale/ui-zh-en.json",
+      "sha256": "b777c285932f956c0f321e99842b79f69e05b2193d655b174d6a491385c6fccc"
+    },
+    {
+      "file": "Browserapp/automation/data/locale/vi.json",
+      "sha256": "e3ea288b9c7b30548e6164014d4634982586147dbb9a81af66270f492523255e"
+    },
+    {
+      "file": "Browserapp/automation/data/locale/zh-CN.json",
+      "sha256": "d613b68b5bb691e30259c2e8f7d06072698a58e79a154abdfacbdfb382a683f0"
+    },
+    {
+      "file": "Browserapp/automation/data/mobile-device-corrections.json",
+      "sha256": "33a1bcb1a1294367c9459aab669dcdfe1b14029eccd81c83846b860f46db970a"
+    },
+    {
+      "file": "Browserapp/automation/data/mobile-devices.json",
+      "sha256": "659102e1601d119e6a0f0e6b3f2cefe223e51c9f02f0df4df05e8361c1cd7e38"
+    },
+    {
+      "file": "Browserapp/automation/deferred-queue.js",
+      "sha256": "2b026d0bc6918c0d3f1cbac1e86ab9b654e6960b658b439fd04acbe43ecbf81a"
+    },
+    {
+      "file": "Browserapp/automation/device-personas.js",
+      "sha256": "0196b45379f8e0eda442e06ac94c494d3eba4bb0b5de1ce3ad5b8998871eefc5"
+    },
+    {
+      "file": "Browserapp/automation/doh-resolver.js",
+      "sha256": "56d8751adaf0e5b564f678568c1617db93612ef33534ae53e79144d1d43e578e"
+    },
+    {
+      "file": "Browserapp/automation/download-naming.js",
+      "sha256": "b317f2e8b25b9dfe35db30b0f3b7db08ad87dc168825967a05392a49af174c31"
+    },
+    {
+      "file": "Browserapp/automation/downloader.js",
+      "sha256": "ab95a65d100935e14a67934231976432e0f738bc74736f127378494e70ee4194"
+    },
+    {
+      "file": "Browserapp/automation/editor-ua.js",
+      "sha256": "2871f156389a10b27cbc3c3f1dfaf9d2385d013c5c9da16441dc44d6af11baaf"
+    },
+    {
+      "file": "Browserapp/automation/env-icon.js",
+      "sha256": "ac5cdf8256244a2a3cc97effb7d4cca4c15c8edeb403249d96cb422de3c38df0"
+    },
+    {
+      "file": "Browserapp/automation/event-loop-monitor.js",
+      "sha256": "e1257bc3a6173d92b849df2d626dec4c946c1839a50e7ff5ab720f8fb6148612"
+    },
+    {
+      "file": "Browserapp/automation/extension-identity.js",
+      "sha256": "1bb699ec6c8a58c22a3d3fcaf7be554d7b97b3ebd2f94ae3f1adaa4547ad7866"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint-debug-log.js",
+      "sha256": "e4f2d951faa327f6296db5b939d4857c1eb7c88e536b64aea78813f86e05b367"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint-generators.js",
+      "sha256": "b7f7ce4a20d7456f4b6c1e34b9db06a8dba1aee903f14ec421e51e814b16cc16"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint-pool.js",
+      "sha256": "47b37b5881ea5152a34349a17b8e73544b8f3e648858383d29bada6604360215"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/chrome-args.js",
+      "sha256": "beb321ac183aa75c2ff0b1dc2afde1dd3b616da36dd12b27cfd017f11b1d6853"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/generation.js",
+      "sha256": "d79f9f869ce4963bc13f57241806ed0d3f0a2e4c96ce537d279791a93b84bee1"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/index.js",
+      "sha256": "a6c7ea21a1e3e1dd381daa19ee5375d6ed6c1ccbe6c6198b9ba208328d9716d9"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/injection-config.js",
+      "sha256": "7ac28a103a8ba38b873689d91934ec5a5d3cf5c86c553a3b7063a59ef277fc5b"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/injection-script.js",
+      "sha256": "797e117d979f66dabba83cac6bfed6bf4b8344aab7e52b6d734f61bbb6854a64"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/native-arguments.js",
+      "sha256": "27436a454af4dc490cd9a757bada3b6404ca382d6f9231950a1a1538ce1aa0f1"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/noise-policy.js",
+      "sha256": "d9027ce26c38d74dc70fcf7257c254fdecf2d454209accf254f5e3b64dce800a"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/persona.js",
+      "sha256": "52ae8b18c21335fea90fd4ddb949fa5ef6378ac42f010e13a564cc06e292817c"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/runtime-revision.js",
+      "sha256": "aab3afb464ced206dbcf423002568c4e29716013bd8a4bbb86b6195a27af3ca1"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/runtime-source.js",
+      "sha256": "6181c53a0391dcdcc5e08d88437ef6d29d80b6022e02c99032a7aebefdf83f44"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/runtime/audio-write-tracker.js",
+      "sha256": "fb9907bcd436996b03085851236d8d842ef2f8e0d7a38f1d66dfb0f7926f0d65"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/runtime/canvas-readback.js",
+      "sha256": "2eedfe08514883108a89dd88de430123ad329870f00159426ee60a227cc58544"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/runtime/document-bootstrap.js",
+      "sha256": "522fc50e287d83a9bd47f9b2af30ebca20ee40037f7c029a2556ca1cf962b3e8"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/runtime/document-fonts.js",
+      "sha256": "b7aaf313bd08e993fa0f0bea8d1723a808b2c08d393a7319474e7166d2db9d4f"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/runtime/document-gpu-storage.js",
+      "sha256": "0e903eaf39d4f11279a09ae6bb3a3d93115258b44652bfbac37bdddfc78f384b"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/runtime/document-graphics.js",
+      "sha256": "c652dd9d23b8a0bab0f5280b9d26edf3c047c488c56d01cbe633f43810bcfec3"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/runtime/document-media.js",
+      "sha256": "2004482df6029b4fdd2b776b2d6dbfda7420ac19c9d57ffb8d5e3455dd68552c"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/runtime/document-navigator.js",
+      "sha256": "b0804c0a5a3a61b3226bd9a5e7328717bd9067379a4ba25c37256fef2eeb9b9a"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/runtime/document-screen.js",
+      "sha256": "76e016fa509028b2e04e266f9c8aeada1155f2daa8fbcc178a8c5cb58cc67cb3"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/runtime/document-timezone-audio.js",
+      "sha256": "d8bbdc7c237c92f5198722b65a798c3329bb035508cde2c7666aa5cd82eff88e"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/runtime/document-webrtc.js",
+      "sha256": "88d714a83c474cd4e30e2ae67ac62182687e8d96f012e4b3015116afb628408e"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/runtime/gpu-storage-fragment.js",
+      "sha256": "5a09cacb8ed01f19b7fc3c7dddeae8621bfc25b57c1dc94da9f2d5c205dda3eb"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/runtime/network-fragment.js",
+      "sha256": "221b97149143367c0c94dd654128962e4e7adf345388cba6b3e25ad0bf02123b"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/runtime/storage-estimate-fragment.js",
+      "sha256": "863b9296a531d95c2121ba19d8e5feec2c4a3562febef364004eccda0f1dd59a"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/runtime/text-metrics-cache.js",
+      "sha256": "f36e5dc8fe74ea0bc9452110834131a4d68896afe8e3fd3ef04c6ceea5eed76b"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/runtime/timezone-fragment.js",
+      "sha256": "100fd752e946fdd2dee98fed6924cfb6cc55eb8fa1e00592ebd304dd6ec6716d"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/runtime/video-frame-readback.js",
+      "sha256": "45709a51122f0edbcefdfc072e4979d8cadb43596061e117188856d691de00b1"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/runtime/worker-bootstrap.js",
+      "sha256": "c5cdc40c93ce7339f4cc8ec77533f24a6694700223d009602bb3b2f87af03ac8"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/runtime/worker-constructor-patch.js",
+      "sha256": "a03ce100707cfa15a29efc5d16bff2254c510a9f7d9253732e9702520b938e16"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/runtime/worker-gpu-storage.js",
+      "sha256": "71e06ca6e90afed36b6b918baecb88dfa2175fc4d9b43f6e431eb05591cf093d"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/runtime/worker-graphics.js",
+      "sha256": "6cae182255f79420bcc5a0ed78ff75390a04525fc50fef0910baf3565ef18c64"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/runtime/worker-session-bootstrap.js",
+      "sha256": "0abb0d3167938c5965a98bbf2bebb222cc264a5060581b04d6130f48d69e7ea2"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/runtime/worker-timezone.js",
+      "sha256": "9dd1a7647c75484da54ed2c9835c3a3370ef6f38d752a554fed91475b13623a5"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/shared.js",
+      "sha256": "122983d500a928d518ae55a3e00007b4ee295ad0aa19af88765f3bed45cc59c0"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/tab-apply.js",
+      "sha256": "9194ab0d02d3a015f3a21370f26c986a5aa74917720f33bc4936c1e68ac847e9"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/webgl-capabilities.js",
+      "sha256": "adb3f946b0de68334997e369808cddaa580f807e1501b763f6edbbde62e32731"
+    },
+    {
+      "file": "Browserapp/automation/fingerprint/worker-injection.js",
+      "sha256": "738f0c80972207a43f51df6bcfd1b83bc7fc7db244598662c4ba7161e6272250"
+    },
+    {
+      "file": "Browserapp/automation/firefox-fingerprint.js",
+      "sha256": "562b11fa993da35865dc6cf159c8d036c99e10e73b7f5b87c199998d69549d1d"
+    },
+    {
+      "file": "Browserapp/automation/firefox-image-filter.js",
+      "sha256": "b86c7ef708c35c7151a4f53a15f0d25143a220fd4413d1fa6dce2bd463487c67"
+    },
+    {
+      "file": "Browserapp/automation/firefox-trust-installer.js",
+      "sha256": "30418ec5c2062da6a9b94b66a23b4bedb0238f22b1576c3d65c8208608749356"
+    },
+    {
+      "file": "Browserapp/automation/firefox-worker-certificates.js",
+      "sha256": "dfa82b70ac0af32d67f748fbed27b9d1c6f8d6352390613b315936a1d385dfa0"
+    },
+    {
+      "file": "Browserapp/automation/firefox-worker-mitm-proxy.js",
+      "sha256": "23273a1a19a5574a5f9824f740eb925b1c02736e0c0f84a651a35965c2f76601"
+    },
+    {
+      "file": "Browserapp/automation/firefox-worker-response.js",
+      "sha256": "4ba4cf9071a03e26f39d6755f88f1054117c5b827ebc75950863d13bca265ac3"
+    },
+    {
+      "file": "Browserapp/automation/font-metrics.js",
+      "sha256": "033eec18046cc128728fa271b46c3683ab098561310148ec5aa2540230e11345"
+    },
+    {
+      "file": "Browserapp/automation/font-placeholder.js",
+      "sha256": "48af303c1f2c773282050e54a7a5fb75e4dce1d944f05756f89665b997817594"
+    },
+    {
+      "file": "Browserapp/automation/html-font-parser.js",
+      "sha256": "eebf7647e74ea8d6324b6fcf70eab991b6461e848317aac0b2c74ba2b9bc819e"
+    },
+    {
+      "file": "Browserapp/automation/human-input.js",
+      "sha256": "c58dcf989e85b8b9873dca3c9b75c0546c349dd07f946b26b376ff85579208bd"
+    },
+    {
+      "file": "Browserapp/automation/human-typing.js",
+      "sha256": "e78b33bac71a3c5e6274fd2ab3aef21102cb5a6009d1861ff57a3be047b6d09e"
+    },
+    {
+      "file": "Browserapp/automation/image-size-filter.js",
+      "sha256": "2e210d8a3d774bf8b799ab0e6d07a5b051ca67cf85fd176da03e8dbfab909e83"
+    },
+    {
+      "file": "Browserapp/automation/index.js",
+      "sha256": "ca5e7580a10bdf6a1d1059f890f2d9d45a8164925c719c59f07a4128b0a7bb04"
+    },
+    {
+      "file": "Browserapp/automation/input-validation.js",
+      "sha256": "940acaac288c9baa1f943dad36c726b75d31af3b8d5b7032026a8afb5cf98c0b"
+    },
+    {
+      "file": "Browserapp/automation/ip-health-score.js",
+      "sha256": "60fe96bf2cfdee57fc4c1a607c79737bb0a20ea0132c3eba0f4a46f7eacda48f"
+    },
+    {
+      "file": "Browserapp/automation/isolation.js",
+      "sha256": "6f8b04cde4e60145a32ceded6cce2a967fe3efa17711f3fc0112ea643c4aec00"
+    },
+    {
+      "file": "Browserapp/automation/kernel-init-sync.js",
+      "sha256": "d38d1767cf291797744675418592dc8ff6e9a4970cf9b785b93f1bcc6f23e55f"
+    },
+    {
+      "file": "Browserapp/automation/kernel-versions.js",
+      "sha256": "71a9ab287ff07761e532577576915b89a6656ba35b479cba937b15961f452930"
+    },
+    {
+      "file": "Browserapp/automation/kernel/archive-trust.js",
+      "sha256": "2be490c60b7b430d453804eb64cd889681cd598bfce0ea8595fd533eaf151291"
+    },
+    {
+      "file": "Browserapp/automation/kernel/archive.js",
+      "sha256": "f12c621fe6933998d6dda04e0bed6ad47f124aef6bde6950ae3155530932078c"
+    },
+    {
+      "file": "Browserapp/automation/kernel/discovery.js",
+      "sha256": "d829710c2dd2f53ecb62442cc91b44874311950e1470ed137f3c9dc11ab1ab02"
+    },
+    {
+      "file": "Browserapp/automation/kernel/metadata.js",
+      "sha256": "801bfaf2a56fbf63d342e0befa191c53979e7450da016fc669062831475bf666"
+    },
+    {
+      "file": "Browserapp/automation/layout-validation.js",
+      "sha256": "68a3e84ff8177546eaaafe010ff85df69c3a589a5c8140017e795bd7d30f4852"
+    },
+    {
+      "file": "Browserapp/automation/linux-autostart.js",
+      "sha256": "196a240ff61bbc16e1d34ea1ae74f0aeb03a04920d83bdfc642b7275d93a12ed"
+    },
+    {
+      "file": "Browserapp/automation/linux-desktop-integration.js",
+      "sha256": "490eac08dfd7c09ccbd97ee2e0d513c0e6d0b2e2819ac2377783e9be06b87b20"
+    },
+    {
+      "file": "Browserapp/automation/local-api-server.js",
+      "sha256": "96bd0c9537169f396d345742cfaa4f9ae58fb76e392ebb8163f4d388d97a4bbb"
+    },
+    {
+      "file": "Browserapp/automation/local-settings.js",
+      "sha256": "ecf5b14c784dee640d600ca2daf48ee9d8db1b99634c5138b66933b46eedb35f"
+    },
+    {
+      "file": "Browserapp/automation/locale-from-country.js",
+      "sha256": "1111234b201467513fcd449bddb72eb2952a6f9ac2e3a119bd5e05dfe03a02a8"
+    },
+    {
+      "file": "Browserapp/automation/log-sanitizer.js",
+      "sha256": "b7752a90d9c753c3706f15ecd1b6e20adb4f3681eb66d351d07e089ee4e7c114"
+    },
+    {
+      "file": "Browserapp/automation/mac-launcher.js",
+      "sha256": "634284243c6ddeaef7b7240f4d048be9cbab2dc7600656631e40724618cb9921"
+    },
+    {
+      "file": "Browserapp/automation/machine-id.js",
+      "sha256": "82962ec026d0a33070374941f8410306dac41ee9fa65371f42c65233071aac14"
+    },
+    {
+      "file": "Browserapp/automation/mcp-server.js",
+      "sha256": "e8687f5cdafeca24186b843abe00e5ce5f67ee61ff37f6fd3b7f33e246ebbb90"
+    },
+    {
+      "file": "Browserapp/automation/mobile-personas.js",
+      "sha256": "f6e1fc10b34485b88092614d3907646fcfeb9c818c8e42d172ede2c0ea10877c"
+    },
+    {
+      "file": "Browserapp/automation/native-window.js",
+      "sha256": "5ee3eec8cbc2a79d3a626c052586525370165746bc2b62f7316357f4c8901a38"
+    },
+    {
+      "file": "Browserapp/automation/navigation-policy.js",
+      "sha256": "e8c8d12db242d1aa0265f733a58d34c5a6925953bb3084b784051cd45040993c"
+    },
+    {
+      "file": "Browserapp/automation/object-utils.js",
+      "sha256": "5dba685fa04c4e38f0f81830c3f5f33b0e212b9d7018713a23f7037633a90fd9"
+    },
+    {
+      "file": "Browserapp/automation/platform-preflight.js",
+      "sha256": "d09e27e7e00d9d277c520bbb211a326090ad8df7bd839e2af4e99463382b2121"
+    },
+    {
+      "file": "Browserapp/automation/port-scan-protection.js",
+      "sha256": "f3a284f730bd60dca02823899b9d9ca04434d8103e787c9ea1d2b0b96be0115b"
+    },
+    {
+      "file": "Browserapp/automation/port-utils.js",
+      "sha256": "4240140c3c00aa0bca6d8344b81c0320cc2c73a118b77ed4171ff7ca21195f00"
+    },
+    {
+      "file": "Browserapp/automation/profile-defaults.js",
+      "sha256": "56cf4060a72988e33a63556cf664fff0df7ade52626a60270fd872a65fa64c15"
+    },
+    {
+      "file": "Browserapp/automation/profile-file-consistency.js",
+      "sha256": "c4733a1f6c64e710c84dfd49f7acaed112d776966f067a723c09a77667f7fb3e"
+    },
+    {
+      "file": "Browserapp/automation/profile-store-sqlite.js",
+      "sha256": "35e4d1210ba51c6ea637127d87637cb470527786cf6b4526ee32f1307c868682"
+    },
+    {
+      "file": "Browserapp/automation/protocol/app-center-protocol.js",
+      "sha256": "4301fe80dec7490c70517270cc5a83287c5f449ef455c6c4c571b532df3e7e48"
+    },
+    {
+      "file": "Browserapp/automation/protocol/cross-platform.js",
+      "sha256": "d61ae330a4b30936e4179893e8c76caa17f9cfbbf236a42254cac12e1e98e029"
+    },
+    {
+      "file": "Browserapp/automation/protocol/event-map.js",
+      "sha256": "fd19e79d7af8b39e6ee6ccdc4e32ebb5fe9f44657955aff09e4bf01127f59b0a"
+    },
+    {
+      "file": "Browserapp/automation/protocol/index.js",
+      "sha256": "a0383c3df2d64dfdce3f88e597a120648829649b3dfee0b0e1c966f46d12d8d6"
+    },
+    {
+      "file": "Browserapp/automation/protocol/internal-pages.js",
+      "sha256": "3e73ac54c67aaa1e53390af4c481f8c33da8d8dcfd21b6f4cc0adb78a08bea74"
+    },
+    {
+      "file": "Browserapp/automation/protocol/rpa-registry.js",
+      "sha256": "ff5036198a2c858edd3126b44b0b88ca0e7efea4afe1a6cf5d5f56c43cebc567"
+    },
+    {
+      "file": "Browserapp/automation/protocol/sync-fanout.js",
+      "sha256": "8ba547512813f6b89a1023a87f7bba6ffafee2bc5a3e5f17181473836349536e"
+    },
+    {
+      "file": "Browserapp/automation/protocol/window-generation.js",
+      "sha256": "c51de686237f32b83bd85bbc7d7b7d2edb062d65c5106afe58eb0d810aa80520"
+    },
+    {
+      "file": "Browserapp/automation/protocol/window-sync-protocol.js",
+      "sha256": "c25e9b4e0a2a2a2b2db915eec02aa895e22b45495cdb91596fd9cae391102136"
+    },
+    {
+      "file": "Browserapp/automation/proxy-redact.js",
+      "sha256": "f9c7b71667b22423e75151a9ccc7a2f77c615f3699b208f4cc6709ad1c93dff6"
+    },
+    {
+      "file": "Browserapp/automation/proxy-store.js",
+      "sha256": "330fa0947d6bd8346c62f2269124496f5e5c33af37324cc5cfe1aeb25c0114a9"
+    },
+    {
+      "file": "Browserapp/automation/proxy-usage.js",
+      "sha256": "642c1a65ee5afdac8f618f71f43d80ecf53ffa77e947f714a04c384f2ddca8f6"
+    },
+    {
+      "file": "Browserapp/automation/query-local-font-blob-gate.js",
+      "sha256": "760b4b7fe3b2eee4320bb17fb0d90002f325960f02575849c5edaf48c030c6d7"
+    },
+    {
+      "file": "Browserapp/automation/reap-orphan-kernels.js",
+      "sha256": "8938224153185765385cd7619121b91f8d0cbcea3be725c36c6b0cdbc56e3b37"
+    },
+    {
+      "file": "Browserapp/automation/request-header-rewriter.js",
+      "sha256": "79a257bf2d0bcbcbc78b19bbf2786c93fc9d30283aa01dd121b473de0cc43b4c"
+    },
+    {
+      "file": "Browserapp/automation/response-body.js",
+      "sha256": "cb1026d40c725130af4bf785592704d05a4fe6201f5b84999a58525cc1e5b6af"
+    },
+    {
+      "file": "Browserapp/automation/rpa-engine.js",
+      "sha256": "bfd4d6ddd677becaf5e6a2fb24e1b99a8a6498d0ab3a78f99be6de5370375d09"
+    },
+    {
+      "file": "Browserapp/automation/rpa-store-budget.js",
+      "sha256": "af10e4206bb273c72235007426601b615f059a97684f6053f03157a8c8fa1f0d"
+    },
+    {
+      "file": "Browserapp/automation/rpa-store.js",
+      "sha256": "936ed8e177fabfa6a41faef45b8b60426844d2f1565acc6b8aa38686e60a849e"
+    },
+    {
+      "file": "Browserapp/automation/rpa-templates-builtin.js",
+      "sha256": "6a28e1d66b87eee6b20961f14c1bc31d09524109590b2f1c00b2878611272cc8"
+    },
+    {
+      "file": "Browserapp/automation/rpa/csv.js",
+      "sha256": "c7b8912c83191d40d6b350c0eb2dd48e73b3483dd8395ff012bf02fe036efbf6"
+    },
+    {
+      "file": "Browserapp/automation/rpa/file-input.js",
+      "sha256": "d90e763446e5a3229a2762c67c6dc7487b07e06323039323487cbc446a45861d"
+    },
+    {
+      "file": "Browserapp/automation/rpa/file-steps.js",
+      "sha256": "e6d2146326fd661f3457d9b6d96354eadd3df9d423311c42165385b3f90eadfe"
+    },
+    {
+      "file": "Browserapp/automation/rpa/paths.js",
+      "sha256": "85f78e9a10425a190756a646f18b28a77b5ab517d5b5547a35a685fba0ce953a"
+    },
+    {
+      "file": "Browserapp/automation/rpa/regex-worker.js",
+      "sha256": "150a17c70a8d936b456745487de19de937f60ff1e283a7859f7de600a06b669f"
+    },
+    {
+      "file": "Browserapp/automation/rpa/regex.js",
+      "sha256": "ce10442aeee93ae4781593e809d96bdc90c9e33243641820b2d563e69008cef5"
+    },
+    {
+      "file": "Browserapp/automation/rpa/step-registry.js",
+      "sha256": "50eca3103697e44b34408a2f6d55616cbd7bfb7329d283f55d652e5f18c2dae5"
+    },
+    {
+      "file": "Browserapp/automation/rpa/step-shape.js",
+      "sha256": "bf74556b3db5d0504265a17437f947488dc2bc1d389faea8cbb7ad816674d2f8"
+    },
+    {
+      "file": "Browserapp/automation/rpa/task-records.js",
+      "sha256": "e57a82f4312e0e5d72192622ca5e764bfcde71af59ebd2f8ff4b60059f1b6fd8"
+    },
+    {
+      "file": "Browserapp/automation/rpa/variables.js",
+      "sha256": "959d9f934995d22895cc9fbecca9941c3e2372591bce44bd909edc9112db5887"
+    },
+    {
+      "file": "Browserapp/automation/rust-core-bridge.js",
+      "sha256": "e637ef68ca6a21616155b99023d6463ac65852ee70fcadb7c0f3feb791efc2d0"
+    },
+    {
+      "file": "Browserapp/automation/rust-core-test-fixtures.js",
+      "sha256": "11ad32b6d47811ebfa301d100398911e23f2631164c35fa84869eefb21bdf1e5"
+    },
+    {
+      "file": "Browserapp/automation/service-worker-script-gate.js",
+      "sha256": "28461ffc6934864f3359fc1cc9fcbe864606c05af5a6305e694aabef4e4a29dd"
+    },
+    {
+      "file": "Browserapp/automation/shell-guard.js",
+      "sha256": "9dd9cdbf08b18c60a627a7aa9b8ee11ec8b3299efe1603b1103ea62b59b162eb"
+    },
+    {
+      "file": "Browserapp/automation/start-page-server.js",
+      "sha256": "c0feac9af7793f27e4b6f9496a6149b442613e89e3640db1ded5768969c3a5c6"
+    },
+    {
+      "file": "Browserapp/automation/start-page-template.js",
+      "sha256": "f18da07bdb6c9e5eba7c95b5897b36a8d1e631f22c727c11793a99da33683870"
+    },
+    {
+      "file": "Browserapp/automation/storage-diagnostics.js",
+      "sha256": "afd8842f990d4d2ddc7338004311701f93fea32e37ec122f28b0dd124b88b8b8"
+    },
+    {
+      "file": "Browserapp/automation/store-fetch.js",
+      "sha256": "b60c91aafc4e9e32267f4f2cac95f419551cf5a9879b9d0e1de819a75fc9595a"
+    },
+    {
+      "file": "Browserapp/automation/sync/extension-pages.js",
+      "sha256": "df633b1f270c23530c155dccbab5c9c27c6ac270bae1ea78cc86bceb0f399cac"
+    },
+    {
+      "file": "Browserapp/automation/sync/master-window-color.js",
+      "sha256": "4a05bdfcbc7693cd8f310caa2741a48115a3733ae579fd0e161b8f43af520b81"
+    },
+    {
+      "file": "Browserapp/automation/task-queue.js",
+      "sha256": "2d9cf285677b3802b29bd326f4d24c2ab82074021574770d1624045e002f719a"
+    },
+    {
+      "file": "Browserapp/automation/task-scheduler.js",
+      "sha256": "3ca5851bc96d6a95bf86d0ae589054e0967d6a43c081c124914d656a33a50066"
+    },
+    {
+      "file": "Browserapp/automation/template-sync.js",
+      "sha256": "d93711400cdb573cf8a1498195164d4a04111c6b11ae82c3e9c52c21f10f8022"
+    },
+    {
+      "file": "Browserapp/automation/transfer-store.js",
+      "sha256": "463fc8008af4a514ea1f103b2c58cb86f20d1e687e857da2a22c1d9cca60ee88"
+    },
+    {
+      "file": "Browserapp/automation/trusted-input.js",
+      "sha256": "0d1212d9ea62aed5e97ebe52a4e9648bec5819bf47c6b8e7813fe70ca032982d"
+    },
+    {
+      "file": "Browserapp/automation/update-trust-tool.js",
+      "sha256": "70d052ba74cacd54f364052d64fc43d3c0437718f68b8fedc81190e281e6a998"
+    },
+    {
+      "file": "Browserapp/automation/update-trust.js",
+      "sha256": "c1c50233c09bcf3bae4703efb5dbeac3d847378c02cbd6095cbba4641e00993b"
+    },
+    {
+      "file": "Browserapp/automation/url-access-policy.js",
+      "sha256": "00f299d106b29b5fd98ef638dc16d5a43dc34abe7132ebc0e4bad7991c22b9b4"
+    },
+    {
+      "file": "Browserapp/automation/user-agent.js",
+      "sha256": "617ee595d9f3f3e56560594447c9f6d32df76d292ef8bf1eeb2e21e308481712"
+    },
+    {
+      "file": "Browserapp/automation/vendor/acorn-runtime.js",
+      "sha256": "6bda3afdb05d116bd8666a362d418ba268742880e6221e397a486d2efd4d35ab"
+    },
+    {
+      "file": "Browserapp/automation/vendor/acorn.js",
+      "sha256": "b95392d79457d0357555c5ed3e56302d074b92dff119bcf3b44179500b10e9df"
+    },
+    {
+      "file": "Browserapp/automation/version-compare.js",
+      "sha256": "872e8278deec26cb4d0e6d1f98fbb26c8d707e596304c69e300da8aeb01de34f"
+    },
+    {
+      "file": "Browserapp/automation/versions.js",
+      "sha256": "542f874b69ac4c2f75063a5ab323d14c02018db3c0bcb607c3bbaef765d50cdc"
+    },
+    {
+      "file": "Browserapp/automation/webrtc-fallback.js",
+      "sha256": "23a5325291dc6499aa744ed267fe8b649b25c102bff32e1f6d86499d1454855d"
+    },
+    {
+      "file": "Browserapp/automation/window-arrangement.js",
+      "sha256": "6e9b7ffc1c045dee4213324769bdf227e3c2cfec7175b3e7bed12be515cfa8a9"
+    },
+    {
+      "file": "Browserapp/automation/window-command-bus.js",
+      "sha256": "1ed422405f4220031af91da7d4143b30f8dc0f2878ad626533260c4481de041f"
+    },
+    {
+      "file": "Browserapp/automation/window-sync-bridge.js",
+      "sha256": "93751fb5f50247abd97603e6176c897fe6a60f99d03145d91cb2533cad272094"
+    },
+    {
+      "file": "Browserapp/automation/worker-font-presence-fallback.js",
+      "sha256": "15937e28a3bcddcc54b5fc2b1c06506b06186d4405127745f2054bcf0886e6db"
+    },
+    {
+      "file": "Browserapp/automation/worker-script-prefixer.js",
+      "sha256": "4e3174518a117779c9d2ec3319bb9e0b457cf52581b127a7aa0cfbba93af8ba6"
+    },
+    {
+      "file": "Browserapp/automation/worker-source.js",
+      "sha256": "9a20e6b3dbf0d6c86b8f3adf2c93284718f61e77a46c032d13177f0fd914e588"
+    },
+    {
+      "file": "Browserapp/automation/zip-reader.js",
+      "sha256": "a6d290b94e930d5ced26cbfd469996c1120aec15ded199d30fb82ba53f7aa820"
+    },
+    {
+      "file": "Browserapp/automation/zip-writer.js",
+      "sha256": "45b2b48bf49842578841a0040d8d679d7b37139cabe1716f6068d02f5142a94a"
+    },
+    {
+      "file": "Browserapp/bundled-extension/manifest.json",
+      "sha256": "a8c5a6152c9323e3f483beb0f110808899db27ee379dbc443ca3a1bceeaab400"
+    },
+    {
+      "file": "Browserapp/bundled-extension/marker.js",
+      "sha256": "7af1ca29f16c96390133c4ee08dbe16481fdf55247eab3650846f9f55fd294c6"
+    },
+    {
+      "file": "Browserapp/cdp.js",
+      "sha256": "3671f9ff669fc69d594f8402f51f1257de64d3a5185f7b70fff82edec0962a6e"
+    },
+    {
+      "file": "Browserapp/chrome-store-metadata.js",
+      "sha256": "9381893b4284e6743cda97c553ed55e42f36ae277f529246b2461c699a4ebfdf"
+    },
+    {
+      "file": "Browserapp/credential-crypto.js",
+      "sha256": "fd4dd154c1a4b6febe1e199f812e3715a9009d3141b89699f49eedd3f176ab06"
+    },
+    {
+      "file": "Browserapp/engine.js",
+      "sha256": "1b3c931c580c5d7111c86cb88c7377ee25ea7d8fc928e2e8663b9423cfa064f1"
+    },
+    {
+      "file": "Browserapp/engine/browser-candidates.js",
+      "sha256": "24c6296a04cf67b6023a1ba0e04eaa04037571afbab267c83fd6df8e870872b5"
+    },
+    {
+      "file": "Browserapp/engine/cdp-hardening.js",
+      "sha256": "ae761bf1bae08742ce36b9056c52e64968236424acf4e99c93a2c2e14f74576a"
+    },
+    {
+      "file": "Browserapp/engine/compose.js",
+      "sha256": "a56f93a945401ecd5eb2403b624ce1f8d37441c9bf000e800006904f89925100"
+    },
+    {
+      "file": "Browserapp/engine/diagnostics.js",
+      "sha256": "e6c4ef46be193ea687bbff9187db9367c8e2efca555d856db46068b7a83a18bc"
+    },
+    {
+      "file": "Browserapp/engine/extensions-api.js",
+      "sha256": "ab5b4c88da1c0e0d07a668431a3ef39a20c4b9f9d59baa4f40a08337d74e6d62"
+    },
+    {
+      "file": "Browserapp/engine/fingerprint-injection.js",
+      "sha256": "e3b55be64a984a64ded473e74d7a59dac9b2ae6bcb8c23b22e6db089ade8232d"
+    },
+    {
+      "file": "Browserapp/engine/fingerprint-session.js",
+      "sha256": "61bfe6b85145b0f89fc3f199aff43970040eeb61dde60dd9cb0a9f8ae0fb815b"
+    },
+    {
+      "file": "Browserapp/engine/fingerprint-transport.js",
+      "sha256": "d1fb1a382584de87c7145379fd493c2f37b676ad39ed6284c0d99e30594f8723"
+    },
+    {
+      "file": "Browserapp/engine/index.js",
+      "sha256": "6bcf3846961e94a0634695275073fafa03e91bc134c8f103605816920377b1fa"
+    },
+    {
+      "file": "Browserapp/engine/init.js",
+      "sha256": "7e05766cf7bba386ba728e6d71af85804282b3e92ec3df3cb3867be3bb15b771"
+    },
+    {
+      "file": "Browserapp/engine/launch-arguments.js",
+      "sha256": "a3140c421d03a1d33f927d6ace9b4fe04e7a34d8c63e9ef07b6675e103a1b5b6"
+    },
+    {
+      "file": "Browserapp/engine/lifecycle-cleanup.js",
+      "sha256": "aca12e6a4e81b682a9b3e69a3f6aa09ec6a9711e2186f7d38c8dbb393457e641"
+    },
+    {
+      "file": "Browserapp/engine/map-publication.js",
+      "sha256": "1bbada22ce9a2b21a83caea9a5b05ba2a100732d24835b6e0efd961a80473802"
+    },
+    {
+      "file": "Browserapp/engine/network-conditions.js",
+      "sha256": "93d905b7748e4bb26b69bfcec2aa7d8866e738eaa2ab9c7c4250ab2b08f26037"
+    },
+    {
+      "file": "Browserapp/engine/persistence.js",
+      "sha256": "2064303214883c5599731cfce81eb51d6efd5bba5c1bb6c323162a6508552212"
+    },
+    {
+      "file": "Browserapp/engine/profile-maintenance.js",
+      "sha256": "68eb4ecaabcb88ce053ddf6ddb348c5576870c35307c4a08ac8df0984681f53c"
+    },
+    {
+      "file": "Browserapp/engine/profile-proxy.js",
+      "sha256": "9b6b603263d9c385fd243671a844e05c2193a9604b898a68d906d33e58ee64dd"
+    },
+    {
+      "file": "Browserapp/engine/profile-publication.js",
+      "sha256": "a61a0927bbdad111dcd248f6cffe8b50d5c0394fa656b9d32a0bb733d08dde7d"
+    },
+    {
+      "file": "Browserapp/engine/profile-revisions.js",
+      "sha256": "b83fe5a00e30e1f8a8ad9579f00c7b36f4d2e10453266b5aa4dc88dd111eae78"
+    },
+    {
+      "file": "Browserapp/engine/profile-sanitizer.js",
+      "sha256": "0ff5ffafb76aed3297d2ef5e42019aeb3f794d260d061d7e265f22366d672543"
+    },
+    {
+      "file": "Browserapp/engine/profile-store-api.js",
+      "sha256": "c775df4a4a56d3027d6f1bf6aec49d6b905eda19c98e909028f821d453680220"
+    },
+    {
+      "file": "Browserapp/engine/profile-sync.js",
+      "sha256": "124114e567cef32822481ff18581b7d7acf98cf40bdc47e0e2d2a0eb19e09cfe"
+    },
+    {
+      "file": "Browserapp/engine/profile-write-guard.js",
+      "sha256": "339e9a2d36d3cba2a3caee1c96be8699c4b28fff8b5487ff45f5c6f7c5298352"
+    },
+    {
+      "file": "Browserapp/engine/proxy-helpers.js",
+      "sha256": "ffecc113634a4b3bfe2e4cd903b162a64e0fbbec45c4dd9353d739185eda5c97"
+    },
+    {
+      "file": "Browserapp/engine/proxy-probe-runner.js",
+      "sha256": "70e73883d8c26d58e6958c695935a3e4fc07bc3708c05471e05eb15d2a22384f"
+    },
+    {
+      "file": "Browserapp/engine/resource-gate.js",
+      "sha256": "31cb70da5554fc8c4e3635215d6641ff2472d8dd51413c6b14b9909207e4c7ac"
+    },
+    {
+      "file": "Browserapp/engine/runtime-policy.js",
+      "sha256": "fac9cdf744f8ac9781bbd192038ae5a850ea77da48de5d5185f5a18e8009e294"
+    },
+    {
+      "file": "Browserapp/engine/runtime-settings.js",
+      "sha256": "59ae90994761b3f3d311e4f175160b7e5c8662a883c3562559dbee2e9faeafbc"
+    },
+    {
+      "file": "Browserapp/engine/session-api.js",
+      "sha256": "56cd70e63937303c696f0414fc01bfd8243da078113854ee67d65536da34281f"
+    },
+    {
+      "file": "Browserapp/engine/start-firefox.js",
+      "sha256": "950e8791cc231b7b8d19cdb25f9e1ab8e05942e5a0bdcbf94216e610d49785a2"
+    },
+    {
+      "file": "Browserapp/engine/start-page.js",
+      "sha256": "75e5bb5e2eb55acf53911687962f1521841fbd789c5da85347e6063cc72bed7c"
+    },
+    {
+      "file": "Browserapp/engine/start.js",
+      "sha256": "4b41eaaf67a531a4cf6b086cdefa2af3f08f3fcfbd9a023be38c23d3b22a5f6b"
+    },
+    {
+      "file": "Browserapp/engine/startup-session.js",
+      "sha256": "da527e170a85bde488eac48652e0dd0d776c50647855673fdef6e1e8d1747b89"
+    },
+    {
+      "file": "Browserapp/engine/state-storage.js",
+      "sha256": "e938c18e0f155b9c4ca61d06d7652b1405c6d7dca3ef71d8ce2900c5414dbeac"
+    },
+    {
+      "file": "Browserapp/engine/status-api.js",
+      "sha256": "348465a5129c9ebf6fddd0b725c3f4f196a4f5de2e4c5da567400195cd276f15"
+    },
+    {
+      "file": "Browserapp/environment-audit.js",
+      "sha256": "4457eb7f8e6c8dd09bb4b4499a7d60b24bfbf65c41f896c23d77e820f21e487e"
+    },
+    {
+      "file": "Browserapp/extension-pipe.js",
+      "sha256": "86242d01a8a33ee115b84df55942f030d4d26a1c24cf446b44b26da0ec606604"
+    },
+    {
+      "file": "Browserapp/host-bridge.js",
+      "sha256": "fb0dbe7c8061eb15f15bf8a9c1fe8747d4d38e5158020452b55d2ea4080bc41b"
+    },
+    {
+      "file": "Browserapp/i18n.js",
+      "sha256": "7cba1921ce63b2f26324073b8a5b7a357d8aa6f5803e931ed2e2f585e9a5ed12"
+    },
+    {
+      "file": "Browserapp/live-sync-v4.js",
+      "sha256": "6b9f1a360213b119dcc22fb0bf94dfea72196c7b0b241691debb6cab9ee111ef"
+    },
+    {
+      "file": "Browserapp/live-sync-v5.js",
+      "sha256": "213dd9c70f32edb831fac9dc7d1d30b3a98d239c6deb3c43097e4af4c7dab9fa"
+    },
+    {
+      "file": "Browserapp/main.js",
+      "sha256": "e23c78cb0600dfcd6aeba9202d1ee6c514e1bb1a153a628ae2568ef37f112b04"
+    },
+    {
+      "file": "Browserapp/main/automation-ipc.js",
+      "sha256": "79b537aa0c0eefec1e68de1b4dcb979cf6d752dad3d1a8661eb4836bf218ab4c"
+    },
+    {
+      "file": "Browserapp/main/extensions-ipc.js",
+      "sha256": "88454328732cff8c2b2235e9edc9bb35f12700384a9c4f8b61b330cd740da9a1"
+    },
+    {
+      "file": "Browserapp/main/kernel-ipc.js",
+      "sha256": "bbf2aa01ceebc31fa3cfb147478ba9a24f2f545ff218f735a1d29db3b5c64da2"
+    },
+    {
+      "file": "Browserapp/main/production-dependencies.js",
+      "sha256": "6c7a233df7cccb2ff84e55f47a8d040d3449139683c7a40a7a317b7a93e1cf90"
+    },
+    {
+      "file": "Browserapp/main/profile-ipc.js",
+      "sha256": "4d8161c60346993158df2802b0ae4bbe29327f4d6cf8f7fcae981f5e3bcb7aa8"
+    },
+    {
+      "file": "Browserapp/native-extension-popup-driver.cs",
+      "sha256": "fb8a6339e7ad228e6ce69ff2f26cfcc9698f8d74bb7420edda261c02637f11d7"
+    },
+    {
+      "file": "Browserapp/native-input-mirror.cs",
+      "sha256": "6218438f7d8756081fb88bd9e3cc4add3d9484f119eb8e3a5adda7a51ca20919"
+    },
+    {
+      "file": "Browserapp/native-omnibox-driver.cs",
+      "sha256": "6d87de8bc49dd080a831d6e2a9b226f3d7645370c69ddc9643e6cf447d600c34"
+    },
+    {
+      "file": "Browserapp/native-profile-marker.cs",
+      "sha256": "86ab11504976efe50d25437fefba7b736e88decf4b0a894005cb51ba0d9ffa7b"
+    },
+    {
+      "file": "Browserapp/native-sync-hotkeys.cs",
+      "sha256": "ddec6ef7a36b4f9e63401cd94f00d3b8712f42e0b02a058bd235e6fdd982c1d5"
+    },
+    {
+      "file": "Browserapp/native-tab-shortcut-driver.cs",
+      "sha256": "559aa1d905a788683c86854d02010aa8bea7888787809676a807598a624bfb3c"
+    },
+    {
+      "file": "Browserapp/native-upper-ui-jitter-driver.cs",
+      "sha256": "910cdb1fab3f0c09f400829523f8c63a3afdcd5f6fc40a3c252ced751baaa2bf"
+    },
+    {
+      "file": "Browserapp/network/address-policy.js",
+      "sha256": "7f5353a5d59355b3d1e505d27f183cf3a315744542f103163dca6d33d772f47b"
+    },
+    {
+      "file": "Browserapp/network/bidi-connection.js",
+      "sha256": "ba09e319873bfb51ab7f57e2bd95eaff1d1922c4cd3b6201f4f929f2a0f04028"
+    },
+    {
+      "file": "Browserapp/network/cdp-connection.js",
+      "sha256": "64867e0a67b78a1d96535d4c50aa4c5759118d006c73fe65c0f1a49cdffd1efa"
+    },
+    {
+      "file": "Browserapp/network/environment-agent.js",
+      "sha256": "48dc38d0b7740473ec4f394addf83874603edb0723a47d6aa39adfb5a36ec604"
+    },
+    {
+      "file": "Browserapp/network/http-request.js",
+      "sha256": "947c6c3fa6121c5ac8497a36df91f4da39765f1640566bc95e86fab32fe26674"
+    },
+    {
+      "file": "Browserapp/network/outbound.js",
+      "sha256": "377c6fb4e5a73f9c4121e3cce8a7cab847623d9809ba10b1c2050088ab301857"
+    },
+    {
+      "file": "Browserapp/network/probe-results.js",
+      "sha256": "296c540009006b97707e480587c0102143fe7f46c562bd9a911af9b6dfd4543b"
+    },
+    {
+      "file": "Browserapp/network/proxy-config.js",
+      "sha256": "0bf8568a41e2b8b5d4f80b1377669d636b08a1d6b89dcef3f8ff505fd1f36033"
+    },
+    {
+      "file": "Browserapp/network/proxy-identity.js",
+      "sha256": "498281551c1ae8cf804697dddc330deaddd28cb174e5220f4c04f2339839278a"
+    },
+    {
+      "file": "Browserapp/package.json",
+      "sha256": "eaff724bb8d886625bbcff526c7351aa65802a53bb7adda635e3173dd2201e81"
+    },
+    {
+      "file": "Browserapp/preload.js",
+      "sha256": "894549cddadeae02a9ca9b4042f091580367318f52ad1441181e31e2fd8d4c55"
+    },
+    {
+      "file": "Browserapp/proxy-forwarder.js",
+      "sha256": "27e1efc8ee404aa1195a93b5717f38ab8608c2cd94a4be6f137070dc669f41a3"
+    },
+    {
+      "file": "Browserapp/rebuild/accounts.js",
+      "sha256": "825902c4a7075e2e49212e8d70d4bd7e4599621f7f27d4eab061bf225cab2b61"
+    },
+    {
+      "file": "Browserapp/rebuild/agent-approval.js",
+      "sha256": "1cd8179a79ea2ded06e765f5bbd09d0c4fa5e313cbd78d816f780f65527991b9"
+    },
+    {
+      "file": "Browserapp/rebuild/agent-channel.js",
+      "sha256": "0e714ced3721fd35c6f9aab2bad951738ed9572a5604e270785df292319e4981"
+    },
+    {
+      "file": "Browserapp/rebuild/agent-files.js",
+      "sha256": "4275c29bf7886bdb036bef8b97d09ad598c33548e72c90ff6e747f70dff52420"
+    },
+    {
+      "file": "Browserapp/rebuild/agent-mcp.js",
+      "sha256": "27e7e8137e2758660355c32e0ef2cb7846ecf56d2c7141f469d2bdc2ac353b5a"
+    },
+    {
+      "file": "Browserapp/rebuild/agent-records.js",
+      "sha256": "0b6a1eaccf97c14537edf8812766eb10e9f3d99878b64a06a91b0da144c35c82"
+    },
+    {
+      "file": "Browserapp/rebuild/agent-service.js",
+      "sha256": "0f7d5f4c51d89f9b1f07764785b3f635ab96180fac6b3606caf3899d93f24da3"
+    },
+    {
+      "file": "Browserapp/rebuild/agent-skill-upload.js",
+      "sha256": "47bc837de2d90b110de8dbd6e2c3feb23d0235f8a81de08686e4c6bbcb02e9ff"
+    },
+    {
+      "file": "Browserapp/rebuild/agent-template-catalog.js",
+      "sha256": "8edab53a50abbe6f94366e82a000f7846e97e2c248bd5c8e6373e0f636372c58"
+    },
+    {
+      "file": "Browserapp/rebuild/context-window.js",
+      "sha256": "2044815d765d3cb22ca4c2253a89c848d0e7f230f382bcda0ed2abb020337055"
+    },
+    {
+      "file": "Browserapp/rebuild/cookie-robot.js",
+      "sha256": "6680fdb167c2505309cd7a241192ef77b02b16f6d3110b3120cd00addcd56cc4"
+    },
+    {
+      "file": "Browserapp/rebuild/dialog-windows.js",
+      "sha256": "ad7dd2bf4d909c279332926467b69404d26a7eb4dc409d3dd684cbfacd6474c6"
+    },
+    {
+      "file": "Browserapp/rebuild/electron-smoke.cjs",
+      "sha256": "a8c7ec0c9785b6623216cd036e31721f1745fb8e44cb232822d0b90bcc8a6114"
+    },
+    {
+      "file": "Browserapp/rebuild/extensions.js",
+      "sha256": "1252bca1aa69f8e507c29e98a9754a7f94e989c1825d85322ac8fcaa52d13ab5"
+    },
+    {
+      "file": "Browserapp/rebuild/host-actions.js",
+      "sha256": "184bd5d0247a47fdce343cdcf9f6fc27748b2093c3a785f42dd20aadd33a1ca3"
+    },
+    {
+      "file": "Browserapp/rebuild/host-network.js",
+      "sha256": "c5e84a902011790963be25ffb5b17f50033e056a3179b04f45fe024fdc0edc7d"
+    },
+    {
+      "file": "Browserapp/rebuild/import-profiles.js",
+      "sha256": "c204fa367bd17c659a0e86c1300441a41c1514ed9f6f1dc76e511f6f9e1131c9"
+    },
+    {
+      "file": "Browserapp/rebuild/local-api.js",
+      "sha256": "784d42f49af9b6ddf4fe5a0d627cad4adafb6c3992f4b82e95f823824ccc66c8"
+    },
+    {
+      "file": "Browserapp/rebuild/local-pages.js",
+      "sha256": "44e5d15b854c273118249a9b147c22079183c72dd2994f89d2b10e47cb320eb8"
+    },
+    {
+      "file": "Browserapp/rebuild/local-record-ids.js",
+      "sha256": "df4b1275881065cac7dd803420f814d2cf970217872185b213336413d39afcc7"
+    },
+    {
+      "file": "Browserapp/rebuild/local-service.js",
+      "sha256": "8b895b5dd8dfaee6ca03edbad6645010c674066fe5f3e58d37f0d5c0f8aea3f5"
+    },
+    {
+      "file": "Browserapp/rebuild/profile-cache.js",
+      "sha256": "e4936ebe0135620d832d4f28903e1645dc7296d3930fce10f712e1b80a0c602f"
+    },
+    {
+      "file": "Browserapp/rebuild/profile-relations.js",
+      "sha256": "74751987fcf9c198e97c0aec15649ab5c84e0ef55592390ede2803ff303e4599"
+    },
+    {
+      "file": "Browserapp/rebuild/protocol.js",
+      "sha256": "31944cda11fbe8e809f7f3ccd41c4b69bc282893ac275146669bcbee98a6b532"
+    },
+    {
+      "file": "Browserapp/rebuild/renderer-bridge.js",
+      "sha256": "cfef9baad4800896ce79700a35d0c71caf012b5104206c4df0762e61b3f8f3fc"
+    },
+    {
+      "file": "Browserapp/rebuild/skill-packages.js",
+      "sha256": "9bfc146bf925762e410179461432eef134177250d9362ae4aa4001db53c8614f"
+    },
+    {
+      "file": "Browserapp/rebuild/sync-service.js",
+      "sha256": "1067bcd9e121a506b11640218fe66032624ad70f6d533dafa37a7615a1b89b4d"
+    },
+    {
+      "file": "Browserapp/rebuild/workbench-chrome.js",
+      "sha256": "ff1e212f605a0232e7f2c88b59aba64c56e898f19b4ab085aa3cdbbb2190f69f"
+    },
+    {
+      "file": "Browserapp/renderer-platform-install.js",
+      "sha256": "3485e56c4969c2cb14ee0746f45158c1690fe3db1c6c4a73ba132dde3b520a55"
+    },
+    {
+      "file": "Browserapp/renderer-select.js",
+      "sha256": "eee6e190d08e7731cb9985300f5580cc9a2142fbdbd9cf42107272742fe07e7a"
+    },
+    {
+      "file": "Browserapp/renderer-theme.js",
+      "sha256": "113168ed56a996074bd3a01519392b88a9ca4fc6bf26f53fbb093c2b89475175"
+    },
+    {
+      "file": "Browserapp/renderer.js",
+      "sha256": "4f658967792147b7328cec99f52803a3ed855a04077a237d20a7ade5de40a2a5"
+    },
+    {
+      "file": "Browserapp/shared/csv.js",
+      "sha256": "37ea8898c15169ad1f05955b6aed1b5a3d82cfa6ed1e0cf1b02f9d7829d1fc10"
+    },
+    {
+      "file": "Browserapp/shared/ipc-result.js",
+      "sha256": "7763b2f907467e99a2c542ab9fdb53c7fd09e7afd4b6ed7c694c97184ec0b984"
+    },
+    {
+      "file": "Browserapp/shared/profile-values.js",
+      "sha256": "24e7609f4e6dc033e4dfbbc776442e0c00d28a5c311ed2d0d61d7e6733e11658"
+    },
+    {
+      "file": "Browserapp/shared/proxy-redact.js",
+      "sha256": "239ec85523634f0670b6b3fa63aa71c675ef556ce41a0728b0ed104487c7c203"
+    },
+    {
+      "file": "Browserapp/store-extension.js",
+      "sha256": "ec0bda523f6765276e2a2a1b656f626683e807a0242cc2e52384699e800bd987"
+    },
+    {
+      "file": "Browserapp/ui/ui-api-mcp.js",
+      "sha256": "031274cad8ddd893f14a88c0d16cb5aaeb7edebd3138a3c5ccee7a0b89021a08"
+    },
+    {
+      "file": "Browserapp/ui/ui-cloud.js",
+      "sha256": "60bd30785a6bb7b244546a697ff1631d4541a5bbbace38c83a132f789eb4667a"
+    },
+    {
+      "file": "Browserapp/ui/ui-dialogs.js",
+      "sha256": "22a9483cc313914edd7b683ad0d3ff405dfe6fa593da32ca0f12acf18685455e"
+    },
+    {
+      "file": "Browserapp/ui/ui-editor.js",
+      "sha256": "bcb7ad18ad193f1b98d8ef5bd2a651a849132935c95f19f73deadf83449aff2f"
+    },
+    {
+      "file": "Browserapp/ui/ui-groups.js",
+      "sha256": "e9d968eb9b19427fbc4842b8d621022b5a28e56afcb4a116d6b6e557ca1bb789"
+    },
+    {
+      "file": "Browserapp/ui/ui-kernel.js",
+      "sha256": "28cbc4d1a1897ac967609e5e933eea2d5b2b6c1887422268576aadb5e8d47f8d"
+    },
+    {
+      "file": "Browserapp/ui/ui-profile-batch.js",
+      "sha256": "4ca517c4acb10772c9ee1620e2e8b402df5d8cc852a60b6ecbee1aebf15b8340"
+    },
+    {
+      "file": "Browserapp/ui/ui-profile-commands.js",
+      "sha256": "c262ea7d266c144f4ffbeaa0665f2c7d3f36cc50a6be6a6983d06090bdcf86b1"
+    },
+    {
+      "file": "Browserapp/ui/ui-profile-list.js",
+      "sha256": "1e8e7806ee992343d23ceda6c78b70f914acc1625fc58ec11a65e2a7edec37fe"
+    },
+    {
+      "file": "Browserapp/ui/ui-profile-rows.js",
+      "sha256": "55359a49a8e32841b886930c085022363baa38a940adc5940aa84bca7d9dc859"
+    },
+    {
+      "file": "Browserapp/ui/ui-profile-state.js",
+      "sha256": "dd733e110e2a4000b4e45a53d2458f9fad356f94b68b6d1fba3592b86bcd0830"
+    },
+    {
+      "file": "Browserapp/ui/ui-proxy-wiring.js",
+      "sha256": "85d3b9a105c853cb85734ce6ced03b05d9edc0102affb8b9860df9142856e6f8"
+    },
+    {
+      "file": "Browserapp/ui/ui-proxy.js",
+      "sha256": "f10fd7b17f1e6a37a8ac1752934e113aff75c08e6ea91eec6add717afa29a1d2"
+    },
+    {
+      "file": "Browserapp/ui/ui-refresh-scheduler.js",
+      "sha256": "b779644d7f0506fd60dd5807752928c63f19da697e9e1feb7705cfe5d0083946"
+    },
+    {
+      "file": "Browserapp/ui/ui-rpa.js",
+      "sha256": "c3301513baba39c2fbd3e9872605a851c8c070cc53c36735cf6541808241356a"
+    },
+    {
+      "file": "Browserapp/ui/ui-session-controller.js",
+      "sha256": "6f5ddab5a27cad9689b01eb8949c044a98acfd3769093d5fcf373b0fe5fbad44"
+    },
+    {
+      "file": "Browserapp/ui/ui-state-store.js",
+      "sha256": "01abef671a036586cee6901cc173adff5f4d26c5b5dd7dcc0d8d8e02299907fd"
+    },
+    {
+      "file": "Browserapp/ui/ui-status-controller.js",
+      "sha256": "61046bec9377b1cb06b76ccf70ba0888ad41e10bd3dfa0e3864b555331725f9d"
+    },
+    {
+      "file": "Browserapp/ui/ui-sync-text.js",
+      "sha256": "b900690c77e6a2ee817b8e4f3048de53c181764ecb540509468e9089b0844218"
+    },
+    {
+      "file": "Browserapp/ui/ui-workbench.js",
+      "sha256": "b1fa14d4905faa8fb636b2e5567dcdef982d964a37f4d87872af98bbf5de65f5"
+    }
+  ]
+}

@@ -1,0 +1,96 @@
+{
+  "passed": true,
+  "checks": [
+    "原颜色选择器保存生效，标准 Chrome 实际加载对应 RGB 的本地主控主题，原设置真实保存；没有返回不支持或假成功",
+    "浮条真实设置按钮打开原 500px 独立偏好窗口，原开关保存到本地并立即改变原同步控制器",
+    "原仿真页保存点击延迟及串行模式，原控制器读回 40–80ms 和 delayMode=0",
+    "原自定义布局表单真实保存，两个独立 Chrome 的 CDP 窗口尺寸 640×480、水平间距 12 均匹配",
+    "原同步窗口列表在独立窗口显示真实两条记录与主控状态，关闭回收窗口",
+    "原批量输入页经真实原后端输入：同文替换、追加无重复、按实际 PID 分配差异文本；同步镜像状态恢复",
+    "原打开网址弹窗在两台真实 Chrome 各打开一次，无重复；从当前页打开保留首个标签，实际替换活动标签；渲染端无 fetch"
+  ],
+  "errors": [],
+  "externalRequests": [],
+  "processes": [
+    {
+      "id": "a8399b29-1c25-4249-a758-852c4b7161d0",
+      "pid": 210630,
+      "port": 41439
+    },
+    {
+      "id": "5ff34fe2-9c8b-48d3-bed7-897349a356ae",
+      "pid": 210774,
+      "port": 39625
+    }
+  ],
+  "nativeDialogBounds": [
+    {
+      "url": "obui://app/index.html?dialog=preferences",
+      "width": 500,
+      "height": 500
+    },
+    {
+      "url": "obui://app/index.html?dialog=preferences",
+      "width": 500,
+      "height": 500
+    },
+    {
+      "url": "obui://app/index.html?dialog=preferences",
+      "width": 500,
+      "height": 500
+    },
+    {
+      "url": "obui://app/index.html?dialog=preferences",
+      "width": 500,
+      "height": 500
+    },
+    {
+      "url": "obui://app/index.html?dialog=preferences&tab=customLayout",
+      "width": 500,
+      "height": 500
+    },
+    {
+      "url": "obui://app/index.html?dialog=syncing-window-list",
+      "width": 480,
+      "height": 350
+    },
+    {
+      "url": "obui://app/index.html?dialog=batch-inputs",
+      "width": 450,
+      "height": 374
+    },
+    {
+      "url": "obui://app/index.html?dialog=open-sites",
+      "width": 450,
+      "height": 350
+    }
+  ],
+  "bounds": [
+    {
+      "left": 0,
+      "top": 0,
+      "width": 640,
+      "height": 480,
+      "windowState": "normal"
+    },
+    {
+      "left": 652,
+      "top": 0,
+      "width": 640,
+      "height": 480,
+      "windowState": "normal"
+    }
+  ],
+  "openedUrls": [
+    [
+      "http://127.0.0.1:38713/initial",
+      "http://127.0.0.1:38713/first",
+      "http://127.0.0.1:38713/second"
+    ],
+    [
+      "http://127.0.0.1:38713/initial",
+      "http://127.0.0.1:38713/second",
+      "http://127.0.0.1:38713/first"
+    ]
+  ]
+}

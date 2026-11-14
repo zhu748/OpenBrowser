@@ -1,0 +1,63 @@
+[
+  {
+    "file": "roxybrowser-playwright-skills/SKILL.md",
+    "headings": [
+      "# RoxyBrowser Playwright Automation Skill",
+      "## When to Use",
+      "## Quick Decision Matrix",
+      "## Critical Rules",
+      "## Starter Workflow",
+      "## Progressive Disclosure (Load More Only When Needed)",
+      "## Integration With RoxyBrowser OpenAPI"
+    ],
+    "mentionsLocalApi": true,
+    "mentionsRoxy": true,
+    "opening": "---\nname: roxybrowser-playwright-skills\ndescription: Guides web automation using RoxyBrowser Playwright MCP tools. Use for navigation, clicking, typing, scraping, screenshots, or debugging through RoxyBrowser browser connection endpoints.\n---\n\n# RoxyBrowser Playwright Automation Skill\n\nUse this skill when the user needs to automate a live browser through the RoxyBrowser Playwright MCP tools.\n\n## When to Use\n- User wants to control a browser (navigate, click, type, upload, scrape)\n- User needs element refs from an accessibility snapshot\n- User needs debugging help for browser automation\n\n## Quick Decision Matrix\n\n| User intent | Tool | Notes |\n| --- | --- | --- |\n| Connect to RoxyBrowser | `roxy_browser_connect` | Requires a browser WebSocket endpoint and supports Chrome or Firefox |\n| Navigate to a URL | `browser_navigate` | For initial entry, user-given URLs, or when clicking a link doesn't navigate. For in-page navigation, prefer clicking the link first — see `guides/human-like-interaction.md` |\n| Find elements | `browser_snapshot` | Preferred over screenshot |\n| Click an element | `browser_click` | Requires element `ref` |\n| Type into a field | `browser_type` | `submit` optional |\n| Wait for page change | `browser_wait_for` | Use `text` or `textGone` when possible |\n| Run custom JS | `browser_evaluate` | For reading data; also a fallback to change state when the UI control d"
+  },
+  {
+    "file": "roxybrowser-openapi-skills/SKILL.md",
+    "headings": [
+      "# RoxyBrowser OpenAPI Skill",
+      "## Current Tool Map",
+      "## Recommended Workflows",
+      "### 1. Create a browser and automate it",
+      "### 2. Reuse an existing browser",
+      "### 3. Free browser quota",
+      "### 4. Bind a proxy to a browser",
+      "### 5. Bind a stored platform account"
+    ],
+    "mentionsLocalApi": false,
+    "mentionsRoxy": true,
+    "opening": "---\nname: roxybrowser-openapi-skills\ndescription: Guides tool selection and usage for the current RoxyBrowser OpenAPI MCP tools. Use when working with RoxyBrowser workspaces, browser profiles, CDP endpoints, proxy configs, platform accounts, browser fingerprints, or cache cleanup.\n---\n\n# RoxyBrowser OpenAPI Skill\n\nThis skill is aligned to the current RoxyBrowser OpenAPI MCP tool set and is intended for real user-facing automation workflows.\n\n## Current Tool Map\n\n| User intent | Use this tool | Notes |\n| --- | --- | --- |\n| Find workspace IDs | `roxy_list_workspaces` | Start here if `workspaceId` is unknown |\n| List browser profiles | `roxy_list_browsers` | Supports common browser lookup fields like `windowName` and `windowSortNum` |\n| Create one browser | `roxy_create_browser` | Full config tool |\n| Create many browsers | `roxy_batch_create_browsers` | Pass `browsers: []` |\n| Open browser(s) and get CDP endpoint(s) | `roxy_open_browsers` | Returns `ws`, `http`, `pid` |\n| Inspect one browser in detail | `roxy_get_browser_detail` | Good before update/delete |\n| Update browser config | `roxy_update_browser` | Requires `workspaceId` and `dirId` |\n| Close browser(s) | `roxy_close_browsers` | Does not free quota |\n| Delete browser(s) permanently | `roxy_delete_browsers` | Frees quota |\n| Get currently opened browser endpoints | `roxy_get_connection_info` | `dirIds` optional |\n| Rando"
+  },
+  {
+    "file": "playwright-rpa-enhance-skills/SKILL.md",
+    "headings": [
+      "# Playwright RPA Enhance Skills",
+      "## Quick Decision Matrix",
+      "## Enhancement Rules",
+      "## Sandbox Runtime",
+      "## Script input (`options`)",
+      "## Debugging"
+    ],
+    "mentionsLocalApi": false,
+    "mentionsRoxy": false,
+    "opening": "---\nname: playwright-rpa-enhance-skills\ndescription: Enhances linear Playwright scripts with RPA patterns — loops, conditionals, randomization, human simulation, and data operations. Use when converting a recorded skeleton script or refined script into a fully functional Playwright browser automation script.\n---\n\n# Playwright RPA Enhance Skills\n\nEnhance a refined (Playwright locators stablized) automation script into a fully functional browser automation script, capable of operating browser automatically, with loops, conditionals, randomization, human simulations and file operations.\n\n## Quick Decision Matrix\n\nWhen user intent matches a capability cluster, **read the indicated example file\nwith read_file** before generating the script.\n\nFor ambiguous / multi-cluster intents, **read `examples/INDEX.md` first** — it\nhas 3 routing tables (intent keyword / capability cluster / fixture id) plus\na \"routing precedence\" guide.\n\n| Capability cluster | Example file |\n|--------------------|------------|\n| C1 Viewport-aware interaction (closest visible) | `examples/facebook-02-viewport-aware-like.md` |\n| C2 Probabilistic scroll loop / backstep | `examples/reddit-02-variable-driven-scroll.md` |\n| C3 Search-engine flow (keyword input + select) | `examples/amazon-04-fallback-selector-hover.md` |\n| C4 Feed batch interaction (by index range) | `examples/twitter-03-index-segment-action.md` |\n| C"
+  },
+  {
+    "file": "automation-script-writing/SKILL.md",
+    "headings": [
+      "# Automation Script Writing",
+      "## 1. Authoring workflow",
+      "## 2. Script structure (the contract)",
+      "## 3. Runtime environment (red lines)",
+      "### Built-in capability packages — prefer these over hand-rolling",
+      "## 4. Script input (`options`)",
+      "## 5. Run outputs",
+      "## 6. Console / output"
+    ],
+    "mentionsLocalApi": false,
+    "mentionsRoxy": true,
+    "opening": "---\nname: automation-script-writing\ndescription: Write, validate, run, debug, and save reusable Playwright automation scripts from recorded RoxyBrowser browser operations. Covers the script skeleton contract, the options/JSON-Schema input rules, the sandbox execution environment (injected globals, env/import whitelists, the @roxybrowser/sandbox capability packages), run outputs (artifacts, logs, profiles), and the authoring workflow over the draft workspace files.\n---\n\n# Automation Script Writing\n\nTurn a recorded browser-operation session into one reusable Playwright script.\nThe script runs inside a strict VM sandbox and is driven by the tools\n`draft_script` → `validate_script` → `run_script` → `save_script`. The sandbox enforces a strict contract on the script skeleton, the input `options` (typed with a JSON Schema), and the runtime environment (injected globals, fs/env/import whitelists, the @roxybrowser/sandbox capability packages). The script produces run outputs (artifacts, logs, profiles) that you read back to judge a run.\n\nRead this whole file first — it carries the rules you must not violate. \n\n---\n\n## 1. Authoring workflow\n\n1. **Draft.** Probe with `read_file(\"seed_script.ts\")`. If it has content the\n   draft already exists — skip `draft_script`. Otherwise call `draft_script`\n   once to initialize the workspace. Never `ls`/`glob`/`find` for it.\n2. **Read the inputs.** "
+  }
+]

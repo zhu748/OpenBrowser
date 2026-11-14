@@ -1,0 +1,7 @@
+import {W as e,f as t,h as n} from "./runtime-core.esm-bundler-CBj16o9G.js";
+var r = { xmlns: "http://www.w3.org/2000/svg", width: "1em", height: "1em", fill: "currentColor", viewBox: "0 0 24 24" };
+function i(i2, a2) {
+  return e(), n("svg", r, [...a2[0] ||= [t("path", { "fill-rule": "evenodd", d: "M12 3a9 9 0 0 0-6.862 14.824A4.99 4.99 0 0 1 9 16h6a4.99 4.99 0 0 1 3.862 1.824A9 9 0 0 0 12 3Zm7.37 17.165A10.972 10.972 0 0 0 23 12c0-6.075-4.925-11-11-11S1 5.925 1 12a10.972 10.972 0 0 0 3.666 8.198A10.959 10.959 0 0 0 12 23a10.959 10.959 0 0 0 7.37-2.835ZM17.4 19.2A2.996 2.996 0 0 0 15 18H9c-.98 0-1.853.47-2.4 1.2A8.96 8.96 0 0 0 12 21a8.96 8.96 0 0 0 5.4-1.8ZM12 6.5a3 3 0 1 0 0 6 3 3 0 0 0 0-6Zm-5 3a5 5 0 1 1 10 0 5 5 0 0 1-10 0Z", "clip-rule": "evenodd" }, null, -1)]]);
+}
+var a = { render: i };
+export {a as default,i as render};

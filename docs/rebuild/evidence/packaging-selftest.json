@@ -1,0 +1,19 @@
+{
+  "status": "PASS",
+  "packages": [
+    "cron-parser",
+    "luxon",
+    "pend",
+    "playwright",
+    "playwright-core",
+    "yauzl"
+  ],
+  "checks": [
+    "production dependency closure copied",
+    "packaged Playwright/CDP, ZIP and cron modules load",
+    "real runtime tree copied; compiler/selftests excluded; resource tree audited",
+    "copied app directory boots real Electron and renders local profiles without renderer network",
+    "directory boot excludes user-installed kernel binaries; it is not an installer test",
+    "unexpected development dependency rejected"
+  ]
+}

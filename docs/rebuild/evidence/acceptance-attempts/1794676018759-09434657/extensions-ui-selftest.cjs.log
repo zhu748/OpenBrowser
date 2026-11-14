@@ -1,0 +1,13 @@
+{
+  "passed": true,
+  "checks": [
+    "原侧栏、原扩展列表、原本地上传和原项目分配弹窗真实导入并关联原生扩展",
+    "真实 Chrome 157 启动已分配扩展的 service worker，原生 chrome.action.getUserSettings 确认工具栏已固定"
+  ],
+  "errors": [],
+  "externalRequests": [],
+  "data": "/workspace/OpenBrowser/work/rebuild/extensions-ui-Q178g5",
+  "chromePin": {
+    "isOnToolbar": true
+  }
+}

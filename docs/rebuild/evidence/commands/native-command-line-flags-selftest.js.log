@@ -1,0 +1,48 @@
+ok    normalizeName strips the prefix and trailing equals
+ok    parseFlag splits a valued flag
+ok    parseFlag marks a valueless flag
+ok    parseFlag keeps an empty value distinct from no value
+ok    escapeRegExp neutralises regex metacharacters
+ok    indexOfFlag finds a valued flag
+ok    indexOfFlag finds a valueless flag
+ok    indexOfFlag does not match a longer flag sharing the prefix
+ok    indexOfFlag does not match a flag that merely contains the name
+ok    indexOfFlag returns -1 for missing input
+ok    getFlag returns the value or null
+ok    getFlag preserves a comma separated payload
+ok    hasFlag detects presence regardless of value
+ok    setFlag appends a new flag
+ok    setFlag replaces an existing flag in place
+ok    setFlag collapses duplicate occurrences into one
+ok    setFlag writes a valueless flag when no value is given
+ok    setFlag does not mutate the input array
+ok    removeFlag drops every occurrence
+ok    removeFlag leaves unrelated flags untouched
+ok    appendFlagValue creates the flag when absent
+ok    appendFlagValue extends an existing list
+ok    appendFlagValue de-duplicates entries
+ok    appendFlagValue can prepend
+ok    appendFlagValue accepts a comma separated payload
+ok    appendFlagValue ignores an empty payload
+ok    appendFlagValue handles a valueless existing flag
+ok    appendFlagValues merges several payloads at once
+ok    appendFlagValues tolerates an empty list
+ok    removeFlagValue drops selected entries only
+ok    removeFlagValue deletes the flag when nothing remains
+ok    mergeFlags keeps list values combined
+ok    mergeFlags keeps the target scalar and drops the duplicate
+ok    mergeFlags overwrites a scalar when asked
+ok    mergeFlags appends new flags from the source
+ok    mergeFlags handles empty inputs
+ok    mergeFlags skips empty entries in the source
+ok    mergeFlags does not mutate either input
+ok    mergeFlags carries non-flag entries through unchanged
+ok    flagNames lists flags in order, ignoring positionals
+ok    findDuplicates reports repeated flags
+ok    findDuplicates returns nothing for a clean list
+ok    repeated feature extension never produces a duplicate flag
+ok    fingerprint flags merge into a browser base list without losing either side
+ok    list value flags are declared once and cover both feature switches
+ok    appending disabled features does not repeat what is already declared
+
+COMMAND_LINE_FLAGS_SELFTEST OK 46/46

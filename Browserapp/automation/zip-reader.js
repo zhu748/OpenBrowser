@@ -72,6 +72,7 @@ function readEntries(buf) {
     const commentLength = buf.readUInt16LE(pos + 32);
     const localHeaderOffset = buf.readUInt32LE(pos + 42);
     const nameStart = pos + 46;
+    const unixMode = (buf.readUInt16LE(pos + 4) >>> 8) === 3 ? buf.readUInt32LE(pos + 38) >>> 16 : 0;
 
     if (nameStart + nameLength > buf.length) {
       throw new Error('corrupt entry name');
@@ -96,6 +97,7 @@ function readEntries(buf) {
       compressedSize,
       uncompressedSize,
       localHeaderOffset,
+      unixMode,
     });
 
     pos = nameStart + nameLength + extraLength + commentLength;
@@ -159,6 +161,7 @@ function open(buf) {
       size: e.uncompressedSize,
       compressedSize: e.compressedSize,
       method: e.method,
+      unixMode: e.unixMode,
     })),
     has(name) {
       return byName.has(name);

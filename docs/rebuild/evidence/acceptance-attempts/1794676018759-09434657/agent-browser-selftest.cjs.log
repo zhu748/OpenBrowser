@@ -1,0 +1,11 @@
+{
+  "passed": true,
+  "errors": [],
+  "externalRequests": [],
+  "checks": [
+    "真实原后端 Chrome 进程，经生产 Playwright/CDP 执行 list_profiles/read_page/fill/click/read_page",
+    "本地 SSE 模型夹具接收真实工具结果，六轮请求后原 Agent 界面显示最终回复",
+    "本测试通过 IPC 授予单个测试窗口完整访问；未冒充 UI 权限勾选验收"
+  ],
+  "modelRequests": 6
+}

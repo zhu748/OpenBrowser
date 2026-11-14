@@ -1,0 +1,7 @@
+{
+  "status": "PASS",
+  "checks": [
+    "parallel build rejected before touching staging/output",
+    "last installed UI hash unchanged"
+  ]
+}

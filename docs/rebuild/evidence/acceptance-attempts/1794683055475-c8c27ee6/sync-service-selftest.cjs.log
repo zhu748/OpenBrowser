@@ -1,0 +1,10 @@
+{
+  "status": "PASS",
+  "checks": [
+    "same/different/random text validation and native runner assignment",
+    "failed native input restores keyboard mirroring; invalid input has no side effects",
+    "all URLs validated before navigation",
+    "global shortcut collision leaves prior registrations intact; only owned keys released",
+    "real controller fan-out: parallel versus per-destination serial delays; stale generation cancels remaining destinations"
+  ]
+}

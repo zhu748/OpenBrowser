@@ -1,0 +1,26 @@
+ok    the shell may reload its own local document
+ok    about:blank is allowed
+ok    another local file is allowed
+ok    a remote page cannot replace the shell
+ok    plain http is blocked too
+ok    the local api host stays reachable
+ok    a look-alike host cannot ride the localhost rule
+ok    non-network schemes are blocked
+ok    a malformed target is blocked rather than allowed by accident
+ok    blocks are reported with a reason
+ok    a window-open handler is installed
+ok    child windows stay denied for every target
+ok    the guard registers exactly one navigation listener
+ok    detaching removes the listener and stops blocking
+ok    detaching twice is harmless
+ok    the policy names the shell window and lists only the local hosts
+ok    development mode is opt-in only
+ok    a missing webContents is rejected loudly
+ok    main.js wires the guard into the shell window
+ok    the shell no longer sets its own window-open handler
+ok    every allow-listed protocol is also in the request filter
+ok    every local host is also in the request filter
+ok    the guard constants do not drift from the request filter protocols
+ok    the allowed url list stays minimal
+
+SHELL_GUARD_SELFTEST OK 24/24

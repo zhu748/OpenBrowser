@@ -1,0 +1,7 @@
+import {W as e,h as t,y as n} from "./runtime-core.esm-bundler-CBj16o9G.js";
+var r = { width: "1em", height: "1em", viewBox: "0 0 90 90", fill: "none", xmlns: "http://www.w3.org/2000/svg" };
+function i(i2, a2) {
+  return e(), t("svg", r, [...a2[0] ||= [n('<g clip-path="url(#clip0_15_3117)"><ellipse cx="42.8081" cy="45.1831" rx="28.9888" ry="41.2285" transform="rotate(47.6665 42.8081 45.1831)" fill="url(#paint0_linear_15_3117)"></ellipse><path d="M52.5612 55.2672C38.0856 68.299 20.5123 72.378 13.3101 64.378C6.10802 56.3779 11.1865 38.6532 25.6622 25.6213C40.1378 12.5895 58.529 9.18548 65.7311 17.1856C72.9333 25.1856 67.0369 42.2353 52.5612 55.2672Z" fill="white" fill-opacity="0.9"></path><path d="M39.8343 41.082L30.4999 35.5L18.5692 57.321C18.2971 57.8187 18.9114 58.3267 19.3492 57.9659L39.8343 41.082Z" fill="#C1E7FE"></path><path d="M50.4733 19.1582L30.5 35.5L39.5 41.5L51.2528 19.8025C51.5219 19.3056 50.9107 18.8003 50.4733 19.1582Z" fill="#6CC6FF"></path></g><defs><linearGradient id="paint0_linear_15_3117" x1="13.8193" y1="45.1831" x2="159.837" y2="51.2469" gradientUnits="userSpaceOnUse"><stop stop-color="#6FD4FF" stop-opacity="0.1"></stop><stop offset="0.721154" stop-color="#5FAFFF"></stop></linearGradient><clipPath id="clip0_15_3117"><rect width="90" height="90" fill="white"></rect></clipPath></defs>', 2)]]);
+}
+var a = { render: i };
+export {a as default,i as render};

@@ -1,0 +1,26 @@
+{
+  "status": "FAIL",
+  "symptom": "原定制模板/商城营销横幅保留商业客服微信二维码",
+  "files": [
+    {
+      "file": "Browserapp/roxy-ui/assets/useCustomTemplateDialog-2nSs2D8n.js",
+      "sha256": "f87212056ec14befb86b272d0e615eef4da3ee35d42b86df4b14aec701c3dcc2"
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/MyTemplatesRoute-Eq3HlS6M.js",
+      "sha256": "7fb758b1aa486c06ca1d2cc3d63abdd5e52b9951aad65f70db96bf2c6fb30ef8"
+    },
+    {
+      "file": "Browserapp/roxy-ui/assets/TemplateStoreRoute-vzcUC0bD.js",
+      "sha256": "2349dcda0019cc1ecf6237c908763db7a05f17daafb6cd65860cf0e2c07a8198"
+    },
+    {
+      "file": "Browserapp/roxy-ui/images/agent-console/feedback-consultant-qr-light.svg",
+      "sha256": "4096b14dcae57d4b8550d45acde567345874a0563ca9bd7d52f1f7ba75c1749a"
+    },
+    {
+      "file": "Browserapp/roxy-ui/images/agent-console/feedback-consultant-qr-dark.svg",
+      "sha256": "49eb0a34957d33e496f20a2e2903ff50c19d8899e01f20290cca59ede7fe78ab"
+    }
+  ]
+}

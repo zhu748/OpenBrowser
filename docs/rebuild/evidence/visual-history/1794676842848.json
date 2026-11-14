@@ -1,0 +1,2209 @@
+{
+  "passed": false,
+  "scope": "Linux Electron 43，相同本地数据；主窗 1536×960、独立子窗原尺寸，详见逐例 clip；相同字体/缩放，原归档独立 render 与当前 render 在同一 Vue 实例切换、各自独立 VNode 缓存；比较原主内容区，品牌与本地外壳有单独边界说明。没有独立 render 的组件不能凭本结果宣布通过。",
+  "data": "/workspace/OpenBrowser/work/rebuild/visual-ui-z6SvBB",
+  "cases": [
+    {
+      "id": "workbench-full",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": true,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/workbench-full-light-production.png",
+          "full": "visual/workbench-full-light-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "diagnostic": [
+            {
+              "html": "<button data-v-5d1c6974=\"\" data-v-c7206253=\"\" class=\"p-button p-component p-button-outlined create-automation-button rx_button xxs\" data-p=\"outlined\" type=\"button\" disabled=\"\" aria-label=\"AI 自动化\" data-pc-name=\"button\" data-p-disabled=\"true\" rotate=\"false\" pc31=\"\" data-pc-section=\"root\" data-pd-ripple=\"true\" style=\"overflow: hidden; position: relative;\"><svg data-v-442d6e45=\"\" data-v-5d1c6974=\"\" preserveAspectRatio=\"none\" overflow=\"visible\" width=\"1em\" height=\"1em\" viewBox=\"0 0 14.6667 14.6667\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" class=\"svg animate-duration-2500 animate-duration-2500\" data-name=\"roxy-agent/rx-ic-create-automation\" style=\"display: block; --e49b1ef0: 16px; --v30a509d2: inherit;\"><g id=\"Vector\"><path d=\"M13.3333 7.33333C13.3333 4.01962 10.647 1.33333 7.33333 1.33333C4.01962 1.33333 1.33333 4.01962 1.33333 7.33333C1.33333 10.647 4.01962 13.3333 7.33333 13.3333V14.6667C3.28325 14.6667 0 11.3834 0 7.33333C0 3.28325 3.28325 0 7.33333 0C11.3834 0 14.6667 3.28325 14.6667 7.33333C14.6667 11.3834 11.3834 14.6667 7.33333 14.6667V13.3333C10.647 13.3333 13.3333 10.647 13.3333 7.33333Z\" fill=\"url(#paint0_linear_0_12)\"></path><path d=\"M4.66667 8V6C4.66667 5.63181 4.96514 5.33333 5.33333 5.33333C5.70152 5.33333 6 5.63181 6 6V8C6 8.36819 5.70152 8.66667 5.33333 8.66667C4.96514 8.66667 4.66667 8.36819 4.66667 8ZM8.66667 8V6C8.66667 5.63181 8.96514 5.33333 9.33333 5.33333C9.70152 5.33333 10 5.63181 10 6V8C10 8.36819 9.70152 8.66667 9.33333 8.66667C8.96514 8.66667 8.66667 8.36819 8.66667 8Z\" fill=\"url(#paint1_linear_0_12)\"></path></g><defs><linearGradient id=\"paint0_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient><linearGradient id=\"paint1_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient></defs></svg><span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">AI 自动化</span><!----><span role=\"presentation\" aria-hidden=\"true\" data-p-ink=\"true\" data-p-ink-active=\"false\" class=\"p-ink\" pd49=\"\" data-pc-name=\"ripple\" data-pc-section=\"root\"></span></button>",
+              "bounds": {
+                "x": 1209.84375,
+                "y": 113,
+                "width": 84.984375,
+                "height": 24,
+                "top": 113,
+                "right": 1294.828125,
+                "bottom": 137,
+                "left": 1209.84375
+              },
+              "style": {
+                "color": "rgb(108, 201, 254)",
+                "transform": "none",
+                "font": "500 12px / 16px Inter",
+                "background": "linear-gradient(rgb(255, 255, 255), rgb(255, 255, 255)) repeat scroll 0% 0% / auto padding-box padding-box, rgba(0, 0, 0, 0) linear-gradient(139.35deg, rgb(63, 170, 246) 0%, rgb(243, 89, 220) 50%, rgb(242, 143, 176) 100%) repeat scroll 0% 0% / auto border-box border-box"
+              },
+              "animations": [
+                {
+                  "name": "rotate-30b6698f",
+                  "time": 0,
+                  "state": "paused"
+                }
+              ]
+            }
+          ],
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "a1e83abf9b777a97bc6dc9b9b86e61a02f85658120830f977db107e83301f982",
+              "a1e83abf9b777a97bc6dc9b9b86e61a02f85658120830f977db107e83301f982",
+              "a1e83abf9b777a97bc6dc9b9b86e61a02f85658120830f977db107e83301f982"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/workbench-full-light-reference.png",
+          "full": "visual/workbench-full-light-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "diagnostic": [
+            {
+              "html": "<button data-v-5d1c6974=\"\" data-v-c7206253=\"\" class=\"p-button p-component p-button-outlined create-automation-button rx_button xxs\" data-p=\"outlined\" type=\"button\" disabled=\"\" aria-label=\"AI 自动化\" data-pc-name=\"button\" data-p-disabled=\"true\" rotate=\"false\" pc31=\"\" data-pc-section=\"root\" data-pd-ripple=\"true\" style=\"overflow: hidden; position: relative;\"><svg data-v-442d6e45=\"\" data-v-5d1c6974=\"\" preserveAspectRatio=\"none\" overflow=\"visible\" width=\"1em\" height=\"1em\" viewBox=\"0 0 14.6667 14.6667\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" class=\"svg animate-duration-2500 animate-duration-2500\" data-name=\"roxy-agent/rx-ic-create-automation\" style=\"display: block; --e49b1ef0: 16px; --v30a509d2: inherit;\"><g id=\"Vector\"><path d=\"M13.3333 7.33333C13.3333 4.01962 10.647 1.33333 7.33333 1.33333C4.01962 1.33333 1.33333 4.01962 1.33333 7.33333C1.33333 10.647 4.01962 13.3333 7.33333 13.3333V14.6667C3.28325 14.6667 0 11.3834 0 7.33333C0 3.28325 3.28325 0 7.33333 0C11.3834 0 14.6667 3.28325 14.6667 7.33333C14.6667 11.3834 11.3834 14.6667 7.33333 14.6667V13.3333C10.647 13.3333 13.3333 10.647 13.3333 7.33333Z\" fill=\"url(#paint0_linear_0_12)\"></path><path d=\"M4.66667 8V6C4.66667 5.63181 4.96514 5.33333 5.33333 5.33333C5.70152 5.33333 6 5.63181 6 6V8C6 8.36819 5.70152 8.66667 5.33333 8.66667C4.96514 8.66667 4.66667 8.36819 4.66667 8ZM8.66667 8V6C8.66667 5.63181 8.96514 5.33333 9.33333 5.33333C9.70152 5.33333 10 5.63181 10 6V8C10 8.36819 9.70152 8.66667 9.33333 8.66667C8.96514 8.66667 8.66667 8.36819 8.66667 8Z\" fill=\"url(#paint1_linear_0_12)\"></path></g><defs><linearGradient id=\"paint0_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient><linearGradient id=\"paint1_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient></defs></svg><span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">AI 自动化</span><!----><span role=\"presentation\" aria-hidden=\"true\" data-p-ink=\"true\" data-p-ink-active=\"false\" class=\"p-ink\" pd49=\"\" data-pc-name=\"ripple\" data-pc-section=\"root\"></span></button>",
+              "bounds": {
+                "x": 1209.84375,
+                "y": 113,
+                "width": 84.984375,
+                "height": 24,
+                "top": 113,
+                "right": 1294.828125,
+                "bottom": 137,
+                "left": 1209.84375
+              },
+              "style": {
+                "color": "rgb(108, 201, 254)",
+                "transform": "none",
+                "font": "500 12px / 16px Inter",
+                "background": "linear-gradient(rgb(255, 255, 255), rgb(255, 255, 255)) repeat scroll 0% 0% / auto padding-box padding-box, rgba(0, 0, 0, 0) linear-gradient(139.35deg, rgb(63, 170, 246) 0%, rgb(243, 89, 220) 50%, rgb(242, 143, 176) 100%) repeat scroll 0% 0% / auto border-box border-box"
+              },
+              "animations": [
+                {
+                  "name": "rotate-30b6698f",
+                  "time": 0,
+                  "state": "paused"
+                }
+              ]
+            }
+          ],
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "a1e83abf9b777a97bc6dc9b9b86e61a02f85658120830f977db107e83301f982",
+              "a1e83abf9b777a97bc6dc9b9b86e61a02f85658120830f977db107e83301f982",
+              "a1e83abf9b777a97bc6dc9b9b86e61a02f85658120830f977db107e83301f982"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/workbench-full-light-diff.png"
+    },
+    {
+      "id": "workbench-full",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": true,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/workbench-full-dark-production.png",
+          "full": "visual/workbench-full-dark-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "diagnostic": [
+            {
+              "html": "<button data-v-5d1c6974=\"\" data-v-c7206253=\"\" class=\"p-button p-component p-button-outlined create-automation-button rx_button xxs\" data-p=\"outlined\" type=\"button\" disabled=\"\" aria-label=\"AI 自动化\" data-pc-name=\"button\" data-p-disabled=\"true\" rotate=\"false\" pc31=\"\" data-pc-section=\"root\" data-pd-ripple=\"true\" style=\"overflow: hidden; position: relative;\"><svg data-v-442d6e45=\"\" data-v-5d1c6974=\"\" preserveAspectRatio=\"none\" overflow=\"visible\" width=\"1em\" height=\"1em\" viewBox=\"0 0 14.6667 14.6667\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" class=\"svg animate-duration-2500 animate-duration-2500\" data-name=\"roxy-agent/rx-ic-create-automation\" style=\"display: block; --e49b1ef0: 16px; --v30a509d2: inherit;\"><g id=\"Vector\"><path d=\"M13.3333 7.33333C13.3333 4.01962 10.647 1.33333 7.33333 1.33333C4.01962 1.33333 1.33333 4.01962 1.33333 7.33333C1.33333 10.647 4.01962 13.3333 7.33333 13.3333V14.6667C3.28325 14.6667 0 11.3834 0 7.33333C0 3.28325 3.28325 0 7.33333 0C11.3834 0 14.6667 3.28325 14.6667 7.33333C14.6667 11.3834 11.3834 14.6667 7.33333 14.6667V13.3333C10.647 13.3333 13.3333 10.647 13.3333 7.33333Z\" fill=\"url(#paint0_linear_0_12)\"></path><path d=\"M4.66667 8V6C4.66667 5.63181 4.96514 5.33333 5.33333 5.33333C5.70152 5.33333 6 5.63181 6 6V8C6 8.36819 5.70152 8.66667 5.33333 8.66667C4.96514 8.66667 4.66667 8.36819 4.66667 8ZM8.66667 8V6C8.66667 5.63181 8.96514 5.33333 9.33333 5.33333C9.70152 5.33333 10 5.63181 10 6V8C10 8.36819 9.70152 8.66667 9.33333 8.66667C8.96514 8.66667 8.66667 8.36819 8.66667 8Z\" fill=\"url(#paint1_linear_0_12)\"></path></g><defs><linearGradient id=\"paint0_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient><linearGradient id=\"paint1_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient></defs></svg><span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">AI 自动化</span><!----><span role=\"presentation\" aria-hidden=\"true\" data-p-ink=\"true\" data-p-ink-active=\"false\" class=\"p-ink\" pd49=\"\" data-pc-name=\"ripple\" data-pc-section=\"root\"></span></button>",
+              "bounds": {
+                "x": 1209.84375,
+                "y": 113,
+                "width": 84.984375,
+                "height": 24,
+                "top": 113,
+                "right": 1294.828125,
+                "bottom": 137,
+                "left": 1209.84375
+              },
+              "style": {
+                "color": "rgb(138, 144, 147)",
+                "transform": "none",
+                "font": "500 12px / 16px Inter",
+                "background": "linear-gradient(rgb(41, 48, 56), rgb(41, 48, 56)) repeat scroll 0% 0% / auto padding-box padding-box, rgba(0, 0, 0, 0) linear-gradient(139.35deg, rgb(63, 170, 246) 0%, rgb(243, 89, 220) 50%, rgb(242, 143, 176) 100%) repeat scroll 0% 0% / auto border-box border-box"
+              },
+              "animations": [
+                {
+                  "name": "rotate-30b6698f",
+                  "time": 0,
+                  "state": "paused"
+                }
+              ]
+            }
+          ],
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "d21be5acbde02b276ec47201038a0906229e055769cee793c3272caa49caa91c",
+              "ff4a21efd7589381e86a12cf125e2e45fb883dac3cc16cfb8b436213577f5672",
+              "ff4a21efd7589381e86a12cf125e2e45fb883dac3cc16cfb8b436213577f5672",
+              "ff4a21efd7589381e86a12cf125e2e45fb883dac3cc16cfb8b436213577f5672"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/workbench-full-dark-reference.png",
+          "full": "visual/workbench-full-dark-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "diagnostic": [
+            {
+              "html": "<button data-v-5d1c6974=\"\" data-v-c7206253=\"\" class=\"p-button p-component p-button-outlined create-automation-button rx_button xxs\" data-p=\"outlined\" type=\"button\" disabled=\"\" aria-label=\"AI 自动化\" data-pc-name=\"button\" data-p-disabled=\"true\" rotate=\"false\" pc31=\"\" data-pc-section=\"root\" data-pd-ripple=\"true\" style=\"overflow: hidden; position: relative;\"><svg data-v-442d6e45=\"\" data-v-5d1c6974=\"\" preserveAspectRatio=\"none\" overflow=\"visible\" width=\"1em\" height=\"1em\" viewBox=\"0 0 14.6667 14.6667\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" class=\"svg animate-duration-2500 animate-duration-2500\" data-name=\"roxy-agent/rx-ic-create-automation\" style=\"display: block; --e49b1ef0: 16px; --v30a509d2: inherit;\"><g id=\"Vector\"><path d=\"M13.3333 7.33333C13.3333 4.01962 10.647 1.33333 7.33333 1.33333C4.01962 1.33333 1.33333 4.01962 1.33333 7.33333C1.33333 10.647 4.01962 13.3333 7.33333 13.3333V14.6667C3.28325 14.6667 0 11.3834 0 7.33333C0 3.28325 3.28325 0 7.33333 0C11.3834 0 14.6667 3.28325 14.6667 7.33333C14.6667 11.3834 11.3834 14.6667 7.33333 14.6667V13.3333C10.647 13.3333 13.3333 10.647 13.3333 7.33333Z\" fill=\"url(#paint0_linear_0_12)\"></path><path d=\"M4.66667 8V6C4.66667 5.63181 4.96514 5.33333 5.33333 5.33333C5.70152 5.33333 6 5.63181 6 6V8C6 8.36819 5.70152 8.66667 5.33333 8.66667C4.96514 8.66667 4.66667 8.36819 4.66667 8ZM8.66667 8V6C8.66667 5.63181 8.96514 5.33333 9.33333 5.33333C9.70152 5.33333 10 5.63181 10 6V8C10 8.36819 9.70152 8.66667 9.33333 8.66667C8.96514 8.66667 8.66667 8.36819 8.66667 8Z\" fill=\"url(#paint1_linear_0_12)\"></path></g><defs><linearGradient id=\"paint0_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient><linearGradient id=\"paint1_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient></defs></svg><span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">AI 自动化</span><!----><span role=\"presentation\" aria-hidden=\"true\" data-p-ink=\"true\" data-p-ink-active=\"false\" class=\"p-ink\" pd49=\"\" data-pc-name=\"ripple\" data-pc-section=\"root\"></span></button>",
+              "bounds": {
+                "x": 1209.84375,
+                "y": 113,
+                "width": 84.984375,
+                "height": 24,
+                "top": 113,
+                "right": 1294.828125,
+                "bottom": 137,
+                "left": 1209.84375
+              },
+              "style": {
+                "color": "rgb(138, 144, 147)",
+                "transform": "none",
+                "font": "500 12px / 16px Inter",
+                "background": "linear-gradient(rgb(41, 48, 56), rgb(41, 48, 56)) repeat scroll 0% 0% / auto padding-box padding-box, rgba(0, 0, 0, 0) linear-gradient(139.35deg, rgb(63, 170, 246) 0%, rgb(243, 89, 220) 50%, rgb(242, 143, 176) 100%) repeat scroll 0% 0% / auto border-box border-box"
+              },
+              "animations": [
+                {
+                  "name": "rotate-30b6698f",
+                  "time": 0,
+                  "state": "paused"
+                }
+              ]
+            }
+          ],
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "ff4a21efd7589381e86a12cf125e2e45fb883dac3cc16cfb8b436213577f5672",
+              "ff4a21efd7589381e86a12cf125e2e45fb883dac3cc16cfb8b436213577f5672",
+              "ff4a21efd7589381e86a12cf125e2e45fb883dac3cc16cfb8b436213577f5672"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/workbench-full-dark-diff.png"
+    },
+    {
+      "id": "workbench-updates",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": true,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/workbench-updates-light-production.png",
+          "full": "visual/workbench-updates-light-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "diagnostic": [
+            {
+              "html": "<button data-v-5d1c6974=\"\" data-v-c7206253=\"\" class=\"p-button p-component p-button-outlined create-automation-button rx_button xxs\" data-p=\"outlined\" type=\"button\" disabled=\"\" aria-label=\"AI 自动化\" data-pc-name=\"button\" data-p-disabled=\"true\" rotate=\"false\" pc31=\"\" data-pc-section=\"root\" data-pd-ripple=\"true\" style=\"overflow: hidden; position: relative;\"><svg data-v-442d6e45=\"\" data-v-5d1c6974=\"\" preserveAspectRatio=\"none\" overflow=\"visible\" width=\"1em\" height=\"1em\" viewBox=\"0 0 14.6667 14.6667\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" class=\"svg animate-duration-2500 animate-duration-2500\" data-name=\"roxy-agent/rx-ic-create-automation\" style=\"display: block; --e49b1ef0: 16px; --v30a509d2: inherit;\"><g id=\"Vector\"><path d=\"M13.3333 7.33333C13.3333 4.01962 10.647 1.33333 7.33333 1.33333C4.01962 1.33333 1.33333 4.01962 1.33333 7.33333C1.33333 10.647 4.01962 13.3333 7.33333 13.3333V14.6667C3.28325 14.6667 0 11.3834 0 7.33333C0 3.28325 3.28325 0 7.33333 0C11.3834 0 14.6667 3.28325 14.6667 7.33333C14.6667 11.3834 11.3834 14.6667 7.33333 14.6667V13.3333C10.647 13.3333 13.3333 10.647 13.3333 7.33333Z\" fill=\"url(#paint0_linear_0_12)\"></path><path d=\"M4.66667 8V6C4.66667 5.63181 4.96514 5.33333 5.33333 5.33333C5.70152 5.33333 6 5.63181 6 6V8C6 8.36819 5.70152 8.66667 5.33333 8.66667C4.96514 8.66667 4.66667 8.36819 4.66667 8ZM8.66667 8V6C8.66667 5.63181 8.96514 5.33333 9.33333 5.33333C9.70152 5.33333 10 5.63181 10 6V8C10 8.36819 9.70152 8.66667 9.33333 8.66667C8.96514 8.66667 8.66667 8.36819 8.66667 8Z\" fill=\"url(#paint1_linear_0_12)\"></path></g><defs><linearGradient id=\"paint0_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient><linearGradient id=\"paint1_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient></defs></svg><span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">AI 自动化</span><!----><span role=\"presentation\" aria-hidden=\"true\" data-p-ink=\"true\" data-p-ink-active=\"false\" class=\"p-ink\" pd49=\"\" data-pc-name=\"ripple\" data-pc-section=\"root\"></span></button>",
+              "bounds": {
+                "x": 1209.84375,
+                "y": 113,
+                "width": 84.984375,
+                "height": 24,
+                "top": 113,
+                "right": 1294.828125,
+                "bottom": 137,
+                "left": 1209.84375
+              },
+              "style": {
+                "color": "rgb(108, 201, 254)",
+                "transform": "none",
+                "font": "500 12px / 16px Inter",
+                "background": "linear-gradient(rgb(255, 255, 255), rgb(255, 255, 255)) repeat scroll 0% 0% / auto padding-box padding-box, rgba(0, 0, 0, 0) linear-gradient(139.35deg, rgb(63, 170, 246) 0%, rgb(243, 89, 220) 50%, rgb(242, 143, 176) 100%) repeat scroll 0% 0% / auto border-box border-box"
+              },
+              "animations": [
+                {
+                  "name": "rotate-30b6698f",
+                  "time": 0,
+                  "state": "paused"
+                }
+              ]
+            }
+          ],
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "65f06f38e4cba3bd0f196bd07c425b4075ba72ef4804a98cf6b78a3d6377f880",
+              "65f06f38e4cba3bd0f196bd07c425b4075ba72ef4804a98cf6b78a3d6377f880",
+              "65f06f38e4cba3bd0f196bd07c425b4075ba72ef4804a98cf6b78a3d6377f880"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/workbench-updates-light-reference.png",
+          "full": "visual/workbench-updates-light-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "diagnostic": [
+            {
+              "html": "<button data-v-5d1c6974=\"\" data-v-c7206253=\"\" class=\"p-button p-component p-button-outlined create-automation-button rx_button xxs\" data-p=\"outlined\" type=\"button\" disabled=\"\" aria-label=\"AI 自动化\" data-pc-name=\"button\" data-p-disabled=\"true\" rotate=\"false\" pc31=\"\" data-pc-section=\"root\" data-pd-ripple=\"true\" style=\"overflow: hidden; position: relative;\"><svg data-v-442d6e45=\"\" data-v-5d1c6974=\"\" preserveAspectRatio=\"none\" overflow=\"visible\" width=\"1em\" height=\"1em\" viewBox=\"0 0 14.6667 14.6667\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" class=\"svg animate-duration-2500 animate-duration-2500\" data-name=\"roxy-agent/rx-ic-create-automation\" style=\"display: block; --e49b1ef0: 16px; --v30a509d2: inherit;\"><g id=\"Vector\"><path d=\"M13.3333 7.33333C13.3333 4.01962 10.647 1.33333 7.33333 1.33333C4.01962 1.33333 1.33333 4.01962 1.33333 7.33333C1.33333 10.647 4.01962 13.3333 7.33333 13.3333V14.6667C3.28325 14.6667 0 11.3834 0 7.33333C0 3.28325 3.28325 0 7.33333 0C11.3834 0 14.6667 3.28325 14.6667 7.33333C14.6667 11.3834 11.3834 14.6667 7.33333 14.6667V13.3333C10.647 13.3333 13.3333 10.647 13.3333 7.33333Z\" fill=\"url(#paint0_linear_0_12)\"></path><path d=\"M4.66667 8V6C4.66667 5.63181 4.96514 5.33333 5.33333 5.33333C5.70152 5.33333 6 5.63181 6 6V8C6 8.36819 5.70152 8.66667 5.33333 8.66667C4.96514 8.66667 4.66667 8.36819 4.66667 8ZM8.66667 8V6C8.66667 5.63181 8.96514 5.33333 9.33333 5.33333C9.70152 5.33333 10 5.63181 10 6V8C10 8.36819 9.70152 8.66667 9.33333 8.66667C8.96514 8.66667 8.66667 8.36819 8.66667 8Z\" fill=\"url(#paint1_linear_0_12)\"></path></g><defs><linearGradient id=\"paint0_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient><linearGradient id=\"paint1_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient></defs></svg><span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">AI 自动化</span><!----><span role=\"presentation\" aria-hidden=\"true\" data-p-ink=\"true\" data-p-ink-active=\"false\" class=\"p-ink\" pd49=\"\" data-pc-name=\"ripple\" data-pc-section=\"root\"></span></button>",
+              "bounds": {
+                "x": 1209.84375,
+                "y": 113,
+                "width": 84.984375,
+                "height": 24,
+                "top": 113,
+                "right": 1294.828125,
+                "bottom": 137,
+                "left": 1209.84375
+              },
+              "style": {
+                "color": "rgb(108, 201, 254)",
+                "transform": "none",
+                "font": "500 12px / 16px Inter",
+                "background": "linear-gradient(rgb(255, 255, 255), rgb(255, 255, 255)) repeat scroll 0% 0% / auto padding-box padding-box, rgba(0, 0, 0, 0) linear-gradient(139.35deg, rgb(63, 170, 246) 0%, rgb(243, 89, 220) 50%, rgb(242, 143, 176) 100%) repeat scroll 0% 0% / auto border-box border-box"
+              },
+              "animations": [
+                {
+                  "name": "rotate-30b6698f",
+                  "time": 0,
+                  "state": "paused"
+                }
+              ]
+            }
+          ],
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "65f06f38e4cba3bd0f196bd07c425b4075ba72ef4804a98cf6b78a3d6377f880",
+              "65f06f38e4cba3bd0f196bd07c425b4075ba72ef4804a98cf6b78a3d6377f880",
+              "65f06f38e4cba3bd0f196bd07c425b4075ba72ef4804a98cf6b78a3d6377f880"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/workbench-updates-light-diff.png"
+    },
+    {
+      "id": "workbench-updates",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": true,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/workbench-updates-dark-production.png",
+          "full": "visual/workbench-updates-dark-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "diagnostic": [
+            {
+              "html": "<button data-v-5d1c6974=\"\" data-v-c7206253=\"\" class=\"p-button p-component p-button-outlined create-automation-button rx_button xxs\" data-p=\"outlined\" type=\"button\" disabled=\"\" aria-label=\"AI 自动化\" data-pc-name=\"button\" data-p-disabled=\"true\" rotate=\"false\" pc31=\"\" data-pc-section=\"root\" data-pd-ripple=\"true\" style=\"overflow: hidden; position: relative;\"><svg data-v-442d6e45=\"\" data-v-5d1c6974=\"\" preserveAspectRatio=\"none\" overflow=\"visible\" width=\"1em\" height=\"1em\" viewBox=\"0 0 14.6667 14.6667\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" class=\"svg animate-duration-2500 animate-duration-2500\" data-name=\"roxy-agent/rx-ic-create-automation\" style=\"display: block; --e49b1ef0: 16px; --v30a509d2: inherit;\"><g id=\"Vector\"><path d=\"M13.3333 7.33333C13.3333 4.01962 10.647 1.33333 7.33333 1.33333C4.01962 1.33333 1.33333 4.01962 1.33333 7.33333C1.33333 10.647 4.01962 13.3333 7.33333 13.3333V14.6667C3.28325 14.6667 0 11.3834 0 7.33333C0 3.28325 3.28325 0 7.33333 0C11.3834 0 14.6667 3.28325 14.6667 7.33333C14.6667 11.3834 11.3834 14.6667 7.33333 14.6667V13.3333C10.647 13.3333 13.3333 10.647 13.3333 7.33333Z\" fill=\"url(#paint0_linear_0_12)\"></path><path d=\"M4.66667 8V6C4.66667 5.63181 4.96514 5.33333 5.33333 5.33333C5.70152 5.33333 6 5.63181 6 6V8C6 8.36819 5.70152 8.66667 5.33333 8.66667C4.96514 8.66667 4.66667 8.36819 4.66667 8ZM8.66667 8V6C8.66667 5.63181 8.96514 5.33333 9.33333 5.33333C9.70152 5.33333 10 5.63181 10 6V8C10 8.36819 9.70152 8.66667 9.33333 8.66667C8.96514 8.66667 8.66667 8.36819 8.66667 8Z\" fill=\"url(#paint1_linear_0_12)\"></path></g><defs><linearGradient id=\"paint0_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient><linearGradient id=\"paint1_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient></defs></svg><span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">AI 自动化</span><!----><span role=\"presentation\" aria-hidden=\"true\" data-p-ink=\"true\" data-p-ink-active=\"false\" class=\"p-ink\" pd49=\"\" data-pc-name=\"ripple\" data-pc-section=\"root\"></span></button>",
+              "bounds": {
+                "x": 1209.84375,
+                "y": 113,
+                "width": 84.984375,
+                "height": 24,
+                "top": 113,
+                "right": 1294.828125,
+                "bottom": 137,
+                "left": 1209.84375
+              },
+              "style": {
+                "color": "rgb(138, 144, 147)",
+                "transform": "none",
+                "font": "500 12px / 16px Inter",
+                "background": "linear-gradient(rgb(41, 48, 56), rgb(41, 48, 56)) repeat scroll 0% 0% / auto padding-box padding-box, rgba(0, 0, 0, 0) linear-gradient(139.35deg, rgb(63, 170, 246) 0%, rgb(243, 89, 220) 50%, rgb(242, 143, 176) 100%) repeat scroll 0% 0% / auto border-box border-box"
+              },
+              "animations": [
+                {
+                  "name": "rotate-30b6698f",
+                  "time": 0,
+                  "state": "paused"
+                }
+              ]
+            }
+          ],
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "67a4aa5184f11146e750f89073f6dd6838b0298c83251279937eda3829d4c21a",
+              "e4c4a35d5d187a737660e47d3756ffc90c63073e9748c26fcedae7aa3e6f8b17",
+              "e4c4a35d5d187a737660e47d3756ffc90c63073e9748c26fcedae7aa3e6f8b17",
+              "e4c4a35d5d187a737660e47d3756ffc90c63073e9748c26fcedae7aa3e6f8b17"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/workbench-updates-dark-reference.png",
+          "full": "visual/workbench-updates-dark-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "diagnostic": [
+            {
+              "html": "<button data-v-5d1c6974=\"\" data-v-c7206253=\"\" class=\"p-button p-component p-button-outlined create-automation-button rx_button xxs\" data-p=\"outlined\" type=\"button\" disabled=\"\" aria-label=\"AI 自动化\" data-pc-name=\"button\" data-p-disabled=\"true\" rotate=\"false\" pc31=\"\" data-pc-section=\"root\" data-pd-ripple=\"true\" style=\"overflow: hidden; position: relative;\"><svg data-v-442d6e45=\"\" data-v-5d1c6974=\"\" preserveAspectRatio=\"none\" overflow=\"visible\" width=\"1em\" height=\"1em\" viewBox=\"0 0 14.6667 14.6667\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" class=\"svg animate-duration-2500 animate-duration-2500\" data-name=\"roxy-agent/rx-ic-create-automation\" style=\"display: block; --e49b1ef0: 16px; --v30a509d2: inherit;\"><g id=\"Vector\"><path d=\"M13.3333 7.33333C13.3333 4.01962 10.647 1.33333 7.33333 1.33333C4.01962 1.33333 1.33333 4.01962 1.33333 7.33333C1.33333 10.647 4.01962 13.3333 7.33333 13.3333V14.6667C3.28325 14.6667 0 11.3834 0 7.33333C0 3.28325 3.28325 0 7.33333 0C11.3834 0 14.6667 3.28325 14.6667 7.33333C14.6667 11.3834 11.3834 14.6667 7.33333 14.6667V13.3333C10.647 13.3333 13.3333 10.647 13.3333 7.33333Z\" fill=\"url(#paint0_linear_0_12)\"></path><path d=\"M4.66667 8V6C4.66667 5.63181 4.96514 5.33333 5.33333 5.33333C5.70152 5.33333 6 5.63181 6 6V8C6 8.36819 5.70152 8.66667 5.33333 8.66667C4.96514 8.66667 4.66667 8.36819 4.66667 8ZM8.66667 8V6C8.66667 5.63181 8.96514 5.33333 9.33333 5.33333C9.70152 5.33333 10 5.63181 10 6V8C10 8.36819 9.70152 8.66667 9.33333 8.66667C8.96514 8.66667 8.66667 8.36819 8.66667 8Z\" fill=\"url(#paint1_linear_0_12)\"></path></g><defs><linearGradient id=\"paint0_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient><linearGradient id=\"paint1_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient></defs></svg><span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">AI 自动化</span><!----><span role=\"presentation\" aria-hidden=\"true\" data-p-ink=\"true\" data-p-ink-active=\"false\" class=\"p-ink\" pd49=\"\" data-pc-name=\"ripple\" data-pc-section=\"root\"></span></button>",
+              "bounds": {
+                "x": 1209.84375,
+                "y": 113,
+                "width": 84.984375,
+                "height": 24,
+                "top": 113,
+                "right": 1294.828125,
+                "bottom": 137,
+                "left": 1209.84375
+              },
+              "style": {
+                "color": "rgb(138, 144, 147)",
+                "transform": "none",
+                "font": "500 12px / 16px Inter",
+                "background": "linear-gradient(rgb(41, 48, 56), rgb(41, 48, 56)) repeat scroll 0% 0% / auto padding-box padding-box, rgba(0, 0, 0, 0) linear-gradient(139.35deg, rgb(63, 170, 246) 0%, rgb(243, 89, 220) 50%, rgb(242, 143, 176) 100%) repeat scroll 0% 0% / auto border-box border-box"
+              },
+              "animations": [
+                {
+                  "name": "rotate-30b6698f",
+                  "time": 0,
+                  "state": "paused"
+                }
+              ]
+            }
+          ],
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "e4c4a35d5d187a737660e47d3756ffc90c63073e9748c26fcedae7aa3e6f8b17",
+              "e4c4a35d5d187a737660e47d3756ffc90c63073e9748c26fcedae7aa3e6f8b17",
+              "e4c4a35d5d187a737660e47d3756ffc90c63073e9748c26fcedae7aa3e6f8b17"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/workbench-updates-dark-diff.png"
+    },
+    {
+      "id": "workbench-client-update",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": true,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/workbench-client-update-light-production.png",
+          "full": "visual/workbench-client-update-light-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "diagnostic": [
+            {
+              "html": "<button data-v-5d1c6974=\"\" data-v-c7206253=\"\" class=\"p-button p-component p-button-outlined create-automation-button rx_button xxs\" data-p=\"outlined\" type=\"button\" disabled=\"\" aria-label=\"AI 自动化\" data-pc-name=\"button\" data-p-disabled=\"true\" rotate=\"false\" pc31=\"\" data-pc-section=\"root\" data-pd-ripple=\"true\" style=\"overflow: hidden; position: relative;\"><svg data-v-442d6e45=\"\" data-v-5d1c6974=\"\" preserveAspectRatio=\"none\" overflow=\"visible\" width=\"1em\" height=\"1em\" viewBox=\"0 0 14.6667 14.6667\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" class=\"svg animate-duration-2500 animate-duration-2500\" data-name=\"roxy-agent/rx-ic-create-automation\" style=\"display: block; --e49b1ef0: 16px; --v30a509d2: inherit;\"><g id=\"Vector\"><path d=\"M13.3333 7.33333C13.3333 4.01962 10.647 1.33333 7.33333 1.33333C4.01962 1.33333 1.33333 4.01962 1.33333 7.33333C1.33333 10.647 4.01962 13.3333 7.33333 13.3333V14.6667C3.28325 14.6667 0 11.3834 0 7.33333C0 3.28325 3.28325 0 7.33333 0C11.3834 0 14.6667 3.28325 14.6667 7.33333C14.6667 11.3834 11.3834 14.6667 7.33333 14.6667V13.3333C10.647 13.3333 13.3333 10.647 13.3333 7.33333Z\" fill=\"url(#paint0_linear_0_12)\"></path><path d=\"M4.66667 8V6C4.66667 5.63181 4.96514 5.33333 5.33333 5.33333C5.70152 5.33333 6 5.63181 6 6V8C6 8.36819 5.70152 8.66667 5.33333 8.66667C4.96514 8.66667 4.66667 8.36819 4.66667 8ZM8.66667 8V6C8.66667 5.63181 8.96514 5.33333 9.33333 5.33333C9.70152 5.33333 10 5.63181 10 6V8C10 8.36819 9.70152 8.66667 9.33333 8.66667C8.96514 8.66667 8.66667 8.36819 8.66667 8Z\" fill=\"url(#paint1_linear_0_12)\"></path></g><defs><linearGradient id=\"paint0_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient><linearGradient id=\"paint1_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient></defs></svg><span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">AI 自动化</span><!----><span role=\"presentation\" aria-hidden=\"true\" data-p-ink=\"true\" data-p-ink-active=\"false\" class=\"p-ink\" pd49=\"\" data-pc-name=\"ripple\" data-pc-section=\"root\"></span></button>",
+              "bounds": {
+                "x": 1209.84375,
+                "y": 113,
+                "width": 84.984375,
+                "height": 24,
+                "top": 113,
+                "right": 1294.828125,
+                "bottom": 137,
+                "left": 1209.84375
+              },
+              "style": {
+                "color": "rgb(108, 201, 254)",
+                "transform": "none",
+                "font": "500 12px / 16px Inter",
+                "background": "linear-gradient(rgb(255, 255, 255), rgb(255, 255, 255)) repeat scroll 0% 0% / auto padding-box padding-box, rgba(0, 0, 0, 0) linear-gradient(139.35deg, rgb(63, 170, 246) 0%, rgb(243, 89, 220) 50%, rgb(242, 143, 176) 100%) repeat scroll 0% 0% / auto border-box border-box"
+              },
+              "animations": [
+                {
+                  "name": "rotate-30b6698f",
+                  "time": 0,
+                  "state": "paused"
+                }
+              ]
+            }
+          ],
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "3135ed8bfa495b5dbd8495b9591db4ebdcbec90924a6a8a7321a32486b91aed7",
+              "3135ed8bfa495b5dbd8495b9591db4ebdcbec90924a6a8a7321a32486b91aed7",
+              "3135ed8bfa495b5dbd8495b9591db4ebdcbec90924a6a8a7321a32486b91aed7"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/workbench-client-update-light-reference.png",
+          "full": "visual/workbench-client-update-light-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "diagnostic": [
+            {
+              "html": "<button data-v-5d1c6974=\"\" data-v-c7206253=\"\" class=\"p-button p-component p-button-outlined create-automation-button rx_button xxs\" data-p=\"outlined\" type=\"button\" disabled=\"\" aria-label=\"AI 自动化\" data-pc-name=\"button\" data-p-disabled=\"true\" rotate=\"false\" pc31=\"\" data-pc-section=\"root\" data-pd-ripple=\"true\" style=\"overflow: hidden; position: relative;\"><svg data-v-442d6e45=\"\" data-v-5d1c6974=\"\" preserveAspectRatio=\"none\" overflow=\"visible\" width=\"1em\" height=\"1em\" viewBox=\"0 0 14.6667 14.6667\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" class=\"svg animate-duration-2500 animate-duration-2500\" data-name=\"roxy-agent/rx-ic-create-automation\" style=\"display: block; --e49b1ef0: 16px; --v30a509d2: inherit;\"><g id=\"Vector\"><path d=\"M13.3333 7.33333C13.3333 4.01962 10.647 1.33333 7.33333 1.33333C4.01962 1.33333 1.33333 4.01962 1.33333 7.33333C1.33333 10.647 4.01962 13.3333 7.33333 13.3333V14.6667C3.28325 14.6667 0 11.3834 0 7.33333C0 3.28325 3.28325 0 7.33333 0C11.3834 0 14.6667 3.28325 14.6667 7.33333C14.6667 11.3834 11.3834 14.6667 7.33333 14.6667V13.3333C10.647 13.3333 13.3333 10.647 13.3333 7.33333Z\" fill=\"url(#paint0_linear_0_12)\"></path><path d=\"M4.66667 8V6C4.66667 5.63181 4.96514 5.33333 5.33333 5.33333C5.70152 5.33333 6 5.63181 6 6V8C6 8.36819 5.70152 8.66667 5.33333 8.66667C4.96514 8.66667 4.66667 8.36819 4.66667 8ZM8.66667 8V6C8.66667 5.63181 8.96514 5.33333 9.33333 5.33333C9.70152 5.33333 10 5.63181 10 6V8C10 8.36819 9.70152 8.66667 9.33333 8.66667C8.96514 8.66667 8.66667 8.36819 8.66667 8Z\" fill=\"url(#paint1_linear_0_12)\"></path></g><defs><linearGradient id=\"paint0_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient><linearGradient id=\"paint1_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient></defs></svg><span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">AI 自动化</span><!----><span role=\"presentation\" aria-hidden=\"true\" data-p-ink=\"true\" data-p-ink-active=\"false\" class=\"p-ink\" pd49=\"\" data-pc-name=\"ripple\" data-pc-section=\"root\"></span></button>",
+              "bounds": {
+                "x": 1209.84375,
+                "y": 113,
+                "width": 84.984375,
+                "height": 24,
+                "top": 113,
+                "right": 1294.828125,
+                "bottom": 137,
+                "left": 1209.84375
+              },
+              "style": {
+                "color": "rgb(108, 201, 254)",
+                "transform": "none",
+                "font": "500 12px / 16px Inter",
+                "background": "linear-gradient(rgb(255, 255, 255), rgb(255, 255, 255)) repeat scroll 0% 0% / auto padding-box padding-box, rgba(0, 0, 0, 0) linear-gradient(139.35deg, rgb(63, 170, 246) 0%, rgb(243, 89, 220) 50%, rgb(242, 143, 176) 100%) repeat scroll 0% 0% / auto border-box border-box"
+              },
+              "animations": [
+                {
+                  "name": "rotate-30b6698f",
+                  "time": 0,
+                  "state": "paused"
+                }
+              ]
+            }
+          ],
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "3135ed8bfa495b5dbd8495b9591db4ebdcbec90924a6a8a7321a32486b91aed7",
+              "3135ed8bfa495b5dbd8495b9591db4ebdcbec90924a6a8a7321a32486b91aed7",
+              "3135ed8bfa495b5dbd8495b9591db4ebdcbec90924a6a8a7321a32486b91aed7"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/workbench-client-update-light-diff.png"
+    },
+    {
+      "id": "workbench-client-update",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": true,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/workbench-client-update-dark-production.png",
+          "full": "visual/workbench-client-update-dark-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "diagnostic": [
+            {
+              "html": "<button data-v-5d1c6974=\"\" data-v-c7206253=\"\" class=\"p-button p-component p-button-outlined create-automation-button rx_button xxs\" data-p=\"outlined\" type=\"button\" disabled=\"\" aria-label=\"AI 自动化\" data-pc-name=\"button\" data-p-disabled=\"true\" rotate=\"false\" pc31=\"\" data-pc-section=\"root\" data-pd-ripple=\"true\" style=\"overflow: hidden; position: relative;\"><svg data-v-442d6e45=\"\" data-v-5d1c6974=\"\" preserveAspectRatio=\"none\" overflow=\"visible\" width=\"1em\" height=\"1em\" viewBox=\"0 0 14.6667 14.6667\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" class=\"svg animate-duration-2500 animate-duration-2500\" data-name=\"roxy-agent/rx-ic-create-automation\" style=\"display: block; --e49b1ef0: 16px; --v30a509d2: inherit;\"><g id=\"Vector\"><path d=\"M13.3333 7.33333C13.3333 4.01962 10.647 1.33333 7.33333 1.33333C4.01962 1.33333 1.33333 4.01962 1.33333 7.33333C1.33333 10.647 4.01962 13.3333 7.33333 13.3333V14.6667C3.28325 14.6667 0 11.3834 0 7.33333C0 3.28325 3.28325 0 7.33333 0C11.3834 0 14.6667 3.28325 14.6667 7.33333C14.6667 11.3834 11.3834 14.6667 7.33333 14.6667V13.3333C10.647 13.3333 13.3333 10.647 13.3333 7.33333Z\" fill=\"url(#paint0_linear_0_12)\"></path><path d=\"M4.66667 8V6C4.66667 5.63181 4.96514 5.33333 5.33333 5.33333C5.70152 5.33333 6 5.63181 6 6V8C6 8.36819 5.70152 8.66667 5.33333 8.66667C4.96514 8.66667 4.66667 8.36819 4.66667 8ZM8.66667 8V6C8.66667 5.63181 8.96514 5.33333 9.33333 5.33333C9.70152 5.33333 10 5.63181 10 6V8C10 8.36819 9.70152 8.66667 9.33333 8.66667C8.96514 8.66667 8.66667 8.36819 8.66667 8Z\" fill=\"url(#paint1_linear_0_12)\"></path></g><defs><linearGradient id=\"paint0_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient><linearGradient id=\"paint1_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient></defs></svg><span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">AI 自动化</span><!----><span role=\"presentation\" aria-hidden=\"true\" data-p-ink=\"true\" data-p-ink-active=\"false\" class=\"p-ink\" pd49=\"\" data-pc-name=\"ripple\" data-pc-section=\"root\"></span></button>",
+              "bounds": {
+                "x": 1209.84375,
+                "y": 113,
+                "width": 84.984375,
+                "height": 24,
+                "top": 113,
+                "right": 1294.828125,
+                "bottom": 137,
+                "left": 1209.84375
+              },
+              "style": {
+                "color": "rgb(138, 144, 147)",
+                "transform": "none",
+                "font": "500 12px / 16px Inter",
+                "background": "linear-gradient(rgb(41, 48, 56), rgb(41, 48, 56)) repeat scroll 0% 0% / auto padding-box padding-box, rgba(0, 0, 0, 0) linear-gradient(139.35deg, rgb(63, 170, 246) 0%, rgb(243, 89, 220) 50%, rgb(242, 143, 176) 100%) repeat scroll 0% 0% / auto border-box border-box"
+              },
+              "animations": [
+                {
+                  "name": "rotate-30b6698f",
+                  "time": 0,
+                  "state": "paused"
+                }
+              ]
+            }
+          ],
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "6328ebf70bb8d196cbb52fec070c346fa8dd1ebbd035623201378e6affef10ba",
+              "6328ebf70bb8d196cbb52fec070c346fa8dd1ebbd035623201378e6affef10ba",
+              "6328ebf70bb8d196cbb52fec070c346fa8dd1ebbd035623201378e6affef10ba"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/workbench-client-update-dark-reference.png",
+          "full": "visual/workbench-client-update-dark-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "diagnostic": [
+            {
+              "html": "<button data-v-5d1c6974=\"\" data-v-c7206253=\"\" class=\"p-button p-component p-button-outlined create-automation-button rx_button xxs\" data-p=\"outlined\" type=\"button\" disabled=\"\" aria-label=\"AI 自动化\" data-pc-name=\"button\" data-p-disabled=\"true\" rotate=\"false\" pc31=\"\" data-pc-section=\"root\" data-pd-ripple=\"true\" style=\"overflow: hidden; position: relative;\"><svg data-v-442d6e45=\"\" data-v-5d1c6974=\"\" preserveAspectRatio=\"none\" overflow=\"visible\" width=\"1em\" height=\"1em\" viewBox=\"0 0 14.6667 14.6667\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" class=\"svg animate-duration-2500 animate-duration-2500\" data-name=\"roxy-agent/rx-ic-create-automation\" style=\"display: block; --e49b1ef0: 16px; --v30a509d2: inherit;\"><g id=\"Vector\"><path d=\"M13.3333 7.33333C13.3333 4.01962 10.647 1.33333 7.33333 1.33333C4.01962 1.33333 1.33333 4.01962 1.33333 7.33333C1.33333 10.647 4.01962 13.3333 7.33333 13.3333V14.6667C3.28325 14.6667 0 11.3834 0 7.33333C0 3.28325 3.28325 0 7.33333 0C11.3834 0 14.6667 3.28325 14.6667 7.33333C14.6667 11.3834 11.3834 14.6667 7.33333 14.6667V13.3333C10.647 13.3333 13.3333 10.647 13.3333 7.33333Z\" fill=\"url(#paint0_linear_0_12)\"></path><path d=\"M4.66667 8V6C4.66667 5.63181 4.96514 5.33333 5.33333 5.33333C5.70152 5.33333 6 5.63181 6 6V8C6 8.36819 5.70152 8.66667 5.33333 8.66667C4.96514 8.66667 4.66667 8.36819 4.66667 8ZM8.66667 8V6C8.66667 5.63181 8.96514 5.33333 9.33333 5.33333C9.70152 5.33333 10 5.63181 10 6V8C10 8.36819 9.70152 8.66667 9.33333 8.66667C8.96514 8.66667 8.66667 8.36819 8.66667 8Z\" fill=\"url(#paint1_linear_0_12)\"></path></g><defs><linearGradient id=\"paint0_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient><linearGradient id=\"paint1_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient></defs></svg><span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">AI 自动化</span><!----><span role=\"presentation\" aria-hidden=\"true\" data-p-ink=\"true\" data-p-ink-active=\"false\" class=\"p-ink\" pd49=\"\" data-pc-name=\"ripple\" data-pc-section=\"root\"></span></button>",
+              "bounds": {
+                "x": 1209.84375,
+                "y": 113,
+                "width": 84.984375,
+                "height": 24,
+                "top": 113,
+                "right": 1294.828125,
+                "bottom": 137,
+                "left": 1209.84375
+              },
+              "style": {
+                "color": "rgb(138, 144, 147)",
+                "transform": "none",
+                "font": "500 12px / 16px Inter",
+                "background": "linear-gradient(rgb(41, 48, 56), rgb(41, 48, 56)) repeat scroll 0% 0% / auto padding-box padding-box, rgba(0, 0, 0, 0) linear-gradient(139.35deg, rgb(63, 170, 246) 0%, rgb(243, 89, 220) 50%, rgb(242, 143, 176) 100%) repeat scroll 0% 0% / auto border-box border-box"
+              },
+              "animations": [
+                {
+                  "name": "rotate-30b6698f",
+                  "time": 0,
+                  "state": "paused"
+                }
+              ]
+            }
+          ],
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "6328ebf70bb8d196cbb52fec070c346fa8dd1ebbd035623201378e6affef10ba",
+              "6328ebf70bb8d196cbb52fec070c346fa8dd1ebbd035623201378e6affef10ba",
+              "6328ebf70bb8d196cbb52fec070c346fa8dd1ebbd035623201378e6affef10ba"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/workbench-client-update-dark-diff.png"
+    },
+    {
+      "id": "workbench-notifications",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": true,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/workbench-notifications-light-production.png",
+          "full": "visual/workbench-notifications-light-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "diagnostic": [
+            {
+              "html": "<button data-v-5d1c6974=\"\" data-v-c7206253=\"\" class=\"p-button p-component p-button-outlined create-automation-button rx_button xxs\" data-p=\"outlined\" type=\"button\" disabled=\"\" aria-label=\"AI 自动化\" data-pc-name=\"button\" data-p-disabled=\"true\" rotate=\"false\" pc31=\"\" data-pc-section=\"root\" data-pd-ripple=\"true\" style=\"overflow: hidden; position: relative;\"><svg data-v-442d6e45=\"\" data-v-5d1c6974=\"\" preserveAspectRatio=\"none\" overflow=\"visible\" width=\"1em\" height=\"1em\" viewBox=\"0 0 14.6667 14.6667\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" class=\"svg animate-duration-2500 animate-duration-2500\" data-name=\"roxy-agent/rx-ic-create-automation\" style=\"display: block; --e49b1ef0: 16px; --v30a509d2: inherit;\"><g id=\"Vector\"><path d=\"M13.3333 7.33333C13.3333 4.01962 10.647 1.33333 7.33333 1.33333C4.01962 1.33333 1.33333 4.01962 1.33333 7.33333C1.33333 10.647 4.01962 13.3333 7.33333 13.3333V14.6667C3.28325 14.6667 0 11.3834 0 7.33333C0 3.28325 3.28325 0 7.33333 0C11.3834 0 14.6667 3.28325 14.6667 7.33333C14.6667 11.3834 11.3834 14.6667 7.33333 14.6667V13.3333C10.647 13.3333 13.3333 10.647 13.3333 7.33333Z\" fill=\"url(#paint0_linear_0_12)\"></path><path d=\"M4.66667 8V6C4.66667 5.63181 4.96514 5.33333 5.33333 5.33333C5.70152 5.33333 6 5.63181 6 6V8C6 8.36819 5.70152 8.66667 5.33333 8.66667C4.96514 8.66667 4.66667 8.36819 4.66667 8ZM8.66667 8V6C8.66667 5.63181 8.96514 5.33333 9.33333 5.33333C9.70152 5.33333 10 5.63181 10 6V8C10 8.36819 9.70152 8.66667 9.33333 8.66667C8.96514 8.66667 8.66667 8.36819 8.66667 8Z\" fill=\"url(#paint1_linear_0_12)\"></path></g><defs><linearGradient id=\"paint0_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient><linearGradient id=\"paint1_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient></defs></svg><span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">AI 自动化</span><!----><span role=\"presentation\" aria-hidden=\"true\" data-p-ink=\"true\" data-p-ink-active=\"false\" class=\"p-ink\" pd49=\"\" data-pc-name=\"ripple\" data-pc-section=\"root\"></span></button>",
+              "bounds": {
+                "x": 1209.84375,
+                "y": 113,
+                "width": 84.984375,
+                "height": 24,
+                "top": 113,
+                "right": 1294.828125,
+                "bottom": 137,
+                "left": 1209.84375
+              },
+              "style": {
+                "color": "rgb(108, 201, 254)",
+                "transform": "none",
+                "font": "500 12px / 16px Inter",
+                "background": "linear-gradient(rgb(255, 255, 255), rgb(255, 255, 255)) repeat scroll 0% 0% / auto padding-box padding-box, rgba(0, 0, 0, 0) linear-gradient(139.35deg, rgb(63, 170, 246) 0%, rgb(243, 89, 220) 50%, rgb(242, 143, 176) 100%) repeat scroll 0% 0% / auto border-box border-box"
+              },
+              "animations": [
+                {
+                  "name": "rotate-30b6698f",
+                  "time": 0,
+                  "state": "paused"
+                }
+              ]
+            }
+          ],
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "1eda210075e8a1f0bd4705dfd7819d542fcb45b734172e4a1efea878d9d49780",
+              "c8ab71f29aebc0ec3805f5f888e0c590c6c87bd479cc4d2151aed53cf2903a0a",
+              "c8ab71f29aebc0ec3805f5f888e0c590c6c87bd479cc4d2151aed53cf2903a0a",
+              "c8ab71f29aebc0ec3805f5f888e0c590c6c87bd479cc4d2151aed53cf2903a0a"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/workbench-notifications-light-reference.png",
+          "full": "visual/workbench-notifications-light-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "diagnostic": [
+            {
+              "html": "<button data-v-5d1c6974=\"\" data-v-c7206253=\"\" class=\"p-button p-component p-button-outlined create-automation-button rx_button xxs\" data-p=\"outlined\" type=\"button\" disabled=\"\" aria-label=\"AI 自动化\" data-pc-name=\"button\" data-p-disabled=\"true\" rotate=\"false\" pc31=\"\" data-pc-section=\"root\" data-pd-ripple=\"true\" style=\"overflow: hidden; position: relative;\"><svg data-v-442d6e45=\"\" data-v-5d1c6974=\"\" preserveAspectRatio=\"none\" overflow=\"visible\" width=\"1em\" height=\"1em\" viewBox=\"0 0 14.6667 14.6667\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" class=\"svg animate-duration-2500 animate-duration-2500\" data-name=\"roxy-agent/rx-ic-create-automation\" style=\"display: block; --e49b1ef0: 16px; --v30a509d2: inherit;\"><g id=\"Vector\"><path d=\"M13.3333 7.33333C13.3333 4.01962 10.647 1.33333 7.33333 1.33333C4.01962 1.33333 1.33333 4.01962 1.33333 7.33333C1.33333 10.647 4.01962 13.3333 7.33333 13.3333V14.6667C3.28325 14.6667 0 11.3834 0 7.33333C0 3.28325 3.28325 0 7.33333 0C11.3834 0 14.6667 3.28325 14.6667 7.33333C14.6667 11.3834 11.3834 14.6667 7.33333 14.6667V13.3333C10.647 13.3333 13.3333 10.647 13.3333 7.33333Z\" fill=\"url(#paint0_linear_0_12)\"></path><path d=\"M4.66667 8V6C4.66667 5.63181 4.96514 5.33333 5.33333 5.33333C5.70152 5.33333 6 5.63181 6 6V8C6 8.36819 5.70152 8.66667 5.33333 8.66667C4.96514 8.66667 4.66667 8.36819 4.66667 8ZM8.66667 8V6C8.66667 5.63181 8.96514 5.33333 9.33333 5.33333C9.70152 5.33333 10 5.63181 10 6V8C10 8.36819 9.70152 8.66667 9.33333 8.66667C8.96514 8.66667 8.66667 8.36819 8.66667 8Z\" fill=\"url(#paint1_linear_0_12)\"></path></g><defs><linearGradient id=\"paint0_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient><linearGradient id=\"paint1_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient></defs></svg><span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">AI 自动化</span><!----><span role=\"presentation\" aria-hidden=\"true\" data-p-ink=\"true\" data-p-ink-active=\"false\" class=\"p-ink\" pd49=\"\" data-pc-name=\"ripple\" data-pc-section=\"root\"></span></button>",
+              "bounds": {
+                "x": 1209.84375,
+                "y": 113,
+                "width": 84.984375,
+                "height": 24,
+                "top": 113,
+                "right": 1294.828125,
+                "bottom": 137,
+                "left": 1209.84375
+              },
+              "style": {
+                "color": "rgb(108, 201, 254)",
+                "transform": "none",
+                "font": "500 12px / 16px Inter",
+                "background": "linear-gradient(rgb(255, 255, 255), rgb(255, 255, 255)) repeat scroll 0% 0% / auto padding-box padding-box, rgba(0, 0, 0, 0) linear-gradient(139.35deg, rgb(63, 170, 246) 0%, rgb(243, 89, 220) 50%, rgb(242, 143, 176) 100%) repeat scroll 0% 0% / auto border-box border-box"
+              },
+              "animations": [
+                {
+                  "name": "rotate-30b6698f",
+                  "time": 0,
+                  "state": "paused"
+                }
+              ]
+            }
+          ],
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "c8ab71f29aebc0ec3805f5f888e0c590c6c87bd479cc4d2151aed53cf2903a0a",
+              "c8ab71f29aebc0ec3805f5f888e0c590c6c87bd479cc4d2151aed53cf2903a0a",
+              "c8ab71f29aebc0ec3805f5f888e0c590c6c87bd479cc4d2151aed53cf2903a0a"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/workbench-notifications-light-diff.png"
+    },
+    {
+      "id": "workbench-notifications",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": true,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/workbench-notifications-dark-production.png",
+          "full": "visual/workbench-notifications-dark-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "diagnostic": [
+            {
+              "html": "<button data-v-5d1c6974=\"\" data-v-c7206253=\"\" class=\"p-button p-component p-button-outlined create-automation-button rx_button xxs\" data-p=\"outlined\" type=\"button\" disabled=\"\" aria-label=\"AI 自动化\" data-pc-name=\"button\" data-p-disabled=\"true\" rotate=\"false\" pc31=\"\" data-pc-section=\"root\" data-pd-ripple=\"true\" style=\"overflow: hidden; position: relative;\"><svg data-v-442d6e45=\"\" data-v-5d1c6974=\"\" preserveAspectRatio=\"none\" overflow=\"visible\" width=\"1em\" height=\"1em\" viewBox=\"0 0 14.6667 14.6667\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" class=\"svg animate-duration-2500 animate-duration-2500\" data-name=\"roxy-agent/rx-ic-create-automation\" style=\"display: block; --e49b1ef0: 16px; --v30a509d2: inherit;\"><g id=\"Vector\"><path d=\"M13.3333 7.33333C13.3333 4.01962 10.647 1.33333 7.33333 1.33333C4.01962 1.33333 1.33333 4.01962 1.33333 7.33333C1.33333 10.647 4.01962 13.3333 7.33333 13.3333V14.6667C3.28325 14.6667 0 11.3834 0 7.33333C0 3.28325 3.28325 0 7.33333 0C11.3834 0 14.6667 3.28325 14.6667 7.33333C14.6667 11.3834 11.3834 14.6667 7.33333 14.6667V13.3333C10.647 13.3333 13.3333 10.647 13.3333 7.33333Z\" fill=\"url(#paint0_linear_0_12)\"></path><path d=\"M4.66667 8V6C4.66667 5.63181 4.96514 5.33333 5.33333 5.33333C5.70152 5.33333 6 5.63181 6 6V8C6 8.36819 5.70152 8.66667 5.33333 8.66667C4.96514 8.66667 4.66667 8.36819 4.66667 8ZM8.66667 8V6C8.66667 5.63181 8.96514 5.33333 9.33333 5.33333C9.70152 5.33333 10 5.63181 10 6V8C10 8.36819 9.70152 8.66667 9.33333 8.66667C8.96514 8.66667 8.66667 8.36819 8.66667 8Z\" fill=\"url(#paint1_linear_0_12)\"></path></g><defs><linearGradient id=\"paint0_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient><linearGradient id=\"paint1_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient></defs></svg><span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">AI 自动化</span><!----><span role=\"presentation\" aria-hidden=\"true\" data-p-ink=\"true\" data-p-ink-active=\"false\" class=\"p-ink\" pd49=\"\" data-pc-name=\"ripple\" data-pc-section=\"root\"></span></button>",
+              "bounds": {
+                "x": 1209.84375,
+                "y": 113,
+                "width": 84.984375,
+                "height": 24,
+                "top": 113,
+                "right": 1294.828125,
+                "bottom": 137,
+                "left": 1209.84375
+              },
+              "style": {
+                "color": "rgb(138, 144, 147)",
+                "transform": "none",
+                "font": "500 12px / 16px Inter",
+                "background": "linear-gradient(rgb(41, 48, 56), rgb(41, 48, 56)) repeat scroll 0% 0% / auto padding-box padding-box, rgba(0, 0, 0, 0) linear-gradient(139.35deg, rgb(63, 170, 246) 0%, rgb(243, 89, 220) 50%, rgb(242, 143, 176) 100%) repeat scroll 0% 0% / auto border-box border-box"
+              },
+              "animations": [
+                {
+                  "name": "rotate-30b6698f",
+                  "time": 0,
+                  "state": "paused"
+                }
+              ]
+            }
+          ],
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "deeb4646e224d6828fc234187bcaf3899bad168b07778c88e6f69f47672a8e1f",
+              "cdddf2dcc673e00998800027eecd14eee3d1e909967ebd14db70c6414693a102",
+              "cdddf2dcc673e00998800027eecd14eee3d1e909967ebd14db70c6414693a102",
+              "cdddf2dcc673e00998800027eecd14eee3d1e909967ebd14db70c6414693a102"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/workbench-notifications-dark-reference.png",
+          "full": "visual/workbench-notifications-dark-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "diagnostic": [
+            {
+              "html": "<button data-v-5d1c6974=\"\" data-v-c7206253=\"\" class=\"p-button p-component p-button-outlined create-automation-button rx_button xxs\" data-p=\"outlined\" type=\"button\" disabled=\"\" aria-label=\"AI 自动化\" data-pc-name=\"button\" data-p-disabled=\"true\" rotate=\"false\" pc31=\"\" data-pc-section=\"root\" data-pd-ripple=\"true\" style=\"overflow: hidden; position: relative;\"><svg data-v-442d6e45=\"\" data-v-5d1c6974=\"\" preserveAspectRatio=\"none\" overflow=\"visible\" width=\"1em\" height=\"1em\" viewBox=\"0 0 14.6667 14.6667\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" class=\"svg animate-duration-2500 animate-duration-2500\" data-name=\"roxy-agent/rx-ic-create-automation\" style=\"display: block; --e49b1ef0: 16px; --v30a509d2: inherit;\"><g id=\"Vector\"><path d=\"M13.3333 7.33333C13.3333 4.01962 10.647 1.33333 7.33333 1.33333C4.01962 1.33333 1.33333 4.01962 1.33333 7.33333C1.33333 10.647 4.01962 13.3333 7.33333 13.3333V14.6667C3.28325 14.6667 0 11.3834 0 7.33333C0 3.28325 3.28325 0 7.33333 0C11.3834 0 14.6667 3.28325 14.6667 7.33333C14.6667 11.3834 11.3834 14.6667 7.33333 14.6667V13.3333C10.647 13.3333 13.3333 10.647 13.3333 7.33333Z\" fill=\"url(#paint0_linear_0_12)\"></path><path d=\"M4.66667 8V6C4.66667 5.63181 4.96514 5.33333 5.33333 5.33333C5.70152 5.33333 6 5.63181 6 6V8C6 8.36819 5.70152 8.66667 5.33333 8.66667C4.96514 8.66667 4.66667 8.36819 4.66667 8ZM8.66667 8V6C8.66667 5.63181 8.96514 5.33333 9.33333 5.33333C9.70152 5.33333 10 5.63181 10 6V8C10 8.36819 9.70152 8.66667 9.33333 8.66667C8.96514 8.66667 8.66667 8.36819 8.66667 8Z\" fill=\"url(#paint1_linear_0_12)\"></path></g><defs><linearGradient id=\"paint0_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient><linearGradient id=\"paint1_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient></defs></svg><span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">AI 自动化</span><!----><span role=\"presentation\" aria-hidden=\"true\" data-p-ink=\"true\" data-p-ink-active=\"false\" class=\"p-ink\" pd49=\"\" data-pc-name=\"ripple\" data-pc-section=\"root\"></span></button>",
+              "bounds": {
+                "x": 1209.84375,
+                "y": 113,
+                "width": 84.984375,
+                "height": 24,
+                "top": 113,
+                "right": 1294.828125,
+                "bottom": 137,
+                "left": 1209.84375
+              },
+              "style": {
+                "color": "rgb(138, 144, 147)",
+                "transform": "none",
+                "font": "500 12px / 16px Inter",
+                "background": "linear-gradient(rgb(41, 48, 56), rgb(41, 48, 56)) repeat scroll 0% 0% / auto padding-box padding-box, rgba(0, 0, 0, 0) linear-gradient(139.35deg, rgb(63, 170, 246) 0%, rgb(243, 89, 220) 50%, rgb(242, 143, 176) 100%) repeat scroll 0% 0% / auto border-box border-box"
+              },
+              "animations": [
+                {
+                  "name": "rotate-30b6698f",
+                  "time": 0,
+                  "state": "paused"
+                }
+              ]
+            }
+          ],
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "cdddf2dcc673e00998800027eecd14eee3d1e909967ebd14db70c6414693a102",
+              "cdddf2dcc673e00998800027eecd14eee3d1e909967ebd14db70c6414693a102",
+              "cdddf2dcc673e00998800027eecd14eee3d1e909967ebd14db70c6414693a102"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/workbench-notifications-dark-diff.png"
+    },
+    {
+      "id": "workbench-profile-menu",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": true,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/workbench-profile-menu-light-production.png",
+          "full": "visual/workbench-profile-menu-light-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "diagnostic": [
+            {
+              "html": "<button data-v-5d1c6974=\"\" data-v-c7206253=\"\" class=\"p-button p-component p-button-outlined create-automation-button rx_button xxs\" data-p=\"outlined\" type=\"button\" disabled=\"\" aria-label=\"AI 自动化\" data-pc-name=\"button\" data-p-disabled=\"true\" rotate=\"false\" pc31=\"\" data-pc-section=\"root\" data-pd-ripple=\"true\" style=\"overflow: hidden; position: relative;\"><svg data-v-442d6e45=\"\" data-v-5d1c6974=\"\" preserveAspectRatio=\"none\" overflow=\"visible\" width=\"1em\" height=\"1em\" viewBox=\"0 0 14.6667 14.6667\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" class=\"svg animate-duration-2500 animate-duration-2500\" data-name=\"roxy-agent/rx-ic-create-automation\" style=\"display: block; --e49b1ef0: 16px; --v30a509d2: inherit;\"><g id=\"Vector\"><path d=\"M13.3333 7.33333C13.3333 4.01962 10.647 1.33333 7.33333 1.33333C4.01962 1.33333 1.33333 4.01962 1.33333 7.33333C1.33333 10.647 4.01962 13.3333 7.33333 13.3333V14.6667C3.28325 14.6667 0 11.3834 0 7.33333C0 3.28325 3.28325 0 7.33333 0C11.3834 0 14.6667 3.28325 14.6667 7.33333C14.6667 11.3834 11.3834 14.6667 7.33333 14.6667V13.3333C10.647 13.3333 13.3333 10.647 13.3333 7.33333Z\" fill=\"url(#paint0_linear_0_12)\"></path><path d=\"M4.66667 8V6C4.66667 5.63181 4.96514 5.33333 5.33333 5.33333C5.70152 5.33333 6 5.63181 6 6V8C6 8.36819 5.70152 8.66667 5.33333 8.66667C4.96514 8.66667 4.66667 8.36819 4.66667 8ZM8.66667 8V6C8.66667 5.63181 8.96514 5.33333 9.33333 5.33333C9.70152 5.33333 10 5.63181 10 6V8C10 8.36819 9.70152 8.66667 9.33333 8.66667C8.96514 8.66667 8.66667 8.36819 8.66667 8Z\" fill=\"url(#paint1_linear_0_12)\"></path></g><defs><linearGradient id=\"paint0_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient><linearGradient id=\"paint1_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient></defs></svg><span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">AI 自动化</span><!----><span role=\"presentation\" aria-hidden=\"true\" data-p-ink=\"true\" data-p-ink-active=\"false\" class=\"p-ink\" pd49=\"\" data-pc-name=\"ripple\" data-pc-section=\"root\"></span></button>",
+              "bounds": {
+                "x": 1209.84375,
+                "y": 113,
+                "width": 84.984375,
+                "height": 24,
+                "top": 113,
+                "right": 1294.828125,
+                "bottom": 137,
+                "left": 1209.84375
+              },
+              "style": {
+                "color": "rgb(108, 201, 254)",
+                "transform": "none",
+                "font": "500 12px / 16px Inter",
+                "background": "linear-gradient(rgb(255, 255, 255), rgb(255, 255, 255)) repeat scroll 0% 0% / auto padding-box padding-box, rgba(0, 0, 0, 0) linear-gradient(139.35deg, rgb(63, 170, 246) 0%, rgb(243, 89, 220) 50%, rgb(242, 143, 176) 100%) repeat scroll 0% 0% / auto border-box border-box"
+              },
+              "animations": [
+                {
+                  "name": "rotate-30b6698f",
+                  "time": 0,
+                  "state": "paused"
+                }
+              ]
+            }
+          ],
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "1d97d0aa2b043d8572ade5a83ccd4f848004299a958a34b03730110df4a9df99",
+              "1d97d0aa2b043d8572ade5a83ccd4f848004299a958a34b03730110df4a9df99",
+              "1d97d0aa2b043d8572ade5a83ccd4f848004299a958a34b03730110df4a9df99"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/workbench-profile-menu-light-reference.png",
+          "full": "visual/workbench-profile-menu-light-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "diagnostic": [
+            {
+              "html": "<button data-v-5d1c6974=\"\" data-v-c7206253=\"\" class=\"p-button p-component p-button-outlined create-automation-button rx_button xxs\" data-p=\"outlined\" type=\"button\" disabled=\"\" aria-label=\"AI 自动化\" data-pc-name=\"button\" data-p-disabled=\"true\" rotate=\"false\" pc31=\"\" data-pc-section=\"root\" data-pd-ripple=\"true\" style=\"overflow: hidden; position: relative;\"><svg data-v-442d6e45=\"\" data-v-5d1c6974=\"\" preserveAspectRatio=\"none\" overflow=\"visible\" width=\"1em\" height=\"1em\" viewBox=\"0 0 14.6667 14.6667\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" class=\"svg animate-duration-2500 animate-duration-2500\" data-name=\"roxy-agent/rx-ic-create-automation\" style=\"display: block; --e49b1ef0: 16px; --v30a509d2: inherit;\"><g id=\"Vector\"><path d=\"M13.3333 7.33333C13.3333 4.01962 10.647 1.33333 7.33333 1.33333C4.01962 1.33333 1.33333 4.01962 1.33333 7.33333C1.33333 10.647 4.01962 13.3333 7.33333 13.3333V14.6667C3.28325 14.6667 0 11.3834 0 7.33333C0 3.28325 3.28325 0 7.33333 0C11.3834 0 14.6667 3.28325 14.6667 7.33333C14.6667 11.3834 11.3834 14.6667 7.33333 14.6667V13.3333C10.647 13.3333 13.3333 10.647 13.3333 7.33333Z\" fill=\"url(#paint0_linear_0_12)\"></path><path d=\"M4.66667 8V6C4.66667 5.63181 4.96514 5.33333 5.33333 5.33333C5.70152 5.33333 6 5.63181 6 6V8C6 8.36819 5.70152 8.66667 5.33333 8.66667C4.96514 8.66667 4.66667 8.36819 4.66667 8ZM8.66667 8V6C8.66667 5.63181 8.96514 5.33333 9.33333 5.33333C9.70152 5.33333 10 5.63181 10 6V8C10 8.36819 9.70152 8.66667 9.33333 8.66667C8.96514 8.66667 8.66667 8.36819 8.66667 8Z\" fill=\"url(#paint1_linear_0_12)\"></path></g><defs><linearGradient id=\"paint0_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient><linearGradient id=\"paint1_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient></defs></svg><span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">AI 自动化</span><!----><span role=\"presentation\" aria-hidden=\"true\" data-p-ink=\"true\" data-p-ink-active=\"false\" class=\"p-ink\" pd49=\"\" data-pc-name=\"ripple\" data-pc-section=\"root\"></span></button>",
+              "bounds": {
+                "x": 1209.84375,
+                "y": 113,
+                "width": 84.984375,
+                "height": 24,
+                "top": 113,
+                "right": 1294.828125,
+                "bottom": 137,
+                "left": 1209.84375
+              },
+              "style": {
+                "color": "rgb(108, 201, 254)",
+                "transform": "none",
+                "font": "500 12px / 16px Inter",
+                "background": "linear-gradient(rgb(255, 255, 255), rgb(255, 255, 255)) repeat scroll 0% 0% / auto padding-box padding-box, rgba(0, 0, 0, 0) linear-gradient(139.35deg, rgb(63, 170, 246) 0%, rgb(243, 89, 220) 50%, rgb(242, 143, 176) 100%) repeat scroll 0% 0% / auto border-box border-box"
+              },
+              "animations": [
+                {
+                  "name": "rotate-30b6698f",
+                  "time": 0,
+                  "state": "paused"
+                }
+              ]
+            }
+          ],
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "1d97d0aa2b043d8572ade5a83ccd4f848004299a958a34b03730110df4a9df99",
+              "1d97d0aa2b043d8572ade5a83ccd4f848004299a958a34b03730110df4a9df99",
+              "1d97d0aa2b043d8572ade5a83ccd4f848004299a958a34b03730110df4a9df99"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/workbench-profile-menu-light-diff.png"
+    },
+    {
+      "id": "workbench-profile-menu",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": true,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/workbench-profile-menu-dark-production.png",
+          "full": "visual/workbench-profile-menu-dark-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "diagnostic": [
+            {
+              "html": "<button data-v-5d1c6974=\"\" data-v-c7206253=\"\" class=\"p-button p-component p-button-outlined create-automation-button rx_button xxs\" data-p=\"outlined\" type=\"button\" disabled=\"\" aria-label=\"AI 自动化\" data-pc-name=\"button\" data-p-disabled=\"true\" rotate=\"false\" pc31=\"\" data-pc-section=\"root\" data-pd-ripple=\"true\" style=\"overflow: hidden; position: relative;\"><svg data-v-442d6e45=\"\" data-v-5d1c6974=\"\" preserveAspectRatio=\"none\" overflow=\"visible\" width=\"1em\" height=\"1em\" viewBox=\"0 0 14.6667 14.6667\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" class=\"svg animate-duration-2500 animate-duration-2500\" data-name=\"roxy-agent/rx-ic-create-automation\" style=\"display: block; --e49b1ef0: 16px; --v30a509d2: inherit;\"><g id=\"Vector\"><path d=\"M13.3333 7.33333C13.3333 4.01962 10.647 1.33333 7.33333 1.33333C4.01962 1.33333 1.33333 4.01962 1.33333 7.33333C1.33333 10.647 4.01962 13.3333 7.33333 13.3333V14.6667C3.28325 14.6667 0 11.3834 0 7.33333C0 3.28325 3.28325 0 7.33333 0C11.3834 0 14.6667 3.28325 14.6667 7.33333C14.6667 11.3834 11.3834 14.6667 7.33333 14.6667V13.3333C10.647 13.3333 13.3333 10.647 13.3333 7.33333Z\" fill=\"url(#paint0_linear_0_12)\"></path><path d=\"M4.66667 8V6C4.66667 5.63181 4.96514 5.33333 5.33333 5.33333C5.70152 5.33333 6 5.63181 6 6V8C6 8.36819 5.70152 8.66667 5.33333 8.66667C4.96514 8.66667 4.66667 8.36819 4.66667 8ZM8.66667 8V6C8.66667 5.63181 8.96514 5.33333 9.33333 5.33333C9.70152 5.33333 10 5.63181 10 6V8C10 8.36819 9.70152 8.66667 9.33333 8.66667C8.96514 8.66667 8.66667 8.36819 8.66667 8Z\" fill=\"url(#paint1_linear_0_12)\"></path></g><defs><linearGradient id=\"paint0_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient><linearGradient id=\"paint1_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient></defs></svg><span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">AI 自动化</span><!----><span role=\"presentation\" aria-hidden=\"true\" data-p-ink=\"true\" data-p-ink-active=\"false\" class=\"p-ink\" pd49=\"\" data-pc-name=\"ripple\" data-pc-section=\"root\"></span></button>",
+              "bounds": {
+                "x": 1209.84375,
+                "y": 113,
+                "width": 84.984375,
+                "height": 24,
+                "top": 113,
+                "right": 1294.828125,
+                "bottom": 137,
+                "left": 1209.84375
+              },
+              "style": {
+                "color": "rgb(138, 144, 147)",
+                "transform": "none",
+                "font": "500 12px / 16px Inter",
+                "background": "linear-gradient(rgb(41, 48, 56), rgb(41, 48, 56)) repeat scroll 0% 0% / auto padding-box padding-box, rgba(0, 0, 0, 0) linear-gradient(139.35deg, rgb(63, 170, 246) 0%, rgb(243, 89, 220) 50%, rgb(242, 143, 176) 100%) repeat scroll 0% 0% / auto border-box border-box"
+              },
+              "animations": [
+                {
+                  "name": "rotate-30b6698f",
+                  "time": 0,
+                  "state": "paused"
+                }
+              ]
+            }
+          ],
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "4263510006278ab60c005d7acaed3e56699ac59b20886da3cd82973665e7a6df",
+              "4263510006278ab60c005d7acaed3e56699ac59b20886da3cd82973665e7a6df",
+              "4263510006278ab60c005d7acaed3e56699ac59b20886da3cd82973665e7a6df"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/workbench-profile-menu-dark-reference.png",
+          "full": "visual/workbench-profile-menu-dark-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "diagnostic": [
+            {
+              "html": "<button data-v-5d1c6974=\"\" data-v-c7206253=\"\" class=\"p-button p-component p-button-outlined create-automation-button rx_button xxs\" data-p=\"outlined\" type=\"button\" disabled=\"\" aria-label=\"AI 自动化\" data-pc-name=\"button\" data-p-disabled=\"true\" rotate=\"false\" pc31=\"\" data-pc-section=\"root\" data-pd-ripple=\"true\" style=\"overflow: hidden; position: relative;\"><svg data-v-442d6e45=\"\" data-v-5d1c6974=\"\" preserveAspectRatio=\"none\" overflow=\"visible\" width=\"1em\" height=\"1em\" viewBox=\"0 0 14.6667 14.6667\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" class=\"svg animate-duration-2500 animate-duration-2500\" data-name=\"roxy-agent/rx-ic-create-automation\" style=\"display: block; --e49b1ef0: 16px; --v30a509d2: inherit;\"><g id=\"Vector\"><path d=\"M13.3333 7.33333C13.3333 4.01962 10.647 1.33333 7.33333 1.33333C4.01962 1.33333 1.33333 4.01962 1.33333 7.33333C1.33333 10.647 4.01962 13.3333 7.33333 13.3333V14.6667C3.28325 14.6667 0 11.3834 0 7.33333C0 3.28325 3.28325 0 7.33333 0C11.3834 0 14.6667 3.28325 14.6667 7.33333C14.6667 11.3834 11.3834 14.6667 7.33333 14.6667V13.3333C10.647 13.3333 13.3333 10.647 13.3333 7.33333Z\" fill=\"url(#paint0_linear_0_12)\"></path><path d=\"M4.66667 8V6C4.66667 5.63181 4.96514 5.33333 5.33333 5.33333C5.70152 5.33333 6 5.63181 6 6V8C6 8.36819 5.70152 8.66667 5.33333 8.66667C4.96514 8.66667 4.66667 8.36819 4.66667 8ZM8.66667 8V6C8.66667 5.63181 8.96514 5.33333 9.33333 5.33333C9.70152 5.33333 10 5.63181 10 6V8C10 8.36819 9.70152 8.66667 9.33333 8.66667C8.96514 8.66667 8.66667 8.36819 8.66667 8Z\" fill=\"url(#paint1_linear_0_12)\"></path></g><defs><linearGradient id=\"paint0_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient><linearGradient id=\"paint1_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient></defs></svg><span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">AI 自动化</span><!----><span role=\"presentation\" aria-hidden=\"true\" data-p-ink=\"true\" data-p-ink-active=\"false\" class=\"p-ink\" pd49=\"\" data-pc-name=\"ripple\" data-pc-section=\"root\"></span></button>",
+              "bounds": {
+                "x": 1209.84375,
+                "y": 113,
+                "width": 84.984375,
+                "height": 24,
+                "top": 113,
+                "right": 1294.828125,
+                "bottom": 137,
+                "left": 1209.84375
+              },
+              "style": {
+                "color": "rgb(138, 144, 147)",
+                "transform": "none",
+                "font": "500 12px / 16px Inter",
+                "background": "linear-gradient(rgb(41, 48, 56), rgb(41, 48, 56)) repeat scroll 0% 0% / auto padding-box padding-box, rgba(0, 0, 0, 0) linear-gradient(139.35deg, rgb(63, 170, 246) 0%, rgb(243, 89, 220) 50%, rgb(242, 143, 176) 100%) repeat scroll 0% 0% / auto border-box border-box"
+              },
+              "animations": [
+                {
+                  "name": "rotate-30b6698f",
+                  "time": 0,
+                  "state": "paused"
+                }
+              ]
+            }
+          ],
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "4263510006278ab60c005d7acaed3e56699ac59b20886da3cd82973665e7a6df",
+              "4263510006278ab60c005d7acaed3e56699ac59b20886da3cd82973665e7a6df",
+              "4263510006278ab60c005d7acaed3e56699ac59b20886da3cd82973665e7a6df"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/workbench-profile-menu-dark-diff.png"
+    },
+    {
+      "id": "workbench-compact-sidebar",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": true,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/workbench-compact-sidebar-light-production.png",
+          "full": "visual/workbench-compact-sidebar-light-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "diagnostic": [
+            {
+              "html": "<button data-v-5d1c6974=\"\" data-v-c7206253=\"\" class=\"p-button p-component p-button-outlined create-automation-button rx_button xxs\" data-p=\"outlined\" type=\"button\" disabled=\"\" aria-label=\"AI 自动化\" data-pc-name=\"button\" data-p-disabled=\"true\" rotate=\"false\" pc31=\"\" data-pc-section=\"root\" data-pd-ripple=\"true\" style=\"overflow: hidden; position: relative;\"><svg data-v-442d6e45=\"\" data-v-5d1c6974=\"\" preserveAspectRatio=\"none\" overflow=\"visible\" width=\"1em\" height=\"1em\" viewBox=\"0 0 14.6667 14.6667\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" class=\"svg animate-duration-2500 animate-duration-2500\" data-name=\"roxy-agent/rx-ic-create-automation\" style=\"display: block; --e49b1ef0: 16px; --v30a509d2: inherit;\"><g id=\"Vector\"><path d=\"M13.3333 7.33333C13.3333 4.01962 10.647 1.33333 7.33333 1.33333C4.01962 1.33333 1.33333 4.01962 1.33333 7.33333C1.33333 10.647 4.01962 13.3333 7.33333 13.3333V14.6667C3.28325 14.6667 0 11.3834 0 7.33333C0 3.28325 3.28325 0 7.33333 0C11.3834 0 14.6667 3.28325 14.6667 7.33333C14.6667 11.3834 11.3834 14.6667 7.33333 14.6667V13.3333C10.647 13.3333 13.3333 10.647 13.3333 7.33333Z\" fill=\"url(#paint0_linear_0_12)\"></path><path d=\"M4.66667 8V6C4.66667 5.63181 4.96514 5.33333 5.33333 5.33333C5.70152 5.33333 6 5.63181 6 6V8C6 8.36819 5.70152 8.66667 5.33333 8.66667C4.96514 8.66667 4.66667 8.36819 4.66667 8ZM8.66667 8V6C8.66667 5.63181 8.96514 5.33333 9.33333 5.33333C9.70152 5.33333 10 5.63181 10 6V8C10 8.36819 9.70152 8.66667 9.33333 8.66667C8.96514 8.66667 8.66667 8.36819 8.66667 8Z\" fill=\"url(#paint1_linear_0_12)\"></path></g><defs><linearGradient id=\"paint0_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient><linearGradient id=\"paint1_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient></defs></svg><span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">AI 自动化</span><!----><span role=\"presentation\" aria-hidden=\"true\" data-p-ink=\"true\" data-p-ink-active=\"false\" class=\"p-ink\" pd49=\"\" data-pc-name=\"ripple\" data-pc-section=\"root\"></span></button>",
+              "bounds": {
+                "x": 1209.84375,
+                "y": 113,
+                "width": 84.984375,
+                "height": 24,
+                "top": 113,
+                "right": 1294.828125,
+                "bottom": 137,
+                "left": 1209.84375
+              },
+              "style": {
+                "color": "rgb(108, 201, 254)",
+                "transform": "none",
+                "font": "500 12px / 16px Inter",
+                "background": "linear-gradient(rgb(255, 255, 255), rgb(255, 255, 255)) repeat scroll 0% 0% / auto padding-box padding-box, rgba(0, 0, 0, 0) linear-gradient(139.35deg, rgb(63, 170, 246) 0%, rgb(243, 89, 220) 50%, rgb(242, 143, 176) 100%) repeat scroll 0% 0% / auto border-box border-box"
+              },
+              "animations": []
+            }
+          ],
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "61d01e2a73e6f1c009bfecd41365c283a46daf04f8b7a222aa8fc6a9b76e9ecf",
+              "61d01e2a73e6f1c009bfecd41365c283a46daf04f8b7a222aa8fc6a9b76e9ecf",
+              "61d01e2a73e6f1c009bfecd41365c283a46daf04f8b7a222aa8fc6a9b76e9ecf"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/workbench-compact-sidebar-light-reference.png",
+          "full": "visual/workbench-compact-sidebar-light-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "diagnostic": [
+            {
+              "html": "<button data-v-5d1c6974=\"\" data-v-c7206253=\"\" class=\"p-button p-component p-button-outlined create-automation-button rx_button xxs\" data-p=\"outlined\" type=\"button\" disabled=\"\" aria-label=\"AI 自动化\" data-pc-name=\"button\" data-p-disabled=\"true\" rotate=\"false\" pc31=\"\" data-pc-section=\"root\" data-pd-ripple=\"true\" style=\"overflow: hidden; position: relative;\"><svg data-v-442d6e45=\"\" data-v-5d1c6974=\"\" preserveAspectRatio=\"none\" overflow=\"visible\" width=\"1em\" height=\"1em\" viewBox=\"0 0 14.6667 14.6667\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" class=\"svg animate-duration-2500 animate-duration-2500\" data-name=\"roxy-agent/rx-ic-create-automation\" style=\"display: block; --e49b1ef0: 16px; --v30a509d2: inherit;\"><g id=\"Vector\"><path d=\"M13.3333 7.33333C13.3333 4.01962 10.647 1.33333 7.33333 1.33333C4.01962 1.33333 1.33333 4.01962 1.33333 7.33333C1.33333 10.647 4.01962 13.3333 7.33333 13.3333V14.6667C3.28325 14.6667 0 11.3834 0 7.33333C0 3.28325 3.28325 0 7.33333 0C11.3834 0 14.6667 3.28325 14.6667 7.33333C14.6667 11.3834 11.3834 14.6667 7.33333 14.6667V13.3333C10.647 13.3333 13.3333 10.647 13.3333 7.33333Z\" fill=\"url(#paint0_linear_0_12)\"></path><path d=\"M4.66667 8V6C4.66667 5.63181 4.96514 5.33333 5.33333 5.33333C5.70152 5.33333 6 5.63181 6 6V8C6 8.36819 5.70152 8.66667 5.33333 8.66667C4.96514 8.66667 4.66667 8.36819 4.66667 8ZM8.66667 8V6C8.66667 5.63181 8.96514 5.33333 9.33333 5.33333C9.70152 5.33333 10 5.63181 10 6V8C10 8.36819 9.70152 8.66667 9.33333 8.66667C8.96514 8.66667 8.66667 8.36819 8.66667 8Z\" fill=\"url(#paint1_linear_0_12)\"></path></g><defs><linearGradient id=\"paint0_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient><linearGradient id=\"paint1_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient></defs></svg><span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">AI 自动化</span><!----><span role=\"presentation\" aria-hidden=\"true\" data-p-ink=\"true\" data-p-ink-active=\"false\" class=\"p-ink\" pd49=\"\" data-pc-name=\"ripple\" data-pc-section=\"root\"></span></button>",
+              "bounds": {
+                "x": 1209.84375,
+                "y": 113,
+                "width": 84.984375,
+                "height": 24,
+                "top": 113,
+                "right": 1294.828125,
+                "bottom": 137,
+                "left": 1209.84375
+              },
+              "style": {
+                "color": "rgb(108, 201, 254)",
+                "transform": "none",
+                "font": "500 12px / 16px Inter",
+                "background": "linear-gradient(rgb(255, 255, 255), rgb(255, 255, 255)) repeat scroll 0% 0% / auto padding-box padding-box, rgba(0, 0, 0, 0) linear-gradient(139.35deg, rgb(63, 170, 246) 0%, rgb(243, 89, 220) 50%, rgb(242, 143, 176) 100%) repeat scroll 0% 0% / auto border-box border-box"
+              },
+              "animations": []
+            }
+          ],
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "61d01e2a73e6f1c009bfecd41365c283a46daf04f8b7a222aa8fc6a9b76e9ecf",
+              "61d01e2a73e6f1c009bfecd41365c283a46daf04f8b7a222aa8fc6a9b76e9ecf",
+              "61d01e2a73e6f1c009bfecd41365c283a46daf04f8b7a222aa8fc6a9b76e9ecf"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/workbench-compact-sidebar-light-diff.png"
+    },
+    {
+      "id": "workbench-compact-sidebar",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": true,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/workbench-compact-sidebar-dark-production.png",
+          "full": "visual/workbench-compact-sidebar-dark-production-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "diagnostic": [
+            {
+              "html": "<button data-v-5d1c6974=\"\" data-v-c7206253=\"\" class=\"p-button p-component p-button-outlined create-automation-button rx_button xxs\" data-p=\"outlined\" type=\"button\" disabled=\"\" aria-label=\"AI 自动化\" data-pc-name=\"button\" data-p-disabled=\"true\" rotate=\"false\" pc31=\"\" data-pc-section=\"root\" data-pd-ripple=\"true\" style=\"overflow: hidden; position: relative;\"><svg data-v-442d6e45=\"\" data-v-5d1c6974=\"\" preserveAspectRatio=\"none\" overflow=\"visible\" width=\"1em\" height=\"1em\" viewBox=\"0 0 14.6667 14.6667\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" class=\"svg animate-duration-2500 animate-duration-2500\" data-name=\"roxy-agent/rx-ic-create-automation\" style=\"display: block; --e49b1ef0: 16px; --v30a509d2: inherit;\"><g id=\"Vector\"><path d=\"M13.3333 7.33333C13.3333 4.01962 10.647 1.33333 7.33333 1.33333C4.01962 1.33333 1.33333 4.01962 1.33333 7.33333C1.33333 10.647 4.01962 13.3333 7.33333 13.3333V14.6667C3.28325 14.6667 0 11.3834 0 7.33333C0 3.28325 3.28325 0 7.33333 0C11.3834 0 14.6667 3.28325 14.6667 7.33333C14.6667 11.3834 11.3834 14.6667 7.33333 14.6667V13.3333C10.647 13.3333 13.3333 10.647 13.3333 7.33333Z\" fill=\"url(#paint0_linear_0_12)\"></path><path d=\"M4.66667 8V6C4.66667 5.63181 4.96514 5.33333 5.33333 5.33333C5.70152 5.33333 6 5.63181 6 6V8C6 8.36819 5.70152 8.66667 5.33333 8.66667C4.96514 8.66667 4.66667 8.36819 4.66667 8ZM8.66667 8V6C8.66667 5.63181 8.96514 5.33333 9.33333 5.33333C9.70152 5.33333 10 5.63181 10 6V8C10 8.36819 9.70152 8.66667 9.33333 8.66667C8.96514 8.66667 8.66667 8.36819 8.66667 8Z\" fill=\"url(#paint1_linear_0_12)\"></path></g><defs><linearGradient id=\"paint0_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient><linearGradient id=\"paint1_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient></defs></svg><span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">AI 自动化</span><!----><span role=\"presentation\" aria-hidden=\"true\" data-p-ink=\"true\" data-p-ink-active=\"false\" class=\"p-ink\" pd49=\"\" data-pc-name=\"ripple\" data-pc-section=\"root\"></span></button>",
+              "bounds": {
+                "x": 1209.84375,
+                "y": 113,
+                "width": 84.984375,
+                "height": 24,
+                "top": 113,
+                "right": 1294.828125,
+                "bottom": 137,
+                "left": 1209.84375
+              },
+              "style": {
+                "color": "rgb(138, 144, 147)",
+                "transform": "none",
+                "font": "500 12px / 16px Inter",
+                "background": "linear-gradient(rgb(41, 48, 56), rgb(41, 48, 56)) repeat scroll 0% 0% / auto padding-box padding-box, rgba(0, 0, 0, 0) linear-gradient(139.35deg, rgb(63, 170, 246) 0%, rgb(243, 89, 220) 50%, rgb(242, 143, 176) 100%) repeat scroll 0% 0% / auto border-box border-box"
+              },
+              "animations": []
+            }
+          ],
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "3798abf8ab7c8da43b9a85d12f3cbff894d74899aab204124a411a87c932e74d",
+              "3798abf8ab7c8da43b9a85d12f3cbff894d74899aab204124a411a87c932e74d",
+              "3798abf8ab7c8da43b9a85d12f3cbff894d74899aab204124a411a87c932e74d"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/workbench-compact-sidebar-dark-reference.png",
+          "full": "visual/workbench-compact-sidebar-dark-reference-full.png",
+          "clip": {
+            "x": 0,
+            "y": 0,
+            "width": 1536,
+            "height": 960
+          },
+          "diagnostic": [
+            {
+              "html": "<button data-v-5d1c6974=\"\" data-v-c7206253=\"\" class=\"p-button p-component p-button-outlined create-automation-button rx_button xxs\" data-p=\"outlined\" type=\"button\" disabled=\"\" aria-label=\"AI 自动化\" data-pc-name=\"button\" data-p-disabled=\"true\" rotate=\"false\" pc31=\"\" data-pc-section=\"root\" data-pd-ripple=\"true\" style=\"overflow: hidden; position: relative;\"><svg data-v-442d6e45=\"\" data-v-5d1c6974=\"\" preserveAspectRatio=\"none\" overflow=\"visible\" width=\"1em\" height=\"1em\" viewBox=\"0 0 14.6667 14.6667\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" class=\"svg animate-duration-2500 animate-duration-2500\" data-name=\"roxy-agent/rx-ic-create-automation\" style=\"display: block; --e49b1ef0: 16px; --v30a509d2: inherit;\"><g id=\"Vector\"><path d=\"M13.3333 7.33333C13.3333 4.01962 10.647 1.33333 7.33333 1.33333C4.01962 1.33333 1.33333 4.01962 1.33333 7.33333C1.33333 10.647 4.01962 13.3333 7.33333 13.3333V14.6667C3.28325 14.6667 0 11.3834 0 7.33333C0 3.28325 3.28325 0 7.33333 0C11.3834 0 14.6667 3.28325 14.6667 7.33333C14.6667 11.3834 11.3834 14.6667 7.33333 14.6667V13.3333C10.647 13.3333 13.3333 10.647 13.3333 7.33333Z\" fill=\"url(#paint0_linear_0_12)\"></path><path d=\"M4.66667 8V6C4.66667 5.63181 4.96514 5.33333 5.33333 5.33333C5.70152 5.33333 6 5.63181 6 6V8C6 8.36819 5.70152 8.66667 5.33333 8.66667C4.96514 8.66667 4.66667 8.36819 4.66667 8ZM8.66667 8V6C8.66667 5.63181 8.96514 5.33333 9.33333 5.33333C9.70152 5.33333 10 5.63181 10 6V8C10 8.36819 9.70152 8.66667 9.33333 8.66667C8.96514 8.66667 8.66667 8.36819 8.66667 8Z\" fill=\"url(#paint1_linear_0_12)\"></path></g><defs><linearGradient id=\"paint0_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient><linearGradient id=\"paint1_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient></defs></svg><span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">AI 自动化</span><!----><span role=\"presentation\" aria-hidden=\"true\" data-p-ink=\"true\" data-p-ink-active=\"false\" class=\"p-ink\" pd49=\"\" data-pc-name=\"ripple\" data-pc-section=\"root\"></span></button>",
+              "bounds": {
+                "x": 1209.84375,
+                "y": 113,
+                "width": 84.984375,
+                "height": 24,
+                "top": 113,
+                "right": 1294.828125,
+                "bottom": 137,
+                "left": 1209.84375
+              },
+              "style": {
+                "color": "rgb(138, 144, 147)",
+                "transform": "none",
+                "font": "500 12px / 16px Inter",
+                "background": "linear-gradient(rgb(41, 48, 56), rgb(41, 48, 56)) repeat scroll 0% 0% / auto padding-box padding-box, rgba(0, 0, 0, 0) linear-gradient(139.35deg, rgb(63, 170, 246) 0%, rgb(243, 89, 220) 50%, rgb(242, 143, 176) 100%) repeat scroll 0% 0% / auto border-box border-box"
+              },
+              "animations": []
+            }
+          ],
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "3798abf8ab7c8da43b9a85d12f3cbff894d74899aab204124a411a87c932e74d",
+              "3798abf8ab7c8da43b9a85d12f3cbff894d74899aab204124a411a87c932e74d",
+              "3798abf8ab7c8da43b9a85d12f3cbff894d74899aab204124a411a87c932e74d"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1536,
+        "height": 960,
+        "changedPixels": 0,
+        "totalPixels": 1474560,
+        "bbox": null
+      },
+      "diff": "visual/workbench-compact-sidebar-dark-diff.png"
+    },
+    {
+      "id": "create-advanced",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/create-advanced-light-production.png",
+          "full": "visual/create-advanced-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "diagnostic": [],
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "a7988e6854fe1c07a01f266484fd8dfa502d5914af99e1bd368e53f4ad0ca346",
+              "9728a88c63b65eec96feb2542b6a10d4622a47b0cf0ce55bcf999efc89d32a2a",
+              "9728a88c63b65eec96feb2542b6a10d4622a47b0cf0ce55bcf999efc89d32a2a",
+              "9728a88c63b65eec96feb2542b6a10d4622a47b0cf0ce55bcf999efc89d32a2a"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/create-advanced-light-reference.png",
+          "full": "visual/create-advanced-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "diagnostic": [],
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "63e451504fc535fdd05426403074c752c45bf9439dcc7c887ac9cfbc2fdd9709",
+              "63e451504fc535fdd05426403074c752c45bf9439dcc7c887ac9cfbc2fdd9709",
+              "63e451504fc535fdd05426403074c752c45bf9439dcc7c887ac9cfbc2fdd9709"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/create-advanced-light-diff.png"
+    },
+    {
+      "id": "create-advanced",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/create-advanced-dark-production.png",
+          "full": "visual/create-advanced-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "diagnostic": [],
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "decee1b7edf5db10c08c6d25b14b70491fd377abe60bbcc5e7bc022ae34d347c",
+              "8b064a8861be27bf49eb667158c7df3581d69d6954c51a7d2badd8ebfc47b3ec",
+              "8b064a8861be27bf49eb667158c7df3581d69d6954c51a7d2badd8ebfc47b3ec",
+              "8b064a8861be27bf49eb667158c7df3581d69d6954c51a7d2badd8ebfc47b3ec"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/create-advanced-dark-reference.png",
+          "full": "visual/create-advanced-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "diagnostic": [],
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "50cabed7a75fdb97a24aabe4c5c292701c295cb4cbcafd35e74ffb7f61b5261d",
+              "50cabed7a75fdb97a24aabe4c5c292701c295cb4cbcafd35e74ffb7f61b5261d",
+              "50cabed7a75fdb97a24aabe4c5c292701c295cb4cbcafd35e74ffb7f61b5261d"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/create-advanced-dark-diff.png"
+    },
+    {
+      "id": "create-search-focus",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/create-search-focus-light-production.png",
+          "full": "visual/create-search-focus-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "diagnostic": [],
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "b685a05dffd67f9aaf6af17ff54527edfb2ec3d4a52f29282255c41b732f66e2",
+              "5fbbf87658c453470ddebd14d186b6c42dac813b23982c3526d30a4e131d8692",
+              "5fbbf87658c453470ddebd14d186b6c42dac813b23982c3526d30a4e131d8692",
+              "5fbbf87658c453470ddebd14d186b6c42dac813b23982c3526d30a4e131d8692"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/create-search-focus-light-reference.png",
+          "full": "visual/create-search-focus-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "diagnostic": [],
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "5342d35a3c1c05aea6aeba7cd1a06da0241d306ca4a6d0ba4c0eaf7bee4d0aa4",
+              "5342d35a3c1c05aea6aeba7cd1a06da0241d306ca4a6d0ba4c0eaf7bee4d0aa4",
+              "5342d35a3c1c05aea6aeba7cd1a06da0241d306ca4a6d0ba4c0eaf7bee4d0aa4"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/create-search-focus-light-diff.png"
+    },
+    {
+      "id": "create-search-focus",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/create-search-focus-dark-production.png",
+          "full": "visual/create-search-focus-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "diagnostic": [],
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "6f859c57a9d3a912f1980112db55a44b24a7fc171ac709a413b14fa269a49245",
+              "aaf7adfd995d114ad0c54d6ecbf619433ccce28bc371adb2f8405a9a516fbcf5",
+              "aaf7adfd995d114ad0c54d6ecbf619433ccce28bc371adb2f8405a9a516fbcf5",
+              "aaf7adfd995d114ad0c54d6ecbf619433ccce28bc371adb2f8405a9a516fbcf5"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/create-search-focus-dark-reference.png",
+          "full": "visual/create-search-focus-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "diagnostic": [],
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "72156f682a0e9dedda2018c0ef5adc275b83768bea092f333729bd61da0869d9",
+              "72156f682a0e9dedda2018c0ef5adc275b83768bea092f333729bd61da0869d9",
+              "72156f682a0e9dedda2018c0ef5adc275b83768bea092f333729bd61da0869d9"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/create-search-focus-dark-diff.png"
+    },
+    {
+      "id": "windows",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/windows-light-production.png",
+          "full": "visual/windows-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "diagnostic": [
+            {
+              "html": "<button data-v-5d1c6974=\"\" data-v-c7206253=\"\" class=\"p-button p-component p-button-outlined create-automation-button rx_button xxs\" data-p=\"outlined\" type=\"button\" disabled=\"\" aria-label=\"AI 自动化\" data-pc-name=\"button\" data-p-disabled=\"true\" rotate=\"false\" pc31=\"\" data-pc-section=\"root\" data-pd-ripple=\"true\" style=\"overflow: hidden; position: relative;\"><svg data-v-442d6e45=\"\" data-v-5d1c6974=\"\" preserveAspectRatio=\"none\" overflow=\"visible\" width=\"1em\" height=\"1em\" viewBox=\"0 0 14.6667 14.6667\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" class=\"svg animate-duration-2500 animate-duration-2500\" data-name=\"roxy-agent/rx-ic-create-automation\" style=\"display: block; --e49b1ef0: 16px; --v30a509d2: inherit;\"><g id=\"Vector\"><path d=\"M13.3333 7.33333C13.3333 4.01962 10.647 1.33333 7.33333 1.33333C4.01962 1.33333 1.33333 4.01962 1.33333 7.33333C1.33333 10.647 4.01962 13.3333 7.33333 13.3333V14.6667C3.28325 14.6667 0 11.3834 0 7.33333C0 3.28325 3.28325 0 7.33333 0C11.3834 0 14.6667 3.28325 14.6667 7.33333C14.6667 11.3834 11.3834 14.6667 7.33333 14.6667V13.3333C10.647 13.3333 13.3333 10.647 13.3333 7.33333Z\" fill=\"url(#paint0_linear_0_12)\"></path><path d=\"M4.66667 8V6C4.66667 5.63181 4.96514 5.33333 5.33333 5.33333C5.70152 5.33333 6 5.63181 6 6V8C6 8.36819 5.70152 8.66667 5.33333 8.66667C4.96514 8.66667 4.66667 8.36819 4.66667 8ZM8.66667 8V6C8.66667 5.63181 8.96514 5.33333 9.33333 5.33333C9.70152 5.33333 10 5.63181 10 6V8C10 8.36819 9.70152 8.66667 9.33333 8.66667C8.96514 8.66667 8.66667 8.36819 8.66667 8Z\" fill=\"url(#paint1_linear_0_12)\"></path></g><defs><linearGradient id=\"paint0_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient><linearGradient id=\"paint1_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient></defs></svg><span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">AI 自动化</span><!----><span role=\"presentation\" aria-hidden=\"true\" data-p-ink=\"true\" data-p-ink-active=\"false\" class=\"p-ink\" pd49=\"\" data-pc-name=\"ripple\" data-pc-section=\"root\"></span></button>",
+              "bounds": {
+                "x": 1209.84375,
+                "y": 113,
+                "width": 84.984375,
+                "height": 24,
+                "top": 113,
+                "right": 1294.828125,
+                "bottom": 137,
+                "left": 1209.84375
+              },
+              "style": {
+                "color": "rgb(108, 201, 254)",
+                "transform": "none",
+                "font": "500 12px / 16px Inter",
+                "background": "linear-gradient(rgb(255, 255, 255), rgb(255, 255, 255)) repeat scroll 0% 0% / auto padding-box padding-box, rgba(0, 0, 0, 0) linear-gradient(139.35deg, rgb(63, 170, 246) 0%, rgb(243, 89, 220) 50%, rgb(242, 143, 176) 100%) repeat scroll 0% 0% / auto border-box border-box"
+              },
+              "animations": [
+                {
+                  "name": "rotate-30b6698f",
+                  "time": 0,
+                  "state": "paused"
+                }
+              ]
+            }
+          ],
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "d8c106f54373de286bf9073913ae41daef0f3db2f588daf139dab475a9a76c0c",
+              "d8c106f54373de286bf9073913ae41daef0f3db2f588daf139dab475a9a76c0c",
+              "d8c106f54373de286bf9073913ae41daef0f3db2f588daf139dab475a9a76c0c"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/windows-light-reference.png",
+          "full": "visual/windows-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "diagnostic": [
+            {
+              "html": "<button data-v-5d1c6974=\"\" data-v-c7206253=\"\" class=\"p-button p-component p-button-outlined create-automation-button rx_button xxs\" data-p=\"outlined\" type=\"button\" disabled=\"\" aria-label=\"AI 自动化\" data-pc-name=\"button\" data-p-disabled=\"true\" rotate=\"false\" pc31=\"\" data-pc-section=\"root\" data-pd-ripple=\"true\" style=\"overflow: hidden; position: relative;\"><svg data-v-442d6e45=\"\" data-v-5d1c6974=\"\" preserveAspectRatio=\"none\" overflow=\"visible\" width=\"1em\" height=\"1em\" viewBox=\"0 0 14.6667 14.6667\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" class=\"svg animate-duration-2500 animate-duration-2500\" data-name=\"roxy-agent/rx-ic-create-automation\" style=\"display: block; --e49b1ef0: 16px; --v30a509d2: inherit;\"><g id=\"Vector\"><path d=\"M13.3333 7.33333C13.3333 4.01962 10.647 1.33333 7.33333 1.33333C4.01962 1.33333 1.33333 4.01962 1.33333 7.33333C1.33333 10.647 4.01962 13.3333 7.33333 13.3333V14.6667C3.28325 14.6667 0 11.3834 0 7.33333C0 3.28325 3.28325 0 7.33333 0C11.3834 0 14.6667 3.28325 14.6667 7.33333C14.6667 11.3834 11.3834 14.6667 7.33333 14.6667V13.3333C10.647 13.3333 13.3333 10.647 13.3333 7.33333Z\" fill=\"url(#paint0_linear_0_12)\"></path><path d=\"M4.66667 8V6C4.66667 5.63181 4.96514 5.33333 5.33333 5.33333C5.70152 5.33333 6 5.63181 6 6V8C6 8.36819 5.70152 8.66667 5.33333 8.66667C4.96514 8.66667 4.66667 8.36819 4.66667 8ZM8.66667 8V6C8.66667 5.63181 8.96514 5.33333 9.33333 5.33333C9.70152 5.33333 10 5.63181 10 6V8C10 8.36819 9.70152 8.66667 9.33333 8.66667C8.96514 8.66667 8.66667 8.36819 8.66667 8Z\" fill=\"url(#paint1_linear_0_12)\"></path></g><defs><linearGradient id=\"paint0_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient><linearGradient id=\"paint1_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient></defs></svg><span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">AI 自动化</span><!----><span role=\"presentation\" aria-hidden=\"true\" data-p-ink=\"true\" data-p-ink-active=\"false\" class=\"p-ink\" pd49=\"\" data-pc-name=\"ripple\" data-pc-section=\"root\"></span></button>",
+              "bounds": {
+                "x": 1209.84375,
+                "y": 113,
+                "width": 84.984375,
+                "height": 24,
+                "top": 113,
+                "right": 1294.828125,
+                "bottom": 137,
+                "left": 1209.84375
+              },
+              "style": {
+                "color": "rgb(108, 201, 254)",
+                "transform": "none",
+                "font": "500 12px / 16px Inter",
+                "background": "linear-gradient(rgb(255, 255, 255), rgb(255, 255, 255)) repeat scroll 0% 0% / auto padding-box padding-box, rgba(0, 0, 0, 0) linear-gradient(139.35deg, rgb(63, 170, 246) 0%, rgb(243, 89, 220) 50%, rgb(242, 143, 176) 100%) repeat scroll 0% 0% / auto border-box border-box"
+              },
+              "animations": [
+                {
+                  "name": "rotate-30b6698f",
+                  "time": 0,
+                  "state": "paused"
+                }
+              ]
+            }
+          ],
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "8d917ad950a2867448d4f93c5fe558587d648781c292c14b7d3773256c7b0a54",
+              "8d917ad950a2867448d4f93c5fe558587d648781c292c14b7d3773256c7b0a54",
+              "8d917ad950a2867448d4f93c5fe558587d648781c292c14b7d3773256c7b0a54"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/windows-light-diff.png"
+    },
+    {
+      "id": "windows",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/windows-dark-production.png",
+          "full": "visual/windows-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "diagnostic": [
+            {
+              "html": "<button data-v-5d1c6974=\"\" data-v-c7206253=\"\" class=\"p-button p-component p-button-outlined create-automation-button rx_button xxs\" data-p=\"outlined\" type=\"button\" disabled=\"\" aria-label=\"AI 自动化\" data-pc-name=\"button\" data-p-disabled=\"true\" rotate=\"false\" pc31=\"\" data-pc-section=\"root\" data-pd-ripple=\"true\" style=\"overflow: hidden; position: relative;\"><svg data-v-442d6e45=\"\" data-v-5d1c6974=\"\" preserveAspectRatio=\"none\" overflow=\"visible\" width=\"1em\" height=\"1em\" viewBox=\"0 0 14.6667 14.6667\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" class=\"svg animate-duration-2500 animate-duration-2500\" data-name=\"roxy-agent/rx-ic-create-automation\" style=\"display: block; --e49b1ef0: 16px; --v30a509d2: inherit;\"><g id=\"Vector\"><path d=\"M13.3333 7.33333C13.3333 4.01962 10.647 1.33333 7.33333 1.33333C4.01962 1.33333 1.33333 4.01962 1.33333 7.33333C1.33333 10.647 4.01962 13.3333 7.33333 13.3333V14.6667C3.28325 14.6667 0 11.3834 0 7.33333C0 3.28325 3.28325 0 7.33333 0C11.3834 0 14.6667 3.28325 14.6667 7.33333C14.6667 11.3834 11.3834 14.6667 7.33333 14.6667V13.3333C10.647 13.3333 13.3333 10.647 13.3333 7.33333Z\" fill=\"url(#paint0_linear_0_12)\"></path><path d=\"M4.66667 8V6C4.66667 5.63181 4.96514 5.33333 5.33333 5.33333C5.70152 5.33333 6 5.63181 6 6V8C6 8.36819 5.70152 8.66667 5.33333 8.66667C4.96514 8.66667 4.66667 8.36819 4.66667 8ZM8.66667 8V6C8.66667 5.63181 8.96514 5.33333 9.33333 5.33333C9.70152 5.33333 10 5.63181 10 6V8C10 8.36819 9.70152 8.66667 9.33333 8.66667C8.96514 8.66667 8.66667 8.36819 8.66667 8Z\" fill=\"url(#paint1_linear_0_12)\"></path></g><defs><linearGradient id=\"paint0_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient><linearGradient id=\"paint1_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient></defs></svg><span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">AI 自动化</span><!----><span role=\"presentation\" aria-hidden=\"true\" data-p-ink=\"true\" data-p-ink-active=\"false\" class=\"p-ink\" pd49=\"\" data-pc-name=\"ripple\" data-pc-section=\"root\"></span></button>",
+              "bounds": {
+                "x": 1209.84375,
+                "y": 113,
+                "width": 84.984375,
+                "height": 24,
+                "top": 113,
+                "right": 1294.828125,
+                "bottom": 137,
+                "left": 1209.84375
+              },
+              "style": {
+                "color": "rgb(138, 144, 147)",
+                "transform": "none",
+                "font": "500 12px / 16px Inter",
+                "background": "linear-gradient(rgb(41, 48, 56), rgb(41, 48, 56)) repeat scroll 0% 0% / auto padding-box padding-box, rgba(0, 0, 0, 0) linear-gradient(139.35deg, rgb(63, 170, 246) 0%, rgb(243, 89, 220) 50%, rgb(242, 143, 176) 100%) repeat scroll 0% 0% / auto border-box border-box"
+              },
+              "animations": [
+                {
+                  "name": "rotate-30b6698f",
+                  "time": 0,
+                  "state": "paused"
+                }
+              ]
+            }
+          ],
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "07dc08bb2b4de8eb75cc66f9e808c4f1625d2d37f529eb8c70afa5665a6881d1",
+              "07dc08bb2b4de8eb75cc66f9e808c4f1625d2d37f529eb8c70afa5665a6881d1",
+              "07dc08bb2b4de8eb75cc66f9e808c4f1625d2d37f529eb8c70afa5665a6881d1"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/windows-dark-reference.png",
+          "full": "visual/windows-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "diagnostic": [
+            {
+              "html": "<button data-v-5d1c6974=\"\" data-v-c7206253=\"\" class=\"p-button p-component p-button-outlined create-automation-button rx_button xxs\" data-p=\"outlined\" type=\"button\" disabled=\"\" aria-label=\"AI 自动化\" data-pc-name=\"button\" data-p-disabled=\"true\" rotate=\"false\" pc31=\"\" data-pc-section=\"root\" data-pd-ripple=\"true\" style=\"overflow: hidden; position: relative;\"><svg data-v-442d6e45=\"\" data-v-5d1c6974=\"\" preserveAspectRatio=\"none\" overflow=\"visible\" width=\"1em\" height=\"1em\" viewBox=\"0 0 14.6667 14.6667\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" class=\"svg animate-duration-2500 animate-duration-2500\" data-name=\"roxy-agent/rx-ic-create-automation\" style=\"display: block; --e49b1ef0: 16px; --v30a509d2: inherit;\"><g id=\"Vector\"><path d=\"M13.3333 7.33333C13.3333 4.01962 10.647 1.33333 7.33333 1.33333C4.01962 1.33333 1.33333 4.01962 1.33333 7.33333C1.33333 10.647 4.01962 13.3333 7.33333 13.3333V14.6667C3.28325 14.6667 0 11.3834 0 7.33333C0 3.28325 3.28325 0 7.33333 0C11.3834 0 14.6667 3.28325 14.6667 7.33333C14.6667 11.3834 11.3834 14.6667 7.33333 14.6667V13.3333C10.647 13.3333 13.3333 10.647 13.3333 7.33333Z\" fill=\"url(#paint0_linear_0_12)\"></path><path d=\"M4.66667 8V6C4.66667 5.63181 4.96514 5.33333 5.33333 5.33333C5.70152 5.33333 6 5.63181 6 6V8C6 8.36819 5.70152 8.66667 5.33333 8.66667C4.96514 8.66667 4.66667 8.36819 4.66667 8ZM8.66667 8V6C8.66667 5.63181 8.96514 5.33333 9.33333 5.33333C9.70152 5.33333 10 5.63181 10 6V8C10 8.36819 9.70152 8.66667 9.33333 8.66667C8.96514 8.66667 8.66667 8.36819 8.66667 8Z\" fill=\"url(#paint1_linear_0_12)\"></path></g><defs><linearGradient id=\"paint0_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient><linearGradient id=\"paint1_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient></defs></svg><span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">AI 自动化</span><!----><span role=\"presentation\" aria-hidden=\"true\" data-p-ink=\"true\" data-p-ink-active=\"false\" class=\"p-ink\" pd49=\"\" data-pc-name=\"ripple\" data-pc-section=\"root\"></span></button>",
+              "bounds": {
+                "x": 1209.84375,
+                "y": 113,
+                "width": 84.984375,
+                "height": 24,
+                "top": 113,
+                "right": 1294.828125,
+                "bottom": 137,
+                "left": 1209.84375
+              },
+              "style": {
+                "color": "rgb(138, 144, 147)",
+                "transform": "none",
+                "font": "500 12px / 16px Inter",
+                "background": "linear-gradient(rgb(41, 48, 56), rgb(41, 48, 56)) repeat scroll 0% 0% / auto padding-box padding-box, rgba(0, 0, 0, 0) linear-gradient(139.35deg, rgb(63, 170, 246) 0%, rgb(243, 89, 220) 50%, rgb(242, 143, 176) 100%) repeat scroll 0% 0% / auto border-box border-box"
+              },
+              "animations": [
+                {
+                  "name": "rotate-30b6698f",
+                  "time": 0,
+                  "state": "paused"
+                }
+              ]
+            }
+          ],
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "21aec143604f88552f93a47a7d61f04dd5554cbccf256775bdd01a999e502125",
+              "21aec143604f88552f93a47a7d61f04dd5554cbccf256775bdd01a999e502125",
+              "21aec143604f88552f93a47a7d61f04dd5554cbccf256775bdd01a999e502125"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/windows-dark-diff.png"
+    },
+    {
+      "id": "window-hover",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/window-hover-light-production.png",
+          "full": "visual/window-hover-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "diagnostic": [
+            {
+              "html": "<button data-v-5d1c6974=\"\" data-v-c7206253=\"\" class=\"p-button p-component p-button-outlined create-automation-button rx_button xxs\" data-p=\"outlined\" type=\"button\" disabled=\"\" aria-label=\"AI 自动化\" data-pc-name=\"button\" data-p-disabled=\"true\" rotate=\"false\" pc31=\"\" data-pc-section=\"root\" data-pd-ripple=\"true\" style=\"overflow: hidden; position: relative;\"><svg data-v-442d6e45=\"\" data-v-5d1c6974=\"\" preserveAspectRatio=\"none\" overflow=\"visible\" width=\"1em\" height=\"1em\" viewBox=\"0 0 14.6667 14.6667\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" class=\"svg animate-duration-2500 animate-duration-2500\" data-name=\"roxy-agent/rx-ic-create-automation\" style=\"display: block; --e49b1ef0: 16px; --v30a509d2: inherit;\"><g id=\"Vector\"><path d=\"M13.3333 7.33333C13.3333 4.01962 10.647 1.33333 7.33333 1.33333C4.01962 1.33333 1.33333 4.01962 1.33333 7.33333C1.33333 10.647 4.01962 13.3333 7.33333 13.3333V14.6667C3.28325 14.6667 0 11.3834 0 7.33333C0 3.28325 3.28325 0 7.33333 0C11.3834 0 14.6667 3.28325 14.6667 7.33333C14.6667 11.3834 11.3834 14.6667 7.33333 14.6667V13.3333C10.647 13.3333 13.3333 10.647 13.3333 7.33333Z\" fill=\"url(#paint0_linear_0_12)\"></path><path d=\"M4.66667 8V6C4.66667 5.63181 4.96514 5.33333 5.33333 5.33333C5.70152 5.33333 6 5.63181 6 6V8C6 8.36819 5.70152 8.66667 5.33333 8.66667C4.96514 8.66667 4.66667 8.36819 4.66667 8ZM8.66667 8V6C8.66667 5.63181 8.96514 5.33333 9.33333 5.33333C9.70152 5.33333 10 5.63181 10 6V8C10 8.36819 9.70152 8.66667 9.33333 8.66667C8.96514 8.66667 8.66667 8.36819 8.66667 8Z\" fill=\"url(#paint1_linear_0_12)\"></path></g><defs><linearGradient id=\"paint0_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient><linearGradient id=\"paint1_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient></defs></svg><span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">AI 自动化</span><!----><span role=\"presentation\" aria-hidden=\"true\" data-p-ink=\"true\" data-p-ink-active=\"false\" class=\"p-ink\" pd49=\"\" data-pc-name=\"ripple\" data-pc-section=\"root\"></span></button>",
+              "bounds": {
+                "x": 1209.84375,
+                "y": 113,
+                "width": 84.984375,
+                "height": 24,
+                "top": 113,
+                "right": 1294.828125,
+                "bottom": 137,
+                "left": 1209.84375
+              },
+              "style": {
+                "color": "rgb(108, 201, 254)",
+                "transform": "none",
+                "font": "500 12px / 16px Inter",
+                "background": "linear-gradient(rgb(255, 255, 255), rgb(255, 255, 255)) repeat scroll 0% 0% / auto padding-box padding-box, rgba(0, 0, 0, 0) linear-gradient(139.35deg, rgb(63, 170, 246) 0%, rgb(243, 89, 220) 50%, rgb(242, 143, 176) 100%) repeat scroll 0% 0% / auto border-box border-box"
+              },
+              "animations": [
+                {
+                  "name": "rotate-30b6698f",
+                  "time": 0,
+                  "state": "paused"
+                }
+              ]
+            }
+          ],
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "101a4da4ebff487da30af7aad995ed865607b18e59ac25b1466da83fab1ea452",
+              "cc640879d6cebd8f5c1e2763e6dbd8b961d3aa3a50d9db508522caeb3a5c776c",
+              "cc640879d6cebd8f5c1e2763e6dbd8b961d3aa3a50d9db508522caeb3a5c776c",
+              "cc640879d6cebd8f5c1e2763e6dbd8b961d3aa3a50d9db508522caeb3a5c776c"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/window-hover-light-reference.png",
+          "full": "visual/window-hover-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "diagnostic": [
+            {
+              "html": "<button data-v-5d1c6974=\"\" data-v-c7206253=\"\" class=\"p-button p-component p-button-outlined create-automation-button rx_button xxs\" data-p=\"outlined\" type=\"button\" disabled=\"\" aria-label=\"AI 自动化\" data-pc-name=\"button\" data-p-disabled=\"true\" rotate=\"false\" pc31=\"\" data-pc-section=\"root\" data-pd-ripple=\"true\" style=\"overflow: hidden; position: relative;\"><svg data-v-442d6e45=\"\" data-v-5d1c6974=\"\" preserveAspectRatio=\"none\" overflow=\"visible\" width=\"1em\" height=\"1em\" viewBox=\"0 0 14.6667 14.6667\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" class=\"svg animate-duration-2500 animate-duration-2500\" data-name=\"roxy-agent/rx-ic-create-automation\" style=\"display: block; --e49b1ef0: 16px; --v30a509d2: inherit;\"><g id=\"Vector\"><path d=\"M13.3333 7.33333C13.3333 4.01962 10.647 1.33333 7.33333 1.33333C4.01962 1.33333 1.33333 4.01962 1.33333 7.33333C1.33333 10.647 4.01962 13.3333 7.33333 13.3333V14.6667C3.28325 14.6667 0 11.3834 0 7.33333C0 3.28325 3.28325 0 7.33333 0C11.3834 0 14.6667 3.28325 14.6667 7.33333C14.6667 11.3834 11.3834 14.6667 7.33333 14.6667V13.3333C10.647 13.3333 13.3333 10.647 13.3333 7.33333Z\" fill=\"url(#paint0_linear_0_12)\"></path><path d=\"M4.66667 8V6C4.66667 5.63181 4.96514 5.33333 5.33333 5.33333C5.70152 5.33333 6 5.63181 6 6V8C6 8.36819 5.70152 8.66667 5.33333 8.66667C4.96514 8.66667 4.66667 8.36819 4.66667 8ZM8.66667 8V6C8.66667 5.63181 8.96514 5.33333 9.33333 5.33333C9.70152 5.33333 10 5.63181 10 6V8C10 8.36819 9.70152 8.66667 9.33333 8.66667C8.96514 8.66667 8.66667 8.36819 8.66667 8Z\" fill=\"url(#paint1_linear_0_12)\"></path></g><defs><linearGradient id=\"paint0_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient><linearGradient id=\"paint1_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient></defs></svg><span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">AI 自动化</span><!----><span role=\"presentation\" aria-hidden=\"true\" data-p-ink=\"true\" data-p-ink-active=\"false\" class=\"p-ink\" pd49=\"\" data-pc-name=\"ripple\" data-pc-section=\"root\"></span></button>",
+              "bounds": {
+                "x": 1209.84375,
+                "y": 113,
+                "width": 84.984375,
+                "height": 24,
+                "top": 113,
+                "right": 1294.828125,
+                "bottom": 137,
+                "left": 1209.84375
+              },
+              "style": {
+                "color": "rgb(108, 201, 254)",
+                "transform": "none",
+                "font": "500 12px / 16px Inter",
+                "background": "linear-gradient(rgb(255, 255, 255), rgb(255, 255, 255)) repeat scroll 0% 0% / auto padding-box padding-box, rgba(0, 0, 0, 0) linear-gradient(139.35deg, rgb(63, 170, 246) 0%, rgb(243, 89, 220) 50%, rgb(242, 143, 176) 100%) repeat scroll 0% 0% / auto border-box border-box"
+              },
+              "animations": [
+                {
+                  "name": "rotate-30b6698f",
+                  "time": 0,
+                  "state": "paused"
+                }
+              ]
+            }
+          ],
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "b727aab2b9c7ac586bb5f7ddcfa11735e6e9a1e3f5dab15839c034ac47ff22f5",
+              "b727aab2b9c7ac586bb5f7ddcfa11735e6e9a1e3f5dab15839c034ac47ff22f5",
+              "b727aab2b9c7ac586bb5f7ddcfa11735e6e9a1e3f5dab15839c034ac47ff22f5"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/window-hover-light-diff.png"
+    },
+    {
+      "id": "window-hover",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/window-hover-dark-production.png",
+          "full": "visual/window-hover-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "diagnostic": [
+            {
+              "html": "<button data-v-5d1c6974=\"\" data-v-c7206253=\"\" class=\"p-button p-component p-button-outlined create-automation-button rx_button xxs\" data-p=\"outlined\" type=\"button\" disabled=\"\" aria-label=\"AI 自动化\" data-pc-name=\"button\" data-p-disabled=\"true\" rotate=\"false\" pc31=\"\" data-pc-section=\"root\" data-pd-ripple=\"true\" style=\"overflow: hidden; position: relative;\"><svg data-v-442d6e45=\"\" data-v-5d1c6974=\"\" preserveAspectRatio=\"none\" overflow=\"visible\" width=\"1em\" height=\"1em\" viewBox=\"0 0 14.6667 14.6667\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" class=\"svg animate-duration-2500 animate-duration-2500\" data-name=\"roxy-agent/rx-ic-create-automation\" style=\"display: block; --e49b1ef0: 16px; --v30a509d2: inherit;\"><g id=\"Vector\"><path d=\"M13.3333 7.33333C13.3333 4.01962 10.647 1.33333 7.33333 1.33333C4.01962 1.33333 1.33333 4.01962 1.33333 7.33333C1.33333 10.647 4.01962 13.3333 7.33333 13.3333V14.6667C3.28325 14.6667 0 11.3834 0 7.33333C0 3.28325 3.28325 0 7.33333 0C11.3834 0 14.6667 3.28325 14.6667 7.33333C14.6667 11.3834 11.3834 14.6667 7.33333 14.6667V13.3333C10.647 13.3333 13.3333 10.647 13.3333 7.33333Z\" fill=\"url(#paint0_linear_0_12)\"></path><path d=\"M4.66667 8V6C4.66667 5.63181 4.96514 5.33333 5.33333 5.33333C5.70152 5.33333 6 5.63181 6 6V8C6 8.36819 5.70152 8.66667 5.33333 8.66667C4.96514 8.66667 4.66667 8.36819 4.66667 8ZM8.66667 8V6C8.66667 5.63181 8.96514 5.33333 9.33333 5.33333C9.70152 5.33333 10 5.63181 10 6V8C10 8.36819 9.70152 8.66667 9.33333 8.66667C8.96514 8.66667 8.66667 8.36819 8.66667 8Z\" fill=\"url(#paint1_linear_0_12)\"></path></g><defs><linearGradient id=\"paint0_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient><linearGradient id=\"paint1_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient></defs></svg><span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">AI 自动化</span><!----><span role=\"presentation\" aria-hidden=\"true\" data-p-ink=\"true\" data-p-ink-active=\"false\" class=\"p-ink\" pd49=\"\" data-pc-name=\"ripple\" data-pc-section=\"root\"></span></button>",
+              "bounds": {
+                "x": 1209.84375,
+                "y": 113,
+                "width": 84.984375,
+                "height": 24,
+                "top": 113,
+                "right": 1294.828125,
+                "bottom": 137,
+                "left": 1209.84375
+              },
+              "style": {
+                "color": "rgb(138, 144, 147)",
+                "transform": "none",
+                "font": "500 12px / 16px Inter",
+                "background": "linear-gradient(rgb(41, 48, 56), rgb(41, 48, 56)) repeat scroll 0% 0% / auto padding-box padding-box, rgba(0, 0, 0, 0) linear-gradient(139.35deg, rgb(63, 170, 246) 0%, rgb(243, 89, 220) 50%, rgb(242, 143, 176) 100%) repeat scroll 0% 0% / auto border-box border-box"
+              },
+              "animations": [
+                {
+                  "name": "rotate-30b6698f",
+                  "time": 0,
+                  "state": "paused"
+                }
+              ]
+            }
+          ],
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "1cac1dc5f140a314cfbe896ab0eede5175c8cb76f60ee1b3b0938b49a711573d",
+              "6d79d71514e6b50570887c5bd63f3a6e24850c63e3779ec4af65213db7b25517",
+              "6d79d71514e6b50570887c5bd63f3a6e24850c63e3779ec4af65213db7b25517",
+              "6d79d71514e6b50570887c5bd63f3a6e24850c63e3779ec4af65213db7b25517"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/window-hover-dark-reference.png",
+          "full": "visual/window-hover-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "diagnostic": [
+            {
+              "html": "<button data-v-5d1c6974=\"\" data-v-c7206253=\"\" class=\"p-button p-component p-button-outlined create-automation-button rx_button xxs\" data-p=\"outlined\" type=\"button\" disabled=\"\" aria-label=\"AI 自动化\" data-pc-name=\"button\" data-p-disabled=\"true\" rotate=\"false\" pc31=\"\" data-pc-section=\"root\" data-pd-ripple=\"true\" style=\"overflow: hidden; position: relative;\"><svg data-v-442d6e45=\"\" data-v-5d1c6974=\"\" preserveAspectRatio=\"none\" overflow=\"visible\" width=\"1em\" height=\"1em\" viewBox=\"0 0 14.6667 14.6667\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" class=\"svg animate-duration-2500 animate-duration-2500\" data-name=\"roxy-agent/rx-ic-create-automation\" style=\"display: block; --e49b1ef0: 16px; --v30a509d2: inherit;\"><g id=\"Vector\"><path d=\"M13.3333 7.33333C13.3333 4.01962 10.647 1.33333 7.33333 1.33333C4.01962 1.33333 1.33333 4.01962 1.33333 7.33333C1.33333 10.647 4.01962 13.3333 7.33333 13.3333V14.6667C3.28325 14.6667 0 11.3834 0 7.33333C0 3.28325 3.28325 0 7.33333 0C11.3834 0 14.6667 3.28325 14.6667 7.33333C14.6667 11.3834 11.3834 14.6667 7.33333 14.6667V13.3333C10.647 13.3333 13.3333 10.647 13.3333 7.33333Z\" fill=\"url(#paint0_linear_0_12)\"></path><path d=\"M4.66667 8V6C4.66667 5.63181 4.96514 5.33333 5.33333 5.33333C5.70152 5.33333 6 5.63181 6 6V8C6 8.36819 5.70152 8.66667 5.33333 8.66667C4.96514 8.66667 4.66667 8.36819 4.66667 8ZM8.66667 8V6C8.66667 5.63181 8.96514 5.33333 9.33333 5.33333C9.70152 5.33333 10 5.63181 10 6V8C10 8.36819 9.70152 8.66667 9.33333 8.66667C8.96514 8.66667 8.66667 8.36819 8.66667 8Z\" fill=\"url(#paint1_linear_0_12)\"></path></g><defs><linearGradient id=\"paint0_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient><linearGradient id=\"paint1_linear_0_12\" x1=\"0\" y1=\"0\" x2=\"16.7093\" y2=\"2.90093\" gradientUnits=\"userSpaceOnUse\"><stop stop-color=\"#3FAAF6\"></stop><stop offset=\"0.5\" stop-color=\"#F359DC\"></stop><stop offset=\"1\" stop-color=\"#F28FB0\"></stop></linearGradient></defs></svg><span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">AI 自动化</span><!----><span role=\"presentation\" aria-hidden=\"true\" data-p-ink=\"true\" data-p-ink-active=\"false\" class=\"p-ink\" pd49=\"\" data-pc-name=\"ripple\" data-pc-section=\"root\"></span></button>",
+              "bounds": {
+                "x": 1209.84375,
+                "y": 113,
+                "width": 84.984375,
+                "height": 24,
+                "top": 113,
+                "right": 1294.828125,
+                "bottom": 137,
+                "left": 1209.84375
+              },
+              "style": {
+                "color": "rgb(138, 144, 147)",
+                "transform": "none",
+                "font": "500 12px / 16px Inter",
+                "background": "linear-gradient(rgb(41, 48, 56), rgb(41, 48, 56)) repeat scroll 0% 0% / auto padding-box padding-box, rgba(0, 0, 0, 0) linear-gradient(139.35deg, rgb(63, 170, 246) 0%, rgb(243, 89, 220) 50%, rgb(242, 143, 176) 100%) repeat scroll 0% 0% / auto border-box border-box"
+              },
+              "animations": [
+                {
+                  "name": "rotate-30b6698f",
+                  "time": 0,
+                  "state": "paused"
+                }
+              ]
+            }
+          ],
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "b02f643a52f025b1a5f1eb854eaa16f1e469c54bc02ef391f0f63d188fda5ce1",
+              "b02f643a52f025b1a5f1eb854eaa16f1e469c54bc02ef391f0f63d188fda5ce1",
+              "b02f643a52f025b1a5f1eb854eaa16f1e469c54bc02ef391f0f63d188fda5ce1"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/window-hover-dark-diff.png"
+    },
+    {
+      "id": "window-selected",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/window-selected-light-production.png",
+          "full": "visual/window-selected-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "diagnostic": [
+            {
+              "html": "<div data-v-5c752966=\"\" class=\"multiple-group-item\" role=\"button\" tabindex=\"0\"><svg data-v-442d6e45=\"\" data-v-5c752966=\"\" width=\"1em\" height=\"1em\" viewBox=\"0 0 32 32\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" class=\"svg pointer-events-none pointer-events-none\" data-name=\"roxy-agent/rx-ic-logo\" style=\"--e49b1ef0: 16px; --v30a509d2: inherit;\"><image href=\"/images/openbrowser.png\" width=\"32\" height=\"32\"></image></svg><span data-v-5c752966=\"\" class=\"icon-label\">AI 自动化</span><!----></div>",
+              "bounds": {
+                "x": 800.359375,
+                "y": 779.703125,
+                "width": 99.34375,
+                "height": 32,
+                "top": 779.703125,
+                "right": 899.703125,
+                "bottom": 811.703125,
+                "left": 800.359375
+              },
+              "style": {
+                "color": "rgb(255, 255, 255)",
+                "transform": "none",
+                "font": "600 13px / 16px Inter",
+                "background": "rgba(0, 0, 0, 0) none repeat scroll 0% 0% / auto padding-box border-box"
+              },
+              "animations": [
+                {
+                  "name": "rotate-30b6698f",
+                  "time": 0,
+                  "state": "paused"
+                }
+              ]
+            }
+          ],
+          "stability": {
+            "attempts": 4,
+            "consecutive": 3,
+            "sha256": [
+              "bf6d450d27f340c82229620eb26c6555875e83bebf091fe7e5607ff67cb9eb86",
+              "fcf4b6c66ee22344c117293408f3b275fb1243800e9086ac809754e82c43ea1f",
+              "fcf4b6c66ee22344c117293408f3b275fb1243800e9086ac809754e82c43ea1f",
+              "fcf4b6c66ee22344c117293408f3b275fb1243800e9086ac809754e82c43ea1f"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/window-selected-light-reference.png",
+          "full": "visual/window-selected-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "diagnostic": [
+            {
+              "html": "<div data-v-5c752966=\"\" class=\"multiple-group-item\" role=\"button\" tabindex=\"0\"><svg data-v-442d6e45=\"\" data-v-5c752966=\"\" width=\"1em\" height=\"1em\" viewBox=\"0 0 32 32\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" class=\"svg pointer-events-none pointer-events-none\" data-name=\"roxy-agent/rx-ic-logo\" style=\"--e49b1ef0: 16px; --v30a509d2: inherit;\"><image href=\"/images/openbrowser.png\" width=\"32\" height=\"32\"></image></svg><span data-v-5c752966=\"\" class=\"icon-label\">AI 自动化</span><!----></div>",
+              "bounds": {
+                "x": 800.359375,
+                "y": 779.703125,
+                "width": 99.34375,
+                "height": 32,
+                "top": 779.703125,
+                "right": 899.703125,
+                "bottom": 811.703125,
+                "left": 800.359375
+              },
+              "style": {
+                "color": "rgb(255, 255, 255)",
+                "transform": "none",
+                "font": "600 13px / 16px Inter",
+                "background": "rgba(0, 0, 0, 0) none repeat scroll 0% 0% / auto padding-box border-box"
+              },
+              "animations": [
+                {
+                  "name": "rotate-30b6698f",
+                  "time": 0,
+                  "state": "paused"
+                }
+              ]
+            }
+          ],
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "50516fa7c4fbc045e4e590942f65fcd023956a9832ade96d43157d573a4e7ecb",
+              "50516fa7c4fbc045e4e590942f65fcd023956a9832ade96d43157d573a4e7ecb",
+              "50516fa7c4fbc045e4e590942f65fcd023956a9832ade96d43157d573a4e7ecb"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/window-selected-light-diff.png"
+    }
+  ],
+  "errors": [],
+  "externalRequests": [],
+  "fixtureNormalizations": [
+    "fingerprint:preview 以真实后端首次返回值固定相同参数的视觉数据",
+    "两种 render 均使用 hasPassword 对应的等宽八星掩码保持相同视觉数据；不返回真实机密"
+  ],
+  "selectedCases": [
+    "workbench-full",
+    "workbench-updates",
+    "workbench-client-update",
+    "workbench-notifications",
+    "workbench-profile-menu",
+    "workbench-compact-sidebar",
+    "create-advanced",
+    "create-search-focus",
+    "windows",
+    "window-hover",
+    "window-selected",
+    "window-favorites-empty",
+    "delete-confirm-dialog",
+    "create",
+    "create-basic",
+    "image-threshold-form",
+    "network-fingerprint-form",
+    "edit",
+    "window-template-dialog",
+    "projects",
+    "project-create-dialog",
+    "project-detail",
+    "proxy",
+    "accounts",
+    "account-create",
+    "extensions",
+    "extension-upload-dialog",
+    "api",
+    "agent",
+    "tasks",
+    "task-create-dialog",
+    "templates",
+    "agent-template-dialog",
+    "template-store",
+    "kernel-upgrade-dialog",
+    "sync-preferences-base",
+    "sync-preferences-simulate",
+    "sync-preferences-customLayout",
+    "sync-preferences-shortcutKey",
+    "sync-inputs-same",
+    "sync-inputs-diff",
+    "sync-inputs-random",
+    "sync-open-sites",
+    "sync-window-list-empty",
+    "mcp-list",
+    "mcp-create",
+    "mcp-http",
+    "workbench-zoom125"
+  ],
+  "failure": "locator.waitFor: Application exited\nCall log:\n\u001b[2m  - waiting for getByText('视觉窗口 1', { exact: true }).first() to be visible\u001b[22m\n\n    at Object.ready (/workspace/OpenBrowser/Browserapp/rebuild/visual-parity-selftest.cjs:30:116)\n    at /workspace/OpenBrowser/Browserapp/rebuild/visual-parity-selftest.cjs:69:15",
+  "body": null
+}

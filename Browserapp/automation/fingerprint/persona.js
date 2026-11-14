@@ -555,7 +555,8 @@ function buildFingerprint(profile = {}) {
     rtt: toFiniteNumber(networkIn?.rtt) !== null
       ? Number(networkIn.rtt)
       : NETWORK_RTT_POOL[draw('network.rtt', 68) % NETWORK_RTT_POOL.length],
-    saveData: false,
+    ...(toFiniteNumber(networkIn?.downlinkMax)!==null?{downlinkMax:Number(networkIn.downlinkMax)}:{}),
+    saveData: networkIn?.saveData===true,
   };
   if (version >= 2) connection = normalizeNetworkInformation(connection);
 

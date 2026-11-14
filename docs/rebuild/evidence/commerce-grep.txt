@@ -1,0 +1,5 @@
+Command (arguments): ["rg","--no-ignore","-n","-l","feedback-consultant-qr|custom-template-dialog|my-templates-custom-button|custom-template-banner|openCustomTemplateDialog|pay-wall|last-pay-modal|\\/user_[a-z_]+|js\\.stripe\\.com|api\\.mixpanel\\.com|\\.pay\\.|showPayWall|showUpgradePlanDialog|userBuyPointsSettlement|subscribe-plan|upgrade-plan|showRenewalDialog|userGetCloudBrowserInfoList|pay-metrics|lifetime-entry|userPayInfo|freeProjectCount|useProjectCount|PROJECT_MAX_LIMIT|proxyRenewMinDiscount|isDirectWhitelist","Browserapp/roxy-ui"]
+Exit: 1 (1 = no matches)
+Matching files: 0
+
+Scope: 当前生成运行目录；只读镜像、编译器、留档与原翻译键不在整仓删除声明内。新规则包含商业咨询弹窗、入口、横幅和客服二维码。

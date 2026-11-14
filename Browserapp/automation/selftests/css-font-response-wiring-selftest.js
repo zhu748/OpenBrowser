@@ -74,66 +74,11 @@ const skip = (name, why) => {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function extractMethodSource(fullSource, methodName) {
-  const methodRegex = new RegExp(`async\\s+${methodName}\\s*\\([^)]*\\)\\s*\\{`);
-  const match = methodRegex.exec(fullSource);
-  if (!match) return '';
-  const startIndex = match.index;
-  let depth = 0;
-  let inString = false;
-  let stringChar = '';
-  let inComment = false;
-  let inBlockComment = false;
-
-  for (let i = startIndex; i < fullSource.length; i++) {
-    const char = fullSource[i];
-    const next = fullSource[i + 1];
-
-    if (inComment) {
-      if (char === '\n') inComment = false;
-      continue;
-    }
-    if (inBlockComment) {
-      if (char === '*' && next === '/') {
-        inBlockComment = false;
-        i += 1;
-      }
-      continue;
-    }
-    if (inString) {
-      if (char === '\\') {
-        i += 1;
-      } else if (char === stringChar) {
-        inString = false;
-      }
-      continue;
-    }
-
-    if (char === '/' && next === '/') {
-      inComment = true;
-      i += 1;
-      continue;
-    }
-    if (char === '/' && next === '*') {
-      inBlockComment = true;
-      i += 1;
-      continue;
-    }
-    if (char === "'" || char === '"' || char === '`') {
-      inString = true;
-      stringChar = char;
-      continue;
-    }
-
-    if (char === '{') {
-      depth += 1;
-    } else if (char === '}') {
-      depth -= 1;
-      if (depth === 0) {
-        return fullSource.slice(startIndex, i + 1);
-      }
-    }
-  }
-  return '';
+  const acorn=require('../vendor/acorn');
+  const ast=acorn.parse(fullSource,{sourceType:'script',ecmaVersion:'latest'}),matches=[];
+  const visit=node=>{if(!node||typeof node!=='object')return;if(node.type==='Property'&&node.key?.name===methodName&&node.value?.async)matches.push(node);for(const [key,value] of Object.entries(node)){if(key==='start'||key==='end')continue;if(Array.isArray(value))value.forEach(visit);else if(value&&typeof value==='object')visit(value);}};
+  visit(ast);assert.equal(matches.length,1,'Production method must have one AST definition');
+  return fullSource.slice(matches[0].start,matches[0].end);
 }
 
 async function stopChild(child, dir) {
@@ -602,7 +547,8 @@ async function runLiveEngineIntegration(serverPort, mutate) {
 
   // Check 4: fontResponseRewriter.enable is awaited for page/iframe sessions before unpause
   check('fontResponseRewriter.enable is called on page and iframe sessions before runIfWaitingForDebugger', () => {
-    assert.ok(methodSource.includes("fontResponseRewriter.enable(connection, { sessionId"), 'enable must be called with sessionId');
+    assert.ok(methodSource.includes("fontResponseRewriter.enable(scopedConnection, { sessionId"), 'enable must be called with sessionId through the guarded connection');
+    assert.ok(methodSource.includes('const scopedConnection = { command: (method, params, options) => state.command(method, params, options) }'), 'response enable must use the same target setup guard');
     // Execution order, not text order: resumeTarget() is *defined* early (its
     // closure sits above the enable call in the file), so comparing indexOf
     // positions misreads the intent. On the initial-target path the sequence is
@@ -628,7 +574,7 @@ async function runLiveEngineIntegration(serverPort, mutate) {
   // Check 6: Live browser kernel availability probe
   if (process.platform !== 'darwin' || !fs.existsSync(launcher)) {
     skip('macos-x64 kernel launcher available', 'platform or launcher missing');
-    console.log(`\ncss-font-response-wiring-selftest: OK ${results.length}/${results.length}`);
+    const failed=results.filter(result=>!result.ok);console.log(`\ncss-font-response-wiring-selftest: ${failed.length?'FAILED':'STATIC PASS; runtime SKIPPED'} (${failed.length} failures)`);if(failed.length)process.exitCode=1;
     return;
   }
 

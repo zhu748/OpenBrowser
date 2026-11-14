@@ -1,0 +1,5 @@
+{
+  "status": "FAIL",
+  "checks": [],
+  "failure": "page.evaluate: Error: ERR101: 启动失败，磁盘空间不足，请清理磁盘空间（当前可用 7.3GB，限制 8GB）\n    at obui://app/assets/local-api.js:20:48\n    at async <anonymous>:381:23\n    at /workspace/OpenBrowser/Browserapp/rebuild/quit-failure-selftest.cjs:50:16"
+}

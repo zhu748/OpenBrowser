@@ -1,0 +1,8 @@
+{
+  "passed": true,
+  "checks": [
+    "原模板商城四张真实本地 Skill 卡片，原获取按钮实际新增个人模板；深色/返回已获取状态、我的模板和重载通过"
+  ],
+  "errors": [],
+  "externalRequests": []
+}

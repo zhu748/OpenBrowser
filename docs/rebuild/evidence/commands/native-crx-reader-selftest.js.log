@@ -1,0 +1,31 @@
+ok    zip reader enumerates every entry
+ok    zip reader inflates deflate entries
+ok    zip reader reads stored entries byte-exact
+ok    zip reader bounds actual inflation before accepting a forged size
+ok    zip reader accepts empty stored and deflated entries
+ok    zip reader rejects stored size mismatches before copying data
+ok    zip reader parses json entries
+ok    zip reader reports missing entries
+ok    zip reader handles a trailing archive comment
+ok    zip reader rejects non-zip buffers
+ok    zip reader rejects zip64 markers
+ok    crx reader derives the extension id from the signing key
+ok    crx reader round-trips id bytes
+ok    crx reader rejects a bad magic number
+ok    crx reader rejects an unsupported container version
+ok    crx reader parses a crx2 container
+ok    crx reader parses a crx3 container with rsa proof
+ok    crx reader parses a crx3 container with ecdsa proof
+ok    crx reader reads the manifest and version from the payload
+ok    crx reader lists and extracts payload files
+ok    validate accepts a matching extension id
+ok    validate rejects a mismatched extension id
+ok    validate rejects a forged declared id
+ok    validate reports malformed packages without throwing
+ok    signature payload exposes verification inputs
+ok    manifest key is injected only when absent
+ok    protobuf decoder reads nested fields
+ok    protobuf decoder rejects truncated input
+ok    async placeholder
+
+CRX_READER_SELFTEST OK 29/29

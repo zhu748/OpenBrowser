@@ -1,0 +1,333 @@
+Firefox catalog: 160.0
+Starting Firefox profile: 85b0d7e4-89aa-4359-b5e5-303f60c6266b
+{
+  "passed": false,
+  "errors": [],
+  "externalRequests": [],
+  "checks": [
+    "真实原后端读取 Mozilla 可安装版本目录",
+    "通过新内核页下载并由原后端校验、安装 Firefox"
+  ],
+  "data": "/workspace/OpenBrowser/work/rebuild/kernel-ui-lNl0CQ",
+  "version": "160.0",
+  "profileId": "85b0d7e4-89aa-4359-b5e5-303f60c6266b",
+  "failure": "page.evaluate: Error: ERR101: 启动失败，磁盘空间不足，请清理磁盘空间（当前可用 7.3GB，限制 8GB）\n    at obui://app/assets/local-api.js:20:48\n    at async <anonymous>:381:23\n    at /workspace/OpenBrowser/Browserapp/rebuild/kernels-ui-selftest.cjs:102:16",
+  "body": "创建窗口\n窗口管理\n项目管理\n代理 IP\n平台账号\n扩展中心\nAI & 自动化\n窗口同步\nAI Agent\n自动化\n模板商城\n任务管理\n我的模板\nAPI & AI MCP\nSkill 管理\n本地\n窗口用量\n1 / ∞\n内核升级\n本地网络\n(172.26.91.242)\nOP\nOpenBrowser\n内核管理\n刷新\n下载 Chrome Stable\n取消下载\nFirefox 160.0 已就绪\n选择文件\n使用此内核\nChrome\nFirefox\n获取可下载版本\n160.0\n159.0.1\n158.0.1\n157.0.1\n156.0.1\n155.0.1\n154.0.1\n153.7.0esr\n153.0.4\n152.0.6\n151.0.4\n150.0.3\n149.0.2\n148.0.2\n147.0.4\n146.0.1\n安装所选版本\n类型\t版本\t来源\t操作\nFirefox\t160.0\tmozilla\t\n检测\n设为默认\n删除\n\nChrome\t157.0.8103.78-1\tchrome-stable\t\n检测\n设为默认\n删除",
+  "hitTest": [
+    {
+      "text": "创建窗口",
+      "rect": {
+        "x": 16,
+        "y": 54,
+        "width": 188,
+        "height": 36,
+        "top": 54,
+        "right": 204,
+        "bottom": 90,
+        "left": 16
+      },
+      "pointer": "auto",
+      "hit": "<span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">创建窗口</span>"
+    },
+    {
+      "text": "AI & 自动化",
+      "rect": {
+        "x": 16,
+        "y": 304,
+        "width": 178,
+        "height": 20,
+        "top": 304,
+        "right": 194,
+        "bottom": 324,
+        "left": 16
+      },
+      "pointer": "auto",
+      "hit": "<span data-v-e4514f78=\"\" class=\"group-title-text\">AI &amp; 自动化</span>"
+    },
+    {
+      "text": "内核升级",
+      "rect": {
+        "x": 28,
+        "y": 804,
+        "width": 164,
+        "height": 28,
+        "top": 804,
+        "right": 192,
+        "bottom": 832,
+        "left": 28
+      },
+      "pointer": "auto",
+      "hit": "<span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">内核升级</span>"
+    },
+    {
+      "text": "",
+      "rect": {
+        "x": 789.6875,
+        "y": 13,
+        "width": 28,
+        "height": 28,
+        "top": 13,
+        "right": 817.6875,
+        "bottom": 41,
+        "left": 789.6875
+      },
+      "pointer": "auto",
+      "hit": "<button data-v-5d1c6974=\"\" data-v-1794327e=\"\" class=\"p-button p-component p-button-icon-only p-button-secondary p-button-outlined shrink-0 rx_button xs\" data-p=\"icon-only outlined\" type=\"button\" aria-label=\"刷新网络定位\" data-pc-name=\"button\" data-p-disabled=\"false\" data-p-severity=\"secondary\" rotate=\"false\" pc2=\"\" data-pc-section=\"root\" data-pd-ripple=\"true\" data-pd-tooltip=\"true\" style=\"overflow: hidden; position: relative;\"><svg data-v-442d6e45=\"\" data-v-5d1c6974=\"\" xmlns=\"http://www.w3.org/2000/sv"
+    },
+    {
+      "text": "",
+      "rect": {
+        "x": 986.1875,
+        "y": 13,
+        "width": 28,
+        "height": 28,
+        "top": 13,
+        "right": 1014.1875,
+        "bottom": 41,
+        "left": 986.1875
+      },
+      "pointer": "auto",
+      "hit": "<button data-v-5d1c6974=\"\" data-v-433cf647=\"\" class=\"p-button p-component p-button-icon-only p-button-secondary p-button-outlined rx_button xs\" data-p=\"icon-only outlined\" type=\"button\" aria-label=\"更新\" data-pc-name=\"button\" data-p-disabled=\"false\" data-p-severity=\"secondary\" rotate=\"false\" pc5=\"\" data-pc-section=\"root\" data-pd-ripple=\"true\" style=\"overflow: hidden; position: relative;\"><svg data-v-442d6e45=\"\" data-v-433cf647=\"\" xmlns=\"http://www.w3.org/2000/svg\" width=\"1em\" height=\"1em\" fill=\"cu"
+    },
+    {
+      "text": "",
+      "rect": {
+        "x": 1026.1875,
+        "y": 13,
+        "width": 28,
+        "height": 28,
+        "top": 13,
+        "right": 1054.1875,
+        "bottom": 41,
+        "left": 1026.1875
+      },
+      "pointer": "auto",
+      "hit": "<button data-v-5d1c6974=\"\" class=\"p-button p-component p-button-icon-only p-button-secondary p-button-outlined rx_button xs\" data-p=\"icon-only outlined\" type=\"button\" aria-label=\"通知\" data-pc-name=\"button\" data-p-disabled=\"false\" data-p-severity=\"secondary\" rotate=\"false\" pc9=\"\" data-pc-section=\"root\" data-pd-ripple=\"true\" style=\"overflow: hidden; position: relative;\"><svg data-v-442d6e45=\"\" data-v-5d1c6974=\"\" xmlns=\"http://www.w3.org/2000/svg\" width=\"1em\" height=\"1em\" fill=\"currentColor\" viewBox"
+    },
+    {
+      "text": "",
+      "rect": {
+        "x": 1066.1875,
+        "y": 13,
+        "width": 28,
+        "height": 28,
+        "top": 13,
+        "right": 1094.1875,
+        "bottom": 41,
+        "left": 1066.1875
+      },
+      "pointer": "auto",
+      "hit": "<button data-v-5d1c6974=\"\" data-v-c3fba65e=\"\" class=\"p-button p-component p-button-icon-only p-button-secondary p-button-outlined shrink-0 rx_button xs\" data-p=\"icon-only outlined\" type=\"button\" aria-label=\"刷新界面\" data-pc-name=\"button\" data-p-disabled=\"false\" data-p-severity=\"secondary\" rotate=\"false\" pc12=\"\" data-pc-section=\"root\" data-pd-ripple=\"true\" data-pd-tooltip=\"true\" style=\"overflow: hidden; position: relative;\"><svg data-v-442d6e45=\"\" data-v-5d1c6974=\"\" xmlns=\"http://www.w3.org/2000/svg"
+    },
+    {
+      "text": "OP\nOpenBrowser",
+      "rect": {
+        "x": 1118.1875,
+        "y": 12,
+        "width": 145.8125,
+        "height": 30,
+        "top": 12,
+        "right": 1264,
+        "bottom": 42,
+        "left": 1118.1875
+      },
+      "pointer": "auto",
+      "hit": "<div data-v-47962e3a=\"\" class=\"tt-primary text-3.25 font-600 leading-4\">OpenBrowser</div>"
+    },
+    {
+      "text": "刷新",
+      "rect": {
+        "x": 245,
+        "y": 120,
+        "width": 72,
+        "height": 32,
+        "top": 120,
+        "right": 317,
+        "bottom": 152,
+        "left": 245
+      },
+      "pointer": "auto",
+      "hit": "<span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">刷新</span>"
+    },
+    {
+      "text": "下载 Chrome Stable",
+      "rect": {
+        "x": 325,
+        "y": 120,
+        "width": 134,
+        "height": 32,
+        "top": 120,
+        "right": 459,
+        "bottom": 152,
+        "left": 325
+      },
+      "pointer": "auto",
+      "hit": "<span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">下载 Chrome Stable</span>"
+    },
+    {
+      "text": "取消下载",
+      "rect": {
+        "x": 467,
+        "y": 120,
+        "width": 72,
+        "height": 32,
+        "top": 120,
+        "right": 539,
+        "bottom": 152,
+        "left": 467
+      },
+      "pointer": "auto",
+      "hit": "<span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">取消下载</span>"
+    },
+    {
+      "text": "选择文件",
+      "rect": {
+        "x": 1086.671875,
+        "y": 168,
+        "width": 72,
+        "height": 32,
+        "top": 168,
+        "right": 1158.671875,
+        "bottom": 200,
+        "left": 1086.671875
+      },
+      "pointer": "auto",
+      "hit": "<span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">选择文件</span>"
+    },
+    {
+      "text": "使用此内核",
+      "rect": {
+        "x": 1166.671875,
+        "y": 168,
+        "width": 72.328125,
+        "height": 32,
+        "top": 168,
+        "right": 1239,
+        "bottom": 200,
+        "left": 1166.671875
+      },
+      "pointer": "auto",
+      "hit": "<span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">使用此内核</span>"
+    },
+    {
+      "text": "获取可下载版本",
+      "rect": {
+        "x": 323,
+        "y": 216,
+        "width": 106.015625,
+        "height": 32,
+        "top": 216,
+        "right": 429.015625,
+        "bottom": 248,
+        "left": 323
+      },
+      "pointer": "auto",
+      "hit": "<span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">获取可下载版本</span>"
+    },
+    {
+      "text": "安装所选版本",
+      "rect": {
+        "x": 530.015625,
+        "y": 216,
+        "width": 94.015625,
+        "height": 32,
+        "top": 216,
+        "right": 624.03125,
+        "bottom": 248,
+        "left": 530.015625
+      },
+      "pointer": "auto",
+      "hit": "<span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">安装所选版本</span>"
+    },
+    {
+      "text": "检测",
+      "rect": {
+        "x": 810.65625,
+        "y": 321,
+        "width": 72,
+        "height": 32,
+        "top": 321,
+        "right": 882.65625,
+        "bottom": 353,
+        "left": 810.65625
+      },
+      "pointer": "auto",
+      "hit": "<span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">检测</span>"
+    },
+    {
+      "text": "设为默认",
+      "rect": {
+        "x": 890.65625,
+        "y": 321,
+        "width": 72,
+        "height": 32,
+        "top": 321,
+        "right": 962.65625,
+        "bottom": 353,
+        "left": 890.65625
+      },
+      "pointer": "auto",
+      "hit": "<span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">设为默认</span>"
+    },
+    {
+      "text": "删除",
+      "rect": {
+        "x": 970.65625,
+        "y": 321,
+        "width": 72,
+        "height": 32,
+        "top": 321,
+        "right": 1042.65625,
+        "bottom": 353,
+        "left": 970.65625
+      },
+      "pointer": "auto",
+      "hit": "<span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">删除</span>"
+    },
+    {
+      "text": "检测",
+      "rect": {
+        "x": 810.65625,
+        "y": 380,
+        "width": 72,
+        "height": 32,
+        "top": 380,
+        "right": 882.65625,
+        "bottom": 412,
+        "left": 810.65625
+      },
+      "pointer": "auto",
+      "hit": "<span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">检测</span>"
+    },
+    {
+      "text": "设为默认",
+      "rect": {
+        "x": 890.65625,
+        "y": 380,
+        "width": 72,
+        "height": 32,
+        "top": 380,
+        "right": 962.65625,
+        "bottom": 412,
+        "left": 890.65625
+      },
+      "pointer": "auto",
+      "hit": "<span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">设为默认</span>"
+    },
+    {
+      "text": "删除",
+      "rect": {
+        "x": 970.65625,
+        "y": 380,
+        "width": 72,
+        "height": 32,
+        "top": 380,
+        "right": 1042.65625,
+        "bottom": 412,
+        "left": 970.65625
+      },
+      "pointer": "auto",
+      "hit": "<span class=\"p-button-label\" data-pc-section=\"label\" data-p=\"\">删除</span>"
+    }
+  ]
+}

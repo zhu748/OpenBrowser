@@ -1,0 +1,11 @@
+{
+  "passed": true,
+  "checks": [
+    "原窗口右键菜单创建真实桌面快捷方式，系统文件格式验证通过",
+    "原设为默认浏览器菜单，真实独立 XDG 配置注册及查询两个 URL scheme",
+    "真实第二个 Electron 进程经单实例通道启动指定原生 Chrome 窗口并打开 CLI URL"
+  ],
+  "errors": [],
+  "externalRequests": [],
+  "data": "/workspace/OpenBrowser/work/rebuild/host-ui-qzSXZ0"
+}

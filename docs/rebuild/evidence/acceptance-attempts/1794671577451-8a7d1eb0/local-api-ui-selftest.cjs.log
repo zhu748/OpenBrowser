@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "checks": [
+    "原 API 页面展示实际密钥和端口，本地文档弹窗、端口变更及原确认框重置密钥；实际旧 key 401、新 key 200",
+    "原页面配置对应真实 Electron 内置 Node stdio MCP 进程：initialize、tools/list、tools/call 经真实原 API 返回窗口",
+    "原开关真实停止监听，应用重启仍保持关闭和已旋转密钥；原明暗页面已截图"
+  ],
+  "errors": [],
+  "externalRequests": [],
+  "data": "/workspace/OpenBrowser/work/rebuild/api-ui-MJcU2a",
+  "mcpToolCount": 67
+}

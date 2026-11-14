@@ -408,6 +408,7 @@ module.exports = {
       await this.ensureKernelBootstrap();
     }
     this.assertStartGenerationActive(profile.id, lifecycleGeneration);
+    let recoverControlColor = false;
     // Explicit 'chromium': this profile must not silently fall into a Firefox
     // kernel even when a Firefox pin exists.
     browser = this.chooseBrowser(profile, 'chromium');
@@ -423,6 +424,7 @@ module.exports = {
     startupResources.profileLock = profileLock;
     startupResources.lifecycleGeneration = lifecycleGeneration;
     this.assertStartGenerationActive(profile.id, lifecycleGeneration);
+    recoverControlColor = await require('../automation/sync/master-window-color').needsStartupRecovery(root);
     restoreSession = profile.advanced.tabMode === 'restore' || profile.advanced.restoreSession;
     // Parallelized (independent IO overlaps; Preferences writers stay serialized). See method.
     await this.prepareProfileFilesForStart(root, profile, restoreSession);
@@ -1006,6 +1008,9 @@ module.exports = {
       throw new Error(item.cdpError || '浏览器在启动过程中异常退出');
     }
     // Detect user closing browser with X (process may stay alive; CDP/pages are source of truth)
+    // A crash may have left the transient sync marker enabled in this profile.
+    // Restore the captured native theme before publishing a new running window.
+    await require('../automation/sync/master-window-color').restoreOwnedColor(item, { recoverOnRestart: recoverControlColor });
     this.startRunningWatch(item);
     currentStage = 'ready'; this.emitStartProgress(profile.id, 'ready', 100, '启动完成');
     this.emit({ type: 'status', id: profile.id, running: true, blocked: Boolean(item.verificationBlocked), ...this.publicRunning(profile.id) });

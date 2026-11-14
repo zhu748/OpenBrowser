@@ -1,0 +1,52 @@
+{
+  "passed": true,
+  "errors": [],
+  "externalRequests": [],
+  "checks": [
+    "真实点击定位按钮：原后端完成公网探测，显示实际返回地址，未使用固定截图数据",
+    "原列表“测试全部代理 IP”走实际探测及结果写回，刷新后检查时间、IP 与成功状态仍在"
+  ],
+  "host": {
+    "ip": "90.96.178.149",
+    "country": "United States",
+    "countryCode": "US",
+    "countries": [
+      "US"
+    ],
+    "countryUsage": "US",
+    "countryRegistered": "US",
+    "geoConflict": false,
+    "countryNote": "",
+    "region": "New York",
+    "city": "Poughkeepsie",
+    "zip": "12601",
+    "timezone": "America/New_York",
+    "latitude": 41.7003714,
+    "longitude": -73.9209713,
+    "isp": "Cloudflare, Inc.",
+    "organization": "Private Customer",
+    "asn": "13335",
+    "asName": "Private Customer",
+    "mobile": false,
+    "proxy": false,
+    "hosting": false,
+    "colo": "LAX",
+    "sourceCount": 3,
+    "checkedAt": "2026-11-14T15:27:37.693Z",
+    "ipChannel": "ip-api",
+    "latencyMs": 321,
+    "networkType": "broadband",
+    "transportVerified": true,
+    "transportVerifiedAt": "2026-11-14T15:27:37.693Z",
+    "route": "environment-proxy",
+    "routeLabel": "当前网络定位（环境代理出口）",
+    "country_code": "US",
+    "localAddress": "172.26.91.242"
+  },
+  "profile": {
+    "id": "ca15cbd1-2cac-41c2-823c-aba41bf5d8b1",
+    "lastIp": "90.96.178.149",
+    "checkTime": "2026-11-14T15:27:38.000Z",
+    "checkStatus": 1
+  }
+}

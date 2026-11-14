@@ -1,0 +1,45 @@
+{
+  "passed": false,
+  "cases": [
+    {
+      "name": "Agent 模板 ID 删除/重启后不复用",
+      "status": "FAIL",
+      "error": "AssertionError [ERR_ASSERTION]: 旧 ID 不得被新模板占用\n    at /workspace/OpenBrowser/Browserapp/rebuild/review-consistency-selftest.cjs:7:454\n    at async check (/workspace/OpenBrowser/Browserapp/rebuild/review-consistency-selftest.cjs:5:248)\n    at async /workspace/OpenBrowser/Browserapp/rebuild/review-consistency-selftest.cjs:7:2"
+    },
+    {
+      "name": "新任务不得继承已删除任务的历史 ID",
+      "status": "FAIL",
+      "error": "AssertionError [ERR_ASSERTION]: 新任务不得混入旧任务日志\n    at /workspace/OpenBrowser/Browserapp/rebuild/review-consistency-selftest.cjs:8:532\n    at async check (/workspace/OpenBrowser/Browserapp/rebuild/review-consistency-selftest.cjs:5:248)\n    at async /workspace/OpenBrowser/Browserapp/rebuild/review-consistency-selftest.cjs:8:2"
+    },
+    {
+      "name": "窗口模板删除后不复用旧 ID",
+      "status": "FAIL",
+      "error": "AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:\n\n  assert.ok(next.id>old.id)\n\n    at /workspace/OpenBrowser/Browserapp/rebuild/review-consistency-selftest.cjs:9:271\n    at async check (/workspace/OpenBrowser/Browserapp/rebuild/review-consistency-selftest.cjs:5:248)\n    at async /workspace/OpenBrowser/Browserapp/rebuild/review-consistency-selftest.cjs:9:2"
+    },
+    {
+      "name": "标签删除后不复用已保存筛选器中的 ID",
+      "status": "FAIL",
+      "error": "AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:\n\n  assert.ok(next.id>old.id)\n\n    at /workspace/OpenBrowser/Browserapp/rebuild/review-consistency-selftest.cjs:10:299\n    at async check (/workspace/OpenBrowser/Browserapp/rebuild/review-consistency-selftest.cjs:5:248)\n    at async /workspace/OpenBrowser/Browserapp/rebuild/review-consistency-selftest.cjs:10:2"
+    },
+    {
+      "name": "groups 元数据保存失败恢复窗口关联且保留并发备注",
+      "status": "FAIL",
+      "error": "AssertionError [ERR_ASSERTION]: 操作失败必须恢复实际后端关联\n+ actual - expected\n\n+ ''\n- '2873aa2f-dd8d-4839-8ec4-1aa8d50b261c'\n\n    at /workspace/OpenBrowser/Browserapp/rebuild/review-consistency-selftest.cjs:11:821\n    at async check (/workspace/OpenBrowser/Browserapp/rebuild/review-consistency-selftest.cjs:5:248)\n    at async /workspace/OpenBrowser/Browserapp/rebuild/review-consistency-selftest.cjs:11:40"
+    },
+    {
+      "name": "labels 元数据保存失败恢复窗口关联且保留并发备注",
+      "status": "FAIL",
+      "error": "AssertionError [ERR_ASSERTION]: 操作失败必须恢复实际后端关联\n\n'' !== '1'\n\n    at /workspace/OpenBrowser/Browserapp/rebuild/review-consistency-selftest.cjs:11:821\n    at async check (/workspace/OpenBrowser/Browserapp/rebuild/review-consistency-selftest.cjs:5:248)\n    at async /workspace/OpenBrowser/Browserapp/rebuild/review-consistency-selftest.cjs:11:40"
+    },
+    {
+      "name": "项目分页重排只替换所选位置",
+      "status": "FAIL",
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n\n  [\n    'dfd2e58a-6bfb-4e56-9c2a-036803841ab5',\n+   '60c92630-64dc-4a45-8d3c-2095ce8d9e00',\n    '62aa44f8-3df3-4cd4-9b92-e2a4ff8a6d8b',\n    '8cab8898-ea11-4223-b8c8-e69e08cd04fc',\n-   '60c92630-64dc-4a45-8d3c-2095ce8d9e00'\n  ]\n\n    at /workspace/OpenBrowser/Browserapp/rebuild/review-consistency-selftest.cjs:12:266\n    at async check (/workspace/OpenBrowser/Browserapp/rebuild/review-consistency-selftest.cjs:5:248)\n    at async /workspace/OpenBrowser/Browserapp/rebuild/review-consistency-selftest.cjs:12:2"
+    },
+    {
+      "name": "筛选器读取应用已保存的排序",
+      "status": "FAIL",
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n\n  [\n-   'c',\n    'a',\n    'b',\n+   'c'\n  ]\n\n    at /workspace/OpenBrowser/Browserapp/rebuild/review-consistency-selftest.cjs:13:246\n    at async check (/workspace/OpenBrowser/Browserapp/rebuild/review-consistency-selftest.cjs:5:248)\n    at async /workspace/OpenBrowser/Browserapp/rebuild/review-consistency-selftest.cjs:13:2"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+  ok  profileEngine: per-profile choice beats pinned default
+  ok  profilePrefersFirefox drives the start branch
+  ok  chooseBrowser(firefox) never returns a chromium binary
+  ok  candidates() labels both engines and dedupes by path
+  ok  runningWithCdp drops Firefox items (no port)
+  ok  startManaged exists and start() routes firefox profiles
+  ok  no firefox pin: profiles default to chromium
+
+engine-dual-engine-selftest: 7 passed, 0 failed

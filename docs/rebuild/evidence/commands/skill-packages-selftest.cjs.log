@@ -1,0 +1,11 @@
+{
+  "status": "PASS",
+  "checks": [
+    "real ZIP extraction",
+    "nested references preserved",
+    "path traversal rejected",
+    "symlinks rejected",
+    "missing manifest rejected",
+    "failed install preserves existing package"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "status": "PASS",
+  "scope": "Current generated runtime JavaScript (AST call/new expressions)",
+  "directTransports": [],
+  "localFetchCallbacks": [
+    {
+      "file": "dist-BAPiYeUN.js",
+      "line": 9707,
+      "callee": "_2.fetch"
+    }
+  ]
+}

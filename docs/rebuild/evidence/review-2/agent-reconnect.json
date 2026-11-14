@@ -1,0 +1,13 @@
+{
+  "passed": true,
+  "checks": [
+    "首次 info 失败后实际重新连接并恢复 ready",
+    "日志同步失败保持 disconnected；四并发重连只握手一次；真实 SSE 任务事件不重复"
+  ],
+  "errors": [],
+  "expectedErrors": [
+    "Error: review connection fixture info\n    at obui://app/assets/local-api.js:20:48\n    at async obui://app/assets/agent-channel.js:79:11",
+    "Error: review connection fixture taskLogs:list\n    at obui://app/assets/local-api.js:20:48\n    at async obui://app/assets/agent-channel.js:80:18"
+  ],
+  "externalRequests": []
+}

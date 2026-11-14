@@ -1,0 +1,4 @@
+'use strict';
+const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
+function runtimeSnapshot(){const root=path.resolve(__dirname,'../..'),{isRuntimeResource}=require('../../scripts/runtime-manifest'),rows=[];function visit(directory,relative=''){for(const entry of fs.readdirSync(directory,{withFileTypes:true})){const name=relative?relative+'/'+entry.name:entry.name;if(['kernels','node_modules'].includes(name)||!isRuntimeResource(name))continue;const file=path.join(directory,entry.name);if(entry.isSymbolicLink())throw Error('运行来源含符号链接：'+name);if(entry.isDirectory())visit(file,name);else rows.push([name,crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex')]);}}visit(root);rows.sort((a,b)=>a[0].localeCompare(b[0]));return {files:rows.length,sha256:crypto.createHash('sha256').update(JSON.stringify(rows)).digest('hex')};}
+module.exports={runtimeSnapshot};

@@ -1,0 +1,7 @@
+import {W as e,h as t,y as n} from "./runtime-core.esm-bundler-CBj16o9G.js";
+var r = { width: "1em", height: "1em", viewBox: "0 0 1467 1249", fill: "none", xmlns: "http://www.w3.org/2000/svg" };
+function i(i2, a2) {
+  return e(), t("svg", r, [...a2[0] ||= [n('<g opacity="0.6" filter="url(#filter0_f_52545_109312)"><ellipse cx="733.151" cy="624.234" rx="433.151" ry="324.234" fill="#12A3FC"></ellipse></g><defs><filter id="filter0_f_52545_109312" x="0" y="0" width="1466.3" height="1248.47" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB"><feFlood flood-opacity="0" result="BackgroundImageFix"></feFlood><feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape"></feBlend><feGaussianBlur stdDeviation="150" result="effect1_foregroundBlur_52545_109312"></feGaussianBlur></filter></defs>', 2)]]);
+}
+var a = { render: i };
+export {a as default,i as render};

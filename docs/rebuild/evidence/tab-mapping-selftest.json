@@ -1,0 +1,34 @@
+{
+  "status": "PASS",
+  "success": true,
+  "staleTabsClosed": 10,
+  "nativeTabsAdopted": 3,
+  "generatedTabs": 4,
+  "repairedMapping": "replacement-arcus",
+  "reattachedConnections": 2,
+  "evictedFailedConnections": 1,
+  "connectionCloses": 3,
+  "finalCounts": [
+    3,
+    3,
+    3
+  ],
+  "reconciliationEvents": 1,
+  "navigated": [
+    {
+      "port": 2,
+      "id": "native-slave-2",
+      "url": "https://example.test/native"
+    },
+    {
+      "port": 3,
+      "id": "native-slave-3",
+      "url": "https://example.test/native"
+    },
+    {
+      "port": 4,
+      "id": "native-slave-4",
+      "url": "https://example.test/native"
+    }
+  ]
+}

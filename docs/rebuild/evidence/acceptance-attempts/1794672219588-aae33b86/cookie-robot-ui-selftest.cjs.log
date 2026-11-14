@@ -1,0 +1,25 @@
+{
+  "passed": true,
+  "checks": [
+    "Chrome 原弹窗启动真实 headless 内核，滚动容器到底、生成 Cookie，关闭后由原后端保存；临时开关不污染配置",
+    "Firefox 原弹窗启动真实 headless 内核，滚动容器到底、生成 Cookie，关闭后由原后端保存；临时开关不污染配置",
+    "两种内核临时禁图真实生效；Chrome Media 请求被阻止；Firefox 通过 BiDi 响应阶段拦截媒体",
+    "重复任务明确拒绝；取消自有任务停止实际浏览器并保存 cancelled",
+    "测试明确缩短内部滚动预算，真实失败记录可读，closeProfile 仍关闭真实进程；没有把未到达底部当成功"
+  ],
+  "errors": [],
+  "externalRequests": [],
+  "data": "/workspace/OpenBrowser/work/rebuild/cookie-robot-ui-wI4hCN",
+  "switches": 4,
+  "received": [
+    "/chrome",
+    "/favicon.ico",
+    "/firefox",
+    "/clip/firefox",
+    "/cancel",
+    "/cancel",
+    "/image/cancel",
+    "/clip/cancel",
+    "/favicon.ico"
+  ]
+}

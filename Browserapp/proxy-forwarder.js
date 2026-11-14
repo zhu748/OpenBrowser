@@ -63,6 +63,13 @@ function getProxyDohLookup() {
       proxyDohLookup = (hostname, opts, callback) => {
         const settings = typeof opts === 'function' ? {} : (opts || {});
         const done = typeof opts === 'function' ? opts : callback;
+        // Container/service names and local-only namespaces have no public
+        // DNS record. Sending them to DoH both leaks local names and exhausts
+        // the proxy probe deadline before the system resolver is attempted.
+        const localName=String(hostname||'').toLowerCase().replace(/\.$/,'');
+        if(!localName.includes('.')||localName==='localhost'||/\.(?:localhost|local|internal)$/.test(localName)){
+          dns.lookup(hostname,settings,done);return;
+        }
         baseLookup(hostname, settings, (error, address, family) => {
           if (!error) { done(null, address, family); return; }
           warnDohDegradedOnce(`[proxy-forwarder] DoH transport failure for "${hostname}" (${error.code || error.message}); resolving via system DNS (potential ISP DNS leak)`);

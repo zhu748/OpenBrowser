@@ -1,0 +1,75 @@
+{
+  "runtime": [
+    {
+      "term": "CHECKPOINT_DIR",
+      "matches": 6,
+      "examples": [
+        {
+          "offset": 5553739,
+          "context": "\"===process.env.DEBUG,ROXY_API_KEY:process.env.ROXY_API_KEY,ROXY_API_HOST:process.env.ROXY_API_HOST,CHECKPOINT_DIR:process.env.CHECKPOINT_DIR,ROXY_SERVER_PORT:Number(process.env.ROXY_SERVER_PORT)||3e3,ROXY_USER_ID:process.env.ROXY_USER_ID,ROXY_WORKSPACE_ID:process.env.ROXY_WORKSPACE_ID,AGENT_SCRIPT_"
+        },
+        {
+          "offset": 5553766,
+          "context": "API_KEY:process.env.ROXY_API_KEY,ROXY_API_HOST:process.env.ROXY_API_HOST,CHECKPOINT_DIR:process.env.CHECKPOINT_DIR,ROXY_SERVER_PORT:Number(process.env.ROXY_SERVER_PORT)||3e3,ROXY_USER_ID:process.env.ROXY_USER_ID,ROXY_WORKSPACE_ID:process.env.ROXY_WORKSPACE_ID,AGENT_SCRIPT_PATH:process.env.AGENT_SCRI"
+        }
+      ]
+    },
+    {
+      "term": "/logs/:logId/replay",
+      "matches": 1,
+      "examples": [
+        {
+          "offset": 5537768,
+          "context": "pi/scripts\",Tg),t.use(\"/api/skills\",Pg),t.use(\"/api/tasks\",Rg),t.use(\"/api/roxy-claw\",vg),t}Rg.get(\"/logs/:logId/replay\",(e,t)=>{let a=Fg.safeParse(Lj(e.params.logId));if(!a.success)return t.status(400).json({code:1,msg:$j(\"任务日志参数不正确\")});try{let e=TR(a.data);return e?t.json({code:0,data:e}):t.status"
+        }
+      ]
+    },
+    {
+      "term": "compaction",
+      "matches": 47,
+      "examples": [
+        {
+          "offset": 4806845,
+          "context": "ng);break;case\"signature_delta\":\"thinking\"===a.type&&this._emit(\"signature\",a.signature);break;case\"compaction_delta\":\"compaction\"===a.type&&a.content&&this._emit(\"compaction\",a.content);break;default:e.delta}break}case\"message_stop\":this._addMessageParam(t),this._addMessage(xv(t,$g(this,Qa,\"f\"),{lo"
+        },
+        {
+          "offset": 4806864,
+          "context": "ature_delta\":\"thinking\"===a.type&&this._emit(\"signature\",a.signature);break;case\"compaction_delta\":\"compaction\"===a.type&&a.content&&this._emit(\"compaction\",a.content);break;default:e.delta}break}case\"message_stop\":this._addMessageParam(t),this._addMessage(xv(t,$g(this,Qa,\"f\"),{logger:$g(this,ur,\"f\""
+        }
+      ]
+    },
+    {
+      "term": "/api/scripts",
+      "matches": 1,
+      "examples": [
+        {
+          "offset": 5537666,
+          "context": "eware),t.use(D.json({limit:\"150mb\"})),t.use(\"/api\",Xf),t.use(\"/api\",Wf),t.use(\"/api/mcp\",eg),t.use(\"/api/scripts\",Tg),t.use(\"/api/skills\",Pg),t.use(\"/api/tasks\",Rg),t.use(\"/api/roxy-claw\",vg),t}Rg.get(\"/logs/:logId/replay\",(e,t)=>{let a=Fg.safeParse(Lj(e.params.logId));if(!a.success)return t.status("
+        }
+      ]
+    },
+    {
+      "term": "agent-worker.jsc",
+      "matches": 0,
+      "examples": []
+    }
+  ],
+  "skills": [
+    {
+      "name": "roxybrowser-playwright-skills",
+      "files": 18
+    },
+    {
+      "name": "roxybrowser-openapi-skills",
+      "files": 5
+    },
+    {
+      "name": "playwright-rpa-enhance-skills",
+      "files": 16
+    },
+    {
+      "name": "automation-script-writing",
+      "files": 21
+    }
+  ]
+}

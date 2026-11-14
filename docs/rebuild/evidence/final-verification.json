@@ -1,0 +1,302 @@
+{
+  "status": "PASS",
+  "scope": "核对指定最新证据记录与当前运行文件，不重跑测试，不代表全页面像素或跨平台验收；历史失败记录保留并明确排除。",
+  "evidence": [
+    {
+      "file": "circled-ui-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "ui-smoke.json",
+      "status": "PASS"
+    },
+    {
+      "file": "management-ui-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "agent-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "agent-ui-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "agent-browser-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "agent-tasks-ui-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "skill-packages-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "sync-browser-ui-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "synchronizer-ui-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "network-ui-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "kernels-ui-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "packaging-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "static-audit.json",
+      "status": "PASS"
+    },
+    {
+      "file": "ui-audit.json",
+      "status": "PASS"
+    },
+    {
+      "file": "module-links.json",
+      "status": "PASS"
+    },
+    {
+      "file": "renderer-transports.json",
+      "status": "PASS"
+    },
+    {
+      "file": "build-guard.json",
+      "status": "PASS"
+    },
+    {
+      "file": "sync-service-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "sync-dialogs-ui-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "dialog-security-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "import-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "import-ui-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "profile-cache-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "profile-cache-ui-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "quit-failure-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "unavailable-ui-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "phase2-command-results.json",
+      "status": "PASS"
+    },
+    {
+      "file": "cookie-robot-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "cookie-robot-ui-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "agent-files-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "agent-files-ui-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "accounts-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "accounts-ui-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "extensions-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "extensions-ui-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "host-actions-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "host-actions-ui-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "local-api-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "local-api-ui-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "agent-approval-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "agent-approval-ui-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "projects-ui-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "agent-mcp-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "agent-mcp-ui-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "style-provenance.json",
+      "status": "PASS"
+    },
+    {
+      "file": "visual-parity-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "settings-ui-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "phase3-command-results.json",
+      "status": "PASS"
+    },
+    {
+      "file": "environment-network-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "network-form-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "image-size-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "image-size-ui-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "media-preferences-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "kernel-upgrade-ui-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "template-catalog-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "template-catalog-ui-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "phase4-command-results.json",
+      "status": "PASS"
+    },
+    {
+      "file": "gallery-ui-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "tab-mapping-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "firefox-image-size-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "master-color-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "master-color-visual-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "native-regression-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "desktop-shortcuts-selftest.json",
+      "status": "PASS"
+    },
+    {
+      "file": "backend-contract-audit.json",
+      "status": "PASS"
+    },
+    {
+      "file": "review-2/consistency.json",
+      "status": "PASS"
+    },
+    {
+      "file": "review-2/agent-reconnect.json",
+      "status": "PASS"
+    },
+    {
+      "file": "review-2/template-ui.json",
+      "status": "PASS"
+    },
+    {
+      "file": "review-3/component-audit.json",
+      "status": "PASS"
+    },
+    {
+      "file": "review-3/agent-contracts.json",
+      "status": "PASS"
+    },
+    {
+      "file": "review-3/agent-contracts-ui.json",
+      "status": "PASS"
+    }
+  ],
+  "runtimeAssetHashesVerified": 1556,
+  "documentationLinks": "PASS",
+  "failures": [],
+  "commandSourcesVerified": 56,
+  "frozenRuntimeFilesVerified": 2376,
+  "nativeTestsVerified": 15,
+  "visualCasesVerified": 96,
+  "nativeRuntimeHashesVerified": 341
+}

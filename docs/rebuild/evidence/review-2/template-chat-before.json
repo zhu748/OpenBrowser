@@ -1,0 +1,12 @@
+{
+  "passed": false,
+  "checks": [
+    "原版弹窗选择 ZIP，保留多文件 Skill 并保存；原版更多操作置顶/取消置顶及重载持久化；明暗截图",
+    "原版模板 API 的 numeric ID、templateIdOrSlug、列表 paramsSerializer 与置顶返回形状实际 IPC 验证",
+    "导入模板实际启动 Agent 任务，后端读取磁盘 Skill，真实 SSE 模型收到内容并完成日志"
+  ],
+  "errors": [],
+  "externalRequests": [],
+  "failure": "Error: 状态未在期限内达到预期\n    at waitUntil (/workspace/OpenBrowser/Browserapp/rebuild/selftest-helpers.cjs:13:9)\n    at async /workspace/OpenBrowser/Browserapp/rebuild/review-template-ui-selftest.cjs:80:5",
+  "body": "OpenBrowser AI Agent\n新建对话\n模板商城\n任务管理\n我的模板\n对话\n模板弹窗上传验收 参考 Skill：--- name: review-upload\n窗口管理\n设置\n?\n新手引导\n有什么我能帮你的吗？\n\n直接与我聊天，或选择模板一键开始。\n\nOpenBrowser 自动化流程参考\n\n当前本地运行时提供结构化浏览器工具，未移植旧版任意脚本沙箱。可依据引用材料设计流程，通过已提供的工具逐步执行；不要调用旧脚本上传、执行或 SDK 接口。\n\n使用\nOpenBrowser 稳定交互参考\n\n先 read_page 确认页面，再执行 click / fill。每步检查工具返回；失败时记录原因，使用有限次数重试。复杂流程可拆成多个本地任务，不伪造成功或执行结果。\n\n使用\nOpenBrowser 本地环境管理\n\n用 list_profiles 查找窗口，create_profile 创建窗口，start_profile / stop_profile 控制真实内核。所有数据来自本机 BrowserEngine。当前工具不提供云端工作区、额度、付费代理或服务器缓存。\n\n使用\nOpenBrowser 浏览器自动化\n\n先 list_profiles 确认窗口；start_profile 后使用 list_tabs、navigate、read_page、click、fill。当前页面工具连接已运行的 Chrome CDP；Firefox 的页面自动化桥尚未移植。\n\n使用\nreview-upload\n\n模板弹窗上传验收\n\n使用\n更多模板\n直接对我说出您的需求，输入 @ 选择窗口，/ 使用模板\n\n\n\n\n选窗口\n选模板\n传文件\n完全访问权限\n有新模板，试试点击这里使用。\n跳过"
+}

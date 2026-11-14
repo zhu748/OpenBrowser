@@ -3,6 +3,7 @@
 
 const assert = require('assert');
 const net = require('net');
+const dns = require('node:dns');
 const {
   connectSocket,
   setProxyDohResolver,
@@ -78,6 +79,12 @@ async function run() {
       socket.destroy();
     });
 
+    await checkAsync('local proxy service names use system DNS without a public DoH query', async () => {
+      let queried=false;setProxyDohResolver({resolve4:async()=>{queried=true;throw Error('private name sent to public DNS');},resolve6:async()=>{queried=true;throw Error('private name sent to public DNS');}});
+      const originalLookup=dns.lookup;dns.lookup=(host,options,callback)=>originalLookup(host==='local-fixture'?'localhost':host,options,callback);
+      try{const socket=await connectSocket('local-fixture',serverPort,3000);assert.equal(queried,false);assert.ok(!socket.destroyed);socket.destroy();}finally{dns.lookup=originalLookup;}
+    });
+
     // 3. DoH 查无记录 (ENODATA) 时按既有语义 fallback 到系统 DNS，并输出可观测警告日志
     await checkAsync('connectSocket falls back to system resolver on DoH ENODATA with warning log', async () => {
       const mockResolver = {
@@ -94,10 +101,11 @@ async function run() {
       };
       setProxyDohResolver(mockResolver);
 
+      const originalLookup=dns.lookup;dns.lookup=(host,options,callback)=>originalLookup(host==='proxy-fallback.vendor.test'?'localhost':host,options,callback);
       let warnLogged = false;
       const origWarn = console.warn;
       console.warn = (...args) => {
-        if (args.join(' ').includes('[proxy-forwarder] DoH lookup for "localhost" fell back to system DNS')) {
+        if (args.join(' ').includes('[proxy-forwarder] DoH lookup for "proxy-fallback.vendor.test" fell back to system DNS')) {
           warnLogged = true;
         }
         origWarn.apply(console, args);
@@ -105,12 +113,12 @@ async function run() {
 
       try {
         // localhost 在系统 hosts/DNS 中可解析为 127.0.0.1
-        const socket = await connectSocket('localhost', serverPort, 3000);
+        const socket = await connectSocket('proxy-fallback.vendor.test', serverPort, 3000);
         assert.ok(socket && !socket.destroyed, 'Socket should connect via fallback');
         assert.strictEqual(warnLogged, true, 'Observable warning log must be emitted on fallback');
         socket.destroy();
       } finally {
-        console.warn = origWarn;
+        console.warn = origWarn;dns.lookup=originalLookup;
       }
     });
 
@@ -130,10 +138,11 @@ async function run() {
       };
       setProxyDohResolver(mockResolver);
 
+      const originalLookup=dns.lookup;dns.lookup=(host,options,callback)=>originalLookup(host==='proxy-fallback.vendor.test'?'localhost':host,options,callback);
       let warnLogged = false;
       const origWarn = console.warn;
       console.warn = (...args) => {
-        if (args.join(' ').includes('[proxy-forwarder] DoH transport failure for "localhost"')) {
+        if (args.join(' ').includes('[proxy-forwarder] DoH transport failure for "proxy-fallback.vendor.test"')) {
           warnLogged = true;
         }
         origWarn.apply(console, args);
@@ -141,12 +150,12 @@ async function run() {
 
       try {
         // A blocked DoH endpoint must not brick proxy dialling for restricted networks.
-        const socket = await connectSocket('localhost', serverPort, 3000);
+        const socket = await connectSocket('proxy-fallback.vendor.test', serverPort, 3000);
         assert.ok(socket && !socket.destroyed, 'Socket should connect via system-DNS fallback');
         assert.strictEqual(warnLogged, true, 'Transport-failure fallback must emit an observable warning');
         socket.destroy();
       } finally {
-        console.warn = origWarn;
+        console.warn = origWarn;dns.lookup=originalLookup;
       }
     });
 

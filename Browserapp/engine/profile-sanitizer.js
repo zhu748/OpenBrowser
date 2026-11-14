@@ -12,8 +12,12 @@ const MAX_PROFILE_PROXY_LENGTH = 64 * 1024;
 function sanitizeProfile(value) {
   if (!value || typeof value !== "object" || typeof value.id !== "string" || typeof value.name !== "string") throw new Error("Invalid profile");
   const id = assertProfileId(value.id);
+  const cookies = String(value.cookies || "");
+  if (cookies.length > 500000) throw Object.assign(new Error("Cookie 内容超过 500000 字符，本次未写入"), { code: "PROFILE_COOKIES_TOO_LARGE" });
   const privacyValue = value.privacy && typeof value.privacy === "object" ? value.privacy : {};
   const advancedValue = value.advanced && typeof value.advanced === "object" ? value.advanced : {};
+  const legacyImageKB=value.prefs?.roxy?.forbidImage===false?Number(value.prefs.roxy.forbiddenPictureSize)||0:0;
+  const imageMaxBytes=Math.min(8*1024*1024,Math.max(0,Math.floor(Number(advancedValue.imageMaxBytes??(legacyImageKB*1024))||0)));
   const proxyMetaValue = value.proxyMeta && typeof value.proxyMeta === "object" ? value.proxyMeta : {};
   const platformValue = value.platform && typeof value.platform === "object" ? value.platform : {};
   const fingerprintValue = value.fingerprint && typeof value.fingerprint === "object"
@@ -94,7 +98,7 @@ function sanitizeProfile(value) {
     userAgent: String(value.userAgent || "").replace(/[\r\n]/g, " ").slice(0, 1000),
     fingerprintVersion: fingerprintVersion(value.fingerprintVersion),
     fingerprintSeed: String(value.fingerprintSeed || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 128),
-    cookies: String(value.cookies || "").slice(0, 500000),
+    cookies,
     note: String(value.note || "").slice(0, 2000),
     exitIp: String(value.exitIp || "").slice(0, 80),
     exitCountryCode: String(value.exitCountryCode || "").slice(0, 4),
@@ -114,6 +118,8 @@ function sanitizeProfile(value) {
       // Roxy 对齐：多账号行（首账号即主账号字段，这里只做上限与字段清洗）
       accounts: Array.isArray(platformValue.accounts)
         ? platformValue.accounts.slice(0, 20).map((acc) => ({
+          ...(typeof acc?.accountId === 'string' && /^[A-Za-z0-9_-]{1,100}$/.test(acc.accountId) ? { accountId: acc.accountId } : {}),
+          ...(acc?.url != null ? { url: String(acc.url).replace(/[\r\n]/g, '').slice(0, 2000) } : {}),
           username: String(acc?.username || "").slice(0, 200),
           password: String(acc?.password || "").slice(0, 500),
           totpSecret: String(acc?.totpSecret || acc?.otp || "").slice(0, 200),
@@ -248,8 +254,9 @@ function sanitizeProfile(value) {
       saveHistory: advancedValue.saveHistory !== false,
       allowSignin: Boolean(advancedValue.allowSignin),
       restoreSession: Boolean(advancedValue.restoreSession) || advancedValue.tabMode === "restore",
-      blockVideo: Boolean(advancedValue.blockVideo || advancedValue.blockSound),
-      blockImages: Boolean(advancedValue.blockImages),
+      blockVideo: Boolean(advancedValue.blockVideo),
+      blockImages: Boolean(advancedValue.blockImages)&&!imageMaxBytes,
+      imageMaxBytes,
       clearCacheOnStart: Boolean(advancedValue.clearCacheOnStart),
       clearCookiesOnStart: Boolean(advancedValue.clearCookiesOnStart),
       clearLocalStorageOnStart: Boolean(advancedValue.clearLocalStorageOnStart),
@@ -419,6 +426,8 @@ function sanitizeFingerprintConfig(fp, privacyCores, privacyMemory) {
     const dl = finite(v.downlink);
     if (dl !== null) out.downlink = dl;
     const rtt = finite(v.rtt); if (rtt !== null) out.rtt = rtt;
+    const maximum=finite(v.downlinkMax);if(maximum!==null&&maximum>=0)out.downlinkMax=Math.min(1000000,maximum);
+    if(typeof v.saveData==='boolean')out.saveData=v.saveData;
     return Object.keys(out).length ? normalizeNetworkInformation(out) : undefined;
   };
 

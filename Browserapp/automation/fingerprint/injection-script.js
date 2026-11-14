@@ -234,7 +234,10 @@ function buildInjectionScript(fp, options = {}) {
   const payload = sharedFontPayloadForOutput
     ? 'const ' + SHARED_FONT_PAYLOAD_VAR + ' = ' + JSON.stringify(sharedFontPayloadForOutput) + ';\n'
     : '';
-  const output = '(() => {\n' + replayGuard + payload + composed + complete + '\n})();';
+  // Register once for future web navigations, but never patch privileged browser
+  // WebUI/extension documents. Their own components rely on untouched DOM APIs.
+  const privilegedGuard = 'if (typeof location !== "undefined" && (/^(?:chrome(?:-untrusted|-extension|-search|-native)?|edge(?:-untrusted|-extension)?|devtools|moz-extension):/i.test(location.href) || (/^about:/i.test(location.href) && !/^about:(?:blank|srcdoc)(?:[?#]|$)/i.test(location.href)))) return;\n';
+  const output = '(() => {\n' + privilegedGuard + replayGuard + payload + composed + complete + '\n})();';
   injectionScriptCache.set(injectionCacheKey, {
     source: output,
     hasBridgePolicy: !livePatch && Boolean(fp?.fonts?.list?.length),

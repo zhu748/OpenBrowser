@@ -8,7 +8,7 @@ function createKernelMetadataClient({ validateUrl, maxRedirects, maxBytes: defau
     if (redirects > maxRedirects) return Promise.reject(new Error(`Kernel ${kind} redirected too many times`));
     const parsed = validateUrl(url);
     return requestBuffer(parsed.toString(), {
-      validateUrl, maxBytes, timeoutMs,
+      validateUrl, maxBytes, timeoutMs, environmentProxy:true,
       headers: { 'User-Agent': 'OpenBrowser/1.0 (kernel)' },
       followRedirects: true, maxRedirects: maxRedirects - redirects,
       validateStatus: (status, target) => { if (status !== 200) throw new Error('HTTP ' + status + ' for ' + target); },

@@ -1,0 +1,134 @@
+{
+  "passed": true,
+  "scope": "Linux Electron 43，相同本地数据；主窗 1536×960、独立子窗原尺寸，详见逐例 clip；相同字体/缩放，原归档独立 render 与当前 render 在同一 Vue 实例切换、各自独立 VNode 缓存；比较原主内容区，品牌与本地外壳有单独边界说明。没有独立 render 的组件不能凭本结果宣布通过。",
+  "data": "/workspace/OpenBrowser/work/rebuild/visual-ui-TERsWo",
+  "cases": [
+    {
+      "id": "network-fingerprint-form",
+      "theme": "light",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/network-fingerprint-form-light-production.png",
+          "full": "visual/network-fingerprint-form-light-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "diagnostic": [],
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "404fb5aa5d8aeb79f526cdf6acb02b9b672d5692fc717b4c660ef0fd48c9404e",
+              "404fb5aa5d8aeb79f526cdf6acb02b9b672d5692fc717b4c660ef0fd48c9404e",
+              "404fb5aa5d8aeb79f526cdf6acb02b9b672d5692fc717b4c660ef0fd48c9404e"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/network-fingerprint-form-light-reference.png",
+          "full": "visual/network-fingerprint-form-light-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "diagnostic": [],
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "404fb5aa5d8aeb79f526cdf6acb02b9b672d5692fc717b4c660ef0fd48c9404e",
+              "404fb5aa5d8aeb79f526cdf6acb02b9b672d5692fc717b4c660ef0fd48c9404e",
+              "404fb5aa5d8aeb79f526cdf6acb02b9b672d5692fc717b4c660ef0fd48c9404e"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/network-fingerprint-form-light-diff.png"
+    },
+    {
+      "id": "network-fingerprint-form",
+      "theme": "dark",
+      "zoom": 1,
+      "fullClip": false,
+      "captures": [
+        {
+          "mode": "production",
+          "file": "visual/network-fingerprint-form-dark-production.png",
+          "full": "visual/network-fingerprint-form-dark-production-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "diagnostic": [],
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "79844727d3ef0feb33473b37656e9a91b44d4167ee46654ecb5c3be0322c2c56",
+              "79844727d3ef0feb33473b37656e9a91b44d4167ee46654ecb5c3be0322c2c56",
+              "79844727d3ef0feb33473b37656e9a91b44d4167ee46654ecb5c3be0322c2c56"
+            ]
+          }
+        },
+        {
+          "mode": "reference",
+          "file": "visual/network-fingerprint-form-dark-reference.png",
+          "full": "visual/network-fingerprint-form-dark-reference-full.png",
+          "clip": {
+            "x": 220,
+            "y": 54,
+            "width": 1300,
+            "height": 890
+          },
+          "diagnostic": [],
+          "stability": {
+            "attempts": 3,
+            "consecutive": 3,
+            "sha256": [
+              "79844727d3ef0feb33473b37656e9a91b44d4167ee46654ecb5c3be0322c2c56",
+              "79844727d3ef0feb33473b37656e9a91b44d4167ee46654ecb5c3be0322c2c56",
+              "79844727d3ef0feb33473b37656e9a91b44d4167ee46654ecb5c3be0322c2c56"
+            ]
+          }
+        }
+      ],
+      "comparison": {
+        "equal": true,
+        "width": 1300,
+        "height": 890,
+        "changedPixels": 0,
+        "totalPixels": 1157000,
+        "bbox": null
+      },
+      "diff": "visual/network-fingerprint-form-dark-diff.png"
+    }
+  ],
+  "errors": [],
+  "externalRequests": [],
+  "fixtureNormalizations": [
+    "fingerprint:preview 以真实后端首次返回值固定相同参数的视觉数据",
+    "两种 render 均使用 hasPassword 对应的等宽八星掩码保持相同视觉数据；不返回真实机密"
+  ],
+  "selectedCases": [
+    "network-fingerprint-form"
+  ]
+}
