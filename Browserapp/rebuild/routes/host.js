@@ -43,10 +43,13 @@ async function fingerprintPreview(service, p) {
       profile.privacy.fingerprint = { ...profile.privacy.fingerprint,
         uaGenerated: true, uaReduced: false, uaPatchRandomized: true, clientHints: generated.clientHints };
     }
-    const f = e.fingerprintFor({
-      ...profile,
-      kernelVersion: browser.version,
-    });
+    // A draft describes the next saved configuration, even while the old
+    // browser is running. fingerprintFor(id) deliberately returns that live
+    // snapshot and must not be used to sample a proposed identity.
+    const configured = { ...profile, kernelVersion: browser.version };
+    const f = profile.engine === 'firefox'
+      ? require('../../automation/firefox-fingerprint').buildFirefoxFingerprint(configured, browser.version)
+      : buildFingerprint(configured);
     return {
       userAgent: f.userAgent,
       webGLManufacturer: f.webgl.vendor,

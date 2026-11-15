@@ -36,7 +36,14 @@ async function main() {
       const [copy] = await service.request('profiles:clone', { ids: [row.id] });
       assert.notEqual(engine.fingerprintFor(copy.id).seed, preview._openbrowser.seed, 'clones retain per-window separation');
 
-      const [editPreview] = await service.request('fingerprint:preview', { ...selected, profileId: row.id });
+      const live = engine.fingerprintFor(row.id);
+      engine.running.set(row.id, { fingerprint: live });
+      let editPreview;
+      try {
+        [editPreview] = await service.request('fingerprint:preview', { ...selected, profileId: row.id });
+        assert.notEqual(editPreview._openbrowser.seed, live.seed, 'an active editor previews the proposed identity, not its live snapshot');
+        assert.equal(engine.fingerprintFor(row.id).seed, live.seed, 'the running identity is not mutated by sampling');
+      } finally { engine.running.delete(row.id); }
       assert.equal(editPreview._fingerprintDraft.profileId, row.id);
       await service.request('profiles:update', { ...selected, ...editPreview, id: row.id, rev: before.rev });
       assert.deepEqual(identity(engine.fingerprintFor(row.id)), identity(editPreview._openbrowser), 'editing uses the persisted storage ID');

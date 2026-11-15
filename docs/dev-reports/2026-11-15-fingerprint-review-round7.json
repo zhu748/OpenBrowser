@@ -7,9 +7,9 @@
       "id": "preview-storage-identity-handoff",
       "severity": "high",
       "status": "fixed",
-      "evidence": "生成器以 profile.id 与 fingerprintSeed 联合散列；旧预览随机 ID 与新建 ID 不同，编辑预览也不使用实际 ID，造成未展示的派生噪声变化。",
-      "change": "新预览分配正式 UUID，由当前引擎的 HMAC 绑定 ID 与 seed；单建、批量和导入统一校验并交接。编辑预览使用已保存 ID；成功持久化后消费分配证明，失败可重试，清除后不可重放。模板复用、克隆及无效分配获得新 ID。",
-      "verification": "真实 SQLite BrowserEngine 新建/编辑/批量/导入/克隆/模板重放、失败重试、清除重放、伪造 ID、磁盘重载；双内核真实表单对照预览与运行时 seed。"
+      "evidence": "生成器以 profile.id 与 fingerprintSeed 联合散列；旧预览随机 ID 与新建 ID 不同，编辑预览也不使用实际 ID，造成未展示的派生噪声变化。 补充复查发现运行中窗口的预览会取回当前运行快照，未构造待保存的新身份。",
+      "change": "新预览分配正式 UUID，由当前引擎的 HMAC 绑定 ID 与 seed；单建、批量和导入统一校验并交接。编辑预览使用已保存 ID；成功持久化后消费分配证明，失败可重试，清除后不可重放。模板复用、克隆及无效分配获得新 ID。 预览显式调用对应内核的纯构建器，避免运行快照覆盖随机草稿；当前运行身份保持不变。",
+      "verification": "真实 SQLite BrowserEngine 新建/编辑/批量/导入/克隆/模板重放、失败重试、清除重放、伪造 ID、磁盘重载；双内核真实表单对照预览与运行时 seed。 两种内核运行态快照与待保存草稿独立验证。"
     },
     {
       "id": "restored-editor-late-preview",
@@ -84,8 +84,12 @@
       "firefox-pipeline.log": "40c4bea08e428870342c690c74626affed5f14d927e2656aa84865f9268102fc",
       "firefox-document.log": "9d53ed5df3f642e30fbd3785c73712eb0f751be0cd55aee02fa44a474d0b5f9f",
       "firefox-worker-final.log": "da099750d029e3de750ba63e4e9dac8054f11bda81c542a738d6f487f79a201f",
-      "editor-ui.log": "f576ba6d73577475e02456d9c16a6c208575f35bcd9f8f8b2ef9e6fcc0bf9ac1"
-    }
+      "editor-ui.log": "f576ba6d73577475e02456d9c16a6c208575f35bcd9f8f8b2ef9e6fcc0bf9ac1",
+      "preview-identity-final.log": "eae913696c814ee7ebce06f30b196e8c44b3627808989761e09b171fbb0483ae",
+      "feedback-final.log": "088b7faaf2865b0efd3c2646983c3b7a64a696be9e9e2667252888639305e0ef",
+      "lint-final.log": "dfb4e146a32136161932f4000a91bb70fe23b446f17eaefb8ee89bf7727bcefd"
+    },
+    "timing": "完整汇总及原生矩阵在运行中预览的纯构建切换前通过；切换后新增运行态隔离回归，并重跑身份交接、工作台反馈和代码检查。最终提交另执行完整远端 CI。"
   },
   "remaining": [
     {
