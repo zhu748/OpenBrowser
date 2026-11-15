@@ -22,6 +22,7 @@ function restoreFingerprintDraft(groups, value) {
     userAgent: value.userAgent || "",
     generated: value.privacy?.fingerprint?.uaGenerated === !0,
     uaReduced: value.privacy?.fingerprint?.uaReduced,
+    uaPatchRandomized: value.privacy?.fingerprint?.uaPatchRandomized,
     clientHints: value.privacy?.fingerprint?.clientHints
   } : null);
   saved && (stateFor(groups, !0).identity = saved);

@@ -110,9 +110,12 @@ function documentScope() {
   await test('UA generation uses the selected kernel and persists preview hints', () => {
     const engine = { profiles: new Map(), chooseBrowser: () => ({ version: '149.0.7827.114' }) };
     const generated = buildEditorUa(engine, { random: true, os: 'windows' });
-    const saved = buildFingerprint(profile({ userAgent: generated.userAgent, privacy: { fingerprint: { clientHints: generated.clientHints } } }));
-    assert.match(generated.userAgent, /Chrome\/149\.0\.0\.0/);
-    assert.equal(generated.metadata.fullVersion, '149.0.7827.114');
+    const saved = buildFingerprint({ ...profile({ userAgent: generated.userAgent, privacy: { fingerprint: {
+      clientHints: generated.clientHints, uaGenerated: generated.kernelBound, uaPatchRandomized: generated.uaPatchRandomized,
+    } } }), kernelVersion: '149.0.7827.114' });
+    assert.match(generated.userAgent, /Chrome\/149\.0\.7827\.\d+ /);
+    assert.equal(generated.metadata.fullVersion, generated.userAgent.match(/Chrome\/([\d.]+)/)[1]);
+    assert.equal(saved.userAgent, generated.userAgent);
     assert.equal(saved.userAgentMetadata.fullVersion, generated.metadata.fullVersion);
     assert.equal(buildFingerprint({ ...profile(), kernelVersion: '150.0.1234.56' }).userAgentMetadata.fullVersion, '150.0.1234.56');
     assert.equal(buildFingerprint({ ...profile(), os: 'Android', kernelVersion: '150.0.1234.56' }).userAgentMetadata.fullVersion, '150.0.1234.56');

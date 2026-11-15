@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const { buildFingerprint, buildInjectionScript, buildWorkerInjectionScript, assertFingerprintConsistency } = require('./fingerprint');
 const { firefoxUserAgent } = require('./kernel-versions');
+const { resolveUaPatchVersion } = require('./ua-version');
 const { evaluateFingerprintDelivery } = require('./request-header-rewriter');
 const { LIVE_PROBE_EXPRESSION } = require('./fingerprint-debug-log');
 const { evaluateBidi } = require('../network/bidi-connection');
@@ -17,12 +18,15 @@ function buildFirefoxFingerprint(profile, version) {
   if (/android|ios|iphone|ipad/i.test(profile.os || '')) throw new Error('Firefox 当前支持桌面设备配置，请选择 Windows、macOS 或 Linux');
   const os = /mac|darwin/i.test(profile.os) ? 'mac' : (/win/i.test(profile.os) ? 'win' : 'linux');
   const pinned = profile.privacy?.fingerprint?.userAgent || (profile.privacy?.fingerprint?.uaGenerated ? '' : profile.userAgent);
+  const productVersion = profile.privacy?.fingerprint?.uaPatchRandomized
+    ? resolveUaPatchVersion(version, profile.userAgent, 'firefox') : null;
   if (pinned && (!/Firefox\//i.test(pinned) || /Chrome\//i.test(pinned))) {
     throw new Error('Firefox 环境需要 Firefox/Gecko UA；清空 UA 可按实际内核自动生成');
   }
   const fp = buildFingerprint({
     ...profile, osVersion: '', kernelVersion: version,
-    userAgent: pinned || firefoxUserAgent(os, version, { shortVersion: profile.privacy?.fingerprint?.uaReduced === true }),
+    userAgent: pinned || firefoxUserAgent(os, version, { shortVersion: profile.privacy?.fingerprint?.uaReduced === true,
+      ...(productVersion ? { productVersion } : {}) }),
     fingerprintLaunchSeed: profile.privacy?.refreshFingerprintOnStart ? crypto.randomBytes(16).toString('hex') : '',
   });
   fp.engine = 'firefox';

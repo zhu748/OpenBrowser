@@ -443,6 +443,7 @@ function sanitizeFingerprintConfig(fp, privacyCores, privacyMemory) {
   set("userAgent", str(fp.userAgent, 1000));
   set("uaGenerated", bool(fp.uaGenerated));
   set("uaReduced", bool(fp.uaReduced));
+  set("uaPatchRandomized", bool(fp.uaPatchRandomized));
   set("languages", strList(fp.languages, 400, 40));
   set("vendor", str(fp.vendor, 80));
   set("deviceProfile", oneOf(fp.deviceProfile, ["default", "persona"]));

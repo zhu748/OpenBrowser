@@ -64,6 +64,8 @@ async function main() {
       });
       assert.ok(originalOs >= 2, 'both real kernels are available');
       let previousUa = await readUa();
+      const versionOf = value => value.match(/(?:Chrome|Firefox)\/([\d.]+)/)?.[1];
+      const branch = versionOf(previousUa).split('.').slice(0, -1).join('.');
       for (const button of [page.getByRole('button', { name: '随机', exact: true }).first(), page.getByRole('button', { name: '一键随机指纹', exact: true })]) {
         const before = await app.evaluate(() => globalThis.editorPreviewHistory.at(-1));
         await button.click();
@@ -72,6 +74,9 @@ async function main() {
         assert.equal(latest.payload.os, before.payload.os, 'randomization preserves the chosen OS');
         assert.equal(latest.payload.coreType, family);
         assert.notEqual(latest.row._fingerprintDraft.seed, before.row._fingerprintDraft.seed);
+        assert.equal(versionOf(latest.row.userAgent).split('.').slice(0, -1).join('.'), branch);
+        assert.ok(Number(versionOf(latest.row.userAgent).split('.').at(-1)) >= 1);
+        assert.equal(latest.row._fingerprintDraft.uaPatchRandomized, true);
         previousUa = await readUa();
       }
       const expected = await app.evaluate(() => globalThis.editorPreviewHistory.at(-1).row);
@@ -82,7 +87,18 @@ async function main() {
       assert.equal(saved.userAgent, expected.userAgent);
       assert.equal(saved.fingerprintSeed, expected._fingerprintDraft.seed);
       assert.equal(saved.privacy.fingerprint.uaGenerated, true);
+      assert.equal(saved.privacy.fingerprint.uaPatchRandomized, true);
       await page.screenshot({ path: path.join(evidence, 'fingerprint-saved-' + family + '.png') });
+      await page.evaluate(id => globalThis.__router.push('/browser/edit?id=' + id), saved.id);
+      await page.getByRole('button', { name: '保存', exact: true }).waitFor();
+      if (!(await readUa())) await page.getByText('基础设置', { exact: true }).click();
+      await waitUntil(async () => !!(await readUa()));
+      assert.equal(await readUa(), saved.userAgent, 'opening an existing profile preserves its random patch');
+      await page.getByRole('button', { name: '保存', exact: true }).click();
+      await page.getByText('真实表单随机 ' + family, { exact: true }).waitFor();
+      const edited = await page.evaluate(id => globalThis.__localRequest('profiles:read', { id }), saved.id);
+      assert.equal(edited.userAgent, saved.userAgent);
+      assert.equal(edited.privacy.fingerprint.uaPatchRandomized, true, 'editing keeps the random patch intent');
     }
     assert.deepEqual(errors, []);
     console.log('PROFILE_FINGERPRINT_UI_SELFTEST OK (real Chromium/Firefox selection, changing UA/seed, unchanged OS and form-to-disk persistence)');

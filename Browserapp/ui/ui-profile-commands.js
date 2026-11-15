@@ -75,6 +75,8 @@
         userAgent: undefined,
         clientHints: generated?.clientHints || (keep ? current.privacy?.fingerprint?.clientHints : undefined),
         uaGenerated: generated ? generated.kernelBound === true : (keep && current.privacy?.fingerprint?.uaGenerated === true),
+        uaReduced: generated ? generated.uaReduced : (keep ? current.privacy?.fingerprint?.uaReduced : undefined),
+        uaPatchRandomized: generated ? generated.uaPatchRandomized : (keep ? current.privacy?.fingerprint?.uaPatchRandomized : undefined),
       },
     };
   }

@@ -15,18 +15,27 @@ async function main() {
   };
   for (const coreType of ['Chrome', 'Firefox']) {
     let previousUserAgent = '', previousSeed = '';
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; attempt < 8; attempt++) {
       const selected = { os: 'Windows', coreType, coreVersion: '159', previousUserAgent };
       const [row] = await preview({ engine }, selected);
-      assert.match(row.userAgent, coreType === 'Firefox' ? /Firefox\/159(?:\.0)?$/ : /Chrome\/159\./);
+      assert.match(row.userAgent, coreType === 'Firefox' ? /Firefox\/159\.0\.\d+$/ : /Chrome\/159\.0\.8154\.\d+ /);
       assert.notEqual(row.userAgent, previousUserAgent, 'each click changes UA without changing the OS');
       assert.notEqual(row._fingerprintDraft.seed, previousSeed);
       assert.equal(row._openbrowser.platform, 'Win32');
       const saved = fromRoxy({ ...selected, ...row });
       assert.equal(saved.fingerprintSeed, row._fingerprintDraft.seed);
       assert.equal(saved.privacy.fingerprint.uaGenerated, true);
+      assert.equal(saved.privacy.fingerprint.uaPatchRandomized, true);
       const delivered = engine.fingerprintFor({ ...saved, kernelVersion: engine.chooseBrowser(saved).version });
       assert.equal(delivered.userAgent, row.userAgent, 'saved UA format survives runtime generation');
+      if (coreType === 'Chrome') assert.equal(delivered.userAgentMetadata.fullVersion, row.userAgent.match(/Chrome\/([\d.]+)/)[1]);
+      const manual = fromRoxy({ userAgent: row.userAgent + ' Custom' }, saved);
+      assert.equal(manual.privacy.fingerprint.uaPatchRandomized, undefined);
+      const restored = structuredClone(saved);
+      const nextVersion = coreType === 'Firefox' ? '160.0' : '160.0.9000.1';
+      const upgradedEngine = { ...engine, chooseBrowser: () => ({ version: nextVersion }) };
+      const upgraded = upgradedEngine.fingerprintFor({ ...restored, kernelVersion: nextVersion });
+      assert.ok(upgraded.userAgent.includes(coreType + '/160.0.'));
       previousUserAgent = row.userAgent; previousSeed = row._fingerprintDraft.seed;
     }
   }

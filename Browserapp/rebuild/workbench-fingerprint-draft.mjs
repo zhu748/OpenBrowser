@@ -23,6 +23,7 @@ export function restoreFingerprintDraft(groups, value) {
     seed: value.fingerprintSeed, version: value.fingerprintVersion,
     userAgent: value.userAgent || '', generated: value.privacy?.fingerprint?.uaGenerated === true,
     uaReduced: value.privacy?.fingerprint?.uaReduced,
+    uaPatchRandomized: value.privacy?.fingerprint?.uaPatchRandomized,
     clientHints: value.privacy?.fingerprint?.clientHints,
   } : null);
   if (saved) stateFor(groups, true).identity = saved;

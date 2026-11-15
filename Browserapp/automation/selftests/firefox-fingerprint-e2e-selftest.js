@@ -15,6 +15,7 @@ const { buildFirefoxFingerprint, initializeFirefoxFingerprint, navigateFirefoxSt
 const { ProfileRoutes } = require('../api/profile-routes');
 const { clearFirefoxPlaces } = require('../browser-data');
 const { DatabaseSync } = require('node:sqlite');
+const { buildEditorUa } = require('../editor-ua');
 const { BidiConnection, waitForFirefoxEndpoint, evaluateBidi } = require('../../network/bidi-connection');
 
 async function run(generation, shortVersion = false) {
@@ -39,9 +40,15 @@ async function run(generation, shortVersion = false) {
   try {
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
     const profile = sanitizeProfile({ id: 'firefox-native', fingerprintVersion: generation, name: 'Firefox native', engine: 'firefox', os: 'Windows', width: 1440, height: 900, privacy: { cores: 4, memory: 0, webrtc: 'disabled', fontListMode: 'real', timezoneMode: 'custom', timezone: 'America/New_York' }, advanced: { showInfoPage: false } });
-    if (shortVersion) profile.privacy.fingerprint = { ...profile.privacy.fingerprint, uaGenerated: true, uaReduced: true };
+    if (shortVersion === true) profile.privacy.fingerprint = { ...profile.privacy.fingerprint, uaGenerated: true, uaReduced: true };
+    if (shortVersion === 'random') {
+      const generated = buildEditorUa({ profiles: new Map(), chooseBrowser: () => ({ version }) }, { engine: 'firefox', os: 'Windows', random: true });
+      profile.userAgent = generated.userAgent;
+      profile.privacy.fingerprint = { ...profile.privacy.fingerprint, uaGenerated: true, uaPatchRandomized: true };
+    }
     const fp = buildFirefoxFingerprint(profile, version);
-    if (shortVersion) assert.match(fp.userAgent, new RegExp('Firefox/' + version.split('.')[0] + '$'));
+    if (shortVersion === true) assert.match(fp.userAgent, new RegExp('Firefox/' + version.split('.')[0] + '$'));
+    if (shortVersion === 'random') assert.equal(fp.userAgent, profile.userAgent);
     await fs.writeFile(path.join(root, 'user.js'), buildFirefoxUserJs({
       userAgent: fp.userAgent, acceptLanguages: fp.languages.join(','), locale: fp.languages[0],
       proxyEndpoint: 'http://127.0.0.1:9', noProxyHosts: '127.0.0.1, localhost',
@@ -115,4 +122,5 @@ async function run(generation, shortVersion = false) {
 }
 run(1).then(() => process.exitCode === 2 ? undefined : run(2))
   .then(() => process.exitCode === 2 ? undefined : run(2, true))
+  .then(() => process.exitCode === 2 ? undefined : run(2, 'random'))
   .catch((error) => { console.error(error); process.exitCode = 1; });

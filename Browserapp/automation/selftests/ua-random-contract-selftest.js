@@ -5,8 +5,29 @@ const crypto = require('node:crypto');
 const ua = require('../user-agent');
 const { buildEditorUa } = require('../editor-ua');
 const { buildFingerprint, assertFingerprintConsistency } = require('../fingerprint');
+const { randomUaPatchVersion, resolveUaPatchVersion } = require('../ua-version');
 
 function main() {
+  for (const [engine, kernel, oldUa, prefix] of [
+    ['chromium', '156.0.8078.74', 'Chrome/156.0.8078.74', '156.0.8078.'],
+    ['firefox', '156.0', 'Firefox/156.0.74', '156.0.'],
+  ]) {
+    const versions = new Set();
+    for (let index = 0; index < 254; index++) {
+      const version = randomUaPatchVersion(kernel, { engine, previousUserAgent: oldUa,
+        randomInt: size => { assert.equal(size, 254); return index; } });
+      assert.ok(version.startsWith(prefix));
+      assert.notEqual(version, prefix + '74');
+      versions.add(version);
+    }
+    assert.equal(versions.size, 254, 'the random pool covers all other patches, rather than two text formats');
+    assert.ok(versions.has(prefix + '1') && versions.has(prefix + '255'));
+    assert.equal(resolveUaPatchVersion(kernel, oldUa, engine), prefix + '74');
+  }
+  assert.equal(resolveUaPatchVersion('157.0.8100.1', 'Chrome/156.0.8078.74'), '157.0.8100.74');
+  assert.equal(resolveUaPatchVersion('157.0', 'Firefox/156.0.74', 'firefox'), '157.0.74');
+  assert.equal(resolveUaPatchVersion('156.0.8078.74', 'Firefox/156.0.74'), null);
+  assert.throws(() => randomUaPatchVersion('unknown'));
   const engine = { profiles: new Map([
     ['linux', { os: 'Linux', osVersion: 'ubuntu 22.04', engine: 'chromium' }],
     ['mac', { os: 'macos_arm', osVersion: '14.5', engine: 'chromium' }],
@@ -24,6 +45,10 @@ function main() {
     const switched = buildEditorUa(engine, { profileId: 'mac', os: 'Windows', random: true });
     assert.equal(switched.os, 'windows');
     assert.equal(switched.metadata.platformVersion, '15.0.0', 'OS switches cannot inherit the old OS release');
+    const runtime = buildFingerprint({ id: 'editor-random-patch', os: 'Windows', userAgent: switched.userAgent, kernelVersion: '159.0.8154.6',
+      privacy: { fingerprint: { uaGenerated: true, uaPatchRandomized: switched.uaPatchRandomized, clientHints: switched.clientHints } } });
+    assert.equal(runtime.userAgent, switched.userAgent);
+    assert.equal(runtime.userAgentMetadata.fullVersion, switched.chromeFull);
     assert.throws(() => buildEditorUa(engine, { os: 'Android', engine: 'firefox' }), { code: 'UA_PLATFORM_UNSUPPORTED' });
   } finally { crypto.randomBytes = originalRandomBytes; }
 

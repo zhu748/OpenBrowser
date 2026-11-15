@@ -5,6 +5,7 @@ const crypto = require('node:crypto');
 const { buildUaProfile } = require('../../automation/user-agent');
 const { firefoxUserAgent } = require('../../automation/kernel-versions');
 const { buildFingerprint } = require('../../automation/fingerprint');
+const { randomUaPatchVersion } = require('../../automation/ua-version');
 
 async function hostShortcut(service, p) {
   return require("../host-actions").shortcut(service, p);
@@ -23,20 +24,19 @@ async function fingerprintPreview(service, p) {
     const profile = fromRoxy({ ...p, windowName: "Preview" });
     const browser = e.chooseBrowser(profile, profile.engine);
     profile.fingerprintSeed = crypto.randomBytes(16).toString('hex');
+    const fullVersion = randomUaPatchVersion(browser.version, { engine: profile.engine, previousUserAgent: p.previousUserAgent });
     const options = { os: profile.os, osVersion: profile.osVersion,
-      chromeMajor: Number(browser.version.split('.')[0]), chromeFull: browser.version };
+      chromeMajor: Number(browser.version.split('.')[0]), chromeFull: fullVersion };
     const os = /mac/i.test(profile.os) ? 'mac' : /win/i.test(profile.os) ? 'win' : 'linux';
-    const normal = profile.engine === 'firefox' ? firefoxUserAgent(os, browser.version) : buildUaProfile({ ...options, reduced: true }).userAgent;
-    const uaReduced = profile.engine === 'firefox' ? p.previousUserAgent === normal : p.previousUserAgent !== normal;
     const generated = profile.engine === 'firefox'
-      ? buildUaProfile({ os: profile.os, userAgent: firefoxUserAgent(os, browser.version, { shortVersion: uaReduced }) })
-      : buildUaProfile({ ...options, reduced: uaReduced });
+      ? buildUaProfile({ os: profile.os, userAgent: firefoxUserAgent(os, browser.version, { productVersion: fullVersion }) })
+      : buildUaProfile({ ...options, reduced: false });
     // Mobile templates own the model and release; they are selected below.
     const mobile = /android|ios|iphone|ipad/i.test(profile.os);
     if (!mobile) {
       profile.userAgent = generated.userAgent;
       profile.privacy.fingerprint = { ...profile.privacy.fingerprint,
-        uaGenerated: true, uaReduced, clientHints: generated.clientHints };
+        uaGenerated: true, uaReduced: false, uaPatchRandomized: true, clientHints: generated.clientHints };
     }
     const f = e.fingerprintFor({
       ...profile,
@@ -51,7 +51,7 @@ async function fingerprintPreview(service, p) {
       hardwareConcurrent: f.hardwareConcurrency == null ? undefined : String(f.hardwareConcurrency),
       deviceMemory: f.deviceMemory == null ? undefined : String(f.deviceMemory),
       _fingerprintDraft: { seed: profile.fingerprintSeed, version: profile.fingerprintVersion, generated: true,
-        userAgent: f.userAgent, uaReduced: mobile ? true : uaReduced, clientHints: f.clientHints },
+        userAgent: f.userAgent, uaReduced: mobile, uaPatchRandomized: !mobile, clientHints: f.clientHints },
       ...(p.fontType
         ? { font: f.fonts.list.join(";"), fontList: f.fonts.list }
         : {}),

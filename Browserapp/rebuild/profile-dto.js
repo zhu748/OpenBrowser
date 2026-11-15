@@ -207,14 +207,17 @@ function fromRoxy(v, base = {}) {
     fp.uaGenerated = generated;
     if (generated) {
       fp.uaReduced = draft.uaReduced !== false;
+      fp.uaPatchRandomized = draft.uaPatchRandomized === true;
       fp.clientHints = draft.clientHints || {};
     } else if (mapped.userAgent !== base.userAgent) {
       delete fp.uaReduced;
+      delete fp.uaPatchRandomized;
       delete fp.clientHints;
     }
   } else if (Object.hasOwn(v, 'userAgent') && mapped.userAgent !== base.userAgent) {
     fp.uaGenerated = false;
     delete fp.uaReduced;
+    delete fp.uaPatchRandomized;
     delete fp.clientHints;
   }
   if (Object.hasOwn(v, "webGLManufacturer"))

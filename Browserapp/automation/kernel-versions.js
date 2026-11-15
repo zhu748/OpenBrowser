@@ -241,10 +241,12 @@ function firefoxUaVersion(version) {
 }
 
 /** Firefox major-segment UA (frozen at major since Gecko 129): 159.0.1 → 159.0. */
-function firefoxUserAgent(osName, version, { shortVersion = false } = {}) {
+function firefoxUserAgent(osName, version, { shortVersion = false, productVersion } = {}) {
   const major = Number(firefoxUaVersion(version).split('.')[0]) || 0;
   const rv = major > 0 ? `${major}.0` : String(firefoxUaVersion(version));
-  const productVersion = shortVersion && major > 0 ? String(major) : rv;
+  if (productVersion !== undefined && (!/^\d+\.\d+\.\d+$/.test(productVersion) || Number(productVersion.split('.')[0]) !== major))
+    throw Error('Firefox UA product version must match the selected major');
+  productVersion ??= shortVersion && major > 0 ? String(major) : rv;
   const os = String(osName || '').toLowerCase();
   if (os.startsWith('win')) {
     return `Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:${rv}) Gecko/20100101 Firefox/${productVersion}`;

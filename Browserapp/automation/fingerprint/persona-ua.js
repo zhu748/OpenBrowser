@@ -3,6 +3,7 @@
 // Resolve declared UA intent without I/O, host injection or device sampling.
 const { buildUaProfile, randomUaForSeed, normalizeUaOs, parseOsFromUa } = require('../user-agent');
 const { OPENBROWSER_KERNEL_VERSION } = require('../versions');
+const { resolveUaPatchVersion } = require('../ua-version');
 
 function normalizeClientHints(hints) {
   // Normalize at the configuration boundary so custom, random and mobile UA
@@ -32,11 +33,12 @@ function resolvePersonaUa({ profile, privacy, fpIn, draw }) {
   // 是一次性 CSS/API 特性探测即可识破的硬伤，与下方 uaMajorPool 的注释同理。
   let uaOverrideStr = uaOverride;
   const strictMajor = kernelMajor || defaultKernelMajor;
-  const strictFull = profile.kernelVersion || OPENBROWSER_KERNEL_VERSION;
+  const kernelFull = profile.kernelVersion || OPENBROWSER_KERNEL_VERSION;
+  const strictFull = (fpIn.uaPatchRandomized && resolveUaPatchVersion(kernelFull, uaOverride)) || kernelFull;
   const strictUa = fpIn.uaStrict || fpIn.uaGenerated;
   if (strictUa && uaOverride && strictMajor) {
     uaOverrideStr = uaOverride.replace(/(Chrome|Chromium|CriOS)\/[\d.]+/i,
-      (_, brand) => `${brand}/${brand.toLowerCase() === 'crios' || fpIn.uaReduced === false ? strictFull : `${strictMajor}.0.0.0`}`);
+      (_, brand) => `${brand}/${brand.toLowerCase() === 'crios' || fpIn.uaPatchRandomized || fpIn.uaReduced === false ? strictFull : `${strictMajor}.0.0.0`}`);
   }
   let uaProfile;
   if (uaOverrideStr) {
