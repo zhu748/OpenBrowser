@@ -13,7 +13,10 @@ function buildEditorUa(engine, payload = {}) {
   try { browser = engine.chooseBrowser(profile, family); }
   catch (error) { if (family === 'firefox' || error.code === 'KERNEL_VERSION_NOT_INSTALLED') throw error; }
   const os = normalizeUaOs(payload.os || saved.os) || (payload.userAgent ? parseOsFromUa(payload.userAgent) : 'windows');
+  const osVersion = payload.osVersion ?? (!payload.os || normalizeUaOs(payload.os) === normalizeUaOs(saved.os) ? saved.osVersion : undefined);
   if (family === 'firefox') {
+    if (os === 'android' || os === 'ios')
+      throw Object.assign(new Error('Firefox 当前支持桌面设备配置，请选择 Windows、macOS 或 Linux'), { code: 'UA_PLATFORM_UNSUPPORTED' });
     const osName = os.startsWith('mac') ? 'mac' : os.startsWith('win') ? 'win' : 'linux';
     return { ...buildUaProfile({ os, userAgent: payload.userAgent || firefoxUserAgent(osName, browser.version) }), kernelBound: !payload.userAgent };
   }
@@ -23,20 +26,20 @@ function buildEditorUa(engine, payload = {}) {
   if ((os === 'android' || os === 'ios') && !payload.userAgent) {
     return generated(require('./mobile-personas').mobilePersona(payload.deviceSeed ?? crypto.randomBytes(4).readUInt32BE(0), os, {
       chromeMajor: major, chromeFull: Number(version.split('.')[0]) === major ? version : undefined,
-      osVersion: payload.osVersion,
+      osVersion,
     }).uaProfile);
   }
   if (payload.random) {
     const ua = randomUaForSeed(crypto.randomBytes(4).readUInt32BE(0), {
-      majors: [major], fullVersion: version, osList: payload.os ? [os] : undefined,
+      majors: [major], fullVersion: version, osList: payload.os || saved.os ? [os] : undefined,
     });
-    return generated(payload.osVersion ? buildUaProfile({ os: ua.os, chromeMajor: major, chromeFull: ua.chromeFull, osVersion: payload.osVersion, architecture: ua.metadata.architecture }) : ua);
+    return generated(osVersion ? buildUaProfile({ os: ua.os, chromeMajor: major, chromeFull: ua.chromeFull, osVersion, architecture: ua.metadata.architecture }) : ua);
   }
   return generated(buildUaProfile({
     userAgent: payload.userAgent || '', os, chromeMajor: major,
     chromeFull: payload.chromeFull || payload.fullVersion || (!payload.userAgent && Number(version.split('.')[0]) === major ? version : undefined),
     reduced: payload.reduced !== false,
-    osVersion: payload.osVersion,
+    osVersion,
   }));
 }
 

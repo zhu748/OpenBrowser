@@ -1,3 +1,4 @@
+const { evidencePath } = require('./evidence-path.cjs');
 const fs = require("fs"),
   a = require("acorn"),
   w = require("acorn-walk");
@@ -181,7 +182,7 @@ for (const file of ["zh-CN-CKEkLKpn.js", "en-D33DiJcZ.js", "ru-Bo9bnzty.js"]) {
 }
 console.log("CSS", css.size);
 fs.writeFileSync(
-  "docs/rebuild/style-inventory.json",
+  evidencePath("style-inventory.json"),
   JSON.stringify([...css], null, 2),
 );
 

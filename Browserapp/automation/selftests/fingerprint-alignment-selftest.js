@@ -23,6 +23,7 @@ const { sanitizeProfile } = require('../../engine/profile-sanitizer');
 const { buildFingerprint } = require('../../automation/fingerprint');
 const { chromeArgsForFingerprint } = require('../../automation/fingerprint/chrome-args');
 const { completeLaunchArguments } = require('../../engine/launch-arguments');
+const { assertExitNetworkPolicy } = require('../../engine/launch-preparation');
 
 const REPO_HTML = path.join(__dirname, '..', '..', 'index.html');
 const START_JS = path.join(__dirname, '..', '..', 'engine', 'start.js');
@@ -369,14 +370,30 @@ async function main() {
     'applyDefaultSearchEngine(root, profile.privacy.searchEngine)',
     'clearProfileLaunchData(root, profile)',
     'windowPositionArg(profile)',
-    "ipChangePolicy(profile) === 'stop'",
-    'ip-change-notice',
     'hostScreen: hostScreenSummary()',
   ]) {
     check(`start.js applies: ${marker}`, () => {
       assert.ok(startSrc.includes(marker), `missing ${marker}`);
     });
   }
+
+  check('both launchers share IP stop, notice and country-change policies', () => {
+    const events = [], engine = { emit: event => events.push(event) };
+    const previous = { exitIp: '192.0.2.1', exitCountryCode: 'US' };
+    const next = { id: 'policy', exitIp: '192.0.2.2', exitCountryCode: 'JP' };
+    assert.throws(() => assertExitNetworkPolicy(engine, previous,
+      { ...next, advanced: { ipChangeRemind: 0, ipChangePolicy: 'stop' } }), { code: 'ip-changed' });
+    assertExitNetworkPolicy(engine, previous, { ...next, advanced: { ipChangeRemind: 0, ipChangePolicy: 'notify' } });
+    assert.equal(events.length, 1);
+    assert.equal(events[0].type, 'ip-change-notice');
+    assert.throws(() => assertExitNetworkPolicy(engine, previous,
+      { ...next, advanced: { ipChangeRemind: 0, stopOpenIPCountryChange: true } }), { code: 'ip-country-changed' });
+    assert.throws(() => assertExitNetworkPolicy(engine, previous,
+      { ...next, advanced: { ipChangeRemind: 0, stopOpenIPChange: true } }), { code: 'ip-changed' });
+    assertExitNetworkPolicy(engine, previous, { ...next, advanced: { ipChangeRemind: 0, ipChangePolicy: 'patch' } });
+    assertExitNetworkPolicy(engine, {}, { ...next, advanced: { ipChangeRemind: 0, ipChangePolicy: 'stop' } });
+    assert.equal(events.length, 1, 'missing history and patch mode emit no notices');
+  });
 
   console.log(`\n${passed} passed, ${failed} failed`);
   if (failed > 0) process.exit(1);

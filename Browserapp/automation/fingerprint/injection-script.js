@@ -15,7 +15,7 @@ const { createWebRtcFallbackSource, buildCssFontLocalGateSource, deriveFontPlace
 // Shared CFG layer: the os/timezone/deviceMemory/webgl/stability computations the
 // worker builder (worker-injection.js) also embeds live in injection-config.js so
 // the two emitted CFGs cannot drift independently. Key order, key set and the
-// intentionally divergent leaves (vendor, userAgentMetadata, webgpu, stability
+// intentionally divergent leaves (vendor, webgpu, stability
 // caps) stay in this file's literal — see the drift list in injection-config.js.
 const { resolveInjectionStability, injectionOs, injectionTimezone, injectionDeviceMemory, injectionWebgl, stabilityNoiseAmplitude, stabilitySampleStepDivisor, stabilityHamming, stabilityMaxWidth, stabilityMaxHeight, stabilitySquare } = require('./injection-config');
 
@@ -83,12 +83,9 @@ function buildInjectionScript(fp, options = {}) {
     maxTouchPoints: fp.maxTouchPoints,
     mobile: Boolean(fp.mobile),
     mobileDevice: fp.mobileDevice || null,
-    // The injected navigator.patches read this; without it the page reported empty brands / model.
-    // Intentionally divergent from the worker CFG (worker-injection.js keeps no uaProfile.metadata
-    // fallback) — preserved as-is, see the drift list in injection-config.js.
+    // Documents and workers resolve metadata through the same fallback.
     userAgentMetadata: fp.userAgentMetadata || fp.uaProfile?.metadata || null,
-    // Intentionally divergent from the worker CFG (worker keeps fp.uaProfile?.vendor ||
-    // 'Google Inc.' with no iOS branch) — preserved as-is, see injection-config.js.
+    // A document can infer iOS from the platform even without an explicit UA profile.
     vendor: fp.vendor ?? ((fp.mobileDevice?.os === 'ios' || fp.uaProfile?.os === 'ios' || (fp.platform && /iphone|ipad|ipod/i.test(fp.platform))) ? 'Apple Computer, Inc.' : (fp.uaProfile?.vendor ?? 'Google Inc.')),
     doNotTrack: fp.doNotTrack,
     seed: fp.seed,

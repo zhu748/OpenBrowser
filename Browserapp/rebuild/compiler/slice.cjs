@@ -1,4 +1,5 @@
 // Binding-aware removal of unreachable compiled code. Original import URLs remain intact.
+const { evidencePath } = require('./evidence-path.cjs');
 const fs = require("fs"),
   path = require("path"),
   acorn = require("acorn"),
@@ -299,7 +300,7 @@ for (const m of modules.values()) {
 }
 console.log("Retained modules", modules.size);
 fs.writeFileSync(
-  "docs/rebuild/module-inventory.json",
+  evidencePath("module-inventory.json"),
   JSON.stringify([...modules.keys()], null, 2),
 );
 

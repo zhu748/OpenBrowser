@@ -1,3 +1,5 @@
+
+const { evidenceDirectory } = require("./compiler/evidence-path.cjs");
 const { waitUntil } = require("./selftest-helpers.cjs");
 const { createTestDirectory } = require("./selftest-helpers.cjs");
 ("use strict");
@@ -9,7 +11,7 @@ const fs = require("node:fs/promises"),
 const { unwrapIpcResult } = require("../shared/ipc-result");
 const repo = path.resolve(__dirname, "../..");
 (async () => {
-  const evidence = path.join(repo, "docs/rebuild/evidence"),
+  const evidence = evidenceDirectory(),
     data = await createTestDirectory('task-ui-');
   const result = {
     passed: false,

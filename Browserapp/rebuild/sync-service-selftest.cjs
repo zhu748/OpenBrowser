@@ -1,7 +1,8 @@
 "use strict";
+const { evidencePath } = require("./compiler/evidence-path.cjs");
+
 const assert = require("node:assert/strict"),
-  fs = require("node:fs"),
-  path = require("node:path");
+  fs = require("node:fs");
 const { SyncService } = require("./sync-service");
 const { LiveSyncController } = require("../live-sync-v5");
 const cdp = require("../cdp");
@@ -216,10 +217,7 @@ const cdp = require("../cdp");
     ],
   };
   fs.writeFileSync(
-    path.resolve(
-      __dirname,
-      "../../docs/rebuild/evidence/sync-service-selftest.json",
-    ),
+    evidencePath("sync-service-selftest.json"),
     JSON.stringify(result, null, 2),
   );
   console.log(JSON.stringify(result, null, 2));

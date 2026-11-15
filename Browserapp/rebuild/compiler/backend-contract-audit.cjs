@@ -1,4 +1,6 @@
 "use strict";
+const { evidencePath } = require("./evidence-path.cjs");
+
 // Extends the SDK/channel audit to direct local RPC, Agent namespaces and ops.
 // This proves a dispatch branch exists; actual DTO semantics need UI regressions.
 const fs = require("node:fs"), path = require("node:path"), crypto = require("node:crypto"),
@@ -135,6 +137,6 @@ const result = { status: missing.length ? "FAIL" : "PASS",
   sources: ["preload.js", "rebuild/local-service.js", "rebuild/local-route-registry.js", "rebuild/profile-dto.js", ...routeFiles,
     "rebuild/agent-service.js", "rebuild/agent-conversations.js", "rebuild/renderer-bridge.js"].map(file => ({ file,
     sha256: crypto.createHash("sha256").update(fs.readFileSync(path.join(base, file))).digest("hex") })) };
-fs.writeFileSync(path.join(repo, "docs/rebuild/evidence/backend-contract-audit.json"), JSON.stringify(result, null, 2));
+fs.writeFileSync(evidencePath("backend-contract-audit.json"), JSON.stringify(result, null, 2));
 console.log(JSON.stringify({ ...result, uses: uses.length, dynamic: dynamic.length, sources: result.sources.length }, null, 2));
 if (missing.length) process.exitCode = 1;

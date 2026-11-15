@@ -1,4 +1,6 @@
 "use strict";
+const { evidenceDirectory } = require("./compiler/evidence-path.cjs");
+
 const { _electron: electron } = require("playwright");
 const fs = require("node:fs/promises"),
   path = require("node:path"),
@@ -6,7 +8,7 @@ const fs = require("node:fs/promises"),
   assert = require("node:assert/strict");
 const root = path.resolve(__dirname, "../..");
 (async () => {
-  const evidence = path.join(root, "docs/rebuild/evidence"),
+  const evidence = evidenceDirectory(),
     data = await fs.mkdtemp(path.join(root, "work/rebuild/agent-ui-"));
   let app;
   const result = {

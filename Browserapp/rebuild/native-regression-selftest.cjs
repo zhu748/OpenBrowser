@@ -1,6 +1,8 @@
 'use strict';
+const { evidenceDirectory } = require("./compiler/evidence-path.cjs");
+
 const fs=require('node:fs'),fsp=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),crypto=require('node:crypto'),assert=require('node:assert/strict'),{spawn}=require('node:child_process');
-const app=path.resolve(__dirname,'..'),evidence=path.resolve(app,'../docs/rebuild/evidence'),result={passed:false,checks:[],results:[]};
+const app=path.resolve(__dirname,'..'),evidence=evidenceDirectory(),result={passed:false,checks:[],results:[]};
 const cases=['rebuild/local-service-selftest.js','automation/selftests/profile-ipc-selftest.js','automation/selftests/profile-metadata-patches-selftest.js','automation/selftests/profile-revisions-selftest.js','automation/selftests/engine-dual-engine-selftest.js','automation/selftests/firefox-start-pipeline-selftest.js','automation/selftests/crx-reader-selftest.js','automation/selftests/command-line-flags-selftest.js','automation/selftests/live-sync-internal-pages-selftest.js','tab-mapping-unit-selftest.js','automation/selftests/injection-cache-selftest.js','automation/selftests/worker-network-injection-selftest.js','fingerprint-inject-order-selftest.js','automation/selftests/fingerprint-reinject-guard-selftest.js','automation/selftests/inject-livepatch-payload-selftest.js'];
 (async()=>{
  for(const name of cases){const log='native-'+path.basename(name)+'.log',fd=fs.openSync(path.join(evidence,'commands',log),'w'),sha256=crypto.createHash('sha256').update(fs.readFileSync(path.join(app,name))).digest('hex'),started=Date.now();const exitCode=await new Promise((resolve,reject)=>{const child=spawn(process.execPath,[name],{cwd:app,stdio:['ignore',fd,fd]});child.once('error',reject);child.once('exit',resolve);});fs.closeSync(fd);result.results.push({name,exitCode,status:exitCode===0?'PASS':'FAIL',sha256,durationMs:Date.now()-started,log:'commands/'+log});console.log((exitCode===0?'PASS ':'FAIL ')+name);}

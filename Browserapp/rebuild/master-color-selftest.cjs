@@ -1,4 +1,6 @@
 'use strict';
+const { evidencePath } = require("./compiler/evidence-path.cjs");
+
 const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),assert=require('node:assert/strict'),http=require('node:http'),{chromium}=require('playwright');
 const {BrowserEngine}=require('../engine'),{LocalService}=require('./local-service'),{setWindowColor,restoreOwnedColor,withControlPage,parseColor}=require('../automation/sync/master-window-color');
 (async()=>{process.env.OPENBROWSER_HEADLESS='1';const root=await fs.mkdtemp(path.join(os.tmpdir(),'ob-master-color-')),engine=new BrowserEngine({getPath:()=>root}),result={passed:false,checks:[],events:[]};let service,browser;
@@ -15,5 +17,5 @@ const {BrowserEngine}=require('../engine'),{LocalService}=require('./local-servi
  assert.equal(browser.contexts()[0].pages().filter(page=>!page.isClosed()).length,initialPages,'临时浏览器控制页必须关闭');assert.throws(()=>parseColor('#invalid'),/颜色/);assert.deepEqual(parseColor('#1246D2').rgb,[18,70,210]);
  const page=browser.contexts()[0].pages().find(page=>!page.isClosed());await page.goto('chrome://settings/');assert.match(await page.evaluate(()=>navigator.platform),/^Linux/,'Chrome 特权设置页保留主机原生身份');assert.ok(await page.locator('settings-ui').count());await page.goto('http://127.0.0.1:'+server.address().port+'/');const identity=await page.evaluate(()=>navigator.userAgent);assert.match(identity,/Chrome\/157/);assert.equal(await page.evaluate(()=>navigator.platform),'Win32','从特权页导航回普通网页仍注入该窗口身份');
  await setWindowColor(item,'#AC7010FF');assert.equal(await restoreOwnedColor(item),true);assert.equal(await restoreOwnedColor(item),false);result.checks.push('标准 Chrome 实际载入本地主控主题，连续改色身份不变，清除恢复默认；原种子颜色和 variant 恢复，临时控制页无遗留','六位/八位原颜色值验证；特权页面不注入网页脚本，后续普通网页仍有原内核身份');assert.deepEqual(result.events,[]);result.passed=true;
- }catch(error){result.failure=error.stack;process.exitCode=1;}finally{await browser?.close();await service?.agent.shutdown();await engine.stopAll();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));await fs.writeFile(path.resolve(__dirname,'../../docs/rebuild/evidence/master-color-selftest.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));}
+ }catch(error){result.failure=error.stack;process.exitCode=1;}finally{await browser?.close();await service?.agent.shutdown();await engine.stopAll();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));await fs.writeFile(evidencePath("master-color-selftest.json"),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));}
 })().catch(error=>{console.error(error);process.exitCode=1;});

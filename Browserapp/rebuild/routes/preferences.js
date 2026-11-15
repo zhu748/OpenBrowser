@@ -77,9 +77,9 @@ async function notificationsRead(service, p) {
 
 module.exports = [
   ["activity:append", activityAppend, "serial"],
-  ["settings:get", settingsGet, "serial"],
+  ["settings:get", settingsGet, "read"],
   ["settings:set", settingsSet, "serial"],
-  ["notifications:list", notificationsList, "serial"],
+  ["notifications:list", notificationsList, "read"],
   ["notifications:append", notificationsAppend, "serial"],
   ["notifications:read", notificationsRead, "serial"],
 ];

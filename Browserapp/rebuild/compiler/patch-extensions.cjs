@@ -1,3 +1,4 @@
+const { replaceExactly } = require("./patch-source.cjs");
 "use strict";
 const fs=require('node:fs'),acorn=require('acorn'),walk=require('acorn-walk');
 const root='work/rebuild/stage/assets',file=root+'/extensions-BlF5aO92.js';
@@ -77,8 +78,8 @@ fs.writeFileSync(file,code);
 if(process.env.REBUILD_REFERENCE_ONLY==='1')process.exit(0);
 const routes=root+'/hook-CnJE4hRq.js';let routing=fs.readFileSync(routes,'utf8');
 if(!routing.includes("children:[{path:'account'"))throw Error('Extension route boundary changed');
-routing=routing.replace("children:[{path:'account'","children:[{path:'extensions',name:'local-extensions',component:()=>import('./extensions-DkcE60nw.js'),meta:{title:'扩展中心'}},{path:'account'");
+routing=replaceExactly(routing, "children:[{path:'account'", "children:[{path:'extensions',name:'local-extensions',component:()=>import('./extensions-DkcE60nw.js'),meta:{title:'扩展中心'}},{path:'account'", "patch-extensions.cjs:80");
 fs.writeFileSync(routes,routing);
 const layout=root+'/layout-C916OUcf.js';let sidebar=fs.readFileSync(layout,'utf8');
 if(!sidebar.includes("{path:'templates',name:'local-templates'"))throw Error('Extension sidebar boundary changed');
-sidebar=sidebar.replace("{path:'templates',name:'local-templates',meta:{title:'窗口模板',icon:'base/rx_ic_stack'}}","{path:'extensions',name:'local-extensions',meta:{title:$t('扩展中心'),icon:'base/rx_ic_extension_store'}}");fs.writeFileSync(layout,sidebar);
+sidebar=replaceExactly(sidebar, "{path:'templates',name:'local-templates',meta:{title:'窗口模板',icon:'base/rx_ic_stack'}}", "{path:'extensions',name:'local-extensions',meta:{title:$t('扩展中心'),icon:'base/rx_ic_extension_store'}}", "patch-extensions.cjs:84");fs.writeFileSync(layout,sidebar);

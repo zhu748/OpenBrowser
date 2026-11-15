@@ -1,8 +1,10 @@
 "use strict";
+const { evidenceDirectory } = require("./compiler/evidence-path.cjs");
+
 const assert = require("node:assert/strict"), fs = require("node:fs/promises"),
   path = require("node:path"), os = require("node:os"), http = require("node:http");
 const { AgentService } = require("./agent-service");
-const evidence = path.resolve(__dirname, "../../docs/rebuild/evidence/review-3"),
+const evidence = evidenceDirectory("review-3"),
   result = { passed: false, cases: [] };
 async function check(name, operation) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "ob-contract-")),

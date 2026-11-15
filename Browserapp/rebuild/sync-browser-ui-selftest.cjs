@@ -1,4 +1,6 @@
 "use strict";
+const { evidenceDirectory } = require("./compiler/evidence-path.cjs");
+
 const { createTestDirectory } = require("./selftest-helpers.cjs");
 const { _electron: electron, chromium } = require("playwright"),
   http = require("node:http"),
@@ -9,7 +11,7 @@ const { waitUntil } = require("./selftest-helpers.cjs");
 const repo = path.resolve(__dirname, "../..");
 (async () => {
   const data = await createTestDirectory("sync-browser-ui-"),
-    evidence = path.join(repo, "docs/rebuild/evidence"),
+    evidence = evidenceDirectory(),
     result = { passed: false, errors: [], externalRequests: [], checks: [] };
   let app, page;
   const connections = [];

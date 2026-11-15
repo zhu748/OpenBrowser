@@ -1,4 +1,6 @@
 'use strict';
+const { evidencePath } = require("./compiler/evidence-path.cjs");
+
 const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),assert=require('node:assert/strict');
 const {BrowserEngine}=require('../engine'),{LocalService}=require('./local-service'),{AgentService}=require('./agent-service');
 const result={passed:false,cases:[]};
@@ -51,4 +53,4 @@ async function check(name,operation){const root=await fs.mkdtemp(path.join(os.tm
 
  });
  result.passed=result.cases.every(row=>row.status==='PASS');if(!result.passed)process.exitCode=1;
-})().catch(error=>{result.failure=error.stack;process.exitCode=1;}).finally(async()=>{await fs.writeFile(path.resolve(__dirname,'../../docs/rebuild/evidence/review-2/consistency.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));});
+})().catch(error=>{result.failure=error.stack;process.exitCode=1;}).finally(async()=>{await fs.writeFile(evidencePath("review-2/consistency.json"),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));});

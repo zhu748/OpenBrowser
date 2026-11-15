@@ -1,4 +1,6 @@
 "use strict";
+const { evidenceDirectory } = require("./compiler/evidence-path.cjs");
+
 const { waitUntil, toggleTheme, createTestDirectory } = require("./selftest-helpers.cjs");
 const fs = require("node:fs/promises");
 const path = require("node:path");
@@ -7,7 +9,7 @@ const { _electron: electron } = require("playwright");
 const { unwrapIpcResult } = require("../shared/ipc-result");
 const repo = path.resolve(__dirname, "../..");
 (async () => {
-  const evidence = path.join(repo, "docs/rebuild/evidence");
+  const evidence = evidenceDirectory();
   await fs.mkdir(evidence, { recursive: true });
   const data = await createTestDirectory("ui-smoke-");
   let app;
@@ -182,7 +184,13 @@ const repo = path.resolve(__dirname, "../..");
       await page.evaluate(() => globalThis.ops.profileStatus())
     ).find((row) => row.id === created.id);
     assert.ok(running.pid > 0);
-    assert.match(running.executable, /kernels\//);
+    if (process.env.OPENBROWSER_TEST_KERNEL_BINARY) {
+      assert.equal(await fs.realpath(running.executable),
+        await fs.realpath(process.env.OPENBROWSER_TEST_KERNEL_BINARY),
+        "the real process must use the explicitly validated test kernel");
+    } else {
+      assert.match(running.executable, /[\\/]kernels[\\/]/);
+    }
     result.nativeProcess = { pid: running.pid, executable: running.executable };
     await page.screenshot({ path: path.join(evidence, "window-running.png") });
     result.checks.push(

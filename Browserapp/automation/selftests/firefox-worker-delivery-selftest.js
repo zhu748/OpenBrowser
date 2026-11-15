@@ -50,6 +50,13 @@ async function navigate(connection, context, url) {
   assert.equal(await evaluateBidi(connection, { context }, 'document.documentURI'), url,
     'test origin must finish loading before a relative Worker URL is used');
 }
+async function startupContext(connection) {
+  // The production initializer reuses Firefox's initial about:blank tab. These
+  // worker checks need that context, not a second tab or its readiness policy.
+  const tree = await connection.command('browsingContext.getTree', {});
+  assert.ok(tree.contexts?.[0]?.context, 'Firefox initial browsing context');
+  return tree.contexts[0];
+}
 const SNAP = "({ua:navigator.userAgent,platform:navigator.platform,cores:navigator.hardwareConcurrency,languages:String(navigator.languages),tz:Intl.DateTimeFormat().resolvedOptions().timeZone,strict:(function(){return this})()===undefined})";
 const dedicatedSrc = `"use strict";const first=${SNAP};postMessage(JSON.stringify(first));`;
 const sharedSrc = `"use strict";const first=${SNAP};self.onconnect=(e)=>{e.ports[0].onmessage=()=>e.ports[0].postMessage(JSON.stringify(first));};`;
@@ -90,7 +97,7 @@ const serviceSrc = `"use strict";const first=${SNAP};self.addEventListener('inst
     const conn = new BidiConnection(wsUrl, {});
     await conn.open();
     await conn.command('session.new', { capabilities: { alwaysMatch: {} } });
-    const ctx = await conn.command('browsingContext.create', { url: 'about:blank', type: 'tab' });
+    const ctx = await startupContext(conn);
     await navigate(conn, ctx.context, 'http://127.0.0.1:' + server.address().port + '/');
     const raw = await evaluateBidi(conn, { context: ctx.context }, `(async () => {
       const out = {};
@@ -203,7 +210,7 @@ const serviceSrc = `"use strict";const first=${SNAP};self.addEventListener('inst
       const conn2 = new BidiConnection(wsUrl2, {});
       await conn2.open();
       await conn2.command('session.new', { capabilities: { alwaysMatch: {} } });
-      const ctx2 = await conn2.command('browsingContext.create', { url: 'about:blank', type: 'tab' });
+      const ctx2 = await startupContext(conn2);
       await navigate(conn2, ctx2.context, 'https://localhost:' + httpsPort + '/');
       const mitmProbe = await evaluateBidi(conn2, { context: ctx2.context }, `(async () => {
         return await new Promise((resolve) => {
@@ -301,7 +308,7 @@ const serviceSrc = `"use strict";const first=${SNAP};self.addEventListener('inst
         const conn3 = new BidiConnection(wsUrl3, {});
         await conn3.open();
         await conn3.command('session.new', { capabilities: { alwaysMatch: {} } });
-        const ctx3 = await conn3.command('browsingContext.create', { url: 'about:blank', type: 'tab' });
+        const ctx3 = await startupContext(conn3);
         await navigate(conn3, ctx3.context, 'https://localhost:' + httpsPort + '/');
         const chainProbe = await evaluateBidi(conn3, { context: ctx3.context }, `(async () => {
           return await new Promise((resolve) => {

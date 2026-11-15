@@ -20,6 +20,14 @@ Legacy seed migration must persist successfully before either engine launches. A
 
 Chromium UA generation uses the selected kernel's major/full version. Generated Client Hints are saved with the UA. An explicit custom UA takes precedence over the OS-version selector.
 
+Editor UA generation reuses the saved OS and release when they are omitted from the request. An explicit OS switch does not inherit the previous OS's release. Random-UA pools normalize OS aliases, reject empty/sparse/invalid OS or version pools, and require an unsigned 32-bit seed. Valid seeds retain their existing draw order and OS weights. Brand/version arrays are independent of the shared GREASE catalogue and caller-supplied arrays.
+
+Navigator platform (`Win32`, `MacIntel`, `Linux x86_64`) and Client Hints platform (`Windows`, `macOS`, `Linux`) are separate fields. `platformNav` and `chPlatform` are the explicit overrides; the legacy `platform` option accepts either known representation without copying it into the other field. Explicit contradictory metadata remains visible to configuration validation.
+
+`fingerprint/persona-ua.js` resolves custom, generated and strict UA intent before device projection. It normalizes `platformVersion` to `platform_version` and `uaFullVersion` / `fullVersion` to `ua_full_version` for Client Hints from `privacy.fingerprint`, `privacy` or the profile. Existing canonical fields retain precedence; strict mode follows the selected kernel. Saved objects are not mutated. Previously ignored camel-case overrides now take effect and contradictory OS/browser versions can fail validation; regenerate the UA, clear the custom override, or use strict mode as appropriate.
+
+`user-agent.js` builds host-side profiles, CDP payloads and launch flags. The browser installer is authored JavaScript in `fingerprint/runtime/ua-bootstrap.js`, serialized as a function receiving only its JSON payload and private token. It has its own lint scope, including WorkerNavigator declarations and a ban on host APIs. Emitted-script parsing, VM contracts and native realm checks remain required: source lint alone cannot validate browser delivery.
+
 Editor-generated UA profiles retain `privacy.fingerprint.uaGenerated`. They follow the actual kernel on later launches, including its full version; editing the UA text makes it custom again. Strict mode updates the UA token, brands, full version and full-version list together. A custom UA that contradicts its navigator platform, Client Hints, or actual Chromium major version fails configuration validation before Chromium is spawned. Regenerating or clearing the UA, or enabling strict mode, repairs a stale major. The same validator runs before per-tab injection. Reduced UA strings may be identical across profiles on the same platform and kernel; the profile identity is not a promise of a unique UA string.
 
 Canvas and WebGL stability use one host policy in documents and workers. Stable mode uses sparse, seeded +/-1 pixel deltas; normal mode retains its -1/0/+1 distribution. Repeated reads of unchanged input keep the same deltas. Stable mode no longer reduces the entire delta distribution to zero. Auto mode resolves amplitude and sample density against the current realm's host instead of reusing the pre-navigation snapshot; prefix exceptions such as `cdn.` have the same meaning in both realms. This correction changes affected stable-mode pixel fingerprints once after upgrading.
@@ -132,6 +140,8 @@ The former unconditional RAM-based quota could exceed native capacity (the Linux
 
 Document and worker Client Hints accept iterable hint sequences, reject invalid arguments through rejected promises, preserve receiver checks and return independent dictionaries. Mutating returned brands or version lists cannot modify later responses. Unknown and inherited property names are ignored. Workers use the same metadata fallback as documents. Absent Client Hints and device-memory APIs remain absent in insecure worker and child realms instead of being created by parent-frame synchronization.
 
+Native `navigator.userAgentData` can return a fresh object on every access. Document injection validates these receivers with the original native getter rather than object identity or `instanceof`; prototype-only fakes still fail native validation. Optional `formFactors` requests await the native capability probe, including the first call. Supported document and worker APIs return the same Desktop/Mobile classification supplied through CDP and opted-in HTTP headers. Optional hints and headers retain their native absence where unsupported. This delivery correction uses worker runtime revision **9**, independently of persisted fingerprint versions **1/2**; it does not rotate saved seeds or change normal generated identity fields.
+
 Synthetic media enumeration calls the native method first, preserving native errors, document visibility and Permissions Policy decisions. Labels and identifiers are exposed separately for each device kind only when native enumeration exposes that kind; other kinds remain withheld. Host labels and identifiers are not returned by synthetic enumeration. Empty mode returns an empty list and rejects `getUserMedia` with `NotFoundError`; explicit media blocking rejects it with `NotAllowedError`, including when enumeration is configured as real. These settings do not synthesize a working camera or microphone.
 
 Choosing real media enumeration no longer prunes independent speech, battery, Bluetooth or connection policies from the emitted script. Network-information getters retain native receiver validation. These behaviors have VM regression coverage; physical capture devices and native permission dialogs require browser validation.
@@ -212,6 +222,8 @@ npm run selftest -- ffcertificates
 npm run selftest -- emittedscriptparse
 npm run selftest -- fpidentity
 npm run selftest -- fprealms
+npm run selftest -- uarandomcontracts
+npm run selftest -- uarealmsnative
 npm run selftest -- fpconsistency
 npm run selftest -- fplifecycle
 npm run selftest -- fpsessionraces

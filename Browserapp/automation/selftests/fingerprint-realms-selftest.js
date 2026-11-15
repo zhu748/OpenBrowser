@@ -9,21 +9,23 @@ let count = 0;
 async function test(name, run) { await run(); count += 1; console.log('PASS ' + name); }
 const profile = (privacy = {}) => ({ id: 'realm-contract', os: 'Windows', privacy: { fontListMode: 'real', ...privacy } });
 
-function realm({ worker = false, secure = true } = {}) {
+function realm({ worker = false, secure = true, formFactors = true, deferHints = false, freshUaData = false } = {}) {
   const scope = vm.createContext({ URL, DOMException, setTimeout, clearTimeout });
   vm.runInContext(`
     const window=globalThis, self=globalThis;
     const document={createElement(type){return type==='iframe'?new HTMLIFrameElement():{getContext(){return null}}},querySelectorAll(){return []}};
     const location={hostname:'example.test',href:'https://example.test/'};
     const valid=new WeakSet();
+    const hostHintsReady = ${deferHints ? 'new Promise(resolve => { globalThis.releaseHostHints = resolve; })' : 'Promise.resolve()'};
     class NavigatorUAData {
       get brands(){if(!valid.has(this))throw new TypeError('Illegal invocation');return [{brand:'Native',version:'1'}]}
       get mobile(){if(!valid.has(this))throw new TypeError('Illegal invocation');return false}
       get platform(){if(!valid.has(this))throw new TypeError('Illegal invocation');return 'Native'}
-      async getHighEntropyValues(){if(!valid.has(this))throw new TypeError('Illegal invocation');return {formFactors:['Desktop']}}
+      async getHighEntropyValues(){if(!valid.has(this))throw new TypeError('Illegal invocation');await hostHintsReady;return ${formFactors ? "{formFactors:['Desktop']}" : '{}'}}
       toJSON(){if(!valid.has(this))throw new TypeError('Illegal invocation');return {brands:this.brands,mobile:false,platform:this.platform}}
     }
     const genuineUa=new NavigatorUAData();valid.add(genuineUa);
+    const nativeUaData=()=>{${freshUaData ? 'const value=new NavigatorUAData();valid.add(value);return value;' : 'return genuineUa;'}};
     class ${worker ? 'WorkerNavigator' : 'Navigator'} {}
     globalThis.${worker ? 'WorkerNavigator' : 'Navigator'}=${worker ? 'WorkerNavigator' : 'Navigator'};
     globalThis.NavigatorUAData=NavigatorUAData;
@@ -33,7 +35,7 @@ function realm({ worker = false, secure = true } = {}) {
     }
     const navigator=new ${worker ? 'WorkerNavigator' : 'Navigator'}();
     globalThis.navigator=navigator;globalThis.window=window;globalThis.self=self;
-    ${secure ? "Object.defineProperty(navProto,'deviceMemory',{configurable:true,get(){return 4}});Object.defineProperty(navProto,'userAgentData',{configurable:true,get(){if(this!==navigator)throw new TypeError('Illegal invocation');return genuineUa}});" : ''}
+    ${secure ? "Object.defineProperty(navProto,'deviceMemory',{configurable:true,get(){return 4}});Object.defineProperty(navProto,'userAgentData',{configurable:true,get(){if(this!==navigator)throw new TypeError('Illegal invocation');return nativeUaData()}});" : ''}
     class Screen {} const screen=new Screen();
     globalThis.Screen=Screen;globalThis.screen=screen;globalThis.document=document;globalThis.location=location;
     class HTMLIFrameElement {get contentWindow(){return globalThis.childFrame||null}}
@@ -59,6 +61,45 @@ function installNativeNetwork(scope, rtt) {
 }
 
 (async () => {
+  await test('fresh native UAData receivers are patched and prototype fakes remain invalid', async () => {
+    const fp = buildFingerprint(profile());
+    const scope = realm({ freshUaData: true });
+    vm.runInContext(buildInjectionScript(fp), scope);
+    assert.equal(vm.runInContext('navigator.userAgentData === navigator.userAgentData', scope), false);
+    for (let read = 0; read < 3; read++) {
+      assert.equal(vm.runInContext('navigator.userAgentData.platform', scope), fp.userAgentMetadata.platform);
+      const value = await vm.runInContext("navigator.userAgentData.getHighEntropyValues(['architecture', 'formFactors'])", scope);
+      assert.equal(value.architecture, fp.userAgentMetadata.architecture);
+      assert.deepEqual(Array.from(value.formFactors), ['Desktop']);
+      assert.equal(vm.runInContext('navigator.userAgentData.toJSON().platform', scope), fp.userAgentMetadata.platform);
+    }
+    assert.throws(() => vm.runInContext("Object.getOwnPropertyDescriptor(NavigatorUAData.prototype,'platform').get.call(Object.create(NavigatorUAData.prototype))", scope), error => error.name === 'TypeError');
+    await assert.rejects(vm.runInContext('NavigatorUAData.prototype.getHighEntropyValues.call(Object.create(NavigatorUAData.prototype), [])', scope), error => error.name === 'TypeError');
+  });
+  await test('optional form factors wait for native support and agree in both realms', async () => {
+    const fp = buildFingerprint(profile());
+    for (const worker of [false, true]) {
+      for (const supported of [false, true]) {
+        const scope = realm({ worker, formFactors: supported, deferHints: true });
+        vm.runInContext(worker ? buildWorkerInjectionScript(fp) : buildInjectionScript(fp), scope);
+        const pending = vm.runInContext("navigator.userAgentData.getHighEntropyValues(['formFactors', 'architecture'])", scope);
+        let settled = false;
+        pending.then(() => { settled = true; });
+        await Promise.resolve();
+        assert.equal(settled, false, 'the initial request must wait for its native capability probe');
+        scope.releaseHostHints();
+        const result = JSON.parse(JSON.stringify(await pending));
+        assert.equal(result.architecture, fp.userAgentMetadata.architecture);
+        assert.equal(Object.hasOwn(result, 'formFactors'), supported);
+        if (supported) {
+          assert.deepEqual(result.formFactors, ['Desktop']);
+          await vm.runInContext("navigator.userAgentData.getHighEntropyValues(['formFactors']).then(value => value.formFactors.push('changed'))", scope);
+          const next = await vm.runInContext("navigator.userAgentData.getHighEntropyValues(['formFactors']).then(value => JSON.stringify(value.formFactors))", scope);
+          assert.equal(next, '["Desktop"]');
+        }
+      }
+    }
+  });
   await test('document and worker Client Hints accept iterables, validate arguments and reject forged receivers', async () => {
     const fp = buildFingerprint(profile());
     for (const worker of [false, true]) {

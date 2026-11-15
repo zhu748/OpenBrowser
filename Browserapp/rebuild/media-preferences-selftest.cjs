@@ -1,4 +1,6 @@
 'use strict';
+const { evidencePath } = require("./compiler/evidence-path.cjs");
+
 const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),http=require('node:http'),assert=require('node:assert/strict'),{chromium}=require('playwright'),{BrowserEngine}=require('../engine'),{LocalService}=require('./local-service');
 (async()=>{
  process.env.OPENBROWSER_HEADLESS='1';const root=await fs.mkdtemp(path.join(os.tmpdir(),'ob-media-')),engine=new BrowserEngine({getPath:()=>root}),result={passed:false,checks:[]},requests=[];let service,browser;
@@ -14,5 +16,5 @@ const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:
   }
   const {firefoxExtraUserPrefs}=require('../engine/start-firefox'),prefs=firefoxExtraUserPrefs({advanced:{blockSound:true,blockVideo:false},privacy:{}},{});assert.ok(prefs.some(([key,value])=>key==='media.volume_scale'&&value==='0.0'));assert.ok(!prefs.some(([key,value])=>key==='media.block-autoplay-until-user-interaction'&&value===true));
   result.checks.push('原声音/视频字段独立保存回读；真实 Chrome 静音参数不再拦截视频网址，而关闭视频真实阻止 .webm 请求；Firefox 生成全局音量 0 且不附带视频 autoplay 禁止');result.limitations=['本测试不测量实际扬声器输出；Firefox 音量配置生成已验证，真实物理声音未验收。'];result.passed=true;
- }catch(error){result.failure=error.stack;process.exitCode=1;}finally{await browser?.close();await service?.agent.shutdown();await engine.stopAll();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));await fs.writeFile(path.resolve(__dirname,'../../docs/rebuild/evidence/media-preferences-selftest.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));}
+ }catch(error){result.failure=error.stack;process.exitCode=1;}finally{await browser?.close();await service?.agent.shutdown();await engine.stopAll();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));await fs.writeFile(evidencePath("media-preferences-selftest.json"),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));}
 })().catch(error=>{console.error(error);process.exitCode=1;});

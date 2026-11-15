@@ -1,4 +1,6 @@
 'use strict';
+const { evidencePath } = require("./compiler/evidence-path.cjs");
+
 const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),assert=require('node:assert/strict'),{AgentService}=require('./agent-service');
 (async()=>{const root=await fs.mkdtemp(path.join(os.tmpdir(),'ob-catalog-')),result={passed:false,checks:[]};let service,reloaded;
  try{service=new AgentService({root,engine:{emit(){},status:()=>[]}});const call=(method,p={})=>service.request(method,p),catalog=(await call('templates.listOfficialTemplates')).data;assert.equal(catalog.length,4);assert.equal(new Set(catalog.map(row=>row.id)).size,4);assert.ok(catalog.every(row=>row.templateType==='skill'&&row.metadata.skillSlug));assert.deepEqual((await call('templates.listTemplateLabelCategories')).data,[]);assert.deepEqual((await call('templates.listTemplateLabels')).data,[]);await assert.rejects(call('templates.createTemplate',{name:'invalid'}),/不支持/);
@@ -9,5 +11,5 @@ const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:
  await call('skills:save',{slug:catalog[0].metadata.skillSlug,enabled:false});assert.equal((await call('templates.listOfficialTemplates')).data.length,3);await assert.rejects(call('userTemplates.createUserTemplate',{official_template_id:catalog[0].id}),/停用/);await call('skills:save',{slug:catalog[0].metadata.skillSlug,enabled:true});await service.shutdown();service=null;
  reloaded=new AgentService({root,engine:{emit(){},status:()=>[]}});assert.deepEqual((await reloaded.request('templates.listOfficialTemplates')).data.map(row=>row.id),catalog.map(row=>row.id));assert.equal((await reloaded.request('userTemplates.listUserTemplates',{limit:200})).data.total,9);
  result.checks.push('四个真实本地 Skill 目录、稳定 ID、原获取 DTO、8 并发创建、实际加密重启、启停可用性、未知/只读操作拒绝','创建/更新/置顶/删除保存失败保持原集合，后续请求继续；模板被任务引用时拒绝删除');result.passed=true;
- }catch(error){result.failure=error.stack;process.exitCode=1;}finally{await service?.shutdown();await reloaded?.shutdown();await fs.writeFile(path.resolve(__dirname,'../../docs/rebuild/evidence/template-catalog-selftest.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));}
+ }catch(error){result.failure=error.stack;process.exitCode=1;}finally{await service?.shutdown();await reloaded?.shutdown();await fs.writeFile(evidencePath("template-catalog-selftest.json"),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));}
 })().catch(error=>{console.error(error);process.exitCode=1;});

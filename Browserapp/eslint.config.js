@@ -361,7 +361,7 @@ module.exports = [
     },
   },
   {
-    files: ['rebuild/agent-channel.js', 'rebuild/local-pages.js', 'rebuild/renderer-bridge.js', 'rebuild/workbench-chrome.js'],
+    files: ['rebuild/agent-channel.js', 'rebuild/local-pages.js', 'rebuild/renderer-bridge.js', 'rebuild/workbench-chrome.js', 'rebuild/workbench-notifications.mjs'],
     languageOptions: { sourceType: 'module' },
   },
   {
@@ -381,7 +381,16 @@ module.exports = [
     },
   },
   {
-    files: ['engine/**/*.js', 'main/**/*.js', 'network/**/*.js', 'automation/kernel/**/*.js', 'automation/api/**/*.js'],
+    // Serialized into the browser unchanged; host APIs cannot be captured here.
+    files: ['automation/fingerprint/runtime/ua-bootstrap.js'],
+    languageOptions: { globals: { WorkerNavigator: 'readonly' } },
+    rules: {
+      'no-restricted-globals': ['error', 'require', 'process', 'Buffer', '__dirname', '__filename', 'global', 'setImmediate'],
+    },
+  },
+  {
+    files: ['engine/**/*.js', 'main/**/*.js', 'network/**/*.js', 'automation/kernel/**/*.js', 'automation/api/**/*.js',
+      'automation/user-agent.js', 'automation/fingerprint/persona-ua.js'],
     rules: {
       'no-restricted-globals': ['error', 'window', 'document', 'navigator', 'localStorage', 'sessionStorage'],
     },
@@ -399,6 +408,15 @@ module.exports = [
     files: ['rebuild/routes/*.js'],
     rules: {
       'max-lines-per-function': ['error', { max: 100, skipBlankLines: true, skipComments: true }],
+    },
+  },
+  {
+    files: ['engine/launch-preparation.js', 'main/fatal-error.js', 'automation/shutdown.js',
+      'automation/fingerprint/persona-display.js', 'automation/fingerprint/persona-locale.js', 'automation/fingerprint/persona-ua.js',
+      'rebuild/workbench-notifications.mjs', 'rebuild/compiler/evidence-path.cjs'],
+    rules: {
+      'max-lines-per-function': ['error', { max: 100, skipBlankLines: true, skipComments: true }],
+      'no-empty': 'error',
     },
   },
   {

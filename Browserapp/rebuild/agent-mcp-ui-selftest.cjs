@@ -1,9 +1,11 @@
 "use strict";
+const { evidenceDirectory } = require("./compiler/evidence-path.cjs");
+
 const { createTestDirectory } = require("./selftest-helpers.cjs");
 const {_electron:electron}=require('playwright'),fs=require('node:fs/promises'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict'),{waitUntil}=require('./selftest-helpers.cjs');
 const repo=path.resolve(__dirname,'../..');
 (async()=>{
- const data=await createTestDirectory('mcp-ui-'),evidence=path.join(repo,'docs/rebuild/evidence'),result={passed:false,checks:[],errors:[],externalRequests:[],data};let app,page,phase='startup',connects=0,deletes=0;
+ const data=await createTestDirectory('mcp-ui-'),evidence=evidenceDirectory(),result={passed:false,checks:[],errors:[],externalRequests:[],data};let app,page,phase='startup',connects=0,deletes=0;
  const server=http.createServer(async(req,res)=>{
   if(req.method==='DELETE'){deletes++;res.writeHead(204);res.end();return;}
   let raw='';for await(const chunk of req)raw+=chunk;const p=JSON.parse(raw);let value;

@@ -1,4 +1,6 @@
 "use strict";
+const { evidencePath } = require("./compiler/evidence-path.cjs");
+
 const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),assert=require('node:assert/strict'),{execFile}=require('node:child_process'),{promisify}=require('node:util');
 const {BrowserEngine}=require('../engine'),{LocalService}=require('./local-service'),host=require('./host-actions');
 (async()=>{
@@ -15,5 +17,5 @@ const {BrowserEngine}=require('../engine'),{LocalService}=require('./local-servi
   assert.equal((await require('./local-store').readLocalStore(service.file)).data.settings.defaultProfileId,profile.id);result.checks.push('真实 xdg-mime 在独立 XDG 目录注册并查询 HTTP/HTTPS 默认应用，目标窗口加密落盘先于 OS 变更');
   await assert.rejects(host.openLaunch(engine,{id:'missing',urls:[]}),/不存在/);await assert.rejects(host.openLaunch(engine,{urls:['https://example.test/']}),/尚未选择/);
   result.passed=true;
- }catch(error){result.failure=error.stack;process.exitCode=1;}finally{await engine.stopAll?.();await fs.writeFile(path.resolve(__dirname,'../../docs/rebuild/evidence/host-actions-selftest.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));}
+ }catch(error){result.failure=error.stack;process.exitCode=1;}finally{await engine.stopAll?.();await fs.writeFile(evidencePath("host-actions-selftest.json"),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));}
 })().catch(error=>{console.error(error);process.exitCode=1;});

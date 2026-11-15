@@ -1,4 +1,6 @@
 "use strict";
+const { evidencePath } = require("./evidence-path.cjs");
+
 const fs = require("node:fs"),
   path = require("node:path"),
   crypto = require("node:crypto"),
@@ -94,17 +96,16 @@ const result = {
   distinctRawChannels: new Set(channels.map((c) => c.channel)).size,
   cloudEndpoints: endpoints.length,
 };
-fs.mkdirSync("docs/rebuild/evidence", { recursive: true });
 fs.writeFileSync(
-  "docs/rebuild/evidence/static-audit.json",
+  evidencePath("static-audit.json"),
   JSON.stringify(result, null, 2),
 );
 fs.writeFileSync(
-  "docs/rebuild/CHANNEL-INVENTORY.json",
+  evidencePath("CHANNEL-INVENTORY.json"),
   JSON.stringify({ channels, network, endpoints }, null, 2),
 );
 fs.writeFileSync(
-  "docs/rebuild/evidence/asset-hashes.json",
+  evidencePath("asset-hashes.json"),
   JSON.stringify(
     files.map((file) => ({
       file: path.posix.join('Browserapp/roxy-ui', path.relative(root, file).split(path.sep).join('/')),

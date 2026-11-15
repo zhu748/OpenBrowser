@@ -1,4 +1,6 @@
 "use strict";
+const { evidenceDirectory } = require("./compiler/evidence-path.cjs");
+
 const { createTestDirectory } = require("./selftest-helpers.cjs");
 const { _electron: electron } = require("playwright"),
   fs = require("node:fs/promises"),
@@ -7,7 +9,7 @@ const { _electron: electron } = require("playwright"),
 const repo = path.resolve(__dirname, "../..");
 (async () => {
   const data = await createTestDirectory("unavailable-ui-"),
-    evidence = path.join(repo, "docs/rebuild/evidence");
+    evidence = evidenceDirectory();
   let app, page;
   const result = {
     passed: false,

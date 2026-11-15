@@ -54,5 +54,6 @@
   "review-agent-reconnect-selftest.cjs",
   "review-template-ui-selftest.cjs",
   "review-agent-contracts-selftest.cjs",
-  "review-agent-contracts-ui-selftest.cjs"
+  "review-agent-contracts-ui-selftest.cjs",
+  "maintenance-ui-selftest.cjs"
 ]

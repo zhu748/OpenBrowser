@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { isRuntimeResource, assertRuntimeResourceTree, RUNTIME_ROOT_FILES } = require('../../scripts/runtime-manifest');
+const { isRuntimeResource, assertRuntimeResourceTree, RUNTIME_ROOT_FILES, DEVELOPMENT_MODULES } = require('../../scripts/runtime-manifest');
 const { copyRecursive } = require('../../scripts/package-portable');
 const root = path.resolve(__dirname, '../..');
 
@@ -18,6 +18,10 @@ for (const name of ['surprise.js', 'eslint.config.js', 'zoom-inspect.js', 'packa
   assert.equal(isRuntimeResource(name), false, name);
 }
 assert.equal(isRuntimeResource('kernels/vendor/scripts/resource.js'), true, 'vendor bundles retain their original tree');
+for (const file of DEVELOPMENT_MODULES) {
+  assert.equal(fs.existsSync(path.join(root, file)), true, 'development modules remain available to tests');
+  assert.equal(isRuntimeResource(file), false, 'unintegrated modules stay out of installers');
+}
 
 // Verify the actual copy operation, not only the manifest predicate.
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ob-runtime-manifest-'));

@@ -242,23 +242,21 @@ class LocalService {
     };
   }
   request(method, payload = {}) {
-    if (method.startsWith("cookie-robot:"))
-      return this.load().then(() =>
-        this.robot.request(method.slice(13), payload),
-      );
-    if (method.startsWith("agent:"))
-      return this.agent.request(method.slice(6), payload);
     // The original engine owns process/proxy concurrency. Do not hold local JSON
     // writes or status reads behind a long browser launch or network probe.
     const route = resolveLocalRoute(method);
+    const invoke = () => route.handle(this, payload, method);
     if (route.execution === "parallel")
-      return this.load().then(() => this.dispatch(method, payload));
+      return route.requiresLocalData ? this.load().then(invoke) : Promise.resolve().then(invoke);
     // Serializing local mutations prevents lost updates; failures never poison the queue.
     const run = this.queue.then(async () => {
       await this.load();
+      // Ordered reads observe completed writes without allocating a rollback
+      // copy of unrelated templates, filters and notifications.
+      if (route.execution === "read") return invoke();
       const previous = clone(this.data);
       try {
-        return await this.dispatch(method, payload);
+        return await invoke();
       } catch (error) {
         this.data = previous;
         throw error;

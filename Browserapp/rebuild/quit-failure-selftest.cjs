@@ -1,14 +1,18 @@
 "use strict";
+const { evidencePath } = require("./compiler/evidence-path.cjs");
+
 const { createTestDirectory } = require("./selftest-helpers.cjs");
 const { _electron: electron } = require("playwright"),
   fs = require("node:fs/promises"),
   path = require("node:path"),
   assert = require("node:assert/strict");
 const { waitUntil } = require("./selftest-helpers.cjs");
+const { once } = require("node:events");
 const repo = path.resolve(__dirname, "../..");
+const fatalHang = process.argv.includes("--fatal-hang");
 (async () => {
   const data = await createTestDirectory('quit-failure-');
-  let app, pid;
+  let app, pid, child;
   const result = { status: "FAIL", checks: [] };
   const alive = () => {
     if (!pid) return false;
@@ -29,8 +33,10 @@ const repo = path.resolve(__dirname, "../..");
         "--disable-gpu",
         path.join(repo, "Browserapp"),
       ],
-      env: { ...process.env, OPENBROWSER_USER_DATA: data },
+      env: { ...process.env, OPENBROWSER_USER_DATA: data, OPENBROWSER_API_PORT: "0",
+        OPENBROWSER_MASTER_KEY_FILE: path.join(data, "master.key") },
     });
+    child = app.process();
     const page = await app.firstWindow();
     await page.setViewportSize({ width: 1280, height: 860 });
     await page.getByText("暂无窗口", { exact: true }).waitFor();
@@ -57,14 +63,29 @@ const repo = path.resolve(__dirname, "../..");
     ).pid;
     assert.ok(pid > 0 && alive());
     await app.evaluate(
-      (_host, file) => {
+      (_host, { file, hang }) => {
         const { AgentService } = process.mainModule.require(file);
         AgentService.prototype.shutdown = async () => {
+          if (hang) return new Promise(() => {});
           throw Error("intentional checkpoint persistence failure");
         };
       },
-      path.join(repo, "Browserapp/rebuild/agent-service.js"),
+      { file: path.join(repo, "Browserapp/rebuild/agent-service.js"), hang: fatalHang },
     );
+    if (fatalHang) {
+      const closed = once(child, "close", { signal: AbortSignal.timeout(25000) });
+      await app.evaluate(() => { process.emit("uncaughtException", Error("intentional fatal shutdown fixture")); })
+        .catch(error => { assert.match(error.message, /closed|destroyed|disconnected/i); });
+      await waitUntil(() => !alive(), { timeout: 10000 });
+      assert.equal(child.exitCode, null, "browser drain cannot depend on the stalled Agent finishing or the host exiting");
+      const [code] = await closed;
+      app = null;
+      assert.equal(code, 1);
+      result.status = "PASS";
+      result.pid = pid;
+      result.checks.push("Agent 关闭永久挂起时，致命异常仍先停止真实独立 Chrome，再由关闭期限以状态 1 退出宿主");
+      return;
+    }
     await app.close();
     app = null;
     await waitUntil(() => !alive(), { timeout: 10000 });
@@ -89,10 +110,13 @@ const repo = path.resolve(__dirname, "../..");
     result.failure = error.stack;
     process.exitCode = 1;
   } finally {
-    await app?.close();
+    if (app && child?.exitCode === null) {
+      if (fatalHang) child.kill("SIGKILL");
+      else await app.close();
+    }
     if (alive()) process.kill(pid, "SIGTERM");
     await fs.writeFile(
-      path.join(repo, "docs/rebuild/evidence/quit-failure-selftest.json"),
+      evidencePath(fatalHang ? "quit-fatal-hang-selftest.json" : "quit-failure-selftest.json"),
       JSON.stringify(result, null, 2),
     );
     console.log(JSON.stringify(result, null, 2));

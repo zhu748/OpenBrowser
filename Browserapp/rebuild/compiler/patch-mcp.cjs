@@ -1,4 +1,6 @@
 "use strict";
+const { replaceExactly } = require("./patch-source.cjs");
+
 const fs=require('node:fs'),acorn=require('acorn'),walk=require('acorn-walk'),root='work/rebuild/stage/assets',file=root+'/AgentSettingsRoute-BB9ba93X.js';
 let code=fs.readFileSync(file,'utf8');const ast=acorn.parse(code,{sourceType:'module',ecmaVersion:'latest'}),edits=[];
 walk.simple(ast,{
@@ -13,4 +15,4 @@ const routes=root+'/hook-CnJE4hRq.js';let route=fs.readFileSync(routes,'utf8');c
 if(!route.includes(needle)||!route.includes(skills))throw Error('MCP client route boundary changed');
 route=route.replace(skills,"path:'skills',name:'local-agent-skills',component:()=>import('./local-pages.js').then(m=>m.Skills)");
 fs.writeFileSync(routes,route.replace(needle,"children:[{path:'mcp',name:'agent-console-settings',component:()=>import('./AgentSettingsRoute-BB9ba93X.js')},{path:'',name:'agent-console-chat'"));
-const layout=root+'/layout-C916OUcf.js',sidebar=fs.readFileSync(layout,'utf8');if(!sidebar.includes("path:'skills',name:'agent-console-settings'"))throw Error('Skill sidebar route boundary changed');fs.writeFileSync(layout,sidebar.replace("path:'skills',name:'agent-console-settings'","path:'skills',name:'local-agent-skills'"));
+const layout=root+'/layout-C916OUcf.js',sidebar=fs.readFileSync(layout,'utf8');if(!sidebar.includes("path:'skills',name:'agent-console-settings'"))throw Error('Skill sidebar route boundary changed');fs.writeFileSync(layout,replaceExactly(sidebar, "path:'skills',name:'agent-console-settings'", "path:'skills',name:'local-agent-skills'", "patch-mcp.cjs:16"));

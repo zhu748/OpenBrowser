@@ -3,6 +3,14 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
+// Retained for tests and future integration; no desktop runtime callers.
+const DEVELOPMENT_MODULES = new Set([
+  'automation/fingerprint-pool.js',
+  'automation/task-queue.js',
+  'automation/aspect-manager.js',
+  'automation/window-command-bus.js',
+]);
+
 // Desktop entry points and resource domains. New top-level runtime resources
 // must be declared here; developer tools cannot enter installers by accident.
 const RUNTIME_DIRECTORIES = new Set([
@@ -27,6 +35,7 @@ for (const name of [...RUNTIME_ROOT_FILES]) {
 
 function isRuntimeResource(relativePath) {
   const normalized = String(relativePath || '').replace(/\\/g, '/');
+  if (DEVELOPMENT_MODULES.has(normalized)) return false;
   const parts = normalized.split('/');
   if (parts.some((part) => !part || part === '.' || part === '..')) return false;
   if(parts[0]==='rebuild'&&parts[1]==='compiler')return false;
@@ -57,4 +66,4 @@ function assertRuntimeResourceTree(root) {
   }
 }
 
-module.exports = { isRuntimeResource, assertRuntimeResourceTree, RUNTIME_DIRECTORIES, RUNTIME_ROOT_FILES };
+module.exports = { isRuntimeResource, assertRuntimeResourceTree, RUNTIME_DIRECTORIES, RUNTIME_ROOT_FILES, DEVELOPMENT_MODULES };

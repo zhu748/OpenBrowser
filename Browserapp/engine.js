@@ -138,6 +138,7 @@ class BrowserEngine {
     this.lifecycleStopRequests = new Map();
     this.stopAllPromise = null;
     this.stopAllInProgress = false;
+    this.shuttingDown = false;
     this._persistQueue = Promise.resolve();
     this.networkInfo = new Map();
     // The proxy library is loaded by the automation layer after engine.init().
@@ -1042,6 +1043,9 @@ class BrowserEngine {
   }
 
   async start(raw, launchOptions = {}) {
+    if (this.shuttingDown) {
+      throw Object.assign(new Error('Browser engine is shutting down'), { code: 'ENGINE_SHUTTING_DOWN' });
+    }
     launchOptions = { headless: launchOptions?.headless === true, blockImages: launchOptions?.blockImages === true };
     const candidate = this.restoreStoredProxyCredentials(
       this.resolveStoredProxyProfile(this.sanitizeProfile(raw)),

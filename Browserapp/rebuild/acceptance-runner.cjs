@@ -1,4 +1,6 @@
 "use strict";
+const { evidenceDirectory } = require("./compiler/evidence-path.cjs");
+
 
 const fs = require("node:fs");
 const path = require("node:path");
@@ -8,7 +10,7 @@ const { workbenchTests } = require("../scripts/workbench-test-registry");
 const { classifySelftestResult } = require("../scripts/selftest-status");
 const { runtimeSnapshot } = require("./compiler/runtime-snapshot.cjs");
 const repo = path.resolve(__dirname, "../..");
-const evidence = path.join(repo, "docs/rebuild/evidence");
+const evidence = evidenceDirectory();
 const hash = (file) =>
   crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
 
@@ -63,7 +65,7 @@ async function runTest(test, output) {
   const logPath = path.join(output, "commands", test.file + ".log");
   const fd = fs.openSync(logPath, "w");
   const started = Date.now();
-  const env = { ...process.env };
+  const env = { ...process.env, OPENBROWSER_EVIDENCE_DIR: output };
   if (!test.file.startsWith("local-api")) env.OPENBROWSER_API_PORT = "0";
   let outcome;
   try {

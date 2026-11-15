@@ -1,4 +1,6 @@
 "use strict";
+const { evidencePath } = require("./evidence-path.cjs");
+
 const fs = require("node:fs"),
   path = require("node:path"),
   acorn = require("acorn"),
@@ -120,7 +122,7 @@ const result = {
   failures,
 };
 fs.writeFileSync(
-  path.resolve(__dirname, "../../../docs/rebuild/evidence/module-links.json"),
+  evidencePath("module-links.json"),
   JSON.stringify(result, null, 2),
 );
 console.log(JSON.stringify(result, null, 2));

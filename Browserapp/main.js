@@ -73,11 +73,9 @@ app.on('open-url', (event, url) => { event.preventDefault(); handleProfileLaunch
 const defaultProfileDataRoot = path.join(app.getPath('userData'), 'browser-profiles-v2');
 const localSettingsFile = path.join(app.getPath('userData'), 'openbrowser-local-settings.json');
 
-// Global async-failure safety net: without these handlers a rejected promise
-// that escapes its call chain crashes the main process (Node treats unhandled
-// rejections as fatal) and an uncaught exception ends the session with no
-// diagnostics on disk. Log both to the console and to a file under userData,
-// then keep serving — the desktop shell should not die from a background task.
+// Unexpected global failures stop new IPC work and enter a bounded shutdown.
+// Recoverable operation failures belong at their domain boundaries.
+let fatalFailure = false;
 function logGlobalFailure(kind, error) {
   try {
     const line = error && error.stack ? error.stack : String(error);
@@ -90,8 +88,20 @@ function logGlobalFailure(kind, error) {
     } catch (_) {}
   } catch (_) {}
 }
-process.on('unhandledRejection', (reason) => logGlobalFailure('unhandledRejection', reason));
-process.on('uncaughtException', (error) => logGlobalFailure('uncaughtException', error));
+const handleFatalError = require('./main/fatal-error').createFatalErrorHandler({
+  log: logGlobalFailure,
+  shutdown: () => {
+    fatalFailure = true;
+    engine?.beginShutdown?.();
+    // A stalled Agent/store shutdown must not keep external browsers alive
+    // until the fatal deadline terminates their controlling host.
+    drainBrowsersForQuit().catch(error => logGlobalFailure('fatal-browser-drain', error));
+    return beginQuitCleanup();
+  },
+  exit: code => app.exit(code),
+});
+process.on('unhandledRejection', reason => { fatalFailure = true; handleFatalError('unhandledRejection', reason); });
+process.on('uncaughtException', error => { fatalFailure = true; handleFatalError('uncaughtException', error); });
 
 // --- Updater, settings, and cloud operations live in automation/ ---
 // app-update.js: release checks, fail-closed signed downloads, status watcher.
@@ -127,6 +137,7 @@ const startupReady = new Promise((resolve, reject) => { resolveStartupReady = re
 startupReady.catch(() => {});
 let quitting = false;
 let quitCleanupPromise = null;
+let quitBrowserDrain = null;
 let localUiService;
 let localUiDialogs;
 let localUiSync;
@@ -176,6 +187,7 @@ function isTrustedAppIndexUrl(senderUrl) {
 }
 
 function assertTrustedIpcSender(event) {
+  if (fatalFailure) throw Object.assign(new Error('应用发生异常，正在关闭，请重新启动。'), { code: 'APP_SHUTTING_DOWN' });
   const isMain = mainWindow && !mainWindow.isDestroyed() && event?.sender === mainWindow.webContents;
   if (!isMain && !localUiDialogs?.owns(event?.sender)) {
     throw new Error('untrusted IPC sender');
@@ -1546,12 +1558,18 @@ async function stopAllForQuit() {
   return { ...(result || {}), stopped: remaining.length === 0, remaining, errors: [...new Set(errors)] };
 }
 
+function drainBrowsersForQuit() {
+  quitBrowserDrain ||= Promise.resolve().then(() => stopAllForQuit());
+  return quitBrowserDrain;
+}
+
 function beginQuitCleanup() {
   if (quitCleanupPromise) return quitCleanupPromise;
   quitting = true;
+  engine?.beginShutdown?.();
   destroyTray();
   const cloud = settingsStore.getLocalSettings()?.cloud || {};
-  let stopResult = { stopped: true, remaining: [], errors: [] };
+  let stopResult = { stopped: false, remaining: [], errors: [] };
   let persistenceFailed = false;
   quitCleanupPromise = Promise.resolve()
     .then(async () => {
@@ -1571,7 +1589,7 @@ function beginQuitCleanup() {
         catch (error) { console.warn('OpenBrowser quit diagnostic failed:', error.message); }
       }
     })
-    .then(async () => { stopResult = await stopAllForQuit(); })
+    .then(async () => { stopResult = await drainBrowsersForQuit(); })
     .then(() => engine?.flushPersistence?.())
     .catch((error) => {
       persistenceFailed = true;
@@ -1598,15 +1616,17 @@ function beginQuitCleanup() {
     })
     .then(async () => {
       try { await automation?.stop?.(); } catch (error) {
+        persistenceFailed = true;
         console.warn('OpenBrowser quit automation cleanup failed:', error?.message || error);
       }
     })
     .then(async () => {
       // Stop browsers and flush close-time state before packaging browser data.
       // Otherwise the backup can capture stale cookies or locked SQLite/LevelDB files.
+      if (!stopResult.stopped) return;
       if (stopResult.remaining.length) return;
       if (persistenceFailed) return;
-      if (!cloud.enabled || !cloud.autoSyncOnQuit) return;
+      if (fatalFailure || !cloud.enabled || !cloud.autoSyncOnQuit) return;
       try {
         // The quit chain is the only path that actually exits the app, so a
         // hung backup (network mount, huge browser-data archive) must not
@@ -1636,7 +1656,7 @@ function beginQuitCleanup() {
       // exit). Exit directly and finish the will-quit work ourselves.
       quitCleanupSettled = true;
       try { stopShortcutBridge(); } catch (_) {}
-      app.exit(0);
+      app.exit(fatalFailure ? 1 : 0);
     });
   return quitCleanupPromise;
 }

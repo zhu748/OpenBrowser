@@ -1,4 +1,6 @@
 "use strict";
+const { replaceExactly } = require("./patch-source.cjs");
+
 const fs=require('node:fs'),acorn=require('acorn'),walk=require('acorn-walk'),root='work/rebuild/stage/assets',file=root+'/api-keys-qLZdcspG.js';let code=fs.readFileSync(file,'utf8');
 const parse=text=>acorn.parse(text,{sourceType:'module',ecmaVersion:'latest'});let component;
 walk.simple(parse(code),{VariableDeclarator(node){if(node.id.name==='zg')component=node.init;}});
@@ -32,5 +34,5 @@ if(!editorInstance)throw Error('JSON EditorView ownership boundary changed');
 editorResult=editorResult.slice(0,editorInstance.start)+'localMarkRaw('+editorResult.slice(editorInstance.start,editorInstance.end)+')'+editorResult.slice(editorInstance.end);
 fs.writeFileSync(file,"import{t as localDocDialog}from'./useDialog-BC-nc8J-.js';import{vt as localMarkRaw}from'./runtime-core.esm-bundler-CBj16o9G.js';\n"+editorResult);
 const routes=root+'/hook-CnJE4hRq.js',routeCode=fs.readFileSync(routes,'utf8');if(!routeCode.includes("children:[{path:'extensions'"))throw Error('API route boundary changed');
-fs.writeFileSync(routes,routeCode.replace("children:[{path:'extensions'","children:[{path:'api-keys',name:'api-keys',component:()=>import('./api-keys-qLZdcspG.js'),meta:{title:'API & AI MCP'}},{path:'extensions'"));
+fs.writeFileSync(routes,replaceExactly(routeCode, "children:[{path:'extensions'", "children:[{path:'api-keys',name:'api-keys',component:()=>import('./api-keys-qLZdcspG.js'),meta:{title:'API & AI MCP'}},{path:'extensions'", "patch-api.cjs:35"));
 const layout=root+'/layout-C916OUcf.js',sidebar=fs.readFileSync(layout,'utf8'),needle="{path:'skills',name:'agent-console-settings',meta:{title:'Skill 管理',icon:'base/rx_ic_doc_code'}}";if(!sidebar.includes(needle))throw Error('API sidebar boundary changed');fs.writeFileSync(layout,sidebar.replace(needle,"{path:'api-keys',name:'api-keys',meta:{title:'API & AI MCP',icon:'base/rx_ic_doc_code'}},"+needle));

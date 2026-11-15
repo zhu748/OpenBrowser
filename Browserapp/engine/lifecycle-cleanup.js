@@ -454,8 +454,12 @@ module.exports = {
     return next;
   },
 
+  beginShutdown() {
+    this.shuttingDown = true;
+  },
+
   assertStartGenerationActive(id, generation) {
-    if (this.stopAllInProgress || this.isLifecycleStopRequested(id, generation)) {
+    if (this.shuttingDown || this.stopAllInProgress || this.isLifecycleStopRequested(id, generation)) {
       const error = new Error(`Browser start was cancelled for profile ${id}`);
       error.code = 'BROWSER_START_CANCELLED';
       throw error;

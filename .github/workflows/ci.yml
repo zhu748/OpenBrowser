@@ -231,6 +231,7 @@ jobs:
           node automation/selftests/workbench-browser-selftest.js
           node automation/selftests/cookie-warmup-native-selftest.js
           node automation/selftests/fingerprint-native-consistency-selftest.js
+          node automation/selftests/ua-realms-native-selftest.js
           node automation/selftests/fingerprint-canvas-font-semantics-selftest.js
           node automation/selftests/fingerprint-override-lifecycle-selftest.js
           # Worker-delivery behavior gates: blob/data/extensionless/nested worker
@@ -238,8 +239,18 @@ jobs:
           # Chromium 143+/157+ delivery paths that no static selftest can cover.
           node automation/selftests/fingerprint-blob-worker-identity-gate.js
           node automation/selftests/fingerprint-cached-sw-identity-gate.js
+          # A stalled service must not leave external browsers orphaned when
+          # the fatal host deadline expires. Use the same independent kernel.
+          node node_modules/electron/install.js
+          OPENBROWSER_TEST_KERNEL_BINARY="$CHROME_BIN" node rebuild/quit-failure-selftest.cjs --fatal-hang
 
-      - name: Firefox native identity, API control and data retention
+      - name: Install Firefox certificate tools
+        if: matrix.browser == 'firefox'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libnss3-tools
+
+      - name: Firefox native identity, API control, data retention and worker delivery
         if: matrix.browser == 'firefox'
         run: |
           FIREFOX_BIN="$(find "$HOME/.cache/ob-browsers" -type f -name firefox -path '*/firefox/*' | head -n 1)"
@@ -250,6 +261,7 @@ jobs:
           export OPENBROWSER_FIREFOX_BINARY="$FIREFOX_BIN"
           node automation/selftests/firefox-fingerprint-e2e-selftest.js
           node automation/selftests/firefox-geolocation-native-selftest.js
+          node automation/selftests/firefox-worker-delivery-selftest.js
 
   review-boundaries:
     name: Storage and runtime boundaries (${{ matrix.os }}, Node ${{ matrix.node }})
@@ -331,6 +343,7 @@ jobs:
             node node_modules/electron/cli.js scripts/benchmark-real-render.js --sizes 10,100,1000 --skip-kernel --render-budget-ms 50 --json
             node rebuild/optimization-ui-selftest.cjs
           fi
+          node rebuild/maintenance-ui-selftest.cjs
 
   # ~200 lines of Windows FFI (process/lock.rs, guardian.rs) compile to nothing
   # on Linux: cargo skips cfg(windows) blocks entirely, so per-push CI never

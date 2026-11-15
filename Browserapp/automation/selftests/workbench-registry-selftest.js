@@ -7,6 +7,7 @@ const { workbenchTests, nodeWorkbenchTests } = require('../../scripts/workbench-
 const { options, runTest } = require('../../rebuild/acceptance-runner.cjs');
 const { createTestDirectory } = require('../../rebuild/selftest-helpers.cjs');
 const manifest = require('../../rebuild/acceptance-manifest.json');
+const { evidenceDirectory, evidencePath } = require('../../rebuild/compiler/evidence-path.cjs');
 
 async function main() {
   assert.deepEqual(workbenchTests.map(test => test.file), manifest);
@@ -27,6 +28,19 @@ async function main() {
   // No work/rebuild parent is needed. Exercise real child exit, logs and timeout.
   const root = await createTestDirectory('runner-');
   try {
+    const previousOutput = process.env.OPENBROWSER_EVIDENCE_DIR;
+    try {
+      delete process.env.OPENBROWSER_EVIDENCE_DIR;
+      assert.equal(evidenceDirectory(), path.resolve(__dirname, '../../../work/rebuild/evidence'));
+      process.env.OPENBROWSER_EVIDENCE_DIR = root;
+      const file = evidencePath('nested/result.json');
+      await fs.writeFile(file, '{}');
+      assert.equal(file, path.join(root, 'nested/result.json'));
+      assert.throws(() => evidencePath('../escape.json'), /escapes/);
+    } finally {
+      if (previousOutput === undefined) delete process.env.OPENBROWSER_EVIDENCE_DIR;
+      else process.env.OPENBROWSER_EVIDENCE_DIR = previousOutput;
+    }
     await fs.mkdir(path.join(root, 'commands'));
     const fixture = path.join(root, 'fixture.cjs');
     const app = path.resolve(__dirname, '../..');
@@ -40,10 +54,12 @@ async function main() {
     const timedOut = await runTest({ ...test, timeoutMs: 200 }, root);
     assert.equal(timedOut.status, 'FAIL');
     assert.equal(timedOut.signal, 'SIGTERM');
-    await fs.writeFile(fixture, 'process.exitCode=0;');
+    await fs.writeFile(fixture, 'console.log(process.env.OPENBROWSER_EVIDENCE_DIR);');
     const recovered = await runTest(test, root);
     assert.equal(recovered.status, 'PASS');
     assert.equal(recovered.testSourceUnchanged, true);
+    assert.ok((await fs.readFile(path.join(root, 'commands/fixture.cjs.log'), 'utf8')).includes(root),
+      'child evidence must use the acceptance output directory');
     await fs.writeFile(fixture, "console.log('SKIP browser fixture unavailable');process.exitCode=2;");
     assert.equal((await runTest(test, root)).status, 'SKIP');
     await fs.writeFile(fixture, "console.log('PASS pure checks');console.log('SKIP browser fixture unavailable');");

@@ -1,4 +1,6 @@
 "use strict";
+const { evidencePath } = require("./compiler/evidence-path.cjs");
+
 const fs = require("node:fs/promises"),
   os = require("node:os"),
   path = require("node:path"),
@@ -119,10 +121,7 @@ const { BrowserEngine } = require("../engine"),
       ],
     };
     await fs.writeFile(
-      path.resolve(
-        __dirname,
-        "../../docs/rebuild/evidence/import-selftest.json",
-      ),
+      evidencePath("import-selftest.json"),
       JSON.stringify(evidence, null, 2),
     );
     console.log(JSON.stringify(evidence, null, 2));

@@ -1,3 +1,5 @@
+
+const { evidencePath } = require("./compiler/evidence-path.cjs");
 const { toggleTheme } = require("./selftest-helpers.cjs");
 const { createTestDirectory } = require("./selftest-helpers.cjs");
 "use strict";
@@ -63,7 +65,7 @@ const repo = path.resolve(__dirname, "../..");
     const dialog = await next;
     await dialog.getByRole("tab", { name: "基础设置", exact: true }).waitFor();
     await dialog.waitForFunction(() => document.documentElement.dataset.theme === "dark");
-    await dialog.screenshot({ path: path.join(repo, "docs/rebuild/evidence/sync-preferences-dark.png") });
+    await dialog.screenshot({ path: evidencePath("sync-preferences-dark.png") });
     await toggleTheme(page);
     await dialog.waitForFunction(() => document.documentElement.dataset.theme === "light");
     result.checks.push("原主题在独立弹窗继承深色，并通过原 BroadcastChannel 跟随主窗切换为浅色");
@@ -148,7 +150,7 @@ const repo = path.resolve(__dirname, "../..");
   } finally {
     await app?.close();
     await fs.writeFile(
-      path.join(repo, "docs/rebuild/evidence/dialog-security-selftest.json"),
+      evidencePath("dialog-security-selftest.json"),
       JSON.stringify(result, null, 2),
     );
     console.log(JSON.stringify(result, null, 2));

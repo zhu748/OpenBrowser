@@ -1,4 +1,6 @@
 "use strict";
+const { evidencePath } = require("./compiler/evidence-path.cjs");
+
 const { createTestDirectory } = require("./selftest-helpers.cjs");
 const { _electron: electron } = require("playwright"),
   fs = require("node:fs/promises"),
@@ -191,10 +193,7 @@ const { _electron: electron } = require("playwright"),
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
     await fs.writeFile(
-      path.resolve(
-        __dirname,
-        "../../docs/rebuild/evidence/review-2/agent-reconnect.json",
-      ),
+      evidencePath("review-2/agent-reconnect.json"),
       JSON.stringify(result, null, 2),
     );
     console.log(JSON.stringify(result, null, 2));

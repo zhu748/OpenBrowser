@@ -10,9 +10,17 @@
 | --- | --- |
 | `rebuild/local-service.js` | 依赖接线、本地数据加载、原子保存、串行写入与失败回滚；不承载领域分发分支 |
 | `rebuild/profile-dto.js` | 工作台与引擎字段转换；高级选项和噪声字段双向共用映射；原 `local-service` 导出保持兼容 |
+| `rebuild/profile-fields.js` | 双向字段别名与窗口位置编码；不进行 I/O 或加载代理转发器 |
 | `rebuild/local-route-registry.js` | 从领域表注册处理器与执行策略，拒绝重名、缺失处理器及缺失策略 |
 | `rebuild/routes/` | `profiles`、`collections`、`preferences`、`host`、`proxies`、`transfer` 与现有服务委派；处理器显式接收 service，不反向导入宿主服务 |
 | `engine/launch-profile.js` | 启动结果的修订号校验与持久指纹身份迁移；Chromium/Firefox 共用，不依赖具体启动实现 |
+| `engine/launch-preparation.js` | 共用的代理准备、资源闸、出口定位、IP 策略及发布；启动器保留内核选择、进程创建和资源释放 |
+| `main/fatal-error.js` | 未捕获异常的单次关闭与 15 秒退出上限；停止新 IPC，退出码为 1，跳过退出自动备份 |
+| `automation/shutdown.js` | 按顺序尝试全部关闭与存储排空，汇总原始失败；并发调用共用一次尝试，失败后允许重试 |
+| `automation/fingerprint/persona-locale.js`、`persona-display.js`、`consistency.js` | 指纹语言链、GPU/屏幕投影与组装后诊断；生成器保留随机抽样顺序和历史 seed 语义 |
+| `automation/fingerprint/persona-ua.js` | UA 与 Client Hints 意图解析、字段别名、严格模式及实际内核版本；无 I/O，不修改输入对象 |
+| `automation/user-agent.js`、`automation/fingerprint/runtime/ua-bootstrap.js` | 宿主 UA 构建与浏览器安装分开维护；安装函数只接收 JSON 配置和私有 token，源码直接接受 lint |
+| `rebuild/workbench-notifications.mjs` | 可独立 lint 和行为测试的通知状态、内容转义与已读操作；生成器只注入 Vue 绑定和导入 |
 | `engine/launch-preferences.js` | Chromium 搜索偏好写入与启动数据清理；进程、锁和失败清理由启动编排持有 |
 | `engine/launch-display.js` | 时区参数校验与桌面显示查询；旧引擎导出保持兼容 |
 | `engine/browser-exit.js` | 两种浏览器的退出/错误清理接线，以及发布 running item 前发生的退出重放 |
@@ -27,6 +35,10 @@
 `LocalService` 的 parallel 策略用于不修改本地 JSON 的独立引擎/网络操作，
 不等同于“只读”。local JSON 变更仍由一个队列串行执行，失败恢复前一个快照；
 跨引擎与本地元数据的关联变更继续使用 `profile-relations.js` 的补偿流程。
+read 策略在同一队列中等待先前写入完成，只复制返回值，不复制整个仓库。
+Agent 与 Cookie Robot 也通过领域表分发；Agent 声明使用自己的存储，
+Cookie Robot 继续等待本地元数据加载。不得将本地 JSON 修改登记为 read。
+嵌套命名空间按最长前缀分发，精确路由优先，不依赖声明顺序。
 新增接口必须在领域表同时声明处理器和执行策略。ESLint 对新领域处理器执行
 100 行函数上限、禁止 DOM 全局及反向依赖；不把此门槛直接套到全部历史代码。
 
@@ -46,12 +58,17 @@ npm run selftest -- workbenchregistry
 npm run selftest -- rebuild:skills
 node rebuild/acceptance-runner.cjs --list
 node rebuild/acceptance-runner.cjs --runtime node --output work/acceptance-node
+npm run inventory:modules
 npm run selftest:all
 npm run lint -- --max-warnings 0
 npm run rebuild:ui
 ```
 
-独立验收的 `--output` 相对仓库根目录解析；不指定时保留原证据输出位置。
+日常构建、自测和独立验收默认将证据写入 `work/rebuild/evidence/`。
+`OPENBROWSER_EVIDENCE_DIR` 可指定统一输出根目录，相对路径以仓库根目录解析。
+独立验收的 `--output` 同样相对仓库根目录解析，并传递给全部子测试。
+发布验收更新历史证据时显式指定 `--output docs/rebuild/evidence`；
+构建和单项检查则设置同名环境变量。常规检查不改写受跟踪的历史结果。
 每项验收有独立超时，记录退出码、终止信号及源码哈希；部分 runtime 的运行
 结果明确标记范围，不能解释为完整桌面验收。已纳入通用 runner 的重复 npm
 入口移除后，统一使用 `npm run selftest -- rebuild:<name>`。
@@ -64,6 +81,92 @@ npm run rebuild:ui
 兼容层裁决：旧界面仍保留；`live-sync-v5.js` 继承 V4，不能单独删除 V4；
 Rust 代理桥仍受开关控制，未接线库能力的后续裁决继续遵循
 `rust-core-decision.md`。其他领域的大规模迁移应按能力对照逐项执行。
+
+`inventory:modules` 按来源、职责、维护状态和安装包资源策略输出
+`work/module-inventory.json`，包含新增但未忽略的源码。分类是路径清单，
+不代替动态加载和功能可达性证明。`fingerprint-pool`、`task-queue`、
+`aspect-manager`、`window-command-bus` 保留测试源码，明确排除出安装包。
+旧 UI、V4/V5 同步基类与受门控 Rust 能力继续保留兼容契约。
+
+新增的启动准备、异常边界、通知、语言/显示投影与证据定位模块使用
+100 行函数上限及显式错误处理门槛。单项行为回归包括
+`fatalerror`、`workbenchnotifications`、扩展后的 `localroutes`、
+`compilerpatches`、`workbenchregistry` 和 `fpalign`。
+`node rebuild/maintenance-ui-selftest.cjs` 验证真实 Electron 通知弹层、
+内容转义、已读操作及异常退出码，并进入三平台桌面 CI。
+
+### 第二轮：取消、关闭与构建边界
+
+- 启动准备在异步资源检查、出口检测、持久化返回后重新检查生命周期和配置修订。
+  进度监听回调触发的停止同样有效；取消后的网络结果不能发布或继续启动内核。
+- `engine.beginShutdown()` 设置永久关闭屏障；普通 `stopAll()` 仍可停止后重启，
+  应用退出后则拒绝新启动，并取消等待中的启动续程。
+- 正常退出保留本地服务、浏览器、存储的原有关闭顺序。致命异常提前启动同一份
+  浏览器排空 Promise，避免某个本地服务挂起时将外部浏览器留给已退出的宿主。
+- 自动化关闭失败也会阻止退出备份；浏览器停止未确认时不读取浏览器数据。
+  各自动化关闭步骤始终继续尝试，AggregateError 保留失败步骤和原始 cause。
+- `patchComponentSetups` 与普通 AST 补丁共用单次匹配、重叠检查及语法检查。
+  组件只替换 setup 行为并保留原 render 表达式，校验成功后才写回文件。
+- 清单区分默认工作台 CSS 与兼容 UI，并细分内核、API、存储和原生集成。
+
+新增 Node 回归：`launchpreparation`、`automationshutdown`；已有 `lifecycle`、
+`compilerpatches`、`localroutes` 补充相应边界。真实挂起回归需要独立内核：
+
+```sh
+OPENBROWSER_TEST_KERNEL_BINARY=/absolute/path/to/chrome \
+  node rebuild/quit-failure-selftest.cjs --fatal-hang
+```
+
+该用例也进入 Chromium 原生 CI，明确检查浏览器进程在宿主退出之前消失。
+
+### 第三轮：UA 随机与跨上下文注入
+
+- `automation/editor-ua.js` 负责编辑器请求与已保存配置的合并；省略 OS/版本时
+  复用已有值，显式切换 OS 时不沿用旧系统版本。Firefox 移动端预览与实际启动
+  使用同一支持范围。
+- `automation/user-agent.js` 分开解析 Navigator 平台与 Client Hints 平台，校验
+  随机池和 uint32 seed，复制品牌条目以免一次修改污染其他环境。
+  有效 seed 保留原抽样顺序和权重；自定义矛盾配置继续由一致性校验拒绝。
+- UAData 接收者由原生 getter 校验，兼容 Chromium 每次读取产生新对象的行为。
+  不使用 `instanceof` 接受伪造对象；两个文档分支共用高熵结果构造。
+- 文档与 Worker 的可选 `formFactors` 请求等待原生能力探测，CDP 与请求头
+  使用相同设备分类。Worker 交付修订提升为 9，持久指纹算法仍为 1/2。
+
+`uarandomcontracts` 验证配置合并、平台、随机池和数组隔离；`fprealms` 验证
+新对象、首次异步请求、返回值隔离和非法接收者。`uarealmsnative` 使用真实内核，
+对照未注入环境核对 Windows/Android 配置在文档、iframe、Dedicated Worker、
+Shared Worker、Service Worker 中的 UA、Client Hints 和 HTTP 请求头，已加入
+Chromium 原生 CI。内核路径通过 `OPENBROWSER_CHROMIUM_BINARY` 指定。
+
+144 份既有生成结果在排除私有交付桥 token 后保持一致，覆盖六种 OS 和两种
+持久指纹版本。该回归与真实 Linux Chromium 检查不代表已验证原生 Windows、
+macOS、Gecko、WebKit 或物理移动设备。后续优先补齐这些平台的同类门禁，
+并继续核实移动设备目录的数据来源。UA 运行时代码拆分见下一轮记录。
+
+### 第四轮：UA 源码边界与双内核验证
+
+- `user-agent.js` 从 1,200 余行缩减为约 570 行；约 640 行安装逻辑转为可直接
+  lint 的函数源码，移除一个未使用的辅助函数。宿主保留数据构建、HMAC token
+  和序列化，浏览器函数不引用 Node API。
+- `persona-ua.js` 承接生成器中的 UA 意图阶段，保留随机抽样位置和权重。
+  Client Hints 的驼峰与下划线别名在入口统一处理，已保存配置保持不变。
+  先前被忽略的版本字段现在参与一致性检查，严格模式仍优先使用实际内核。
+- 修正注入配置说明中过时的 metadata fallback 差异，保留真实的 realm 差异。
+- Firefox Worker 门禁复用生产初始化时的首个标签页，覆盖三个 Worker 的
+  prefs 字段、HTTPS Worker 脚本改写和带认证的上游代理链，已进入原生 CI。
+  CI 安装 NSS 工具，通过临时 profile 的信任库导入测试 CA。
+
+本轮用 AST 对比确认安装函数与原模板的有效逻辑一致；144 份完整指纹回放
+连同私有交付桥字段保持一致。既有生成门禁继续覆盖 240 份 V1 身份、2,000
+份 V2 配置及跨宿主回放。别名检查覆盖三个配置来源、自定义/生成 UA、规范
+字段优先级、严格模式和矛盾版本拒绝。
+
+本地原生验证使用 Linux Chromium 159 与 Playwright Firefox 159：前者覆盖
+UA 跨 realm 及 Windows/Android/iOS 配置的原生 API 合约，后者覆盖 V1/V2
+文档、iframe、HTTP UA、数据保留和上述 Worker 交付范围。这不证明原生
+Windows/macOS、WebKit、物理移动设备或所有 Firefox Worker 来源已经通过。
+后续优先将同类原生门禁扩展到其他宿主平台，继续拆分 Worker 模板中的共享
+协议逻辑，并核实移动设备目录中的型号、系统版本和 GPU 来源。
 
 ## 配置一致性与恢复约定（2026-11-12）
 

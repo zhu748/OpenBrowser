@@ -8,10 +8,20 @@ const handle = async () => true;
 assert.throws(() => createLocalRouteRegistry([[['a:b', handle, 'serial'], ['a:b', handle, 'parallel']]]), /Duplicate/);
 assert.throws(() => createLocalRouteRegistry([[['a:b', null, 'serial']]]), /Missing local handler/);
 assert.throws(() => createLocalRouteRegistry([[['a:b', handle]]]), /execution policy/);
+assert.throws(() => createLocalRouteRegistry([[['a:b', handle, 'read', false]]]), /data policy/);
 const exact = async () => 'exact';
 const registry = createLocalRouteRegistry([[['a:', handle, 'serial'], ['a:b', exact, 'parallel']]]);
 assert.equal(registry.resolve('a:b').handle, exact);
 assert.equal(registry.resolve('a:c').handle, handle);
+for (const routes of [
+  [['a:', handle, 'serial'], ['a:read:', exact, 'read']],
+  [['a:read:', exact, 'read'], ['a:', handle, 'serial']],
+]) {
+  const nested = createLocalRouteRegistry([routes]);
+  assert.equal(nested.resolve('a:read:list').handle, exact);
+  assert.equal(nested.resolve('a:read:list').execution, 'read');
+  assert.equal(nested.resolve('a:other').handle, handle);
+}
 assert.ok(localRoutes.every(Object.isFrozen));
 
 function deferred() {
@@ -25,7 +35,14 @@ async function main() {
   const service = Object.create(LocalService.prototype);
   service.queue = Promise.resolve();
   service.data = { settings: {} };
-  service.load = async () => {};
+  let loaded = 0;
+  service.load = async () => { loaded++; };
+  service.agent = { request: async (method, payload) => ({ method, payload }) };
+  service.robot = service.agent;
+  assert.deepEqual(await service.request('agent:info', { id: 1 }), { method: 'info', payload: { id: 1 } });
+  assert.equal(loaded, 0, 'the Agent owns its store and must not depend on local metadata');
+  await service.request('cookie-robot:list');
+  assert.equal(loaded, 1, 'Cookie Robot waits for local metadata migration');
   service.save = async () => {};
   const launch = deferred();
   service.engine = {
@@ -53,6 +70,34 @@ async function main() {
   await rejected;
   await next;
   assert.deepEqual(service.data.settings, { duringLaunch: true, next: true });
+
+  // A read waits for a pending write, then clones only its result. Detect
+  // whole-store cloning without timing assertions or a large memory fixture.
+  const pendingWrite = deferred();
+  const saving = deferred();
+  service.save = async () => { saving.resolve(); await pendingWrite.promise; };
+  const writing = service.request('settings:set', { ordered: true });
+  await saving.promise;
+  let readFinished = false;
+  const originalClone = globalThis.structuredClone;
+  const reading = service.request('settings:get').then(value => { readFinished = true; return value; });
+  await Promise.resolve();
+  assert.equal(readFinished, false, 'reads cannot observe a write before it commits');
+  globalThis.structuredClone = value => {
+    assert.notStrictEqual(value, service.data, 'ordered reads must not clone the whole local store');
+    return originalClone(value);
+  };
+  try {
+    pendingWrite.resolve();
+    await writing;
+    const settings = await reading;
+    assert.equal(settings.ordered, true);
+    settings.ordered = false;
+    assert.equal(service.data.settings.ordered, true, 'read results remain isolated');
+  } finally {
+    globalThis.structuredClone = originalClone;
+  }
+  service.save = async () => {};
   await assert.rejects(service.request('missing:method'), { code: 'LOCAL_CHANNEL_UNIMPLEMENTED' });
   await service.request('settings:set', { recovered: true });
   assert.equal(service.data.settings.recovered, true);

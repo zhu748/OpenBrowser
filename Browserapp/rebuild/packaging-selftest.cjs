@@ -1,4 +1,6 @@
 "use strict";
+const { evidencePath } = require("./compiler/evidence-path.cjs");
+
 const fs = require("node:fs"),
   path = require("node:path"),
   os = require("node:os"),
@@ -121,7 +123,7 @@ async function main() {
       ],
     };
     fs.writeFileSync(
-      path.resolve(source, "../docs/rebuild/evidence/packaging-selftest.json"),
+      evidencePath("packaging-selftest.json"),
       JSON.stringify(evidence, null, 2),
     );
     console.log(JSON.stringify(evidence, null, 2));

@@ -1,4 +1,6 @@
 "use strict";
+const { evidencePath } = require("./compiler/evidence-path.cjs");
+
 const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),assert=require('node:assert/strict');
 const {BrowserEngine}=require('../engine'),{LocalService}=require('./local-service');
 (async()=>{
@@ -55,5 +57,5 @@ const {BrowserEngine}=require('../engine'),{LocalService}=require('./local-servi
   result.checks.push('真实 ZIP 解包并安装，包装目录支持；越界、归档符号链接和超过原界面 50 MiB 上限明确拒绝');
   await service.request('extensions:remove',{ids:[id]});assert.ok(!engine.extensions.has(id));assert.ok(!engine.assignments.get(one.id).has(id));await assert.rejects(fs.stat(saved.path),{code:'ENOENT'});
   result.checks.push('符号链接拒绝，内置扩展不可删，删除移除真实文件与窗口关联');result.passed=true;
- }catch(error){result.failure=error.stack;process.exitCode=1;}finally{await service?.extensions.shutdown();await engine.stopAll?.();await fs.writeFile(path.resolve(__dirname,'../../docs/rebuild/evidence/extensions-selftest.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));}
+ }catch(error){result.failure=error.stack;process.exitCode=1;}finally{await service?.extensions.shutdown();await engine.stopAll?.();await fs.writeFile(evidencePath("extensions-selftest.json"),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));}
 })().catch(error=>{console.error(error);process.exitCode=1;});

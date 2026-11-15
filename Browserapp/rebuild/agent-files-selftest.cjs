@@ -1,4 +1,6 @@
 "use strict";
+const { evidencePath } = require("./compiler/evidence-path.cjs");
+
 const fs = require("node:fs/promises"),
   path = require("node:path"),
   os = require("node:os"),
@@ -298,10 +300,7 @@ const { AgentFiles } = require("./agent-files"),
     await service?.shutdown();
     await new Promise((resolve) => server.close(resolve));
     await fs.writeFile(
-      path.join(
-        __dirname,
-        "../../docs/rebuild/evidence/agent-files-selftest.json",
-      ),
+      evidencePath("agent-files-selftest.json"),
       JSON.stringify(result, null, 2),
     );
     await fs.rm(root, { recursive: true, force: true });

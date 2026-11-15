@@ -1,4 +1,6 @@
 "use strict";
+const { evidencePath } = require("./compiler/evidence-path.cjs");
+
 const fs = require("node:fs/promises"),
   os = require("node:os"),
   path = require("node:path"),
@@ -110,10 +112,7 @@ const { CookieRobot, options } = require("./cookie-robot"),
     await robot?.shutdown();
     await engine.flushPersistence();
     await fs.writeFile(
-      path.join(
-        __dirname,
-        "../../docs/rebuild/evidence/cookie-robot-selftest.json",
-      ),
+      evidencePath("cookie-robot-selftest.json"),
       JSON.stringify(result, null, 2),
     );
     await fs.rm(root, { recursive: true, force: true });

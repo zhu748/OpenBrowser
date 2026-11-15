@@ -1,9 +1,11 @@
 "use strict";
+const { evidenceDirectory } = require("./compiler/evidence-path.cjs");
+
 const { createTestDirectory } = require("./selftest-helpers.cjs");
 const {_electron:electron}=require('playwright'),fs=require('node:fs/promises'),path=require('node:path'),assert=require('node:assert/strict');
 const repo=path.resolve(__dirname,'../..');
 (async()=>{
- const data=await createTestDirectory('settings-ui-'),evidence=path.join(repo,'docs/rebuild/evidence'),result={passed:false,checks:[],errors:[],externalRequests:[],data};let app,page;
+ const data=await createTestDirectory('settings-ui-'),evidence=evidenceDirectory(),result={passed:false,checks:[],errors:[],externalRequests:[],data};let app,page;
  try{
   app=await electron.launch({executablePath:require('electron'),args:['--no-sandbox','--ozone-platform=headless','--disable-gpu',path.join(repo,'Browserapp')],env:{...process.env,OPENBROWSER_USER_DATA:data,OPENBROWSER_API_PORT:'0'}});page=await app.firstWindow();page.on('pageerror',error=>result.errors.push(error.message));page.on('console',message=>{if(message.type()==='error')result.errors.push(message.text());});page.on('request',request=>{if(/^https?:|^wss?:/.test(request.url()))result.externalRequests.push(request.url());});await page.getByText('暂无窗口',{exact:true}).waitFor();
   const saved=await page.evaluate(async()=>{const store=(await import('/assets/utils-BIWenCnY.js')).v();await globalThis.__localApi.base.userSetUserConfigCreate({batchOpenLayout:'tile',remarkDisplayStatus:true,preferenceSettings:{base:{copy:true},simulate:{serial:true,serialTime:113}}});return {store:JSON.parse(JSON.stringify(store.userConfig)),disk:await globalThis.__localRequest('settings:get')};});

@@ -1,9 +1,20 @@
 "use strict";
+const { evidenceDirectory, evidencePath } = require("./evidence-path.cjs");
+
 const fs = require("node:fs");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const repo = path.resolve(__dirname, "../../..");
 process.chdir(repo);
+function runStep(step) {
+  const result = spawnSync(process.execPath, [path.join(__dirname, step)], {
+    stdio: "inherit", env: process.env,
+  });
+  if (result.error) throw result.error;
+  if (result.signal) throw Error(`Compiler step ${step} terminated by ${result.signal}`);
+  if (result.status !== 0) process.exit(result.status || 1);
+}
+
 // All compiler steps share a staging directory. Never allow parallel builds
 // to delete one another's stage or install a partially audited output.
 const lock = path.join(repo, "work/rebuild/build.lock");
@@ -28,9 +39,9 @@ const { resolveBuildSource, manifest } = require("./source.cjs");
 const src = resolveBuildSource();
 // All child steps read the same validated checkout-local source.
 process.env.ROXY_SOURCE = src;
-fs.mkdirSync(path.join(repo, "docs/rebuild/evidence"), { recursive: true });
+fs.mkdirSync(evidenceDirectory(), { recursive: true });
 fs.writeFileSync(
-  path.join(repo, "docs/rebuild/evidence/build-source-check.json"),
+  evidencePath("build-source-check.json"),
   JSON.stringify({ status: "PASS", source: path.relative(repo, src).split(path.sep).join("/"), snapshot: manifest.snapshot }, null, 2),
 );
 fs.rmSync(path.join(repo, "work/rebuild/stage"), {
@@ -57,11 +68,7 @@ for (const step of [
   "offline-boundaries.cjs",
   "slice.cjs",
 ]) {
-  const result = spawnSync(process.execPath, [path.join(__dirname, step)], {
-    stdio: "inherit",
-    env: process.env,
-  });
-  if (result.status !== 0) process.exit(result.status || 1);
+  runStep(step);
 }
 const stage = path.join(repo, "work/rebuild/stage");
 function copyResources(dir) {
@@ -78,15 +85,7 @@ function copyResources(dir) {
   }
 }
 copyResources(stage);
-const result = spawnSync(
-  process.execPath,
-  [path.join(__dirname, "resources.cjs")],
-  {
-    stdio: "inherit",
-    env: process.env,
-  },
-);
-if (result.status) process.exit(result.status);
+runStep("resources.cjs");
 for (const step of [
   "purge-resources.cjs",
   "link-audit.cjs",
@@ -95,11 +94,7 @@ for (const step of [
   "channel-audit.cjs",
   "backend-contract-audit.cjs",
 ]) {
-  const result = spawnSync(process.execPath, [path.join(__dirname, step)], {
-    stdio: "inherit",
-    env: process.env,
-  });
-  if (result.status !== 0) process.exit(result.status || 1);
+  runStep(step);
 }
 const backup = target + ".previous";
 fs.rmSync(backup, { recursive: true, force: true });

@@ -1,4 +1,6 @@
 "use strict";
+const { evidencePath } = require("./evidence-path.cjs");
+
 // Independent visual baseline: original compiled render functions, with the
 // same local data/lifecycle adapters as the app. Never ship this test harness.
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),{spawnSync}=require('node:child_process'),acorn=require('acorn'),walk=require('acorn-walk'),scope=require('eslint-scope');
@@ -87,4 +89,4 @@ for(const name of fs.readdirSync(runtime).filter(file=>file.endsWith('.js'))){
  parse(result);fs.writeFileSync(path.join(out,name),result);files.push({file:name,originalArchiveSha256:hash(fs.readFileSync(path.join(raw,'web/assets',name))),authorizedCommerceSha256:hash(baseline),graftedSha256:hash(result)});
 }
 const result={status:'READY',scope:'原归档 render 函数 + 同一套本地数据/生命周期；商业删除及扩展/项目云端本地化作为共同前处理，函数逻辑不进入 render 基线。未提供独立原 render 的组件明确列出；本文件不是像素通过证明。',preprocessors:['commerce.cjs','patch-extensions.cjs','patch-projects.cjs'].map(file=>({file,sha256:hash(fs.readFileSync(path.join(__dirname,file)))})),root:out,originalRendererCount:records.filter(row=>row.status==='original-renderer').length,changedRendererCount:records.filter(row=>row.changed).length,records,files};
-fs.writeFileSync(path.join(repo,'docs/rebuild/evidence/visual-reference-provenance.json'),JSON.stringify(result,null,2));console.log(JSON.stringify({status:result.status,files:files.length,originalRendererCount:result.originalRendererCount,changedRendererCount:result.changedRendererCount,excluded:records.filter(row=>row.status!=='original-renderer').length}));
+fs.writeFileSync(evidencePath("visual-reference-provenance.json"),JSON.stringify(result,null,2));console.log(JSON.stringify({status:result.status,files:files.length,originalRendererCount:result.originalRendererCount,changedRendererCount:result.changedRendererCount,excluded:records.filter(row=>row.status!=='original-renderer').length}));

@@ -1,3 +1,4 @@
+import {createNotifications} from "./workbench-notifications.js";
 import {gi as o,gr as s,qt as d,sn as f,ui as p,v as m} from "./utils-BIWenCnY.js";
 import {C as _,D as v,H as S,L as ee,N as C,P as te,St as T,V as E,W as D,Y as O,Z as ne,_t as re,at as k,b as ie,ct as A,d as j,en as M,f as N,h as P,i as F,in as I,jt as L,lt as R,m as z,p as B,q as V,rt as H,st as oe,ut as U,vt as se,x as W} from "./runtime-core.esm-bundler-CBj16o9G.js";
 import {m as G,s as le} from "./runtime-dom.esm-bundler-_WxS4Zar.js";
@@ -110,28 +111,8 @@ var Xt = { class: "flex justify-between items-center" };
 var Zt = ["onClick"];
 var Qt = { key: 1, class: "flex justify-center items-center min-h-[150px] max-h-[280px] text-4" };
 var en = Y(_({ __name: "notification", setup(t2) {
-  const m2 = k("pop"), h2 = T([{ value: "sys", title: $t("\u7CFB\u7EDF\u901A\u77E5"), list: [], noRead: 0 }]), g2 = T("sys"), f2 = T(/* @__PURE__ */ new Set()), _2 = j(() => h2.value[0].noRead), escape = (value) => String(value).replace(/[&<>"']/g, (c2) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c2]);
-  async function load() {
-    const rows = await globalThis.__localRequest("notifications:list");
-    h2.value[0].list = rows.map((row) => ({ id: row.id, status: row.read ? 1 : 0, messageModule: "sys", _icon: "status/speaker", notify: escape(row.title) + "<br><span>" + escape(row.message) + "</span>", createTime: new Date(row.at).toLocaleString() })), h2.value[0].noRead = rows.filter((row) => !row.read).length;
-  }
-  async function b2(event) {
-    const target = event.currentTarget;
-    await load(), m2.value.instance.toggle(event, target);
-  }
-  async function S2(row) {
-    row.status || (await globalThis.__localRequest("notifications:read", { ids: [row.id] }), await load());
-  }
-  async function C2() {
-    await globalThis.__localRequest("notifications:read"), await load();
-  }
-  function H2(event) {
-    event.preventDefault();
-  }
-  function te2() {
-    throw Error("\u672C\u5730\u901A\u77E5\u6CA1\u6709\u4E91\u7AEF\u8BE6\u60C5");
-  }
-  return ee(load), (e2, t3) => {
+  const { popover: m2, groups: h2, selectedGroup: g2, selectedItems: f2, unreadCount: _2, toggle: b2, markRead: S2, markAllRead: C2, preventDefault: H2, showDetails: te2 } = createNotifications({ templateRef: k, ref: T, computed: j, onMounted: ee, translate: $t });
+  return (e2, t3) => {
     let n2 = Z, r2 = Ie, i2 = Ae, a2 = Xe, o2 = Je, s2 = J, c2 = Ge, l2 = Ye, u2 = qe, d2 = Ke, p2 = He, m3 = X;
     return U((D(), P("div", Wt, [W(r2, { value: L(_2), severity: "danger", size: "small", class: M(L(_2) ? "" : e2.message.empty) }, { default: R(() => [W(n2, { severity: "secondary", icon: "base/rx_ic_mail", "aria-label": "\u901A\u77E5", outlined: "", size: "xs", onClick: b2 })]), _: 1 }, 8, ["value", "class"]), W(p2, { ref: "pop" }, { default: R(() => [N("div", Gt, [N("div", Kt, [N("div", { class: M(e2.message.title) }, I(e2.$t("\u901A\u77E5")), 3), W(n2, { severity: "secondary", size: "sm", text: "", icon: "base/rx_ic_done", label: e2.$t("\u5168\u90E8\u5DF2\u8BFB"), onClick: C2 }, null, 8, ["label"])]), W(d2, { value: L(g2), "onUpdate:value": t3[0] ||= (e3) => re(g2) ? g2.value = e3 : null }, { default: R(() => [W(o2, { pt: { tablist: "px-4 gap-4 h-[40px] !border-[var(--colors-border-border-subtle)]", activeBar: "!h-[2px]" } }, { default: R(() => [(D(!0), P(F, null, V(L(h2), (e3) => (D(), B(a2, { key: e3.title, value: e3.value, class: "flex flex-1 justify-center items-center gap-1.5" }, { default: R(() => [N("span", null, I(e3.title), 1), e3.noRead ? (D(), B(i2, { key: 0, value: e3.noRead, severity: "danger", size: "small" }, null, 8, ["value"])) : z("", !0)]), _: 2 }, 1032, ["value"]))), 128))]), _: 1 }), W(u2, { class: "!pa-0 min-h-[100px] max-h-[280px] overflow-auto" }, { default: R(() => [(D(!0), P(F, null, V(L(h2), (t4) => (D(), B(l2, { key: t4.title, value: t4.value }, { default: R(() => [t4.list?.length ? (D(!0), P(F, { key: 0 }, V(t4.list, (n3) => (D(), P("div", { key: n3.id, class: M(["flex gap-2.5 py-3 px-4 items-start", [e2.message.item, !n3.status && e2.message.noRead]]), onClick: (e3) => S2(n3) }, [n3._icon ? (D(), B(s2, { key: 0, class: "w-5 h-5", name: n3._icon }, null, 8, ["name"])) : (D(), B(c2, { key: 1, class: M(["relative cursor-pointer aspect-square", { [e2.message.badge]: !n3.status }]), avatar: n3.avatar || (n3.messageModule === "sys" && n3.sysType === 1 ? "/images/system-notice-avatar.png" : ""), name: n3.userName?.slice(0, 2), color: n3.avatarColor, size: 24, "font-size": 12 }, null, 8, ["class", "avatar", "name", "color"])), N("div", Jt, [N("div", { class: M([t4.value, e2.message.text]), onClick: H2, innerHTML: n3.notify }, null, 10, Yt), N("div", Xt, [N("div", { class: M(e2.message.time) }, I(n3.createTime), 3), n3.paramData || L(f2).has(n3.type) || n3.windowTransferNo ? (D(), P("div", { key: 0, class: M(["flex items-center gap-1 select-none cursor-pointer", e2.message.detail]), onClick: (e3) => te2(n3) }, [N("span", null, I(e2.$t("\u67E5\u770B\u8BE6\u60C5")), 1), W(s2, { name: "base/rx_ic_chevron_right" })], 10, Zt)) : z("", !0)])])], 10, qt))), 128)) : (D(), P("div", Qt, I(e2.$t("\u6682\u65E0\u6D88\u606F")), 1))]), _: 2 }, 1032, ["value"]))), 128))]), _: 1 })]), _: 1 }, 8, ["value"])])]), _: 1 }, 512)])), [[m3, { value: e2.$t("\u901A\u77E5"), showDelay: 600 }, void 0, { left: !0 }]]);
   };

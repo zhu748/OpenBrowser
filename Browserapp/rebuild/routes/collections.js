@@ -252,17 +252,17 @@ async function filtersDelete(service, p) {
 }
 
 module.exports = [
-  ["groups:list", groupsList, "serial"],
+  ["groups:list", groupsList, "read"],
   ["groups:save", groupsSave, "serial"],
-  ["labels:list", labelsList, "serial"],
+  ["labels:list", labelsList, "read"],
   ["labels:save", labelsSave, "serial"],
   ["labels:delete", labelsDelete, "serial"],
   ["groups:delete", groupsDelete, "serial"],
   ["groups:sort", groupsSort, "serial"],
-  ["templates:list", templatesList, "serial"],
+  ["templates:list", templatesList, "read"],
   ["templates:save", templatesSave, "serial"],
   ["templates:delete", templatesDelete, "serial"],
-  ["filters:list", filtersList, "serial"],
+  ["filters:list", filtersList, "read"],
   ["filters:save", filtersSave, "serial"],
   ["filters:delete", filtersDelete, "serial"],
 ];

@@ -423,6 +423,17 @@ async function testAppQuitCleanupContract() {
   assert.ok(source.includes('liveSync?.stop?.()'), 'quit must invalidate live-sync work before stopping environments');
 }
 
+async function testShutdownRejectsNewAndPendingStarts() {
+  const engine = makeEngine();
+  engine.beginShutdown();
+  engine.beginShutdown();
+  assert.throws(() => engine.assertStartGenerationActive('closing-env', 1), { code: 'BROWSER_START_CANCELLED' });
+  await assert.rejects(engine.start({ id: 'closing-env', name: 'Closing' }), { code: 'ENGINE_SHUTTING_DOWN' });
+  assert.equal((await engine.stopAll()).stopped, true, 'closing still permits resource cleanup');
+  assert.equal(engine.stopAllInProgress, false);
+  await assert.rejects(engine.start({ id: 'closing-env', name: 'Closing' }), { code: 'ENGINE_SHUTTING_DOWN' });
+}
+
 async function main() {
   await testStateRecovery();
   await testProfileLockRecovery();
@@ -435,6 +446,7 @@ async function main() {
   await testLateExitWhileReplacementStarts();
   await testStopAllBoundsHungEnvironment();
   await testAppQuitCleanupContract();
+  await testShutdownRejectsNewAndPendingStarts();
   await testLockReleaseFailureRetainsRunningItem();
   await testStartupResourceCleanupUnknownScan();
   await testRestartRetainsLockWhenProcessScanUnknown();
@@ -607,10 +619,10 @@ async function testQuitFlushFailureStillCleansUp() {
   const warnings = [];
   const failedWrite = (label) => async () => { calls.push(label); throw new Error(label + ' failed'); };
   const context = {
-    quitCleanupPromise: null, quitting: false, quitCleanupSettled: false,
+    quitCleanupPromise: null, quitting: false, quitCleanupSettled: false, fatalFailure: false,
     localUiSync: undefined, localUiService: undefined,
     destroyTray: () => {},
-    stopAllForQuit: async () => ({ stopped: true, remaining: [], errors: [] }),
+    drainBrowsersForQuit: async () => ({ stopped: true, remaining: [], errors: [] }),
     engine: { flushPersistence: failedWrite('engine') },
     settingsStore: {
       getLocalSettings: () => ({ cloud: { enabled: true, autoSyncOnQuit: true } }),
@@ -631,4 +643,16 @@ async function testQuitFlushFailureStillCleansUp() {
   assert.deepStrictEqual(calls, ['engine', 'settings', 'rpa', 'sync-stop', 'automation-stop', 'shortcut-stop', 'exit']);
   assert.strictEqual(warnings.length, 3, 'every failed flush must be reported');
   assert.strictEqual(context.quitCleanupSettled, true);
+  for (const scenario of ['automation-failure', 'unconfirmed-stop', 'healthy']) {
+    calls.length = 0;
+    warnings.length = 0;
+    context.quitCleanupPromise = null;
+    context.engine.flushPersistence = async () => {};
+    context.settingsStore.flushSettingsWriter = async () => {};
+    context.automation.rpaStore.flush = async () => {};
+    context.automation.stop = scenario === 'automation-failure' ? failedWrite('automation-stop') : async () => {};
+    context.drainBrowsersForQuit = async () => ({ stopped: scenario !== 'unconfirmed-stop', remaining: [], errors: [] });
+    await require('vm').runInNewContext(source.slice(start, end) + '\nbeginQuitCleanup();', context);
+    assert.equal(calls.includes('backup'), scenario === 'healthy', 'backup eligibility: ' + scenario);
+  }
 }

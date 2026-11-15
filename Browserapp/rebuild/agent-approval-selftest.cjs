@@ -1,4 +1,6 @@
 "use strict";
+const { evidencePath } = require("./compiler/evidence-path.cjs");
+
 const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),http=require('node:http'),assert=require('node:assert/strict');
 const {BrowserEngine}=require('../engine'),{LocalService}=require('./local-service'),{waitUntil}=require('./selftest-helpers.cjs');
 (async()=>{
@@ -20,5 +22,5 @@ const {BrowserEngine}=require('../engine'),{LocalService}=require('./local-servi
   agent.save=function(...args){if(hold&&[...this.active.values()].some(run=>run.pendingApproval)){hold=false;return new Promise((resolve,reject)=>{release=()=>save(...args).then(resolve,reject);});}return save(...args);};
   c=await start('APPROVE THEN CANCEL DURING DISK');assert.ok(release);await submit(c,{type:'approve'});await agent.request('channel:send',{type:'conversation.run.stop',data:{conversationId:c.id}});release();await waitUntil(()=>!agent.active.has(c.id));agent.save=save;assert.equal(engine.profiles.size,3);assert.equal(agent.conversation(c.id).latestRunStatus,'cancelled');result.checks.push('授权快照写盘被延迟时，先允许再取消仍不执行工具；拒绝已观察且不产生未处理 Promise');
   agent.approvalTimeoutMs=500;c=await start('TIMEOUT');await waitUntil(()=>!agent.active.has(c.id));assert.equal(agent.conversation(c.id).latestRunStatus,'failed');assert.equal(engine.profiles.size,3);result.checks.push('等待中的取消与超时清理监听/定时器，明确终止任务，均未执行工具');result.passed=true;
- }catch(error){result.failure=error.stack;process.exitCode=1;}finally{await service?.agent.shutdown();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));await engine.stopAll?.();await fs.writeFile(path.resolve(__dirname,'../../docs/rebuild/evidence/agent-approval-selftest.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));}
+ }catch(error){result.failure=error.stack;process.exitCode=1;}finally{await service?.agent.shutdown();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));await engine.stopAll?.();await fs.writeFile(evidencePath("agent-approval-selftest.json"),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));}
 })().catch(error=>{console.error(error);process.exitCode=1;});

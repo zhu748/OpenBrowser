@@ -1,4 +1,6 @@
 "use strict";
+const { evidenceDirectory } = require("./compiler/evidence-path.cjs");
+
 const { createTestDirectory } = require("./selftest-helpers.cjs");
 const { _electron: electron } = require("playwright"),
   fs = require("node:fs/promises"),
@@ -12,7 +14,7 @@ const { waitUntil } = require("./selftest-helpers.cjs");
 const repo = path.resolve(__dirname, "../..");
 (async () => {
   const data = await createTestDirectory("cookie-robot-ui-"),
-    evidence = path.join(repo, "docs/rebuild/evidence"),
+    evidence = evidenceDirectory(),
     result = {
       passed: false,
       checks: [],

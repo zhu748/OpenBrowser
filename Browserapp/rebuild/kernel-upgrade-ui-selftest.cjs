@@ -1,9 +1,11 @@
 'use strict';
+const { evidenceDirectory } = require("./compiler/evidence-path.cjs");
+
 const { createTestDirectory } = require("./selftest-helpers.cjs");
 const {_electron:electron}=require('playwright'),fs=require('node:fs/promises'),path=require('node:path'),assert=require('node:assert/strict'),{waitUntil,toggleTheme}=require('./selftest-helpers.cjs');
 const repo=path.resolve(__dirname,'../..');
 (async()=>{
- const evidence=path.join(repo,'docs/rebuild/evidence'),data=await createTestDirectory('kernel-upgrade-'),result={passed:false,checks:[],errors:[],externalRequests:[],data};let app,page;
+ const evidence=evidenceDirectory(),data=await createTestDirectory('kernel-upgrade-'),result={passed:false,checks:[],errors:[],externalRequests:[],data};let app,page;
  try{
   const prior=JSON.parse(await fs.readFile(path.join(evidence,'kernels-ui-selftest.json')));assert.equal(prior.passed,true);await fs.mkdir(path.join(data,'kernels'),{recursive:true});await fs.cp(path.join(prior.data,'kernels/firefox'),path.join(data,'kernels/firefox'),{recursive:true});
   app=await electron.launch({executablePath:require('electron'),args:['--no-sandbox','--ozone-platform=headless','--disable-gpu',path.join(repo,'Browserapp')],env:{...process.env,OPENBROWSER_USER_DATA:data,OPENBROWSER_API_PORT:'0',OPENBROWSER_HEADLESS:'1'}});page=await app.firstWindow();page.setDefaultTimeout(15000);await page.setViewportSize({width:1536,height:960});page.on('pageerror',error=>result.errors.push(error.message));page.on('console',message=>{if(message.type()==='error')result.errors.push(message.text());});page.on('request',request=>{if(/^https?:|^wss?:/.test(request.url()))result.externalRequests.push(request.url());});await page.getByText('暂无窗口',{exact:true}).waitFor();

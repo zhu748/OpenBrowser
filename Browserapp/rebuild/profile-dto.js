@@ -4,31 +4,7 @@
 const { randomUUID: uid } = require("node:crypto");
 const { sanitizeProfile } = require("../engine/profile-sanitizer");
 
-const ADVANCED_FIELDS = Object.freeze({
-  syncCookie: "syncCookiesOnClose",
-  syncIndexedDb: "syncIndexedDB",
-  syncLocalStorage: "syncLocalStorage",
-  syncSessionStorage: "syncSessionStorage",
-  syncPassword: "syncPasswords",
-  syncExtensions: "syncExtensionData",
-  syncTab: "syncTab",
-  syncHistory: "syncHistory",
-  clearCacheFile: "clearCacheOnStart",
-  clearCookie: "clearCookiesOnStart",
-  clearLocalStorage: "clearLocalStorageOnStart",
-  stopOpenNet: "stopOpenNet",
-  stopOpenIP: "stopOpenIPChange",
-  stopOpenPosition: "stopOpenIPCountryChange",
-  openBookmarks: "showBookmarkBar",
-});
-
-const NOISE_FIELDS = Object.freeze({
-  canvas: "canvas",
-  webGL: "webgl",
-  audioContext: "audio",
-  clientRects: "clientRects",
-  speechVoices: "speech",
-});
+const { ADVANCED_FIELDS, NOISE_FIELDS, parseWindowPosition, formatWindowPosition } = require('./profile-fields');
 
 function fromRoxy(v, base = {}) {
   const first = v.windowPlatformList?.[0];
@@ -158,26 +134,8 @@ function fromRoxy(v, base = {}) {
     mapped.privacy.uiLanguage = v.isLanguageBaseIp ? "ip" : v.language;
   if (Object.hasOwn(v, "positionSwitch"))
     mapped.privacy.fullscreen = !v.positionSwitch;
-  const positions = {
-    "0,0": "tl",
-    "0.5,0": "tm",
-    "1,0": "tr",
-    "0,0.5": "ml",
-    "0.5,0.5": "mm",
-    "1,0.5": "mr",
-    "0,1": "bl",
-    "0.5,1": "bm",
-    "1,1": "br",
-  };
-  if (Object.hasOwn(v, "windowRatioPosition")) {
-    const pair = String(v.windowRatioPosition)
-      .split(",")
-      .slice(0, 2)
-      .map(Number)
-      .join(",");
-    if (!positions[pair]) throw Error("无效的窗口位置");
-    mapped.privacy.windowPos = positions[pair];
-  }
+  if (Object.hasOwn(v, "windowRatioPosition"))
+    mapped.privacy.windowPos = parseWindowPosition(v.windowRatioPosition);
   for (const [source, target] of Object.entries(ADVANCED_FIELDS))
     if (Object.hasOwn(v, source)) mapped.advanced[target] = v[source];
   // The legacy field names say 'forbid', but the actual radio labels use true = 开启.
@@ -342,7 +300,7 @@ function toRoxy(p) {
   let proxy = {};
   if (p.networkMode === "proxy" && p.proxy) {
     try {
-      const parsed = require("../proxy-forwarder").parseProxy(p.proxy);
+      const parsed = require("../network/proxy-config").parseProxy(p.proxy);
       proxy = {
         moduleId: p.proxyId || 0,
         proxyMethod: p.proxyId ? "choose" : "custom",
@@ -446,18 +404,7 @@ function toRoxy(p) {
     openWidth: p.width,
     openHeight: p.height,
     positionSwitch: !p.privacy?.fullscreen,
-    windowRatioPosition:
-      {
-        tl: "0,0,tl",
-        tm: "0.5,0,tl",
-        tr: "1,0,tr",
-        ml: "0,0.5,tl",
-        mm: "0.5,0.5,tl",
-        mr: "1,0.5,tr",
-        bl: "0,1,bl",
-        bm: "0.5,1,bl",
-        br: "1,1,br",
-      }[p.privacy?.windowPos] || "0,0,tl",
+    windowRatioPosition: formatWindowPosition(p.privacy?.windowPos),
     fontType: p.privacy?.fontListMode !== "real",
     fontList: p.privacy?.fingerprint?.fonts || [],
     font: (p.privacy?.fingerprint?.fonts || []).join(";"),

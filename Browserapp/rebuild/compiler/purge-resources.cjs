@@ -1,4 +1,6 @@
 "use strict";
+const { evidencePath } = require("./evidence-path.cjs");
+
 const fs = require("node:fs"),
   path = require("node:path"),
   postcss = require("postcss");
@@ -88,7 +90,7 @@ scan(root);
 // Dynamic preload dependency arrays are removed by the graph slicer. The
 // stylesheet manifest is the complete set loaded by this local build.
 const activeCss = new Set(
-  JSON.parse(fs.readFileSync("docs/rebuild/style-inventory.json", "utf8")),
+  JSON.parse(fs.readFileSync(evidencePath("style-inventory.json"), "utf8")),
 );
 activeCss.add("assets/workbench-chrome.css");
 for (const entry of fs.readdirSync(path.join(root, "assets"))) {
@@ -105,7 +107,7 @@ html = html.replace(/<link rel="stylesheet" href="([^\"]+)">/g, (tag, href) =>
 );
 fs.writeFileSync(index, html);
 fs.writeFileSync(
-  "docs/rebuild/evidence/removed-resources.json",
+  evidencePath("removed-resources.json"),
   JSON.stringify(removed, null, 2),
 );
 console.log("Deleted commercial resources", removed.length);

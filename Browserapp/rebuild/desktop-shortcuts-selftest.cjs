@@ -1,8 +1,10 @@
 'use strict';
+const { evidenceDirectory } = require("./compiler/evidence-path.cjs");
+
 const { createTestDirectory } = require("./selftest-helpers.cjs");
 const {_electron:electron}=require('playwright'),fs=require('node:fs/promises'),path=require('node:path'),assert=require('node:assert/strict'),{execFile}=require('node:child_process'),{promisify}=require('node:util');
 const repo=path.resolve(__dirname,'../..'),{waitUntil}=require('./selftest-helpers.cjs');
-(async()=>{const evidence=path.join(repo,'docs/rebuild/evidence'),result={passed:false,checks:[],errors:[],externalRequests:[],sourceSha256:require('node:crypto').createHash('sha256').update(require('node:fs').readFileSync(__filename)).digest('hex'),runtimeAtStart:require('./compiler/runtime-snapshot.cjs').runtimeSnapshot()};let first,second;
+(async()=>{const evidence=evidenceDirectory(),result={passed:false,checks:[],errors:[],externalRequests:[],sourceSha256:require('node:crypto').createHash('sha256').update(require('node:fs').readFileSync(__filename)).digest('hex'),runtimeAtStart:require('./compiler/runtime-snapshot.cjs').runtimeSnapshot()};let first,second;
  const display=process.env.OPENBROWSER_TEST_DISPLAY||process.env.DISPLAY||':91',tool=process.env.OPENBROWSER_TEST_XDOTOOL||(require('node:fs').existsSync(path.join(repo,'work/rebuild/x11-debs/root/usr/bin/xdotool'))?path.join(repo,'work/rebuild/x11-debs/root/usr/bin/xdotool'):'xdotool'),binding={mac:{openPreferenceSettings:'Ctrl + Alt + P'}};
  const launch=async()=>{const data=await createTestDirectory('desktop-shortcuts-'),app=await electron.launch({executablePath:require('electron'),args:['--no-sandbox','--ozone-platform=x11','--disable-gpu',path.join(repo,'Browserapp')],env:{...process.env,DISPLAY:display,OPENBROWSER_USER_DATA:data,OPENBROWSER_API_PORT:'0'}}),page=await app.firstWindow();page.on('pageerror',e=>result.errors.push(e.message));page.on('console',m=>{if(m.type()==='error')result.errors.push(m.text());});page.on('request',r=>{if(/^https?:|^wss?:/.test(r.url()))result.externalRequests.push(r.url());});await page.getByText('暂无窗口',{exact:true}).waitFor();return {app,page};};
  const key=()=>promisify(execFile)(tool,['key','--clearmodifiers','ctrl+alt+p'],{env:{...process.env,DISPLAY:display}});

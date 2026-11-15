@@ -1,4 +1,6 @@
 "use strict";
+const { evidencePath } = require("./evidence-path.cjs");
+
 // Decoded Vue component names complement the raw text audit. This finite
 // concern list cannot prove that every commercial meaning has been removed.
 const fs = require("node:fs"), path = require("node:path"),
@@ -39,6 +41,6 @@ const result = {
   concernNames: [...concerns].sort(), decodedNames: names.size, retained,
   snapshot: require("./runtime-snapshot.cjs").runtimeSnapshot(),
 };
-fs.writeFileSync(path.resolve(app, "../docs/rebuild/evidence/review-3/component-audit.json"), JSON.stringify(result, null, 2));
+fs.writeFileSync(evidencePath("review-3/component-audit.json"), JSON.stringify(result, null, 2));
 console.log(JSON.stringify(result));
 if (retained.length) process.exitCode = 1;

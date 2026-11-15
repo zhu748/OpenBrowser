@@ -335,6 +335,15 @@ ${stabilityRuntime}
         } catch (_) {}
       }
       const metadata = CFG.userAgentMetadata || {};
+      let formFactorsReady = Promise.resolve(false);
+      try {
+        const realUaData = navigator.userAgentData;
+        const nativeHints = realUaData && realUaData.getHighEntropyValues;
+        if (typeof nativeHints === 'function') {
+          formFactorsReady = Promise.resolve(nativeHints.call(realUaData, ['formFactors']))
+            .then(result => Boolean(result) && Array.isArray(result.formFactors), () => false);
+        }
+      } catch (_) {}
       const brands = Object.freeze((metadata.brands || []).map((item) => Object.freeze({ brand: String(item.brand), version: String(item.version) })));
       const fullVersionList = Object.freeze((metadata.fullVersionList || brands).map((item) => Object.freeze({ brand: String(item.brand), version: String(item.version) })));
       const uaDataState = {
@@ -348,6 +357,7 @@ ${stabilityRuntime}
         mobile: Boolean(metadata.mobile),
         bitness: String(metadata.bitness ?? '64'),
         wow64: Boolean(metadata.wow64),
+        formFactors: metadata.formFactors || (metadata.mobile ? ['Mobile'] : ['Desktop']),
       };
       const uaDataStates = new WeakMap();
       const publicBrands = Object.freeze(brands.map((item) => ({ ...item })));
@@ -394,7 +404,7 @@ ${stabilityRuntime}
         patchedUaMethods.add(key);
         return true;
       };
-      const highEntropyValue = (state, hints) => {
+      const highEntropyValue = (state, hints, supportsFormFactors = false) => {
         const all = {
           brands: state.brands,
           fullVersionList: state.fullVersionList,
@@ -406,6 +416,7 @@ ${stabilityRuntime}
           mobile: state.mobile,
           bitness: state.bitness,
           wow64: state.wow64,
+          ...(supportsFormFactors ? { formFactors: state.formFactors } : {}),
         };
         const copy = (value) => Array.isArray(value) ? value.map((item) => typeof item === 'object' ? { ...item } : item) : value;
         const out = { brands: copy(state.brands), mobile: state.mobile, platform: state.platform };
@@ -424,7 +435,9 @@ ${stabilityRuntime}
             if (typeof item === 'symbol') throw new TypeError('Cannot convert a Symbol value to a string');
             return String(item);
           });
-          return Promise.resolve(highEntropyValue(state, values));
+          return values.includes('formFactors')
+            ? formFactorsReady.then(supported => highEntropyValue(state, values, supported))
+            : Promise.resolve(highEntropyValue(state, values));
         } catch (error) {
           stripStackFrame(error, serveHighEntropy, 'getHighEntropyValues');
           return Promise.reject(error);

@@ -1,6 +1,6 @@
 'use strict';
 
-const { openWorkbench, ipChangePolicy } = require('../automation/profile-defaults');
+const { openWorkbench } = require('../automation/profile-defaults');
 
 /**
  * Startup routine mixin for BrowserEngine (prototype-assigned by engine.js):
@@ -26,7 +26,7 @@ const { resolveProfileTimezone } = require('../automation/locale-from-country');
 const { mergeLoadExtensionArgs } = require('../automation/protocol/app-center-protocol');
 const { portConnection, reconcileOnConnection } = require('../extension-pipe');
 const { appendDiagnosticOutput, formatBrowserStartupError, isChildExited, removeSingletonFiles, writeBrowserStartupDiagnostic } = require('./index');
-const { assertResourceGateForLaunch } = require('./resource-gate');
+const { prepareLaunchProfile, createStartupResources, reportPlatformPreflight } = require('./launch-preparation');
 const { spawn } = require('child_process');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -52,28 +52,15 @@ module.exports = {
     // start() already applied redaction recovery exactly once. Repeating it here
     // would undo an explicit proxyAuthAction=clear before launch.
     let profile = this.resolveStoredProxyProfile(this.sanitizeProfile(raw));
-    // 记录本次启动前的出口 IP（上次运行持久化的值），供 ipChangePolicy 比对。
-    const previousExitIp = String(profile.exitIp || '').trim();
-    const previousExitCountryCode = String(profile.exitCountryCode || '').trim();
     this.profiles.set(profile.id, profile);
     let assertLaunchProfileCurrent = profileWriteGuard(this, profile.id);
-    let launchNetwork;
-    const captureNetwork = (network) => { launchNetwork = network; };
     this.assertStartGenerationActive(profile.id, lifecycleGeneration);
     if (this.running.has(profile.id)) {
       return this.publicRunning(profile.id);
     }
     assertUrlAccessPolicySupported(profile);
     this.assertProxyConcurrencyAvailable(profile);
-    // Surface cross-platform risks (Windows MAX_PATH on a deep data root, missing env,
-    // Linux sandbox, …) once — turns silent per-platform breakage into an actionable event.
-    if (!this._platformPreflightDone) {
-      this._platformPreflightDone = true;
-      try {
-        const preflight = this.platformPreflightReport();
-        if (preflight.warnings.length) this.emit({ type: 'platform-preflight', ok: preflight.ok, warnings: preflight.warnings });
-      } catch (_) {}
-    }
+    reportPlatformPreflight(this);
     let currentStage = 'prepare';
     this.emitStartProgress(profile.id, 'prepare', 6, '正在准备环境…');
     // Hoisted so the outer catch can release these if start throws after they are
@@ -94,67 +81,13 @@ module.exports = {
     let restoreSession = false;
     let startUrl = null;
     let injectionFailed = false;
-    const startupResources = {
-      root: null,
-      profileLock: null,
-      proxyForwarder: null,
-      kernelWindowName: null,
-      browser: null,
-      launchBinary: null,
-      child: null,
-      connection: null,
-    };
+    const startupResources = createStartupResources();
     try {
-      profile = await this.prepareProfileProxyForStart(profile, { publish: false, onNetwork: captureNetwork });
-    this.assertStartGenerationActive(profile.id, lifecycleGeneration);
-    profile = mergeLaunchProfileUpdate(this, profile, assertLaunchProfileCurrent);
-    if (launchNetwork) this.networkInfo.set(profile.id, launchNetwork);
-    assertLaunchProfileCurrent = profileWriteGuard(this, profile.id);
-    // Roxy 客户端设置对齐：内存使用率超上限 / 磁盘可用空间低于下限 → 停止打开窗口。
-    currentStage = 'resources'; this.emitStartProgress(profile.id, 'resources', 8, '正在检测内存与磁盘…');
-    await assertResourceGateForLaunch({ diskRoot: this.profileRoot(profile.id) });
-    currentStage = 'proxy'; this.emitStartProgress(profile.id, 'proxy', 18, '正在检测代理与出口…');
-    // 「网络不通停止打开」：守护开启时强制做一次真实出口检测，失败即阻断启动。
-    if (profile.advanced?.stopOpenNet) {
-      try {
-        await this.ensureExitNetworkForLocale(profile, { force: true, publish: false, network: launchNetwork, onNetwork: captureNetwork });
-      } catch (error) {
-        if (error.code === 'PROFILE_STALE_REV' || error.code === 'PROFILE_MAINTENANCE') throw error;
-        throw Object.assign(new Error('网络不可用，已按「网络不通停止打开」策略停止启动：' + error.message), { code: 'network-unavailable' });
-      }
-      if (!String(launchNetwork?.ip || '').trim()) {
-        throw Object.assign(new Error('网络不可用，已按「网络不通停止打开」策略停止启动'), { code: 'network-unavailable' });
-      }
-    } else {
-      await this.ensureExitNetworkForLocale(profile, { publish: false, network: launchNetwork, onNetwork: captureNetwork });
-    }
-    profile = this.applyResolvedLocale(profile, launchNetwork);
-    profile = mergeLaunchProfileUpdate(this, profile, assertLaunchProfileCurrent);
-    if (launchNetwork) this.networkInfo.set(profile.id, launchNetwork);
-    assertLaunchProfileCurrent = profileWriteGuard(this, profile.id);
-    // IP 变化守护（对齐「IP 发生变化停止打开 / 提醒」）：patch = 默认，重对齐指纹继续；
-    // stop = 启动阶段直接阻断；notify = 发出提醒事件但不阻断。仅在本次启动真的做了
-    // 出口检测时才可能触发（同会话内的缓存命中不会误报）。
-    const currentExitIp = String(profile.exitIp || '').trim();
-    if (previousExitIp && currentExitIp && previousExitIp !== currentExitIp && ipChangePolicy(profile) !== 'patch') {
-      const message = `出口 IP 已变化：${previousExitIp} → ${currentExitIp}`;
-      if (ipChangePolicy(profile) === 'stop') {
-        throw Object.assign(new Error(message + '，已按「IP 变化停止打开」策略阻断启动'), { code: 'ip-changed' });
-      }
-      this.emit({ type: 'ip-change-notice', id: profile.id, previousExitIp, currentExitIp, message });
-    }
-    // 「IP 发生变化停止打开 / IP 对应国家发生改变停止打开」：独立于 ipChangePolicy 的硬闸。
-    const currentExitCountryCode = String(profile.exitCountryCode || '').trim();
-    if (profile.advanced?.stopOpenIPChange && previousExitIp && currentExitIp && previousExitIp !== currentExitIp) {
-      throw Object.assign(new Error(`出口 IP 已变化：${previousExitIp} → ${currentExitIp}，已按「IP 发生变化停止打开」策略阻断启动`), { code: 'ip-changed' });
-    }
-    if (profile.advanced?.stopOpenIPCountryChange && previousExitCountryCode && currentExitCountryCode && previousExitCountryCode !== currentExitCountryCode) {
-      throw Object.assign(new Error(`出口国家/地区已变化：${previousExitCountryCode} → ${currentExitCountryCode}，已按「IP 对应国家/地区发生改变停止打开」策略阻断启动`), { code: 'ip-country-changed' });
-    }
-    // Persist the effective proxy (including credentials returned by a dynamic
-    // proxy API) before launching Chromium. A quit immediately after startup
-    // must not leave the renderer's redacted copy as the durable state.
-    await this.persist();
+      ({ profile, assertCurrent: assertLaunchProfileCurrent } = await prepareLaunchProfile(this, profile, {
+        lifecycleGeneration,
+        assertCurrent: assertLaunchProfileCurrent,
+        onStage: stage => { currentStage = stage; },
+      }));
     const extensions = this.assignedExtensions(profile.id);
     currentStage = 'kernel'; this.emitStartProgress(profile.id, 'kernel', 30, '正在准备浏览器内核…');
     if (!this.kernelStatus().installed && this.preferIndependentKernel

@@ -1,4 +1,6 @@
 "use strict";
+const { evidenceDirectory } = require("./compiler/evidence-path.cjs");
+
 const { createTestDirectory } = require("./selftest-helpers.cjs");
 const { _electron: electron } = require("playwright"),
   fs = require("node:fs/promises"),
@@ -9,7 +11,7 @@ const { _electron: electron } = require("playwright"),
 const repo = path.resolve(__dirname, "../..");
 (async () => {
   const data = await createTestDirectory('import-ui-'),
-    evidence = path.join(repo, "docs/rebuild/evidence"),
+    evidence = evidenceDirectory(),
     result = { passed: false, errors: [], externalRequests: [], checks: [] };
   let app, page;
   const choose = async (file) => {

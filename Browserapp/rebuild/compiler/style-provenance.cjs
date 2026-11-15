@@ -1,4 +1,6 @@
 "use strict";
+const { evidencePath } = require("./evidence-path.cjs");
+
 const fs=require('node:fs'),path=require('node:path'),postcss=require('postcss'),crypto=require('node:crypto');
 const repo=path.resolve(__dirname,'../../..'),raw=path.join(require('./source.cjs').resolveBuildSource(),'web/assets'),runtime=path.join(repo,'Browserapp/roxy-ui/assets'),failures=[],files=[];
 function declarations(text){
@@ -18,4 +20,4 @@ for(const file of fs.readdirSync(runtime).filter(name=>name.endsWith('.css'))){
  if(mismatches.length)failures.push({file,mismatches});
 }
 const result={status:failures.length?'FAIL':'PASS',scope:'逐项核对每个保留声明的原文件、选择器、条件、属性、值与 important；仅归一化已记录的同步 CSS 路由隔离前缀。商业删除允许为原声明子集，本地新增样式单列，不是全页面像素验收。',checked,files,failures};
-fs.writeFileSync(path.join(repo,'docs/rebuild/evidence/style-provenance.json'),JSON.stringify(result,null,2));console.log(JSON.stringify({status:result.status,checked,failures:failures.map(row=>({file:row.file,count:row.mismatches.length}))}));if(failures.length)process.exitCode=1;
+fs.writeFileSync(evidencePath("style-provenance.json"),JSON.stringify(result,null,2));console.log(JSON.stringify({status:result.status,checked,failures:failures.map(row=>({file:row.file,count:row.mismatches.length}))}));if(failures.length)process.exitCode=1;

@@ -8,7 +8,7 @@
 // Shared CFG layer: the os/timezone/deviceMemory/webgl/stability computations the
 // main-world builder (injection-script.js) also embeds live in injection-config.js so
 // the two emitted CFGs cannot drift independently. Key order, key set and the
-// intentionally divergent leaves (vendor, userAgentMetadata, webgpu, stability caps)
+// intentionally divergent leaves (vendor, webgpu, stability caps)
 // stay in this file's literal — see the drift list in injection-config.js.
 const { resolveInjectionStability, injectionOs, injectionTimezone, injectionDeviceMemory, injectionWebgl, stabilityNoiseAmplitude, stabilitySampleStepDivisor, stabilityMaxWidth, stabilityMaxHeight, stabilitySquare } = require('./injection-config');
 const { normalizeNetworkInformation } = require('../../shared/profile-values');
@@ -47,9 +47,7 @@ function buildWorkerInjectionScript(fp, options = {}) {
     mobileDevice: fp.mobileDevice || null,
     userAgent: fp.userAgent,
     appVersion: fp.uaProfile?.appVersion || String(fp.userAgent || '').replace(/^Mozilla\//, ''),
-    // Intentionally divergent from the main-world CFG (injection-script.js adds the iOS
-    // 'Apple Computer, Inc.' branch and a uaProfile.vendor fallback) — preserved as-is,
-    // see the drift list in injection-config.js.
+    // Workers use the explicit vendor or UA profile, without inferring it from the platform.
     vendor: fp.vendor ?? fp.uaProfile?.vendor ?? 'Google Inc.',
     // Keep the same metadata fallback as the document builder.
     userAgentMetadata: fp.userAgentMetadata || fp.uaProfile?.metadata || null,

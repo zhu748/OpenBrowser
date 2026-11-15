@@ -1,4 +1,6 @@
 "use strict";
+const { evidencePath } = require("./evidence-path.cjs");
+
 const fs = require("node:fs"),
   path = require("node:path"),
   assert = require("node:assert/strict"),
@@ -172,11 +174,11 @@ const result = {
   failures,
 };
 fs.writeFileSync(
-  "docs/rebuild/evidence/ui-audit.json",
+  evidencePath("ui-audit.json"),
   JSON.stringify(result, null, 2),
 );
 fs.writeFileSync(
-  "docs/rebuild/evidence/renderer-transports.json",
+  evidencePath("renderer-transports.json"),
   JSON.stringify(
     {
       status: transports.length ? "FAIL" : "PASS",

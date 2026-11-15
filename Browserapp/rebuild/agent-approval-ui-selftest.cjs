@@ -1,9 +1,11 @@
 "use strict";
+const { evidenceDirectory } = require("./compiler/evidence-path.cjs");
+
 const { createTestDirectory } = require("./selftest-helpers.cjs");
 const {_electron:electron}=require('playwright'),fs=require('node:fs/promises'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict');
 const {waitUntil}=require('./selftest-helpers.cjs'),repo=path.resolve(__dirname,'../..');
 (async()=>{
- const data=await createTestDirectory('approval-ui-'),evidence=path.join(repo,'docs/rebuild/evidence'),result={passed:false,checks:[],errors:[],externalRequests:[],data},requests=[];let app,page;
+ const data=await createTestDirectory('approval-ui-'),evidence=evidenceDirectory(),result={passed:false,checks:[],errors:[],externalRequests:[],data},requests=[];let app,page;
  const server=http.createServer(async(req,res)=>{let raw='';for await(const chunk of req)raw+=chunk;const p=JSON.parse(raw);requests.push(p);const count=p.messages.filter(message=>message.role==='tool').length,double=p.messages.some(message=>String(message.content).includes('DOUBLE'));
   res.writeHead(200,{'content-type':'text/event-stream'});const delta=count<(double?2:1)?{tool_calls:[{index:0,id:'call-'+count,type:'function',function:{name:'create_profile',arguments:JSON.stringify({name:'授权窗口 '+count,os:'Linux'})}}]}:{content:'授权操作测试完成'};res.end('data: '+JSON.stringify({choices:[{delta}]})+'\n\ndata: [DONE]\n\n');});await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
  try{

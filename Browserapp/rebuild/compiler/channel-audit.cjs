@@ -1,4 +1,5 @@
 "use strict";
+const { evidencePath } = require("./evidence-path.cjs");
 const fs = require("node:fs"),
   path = require("node:path"),
   acorn = require("acorn"),
@@ -113,7 +114,7 @@ const result = {
   dynamicChannels,
 };
 fs.writeFileSync(
-  path.join(repo, "docs/rebuild/ADAPTER-MAP.json"),
+  evidencePath("ADAPTER-MAP.json"),
   JSON.stringify(result, null, 2),
 );
 console.log(

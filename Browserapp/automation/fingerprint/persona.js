@@ -1,17 +1,22 @@
 'use strict';
 
 const { fingerprintVersion, createFingerprintDraw } = require('./generation');
+const { resolvePersonaLanguages } = require('./persona-locale');
+const { inferGpuFromRenderer, resolvePersonaScreen } = require('./persona-display');
+const { fingerprintConsistencyIssues, assertFingerprintConsistency } = require('./consistency');
 
 const { normalizeCoordinates, normalizeNetworkInformation, toFiniteNumber } = require('../../shared/profile-values');
-const { normalizeUaOs, parseChromeVersion, osChromeSupportViolation } = require('../user-agent');
+const { normalizeUaOs } = require('../user-agent');
+const { OPENBROWSER_KERNEL_VERSION } = require('../versions');
+const { resolvePersonaUa } = require('./persona-ua');
 
 /**
  * Persona construction: buildFingerprint (deterministic profile ->
- * static/dynamic fingerprint config) and its consistency diagnostics.
- * Extracted verbatim from the former automation/fingerprint.js.
+ * static/dynamic fingerprint config). Locale, display projection and consistency
+ * validation are separate pure stages; random draw order stays in this builder.
  */
 
-const { pickPersona, fontsForOs, exclusiveFontsForOtherOs, isPersonaWebglCompatible, resolveCompatiblePersona, applyPersonaPerturbations, mobilePersona, supportsRuntimePersona, buildUaProfile, randomUaForSeed, buildAcceptLanguageHeader, parseOsFromUa, OS_PRESETS, canonicalBridgeToken, hashSeed, mulberry32, WEBGL_PRESETS, webglPresetsForOs, webglParameterOverrides, expectedClientHintPlatform, buildWebglFpPayload, desktopOs, resolveStabilityPolicy, createBatteryFromSeed, createMediaDevicesFromSeed, createSpeechVoicesFromSeed, createDeviceNameFromSeed, createLocalIpFromSeed, createLocalMdnsFromSeed, formatGeopositionValue, audioMarkFromSeed, clientRectMarkFromSeed } = require('./shared');
+const { pickPersona, fontsForOs, exclusiveFontsForOtherOs, isPersonaWebglCompatible, resolveCompatiblePersona, applyPersonaPerturbations, mobilePersona, supportsRuntimePersona, buildUaProfile, buildAcceptLanguageHeader, parseOsFromUa, OS_PRESETS, canonicalBridgeToken, hashSeed, mulberry32, WEBGL_PRESETS, webglPresetsForOs, webglParameterOverrides, buildWebglFpPayload, desktopOs, resolveStabilityPolicy, createBatteryFromSeed, createMediaDevicesFromSeed, createSpeechVoicesFromSeed, createDeviceNameFromSeed, createLocalIpFromSeed, createLocalMdnsFromSeed, formatGeopositionValue, audioMarkFromSeed, clientRectMarkFromSeed } = require('./shared');
 
 
 /**
@@ -120,88 +125,8 @@ function buildFingerprint(profile = {}) {
     mode: fpIn.stabilityMode || privacy.stabilityMode,
   });
 
-  // --- User-Agent + Client Hints ---
-  // Custom profile.userAgent wins; otherwise deterministic seeded UA.
-  // clientHints / privacy.fingerprint.clientHints feed UserAgentMetadata.
-  const uaOverride = String(fpIn.userAgent || profile.userAgent || '').trim();
-  const clientHintsIn = (fpIn.clientHints && typeof fpIn.clientHints === 'object')
-    ? fpIn.clientHints
-    : (privacy.clientHints && typeof privacy.clientHints === 'object' ? privacy.clientHints
-      : (profile.clientHints && typeof profile.clientHints === 'object' ? profile.clientHints : {}));
-  const kernelMajor = Number(String(profile.kernelVersion || '').match(/^\d+/)?.[0]) || 0;
-  // The UA major must track the actual browser kernel: an engine advertising
-  // Chrome 128-137 while running a 148 kernel is a one-shot CSS/API
-  // feature-detection tell. When the profile doesn't pin a kernel version,
-  // derive the pool from the bundled kernel's major version.
-  const { OPENBROWSER_KERNEL_VERSION } = require('../browser-kernel');
-  const defaultKernelMajor = Number(String(OPENBROWSER_KERNEL_VERSION || '').match(/^\d+/)?.[0]) || 0;
-  const uaMajorPool = kernelMajor ? [kernelMajor] : (defaultKernelMajor ? [defaultKernelMajor] : undefined);
-  // UA 严格模式：强制自定义 UA 的 Chrome 主版本与内核一致 — UA 宣传 131 而内核是 148
-  // 是一次性 CSS/API 特性探测即可识破的硬伤，与下方 uaMajorPool 的注释同理。
-  let uaOverrideStr = uaOverride;
-  const strictMajor = kernelMajor || defaultKernelMajor;
-  const strictFull = profile.kernelVersion || OPENBROWSER_KERNEL_VERSION;
-  const strictUa = fpIn.uaStrict || fpIn.uaGenerated;
-  if (strictUa && uaOverride && strictMajor) {
-    uaOverrideStr = uaOverride.replace(/(Chrome|Chromium|CriOS)\/[\d.]+/i,
-      (_, brand) => `${brand}/${brand.toLowerCase() === 'crios' ? strictFull : `${strictMajor}.0.0.0`}`);
-  }
-  let uaProfile;
-  if (uaOverrideStr) {
-    const osFromUa = parseOsFromUa(uaOverrideStr);
-    // buildUaProfile keys OS_PRESETS with exact lowercase ids; profile records may carry
-    // aliases ("iOS", "Mac", "Win11") that would otherwise fall through to the host OS.
-    uaProfile = buildUaProfile({
-      userAgent: uaOverrideStr,
-      // profile.os participates so a saved "macos_arm" profile keeps its Apple Silicon
-      // identity (preset pins architecture=arm) even when it also pins a custom UA string.
-      os: normalizeUaOs(fpIn.os || clientHintsIn.os || profile.os) || osFromUa,
-      chromeMajor: (strictUa && strictMajor) || Number(fpIn.chromeMajor || clientHintsIn.chromeMajor) || undefined,
-      chromeFull: strictUa ? strictFull : (fpIn.ua_full_version || clientHintsIn.ua_full_version || fpIn.fullVersion),
-      platform: fpIn.platform,
-      architecture: clientHintsIn.architecture ?? fpIn.architecture,
-      platform_version: clientHintsIn.platform_version || fpIn.platformVersion,
-      model: clientHintsIn.model,
-      mobile: clientHintsIn.mobile,
-      wow64: clientHintsIn.wow64,
-      bitness: clientHintsIn.bitness,
-      ua_full_version: strictUa ? strictFull : (clientHintsIn.ua_full_version || fpIn.ua_full_version),
-    });
-  } else {
-    const desktopRequested = [fpIn.os, clientHintsIn.os, profile.os]
-      .map(normalizeUaOs)
-      .find((value) => value === "windows" || value === "macos" || value === "macos_arm" || value === "linux");
-    uaProfile = randomUaForSeed(draw('userAgent', 44), {
-      majors: uaMajorPool,
-      fullVersion: profile.kernelVersion || OPENBROWSER_KERNEL_VERSION,
-      // The UA is the source of truth for every OS-facing fingerprint surface.
-      // macos_arm goes through as-is: OS_PRESETS.macos_arm emits the same MacIntel UA token
-      // but pins Client Hints architecture=arm, which downstream persona/WebGL pools key on.
-      osList: desktopRequested ? [desktopRequested] : ['windows', 'windows', 'macos', 'linux'],
-    });
-    // Apply explicit clientHints overrides on top of seeded UA
-    if (Object.keys(clientHintsIn).length) {
-      uaProfile = buildUaProfile({
-        userAgent: uaProfile.userAgent,
-        os: uaProfile.os,
-        chromeMajor: uaProfile.chromeMajor,
-        ...clientHintsIn,
-        ua_full_version: clientHintsIn.ua_full_version || uaProfile.chromeFull,
-      });
-    }
-  }
-
-  // Roxy 对齐：编辑器「系统版本」下拉（profile.osVersion）参与 UA token 与
-  // Client Hints platformVersion 生成；未选择时保持原有随机 UA 不变。
-  if (!uaOverrideStr && String(profile.osVersion || '').trim()) {
-    uaProfile = buildUaProfile({
-      ...clientHintsIn,
-      os: uaProfile.os || parseOsFromUa(uaProfile.userAgent),
-      chromeMajor: uaProfile.chromeMajor,
-      ua_full_version: uaProfile.chromeFull,
-      osVersion: String(profile.osVersion).trim(),
-    });
-  }
+  const { uaOverrideStr, clientHintsIn, kernelMajor, defaultKernelMajor, uaProfile: resolvedUa } = resolvePersonaUa({ profile, privacy, fpIn, draw });
+  let uaProfile = resolvedUa;
 
   const parsedOsForFp = parseOsFromUa(uaProfile.userAgent);
   const detectedMobileOs = (uaProfile.os === "android" || parsedOsForFp === "android") ? "android" : ((uaProfile.os === "ios" || parsedOsForFp === "ios") ? "ios" : null);
@@ -310,35 +235,6 @@ function buildFingerprint(profile = {}) {
       uaProfile.clientHints.deviceModel = mobileDevice.deviceModel;
     }
   }
-  const inferGpuFromRenderer = (rendererStr) => {
-    const s = String(rendererStr || '').toLowerCase();
-    if (s.includes('nvidia') || s.includes('geforce') || s.includes('quadro') || s.includes('rtx') || s.includes('gtx')) {
-      let arch = 'ampere';
-      if (s.includes('40') || s.includes('ada')) arch = 'ada';
-      else if (s.includes('30') || s.includes('ampere')) arch = 'ampere';
-      else if (s.includes('20') || s.includes('16') || s.includes('turing')) arch = 'turing';
-      else if (s.includes('10') || s.includes('pascal')) arch = 'pascal';
-      return { vendor: 'nvidia', architecture: arch };
-    }
-    if (s.includes('intel') || s.includes('arc') || s.includes('iris') || s.includes('uhd') || s.includes('hd graphics')) {
-      let arch = 'gen12';
-      if (s.includes('arc') || s.includes('alchemist')) arch = 'alchemist';
-      else if (s.includes('iris') || s.includes('770') || s.includes('gen12')) arch = 'gen12';
-      else if (s.includes('630') || s.includes('620') || s.includes('gen9')) arch = 'gen9';
-      return { vendor: 'intel', architecture: arch };
-    }
-    if (s.includes('amd') || s.includes('radeon')) {
-      let arch = 'rdna-2';
-      if (s.includes('7900') || s.includes('7800') || s.includes('7700') || s.includes('7600') || s.includes('780m') || s.includes('rdna-3') || s.includes('rdna3')) arch = 'rdna-3';
-      else if (s.includes('6900') || s.includes('6800') || s.includes('6700') || s.includes('6600') || s.includes('680m') || s.includes('rdna-2') || s.includes('rdna2')) arch = 'rdna-2';
-      else if (s.includes('580') || s.includes('570') || s.includes('590')) arch = 'gcn-4';
-      return { vendor: 'amd', architecture: arch };
-    }
-    if (s.includes('apple') || s.includes('m1') || s.includes('m2') || s.includes('m3')) {
-      return { vendor: 'apple', architecture: 'common-3' };
-    }
-    return null;
-  };
   const effectiveRenderer = String(fpIn.webglRenderer || webglPreset.renderer || '');
   const inferredGpu = inferGpuFromRenderer(effectiveRenderer);
   const webglGpu = ((fpIn.webgpu && typeof fpIn.webgpu === 'object') || fpIn.gpuVendor || fpIn.gpuArchitecture)
@@ -348,67 +244,11 @@ function buildFingerprint(profile = {}) {
     }
     : (inferredGpu || webglPreset.gpu || null);
 
-  // Prefer already-resolved profile.language (engine sets JP→ja-JP when languageMode=ip)
-  let languagePrimary = String(profile.language || 'en-US').trim() || 'en-US';
-  try {
-    const { resolveProfileLanguage } = require('../locale-from-country');
-    languagePrimary = resolveProfileLanguage(profile, {
-      countryCode: profile.exitCountryCode,
-    }) || languagePrimary;
-  } catch (_) {}
-  // Single languages chain: privacy.languages first, then privacy.fingerprint.languages, then
-  // profile.languages, then the locale-derived default. navigator.languages, Emulation locale and
-  // Accept-Language all read this one resolution, so the three surfaces cannot disagree. (The UI
-  // has a single language intent: editor-language-mode + editor-language fallback; neither
-  // privacy.languages nor privacy.fingerprint.languages has a UI entry.)
-  const candidateLangs = (Array.isArray(privacy.languages) && privacy.languages.length)
-    ? privacy.languages
-    : (Array.isArray(fpIn.languages) && fpIn.languages.length)
-      ? fpIn.languages
-      : (Array.isArray(profile.languages) && profile.languages.length)
-        ? profile.languages
-        : null;
-  let languages = candidateLangs
-    ? candidateLangs.map((s) => String(s || '').trim()).filter(Boolean)
-    : String(languagePrimary).split(',').map((s) => s.trim()).filter(Boolean);
-  if (!languages.length) languages.push('en-US');
-  if (languages.length === 1 && languages[0].includes('-')) {
-    const base = languages[0].split('-')[0];
-    if (!languages.includes(base)) languages.push(base);
-  } else if (languages.length === 1 && languages[0].toLowerCase() === 'en') {
-    if (!languages.includes('en-US')) languages.push('en-US');
-  }
+  const languages = resolvePersonaLanguages(profile, privacy, fpIn);
 
-  // A persona carries its own panel size; without it the reported screen follows the window,
-  // which is what makes "screen smaller than the viewport" style inconsistencies show up.
-  // Phones report the full display, and their floor is far below the desktop minimum the window
-  // sync assumes, so the panel comes from the persona without the desktop clamp.
-  // privacy.resolutionMode === 'real' (跟随系统) opts out of the drawn panel: the engine passes
-  // the host's real display bounds via profile.hostScreen and every screen field follows them.
-  const mobileScreen = mobileDevice ? mobileDevice.screen : null;
-  const hostScreen = (profile.hostScreen && Number(profile.hostScreen.width) >= 640 && Number(profile.hostScreen.height) >= 480)
-    ? { width: Math.round(Number(profile.hostScreen.width)), height: Math.round(Number(profile.hostScreen.height)) }
-    : null;
-  const followHostScreen = String(privacy.resolutionMode || '') === 'real' && !mobileScreen && Boolean(hostScreen);
-  const screenWidth = followHostScreen
-    ? hostScreen.width
-    : mobileScreen
-      ? Math.round(Number(fpIn.screenWidth) || mobileScreen.width)
-      : Math.max(640, Math.round(Number(fpIn.screenWidth) || devicePersona?.screen?.width || width));
-  const screenHeight = followHostScreen
-    ? hostScreen.height
-    : mobileScreen
-      ? Math.round(Number(fpIn.screenHeight) || mobileScreen.height)
-      : Math.max(480, Math.round(Number(fpIn.screenHeight) || devicePersona?.screen?.height || height));
-  const taskbarHeight = mobileScreen
-    ? 0
-    : Math.max(0, Math.round(Number(fpIn.taskbarHeight) || devicePersona?.screen?.taskbarHeight || (uaOs === 'macos' || uaOs === 'macos_arm' ? 25 : 40)));
-  const availLeft = Math.round(Number(fpIn.availLeft) || 0);
-  const availTop = Math.round(Number(fpIn.availTop) || 0);
-  const availWidth = Math.min(screenWidth, Math.max(1, Math.round(Number(fpIn.availWidth) || screenWidth)));
-  const availHeight = Math.min(screenHeight, Math.max(1, Math.round(Number(fpIn.availHeight) || (screenHeight - taskbarHeight))));
-  const screenX = Math.max(availLeft, Math.round(Number(fpIn.screenX) || availLeft));
-  const screenY = Math.max(availTop, Math.round(Number(fpIn.screenY) || availTop));
+  const { screenWidth, screenHeight, availWidth, availHeight, availLeft, availTop, screenX, screenY } = resolvePersonaScreen({
+    profile, privacy, fpIn, mobileDevice, devicePersona, width, height, uaOs,
+  });
 
   const mediaLabelTemplates = (fpIn.mediaLabels && typeof fpIn.mediaLabels === 'object')
     ? fpIn.mediaLabels
@@ -875,205 +715,6 @@ function buildFingerprint(profile = {}) {
   fingerprint.consistency = fingerprintConsistencyIssues(fingerprint);
   return fingerprint;
 }
-
-/**
- * Report contradictions that make a configured desktop environment implausible.
- * Overrides remain supported; callers can surface these warnings before launch.
- */
-function fingerprintConsistencyIssues(fp) {
-  const issues = [];
-  const parsedOs = parseOsFromUa(fp?.userAgent);
-  const mobileOs = (parsedOs === 'android' || parsedOs === 'ios') ? parsedOs : null;
-  const uaOs = mobileOs
-    ? mobileOs
-    : (desktopOs(parsedOs) || 'windows');
-  const expectedPlatform = mobileOs
-    ? (mobileOs === 'ios' ? 'iPhone' : 'Linux armv8l')
-    : (OS_PRESETS[uaOs]?.platformNav || OS_PRESETS.windows.platformNav);
-  const expectedChPlatform = mobileOs === 'android' ? 'Android' : (mobileOs === 'ios' ? 'iOS' : expectedClientHintPlatform(uaOs));
-  const renderer = String(fp?.webgl?.renderer || '');
-  const vendor = String(fp?.webgl?.vendor || '');
-
-  const add = (code, message, severity = 'warning') => issues.push({ code, severity, message });
-  if (fp?.connection) {
-    const projected = normalizeNetworkInformation(fp.connection);
-    for (const key of ['downlink', 'rtt']) {
-      if (!Object.prototype.hasOwnProperty.call(fp.connection, key)) continue;
-      if (fp.connection[key] !== projected[key]) {
-        add('network-native-bound', `navigator.connection.${key} must use Chromium's native bounds and buckets (effective value ${projected[key] ?? 'absent'}).`,
-          (fp.generationVersion || 1) === 1 ? 'warning' : 'error');
-      }
-    }
-  }
-  if (fp?.platform !== expectedPlatform) {
-    add('platform-ua-mismatch', `navigator.platform (${fp?.platform || 'empty'}) does not match the ${uaOs} user agent.`, 'error');
-  }
-  if (fp?.uaProfile?.engine !== 'firefox' && fp?.userAgentMetadata?.platform !== expectedChPlatform) {
-    add('client-hints-ua-mismatch', `Client Hints platform (${fp?.userAgentMetadata?.platform || 'empty'}) does not match the ${uaOs} user agent.`, 'error');
-  }
-  const uaVersion = parseChromeVersion(fp?.userAgent);
-  const actualKernelMajor = Number(String(fp?.kernelVersion || '').match(/^\d+/)?.[0]);
-  if (uaVersion && actualKernelMajor && uaVersion.major !== actualKernelMajor) {
-    add('ua-kernel-version-mismatch',
-      `UA Chrome ${uaVersion.major} 与实际内核 ${actualKernelMajor} 不一致；请重新生成 UA、清空自定义 UA，或启用 UA 严格模式。`, 'error');
-  }
-  const metadata = fp?.userAgentMetadata;
-  if (uaVersion && metadata) {
-    const full = metadata.uaFullVersion || metadata.fullVersion;
-    const versions = [full,
-      ...(metadata.brands || []).filter((b) => /^(Chromium|Google Chrome)$/.test(b.brand)).map((b) => b.version),
-      ...(metadata.fullVersionList || []).filter((b) => /^(Chromium|Google Chrome)$/.test(b.brand)).map((b) => b.version)];
-    if (versions.some((value) => Number(String(value || '').split('.')[0]) !== uaVersion.major)
-        || (metadata.uaFullVersion && metadata.fullVersion && metadata.uaFullVersion !== metadata.fullVersion)
-        || (uaVersion.full !== `${uaVersion.major}.0.0.0` && uaVersion.full !== full)
-        || (metadata.fullVersionList || []).some((b) => /^(Chromium|Google Chrome)$/.test(b.brand) && b.version !== full)) {
-      add('client-hints-version-mismatch', 'UA, brands and fullVersionList must describe one browser version.', 'error');
-    }
-  }
-  if (fp?.mobileDevice && metadata && mobileOs === 'android') {
-    if (metadata.model !== fp.mobileDevice.model || Number(metadata.platformVersion?.split('.')[0]) !== fp.mobileDevice.osVersion || metadata.mobile !== true) {
-      add('mobile-identity-mismatch', 'Mobile Client Hints must describe the sampled device and OS release.', 'error');
-    }
-    const explicit = String(fp.userAgent || '').match(/Android\s+([0-9.]+);\s*([^;)]+)/i);
-    if (explicit && !(explicit[1] === '10' && explicit[2].trim() === 'K')
-        && (Number(explicit[1].split('.')[0]) !== Number(metadata.platformVersion?.split('.')[0]) || explicit[2].trim() !== metadata.model)) {
-      add('mobile-ua-metadata-mismatch', 'The full Android UA must match the device model and OS in Client Hints.', 'error');
-    }
-  }
-  if (uaOs === 'windows' && /Apple M[0-9]|OpenGL 4\.1|Mesa|RADV|SwiftShader|llvmpipe|Software Rasterizer/i.test(renderer)) {
-    add('webgl-ua-mismatch', 'WebGL renderer does not look like a Windows renderer.');
-  }
-  if ((uaOs === 'macos' || uaOs === 'macos_arm') && (/Direct3D|D3D11|Mesa|RADV|SwiftShader|llvmpipe/i.test(renderer) || !/Apple|Intel|AMD/i.test(vendor + renderer))) {
-    add('webgl-ua-mismatch', 'WebGL renderer does not look like a macOS renderer.');
-  }
-  // CPU-architecture vs GPU: an x86 Client Hints architecture cannot ship an Apple M-series
-  // GPU and an arm hint cannot ship an Intel/AMD discrete part. The legacy mixed pool used
-  // to draw exactly that; this gate makes any future regression loud instead of silent.
-  const fpArchitecture = String(fp?.clientHints?.architecture || '').toLowerCase();
-  if (uaOs === 'macos' && /Apple M[0-9]/i.test(renderer) && fpArchitecture && fpArchitecture !== 'arm') {
-    add('webgl-ua-mismatch', 'An Apple M-series GPU requires an arm Client Hints architecture; this profile claims x86.', 'error');
-  }
-  if (uaOs === 'macos_arm' && /Intel|Radeon|AMD/i.test(renderer)) {
-    add('webgl-ua-mismatch', 'An arm macOS persona cannot ship an Intel/AMD GPU.', 'error');
-  }
-  // OS-version vs Chrome-major support window (Win7/8/8.1 → 109, macOS 10.15 → 138).
-  const fpChromeMajor = Number(parseChromeVersion(fp?.userAgent)?.major) || 0;
-  // Reduced macOS UAs report 10_15_7 on current systems too. Client Hints
-  // carry the actual release; only Windows legacy NT tokens are unambiguous.
-  const windowsRelease = String(fp?.userAgent || '').match(/Windows NT (6\.1|6\.2|6\.3)/i)?.[1];
-  const fpOsVersion = String(fp?.osVersion || (uaOs === 'macos' || uaOs === 'macos_arm'
-    ? String(metadata?.platformVersion || '').split('.').slice(0, 2).join('.')
-    : ({ '6.1': '7', '6.2': '8', '6.3': '8.1' }[windowsRelease] || ''))).trim();
-  const osChromeViolation = fpOsVersion && fpChromeMajor
-    ? osChromeSupportViolation({ id: uaOs }, fpOsVersion, fpChromeMajor)
-    : null;
-  if (osChromeViolation) {
-    add('os-chrome-support-mismatch', `Chrome ${fpChromeMajor} never shipped on ${osChromeViolation.osId} ${osChromeViolation.osVersion} (last supporting major: ${osChromeViolation.maxChromeMajor}).`, 'error');
-  }
-  if (uaOs === 'linux' && (/Direct3D|D3D11|Apple M[0-9]/i.test(renderer) || !/Mesa|RADV|OpenGL/i.test(renderer))) {
-    add('webgl-ua-mismatch', 'WebGL renderer does not look like a Linux renderer.');
-  }
-  if (mobileOs && /Direct3D|D3D11|Apple M[0-9]|Mesa|RADV|SwiftShader|llvmpipe/i.test(renderer)) {
-    add('webgl-ua-mismatch', 'WebGL renderer does not look like a mobile GPU.');
-  }
-  if (fp?.mobile && !(Number(fp?.maxTouchPoints) > 0)) {
-    add('mobile-touch-missing', 'A mobile profile must expose touch points.', 'error');
-  }
-  if (fp?.mobile && fp?.mobileDevice && Number(fp.mobileDevice.screen?.width) !== Number(fp?.screen?.width)) {
-    add('mobile-screen-mismatch', 'The reported screen must be the panel of the sampled device.');
-  }
-  const screen = fp?.screen || {};
-  if (!(Number(screen.width) > 0 && Number(screen.height) > 0 && Number(screen.availWidth) > 0 && Number(screen.availHeight) > 0)) {
-    add('screen-invalid', 'Screen dimensions must be positive.', 'error');
-  } else if (Number(screen.availWidth) > Number(screen.width) || Number(screen.availHeight) > Number(screen.height)) {
-    add('screen-available-invalid', 'Available screen dimensions cannot exceed total screen dimensions.', 'error');
-  }
-  if (Number(screen.availLeft) + Number(screen.availWidth) > Number(screen.width)
-      || Number(screen.availTop) + Number(screen.availHeight) > Number(screen.height)) {
-    add('screen-origin-invalid', 'Available screen origin and dimensions must remain inside the screen.', 'error');
-  }
-  if (Number(screen.screenX) < Number(screen.availLeft) || Number(screen.screenY) < Number(screen.availTop)) {
-    add('window-origin-invalid', 'Window origin must not precede the available screen origin.', 'error');
-  }
-  if (!(Number(screen.devicePixelRatio) > 0 && Number(screen.devicePixelRatio) <= 4)) {
-    add('device-pixel-ratio-invalid', 'devicePixelRatio must be within the supported desktop range.', 'error');
-  }
-  if (fp?.hardwareConcurrency != null && !(Number(fp.hardwareConcurrency) >= 1 && Number(fp.hardwareConcurrency) <= 64)) {
-    add('cores-invalid', 'hardwareConcurrency must be between 1 and 64 when overridden.', 'error');
-  }
-  if (fp?.deviceMemory != null && ![0.25, 0.5, 1, 2, 4, 8].includes(Number(fp.deviceMemory))) {
-    add('memory-invalid', 'deviceMemory must use a supported quantized tier.', 'error');
-  }
-  // Hardware-class coherence (the isCoherent rules from device-personas.js applied to the
-  // final assembled fingerprint). These are heuristics, not physical constraints:
-  // deviceMemory is quantised and RAM may be upgraded independently of the CPU.
-  // (A macOS DPR of 1 is deliberately NOT flagged: a Mac on an external non-Retina display
-  // answers exactly that, so the per-OS DPR pool keeps it as a legitimate draw.)
-  const hwCores = Number(fp?.hardwareConcurrency) || 0;
-  const hwMemory = Number(fp?.deviceMemory) || 0;
-  if (hwCores >= 12 && hwMemory > 0 && hwMemory < 8) {
-    add('hardware-class-incoherent', '12+ logical cores paired with <8 GB deviceMemory is unusual for the bundled device personas.', 'warning');
-  }
-  // window.outerWidth/outerHeight larger than screen.availWidth/availHeight: a window
-  // cannot exceed the work area on any OS (taskbar/dock alone forbids the equality case
-  // on the axis it occupies). A persona that draws them independently produces exactly
-  // that impossible geometry.
-  const hwAvailWidth = Number(fp?.screen?.availWidth) || 0;
-  const hwAvailHeight = Number(fp?.screen?.availHeight) || 0;
-  const hwOuterW = Number(fp?.windowOuter?.width ?? fp?.window?.outerWidth) || 0;
-  const hwOuterH = Number(fp?.windowOuter?.height ?? fp?.window?.outerHeight) || 0;
-  if (hwAvailWidth && hwOuterW && hwOuterW > hwAvailWidth) {
-    add('window-exceeds-avail', 'window.outerWidth exceeds screen.availWidth; no OS draws a window wider than the work area.', 'warning');
-  }
-  if (hwAvailHeight && hwOuterH && hwOuterH > hwAvailHeight) {
-    add('window-exceeds-avail', 'window.outerHeight exceeds screen.availHeight; the taskbar/dock alone makes that impossible.', 'warning');
-  }
-  // Low-end CPU with a workstation-class GPU: real machines pair RTX 40xx / RDNA3-class
-  // cards with 8+ cores and 16+ GB. A 4-core/4 GB host driving an RTX 4080 is a pairing
-  // no OEM ships, and "cheap CPU + top GPU" is exactly what lazy pool draws produce.
-  const hwRenderer = String(fp?.webgl?.renderer || fp?.webglPreset?.renderer || '');
-  const workstationGpu = /RTX 40[7-9]|RTX 50|RX 79|Radeon Pro W[67]|A[0-9]000|MPS/mi.test(hwRenderer);
-  if (workstationGpu && hwCores > 0 && hwCores <= 4 && hwMemory > 0 && hwMemory <= 4) {
-    add('hardware-class-incoherent', 'A workstation-class GPU paired with 4 cores / <=4 GB deviceMemory is unusual for the bundled device personas.', 'warning');
-  }
-  // WebGL and WebGPU read the same physical adapter, so a page that finds a disguised WebGL
-  // renderer next to an untouched WebGPU adapter has two GPUs on one machine - a contradiction no
-  // real desktop produces. Leaving WebGPU "real" is a legitimate user choice, so this is reported
-  // rather than enforced: the point is that the trade-off is visible instead of silent.
-  const webglGpu = fp?.webgl?.gpu || null;
-  const webglDisguised = Boolean(webglGpu && (webglGpu.vendor || webglGpu.architecture)
-    && String(fp?.webgl?.mode || 'noise') !== 'real');
-  if (webglDisguised && String(fp?.webgpu?.mode || '') === 'real') {
-    add('webgpu-real-vs-webgl-disguised',
-      'WebGL reports a profile GPU while WebGPU is left on the host adapter; the two APIs will disagree.',
-      'warning');
-  }
-  // The host OS is not a driver capability probe. Bounds are checked in each
-  // live context; construction cannot claim they have already been verified.
-  if (mobileOs === 'ios' && fp?.webgl?.metaMode !== 'real'
-      && /ANGLE|Google Inc\./i.test(String(fp?.webgl?.vendor) + ' ' + String(fp?.webgl?.renderer))) {
-    add('ios-webgl-shape', 'The iOS WebGL identity contains a desktop ANGLE wrapper.', 'warning');
-  }
-  if (webglGpu && (webglGpu.vendor || webglGpu.architecture) && !webglParameterOverrides(webglGpu)) {
-    add('webgl-limits-unknown-gpu',
-      `No driver limit table entry for ${String(webglGpu.vendor || 'unknown')}/${String(webglGpu.architecture || 'unknown')}.`,
-      'warning');
-  }
-  return { ok: !issues.some((issue) => issue.severity === 'error'), issues };
-}
-
-function assertFingerprintConsistency(fp) {
-  const result = fingerprintConsistencyIssues(fp);
-  const errors = result.issues.filter((issue) => issue.severity === 'error');
-  if (errors.length) {
-    const error = new Error('指纹配置不一致：' + errors.map((issue) => issue.message).join('; '));
-    error.code = 'FINGERPRINT_CONFIG_INVALID';
-    error.issues = errors;
-    throw error;
-  }
-  return result;
-}
-
 
 module.exports = {
   buildFingerprint,

@@ -9,6 +9,41 @@ function parse(source) {
   return acorn.parse(source, { ecmaVersion: "latest", sourceType: "module" });
 }
 
+function applyEdits(source, edits, label) {
+  edits.sort((a, b) => a.start - b.start);
+  for (let index = 1; index < edits.length; index++) {
+    if (edits[index].start < edits[index - 1].end)
+      throw Error(`${label}: overlapping patches`);
+  }
+  let result = source;
+  for (const { start, end, replacement } of edits.reverse())
+    result = result.slice(0, start) + replacement + result.slice(end);
+  parse(result);
+  return result;
+}
+
+function assertSingleMatches(hits, label) {
+  for (const [key, count] of hits) {
+    if (count !== 1) throw Error(`${label}: ${key} expected 1 match, found ${count}`);
+  }
+}
+
+/** Literal source edits must fail when the locked input drifts. */
+function replaceExactly(source, before, after, label = "source", expected = 1) {
+  if (typeof before !== "string" || !before || !Number.isInteger(expected) || expected < 1)
+    throw Error(`${label}: invalid literal patch`);
+  const count = source.split(before).length - 1;
+  if (count !== expected)
+    throw Error(`${label}: literal patch expected ${expected} matches, found ${count}: ${before.slice(0, 120)}`);
+  return expected === 1 ? source.replace(before, after) : source.replaceAll(before, after);
+}
+
+function replaceOneOf(source, alternatives, after, label = "source") {
+  const matches = alternatives.filter(before => typeof before === "string" && before && source.includes(before));
+  if (matches.length !== 1) throw Error(`${label}: expected one source spelling, found ${matches.length}`);
+  return replaceExactly(source, matches[0], after, label);
+}
+
 /** Validate every requested symbol and edit before publishing any replacement. */
 function patchSource(source, variables = {}, functions = {}, label = "source") {
   const edits = [];
@@ -32,19 +67,36 @@ function patchSource(source, variables = {}, functions = {}, label = "source") {
         add("function", node.id.name, node.body, "{" + functions[node.id.name] + "}");
     },
   });
-  for (const [key, count] of hits) {
-    if (count !== 1) throw Error(`${label}: ${key} expected 1 match, found ${count}`);
-  }
-  edits.sort((a, b) => a.start - b.start);
-  for (let index = 1; index < edits.length; index++) {
-    if (edits[index].start < edits[index - 1].end)
-      throw Error(`${label}: overlapping patches`);
-  }
-  let result = source;
-  for (const { start, end, replacement } of edits.reverse())
-    result = result.slice(0, start) + replacement + result.slice(end);
-  parse(result);
-  return result;
+  assertSingleMatches(hits, label);
+  return applyEdits(source, edits, label);
+}
+
+/** Replace setup behavior while preserving the archived render expression. */
+function patchComponentSetups(source, replacements, label = "source") {
+  const hits = new Map(Object.keys(replacements).map(name => [name, 0]));
+  const edits = [];
+  walk.simple(parse(source), {
+    VariableDeclarator(node) {
+      const name = node.id.name;
+      if (!Object.hasOwn(replacements, name)) return;
+      if (!node.init) throw Error(`${label}: ${name} has no initializer`);
+      walk.simple(node.init, {
+        Property(property) {
+          if (property.key.name !== 'setup') return;
+          hits.set(name, hits.get(name) + 1);
+          const body = property.value.body;
+          const returned = body?.body?.findLast(row => row.type === 'ReturnStatement');
+          let render = returned?.argument;
+          if (render?.type === 'SequenceExpression') render = render.expressions.at(-1);
+          if (!render) throw Error(`${label}: ${name} has no setup render return`);
+          edits.push({ start: body.start, end: body.end,
+            replacement: '{' + replacements[name] + ';return ' + source.slice(render.start, render.end) + ';}' });
+        },
+      });
+    },
+  });
+  assertSingleMatches(hits, label);
+  return applyEdits(source, edits, label);
 }
 
 function createPatch(directory) {
@@ -56,4 +108,4 @@ function createPatch(directory) {
   };
 }
 
-module.exports = { createPatch, patchSource };
+module.exports = { createPatch, patchSource, patchComponentSetups, replaceExactly, replaceOneOf };

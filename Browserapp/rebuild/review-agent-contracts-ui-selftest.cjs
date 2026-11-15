@@ -1,10 +1,12 @@
 "use strict";
+const { evidenceDirectory } = require("./compiler/evidence-path.cjs");
+
 const { createTestDirectory } = require("./selftest-helpers.cjs");
 const { _electron: electron } = require("playwright"), fs = require("node:fs/promises"),
   path = require("node:path"), http = require("node:http"), assert = require("node:assert/strict");
 const { zip } = require("./selftest-zip.cjs"), { waitUntil } = require("./selftest-helpers.cjs");
 (async () => {
-  const repo = path.resolve(__dirname, "../.."), output = path.join(repo, "docs/rebuild/evidence/review-3"),
+  const repo = path.resolve(__dirname, "../.."), output = evidenceDirectory("review-3"),
     data = await createTestDirectory('review3-ui-'),
     result = { passed: false, checks: [], errors: [], externalRequests: [] }, requests = [];
   let app, page;

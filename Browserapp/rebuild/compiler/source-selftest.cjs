@@ -1,4 +1,6 @@
 "use strict";
+const { evidencePath } = require("./evidence-path.cjs");
+
 const fs = require("node:fs"), path = require("node:path"), os = require("node:os"),
   assert = require("node:assert/strict"), crypto = require("node:crypto"), { spawnSync } = require("node:child_process");
 const { resolveBuildSource, verifySource, bundledRoot, manifest } = require("./source.cjs");
@@ -63,7 +65,7 @@ try {
   result.passed = result.failures.length === 0;
 } finally {
   fs.rmSync(temporary, { recursive: true, force: true });
-  fs.writeFileSync(path.join(repo, "docs/rebuild/evidence/build-source-selftest.json"), JSON.stringify(result, null, 2));
+  fs.writeFileSync(evidencePath("build-source-selftest.json"), JSON.stringify(result, null, 2));
 }
 console.log(JSON.stringify(result, null, 2));
 if (!result.passed) process.exitCode = 1;

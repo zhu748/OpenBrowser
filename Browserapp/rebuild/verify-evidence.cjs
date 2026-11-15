@@ -5,7 +5,7 @@ const fs = require("node:fs"),
   crypto = require("node:crypto");
 const repo = path.resolve(__dirname, "../.."),
   docs = path.join(repo, "docs/rebuild"),
-  evidence = path.join(docs, "evidence");
+  evidence = require("./compiler/evidence-path.cjs").evidenceDirectory();
 const records = [
   "circled-ui-selftest.json",
   "ui-smoke.json",

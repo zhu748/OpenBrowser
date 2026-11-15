@@ -1,4 +1,6 @@
 "use strict";
+const { evidencePath } = require("./compiler/evidence-path.cjs");
+
 const fs=require('node:fs/promises'),path=require('node:path'),http=require('node:http'),os=require('node:os'),assert=require('node:assert/strict');
 const {AgentService}=require('./agent-service'),{Connection,commandLine,validate}=require('./agent-mcp'),{waitUntil}=require('./selftest-helpers.cjs');
 (async()=>{
@@ -57,5 +59,5 @@ const {AgentService}=require('./agent-service'),{Connection,commandLine,validate
   restored=new AgentService({root,engine});const persisted=await restored.request('mcp:list');assert.equal(persisted.data.length,2);assert.equal(persisted.data.find(row=>row.name==='HTTP 工具').enabled,true);assert.equal(restored.mcp.connections.size,0);await restored.request('mcp:delete',{name:'进程工具'});assert.equal((await restored.request('mcp:list')).data.length,1);
   await assert.rejects(restored.request('mcp:import',{mcpServers:{valid:config,bad:{type:'http',url:'invalid'}}}),/URL/);assert.equal((await restored.request('mcp:list')).data.length,1);
   result.checks.push('认证信息加密落盘、重启恢复配置与启用状态且无启动自动出网；删除与整批导入的验证原子性');result.passed=true;
- }catch(error){result.failure=error.stack;process.exitCode=1;}finally{await agent?.shutdown();await restored?.shutdown();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));await fs.writeFile(path.resolve(__dirname,'../../docs/rebuild/evidence/agent-mcp-selftest.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));}
+ }catch(error){result.failure=error.stack;process.exitCode=1;}finally{await agent?.shutdown();await restored?.shutdown();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));await fs.writeFile(evidencePath("agent-mcp-selftest.json"),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));}
 })().catch(error=>{console.error(error);process.exitCode=1;});

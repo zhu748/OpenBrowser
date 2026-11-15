@@ -1,4 +1,6 @@
 'use strict';
+const { evidencePath } = require("./compiler/evidence-path.cjs");
+
 const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),http=require('node:http'),zlib=require('node:zlib'),assert=require('node:assert/strict'),{chromium}=require('playwright'),{BrowserEngine}=require('../engine'),{LocalService}=require('./local-service'),{ImageSizeFilter}=require('../automation/image-size-filter');
 const {waitUntil}=require('./selftest-helpers.cjs');
 (async()=>{
@@ -23,5 +25,5 @@ const {waitUntil}=require('./selftest-helpers.cjs');
   const pending=page.evaluate(()=>new Promise(resolve=>{const img=new Image();img.onload=()=>resolve('loaded');img.onerror=()=>resolve('blocked');img.src='/slow.png';document.body.append(img);})).catch(error=>({closed:error.message}));
   await waitUntil(()=>item.imageSizeFilter.operations.size>0);await service.request('profiles:stop',{id:row.id});await pending;assert.equal(item.imageSizeFilter.destroyed,true);assert.equal(item.imageSizeFilter.operations.size,0);assert.deepEqual(result.events,[]);
   result.checks.push('原 KB 表单映射为字节，正阈值不再误开全部图片屏蔽；真实 Chrome 小图放行/大图阻止，chunked 未知长度与 gzip 解码后大小均检查，退出无遗留操作；Firefox 正阈值保存往返，真实 Firefox 过滤由独立回归验收');result.limitations=['本测试验收 Chromium 网络 Image 响应；Firefox 有独立真实浏览器回归，data/blob、本地资源不计入网络图片阈值验收。'];result.passed=true;
- }catch(error){result.failure=error.stack;process.exitCode=1;}finally{await browser?.close();await service?.agent.shutdown();await engine.stopAll();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));await fs.writeFile(path.resolve(__dirname,'../../docs/rebuild/evidence/image-size-selftest.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));}
+ }catch(error){result.failure=error.stack;process.exitCode=1;}finally{await browser?.close();await service?.agent.shutdown();await engine.stopAll();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));await fs.writeFile(evidencePath("image-size-selftest.json"),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));}
 })().catch(error=>{console.error(error);process.exitCode=1;});

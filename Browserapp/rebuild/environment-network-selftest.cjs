@@ -1,4 +1,6 @@
 'use strict';
+const { evidencePath } = require("./compiler/evidence-path.cjs");
+
 const http=require('node:http'),fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),crypto=require('node:crypto'),assert=require('node:assert/strict');
 const {requestBuffer}=require('../network/http-request'),{createKernelMetadataClient}=require('../automation/kernel/metadata'),{Downloader}=require('../automation/downloader');
 (async()=>{
@@ -18,5 +20,5 @@ const {requestBuffer}=require('../network/http-request'),{createKernelMetadataCl
   const before=requests.length,direct=await requestBuffer('http://127.0.0.1:'+origin.address().port+'/direct',{maxBytes:1024,timeoutMs:2000});assert.equal(direct.buffer.toString(),'direct fixture');assert.equal(requests.length,before);
   process.env.NO_PROXY='origin.invalid';const bypass=await requestBuffer('http://origin.invalid:'+origin.address().port+'/direct',{maxBytes:1024,timeoutMs:2000,environmentProxy:true,lookup:(_host,options,callback)=>callback(null,...(options.all?[[{address:'127.0.0.1',family:4}]]:['127.0.0.1',4]))});assert.equal(bypass.buffer.toString(),'direct fixture');assert.equal(requests.length,before);
   result.checks.push('真实流式下载仍验证 SHA-256；未选择环境代理的请求继续直连，NO_PROXY 绕过正确，不修改全局 agent');result.passed=true;
- }catch(error){result.failure=error.stack;process.exitCode=1;}finally{for(const[key,value]of Object.entries(previous))if(value===undefined)delete process.env[key];else process.env[key]=value;proxy.closeAllConnections();origin.closeAllConnections();await Promise.all([new Promise(resolve=>proxy.close(resolve)),new Promise(resolve=>origin.close(resolve))]);await fs.writeFile(path.resolve(__dirname,'../../docs/rebuild/evidence/environment-network-selftest.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));}
+ }catch(error){result.failure=error.stack;process.exitCode=1;}finally{for(const[key,value]of Object.entries(previous))if(value===undefined)delete process.env[key];else process.env[key]=value;proxy.closeAllConnections();origin.closeAllConnections();await Promise.all([new Promise(resolve=>proxy.close(resolve)),new Promise(resolve=>origin.close(resolve))]);await fs.writeFile(evidencePath("environment-network-selftest.json"),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));}
 })().catch(error=>{console.error(error);process.exitCode=1;});

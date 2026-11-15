@@ -37,6 +37,12 @@ const ROOT = path.join(__dirname, '..');
 // name exists — package.json only keeps entries that a workflow, the release
 // gate or the docs still invoke directly.
 const SUITE = [
+  ['selftest:fatalerror', 'automation/selftests/fatal-error-selftest.js'],
+  ['selftest:launchpreparation', 'automation/selftests/launch-preparation-selftest.js'],
+  ['selftest:automationshutdown', 'automation/selftests/automation-shutdown-selftest.js'],
+  ['selftest:uarandomcontracts', 'automation/selftests/ua-random-contract-selftest.js'],
+  ['selftest:uarealmsnative', 'automation/selftests/ua-realms-native-selftest.js', { nativeOnly: true }],
+  ['selftest:workbenchnotifications', 'automation/selftests/workbench-notifications-selftest.js'],
   ...nodeWorkbenchTests.map(({ name, script, timeoutMs }) => [name, script, { timeoutMs }]),
   ['selftest:localroutes', 'automation/selftests/local-route-registry-selftest.js'],
   ['selftest:compilerpatches', 'automation/selftests/compiler-patches-selftest.js'],

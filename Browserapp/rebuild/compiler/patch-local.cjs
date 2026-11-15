@@ -1,3 +1,4 @@
+const { replaceExactly, replaceOneOf } = require("./patch-source.cjs");
 const fs = require("fs"),
   acorn = require("acorn"),
   walk = require("acorn-walk");
@@ -24,22 +25,8 @@ patch(
   {},
   { j$: "return globalThis.__localDict;", N$: "return;" },
 );
-let boot = fs
-  .readFileSync(dir + "/bootstrap.js", "utf8")
-  .replace("import {r as globals}", "import {t as GlobalUi,r as globals}")
-  .replace("import {a as pinia}", "import {Ct as registerRouter}")
-  .replace(
-    "return h(resolve('RouterView'))",
-    "return [h(resolve('RouterView')),h(GlobalUi)]",
-  )
-  .replace(
-    "render(){return [h(resolve('RouterView')),h(GlobalUi)]}",
-    "setup(){localAppearance();const notices=localNotifications();globalThis.__localUiError=message=>notices.add({group:'tr',severity:'error',summary:String(message),life:5000});return()=>[h(resolve('RouterView')),h(GlobalUi)]}",
-  )
-  .replace(
-    "await router.replace",
-    "registerRouter(router);await router.replace",
-  );
+let boot = replaceExactly(replaceExactly(replaceExactly(replaceExactly(replaceExactly(fs
+  .readFileSync(dir + "/bootstrap.js", "utf8"), "import {r as globals}", "import {t as GlobalUi,r as globals}", "patch-local.cjs:27"), "import {a as pinia}", "import {Ct as registerRouter}", "patch-local.cjs:27"), "return h(resolve('RouterView'))", "return [h(resolve('RouterView')),h(GlobalUi)]", "patch-local.cjs:27"), "render(){return [h(resolve('RouterView')),h(GlobalUi)]}", "setup(){localAppearance();const notices=localNotifications();globalThis.__localUiError=message=>notices.add({group:'tr',severity:'error',summary:String(message),life:5000});return()=>[h(resolve('RouterView')),h(GlobalUi)]}", "patch-local.cjs:27"), "await router.replace", "registerRouter(router);await router.replace", "patch-local.cjs:27");
 boot = "import {n as localAppearance} from './theme-mq6SsndU.js';\n" + boot;
 boot =
   "import {n as localNotifications} from './usetoast-DphSlejX.js';\n" + boot;
@@ -48,13 +35,9 @@ fs.copyFileSync("Browserapp/rebuild/renderer-bridge.js", dir + "/local-api.js");
 
 {
   const f = dir + "/hook-CnJE4hRq.js";
-  let s = fs
-    .readFileSync(f, "utf8")
-    .replace("r as Mt,t as Nt", "n as Mt,t as Nt");
-  s = s.replace(
-    "children:[{path:'browser/list'",
-    "children:[{path:'projects',name:'projects',redirect:'/projects/list'},{path:'projects/list',name:'project-list',component:()=>import('./projects-CN6_vL2j.js')},{path:'agent',name:'agent-list',component:()=>import('./agent-CYnwl_KT.js')},{path:'browser/list'",
-  );
+  let s = replaceExactly(fs
+    .readFileSync(f, "utf8"), "r as Mt,t as Nt", "n as Mt,t as Nt", "patch-local.cjs:51");
+  s = replaceExactly(s, "children:[{path:'browser/list'", "children:[{path:'projects',name:'projects',redirect:'/projects/list'},{path:'projects/list',name:'project-list',component:()=>import('./projects-CN6_vL2j.js')},{path:'agent',name:'agent-list',component:()=>import('./agent-CYnwl_KT.js')},{path:'browser/list'", "patch-local.cjs:54");
   fs.writeFileSync(f, s);
 }
 {
@@ -152,19 +135,15 @@ patch(
 );
 {
   const f = dir + "/utils-CnUy4XUk.js";
-  let text = fs
-    .readFileSync(f, "utf8")
-    .replace("e[0].value", "e[0]?.value??``");
+  let text = replaceExactly(fs
+    .readFileSync(f, "utf8"), "e[0].value", "e[0]?.value??``", "patch-local.cjs:138");
   fs.writeFileSync(f, text);
 }
 
 {
   const f = dir + "/hook-CnJE4hRq.js";
   let code = fs.readFileSync(f, "utf8");
-  code = code.replace(
-    "children:[{path:'projects'",
-    "children:[{path:'kernels',name:'local-kernels',component:()=>import('./local-pages.js').then(m=>m.Kernels)},{path:'templates',name:'local-templates',component:()=>import('./local-pages.js').then(m=>m.Templates)},{path:'projects'",
-  );
+  code = replaceExactly(code, "children:[{path:'projects'", "children:[{path:'kernels',name:'local-kernels',component:()=>import('./local-pages.js').then(m=>m.Kernels)},{path:'templates',name:'local-templates',component:()=>import('./local-pages.js').then(m=>m.Templates)},{path:'projects'", "patch-local.cjs:147");
   fs.writeFileSync(f, code);
 }
 
@@ -173,10 +152,7 @@ fs.copyFileSync("Browserapp/rebuild/local-pages.js", dir + "/local-pages.js");
 {
   const f = dir + "/hook-CnJE4hRq.js";
   let s = fs.readFileSync(f, "utf8");
-  s = s.replace(
-    "{path:'browser/create',name:'browser-create'",
-    "{path:'browser/edit',name:'browser-edit',component:()=>import('./edit-IaDdchpD.js')},{path:'browser/create',name:'browser-create'",
-  );
+  s = replaceExactly(s, "{path:'browser/create',name:'browser-create'", "{path:'browser/edit',name:'browser-edit',component:()=>import('./edit-IaDdchpD.js')},{path:'browser/create',name:'browser-create'", "patch-local.cjs:159");
   fs.writeFileSync(f, s);
 }
 
@@ -213,10 +189,7 @@ patch(
 {
   const f = dir + "/hook-CnJE4hRq.js";
   let code = fs.readFileSync(f, "utf8");
-  code = code.replace(
-    "routes:[{path:'/'",
-    "routes:[{path:'/agent-console',name:'agent-console',component:Oy,children:[{path:'',name:'agent-console-chat',component:CT},{path:'c/:conversationId',name:'agent-console-conversation',component:CT},{path:'task-manager',name:'agent-console-task-manager',component:()=>import('./TaskManagerRoute-iC4ANt4w.js')},{path:'templates',name:'agent-console-my-templates',component:()=>import('./MyTemplatesRoute-Eq3HlS6M.js')},{path:'settings',name:'agent-console-roxyclaw',component:()=>import('./local-pages.js').then(m=>m.AgentConfig)},{path:'skills',name:'agent-console-settings',component:()=>import('./local-pages.js').then(m=>m.Skills)},{path:'template-store',name:'agent-console-template-store',redirect:'/agent-console/templates'}]},{path:'/'",
-  );
+  code = replaceExactly(code, "routes:[{path:'/'", "routes:[{path:'/agent-console',name:'agent-console',component:Oy,children:[{path:'',name:'agent-console-chat',component:CT},{path:'c/:conversationId',name:'agent-console-conversation',component:CT},{path:'task-manager',name:'agent-console-task-manager',component:()=>import('./TaskManagerRoute-iC4ANt4w.js')},{path:'templates',name:'agent-console-my-templates',component:()=>import('./MyTemplatesRoute-Eq3HlS6M.js')},{path:'settings',name:'agent-console-roxyclaw',component:()=>import('./local-pages.js').then(m=>m.AgentConfig)},{path:'skills',name:'agent-console-settings',component:()=>import('./local-pages.js').then(m=>m.Skills)},{path:'template-store',name:'agent-console-template-store',redirect:'/agent-console/templates'}]},{path:'/'", "patch-local.cjs:199");
   fs.writeFileSync(f, code);
 }
 fs.copyFileSync(
@@ -225,12 +198,8 @@ fs.copyFileSync(
 );
 {
   const f = dir + "/bootstrap.js";
-  let s = fs
-    .readFileSync(f, "utf8")
-    .replace(
-      "import './local-api.js';",
-      "import './local-api.js';\nimport './agent-channel.js';",
-    );
+  let s = replaceExactly(fs
+    .readFileSync(f, "utf8"), "import './local-api.js';", "import './local-api.js';\nimport './agent-channel.js';", "patch-local.cjs:211");
   fs.writeFileSync(f, s);
 }
 {
@@ -379,10 +348,7 @@ fs.copyFileSync("Browserapp/rebuild/local-pages.js", dir + "/local-pages.js");
 {
   const f = dir + "/hook-CnJE4hRq.js";
   let s = fs.readFileSync(f, "utf8");
-  s = s.replace(
-    "{path:'agent',name:'agent-list'",
-    "{path:'agent/create',name:'agent-create',component:()=>import('./create-DJwGZbA7.js')},{path:'agent',name:'agent-list'",
-  );
+  s = replaceExactly(s, "{path:'agent',name:'agent-list'", "{path:'agent/create',name:'agent-create',component:()=>import('./create-DJwGZbA7.js')},{path:'agent',name:'agent-list'", "patch-local.cjs:365");
   fs.writeFileSync(f, s);
 }
 for (const file of ["rx-ic-logo-Bi20vHBm", "logo-BtJ5ZiSc"]) {
@@ -503,10 +469,7 @@ patch(
 {
   const f = dir + "/hook-CnJE4hRq.js";
   let s = fs.readFileSync(f, "utf8");
-  s = s.replace(
-    "{path:'projects/list',name:'project-list'",
-    "{path:'projects/:id',name:'project-item',component:()=>import('./list-ByevuXQD.js')},{path:'projects/list',name:'project-list'",
-  );
+  s = replaceExactly(s, "{path:'projects/list',name:'project-list'", "{path:'projects/:id',name:'project-item',component:()=>import('./list-ByevuXQD.js')},{path:'projects/list',name:'project-list'", "patch-local.cjs:489");
   fs.writeFileSync(f, s);
 }
 // Tasks created by TaskManager store concurrency metadata but no prompt override.
@@ -545,10 +508,7 @@ patch(
 {
   const file = dir + "/hook-CnJE4hRq.js";
   let code = fs.readFileSync(file, "utf8");
-  code = code.replace(
-    "routes:[{path:'/agent-console'",
-    "routes:[{path:'/synchronizer/active',name:'local-synchronizer-active',component:()=>import('./action-bar-50RAQCsf.js')},{path:'/synchronizer',name:'local-synchronizer',component:()=>import('./synchronizer-mUJbzl7S.js')},{path:'/agent-console'",
-  );
+  code = replaceExactly(code, "routes:[{path:'/agent-console'", "routes:[{path:'/synchronizer/active',name:'local-synchronizer-active',component:()=>import('./action-bar-50RAQCsf.js')},{path:'/synchronizer',name:'local-synchronizer',component:()=>import('./synchronizer-mUJbzl7S.js')},{path:'/agent-console'", "patch-local.cjs:531");
   fs.writeFileSync(file, code);
 }
 for (const name of [
@@ -579,16 +539,8 @@ for (const name of [
   for (const [a, b, value] of edits.sort((a, b) => b[0] - a[0]))
     code = code.slice(0, a) + value + code.slice(b);
   if (name.startsWith("action-bar")) {
-    code = code
-      .replaceAll("window.addEventListener(", "globalThis.__localListenWindow(")
-      .replace(
-        "o(()=>{fe()})",
-        "o(()=>{fe();cancelAnimationFrame(z);clearTimeout(M);clearTimeout(P)})",
-      )
-      .replace(
-        "getComputedStyle(p.value).width",
-        '(p.value?getComputedStyle(p.value).width:"auto")',
-      );
+    code = replaceExactly(replaceExactly(code
+      .replaceAll("window.addEventListener(", "globalThis.__localListenWindow("), "o(()=>{fe()})", "o(()=>{fe();cancelAnimationFrame(z);clearTimeout(M);clearTimeout(P)})", "patch-local.cjs:565"), "getComputedStyle(p.value).width", '(p.value?getComputedStyle(p.value).width:"auto")', "patch-local.cjs:565");
   }
   fs.writeFileSync(file, code);
 }
@@ -596,14 +548,8 @@ for (const name of [
 {
   const file = dir + "/bootstrap.js";
   let code = fs.readFileSync(file, "utf8");
-  code = code.replace(
-    "import './local-api.js';",
-    "import './local-api.js';\nimport {r as localEventBus} from './rich-html-link-VdBpR3Cm.js';",
-  );
-  code = code.replace(
-    "console.error(e);globalThis.__uiErrors",
-    "console.error(e);if(!e.localUiNotified)globalThis.__localUiError?.(e.message||e);globalThis.__uiErrors",
-  );
+  code = replaceExactly(code, "import './local-api.js';", "import './local-api.js';\nimport {r as localEventBus} from './rich-html-link-VdBpR3Cm.js';", "patch-local.cjs:582");
+  code = replaceExactly(code, "console.error(e);globalThis.__uiErrors", "console.error(e);if(!e.localUiNotified)globalThis.__localUiError?.(e.message||e);globalThis.__uiErrors", "patch-local.cjs:586");
   fs.writeFileSync(file, code);
 }
 // Restoring local files has no subscription quota and does not change creation time.
@@ -673,9 +619,7 @@ fs.copyFileSync(
 {
   const f = dir + "/list-ByevuXQD.js";
   let code = fs.readFileSync(f, "utf8");
-  code = code
-    .replace("label:'窗口文件'", "label:$t('转移中')")
-    .replace('label:"窗口文件"', "label:$t('转移中')");
+  code = replaceOneOf(code, ["label:'窗口文件'", 'label:"窗口文件"'], "label:$t('转移中')", 'profile transfer label');
   fs.writeFileSync(f, code);
 }
 
@@ -710,10 +654,7 @@ fs.copyFileSync(
 {
   const f = dir + "/hook-CnJE4hRq.js";
   let code = fs.readFileSync(f, "utf8");
-  code = code.replace(
-    "name:'agent-console-template-store',redirect:'/agent-console/templates'",
-    "name:'agent-console-template-store',component:()=>import('./TemplateStoreRoute-vzcUC0bD.js')",
-  );
+  code = replaceExactly(code, "name:'agent-console-template-store',redirect:'/agent-console/templates'", "name:'agent-console-template-store',component:()=>import('./TemplateStoreRoute-vzcUC0bD.js')", "patch-local.cjs:696");
   fs.writeFileSync(f, code);
 }
 
@@ -842,15 +783,13 @@ fs.copyFileSync(
       `{path:'/synchronizer/dialog/${kind}',name:'local-dialog-${kind}',component:()=>import('./${chunk}.js')}`,
   );
   if (!code.includes("routes:[")) throw Error("Missing local router");
-  code = code.replace("routes:[", "routes:[" + routes.join(",") + ",");
+  code = replaceExactly(code, "routes:[", "routes:[" + routes.join(",") + ",", "patch-local.cjs:828");
   fs.writeFileSync(file, code);
   const bootstrap = dir + "/bootstrap.js";
   let boot = fs.readFileSync(bootstrap, "utf8");
   boot =
     "import {r as localUiEvents} from './rich-html-link-VdBpR3Cm.js';\n" + boot;
-  boot = boot.replace(
-    "await router.replace('/browser/list');",
-    `
+  boot = replaceExactly(boot, "await router.replace('/browser/list');", `
 const dialogParams=new URL(location.href).searchParams,dialogKind=dialogParams.get('dialog');
 if(dialogKind&&!${JSON.stringify(["preferences", "batch-inputs", "open-sites", "syncing-window-list"])}.includes(dialogKind))throw Error('未知本地弹窗');
 document.documentElement.toggleAttribute('data-ob-local-dialog',!!dialogKind);
@@ -859,8 +798,7 @@ if(dialogKind){
   await new Promise((resolve,reject)=>{const deadline=Date.now()+10000;const painted=()=>{if(innerWidth>=200&&innerHeight>=200)return resolve();if(Date.now()>deadline)return reject(Error('弹窗尚未完成布局'));requestAnimationFrame(painted);};painted();});
 }
 const initialPath=location.hash.slice(1)||'/browser/list';
-await router.replace(dialogKind?{path:'/synchronizer/dialog/'+dialogKind,query:{tab:dialogParams.get('tab')||undefined}}:router.resolve(initialPath).matched.length?initialPath:'/browser/list');`,
-  );
+await router.replace(dialogKind?{path:'/synchronizer/dialog/'+dialogKind,query:{tab:dialogParams.get('tab')||undefined}}:router.resolve(initialPath).matched.length?initialPath:'/browser/list');`, "patch-local.cjs:834");
   fs.writeFileSync(bootstrap, boot);
 }
 // Await mutations and display failures; the archived dialogs discarded several
@@ -925,10 +863,7 @@ for (const [name, fn, body] of [
 {
   const file = dir + "/batch-inputs-B_HNTlr8.js";
   let code = fs.readFileSync(file, "utf8");
-  code = code.replace(
-    "let r=await globalThis.electronAPI.send(`syncControl:batchInputText`,n);",
-    'let r;try{r=await globalThis.electronAPI.send(`syncControl:batchInputText`,n);}catch(error){t.add({severity:"error",summary:error.message,life:5000});return;}',
-  );
+  code = replaceExactly(code, "let r=await globalThis.electronAPI.send(`syncControl:batchInputText`,n);", 'let r;try{r=await globalThis.electronAPI.send(`syncControl:batchInputText`,n);}catch(error){t.add({severity:"error",summary:error.message,life:5000});return;}', "patch-local.cjs:911");
   if (!code.includes("summary:error.message"))
     throw Error("Batch input rejection adaptation changed");
   fs.writeFileSync(file, code);
@@ -1193,10 +1128,7 @@ patch(
         if (!node.async || node.body.type !== "BlockStatement") return;
         const body = code.slice(node.body.start + 1, node.body.end - 1);
         if (body.includes("browser:startCookieRobot")) {
-          const fixed = body.replace(
-            "globalThis.electronAPI.send(`browser:startCookieRobot`",
-            "await globalThis.electronAPI.send(`browser:startCookieRobot`",
-          );
+          const fixed = replaceExactly(body, "globalThis.electronAPI.send(`browser:startCookieRobot`", "await globalThis.electronAPI.send(`browser:startCookieRobot`", "patch-local.cjs:1179");
           if (fixed === body)
             throw Error("Cookie robot await structure changed");
           edits.push([

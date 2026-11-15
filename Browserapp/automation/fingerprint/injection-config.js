@@ -11,17 +11,12 @@
  * surface. Every computation the two builders share now lives here once, so a
  * change to a shared leaf cannot be made on one side only.
  *
- * Scope contract (byte-identical output): each helper below reproduces exactly
- * one field of the former inline literals — same fallback chain, same coercion
- * defaults, same property evaluation order. The builders keep their own key
- * ORDER, key SET and per-key comments, because those differ between the main
- * and worker CFG shapes by design (and where they drifted, see the
- * "intentionally divergent" notes below — the divergence is preserved, not
- * unified; unifying it is a behaviour change that needs product sign-off):
+ * Helpers preserve the builders' fallback chains and coercion defaults.
+ * The builders own key order, key presence and realm-specific policy:
  *
  *   - vendor: main falls back to the iOS 'Apple Computer, Inc.' branch when
  *     the persona is iOS (mobileDevice/uaProfile/platform tests); worker falls
- *     back to fp.uaProfile?.vendor || 'Google Inc.' only.
+ *     back to fp.uaProfile?.vendor ?? 'Google Inc.' only.
  *   - userAgentMetadata uses the same uaProfile fallback in both realms.
  *   - webgpu: main passes fp.webgpu || null through unchanged; worker
  *     restructures it to {mode, gpu} and synthesises a webgl-gpu fallback.

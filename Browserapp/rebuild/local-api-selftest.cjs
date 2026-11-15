@@ -1,4 +1,6 @@
 "use strict";
+const { evidencePath } = require("./compiler/evidence-path.cjs");
+
 const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),http=require('node:http'),assert=require('node:assert/strict');
 const {BrowserEngine}=require('../engine'),{LocalApiServer}=require('../automation/local-api-server'),{LocalService}=require('./local-service'),{findFreePort}=require('../automation/port-utils');
 (async()=>{
@@ -16,5 +18,5 @@ const {BrowserEngine}=require('../engine'),{LocalApiServer}=require('../automati
   assert.deepEqual(await require('./local-api').startupConfig(root),{open:false,port:next,apiAllowLan:false});
   await service.request('api:set',{...off,open:true,apiAllowLan:true});assert.equal(localApi.host,'0.0.0.0');assert.equal((await fetch('http://127.0.0.1:'+next+'/api/v1/user/list',{headers:{Authorization:'Bearer '+automation.apiKey}})).status,200);await service.request('api:set',{...off,open:true,apiAllowLan:false});
   const config=await service.request('api:mcp-config');assert.equal(config.mcpServers.openbrowser.env.OPENBROWSER_API_PORT,String(next));assert.ok(!JSON.stringify(config).includes('@roxybrowser'));assert.ok((await service.request('api:reference')).includes('mcp-server.js'));result.checks.push('真实关闭/开启、LAN 绑定/还原，重启配置读回；原 Native MCP 路径、实际端口、密钥与本地参考文档');result.passed=true;
- }catch(error){result.failure=error.stack;process.exitCode=1;}finally{await localApi?.stop();if(occupied)await new Promise(resolve=>occupied.close(resolve));await engine.stopAll?.();await fs.writeFile(path.resolve(__dirname,'../../docs/rebuild/evidence/local-api-selftest.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));}
+ }catch(error){result.failure=error.stack;process.exitCode=1;}finally{await localApi?.stop();if(occupied)await new Promise(resolve=>occupied.close(resolve));await engine.stopAll?.();await fs.writeFile(evidencePath("local-api-selftest.json"),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));}
 })().catch(error=>{console.error(error);process.exitCode=1;});

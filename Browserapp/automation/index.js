@@ -13,6 +13,7 @@ const { ProxyStore } = require('./proxy-store');
 const { ApiKeyStore } = require('./api-key-store');
 const { AccountStore } = require('./account-store');
 const { TransferStore } = require('./transfer-store');
+const { createAutomationStop } = require('./shutdown');
 
 /**
  * Mount automation stack (Local API + RPA + window-sync + app center + proxy library).
@@ -115,18 +116,7 @@ async function startAutomation(context = {}) {
       localApi.setApiKey(newKey);
       return newKey;
     },
-    async stop() {
-      await rpaEngine.stop();
-      await localApi.stop();
-      // Proxy credentials are written through a serialized queue. Wait for the
-      // queue before Electron is allowed to tear down the main process.
-      await proxyStore.flush?.();
-      await accountStore.flush();
-      await transferStore.flush();
-      // RPA task/template updates coalesce into one quiet-period write; flush
-      // it so the final task status is on disk before teardown.
-      await rpaStore.flush?.();
-    },
+    stop: createAutomationStop({ rpaEngine, localApi, proxyStore, accountStore, transferStore, rpaStore }),
   };
 }
 

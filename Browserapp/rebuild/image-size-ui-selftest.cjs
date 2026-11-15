@@ -1,9 +1,11 @@
 'use strict';
+const { evidenceDirectory } = require("./compiler/evidence-path.cjs");
+
 const { createTestDirectory } = require("./selftest-helpers.cjs");
 const {_electron:electron}=require('playwright'),fs=require('node:fs/promises'),path=require('node:path'),assert=require('node:assert/strict'),{waitUntil,toggleTheme}=require('./selftest-helpers.cjs');
 const repo=path.resolve(__dirname,'../..'),hint='禁止加载超过以下大小的图片（如果设置为0则不加载任何图片，为避免无法显示验证码，建议填写10KB）';
 (async()=>{
- const data=await createTestDirectory('image-size-ui-'),evidence=path.join(repo,'docs/rebuild/evidence'),result={passed:false,checks:[],errors:[],externalRequests:[],data};let app,page;
+ const data=await createTestDirectory('image-size-ui-'),evidence=evidenceDirectory(),result={passed:false,checks:[],errors:[],externalRequests:[],data};let app,page;
  try{
   app=await electron.launch({executablePath:require('electron'),args:['--no-sandbox','--ozone-platform=headless','--disable-gpu',path.join(repo,'Browserapp')],env:{...process.env,OPENBROWSER_USER_DATA:data,OPENBROWSER_API_PORT:'0'}});page=await app.firstWindow();page.setDefaultTimeout(15000);await page.setViewportSize({width:1536,height:960});page.on('pageerror',error=>result.errors.push(error.message));page.on('console',message=>{if(message.type()==='error')result.errors.push(message.text());});page.on('request',request=>{if(/^https?:|^wss?:/.test(request.url()))result.externalRequests.push(request.url());});await page.getByText('暂无窗口',{exact:true}).waitFor();await page.evaluate(()=>globalThis.__router.push('/browser/create'));await page.getByRole('button',{name:'创建窗口',exact:true}).last().waitFor();await page.locator('input').first().fill('原图片阈值表单');
   const imageRow=page.locator('.rx-input').filter({has:page.locator('label[for="forbidImage"]')});await page.getByText('基础设置',{exact:true}).click();await imageRow.getByRole('button',{name:'关闭',exact:true}).click();const size=page.getByText(hint,{exact:true}).locator('..').getByRole('spinbutton');await size.fill('1');await size.press('Tab');await page.screenshot({path:path.join(evidence,'image-size-form-light.png')});
