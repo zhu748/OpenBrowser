@@ -16,10 +16,9 @@ const { buildFirefoxUserJs, firefoxStartupArgs, firefoxPlatformDir } = require('
 const { acquireProfileLock, updateProfileLock, validateProfileRootSecure } = require('../automation/isolation');
 const { removeSingletonFiles, writeBrowserStartupDiagnostic, formatBrowserStartupError, isChildExited } = require('./index');
 const { assertResourceGateForLaunch } = require('./resource-gate');
-// Shared launch-data walker (parameterized target map) from the Chromium
-// startup mixin: start.js does not require this file, so there is no cycle.
-const { mergeLaunchProfileUpdate, ensureLegacyFingerprintSeed } = require('./start');
+const { mergeLaunchProfileUpdate, ensureLegacyFingerprintSeed } = require('./launch-profile');
 const { profileWriteGuard } = require('./profile-write-guard');
+const { attachBrowserExitHandlers } = require('./browser-exit');
 const { normalizeNetworkConditions } = require('../shared/profile-values');
 const { spawn } = require('child_process');
 const path = require('path');
@@ -28,17 +27,8 @@ const { BidiConnection, waitForFirefoxEndpoint } = require('../network/bidi-conn
 const { buildFirefoxFingerprint, initializeFirefoxFingerprint, navigateFirefoxStartup } = require('../automation/firefox-fingerprint');
 
 
-// proxy-forwarder is optional in _start; keep the same guarded require here so
-// a missing optional dependency cannot take the Firefox path down either.
-let proxyForwarderModule;
-try {
-  proxyForwarderModule = require('../proxy-forwarder');
-} catch (pfErr) {
-  console.warn('[BrowserEngine/start-firefox] Note: proxy-forwarder module load warning:', pfErr.message);
-}
-const {
-  startAuthenticatedProxy = async () => { throw new Error('Proxy forwarder is unavailable'); },
-} = proxyForwarderModule;
+// Proxy support is a required engine capability; preserve dependency load errors.
+const { startAuthenticatedProxy } = require('../proxy-forwarder');
 
 /** Resolve the per-profile OS persona for the Firefox UA. */
 function firefoxOsName(profile) {
@@ -489,39 +479,7 @@ module.exports = {
       liveItem = item;
       this.assertStartGenerationActive(profile.id, lifecycleGeneration);
 
-      const handleChildExit = (code, signal) => {
-        const expected = item.stopping === true || code === 0;
-        const error = expected ? null : `浏览器异常退出${signal ? ` (${signal})` : ` (code ${code})`}`;
-        this.handleBrowserGone(profile.id, item, 'browser-exit', {
-          expected,
-          error,
-          kill: true,
-          waitForExit: true,
-        }).catch((cleanupError) => {
-          this.emit({ type: 'sync-error', action: 'browser-exit-cleanup', id: profile.id, message: cleanupError.message });
-        });
-      };
-      const handleChildError = (error) => {
-        this.handleBrowserGone(profile.id, item, 'browser-error', {
-          expected: false,
-          error: error?.message || String(error),
-          kill: true,
-          waitForExit: true,
-        }).catch(() => {});
-      };
-      child.once('exit', (code, signal) => {
-        item.childExitState = { ...(item.childExitState || {}), exited: true, code, signal };
-        handleChildExit(code, signal);
-      });
-      child.once('error', (error) => {
-        item.childExitState = { ...(item.childExitState || {}), error };
-        handleChildError(error);
-      });
-      if (item.childExitState?.exited) {
-        queueMicrotask(() => handleChildExit(item.childExitState.code, item.childExitState.signal));
-      } else if (item.childExitState?.error) {
-        queueMicrotask(() => handleChildError(item.childExitState.error));
-      }
+      attachBrowserExitHandlers(this, profile.id, item, child);
 
       currentStage = 'inject'; this.emitStartProgress(profile.id, 'inject', 82, '正在注入 Firefox 设备指纹…');
       const endpoint = await waitForFirefoxEndpoint(child);

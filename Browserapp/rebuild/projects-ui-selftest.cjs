@@ -1,8 +1,9 @@
 "use strict";
+const { createTestDirectory } = require("./selftest-helpers.cjs");
 const {_electron:electron}=require('playwright'),fs=require('node:fs/promises'),path=require('node:path'),assert=require('node:assert/strict'),{waitUntil,toggleTheme}=require('./selftest-helpers.cjs');
 const repo=path.resolve(__dirname,'../..');
 (async()=>{
- const data=await fs.mkdtemp(path.join(repo,'work/rebuild/projects-ui-')),evidence=path.join(repo,'docs/rebuild/evidence'),result={passed:false,checks:[],errors:[],externalRequests:[],data};let app,page,phase='startup';
+ const data=await createTestDirectory('projects-ui-'),evidence=path.join(repo,'docs/rebuild/evidence'),result={passed:false,checks:[],errors:[],externalRequests:[],data};let app,page,phase='startup';
  const call=(method,p={})=>page.evaluate(({method,p})=>globalThis.__localRequest(method,p),{method,p});
  const go=route=>page.evaluate(route=>globalThis.__router.push(route),route);
  try{

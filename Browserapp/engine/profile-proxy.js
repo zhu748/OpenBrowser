@@ -12,21 +12,8 @@
 
 
 
-// proxy-forwarder is optional: the guarded require keeps a broken optional
-// dependency from taking the proxy paths down (same pattern as engine.js).
-let proxyForwarderModule;
-try {
-  proxyForwarderModule = require('../proxy-forwarder');
-} catch (pfErr) {
-  console.warn('[BrowserEngine/profile-proxy] Note: proxy-forwarder module load warning:', pfErr.message);
-}
-const {
-  parseProxy = (_v) => ({ protocol: 'direct', host: '', port: 0 }),
-  lookupProxyCountry = async () => ({ ip: '', country: '', countryCode: '' }),
-  extractProxyFromApi = async () => '',
-  invokeProxyRefresh = async () => '',
-  classifyProxyError = () => 'proxy-unknown',
-} = proxyForwarderModule;
+// Proxy support is a required engine capability; preserve dependency load errors.
+const { parseProxy, lookupProxyCountry, extractProxyFromApi, invokeProxyRefresh, classifyProxyError } = require('../proxy-forwarder');
 const { sameProxyIdentity } = require('./proxy-helpers');
 const { profileWriteGuard } = require('./profile-write-guard');
 

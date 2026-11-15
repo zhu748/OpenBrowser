@@ -31,20 +31,7 @@ const fontAssetBase64Cache = new Map();
 /**
  * Resolve root directory containing platform font subsets.
  */
-function resolveFontSubsetRoot() {
-  const candidates = [
-    path.resolve(__dirname, '..', 'assets', 'font-subsets'),
-    path.resolve(__dirname, '..', '..', 'assets', 'font-subsets'),
-    path.resolve(process.cwd(), 'Browserapp', 'assets', 'font-subsets'),
-    path.resolve(process.cwd(), 'assets', 'font-subsets'),
-  ];
-  for (const candidate of candidates) {
-    if (fs.existsSync(path.join(candidate, 'index.json'))) {
-      return candidate;
-    }
-  }
-  return candidates[0];
-}
+const { resolveFontSubsetRoot } = require('./font-subset-path');
 
 /**
  * Normalize platform string to canonical key: 'windows' | 'macos' | 'linux' | 'android'.

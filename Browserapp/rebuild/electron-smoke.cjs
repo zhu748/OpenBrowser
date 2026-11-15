@@ -1,5 +1,5 @@
-const { waitUntil, toggleTheme } = require("./selftest-helpers.cjs");
-("use strict");
+"use strict";
+const { waitUntil, toggleTheme, createTestDirectory } = require("./selftest-helpers.cjs");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const assert = require("node:assert/strict");
@@ -9,7 +9,7 @@ const repo = path.resolve(__dirname, "../..");
 (async () => {
   const evidence = path.join(repo, "docs/rebuild/evidence");
   await fs.mkdir(evidence, { recursive: true });
-  const data = await fs.mkdtemp(path.join(repo, "work/rebuild/ui-smoke-"));
+  const data = await createTestDirectory("ui-smoke-");
   let app;
   const result = {
     passed: false,

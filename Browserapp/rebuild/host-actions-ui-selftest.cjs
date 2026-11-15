@@ -1,8 +1,9 @@
 "use strict";
+const { createTestDirectory } = require("./selftest-helpers.cjs");
 const {_electron:electron,chromium}=require('playwright'),fs=require('node:fs/promises'),path=require('node:path'),assert=require('node:assert/strict'),http=require('node:http'),{execFile}=require('node:child_process'),{promisify}=require('node:util');
 const {waitUntil}=require('./selftest-helpers.cjs'),repo=path.resolve(__dirname,'../..');
 (async()=>{
- const data=await fs.mkdtemp(path.join(repo,'work/rebuild/host-ui-')),evidence=path.join(repo,'docs/rebuild/evidence'),desktop=path.join(data,'Desktop'),result={passed:false,checks:[],errors:[],externalRequests:[],data};let app,page,browser;
+ const data=await createTestDirectory('host-ui-'),evidence=path.join(repo,'docs/rebuild/evidence'),desktop=path.join(data,'Desktop'),result={passed:false,checks:[],errors:[],externalRequests:[],data};let app,page,browser;
  const server=http.createServer((_req,res)=>res.end('<title>Native launcher fixture</title><h1>Profile launcher</h1>'));await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
  const env={...process.env,OPENBROWSER_USER_DATA:data,OPENBROWSER_HEADLESS:'1',XDG_CONFIG_HOME:path.join(data,'xdg-config'),XDG_DATA_HOME:path.join(data,'xdg-data')};
  try{

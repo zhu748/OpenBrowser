@@ -1,4 +1,5 @@
 "use strict";
+const { createTestDirectory } = require("./selftest-helpers.cjs");
 const { _electron: electron } = require("playwright"),
   fs = require("node:fs/promises"),
   path = require("node:path"),
@@ -8,7 +9,7 @@ const repo = path.resolve(__dirname, "../..");
 (async () => {
   const data =
       process.env.OPENBROWSER_KERNEL_TEST_DATA ||
-      (await fs.mkdtemp(path.join(repo, "work/rebuild/kernel-ui-"))),
+      (await createTestDirectory('kernel-ui-')),
     evidence = path.join(repo, "docs/rebuild/evidence"),
     result = {
       passed: false,

@@ -17,17 +17,8 @@ const path = require('path');
 const { profileWriteGuard } = require('./profile-write-guard');
 const { normalizeCoordinates } = require('../shared/profile-values');
 
-// proxy-forwarder is optional: the guarded require keeps a broken optional
-// dependency from taking the exit-network geo lookup down (same pattern as engine.js).
-let proxyForwarderModule;
-try {
-  proxyForwarderModule = require('../proxy-forwarder');
-} catch (pfErr) {
-  console.warn('[BrowserEngine/start-page] Note: proxy-forwarder module load warning:', pfErr.message);
-}
-const {
-  lookupDirectCountry = async () => ({ ip: '', country: '', countryCode: '' }),
-} = proxyForwarderModule;
+// Proxy support is a required engine capability; preserve dependency load errors.
+const { lookupDirectCountry } = require('../proxy-forwarder');
 
 module.exports = {
   async suppressStartupExtensionPages(connection, installed, durationMs = 7000) {

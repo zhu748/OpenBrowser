@@ -6,23 +6,7 @@ const { spawn } = require('child_process');
 const cdp = require('./cdp');
 const { allowGoogleLogin } = require('./automation/profile-defaults');
 const { compareKernelVersions } = require('./automation/kernel-versions');
-let proxyForwarderModule = {};
-try {
-  proxyForwarderModule = require('./proxy-forwarder');
-} catch (pfErr) {
-  console.warn('[BrowserEngine] Note: proxy-forwarder module load warning:', pfErr.message);
-}
-const {
-  parseProxy = () => ({ protocol: 'direct', host: '', port: 0 }),
-  // Only used by resolveStoredProxyProfile's live-library branch; the fallback
-  // mirrors normalizeIpLookupChannel's accepted set so engine.js still loads
-  // when proxy-forwarder is unavailable.
-  normalizeIpLookupChannel = (v) => {
-    const raw = String(v || '').trim().toLowerCase();
-    if (raw === 'ifconfig' || raw === 'ifconfig.me' || raw === 'ifconfig-me') return 'ifconfig-me';
-    return ['ip-api', 'ip2location', 'ifconfig-me'].includes(raw) ? raw : 'ip-api';
-  },
-} = proxyForwarderModule;
+const { parseProxy, normalizeIpLookupChannel } = require('./network/proxy-config');
 // Mirrors sanitizeProfile's guard (profile-sanitizer.js) so the direct field
 // rewrite in resolveStoredProxyProfile cannot smuggle a longer raw through.
 const MAX_PROFILE_PROXY_LENGTH = 64 * 1024;
@@ -128,7 +112,7 @@ const {
   evaluateFingerprintDelivery,
 } = require('./automation/request-header-rewriter');
 
-const { isValidIanaTimezone, extractTimezoneFromArgs } = require('./engine/start');
+const { isValidIanaTimezone, extractTimezoneFromArgs } = require('./engine/launch-display');
 const { TrackedProfileMap } = require('./engine/profile-revisions');
 const { assertProfileNotMaintained } = require('./engine/profile-maintenance');
 const { assertProfileRestoreReady } = require('./automation/cloud/file-restore');

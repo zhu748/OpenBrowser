@@ -9,7 +9,7 @@ const {
   parseProxyInput,
   displayProxy,
   normalizeIpLookupChannel,
-} = require('../proxy-forwarder');
+} = require('../network/proxy-config');
 const {
   summarizeProxyUsage, canAssignProxy, assertProxyAssignmentAvailable,
   profileMatchesProxy, MAX_PROXY_CONCURRENCY,

@@ -14,6 +14,21 @@ function alternatives(node) {
   return [];
 }
 function add(name, file, line) { if (!branches.has(name)) branches.set(name, []); branches.get(name).push({ file, line }); }
+// The workbench registers validated handlers rather than a chain of if branches.
+// Read the same registry used by LocalService so an unregistered name cannot
+// satisfy this audit merely by appearing in a comment or string elsewhere.
+const { localRoutes } = require("../local-route-registry");
+const registered = new Set(localRoutes.map(route => route.name));
+const routeFiles = fs.readdirSync(path.join(base, "rebuild/routes"))
+  .filter(file => file.endsWith(".js")).map(file => "rebuild/routes/" + file);
+for (const file of routeFiles) {
+  walk.simple(parse(fs.readFileSync(path.join(base, file), "utf8")), {
+    ArrayExpression(node) {
+      const name = literal(node.elements[0]);
+      if (registered.has(name) && !name.endsWith(":")) add(name, file, node.loc.start.line);
+    },
+  });
+}
 for (const [file, prefix] of [
   ["rebuild/local-service.js", ""], ["rebuild/accounts.js", "accounts:"],
   ["rebuild/extensions.js", "extensions:"], ["rebuild/local-api.js", "api:"],
@@ -117,7 +132,8 @@ const result = { status: missing.length ? "FAIL" : "PASS",
   scope: "仅对可静态解析调用证明存在精确分发分支；动态转发单列，不等于参数、返回值或所有交互已验收。脚本沙箱明确列为未迁移。",
   staticCalls: uses.length, uniqueCalls: new Set(uses.map(row => row.kind + row.name)).size,
   uses, dynamic, unsupported, missing,
-  sources: ["preload.js", "rebuild/local-service.js", "rebuild/agent-service.js", "rebuild/agent-conversations.js", "rebuild/renderer-bridge.js"].map(file => ({ file,
+  sources: ["preload.js", "rebuild/local-service.js", "rebuild/local-route-registry.js", "rebuild/profile-dto.js", ...routeFiles,
+    "rebuild/agent-service.js", "rebuild/agent-conversations.js", "rebuild/renderer-bridge.js"].map(file => ({ file,
     sha256: crypto.createHash("sha256").update(fs.readFileSync(path.join(base, file))).digest("hex") })) };
 fs.writeFileSync(path.join(repo, "docs/rebuild/evidence/backend-contract-audit.json"), JSON.stringify(result, null, 2));
 console.log(JSON.stringify({ ...result, uses: uses.length, dynamic: dynamic.length, sources: result.sources.length }, null, 2));

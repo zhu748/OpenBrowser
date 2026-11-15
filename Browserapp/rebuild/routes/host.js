@@ -1,0 +1,109 @@
+"use strict";
+
+const { fromRoxy } = require("../profile-dto");
+
+async function hostShortcut(service, p) {
+  return require("../host-actions").shortcut(service, p);
+}
+
+async function hostDefaultBrowser(service, p) {
+  return require("../host-actions").setDefault(service, p);
+}
+
+async function fingerprintPreview(service, p) {
+  const e = service.engine;
+  const count = Number(p.count ?? 1);
+  if (!Number.isInteger(count) || count < 1 || count > 100)
+    throw Error("Invalid fingerprint count");
+  return Array.from({ length: count }, () => {
+    const profile = fromRoxy({ ...p, windowName: "Preview" });
+    const browser = e.chooseBrowser(profile, profile.engine);
+    const f = e.fingerprintFor({
+      ...profile,
+      kernelVersion: browser.version,
+    });
+    return {
+      userAgent: f.userAgent,
+      webGLManufacturer: f.webgl.vendor,
+      webGLRender: f.webgl.renderer,
+      deviceName: f.deviceName,
+      macAddr: f.mac.value,
+      ...(p.fontType
+        ? { font: f.fonts.list.join(";"), fontList: f.fonts.list }
+        : {}),
+      _openbrowser: f,
+    };
+  });
+}
+
+async function hostDictionary() {
+  const { COUNTRY_TO_LOCALE } = require("../../automation/locale-from-country");
+  return {
+    languages: [...new Set(Object.values(COUNTRY_TO_LOCALE))].sort(),
+    timezones: [...new Set(["UTC", ...Intl.supportedValuesOf("timeZone")])],
+  };
+}
+
+async function hostNetwork(service, p) {
+  if (p.probe) {
+    if (!service.hostNetworkProbe)
+      service.hostNetworkProbe = require("../host-network")
+        .probeHostNetwork()
+        .finally(() => {
+          service.hostNetworkProbe = null;
+        });
+    const result = await service.hostNetworkProbe;
+    if (!result.ip) throw Error("网络定位未返回 IP");
+    service.hostNetwork = {
+      ...result,
+      country_code: result.countryCode || "",
+    };
+  }
+
+  const entries = Object.values(require("node:os").networkInterfaces())
+    .flat()
+    .filter((v) => v && !v.internal);
+  return {
+    ...service.hostNetwork,
+    ip: service.hostNetwork?.ip || "",
+    localAddress: entries.find((v) => v.family === "IPv4")?.address || "",
+    timezone:
+      service.hostNetwork?.timezone ||
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
+    country_code: service.hostNetwork?.country_code || "",
+    city: service.hostNetwork?.city || "",
+  };
+}
+
+async function hostMac() {
+  const row = Object.values(require("node:os").networkInterfaces())
+    .flat()
+    .find((v) => v && !v.internal && v.mac !== "00:00:00:00:00:00");
+  if (!row) throw Error("没有可读取的本机 MAC 地址");
+  return row.mac;
+}
+
+async function kernelsList(service) {
+  const e = service.engine;
+  const rows = [...e.kernelManager.listInstalledKernels()];
+  const primary = e.kernelManager.resolveInstalled();
+  if (primary?.path && !rows.some((row) => row.path === primary.path))
+    rows.push({
+      ...primary,
+      id: "primary:" + primary.path,
+      engine: primary.engine === "firefox" ? "firefox" : "chromium",
+      version: primary.version,
+      primary: true,
+    });
+  return rows;
+}
+
+module.exports = [
+  ["host:shortcut", hostShortcut, "serial"],
+  ["host:default-browser", hostDefaultBrowser, "serial"],
+  ["fingerprint:preview", fingerprintPreview, "serial"],
+  ["host:dictionary", hostDictionary, "parallel"],
+  ["host:network", hostNetwork, "parallel"],
+  ["host:mac", hostMac, "parallel"],
+  ["kernels:list", kernelsList, "parallel"],
+];

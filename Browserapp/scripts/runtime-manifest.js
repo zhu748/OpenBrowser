@@ -30,7 +30,7 @@ function isRuntimeResource(relativePath) {
   const parts = normalized.split('/');
   if (parts.some((part) => !part || part === '.' || part === '..')) return false;
   if(parts[0]==='rebuild'&&parts[1]==='compiler')return false;
-  if(parts[0]==='rebuild'&&['acceptance-runner.cjs','acceptance-manifest.json','verify-evidence.cjs','visual-pixel-diff.py','build-evidence-gallery.cjs'].includes(parts[1]))return false;
+  if(parts[0]==='rebuild'&&['acceptance-runner.cjs','acceptance-manifest.json','verify-evidence.cjs','visual-pixel-diff.py','build-evidence-gallery.cjs','selftest-helpers.cjs'].includes(parts[1]))return false;
   // Preserve vendor trees as supplied, including signed browser bundles.
   if (['kernels', 'assets', 'bundled-extension'].includes(parts[0])) return true;
   if (parts.some((part) => ['selftests', 'scripts', 'node_modules', 'reports', '__pycache__'].includes(part.toLowerCase()))) return false;

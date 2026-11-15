@@ -27,20 +27,7 @@ const path = require('path');
 const { deriveFontPlaceholder, deriveBridgeToken } = require('./font-placeholder');
 const { mapPlatformToSubsetKey } = require('./font-metrics');
 
-function resolveFontSubsetRoot() {
-  const candidates = [
-    path.resolve(__dirname, '..', 'assets', 'font-subsets'),
-    path.resolve(__dirname, '..', '..', 'assets', 'font-subsets'),
-    path.resolve(process.cwd(), 'Browserapp', 'assets', 'font-subsets'),
-    path.resolve(process.cwd(), 'assets', 'font-subsets'),
-  ];
-  for (const candidate of candidates) {
-    if (fs.existsSync(path.join(candidate, 'index.json'))) {
-      return candidate;
-    }
-  }
-  return candidates[0];
-}
+const { resolveFontSubsetRoot } = require('./font-subset-path');
 
 function loadSubsetsForGate(platformOrSubsets) {
   if (Array.isArray(platformOrSubsets) && platformOrSubsets.length > 0 && platformOrSubsets[0].base64) {

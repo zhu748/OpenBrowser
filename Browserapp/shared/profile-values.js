@@ -8,6 +8,13 @@
   const MAX_LATITUDE = 90;
   const MAX_LONGITUDE = 180;
 
+  /** Scan without spreading rows into arguments or allocating a second array. */
+  function maxProfileNumber(profiles) {
+    let highest = 0;
+    for (const profile of profiles) highest = Math.max(highest, Number(profile.number) || 0);
+    return highest;
+  }
+
   /** Missing values and booleans must never become numeric configuration. */
   function toFiniteNumber(value) {
     if (typeof value === 'number') return Number.isFinite(value) ? value : null;
@@ -88,6 +95,6 @@
     return out.offline || Object.values(out).some((n) => typeof n === 'number') ? out : null;
   }
 
-  return Object.freeze({ toFiniteNumber, toBoundedInteger, normalizeLatitude, normalizeLongitude, normalizeBatterySnapshot, normalizeNetworkInformation, normalizeNetworkConditions,
+  return Object.freeze({ maxProfileNumber, toFiniteNumber, toBoundedInteger, normalizeLatitude, normalizeLongitude, normalizeBatterySnapshot, normalizeNetworkInformation, normalizeNetworkConditions,
     isValidLatitude, isValidLongitude, normalizeCoordinates, MAX_LATITUDE, MAX_LONGITUDE });
 });

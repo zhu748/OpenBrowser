@@ -1,29 +1,9 @@
 const fs = require("fs"),
-  path = require("path"),
-  acorn = require("acorn"),
-  walk = require("acorn-walk");
+  path = require("path");
 const src = path.join(require("./source.cjs").resolveBuildSource(), "web"),
   dst = path.resolve("work/rebuild/stage");
 fs.cpSync(src, dst, { recursive: true });
-function patch(name, vars = {}, funcs = {}) {
-  const file = path.join(dst, "assets", name + ".js");
-  let text = fs.readFileSync(file, "utf8"),
-    ast = acorn.parse(text, { ecmaVersion: "latest", sourceType: "module" }),
-    edits = [];
-  walk.simple(ast, {
-    VariableDeclarator(n) {
-      if (n.id.type === "Identifier" && vars[n.id.name] !== undefined)
-        edits.push([n.init.start, n.init.end, vars[n.id.name]]);
-    },
-    FunctionDeclaration(n) {
-      if (funcs[n.id.name] !== undefined)
-        edits.push([n.body.start, n.body.end, "{" + funcs[n.id.name] + "}"]);
-    },
-  });
-  for (const [s, e, v] of edits.sort((a, b) => b[0] - a[0]))
-    text = text.slice(0, s) + v + text.slice(e);
-  fs.writeFileSync(file, text);
-}
+const patch = require("./patch-source.cjs").createPatch(path.join(dst, "assets"));
 const localUser = `ve('user',()=>{const defaults={batchOpenLayout:'stack',ipChecker:'local'},userConfig=a({...defaults,...globalThis.__localSettings});globalThis.__applyLocalUserConfig=saved=>userConfig.value={...defaults,...saved};const userInfo=a({userId:'local',id:'local',userName:globalThis.__localSettings?.localUserName||'OpenBrowser',workspaceId:'local',workspaceType:0,onboardingTaskStatus:globalThis.__localSettings?.onboardingTaskStatus||{}});return {userInfo,fetchUserInfo:async()=>{const saved=await globalThis.__localRequest('settings:get');userInfo.value.userName=saved.localUserName||'OpenBrowser';userInfo.value.onboardingTaskStatus=saved.onboardingTaskStatus||{};},updateUserConfig:async p=>{await globalThis.__localApi.base.userSetUserConfigCreate(p);},token:a('local'),appVersion:a(globalThis.$appVersion),userConfig,getUserConfig:async()=>await globalThis.__localApi.base.userGetUserConfigList().then(r=>r.data),identityInfo:a({}),initUserInfo:async()=>{},setToken:()=>{},mixpanelTrack:()=>{},clearUserInfo:()=>{}}})`;
 patch(
   "utils-BIWenCnY",

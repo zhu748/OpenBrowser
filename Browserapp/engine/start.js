@@ -18,18 +18,18 @@ const { normalizeEnvNumber, prepareMacDockWrapper, prepareMarkerExtension } = re
 const { buildFingerprint, assertFingerprintConsistency } = require('../automation/fingerprint');
 const { assertUrlAccessPolicySupported } = require('../automation/url-access-policy');
 const { profileWriteGuard } = require('./profile-write-guard');
+const { attachBrowserExitHandlers } = require('./browser-exit');
 const { fpLog, summarizeFp, logPath: fingerprintLogPath } = require('../automation/fingerprint-debug-log');
 const { acquireProfileLock, updateProfileLock, validateProfileRootSecure } = require('../automation/isolation');
 const { fingerprintForNativeKernelInject, isOpenBrowser148, writeOpenBrowserKernelInit } = require('../automation/kernel-init-sync');
 const { resolveProfileTimezone } = require('../automation/locale-from-country');
 const { mergeLoadExtensionArgs } = require('../automation/protocol/app-center-protocol');
 const { portConnection, reconcileOnConnection } = require('../extension-pipe');
-const { appendDiagnosticOutput, formatBrowserStartupError, isChildExited, removeSingletonFiles, writeBrowserStartupDiagnostic, writeRawAtomically } = require('./index');
+const { appendDiagnosticOutput, formatBrowserStartupError, isChildExited, removeSingletonFiles, writeBrowserStartupDiagnostic } = require('./index');
 const { assertResourceGateForLaunch } = require('./resource-gate');
 const { spawn } = require('child_process');
 const crypto = require('crypto');
 const fs = require('fs');
-const fsp = require('fs/promises');
 const path = require('path');
 const { readDeferredSessionUrls, preserveLegacySession, openVerifiedStartupTabs } = require('./startup-session');
 
@@ -39,256 +39,12 @@ const { readDeferredSessionUrls, preserveLegacySession, openVerifiedStartupTabs 
 // the non-existent engine/kernels and silently drop every resource root.
 const APP_ROOT = path.join(__dirname, '..');
 
-// proxy-forwarder is optional: the guarded require keeps a broken optional
-// dependency from taking the startup path down (same pattern as engine.js).
-let proxyForwarderModule;
-try {
-  proxyForwarderModule = require('../proxy-forwarder');
-} catch (pfErr) {
-  console.warn('[BrowserEngine/start] Note: proxy-forwarder module load warning:', pfErr.message);
-}
-const {
-  startAuthenticatedProxy = async () => ({ port: 0, close: () => {} }),
-  needsProxyBridge = () => false,
-  chromeProxyEndpoint = () => '',
-} = proxyForwarderModule;
+// Proxy support is a required engine capability; preserve dependency load errors.
+const { startAuthenticatedProxy, needsProxyBridge, chromeProxyEndpoint } = require('../proxy-forwarder');
 
-/**
- * Validate whether a string is a recognized, valid IANA time zone identifier.
- */
-function isValidIanaTimezone(tz) {
-  if (!tz || typeof tz !== "string") return false;
-  const trimmed = tz.trim();
-  if (!trimmed) return false;
-  try {
-    Intl.DateTimeFormat(undefined, { timeZone: trimmed });
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
-
-/**
- * Extract an explicit --time-zone-for-testing value from launch args if present.
- */
-function extractTimezoneFromArgs(args) {
-  if (!Array.isArray(args)) return null;
-  for (let i = args.length - 1; i >= 0; i -= 1) {
-    const item = String(args[i] || "");
-    if (item.startsWith("--time-zone-for-testing=")) {
-      const val = item.slice("--time-zone-for-testing=".length).trim();
-      return val || null;
-    }
-  }
-  return null;
-}
-
-// 默认搜索引擎模板（对齐常见指纹浏览器的搜索引擎选择）。写入 Default/Preferences 的
-// default_search_provider_data.template_url_data，内核首次启动即按此渲染 NTP/ omnibox。
-const SEARCH_ENGINE_TEMPLATES = {
-  google: { short_name: 'Google', keyword: 'google.com', favicon_url: 'https://www.google.com/favicon.ico', url: 'https://www.google.com/search?q={searchTerms}', suggestions_url: 'https://www.google.com/complete/search?client=chrome&q={searchTerms}' },
-  bing: { short_name: 'Microsoft Bing', keyword: 'bing.com', favicon_url: 'https://www.bing.com/favicon.ico', url: 'https://www.bing.com/search?q={searchTerms}', suggestions_url: 'https://www.bing.com/osjson.aspx?query={searchTerms}' },
-  yahoo: { short_name: 'Yahoo', keyword: 'yahoo.com', favicon_url: 'https://www.yahoo.com/favicon.ico', url: 'https://search.yahoo.com/search?p={searchTerms}', suggestions_url: 'https://search.yahoo.com/sugg/os?command={searchTerms}' },
-  yandex: { short_name: 'Yandex', keyword: 'yandex.com', favicon_url: 'https://yandex.com/favicon.ico', url: 'https://yandex.com/search/?text={searchTerms}', suggestions_url: 'https://suggest.yandex.com/suggest-ff.cgi?part={searchTerms}' },
-  duckduckgo: { short_name: 'DuckDuckGo', keyword: 'duckduckgo.com', favicon_url: 'https://duckduckgo.com/favicon.ico', url: 'https://duckduckgo.com/?q={searchTerms}', suggestions_url: 'https://duckduckgo.com/ac/?q={searchTerms}&type=list' },
-};
-
-/**
- * Merge the chosen default search engine into <root>/Default/Preferences.
- * Existing Preferences keys are preserved; failure to write is non-fatal (the
- * environment still starts with the kernel default search engine).
- */
-async function applyDefaultSearchEngine(root, engine) {
-  const template = SEARCH_ENGINE_TEMPLATES[String(engine || '')];
-  if (!template) return false;
-  const prefsPath = path.join(root, 'Default', 'Preferences');
-  let prefs = {};
-  try { prefs = JSON.parse(await fsp.readFile(prefsPath, 'utf8')); } catch (_) { prefs = {}; }
-  prefs.default_search_provider_data = prefs.default_search_provider_data && typeof prefs.default_search_provider_data === 'object'
-    ? prefs.default_search_provider_data
-    : {};
-  prefs.default_search_provider_data.template_url_data = {
-    short_name: template.short_name,
-    keyword: template.keyword,
-    url: template.url,
-    suggestions_url: template.suggestions_url,
-    favicon_url: template.favicon_url,
-    safe_for_autoreplace: false,
-    originating_url: '',
-    prepopulate_id: 0,
-    date_created: '13300000000000000',
-    last_modified: '13300000000000000',
-    sync_guid: 'openbrowser-' + String(engine),
-    alternate_urls: [],
-  };
-  try {
-    await fsp.mkdir(path.dirname(prefsPath), { recursive: true });
-    // Atomic write (temp + rename): a partial Preferences file would be read by
-    // the kernel as a corrupt profile on the very next launch.
-    await writeRawAtomically(prefsPath, JSON.stringify(prefs));
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
-
-/**
- * Per-profile launch-time data clearing (对齐「启动浏览器前删除 Cookie / Local Storage」).
- * Cache clearing already exists via advanced.clearCacheOnStart; this covers the
- * cookie and local-storage/session/indexeddb stores. Best-effort deletes.
- * Target lists are engine-specific (Chromium nests stores under Default/,
- * Firefox keeps them in the profile root), so the walker below is shared and
- * parameterized by CHROMIUM_LAUNCH_DATA_TARGETS here and by the Firefox map in
- * engine/start-firefox.js.
- */
-const CHROMIUM_LAUNCH_DATA_TARGETS = {
-  cookies: ['Default/Network/Cookies', 'Default/Network/Cookies-journal', 'Default/Cookies', 'Default/Cookies-journal'],
-  localStorage: ['Default/Local Storage/leveldb', 'Default/Session Storage', 'Default/IndexedDB'],
-  history: ['Default/History', 'Default/History-journal', 'Default/History Provider Cache', 'Default/Visited Links'],
-};
-
-function clearProfileLaunchData(root, profile) {
-  const advanced = profile?.advanced && typeof profile.advanced === 'object' ? profile.advanced : {};
-  return clearLaunchDataTargets(root, advanced, CHROMIUM_LAUNCH_DATA_TARGETS);
-}
-
-/**
- * Shared best-effort walker behind clearProfileLaunchData (and the Firefox
- * variant in start-firefox.js): deletes every engine-specific target whose
- * launch-clear switch is on, returning the relative paths actually removed
- * (payload of the profile-launch-data-cleared event).
- */
-async function clearLaunchDataTargets(root, advanced, targets) {
-  const switches = advanced && typeof advanced === 'object' ? advanced : {};
-  const rm = async (relative) => {
-    try { await fsp.rm(path.join(root, relative), { recursive: true, force: true }); return true; } catch (_) { return false; }
-  };
-  const removed = [];
-  if (switches.clearCookiesOnStart) {
-    for (const relative of targets.cookies) {
-      if (await rm(relative)) removed.push(relative);
-    }
-  }
-  if (switches.clearLocalStorageOnStart) {
-    for (const relative of targets.localStorage) {
-      if (await rm(relative)) removed.push(relative);
-    }
-  }
-  if (switches.clearHistoryOnStart) {
-    for (const relative of targets.history) {
-      if (await rm(relative)) removed.push(relative);
-    }
-  }
-  return removed;
-}
-
-/**
- * Host display bounds for privacy.resolutionMode === 'real' (分辨率跟随系统).
- * The main process has the Electron screen module; failure falls back to the
- * profile's stored width/height.
- */
-function hostScreenSummary() {
-  // Requiring the npm Electron launcher under plain Node can download a binary.
-  // Only the Electron main process exposes the screen service used here.
-  if (!process.versions.electron) return null;
-  try {
-    const { screen } = require('electron');
-    const display = screen.getPrimaryDisplay();
-    const width = Number(display?.bounds?.width);
-    const height = Number(display?.bounds?.height);
-    if (Number.isFinite(width) && Number.isFinite(height) && width >= 640 && height >= 480) {
-      return { width, height };
-    }
-  } catch (_) {}
-  return null;
-}
-
-// 九宫格窗口位置：相对屏幕工作区的偏移比例（对齐「窗口位置」选择器）。
-const WINDOW_POSITION_RATIOS = {
-  tl: [0, 0], tm: [0.5, 0], tr: [1, 0],
-  ml: [0, 0.5], mm: [0.5, 0.5], mr: [1, 0.5],
-  bl: [0, 1], bm: [0.5, 1], br: [1, 1],
-};
-
-/**
- * --window-position for the selected grid cell, clamped into the work area so
- * corner cells never push the window titlebar off-screen.
- */
-function windowPositionArg(profile) {
-  if (!process.versions.electron) return null;
-  const cell = String(profile.privacy?.windowPos || '');
-  const ratios = WINDOW_POSITION_RATIOS[cell];
-  if (!ratios) return null;
-  try {
-    const { screen } = require('electron');
-    const workArea = screen.getPrimaryDisplay().workArea;
-    const width = Math.min(Number(profile.width) || 1280, workArea.width);
-    const height = Math.min(Number(profile.height) || 820, workArea.height);
-    const x = Math.round((workArea.width - width) * ratios[0]) + workArea.x;
-    const y = Math.round((workArea.height - height) * ratios[1]) + workArea.y;
-    return `--window-position=${Math.max(workArea.x, x)},${Math.max(workArea.y, y)}`;
-  } catch (_) {
-    return null;
-  }
-}
-
-/**
- * Publish a staged launch result only while its source revision is current.
- * Proxy and locale probes may take seconds. Any intervening edit/deletion
- * aborts this launch, preserving the user's latest configuration in full.
- */
-function mergeLaunchProfileUpdate(engine, snapshot, assertCurrent) {
-  if (!snapshot || typeof snapshot !== 'object') return null;
-  assertCurrent();
-  const live = engine.profiles.get(snapshot.id);
-  if (!live) throw Object.assign(new Error('环境已被删除，已停止启动'), { code: 'PROFILE_STALE_REV' });
-  const next = engine.sanitizeProfile(snapshot);
-  engine.profiles.set(next.id, next);
-  engine.invalidateStatusCache?.();
-  return next;
-}
-
-// A failed migration must be flushed again before a retry can launch, even
-// though its seed is already present in memory. Keep the chosen identity on
-// failure so a disk retry does not silently generate a second fingerprint.
-const pendingFingerprintSeeds = new WeakMap();
-
-async function ensureLegacyFingerprintSeed(engine, profile) {
-  if (!profile) return false;
-  let pending = pendingFingerprintSeeds.get(engine);
-  if (!pending) { pending = new Map(); pendingFingerprintSeeds.set(engine, pending); }
-  const live = engine.profiles.get(profile.id);
-  const existing = pending.get(profile.id);
-  if (existing && !live) throw Object.assign(new Error('环境已被删除，已停止指纹身份迁移。'), { code: 'FINGERPRINT_IDENTITY_CHANGED' });
-  const seed = String(live?.fingerprintSeed || profile.fingerprintSeed || '').trim();
-  if (seed && !existing) { profile.fingerprintSeed = seed; return false; }
-  const chosen = seed || crypto.randomBytes(16).toString('hex');
-  profile.fingerprintSeed = chosen;
-  if (existing?.seed === chosen && existing.status === 'pending') {
-    await existing.promise;
-    return true;
-  }
-  // Write only the seed onto the latest row; never replace concurrent edits
-  // with the startup routine's older snapshot.
-  engine.profiles.set(profile.id, { ...(live || profile), fingerprintSeed: chosen });
-  const entry = { seed: chosen, status: 'pending', promise: null };
-  pending.set(profile.id, entry);
-  entry.promise = Promise.resolve().then(async () => {
-    try {
-      await engine.persist();
-    } catch (cause) {
-      throw Object.assign(new Error('指纹种子保存失败，已停止启动；请检查存储后重试。', { cause }), {
-        code: 'FINGERPRINT_SEED_PERSIST_FAILED',
-      });
-    }
-    if (engine.profiles.get(profile.id)?.fingerprintSeed !== chosen) {
-      throw Object.assign(new Error('保存期间指纹身份已被修改，请重新启动环境。'), { code: 'FINGERPRINT_IDENTITY_CHANGED' });
-    }
-    if (pending.get(profile.id) === entry) pending.delete(profile.id);
-  }).catch((error) => { entry.status = 'failed'; throw error; });
-  await entry.promise;
-  return true;
-}
+const { mergeLaunchProfileUpdate, ensureLegacyFingerprintSeed } = require('./launch-profile');
+const { applyDefaultSearchEngine, clearProfileLaunchData, clearLaunchDataTargets } = require('./launch-preferences');
+const { isValidIanaTimezone, extractTimezoneFromArgs, hostScreenSummary, windowPositionArg } = require('./launch-display');
 
 module.exports = {
   async _start(raw, lifecycleGeneration = null, launchOptions = {}) {
@@ -786,43 +542,7 @@ module.exports = {
     liveItem = item;
     this.assertStartGenerationActive(profile.id, lifecycleGeneration);
 
-    const handleChildExit = (code, signal) => {
-      const expected = item.stopping === true || code === 0;
-      const error = expected
-        ? null
-        : `浏览器异常退出${signal ? ` (${signal})` : ` (code ${code})`}`;
-      this.handleBrowserGone(profile.id, item, 'browser-exit', {
-        expected,
-        error,
-        kill: true,
-        waitForExit: true,
-      }).catch((cleanupError) => {
-        this.emit({ type: 'sync-error', action: 'browser-exit-cleanup', id: profile.id, message: cleanupError.message });
-      });
-    };
-    const handleChildError = (error) => {
-      this.handleBrowserGone(profile.id, item, 'browser-error', {
-        expected: false,
-        error: error?.message || String(error),
-        kill: true,
-        waitForExit: true,
-      }).catch(() => {});
-    };
-    child.once('exit', (code, signal) => {
-      item.childExitState = { ...(item.childExitState || {}), exited: true, code, signal };
-      handleChildExit(code, signal);
-    });
-    child.once('error', (error) => {
-      item.childExitState = { ...(item.childExitState || {}), error };
-      handleChildError(error);
-    });
-    // The process may have exited during CDP/bootstrap setup, before the item
-    // listeners above were installed. Replay that state exactly once.
-    if (item.childExitState?.exited) {
-      queueMicrotask(() => handleChildExit(item.childExitState.code, item.childExitState.signal));
-    } else if (item.childExitState?.error) {
-      queueMicrotask(() => handleChildError(item.childExitState.error));
-    }
+    attachBrowserExitHandlers(this, profile.id, item, child);
     item.startupExtensionGuard = this.suppressStartupExtensionPages(connection, reconciled.installed).catch((error) => this.emit({ type: 'sync-error', action: 'startup-extension-pages', id: profile.id, message: error.message }));
     try {
       item.startUrl = startUrl;

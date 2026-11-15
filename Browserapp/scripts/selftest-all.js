@@ -25,6 +25,7 @@
 const { spawnSync } = require('child_process');
 const path = require('path');
 const { classifySelftestResult } = require('./selftest-status');
+const { nodeWorkbenchTests } = require('./workbench-test-registry');
 
 // Browserapp root (this runner lives in scripts/); all script paths are
 // relative to the app root, not to this file.
@@ -36,18 +37,11 @@ const ROOT = path.join(__dirname, '..');
 // name exists — package.json only keeps entries that a workflow, the release
 // gate or the docs still invoke directly.
 const SUITE = [
-  ['selftest:rebuild:optimization', 'rebuild/optimization-selftest.cjs'],
-  ['selftest:rebuild:service', 'rebuild/local-service-selftest.js'],
-  ['selftest:rebuild:agent', 'rebuild/agent-selftest.cjs'],
-  ['selftest:rebuild:approval', 'rebuild/agent-approval-selftest.cjs'],
-  ['selftest:rebuild:mcp', 'rebuild/agent-mcp-selftest.cjs'],
-  ['selftest:rebuild:accounts', 'rebuild/accounts-selftest.cjs'],
-  ['selftest:rebuild:attachments', 'rebuild/agent-files-selftest.cjs'],
-  ['selftest:rebuild:extensions', 'rebuild/extensions-selftest.cjs'],
-  ['selftest:rebuild:sync-service', 'rebuild/sync-service-selftest.cjs'],
-  ['selftest:rebuild:import', 'rebuild/import-selftest.cjs'],
-  ['selftest:rebuild:cache', 'rebuild/profile-cache-selftest.cjs'],
-  ['selftest:rebuild:contracts', 'rebuild/review-agent-contracts-selftest.cjs'],
+  ...nodeWorkbenchTests.map(({ name, script, timeoutMs }) => [name, script, { timeoutMs }]),
+  ['selftest:localroutes', 'automation/selftests/local-route-registry-selftest.js'],
+  ['selftest:compilerpatches', 'automation/selftests/compiler-patches-selftest.js'],
+  ['selftest:enginedependencies', 'automation/selftests/engine-dependency-selftest.js'],
+  ['selftest:workbenchregistry', 'automation/selftests/workbench-registry-selftest.js'],
   ['selftest:extensionpublication', 'automation/selftests/extension-publication-selftest.js'],
   ['selftest:browserdata', 'automation/selftests/browser-data-optimization-selftest.js'],
   ['selftest:profilekernels', 'automation/selftests/kernel-profile-selection-selftest.js'],
@@ -348,7 +342,7 @@ function main() {
       // 60s availability probe must not become the de-facto execution timeout
       // (a SIGTERM here turns a green gate into FAILED).
       const probe = spawnSync(process.execPath, [scriptPath, 'selftest'], {
-        cwd: ROOT, encoding: 'utf8', timeout: PER_SCRIPT_TIMEOUT_MS, maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
+        cwd: ROOT, encoding: 'utf8', timeout: flags?.timeoutMs || PER_SCRIPT_TIMEOUT_MS, maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
       });
       if (probe.status === 2) {
         skipped += 1;
@@ -373,7 +367,7 @@ function main() {
     const res = spawnSync(process.execPath, [scriptPath, 'selftest'], {
       cwd: ROOT,
       encoding: 'utf8',
-      timeout: PER_SCRIPT_TIMEOUT_MS,
+      timeout: flags?.timeoutMs || PER_SCRIPT_TIMEOUT_MS,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     const seconds = ((Date.now() - started) / 1000).toFixed(1);

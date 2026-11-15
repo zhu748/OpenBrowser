@@ -1,11 +1,6 @@
 'use strict';
 
-const DEFAULT_PREFERENCES = Object.freeze({ openWorkbench: true, ipChangeRemind: true, googleLogin: false });
-
-function normalizeDefaultPreferences(value = {}, previous = DEFAULT_PREFERENCES) {
-  return Object.fromEntries(Object.keys(DEFAULT_PREFERENCES).map((key) => [key,
-    typeof value?.[key] === 'boolean' ? value[key] : previous?.[key] ?? DEFAULT_PREFERENCES[key]]));
-}
+const { DEFAULT_PREFERENCES, normalizeDefaultPreferences } = require('../shared/default-preferences');
 
 function preference(profile, key, defaults) {
   const value = String(profile.advanced?.[key] ?? '2');

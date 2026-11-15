@@ -1,4 +1,5 @@
 const { toggleTheme } = require("./selftest-helpers.cjs");
+const { createTestDirectory } = require("./selftest-helpers.cjs");
 "use strict";
 const { _electron: electron } = require("playwright"),
   fs = require("node:fs/promises"),
@@ -6,9 +7,7 @@ const { _electron: electron } = require("playwright"),
   assert = require("node:assert/strict");
 const repo = path.resolve(__dirname, "../..");
 (async () => {
-  const data = await fs.mkdtemp(
-    path.join(repo, "work/rebuild/dialog-security-"),
-  );
+  const data = await createTestDirectory("dialog-security-");
   let app;
   const result = { status: "FAIL", checks: [] };
   try {

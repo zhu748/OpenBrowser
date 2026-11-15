@@ -1,5 +1,70 @@
 # 代码分类与维护入口
 
+## 当前模块边界与重构约束
+
+默认界面由 `rebuild/compiler/` 从锁定输入生成到 `roxy-ui/`；旧版
+`renderer.js` / `ui/` 仍由 `OPENBROWSER_ROXY_UI=0` 启用。生成产物、第三方
+输入和历史证据分别管理，不把它们作为手写业务代码批量格式化或删除。
+
+| 模块 | 职责与维护约束 |
+| --- | --- |
+| `rebuild/local-service.js` | 依赖接线、本地数据加载、原子保存、串行写入与失败回滚；不承载领域分发分支 |
+| `rebuild/profile-dto.js` | 工作台与引擎字段转换；高级选项和噪声字段双向共用映射；原 `local-service` 导出保持兼容 |
+| `rebuild/local-route-registry.js` | 从领域表注册处理器与执行策略，拒绝重名、缺失处理器及缺失策略 |
+| `rebuild/routes/` | `profiles`、`collections`、`preferences`、`host`、`proxies`、`transfer` 与现有服务委派；处理器显式接收 service，不反向导入宿主服务 |
+| `engine/launch-profile.js` | 启动结果的修订号校验与持久指纹身份迁移；Chromium/Firefox 共用，不依赖具体启动实现 |
+| `engine/launch-preferences.js` | Chromium 搜索偏好写入与启动数据清理；进程、锁和失败清理由启动编排持有 |
+| `engine/launch-display.js` | 时区参数校验与桌面显示查询；旧引擎导出保持兼容 |
+| `engine/browser-exit.js` | 两种浏览器的退出/错误清理接线，以及发布 running item 前发生的退出重放 |
+| `shared/default-preferences.js` | 无 I/O 的偏好默认值和规范化；存储层不再反向依赖 profile runtime policy |
+| `shared/seeded-random.js` | 确定性随机序列；变更必须保持既有 seed 的输出兼容 |
+| `automation/font-subset-path.js` | 两种字体交付路径共用的资源定位顺序，不缓存工作目录 |
+| `rebuild/compiler/patch-source.cjs` | 通用 AST 补丁；每个目标必须恰好命中一次，编辑不得重叠，输出语法通过后才能写入 |
+
+代理转发实现是引擎的必需能力。模块加载错误保留原始异常，不安装空代理桥或
+伪造直连配置；纯配置解析直接依赖 `network/proxy-config.js`。
+
+`LocalService` 的 parallel 策略用于不修改本地 JSON 的独立引擎/网络操作，
+不等同于“只读”。local JSON 变更仍由一个队列串行执行，失败恢复前一个快照；
+跨引擎与本地元数据的关联变更继续使用 `profile-relations.js` 的补偿流程。
+新增接口必须在领域表同时声明处理器和执行策略。ESLint 对新领域处理器执行
+100 行函数上限、禁止 DOM 全局及反向依赖；不把此门槛直接套到全部历史代码。
+
+### 测试与构建入口
+
+`rebuild/acceptance-manifest.json` 保留工作台验收清单；
+`scripts/workbench-test-registry.js` 声明运行条件并供聚合门禁和独立验收共用。
+全部 Node 工作台验收均自动进入 `scripts/selftest-all.js`。界面测试通过
+`selftest-helpers.cjs` 在系统临时目录创建独立数据根，不依赖先前构建留下的目录。
+
+```sh
+cd Browserapp
+npm run selftest -- localroutes
+npm run selftest -- compilerpatches
+npm run selftest -- enginedependencies
+npm run selftest -- workbenchregistry
+npm run selftest -- rebuild:skills
+node rebuild/acceptance-runner.cjs --list
+node rebuild/acceptance-runner.cjs --runtime node --output work/acceptance-node
+npm run selftest:all
+npm run lint -- --max-warnings 0
+npm run rebuild:ui
+```
+
+独立验收的 `--output` 相对仓库根目录解析；不指定时保留原证据输出位置。
+每项验收有独立超时，记录退出码、终止信号及源码哈希；部分 runtime 的运行
+结果明确标记范围，不能解释为完整桌面验收。已纳入通用 runner 的重复 npm
+入口移除后，统一使用 `npm run selftest -- rebuild:<name>`。
+
+需要浏览器的桌面验收可显式设置 `OPENBROWSER_TEST_KERNEL_BINARY` 为已安装的
+独立浏览器路径。测试辅助函数通过生产内核管理器验证后，将该路径写入各自
+临时数据根的内核元数据；不修改开发者的设置，也不依赖首次下载恰好先于表单
+操作完成。未设置时保留原首次启动行为，系统浏览器路径仍按生产策略拒绝。
+
+兼容层裁决：旧界面仍保留；`live-sync-v5.js` 继承 V4，不能单独删除 V4；
+Rust 代理桥仍受开关控制，未接线库能力的后续裁决继续遵循
+`rust-core-decision.md`。其他领域的大规模迁移应按能力对照逐项执行。
+
 ## 配置一致性与恢复约定（2026-11-12）
 
 - `engine/profile-publication.js` 是环境同步与编辑命令的统一发布/持久化入口。合并写入失败时，关联的失败编辑回滚到原始状态；已经成功的后续写入和独立扩展分配不被旧失败覆盖。

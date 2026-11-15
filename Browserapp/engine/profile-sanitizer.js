@@ -1,7 +1,7 @@
 "use strict";
 
 const { assertProfileId } = require("../automation/isolation");
-const { normalizeIpLookupChannel } = require("../proxy-forwarder");
+const { normalizeIpLookupChannel } = require('../network/proxy-config');
 const { profileProxyAssociation, normalizedProxyAssociationId } = require("./proxy-helpers");
 const { normalizeCoordinates, normalizeBatterySnapshot, normalizeNetworkInformation, normalizeNetworkConditions, toFiniteNumber: finite } = require("../shared/profile-values");
 

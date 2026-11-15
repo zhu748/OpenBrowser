@@ -1,4 +1,5 @@
 "use strict";
+const { maxProfileNumber } = require('../shared/profile-values');
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const crypto = require("node:crypto");
@@ -918,12 +919,12 @@ class AgentService {
         });
         return { id: row.id, name: row.windowName };
       }
-      const { fromRoxy } = require("./local-service");
+      const { fromRoxy } = require("./profile-dto");
       const profile = fromRoxy({
         windowName: p.name,
         os: p.os,
         sortNum:
-          Math.max(0, ...engine.status().map((v) => Number(v.number) || 0)) + 1,
+          maxProfileNumber(engine.status()) + 1,
       });
       await engine.syncProfiles([profile]);
       return { id: profile.id, name: profile.name };

@@ -1,4 +1,5 @@
 "use strict";
+const { createTestDirectory } = require("./selftest-helpers.cjs");
 const { _electron: electron, chromium } = require("playwright"),
   http = require("node:http"),
   fs = require("node:fs/promises"),
@@ -7,7 +8,7 @@ const { _electron: electron, chromium } = require("playwright"),
 const { waitUntil } = require("./selftest-helpers.cjs");
 const repo = path.resolve(__dirname, "../..");
 (async () => {
-  const data = await fs.mkdtemp(path.join(repo, "work/rebuild/sync-dialogs-")),
+  const data = await createTestDirectory('sync-dialogs-'),
     evidence = path.join(repo, "docs/rebuild/evidence"),
     result = { passed: false, checks: [], errors: [], externalRequests: [] };
   let app, page, dialog;

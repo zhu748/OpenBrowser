@@ -387,6 +387,21 @@ module.exports = [
     },
   },
   {
+    files: ['rebuild/routes/*.js', 'rebuild/profile-dto.js', 'rebuild/local-route-registry.js'],
+    rules: {
+      'no-restricted-globals': ['error', 'window', 'document', 'navigator', 'localStorage', 'sessionStorage'],
+      // Routing and DTO modules use explicit context, never import their owners.
+      'no-restricted-modules': ['error', './local-service', '../local-service', './agent-service', '../agent-service'],
+      'no-empty': 'error',
+    },
+  },
+  {
+    files: ['rebuild/routes/*.js'],
+    rules: {
+      'max-lines-per-function': ['error', { max: 100, skipBlankLines: true, skipComments: true }],
+    },
+  },
+  {
     files: ['renderer*.js', 'ui/*.js', 'environment-audit.js', 'i18n.js', 'shared/*.js'],
     ignores: ['**/*selftest*.js'],
     rules: {

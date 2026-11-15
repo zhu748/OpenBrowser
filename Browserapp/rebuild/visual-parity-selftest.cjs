@@ -1,8 +1,9 @@
 "use strict";
+const { createTestDirectory } = require("./selftest-helpers.cjs");
 const {_electron:electron}=require('playwright'),fs=require('node:fs/promises'),path=require('node:path'),assert=require('node:assert/strict'),{execFile}=require('node:child_process'),{promisify}=require('node:util'),crypto=require('node:crypto');
 const {waitUntil}=require('./selftest-helpers.cjs'),repo=path.resolve(__dirname,'../..');
 (async()=>{
- const data=await fs.mkdtemp(path.join(repo,'work/rebuild/visual-ui-')),evidence=path.join(repo,'docs/rebuild/evidence'),shots=path.join(evidence,'visual'),reference=JSON.parse(await fs.readFile(path.join(evidence,'visual-reference-provenance.json'))),result={passed:false,scope:'Linux Electron 43，相同本地数据；主窗 1536×960、独立子窗原尺寸，详见逐例 clip；相同字体/缩放，原归档独立 render 与当前 render 在同一 Vue 实例切换、各自独立 VNode 缓存；比较原主内容区，品牌与本地外壳有单独边界说明。没有独立 render 的组件不能凭本结果宣布通过。',data,cases:[],errors:[],externalRequests:[],fixtureNormalizations:['fingerprint:preview 以真实后端首次返回值固定相同参数的视觉数据','两种 render 均使用 hasPassword 对应的等宽八星掩码保持相同视觉数据；不返回真实机密']};let app,page,phase='startup';
+ const data=await createTestDirectory('visual-ui-'),evidence=path.join(repo,'docs/rebuild/evidence'),shots=path.join(evidence,'visual'),reference=JSON.parse(await fs.readFile(path.join(evidence,'visual-reference-provenance.json'))),result={passed:false,scope:'Linux Electron 43，相同本地数据；主窗 1536×960、独立子窗原尺寸，详见逐例 clip；相同字体/缩放，原归档独立 render 与当前 render 在同一 Vue 实例切换、各自独立 VNode 缓存；比较原主内容区，品牌与本地外壳有单独边界说明。没有独立 render 的组件不能凭本结果宣布通过。',data,cases:[],errors:[],externalRequests:[],fixtureNormalizations:['fingerprint:preview 以真实后端首次返回值固定相同参数的视觉数据','两种 render 均使用 hasPassword 对应的等宽八星掩码保持相同视觉数据；不返回真实机密']};let app,page,phase='startup';
  await fs.mkdir(shots,{recursive:true});
  try{const previous=await fs.readFile(path.join(evidence,'visual-parity-selftest.json'));const history=path.join(evidence,'visual-history');await fs.mkdir(history,{recursive:true});await fs.writeFile(path.join(history,Date.now()+'.json'),previous);}catch(error){if(error.code!=='ENOENT')throw error;}
  try{

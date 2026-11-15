@@ -2,25 +2,7 @@ const fs = require("fs"),
   acorn = require("acorn"),
   walk = require("acorn-walk");
 const dir = "work/rebuild/stage/assets";
-function patch(name, vars = {}, funcs = {}) {
-  let f = dir + "/" + name + ".js",
-    text = fs.readFileSync(f, "utf8"),
-    ast = acorn.parse(text, { ecmaVersion: "latest", sourceType: "module" }),
-    ed = [];
-  walk.simple(ast, {
-    VariableDeclarator(n) {
-      if (n.id.type === "Identifier" && vars[n.id.name] !== undefined)
-        ed.push([n.init.start, n.init.end, vars[n.id.name]]);
-    },
-    FunctionDeclaration(n) {
-      if (funcs[n.id.name] !== undefined)
-        ed.push([n.body.start, n.body.end, "{" + funcs[n.id.name] + "}"]);
-    },
-  });
-  for (const [s, e, v] of ed.sort((a, b) => b[0] - a[0]))
-    text = text.slice(0, s) + v + text.slice(e);
-  fs.writeFileSync(f, text);
-}
+const patch = require("./patch-source.cjs").createPatch(dir);
 patch("hook-CnJE4hRq", {
   lE: `Nt({history:Mt('/index.html#'),routes:[{path:'/',component:()=>import('./layout-C916OUcf.js'),redirect:'/browser/list',children:[{path:'browser/list',name:'browser-list',component:()=>import('./list-ByevuXQD.js')},{path:'browser/create',name:'browser-create',component:()=>import('./create-HSjma60V.js')},{path:'browser',name:'browser',redirect:'/browser/list'}]}]})`,
 });

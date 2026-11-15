@@ -1,4 +1,5 @@
 "use strict";
+const { createTestDirectory } = require("./selftest-helpers.cjs");
 const {_electron:electron}=require('playwright'),fs=require('node:fs/promises'),path=require('node:path'),assert=require('node:assert/strict'),{spawn}=require('node:child_process');
 const {waitUntil,toggleTheme}=require('./selftest-helpers.cjs'),{findFreePort}=require('../automation/port-utils'),repo=path.resolve(__dirname,'../..');
 async function runMcp(config){return new Promise((resolve,reject)=>{
@@ -7,7 +8,7 @@ async function runMcp(config){return new Promise((resolve,reject)=>{
  const messages=[{jsonrpc:'2.0',id:1,method:'initialize',params:{protocolVersion:'2024-11-05',capabilities:{},clientInfo:{name:'OpenBrowser acceptance',version:'1'}}},{jsonrpc:'2.0',method:'notifications/initialized'},{jsonrpc:'2.0',id:2,method:'tools/list'},{jsonrpc:'2.0',id:3,method:'tools/call',params:{name:'list_profiles',arguments:{}}}];child.stdin.end(messages.map(value=>JSON.stringify(value)).join('\n')+'\n');
 });}
 (async()=>{
- const data=await fs.mkdtemp(path.join(repo,'work/rebuild/api-ui-')),evidence=path.join(repo,'docs/rebuild/evidence'),result={passed:false,checks:[],errors:[],externalRequests:[],data};let app,page;
+ const data=await createTestDirectory('api-ui-'),evidence=path.join(repo,'docs/rebuild/evidence'),result={passed:false,checks:[],errors:[],externalRequests:[],data};let app,page;
  const launch=async()=>{app=await electron.launch({executablePath:require('electron'),args:['--no-sandbox','--ozone-platform=headless','--disable-gpu',path.join(repo,'Browserapp')],env:{...process.env,OPENBROWSER_USER_DATA:data,OPENBROWSER_API_PORT:'0'}});page=await app.firstWindow();page.setDefaultTimeout(15000);await page.setViewportSize({width:1536,height:1050});page.on('pageerror',error=>result.errors.push(error.message));page.on('console',message=>{if(message.type()==='error')result.errors.push(message.text());});page.on('request',request=>{if(/^https?:|^wss?:/.test(request.url()))result.externalRequests.push(request.url());});await page.getByText('API & AI MCP',{exact:true}).first().waitFor();};
  try{
   await launch();const profile=await page.evaluate(()=>globalThis.__localRequest('profiles:create',{windowName:'MCP 原后端验收',os:'Linux'}));await page.getByText('API & AI MCP',{exact:true}).first().click();await page.getByText('API 启用状态',{exact:true}).waitFor();await waitUntil(()=>page.locator('.api-content-key-value').innerText().then(value=>value.length>20));

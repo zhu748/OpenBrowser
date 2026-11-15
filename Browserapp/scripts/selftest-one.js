@@ -94,7 +94,7 @@ function runOne(entry, extraArgs) {
   process.stdout.write(`run   ${name}  ${script} ... `);
   const res = spawnSync(process.execPath, [scriptPath, 'selftest', ...extraArgs], {
     cwd: ROOT,
-    timeout: PER_SCRIPT_TIMEOUT_MS,
+    timeout: flags?.timeoutMs || PER_SCRIPT_TIMEOUT_MS,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
   });

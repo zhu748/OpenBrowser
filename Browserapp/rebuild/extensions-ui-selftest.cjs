@@ -1,8 +1,9 @@
 "use strict";
+const { createTestDirectory } = require("./selftest-helpers.cjs");
 const {_electron:electron,chromium}=require('playwright'),fs=require('node:fs/promises'),path=require('node:path'),assert=require('node:assert/strict');
 const {waitUntil,toggleTheme}=require('./selftest-helpers.cjs');const repo=path.resolve(__dirname,'../..');
 (async()=>{
- const data=await fs.mkdtemp(path.join(repo,'work/rebuild/extensions-ui-')),source=path.join(data,'fixture'),evidence=path.join(repo,'docs/rebuild/evidence'),result={passed:false,checks:[],errors:[],externalRequests:[],data};let app,page,browser;
+ const data=await createTestDirectory('extensions-ui-'),source=path.join(data,'fixture'),evidence=path.join(repo,'docs/rebuild/evidence'),result={passed:false,checks:[],errors:[],externalRequests:[],data};let app,page,browser;
  try{
   await fs.mkdir(source);await fs.writeFile(path.join(source,'manifest.json'),JSON.stringify({manifest_version:3,name:'Local Extension Fixture',version:'1.0',action:{default_title:'Native fixture'},background:{service_worker:'worker.js'}}));await fs.writeFile(path.join(source,'worker.js'),'globalThis.extensionFixture=true;');
   app=await electron.launch({executablePath:require('electron'),args:['--no-sandbox','--ozone-platform=headless','--disable-gpu',path.join(repo,'Browserapp')],env:{...process.env,OPENBROWSER_USER_DATA:data,OPENBROWSER_HEADLESS:'1'}});page=await app.firstWindow();page.setDefaultTimeout(15000);await page.setViewportSize({width:1448,height:960});

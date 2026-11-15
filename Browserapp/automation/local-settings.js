@@ -15,7 +15,7 @@ const path = require('path');
 const cloudSync = require('./cloud-sync');
 const credentialCrypto = require('../credential-crypto');
 const { createCoalescedWriter } = require('./coalesced-writer');
-const { normalizeDefaultPreferences } = require('./profile-defaults');
+const { normalizeDefaultPreferences } = require('../shared/default-preferences');
 const { deepEqual } = require('./object-utils');
 const { validateDataRootIsolationSecure } = require('./isolation');
 

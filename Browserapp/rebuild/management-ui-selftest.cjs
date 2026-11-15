@@ -1,4 +1,5 @@
 const { waitUntil } = require("./selftest-helpers.cjs");
+const { createTestDirectory } = require("./selftest-helpers.cjs");
 ("use strict");
 const { _electron: electron } = require("playwright");
 const fs = require("node:fs/promises"),
@@ -8,7 +9,7 @@ const { unwrapIpcResult } = require("../shared/ipc-result");
 const repo = path.resolve(__dirname, "../..");
 (async () => {
   const evidence = path.join(repo, "docs/rebuild/evidence"),
-    data = await fs.mkdtemp(path.join(repo, "work/rebuild/management-"));
+    data = await createTestDirectory('management-');
   const result = {
     passed: false,
     checks: [],
