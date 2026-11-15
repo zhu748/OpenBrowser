@@ -1,4 +1,5 @@
 "use strict";
+const { openWorkspacePage } = require("./selftest-helpers.cjs");
 const { evidenceDirectory } = require("./compiler/evidence-path.cjs");
 
 const { createTestDirectory } = require("./selftest-helpers.cjs");
@@ -29,7 +30,7 @@ const { zip } = require("./selftest-zip.cjs"), { waitUntil } = require("./selfte
     page.on("request", request => { if (/^https?:|^wss?:/.test(request.url())) result.externalRequests.push(request.url()); });
     await page.getByText("暂无窗口", { exact: true }).waitFor();
     await page.evaluate(port => globalThis.__localRequest("agent:config:set", { provider: "openai", baseUrl: "http://127.0.0.1:" + port, model: "contract-ui" }), server.address().port);
-    await page.evaluate(() => globalThis.__router.push("/agent-console/templates"));
+    page = await openWorkspacePage(app, '/agent-console/templates');
     await page.getByRole("button", { name: "创建模板", exact: true }).last().click();
     await page.getByRole("button", { name: "Skill", exact: true }).last().click();
     await page.locator('input[type="file"][accept*=".zip"]').last().setInputFiles({ name: "edit.zip", mimeType: "application/zip",

@@ -1,6 +1,10 @@
 "use strict";
 
 const { fromRoxy } = require("../profile-dto");
+const crypto = require('node:crypto');
+const { buildUaProfile } = require('../../automation/user-agent');
+const { firefoxUserAgent } = require('../../automation/kernel-versions');
+const { buildFingerprint } = require('../../automation/fingerprint');
 
 async function hostShortcut(service, p) {
   return require("../host-actions").shortcut(service, p);
@@ -18,6 +22,22 @@ async function fingerprintPreview(service, p) {
   return Array.from({ length: count }, () => {
     const profile = fromRoxy({ ...p, windowName: "Preview" });
     const browser = e.chooseBrowser(profile, profile.engine);
+    profile.fingerprintSeed = crypto.randomBytes(16).toString('hex');
+    const options = { os: profile.os, osVersion: profile.osVersion,
+      chromeMajor: Number(browser.version.split('.')[0]), chromeFull: browser.version };
+    const os = /mac/i.test(profile.os) ? 'mac' : /win/i.test(profile.os) ? 'win' : 'linux';
+    const normal = profile.engine === 'firefox' ? firefoxUserAgent(os, browser.version) : buildUaProfile({ ...options, reduced: true }).userAgent;
+    const uaReduced = profile.engine === 'firefox' ? p.previousUserAgent === normal : p.previousUserAgent !== normal;
+    const generated = profile.engine === 'firefox'
+      ? buildUaProfile({ os: profile.os, userAgent: firefoxUserAgent(os, browser.version, { shortVersion: uaReduced }) })
+      : buildUaProfile({ ...options, reduced: uaReduced });
+    // Mobile templates own the model and release; they are selected below.
+    const mobile = /android|ios|iphone|ipad/i.test(profile.os);
+    if (!mobile) {
+      profile.userAgent = generated.userAgent;
+      profile.privacy.fingerprint = { ...profile.privacy.fingerprint,
+        uaGenerated: true, uaReduced, clientHints: generated.clientHints };
+    }
     const f = e.fingerprintFor({
       ...profile,
       kernelVersion: browser.version,
@@ -28,6 +48,10 @@ async function fingerprintPreview(service, p) {
       webGLRender: f.webgl.renderer,
       deviceName: f.deviceName,
       macAddr: f.mac.value,
+      hardwareConcurrent: f.hardwareConcurrency == null ? undefined : String(f.hardwareConcurrency),
+      deviceMemory: f.deviceMemory == null ? undefined : String(f.deviceMemory),
+      _fingerprintDraft: { seed: profile.fingerprintSeed, version: profile.fingerprintVersion, generated: true,
+        userAgent: f.userAgent, uaReduced: mobile ? true : uaReduced, clientHints: f.clientHints },
       ...(p.fontType
         ? { font: f.fonts.list.join(";"), fontList: f.fonts.list }
         : {}),
@@ -44,8 +68,16 @@ async function hostDictionary() {
   };
 }
 
+async function fingerprintFields(_service, p) {
+  const profile = fromRoxy({ os: p.os, windowName: 'Fingerprint fields' });
+  const f = buildFingerprint({ ...profile, fingerprintSeed: crypto.randomBytes(16).toString('hex') });
+  return { getwebGLNoiseValue: f.webgl.mark, getCanvasContextNoiseValue: f.canvas.mark,
+    getClientRectsValue: f.clientRects, getSpeechSynthesis: f.speech.voices, getAllowFontList: f.fonts.list,
+    deviceName: f.deviceName, macAddr: f.mac.value };
+}
+
 async function hostNetwork(service, p) {
-  if (p.probe) {
+  if (p.probe && !(p.cached && service.hostNetwork?.ip && Date.now() - service.hostNetworkTime < 60000)) {
     if (!service.hostNetworkProbe)
       service.hostNetworkProbe = require("../host-network")
         .probeHostNetwork()
@@ -58,6 +90,7 @@ async function hostNetwork(service, p) {
       ...result,
       country_code: result.countryCode || "",
     };
+    service.hostNetworkTime = Date.now();
   }
 
   const entries = Object.values(require("node:os").networkInterfaces())
@@ -102,6 +135,7 @@ module.exports = [
   ["host:shortcut", hostShortcut, "serial"],
   ["host:default-browser", hostDefaultBrowser, "serial"],
   ["fingerprint:preview", fingerprintPreview, "serial"],
+  ['fingerprint:sample-fields', fingerprintFields, 'parallel'],
   ["host:dictionary", hostDictionary, "parallel"],
   ["host:network", hostNetwork, "parallel"],
   ["host:mac", hostMac, "parallel"],

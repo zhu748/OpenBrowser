@@ -1,3 +1,4 @@
+import {createNetworkIndicator} from "./workbench-network.js";
 import {SidebarFooter as LocalSidebarFooter} from "./workbench-chrome.js";
 import {Dr as o,at as ue,h as T,mt as ye,nn as Se,pr as Ee,sn as ke,tn as je,v as E,xi as Ie} from "./utils-BIWenCnY.js";
 import {C as D,E as Be,F as He,P as O,St as k,V as Ye,W as A,Y as Ze,_t as j,at as $e,ct as tt,d as N,en as P,f as F,h as I,i as L,in as R,jt as z,lt as B,m as V,nn as it,p as H,st as lt,ut,x as W} from "./runtime-core.esm-bundler-CBj16o9G.js";
@@ -90,18 +91,8 @@ var ml = { key: 1, class: "flex items-center gap-1" };
 var hl = { class: "city" };
 var gl = { class: "ip" };
 var _l = J(D({ __name: "network", setup(e3) {
-  const a2 = k({ city: "\u672C\u5730\u7F51\u7EDC", ip: "--" }), r2 = k(!1), assign = (value) => {
-    a2.value = { city: value.ip ? [value.country_code, value.city].filter(Boolean).join("/") : "\u672C\u5730\u7F51\u7EDC", ip: value.ip || value.localAddress || "--" };
-  };
-  async function o2() {
-    r2.value = !0;
-    try {
-      assign(await globalThis.__localRequest("host:network", { probe: !0 }));
-    } finally {
-      r2.value = !1;
-    }
-  }
-  return Ye(async () => assign(await globalThis.__localRequest("host:network"))), (e4, t2) => {
+  const { network: a2, loading: r2, refresh: o2 } = createNetworkIndicator({ ref: k, onMounted: Ye, request: (...args) => globalThis.__localRequest(...args) });
+  return (e4, t2) => {
     let n2 = Y, i2 = dr, s2 = dn;
     return A(), I("div", pl, [ut(W(n2, { class: "shrink-0", "aria-label": "\u5237\u65B0\u7F51\u7EDC\u5B9A\u4F4D", icon: z(a2).ip ? "base/rx_ic_location" : "base/rx_ic_location_error", severity: "secondary", outlined: "", size: "xs", onClick: o2 }, null, 8, ["icon"]), [[s2, { value: e4.$t("\u70B9\u51FB\u5237\u65B0"), showDelay: 300 }, void 0, { left: !0 }]]), z(r2) ? (A(), I(L, { key: 0 }, [W(i2, { width: "4rem", height: "12px" }), W(i2, { width: "3rem", height: "10px" })], 64)) : z(a2).ip ? ut((A(), I("div", ml, [F("div", hl, R(z(a2).city), 1), F("div", gl, " (" + R(z(a2).ip) + ") ", 1)])), [[s2, { value: e4.$t("\u5F53\u524D\u7F51\u7EDC\u5B9A\u4F4D"), showDelay: 300 }, void 0, { bottom: !0 }]]) : V("", !0)]);
   };

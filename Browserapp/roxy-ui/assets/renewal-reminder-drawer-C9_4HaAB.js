@@ -26,7 +26,7 @@ import {a as et} from "./contextmenu-BBjizTDn.js";
 import {t as tt} from "./useDialog-BC-nc8J-.js";
 import {t as nt} from "./skeleton-CcmFVUhV.js";
 import {t as rt} from "./custom-empty-CChX4pJt.js";
-import {n as it,t as at} from "./hooks-BozaoB_u.js";
+import {t as at} from "./hooks-BozaoB_u.js";
 import {c as ot,l as st,o as ct,s as lt,t as ut,u as dt} from "./hooks-Jw3GridD.js";
 import {n as ft} from "./proxy-shop-labels-nJaBS4W_.js";
 import {t as pt} from "./simplePopup-D6H7ykCr.js";
@@ -374,14 +374,14 @@ var Vn = Fe(v({ __name: "index", props: { currentFilter: {}, isProjectProfile: {
     await globalThis.electronAPI.send("browser:createDesktopShortcut", { ...ie(e2), __orderName: `${Z.value}-${t3}` }), G2(0, $t("\u521B\u5EFA\u684C\u9762\u5FEB\u6377\u65B9\u5F0F\u6210\u529F"));
   }
   function zr(e2, t3) {
-    R2.value.onboardingTaskStatus?.contextMenuGuideStatus ? Ke2(e2.event, { operation: e2.operation, operationHandler: async (n2) => {
+    Ke2(e2.event, { operation: e2.operation, operationHandler: async (n2) => {
       try {
         let r2 = { ...i(ie(n2)), _event: e2.event };
         await Ir(r2, t3);
       } catch (e3) {
         console.error(e3);
       }
-    } }) : He2({ showHeader: !1, modal: !0, blockScroll: !0, handleCancel: () => Fe2({ contextMenuGuideStatus: !0 }), slots: { container: ({ handleCancel: e3 }) => I(it, { title: $t("\u9F20\u6807\u53F3\u952E\u7F16\u8F91"), desc: ({ class: e4 }) => I("div", { class: e4 }, [$t('\u7EDD\u5927\u591A\u6570\u7684 Roxy\u6D4F\u89C8\u5668\u5217\u8868\u5141\u8BB8\u60A8\u4FBF\u6377\u5730\u901A\u8FC7\u9F20\u6807\u53F3\u952E\u76F4\u63A5\u7F16\u8F91\uFF0C\u800C\u65E0\u9700\u5BFB\u627E"\u66F4\u591A\u64CD\u4F5C"\u6309\u94AE\u3002')]), video: nn("right-click.mp4"), onClose: e3, onConfirm: e3 }, null) } });
+    } });
   }
   async function Br(e2, t3) {
     return await globalThis.electronAPI.send("browser:exportProfiles", { ids: e2.map((row) => row.id) });

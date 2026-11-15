@@ -56,6 +56,11 @@ function fromRoxy(v, base = {}) {
     privacy: { ...base.privacy, webRTC: v.webRTC ?? base.privacy?.webRTC },
     advanced: { ...base.advanced },
   };
+  const draft = v._fingerprintDraft;
+  if (draft && typeof draft === 'object' && !Array.isArray(draft)) {
+    mapped.fingerprintSeed = String(draft.seed || '');
+    mapped.fingerprintVersion = draft.version;
+  }
   if (Array.isArray(v.windowPlatformList)) {
     if (v.windowPlatformList.length > 20)
       throw Error("每个窗口最多 20 个平台账号");
@@ -197,6 +202,21 @@ function fromRoxy(v, base = {}) {
       : null;
   }
   const fp = { ...mapped.privacy.fingerprint };
+  if (draft && typeof draft === 'object' && !Array.isArray(draft)) {
+    const generated = draft.generated !== false && mapped.userAgent === draft.userAgent;
+    fp.uaGenerated = generated;
+    if (generated) {
+      fp.uaReduced = draft.uaReduced !== false;
+      fp.clientHints = draft.clientHints || {};
+    } else if (mapped.userAgent !== base.userAgent) {
+      delete fp.uaReduced;
+      delete fp.clientHints;
+    }
+  } else if (Object.hasOwn(v, 'userAgent') && mapped.userAgent !== base.userAgent) {
+    fp.uaGenerated = false;
+    delete fp.uaReduced;
+    delete fp.clientHints;
+  }
   if (Object.hasOwn(v, "webGLManufacturer"))
     fp.webglVendor = v.webGLManufacturer;
   if (Object.hasOwn(v, "webGLRender")) fp.webglRenderer = v.webGLRender;

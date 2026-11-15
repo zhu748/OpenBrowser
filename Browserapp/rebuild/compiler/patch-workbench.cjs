@@ -14,8 +14,11 @@ function setups(file, replacements) {
 }
 
 setups('layout-C916OUcf.js',{
- _l:`const a=k({city:'本地网络',ip:'--'}),r=k(false);const assign=value=>{a.value={city:value.ip?[value.country_code,value.city].filter(Boolean).join('/'):'本地网络',ip:value.ip||value.localAddress||'--'};};async function o(){r.value=true;try{assign(await globalThis.__localRequest('host:network',{probe:true}));}finally{r.value=false;}}Ye(async()=>assign(await globalThis.__localRequest('host:network')))`
+ _l:`const {network:a,loading:r,refresh:o}=createNetworkIndicator({ref:k,onMounted:Ye,request:(...args)=>globalThis.__localRequest(...args)})`
 });
+const layoutFile=path.join(dir,'layout-C916OUcf.js');
+fs.writeFileSync(layoutFile,"import {createNetworkIndicator} from './workbench-network.js';\n"+fs.readFileSync(layoutFile,'utf8'));
+fs.copyFileSync('Browserapp/rebuild/workbench-network.mjs',path.join(dir,'workbench-network.js'));
 setups('identity-verification-entry-B8EzLOCj.js',{
  en:`const {popover:m,groups:h,selectedGroup:g,selectedItems:f,unreadCount:_,toggle:b,markRead:S,markAllRead:C,preventDefault:H,showDetails:te}=createNotifications({templateRef:k,ref:T,computed:j,onMounted:ee,translate:$t})`,
  ar:`const i=k('popover'),o=T(),s=T(false),c=T([]),p=T([]),g=T('kernel'),h=T([{title:$t('客户端升级'),list:c,value:'client',badge:0,component:se(Tn)},{title:$t('内核升级'),list:p,value:'kernel',badge:0,component:se(tr)}]),S=T(false),ee=T(),v=j(()=>p.value.flatMap(group=>group.list).filter(row=>row.status==='update').length),y=T(false);async function load(){const rows=await globalThis.__localRequest('kernels:list');p.value=[{title:$t('内核列表'),list:rows.map(row=>({coreType:row.engine==='firefox'?'Firefox':'Chrome',coreVersion:String(row.version).split('.')[0],status:'downloaded',_light:false,_desc:row.version,_engine:row.engine,_version:row.version,primary:row.primary}))}];}async function re(event){const target=event.currentTarget;await load();i.value.instance.toggle(event,target);}function le(){return load();}E(load)`,

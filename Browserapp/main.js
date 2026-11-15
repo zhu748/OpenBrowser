@@ -140,6 +140,7 @@ let quitCleanupPromise = null;
 let quitBrowserDrain = null;
 let localUiService;
 let localUiDialogs;
+let localUiWorkspaces;
 let localUiSync;
 let quitCleanupSettled = false;
 let syncSelection = [];
@@ -189,7 +190,7 @@ function isTrustedAppIndexUrl(senderUrl) {
 function assertTrustedIpcSender(event) {
   if (fatalFailure) throw Object.assign(new Error('应用发生异常，正在关闭，请重新启动。'), { code: 'APP_SHUTTING_DOWN' });
   const isMain = mainWindow && !mainWindow.isDestroyed() && event?.sender === mainWindow.webContents;
-  if (!isMain && !localUiDialogs?.owns(event?.sender)) {
+  if (!isMain && !localUiDialogs?.owns(event?.sender) && !localUiWorkspaces?.owns(event?.sender)) {
     throw new Error('untrusted IPC sender');
   }
   const senderUrl = String(event.sender.getURL?.() || '');
@@ -799,21 +800,10 @@ function applyWindowChrome(win, themeId, colorMode) {
   if (process.platform === 'win32' && typeof win.setBackgroundMaterial === 'function') {
     try { win.setBackgroundMaterial(winMica ? 'mica' : 'none'); } catch (_) {}
   }
-  // Keep Windows caption overlay in sync with theme (light/dark native skin too)
-  if (process.platform === 'win32' && typeof win.setTitleBarOverlay === 'function') {
-    try {
-      win.setTitleBarOverlay({
-        color: chrome.overlay,
-        symbolColor: chrome.symbol,
-        height: 40,
-      });
-    } catch (_) {}
-  }
 }
 
 async function createWindow() {
   const isMac = process.platform === 'darwin';
-  const isWin = process.platform === 'win32';
   const chrome = chromeForTheme('modern');
 
   /** @type {Record<string, any>} */
@@ -840,27 +830,15 @@ async function createWindow() {
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: true, spellcheck: false },
   };
 
-  // Fuse system title bar with in-app chrome (shipping-app style)
-  if (isMac) {
-    options.titleBarStyle = 'hiddenInset';
-    // Sit in the empty strip above brand (brand is pushed down in CSS)
-    options.trafficLightPosition = { x: 12, y: 14 };
-    options.transparent = false;
-  } else if (isWin) {
-    // Same shipping-app fusion as macOS: custom chrome + native caption buttons
-    options.titleBarStyle = 'hidden';
-    options.frame = true;
-    options.titleBarOverlay = {
-      color: chrome.overlay,
-      symbolColor: chrome.symbol,
-      height: 40,
-    };
-  }
+  // Keep a native drag/resize frame above the workbench on every platform.
+  // Caption buttons must not cover the application header or profile menu.
+  options.title = `OpenBrowser v${app.getVersion()}`;
+  options.frame = true;
 
   const win = new BrowserWindow(options);
   mainWindow = win;
   windows.add(win);
-  win.on('closed', () => { windows.delete(win); if (mainWindow === win) { localUiDialogs?.closeAll(); mainWindow = null; } });
+  win.on('closed', () => { windows.delete(win); if (mainWindow === win) { localUiDialogs?.closeAll(); localUiWorkspaces?.closeAll(); mainWindow = null; } });
   win.on('close', (event) => {
     // macOS keeps the standard close-to-Dock convention; quitting paths bypass this.
     if (quitting || process.platform === 'darwin') return;
@@ -938,6 +916,8 @@ app.whenReady().then(async () => {
     });
     const { DialogWindows } = require('./rebuild/dialog-windows');
     localUiDialogs = new DialogWindows({ BrowserWindow, parent: () => mainWindow, windows });
+    const { WorkspaceWindows } = require('./rebuild/workspace-windows');
+    localUiWorkspaces = new WorkspaceWindows({ BrowserWindow, parent: () => mainWindow, windows });
   }
   session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
     const url = String(details.url || '');
@@ -972,11 +952,13 @@ app.whenReady().then(async () => {
       const { captureIpcResult } = require('./shared/ipc-result');
       if (typeof method === 'string' && method.startsWith('ui:dialog:'))
         return captureIpcResult(() => localUiDialogs.request(method, payload, _event.sender));
+      if (typeof method === 'string' && method.startsWith('ui:workspace:'))
+        return captureIpcResult(() => localUiWorkspaces.request(method, payload, _event.sender));
       if (typeof method === 'string' && method.startsWith('sync:'))
         return captureIpcResult(() => localUiSync.request(method, payload));
       if (!localUiService) {
         const { LocalService } = require('./rebuild/local-service');
-        localUiService = new LocalService({ engine, root: app.getPath('userData'), dialog, window: () => mainWindow, proxyStore, accountStore: () => automation?.accountStore, automation: () => automation, beforeRemove: beforeProfileRemoval,
+        localUiService = new LocalService({ engine, root: app.getPath('userData'), dialog, window: () => BrowserWindow.getFocusedWindow() || mainWindow, proxyStore, accountStore: () => automation?.accountStore, automation: () => automation, beforeRemove: beforeProfileRemoval,
           isSynchronizing: (id) => syncState.active && syncState.selected.includes(id) });
       }
       return captureIpcResult(() => localUiService.request(method, payload));
@@ -1000,7 +982,7 @@ app.whenReady().then(async () => {
     preferIndependentKernel: engine?.preferIndependentKernel ?? true,
     allowSystemBrowserFallback: engine?.allowSystemBrowserFallback ?? false,
     systemBrowserPath: engine?.systemBrowserPath ?? '',
-    titleBarIntegrated: process.platform === 'darwin' || process.platform === 'win32',
+    titleBarIntegrated: false,
     platform: process.platform,
     closeAction: settingsStore.normalizeCloseAction(settingsStore.getLocalSettings().closeAction),
     };

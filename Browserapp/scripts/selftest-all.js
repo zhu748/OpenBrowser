@@ -41,6 +41,7 @@ const SUITE = [
   ['selftest:launchpreparation', 'automation/selftests/launch-preparation-selftest.js'],
   ['selftest:automationshutdown', 'automation/selftests/automation-shutdown-selftest.js'],
   ['selftest:uarandomcontracts', 'automation/selftests/ua-random-contract-selftest.js'],
+  ['selftest:workbenchfeedback', 'automation/selftests/workbench-feedback-selftest.js'],
   ['selftest:uarealmsnative', 'automation/selftests/ua-realms-native-selftest.js', { nativeOnly: true }],
   ['selftest:workbenchnotifications', 'automation/selftests/workbench-notifications-selftest.js'],
   ...nodeWorkbenchTests.map(({ name, script, timeoutMs }) => [name, script, { timeoutMs }]),

@@ -179,8 +179,8 @@ const methods = {
   userDelWindowInfoCreate: (p) => request("profiles:purge", p),
   userDelWindowInfoRecycleCreate: (p) => request("profiles:purge", p),
   userGetUaWebglV2List: (p) => request("fingerprint:preview", p),
-  userGetDeviceNameV2List: (p) => request("fingerprint:preview", p),
-  userGetMacAddrV2List: (p) => request("fingerprint:preview", p),
+  userGetDeviceNameV2List: async (p) => [await request("fingerprint:sample-fields", p)],
+  userGetMacAddrV2List: async (p) => [await request("fingerprint:sample-fields", p)],
   userGetBrowserVersionInfoList: async () => (await request("kernels:list")).filter((v) => v.engine === "chromium").map((v) => ({ browserVersion: v.version.split("-")[0] })),
   userGetWindowStatusInfoCreate: async (p) => (await request("profiles:list")).filter((v) => p.ids.includes(v.id)),
   userRestoreWindowInfoCreate: (p) => request("profiles:restore", p),
@@ -442,20 +442,14 @@ const sends = {
   "browser:exportProfiles": (payload) => request("transfer:export", payload),
   "util:genRandomFingerprint": (p, count) => request("fingerprint:preview", { ...p, count }),
   "util:callRandomFingerprintFunc": async (functions) => {
-    const f = (await request("fingerprint:preview"))[0]._openbrowser, values = {
-      getwebGLNoiseValue: f.webgl.mark,
-      getCanvasContextNoiseValue: f.canvas.mark,
-      getClientRectsValue: f.clientRects,
-      getSpeechSynthesis: f.speech.voices,
-      getAllowFontList: f.fonts.list
-    }, result = {};
+    const os = functions.getSpeechSynthesis?.[0] || functions.getAllowFontList?.[0], values = await request("fingerprint:sample-fields", { os }), result = {};
     for (const k of Object.keys(functions)) {
       if (!Object.hasOwn(values, k)) throw Error("\u672A\u6620\u5C04\u6307\u7EB9\u51FD\u6570: " + k);
       result[k] = values[k];
     }
     return result;
   },
-  "util:genRandomFonts": async () => (await request("fingerprint:preview"))[0]._openbrowser.fonts.list,
+  "util:genRandomFonts": async () => (await request("fingerprint:sample-fields")).getAllowFontList,
   "app:isMainWindow": () => !new URL(location.href).searchParams.has("dialog"),
   "app:showCurrentWebviewWindow": () => request("ui:dialog:show"),
   "app:resizeWindow": (p) => request("ui:dialog:resize", p),

@@ -22,7 +22,7 @@ function buildFirefoxFingerprint(profile, version) {
   }
   const fp = buildFingerprint({
     ...profile, osVersion: '', kernelVersion: version,
-    userAgent: pinned || firefoxUserAgent(os, version),
+    userAgent: pinned || firefoxUserAgent(os, version, { shortVersion: profile.privacy?.fingerprint?.uaReduced === true }),
     fingerprintLaunchSeed: profile.privacy?.refreshFingerprintOnStart ? crypto.randomBytes(16).toString('hex') : '',
   });
   fp.engine = 'firefox';

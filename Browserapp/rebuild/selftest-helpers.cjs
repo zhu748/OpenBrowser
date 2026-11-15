@@ -43,4 +43,17 @@ async function toggleTheme(page) {
   await page.getByText(current==='dark'?'浅色模式':'深色模式',{exact:true}).click();
   await page.keyboard.press('Escape');
 }
-module.exports = { waitUntil, toggleTheme, createTestDirectory };
+async function openWorkspacePage(app, route) {
+  const main = await app.firstWindow(), key = route.split('?')[0];
+  let page = app.windows().find(candidate => new URL(candidate.url() || 'about:blank').searchParams.get('workspace') === key);
+  const created = page ? null : app.waitForEvent('window');
+  await main.evaluate(value => globalThis.__localRequest('ui:workspace:open', { route: value }), route);
+  if (!page) page = await created;
+  for (const event of ['pageerror', 'console', 'request'])
+    for (const listener of main.listeners(event)) if (!page.listeners(event).includes(listener)) page.on(event, listener);
+  const viewport = main.viewportSize();
+  if (viewport) await page.setViewportSize(viewport);
+  await page.waitForFunction(() => !!globalThis.__router && !!globalThis.__localRequest);
+  return page;
+}
+module.exports = { waitUntil, toggleTheme, createTestDirectory, openWorkspacePage };

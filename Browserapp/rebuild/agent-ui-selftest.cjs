@@ -1,4 +1,5 @@
 "use strict";
+const { openWorkspacePage } = require("./selftest-helpers.cjs");
 const { evidenceDirectory } = require("./compiler/evidence-path.cjs");
 
 const { _electron: electron } = require("playwright");
@@ -52,7 +53,7 @@ const root = path.resolve(__dirname, "../..");
         OPENBROWSER_USER_DATA: data,
       },
     });
-    const page = await app.firstWindow();
+    let page = await app.firstWindow();
     await page.setViewportSize({ width: 1280, height: 860 });
     page.on("pageerror", (e) => result.errors.push(e.stack));
     page.on("console", (m) => {
@@ -63,9 +64,7 @@ const root = path.resolve(__dirname, "../..");
         result.externalRequests.push(r.url());
     });
     await page.getByText("暂无窗口", { exact: true }).waitFor();
-    await page.evaluate(() =>
-      globalThis.__router.push("/agent-console/settings"),
-    );
+    page = await openWorkspacePage(app, '/agent-console/settings');
     await page.getByLabel("模型服务", { exact: true }).selectOption("openai");
     await page
       .getByLabel("服务地址", { exact: true })

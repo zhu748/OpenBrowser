@@ -1,4 +1,5 @@
 "use strict";
+const { openWorkspacePage } = require("./selftest-helpers.cjs");
 const assert = require("node:assert/strict"), fs = require("node:fs/promises"),
   path = require("node:path"), os = require("node:os"), vm = require("node:vm");
 const acorn = require("acorn"), walk = require("acorn-walk");
@@ -25,7 +26,7 @@ async function main() {
     app = await electron.launch({ executablePath: require("electron"),
       args: [...(process.platform === "linux" ? ["--no-sandbox", "--ozone-platform=headless", "--disable-gpu"] : []), path.resolve(__dirname, "..")],
       env: { ...process.env, OPENBROWSER_USER_DATA: root, OPENBROWSER_API_PORT: "0", OPENBROWSER_MASTER_KEY_FILE: path.join(root, "master.key") }, timeout: 30000 });
-    const page = await app.firstWindow();
+    let page = await app.firstWindow();
     await page.waitForFunction(() => !!globalThis.__router, null, { timeout: 30000 });
     await app.evaluate(({ ipcMain }) => {
       ipcMain.removeHandler("kernel:list-versions");
@@ -66,7 +67,7 @@ async function main() {
         return original(event, method, payload);
       });
     });
-    await page.evaluate(() => globalThis.__router.push("/agent-console/settings"));
+    page = await openWorkspacePage(app, '/agent-console/settings');
     const model = page.getByLabel("模型名称", { exact: true }), save = page.getByRole("button", { name: "保存设置", exact: true });
     await model.waitFor(); assert(await model.isDisabled()); assert(await save.isDisabled());
     await app.evaluate(() => globalThis.__configResponse({ provider: "ollama", baseUrl: "http://127.0.0.1:11434", model: "loaded-model", hasApiKey: false }));

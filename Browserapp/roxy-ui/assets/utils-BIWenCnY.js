@@ -1,3 +1,4 @@
+import {serializeFingerprintDraft} from "./workbench-fingerprint-draft.js";
 import {t as n} from "./rolldown-runtime-BCiCTKAo.js";
 import {St as a,d as o} from "./runtime-core.esm-bundler-CBj16o9G.js";
 import {n as l} from "./locales-BfKu2SD4.js";
@@ -3552,7 +3553,6 @@ var zY = ve("workspace", () => ({ currentWorkspace: a({ id: "local", workspaceTy
 }, enterWorkspace: async () => {
 }, setCurrentWorkspace: async () => {
 }, fetchWorkspaceList: async () => [] }));
-var BY = ve('tutorial',()=>{const videoMaps=a({});return {videoMaps,getVideoByType:async()=>undefined,getVideoMaps:async()=>videoMaps.value,resetVideoMaps:()=>{videoMaps.value={};}}});
 var VY = typeof __SENTRY_DEBUG__ > "u" || __SENTRY_DEBUG__;
 var HY = globalThis;
 var UY = "10.55.0";
@@ -3994,10 +3994,10 @@ function L$(e5, t2 = {}, n2 = { keyName: "name", valueName: "value" }) {
   return r2.clear(), i2;
 }
 function R$(e5, t2 = {}, n2 = { keyName: "name", valueName: "value" }) {
-  return Array.isArray(e5) ? e5.reduce((e6, t3) => {
+  return serializeFingerprintDraft(e5, Array.isArray(e5) ? e5.reduce((e6, t3) => {
     let r2 = L$(t3, e6, n2);
     return Object.assign(e6, r2);
-  }, t2) : [];
+  }, t2) : []);
 }
 function z$(e5, t2) {
   if (e5.has(t2.name)) throw Error(`Duplicate input.name '${t2.name}' found in inputs`);
@@ -4031,4 +4031,4 @@ function W$(e5, t2 = (e6) => !!e6) {
 function G$(e5, t2, n2) {
   return e5 === void 0 ? n2 : e5 === t2;
 }
-export {Jw as An,cf as Ar,Ww as Cn,Wd as Cr,nY as Ct,yf as Dr,$J as Dt,rT as En,OZ as F,Ku as Fr,dZ as H,yJ as Kt,ZZ as N,Lw as Nn,Gw as On,Ef as Or,ZJ as Ot,kZ as P,uf as Pr,UJ as Pt,Qw as Sn,Ud as Sr,mf as Tr,eY as Tt,DJ as Ut,SY as _t,F$ as a,pt as ai,gf as ar,YX as at,sf as br,yY as bt,G$ as c,et as ci,rf as cr,qX as ct,U$ as d,Xe as di,lX as dt,bJ as en,B$ as f,it as fi,_f as fr,YY as ft,Ue as gi,nf as gr,TY as gt,O$ as h,MT as hn,vf as hr,EY as ht,I$ as i,Kw as jn,xf as jr,Zw as kn,Gd as kr,H$ as l,VT as ln,KX as lt,j$ as m,RT as mn,Kd as mr,zY as mt,lt as ni,hJ as nn,L$ as o,mt as oi,of as or,JX as ot,qe as pi,wf as pr,BY as pt,EJ as qt,W$ as r,ut as ri,sJ as rn,R$ as s,ZT as sn,ef as sr,GX as st,ct as ti,wJ as tn,mp as tr,V$ as u,Je as ui,bX as ut,jQ as v,pY as vt,Uw as wn,Hd as wr,fY as wt,Pe as xi,Yw as xn,Jd as xr,Xw as yn,Sf as yr,bY as yt,PJ as zt};
+export {Jw as An,cf as Ar,Ww as Cn,Wd as Cr,nY as Ct,yf as Dr,$J as Dt,rT as En,OZ as F,Ku as Fr,dZ as H,yJ as Kt,ZZ as N,Lw as Nn,Gw as On,Ef as Or,ZJ as Ot,kZ as P,uf as Pr,UJ as Pt,Qw as Sn,Ud as Sr,mf as Tr,eY as Tt,DJ as Ut,SY as _t,F$ as a,pt as ai,gf as ar,YX as at,sf as br,yY as bt,G$ as c,et as ci,rf as cr,qX as ct,U$ as d,Xe as di,lX as dt,bJ as en,B$ as f,it as fi,_f as fr,YY as ft,Ue as gi,nf as gr,TY as gt,O$ as h,MT as hn,vf as hr,EY as ht,I$ as i,Kw as jn,xf as jr,Zw as kn,Gd as kr,H$ as l,VT as ln,KX as lt,j$ as m,RT as mn,Kd as mr,zY as mt,lt as ni,hJ as nn,L$ as o,mt as oi,of as or,JX as ot,qe as pi,wf as pr,EJ as qt,W$ as r,ut as ri,sJ as rn,R$ as s,ZT as sn,ef as sr,GX as st,ct as ti,wJ as tn,mp as tr,V$ as u,Je as ui,bX as ut,jQ as v,pY as vt,Uw as wn,Hd as wr,fY as wt,Pe as xi,Yw as xn,Jd as xr,Xw as yn,Sf as yr,bY as yt,PJ as zt};

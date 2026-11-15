@@ -227,8 +227,8 @@ const methods = {
   userDelWindowInfoCreate: (p) => request("profiles:purge", p),
   userDelWindowInfoRecycleCreate: (p) => request("profiles:purge", p),
   userGetUaWebglV2List: (p) => request("fingerprint:preview", p),
-  userGetDeviceNameV2List: (p) => request("fingerprint:preview", p),
-  userGetMacAddrV2List: (p) => request("fingerprint:preview", p),
+  userGetDeviceNameV2List: async (p) => [await request("fingerprint:sample-fields", p)],
+  userGetMacAddrV2List: async (p) => [await request("fingerprint:sample-fields", p)],
   userGetBrowserVersionInfoList: async () =>
     (await request("kernels:list"))
       .filter((v) => v.engine === "chromium")
@@ -558,14 +558,8 @@ const sends = {
   "util:genRandomFingerprint": (p, count) =>
     request("fingerprint:preview", { ...p, count }),
   "util:callRandomFingerprintFunc": async (functions) => {
-    const f = (await request("fingerprint:preview"))[0]._openbrowser;
-    const values = {
-      getwebGLNoiseValue: f.webgl.mark,
-      getCanvasContextNoiseValue: f.canvas.mark,
-      getClientRectsValue: f.clientRects,
-      getSpeechSynthesis: f.speech.voices,
-      getAllowFontList: f.fonts.list,
-    };
+    const os = functions.getSpeechSynthesis?.[0] || functions.getAllowFontList?.[0];
+    const values = await request('fingerprint:sample-fields', { os });
     const result = {};
     for (const k of Object.keys(functions)) {
       if (!Object.hasOwn(values, k)) throw Error("未映射指纹函数: " + k);
@@ -574,7 +568,7 @@ const sends = {
     return result;
   },
   "util:genRandomFonts": async () =>
-    (await request("fingerprint:preview"))[0]._openbrowser.fonts.list,
+    (await request('fingerprint:sample-fields')).getAllowFontList,
   "app:isMainWindow": () => !new URL(location.href).searchParams.has("dialog"),
   "app:showCurrentWebviewWindow": () => request("ui:dialog:show"),
   "app:resizeWindow": (p) => request("ui:dialog:resize", p),

@@ -55,5 +55,7 @@
   "review-template-ui-selftest.cjs",
   "review-agent-contracts-selftest.cjs",
   "review-agent-contracts-ui-selftest.cjs",
-  "maintenance-ui-selftest.cjs"
+  "maintenance-ui-selftest.cjs",
+  "workbench-interactions-ui-selftest.cjs",
+  "profile-fingerprint-ui-selftest.cjs"
 ]

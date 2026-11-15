@@ -241,17 +241,18 @@ function firefoxUaVersion(version) {
 }
 
 /** Firefox major-segment UA (frozen at major since Gecko 129): 159.0.1 → 159.0. */
-function firefoxUserAgent(osName, version) {
+function firefoxUserAgent(osName, version, { shortVersion = false } = {}) {
   const major = Number(firefoxUaVersion(version).split('.')[0]) || 0;
   const rv = major > 0 ? `${major}.0` : String(firefoxUaVersion(version));
+  const productVersion = shortVersion && major > 0 ? String(major) : rv;
   const os = String(osName || '').toLowerCase();
   if (os.startsWith('win')) {
-    return `Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:${rv}) Gecko/20100101 Firefox/${rv}`;
+    return `Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:${rv}) Gecko/20100101 Firefox/${productVersion}`;
   }
   if (os.startsWith('mac')) {
-    return `Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:${rv}) Gecko/20100101 Firefox/${rv}`;
+    return `Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:${rv}) Gecko/20100101 Firefox/${productVersion}`;
   }
-  return `Mozilla/5.0 (X11; Linux x86_64; rv:${rv}) Gecko/20100101 Firefox/${rv}`;
+  return `Mozilla/5.0 (X11; Linux x86_64; rv:${rv}) Gecko/20100101 Firefox/${productVersion}`;
 }
 
 /** "socks5://127.0.0.1:8080" | "http://h:80" → {scheme, host, port} or null. */

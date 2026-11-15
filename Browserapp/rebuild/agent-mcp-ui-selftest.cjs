@@ -1,4 +1,5 @@
 "use strict";
+const { openWorkspacePage } = require("./selftest-helpers.cjs");
 const { evidenceDirectory } = require("./compiler/evidence-path.cjs");
 
 const { createTestDirectory } = require("./selftest-helpers.cjs");
@@ -15,7 +16,7 @@ const repo=path.resolve(__dirname,'../..');
  });await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
  try{
   app=await electron.launch({executablePath:require('electron'),args:['--no-sandbox','--ozone-platform=headless','--disable-gpu',path.join(repo,'Browserapp')],env:{...process.env,OPENBROWSER_USER_DATA:data,OPENBROWSER_API_PORT:'0'}});page=await app.firstWindow();page.setDefaultTimeout(15000);await page.setViewportSize({width:1536,height:960});page.on('pageerror',error=>result.errors.push({phase,error:error.message}));page.on('console',message=>{if(message.type()==='error')result.errors.push({phase,error:message.text()});});page.on('request',request=>{if(/^https?:|^wss?:/.test(request.url()))result.externalRequests.push(request.url());});await page.getByText('暂无窗口',{exact:true}).waitFor();
-  phase='open-original';await page.evaluate(()=>globalThis.__router.push('/agent-console/settings'));await page.getByRole('button',{name:'MCP 服务',exact:true}).click();await page.getByRole('heading',{name:'MCP 服务',exact:true}).waitFor();await page.getByText('暂无 MCP',{exact:true}).waitFor();
+  phase='open-original';page = await openWorkspacePage(app, '/agent-console/settings');await page.getByRole('button',{name:'MCP 服务',exact:true}).click();await page.getByRole('heading',{name:'MCP 服务',exact:true}).waitFor();await page.getByText('暂无 MCP',{exact:true}).waitFor();
   await page.getByRole('button',{name:'新建',exact:true}).click();await page.getByRole('tab',{name:'HTTP 请求',exact:true}).click();await page.getByPlaceholder('输入服务名称',{exact:true}).fill('界面 MCP 验收');await page.getByPlaceholder('https://...',{exact:true}).fill('http://127.0.0.1:'+server.address().port+'/mcp');
   await page.screenshot({path:path.join(evidence,'mcp-client-create-light.png')});phase='validate';await page.getByRole('button',{name:'验证',exact:true}).click();await page.getByText('验证成功',{exact:true}).waitFor();assert.equal(connects,1);assert.equal(deletes,1);
   phase='save';await page.getByRole('button',{name:'保存',exact:true}).click();const row=page.locator('.mcp-server-row').filter({hasText:'界面 MCP 验收'});await row.waitFor();assert.equal(connects,1);assert.equal(await row.getByRole('switch').getAttribute('aria-checked'),'false');

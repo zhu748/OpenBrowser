@@ -1,3 +1,4 @@
+import {installWorkspaceNavigation} from "./workbench-navigation.js";
 import "./rich-html-link-VdBpR3Cm.js";
 import {n as localNotifications} from "./usetoast-DphSlejX.js";
 import {n as localAppearance} from "./theme-mq6SsndU.js";
@@ -36,7 +37,7 @@ async function startLocalUi() {
     };
     painted();
   }));
-  const initialPath = location.hash.slice(1) || "/browser/list";
+  const initialPath = await installWorkspaceNavigation(router, { url: location.href, dialogKind, request: (...args) => globalThis.__localRequest(...args), events: (callback) => globalThis.rebuild.onEvent(callback) });
   await router.replace(dialogKind ? { path: "/synchronizer/dialog/" + dialogKind, query: { tab: dialogParams.get("tab") || void 0 } } : router.resolve(initialPath).matched.length ? initialPath : "/browser/list"), app.mount("#app"), document.querySelector("#page-loading")?.remove(), globalThis.__router = router;
 }
 startLocalUi().catch((error) => {

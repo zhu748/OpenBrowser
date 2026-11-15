@@ -3,6 +3,8 @@
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const h = require('./native-gate-harness');
+const { buildFingerprint } = require('../fingerprint');
+const { buildUaProfile } = require('../user-agent');
 
 async function snapshot() {
   const hints = await navigator.userAgentData.getHighEntropyValues(new Set([
@@ -81,8 +83,14 @@ async function main() {
   const origin = 'http://127.0.0.1:' + server.address().port;
   let reference;
   try {
-    for (const os of [null, 'Windows', 'Android']) {
-      const persona = h.buildPersona('ua-contract-' + (os || 'baseline'), { os: os || 'Windows', kernelVersion: browser.version });
+    for (const os of [null, 'Windows', 'Android', 'Windows full UA']) {
+      const persona = h.buildPersona('ua-contract-' + (os || 'baseline').replaceAll(' ', '-'), { os: os === 'Windows full UA' ? 'Windows' : os || 'Windows', kernelVersion: browser.version });
+      if (os === 'Windows full UA') {
+        persona.profile.userAgent = buildUaProfile({ os: 'Windows', chromeMajor: Number(browser.version.split('.')[0]), chromeFull: browser.version, reduced: false }).userAgent;
+        Object.assign(persona.profile.privacy.fingerprint, { uaGenerated: true, uaReduced: false });
+        persona.fingerprint = buildFingerprint({ ...persona.profile, kernelVersion: browser.version });
+        assert.ok(persona.fingerprint.userAgent.includes('Chrome/' + browser.version));
+      }
       const run = await h.launchPersonaBrowser(browser, persona, { injectFingerprint: os !== null });
       let page;
       try {

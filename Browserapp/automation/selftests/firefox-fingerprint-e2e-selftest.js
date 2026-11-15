@@ -17,7 +17,7 @@ const { clearFirefoxPlaces } = require('../browser-data');
 const { DatabaseSync } = require('node:sqlite');
 const { BidiConnection, waitForFirefoxEndpoint, evaluateBidi } = require('../../network/bidi-connection');
 
-async function run(generation) {
+async function run(generation, shortVersion = false) {
   const binary = process.env.OPENBROWSER_FIREFOX_BINARY;
   if (!binary) {
     console.error('Native Firefox verification requires OPENBROWSER_FIREFOX_BINARY; no browser checks ran.');
@@ -39,7 +39,9 @@ async function run(generation) {
   try {
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
     const profile = sanitizeProfile({ id: 'firefox-native', fingerprintVersion: generation, name: 'Firefox native', engine: 'firefox', os: 'Windows', width: 1440, height: 900, privacy: { cores: 4, memory: 0, webrtc: 'disabled', fontListMode: 'real', timezoneMode: 'custom', timezone: 'America/New_York' }, advanced: { showInfoPage: false } });
+    if (shortVersion) profile.privacy.fingerprint = { ...profile.privacy.fingerprint, uaGenerated: true, uaReduced: true };
     const fp = buildFirefoxFingerprint(profile, version);
+    if (shortVersion) assert.match(fp.userAgent, new RegExp('Firefox/' + version.split('.')[0] + '$'));
     await fs.writeFile(path.join(root, 'user.js'), buildFirefoxUserJs({
       userAgent: fp.userAgent, acceptLanguages: fp.languages.join(','), locale: fp.languages[0],
       proxyEndpoint: 'http://127.0.0.1:9', noProxyHosts: '127.0.0.1, localhost',
@@ -112,4 +114,5 @@ async function run(generation) {
   }
 }
 run(1).then(() => process.exitCode === 2 ? undefined : run(2))
+  .then(() => process.exitCode === 2 ? undefined : run(2, true))
   .catch((error) => { console.error(error); process.exitCode = 1; });

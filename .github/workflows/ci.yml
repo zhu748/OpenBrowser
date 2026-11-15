@@ -249,6 +249,10 @@ jobs:
           # the fatal host deadline expires. Use the same independent kernel.
           node node_modules/electron/install.js
           OPENBROWSER_TEST_KERNEL_BINARY="$CHROME_BIN" node rebuild/quit-failure-selftest.cjs --fatal-hang
+          npx @puppeteer/browsers install firefox@stable --path "$HOME/.cache/ob-browsers"
+          FIREFOX_BIN="$(find "$HOME/.cache/ob-browsers" -type f -name firefox -path '*/firefox/*' | head -n 1)"
+          test -x "$FIREFOX_BIN"
+          OPENBROWSER_TEST_KERNEL_BINARY="$CHROME_BIN" OPENBROWSER_FIREFOX_BINARY="$FIREFOX_BIN" node rebuild/profile-fingerprint-ui-selftest.cjs
 
       - name: Install Firefox certificate tools
         if: matrix.browser == 'firefox'
@@ -350,6 +354,7 @@ jobs:
             node rebuild/optimization-ui-selftest.cjs
           fi
           node rebuild/maintenance-ui-selftest.cjs
+          node rebuild/workbench-interactions-ui-selftest.cjs
 
   # ~200 lines of Windows FFI (process/lock.rs, guardian.rs) compile to nothing
   # on Linux: cargo skips cfg(windows) blocks entirely, so per-push CI never

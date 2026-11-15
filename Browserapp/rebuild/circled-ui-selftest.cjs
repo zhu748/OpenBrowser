@@ -217,7 +217,11 @@ const repo = path.resolve(__dirname, "../..");
       ["任务管理", "/agent-console/task-manager"],
       ["我的模板", "/agent-console/templates"],
     ]) {
+      const opened = route.startsWith('/agent-console') ? app.waitForEvent('window') : null;
       await page.locator(".rx-side").getByText(label, { exact: true }).click();
+      const mainPage = page;
+      if (opened) page = await opened;
+      await page.waitForFunction(() => !!globalThis.__router);
       await waitUntil(() =>
         page.evaluate(
           (route) => globalThis.__router.currentRoute.value.path === route,
@@ -232,11 +236,12 @@ const repo = path.resolve(__dirname, "../..");
           "circled-route-" + route.replaceAll("/", "-") + ".png",
         ),
       });
-      await page.evaluate(() => globalThis.__router.push("/browser/list"));
+      if (opened) { await page.close(); page = mainPage; }
+      else await page.evaluate(() => globalThis.__router.push("/browser/list"));
       await page.getByText("全部窗口", { exact: true }).waitFor();
     }
     result.checks.push(
-      "侧栏窗口同步、模板商城、任务管理、我的模板均由真实点击进入对应原组件路由",
+      "侧栏窗口同步进入原组件，模板商城、任务管理和我的模板由真实点击打开独立窗口，关闭后主界面保留",
     );
     await page
       .getByTestId("local-usage")

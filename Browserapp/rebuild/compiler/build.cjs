@@ -57,6 +57,7 @@ for (const step of [
   "prepare.cjs",
   "patch-local.cjs",
   "patch-correctness.cjs",
+  "patch-editor-interactions.cjs",
   "patch-workbench.cjs",
   "patch-extensions.cjs",
   "patch-host.cjs",

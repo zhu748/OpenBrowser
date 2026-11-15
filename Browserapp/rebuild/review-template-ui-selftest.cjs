@@ -1,4 +1,5 @@
 "use strict";
+const { openWorkspacePage } = require("./selftest-helpers.cjs");
 const { evidenceDirectory } = require("./compiler/evidence-path.cjs");
 
 const { createTestDirectory } = require("./selftest-helpers.cjs");
@@ -27,7 +28,7 @@ const { zip } = require("./selftest-zip.cjs"), { waitUntil, toggleTheme } = requ
     page.on("console", message => { if (message.type() === "error") result.errors.push(message.text()); });
     page.on("request", request => { if (/^https?:|^wss?:/.test(request.url())) result.externalRequests.push(request.url()); });
     await page.getByText("暂无窗口", { exact: true }).waitFor();
-    await page.evaluate(() => globalThis.__router.push("/agent-console/templates"));
+    page = await openWorkspacePage(app, '/agent-console/templates');
     await page.getByRole("button", { name: "创建模板", exact: true }).last().waitFor();
     assert.equal(await page.getByRole("button", { name: "定制模板", exact: true }).count(), 0, "商业咨询入口必须删除");
     assert.equal(await page.locator(".custom-template-dialog,.custom-template-banner").count(), 0);
@@ -55,8 +56,8 @@ const { zip } = require("./selftest-zip.cjs"), { waitUntil, toggleTheme } = requ
     await page.screenshot({ path: path.join(output, "template-pin-light.png") });
     await page.getByRole("button", { name: "取消置顶", exact: true }).last().click();
     await waitUntil(() => page.evaluate(async id => !(await globalThis.__localAgentApi.userTemplates.getUserTemplate({ templateId: id })).data.isTopped, saved.id));
-    await page.evaluate(() => globalThis.__router.push("/browser/list")); await toggleTheme(page);
-    await page.evaluate(() => globalThis.__router.push("/agent-console/templates")); await card().waitFor();
+    page = await app.firstWindow(); await toggleTheme(page);
+    page = await openWorkspacePage(app, '/agent-console/templates'); await page.reload(); await card().waitFor();
     await page.screenshot({ path: path.join(output, "skill-template-dark.png") });
     result.checks.push("原版弹窗选择 ZIP，保留多文件 Skill 并保存；原版更多操作置顶/取消置顶及重载持久化；明暗截图");
     const catalog = await page.evaluate(async () => {

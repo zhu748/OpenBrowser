@@ -1,4 +1,5 @@
 
+const { openWorkspacePage } = require("./selftest-helpers.cjs");
 const { evidenceDirectory } = require("./compiler/evidence-path.cjs");
 const { waitUntil } = require("./selftest-helpers.cjs");
 const { createTestDirectory } = require("./selftest-helpers.cjs");
@@ -81,9 +82,7 @@ const repo = path.resolve(__dirname, "../..");
     });
     phase = "template-create";
     console.log(phase);
-    await page.evaluate(() =>
-      globalThis.__router.push("/agent-console/templates"),
-    );
+    page = await openWorkspacePage(app, '/agent-console/templates');
     await page
       .getByRole("button", { name: "创建模板", exact: true })
       .last()

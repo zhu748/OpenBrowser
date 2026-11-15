@@ -1,4 +1,5 @@
 "use strict";
+const { openWorkspacePage } = require("./selftest-helpers.cjs");
 const { evidenceDirectory } = require("./compiler/evidence-path.cjs");
 
 const { createTestDirectory } = require("./selftest-helpers.cjs");
@@ -11,6 +12,7 @@ const {waitUntil}=require('./selftest-helpers.cjs'),repo=path.resolve(__dirname,
  try{
   app=await electron.launch({executablePath:require('electron'),args:['--no-sandbox','--ozone-platform=headless','--disable-gpu',path.join(repo,'Browserapp')],env:{...process.env,OPENBROWSER_USER_DATA:data,OPENBROWSER_API_PORT:'0'}});page=await app.firstWindow();page.setDefaultTimeout(15000);await page.setViewportSize({width:1448,height:1050});page.on('pageerror',error=>result.errors.push(error.message));page.on('console',message=>{if(message.type()==='error')result.errors.push(message.text());});page.on('request',request=>{if(/^https?:|^wss?:/.test(request.url()))result.externalRequests.push(request.url());});await page.getByText('暂无窗口',{exact:true}).waitFor();
   await page.evaluate(baseUrl=>globalThis.__agentRequest('config:set',{provider:'openai',baseUrl,model:'fixture'}),'http://127.0.0.1:'+server.address().port);
+  page=await openWorkspacePage(app,'/agent-console');
   const start=async message=>{const c=await page.evaluate(()=>globalThis.__agentRequest('createConversation'));await page.evaluate(id=>globalThis.__router.push('/agent-console/c/'+id),c.id);const editor=page.locator('[contenteditable="true"]').first();await editor.waitFor();const full=page.getByRole('button',{name:'完全访问权限',exact:true});if(await full.count()){await full.first().click();await page.locator('.approval-option:visible').filter({hasText:'请求批准'}).click();}await editor.fill(message);await editor.press('Enter');await page.locator('.hitl-card').waitFor();return c;};
   let c=await start('ONE');assert.equal((await page.evaluate(()=>globalThis.__localRequest('profiles:list'))).length,0);assert.equal(requests.length,1);await page.screenshot({path:path.join(evidence,'agent-approval-pending.png')});
   await page.reload();await page.locator('.hitl-card').waitFor();assert.equal(requests.length,1);assert.equal((await page.evaluate(()=>globalThis.__localRequest('profiles:list'))).length,0);

@@ -361,7 +361,8 @@ module.exports = [
     },
   },
   {
-    files: ['rebuild/agent-channel.js', 'rebuild/local-pages.js', 'rebuild/renderer-bridge.js', 'rebuild/workbench-chrome.js', 'rebuild/workbench-notifications.mjs'],
+    files: ['rebuild/agent-channel.js', 'rebuild/local-pages.js', 'rebuild/renderer-bridge.js', 'rebuild/workbench-chrome.js', 'rebuild/workbench-notifications.mjs',
+      'rebuild/workbench-fingerprint-draft.mjs', 'rebuild/workbench-network.mjs', 'rebuild/workbench-navigation.mjs'],
     languageOptions: { sourceType: 'module' },
   },
   {

@@ -36,7 +36,7 @@ function resolvePersonaUa({ profile, privacy, fpIn, draw }) {
   const strictUa = fpIn.uaStrict || fpIn.uaGenerated;
   if (strictUa && uaOverride && strictMajor) {
     uaOverrideStr = uaOverride.replace(/(Chrome|Chromium|CriOS)\/[\d.]+/i,
-      (_, brand) => `${brand}/${brand.toLowerCase() === 'crios' ? strictFull : `${strictMajor}.0.0.0`}`);
+      (_, brand) => `${brand}/${brand.toLowerCase() === 'crios' || fpIn.uaReduced === false ? strictFull : `${strictMajor}.0.0.0`}`);
   }
   let uaProfile;
   if (uaOverrideStr) {

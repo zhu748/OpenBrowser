@@ -1,0 +1,47 @@
+{
+  "date": "2026-11-15",
+  "baseCommit": "b4a91b7e2840c6c975a9adf5ffca8434bb45e801",
+  "scope": "User feedback: native titlebar and draggable frame, independent feature windows, public egress IP, removed tutorials, left-click row menu and persistent random UA/fingerprint",
+  "changes": {
+    "windowChrome": "Restore native frame/titlebar for the main window and secondary workspaces. Native caption buttons occupy their own area.",
+    "workspaces": "Agent, tasks, template store, my templates, API and skills open owned sandboxed native windows; reuse existing pages and focus the retained main window from their home action.",
+    "network": "Probe and display public egress IP with 60s startup cache and explicit refresh. Never present LAN IP as public IP.",
+    "interaction": "Remove broken video/tutorial component and bypass obsolete right-click onboarding for the three-dot button.",
+    "fingerprint": "Generate a new seed and change desktop UA representation per click while retaining selected OS and kernel family/version. Carry draft seed/UA intent through the actual create/edit serializer, guard stale requests and custom edits, clear mismatched UA on missing engines and permit retry.",
+    "uaConstraints": "Chrome alternates real full kernel version and reduced version; Firefox alternates major.0 and major product versions with unchanged rv. No fabricated kernel version or architecture."
+  },
+  "verification": {
+    "aggregate": {
+      "passed": 224,
+      "partial": 1,
+      "skipped": 31,
+      "failed": 0,
+      "note": "Native prerequisites deliberately omitted from aggregate. The final preview retry/device-field adjustments were followed by targeted Node, real UI and native gates."
+    },
+    "realUi": "Linux Electron: empty-state/tutorial removal, direct row menu, independent windows with real IPC, public network indicator, full icon bounds, real Chromium159 and Firefox159 selection, both random buttons, same OS, new seed and actual disk persistence. API, templates, Agent, editor races and fatal shutdown regressions passed.",
+    "native": "Chromium document/iframe/dedicated/shared/service UA and headers including generated full version; Firefox document/iframe and HTTP UA including generated short version. Firefox worker support is not certified by the document gate.",
+    "limitations": [
+      "Physical dragging of the native Windows/macOS titlebar cannot be exercised in the Linux headless workspace. Cross-platform desktop CI checks native frame bounds, movable/resizable flags and header containment.",
+      "Fingerprint privacy protections have engine-specific limits; this change does not claim universal detection avoidance."
+    ],
+    "logSha256": {
+      "selftest-all.log": "5b04ce88065ee0dd0f6d18904855e67a988083cfb55ac9d08a2fcd68f140946d",
+      "lint.log": "dfb4e146a32136161932f4000a91bb70fe23b446f17eaefb8ee89bf7727bcefd",
+      "build-final.log": "e53339606a30a9992e944708cad7fbf14bb8da53f135bcd5dc6c124767c0b24d",
+      "feedback-node.log": "088b7faaf2865b0efd3c2646983c3b7a64a696be9e9e2667252888639305e0ef",
+      "interactions-ui.log": "d6dd1ed621bb6cd647041cf2746594e141c087a3621042a4f606c216caf81696",
+      "fingerprint-ui.log": "f576ba6d73577475e02456d9c16a6c208575f35bcd9f8f8b2ef9e6fcc0bf9ac1",
+      "optimization-ui.log": "3c3002240b73c85bb8c66b179130cba1444a40b7d125a372996aeb947afc64e2",
+      "maintenance-ui.log": "47dcf9e0e50a43c52e9a9b59c39e5b2662d2b2e29b98fdfada134cd7d91f2a41",
+      "api-ui.log": "99bf8423a9c7ffac71b16a0813b90dca12bc8e56b216064e0306c8ceeccb1a50",
+      "catalog-ui.log": "d25416607fcf3e6a2f67e5da0a004754d809f6c66a50a8eacb5801f241a7e8b3",
+      "circled-ui.log": "7022b81a0f9ad2d3786bc25ac64ccdb98a9f984856d330b87e184e3404664e02",
+      "agent-ui.log": "90d2a81702e01ea955d804ed762e232612de95386e601c6134c49ce4b2762de9",
+      "template-ui.log": "58940cae1eab96e3be988d2ab6a42fb97d4f87413bff303ec37ceee5569ce951",
+      "compiler.log": "bd5abc2368f97311fcc03a54e725ed940f5d93ca35a741edb6ad3382b3cea181",
+      "runtime-manifest.log": "b2bcd9e528746f8581ed0da72b644de0824900d6895520cf02bbda093b0b9189",
+      "ua-realms-native.log": "0ccd1422665c792f9065b9940f9ba86381e1468c47ae1e17dc3078131848dd84",
+      "firefox-native.log": "075aad99a17d161d3317eae3e7bb078c04a1abfde19411c7e561dd233ae40847"
+    }
+  }
+}

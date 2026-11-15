@@ -1,4 +1,5 @@
 "use strict";
+const { openWorkspacePage } = require("./selftest-helpers.cjs");
 const { evidenceDirectory } = require("./compiler/evidence-path.cjs");
 
 const { createTestDirectory } = require("./selftest-helpers.cjs");
@@ -125,7 +126,7 @@ const repo = path.resolve(__dirname, "../..");
         }),
       "http://127.0.0.1:" + server.address().port,
     );
-    await page.evaluate(() => globalThis.__router.push("/agent-console"));
+    page = await openWorkspacePage(app, '/agent-console');
     await page.getByText("有什么我能帮你的吗？", { exact: true }).waitFor();
     await page
       .getByRole("button", { name: "Attach file", exact: true })

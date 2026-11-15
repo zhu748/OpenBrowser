@@ -1,3 +1,4 @@
+import {restoreFingerprintDraft,refreshFingerprintDraft,invalidateFingerprintDraft} from "./workbench-fingerprint-draft.js";
 import {Dr as e,En as t,a as n,br as r,c as i,d as a,en as o,f as s,h as c,i as l,l as u,ln as d,m as f,mt as p,qt as m,s as h,ti as g,tn as _,v as ee,xr as v} from "./utils-BIWenCnY.js";
 import {bt as b} from "./runtime-core.esm-bundler-CBj16o9G.js";
 import {o as te,r as ne,s as re} from "./cookie-CqdL0VrU.js";
@@ -79,12 +80,7 @@ function pe(e2) {
 }
 var me = ee();
 async function A(e2) {
-  let { os: t2, osVersion: r2, coreVersion: i2, browserVersion: o2, coreType: s2 } = h(e2), { code: c2, data: l2 } = await ge({ os: t2, osVersion: r2, coreVersion: i2, coreType: s2, browserVersion: o2, count: 1 });
-  if (c2 === 0) {
-    a(e2, l2[0]);
-    let t3 = n(e2[0], "userAgent");
-    t3 && Reflect.set(t3, "_custom_ua", !1);
-  }
+  return (await refreshFingerprintDraft(e2, { read: h, apply: a, find: n, request: (p2) => ge(p2).then((result) => result.data) })).length > 0;
 }
 async function he(e2) {
   let { os: t2 } = h(e2), { code: n2, data: r2 } = await j({ os: t2, count: 1 });
@@ -104,13 +100,8 @@ async function M(e2) {
 }
 var N = { count: 1, preview: !0 };
 async function P(e2, t2) {
-  let { fontType: r2, canvas: i2, webGL: o2, audioContext: s2, speechVoices: c2, clientRects: l2, macInfo: u2, os: d2, osVersion: f2, coreVersion: p2, coreType: m2, webGLInfo: g2 } = h(e2), { count: _2, preview: ee2 } = { ...N, ...t2 }, v2 = await globalThis.electronAPI.send("util:genRandomFingerprint", { fontType: r2, canvas: i2, webGL: o2, audioContext: s2, speechVoices: c2, clientRects: l2, macInfo: u2, os: d2, osVersion: f2, coreVersion: p2, coreType: m2 }, _2);
-  if (console.debug("fingerDetail", v2), ee2) {
-    let { userAgent: t3, webGLManufacturer: n2, webGLRender: r3, macAddr: i3, deviceName: o3 } = v2[0], s3 = { userAgent: t3, macAddr: i3, deviceName: o3 };
-    g2 !== 2 && (s3.webGLManufacturer = n2, s3.webGLRender = r3), a(e2, s3);
-  }
-  let y2 = n(e2[0], "userAgent");
-  return y2 && Reflect.set(y2, "_custom_ua", !1), v2;
+  const options = { ...N, ...t2 };
+  return refreshFingerprintDraft(e2, { read: h, apply: a, find: n, count: options.count, preview: options.preview, request: (p2) => globalThis.electronAPI.send("util:genRandomFingerprint", p2, p2.count) });
 }
 function _e(e2, t2) {
   let n2 = ["ios", "android"].includes(e2.toLocaleLowerCase()), r2 = n2 ? t2.mobileResolution : t2.resolution;
@@ -221,9 +212,9 @@ async function U(a2 = {}, h2 = () => {
     let e2 = n(Z, "browserVersion");
     e2.value.slice().sort().join(",") !== e2._oldValue.slice().sort().join(",") && (e2._oldValue = e2.value.slice(), y2(() => A(q)));
   } }, { type: "textarea", label: $t("User-Agent"), name: "userAgent", value: a2.userAgent, rows: 3, iconClick: async () => {
-    await y2(() => A(q)), h2(0, $t("UA\u5237\u65B0\u6210\u529F"));
+    await y2(() => A(q)) && h2(0, $t("UA\u5237\u65B0\u6210\u529F"));
   }, change: (e2) => {
-    Reflect.set(e2, "_custom_ua", !0);
+    Reflect.set(e2, "_custom_ua", !0), invalidateFingerprintDraft(q);
   }, formatValue: (e2, t2, n2) => (Reflect.set(n2, "_custom_ua", e2._custom_ua), e2.value?.trim()), slot: "userAgent", preview: { label: "User Agent" } }, { type: "textarea", label: "Cookies", placeholder: $t(`\u9009\u586B
 \u652F\u6301\u683C\u5F0F: JSON\u3001Netscape\u3001Name=Value
 Name=Value \u672A\u5199 domain \u65F6\uFF0C\u5C06\u6309\u884C\u4ECE\u5E73\u53F0\u8D26\u53F7\u7684\u7F51\u5740\u81EA\u52A8\u586B\u5145`), name: "cookie", value: v(a2?.cookie) ? "" : te(a2.cookie), validator(e2) {
@@ -396,7 +387,7 @@ Name=Value \u672A\u5199 domain \u65F6\uFF0C\u5C06\u6309\u884C\u4ECE\u5E73\u53F0\
       Object.assign(Y, { speechVoicesValue: { enable: !0, voices: i3 } });
     }
   }
-  return q.push(Z, Q, X, $), await y2(() => Le(I2, P2?.value, B2?.value)), [q, Y];
+  return q.push(Z, Q, X, $), restoreFingerprintDraft(q, a2), await y2(() => Le(I2, P2?.value, B2?.value)), [q, Y];
 }
 function Te(e2, t2) {
   let n2 = l(e2, ["BatterySeparator", "NetworkSeparator", "bluetoothSeparator", "openBattery", "openNetwork", "openBluetooth"]);
