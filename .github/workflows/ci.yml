@@ -67,6 +67,10 @@ jobs:
       # no kernels needed): keeps scripts/fetch-kernels.js covered by the
       # per-push gate. The real download path is exercised by the
       # kernel-release / build-installers workflows.
+      - name: Install Linux desktop validation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y desktop-file-utils
       - name: Kernel fetch tooling selftest
         run: node scripts/fetch-kernels.js --selftest
       # Aggregate gate: scripts/selftest-all.js runs every dependency-free
@@ -183,7 +187,9 @@ jobs:
   # browser is missing, which the runner reports as a skip, never a false pass.
   native-gates:
     name: Native browser gates (${{ matrix.browser }})
-    runs-on: ubuntu-latest
+    # Match the Linux release host; the production custom-kernel probe uses
+    # Chromium's sandbox and needs working unprivileged user namespaces.
+    runs-on: ubuntu-22.04
     timeout-minutes: 25
     strategy:
       fail-fast: false

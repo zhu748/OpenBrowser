@@ -18,7 +18,7 @@ function scan(dir) {
       scan(file);
       continue;
     }
-    if (businessFile.test(file) && !file.endsWith(".js")) {
+    if (businessFile.test(file.replace(/\\/g, "/")) && !file.endsWith(".js")) {
       removed.push(file);
       fs.unlinkSync(file);
       continue;

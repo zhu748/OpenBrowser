@@ -45,4 +45,45 @@ try {
 } finally {
   fs.rmSync(directory, { recursive: true, force: true });
 }
-console.log('PASS compiler patches: exact matches, overlap, syntax and publication boundaries');
+// Run the real resource-purge stage with both path dialects. On Windows an
+// unnormalized separator used to retain removed CSS and its HTML link.
+const purgeSource = fs.readFileSync(path.join(__dirname, '../../rebuild/compiler/purge-resources.cjs'), 'utf8');
+for (const dialect of [path.posix, path.win32]) {
+  const root = dialect.join('fixture', 'output'), assets = dialect.join(root, 'assets');
+  const removed = dialect.join(assets, 'last-pay-modal-fixture.css');
+  const retained = dialect.join(assets, 'workbench-chrome.css');
+  const index = dialect.join(root, 'index.html');
+  const files = new Map([[removed, '.removed { color: red }'], [retained, '.local { color: blue }'],
+    [index, '<link rel="stylesheet" href="/assets/last-pay-modal-fixture.css"><link rel="stylesheet" href="/assets/workbench-chrome.css">']]);
+  const fixtureFs = {
+    readdirSync(dir, options) {
+      const entries = dir === root ? [['assets', true], ['index.html', false]]
+        : [...files.keys()].filter(file => dialect.dirname(file) === dir).map(file => [dialect.basename(file), false]);
+      return options?.withFileTypes ? entries.map(([name, directory]) => ({ name, isDirectory: () => directory })) : entries.map(([name]) => name);
+    },
+    readFileSync(file) {
+      if (file === 'work/rebuild/removed-scopes.json') return '[]';
+      if (file === 'style-inventory.json') return '["assets/last-pay-modal-fixture.css","assets/workbench-chrome.css"]';
+      assert.ok(files.has(file), 'fixture file exists: ' + file);
+      return files.get(file);
+    },
+    writeFileSync: (file, value) => files.set(file, value),
+    existsSync: file => files.has(file),
+    unlinkSync: file => assert.equal(files.delete(file), true),
+  };
+  vm.runInNewContext(purgeSource, {
+    process: { env: { REBUILD_OUTPUT: root } }, console: { log() {} },
+    require(specifier) {
+      if (specifier === 'node:fs') return fixtureFs;
+      if (specifier === 'node:path') return dialect;
+      if (specifier === './evidence-path.cjs') return { evidencePath: file => file };
+      if (specifier === 'postcss') return require('postcss');
+      throw Error('Unexpected purge dependency: ' + specifier);
+    },
+  });
+  assert.equal(files.has(removed), false, 'removed resource is deleted with ' + dialect.sep + ' paths');
+  assert.equal(files.has(retained), true, 'active local stylesheet is retained');
+  assert.doesNotMatch(files.get(index), /last-pay-modal/);
+  assert.match(files.get(index), /workbench-chrome/);
+}
+console.log('PASS compiler patches: exact matches, overlap, syntax, publication and portable resource removal');
