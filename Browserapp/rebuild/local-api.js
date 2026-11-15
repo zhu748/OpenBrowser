@@ -6,7 +6,7 @@ function savedConfig(settings){
  return value;
 }
 async function startupConfig(root){
- try{const value=JSON.parse(await fs.readFile(path.join(root,'rebuild-local.json'),'utf8'));if(value.version!==1)throw Error('本地配置版本不支持');return savedConfig(value.settings);}
+ try{const {data:value}=await require('./local-store').readLocalStore(path.join(root,'rebuild-local.json'));return savedConfig(value.settings);}
  catch(error){if(error.code==='ENOENT')return {};throw error;}
 }
 function stack(service){const value=service.automation?.();if(!value?.localApi)throw Error('本地 API 服务尚未就绪');return value;}

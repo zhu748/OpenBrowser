@@ -4,6 +4,15 @@
 const {spawn}=require('node:child_process'),crypto=require('node:crypto');
 const {saveFields}=require('./agent-store');
 const LIMIT=2*1024*1024,VERSION='2024-11-05';
+function cancellable(promise,signal){
+ if(!signal)return promise;
+ return new Promise((resolve,reject)=>{
+  const abort=()=>{signal.removeEventListener('abort',abort);reject(signal.reason||Error('MCP request cancelled'));};
+  signal.addEventListener('abort',abort,{once:true});
+  Promise.resolve(promise).then(resolve,reject).finally(()=>signal.removeEventListener('abort',abort));
+  if(signal.aborted)abort();
+ });
+}
 function commandLine(text){
  if(typeof text!=='string'||!text.trim()||text.length>16384||/[\0\r\n]/.test(text))throw Error('MCP command is required or invalid');
  const out=[];let value='',quote='',started=false;
@@ -40,7 +49,8 @@ function validate(name,input){
 }
 class Connection{
  constructor(config){this.config=config;this.nextId=0;this.pending=new Map();this.controller=new AbortController();this.closed=false;}
- async open(){
+ async open(signal){
+  signal?.throwIfAborted();
   if(this.config.type==='stdio'){
    const environment={};for(const key of ['PATH','HOME','USERPROFILE','APPDATA','LOCALAPPDATA','SystemRoot','WINDIR','TEMP','TMP','LANG'])if(process.env[key]!==undefined)environment[key]=process.env[key];
    const child=this.child=spawn(this.config.command,this.config.args,{env:{...environment,...this.config.env},shell:false,stdio:['pipe','pipe','pipe'],windowsHide:true});
@@ -48,9 +58,9 @@ class Connection{
    child.stdout.on('data',text=>{buffer+=text;if(Buffer.byteLength(buffer)>LIMIT){this.fail(Error('MCP response exceeds 2 MiB'));return;}let end;while((end=buffer.indexOf('\n'))!==-1){const line=buffer.slice(0,end).trim();buffer=buffer.slice(end+1);if(!line)continue;try{this.receive(JSON.parse(line));}catch{this.fail(Error('Invalid MCP JSON response'));return;}}});
    child.stderr.resume();child.stdin.on('error',error=>this.fail(error));child.on('error',error=>this.fail(error));child.on('exit',code=>this.fail(Error('MCP process exited ('+code+')')));
   }
-  const initialized=await this.request('initialize',{protocolVersion:VERSION,capabilities:{},clientInfo:{name:'OpenBrowser',version:'1.0'}});
+  const initialized=await this.request('initialize',{protocolVersion:VERSION,capabilities:{},clientInfo:{name:'OpenBrowser',version:'1.0'}},signal);
   if(!initialized||typeof initialized.protocolVersion!=='string'||!initialized.capabilities)throw Error('Invalid MCP initialize response');
-  this.version=initialized.protocolVersion;await this.notify('notifications/initialized',{});return this;
+  this.version=initialized.protocolVersion;await this.write({jsonrpc:'2.0',method:'notifications/initialized',params:{}},signal);return this;
  }
  receive(message){
   if(message?.jsonrpc!=='2.0')throw Error('Invalid MCP protocol response');
@@ -61,6 +71,7 @@ class Connection{
   if(message.error)pending.reject(Object.assign(Error(String(message.error.message||'MCP error')),{code:message.error.code}));else if(Object.hasOwn(message,'result'))pending.resolve(message.result);else pending.reject(Error('Invalid MCP result'));
  }
  async write(message,signal){
+  signal?.throwIfAborted();
   if(this.closed)throw Error('MCP connection closed');const text=JSON.stringify(message);if(Buffer.byteLength(text)>LIMIT)throw Error('MCP request exceeds 2 MiB');
   if(this.config.type==='stdio')return new Promise((resolve,reject)=>this.child.stdin.write(text+'\n',error=>error?reject(error):resolve()));
   const headers={...this.config.headers,'Content-Type':'application/json',Accept:'application/json, text/event-stream',...(this.session?{'Mcp-Session-Id':this.session}:{}),...(this.version?{'MCP-Protocol-Version':this.version}:{})};
@@ -94,16 +105,16 @@ class Connection{
   if(this.child){const force=setTimeout(()=>this.child.kill('SIGKILL'),1500);try{await this.exited;}finally{clearTimeout(force);}}
   else if(session){const response=await fetch(this.config.url,{method:'DELETE',headers:{...this.config.headers,'Mcp-Session-Id':session,'MCP-Protocol-Version':this.version},redirect:'error',signal:AbortSignal.timeout(2000)});await response.body?.cancel();if(!response.ok&&response.status!==404&&response.status!==405)throw Error('MCP session cleanup HTTP '+response.status);}
  }
- async tools(){const list=[],cursors=new Set(),names=new Set();let cursor;do{const page=await this.request('tools/list',cursor?{cursor}:{});if(!Array.isArray(page.tools))throw Error('Invalid MCP tools response');list.push(...page.tools);if(list.length>200)throw Error('MCP server exceeds 200 tools');cursor=page.nextCursor;if(cursor&&(typeof cursor!=='string'||cursors.has(cursor)||cursors.size>=20))throw Error('MCP pagination did not advance or exceeds 20 pages');if(cursor)cursors.add(cursor);}while(cursor);for(const tool of list){if(typeof tool.name!=='string'||!tool.name||tool.name.length>200||!tool.inputSchema||tool.inputSchema.type!=='object'||names.has(tool.name))throw Error('Invalid or duplicate MCP tool definition');names.add(tool.name);}return list;}
+ async tools(signal){const list=[],cursors=new Set(),names=new Set();let cursor;do{signal?.throwIfAborted();const page=await this.request('tools/list',cursor?{cursor}:{},signal);if(!Array.isArray(page.tools))throw Error('Invalid MCP tools response');list.push(...page.tools);if(list.length>200)throw Error('MCP server exceeds 200 tools');cursor=page.nextCursor;if(cursor&&(typeof cursor!=='string'||cursors.has(cursor)||cursors.size>=20))throw Error('MCP pagination did not advance or exceeds 20 pages');if(cursor)cursors.add(cursor);}while(cursor);for(const tool of list){if(typeof tool.name!=='string'||!tool.name||tool.name.length>200||!tool.inputSchema||tool.inputSchema.type!=='object'||names.has(tool.name))throw Error('Invalid or duplicate MCP tool definition');names.add(tool.name);}return list;}
 }
 class AgentMcp{
  constructor(service){this.service=service;this.connections=new Map();this.queue=Promise.resolve();this.connectionQueue=Promise.resolve();}
  rows(){return this.service.data.mcpServers||[];}
- connect(row){const run=this.connectionQueue.then(()=>{if(this.closing)throw Error('MCP 正在关闭');return this.connectNow(row);});this.connectionQueue=run.catch(()=>{});return run;}
- async connectNow(row){
+ connect(row,signal){const run=this.connectionQueue.then(()=>{signal?.throwIfAborted();if(this.closing)throw Error('MCP 正在关闭');return this.connectNow(row,signal);});this.connectionQueue=run.catch(()=>{});return cancellable(run,signal);}
+ async connectNow(row,signal){
   const key=JSON.stringify(row.config),existing=this.connections.get(row.name);if(existing?.key===key&&!existing.connection.closed)return existing;
   if(existing){await existing.connection.close();this.connections.delete(row.name);}const connection=new Connection(row.config);
-  try{await connection.open();const tools=await connection.tools(),record={key,connection,tools};this.connections.set(row.name,record);return record;}catch(error){await connection.close();throw error;}
+  try{await connection.open(signal);const tools=await connection.tools(signal),record={key,connection,tools};signal?.throwIfAborted();this.connections.set(row.name,record);return record;}catch(error){await connection.close();throw error;}
  }
  close(name){const run=this.connectionQueue.then(async()=>{const record=this.connections.get(name);if(record){this.connections.delete(name);await record.connection.close();}});this.connectionQueue=run.catch(()=>{});return run;}
  request(method,p={}){
@@ -133,16 +144,16 @@ class AgentMcp{
   for(const name of close)await this.close(name);return {code:0,data:{success:true}};
  }
  async definitions(run){
-  await this.queue;const snapshot=new Map();if(run.allowedProfileIds){run.mcpTools=snapshot;return [];}
+  const signal=run.abort?.signal;await cancellable(this.queue,signal);signal?.throwIfAborted();const snapshot=new Map();if(run.allowedProfileIds){run.mcpTools=snapshot;return [];}
   for(const row of this.rows().filter(row=>row.enabled)){
-   const record=await this.connect(row);for(const tool of record.tools){const name='mcp_'+crypto.createHash('sha256').update(row.name+'\0'+tool.name).digest('hex').slice(0,12)+'_'+tool.name.replace(/[^a-zA-Z0-9_-]/g,'_').slice(0,40);snapshot.set(name,{server:row.name,tool:tool.name,key:record.key,definition:{type:'function',function:{name,description:('MCP '+row.name+': '+(tool.description||tool.name)).slice(0,4000),parameters:tool.inputSchema}}});}
+   const record=await this.connect(row,signal);for(const tool of record.tools){const name='mcp_'+crypto.createHash('sha256').update(row.name+'\0'+tool.name).digest('hex').slice(0,12)+'_'+tool.name.replace(/[^a-zA-Z0-9_-]/g,'_').slice(0,40);snapshot.set(name,{server:row.name,tool:tool.name,key:record.key,definition:{type:'function',function:{name,description:('MCP '+row.name+': '+(tool.description||tool.name)).slice(0,4000),parameters:tool.inputSchema}}});}
   }
   if(snapshot.size>200)throw Error('启用的 MCP 工具合计不能超过 200 个');run.mcpTools=snapshot;return [...snapshot.values()].map(tool=>tool.definition);
  }
  async call(name,args,run){
   if(run.allowedProfileIds)throw Error('限定窗口范围的任务不能调用外部 MCP 工具；外部服务不能保证该范围');
   const tool=run.mcpTools?.get(name),row=tool&&this.rows().find(row=>row.name===tool.server&&row.enabled);if(!tool||!row||JSON.stringify(row.config)!==tool.key)throw Error('MCP 服务已修改或停用，请重新发起任务');
-  const record=await this.connect(row);run.abort.signal.throwIfAborted();const result=await record.connection.request('tools/call',{name:tool.tool,arguments:args},run.abort.signal);if(result.isError)throw Error(JSON.stringify(result.content||result));return result;
+  const record=await this.connect(row,run.abort.signal);run.abort.signal.throwIfAborted();const result=await record.connection.request('tools/call',{name:tool.tool,arguments:args},run.abort.signal);if(result.isError)throw Error(JSON.stringify(result.content||result));return result;
  }
  async shutdown(){this.closing=true;await this.queue;await this.connectionQueue;const results=await Promise.allSettled([...this.connections.keys()].map(name=>this.close(name)));const errors=results.filter(row=>row.status==='rejected').map(row=>row.reason);if(errors.length)throw new AggregateError(errors,'MCP 连接清理失败');}
 }

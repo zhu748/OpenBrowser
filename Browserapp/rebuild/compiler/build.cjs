@@ -45,6 +45,7 @@ fs.rmSync(assets, { recursive: true, force: true });
 for (const step of [
   "prepare.cjs",
   "patch-local.cjs",
+  "patch-correctness.cjs",
   "patch-workbench.cjs",
   "patch-extensions.cjs",
   "patch-host.cjs",

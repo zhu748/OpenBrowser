@@ -51,8 +51,12 @@ var I = y(s({ __name: "edit", setup(s2) {
     }
     let s3 = O(o2);
     J.value = !0;
-    let { code: c2, msg: l2 } = await t.window.userMdfWindowInfoSingleV2Create(s3);
-    J.value = !1, V(c2, l2), c2 === 0 && (L("profile_edit"), ge(), U(i.ACCOUNT_LIST), H === "/browser/edit" ? y2.replace({ path: "/browser" }) : y2.replace({ path: H, query: fe }));
+    try {
+      let { code: c2, msg: l2 } = await t.window.userMdfWindowInfoSingleV2Create(s3);
+      V(c2, l2), c2 === 0 && (L("profile_edit"), ge(), U(i.ACCOUNT_LIST), H === "/browser/edit" ? y2.replace({ path: "/browser" }) : y2.replace({ path: H, query: fe }));
+    } finally {
+      J.value = !1;
+    }
   }
   function _e() {
     ["platformUrl", "platformUserName", "platformPassword"].forEach((e2) => {

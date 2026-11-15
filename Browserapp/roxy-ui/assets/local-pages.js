@@ -51,24 +51,39 @@ const table = (head, rows) => h(
 const Kernels = {
   setup() {
     const rows = ref([]), custom = ref(""), family = ref("chromium"), versions = ref([]), version = ref(""), busy = ref(!1), error = ref(""), progress = ref("");
-    let dispose;
+    let dispose, versionRequest = 0, disposed = !1, pending = 0;
     const run = async (fn) => {
-      busy.value = !0, error.value = "";
+      busy.value = ++pending > 0, error.value = "";
       try {
         await fn();
       } catch (e) {
         throw error.value = e.message, e;
       } finally {
-        busy.value = !1;
+        busy.value = --pending > 0;
       }
     }, load = async () => {
       rows.value = await ipc("kernels:list");
+    }, loadVersions = async () => {
+      const request = ++versionRequest, selectedFamily = family.value;
+      busy.value = ++pending > 0, error.value = "";
+      try {
+        const response = await globalThis.ops.kernelListVersions(selectedFamily, !0);
+        if (disposed || request !== versionRequest || family.value !== selectedFamily) return;
+        const list = Array.isArray(response) ? response : response.versions || [];
+        versions.value = list, version.value = String(list[0]?.version || list[0] || "");
+      } catch (e) {
+        !disposed && request === versionRequest && family.value === selectedFamily && (error.value = e.message);
+      } finally {
+        busy.value = --pending > 0;
+      }
     };
     return onMounted(() => {
       load().catch((e) => error.value = e.message), dispose = globalThis.ops.onEvent((e) => {
         (e.type === "kernel-progress" || e.type === "kernel-status") && (progress.value = e.message || e.phase || e.status || "", ["ready", "installed", "done", "deleted"].includes(e.phase) && load().catch((e2) => error.value = e2.message));
       });
-    }), onBeforeUnmount(() => dispose?.()), () => shell("\u5185\u6838\u7BA1\u7406", [
+    }), onBeforeUnmount(() => {
+      disposed = !0, versionRequest++, dispose?.();
+    }), () => shell("\u5185\u6838\u7BA1\u7406", [
       error.value ? h(Alert, {
         type: "error",
         content: error.value,
@@ -116,7 +131,7 @@ const Kernels = {
             "aria-label": "\u5185\u6838\u7C7B\u578B",
             value: family.value,
             onChange: (e) => {
-              family.value = e.target.value, versions.value = [], version.value = "";
+              versionRequest++, family.value = e.target.value, versions.value = [], version.value = "";
             }
           },
           [
@@ -124,17 +139,7 @@ const Kernels = {
             h("option", { value: "firefox" }, "Firefox")
           ]
         ),
-        btn(
-          "\u83B7\u53D6\u53EF\u4E0B\u8F7D\u7248\u672C",
-          () => run(async () => {
-            versions.value = await globalThis.ops.kernelListVersions(
-              family.value,
-              !0
-            );
-            const list = Array.isArray(versions.value) ? versions.value : versions.value.versions || [];
-            versions.value = list, version.value = String(list[0]?.version || list[0] || "");
-          })
-        ),
+        btn("\u83B7\u53D6\u53EF\u4E0B\u8F7D\u7248\u672C", loadVersions, { disabled: busy.value }),
         h(
           "select",
           {
@@ -253,19 +258,24 @@ const AgentConfig = {
       baseUrl: "http://127.0.0.1:11434",
       model: "",
       apiKey: ""
-    }), error = ref(""), saved = ref(!1), busy = ref(!1);
+    }), error = ref(""), saved = ref(!1), loaded = ref(!1), busy = ref(!1);
+    let revision = 0;
     onMounted(async () => {
       try {
-        config.value = { ...await ipc("agent:config:get"), apiKey: "" };
+        config.value = { ...await ipc("agent:config:get"), apiKey: "" }, loaded.value = !0;
       } catch (e) {
         error.value = e.message;
       }
     });
     const save = async () => {
+      if (!loaded.value || busy.value) return;
+      const savingRevision = revision;
       busy.value = !0, error.value = "";
       try {
         const { hasApiKey: _hasApiKey, ...value } = config.value;
-        value.apiKey || delete value.apiKey, await ipc("agent:config:set", value), saved.value = !0;
+        value.apiKey || delete value.apiKey;
+        const accepted = await ipc("agent:config:set", value);
+        saved.value = revision === savingRevision, saved.value && (config.value.hasApiKey = accepted.hasApiKey, config.value.apiKey = "");
       } catch (e) {
         error.value = e.message;
       } finally {
@@ -291,9 +301,10 @@ const AgentConfig = {
           "select",
           {
             "aria-label": "\u6A21\u578B\u670D\u52A1",
+            disabled: !loaded.value,
             value: config.value.provider,
             onChange: (e) => {
-              config.value.provider = e.target.value, config.value.baseUrl = e.target.value === "ollama" ? "http://127.0.0.1:11434" : "https://api.openai.com/v1";
+              revision++, saved.value = !1, config.value.provider = e.target.value, config.value.apiKey = "", config.value.hasApiKey = !1, config.value.baseUrl = e.target.value === "ollama" ? "http://127.0.0.1:11434" : "https://api.openai.com/v1";
             }
           },
           [
@@ -308,21 +319,32 @@ const AgentConfig = {
           h(Input, {
             "aria-label": ["\u670D\u52A1\u5730\u5740", "\u6A21\u578B\u540D\u79F0", "API key"][i],
             type: key === "apiKey" ? "password" : "text",
+            disabled: !loaded.value,
             placeholder: key === "apiKey" && config.value.hasApiKey ? "\u5DF2\u4FDD\u5B58\uFF0C\u7559\u7A7A\u4FDD\u7559\u539F\u503C" : "",
             modelValue: config.value[key],
             "onUpdate:modelValue": (v) => {
-              config.value[key] = v, saved.value = !1;
+              revision++, config.value[key] = v, saved.value = !1;
             }
           })
         ])
       ),
       h("div", { class: "flex gap-2" }, [
         btn("\u4FDD\u5B58\u8BBE\u7F6E", save, {
-          disabled: busy.value || !config.value.model
+          disabled: !loaded.value || busy.value || !config.value.model
         }),
         btn("\u6E05\u9664 API key", async () => {
-          await ipc("agent:config:set", { apiKey: "" }), config.value.hasApiKey = !1, config.value.apiKey = "";
-        }),
+          if (!loaded.value || busy.value) return;
+          busy.value = !0, error.value = "";
+          const clearingRevision = ++revision;
+          saved.value = !1;
+          try {
+            await ipc("agent:config:set", { apiKey: "" }), revision === clearingRevision && (config.value.hasApiKey = !1, config.value.apiKey = "");
+          } catch (e) {
+            error.value = e.message;
+          } finally {
+            busy.value = !1;
+          }
+        }, { disabled: !loaded.value || busy.value }),
         btn(
           "Skill \u7BA1\u7406",
           () => globalThis.__router.push("/agent-console/skills")

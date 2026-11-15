@@ -2,7 +2,8 @@
 const crypto = require("node:crypto");
 const now = () => new Date().toISOString();
 function metadata(conversation) {
-  const { messages: _messages, ...value } = conversation;
+  const fields = ["id", "title", "createdAt", "updatedAt", "unread", "latestRunId", "latestRunStatus", "taskId"];
+  const value = Object.fromEntries(fields.filter(key => Object.hasOwn(conversation, key)).map(key => [key, conversation[key]]));
   return value.latestRunStatus === "interrupted" ? { ...value, latestRunStatus: "cancelled", interrupted: true } : value;
 }
 function pageSize(value, fallback = 40, maximum = 200) {
@@ -41,7 +42,7 @@ async function requestConversations(service, method, p) {
       if (end < 0) throw Error("历史游标不存在或不属于当前会话");
     }
     const start = Math.max(0, end - limit), messages = c.messages.slice(start, end).map(messageDto);
-    return { conversation: metadata(c), messages, hasMore: start > 0, nextCursor: start > 0 ? messages[0].id : null };
+    return { conversation: { ...metadata(c), checkpoint: c.checkpoint }, messages, hasMore: start > 0, nextCursor: start > 0 ? messages[0].id : null };
   }
   if (method === "updateConversation") {
     if (typeof p.title !== "string" || !p.title.trim() || p.title.trim().length > 200) throw Error("会话名称应为 1–200 个字符");

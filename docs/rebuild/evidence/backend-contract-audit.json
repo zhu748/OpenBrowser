@@ -1,7 +1,7 @@
 {
   "status": "PASS",
   "scope": "仅对可静态解析调用证明存在精确分发分支；动态转发单列，不等于参数、返回值或所有交互已验收。脚本沙箱明确列为未迁移。",
-  "staticCalls": 305,
+  "staticCalls": 304,
   "uniqueCalls": 169,
   "uses": [
     {
@@ -12,7 +12,7 @@
       "backend": [
         {
           "file": "rebuild/agent-mcp.js",
-          "line": 113
+          "line": 124
         }
       ]
     },
@@ -24,7 +24,7 @@
       "backend": [
         {
           "file": "rebuild/agent-mcp.js",
-          "line": 119
+          "line": 130
         }
       ]
     },
@@ -36,7 +36,7 @@
       "backend": [
         {
           "file": "rebuild/agent-mcp.js",
-          "line": 122
+          "line": 133
         }
       ]
     },
@@ -48,7 +48,7 @@
       "backend": [
         {
           "file": "rebuild/agent-mcp.js",
-          "line": 126
+          "line": 137
         }
       ]
     },
@@ -60,7 +60,7 @@
       "backend": [
         {
           "file": "rebuild/agent-mcp.js",
-          "line": 128
+          "line": 139
         }
       ]
     },
@@ -72,7 +72,7 @@
       "backend": [
         {
           "file": "rebuild/agent-mcp.js",
-          "line": 127
+          "line": 138
         }
       ]
     },
@@ -84,7 +84,7 @@
       "backend": [
         {
           "file": "rebuild/agent-mcp.js",
-          "line": 114
+          "line": 125
         }
       ]
     },
@@ -144,7 +144,7 @@
       "backend": [
         {
           "file": "rebuild/agent-service.js",
-          "line": 240
+          "line": 243
         }
       ]
     },
@@ -256,7 +256,7 @@
       "backend": [
         {
           "file": "rebuild/agent-service.js",
-          "line": 240
+          "line": 243
         }
       ]
     },
@@ -316,7 +316,7 @@
       "backend": [
         {
           "file": "rebuild/agent-service.js",
-          "line": 240
+          "line": 243
         }
       ]
     },
@@ -412,7 +412,7 @@
       "backend": [
         {
           "file": "rebuild/agent-service.js",
-          "line": 245
+          "line": 248
         }
       ]
     },
@@ -424,7 +424,7 @@
       "backend": [
         {
           "file": "rebuild/agent-service.js",
-          "line": 251
+          "line": 254
         }
       ]
     },
@@ -436,7 +436,7 @@
       "backend": [
         {
           "file": "rebuild/agent-service.js",
-          "line": 251
+          "line": 254
         }
       ]
     },
@@ -448,7 +448,7 @@
       "backend": [
         {
           "file": "rebuild/agent-service.js",
-          "line": 256
+          "line": 259
         }
       ]
     },
@@ -556,7 +556,7 @@
       "backend": [
         {
           "file": "rebuild/agent-service.js",
-          "line": 243
+          "line": 246
         }
       ]
     },
@@ -580,7 +580,7 @@
       "backend": [
         {
           "file": "rebuild/agent-service.js",
-          "line": 213
+          "line": 216
         }
       ]
     },
@@ -629,7 +629,7 @@
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1169
+          "line": 1201
         }
       ]
     },
@@ -653,11 +653,11 @@
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 691
+          "line": 729
         },
         {
           "file": "rebuild/local-service.js",
-          "line": 735
+          "line": 775
         }
       ]
     },
@@ -718,11 +718,11 @@
       "backend": [
         {
           "file": "rebuild/agent-service.js",
-          "line": 211
+          "line": 214
         },
         {
           "file": "rebuild/agent-conversations.js",
-          "line": 59
+          "line": 60
         }
       ]
     },
@@ -734,11 +734,11 @@
       "backend": [
         {
           "file": "rebuild/agent-service.js",
-          "line": 211
+          "line": 214
         },
         {
           "file": "rebuild/agent-conversations.js",
-          "line": 27
+          "line": 28
         }
       ]
     },
@@ -750,11 +750,11 @@
       "backend": [
         {
           "file": "rebuild/agent-service.js",
-          "line": 211
+          "line": 214
         },
         {
           "file": "rebuild/agent-conversations.js",
-          "line": 27
+          "line": 28
         }
       ]
     },
@@ -766,11 +766,11 @@
       "backend": [
         {
           "file": "rebuild/agent-service.js",
-          "line": 211
+          "line": 214
         },
         {
           "file": "rebuild/agent-conversations.js",
-          "line": 35
+          "line": 36
         }
       ]
     },
@@ -782,11 +782,11 @@
       "backend": [
         {
           "file": "rebuild/agent-service.js",
-          "line": 211
+          "line": 214
         },
         {
           "file": "rebuild/agent-conversations.js",
-          "line": 35
+          "line": 36
         }
       ]
     },
@@ -798,11 +798,11 @@
       "backend": [
         {
           "file": "rebuild/agent-service.js",
-          "line": 211
+          "line": 214
         },
         {
           "file": "rebuild/agent-conversations.js",
-          "line": 72
+          "line": 73
         }
       ]
     },
@@ -814,11 +814,11 @@
       "backend": [
         {
           "file": "rebuild/agent-service.js",
-          "line": 211
+          "line": 214
         },
         {
           "file": "rebuild/agent-conversations.js",
-          "line": 46
+          "line": 47
         }
       ]
     },
@@ -896,11 +896,11 @@
       "backend": [
         {
           "file": "rebuild/agent-service.js",
-          "line": 211
+          "line": 214
         },
         {
           "file": "rebuild/agent-conversations.js",
-          "line": 19
+          "line": 20
         }
       ]
     },
@@ -938,7 +938,7 @@
       "backend": [
         {
           "file": "rebuild/agent-service.js",
-          "line": 240
+          "line": 243
         }
       ]
     },
@@ -986,7 +986,7 @@
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1169
+          "line": 1201
         }
       ]
     },
@@ -998,7 +998,7 @@
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1170
+          "line": 1202
         }
       ]
     },
@@ -1010,11 +1010,11 @@
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 691
+          "line": 729
         },
         {
           "file": "rebuild/local-service.js",
-          "line": 1296
+          "line": 1328
         }
       ]
     },
@@ -1026,7 +1026,7 @@
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1232
+          "line": 1264
         }
       ]
     },
@@ -1038,7 +1038,7 @@
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1254
+          "line": 1286
         }
       ]
     },
@@ -1050,7 +1050,7 @@
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1254
+          "line": 1286
         }
       ]
     },
@@ -1088,11 +1088,11 @@
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 691
+          "line": 729
         },
         {
           "file": "rebuild/local-service.js",
-          "line": 1325
+          "line": 1357
         }
       ]
     },
@@ -1104,11 +1104,11 @@
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 691
+          "line": 729
         },
         {
           "file": "rebuild/local-service.js",
-          "line": 1261
+          "line": 1293
         }
       ]
     },
@@ -1120,11 +1120,11 @@
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 691
+          "line": 729
         },
         {
           "file": "rebuild/local-service.js",
-          "line": 1261
+          "line": 1293
         }
       ]
     },
@@ -1136,7 +1136,7 @@
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1169
+          "line": 1201
         }
       ]
     },
@@ -1148,7 +1148,7 @@
       "backend": [
         {
           "file": "rebuild/accounts.js",
-          "line": 143
+          "line": 144
         }
       ]
     },
@@ -1160,7 +1160,7 @@
       "backend": [
         {
           "file": "rebuild/accounts.js",
-          "line": 143
+          "line": 144
         }
       ]
     },
@@ -1172,7 +1172,7 @@
       "backend": [
         {
           "file": "rebuild/accounts.js",
-          "line": 143
+          "line": 144
         }
       ]
     },
@@ -1184,7 +1184,7 @@
       "backend": [
         {
           "file": "rebuild/accounts.js",
-          "line": 143
+          "line": 144
         }
       ]
     },
@@ -1196,7 +1196,7 @@
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1169
+          "line": 1201
         }
       ]
     },
@@ -1208,11 +1208,11 @@
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 691
+          "line": 729
         },
         {
           "file": "rebuild/local-service.js",
-          "line": 1223
+          "line": 1255
         }
       ]
     },
@@ -1224,11 +1224,11 @@
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 691
+          "line": 729
         },
         {
           "file": "rebuild/local-service.js",
-          "line": 941
+          "line": 979
         }
       ]
     },
@@ -1240,11 +1240,11 @@
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 691
+          "line": 729
         },
         {
           "file": "rebuild/local-service.js",
-          "line": 873
+          "line": 911
         }
       ]
     },
@@ -1256,11 +1256,11 @@
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 691
+          "line": 729
         },
         {
           "file": "rebuild/local-service.js",
-          "line": 1338
+          "line": 1370
         }
       ]
     },
@@ -1272,7 +1272,7 @@
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1148
+          "line": 1180
         }
       ]
     },
@@ -1284,11 +1284,11 @@
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 760
+          "line": 800
         },
         {
           "file": "rebuild/local-service.js",
-          "line": 792
+          "line": 832
         }
       ]
     },
@@ -1300,39 +1300,23 @@
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 760
+          "line": 800
         }
       ]
     },
     {
       "kind": "local RPC",
-      "name": "profiles:trash",
+      "name": "profiles:query",
       "file": "local-api.js",
       "line": 154,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 691
+          "line": 729
         },
         {
           "file": "rebuild/local-service.js",
-          "line": 992
-        }
-      ]
-    },
-    {
-      "kind": "local RPC",
-      "name": "profiles:list",
-      "file": "local-api.js",
-      "line": 154,
-      "backend": [
-        {
-          "file": "rebuild/local-service.js",
-          "line": 691
-        },
-        {
-          "file": "rebuild/local-service.js",
-          "line": 797
+          "line": 765
         }
       ]
     },
@@ -1340,15 +1324,15 @@
       "kind": "local RPC",
       "name": "profiles:read",
       "file": "local-api.js",
-      "line": 223,
+      "line": 161,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 691
+          "line": 729
         },
         {
           "file": "rebuild/local-service.js",
-          "line": 802
+          "line": 842
         }
       ]
     },
@@ -1356,15 +1340,15 @@
       "kind": "local RPC",
       "name": "profiles:read",
       "file": "local-api.js",
-      "line": 228,
+      "line": 166,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 691
+          "line": 729
         },
         {
           "file": "rebuild/local-service.js",
-          "line": 802
+          "line": 842
         }
       ]
     },
@@ -1372,11 +1356,11 @@
       "kind": "local RPC",
       "name": "profiles:create",
       "file": "local-api.js",
-      "line": 229,
+      "line": 167,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 807
+          "line": 846
         }
       ]
     },
@@ -1384,11 +1368,11 @@
       "kind": "local RPC",
       "name": "profiles:update",
       "file": "local-api.js",
-      "line": 230,
+      "line": 168,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 858
+          "line": 897
         }
       ]
     },
@@ -1396,11 +1380,11 @@
       "kind": "local RPC",
       "name": "profiles:patch",
       "file": "local-api.js",
-      "line": 230,
+      "line": 168,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 921
+          "line": 959
         }
       ]
     },
@@ -1408,7 +1392,35 @@
       "kind": "local RPC",
       "name": "profiles:delete",
       "file": "local-api.js",
-      "line": 231,
+      "line": 169,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1018
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:list",
+      "file": "local-api.js",
+      "line": 171,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 729
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 837
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "profiles:edit-data",
+      "file": "local-api.js",
+      "line": 178,
       "backend": [
         {
           "file": "rebuild/local-service.js",
@@ -1418,29 +1430,13 @@
     },
     {
       "kind": "local RPC",
-      "name": "profiles:list",
+      "name": "profiles:purge",
       "file": "local-api.js",
-      "line": 233,
+      "line": 179,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 691
-        },
-        {
-          "file": "rebuild/local-service.js",
-          "line": 797
-        }
-      ]
-    },
-    {
-      "kind": "local RPC",
-      "name": "profiles:edit-data",
-      "file": "local-api.js",
-      "line": 240,
-      "backend": [
-        {
-          "file": "rebuild/local-service.js",
-          "line": 942
+          "line": 1025
         }
       ]
     },
@@ -1448,23 +1444,11 @@
       "kind": "local RPC",
       "name": "profiles:purge",
       "file": "local-api.js",
-      "line": 241,
+      "line": 180,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 987
-        }
-      ]
-    },
-    {
-      "kind": "local RPC",
-      "name": "profiles:purge",
-      "file": "local-api.js",
-      "line": 242,
-      "backend": [
-        {
-          "file": "rebuild/local-service.js",
-          "line": 987
+          "line": 1025
         }
       ]
     },
@@ -1472,11 +1456,11 @@
       "kind": "local RPC",
       "name": "fingerprint:preview",
       "file": "local-api.js",
-      "line": 243,
+      "line": 181,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1199
+          "line": 1231
         }
       ]
     },
@@ -1484,11 +1468,11 @@
       "kind": "local RPC",
       "name": "fingerprint:preview",
       "file": "local-api.js",
-      "line": 244,
+      "line": 182,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1199
+          "line": 1231
         }
       ]
     },
@@ -1496,11 +1480,11 @@
       "kind": "local RPC",
       "name": "fingerprint:preview",
       "file": "local-api.js",
-      "line": 245,
+      "line": 183,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1199
+          "line": 1231
         }
       ]
     },
@@ -1508,15 +1492,15 @@
       "kind": "local RPC",
       "name": "kernels:list",
       "file": "local-api.js",
-      "line": 246,
+      "line": 184,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 691
+          "line": 729
         },
         {
           "file": "rebuild/local-service.js",
-          "line": 1325
+          "line": 1357
         }
       ]
     },
@@ -1524,15 +1508,15 @@
       "kind": "local RPC",
       "name": "profiles:list",
       "file": "local-api.js",
-      "line": 247,
+      "line": 185,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 691
+          "line": 729
         },
         {
           "file": "rebuild/local-service.js",
-          "line": 797
+          "line": 837
         }
       ]
     },
@@ -1540,11 +1524,11 @@
       "kind": "local RPC",
       "name": "profiles:restore",
       "file": "local-api.js",
-      "line": 248,
+      "line": 186,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 985
+          "line": 1023
         }
       ]
     },
@@ -1552,11 +1536,11 @@
       "kind": "local RPC",
       "name": "profiles:clone",
       "file": "local-api.js",
-      "line": 249,
+      "line": 187,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 900
+          "line": 938
         }
       ]
     },
@@ -1564,11 +1548,11 @@
       "kind": "local RPC",
       "name": "profiles:create-batch",
       "file": "local-api.js",
-      "line": 250,
+      "line": 188,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 815
+          "line": 854
         }
       ]
     },
@@ -1576,15 +1560,15 @@
       "kind": "local RPC",
       "name": "profiles:list",
       "file": "local-api.js",
-      "line": 252,
+      "line": 190,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 691
+          "line": 729
         },
         {
           "file": "rebuild/local-service.js",
-          "line": 797
+          "line": 837
         }
       ]
     },
@@ -1592,11 +1576,11 @@
       "kind": "local RPC",
       "name": "filters:list",
       "file": "local-api.js",
-      "line": 254,
+      "line": 192,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1176
+          "line": 1208
         }
       ]
     },
@@ -1604,11 +1588,11 @@
       "kind": "local RPC",
       "name": "filters:save",
       "file": "local-api.js",
-      "line": 255,
+      "line": 193,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1181
+          "line": 1213
         }
       ]
     },
@@ -1616,11 +1600,11 @@
       "kind": "local RPC",
       "name": "filters:save",
       "file": "local-api.js",
-      "line": 256,
+      "line": 194,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1181
+          "line": 1213
         }
       ]
     },
@@ -1628,11 +1612,11 @@
       "kind": "local RPC",
       "name": "filters:delete",
       "file": "local-api.js",
-      "line": 257,
+      "line": 195,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1192
+          "line": 1224
         }
       ]
     },
@@ -1640,11 +1624,11 @@
       "kind": "local RPC",
       "name": "settings:set",
       "file": "local-api.js",
-      "line": 258,
+      "line": 196,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1170
+          "line": 1202
         }
       ]
     },
@@ -1652,11 +1636,11 @@
       "kind": "local RPC",
       "name": "templates:list",
       "file": "local-api.js",
-      "line": 259,
+      "line": 197,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1122
+          "line": 1154
         }
       ]
     },
@@ -1664,11 +1648,11 @@
       "kind": "local RPC",
       "name": "templates:save",
       "file": "local-api.js",
-      "line": 260,
+      "line": 198,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1123
+          "line": 1155
         }
       ]
     },
@@ -1676,11 +1660,11 @@
       "kind": "local RPC",
       "name": "templates:save",
       "file": "local-api.js",
-      "line": 261,
+      "line": 199,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1123
+          "line": 1155
         }
       ]
     },
@@ -1688,11 +1672,11 @@
       "kind": "local RPC",
       "name": "templates:delete",
       "file": "local-api.js",
-      "line": 262,
+      "line": 200,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1140
+          "line": 1172
         }
       ]
     },
@@ -1700,11 +1684,11 @@
       "kind": "local RPC",
       "name": "settings:set",
       "file": "local-api.js",
-      "line": 264,
+      "line": 202,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1170
+          "line": 1202
         }
       ]
     },
@@ -1712,7 +1696,7 @@
       "kind": "local RPC",
       "name": "api:get",
       "file": "local-api.js",
-      "line": 265,
+      "line": 203,
       "backend": [
         {
           "file": "rebuild/local-api.js",
@@ -1724,7 +1708,7 @@
       "kind": "local RPC",
       "name": "api:set",
       "file": "local-api.js",
-      "line": 266,
+      "line": 204,
       "backend": [
         {
           "file": "rebuild/local-api.js",
@@ -1736,11 +1720,11 @@
       "kind": "local RPC",
       "name": "settings:set",
       "file": "local-api.js",
-      "line": 269,
+      "line": 207,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1170
+          "line": 1202
         }
       ]
     },
@@ -1748,11 +1732,11 @@
       "kind": "local RPC",
       "name": "groups:list",
       "file": "local-api.js",
-      "line": 272,
+      "line": 210,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1004
+          "line": 1042
         }
       ]
     },
@@ -1760,7 +1744,7 @@
       "kind": "local RPC",
       "name": "extensions:list",
       "file": "local-api.js",
-      "line": 275,
+      "line": 213,
       "backend": [
         {
           "file": "rebuild/extensions.js",
@@ -1772,7 +1756,7 @@
       "kind": "local RPC",
       "name": "extensions:pin",
       "file": "local-api.js",
-      "line": 276,
+      "line": 214,
       "backend": [
         {
           "file": "rebuild/extensions.js",
@@ -1784,7 +1768,7 @@
       "kind": "local RPC",
       "name": "extensions:store",
       "file": "local-api.js",
-      "line": 277,
+      "line": 215,
       "backend": [
         {
           "file": "rebuild/extensions.js",
@@ -1796,7 +1780,7 @@
       "kind": "local RPC",
       "name": "extensions:finish",
       "file": "local-api.js",
-      "line": 278,
+      "line": 216,
       "backend": [
         {
           "file": "rebuild/extensions.js",
@@ -1808,7 +1792,7 @@
       "kind": "local RPC",
       "name": "extensions:assign",
       "file": "local-api.js",
-      "line": 279,
+      "line": 217,
       "backend": [
         {
           "file": "rebuild/extensions.js",
@@ -1820,7 +1804,7 @@
       "kind": "local RPC",
       "name": "extensions:read",
       "file": "local-api.js",
-      "line": 280,
+      "line": 218,
       "backend": [
         {
           "file": "rebuild/extensions.js",
@@ -1832,7 +1816,7 @@
       "kind": "local RPC",
       "name": "extensions:reload",
       "file": "local-api.js",
-      "line": 281,
+      "line": 219,
       "backend": [
         {
           "file": "rebuild/extensions.js",
@@ -1844,7 +1828,7 @@
       "kind": "local RPC",
       "name": "extensions:reload",
       "file": "local-api.js",
-      "line": 282,
+      "line": 220,
       "backend": [
         {
           "file": "rebuild/extensions.js",
@@ -1856,7 +1840,7 @@
       "kind": "local RPC",
       "name": "extensions:remove",
       "file": "local-api.js",
-      "line": 283,
+      "line": 221,
       "backend": [
         {
           "file": "rebuild/extensions.js",
@@ -1868,11 +1852,11 @@
       "kind": "local RPC",
       "name": "groups:list",
       "file": "local-api.js",
-      "line": 285,
+      "line": 223,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1004
+          "line": 1042
         }
       ]
     },
@@ -1880,11 +1864,11 @@
       "kind": "local RPC",
       "name": "groups:save",
       "file": "local-api.js",
-      "line": 288,
+      "line": 226,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1023
+          "line": 1061
         }
       ]
     },
@@ -1892,11 +1876,11 @@
       "kind": "local RPC",
       "name": "groups:save",
       "file": "local-api.js",
-      "line": 289,
+      "line": 227,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1023
+          "line": 1061
         }
       ]
     },
@@ -1904,11 +1888,11 @@
       "kind": "local RPC",
       "name": "groups:delete",
       "file": "local-api.js",
-      "line": 290,
+      "line": 228,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1094
+          "line": 1126
         }
       ]
     },
@@ -1916,11 +1900,11 @@
       "kind": "local RPC",
       "name": "groups:sort",
       "file": "local-api.js",
-      "line": 291,
+      "line": 229,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1110
+          "line": 1142
         }
       ]
     },
@@ -1928,15 +1912,15 @@
       "kind": "local RPC",
       "name": "proxies:list",
       "file": "local-api.js",
-      "line": 295,
+      "line": 233,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 691
+          "line": 729
         },
         {
           "file": "rebuild/local-service.js",
-          "line": 1338
+          "line": 1370
         }
       ]
     },
@@ -1944,15 +1928,15 @@
       "kind": "local RPC",
       "name": "proxies:list",
       "file": "local-api.js",
-      "line": 301,
+      "line": 239,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 691
+          "line": 729
         },
         {
           "file": "rebuild/local-service.js",
-          "line": 1338
+          "line": 1370
         }
       ]
     },
@@ -1960,11 +1944,11 @@
       "kind": "local RPC",
       "name": "settings:get",
       "file": "local-api.js",
-      "line": 304,
+      "line": 242,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1169
+          "line": 1201
         }
       ]
     },
@@ -1972,11 +1956,11 @@
       "kind": "local RPC",
       "name": "settings:set",
       "file": "local-api.js",
-      "line": 305,
+      "line": 243,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1170
+          "line": 1202
         }
       ]
     },
@@ -1984,15 +1968,15 @@
       "kind": "local RPC",
       "name": "proxies:read",
       "file": "local-api.js",
-      "line": 309,
+      "line": 247,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 691
+          "line": 729
         },
         {
           "file": "rebuild/local-service.js",
-          "line": 1352
+          "line": 1377
         }
       ]
     },
@@ -2000,15 +1984,15 @@
       "kind": "local RPC",
       "name": "proxies:list",
       "file": "local-api.js",
-      "line": 311,
+      "line": 249,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 691
+          "line": 729
         },
         {
           "file": "rebuild/local-service.js",
-          "line": 1338
+          "line": 1370
         }
       ]
     },
@@ -2016,11 +2000,11 @@
       "kind": "local RPC",
       "name": "proxies:duplicates",
       "file": "local-api.js",
-      "line": 314,
+      "line": 252,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1357
+          "line": 1382
         }
       ]
     },
@@ -2028,11 +2012,11 @@
       "kind": "local RPC",
       "name": "proxies:bind",
       "file": "local-api.js",
-      "line": 315,
+      "line": 253,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1380
+          "line": 1405
         }
       ]
     },
@@ -2040,11 +2024,11 @@
       "kind": "local RPC",
       "name": "proxies:save-results",
       "file": "local-api.js",
-      "line": 316,
+      "line": 254,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1408
+          "line": 1433
         }
       ]
     },
@@ -2052,11 +2036,11 @@
       "kind": "local RPC",
       "name": "profiles:proxy-results",
       "file": "local-api.js",
-      "line": 317,
+      "line": 255,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1424
+          "line": 1449
         }
       ]
     },
@@ -2064,11 +2048,11 @@
       "kind": "local RPC",
       "name": "proxies:create-many",
       "file": "local-api.js",
-      "line": 318,
+      "line": 256,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1376
+          "line": 1401
         }
       ]
     },
@@ -2076,11 +2060,11 @@
       "kind": "local RPC",
       "name": "proxies:update",
       "file": "local-api.js",
-      "line": 321,
+      "line": 259,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1379
+          "line": 1404
         }
       ]
     },
@@ -2088,11 +2072,11 @@
       "kind": "local RPC",
       "name": "proxies:update",
       "file": "local-api.js",
-      "line": 326,
+      "line": 264,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1379
+          "line": 1404
         }
       ]
     },
@@ -2100,11 +2084,11 @@
       "kind": "local RPC",
       "name": "proxies:delete",
       "file": "local-api.js",
-      "line": 327,
+      "line": 265,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1450
+          "line": 1475
         }
       ]
     },
@@ -2112,11 +2096,11 @@
       "kind": "local RPC",
       "name": "profiles:delete",
       "file": "local-api.js",
-      "line": 328,
+      "line": 266,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 980
+          "line": 1018
         }
       ]
     },
@@ -2124,11 +2108,11 @@
       "kind": "local RPC",
       "name": "profiles:restore",
       "file": "local-api.js",
-      "line": 328,
+      "line": 266,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 985
+          "line": 1023
         }
       ]
     },
@@ -2136,11 +2120,11 @@
       "kind": "local RPC",
       "name": "profiles:patch",
       "file": "local-api.js",
-      "line": 330,
+      "line": 268,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 921
+          "line": 959
         }
       ]
     },
@@ -2148,11 +2132,11 @@
       "kind": "local RPC",
       "name": "groups:list",
       "file": "local-api.js",
-      "line": 331,
+      "line": 269,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1004
+          "line": 1042
         }
       ]
     },
@@ -2160,11 +2144,11 @@
       "kind": "local RPC",
       "name": "labels:list",
       "file": "local-api.js",
-      "line": 333,
+      "line": 271,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1046
+          "line": 1084
         }
       ]
     },
@@ -2172,11 +2156,11 @@
       "kind": "local RPC",
       "name": "labels:save",
       "file": "local-api.js",
-      "line": 336,
+      "line": 274,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1057
+          "line": 1089
         }
       ]
     },
@@ -2184,11 +2168,11 @@
       "kind": "local RPC",
       "name": "labels:save",
       "file": "local-api.js",
-      "line": 337,
+      "line": 275,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1057
+          "line": 1089
         }
       ]
     },
@@ -2196,11 +2180,11 @@
       "kind": "local RPC",
       "name": "labels:delete",
       "file": "local-api.js",
-      "line": 338,
+      "line": 276,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1077
+          "line": 1109
         }
       ]
     },
@@ -2208,15 +2192,15 @@
       "kind": "local RPC",
       "name": "profiles:list",
       "file": "local-api.js",
-      "line": 342,
+      "line": 280,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 691
+          "line": 729
         },
         {
           "file": "rebuild/local-service.js",
-          "line": 797
+          "line": 837
         }
       ]
     },
@@ -2224,11 +2208,11 @@
       "kind": "local RPC",
       "name": "accounts:list",
       "file": "local-api.js",
-      "line": 363,
+      "line": 301,
       "backend": [
         {
           "file": "rebuild/accounts.js",
-          "line": 143
+          "line": 144
         }
       ]
     },
@@ -2236,11 +2220,11 @@
       "kind": "local RPC",
       "name": "accounts:create",
       "file": "local-api.js",
-      "line": 364,
+      "line": 302,
       "backend": [
         {
           "file": "rebuild/accounts.js",
-          "line": 178
+          "line": 179
         }
       ]
     },
@@ -2248,11 +2232,11 @@
       "kind": "local RPC",
       "name": "accounts:create",
       "file": "local-api.js",
-      "line": 365,
+      "line": 303,
       "backend": [
         {
           "file": "rebuild/accounts.js",
-          "line": 178
+          "line": 179
         }
       ]
     },
@@ -2260,15 +2244,15 @@
       "kind": "local RPC",
       "name": "accounts:update",
       "file": "local-api.js",
-      "line": 368,
+      "line": 306,
       "backend": [
         {
           "file": "rebuild/accounts.js",
-          "line": 221
+          "line": 222
         },
         {
           "file": "rebuild/accounts.js",
-          "line": 223
+          "line": 224
         }
       ]
     },
@@ -2276,11 +2260,11 @@
       "kind": "local RPC",
       "name": "accounts:bind",
       "file": "local-api.js",
-      "line": 369,
+      "line": 307,
       "backend": [
         {
           "file": "rebuild/accounts.js",
-          "line": 186
+          "line": 187
         }
       ]
     },
@@ -2288,15 +2272,15 @@
       "kind": "local RPC",
       "name": "accounts:delete",
       "file": "local-api.js",
-      "line": 370,
+      "line": 308,
       "backend": [
         {
           "file": "rebuild/accounts.js",
-          "line": 221
+          "line": 222
         },
         {
           "file": "rebuild/accounts.js",
-          "line": 240
+          "line": 241
         }
       ]
     },
@@ -2304,11 +2288,11 @@
       "kind": "local RPC",
       "name": "settings:get",
       "file": "local-api.js",
-      "line": 383,
+      "line": 321,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1169
+          "line": 1201
         }
       ]
     },
@@ -2316,11 +2300,11 @@
       "kind": "local RPC",
       "name": "settings:set",
       "file": "local-api.js",
-      "line": 384,
+      "line": 322,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1170
+          "line": 1202
         }
       ]
     },
@@ -2328,11 +2312,11 @@
       "kind": "local RPC",
       "name": "settings:get",
       "file": "local-api.js",
-      "line": 386,
+      "line": 324,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1169
+          "line": 1201
         }
       ]
     },
@@ -2340,11 +2324,11 @@
       "kind": "local RPC",
       "name": "settings:set",
       "file": "local-api.js",
-      "line": 387,
+      "line": 325,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1170
+          "line": 1202
         }
       ]
     },
@@ -2352,11 +2336,11 @@
       "kind": "local RPC",
       "name": "settings:set",
       "file": "local-api.js",
-      "line": 388,
+      "line": 326,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1170
+          "line": 1202
         }
       ]
     },
@@ -2364,7 +2348,7 @@
       "kind": "local RPC",
       "name": "api:status",
       "file": "local-api.js",
-      "line": 406,
+      "line": 344,
       "backend": [
         {
           "file": "rebuild/local-api.js",
@@ -2376,7 +2360,7 @@
       "kind": "local RPC",
       "name": "api:check-port",
       "file": "local-api.js",
-      "line": 407,
+      "line": 345,
       "backend": [
         {
           "file": "rebuild/local-api.js",
@@ -2388,7 +2372,7 @@
       "kind": "ops",
       "name": "rotateApiKey",
       "file": "local-api.js",
-      "line": 408,
+      "line": 346,
       "backend": {
         "file": "preload.js",
         "line": 73,
@@ -2401,11 +2385,11 @@
       "kind": "local RPC",
       "name": "host:shortcut",
       "file": "local-api.js",
-      "line": 409,
+      "line": 347,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 727
+          "line": 767
         }
       ]
     },
@@ -2413,11 +2397,11 @@
       "kind": "local RPC",
       "name": "host:default-browser",
       "file": "local-api.js",
-      "line": 410,
+      "line": 348,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 728
+          "line": 768
         }
       ]
     },
@@ -2425,7 +2409,7 @@
       "kind": "local RPC",
       "name": "extensions:select",
       "file": "local-api.js",
-      "line": 412,
+      "line": 350,
       "backend": [
         {
           "file": "rebuild/extensions.js",
@@ -2437,7 +2421,7 @@
       "kind": "local RPC",
       "name": "extensions:stage",
       "file": "local-api.js",
-      "line": 413,
+      "line": 351,
       "backend": [
         {
           "file": "rebuild/extensions.js",
@@ -2449,7 +2433,7 @@
       "kind": "local RPC",
       "name": "extensions:exists",
       "file": "local-api.js",
-      "line": 414,
+      "line": 352,
       "backend": [
         {
           "file": "rebuild/extensions.js",
@@ -2461,7 +2445,7 @@
       "kind": "local RPC",
       "name": "extensions:show",
       "file": "local-api.js",
-      "line": 415,
+      "line": 353,
       "backend": [
         {
           "file": "rebuild/extensions.js",
@@ -2473,7 +2457,7 @@
       "kind": "local RPC",
       "name": "extensions:verify",
       "file": "local-api.js",
-      "line": 416,
+      "line": 354,
       "backend": [
         {
           "file": "rebuild/extensions.js",
@@ -2485,7 +2469,7 @@
       "kind": "local RPC",
       "name": "extensions:verify-removed",
       "file": "local-api.js",
-      "line": 418,
+      "line": 356,
       "backend": [
         {
           "file": "rebuild/extensions.js",
@@ -2497,7 +2481,7 @@
       "kind": "local RPC",
       "name": "agent:files:choose",
       "file": "local-api.js",
-      "line": 420,
+      "line": 358,
       "backend": [
         {
           "file": "rebuild/agent-service.js",
@@ -2509,7 +2493,7 @@
       "kind": "local RPC",
       "name": "agent:files:export",
       "file": "local-api.js",
-      "line": 423,
+      "line": 361,
       "backend": [
         {
           "file": "rebuild/agent-service.js",
@@ -2521,11 +2505,11 @@
       "kind": "local RPC",
       "name": "settings:get",
       "file": "local-api.js",
-      "line": 424,
+      "line": 362,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1169
+          "line": 1201
         }
       ]
     },
@@ -2533,7 +2517,7 @@
       "kind": "local RPC",
       "name": "sync:restore",
       "file": "local-api.js",
-      "line": 424,
+      "line": 362,
       "backend": [
         {
           "file": "rebuild/sync-service.js",
@@ -2545,7 +2529,7 @@
       "kind": "local RPC",
       "name": "sync:shortcuts:clear",
       "file": "local-api.js",
-      "line": 425,
+      "line": 363,
       "backend": [
         {
           "file": "rebuild/sync-service.js",
@@ -2557,11 +2541,11 @@
       "kind": "local RPC",
       "name": "settings:get",
       "file": "local-api.js",
-      "line": 427,
+      "line": 365,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1169
+          "line": 1201
         }
       ]
     },
@@ -2569,7 +2553,7 @@
       "kind": "local RPC",
       "name": "sync:restore",
       "file": "local-api.js",
-      "line": 427,
+      "line": 365,
       "backend": [
         {
           "file": "rebuild/sync-service.js",
@@ -2581,7 +2565,7 @@
       "kind": "ops",
       "name": "startSync",
       "file": "local-api.js",
-      "line": 428,
+      "line": 366,
       "backend": {
         "file": "preload.js",
         "line": 64,
@@ -2594,7 +2578,7 @@
       "kind": "ops",
       "name": "stopSync",
       "file": "local-api.js",
-      "line": 432,
+      "line": 370,
       "backend": {
         "file": "preload.js",
         "line": 65,
@@ -2607,7 +2591,7 @@
       "kind": "local RPC",
       "name": "sync:shortcuts:clear",
       "file": "local-api.js",
-      "line": 435,
+      "line": 373,
       "backend": [
         {
           "file": "rebuild/sync-service.js",
@@ -2619,7 +2603,7 @@
       "kind": "ops",
       "name": "stopSync",
       "file": "local-api.js",
-      "line": 435,
+      "line": 373,
       "backend": {
         "file": "preload.js",
         "line": 65,
@@ -2632,11 +2616,11 @@
       "kind": "local RPC",
       "name": "settings:get",
       "file": "local-api.js",
-      "line": 436,
+      "line": 374,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1169
+          "line": 1201
         }
       ]
     },
@@ -2644,7 +2628,7 @@
       "kind": "local RPC",
       "name": "sync:restore",
       "file": "local-api.js",
-      "line": 436,
+      "line": 374,
       "backend": [
         {
           "file": "rebuild/sync-service.js",
@@ -2656,7 +2640,7 @@
       "kind": "ops",
       "name": "getSyncState",
       "file": "local-api.js",
-      "line": 437,
+      "line": 375,
       "backend": {
         "file": "preload.js",
         "line": 61,
@@ -2669,7 +2653,7 @@
       "kind": "ops",
       "name": "startSync",
       "file": "local-api.js",
-      "line": 436,
+      "line": 374,
       "backend": {
         "file": "preload.js",
         "line": 64,
@@ -2682,7 +2666,7 @@
       "kind": "ops",
       "name": "getSyncState",
       "file": "local-api.js",
-      "line": 440,
+      "line": 378,
       "backend": {
         "file": "preload.js",
         "line": 61,
@@ -2695,15 +2679,15 @@
       "kind": "local RPC",
       "name": "profiles:list",
       "file": "local-api.js",
-      "line": 441,
+      "line": 379,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 691
+          "line": 729
         },
         {
           "file": "rebuild/local-service.js",
-          "line": 797
+          "line": 837
         }
       ]
     },
@@ -2711,7 +2695,7 @@
       "kind": "ops",
       "name": "getSyncState",
       "file": "local-api.js",
-      "line": 446,
+      "line": 384,
       "backend": {
         "file": "preload.js",
         "line": 61,
@@ -2724,7 +2708,7 @@
       "kind": "ops",
       "name": "windowAction",
       "file": "local-api.js",
-      "line": 445,
+      "line": 383,
       "backend": {
         "file": "preload.js",
         "line": 67,
@@ -2737,7 +2721,7 @@
       "kind": "local RPC",
       "name": "sync:layout",
       "file": "local-api.js",
-      "line": 450,
+      "line": 388,
       "backend": [
         {
           "file": "rebuild/sync-service.js",
@@ -2749,7 +2733,7 @@
       "kind": "local RPC",
       "name": "ui:dialog:open",
       "file": "local-api.js",
-      "line": 451,
+      "line": 389,
       "backend": [
         {
           "file": "rebuild/dialog-windows.js",
@@ -2761,7 +2745,7 @@
       "kind": "local RPC",
       "name": "ui:dialog:open",
       "file": "local-api.js",
-      "line": 452,
+      "line": 390,
       "backend": [
         {
           "file": "rebuild/dialog-windows.js",
@@ -2773,7 +2757,7 @@
       "kind": "local RPC",
       "name": "ui:dialog:open",
       "file": "local-api.js",
-      "line": 453,
+      "line": 391,
       "backend": [
         {
           "file": "rebuild/dialog-windows.js",
@@ -2785,7 +2769,7 @@
       "kind": "local RPC",
       "name": "ui:dialog:open",
       "file": "local-api.js",
-      "line": 454,
+      "line": 392,
       "backend": [
         {
           "file": "rebuild/dialog-windows.js",
@@ -2797,7 +2781,7 @@
       "kind": "local RPC",
       "name": "ui:dialog:close",
       "file": "local-api.js",
-      "line": 455,
+      "line": 393,
       "backend": [
         {
           "file": "rebuild/dialog-windows.js",
@@ -2809,7 +2793,7 @@
       "kind": "local RPC",
       "name": "ui:dialog:close",
       "file": "local-api.js",
-      "line": 456,
+      "line": 394,
       "backend": [
         {
           "file": "rebuild/dialog-windows.js",
@@ -2821,7 +2805,7 @@
       "kind": "local RPC",
       "name": "ui:dialog:close",
       "file": "local-api.js",
-      "line": 457,
+      "line": 395,
       "backend": [
         {
           "file": "rebuild/dialog-windows.js",
@@ -2833,7 +2817,7 @@
       "kind": "local RPC",
       "name": "ui:dialog:close",
       "file": "local-api.js",
-      "line": 458,
+      "line": 396,
       "backend": [
         {
           "file": "rebuild/dialog-windows.js",
@@ -2845,7 +2829,7 @@
       "kind": "local RPC",
       "name": "ui:dialog:resize",
       "file": "local-api.js",
-      "line": 459,
+      "line": 397,
       "backend": [
         {
           "file": "rebuild/dialog-windows.js",
@@ -2857,7 +2841,7 @@
       "kind": "local RPC",
       "name": "ui:dialog:resize",
       "file": "local-api.js",
-      "line": 460,
+      "line": 398,
       "backend": [
         {
           "file": "rebuild/dialog-windows.js",
@@ -2869,7 +2853,7 @@
       "kind": "ops",
       "name": "getSyncState",
       "file": "local-api.js",
-      "line": 462,
+      "line": 400,
       "backend": {
         "file": "preload.js",
         "line": 61,
@@ -2882,7 +2866,7 @@
       "kind": "local RPC",
       "name": "sync:master-bounds",
       "file": "local-api.js",
-      "line": 465,
+      "line": 403,
       "backend": [
         {
           "file": "rebuild/sync-service.js",
@@ -2894,7 +2878,7 @@
       "kind": "local RPC",
       "name": "sync:batch-text",
       "file": "local-api.js",
-      "line": 466,
+      "line": 404,
       "backend": [
         {
           "file": "rebuild/sync-service.js",
@@ -2906,7 +2890,7 @@
       "kind": "local RPC",
       "name": "sync:open-sites",
       "file": "local-api.js",
-      "line": 467,
+      "line": 405,
       "backend": [
         {
           "file": "rebuild/sync-service.js",
@@ -2918,7 +2902,7 @@
       "kind": "local RPC",
       "name": "sync:shortcuts:check",
       "file": "local-api.js",
-      "line": 468,
+      "line": 406,
       "backend": [
         {
           "file": "rebuild/sync-service.js",
@@ -2930,7 +2914,7 @@
       "kind": "local RPC",
       "name": "sync:shortcuts:register",
       "file": "local-api.js",
-      "line": 469,
+      "line": 407,
       "backend": [
         {
           "file": "rebuild/sync-service.js",
@@ -2942,7 +2926,7 @@
       "kind": "ops",
       "name": "getSyncState",
       "file": "local-api.js",
-      "line": 479,
+      "line": 417,
       "backend": {
         "file": "preload.js",
         "line": 61,
@@ -2955,7 +2939,7 @@
       "kind": "ops",
       "name": "tabAction",
       "file": "local-api.js",
-      "line": 478,
+      "line": 416,
       "backend": {
         "file": "preload.js",
         "line": 70,
@@ -2968,7 +2952,7 @@
       "kind": "local RPC",
       "name": "sync:settings",
       "file": "local-api.js",
-      "line": 485,
+      "line": 423,
       "backend": [
         {
           "file": "rebuild/sync-service.js",
@@ -2980,7 +2964,7 @@
       "kind": "ops",
       "name": "getSyncState",
       "file": "local-api.js",
-      "line": 487,
+      "line": 425,
       "backend": {
         "file": "preload.js",
         "line": 61,
@@ -2993,15 +2977,15 @@
       "kind": "local RPC",
       "name": "profiles:list",
       "file": "local-api.js",
-      "line": 488,
+      "line": 426,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 691
+          "line": 729
         },
         {
           "file": "rebuild/local-service.js",
-          "line": 797
+          "line": 837
         }
       ]
     },
@@ -3009,75 +2993,11 @@
       "kind": "local RPC",
       "name": "host:mac",
       "file": "local-api.js",
-      "line": 495,
+      "line": 433,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 691
-        },
-        {
-          "file": "rebuild/local-service.js",
-          "line": 1289
-        }
-      ]
-    },
-    {
-      "kind": "local RPC",
-      "name": "proxies:detect",
-      "file": "local-api.js",
-      "line": 496,
-      "backend": [
-        {
-          "file": "rebuild/local-service.js",
-          "line": 691
-        },
-        {
-          "file": "rebuild/local-service.js",
-          "line": 1296
-        }
-      ]
-    },
-    {
-      "kind": "local RPC",
-      "name": "host:network",
-      "file": "local-api.js",
-      "line": 497,
-      "backend": [
-        {
-          "file": "rebuild/local-service.js",
-          "line": 691
-        },
-        {
-          "file": "rebuild/local-service.js",
-          "line": 1261
-        }
-      ]
-    },
-    {
-      "kind": "local RPC",
-      "name": "proxies:refresh",
-      "file": "local-api.js",
-      "line": 498,
-      "backend": [
-        {
-          "file": "rebuild/local-service.js",
-          "line": 691
-        },
-        {
-          "file": "rebuild/local-service.js",
-          "line": 1319
-        }
-      ]
-    },
-    {
-      "kind": "local RPC",
-      "name": "proxies:extract",
-      "file": "local-api.js",
-      "line": 499,
-      "backend": [
-        {
-          "file": "rebuild/local-service.js",
-          "line": 691
+          "line": 729
         },
         {
           "file": "rebuild/local-service.js",
@@ -3087,13 +3007,77 @@
     },
     {
       "kind": "local RPC",
-      "name": "proxies:export",
+      "name": "proxies:detect",
       "file": "local-api.js",
-      "line": 500,
+      "line": 434,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1459
+          "line": 729
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1328
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "host:network",
+      "file": "local-api.js",
+      "line": 435,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 729
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1293
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "proxies:refresh",
+      "file": "local-api.js",
+      "line": 436,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 729
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1351
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "proxies:extract",
+      "file": "local-api.js",
+      "line": 437,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 729
+        },
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1353
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "proxies:export",
+      "file": "local-api.js",
+      "line": 438,
+      "backend": [
+        {
+          "file": "rebuild/local-service.js",
+          "line": 1484
         }
       ]
     },
@@ -3101,11 +3085,11 @@
       "kind": "local RPC",
       "name": "profiles:purge",
       "file": "local-api.js",
-      "line": 502,
+      "line": 440,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 987
+          "line": 1025
         }
       ]
     },
@@ -3113,11 +3097,11 @@
       "kind": "local RPC",
       "name": "profiles:clear-cache",
       "file": "local-api.js",
-      "line": 503,
+      "line": 441,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 733
+          "line": 773
         }
       ]
     },
@@ -3125,11 +3109,11 @@
       "kind": "local RPC",
       "name": "transfer:export",
       "file": "local-api.js",
-      "line": 504,
+      "line": 442,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1478
+          "line": 1503
         }
       ]
     },
@@ -3137,11 +3121,11 @@
       "kind": "local RPC",
       "name": "fingerprint:preview",
       "file": "local-api.js",
-      "line": 505,
+      "line": 443,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1199
+          "line": 1231
         }
       ]
     },
@@ -3149,11 +3133,11 @@
       "kind": "local RPC",
       "name": "fingerprint:preview",
       "file": "local-api.js",
-      "line": 507,
+      "line": 445,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1199
+          "line": 1231
         }
       ]
     },
@@ -3161,11 +3145,11 @@
       "kind": "local RPC",
       "name": "fingerprint:preview",
       "file": "local-api.js",
-      "line": 520,
+      "line": 458,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1199
+          "line": 1231
         }
       ]
     },
@@ -3173,7 +3157,7 @@
       "kind": "local RPC",
       "name": "ui:dialog:show",
       "file": "local-api.js",
-      "line": 522,
+      "line": 460,
       "backend": [
         {
           "file": "rebuild/dialog-windows.js",
@@ -3185,7 +3169,7 @@
       "kind": "local RPC",
       "name": "ui:dialog:resize",
       "file": "local-api.js",
-      "line": 523,
+      "line": 461,
       "backend": [
         {
           "file": "rebuild/dialog-windows.js",
@@ -3197,7 +3181,7 @@
       "kind": "ops",
       "name": "getInfo",
       "file": "local-api.js",
-      "line": 524,
+      "line": 462,
       "backend": {
         "file": "preload.js",
         "line": 7,
@@ -3210,11 +3194,11 @@
       "kind": "local RPC",
       "name": "settings:get",
       "file": "local-api.js",
-      "line": 525,
+      "line": 463,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1169
+          "line": 1201
         }
       ]
     },
@@ -3222,11 +3206,11 @@
       "kind": "local RPC",
       "name": "settings:set",
       "file": "local-api.js",
-      "line": 526,
+      "line": 464,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1170
+          "line": 1202
         }
       ]
     },
@@ -3234,15 +3218,15 @@
       "kind": "local RPC",
       "name": "kernels:list",
       "file": "local-api.js",
-      "line": 528,
+      "line": 466,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 691
+          "line": 729
         },
         {
           "file": "rebuild/local-service.js",
-          "line": 1325
+          "line": 1357
         }
       ]
     },
@@ -3250,11 +3234,11 @@
       "kind": "local RPC",
       "name": "settings:set",
       "file": "local-api.js",
-      "line": 542,
+      "line": 480,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1170
+          "line": 1202
         }
       ]
     },
@@ -3262,15 +3246,15 @@
       "kind": "local RPC",
       "name": "profiles:list",
       "file": "local-api.js",
-      "line": 543,
+      "line": 481,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 691
+          "line": 729
         },
         {
           "file": "rebuild/local-service.js",
-          "line": 797
+          "line": 837
         }
       ]
     },
@@ -3278,15 +3262,15 @@
       "kind": "local RPC",
       "name": "profiles:list",
       "file": "local-api.js",
-      "line": 548,
+      "line": 486,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 691
+          "line": 729
         },
         {
           "file": "rebuild/local-service.js",
-          "line": 797
+          "line": 837
         }
       ]
     },
@@ -3294,7 +3278,7 @@
       "kind": "local RPC",
       "name": "cookie-robot:start",
       "file": "local-api.js",
-      "line": 550,
+      "line": 488,
       "backend": [
         {
           "file": "rebuild/cookie-robot.js",
@@ -3306,7 +3290,7 @@
       "kind": "ops",
       "name": "windowAction",
       "file": "local-api.js",
-      "line": 553,
+      "line": 491,
       "backend": {
         "file": "preload.js",
         "line": 67,
@@ -3319,7 +3303,7 @@
       "kind": "ops",
       "name": "windowAction",
       "file": "local-api.js",
-      "line": 557,
+      "line": 495,
       "backend": {
         "file": "preload.js",
         "line": 67,
@@ -3332,15 +3316,15 @@
       "kind": "local RPC",
       "name": "profiles:stop",
       "file": "local-api.js",
-      "line": 564,
+      "line": 502,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 691
+          "line": 729
         },
         {
           "file": "rebuild/local-service.js",
-          "line": 941
+          "line": 979
         }
       ]
     },
@@ -3348,15 +3332,15 @@
       "kind": "local RPC",
       "name": "profiles:list",
       "file": "local-api.js",
-      "line": 566,
+      "line": 504,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 691
+          "line": 729
         },
         {
           "file": "rebuild/local-service.js",
-          "line": 797
+          "line": 837
         }
       ]
     },
@@ -3364,15 +3348,15 @@
       "kind": "local RPC",
       "name": "profiles:start",
       "file": "local-api.js",
-      "line": 569,
+      "line": 507,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 691
+          "line": 729
         },
         {
           "file": "rebuild/local-service.js",
-          "line": 873
+          "line": 911
         }
       ]
     },
@@ -3380,15 +3364,15 @@
       "kind": "local RPC",
       "name": "profiles:stop",
       "file": "local-api.js",
-      "line": 570,
+      "line": 508,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 691
+          "line": 729
         },
         {
           "file": "rebuild/local-service.js",
-          "line": 941
+          "line": 979
         }
       ]
     },
@@ -3396,7 +3380,7 @@
       "kind": "local RPC",
       "name": "agent:info",
       "file": "local-api.js",
-      "line": 631,
+      "line": 569,
       "backend": [
         {
           "file": "rebuild/agent-service.js",
@@ -3412,19 +3396,32 @@
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 691
+          "line": 729
         },
         {
           "file": "rebuild/local-service.js",
-          "line": 1325
+          "line": 1357
         }
       ]
     },
     {
       "kind": "ops",
+      "name": "kernelListVersions",
+      "file": "local-pages.js",
+      "line": 70,
+      "backend": {
+        "file": "preload.js",
+        "line": 22,
+        "channels": [
+          "kernel:list-versions"
+        ]
+      }
+    },
+    {
+      "kind": "ops",
       "name": "onEvent",
       "file": "local-pages.js",
-      "line": 68,
+      "line": 81,
       "backend": {
         "file": "preload.js",
         "line": 125,
@@ -3435,7 +3432,7 @@
       "kind": "ops",
       "name": "kernelDownload",
       "file": "local-pages.js",
-      "line": 83,
+      "line": 98,
       "backend": {
         "file": "preload.js",
         "line": 17,
@@ -3448,7 +3445,7 @@
       "kind": "ops",
       "name": "kernelCancelDownload",
       "file": "local-pages.js",
-      "line": 87,
+      "line": 102,
       "backend": {
         "file": "preload.js",
         "line": 29,
@@ -3461,7 +3458,7 @@
       "kind": "ops",
       "name": "kernelChooseCustom",
       "file": "local-pages.js",
-      "line": 101,
+      "line": 116,
       "backend": {
         "file": "preload.js",
         "line": 21,
@@ -3474,7 +3471,7 @@
       "kind": "ops",
       "name": "kernelSetCustom",
       "file": "local-pages.js",
-      "line": 107,
+      "line": 122,
       "backend": {
         "file": "preload.js",
         "line": 19,
@@ -3485,22 +3482,9 @@
     },
     {
       "kind": "ops",
-      "name": "kernelListVersions",
-      "file": "local-pages.js",
-      "line": 130,
-      "backend": {
-        "file": "preload.js",
-        "line": 22,
-        "channels": [
-          "kernel:list-versions"
-        ]
-      }
-    },
-    {
-      "kind": "ops",
       "name": "kernelInstallVersion",
       "file": "local-pages.js",
-      "line": 156,
+      "line": 161,
       "backend": {
         "file": "preload.js",
         "line": 23,
@@ -3513,7 +3497,7 @@
       "kind": "ops",
       "name": "kernelCheck",
       "file": "local-pages.js",
-      "line": 173,
+      "line": 178,
       "backend": {
         "file": "preload.js",
         "line": 28,
@@ -3526,7 +3510,7 @@
       "kind": "ops",
       "name": "kernelPin",
       "file": "local-pages.js",
-      "line": 178,
+      "line": 183,
       "backend": {
         "file": "preload.js",
         "line": 25,
@@ -3539,7 +3523,7 @@
       "kind": "ops",
       "name": "kernelDelete",
       "file": "local-pages.js",
-      "line": 185,
+      "line": 190,
       "backend": {
         "file": "preload.js",
         "line": 27,
@@ -3552,11 +3536,11 @@
       "kind": "local RPC",
       "name": "templates:list",
       "file": "local-pages.js",
-      "line": 202,
+      "line": 207,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1122
+          "line": 1154
         }
       ]
     },
@@ -3564,11 +3548,11 @@
       "kind": "local RPC",
       "name": "transfer:import",
       "file": "local-pages.js",
-      "line": 224,
+      "line": 229,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1514
+          "line": 1539
         }
       ]
     },
@@ -3576,11 +3560,11 @@
       "kind": "local RPC",
       "name": "templates:delete",
       "file": "local-pages.js",
-      "line": 240,
+      "line": 245,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1140
+          "line": 1172
         }
       ]
     },
@@ -3588,7 +3572,7 @@
       "kind": "local RPC",
       "name": "agent:config:get",
       "file": "local-pages.js",
-      "line": 259,
+      "line": 265,
       "backend": [
         {
           "file": "rebuild/agent-service.js",
@@ -3600,7 +3584,7 @@
       "kind": "local RPC",
       "name": "agent:config:set",
       "file": "local-pages.js",
-      "line": 268,
+      "line": 277,
       "backend": [
         {
           "file": "rebuild/agent-service.js",
@@ -3612,7 +3596,7 @@
       "kind": "local RPC",
       "name": "agent:config:set",
       "file": "local-pages.js",
-      "line": 324,
+      "line": 341,
       "backend": [
         {
           "file": "rebuild/agent-service.js",
@@ -3624,11 +3608,11 @@
       "kind": "local RPC",
       "name": "agent:skills:list",
       "file": "local-pages.js",
-      "line": 338,
+      "line": 360,
       "backend": [
         {
           "file": "rebuild/agent-service.js",
-          "line": 271
+          "line": 274
         }
       ]
     },
@@ -3636,31 +3620,15 @@
       "kind": "local RPC",
       "name": "agent:skills:import",
       "file": "local-pages.js",
-      "line": 366,
+      "line": 388,
       "backend": [
         {
           "file": "rebuild/agent-service.js",
-          "line": 309
+          "line": 312
         },
         {
           "file": "rebuild/agent-service.js",
-          "line": 339
-        }
-      ]
-    },
-    {
-      "kind": "local RPC",
-      "name": "agent:skills:save",
-      "file": "local-pages.js",
-      "line": 370,
-      "backend": [
-        {
-          "file": "rebuild/agent-service.js",
-          "line": 309
-        },
-        {
-          "file": "rebuild/agent-service.js",
-          "line": 349
+          "line": 343
         }
       ]
     },
@@ -3672,11 +3640,27 @@
       "backend": [
         {
           "file": "rebuild/agent-service.js",
-          "line": 309
+          "line": 312
         },
         {
           "file": "rebuild/agent-service.js",
-          "line": 349
+          "line": 353
+        }
+      ]
+    },
+    {
+      "kind": "local RPC",
+      "name": "agent:skills:save",
+      "file": "local-pages.js",
+      "line": 414,
+      "backend": [
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 312
+        },
+        {
+          "file": "rebuild/agent-service.js",
+          "line": 353
         }
       ]
     },
@@ -3684,15 +3668,15 @@
       "kind": "local RPC",
       "name": "agent:skills:delete",
       "file": "local-pages.js",
-      "line": 400,
+      "line": 422,
       "backend": [
         {
           "file": "rebuild/agent-service.js",
-          "line": 309
+          "line": 312
         },
         {
           "file": "rebuild/agent-service.js",
-          "line": 370
+          "line": 374
         }
       ]
     },
@@ -3700,15 +3684,15 @@
       "kind": "local RPC",
       "name": "profiles:list",
       "file": "local-pages.js",
-      "line": 410,
+      "line": 432,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 691
+          "line": 729
         },
         {
           "file": "rebuild/local-service.js",
-          "line": 797
+          "line": 837
         }
       ]
     },
@@ -3716,11 +3700,11 @@
       "kind": "local RPC",
       "name": "transfer:import",
       "file": "local-pages.js",
-      "line": 433,
+      "line": 455,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1514
+          "line": 1539
         }
       ]
     },
@@ -3728,11 +3712,11 @@
       "kind": "local RPC",
       "name": "transfer:export",
       "file": "local-pages.js",
-      "line": 436,
+      "line": 458,
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1478
+          "line": 1503
         }
       ]
     },
@@ -3744,11 +3728,11 @@
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 691
+          "line": 729
         },
         {
           "file": "rebuild/local-service.js",
-          "line": 802
+          "line": 842
         }
       ]
     },
@@ -3760,7 +3744,7 @@
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1004
+          "line": 1042
         }
       ]
     },
@@ -3784,7 +3768,7 @@
       "backend": [
         {
           "file": "rebuild/agent-service.js",
-          "line": 245
+          "line": 248
         }
       ]
     },
@@ -3808,7 +3792,7 @@
       "backend": [
         {
           "file": "rebuild/agent-service.js",
-          "line": 249
+          "line": 252
         }
       ]
     },
@@ -3820,7 +3804,7 @@
       "backend": [
         {
           "file": "rebuild/agent-service.js",
-          "line": 240
+          "line": 243
         }
       ]
     },
@@ -3832,7 +3816,7 @@
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 1169
+          "line": 1201
         }
       ]
     },
@@ -3844,11 +3828,11 @@
       "backend": [
         {
           "file": "rebuild/local-service.js",
-          "line": 691
+          "line": 729
         },
         {
           "file": "rebuild/local-service.js",
-          "line": 797
+          "line": 837
         }
       ]
     },
@@ -3872,42 +3856,42 @@
     },
     {
       "file": "local-api.js",
-      "line": 589,
+      "line": 527,
       "expression": "request(\"agent:\" + method, payload)"
     },
     {
       "file": "local-api.js",
-      "line": 595,
+      "line": 533,
       "expression": "globalThis.__agentRequest(method, { id: args[0], runId: args[1] })"
     },
     {
       "file": "local-api.js",
-      "line": 595,
+      "line": 533,
       "expression": "globalThis.__agentRequest(method, {\n  data: args[0],\n  mimeType: args[1],\n  fileName: args[2],\n  conversationId: args[3]\n})"
     },
     {
       "file": "local-api.js",
-      "line": 607,
+      "line": 545,
       "expression": "globalThis.__agentRequest(method, { id: args[0], ...args[1] })"
     },
     {
       "file": "local-api.js",
-      "line": 607,
+      "line": 545,
       "expression": "globalThis.__agentRequest(method, { id: args[0], title: args[1] })"
     },
     {
       "file": "local-api.js",
-      "line": 607,
+      "line": 545,
       "expression": "globalThis.__agentRequest(method, args[0] || {})"
     },
     {
       "file": "local-api.js",
-      "line": 625,
+      "line": 563,
       "expression": "globalThis.__agentRequest(key + \".\" + method, { filename: file.name, data })"
     },
     {
       "file": "local-api.js",
-      "line": 627,
+      "line": 565,
       "expression": "globalThis.__agentRequest(key + \".\" + method, payload)"
     },
     {
@@ -3934,19 +3918,19 @@
     },
     {
       "file": "rebuild/local-service.js",
-      "sha256": "8b895b5dd8dfaee6ca03edbad6645010c674066fe5f3e58d37f0d5c0f8aea3f5"
+      "sha256": "0d9faf3873a2de3d61bf88f3892918ee4603d4612fff8c3f23e0f858fe3ef441"
     },
     {
       "file": "rebuild/agent-service.js",
-      "sha256": "3bd2b10b885003b3b47c4ba55006fd090eea380cf21b4f17b5f1caa7ad456260"
+      "sha256": "293697cf63e049a816df3dd2307b965afbb97f45839df63dc90417d8f0109c00"
     },
     {
       "file": "rebuild/agent-conversations.js",
-      "sha256": "a4be459dc21e3f3d655c7c890a0167b2ed7af204272d69f99db75b639fa0d7b4"
+      "sha256": "899277f294d94755d5f7481f28c6085765448aeadc9cdceb6e5401b3b8e93325"
     },
     {
       "file": "rebuild/renderer-bridge.js",
-      "sha256": "186e23e4eeabaecb8e28078ba1cde225a7cf943577883fa82c9eb8d43c57e624"
+      "sha256": "668bf8917680fab2a6386367c91cb4b15336d237317eccff0033bbb830559bad"
     }
   ]
 }

@@ -200,6 +200,9 @@ class AgentService {
         url.password
       )
         throw Error("无效的 LLM 服务地址");
+      // A retained key belongs to the provider and origin that stored it.
+      // Changing services requires an explicit key instead of forwarding it.
+      if (!Object.hasOwn(p, "apiKey") && (next.provider !== old.provider || url.origin !== new URL(old.baseUrl).origin)) next.apiKey = "";
       next.maxContext = Math.max(
         4000,
         Math.min(200000, Number(next.maxContext) || 24000),
@@ -316,14 +319,15 @@ class AgentService {
       const c = this.conversation(p.id);
       const last = [...c.messages].reverse().find((m) => m.role === "user");
       if (!last) throw Error("没有可续跑的任务");
+      const checkpoint = c.checkpoint && c.latestRunId && c.checkpoint.runId === c.latestRunId && c.checkpoint.turnId === last.id ? c.checkpoint : null;
       this.start(
         {
           conversationId: c.id,
           message: "继续上次中断的任务。原始任务：" + last.content,
-          resumeContext: c.checkpoint?.context,
-          fullAccess: !!c.checkpoint?.fullAccess,
-          allowedProfileIds: c.checkpoint?.allowedProfileIds,
-          taskMeta: c.checkpoint?.taskMeta,
+          resumeContext: checkpoint?.context,
+          fullAccess: checkpoint?.fullAccess ?? c.runPolicy?.fullAccess ?? false,
+          allowedProfileIds: checkpoint ? checkpoint.allowedProfileIds : c.runPolicy ? c.runPolicy.allowedProfileIds : [],
+          taskMeta: checkpoint?.taskMeta ?? c.runPolicy?.taskMeta,
         },
         id(),
       );
@@ -391,8 +395,11 @@ class AgentService {
       startedAt: now(),
       fullAccess: !!p.fullAccess,
       taskMeta: p.taskMeta,
-      allowedProfileIds: p.allowedProfileIds,
+      allowedProfileIds: p.allowedProfileIds === undefined ? undefined : structuredClone(p.allowedProfileIds),
     };
+    // A new turn must never inherit the previous turn's checkpoint or policy.
+    c.checkpoint = null;
+    c.runPolicy = structuredClone({ fullAccess: run.fullAccess, allowedProfileIds: run.allowedProfileIds, taskMeta: run.taskMeta });
     if (p.attachmentsPending)
       run.attachmentGate = new Promise((resolve) => {
         run.receiveAttachments = resolve;
@@ -638,6 +645,8 @@ class AgentService {
           });
         }
         run.checkpoint = {
+          runId: run.id,
+          turnId: run.turnId,
           step,
           context,
           fullAccess: run.fullAccess,

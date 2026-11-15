@@ -84,6 +84,7 @@ async function profileTransaction(engine, profiles) {
             baseRev: current.rev,
             profile: {
               ...current.profile,
+              credentialsAction: "replace",
               startUrl: row.original.startUrl,
               platform: row.original.platform,
             },
@@ -101,7 +102,7 @@ async function profileTransaction(engine, profiles) {
           kind: "modify",
           id: row.original.id,
           baseRev: row.baseRev,
-          profile: row.profile,
+          profile: { ...row.profile, credentialsAction: "replace" },
         })),
         { delta: true },
       );

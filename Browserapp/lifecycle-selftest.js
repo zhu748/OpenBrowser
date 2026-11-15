@@ -608,6 +608,7 @@ async function testQuitFlushFailureStillCleansUp() {
   const failedWrite = (label) => async () => { calls.push(label); throw new Error(label + ' failed'); };
   const context = {
     quitCleanupPromise: null, quitting: false, quitCleanupSettled: false,
+    localUiSync: undefined, localUiService: undefined,
     destroyTray: () => {},
     stopAllForQuit: async () => ({ stopped: true, remaining: [], errors: [] }),
     engine: { flushPersistence: failedWrite('engine') },

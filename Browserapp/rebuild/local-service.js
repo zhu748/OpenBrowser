@@ -5,6 +5,7 @@ const crypto = require("node:crypto");
 const { sanitizeProfile } = require("../engine/profile-sanitizer");
 const { nextRecordId, rememberRecordIds } = require("./local-record-ids");
 const { profileRelations } = require("./profile-relations");
+const { readLocalStore, encodeLocalStore } = require("./local-store");
 const uid = () => crypto.randomUUID();
 const object = (v) => v && typeof v === "object" && !Array.isArray(v);
 const clone = (v) => structuredClone(v);
@@ -573,7 +574,6 @@ class LocalService {
       window,
       localRequest: (method, payload) => this.request(method, payload),
     });
-    this.revisions = new Map();
     this.file = path.join(root, "rebuild-local.json");
   }
   resolveInputs(input) {
@@ -613,13 +613,20 @@ class LocalService {
   }
   async load() {
     if (this.loadPromise) return this.loadPromise;
-    this.loadPromise = this.loadOnce();
+    this.loadPromise = this.loadOnce().catch(error => {
+      this.data = undefined;
+      this.loadPromise = null;
+      throw error;
+    });
     return this.loadPromise;
   }
   async loadOnce() {
     if (this.data) return;
+    let migrated = false;
     try {
-      this.data = JSON.parse(await fs.readFile(this.file, "utf8"));
+      const loaded = await readLocalStore(this.file);
+      this.data = loaded.data;
+      migrated = loaded.legacy;
     } catch (e) {
       if (e.code !== "ENOENT") throw e;
       this.data = {
@@ -635,7 +642,6 @@ class LocalService {
     if (this.data.version !== 1) throw Error("Unsupported local store version");
     // The old renderer kept group labels in its own origin's localStorage.
     // Recover groups still referenced by original backend profiles on first load.
-    let migrated = false;
     for (const profile of this.engine.status()) {
       if (
         profile.groupId &&
@@ -652,16 +658,48 @@ class LocalService {
     if (migrated) await this.save();
   }
   async save() {
-    const content = JSON.stringify(this.data, null, 2),
+    const content = encodeLocalStore(this.data),
       tmp = this.file + "." + uid() + ".tmp";
     await fs.mkdir(this.root, { recursive: true });
-    await fs.writeFile(tmp, content, { mode: 0o600 });
-    await fs.rename(tmp, this.file);
+    try {
+      await fs.writeFile(tmp, content, { mode: 0o600 });
+      await fs.rename(tmp, this.file);
+    } finally { await fs.rm(tmp, { force: true }); }
+  }
+  profileIndex() {
+    const snapshot = this.engine.status(), groups = this.data.groups, labels = this.data.labels;
+    const cached = this.profileProjection;
+    if (cached?.snapshot === snapshot && cached.groups === groups && cached.labels === labels) return cached;
+    const index = { snapshot, groups, labels, groupById: new Map(groups.map(row => [row.id, row])),
+      labelById: new Map((labels || []).map(row => [row.id, row])), groupCounts: new Map(),
+      proxyProfiles: new Map(), labelProfiles: new Map(), summaries: [] };
+    for (const profile of snapshot) {
+      const labelIds = /^\d+(,\d+)*$/.test(profile.tag || "") ? profile.tag.split(",").map(Number) : [];
+      if (!profile.trashed) {
+        index.groupCounts.set(profile.groupId || "", (index.groupCounts.get(profile.groupId || "") || 0) + 1);
+        if (profile.proxyId) {
+          if (!index.proxyProfiles.has(profile.proxyId)) index.proxyProfiles.set(profile.proxyId, []);
+          index.proxyProfiles.get(profile.proxyId).push({ id: profile.id, windowName: profile.name, windowSortNum: profile.number });
+        }
+        for (const id of labelIds) {
+          if (!index.labelProfiles.has(id)) index.labelProfiles.set(id, []);
+          index.labelProfiles.get(id).push(profile.id);
+        }
+      }
+      index.summaries.push({ source: profile, windowName: profile.name || "", windowRemark: profile.note || "",
+        windowSortNum: profile.number, projectId: profile.groupId || "", openStatus: !!profile.running,
+        isOften: !!profile.favorite, os: profile.os, coreType: profile.engine === "firefox" ? "Firefox" : "Chrome",
+        labelIds, labelInfos: labelIds.map(id => index.labelById.get(id)).filter(Boolean).map(label => ({ labelName: label.name })),
+        windowPlatformList: (profile.platform?.accounts || (profile.platform ? [profile.platform] : [])).map(account => ({ platformUrl: account.url || account.startUrl || profile.platform?.startUrl })),
+        createdAt: profile.createdAt, updatedAt: profile.updatedAt, openTime: profile.lastOpenedAt });
+    }
+    this.profileProjection = index;
+    return index;
   }
   decorate(profile) {
+    const index = this.profileIndex();
     const row = toRoxy(profile);
-    const labelInfo = (this.data.labels || [])
-      .filter((label) => row.labelIds.includes(label.id))
+    const labelInfo = row.labelIds.map(id => index.labelById.get(id)).filter(Boolean)
       .map((label) => ({
         labelId: String(label.id),
         labelName: label.name,
@@ -670,7 +708,7 @@ class LocalService {
     return {
       ...row,
       projectName:
-        this.data.groups.find((group) => group.id === profile.groupId)
+        index.groupById.get(profile.groupId)
           ?.projectName ||
         profile.group_name ||
         "",
@@ -692,6 +730,7 @@ class LocalService {
         "profiles:start",
         "profiles:stop",
         "profiles:list",
+        "profiles:query",
         "profiles:read",
         "profiles:choose-import",
         "profiles:trash",
@@ -723,6 +762,7 @@ class LocalService {
   }
   async dispatch(method, p) {
     const e = this.engine;
+    if (method === "profiles:query") return require("./profile-query").queryProfiles(this, p);
     if (method.startsWith('api:')) return require('./local-api').request(this,method.slice(4),p);
     if (method === 'host:shortcut') return require('./host-actions').shortcut(this, p);
     if (method === 'host:default-browser') return require('./host-actions').setDefault(this, p);
@@ -801,7 +841,6 @@ class LocalService {
         .map((v) => this.decorate(v));
     if (method === "profiles:read") {
       const r = e.profileForEdit(String(p.id));
-      this.revisions.set(r.profile.id, r.rev);
       return { ...this.decorate(r.profile), rev: r.rev };
     }
     if (method === "profiles:create") {
@@ -858,16 +897,15 @@ class LocalService {
     if (method === "profiles:update") {
       const id = String(p.id ?? p.windowId ?? p.dirId ?? "");
       const base = e.profileForEdit(id);
-      const rev = p.rev ?? this.revisions.get(id);
+      const rev = p.rev;
       if (!Number.isInteger(rev)) throw Error("请重新打开编辑表单以读取版本");
       const profile = fromRoxy(this.resolveInputs(p), base.profile);
       await e.applyProfileCommands(
-        [{ kind: "modify", id, baseRev: rev, profile }],
+        [{ kind: "modify", id, baseRev: rev, profile: { ...profile, credentialsAction: "replace", proxyAuthAction: "clear" } }],
         {
           delta: true,
         },
       );
-      this.revisions.delete(id);
       return toRoxy(profile);
     }
     if (method === "profiles:start") {
@@ -931,7 +969,7 @@ class LocalService {
           kind: "modify",
           id,
           baseRev: base.rev,
-          profile: fromRoxy(this.resolveInputs({ ...patch, ...fingerDetail?.[index] }), base.profile),
+          profile: { ...fromRoxy(this.resolveInputs({ ...patch, ...fingerDetail?.[index] }), base.profile), credentialsAction: "replace", proxyAuthAction: "clear" },
         };
       });
       if (commands.length)
@@ -971,7 +1009,7 @@ class LocalService {
           kind: "modify",
           id,
           baseRev: current.rev,
-          profile: fromRoxy(this.resolveInputs(patch), current.profile),
+          profile: { ...fromRoxy(this.resolveInputs(patch), current.profile), credentialsAction: "replace", proxyAuthAction: "clear" },
         };
       });
       await e.applyProfileCommands(commands, { delta: true });
@@ -1002,13 +1040,13 @@ class LocalService {
             "",
         }));
     if (method === "groups:list") {
+      const index = this.profileIndex();
       const rows = this.data.groups.map((v) => ({
         ...clone(v),
         projectName: v.projectName,
         project_id: v.id,
         projectId: v.id,
-        windowCount: e.status().filter((p) => !p.trashed && p.groupId === v.id)
-          .length,
+        windowCount: index.groupCounts.get(v.id) || 0,
         user_info: [
           {
             userId: "local",
@@ -1017,7 +1055,7 @@ class LocalService {
           },
         ],
       }));
-      if(p.default===2)rows.unshift({id:'local-default',project_id:'local-default',projectId:'local-default',projectDefault:1,projectName:'默认项目',pinStatus:this.data.settings.defaultProjectPin||0,windowCount:e.status().filter(profile=>!profile.trashed&&!profile.groupId).length,user_info:[{userId:'local',userName:'OpenBrowser',pinStatus:this.data.settings.defaultProjectPin||0}]});
+      if(p.default===2)rows.unshift({id:'local-default',project_id:'local-default',projectId:'local-default',projectDefault:1,projectName:'默认项目',pinStatus:this.data.settings.defaultProjectPin||0,windowCount:index.groupCounts.get('')||0,user_info:[{userId:'local',userName:'OpenBrowser',pinStatus:this.data.settings.defaultProjectPin||0}]});
       return p.pinnedOnly ? rows.filter(row=>row.pinStatus===1) : rows;
     }
     if (method === "groups:save") {
@@ -1046,13 +1084,7 @@ class LocalService {
     if (method === "labels:list")
       return (this.data.labels || []).map((row) => ({
         ...row,
-        bindWindowIds: e
-          .status()
-          .filter(
-            (profile) =>
-              !profile.trashed && toRoxy(profile).labelIds.includes(row.id),
-          )
-          .map((profile) => profile.id),
+        bindWindowIds: this.profileIndex().labelProfiles.get(row.id) || [],
       }));
     if (method === "labels:save") {
       if (!String(p.name || "").trim()) throw Error("请输入标签名称");
@@ -1340,14 +1372,7 @@ class LocalService {
         .list(p)
         .map((row) => ({
           ...row,
-          bindList: e
-            .status()
-            .filter((v) => !v.trashed && v.proxyId === row.id)
-            .map((v) => ({
-              id: v.id,
-              windowName: v.name,
-              windowSortNum: v.number,
-            })),
+          bindList: this.profileIndex().proxyProfiles.get(row.id) || [],
         }));
     if (method === "proxies:read") {
       const row = this.proxyStore().get(String(p.id));

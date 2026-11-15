@@ -145,7 +145,7 @@ async function handleProfileLaunch(argv) {
     if (!request.id) {
       if (localUiService) defaultId = (await localUiService.request('settings:get')).defaultProfileId;
       else {
-        const saved = JSON.parse(await fsp.readFile(path.join(app.getPath('userData'), 'rebuild-local.json'), 'utf8'));
+        const { data: saved } = await require('./rebuild/local-store').readLocalStore(path.join(app.getPath('userData'), 'rebuild-local.json'));
         if (saved.version !== 1) throw Error('不支持的本地设置版本');
         defaultId = saved.settings?.defaultProfileId;
       }

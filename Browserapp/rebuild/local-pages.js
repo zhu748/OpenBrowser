@@ -70,9 +70,9 @@ export const Kernels = {
       busy = ref(false),
       error = ref(""),
       progress = ref("");
-    let dispose;
+    let dispose, versionRequest = 0, disposed = false, pending = 0;
     const run = async (fn) => {
-      busy.value = true;
+      busy.value = ++pending > 0;
       error.value = "";
       try {
         await fn();
@@ -80,11 +80,25 @@ export const Kernels = {
         error.value = e.message;
         throw e;
       } finally {
-        busy.value = false;
+        busy.value = --pending > 0;
       }
     };
     const load = async () => {
       rows.value = await ipc("kernels:list");
+    };
+    const loadVersions = async () => {
+      const request = ++versionRequest, selectedFamily = family.value;
+      busy.value = ++pending > 0;
+      error.value = "";
+      try {
+        const response = await globalThis.ops.kernelListVersions(selectedFamily, true);
+        if (disposed || request !== versionRequest || family.value !== selectedFamily) return;
+        const list = Array.isArray(response) ? response : response.versions || [];
+        versions.value = list;
+        version.value = String(list[0]?.version || list[0] || "");
+      } catch (e) {
+        if (!disposed && request === versionRequest && family.value === selectedFamily) error.value = e.message;
+      } finally { busy.value = --pending > 0; }
     };
     onMounted(() => {
       load().catch((e) => (error.value = e.message));
@@ -96,7 +110,7 @@ export const Kernels = {
         }
       });
     });
-    onBeforeUnmount(() => dispose?.());
+    onBeforeUnmount(() => { disposed = true; versionRequest++; dispose?.(); });
     return () =>
       shell("内核管理", [
         error.value
@@ -152,6 +166,7 @@ export const Kernels = {
               "aria-label": "内核类型",
               value: family.value,
               onChange: (e) => {
+                versionRequest++;
                 family.value = e.target.value;
                 versions.value = [];
                 version.value = "";
@@ -162,19 +177,7 @@ export const Kernels = {
               h("option", { value: "firefox" }, "Firefox"),
             ],
           ),
-          btn("获取可下载版本", () =>
-            run(async () => {
-              versions.value = await globalThis.ops.kernelListVersions(
-                family.value,
-                true,
-              );
-              const list = Array.isArray(versions.value)
-                ? versions.value
-                : versions.value.versions || [];
-              versions.value = list;
-              version.value = String(list[0]?.version || list[0] || "");
-            }),
-          ),
+          btn("获取可下载版本", loadVersions, { disabled: busy.value }),
           h(
             "select",
             {
@@ -311,22 +314,31 @@ export const AgentConfig = {
       }),
       error = ref(""),
       saved = ref(false),
+      loaded = ref(false),
       busy = ref(false);
+    let revision = 0;
     onMounted(async () => {
       try {
         config.value = { ...(await ipc("agent:config:get")), apiKey: "" };
+        loaded.value = true;
       } catch (e) {
         error.value = e.message;
       }
     });
     const save = async () => {
+      if (!loaded.value || busy.value) return;
+      const savingRevision = revision;
       busy.value = true;
       error.value = "";
       try {
         const { hasApiKey: _hasApiKey, ...value } = config.value;
         if (!value.apiKey) delete value.apiKey;
-        await ipc("agent:config:set", value);
-        saved.value = true;
+        const accepted = await ipc("agent:config:set", value);
+        saved.value = revision === savingRevision;
+        if (saved.value) {
+          config.value.hasApiKey = accepted.hasApiKey;
+          config.value.apiKey = "";
+        }
       } catch (e) {
         error.value = e.message;
       } finally {
@@ -357,9 +369,13 @@ export const AgentConfig = {
             "select",
             {
               "aria-label": "模型服务",
+              disabled: !loaded.value,
               value: config.value.provider,
               onChange: (e) => {
+                revision++; saved.value = false;
                 config.value.provider = e.target.value;
+                config.value.apiKey = "";
+                config.value.hasApiKey = false;
                 config.value.baseUrl =
                   e.target.value === "ollama"
                     ? "http://127.0.0.1:11434"
@@ -378,12 +394,14 @@ export const AgentConfig = {
             h(Input, {
               "aria-label": ["服务地址", "模型名称", "API key"][i],
               type: key === "apiKey" ? "password" : "text",
+              disabled: !loaded.value,
               placeholder:
                 key === "apiKey" && config.value.hasApiKey
                   ? "已保存，留空保留原值"
                   : "",
               modelValue: config.value[key],
               "onUpdate:modelValue": (v) => {
+                revision++;
                 config.value[key] = v;
                 saved.value = false;
               },
@@ -392,13 +410,22 @@ export const AgentConfig = {
         ),
         h("div", { class: "flex gap-2" }, [
           btn("保存设置", save, {
-            disabled: busy.value || !config.value.model,
+            disabled: !loaded.value || busy.value || !config.value.model,
           }),
           btn("清除 API key", async () => {
-            await ipc("agent:config:set", { apiKey: "" });
-            config.value.hasApiKey = false;
-            config.value.apiKey = "";
-          }),
+            if (!loaded.value || busy.value) return;
+            busy.value = true; error.value = "";
+            const clearingRevision = ++revision;
+            saved.value = false;
+            try {
+              await ipc("agent:config:set", { apiKey: "" });
+              if (revision === clearingRevision) {
+                config.value.hasApiKey = false;
+                config.value.apiKey = "";
+              }
+            } catch (e) { error.value = e.message; }
+            finally { busy.value = false; }
+          }, { disabled: !loaded.value || busy.value }),
           btn("Skill 管理", () =>
             globalThis.__router.push("/agent-console/skills"),
           ),

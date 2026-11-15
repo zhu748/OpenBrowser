@@ -36,6 +36,18 @@ const ROOT = path.join(__dirname, '..');
 // name exists — package.json only keeps entries that a workflow, the release
 // gate or the docs still invoke directly.
 const SUITE = [
+  ['selftest:rebuild:optimization', 'rebuild/optimization-selftest.cjs'],
+  ['selftest:rebuild:service', 'rebuild/local-service-selftest.js'],
+  ['selftest:rebuild:agent', 'rebuild/agent-selftest.cjs'],
+  ['selftest:rebuild:approval', 'rebuild/agent-approval-selftest.cjs'],
+  ['selftest:rebuild:mcp', 'rebuild/agent-mcp-selftest.cjs'],
+  ['selftest:rebuild:accounts', 'rebuild/accounts-selftest.cjs'],
+  ['selftest:rebuild:attachments', 'rebuild/agent-files-selftest.cjs'],
+  ['selftest:rebuild:extensions', 'rebuild/extensions-selftest.cjs'],
+  ['selftest:rebuild:sync-service', 'rebuild/sync-service-selftest.cjs'],
+  ['selftest:rebuild:import', 'rebuild/import-selftest.cjs'],
+  ['selftest:rebuild:cache', 'rebuild/profile-cache-selftest.cjs'],
+  ['selftest:rebuild:contracts', 'rebuild/review-agent-contracts-selftest.cjs'],
   ['selftest:extensionpublication', 'automation/selftests/extension-publication-selftest.js'],
   ['selftest:browserdata', 'automation/selftests/browser-data-optimization-selftest.js'],
   ['selftest:profilekernels', 'automation/selftests/kernel-profile-selection-selftest.js'],

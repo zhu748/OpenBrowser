@@ -116,11 +116,12 @@ async function main() {
     const { BrowserEngine } = require('../../engine');
     const prefsRoot = path.join(root, 'signin-preferences');
     const signinProfile = { language: 'en-US', privacy: {}, advanced: { googleLogin: '2', allowSignin: false } };
-    await BrowserEngine.prototype.applyProfilePreferences.call({}, prefsRoot, signinProfile);
+    const preferenceEngine = { assignments: new Map(), extensions: new Map() };
+    await BrowserEngine.prototype.applyProfilePreferences.call(preferenceEngine, prefsRoot, signinProfile);
     let signinPrefs = JSON.parse(await fs.readFile(path.join(prefsRoot, 'Default/Preferences'), 'utf8'));
     assert.equal(signinPrefs.signin.allowed, true);
     await settings.saveLocalSettings({ defaultPreferences: { googleLogin: false } });
-    await BrowserEngine.prototype.applyProfilePreferences.call({}, prefsRoot, signinProfile);
+    await BrowserEngine.prototype.applyProfilePreferences.call(preferenceEngine, prefsRoot, signinProfile);
     signinPrefs = JSON.parse(await fs.readFile(path.join(prefsRoot, 'Default/Preferences'), 'utf8'));
     assert.equal(signinPrefs.signin.allowed, false);
     console.log('BROWSER_DATA_OPTIMIZATION_SELFTEST OK (independent retention, rollback, site storage, cleanup, Firefox backup/restore/WAL, partitioned cookies, defaults, matrix)');

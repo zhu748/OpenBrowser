@@ -1,7 +1,8 @@
 'use strict';
 
 // Linux real-main startup gate. Runs in an isolated userData directory and
-// exercises the actual startup barrier, preload and version-checked IPC.
+// exercises the legacy renderer's startup barrier, preload and version-checked
+// IPC. The default workbench is covered by rebuild/optimization-ui-selftest.cjs.
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -19,7 +20,7 @@ async function main() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ob-app-startup-'));
   const child = spawn(electron, ['--no-sandbox', ...(headless ? ['--ozone-platform=headless'] : []), '--remote-debugging-port=0', '.'], {
     cwd: path.resolve(__dirname, '../..'),
-    env: { ...process.env, OPENBROWSER_USER_DATA: root, OPENBROWSER_API_PORT: '0',
+    env: { ...process.env, OPENBROWSER_ROXY_UI: '0', OPENBROWSER_USER_DATA: root, OPENBROWSER_API_PORT: '0',
       XDG_CONFIG_HOME: path.join(root, 'config'), XDG_DATA_HOME: path.join(root, 'data'), XDG_CACHE_HOME: path.join(root, 'cache'),
       OPENBROWSER_MASTER_KEY_FILE: path.join(root, 'master.key'), OPENBROWSER_FP_LOG: path.join(root, 'fp.log') },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -40,6 +41,19 @@ async function main() {
     }
     assert.ok(tab, 'real app did not expose its UI: ' + output);
     connection = await cdp.connect(tab.webSocketDebuggerUrl);
+    let readyDocument = false;
+    for (let i = 0; i < 200; i++) {
+      try {
+        const ready = await connection.command('Runtime.evaluate', {
+          expression: `document.readyState === 'complete' && !!window.OpenBrowserApp?.whenReady`, returnByValue: true,
+        });
+        if (ready.result.value) { readyDocument = true; break; }
+      } catch (error) {
+        if (!/context.*destroyed|cannot find context/i.test(error.message)) throw error;
+      }
+      await delay(100);
+    }
+    assert.ok(readyDocument, 'legacy renderer did not finish loading: ' + output);
     const evaluated = await connection.command('Runtime.evaluate', {
       expression: `(async () => {
         while (!window.OpenBrowserApp?.whenReady) await new Promise(r=>setTimeout(r,20));

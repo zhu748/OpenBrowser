@@ -27,14 +27,16 @@
           "p = {}"
         ],
         "line": 195,
-        "backend": []
+        "backend": [
+          "profiles:query"
+        ]
       },
       {
         "name": "userGetWindowInfoV2List",
         "parameters": [
           "p"
         ],
-        "line": 301,
+        "line": 199,
         "backend": [
           "profiles:read"
         ]
@@ -44,7 +46,7 @@
         "parameters": [
           "p"
         ],
-        "line": 312,
+        "line": 210,
         "backend": [
           "profiles:read"
         ]
@@ -54,7 +56,7 @@
         "parameters": [
           "p"
         ],
-        "line": 314,
+        "line": 212,
         "backend": [
           "profiles:create"
         ]
@@ -64,7 +66,7 @@
         "parameters": [
           "p"
         ],
-        "line": 315,
+        "line": 213,
         "backend": [
           "profiles:update",
           "profiles:patch"
@@ -75,7 +77,7 @@
         "parameters": [
           "p"
         ],
-        "line": 319,
+        "line": 217,
         "backend": [
           "profiles:delete"
         ]
@@ -85,7 +87,7 @@
         "parameters": [
           "p"
         ],
-        "line": 320,
+        "line": 218,
         "backend": [
           "profiles:list"
         ]
@@ -95,7 +97,7 @@
         "parameters": [
           "p"
         ],
-        "line": 328,
+        "line": 226,
         "backend": [
           "profiles:edit-data"
         ]
@@ -105,7 +107,7 @@
         "parameters": [
           "p"
         ],
-        "line": 329,
+        "line": 227,
         "backend": [
           "profiles:purge"
         ]
@@ -115,7 +117,7 @@
         "parameters": [
           "p"
         ],
-        "line": 330,
+        "line": 228,
         "backend": [
           "profiles:purge"
         ]
@@ -125,7 +127,7 @@
         "parameters": [
           "p"
         ],
-        "line": 331,
+        "line": 229,
         "backend": [
           "fingerprint:preview"
         ]
@@ -135,7 +137,7 @@
         "parameters": [
           "p"
         ],
-        "line": 332,
+        "line": 230,
         "backend": [
           "fingerprint:preview"
         ]
@@ -145,7 +147,7 @@
         "parameters": [
           "p"
         ],
-        "line": 333,
+        "line": 231,
         "backend": [
           "fingerprint:preview"
         ]
@@ -153,7 +155,7 @@
       {
         "name": "userGetBrowserVersionInfoList",
         "parameters": [],
-        "line": 334,
+        "line": 232,
         "backend": [
           "kernels:list"
         ]
@@ -163,7 +165,7 @@
         "parameters": [
           "p"
         ],
-        "line": 338,
+        "line": 236,
         "backend": [
           "profiles:list"
         ]
@@ -173,7 +175,7 @@
         "parameters": [
           "p"
         ],
-        "line": 340,
+        "line": 238,
         "backend": [
           "profiles:restore"
         ]
@@ -183,7 +185,7 @@
         "parameters": [
           "p"
         ],
-        "line": 341,
+        "line": 239,
         "backend": [
           "profiles:clone"
         ]
@@ -193,7 +195,7 @@
         "parameters": [
           "p"
         ],
-        "line": 342,
+        "line": 240,
         "backend": [
           "profiles:create-batch"
         ]
@@ -201,7 +203,7 @@
       {
         "name": "userGetWindowSortNumList",
         "parameters": [],
-        "line": 343,
+        "line": 241,
         "backend": [
           "profiles:list"
         ]
@@ -209,7 +211,7 @@
       {
         "name": "userGetWindowFilterNameListList",
         "parameters": [],
-        "line": 346,
+        "line": 244,
         "backend": [
           "filters:list"
         ]
@@ -219,7 +221,7 @@
         "parameters": [
           "p"
         ],
-        "line": 347,
+        "line": 245,
         "backend": [
           "filters:save"
         ]
@@ -229,7 +231,7 @@
         "parameters": [
           "p"
         ],
-        "line": 348,
+        "line": 246,
         "backend": [
           "filters:save"
         ]
@@ -239,7 +241,7 @@
         "parameters": [
           "p"
         ],
-        "line": 349,
+        "line": 247,
         "backend": [
           "filters:delete"
         ]
@@ -249,7 +251,7 @@
         "parameters": [
           "p"
         ],
-        "line": 350,
+        "line": 248,
         "backend": [
           "settings:set"
         ]
@@ -257,7 +259,7 @@
       {
         "name": "userGetWindowTemplateListList",
         "parameters": [],
-        "line": 352,
+        "line": 250,
         "backend": [
           "templates:list"
         ]
@@ -267,7 +269,7 @@
         "parameters": [
           "p"
         ],
-        "line": 353,
+        "line": 251,
         "backend": [
           "templates:save"
         ]
@@ -277,7 +279,7 @@
         "parameters": [
           "p"
         ],
-        "line": 354,
+        "line": 252,
         "backend": [
           "templates:save"
         ]
@@ -287,14 +289,14 @@
         "parameters": [
           "p"
         ],
-        "line": 355,
+        "line": 253,
         "backend": [
           "templates:delete"
         ]
       },
       {
         "name": "userGetUserConfigList",
-        "line": 357,
+        "line": 255,
         "backend": []
       },
       {
@@ -302,7 +304,7 @@
         "parameters": [
           "p"
         ],
-        "line": 358,
+        "line": 256,
         "backend": [
           "settings:set"
         ]
@@ -310,7 +312,7 @@
       {
         "name": "userGetUserApiList",
         "parameters": [],
-        "line": 359,
+        "line": 257,
         "backend": [
           "api:get"
         ]
@@ -320,7 +322,7 @@
         "parameters": [
           "p"
         ],
-        "line": 360,
+        "line": 258,
         "backend": [
           "api:set"
         ]
@@ -330,7 +332,7 @@
         "parameters": [
           "p"
         ],
-        "line": 361,
+        "line": 259,
         "backend": [
           "settings:set"
         ]
@@ -340,7 +342,7 @@
         "parameters": [
           "p = {}"
         ],
-        "line": 365,
+        "line": 263,
         "backend": [
           "groups:list"
         ]
@@ -350,7 +352,7 @@
         "parameters": [
           "p"
         ],
-        "line": 369,
+        "line": 267,
         "backend": [
           "extensions:list"
         ]
@@ -360,7 +362,7 @@
         "parameters": [
           "p"
         ],
-        "line": 370,
+        "line": 268,
         "backend": [
           "extensions:pin"
         ]
@@ -370,7 +372,7 @@
         "parameters": [
           "p"
         ],
-        "line": 371,
+        "line": 269,
         "backend": [
           "extensions:store"
         ]
@@ -380,7 +382,7 @@
         "parameters": [
           "p"
         ],
-        "line": 372,
+        "line": 270,
         "backend": [
           "extensions:finish"
         ]
@@ -390,7 +392,7 @@
         "parameters": [
           "p"
         ],
-        "line": 373,
+        "line": 271,
         "backend": [
           "extensions:assign"
         ]
@@ -400,7 +402,7 @@
         "parameters": [
           "p"
         ],
-        "line": 374,
+        "line": 272,
         "backend": [
           "extensions:read"
         ]
@@ -410,7 +412,7 @@
         "parameters": [
           "p"
         ],
-        "line": 375,
+        "line": 273,
         "backend": [
           "extensions:reload"
         ]
@@ -420,7 +422,7 @@
         "parameters": [
           "p"
         ],
-        "line": 376,
+        "line": 274,
         "backend": [
           "extensions:reload"
         ]
@@ -430,7 +432,7 @@
         "parameters": [
           "p"
         ],
-        "line": 377,
+        "line": 275,
         "backend": [
           "extensions:remove"
         ]
@@ -438,7 +440,7 @@
       {
         "name": "userGetTopProjectInfoList",
         "parameters": [],
-        "line": 378,
+        "line": 276,
         "backend": [
           "groups:list"
         ]
@@ -448,7 +450,7 @@
         "parameters": [
           "p"
         ],
-        "line": 379,
+        "line": 277,
         "backend": [
           "groups:save"
         ]
@@ -458,7 +460,7 @@
         "parameters": [
           "p"
         ],
-        "line": 380,
+        "line": 278,
         "backend": [
           "groups:save"
         ]
@@ -468,7 +470,7 @@
         "parameters": [
           "p"
         ],
-        "line": 381,
+        "line": 279,
         "backend": [
           "groups:delete"
         ]
@@ -478,20 +480,20 @@
         "parameters": [
           "p"
         ],
-        "line": 383,
+        "line": 281,
         "backend": [
           "groups:sort"
         ]
       },
       {
         "name": "userGetProxyListMergedList",
-        "line": 384,
+        "line": 282,
         "backend": []
       },
       {
         "name": "userGetProxyAllCountriesList",
         "parameters": [],
-        "line": 385,
+        "line": 283,
         "backend": [
           "proxies:list"
         ]
@@ -499,13 +501,13 @@
       {
         "name": "userGetProxyProvidersTypeList",
         "parameters": [],
-        "line": 393,
+        "line": 291,
         "backend": []
       },
       {
         "name": "userGetProxyVendorListList",
         "parameters": [],
-        "line": 394,
+        "line": 292,
         "backend": [
           "proxies:list"
         ]
@@ -513,7 +515,7 @@
       {
         "name": "userGetProxyTableSortOrderList",
         "parameters": [],
-        "line": 400,
+        "line": 298,
         "backend": [
           "settings:get"
         ]
@@ -523,24 +525,24 @@
         "parameters": [
           "p"
         ],
-        "line": 402,
+        "line": 300,
         "backend": [
           "settings:set"
         ]
       },
       {
         "name": "userGetProxyModuleListList",
-        "line": 404,
+        "line": 302,
         "backend": []
       },
       {
         "name": "userGetProxyModuleV2List",
-        "line": 405,
+        "line": 303,
         "backend": []
       },
       {
         "name": "userGetProxyModuleList",
-        "line": 406,
+        "line": 304,
         "backend": []
       },
       {
@@ -548,7 +550,7 @@
         "parameters": [
           "p"
         ],
-        "line": 407,
+        "line": 305,
         "backend": [
           "proxies:read"
         ]
@@ -556,7 +558,7 @@
       {
         "name": "userGetRandomAvailableProxyMergedList",
         "parameters": [],
-        "line": 409,
+        "line": 307,
         "backend": [
           "proxies:list"
         ]
@@ -566,7 +568,7 @@
         "parameters": [
           "p"
         ],
-        "line": 415,
+        "line": 313,
         "backend": [
           "proxies:duplicates"
         ]
@@ -576,7 +578,7 @@
         "parameters": [
           "p"
         ],
-        "line": 416,
+        "line": 314,
         "backend": [
           "proxies:bind"
         ]
@@ -586,7 +588,7 @@
         "parameters": [
           "p"
         ],
-        "line": 417,
+        "line": 315,
         "backend": [
           "proxies:save-results"
         ]
@@ -596,7 +598,7 @@
         "parameters": [
           "p"
         ],
-        "line": 418,
+        "line": 316,
         "backend": [
           "profiles:proxy-results"
         ]
@@ -606,7 +608,7 @@
         "parameters": [
           "p"
         ],
-        "line": 420,
+        "line": 318,
         "backend": [
           "proxies:create-many"
         ]
@@ -616,7 +618,7 @@
         "parameters": [
           "p"
         ],
-        "line": 422,
+        "line": 320,
         "backend": [
           "proxies:update"
         ]
@@ -626,7 +628,7 @@
         "parameters": [
           "p"
         ],
-        "line": 433,
+        "line": 331,
         "backend": [
           "proxies:delete"
         ]
@@ -636,7 +638,7 @@
         "parameters": [
           "p"
         ],
-        "line": 435,
+        "line": 333,
         "backend": [
           "profiles:patch"
         ]
@@ -644,7 +646,7 @@
       {
         "name": "userGetProjectListList",
         "parameters": [],
-        "line": 441,
+        "line": 339,
         "backend": [
           "groups:list"
         ]
@@ -652,7 +654,7 @@
       {
         "name": "userGetLabelInfoList",
         "parameters": [],
-        "line": 442,
+        "line": 340,
         "backend": [
           "labels:list"
         ]
@@ -662,7 +664,7 @@
         "parameters": [
           "p"
         ],
-        "line": 446,
+        "line": 344,
         "backend": [
           "labels:save"
         ]
@@ -672,7 +674,7 @@
         "parameters": [
           "p"
         ],
-        "line": 447,
+        "line": 345,
         "backend": [
           "labels:save"
         ]
@@ -682,7 +684,7 @@
         "parameters": [
           "p"
         ],
-        "line": 448,
+        "line": 346,
         "backend": [
           "labels:delete"
         ]
@@ -690,7 +692,7 @@
       {
         "name": "userGetWindowPlatformAccountListList",
         "parameters": [],
-        "line": 449,
+        "line": 347,
         "backend": [
           "profiles:list"
         ]
@@ -698,7 +700,7 @@
       {
         "name": "userGetPlatformInfoList",
         "parameters": [],
-        "line": 462,
+        "line": 360,
         "backend": []
       },
       {
@@ -706,7 +708,7 @@
         "parameters": [
           "p = {}"
         ],
-        "line": 476,
+        "line": 374,
         "backend": [
           "accounts:list"
         ]
@@ -716,7 +718,7 @@
         "parameters": [
           "p"
         ],
-        "line": 477,
+        "line": 375,
         "backend": [
           "accounts:create"
         ]
@@ -726,7 +728,7 @@
         "parameters": [
           "p"
         ],
-        "line": 478,
+        "line": 376,
         "backend": [
           "accounts:create"
         ]
@@ -736,7 +738,7 @@
         "parameters": [
           "p"
         ],
-        "line": 482,
+        "line": 380,
         "backend": [
           "accounts:update"
         ]
@@ -746,7 +748,7 @@
         "parameters": [
           "p"
         ],
-        "line": 483,
+        "line": 381,
         "backend": [
           "accounts:bind"
         ]
@@ -756,7 +758,7 @@
         "parameters": [
           "p"
         ],
-        "line": 484,
+        "line": 382,
         "backend": [
           "accounts:delete"
         ]
@@ -764,13 +766,13 @@
       {
         "name": "userGetSearchEnginesList",
         "parameters": [],
-        "line": 485,
+        "line": 383,
         "backend": []
       },
       {
         "name": "userGetWindowTableSortOrderList",
         "parameters": [],
-        "line": 497,
+        "line": 395,
         "backend": [
           "settings:get"
         ]
@@ -780,7 +782,7 @@
         "parameters": [
           "p"
         ],
-        "line": 499,
+        "line": 397,
         "backend": [
           "settings:set"
         ]
@@ -788,13 +790,13 @@
       {
         "name": "userCheckWindowTotalCountList",
         "parameters": [],
-        "line": 501,
+        "line": 399,
         "backend": []
       },
       {
         "name": "userGetQuickCreateTemplateList",
         "parameters": [],
-        "line": 502,
+        "line": 400,
         "backend": [
           "settings:get"
         ]
@@ -804,7 +806,7 @@
         "parameters": [
           "p"
         ],
-        "line": 504,
+        "line": 402,
         "backend": [
           "settings:set"
         ]
@@ -814,7 +816,7 @@
         "parameters": [
           "p"
         ],
-        "line": 506,
+        "line": 404,
         "backend": [
           "settings:set"
         ]
@@ -824,7 +826,7 @@
       {
         "name": "api:getStatus",
         "parameters": [],
-        "line": 534,
+        "line": 432,
         "backend": [
           "api:status"
         ]
@@ -834,7 +836,7 @@
         "parameters": [
           "port"
         ],
-        "line": 535,
+        "line": 433,
         "backend": [
           "api:check-port"
         ]
@@ -842,7 +844,7 @@
       {
         "name": "util:genApiKey",
         "parameters": [],
-        "line": 536,
+        "line": 434,
         "backend": [
           "ops.rotateApiKey"
         ]
@@ -852,7 +854,7 @@
         "parameters": [
           "p"
         ],
-        "line": 537,
+        "line": 435,
         "backend": [
           "host:shortcut"
         ]
@@ -862,7 +864,7 @@
         "parameters": [
           "p"
         ],
-        "line": 538,
+        "line": 436,
         "backend": [
           "host:default-browser"
         ]
@@ -870,7 +872,7 @@
       {
         "name": "util:getCommonRequestHeaders",
         "parameters": [],
-        "line": 539,
+        "line": 437,
         "backend": []
       },
       {
@@ -878,7 +880,7 @@
         "parameters": [
           "kind"
         ],
-        "line": 540,
+        "line": 438,
         "backend": [
           "extensions:select"
         ]
@@ -888,7 +890,7 @@
         "parameters": [
           "p"
         ],
-        "line": 541,
+        "line": 439,
         "backend": [
           "extensions:stage"
         ]
@@ -898,7 +900,7 @@
         "parameters": [
           "id"
         ],
-        "line": 542,
+        "line": 440,
         "backend": [
           "extensions:exists"
         ]
@@ -908,7 +910,7 @@
         "parameters": [
           "id"
         ],
-        "line": 543,
+        "line": 441,
         "backend": [
           "extensions:show"
         ]
@@ -918,7 +920,7 @@
         "parameters": [
           "rows"
         ],
-        "line": 544,
+        "line": 442,
         "backend": [
           "extensions:verify"
         ]
@@ -928,7 +930,7 @@
         "parameters": [
           "ids"
         ],
-        "line": 546,
+        "line": 444,
         "backend": [
           "extensions:verify-removed"
         ]
@@ -936,7 +938,7 @@
       {
         "name": "dialog:selectFileOrDirInfo",
         "parameters": [],
-        "line": 547,
+        "line": 445,
         "backend": [
           "agent:files:choose"
         ]
@@ -946,7 +948,7 @@
         "parameters": [
           "payload"
         ],
-        "line": 553,
+        "line": 451,
         "backend": [
           "agent:files:export"
         ]
@@ -954,7 +956,7 @@
       {
         "name": "syncControl:open",
         "parameters": [],
-        "line": 554,
+        "line": 452,
         "backend": [
           "settings:get",
           "sync:restore"
@@ -963,7 +965,7 @@
       {
         "name": "syncControl:close",
         "parameters": [],
-        "line": 558,
+        "line": 456,
         "backend": [
           "sync:shortcuts:clear"
         ]
@@ -973,7 +975,7 @@
         "parameters": [
           "ids"
         ],
-        "line": 562,
+        "line": 460,
         "backend": [
           "settings:get",
           "sync:restore",
@@ -983,7 +985,7 @@
       {
         "name": "syncControl:stop",
         "parameters": [],
-        "line": 568,
+        "line": 466,
         "backend": [
           "ops.stopSync"
         ]
@@ -991,7 +993,7 @@
       {
         "name": "syncControl:pause",
         "parameters": [],
-        "line": 573,
+        "line": 471,
         "backend": [
           "sync:shortcuts:clear",
           "ops.stopSync"
@@ -1000,7 +1002,7 @@
       {
         "name": "syncControl:resume",
         "parameters": [],
-        "line": 577,
+        "line": 475,
         "backend": [
           "settings:get",
           "sync:restore",
@@ -1011,7 +1013,7 @@
       {
         "name": "syncControl:getSyncWindowCount",
         "parameters": [],
-        "line": 583,
+        "line": 481,
         "backend": [
           "ops.getSyncState",
           "profiles:list"
@@ -1020,7 +1022,7 @@
       {
         "name": "syncControl:showAll",
         "parameters": [],
-        "line": 589,
+        "line": 487,
         "backend": [
           "ops.getSyncState",
           "ops.windowAction"
@@ -1031,7 +1033,7 @@
         "parameters": [
           "p"
         ],
-        "line": 595,
+        "line": 493,
         "backend": [
           "sync:layout"
         ]
@@ -1041,7 +1043,7 @@
         "parameters": [
           "p"
         ],
-        "line": 596,
+        "line": 494,
         "backend": [
           "ui:dialog:open"
         ]
@@ -1051,7 +1053,7 @@
         "parameters": [
           "p"
         ],
-        "line": 598,
+        "line": 496,
         "backend": [
           "ui:dialog:open"
         ]
@@ -1059,7 +1061,7 @@
       {
         "name": "syncControl:openOpenSitesDialog",
         "parameters": [],
-        "line": 600,
+        "line": 498,
         "backend": [
           "ui:dialog:open"
         ]
@@ -1067,7 +1069,7 @@
       {
         "name": "syncControl:openSyncingWindowListDialog",
         "parameters": [],
-        "line": 602,
+        "line": 500,
         "backend": [
           "ui:dialog:open"
         ]
@@ -1075,7 +1077,7 @@
       {
         "name": "syncControl:closePreferencesDialog",
         "parameters": [],
-        "line": 604,
+        "line": 502,
         "backend": [
           "ui:dialog:close"
         ]
@@ -1083,7 +1085,7 @@
       {
         "name": "syncControl:closeBatchInputsDialog",
         "parameters": [],
-        "line": 605,
+        "line": 503,
         "backend": [
           "ui:dialog:close"
         ]
@@ -1091,7 +1093,7 @@
       {
         "name": "syncControl:closeOpenSitesDialog",
         "parameters": [],
-        "line": 606,
+        "line": 504,
         "backend": [
           "ui:dialog:close"
         ]
@@ -1099,7 +1101,7 @@
       {
         "name": "syncControl:closeSyncingWindowListDialog",
         "parameters": [],
-        "line": 607,
+        "line": 505,
         "backend": [
           "ui:dialog:close"
         ]
@@ -1109,7 +1111,7 @@
         "parameters": [
           "p"
         ],
-        "line": 608,
+        "line": 506,
         "backend": [
           "ui:dialog:resize"
         ]
@@ -1119,7 +1121,7 @@
         "parameters": [
           "p"
         ],
-        "line": 609,
+        "line": 507,
         "backend": [
           "ui:dialog:resize"
         ]
@@ -1127,7 +1129,7 @@
       {
         "name": "syncControl:getMainControlDirId",
         "parameters": [],
-        "line": 610,
+        "line": 508,
         "backend": [
           "ops.getSyncState"
         ]
@@ -1135,7 +1137,7 @@
       {
         "name": "syncControl:getMainControlBrowserSize",
         "parameters": [],
-        "line": 614,
+        "line": 512,
         "backend": [
           "sync:master-bounds"
         ]
@@ -1145,7 +1147,7 @@
         "parameters": [
           "p"
         ],
-        "line": 615,
+        "line": 513,
         "backend": [
           "sync:batch-text"
         ]
@@ -1155,7 +1157,7 @@
         "parameters": [
           "p"
         ],
-        "line": 616,
+        "line": 514,
         "backend": [
           "sync:open-sites"
         ]
@@ -1165,7 +1167,7 @@
         "parameters": [
           "p"
         ],
-        "line": 617,
+        "line": 515,
         "backend": [
           "sync:shortcuts:check"
         ]
@@ -1175,7 +1177,7 @@
         "parameters": [
           "p"
         ],
-        "line": 619,
+        "line": 517,
         "backend": [
           "sync:shortcuts:register"
         ]
@@ -1185,7 +1187,7 @@
         "parameters": [
           "p"
         ],
-        "line": 636,
+        "line": 534,
         "backend": [
           "sync:settings"
         ]
@@ -1193,7 +1195,7 @@
       {
         "name": "syncControl:getAllSyncingWindows",
         "parameters": [],
-        "line": 637,
+        "line": 535,
         "backend": [
           "ops.getSyncState",
           "profiles:list"
@@ -1202,7 +1204,7 @@
       {
         "name": "app:getMacAddress",
         "parameters": [],
-        "line": 649,
+        "line": 547,
         "backend": [
           "host:mac"
         ]
@@ -1212,7 +1214,7 @@
         "parameters": [
           "p"
         ],
-        "line": 650,
+        "line": 548,
         "backend": [
           "proxies:detect"
         ]
@@ -1220,7 +1222,7 @@
       {
         "name": "proxy:detectNetwork",
         "parameters": [],
-        "line": 651,
+        "line": 549,
         "backend": [
           "host:network"
         ]
@@ -1230,7 +1232,7 @@
         "parameters": [
           "url"
         ],
-        "line": 652,
+        "line": 550,
         "backend": [
           "proxies:refresh"
         ]
@@ -1240,7 +1242,7 @@
         "parameters": [
           "url"
         ],
-        "line": 653,
+        "line": 551,
         "backend": [
           "proxies:extract"
         ]
@@ -1250,7 +1252,7 @@
         "parameters": [
           "p"
         ],
-        "line": 654,
+        "line": 552,
         "backend": [
           "proxies:export"
         ]
@@ -1258,7 +1260,7 @@
       {
         "name": "util:removeProject",
         "parameters": [],
-        "line": 656,
+        "line": 554,
         "backend": []
       },
       {
@@ -1266,7 +1268,7 @@
         "parameters": [
           "ids"
         ],
-        "line": 657,
+        "line": 555,
         "backend": [
           "profiles:purge"
         ]
@@ -1276,7 +1278,7 @@
         "parameters": [
           "p"
         ],
-        "line": 658,
+        "line": 556,
         "backend": [
           "profiles:clear-cache"
         ]
@@ -1286,7 +1288,7 @@
         "parameters": [
           "payload"
         ],
-        "line": 659,
+        "line": 557,
         "backend": [
           "transfer:export"
         ]
@@ -1297,7 +1299,7 @@
           "p",
           "count"
         ],
-        "line": 660,
+        "line": 558,
         "backend": [
           "fingerprint:preview"
         ]
@@ -1307,7 +1309,7 @@
         "parameters": [
           "functions"
         ],
-        "line": 662,
+        "line": 560,
         "backend": [
           "fingerprint:preview"
         ]
@@ -1315,7 +1317,7 @@
       {
         "name": "util:genRandomFonts",
         "parameters": [],
-        "line": 678,
+        "line": 576,
         "backend": [
           "fingerprint:preview"
         ]
@@ -1323,13 +1325,13 @@
       {
         "name": "app:isMainWindow",
         "parameters": [],
-        "line": 680,
+        "line": 578,
         "backend": []
       },
       {
         "name": "app:showCurrentWebviewWindow",
         "parameters": [],
-        "line": 681,
+        "line": 579,
         "backend": [
           "ui:dialog:show"
         ]
@@ -1339,7 +1341,7 @@
         "parameters": [
           "p"
         ],
-        "line": 682,
+        "line": 580,
         "backend": [
           "ui:dialog:resize"
         ]
@@ -1347,7 +1349,7 @@
       {
         "name": "app:getAppVersion",
         "parameters": [],
-        "line": 683,
+        "line": 581,
         "backend": [
           "ops.getInfo"
         ]
@@ -1355,7 +1357,7 @@
       {
         "name": "app:getSoftConfig",
         "parameters": [],
-        "line": 684,
+        "line": 582,
         "backend": [
           "settings:get"
         ]
@@ -1365,7 +1367,7 @@
         "parameters": [
           "p"
         ],
-        "line": 685,
+        "line": 583,
         "backend": [
           "settings:set"
         ]
@@ -1373,7 +1375,7 @@
       {
         "name": "app:getCoreList",
         "parameters": [],
-        "line": 686,
+        "line": 584,
         "backend": [
           "kernels:list"
         ]
@@ -1383,7 +1385,7 @@
         "parameters": [
           "p"
         ],
-        "line": 704,
+        "line": 602,
         "backend": [
           "settings:set"
         ]
@@ -1391,7 +1393,7 @@
       {
         "name": "browser:getOpenedBrowser",
         "parameters": [],
-        "line": 705,
+        "line": 603,
         "backend": [
           "profiles:list"
         ]
@@ -1399,7 +1401,7 @@
       {
         "name": "browser:getOpenedBrowserMessage",
         "parameters": [],
-        "line": 713,
+        "line": 611,
         "backend": [
           "profiles:list"
         ]
@@ -1409,7 +1411,7 @@
         "parameters": [
           "ids"
         ],
-        "line": 715,
+        "line": 613,
         "backend": []
       },
       {
@@ -1417,7 +1419,7 @@
         "parameters": [
           "payload"
         ],
-        "line": 716,
+        "line": 614,
         "backend": [
           "cookie-robot:start"
         ]
@@ -1427,7 +1429,7 @@
         "parameters": [
           "ids"
         ],
-        "line": 718,
+        "line": 616,
         "backend": [
           "ops.windowAction"
         ]
@@ -1437,7 +1439,7 @@
         "parameters": [
           "p"
         ],
-        "line": 724,
+        "line": 622,
         "backend": [
           "ops.windowAction"
         ]
@@ -1447,7 +1449,7 @@
         "parameters": [
           "ids"
         ],
-        "line": 739,
+        "line": 637,
         "backend": []
       },
       {
@@ -1455,7 +1457,7 @@
         "parameters": [
           "ids"
         ],
-        "line": 740,
+        "line": 638,
         "backend": [
           "profiles:stop"
         ]
@@ -1465,7 +1467,7 @@
         "parameters": [
           "ids"
         ],
-        "line": 742,
+        "line": 640,
         "backend": [
           "profiles:list"
         ]
@@ -1475,7 +1477,7 @@
         "parameters": [
           "p"
         ],
-        "line": 746,
+        "line": 644,
         "backend": [
           "profiles:start"
         ]
@@ -1485,7 +1487,7 @@
         "parameters": [
           "p"
         ],
-        "line": 748,
+        "line": 646,
         "backend": [
           "profiles:stop"
         ]
@@ -1493,7 +1495,7 @@
       {
         "name": "syncControl:unifyTabs",
         "parameters": [],
-        "line": 620,
+        "line": 518,
         "backend": [
           "ops.tabAction"
         ],
@@ -1502,7 +1504,7 @@
       {
         "name": "syncControl:closeOtherTabs",
         "parameters": [],
-        "line": 620,
+        "line": 518,
         "backend": [
           "ops.tabAction"
         ],
@@ -1511,7 +1513,7 @@
       {
         "name": "syncControl:closeCurrentTab",
         "parameters": [],
-        "line": 620,
+        "line": 518,
         "backend": [
           "ops.tabAction"
         ],
@@ -1520,7 +1522,7 @@
       {
         "name": "syncControl:closeBlankTabs",
         "parameters": [],
-        "line": 620,
+        "line": 518,
         "backend": [
           "ops.tabAction"
         ],

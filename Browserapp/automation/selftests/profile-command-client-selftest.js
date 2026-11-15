@@ -25,7 +25,7 @@ async function main() {
     require(name) {
       assert.equal(name, 'electron');
       return {
-        contextBridge: { exposeInMainWorld(_name, api) { ops = api; } },
+        contextBridge: { exposeInMainWorld(name, api) { if (name === 'ops') ops = api; } },
         ipcRenderer: { invoke: async () => structuredClone(failure) },
       };
     },

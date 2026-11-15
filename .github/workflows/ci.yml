@@ -75,6 +75,10 @@ jobs:
       # someone to paste another line into this workflow. Entries flagged
       # darwinOnly are reported as skips on this Linux job (they need the
       # macOS kernel launcher) and never count as passes.
+      - name: Rebuild the default workbench from pinned repository inputs
+        run: |
+          npm run rebuild:ui
+          node rebuild/compiler/source-selftest.cjs
       - name: Full selftest aggregate (kernel-free suite)
         run: npm run selftest:all
         env:
@@ -314,6 +318,7 @@ jobs:
           cache-dependency-path: Browserapp/package-lock.json
       - run: npm ci --include=dev --ignore-scripts
       - run: node node_modules/electron/install.js
+      - run: npm run rebuild:ui
       - name: Real DOM, preload, IPC, SQLite and editor conflict gates
         env:
           OPENBROWSER_MASTER_KEY_FILE: ${{ runner.temp }}/openbrowser-desktop.key
@@ -321,8 +326,10 @@ jobs:
           if [[ "$RUNNER_OS" == "Linux" ]]; then
             xvfb-run -a node node_modules/electron/cli.js --no-sandbox scripts/benchmark-real-render.js --sizes 10,100,1000 --skip-kernel --render-budget-ms 50 --json
             xvfb-run -a node automation/selftests/app-startup-e2e-selftest.js
+            node rebuild/optimization-ui-selftest.cjs
           else
             node node_modules/electron/cli.js scripts/benchmark-real-render.js --sizes 10,100,1000 --skip-kernel --render-budget-ms 50 --json
+            node rebuild/optimization-ui-selftest.cjs
           fi
 
   # ~200 lines of Windows FFI (process/lock.rs, guardian.rs) compile to nothing

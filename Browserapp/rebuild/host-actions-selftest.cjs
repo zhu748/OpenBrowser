@@ -12,7 +12,7 @@ const {BrowserEngine}=require('../engine'),{LocalService}=require('./local-servi
   process.env.XDG_DATA_HOME=path.join(root,'xdg-data');process.env.XDG_CONFIG_HOME=path.join(root,'xdg-config');
   const applied=await host.setDefault(service,{id:profile.id},{app});assert.equal(applied.applied,true,applied.message);
   for(const protocol of ['http','https']){const {stdout}=await promisify(execFile)('xdg-mime',['query','default','x-scheme-handler/'+protocol],{timeout:5000});assert.equal(stdout.trim(),'openbrowser-default.desktop');}
-  assert.equal(JSON.parse(await fs.readFile(service.file)).settings.defaultProfileId,profile.id);result.checks.push('真实 xdg-mime 在独立 XDG 目录注册并查询 HTTP/HTTPS 默认应用，目标窗口落盘先于 OS 变更');
+  assert.equal((await require('./local-store').readLocalStore(service.file)).data.settings.defaultProfileId,profile.id);result.checks.push('真实 xdg-mime 在独立 XDG 目录注册并查询 HTTP/HTTPS 默认应用，目标窗口加密落盘先于 OS 变更');
   await assert.rejects(host.openLaunch(engine,{id:'missing',urls:[]}),/不存在/);await assert.rejects(host.openLaunch(engine,{urls:['https://example.test/']}),/尚未选择/);
   result.passed=true;
  }catch(error){result.failure=error.stack;process.exitCode=1;}finally{await engine.stopAll?.();await fs.writeFile(path.resolve(__dirname,'../../docs/rebuild/evidence/host-actions-selftest.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));}

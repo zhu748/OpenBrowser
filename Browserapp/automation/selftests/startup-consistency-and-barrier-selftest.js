@@ -180,6 +180,8 @@ async function check(name, fn) {
   await check('D.1: prepareProfileFilesForStart atomically writes Local State before spawn', async () => {
     const proto = BrowserEngine.prototype;
     const eng = {
+      assignments: new Map(),
+      extensions: new Map(),
       resetZoom: proto.resetZoom,
       applyProfilePreferences: proto.applyProfilePreferences,
       enforceDataRetention: proto.enforceDataRetention,

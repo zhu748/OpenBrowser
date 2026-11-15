@@ -151,70 +151,8 @@ const methods = {
   userAnalysisWindowInfoCreate: (p) => request("profiles:analyse-import", p),
   userImportWindowInfoV2Create: (p) => request("profiles:import", p),
   userGetWindowInfoListList: async (p = {}) => {
-    let rows = (await request(p?.isDelete ? "profiles:trash" : "profiles:list")).map((row) => ({
-      ...row,
-      projectName: row.projectId ? row.projectName : globalThis.$t("\u9ED8\u8BA4\u9879\u76EE")
-    }));
-    if (p?.windowName && (rows = rows.filter((r) => r.windowName.includes(p.windowName))), p?.openStatus && (rows = rows.filter((r) => r.openStatus)), p?.isOften && (rows = rows.filter((r) => r.isOften)), p?.projectId || p?.projectIds) {
-      const ids = String(p.projectId || p.projectIds).split(",").map((id) => id === "local-default" ? "" : id);
-      rows = rows.filter((r) => ids.includes(r.projectId));
-    }
-    if (p?.queryValue && (!p.queryKey || p.queryKey === "name_remark")) {
-      const query2 = String(p.queryValue).toLowerCase();
-      rows = rows.filter(
-        (r) => (r.windowName + " " + r.windowRemark).toLowerCase().includes(query2)
-      );
-    }
-    const values = (v) => Array.isArray(v) ? v.map(String) : String(v ?? "").split(",").filter(Boolean), query = String(p.queryValue || "").toLowerCase();
-    if (query && p.queryKey) {
-      const key = {
-        name: "windowName",
-        remark: "windowRemark",
-        note: "windowRemark",
-        sortNum: "windowSortNum",
-        id: "windowSortNum"
-      }[p.queryKey];
-      key && (rows = rows.filter(
-        (row) => String(row[key]).toLowerCase().includes(query)
-      )), p.queryKey === "tag" && (rows = rows.filter(
-        (row) => row.labelInfos.some(
-          (label) => label.labelName.toLowerCase().includes(query)
-        )
-      ));
-    }
-    p.sortNums && (rows = rows.filter(
-      (row) => values(p.sortNums).includes(String(row.windowSortNum))
-    )), p.osList?.length && (rows = rows.filter((row) => values(p.osList).includes(row.os))), p.coreType?.length && (rows = rows.filter((row) => values(p.coreType).includes(row.coreType))), p.labelIds?.length && (rows = rows.filter(
-      (row) => row.labelIds.some((id) => values(p.labelIds).includes(String(id)))
-    )), p.windowRemark && (rows = rows.filter((row) => row.windowRemark.includes(p.windowRemark))), p.platformUrls?.length && (rows = rows.filter(
-      (row) => row.windowPlatformList.some(
-        (account) => values(p.platformUrls).some(
-          (value) => String(account.platformUrl).includes(value)
-        )
-      )
-    ));
-    const ranges = Array.isArray(p.createTime) ? p.createTime : [p.startTime, p.endTime];
-    if (ranges[0] && (rows = rows.filter(
-      (row) => Date.parse(row.createdAt) >= Date.parse(ranges[0])
-    )), ranges[1] && (rows = rows.filter(
-      (row) => Date.parse(row.createdAt) <= Date.parse(ranges[1])
-    )), p.orderName) {
-      const key = {
-        profile: "windowSortNum",
-        profileName: "windowSortNum",
-        windowSortNum: "windowSortNum",
-        windowName: "windowName",
-        openTime: "openTime",
-        createTime: "createdAt",
-        updateTime: "updatedAt"
-      }[p.orderName];
-      key && rows.sort((a, b) => {
-        const left = a[key] ?? "", right = b[key] ?? "", result = typeof left == "number" && typeof right == "number" ? left - right : String(left).localeCompare(String(right));
-        return /desc|^-1$/i.test(String(p.orderType)) ? -result : result;
-      });
-    }
-    const total = rows.length, index = Number(p?.page_index ?? p?.pageIndex ?? 1), size = Number(p?.page_size ?? p?.pageSize ?? 10);
-    return { rows: rows.slice((index - 1) * size, index * size), total };
+    const result = await request("profiles:query", p);
+    return { ...result, rows: result.rows.map((row) => ({ ...row, projectName: row.projectId ? row.projectName : globalThis.$t("\u9ED8\u8BA4\u9879\u76EE") })) };
   },
   userGetWindowInfoV2List: async (p) => {
     const ids = String(p.windowIds || p.id || p.windowId || "").split(",").filter(Boolean);
