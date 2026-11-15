@@ -16,6 +16,9 @@ function serializeFingerprintDraft(groups, value) {
   return identity ? { ...value, _fingerprintDraft: identity } : value;
 }
 function restoreFingerprintDraft(groups, value) {
+  const state = stateFor(groups, !0);
+  if (!state) return;
+  state.revision++, state.profileId = value?.windowId && value.windowId === value.id ? value.id : void 0;
   const saved = value?._fingerprintDraft || (value?.fingerprintSeed ? {
     seed: value.fingerprintSeed,
     version: value.fingerprintVersion,
@@ -25,7 +28,7 @@ function restoreFingerprintDraft(groups, value) {
     uaPatchRandomized: value.privacy?.fingerprint?.uaPatchRandomized,
     clientHints: value.privacy?.fingerprint?.clientHints
   } : null);
-  saved && (stateFor(groups, !0).identity = saved);
+  state.identity = saved;
 }
 function invalidateFingerprintDraft(groups) {
   const state = stateFor(groups);
@@ -41,6 +44,7 @@ async function refreshFingerprintDraft(groups, { read, apply, find, request, cou
       ...selected,
       count,
       fontType: values.fontType,
+      profileId: state.profileId,
       canvas: values.canvas,
       webGL: values.webGL,
       audioContext: values.audioContext,

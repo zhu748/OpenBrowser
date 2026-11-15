@@ -29,7 +29,7 @@ const { spawn, execFileSync } = require('node:child_process');
 const { sanitizeProfile } = require('../../engine/profile-sanitizer');
 const { firefoxExtraUserPrefs } = require('../../engine/start-firefox');
 const { buildFirefoxUserJs, firefoxStartupArgs } = require('../kernel-versions');
-const { buildFirefoxFingerprint } = require('../firefox-fingerprint');
+const { buildFirefoxFingerprint, initializeFirefoxFingerprint } = require('../firefox-fingerprint');
 const { BidiConnection, waitForFirefoxEndpoint, evaluateBidi } = require('../../network/bidi-connection');
 const https = require('node:https');
 const net = require('node:net');
@@ -37,6 +37,18 @@ const { buildWorkerInjectionScript } = require('../fingerprint');
 const { FirefoxWorkerMitmProxy } = require('../firefox-worker-mitm-proxy');
 const { installFirefoxCa } = require('../firefox-trust-installer');
 const { receiverShadowSnapshot } = require('./fingerprint-receiver-probes');
+const { matrixSources, probeFirefoxWorkerMatrix, probeCachedFirefoxServiceWorker } = require('./firefox-worker-matrix-probes');
+const { prepareFirefoxWorkerCache } = require('../firefox-worker-cache');
+
+async function closeFirefox(connection, child) {
+  await connection.command('browser.close', {}, 5000).catch(() => {});
+  connection.close();
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  await new Promise(resolve => {
+    const timer = setTimeout(() => child.kill('SIGKILL'), 5000);
+    child.once('close', () => { clearTimeout(timer);resolve(); });
+  });
+}
 
 function verifyReceivers(snapshot) {
   assert.ok(snapshot, 'dedicated worker receiver checks ran');
@@ -72,6 +84,10 @@ const SNAP = "({ua:navigator.userAgent,platform:navigator.platform,cores:navigat
 const dedicatedSrc = `"use strict";const first=${SNAP};(${receiverShadowSnapshot.toString()})().then(receivers=>postMessage(JSON.stringify({...first,receivers})));`;
 const sharedSrc = `"use strict";const first=${SNAP};self.onconnect=(e)=>{e.ports[0].onmessage=()=>e.ports[0].postMessage(JSON.stringify(first));};`;
 const serviceSrc = `"use strict";const first=${SNAP};self.addEventListener('install',e=>self.skipWaiting());self.addEventListener('activate',e=>self.clients.claim());self.addEventListener('message',e=>e.ports[0].postMessage(JSON.stringify(first)));`;
+const matrixScripts = matrixSources(SNAP);
+const evaluateMatrix = (connection, context) => evaluateBidi({
+  command: (method, params) => connection.command(method, params, 120000),
+}, { context }, `(${probeFirefoxWorkerMatrix.toString()})(${JSON.stringify(SNAP)})`);
 
 (async () => {
   const binary = process.env.OPENBROWSER_FIREFOX_BINARY;
@@ -84,7 +100,9 @@ const serviceSrc = `"use strict";const first=${SNAP};self.addEventListener('inst
   if (!version) throw new Error('Cannot determine the native Firefox version');
 
   const server = http.createServer((req, res) => {
-    if (req.url.startsWith('/dedicated.js')) { res.setHeader('Content-Type', 'application/javascript'); res.end(dedicatedSrc); }
+    if (req.url === '/matrix/service.js') res.setHeader('Service-Worker-Allowed', '/');
+    if (matrixScripts[req.url]) { res.setHeader('Content-Type', 'application/javascript');res.end(matrixScripts[req.url]); }
+    else if (req.url.startsWith('/dedicated.js')) { res.setHeader('Content-Type', 'application/javascript'); res.end(dedicatedSrc); }
     else if (req.url.startsWith('/shared.js')) { res.setHeader('Content-Type', 'application/javascript'); res.end(sharedSrc); }
     else if (req.url.startsWith('/service.js')) { res.setHeader('Content-Type', 'application/javascript'); res.end(serviceSrc); }
     else { res.setHeader('Content-Type', 'text/html'); res.end('<!doctype html><body></body>'); }
@@ -94,7 +112,7 @@ const serviceSrc = `"use strict";const first=${SNAP};self.addEventListener('inst
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ob-ff-worker-'));
   const profile = sanitizeProfile({ id: 'ff-worker-gate', name: 'ff-worker-gate', engine: 'firefox', os: 'Windows', width: 1440, height: 900,
     privacy: { cores: 4, memory: 0, webrtc: 'disabled', fontListMode: 'real', timezoneMode: 'custom', timezone: 'America/New_York' }, advanced: { showInfoPage: false } });
-  const fp = buildFirefoxFingerprint(profile, version);
+  let fp = buildFirefoxFingerprint(profile, version);
   await fs.writeFile(path.join(root, 'user.js'), buildFirefoxUserJs({
     userAgent: fp.userAgent, acceptLanguages: fp.languages.join(','), locale: fp.languages[0],
     proxyEndpoint: 'http://127.0.0.1:9', noProxyHosts: '127.0.0.1, localhost',
@@ -159,6 +177,13 @@ const serviceSrc = `"use strict";const first=${SNAP};self.addEventListener('inst
       }
     }
     console.log('firefox-worker-delivery-selftest: prefs phase OK');
+    const nativeMatrix = await evaluateMatrix(conn, ctx.context);
+    console.log('NATIVE_WORKER_MATRIX', JSON.stringify(nativeMatrix));
+    if (nativeMatrix.network.cores === fp.hardwareConcurrency) {
+      profile.privacy.cores = 6;
+      fp = buildFirefoxFingerprint(profile, version);
+    }
+    assert.notEqual(nativeMatrix.network.cores, fp.hardwareConcurrency, 'configured cores must differ from the native control');
 
     // ---- PHASE 2: proxy-delivered JS-only fields over HTTPS ----
     conn.close();
@@ -175,8 +200,10 @@ const serviceSrc = `"use strict";const first=${SNAP};self.addEventListener('inst
       key: await fs.readFile(keyPath),
       cert: await fs.readFile(certPath),
     }, (req, res) => {
-      res.setHeader('Content-Type', 'application/javascript');
-      res.end(httpsWorkerBody);
+      if (req.url === '/matrix/service.js') res.setHeader('Service-Worker-Allowed', '/');
+      if (matrixScripts[req.url]) { res.setHeader('Content-Type', 'application/javascript');res.end(matrixScripts[req.url]); }
+      else if (req.url === '/') { res.setHeader('Content-Type', 'text/html');res.end('<!doctype html><body>Worker matrix</body>'); }
+      else { res.setHeader('Content-Type', 'application/javascript');res.end(httpsWorkerBody); }
     });
     await new Promise((r) => httpsServer.listen(0, '127.0.0.1', r));
     const httpsPort = httpsServer.address().port;
@@ -204,6 +231,7 @@ const serviceSrc = `"use strict";const first=${SNAP};self.addEventListener('inst
         + certOverrideLine({ host: 'localhost', port: httpsPort, sha256Base64, leafDer }) + '\n', 'utf8');
     }
     console.log('NOTE ff-worker MITM trust mode: ' + trustMode);
+    await prepareFirefoxWorkerCache(mitmRoot, proxy.workerSource);
 
     await fs.writeFile(path.join(mitmRoot, 'user.js'), buildFirefoxUserJs({
       userAgent: fp.userAgent, acceptLanguages: fp.languages.join(','), locale: fp.languages[0],
@@ -221,9 +249,20 @@ const serviceSrc = `"use strict";const first=${SNAP};self.addEventListener('inst
       const wsUrl2 = await waitForFirefoxEndpoint(child2, 30000);
       const conn2 = new BidiConnection(wsUrl2, {});
       await conn2.open();
-      await conn2.command('session.new', { capabilities: { alwaysMatch: {} } });
+      await initializeFirefoxFingerprint(conn2, fp, profile, { workerProxyReady: true });
       const ctx2 = await startupContext(conn2);
       await navigate(conn2, ctx2.context, 'https://localhost:' + httpsPort + '/');
+      const matrix = await evaluateMatrix(conn2, ctx2.context);
+      console.log('INJECTED_WORKER_MATRIX', JSON.stringify(matrix));
+      for (const [kind, value] of Object.entries(matrix)) {
+        assert.equal(value.error, undefined, kind + ' must run');
+        for (const [label, fields] of [[kind, value], ...(value.dependency ? [[kind + ' dependency', value.dependency]] : [])]) {
+          assert.equal(fields.cores, fp.hardwareConcurrency, label + ' first-read cores');
+          assert.equal(fields.ua, fp.userAgent, label + ' first-read UA');
+          assert.equal(fields.platform, fp.platform, label + ' first-read platform');
+          assert.equal(fields.tz, fp.timezone, label + ' first-read timezone');
+        }
+      }
       const mitmProbe = await evaluateBidi(conn2, { context: ctx2.context }, `(async () => {
         return await new Promise((resolve) => {
           const w = new Worker('/worker.js');
@@ -241,8 +280,47 @@ const serviceSrc = `"use strict";const first=${SNAP};self.addEventListener('inst
       assert.equal(mitmProbe.cores, fp.hardwareConcurrency,
         'MITM worker hardwareConcurrency must be the persona value (this is the JS-only field the proxy delivers)');
       console.log('PASS ff-worker dedicated first read over HTTPS via MITM proxy: JS-only fields (hardwareConcurrency) are persona');
-      conn2.close();
-      await stopChild(child2);
+      await evaluateBidi(conn2, { context: ctx2.context }, `(async()=>{
+        document.cookie='worker_keep=retained;Max-Age=3600;SameSite=Lax;Secure';localStorage.setItem('worker_keep','retained');
+        await (await caches.open('worker-retention')).put('/retained',new Response('retained'));
+      })()`);
+      const registrationFile = path.join(mitmRoot, 'serviceworker.txt');
+      for (let retry = 0; ; retry++) {
+        if (await fs.readFile(registrationFile, 'utf8').catch(() => '').then(text => text.includes('/matrix/service.js'))) break;
+        if (retry >= 100) throw Error('Firefox did not persist the worker registration');
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+      await closeFirefox(conn2, child2);
+      const changedProfile = sanitizeProfile({ ...profile, privacy: { ...profile.privacy, cores: fp.hardwareConcurrency === 6 ? 8 : 6 } });
+      const changed = buildFirefoxFingerprint(changedProfile, version);
+      for (const current of [fp, changed]) {
+        proxy.setWorkerSource(buildWorkerInjectionScript(current));
+        const cacheState = await prepareFirefoxWorkerCache(mitmRoot, proxy.workerSource);
+        assert.equal(cacheState.reset, current === changed, 'only a changed worker identity invalidates registrations');
+        const cachedChild = spawn(binary, firefoxStartupArgs({ root: mitmRoot, startUrl: 'about:blank', headless: true, remoteDebugging: true }), {
+          stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, TZ: current.timezone },
+        });
+        let restartConnection;
+        try {
+          restartConnection = new BidiConnection(await waitForFirefoxEndpoint(cachedChild, 30000), {});
+          await restartConnection.open();
+          await initializeFirefoxFingerprint(restartConnection, current, current === changed ? changedProfile : profile, { workerProxyReady: true });
+          const ctx3 = await startupContext(restartConnection);
+          await navigate(restartConnection, ctx3.context, 'https://localhost:' + httpsPort + '/');
+          const cached = await evaluateBidi(restartConnection, { context: ctx3.context }, `(${probeCachedFirefoxServiceWorker.toString()})()`);
+          if (cacheState.reset) {
+            assert.equal(cached.missing, true, 'old cached programs cannot execute under a new identity');
+            const fresh = await evaluateMatrix(restartConnection, ctx3.context);
+            assert.equal(fresh.service.cores, current.hardwareConcurrency, 'reregistered worker uses the changed identity');
+          } else assert.equal(cached.cores, current.hardwareConcurrency, 'unchanged cached worker keeps its identity');
+          const retained = await evaluateBidi(restartConnection, { context: ctx3.context }, `(async()=>({cookie:document.cookie,
+            local:localStorage.getItem('worker_keep'),cache:await(await(await caches.open('worker-retention')).match('/retained')).text()}))()`);
+          assert.ok(retained.cookie.includes('worker_keep=retained'));
+          assert.equal(retained.local, 'retained');assert.equal(retained.cache, 'retained');
+          console.log('PASS ff-worker cached restart', cacheState.reset ? 'changed identity, fresh registration' : 'same identity, registration preserved', '(origin data retained)');
+          await closeFirefox(restartConnection, cachedChild);
+        } finally { restartConnection?.close();await stopChild(cachedChild); }
+      }
 
       // ---- PHASE 3: same delivery through a chained AUTHENTICATED bridge ----
       // The engine chains the MITM forwarder through the authenticated proxy

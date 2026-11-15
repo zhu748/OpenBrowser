@@ -6,6 +6,7 @@ const { buildUaProfile } = require('../../automation/user-agent');
 const { firefoxUserAgent } = require('../../automation/kernel-versions');
 const { buildFingerprint } = require('../../automation/fingerprint');
 const { randomUaPatchVersion } = require('../../automation/ua-version');
+const { previewIdentity } = require('../fingerprint-draft');
 
 async function hostShortcut(service, p) {
   return require("../host-actions").shortcut(service, p);
@@ -20,8 +21,12 @@ async function fingerprintPreview(service, p) {
   const count = Number(p.count ?? 1);
   if (!Number.isInteger(count) || count < 1 || count > 100)
     throw Error("Invalid fingerprint count");
+  const edited = p.profileId ? e.profileForEdit(String(p.profileId)).profile : null;
   return Array.from({ length: count }, () => {
-    const profile = fromRoxy({ ...p, windowName: "Preview" });
+    // Existing editors keep their storage identity; new previews hand their
+    // UUID to create instead of hashing a second, unrelated UUID after save.
+    const profile = fromRoxy({ ...p, windowName: "Preview" }, edited
+      ? { id: edited.id } : {});
     const browser = e.chooseBrowser(profile, profile.engine);
     profile.fingerprintSeed = crypto.randomBytes(16).toString('hex');
     const fullVersion = randomUaPatchVersion(browser.version, { engine: profile.engine, previousUserAgent: p.previousUserAgent });
@@ -50,7 +55,7 @@ async function fingerprintPreview(service, p) {
       macAddr: f.mac.value,
       hardwareConcurrent: f.hardwareConcurrency == null ? undefined : String(f.hardwareConcurrency),
       deviceMemory: f.deviceMemory == null ? undefined : String(f.deviceMemory),
-      _fingerprintDraft: { seed: profile.fingerprintSeed, version: profile.fingerprintVersion, generated: true,
+      _fingerprintDraft: { ...previewIdentity(e, profile), generated: true,
         userAgent: f.userAgent, uaReduced: mobile, uaPatchRandomized: !mobile, clientHints: f.clientHints },
       ...(p.fontType
         ? { font: f.fonts.list.join(";"), fontList: f.fonts.list }

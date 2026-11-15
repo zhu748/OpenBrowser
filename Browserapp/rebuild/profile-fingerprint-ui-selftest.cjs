@@ -87,6 +87,8 @@ async function main() {
       const saved = await page.evaluate(async name => (await globalThis.__localRequest('profiles:list')).find(row => row.windowName === name), '真实表单随机 ' + family);
       assert.equal(saved.userAgent, expected.userAgent);
       assert.equal(saved.fingerprintSeed, expected._fingerprintDraft.seed);
+      assert.equal(saved.id, expected._fingerprintDraft.profileId, 'creation accepts the preview UUID');
+      assert.equal(await app.evaluate((_host, id) => globalThis.editorTestEngine.fingerprintFor(id).seed, saved.id), expected._openbrowser.seed);
       assert.equal(saved.privacy.fingerprint.uaGenerated, true);
       assert.equal(saved.privacy.fingerprint.uaPatchRandomized, true);
       await page.screenshot({ path: path.join(evidence, 'fingerprint-saved-' + family + '.png') });
@@ -108,6 +110,8 @@ async function main() {
       await editRandom.click();
       await waitUntil(async () => { const value = await readUa();return value && value !== legacyUa; });
       const editedUa = await readUa();
+      const editPreview = await app.evaluate(() => globalThis.editorPreviewHistory.at(-1).row);
+      assert.equal(editPreview._fingerprintDraft.profileId, saved.id, 'edit preview is bound to its actual window');
       await page.getByRole('button', { name: '保存', exact: true }).click();
       await page.getByText('真实表单随机 ' + family, { exact: true }).waitFor();
       const edited = await page.evaluate(id => globalThis.__localRequest('profiles:read', { id }), saved.id);
@@ -115,6 +119,7 @@ async function main() {
       assert.equal(edited.privacy.fingerprint.userAgent, undefined, 'saving migrates the old hidden override');
       assert.equal(edited.privacy.fingerprint.uaPatchRandomized, true, 'editing keeps the random patch intent');
       assert.equal(await app.evaluate((_host, id) => globalThis.editorTestEngine.fingerprintFor(id).userAgent, saved.id), editedUa);
+      assert.equal(await app.evaluate((_host, id) => globalThis.editorTestEngine.fingerprintFor(id).seed, saved.id), editPreview._openbrowser.seed);
     }
     assert.deepEqual(errors, []);
     console.log('PROFILE_FINGERPRINT_UI_SELFTEST OK (real Chromium/Firefox selection, changing UA/seed, unchanged OS and form-to-disk persistence)');

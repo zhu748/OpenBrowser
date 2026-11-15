@@ -1,0 +1,110 @@
+{
+  "date": "2026-11-15",
+  "baseCommit": "715399ce02d1f0baa382a96187f25e74dfaaf785",
+  "assessment": "修复预览身份交接、迟到预览覆盖和 Firefox 旧缓存 Worker 身份问题；扩展原生验证。当前矩阵通过，不等于所有内核、平台和 CSP 场景完美。",
+  "findings": [
+    {
+      "id": "preview-storage-identity-handoff",
+      "severity": "high",
+      "status": "fixed",
+      "evidence": "生成器以 profile.id 与 fingerprintSeed 联合散列；旧预览随机 ID 与新建 ID 不同，编辑预览也不使用实际 ID，造成未展示的派生噪声变化。",
+      "change": "新预览分配正式 UUID，由当前引擎的 HMAC 绑定 ID 与 seed；单建、批量和导入统一校验并交接。编辑预览使用已保存 ID；成功持久化后消费分配证明，失败可重试，清除后不可重放。模板复用、克隆及无效分配获得新 ID。",
+      "verification": "真实 SQLite BrowserEngine 新建/编辑/批量/导入/克隆/模板重放、失败重试、清除重放、伪造 ID、磁盘重载；双内核真实表单对照预览与运行时 seed。"
+    },
+    {
+      "id": "restored-editor-late-preview",
+      "severity": "medium",
+      "status": "fixed",
+      "evidence": "恢复另一个编辑器或模板时，系统与内核可保持相同，旧异步请求仅比较选择项，仍有机会覆盖新草稿。",
+      "change": "恢复时递增 revision 并明确重置 identity，持久编辑器所有权与模板预览元数据分离。",
+      "verification": "同选择项、不同编辑器的挂起响应被拒绝；模板不继承旧窗口所有权。"
+    },
+    {
+      "id": "firefox-cached-service-worker-identity",
+      "severity": "high",
+      "status": "fixed",
+      "evidence": "真实 Firefox 159.0 将配置从 4 核改为 6 核后重启，已有 Service Worker 首条指令仍返回旧的 4 核；更新代理源码和 no-store 无法影响未重新抓取的程序。",
+      "change": "在持有窗口锁、Firefox 未启动时记录完整注入源码的 SHA-256。记录缺失/损坏或源码变化时使 serviceworker.txt 注册元数据失效，保留站点存储；失败阻止启动。源码不变保留注册。",
+      "verification": "真实持久化重启：相同源码保留旧注册和正确身份；改变源码后旧程序不能执行，新注册首读为新身份；持久 Cookie、LocalStorage、CacheStorage 均保留。缓存单测覆盖错误记录、失败不标记成功和站点文件保留；启动流水线 15 项通过。"
+    },
+    {
+      "id": "firefox-first-instruction-matrix",
+      "severity": "coverage-gap",
+      "status": "expanded",
+      "change": "使用实际文档初始化器和可信 HTTPS 转发，验证 network classic/module、静态依赖、嵌套、classic Blob/Data、Blob module、network/Blob SharedWorker、Service Worker。配置核心数确保与原生对照不同。保留认证上游代理链验证，统一能力说明来源。",
+      "verification": "9 条 Worker 路径以及两处依赖的 UA/platform/cores/timezone 首读；原生无注入对照单独记录。"
+    },
+    {
+      "id": "cdp-deadline-test-unbounded-wait",
+      "severity": "test-reliability",
+      "status": "fixed",
+      "evidence": "汇总中 40ms 期限可能在服务端收到请求前触发，随后 socketClosed 永远不兑现，原测试挂起。",
+      "change": "预热本地连接，给予调度余量，断言已收到流式响应，再有界等待套接字关闭；仍要求绝对超时，持续滴流不能重置期限。生产 CDP 实现未修改。",
+      "verification": "独立 deadline 检查和最终完整汇总通过。"
+    }
+  ],
+  "classification": {
+    "previewOwnership": "rebuild/fingerprint-draft.js 集中签名、分配校验和成功消费；routes/profiles.js 共用。",
+    "firefoxCachePolicy": "automation/firefox-worker-cache.js 独立负责源码修订与旧注册退役；start-firefox.js 只编排启动。",
+    "capabilityDeclaration": "启动诊断复用 initializeFirefoxFingerprint 的 workerInjection 说明，避免两份能力边界漂移。"
+  },
+  "compatibility": {
+    "persistedFingerprintVersions": [
+      1,
+      2
+    ],
+    "drawAlgorithms": "未修改；旧版普通编辑不升级或重算，显式随机继续按原约定生成 V2 草稿。",
+    "workerRuntimeRevision": 10,
+    "uaPatchRandomization": "选定内核分支内的补丁号随机规则未更改。",
+    "serviceWorkerPolicyImpact": "首次采用策略或注入源码变化后，网站需重新注册 Service Worker；离线网站可能需要先联网访问。未清除 Cookie、LocalStorage、IndexedDB 或 CacheStorage。"
+  },
+  "verification": {
+    "aggregate": {
+      "passed": 227,
+      "partial": 1,
+      "skipped": 32,
+      "failed": 0
+    },
+    "environment": {
+      "host": "Linux",
+      "node": "24.22.1",
+      "chromium": "159.0.8154.6",
+      "firefox": "159.0"
+    },
+    "partial": "kernel automation flag forensics 仍为部分验证；环境依赖项在汇总中跳过，原生 Firefox 与实际双内核界面另测。",
+    "evidenceDirectory": "work/review/fingerprint-round7",
+    "logSha256": {
+      "selftest-all.log": "07ffd306ba4b131d2e21d7558952a0292aaac465fd0f8acae29df8071613fb17",
+      "ui-build.log": "e53339606a30a9992e944708cad7fbf14bb8da53f135bcd5dc6c124767c0b24d",
+      "lint.log": "dfb4e146a32136161932f4000a91bb70fe23b446f17eaefb8ee89bf7727bcefd",
+      "preview-identity.log": "eae913696c814ee7ebce06f30b196e8c44b3627808989761e09b171fbb0483ae",
+      "cache-unit.log": "ffa6d5f8364b23a4613954cadcab7bf83c68d3c0aa236695c3049d340668d639",
+      "feedback.log": "088b7faaf2865b0efd3c2646983c3b7a64a696be9e9e2667252888639305e0ef",
+      "cdp-deadline.log": "af63963ce358170cf5a162bc2919b2d57c61328c19b0426b19b46eff002970b1",
+      "firefox-pipeline.log": "40c4bea08e428870342c690c74626affed5f14d927e2656aa84865f9268102fc",
+      "firefox-document.log": "9d53ed5df3f642e30fbd3785c73712eb0f751be0cd55aee02fa44a474d0b5f9f",
+      "firefox-worker-final.log": "da099750d029e3de750ba63e4e9dac8054f11bda81c542a738d6f487f79a201f",
+      "editor-ui.log": "f576ba6d73577475e02456d9c16a6c208575f35bcd9f8f8b2ef9e6fcc0bf9ac1"
+    }
+  },
+  "remaining": [
+    {
+      "id": "firefox-csp-and-creator-matrix",
+      "priority": "P2",
+      "status": "not-exhaustively-certified",
+      "next": "增加 restrictive CSP、跨源模块图、module Data、无关 Blob 创建者、扩展及绕过代理的本地网络脚本首条指令对照。当前通过的常见矩阵不代表这些路径通过。"
+    },
+    {
+      "id": "real-device-network-surface",
+      "priority": "P2",
+      "status": "platform-validation-required",
+      "next": "真实 Windows/macOS GPU、字体、编解码及公网 WebRTC/DNS/TLS/HTTP2 差分。转发器使用 Node TLS，未模拟 Gecko TLS/HTTP2 原生指纹。"
+    },
+    {
+      "id": "preview-config-projection",
+      "priority": "P2",
+      "status": "bounded-contract",
+      "next": "本轮保证 ID/seed 交接与默认派生噪声一致；继续验证显式自定义字段、IP 动态字段与批量修改的完整配置投影，不把身份交接等同于所有配置字段均固定。"
+    }
+  ]
+}

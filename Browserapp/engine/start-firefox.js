@@ -239,6 +239,7 @@ module.exports = {
       }
       let proxy = null;
       let workerMitm = null;
+      let workerSource;
       // Both paths route through the per-profile worker-script MITM forwarder so
       // worker scopes receive the persona JS-only fields (hardwareConcurrency)
       // that no BiDi channel can deliver. With a configured upstream proxy the
@@ -248,6 +249,7 @@ module.exports = {
       try {
         const { FirefoxWorkerMitmProxy } = require('../automation/firefox-worker-mitm-proxy');
         const { buildWorkerInjectionScript } = require('../automation/fingerprint');
+        workerSource = buildWorkerInjectionScript(fingerprint);
         let chain = null;
         if (proxyConfig) {
           proxyForwarder = await startAuthenticatedProxy(proxyConfig, (value) => this.emit({ type: 'proxy-error', id: profile.id, code: value.code, message: value.message }));
@@ -263,7 +265,7 @@ module.exports = {
           if (require('fs').existsSync(caPath)) upstreamCaBundle = require('fs').readFileSync(caPath);
         } catch (_) { /* optional */ }
         workerMitm = await FirefoxWorkerMitmProxy.create({
-          workerSource: buildWorkerInjectionScript(fingerprint),
+          workerSource,
           ...(upstreamCaBundle ? { upstreamCaBundle } : {}),
           ...(chain ? {
             upstreamProxy: {
@@ -306,6 +308,7 @@ module.exports = {
       // user.js wins over prefs.js at every startup, then Firefox copies it to
       // prefs.js. Writing it fresh each launch keeps the proxy/UA/prefs current.
       await fspWriteFile(path.join(root, 'user.js'), userJs, 'utf8');
+      await require('../automation/firefox-worker-cache').prepareFirefoxWorkerCache(root, workerSource);
       currentStage = 'spawn'; this.emitStartProgress(profile.id, 'spawn', 62, '正在启动 Firefox…');
       this.assertStartGenerationActive(profile.id, lifecycleGeneration);
       const headless = launchOptions.headless === true || /^(1|true|new)$/i.test(String(process.env.OPENBROWSER_HEADLESS || '').trim());
@@ -457,7 +460,7 @@ module.exports = {
         running: true,
         capabilities: item.capabilities,
         undeliverable: {
-          workerFingerprint: 'UA/语言/时区由 user.js 覆盖；经过转发器的新 HTTP(S) Worker 脚本前置注入 JS-only 字段。所有配置代理均通过上游桥接，CA 导入失败阻止启动。Blob/data、已有缓存、静态模块依赖及绕过代理的本地 Worker 不保证首条指令覆盖。',
+          workerFingerprint: delivered.capabilities.workerInjection,
           deviceMemory: '保留 Firefox 原生接口形态，不创建 Chromium 的 deviceMemory 接口。',
           frameFontSurface: '跨 OS persona 下，子帧内 document.fonts 为度量层代理，foreign check 门控与文本栅格可能与主文档存在残差（主文档已验证正确，Chromium 路径无此问题）。',
           intlAppLocale: 'Intl 运行时 locale 跟随内核语言包（en-US 构建即 en-US）——与 persona 语言形成「英文界面 + 母语内容偏好」的真实用户形态；不再用 BiDi locale override（实测会将 Accept-Language 头重写为单条）。',

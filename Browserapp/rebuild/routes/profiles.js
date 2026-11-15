@@ -6,6 +6,7 @@ const path = require("node:path");
 const { randomUUID: uid } = require("node:crypto");
 const { sanitizeProfile } = require("../../engine/profile-sanitizer");
 const { fromRoxy, toRoxy } = require("../profile-dto");
+const { profileFromPreview, savePreviewProfiles } = require('../fingerprint-draft');
 const object = (value) =>
   value && typeof value === "object" && !Array.isArray(value);
 
@@ -53,14 +54,15 @@ async function profilesAnalyseImport(service, p, method) {
   )
     throw Error("指纹条数与导入窗口数不一致");
   const start = maxProfileNumber(e.status());
+  const allocated = new Set();
   const profiles = rows.map((row, index) => {
     const { excelData: _rows, fingerDetail, fileName: _name, ...defaults } = p;
-    const profile = fromRoxy({
+    const profile = profileFromPreview(e, {
       ...service.resolveInputs(defaults),
       ...fingerDetail?.[index],
       ...row,
       sortNum: start + index + 1,
-    });
+    }, allocated);
     if (row._importRefreshUrl)
       profile.proxyMeta = {
         ...profile.proxyMeta,
@@ -69,7 +71,7 @@ async function profilesAnalyseImport(service, p, method) {
     return profile;
   });
   if (method === "profiles:analyse-import") return { count: profiles.length };
-  await e.syncProfiles(profiles);
+  await savePreviewProfiles(e, profiles);
   return { successCount: profiles.length };
 }
 
@@ -91,8 +93,8 @@ async function profilesCreate(service, p) {
   const e = service.engine;
   if (!object(p)) throw Error("Invalid create payload");
   const n = maxProfileNumber(e.status()) + 1;
-  const profile = fromRoxy({ ...service.resolveInputs(p), sortNum: n });
-  await e.syncProfiles([profile]);
+  const profile = profileFromPreview(e, { ...service.resolveInputs(p), sortNum: n });
+  await savePreviewProfiles(e, [profile]);
   return { windowId: profile.id, ...toRoxy(profile) };
 }
 
@@ -112,6 +114,7 @@ async function profilesCreateBatch(service, p) {
   if (p.platformBindType !== 2 && accounts.length > count)
     throw Error("账号数量不能大于窗口数量");
   let number = maxProfileNumber(e.status());
+  const allocated = new Set();
   const profiles = Array.from({ length: count }, (_, i) => {
     const selected =
       p.platformBindType === 2 ? accounts : accounts.slice(i, i + 1);
@@ -129,10 +132,10 @@ async function profilesCreateBatch(service, p) {
         .filter((a) => a.accountId)
         .map((a) => a.accountId),
     });
-    return fromRoxy(profileInput);
+    return profileFromPreview(e, profileInput, allocated);
   });
   // Validate every row before the original engine commits the whole batch.
-  await e.syncProfiles(profiles);
+  await savePreviewProfiles(e, profiles);
   return profiles.map(toRoxy);
 }
 

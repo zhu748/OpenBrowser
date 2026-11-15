@@ -144,7 +144,7 @@ async function initializeFirefoxFingerprint(connection, fingerprint, profile, op
       fingerprintVerification: true, runtimeInjection: true, documentStartInjection: true,
       workerFingerprintDelivery: options.workerProxyReady === true ? 'prefs-fields-plus-proxy' : 'prefs-fields',
       workerInjection: options.workerProxyReady === true
-        ? 'Prefs cover UA/platform/languages/timezone. Newly fetched HTTP(S) worker scripts routed through the trusted per-profile forwarder receive JS-only fields; blob/data, cached scripts, static module dependencies and local bypasses are not certified.'
+        ? 'Prefs cover UA/platform/languages/timezone. The native gate verifies HTTP(S) classic/module workers and static dependencies, nested workers, document-created classic Blob/Data workers, Blob modules and shared Blob workers with the trusted forwarder and document installer. Startup invalidates persisted Service Worker registrations when the injection source changes, retaining origin storage. Restrictive CSP, unrelated cross-origin graphs and bypassed local network scripts remain outside this matrix.'
         : 'Prefs cover UA/platform/languages/timezone; asynchronous realm injection does not guarantee JS-only fields before the first worker instruction.',
       deviceMemoryOverride: false, extensionHotLoad: false, zoomReconcile: false,
       retention: true, startUrls: true,

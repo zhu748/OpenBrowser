@@ -4,6 +4,8 @@
 
 Profiles keep a `fingerprintSeed` alongside their ID. The editor's randomize action generates a new 128-bit seed in the draft, clears old overrides, and selects a coherent device persona. Saving commits the new identity; reopening an unchanged profile keeps it stable. Refresh-on-start uses an additional launch seed independently of the sampling stability mode.
 
+New-profile previews allocate the UUID that creation will use, because both identity versions hash the profile ID together with its seed. An engine-scoped HMAC binds that UUID to the generated seed; unissued UUIDs cannot adopt an existing storage directory. Creation accepts it only while unused, including within a staged batch or import. Replayed templates and clones receive distinct IDs. Existing editors preview against their persisted ID, and restoring an editor invalidates older pending previews. This changes identity delivery, not either persisted draw algorithm. IP-derived values and explicit user overrides still resolve independently of this handoff.
+
 Profiles also persist `fingerprintVersion`. Missing versions mean **1**, including old backups and sync records. New profiles created through the API, single/batch creation dialogs, and the tabular importer use **2**. Templates and clones inherit their source version. The editor's randomize action upgrades the draft to version 2; saving commits both the seed and version. Ordinary edits and launches do not upgrade existing identities. Unsupported versions are rejected. API create accepts `fingerprintVersion` or `fingerprint_version`; API sync/import retains version 1 when absent.
 
 Version 2 derives random fields using domain-separated SHA-256 (`seed + field name`), replacing version 1's overlapping seed offsets. Its default hardware path selects one coherent CPU/memory/screen/DPR/GPU template; new single-profile creation no longer pins 12 cores/8 GB over that template. Selection is independent of the host OS, while version 1 retains its historical host gating. Configured identity can be reproduced across hosts, but rendering pixels and usable limits still depend on the kernel, driver and fonts. Reusing a common hardware template is expected; this is not a guarantee of globally unique identities.
@@ -175,7 +177,9 @@ Repeated opens share a single BiDi socket. Firefox liveness checks use BiDi and 
 | Worker realms | Prefs supply UA/platform/languages/timezone; newly fetched HTTP(S) worker scripts routed through the per-profile forwarder receive the JS prefix. Asynchronous realm injection remains best effort |
 | CDP automation / extension hot loading | Remain unsupported on Firefox |
 
-`fingerprintDelivery` and `fingerprintVerification` describe document delivery. `workerFingerprintDelivery` is `prefs-fields` after standalone BiDi initialization and `prefs-fields-plus-proxy` only when startup has established the Worker forwarder and imported its CA. This is not a claim of complete worker coverage: blob/data workers, previously cached scripts, static module dependencies and local proxy bypasses are not certified before their first instruction.
+`fingerprintDelivery` and `fingerprintVerification` describe document delivery. `workerFingerprintDelivery` is `prefs-fields` after standalone BiDi initialization and `prefs-fields-plus-proxy` only when startup has established the Worker forwarder and imported its CA. The native Firefox gate now checks first reads in network classic/module entries and their static dependency, nested workers, document-created classic Blob/Data workers, a Blob module with a network dependency, network/Blob SharedWorkers and Service Workers. This uses both the document installer and trusted forwarder. It does not certify arbitrary CSP/cross-origin graphs, unrelated Blob creators, module Data workers, or local network scripts that bypass the forwarder.
+
+Firefox startup hashes the complete worker injection source while holding the profile lock. If it differs from the recorded source, or the record is missing/corrupt, startup removes `serviceworker.txt` before spawning Firefox. Otherwise a persisted worker can return the old identity without fetching through the updated forwarder. This invalidates registration metadata only; cookies, LocalStorage, IndexedDB and CacheStorage are not cleared. Sites register again through the current forwarder, so an offline site can need a network visit after identity/runtime changes or the first upgrade to this policy. An unchanged source preserves registrations. Invalidation failures prevent spawn. The native gate verifies unchanged/changed cached-worker restarts and retained persistent cookies, LocalStorage and CacheStorage.
 
 Every configured HTTP/HTTPS/SOCKS5 proxy, including unauthenticated proxies, is bridged before the Worker forwarder. Upstream credentials remain at the bridge. Forwarder or CA import failure stops startup before browser spawn. OpenSSL and an NSS `certutil` are required for this Firefox path. Localhost stays outside the forwarder so the managed local start page remains reachable. Normal stop first requests native BiDi `browser.close`; normal stop and failed startup both close the listener and sockets and remove temporary CA files.
 
@@ -283,4 +287,12 @@ Native Firefox verification is a separate gate:
 OPENBROWSER_FIREFOX_BINARY=/absolute/path/to/firefox npm run selftest:firefoxfingerprint
 ```
 
-That gate checks inline first-script observations, iframe observations and HTTP UA against a local server. Other traffic is routed to an unavailable loopback proxy. Missing Firefox exits with code 2 rather than reporting a passed browser test. Native Windows/macOS/Linux checks, GPU/codec/font compatibility and worker-first-instruction delivery still require platform-specific validation.
+That gate checks inline first-script observations, iframe observations and HTTP UA against a local server. Other traffic is routed to an unavailable loopback proxy. Missing Firefox exits with code 2 rather than reporting a passed browser test. The separate worker matrix exercises the production initializer and trusted HTTPS forwarder, authenticated proxy chaining and cached-worker restarts:
+
+```sh
+OPENBROWSER_FIREFOX_BINARY=/absolute/path/to/firefox npm run selftest -- ffworker
+npm run selftest -- fpreviewidentity
+npm run selftest -- ffworkercache
+```
+
+Native Windows/macOS/Linux GPU/codec/font compatibility and broader worker/CSP graphs still require their platform-specific validation.

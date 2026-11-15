@@ -19,6 +19,12 @@ export function serializeFingerprintDraft(groups, value) {
 }
 
 export function restoreFingerprintDraft(groups, value) {
+  const state = stateFor(groups, true);
+  if (!state) return;
+  state.revision++;
+  // Only a persisted edit DTO owns a profile. A copied template's preview
+  // metadata must not turn a new editor into an editor for that old window.
+  state.profileId = value?.windowId && value.windowId === value.id ? value.id : undefined;
   const saved = value?._fingerprintDraft || (value?.fingerprintSeed ? {
     seed: value.fingerprintSeed, version: value.fingerprintVersion,
     userAgent: value.userAgent || '', generated: value.privacy?.fingerprint?.uaGenerated === true,
@@ -26,7 +32,7 @@ export function restoreFingerprintDraft(groups, value) {
     uaPatchRandomized: value.privacy?.fingerprint?.uaPatchRandomized,
     clientHints: value.privacy?.fingerprint?.clientHints,
   } : null);
-  if (saved) stateFor(groups, true).identity = saved;
+  state.identity = saved;
 }
 
 export function invalidateFingerprintDraft(groups) {
@@ -52,6 +58,7 @@ export async function refreshFingerprintDraft(groups, { read, apply, find, reque
       /Firefox\//i.test(values.userAgent) !== (selected.coreType === 'Firefox')) field.value = '';
   try {
     const rows = await request({ ...selected, count, fontType: values.fontType,
+      profileId: state.profileId,
       canvas: values.canvas, webGL: values.webGL, audioContext: values.audioContext,
       speechVoices: values.speechVoices, clientRects: values.clientRects, macInfo: values.macInfo,
       previousUserAgent: values.userAgent || '' });

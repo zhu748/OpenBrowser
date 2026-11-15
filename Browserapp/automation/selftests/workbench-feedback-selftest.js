@@ -76,6 +76,17 @@ async function main() {
   await draft.refreshFingerprintDraft(groups, { read: validatingRead, find, apply,
     request: async () => [{ userAgent: identity.userAgent, _fingerprintDraft: identity }] });
   assert.equal(read(groups).userAgent, identity.userAgent, 'a failed preview can recover after installing/selecting a kernel');
+  let releasePreviousEditor;
+  const previousEditor = draft.refreshFingerprintDraft(groups, { read, find, apply,
+    request: () => new Promise(resolve => { releasePreviousEditor = resolve; }) });
+  draft.restoreFingerprintDraft(groups, { id: 'persisted-window', windowId: 'persisted-window', fingerprintSeed: 'stored-seed', fingerprintVersion: 1 });
+  releasePreviousEditor([{ userAgent: 'Firefox/159.0', _fingerprintDraft: identity }]);
+  assert.equal((await previousEditor).length, 0, 'restoring an editor invalidates pending previews even when OS/kernel are unchanged');
+  await draft.refreshFingerprintDraft(groups, { read, find, apply,
+    request: async payload => { assert.equal(payload.profileId, 'persisted-window');return [{ userAgent: identity.userAgent, _fingerprintDraft: identity }]; } });
+  draft.restoreFingerprintDraft(groups, { _fingerprintDraft: { ...identity, profileId: 'template-old-window' } });
+  await draft.refreshFingerprintDraft(groups, { read, find, apply,
+    request: async payload => { assert.equal(payload.profileId, undefined, 'templates do not take ownership of an old window');return [{ userAgent: identity.userAgent, _fingerprintDraft: identity }]; } });
 
   const { createNetworkIndicator } = await import('../../rebuild/workbench-network.mjs');
   let mounted, calls = 0;
