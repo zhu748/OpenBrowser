@@ -8,6 +8,12 @@ module.exports = function bootstrap({ uaScript, json, bridgeToken }) {
 (() => {
   try {
   const CFG = ${json};
+  const nativeTypeError = TypeError;
+  const applyNative = Reflect.apply;
+  const nativeNavigator = typeof navigator !== 'undefined' ? navigator : null;
+  const nativeScreen = typeof screen !== 'undefined' ? screen : null;
+  const nativeNavBrand = nativeNavigator && Object.getOwnPropertyDescriptor(Object.getPrototypeOf(nativeNavigator), 'hardwareConcurrency')?.get;
+  const nativeScreenBrand = nativeScreen && Object.getOwnPropertyDescriptor(Object.getPrototypeOf(nativeScreen), 'width')?.get;
   // Phone identity flag, shared by the window metrics and the navigator patch below.
   const MOBILE = Boolean(CFG.mobile);
 
@@ -198,68 +204,32 @@ ${stabilityRuntime}
     }
     return err;
   };
-  const getRealmTypeError = (receiver) => {
-    try {
-      if (receiver) {
-        if (receiver.ownerDocument && receiver.ownerDocument.defaultView && receiver.ownerDocument.defaultView.TypeError) {
-          return receiver.ownerDocument.defaultView.TypeError;
-        }
-        const ctor = receiver.constructor;
-        if (ctor) {
-          if (ctor.ownerDocument && ctor.ownerDocument.defaultView && ctor.ownerDocument.defaultView.TypeError) {
-            return ctor.ownerDocument.defaultView.TypeError;
-          }
-          if (typeof ctor.constructor === "function") {
-            const globalObj = ctor.constructor("return this")();
-            if (globalObj && globalObj.TypeError) return globalObj.TypeError;
-          }
-        }
-      }
-    } catch (_) {}
-    return (typeof TypeError !== "undefined" ? TypeError : Error);
-  };
-  // Genuine-instance whitelist for cross-realm receivers. WebIDL getters brand-check the
-  // receiver against interface internal slots, which pure JS cannot inspect. The previous
-  // structural acceptance (foreign constructor name + prototype match) also accepted synthetic
-  // receivers built on ANOTHER realm's prototype (Object.create(frameWin.Navigator.prototype)
-  // passed the parent-closure getters installed by patchSubWindow) — receivers stock engines
-  // reject with "Illegal invocation" (verified against Chrome 157 / Firefox 160). Only this
-  // realm's own navigator/screen instance and sub-window instances registered at sync time
-  // (see document-screen.js patchSubWindow) may read; everything else throws.
+  // Let native internal-slot checks validate genuine foreign instances. Object
+  // identity is the fallback only when the host lacks a brand accessor.
   const crossRealmApproved = new WeakSet();
-  const isPlatformObject = (receiver, localInstance) => {
+  const isPlatformObject = (receiver, localInstance, brand) => {
     if (!receiver) return false;
+    if (typeof brand === 'function') {
+      try { applyNative(brand, receiver, []);return true; } catch (_) { return false; }
+    }
     if (receiver === localInstance) return true;
     return crossRealmApproved.has(receiver);
   };
   const makeNativeGetter = (key, getValue, targetType, realmWin) => {
+    const RealmTypeError = realmWin?.TypeError || nativeTypeError;
     let getter;
     const holder = {
       get [key]() {
         if (targetType === "navigator") {
-          const isProto = (typeof Navigator !== "undefined" && this === Navigator.prototype) ||
-            (this && this.constructor && this.constructor.prototype === this) ||
-            (this && Object.getPrototypeOf(this) === Object.prototype);
-          const isNav = !isProto && isPlatformObject(
-            this,
-            typeof navigator !== "undefined" ? navigator : null
-          );
+          const isNav = isPlatformObject(this, nativeNavigator, nativeNavBrand);
           if (!isNav) {
-            const RealmTypeError = (realmWin && realmWin.TypeError) || getRealmTypeError(this);
             const err = new RealmTypeError("Illegal invocation");
             stripStackFrame(err, getter, "get " + key);
             throw err;
           }
         } else if (targetType === "screen") {
-          const isProto = (typeof Screen !== "undefined" && this === Screen.prototype) ||
-            (this && this.constructor && this.constructor.prototype === this) ||
-            (this && Object.getPrototypeOf(this) === Object.prototype);
-          const isScr = !isProto && isPlatformObject(
-            this,
-            typeof screen !== "undefined" ? screen : null
-          );
+          const isScr = isPlatformObject(this, nativeScreen, nativeScreenBrand);
           if (!isScr) {
-            const RealmTypeError = (realmWin && realmWin.TypeError) || getRealmTypeError(this);
             const err = new RealmTypeError("Illegal invocation");
             stripStackFrame(err, getter, "get " + key);
             throw err;

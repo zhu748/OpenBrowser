@@ -36,6 +36,17 @@ const net = require('node:net');
 const { buildWorkerInjectionScript } = require('../fingerprint');
 const { FirefoxWorkerMitmProxy } = require('../firefox-worker-mitm-proxy');
 const { installFirefoxCa } = require('../firefox-trust-installer');
+const { receiverShadowSnapshot } = require('./fingerprint-receiver-probes');
+
+function verifyReceivers(snapshot) {
+  assert.ok(snapshot, 'dedicated worker receiver checks ran');
+  for (const value of Object.values(snapshot)) {
+    assert.equal(value.reads, 0);
+    assert.equal(value.applyReads, 0);
+    assert.deepEqual(value.after, value.before);
+    if (value.forgery) assert.deepEqual(value.forgery, { errorName: 'TypeError', reads: 0 });
+  }
+}
 
 async function stopChild(child) {
   if (child.exitCode !== null || child.signalCode !== null) return;
@@ -58,7 +69,7 @@ async function startupContext(connection) {
   return tree.contexts[0];
 }
 const SNAP = "({ua:navigator.userAgent,platform:navigator.platform,cores:navigator.hardwareConcurrency,languages:String(navigator.languages),tz:Intl.DateTimeFormat().resolvedOptions().timeZone,strict:(function(){return this})()===undefined})";
-const dedicatedSrc = `"use strict";const first=${SNAP};postMessage(JSON.stringify(first));`;
+const dedicatedSrc = `"use strict";const first=${SNAP};(${receiverShadowSnapshot.toString()})().then(receivers=>postMessage(JSON.stringify({...first,receivers})));`;
 const sharedSrc = `"use strict";const first=${SNAP};self.onconnect=(e)=>{e.ports[0].onmessage=()=>e.ports[0].postMessage(JSON.stringify(first));};`;
 const serviceSrc = `"use strict";const first=${SNAP};self.addEventListener('install',e=>self.skipWaiting());self.addEventListener('activate',e=>self.clients.claim());self.addEventListener('message',e=>e.ports[0].postMessage(JSON.stringify(first)));`;
 
@@ -136,6 +147,7 @@ const serviceSrc = `"use strict";const first=${SNAP};self.addEventListener('inst
       assert.equal(w.languages, fp.languages.join(','), kind + ' worker languages');
       assert.equal(w.tz, fp.timezone, kind + ' worker timezone');
       assert.equal(w.strict, true, kind + ' worker strict semantics');
+      if (kind === 'dedicated') verifyReceivers(w.receivers);
       console.log('PASS ff-worker ' + kind + ' first read: UA/platform/languages/timezone are persona');
       // JS-patch-only field: record the documented gap. The assertion is on the
       // DELIVERED capability set, never relaxed to pretend coverage.
@@ -222,6 +234,7 @@ const serviceSrc = `"use strict";const first=${SNAP};self.addEventListener('inst
       })()`);
       assert.ok(mitmProbe && !mitmProbe.err && !mitmProbe.timeout, 'HTTPS worker through the MITM proxy failed: ' + JSON.stringify(mitmProbe));
       assert.equal(mitmProbe.ua, fp.userAgent, 'MITM worker UA');
+      verifyReceivers(mitmProbe.receivers);
       assert.equal(mitmProbe.strict, true, 'MITM worker strict semantics');
       assert.equal(mitmProbe.platform, fp.platform, 'MITM worker platform');
       assert.equal(mitmProbe.tz, fp.timezone, 'MITM worker timezone');
@@ -321,6 +334,7 @@ const serviceSrc = `"use strict";const first=${SNAP};self.addEventListener('inst
         assert.ok(chainProbe && !chainProbe.err && !chainProbe.timeout, 'HTTPS worker through the chained authenticated bridge failed: ' + JSON.stringify(chainProbe));
         assert.equal(chainProbe.cores, fp.hardwareConcurrency, 'chained worker hardwareConcurrency must be the persona value');
         assert.equal(chainProbe.ua, fp.userAgent, 'chained worker UA');
+        verifyReceivers(chainProbe.receivers);
         assert.equal(chainProbe.strict, true, 'chained worker strict semantics');
         console.log('PASS ff-worker first read over HTTPS via chained authenticated bridge: JS-only fields are persona behind a real proxy too');
         conn3.close();

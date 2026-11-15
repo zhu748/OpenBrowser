@@ -1065,7 +1065,9 @@ module.exports = {
       const fingerprint = running?.fingerprint || require('../automation/firefox-fingerprint').buildFirefoxFingerprint(profile, this.chooseBrowser(profile, 'firefox').version);
       return { ...structuredClone(fingerprint), delivery: running?.capabilities?.fingerprintDelivery ? 'verified-document' : 'configured' };
     }
-    return running?.fingerprint ? structuredClone(running.fingerprint) : buildFingerprint(profile);
+    if (running?.fingerprint) return structuredClone(running.fingerprint);
+    const kernelVersion = profile.kernelVersion || this.chooseBrowser(profile, 'chromium').version;
+    return buildFingerprint({ ...profile, kernelVersion });
   },
 
 fingerprintConfigHash,

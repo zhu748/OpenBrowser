@@ -18,7 +18,7 @@ module.exports = `
         if (existing && existing.token === BRIDGE_TOKEN) continue;
         const wrappedGet = nativeLike(function networkValue() {
           const original = nativeGet.call(this);
-          return this === realConnection && Object.prototype.hasOwnProperty.call(netState, key)
+          return Object.prototype.hasOwnProperty.call(netState, key)
             ? netState[key] : original;
         }, nativeGet, 'get ' + key, 0);
         Object.defineProperty(netProto, key, { ...descriptor, get: wrappedGet });

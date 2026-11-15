@@ -40,6 +40,7 @@ async function main() {
       const { LocalService } = process.mainModule.require(file), original = LocalService.prototype.request;
       globalThis.editorPreviewHistory = [];
       LocalService.prototype.request = async function(method, payload, ...rest) {
+        globalThis.editorTestEngine = this.engine;
         const result = await original.call(this, method, payload, ...rest);
         if (method === 'fingerprint:preview') globalThis.editorPreviewHistory.push({ payload, row: result[0] });
         return result;
@@ -89,16 +90,31 @@ async function main() {
       assert.equal(saved.privacy.fingerprint.uaGenerated, true);
       assert.equal(saved.privacy.fingerprint.uaPatchRandomized, true);
       await page.screenshot({ path: path.join(evidence, 'fingerprint-saved-' + family + '.png') });
+      const legacyUa = await app.evaluate(async (_host, id) => {
+        const engine = globalThis.editorTestEngine, current = engine.profiles.get(id);
+        const userAgent = current.userAgent.replace(/((?:Chrome|Firefox)\/)([\d.]+)/, (_match, product, version) => {
+          const parts = version.split('.');parts[parts.length - 1] = parts.at(-1) === '1' ? '2' : '1';return product + parts.join('.');
+        });
+        await engine.syncProfiles([{ ...current, privacy: { ...current.privacy,
+          fingerprint: { ...current.privacy.fingerprint, userAgent } } }]);
+        return userAgent;
+      }, saved.id);
       await page.evaluate(id => globalThis.__router.push('/browser/edit?id=' + id), saved.id);
       await page.getByRole('button', { name: '保存', exact: true }).waitFor();
-      if (!(await readUa())) await page.getByText('基础设置', { exact: true }).click();
+      const editRandom = page.getByRole('button', { name: '随机', exact: true }).first();
+      if (!await editRandom.isVisible()) await page.getByText('基础设置', { exact: true }).click();
       await waitUntil(async () => !!(await readUa()));
-      assert.equal(await readUa(), saved.userAgent, 'opening an existing profile preserves its random patch');
+      assert.equal(await readUa(), legacyUa, 'the editor shows the effective legacy override');
+      await editRandom.click();
+      await waitUntil(async () => { const value = await readUa();return value && value !== legacyUa; });
+      const editedUa = await readUa();
       await page.getByRole('button', { name: '保存', exact: true }).click();
       await page.getByText('真实表单随机 ' + family, { exact: true }).waitFor();
       const edited = await page.evaluate(id => globalThis.__localRequest('profiles:read', { id }), saved.id);
-      assert.equal(edited.userAgent, saved.userAgent);
+      assert.equal(edited.userAgent, editedUa);
+      assert.equal(edited.privacy.fingerprint.userAgent, undefined, 'saving migrates the old hidden override');
       assert.equal(edited.privacy.fingerprint.uaPatchRandomized, true, 'editing keeps the random patch intent');
+      assert.equal(await app.evaluate((_host, id) => globalThis.editorTestEngine.fingerprintFor(id).userAgent, saved.id), editedUa);
     }
     assert.deepEqual(errors, []);
     console.log('PROFILE_FINGERPRINT_UI_SELFTEST OK (real Chromium/Firefox selection, changing UA/seed, unchanged OS and form-to-disk persistence)');

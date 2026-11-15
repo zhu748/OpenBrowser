@@ -264,6 +264,18 @@ function documentScope() {
     assert.equal(connection.pending.size, 0);
     assert.throws(() => localBidiEndpoint('ws://example.com:1234/session'), /loopback/);
     assert.deepEqual(deserializeRemoteValue(remote({ list: [1, null, 'ok'] })), { list: [1, null, 'ok'] });
+    const graph = deserializeRemoteValue({ type: 'object', internalId: 'root', value: [
+      ['first', { type: 'array', internalId: 'languages', value: [{ type: 'string', value: 'en-US' }] }],
+      ['second', { type: 'array', internalId: 'languages' }],
+      ['self', { type: 'object', internalId: 'root' }],
+      ['__proto__', { type: 'object', value: [['polluted', { type: 'boolean', value: true }]] }],
+    ] });
+    assert.deepEqual(graph.first, ['en-US']);
+    assert.equal(graph.second, graph.first, 'BiDi internal references retain shared values');
+    assert.equal(graph.self, graph, 'recursive references resolve without recursive decoding');
+    assert.equal(Object.getPrototypeOf(graph), Object.prototype);
+    assert.equal({}.polluted, undefined);
+    assert.deepEqual(deserializeRemoteValue({ type: 'array', internalId: 'languages' }), [], 'reference IDs are scoped to one result');
   });
   console.log(`fingerprint-reliability-selftest: OK ${count}/${count}`);
 })().catch((error) => { console.error(error); process.exitCode = 1; });

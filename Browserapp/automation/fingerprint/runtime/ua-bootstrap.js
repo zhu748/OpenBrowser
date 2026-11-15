@@ -8,42 +8,12 @@
 module.exports = (U, UA_BRIDGE_TOKEN) => {
   const nativeSource = new WeakMap();
   const originalToString = Function.prototype.toString;
-  const getRealmTypeError = (receiver, fallbackProto) => {
-    try {
-      if (receiver) {
-        if (receiver.ownerDocument && receiver.ownerDocument.defaultView && receiver.ownerDocument.defaultView.TypeError) {
-          return receiver.ownerDocument.defaultView.TypeError;
-        }
-        if (receiver.defaultView && receiver.defaultView.TypeError) {
-          return receiver.defaultView.TypeError;
-        }
-        if (typeof receiver.TypeError === "function") {
-          return receiver.TypeError;
-        }
-        const ctor = receiver.constructor;
-        if (ctor) {
-          if (ctor.ownerDocument && ctor.ownerDocument.defaultView && ctor.ownerDocument.defaultView.TypeError) {
-            return ctor.ownerDocument.defaultView.TypeError;
-          }
-          if (typeof ctor.constructor === "function") {
-            try {
-              const globalObj = ctor.constructor("return this")();
-              if (globalObj && globalObj.TypeError) return globalObj.TypeError;
-            } catch (_) {}
-          }
-        }
-      }
-    } catch (_) {}
-    try {
-      if (fallbackProto && fallbackProto.constructor && typeof fallbackProto.constructor.constructor === "function") {
-        try {
-          const globalObj = fallbackProto.constructor.constructor("return this")();
-          if (globalObj && globalObj.TypeError) return globalObj.TypeError;
-        } catch (_) {}
-      }
-    } catch (_) {}
-    return (typeof TypeError !== "undefined" ? TypeError : Error);
-  };
+  // Native errors belong to the getter/method's realm. Never inspect a
+  // receiver's constructor or evaluate code to choose an error constructor.
+  const NativeTypeError = TypeError;
+  const applyNative = Reflect.apply;
+  const nativeNavigator = typeof navigator !== 'undefined' ? navigator : null;
+  const nativeNavBrand = nativeNavigator && Object.getOwnPropertyDescriptor(Object.getPrototypeOf(nativeNavigator), 'userAgent')?.get;
 
   const patchSubWindow = (subWin) => {
     try {
@@ -240,22 +210,17 @@ module.exports = (U, UA_BRIDGE_TOKEN) => {
   const sameValue = (obj, key, expected) => {
     try { return obj && obj[key] === expected; } catch (_) { return false; }
   };
-  // Genuine-instance whitelist. WebIDL getters brand-check the receiver against internal
-  // slots, which pure JS cannot inspect; instanceof/toString heuristics accept the synthetic
-  // receivers a page builds with Object.create(Navigator.prototype) — receivers the real
-  // engine rejects with "Illegal invocation" (verified against stock Chrome 157 / Firefox
-  // 160), which is a one-line injection oracle. Only this realm's own navigator instance and
-  // sub-window instances registered at sync time may read; everything else falls through to
-  // the original getter and inherits its native rejection.
+  // Native brand accessors accept genuine foreign instances while rejecting
+  // prototype forgeries, even if a page replaces a frame's navigator property.
   const approvedNavs = new WeakSet();
   const approvedUad = new WeakSet();
   const isNav = (receiver) => {
     try {
       if (!receiver) return false;
-      if (typeof Navigator !== "undefined" && receiver === Navigator.prototype) return false;
-      if (typeof WorkerNavigator !== "undefined" && receiver === WorkerNavigator.prototype) return false;
-      if (receiver && receiver.constructor && receiver.constructor.prototype === receiver) return false;
-      if (typeof navigator !== "undefined" && receiver === navigator) return true;
+      if (typeof nativeNavBrand === 'function') {
+        try { applyNative(nativeNavBrand, receiver, []);return true; } catch (_) { return false; }
+      }
+      if (receiver === nativeNavigator) return true;
       if (approvedNavs.has(receiver)) return true;
       return false;
     } catch (_) { return false; }
@@ -296,7 +261,7 @@ module.exports = (U, UA_BRIDGE_TOKEN) => {
       configurable: true,
       get: function() {
         if (!isNav(this)) {
-          const RealmTypeError = getRealmTypeError(this, obj);
+          const RealmTypeError = NativeTypeError;
           if (originalGetter) {
             try {
               return originalGetter.call(this);
@@ -452,7 +417,7 @@ module.exports = (U, UA_BRIDGE_TOKEN) => {
           configurable: true,
           get: function() {
             if (!isUaReceiver(this)) {
-              const RealmTypeError = getRealmTypeError(this, targetProto);
+              const RealmTypeError = NativeTypeError;
               if (originalGetter) {
                 try {
                   return originalGetter.call(this);
@@ -487,7 +452,7 @@ module.exports = (U, UA_BRIDGE_TOKEN) => {
       let geh;
       const gehHolder = {
         getHighEntropyValues(hints) {
-          const RealmTypeError = getRealmTypeError(this, targetProto);
+          const RealmTypeError = NativeTypeError;
           if (!isUaReceiver(this)) {
             if (typeof nativeGeh === "function") return nativeGeh.apply(this, arguments);
             const err = new RealmTypeError("Failed to execute 'getHighEntropyValues' on 'NavigatorUAData': Illegal invocation");
@@ -520,7 +485,7 @@ module.exports = (U, UA_BRIDGE_TOKEN) => {
               try {
                 return nativeToJSON.apply(this, arguments);
               } catch (err) {
-                const RealmTypeError = getRealmTypeError(this, targetProto);
+                const RealmTypeError = NativeTypeError;
                 if (RealmTypeError !== TypeError && err && err.name === "TypeError") {
                   const reErr = new RealmTypeError(err.message || "Illegal invocation");
                   stripStackFrame(reErr, tj, "toJSON");
@@ -530,7 +495,7 @@ module.exports = (U, UA_BRIDGE_TOKEN) => {
                 throw err;
               }
             }
-            const RealmTypeError = getRealmTypeError(this, targetProto);
+            const RealmTypeError = NativeTypeError;
             const err = new RealmTypeError("Illegal invocation");
             stripStackFrame(err, tj, "toJSON");
             throw err;
@@ -566,7 +531,7 @@ module.exports = (U, UA_BRIDGE_TOKEN) => {
           configurable: true,
           get: function() {
             if (this !== uaData) {
-              const RealmTypeError = getRealmTypeError(this);
+              const RealmTypeError = NativeTypeError;
               const err = new RealmTypeError("Illegal invocation");
               stripStackFrame(err, g, "get " + prop);
               throw err;
@@ -586,7 +551,7 @@ module.exports = (U, UA_BRIDGE_TOKEN) => {
       let geh;
       const gehHolder = {
         getHighEntropyValues(hints) {
-          const RealmTypeError = getRealmTypeError(this);
+          const RealmTypeError = NativeTypeError;
           if (this !== uaData) {
             const err = new RealmTypeError("Failed to execute 'getHighEntropyValues' on 'NavigatorUAData': Illegal invocation");
             stripStackFrame(err, geh, "getHighEntropyValues");
@@ -613,7 +578,7 @@ module.exports = (U, UA_BRIDGE_TOKEN) => {
       let tj;
       const tjHolder = {
         toJSON() {
-          const RealmTypeError = getRealmTypeError(this);
+          const RealmTypeError = NativeTypeError;
           if (this !== uaData) {
             const err = new RealmTypeError("Illegal invocation");
             stripStackFrame(err, tj, "toJSON");

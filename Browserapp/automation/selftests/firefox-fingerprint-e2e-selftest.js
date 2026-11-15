@@ -16,6 +16,7 @@ const { ProfileRoutes } = require('../api/profile-routes');
 const { clearFirefoxPlaces } = require('../browser-data');
 const { DatabaseSync } = require('node:sqlite');
 const { buildEditorUa } = require('../editor-ua');
+const { receiverShadowSnapshot } = require('./fingerprint-receiver-probes');
 const { BidiConnection, waitForFirefoxEndpoint, evaluateBidi } = require('../../network/bidi-connection');
 
 async function run(generation, shortVersion = false) {
@@ -73,6 +74,13 @@ async function run(generation, shortVersion = false) {
       assert.equal(realm.timezone, fp.timezone);
       assert.equal(realm.width, fp.screen.width);
       assert.equal(realm.height, fp.screen.height);
+    }
+    const receivers = await evaluateBidi(connection, { context: initialized.context }, '(' + receiverShadowSnapshot.toString() + ')()');
+    for (const [name, value] of Object.entries(receivers)) {
+      assert.equal(value.reads, 0, name + ' does not read a page-writable constructor');
+      assert.equal(value.applyReads, 0);
+      assert.deepEqual(value.after, value.before);
+      if (value.forgery) assert.deepEqual(value.forgery, { errorName: 'TypeError', reads: 0 });
     }
     assert.ok(requests.some((request) => request.path === '/doc' && request.ua === fp.userAgent));
     assert.ok(requests.some((request) => request.path === '/frame' && request.ua === fp.userAgent));

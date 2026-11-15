@@ -8,9 +8,10 @@ const { buildUaProfile } = require('../user-agent');
 let count = 0;
 async function test(name, run) { await run(); count += 1; console.log('PASS ' + name); }
 const profile = (privacy = {}) => ({ id: 'realm-contract', os: 'Windows', privacy: { fontListMode: 'real', ...privacy } });
+const nativeNavigators = new WeakSet();
 
 function realm({ worker = false, secure = true, formFactors = true, deferHints = false, freshUaData = false } = {}) {
-  const scope = vm.createContext({ URL, DOMException, setTimeout, clearTimeout });
+  const scope = vm.createContext({ URL, DOMException, setTimeout, clearTimeout, nativeNavigators });
   vm.runInContext(`
     const window=globalThis, self=globalThis;
     const document={createElement(type){return type==='iframe'?new HTMLIFrameElement():{getContext(){return null}}},querySelectorAll(){return []}};
@@ -31,9 +32,10 @@ function realm({ worker = false, secure = true, formFactors = true, deferHints =
     globalThis.NavigatorUAData=NavigatorUAData;
     const navProto=${worker ? 'WorkerNavigator' : 'Navigator'}.prototype;
     for (const [key,value] of Object.entries({userAgent:'native',platform:'Win32',appVersion:'native',vendor:'',hardwareConcurrency:2,languages:['en-US'],language:'en-US',maxTouchPoints:0,webdriver:false})) {
-      Object.defineProperty(navProto,key,{configurable:true,enumerable:true,get(){if(this!==navigator)throw new TypeError('Illegal invocation');return value}});
+      Object.defineProperty(navProto,key,{configurable:true,enumerable:true,get(){if(!nativeNavigators.has(this))throw new TypeError('Illegal invocation');return value}});
     }
     const navigator=new ${worker ? 'WorkerNavigator' : 'Navigator'}();
+    nativeNavigators.add(navigator);
     globalThis.navigator=navigator;globalThis.window=window;globalThis.self=self;
     ${secure ? "Object.defineProperty(navProto,'deviceMemory',{configurable:true,get(){return 4}});Object.defineProperty(navProto,'userAgentData',{configurable:true,get(){if(this!==navigator)throw new TypeError('Illegal invocation');return nativeUaData()}});" : ''}
     class Screen {} const screen=new Screen();

@@ -1,4 +1,4 @@
 'use strict';
 
 // Delivery protocol revision, independent of the persisted identity algorithm.
-module.exports = { WORKER_RUNTIME_REVISION: 9 };
+module.exports = { WORKER_RUNTIME_REVISION: 10 };

@@ -1,0 +1,140 @@
+{
+  "date": "2026-11-15",
+  "baseCommit": "0cd27d53300986da06c17796cf9219839aa46260",
+  "assessment": "当前覆盖范围通过，不能称为完美。此轮修复五类实证问题；原生环境、Firefox 未认证 Worker 场景和完整预览身份交接仍有边界。",
+  "scope": [
+    "指纹声明与旧配置迁移",
+    "所选内核与启动身份",
+    "原生 getter 接收者、错误 Realm 和可变全局对象",
+    "页面/iframe/三类 Worker 网络信息、UA、Client Hints 与请求头",
+    "Canvas/音频/字体、权限/地理位置/存储、缓存及更新 Worker",
+    "真实创建/编辑界面到磁盘与运行时"
+  ],
+  "findings": [
+    {
+      "id": "legacy-hidden-ua",
+      "severity": "high",
+      "status": "fixed",
+      "evidence": "可见 UA 已更新为 Chrome/159.0.8154.73，隐藏 privacy.fingerprint.userAgent 仍为 .74，实际注入仍使用 .74。",
+      "change": "编辑器显示实际生效的旧覆盖；显式保存 UA 时迁移到统一字段，清除旧覆盖；按有效旧值判断清空/修改，防止遗留 Client Hints。",
+      "verification": "生产 DTO/生成器回归；实际 Chrome 和 Firefox 创建、植入旧记录、编辑随机、保存及内核运行配置回读。"
+    },
+    {
+      "id": "cross-realm-network-values",
+      "severity": "high",
+      "status": "fixed",
+      "evidence": "配置 rtt=850、downlink=1.3、effectiveType=3g、saveData=true，本地读正确，借用父/子 iframe getter 却返回原始 100/1.4/4g/false。",
+      "change": "先保留原生 brand 校验，所有真实跨 Realm 接收者均返回配置值；伪造接收者继续拒绝。",
+      "verification": "真实 Chromium 四个方向的 getter 借用及伪造对象检查。"
+    },
+    {
+      "id": "native-getter-receivers",
+      "severity": "high",
+      "status": "fixed",
+      "evidence": "原生 navigator/screen 改写 constructor 后仍正常，旧注入会调用该 getter 并抛错；借用 getter 的错误对象也来自错误的 Realm。",
+      "change": "使用捕获的原生 brand getter 和错误构造器；移除结构式 constructor 判断及动态 Function 求值，捕获 Reflect.apply，拒绝伪造的全局 navigator。",
+      "verification": "真实原生对照；页面、iframe、Blob Worker 和 Firefox 文档/转发 Worker 的 constructor/Reflect.apply 篡改与非法接收者测试。"
+    },
+    {
+      "id": "stopped-chromium-kernel-preview",
+      "severity": "medium",
+      "status": "fixed",
+      "evidence": "未启动的 Chrome 使用默认打包版本构造指纹，未解析实际选中的已安装内核；运行与预览可能使用不同的大版本。",
+      "change": "未运行时解析所选实际内核；已运行时继续克隆真实运行身份；内核不可用时明确报错。",
+      "verification": "生产 BrowserEngine 方法的选定版本、无内核错误、运行态不重算与返回对象隔离测试。"
+    },
+    {
+      "id": "firefox-bidi-shared-references",
+      "severity": "medium",
+      "status": "fixed",
+      "evidence": "同一 navigator.languages 数组在结果中出现两次时，BiDi 第二次只发送 internalId，旧回读把它解码为 []，造成检测假差异。",
+      "change": "每次结果独立维护引用表，保留共享数组/对象和循环引用；继续通过 defineProperty 防止 __proto__ 污染。",
+      "verification": "协议包引用/循环/隔离回归和真实 Firefox 前后读取同一数组的原生测试。"
+    }
+  ],
+  "compatibility": {
+    "persistedFingerprintVersions": [
+      1,
+      2
+    ],
+    "identityDrawAlgorithm": "未更改",
+    "workerRuntimeRevision": 10,
+    "workerRevisionPurpose": "仅更新交付实现并使旧缓存前缀进入修订退役逻辑；非身份重置。"
+  },
+  "verification": {
+    "aggregate": {
+      "passed": 225,
+      "partial": 1,
+      "skipped": 32,
+      "failed": 0,
+      "skipReason": "汇总未配置原生浏览器和部分平台专用环境；另行运行下列原生检查。"
+    },
+    "nativeEnvironment": {
+      "host": "Linux",
+      "chromium": "159.0.8154.6",
+      "firefox": "159.0"
+    },
+    "checks": [
+      "selftest-final.log",
+      "lint.log",
+      "receivers-native.log",
+      "native-consistency.log",
+      "interface.log",
+      "canvas-font.log",
+      "api-native.log",
+      "cache-native.log",
+      "ua-native.log",
+      "blob-native.log",
+      "worker-network.log",
+      "override-native.log",
+      "firefox-document.log",
+      "firefox-worker.log",
+      "editor-ui.log",
+      "review-unit.log",
+      "reliability.log"
+    ],
+    "timing": "新增接收者与 Firefox 检查针对最终原生校验实现执行；Canvas/API/缓存专项随后仅变更了原生校验使用的 Reflect.apply 捕获，新增篡改测试通过。",
+    "logSha256": {
+      "selftest-final.log": "4b6b9965858f734f42a03c1c6747ab9b039464362d96db96ae7fc803019ecdc5",
+      "lint.log": "dfb4e146a32136161932f4000a91bb70fe23b446f17eaefb8ee89bf7727bcefd",
+      "receivers-native.log": "b82947b77758e3f45c1d53c99acbf03c451f2251585e98d864b92d76e753659a",
+      "native-consistency.log": "6ab5ef4af1213fbbba48d4bb5fe38c8e9c9df0ea90449afd9a229491696f085f",
+      "interface.log": "c6ec00d7aec224eb0822c3b4255e4d97bd26e968b451777b0261efdab9c00d5d",
+      "canvas-font.log": "1f720d3e25df9c2d8329c48b6acae5ad633e99783a467407721b4f89246e86c7",
+      "api-native.log": "ffe5be0c970ce2a0549ba7900ab8140a388e4b457d1ab5c383ac2ec0138c977f",
+      "cache-native.log": "bef298b927184f7823d9f34a324d708b8bfb3074610ce59e97ccd0dee309d7ba",
+      "ua-native.log": "449c2b5a7f769e027c7543fb06a0692ddcb5d816c029d7703077e7aacbe7ed90",
+      "blob-native.log": "49eda6df977ea1e904e5d359f8b9b4d6e7f9710c50658e282835b5903dfb8551",
+      "worker-network.log": "aa27b41b538e9d107f453df4afc3da96e308f20d0ee45da1ecb0b2199e52de2c",
+      "override-native.log": "dcab3650ff5abe6548e8a0fd9292448d2cd166fef6c0813c66365da1ed3da3f7",
+      "firefox-document.log": "9d53ed5df3f642e30fbd3785c73712eb0f751be0cd55aee02fa44a474d0b5f9f",
+      "firefox-worker.log": "c807575f62f658cb7294b6d783d849338349276728073f17f9e44da73a828165",
+      "editor-ui.log": "f576ba6d73577475e02456d9c16a6c208575f35bcd9f8f8b2ef9e6fcc0bf9ac1",
+      "review-unit.log": "4da7701a601790efa091d264f79003a86a35bb478169bfb364df6060cfd48f3b",
+      "reliability.log": "d3b99929cbd34e526c6708f96a0465f5095dcf975ff0d171b33263b39e1b9faa"
+    }
+  },
+  "remaining": [
+    {
+      "priority": "P2",
+      "id": "creation-preview-salt",
+      "status": "identified-design-gap",
+      "detail": "完整预览使用临时窗口 ID，正式创建使用新 ID；现有算法把 ID 与 seed 一起散列，因此未展示的 Canvas/音频等派生噪声会在创建时重算。已保存窗口的重启稳定性通过。",
+      "next": "设计预分配 ID 的安全交接并覆盖模板复用、批量创建、复制和导入；保持既有身份算法兼容后再扩大完整预览一致性承诺。"
+    },
+    {
+      "priority": "P1",
+      "id": "firefox-worker-uncertified-paths",
+      "status": "not-certified",
+      "detail": "prefs 可覆盖 UA/平台/语言/时区；此轮 HTTPS 专用转发及认证代理链验证了 dedicated Worker JS 字段。Blob/Data、缓存脚本、静态模块依赖及本地绕过仍未在该 Firefox 门禁中认证。",
+      "next": "扩大首条指令矩阵并明确转发/证书不可用时的交付能力，避免把未认证路径显示为已验证。"
+    },
+    {
+      "priority": "P2",
+      "id": "real-platform-and-network-surfaces",
+      "status": "not-exhaustively-tested",
+      "detail": "Windows/macOS 的真实 GPU/字体/编解码、TLS/HTTP2 与公网 WebRTC/DNS 需要对应机器和网络验证。UA 补丁号为按用户要求的数值随机，不改变实际内核二进制。",
+      "next": "增加真实 Windows/macOS 和内核升级差分矩阵；继续对照原生 API，而不把字符串伪装视为全部原生能力。"
+    }
+  ]
+}

@@ -42,6 +42,8 @@ const SUITE = [
   ['selftest:automationshutdown', 'automation/selftests/automation-shutdown-selftest.js'],
   ['selftest:uarandomcontracts', 'automation/selftests/ua-random-contract-selftest.js'],
   ['selftest:workbenchfeedback', 'automation/selftests/workbench-feedback-selftest.js'],
+  ['selftest:fpreview', 'automation/selftests/fingerprint-review-selftest.js'],
+  ['selftest:fpreceivernative', 'automation/selftests/fingerprint-receiver-native-selftest.js', { nativeOnly: true }],
   ['selftest:uarealmsnative', 'automation/selftests/ua-realms-native-selftest.js', { nativeOnly: true }],
   ['selftest:workbenchnotifications', 'automation/selftests/workbench-notifications-selftest.js'],
   ...nodeWorkbenchTests.map(({ name, script, timeoutMs }) => [name, script, { timeoutMs }]),

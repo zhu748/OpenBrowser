@@ -238,6 +238,7 @@ jobs:
           node automation/selftests/cookie-warmup-native-selftest.js
           node automation/selftests/fingerprint-native-consistency-selftest.js
           node automation/selftests/ua-realms-native-selftest.js
+          node automation/selftests/fingerprint-receiver-native-selftest.js
           node automation/selftests/fingerprint-canvas-font-semantics-selftest.js
           node automation/selftests/fingerprint-override-lifecycle-selftest.js
           # Worker-delivery behavior gates: blob/data/extensionless/nested worker

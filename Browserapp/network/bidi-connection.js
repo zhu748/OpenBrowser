@@ -117,16 +117,23 @@ class BidiConnection {
   }
 }
 
-function deserializeRemoteValue(value, depth = 0) {
+function deserializeRemoteValue(value, depth = 0, references = new Map()) {
   if (!value || depth > 16) return undefined;
+  if (value.internalId !== undefined && references.has(value.internalId)) return references.get(value.internalId);
   if (value.type === 'null') return null;
   if (value.type === 'undefined') return undefined;
-  if (value.type === 'array') return (value.value || []).map((entry) => deserializeRemoteValue(entry, depth + 1));
+  if (value.type === 'array') {
+    const out = [];
+    if (value.internalId !== undefined) references.set(value.internalId, out);
+    for (const entry of value.value || []) out.push(deserializeRemoteValue(entry, depth + 1, references));
+    return out;
+  }
   if (value.type === 'object') {
     const out = {};
+    if (value.internalId !== undefined) references.set(value.internalId, out);
     for (const [key, entry] of value.value || []) {
-      Object.defineProperty(out, typeof key === 'string' ? key : String(deserializeRemoteValue(key, depth + 1)), {
-        enumerable: true, configurable: true, writable: true, value: deserializeRemoteValue(entry, depth + 1),
+      Object.defineProperty(out, typeof key === 'string' ? key : String(deserializeRemoteValue(key, depth + 1, references)), {
+        enumerable: true, configurable: true, writable: true, value: deserializeRemoteValue(entry, depth + 1, references),
       });
     }
     return out;

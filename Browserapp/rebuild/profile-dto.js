@@ -202,6 +202,10 @@ function fromRoxy(v, base = {}) {
       : null;
   }
   const fp = { ...mapped.privacy.fingerprint };
+  const previousUa = base.privacy?.fingerprint?.userAgent || base.userAgent || '';
+  // The editor exposes one UA. Promote an explicit edit to that canonical
+  // field instead of letting an old hidden override win during injection.
+  if (Object.hasOwn(v, 'userAgent')) delete fp.userAgent;
   if (draft && typeof draft === 'object' && !Array.isArray(draft)) {
     const generated = draft.generated !== false && mapped.userAgent === draft.userAgent;
     fp.uaGenerated = generated;
@@ -209,12 +213,12 @@ function fromRoxy(v, base = {}) {
       fp.uaReduced = draft.uaReduced !== false;
       fp.uaPatchRandomized = draft.uaPatchRandomized === true;
       fp.clientHints = draft.clientHints || {};
-    } else if (mapped.userAgent !== base.userAgent) {
+    } else if (mapped.userAgent !== previousUa) {
       delete fp.uaReduced;
       delete fp.uaPatchRandomized;
       delete fp.clientHints;
     }
-  } else if (Object.hasOwn(v, 'userAgent') && mapped.userAgent !== base.userAgent) {
+  } else if (Object.hasOwn(v, 'userAgent') && mapped.userAgent !== previousUa) {
     fp.uaGenerated = false;
     delete fp.uaReduced;
     delete fp.uaPatchRandomized;
@@ -378,6 +382,7 @@ function toRoxy(p) {
       .split(",")
       .filter(Boolean),
     os: p.os,
+    userAgent: p.privacy?.fingerprint?.userAgent || p.userAgent || '',
     cookie: p.cookies,
     windowPlatformList: (
       p.platform?.accounts || (p.platform ? [p.platform] : [])

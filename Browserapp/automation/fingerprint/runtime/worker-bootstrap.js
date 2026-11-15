@@ -7,6 +7,10 @@ const { WORKER_RUNTIME_REVISION } = require('../runtime-revision');
 module.exports = function bootstrap({ json, bridgeToken }) {
   return `(function installWorkerIdentity(originalWorkerUrl, constructorInstaller) {
   const CFG = ${json};
+  const nativeTypeError = TypeError;
+  const applyNative = Reflect.apply;
+  const nativeNavigator = typeof navigator !== 'undefined' ? navigator : null;
+  const nativeNavBrand = nativeNavigator && Object.getOwnPropertyDescriptor(Object.getPrototypeOf(nativeNavigator), 'hardwareConcurrency')?.get;
 
   // Phone identity flags mirroring the main-world script: declared once at IIFE top level so
   // every guard below (UAData replacement, StorageManager quota) sees them. Previously each flag
@@ -166,45 +170,16 @@ ${stabilityRuntime}
     }
     return err;
   };
-  const getWorkerRealmTypeError = (receiver) => {
-    try {
-      if (receiver && receiver.constructor) {
-        const ctor = receiver.constructor;
-        if (typeof ctor.constructor === 'function') {
-          const glob = ctor.constructor('return this')();
-          if (glob && glob.TypeError) return glob.TypeError;
-        }
-      }
-    } catch (_) {}
-    try {
-      if (typeof self !== 'undefined' && self.TypeError) return self.TypeError;
-    } catch (_) {}
-    try {
-      if (typeof globalThis !== 'undefined' && globalThis.TypeError) return globalThis.TypeError;
-    } catch (_) {}
-    return (typeof TypeError !== 'undefined' ? TypeError : Error);
-  };
   const makeNativeWorkerGetter = (key, getValue) => {
     let getter;
     const holder = {
       get [key]() {
-        // Same brand-check approximation as the document runtime: only the realm's own
-        // WorkerNavigator instance may read. A worker scope is a single realm — there are no
-        // sub-windows to register, so synthetic receivers (Object.create(
-        // WorkerNavigator.prototype), subclasses, plain objects) throw "Illegal invocation"
-        // exactly like the real engine does.
-        const isProto = (typeof WorkerNavigator !== 'undefined' && this === WorkerNavigator.prototype) ||
-          (this && this.constructor && this.constructor.prototype === this) ||
-          (this && Object.getPrototypeOf(this) === Object.prototype);
-        const isWorkerNav = Boolean(
-          this &&
-          !isProto &&
-          (typeof WorkerNavigator === 'undefined' || this !== WorkerNavigator.prototype) &&
-          this === (typeof navigator !== 'undefined' ? navigator : null)
-        );
+        let isWorkerNav = this === nativeNavigator && nativeNavigator !== null;
+        if (typeof nativeNavBrand === 'function') {
+          try { applyNative(nativeNavBrand, this, []);isWorkerNav = true; } catch (_) { isWorkerNav = false; }
+        }
         if (!isWorkerNav) {
-          const RealmTypeError = getWorkerRealmTypeError(this);
-          const err = new RealmTypeError('Illegal invocation');
+          const err = new nativeTypeError('Illegal invocation');
           stripStackFrame(err, getter, 'get ' + key);
           throw err;
         }
