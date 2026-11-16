@@ -448,11 +448,11 @@ const sends = {
       ...new Set(
         rows.filter((k) => k.coreType === "Chrome").map((k) => k.coreVersion)
       )
-    ]), dictionary.firefoxCoreVersion = opts([
+    ]).map((option) => ({ ...option, label: "Chrome " + option.value })), dictionary.firefoxCoreVersion = opts([
       ...new Set(
         rows.filter((k) => k.coreType === "Firefox").map((k) => k.coreVersion)
       )
-    ]), rows;
+    ]).map((option) => ({ ...option, label: "Firefox " + option.value })), rows;
   },
   "app:setSystemTheme": (p) => request("settings:set", { colorScheme: p }),
   "browser:getOpenedBrowser": async () => (await request("profiles:list")).filter((v) => v.openStatus).map((row) => ({

@@ -59,6 +59,7 @@ async function main() {
       if (family === 'Firefox') await page.getByText('Firefox', { exact: true }).first().click();
       await ua.waitFor();
       await waitUntil(async () => (await readUa()).includes(family + '/'));
+      await page.getByText(new RegExp('^' + family + ' \\d+$'), { exact: true }).first().waitFor();
       const originalOs = await page.evaluate(async () => {
         const rows = await globalThis.__localRequest('kernels:list');
         return rows.length;

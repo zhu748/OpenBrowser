@@ -44,6 +44,13 @@
       "status": "fixed",
       "evidence": "Firefox 原生 UA 使用 major.0，补丁发布不会自然产生 Firefox/160.0.73。原生成器为 Firefox 人为追加随机尾号，UA 单项随机的行为也容易与原生格式混淆。",
       "change": "Firefox 创建/编辑及随机预览使用标准 major.0 UA；禁用 UA 单项随机并说明原因，一键随机继续生成新 seed 和其他指纹。旧 app-generated UA 的随机尾号/短格式被确定性规范化；手工 UA 与显式隐藏覆盖不改写。Chrome 的所选分支补丁号随机保留。"
+    },
+    {
+      "id": "kernel-version-option-label",
+      "severity": "ui-clarity",
+      "status": "fixed",
+      "evidence": "版本选择器只显示 160，无法直接区分内核族。",
+      "change": "已安装的大版本选项显示 Chrome 159 / Firefox 160 等名称，内部 value 仍为原数字版本；保留原有保持最新选项。"
     }
   ],
   "classification": {
@@ -166,7 +173,10 @@
       "editor-native-ua.log": "72f7a0f0ebd85a6e72c5b97a63c6e507a23f0147c6feafa450dd1f8f179257a1",
       "firefox-native-ua-delivery.log": "a43dd6e4ef75814bba080ab3ec0a76325c47a26bb1ec29963ac6d8778a54dc66",
       "ui-native-ua-build.log": "a77137b878dbaa1c0c79125c598343ce4aad285504e53a1085597f16ffc896d9",
-      "lint-native-ua.log": "40b6000cfa17b3913102c5a8a8208fa9dd17125d75d93b1478765543fed65d74"
+      "lint-native-ua.log": "40b6000cfa17b3913102c5a8a8208fa9dd17125d75d93b1478765543fed65d74",
+      "ui-kernel-label-build.log": "a77137b878dbaa1c0c79125c598343ce4aad285504e53a1085597f16ffc896d9",
+      "editor-kernel-label.log": "72f7a0f0ebd85a6e72c5b97a63c6e507a23f0147c6feafa450dd1f8f179257a1",
+      "lint-kernel-label.log": "40b6000cfa17b3913102c5a8a8208fa9dd17125d75d93b1478765543fed65d74"
     },
     "ciInitial": {
       "runId": 43823393421,
@@ -189,6 +199,17 @@
         "旧自动 UA 格式迁移幂等，人工 UA 与显式覆盖保留，派生噪声不变",
         "真实 Firefox 页面、iframe 首读、HTTP UA 保持标准格式"
       ]
+    },
+    "ciNativeUaFirst": {
+      "runId": 43832526634,
+      "sourceCommit": "ca92e0aac8d07b01785ff225657bdfdeda78fa20",
+      "passedJobs": 15,
+      "failedJob": "Electron desktop behavior (macos-latest)",
+      "cause": "列表真实渲染 N=10 tag 查询 p95=121.4ms 超出 50ms 门禁；未降低性能门禁，标签补充后的完整 CI 再验证。"
+    },
+    "kernelVersionLabels": {
+      "passed": true,
+      "scope": "真实创建/编辑表单，Chrome/Firefox 全名版本标签，双向切换、原数字 value、UA/seed 保存链路。"
     }
   },
   "remaining": [
