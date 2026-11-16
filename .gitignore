@@ -7,6 +7,7 @@ __pycache__/
 *.pyc
 # Test reports and build output
 Browserapp/reports/
+Browserapp/rpa-output/
 /reports/
 dist
 dist/

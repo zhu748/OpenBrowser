@@ -234,19 +234,7 @@ jobs:
           fi
           echo "CHROME_BIN=$CHROME_BIN"
           export OPENBROWSER_CHROMIUM_BINARY="$CHROME_BIN"
-          node automation/selftests/workbench-browser-selftest.js
-          node automation/selftests/cookie-warmup-native-selftest.js
-          node automation/selftests/fingerprint-native-consistency-selftest.js
-          node automation/selftests/ua-realms-native-selftest.js
-          node automation/selftests/fingerprint-receiver-native-selftest.js
-          node automation/selftests/fingerprint-canvas-font-semantics-selftest.js
-          node automation/selftests/fingerprint-override-lifecycle-selftest.js
-          node automation/selftests/inline-worker-sources-native-selftest.js
-          # Worker-delivery behavior gates: blob/data/extensionless/nested worker
-          # identity, and cached-service-worker scope identity. Both exercise the
-          # Chromium 143+/157+ delivery paths that no static selftest can cover.
-          node automation/selftests/fingerprint-blob-worker-identity-gate.js
-          node automation/selftests/fingerprint-cached-sw-identity-gate.js
+          node scripts/native-test-runner.js --runtime chromium
           # A stalled service must not leave external browsers orphaned when
           # the fatal host deadline expires. Use the same independent kernel.
           node node_modules/electron/install.js
@@ -272,10 +260,15 @@ jobs:
             exit 1
           fi
           export OPENBROWSER_FIREFOX_BINARY="$FIREFOX_BIN"
-          node automation/selftests/firefox-fingerprint-e2e-selftest.js
-          node automation/selftests/firefox-geolocation-native-selftest.js
-          node automation/selftests/firefox-worker-delivery-selftest.js
-          node automation/selftests/inline-worker-sources-native-selftest.js --firefox
+          node scripts/native-test-runner.js --runtime firefox
+
+      - name: Preserve native gate reports and logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: native-gates-${{ matrix.browser }}
+          path: work/native-gates/
+          if-no-files-found: error
 
   review-boundaries:
     name: Storage and runtime boundaries (${{ matrix.os }}, Node ${{ matrix.node }})
@@ -299,8 +292,12 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ matrix.node }}
-      # These regressions use only Node builtins; no Electron download or
-      # browser kernel is required. Desktop/browser E2E remains a release gate.
+          cache: npm
+          cache-dependency-path: Browserapp/package-lock.json
+      - name: Install locked runtime dependencies without browser downloads
+        run: npm ci --omit=dev --ignore-scripts
+      # Agent scheduling uses cron-parser. Install runtime dependencies without
+      # Electron or browser binaries; desktop/browser E2E has a separate gate.
       - name: Storage, runtime, update and input regressions
         run: |
           node scripts/selftest-one.js reviewstorage
@@ -317,6 +314,10 @@ jobs:
           node scripts/selftest-one.js mcptransport
           node scripts/selftest-one.js accountstore
           node scripts/selftest-one.js workbenchboundaries
+          node scripts/selftest-one.js agentstore
+          node scripts/selftest-one.js agentstreaming
+          node scripts/selftest-one.js agentretention
+          node scripts/selftest-one.js agentmcplifecycle
 
   desktop-gates:
     name: Electron desktop behavior (${{ matrix.os }})
@@ -359,6 +360,20 @@ jobs:
           fi
           node rebuild/maintenance-ui-selftest.cjs
           node rebuild/workbench-interactions-ui-selftest.cjs
+          node rebuild/agent-tasks-ui-selftest.cjs
+          node rebuild/agent-history-ui-selftest.cjs
+          node rebuild/agent-streaming-ui-selftest.cjs
+          node rebuild/agent-conversation-cache-ui-selftest.cjs
+          node rebuild/agent-mcp-ui-selftest.cjs
+          node rebuild/agent-approval-ui-selftest.cjs
+          node scripts/benchmark-workbench.js --sizes 10,100,1000 --interaction-budget-ms 1500 --output ../work/workbench-performance/report.json
+      - name: Preserve default workbench performance evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: workbench-performance-${{ matrix.os }}
+          path: work/workbench-performance/
+          if-no-files-found: warn
 
   # ~200 lines of Windows FFI (process/lock.rs, guardian.rs) compile to nothing
   # on Linux: cargo skips cfg(windows) blocks entirely, so per-push CI never

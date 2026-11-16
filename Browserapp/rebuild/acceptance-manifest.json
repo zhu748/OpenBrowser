@@ -57,5 +57,8 @@
   "review-agent-contracts-ui-selftest.cjs",
   "maintenance-ui-selftest.cjs",
   "workbench-interactions-ui-selftest.cjs",
-  "profile-fingerprint-ui-selftest.cjs"
+  "profile-fingerprint-ui-selftest.cjs",
+  "agent-history-ui-selftest.cjs",
+  "agent-streaming-ui-selftest.cjs",
+  "agent-conversation-cache-ui-selftest.cjs"
 ]

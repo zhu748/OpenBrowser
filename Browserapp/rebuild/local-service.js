@@ -1,9 +1,7 @@
 "use strict";
-const fs = require("node:fs/promises");
 const path = require("node:path");
-const crypto = require("node:crypto");
+const { writeRawAtomically } = require("../engine/state-storage");
 const { readLocalStore, encodeLocalStore } = require("./local-store");
-const uid = () => crypto.randomUUID();
 const clone = (v) => structuredClone(v);
 const { fromRoxy, toRoxy } = require("./profile-dto");
 const { resolveLocalRoute } = require("./local-route-registry");
@@ -133,15 +131,7 @@ class LocalService {
     if (migrated) await this.save();
   }
   async save() {
-    const content = encodeLocalStore(this.data),
-      tmp = this.file + "." + uid() + ".tmp";
-    await fs.mkdir(this.root, { recursive: true });
-    try {
-      await fs.writeFile(tmp, content, { mode: 0o600 });
-      await fs.rename(tmp, this.file);
-    } finally {
-      await fs.rm(tmp, { force: true });
-    }
+    await writeRawAtomically(this.file, encodeLocalStore(this.data));
   }
   profileIndex() {
     const snapshot = this.engine.status(),
@@ -164,12 +154,14 @@ class LocalService {
       proxyProfiles: new Map(),
       labelProfiles: new Map(),
       summaries: [],
+      activeCount: 0,
     };
     for (const profile of snapshot) {
       const labelIds = /^\d+(,\d+)*$/.test(profile.tag || "")
         ? profile.tag.split(",").map(Number)
         : [];
       if (!profile.trashed) {
+        index.activeCount++;
         index.groupCounts.set(
           profile.groupId || "",
           (index.groupCounts.get(profile.groupId || "") || 0) + 1,

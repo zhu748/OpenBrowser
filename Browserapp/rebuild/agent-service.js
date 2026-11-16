@@ -3,7 +3,7 @@ const { maxProfileNumber } = require('../shared/profile-values');
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const crypto = require("node:crypto");
-const credentials = require("../credential-crypto");
+const { AgentStateStore } = require("./agent-state-store");
 const id = () => crypto.randomUUID(),
   now = () => new Date().toISOString();
 const tools = [
@@ -88,6 +88,7 @@ class AgentService {
     this.window = window;
     this.localRequest = localRequest;
     this.active = new Map();
+    this.stateStore = new AgentStateStore(this.root);
     this.writeQueue = Promise.resolve();
     this.loadPromise = null;
     this.files = new (require("./agent-files").AgentFiles)({
@@ -101,12 +102,8 @@ class AgentService {
     if (!this.loadPromise)
       this.loadPromise = (async () => {
         await fs.mkdir(this.root, { recursive: true, mode: 0o700 });
-        try {
-          this.data = credentials.decryptCredentialJson(
-            await fs.readFile(path.join(this.root, "state.enc")),
-          );
-        } catch (e) {
-          if (e.code !== "ENOENT") throw e;
+        this.data = await this.stateStore.load();
+        if (!this.data) {
           this.data = {
             version: 1,
             eventProtocolVersion: 2,
@@ -138,18 +135,16 @@ class AgentService {
   }
   save(transaction) {
     const run = this.writeQueue.then(async () => {
-      const tmp = path.join(this.root, "state." + id() + ".tmp");
-      try {
-        const value = transaction ? transaction.snapshot() : this.data;
-        await fs.writeFile(tmp, credentials.encryptCredentialJson(value), { mode: 0o600 });
-        await fs.rename(tmp, path.join(this.root, "state.enc"));
-        // Publish only after rename, on the same writer turn. Other saves
-        // capture the newly committed fields without losing live messages.
-        transaction?.commit();
-      } finally { await fs.rm(tmp, { force: true }); }
+      const value = transaction?.snapshot ? transaction.snapshot() : this.data;
+      await this.stateStore.save(value, transaction?.scope);
+      // Publish on the writer turn only after the encrypted snapshot is durable.
+      transaction?.commit?.();
     });
     this.writeQueue = run.catch(() => undefined);
     return run;
+  }
+  saveRun(run) {
+    return this.save({ scope: { conversations: [run.cid], logs: [run.id] } });
   }
   emit(type, data) {
     this.engine.emit({
@@ -173,14 +168,14 @@ class AgentService {
     if (method === 'activeEvents')
       return structuredClone([...this.active.values()].flatMap(run=>run.events.map(data=>({id:id(),type:'conversation.run.event',data}))));
     if (method === "info")
-      return { ready: true, transport: "ipc", running: this.active.size };
+      return { ready: true, transport: "ipc", running: this.active.size, storage: this.stateStore.stats };
     if (method === "config:get") {
       const { apiKey, ...config } = this.data.config;
       return { ...config, hasApiKey: !!apiKey };
     }
     if (method === "config:set") {
       let next;
-      await this.save({ snapshot: () => {
+      await this.save({ scope: { conversations: [], logs: [] }, snapshot: () => {
       const old = this.data.config;
       next = { ...old, ...p };
       if (
@@ -244,6 +239,9 @@ class AgentService {
     if (method === "skillPathInfo")
       return { installedRoot: path.join(__dirname, "skills") };
     if (method === "logs:list") return this.data.logs;
+    if (method === "taskLogs:summary") return this.data.logs.filter(log => log.taskId)
+      .map(log => require("./agent-history").logSummary(this, log));
+    if (method === "logs:detail") return require("./agent-history").logDetail(this, p.id);
     if (method === "taskLogs:list")
       return this.data.logs.filter((log) => log.taskId);
     if (method === "syncTasks") {
@@ -261,6 +259,7 @@ class AgentService {
       if ([...this.active.values()].some((run) => run.id === p.id))
         throw Error("请先停止任务");
       await this.save({
+        scope: { conversations: [], logs: [] },
         snapshot: () => ({ ...this.data, logs: this.data.logs.filter(log => log.id !== p.id) }),
         commit: () => { this.data.logs = this.data.logs.filter(log => log.id !== p.id); },
       });
@@ -423,7 +422,7 @@ class AgentService {
         input: p.message,
       };
       this.data.logs.unshift(log);
-      this.emit("task_log.changed", log);
+      this.emit("task_log.changed", require("./agent-history").logSummary(this, log));
     }
     run.done = this.run(c, p, run).catch((error) => {
       console.error("[local-agent] terminal failure", error);
@@ -494,7 +493,7 @@ class AgentService {
       attachments: p.pendingAttachments || [],
       createdAt: Date.now(),
     });
-    await this.save();
+    await this.saveRun(run);
     try {
       if (run.attachmentGate) {
         let timer, abort;
@@ -655,7 +654,7 @@ class AgentService {
           taskMeta: run.taskMeta,
         };
         c.checkpoint = structuredClone(run.checkpoint);
-        await this.save();
+        await this.saveRun(run);
         if (step === 23) throw Error("达到 24 步上限，请检查日志后继续任务");
       }
       c.latestRunStatus = "completed";
@@ -704,13 +703,22 @@ class AgentService {
       };
       this.data.logs = this.data.logs.filter((row) => row.id !== run.id);
       this.data.logs.unshift(log);
-      if (run.taskMeta) this.emit("task_log.changed", log);
+      if (run.taskMeta) this.emit("task_log.changed", require("./agent-history").logSummary(this, log));
+      const removed = this.data.logs.slice(500);
       this.data.logs = this.data.logs.slice(0, 500);
-      await this.save();
+      await this.saveRun(run);
+      for (const row of removed) if (row.taskId) this.emit("task_log.deleted", { logId: row.id });
       this.active.delete(c.id);
     }
   }
-  async shutdown() {
+  shutdown() {
+    if (!this.shutdownPromise) this.shutdownPromise = this.drainForShutdown().catch(error => {
+      this.shutdownPromise = undefined;
+      throw error;
+    });
+    return this.shutdownPromise;
+  }
+  async drainForShutdown() {
     this.closing = true;
     this.files.closing = true;
     clearInterval(this.scheduler);
@@ -725,133 +733,7 @@ class AgentService {
     if(failures.length)throw new AggregateError(failures,'Agent 关闭时保存或清理失败：'+failures.map(error=>error.message).join('; '));
   }
   async completion(config, messages, run) {
-    messages = await this.files.context(messages, config.provider);
-    const base = config.baseUrl.replace(/\/$/, "");
-    const ollama = config.provider === "ollama";
-    const providerMessages = ollama
-      ? messages.map((message) => {
-          if (message.tool_calls)
-            return {
-              ...message,
-              tool_calls: message.tool_calls.map((call) => ({
-                function: {
-                  name: call.function.name,
-                  arguments:
-                    typeof call.function.arguments === "string"
-                      ? JSON.parse(call.function.arguments)
-                      : call.function.arguments,
-                },
-              })),
-            };
-          if (message.role === "tool") {
-            const call = messages
-              .flatMap((m) => m.tool_calls || [])
-              .find((call) => call.id === message.tool_call_id);
-            return {
-              role: "tool",
-              content: message.content,
-              tool_name: call?.function.name,
-            };
-          }
-          return message;
-        })
-      : messages;
-    const url = ollama
-      ? base.replace(/\/api$/, "") + "/api/chat"
-      : base.replace(/\/chat\/completions$/, "") + "/chat/completions";
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(config.apiKey ? { Authorization: "Bearer " + config.apiKey } : {}),
-      },
-      body: JSON.stringify({
-        model: config.model,
-        messages: providerMessages,
-        tools: [...tools,...await this.mcp.definitions(run)],
-        stream: true,
-      }),
-      signal: AbortSignal.any([run.abort.signal, AbortSignal.timeout(120000)]),
-    });
-    const limit = 2 * 1024 * 1024;
-    const readText = async () => {
-      let total = 0;
-      const chunks = [];
-      for await (const chunk of res.body) {
-        total += chunk.byteLength;
-        if (total > limit) throw Error("LLM 单轮响应超过 2 MiB 上限");
-        chunks.push(Buffer.from(chunk));
-      }
-      return Buffer.concat(chunks).toString("utf8");
-    };
-    if (!res.ok)
-      throw Error(
-        "LLM HTTP " + res.status + ": " + (await readText()).slice(0, 400),
-      );
-    const type = res.headers.get("content-type") || "";
-    if (type.includes("application/json") && !type.includes("ndjson")) {
-      const body = JSON.parse(await readText());
-      const message = ollama ? body.message : body.choices?.[0]?.message;
-      if (!message) throw Error("LLM 返回中没有 message");
-      return message;
-    }
-    let buffer = "",
-      content = "",
-      calls = [];
-    const decoder = new TextDecoder();
-    const consume = (line) => {
-      line = line.trim();
-      if (!line || line.startsWith(":") || line === "data: [DONE]") return;
-      if (line.startsWith("data:")) line = line.slice(5).trim();
-      else if (!ollama) return;
-      const body = JSON.parse(line);
-      if (body.error)
-        throw Error(
-          typeof body.error === "string" ? body.error : body.error.message,
-        );
-      const delta = ollama ? body.message : body.choices?.[0]?.delta;
-      if (!delta) return;
-      if (delta.content) {
-        content += delta.content;
-        run.partialAnswer = (run.partialAnswer || "") + delta.content;
-        this.event(run, "content_delta", {
-          contentId: run.assistantId,
-          text: delta.content,
-        });
-      }
-      for (const item of delta.tool_calls || []) {
-        const index = item.index ?? calls.length;
-        if (!Number.isInteger(index) || index < 0 || index >= 64)
-          throw Error("LLM 工具调用索引无效或超过 64 个");
-        if (!calls[index])
-          calls[index] = {
-            id: item.id || id(),
-            type: "function",
-            function: { name: "", arguments: "" },
-          };
-        const target = calls[index];
-        if (item.function?.name) target.function.name += item.function.name;
-        if (item.function?.arguments) {
-          if (typeof item.function.arguments === "object")
-            target.function.arguments = JSON.stringify(item.function.arguments);
-          else target.function.arguments += item.function.arguments;
-        }
-      }
-    };
-    let received = 0;
-    for await (const chunk of res.body) {
-      received += chunk.byteLength;
-      if (received > limit) throw Error("LLM 单轮响应超过 2 MiB 上限");
-      buffer += decoder.decode(chunk, { stream: true });
-      let boundary;
-      while ((boundary = buffer.indexOf("\n")) >= 0) {
-        consume(buffer.slice(0, boundary));
-        buffer = buffer.slice(boundary + 1);
-      }
-    }
-    buffer += decoder.decode();
-    if (buffer.trim()) consume(buffer);
-    return { content, tool_calls: calls.filter(Boolean), streamed: true };
+    return require("./agent-completion").completion(this, config, messages, run, tools);
   }
 
   async tool(name, p, run) {
@@ -942,6 +824,7 @@ class AgentService {
           name: v.name,
           running: v.running,
           engine: v.engine,
+          capabilities: require("./agent-browser-tools").browserCapabilities(v.engine),
         }));
     if (name === "start_profile")
       return this.localRequest
@@ -951,52 +834,9 @@ class AgentService {
       return this.localRequest
         ? this.localRequest("profiles:stop", { id: p.id })
         : engine.stop(String(p.id));
-    if (!["list_tabs", "navigate", "read_page", "click", "fill"].includes(name))
+    if (!require("./agent-browser-tools").BROWSER_TOOLS.includes(name))
       throw Error("未知工具: " + name);
-    const running = engine.running.get(String(p.id));
-    if (!running?.port || running.engine === "firefox")
-      throw Error("此工具需要已启动的 Chrome CDP 会话");
-    const { chromium } = require("playwright");
-    const browser = await chromium.connectOverCDP(
-      "http://127.0.0.1:" + running.port,
-    );
-    try {
-      const pages = browser.contexts().flatMap((c) => c.pages());
-      if (name === "list_tabs")
-        return Promise.all(
-          pages.map(async (page) => ({
-            url: page.url(),
-            title: await page.title(),
-          })),
-        );
-      const page = pages[0];
-      if (!page) throw Error("浏览器中没有标签页");
-      if (name === "navigate") {
-        const url = new URL(p.url);
-        if (!["http:", "https:", "about:"].includes(url.protocol))
-          throw Error("不支持的页面协议");
-        await page.goto(url.href, {
-          waitUntil: "domcontentloaded",
-          timeout: 30000,
-        });
-        return { url: page.url() };
-      }
-      if (name === "read_page")
-        return {
-          url: page.url(),
-          title: await page.title(),
-          text: (await page.locator("body").innerText()).slice(0, 16000),
-        };
-      if (name === "click")
-        await page.locator(p.selector).click({ timeout: 10000 });
-      if (name === "fill")
-        await page
-          .locator(p.selector)
-          .fill(String(p.value), { timeout: 10000 });
-      return { ok: true, url: page.url() };
-    } finally {
-      await browser.close();
-    }
+    return require("./agent-browser-tools").browserTool(engine, name, p, run);
   }
 }
 module.exports = { AgentService };

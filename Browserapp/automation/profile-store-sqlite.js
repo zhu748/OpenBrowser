@@ -228,6 +228,14 @@ class ProfileStoreSqlite {
         context TEXT,
         failed_at TEXT
       );
+
+      CREATE TABLE IF NOT EXISTS record_decode_failures (
+        kind TEXT NOT NULL,
+        id TEXT NOT NULL,
+        raw_data BLOB NOT NULL,
+        failed_at TEXT NOT NULL,
+        PRIMARY KEY (kind, id)
+      );
     `);
   }
 
@@ -269,6 +277,12 @@ class ProfileStoreSqlite {
       countDecodeFailures: this.db.prepare('SELECT count(*) as count FROM profile_decode_failures'),
       pruneDecodeFailures: this.db.prepare('DELETE FROM profile_decode_failures WHERE failed_at < ?'),
       listDecodeFailures: this.db.prepare('SELECT id, error, context, failed_at FROM profile_decode_failures ORDER BY failed_at DESC'),
+      upsertRecordFailure: this.db.prepare(`
+        INSERT INTO record_decode_failures (kind, id, raw_data, failed_at) VALUES (?, ?, ?, ?)
+        ON CONFLICT(kind, id) DO UPDATE SET raw_data = excluded.raw_data, failed_at = excluded.failed_at
+      `),
+      clearRecordFailure: this.db.prepare('DELETE FROM record_decode_failures WHERE kind = ? AND id = ?'),
+      countRecordFailures: this.db.prepare('SELECT kind, count(*) AS count FROM record_decode_failures GROUP BY kind'),
 
       // Group statements
       upsertGroup: this.db.prepare(`
@@ -283,7 +297,7 @@ class ProfileStoreSqlite {
           data = excluded.data;
       `),
       getGroup: this.db.prepare('SELECT data FROM groups WHERE id = ?'),
-      getAllGroups: this.db.prepare('SELECT data FROM groups ORDER BY sort ASC, name ASC'),
+      getAllGroups: this.db.prepare('SELECT id, data FROM groups ORDER BY sort ASC, name ASC'),
       deleteGroup: this.db.prepare('DELETE FROM groups WHERE id = ?'),
 
       // Extension statements
@@ -808,6 +822,29 @@ class ProfileStoreSqlite {
 
   /* ---------------- Group operations ---------------- */
 
+  _decodeMetadataRow(kind, row) {
+    let value;
+    try {
+      value = JSON.parse(row.data);
+      if (!value || typeof value !== 'object' || Array.isArray(value) || String(value.id) !== row.id)
+        throw new Error('Invalid metadata record');
+    } catch (_) {
+      // Preserve exact original bytes. Do not put parse-error snippets, paths,
+      // or record contents into the user-facing diagnostic or console.
+      const raw = Buffer.from(row.data instanceof Uint8Array ? row.data : String(row.data));
+      this._statements.upsertRecordFailure.run(kind, row.id, raw, new Date().toISOString());
+      return null;
+    }
+    this._statements.clearRecordFailure.run(kind, row.id);
+    return value;
+  }
+
+  recordDecodeFailureReport() {
+    const rows = this._statements.countRecordFailures.all();
+    return { count: rows.reduce((sum, row) => sum + Number(row.count), 0),
+      byKind: Object.fromEntries(rows.map(row => [row.kind, Number(row.count)])) };
+  }
+
   saveGroup(group) {
     if (!group || typeof group !== 'object' || !group.id) return;
     this._statements.upsertGroup.run(
@@ -832,15 +869,14 @@ class ProfileStoreSqlite {
 
   listGroups() {
     const rows = this._statements.getAllGroups.all();
-    const result = [];
-    for (const row of rows) {
-      try { result.push(JSON.parse(row.data)); } catch (_) {}
-    }
-    return result;
+    return rows.map(row => this._decodeMetadataRow('group', row)).filter(Boolean);
   }
 
   deleteGroup(id) {
-    this._statements.deleteGroup.run(String(id));
+    this.withTransaction(() => {
+      this._statements.deleteGroup.run(String(id));
+      this._statements.clearRecordFailure.run('group', String(id));
+    });
   }
 
   /* ---------------- Extension operations ---------------- */
@@ -871,7 +907,9 @@ class ProfileStoreSqlite {
     const ids = new Set(extensions.map((extension) => String(extension.id)));
     this.withTransaction(() => {
       for (const row of this._statements.getAllExtensions.all()) {
-        if (!ids.has(String(row.id))) this.deleteExtension(row.id);
+        // A startup read may have quarantined an extension. Its absence from
+        // memory is not a deletion command; retain it and its assignments.
+        if (!ids.has(String(row.id)) && this._decodeMetadataRow('extension', row)) this.deleteExtension(row.id);
       }
       this.saveExtensions(extensions);
     });
@@ -879,11 +917,7 @@ class ProfileStoreSqlite {
 
   listExtensions() {
     const rows = this._statements.getAllExtensions.all();
-    const result = [];
-    for (const row of rows) {
-      try { result.push(JSON.parse(row.data)); } catch (_) {}
-    }
-    return result;
+    return rows.map(row => this._decodeMetadataRow('extension', row)).filter(Boolean);
   }
 
   deleteExtension(id) {
@@ -892,6 +926,7 @@ class ProfileStoreSqlite {
     this.withTransaction(() => {
       this._statements.clearAssignmentsForExtension.run(safeId);
       this._statements.deleteExtension.run(safeId);
+      this._statements.clearRecordFailure.run('extension', safeId);
     });
   }
 
@@ -1014,6 +1049,11 @@ class ProfileStoreSqlite {
     const profiles = this.getAllProfiles();
     const groups = this.listGroups();
     const extensions = this.listExtensions();
+    const failures = this.recordDecodeFailureReport();
+    if (failures.count) throw Object.assign(
+      new Error('Cannot export incomplete storage: damaged group/extension records were preserved for recovery'),
+      { code: 'STORAGE_DECODE_FAILED', count: failures.count },
+    );
     const assignmentMap = this.getAssignments();
     const assignments = Object.fromEntries(
       [...assignmentMap.entries()].map(([pid, set]) => [pid, [...set]])

@@ -136,7 +136,7 @@ async function recordOperation(service, method, input) {
     ...p,
     id: row?.id || nextRecordId(idDraft, key, [
       ...service.data.logs.flatMap(log => [key === "tasks" ? log.taskId : log.templateId]),
-      ...service.data.conversations.flatMap(c => [key === "tasks" ? c.taskId : c.checkpoint?.taskMeta?.templateId]),
+      ...service.data.conversations.map(c => key === "tasks" ? c.taskId : service.stateStore.templateReference(c)),
       ...(key === "templates" ? service.data.tasks.map(task => task.userTemplateId) : []),
     ]),
     workspaceId: "local",
@@ -219,7 +219,7 @@ async function runTaskOperation(service, taskId, scheduled = false) {
     require("node:crypto").randomUUID(),
   );
   task.runtimeTaskLogId = runId;
-  await service.save();
+  await service.save({ scope: { conversations: [c.id], logs: [runId] } });
   return { success: true, taskLogId: runId, conversationId: c.id };
 }
 function startScheduler(service) {
@@ -250,7 +250,7 @@ function startScheduler(service) {
           task.enabled = false;
           task.nextExecuteAt = null;
         } else task.nextExecuteAt = next(task);
-        await service.save();
+        await service.save({ scope: { conversations: [], logs: [] } });
       }
     })
       .catch((error) => {

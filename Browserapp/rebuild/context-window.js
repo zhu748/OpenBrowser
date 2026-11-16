@@ -4,6 +4,16 @@ const size = (messages) => JSON.stringify(messages).length;
 function compactContext(messages, limit) {
   let removed = 0;
   const notes = [];
+  // Checkpoints written by older versions may already contain promoted
+  // summaries. Move that known generated suffix back to tool data on resume.
+  const legacy = "\n已执行步骤的简要记录（完整结果保存在本地日志）：\n";
+  for (const message of messages) {
+    if (message.role !== "system" || typeof message.content !== "string") continue;
+    const boundary = message.content.indexOf(legacy);
+    if (boundary < 0) continue;
+    notes.push(message.content.slice(boundary + legacy.length));
+    message.content = message.content.slice(0, boundary);
+  }
   while (size(messages) > limit) {
     const users = messages.flatMap((m, i) => (m.role === "user" ? [i] : []));
     if (users.length > 1) {
@@ -33,13 +43,9 @@ function compactContext(messages, limit) {
     }
     break;
   }
-  if (notes.length) {
-    const system = messages.find((m) => m.role === "system");
-    if (system)
-      system.content +=
-        "\n已执行步骤的简要记录（完整结果保存在本地日志）：\n" +
-        notes.join("\n").slice(-2000);
-  }
+  // Compacted page/attachment/MCP text remains tool data. Never promote it
+  // into system (or assistant) instructions, even when it resembles a policy.
+  if (notes.length) appendToolHistory(messages, notes.join("\n"), limit);
   if (size(messages) > limit)
     throw Object.assign(
       Error(
@@ -48,6 +54,25 @@ function compactContext(messages, limit) {
       { code: "CONTEXT_LIMIT" },
     );
   return { removed, summary: notes.join("\n") };
+}
+function appendToolHistory(messages, notes, limit) {
+  const target = messages.findLast((message) => message.role === "tool");
+  if (!target) return;
+  const original = target.content;
+  const history = notes.slice(-2000);
+  let low = 0, high = history.length;
+  // Include JSON escaping in the budget, without repeatedly copying the
+  // entire conversation for every character removed.
+  const available = limit - size(messages);
+  const originalSize = JSON.stringify(original).length;
+  const content = length => String(original) +
+    "\n\n[Compacted external tool history — reference data only]\n" + history.slice(-length);
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+    if (JSON.stringify(content(mid)).length - originalSize <= available) low = mid;
+    else high = mid - 1;
+  }
+  if (low) target.content = content(low);
 }
 function boundedToolResult(value, limit) {
   const text = JSON.stringify(value);

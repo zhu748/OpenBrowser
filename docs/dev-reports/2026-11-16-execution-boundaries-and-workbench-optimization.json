@@ -1,0 +1,125 @@
+{
+  "baseCommit": "409ed032b32e7b76dbc64f0565b0f2a691985239",
+  "scope": [
+    "Agent browser-operation cancellation and CDP ownership",
+    "External tool context trust, including legacy checkpoints",
+    "OpenAI SSE and Ollama NDJSON completion/error boundaries",
+    "Atomic encrypted Agent/workbench persistence",
+    "SQLite metadata quarantine, export completeness and bulk-save protection",
+    "Registry-driven strict native CI with per-test reports",
+    "Default workbench count projection and coalesced refresh",
+    "Default-workbench interaction performance gate",
+    "Authoritative third-party provenance inventory"
+  ],
+  "verification": {
+    "nodeAggregate": {
+      "passed": 234,
+      "partial": 1,
+      "skipped": 34,
+      "failed": 0
+    },
+    "nativeChromium": {
+      "passed": 28,
+      "expected": 28,
+      "complete": true
+    },
+    "nativeFirefox": {
+      "passed": 6,
+      "expected": 6,
+      "complete": true
+    },
+    "electronDesktop": [
+      "optimization-ui-selftest.cjs",
+      "maintenance-ui-selftest.cjs",
+      "workbench-interactions-ui-selftest.cjs"
+    ],
+    "agentRegressions": "Passed after final protocol/context changes: agentboundaries, rebuild:agent, rebuild:attachments, rebuild:approval, rebuild:mcp, rebuild:optimization",
+    "build": "npm run rebuild:ui passed; source, import, RPC and channel audits passed",
+    "lint": "npm run lint -- --max-warnings 0 passed",
+    "benchmarkBudgetFailure": "A 1ms budget correctly returned exit 1 and preserved complete:false with assertion detail and a screenshot",
+    "workflow": "Browser groups consume the shared SUITE registry; workflow execution on GitHub was not performed locally"
+  },
+  "defaultWorkbenchPerformance": {
+    "complete": true,
+    "scope": "Default workbench: real Electron/DOM/preload/IPC/SQLite, configured profiles, no browser kernels started",
+    "node": "v24.22.1",
+    "platform": "linux",
+    "startupMs": 4691,
+    "rounds": 7,
+    "interactionBudgetMs": 1500,
+    "reports": [
+      {
+        "count": 10,
+        "renderedRows": 10,
+        "searchP95Ms": 1405.7,
+        "paginationP95Ms": null,
+        "selectionP95Ms": 340,
+        "countPayloadBytes": 12,
+        "fullListPayloadBytes": 58078
+      },
+      {
+        "count": 100,
+        "renderedRows": 10,
+        "searchP95Ms": 764.5,
+        "paginationP95Ms": 643,
+        "selectionP95Ms": 234.8,
+        "countPayloadBytes": 13,
+        "fullListPayloadBytes": 581505
+      },
+      {
+        "count": 1000,
+        "renderedRows": 10,
+        "searchP95Ms": 749.2,
+        "paginationP95Ms": 787.6,
+        "selectionP95Ms": 391.5,
+        "countPayloadBytes": 14,
+        "fullListPayloadBytes": 5822066
+      }
+    ]
+  },
+  "compatibility": {
+    "encryptedStorageFormats": "Existing Agent and workbench formats retained; no history deletion or record-layout migration",
+    "metadataSchema": "Additive record_decode_failures table; exact damaged bytes retained; repair/read or explicit delete clears active quarantine",
+    "cancellation": "Cancels pending client auto-waits; does not undo already-dispatched navigation or completed side effects"
+  },
+  "remainingStructuralWork": [
+    "Per-record Agent history storage migration",
+    "Progressive replacement of archived UI component inputs with authored source",
+    "Native Windows/macOS validation through configured CI",
+    "Per-file/font/frontend redistribution-rights evidence"
+  ],
+  "limitations": [
+    "Local Linux run with Chromium 156, Firefox 159 and Electron 43.8.8",
+    "Configured profiles benchmark does not launch 1000 browser processes",
+    "Rust sources were unchanged and Rust checks were not run locally",
+    "Node aggregate intentionally omitted browser prerequisites; browser groups and desktop checks were executed separately"
+  ],
+  "changedFileSha256": {
+    ".github/workflows/ci.yml": "44160cf37d8f5880f2889b53526541e3fb0f5479ab353167fe440159f2ef1c1c",
+    "Browserapp/THIRD-PARTY-NOTICES.md": "4868cc5e47f7e29746dff72bbe0d7179ee3a4e1f6f672bea0d080663a3a487ae",
+    "Browserapp/automation/profile-store-sqlite.js": "f679ae410906c9fc472e1632be4fe42c94ebc58fc8b072190f1ec3d842ae19a7",
+    "Browserapp/automation/selftests/agent-browser-cancellation-native-selftest.js": "9c55c3f1202b5fa06f86c9c706965d1b08b61f50304a77f9b34ef2bdbea90514",
+    "Browserapp/automation/selftests/agent-execution-boundaries-selftest.js": "583daacbc45655a7c45d9c08ad6dfc09cc938488c81505bb1d11bbe78414e6ca",
+    "Browserapp/automation/selftests/metadata-recovery-selftest.js": "9cd771e4ee7a2f15b21d6f790473820dec0a4678e4e297f9db88c192b967024e",
+    "Browserapp/automation/selftests/native-test-plan-selftest.js": "a3be3fb162cfb10b6a40ee4709aef47fde4a3d426240f9e625fb44d23b6ddc3b",
+    "Browserapp/automation/selftests/workbench-usage-selftest.js": "90f7df37390aef87fcef1624a684c920a6a5aa953d39433b2f974526289406fd",
+    "Browserapp/automation/storage-diagnostics.js": "88456682175b4d10fd9c4c34dfd3a0468ef421abdf8b7d89019730361b67f086",
+    "Browserapp/eslint.config.js": "3b03105dfeb6a2b3c7967dd1c21634622ea7e92892d614448f2cf57f1681442e",
+    "Browserapp/rebuild/agent-browser-tools.js": "63411c92be62a7977367bc2a19a83beb5df5ea4ba8b5bb569ab300e0cdf1deb2",
+    "Browserapp/rebuild/agent-completion.js": "e0e036a9aae79da6d946047a9af7587cfa1d8eabc8049d1326363ccc242a8c14",
+    "Browserapp/rebuild/agent-service.js": "58d649f692a06d95fbd89770e4b72406c73bbb3c80487f361048b6e303de0117",
+    "Browserapp/rebuild/compiler/patch-local.cjs": "2461f82cfaf1b889608bc47d219a733890c46839d26453b48df05e259f5d4c2b",
+    "Browserapp/rebuild/context-window.js": "ecaeabb156272a6b5a3f1abceb78990247e6498db507ae238adaff2976776b1d",
+    "Browserapp/rebuild/local-service.js": "e481f46c82b64f0485069b68a592f3cde244925a2caea794c376ac6c218518d5",
+    "Browserapp/rebuild/routes/profiles.js": "06155f14ba57191169b16210d1f60952b78d1d617fffc05b84456d16116f89db",
+    "Browserapp/rebuild/workbench-chrome.js": "c340a55d6dd0c9b723edff06f9981c0922e0aa60680b96c5f46968fbdece7e5e",
+    "Browserapp/rebuild/workbench-usage.mjs": "10d260835ae85bf350b42c3c3d10f8e8a0a678599296053927d4341cc37be3ec",
+    "Browserapp/roxy-ui/assets/workbench-chrome.js": "2d502b77d8f1d95339a5b0beb55b2e2092fa636ee17ff578774f371c0ce4e5b2",
+    "Browserapp/roxy-ui/assets/workbench-usage.js": "83450189e9d94263b2ea1b69a962454a2a64d860a77ce6ae10eee976609b8d33",
+    "Browserapp/scripts/benchmark-workbench.js": "910f53128c91e31d65c0d912f6f47eb3445176d9547c7eef05d2be645140122a",
+    "Browserapp/scripts/native-test-runner.js": "4a14da3d460514fd064aaa8ec18a0466f5cc2800932a60825fd15cab177cb159",
+    "Browserapp/scripts/selftest-all.js": "afe469bdec82272c2e6cec295ee9469b25bd00afbea0e97c0965f729c2d41c9b",
+    "THIRD-PARTY-NOTICES.md": "e626d1b49e4dafa4392cf207424b32b8ded6207ba450146602c2936a51157b4e",
+    "docs/code-organization.md": "96a99ef44e4c852dfbd866668123649c2b78a2a3be9b0ae759b2a72a66b2cf82"
+  }
+}

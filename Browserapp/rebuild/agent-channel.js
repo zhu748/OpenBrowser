@@ -2,10 +2,12 @@ import {
   St as ref,
   d as computed,
 } from "./runtime-core.esm-bundler-CBj16o9G.js";
+import { createTaskHistory } from "./agent-task-history.js";
 const connected = ref(false),
   lastError = ref(),
   taskLogs = ref([]),
   ready = ref(false),
+  loadingDetail = ref(false),
   subscribers = new Set(),
   taskExecutionDetails = ref({});
 const detail = (log) => ({
@@ -15,6 +17,17 @@ const detail = (log) => ({
   messages: log.messages || [],
   artifacts: [],
   scriptWindows: [],
+});
+const history = createTaskHistory({
+  read: id => globalThis.__agentRequest("logs:detail", { id }),
+  exists: id => taskLogs.value.some(log => log.id === id),
+  publish: (id, value) => {
+    if ((taskExecutionDetails.value[id]?.revision || 0) > value.revision) return;
+    taskExecutionDetails.value = { ...taskExecutionDetails.value, [id]: value };
+  },
+  drop: id => { const next = { ...taskExecutionDetails.value }; delete next[id]; taskExecutionDetails.value = next; },
+  busy: value => { loadingDetail.value = value; },
+  onError: error => { lastError.value = error.message; globalThis.__localUiError?.(error.message); console.error(error); },
 });
 const delivered = new WeakMap();
 const deliver = (fn, event) => {
@@ -34,12 +47,10 @@ const dispatch = (event) => {
       event.data,
       ...taskLogs.value.filter((log) => log.id !== event.data.id),
     ];
-    taskExecutionDetails.value = {
-      ...taskExecutionDetails.value,
-      [event.data.id]: detail(event.data),
-    };
+    history.refresh(event.data.id);
   }
   if (event.type === "task_log.deleted") {
+    history.remove(event.data.logId);
     taskLogs.value = taskLogs.value.filter(
       (log) => log.id !== event.data.logId,
     );
@@ -50,18 +61,28 @@ const dispatch = (event) => {
   if (event.type === "conversation.run.event") {
     const e = event.data,
       log = taskLogs.value.find(
-        (log) => log.conversationId === e.conversationId,
+        (log) => log.id === e.runId && log.conversationId === e.conversationId,
       );
-    if (log && e.sequence > (taskExecutionDetails.value[log.id]?.revision || 0)) {
+    // An in-flight snapshot owns this detail until it is published. Remember
+    // intervening changes for one trailing read instead of appending a tail
+    // that could hide the snapshot's earlier text behind a newer revision.
+    if (log && history.isLoading(log.id)) history.refresh(log.id);
+    if (log && history.has(log.id) && !history.isLoading(log.id) &&
+        e.sequence > (taskExecutionDetails.value[log.id]?.revision || 0)) {
       const previous = taskExecutionDetails.value[log.id] || detail(log),
         messages = [...previous.messages];
-      if (e.event.type === "user_message")
-        messages.push({
+      if (e.event.type === "user_message") {
+        const index = messages.findIndex(message => message.id === e.event.data.messageId);
+        const user = {
+          ...(index < 0 ? {} : messages[index]),
           id: e.event.data.messageId,
           role: "user",
           content: e.event.data.content,
-          createdAt: new Date(e.timestamp).toISOString(),
-        });
+          createdAt: e.event.data.createdAt || new Date(e.timestamp).toISOString(),
+          metadata: { ...(index < 0 ? {} : messages[index].metadata), attachments: e.event.data.attachments || [] },
+        };
+        if (index < 0) messages.push(user); else messages[index] = user;
+      }
       if (e.event.type === "content_delta") {
         let assistant = messages.find((m) => m.id === e.assistantMessageId);
         if (assistant) {
@@ -106,11 +127,12 @@ const connect = () => {
     try {
       const info = await globalThis.__agentRequest("info");
       if (!info.ready) throw Error("Agent 尚未就绪");
-      const logs = await globalThis.__agentRequest("taskLogs:list");
+      const logs = await globalThis.__agentRequest("taskLogs:summary");
       const active = await globalThis.__agentRequest("activeEvents");
       if (overflow) throw Error("Agent 重连期间事件过多，请重新连接");
       taskLogs.value = logs;
-      taskExecutionDetails.value = Object.fromEntries(logs.map(log => [log.id, detail(log)]));
+      history.reset();
+      taskExecutionDetails.value = {};
       const pending = buffered;
       buffered = undefined;
       lastError.value = undefined;
@@ -120,6 +142,7 @@ const connect = () => {
         data: { connectedAt: new Date().toISOString() } });
       for (const event of active) dispatch(event);
       for (const event of pending) dispatch(event);
+      history.reconnect();
     } catch (error) {
       connected.value = false;
       ready.value = false;
@@ -144,8 +167,10 @@ const channel = {
   status: computed(() => (connected.value ? "connected" : "disconnected")),
   taskLogs,
   taskLogsReady: ready,
-  taskExecutionReady: ready,
+  taskExecutionReady: computed(() => ready.value && !loadingDetail.value),
   taskExecutionDetails,
+  loadTaskExecution: id => history.select(id),
+  clearTaskExecution: () => history.clearSelection(),
   taskMonitorSnapshot: ref(),
   profileMonitorSnapshot: ref(),
   executionCenterSnapshot: ref(),

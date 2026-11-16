@@ -1,3 +1,4 @@
+import {touchConversationCache} from "./agent-conversation-cache.js";
 import {Cn as a,H as h,N as x,Nn as S,On as E,di as ae,gr as k,gt as ce,h as A,ht as j,mt as ve,or as be,ri as xe,sn as Se,v as Ee,yn as Oe} from "./utils-BIWenCnY.js";
 import {A as ke,C as M,D as Ae,Et as je,F as Me,H as Pe,J as Fe,N as Le,P as Re,R as ze,S as Be,St as N,Tt as Ve,V as He,W as P,X as Ue,Y as We,Z as Ge,_t as Ke,at as qe,b as Je,bt as Ye,d as F,dt as Xe,en as I,f as L,h as R,i as z,in as B,jt as V,k as Ze,lt as H,m as U,p as W,q as G,rn as $e,rt as et,s as tt,st as K,ut as rt,v as it,x as q} from "./runtime-core.esm-bundler-CBj16o9G.js";
 import {m as ut,p as ft,t as mt} from "./runtime-dom.esm-bundler-_WxS4Zar.js";
@@ -173,7 +174,7 @@ function Hl(e2) {
   if (t2.type === "content_delta") return `${i2}:content:${t2.data.id ?? t2.data.contentId}:${t2.data.phase ?? ""}`;
 }
 function Ul(e2) {
-  return e2.startSequence === void 0 ? void 0 : Hl(e2);
+  return e2.startSequence !== void 0 && e2.startSequence < e2.sequence ? Hl(e2) : void 0;
 }
 function Wl(e2, t2, n2) {
   let r2 = e2.length;
@@ -1811,16 +1812,10 @@ function Xm(e2, t2) {
 function Zm(e2) {
   Ym.delete(e2);
 }
-function Qm(e2, t2) {
-  Xm(e2, t2) ? Zm(t2) : (delete e2.messagesByConversationId[t2], delete km[t2]);
-}
 function $m(e2, t2) {
-  if (Xm(e2, t2)) Zm(t2);
-  else for (Ym.delete(t2), Ym.set(t2, !0); Ym.size > Jm; ) {
-    let t3 = Ym.keys().next().value;
-    if (t3 === void 0) break;
-    Ym.delete(t3), Qm(e2, t3);
-  }
+  return touchConversationCache(e2, t2, { recent: Ym, maximum: Jm, isActive: (id2) => Xm(e2, id2), selected: () => zm(globalThis.__router?.currentRoute?.value?.params?.conversationId), onEvict: (id2) => {
+    delete km[id2], Ym.delete(id2);
+  } });
 }
 function eh(e2) {
   return e2.startsWith("conv-");
@@ -2103,8 +2098,7 @@ function mh() {
     return { ...e3, messages: n3 };
   }
   async function Pe2(n3) {
-    if (!je2(n3) || bm.has(n3)) return;
-    $m(e2, n3);
+    if ($m(e2, n3), !je2(n3) || bm.has(n3)) return;
     let r3 = j("agent-console:loadConversationDetail", { conversationId: n3 });
     bm.add(n3);
     try {
@@ -2123,7 +2117,7 @@ function mh() {
           a3.push({ runId: t3.runId, status: n4, error: r5?.event.type === "run_failed" ? r5.event.data.message : void 0 });
         }
       }
-      e2.messagesByConversationId[n3] = Jf(r4), km[n3] = { hasMore: r4.hasMore === !0 && r4.nextCursor !== null, loading: !1, nextCursor: r4.nextCursor ?? null };
+      e2.messagesByConversationId[n3] = Jf(r4), km[n3] = { hasMore: r4.hasMore === !0 && r4.nextCursor !== null, loading: !1, nextCursor: r4.nextCursor ?? null }, $m(e2, n3);
       for (let t3 of a3) Wm(e2, t3.runId, t3.status, t3.error), ge2(n3);
     } catch (e3) {
       console.error(`[agent-console] Failed to load conversation detail ${n3}:`, e3);

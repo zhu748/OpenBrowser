@@ -1,0 +1,174 @@
+{
+  "date": "2026-11-16",
+  "userTimezone": "Asia/Shanghai",
+  "baseCommit": "409ed032b32e7b76dbc64f0565b0f2a691985239",
+  "reviewSnapshot": {
+    "previousRounds": 4,
+    "previousRoundRecordedFiles": 16,
+    "previousRoundHashMatchesAtReviewStart": 16,
+    "previousRoundRegression": {
+      "passed": 266,
+      "partial": 1,
+      "skipped": 6,
+      "failed": 0
+    },
+    "gitStatus": "Prior and current changes are local and uncommitted; no push or deployment performed"
+  },
+  "progressByArea": [
+    {
+      "area": "Execution and recovery",
+      "implemented": "Browser operation cancellation, completion validation, context trust, atomic local persistence, SQLite damaged-record quarantine and registry-driven native checks"
+    },
+    {
+      "area": "History persistence",
+      "implemented": "Encrypted V2 per-record storage, lazy body reads, durable migration backups, summary-only task lists and explicit log details",
+      "historicalRound2Measurement": "1000 conversations/500 logs: metadata saves wrote 753646 bytes including index backup, versus 11227711 legacy bytes; later reference metadata adds small index overhead"
+    },
+    {
+      "area": "Streaming and renderer retention",
+      "implemented": "Immediate first fragment then batched deltas, atomic event semantics, bounded task details and idle conversation/run eviction with selected/active/approval protection",
+      "historicalMeasurements": "10000 tiny provider frames: 10000 to 5 events and 4127788 to 72000 IPC bytes; 1000 idle conversation fixture: 1000 to 3 retained raw streams; indexed template allocation: 1000 to 0 body reads"
+    },
+    {
+      "area": "MCP lifecycle (this round)",
+      "implemented": "Per-server ordering with four initializer slots, configuration revalidation and epoch cancellation, transient test cancellation, retryable cleanup, HTTP stream ownership/correlation and bounded stdio writes"
+    }
+  ],
+  "scope": [
+    "Bounded concurrent discovery and single ownership per server",
+    "Reject stale tool calls after disabled/edited configuration commits",
+    "Skip unrelated MCP queues for window-scoped tasks",
+    "Cancel transient verification and queued initialization on shutdown",
+    "Release error/unsupported/SSE response bodies and validate response IDs",
+    "Accept HTTP 202 for client replies to server ping; bound inbound reply work to 32 and give writes deadlines",
+    "Bound stdio backpressure cancellation and direct-child shutdown, preserving cleanup ownership on failure",
+    "Update old desktop reload navigation and removed-global-queue selftest assumptions"
+  ],
+  "behavior": {
+    "initializerConcurrency": 4,
+    "toolLimit": 200,
+    "outboundPendingRequestLimitPerConnection": 128,
+    "serverReplyLimitPerConnection": 32,
+    "messageByteLimit": 2097152,
+    "defaultRequestOrWriteTimeoutMs": 20000,
+    "cancellationNotificationTimeoutMs": 2000,
+    "directChildForceKillDelayMs": 1500,
+    "directChildExitDeadlineMs": 3000,
+    "ordering": "Same server is serialized/reused. Different servers can initialize concurrently. Published tool order follows configuration order. Failed discovery publishes no partial tool snapshot.",
+    "disableBoundary": "Config status, config key and connection ownership are checked after awaiting connect. Per-server epochs invalidate queued/in-flight operations. Already dispatched remote side effects cannot be rolled back.",
+    "cleanup": "Transient connections remain tracked until cleanup succeeds; failed named cleanup remains owned and shutdown can retry. Direct child exit is awaited independently of inherited pipe close; pipes are explicitly destroyed."
+  },
+  "verification": {
+    "nodeCiAggregate": {
+      "status": "passed",
+      "passed": 239,
+      "partial": 1,
+      "skipped": 34,
+      "failed": 0,
+      "environment": "OPENBROWSER_REQUIRE_EXPLICIT_BINARY=1, matching CI smoke; native Chromium checks were separately observed passing in the available-browser run",
+      "partialReason": "Kernel automation flag forensics launcher unavailable on this platform; portable assertions passed",
+      "skipReason": "Explicit browser binaries were omitted for the Node CI gate, so browser-dependent checks were skipped rather than counted as passes",
+      "log": "work/optimization-round5/node-ci-selftests-verified.log"
+    },
+    "availableNativeChromium": {
+      "passed": 28,
+      "expected": 28,
+      "complete": true,
+      "log": "work/optimization-round5/node-selftests.log"
+    },
+    "firstAvailableAggregate": {
+      "passed": 266,
+      "partial": 1,
+      "skipped": 6,
+      "failed": 1,
+      "failure": "optimization-selftest used the removed global connectionQueue and ended its HTTP response twice. Updated it to await owned pool operations and make fixture release idempotent. Targeted rerun and subsequent CI-style aggregate passed."
+    },
+    "targeted": [
+      "agentmcplifecycle: real HTTP slow-server isolation, per-server reuse and concurrency bound; deterministic post-commit disabled-call race; queued cancellation and retry; transient shutdown cancellation; failed close retry; 200-tool budget; ID correlation, response release, absolute drip timeout, mixed-case MIME, CRLF/multiline/Unicode SSE, ping 202 and 33-ping backpressure limit; real child stdin backpressure, notification deadline, force termination and inherited pipes",
+      "rebuild:mcp: existing actual HTTP/SSE/auth/session, stdio child, approval-gated remote call, encrypted config and shutdown regressions",
+      "rebuild:optimization: corrected consumer of pool operation ownership and idempotent HTTP fixture release"
+    ],
+    "electronDesktop": {
+      "passed": [
+        "agent-mcp-ui-selftest.cjs: real MCP form validate/save/enable/rename/reload/disable/delete; host HTTP only, renderer external requests zero",
+        "agent-approval-ui-selftest.cjs: pending card reload and conversation reopen, approve/reject/full-access behavior and persisted native profile records"
+      ],
+      "harnessFixes": "MCP modal and selected conversation are re-entered after workspace reload; Linux-only headless flags guarded for three-platform CI."
+    },
+    "isolatedProductionDependencies": "Latest lifecycle regression passed using only the previous locked production dependencies; Electron is absent in the fixture. No new npm dependencies.",
+    "lint": "npm run lint -- --max-warnings 0 passed",
+    "workflow": "YAML parsed. New lifecycle Node check added to Node 22/24 three-platform boundaries; MCP and approval desktop checks added to three-platform desktop gate. Remote CI not run.",
+    "uiBuild": "Generated renderer assets unchanged in this round; runtime behavior verified in actual Electron. No UI rebuild was required.",
+    "diffCheck": "git diff --check passed"
+  },
+  "benchmark": {
+    "node": "v24.22.1",
+    "platform": "linux",
+    "scope": "Real loopback MCP HTTP initialize/tools-list calls, actual Agent configuration transactions, three discovery samples over eight fixture servers; deterministic disable-during-connect interleaving",
+    "discovery": {
+      "before": {
+        "servers": 8,
+        "syntheticInitializeDelayMs": 60,
+        "samplesMs": [
+          651.78,
+          523.2,
+          523.56
+        ],
+        "medianMs": 523.56,
+        "peakConcurrentInitializers": 1
+      },
+      "after": {
+        "servers": 8,
+        "syntheticInitializeDelayMs": 60,
+        "samplesMs": [
+          164.86,
+          152.46,
+          144.12
+        ],
+        "medianMs": 152.46,
+        "peakConcurrentInitializers": 4
+      }
+    },
+    "disabledCallRace": {
+      "before": {
+        "staleRemoteCalls": 1,
+        "rejected": false
+      },
+      "after": {
+        "staleRemoteCalls": 0,
+        "rejected": true,
+        "message": "MCP 服务已修改或停用，请重新发起任务"
+      }
+    },
+    "limitations": "Each fixture handshake waits 60ms. Discovery time excludes setup, disk save and shutdown, and does not measure real remote-service performance. HTTP request dispatch remains irreversible once sent."
+  },
+  "syntheticDiscoveryMedianReductionPercent": 70.88,
+  "remainingWork": [
+    "Very long conversations still load/save as whole records; selected/active renderer history can remain large",
+    "Main-process bodies already materialized by other operations do not yet have an unloading policy",
+    "Archived third-party renderer inputs remain; replacement with authored components is incomplete",
+    "Firefox page automation bridge and old arbitrary script sandbox are explicitly unsupported, not implemented by these optimizations",
+    "Windows/macOS native gates and remote CI/release were not executed locally",
+    "Third-party notices were aligned in earlier work; complete per-asset/font redistribution evidence remains outside these performance fixes"
+  ],
+  "limitations": [
+    "Synthetic 60ms handshake fixtures do not measure actual remote server/model performance",
+    "No promise of undoing external tools already sent to a server",
+    "Only the directly started stdio process is terminated; independently detached server descendants are not claimed to be terminated",
+    "No new encrypted storage format migration in this round"
+  ],
+  "changedFileSha256": {
+    "Browserapp/rebuild/agent-mcp.js": "0097cca8b3f786baaac73b700df3b792f3b5a80eca490fb21e34ed88c8d4b47c",
+    "Browserapp/rebuild/agent-mcp-connection.js": "70771a7b9c84a5d557d4bb69d5c074e89e76af5709ec9efe6e7a4c16ee26dfbb",
+    "Browserapp/rebuild/agent-mcp-pool.js": "7a9c69f9314a09dcb307771b874322781ce003219939fdf8a724a8328d7c6931",
+    "Browserapp/automation/selftests/agent-mcp-lifecycle-selftest.js": "979022f2d05f2a3ae03878e5c3e36d76a6f709d42293ad296b5749561257d2f7",
+    "Browserapp/scripts/benchmark-agent-mcp.js": "a13f99fd73c034caf20f97b40aa9c679a675e0c574c50503da13b3bc914cb5e7",
+    "Browserapp/rebuild/optimization-selftest.cjs": "febc02fc2147f11519ec6ee8d48a4236bec509359b4da9694d5b6953420c19f2",
+    "Browserapp/rebuild/agent-mcp-ui-selftest.cjs": "e65e2ef34a49f7f7cbc449403e08f99e74ca22df2c796b1e42a13f0047495ad4",
+    "Browserapp/rebuild/agent-approval-ui-selftest.cjs": "06deb01c28a783e1d328d6811d95a24e2166909d4bf0f675cb496ab7bb205182",
+    "Browserapp/scripts/selftest-all.js": "62f7ef2d0610e3fee23de5a7bae43c8fce549baf02170a628bf82bb619f826ef",
+    "Browserapp/eslint.config.js": "62d1962c1e5bba384ca8040143d9cf47b254aa6d140164067eb947a0a0488b19",
+    ".github/workflows/ci.yml": "a61f8556403b63a7f81707e34fbd3f8eea7d2fbd1900af8ba2e49a117cee9fc6",
+    "docs/code-organization.md": "ae97367af09d8150ceea063e122319e92a971dc869eb21316fb07829c08394d5"
+  }
+}

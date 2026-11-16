@@ -1,0 +1,130 @@
+{
+  "baseCommit": "409ed032b32e7b76dbc64f0565b0f2a691985239",
+  "date": "2026-11-16",
+  "scope": [
+    "Encrypted per-record Agent history and lazy body materialization",
+    "Metadata-only task synchronization and on-demand viewer details",
+    "Bounded opened-detail cache and request/reconnect/deletion races",
+    "Atomic attachment data/index publication and transient read retries",
+    "Idempotent Agent shutdown and stale-session overwrite rejection"
+  ],
+  "persistence": {
+    "format": 2,
+    "migration": "First successful save publishes an encrypted index only after all new encrypted records are durable; preserves original encrypted V1 bytes as state.legacy.enc",
+    "recovery": "Current and previous index references survive garbage collection; missing index, missing bodies, invalid identity and authentication errors reject reads instead of creating empty history",
+    "backup": "Copy the entire local-agent directory and preserve original credential key; legacy backup contains only the migration-time state",
+    "ownership": "AgentService writeQueue serializes snapshots. Per-process publication lanes and a previous-state comparison reject stale sessions; this is not a cross-process transaction lock."
+  },
+  "verification": {
+    "nodeAggregate": {
+      "passed": 236,
+      "partial": 1,
+      "skipped": 34,
+      "failed": 0,
+      "partialReason": "Kernel automation flag forensics launcher unavailable on this platform",
+      "skippedReason": "Native browser prerequisites intentionally omitted from aggregate run"
+    },
+    "finalTargeted": [
+      "agentstore: legacy migration, SIGKILL before index commit and successful retry, rollback/cache safety, identity/digest and fail-closed checks",
+      "agenthistory: metadata-only list/title/read updates, one-body reads, cache limits/races, attachment failure rollback and retry",
+      "registry: JavaScript syntax and suite consistency",
+      "workbenchregistry: acceptance registration and runtime classification"
+    ],
+    "electronDesktop": {
+      "runtime": "Electron 43.8.8, Linux",
+      "passed": [
+        "agent-tasks-ui-selftest.cjs: real IPC template/task creation, real SSE scheduled execution, reconnect summaries and one on-demand detail read",
+        "review-agent-reconnect-selftest.cjs: failed handshake retry, coalesced reconnect and event delivery",
+        "review-agent-contracts-ui-selftest.cjs: 22 real model turns, 44 messages, cursor paging, rename/read/delete/reload",
+        "agent-history-ui-selftest.cjs: 200-conversation encrypted V1 migration, exact legacy backup, whole process restart, zero sidebar body reads and one opened-conversation read"
+      ]
+    },
+    "build": "npm run rebuild:ui passed; generated UI, imports, source, RPC and channel audits passed",
+    "lint": "npm run lint -- --max-warnings 0 passed",
+    "workflow": "YAML parsed; encrypted-store gate registered for Node 22/24 on Linux/Windows/macOS; task/history UI registered for desktop CI; remote CI not executed",
+    "diffCheck": "git diff --check passed",
+    "priorRoundNativeGates": "Previous-round Chromium 28/28 and Firefox 6/6 passed; browser/fingerprint sources unchanged in this round, groups not rerun"
+  },
+  "benchmark": {
+    "scope": "Synthetic history, real encryption, fsync and atomic file replacement; three warmed samples per save scenario",
+    "node": "v24.22.1",
+    "platform": "linux",
+    "reports": [
+      {
+        "conversations": 10,
+        "logs": 10,
+        "migrationMs": 132.6,
+        "metadataLoadMs": 1.3,
+        "legacySaveMedianMs": 6.6,
+        "recordSaveMedianMs": 9.82,
+        "legacyEncryptedBytes": 120700,
+        "metadataWriteBytesIncludingBackup": 10244,
+        "metadataBodyReads": 0,
+        "singleConversationBodyWrites": 1,
+        "singleConversationRecordBytes": 10332
+      },
+      {
+        "conversations": 100,
+        "logs": 100,
+        "migrationMs": 1185.1,
+        "metadataLoadMs": 3.3,
+        "legacySaveMedianMs": 17.34,
+        "recordSaveMedianMs": 8.27,
+        "legacyEncryptedBytes": 1205111,
+        "metadataWriteBytesIncludingBackup": 98446,
+        "metadataBodyReads": 0,
+        "singleConversationBodyWrites": 1,
+        "singleConversationRecordBytes": 10332
+      },
+      {
+        "conversations": 1000,
+        "logs": 500,
+        "migrationMs": 5970.5,
+        "metadataLoadMs": 25.3,
+        "legacySaveMedianMs": 230.21,
+        "recordSaveMedianMs": 19.52,
+        "legacyEncryptedBytes": 11227711,
+        "metadataWriteBytesIncludingBackup": 753646,
+        "metadataBodyReads": 0,
+        "singleConversationBodyWrites": 1,
+        "singleConversationRecordBytes": 10332
+      }
+    ]
+  },
+  "stableWriteReductionPercent": 93.29,
+  "benchmarkInterpretation": "Synthetic history with actual encryption, fsync and atomic replacements. Save medians depend on local machine load; write-volume reduction is the primary reproducible result. The smallest dataset can be slower due to extra index/backup I/O.",
+  "limitations": [
+    "First migration has a one-time per-record encryption/fsync cost (about 6 seconds for the largest local synthetic dataset)",
+    "A very long single conversation is still materialized and saved as one record",
+    "Old app versions cannot read the V2 index; the legacy backup omits later updates",
+    "Windows/macOS checks are configured in CI but were not run locally",
+    "Archived UI component inputs remain; this round changes authored compiler/bridge sources and regenerates assets"
+  ],
+  "changedFileSha256": {
+    "Browserapp/rebuild/agent-state-store.js": "8743f686ed5216b6706ff1a6a0b506413f714e354394461fddef8f12a1ea3644",
+    "Browserapp/rebuild/agent-history.js": "43d0b069d7de170ff348305023be845a3c2a750de4aa0e2154905dedd73c9f4a",
+    "Browserapp/rebuild/agent-task-history.mjs": "0a20daa3abd85a77a512abb718b223cd47e7871f5079f52cbb3e1a7b2bd9eec7",
+    "Browserapp/rebuild/agent-service.js": "ed4e38524f577be4e599152f1a09cbf35662b7fd7fb540e6c0bf8e4bb6685e82",
+    "Browserapp/rebuild/agent-channel.js": "962097e9c05b9ba7433a39395860e5423a4f2eacf0f6b6f75a2f9c15f4f2c386",
+    "Browserapp/rebuild/agent-conversations.js": "aaf6226bca1dc7bff5aab8984742fcafedf0e0059a37e029208d96280d56f134",
+    "Browserapp/rebuild/agent-files.js": "5dfb774773a46e800ce7b5188b78c5212f38bc0cfcf01db1c3077c4fae6bb62d",
+    "Browserapp/rebuild/agent-records.js": "aa9dce29bc45b283607f69c2976b9a6e324fc00daad5ac87a2a5621e5e12f54d",
+    "Browserapp/rebuild/agent-store.js": "78b75dcd59e62d36259138466553c73d00df6eed207b1f7fc6c6142ccadf103e",
+    "Browserapp/rebuild/agent-approval.js": "fe2707e6f5c5141442f3def937ebe8647164abf5e29d4dbc112f7ab80d22a123",
+    "Browserapp/rebuild/renderer-bridge.js": "cb59c1b93914c6c854edc8720990e8644cdff9ff4f36b89e3bef15338ba0b8b1",
+    "Browserapp/rebuild/compiler/patch-local.cjs": "518d07e92f31a26d08a54644ccf35363eb5315bd6c7529164a51d9224498b8d6",
+    "Browserapp/rebuild/compiler/patch-workbench.cjs": "111cba2faf15aeb4339561c0800befee61a5b88fa607f5a1595fcd784dcbee46",
+    "Browserapp/automation/selftests/agent-state-store-selftest.js": "4b87a6ce3ac2f550ce2b0deff799a2d9cd7880518fb00d85a1badc498cdb6088",
+    "Browserapp/automation/selftests/agent-history-selftest.js": "771513f031fd4531f393212df5c5715fe1f5f1017454b2a07d7b6716033f4004",
+    "Browserapp/rebuild/agent-history-ui-selftest.cjs": "92398ffd5f621c68164db9ddd7bce2af75b83f6537de6640591ea85c8b2937bd",
+    "Browserapp/rebuild/agent-tasks-ui-selftest.cjs": "8a2cbd619e004f1445beba6066dfa85bcaada8cbcce4b345e31683ff4cbb7dcd",
+    "Browserapp/scripts/benchmark-agent-history.js": "b73e6bd87c34a82cc9669bde3fbeb9b441030a47b983c98d170e3926ef1d8f4d",
+    "Browserapp/rebuild/acceptance-manifest.json": "0feca30a3c69c57b55cda2478ebc45718999e806cf0586c8450899f21d84cd9a",
+    "Browserapp/scripts/selftest-all.js": "3a98e0f92dd87ea7be37ca1aa04b3fa34e866b7d156c0c01eae0e5b1367119d9",
+    "Browserapp/eslint.config.js": "b23da0d7c7b1b258630b2f7b84e2b09261fd9850e19e0df711f0954a403ef3a4",
+    ".github/workflows/ci.yml": "96623606e1db5fba0738712d16b5a2a21b2fff73c90f5866bb9c05a5da7cbc76",
+    "docs/code-organization.md": "c5c3af146a9421aa5df9347c8d2c36fbdd9f36100177e85e18d9f8e79a380f10",
+    "README.md": "a9b78d38780417a03eaf8b359a858566a41bc78d3f0f23f0cc35bdff7213362e",
+    "README_CN.md": "bd888b0d2fda4c1305ba19b46ba12b57bdca7d739faa0bccedcd1cffda5a1e27"
+  }
+}

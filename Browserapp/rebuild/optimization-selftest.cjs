@@ -83,7 +83,7 @@ async function main() {
       let text = ""; for await (const chunk of req) text += chunk;
       const message = JSON.parse(text); res.setHeader("content-type", "application/json");
       if (message.method === "initialize") res.end(JSON.stringify({ jsonrpc: "2.0", id: message.id, result: { protocolVersion: "2024-11-05", capabilities: { tools: {} } } }));
-      else if (message.method === "tools/list") { release = () => res.end(JSON.stringify({ jsonrpc: "2.0", id: message.id, result: { tools: [] } })); reached(); }
+      else if (message.method === "tools/list") { release = () => { if (!res.destroyed && !res.writableEnded) res.end(JSON.stringify({ jsonrpc: "2.0", id: message.id, result: { tools: [] } })); }; reached(); }
       else { res.statusCode = 202; res.end(); }
     });
     await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
@@ -93,8 +93,10 @@ async function main() {
       discovering.catch(() => {});
       await discovered; controller.abort(Error("cancel discovery"));
       await assert.rejects(Promise.race([discovering, new Promise((_, reject) => { const timer = setTimeout(() => reject(Error("cancellation too slow")), 1000); timer.unref(); })]), /cancel discovery/);
-      release(); await agent.mcp.connectionQueue;
+      release(); await Promise.allSettled([...agent.mcp.pool.operations]);
       assert.equal(agent.mcp.connections.size, 0);
+      assert.equal(agent.mcp.pool.transients.size, 0);
+      assert.equal(agent.mcp.pool.slots.active, 0);
     } finally { release?.(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
     await agent.shutdown(); agent = null;
 

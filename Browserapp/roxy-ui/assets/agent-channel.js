@@ -1,8 +1,10 @@
 import {St as ref,d as computed} from "./runtime-core.esm-bundler-CBj16o9G.js";
+import {createTaskHistory} from "./agent-task-history.js";
 const connected = ref(!1);
 const lastError = ref();
 const taskLogs = ref([]);
 const ready = ref(!1);
+const loadingDetail = ref(!1);
 const subscribers = /* @__PURE__ */ new Set();
 const taskExecutionDetails = ref({});
 const detail = (log) => ({
@@ -12,6 +14,23 @@ const detail = (log) => ({
   messages: log.messages || [],
   artifacts: [],
   scriptWindows: []
+});
+const history = createTaskHistory({
+  read: (id) => globalThis.__agentRequest("logs:detail", { id }),
+  exists: (id) => taskLogs.value.some((log) => log.id === id),
+  publish: (id, value) => {
+    (taskExecutionDetails.value[id]?.revision || 0) > value.revision || (taskExecutionDetails.value = { ...taskExecutionDetails.value, [id]: value });
+  },
+  drop: (id) => {
+    const next = { ...taskExecutionDetails.value };
+    delete next[id], taskExecutionDetails.value = next;
+  },
+  busy: (value) => {
+    loadingDetail.value = value;
+  },
+  onError: (error) => {
+    lastError.value = error.message, globalThis.__localUiError?.(error.message), console.error(error);
+  }
 });
 const delivered = /* @__PURE__ */ new WeakMap();
 const deliver = (fn, event) => {
@@ -24,11 +43,8 @@ const dispatch = (event) => {
   if (event.type === "task_log.changed" && (taskLogs.value = [
     event.data,
     ...taskLogs.value.filter((log) => log.id !== event.data.id)
-  ], taskExecutionDetails.value = {
-    ...taskExecutionDetails.value,
-    [event.data.id]: detail(event.data)
-  }), event.type === "task_log.deleted") {
-    taskLogs.value = taskLogs.value.filter(
+  ], history.refresh(event.data.id)), event.type === "task_log.deleted") {
+    history.remove(event.data.logId), taskLogs.value = taskLogs.value.filter(
       (log) => log.id !== event.data.logId
     );
     const next = { ...taskExecutionDetails.value };
@@ -36,16 +52,22 @@ const dispatch = (event) => {
   }
   if (event.type === "conversation.run.event") {
     const e = event.data, log = taskLogs.value.find(
-      (log2) => log2.conversationId === e.conversationId
+      (log2) => log2.id === e.runId && log2.conversationId === e.conversationId
     );
-    if (log && e.sequence > (taskExecutionDetails.value[log.id]?.revision || 0)) {
+    if (log && history.isLoading(log.id) && history.refresh(log.id), log && history.has(log.id) && !history.isLoading(log.id) && e.sequence > (taskExecutionDetails.value[log.id]?.revision || 0)) {
       const previous = taskExecutionDetails.value[log.id] || detail(log), messages = [...previous.messages];
-      if (e.event.type === "user_message" && messages.push({
-        id: e.event.data.messageId,
-        role: "user",
-        content: e.event.data.content,
-        createdAt: new Date(e.timestamp).toISOString()
-      }), e.event.type === "content_delta") {
+      if (e.event.type === "user_message") {
+        const index = messages.findIndex((message) => message.id === e.event.data.messageId), user = {
+          ...index < 0 ? {} : messages[index],
+          id: e.event.data.messageId,
+          role: "user",
+          content: e.event.data.content,
+          createdAt: e.event.data.createdAt || new Date(e.timestamp).toISOString(),
+          metadata: { ...index < 0 ? {} : messages[index].metadata, attachments: e.event.data.attachments || [] }
+        };
+        index < 0 ? messages.push(user) : messages[index] = user;
+      }
+      if (e.event.type === "content_delta") {
         let assistant = messages.find((m) => m.id === e.assistantMessageId);
         assistant ? (assistant = {
           ...assistant,
@@ -77,9 +99,9 @@ let overflow = !1;
 const connect = () => connecting || (connected.value = !1, ready.value = !1, buffered = [], overflow = !1, connecting = (async () => {
   try {
     if (!(await globalThis.__agentRequest("info")).ready) throw Error("Agent \u5C1A\u672A\u5C31\u7EEA");
-    const logs = await globalThis.__agentRequest("taskLogs:list"), active = await globalThis.__agentRequest("activeEvents");
+    const logs = await globalThis.__agentRequest("taskLogs:summary"), active = await globalThis.__agentRequest("activeEvents");
     if (overflow) throw Error("Agent \u91CD\u8FDE\u671F\u95F4\u4E8B\u4EF6\u8FC7\u591A\uFF0C\u8BF7\u91CD\u65B0\u8FDE\u63A5");
-    taskLogs.value = logs, taskExecutionDetails.value = Object.fromEntries(logs.map((log) => [log.id, detail(log)]));
+    taskLogs.value = logs, history.reset(), taskExecutionDetails.value = {};
     const pending = buffered;
     buffered = void 0, lastError.value = void 0, connected.value = !0, ready.value = !0, dispatch({
       id: crypto.randomUUID(),
@@ -88,6 +110,7 @@ const connect = () => connecting || (connected.value = !1, ready.value = !1, buf
     });
     for (const event of active) dispatch(event);
     for (const event of pending) dispatch(event);
+    history.reconnect();
   } catch (error) {
     throw connected.value = !1, ready.value = !1, lastError.value = error.message, buffered = void 0, error;
   }
@@ -104,8 +127,10 @@ const channel = {
   status: computed(() => connected.value ? "connected" : "disconnected"),
   taskLogs,
   taskLogsReady: ready,
-  taskExecutionReady: ready,
+  taskExecutionReady: computed(() => ready.value && !loadingDetail.value),
   taskExecutionDetails,
+  loadTaskExecution: (id) => history.select(id),
+  clearTaskExecution: () => history.clearSelection(),
   taskMonitorSnapshot: ref(),
   profileMonitorSnapshot: ref(),
   executionCenterSnapshot: ref(),

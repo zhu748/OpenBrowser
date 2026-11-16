@@ -2,6 +2,7 @@ import {t as AnimatedBorder} from "./animation-border-Bx_8JoE6.js";
 import {D as h,St as ref,V as onMounted,R as onBeforeUnmount} from "./runtime-core.esm-bundler-CBj16o9G.js";
 import {t as Button} from "./rx-button-DyzuUt-V.js";
 import {Z as Icon} from "./basecomponent-ClhuVxJN.js";
+import {createUsageCounter} from "./workbench-usage.js";
 const ipc = (method, payload = {}) => globalThis.__localRequest(method, payload);
 const button = (label, icon, onClick, props = {}) => h(Button, {
   severity: "secondary",
@@ -19,16 +20,20 @@ const SidebarFooter = {
   setup(props) {
     const count = ref(0);
     let dispose;
-    const load = async () => {
-      count.value = (await ipc("profiles:list")).length;
-    };
+    const usage = createUsageCounter({
+      read: () => ipc("profiles:count"),
+      update: (value) => {
+        count.value = value;
+      },
+      onError: (error) => console.error(error)
+    });
     return onMounted(async () => {
       dispose = globalThis.ops.onEvent((event) => {
-        ["profiles", "profile-delta", "status"].includes(event.type) && load().catch((error) => {
-          console.error(error);
-        });
-      }), await load();
-    }), onBeforeUnmount(() => dispose?.()), () => h(
+        ["profiles", "profile-delta", "status"].includes(event.type) && usage.refresh();
+      }), await usage.refresh();
+    }), onBeforeUnmount(() => {
+      usage.dispose(), dispose?.();
+    }), () => h(
       "div",
       {
         class: ["rx-layout-footer", { collapsed: props.collapsed }],

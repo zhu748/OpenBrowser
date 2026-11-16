@@ -7,6 +7,7 @@ import {
 } from "./runtime-core.esm-bundler-CBj16o9G.js";
 import { t as Button } from "./rx-button-DyzuUt-V.js";
 import { Z as Icon } from "./basecomponent-ClhuVxJN.js";
+import { createUsageCounter } from "./workbench-usage.js";
 const ipc = (method, payload = {}) =>
   globalThis.__localRequest(method, payload);
 const button = (label, icon, onClick, props = {}) =>
@@ -26,19 +27,18 @@ export const SidebarFooter = {
   setup(props) {
     const count = ref(0);
     let dispose;
-    const load = async () => {
-      count.value = (await ipc("profiles:list")).length;
-    };
+    const usage = createUsageCounter({
+      read: () => ipc("profiles:count"), update: value => { count.value = value; },
+      onError: error => console.error(error),
+    });
     onMounted(async () => {
       dispose = globalThis.ops.onEvent((event) => {
         if (["profiles", "profile-delta", "status"].includes(event.type))
-          load().catch((error) => {
-            console.error(error);
-          });
+          usage.refresh();
       });
-      await load();
+      await usage.refresh();
     });
-    onBeforeUnmount(() => dispose?.());
+    onBeforeUnmount(() => { usage.dispose(); dispose?.(); });
     return () =>
       h(
         "div",

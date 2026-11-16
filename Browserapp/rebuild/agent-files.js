@@ -3,6 +3,7 @@ const fs = require("node:fs/promises"),
   path = require("node:path"),
   crypto = require("node:crypto"),
   credentials = require("../credential-crypto");
+const { writeRawAtomically } = require("../engine/state-storage");
 const LIMIT = 10 * 1024 * 1024,
   TOTAL = 20 * 1024 * 1024;
 function fileName(value) {
@@ -72,7 +73,7 @@ class AgentFiles {
           typeof this.index.grants !== "object"
         )
           throw Error("附件索引格式无效");
-      })();
+      })().catch(error => { this.loading = undefined; this.index = undefined; throw error; });
     return this.loading;
   }
   async commit(files, grant) {
@@ -83,15 +84,7 @@ class AgentFiles {
         files: [...this.index.files, ...files],
         grants: { ...this.index.grants, ...grant },
       };
-      const temp = path.join(this.root, crypto.randomUUID() + ".tmp");
-      try {
-        await fs.writeFile(temp, credentials.encryptCredentialJson(next), {
-          mode: 0o600,
-        });
-        await fs.rename(temp, path.join(this.root, "index.enc"));
-      } finally {
-        await fs.rm(temp, { force: true });
-      }
+      await writeRawAtomically(path.join(this.root, "index.enc"), credentials.encryptCredentialJson(next));
       this.index = next;
     });
     this.queue = run.catch(() => undefined);
@@ -117,10 +110,9 @@ class AgentFiles {
       mimeType: mime(bytes),
       size: bytes.length,
     };
-    await fs.writeFile(
+    await writeRawAtomically(
       path.join(this.root, record.fileId + ".enc"),
       credentials.encryptCredentialJson({ data: bytes.toString("base64") }),
-      { flag: "wx", mode: 0o600 },
     );
     return record;
   }

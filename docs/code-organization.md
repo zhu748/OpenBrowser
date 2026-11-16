@@ -1,5 +1,108 @@
 # 代码分类与维护入口
 
+## 第五轮：MCP 连接并发、停用边界与资源释放（2026-11-16）
+
+前四轮已完成执行/恢复边界、分记录加密与按需读取、流式事件合并、闲置会话回收及模板引用索引。进入本轮前，第四轮记录的 16 个文件哈希均与工作区一致；其最后一次完整回归为 266 通过、1 部分执行、6 跳过、0 失败。源码与生成资产仍是本地修改，未提交或推送。
+
+- `rebuild/agent-mcp-pool.js` 按服务串行复用连接，同时最多进行 4 个不同服务的初始化/验证。同名服务不会重复握手；排队取消会释放等待项和名额，失败初始化不发布半成品工具快照。发现顺序仍与配置顺序一致，总工具数超过 200 时停止本次发现。
+- 停用、删除或改配置会使该服务的旧连接代次失效。工具在等待连接完成后再次核对启用状态、配置和实际连接归属，不能在配置已停用但连接尚未关闭的间隙调用远端。已经发送的请求无法承诺撤销远端副作用。
+- 窗口范围受限的任务立即返回空 MCP 工具列表，不等待无关的慢验证。退出会中止临时验证和排队/初始化操作，再关闭持有连接；清理失败仍保留所有权以便再次关闭。
+- `rebuild/agent-mcp-connection.js` 独立处理 stdio/HTTP 传输。HTTP 错误、类型错误和会话错误都释放响应正文；请求校验响应 ID，SSE 支持多行、分块 CRLF、UTF-8 和服务端 ping，客户端回包可以正常接受 HTTP 202。无匹配结果的已结束响应及时报错；服务端请求回包同时最多 32 个，超过上限关闭连接，回包写入也有绝对期限。
+- stdio 写入等待可取消，取消通知有自己的期限，stdin 背压不能无限阻塞退出。关闭共用同一结果，失败可重试；等待直接启动进程的退出并关闭继承管道，必要时强制结束该进程。不声明终止服务自行脱离的全部后台进程。
+- `automation/selftests/agent-mcp-lifecycle-selftest.js` 使用真实 HTTP/子进程验证慢服务隔离、并发复用/上限、排队取消恢复、停用竞态、临时连接退出、失败关闭重试、工具预算、响应释放/ID/SSE，以及背压和继承管道。旧综合验收改为等待新的连接所有者操作，HTTP 夹具的释放支持重复调用。
+- MCP 与授权桌面脚本在刷新后按实际入口重新打开 MCP 弹窗或会话；已加入三平台桌面 CI。新 Node 生命周期门禁使用上一轮补齐的生产依赖环境。
+
+```sh
+cd Browserapp
+npm run selftest -- agentmcplifecycle
+npm run selftest -- rebuild:mcp
+node scripts/benchmark-agent-mcp.js --output ../work/agent-mcp/report.json
+node rebuild/agent-mcp-ui-selftest.cjs
+node rebuild/agent-approval-ui-selftest.cjs
+```
+
+MCP 基准使用 8 个本地服务夹具，每次握手等待 60 ms，取三次发现耗时的中位数；可用 `--baseline` 指定旧 MCP 模块对照。它不代表真实远端服务或模型推理速度。剩余结构工作仍包括超长单会话的分段读写、主进程已解密正文的回收、归档界面的逐步替换与原生跨平台发布验证。
+
+## 第四轮：闲置会话回收与模板引用索引（2026-11-16）
+
+- `rebuild/agent-conversation-cache.mjs` 统一闲置正文及运行事件的回收。保留原来的 3 条闲置会话预算，淘汰时同时释放消息、原始事件、运行状态和进度；元数据、未发送草稿、附件预览及排队提示词保留。当前查看、仍在运行和待审批的会话不参与淘汰，因此这不是进程总内存上限。
+- `compiler/patch-workbench.cjs` 将上述规则接入原聊天界面；缓存命中时更新访问顺序，异步历史详情发布后重新登记缓存，防止迟到响应绕过上限。修改编译源并生成 `roxy-ui/assets/agent-conversation-cache.js`，不修改归档输入。
+- `agent-state-store.js` 在加密 V2 索引的正文引用中附加可选 `templateReference`，正文保存时同步计算。模板编号不再为寻找检查点引用而展开全部会话；内存中已编辑的检查点仍优先参与编号计算，防止复用历史模板 ID。
+- 早期 V2 索引没有该字段时，在第一次确实需要编号引用时校验并读取对应正文，临时提取引用而不展开惰性会话。后续成功的索引保存保留这些投影；失败或损坏不会当成零引用。新字段不更改正文加密格式，整个 `local-agent/` 目录及原密钥的备份规则继续适用。
+- `automation/selftests/agent-retention-selftest.js` 同时覆盖独立策略、实际生成的缓存入口和详情发布代码、1000 条会话回收、当前/运行/审批保护、草稿保留、迟到响应以及旧索引兼容。真实桌面验收覆盖 10 个后台模型夹具回合、当前正文和草稿保留、淘汰后重新加载，以及 200 条历史下从原模板弹窗创建模板时零正文读取。
+- CI 的 Node 22/24 三平台边界门禁安装锁定的生产依赖并禁用安装脚本。Agent 调度依赖 `cron-parser`，不能把服务级验收放进完全没有依赖的环境；该门禁不需要下载 Electron 或浏览器。
+
+```sh
+cd Browserapp
+npm run selftest -- agentretention
+node scripts/benchmark-agent-retention.js --output ../work/agent-retention/report.json
+node rebuild/agent-conversation-cache-ui-selftest.cjs
+node rebuild/agent-history-ui-selftest.cjs
+```
+
+保留量基准执行实际生成的缓存入口，使用普通状态夹具；序列化字节不是进程堆占用。模板编号基准比较相同加密记录上的原检查点扫描与索引投影，不含索引加载、保存和模型推理耗时。长时间保持打开的单个会话、活跃会话和用户草稿仍可能较大。
+
+## 第三轮：流式事件与前端历史保留（2026-11-16）
+
+- `rebuild/agent-content-emitter.js` 保持首个模型正文片段立即发布，后续片段按约 24 ms 或 8,192 个 UTF-16 码元的阈值合并，再由 Agent 分配连续的原子事件序号。阈值不拆分单个提供商片段；事件循环忙碌时定时器可能延后。正常结束、错误和取消都先排空待发布文字并清理定时器，定时发布失败会终止该模型请求。
+- `run.partialAnswer` 与已发布序号一起更新，日志快照不包含尚未发布的尾部，避免打开日志后下一条增量重复显示。SSE/NDJSON 完成标记、响应预算与工具参数校验保持原有规则。
+- 原界面的序号范围替换逻辑由 `compiler/patch-workbench.cjs` 校正：`startSequence === sequence` 是追加事件，只有真正的多序号范围才替换同键片段。修改编译源并重新生成，不直接改归档输入。
+- `agent-channel.js` 仅为已打开且尚在缓存内的日志维护增量正文，未打开日志只保留摘要；已打开详情共用 `agent-task-history.mjs` 的 12 条缓存。加载期间的事件合并为一次尾随读取，不能用缺少前文的尾部覆盖完整快照。附件更新按用户消息 ID 合并，日志增量同时核对会话和运行 ID。
+- 后端完成保存并淘汰超过 500 条上限的日志后，通知界面删除对应摘要和详情，避免持续运行时前端列表无限增长。
+- `automation/selftests/agent-streaming-selftest.js` 验证真实 HTTP 分段、原子事件与范围回放、截断和取消、快照序号一致性、日志淘汰及前端缓存竞态。`rebuild/agent-streaming-ui-selftest.cjs` 使用真实 Electron，验证暂停提供商、重连和页面重载后的中文/emoji 正文与最终存储一致。
+
+```sh
+cd Browserapp
+npm run selftest -- agentstreaming
+node scripts/benchmark-agent-streaming.js --output ../work/agent-streaming/report.json
+node rebuild/agent-streaming-ui-selftest.cjs
+```
+
+流式基准使用本地 HTTP 模型夹具和真实 Agent 事件序列化；可用 `--baseline` 指定先前的 completion 模块、`--channel-baseline` 指定先前的 channel 源码做对照。前端保留量来自实际 channel 源码和轻量 ref 夹具，序列化字节不等同于进程堆占用；耗时是本机单次样本，不作为推理速度或延迟保证。
+
+## 第二轮：Agent 历史记录与按需读取（2026-11-16）
+
+- `rebuild/agent-state-store.js` 将 `state.enc` 升级为加密的 V2 索引，会话正文/检查点和日志正文分别放在 `local-agent/records/` 的独立加密记录中。内容变化才生成新记录；索引原子替换后才提交内存状态。配置和已读等元数据保存不读取历史正文，模型运行只声明当前会话/日志的正文变更范围。
+- 原 V1 文件在迁移前以 `state.legacy.enc` 保留，迁移中断不发布半成品索引。保存失败清理本次新记录且不更新指纹缓存；上一索引保存在 `state.previous.enc`，清理只回收当前及上一索引都不引用的旧记录。`records.initialized` 防止已经建立的空历史库在索引丢失时被误当新库。
+- 启动只加载索引及检查引用文件是否存在；首次使用某条会话/日志时校验加密、记录身份和摘要并读取正文。损坏记录报错，不回退为空历史。存储所有者通过 `AgentService.writeQueue` 串行调用；不同实例的过期快照拒绝覆盖。成功的关闭共用结果，失败的关闭允许重试。
+- 备份/转移必须包含整个 `local-agent/` 目录，不能只复制 V2 `state.enc`。旧程序不识别 V2；`state.legacy.enc` 是迁移时恢复点，不含迁移后的新增历史，不应自动覆盖当前索引。
+- `rebuild/agent-history.js` 提供不含正文/输入/检查点的日志摘要，以及去除重复事件载荷的按需详情。原完整日志接口保留兼容；默认工作台重连使用 `taskLogs:summary`，打开日志才请求 `logs:detail`。界面读取会话分页时省略后端保留的检查点。
+- `rebuild/agent-task-history.mjs` 管理详情请求合并、最多 12 条已打开详情的缓存、选择切换和重连/删除后的迟到响应。列表刷新保留当前详情；选中日志变化时合并一次尾随刷新。
+- 附件正文及索引共用可靠文件写入函数，先同步正文再发布索引；索引提交失败回收新附件，临时读取失败可重试。
+
+```sh
+cd Browserapp
+npm run selftest -- agentstore
+npm run selftest -- agenthistory
+node scripts/benchmark-agent-history.js --output ../work/agent-history-performance/report.json
+node rebuild/agent-tasks-ui-selftest.cjs
+node rebuild/agent-history-ui-selftest.cjs
+```
+
+历史基准使用模拟正文、真实加密和文件同步；分别记录一次性迁移成本、元数据读取及热保存成本，不能将其解释为真实大模型推理性能。新格式保留按会话读取的内存边界，超长单会话的正文仍会整体读取和保存。
+
+## 执行边界与性能门禁（2026-11-16）
+
+- `rebuild/agent-completion.js` 负责 OpenAI SSE/Ollama NDJSON 协议、响应预算与完成状态。提前结束、长度截断或拒绝不能发布完成，也不能执行收到一半的工具回合。
+- `rebuild/agent-browser-tools.js` 持有每次工具调用的 CDP 客户端。取消会关闭该客户端并等待操作结束，保留用户浏览器；已发送的导航或已发生的副作用不能承诺撤销。
+- `rebuild/context-window.js` 将压缩摘要保留在 tool 消息，兼容清理旧检查点生成的 system 摘要后缀。任务授权仍由执行层单独校验。
+- 该轮 Agent 与工作台本地存储共用 `engine/state-storage.js` 的文件同步、原子替换及失败清理，保留当时的加密文件格式。本轮历史记录的 V2 迁移见上方章节。
+- SQLite 的 `record_decode_failures` 保留损坏分组/扩展的原始记录，诊断只返回计数。批量扩展保存保留隔离记录与分配；导出拒绝静默缺项。修复后读取或显式删除会清理对应诊断。
+- `profiles:count` 返回缓存投影中的未删除环境数量；`workbench-usage.mjs` 合并侧栏计数刷新，避免读取全量环境 DTO，并隔离卸载后的迟到响应。
+- `scripts/selftest-all.js` 的原生条目必须声明 `runtimes`，可声明 `argsByRuntime`。`scripts/native-test-runner.js` 从同一注册表生成 Chromium/Firefox 门禁；跳过、部分通过及超时均阻止通过，CI 保留逐项报告和日志。
+- `scripts/benchmark-workbench.js` 运行默认 `obui://app` 界面，测量真实搜索提交、翻页、选择和计数载荷，包含 IPC、SQLite 与绘制等待；旧 `benchmark-real-render.js` 继续覆盖兼容界面。交互预算与纯渲染预算分别维护。
+
+```sh
+cd Browserapp
+npm run selftest -- agentboundaries
+npm run selftest -- metadatarecovery
+npm run selftest -- workbenchusage
+npm run selftest -- nativeplan
+OPENBROWSER_CHROMIUM_BINARY=/absolute/path/to/chrome node scripts/native-test-runner.js --runtime chromium
+OPENBROWSER_FIREFOX_BINARY=/absolute/path/to/firefox node scripts/native-test-runner.js --runtime firefox
+node scripts/benchmark-workbench.js --sizes 10,100,1000 --interaction-budget-ms 1500 --output ../work/workbench-performance/report.json
+```
+
 ## 当前模块边界与重构约束
 
 默认界面由 `rebuild/compiler/` 从锁定输入生成到 `roxy-ui/`；旧版

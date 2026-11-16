@@ -6,6 +6,9 @@ function collectStorageDiagnostics({ engine, automation } = {}) {
   const decodeCount = engine?.sqliteStore?.decodeFailureReport?.().count || 0;
   if (decodeCount) warnings.push({ code: 'PROFILE_DECODE_FAILED', count: decodeCount,
     message: `Could not decode ${decodeCount} profile(s). Original data was preserved; check the key before restoring.` });
+  const metadata = engine?.sqliteStore?.recordDecodeFailureReport?.();
+  if (metadata?.count) warnings.push({ code: 'METADATA_DECODE_FAILED', count: metadata.count,
+    message: `Could not decode ${metadata.count} group/extension record(s). Original data was preserved; repair or restore before exporting.` });
   if (engine?.storageRecovery) warnings.push({ code: 'ENGINE_RECOVERED',
     message: 'Profile settings were recovered from a backup. Check your recent changes.' });
   if (automation?.rpaStore?.loadReport?.quarantined) warnings.push({ code: 'RPA_QUARANTINED',

@@ -1,0 +1,149 @@
+{
+  "date": "2026-11-16",
+  "baseCommit": "409ed032b32e7b76dbc64f0565b0f2a691985239",
+  "scope": [
+    "Coalesce tiny streamed model fragments before event sequencing, IPC and history persistence",
+    "Correct archived renderer atomic-delta versus replacement-range semantics",
+    "Stop retaining unopened live task details and share the 12-entry opened-detail cache",
+    "Preserve snapshot prefixes during live detail loads, upsert attachment updates and match exact run identity",
+    "Notify renderer of durably evicted task logs",
+    "Remove a fixed-delay assumption from the real-browser import-limit gate"
+  ],
+  "behavior": {
+    "batching": "First fragment publishes immediately; later adjacent fragments flush at a nominal 24ms or 8192 UTF-16 code-unit threshold, without splitting an individual provider fragment. Closing success, failure or cancellation flushes pending received text and clears timers.",
+    "snapshotConsistency": "partialAnswer advances only with published events, so a log snapshot cannot include a tail that a future delta will publish again.",
+    "atomicProtocol": "Local events retain startSequence === sequence. The renderer appends these; only a real startSequence < sequence text range replaces earlier fragments for its key. Compiled assets are regenerated from authored compiler patches; archived inputs are unchanged.",
+    "detailRetention": "Unopened tasks retain metadata only. Only explicitly loaded, still-cached details receive live text. In-flight snapshots defer incoming detail changes to one trailing refresh; repeated user-message events update the existing message and attachment metadata.",
+    "logRetention": "After the existing 500-log retention save succeeds, evicted task logs emit task_log.deleted so each connected renderer drops their summaries and cached details.",
+    "importGate": "Oversized-upload validation waits up to 5 seconds for the new toast instead of reading a prior notice after a fixed 80ms."
+  },
+  "verification": {
+    "aggregate": {
+      "status": "passed",
+      "passed": 265,
+      "partial": 1,
+      "skipped": 6,
+      "failed": 0,
+      "partialReason": "Kernel automation flag forensics: launcher unavailable on this platform; portable checks passed",
+      "skippedScripts": [
+        "selftest:ffgeonative",
+        "selftest:appstartup",
+        "selftest:cssfontgate",
+        "selftest:cssfontrewrite",
+        "selftest:firefoxfingerprint",
+        "ffworker"
+      ],
+      "scope": "Full SUITE including available Chromium native gates; skipped prerequisites are reported, not counted as passes",
+      "log": "work/optimization-round3/node-selftests-final.log"
+    },
+    "firstAggregate": {
+      "passed": 264,
+      "partial": 1,
+      "skipped": 6,
+      "failed": 1,
+      "failure": "workbench-browser-selftest read an older toast after 80ms; corrected waiting and targeted full browser script passed before a fresh full aggregate run"
+    },
+    "targeted": [
+      "agentstreaming: deterministic timer/Unicode/error cleanup, actual compiled atomic/range reducers, 500 unopened logs and 12-entry cache, attachment upserts, exact run identity and in-flight snapshot races, real HTTP 10000-fragment response, encrypted reopen, 500-log eviction, truncation/cancellation and snapshot watermark",
+      "agentboundaries: SSE/NDJSON completion, failed completion never dispatches tools, trust/context boundaries and durable rollback",
+      "agenthistory: lazy history, on-demand details, cache races and attachment rollback/retry",
+      "workbenchregistry: acceptance scripts and runtime classification",
+      "workbenchbrowser: full real-browser script passed after waiting fix"
+    ],
+    "electronDesktop": [
+      "agent-streaming-ui-selftest.cjs: actual Electron, local HTTP SSE fixture with 1502 Unicode deltas, paused provider, reconnect, renderer reload and conversation reopen; exact final DOM and stored message",
+      "agent-tasks-ui-selftest.cjs: per-character SSE fixture, real IPC template/task UI and scheduler, zero unopened details, summary reconnect and one on-demand viewer request",
+      "review-agent-contracts-ui-selftest.cjs: 22 model-fixture turns/44 messages, cursor pagination, attachments/Skill references, unread/rename/delete and reload",
+      "review-agent-reconnect-selftest.cjs: retry failed handshake, four reconnects share one handshake and no duplicated live delivery"
+    ],
+    "desktopRetry": "One contract-UI startup timed out at its existing 15s limit during concurrent desktop/native/lint runs; the unchanged script passed in a separate rerun.",
+    "build": "npm run rebuild:ui passed including source, import, RPC and channel audits",
+    "lint": "npm run lint -- --max-warnings 0 passed",
+    "workflow": "YAML parsed. Streaming Node gate added to Node 22/24 Linux/Windows/macOS boundary jobs; streaming UI added to the three-platform desktop gate. Remote CI not run locally.",
+    "diffCheck": "git diff --check passed"
+  },
+  "benchmark": {
+    "node": "v24.22.1",
+    "platform": "linux",
+    "scope": "Synthetic tiny-token SSE over real loopback HTTP, actual Agent event envelopes and serialization; authored channel executed with reactive-ref stubs for retention accounting",
+    "reports": [
+      {
+        "before": {
+          "providerFrames": 1000,
+          "events": 1000,
+          "ipcBytes": 410786,
+          "replayBytes": 290787,
+          "elapsedMs": 98.18
+        },
+        "after": {
+          "providerFrames": 1000,
+          "events": 2,
+          "ipcBytes": 7800,
+          "replayBytes": 7561,
+          "elapsedMs": 16.41
+        }
+      },
+      {
+        "before": {
+          "providerFrames": 10000,
+          "events": 10000,
+          "ipcBytes": 4127788,
+          "replayBytes": 2927789,
+          "elapsedMs": 117.89
+        },
+        "after": {
+          "providerFrames": 10000,
+          "events": 5,
+          "ipcBytes": 72000,
+          "replayBytes": 71401,
+          "elapsedMs": 57.13
+        }
+      }
+    ],
+    "retention": {
+      "before": {
+        "unopenedLogs": 500,
+        "retainedDetails": 500,
+        "serializedDetailBytes": 14148951
+      },
+      "after": {
+        "unopenedLogs": 500,
+        "retainedDetails": 0,
+        "serializedDetailBytes": 2
+      }
+    },
+    "caveat": "Elapsed time is a single local sample, not an SLA. Serialized retained-detail bytes do not measure process heap. Encryption and file I/O are outside this benchmark."
+  },
+  "ipcReductionPercentAt10000Fragments": 98.26,
+  "replayReductionPercentAt10000Fragments": 97.56,
+  "limitations": [
+    "24ms is a scheduling interval, not a hard deadline when the event loop is busy",
+    "Synthetic provider and local Linux timings do not measure production model inference speed",
+    "Serialized detail bytes are not process heap measurements",
+    "Long individual conversations are still read and saved as whole encrypted records",
+    "No new encrypted storage format migration in this round; previous V2 backup rules continue to apply",
+    "Windows/macOS CI is configured but was not executed locally",
+    "The 12-entry bound applies to task log viewer details, not to the archived chat store's own conversation/process caches."
+  ],
+  "changedFileSha256": {
+    "Browserapp/rebuild/agent-content-emitter.js": "5a9abdcb6287755a030cb19b0a25d01117da401c8f629b0568834f8548d6f532",
+    "Browserapp/rebuild/agent-completion.js": "e1c133b7fd8e660597055f2de165a62e0c30a951a5adc0e76bd77a78defcdf08",
+    "Browserapp/rebuild/agent-channel.js": "44207e2e036ddf48e81c49a55117f2ce9e70791c7cbe1f3599ce9ab711da7dc0",
+    "Browserapp/rebuild/agent-task-history.mjs": "684486800a523137b37bcbb67d3c42f706b0a49364bef534c229d182f9b12492",
+    "Browserapp/rebuild/agent-service.js": "c57fbc60078442ef9c42a0bc74d4cab26c1ebdadd0dc9309c61f3ae1a4863a75",
+    "Browserapp/rebuild/compiler/patch-workbench.cjs": "8a66effc66239931f9193636bad6564746a2254facdd5fd7620c7c1156c8ce42",
+    "Browserapp/roxy-ui/assets/agent-channel.js": "2d26e76e9abff850097a0cf0cffba0f5f7739b5c1396d018d46462c093d92a1d",
+    "Browserapp/roxy-ui/assets/agent-task-history.js": "b1baa9a0dfaa06c7a37cb1d259c9f154b5aabb222090baf588a782a856149478",
+    "Browserapp/roxy-ui/assets/hook-CnJE4hRq.js": "d85471d2de85b98fe5b3f28ff12ce2e1ce56020cd9f1032c4b1c73ce74a70ebc",
+    "Browserapp/automation/selftests/agent-streaming-selftest.js": "7c5f0565bbd840a071f0abc1578e706451f693db64fcf1ec9279842005635837",
+    "Browserapp/automation/selftests/workbench-browser-selftest.js": "9cee9a3353532b6b75f71fb3e8990eb504ada10c8801e90b5bdf3e6b0e667f6e",
+    "Browserapp/rebuild/agent-streaming-ui-selftest.cjs": "e80e169016ac91f86a8a9cb82aec77d69cf01d652b9118e578cb693d7d3a74b5",
+    "Browserapp/rebuild/agent-tasks-ui-selftest.cjs": "92eab378a0f4c820f7fa2eacf477a485e40fb2a4825669237a918fdb9c610c2a",
+    "Browserapp/scripts/benchmark-agent-streaming.js": "59ec2d9953da106b13f28204ca249fa38f4f906a02c25994b2fcb3dce7fd83ed",
+    "Browserapp/scripts/selftest-all.js": "c40cc6a1560d22ee5eac91042418ec9b2047a7c061db5e580f044780d4522d01",
+    "Browserapp/rebuild/acceptance-manifest.json": "0028a17a900f8baf2cc85853022d0a35cc6d6367f1165e8e55bf54cc514f3a5a",
+    "Browserapp/eslint.config.js": "067cb69e63d380538ac3d269d1f650b948a988d1bbd9aee35702515b202ddcfa",
+    ".github/workflows/ci.yml": "2447dcaf33413aa6ef2b7869258fcc8c312e41cff9ce49e41e5531c7ed3af0d4",
+    "docs/code-organization.md": "f0d4dec0f6614d8f7f1c7aff10921f8d06ad077528cdd5612b742db910e5aa97"
+  }
+}

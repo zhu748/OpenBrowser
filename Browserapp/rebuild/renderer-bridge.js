@@ -672,9 +672,10 @@ const agentCall = (method, ...args) => {
       fileName: args[2],
       conversationId: args[3],
     });
+  if (method === "conversationDetail")
+    return globalThis.__agentRequest(method, { id: args[0], ...args[1], includeCheckpoint: false });
   if (
     [
-      "conversationDetail",
       "deleteConversation",
       "resume",
       "runTask",

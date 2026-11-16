@@ -3,6 +3,7 @@
 // save meanwhile, so drafts must remain outside the shared object until durable.
 function saveFields(service, fields) {
   return service.save({
+    scope: { conversations: [], logs: [] },
     snapshot: () => ({ ...service.data, ...fields }),
     commit: () => Object.assign(service.data, fields),
   });

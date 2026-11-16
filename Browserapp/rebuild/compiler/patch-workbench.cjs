@@ -6,6 +6,32 @@ const fs = require('node:fs');
 const path = require('node:path');
 const dir = 'work/rebuild/stage/assets';
 
+// Local events are atomic even when they declare their own startSequence.
+// Only a genuine multi-sequence range replaces previous text for that key.
+require('./patch-source.cjs').createPatch(dir)('hook-CnJE4hRq', {}, {
+ Ul: `return e.startSequence!==void 0&&e.startSequence<e.sequence?Hl(e):void 0;`,
+ Qm: `return evictConversationCache(e,t,{isActive:id=>Xm(e,id),selected:()=>zm(globalThis.__router?.currentRoute?.value?.params?.conversationId),onEvict:id=>{delete km[id];Ym.delete(id);}});`,
+ $m: `return touchConversationCache(e,t,{recent:Ym,maximum:Jm,isActive:id=>Xm(e,id),selected:()=>zm(globalThis.__router?.currentRoute?.value?.params?.conversationId),onEvict:id=>{delete km[id];Ym.delete(id);}});`,
+});
+const conversationFile = path.join(dir, 'hook-CnJE4hRq.js');
+let conversationSource = fs.readFileSync(conversationFile, 'utf8');
+// Revisit cached selections, and enroll a late detail response again after
+// publication: its original LRU reservation may have been evicted during I/O.
+conversationSource = replaceExactly(conversationSource,
+ 'async function Pe(n){if(!je(n)||bm.has(n))return;$m(e,n);',
+ 'async function Pe(n){$m(e,n);if(!je(n)||bm.has(n))return;', 'conversation cache access');
+const publishedDetail = 'e.messagesByConversationId[n]=Jf(r),km[n]={hasMore:r.hasMore===!0&&r.nextCursor!==null,loading:!1,nextCursor:r.nextCursor??null};';
+conversationSource = replaceExactly(conversationSource, publishedDetail, publishedDetail + '$m(e,n);', 'conversation cache publication');
+fs.writeFileSync(conversationFile, "import {evictConversationCache,touchConversationCache} from './agent-conversation-cache.js';\n" + conversationSource);
+fs.copyFileSync('Browserapp/rebuild/agent-conversation-cache.mjs', path.join(dir, 'agent-conversation-cache.js'));
+
+// Load full execution details only when the user opens a log. Preserve the
+// archived viewer/render and use the channel's bounded, race-aware cache.
+require('./patch-source.cjs').createPatch(dir)('TaskManagerRoute-iC4ANt4w', {}, {
+ Tr: `if(!$e(e))return;return A.loadTaskExecution(e.id).then(value=>{if(value&&$e(e)){ut.value=e.id;dr([e]);}}).catch(error=>{globalThis.__localUiError?.(error.message);console.error(error);});`,
+ Er: `A.clearTaskExecution();ut.value=void 0;`,
+});
+
 function setups(file, replacements) {
   const target = path.join(dir, file);
   const source = fs.readFileSync(target, 'utf8');

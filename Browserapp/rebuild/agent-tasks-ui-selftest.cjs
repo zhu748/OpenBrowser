@@ -31,11 +31,11 @@ const repo = path.resolve(__dirname, "../..");
     requests++;
     res.writeHead(200, { "content-type": "text/event-stream" });
     res.end(
-      "data: " +
+      Array.from("这是本地任务的真实模型输出。", content => "data: " +
         JSON.stringify({
-          choices: [{ delta: { content: "这是本地任务的真实模型输出。" } }],
+          choices: [{ delta: { content } }],
         }) +
-        "\n\ndata: [DONE]\n\n",
+        "\n\n").join("") + "data: [DONE]\n\n",
     );
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -50,15 +50,14 @@ const repo = path.resolve(__dirname, "../..");
     app = await electron.launch({
       executablePath: require("electron"),
       args: [
-        "--no-sandbox",
-        "--ozone-platform=headless",
-        "--disable-gpu",
+        ...(process.platform === 'linux' ? ["--no-sandbox", "--ozone-platform=headless", "--disable-gpu"] : []),
         path.join(repo, "Browserapp"),
       ],
       env: {
         ...process.env,
         OPENBROWSER_ROXY_UI: "1",
         OPENBROWSER_USER_DATA: data,
+        OPENBROWSER_API_PORT: "0",
       },
     });
     page = await app.firstWindow();
@@ -200,10 +199,27 @@ const repo = path.resolve(__dirname, "../..");
     );
     await page.getByText("执行日志", { exact: true }).click();
     await page.getByText("本地任务执行验收", { exact: true }).first().waitFor();
+    assert.equal(await page.evaluate(() => Object.keys(globalThis.__localAgentChannel().taskExecutionDetails.value).length), 0,
+      'unopened live task output must not allocate viewer details');
+    await page.evaluate(() => {
+      const request = globalThis.__agentRequest;
+      globalThis.__historyDetailReads = 0;
+      globalThis.__agentRequest = (method, payload) => {
+        if (method === 'taskLogs:list') throw Error('task list must use summaries');
+        if (method === 'logs:detail') globalThis.__historyDetailReads++;
+        return request(method, payload);
+      };
+    });
+    await page.evaluate(() => globalThis.__localAgentChannel().reconnect());
+    await page.locator('tr').filter({ hasText: '本地任务执行验收' })
+      .getByRole('button', { name: '查看日志', exact: true }).click();
+    await page.getByText('这是本地任务的真实模型输出。', { exact: true }).first().waitFor();
+    assert.equal(await page.evaluate(() => globalThis.__historyDetailReads), 1);
     await page.screenshot({ path: path.join(evidence, "agent-task-logs.png") });
     assert.equal(requests, 2);
     result.checks.push(
       "测试经 IPC 设置一次性计划；本地调度器真实执行模型任务，原执行日志页面显示成功结果",
+      "重连仅同步摘要；原查看日志按钮按需读取一次详情并显示真实模型输出",
     );
     assert.deepEqual(result.errors, []);
     assert.deepEqual(result.externalRequests, []);

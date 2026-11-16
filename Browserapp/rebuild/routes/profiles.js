@@ -14,6 +14,10 @@ async function profilesQuery(service, p) {
   return require("../profile-query").queryProfiles(service, p);
 }
 
+function profilesCount(service) {
+  return { count: service.profileIndex().activeCount };
+}
+
 async function profilesClearCache(service, p) {
   const e = service.engine;
   return require("../profile-cache").clearLocalCache(e, p);
@@ -366,6 +370,7 @@ async function profilesProxyResults(service, p) {
 }
 
 module.exports = [
+  ["profiles:count", profilesCount, "parallel"],
   ["profiles:query", profilesQuery, "parallel"],
   ["profiles:clear-cache", profilesClearCache, "serial"],
   ["profiles:choose-import", profilesChooseImport, "parallel"],

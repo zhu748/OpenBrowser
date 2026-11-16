@@ -196,6 +196,7 @@ fs.copyFileSync(
   "Browserapp/rebuild/agent-channel.js",
   dir + "/agent-channel.js",
 );
+fs.copyFileSync("Browserapp/rebuild/agent-task-history.mjs", dir + "/agent-task-history.js");
 {
   const f = dir + "/bootstrap.js";
   let s = replaceExactly(fs
@@ -616,6 +617,7 @@ fs.copyFileSync(
   "Browserapp/rebuild/workbench-chrome.js",
   dir + "/workbench-chrome.js",
 );
+fs.copyFileSync("Browserapp/rebuild/workbench-usage.mjs", dir + "/workbench-usage.js");
 {
   const f = dir + "/list-ByevuXQD.js";
   let code = fs.readFileSync(f, "utf8");

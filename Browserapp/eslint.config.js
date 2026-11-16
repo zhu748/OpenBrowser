@@ -414,7 +414,12 @@ module.exports = [
   {
     files: ['engine/launch-preparation.js', 'main/fatal-error.js', 'automation/shutdown.js',
       'automation/fingerprint/persona-display.js', 'automation/fingerprint/persona-locale.js', 'automation/fingerprint/persona-ua.js',
-      'rebuild/workbench-notifications.mjs', 'rebuild/compiler/evidence-path.cjs'],
+      'rebuild/workbench-notifications.mjs', 'rebuild/workbench-usage.mjs', 'rebuild/agent-task-history.mjs',
+      'rebuild/agent-conversation-cache.mjs',
+      'rebuild/agent-completion.js', 'rebuild/agent-content-emitter.js', 'rebuild/agent-browser-tools.js',
+      'rebuild/agent-state-store.js', 'rebuild/agent-history.js',
+      'rebuild/agent-mcp-connection.js', 'rebuild/agent-mcp-pool.js',
+      'rebuild/compiler/evidence-path.cjs'],
     rules: {
       'max-lines-per-function': ['error', { max: 100, skipBlankLines: true, skipComments: true }],
       'no-empty': 'error',

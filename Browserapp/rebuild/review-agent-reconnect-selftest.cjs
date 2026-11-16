@@ -106,12 +106,12 @@ const { _electron: electron } = require("playwright"),
     );
     result.checks.push("首次 info 失败后实际重新连接并恢复 ready");
     await app.evaluate(() => {
-      globalThis.__reviewConnection.method = "taskLogs:list";
+      globalThis.__reviewConnection.method = "taskLogs:summary";
       globalThis.__reviewConnection.failures = 1;
     });
     await page.reload();
     await waitUntil(async () =>
-      String((await state())?.error).includes("fixture taskLogs:list"),
+      String((await state())?.error).includes("fixture taskLogs:summary"),
     );
     assert.equal(
       (await state()).connected,

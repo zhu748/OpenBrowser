@@ -1,0 +1,154 @@
+{
+  "date": "2026-11-16",
+  "baseCommit": "409ed032b32e7b76dbc64f0565b0f2a691985239",
+  "scope": [
+    "Release raw completed-run events alongside idle conversation message projections",
+    "Pin selected/active/approval conversations while preserving unsent drafts, attachment previews and queued prompts",
+    "Re-enroll asynchronous detail results in cache after publication",
+    "Project checkpoint template references into encrypted record indexes without changing record encryption or V2 version",
+    "Preserve monotonic record IDs across legacy fallback and edited checkpoints",
+    "Install locked production dependencies for cross-platform Agent CI boundary gates"
+  ],
+  "cache": {
+    "idleBudget": 3,
+    "eviction": "Remove rendered messages, runs, raw streams and progress for an eligible idle conversation; preserve metadata and all unsent work",
+    "pinning": "Current conversation from the real router, active runs and pending approvals are excluded from eviction",
+    "lifecycle": "Promote cached accesses and touch again after an asynchronous detail publishes, since its original cache reservation can be evicted during the request",
+    "migration": "No persistent chat-history deletion; evicted messages reload from the existing IPC history API"
+  },
+  "templateReferences": {
+    "indexField": "Optional encrypted body.templateReference scalar in the V2 manifest; validated as a nonnegative safe integer",
+    "computation": "Compute references when a conversation body is serialized; loaded/edited checkpoints take precedence when allocating IDs",
+    "legacy": "Old V2 entries lacking the projection are authenticated/read once on demand, with only the extracted reference retained. The next successful index commit preserves the projection. Missing/corrupt records fail instead of implying zero.",
+    "compatibility": "No new store version or encrypted body format. Back up the entire local-agent directory and original credential key as before."
+  },
+  "verification": {
+    "aggregate": {
+      "status": "passed",
+      "passed": 266,
+      "partial": 1,
+      "skipped": 6,
+      "failed": 0,
+      "partialReason": "Kernel automation flag forensics launcher is unavailable on this platform; portable checks pass",
+      "skippedScripts": [
+        "selftest:ffgeonative",
+        "selftest:appstartup",
+        "selftest:cssfontgate",
+        "selftest:cssfontrewrite",
+        "selftest:firefoxfingerprint",
+        "ffworker"
+      ],
+      "scope": "Full SUITE including available Chromium native gates; missing prerequisites are not counted as passes",
+      "log": "work/optimization-round4/node-selftests.log"
+    },
+    "nodeTargeted": [
+      "agentstore: encrypted migration, interrupted migration, rollback/retry, snapshot isolation, identity and GC",
+      "agentretention: 1000-conversation retention through pure policy and actual compiled entry points, selected/active/approval protection, unsent work and orphan streams; delayed compiled detail publication; encrypted template projections and old-V2 fallback across restarts",
+      "agenthistory: lazy metadata, detail cache races, checkpoint omission and attachment durability",
+      "rebuild:contracts: ID/reference-related record and durable transaction contracts",
+      "workbenchregistry: standalone acceptance setup and runtime classification"
+    ],
+    "electronDesktop": [
+      "agent-conversation-cache-ui-selftest.cjs: original chat send UI plus 10 background model-fixture responses; selected body and unsent draft remain; an evicted conversation reopens through real IPC",
+      "agent-history-ui-selftest.cjs: encrypted 200-conversation legacy migration and whole-process restart; original template dialog creates a template with zero body reads; opened conversation reads one body",
+      "review-agent-contracts-ui-selftest.cjs: 22 real model-fixture HTTP turns, 44 history messages, cursor paging, Skill edits, unread/rename/delete and reload",
+      "agent-streaming-ui-selftest.cjs: 1502 Unicode SSE deltas, paused provider, reconnect, renderer reload/reopen and exact final stored/visible text"
+    ],
+    "build": "npm run rebuild:ui passed with source, import, RPC and channel audits",
+    "lint": "npm run lint -- --max-warnings 0 passed",
+    "ciDependencies": {
+      "reproduction": "Isolated source fixture with no node_modules failed on missing cron-parser, matching the former review-boundaries configuration",
+      "fix": "npm ci --omit=dev --ignore-scripts installs six locked runtime packages; no Electron dependency or browser binary is installed",
+      "verified": [
+        "agentstore",
+        "agentstreaming",
+        "agentretention"
+      ],
+      "matrix": "Configured Node 22/24 on Linux/Windows/macOS; isolated local verification used Node 24 on Linux; remote CI was not executed",
+      "electronInstalledInIsolatedFixture": false
+    },
+    "workflow": "YAML parsed; retention Node and desktop gates registered in shared matrices and acceptance manifest",
+    "diffCheck": "git diff --check passed"
+  },
+  "benchmark": {
+    "node": "v24.22.1",
+    "platform": "linux",
+    "scope": "Actual generated conversation cache entry points with plain-state fixtures; original checkpoint scan versus indexed ID projection over identical real encrypted records",
+    "idleCache": {
+      "before": {
+        "conversations": 1000,
+        "cachedMessages": 3,
+        "retainedRuns": 1000,
+        "retainedStreams": 1000,
+        "selectedConversationRetained": false,
+        "serializedProjectionBytes": 5151472
+      },
+      "after": {
+        "conversations": 1000,
+        "cachedMessages": 3,
+        "retainedRuns": 3,
+        "retainedStreams": 3,
+        "selectedConversationRetained": true,
+        "serializedProjectionBytes": 18349
+      }
+    },
+    "templateIdProjection": [
+      {
+        "before": {
+          "conversations": 100,
+          "bodyReads": 100,
+          "allocatedId": 10100,
+          "elapsedMs": 65.56
+        },
+        "after": {
+          "conversations": 100,
+          "bodyReads": 0,
+          "allocatedId": 10100,
+          "elapsedMs": 0.45
+        }
+      },
+      {
+        "before": {
+          "conversations": 1000,
+          "bodyReads": 1000,
+          "allocatedId": 11000,
+          "elapsedMs": 1314.9
+        },
+        "after": {
+          "conversations": 1000,
+          "bodyReads": 0,
+          "allocatedId": 11000,
+          "elapsedMs": 1.96
+        }
+      }
+    ],
+    "limitations": "Serialized projection bytes are not heap usage. ID timings exclude index load and save. Existing V2 indexes without projected references require a one-time lazy fallback. Active/selected/approval state is protected; this is not an absolute total-memory cap."
+  },
+  "projectionByteReductionPercent": 99.64,
+  "limitations": [
+    "The idle budget is not a total process-memory cap: active/selected/approval state and unsent work remain protected",
+    "A very long selected conversation and its run history can still be large until it becomes eligible for eviction",
+    "Serialized fixture bytes are not measured heap usage; benchmark timings exclude index load/save and model inference",
+    "Earlier V2 entries pay a one-time body read when template references are first needed",
+    "Main-process lazy bodies already materialized by other operations are not unloaded by this renderer cache policy",
+    "Windows/macOS CI is configured, not locally executed"
+  ],
+  "changedFileSha256": {
+    "Browserapp/rebuild/agent-conversation-cache.mjs": "54535b432ebfabfdd400e911a335a3ae264a15ca684943b910b6c03d18528a40",
+    "Browserapp/roxy-ui/assets/agent-conversation-cache.js": "8a1daac2fb15960fe1c7ccab32975331031bd1138858b67d56dce5b2a8762df0",
+    "Browserapp/rebuild/agent-state-store.js": "03d8afdee2f2c9be370d82dad9daa44774e91657c32f23399a606f79215df1d1",
+    "Browserapp/rebuild/agent-records.js": "acb185401349d9dd58ea3a6df53fbfa206a60047d8df4f7be50e8a64db4eaba6",
+    "Browserapp/rebuild/compiler/patch-workbench.cjs": "6d9b630f7e927b06380ebd3f2344c61360113ea0e30c252484e8cb974f50a2ef",
+    "Browserapp/roxy-ui/assets/hook-CnJE4hRq.js": "33c054b82674e1f6118516ff570c024a8a7241396fe70e13d732fd10e602e671",
+    "Browserapp/rebuild/selftest-conversation-cache.cjs": "bcbaf064889dac821d6e015aa97427e0578a67899ac30460779c5cba1fdbc19e",
+    "Browserapp/automation/selftests/agent-retention-selftest.js": "b8e88d0e55d9193809845878b96ec84d1621701cf9d42a146bbfdb46e7c56c3e",
+    "Browserapp/rebuild/agent-conversation-cache-ui-selftest.cjs": "15e9c4263f00f8192ee53aa328b53d8b3905a986c2f668922ea2d2a0afa6efe7",
+    "Browserapp/rebuild/agent-history-ui-selftest.cjs": "35ff29397b4f52d5ca4b7012126d49845bd6147dba7a0c2b581e1a9d44d3b0da",
+    "Browserapp/scripts/benchmark-agent-retention.js": "d1d15358d406ec1368a185162ea12ed73ebcd03145e667609f326ef5ba51abe1",
+    "Browserapp/scripts/selftest-all.js": "95e9d622ef2e0070f890a8dc10399ce1488a80ac080bb66a8aeb2a00572b6843",
+    "Browserapp/rebuild/acceptance-manifest.json": "d8f2a9a0308c3c56ffd55abb60c0e6c1036ec3cfc6f4656933a88fb83da608ef",
+    "Browserapp/eslint.config.js": "d08404ab53f9c5b62db7aa09c53037838180cead5be1244be79b50e9adc61059",
+    ".github/workflows/ci.yml": "6ac948d063a5dee01884037ac3a601349018a549375e1b03ced6ffe1f93079fa",
+    "docs/code-organization.md": "ea37293b041f9bc8d1b4655efb885c5c278deaa909234a1ab1689208d760963e"
+  }
+}

@@ -480,7 +480,15 @@ async function main() {
     assert.equal(uploadRace,0);
     const limits = await evaluate(async () => {
       window.openWorkbenchEditorMode('import');const input=document.getElementById('window-upload-input');
-      const upload=async(content,name)=>{const data=new DataTransfer();data.items.add(new File([content],name));input.files=data.files;input.dispatchEvent(new Event('change',{bubbles:true}));await new Promise(r=>setTimeout(r,80));return {rows:window.pendingImportedRows.length,toast:document.getElementById('toast').textContent};};
+      const upload=async(content,name)=>{
+        const notice=document.getElementById('toast');notice.textContent='';
+        const data=new DataTransfer();data.items.add(new File([content],name));input.files=data.files;
+        input.dispatchEvent(new Event('change',{bubbles:true}));
+        const deadline=Date.now()+5000;
+        while(!notice.textContent&&Date.now()<deadline)await new Promise(r=>setTimeout(r,20));
+        if(!notice.textContent)throw Error('Oversized import did not publish its validation result');
+        return {rows:window.pendingImportedRows.length,toast:notice.textContent};
+      };
       return [await upload(JSON.stringify(Array.from({length:5001},()=>({title:'oversized'}))),'oversized.json'),await upload(Array(5001).fill('title|https://example.test/').join('\n'),'oversized.txt')];
     });
     for(const limit of limits){assert.equal(limit.rows,0);assert.match(limit.toast,/5000/);}

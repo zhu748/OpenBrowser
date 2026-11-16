@@ -512,8 +512,7 @@ const agentCall = (method, ...args) => method === "getFileUrl" ? "obui://app/age
   mimeType: args[1],
   fileName: args[2],
   conversationId: args[3]
-}) : [
-  "conversationDetail",
+}) : method === "conversationDetail" ? globalThis.__agentRequest(method, { id: args[0], ...args[1], includeCheckpoint: !1 }) : [
   "deleteConversation",
   "resume",
   "runTask",

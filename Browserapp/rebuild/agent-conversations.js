@@ -16,10 +16,16 @@ function messageDto(message) {
     metadata: { ...message.metadata, attachments: message.attachments },
   } : {}) };
 }
+function metadataDraft(conversation, patch) {
+  // Preserve lazy body descriptors. Object spread would decrypt the complete
+  // conversation just to update its title or unread flag.
+  return Object.assign(Object.defineProperties({}, Object.getOwnPropertyDescriptors(conversation)), patch);
+}
 async function requestConversations(service, method, p) {
   if (method === "createConversation") {
     const c = { id: crypto.randomUUID(), title: "New conversation", createdAt: now(), updatedAt: now(), messages: [], unread: false };
     await service.save({
+      scope: { conversations: [c.id], logs: [] },
       snapshot: () => ({ ...service.data, conversations: [c, ...service.data.conversations] }),
       commit: () => service.data.conversations.unshift(c),
     });
@@ -42,16 +48,18 @@ async function requestConversations(service, method, p) {
       if (end < 0) throw Error("历史游标不存在或不属于当前会话");
     }
     const start = Math.max(0, end - limit), messages = c.messages.slice(start, end).map(messageDto);
-    return { conversation: { ...metadata(c), checkpoint: c.checkpoint }, messages, hasMore: start > 0, nextCursor: start > 0 ? messages[0].id : null };
+    return { conversation: { ...metadata(c), ...(p.includeCheckpoint === false ? {} : { checkpoint: c.checkpoint }) },
+      messages, hasMore: start > 0, nextCursor: start > 0 ? messages[0].id : null };
   }
   if (method === "updateConversation") {
     if (typeof p.title !== "string" || !p.title.trim() || p.title.trim().length > 200) throw Error("会话名称应为 1–200 个字符");
     const title = p.title.trim();
     let updatedAt;
     await service.save({
+      scope: { conversations: [], logs: [] },
       snapshot: () => {
         service.conversation(p.id); updatedAt = now();
-        return { ...service.data, conversations: service.data.conversations.map(row => row.id === p.id ? { ...row, title, updatedAt } : row) };
+        return { ...service.data, conversations: service.data.conversations.map(row => row.id === p.id ? metadataDraft(row, { title, updatedAt }) : row) };
       },
       commit: () => { c.title = title; c.updatedAt = c.updatedAt > updatedAt ? c.updatedAt : updatedAt; },
     });
@@ -61,10 +69,11 @@ async function requestConversations(service, method, p) {
     if (p.runId !== undefined && typeof p.runId !== "string") throw Error("已读轮次无效");
     let seenRunId;
     await service.save({
+      scope: { conversations: [], logs: [] },
       snapshot: () => {
         const current = service.conversation(p.id); seenRunId = p.runId ?? current.latestRunId;
         return { ...service.data, conversations: service.data.conversations.map(row =>
-          row.id === p.id && row.latestRunId === seenRunId ? { ...row, unread: false } : row) };
+          row.id === p.id && row.latestRunId === seenRunId ? metadataDraft(row, { unread: false }) : row) };
       },
       commit: () => { if (c.latestRunId === seenRunId) c.unread = false; },
     });
@@ -77,6 +86,7 @@ async function requestConversations(service, method, p) {
     service.deletingConversations.add(p.id);
     try {
       await service.save({
+        scope: { conversations: [], logs: [] },
         snapshot: () => {
           service.conversation(p.id);
           return { ...service.data, conversations: service.data.conversations.filter(row => row.id !== p.id) };

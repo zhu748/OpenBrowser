@@ -138,7 +138,7 @@ async function conversation(service) { return service.request("createConversatio
         : kind === "skill" ? service.request("skills:save", { slug: "stable-skill", enabled: false }) : kind === "mcp" ? service.request("mcp:upsert", { name: "not-committed", config: { type: "http", url: "http://127.0.0.1:12345" } }) : service.request("templates.topOfficialTemplate", { id: catalog.id });
       const rejected = assert.rejects(mutation, /record rename failure/);
       await new Promise(resolve => setImmediate(resolve)); release(); await initial; await config; await rejected;
-      const disk = require("../credential-crypto").decryptCredentialJson(await fs.readFile(path.join(service.root, "state.enc")));
+      const disk = await new (require("./agent-state-store").AgentStateStore)(service.root).load();
       assert.deepEqual(disk, service.data, "其他请求不能把尚未提交的记录带入自己的快照");
     } finally { release(); fs.rename = rename; await Promise.allSettled([initial, config, mutation]); }
   });
@@ -149,7 +149,7 @@ async function conversation(service) { return service.request("createConversatio
     service.data.eventProtocolVersion = 1; await service.shutdown();
     const reloaded = new AgentService({ root, engine: { emit() {}, status: () => [] } });
     try {
-      await reloaded.load(); const disk = require("../credential-crypto").decryptCredentialJson(await fs.readFile(path.join(reloaded.root, "state.enc")));
+      await reloaded.load(); const disk = await new (require("./agent-state-store").AgentStateStore)(reloaded.root).load();
       assert.equal(disk.eventProtocolVersion, 2);
       for (const stream of [disk.conversations[0].messages[0].events, disk.logs[0].events, disk.logs[0].messages[0].events]) assert.deepEqual(stream.map(event => event.startSequence), [1, 2, 3]);
     } finally { await reloaded.shutdown(); }
@@ -174,7 +174,7 @@ async function conversation(service) { return service.request("createConversatio
     fs.rename = async (from, to) => { if (to === path.join(reloaded.root, "state.enc") && failures-- > 0) throw Error("injected migration rename failure"); return rename(from, to); };
     try {
       await assert.rejects(reloaded.request("info"), /migration rename/);
-      const disk = require("../credential-crypto").decryptCredentialJson(await fs.readFile(path.join(reloaded.root, "state.enc"))); assert.equal(disk.eventProtocolVersion, 1);
+      const disk = await new (require("./agent-state-store").AgentStateStore)(reloaded.root).load(); assert.equal(disk.eventProtocolVersion, 1);
       assert.equal((await reloaded.request("info")).ready, true); assert.equal(reloaded.data.eventProtocolVersion, 2);
     } finally { fs.rename = rename; await reloaded.shutdown(); }
   });

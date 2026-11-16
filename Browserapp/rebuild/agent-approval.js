@@ -16,7 +16,7 @@ async function authorize(service,run,name,args){
   run.abort.signal.addEventListener('abort',abort,{once:true});run.abort.signal.throwIfAborted();
   timer=setTimeout(()=>settle.reject(Object.assign(Error('等待授权超时，任务已停止'),{code:'APPROVAL_TIMEOUT'})),service.approvalTimeoutMs||30*60*1000);timer.unref?.();
   service.event(run,'approval_requested',{approvalId,actionRequests,prompt:'请确认此操作后继续。'});
-  await service.save();
+  await service.saveRun(run);
   decision=await pending;
   run.abort.signal.throwIfAborted();
   if(decision.type==='reject')throw Object.assign(Error('用户拒绝了此操作，未执行'),{code:'APPROVAL_REJECTED'});

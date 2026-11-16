@@ -436,10 +436,15 @@ var Fn = T(a({ __name: "TaskManagerRoute", props: s({ activeConversationId: {}, 
     return je(e2.endReasonCode);
   }
   function Tr(e2) {
-    $e2(e2) && (ut2.value = e2.id, dr([e2]));
+    if ($e2(e2))
+      return A2.loadTaskExecution(e2.id).then((value) => {
+        value && $e2(e2) && (ut2.value = e2.id, dr([e2]));
+      }).catch((error) => {
+        globalThis.__localUiError?.(error.message), console.error(error);
+      });
   }
   function Er() {
-    ut2.value = void 0;
+    A2.clearTaskExecution(), ut2.value = void 0;
   }
   function Dr(e2) {
     if (!P2(e2)) return;
