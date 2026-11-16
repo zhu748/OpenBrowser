@@ -32,6 +32,10 @@ async function probeInlineWorkerSources() {
     ['malformed-program', () => data('"use strict";let = ;')],
     ['nested-data-upper', () => blob('const w=new Worker(' + JSON.stringify(data(source).replace('data:', 'DATA:'))
       + ');w.onmessage=e=>{w.terminate();postMessage(e.data)};w.onerror=()=>postMessage({failed:true});')],
+    ['nested-blob-upper', () => blob('const url=URL.createObjectURL(new Blob([' + JSON.stringify(source)
+      + '],{type:"application/javascript"})).replace("blob:","BLOB:");const w=new Worker(url);'
+      + 'w.onmessage=e=>{w.terminate();URL.revokeObjectURL(url);postMessage(e.data)};'
+      + 'w.onerror=e=>{e.preventDefault();URL.revokeObjectURL(url);throw Error("Nested Blob load failed")};')],
   ];
   const run = (factory, type = 'classic', shared = false) => new Promise(resolve => {
     let worker, url, timer;

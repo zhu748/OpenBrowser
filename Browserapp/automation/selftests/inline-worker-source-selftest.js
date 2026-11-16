@@ -2,6 +2,9 @@
 
 const assert = require('node:assert/strict');
 const { inlineWorkerSourceTools } = require('../inline-worker-source');
+const { buildFirefoxFingerprint } = require('../firefox-fingerprint');
+const { buildInjectionScript, buildWorkerInjectionScript } = require('../fingerprint');
+const { sanitizeProfile } = require('../../engine/profile-sanitizer');
 
 async function main() {
   const tools = inlineWorkerSourceTools(URL, TextEncoder, TextDecoder, Uint8Array, atob, 'chromium');
@@ -25,12 +28,25 @@ async function main() {
   for (const raw of ['DATA:text/plain,one', ' \tdata:text/plain,two\n', 'da\tta:text/plain,three', '\0data:,four']) {
     assert.equal(tools.resolve(raw), new URL(raw).href);
   }
-  const gecko = inlineWorkerSourceTools(URL, TextEncoder, TextDecoder, Uint8Array, atob, 'firefox');
+  const gecko = inlineWorkerSourceTools(URL, TextEncoder, TextDecoder, Uint8Array, atob, 'firefox', '159.0');
   assert.equal(gecko.resolve('da\tta:text/plain,one'), null, 'delegate Gecko scheme errors to its Worker constructor');
   assert.equal(gecko.resolve('BLOB:https://example.test/id'), null, 'do not turn Gecko native Blob load errors into executable sources');
   assert.equal(gecko.resolve('DATA:text/plain,one'), 'data:text/plain,one');
+  const gecko160 = inlineWorkerSourceTools(URL, TextEncoder, TextDecoder, Uint8Array, atob, 'firefox', '160.0');
+  assert.equal(gecko160.resolve('BLOB:https://example.test/id'), 'blob:https://example.test/id');
+  assert.equal(gecko160.resolve('da\tta:text/plain,one'), null);
   assert.equal(tools.resolve('/relative-worker.js'), null, 'ordinary URLs keep their native base URL resolution');
   assert.equal(tools.resolve('https://example.test/worker.js'), null);
+  const profile = sanitizeProfile({ id: 'native-version-cache', name: 'Native version cache', engine: 'firefox',
+    os: 'Windows', userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:158.0) Gecko/20100101 Firefox/158.0',
+    fingerprintSeed: 'native-version-cache', privacy: { fontListMode: 'real' } });
+  const fp159 = buildFirefoxFingerprint(profile, '159.0'), fp160 = buildFirefoxFingerprint(profile, '160.0');
+  assert.equal(fp159.userAgent, fp160.userAgent, 'the pinned UA does not identify the actual native kernel');
+  for (const build of [buildInjectionScript, buildWorkerInjectionScript]) {
+    const older = build(fp159), newer = build(fp160);
+    assert.notEqual(older, newer, 'cached source must follow the actual kernel even with an unchanged UA');
+    assert.ok(older.includes('"kernelVersion":"159.0"') && newer.includes('"kernelVersion":"160.0"'));
+  }
   console.log('INLINE_WORKER_SOURCE OK (native fetch decoding, malformed bytes, MIME metadata, base64 and per-engine URL contracts)');
 }
 

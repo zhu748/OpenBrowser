@@ -7,8 +7,8 @@
       "id": "inline-url-normalization-gap",
       "severity": "high",
       "status": "fixed",
-      "evidence": "原 prepare 仅匹配小写且无前导字符的 blob:/data:。真实 Chromium/Firefox 中 DATA:、前置空白与控制字符的合法 Data URL 返回宿主 5 核而非配置 2 核。Chromium 还允许部分内嵌 scheme 控制字符和大写 BLOB:；Firefox 对这些情况原生报错。",
-      "change": "使用捕获的原生 URL 规范化内联地址；区分 Gecko 自身拒绝的输入并保留其原生错误，普通网络/相对地址仍交给原生构造器。Worker CFG 携带 engine，嵌套构造器复用同一策略。"
+      "evidence": "原 prepare 仅匹配小写且无前导字符的 blob:/data:。真实 Chromium/Firefox 中 DATA:、前置空白与控制字符的合法 Data URL 返回原生 5 核而非配置 2 核。Chromium 允许部分内嵌 scheme 控制字符；Firefox 159 对大写 BLOB: 原生报错，但远端 Firefox 160 已允许。首次 CI 的新门禁检出了这一实际版本差异。",
+      "change": "使用捕获的原生 URL 规范化内联地址；以实际 fp.kernelVersion 区分 Firefox 159/160 的 Blob 策略，保留 Gecko 原生拒绝的 scheme 控制字符。文档/Worker CFG 共用真实内核版本，嵌套构造器继承；固定旧版 UA 也不能改变这项原生行为。普通网络/相对地址仍交给原生构造器。"
     },
     {
       "id": "hashbang-first-read-leak",
@@ -59,8 +59,11 @@
       "host": "Linux",
       "node": "24.22.1",
       "chromium": "159.0.8154.6",
-      "firefox": "159.0",
-      "casesPerEngine": 38,
+      "firefox": [
+        "159.0",
+        "160.0"
+      ],
+      "casesPerEngine": 39,
       "passed": true,
       "cases": [
         "大小写和空白/控制字符 URL",
@@ -70,16 +73,18 @@
         "错误 MIME 与错误语法保持原生结果",
         "UTF-8 错字节、字面百分号、Base64 和旧字符集",
         "WorkerLocation/import.meta.url、严格模式与无公开标记",
-        "页面包装加载 API 不被私有读取调用"
+        "页面包装加载 API 不被私有读取调用",
+        "固定较旧 UA 的 Firefox 159/160，以及嵌套大写 Blob URL；缓存源码跟随实际内核而非 UA"
       ],
-      "isolation": "先运行同一内核的无注入原生对照，再只执行文档安装器。异步协议 realm 回调未参与，不能掩盖构造器首读泄漏。"
+      "isolation": "先运行同一内核的无注入原生对照，再只执行文档安装器。异步协议 realm 回调未参与，不能掩盖构造器首读泄漏。",
+      "pinnedUa": "Firefox 159 使用固定 Firefox/158.0 UA，Firefox 160 使用固定 Firefox/159.0 UA；两版本各 39 项通过，原生 URL 策略依据实际内核。"
     },
     "aggregate": {
       "passed": 230,
       "partial": 1,
       "skipped": 33,
       "failed": 0,
-      "finalRun": "passed; isolated final run"
+      "finalRun": "passed after actual-kernel-version follow-up; no native browser runs overlapped"
     },
     "kernelFreeDecoding": "Node 原生 fetch(Data URL) 作为独立解码对照，覆盖所有 256 个字节、非法转义、BOM、Base64 和无效加载。",
     "existingNative": [
@@ -128,21 +133,30 @@
         "protocol": 0
       }
     },
-    "timing": "并行回归中一次 Firefox session.new 在注入前超时，隔离运行恢复通过；完整汇总也曾在未改动的 stopAll 500ms 墙钟断言超时。保留失败日志，最终完整汇总隔离执行；未放宽生产超时或原有测试断言。",
+    "timing": "并行回归中一次 Firefox session.new 在注入前超时，隔离运行恢复通过；完整汇总也曾在未改动的 stopAll 500ms 墙钟断言超时。保留失败日志，最终完整汇总隔离执行；未放宽生产超时或原有测试断言。 Firefox 160 的首次远端失败是实际版本行为差异，已通过实际 kernelVersion 修复并在本地 159/160 对照通过；与前述会话超时分开记录。",
     "evidenceDirectory": "work/review/fingerprint-round8",
     "partialReason": "既有 kernel automation flag forensics 保持部分验证。",
     "skippedReason": "汇总显式禁用自动选择内核，原生依赖检查跳过；本轮原生检查另行实跑，CI 继续执行完整双内核矩阵。",
     "logSha256": {
-      "selftest-all-final.log": "c620bb2fe05f5c74e6f945640068b742d9e8b75530eeba3b0f39a63686025b60",
-      "inline-native-chromium.log": "4198cd3acd01c33006bef5edd83a156f7c5b0fbe3192f41683e002fb4327d9b9",
-      "inline-native-firefox.log": "371346c6b341fb7099eac2400d92e1c9a9df914ad76e2952ec24620575c597e0",
+      "inline-native-chromium.log": "cbe1e5a54174dd1a12e8d798e64e343774fed9b8af879dbf7fad6460ea6e4ba6",
       "inline-source-unit.log": "944bb48fa9f1562dd3679ffec2bb70403d164f546eaea13968e49c72cb122c43",
       "native-contract.log": "1f355c11201bfb27cc48516ad3666a0fcd110d80c189fdb30f7ee2c84b521f15",
       "firefox-worker.log": "7b819235d39de71e458349ae46d4264435830f7c94e7f9ed712e18b9c337ca16",
       "chromium-cached-sw.log": "9053c541c69d1984b6950643cc54f8bb57d4b1063ca7a2e4c0876f3583810582",
       "chromium-blob-worker.log": "4fd713eca592909b5904f57c4ee590c3c0dd772a5e0044737687995b3c0728e9",
       "lint-final.log": "40b6000cfa17b3913102c5a8a8208fa9dd17125d75d93b1478765543fed65d74",
-      "negative-control.log": "8fb48bb46f92fb4ec7917e5cf6fe75bf4af003db2f6b49b826ca6ce61ec18b25"
+      "negative-control.log": "8fb48bb46f92fb4ec7917e5cf6fe75bf4af003db2f6b49b826ca6ce61ec18b25",
+      "selftest-all-version-final.log": "4a51830e0422306e71cf396097c67caa3269b9419c7aa4eb899c9b39697828eb",
+      "inline-native-firefox159.log": "9d2e2c5c42915ad3615677757c1f01ff1cc1d900898f420d7ed6a7ed04cc7d92",
+      "inline-native-firefox160.log": "17a6e748f1fb06c91a0b4ccd2343439143d8cd8a8efee50648226a68265073ca",
+      "editor-current.log": "f576ba6d73577475e02456d9c16a6c208575f35bcd9f8f8b2ef9e6fcc0bf9ac1"
+    },
+    "ciInitial": {
+      "runId": 43823393421,
+      "sourceCommit": "85ac7177791c3a00ebfb8c9260303adda0dde8d3",
+      "passedJobs": 15,
+      "failedJob": "Native browser gates (firefox)",
+      "cause": "Firefox 160 支持大写 BLOB:，先前仅按 Firefox 家族保留 159 的原生拒绝策略，导致该路径漏注入；由新增对照门禁检出，未触发重新发布。"
     }
   },
   "remaining": [

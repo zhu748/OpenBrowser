@@ -8,7 +8,7 @@ const { inlineWorkerSourceTools } = require('../../inline-worker-source');
 
 // Serialized into each realm. No flags or source-passing hooks are installed
 // on WorkerGlobalScope. The same-origin registry uses the private bridge.
-function installWorkerConstructors(workerCore, nativeLike, bridgeToken, engine) {
+function installWorkerConstructors(workerCore, nativeLike, bridgeToken, engine, kernelVersion) {
   const realm = globalThis;
   const NativeWorker = realm.Worker, NativeSharedWorker = realm.SharedWorker;
   const NativeBlob = realm.Blob, NativeXHR = realm.XMLHttpRequest;
@@ -24,7 +24,7 @@ function installWorkerConstructors(workerCore, nativeLike, bridgeToken, engine) 
   const nativeTrustedUrlString = realm.TrustedScriptURL?.prototype?.toString;
   if (!NativeBlob || !createUrl || !NativeWorker && !NativeSharedWorker) return;
   const tools = (/* PRIVATE_INLINE_TOOLS */ null)(nativeURL, realm.TextEncoder, realm.TextDecoder,
-    realm.Uint8Array, realm.atob.bind(realm), engine);
+    realm.Uint8Array, realm.atob.bind(realm), engine, kernelVersion);
   const sourcePosition = /* PRIVATE_SOURCE_POSITION */ null;
   const apply = Reflect.apply;
   const xhrPrototype = NativeXHR?.prototype;
@@ -271,10 +271,10 @@ const installerSource = installWorkerConstructors.toString()
   .replace('/* PRIVATE_INLINE_TOOLS */ null', () => inlineWorkerSourceTools.toString())
   .replace('/* PRIVATE_SOURCE_POSITION */ null', () => '(' + workerInjectionPosition.toString() + ')');
 function workerConstructorPatch({ workerSource }) {
-  return `\n;(${installerSource})(${JSON.stringify(String(workerSource))}, nativeLike, BRIDGE_TOKEN, CFG.engine);\n`;
+  return `\n;(${installerSource})(${JSON.stringify(String(workerSource))}, nativeLike, BRIDGE_TOKEN, CFG.engine, CFG.kernelVersion);\n`;
 }
 workerConstructorPatch.installerSource = installerSource;
 workerConstructorPatch.parserSourceBytes = acornSource.length;
 workerConstructorPatch.workerRuntime = `\nif (typeof constructorInstaller === 'function') constructorInstaller(
-  '(' + originalToString.call(installWorkerIdentity) + ')', nativeLike, BRIDGE_TOKEN, CFG.engine);\n`;
+  '(' + originalToString.call(installWorkerIdentity) + ')', nativeLike, BRIDGE_TOKEN, CFG.engine, CFG.kernelVersion);\n`;
 module.exports = workerConstructorPatch;

@@ -11,7 +11,7 @@ const { sanitizeProfile } = require('../../engine/profile-sanitizer');
 const { buildFingerprint, buildInjectionScript } = require('../fingerprint');
 const { buildFirefoxFingerprint } = require('../firefox-fingerprint');
 const { firefoxExtraUserPrefs } = require('../../engine/start-firefox');
-const { buildFirefoxUserJs, firefoxStartupArgs } = require('../kernel-versions');
+const { buildFirefoxUserJs, firefoxStartupArgs, firefoxUserAgent } = require('../kernel-versions');
 const { BidiConnection, waitForFirefoxEndpoint, evaluateBidi } = require('../../network/bidi-connection');
 const { probeInlineWorkerSources, verifyInlineWorkerSources } = require('./inline-worker-source-probes');
 
@@ -58,6 +58,9 @@ async function main() {
   } else browser = h.chooseChromiumBinary();
   const profile = sanitizeProfile({ id: 'inline-native-' + engine, name: 'Inline native parity', engine, os: 'Windows',
     fingerprintSeed: 'inline-native-stable', privacy: { cores: 2, fontListMode: 'real' } });
+  // Compatibility follows the installed kernel, independently of a user's
+  // pinned UA. Exercise that distinction with a deliberately older Firefox UA.
+  if (firefox) profile.userAgent = firefoxUserAgent('win', String(parseInt(browser.version, 10) - 1) + '.0');
   const build = () => firefox ? buildFirefoxFingerprint(profile, browser.version)
     : buildFingerprint({ ...profile, kernelVersion: browser.version });
   let fingerprint = build();
