@@ -67,17 +67,34 @@ async function main() {
       let previousUa = await readUa();
       const versionOf = value => value.match(/(?:Chrome|Firefox)\/([\d.]+)/)?.[1];
       const branch = versionOf(previousUa).split('.').slice(0, -1).join('.');
-      for (const button of [page.getByRole('button', { name: '随机', exact: true }).first(), page.getByRole('button', { name: '一键随机指纹', exact: true })]) {
+      const singleRandom = page.getByRole('button', { name: '随机', exact: true }).first();
+      const wholeRandom = page.getByRole('button', { name: '一键随机指纹', exact: true });
+      if (family === 'Firefox') {
+        await page.getByText('Chrome', { exact: true }).first().click();
+        await waitUntil(async () => (await readUa()).includes('Chrome/'));
+        assert.equal(await singleRandom.isDisabled(), false, 'returning to Chrome enables patch randomization');
+        await page.getByText('Firefox', { exact: true }).first().click();
+        await waitUntil(async () => (await readUa()).includes('Firefox/'));
+        previousUa = await readUa();
+        assert.equal(await singleRandom.isDisabled(), true);
+        assert.match(await singleRandom.getAttribute('title'), /Firefox.*标准 UA/);
+        assert.match(previousUa, /Firefox\/\d+\.0$/);
+        await singleRandom.scrollIntoViewIfNeeded();
+        await page.screenshot({ path: path.join(evidence, 'firefox-native-ua-disabled.png') });
+      }
+      for (const button of family === 'Firefox' ? [wholeRandom, wholeRandom] : [singleRandom, wholeRandom]) {
         const before = await app.evaluate(() => globalThis.editorPreviewHistory.at(-1));
         await button.click();
-        await waitUntil(async () => { const value = await readUa(); return value && value !== previousUa; });
+        await waitUntil(async () => (await app.evaluate(() => globalThis.editorPreviewHistory.at(-1))).row._fingerprintDraft.seed !== before.row._fingerprintDraft.seed);
+        if (family === 'Chrome') await waitUntil(async () => { const value = await readUa(); return value && value !== previousUa; });
+        else assert.equal(await readUa(), previousUa);
         const latest = await app.evaluate(() => globalThis.editorPreviewHistory.at(-1));
         assert.equal(latest.payload.os, before.payload.os, 'randomization preserves the chosen OS');
         assert.equal(latest.payload.coreType, family);
         assert.notEqual(latest.row._fingerprintDraft.seed, before.row._fingerprintDraft.seed);
         assert.equal(versionOf(latest.row.userAgent).split('.').slice(0, -1).join('.'), branch);
-        assert.ok(Number(versionOf(latest.row.userAgent).split('.').at(-1)) >= 1);
-        assert.equal(latest.row._fingerprintDraft.uaPatchRandomized, true);
+        assert.ok(family === 'Firefox' || Number(versionOf(latest.row.userAgent).split('.').at(-1)) >= 1);
+        assert.equal(latest.row._fingerprintDraft.uaPatchRandomized, family === 'Chrome');
         previousUa = await readUa();
       }
       const expected = await app.evaluate(() => globalThis.editorPreviewHistory.at(-1).row);
@@ -90,7 +107,7 @@ async function main() {
       assert.equal(saved.id, expected._fingerprintDraft.profileId, 'creation accepts the preview UUID');
       assert.equal(await app.evaluate((_host, id) => globalThis.editorTestEngine.fingerprintFor(id).seed, saved.id), expected._openbrowser.seed);
       assert.equal(saved.privacy.fingerprint.uaGenerated, true);
-      assert.equal(saved.privacy.fingerprint.uaPatchRandomized, true);
+      assert.equal(saved.privacy.fingerprint.uaPatchRandomized, family === 'Chrome');
       await page.screenshot({ path: path.join(evidence, 'fingerprint-saved-' + family + '.png') });
       const legacyUa = await app.evaluate(async (_host, id) => {
         const engine = globalThis.editorTestEngine, current = engine.profiles.get(id);
@@ -103,8 +120,8 @@ async function main() {
       }, saved.id);
       await page.evaluate(id => globalThis.__router.push('/browser/edit?id=' + id), saved.id);
       await page.getByRole('button', { name: '保存', exact: true }).waitFor();
-      const editRandom = page.getByRole('button', { name: '随机', exact: true }).first();
-      if (!await editRandom.isVisible()) await page.getByText('基础设置', { exact: true }).click();
+      const editRandom = family === 'Firefox' ? page.getByRole('button', { name: '一键随机指纹', exact: true }) : page.getByRole('button', { name: '随机', exact: true }).first();
+      if (!await ua.isVisible()) await page.getByText('基础设置', { exact: true }).click();
       await waitUntil(async () => !!(await readUa()));
       assert.equal(await readUa(), legacyUa, 'the editor shows the effective legacy override');
       await editRandom.click();
@@ -117,12 +134,16 @@ async function main() {
       const edited = await page.evaluate(id => globalThis.__localRequest('profiles:read', { id }), saved.id);
       assert.equal(edited.userAgent, editedUa);
       assert.equal(edited.privacy.fingerprint.userAgent, undefined, 'saving migrates the old hidden override');
-      assert.equal(edited.privacy.fingerprint.uaPatchRandomized, true, 'editing keeps the random patch intent');
+      assert.equal(edited.privacy.fingerprint.uaPatchRandomized, family === 'Chrome', 'editing keeps the selected engine UA policy');
       assert.equal(await app.evaluate((_host, id) => globalThis.editorTestEngine.fingerprintFor(id).userAgent, saved.id), editedUa);
       assert.equal(await app.evaluate((_host, id) => globalThis.editorTestEngine.fingerprintFor(id).seed, saved.id), editPreview._openbrowser.seed);
     }
     assert.deepEqual(errors, []);
-    console.log('PROFILE_FINGERPRINT_UI_SELFTEST OK (real Chromium/Firefox selection, changing UA/seed, unchanged OS and form-to-disk persistence)');
+    await fs.writeFile(path.join(evidence, 'ua-seed-history.json'), JSON.stringify(await app.evaluate(() => globalThis.editorPreviewHistory.map(({ payload, row }) => ({
+      os: payload.os, coreType: payload.coreType, userAgent: row.userAgent,
+      seed: row._fingerprintDraft.seed, uaPatchRandomized: row._fingerprintDraft.uaPatchRandomized,
+    }))), null, 2));
+    console.log('PROFILE_FINGERPRINT_UI_SELFTEST OK (Chrome patch randomization, Firefox native UA/disabled single action, changing seed, unchanged OS and form-to-disk persistence)');
   } catch (error) {
     console.error('RENDER_ERRORS', errors, await app?.firstWindow().then(page => page.evaluate(() => globalThis.previewErrors)));
     console.error('PREVIEWS', await app?.evaluate(() => globalThis.editorPreviewHistory));

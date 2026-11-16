@@ -6,6 +6,8 @@ const ua = require('../user-agent');
 const { buildEditorUa } = require('../editor-ua');
 const { buildFingerprint, assertFingerprintConsistency } = require('../fingerprint');
 const { randomUaPatchVersion, resolveUaPatchVersion } = require('../ua-version');
+const { sanitizeProfile } = require('../../engine/profile-sanitizer');
+const { buildFirefoxFingerprint } = require('../firefox-fingerprint');
 
 function main() {
   for (const [engine, kernel, oldUa, prefix] of [
@@ -28,6 +30,30 @@ function main() {
   assert.equal(resolveUaPatchVersion('157.0', 'Firefox/156.0.74', 'firefox'), '157.0.74');
   assert.equal(resolveUaPatchVersion('156.0.8078.74', 'Firefox/156.0.74'), null);
   assert.throws(() => randomUaPatchVersion('unknown'));
+  const firefoxEngine = { profiles: new Map(), chooseBrowser: () => ({ version: '160.0.2' }) };
+  for (let i = 0; i < 16; i++) {
+    const native = buildEditorUa(firefoxEngine, { engine: 'firefox', os: 'Windows', random: true, previousUserAgent: 'Firefox/160.0.73' });
+    assert.ok(native.userAgent.endsWith('Firefox/160.0'));
+    assert.equal(native.uaPatchRandomized, false);
+    assert.equal(native.uaReduced, false);
+  }
+  const oldGenerated = { id: 'firefox-native-policy', name: 'Firefox native policy', engine: 'firefox', os: 'Windows',
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:160.0) Gecko/20100101 Firefox/160.0.73',
+    fingerprintSeed: 'existing-seed', fingerprintVersion: 1,
+    privacy: { fingerprint: { uaGenerated: true, uaPatchRandomized: true } } };
+  const normalized = sanitizeProfile(oldGenerated);
+  assert.ok(normalized.userAgent.endsWith('Firefox/160.0'));
+  assert.deepEqual(sanitizeProfile(normalized), normalized, 'native UA normalization is idempotent');
+  assert.equal(normalized.privacy.fingerprint.uaPatchRandomized, false);
+  assert.equal(normalized.fingerprintSeed, 'existing-seed');assert.equal(normalized.fingerprintVersion, 1);
+  const beforeMigration = buildFirefoxFingerprint({ ...normalized, userAgent: oldGenerated.userAgent,
+    privacy: { ...normalized.privacy, fingerprint: { ...normalized.privacy.fingerprint, uaPatchRandomized: true } } }, '160.0.2');
+  const afterMigration = buildFirefoxFingerprint(normalized, '160.0.2');
+  for (const key of ['seed', 'canvas', 'audio', 'clientRects', 'webgl'])
+    assert.deepEqual(afterMigration[key], beforeMigration[key], 'UA format migration preserves ' + key);
+  assert.equal(sanitizeProfile({ ...oldGenerated, privacy: { fingerprint: { uaGenerated: false } } }).userAgent, oldGenerated.userAgent, 'manual UA remains user-owned');
+  const overridden = sanitizeProfile({ ...oldGenerated, privacy: { fingerprint: { ...oldGenerated.privacy.fingerprint, userAgent: oldGenerated.userAgent + ' Custom' } } });
+  assert.equal(overridden.privacy.fingerprint.userAgent, oldGenerated.userAgent + ' Custom');
   const engine = { profiles: new Map([
     ['linux', { os: 'Linux', osVersion: 'ubuntu 22.04', engine: 'chromium' }],
     ['mac', { os: 'macos_arm', osVersion: '14.5', engine: 'chromium' }],

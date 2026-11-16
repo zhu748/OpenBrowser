@@ -6,6 +6,7 @@ const { profileProxyAssociation, normalizedProxyAssociationId } = require("./pro
 const { normalizeCoordinates, normalizeBatterySnapshot, normalizeNetworkInformation, normalizeNetworkConditions, toFiniteNumber: finite } = require("../shared/profile-values");
 
 const { fingerprintVersion } = require("../automation/fingerprint/generation");
+const { normalizeGeneratedFirefoxUa } = require('../automation/firefox-ua-policy');
 
 const MAX_PROFILE_PROXY_LENGTH = 64 * 1024;
 
@@ -63,7 +64,7 @@ function sanitizeProfile(value) {
   const location = normalizeCoordinates(privacyValue.latitude, privacyValue.longitude);
   const exitLocation = normalizeCoordinates(value.exitLatitude, value.exitLongitude);
 
-  return {
+  return normalizeGeneratedFirefoxUa({
     id,
     number: Number.isInteger(number) && number > 0 ? number : null,
     trashed: Boolean(value.trashed),
@@ -307,7 +308,7 @@ function sanitizeProfile(value) {
       showBookmarkBar: Boolean(advancedValue.showBookmarkBar),
       uploadBookmarks: Boolean(advancedValue.uploadBookmarks),
     },
-  };
+  });
 }
 
 module.exports = {

@@ -18,14 +18,15 @@ async function main() {
     for (let attempt = 0; attempt < 8; attempt++) {
       const selected = { os: 'Windows', coreType, coreVersion: '159', previousUserAgent };
       const [row] = await preview({ engine }, selected);
-      assert.match(row.userAgent, coreType === 'Firefox' ? /Firefox\/159\.0\.\d+$/ : /Chrome\/159\.0\.8154\.\d+ /);
-      assert.notEqual(row.userAgent, previousUserAgent, 'each click changes UA without changing the OS');
+      assert.match(row.userAgent, coreType === 'Firefox' ? /Firefox\/159\.0$/ : /Chrome\/159\.0\.8154\.\d+ /);
+      if (coreType === 'Chrome') assert.notEqual(row.userAgent, previousUserAgent, 'Chrome randomization changes the patch');
+      else if (previousUserAgent) assert.equal(row.userAgent, previousUserAgent, 'Firefox retains its native UA while other identity fields randomize');
       assert.notEqual(row._fingerprintDraft.seed, previousSeed);
       assert.equal(row._openbrowser.platform, 'Win32');
       const saved = fromRoxy({ ...selected, ...row });
       assert.equal(saved.fingerprintSeed, row._fingerprintDraft.seed);
       assert.equal(saved.privacy.fingerprint.uaGenerated, true);
-      assert.equal(saved.privacy.fingerprint.uaPatchRandomized, true);
+      assert.equal(saved.privacy.fingerprint.uaPatchRandomized, coreType === 'Chrome');
       const delivered = engine.fingerprintFor({ ...saved, kernelVersion: engine.chooseBrowser(saved).version });
       assert.equal(delivered.userAgent, row.userAgent, 'saved UA format survives runtime generation');
       if (coreType === 'Chrome') assert.equal(delivered.userAgentMetadata.fullVersion, row.userAgent.match(/Chrome\/([\d.]+)/)[1]);
@@ -35,7 +36,7 @@ async function main() {
       const nextVersion = coreType === 'Firefox' ? '160.0' : '160.0.9000.1';
       const upgradedEngine = { ...engine, chooseBrowser: () => ({ version: nextVersion }) };
       const upgraded = upgradedEngine.fingerprintFor({ ...restored, kernelVersion: nextVersion });
-      assert.ok(upgraded.userAgent.includes(coreType + '/160.0.'));
+      assert.ok(coreType === 'Firefox' ? upgraded.userAgent.endsWith('Firefox/160.0') : upgraded.userAgent.includes('Chrome/160.0.'));
       previousUserAgent = row.userAgent; previousSeed = row._fingerprintDraft.seed;
     }
   }

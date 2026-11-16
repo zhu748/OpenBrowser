@@ -73,8 +73,44 @@ walk.simple(parse(source), {
 });
 if (formEdits.length !== 2) throw Error('UA manual-edit/feedback boundaries changed');
 for (const { start, end, text } of formEdits.sort((a, b) => b.start - a.start)) source = source.slice(0, start) + text + source.slice(end);
+const stringValue = node => node?.type === 'TemplateLiteral' && !node.expressions.length
+  ? node.quasis[0].value.cooked : node?.value;
+const uaFields = [];
+walk.simple(parse(source), { ObjectExpression(node) {
+  if (!node.properties.some(p => p.key?.name === 'name' && stringValue(p.value) === 'userAgent')
+    || !node.properties.some(p => p.key?.name === 'iconClick')) return;
+  uaFields.push(node.end - 1);
+} });
+if (uaFields.length !== 1) throw Error('Firefox UA policy field boundary changed');
+source = source.slice(0, uaFields[0]) + ',randomHelp:"Firefox 使用内核标准 UA；一键随机指纹可更新其他参数"' + source.slice(uaFields[0]);
 parse(source);
 fs.writeFileSync(formFile, draftImport + source);
+
+// The UA-specific action communicates Firefox's native-format policy. The
+// separate whole-fingerprint action remains available and refreshes its seed.
+const controlsFile = path.join(root, 'useAsyncGate-D7VA7DLY.js');
+source = fs.readFileSync(controlsFile, 'utf8');
+let uaSetup;
+walk.simple(parse(source), { ObjectExpression(node) {
+  if (node.properties.some(p => p.key?.name === '__name' && stringValue(p.value) === 'user-agent-field'))
+    uaSetup = node.properties.find(p => p.key?.name === 'setup')?.value;
+} });
+if (!uaSetup || uaSetup.params[0]?.type !== 'Identifier') throw Error('UA control setup boundary changed');
+const uaProps = uaSetup.params[0].name, controlEdits = [];
+const uaDisabled = 'findUaPolicyField('+uaProps+'.inputsGroup[0]||[],"coreType")?.value?.value==="Firefox"';
+walk.simple(uaSetup.body, { CallExpression(node) {
+  const props = node.arguments[1], dynamic = node.arguments.at(-1);
+  if (props?.type !== 'ObjectExpression' || !props.properties.some(p => p.key?.name === 'icon'
+    && stringValue(p.value) === 'base/rx_ic_shuffle')) return;
+  if (dynamic?.type !== 'ArrayExpression') throw Error('UA random button dynamic properties changed');
+  controlEdits.push({ start: props.end - 1, end: props.end - 1,
+    text: ',disabled:('+uaDisabled+'),title:('+uaDisabled+')?'+uaProps+'.input.randomHelp:undefined' });
+  controlEdits.push({ start: dynamic.end - 1, end: dynamic.end - 1, text: ',"disabled","title"' });
+} });
+if (controlEdits.length !== 2) throw Error('UA random button boundary changed');
+for (const e of controlEdits.sort((a, b) => b.start - a.start)) source = source.slice(0, e.start) + e.text + source.slice(e.end);
+source = "import {a as findUaPolicyField} from './utils-BIWenCnY.js';\n" + source;
+parse(source);fs.writeFileSync(controlsFile, source);
 
 const bootstrapFile = path.join(root, 'bootstrap.js');
 source = fs.readFileSync(bootstrapFile, 'utf8');

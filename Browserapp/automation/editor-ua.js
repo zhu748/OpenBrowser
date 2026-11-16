@@ -20,9 +20,8 @@ function buildEditorUa(engine, payload = {}) {
       throw Object.assign(new Error('Firefox 当前支持桌面设备配置，请选择 Windows、macOS 或 Linux'), { code: 'UA_PLATFORM_UNSUPPORTED' });
     const osName = os.startsWith('mac') ? 'mac' : os.startsWith('win') ? 'win' : 'linux';
     if (payload.random) {
-      const productVersion = randomUaPatchVersion(browser.version, { engine: family, previousUserAgent: payload.previousUserAgent || payload.userAgent });
-      return { ...buildUaProfile({ os, userAgent: firefoxUserAgent(osName, browser.version, { productVersion }) }),
-        kernelBound: true, uaReduced: false, uaPatchRandomized: true };
+      return { ...buildUaProfile({ os, userAgent: firefoxUserAgent(osName, browser.version) }),
+        kernelBound: true, uaReduced: false, uaPatchRandomized: false };
     }
     return { ...buildUaProfile({ os, userAgent: payload.userAgent || firefoxUserAgent(osName, browser.version) }), kernelBound: !payload.userAgent };
   }

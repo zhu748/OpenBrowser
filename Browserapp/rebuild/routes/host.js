@@ -29,19 +29,20 @@ async function fingerprintPreview(service, p) {
       ? { id: edited.id } : {});
     const browser = e.chooseBrowser(profile, profile.engine);
     profile.fingerprintSeed = crypto.randomBytes(16).toString('hex');
-    const fullVersion = randomUaPatchVersion(browser.version, { engine: profile.engine, previousUserAgent: p.previousUserAgent });
+    const firefox = profile.engine === 'firefox';
+    const fullVersion = firefox ? null : randomUaPatchVersion(browser.version, { previousUserAgent: p.previousUserAgent });
     const options = { os: profile.os, osVersion: profile.osVersion,
       chromeMajor: Number(browser.version.split('.')[0]), chromeFull: fullVersion };
     const os = /mac/i.test(profile.os) ? 'mac' : /win/i.test(profile.os) ? 'win' : 'linux';
-    const generated = profile.engine === 'firefox'
-      ? buildUaProfile({ os: profile.os, userAgent: firefoxUserAgent(os, browser.version, { productVersion: fullVersion }) })
+    const generated = firefox
+      ? buildUaProfile({ os: profile.os, userAgent: firefoxUserAgent(os, browser.version) })
       : buildUaProfile({ ...options, reduced: false });
     // Mobile templates own the model and release; they are selected below.
     const mobile = /android|ios|iphone|ipad/i.test(profile.os);
     if (!mobile) {
       profile.userAgent = generated.userAgent;
       profile.privacy.fingerprint = { ...profile.privacy.fingerprint,
-        uaGenerated: true, uaReduced: false, uaPatchRandomized: true, clientHints: generated.clientHints };
+        uaGenerated: true, uaReduced: false, uaPatchRandomized: !firefox, clientHints: generated.clientHints };
     }
     // A draft describes the next saved configuration, even while the old
     // browser is running. fingerprintFor(id) deliberately returns that live
@@ -59,7 +60,7 @@ async function fingerprintPreview(service, p) {
       hardwareConcurrent: f.hardwareConcurrency == null ? undefined : String(f.hardwareConcurrency),
       deviceMemory: f.deviceMemory == null ? undefined : String(f.deviceMemory),
       _fingerprintDraft: { ...previewIdentity(e, profile), generated: true,
-        userAgent: f.userAgent, uaReduced: mobile, uaPatchRandomized: !mobile, clientHints: f.clientHints },
+        userAgent: f.userAgent, uaReduced: mobile, uaPatchRandomized: !mobile && !firefox, clientHints: f.clientHints },
       ...(p.fontType
         ? { font: f.fonts.list.join(";"), fontList: f.fonts.list }
         : {}),

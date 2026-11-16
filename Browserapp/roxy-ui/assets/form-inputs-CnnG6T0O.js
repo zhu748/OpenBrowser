@@ -215,7 +215,7 @@ async function U(a2 = {}, h2 = () => {
     await y2(() => A(q)) && h2(0, $t("UA\u5237\u65B0\u6210\u529F"));
   }, change: (e2) => {
     Reflect.set(e2, "_custom_ua", !0), invalidateFingerprintDraft(q);
-  }, formatValue: (e2, t2, n2) => (Reflect.set(n2, "_custom_ua", e2._custom_ua), e2.value?.trim()), slot: "userAgent", preview: { label: "User Agent" } }, { type: "textarea", label: "Cookies", placeholder: $t(`\u9009\u586B
+  }, formatValue: (e2, t2, n2) => (Reflect.set(n2, "_custom_ua", e2._custom_ua), e2.value?.trim()), slot: "userAgent", preview: { label: "User Agent" }, randomHelp: "Firefox \u4F7F\u7528\u5185\u6838\u6807\u51C6 UA\uFF1B\u4E00\u952E\u968F\u673A\u6307\u7EB9\u53EF\u66F4\u65B0\u5176\u4ED6\u53C2\u6570" }, { type: "textarea", label: "Cookies", placeholder: $t(`\u9009\u586B
 \u652F\u6301\u683C\u5F0F: JSON\u3001Netscape\u3001Name=Value
 Name=Value \u672A\u5199 domain \u65F6\uFF0C\u5C06\u6309\u884C\u4ECE\u5E73\u53F0\u8D26\u53F7\u7684\u7F51\u5740\u81EA\u52A8\u586B\u5145`), name: "cookie", value: v(a2?.cookie) ? "" : te(a2.cookie), validator(e2) {
     let t2 = re(e2.value?.trim() ?? "", { platformUrls: pe(Z) });

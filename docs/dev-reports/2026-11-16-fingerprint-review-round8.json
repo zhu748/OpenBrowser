@@ -37,22 +37,31 @@
       "status": "fixed",
       "evidence": "失败对照中，页面包装 XHR.open/send/status/responseText 后，创建 Blob Worker 会触发这些页面回调，原生 Worker 加载不会。",
       "change": "安装时捕获 XHR 操作/读取器、编码器、解码器和 URL 读取器。新增对照要求私有加载对页面包装的回调次数与原生一样为 0。"
+    },
+    {
+      "id": "firefox-native-ua-policy",
+      "severity": "behavior-alignment",
+      "status": "fixed",
+      "evidence": "Firefox 原生 UA 使用 major.0，补丁发布不会自然产生 Firefox/160.0.73。原生成器为 Firefox 人为追加随机尾号，UA 单项随机的行为也容易与原生格式混淆。",
+      "change": "Firefox 创建/编辑及随机预览使用标准 major.0 UA；禁用 UA 单项随机并说明原因，一键随机继续生成新 seed 和其他指纹。旧 app-generated UA 的随机尾号/短格式被确定性规范化；手工 UA 与显式隐藏覆盖不改写。Chrome 的所选分支补丁号随机保留。"
     }
   ],
   "classification": {
     "automation/inline-worker-source.js": "可序列化的纯解码与每内核 URL 策略，无 Node 依赖。",
     "automation/worker-source-position.js": "网络和内联共用的语法插入位置，删除两份指令序列处理。",
-    "automation/fingerprint/runtime/worker-constructor-patch.js": "保留构造器、SharedWorker 注册、原 URL 与辅助 Blob 生命周期编排。"
+    "automation/fingerprint/runtime/worker-constructor-patch.js": "保留构造器、SharedWorker 注册、原 URL 与辅助 Blob 生命周期编排。",
+    "automation/firefox-ua-policy.js": "独立、确定性的旧自动 UA 格式迁移；通用 profile-sanitizer 只调用策略，手工值与 seed 保留。"
   },
   "compatibility": {
     "persistedFingerprintVersions": [
       1,
       2
     ],
-    "identityAlgorithms": "未修改；系统、已保存 UA 与 seed 的随机规则保持原约定。",
+    "identityAlgorithms": "V1/V2 的派生算法与既有 seed 保持；Firefox 默认 UA 改为原生 major.0，Chrome 仍按所选内核分支随机补丁。",
     "workerRuntimeRevision": 10,
     "protocol": "维持兼容的缓存前缀握手，避免同身份的旧 Chromium Service Worker 因无关的协议升号而被阻止。实现源码改变仍由 Firefox 源码 hash 缓存策略处理。",
-    "firefoxServiceWorkerCache": "注入源码变化后旧注册元数据失效，Cookie、LocalStorage、IndexedDB、CacheStorage 不清除；网站需重新注册。"
+    "firefoxServiceWorkerCache": "注入源码变化后旧注册元数据失效，Cookie、LocalStorage、IndexedDB、CacheStorage 不清除；网站需重新注册。",
+    "firefoxUaMigration": "只规范化 uaGenerated 且 uaPatchRandomized/uaReduced 的旧自动 UA；人工 UA、显式覆盖和 seed 保留。测试核对 seed、canvas/audio/clientRects/webgl 均不因格式迁移改变。"
   },
   "verification": {
     "native": {
@@ -84,7 +93,7 @@
       "partial": 1,
       "skipped": 33,
       "failed": 0,
-      "finalRun": "passed after actual-kernel-version follow-up; no native browser runs overlapped"
+      "finalRun": "passed after Firefox native UA policy; native processes did not overlap the aggregate"
     },
     "kernelFreeDecoding": "Node 原生 fetch(Data URL) 作为独立解码对照，覆盖所有 256 个字节、非法转义、BOM、Base64 和无效加载。",
     "existingNative": [
@@ -149,7 +158,15 @@
       "selftest-all-version-final.log": "4a51830e0422306e71cf396097c67caa3269b9419c7aa4eb899c9b39697828eb",
       "inline-native-firefox159.log": "9d2e2c5c42915ad3615677757c1f01ff1cc1d900898f420d7ed6a7ed04cc7d92",
       "inline-native-firefox160.log": "17a6e748f1fb06c91a0b4ccd2343439143d8cd8a8efee50648226a68265073ca",
-      "editor-current.log": "f576ba6d73577475e02456d9c16a6c208575f35bcd9f8f8b2ef9e6fcc0bf9ac1"
+      "editor-current.log": "f576ba6d73577475e02456d9c16a6c208575f35bcd9f8f8b2ef9e6fcc0bf9ac1",
+      "selftest-all-native-ua-final.log": "c9121d8f12a69c2583386c315fa85e1d89488ef2a4c2b49283b1b63e06cd2667",
+      "ua-native-contract.log": "c82fb19e49a81ac8777c3392ef438d1c8e034b3277515454780a2442eb476c4d",
+      "ua-native-feedback.log": "088b7faaf2865b0efd3c2646983c3b7a64a696be9e9e2667252888639305e0ef",
+      "ua-native-preview-identity.log": "eae913696c814ee7ebce06f30b196e8c44b3627808989761e09b171fbb0483ae",
+      "editor-native-ua.log": "72f7a0f0ebd85a6e72c5b97a63c6e507a23f0147c6feafa450dd1f8f179257a1",
+      "firefox-native-ua-delivery.log": "a43dd6e4ef75814bba080ab3ec0a76325c47a26bb1ec29963ac6d8778a54dc66",
+      "ui-native-ua-build.log": "a77137b878dbaa1c0c79125c598343ce4aad285504e53a1085597f16ffc896d9",
+      "lint-native-ua.log": "40b6000cfa17b3913102c5a8a8208fa9dd17125d75d93b1478765543fed65d74"
     },
     "ciInitial": {
       "runId": 43823393421,
@@ -157,6 +174,21 @@
       "passedJobs": 15,
       "failedJob": "Native browser gates (firefox)",
       "cause": "Firefox 160 支持大写 BLOB:，先前仅按 Firefox 家族保留 159 的原生拒绝策略，导致该路径漏注入；由新增对照门禁检出，未触发重新发布。"
+    },
+    "firefoxUaUi": {
+      "passed": true,
+      "firefoxVersion": "160.0",
+      "previews": 5,
+      "uniqueUa": 1,
+      "uniqueSeeds": 5,
+      "cases": [
+        "Firefox UA 单项随机禁用且说明可读",
+        "Chrome ↔ Firefox 切换恢复各自的按钮状态",
+        "一键随机更新 seed，系统与标准 Firefox UA 不变",
+        "创建/编辑、旧隐藏 UA 重置和磁盘持久化一致",
+        "旧自动 UA 格式迁移幂等，人工 UA 与显式覆盖保留，派生噪声不变",
+        "真实 Firefox 页面、iframe 首读、HTTP UA 保持标准格式"
+      ]
     }
   },
   "remaining": [

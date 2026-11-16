@@ -45,7 +45,8 @@ async function run(generation, shortVersion = false) {
     if (shortVersion === 'random') {
       const generated = buildEditorUa({ profiles: new Map(), chooseBrowser: () => ({ version }) }, { engine: 'firefox', os: 'Windows', random: true });
       profile.userAgent = generated.userAgent;
-      profile.privacy.fingerprint = { ...profile.privacy.fingerprint, uaGenerated: true, uaPatchRandomized: true };
+      profile.privacy.fingerprint = { ...profile.privacy.fingerprint, uaGenerated: true, uaReduced: false,
+        uaPatchRandomized: generated.uaPatchRandomized };
     }
     const fp = buildFirefoxFingerprint(profile, version);
     if (shortVersion === true) assert.match(fp.userAgent, new RegExp('Firefox/' + version.split('.')[0] + '$'));
