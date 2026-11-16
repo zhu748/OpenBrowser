@@ -1,6 +1,7 @@
 'use strict';
 
 const syntax = require('./vendor/acorn-runtime');
+const { workerInjectionPosition } = require('./worker-source-position');
 const MAX_WORKER_BYTES = 16 * 1024 * 1024;
 const JAVASCRIPT_MIMES = new Set([
   'application/ecmascript', 'application/javascript', 'application/x-ecmascript', 'application/x-javascript',
@@ -12,27 +13,7 @@ const JAVASCRIPT_MIMES = new Set([
 // program. Preserve hashbangs, ASI and native syntax errors; never wrap the user's
 // program in a function or turn a non-directive string expression into strict mode.
 function injectionPosition(source) {
-  let position = 0;
-  if (source.startsWith('#!')) {
-    const end = source.search(/[\r\n\u2028\u2029]/);
-    position = end < 0 ? source.length : end + (source.slice(end, end + 2) === '\r\n' ? 2 : 1);
-  }
-  const options = { ecmaVersion: 'latest', allowHashBang: true, sourceType: 'module' };
-  try {
-    const tokens = syntax.tokenizer(source, options);
-    let token = tokens.getToken();
-    while (token.type.label === 'string') {
-      const expression = syntax.parseExpressionAt(source, token.start, options);
-      if (expression.type !== 'Literal' || typeof expression.value !== 'string') break;
-      do { token = tokens.getToken(); } while (token.start < expression.end);
-      if (token.type.label === ';') {
-        position = token.end; token = tokens.getToken();
-      } else if (token.type.label === 'eof' || /[\r\n\u2028\u2029]/.test(source.slice(expression.end, token.start))) {
-        position = expression.end;
-      } else break;
-    }
-  } catch (_) { /* The browser remains responsible for parsing invalid syntax. */ }
-  return position;
+  return workerInjectionPosition(source, syntax);
 }
 
 function injectWorkerSource(original, injection) {

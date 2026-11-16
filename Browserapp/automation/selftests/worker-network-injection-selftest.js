@@ -7,8 +7,9 @@ const { WorkerScriptPrefixer } = require('../worker-script-prefixer');
 async function main() {
   for (const mime of ['text/javascript', 'text/javascript1.5', 'text/jscript', 'application/x-ecmascript; charset=utf-8']) assert.ok(isJavaScriptMime(mime));
   for (const mime of ['text/plain', 'application/json', 'text/javascript-invalid']) assert.equal(isJavaScriptMime(mime), false);
-  const read = 'globalThis.strict=(function(){return this})()===undefined;';
+  const read = 'globalThis.first=globalThis.installed;globalThis.strict=(function(){return this})()===undefined;';
   for (const source of [read, '"use strict";' + read, '#!worker\r\n"use strict"\n' + read,
+    ...['\r', '\n', '\u2028', '\u2029'].map(line => '#!worker' + line + '"use strict";' + read),
     '/* comment */ "first";\n"use strict";\n' + read, '"use strict"\n+1;\n' + read,
     '"use strict"; ;"second";' + read, '"first"\n"use strict"\n' + read]) {
     const native = {}, patched = {};
@@ -16,6 +17,7 @@ async function main() {
     vm.runInNewContext(injectWorkerSource(source, 'globalThis.installed=true;').toString(), patched);
     assert.equal(patched.strict, native.strict, 'original directive semantics');
     assert.equal(patched.installed, true);
+    assert.equal(patched.first, true, 'installation precedes the first user instruction');
   }
   for (const source of ['"use strict"; with({}){}', '"use strict" missingSeparator()', '"unterminated', 'let = ;']) {
     assert.throws(() => new vm.Script(source));

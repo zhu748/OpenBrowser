@@ -3,10 +3,12 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const acornSource = fs.readFileSync(path.join(__dirname, '../../vendor/acorn-runtime.js'), 'utf8');
+const { workerInjectionPosition } = require('../../worker-source-position');
+const { inlineWorkerSourceTools } = require('../../inline-worker-source');
 
 // Serialized into each realm. No flags or source-passing hooks are installed
 // on WorkerGlobalScope. The same-origin registry uses the private bridge.
-function installWorkerConstructors(workerCore, nativeLike, bridgeToken) {
+function installWorkerConstructors(workerCore, nativeLike, bridgeToken, engine) {
   const realm = globalThis;
   const NativeWorker = realm.Worker, NativeSharedWorker = realm.SharedWorker;
   const NativeBlob = realm.Blob, NativeXHR = realm.XMLHttpRequest;
@@ -21,6 +23,15 @@ function installWorkerConstructors(workerCore, nativeLike, bridgeToken) {
   const nativeIsTrustedUrl = realm.trustedTypes?.isScriptURL;
   const nativeTrustedUrlString = realm.TrustedScriptURL?.prototype?.toString;
   if (!NativeBlob || !createUrl || !NativeWorker && !NativeSharedWorker) return;
+  const tools = (/* PRIVATE_INLINE_TOOLS */ null)(nativeURL, realm.TextEncoder, realm.TextDecoder,
+    realm.Uint8Array, realm.atob.bind(realm), engine);
+  const sourcePosition = /* PRIVATE_SOURCE_POSITION */ null;
+  const apply = Reflect.apply;
+  const xhrPrototype = NativeXHR?.prototype;
+  const xhrOpen = xhrPrototype?.open, xhrSend = xhrPrototype?.send;
+  const xhrHeader = xhrPrototype?.getResponseHeader, xhrOverride = xhrPrototype?.overrideMimeType;
+  const xhrStatus = xhrPrototype && Object.getOwnPropertyDescriptor(xhrPrototype, 'status')?.get;
+  const xhrText = xhrPrototype && Object.getOwnPropertyDescriptor(xhrPrototype, 'responseText')?.get;
   const disguise = (proxy, original) => nativeLike(proxy, original, original.name, original.length, true);
   let parser;
   const getParser = () => parser || (parser = /* PRIVATE_PARSER */ null);
@@ -62,7 +73,7 @@ function installWorkerConstructors(workerCore, nativeLike, bridgeToken) {
   getRegistry(realm, registry);
   const owner = {
     urls: new Set(),
-    mint(text) { return Reflect.apply(createUrl, nativeURL, [new NativeBlob([text], { type: 'application/javascript' })]); },
+    mint(text, type) { return Reflect.apply(createUrl, nativeURL, [new NativeBlob([text], { type })]); },
     revoke(url) { return Reflect.apply(revokeUrl, nativeURL, [url]); },
   };
   const release = (entry) => {
@@ -104,24 +115,25 @@ function installWorkerConstructors(workerCore, nativeLike, bridgeToken) {
     }]);
   }
   const readSource = (url) => {
-    if (url.startsWith('data:')) {
-      const comma = url.indexOf(',');
-      if (comma < 0) return null;
-      const metadata = url.slice(5, comma), body = url.slice(comma + 1).split('#')[0];
-      if (/;base64$/i.test(metadata)) {
-        const raw = atob(decodeURIComponent(body));
-        return new TextDecoder().decode(Uint8Array.from(raw, (c) => c.charCodeAt(0)));
-      }
-      return decodeURIComponent(body);
-    }
+    if (url.startsWith('data:')) return tools.readData(url);
     if (!NativeXHR) return null;
-    const xhr = new NativeXHR(); xhr.open('GET', url, false); xhr.send(null);
-    return xhr.status === 200 || xhr.status === 0 ? xhr.responseText : null;
+    const xhr = new NativeXHR(); apply(xhrOpen, xhr, ['GET', url, false]);apply(xhrSend, xhr, [null]);
+    const status = xhrStatus ? apply(xhrStatus, xhr, []) : xhr.status;
+    if (status !== 200 && status !== 0) return null;
+    const mime = apply(xhrHeader, xhr, ['Content-Type']) || '';
+    // Worker scripts use UTF-8 even if a Blob declares a legacy charset.
+    // Gecko exposes overrideMimeType in Blob response headers, so retain the
+    // original header before the exceptional legacy-charset re-read.
+    const charset = /(?:^|;)\s*charset\s*=\s*(?:"([^"]*)"|([^;\s]*))/i.exec(mime);
+    if (charset && !/^utf-?8$/i.test(charset[1] ?? charset[2]) && xhrOverride) {
+      apply(xhrOpen, xhr, ['GET', url, false]);apply(xhrOverride, xhr, ['text/plain;charset=utf-8']);apply(xhrSend, xhr, [null]);
+    }
+    return { text: xhrText ? apply(xhrText, xhr, []) : xhr.responseText, mime };
   };
   const analyze = (source) => {
     const syntax = getParser(), options = { ecmaVersion: 'latest', allowHashBang: true };
-    let position = source.startsWith('#!') ? (source.includes('\n') ? source.indexOf('\n') + 1 : source.length) : 0;
-    let directive = true, expressionEnd = position, depth = 0, previous = null, isModule = false;
+    const position = sourcePosition(source, syntax);
+    let depth = 0, previous = null, isModule = false;
     const iterator = syntax.tokenizer(source, options);
     let current;
     try {
@@ -129,19 +141,6 @@ function installWorkerConstructors(workerCore, nativeLike, bridgeToken) {
       let next = iterator.getToken(), afterNext = iterator.getToken();
       while (current.type.label !== 'eof') {
         const label = current.type.label;
-        if (directive && current.start >= expressionEnd) {
-          if (label === 'string') {
-            let expression;
-            try { expression = syntax.parseExpressionAt(source, current.start, options); }
-            catch (_) {
-              try { expression = syntax.parseExpressionAt(source, current.start, { ...options, sourceType: 'module' }); } catch (_) {}
-            }
-            if (expression && expression.type === 'Literal' && typeof expression.value === 'string') {
-              position = expressionEnd = expression.end;
-            } else directive = false;
-          } else if (label === ';') position = expressionEnd = current.end;
-          else directive = false;
-        }
         const qualified = previous === '.' || previous === '?.';
         if (!qualified && label === 'import' && (next.type.label === '.' && afterNext.value === 'meta' || depth === 0 && !['(', '.'].includes(next.type.label))) isModule = true;
         if (!qualified && label === 'export' && depth === 0) isModule = true;
@@ -158,18 +157,21 @@ function installWorkerConstructors(workerCore, nativeLike, bridgeToken) {
   const prepare = (url, shared) => {
     if (!/^(blob|data):/.test(url)) return null;
     if (shared && registry.entries.has(url)) return { entry: registry.entries.get(url), fresh: false };
-    let source;
-    try { source = readSource(url); } catch (_) { source = null; }
-    if (source === null) throw new DOMException('Unable to initialize the configured worker source.', 'SecurityError');
+    let original;
+    try { original = readSource(url); }
+    catch (_) { throw new DOMException('Unable to initialize the configured worker source.', 'SecurityError'); }
+    if (original === null && url.startsWith('data:')) return null;
+    if (original == null) throw new DOMException('Unable to initialize the configured worker source.', 'SecurityError');
+    const { text: source, mime } = original;
     const creator = registry.owners.get(url) || owner;
     const entry = { url: null, owner: creator, resources: [], revoked: false, signal: null };
     const mint = (text) => {
-      if (url.startsWith('data:')) return 'data:application/javascript;charset=utf-8,' + encodeURIComponent(text);
-      const minted = creator.mint(text); entry.resources.push(minted); return minted;
+      if (url.startsWith('data:')) return 'data:' + mime + ',' + encodeURIComponent(text);
+      const minted = creator.mint(text, mime); entry.resources.push(minted); return minted;
     };
-    const hashbangEnd = source.startsWith('#!') ? (source.includes('\n') ? source.indexOf('\n') + 1 : source.length) : 0;
     const parsed = analyze(source);
-    let position = hashbangEnd, text;
+    const position = parsed.position;
+    let text;
     if (parsed.module) {
       // Static dependencies execute before the entry body. A first, synchronous
       // side-effect import installs identity before the original dependency graph.
@@ -182,7 +184,6 @@ function installWorkerConstructors(workerCore, nativeLike, bridgeToken) {
       text = source.slice(0, position) + '\nimport ' + JSON.stringify(prefixUrl) + ';\nimport.meta.url = '
         + JSON.stringify(url) + ';\n' + source.slice(position);
     } else {
-      position = parsed.position;
       text = source.slice(0, position) + '\n;' + prefix(url) + '\n;' + source.slice(position);
     }
     entry.url = mint(text);
@@ -213,11 +214,12 @@ function installWorkerConstructors(workerCore, nativeLike, bridgeToken) {
         let replacement, normalizedUrl, succeeded = false;
         const forwarded = args.slice(), input = args[0];
         const trusted = typeof nativeIsTrustedUrl === 'function' && Reflect.apply(nativeIsTrustedUrl, realm.trustedTypes, [input]);
-        if (trusted && nativeTrustedUrlString && /^(blob|data):/.test(Reflect.apply(nativeTrustedUrlString, input, []))) {
+        if (trusted && nativeTrustedUrlString && tools.resolve(Reflect.apply(nativeTrustedUrlString, input, []))) {
           throw new DOMException('Trusted inline worker sources cannot be initialized with this configuration.', 'SecurityError');
         }
         if (args.length && !trusted) forwarded[0] = { [Symbol.toPrimitive]() {
-          const url = `${input}`; normalizedUrl = url; replacement = prepare(url, shared);
+          const url = `${input}`; normalizedUrl = tools.resolve(url);
+          replacement = normalizedUrl ? prepare(normalizedUrl, shared) : null;
           return replacement ? replacement.entry.url : url;
         } };
         try {
@@ -264,12 +266,15 @@ function installWorkerConstructors(workerCore, nativeLike, bridgeToken) {
 }
 
 const parserFactory = `(function () { const exports = {}; const module = { exports };\n${acornSource}\nreturn module.exports; })()`;
-const installerSource = installWorkerConstructors.toString().replace('/* PRIVATE_PARSER */ null', () => parserFactory);
+const installerSource = installWorkerConstructors.toString()
+  .replace('/* PRIVATE_PARSER */ null', () => parserFactory)
+  .replace('/* PRIVATE_INLINE_TOOLS */ null', () => inlineWorkerSourceTools.toString())
+  .replace('/* PRIVATE_SOURCE_POSITION */ null', () => '(' + workerInjectionPosition.toString() + ')');
 function workerConstructorPatch({ workerSource }) {
-  return `\n;(${installerSource})(${JSON.stringify(String(workerSource))}, nativeLike, BRIDGE_TOKEN);\n`;
+  return `\n;(${installerSource})(${JSON.stringify(String(workerSource))}, nativeLike, BRIDGE_TOKEN, CFG.engine);\n`;
 }
 workerConstructorPatch.installerSource = installerSource;
 workerConstructorPatch.parserSourceBytes = acornSource.length;
 workerConstructorPatch.workerRuntime = `\nif (typeof constructorInstaller === 'function') constructorInstaller(
-  '(' + originalToString.call(installWorkerIdentity) + ')', nativeLike, BRIDGE_TOKEN);\n`;
+  '(' + originalToString.call(installWorkerIdentity) + ')', nativeLike, BRIDGE_TOKEN, CFG.engine);\n`;
 module.exports = workerConstructorPatch;

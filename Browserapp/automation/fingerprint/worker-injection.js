@@ -38,6 +38,7 @@ function buildWorkerInjectionScript(fp, options = {}) {
   }
   const stability = resolveInjectionStability(fp);
   const json = JSON.stringify({
+    engine: fp.engine || fp.uaProfile?.engine || 'chromium',
     platform: fp.platform,
     // Mirrors the main-world CFG (injection-script.js): os/mobile/mobileDevice feed the worker's
     // platform guards (isIosPersona / isAndroidPersona / the UAData page-side replacement path).

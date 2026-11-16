@@ -272,6 +272,8 @@ const SUITE = [
   // headless run; exit code 2 marks the browser as unavailable (reported as skip).
   ['selftest:fpworkerboundaries', 'automation/selftests/fingerprint-worker-boundaries-selftest.js', { nativeOnly: true }],
   ['selftest:fpnativecontract', 'automation/selftests/fingerprint-native-contract-selftest.js', { nativeOnly: true }],
+  ['selftest:inlineworkers', 'automation/selftests/inline-worker-sources-native-selftest.js', { nativeOnly: true }],
+  ['selftest:inlineworkersource', 'automation/selftests/inline-worker-source-selftest.js'],
   ['selftest:fpcapabilitiesnative', 'automation/selftests/fingerprint-capabilities-native-selftest.js', { nativeOnly: true }],
   ['selftest:fingerprintnative', 'automation/selftests/fingerprint-native-consistency-selftest.js', { nativeOnly: true }],
   ['blobworker', 'automation/selftests/fingerprint-blob-worker-identity-gate.js', { nativeOnly: true }],

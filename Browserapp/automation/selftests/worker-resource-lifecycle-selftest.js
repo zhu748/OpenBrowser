@@ -15,6 +15,7 @@ async function main() {
   FixtureURL.revokeObjectURL = (url) => URL.revokeObjectURL(url);
   class LocalXHR {
     open(_method, url) { this.url = String(url); }
+    getResponseHeader() { return 'application/javascript'; }
     send() {
       if (!originals.has(this.url)) throw new DOMException('missing local blob', 'NetworkError');
       this.status = 200; this.responseText = originals.get(this.url);
@@ -29,7 +30,7 @@ async function main() {
     terminate() { this.stopped = true; }
   }
   const scope = vm.createContext({ Blob, URL: FixtureURL, XMLHttpRequest: LocalXHR, Worker: FixtureWorker,
-    EventTarget, Event, MessageEvent, DOMException, TextDecoder, Uint8Array, Uint32Array,
+    EventTarget, Event, MessageEvent, DOMException, TextEncoder, TextDecoder, atob, Uint8Array, Uint32Array,
     WeakRef, crypto: webcrypto, console, nativeLike: (proxy) => proxy });
   vm.runInContext(`{
     const original = Function.prototype.toString;

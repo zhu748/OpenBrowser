@@ -241,6 +241,7 @@ jobs:
           node automation/selftests/fingerprint-receiver-native-selftest.js
           node automation/selftests/fingerprint-canvas-font-semantics-selftest.js
           node automation/selftests/fingerprint-override-lifecycle-selftest.js
+          node automation/selftests/inline-worker-sources-native-selftest.js
           # Worker-delivery behavior gates: blob/data/extensionless/nested worker
           # identity, and cached-service-worker scope identity. Both exercise the
           # Chromium 143+/157+ delivery paths that no static selftest can cover.
@@ -274,6 +275,7 @@ jobs:
           node automation/selftests/firefox-fingerprint-e2e-selftest.js
           node automation/selftests/firefox-geolocation-native-selftest.js
           node automation/selftests/firefox-worker-delivery-selftest.js
+          node automation/selftests/inline-worker-sources-native-selftest.js --firefox
 
   review-boundaries:
     name: Storage and runtime boundaries (${{ matrix.os }}, Node ${{ matrix.node }})

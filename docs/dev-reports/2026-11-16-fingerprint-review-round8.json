@@ -1,0 +1,165 @@
+{
+  "date": "2026-11-16",
+  "baseCommit": "2df165659788a72d697c7c734db82abb3773d8f0",
+  "assessment": "本轮重点修复内联 Worker 首条指令注入与原生行为偏差。已由同内核无注入对照复现，再验证修复。当前验证范围通过，不等于全部内核、平台与 CSP 场景已穷尽。",
+  "findings": [
+    {
+      "id": "inline-url-normalization-gap",
+      "severity": "high",
+      "status": "fixed",
+      "evidence": "原 prepare 仅匹配小写且无前导字符的 blob:/data:。真实 Chromium/Firefox 中 DATA:、前置空白与控制字符的合法 Data URL 返回宿主 5 核而非配置 2 核。Chromium 还允许部分内嵌 scheme 控制字符和大写 BLOB:；Firefox 对这些情况原生报错。",
+      "change": "使用捕获的原生 URL 规范化内联地址；区分 Gecko 自身拒绝的输入并保留其原生错误，普通网络/相对地址仍交给原生构造器。Worker CFG 携带 engine，嵌套构造器复用同一策略。"
+    },
+    {
+      "id": "hashbang-first-read-leak",
+      "severity": "high",
+      "status": "fixed",
+      "evidence": "内联分析器只按 LF 寻找 hashbang 结束；CR、U+2028、U+2029 使前缀落到用户代码之后。两内核首次读取均为宿主 5 核。",
+      "change": "提取 worker-source-position.js，由网络与内联注入共用完整 hashbang 换行和指令序列定位，保持严格/非严格模式及原生语法错误。"
+    },
+    {
+      "id": "data-worker-decoding-and-blob-charset",
+      "severity": "medium",
+      "status": "fixed",
+      "evidence": "decodeURIComponent 对 Data URL 中 %FF 和字面 %zz 抛错，但原生能把它们作为脚本字符串解码并执行；Blob 声明旧字符集时，XHR 解码与 Worker UTF-8 解码不同。",
+      "change": "按字节执行宽容百分号/Base64/UTF-8 解码，无效 Base64 仍由原生加载失败；保留 MIME，并对声明旧字符集的 Blob 按 UTF-8 重读。十六进制读取直接处理字节，避免每个转义分配字符串和正则。"
+    },
+    {
+      "id": "module-worker-mime-overwrite",
+      "severity": "medium",
+      "status": "fixed",
+      "evidence": "旧重写统一生成 application/javascript。真实两内核中，text/plain 或空 MIME 的模块 Worker 原生拒绝，注入后却能执行。",
+      "change": "生成 Blob/Data URI 保留原始 MIME，模块依赖安装器也保持相同类型。合法模块运行，原生应拒绝的类型继续拒绝。"
+    },
+    {
+      "id": "private-loader-invokes-page-callbacks",
+      "severity": "medium",
+      "status": "fixed",
+      "evidence": "失败对照中，页面包装 XHR.open/send/status/responseText 后，创建 Blob Worker 会触发这些页面回调，原生 Worker 加载不会。",
+      "change": "安装时捕获 XHR 操作/读取器、编码器、解码器和 URL 读取器。新增对照要求私有加载对页面包装的回调次数与原生一样为 0。"
+    }
+  ],
+  "classification": {
+    "automation/inline-worker-source.js": "可序列化的纯解码与每内核 URL 策略，无 Node 依赖。",
+    "automation/worker-source-position.js": "网络和内联共用的语法插入位置，删除两份指令序列处理。",
+    "automation/fingerprint/runtime/worker-constructor-patch.js": "保留构造器、SharedWorker 注册、原 URL 与辅助 Blob 生命周期编排。"
+  },
+  "compatibility": {
+    "persistedFingerprintVersions": [
+      1,
+      2
+    ],
+    "identityAlgorithms": "未修改；系统、已保存 UA 与 seed 的随机规则保持原约定。",
+    "workerRuntimeRevision": 10,
+    "protocol": "维持兼容的缓存前缀握手，避免同身份的旧 Chromium Service Worker 因无关的协议升号而被阻止。实现源码改变仍由 Firefox 源码 hash 缓存策略处理。",
+    "firefoxServiceWorkerCache": "注入源码变化后旧注册元数据失效，Cookie、LocalStorage、IndexedDB、CacheStorage 不清除；网站需重新注册。"
+  },
+  "verification": {
+    "native": {
+      "host": "Linux",
+      "node": "24.22.1",
+      "chromium": "159.0.8154.6",
+      "firefox": "159.0",
+      "casesPerEngine": 38,
+      "passed": true,
+      "cases": [
+        "大小写和空白/控制字符 URL",
+        "五种 hashbang 换行",
+        "模块依赖首读",
+        "嵌套与 SharedWorker",
+        "错误 MIME 与错误语法保持原生结果",
+        "UTF-8 错字节、字面百分号、Base64 和旧字符集",
+        "WorkerLocation/import.meta.url、严格模式与无公开标记",
+        "页面包装加载 API 不被私有读取调用"
+      ],
+      "isolation": "先运行同一内核的无注入原生对照，再只执行文档安装器。异步协议 realm 回调未参与，不能掩盖构造器首读泄漏。"
+    },
+    "aggregate": {
+      "passed": 230,
+      "partial": 1,
+      "skipped": 33,
+      "failed": 0,
+      "finalRun": "passed; isolated final run"
+    },
+    "kernelFreeDecoding": "Node 原生 fetch(Data URL) 作为独立解码对照，覆盖所有 256 个字节、非法转义、BOM、Base64 和无效加载。",
+    "existingNative": [
+      "Chromium Windows V1/V2、Android、iOS 原生契约通过",
+      "Chromium blob/data/network Worker 与缓存 Service Worker 身份门禁通过",
+      "Firefox HTTPS 可信转发、静态依赖、嵌套、Blob/Data/Shared、认证上游代理链、相同/改变身份的持久化重启通过"
+    ],
+    "lint": "passed; zero warnings",
+    "negativeControl": {
+      "sourceCommit": "2df165659788a72d697c7c734db82abb3773d8f0",
+      "method": "同一套原生测试加载基线构造器实现，保留其他环境与测试用例；失败为预期。",
+      "reproducedCases": [
+        "data-upper",
+        "data-leading-space",
+        "data-inner-tab",
+        "data-null-space",
+        "data-form-feed",
+        "data-utf8-invalid",
+        "data-percent-literal",
+        "data-base64-space",
+        "data-base64-invalid",
+        "hashbang-1",
+        "hashbang-3",
+        "hashbang-4",
+        "blob-upper",
+        "blob-module-mime-1",
+        "blob-module-mime-2",
+        "data-module-plain",
+        "module-dependency-cr",
+        "nested-data-upper",
+        "shared-blob-upper",
+        "shared-data-upper",
+        "shared-hashbang-cr",
+        "shared-module-plain"
+      ],
+      "legacyPageCallbackReads": {
+        "open": 1,
+        "send": 1,
+        "getResponseHeader": 0,
+        "overrideMimeType": 0,
+        "status": 1,
+        "responseText": 1,
+        "encode": 0,
+        "decode": 0,
+        "href": 0,
+        "protocol": 0
+      }
+    },
+    "timing": "并行回归中一次 Firefox session.new 在注入前超时，隔离运行恢复通过；完整汇总也曾在未改动的 stopAll 500ms 墙钟断言超时。保留失败日志，最终完整汇总隔离执行；未放宽生产超时或原有测试断言。",
+    "evidenceDirectory": "work/review/fingerprint-round8",
+    "partialReason": "既有 kernel automation flag forensics 保持部分验证。",
+    "skippedReason": "汇总显式禁用自动选择内核，原生依赖检查跳过；本轮原生检查另行实跑，CI 继续执行完整双内核矩阵。",
+    "logSha256": {
+      "selftest-all-final.log": "c620bb2fe05f5c74e6f945640068b742d9e8b75530eeba3b0f39a63686025b60",
+      "inline-native-chromium.log": "4198cd3acd01c33006bef5edd83a156f7c5b0fbe3192f41683e002fb4327d9b9",
+      "inline-native-firefox.log": "371346c6b341fb7099eac2400d92e1c9a9df914ad76e2952ec24620575c597e0",
+      "inline-source-unit.log": "944bb48fa9f1562dd3679ffec2bb70403d164f546eaea13968e49c72cb122c43",
+      "native-contract.log": "1f355c11201bfb27cc48516ad3666a0fcd110d80c189fdb30f7ee2c84b521f15",
+      "firefox-worker.log": "7b819235d39de71e458349ae46d4264435830f7c94e7f9ed712e18b9c337ca16",
+      "chromium-cached-sw.log": "9053c541c69d1984b6950643cc54f8bb57d4b1063ca7a2e4c0876f3583810582",
+      "chromium-blob-worker.log": "4fd713eca592909b5904f57c4ee590c3c0dd772a5e0044737687995b3c0728e9",
+      "lint-final.log": "40b6000cfa17b3913102c5a8a8208fa9dd17125d75d93b1478765543fed65d74",
+      "negative-control.log": "8fb48bb46f92fb4ec7917e5cf6fe75bf4af003db2f6b49b826ca6ce61ec18b25"
+    }
+  },
+  "remaining": [
+    {
+      "priority": "P2",
+      "id": "csp-and-creator-origin-matrix",
+      "next": "继续验证严格 CSP、跨源静态模块图、无关创建者 Blob、扩展与绕过代理的本地脚本；本轮无 CSP 放宽。"
+    },
+    {
+      "priority": "P2",
+      "id": "inline-fragments-and-lifetimes",
+      "next": "扩展片段、查询、撤销、跨文档创建者及窗口退出时的 SharedWorker 身份/生命周期组合。"
+    },
+    {
+      "priority": "P2",
+      "id": "physical-platform-and-network-surfaces",
+      "next": "真实 Windows/macOS 的 GPU、字体、编解码和公网 WebRTC/DNS/TLS/HTTP2 对照；Linux 原生矩阵不代表这些维度已验收。"
+    }
+  ]
+}
