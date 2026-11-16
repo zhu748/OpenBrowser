@@ -1,0 +1,164 @@
+{
+  "date": "2026-11-16",
+  "baseCommit": "4e0996a9aaa3dfca42e158683333e1dd8c65bd8e",
+  "scope": "对照用户上传的 Roxy 前端与静态解包主进程，修复 OpenBrowser 启动/关闭状态传递、恢复与并发边界。",
+  "assessment": "原按钮组件具备阶段进度与关闭同步状态；旧本地桥接只发送笼统启动和最终结果，未转发实际阶段。已接入真实生命周期，不人为延时或编造同步任务。",
+  "reference": {
+    "archives": [
+      {
+        "name": "roxy-src-5of5-web-svg-img.zip",
+        "sha256": "c2070c20bf56523d4850c95629c993a1d658a0ddb138f47e00bcfcb972241a0d",
+        "entries": 340
+      },
+      {
+        "name": "roxy-src-2of5-main-agent.zip",
+        "sha256": "9e168c8ab7a9ec3cfebe5345db87969b5e826551d8a8477b616e9a784e43881e",
+        "entries": 189
+      },
+      {
+        "name": "roxy-src-3of5-web-png-a.zip",
+        "sha256": "8b24a9a282e401e04c1783d437e655bff56722c452c8cf552b715a7f65d7a323",
+        "entries": 78
+      },
+      {
+        "name": "roxy-src-1of5-web-code.zip",
+        "sha256": "a670a441d415fd4520404ecaf78757e160d7e6a7318f8e5fcf0cb17f7ee55aec",
+        "entries": 1379
+      },
+      {
+        "name": "roxy-src-4of5-web-png-b.zip",
+        "sha256": "3032684c4d5076318b5239f03dc98c9c77e565c249ef1103e66888e2c8bbb851",
+        "entries": 77
+      }
+    ],
+    "frontendComparison": {
+      "filesCompared": 1874,
+      "identical": 1874,
+      "different": 0,
+      "missing": 0,
+      "evidence": "work/review/startup-status/reference-vendor-comparison.json"
+    },
+    "staticOnly": true,
+    "boundaries": [
+      {
+        "file": "web/assets/useProfileOpenState-GCrr7PDa.js",
+        "contract": [
+          "browser:launch-process-message",
+          "browser:on-close-syncing-data",
+          "browser:on-close",
+          "browser:getOpenedBrowserMessage"
+        ],
+        "observation": "成功以 percent=100 判定；同步以 uploading 标记禁用按钮。原恢复路径只拷贝 data，需补全 uploading/code。"
+      },
+      {
+        "file": "web/assets/renewal-reminder-drawer-C9_4HaAB.js",
+        "observation": "原 browser-control 提供环形进度、短标签、内核图标和禁用态；保留组件与样式。"
+      },
+      {
+        "file": "main/src/dist-vite/devtools-guard.mjs",
+        "lines": [
+          337,
+          11608,
+          11696,
+          12555,
+          12651
+        ],
+        "observation": "主进程按任务表发送检测 IP、内核、启动窗口等阶段；原生断连后先同步，完成再关闭状态。参考实现含定时百分比递增，本项目未移植该计时进度。"
+      }
+    ]
+  },
+  "findings": [
+    {
+      "id": "missing-live-startup-phases",
+      "status": "fixed",
+      "evidence": "renderer-bridge 原 batch 只发 1% 启动中和最终 100%；引擎已有细分进度。",
+      "change": "独立生命周期适配器把真实资源、IP、内核、进程、连接、注入和验证阶段传到原按钮；代理准备前即进入检测 IP；悬停展示实际等待事项。"
+    },
+    {
+      "id": "registered-process-is-not-ready",
+      "status": "fixed",
+      "evidence": "进程进入 running Map 时仍可能等待注入、Worker 与指纹验证，原 status 事件会提前把按钮标成打开成功。",
+      "change": "publicRunning 以启动生命周期为准；只有 ready 后对外开放运行状态。保留现有验证和取消检查。"
+    },
+    {
+      "id": "missing-close-sync-state",
+      "status": "fixed",
+      "change": "手动关闭与实际浏览器退出都发出本地关闭同步进度；观察原清理 Promise，结束或失败后终止忙碌态。云备份仅在实际启用且当前配置允许时单独追踪，两条任务都结束才清除同步态。"
+    },
+    {
+      "id": "progress-lost-on-renderer-reload",
+      "status": "fixed",
+      "change": "状态快照包含阶段；原 getOpenedBrowserMessage 恢复 pending/error/uploading；同步恢复不再误触发打开成功副作用。"
+    },
+    {
+      "id": "late-generation-or-client-response",
+      "status": "fixed",
+      "change": "后端记录真实启动代际，拒绝旧代际进度；前端有界缓存去重终态，拒绝关闭后的迟到启动帧和过期 RPC 回调。清理完成不会覆盖稍早的真实同步失败。"
+    },
+    {
+      "id": "already-running-generation-drift",
+      "status": "fixed",
+      "evidence": "旧 startManaged 在发现已有健康实例前推进生命周期代际；已有进程及其退出清理仍持有旧代际，随后关闭事件会被拒绝。",
+      "change": "无操作重启保留实际实例所有权；客户端从 alreadyRunning 响应中的真实代际校正预估。单测和实际界面重复打开后关闭均验证。"
+    }
+  ],
+  "classification": {
+    "engine/profile-lifecycle.js": "引擎阶段快照、本地/云同步聚合和停止完成观察。",
+    "automation/close-profile-sync.js": "实际关闭后的可选云备份进度。",
+    "rebuild/workbench-profile-lifecycle.mjs": "原型 IPC 协议、标签映射、去重和恢复 DTO。",
+    "rebuild/compiler/patch-profile-lifecycle.cjs": "有边界断言的 AST 补丁；原型源文件保持原样。"
+  },
+  "verification": {
+    "aggregate": {
+      "passed": 229,
+      "partial": 1,
+      "skipped": 32,
+      "failed": 0,
+      "finalRun": "passed after already-running generation fix"
+    },
+    "lint": "passed; zero warnings",
+    "uiBuild": "passed; generated assets validated",
+    "engineLifecycle": "concurrent start/stop, five restart cycles and failed-start recovery passed",
+    "firefoxPipeline": {
+      "passed": 15,
+      "failed": 0
+    },
+    "nativeUi": {
+      "host": "Linux",
+      "node": "24.22.1",
+      "chromium": "159.0.8154.6",
+      "passed": true,
+      "cases": [
+        "原按钮显示启动中、检测 IP、启动窗口",
+        "实际进程已注册但注入未完成时不报已打开",
+        "启动中刷新恢复",
+        "实际关闭等待本地清理显示同步中",
+        "同步中刷新恢复",
+        "IP 失败后可重试",
+        "实际 CDP Browser.close 导致原生进程退出时显示同步中",
+        "渲染 requestAnimationFrame 仍可执行且无 pageerror",
+        "重复打开健康实例不推进代际，后续关闭进度和目录释放正常"
+      ],
+      "controlledBoundaries": "测试单独挂起 IP provider、注入入口和实际关闭清理以稳定观察中间态；浏览器进程、协议与注入实际运行。未把测试等待时间作为产品性能数据。"
+    },
+    "evidenceDirectory": "work/review/startup-status",
+    "partialReason": "现有 kernel automation flag forensics 保持部分验证；本轮未改变相关实现。",
+    "skippedReason": "汇总刻意要求显式内核路径；依赖实际内核的条目跳过，真实 Chromium 生命周期界面另测，完整双内核矩阵由远端 CI 执行。",
+    "logSha256": {
+      "selftest-all-final.log": "d30a647bd3fba2e53209fc81e6b3ef55ed04f6b99ccccdc16466e967b2b93081",
+      "lifecycle-unit.log": "ed116ceb2e793f08fc90d28c4684f6e3d85ae4dc8f56516d1d91a229c356c33d",
+      "bridge-unit.log": "4e845d444e3ee632334a4016acd50935ed1192202c2828de2e347337842570bb",
+      "preparation.log": "4e7da7fdac994114b663abbd6ccc845c4da65a2b8d37d408957d00a4a13bef09",
+      "lifecycle-existing.log": "5862dbf5aae49f3e4df712df244c4be7d84625d39636616785a1a57e4a2cf1ad",
+      "firefox-start.log": "40c4bea08e428870342c690c74626affed5f14d927e2656aa84865f9268102fc",
+      "ui-lifecycle-final.log": "a188fd053a01decc4117f1d55b44f5b75ac22636c2053cee7a07ed28cdb44dfc",
+      "ui-build.log": "a77137b878dbaa1c0c79125c598343ce4aad285504e53a1085597f16ffc896d9",
+      "lint.log": "40b6000cfa17b3913102c5a8a8208fa9dd17125d75d93b1478765543fed65d74"
+    }
+  },
+  "limits": [
+    "阶段百分比代表真实任务里程碑，不预测剩余耗时；内核下载、网络探测和安全验证仍需实际等待。",
+    "Linux 真实 Chromium 界面已验证；Windows/macOS 安装包构建与回归在 CI 执行，未宣称这些平台的物理桌面人工验收。",
+    "云备份通过受控异步成功/失败与先后次序验证；未连接用户的实际云存储。"
+  ]
+}

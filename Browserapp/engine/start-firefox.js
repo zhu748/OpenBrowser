@@ -155,7 +155,7 @@ module.exports = {
     this.assertProxyConcurrencyAvailable(profile);
     reportPlatformPreflight(this);
     let currentStage = 'prepare';
-    this.emitStartProgress(profile.id, 'prepare', 6, '正在准备环境…');
+    this.emitStartProgress(profile.id, 'prepare', 6, '正在准备环境…', lifecycleGeneration);
     let root = null;
     let profileLock = null;
     let proxyForwarder = null;
@@ -169,7 +169,7 @@ module.exports = {
         onStage: stage => { currentStage = stage; },
       }));
 
-      currentStage = 'kernel'; this.emitStartProgress(profile.id, 'kernel', 30, '正在准备 Firefox 内核…');
+      currentStage = 'kernel'; this.emitStartProgress(profile.id, 'kernel', 30, '正在准备 Firefox 内核…', lifecycleGeneration);
       // The global bootstrap downloads Chrome. Firefox must use a downloaded
       // Firefox tree and report a missing selection directly.
       this.assertStartGenerationActive(profile.id, lifecycleGeneration);
@@ -291,7 +291,7 @@ module.exports = {
       // Firefox cannot express a bypass list from a URL string the way Chrome's
       // --proxy-bypass-list does; loopback is always excluded via prefs below.
 
-      currentStage = 'configure'; this.emitStartProgress(profile.id, 'configure', 48, '正在写入 Firefox 配置…');
+      currentStage = 'configure'; this.emitStartProgress(profile.id, 'configure', 48, '正在写入 Firefox 配置…', lifecycleGeneration);
       const acceptLanguages = collectAcceptLanguages(fingerprint, profile);
       const locale = String(profile.language || 'en-US');
       const workerMitmActive = Boolean(workerMitm);
@@ -309,7 +309,7 @@ module.exports = {
       // prefs.js. Writing it fresh each launch keeps the proxy/UA/prefs current.
       await fspWriteFile(path.join(root, 'user.js'), userJs, 'utf8');
       await require('../automation/firefox-worker-cache').prepareFirefoxWorkerCache(root, workerSource);
-      currentStage = 'spawn'; this.emitStartProgress(profile.id, 'spawn', 62, '正在启动 Firefox…');
+      currentStage = 'spawn'; this.emitStartProgress(profile.id, 'spawn', 62, '正在启动 Firefox…', lifecycleGeneration);
       this.assertStartGenerationActive(profile.id, lifecycleGeneration);
       const headless = launchOptions.headless === true || /^(1|true|new)$/i.test(String(process.env.OPENBROWSER_HEADLESS || '').trim());
       const args = firefoxStartupArgs({ root, startUrl: 'about:blank', headless, remoteDebugging: true });
@@ -414,7 +414,7 @@ module.exports = {
 
       attachBrowserExitHandlers(this, profile.id, item, child);
 
-      currentStage = 'inject'; this.emitStartProgress(profile.id, 'inject', 82, '正在注入 Firefox 设备指纹…');
+      currentStage = 'inject'; this.emitStartProgress(profile.id, 'inject', 82, '正在注入 Firefox 设备指纹…', lifecycleGeneration);
       const endpoint = await waitForFirefoxEndpoint(child);
       const connection = new BidiConnection(endpoint, {
         onDisconnect: (error) => {
@@ -448,9 +448,9 @@ module.exports = {
       item.capabilities = delivered.capabilities;
       item.bidiContext = delivered.context;
       item.fingerprintWarnings = delivered.warnings;
-      currentStage = 'verify'; this.emitStartProgress(profile.id, 'verify', 94, 'Firefox 页面指纹校验完成');
+      currentStage = 'verify'; this.emitStartProgress(profile.id, 'verify', 94, 'Firefox 页面指纹校验完成', lifecycleGeneration);
       await navigateFirefoxStartup(connection, delivered.context, [startUrl, ...extraStartUrls]);
-      currentStage = 'ready'; this.emitStartProgress(profile.id, 'ready', 100, 'Firefox 启动完成');
+      currentStage = 'ready'; this.emitStartProgress(profile.id, 'ready', 100, 'Firefox 启动完成', lifecycleGeneration);
       this.startRunningWatch(item);
       // Report verified document delivery and the remaining worker/API limits.
       this.emit({
@@ -514,7 +514,9 @@ module.exports = {
       this.emit({
         type: 'profile-start-progress',
         id: profile.id,
+        lifecycleGeneration,
         phase: 'error',
+        errorCode: error?.code,
         stage: currentStage,
         kernelVersion: kernelVer,
         operation: 'start',

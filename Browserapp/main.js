@@ -1022,17 +1022,14 @@ app.whenReady().then(async () => {
     // Hub/ix style: when an opted-in profile closes, auto-push that env to cloud
     if (value?.type === 'profile-closed' && value.cloudBackup && value.profile?.id) {
       const cloud = settingsStore.getLocalSettings()?.cloud || {};
-      if (cloud.enabled) {
-        cloudOps.runCloudProfilePush({
-          profileIds: [value.profile.id],
-          profiles: [value.profile],
-          groups: settingsStore.getLocalSettings().uiGroups || [],
-          cloud,
-        }).catch((error) => {
+      require('./automation/close-profile-sync').syncClosedProfile(engine, value, {
+        cloud, groups: settingsStore.getLocalSettings().uiGroups || [],
+        push: payload => cloudOps.runCloudProfilePush(payload),
+        onError: error => {
           console.warn('OpenBrowser auto cloud push failed:', error.message);
           emit({ type: 'cloud-sync', action: 'profile-push-error', id: value.profile.id, message: error.message });
-        });
-      }
+        },
+      });
     }
   });
   engine.ensureKernelBootstrap().catch((error) => console.error('OpenBrowser kernel bootstrap failed:', error.message));

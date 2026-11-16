@@ -15,6 +15,7 @@ module.exports = {
     // changed. Profile Map versions catch content edits; runtime/extension/
     // network writers still invalidate explicitly when their public view changes.
     if (this._statusCache && this._statusProfileVersion === this.profiles.version) return this._statusCache;
+    for (const id of this.profileLifecycles?.keys() || []) if (!this.profiles.has(id)) this.profileLifecycles.delete(id);
     this._statusProfileVersion = this.profiles.version;
     this._statusStamps ||= new Map();
     this._statusInstance ||= crypto.randomBytes(8).toString('hex');

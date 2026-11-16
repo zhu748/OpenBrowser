@@ -27,6 +27,7 @@ const { saveDeferredSession } = require('./startup-session');
 const { assertUrlAccessPolicySupported } = require('../automation/url-access-policy');
 const { runtimePolicyProfile } = require('./runtime-policy');
 const { closePageFingerprintConnections } = require('./fingerprint-transport');
+const { beginProfileStop, observeProfileStop } = require('./profile-lifecycle');
 
 module.exports = {
   cleanupRunningItem(profileId, item, options = {}) {
@@ -159,6 +160,7 @@ module.exports = {
           cloudBackup: true,
           cookieExported: false,
           profile: live,
+          lifecycleGeneration: item.lifecycleGeneration,
           reason,
         });
       }
@@ -240,9 +242,8 @@ module.exports = {
     cleanupPromise.lifecycleItem = item;
     cleanupPromise.lifecycleGeneration = item.lifecycleGeneration;
     this.stopping.set(profileId, cleanupPromise);
-    cleanupPromise.finally(() => {
-      if (this.stopping.get(profileId) === cleanupPromise) this.stopping.delete(profileId);
-    }).catch(() => {});
+    beginProfileStop(this, profileId, item);
+    observeProfileStop(this, profileId, cleanupPromise, item);
     return cleanupPromise;
   },
 

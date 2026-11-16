@@ -85,16 +85,16 @@ async function prepareLaunchProfile(engine, profile, { lifecycleGeneration, asse
   const stage = (name, percent, message) => {
     assertActive();
     onStage(name);
-    engine.emitStartProgress(profile.id, name, percent, message);
+    engine.emitStartProgress(profile.id, name, percent, message, lifecycleGeneration);
     // A progress listener can synchronously stop or edit this profile.
     assertActive();
   };
   assertActive();
-  const candidate = await waitActive(engine.prepareProfileProxyForStart(profile, { publish: false, onNetwork: captureNetwork }));
-  publish(candidate);
   stage('resources', 8, '正在检测内存与磁盘…');
   await waitActive(assertResourceGateForLaunch({ diskRoot: engine.profileRoot(profile.id) }));
   stage('proxy', 18, '正在检测代理与出口…');
+  const candidate = await waitActive(engine.prepareProfileProxyForStart(profile, { publish: false, onNetwork: captureNetwork }));
+  publish(candidate);
   await waitActive(resolveLaunchNetwork(engine, profile, () => network, captureNetwork));
   publish(engine.applyResolvedLocale(profile, network));
   assertExitNetworkPolicy(engine, previous, profile);

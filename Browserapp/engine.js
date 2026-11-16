@@ -4,6 +4,7 @@ const path = require('path');
 const os = require('os');
 const { spawn } = require('child_process');
 const cdp = require('./cdp');
+const { recordProfileLifecycle, profileLifecycle, beginProfileStop, observeProfileStop } = require('./engine/profile-lifecycle');
 const { allowGoogleLogin } = require('./automation/profile-defaults');
 const { compareKernelVersions } = require('./automation/kernel-versions');
 const { parseProxy, normalizeIpLookupChannel } = require('./network/proxy-config');
@@ -965,15 +966,16 @@ class BrowserEngine {
     ));
   }
 
-  emitStartProgress(profileId, phase, percent, message = '') {
+  emitStartProgress(profileId, phase, percent, message = '', lifecycleGeneration = null) {
     this.emit({
       type: 'profile-start-progress',
       id: profileId,
       phase,
       percent: Math.max(0, Math.min(100, Math.round(Number(percent) || 0))),
       message: message || '',
-      starting: true,
-      running: false,
+      lifecycleGeneration,
+      starting: phase !== 'ready' && phase !== 'error',
+      running: phase === 'ready',
     });
   }
 
@@ -1081,6 +1083,12 @@ class BrowserEngine {
    */
   async startManaged(id, candidate, run) {
     assertProfileNotMaintained(this, id);
+    const current = this.running.get(id);
+    // A no-op relaunch must retain the running item's generation: its exit
+    // handlers and profile-lock ownership still belong to that same instance.
+    if (current && !this.stopping.has(id) && !current.cleanupFailed && !current.cleanedUp && !current.stopping) {
+      return { ...this.publicRunning(id), alreadyRunning: true };
+    }
     const generation = this.nextLifecycleGeneration(id);
     const task = (async () => {
       const pendingStop = this.stopping.get(id);
@@ -1167,10 +1175,20 @@ class BrowserEngine {
     })();
     task.lifecycleGeneration = generation;
     this.starting.set(id, task);
+    this.emitStartProgress?.(id, 'prepare', 1, '启动中…', generation);
     try {
-      return await task;
+      const result = await task;
+      if (result?.alreadyRunning) this.emitStartProgress?.(id, 'ready', 100, '窗口已打开', generation);
+      return result;
+    } catch (error) {
+      if (profileLifecycle(this, id)?.operation === 'start' && profileLifecycle(this, id)?.pending) {
+        this.emit({ type: 'profile-start-progress', id, phase: 'error', percent: 0,
+          message: error.message || String(error), error: true, lifecycleGeneration: generation });
+      }
+      throw error;
     } finally {
       if (this.starting.get(id) === task) this.starting.delete(id);
+      this.invalidateStatusCache?.();
     }
   }
 
@@ -1190,10 +1208,11 @@ class BrowserEngine {
   }
 
   publicRunning(id) {
-    const starting = this.starting.has(id);
+    const lifecycle = profileLifecycle(this, id);
+    const starting = lifecycle?.operation === 'start' ? lifecycle.pending : this.starting.has(id);
     const pendingStop = this.stopping.has(id);
     const item = this.running.get(id);
-    if (!item) return { id, running: false, starting, stopping: pendingStop };
+    if (!item) return { id, running: false, starting, stopping: pendingStop, ...(lifecycle ? { lifecycle } : {}) };
     if (item.cleanedUp || item.stopping) {
       return {
         id,
@@ -1204,6 +1223,7 @@ class BrowserEngine {
         browser: item.browser?.name,
         executable: item.browser?.path,
         profileDirectory: item.root,
+        ...(lifecycle ? { lifecycle } : {}),
       };
     }
     const capabilities = item.engine === 'firefox'
@@ -1220,7 +1240,7 @@ class BrowserEngine {
       }
       : null;
     return {
-      id, running: true, starting: false, stopping: false, pid: item.pid, port: item.port,
+      id, running: !starting, starting, stopping: false, ...(lifecycle ? { lifecycle } : {}), pid: item.pid, port: item.port,
       engine: item.engine || 'chromium',
       browser: item.browser.name, executable: item.browser.path,
       profileDirectory: item.root,
@@ -1260,9 +1280,8 @@ class BrowserEngine {
       cleanupPromise.lifecycleItem = item;
       cleanupPromise.lifecycleGeneration = item.lifecycleGeneration;
       this.stopping.set(safe, cleanupPromise);
-      cleanupPromise.finally(() => {
-        if (this.stopping.get(safe) === cleanupPromise) this.stopping.delete(safe);
-      }).catch(() => {});
+      beginProfileStop(this, safe, item);
+      observeProfileStop(this, safe, cleanupPromise, item);
       return cleanupPromise;
     }
 
@@ -1275,9 +1294,8 @@ class BrowserEngine {
       () => { task.lifecycleSettled = true; },
     );
     this.stopping.set(safe, task);
-    task.finally(() => {
-      if (this.stopping.get(safe) === task) this.stopping.delete(safe);
-    }).catch(() => {});
+    beginProfileStop(this, safe, item);
+    observeProfileStop(this, safe, task, item);
     return task;
   }
 
@@ -1380,6 +1398,7 @@ class BrowserEngine {
         cloudBackup: true,
         cookieExported: Boolean(cookieExport),
         profile: this.profiles.get(safe) || profile,
+        lifecycleGeneration: item.lifecycleGeneration,
         reason: 'stop',
       });
     }
@@ -1449,7 +1468,11 @@ class BrowserEngine {
   // proxy checks, fingerprint-verification outcomes — anything that reports
   // itself as a status change.
   emit(value) {
-    if (value?.type === 'status') this._statusCache = null;
+    if (!recordProfileLifecycle(this, value)) return;
+    if (value?.type === 'status' || /^(profile-start|profile-stop|profile-sync)-progress$/.test(value?.type || '')) {
+      this._statusCache = null;
+      if (value.id) value = { ...value, lifecycle: profileLifecycle(this, value.id) };
+    }
     // Listener isolation: a destroyed-window listener (or any single faulty
     // consumer) must not break the fan-out — the remaining listeners still
     // need the event, and cleanup paths depend on emit completing.

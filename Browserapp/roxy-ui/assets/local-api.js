@@ -1,4 +1,5 @@
 import {mt as currentScope,yt as onScopeDispose} from "./runtime-core.esm-bundler-CBj16o9G.js";
+import {createProfileLifecycleBridge} from "./workbench-profile-lifecycle.js";
 const plain = (value, seen = /* @__PURE__ */ new WeakSet()) => {
   if (value === null || typeof value != "object") {
     if (typeof value == "function" || typeof value == "symbol")
@@ -79,37 +80,19 @@ const listeners = /* @__PURE__ */ new Map();
 const emit = (channel, value) => {
   for (const fn of listeners.get(channel) || []) fn(value);
 };
-const opened = (v) => ({
-  dirId: v.dirId,
-  percent: 100,
-  message: "\u6253\u5F00\u6210\u529F",
-  warningMessages: []
-});
+const profileLifecycle = createProfileLifecycleBridge({ emit, notify: (message) => globalThis.__localUiError?.(message) });
 globalThis.rebuild?.onEvent?.((event) => {
-  (event.type === "profiles" || event.type === "status" && event.action === "profiles-update") && emit("local:profiles-change", event), event.type === "status" && event.id && (event.running ? emit("browser:launch-process-message", {
-    code: 0,
-    data: opened({ dirId: event.id })
-  }) : emit("browser:on-close", [String(event.id)])), event.channel && emit(event.channel, event.payload), event.channel === "local:navigate" && globalThis.__router?.push(event.payload), event.channel === "local:error" && globalThis.__localUiError?.(event.payload);
+  profileLifecycle.handle(event), (event.type === "profiles" || event.type === "status" && event.action === "profiles-update" || /^profile-(start|stop|sync)-progress$/.test(event.type) && event.lifecycle && !event.lifecycle.pending) && emit("local:profiles-change", event), event.channel && emit(event.channel, event.payload), event.channel === "local:navigate" && globalThis.__router?.push(event.payload), event.channel === "local:error" && globalThis.__localUiError?.(event.payload);
 });
 const batch = async (ids, restart = !1) => Promise.all(
   ids.map(async (id) => {
-    emit("browser:launch-process-message", {
-      code: 0,
-      data: { dirId: id, percent: 1, message: "\u542F\u52A8\u4E2D..." }
-    });
+    const operation = profileLifecycle.beginStart(id);
     try {
       restart && await request("profiles:stop", { id });
-      const result = await request("profiles:start", { id }), data = {
-        ...opened({ dirId: id }),
-        warningMessages: result.warningMessages || []
-      };
-      return emit("browser:launch-process-message", { code: 0, data }), { id, ok: !0 };
+      const result = await request("profiles:start", { id });
+      return profileLifecycle.finishStart(operation, result), { id, ok: !0 };
     } catch (error) {
-      return emit("browser:launch-process-message", {
-        code: 1,
-        message: error.message,
-        data: { dirId: id, percent: 0, message: error.message }
-      }), { id, ok: !1, error: error.message, code: error.code };
+      return profileLifecycle.finishStart(operation, null, error), { id, ok: !1, error: error.message, code: error.code };
     }
   })
 );
@@ -477,7 +460,7 @@ const sends = {
     platform: row.os,
     $canUseSyncControl: row.coreType === "Chrome"
   })),
-  "browser:getOpenedBrowserMessage": async () => (await request("profiles:list")).filter((v) => v.openStatus).map(opened),
+  "browser:getOpenedBrowserMessage": async () => profileLifecycle.messages(await request("profiles:list")),
   "browser:batchLaunch": (ids) => batch(ids),
   "browser:startCookieRobot": (payload) => request("cookie-robot:start", payload),
   "browser:chunkBrowsersByScreen": async (ids) => {

@@ -44,6 +44,8 @@ const SUITE = [
   ['selftest:workbenchfeedback', 'automation/selftests/workbench-feedback-selftest.js'],
   ['selftest:fpreview', 'automation/selftests/fingerprint-review-selftest.js'],
   ['selftest:fpreviewidentity', 'automation/selftests/fingerprint-preview-identity-selftest.js'],
+  ['selftest:profilestatus', 'automation/selftests/profile-lifecycle-selftest.js'],
+  ['selftest:profilestatusbridge', 'automation/selftests/profile-lifecycle-bridge-selftest.js'],
   ['selftest:ffworkercache', 'automation/selftests/firefox-worker-cache-selftest.js'],
   ['selftest:fpreceivernative', 'automation/selftests/fingerprint-receiver-native-selftest.js', { nativeOnly: true }],
   ['selftest:uarealmsnative', 'automation/selftests/ua-realms-native-selftest.js', { nativeOnly: true }],

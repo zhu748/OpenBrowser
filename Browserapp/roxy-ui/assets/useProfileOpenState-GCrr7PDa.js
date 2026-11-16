@@ -125,7 +125,7 @@ function _e() {
       let n2 = typeof t2.data == "object" && t2.data?.dirId != null ? t2.data.dirId : typeof t2.data == "string" || typeof t2.data == "number" ? t2.data : null;
       if (n2 != null) {
         if (Reflect.set(x2, String(n2), t2), t2.code !== 0) e3?.onOpenFailed?.(n2);
-        else if (typeof t2.data == "object" && t2.data.percent === 100) {
+        else if (typeof t2.data == "object" && t2.data.percent === 100 && !t2.uploading) {
           D2(), e3?.onOpenSuccess?.(n2);
           let r2 = t2.data.warningMessages?.filter(Boolean) ?? [];
           r2.length && e3?.onProxyDetectWarning?.(n2, r2);
@@ -198,7 +198,7 @@ function _e() {
   function z2() {
     return globalThis.electronAPI.send("browser:getOpenedBrowserMessage").then((e3) => {
       e3.forEach((e4) => {
-        Reflect.set(x2, e4.dirId, { data: e4 });
+        Reflect.set(x2, e4.dirId, { data: e4, uploading: !!e4.uploading, code: e4.code || 0, message: e4.errorMessage });
       });
     });
   }

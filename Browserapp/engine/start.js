@@ -62,7 +62,7 @@ module.exports = {
     this.assertProxyConcurrencyAvailable(profile);
     reportPlatformPreflight(this);
     let currentStage = 'prepare';
-    this.emitStartProgress(profile.id, 'prepare', 6, '正在准备环境…');
+    this.emitStartProgress(profile.id, 'prepare', 6, '正在准备环境…', lifecycleGeneration);
     // Hoisted so the outer catch can release these if start throws after they are
     // acquired. The profile lock is keyed on the live Electron pid, so a leaked lock
     // does NOT self-heal while the app runs — it blocks this environment (with a
@@ -89,7 +89,7 @@ module.exports = {
         onStage: stage => { currentStage = stage; },
       }));
     const extensions = this.assignedExtensions(profile.id);
-    currentStage = 'kernel'; this.emitStartProgress(profile.id, 'kernel', 30, '正在准备浏览器内核…');
+    currentStage = 'kernel'; this.emitStartProgress(profile.id, 'kernel', 30, '正在准备浏览器内核…', lifecycleGeneration);
     if (!this.kernelStatus().installed && this.preferIndependentKernel
         && (!profile.engineVersion || profile.engineVersion === 'latest')) {
       // Default profiles retain first-run bootstrap; a fixed selection must
@@ -189,7 +189,7 @@ module.exports = {
       proxyForwarder = await startAuthenticatedProxy(proxyConfig, (value) => this.emit({ type: 'proxy-error', id: profile.id, code: value.code, message: value.message }));
       startupResources.proxyForwarder = proxyForwarder;
     }
-    this.emitStartProgress(profile.id, 'configure', 48, '正在配置启动参数…');
+    this.emitStartProgress(profile.id, 'configure', 48, '正在配置启动参数…', lifecycleGeneration);
     let hostScaleFactor = null;
     try {
       hostScaleFactor = this.getHostScaleFactor ? this.getHostScaleFactor() : null;
@@ -298,7 +298,7 @@ module.exports = {
     let connection;
     let port;
     try {
-      currentStage = 'spawn'; this.emitStartProgress(profile.id, 'spawn', 62, '正在启动浏览器进程…');
+      currentStage = 'spawn'; this.emitStartProgress(profile.id, 'spawn', 62, '正在启动浏览器进程…', lifecycleGeneration);
       this.assertStartGenerationActive(profile.id, lifecycleGeneration);
       await ensureKernelReadyForLaunch(browser);
       this.assertStartGenerationActive(profile.id, lifecycleGeneration);
@@ -385,7 +385,7 @@ module.exports = {
       child.stdout?.on('data', (chunk) => { startupDiagnostic.stdout = appendDiagnosticOutput(startupDiagnostic.stdout, chunk); });
       child.stderr?.on('data', (chunk) => { startupDiagnostic.stderr = appendDiagnosticOutput(startupDiagnostic.stderr, chunk); });
       child.on('error', (error) => { startupDiagnostic.spawnError = error.message; });
-      this.emitStartProgress(profile.id, 'cdp', 76, '正在等待调试端口…');
+      this.emitStartProgress(profile.id, 'cdp', 76, '正在等待调试端口…', lifecycleGeneration);
       port = await this.waitForPort(root, 30000, child);
       connection = await portConnection(port);
       startupResources.connection = connection;
@@ -496,7 +496,7 @@ module.exports = {
         injectFp: summarizeFp(injectFp),
         logFile: fingerprintLogPath(),
       });
-      currentStage = 'inject'; this.emitStartProgress(profile.id, 'inject', 88, '正在注入指纹与运行时…');
+      currentStage = 'inject'; this.emitStartProgress(profile.id, 'inject', 88, '正在注入指纹与运行时…', lifecycleGeneration);
       let injectSucceeded = false;
       let injectError = null;
 
@@ -591,7 +591,7 @@ module.exports = {
         throw Object.assign(new Error(failureDetails), { code: 'FINGERPRINT_INJECTION_FAILED' });
       } else {
         // Fail-Closed: Verify actual delivered fingerprint via CDP probe before target navigation
-        currentStage = 'verify'; this.emitStartProgress(profile.id, 'verify', 92, '正在校验指纹交付…');
+        currentStage = 'verify'; this.emitStartProgress(profile.id, 'verify', 92, '正在校验指纹交付…', lifecycleGeneration);
         let deliveryResult = { ok: false, blocked: true, mismatches: [], warnings: [] };
         try {
           deliveryResult = await this.verifyStartupFingerprintDelivery(item, profile, item.fingerprint || fingerprint);
@@ -665,7 +665,7 @@ module.exports = {
     // Restore the captured native theme before publishing a new running window.
     await require('../automation/sync/master-window-color').restoreOwnedColor(item, { recoverOnRestart: recoverControlColor });
     this.startRunningWatch(item);
-    currentStage = 'ready'; this.emitStartProgress(profile.id, 'ready', 100, '启动完成');
+    currentStage = 'ready'; this.emitStartProgress(profile.id, 'ready', 100, '启动完成', lifecycleGeneration);
     this.emit({ type: 'status', id: profile.id, running: true, blocked: Boolean(item.verificationBlocked), ...this.publicRunning(profile.id) });
     return this.publicRunning(profile.id);
     } catch (error) {
@@ -702,7 +702,9 @@ module.exports = {
       this.emit({
         type: 'profile-start-progress',
         id: profile.id,
+        lifecycleGeneration,
         phase: 'error',
+        errorCode: error?.code,
         stage: currentStage,
         kernelVersion: kernelVer,
         operation: 'start',

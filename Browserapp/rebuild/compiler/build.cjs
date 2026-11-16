@@ -58,6 +58,7 @@ for (const step of [
   "patch-local.cjs",
   "patch-correctness.cjs",
   "patch-editor-interactions.cjs",
+  "patch-profile-lifecycle.cjs",
   "patch-workbench.cjs",
   "patch-extensions.cjs",
   "patch-host.cjs",

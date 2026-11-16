@@ -2,6 +2,7 @@ import {
   mt as currentScope,
   yt as onScopeDispose,
 } from "./runtime-core.esm-bundler-CBj16o9G.js";
+import { createProfileLifecycleBridge } from './workbench-profile-lifecycle.js';
 // Vue reactive proxies cannot cross Electron structured-clone IPC. Copy the DTO explicitly.
 const plain = (value, seen = new WeakSet()) => {
   if (value === null || typeof value !== "object") {
@@ -98,26 +99,15 @@ const listeners = new Map();
 const emit = (channel, value) => {
   for (const fn of listeners.get(channel) || []) fn(value);
 };
-const opened = (v) => ({
-  dirId: v.dirId,
-  percent: 100,
-  message: "打开成功",
-  warningMessages: [],
-});
+const profileLifecycle = createProfileLifecycleBridge({ emit, notify: message => globalThis.__localUiError?.(message) });
 globalThis.rebuild?.onEvent?.((event) => {
+  profileLifecycle.handle(event);
   if (
     event.type === "profiles" ||
-    (event.type === "status" && event.action === "profiles-update")
+    (event.type === "status" && event.action === "profiles-update") ||
+    (/^profile-(start|stop|sync)-progress$/.test(event.type) && event.lifecycle && !event.lifecycle.pending)
   )
     emit("local:profiles-change", event);
-  if (event.type === "status" && event.id) {
-    if (event.running)
-      emit("browser:launch-process-message", {
-        code: 0,
-        data: opened({ dirId: event.id }),
-      });
-    else emit("browser:on-close", [String(event.id)]);
-  }
   if (event.channel) emit(event.channel, event.payload);
   if (event.channel === "local:navigate")
     globalThis.__router?.push(event.payload);
@@ -127,25 +117,14 @@ globalThis.rebuild?.onEvent?.((event) => {
 const batch = async (ids, restart = false) =>
   Promise.all(
     ids.map(async (id) => {
-      emit("browser:launch-process-message", {
-        code: 0,
-        data: { dirId: id, percent: 1, message: "启动中..." },
-      });
+      const operation = profileLifecycle.beginStart(id);
       try {
         if (restart) await request("profiles:stop", { id });
         const result = await request("profiles:start", { id });
-        const data = {
-          ...opened({ dirId: id }),
-          warningMessages: result.warningMessages || [],
-        };
-        emit("browser:launch-process-message", { code: 0, data });
+        profileLifecycle.finishStart(operation, result);
         return { id, ok: true };
       } catch (error) {
-        emit("browser:launch-process-message", {
-          code: 1,
-          message: error.message,
-          data: { dirId: id, percent: 0, message: error.message },
-        });
+        profileLifecycle.finishStart(operation, null, error);
         return { id, ok: false, error: error.message, code: error.code };
       }
     }),
@@ -603,7 +582,7 @@ const sends = {
         $canUseSyncControl: row.coreType === "Chrome",
       })),
   "browser:getOpenedBrowserMessage": async () =>
-    (await request("profiles:list")).filter((v) => v.openStatus).map(opened),
+    profileLifecycle.messages(await request("profiles:list")),
   "browser:batchLaunch": (ids) => batch(ids),
   "browser:startCookieRobot": (payload) =>
     request("cookie-robot:start", payload),
