@@ -1,0 +1,77 @@
+:host {
+  color-scheme: light;
+  --canvas: #edf2f3;
+  --surface: #fff;
+  --text: #14282c;
+  --muted: #465d61;
+  --line: #c8d5d6;
+  --accent: #005e55;
+  --current: #cce3df;
+  --danger: #a02b2b;
+  display: block;
+  color: var(--text);
+  background: var(--canvas);
+  font: 14px/1.55 system-ui, sans-serif;
+}
+
+:host-context(html[data-theme="dark"]) {
+  color-scheme: dark;
+  --canvas: #131e20;
+  --surface: #1e2d30;
+  --text: #e1eeed;
+  --muted: #aabdbd;
+  --line: #3b5255;
+  --accent: #65c3b3;
+  --current: #244947;
+  --danger: #ffa39a;
+}
+
+* { box-sizing: border-box; }
+.workspace-page { max-width: 1160px; margin: auto; padding: clamp(20px, 4vw, 44px); }
+.page-header, .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.page-header { justify-content: space-between; margin-bottom: 20px; }
+.page-header h1 { margin: 0; font-size: clamp(23px, 3vw, 30px); line-height: 1.2; }
+.workspace-page h2 { margin: 0; font-size: 18px; }
+.workspace-page :is(a, summary) { color: var(--accent); }
+.workspace-page :is(button, input, textarea, select) { font: inherit; color: inherit; }
+.workspace-page :is(button, input:not([type='checkbox']), textarea, select) {
+  min-height: 34px; padding: 5px 10px; border: 1px solid var(--line);
+  border-radius: 7px; background: var(--surface);
+}
+.workspace-page :is(button, summary) { cursor: pointer; }
+.workspace-page button:disabled { opacity: .55; cursor: default; }
+.workspace-page button:hover:not(:disabled) { background: var(--current); }
+.workspace-page button.primary { color: #fff; background: #005e55; border-color: transparent; }
+.workspace-page input[type="checkbox"] { accent-color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.danger, .workspace-page button.danger { color: var(--danger); }
+
+.panel, .callout { margin: 16px 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+.callout { padding: 10px 14px; overflow-wrap: anywhere; }
+.empty-state, .table-footer { margin: 0; padding: 10px 14px; }
+.table-footer { justify-content: flex-end; }
+.table-footer span { margin-inline-end: auto; color: var(--muted); }
+.table-scroll { overflow-x: auto; }
+.profiles-table { width: 100%; border-collapse: collapse; text-align: left; overflow-wrap: anywhere; }
+.profiles-table :is(th, td) { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.profiles-table th[scope="row"] { min-width: 125px; }
+.profiles-table small, .muted { display: block; color: var(--muted); font-weight: normal; }
+.row-actions { min-width: 150px; }
+.editor { display: grid; gap: 12px; max-width: 760px; padding: 16px; }
+.editor label { display: grid; gap: 4px; }
+.editor textarea { resize: vertical; }
+.editor .check-field { display: flex; align-items: center; gap: 8px; }
+.text-break { overflow-wrap: anywhere; }
+.checklist { max-height: 250px; overflow: auto; padding: 10px; margin: 0; border: 1px solid var(--line); border-radius: 8px; }
+.checklist label { padding: 4px; display: flex; gap: 8px; align-items: start; }
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+:where(form.editor, .active-detail) { animation: panel-enter 150ms ease-out; }
+
+@keyframes panel-enter {
+  from { opacity: .35; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :where(form.editor, .active-detail) { animation: none; }
+}

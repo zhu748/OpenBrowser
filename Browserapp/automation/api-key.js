@@ -80,15 +80,18 @@ function apiKeyFileCandidates({ env = process.env, userDataPath = '' } = {}) {
   return [...new Set(candidates.map((value) => String(value || '').trim()).filter(Boolean))];
 }
 
-function resolveApiKey({ configured = '', env = process.env, userDataPath = '', ignoreEnv = false } = {}) {
+function resolveApiKey({ configured = '', env = process.env, userDataPath = '', ignoreEnv = false, explicitOnly = false } = {}) {
+  const directValues = explicitOnly ? [env.OPENBROWSER_API_KEY] : [configured, env.OPENBROWSER_API_KEY, env.API_KEY];
   if (!ignoreEnv) {
-  for (const value of [configured, env.OPENBROWSER_API_KEY, env.API_KEY]) {
-    const direct = cleanApiKey(value);
-    if (direct && !isApiKeyPlaceholder(direct)) return { key: direct, filePath: null, source: 'environment' };
-  }
+    for (const value of directValues) {
+      const direct = cleanApiKey(value);
+      if (direct && !isApiKeyPlaceholder(direct)) return { key: direct, filePath: null, source: 'environment' };
+    }
   }
 
-  for (const filePath of apiKeyFileCandidates({ env, userDataPath })) {
+  const candidates = explicitOnly ? [String(env.OPENBROWSER_API_KEY_FILE || '').trim()].filter(Boolean)
+    : apiKeyFileCandidates({ env, userDataPath });
+  for (const filePath of candidates) {
     try {
       const rawBuffer = fs.readFileSync(filePath);
       let raw = rawBuffer.toString('utf8');
@@ -114,7 +117,7 @@ function resolveApiKey({ configured = '', env = process.env, userDataPath = '', 
   }
 
   if (ignoreEnv) {
-    for (const value of [configured, env.OPENBROWSER_API_KEY, env.API_KEY]) {
+    for (const value of directValues) {
       const direct = cleanApiKey(value);
       if (direct && !isApiKeyPlaceholder(direct)) return { key: direct, filePath: null, source: 'environment' };
     }

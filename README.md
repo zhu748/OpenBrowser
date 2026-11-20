@@ -77,7 +77,7 @@ The app supports multiple UI languages, currently including English and Chinese.
 
 ## Quick start
 
-Requires Node.js LTS and npm.
+Requires Node.js 22.13 or later in the 22.x line, or Node.js 24 and later, plus npm.
 
 ```bash
 cd Browserapp
@@ -215,12 +215,12 @@ OpenBrowser/
 └── README_CN.md           # Chinese documentation
 ```
 
-This repository contains source code and documentation. It does not track browser binaries, use Git LFS, or bundle browser kernels in installers. A normal `git clone` is sufficient. OpenBrowser downloads an independent official Chrome Stable kernel when needed, or uses a browser selected by the user. Downloaded kernels and browser profiles remain local and ignored by Git.
+A normal `git clone` provides the build inputs, including source code, static assets, and the archive used for historical comparisons. OpenBrowser downloads an independent official Chrome Stable kernel when needed or uses a browser selected by the user. Downloaded kernels and browser profiles remain local and ignored by Git.
 
 ## Data and security
 
-- The local API binds to loopback by default.
-- If `OPENBROWSER_API_KEY` is set, requests must include the `api-key` header.
+- The local API binds to loopback by default. Protected requests require a key via `api-key`, `x-api-key`, or `Authorization: Bearer`. The application loads or generates a local key when `OPENBROWSER_API_KEY` is unset.
+- The LAN toggle uses plaintext HTTP. For remote access, keep the API on loopback and terminate HTTPS in a reverse proxy on the same host. MCP clients can set an explicit HTTPS origin and key. [Configuration](Browserapp/automation/README.md#通过-https-远程访问)
 - Browser startup failures are appended to the local-only `browser-startup.log` under the user's OpenBrowser data directory. Inspect it with `npm run log:startup` from `Browserapp/`; logs are ignored by Git.
 - Third-party notices are documented in [`THIRD-PARTY-NOTICES.md`](./Browserapp/THIRD-PARTY-NOTICES.md).
 - Cloud backup integrations only connect outward after explicit user configuration.
@@ -228,7 +228,9 @@ This repository contains source code and documentation. It does not track browse
 - The updater checks installer SHA-256 and the Ed25519 signature in `SHA256SUMS.txt.sig`. All updates require a valid signature and matching installer digest, including historical releases; environment variables cannot bypass verification.
 - Release signing uses an encrypted GitHub Actions secret exposed only to the final signing step. Install this reissued 1.0.0 once manually to migrate from the earlier missing signing key; subsequent signed releases use the new trust root.
 - RPA plans, variables and results are encrypted at rest. Existing JSON stores migrate after a successful read; use application import/export instead of editing storage files.
-- Agent history migrates to an encrypted index and separate encrypted records on its next successful save. Back up the entire `local-agent/` directory together with the original credential key; copying `state.enc` alone is insufficient. Older versions cannot read the new format. `state.legacy.enc` preserves only the history at migration time.
+- Agent history uses an encrypted index and separate encrypted records. Long conversations move to segmented storage when updated and require a version that reads the V3 index. Back up the entire `local-agent/` directory and the original credential key. Attachments referenced by recovery snapshots are retained. In Agent Settings, you can view attachment usage and clean up unreferenced files older than seven days.
+- Permanent profile deletion stages data on the same volume before committing metadata. On restart, the application restores data for uncommitted deletions or finishes cleanup for committed deletions.
+- One-time and cron tasks record each occurrence before execution. A restart preserves interrupted occurrences for the user to review before resuming.
 - Platform accounts and transfer history use encrypted host-side files. Legacy localStorage entries are removed only after a confirmed encrypted write. Account lists return metadata; credentials are read explicitly when needed.
 - Account CSV supports quoted commas, multiline fields and reversible spreadsheet formula protection. CSV and offline transfer codes remain plaintext exports and require confirmation when sharing credentials; use cloud backup export for encrypted migration.
 - Cookie warmup creates a persisted, queryable and cancellable RPA task. Headless mode and image blocking require a stopped profile. Task options do not overwrite saved settings, and automatic close also runs after failures. Video blocking covers common media URL patterns.
@@ -282,4 +284,4 @@ npm ci
 npm run rebuild:ui
 ```
 
-The required frontend build inputs and their SHA256 manifest are included in this repository. No external `/workspace/roxy-src` directory or uploaded archives are required. See [the reproducible build guide](docs/rebuild/BUILD-REPRODUCIBILITY.md).
+`npm start` builds and opens the default workbench from maintained source, reviewed runtime libraries, and static assets. The previous release remains available from Git history for visual comparisons. [Build and verification guide](docs/rebuild/BUILD-REPRODUCIBILITY.md)

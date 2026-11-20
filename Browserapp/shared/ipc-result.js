@@ -16,6 +16,10 @@
       if (Array.isArray(error?.stale)) {
         detail.stale = error.stale.map(({ id, baseRev, rev }) => ({ id, baseRev, rev }));
       }
+      if (Number.isSafeInteger(error?.completed) && error.completed >= 0) detail.completed = error.completed;
+      if (Array.isArray(error?.remainingIds)) {
+        detail.remainingIds = error.remainingIds.filter(id => typeof id === 'string');
+      }
       return { ipcResult: 1, ok: false, error: detail };
     }
   }
@@ -27,6 +31,8 @@
     const error = new Error(detail.message || 'Operation failed');
     if (detail.code !== undefined) error.code = detail.code;
     if (Array.isArray(detail.stale)) error.stale = detail.stale;
+    if (Number.isSafeInteger(detail.completed)) error.completed = detail.completed;
+    if (Array.isArray(detail.remainingIds)) error.remainingIds = detail.remainingIds;
     throw error;
   }
 

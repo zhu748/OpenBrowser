@@ -57,7 +57,8 @@ async function main() {
       const dbFile = path.join(root, `${sqlite}.db`);
       await fs.writeFile(stateFile, cc.encryptCredentialJson({ profiles, kernelPolicyVersion: 4 }));
       ProfileStoreSqlite.isSupported = () => sqlite;
-      const engine = Object.assign({ stateFile, dbFile, kernelManager: { loadMeta: async () => {} },
+      const engine = Object.assign({ stateFile, dbFile, profileDataRootPath: path.join(root, 'profiles'),
+        kernelManager: { loadMeta: async () => {} },
         profiles: new Map(), extensions: new Map(), assignments: new Map(), sanitizeProfile: (p) => p, emit() {},
         preferIndependentKernel: true, allowSystemBrowserFallback: false, systemBrowserPath: null,
       }, persistence);

@@ -37,3 +37,6 @@ Browserapp/core
 /signing-keys/
 # Local optimization probes and validation logs.
 /work/
+/Browserapp/roxy-ui/
+/Browserapp/roxy-ui.build.lock
+/Browserapp/.workbench-build-*/

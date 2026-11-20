@@ -85,9 +85,12 @@ function installUiProtocol(protocol, net, root, { agentFile } = {}) {
         if (request.method && !["GET", "HEAD"].includes(request.method))
           return new Response("Method not allowed", { status: 405 });
         const file = await agentFile(url.pathname.slice(13));
+        const disposition = file.artifact && "attachment; filename*=UTF-8''" + encodeURIComponent(path.basename(file.fileName).toWellFormed())
+          .replace(/['()*]/g, character => "%" + character.charCodeAt(0).toString(16));
         return new Response(request.method === "HEAD" ? null : file.bytes, {
           headers: {
             "Content-Type": file.mimeType,
+            ...(disposition && { "Content-Disposition": disposition }),
             "Cache-Control": "no-store",
             "Content-Security-Policy": CSP,
             "X-Content-Type-Options": "nosniff",

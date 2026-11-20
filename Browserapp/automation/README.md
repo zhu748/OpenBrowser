@@ -81,8 +81,20 @@ curl -s -X DELETE -H 'api-key: YOUR_API_KEY' http://127.0.0.1:50325/api/rpa/task
 环境变量：
 
 - `OPENBROWSER_API_PORT`（默认 `50325`）
-- `OPENBROWSER_API_KEY`（可选；不设置时会生成并持久化到 `userData/local-api-key.txt`）
+- `OPENBROWSER_API_KEY`（可选，应用默认从加密的 `userData/mcp-key.json` 读取或生成密钥）
 - `OPENBROWSER_API_KEY_FILE`（可选；独立 MCP 进程从该文件读取 key，适合不把 key 直接写进客户端配置）
+
+### 通过 HTTPS 远程访问
+
+保持 OpenBrowser 的「允许局域网访问」关闭。在同一台主机使用配置了可信证书的 HTTPS 反向代理，将请求转发到实际的回环 API 端口。以下 Caddy 配置中的域名和端口可按部署调整。
+
+```caddyfile
+browser-api.example.com {
+    reverse_proxy 127.0.0.1:50325
+}
+```
+
+通过 HTTPS 调用 API 时仍需发送 API 密钥。使用 MCP 的客户端可将 `OPENBROWSER_API_URL` 设为 HTTPS 源地址，并显式设置 `OPENBROWSER_API_KEY` 或 `OPENBROWSER_API_KEY_FILE`。端口发生回退时，以应用的 API 页面为准。
 
 ## HTTP 示例
 

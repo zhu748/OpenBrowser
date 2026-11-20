@@ -79,7 +79,7 @@ console.log('[run] starting', hostBin);
 
 const child = spawn(hostBin, [appRoot], {
   stdio: 'inherit',
-  env: process.env,
+  env: process.argv.includes('--source-renderer') ? { ...process.env, OPENBROWSER_RENDERER: 'source' } : process.env,
   cwd: appRoot,
 });
 

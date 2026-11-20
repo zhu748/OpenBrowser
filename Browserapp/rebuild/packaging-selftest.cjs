@@ -15,6 +15,7 @@ const {
   assertRuntimeResourceTree,
 } = require("../scripts/runtime-manifest");
 const { _electron: electron } = require("playwright");
+const { exerciseSourceWorkbench } = require("./source-workbench-ui-selftest.cjs");
 const source = path.resolve(__dirname, ".."),
   root = fs.mkdtempSync(path.join(os.tmpdir(), "ob-rebuild-package-"));
 async function main() {
@@ -32,12 +33,19 @@ async function main() {
       "function",
     );
     assert.equal(typeof requirePackaged("yauzl").open, "function");
+    assert.equal(typeof requirePackaged("acorn").parse, "function");
+    assert.equal(typeof requirePackaged("quickjs-emscripten-core").newQuickJSWASMModuleFromVariant, "function");
     assert.equal(
       typeof requirePackaged("cron-parser").CronExpressionParser.parse,
       "function",
     );
     for (const file of [
       "roxy-ui/index.html",
+      "roxy-ui/source-frontend/templates.js",
+      "roxy-ui/source-frontend/index.html",
+      "roxy-ui/source-frontend/kernels.js",
+      "roxy-ui/source-frontend/management.js",
+      "roxy-ui/source-frontend/VUE-LICENSE.txt",
       "rebuild/protocol.js",
       "rebuild/local-service.js",
       "rebuild/agent-service.js",
@@ -47,13 +55,13 @@ async function main() {
       assert.ok(fs.existsSync(path.join(source, file)), file);
     }
     for (const file of [
-      "rebuild/compiler/build.cjs",
+      "frontend/src/templates/TemplatesPage.vue",
+      "rebuild/compiler/source-selftest.cjs",
       "rebuild/agent-selftest.cjs",
       "rebuild/acceptance-runner.cjs",
       "rebuild/acceptance-manifest.json",
       "rebuild/verify-evidence.cjs",
       "rebuild/visual-pixel-diff.py",
-      "rebuild/build-evidence-gallery.cjs",
     ])
       assert.equal(isRuntimeResource(file), false, file);
     // Exercise the same runtime filter against real files, not invented paths.
@@ -101,10 +109,33 @@ async function main() {
       globalThis.__localRequest("profiles:list"),
     );
     assert.ok(Array.isArray(profiles));
+    const description = await page.evaluate(() => globalThis.__localRequest("agent:scriptSelfDescription", {
+      code: 'defineMetadata({name:"Packaged script"});defineParams({type:"object"});export function main(options: object){return options}',
+    }));
+    assert.equal(description.metadata.name, "Packaged script");
+    const packagedScript = await requirePackaged("./rebuild/agent-script-runner").runScriptWindow(null, {
+      source: "export async function main(){return await Promise.resolve(42)}",
+      filename: "packaged.js", schema: { type: "object" }, params: "{}",
+    }, "fixture", new AbortController().signal, () => {});
+    assert.equal(packagedScript, "42");
+    await page.evaluate(() => globalThis.__router.push("/templates"));
+    await page.getByRole("heading", { name: "已保存的模板", exact: true }).waitFor();
+    await page.getByText("暂无模板", { exact: true }).waitFor();
+    await page.evaluate(() => globalThis.__router.push("/extensions"));
+    await page.getByRole("button", { name: "本地上传", exact: true }).waitFor();
+    await page.getByRole("columnheader", { name: "扩展信息", exact: true }).waitFor();
+    await page.evaluate(() => globalThis.__router.push("/extensions?renderer=source"));
+    await page.locator("#extensions-title").waitFor();
+    await page.getByRole("button", { name: "本地上传", exact: true }).click();
+    await page.getByRole("dialog", { name: "本地上传" }).getByRole("button", { name: "选择 ZIP / CRX", exact: true }).waitFor();
     assert.deepEqual(errors, []);
     assert.deepEqual(externalRequests, []);
     await app.close();
     app = null;
+    for (const name of fs.readdirSync(path.join(root, "roxy-ui"))) {
+      if (name !== "source-frontend") fs.rmSync(path.join(root, "roxy-ui", name), { recursive: true });
+    }
+    await exerciseSourceWorkbench(root);
     fs.mkdirSync(path.join(root, "node_modules", "eslint"));
     assert.throws(
       () => assertProductionDependencies(root),
@@ -118,6 +149,7 @@ async function main() {
         "packaged Playwright/CDP, ZIP and cron modules load",
         "real runtime tree copied; compiler/selftests excluded; resource tree audited",
         "copied app directory boots real Electron and renders local profiles without renderer network",
+        "source workbench boots and uses native IPC with only its own renderer assets in the packaged tree",
         "directory boot excludes user-installed kernel binaries; it is not an installer test",
         "unexpected development dependency rejected",
       ],

@@ -23,8 +23,9 @@ const records = [
   "static-audit.json",
   "ui-audit.json",
   "module-links.json",
+  "workbench-source-provenance.json",
+  "full-workbench-parity/report.json",
   "renderer-transports.json",
-  "build-guard.json",
   "sync-service-selftest.json",
   "sync-dialogs-ui-selftest.json",
   "dialog-security-selftest.json",
@@ -52,8 +53,6 @@ const records = [
   "projects-ui-selftest.json",
   "agent-mcp-selftest.json",
   "agent-mcp-ui-selftest.json",
-  "style-provenance.json",
-  "visual-parity-selftest.json",
   "settings-ui-selftest.json",
   "phase3-command-results.json",
   "environment-network-selftest.json",
@@ -65,7 +64,6 @@ const records = [
   "template-catalog-selftest.json",
   "template-catalog-ui-selftest.json",
   "phase4-command-results.json",
-  "gallery-ui-selftest.json",
   "tab-mapping-selftest.json",
   "firefox-image-size-selftest.json",
   "master-color-selftest.json",
@@ -127,7 +125,16 @@ try {
 
  const targeted=read(path.join(evidence,'native-regression-selftest.json'));for(const row of targeted.results){const actual=crypto.createHash('sha256').update(fs.readFileSync(path.join(repo,'Browserapp',row.name))).digest('hex');if(actual!==row.sha256)throw Error('原生回归来源已变化：'+row.name);}result.nativeTestsVerified=targeted.results.length;
  const desktop=read(path.join(evidence,'desktop-shortcuts-selftest.json'));if(!desktop.sourceUnchanged||desktop.runtimeAtEnd.sha256!==current.sha256||desktop.sourceSha256!==crypto.createHash('sha256').update(fs.readFileSync(path.join(__dirname,'desktop-shortcuts-selftest.cjs'))).digest('hex'))throw Error('真实桌面证据来源与当前代码不一致');
- const visuals=read(path.join(evidence,'visual-parity-selftest.json'));if(visuals.selectedCases.length!==48||visuals.cases.length!==96||visuals.cases.some(row=>!row.comparison.equal))throw Error('视觉证据未覆盖完整 48 状态 / 明暗 96 组');result.visualCasesVerified=visuals.cases.length;
+ const visuals = read(path.join(evidence, 'full-workbench-parity/report.json'));
+ if (!visuals.passed || !visuals.cases.length || visuals.cases.some(row =>
+     !row.expectedFix && (!row.stateMatches || (!row.equal && !row.rasterRounding))))
+   throw Error('完整工作台对照验收未通过');
+ for (const [asset, expected] of Object.entries(visuals.bootHashes.source)) {
+   const file = path.join(repo, 'Browserapp/roxy-ui', asset);
+   const actual = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+   if (actual !== expected) throw Error('视觉验收后工作台入口发生变化：' + asset);
+ }
+ result.visualCasesVerified = visuals.cases.length;
 } catch(error) { failures.push({file:'phase4-command-results.json',error:error.message}); }
 const native=read(path.join(evidence,'native-runtime-hashes.json'));
 result.nativeRuntimeHashesVerified=0;

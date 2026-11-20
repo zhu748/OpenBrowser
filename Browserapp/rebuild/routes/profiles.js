@@ -2,9 +2,11 @@
 const { maxProfileNumber } = require('../../shared/profile-values');
 
 const fs = require("node:fs/promises");
+const { O_RDONLY, O_NONBLOCK } = require("node:fs").constants;
 const path = require("node:path");
 const { randomUUID: uid } = require("node:crypto");
 const { sanitizeProfile } = require("../../engine/profile-sanitizer");
+const { assertProfileId } = require("../../automation/isolation");
 const { fromRoxy, toRoxy } = require("../profile-dto");
 const { profileFromPreview, savePreviewProfiles } = require('../fingerprint-draft');
 const object = (value) =>
@@ -33,20 +35,37 @@ async function profilesChooseImport(service) {
     extension = path.extname(file).toLowerCase();
   if (![".xlsx", ".txt"].includes(extension))
     throw Error("仅支持 .xlsx 或 .txt 文件");
-  const stat = await fs.stat(file);
-  if (!stat.isFile() || stat.size > 5 * 1024 * 1024)
-    throw Error("导入文件不能超过 5 MiB");
-  const bytes = await fs.readFile(file);
-  if (bytes.length > 5 * 1024 * 1024) throw Error("导入文件不能超过 5 MiB");
-  return {
-    name: path.basename(file),
-    size: bytes.length,
-    bytes: new Uint8Array(bytes),
-    type:
-      extension === ".txt"
-        ? "text/plain"
-        : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  };
+  const limit = 5 * 1024 * 1024;
+  const handle = await fs.open(file, O_RDONLY | O_NONBLOCK);
+  try {
+    const stat = await handle.stat();
+    if (!stat.isFile()) throw Error("请选择普通文件");
+    if (stat.size > limit) throw Error("导入文件不能超过 5 MiB");
+    // Read a bounded snapshot from the same handle that was checked above.
+    const bytes = new Uint8Array(stat.size + 1);
+    let size = 0;
+    while (size < bytes.length) {
+      const { bytesRead } = await handle.read(bytes, size, bytes.length - size, size);
+      if (!bytesRead) break;
+      size += bytesRead;
+    }
+    if (size > limit) throw Error("导入文件不能超过 5 MiB");
+    const current = await handle.stat();
+    if (size !== stat.size || current.size !== stat.size || current.mtimeMs !== stat.mtimeMs) {
+      throw Error("导入文件已更改，请重新选择");
+    }
+    return {
+      name: path.basename(file),
+      size,
+      bytes: bytes.subarray(0, size),
+      type:
+        extension === ".txt"
+          ? "text/plain"
+          : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    };
+  } finally {
+    await handle.close();
+  }
 }
 
 async function profilesAnalyseImport(service, p, method) {
@@ -77,6 +96,15 @@ async function profilesAnalyseImport(service, p, method) {
   if (method === "profiles:analyse-import") return { count: profiles.length };
   await savePreviewProfiles(e, profiles);
   return { successCount: profiles.length };
+}
+
+async function profilesReadImport(service) {
+  const file = await profilesChooseImport(service);
+  if (!file) return null;
+  const excelData = await require('../profile-import-formats').parseProfileImport(file);
+  const payload = { fileName: file.name, excelData };
+  const { count } = await profilesAnalyseImport(service, payload, 'profiles:analyse-import');
+  return { ...payload, count };
 }
 
 async function profilesList(service) {
@@ -167,7 +195,7 @@ async function profilesUpdate(service, p) {
       delta: true,
     },
   );
-  return toRoxy(profile);
+  return profilesRead(service, { id });
 }
 
 async function profilesStart(service, p) {
@@ -263,7 +291,12 @@ async function profilesPatch(service, p) {
 
 async function profilesStop(service, p) {
   const e = service.engine;
-  return e.stop(String(p.id));
+  const id = String(p.id);
+  const result = await e.stop(id);
+  if (result?.running || result?.cleanupBlocked) {
+    throw Object.assign(Error("窗口关闭尚未确认，请稍后重试"), { code: "BROWSER_EXIT_UNCONFIRMED" });
+  }
+  return result;
 }
 
 async function profilesEditData(service, p) {
@@ -309,23 +342,44 @@ async function profilesEditData(service, p) {
   return true;
 }
 
-async function profilesDelete(service, p) {
-  const e = service.engine;
-  const ids = p.ids.map(String);
-  await service.beforeRemove?.(ids);
-  return e.trashProfiles(ids);
+async function profileLifecycleBatch(values, countField, apply, defaults = {}) {
+  if (!Array.isArray(values) || values.length > 5000) throw Error("窗口选择数量无效");
+  const ids = [...new Set(values.map(value => assertProfileId(String(value))))];
+  const result = { success: true, [countField]: 0, ids: [], ...defaults };
+  for (let offset = 0; offset < ids.length; offset += 200) {
+    const chunk = ids.slice(offset, offset + 200);
+    try {
+      const completed = await apply(chunk);
+      result[countField] += completed[countField];
+      result.ids.push(...completed.ids);
+      if ("stopped" in result) result.stopped += completed.stopped || 0;
+    } catch (cause) {
+      const remainingIds = ids.slice(offset);
+      if (!offset) throw cause;
+      throw Object.assign(Error(`已处理 ${result[countField]} 个窗口，其余 ${remainingIds.length} 个未处理。 ${cause.message}`, { cause }), {
+        code: cause.code || "PROFILE_BATCH_PARTIAL", completed: result[countField], remainingIds,
+      });
+    }
+  }
+  return result;
 }
 
-async function profilesRestore(service, p) {
-  const e = service.engine;
-  return e.restoreProfiles(p.ids.map(String));
+function profilesDelete(service, p) {
+  return profileLifecycleBatch(p.ids, "trashed", async ids => {
+    await service.beforeRemove?.(ids);
+    return service.engine.trashProfiles(ids);
+  }, { stopped: 0 });
 }
 
-async function profilesPurge(service, p) {
-  const e = service.engine;
-  const ids = p.ids.map(String);
-  await service.beforeRemove?.(ids);
-  return e.purgeProfiles(ids, true);
+function profilesRestore(service, p) {
+  return profileLifecycleBatch(p.ids, "restored", ids => service.engine.restoreProfiles(ids));
+}
+
+function profilesPurge(service, p) {
+  return profileLifecycleBatch(p.ids, "deleted", async ids => {
+    await service.beforeRemove?.(ids);
+    return service.engine.purgeProfiles(ids, true);
+  }, { stopped: 0, dataDeleted: true });
 }
 
 async function profilesTrash(service) {
@@ -374,6 +428,7 @@ module.exports = [
   ["profiles:query", profilesQuery, "parallel"],
   ["profiles:clear-cache", profilesClearCache, "serial"],
   ["profiles:choose-import", profilesChooseImport, "parallel"],
+  ["profiles:read-import", profilesReadImport, "parallel"],
   ["profiles:analyse-import", profilesAnalyseImport, "serial"],
   ["profiles:import", profilesAnalyseImport, "serial"],
   ["profiles:list", profilesList, "parallel"],

@@ -47,6 +47,14 @@ const ok = (name, cond) => {
     const released = await releaseProfileLock(profileDir, lock1);
     ok('releaseProfileLock successfully removes lock', released === true);
 
+    await fsp.writeFile(lockFile, '');
+    await assert.rejects(acquireProfileLock(profileDir, { profileId: 'p1' }), { code: 'PROFILE_LOCKED' });
+    ok('a recent empty lock remains reserved for its writer', (await fsp.stat(lockFile)).size === 0);
+    const abandoned = new Date(Date.now() - 30_000);
+    await fsp.utimes(lockFile, abandoned, abandoned);
+    const recoveredEmpty = await acquireProfileLock(profileDir, { profileId: 'p1' });
+    ok('an abandoned empty lock can be recovered after the startup timeout', await releaseProfileLock(profileDir, recoveredEmpty));
+
     // 2. Dead owner + dead browserPid: WMI failure does not deadlock recovery
     // Simulate a crash from previous session with dead PIDs
     // PIDs like 99999999 are almost certainly unused on any OS

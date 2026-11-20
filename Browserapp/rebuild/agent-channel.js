@@ -66,8 +66,8 @@ const dispatch = (event) => {
     // An in-flight snapshot owns this detail until it is published. Remember
     // intervening changes for one trailing read instead of appending a tail
     // that could hide the snapshot's earlier text behind a newer revision.
-    if (log && history.isLoading(log.id)) history.refresh(log.id);
-    if (log && history.has(log.id) && !history.isLoading(log.id) &&
+    if (log && (log.templateType === "script" || history.isLoading(log.id))) history.refresh(log.id);
+    if (log && log.templateType !== "script" && history.has(log.id) && !history.isLoading(log.id) &&
         e.sequence > (taskExecutionDetails.value[log.id]?.revision || 0)) {
       const previous = taskExecutionDetails.value[log.id] || detail(log),
         messages = [...previous.messages];

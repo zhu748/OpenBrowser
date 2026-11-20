@@ -36,17 +36,20 @@ class DialogWindows {
           : null;
     if (method === "ui:dialog:open") {
       if (!spec) throw Error("未知本地弹窗");
+      if (payload.tab !== undefined && !spec.tabs?.includes(payload.tab))
+        throw Error("无效弹窗标签");
       const existing = this.entries.get(kind);
       if (existing) {
+        if (payload.tab !== undefined) existing.tab = payload.tab;
         await existing.ready;
         if (!existing.window.isDestroyed()) {
+          if (payload.tab !== undefined && existing.tab === payload.tab)
+            existing.window.webContents.send("engine:event", { channel: "dialog:tab", payload: existing.tab });
           existing.window.show();
           existing.window.focus();
         }
         return { kind };
       }
-      if (payload.tab !== undefined && !spec.tabs?.includes(payload.tab))
-        throw Error("无效弹窗标签");
       const window = new this.BrowserWindow({
         width: spec.width,
         height: spec.height,
@@ -71,7 +74,7 @@ class DialogWindows {
       window.setResizable(true);
       window.setContentSize(spec.width, spec.height);
       window.setResizable(false);
-      const entry = { window, ready: null };
+      const entry = { window, tab: payload.tab, ready: null };
       this.entries.set(kind, entry);
       this.windows.add(window);
       window.on("closed", () => {
@@ -101,6 +104,7 @@ class DialogWindows {
     );
     if (!entry || !isUiDocument(sender.getURL()))
       throw Error("弹窗操作来源无效");
+    if (method === "ui:dialog:requested-tab") return entry.tab ?? null;
     if (method === "ui:dialog:show") {
       entry.window.show();
       return true;

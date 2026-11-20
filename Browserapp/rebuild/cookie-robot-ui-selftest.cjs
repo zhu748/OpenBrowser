@@ -124,6 +124,9 @@ const repo = path.resolve(__dirname, "../..");
         result.externalRequests.push(request.url());
     });
     await page.getByText("暂无窗口", { exact: true }).waitFor();
+    if (process.env.OPENBROWSER_TEST_KERNEL_BINARY) {
+      await page.evaluate(() => globalThis.ops.saveClientSettings({ diskLimit: 0 }));
+    }
     // Observe the actual service instance without replacing any command or
     // browser response. This permits native spawn-argument/BiDi checks below.
     await app.evaluate(
@@ -165,7 +168,7 @@ const repo = path.resolve(__dirname, "../..");
         .getByText(profile.windowName, { exact: true })
         .click({ button: "right" });
       await page.getByText("Cookie 机器人", { exact: true }).last().click();
-      const form = page.locator(".p-dialog");
+      const form = page.getByRole("dialog").filter({ hasText: "Cookie 机器人" });
       await form
         .locator("textarea")
         .fill(origin + "/" + profile.coreType.toLowerCase());
@@ -350,7 +353,7 @@ const repo = path.resolve(__dirname, "../..");
     const failed = await waitUntil(
       async () =>
         (await jobs()).find(
-          (row) => row.id === bounded.taskIds[0] && row.status === "failed",
+          (row) => row.id === bounded.taskIds[0] && row.status === "failed" && row.finishedAt,
         ),
       { timeout: 90000 },
     );
@@ -359,10 +362,15 @@ const repo = path.resolve(__dirname, "../..");
       JSON.stringify(failed),
     );
     assert.ok(failed.pid > 0);
-    assert.throws(
-      () => process.kill(failed.pid, 0),
-      (error) => error.code === "ESRCH",
-    );
+    await waitUntil(() => {
+      try {
+        process.kill(failed.pid, 0);
+        return false;
+      } catch (error) {
+        if (error.code !== "ESRCH") throw error;
+        return true;
+      }
+    }, { timeout: 30000 });
     assert.ok(
       !(await page.evaluate(() => globalThis.ops.profileStatus())).some(
         (entry) => entry.id === profile.id && entry.running,

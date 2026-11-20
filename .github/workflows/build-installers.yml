@@ -154,6 +154,11 @@ jobs:
           npm run selftest -- reviewupdate
           npm run selftest:proxyconcurrency
           npm run selftest:dnsleakclassify
+      - name: Rebuild and verify the workbench included in the installer
+        run: |
+          npm run rebuild:ui
+          node rebuild/compiler/source-selftest.cjs
+          test -z "$(git ls-files -- roxy-ui)"
       - name: Install NSIS
         if: runner.os == 'Windows'
         shell: pwsh

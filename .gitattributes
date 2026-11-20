@@ -2,12 +2,12 @@
 /Browserapp/rebuild/compiler/** text eol=lf
 /Browserapp/rebuild/*.js text eol=lf
 /Browserapp/rebuild/*.css text eol=lf
-/Browserapp/rebuild/compiler/vendor/roxy-ui/** -text
+/Browserapp/frontend/** text=auto eol=lf
+/Browserapp/frontend/workbench/** -text
 /Browserapp/roxy-ui/** -text
 
 # Keep generated resources and vendor inputs out of hand-written code reviews.
 /Browserapp/roxy-ui/** linguist-generated=true
-/Browserapp/rebuild/compiler/vendor/** linguist-vendored=true
 /Browserapp/automation/vendor/** linguist-vendored=true
 /Browserapp/automation/data/** linguist-generated=true
 /docs/rebuild/evidence/** linguist-generated=true

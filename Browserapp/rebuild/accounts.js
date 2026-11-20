@@ -29,6 +29,8 @@ function linked(profile, id) {
 }
 function dto(store, engine, value, secret = false) {
   const row = secret ? store.get(value.id) : value;
+  const profiles = [...engine.profiles.values()]
+    .filter((profile) => !profile.trashed && linked(profile, row.id));
   return {
     ...row,
     platformUrl: row.url,
@@ -40,11 +42,8 @@ function dto(store, engine, value, secret = false) {
     platformIcon: "",
     platformIconDark: "",
     createTime: row.createdAt,
-    window_info: JSON.stringify(
-      [...engine.profiles.values()]
-        .filter((profile) => !profile.trashed && linked(profile, row.id))
-        .map((profile) => profile.number),
-    ),
+    window_info: JSON.stringify(profiles.map((profile) => profile.number)),
+    boundProfileIds: profiles.map((profile) => profile.id),
   };
 }
 async function profileTransaction(engine, profiles) {
@@ -141,6 +140,21 @@ async function requestAccounts(service, method, payload) {
   const store = service.accountStore?.(),
     engine = service.engine;
   if (!store) throw Error("账号库尚未就绪");
+  if (method === "import-preview") {
+    const selection = await require("./account-workbook").selectAccounts(service);
+    if (!selection.canceled) selection.values.forEach(value => input(value));
+    return selection;
+  }
+  if (method === "export-template") return require("./account-workbook").exportAccounts(service, [], true);
+  if (method === "export") {
+    if (!Array.isArray(payload.ids) || !payload.ids.length || payload.ids.length > 500 ||
+       new Set(payload.ids).size !== payload.ids.length) throw Error("请选择 1–500 个不同账号");
+    const records = payload.ids.map(id => {
+      const { password, totpSecret, ...account } = store.get(String(id));
+      return payload.includeCredentials === true ? { ...account, password, totpSecret } : account;
+    });
+    return require("./account-workbook").exportAccounts(service, records);
+  }
   if (method === "list") {
     if (payload.id)
       return {

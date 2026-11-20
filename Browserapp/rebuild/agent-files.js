@@ -4,8 +4,10 @@ const fs = require("node:fs/promises"),
   crypto = require("node:crypto"),
   credentials = require("../credential-crypto");
 const { writeRawAtomically } = require("../engine/state-storage");
+const { FILE_ID } = require("./agent-attachment-references");
 const LIMIT = 10 * 1024 * 1024,
   TOTAL = 20 * 1024 * 1024;
+const RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 function fileName(value) {
   if (
     typeof value !== "string" ||
@@ -81,11 +83,11 @@ class AgentFiles {
     if (this.closing) throw Error("附件服务正在关闭");
     const run = this.queue.then(async () => {
       const next = {
+        ...this.index,
         files: [...this.index.files, ...files],
         grants: { ...this.index.grants, ...grant },
       };
-      await writeRawAtomically(path.join(this.root, "index.enc"), credentials.encryptCredentialJson(next));
-      this.index = next;
+      await this.saveIndex(next);
     });
     this.queue = run.catch(() => undefined);
     return run;
@@ -100,15 +102,67 @@ class AgentFiles {
       localUrl: "obui://app/agent-files/" + file.fileId,
     };
   }
-  async write(bytes, name) {
+  async usage() {
+    await this.load();
+    return {
+      count: this.index.files.length,
+      bytes: this.index.files.reduce((sum, file) => sum + (Number(file.size) || 0), 0),
+      pendingCleanup: this.index.pendingDeletes?.length || 0,
+      retentionDays: 7,
+    };
+  }
+  async pruneUnused(keepReferences, now = Date.now()) {
+    await this.load();
+    const run = this.queue.then(() => this.pruneIndex(keepReferences, now - RETENTION_MS));
+    this.queue = run.catch(() => undefined);
+    return run;
+  }
+  async pruneIndex(keepReferences, cutoff) {
+    const index = this.index;
+    const expired = [];
+    for (const file of index.files) {
+      if (typeof file.fileId !== "string" || !FILE_ID.test(file.fileId)) continue;
+      const createdAt = file.createdAt ?? (await fs.lstat(path.join(this.root, file.fileId + ".enc"))
+        .catch(error => { if (error.code !== "ENOENT") throw error; return { mtimeMs: 0 }; })).mtimeMs;
+      if (createdAt <= cutoff) expired.push(file);
+    }
+    const pending = (index.pendingDeletes || []).filter(id => typeof id === "string" && FILE_ID.test(id));
+    if (!expired.length && !pending.length) return { removed: 0, bytes: 0 };
+    const keep = await keepReferences();
+    const unused = expired.filter(file => !keep.has(file.fileId));
+    const ids = new Set(unused.map(file => file.fileId));
+    const toDelete = [...new Set([...pending, ...ids])].filter(id => !keep.has(id));
+    if (!toDelete.length) return { removed: 0, bytes: 0 };
+    const next = {
+      files: index.files.filter(file => !ids.has(file.fileId)),
+      grants: Object.fromEntries(Object.entries(index.grants).filter(([, files]) =>
+        Array.isArray(files) && !files.some(id => ids.has(id)))),
+      pendingDeletes: [...new Set([...pending, ...ids])],
+    };
+    await this.saveIndex(next);
+    const deleted = new Set();
+    for (const id of toDelete) {
+      try { await fs.rm(path.join(this.root, id + ".enc"), { force: true }); deleted.add(id); }
+      catch (_) { /* Keep the pending deletion in the durable index for retry. */ }
+    }
+    if (deleted.size) await this.saveIndex({ ...next, pendingDeletes: next.pendingDeletes.filter(id => !deleted.has(id)) });
+    return { removed: deleted.size, bytes: unused.reduce((sum, file) => sum + (deleted.has(file.fileId) ? file.size : 0), 0) };
+  }
+  async saveIndex(index) {
+    await writeRawAtomically(path.join(this.root, "index.enc"), credentials.encryptCredentialJson(index));
+    this.index = index;
+  }
+  async write(bytes, name, artifact = false) {
     if (this.closing) throw Error("附件服务正在关闭");
     fileName(name);
     if (bytes.length > LIMIT) throw Error("单个附件不能超过 10 MiB");
     const record = {
       fileId: crypto.randomUUID(),
       fileName: name,
-      mimeType: mime(bytes),
+      mimeType: artifact ? "application/octet-stream" : mime(bytes),
+      ...(artifact && { artifact: true }),
       size: bytes.length,
+      createdAt: Date.now(),
     };
     await writeRawAtomically(
       path.join(this.root, record.fileId + ".enc"),
@@ -127,7 +181,11 @@ class AgentFiles {
       throw Error("附件编码或大小无效");
     const bytes = Buffer.from(p.data, "base64");
     if (bytes.toString("base64") !== p.data) throw Error("附件编码无效");
-    const record = await this.write(bytes, p.fileName);
+    return this.storeBytes(bytes, p.fileName);
+  }
+  async storeBytes(bytes, name, artifact = false) {
+    await this.load();
+    const record = await this.write(bytes, name, artifact);
     try {
       await this.commit([record]);
     } catch (error) {
@@ -248,7 +306,7 @@ class AgentFiles {
     if (
       bytes.length !== record.size ||
       bytes.length > LIMIT ||
-      mime(bytes) !== record.mimeType
+      (record.artifact ? record.mimeType !== "application/octet-stream" : mime(bytes) !== record.mimeType)
     )
       throw Error("附件校验失败");
     return { ...record, bytes };

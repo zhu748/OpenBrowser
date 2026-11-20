@@ -86,6 +86,10 @@ const repo = path.resolve(__dirname, "../..");
       .getByRole("button", { name: "创建模板", exact: true })
       .last()
       .click();
+    assert.equal(await page.getByRole("button", { name: "脚本", exact: true }).isEnabled(), true);
+    assert.equal(await page.getByRole("button", { name: "脚本", exact: true }).getAttribute("aria-pressed"), "true");
+    await page.getByRole("button", { name: "上传脚本", exact: true }).waitFor();
+    assert.equal(await page.getByText("请选择官方脚本模板", { exact: true }).count(), 0);
     await page
       .getByPlaceholder("请输入模板名称", { exact: true })
       .fill("本地提示词任务验收");
@@ -112,12 +116,110 @@ const repo = path.resolve(__dirname, "../..");
       "请返回一次任务执行结果。",
     );
     result.checks.push("原版 Agent 模板弹窗创建提示词模板，经真实 IPC 落盘");
-    phase = "task-create";
-    console.log(phase);
+
+    phase = "local-script";
+    const script = [
+      'import {defineMetadata, defineParams} from "@openbrowser/sandbox";',
+      'defineMetadata({name: "本地脚本模板", description: "脚本描述预览"});',
+      'defineParams({type: "object", properties: {count: {type: "number", default: -1}}});',
+      'export async function main(options: {count: number}) { console.log("开始计算"); return {scriptValue: await Promise.resolve(options.count * 3)}; }',
+    ].join("\n");
+    const metadata = await call("agent:scriptSelfDescription", { code: 'throw Error("仅允许静态预览");\n' + script });
+    assert.equal(metadata.paramsSchema.properties.count.default, -1);
+    const legacy = await call("agent:scriptSelfDescription", {
+      filename: "旧版归档.ts", code: 'import { chromium } from "playwright"; export async function main() { return chromium.name(); }',
+    });
+    assert.equal(legacy.metadata.name, "旧版归档");
+    assert.deepEqual(legacy.paramsSchema, { type: "object" });
+    await assert.rejects(call("agent:scriptSelfDescription", { code: script.replace("default: -1", "default: Math.random()") }), /静态/);
+    await assert.rejects(call("agent:scriptSelfDescription", { code: script.replace("function main", "function other") }), /main\(options\)/);
+    await page.getByRole("button", { name: "创建模板", exact: true }).last().click();
+    await page.getByRole("button", { name: "脚本", exact: true }).click();
+    await page.getByRole("button", { name: "上传脚本", exact: true }).click();
+    const upload = page.locator(".agent-console-upload-script-dialog");
+    await upload.getByRole("button", { name: "脚本开发文档", exact: true }).click();
+    await upload.getByText(/从任务管理选择窗口后运行/).waitFor();
+    assert.equal(app.windows().length, 2, "the documentation stays inside the current workspace");
+    await upload.getByRole("button", { name: "脚本开发文档", exact: true }).click();
+    await upload.locator('input[value="file"]').check();
+    await upload.locator('input[type="file"]').setInputFiles({
+      name: "archive-fixture.ts", mimeType: "application/typescript", buffer: Buffer.from(script),
+    });
+    await upload.getByText("脚本描述预览", { exact: true }).waitFor();
+    await upload.screenshot({ path: path.join(evidence, "agent-script-preview.png") });
+    await upload.getByRole("button", { name: "上传脚本", exact: true }).click();
+    await upload.waitFor({ state: "hidden" });
+    const scriptParameter = page.locator('.create-template-dialog__script-parameters input[type="number"]');
+    assert.equal(await scriptParameter.inputValue(), "-1");
+    await scriptParameter.fill("7");
+    await scriptParameter.press("Tab");
+    assert.equal(await page.getByRole("button", { name: "保存并运行", exact: true }).isEnabled(), true);
+    await page.getByRole("button", { name: "仅保存", exact: true }).click();
+    const scriptCard = page.locator(".my-template-card").filter({ hasText: "本地脚本模板" });
+    await scriptCard.waitFor();
+    assert.equal(await scriptCard.getByRole("button", { name: "创建任务", exact: true }).isEnabled(), true);
+    const summary = (await call("agent:userTemplates.listUserTemplates")).data.items.find(row => row.templateType === "script");
+    assert.equal(summary.metadata.scriptSource, undefined);
+    const storedScript = (await call("agent:userTemplates.getUserTemplate", { id: summary.id })).data.metadata;
+    assert.equal(storedScript.scriptSource, script);
+    assert.deepEqual(storedScript.params, { count: 7 });
+    await assert.rejects(call("agent:userTasks.createUserTask", { name: "未选择窗口", userTemplateId: summary.id }), /选择/);
+    await scriptCard.getByRole("button", { name: /本地脚本模板/ }).click();
+    await page.getByRole("button", { name: "上传脚本", exact: true }).click();
+    assert.equal(await upload.locator("textarea").inputValue(), script);
+    await upload.getByRole("button", { name: "取消", exact: true }).click();
+    await upload.waitFor({ state: "hidden" });
+    await page.getByRole("button", { name: "取消", exact: true }).click();
+    const workspace = await call("profiles:create", { windowName: "本地脚本窗口" });
+    await scriptCard.getByRole("button", { name: "运行脚本", exact: true }).click();
+    const scriptDialog = page.locator(".agent-console-create-task-dialog");
+    await scriptDialog.getByPlaceholder("请输入任务名称", { exact: true }).fill("本地脚本任务验收");
+    await scriptDialog.getByText(/OPE-\d+ · 本地脚本窗口/).click();
+    await scriptDialog.getByRole("button", { name: "保存", exact: true }).click();
+    await scriptDialog.waitFor({ state: "hidden" });
+    await waitUntil(async () => (await call("agent:taskLogs:summary")).some(log => log.taskName === "本地脚本任务验收" && log.status === "success"));
+    const manualScript = (await call("agent:taskLogs:summary")).find(log => log.taskName === "本地脚本任务验收");
+    const scriptLog = await call("agent:logs:detail", { id: manualScript.id });
+    assert.ok(scriptLog.messages.at(-1).content.includes('"scriptValue":21'));
+    assert.equal(requests, 0, "the script runs locally without calling the model");
+    await page.getByText("执行日志", { exact: true }).click();
+    await page.locator("tr").filter({ hasText: "本地脚本任务验收" }).getByRole("button", { name: "查看日志", exact: true }).click();
+    await page.getByText(/scriptValue.*21/).first().waitFor();
+    await page.getByText("任务已开始", { exact: true }).waitFor({ state: "hidden" });
+    await page.getByText("任务已创建", { exact: true }).waitFor({ state: "hidden" });
+    await page.screenshot({ path: path.join(evidence, "agent-local-script-log.png") });
+    await page.keyboard.press("Escape");
+    await call("agent:userTasks.updateUserTask", {
+      taskId: manualScript.taskId, plan_type: "once", execute_at: new Date(Date.now() + 1000).toISOString(), enabled: true,
+    });
+    await waitUntil(async () => (await call("agent:taskLogs:summary")).some(log => log.taskId === manualScript.taskId && log.id !== manualScript.id && log.status === "success"));
+    assert.ok(workspace.id);
+    assert.equal(requests, 0);
+    result.checks.push("原脚本弹窗静态读取 TypeScript 参数，模板卡片创建并运行手动任务，定时重跑保留结果且不调用模型");
+    await page.evaluate(() => globalThis.__router.push("/agent-console/templates"));
+    phase = "script-rerun";
     await page.evaluate(() =>
       globalThis.__router.push("/agent-console/task-manager"),
     );
+    const taskLogs = async () => (await call("agent:taskLogs:summary"))
+      .filter(log => log.taskId === manualScript.taskId);
+    const previousRuns = new Set((await taskLogs()).map(log => log.id));
+    await page.locator("tr").filter({ hasText: "本地脚本任务验收" })
+      .getByRole("button", { name: "立即执行", exact: true }).click();
+    await waitUntil(async () => (await taskLogs()).some(log => !previousRuns.has(log.id) && log.status === "success"));
+    const rerunTask = (await call("agent:userTasks.listUserTasks")).data.items.find(task => task.id === manualScript.taskId);
+    assert.equal(rerunTask.enabled, false);
+    assert.equal(rerunTask.nextExecuteAt, null);
+    assert.equal(requests, 0);
+    result.checks.push("一次性计划结束后，任务管理仍可通过立即执行手动重跑，计划继续停用");
+    phase = "task-create";
+    console.log(phase);
     await call("profiles:create", { windowName: "任务关联窗口" });
+    const selectedOnly = await call("profiles:query", {
+      dirIds: workspace.id, page_size: 1, orderName: "createTime", orderType: "desc",
+    });
+    assert.deepEqual(selectedOnly.rows.map(row => row.dirId), [workspace.id]);
+    assert.equal(selectedOnly.total, 1);
     await page
       .getByRole("button", { name: "创建任务", exact: true })
       .last()
@@ -150,9 +252,8 @@ const repo = path.resolve(__dirname, "../..");
       })
       .click();
     await page.keyboard.press("Escape");
-    await page
+    await page.locator("tr").filter({ hasText: "本地任务执行验收" })
       .getByRole("button", { name: "立即执行", exact: true })
-      .last()
       .click();
     await page.locator('[contenteditable="true"]').first().waitFor();
     await waitUntil(async () =>
@@ -199,7 +300,8 @@ const repo = path.resolve(__dirname, "../..");
     );
     await page.getByText("执行日志", { exact: true }).click();
     await page.getByText("本地任务执行验收", { exact: true }).first().waitFor();
-    assert.equal(await page.evaluate(() => Object.keys(globalThis.__localAgentChannel().taskExecutionDetails.value).length), 0,
+    const promptLog = (await call("agent:taskLogs:summary")).find(log => log.taskId === task.id);
+    assert.equal(await page.evaluate(id => Object.hasOwn(globalThis.__localAgentChannel().taskExecutionDetails.value, id), promptLog.id), false,
       'unopened live task output must not allocate viewer details');
     await page.evaluate(() => {
       const request = globalThis.__agentRequest;
@@ -239,9 +341,13 @@ const repo = path.resolve(__dirname, "../..");
     }
     process.exitCode = 1;
   } finally {
-    await app?.close();
-    server.closeAllConnections();
-    await new Promise((resolve) => server.close(resolve));
+    try {
+      await app?.close();
+    } finally {
+      server.closeAllConnections();
+      await new Promise((resolve) => server.close(resolve));
+      await fs.rm(data, { recursive: true, force: true, maxRetries: 3 });
+    }
     result.modelRequests = requests;
     await fs.writeFile(
       path.join(evidence, "agent-tasks-ui-selftest.json"),

@@ -21,9 +21,12 @@ function metadataDraft(conversation, patch) {
   // conversation just to update its title or unread flag.
   return Object.assign(Object.defineProperties({}, Object.getOwnPropertyDescriptors(conversation)), patch);
 }
+function createConversation() {
+  return { id: crypto.randomUUID(), title: "New conversation", createdAt: now(), updatedAt: now(), messages: [], unread: false };
+}
 async function requestConversations(service, method, p) {
   if (method === "createConversation") {
-    const c = { id: crypto.randomUUID(), title: "New conversation", createdAt: now(), updatedAt: now(), messages: [], unread: false };
+    const c = createConversation();
     await service.save({
       scope: { conversations: [c.id], logs: [] },
       snapshot: () => ({ ...service.data, conversations: [c, ...service.data.conversations] }),
@@ -41,15 +44,21 @@ async function requestConversations(service, method, p) {
   const c = service.conversation(p.id);
   if (method === "conversationDetail") {
     const limit = pageSize(p.limit);
+    if (p.cursor != null && (typeof p.cursor !== "string" || !p.cursor)) throw Error("历史游标无效");
+    const conversation = { ...metadata(c), ...(p.includeCheckpoint === false ? {} : { checkpoint: c.checkpoint }) };
+    const segmented = service.stateStore.segmentedPage(c, p.cursor, limit);
+    if (segmented) {
+      const page = await segmented;
+      const messages = page.messages.map(messageDto);
+      return { conversation, messages, hasMore: page.hasMore, nextCursor: page.hasMore ? messages[0].id : null };
+    }
     let end = c.messages.length;
     if (p.cursor != null) {
-      if (typeof p.cursor !== "string" || !p.cursor) throw Error("历史游标无效");
       end = c.messages.findIndex(message => message.id === p.cursor);
       if (end < 0) throw Error("历史游标不存在或不属于当前会话");
     }
     const start = Math.max(0, end - limit), messages = c.messages.slice(start, end).map(messageDto);
-    return { conversation: { ...metadata(c), ...(p.includeCheckpoint === false ? {} : { checkpoint: c.checkpoint }) },
-      messages, hasMore: start > 0, nextCursor: start > 0 ? messages[0].id : null };
+    return { conversation, messages, hasMore: start > 0, nextCursor: start > 0 ? messages[0].id : null };
   }
   if (method === "updateConversation") {
     if (typeof p.title !== "string" || !p.title.trim() || p.title.trim().length > 200) throw Error("会话名称应为 1–200 个字符");
@@ -82,6 +91,7 @@ async function requestConversations(service, method, p) {
   if (method === "deleteConversation") {
     service.deletingConversations ??= new Set();
     if (service.active.has(p.id)) throw Error("请先停止任务");
+    if (service.pendingRunSaves.has(p.id)) throw Error("此会话有待保存的任务结果，请先重试保存");
     if (service.deletingConversations.has(p.id)) throw Error("会话正在删除");
     service.deletingConversations.add(p.id);
     try {
@@ -98,4 +108,4 @@ async function requestConversations(service, method, p) {
   }
   throw Error("不支持的会话操作: " + method);
 }
-module.exports = { requestConversations };
+module.exports = { requestConversations, createConversation };

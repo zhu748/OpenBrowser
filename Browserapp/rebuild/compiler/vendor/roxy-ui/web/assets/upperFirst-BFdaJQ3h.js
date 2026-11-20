@@ -1,1 +1,0 @@
-function e(e){return e.substring(0,1).toUpperCase()+e.substring(1)}export{e as t};

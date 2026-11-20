@@ -11,6 +11,7 @@ const { KERNEL_POLICY_VERSION, engineStateRecoveryCandidates, preserveCorruptEng
 const fs = require('fs');
 const path = require('path');
 const { ProfileStoreSqlite } = require('../automation/profile-store-sqlite');
+const { recoverProfileDeletions } = require('./profile-deletion');
 
 // Storage is authoritative: UI pagination must never truncate the state that
 // the next save will persist. Both backends already decode the full snapshot.
@@ -20,6 +21,7 @@ module.exports = {
     await this.kernelManager.loadMeta();
     let migrateKernelPolicy = false;
     let recoveredState = false;
+    let storedIds;
     let existingDatabase = false;
     try { existingDatabase = fs.statSync(this.dbFile).size > 0; }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
@@ -112,6 +114,7 @@ module.exports = {
       }
       if (state) {
         const saved = state.saved;
+        storedIds = new Set(Array.isArray(saved.profiles) ? saved.profiles.map(profile => profile?.id) : []);
         for (const extension of saved.extensions || []) {
           if (fs.existsSync(extension.path)) {
             try {
@@ -147,6 +150,7 @@ module.exports = {
         }
       }
     }
+    await recoverProfileDeletions(this, { recoveredState, storedIds });
     if (bundledExtensionPath && fs.existsSync(path.join(bundledExtensionPath, 'manifest.json'))) {
       const builtIn = await this.readExtension(bundledExtensionPath, true);
       const obsoleteBuiltInIds = [...this.extensions.values()]

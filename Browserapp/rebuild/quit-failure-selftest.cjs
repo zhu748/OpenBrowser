@@ -10,6 +10,7 @@ const { waitUntil } = require("./selftest-helpers.cjs");
 const { once } = require("node:events");
 const repo = path.resolve(__dirname, "../..");
 const fatalHang = process.argv.includes("--fatal-hang");
+const normalHang = process.argv.includes("--normal-hang");
 (async () => {
   const data = await createTestDirectory('quit-failure-');
   let app, pid, child;
@@ -70,7 +71,7 @@ const fatalHang = process.argv.includes("--fatal-hang");
           throw Error("intentional checkpoint persistence failure");
         };
       },
-      { file: path.join(repo, "Browserapp/rebuild/agent-service.js"), hang: fatalHang },
+      { file: path.join(repo, "Browserapp/rebuild/agent-service.js"), hang: fatalHang || normalHang },
     );
     if (fatalHang) {
       const closed = once(child, "close", { signal: AbortSignal.timeout(25000) });
@@ -86,21 +87,28 @@ const fatalHang = process.argv.includes("--fatal-hang");
       result.checks.push("Agent 关闭永久挂起时，致命异常仍先停止真实独立 Chrome，再由关闭期限以状态 1 退出宿主");
       return;
     }
-    await app.close();
-    app = null;
+    if (normalHang) {
+      const closed = once(child, "close", { signal: AbortSignal.timeout(30000) });
+      await app.evaluate(({ app: host }) => { host.quit(); });
+      const [code] = await closed;
+      assert.equal(code, 0);
+      assert.equal(alive(), false, "normal quit must stop the external browser before the host exits");
+      app = null;
+    } else {
+      await app.close();
+      app = null;
+    }
     await waitUntil(() => !alive(), { timeout: 10000 });
     const diagnostic = await fs.readFile(
       path.join(data, "logs/browser-startup.log"),
       "utf8",
     );
     assert.ok(diagnostic.includes("local-service-shutdown-error"));
-    assert.ok(
-      diagnostic.includes("intentional checkpoint persistence failure"),
-    );
+    assert.ok(diagnostic.includes(normalHang ? "Quit local-agent timed out" : "intentional checkpoint persistence failure"));
     result.status = "PASS";
     result.pid = pid;
     result.checks.push(
-      "真实独立 Chrome 运行时，测试显式注入 Agent 退出持久化拒绝",
+      normalHang ? "真实独立 Chrome 运行时，普通退出等待 Agent 到达时限" : "真实独立 Chrome 运行时，测试显式注入 Agent 退出持久化拒绝",
     );
     result.checks.push(
       "退出仍等待并停止真实浏览器进程，未因服务失败跳过 stopAll",
@@ -111,12 +119,12 @@ const fatalHang = process.argv.includes("--fatal-hang");
     process.exitCode = 1;
   } finally {
     if (app && child?.exitCode === null) {
-      if (fatalHang) child.kill("SIGKILL");
+      if (fatalHang || normalHang) child.kill("SIGKILL");
       else await app.close();
     }
     if (alive()) process.kill(pid, "SIGTERM");
     await fs.writeFile(
-      evidencePath(fatalHang ? "quit-fatal-hang-selftest.json" : "quit-failure-selftest.json"),
+      evidencePath(fatalHang ? "quit-fatal-hang-selftest.json" : normalHang ? "quit-normal-hang-selftest.json" : "quit-failure-selftest.json"),
       JSON.stringify(result, null, 2),
     );
     console.log(JSON.stringify(result, null, 2));

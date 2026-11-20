@@ -79,10 +79,12 @@ jobs:
       # someone to paste another line into this workflow. Entries flagged
       # darwinOnly are reported as skips on this Linux job (they need the
       # macOS kernel launcher) and never count as passes.
-      - name: Rebuild the default workbench from pinned repository inputs
+      - name: Build the default workbench from source
         run: |
+          npm run typecheck:renderer
           npm run rebuild:ui
           node rebuild/compiler/source-selftest.cjs
+          test -z "$(git ls-files -- roxy-ui)"
       - name: Full selftest aggregate (kernel-free suite)
         run: npm run selftest:all
         env:
@@ -239,6 +241,8 @@ jobs:
           # the fatal host deadline expires. Use the same independent kernel.
           node node_modules/electron/install.js
           OPENBROWSER_TEST_KERNEL_BINARY="$CHROME_BIN" node rebuild/quit-failure-selftest.cjs --fatal-hang
+          OPENBROWSER_TEST_KERNEL_BINARY="$CHROME_BIN" node rebuild/quit-failure-selftest.cjs --normal-hang
+          OPENBROWSER_TEST_KERNEL_BINARY="$CHROME_BIN" node rebuild/import-ui-selftest.cjs
           npx @puppeteer/browsers install firefox@stable --path "$HOME/.cache/ob-browsers"
           FIREFOX_BIN="$(find "$HOME/.cache/ob-browsers" -type f -name firefox -path '*/firefox/*' | head -n 1)"
           test -x "$FIREFOX_BIN"
@@ -278,7 +282,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        node: [22, 24]
+        node: ['22', '24']
+        include:
+          - os: ubuntu-latest
+            node: '22.13.0'
     defaults:
       run:
         working-directory: Browserapp
@@ -318,6 +325,9 @@ jobs:
           node scripts/selftest-one.js agentstreaming
           node scripts/selftest-one.js agentretention
           node scripts/selftest-one.js agentmcplifecycle
+          node scripts/selftest-one.js sqlitestore
+          node scripts/selftest-one.js profiledeletejournal
+          node scripts/selftest-one.js agentdurability
 
   desktop-gates:
     name: Electron desktop behavior (${{ matrix.os }})
@@ -359,7 +369,13 @@ jobs:
             node rebuild/optimization-ui-selftest.cjs
           fi
           node rebuild/maintenance-ui-selftest.cjs
+          node rebuild/templates-ui-selftest.cjs
+          node rebuild/source-workbench-ui-selftest.cjs
           node rebuild/workbench-interactions-ui-selftest.cjs
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            node rebuild/local-api-ui-selftest.cjs
+            node rebuild/packaging-selftest.cjs
+          fi
           node rebuild/agent-tasks-ui-selftest.cjs
           node rebuild/agent-history-ui-selftest.cjs
           node rebuild/agent-streaming-ui-selftest.cjs

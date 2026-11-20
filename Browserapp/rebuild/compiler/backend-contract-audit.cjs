@@ -64,9 +64,7 @@ const { recordActions } = require("../agent-records");
 for (const [namespace, methods] of Object.entries(recordActions))
   for (const method of methods) add("agent:" + namespace + "." + method, "rebuild/agent-records.js", 5);
 const unsupported = {
-  "agent:scriptSelfDescription": "原脚本沙箱未移植，明确拒绝；不是已接通功能",
-  "agent:officialScripts.getOfficialScript": "原脚本沙箱未移植，明确拒绝；不是已接通功能",
-  "agent:userTemplates.uploadUserTemplateScript": "原脚本沙箱未移植，明确拒绝；不是已接通功能",
+  "agent:officialScripts.getOfficialScript": "官方远程目录未接入。用户脚本由本地模板运行",
 };
 const preload = fs.readFileSync(path.join(base, "preload.js"), "utf8"), ops = new Map(), handlers = new Map();
 walk.simple(parse(preload), { CallExpression(node) {
@@ -131,7 +129,7 @@ for (const file of fs.readdirSync(path.join(assets, "assets")).filter(name => na
   } });
 }
 const result = { status: missing.length ? "FAIL" : "PASS",
-  scope: "仅对可静态解析调用证明存在精确分发分支；动态转发单列，不等于参数、返回值或所有交互已验收。脚本沙箱明确列为未迁移。",
+  scope: "验证可静态解析调用的精确分发分支。动态转发及仅保留兼容响应的端点单列。参数、返回值与交互由运行时验证覆盖。",
   staticCalls: uses.length, uniqueCalls: new Set(uses.map(row => row.kind + row.name)).size,
   uses, dynamic, unsupported, missing,
   sources: ["preload.js", "rebuild/local-service.js", "rebuild/local-route-registry.js", "rebuild/profile-dto.js", ...routeFiles,

@@ -9,12 +9,14 @@ const fs = require("node:fs"),
   postcss = require("postcss");
 const repo = path.resolve(__dirname, "../../..");
 process.chdir(repo);
-const source = require("./source.cjs").resolveBuildSource(),
-  root = process.env.REBUILD_OUTPUT || "Browserapp/roxy-ui";
+const sourceAssets = path.join(repo, "Browserapp/frontend/workbench/assets");
+const sourceEntries = JSON.parse(fs.readFileSync(path.join(repo, "Browserapp/frontend/workbench-entries.json"), "utf8"));
+const root = process.env.REBUILD_OUTPUT || "Browserapp/roxy-ui";
 const failures = [],
   transports = [],
   localFetchCallbacks = [],
-  commercialComponents = [];
+  commercialComponents = [],
+  precompiledComponents = [];
 for (const name of fs
   .readdirSync(path.join(root, "assets"))
   .filter((name) => name.endsWith(".js"))) {
@@ -24,6 +26,7 @@ for (const name of fs
       sourceType: "module",
       locations: true,
     });
+  const precompiled = fs.existsSync(path.join(sourceAssets, name));
   walk.simple(ast, {
     Property(n) {
       const value =
@@ -32,6 +35,9 @@ for (const name of fs
           : n.value?.type === "TemplateLiteral" && !n.value.expressions.length
             ? n.value.quasis[0].value.cooked
             : undefined;
+      if (precompiled && n.key?.name === "__name" && typeof value === "string") {
+        precompiledComponents.push({ file: name, name: value, line: n.loc.start.line });
+      }
       if (
         n.key?.name === "__name" &&
         typeof value === "string" &&
@@ -120,7 +126,8 @@ function theme(file) {
   });
   return values;
 }
-const original = theme(path.join(source, "web/assets/theme-sp0uFzH4.css")),
+const themeEntry = sourceEntries["assets/theme-sp0uFzH4.css"];
+const original = theme(themeEntry ? path.join(repo, "Browserapp", themeEntry) : path.join(sourceAssets, "theme-sp0uFzH4.css")),
   built = theme(path.join(root, "assets/theme-sp0uFzH4.css"));
 const changed = [...built]
     .filter(([key, value]) => original.get(key) !== value)
@@ -148,7 +155,8 @@ function localeKeys(file) {
 const locale = [];
 for (const name of ["zh-CN-CKEkLKpn.js", "en-D33DiJcZ.js", "ru-Bo9bnzty.js"]) {
   if (!fs.existsSync(path.join(root, "assets", name))) continue;
-  const before = localeKeys(path.join(source, "web/assets", name)),
+  const entry = sourceEntries["assets/" + name];
+  const before = localeKeys(entry ? path.join(repo, "Browserapp", entry) : path.join(sourceAssets, name)),
     after = localeKeys(path.join(root, "assets", name)),
     lost = [...before].filter((key) => !after.has(key));
   if (lost.length) failures.push({ file: name, error: "翻译键被删除", lost });
@@ -163,6 +171,7 @@ const result = {
   status: failures.length ? "FAIL" : "PASS",
   directTransports: transports,
   commercialComponents,
+  precompiledComponents,
   localFetchCallbacks,
   theme: {
     originalDeclarations: original.size,

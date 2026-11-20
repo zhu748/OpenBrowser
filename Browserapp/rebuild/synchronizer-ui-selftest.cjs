@@ -36,11 +36,16 @@ const repo = path.resolve(__dirname, "../..");
     });
     await page.getByText("暂无窗口", { exact: true }).waitFor();
     await page.evaluate(() => (globalThis.__localSubscriptions = []));
+    const navigateSync = channel => page.evaluate(channel => {
+      // The navigation may dispose the execution context. Observe the route
+      // after the click, and surface errors through the pageerror handler.
+      void globalThis.electronAPI.send(channel).catch(error => {
+        setTimeout(() => { throw error; }, 0);
+      });
+    }, channel);
     for (let i = 0; i < 3; i++) {
-      await page.evaluate(() =>
-        globalThis.electronAPI.send("syncControl:open"),
-      );
-      await page.getByText("窗口同步", { exact: true }).waitFor();
+      await navigateSync("syncControl:open");
+      await page.locator(".synchronizer").waitFor();
       await page.waitForTimeout(300);
       const end = await page.evaluate(
         () => globalThis.__localSubscriptions.length,
@@ -52,9 +57,7 @@ const repo = path.resolve(__dirname, "../..");
           path: path.join(evidence, "synchronizer-empty.png"),
         });
       }
-      await page.evaluate(() =>
-        globalThis.electronAPI.send("syncControl:close"),
-      );
+      await navigateSync("syncControl:close");
       await page.getByText("暂无窗口", { exact: true }).waitFor();
       await waitUntil(() =>
         page.evaluate(
@@ -95,7 +98,7 @@ const repo = path.resolve(__dirname, "../..");
       path: path.join(evidence, "synchronizer-actions.png"),
     });
     await page.getByText("停止同步", { exact: true }).click();
-    await page.getByText("窗口同步", { exact: true }).waitFor();
+    await page.locator(".synchronizer").waitFor();
     await page.waitForTimeout(200);
     assert.equal(
       await page.evaluate(
@@ -121,6 +124,7 @@ const repo = path.resolve(__dirname, "../..");
     process.exitCode = 1;
   } finally {
     await app?.close();
+    await fs.rm(data, { recursive: true, force: true, maxRetries: 3 });
     await fs.writeFile(
       path.join(evidence, "synchronizer-ui-selftest.json"),
       JSON.stringify(result, null, 2),

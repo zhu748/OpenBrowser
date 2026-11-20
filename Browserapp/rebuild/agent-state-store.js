@@ -6,8 +6,10 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const credentials = require("../credential-crypto");
 const { writeRawAtomically } = require("../engine/state-storage");
+const { CHUNK_SIZE, shouldChunk, prepareMessageChunks, pageChunks } = require("./agent-message-chunks");
+const { collectAttachmentIds } = require("./agent-attachment-references");
 
-const FORMAT = "OpenBrowserAgentRecords", VERSION = 2;
+const FORMAT = "OpenBrowserAgentRecords", BASE_VERSION = 2, SEGMENTED_VERSION = 3;
 const FIELDS = { conversation: ["messages", "checkpoint"], log: ["events", "messages", "checkpoint", "input"] };
 const KEY = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const LAZY = Symbol("agent record");
@@ -29,7 +31,7 @@ function metadata(record, fields) {
 }
 
 function validateManifest(value) {
-  if (value.format !== FORMAT || value.version !== VERSION || value.state?.version !== 1)
+  if (value.format !== FORMAT || ![BASE_VERSION, SEGMENTED_VERSION].includes(value.version) || value.state?.version !== 1)
     throw fault("Unsupported Agent record store");
   for (const kind of ["conversations", "logs"]) {
     if (!Array.isArray(value[kind])) throw fault("Invalid Agent record index");
@@ -44,10 +46,25 @@ function validateManifest(value) {
       if (Object.hasOwn(entry.body, "templateReference") &&
           (!Number.isSafeInteger(entry.body.templateReference) || entry.body.templateReference < 0))
         throw fault("Invalid Agent template reference");
+      if (Object.hasOwn(entry.body, "messageChunks")) {
+        const chunks = entry.body.messageChunks;
+        if (type !== "conversation" || value.version !== SEGMENTED_VERSION || entry.body.fields.includes("messages") ||
+            !Array.isArray(chunks) || chunks.some((chunk, i) => !KEY.test(chunk?.key || "") ||
+              !/^[a-f0-9]{64}$/.test(chunk.digest || "") || chunk.fields?.length !== 1 || chunk.fields[0] !== "messages" ||
+              !Array.isArray(chunk.ids) || !chunk.ids.length || chunk.ids.length > CHUNK_SIZE ||
+              (i < chunks.length - 1 && chunk.ids.length !== CHUNK_SIZE) ||
+              chunk.ids.some(id => id !== null && typeof id !== "string"))) {
+          throw fault("Invalid Agent message index");
+        }
+      }
       ids.add(entry.meta.id);
     }
   }
   return value;
+}
+
+function references(index) {
+  return [...index.conversations, ...index.logs].flatMap(({ body }) => [body, ...(body.messageChunks || [])]);
 }
 
 class AgentStateStore {
@@ -58,7 +75,7 @@ class AgentStateStore {
     this.cache = new Map();
     this.raw = null;
     this.commits = 0;
-    this.stats = { format: VERSION, bodyReads: 0, lastWrite: null };
+    this.stats = { format: BASE_VERSION, bodyReads: 0, lastWrite: null };
   }
 
   async currentBytes() {
@@ -88,6 +105,7 @@ class AgentStateStore {
     if (value.version === 1 && value.format === undefined) { this.stats.format = 1; return value; }
     if (!credentials.isEncrypted(this.raw)) throw fault("Agent record index must be encrypted");
     const index = validateManifest(value);
+    this.stats.format = index.version;
     const data = { ...index.state, conversations: [], logs: [] };
     for (const [kind, list] of [["conversation", index.conversations], ["log", index.logs]]) {
       for (const entry of list) {
@@ -115,6 +133,16 @@ class AgentStateStore {
       Object.defineProperty(item, field, { enumerable: true, configurable: true, get,
         set: value => { materialize(); item[field] = value; } });
     }
+    if (reference.messageChunks) {
+      const get = () => {
+        const value = reference.messageChunks.flatMap(chunk => this.readBody("messages", item.id, chunk).messages);
+        Object.defineProperty(item, "messages", { value, writable: true, enumerable: true, configurable: true });
+        return value;
+      };
+      get[LAZY] = reference.key;
+      Object.defineProperty(item, "messages", { enumerable: true, configurable: true, get,
+        set: value => Object.defineProperty(item, "messages", { value, writable: true, enumerable: true, configurable: true }) });
+    }
   }
 
   readBody(kind, owner, reference) {
@@ -124,6 +152,19 @@ class AgentStateStore {
     const stat = fs.lstatSync(file);
     if (!stat.isFile() || stat.isSymbolicLink()) throw fault("Invalid Agent record file");
     const raw = fs.readFileSync(file);
+    return this.decodeBody(kind, owner, reference, raw);
+  }
+
+  async readRecord(kind, owner, reference) {
+    const file = this.recordPath(reference.key);
+    const directory = await fsp.lstat(this.directory);
+    if (!directory.isDirectory() || directory.isSymbolicLink()) throw fault("Invalid Agent records directory");
+    const stat = await fsp.lstat(file);
+    if (!stat.isFile() || stat.isSymbolicLink()) throw fault("Invalid Agent record file");
+    return this.decodeBody(kind, owner, reference, await fsp.readFile(file));
+  }
+
+  decodeBody(kind, owner, reference, raw) {
     if (!credentials.isEncrypted(raw)) throw fault("Agent history record must be encrypted");
     const record = credentials.decryptCredentialJson(raw);
     if (record.version !== 1 || record.kind !== kind || record.owner !== owner || record.key !== reference.key ||
@@ -131,8 +172,20 @@ class AgentStateStore {
         digest(JSON.stringify(record.value)) !== reference.digest ||
         Object.keys(record.value).sort().join() !== [...reference.fields].sort().join())
       throw fault("Agent record authentication or identity check failed");
+    if (kind === "messages" && (!Array.isArray(record.value.messages) ||
+        record.value.messages.length !== reference.ids.length ||
+        record.value.messages.some((row, i) => (typeof row?.id === "string" ? row.id : null) !== reference.ids[i]))) {
+      throw fault("Agent message index does not match the record");
+    }
     this.stats.bodyReads++;
     return record.value;
+  }
+
+  segmentedPage(conversation, cursor, limit) {
+    const reference = this.cache.get("conversation:" + conversation.id);
+    const getter = Object.getOwnPropertyDescriptor(conversation, "messages")?.get;
+    if (!reference?.messageChunks || getter?.[LAZY] !== reference.key) return null;
+    return pageChunks(reference.messageChunks, cursor, limit, chunk => this.readRecord("messages", conversation.id, chunk));
   }
 
   recordPath(key) {
@@ -158,19 +211,19 @@ class AgentStateStore {
   }
 
   async verifyFiles(index) {
-    const entries = [...index.conversations, ...index.logs];
+    const entries = references(index);
     if (!entries.length) return;
     const directory = await fsp.lstat(this.directory);
     if (!directory.isDirectory() || directory.isSymbolicLink()) throw fault("Invalid Agent records directory");
     const files = new Map((await fsp.readdir(this.directory, { withFileTypes: true })).map(entry => [entry.name, entry]));
     for (const entry of entries) {
-      const file = files.get(entry.body.key + ".enc");
+      const file = files.get(entry.key + ".enc");
       if (!file?.isFile() || file.isSymbolicLink()) throw fault("Agent history record is missing; the index was preserved");
     }
   }
 
   prepare(data, scope) {
-    const result = { format: FORMAT, version: VERSION,
+    const result = { format: FORMAT, version: Math.max(BASE_VERSION, this.stats.format),
       state: metadata(data, ["conversations", "logs"]), conversations: [], logs: [] };
     const records = [], cache = new Map();
     for (const [kind, collection] of [["conversation", "conversations"], ["log", "logs"]]) {
@@ -181,25 +234,48 @@ class AgentStateStore {
         ids.add(item.id);
         const old = this.cache.get(kind + ":" + item.id);
         const fields = FIELDS[kind].filter(field => Object.hasOwn(item, field));
-        const lazy = old && fields.length === old.fields.length &&
+        const lazyFields = old && old.fields.length + Number(Boolean(old.messageChunks));
+        const lazy = old && fields.length === lazyFields &&
           fields.every(field => Object.getOwnPropertyDescriptor(item, field)?.get?.[LAZY] === old.key);
         let body = old;
         if (!old || !lazy && (!selected || selected.has(item.id))) {
           const value = Object.fromEntries(fields.map(field => [field, item[field]]));
-          const text = JSON.stringify(value);
-          const hash = digest(text);
-          if (!old || old.digest !== hash) {
-            body = { key: crypto.randomUUID(), digest: hash, fields: fields.filter(field => value[field] !== undefined),
-              eventCount: Array.isArray(value.events) ? value.events.length : 0 };
-            records.push({ kind, owner: item.id, reference: body, text });
+          let text = "";
+          let messageChunks;
+          if (kind === "conversation" && Array.isArray(value.messages)) {
+            if (!old?.messageChunks && value.messages.length <= 32) text = JSON.stringify(value);
+            if (shouldChunk(value.messages, old?.messageChunks, text)) {
+              const firstDirty = scope?.historyFrom?.get(item.id) || 0;
+              messageChunks = prepareMessageChunks(value.messages, old?.messageChunks, firstDirty,
+                (payload, previous) => this.planRecord(records, "messages", item.id, payload, previous));
+              delete value.messages;
+              text = "";
+            }
           }
+          body = this.planRecord(records, kind, item.id, value, old, text);
+          if (messageChunks) body = { ...body, messageChunks };
+          else if (body.messageChunks) { body = { ...body }; delete body.messageChunks; }
           if (kind === "conversation") body = { ...body, templateReference: recordId(value.checkpoint?.taskMeta?.templateId) };
         }
+        if (body.messageChunks) result.version = SEGMENTED_VERSION;
         cache.set(kind + ":" + item.id, body);
         result[collection].push({ meta: metadata(item, FIELDS[kind]), body });
       }
     }
-    return { text: JSON.stringify(result), records, cache };
+    return { text: JSON.stringify(result), records, cache, version: result.version };
+  }
+
+  planRecord(records, kind, owner, value, previous, text = "") {
+    text ||= JSON.stringify(value);
+    const hash = digest(text);
+    if (previous?.digest === hash && Array.isArray(previous.attachmentIds)) return previous;
+    const attachmentIds = [...collectAttachmentIds(value)];
+    if (previous?.digest === hash) return { ...previous, attachmentIds };
+    const reference = { key: crypto.randomUUID(), digest: hash,
+      fields: Object.keys(value).filter(field => value[field] !== undefined),
+      eventCount: Array.isArray(value.events) ? value.events.length : 0, attachmentIds };
+    records.push({ kind, owner, reference, text });
+    return reference;
   }
 
   save(data, scope) {
@@ -239,7 +315,7 @@ class AgentStateStore {
       await writeRawAtomically(this.file, payload);
       committed = true;
       this.raw = payload; this.base = plan.text; this.cache = plan.cache;
-      this.stats.format = VERSION;
+      this.stats.format = plan.version;
       this.stats.lastWrite = { records: written.length, recordBytes: bytes, indexBytes: payload.length, backupBytes };
       if (!this.initialized) {
         try { await writeRawAtomically(path.join(this.root, "records.initialized"), "Agent records v2\n"); this.initialized = true; }
@@ -268,6 +344,37 @@ class AgentStateStore {
 
   collect() { return serialized(this.root, () => this.collectNow()); }
 
+  attachmentReferences() {
+    return serialized(this.root, async () => {
+      const names = await fsp.readdir(this.root);
+      const snapshots = names.filter(name => /^(state|state\.previous|state\.legacy(?:-[a-f0-9-]+)?)\.enc$/.test(name));
+      if (!snapshots.includes("state.enc") && (this.raw || snapshots.length)) throw fault("Agent index is missing");
+      const attached = new Set(), visited = new Set();
+      const visit = async (kind, id, reference) => {
+        if (visited.has(reference.key)) return;
+        visited.add(reference.key);
+        if (Array.isArray(reference.attachmentIds)) {
+          for (const fileId of reference.attachmentIds) attached.add(fileId);
+        } else {
+          collectAttachmentIds(await this.readRecord(kind, id, reference), attached);
+        }
+      };
+      for (const name of snapshots) {
+        const raw = await fsp.readFile(path.join(this.root, name));
+        const value = credentials.decryptCredentialJson(raw);
+        if (value.version === 1 && value.format === undefined) { collectAttachmentIds(value, attached); continue; }
+        const index = validateManifest(value);
+        for (const [kind, rows] of [["conversation", index.conversations], ["log", index.logs]]) {
+          for (const { meta, body } of rows) {
+            await visit(kind, meta.id, body);
+            for (const chunk of body.messageChunks || []) await visit("messages", meta.id, chunk);
+          }
+        }
+      }
+      return attached;
+    });
+  }
+
   async collectNow() {
     const keep = new Set();
     for (const name of ["state.enc", "state.previous.enc"]) {
@@ -277,7 +384,7 @@ class AgentStateStore {
       const index = credentials.decryptCredentialJson(raw);
       if (index.version === 1) continue;
       validateManifest(index);
-      for (const row of [...index.conversations, ...index.logs]) keep.add(row.body.key + ".enc");
+      for (const reference of references(index)) keep.add(reference.key + ".enc");
     }
     for (const entry of await fsp.readdir(this.directory, { withFileTypes: true })) {
       if (!entry.isFile() || !KEY.test(entry.name.slice(0, -4)) || !entry.name.endsWith(".enc") || keep.has(entry.name)) continue;

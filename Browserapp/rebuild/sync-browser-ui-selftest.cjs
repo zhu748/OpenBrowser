@@ -45,6 +45,7 @@ const repo = path.resolve(__dirname, "../..");
         result.externalRequests.push(r.url());
     });
     await page.getByText("暂无窗口", { exact: true }).waitFor();
+    if (process.env.OPENBROWSER_TEST_KERNEL_BINARY) await page.evaluate(() => globalThis.ops.saveClientSettings({ diskLimit: 0 }));
     await page.evaluate(() => {
       globalThis.__syncProbeEvents = [];
       globalThis.ops.onEvent((event) => {
@@ -83,14 +84,31 @@ const repo = path.resolve(__dirname, "../..");
     assert.equal(result.processes.length, 2);
     assert.ok(result.processes.every((row) => row.pid > 0 && row.port > 0));
     result.checks.push("两个独立 Chrome 真实进程及 CDP 端口存在");
-    await page.evaluate(() => globalThis.electronAPI.send("syncControl:open"));
-    await page.getByText("同步真实窗口 2", { exact: true }).waitFor();
-    assert.equal(await page.locator(".can-use-sync-control").count(), 2);
+    const invalidStart = await page.evaluate(async ids => {
+      try {
+        await globalThis.electronAPI.send("syncControl:start", ["closed-sync-window", ...ids]);
+      } catch (error) {
+        return error.message;
+      }
+    }, ids);
+    assert.match(invalidStart, /请重新选择/);
+    assert.equal(await page.evaluate(() => globalThis.ops.getSyncState().then(state => state.active)), false);
+    result.checks.push("失效主控被拒绝，启动流程不会自动改用另一窗口");
+    await page.locator(".rx-side").getByText("窗口同步", { exact: true }).click();
+    const syncTable = page.locator(".sync-control-table");
+    await syncTable.getByText("同步真实窗口 2", { exact: true }).waitFor();
+    await waitUntil(async () => await syncTable.locator(".can-use-sync-control").count() === 2, {
+      message: "同步页未显示两台可同步的 Chrome 窗口",
+    });
+    const controllingRow = syncTable.getByRole('row').filter({ hasText: '同步真实窗口 2' });
+    await controllingRow.hover();
+    await controllingRow.getByRole('button', { name: '设为主控', exact: true }).click();
     await page
       .locator(".sync-control-table")
       .getByRole("checkbox")
       .first()
       .check();
+    await page.screenshot({ path: path.join(evidence, "sync-real-window-selection.png") });
     await page
       .getByRole("button", { name: "开始同步 2 个窗口", exact: true })
       .click();
@@ -100,13 +118,20 @@ const repo = path.resolve(__dirname, "../..");
       ),
     );
     result.state = await page.evaluate(() => globalThis.ops.getSyncState());
+    assert.equal(result.state.master, ids[1]);
     await page.locator(".action-bar").hover();
     await page.getByText("停止同步", { exact: true }).waitFor();
     await page.screenshot({
       path: path.join(evidence, "sync-real-active.png"),
     });
+    await page.locator(".sync-text").hover();
+    await page.locator(".action-bar.hover .bottom-bar").waitFor();
+    await page.screenshot({
+      path: path.join(evidence, "sync-real-tools-expanded.png"),
+      animations: "disabled",
+    });
     result.checks.push(
-      "原同步选择页全选并点击开始，现有后端进入真实 active 状态，原操作条显示",
+      "选择两个真实窗口、指定第二个为主控并从原操作条进入运行状态",
     );
     const ordered = [
       result.state.master,
@@ -216,6 +241,7 @@ const repo = path.resolve(__dirname, "../..");
       await pausedPage.locator("#sync-input").inputValue(),
       "local sync verification",
     );
+    await page.screenshot({ path: path.join(evidence, "sync-real-paused.png"), animations: "disabled" });
     await page.locator(".action-bar").hover();
     await page.getByText("恢复同步", { exact: true }).click();
     await waitUntil(() =>
@@ -302,6 +328,7 @@ const repo = path.resolve(__dirname, "../..");
     await app?.close();
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
+    await fs.rm(data, { recursive: true, force: true, maxRetries: 3 });
     await fs.writeFile(
       path.join(evidence, "sync-browser-ui-selftest.json"),
       JSON.stringify(result, null, 2),

@@ -23,7 +23,7 @@ export function createProfileLifecycleBridge({ emit, notify = () => {} }) {
     latest.delete(id);latest.set(id, value);
     while (latest.size > limit) latest.delete(latest.keys().next().value);
   };
-  function publish(id, lifecycle, warnings = []) {
+  function publish(id, lifecycle, warnings = [], running) {
     id = String(id);
     const previous = latest.get(id), generation = Number(lifecycle.generation) || 0;
     if (generation < (previous?.generation || 0)) return;
@@ -32,13 +32,17 @@ export function createProfileLifecycleBridge({ emit, notify = () => {} }) {
     const closed = !lifecycle.pending && !lifecycle.error && lifecycle.operation !== 'start';
     const message = profileProgressMessage(id, lifecycle, warnings);
     const key = closed ? 'closed' : JSON.stringify([message.code, message.uploading, message.data.percent,
-      message.data.message, warnings]);
+      message.data.message, warnings, Boolean(lifecycle.error && lifecycle.operation !== 'start' && running)]);
     const value = { generation, key, kind: closed ? 'closed' : lifecycle.operation, pending: lifecycle.pending,
       token: lifecycle.operation === 'start' ? previous?.token : null };
     remember(id, value);
     if (previous?.key === key && previous.generation === generation) return;
     if (closed || (lifecycle.error && lifecycle.operation !== 'start')) {
-      emit('browser:on-close', [id]);
+      if (lifecycle.error && running) {
+        const retained = profileProgressMessage(id, { operation: 'start', phase: 'ready' });
+        retained.data.message = lifecycle.message;
+        emit('browser:launch-process-message', retained);
+      } else emit('browser:on-close', [id]);
       if (lifecycle.error) notify('关闭或同步失败：' + lifecycle.message);
     } else {
       emit('browser:launch-process-message', message);
@@ -53,12 +57,12 @@ export function createProfileLifecycleBridge({ emit, notify = () => {} }) {
       error: Boolean(event.error) || event.phase === 'error', percent: event.percent, message: event.message,
     } : null);
     if (event.type === 'status') {
-      if (lifecycle?.pending || lifecycle?.error) publish(event.id, lifecycle);
+      if (lifecycle?.pending || lifecycle?.error) publish(event.id, lifecycle, [], event.running);
       else if (!event.running && !latest.get(String(event.id))?.pending)
         publish(event.id, { operation: 'stop', phase: 'done', generation: lifecycle?.generation });
       else if (event.running && !lifecycle && !latest.has(String(event.id)))
         publish(event.id, { operation: 'start', phase: 'ready' });
-    } else if (/^profile-(start|stop|sync)-progress$/.test(event.type)) publish(event.id, lifecycle);
+    } else if (/^profile-(start|stop|sync)-progress$/.test(event.type)) publish(event.id, lifecycle, [], event.running);
   }
   function beginStart(id) {
     id = String(id);
@@ -86,7 +90,9 @@ export function createProfileLifecycleBridge({ emit, notify = () => {} }) {
     return rows.flatMap(row => {
       const lifecycle = row.lifecycle;
       if (!row.openStatus && !lifecycle?.pending && !lifecycle?.error) return [];
-      const value = profileProgressMessage(row.dirId || row.id, lifecycle || { operation: 'start', phase: 'ready' });
+      const retainRunning = row.openStatus && lifecycle?.error && lifecycle.operation !== 'start';
+      const value = profileProgressMessage(row.dirId || row.id, retainRunning || !lifecycle ? { operation: 'start', phase: 'ready' } : lifecycle);
+      if (retainRunning) value.data.detail = lifecycle.message;
       return [{ ...value.data, code: value.code, uploading: value.uploading, errorMessage: value.message }];
     });
   }

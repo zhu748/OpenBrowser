@@ -48,6 +48,14 @@ async function proxiesList(service, p) {
     }));
 }
 
+async function proxiesSummaries(service, p) {
+  const usage = service.profileIndex().proxyProfiles;
+  return service.proxyStore().list(p).map(({ id, name, protocol, host, port, remark, lastCheckOk, lastIp }) => ({
+    id, name, protocol, host, port, remark, lastCheckOk, lastIp,
+    windowCount: usage.get(id)?.length || 0,
+  }));
+}
+
 async function proxiesRead(service, p) {
   const row = service.proxyStore().get(String(p.id));
   if (!row) throw Error("代理不存在");
@@ -168,6 +176,7 @@ module.exports = [
   ["proxies:refresh", proxiesRefresh, "parallel"],
   ["proxies:extract", proxiesExtract, "parallel"],
   ["proxies:list", proxiesList, "parallel"],
+  ["proxies:summaries", proxiesSummaries, "parallel"],
   ["proxies:read", proxiesRead, "parallel"],
   ["proxies:duplicates", proxiesDuplicates, "serial"],
   ["proxies:create-many", proxiesCreateMany, "serial"],

@@ -1,5 +1,6 @@
 "use strict";
 const { evidencePath } = require("./compiler/evidence-path.cjs");
+const { workbookFixture, cell } = require('./selftest-profile-xlsx.cjs');
 
 const fs = require("node:fs/promises"),
   os = require("node:os"),
@@ -111,6 +112,32 @@ const { BrowserEngine } = require("../engine"),
       filePaths: [],
     });
     assert.equal(await service.request("profiles:choose-import"), null);
+
+    const header = `<row r="1">${cell('A1', 'windowName')}${cell('B1', 'os')}</row>`;
+    const xlsx = path.join(root, 'fixture.xlsx');
+    service.dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [xlsx] });
+    await fs.writeFile(xlsx, workbookFixture([
+      `${header}<row r="4">${cell('A4', '说明：从第 5 行导入')}</row><row r="5"><c r="A5" t="s"><v>0</v></c>${cell('B5', 'Linux')}</row>`,
+      `<row r="1">${cell('A1', '操作系统')}${cell('C1', '窗口名称')}${cell('D1', '备注')}</row><row r="2">${cell('A2', 'Windows')}${cell('C2', '普通表头')}</row><row r="4">${cell('A4', 'Linux')}${cell('C4', '第四行')}${cell('D4', '现场说明')}</row>`,
+    ], { shared: '<si><r><t>旧模板</t></r><r><t>富文本</t></r></si>' }));
+    const analysis = await service.request('profiles:read-import');
+    assert.deepEqual(analysis.excelData.map(row => row.windowName), ['旧模板富文本', '普通表头', '第四行']);
+    assert.equal(analysis.count, 3);
+    assert.equal(engine.profiles.size, 2);
+    await fs.writeFile(xlsx, workbookFixture([`${header}<row r="2"><c r="A2"><f>1+2</f><v>3</v></c>${cell('B2', 'Linux')}</row>`]));
+    await assert.rejects(service.request('profiles:read-import'), /第 2 行.*公式/);
+    await fs.writeFile(xlsx, workbookFixture([`${header}<row r="2">${cell('A2', 'x'.repeat(16 * 1024 * 1024))}${cell('B2', 'Linux')}</row>`]));
+    await assert.rejects(service.request('profiles:read-import'), /解压内容超过 16 MiB/);
+    assert.equal(engine.profiles.size, 2);
+
+    const draft = await service.request('profiles:read', { id: first.id });
+    const saved = await service.request('profiles:update', { id: first.id, rev: draft.rev, defaultOpenUrl: [], openWidth: 1440 });
+    assert.deepEqual(saved.defaultOpenUrl, []);
+    assert.equal(saved.openWidth, 1440);
+    const after = engine.profiles.get(first.id);
+    assert.equal(after.proxy, first.proxy);
+    assert.deepEqual(after.platform.accounts, first.platform.accounts);
+    assert.equal(after.cookies, first.cookies);
     const evidence = {
       status: "PASS",
       checks: [
@@ -118,6 +145,8 @@ const { BrowserEngine } = require("../engine"),
         "proxy auth/refresh, accounts/URLs, Cookie, Chrome/Firefox and explicit major version persist across restart",
         "fresh IDs and direct mode; row/count validation",
         "native picker cancellation and bounded file bytes",
+        "source XLSX supports legacy and plain sheets and rejects formulas and oversized expanded content",
+        "clearing startup URLs preserves existing proxy, accounts and cookies",
       ],
     };
     await fs.writeFile(

@@ -41,6 +41,11 @@ async function main() {
   assert.equal(syncing[0].uploading, true);assert.equal(syncing[0].percent, 100);
   bridge.handle({ type: 'profile-stop-progress', id, phase: 'error', error: true, message: 'blocked', lifecycleGeneration: 2 });
   assert.equal(events.at(-1).channel, 'browser:on-close');assert.equal(errors.length, 1);
+  bridge.handle({ type: 'profile-stop-progress', id, phase: 'error', error: true, running: true,
+    message: 'still running', lifecycleGeneration: 3 });
+  assert.equal(events.at(-1).channel, 'browser:launch-process-message');
+  assert.equal(events.at(-1).value.data.percent, 100);
+  assert.match(errors.at(-1), /still running/);
   console.log('PROFILE_LIFECYCLE_BRIDGE_SELFTEST OK (real stage labels, deduplicated completion, resync, sync/error and stale RPC handling)');
 }
 main().catch(error => { console.error(error);process.exitCode = 1; });

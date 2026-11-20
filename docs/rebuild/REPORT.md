@@ -90,18 +90,16 @@ npm start
 npm run selftest:rebuild:acceptance      # 56 项；含真实外框用例，需要 X11
 node rebuild/native-regression-selftest.cjs
 node rebuild/desktop-shortcuts-selftest.cjs
-npm run rebuild:visual-reference
-npm run selftest:rebuild:visual          # 完整 48 状态 / 明暗 96 组
-node rebuild/build-evidence-gallery.cjs
-node rebuild/gallery-ui-selftest.cjs
-npm run audit:rebuild:styles
+baseline=$(mktemp -d)
+git -C .. archive 96f3d557c91d9c1c9f3bac52119749c488d28d62 Browserapp/roxy-ui | tar -x -C "$baseline"
+npm run selftest:rebuild:full-workbench -- "$baseline/Browserapp/roxy-ui"
 node rebuild/compiler/backend-contract-audit.cjs
 node rebuild/compiler/audit-components.cjs
 node rebuild/compiler/audit-native.cjs
 npm run verify:rebuild:evidence
 ```
 
-重新构建使用 `npm ci` 和 `npm run rebuild:ui`，默认读取当前仓库内的锁定输入，无需外部镜像；样式审计和视觉基线也使用相同解析入口。真实桌面用例需要 Xvfb/xdotool/ImageMagick/xwininfo/Python Pillow，可使用 `OPENBROWSER_TEST_DISPLAY` 和 `OPENBROWSER_TEST_XDOTOOL` 指定；此前完整验收使用独立 :91 及工作目录解包的 Debian 工具。其余 Electron 用例使用自身 headless 参数。`OPENBROWSER_ROXY_UI=0` 仅保留旧开发界面排查入口。
+重新构建使用 `npm ci` 和 `npm run rebuild:ui`，默认读取当前仓库的源码和已登记的第三方资源。历史视觉参照由 Git 提取。真实桌面用例需要 Xvfb/xdotool/ImageMagick/xwininfo/Python Pillow，可使用 `OPENBROWSER_TEST_DISPLAY` 和 `OPENBROWSER_TEST_XDOTOOL` 指定；此前完整验收使用独立 :91 及工作目录解包的 Debian 工具。其余 Electron 用例使用自身 headless 参数。`OPENBROWSER_ROXY_UI=0` 仅保留旧开发界面排查入口。
 
 [最终证据核对](evidence/final-verification.json) 核对 72 份指定证据记录（含历史阶段记录，当前执行以 phase4-command-results 为准）、当前 1556 个前端文件、341 个 Native/开发入口代码文件、56 个实际执行测试的 hash，以及整轮 2376 运行文件摘要和文档链接；它不重跑测试。历史失败日志与混合来源失败运行均在 [尝试目录](evidence/acceptance-attempts/) 留档。全仓 lint 通过。提交前将新增文件加入索引后，git diff --cached --check 检出原模板字符串及 Skill 文档继承的行尾空白，原值保留；此格式检查不声称通过，详见 [提交说明](PUBLISH-NOTES.md)。
 

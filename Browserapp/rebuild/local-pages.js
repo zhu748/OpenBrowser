@@ -3,6 +3,7 @@ import {
   D as h,
   V as onMounted,
   R as onBeforeUnmount,
+  st as watch,
 } from "./runtime-core.esm-bundler-CBj16o9G.js";
 import { t as Button } from "./rx-button-DyzuUt-V.js";
 import { t as Input } from "./m-input-text-JVbCgVJP.js";
@@ -304,6 +305,47 @@ export const Templates = {
       ]);
   },
 };
+const AgentStorage = {
+  setup() {
+    const usage = ref(null), pending = ref(0), busy = ref(false);
+    const feedback = ref(""), error = ref("");
+    const run = async (action) => {
+      if (busy.value) return;
+      busy.value = true;
+      feedback.value = error.value = "";
+      try {
+        if (action) feedback.value = await action();
+        const [files, agent] = await Promise.all([ipc("agent:files:usage"), ipc("agent:info")]);
+        usage.value = files;
+        pending.value = agent.pendingRunSaves;
+      } catch (failure) {
+        error.value = failure.message;
+      } finally {
+        busy.value = false;
+      }
+    };
+    onMounted(() => run());
+    return () => h("section", { class: "flex flex-col gap-2", "aria-label": "Agent 存储" }, [
+      h("h3", { class: "text-4 font-600 m-0" }, "Agent 存储"),
+      usage.value ? h("p", { class: "m-0" },
+        `已保存 ${usage.value.count} 个附件，占用 ${(usage.value.bytes / (1024 * 1024)).toFixed(2)} MiB。超过 ${usage.value.retentionDays} 天且无引用的附件可清理。`) : null,
+      usage.value?.pendingCleanup ? h("p", { class: "m-0" }, `${usage.value.pendingCleanup} 个附件待清理。`) : null,
+      pending.value ? h("p", { class: "m-0" }, `${pending.value} 个任务结果待保存。`) : null,
+      h("div", { class: "flex gap-2" }, [
+        btn("清理过期附件", () => run(async () => {
+          const result = await ipc("agent:files:cleanup");
+          return result.busy ? "Agent 正忙，请稍后再清理。" : `已清理 ${result.removed} 个附件。`;
+        }), { disabled: busy.value || !usage.value }),
+        pending.value ? btn("重试保存任务结果", () => run(async () => {
+          const result = await ipc("agent:retryRunSaves");
+          return `已保存 ${result.saved} 个任务结果。`;
+        }), { disabled: busy.value }) : null,
+      ]),
+      feedback.value ? h("p", { role: "status", class: "m-0" }, feedback.value) : null,
+      error.value ? h(Alert, { type: "error", content: error.value, closable: false, role: "alert" }) : null,
+    ]);
+  },
+};
 export const AgentConfig = {
   setup() {
     const config = ref({
@@ -430,9 +472,149 @@ export const AgentConfig = {
             globalThis.__router.push("/agent-console/skills"),
           ),
           btn("MCP 服务", () => globalThis.__router.push("/agent-console/mcp")),
+          btn("消息平台", () => globalThis.__router.push("/agent-console/roxyclaw/telegram")),
           btn("返回对话", () => globalThis.__router.push("/agent-console")),
         ]),
+        h(AgentStorage),
       ]);
+  },
+};
+const integrationLabels = {
+  telegram: "Telegram",
+  lark: "飞书 / Lark",
+  slack: "Slack",
+  discord: "Discord",
+};
+
+export const AgentIntegrationSettings = {
+  props: { provider: { type: String, required: true } },
+  setup(props) {
+    const form = ref({}), hasCredential = ref(false), loaded = ref(false),
+      busy = ref(false), error = ref(""), notice = ref(""), telegram = ref({ status: "stopped" });
+    let revision = 0, statusRevision = 0;
+    function accept(result) {
+      form.value = { appId: result.appId || "", environment: result.environment || "feishu", allowedChatIds: result.allowedChatIds || "" };
+      hasCredential.value = result.hasCredential;
+    }
+    watch(() => props.provider, async provider => {
+      const generation = ++revision;
+      busy.value = loaded.value = false;
+      error.value = notice.value = "";
+      form.value = {};
+      try {
+        const values = await ipc("agent:integrations:get", { provider });
+        if (generation === revision) {
+          accept(values);
+          loaded.value = true;
+          if (provider === "telegram") await readStatus();
+        }
+      } catch (e) {
+        if (generation === revision) error.value = e.message;
+      }
+    }, { immediate: true });
+    const statusTimer = setInterval(() => {
+      if (props.provider === "telegram" && !busy.value) void readStatus();
+    }, 1200);
+    onBeforeUnmount(() => { revision++; clearInterval(statusTimer); });
+    async function readStatus() {
+      const generation = revision;
+      const update = ++statusRevision;
+      try {
+        const result = await ipc("agent:telegram:status");
+        if (generation === revision && update === statusRevision) telegram.value = result;
+      } catch (e) {
+        if (generation === revision && update === statusRevision) error.value = e.message;
+      }
+    }
+
+    async function send(action, clearCredential = false) {
+      if (busy.value || !loaded.value) return;
+      const generation = revision;
+      busy.value = true;
+      error.value = notice.value = "";
+      try {
+        const input = { provider: props.provider, values: { ...form.value }, clearCredential };
+        if (clearCredential) delete input.values[props.provider === "lark" ? "appSecret" : "botToken"];
+        const result = await ipc(action === "test" ? "agent:integrations:test" : "agent:integrations:set", input);
+        if (generation !== revision) return;
+        if (action === "test") notice.value = "凭证验证通过";
+        else {
+          accept(result);
+          notice.value = clearCredential ? "凭证已清除" : "配置已保存";
+        }
+      } catch (e) {
+        if (generation === revision) error.value = e.message;
+      } finally {
+        if (generation === revision) busy.value = false;
+      }
+    }
+    async function controlTelegram(start) {
+      if (busy.value || !loaded.value) return;
+      const generation = revision;
+      statusRevision++;
+      busy.value = true;
+      error.value = notice.value = "";
+      try {
+        const status = await ipc(start ? "agent:telegram:start" : "agent:telegram:stop");
+        if (generation === revision) telegram.value = status;
+      } catch (e) {
+        if (generation === revision) error.value = e.message;
+      } finally {
+        if (generation === revision) busy.value = false;
+      }
+    }
+
+    const telegramActive = () => props.provider === "telegram" && telegram.value.status !== "stopped";
+    const input = (key, label, secret = false) => h("label", { class: "flex flex-col gap-2" }, [
+      label,
+      h(Input, {
+        "aria-label": label,
+        type: secret ? "password" : "text",
+        disabled: !loaded.value || busy.value || telegramActive(),
+        placeholder: secret && hasCredential.value ? "已保存，留空保留原值" : "",
+        modelValue: form.value[key] || "",
+        "onUpdate:modelValue": value => { form.value[key] = value; notice.value = ""; },
+      }),
+    ]);
+    return () => shell(integrationLabels[props.provider], [
+      h("nav", { class: "flex flex-wrap gap-2", "aria-label": "消息平台" }, [
+        ...Object.entries(integrationLabels).map(([provider, label]) =>
+          btn(label, () => globalThis.__router.push("/agent-console/roxyclaw/" + provider), {
+            "aria-current": props.provider === provider ? "page" : undefined,
+          })),
+        btn("模型设置", () => globalThis.__router.push("/agent-console/settings")),
+      ]),
+      h("p", { class: "m-0" }, props.provider === "telegram"
+        ? "保存凭证和允许的聊天 ID 后即可启动 Bot 文本对话。多个 ID 可用逗号分隔。"
+        : "可保存并测试平台凭证，消息收发尚未开放。"),
+      ...(props.provider === "lark" ? [
+        h("label", { class: "flex flex-col gap-2" }, [
+          "环境",
+          h("select", {
+            "aria-label": "环境", value: form.value.environment, disabled: !loaded.value || busy.value,
+            onChange: event => { form.value.environment = event.target.value; notice.value = ""; },
+          }, [h("option", { value: "feishu" }, "飞书"), h("option", { value: "lark" }, "Lark")]),
+        ]),
+        input("appId", "App ID"),
+        input("appSecret", "App Secret", true),
+      ] : [input("botToken", "Bot Token", true)]),
+      ...(props.provider === "telegram" ? [
+        input("allowedChatIds", "允许的聊天 ID"),
+        h("p", { class: "m-0", role: "status" }, "Telegram · " + ({
+          stopped: "已停止", starting: "正在启动", running: "运行中", stopping: "正在停止", error: "连接失败",
+        })[telegram.value.status] + (telegram.value.error ? " · " + telegram.value.error : "")),
+      ] : []),
+      h("div", { class: "flex flex-wrap gap-2" }, [
+        btn("保存配置", () => send("save"), { disabled: !loaded.value || busy.value || telegramActive() }),
+        btn("测试连接", () => send("test"), { disabled: !loaded.value || busy.value }),
+        btn("清除凭证", () => send("save", true), { disabled: !loaded.value || busy.value || !hasCredential.value || telegramActive() }),
+        ...(props.provider === "telegram" ? [telegramActive()
+          ? btn("停止 Telegram", () => controlTelegram(false), { disabled: busy.value })
+          : btn("启动 Telegram", () => controlTelegram(true), { disabled: busy.value || !loaded.value || !hasCredential.value })] : []),
+      ]),
+      error.value ? h(Alert, { type: "error", content: error.value, closable: false, role: "alert" }) : null,
+      notice.value ? h(Alert, { type: "success", content: notice.value, closable: false, role: "status" }) : null,
+    ]);
   },
 };
 export const Skills = {

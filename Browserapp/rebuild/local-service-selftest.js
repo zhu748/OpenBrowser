@@ -71,13 +71,48 @@ const {
     );
     assert.equal(engine.profiles.get(row.id).note, "来自后端的新内容");
     const fresh = await service.request("profiles:read", { id: row.id });
-    await service.request("profiles:update", {
+    const saved = await service.request("profiles:update", {
       id: row.id,
       rev: fresh.rev,
       windowName: "修改成功",
     });
     assert.equal(engine.profiles.get(row.id).name, "修改成功");
     assert.ok(engine.profiles.get(row.id).cookies.includes("secret"));
+    assert.deepEqual(saved, await service.request("profiles:read", { id: row.id }));
+    const savedAgain = await service.request("profiles:update", {
+      id: row.id,
+      rev: saved.rev,
+      windowName: "再次保存成功",
+    });
+    assert.ok(savedAgain.rev > saved.rev);
+
+    const importFile = path.join(root, "windows.txt");
+    service.dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [importFile] });
+    const sample = Buffer.from("窗口导入回归\n");
+    await fs.writeFile(importFile, sample);
+    const selected = await service.request("profiles:choose-import");
+    assert.equal(selected.type, "text/plain");
+    assert.equal(selected.size, sample.length);
+    assert.deepEqual(Buffer.from(selected.bytes), sample);
+    const originalOpen = fs.open;
+    const limit = 5 * 1024 * 1024;
+    await fs.truncate(importFile, limit);
+    assert.equal((await service.request("profiles:choose-import")).size, limit);
+    fs.open = async (...args) => {
+      const handle = await originalOpen(...args);
+      if (args[0] === importFile) {
+        const read = handle.read.bind(handle);
+        handle.read = async (...params) => {
+          await fs.truncate(importFile, limit + 1);
+          return read(...params);
+        };
+      }
+      return handle;
+    };
+    try { await assert.rejects(service.request("profiles:choose-import"), /5 MiB/); }
+    finally { fs.open = originalOpen; }
+    await assert.rejects(service.request("profiles:choose-import"), /5 MiB/);
+
     await service.request("profiles:delete", { ids: [row.id] });
     assert.equal((await service.request("profiles:list")).length, 0);
     assert.equal((await service.request("profiles:trash")).length, 1);
@@ -480,7 +515,7 @@ const {
     }
     const persisted = new BrowserEngine({ getPath: () => root });
     await persisted.init(null);
-    assert.equal(persisted.profiles.get(row.id).name, "修改成功");
+    assert.equal(persisted.profiles.get(row.id).name, "再次保存成功");
     assert.equal(isUiDocument("obui://app/index.html#/browser/list"), true);
     assert.equal(isUiDocument("obui://app/assets/other.html"), false);
     assert.equal(isUiDocument("https://app/index.html"), false);

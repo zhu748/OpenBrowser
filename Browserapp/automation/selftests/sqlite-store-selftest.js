@@ -213,6 +213,25 @@ async function main() {
     fs.mkdirSync(dir2, { recursive: true });
     fs.mkdirSync(dir3, { recursive: true });
 
+    // Abort the second SQL update to exercise rollback of the whole batch.
+    const rejectSecondProfile = () => engine.sqliteStore.db.exec(`
+      CREATE TRIGGER fail_rb_update BEFORE UPDATE ON profiles
+      WHEN NEW.id = 'rb-2' BEGIN SELECT RAISE(ABORT, 'synthetic trash state write failure'); END;
+    `);
+    const allowProfileUpdates = () => engine.sqliteStore.db.exec('DROP TRIGGER fail_rb_update');
+    const assertTrashState = (trashed) => {
+      for (const id of ['rb-1', 'rb-2']) {
+        assert.equal(engine.profiles.get(id).trashed, trashed);
+        assert.equal(engine.sqliteStore.getProfile(id).trashed, trashed);
+        assert.equal(engine.profiles.get(id).trashedAt, engine.sqliteStore.getProfile(id).trashedAt);
+        assert(!engine.deletingProfiles.has(id));
+      }
+    };
+    rejectSecondProfile();
+    await assert.rejects(engine.trashProfiles(['rb-1', 'rb-2']), /synthetic trash state write failure/);
+    assertTrashState(false);
+    allowProfileUpdates();
+
     // 3.1 Soft delete: move rb-1 and rb-2 to trash
     const trashRes = await engine.trashProfiles(['rb-1', 'rb-2']);
     assert.equal(trashRes.success, true);
@@ -229,6 +248,11 @@ async function main() {
     assert.equal(dbP1.trashed, true);
     assert.ok(dbP1.trashedAt);
     assert.ok(fs.existsSync(dir1), 'Profile data directory must remain on soft delete');
+
+    rejectSecondProfile();
+    await assert.rejects(engine.restoreProfiles(['rb-1', 'rb-2']), /synthetic trash state write failure/);
+    assertTrashState(true);
+    allowProfileUpdates();
 
     // 3.2 Restore: restore rb-1
     const restoreRes = await engine.restoreProfiles(['rb-1']);

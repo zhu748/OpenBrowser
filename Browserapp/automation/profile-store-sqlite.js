@@ -655,6 +655,10 @@ class ProfileStoreSqlite {
     return this._decodeProfileRow(row, 'getProfile');
   }
 
+  hasProfile(id) {
+    return Boolean(this._statements.getProfile.get(String(id)));
+  }
+
   getAllProfiles() {
     const rows = this._statements.getAllProfiles.all();
     const result = [];
@@ -788,8 +792,23 @@ class ProfileStoreSqlite {
    * @param {string[]} ids
    * @returns {string[]} deleted ids
    */
-  deleteProfiles(ids) {
+  deleteProfiles(ids, { durable = false } = {}) {
     if (!Array.isArray(ids) || !ids.length) return [];
+    // A staged directory may be permanently removed after this commit. With
+    // WAL + NORMAL, a power loss could roll back the database deletion after
+    // its files had already been removed.
+    const fullSync = durable && this.enableWal;
+    if (fullSync) this.db.exec('PRAGMA synchronous = FULL;');
+    try { return this.deleteProfileRows(ids); }
+    finally {
+      if (fullSync) {
+        try { this.db.exec('PRAGMA synchronous = NORMAL;'); }
+        catch (error) { console.warn('[profile-store] kept full sync after profile deletion:', error.code); }
+      }
+    }
+  }
+
+  deleteProfileRows(ids) {
     this._assignmentSnapshot = null;
     const deletedIds = [];
     this.withTransaction(() => {

@@ -17,6 +17,15 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Directory handles are unsupported on some Windows filesystems.
+async function syncDirectory(directory) {
+  try {
+    const handle = await fsp.open(directory, "r");
+    try { await handle.sync(); }
+    finally { await handle.close(); }
+  } catch (_) {}
+}
+
 async function writeRawAtomically(filePath, value, mode = 0o600) {
   const directory = path.dirname(filePath);
   let lastError = null;
@@ -31,11 +40,7 @@ async function writeRawAtomically(filePath, value, mode = 0o600) {
       await handle.close();
       handle = null;
       await fsp.rename(temporary, filePath);
-      try {
-        const directoryHandle = await fsp.open(directory, "r");
-        try { await directoryHandle.sync(); }
-        finally { await directoryHandle.close(); }
-      } catch (_) {}
+      await syncDirectory(directory);
       return;
     } catch (error) {
       lastError = error;
@@ -135,6 +140,7 @@ async function preserveCorruptEngineState(filePath) {
 module.exports = {
   KERNEL_POLICY_VERSION,
   writeRawAtomically,
+  syncDirectory,
   writeJsonAtomically,
   readEngineStateCandidate,
   engineStateRecoveryCandidates,

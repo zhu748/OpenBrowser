@@ -1,1 +1,0 @@
-export{sn as useSimpleLocale}from"./utils-BIWenCnY.js";

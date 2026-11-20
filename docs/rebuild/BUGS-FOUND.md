@@ -186,3 +186,75 @@
 ## 前端独立构建修复
 
 症状：干净仓库缺少 `/workspace/roxy-src` 时 `npm run rebuild:ui` 直接失败。根因：8 个编译/审计入口各自硬编码外部默认路径，build 还把无关主进程、Agent 和工具的全镜像数量作为构建前提。修法：仓库内保存实际必需的 1875 个原字节输入，所有入口共用解析和逐文件 SHA256 校验，保留失败预检、构建锁与原审计断言。位置：Browserapp/rebuild/compiler/source.cjs:1、build.cjs:27。10 项输入与失败路径检查已通过；独立检出及产物比较见 [构建报告](BUILD-REPRODUCIBILITY.md)。
+
+## 默认前端交互复查
+
+| 复现 | 修复与验证 |
+| --- | --- |
+| 没有安装内核时保存窗口模板，报错为「空白字段是必填项」 | 版本选项提供「保持最新」，模板可延后选内核。实际创建窗口继续要求可用内核。[模板测试](../../Browserapp/rebuild/templates-ui-selftest.cjs) |
+| 内核列表读取被延迟时，原表单可把空对象保存成模板 | 模板保存等待表单初始化完成。测试在内核请求挂起时点击保存，释放请求后核对落盘的系统和内核字段。[模板测试](../../Browserapp/rebuild/templates-ui-selftest.cjs) |
+| 旧 `/skills` 入口有窗口标题但内容为空 | 旧路径转到同一个 Skill 管理子窗口，保留查询参数和锚点。分别从路由和 IPC 验证，第二次打开时复用子窗口。[导航测试](../../Browserapp/rebuild/workbench-interactions-ui-selftest.cjs) |
+| 简版编辑器把旧直连模板改为库代理后，再打开仍显示直连 | 保存代理变更时清理旧顶层关联字段。读取时按现有代理条目还原选择。测试重新打开模板，并用它创建实际关联代理的窗口。[源码工作台测试](../../Browserapp/rebuild/source-workbench-ui-selftest.cjs) |
+| Agent 新建模板默认进入旧脚本类型，脚本入口会被本地运行时拒绝 | 默认选中提示词，保留 Skill 类型，并把旧脚本选项设为禁用。测试继续创建提示词模板和执行本地任务。[Agent 任务测试](../../Browserapp/rebuild/agent-tasks-ui-selftest.cjs) |
+| 构建与 Lint 同时运行时，大量临时产物被 ESLint 当作 CommonJS 扫描 | Lint 跳过工作台构建临时目录，生成的 ESM 继续执行构建链接与 IPC 审计。[Lint 配置](../../Browserapp/eslint.config.js) |
+
+旧脚本执行尚未接入本地 Agent，随后补传的归档中找到了脚本执行的打包模块。独立简版工作台覆盖窗口、回收站、代理、模板和内核，完整页面从默认工作台进入。
+
+## 归档入口与同步弹窗复查
+
+| 复现 | 修复与验证 |
+| --- | --- |
+| 原代理、平台账号、扩展和自动化链接无法匹配页面 | 恢复 `/resource/*`、`/automation/*`、`/mcp` 等对应入口，使用当前页面与本地 IPC。Electron 验证旧打开方式、资源路径上的查询参数与锚点，以及任务管理与模型设置子窗。[导航测试](../../Browserapp/rebuild/workbench-interactions-ui-selftest.cjs) |
+| 归档的独立同步弹窗和自定义布局链接无法打开 | 从旧入口打开现有原生同步弹窗，自定义布局定位到偏好设置的对应标签。普通页面仍可继续使用。[弹窗测试](../../Browserapp/rebuild/dialog-security-selftest.cjs) |
+| 已打开同步弹窗时，请求新标签只聚焦窗口，非法标签也可能返回成功 | 校验标签后复用窗口并切换到指定标签。验证偏好设置保留未保存修改，批量输入切换模式，非法标签与主窗口读取子窗标签均被拒绝。[弹窗测试](../../Browserapp/rebuild/dialog-security-selftest.cjs) |
+
+## Agent 归档功能复查
+
+| 归档功能 | 本地恢复和证据 |
+| --- | --- |
+| 脚本模板上传与自描述 | 在原上传弹窗选择 `.js` 或 `.ts` 文件，也可粘贴代码。主进程静态读取脚本名称、描述、参数和入口，不执行脚本。脚本原文随草稿写入加密存储，可重新打开编辑。草稿从任务和会话模板选择中排除。[模板与任务测试](../../Browserapp/rebuild/agent-tasks-ui-selftest.cjs) |
+| 脚本参数表单 | 原动态校验编译被 Electron CSP 拒绝。草稿使用原表单渲染和保存预填参数。归档脚本的任务执行和运行时参数校验仍待移植。 |
+| Telegram | 恢复旧设置路径、凭证和聊天 ID 列表、启动和停止、文本对话以及 `/start`、`/new`、`/clear` 和 `/status`。仅处理允许名单中的消息，模型调用为文本模式。同一聊天的不同话题使用独立上下文。[消息平台测试](../../Browserapp/rebuild/agent-integration-ui-selftest.cjs) |
+| 飞书 / Lark、Slack、Discord | 恢复旧设置路径、加密本地凭证保存和对应 API 的连接测试。端到端测试替换平台响应，验证请求格式与真实 UI 反馈。飞书收发、Slack 和 Discord 的收发及微信扫码和收发仍待接入。[消息平台测试](../../Browserapp/rebuild/agent-integration-ui-selftest.cjs) |
+| 官方脚本目录 | 原档保留官方脚本 API 和客户端调用，未包含线上目录数据。当前模板商城使用本地 Skill，官方脚本读取仍未接入。 |
+| 工作台导航自测无法导入模块 | 上轮原生弹窗改动让共享导航代码直接导入了渲染器 Vue 资产。现将弹窗标签逻辑放到前端模块，导航单元测试和原生弹窗测试分别验证。 |
+
+归档脚本的执行链使用 `node:vm` 和宿主侧 Playwright、网络、存储等能力。完整移植需要隔离脚本进程并适配这些宿主接口。Telegram 已在模拟平台和模型服务上验证，真实平台登录和消息交付仍需相应测试账号与 Bot 凭证。
+
+## 本地脚本任务
+
+- 已保存的本地 JS 和 TS 模板可创建手动、一次性或 Cron 任务，按所选窗口运行。模板卡片的「运行脚本」和编辑器的「保存并运行」进入原任务对话框。
+- QuickJS 在 Worker 中执行 `main(options)`，先按 JSON Schema 校验参数并填入默认值。日志按窗口保存在现有任务记录，继续使用原日志页签。简版脚本默认每窗 30 秒，归档兼容模式默认每窗 120 秒。任务元数据可设定 1 至 300 秒，每项任务最多并行 8 个窗口。停止任务会终止脚本并断开该脚本建立的自动化会话。
+- `@openbrowser/sandbox` 提供 `defineMetadata`、`defineParams` 和 `browser`。后者支持 `listTabs()`、`navigate(url)`、`readPage()`、`click(selector)`、`fill(selector, value)`，作用于当前任务分配且已启动的 Chromium 或 Firefox 窗口。
+- 上传弹窗的脚本文档改为内置说明。模板商城继续使用本地 Skill 数据，脚本来自本地文件。历史登录、注册、付费、推广和扫码入口未纳入恢复范围，构建继续检查商业标记，Electron 导航测试检查相关旧路径。
+- 修复本地窗口查询在分页前遗漏 ID 筛选的问题，以及启动完成后遗留计时器尝试打开已删除页面的问题。启动超时时显示本地说明。
+
+[脚本隔离测试](../../Browserapp/rebuild/agent-script-runner-selftest.cjs) · [桌面任务测试](../../Browserapp/rebuild/agent-tasks-ui-selftest.cjs) · [真实 Chromium 测试](../../Browserapp/rebuild/agent-browser-selftest.cjs)。
+
+### 脚本任务回归审查
+
+- 手动运行和定时运行都会先把任务、会话和日志一并保存。保存失败时不会启动脚本。暂停计划的任务仍可点击「立即执行」，执行后保留计划状态。
+- 脚本任务按窗口排队。同一窗口的前一个脚本结束后才开始下一个，其他窗口可以并行。等待中的脚本可以取消，脚本退出时仍有未完成的窗口操作则记录为失败。
+- 长输出按窗口截断，每个窗口都会保留执行结果。旧模板未保存参数时使用参数定义中的默认值。重启恢复后，被中断的脚本会引导用户在任务管理中重新运行。
+- 任务管理桌面自测结束后清理临时 Electron 用户目录，避免重复运行累积内核缓存并占满磁盘。
+
+[持久化回归测试](../../Browserapp/automation/selftests/agent-durability-selftest.js)。
+
+### 归档脚本兼容与复审
+
+- 归档脚本可沿用 `playwright`、`process.env.BROWSER_URL` 和 `BROWSER_TYPE`，旧的 `CDP_URL` 写法也可连接 Chromium。Firefox 通过已有 BiDi 会话提供 Playwright 接口。页面与标签页、定位器、表单、页面表达式、请求和响应等待、截图以及浏览器下载均由所选窗口执行。任务取消后会撤销该任务建立的连接和事件监听。
+- `@roxybrowser/sandbox` 与 `@openbrowser/sandbox` 的辅助模块共用实现。包括 `utils`、`human`、`table`、`kv`、`debug`、`download` 和 `llm`。模型调用显式使用用户在 Agent 中配置的服务。调试文件仅在任务元数据启用 `debug` 后产生。
+- 表格和 KV 按模板加密保存，并按顺序提交并发写入。各次运行的 CSV、KV、调试文件和下载文件各自保留快照，可从任务日志导出。单个文件上限 10 MiB，每次任务上限为 20 MiB 和 100 个文件。
+- 旧脚本省略自描述宏时，文件名作为默认模板名称。参数沿用旧模板保存的 Schema，缺省时使用空对象。上传预览按最近一次选择更新。常用 `fs`、`path`、`url`、`crypto` 和 `buffer` 用法由隔离环境提供，文件操作限定在单次运行的虚拟输出目录。任意宿主路径、直接宿主网络和任意 Playwright 连接仍不可用。
+- 复审验证了真实浏览器响应事件、取消和断开、多个窗口共享表时的并发写入、写入失败后的持久化一致性，以及桌面日志中的实际 CSV 下载。登录、注册、广告营销、付费和扫码的移除范围沿用之前的审核。
+
+[Chromium 和桌面日志测试](../../Browserapp/rebuild/agent-browser-selftest.cjs) · [Firefox BiDi 实测](../../Browserapp/rebuild/agent-script-firefox-selftest.cjs) · [隔离和存储测试](../../Browserapp/rebuild/agent-script-runner-selftest.cjs)。
+
+### 管理页源码迁移复审
+
+- 项目改名和固定现在保持原排序，侧栏在项目元数据更新后刷新。
+- 账号绑定、删除和批量导入在进入 Electron IPC 前传递普通数组和对象。旧 TXT 和 XLSX 可在写入前预览，Excel 导出可按需包含本地凭据。
+- 扩展安装范围以保存的项目规则为准。空项目和以后新建的关联窗口均可继承相应规则。
+- 没有初始提示词或指定类型时，新建 Agent 模板默认进入本地脚本页签。现有模板类型和带提示词的入口沿用原上下文。
+
+[默认与独立源码版桌面测试](../../Browserapp/rebuild/source-management-ui-selftest.cjs) · [模板任务流程测试](../../Browserapp/rebuild/agent-tasks-ui-selftest.cjs)。

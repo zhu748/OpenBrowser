@@ -268,6 +268,7 @@ function fromRoxy(v, base = {}) {
   if (Array.isArray(v.defaultOpenUrl)) {
     mapped.startUrl = v.defaultOpenUrl[0] || "";
     mapped.advanced.startUrls = v.defaultOpenUrl.join("\n");
+    mapped.platform = { ...mapped.platform, startUrl: mapped.startUrl };
   }
   for (const key of ["openWorkbench", "ipChangeRemind"])
     if (Object.hasOwn(v, key)) mapped.advanced[key] = String(v[key]);

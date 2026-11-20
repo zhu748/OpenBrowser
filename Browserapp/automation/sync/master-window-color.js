@@ -64,7 +64,13 @@ async function backupTheme(source,destination){
 }
 async function restoreWith(control,original,item){
  if(original.thirdPartyId){try{await control.management('enable',original.thirdPartyId);}catch(error){if(!/Failed to find extension/.test(error.message)||!original.thirdPartyPath)throw error;let source=original.thirdPartyPath;try{await fs.access(path.join(source,'manifest.json'));}catch(missing){if(missing.code!=='ENOENT')throw missing;source=path.join(paths(item).directory,'original-theme');}const manifest=JSON.parse(await fs.readFile(path.join(source,'manifest.json'),'utf8'));if(!manifest.theme||manifest.background||manifest.content_scripts)throw Error('原主题恢复包无效');await control.activate();const loaded=await control.connection.command('Extensions.loadUnpacked',{path:source});if(loaded.id!==original.thirdPartyId)throw Error('原主题恢复身份不匹配，恢复记录已保留');}}else{
-  await control.evaluate(`(async()=>{const {browserProxyFactory}=await import(${JSON.stringify(PICKER)});const p=browserProxyFactory.getInstance();const original=${JSON.stringify(original.theme)};if(original.isGreyBaseline)p.handler.setGreyDefaultColor();else if(original.seedColor.value)p.handler.setSeedColor(original.seedColor,original.browserColorVariant);else p.handler.setDefaultColor();const {CustomizeChromeApiProxy}=await import('./customize_chrome_api_proxy.js');CustomizeChromeApiProxy.getInstance().handler.setFollowDeviceTheme(original.followDeviceTheme);return true;})()`);
+  await control.evaluate(`(async()=>{const {browserProxyFactory}=await import(${JSON.stringify(PICKER)});const p=browserProxyFactory.getInstance();const original=${JSON.stringify(original.theme)};if(original.isGreyBaseline)p.handler.setGreyDefaultColor();else if(original.seedColor.value)p.handler.setSeedColor(original.seedColor,original.browserColorVariant);else p.handler.setDefaultColor();return true;})()`);
+  // The Chrome side panel proxy is version-specific. Only call it when the
+  // observed follow-device preference actually needs to be restored.
+  const restored = await control.theme();
+  if (typeof original.theme.followDeviceTheme === 'boolean' && restored.followDeviceTheme !== original.theme.followDeviceTheme) {
+   await control.evaluate(`(async()=>{const {CustomizeChromeApiProxy}=await import('./customize_chrome_api_proxy.js');CustomizeChromeApiProxy.getInstance().handler.setFollowDeviceTheme(${original.theme.followDeviceTheme});return true;})()`);
+  }
  }
  const restored=await control.theme();const expected=original.theme;
  if(restored.hasThirdPartyTheme!==expected.hasThirdPartyTheme||restored.seedColor.value!==expected.seedColor.value||restored.isGreyBaseline!==expected.isGreyBaseline||restored.followDeviceTheme!==expected.followDeviceTheme||restored.hasBackgroundImage!==expected.hasBackgroundImage)throw Error('原浏览器主题未完整恢复，恢复记录已保留');

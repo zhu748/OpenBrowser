@@ -7,14 +7,29 @@
  * these are the operations the UI and profile-store-sqlite drive.
  */
 
-const { assertProfileId, validateProfileRootSecure } = require('../automation/isolation');
+const { assertProfileId } = require('../automation/isolation');
 const { prepareProfileSync } = require('./profile-sync');
 const { persistProfileSync } = require('./profile-publication');
 const { assertProfileNotMaintained, acquireProfileMaintenance } = require('./profile-maintenance');
 const { assertProfileRestoreReady } = require('../automation/cloud/file-restore');
 const { FIREFOX_COOKIES, isFirefoxProfile, removeBrowserFiles, clearBrowserCache } = require('../automation/browser-data');
-const fs = require('fs');
-const fsp = require('fs/promises');
+const { deleteProfileDirectories } = require('./profile-deletion');
+
+async function withProfileLifecycleChange(engine, ids, change) {
+  if (!Array.isArray(ids) || ids.length > 200) throw new Error('Invalid profile selection');
+  const safeIds = [...new Set(ids.map(assertProfileId))];
+  for (const id of safeIds) assertProfileNotMaintained(engine, id);
+  engine.deletingProfiles ||= new Set();
+  if (safeIds.some((id) => engine.deletingProfiles.has(id))) {
+    throw Object.assign(new Error('Profile lifecycle change is already in progress'), { code: 'PROFILE_DELETING' });
+  }
+  for (const id of safeIds) engine.deletingProfiles.add(id);
+  try {
+    return await change(safeIds);
+  } finally {
+    for (const id of safeIds) engine.deletingProfiles.delete(id);
+  }
+}
 
 module.exports = {
   profileForEdit(id) {
@@ -103,25 +118,12 @@ module.exports = {
     return options?.delta === true ? rows.filter((row) => seen.has(row.id)) : rows;
   },
 
-  async deleteProfiles(ids, deleteData = true) {
-    if (!Array.isArray(ids) || ids.length > 200) throw new Error('Invalid profile selection');
-    const safeIds = [...new Set(ids.map(assertProfileId))];
-    for (const id of safeIds) assertProfileNotMaintained(this, id);
-    this.deletingProfiles ||= new Set();
-    if (safeIds.some((id) => this.deletingProfiles.has(id))) {
-      throw Object.assign(new Error('Profile deletion is already in progress'), { code: 'PROFILE_DELETING' });
-    }
-    for (const id of safeIds) this.deletingProfiles.add(id);
-    try {
-      return await this._deleteProfiles(safeIds, deleteData);
-    } finally {
-      for (const id of safeIds) this.deletingProfiles.delete(id);
-    }
+  deleteProfiles(ids, deleteData = true) {
+    return withProfileLifecycleChange(this, ids, (safeIds) => this._deleteProfiles(safeIds, deleteData));
   },
 
   async _deleteProfiles(safeIds, deleteData) {
     this.invalidateStatusCache?.();
-    const deleted = []; let stopped = 0;
     // Preflight the whole batch before removing any data: recovery backups
     // from an interrupted restore must not disappear in a later bulk purge.
     if (deleteData) {
@@ -131,113 +133,20 @@ module.exports = {
       }
     }
 
-    // Phase 1 — stop running environments with bounded concurrency. A serial
-    // stop loop serialized every window's teardown (taskkill scans, helper
-    // drains …); batches of deleted environments waited for each sibling.
-    const activeIds = safeIds.filter((id) =>
-      this.profiles.has(id)
-      && (this.running.has(id) || this.starting.has(id) || this.stopping.has(id)));
-    for (let offset = 0; offset < activeIds.length; offset += 4) {
-      const batch = activeIds.slice(offset, offset + 4);
-      const results = await Promise.allSettled(batch.map((id) => this.stop(id)));
-      for (let index = 0; index < results.length; index += 1) {
-        const result = results[index];
-        if (result.status === 'rejected') throw result.reason;
-        const id = batch[index];
-        if (result.value?.running || result.value?.cleanupBlocked
-          || this.running.has(id) || this.starting.has(id) || this.stopping.has(id)) {
-          throw Object.assign(new Error(`Browser exit is unconfirmed for profile ${id}; deletion stopped`), {
-            code: 'BROWSER_EXIT_UNCONFIRMED', profileId: id,
-          });
-        }
-        if (!result.value?.alreadyStopped) stopped += 1;
-      }
+    const stopped = await this._stopProfilesForRemoval(safeIds);
+    const deleted = safeIds.filter((id) => this.profiles.has(id));
+    if (deleted.length) {
+      const commit = () => this._persistProfileDeletion(deleted);
+      if (deleteData) await deleteProfileDirectories(this, deleted, commit);
+      else await commit();
     }
-
-    // Phase 2 — remove data directories with the same bounded concurrency.
-    if (deleteData) {
-      const removals = safeIds.filter((id) => this.profiles.has(id));
-      const removeRoot = async (id) => {
-        const profileRoot = this.profileRoot(id);
-        const rootCheck = await validateProfileRootSecure(this.profileDataRootPath, profileRoot, id);
-        if (!rootCheck.ok) throw new Error('Isolation error: ' + rootCheck.message);
-        if (fs.existsSync(profileRoot)) {
-          // Windows often holds Chrome locks (EBUSY/EPERM) briefly after Browser.close / taskkill.
-          let lastError = null;
-          for (let attempt = 0; attempt < 8; attempt += 1) {
-            try {
-              await fsp.rm(profileRoot, { recursive: true, force: true });
-              lastError = null;
-              break;
-            } catch (error) {
-              lastError = error;
-              if (!error || !['EBUSY', 'EPERM', 'EACCES', 'ENOTEMPTY'].includes(error.code)) throw error;
-              await new Promise((resolve) => setTimeout(resolve, 120 * (attempt + 1)));
-            }
-          }
-          if (lastError) throw lastError;
-        }
-      };
-
-      for (let offset = 0; offset < removals.length; offset += 4) {
-        const batch = removals.slice(offset, offset + 4);
-        const results = await Promise.allSettled(batch.map(removeRoot));
-        for (const result of results) {
-          if (result.status === 'rejected') throw result.reason;
-        }
-      }
-    }
-
-    // Phase 3 — after directory removal, commit the database batch before
-    // removing live records, then persist the remaining engine state once.
-    const existingIds = safeIds.filter((id) => this.profiles.has(id));
-    if (existingIds.length && this.usingSqlite && this.sqliteStore) {
-      // One transaction for the batch. A database failure must leave the
-      // in-memory records intact instead of committing a partial removal.
-      this.sqliteStore.deleteProfiles(existingIds);
-    }
-    for (const id of existingIds) {
-      this.profiles.delete(id);
-      this.assignments.delete(id);
-      this.networkInfo.delete(id);
-      deleted.push(id);
-    }
-    if (deleted.length) await this.persist();
-    this.emit({ type: 'profiles', action: 'delete', ids: deleted }); this.emit({ type: 'extensions' });
+    this.emit({ type: 'profiles', action: 'delete', ids: deleted });
+    this.emit({ type: 'extensions' });
     return { success: true, deleted: deleted.length, stopped, dataDeleted: Boolean(deleteData), ids: deleted };
   },
 
-  async trashProfiles(ids) {
-    if (!Array.isArray(ids) || ids.length > 200) throw new Error('Invalid profile selection');
-    const safeIds = [...new Set(ids.map(assertProfileId))];
-    for (const id of safeIds) assertProfileNotMaintained(this, id);
-    // Same operation guard as deleteProfiles: trashing shares the deletingProfiles
-    // set so a start() racing in mid-transition is rejected by the existing check
-    // in engine.js, and a second trash/delete of the same ids cannot interleave
-    // its stop phase with this one.
-    this.deletingProfiles ||= new Set();
-    if (safeIds.some((id) => this.deletingProfiles.has(id))) {
-      throw Object.assign(new Error('Profile deletion is already in progress'), { code: 'PROFILE_DELETING' });
-    }
-    for (const id of safeIds) this.deletingProfiles.add(id);
-    try {
-      return await this._trashProfiles(safeIds);
-    } finally {
-      for (const id of safeIds) this.deletingProfiles.delete(id);
-    }
-  },
-
-  async _trashProfiles(safeIds) {
-    this.invalidateStatusCache?.();
-    const trashed = [];
+  async _stopProfilesForRemoval(safeIds) {
     let stopped = 0;
-    const nowIso = new Date().toISOString();
-
-    // Phase 1 — stop running environments first, with the same bounded-concurrency
-    // batches deleteProfiles uses. Trash is a soft delete, but it still must not
-    // flip profiles to trashed while their windows are live: the wrapper teardown
-    // persists state on close, and a mid-stop persist of a partially trashed batch
-    // committed the subset as final even when a later item's stop failed.
     const activeIds = safeIds.filter((id) =>
       this.profiles.has(id)
       && (this.running.has(id) || this.starting.has(id) || this.stopping.has(id)));
@@ -250,7 +159,7 @@ module.exports = {
         const id = batch[index];
         if (result.value?.running || result.value?.cleanupBlocked
           || this.running.has(id) || this.starting.has(id) || this.stopping.has(id)) {
-          throw Object.assign(new Error(`Browser exit is unconfirmed for profile ${id}; trashing stopped`), {
+          throw Object.assign(new Error(`Browser exit is unconfirmed for profile ${id}`), {
             code: 'BROWSER_EXIT_UNCONFIRMED', profileId: id,
           });
         }
@@ -258,44 +167,24 @@ module.exports = {
       }
     }
 
-    // Phase 2 — only after every stop resolved does any profile flip to trashed.
-    // A rejected or incomplete stop above aborts with zero partial trash instead
-    // of leaving a subset the next unrelated persist would commit.
-    for (const id of safeIds) {
-      const profile = this.profiles.get(id);
-      if (!profile) continue;
-      // Fresh-object write: in-place mutation would go undetected by the
-      // identity-memoized profileDataHash (round-4 PERF-2).
-      this.profiles.set(id, { ...profile, trashed: true, trashedAt: nowIso });
-      trashed.push(id);
-    }
-    if (this.usingSqlite && this.sqliteStore) {
-      this.sqliteStore.trashProfiles(trashed, nowIso);
-    }
-    await this.persist();
-    this.emit({ type: 'profiles', action: 'trash', ids: trashed });
-    return { success: true, trashed: trashed.length, stopped, ids: trashed };
+    return stopped;
   },
 
-  async restoreProfiles(ids) {
-    if (!Array.isArray(ids) || ids.length > 200) throw new Error('Invalid profile selection');
-    this.invalidateStatusCache?.();
-    const safeIds = [...new Set(ids.map(assertProfileId))];
-    for (const id of safeIds) assertProfileNotMaintained(this, id);
-    const restored = [];
-    for (const id of safeIds) {
-      const profile = this.profiles.get(id);
-      if (!profile) continue;
-      // Fresh-object write, same reason as trashProfiles above.
-      this.profiles.set(id, { ...profile, trashed: false, trashedAt: null });
-      restored.push(id);
-    }
-    if (this.usingSqlite && this.sqliteStore) {
-      this.sqliteStore.restoreProfiles(restored);
-    }
-    await this.persist();
-    this.emit({ type: 'profiles', action: 'restore', ids: restored });
-    return { success: true, restored: restored.length, ids: restored };
+  trashProfiles(ids) {
+    return withProfileLifecycleChange(this, ids, async (safeIds) => {
+      const stopped = await this._stopProfilesForRemoval(safeIds);
+      const trashed = await this._persistProfileTrashState(safeIds, true);
+      this.emit({ type: 'profiles', action: 'trash', ids: trashed });
+      return { success: true, trashed: trashed.length, stopped, ids: trashed };
+    });
+  },
+
+  restoreProfiles(ids) {
+    return withProfileLifecycleChange(this, ids, async (safeIds) => {
+      const restored = await this._persistProfileTrashState(safeIds, false);
+      this.emit({ type: 'profiles', action: 'restore', ids: restored });
+      return { success: true, restored: restored.length, ids: restored };
+    });
   },
 
   async purgeProfiles(ids, deleteData = true) {

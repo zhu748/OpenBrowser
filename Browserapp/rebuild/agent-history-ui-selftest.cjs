@@ -62,8 +62,14 @@ async function main() {
     const history = await page.evaluate(() => globalThis.__localAgentApi.conversationDetail('history-199'));
     assert.ok(!Object.hasOwn(history.conversation, 'checkpoint'));
     assert.ok(!JSON.stringify(history).includes('CHECKPOINT_NOT_FOR_RENDERER'));
+    await page.evaluate(() => globalThis.__localRequest('agent:uploadFile', { fileName: 'fixture.txt', data: btoa('fixture') }));
+    page = await openWorkspacePage(app, '/agent-console/settings');
+    const storage = page.getByRole('region', { name: 'Agent 存储' });
+    await storage.getByText(/已保存 1 个附件/).waitFor();
+    await storage.getByRole('button', { name: '清理过期附件' }).click();
+    await storage.getByText('已清理 0 个附件。', { exact: true }).waitFor();
     assert.deepEqual(errors, []);
-    console.log('AGENT_HISTORY_UI OK (real Electron legacy migration, encrypted backup, process restart, lazy sidebar/template creation, on-demand message and bounded DTO)');
+    console.log('AGENT_HISTORY_UI OK (legacy migration, encrypted backup, restart, on-demand message and attachment storage controls)');
   } catch (error) {
     if (page) console.error(await page.evaluate(() => ({ url: location.href, body: document.body.innerText.slice(0, 2500) })));
     throw error;

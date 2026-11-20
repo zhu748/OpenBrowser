@@ -7,7 +7,9 @@ const { spawn } = require('node:child_process');
 async function main() {
   let sequence = 0;
   const server = http.createServer((req, res) => {
-    if (req.url === '/truncated' || req.url === '/' && sequence++ === 0) {
+    if (req.url === '/redirect') {
+      res.writeHead(302, { Location: '/truncated' }).end();
+    } else if (req.url === '/truncated' || req.url === '/' && sequence++ === 0) {
       res.writeHead(200, { 'Content-Length': '1000' }); res.write('{'); setTimeout(() => res.destroy(), 10);
     } else if (req.url === '/drip') {
       res.writeHead(200); res.write('{');
@@ -21,7 +23,11 @@ async function main() {
   process.env.OPENBROWSER_API_PORT = String(server.address().port);
   process.env.OPENBROWSER_API_KEY = 'synthetic-mcp-key-for-testing';
   try {
-    const { request } = require('../mcp-server');
+    const { request, apiOrigin } = require('../mcp-server');
+    assert.equal(apiOrigin('https://api.example.test/'), 'https://api.example.test');
+    assert.throws(() => apiOrigin('http://api.example.test'), /HTTPS/);
+    assert.throws(() => apiOrigin('https://api.example.test/other'), /HTTPS/);
+    await assert.rejects(request('GET', '/redirect'), /returned a redirect/);
     await assert.rejects(request('GET', '/truncated'), { code: 'ECONNRESET' });
     await assert.rejects(request('GET', '/drip', undefined, { timeout: 60 }), { code: 'ETIMEDOUT' });
     await assert.rejects(request('GET', '/large'), { code: 'ERESPONSETOOLARGE' });

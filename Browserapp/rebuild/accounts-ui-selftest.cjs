@@ -35,6 +35,11 @@ const repo = path.resolve(__dirname, "../..");
         result.externalRequests.push(request.url());
     });
     await page.getByText("暂无窗口", { exact: true }).waitFor();
+    await page.evaluate(() => globalThis.__router.beforeEach(to => {
+      if (to.path.startsWith('/account/') && to.query.renderer !== 'legacy') {
+        return { path: to.path, query: { ...to.query, renderer: 'legacy' }, hash: to.hash };
+      }
+    }));
     await page.getByText("平台账号", { exact: true }).first().click();
     await page.getByText("暂无平台账号", { exact: true }).waitFor();
     await page.screenshot({ path: path.join(evidence, "accounts-empty.png") });
@@ -82,6 +87,12 @@ const repo = path.resolve(__dirname, "../..");
       "account-secret",
     );
     result.checks.push("原侧栏、空态、单个添加表单真实保存到原加密账号库");
+    await page.getByRole("button", { name: "导出数据", exact: true }).click();
+    const exportDialog = page.locator(".export-accounts");
+    await exportDialog.waitFor();
+    await exportDialog.getByRole("button", { name: "取消", exact: true }).click();
+    await exportDialog.waitFor({ state: "hidden" });
+    result.checks.push("没有选中账号时仍能打开当前列表的导出弹窗");
     await page
       .getByText("library@example.test", { exact: true })
       .first()
@@ -164,6 +175,7 @@ const repo = path.resolve(__dirname, "../..");
     }
   } finally {
     await app?.close();
+    await fs.rm(data, { recursive: true, force: true, maxRetries: 3 });
     await fs.writeFile(
       path.join(evidence, "accounts-ui-selftest.json"),
       JSON.stringify(result, null, 2),

@@ -16,6 +16,11 @@ module.exports = [
     ignores: [
       'node_modules/**',
       'dist/**',
+      'frontend/dist/**',
+      // Recovered renderer modules are checked by the ESM and IPC build audits.
+      'frontend/workbench/**',
+      'frontend/workbench-pages/**',
+      '.workbench-build-*/**',
       'kernels/**',
       'rust-core/**',
       'assets/**',
@@ -318,7 +323,7 @@ module.exports = [
     },
   },
   {
-    files: ['**/*.js', '**/*.cjs'],
+    files: ['**/*.js', '**/*.cjs', 'frontend/src/workbench/*.mjs'],
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: 'commonjs',
@@ -362,7 +367,9 @@ module.exports = [
   },
   {
     files: ['rebuild/agent-channel.js', 'rebuild/local-pages.js', 'rebuild/renderer-bridge.js', 'rebuild/workbench-chrome.js', 'rebuild/workbench-notifications.mjs',
-      'rebuild/workbench-fingerprint-draft.mjs', 'rebuild/workbench-network.mjs', 'rebuild/workbench-navigation.mjs'],
+      'rebuild/workbench-fingerprint-draft.mjs', 'rebuild/workbench-network.mjs', 'rebuild/workbench-navigation.mjs',
+      'frontend/src/workbench/*.mjs',
+      'rebuild/templates-route.js', 'rebuild/kernels-route.js', 'rebuild/source-page-route.js'],
     languageOptions: { sourceType: 'module' },
   },
   {

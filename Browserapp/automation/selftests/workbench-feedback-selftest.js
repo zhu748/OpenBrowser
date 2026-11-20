@@ -128,6 +128,14 @@ async function main() {
   assert.equal(child.sent[0][1].channel, 'workspace:navigate');
   await manager.request('ui:workspace:open', { route: '/api-keys' });
   assert.equal(manager.entries.size, 2);
+  await manager.request('ui:workspace:open', { route: '/agent-console/mcp' });
+  const mcpChild = manager.entries.get('/agent-console/mcp').window;
+  await manager.request('ui:workspace:ready', {}, mcpChild.webContents);
+  await Promise.all([
+    manager.request('ui:workspace:open', { route: '/agent-console/mcp?tab=old' }),
+    manager.request('ui:workspace:open', { route: '/agent-console/mcp?tab=current' }),
+  ]);
+  assert.deepEqual(mcpChild.sent.map(([, event]) => event.payload), ['/agent-console/mcp?tab=current']);
   manager.closeAll();
   assert.equal(manager.entries.size, 0);
   assert.equal(windows.size, 1);

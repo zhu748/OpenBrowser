@@ -7,7 +7,7 @@ const repo=path.resolve(__dirname,'../..');
 (async()=>{
  const data=await createTestDirectory('projects-ui-'),evidence=evidenceDirectory(),result={passed:false,checks:[],errors:[],externalRequests:[],data};let app,page,phase='startup';
  const call=(method,p={})=>page.evaluate(({method,p})=>globalThis.__localRequest(method,p),{method,p});
- const go=route=>page.evaluate(route=>globalThis.__router.push(route),route);
+ const go=route=>page.evaluate(route=>globalThis.__router.push({ path: route, query: { renderer: 'legacy' } }),route);
  try{
   app=await electron.launch({executablePath:require('electron'),args:['--no-sandbox','--ozone-platform=headless','--disable-gpu',path.join(repo,'Browserapp')],env:{...process.env,OPENBROWSER_USER_DATA:data,OPENBROWSER_API_PORT:'0'}});page=await app.firstWindow();page.setDefaultTimeout(12000);await page.setViewportSize({width:1536,height:960});
   page.on('pageerror',error=>result.errors.push({phase,error:error.message}));page.on('console',message=>{if(message.type()==='error')result.errors.push({phase,error:message.text()});});page.on('request',request=>{if(/^https?:|^wss?:/.test(request.url()))result.externalRequests.push(request.url());});await page.getByText('暂无窗口',{exact:true}).waitFor();
@@ -21,9 +21,21 @@ const repo=path.resolve(__dirname,'../..');
   await toggleTheme(page);await page.screenshot({path:path.join(evidence,'project-detail-dark.png')});result.checks.push('重载后固定侧栏仍存在，原项目详情路由按项目筛选，浅色/暗色截图');
   phase='default-detail';await go('/projects/local-default');await page.getByText('默认窗口验收',{exact:true}).first().waitFor();assert.equal(await page.getByText('项目内窗口验收',{exact:true}).count(),0);await assert.rejects(call('groups:save',{id:'local-default',projectName:'禁止修改'}),/默认项目/);await assert.rejects(call('groups:delete',{ids:['local-default']}),/默认项目/);
   await go('/projects/list');const target=page.getByRole('row').filter({hasText:'项目闭环验收'});await target.click({button:'right'});await page.getByText('取消固定到侧边栏',{exact:true}).last().click();await waitUntil(async()=>(await call('groups:list',{pinnedOnly:true})).length===0);await page.keyboard.press('Escape');
-  phase='rename';await target.click({button:'right'});await page.getByText('编辑',{exact:true}).last().click();await page.locator('.p-dialog input').last().fill('项目已改名');await page.getByRole('button',{name:'保存',exact:true}).last().click();await page.getByRole('row').filter({hasText:'项目已改名'}).waitFor();
+  phase='rename';
+  await target.click({button:'right'});
+  await page.getByText('编辑',{exact:true}).last().click();
+  const editor=page.locator('.p-dialog').filter({hasText:'编辑项目'});
+  const projectName=editor.locator('input').last(),save=editor.getByRole('button',{name:'保存',exact:true});
+  await projectName.fill('');
+  await save.click();
+  await editor.getByText(/请输入您的项目名称|项目名称必须大于 1 个字符/).waitFor();
+  assert.equal((await call('groups:list')).find(row=>row.id===group.id).projectName,'项目闭环验收');
+  await projectName.fill('项目已改名');
+  await save.click();
+  await page.getByRole('row').filter({hasText:'项目已改名'}).waitFor();
+  result.checks.push('项目名称为空时保留编辑对话框和原项目数据，修正后可保存');
   phase='delete';await page.getByRole('row').filter({hasText:'项目已改名'}).click({button:'right'});await page.getByText('删除',{exact:true}).last().click();await page.getByRole('button',{name:'确认',exact:true}).last().click();await waitUntil(async()=>(await call('groups:list')).length===0);assert.equal((await call('profiles:read',{id:inside.id})).projectId,'');assert.equal((await call('profiles:list')).length,2);assert.ok(outside.id);
   result.checks.push('默认项目筛选和不可重命名/删除，原菜单取消固定、重命名、删除；删除后窗口回归默认且不丢失');assert.deepEqual(result.errors,[]);assert.deepEqual(result.externalRequests,[]);result.passed=true;
  }catch(error){result.failure={phase,error:error.stack};if(page){result.body=await page.locator('body').innerText().catch(()=>null);await page.screenshot({path:path.join(evidence,'projects-ui-failure.png')}).catch(()=>{});}}
- finally{await app?.close();await fs.writeFile(path.join(evidence,'projects-ui-selftest.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));if(!result.passed)process.exitCode=1;}
+ finally{await app?.close();await fs.rm(data,{recursive:true,force:true,maxRetries:3});await fs.writeFile(path.join(evidence,'projects-ui-selftest.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2));if(!result.passed)process.exitCode=1;}
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -137,12 +137,18 @@ async function completion(service, config, messages, run, tools) {
   messages = await service.files.context(messages, config.provider);
   const ollama = config.provider === "ollama", base = config.baseUrl.replace(/\/$/, "");
   const url = ollama ? base.replace(/\/api$/, "") + "/api/chat" : base.replace(/\/chat\/completions$/, "") + "/chat/completions";
-  const definitions = [...tools, ...await service.mcp.definitions(run)];
+  const definitions = run.textOnly ? [] : [...tools, ...await service.mcp.definitions(run)];
   run.abort.signal.throwIfAborted();
   const res = await fetch(url, {
     method: "POST", redirect: "error",
     headers: { "Content-Type": "application/json", ...(config.apiKey ? { Authorization: "Bearer " + config.apiKey } : {}) },
-    body: JSON.stringify({ model: config.model, messages: providerMessages(messages, ollama), tools: definitions, stream: true }),
+    body: JSON.stringify({ model: config.model, messages: providerMessages(messages, ollama), tools: definitions, stream: true,
+      ...(ollama ? (run.requestOptions && { options: {
+        temperature: run.requestOptions.temperature, num_predict: run.requestOptions.maxTokens,
+      } }) : {
+        temperature: run.requestOptions?.temperature, max_tokens: run.requestOptions?.maxTokens,
+      }),
+    }),
     signal: AbortSignal.any([run.abort.signal, AbortSignal.timeout(120000)]),
   });
   if (!res.ok) throw Error("LLM HTTP " + res.status + ": " + (await readText(res)).slice(0, 400));

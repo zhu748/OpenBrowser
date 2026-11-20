@@ -14,7 +14,16 @@ async function localCatalog(service){
 async function catalogRequest(service,action,input){
  if(['listTemplateLabelCategories','listTemplateLabels'].includes(action))return {code:0,data:[]};
  const rows=await localCatalog(service);
- if(action==='listOfficialTemplates')return {code:0,data:rows.filter(row=>(!input.templateType||row.templateType===input.templateType)&&!(input.labelIds?.length)&&(!input.search||[row.name,row.description,row.slug].join(' ').toLowerCase().includes(String(input.search).toLowerCase())))};
+ if (action === 'listOfficialTemplates') {
+  const filtered = rows.filter(row => (!input.templateType || row.templateType === input.templateType) && !input.labelIds?.length &&
+    (!input.search || [row.name, row.description, row.slug].join(' ').toLowerCase().includes(String(input.search).toLowerCase())));
+  if (input.offset === undefined) return { code: 0, data: filtered };
+  const offset = Number(input.offset);
+  const limit = Number(input.limit ?? 20);
+  if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 200)
+    throw Error('本地模板分页参数无效');
+  return { code: 0, data: { items: filtered.slice(offset, offset + limit), total: filtered.length, limit, offset } };
+ }
  if(['topOfficialTemplate','untopOfficialTemplate'].includes(action)){
   const row=rows.find(row=>row.id===Number(input.id||input.templateId||input.templateIdOrSlug)||row.slug===input.templateIdOrSlug);if(!row)throw Error('本地模板不存在或 Skill 已停用');
   const catalogTopped={...service.data.catalogTopped};const toppedAt=action==='topOfficialTemplate'?new Date().toISOString():null;

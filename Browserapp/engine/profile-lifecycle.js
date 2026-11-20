@@ -50,11 +50,12 @@ function observeProfileStop(engine, id, task, item) {
     if (engine.stopping.get(id) !== task) return;
     engine.stopping.delete(id);
     engine.emit({ type: 'profile-stop-progress', id, phase: error ? 'error' : 'done',
-      percent: error ? 0 : 100, error: Boolean(error),
+    percent: error ? 0 : 100, error: Boolean(error), running: Boolean(engine.running?.has(id)),
       message: error ? error.message || String(error) : '窗口关闭与本地数据同步完成',
       lifecycleGeneration: item?.lifecycleGeneration });
   };
-  task.then(() => settled(null), settled).catch(() => {});
+  task.then(result => settled(result?.cleanupBlocked || result?.running ?
+    Error('窗口关闭尚未确认，请稍后重试') : null), settled).catch(() => {});
 }
 
 module.exports = { recordProfileLifecycle, profileLifecycle, beginProfileStop, observeProfileStop };

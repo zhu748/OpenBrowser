@@ -10,7 +10,7 @@ npm ci
 npm start
 ```
 
-已生成 roxy-ui 可直接运行。重建使用 `npm run rebuild:ui`，默认输入已随仓库保存于 `Browserapp/rebuild/compiler/vendor/roxy-ui/`，不需要 `/workspace/roxy-src`、原始分卷或 `ROXY_SOURCE` 环境变量。输入逐文件核对 SHA256；单独检查可运行 `node rebuild/compiler/source-selftest.cjs`。[独立构建说明](BUILD-REPRODUCIBILITY.md)。详细功能复跑命令与 X11 依赖见报告。
+`npm run rebuild:ui` 从 `Browserapp/frontend/` 和本地桥接模块生成 `roxy-ui/`。`node rebuild/compiler/source-selftest.cjs` 会移除旧产物、原始归档和补丁脚本，再逐文件核对构建结果。`Browserapp/rebuild/compiler/vendor/roxy-ui/` 用于归档转换和历史视觉对照。详细构建与验收命令见 [独立构建说明](BUILD-REPRODUCIBILITY.md) 和 [验收报告](REPORT.md)。
 
 [缺陷与文件:行](BUGS-FOUND.md) · [Channel](CHANNEL-MAP.md) · [额外功能及理由](EXTRA-FEATURES.md) · [实施决定](DEVIATIONS.md) · [环境/兼容边界](BLOCKERS.md)。PHASE-2/PHASE-3 为历史阶段，以 REPORT 和最新 JSON 为准；历史失败不作为通过凭据。
 

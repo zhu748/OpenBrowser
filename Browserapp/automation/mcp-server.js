@@ -20,11 +20,24 @@ const { resolveApiKey, apiKeyFileCandidates } = require('./api-key');
 
 const PORT = Number(process.env.OPENBROWSER_API_PORT || process.env.PORT || 50325);
 const HOST = process.env.OPENBROWSER_API_HOST || '127.0.0.1';
+const customApiUrl = process.env.OPENBROWSER_API_URL;
+
+function apiOrigin(explicitUrl) {
+  if (!explicitUrl) return `http://${HOST.includes(':') ? '[' + HOST + ']' : HOST}:${PORT}`;
+  let url;
+  try { url = new URL(explicitUrl); } catch (_) {}
+  const loopback = url && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+  if (!url || (url.protocol !== 'https:' && !(loopback && url.protocol === 'http:')) ||
+      url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
+    throw new Error('OPENBROWSER_API_URL must be an HTTPS origin, or a loopback HTTP origin, without credentials or a path');
+  }
+  return url.origin;
+}
 
 let cachedApiKey = null;
 function getApiKey(forceReload = false, ignoreEnv = false) {
   if (!forceReload && !ignoreEnv && cachedApiKey) return cachedApiKey;
-  const resolution = resolveApiKey({ ignoreEnv });
+  const resolution = resolveApiKey({ ignoreEnv, explicitOnly: Boolean(customApiUrl) });
   cachedApiKey = resolution.key || "";
   return cachedApiKey;
 }
@@ -131,6 +144,11 @@ function withInputAliases(schema) {
 async function request(method, path, body, options = {}) {
   const payload = body === undefined ? null : JSON.stringify(body);
   const currentKey = getApiKey(Boolean(options._retried), Boolean(options._retried));
+  const origin = apiOrigin(customApiUrl);
+  if (typeof path !== 'string' || !path.startsWith('/')) throw new Error('Local API request path must start with /');
+  if (customApiUrl && !currentKey) {
+    throw new Error('Set OPENBROWSER_API_KEY or OPENBROWSER_API_KEY_FILE for OPENBROWSER_API_URL');
+  }
   // One absolute deadline includes key reload/retry, headers and body reads.
   const deadline = options._deadline ?? Date.now() + (options.timeout ?? 60000);
   const remaining = deadline - Date.now();
@@ -142,16 +160,17 @@ async function request(method, path, body, options = {}) {
     headers['x-api-key'] = currentKey;
     headers.Authorization = `Bearer ${currentKey}`;
   }
-  const res = await requestBuffer(`http://${HOST.includes(':') ? '[' + HOST + ']' : HOST}:${PORT}${path}`, {
+  const res = await requestBuffer(`${origin}${path}`, {
     method, headers, body: payload, timeoutMs: remaining, maxBytes: 32 * 1024 * 1024,
     signal: options.signal, timeoutMessage: 'Local API timeout',
     tooLargeMessage: 'MCP: Local API response exceeded 32 MiB',
   });
+  if (res.status >= 300 && res.status < 400) throw new Error('Local API returned a redirect. Configure the final API origin.');
   if (res.status === 401) {
     if (!options._retried) return request(method, path, body, { ...options, _retried: true, _deadline: deadline });
     const challenge = String(res.headers['www-authenticate'] || '').trim();
-    const candidates = apiKeyFileCandidates();
-    throw new Error(`MCP: Local API at http://${HOST}:${PORT} rejected all supplied API credentials (401). Set OPENBROWSER_API_KEY or OPENBROWSER_API_KEY_FILE to the key shown on the OpenBrowser API & MCP page.${challenge ? ` Server challenge: ${challenge}.` : ''}${candidates.length ? ` Checked locations: ${candidates.join(', ')}.` : ''}`);
+    const candidates = customApiUrl ? [] : apiKeyFileCandidates();
+    throw new Error(`MCP: Local API at ${origin} rejected all supplied API credentials (401). Set OPENBROWSER_API_KEY or OPENBROWSER_API_KEY_FILE to the key shown on the OpenBrowser API & MCP page.${challenge ? ` Server challenge: ${challenge}.` : ''}${candidates.length ? ` Checked locations: ${candidates.join(', ')}.` : ''}`);
   }
   let parsed;
   try { parsed = JSON.parse(res.buffer.toString('utf8') || '{}'); }
@@ -686,4 +705,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { TOOLS: toolsForMode().map(toTool), callTool, request, toolsMeta, LEVEL_ORDER };
+module.exports = { TOOLS: toolsForMode().map(toTool), callTool, request, toolsMeta, LEVEL_ORDER, apiOrigin };

@@ -63,6 +63,16 @@ async function main() {
     failed.reject(Error('cleanup blocked'));await failed.promise.catch(() => {});await Promise.resolve();
     assert.equal(profileLifecycle(engine, id).error, true);
     assert.equal(profileLifecycle(engine, id).pending, false, 'failure clears the indefinite busy indicator');
+    const blocked = deferred();
+    engine.running.set(id, item);
+    beginProfileStop(engine, id, item);
+    engine.stopping.set(id, blocked.promise);
+    observeProfileStop(engine, id, blocked.promise, item);
+    blocked.resolve({ running: false, cleanupBlocked: true });
+    await blocked.promise;
+    assert.equal(events.at(-1).running, true, 'an uncertain cleanup preserves the current process state');
+    assert.equal(events.at(-1).phase, 'error', 'an uncertain cleanup must not publish success');
+    engine.running.delete(id);
     engine.lifecycleGenerations.set(id, 2);
     engine.emitStartProgress(id, 'proxy', 18, 'new probe', 2);
     const count = events.length;

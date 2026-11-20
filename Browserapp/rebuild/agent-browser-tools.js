@@ -32,7 +32,7 @@ async function operate(browser, name, p, signal) {
 async function browserTool(engine, name, p, run) {
   const signal = run?.abort?.signal;
   signal?.throwIfAborted();
-  const running = engine.running.get(String(p.id));
+  const running = engine?.running?.get(String(p.id));
   if (!running?.port || !browserCapabilities(running.engine).browserTools.includes(name))
     throw Object.assign(Error("此工具需要已启动的 Chrome CDP 会话"), { code: "AGENT_BROWSER_UNSUPPORTED" });
   const { chromium } = require("playwright");
@@ -61,4 +61,4 @@ async function browserTool(engine, name, p, run) {
   }
 }
 
-module.exports = { BROWSER_TOOLS, browserCapabilities, browserTool };
+module.exports = { BROWSER_TOOLS, browserCapabilities, browserTool, operate };

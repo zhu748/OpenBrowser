@@ -209,6 +209,33 @@ const repo = path.resolve(__dirname, "../..");
     await waitUntil(() => persistedImage.evaluate(img => img.complete && img.naturalWidth > 0));
     await page.screenshot({ path: path.join(evidence, "agent-attachments-reloaded.png") });
     result.checks.push("刷新原聊天历史后，文本/图片附件及真实本地缩略图保持；metadata.attachments 契约实际验证");
+
+    const conversationId = await page.evaluate(() => globalThis.__router.currentRoute.value.params.conversationId);
+    const conversation = page.locator(".conversation-item.active");
+    async function openConversationActions() {
+      await conversation.hover();
+      await conversation.locator(".conversation-delete").click();
+      return page.locator(".conversation-action-menu");
+    }
+    let actions = await openConversationActions();
+    await actions.getByRole("button", { name: "重命名对话", exact: true }).click();
+    const rename = page.locator(".rename-conversation-dialog");
+    await rename.getByRole("textbox").fill("附件会话重命名验收");
+    await rename.getByRole("button", { name: "保存", exact: true }).click();
+    await conversation.getByText("附件会话重命名验收", { exact: true }).waitFor();
+    await page.reload();
+    await conversation.getByText("附件会话重命名验收", { exact: true }).waitFor();
+    assert.equal(await page.evaluate(() => globalThis.__router.currentRoute.value.params.conversationId), conversationId);
+
+    actions = await openConversationActions();
+    await actions.getByRole("button", { name: "删除", exact: true }).click();
+    const deleteDialog = page.locator(".agent-console-delete-confirm-dialog");
+    await deleteDialog.getByRole("button", { name: "删除", exact: true }).click();
+    await page.waitForFunction(() => globalThis.__router.currentRoute.value.name === "agent-console-chat");
+    await page.reload();
+    await page.getByText("有什么我能帮你的吗？", { exact: true }).waitFor();
+    assert.equal(await page.locator(".conversation-item").count(), 0);
+    result.checks.push("通过会话菜单重命名并刷新后保留名称；删除当前会话后跳回首页，刷新不再打开已删除路由");
     assert.deepEqual(result.errors, []);
     assert.deepEqual(result.externalRequests, []);
     result.passed = true;

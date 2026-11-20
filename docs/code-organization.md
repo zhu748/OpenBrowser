@@ -124,6 +124,9 @@ node scripts/benchmark-workbench.js --sizes 10,100,1000 --interaction-budget-ms 
 | `automation/fingerprint/persona-ua.js` | UA 与 Client Hints 意图解析、字段别名、严格模式及实际内核版本；无 I/O，不修改输入对象 |
 | `automation/user-agent.js`、`automation/fingerprint/runtime/ua-bootstrap.js` | 宿主 UA 构建与浏览器安装分开维护；安装函数只接收 JSON 配置和私有 token，源码直接接受 lint |
 | `rebuild/workbench-notifications.mjs` | 可独立 lint 和行为测试的通知状态、内容转义与已读操作；生成器只注入 Vue 绑定和导入 |
+| `rebuild/workbench-table.mjs` | 表格只采纳当前请求的结果，失败时保留现有列表。环境列表合并后台刷新并校正已消失的页码。 |
+| `rebuild/workbench-api-settings.mjs` | 按顺序保存 API 设置，使用主进程的确认更新表单，同时保留确认期间的输入。密钥轮换走独立 IPC。 |
+| `rebuild/workbench-navigation.mjs`、`rebuild/workspace-windows.js` | 主进程分配原生功能窗口，渲染进程在初始路由完成后接收待处理的导航。 |
 | `engine/launch-preferences.js` | Chromium 搜索偏好写入与启动数据清理；进程、锁和失败清理由启动编排持有 |
 | `engine/launch-display.js` | 时区参数校验与桌面显示查询；旧引擎导出保持兼容 |
 | `engine/browser-exit.js` | 两种浏览器的退出/错误清理接线，以及发布 running item 前发生的退出重放 |

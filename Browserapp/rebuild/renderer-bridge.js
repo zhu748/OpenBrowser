@@ -3,6 +3,7 @@ import {
   yt as onScopeDispose,
 } from "./runtime-core.esm-bundler-CBj16o9G.js";
 import { createProfileLifecycleBridge } from './workbench-profile-lifecycle.js';
+import { invalidateProfileTableCache } from './workbench-table.js';
 // Vue reactive proxies cannot cross Electron structured-clone IPC. Copy the DTO explicitly.
 const plain = (value, seen = new WeakSet()) => {
   if (value === null || typeof value !== "object") {
@@ -20,7 +21,7 @@ const plain = (value, seen = new WeakSet()) => {
   seen.delete(value);
   return copy;
 };
-const request = (method, payload = {}) => {
+const request = async (method, payload = {}) => {
   if (!globalThis.rebuild) throw Error("请在 OpenBrowser 桌面程序中打开");
   globalThis.__localRequests?.push(method);
   return globalThis.rebuild.request(method, plain(payload)).then((result) => {
@@ -31,6 +32,8 @@ const request = (method, payload = {}) => {
     const error = new Error(detail.message || "Operation failed");
     if (detail.code !== undefined) error.code = detail.code;
     if (Array.isArray(detail.stale)) error.stale = detail.stale;
+    if (Number.isSafeInteger(detail.completed)) error.completed = detail.completed;
+    if (Array.isArray(detail.remainingIds)) error.remainingIds = detail.remainingIds;
     throw error;
   });
 };
@@ -97,7 +100,13 @@ globalThis.__loadLocalDictionary = async () => {
 globalThis.__localDict = new Proxy(dictionary, { get: (o, k) => o[k] ?? [] });
 const listeners = new Map();
 const emit = (channel, value) => {
-  for (const fn of listeners.get(channel) || []) fn(value);
+  const report = error => console.error("[OpenBrowser] renderer event listener failed:", channel, error);
+  for (const fn of [...(listeners.get(channel) || [])]) {
+    try {
+      const result = fn(value);
+      if (result?.then) Promise.resolve(result).catch(report);
+    } catch (error) { report(error); }
+  }
 };
 const profileLifecycle = createProfileLifecycleBridge({ emit, notify: message => globalThis.__localUiError?.(message) });
 globalThis.rebuild?.onEvent?.((event) => {
@@ -106,8 +115,10 @@ globalThis.rebuild?.onEvent?.((event) => {
     event.type === "profiles" ||
     (event.type === "status" && event.action === "profiles-update") ||
     (/^profile-(start|stop|sync)-progress$/.test(event.type) && event.lifecycle && !event.lifecycle.pending)
-  )
+  ) {
+    invalidateProfileTableCache();
     emit("local:profiles-change", event);
+  }
   if (event.channel) emit(event.channel, event.payload);
   if (event.channel === "local:navigate")
     globalThis.__router?.push(event.payload);
@@ -129,6 +140,13 @@ const batch = async (ids, restart = false) =>
       }
     }),
   );
+const closeBatch = async ids => {
+  const results = await Promise.allSettled(ids.map(id => request("profiles:stop", { id })));
+  const failed = results.filter(row => row.status === "rejected").length;
+  if (failed) globalThis.__localUiError?.(`${failed} 个窗口未能确认关闭，请检查状态后重试。`);
+  return results.map((result, index) => result.status === "fulfilled" ? result.value :
+    { id: ids[index], ok: false, error: result.reason.message, code: result.reason.code });
+};
 const proxyRow = (v) => ({
   ...v,
   proxyType: 0,
@@ -437,8 +455,10 @@ const sends = {
     return globalThis.__router.push("/browser/list");
   },
   "syncControl:start": async (ids) => {
+    const selected = Array.isArray(ids) ? [...new Set(ids.filter(id => typeof id === 'string' && id))] : [];
+    if (selected.length < 2) throw Error('请至少选择两个运行中的窗口');
     await request("sync:restore", await request("settings:get"));
-    const result = await globalThis.ops.startSync(plain(ids.filter(Boolean)));
+    const result = await globalThis.ops.startSync(plain(selected));
     await globalThis.__router.push("/synchronizer/active");
     return result;
   },
@@ -452,10 +472,10 @@ const sends = {
     return globalThis.ops.stopSync();
   },
   "syncControl:resume": async () => {
+    const { selected } = await globalThis.ops.getSyncState();
+    if (selected.length < 2) throw Error('请至少选择两个运行中的窗口');
     await request("sync:restore", await request("settings:get"));
-    return globalThis.ops.startSync(
-      (await globalThis.ops.getSyncState()).selected,
-    );
+    return globalThis.ops.startSync(selected);
   },
   "syncControl:getSyncWindowCount": async () => {
     const ids = (await globalThis.ops.getSyncState()).selected || [];
@@ -608,8 +628,7 @@ const sends = {
     return result;
   },
   "browser:batchRelaunch": (ids) => batch(ids, true),
-  "browser:batchClose": (ids) =>
-    Promise.all(ids.map((id) => request("profiles:stop", { id }))),
+  "browser:batchClose": closeBatch,
   "browser:isProcessExists": async (ids) => {
     const rows = await request("profiles:list");
     return ids.map((id) => !!rows.find((v) => v.id === String(id))?.openStatus);
@@ -641,7 +660,7 @@ globalThis.electronAPI = {
     if (probe) globalThis.__localSubscriptions.push(probe);
     const unsubscribe = () => {
       set.delete(callback);
-      if (!set.size) listeners.delete(channel);
+      if (!set.size && listeners.get(channel) === set) listeners.delete(channel);
       if (probe) probe.active = false;
     };
     if (currentScope()) onScopeDispose(unsubscribe);
@@ -665,6 +684,8 @@ const agentCall = (method, ...args) => {
     });
   if (method === "markConversationRead")
     return globalThis.__agentRequest(method, { id: args[0], runId: args[1] });
+  if (method === "scriptSelfDescription")
+    return globalThis.__agentRequest(method, { code: args[0], filename: args[1] });
   if (method === "uploadFile")
     return globalThis.__agentRequest(method, {
       data: args[0],
@@ -703,6 +724,12 @@ globalThis.__localAgentApi = new Proxy(
             get:
               (_, method) =>
               async (...args) => {
+                if (method === "uploadUserTemplateScript") {
+                  const file = args[0]?.file;
+                  if (!(file instanceof File) || file.size > 256 * 1024)
+                    throw Error("脚本不能超过 256 KiB");
+                  return globalThis.__agentRequest(key + "." + method, { filename: file.name, code: await file.text() });
+                }
                 if (method === "uploadUserTemplateSkill") {
                   const file = args[0]?.file;
                   if (!(file instanceof Blob) || file.size > 16 * 1024 * 1024)

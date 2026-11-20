@@ -5,8 +5,7 @@ const fs = require("node:fs"),
   path = require("node:path"),
   acorn = require("acorn"),
   walk = require("acorn-walk"),scope=require('eslint-scope'),globals=require('globals');
-const root =
-    process.env.REBUILD_OUTPUT || path.resolve(__dirname, "../../roxy-ui"),
+const root = path.resolve(process.env.REBUILD_OUTPUT || path.join(__dirname, "../../roxy-ui")),
   modules = new Map(),
   failures = [];
 const allowedGlobals=new Set([...Object.keys(globals.browser),...Object.keys(globals.es2025),'$t','$appVersion','isElectron','__vite__mapDeps','__VUE_OPTIONS_API__','__VUE_PROD_DEVTOOLS__','__VUE_PROD_HYDRATION_MISMATCH_DETAILS__','__INTLIFY_PROD_DEVTOOLS__','__INTLIFY_DROP_MESSAGE_COMPILER__','__VUE_I18N_FULL_INSTALL__','__VUE_I18N_LEGACY_API__','__SENTRY_DEBUG__']);
@@ -14,26 +13,32 @@ const allowedGlobals=new Set([...Object.keys(globals.browser),...Object.keys(glo
 // detection or a caught legacy polyfill assignment, never renderer Node access.
 const compatibility={
  'ScriptSchemaForm-z_48GvPJ.js':['global'],
+ 'workbench-jsonforms.js':['global'],
  'dist-NctnpPRe.js':['global'],
  'runtime-core.esm-bundler-CBj16o9G.js':['global'],
  'locales-BfKu2SD4.js':['global'],
+ 'workbench-vue-i18n.js':['global'],
  'exceljs.min-DfecxsXL.js':['global','define','Deno','Pebble','ActiveXObject','regeneratorRuntime','msCrypto'],
  'utils-BIWenCnY.js':['define'],
  'rolldown-runtime-BCiCTKAo.js':['require'],
 };
 const compatibilityReferences=[];
-for (const name of fs
-  .readdirSync(path.join(root, "assets"))
-  .filter((n) => n.endsWith(".js"))) {
-  const file = path.join(root, "assets", name),
-    code = fs.readFileSync(file, "utf8");
+const assetDirectories = [path.join(root, "assets")];
+const sourceFrontend = path.join(root, "source-frontend");
+if (fs.existsSync(sourceFrontend)) assetDirectories.push(sourceFrontend);
+const javascript = assetDirectories.flatMap(dir => fs.readdirSync(dir)
+  .filter(name => name.endsWith(".js")).map(name => path.join(dir, name)));
+for (const file of javascript) {
+  const name = path.basename(file), code = fs.readFileSync(file, "utf8");
   modules.set(file, {
     ast: acorn.parse(code, { ecmaVersion: "latest", sourceType: "module",ranges:true,locations:true }),
     exports: new Set(),
     stars: [],
     imports: [],
+    computedImports: [],
   });
   const ast=modules.get(file).ast,manager=scope.analyze(ast,{ecmaVersion:2024,sourceType:'module',optimistic:true,ignoreEval:true}),typeChecks=new Set();
+  modules.get(file).translates = manager.globalScope.through.some(reference => reference.identifier.name === '$t');
   walk.simple(ast,{UnaryExpression(node){if(node.operator==='typeof'&&node.argument.type==='Identifier')typeChecks.add(node.argument.start);}});
   for(const reference of manager.globalScope.through){const node=reference.identifier;if(allowedGlobals.has(node.name))continue;
    if(typeChecks.has(node.start)||compatibility[name]?.includes(node.name)){compatibilityReferences.push({file:name,name:node.name,line:node.loc.start.line,reason:typeChecks.has(node.start)?'typeof feature detection':'reviewed vendor compatibility branch'});continue;}
@@ -80,6 +85,9 @@ for (const [file, m] of modules) {
     ImportExpression(n) {
       if (n.source.type === "Literal")
         m.imports.push({ source: n.source.value, names: [] });
+      else if (n.source.type === "TemplateLiteral" && !n.source.expressions.length)
+        m.imports.push({ source: n.source.quasis[0].value.cooked, names: [] });
+      else m.computedImports.push(n.loc.start.line);
     },
   });
 }
@@ -115,6 +123,16 @@ for (const [file, m] of modules)
           error: "missing export",
         });
   }
+{
+  const { unclassifiedCopiedAssets, unclassifiedStylesheets } =
+    require("./workbench-source-provenance.cjs").writeSourceProvenance({ root, modules, resolve });
+  for (const file of unclassifiedCopiedAssets) {
+    failures.push({ file, error: "copied asset must have maintained source or be a reviewed dependency" });
+  }
+  for (const file of unclassifiedStylesheets) {
+    failures.push({ file, error: "stylesheet must have maintained source or be a reviewed dependency" });
+  }
+}
 const result = {
   status: failures.length ? "FAIL" : "PASS",
   modules: modules.size,

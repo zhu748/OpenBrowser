@@ -89,6 +89,7 @@ const repo = path.resolve(__dirname, "../..");
     observe(page);
     await page.setViewportSize({ width: 1280, height: 860 });
     await page.getByText("暂无窗口", { exact: true }).waitFor();
+    if (process.env.OPENBROWSER_TEST_KERNEL_BINARY) await page.evaluate(() => globalThis.ops.saveClientSettings({ diskLimit: 0 }));
     const ids = [];
     for (let i = 0; i < 2; i++) {
       const row = await page.evaluate(
@@ -429,6 +430,7 @@ const repo = path.resolve(__dirname, "../..");
     await app?.close();
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
+    await fs.rm(data, { recursive: true, force: true, maxRetries: 3 });
     await fs.writeFile(
       path.join(evidence, "sync-dialogs-ui-selftest.json"),
       JSON.stringify(result, null, 2),

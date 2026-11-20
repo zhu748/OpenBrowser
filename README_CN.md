@@ -77,7 +77,7 @@ OpenBrowser 是一款本地桌面指纹浏览器，用于管理多套互相隔�
 
 ## 快速开始
 
-需要 Node.js LTS 和 npm。
+需要 Node.js 22.13 或更新的 22.x 版本，也支持 Node.js 24 及以上版本。安装依赖使用 npm。
 
 ```bash
 cd Browserapp
@@ -194,12 +194,12 @@ OpenBrowser/
 └── README_CN.md           # 中文说明
 ```
 
-仓库只保留源码与文档，不使用 Git LFS，不跟踪浏览器二进制，也不在安装包内预装内核。普通 `git clone` 即可获取完整源码。首次使用时，程序会按需下载独立的官方 Chrome Stable 内核，也可选择用户自己的浏览器。下载的内核、Profile、Cookie、代理凭据均保留在本地，不进入 Git。
+普通 `git clone` 即可获取构建输入，包括源码、前端静态资源和用于历史对照的归档。首次使用时，程序会按需下载独立的官方 Chrome Stable 内核，也可选择用户自己的浏览器。浏览器内核、Profile、Cookie 和代理凭据保留在本地，不进入 Git。
 
 ## 数据与安全
 
-- 本地 API 默认只监听回环地址。
-- 设置 `OPENBROWSER_API_KEY` 后，请求必须携带 `api-key` 头。
+- 本地 API 默认只监听回环地址。受保护的请求始终需要 API 密钥，可通过 `api-key`、`x-api-key` 或 `Authorization: Bearer` 传递。未设置 `OPENBROWSER_API_KEY` 时，应用会读取或生成本地密钥。
+- 局域网访问开关会启用明文 HTTP。需要远程访问时，保持应用监听回环地址，并通过同机 HTTPS 反向代理访问。MCP 客户端可显式配置 HTTPS 地址及其密钥。 [配置说明](Browserapp/automation/README.md#通过-https-远程访问)
 - 浏览器启动失败会追加写入用户 OpenBrowser 数据目录下的本地 `browser-startup.log`。在 `Browserapp/` 执行 `npm run log:startup` 可直接读取；日志已被 Git 忽略。
 - 第三方组件声明见 [`THIRD-PARTY-NOTICES.md`](./Browserapp/THIRD-PARTY-NOTICES.md)。
 - 云备份集成只有在用户显式配置后才会主动联网。
@@ -207,7 +207,9 @@ OpenBrowser/
 - 应用内更新器从 `zhu748/OpenBrowser` 下载并核对安装包 SHA-256，同时验证 `SHA256SUMS.txt.sig` 的 Ed25519 签名。所有更新（包括历史版本）都必须通过签名和安装包哈希校验，缺失或失败时拒绝运行安装器，环境变量不能绕过验签。
 - 发布签名使用 GitHub 加密 Secret，仅在最终签名步骤暴露。旧版 1.0.0 请先手动覆盖安装本次重发版本，以接入新的签名公钥；后续签名更新使用新信任根。
 - RPA 计划、变量与执行结果也加密保存；旧 JSON 文件在成功读取后自动迁移。请通过应用导入/导出，避免直接编辑存储文件。
-- Agent 历史在下一次成功保存时迁移为加密索引及独立加密记录。备份时须保留整个 `local-agent/` 目录和原凭据密钥，不能只复制 `state.enc`。旧版本无法读取新格式；`state.legacy.enc` 只保留迁移时的历史，不包含后续更新。
+- Agent 历史使用加密索引及独立加密记录，长会话会在更新时分段存储。备份时保留整个 `local-agent/` 目录和原凭据密钥。生成分段历史后，需使用支持 V3 索引的版本读取。可恢复快照引用的附件会保留，未引用的附件至少保留七天后才可回收。在「Agent 设置」可查看附件占用并清理过期附件。
+- 永久删除环境时会先暂存同卷目录，再提交环境记录。重启会将未提交事务的目录复位，或者继续清理已提交删除的暂存数据。
+- 一次性和 Cron 任务启动前会保存本次计划记录。遇到进程中断时，已领取的任务会保留中断记录，由用户决定是否继续。
 - 平台账号池和窗口转移记录保存在主进程加密文件中；旧 localStorage 数据只在加密保存确认后清理。账号列表不预载密码和 2FA，显示或使用时按需读取。
 - 账号 CSV 支持引号、逗号、换行及公式前缀保护；应用导出的编码标记用于精确保留密码。CSV 和离线转移码本身仍是明文，导出凭据前会明确确认；需要加密迁移时使用云备份导出。
 - Cookie 机器人创建可查询、可取消的真实 RPA 任务。无头模式和不加载图片需要先停止环境；任务选项不改写已保存配置，自动关闭也覆盖失败路径。视频选项拦截常见视频资源 URL。
@@ -263,10 +265,12 @@ OpenBrowser/
 
 ## 独立重建前端
 
+在 `Browserapp` 运行 `npm start` 会先构建并启动默认工作台。`npm run start:source` 会启动独立的精简界面，供源码开发和验证使用。
+
 ```bash
 cd Browserapp
 npm ci
 npm run rebuild:ui
 ```
 
-必需构建输入及 SHA256 清单已随仓库保存，不需要外部 `/workspace/roxy-src` 或上传分卷。[构建说明与验证](docs/rebuild/BUILD-REPRODUCIBILITY.md)。
+默认构建使用维护中的源码、已登记的第三方运行库和静态资源。旧版完整前端可从 Git 历史提取，用于截图对照。[构建说明与验证](docs/rebuild/BUILD-REPRODUCIBILITY.md)

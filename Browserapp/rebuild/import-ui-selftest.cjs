@@ -1,13 +1,11 @@
 "use strict";
 const { evidenceDirectory } = require("./compiler/evidence-path.cjs");
 
-const { createTestDirectory } = require("./selftest-helpers.cjs");
+const { createTestDirectory, waitUntil } = require("./selftest-helpers.cjs");
 const { _electron: electron } = require("playwright"),
   fs = require("node:fs/promises"),
   path = require("node:path"),
-  assert = require("node:assert/strict"),
-  acorn = require("acorn"),
-  walk = require("acorn-walk");
+  assert = require("node:assert/strict");
 const repo = path.resolve(__dirname, "../..");
 (async () => {
   const data = await createTestDirectory('import-ui-'),
@@ -58,12 +56,27 @@ const repo = path.resolve(__dirname, "../..");
         result.externalRequests.push(request.url());
     });
     await page.getByText("暂无窗口", { exact: true }).waitFor();
+    const coreVersion = await page.evaluate(async () =>
+      (await globalThis.electronAPI.send("app:getCoreList")).find((core) => core.coreType === "Chrome")?.coreVersion,
+    );
+    assert.ok(coreVersion, "Set OPENBROWSER_TEST_KERNEL_BINARY to an independent Chrome kernel");
+
+    const unavailable = path.join(data, "unavailable.txt");
+    await fs.writeFile(unavailable, "windowName=内核缺失回归\nos=Linux\ncoreType=Chrome\ncoreVersion=9999\n");
+    await importPage();
+    await upload(unavailable);
+    await page.getByText("1 个窗口已成功导入", { exact: true }).waitFor();
+    await create();
+    await page.getByText(/未安装所选的 Chrome 9999 内核/).waitFor();
+    await page.waitForFunction(() => !document.querySelector('.rx-main-content button[aria-label="创建窗口"]').disabled);
+    assert.equal((await page.evaluate(() => globalThis.ops.profileStatus())).length, 0);
+    result.checks.push("缺少指定内核时显示确切版本，结束等待并允许重新选择文件，未写入窗口");
+
     const txt = path.join(data, "profiles.txt");
     await fs.writeFile(
       txt,
-      'windowName=TXT 导入一\nos=Linux\ncoreType=Chrome\ncoreVersion=157\nproxyCategory=HTTP\nproxyInfo=127.0.0.1:8080:import-user:import-pass\nwindowPlatformList=["https://example.com:local:account-secret"]\ndefaultOpenUrl=["https://example.com"]\ncookie=[{"name":"from-txt","value":"txt-cookie","domain":"example.com"}]\n\n##########\n\nwindowName=TXT 导入二\nos=Windows\ncoreType=Chrome\ndefaultOpenUrl=["about:blank"]\n\n##########\n',
+      `windowName=TXT 导入一\nos=Linux\ncoreType=Chrome\ncoreVersion=${coreVersion}\nproxyCategory=HTTP\nproxyInfo=127.0.0.1:8080:import-user:import-pass\nwindowPlatformList=["https://example.com:local:account-secret"]\ndefaultOpenUrl=["https://example.com"]\ncookie=[{"name":"from-txt","value":"txt-cookie","domain":"example.com"}]\n\n##########\n\nwindowName=TXT 导入二\nos=Windows\ncoreType=Chrome\ndefaultOpenUrl=["about:blank"]\n\n##########\n`,
     );
-    await importPage();
     await upload(txt);
     await page.getByText("2 个窗口已成功导入", { exact: true }).waitFor();
     assert.equal(
@@ -87,62 +100,45 @@ const repo = path.resolve(__dirname, "../..");
     assert.ok(profile.cookies.includes("txt-cookie"));
     assert.equal(profile.platform.accounts[0].password, "account-secret");
     assert.ok(profile.proxy.includes("import-user:import-pass"));
-    assert.equal(profile.engineVersion, "157");
+    assert.equal(profile.engineVersion, coreVersion);
     result.checks.push(
       "原窗口导入页解析真实 TXT（含结尾分隔符），分析不创建数据；点击创建后两条记录、代理认证、账号与 Cookie 写入原后端",
     );
-    const code = await fs.readFile(
-        path.join(repo, "Browserapp/roxy-ui/assets/utils-CnUy4XUk.js"),
-        "utf8",
-      ),
-      keys = [];
-    walk.simple(
-      acorn.parse(code, { sourceType: "module", ecmaVersion: "latest" }),
-      {
-        FunctionDeclaration(node) {
-          if (node.id.name !== "p") return;
-          walk.simple(node.body, {
-            ObjectExpression(row) {
-              const key = row.properties.find(
-                (property) => property.key?.name === "key",
-              );
-              if (key) {
-                const value =
-                  key.value.value ?? key.value.quasis?.[0]?.value.cooked;
-                if (typeof value === "string") keys.push(value);
-              }
-            },
-          });
-        },
-      },
-    );
-    assert.ok(keys.includes("coreType") && keys.includes("windowName"));
-    const bytes = await page.evaluate(async (keys) => {
+    await importPage();
+    const templatePath = path.join(data, "downloaded-template.xlsx");
+    await app.evaluate(({ session }, target) => {
+      session.defaultSession.once("will-download", (_event, item) => {
+        item.setSavePath(target);
+        item.once("done", (_event, state) => { globalThis.__templateDownloadState = state; });
+      });
+    }, templatePath);
+    await page.getByText("窗口导入模板", { exact: true }).click();
+    await page.getByText("excel 模板", { exact: true }).click();
+    await waitUntil(() => app.evaluate(() => globalThis.__templateDownloadState));
+    assert.equal(await app.evaluate(() => globalThis.__templateDownloadState), "completed");
+    const template = Array.from(await fs.readFile(templatePath));
+    const bytes = await page.evaluate(async ({ template, coreVersion }) => {
       const excel = (await import("/assets/exceljs.min-DfecxsXL.js")).t();
-      const book = new excel.Workbook(),
-        sheet = book.addWorksheet("profiles");
-      sheet.addRow(keys);
-      sheet.getRow(2).getCell(1).value = "说明";
-      sheet.getRow(3).getCell(1).value = "举例";
-      sheet.getRow(4).getCell(1).value = "说明";
-      const row = {
-        windowName: "XLSX 导入三",
-        os: "Linux",
-        coreType: "Chrome",
-        coreVersion: "157",
-        proxyCategory: "",
-        windowPlatformList: '["https://example.org:xlsx-user:xlsx-secret"]',
-        defaultOpenUrl: '["https://example.org"]',
-        cookie:
-          '[{"name":"from-xlsx","value":"xlsx-cookie","domain":"example.org"}]',
-        windowRemark: "Excel 原解析器",
+      const book = new excel.Workbook();
+      await book.xlsx.load(new Uint8Array(template));
+      const sheet = book.getWorksheet(1);
+      const headings = sheet.getRow(1).values.slice(1);
+      if (!headings.includes("浏览器内核") || !headings.includes("窗口名称")) throw Error("Workbook is missing required headers");
+      const cells = {
+        窗口名称: "XLSX 导入三",
+        操作系统: "Linux",
+        浏览器内核: "Chrome",
+        内核版本: coreVersion,
+        平台账号: '["https://example.org:xlsx-user:xlsx-secret"]',
+        "自定义打开 URL": '["https://example.org"]',
+        Cookie: '[{"name":"from-xlsx","value":"xlsx-cookie","domain":"example.org"}]',
+        窗口备注: "工作台导出的工作簿",
       };
-      sheet.addRow(keys.map((key) => row[key] ?? ""));
+      sheet.addRow(headings.map(header => cells[header] ?? ""));
       return Array.from(new Uint8Array(await book.xlsx.writeBuffer()));
-    }, keys);
+    }, { template, coreVersion });
     const xlsx = path.join(data, "profiles.xlsx");
     await fs.writeFile(xlsx, Buffer.from(bytes));
-    await importPage();
     await upload(xlsx);
     await page.getByText("1 个窗口已成功导入", { exact: true }).waitFor();
     await create();
@@ -153,14 +149,18 @@ const repo = path.resolve(__dirname, "../..");
     );
     await page.screenshot({ path: path.join(evidence, "import-created.png") });
     result.checks.push(
-      "原 ExcelJS 与原列顺序生成 .xlsx 夹具，原上传/解析/创建流程真实新增第三条窗口；原生文件选择只固定测试返回路径",
+      "点击导出 XLSX 模板，在实际下载的工作簿中填入一条记录，上传后经原窗口创建流程新增第三条窗口",
     );
     const invalid = path.join(data, "invalid.txt");
     await fs.writeFile(
       invalid,
       'windowName=禁止写入\nos=Linux\nwindowPlatformList={"bad":true}',
     );
+    const oldPreview = path.join(data, "obsolete-preview.txt");
+    await fs.writeFile(oldPreview, `windowName=已替换的预览\nos=Linux\ncoreType=Chrome\ncoreVersion=${coreVersion}\n`);
     await importPage();
+    await upload(oldPreview);
+    await page.getByText("1 个窗口已成功导入", { exact: true }).waitFor();
     await upload(invalid);
     await page
       .getByText("平台账号 必须是 JSON 数组", { exact: true })
@@ -170,8 +170,13 @@ const repo = path.resolve(__dirname, "../..");
       3,
     );
     await page.screenshot({ path: path.join(evidence, "import-invalid.png") });
+    assert.equal(await page.getByText("obsolete-preview.txt", { exact: true }).count(), 0);
+    await page.locator(".rx-alert-close").click();
+    await create();
+    await page.getByText("请选择要导入的文件。", { exact: true }).waitFor();
+    assert.equal((await page.evaluate(() => globalThis.ops.profileStatus())).length, 3);
     result.checks.push(
-      "非法平台账号 JSON 显示原页面错误区，不转成空账号、不新增窗口、不遗留等待状态",
+      "用无效文件替换已预览文件时显示校验错误并清除旧预览，关闭提示后也无法提交旧文件",
     );
     assert.deepEqual(result.errors, []);
     assert.deepEqual(result.externalRequests, []);

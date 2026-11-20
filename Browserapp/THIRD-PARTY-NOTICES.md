@@ -54,6 +54,22 @@ does not establish a new license for the original assets.
 The compiler inputs are excluded from installers. The generated `roxy-ui/`
 assets are packaged, so provenance must cover the retained generated material.
 
+## Vue.js
+
+The window templates page bundles the npm Vue.js runtime under the MIT license.
+Its exact version is locked in `package-lock.json`, and its license ships at
+`roxy-ui/source-frontend/VUE-LICENSE.txt`.
+
+## Fuse.js
+
+The workbench uses Fuse.js 7.4.1 for local search in form controls. The MIT
+license ships with the npm dependency at `node_modules/fuse.js/LICENSE`.
+
+## XLSX import XML parsing
+
+The local XLSX import uses Saxes (ISC) and XMLChars (MIT). Their license files
+ship with the production npm dependencies. Versions are locked in `package-lock.json`.
+
 ## Browser kernels
 
 Browser kernels are downloaded at runtime and are neither Git LFS objects in
@@ -80,6 +96,14 @@ component notices are included as `runtime/LICENSES.chromium.html`.
 - Usage: build-time only
 
 `rcedit` is used only while building the Windows portable package to set the project icon and version metadata. It is not loaded by the application at runtime.
+
+## Installer asset provenance
+
+| Installer paths | Evidence to record before redistribution |
+| --- | --- |
+| `roxy-ui/` | Supplier, revision and license for the retained precompiled scripts, styles, images and fonts. The build input hashes are recorded in `rebuild/compiler/source-manifest.json`. |
+| `assets/font-subsets/` and `assets/fonts/` | Upstream family, exact source and applicable redistribution terms for each shipped font. The development directory `assets/fonts/_preview/` is excluded. |
+| `native-*.cs` and Windows helper executables | Upstream revision, adapted files and applicable license per helper. Preserve the source corresponding to each Windows executable. |
 
 ## Acorn
 

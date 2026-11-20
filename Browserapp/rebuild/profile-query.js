@@ -25,6 +25,10 @@ function queryProfiles(service, p = {}) {
       : String(v ?? "")
           .split(",")
           .filter(Boolean);
+  if (p.dirIds) {
+    const selected = new Set(values(p.dirIds));
+    rows = rows.filter(row => selected.has(String(row.source.id)));
+  }
   const query = String(p.queryValue || "").toLowerCase();
   if (query && p.queryKey) {
     const key = {

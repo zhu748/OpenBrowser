@@ -13,6 +13,20 @@ const {waitUntil}=require('./selftest-helpers.cjs'),repo=path.resolve(__dirname,
   app=await electron.launch({executablePath:require('electron'),args:[...(process.platform==='linux'?['--no-sandbox','--ozone-platform=headless','--disable-gpu']:[]),path.join(repo,'Browserapp')],env:{...process.env,OPENBROWSER_USER_DATA:data,OPENBROWSER_API_PORT:'0'}});page=await app.firstWindow();page.setDefaultTimeout(15000);await page.setViewportSize({width:1448,height:1050});page.on('pageerror',error=>result.errors.push(error.message));page.on('console',message=>{if(message.type()==='error')result.errors.push(message.text());});page.on('request',request=>{if(/^https?:|^wss?:/.test(request.url()))result.externalRequests.push(request.url());});await page.getByText('暂无窗口',{exact:true}).waitFor();
   await page.evaluate(baseUrl=>globalThis.__agentRequest('config:set',{provider:'openai',baseUrl,model:'fixture'}),'http://127.0.0.1:'+server.address().port);
   page=await openWorkspacePage(app,'/agent-console');
+  const names = await page.evaluate(async () => {
+    const { approvalActionTitles } = await import('/assets/workbench-approval-resource-names.js');
+    const actions = ['legacy-catalog-slug', '/local/scripts/fixture.ts', 'user:1']
+      .map(scriptPath => ({ name: 'roxy_script_run', args: { scriptPath } }));
+    let remoteLookups = 0;
+    const titles = await approvalActionTitles(actions, {
+      workspaceName: 'OpenBrowser', locale: 'zh-CN',
+      userTemplates: { getUserTemplate: async () => ({ data: { name: '本地脚本模板' } }) },
+      officialScripts: { getOfficialScript: async () => { remoteLookups++; throw Error('Remote catalog is disabled'); } },
+    });
+    return { titles, remoteLookups };
+  });
+  assert.deepEqual(names, { titles: ['运行脚本 legacy-catalog-slug', '运行脚本 fixture.ts', '运行脚本 本地脚本模板'], remoteLookups: 0 });
+  result.checks.push('脚本授权卡显示历史标识、文件名和本地模板名，历史标识不请求官方目录');
   const start=async message=>{const c=await page.evaluate(()=>globalThis.__agentRequest('createConversation'));await page.evaluate(id=>globalThis.__router.push('/agent-console/c/'+id),c.id);const editor=page.locator('[contenteditable="true"]').first();await editor.waitFor();const full=page.getByRole('button',{name:'完全访问权限',exact:true});if(await full.count()){await full.first().click();await page.locator('.approval-option:visible').filter({hasText:'请求批准'}).click();}await editor.fill(message);await editor.press('Enter');await page.locator('.hitl-card').waitFor();return c;};
   let c=await start('ONE');assert.equal((await page.evaluate(()=>globalThis.__localRequest('profiles:list'))).length,0);assert.equal(requests.length,1);await page.screenshot({path:path.join(evidence,'agent-approval-pending.png')});
   await page.reload();await page.locator('.conversation-item').filter({hasText:'ONE'}).click();await page.locator('.hitl-card').waitFor();assert.equal(requests.length,1);assert.equal((await page.evaluate(()=>globalThis.__localRequest('profiles:list'))).length,0);

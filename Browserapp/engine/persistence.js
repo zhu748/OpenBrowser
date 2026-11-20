@@ -39,9 +39,12 @@ module.exports = {
         else this.sqliteStore.saveProfiles(profiles);
       };
     } else {
-      const payload = JSON.stringify(this._engineStateSnapshot(), null, 2);
-      write = () => writeJsonAtomically(this.stateFile, payload);
+      write = () => writeJsonAtomically(this.stateFile, JSON.stringify(this._engineStateSnapshot(), null, 2));
     }
+    return this._queuePersist(write);
+  },
+
+  _queuePersist(write) {
     // Retain a healthy serialization lane for retries, and a strict result
     // for explicit flushes, including callers of _persistNow() itself.
     const previous = this._persistQueue || Promise.resolve();
@@ -49,6 +52,52 @@ module.exports = {
     this._lastPersistWrite = queued;
     this._persistQueue = queued.catch(() => {});
     return queued;
+  },
+
+  async _persistProfileTrashState(ids, trashed) {
+    if (!ids.some((id) => this.profiles.has(id))) return [];
+    // Settle edits that were already published before the lifecycle guard was acquired.
+    await this._persistWriter?.flushNow();
+    return this._queuePersist(async () => {
+      const now = new Date().toISOString();
+      const changed = new Map();
+      for (const id of ids) {
+        const profile = this.profiles.get(id);
+        if (profile) changed.set(id, { ...profile, trashed, trashedAt: trashed ? now : null });
+      }
+      if (!changed.size) return [];
+      if (this.usingSqlite && this.sqliteStore) {
+        this.sqliteStore.saveProfilesDiffed([...changed.values()]);
+      } else {
+        const snapshot = this._engineStateSnapshot();
+        snapshot.profiles = snapshot.profiles.map((profile) => changed.get(profile.id) || profile);
+        await writeJsonAtomically(this.stateFile, JSON.stringify(snapshot, null, 2));
+      }
+      for (const [id, profile] of changed) this.profiles.set(id, profile);
+      this.invalidateStatusCache?.();
+      return [...changed.keys()];
+    });
+  },
+
+  async _persistProfileDeletion(ids) {
+    const removed = new Set(ids);
+    await this._queuePersist(async () => {
+      if (this.usingSqlite && this.sqliteStore) {
+        // The SQLite transaction deletes both profiles and their assignments.
+        this.sqliteStore.deleteProfiles(ids, { durable: true });
+      } else {
+        const snapshot = this._engineStateSnapshot();
+        snapshot.profiles = snapshot.profiles.filter(profile => !removed.has(profile.id));
+        for (const id of ids) delete snapshot.assignments[id];
+        await writeJsonAtomically(this.stateFile, JSON.stringify(snapshot, null, 2));
+      }
+      for (const id of ids) {
+        this.profiles.delete(id);
+        this.assignments.delete(id);
+        this.networkInfo.delete(id);
+      }
+      this.invalidateStatusCache?.();
+    });
   },
 
   async flushPersistence() {

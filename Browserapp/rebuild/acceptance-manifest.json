@@ -2,6 +2,8 @@
   "electron-smoke.cjs",
   "circled-ui-selftest.cjs",
   "management-ui-selftest.cjs",
+  "templates-ui-selftest.cjs",
+  "source-workbench-ui-selftest.cjs",
   "agent-selftest.cjs",
   "agent-ui-selftest.cjs",
   "agent-browser-selftest.cjs",

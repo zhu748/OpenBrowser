@@ -432,7 +432,7 @@ class BrowserEngine {
   setProfileDataRoot(value) {
     const raw = String(value || '').trim();
     if (!raw) throw new Error('Environment data directory is required');
-    if (this.running.size || this.starting.size || this.stopping.size || this.profileMaintenance?.size) {
+    if (this.running.size || this.starting.size || this.stopping.size || this.profileMaintenance?.size || this.deletingProfiles.size) {
       throw new Error('Stop all browser environments before changing the data directory');
     }
     const check = validateDataRootIsolationSecure(raw);

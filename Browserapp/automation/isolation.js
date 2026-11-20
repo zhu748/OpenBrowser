@@ -266,8 +266,8 @@ async function acquireProfileLock(profileRoot, meta = {}) {
   for (;;) {
     let handle;
     try {
-      // wx is the actual inter-process exclusion. Unlike the old directory
-      // protocol, there is no empty guard window that can deadlock a profile.
+      // wx is the inter-process exclusion. The file exists before ownership
+      // is written, so a recent empty file still excludes another opener.
       handle = await fsp.open(file, 'wx', 0o600);
     } catch (error) {
       if (error?.code !== 'EEXIST') throw error;
@@ -277,16 +277,22 @@ async function acquireProfileLock(profileRoot, meta = {}) {
       const mtimeMs = stat ? stat.mtimeMs : 0;
       const isFileFromPriorBoot = mtimeMs > 0 && mtimeMs < (systemBootTimeMs - 5000);
 
-      let existing;
-      let rawContent = '';
+      let rawContent;
       try {
         rawContent = await fsp.readFile(file, 'utf8');
+      } catch (readError) {
+        if (readError?.code === 'ENOENT') continue;
+        throw readError;
+      }
+      let existing;
+      try {
         existing = JSON.parse(rawContent);
       } catch (_) {
-        if (isFileFromPriorBoot || (mtimeMs > 0 && Date.now() - mtimeMs > UNKNOWN_STARTUP_LOCK_RECOVERY_MS) || !rawContent.trim()) {
+        if (isFileFromPriorBoot || (mtimeMs > 0 && Date.now() - mtimeMs > UNKNOWN_STARTUP_LOCK_RECOVERY_MS)) {
           await fsp.rm(file, { force: true }).catch(() => {});
           continue;
         }
+        if (!rawContent.trim()) throw lockOwnerError('PROFILE_LOCKED', 'Profile startup lock is being written');
         throw lockOwnerError('PROFILE_LOCK_UNRECOVERABLE', 'Profile lock is malformed and cannot be recovered');
       }
 

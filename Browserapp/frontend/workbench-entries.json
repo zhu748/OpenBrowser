@@ -1,0 +1,1481 @@
+{
+  "assets/bootstrap.js": "frontend/src/workbench/bootstrap.mjs",
+  "assets/routes.js": "frontend/src/workbench/routes.mjs",
+  "assets/layout-C916OUcf.js": "frontend/src/workbench/layout.mjs",
+  "assets/create-Bs68oonD.js": "frontend/src/workbench/proxy-create.mjs",
+  "assets/local-api.js": "rebuild/renderer-bridge.js",
+  "assets/local-pages.js": "rebuild/local-pages.js",
+  "assets/agent-channel.js": "rebuild/agent-channel.js",
+  "assets/agent-task-history.js": "rebuild/agent-task-history.mjs",
+  "assets/agent-conversation-cache.js": "rebuild/agent-conversation-cache.mjs",
+  "assets/workbench-chrome.js": "rebuild/workbench-chrome.js",
+  "assets/workbench-usage.js": "rebuild/workbench-usage.mjs",
+  "assets/workbench-network.js": "rebuild/workbench-network.mjs",
+  "assets/workbench-notifications.js": "rebuild/workbench-notifications.mjs",
+  "assets/workbench-profile-lifecycle.js": "rebuild/workbench-profile-lifecycle.mjs",
+  "assets/workbench-fingerprint-draft.js": "rebuild/workbench-fingerprint-draft.mjs",
+  "assets/workbench-navigation.js": "rebuild/workbench-navigation.mjs",
+  "assets/workbench-dialog-tabs.js": "frontend/src/workbench/dialog-tabs.mjs",
+  "assets/workbench-api-settings.js": "rebuild/workbench-api-settings.mjs",
+  "assets/workbench-table.js": "rebuild/workbench-table.mjs",
+  "assets/kernels-route.js": "rebuild/kernels-route.js",
+  "assets/templates-route.js": "rebuild/templates-route.js",
+  "assets/source-page-route.js": "rebuild/source-page-route.js",
+  "assets/management-routes.js": "rebuild/management-routes.mjs",
+  "assets/list-ByevuXQD.js": {
+    "source": "frontend/src/workbench/profiles/ProfilesWorkbench.vue",
+    "scopeId": "bf94cffb"
+  },
+  "assets/renewal-reminder-drawer-C9_4HaAB.js": "frontend/src/workbench/profiles/profile-table-entry.mjs",
+  "assets/workbench-profile-table.js": {
+    "source": "frontend/src/workbench/profiles/ProfileTable.vue",
+    "scopeId": "c7206253"
+  },
+  "assets/workbench-profile-table-state.js": "frontend/src/workbench/profiles/use-profile-table.mjs",
+  "assets/workbench-profile-recycle.js": {
+    "source": "frontend/src/workbench/profiles/RecycleBin.vue",
+    "scopeId": "641d312d"
+  },
+  "assets/create-HSjma60V.js": {
+    "source": "frontend/src/workbench/profiles/CreateProfile.vue",
+    "scopeId": "12c289c8"
+  },
+  "assets/workbench-profile-create-single.js": {
+    "source": "frontend/src/workbench/profiles/CreateSingle.vue",
+    "scopeId": "80df20fe"
+  },
+  "assets/workbench-profile-create-batch.js": {
+    "source": "frontend/src/workbench/profiles/CreateBatch.vue",
+    "scopeId": "e8821cb5"
+  },
+  "assets/workbench-profile-create-file.js": {
+    "source": "frontend/src/workbench/profiles/CreateFromFile.vue",
+    "scopeId": "1f1aed2c"
+  },
+  "assets/workbench-profile-import-file.js": {
+    "source": "frontend/src/workbench/profiles/ProfileImportFile.vue",
+    "scopeId": "54c87b08"
+  },
+  "assets/edit-IaDdchpD.js": {
+    "source": "frontend/src/workbench/profiles/EditProfile.vue",
+    "scopeId": "261a7b66"
+  },
+  "assets/projects-CN6_vL2j.js": {
+    "source": "frontend/src/workbench/projects/ProjectsWorkbench.vue",
+    "scopeId": "6527e252"
+  },
+  "assets/project-item-Dd4vT7Wq.js": {
+    "source": "frontend/src/workbench/projects/ProjectProfiles.vue",
+    "scopeId": "1275f50e"
+  },
+  "assets/agent-CYnwl_KT.js": {
+    "source": "frontend/src/workbench/proxies/ProxyRoute.vue"
+  },
+  "assets/shop-v2DtsxR2.js": {
+    "source": "frontend/src/workbench/proxies/ProxyWorkbench.vue",
+    "scopeId": "74570167"
+  },
+  "assets/list-CkXy4JN3.js": {
+    "source": "frontend/src/workbench/accounts/AccountsWorkbench.vue",
+    "scopeId": "8ad5ed8a"
+  },
+  "assets/workbench-account-export.js": {
+    "source": "frontend/src/workbench/accounts/ExportAccounts.vue",
+    "scopeId": "51de0ca6"
+  },
+  "assets/create-QG0MnZuH.js": {
+    "source": "frontend/src/workbench/accounts/AddAccount.vue"
+  },
+  "assets/workbench-account-batch.js": {
+    "source": "frontend/src/workbench/accounts/BatchAccounts.vue",
+    "scopeId": "b2abcec5"
+  },
+  "assets/workbench-account-import.js": {
+    "source": "frontend/src/workbench/accounts/ImportAccounts.vue",
+    "scopeId": "d5818ccc"
+  },
+  "assets/extensions-DkcE60nw.js": {
+    "source": "frontend/src/workbench/extensions/ExtensionsWorkbench.vue"
+  },
+  "assets/api-keys-qLZdcspG.js": {
+    "source": "frontend/src/workbench/api/ApiWorkbench.vue",
+    "scopeId": "3c7b5f8a"
+  },
+  "assets/workbench-mcp-code.js": {
+    "source": "frontend/src/workbench/api/McpCode.vue"
+  },
+  "assets/workbench-number-fields.js": {
+    "source": "frontend/src/workbench/api/NumberFields.vue",
+    "scopeId": "9e4edfbf"
+  },
+  "assets/AgentSettingsRoute-BB9ba93X.js": {
+    "source": "frontend/src/workbench/agent/McpServers.vue",
+    "scopeId": "5f4340fe"
+  },
+  "assets/workbench-agent-chat-route.js": {
+    "source": "frontend/src/workbench/agent/AgentChat.vue",
+    "scopeId": "dacbb61d"
+  },
+  "assets/workbench-agent-entry.js": {
+    "source": "frontend/src/workbench/agent/AgentEntry.vue",
+    "scopeId": "e391a3dd"
+  },
+  "assets/workbench-agent-shell.js": {
+    "source": "frontend/src/workbench/agent/AgentShell.vue",
+    "scopeId": "0bb55c34"
+  },
+  "assets/workbench-agent-shell-state.js": "frontend/src/workbench/agent/use-agent-shell.mjs",
+  "assets/workbench-chat-workspace.js": {
+    "source": "frontend/src/workbench/agent/ChatWorkspace.vue",
+    "scopeId": "40ca6d1d"
+  },
+  "assets/workbench-chat-contract.js": "frontend/src/workbench/agent/chat-route-contract.mjs",
+  "assets/workbench-chat-state.js": "frontend/src/workbench/agent/use-chat-workspace.mjs",
+  "assets/workbench-chat-message-list.js": {
+    "source": "frontend/src/workbench/agent/ChatMessageList.vue",
+    "scopeId": "ce4627f2"
+  },
+  "assets/workbench-chat-message.js": {
+    "source": "frontend/src/workbench/agent/ChatMessage.vue",
+    "scopeId": "bcdb277e"
+  },
+  "assets/workbench-chat-message-state.js": "frontend/src/workbench/agent/use-message-list.mjs",
+  "assets/workbench-chat-composer.js": {
+    "source": "frontend/src/workbench/agent/ChatComposer.vue",
+    "scopeId": "3c26844e"
+  },
+  "assets/workbench-chat-composer-state.js": "frontend/src/workbench/agent/use-chat-composer.mjs",
+  "assets/workbench-agent-navigation.js": {
+    "source": "frontend/src/workbench/agent/AgentNavigation.vue",
+    "scopeId": "f21bd12f"
+  },
+  "assets/workbench-agent-conversation-list.js": {
+    "source": "frontend/src/workbench/agent/ConversationList.vue",
+    "scopeId": "45a8424b"
+  },
+  "assets/workbench-agent-sidebar-footer.js": {
+    "source": "frontend/src/workbench/agent/SidebarFooter.vue",
+    "scopeId": "acbf514d"
+  },
+  "assets/workbench-agent-templates-link.js": {
+    "source": "frontend/src/workbench/agent/MyTemplatesLink.vue",
+    "scopeId": "a0b5c48f"
+  },
+  "assets/workbench-agent-sidebar.js": {
+    "source": "frontend/src/workbench/agent/AgentSidebar.vue",
+    "scopeId": "50ab874f"
+  },
+  "assets/workbench-agent-rename-conversation.js": {
+    "source": "frontend/src/workbench/agent/RenameConversation.vue",
+    "scopeId": "f48bd423"
+  },
+  "assets/workbench-agent-delete-confirmation.js": {
+    "source": "frontend/src/workbench/agent/DeleteConfirmation.vue",
+    "scopeId": "8f762b61"
+  },
+  "assets/workbench-agent-process-timeline.js": {
+    "source": "frontend/src/workbench/agent/ProcessTimeline.vue",
+    "scopeId": "551e6311"
+  },
+  "assets/workbench-agent-status-message.js": {
+    "source": "frontend/src/workbench/agent/StatusMessage.vue",
+    "scopeId": "bf8d5650"
+  },
+  "assets/workbench-agent-copy-notification.js": {
+    "source": "frontend/src/workbench/agent/CopyNotification.vue",
+    "scopeId": "d8dd93db"
+  },
+  "assets/workbench-agent-template-dialog.js": {
+    "source": "frontend/src/workbench/agent/TemplateDialog.vue",
+    "scopeId": "c679433c"
+  },
+  "assets/workbench-agent-template-dialog-state.js": "frontend/src/workbench/agent/use-template-dialog.mjs",
+  "assets/TaskManagerRoute-iC4ANt4w.js": {
+    "source": "frontend/src/workbench/agent/TaskManager.vue",
+    "scopeId": "14465712"
+  },
+  "assets/workbench-task-manager-state.js": "frontend/src/workbench/agent/use-task-manager.mjs",
+  "assets/workbench-task-schedule.js": {
+    "source": "frontend/src/workbench/agent/TaskSchedule.vue",
+    "scopeId": "4bb630b0"
+  },
+  "assets/workbench-task-table-skeleton.js": {
+    "source": "frontend/src/workbench/agent/TaskTableSkeleton.vue",
+    "scopeId": "49b94fec"
+  },
+  "assets/workbench-task-log-drawer.js": {
+    "source": "frontend/src/workbench/agent/TaskLogDrawer.vue",
+    "scopeId": "c06f0b3c"
+  },
+  "assets/MyTemplatesRoute-Eq3HlS6M.js": {
+    "source": "frontend/src/workbench/agent/MyTemplates.vue",
+    "scopeId": "ce3300e3"
+  },
+  "assets/workbench-my-template-card.js": {
+    "source": "frontend/src/workbench/agent/MyTemplateCard.vue",
+    "scopeId": "41089d73"
+  },
+  "assets/workbench-my-template-skeleton.js": {
+    "source": "frontend/src/workbench/agent/MyTemplateSkeleton.vue",
+    "scopeId": "61d848fd"
+  },
+  "assets/TemplateStoreRoute-vzcUC0bD.js": {
+    "source": "frontend/src/workbench/agent/TemplateStore.vue",
+    "scopeId": "f28a0d2f"
+  },
+  "assets/workbench-store-template-card.js": {
+    "source": "frontend/src/workbench/agent/StoreTemplateCard.vue",
+    "scopeId": "6c926f68"
+  },
+  "assets/workbench-store-template-skeleton.js": {
+    "source": "frontend/src/workbench/agent/StoreTemplateSkeleton.vue",
+    "scopeId": "c953c65c"
+  },
+  "assets/workbench-store-filter-skeleton.js": {
+    "source": "frontend/src/workbench/agent/StoreFilterSkeleton.vue",
+    "scopeId": "abeeb535"
+  },
+  "assets/synchronizer-mUJbzl7S.js": {
+    "source": "frontend/src/workbench/sync/Synchronizer.vue",
+    "scopeId": "d8a4773f"
+  },
+  "assets/window-list-C-MAmr_C.js": {
+    "source": "frontend/src/workbench/sync/SyncWindowTable.vue",
+    "scopeId": "6736473a"
+  },
+  "assets/sync-window-selection.js": "frontend/src/workbench/sync-window-selection.mjs",
+  "assets/sync-action-state.js": "frontend/src/workbench/sync-action-state.mjs",
+  "assets/action-bar-50RAQCsf.js": {
+    "source": "frontend/src/workbench/sync/SyncActionBar.vue",
+    "scopeId": "fe4e5a5c"
+  },
+  "assets/preferences--734d_2_.js": {
+    "source": "frontend/src/workbench/sync/SyncPreferences.vue"
+  },
+  "assets/sync-preferences-base.js": {
+    "source": "frontend/src/workbench/sync/BaseSettings.vue",
+    "scopeId": "704c2d0e"
+  },
+  "assets/sync-preferences-simulation.js": {
+    "source": "frontend/src/workbench/sync/SimulationSettings.vue",
+    "scopeId": "3de51465"
+  },
+  "assets/sync-preferences-shortcuts.js": {
+    "source": "frontend/src/workbench/sync/ShortcutSettings.vue",
+    "scopeId": "5b537c4c"
+  },
+  "assets/custom-layout-C32t9VHy.js": {
+    "source": "frontend/src/workbench/sync/CustomLayout.vue",
+    "scopeId": "ed2619d1"
+  },
+  "assets/batch-inputs-B_HNTlr8.js": {
+    "source": "frontend/src/workbench/sync/BatchInputs.vue",
+    "scopeId": "8b8b3f9e"
+  },
+  "assets/sync-same-text.js": {
+    "source": "frontend/src/workbench/sync/SameText.vue"
+  },
+  "assets/sync-different-text.js": {
+    "source": "frontend/src/workbench/sync/DifferentText.vue",
+    "scopeId": "bd8c7b9a"
+  },
+  "assets/sync-random-text.js": {
+    "source": "frontend/src/workbench/sync/RandomText.vue",
+    "scopeId": "75610312"
+  },
+  "assets/open-sites-BUgaXFNX.js": {
+    "source": "frontend/src/workbench/sync/OpenSites.vue",
+    "scopeId": "e8a70b10"
+  },
+  "assets/syncing-window-list-g5VmUz_T.js": {
+    "source": "frontend/src/workbench/sync/SyncingWindows.vue"
+  },
+  "images/openbrowser.png": "assets/logo-pixel.png",
+  "assets/workbench-vue.js": "frontend/src/workbench/runtime.mjs",
+  "assets/extension-labels.js": "frontend/src/workbench/extensions/labels.mjs",
+  "assets/installed-extensions.js": {
+    "source": "frontend/src/workbench/extensions/InstalledExtensions.vue",
+    "scopeId": "871f865f"
+  },
+  "assets/upload-extension.js": {
+    "source": "frontend/src/workbench/extensions/UploadExtension.vue",
+    "scopeId": "10e70494"
+  },
+  "assets/assign-extension.js": {
+    "source": "frontend/src/workbench/extensions/AssignExtension.vue",
+    "scopeId": "b6b19e28"
+  },
+  "assets/extension-inspection.js": {
+    "source": "frontend/src/workbench/extensions/ExtensionInspection.vue",
+    "scopeId": "a8922f30"
+  },
+  "assets/chrome-extension-help.js": {
+    "source": "frontend/src/workbench/extensions/ChromeExtensionHelp.vue",
+    "scopeId": "e80b049b"
+  },
+  "assets/sync-header.js": {
+    "source": "frontend/src/workbench/sync/SyncHeader.vue",
+    "scopeId": "ce4adc08"
+  },
+  "assets/extensions-DPs3zrq9.css": "frontend/src/workbench/styles/extensions.css",
+  "assets/window-list-DVlbVHdg.css": "frontend/src/workbench/styles/sync-window-table.css",
+  "assets/synchronizer-Dvr2NSvU.css": "frontend/src/workbench/styles/synchronizer.css",
+  "assets/action-bar-wpLLnkNt.css": "frontend/src/workbench/styles/sync-action-bar.css",
+  "assets/batch-inputs-D36ClwFU.css": "frontend/src/workbench/styles/sync-batch-inputs.css",
+  "assets/open-sites-BB547REz.css": "frontend/src/workbench/styles/sync-open-sites.css",
+  "assets/preferences-CL1kBob1.css": "frontend/src/workbench/styles/sync-preferences.css",
+  "assets/syncing-window-list-DGi17PrZ.css": "frontend/src/workbench/styles/syncing-window-list.css",
+  "assets/custom-layout-D-VgojT8.css": "frontend/src/workbench/styles/sync-custom-layout.css",
+  "assets/projects-Dwta7dxA.css": "frontend/src/workbench/styles/projects.css",
+  "assets/project-item-BpIQQ6YI.css": "frontend/src/workbench/styles/project-profiles.css",
+  "assets/shop-BE0O8dxy.css": "frontend/src/workbench/styles/proxy-list.css",
+  "assets/api-keys-Cvp15bpU.css": "frontend/src/workbench/styles/api-mcp.css",
+  "assets/create-DfI1h-Tp.css": "frontend/src/workbench/styles/account-create.css",
+  "assets/list-BOHYnQBX.css": "frontend/src/workbench/styles/account-list.css",
+  "assets/create-Cg-Dpis0.css": "frontend/src/workbench/styles/profile-create.css",
+  "assets/edit-5ET1McHt.css": "frontend/src/workbench/styles/profile-edit.css",
+  "assets/TaskManagerRoute-BnImHb6A.css": "frontend/src/workbench/styles/task-manager.css",
+  "assets/MyTemplatesRoute-ZviMCbe7.css": "frontend/src/workbench/styles/my-templates.css",
+  "assets/TemplateStoreRoute-D5eVLN2a.css": "frontend/src/workbench/styles/template-store.css",
+  "assets/AgentSettingsRoute-CjUsolZT.css": "frontend/src/workbench/styles/agent-mcp.css",
+  "assets/hook-fIhtIW1P.css": "frontend/src/workbench/styles/agent-console.css",
+  "assets/CreateTemplateDialog-fkmAdJVO.css": "frontend/src/workbench/styles/agent-composer.css",
+  "assets/list-BP9D8vHT.css": "frontend/src/workbench/styles/profile-list.css",
+  "assets/layout-CsWw6Q6g.css": "frontend/src/workbench/styles/workbench-layout.css",
+  "assets/workbench-profile-form.js": {
+    "source": "frontend/src/workbench/profiles/fields/ProfileForm.vue",
+    "scopeId": "0bfa514c"
+  },
+  "assets/workbench-profile-field-list.js": {
+    "source": "frontend/src/workbench/profiles/fields/FieldList.vue",
+    "scopeId": "fa71a3b7"
+  },
+  "assets/workbench-profile-user-agent-field.js": {
+    "source": "frontend/src/workbench/profiles/fields/UserAgent.vue",
+    "scopeId": "0d737e8d"
+  },
+  "assets/workbench-profile-window-fields.js": {
+    "source": "frontend/src/workbench/profiles/fields/WindowFields.vue",
+    "scopeId": "db7e1133"
+  },
+  "assets/workbench-agent-collapse.js": {
+    "source": "frontend/src/workbench/agent/process/Collapse.vue",
+    "scopeId": "cec3b461"
+  },
+  "assets/workbench-agent-script-log.js": {
+    "source": "frontend/src/workbench/agent/process/ScriptLog.vue",
+    "scopeId": "a27ba244"
+  },
+  "assets/workbench-agent-web-search-label.js": {
+    "source": "frontend/src/workbench/agent/process/WebSearchLabel.vue",
+    "scopeId": "92f0c6e7"
+  },
+  "assets/workbench-agent-process-event-list.js": {
+    "source": "frontend/src/workbench/agent/process/EventList.vue",
+    "scopeId": "0873d802"
+  },
+  "assets/workbench-agent-process-event-row.js": {
+    "source": "frontend/src/workbench/agent/process/EventRow.vue",
+    "scopeId": "0873d802"
+  },
+  "assets/workbench-agent-lifecycle-tree.js": {
+    "source": "frontend/src/workbench/agent/process/LifecycleTree.vue",
+    "scopeId": "ef4d61aa"
+  },
+  "assets/workbench-agent-task-report.js": {
+    "source": "frontend/src/workbench/agent/process/TaskReport.vue",
+    "scopeId": "69cc1cf5"
+  },
+  "assets/workbench-agent-process-event-state.js": "frontend/src/workbench/agent/process/use-event-list.mjs",
+  "assets/workbench-agent-report-markdown.js": "frontend/src/workbench/agent/process/report-markdown.mjs",
+  "assets/workbench-profile-basics.js": {
+    "source": "frontend/src/workbench/profiles/fields/ProfileBasics.vue",
+    "scopeId": "4e0b1f5d"
+  },
+  "assets/workbench-profile-local-network.js": {
+    "source": "frontend/src/workbench/profiles/fields/LocalNetwork.vue"
+  },
+  "assets/workbench-profile-proxy-section.js": {
+    "source": "frontend/src/workbench/profiles/fields/ProxySection.vue",
+    "scopeId": "b9ec4a5a"
+  },
+  "assets/workbench-profile-linked-accounts.js": {
+    "source": "frontend/src/workbench/profiles/fields/LinkedAccounts.vue",
+    "scopeId": "aaedf38f"
+  },
+  "assets/workbench-profile-fingerprint-overview.js": {
+    "source": "frontend/src/workbench/profiles/fields/FingerprintOverview.vue",
+    "scopeId": "0fba030b"
+  },
+  "assets/createDefaultAccordions-CO1KkbkO.js": "frontend/src/workbench/profiles/profile-panels.mjs",
+  "assets/workbench-profile-input-item.js": {
+    "source": "frontend/src/workbench/profiles/fields/InputItem.vue",
+    "scopeId": "7648fa6c"
+  },
+  "assets/workbench-profile-multi-select.js": {
+    "source": "frontend/src/workbench/profiles/fields/MultiSelect.vue",
+    "scopeId": "6e8801f8"
+  },
+  "assets/workbench-profile-password-field.js": {
+    "source": "frontend/src/workbench/profiles/fields/PasswordField.vue",
+    "scopeId": "a999f5dc"
+  },
+  "assets/workbench-profile-window-position.js": {
+    "source": "frontend/src/workbench/profiles/fields/WindowPosition.vue",
+    "scopeId": "3c340f6d"
+  },
+  "assets/workbench-profile-cookies.js": {
+    "source": "frontend/src/workbench/profiles/fields/Cookies.vue"
+  },
+  "assets/workbench-profile-urls.js": {
+    "source": "frontend/src/workbench/profiles/fields/Urls.vue"
+  },
+  "assets/workbench-profile-account-assignments.js": {
+    "source": "frontend/src/workbench/profiles/fields/AccountAssignments.vue",
+    "scopeId": "08a8bdac"
+  },
+  "assets/workbench-profile-proxy-assignments.js": {
+    "source": "frontend/src/workbench/profiles/fields/ProxyAssignments.vue",
+    "scopeId": "bc5de22c"
+  },
+  "assets/useAsyncGate-D7VA7DLY.js": "frontend/src/workbench/profiles/form-context.mjs",
+  "assets/useAsyncGate-DZHPAmL8.css": "frontend/src/workbench/styles/profile-fields.css",
+  "assets/createDefaultAccordions-C8TxFuLo.css": "frontend/src/workbench/styles/profile-basics.css",
+  "assets/workbench-prompt-editor.js": "frontend/src/workbench/agent/use-prompt-editor.mjs",
+  "assets/workbench-prompt-editor-support.js": "frontend/src/workbench/agent/prompt-editor-support.mjs",
+  "assets/workbench-agent-template-picker.js": {
+    "source": "frontend/src/workbench/agent/composer/TemplatePicker.vue",
+    "scopeId": "9a701847"
+  },
+  "assets/workbench-agent-window-picker.js": {
+    "source": "frontend/src/workbench/agent/composer/WindowPicker.vue",
+    "scopeId": "f791c7c6"
+  },
+  "assets/workbench-agent-suggestions.js": {
+    "source": "frontend/src/workbench/agent/composer/Suggestions.vue",
+    "scopeId": "692f55fe"
+  },
+  "assets/workbench-agent-prompt-queue.js": {
+    "source": "frontend/src/workbench/agent/composer/QueuedPrompts.vue",
+    "scopeId": "6e007863"
+  },
+  "assets/workbench-agent-composer-toolbar.js": {
+    "source": "frontend/src/workbench/agent/composer/Toolbar.vue",
+    "scopeId": "7b6abaac"
+  },
+  "assets/workbench-agent-file-card.js": {
+    "source": "frontend/src/workbench/agent/composer/FileCard.vue",
+    "scopeId": "27a023fe"
+  },
+  "assets/workbench-agent-markdown.js": {
+    "source": "frontend/src/workbench/agent/composer/Markdown.vue",
+    "scopeId": "f4aaa54a"
+  },
+  "assets/workbench-agent-overflow-tooltip.js": {
+    "source": "frontend/src/workbench/agent/composer/OverflowTooltip.vue",
+    "scopeId": "4d0d1f58"
+  },
+  "assets/workbench-agent-template-skeleton.js": {
+    "source": "frontend/src/workbench/agent/composer/TemplateSkeleton.vue",
+    "scopeId": "05ffb12e"
+  },
+  "assets/workbench-agent-upload-script.js": {
+    "source": "frontend/src/workbench/agent/composer/UploadScript.vue",
+    "scopeId": "ae2d2318"
+  },
+  "assets/workbench-agent-file-icons.js": "frontend/src/workbench/agent/composer/file-icons.mjs",
+  "assets/workbench-profile-metadata.js": {
+    "source": "frontend/src/workbench/profiles/fields/ProfileMetadata.vue",
+    "scopeId": "13c71cae"
+  },
+  "assets/mate-group-CBm6kY0g.js": "frontend/src/workbench/profiles/profile-metadata-entry.mjs",
+  "assets/workbench-agent-brand.js": {
+    "source": "frontend/src/workbench/agent/shell/Brand.vue",
+    "scopeId": "e677c5ff"
+  },
+  "assets/workbench-agent-home-card-skeleton.js": {
+    "source": "frontend/src/workbench/agent/shell/HomeCardSkeleton.vue",
+    "scopeId": "a0db8e58"
+  },
+  "assets/workbench-agent-window-guide.js": {
+    "source": "frontend/src/workbench/agent/shell/WindowGuide.vue",
+    "scopeId": "a320a8c2"
+  },
+  "assets/workbench-agent-monitor.js": {
+    "source": "frontend/src/workbench/agent/shell/Monitor.vue",
+    "scopeId": "7206001f"
+  },
+  "assets/workbench-agent-task-group.js": {
+    "source": "frontend/src/workbench/agent/shell/TaskGroup.vue",
+    "scopeId": "620958b3"
+  },
+  "assets/workbench-agent-copy-button.js": {
+    "source": "frontend/src/workbench/agent/composer/CopyButton.vue",
+    "scopeId": "83965306"
+  },
+  "assets/form-inputs-CnnG6T0O.js": "frontend/src/workbench/profiles/profile-inputs.mjs",
+  "assets/workbench-profile-proxy-inputs.js": "frontend/src/workbench/profiles/profile-proxy-inputs.mjs",
+  "assets/useWindowCreateCore-01alf0RN.js": "frontend/src/workbench/profiles/use-window-create.mjs",
+  "assets/AgentConsolePageLayout-CwKh-Fcw.js": "frontend/src/workbench/agent/shell/console-layout-entry.mjs",
+  "assets/workbench-profile-monitor-context.js": "frontend/src/workbench/agent/shell/profile-monitor-context.mjs",
+  "assets/workbench-agent-tooltip.js": {
+    "source": "frontend/src/workbench/agent/shell/AgentTooltip.vue",
+    "scopeId": "793874f8"
+  },
+  "assets/workbench-profile-monitor-toggle.js": {
+    "source": "frontend/src/workbench/agent/shell/ProfileMonitorToggle.vue",
+    "scopeId": "ad326f0a"
+  },
+  "assets/workbench-agent-console-layout.js": {
+    "source": "frontend/src/workbench/agent/shell/AgentConsolePageLayout.vue",
+    "scopeId": "61bd18fd"
+  },
+  "assets/workbench-shadow-dot-grid.js": {
+    "source": "frontend/src/workbench/shared/ShadowDotGrid.vue"
+  },
+  "assets/workbench-parse-textarea.js": {
+    "source": "frontend/src/workbench/shared/ParseTextarea.vue",
+    "scopeId": "cadffbdf"
+  },
+  "assets/parse-textarea-Dia3ayaD.js": "frontend/src/workbench/shared/parse-textarea-entry.mjs",
+  "assets/workbench-agent-form-field.js": {
+    "source": "frontend/src/workbench/agent/fields/FormField.vue",
+    "scopeId": "87792535"
+  },
+  "assets/workbench-agent-select.js": {
+    "source": "frontend/src/workbench/agent/fields/Select.vue",
+    "scopeId": "e0ce96a7"
+  },
+  "assets/workbench-agent-button.js": {
+    "source": "frontend/src/workbench/agent/fields/Button.vue",
+    "scopeId": "8463baf4"
+  },
+  "assets/workbench-agent-checkbox.js": {
+    "source": "frontend/src/workbench/agent/fields/Checkbox.vue",
+    "scopeId": "15d88f09"
+  },
+  "assets/workbench-agent-badge.js": {
+    "source": "frontend/src/workbench/agent/fields/Badge.vue",
+    "scopeId": "07e3df1c"
+  },
+  "assets/workbench-agent-schema-form.js": {
+    "source": "frontend/src/workbench/agent/fields/SchemaForm.vue",
+    "scopeId": "2de6b2e7"
+  },
+  "assets/workbench-agent-schema-renderers.js": "frontend/src/workbench/agent/fields/schema-renderers.mjs",
+  "assets/workbench-menu-selection-item.js": {
+    "source": "frontend/src/workbench/shared/MenuSelectionItem.vue"
+  },
+  "assets/workbench-popup-menu.js": {
+    "source": "frontend/src/workbench/shared/PopupMenu.vue"
+  },
+  "assets/usePopupMenu-BRw1zJ0m.js": "frontend/src/workbench/shared/use-popup-menu.mjs",
+  "assets/AgentConsolePageLayout-BB5HEnzR.css": "frontend/src/workbench/styles/agent-page-layout.css",
+  "assets/ScriptSchemaForm-qvVM2mCo.css": "frontend/src/workbench/styles/agent-fields.css",
+  "assets/usePopupMenu-Cq8y3Jng.css": "frontend/src/workbench/styles/popup-menu.css",
+  "assets/profile-info-ExiJC1su.js": "frontend/src/workbench/profiles/row/profile-row.mjs",
+  "assets/workbench-profile-info.js": {
+    "source": "frontend/src/workbench/profiles/row/ProfileInfo.vue",
+    "scopeId": "f8d88522"
+  },
+  "assets/workbench-profile-activity-line.js": {
+    "source": "frontend/src/workbench/profiles/row/BrowserWaveLine.vue"
+  },
+  "assets/workbench-profile-account-tooltip.js": {
+    "source": "frontend/src/workbench/profiles/row/ProfileAccountTooltip.vue",
+    "scopeId": "233bbaf5"
+  },
+  "assets/workbench-profile-wave-noise.js": "frontend/src/workbench/profiles/row/wave-noise.mjs",
+  "assets/workbench-profile-account-editor.js": {
+    "source": "frontend/src/workbench/profiles/row/ProfileAccountEditor.vue",
+    "scopeId": "2c17b2b3"
+  },
+  "assets/workbench-profile-proxy-picker.js": {
+    "source": "frontend/src/workbench/profiles/row/ProfileProxyPicker.vue"
+  },
+  "assets/operationHandlers-Db52Gyo7.js": "frontend/src/workbench/profiles/operations/profile-operations.mjs",
+  "assets/workbench-clear-profile-cache.js": {
+    "source": "frontend/src/workbench/profiles/operations/ClearProfileCache.vue",
+    "scopeId": "c30b136e"
+  },
+  "assets/workbench-export-profiles.js": {
+    "source": "frontend/src/workbench/profiles/operations/ExportProfiles.vue",
+    "scopeId": "46023371"
+  },
+  "assets/workbench-profile-cookie-editor.js": {
+    "source": "frontend/src/workbench/profiles/operations/ProfileCookieEditor.vue"
+  },
+  "assets/workbench-profile-cookie-robot.js": {
+    "source": "frontend/src/workbench/profiles/operations/ProfileCookieRobot.vue",
+    "scopeId": "a1dc008d"
+  },
+  "assets/choose-panel-CC3iR_nA.js": "frontend/src/workbench/proxy-fields/proxy-fields-entry.mjs",
+  "assets/workbench-custom-proxy.js": {
+    "source": "frontend/src/workbench/proxy-fields/CustomProxy.vue"
+  },
+  "assets/workbench-choose-proxy.js": {
+    "source": "frontend/src/workbench/proxy-fields/ChooseProxy.vue",
+    "scopeId": "1f4dc7bb"
+  },
+  "assets/workbench-preview-card.js": {
+    "source": "frontend/src/workbench/proxy-fields/PreviewCard.vue",
+    "scopeId": "4de31cf8"
+  },
+  "assets/rx-form-A3sc3aGh.js": "frontend/src/workbench/shared/schema/schema-entry.mjs",
+  "assets/workbench-schema-form.js": {
+    "source": "frontend/src/workbench/shared/schema/SchemaForm.vue",
+    "scopeId": "96295b02"
+  },
+  "assets/workbench-validated-form.js": {
+    "source": "frontend/src/workbench/shared/inputs/WorkbenchForm.vue"
+  },
+  "assets/workbench-schema-field.js": {
+    "source": "frontend/src/workbench/shared/schema/SchemaField.vue",
+    "scopeId": "a310c92e"
+  },
+  "assets/workbench-schema-radio.js": {
+    "source": "frontend/src/workbench/shared/schema/SchemaRadio.vue"
+  },
+  "assets/workbench-schema-form-state.js": "frontend/src/workbench/shared/schema/schema-form-state.mjs",
+  "assets/workbench-clone-field-schema.js": "frontend/src/workbench/shared/schema/clone-schema.mjs",
+  "assets/profile-info-BwzXFTHP.css": "frontend/src/workbench/styles/profile-row.css",
+  "assets/operationHandlers-BwbO1zkI.css": "frontend/src/workbench/styles/profile-operations.css",
+  "assets/choose-panel-1gHc8b5C.css": "frontend/src/workbench/styles/proxy-fields.css",
+  "assets/rx-form-8ueeQ5jW.css": "frontend/src/workbench/styles/schema-form.css",
+  "assets/single-proxies-C7CAMkyq.js": "frontend/src/workbench/proxy-fields/single-proxy-entry.mjs",
+  "assets/workbench-single-proxy.js": {
+    "source": "frontend/src/workbench/proxy-fields/SingleProxyEditor.vue",
+    "scopeId": "62671e31"
+  },
+  "assets/workbench-drawer.js": {
+    "source": "frontend/src/workbench/shared/WorkbenchDrawer.vue"
+  },
+  "assets/workbench-advanced-search.js": {
+    "source": "frontend/src/workbench/shared/AdvancedSearch.vue",
+    "scopeId": "3ea763a6"
+  },
+  "assets/workbench-related-profiles.js": {
+    "source": "frontend/src/workbench/shared/RelatedProfilesCell.vue",
+    "scopeId": "9ef9934f"
+  },
+  "assets/batch-proxies-wPSH-NmI.js": "frontend/src/workbench/proxy-fields/batch-proxy-entry.mjs",
+  "assets/workbench-batch-proxy.js": {
+    "source": "frontend/src/workbench/proxy-fields/BatchProxyEditor.vue",
+    "scopeId": "9c732010"
+  },
+  "assets/workbench-proxy-import-help.js": {
+    "source": "frontend/src/workbench/proxy-fields/ProxyImportHelp.vue"
+  },
+  "assets/single-proxies-DVuXx18A.css": "frontend/src/workbench/styles/proxy-single.css",
+  "assets/batch-proxies-BH-IfBu1.css": "frontend/src/workbench/styles/proxy-batch.css",
+  "assets/useProxyFormDrawer-BPGQiaTr.css": "frontend/src/workbench/styles/proxy-drawer.css",
+  "assets/ry-table-do6kugym.js": "frontend/src/workbench/shared/tables/browser-table-entry.mjs",
+  "assets/workbench-browser-table.js": {
+    "source": "frontend/src/workbench/shared/tables/BrowserDataTable.vue",
+    "scopeId": "6bcccfc5"
+  },
+  "assets/workbench-browser-table-state.js": "frontend/src/workbench/shared/tables/use-browser-table.mjs",
+  "assets/workbench-table-actions.js": "frontend/src/workbench/shared/tables/table-actions.mjs",
+  "assets/workbench-row-actions.js": {
+    "source": "frontend/src/workbench/shared/tables/RowActions.vue",
+    "scopeId": "1c6fd86b"
+  },
+  "assets/workbench-selection-toolbar.js": {
+    "source": "frontend/src/workbench/shared/tables/SelectionToolbar.vue",
+    "scopeId": "5c752966"
+  },
+  "assets/workbench-column-settings.js": {
+    "source": "frontend/src/workbench/shared/tables/ColumnSettings.vue"
+  },
+  "assets/workbench-table-filters.js": {
+    "source": "frontend/src/workbench/shared/tables/TableFilters.vue",
+    "scopeId": "040e0086"
+  },
+  "assets/workbench-table-refresh.js": {
+    "source": "frontend/src/workbench/shared/tables/TableRefresh.vue"
+  },
+  "assets/workbench-table-date-range.js": {
+    "source": "frontend/src/workbench/shared/tables/TableDateRange.vue"
+  },
+  "assets/workbench-table-context-menu.js": {
+    "source": "frontend/src/workbench/shared/tables/TableContextMenu.vue"
+  },
+  "assets/workbench-table-context.js": "frontend/src/workbench/shared/tables/use-table-context-menu.mjs",
+  "assets/table-BJcS2I0Z.js": "frontend/src/workbench/shared/tables/compact-table-entry.mjs",
+  "assets/workbench-compact-data-table.js": {
+    "source": "frontend/src/workbench/shared/tables/CompactDataTable.vue"
+  },
+  "assets/workbench-compact-table-columns.js": {
+    "source": "frontend/src/workbench/shared/tables/CompactTableColumns.vue"
+  },
+  "assets/workbench-compact-table-filters.js": {
+    "source": "frontend/src/workbench/shared/tables/CompactTableFilters.vue"
+  },
+  "assets/workbench-compact-row-actions.js": {
+    "source": "frontend/src/workbench/shared/tables/CompactRowActions.vue"
+  },
+  "assets/workbench-compact-selection-bar.js": {
+    "source": "frontend/src/workbench/shared/tables/CompactSelectionBar.vue",
+    "scopeId": "6d43d0fd"
+  },
+  "assets/workbench-compact-table-state.js": "frontend/src/workbench/shared/tables/use-compact-table.mjs",
+  "assets/ry-table-DiuLwd6c.css": "frontend/src/workbench/shared/tables/browser-data-table.css",
+  "assets/table-DZCQ_6gS.css": "frontend/src/workbench/shared/tables/compact-data-table.css",
+  "assets/useQuickCreate-DgAf1jWE.js": "frontend/src/workbench/profiles/quick-create-entry.mjs",
+  "assets/workbench-profile-name.js": {
+    "source": "frontend/src/workbench/profiles/EditableProfileName.vue",
+    "scopeId": "570a9730"
+  },
+  "assets/workbench-quick-create-editor.js": {
+    "source": "frontend/src/workbench/profiles/QuickCreateEditor.vue",
+    "scopeId": "72ae8440"
+  },
+  "assets/workbench-profile-table-options.js": "frontend/src/workbench/profiles/profile-table-options.mjs",
+  "assets/workbench-quick-create-state.js": "frontend/src/workbench/profiles/use-quick-create.mjs",
+  "assets/useQuickCreate-DhhS5uCl.css": "frontend/src/workbench/profiles/quick-create.css",
+  "assets/profile-table-compat.js": "frontend/src/workbench/profiles/profile-table-runtime.mjs",
+  "assets/workbench-browser-open-control.js": {
+    "source": "frontend/src/workbench/profiles/BrowserOpenControl.vue",
+    "scopeId": "05079936"
+  },
+  "assets/workbench-kernel-upgrade-dialog.js": {
+    "source": "frontend/src/workbench/profiles/KernelUpgradeDialog.vue"
+  },
+  "assets/workbench-profile-launch-guide.js": "frontend/src/workbench/profiles/use-profile-launch-guide.mjs",
+  "assets/workbench-profile-kernel-upgrade.js": "frontend/src/workbench/profiles/use-profile-kernel-upgrade.mjs",
+  "assets/identity-verification-entry-B8EzLOCj.js": "frontend/src/workbench/workbench-header-entry.mjs",
+  "assets/workbench-desktop-download.js": {
+    "source": "frontend/src/workbench/WorkbenchDesktopDownload.vue"
+  },
+  "assets/workbench-notifications-popover.js": {
+    "source": "frontend/src/workbench/WorkbenchNotifications.vue"
+  },
+  "assets/workbench-updates-popover.js": {
+    "source": "frontend/src/workbench/WorkbenchUpdates.vue",
+    "scopeId": "433cf647"
+  },
+  "assets/workbench-sidebar-links.js": {
+    "source": "frontend/src/workbench/SidebarLinks.vue",
+    "scopeId": "e4514f78"
+  },
+  "assets/workbench-sidebar-menu-item.js": {
+    "source": "frontend/src/workbench/SidebarMenuItem.vue",
+    "scopeId": "10078f4d"
+  },
+  "assets/workbench-reload-button.js": {
+    "source": "frontend/src/workbench/WorkbenchReloadButton.vue"
+  },
+  "assets/workbench-client-update-panel.js": {
+    "source": "frontend/src/workbench/ClientUpdatePanel.vue",
+    "scopeId": "b4f2eae3"
+  },
+  "assets/workbench-kernel-update-panel.js": {
+    "source": "frontend/src/workbench/KernelUpdatePanel.vue",
+    "scopeId": "34fd05f6"
+  },
+  "assets/workbench-kernel-chrome.png": "frontend/src/workbench/assets/kernel-chrome.png",
+  "assets/workbench-kernel-firefox.png": "frontend/src/workbench/assets/kernel-firefox.png",
+  "assets/identity-verification-entry-DCy7p-uC.css": "frontend/src/workbench/styles/header-popovers.css",
+  "assets/m-input-date-picker-CPwsZFnI.js": {
+    "source": "frontend/src/workbench/shared/inputs/DateInput.vue",
+    "scopeId": "94cc9581",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/m-input-multi-select-B7lX5Cnm.js": {
+    "source": "frontend/src/workbench/shared/inputs/MultiSelectInput.vue",
+    "scopeId": "894de770",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/m-input-number-BOH1hUUB.js": {
+    "source": "frontend/src/workbench/shared/inputs/NumberInput.vue",
+    "scopeId": "2e7a5d71",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/m-input-password-IOnajQ90.js": {
+    "source": "frontend/src/workbench/shared/inputs/PasswordInput.vue",
+    "scopeId": "61a53dc8",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/m-input-text-JVbCgVJP.js": {
+    "source": "frontend/src/workbench/shared/inputs/TextInput.vue",
+    "scopeId": "49860b4c",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/m-input-textarea-33WQDaSq.js": {
+    "source": "frontend/src/workbench/shared/inputs/TextareaInput.vue",
+    "scopeId": "902bcf16",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/rx-toggle-switch-BI8eb18U.js": {
+    "source": "frontend/src/workbench/shared/inputs/SwitchInput.vue",
+    "scopeId": "c7ccdfac",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/rx-checkbox-BrC0MzoD.js": {
+    "source": "frontend/src/workbench/shared/inputs/CheckboxInput.vue",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/rx-input-radio-BGeLgzak.js": {
+    "source": "frontend/src/workbench/shared/inputs/LabeledRadioGroup.vue",
+    "scopeId": "5d1621c6",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/rx-input-text-CytLc5Og.js": {
+    "source": "frontend/src/workbench/shared/inputs/IconTextInput.vue",
+    "scopeId": "123bcdfb",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/rx-input-textarea-BWwP6OaO.js": {
+    "source": "frontend/src/workbench/shared/inputs/IconTextareaInput.vue",
+    "scopeId": "ea4d3990",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/rx-divider-Ci3C58Q3.js": {
+    "source": "frontend/src/workbench/shared/WorkbenchDivider.vue",
+    "scopeId": "8e072500",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/base-dialog-Bet1oNF8.js": {
+    "source": "frontend/src/workbench/shared/WorkbenchWindowDialog.vue",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/table-paginator-DmCNA2td.js": {
+    "source": "frontend/src/workbench/shared/tables/TablePaginator.vue",
+    "scopeId": "6eeceda2",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/views-header-CcjwXPjG.js": {
+    "source": "frontend/src/workbench/shared/ViewHeader.vue",
+    "scopeId": "f2b7568e",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/rx-alert-A_y5uvgP.js": {
+    "source": "frontend/src/workbench/shared/WorkbenchAlert.vue",
+    "scopeId": "a84c3e94",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/rx-avatar-h90aIpxl.js": {
+    "source": "frontend/src/workbench/shared/WorkbenchAvatar.vue",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/m-input-date-picker-ke8g680r.css": "frontend/src/workbench/shared/inputs/DateInput.css",
+  "assets/m-input-multi-select-19Urjt-l.css": "frontend/src/workbench/shared/inputs/MultiSelectInput.css",
+  "assets/m-input-number-B7bCpOnR.css": "frontend/src/workbench/shared/inputs/NumberInput.css",
+  "assets/m-input-password-C_yRbo7w.css": "frontend/src/workbench/shared/inputs/PasswordInput.css",
+  "assets/m-input-text-BVOqevAm.css": "frontend/src/workbench/shared/inputs/TextInput.css",
+  "assets/m-input-textarea-8SbMbgiL.css": "frontend/src/workbench/shared/inputs/TextareaInput.css",
+  "assets/rx-toggle-switch-KeqpJ47d.css": "frontend/src/workbench/shared/inputs/SwitchInput.css",
+  "assets/rx-input-radio-CFxXLK4J.css": "frontend/src/workbench/shared/inputs/LabeledRadioGroup.css",
+  "assets/rx-input-text-DJi2f0JE.css": "frontend/src/workbench/shared/inputs/IconTextInput.css",
+  "assets/rx-input-textarea-BMYXQh5C.css": "frontend/src/workbench/shared/inputs/IconTextareaInput.css",
+  "assets/rx-divider-B4AJqJ6z.css": "frontend/src/workbench/shared/WorkbenchDivider.css",
+  "assets/base-dialog-CVdM7Cnu.css": "frontend/src/workbench/shared/WorkbenchWindowDialog.css",
+  "assets/table-paginator-Ba3PyMmU.css": "frontend/src/workbench/shared/tables/TablePaginator.css",
+  "assets/views-header-CcpbJZgp.css": "frontend/src/workbench/shared/ViewHeader.css",
+  "assets/rx-alert-nkzOZ-l5.css": "frontend/src/workbench/shared/WorkbenchAlert.css",
+  "assets/rx-avatar-DZO-TuNb.css": "frontend/src/workbench/shared/WorkbenchAvatar.css",
+  "assets/form-BQBA_XzO.js": "frontend/src/workbench/shared/inputs/form-entry.mjs",
+  "assets/workbench-form-providers.js": "frontend/src/workbench/shared/inputs/form-providers.mjs",
+  "assets/workbench-form-radio.js": {
+    "source": "frontend/src/workbench/shared/inputs/FormRadioInput.vue",
+    "scopeId": "a970bffb"
+  },
+  "assets/workbench-cascade-input.js": {
+    "source": "frontend/src/workbench/shared/inputs/CascadeSelectInput.vue",
+    "scopeId": "1a38cccd"
+  },
+  "assets/workbench-form-label.js": {
+    "source": "frontend/src/workbench/shared/inputs/FieldLabel.vue",
+    "scopeId": "133e8c3c"
+  },
+  "assets/workbench-custom-form-field.js": {
+    "source": "frontend/src/workbench/shared/inputs/CustomFormField.vue"
+  },
+  "assets/workbench-form-field.js": {
+    "source": "frontend/src/workbench/shared/inputs/WorkbenchFormField.vue"
+  },
+  "assets/workbench-form-item.js": {
+    "source": "frontend/src/workbench/shared/inputs/WorkbenchFormItem.vue",
+    "scopeId": "35309b81"
+  },
+  "assets/workbench-fuse.js": "node_modules/fuse.js/dist/fuse.mjs",
+  "assets/form-C9FJViln.css": "frontend/src/workbench/shared/inputs/WorkbenchForm.css",
+  "assets/m-input-select-C8pih1gY.js": "frontend/src/workbench/shared/inputs/select-entry.mjs",
+  "assets/workbench-select-input.js": {
+    "source": "frontend/src/workbench/shared/inputs/SelectInput.vue",
+    "scopeId": "b5fc224b"
+  },
+  "assets/workbench-loading-cover.js": {
+    "source": "frontend/src/workbench/shared/inputs/LoadingCover.vue",
+    "scopeId": "31a7eeef"
+  },
+  "assets/m-input-select-f2WWD4tN.css": "frontend/src/workbench/shared/inputs/SelectInput.css",
+  "assets/quick-CZrtqSCy.js": "frontend/src/workbench/profiles/row/profile-account-picker-entry.mjs",
+  "assets/quick-kroUOSn_.js": "frontend/src/workbench/profiles/row/profile-account-editor-entry.mjs",
+  "assets/useProfileOpenState-GCrr7PDa.js": "frontend/src/workbench/profiles/profile-open-entry.mjs",
+  "assets/quick-B2L_ldyc.css": "frontend/src/workbench/profiles/row/profile-account-editor.css",
+  "assets/quick-B_dbDvPO.css": "frontend/src/workbench/profiles/row/profile-account-picker.css",
+  "assets/useProfileOpenState-DU5FSUn2.css": "frontend/src/workbench/profiles/profile-open.css",
+  "assets/workbench-profile-account-options.js": "frontend/src/workbench/profiles/row/profile-account-options.mjs",
+  "assets/workbench-profile-account-cell.js": {
+    "source": "frontend/src/workbench/profiles/row/AccountFieldCell.vue",
+    "scopeId": "27d7d4ce"
+  },
+  "assets/workbench-platform-info-cell.js": {
+    "source": "frontend/src/workbench/profiles/row/PlatformInfoCell.vue",
+    "scopeId": "1e72e3ee"
+  },
+  "assets/workbench-profile-account-picker.js": {
+    "source": "frontend/src/workbench/profiles/row/ProfileAccountPicker.vue",
+    "scopeId": "4bdd4926"
+  },
+  "assets/workbench-platform-url-select.js": {
+    "source": "frontend/src/workbench/profiles/row/PlatformUrlSelect.vue",
+    "scopeId": "faf0d5e2"
+  },
+  "assets/workbench-platform-url-field.js": {
+    "source": "frontend/src/workbench/profiles/row/PlatformUrlFormField.vue"
+  },
+  "assets/workbench-profile-account-editor-form.js": {
+    "source": "frontend/src/workbench/profiles/row/ProfileAccountEditorForm.vue",
+    "scopeId": "b78b58b2"
+  },
+  "assets/workbench-platform-account-fields.js": "frontend/src/workbench/profiles/row/platform-account-fields.mjs",
+  "assets/workbench-circle-progress.js": {
+    "source": "frontend/src/workbench/profiles/CircleProgress.vue",
+    "scopeId": "9dc6d3aa"
+  },
+  "assets/workbench-disk-space-dialog.js": {
+    "source": "frontend/src/workbench/profiles/DiskSpaceDialog.vue",
+    "scopeId": "0c275d6d"
+  },
+  "assets/workbench-batch-launch-layout.js": {
+    "source": "frontend/src/workbench/profiles/BatchLaunchLayout.vue",
+    "scopeId": "a2e9620a"
+  },
+  "assets/workbench-profile-open-state.js": "frontend/src/workbench/profiles/use-profile-open-state.mjs",
+  "assets/rx-button-DyzuUt-V.js": {
+    "source": "frontend/src/workbench/shared/WorkbenchButton.vue",
+    "scopeId": "5d1c6974",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/rx-card-De8gGY1x.js": {
+    "source": "frontend/src/workbench/shared/WorkbenchCard.vue",
+    "scopeId": "aeb360a2",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/rx-input-number-EcSY6ALQ.js": {
+    "source": "frontend/src/workbench/shared/inputs/NumberStepper.vue",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/rx-input-number-aNUE_OpE.js": {
+    "source": "frontend/src/workbench/shared/inputs/SizedNumberInput.vue",
+    "scopeId": "11f2b12d",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/rx-tabs-Dp-8mudX.js": {
+    "source": "frontend/src/workbench/shared/WorkbenchTabs.vue",
+    "scopeId": "2a7ea933",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/rx-tag-BIY_xUFU.js": {
+    "source": "frontend/src/workbench/shared/WorkbenchTag.vue",
+    "scopeId": "11b4c1e2",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/related-info-VU3nxvtB.js": {
+    "source": "frontend/src/workbench/shared/RelatedInfo.vue",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/remark-cell-DMyo1A0X.js": {
+    "source": "frontend/src/workbench/shared/RemarkCell.vue",
+    "scopeId": "cb424919",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/platform-icon-Cvcj894X.js": {
+    "source": "frontend/src/workbench/shared/PlatformIcon.vue",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/custom-empty-CChX4pJt.js": {
+    "source": "frontend/src/workbench/shared/EmptyState.vue",
+    "scopeId": "47b37f2a",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/custom-new-empty-CLCRgYs2.js": {
+    "source": "frontend/src/workbench/shared/IllustratedEmptyState.vue",
+    "scopeId": "48ec7f98",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/rx-button-CKFeYcgT.css": "frontend/src/workbench/shared/WorkbenchButton.css",
+  "assets/rx-card-C5AIEtyn.css": "frontend/src/workbench/shared/WorkbenchCard.css",
+  "assets/rx-tabs-Dq63M3j8.css": "frontend/src/workbench/shared/WorkbenchTabs.css",
+  "assets/rx-tag-B9fXuQnE.css": "frontend/src/workbench/shared/WorkbenchTag.css",
+  "assets/remark-cell-CAGogmOm.css": "frontend/src/workbench/shared/RemarkCell.css",
+  "assets/custom-empty-BGaxO1Zk.css": "frontend/src/workbench/shared/EmptyState.css",
+  "assets/custom-new-empty-B3PxPaFA.css": "frontend/src/workbench/shared/IllustratedEmptyState.css",
+  "assets/rx-input-number-BSMNGCTA.css": "frontend/src/workbench/shared/inputs/SizedNumberInput.css",
+  "assets/rx-input-number-F0t8ZkWb.css": "frontend/src/workbench/shared/inputs/NumberStepper.css",
+  "assets/workbench-empty-illustrations.js": "frontend/src/workbench/shared/empty-illustrations.mjs",
+  "assets/AgentInput-CVahkFed.js": {
+    "source": "frontend/src/workbench/agent/AgentInput.vue",
+    "scopeId": "44539316",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/animation-border-Bx_8JoE6.js": {
+    "source": "frontend/src/workbench/shared/AnimatedBorder.vue",
+    "scopeId": "30b6698f",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/colors-select-CQM6_O2z.js": {
+    "source": "frontend/src/workbench/shared/ColorOptions.vue",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/input-label-qeCNGFwS.js": {
+    "source": "frontend/src/workbench/shared/inputs/InputLabel.vue",
+    "scopeId": "e9675ce9",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/os-switch-BtW3PZYG.js": {
+    "source": "frontend/src/workbench/shared/inputs/OperatingSystemSwitch.vue",
+    "scopeId": "4bdf6bc4",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/TaskStatusBadge-fl9VE7c_.js": "frontend/src/workbench/agent/task-status-entry.mjs",
+  "assets/check-channel-BUSbubqx.js": "frontend/src/workbench/proxy-fields/check-channel-entry.mjs",
+  "assets/operation-zwm3okqF.js": "frontend/src/workbench/proxy-fields/proxy-table-options.mjs",
+  "assets/AgentInput-D5Hb9LbL.css": "frontend/src/workbench/agent/AgentInput.css",
+  "assets/animation-border-CvJzVjTk.css": "frontend/src/workbench/shared/AnimatedBorder.css",
+  "assets/input-label-9Hxm_1IX.css": "frontend/src/workbench/shared/inputs/InputLabel.css",
+  "assets/os-switch-CVDr3Phf.css": "frontend/src/workbench/shared/inputs/OperatingSystemSwitch.css",
+  "assets/TaskStatusBadge-BetC7MAN.css": "frontend/src/workbench/agent/TaskStatusBadge.css",
+  "assets/operation-xhm181G6.css": "frontend/src/workbench/proxy-fields/proxy-table.css",
+  "assets/workbench-task-status-badge.js": {
+    "source": "frontend/src/workbench/agent/TaskStatusBadge.vue",
+    "scopeId": "a7d5a81e"
+  },
+  "assets/workbench-check-channel-link.js": {
+    "source": "frontend/src/workbench/proxy-fields/CheckChannelLink.vue"
+  },
+  "assets/workbench-proxy-basic-info.js": {
+    "source": "frontend/src/workbench/proxy-fields/ProxyBasicInfo.vue",
+    "scopeId": "6804b2f9"
+  },
+  "assets/workbench-proxy-remark-header.js": {
+    "source": "frontend/src/workbench/proxy-fields/ProxyRemarkHeader.vue"
+  },
+  "assets/AgentPopover-BDVkdMHH.js": {
+    "source": "frontend/src/workbench/agent/AgentPopover.vue",
+    "scopeId": "611867ea",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/edit-BQkIxl5s.js": {
+    "source": "frontend/src/workbench/shared/EditTagDialog.vue",
+    "scopeId": "a24ff283",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/gen-project-BYIY-yxb.js": {
+    "source": "frontend/src/workbench/projects/CreateInlineProject.vue",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/simplePopup-D6H7ykCr.js": "frontend/src/workbench/shared/use-simple-dialog.mjs",
+  "assets/earth-DQKkazIm.js": "frontend/src/workbench/proxy-fields/earth-entry.mjs",
+  "assets/AgentPopover-DNtjp8Ky.css": "frontend/src/workbench/agent/AgentPopover.css",
+  "assets/earth-aqhWgZYN.css": "frontend/src/workbench/proxy-fields/EarthSpinner.css",
+  "assets/edit-RQ4Q31a8.css": "frontend/src/workbench/shared/EditTagDialog.css",
+  "assets/simplePopup-DDnnFIvx.css": "frontend/src/workbench/shared/SimpleDialog.css",
+  "assets/workbench-proxy-location-tooltip.js": {
+    "source": "frontend/src/workbench/proxy-fields/ProxyLocationTooltip.vue"
+  },
+  "assets/workbench-earth-spinner.js": {
+    "source": "frontend/src/workbench/proxy-fields/EarthSpinner.vue",
+    "scopeId": "374be9fd"
+  },
+  "assets/workbench-simple-dialog.js": {
+    "source": "frontend/src/workbench/shared/SimpleDialog.vue",
+    "scopeId": "2c669294"
+  },
+  "assets/AnimatePresence-d-29l3Fb.js": {
+    "source": "frontend/src/workbench/shared/AnimatePresence.vue",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/rx-tooltip-BnCRxqlH.js": {
+    "source": "frontend/src/workbench/shared/InteractiveTooltip.vue",
+    "scopeId": "5c94df36",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/workbench-tag-color-dot.js": {
+    "source": "frontend/src/workbench/shared/TagColorDot.vue"
+  },
+  "assets/workbench-project-tag.js": {
+    "source": "frontend/src/workbench/shared/ProjectTag.vue"
+  },
+  "assets/workbench-profile-tags.js": {
+    "source": "frontend/src/workbench/shared/ProfileTags.vue",
+    "scopeId": "1187bc0a"
+  },
+  "assets/workbench-proxy-filter-drawer.js": {
+    "source": "frontend/src/workbench/proxy-fields/ProxyFilterDrawer.vue",
+    "scopeId": "7f70b4af"
+  },
+  "assets/proxy-filter-Ct5F0LvB.js": {
+    "source": "frontend/src/workbench/proxy-fields/ProxyFilterButton.vue",
+    "scopeId": "0f58a0cb",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/tags-D13xnrA2.js": {
+    "source": "frontend/src/workbench/shared/TagManagementDialog.vue",
+    "scopeId": "d50511a2",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/tags-icon-CZSs72B-.js": "frontend/src/workbench/shared/profile-tags-entry.mjs",
+  "assets/rx-tooltip-D0HRwVmF.css": "frontend/src/workbench/shared/InteractiveTooltip.css",
+  "assets/tags-l2oxbRYK.css": "frontend/src/workbench/shared/TagManagementDialog.css",
+  "assets/tags-icon-DV__UBD7.css": "frontend/src/workbench/shared/ProfileTags.css",
+  "assets/proxy-filter-nTnEOoiC.css": "frontend/src/workbench/proxy-fields/ProxyFilter.css",
+  "assets/rx-select-button-DQtmZ0kT.js": {
+    "source": "frontend/src/workbench/shared/WorkbenchSelectButton.vue",
+    "scopeId": "eeda56a5",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/workbench-accordion.js": {
+    "source": "frontend/src/workbench/shared/WorkbenchAccordion.vue"
+  },
+  "assets/rx-toast-headless-D9U8AboF.js": {
+    "source": "frontend/src/workbench/shared/WorkbenchToast.vue",
+    "scopeId": "56ad81a9",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/phone-select-DbsQ1A1T.js": {
+    "source": "frontend/src/workbench/proxy-fields/PhonePicker.vue",
+    "scopeId": "6dc0ed7d"
+  },
+  "assets/rx-accordion-BvZbJmSm.js": "frontend/src/workbench/shared/accordion-entry.mjs",
+  "assets/rx-select-button-Cl2VgNYc.css": "frontend/src/workbench/shared/WorkbenchSelectButton.css",
+  "assets/rx-toast-headless-CsWBIeep.css": "frontend/src/workbench/shared/WorkbenchToast.css",
+  "assets/profile-select-Cn2Zq-u9.js": {
+    "source": "frontend/src/workbench/profiles/ProfilePicker.vue",
+    "scopeId": "b9acccff",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/workbench-tag-menu-search.js": {
+    "source": "frontend/src/workbench/shared/TagMenuSearch.vue"
+  },
+  "assets/workbench-guide-dialog.js": {
+    "source": "frontend/src/workbench/shared/GuideDialog.vue",
+    "scopeId": "cc600978"
+  },
+  "assets/workbench-proxy-remark.js": {
+    "source": "frontend/src/workbench/proxy-fields/ProxyRemark.vue",
+    "scopeId": "79c5e4a8"
+  },
+  "assets/use-tag-menu-DZnIrtE9.js": "frontend/src/workbench/shared/use-tag-menu.mjs",
+  "assets/hooks-BozaoB_u.js": "frontend/src/workbench/shared/use-onboarding.mjs",
+  "assets/proxy-create-mode-BCcLAAf5.js": "frontend/src/workbench/proxy-fields/proxy-form-labels.mjs",
+  "assets/workbench-proxy-address.js": "frontend/src/workbench/proxy-fields/proxy-address.mjs",
+  "assets/profile-select-CdlqPIMN.css": "frontend/src/workbench/profiles/ProfilePicker.css",
+  "assets/hooks-phTu3k4s.css": "frontend/src/workbench/shared/GuideDialog.css",
+  "assets/proxy-create-mode-D4Xz-JSw.css": "frontend/src/workbench/proxy-fields/ProxyRemark.css",
+  "assets/workbench-icon-catalog.js": "frontend/src/workbench/shared/icon-catalog.mjs",
+  "assets/workbench-svg-icon.js": {
+    "source": "frontend/src/workbench/shared/SvgIcon.vue",
+    "scopeId": "442d6e45"
+  },
+  "assets/workbench-code-editor.js": {
+    "source": "frontend/src/workbench/shared/CodeEditor.vue"
+  },
+  "assets/contextmenu-BBjizTDn.js": "frontend/src/workbench/shared/context-menu-entry.mjs",
+  "assets/workbench-option-picker.js": {
+    "source": "frontend/src/workbench/shared/OptionPicker.vue",
+    "scopeId": "0cb1216c"
+  },
+  "assets/workbench-popover.js": {
+    "source": "frontend/src/workbench/shared/WorkbenchPopover.vue"
+  },
+  "assets/custom-filters-D_902RzL.js": {
+    "source": "frontend/src/workbench/shared/CustomFilters.vue",
+    "scopeId": "48da47f4",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/useProxyModuleCreate-DnWsQ0mq.js": "frontend/src/workbench/proxy-fields/use-proxy-module.mjs",
+  "assets/workbench-duplicate-proxy-dialog.js": {
+    "source": "frontend/src/workbench/proxy-fields/DuplicateProxyDialog.vue"
+  },
+  "assets/custom-filters-DzGuEkSw.css": "frontend/src/workbench/shared/CustomFilters.css",
+  "assets/contextmenu-_wkelCbU.css": "frontend/src/workbench/shared/WorkbenchPopover.css",
+  "assets/workbench-proxy-outbound.js": {
+    "source": "frontend/src/workbench/proxy-fields/OutboundIp.vue",
+    "scopeId": "575fcab2"
+  },
+  "assets/workbench-proxy-test-progress.js": {
+    "source": "frontend/src/workbench/proxy-fields/ProxyTestProgress.vue",
+    "scopeId": "0f4b1dcf"
+  },
+  "assets/device-detect-result-modal-Caj_9rFr.js": {
+    "source": "frontend/src/workbench/proxy-fields/DeviceDetectDialog.vue",
+    "aliases": [
+      "t"
+    ]
+  },
+  "assets/workbench-device-detect-feedback.js": {
+    "source": "frontend/src/workbench/proxy-fields/DeviceDetectFeedback.vue",
+    "scopeId": "65afcca9"
+  },
+  "assets/workbench-proxy-picker.js": {
+    "source": "frontend/src/workbench/proxy-fields/ProxyPicker.vue",
+    "scopeId": "4ac02c90"
+  },
+  "assets/workbench-agent-minute-picker.js": {
+    "source": "frontend/src/workbench/agent/AgentMinutePicker.vue",
+    "scopeId": "622ab0fc"
+  },
+  "assets/workbench-create-task-dialog.js": {
+    "source": "frontend/src/workbench/agent/CreateTaskDialog.vue",
+    "scopeId": "3be49ec4"
+  },
+  "assets/hooks-Jw3GridD.js": "frontend/src/workbench/proxy-fields/use-proxy-tools.mjs",
+  "assets/simple-zBOi42-i.js": "frontend/src/workbench/proxy-fields/proxy-binding-context.mjs",
+  "assets/useTemplateTaskExecution-yGKXS9Rw.js": "frontend/src/workbench/agent/task-operations-entry.mjs",
+  "assets/workbench-task-operations.js": "frontend/src/workbench/agent/task-operations.mjs",
+  "assets/hooks-Co33PFFA.css": "frontend/src/workbench/proxy-fields/OutboundIp.css",
+  "assets/device-detect-result-modal-CWIz-8QR.css": "frontend/src/workbench/proxy-fields/DeviceDetectDialog.css",
+  "assets/simple-SqcWCUeX.css": "frontend/src/workbench/proxy-fields/ProxyPicker.css",
+  "assets/useTemplateTaskExecution-CTLUlurC.css": "frontend/src/workbench/agent/CreateTaskDialog.css",
+  "assets/useProxyFilter-A8Qveof-.js": "frontend/src/workbench/proxy-fields/use-proxy-filter.mjs",
+  "assets/useDialog-BC-nc8J-.js": "frontend/src/workbench/shared/use-workbench-dialog.mjs",
+  "assets/theme-mq6SsndU.js": "frontend/src/workbench/shared/workbench-theme.mjs",
+  "assets/useTutorialEntityLabels-BJzywsZZ.js": "frontend/src/workbench/shared/tutorial-labels.mjs",
+  "assets/useProfileEntityLabels-BfqbVpel.js": "frontend/src/workbench/shared/profile-labels.mjs",
+  "assets/useProjectEntityLabels-DdcfADRx.js": "frontend/src/workbench/shared/project-labels.mjs",
+  "assets/useProfileProxy-Cbqapbxb.js": "frontend/src/workbench/profiles/use-profile-proxy.mjs",
+  "assets/useProxyFormDrawer-r-7UykRS.js": "frontend/src/workbench/shared/use-workbench-drawer.mjs",
+  "assets/api-extract-BlmYcIz7.js": "frontend/src/workbench/proxy-fields/proxy-url-extraction.mjs",
+  "assets/useCommonUtil-C7F4fHRj.js": "frontend/src/workbench/shared/use-local-preferences.mjs",
+  "assets/global-component-Hns640q-.js": "frontend/src/workbench/shared/install-workbench-stores.mjs",
+  "assets/agent-BmSFI9WH.js": "frontend/src/workbench/shared/workbench-stores.mjs",
+  "assets/workbench-global-ui.js": {
+    "source": "frontend/src/workbench/shared/GlobalWorkbenchUi.vue"
+  },
+  "assets/utils-BIWenCnY.js": "frontend/src/workbench/shared/workbench-compat.mjs",
+  "assets/workspace-CNvgSgaH.js": "frontend/src/workbench/shared/workspace-appearance.mjs",
+  "assets/workbench-environment.js": "frontend/src/workbench/shared/workbench-environment.mjs",
+  "assets/workbench-local-workspace.js": "frontend/src/workbench/shared/local-workspace.mjs",
+  "assets/workbench-fields.js": "frontend/src/workbench/shared/workbench-fields.mjs",
+  "assets/workbench-list-cache.js": "frontend/src/workbench/shared/workbench-list-cache.mjs",
+  "assets/workbench-utilities.js": "frontend/src/workbench/shared/workbench-utilities.mjs",
+  "assets/workbench-image-assets.js": "frontend/src/workbench/shared/workbench-image-assets.mjs",
+  "assets/workbench-agent-template-tokens.js": "frontend/src/workbench/agent/template-tokens.mjs",
+  "assets/workbench-proxy-rules.js": "frontend/src/workbench/proxy-fields/proxy-rules.mjs",
+  "assets/workbench-task-report-schema.js": "frontend/src/workbench/agent/task-report-schema.mjs",
+  "assets/useRouteContext-Cfh7KChG.js": "frontend/src/workbench/shared/use-route-context.mjs",
+  "assets/api-BToUsmQq.js": "frontend/src/workbench/shared/local-api-entry.mjs",
+  "assets/apiError-BDM3pKoT.js": "frontend/src/workbench/shared/api-result.mjs",
+  "assets/proxy-D7e36h-l.js": "frontend/src/workbench/proxy-fields/proxy-types.mjs",
+  "assets/useCustomTemplateDialog-2nSs2D8n.js": "frontend/src/workbench/agent/use-template-task-dialog.mjs",
+  "assets/useProject-BHb2F7tC.js": "frontend/src/workbench/projects/use-project-editor.mjs",
+  "assets/useFormDialog-ChvKgFzE.js": "frontend/src/workbench/shared/use-schema-dialog.mjs",
+  "assets/persistProxyCheck-DLlpHtgK.js": "frontend/src/workbench/proxy-fields/persist-phone-proxy-checks.mjs",
+  "assets/persistProxyCheck-GOErCdJb.js": "frontend/src/workbench/proxy-fields/persist-phone-proxy-checks.mjs",
+  "assets/rich-html-link-VdBpR3Cm.js": "frontend/src/workbench/shared/router-context.mjs",
+  "assets/workbench-router.js": "frontend/src/workbench/shared/workbench-router.mjs",
+  "assets/workbench-agent-status.js": "frontend/src/workbench/agent/agent-status.mjs",
+  "assets/workbench-agent-message-selection.js": "frontend/src/workbench/agent/process/message-selection.mjs",
+  "assets/workbench-agent-timeline-state.js": "frontend/src/workbench/agent/process/timeline-state.mjs",
+  "assets/ScriptSchemaForm-z_48GvPJ.js": "frontend/src/workbench/agent/fields/script-schema-entry.mjs",
+  "assets/workbench-script-parameters.js": "frontend/src/workbench/agent/fields/script-parameters.mjs",
+  "assets/cookie-CqdL0VrU.js": "frontend/src/workbench/profiles/fields/cookie-text.mjs",
+  "assets/util-C5rl6Moc.js": "frontend/src/workbench/sync/preferences-api.mjs",
+  "assets/proxy-shop-labels-nJaBS4W_.js": "frontend/src/workbench/proxy-fields/proxy-labels.mjs",
+  "assets/proxy-cE263mR5.js": "frontend/src/workbench/proxy-fields/proxy-picker-store.mjs",
+  "assets/relatedPhones-BgFrJS53.js": "frontend/src/workbench/proxy-fields/phone-proxy-bindings.mjs",
+  "assets/workbench-agent-template-catalog.js": "frontend/src/workbench/agent/template-catalog.mjs",
+  "assets/workbench-agent-template-read-state.js": "frontend/src/workbench/agent/template-read-state.mjs",
+  "assets/workbench-agent-profile-options.js": "frontend/src/workbench/agent/profile-options.mjs",
+  "assets/utils-CnUy4XUk.js": "frontend/src/workbench/profiles/profile-file-io.mjs",
+  "assets/workbench-profile-file-columns.js": "frontend/src/workbench/profiles/profile-file-columns.mjs",
+  "assets/workbench-profile-file-values.js": "frontend/src/workbench/profiles/profile-file-values.mjs",
+  "assets/workbench-markdown-links.js": "frontend/src/workbench/agent/composer/markdown-links.mjs",
+  "assets/workbench-markdown-elements.js": "frontend/src/workbench/agent/composer/markdown-elements.mjs",
+  "assets/workbench-profile-token-labels.js": "frontend/src/workbench/agent/composer/profile-token-labels.mjs",
+  "assets/workbench-render-markdown.js": "frontend/src/workbench/agent/composer/render-markdown.mjs",
+  "assets/workbench-markdown-element-styles.js": "frontend/src/workbench/agent/composer/markdown-element-styles.mjs",
+  "assets/CreateTemplateDialog-Bpq9OLTG.js": "frontend/src/workbench/agent/template-dialog-entry.mjs",
+  "assets/workbench-agent-prompt-actions.js": "frontend/src/workbench/agent/composer/prompt-actions.mjs",
+  "assets/workbench-agent-prompt-document.js": "frontend/src/workbench/agent/composer/prompt-document.mjs",
+  "assets/workbench-agent-conversation-stream.js": "frontend/src/workbench/agent/conversation-stream.mjs",
+  "assets/workbench-agent-route-intents.js": "frontend/src/workbench/agent/agent-route-intents.mjs",
+  "assets/workbench-agent-task-monitor.js": "frontend/src/workbench/agent/process/use-task-monitor.mjs",
+  "assets/workbench-tool-operation-labels.js": "frontend/src/workbench/agent/process/tool-operation-labels.mjs",
+  "assets/workbench-tool-event-labels.js": "frontend/src/workbench/agent/process/tool-event-labels.mjs",
+  "assets/router-CA4Vr6Cg.js": "frontend/src/workbench/shared/router-entry.mjs",
+  "assets/workbench-approval-request.js": "frontend/src/workbench/agent/approval-request.mjs",
+  "assets/workbench-approval-resource-names.js": "frontend/src/workbench/agent/approval-resource-names.mjs",
+  "assets/locales-BfKu2SD4.js": "frontend/src/workbench/shared/workbench-i18n.mjs",
+  "assets/workbench-run-event-batch.js": "frontend/src/workbench/agent/run-event-batch.mjs",
+  "assets/workbench-attachment-draft.js": "frontend/src/workbench/agent/attachment-draft.mjs",
+  "assets/workbench-run-process.js": "frontend/src/workbench/agent/process/run-process.mjs",
+  "assets/hook-CnJE4hRq.js": "frontend/src/workbench/agent/agent-runtime-entry.mjs",
+  "assets/workbench-agent-conversation.js": "frontend/src/workbench/agent/use-agent-conversation.mjs",
+  "assets/main-types-DreniZN2.js": "frontend/src/workbench/sync/default-preferences.mjs",
+  "assets/permission-DOhNJfB3.js": "frontend/src/workbench/shared/workbench-operations.mjs",
+  "assets/project-zUGx3yhI.js": "frontend/src/workbench/projects/project-store.mjs",
+  "assets/schemas-Y9Ask_a8.js": "frontend/src/workbench/projects/project-schema.mjs",
+  "assets/template-guide-OgW15d11.js": "frontend/src/workbench/agent/composer/template-guide-state.mjs",
+  "assets/usePreventMask-Cud6gNnu.js": "frontend/src/workbench/shared/use-prevent-mask.mjs",
+  "assets/useDomSpotlight-CA279FOk.js": "frontend/src/workbench/shared/use-dom-spotlight.mjs",
+  "assets/useRemarkDisplay-C7h7k7ja.js": "frontend/src/workbench/proxy-fields/use-remark-display.mjs",
+  "assets/ui-DTZutfuE.js": "frontend/src/workbench/proxy-fields/phone-picker-ui.mjs",
+  "assets/phoneDisplay-DDMDXeMy.js": "frontend/src/workbench/proxy-fields/phone-name.mjs",
+  "assets/actionMessage-f0W4sNUi.js": "frontend/src/workbench/shared/action-message.mjs",
+  "assets/useOperationTrack-BXe8Vwhz.js": "frontend/src/workbench/shared/operation-tracking.mjs",
+  "assets/account-2bDq0W_G.js": "frontend/src/workbench/accounts/account-assignment.mjs",
+  "assets/id-Bjy_bMW8.js": "frontend/src/workbench/proxy-fields/proxy-id.mjs",
+  "assets/proxy-BZs_g4bS.js": "frontend/src/workbench/proxy-fields/proxy-store-entry.mjs",
+  "assets/create-DJwGZbA7.js": "frontend/src/workbench/proxies/create-entry.mjs",
+  "assets/rx-tooltip-CNCSEJGC.js": "frontend/src/workbench/shared/proxy-tooltip-entry.mjs",
+  "assets/ry-table-B9vARMiu.js": "frontend/src/workbench/shared/profile-table-entry.mjs",
+  "assets/grid-loader-BbJvp9z6.js": "frontend/src/workbench/shared/grid-loader.mjs",
+  "assets/grid-loader-CXT-wJah.js": "frontend/src/workbench/shared/grid-loader-entry.mjs",
+  "assets/roxy-claw-1j3mqM_d.js": "frontend/src/workbench/shared/local-agent-settings-status.mjs",
+  "assets/live-chat-DNUnbM8O.js": "frontend/src/workbench/shared/no-promotion.mjs",
+  "assets/tutorial-video-Cb-jkf_V.js": "frontend/src/workbench/shared/no-promotion.mjs",
+  "assets/iso-639-CUMONuwI.js": "frontend/src/workbench/shared/languages.mjs",
+  "assets/constants-DLlGaEfk.js": "frontend/src/workbench/shared/import-file-types-and-tag-colors.mjs",
+  "assets/sync-radio-group.js": "frontend/src/workbench/sync/radio-button-group.mjs",
+  "assets/rx_ic_check_fill-DhZ0qHY_.js": {
+    "source": "frontend/src/workbench/icons/rx_ic_check_fill-DhZ0qHY_.svg",
+    "exports": {
+      "component": "n",
+      "render": "t"
+    }
+  },
+  "assets/rx_ic_delete-CnrObAWC.js": {
+    "source": "frontend/src/workbench/icons/rx_ic_delete-CnrObAWC.svg",
+    "exports": {
+      "component": "n",
+      "render": "t"
+    }
+  },
+  "assets/rx_ic_info_fill-BKETVyN3.js": {
+    "source": "frontend/src/workbench/icons/rx_ic_info_fill-BKETVyN3.svg",
+    "exports": {
+      "component": "n",
+      "render": "t"
+    }
+  },
+  "assets/rx_ic_warn_fill-D1nvFIgs.js": {
+    "source": "frontend/src/workbench/icons/rx_ic_warn_fill-D1nvFIgs.svg",
+    "exports": {
+      "component": "n",
+      "render": "t"
+    }
+  },
+  "assets/en-D33DiJcZ.js": "frontend/src/workbench/locales/en.mjs",
+  "assets/ru-Bo9bnzty.js": "frontend/src/workbench/locales/ru.mjs",
+  "assets/zh-CN-CKEkLKpn.js": "frontend/src/workbench/locales/zh-CN.mjs",
+  "assets/rx_ic_check_fill-DFRs3Yya.js": "frontend/src/workbench/icons/rx_ic_check_fill-DFRs3Yya.mjs",
+  "assets/rx_ic_delete-DJF3_9ON.js": "frontend/src/workbench/icons/rx_ic_delete-DJF3_9ON.mjs",
+  "assets/rx_ic_info_fill-CNU5a8IZ.js": "frontend/src/workbench/icons/rx_ic_info_fill-CNU5a8IZ.mjs",
+  "assets/rx_ic_warn_fill-BaVlkXWE.js": "frontend/src/workbench/icons/rx_ic_warn_fill-BaVlkXWE.mjs",
+  "assets/_Primitives_tokens-N0m8cQDB.js": "frontend/src/workbench/shared/theme-primitives.mjs",
+  "assets/basecomponent-ClhuVxJN.js": "frontend/src/workbench/shared/prime-base-component.mjs",
+  "assets/workbench-theme-preset.js": "frontend/src/workbench/shared/theme-preset.mjs",
+  "assets/primevue-3KC3oRok.js": "frontend/src/workbench/shared/prime-config.mjs",
+  "assets/__uno-Bewab8Nc.css": "frontend/src/workbench/styles/utility-classes.css",
+  "assets/app-CZQdYwDM.css": "frontend/src/workbench/styles/application-shell.css",
+  "assets/basecomponent-Mvi8h6e2.css": "frontend/src/workbench/styles/svg-icon.css",
+  "assets/create-sV6q3jXH.css": "frontend/src/workbench/styles/proxy-create-tabs.css",
+  "assets/global-component-C-H1nIMa.css": "frontend/src/workbench/styles/global-dialogs.css",
+  "assets/mate-group-Cj_DJD1R.css": "frontend/src/workbench/styles/profile-metadata.css",
+  "assets/parse-textarea-txC4T-yV.css": "frontend/src/workbench/styles/proxy-parse-textarea.css",
+  "assets/renewal-reminder-drawer-BEulm-5c.css": "frontend/src/workbench/styles/browser-open-controls.css",
+  "assets/styles-DhEz4BM4.css": "frontend/src/workbench/styles/workbench-base.css",
+  "assets/theme-sp0uFzH4.css": "frontend/src/workbench/styles/theme-tokens.css"
+}

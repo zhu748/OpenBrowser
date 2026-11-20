@@ -360,16 +360,24 @@ async function main() {
   });
   let activeRuns = 0;
   let peakRuns = 0;
+  const stepsEntered = Promise.withResolvers();
+  const releaseAfterTimeout = setTimeout(stepsEntered.resolve, 5000);
   const originalExecuteStep = rpa.executeStep.bind(rpa);
   rpa.executeStep = async () => {
     activeRuns += 1;
     peakRuns = Math.max(peakRuns, activeRuns);
-    await new Promise((resolve) => setTimeout(resolve, 15));
+    if (activeRuns === 2) stepsEntered.resolve();
+    await stepsEntered.promise;
     activeRuns -= 1;
   };
   rpa.engine.running.set('p2', { port: 9223 });
-  const parallelRun = await rpa.runPlan(parallelPlan.id);
-  rpa.executeStep = originalExecuteStep;
+  let parallelRun;
+  try {
+    parallelRun = await rpa.runPlan(parallelPlan.id);
+  } finally {
+    clearTimeout(releaseAfterTimeout);
+    rpa.executeStep = originalExecuteStep;
+  }
   assert.strictEqual(parallelRun.success, true, 'parallel rpa plan succeeds');
   assert.strictEqual(parallelRun.results.length, 2, 'parallel plan creates one task per environment');
   assert.ok(peakRuns >= 2, 'rpa tasks run concurrently across environments');

@@ -7,17 +7,24 @@ const { attachShellNavigationGuard, createShellNavigationPolicy } = require('../
 const ROUTES = new Map([
   ['/agent-console', 'AI Agent'], ['/agent-console/task-manager', '任务管理'],
   ['/agent-console/templates', '我的模板'], ['/agent-console/template-store', '模板商城'],
-  ['/agent-console/settings', '设置'], ['/agent-console/skills', 'Skill 管理'],
-  ['/api-keys', 'API & AI MCP'], ['/skills', 'Skill 管理'],
+  ['/agent-console/settings', '设置'], ['/agent-console/mcp', 'MCP 服务'], ['/agent-console/skills', 'Skill 管理'],
+  ['/api-keys', 'API & AI MCP'],
 ]);
+const ALIASES = new Map([
+  ['/skills', '/agent-console/skills'],
+  ['/agent-console/roxyclaw', '/agent-console/settings'],
+]);
+const INTEGRATION_PATHS = new Set(['telegram', 'lark', 'slack', 'discord'].map(provider => '/agent-console/roxyclaw/' + provider));
 
 function workspaceRoute(value) {
   if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//') || /[\\\0]/.test(value))
     throw Error('无效功能窗口路径');
   const url = new URL(value, 'https://workspace.invalid');
-  const title = ROUTES.get(url.pathname) || (/^\/agent-console\/c\/[a-zA-Z0-9_-]+$/.test(url.pathname) ? 'AI Agent' : null);
+  const route = ALIASES.get(url.pathname) || url.pathname;
+  const key = INTEGRATION_PATHS.has(route) ? '/agent-console/settings' : route;
+  const title = ROUTES.get(key) || (/^\/agent-console\/c\/[a-zA-Z0-9_-]+$/.test(key) ? 'AI Agent' : null);
   if (url.origin !== 'https://workspace.invalid' || !title) throw Error('未知功能窗口');
-  return { route: url.pathname + url.search, key: url.pathname, title };
+  return { route: route + url.search + url.hash, key, title };
 }
 
 class WorkspaceWindows {
@@ -45,7 +52,9 @@ class WorkspaceWindows {
     const existing = this.entries.get(selected.key);
     if (existing && !existing.window.isDestroyed()) {
       existing.route = selected.route;
+      const revision = ++existing.revision;
       await existing.ready;
+      if (existing.window.isDestroyed() || existing.revision !== revision) return { key: selected.key };
       if (existing.rendererReady) existing.window.webContents.send('engine:event', { channel: 'workspace:navigate', payload: selected.route });
       if (existing.window.isMinimized()) existing.window.restore();
       existing.window.show(); existing.window.focus();
@@ -58,7 +67,7 @@ class WorkspaceWindows {
       webPreferences: { preload: path.resolve(__dirname, '../preload.js'),
         contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false },
     });
-    const entry = { window, route: selected.route, rendererReady: false, ready: null };
+    const entry = { window, route: selected.route, revision: 0, rendererReady: false, ready: null };
     this.entries.set(selected.key, entry);
     this.windows.add(window);
     window.on('closed', () => { this.entries.delete(selected.key); this.windows.delete(window); });
@@ -66,6 +75,17 @@ class WorkspaceWindows {
     const url = new URL(DOCUMENT);
     url.searchParams.set('workspace', selected.key);
     url.hash = selected.route;
+    window.webContents.on('did-start-navigation', (event, target, inPlace, mainFrame) => {
+      if (!(event.isMainFrame ?? mainFrame) || (event.isInPlace ?? inPlace) || !entry.rendererReady) return;
+      const destination = new URL(event.url ?? target);
+      if (destination.protocol !== url.protocol || destination.host !== url.host || destination.pathname !== url.pathname ||
+          destination.searchParams.get('workspace') !== selected.key) return;
+      entry.rendererReady = false;
+      if (!destination.hash) return;
+      // In-window routing changes the hash without a new workspace request.
+      try { entry.route = workspaceRoute(destination.hash.slice(1)).route; }
+      catch { /* Keep the last known route when a renderer URL does not resolve. */ }
+    });
     entry.ready = window.loadURL(url.href).then(() => {
       if (!window.isDestroyed()) { window.show(); window.focus(); }
     }).catch(error => {

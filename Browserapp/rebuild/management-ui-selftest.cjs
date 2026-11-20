@@ -58,18 +58,18 @@ const repo = path.resolve(__dirname, "../..");
     await page.getByText("暂无窗口", { exact: true }).waitFor();
     phase = "project-create";
     console.log(phase);
-    await page.evaluate(() => globalThis.__router.push("/projects/list"));
+    await page.evaluate(() => globalThis.__router.push("/projects/list?renderer=source"));
     await page
       .getByRole("button", { name: "创建项目", exact: true })
       .last()
       .click();
-    await page.locator("input").last().fill("本地项目验收");
-    await page.getByRole("button", { name: "确认", exact: true }).click();
+    await page.getByLabel("项目名称", { exact: true }).fill("本地项目验收");
+    await page.getByRole("button", { name: "保存项目", exact: true }).click();
     await page.getByText("本地项目验收", { exact: true }).first().waitFor();
     assert.ok(
       (await call("groups:list")).some((r) => r.projectName === "本地项目验收"),
     );
-    result.checks.push("原项目页面创建项目，真实本地存储存在该记录");
+    result.checks.push("源码项目页面创建项目，真实本地存储存在该记录");
     await page.screenshot({
       path: path.join(evidence, "projects-created.png"),
     });
@@ -110,6 +110,7 @@ const repo = path.resolve(__dirname, "../..");
     phase = "template-use";
     console.log(phase);
     await page.evaluate(() => globalThis.__router.push("/templates"));
+    await page.getByRole("heading", { name: "已保存的模板", exact: true }).waitFor();
     await page
       .getByRole("button", { name: "使用 / 修改", exact: true })
       .click();
@@ -121,7 +122,7 @@ const repo = path.resolve(__dirname, "../..");
         "template-cookie",
       ),
     );
-    result.checks.push("模板管理使用按钮把完整配置读回原创建表单");
+    result.checks.push("源码模板页的使用按钮把完整配置读回原创建表单");
     phase = "proxy-edit";
     console.log(phase);
     const proxy = await call("proxies:create", {
@@ -239,6 +240,7 @@ const repo = path.resolve(__dirname, "../..");
     process.exitCode = 1;
   } finally {
     await app?.close();
+    await fs.rm(data, { recursive: true, force: true, maxRetries: 3 });
     await fs.writeFile(
       path.join(evidence, "management-ui-selftest.json"),
       JSON.stringify(result, null, 2),

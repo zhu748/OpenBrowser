@@ -11,12 +11,13 @@
     "url": "https://github.com/zhu748/OpenBrowser.git"
   },
   "engines": {
-    "node": ">=22.12.0"
+    "node": "^22.13.0 || >=24"
   },
   "scripts": {
     "inventory:modules": "node scripts/module-inventory.js",
     "check:environment": "node scripts/check-dev-environment.js",
-    "start": "node scripts/run-app.js",
+    "start": "npm run rebuild:ui && node scripts/run-app.js",
+    "start:source": "npm run build:renderer && node scripts/run-app.js --source-renderer",
     "lint": "eslint .",
     "selftest": "node scripts/selftest-one.js",
     "selftest:environment": "node environment-audit-selftest.js",
@@ -55,6 +56,7 @@
     "kernels:status": "node scripts/fetch-kernels.js --status",
     "fonts:materialize": "node scripts/materialize-wayfern-fonts.js",
     "build:native": "node scripts/build-native.js",
+    "prepackage:portable": "npm run rebuild:ui",
     "package:portable": "node scripts/package-portable.js",
     "build:rustcore": "node scripts/build-rust-core.js",
     "selftest:rustrelease": "node automation/selftests/rust-release-packaging-selftest.js && node automation/selftests/release-version-consistency-selftest.js",
@@ -196,11 +198,13 @@
     "audit:valuefingerprint": "node automation/value-fingerprint-adversarial-audit.js",
     "audit:valuefirefox": "node automation/value-fingerprint-firefox-audit.js",
     "audit:mathparity": "node automation/math-value-parity-audit.js",
-    "rebuild:preview": "node rebuild/compiler/build.cjs",
+    "rebuild:preview": "node frontend/build-workbench.cjs",
     "selftest:rebuild": "node rebuild/local-service-selftest.js",
     "audit:rebuild": "node rebuild/compiler/audit.cjs",
     "selftest:rebuild:ui": "node rebuild/electron-smoke.cjs",
-    "rebuild:ui": "node rebuild/compiler/build.cjs",
+    "build:renderer": "node frontend/build.mjs",
+    "typecheck:renderer": "vue-tsc -p frontend/tsconfig.json",
+    "rebuild:ui": "node frontend/build-workbench.cjs",
     "selftest:rebuild:management": "node rebuild/management-ui-selftest.cjs",
     "selftest:rebuild:agent-ui": "node rebuild/agent-ui-selftest.cjs",
     "selftest:rebuild:tasks-ui": "node rebuild/agent-tasks-ui-selftest.cjs",
@@ -228,9 +232,8 @@
     "selftest:rebuild:approval-ui": "node rebuild/agent-approval-ui-selftest.cjs",
     "selftest:rebuild:projects-ui": "node rebuild/projects-ui-selftest.cjs",
     "selftest:rebuild:mcp-ui": "node rebuild/agent-mcp-ui-selftest.cjs",
-    "selftest:rebuild:visual": "node rebuild/visual-parity-selftest.cjs",
-    "audit:rebuild:styles": "node rebuild/compiler/style-provenance.cjs",
-    "rebuild:visual-reference": "node rebuild/compiler/visual-reference.cjs",
+    "selftest:rebuild:source-visual": "node rebuild/source-workbench-visual-selftest.cjs",
+    "selftest:rebuild:full-workbench": "node rebuild/full-workbench-parity-selftest.cjs",
     "selftest:rebuild:settings-ui": "node rebuild/settings-ui-selftest.cjs",
     "selftest:rebuild:network-form": "node rebuild/network-form-selftest.cjs",
     "selftest:rebuild:image-size": "node rebuild/image-size-selftest.cjs",
@@ -245,7 +248,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "acorn": "^8.19.0",
+    "@vitejs/plugin-vue": "6.0.11",
     "acorn-walk": "^8.3.5",
     "electron": "43.8.8",
     "esbuild": "^0.28.2",
@@ -253,14 +256,25 @@
     "eslint-scope": "^9.1.2",
     "globals": "^17.14.0",
     "postcss": "^8.5.33",
-    "rcedit": "^5.0.2"
+    "rcedit": "^5.0.2",
+    "typescript": "5.9.3",
+    "vite": "7.3.8",
+    "vue": "3.5.45",
+    "vue-tsc": "3.3.14"
   },
   "overrides": {
     "minimatch": "^11.0.1"
   },
   "dependencies": {
+    "@jitl/quickjs-wasmfile-release-sync": "^0.32.0",
+    "acorn": "^8.19.0",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
     "cron-parser": "^5.10.5",
+    "fuse.js": "7.4.1",
     "playwright": "^1.65.1",
+    "quickjs-emscripten-core": "^0.32.0",
+    "saxes": "6.0.0",
     "yauzl": "^3.4.0"
   }
 }

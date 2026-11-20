@@ -23,11 +23,13 @@ function upgradeEventRanges(data) {
 }
 function recoverInterruptedRuns(data) {
   let changed = false;
-  const finish = events => {
+  const finish = (events, templateType) => {
     if (!events?.length || events.some(item => ["run_completed", "run_failed", "run_cancelled"].includes(item.event?.type))) return;
     const last = events.at(-1), sequence = events.reduce((maximum, item) => Math.max(maximum, item.sequence || 0), 0) + 1;
     events.push({ ...last, sequence, startSequence: sequence, timestamp: Date.now(), event: {
-      type: "run_cancelled", data: { reason: "process_exit", message: "应用退出导致任务中断，可从检查点继续。" },
+      type: "run_cancelled", data: { reason: "process_exit", message: templateType === "script"
+        ? "应用退出导致脚本中断，可在任务管理重新运行。"
+        : "应用退出导致任务中断，可从检查点继续。" },
     } });
     changed = true;
   };
@@ -35,7 +37,8 @@ function recoverInterruptedRuns(data) {
     if (c.latestRunStatus === "running") { c.latestRunStatus = "interrupted"; c.unread = true; changed = true; }
     if (c.latestRunStatus === "interrupted")
       for (const message of c.messages || [])
-        if (message.role === "assistant" && message.events?.some(event => event.runId === c.latestRunId)) finish(message.events);
+        if (message.role === "assistant" && message.events?.some(event => event.runId === c.latestRunId))
+          finish(message.events, c.runPolicy?.taskMeta?.templateType);
   }
   for (const log of data.logs) {
     if (log.status === "running" || log.status === "preparing") {
@@ -43,8 +46,8 @@ function recoverInterruptedRuns(data) {
       changed = true;
     }
     if (log.status === "interrupted" && log.endReasonCode === "process_exit") {
-      finish(log.events);
-      for (const message of log.messages || []) if (message.role === "assistant") finish(message.events);
+      finish(log.events, log.templateType);
+      for (const message of log.messages || []) if (message.role === "assistant") finish(message.events, log.templateType);
     }
   }
   return changed;

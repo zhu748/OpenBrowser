@@ -47,7 +47,7 @@ async function main() {
   }
   const [major, minor] = process.versions.node.split('.').map(Number);
   const report = {
-    node: { version: process.version, available: major > 22 || (major === 22 && minor >= 12) },
+    node: { version: process.version, available: major >= 24 || (major === 22 && minor >= 13) },
     rust: Object.fromEntries([
       ['cargo', ['cargo', ['--version']]], ['rustc', ['rustc', ['--version']]],
       ['rustfmt', ['rustfmt', ['--version']]], ['clippy', ['cargo', ['clippy', '--version']]],

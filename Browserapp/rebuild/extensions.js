@@ -20,12 +20,16 @@ class Extensions {
   }
   async dto(extension){
     const profiles=(extension.assignedProfileIds||[]).map(id=>this.engine.profiles.get(id)).filter(Boolean),
-      groups=[...new Set(profiles.map(profile=>profile.groupId||DEFAULT))];
+      known=new Set([DEFAULT,...this.service.data.groups.map(group=>group.id)]),
+      hasProjectAssignment=Array.isArray(extension.assignedGroupIds),
+      groups=hasProjectAssignment?extension.assignedGroupIds.filter(id=>known.has(id)):
+        [...new Set(profiles.map(profile=>profile.groupId||DEFAULT))],
+      allProjects=extension.enabledByDefault===true||(!hasProjectAssignment&&extension.enabledAll&&groups.length===known.size);
     return {id:extension.id,pluginDir:extension.id,localKey:extension.id,pluginName:extension.name,
       pluginVersion:extension.version,pluginDescription:extension.description||"",pluginIcon:await this.icon(extension),
       pluginSwitchType:2,source:extension.builtIn?"sys":extension.storeId?"store":"local",canDelete:!extension.builtIn,
       fixedPlugin:extension.fixedPlugin||"customize",pluginUpdateState:2,bindPluginId:groups,
-      projectIds:groups,installType:extension.enabledAll?1:2,
+      projectIds:groups,installType:allProjects?1:2,
       projectNames:groups.map(id=>id===DEFAULT?"默认项目":this.service.data.groups.find(group=>group.id===id)?.projectName||id),
       bindPlugin:groups.map(id=>id===DEFAULT?'默认项目':this.service.data.groups.find(group=>group.id===id)?.projectName||id),
     };

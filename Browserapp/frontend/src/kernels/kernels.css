@@ -1,0 +1,41 @@
+:host {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  color: #182230;
+  font: 14px/1.5 system-ui, sans-serif;
+  --kernel-bg: #fff;
+  --kernel-line: #d7dfe5;
+  --kernel-muted: #4c5b69;
+  --kernel-alert: #9c3025;
+}
+
+:host-context([data-theme="dark"]) {
+  color: #e5edf4;
+  --kernel-bg: #1b242d;
+  --kernel-line: #3b4b57;
+  --kernel-muted: #afbfcc;
+  --kernel-alert: #ffaba1;
+}
+
+* { box-sizing: border-box; }
+.kernel-page { max-width: 1100px; margin: auto; padding: clamp(20px, 4vw, 48px); }
+.kernel-page h1, .kernel-page h2, .kernel-page p { margin: 0; }
+.kernel-page h1 { font-size: 28px; }
+.kernel-page h2 { font-size: 16px; }
+.kernel-heading, .kernel-list li { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.kernel-section { display: grid; gap: 12px; margin-top: 18px; padding: 16px; border: 1px solid var(--kernel-line); border-radius: 12px; background: var(--kernel-bg); }
+.kernel-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.kernel-actions input { flex: 1 1 260px; min-width: 0; }
+.kernel-page :is(button, select, input) { min-height: 34px; padding: 5px 10px; border: 1px solid var(--kernel-line); border-radius: 7px; background: var(--kernel-bg); color: inherit; font: inherit; }
+.kernel-page button { cursor: pointer; }
+.kernel-page button:disabled, .kernel-page select:disabled { opacity: .55; cursor: default; }
+.kernel-page :is(button, select, input):focus-visible { outline: 2px solid #21887b; outline-offset: 2px; }
+.kernel-page .kernel-primary { border-color: transparent; background: #005c55; color: #fff; }
+.kernel-list { display: grid; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.kernel-list li { flex-wrap: wrap; border-top: 1px solid var(--kernel-line); padding-top: 8px; }
+.kernel-source { margin-inline-start: 8px; color: var(--kernel-muted); }
+.kernel-alert, .kernel-status { overflow-wrap: anywhere; }
+.kernel-page > :is(.kernel-alert, .kernel-status) { margin-top: 12px; }
+.kernel-alert { color: var(--kernel-alert); }

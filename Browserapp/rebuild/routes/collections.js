@@ -52,6 +52,7 @@ async function groupsSave(service, p) {
       throw Error("默认项目不能重命名");
     service.data.settings.defaultProjectPin = p.pinStatus;
     await service.save();
+    service.engine.emit?.({ type: "profiles", action: "group-metadata" });
     return true;
   }
   const previous = service.data.groups.find((v) => v.id === id),
@@ -67,10 +68,10 @@ async function groupsSave(service, p) {
     projectId: id,
     id,
   };
-  service.data.groups = service.data.groups
-    .filter((v) => v.project_id !== row.project_id)
-    .concat(row);
+  service.data.groups = previous ? service.data.groups.map(project => project.id === id ? row : project) :
+    [...service.data.groups, row];
   await service.save();
+  service.engine.emit?.({ type: "profiles", action: "group-metadata" });
   return row;
 }
 
@@ -101,6 +102,7 @@ async function labelsSave(service, p) {
     .filter((label) => label.id !== id)
     .concat(row);
   await service.save();
+  e.emit?.({ type: "profiles", action: "label-metadata" });
   return row;
 }
 
@@ -147,13 +149,15 @@ async function groupsDelete(service, p) {
         patch: { groupId: "", group_name: "" },
       };
     });
-  return profileRelations(e, changes, async () => {
+  const result = await profileRelations(e, changes, async () => {
     service.data.groups = service.data.groups.filter(
       (row) => !ids.includes(String(row.id)),
     );
     await service.save();
     return true;
   });
+  e.emit?.({ type: "profiles", action: "group-metadata" });
+  return result;
 }
 
 async function groupsSort(service, p) {
@@ -169,6 +173,7 @@ async function groupsSort(service, p) {
     selected.has(row.id) ? byId.get(order[index++]) : row,
   );
   await service.save();
+  service.engine.emit?.({ type: "profiles", action: "group-metadata" });
   return true;
 }
 

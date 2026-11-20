@@ -1,10 +1,12 @@
 "use strict";
+const { randomUUID } = require("node:crypto");
+const { createConversation } = require("./agent-conversations");
 const { CronExpressionParser } = require("cron-parser");
 const { nextRecordId, rememberRecordIds } = require("./local-record-ids");
 const { saveFields } = require("./agent-store");
 const date = () => new Date().toISOString();
 const recordActions = {
- userTemplates: ["listUserTemplates", "getUserTemplate", "createUserTemplate", "updateUserTemplate", "deleteUserTemplate", "topUserTemplate", "untopUserTemplate", "uploadUserTemplateSkill"],
+ userTemplates: ["listUserTemplates", "getUserTemplate", "createUserTemplate", "updateUserTemplate", "deleteUserTemplate", "topUserTemplate", "untopUserTemplate", "uploadUserTemplateSkill", "uploadUserTemplateScript"],
  userTasks: ["listUserTasks", "createUserTask", "updateUserTask", "deleteUserTask"],
  templates: ["listTemplateLabelCategories", "listTemplateLabels", "listOfficialTemplates", "getOfficialTemplate", "topOfficialTemplate", "untopOfficialTemplate"],
  officialScripts: ["getOfficialScript"],
@@ -40,15 +42,22 @@ function next(task, at = Date.now()) {
     .toISOString();
 }
 function enqueue(service, operation) {
-  const pending=(service.recordQueue||Promise.resolve()).then(()=>{
-    if(service.closing)throw Error('Agent 正在关闭');
+  service.recordOperations = (service.recordOperations || 0) + 1;
+  const pending = (service.recordQueue || Promise.resolve()).then(async () => {
+    await service.attachmentCleanup?.catch(() => {});
+    if (service.closing) throw Error('Agent 正在关闭');
     return operation();
-  });
-  service.recordQueue=pending.catch(()=>{});
+  }).finally(() => { service.recordOperations--; });
+  service.recordQueue = pending.catch(() => {});
   return pending;
 }
 function records(service, method, input) {
   return enqueue(service, () => recordOperation(service, method, input));
+}
+function listTemplate(row) {
+  if (!Object.hasOwn(row.metadata || {}, "scriptSource")) return row;
+  const { scriptSource: _scriptSource, ...metadata } = row.metadata;
+  return { ...row, metadata };
 }
 async function recordOperation(service, method, input) {
   const [ns, action] = method.split(".");
@@ -57,8 +66,11 @@ async function recordOperation(service, method, input) {
   )
     throw Error("Unknown record namespace");
   if (!recordActions[ns].includes(action)) throw Error("不支持的记录操作: " + method);
-  if (ns === "officialScripts") throw Error("原脚本沙箱尚未移植，无法读取脚本");
+  if (ns === "officialScripts") throw Error("官方脚本目录未接入，请使用本地脚本模板");
   if (action === "uploadUserTemplateSkill") return require("./agent-skill-upload").uploadSkill(service, input);
+  if (action === "uploadUserTemplateScript") {
+    return { code: 0, data: require("./agent-script-template").scriptFile(input.filename, input.code) };
+  }
   if(ns==='templates')return require('./agent-template-catalog').catalogRequest(service,action,input);
   let source;
   const normalized=normalize(input);
@@ -94,7 +106,7 @@ async function recordOperation(service, method, input) {
     return {
       code: 0,
       data: {
-        items: filtered.slice(offset, offset + limit),
+        items: filtered.slice(offset, offset + limit).map(row => ns === "userTemplates" ? listTemplate(row) : row),
         total: filtered.length,
         limit,
         offset,
@@ -149,14 +161,22 @@ async function recordOperation(service, method, input) {
   if (!String(value.name || "").trim()) throw Error("请输入名称");
   if (ns === "userTemplates") {
     value.templateType ??= "prompt";
-    if (!["prompt", "skill"].includes(value.templateType))
-      throw Error("当前本地运行时支持提示词和 Skill 模板；原脚本沙箱尚未移植");
+    if (!["prompt", "skill", "script"].includes(value.templateType)) throw Error("无效的模板类型");
+    if (value.templateType === "script") {
+      if (row?.templateType !== "script" && service.data.tasks.some(task => Number(task.userTemplateId) === value.id))
+        throw Error("此模板已被任务引用，不能变更为脚本类型");
+      const script = require("./agent-script-template")
+        .scriptFile(value.metadata.filename, value.metadata.scriptSource, value.metadata.optionsSchema);
+      value.metadata = { ...value.metadata, ...script };
+    }
   } else if (ns === "userTasks") {
-    if (
-      !service.data.templates.some((t) => t.id === Number(value.userTemplateId))
-    )
-      throw Error("所选模板不存在");
+    const template = service.data.templates.find(t => t.id === Number(value.userTemplateId));
+    if (!template) throw Error("所选模板不存在");
     value.windowIds = (value.windowIds || []).map(String);
+    if (template.templateType === "script") {
+      const script = require("./agent-script-runner").prepareScript(template, value, service.engine);
+      value.windowIds = script.windowIds;
+    }
     value.planType ??= "manual";
     value.enabled = value.enabled !== false;
     value.nextExecuteAt = next(value);
@@ -164,23 +184,39 @@ async function recordOperation(service, method, input) {
   await saveFields(service, { [key]: rows.filter((v) => v.id !== value.id).concat(value), recordIds: idDraft.recordIds });
   return { code: 0, data: value };
 }
-function runTask(service,taskId,scheduled=false){return enqueue(service,()=>runTaskOperation(service,taskId,scheduled));}
-async function runTaskOperation(service, taskId, scheduled = false) {
-  const task = service.data.tasks.find((t) => t.id === Number(taskId));
+function runTask(service, taskId) {
+  return enqueue(service, async () => {
+    const task = service.data.tasks.find(row => row.id === Number(taskId));
+    const input = await prepareTaskRun(service, task);
+    return claimTaskRun(service, task, input);
+  });
+}
+async function prepareTaskRun(service, task, scheduledAt = null) {
   if (!task) throw Error("任务不存在");
-  if (!task.enabled) throw Error("任务已停用");
-  if (
-    service.data.conversations.some(
-      (c) => c.taskId === task.id && service.active.has(c.id),
-    )
-  )
-    throw Object.assign(Error("任务正在运行"), {
-      code: "TASK_ALREADY_RUNNING",
-    });
+  if (scheduledAt !== null && !task.enabled) throw Error("任务已停用");
+  if (service.data.conversations.some(c => c.taskId === task.id && service.active.has(c.id))) {
+    throw Object.assign(Error("任务正在运行"), { code: "TASK_ALREADY_RUNNING" });
+  }
   const template = service.data.templates.find(
     (t) => t.id === Number(task.userTemplateId),
   );
   if (!template) throw Error("模板不存在");
+  const taskMeta = {
+    taskId: task.id,
+    taskName: task.name,
+    templateId: template.id,
+    templateName: template.name,
+    templateType: template.templateType,
+    windowDirIds: task.windowIds,
+    triggerType: scheduledAt ? task.planType : "manual",
+    scheduledAt,
+    occurrenceId: scheduledAt ? `${task.id}:${scheduledAt}` : null,
+  };
+  if (template.templateType === "script") {
+    const script = require("./agent-script-runner").prepareScript(template, task, service.engine);
+    taskMeta.windowDirIds = script.windowIds;
+    return { script, message: "运行本地脚本：" + template.name, fullAccess: false, allowedProfileIds: script.windowIds, taskMeta };
+  }
   let prompt =
     template.metadata.prompt ||
     template.metadata.usageExample ||
@@ -196,31 +232,79 @@ async function runTaskOperation(service, taskId, scheduled = false) {
     if (!skill) throw Error("任务的 Skill 不存在或未启用");
     prompt = String(prompt) + "\n参考 Skill：" + skill.content;
   }
-  const c = await service.request("createConversation");
-  c.taskId = task.id;
-  const runId = service.start(
-    {
-      conversationId: c.id,
-      message:
-        String(prompt) + "\n任务选择的窗口 ID：" + task.windowIds.join(", "),
-      fullAccess: true,
-      allowedProfileIds: task.windowIds.length ? task.windowIds : undefined,
-      taskMeta: {
-        taskId: task.id,
-        taskName: task.name,
-        templateId: template.id,
-        templateName: template.name,
-        templateType: template.templateType,
-        windowDirIds: task.windowIds,
-        triggerType: scheduled ? task.planType : "manual",
-        scheduledAt: scheduled ? task.nextExecuteAt : null,
-      },
+  return {
+    message: String(prompt) + "\n任务选择的窗口 ID：" + task.windowIds.join(", "),
+    fullAccess: true,
+    allowedProfileIds: task.windowIds.length ? task.windowIds : undefined,
+    taskMeta,
+  };
+}
+
+function replaceTask(tasks, task) {
+  return tasks.map(row => row.id === task.id ? task : row);
+}
+
+function saveTask(service, task) {
+  return saveFields(service, { tasks: replaceTask(service.data.tasks, task) });
+}
+
+function advanceSchedule(task) {
+  return task.planType === "once" ? { ...task, enabled: false, nextExecuteAt: null } : { ...task, nextExecuteAt: next(task) };
+}
+
+async function claimTaskRun(service, task, { script, ...input }) {
+  const conversation = createConversation();
+  const runId = randomUUID(), turnId = randomUUID();
+  const user = { id: turnId, role: "user", content: input.message, createdAt: conversation.createdAt };
+  Object.assign(conversation, {
+    taskId: task.id, latestRunId: runId, latestRunStatus: "running", messages: [user],
+    runPolicy: { fullAccess: input.fullAccess, allowedProfileIds: input.allowedProfileIds, taskMeta: input.taskMeta },
+  });
+  const log = {
+    ...input.taskMeta, id: runId, conversationId: conversation.id, status: "preparing", success: false,
+    startedAt: conversation.createdAt, endedAt: null, durationMs: null, endReasonCode: null,
+    scriptRuns: [], fileIds: [], input: input.message, messages: [user],
+  };
+  const claimedTask = { ...task, runtimeTaskLogId: runId };
+  // Persist the task pointer, conversation and log together before executing.
+  await service.save({
+    scope: { conversations: [conversation.id], logs: [log.id] },
+    snapshot: () => ({
+      ...service.data, tasks: replaceTask(service.data.tasks, claimedTask),
+      conversations: [conversation, ...service.data.conversations], logs: [log, ...service.data.logs],
+    }),
+    commit: () => {
+      service.data.tasks = replaceTask(service.data.tasks, claimedTask);
+      service.data.conversations.unshift(conversation);
+      service.data.logs.unshift(log);
     },
-    require("node:crypto").randomUUID(),
-  );
-  task.runtimeTaskLogId = runId;
-  await service.save({ scope: { conversations: [c.id], logs: [runId] } });
-  return { success: true, taskLogId: runId, conversationId: c.id };
+  });
+  if (service.closing) {
+    if (input.taskMeta.triggerType === "manual") throw Error("Agent 正在关闭");
+    return;
+  }
+  service.start({ ...input, conversationId: conversation.id }, randomUUID(), { runId, turnId }, script);
+  return { success: true, taskLogId: runId, conversationId: conversation.id };
+}
+
+async function runScheduledTask(service, task) {
+  const scheduledAt = task.nextExecuteAt;
+  const updated = advanceSchedule(task);
+  // Versions before atomic claims could record a run before advancing the
+  // schedule. Honor those records when reopening an existing store.
+  const recorded = service.data.logs.find(log => log.taskId === task.id && log.scheduledAt === scheduledAt);
+  if (recorded) {
+    await saveTask(service, { ...updated, runtimeTaskLogId: recorded.id });
+    return;
+  }
+  let input;
+  try { input = await prepareTaskRun(service, task, scheduledAt); }
+  catch (error) {
+    await saveTask(service, { ...updated, lastError: error.message });
+    service.engine.emit({ channel: "agent:scheduler-error", payload: { taskId: task.id, message: error.message } });
+    return;
+  }
+  if (!service.closing) await claimTaskRun(service, { ...updated, lastError: null }, input);
 }
 function startScheduler(service) {
   if (service.scheduler || service.closing) return;
@@ -230,27 +314,14 @@ function startScheduler(service) {
     service.tickPromise = enqueue(service,async () => {
       await service.load();
       for (const task of service.data.tasks) {
-        if (service.closing) break;
+        if (service.closing || service.attachmentCleanup) break;
         if (
           !task.enabled ||
           !task.nextExecuteAt ||
           Date.parse(task.nextExecuteAt) > Date.now()
         )
           continue;
-        try {
-          await runTaskOperation(service, task.id, true);
-        } catch (error) {
-          service.engine.emit({
-            channel: "agent:scheduler-error",
-            payload: { taskId: task.id, message: error.message },
-          });
-          task.lastError = error.message;
-        }
-        if (task.planType === "once") {
-          task.enabled = false;
-          task.nextExecuteAt = null;
-        } else task.nextExecuteAt = next(task);
-        await service.save({ scope: { conversations: [], logs: [] } });
+        await runScheduledTask(service, task);
       }
     })
       .catch((error) => {

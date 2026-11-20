@@ -1,6 +1,7 @@
 const { app, BrowserWindow, Menu, clipboard, dialog, globalShortcut, ipcMain, nativeImage, screen, session, shell, Tray } = require('./host-bridge');
 const path = require('path');
-const roxyPreview = process.env.OPENBROWSER_ROXY_UI !== '0';
+const sourceRenderer = process.env.OPENBROWSER_RENDERER === 'source';
+const roxyPreview = sourceRenderer || process.env.OPENBROWSER_ROXY_UI !== '0';
 const rebuildProtocol = require('./rebuild/protocol');
 if (roxyPreview) rebuildProtocol.registerUiScheme(require('./host-bridge').protocol);
 const fs = require('fs');
@@ -15,6 +16,21 @@ const { registerProfileIpc } = require('./main/profile-ipc');
 const { registerAutomationControlIpc } = require('./main/automation-ipc');
 const { collectStorageDiagnostics } = require('./automation/storage-diagnostics');
 const { LiveSyncController } = require('./live-sync-v5');
+
+function workbenchRoot() {
+  if (!sourceRenderer) {
+    const workbench = path.join(__dirname, 'roxy-ui');
+    if (!fs.existsSync(path.join(workbench, 'index.html'))) {
+      throw Error('找不到工作台，请先运行 npm run rebuild:ui');
+    }
+    return workbench;
+  }
+  const standalone = path.join(__dirname, 'frontend', 'dist');
+  if (fs.existsSync(path.join(standalone, 'index.html'))) return standalone;
+  const packaged = path.join(__dirname, 'roxy-ui', 'source-frontend');
+  if (fs.existsSync(path.join(packaged, 'index.html'))) return packaged;
+  throw Error('找不到源码工作台，请先运行 npm run build:renderer');
+}
 
 // Host process performance (Win / macOS / Linux): cut background timers and idle GPU work.
 try {
@@ -628,10 +644,18 @@ async function beginSync(ids = syncSelection) {
   }
   if (selected.length < 2) throw new Error('\u8bf7\u81f3\u5c11\u9009\u62e9\u4e24\u4e2a\u8fd0\u884c\u4e2d\u7684\u6d4f\u89c8\u5668\u73af\u5883');
   if (expanded) emit({ type: 'sync-notice', message: '\u672a\u9009\u62e9\u73af\u5883\uff0c\u5df2\u81ea\u52a8\u7eb3\u5165\u5168\u90e8\u8fd0\u884c\u4e2d\u7684\u73af\u5883\u8fdb\u884c\u540c\u6b65' });
-  syncSelection = selected;
+  const assertRunning = () => {
+    if (engine.runningWithCdp(selected).length !== selected.length) {
+      throw new Error('选中的窗口已关闭或无法同步，请重新选择');
+    }
+  };
+  assertRunning();
   await tile(selected, false);
+  assertRunning();
   const tabs = await syncTabsFromMaster(selected);
+  assertRunning();
   await liveSync.start(selected);
+  syncSelection = selected;
   syncState = { active: true, master: selected[0], selected };
   try{await localUiSync?.request('sync:apply-color');}catch(error){await endSync();throw error;}
   emit({ type: 'sync-state', ...syncSnapshot() });
@@ -911,7 +935,7 @@ app.whenReady().then(async () => {
   }
   if (roxyPreview) {
     const host = require('./host-bridge');
-    rebuildProtocol.installUiProtocol(host.protocol, host.net, path.join(__dirname, 'roxy-ui'), {
+    rebuildProtocol.installUiProtocol(host.protocol, host.net, workbenchRoot(), {
       agentFile: (id) => { if (!localUiService?.agent) throw Error('附件服务尚未就绪'); return localUiService.agent.files.get(id); },
     });
     const { DialogWindows } = require('./rebuild/dialog-windows');
@@ -947,22 +971,22 @@ app.whenReady().then(async () => {
   // awaiting it earlier in the chain left a window where the first invoke
   // rejected with "No handler registered" and the profile list never rendered.
   if (roxyPreview) {
-    registerTrustedIpc('rebuild:request', async (_event, method, payload) => {
+    const { captureIpcResult } = require('./shared/ipc-result');
+    registerTrustedIpc('rebuild:request', (_event, method, payload) => captureIpcResult(async () => {
       await startupReady;
-      const { captureIpcResult } = require('./shared/ipc-result');
       if (typeof method === 'string' && method.startsWith('ui:dialog:'))
-        return captureIpcResult(() => localUiDialogs.request(method, payload, _event.sender));
+        return localUiDialogs.request(method, payload, _event.sender);
       if (typeof method === 'string' && method.startsWith('ui:workspace:'))
-        return captureIpcResult(() => localUiWorkspaces.request(method, payload, _event.sender));
+        return localUiWorkspaces.request(method, payload, _event.sender);
       if (typeof method === 'string' && method.startsWith('sync:'))
-        return captureIpcResult(() => localUiSync.request(method, payload));
+        return localUiSync.request(method, payload);
       if (!localUiService) {
         const { LocalService } = require('./rebuild/local-service');
         localUiService = new LocalService({ engine, root: app.getPath('userData'), dialog, window: () => BrowserWindow.getFocusedWindow() || mainWindow, proxyStore, accountStore: () => automation?.accountStore, automation: () => automation, beforeRemove: beforeProfileRemoval,
           isSynchronizing: (id) => syncState.active && syncState.selected.includes(id) });
       }
-      return captureIpcResult(() => localUiService.request(method, payload));
-    });
+      return localUiService.request(method, payload);
+    }));
   }
   registerTrustedIpc('system:info', async () => {
     // The first frame may paint while storage and automation initialize, but
@@ -1505,7 +1529,9 @@ async function stopAllForQuit() {
   if (!result) remaining = lifecycleIds();
   if (Array.isArray(result?.errors)) errors.push(...result.errors);
   for (let attempt = 0; attempt < 2 && remaining.length; attempt += 1) {
-    await Promise.allSettled(remaining.map((id) => engine.stop(id)));
+    await Promise.allSettled(remaining.map((id) => lifecycleTimeout(
+      Promise.resolve().then(() => engine.stop(id)), 5_000, `Quit browser retry timed out for ${id}`
+    )));
     await sleep(150 * (attempt + 1));
     try { result = await engine.stopAll(); } catch (error) {
       errors.push(String(error?.message || error));
@@ -1550,55 +1576,59 @@ function beginQuitCleanup() {
   const cloud = settingsStore.getLocalSettings()?.cloud || {};
   let stopResult = { stopped: false, remaining: [], errors: [] };
   let persistenceFailed = false;
+  const stageTimeoutMs = 15_000;
+  const runStage = (name, action, timeout = stageTimeoutMs) => lifecycleTimeout(
+    Promise.resolve().then(action), timeout, `Quit ${name} timed out after ${timeout / 1000}s`
+  );
+  const runFlush = async (name, action) => {
+    try { await runStage(name, action); }
+    catch (error) {
+      persistenceFailed = true;
+      console.warn(`OpenBrowser quit ${name} failed:`, error?.message || error);
+    }
+  };
   quitCleanupPromise = Promise.resolve()
     .then(async () => {
-      const names = ['local-sync', 'local-agent', 'cookie-robot', 'local-extensions'];
-      const localShutdown = await Promise.allSettled([
-        Promise.resolve().then(() => localUiSync?.shutdown()),
-        Promise.resolve().then(() => localUiService?.agent?.shutdown()),
-        Promise.resolve().then(() => localUiService?.robot?.shutdown()),
-        Promise.resolve().then(async () => { await localUiService?.queue; await localUiService?.extensions?.shutdown(); }),
-      ]);
-      for (const [index, result] of localShutdown.entries()) {
-        if (result.status !== 'rejected') continue;
+      const services = [
+        ['local-sync', () => localUiSync?.shutdown()],
+        ['local-agent', () => localUiService?.agent?.shutdown()],
+        ['cookie-robot', () => localUiService?.robot?.shutdown()],
+        ['local-extensions', async () => { await localUiService?.queue; await localUiService?.extensions?.shutdown(); }],
+      ];
+      await Promise.all(services.map(async ([service, shutdown]) => {
+        try { await runStage(service, shutdown); }
+        catch (error) {
+          persistenceFailed = true;
+          const message = error?.message || String(error);
+          console.warn('OpenBrowser quit local service failed:', service, message);
+          try {
+            await runStage('diagnostic', () => writeBrowserStartupDiagnostic(app.getPath('userData'), {
+              type: 'local-service-shutdown-error', service, message,
+            }), 2_000);
+          } catch (error) { console.warn('OpenBrowser quit diagnostic failed:', error.message); }
+        }
+      }));
+    })
+    .then(async () => {
+      try { stopResult = await drainBrowsersForQuit(); }
+      catch (error) {
         persistenceFailed = true;
-        const message = result.reason?.message || String(result.reason);
-        console.warn('OpenBrowser quit local service failed:', names[index], message);
-        try { await writeBrowserStartupDiagnostic(app.getPath('userData'), { type: 'local-service-shutdown-error', service: names[index], message }); }
-        catch (error) { console.warn('OpenBrowser quit diagnostic failed:', error.message); }
+        console.warn('OpenBrowser quit browser drain failed:', error?.message || error);
       }
     })
-    .then(async () => { stopResult = await drainBrowsersForQuit(); })
-    .then(() => engine?.flushPersistence?.())
-    .catch((error) => {
-      persistenceFailed = true;
-      console.warn('OpenBrowser quit engine flush failed:', error?.message || error);
-    })
+    .then(() => runFlush('engine flush', () => engine?.flushPersistence?.()))
     // A settings change made moments before quitting may still be inside the
     // quiet period; write it out before the process goes away.
-    .then(() => settingsStore.flushSettingsWriter())
-    .catch((error) => {
-      persistenceFailed = true;
-      console.warn('OpenBrowser quit settings flush failed:', error?.message || error);
-    })
+    .then(() => runFlush('settings flush', () => settingsStore.flushSettingsWriter()))
     // RPA task/template updates coalesce into one quiet-period write; flush it
     // before the process goes away so the final task status reaches the disk.
-    .then(() => automation?.rpaStore?.flush?.())
-    .catch((error) => {
-      persistenceFailed = true;
-      console.warn('OpenBrowser quit rpa-store flush failed:', error?.message || error);
-    })
+    .then(() => runFlush('rpa-store flush', () => automation?.rpaStore?.flush?.()))
     .then(() => {
       try { liveSync?.stop?.(); } catch (error) {
         console.warn('OpenBrowser quit live-sync cleanup failed:', error?.message || error);
       }
     })
-    .then(async () => {
-      try { await automation?.stop?.(); } catch (error) {
-        persistenceFailed = true;
-        console.warn('OpenBrowser quit automation cleanup failed:', error?.message || error);
-      }
-    })
+    .then(() => runFlush('automation cleanup', () => automation?.stop?.()))
     .then(async () => {
       // Stop browsers and flush close-time state before packaging browser data.
       // Otherwise the backup can capture stale cookies or locked SQLite/LevelDB files.
@@ -1624,7 +1654,7 @@ function beginQuitCleanup() {
         try {
           const failedSettings = settingsStore.getLocalSettings();
           failedSettings.cloud = { ...cloud, lastError: error.message };
-          await settingsStore.saveLocalSettings(failedSettings);
+          await runStage('backup diagnostic', () => settingsStore.saveLocalSettings(failedSettings), 2_000);
         } catch (_) {}
       }
     })

@@ -5,18 +5,10 @@ const path = require('node:path');
 const { assertSafeProfileChild, validateProfileRootSecure } = require('../isolation');
 const { FIREFOX_PREFIX, isFirefoxBackupPath } = require('../browser-data');
 const { MAX_BROWSER_DATA_BYTES, MAX_BROWSER_FILE_BYTES, MAX_BROWSER_DATA_FILES } = require('./limits');
+const { syncDirectory } = require('../../engine/state-storage');
 const RESTORE_PREFIX = '.openbrowser-restore-';
 const SETTLED_MARKER = 'settled.json';
 const SETTLED_CONTENTS = new Set(['{"version":1,"outcome":"committed"}', '{"version":1,"outcome":"rolled-back"}']);
-
-async function syncDirectory(directory) {
-  // Directory fsync is unsupported on some platforms. File fsync below is
-  // strict; directory durability is best effort on those filesystems.
-  let handle;
-  try { handle = await fs.open(directory, 'r'); await handle.sync(); }
-  catch (_) {}
-  finally { if (handle) await handle.close().catch(() => {}); }
-}
 
 async function writeDurably(file, value) {
   const handle = await fs.open(file, 'wx', 0o600);

@@ -9,6 +9,7 @@ const repo = path.resolve(__dirname, '../..');
 function classify(file) {
   if (file.includes('/vendor/')) return ['third-party', 'locked-input'];
   if (file.startsWith('Browserapp/roxy-ui/')) return ['generated-ui', 'generated'];
+  if (file.startsWith('Browserapp/frontend/')) return ['workbench', 'supported'];
   if (file.startsWith('docs/')) return ['documentation-evidence', 'reference'];
   if (/\/assets\/|\/data\//.test(file)) return ['resources-data', 'supported'];
   if (/selftest|\/tests\/|adversarial|benchmark|regression-runner|test-fixtures/.test(file)) return ['tests-tools', 'development'];

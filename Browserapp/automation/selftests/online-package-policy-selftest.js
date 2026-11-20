@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { packageArtifactStem, shouldShipOpenBrowser148Kernel, pruneForeignKernelSeeds } = require('../../scripts/package-portable');
+const { isRuntimeResource } = require('../../scripts/runtime-manifest');
 const previous = process.env.OPENBROWSER_PACKAGE_VARIANT;
 const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'openbrowser-online-policy-'));
 try {
@@ -26,6 +27,9 @@ try {
   delete process.env.OPENBROWSER_PACKAGE_VARIANT;
   assert.equal(shouldShipOpenBrowser148Kernel('darwin', 'x86_64'), false);
   assert.equal(packageArtifactStem('darwin', 'x86_64'), 'OpenBrowser-macOS-x86_64-without-kernel', 'the default build also downloads its kernel later');
+  assert.equal(isRuntimeResource('assets/fonts/_preview/index.html'), false);
+  assert.equal(isRuntimeResource('assets/fonts/_preview/fonts/cubic11.ttf'), false);
+  assert.equal(isRuntimeResource('assets/font-subsets/index.json'), true);
   console.log('ONLINE_PACKAGE_POLICY_SELFTEST OK (four online variants, default without kernel, no LFS resources, legacy bundled build rejected)');
 } finally {
   if (previous === undefined) delete process.env.OPENBROWSER_PACKAGE_VARIANT;

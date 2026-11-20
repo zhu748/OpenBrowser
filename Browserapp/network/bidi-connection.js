@@ -19,6 +19,7 @@ class BidiConnection {
     this.onEvent = options.onEvent;
     this.onDisconnect = options.onDisconnect;
     this.pending = new Map();
+    this.listeners = new Set();
     this.nextId = 1;
     this.closed = false;
     this.intentionalClose = false;
@@ -54,9 +55,15 @@ class BidiConnection {
           const error = new Error(message.message || message.error || 'BiDi command failed');
           error.code = message.error;
           pending.reject(error);
-        } else pending.resolve(message.result || {});
+        } else {
+          if (pending.method === 'session.new') this.sessionInfo = message.result;
+          pending.resolve(message.result || {});
+        }
       } else if (message.type === 'event') {
         Promise.resolve().then(() => { if (!this.closed) return this.onEvent?.(message, this); }).catch((error) => this.terminate(error));
+        for (const listener of this.listeners) {
+          try { listener(message); } catch (_) { /* Observers do not own the browser connection. */ }
+        }
       }
     });
     this.socket.addEventListener('close', () => this.terminate(new Error('Firefox BiDi connection closed')));
@@ -99,12 +106,18 @@ class BidiConnection {
     pending.reject(new Error(`BiDi timeout: ${pending.method}`));
   }
 
+  observe(listener) {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
   terminate(error) {
     if (this.closed) return;
     this.closed = true;
     this.opening?.reject(error);
     for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(error); }
     this.pending.clear();
+    this.listeners.clear();
     try { this.socket?.close(); } catch (_) {}
     if (!this.intentionalClose) {
       try { Promise.resolve(this.onDisconnect?.(error)).catch(() => {}); } catch (_) {}
