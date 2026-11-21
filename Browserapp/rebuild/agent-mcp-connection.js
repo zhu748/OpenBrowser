@@ -1,6 +1,7 @@
 "use strict";
 
 const { spawn } = require("node:child_process");
+const { deadlineSignal } = require("./abort-deadline");
 const LIMIT = 2 * 1024 * 1024, VERSION = "2024-11-05";
 
 class Connection {
@@ -65,7 +66,7 @@ class Connection {
         }
         const response = message.method === "ping" ? { result: {} } : { error: { code: -32601, message: "Client capability not supported" } };
         this.replying++;
-        void this.write({ jsonrpc: "2.0", id: message.id, ...response }, AbortSignal.timeout(this.requestTimeoutMs))
+        void this.write({ jsonrpc: "2.0", id: message.id, ...response }, deadlineSignal(this.requestTimeoutMs, "MCP reply timeout"))
           .catch(error => this.fail(error)).finally(() => { this.replying--; });
       }
       return;
@@ -87,7 +88,7 @@ class Connection {
   }
 
   writeProcess(text, signal) {
-    const combined = AbortSignal.any([this.controller.signal, ...(signal ? [signal] : []), AbortSignal.timeout(this.requestTimeoutMs)]);
+    const combined = AbortSignal.any([this.controller.signal, ...(signal ? [signal] : []), deadlineSignal(this.requestTimeoutMs, "MCP request write timeout")]);
     return new Promise((resolve, reject) => {
       const finish = error => { combined.removeEventListener("abort", abort); error ? reject(error) : resolve(); };
       const abort = () => finish(combined.reason || Error("MCP request cancelled"));
@@ -103,7 +104,7 @@ class Connection {
     const headers = { ...this.config.headers, "Content-Type": "application/json", Accept: "application/json, text/event-stream",
       ...(this.session ? { "Mcp-Session-Id": this.session } : {}), ...(this.version ? { "MCP-Protocol-Version": this.version } : {}) };
     const response = await fetch(this.config.url, { method: "POST", headers, body: text, redirect: "error",
-      signal: AbortSignal.any([this.controller.signal, ...(signal ? [signal] : []), AbortSignal.timeout(this.requestTimeoutMs)]) });
+      signal: AbortSignal.any([this.controller.signal, ...(signal ? [signal] : []), deadlineSignal(this.requestTimeoutMs, "MCP request timeout")]) });
     try {
       if (!response.ok) throw Error("MCP HTTP " + response.status);
       const session = response.headers.get("mcp-session-id");
@@ -172,7 +173,7 @@ class Connection {
       if (combined.aborted && !this.closed) {
         try { await this.write({ jsonrpc: "2.0", method: "notifications/cancelled", params: {
           requestId: id, reason: "OpenBrowser request cancelled",
-        } }, AbortSignal.timeout(this.cleanupTimeoutMs)); }
+        } }, deadlineSignal(this.cleanupTimeoutMs, "MCP cleanup timeout")); }
         catch (error) { throw new AggregateError([combined.reason, error], "MCP 已取消，但远端取消通知失败"); }
       }
     }
@@ -206,7 +207,7 @@ class Connection {
       }
     } else if (session) {
       const response = await fetch(this.config.url, { method: "DELETE", headers: { ...this.config.headers,
-        "Mcp-Session-Id": session, "MCP-Protocol-Version": this.version }, redirect: "error", signal: AbortSignal.timeout(this.cleanupTimeoutMs) });
+        "Mcp-Session-Id": session, "MCP-Protocol-Version": this.version }, redirect: "error", signal: deadlineSignal(this.cleanupTimeoutMs, "MCP session cleanup timeout") });
       await response.body?.cancel();
       if (!response.ok && response.status !== 404 && response.status !== 405) throw Error("MCP session cleanup HTTP " + response.status);
     }

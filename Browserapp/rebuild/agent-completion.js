@@ -1,6 +1,7 @@
 "use strict";
 
 const crypto = require("node:crypto");
+const { deadlineSignal } = require("./abort-deadline");
 const { createContentEmitter } = require("./agent-content-emitter");
 const LIMIT = 2 * 1024 * 1024;
 const failure = (message, code = "LLM_INCOMPLETE_RESPONSE") => Object.assign(Error(message), { code });
@@ -153,7 +154,7 @@ async function completion(service, config, messages, run, tools) {
         temperature: run.requestOptions?.temperature, max_tokens: run.requestOptions?.maxTokens,
       }),
     }),
-    signal: AbortSignal.any([run.abort.signal, AbortSignal.timeout(120000)]),
+    signal: AbortSignal.any([run.abort.signal, deadlineSignal(120000, "Model request timeout")]),
   });
   if (!res.ok) throw Error("LLM HTTP " + res.status + ": " + (await readText(res)).slice(0, 400));
   const type = (res.headers.get("content-type") || "").toLowerCase();

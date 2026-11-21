@@ -1,6 +1,7 @@
 "use strict";
 
 const { randomUUID } = require("node:crypto");
+const { deadlineSignal } = require("./abort-deadline");
 const { setTimeout: delay } = require("node:timers/promises");
 const { parseChatIds } = require("./agent-integration-settings");
 
@@ -12,7 +13,7 @@ async function callTelegram(token, method, values, signal, timeout = 12000) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(values),
       redirect: "error",
-      signal: AbortSignal.any([signal, AbortSignal.timeout(timeout)]),
+      signal: AbortSignal.any([signal, deadlineSignal(timeout, "Telegram request timeout")]),
     });
     body = await response.json();
     if (!response.ok || body?.ok !== true) throw Error();

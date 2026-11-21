@@ -396,7 +396,7 @@ jobs:
           echo "::warning::desktop gates failed on macOS; retrying once (transient hosted-runner noise class)"
           gates
       - name: Measure default workbench responsiveness
-        timeout-minutes: 7
+        timeout-minutes: 12
         # Same macOS retry rationale: the 5fdeea2/f3f70f2 runs missed the
         # interaction budget by ~3% (search p95 1550ms vs 1500ms) while the
         # same code passes with headroom on Linux/Windows — hosted-runner
