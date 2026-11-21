@@ -8,6 +8,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const { _electron: electron } = require('playwright');
+const searchPlaceholder = /^搜索 (?:Ctrl|⌘) \+ F$/;
 
 function options(argv) {
   const result = { sizes: [10, 100, 1000], rounds: 7, budgetMs: 1500 };
@@ -88,7 +89,7 @@ async function queryPaint(page, act, expected) {
 }
 
 async function measure(page, count, rounds) {
-  const search = page.getByPlaceholder('搜索 Ctrl + F', { exact: true });
+  const search = page.getByPlaceholder(searchPlaceholder);
   const searchMs = [], pageMs = [], selectionMs = [];
   // Ensure the warm-up itself is a real query even for a single-page fleet.
   const query = async value => { await search.fill(value); await search.press('Enter'); };
@@ -140,7 +141,7 @@ async function benchmark(args) {
     });
     await window.dispose();
     await page.waitForFunction(() => !!globalThis.__localRequest && !!globalThis.__localApi?.window && !!globalThis.__router);
-    await page.getByPlaceholder('搜索 Ctrl + F', { exact: true }).waitFor();
+    await page.getByPlaceholder(searchPlaceholder).waitFor();
     assert.ok(page.url().startsWith('obui://app/'), 'benchmark must exercise the default workbench');
     const startupMs = Math.round(performance.now() - start);
     await observeQueries(app, page);
@@ -166,6 +167,7 @@ async function benchmark(args) {
       node: process.version, platform: process.platform, startupMs, rounds: args.rounds,
       interactionBudgetMs: args.budgetMs, reports };
   } catch (error) {
+    console.error(error.message);
     if (args.output) {
       await fs.mkdir(path.dirname(args.output), { recursive: true });
       await fs.writeFile(args.output, JSON.stringify({ complete: false, reports, errors, error: error.stack }, null, 2));

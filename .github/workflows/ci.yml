@@ -383,7 +383,9 @@ jobs:
           node rebuild/agent-conversation-cache-ui-selftest.cjs
           node rebuild/agent-mcp-ui-selftest.cjs
           node rebuild/agent-approval-ui-selftest.cjs
-          node scripts/benchmark-workbench.js --sizes 10,100,1000 --interaction-budget-ms 1500 --output ../work/workbench-performance/report.json
+      - name: Measure default workbench responsiveness
+        timeout-minutes: 4
+        run: node scripts/benchmark-workbench.js --sizes 10,100,1000 --interaction-budget-ms 1500 --output ../work/workbench-performance/report.json
       - name: Preserve default workbench performance evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
