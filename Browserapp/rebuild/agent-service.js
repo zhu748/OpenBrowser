@@ -292,12 +292,19 @@ class AgentService {
     }
     if (method === "skillPathInfo")
       return { installedRoot: path.join(__dirname, "skills") };
-    if (method === "logs:list") return this.data.logs;
+    // Lazy getter guard: returning segmented log/conversation records as-is
+    // makes the Electron IPC structured clone materialize EVERY heavy getter
+    // (all messages/events/checkpoints -> full decrypt of all history) in one
+    // synchronous burst. Both list endpoints return summaries only; the
+    // detail endpoint is the supported path to full contents.
+    if (method === "logs:list")
+      return this.data.logs.map((log) => require("./agent-history").logSummary(this, log));
     if (method === "taskLogs:summary") return this.data.logs.filter(log => log.taskId)
       .map(log => require("./agent-history").logSummary(this, log));
     if (method === "logs:detail") return require("./agent-history").logDetail(this, p.id);
     if (method === "taskLogs:list")
-      return this.data.logs.filter((log) => log.taskId);
+      return this.data.logs.filter((log) => log.taskId)
+        .map((log) => require("./agent-history").logSummary(this, log));
     if (method === "syncTasks") {
       require("./agent-records").startScheduler(this);
       return { synced: true };
@@ -556,10 +563,17 @@ class AgentService {
       if (script) {
         const publish = (windowId, line, status) => {
           const scriptLine = line ? line + "\n" : "";
-          const text = scriptLine ? `[${windowId}] ${scriptLine}`.slice(0, 96000 - answer.length) : "";
           if (!scriptLine && !status) return;
-          answer += text;
-          run.partialAnswer = assistant.content = answer;
+          // Clamp the remaining budget to >= 0: once answer exceeded the
+          // 96000 cap, `96000 - answer.length` went negative and slice(0,
+          // negative) kept the HEAD and dropped the TAIL of each new line —
+          // the cap kept being pushed past it with garbled content_delta text.
+          const room = Math.max(0, 96000 - answer.length);
+          const text = scriptLine ? `[${windowId}] ${scriptLine}`.slice(0, room) : "";
+          if (text) {
+            answer += text;
+            run.partialAnswer = assistant.content = answer;
+          }
           this.event(run, "content_delta", {
             contentId: assistant.id, text, scriptWindowId: windowId, scriptStatus: status,
             scriptLine,

@@ -23,8 +23,11 @@ impl MockSocks5UdpServer {
             .expect("bind mock tcp");
         let tcp_addr = tcp_listener.local_addr().expect("tcp addr");
 
+        // Bind the UDP relay on a distinct loopback address (127.0.0.2) so
+        // tests can also send datagrams from 127.0.0.1 sources that must be
+        // dropped by client-side source validation.
         let udp_socket = Arc::new(
-            UdpSocket::bind("127.0.0.1:0")
+            UdpSocket::bind("127.0.0.2:0")
                 .await
                 .expect("bind mock udp relay"),
         );
@@ -32,6 +35,15 @@ impl MockSocks5UdpServer {
 
         let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
         let mut shutdown_udp = shutdown_rx.clone();
+
+        // Spoof source: an unrelated 127.0.0.1 socket whose replies must be
+        // dropped by client source validation (the relay itself is on
+        // 127.0.0.2). Sent before every legit echo to pin the drop behavior.
+        let spoofer = Arc::new(
+            UdpSocket::bind("127.0.0.1:0")
+                .await
+                .expect("bind mock udp spoofer"),
+        );
 
         // Spawn UDP Echo Relay
         let udp_relay = udp_socket.clone();
@@ -43,6 +55,16 @@ impl MockSocks5UdpServer {
                     recv_res = udp_relay.recv_from(&mut buf) => {
                         if let Ok((n, client_addr)) = recv_res {
                             if let Ok(packet) = Socks5UdpPacket::decode(&buf[..n]) {
+                                // Spoofed reply from a mismatching source: the
+                                // client must drop it and keep the session.
+                                let spoof = Socks5UdpPacket::new(
+                                    packet.address.clone(),
+                                    packet.port,
+                                    b"SPOOF".to_vec(),
+                                );
+                                if let Ok(encoded) = spoof.encode() {
+                                    let _ = spoofer.send_to(&encoded, client_addr).await;
+                                }
                                 // Echo back payload
                                 let mut response_data = b"ECHO:".to_vec();
                                 response_data.extend_from_slice(&packet.data);
@@ -113,9 +135,10 @@ impl MockSocks5UdpServer {
                                     return;
                                 }
 
-                                // Send Reply with UDP relay port
+                                // Send Reply with UDP relay port (advertise the
+                                // real 127.0.0.2 relay address)
                                 let mut reply = vec![SOCKS5_VERSION, REP_SUCCEEDED, 0x00, ATYP_IPV4];
-                                reply.extend_from_slice(&[127, 0, 0, 1]);
+                                reply.extend_from_slice(&[127, 0, 0, 2]);
                                 reply.push((udp_addr.port() >> 8) as u8);
                                 reply.push((udp_addr.port() & 0xFF) as u8);
                                 let _ = stream.write_all(&reply).await;
@@ -249,6 +272,54 @@ async fn test_socks5_udp_associate_auth_failure() {
 
     let result = Socks5UdpAssociate::associate(&bad_config, None).await;
     assert!(result.is_err(), "Invalid auth must be rejected");
+
+    server.stop();
+}
+
+#[tokio::test]
+async fn test_socks5_udp_associate_spoofed_source_dropped_not_fatal() {
+    // A datagram from a non-relay source (the mock's 127.0.0.1 spoofer, while
+    // the relay is 127.0.0.2) must be DROPPED: previously a single mismatched
+    // (spoofable) datagram killed the whole UDP ASSOCIATE session.
+    let server = MockSocks5UdpServer::start(false).await;
+    let config = ProxyConfig {
+        protocol: ProxyProtocol::Socks5,
+        host: "127.0.0.1".into(),
+        port: server.tcp_addr.port(),
+        username: None,
+        password: None,
+        remark: None,
+        name: None,
+    };
+
+    let session = Socks5UdpAssociate::associate(&config, None)
+        .await
+        .expect("associate must succeed");
+
+    let target = SocksAddress::Ipv4(Ipv4Addr::new(8, 8, 8, 8));
+    session
+        .send_to(b"alive", &target, 53)
+        .await
+        .expect("send_to must succeed");
+
+    // The relay sends a spoofed datagram (from 127.0.0.1) BEFORE the real
+    // echo (from 127.0.0.2): recv_from must skip the spoof and return the
+    // relay's echo instead of erroring out.
+    let mut buf = [0u8; 512];
+    let (n, _addr, _port) =
+        tokio::time::timeout(Duration::from_secs(2), session.recv_from(&mut buf))
+            .await
+            .expect("timeout")
+            .expect("recv_from must survive the spoofed datagram");
+    assert_eq!(&buf[..n], b"ECHO:alive");
+    assert_ne!(&buf[..n], b"SPOOF");
+
+    // The session stays usable afterwards.
+    assert!(session.is_control_alive());
+    session
+        .send_to(b"still-alive", &target, 53)
+        .await
+        .expect("session must remain usable after spoofed datagram");
 
     server.stop();
 }

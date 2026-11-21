@@ -196,6 +196,9 @@ impl ProxyConfig {
 /// non-credential positions. Encoding everything outside the unreserved set
 /// keeps the generated URL parseable and losslessly decodable.
 fn encode_userinfo(part: &str) -> String {
+    // Hex digits for the percent-encoded escape: one lookup per encoded byte
+    // instead of a format! String per byte.
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
     let mut out = String::with_capacity(part.len());
     for byte in part.bytes() {
         match byte {
@@ -203,7 +206,9 @@ fn encode_userinfo(part: &str) -> String {
                 out.push(byte as char);
             }
             _ => {
-                out.push_str(&format!("%{:02X}", byte));
+                out.push('%');
+                out.push(HEX[(byte >> 4) as usize] as char);
+                out.push(HEX[(byte & 0x0F) as usize] as char);
             }
         }
     }

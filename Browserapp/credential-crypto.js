@@ -103,6 +103,11 @@ function getLocalMasterKey() {
       const content = fs.readFileSync(keyPath, 'utf8').trim();
       if (content.length >= 32) return content;
       // The exclusive creator may not have completed its first write yet.
+      // NOTE: this is a synchronous function, so any backoff blocks the main
+      // thread; Atomics.waitAsync would return instantly (zero delay, a
+      // wasted spin) because its promise cannot be awaited here. The block is
+      // bounded at 10 x 10ms and only occurs in the rare concurrent
+      // first-creation race.
       if (attempt < 9) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
     }
     throw new Error('Local master key is invalid; preserve the key file for recovery');
@@ -220,7 +225,11 @@ function deriveAesKey(passphrase, salt) {
   const cached = __derivedKeyCache.get(cacheKey);
   if (cached) return cached;
   const key = crypto.scryptSync(passphrase, salt, KEY_LENGTH);
-  if (__derivedKeyCache.size >= DERIVED_KEY_CACHE_MAX) __derivedKeyCache.clear();
+  if (__derivedKeyCache.size >= DERIVED_KEY_CACHE_MAX) {
+    // Evict the oldest entry instead of clearing the table: a full clear made
+    // the next batch of callers each pay a fresh ~30-45ms scryptSync.
+    __derivedKeyCache.delete(__derivedKeyCache.keys().next().value);
+  }
   __derivedKeyCache.set(cacheKey, key);
   return key;
 }
@@ -238,7 +247,10 @@ function deriveAesKeyAtCloudCost(passphrase, salt) {
   const cached = __derivedKeyCache.get(cacheKey);
   if (cached) return cached;
   const key = crypto.scryptSync(passphrase, salt, KEY_LENGTH, CLOUD_SCRYPT_COST);
-  if (__derivedKeyCache.size >= DERIVED_KEY_CACHE_MAX) __derivedKeyCache.clear();
+  if (__derivedKeyCache.size >= DERIVED_KEY_CACHE_MAX) {
+    // Same oldest-first eviction as deriveAesKey; clear-all was a scrypt storm.
+    __derivedKeyCache.delete(__derivedKeyCache.keys().next().value);
+  }
   __derivedKeyCache.set(cacheKey, key);
   return key;
 }

@@ -77,17 +77,21 @@ function positionSelectMenu(menu, button) {
   const space = Math.max(0, openAbove ? availableAbove : availableBelow);
   // Long option lists need real height — allow up to ~half viewport
   const maxHeight = Math.max(120, Math.min(Math.floor(window.innerHeight * 0.5), Math.max(space, 160), 420));
+  // Read offsetParent BEFORE switching to position:fixed: a fixed-position
+  // element's offsetParent is always null per spec, so reading it after the
+  // style write made the ancestor-rect compensation below dead code and the
+  // menu would misplace inside any transform/filter/contain containing block
+  // (e.g. the backdrop-filter header) once one is introduced.
+  const parent = menu.offsetParent;
+  const parentRect = parent && parent !== document.body && parent !== document.documentElement
+    ? parent.getBoundingClientRect()
+    : null;
   menu.style.position = 'fixed';
   menu.style.zIndex = '2147483000';
   menu.style.width = `${menuWidth}px`;
   menu.style.maxHeight = `${maxHeight}px`;
   menu.style.overflowY = 'auto';
   menu.style.overflowX = 'hidden';
-
-  const parent = menu.offsetParent;
-  const parentRect = parent && parent !== document.body && parent !== document.documentElement
-    ? parent.getBoundingClientRect()
-    : null;
 
   const adjustedLeft = parentRect ? menuLeft - parentRect.left : menuLeft;
   menu.style.left = `${adjustedLeft}px`;

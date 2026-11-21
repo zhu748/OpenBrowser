@@ -253,11 +253,12 @@ async function profilesClone(service, p) {
     }),
   );
   await e.syncProfiles(copies);
+  // One Map instead of a linear groups.find per cloned row.
+  const groupById = new Map(service.data.groups.map((group) => [group.id, group]));
   return copies.map((v) => ({
     ...toRoxy(v),
     projectName:
-      service.data.groups.find((group) => group.id === v.groupId)
-        ?.projectName ||
+      groupById.get(v.groupId)?.projectName ||
       v.group_name ||
       "",
   }));
@@ -394,14 +395,15 @@ function profilesPurge(service, p) {
 
 async function profilesTrash(service) {
   const e = service.engine;
+  // One Map for the whole trashed list instead of a per-row groups.find.
+  const groupById = new Map(service.data.groups.map((group) => [group.id, group]));
   return e
     .status()
     .filter((v) => v.trashed)
     .map((v) => ({
       ...toRoxy(v),
       projectName:
-        service.data.groups.find((group) => group.id === v.groupId)
-          ?.projectName ||
+        groupById.get(v.groupId)?.projectName ||
         v.group_name ||
         "",
     }));

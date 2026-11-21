@@ -1,5 +1,7 @@
 use crate::error::{CoreError, Result};
 use std::pin::Pin;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::task::Poll;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::time::{sleep, Duration, Instant};
@@ -35,14 +37,32 @@ where
     })
 }
 
+/// Millis since an arbitrary process-wide epoch. Instant cannot be stored in
+/// an AtomicU64 directly, so deadlines live as absolute millis on this scale;
+/// monotonicity of Instant makes the arithmetic race-free.
+fn millis_since_start(at: Instant) -> u64 {
+    static START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+    at.duration_since(*START.get_or_init(Instant::now))
+        .as_millis() as u64
+}
+
 /// Stream wrapper that tracks last-progress time against [IDLE_TIMEOUT].
 /// It is fully transparent: reads, writes, flushes and shutdowns delegate to
 /// the inner stream; the only added behavior is the deadline bookkeeping the
-/// watchdog query below consults.
+/// watchdog query below consults, plus optional live byte counting so a
+/// watchdog kill still reports the traffic a session already transferred.
 struct IdleTimeoutStream<S> {
     inner: S,
     idle: Duration,
-    last_progress: std::sync::Arc<std::sync::Mutex<Instant>>,
+    /// Absolute millis-deadline shared by both ends. Lock-free: poll paths
+    /// only ever `store` the next deadline, the watchdog only `load`s it —
+    /// the std Mutex this replaces was two lock/unlock pairs per 16KB chunk.
+    last_progress: Arc<AtomicU64>,
+    /// Bytes READ from this stream are added here live (one direction of the
+    /// tunnel). Counting on the read side — not the write side — matches
+    /// tokio's per-direction byte accounting and avoids double counting the
+    /// same chunk at both wrappers.
+    read_counter: Option<Arc<AtomicU64>>,
 }
 
 impl<S> IdleTimeoutStream<S> {
@@ -52,9 +72,8 @@ impl<S> IdleTimeoutStream<S> {
         // pushes it. The watchdog reads the cell without borrowing the
         // streams, so its select arm never conflicts with the copy future's
         // &mut borrows.
-        if let Ok(mut cell) = self.last_progress.lock() {
-            *cell = Instant::now() + self.idle;
-        }
+        let deadline = millis_since_start(Instant::now()) + self.idle.as_millis() as u64;
+        self.last_progress.store(deadline, Ordering::Release);
     }
 }
 
@@ -70,6 +89,11 @@ impl<S: AsyncRead + Unpin> AsyncRead for IdleTimeoutStream<S> {
             // Ready(EOF) included: FIN propagation happens through tokio's
             // copy loop exactly as before; only a READ timeout errors.
             Poll::Ready(Ok(())) => {
+                // Live-count the chunk that just entered this end of the
+                // tunnel (read-side accounting), then push the deadline.
+                if let Some(counter) = &this.read_counter {
+                    counter.fetch_add(buf.filled().len() as u64, Ordering::Relaxed);
+                }
                 this.note_progress();
                 Poll::Ready(Ok(()))
             }
@@ -145,6 +169,32 @@ where
     copy_bidirectional_with_idle_timeout_bounded(client, server, IDLE_TIMEOUT).await
 }
 
+/// Live-counted variant for the bridge hot path: every byte read from either
+/// end is added to the SHARED counters as it flows (client reads feed c2s,
+/// server reads feed s2c), so a session killed by the idle watchdog still
+/// contributes the traffic it transferred before going idle — previously the
+/// error path dropped the copy future and with it every byte of a multi-GB
+/// session. The Ok return value keeps the session's final totals.
+pub async fn copy_bidirectional_with_idle_timeout_into<A, B>(
+    client: A,
+    server: B,
+    c2s_counter: Arc<AtomicU64>,
+    s2c_counter: Arc<AtomicU64>,
+) -> Result<StreamStats>
+where
+    A: AsyncRead + AsyncWrite + Unpin,
+    B: AsyncRead + AsyncWrite + Unpin,
+{
+    copy_bidirectional_with_idle_timeout_bounded_into(
+        client,
+        server,
+        IDLE_TIMEOUT,
+        Some(c2s_counter),
+        Some(s2c_counter),
+    )
+    .await
+}
+
 /// Injection seam for the regression tests: identical semantics with a
 /// caller-provided window so the re-arm loop can be exercised in milliseconds
 /// instead of waiting out the 90s production constant.
@@ -157,16 +207,36 @@ where
     A: AsyncRead + AsyncWrite + Unpin,
     B: AsyncRead + AsyncWrite + Unpin,
 {
-    let last_progress = std::sync::Arc::new(std::sync::Mutex::new(Instant::now() + idle));
+    copy_bidirectional_with_idle_timeout_bounded_into(client, server, idle, None, None).await
+}
+
+/// Shared implementation: optional live byte counters (the bridge passes the
+/// shared session-total atomics; tests pass None and read the Ok totals).
+async fn copy_bidirectional_with_idle_timeout_bounded_into<A, B>(
+    client: A,
+    server: B,
+    idle: Duration,
+    c2s_counter: Option<Arc<AtomicU64>>,
+    s2c_counter: Option<Arc<AtomicU64>>,
+) -> Result<StreamStats>
+where
+    A: AsyncRead + AsyncWrite + Unpin,
+    B: AsyncRead + AsyncWrite + Unpin,
+{
+    let last_progress = Arc::new(AtomicU64::new(
+        millis_since_start(Instant::now()) + idle.as_millis() as u64,
+    ));
     let mut client = IdleTimeoutStream {
         inner: client,
         idle,
-        last_progress: std::sync::Arc::clone(&last_progress),
+        last_progress: Arc::clone(&last_progress),
+        read_counter: c2s_counter,
     };
     let mut server = IdleTimeoutStream {
         inner: server,
         idle,
-        last_progress: std::sync::Arc::clone(&last_progress),
+        last_progress: Arc::clone(&last_progress),
+        read_counter: s2c_counter,
     };
 
     // The watchdog is armed from the shared deadline and RE-ARMED whenever
@@ -181,24 +251,15 @@ where
     // tokio::io::copy_bidirectional's.
     let mut copy_fut = std::pin::pin!(tokio::io::copy_bidirectional(&mut client, &mut server));
     loop {
-        let now = Instant::now();
-        let armed = last_progress.lock().map(|cell| *cell).unwrap_or(now + idle);
-        let mut watchdog = Box::pin(sleep(armed.saturating_duration_since(now)));
+        let now_ms = millis_since_start(Instant::now());
+        let armed_ms = last_progress.load(Ordering::Acquire).max(now_ms);
+        let mut watchdog = Box::pin(sleep(Duration::from_millis(armed_ms - now_ms)));
         tokio::select! {
             biased;
-            _ = &mut watchdog => {
-                let now = Instant::now();
-                let cell_deadline = last_progress
-                    .lock()
-                    .map(|cell| *cell)
-                    .unwrap_or(now + idle);
-                if cell_deadline <= now {
-                    return Err(CoreError::Proxy("Tunnel session idle timeout exceeded".into()));
-                }
-                // Progress pushed the deadline after this sleep was armed:
-                // the session is NOT idle. Loop re-arms from the new deadline.
-                continue;
-            }
+            // Copy-first ordering: a completed copy is the definitive session
+            // outcome. With the watchdog polled first, a copy that finished in
+            // the same wakeup batch as an expired sleep was misreported as an
+            // idle timeout (and its stats dropped).
             copied = &mut copy_fut => {
                 let (c2s, s2c) = copied?;
                 return Ok(StreamStats {
@@ -206,11 +267,20 @@ where
                     server_to_client_bytes: s2c,
                 });
             }
+            _ = &mut watchdog => {
+                let now_ms = millis_since_start(Instant::now());
+                let cell_deadline = last_progress.load(Ordering::Acquire);
+                if cell_deadline <= now_ms {
+                    return Err(CoreError::Proxy("Tunnel session idle timeout exceeded".into()));
+                }
+                // Progress pushed the deadline after this sleep was armed:
+                // the session is NOT idle. Loop re-arms from the new deadline.
+                continue;
+            }
         }
     }
 }
 
-#[cfg(test)]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -232,12 +302,59 @@ mod tests {
         let mut wrapped = IdleTimeoutStream {
             inner: client,
             idle: IDLE_TIMEOUT,
-            last_progress: std::sync::Arc::new(std::sync::Mutex::new(Instant::now())),
+            last_progress: Arc::new(AtomicU64::new(0)),
+            read_counter: Some(Arc::new(AtomicU64::new(0))),
         };
         wrapped.write_all(b"ping").await.unwrap();
         let mut buf = [0u8; 4];
         wrapped.read_exact(&mut buf).await.unwrap();
         assert_eq!(&buf, b"ping");
         echo.abort();
+    }
+
+    #[tokio::test]
+    async fn idle_timeout_live_counters_survive_watchdog_kill() {
+        // A session that transfers bytes, then goes silent long enough for the
+        // watchdog: the live counters must retain the transferred bytes even
+        // though the copy future (and its internal stats) is dropped on error.
+        let l_up = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let up_addr = l_up.local_addr().unwrap();
+        let up = tokio::spawn(async move {
+            let (mut sock, _) = l_up.accept().await.unwrap();
+            sock.write_all(b"payload").await.unwrap();
+            // Then stay silent forever: the watchdog must fire.
+            tokio::time::sleep(Duration::from_secs(3600)).await;
+        });
+        let l_cli = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let cli_addr = l_cli.local_addr().unwrap();
+        let cli = tokio::spawn(async move {
+            let (_sock, _) = l_cli.accept().await.unwrap();
+            tokio::time::sleep(Duration::from_secs(3600)).await;
+        });
+        let client_end = TcpStream::connect(cli_addr).await.unwrap();
+        let server_end = TcpStream::connect(up_addr).await.unwrap();
+
+        let c2s = Arc::new(AtomicU64::new(0));
+        let s2c = Arc::new(AtomicU64::new(0));
+        let res = copy_bidirectional_with_idle_timeout_bounded_into(
+            client_end,
+            server_end,
+            Duration::from_millis(200),
+            Some(c2s.clone()),
+            Some(s2c.clone()),
+        )
+        .await;
+        assert!(
+            res.is_err(),
+            "silent session must be killed by the watchdog"
+        );
+        assert_eq!(
+            s2c.load(Ordering::Relaxed),
+            b"payload".len() as u64,
+            "bytes transferred before idle must survive the watchdog kill"
+        );
+        assert_eq!(c2s.load(Ordering::Relaxed), 0);
+        up.abort();
+        cli.abort();
     }
 }

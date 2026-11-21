@@ -186,6 +186,16 @@
     return format(text, params);
   }
 
+  // t-with-fallback: returns '' for a missing key so `tf(key) || '中文'`
+  // fallback chains actually fire. `t(key)` echoes the key for missing
+  // entries (renderer.js checks `t(phaseKey) !== phaseKey` to detect missing
+  // translations), which made every `t(key) || '…'` fallback dead code.
+  function tf(key, params) {
+    const catalog = CATALOGS[resolved] || en;
+    const text = catalog[key] ?? en[key] ?? (resolved === 'zh-CN' ? zhCN[key] : undefined);
+    return text == null ? '' : format(text, params);
+  }
+
   // Chinese UI chrome → English when locale is not zh-CN (full-page pass).
   const UI_ZH_EN = Object.freeze(LOCALE_DATA.uiZhEn);
   // Runtime feedback, confirmations, logs, and audit cards predate data-i18n.
@@ -447,6 +457,7 @@
     SUPPORTED,
     BROWSER_LOCALES,
     t,
+    tf,
     detectSystemLocale,
     getPreference: () => preference,
     getLocale: () => resolved,

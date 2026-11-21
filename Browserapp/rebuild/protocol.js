@@ -70,6 +70,15 @@ function registerUiScheme(protocol) {
   ]);
 }
 function installUiProtocol(protocol, net, root, { agentFile } = {}) {
+  // The base directory realpath is constant for the process lifetime, but it
+  // used to be re-resolved on EVERY static request (two realpath syscalls per
+  // asset). Resolved lazily on first use; the per-file realpath below still
+  // runs every time because the file itself can be a symlink.
+  let cachedBase = null;
+  const baseRealpath = async () => {
+    if (cachedBase === null) cachedBase = await fs.realpath(root);
+    return cachedBase;
+  };
   protocol.handle("obui", async (request) => {
     try {
       const url = new URL(request.url);
@@ -99,7 +108,7 @@ function installUiProtocol(protocol, net, root, { agentFile } = {}) {
       }
       const file = resolveAsset(root, request.url);
       const real = await fs.realpath(file),
-        base = await fs.realpath(root);
+        base = await baseRealpath();
       if (!real.startsWith(base + path.sep))
         return new Response("Forbidden", { status: 403 });
       const types = {
@@ -118,9 +127,19 @@ function installUiProtocol(protocol, net, root, { agentFile } = {}) {
         ".wasm": "application/wasm",
         ".json": "application/json",
       };
+      const stat = await fs.stat(real);
+      // ETag revalidation: workbench assets only change when the app is
+      // rebuilt, yet every window/page load used to re-transfer every JS/CSS
+      // body in full. Chromium sends If-None-Match for obui:// responses that
+      // carried an ETag; a matching tag answers 304 with no body.
+      const etag = `"${stat.size.toString(16)}-${stat.mtimeMs.toString(16)}"`;
+      if (request.headers?.get?.("if-none-match") === etag)
+        return new Response(null, { status: 304, headers: { ETag: etag } });
       const body = await fs.readFile(real);
       const headers = new Headers({
         "Content-Type": types[path.extname(real)] || "application/octet-stream",
+        "Cache-Control": "no-cache",
+        ETag: etag,
       });
       headers.set("Content-Security-Policy", CSP);
       headers.set("X-Content-Type-Options", "nosniff");

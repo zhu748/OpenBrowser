@@ -28,7 +28,13 @@ class Slots {
   drain() {
     while (this.active < this.maximum && this.waiting.length) {
       const entry = this.waiting.shift(); entry.signal.removeEventListener("abort", entry.abort);
-      if (entry.signal.aborted) continue;
+      if (entry.signal.aborted) {
+        // Defensive path (the abort listener normally removes the entry
+        // first): without an explicit reject here the acquire() promise
+        // would hang forever, pinning its lane and blocking agent shutdown.
+        entry.reject(entry.signal.reason || Error("MCP request cancelled"));
+        continue;
+      }
       this.active++;
       let released = false;
       entry.resolve(() => { if (!released) { released = true; this.active--; this.drain(); } });

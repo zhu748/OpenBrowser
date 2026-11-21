@@ -62,6 +62,10 @@ async function openLaunch(engine,request,defaultId){
  if(!id)throw Error('尚未选择默认浏览器窗口');const profile=engine.profiles.get(id);if(!profile||profile.trashed)throw Error('启动窗口不存在或已在回收站');
  await engine.start(engine.profileForEdit(id).profile);
  const item=engine.running.get(id);
+ // The browser can exit immediately (crash, stop race with another surface):
+ // dereferencing item.engine below used to turn that into a raw TypeError
+ // for a user who just clicked an OS link.
+ if(!item)throw Error('浏览器启动后立即退出，未能打开网址，请重试或检查窗口配置');
  for(const url of request.urls){
   if(item.engine==='firefox'){const {context}=await item.bidiConnection.command('browsingContext.create',{type:'tab'});await item.bidiConnection.command('browsingContext.navigate',{context,url,wait:'complete'});}
   else await require('../cdp').newTab(item.port,url);

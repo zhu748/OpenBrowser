@@ -15,7 +15,16 @@ export function createNotifications({ templateRef, ref, computed, onMounted, tra
     char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 
   async function load() {
-    const rows = await transport.list();
+    let rows = [];
+    try {
+      rows = await transport.list();
+    } catch (error) {
+      // The RPC boundary can reject (service shutting down, renderer late);
+      // an unhandled rejection here killed onMounted(load) hygiene and left
+      // the popover in a broken half-initialized state.
+      globalThis.__localUiError?.(String(error?.message || error));
+      return;
+    }
     groups.value[0].list = rows.map(row => ({
       id: row.id, status: row.read ? 1 : 0, messageModule: 'sys', _icon: 'status/speaker',
       notify: escape(row.title) + '<br><span>' + escape(row.message) + '</span>',
@@ -26,7 +35,8 @@ export function createNotifications({ templateRef, ref, computed, onMounted, tra
   async function toggle(event) {
     const target = event.currentTarget;
     await load();
-    popover.value.instance.toggle(event, target);
+    // The popover component may have unmounted while load() awaited.
+    popover.value?.instance?.toggle?.(event, target);
   }
   async function markRead(row) {
     if (row.status) return;

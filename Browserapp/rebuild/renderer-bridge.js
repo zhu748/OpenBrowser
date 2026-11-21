@@ -408,6 +408,10 @@ const sends = {
     const chosen = await request("agent:files:choose");
     if (chosen?.type === "file")
       attachmentPreviews.set(chosen.path, chosen.files[0].url);
+    // Bound the renderer-side preview map: it used to grow for the whole
+    // process lifetime, one data-URL entry per picked file.
+    if (attachmentPreviews.size > 100)
+      attachmentPreviews.delete(attachmentPreviews.keys().next().value);
     return chosen;
   },
   "app:downloadLocalFile": (payload) => request("agent:files:export", payload),

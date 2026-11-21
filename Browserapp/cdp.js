@@ -90,8 +90,11 @@ function callDedicated(webSocketUrl, method, params = {}, timeout = 6000, __dead
 // typing alone dispatches 2-3 connections per keystroke, and engine injection fans out
 // over every open tab. The pool keeps one PersistentConnection per webSocketDebuggerUrl,
 // multiplexes concurrent commands over it (id-keyed, see PersistentConnection), evicts on
-// disconnect, and reaps idle sockets so tab teardowns do not leak.
-const POOL_MAX = 16;
+// disconnect, and reaps idle sockets so tab teardowns do not leak. POOL_MAX is sized for
+// live-sync fleets (windows x tabs) plus RPA and engine injection sharing the same pool;
+// at the old cap of 16 a 20-tab sync session degenerated every extra target back to the
+// per-command handshake the pool exists to remove. Idle reaping (30s) still bounds it.
+const POOL_MAX = 64;
 let POOL_IDLE_MS = 30_000;
 const callPool = new Map(); // webSocketUrl -> entry { conn, openPromise, inFlight, dead, diedAt, lastUsed, idleTimer }
 
@@ -199,9 +202,23 @@ async function call(webSocketUrl, method, params = {}, timeout = 6000, __retried
   try {
     // Each waiter owns its deadline. Timing out a short waiter must neither
     // close a shared handshake nor dispatch its command after that deadline.
-    const conn = await Promise.race([entry.openPromise, new Promise((_resolve, reject) => {
-      timer = setTimeout(() => reject(expired()), Math.max(0, remaining()));
-    })]);
+    let conn;
+    try {
+      conn = await Promise.race([entry.openPromise, new Promise((_resolve, reject) => {
+        timer = setTimeout(() => reject(expired()), Math.max(0, remaining()));
+      })]);
+    } catch (error) {
+      clearTimeout(timer);
+      // A transient handshake failure (target just closed, Chromium momentarily
+      // busy) evicts the pool entry for every concurrent waiter. One retry on a
+      // fresh connection keeps a single slow tick from failing the whole batch —
+      // the __retried guard below previously covered only "dead after race",
+      // letting an open rejection fail every command of the tick outright.
+      if (!__retried && entry.dead && remaining() > 0) {
+        return await call(webSocketUrl, method, params, budget, true, deadline);
+      }
+      throw error;
+    }
     clearTimeout(timer);
     if (entry.dead && !__retried) {
       poolEvict(webSocketUrl, entry);
@@ -317,17 +334,23 @@ async function firstTab(port) {
 // whenever they were not on the first tab.
 async function activeTab(port) {
   const list = await tabs(port);
-  const candidates = list.filter((item) => item.webSocketDebuggerUrl);
-  const probed = await Promise.all(candidates.map(async (item) => {
+  const candidates = list.filter((item) => item.webSocketDebuggerUrl
+    && !/^(chrome|edge):/i.test(item.url || ''));
+  // Short-circuit probe: at most one tab can be visible+focused, and the
+  // /json/list order tends to put the most recently used tab first, so the
+  // common case resolves on the first probe. The old always-parallel version
+  // evaluated the focus expression in EVERY tab on every call — O(tabs) CDP
+  // commands per close/navigate, multiplied again by per-environment callers.
+  for (const item of candidates) {
     try {
       const result = await call(item.webSocketDebuggerUrl, 'Runtime.evaluate', {
         expression: 'document.visibilityState === "visible" && document.hasFocus()',
         returnByValue: true,
       });
-      return { tab: item, active: Boolean(result.result?.value) };
-    } catch (_) { return { tab: item, active: false }; }
-  }));
-  return (probed.find((item) => item.active) || { tab: null }).tab
+      if (result.result?.value) return item;
+    } catch (_) { /* probe failure: try the next candidate */ }
+  }
+  return candidates[0]
     || list.find((item) => !item.url.startsWith('chrome://') && !item.url.startsWith('edge://'))
     || list[0]
     || null;

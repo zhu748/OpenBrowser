@@ -4,17 +4,30 @@ const fs = require("node:fs/promises"), path = require("node:path"), crypto = re
   {persistExtensionChanges,serializeExtensionMutation}=require("../engine/map-publication");
 const DEFAULT="local-default", MAX=256*1024*1024;
 class Extensions {
-  constructor(service){this.service=service;this.engine=service.engine;this.root=path.join(service.root,"local-extensions");this.pending=new Map();this.cleanup=new Set();}
+  constructor(service){this.service=service;this.engine=service.engine;this.root=path.join(service.root,"local-extensions");this.pending=new Map();this.cleanup=new Set();
+    // Icon data-URL cache keyed by (extension path, iconUrl, icon mtime, size):
+    // icons only change when the extension is (re)installed, but every
+    // extensions:list used to realpath the extension dir twice and re-read +
+    // base64 every icon for the whole list.
+    this.iconCache=new Map();}
   async icon(extension){
     if(extension.iconUrl?.startsWith("file:")){
-      const file=fileURLToPath(extension.iconUrl),real=await fs.realpath(file),base=await fs.realpath(extension.path),stat=await fs.lstat(file);
+      const file=fileURLToPath(extension.iconUrl),stat=await fs.lstat(file);
+      const cacheKey=extension.path+"\0"+extension.iconUrl+"\0"+stat.mtimeMs+"\0"+stat.size;
+      const cached=this.iconCache.get(cacheKey);
+      if(cached!==undefined)return cached;
+      const real=await fs.realpath(file),base=await fs.realpath(extension.path);
+      let result="/images/openbrowser.png";
       if(!stat.isSymbolicLink()&&stat.isFile()&&stat.size<=2*1024*1024&&real.startsWith(base+path.sep)){
         const bytes=await fs.readFile(real);let mime;
         if(bytes.subarray(0,4).equals(Buffer.from([0,0,1,0])))mime='image/x-icon';
         else if(/^(?:\s*<\?xml[^>]*>\s*)?<svg\b/i.test(bytes.toString('utf8')))mime='image/svg+xml';
-        else {try{mime=require("./agent-files").mime(bytes);}catch{return '/images/openbrowser.png';}}
-        if(mime.startsWith("image/"))return "data:"+mime+";base64,"+bytes.toString("base64");
+        else {try{mime=require("./agent-files").mime(bytes);}catch{result='/images/openbrowser.png';}}
+        if(mime?.startsWith("image/"))result="data:"+mime+";base64,"+bytes.toString("base64");
       }
+      if(this.iconCache.size>=200)this.iconCache.delete(this.iconCache.keys().next().value);
+      this.iconCache.set(cacheKey,result);
+      return result;
     }
     return "/images/openbrowser.png";
   }

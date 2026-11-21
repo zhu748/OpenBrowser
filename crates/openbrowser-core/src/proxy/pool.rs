@@ -145,20 +145,27 @@ impl UpstreamTunnelPool {
         target_host: &str,
         target_port: u16,
     ) -> Option<(TcpStream, Vec<u8>)> {
-        let key = (target_host.to_ascii_lowercase(), target_port);
+        self.take_tunnel_key(&(target_host.to_ascii_lowercase(), target_port))
+            .await
+    }
+
+    /// Key-based variant for callers that already computed the (lowercased)
+    /// pool key — the CONNECT hot path probes take/should_prewarm/record in
+    /// sequence and previously re-lowercased the host for each probe.
+    pub async fn take_tunnel_key(&self, key: &(String, u16)) -> Option<(TcpStream, Vec<u8>)> {
         let mut guard = self.tunnels.lock().await;
 
-        if let Some(list) = guard.get_mut(&key) {
+        if let Some(list) = guard.get_mut(key) {
             while let Some(tunnel) = list.pop_front() {
                 if tunnel.created_at.elapsed() < self.ttl && is_stream_healthy(&tunnel.stream) {
                     if list.is_empty() {
-                        guard.remove(&key);
+                        guard.remove(key);
                     }
                     return Some((tunnel.stream, tunnel.upstream_remainder));
                 }
                 // Expired or closed stream is silently dropped
             }
-            guard.remove(&key);
+            guard.remove(key);
         }
         None
     }
@@ -245,37 +252,47 @@ impl UpstreamTunnelPool {
     /// the real path is one-off traffic, and prewarming it would spend an
     /// upstream dial that may never be reused.
     pub async fn record_dial(&self, target_host: &str, target_port: u16) {
-        let key = (target_host.to_ascii_lowercase(), target_port);
+        self.record_dial_key(&(target_host.to_ascii_lowercase(), target_port))
+            .await
+    }
+
+    /// Key-based variant; see [take_tunnel_key].
+    pub async fn record_dial_key(&self, key: &(String, u16)) {
         let mut guard = self.recent_dials.lock().await;
         if guard.len() >= RECENT_DIAL_CAP {
             guard.retain(|_, at| at.elapsed() < self.ttl);
         }
-        if guard.len() >= RECENT_DIAL_CAP && !guard.contains_key(&key) {
+        if guard.len() >= RECENT_DIAL_CAP && !guard.contains_key(key) {
             // Full of fresh entries: dropping this record only costs the
             // target its prewarm eligibility, never correctness.
             return;
         }
-        guard.insert(key, Instant::now());
+        guard.insert(key.clone(), Instant::now());
     }
 
     /// Check if a standby tunnel for this target is worth dialing now.
     /// Three gates: the target carried real traffic within the TTL, the pool
     /// has per-target AND total capacity, and the pool is not stopped.
     pub async fn should_prewarm(&self, target_host: &str, target_port: u16) -> bool {
+        self.should_prewarm_key(&(target_host.to_ascii_lowercase(), target_port))
+            .await
+    }
+
+    /// Key-based variant; see [take_tunnel_key].
+    pub async fn should_prewarm_key(&self, key: &(String, u16)) -> bool {
         if !self.prewarm_enabled || self.stopped.load(Ordering::Acquire) {
             return false;
         }
-        let key = (target_host.to_ascii_lowercase(), target_port);
         let recently_dialed = {
             let recency = self.recent_dials.lock().await;
-            recency.get(&key).is_some_and(|at| at.elapsed() < self.ttl)
+            recency.get(key).is_some_and(|at| at.elapsed() < self.ttl)
         };
         if !recently_dialed {
             return false;
         }
         let mut tunnels = self.tunnels.lock().await;
         self.prune_expired_tunnels(&mut tunnels);
-        tunnels.get(&key).map_or(0, |v| v.len()) < self.max_tunnels_per_target
+        tunnels.get(key).map_or(0, |v| v.len()) < self.max_tunnels_per_target
             && tunnels.values().map(|v| v.len()).sum::<usize>() < self.max_total_tunnels
     }
 

@@ -1,3 +1,5 @@
+use std::fmt::Write as _;
+
 use crate::error::{CoreError, Result};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -356,7 +358,25 @@ pub fn format_origin_request(header_slice: &[u8], uri_or_target: &str) -> Vec<u8
     out.push_str("\r\n");
 
     let mut kept_upgrade_connection = false;
+    // RFC 9112 §5.2 obs-fold: a physical line starting with SP/HTAB is a
+    // continuation of the previous header. It must never survive as its own
+    // header line (a trimmed continuation promoted to a standalone header is
+    // a request-smuggling vector), so it is folded into the previously
+    // emitted header — or dropped when that header was stripped above.
+    let mut last_header_emitted = false;
     for line in lines {
+        if line.starts_with(' ') || line.starts_with('\t') {
+            let cont = line.trim();
+            if !cont.is_empty() && last_header_emitted {
+                // Fold into the previous emitted header: swap its trailing
+                // CRLF for a single SP before appending the continuation.
+                out.truncate(out.len() - 2);
+                out.push(' ');
+                out.push_str(cont);
+                out.push_str("\r\n");
+            }
+            continue;
+        }
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
@@ -375,6 +395,7 @@ pub fn format_origin_request(header_slice: &[u8], uri_or_target: &str) -> Vec<u8
             || ci_starts_with("proxy-authenticate:")
             || ci_starts_with("keep-alive:")
         {
+            last_header_emitted = false;
             continue;
         }
         // Same rationale as the forwarded rewrite: only the first request on a
@@ -386,11 +407,15 @@ pub fn format_origin_request(header_slice: &[u8], uri_or_target: &str) -> Vec<u8
                 kept_upgrade_connection = true;
                 out.push_str(trimmed);
                 out.push_str("\r\n");
+                last_header_emitted = true;
+            } else {
+                last_header_emitted = false;
             }
             continue;
         }
         out.push_str(trimmed);
         out.push_str("\r\n");
+        last_header_emitted = true;
     }
     if !kept_upgrade_connection {
         out.push_str("Connection: close\r\n");
@@ -436,11 +461,9 @@ pub fn format_forwarded_proxy_request(header_slice: &[u8], auth_header: Option<&
             if let Some(host) = host_header {
                 // Bare IPv6 Host values are bracketed before splicing
                 // (upstream_socket_addr semantics, narrowed to this shape).
+                // write! into `out` avoids the intermediate format! String.
                 let target_host = bracket_bare_ipv6_host(&host);
-                out.push_str(&format!(
-                    "{} http://{}{} {}\r\n",
-                    method, target_host, uri, version
-                ));
+                let _ = write!(out, "{} http://{target_host}{uri} {version}\r\n", method);
             } else {
                 out.push_str(first_line.trim());
                 out.push_str("\r\n");
@@ -455,7 +478,21 @@ pub fn format_forwarded_proxy_request(header_slice: &[u8], auth_header: Option<&
     }
 
     let mut kept_upgrade_connection = false;
+    // Same obs-fold handling as format_origin_request: SP/HTAB continuations
+    // fold into the previously emitted header (or are dropped with the
+    // stripped header they belong to), never promoted to standalone lines.
+    let mut last_header_emitted = false;
     for line in lines {
+        if line.starts_with(' ') || line.starts_with('\t') {
+            let cont = line.trim();
+            if !cont.is_empty() && last_header_emitted {
+                out.truncate(out.len() - 2);
+                out.push(' ');
+                out.push_str(cont);
+                out.push_str("\r\n");
+            }
+            continue;
+        }
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
@@ -465,6 +502,7 @@ pub fn format_forwarded_proxy_request(header_slice: &[u8], auth_header: Option<&
                 && trimmed.as_bytes()[..needle.len()].eq_ignore_ascii_case(needle.as_bytes())
         };
         if ci_starts_with("proxy-authorization:") || ci_starts_with("proxy-connection:") {
+            last_header_emitted = false;
             continue;
         }
         // Rewrite client keep-alive into close: the bridge only rewrites the
@@ -478,15 +516,19 @@ pub fn format_forwarded_proxy_request(header_slice: &[u8], auth_header: Option<&
                 kept_upgrade_connection = true;
                 out.push_str(trimmed);
                 out.push_str("\r\n");
+                last_header_emitted = true;
+            } else {
+                last_header_emitted = false;
             }
             continue;
         }
         out.push_str(trimmed);
         out.push_str("\r\n");
+        last_header_emitted = true;
     }
 
     if let Some(auth) = auth_header {
-        out.push_str(&format!("Proxy-Authorization: {}\r\n", auth));
+        let _ = write!(out, "Proxy-Authorization: {auth}\r\n");
     }
     if !kept_upgrade_connection {
         out.push_str("Connection: close\r\n");
@@ -664,6 +706,37 @@ mod tests {
         assert!(formatted_str.contains("Proxy-Connection: close\r\n"));
         assert!(formatted_str.contains("Connection: close\r\n"));
         assert!(formatted_str.ends_with("\r\n\r\n"));
+    }
+
+    #[test]
+    fn test_obs_fold_continuation_never_promoted_to_header() {
+        // A folded continuation must never survive as its own header line
+        // (request-smuggling vector): it folds into the previously emitted
+        // header and disappears with a header that was stripped.
+        let raw = b"GET http://example.com/p HTTP/1.1\r\nHost: example.com\r\nX-Real: a\r\n X-Injected: evil\r\nProxy-Authorization: Basic x\r\n tail\r\n\r\n";
+        let out = String::from_utf8(format_origin_request(raw, "http://example.com/p")).unwrap();
+        assert!(out.contains("X-Real: a X-Injected: evil\r\n"), "{out}");
+        assert!(!out.contains("\r\nX-Injected: evil\r\n"), "{out}");
+        // The continuation of the stripped Proxy-Authorization is dropped too.
+        assert!(!out.contains("tail"), "{out}");
+
+        let raw2 = b"GET /p HTTP/1.1\r\nHost: example.com\r\nProxy-Authorization: Basic x\r\n tail\r\n\r\n";
+        let out2 = String::from_utf8(format_forwarded_proxy_request(raw2, None)).unwrap();
+        assert!(!out2.contains("tail"), "{out2}");
+
+        // A continuation after a kept header folds into it (RFC 9112 §5.2).
+        let raw3 = b"GET /p HTTP/1.1\r\nHost: example.com\r\n orphan\r\n\r\n";
+        let out3 = String::from_utf8(format_forwarded_proxy_request(raw3, None)).unwrap();
+        assert!(out3.contains("Host: example.com orphan\r\n"), "{out3}");
+        // The folded Host carries whitespace, so the absolute-form rewrite
+        // must not splice it into the request line.
+        assert!(out3.starts_with("GET /p HTTP/1.1\r\n"), "{out3}");
+
+        // A continuation before any header was emitted has nothing to fold
+        // into and is dropped.
+        let raw4 = b"GET /p HTTP/1.1\r\n top-continuation\r\nHost: example.com\r\n\r\n";
+        let out4 = String::from_utf8(format_origin_request(raw4, "http://example.com/p")).unwrap();
+        assert!(!out4.contains("top-continuation"), "{out4}");
     }
 
     #[test]

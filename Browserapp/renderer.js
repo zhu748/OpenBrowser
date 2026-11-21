@@ -6,6 +6,14 @@ function t(key, params) {
   return window.OpenBrowserI18n?.t?.(key, params) ?? key;
 }
 
+// t-with-fallback: '' on missing key so `tf(key) || '中文兜底'` chains fire.
+// `t()` echoes the key (renderer phase text checks rely on that), which made
+// every `t(key) || '…'` fallback in this file unreachable.
+function tf(key, params) {
+  const value = window.OpenBrowserI18n?.tf?.(key, params);
+  return value === undefined || value === null ? '' : value;
+}
+
 function tx(s) {
   if (s == null || s === '') return s;
   try {
@@ -59,19 +67,18 @@ function applyVersionTrafficLight(payload) {
   if (payload?.updateStatus === 'unknown') light = 'unknown';
   lightEl.dataset.state = light;
   if (payload?.currentVersion && versionEl) versionEl.textContent = `v${payload.currentVersion}`;
-  let title = t('footer.versionChecking') || '正在检查版本…';
+  let title = tf('footer.versionChecking') || '正在检查版本…';
   if (light === 'green') {
-    title = t('footer.versionLatest', { version: payload.currentVersion || '' })
-      || `已是最新版本 v${payload.currentVersion || ''}`;
+    title = tf('footer.versionLatest', { version: payload.currentVersion || '' }) || `已是最新版本 v${payload.currentVersion || ''}`;
   } else if (light === 'red') {
-    title = t('footer.versionUpdateAvailable', {
+    title = tf('footer.versionUpdateAvailable', {
       current: payload.currentVersion || '',
       version: payload.remoteVersion || '',
     }) || `有新版本 v${payload.remoteVersion}（当前 v${payload.currentVersion}），点击查看更新`;
   } else if (light === 'unknown') {
     title = payload?.error
-      ? (t('footer.versionCheckFailed', { message: payload.error }) || `版本检查失败：${payload.error}`)
-      : (t('footer.versionUnknown') || '无法判断是否为最新版本');
+      ? (tf('footer.versionCheckFailed', { message: payload.error }) || `版本检查失败：${payload.error}`)
+      : (tf('footer.versionUnknown') || '无法判断是否为最新版本');
   }
   wrap.title = title;
   wrap.setAttribute('aria-label', title);
@@ -823,7 +830,7 @@ function buildEnvBrowserCell(profile) {
 
   const titleEl = element('strong', '', `${engineName} ${displayVersion}`);
   const kernelSub = isFirefox
-    ? (t('profiles.kernel.firefox') || 'Firefox 内核')
+    ? (tf('profiles.kernel.firefox') || 'Firefox 内核')
     : (isEdge ? t('profiles.kernel.edge') : t('profiles.kernel.independent'));
   const subEl = element('small', '', kernelSub);
 
@@ -1004,9 +1011,22 @@ function iconActionButton(icon, label, className = 'mini') {
   const iconEl = createLucideIconElement(icon);
   button.append(iconEl);
   if (iconEl.tagName === 'I' && typeof refreshIcons === 'function') {
-    requestAnimationFrame(() => refreshIcons());
+    // One shared rAF per frame: every fallback-icon button used to queue its
+    // own refreshIcons() — a full-document querySelectorAll sweep each — so
+    // a 100-row table render queued hundreds of redundant full-page scans.
+    scheduleIconRefresh(button);
   }
   return button;
+}
+let __iconRefreshScheduled = false;
+function scheduleIconRefresh(scope) {
+  if (__iconRefreshScheduled) return;
+  __iconRefreshScheduled = true;
+  requestAnimationFrame(() => {
+    __iconRefreshScheduled = false;
+    // Scope to the nearest row/card when available; full document otherwise.
+    refreshIcons(scope?.closest?.('tr, .table-card, tbody, table') || document);
+  });
 }
 let lastQuotaWarningAt = 0;
 function notifyStorageQuotaExceeded(error) {
@@ -1127,11 +1147,36 @@ try {
   fillGroupSelect($('#profile-create-group'), listGroups()[0]?.id || UNGROUPED_ID);
 } catch (_) {}
 enhanceSelects();
-new MutationObserver((records) => {
-  records.forEach((record) => record.addedNodes.forEach((node) => {
-    if (node instanceof Element) enhanceSelects(node);
-  }));
-}).observe(document.body, { childList: true, subtree: true });
+// Batched + deduped select enhancement: the raw observer ran enhanceSelects
+// (a querySelectorAll per node) on EVERY added Element of EVERY mutation —
+// per row of a 100-row render, per toast, per icon swap. A microtask batch
+// with ancestor dedup keeps the semantic (any <select> inserted anywhere
+// gets themed) at a fraction of the cost.
+{
+  let __enhanceQueue = [];
+  let __enhanceMicrotask = false;
+  new MutationObserver((records) => {
+    for (const record of records) {
+      for (const node of record.addedNodes) {
+        if (node instanceof Element) __enhanceQueue.push(node);
+      }
+    }
+    if (!__enhanceQueue.length || __enhanceMicrotask) return;
+    __enhanceMicrotask = true;
+    queueMicrotask(() => {
+      __enhanceMicrotask = false;
+      const batch = __enhanceQueue;
+      __enhanceQueue = [];
+      for (const node of batch) {
+        // Skip nodes shadowed by another queued ancestor: the ancestor's
+        // querySelectorAll already covers them.
+        if (!node.isConnected) continue;
+        if (batch.some((other) => other !== node && other.contains(node))) continue;
+        enhanceSelects(node);
+      }
+    });
+  }).observe(document.body, { childList: true, subtree: true });
+}
 
 function toast(message, { tone = 'status' } = {}) {
   const value = $('#toast');
@@ -2249,28 +2294,28 @@ function closeRowMoreMenu() {
 // Roxy 对齐：行菜单全集（查看/编辑/开关/重启/收藏/复制ID/备注/标签/测代理/导出/克隆/清缓存 + 删除）
 function rowMenuItemsFor(profile, info) {
   return [
-    ['edit', t('profiles.menuEdit') || '编辑窗口', 'pencil'],
+    ['edit', tf('profiles.menuEdit') || '编辑窗口', 'pencil'],
     ['quick-proxy', '添加代理 IP', 'network'],
     ['transfer-profile', '转移窗口', 'send'],
     ['upload-profile', '上传窗口', 'upload'],
     ['---', '', ''],
-    [info.running ? 'stop' : 'start', info.running ? (t('action.stop')) : (t('profiles.openProfile') || '打开窗口'), 'play'],
-    ...(info.running ? [['restart', t('profiles.menuRestart') || '重启窗口', 'rotate-cw']] : []),
-    ['view', t('profiles.menuView') || '查看窗口', 'eye'],
-    ['check-proxy', t('profiles.menuCheckProxy') || '测试代理 IP', 'radar'],
+    [info.running ? 'stop' : 'start', info.running ? (t('action.stop')) : (tf('profiles.openProfile') || '打开窗口'), 'play'],
+    ...(info.running ? [['restart', tf('profiles.menuRestart') || '重启窗口', 'rotate-cw']] : []),
+    ['view', tf('profiles.menuView') || '查看窗口', 'eye'],
+    ['check-proxy', tf('profiles.menuCheckProxy') || '测试代理 IP', 'radar'],
     ['---', '', ''],
     ['set-default-browser', '设为默认浏览器', 'monitor'],
     ['create-desktop-shortcut', '创建桌面快捷方式', 'external-link'],
     ['---', '', ''],
-    ['note', profile.note ? (t('profiles.editNote') || '修改备注') : (t('profiles.addNote') || '添加备注'), 'sticky-note'],
-    ['tag', t('profiles.menuTag') || '添加标签', 'tags'],
-    ['fav', profile.favorite ? (t('profiles.unfavorite') || '取消收藏') : (t('profiles.favorite') || '收藏'), 'star'],
+    ['note', profile.note ? (tf('profiles.editNote') || '修改备注') : (tf('profiles.addNote') || '添加备注'), 'sticky-note'],
+    ['tag', tf('profiles.menuTag') || '添加标签', 'tags'],
+    ['fav', profile.favorite ? (tf('profiles.unfavorite') || '取消收藏') : (tf('profiles.favorite') || '收藏'), 'star'],
     ['edit-cookies', '编辑 Cookies', 'cookie'],
     ['cookie-robot', 'Cookie 机器人', 'bot'],
-    ['copy-id', t('profiles.copyId') || '复制窗口 ID', 'copy'],
-    ['export-profile', t('profiles.exportProfile') || '导出窗口', 'download'],
-    ['clone', t('action.clone') || '克隆', 'copy-plus'],
-    ['clear-cache', t('profiles.menuClearCache') || '清除缓存', 'eraser'],
+    ['copy-id', tf('profiles.copyId') || '复制窗口 ID', 'copy'],
+    ['export-profile', tf('profiles.exportProfile') || '导出窗口', 'download'],
+    ['clone', tf('action.clone') || '克隆', 'copy-plus'],
+    ['clear-cache', tf('profiles.menuClearCache') || '清除缓存', 'eraser'],
   ];
 }
 function fillRowMenu(menu, profile, info) {
@@ -2292,7 +2337,7 @@ function fillRowMenu(menu, profile, info) {
   danger.dataset.id = profile.id;
   danger.style.color = '#c43a49';
   danger.innerHTML = `<i data-lucide="trash-2"></i><span></span>`;
-  danger.querySelector('span').textContent = t('profiles.menuDelete') || '删除窗口';
+  danger.querySelector('span').textContent = tf('profiles.menuDelete') || '删除窗口';
   menu.append(danger);
 }
 function placeRowMoreMenu(handle) {
@@ -2423,9 +2468,9 @@ async function trashProfile(id) {
   const target = ui.profiles.find((item) => item.id === id);
   if (!target) return;
   if (!await confirmAction({
-    title: t('profiles.menuDelete') || '删除窗口',
-    message: t('trash.trashConfirmSingle') || '您确认要将所选窗口移至回收站吗？',
-    confirmLabel: t('profiles.menuDelete') || '删除窗口',
+    title: tf('profiles.menuDelete') || '删除窗口',
+    message: tf('trash.trashConfirmSingle') || '您确认要将所选窗口移至回收站吗？',
+    confirmLabel: tf('profiles.menuDelete') || '删除窗口',
     tone: 'danger',
   })) return;
   try {
@@ -2438,9 +2483,9 @@ async function trashProfile(id) {
     invalidateViewCache(['profiles', 'groups', 'sync']);
     engineProfiles = await readUiProfiles();
     renderProfiles();
-    toast(t('trash.trashed') || '已移入回收站');
+    toast(tf('trash.trashed') || '已移入回收站');
   } catch (error) {
-    toast((t('trash.trashFailed') || '移入回收站失败') + ': ' + error.message);
+    toast((tf('trash.trashFailed') || '移入回收站失败') + ': ' + error.message);
   }
 }
 async function clearProfileCache(id) {
@@ -2498,7 +2543,7 @@ function openBatchQuickDialog(mode, singleId = null) {
   $('#batch-quick-summary').textContent = t('profiles.selected', { n: ids.length });
   const field = $('#batch-quick-value');
   field.value = '';
-  field.placeholder = mode === 'note' ? (t('profiles.addNote') || '添加备注') : (t('profiles.tagPlaceholder') || '输入标签');
+  field.placeholder = mode === 'note' ? (tf('profiles.addNote') || '添加备注') : (tf('profiles.tagPlaceholder') || '输入标签');
   field.dataset.mode = mode;
   field.dataset.ids = JSON.stringify(ids);
   dialog.showModal();
@@ -2669,7 +2714,7 @@ function renderSavedFilters() {
   if (!list) return;
   list.replaceChildren();
   if (!savedFilters.length) {
-    list.append(element('span', 'adv-empty', t('adv.none') || '暂无保存的筛选器'));
+    list.append(element('span', 'adv-empty', tf('adv.none') || '暂无保存的筛选器'));
     return;
   }
   for (const item of savedFilters) {
@@ -2677,7 +2722,7 @@ function renderSavedFilters() {
     chip.type = 'button';
     const label = element('span', '', item.name);
     const del = element('span', 'x', '×');
-    del.title = t('common.delete') || '删除';
+    del.title = tf('common.delete') || '删除';
     chip.append(label, del);
     chip.addEventListener('click', (event) => {
       if (event.target === del) {
@@ -2717,7 +2762,7 @@ $('#adv-save')?.addEventListener('click', () => {
   persistSavedFilters();
   if (nameEl) nameEl.value = '';
   renderSavedFilters();
-  toast(t('adv.saved') || '筛选器已保存');
+  toast(tf('adv.saved') || '筛选器已保存');
 });
 
 function makeEditorReadonly() {
@@ -2815,7 +2860,7 @@ function buildProfileRow(profile) {
   nameCell.append(buildEnvIdentity(profile));
   if (profile.favorite) {
     const star = element('span', 'fav-star', '★');
-    star.title = t('profiles.favorited') || '已收藏';
+    star.title = tf('profiles.favorited') || '已收藏';
     nameCell.append(star);
   }
   const exitInfo = info.network || (profile.exitIp ? { ip: profile.exitIp, countryCode: profile.exitCountryCode } : null);
@@ -2837,7 +2882,7 @@ function buildProfileRow(profile) {
     purge.dataset.id = profile.id;
     actions.append(restore, purge);
   } else {
-    const openLabel = info.running ? t('action.stop') : (startingProfiles.has(profile.id) ? t('status.starting') : (t('profiles.openProfile') || '打开窗口'));
+    const openLabel = info.running ? t('action.stop') : (startingProfiles.has(profile.id) ? t('status.starting') : (tf('profiles.openProfile') || '打开窗口'));
     const openBtn = iconActionButton(info.running ? 'square' : 'play', openLabel, 'mini primary-outline roxy-open-pill');
     openBtn.dataset.action = info.running ? 'stop' : 'start';
     openBtn.dataset.id = profile.id;
@@ -2863,7 +2908,7 @@ function buildProfileRow(profile) {
   noteBtn.type = 'button';
   noteBtn.dataset.action = 'note';
   noteBtn.dataset.id = profile.id;
-  noteBtn.title = profile.note || (t('profiles.addNote') || '添加备注');
+  noteBtn.title = profile.note || (tf('profiles.addNote') || '添加备注');
   const noteIcon = element('span', 'cell-inline-icon');
   noteIcon.setAttribute('aria-hidden', 'true');
   noteIcon.append(buildLucideInlineSvg(['M12 20h9', 'M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z']));
@@ -2876,7 +2921,7 @@ function buildProfileRow(profile) {
   tagBtn.type = 'button';
   tagBtn.dataset.action = 'tag';
   tagBtn.dataset.id = profile.id;
-  tagBtn.title = profile.tag || (t('profiles.menuTag') || '添加标签');
+  tagBtn.title = profile.tag || (tf('profiles.menuTag') || '添加标签');
   const tagIcon = element('span', 'cell-inline-icon');
   tagIcon.setAttribute('aria-hidden', 'true');
   tagIcon.append(buildLucideInlineSvg(['M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z', 'M7 7h.01']));
@@ -2909,7 +2954,7 @@ function buildProfileRow(profile) {
   moreCell.className = 'col-more';
   if (activeGroupFilter !== 'trash') {
     const moreWrap = element('div', 'row-more-wrap');
-    const moreBtn = iconActionButton('ellipsis-vertical', t('profiles.more') || '更多', 'mini');
+    const moreBtn = iconActionButton('ellipsis-vertical', tf('profiles.more') || '更多', 'mini');
     moreBtn.dataset.action = 'more';
     moreBtn.dataset.id = profile.id;
     moreWrap.append(moreBtn);
@@ -5067,6 +5112,7 @@ window.OpenBrowserApp = {
   toast,
   tx,
   t,
+  tf,
   log,
   $,
   $$,
@@ -5086,6 +5132,7 @@ window.save = save;
 window.toast = toast;
 window.tx = tx;
 window.t = t;
+window.tf = tf;
 window.log = log;
 window.$ = $;
 window.loadedViews = loadedViews;

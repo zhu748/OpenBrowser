@@ -12,6 +12,8 @@ async function transferExport(service, p) {
   const e = service.engine;
   if (!Array.isArray(p.ids) || !p.ids.length || p.ids.length > 200)
     throw Error("一次只能导出 1–200 个窗口");
+  // One Map for all exported rows instead of a linear groups.find per profile.
+  const groupById = new Map(service.data.groups.map((group) => [group.id, group]));
   const profiles = p.ids.map((id) => {
     const profile = e.profileForEdit(String(id)).profile;
     const selected = profile.proxyId
@@ -24,8 +26,7 @@ async function transferExport(service, p) {
       proxy: selected?.raw || profile.proxy,
       proxyId: null,
       group_name:
-        service.data.groups.find((group) => group.id === profile.groupId)
-          ?.projectName ||
+        groupById.get(profile.groupId)?.projectName ||
         profile.group_name ||
         "",
     });

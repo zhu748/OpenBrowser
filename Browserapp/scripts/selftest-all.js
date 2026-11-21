@@ -396,6 +396,11 @@ function main() {
       cwd: ROOT,
       encoding: 'utf8',
       timeout: flags?.timeoutMs || PER_SCRIPT_TIMEOUT_MS,
+      // spawnSync's default 1MB cap kills any test that prints more than
+      // 1MB (failure diagnostics, chatty suites) with res.error set, which
+      // classifySelftestResult reports as FAILED — a false gate failure for
+      // a test that may have passed. Same ceiling as the nativeOnly branch.
+      maxBuffer: 32 * 1024 * 1024,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     const seconds = ((Date.now() - started) / 1000).toFixed(1);

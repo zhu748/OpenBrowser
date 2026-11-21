@@ -91,6 +91,7 @@ impl ClientHelloBuilder {
             || self.profile.ciphers.is_empty()
             || self.profile.ciphers.len() > 4096
             || self.profile.supported_groups.len() > 1024
+            || self.profile.signature_algorithms.len() > 4096
             || self.profile.alpn.len() > 16
             || self
                 .profile
@@ -382,7 +383,17 @@ impl ClientHelloBuilder {
             return Err(CoreError::Tls("Truncated cipher suites data".into()));
         }
         let mut ciphers = Vec::with_capacity(ciphers_len / 2);
-        for chunk in body[offset..offset + ciphers_len].as_chunks::<2>().0 {
+        let cipher_block = &body[offset..offset + ciphers_len];
+        let (cipher_chunks, cipher_rem) = cipher_block.as_chunks::<2>();
+        if !cipher_rem.is_empty() {
+            // An odd-length cipher block means the trailing byte cannot be
+            // part of any cipher: the hello is malformed, and silently
+            // dropping the byte would hide that from verification.
+            return Err(CoreError::Tls(
+                "Cipher suites length is not a multiple of 2".into(),
+            ));
+        }
+        for chunk in cipher_chunks {
             ciphers.push(u16::from_be_bytes([chunk[0], chunk[1]]));
         }
         offset += ciphers_len;
@@ -421,6 +432,12 @@ impl ClientHelloBuilder {
                 }
                 extensions.push(ext_type);
                 offset += ext_data_len;
+            }
+            if offset != ext_end {
+                // 1-3 dangling bytes after the last extension: not a valid
+                // extensions block. A verification parser must reject, not
+                // silently ignore, trailing garbage.
+                return Err(CoreError::Tls("Trailing bytes after last extension".into()));
             }
         } else if remaining > 0 {
             // 0 < remaining < 2: a dangling byte cannot hold the 2-byte

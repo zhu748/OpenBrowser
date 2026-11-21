@@ -10,7 +10,7 @@ use crate::proxy::socks5::{
     reply_code_name, ATYP_DOMAIN, ATYP_IPV4, ATYP_IPV6, AUTH_METHOD_NONE, AUTH_METHOD_USER_PASS,
     CMD_CONNECT, REP_SUCCEEDED, SOCKS5_AUTH_SUBNEGOTIATION_VERSION, SOCKS5_VERSION,
 };
-use crate::proxy::stream::{copy_bidirectional_with_idle_timeout, StreamStats};
+use crate::proxy::stream::{copy_bidirectional_with_idle_timeout_into, StreamStats};
 use crate::proxy::MAX_HEADER_BYTES;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -39,6 +39,10 @@ struct ClientHandlerContext {
     // ProxyConfig deep-copies 5 Strings each time. The config is immutable
     // after bridge construction.
     config: Arc<ProxyConfig>,
+    /// Precomputed upstream Proxy-Authorization value ("Basic ..."). The
+    /// config is immutable after bridge construction, so the per-request
+    /// base64 re-encode was pure overhead on the plain-HTTP hot path.
+    auth_header: Option<Arc<str>>,
     fail_closed: FailClosedPolicy,
     limiter: ConcurrencyLimiter,
     tunnel_pool: Arc<UpstreamTunnelPool>,
@@ -237,7 +241,7 @@ impl LocalProxyBridge {
         config.validate()?;
         let upstream_addr = upstream_socket_addr(&config.host, config.port);
         let mut stream = TcpStream::connect(&upstream_addr).await.map_err(|e| {
-            CoreError::Proxy(format!(
+            CoreError::UpstreamUnreachable(format!(
                 "Failed to connect to SOCKS5 upstream {}: {}",
                 upstream_addr, e
             ))
@@ -442,7 +446,7 @@ impl LocalProxyBridge {
         )
         .await
         .map_err(|_| {
-            CoreError::Proxy(format!(
+            CoreError::UpstreamUnreachable(format!(
                 "Timed out connecting to HTTP upstream {}",
                 upstream_addr
             ))
@@ -472,7 +476,7 @@ impl LocalProxyBridge {
 
         let upstream_addr = upstream_socket_addr(&config.host, config.port);
         let mut stream = TcpStream::connect(&upstream_addr).await.map_err(|e| {
-            CoreError::Http(format!(
+            CoreError::UpstreamUnreachable(format!(
                 "Failed to connect to HTTP upstream {}: {}",
                 upstream_addr, e
             ))
@@ -694,6 +698,12 @@ impl LocalProxyBridge {
         let (http_status, code) = match err {
             CoreError::AuthFailed(_) => ("502 Bad Gateway", "AUTH_FAILED"),
             CoreError::FailClosed(_) => ("502 Bad Gateway", "FAIL_CLOSED"),
+            // UpstreamUnreachable intentionally keeps the established
+            // UPSTREAM_CONNECT_FAILED status code: the Node host bridge maps a
+            // fixed code vocabulary to human messages, and the distinction
+            // between "dial to proxy failed" vs "target through proxy failed"
+            // still flows through the error detail text.
+            CoreError::UpstreamUnreachable(_) => ("502 Bad Gateway", "UPSTREAM_CONNECT_FAILED"),
             CoreError::HeaderTooLarge => {
                 ("431 Request Header Fields Too Large", "HEADER_TOO_LARGE")
             }
@@ -818,9 +828,13 @@ impl LocalProxyBridge {
             // 4. Concurrency acquire right before dialing upstream
             let permit = ctx.limiter.acquire().await?;
 
-            // 5. Dial upstream: check tunnel pool first for CONNECT, otherwise dial_target
+            // 5. Dial upstream: check tunnel pool first for CONNECT, otherwise dial_target.
+            // One lowercase per CONNECT feeds every pool probe below (the pool
+            // keys are ASCII case-insensitive; each probe used to re-lower the
+            // host separately).
+            let target_key = (target.host.to_ascii_lowercase(), target.port);
             let pooled = if is_connect {
-                ctx.tunnel_pool.take_tunnel(&target.host, target.port).await
+                ctx.tunnel_pool.take_tunnel_key(&target_key).await
             } else {
                 None
             };
@@ -855,10 +869,7 @@ impl LocalProxyBridge {
                 // dials never queue ahead of real handshakes.
                 if ctx.config.protocol == ProxyProtocol::Http
                     && ctx.tunnel_pool.is_prewarm_enabled()
-                    && ctx
-                        .tunnel_pool
-                        .should_prewarm(&target.host, target.port)
-                        .await
+                    && ctx.tunnel_pool.should_prewarm_key(&target_key).await
                 {
                     if let Some(slot) = ctx.tunnel_pool.try_acquire_prewarm_slot() {
                         let pool_clone = ctx.tunnel_pool.clone();
@@ -909,18 +920,10 @@ impl LocalProxyBridge {
                 // Recorded after the prewarm decision so a first request can
                 // never prewarm its own target: only a target already served
                 // by an earlier request is worth a standby dial.
-                ctx.tunnel_pool.record_dial(&target.host, target.port).await;
+                ctx.tunnel_pool.record_dial_key(&target_key).await;
             } else {
                 let outgoing_header = if ctx.config.protocol == ProxyProtocol::Http {
-                    let auth = if ctx.config.is_authenticated() {
-                        Some(basic_auth_header(
-                            ctx.config.username.as_deref().unwrap_or(""),
-                            ctx.config.password.as_deref().unwrap_or(""),
-                        ))
-                    } else {
-                        None
-                    };
-                    format_forwarded_proxy_request(&header_slice, auth.as_deref())
+                    format_forwarded_proxy_request(&header_slice, ctx.auth_header.as_deref())
                 } else {
                     format_origin_request(&header_slice, uri_or_target)
                 };
@@ -958,20 +961,37 @@ impl LocalProxyBridge {
                 client_remainder,
                 upstream_remainder,
             }))) => {
-                client
-                    .write_all(
-                        b"HTTP/1.1 200 Connection Established\r\nProxy-Agent: OpenBrowser\r\n\r\n",
-                    )
-                    .await?;
-                if !client_remainder.is_empty() {
-                    stream.write_all(&client_remainder).await?;
-                    ctx.total_c2s
-                        .fetch_add(client_remainder.len() as u64, Ordering::Relaxed);
+                // Bounded post-handshake writes: these run after the deadline
+                // block and before the idle watchdog takes over, so a client
+                // that stops reading (receive window full) could otherwise
+                // park this session slot forever with up to 64KB of buffered
+                // remainder. A short ceiling closes the gap; the spam-block
+                // path above already had equivalent deadline protection.
+                let c2s_remainder = client_remainder.len() as u64;
+                let s2c_remainder = upstream_remainder.len() as u64;
+                timeout(Duration::from_secs(10), async {
+                    client
+                        .write_all(
+                            b"HTTP/1.1 200 Connection Established\r\nProxy-Agent: OpenBrowser\r\n\r\n",
+                        )
+                        .await?;
+                    if !client_remainder.is_empty() {
+                        stream.write_all(&client_remainder).await?;
+                    }
+                    if !upstream_remainder.is_empty() {
+                        client.write_all(&upstream_remainder).await?;
+                    }
+                    Ok::<_, CoreError>(())
+                })
+                .await
+                .map_err(|_| {
+                    CoreError::Proxy("client stalled after CONNECT tunnel established".into())
+                })??;
+                if c2s_remainder > 0 {
+                    ctx.total_c2s.fetch_add(c2s_remainder, Ordering::Relaxed);
                 }
-                if !upstream_remainder.is_empty() {
-                    client.write_all(&upstream_remainder).await?;
-                    ctx.total_s2c
-                        .fetch_add(upstream_remainder.len() as u64, Ordering::Relaxed);
+                if s2c_remainder > 0 {
+                    ctx.total_s2c.fetch_add(s2c_remainder, Ordering::Relaxed);
                 }
                 // A tunnel that reaches streaming is the health signal that
                 // resets the fail-closed breaker.
@@ -987,13 +1007,28 @@ impl LocalProxyBridge {
                 // Credentials rejected by the upstream means the route cannot
                 // be trusted: trip the breaker so subsequent requests fail
                 // fast instead of redialing with the same broken credentials.
+                // A dial failure to the upstream proxy itself (refused /
+                // unroutable / transport death) gets the same treatment:
+                // without it, an upstream that is simply down made every
+                // request pay the full 8s handshake deadline instead of
+                // failing fast, 512 sessions at a time. Per-target failures
+                // through a WORKING upstream (SOCKS5 REP errors, HTTP tunnel
+                // status) stay classified as Socks5/Http and do NOT trip.
                 if matches!(err, CoreError::AuthFailed(_)) {
                     ctx.fail_closed.trip("upstream rejected proxy credentials");
+                } else if matches!(err, CoreError::UpstreamUnreachable(_) | CoreError::Io(_)) {
+                    ctx.fail_closed.trip("upstream proxy unreachable");
                 }
                 Self::send_proxy_error(&mut client, &err, ctx.status_sender.as_ref()).await;
                 return Err(err);
             }
             Err(_) => {
+                // The handshake deadline covering the whole dial + handshake
+                // elapsed: with an unreachable upstream this is the recurring
+                // 8s-per-request failure mode, so it trips the breaker too
+                // (half-open probes after the cooldown resolve it either way).
+                ctx.fail_closed
+                    .trip("handshake deadline exceeded (upstream unreachable)");
                 let err = CoreError::Proxy("Handshake deadline exceeded".into());
                 let _ = client
                     .write_all(b"HTTP/1.1 408 Request Timeout\r\nX-Proxy-Error: Handshake deadline exceeded\r\nConnection: close\r\n\r\n")
@@ -1011,11 +1046,16 @@ impl LocalProxyBridge {
         // by an inactivity ceiling: without it a wedged session (upstream
         // replied 200 then silence) holds one of the 512 session slots forever.
         // Bytes in either direction extend the deadline; see stream.rs.
-        let stats = copy_bidirectional_with_idle_timeout(client, upstream).await?;
-        ctx.total_c2s
-            .fetch_add(stats.client_to_server_bytes, Ordering::Relaxed);
-        ctx.total_s2c
-            .fetch_add(stats.server_to_client_bytes, Ordering::Relaxed);
+        // The _into variant counts bytes straight into the shared session
+        // totals, so a watchdog kill no longer drops the traffic a long-lived
+        // session had already transferred.
+        copy_bidirectional_with_idle_timeout_into(
+            client,
+            upstream,
+            Arc::clone(&ctx.total_c2s),
+            Arc::clone(&ctx.total_s2c),
+        )
+        .await?;
 
         Ok(())
     }
@@ -1080,6 +1120,7 @@ impl ProxyForwarder for LocalProxyBridge {
 
         let ctx = ClientHandlerContext {
             config: Arc::new(self.config.clone()),
+            auth_header: self.upstream_auth_header(),
             fail_closed: self.fail_closed.clone(),
             limiter: self.limiter.clone(),
             tunnel_pool: self.tunnel_pool.clone(),
@@ -1217,6 +1258,22 @@ impl ProxyForwarder for LocalProxyBridge {
         StreamStats {
             client_to_server_bytes: self.total_c2s.load(Ordering::Relaxed),
             server_to_client_bytes: self.total_s2c.load(Ordering::Relaxed),
+        }
+    }
+}
+
+impl LocalProxyBridge {
+    /// Upstream Proxy-Authorization value, computed once per bridge run: the
+    /// config is immutable after construction, so the per-request base64
+    /// re-encode on the plain-HTTP hot path was pure overhead.
+    fn upstream_auth_header(&self) -> Option<Arc<str>> {
+        if self.config.is_authenticated() {
+            Some(Arc::from(basic_auth_header(
+                self.config.username.as_deref().unwrap_or(""),
+                self.config.password.as_deref().unwrap_or(""),
+            )))
+        } else {
+            None
         }
     }
 }

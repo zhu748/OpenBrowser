@@ -22,11 +22,17 @@ function logDetail(service, id) {
   const active = run?.id === id;
   const messages = active ? service.conversation(run.cid).messages.slice(-2).map(message =>
     message.id === run.assistantId ? { ...message, content: run.partialAnswer || message.content } : message) : log.messages || [];
-  const events = active ? run.events : log.events || [];
+  // Only SCRIPT logs actually read event contents (scriptWindowLogs); other
+  // logs need the event COUNT for the revision, which stateStore answers
+  // without materializing — reading `log.events` here used to trigger the
+  // lazy getter's full decrypt of the segmented event history.
+  const isScript = log.templateType === "script";
+  const events = active ? run.events : (isScript ? log.events || [] : []);
   const artifacts = active ? run.scriptArtifacts || [] : log.artifacts || [];
-  const scriptWindows = log.templateType === "script" ? scriptWindowLogs(log, events, artifacts) : [];
+  const scriptWindows = isScript ? scriptWindowLogs(log, events, artifacts) : [];
   return structuredClone({ taskLogId: id, conversationId: log.conversationId,
-    revision: active ? run.sequence : events.length, messages, artifacts, scriptWindows });
+    revision: active ? run.sequence : (isScript ? events.length : service.stateStore.eventCount(log.id)),
+    messages, artifacts, scriptWindows });
 }
 
 function scriptWindowLogs(log, events, artifacts) {

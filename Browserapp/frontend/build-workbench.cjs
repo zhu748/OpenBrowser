@@ -36,7 +36,15 @@ function readEntries() {
 }
 
 function run(file, args, env) {
-  const child = spawnSync(process.execPath, [file, ...args], { cwd: repo, env, encoding: "utf8" });
+  // Bounded subprocesses: assemble() chains 5 audit compilers, and a hung
+  // child (file lock, wedged CI runner) used to hang `npm start` forever —
+  // the first step of which is rebuild:ui --if-needed. The 32MB maxBuffer
+  // also prevents the default 1MB cap from ENOBUFS-killing audits that dump
+  // large link inventories.
+  const child = spawnSync(process.execPath, [file, ...args], {
+    cwd: repo, env, encoding: "utf8",
+    timeout: 10 * 60 * 1000, maxBuffer: 32 * 1024 * 1024,
+  });
   if (child.error) throw child.error;
   if (child.status !== 0) {
     if (child.stdout) process.stdout.write(child.stdout);
@@ -130,7 +138,13 @@ function recoverBuilds() {
   if (legacyPid !== undefined) fs.rmSync(lock, { force: true });
 }
 
-function hashFiles(root, names) {
+// Binary/asset inputs are copied verbatim by assemble() — their content never
+// influences compilation — so stat identity (size + mtime) is sufficient for
+// them and skips re-reading ~60MB of workbench assets on every
+// `npm start` --if-needed. Source files still hash by content.
+const STAT_IDENTITY = /\.(?:png|jpe?g|gif|webp|ico|svg|woff2?|ttf|otf|eot|mp4|webm|wasm)$/i;
+
+function hashFiles(root, names, { statOnly = false } = {}) {
   const hash = createHash("sha256").update(`${process.version}/${process.platform}/${process.arch}\0`);
   function add(relative) {
     const file = path.join(root, relative);
@@ -140,6 +154,8 @@ function hashFiles(root, names) {
         if (relative === "frontend" && name === "dist") continue;
         add(path.join(relative, name));
       }
+    } else if (statOnly || STAT_IDENTITY.test(relative)) {
+      hash.update(`${relative}\0s${stat.size}\0${stat.mtimeMs}\0`);
     } else {
       hash.update(`${relative}\0${stat.size}\0`).update(fs.readFileSync(file));
     }
@@ -156,7 +172,10 @@ function buildInputHash() {
 function reuseBuild(input, stamp) {
   try {
     const cached = JSON.parse(fs.readFileSync(stamp, "utf8"));
-    return cached.input === input && cached.output === hashFiles(output, ["."]);
+    // The output tree is generated: its hash exists only to detect manual
+    // tampering or drift, and any real write changes mtime — so stat identity
+    // answers it without re-reading ~90MB of built assets per start.
+    return cached.input === input && cached.output === hashFiles(output, ["."], { statOnly: true });
   } catch (_) { return false; }
 }
 
@@ -173,7 +192,7 @@ try {
     publish(staged, path.join(stage, "previous"));
     if (input && buildInputHash() === input) {
       const nextStamp = path.join(stage, "build-input.json");
-      fs.writeFileSync(nextStamp, JSON.stringify({ input, output: hashFiles(output, ["."]) }));
+      fs.writeFileSync(nextStamp, JSON.stringify({ input, output: hashFiles(output, ["."], { statOnly: true }) }));
       fs.renameSync(nextStamp, stamp);
     }
     console.log("Built workbench from frontend sources:", output);

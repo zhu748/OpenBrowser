@@ -14,6 +14,9 @@ pub enum CoreError {
     #[error("HTTP proxy error: {0}")]
     Http(String),
 
+    #[error("Upstream proxy unreachable: {0}")]
+    UpstreamUnreachable(String),
+
     #[error("HTTP request header exceeds 64 KiB")]
     HeaderTooLarge,
 

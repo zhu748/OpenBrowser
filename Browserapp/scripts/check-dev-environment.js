@@ -5,16 +5,35 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const net = require('node:net');
-const { spawnSync } = require('node:child_process');
+const { spawn } = require('node:child_process');
 
-function tool(command, args, env) {
-  const result = spawnSync(command, args, { env, encoding: 'utf8', timeout: 15000, maxBuffer: 1024 * 1024, windowsHide: true });
-  return {
-    available: !result.error && result.status === 0,
-    version: String(result.stdout || '').trim().split('\n')[0],
-    ...(result.error ? { error: result.error.code || result.error.message } : {}),
-    ...(result.status !== 0 ? { exitCode: result.status, detail: String(result.stderr || '').slice(-4000) } : {}),
-  };
+// Parallel probe wrapper: the serial chain of 15s-timeout tool calls
+// (4 rust tools + 2 browsers + electron) took up to ~75s+ on machines where a
+// tool was missing — each absent binary burns its full timeout. Bounded
+// fan-out keeps the report shape identical.
+function toolAsync(command, args, env) {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, { env, encoding: 'utf8', windowsHide: true });
+    let stdout = '', stderr = '', timer;
+    const finish = (result) => {
+      clearTimeout(timer);
+      resolve(result);
+    };
+    timer = setTimeout(() => {
+      try { child.kill('SIGKILL'); } catch (_) {}
+      finish({ available: false, version: '', error: 'ETIMEDOUT', exitCode: null, detail: stderr.slice(-4000) });
+    }, 15000);
+    child.stdout?.on('data', (chunk) => { if (stdout.length < 1024 * 1024) stdout += chunk; });
+    child.stderr?.on('data', (chunk) => { if (stderr.length < 8192) stderr += chunk; });
+    child.on('error', (error) => finish({
+      available: false, version: '', error: error.code || error.message,
+    }));
+    child.on('close', (code) => finish({
+      available: code === 0,
+      version: String(stdout || '').trim().split('\n')[0],
+      ...(code !== 0 ? { exitCode: code, detail: String(stderr || '').slice(-4000) } : {}),
+    }));
+  });
 }
 
 async function socketProbe(address) {
@@ -48,19 +67,31 @@ async function main() {
   const [major, minor] = process.versions.node.split('.').map(Number);
   const report = {
     node: { version: process.version, available: major >= 24 || (major === 22 && minor >= 13) },
-    rust: Object.fromEntries([
-      ['cargo', ['cargo', ['--version']]], ['rustc', ['rustc', ['--version']]],
-      ['rustfmt', ['rustfmt', ['--version']]], ['clippy', ['cargo', ['clippy', '--version']]],
-    ].map(([name, [command, parameters]]) => [name, tool(command, parameters, env)])),
   };
   const chromium = env.OPENBROWSER_CHROMIUM_BINARY || 'chromium';
   const firefox = env.OPENBROWSER_FIREFOX_BINARY || (root ? path.join(root, 'firefox', process.platform === 'win32' ? 'firefox.exe' : 'firefox') : 'firefox');
-  report.chromium = tool(chromium, ['--version'], env);
-  report.firefox = tool(firefox, ['--version'], env);
-  try {
-    const electron = require('electron');
-    report.electron = { path: electron, ...tool(electron, ['-p', 'process.versions.electron'], { ...env, ELECTRON_RUN_AS_NODE: '1' }) };
-  } catch (error) { report.electron = { available: false, error: error.message }; }
+  // All probes run concurrently: total wall time is the slowest single
+  // probe instead of the sum of seven 15s timeouts.
+  const rustProbes = [
+    ['cargo', ['cargo', ['--version']]], ['rustc', ['rustc', ['--version']]],
+    ['rustfmt', ['rustfmt', ['--version']]], ['clippy', ['cargo', ['clippy', '--version']]],
+  ];
+  const [rustResults, chromiumResult, firefoxResult, electronResult] = await Promise.all([
+    Promise.all(rustProbes.map(async ([name, [command, parameters]]) => [name, await toolAsync(command, parameters, env)]))
+      .then((entries) => Object.fromEntries(entries)),
+    toolAsync(chromium, ['--version'], env),
+    toolAsync(firefox, ['--version'], env),
+    (async () => {
+      try {
+        const electron = require('electron');
+        return { path: electron, ...await toolAsync(electron, ['-p', 'process.versions.electron'], { ...env, ELECTRON_RUN_AS_NODE: '1' }) };
+      } catch (error) { return { available: false, error: error.message }; }
+    })(),
+  ]);
+  report.rust = rustResults;
+  report.chromium = chromiumResult;
+  report.firefox = firefoxResult;
+  report.electron = electronResult;
   let temporary;
   try {
     temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'ob-environment-'));
@@ -69,13 +100,14 @@ async function main() {
     report.unixSocket = process.platform === 'win32' ? { required: false }
       : await socketProbe(path.join(temporary, 'socket'));
     if ((args.includes('--probe-native') || args.includes('--strict')) && report.chromium.available) {
-      const result = spawnSync(chromium, [
+      const result = await toolAsync(chromium, [
         '--headless=new', '--no-sandbox', '--disable-dev-shm-usage', '--disable-background-networking',
         '--no-first-run', '--no-default-browser-check', '--proxy-server=http://127.0.0.1:9',
         '--user-data-dir=' + path.join(temporary, 'chromium'), '--dump-dom', 'about:blank',
-      ], { env, encoding: 'utf8', timeout: 15000, maxBuffer: 1024 * 1024, windowsHide: true });
-      report.chromium.launch = { available: !result.error && result.status === 0,
-        exitCode: result.status, detail: String(result.stderr || result.error?.message || '').slice(-4000) };
+      ], env);
+      report.chromium.launch = { available: result.available && result.exitCode === undefined,
+        exitCode: result.exitCode ?? (result.available ? 0 : 1),
+        detail: String(result.detail || result.error || '').slice(-4000) };
     }
   } catch (error) { report.temp = { path: os.tmpdir(), writable: false, error: error.code || error.message }; }
   finally { if (temporary) await fs.rm(temporary, { recursive: true, force: true, maxRetries: 3 }); }

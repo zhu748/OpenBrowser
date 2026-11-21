@@ -829,7 +829,11 @@ class LiveSyncController extends LiveSyncV4 {
       this.nativeBridgeReadyTimer = null;
       this.nativeInputStdoutBuffer += String(chunk || '');
       const lines = this.nativeInputStdoutBuffer.split(/\r?\n/);
-      this.nativeInputStdoutBuffer = lines.pop() || '';
+      // Cap the unterminated tail: a misbehaving mirror binary that streams
+      // bytes without ever emitting a newline used to grow this buffer for
+      // the whole process lifetime. Same ceiling as the shortcut bridge in
+      // main.js.
+      this.nativeInputStdoutBuffer = (lines.pop() || '').slice(-1000);
       for (const line of lines) {
         const match = line.match(/^DEVTOOLS_MODE=([01])$/);
         if (match) {
@@ -1098,6 +1102,9 @@ class LiveSyncController extends LiveSyncV4 {
     }
     this.fullscreenSessionInitializations?.clear();
     this.unreachableSlaves?.clear();
+    // Stale error-report timestamps from the PREVIOUS session otherwise
+    // suppressed the first reports of the next session inside the 10s window.
+    this._slaveErrorAt?.clear();
     this.mappingReady = false; this.activeMasterTab = null; this.geometryPausedUntil = 0; this.browserOwnedUntil = 0; this.devToolsTargetCount = 0;
     this.windowGuardGeneration += 1;
     this.windowGenerations.clear(); this.windowKeyGenerations.clear(); this.tabWindowKeys.clear();
@@ -1437,14 +1444,19 @@ class LiveSyncController extends LiveSyncV4 {
     this._lastMasterTabCount = tabs.length;
     if (doHeavy || tabCountChanged) await this.reconcileSlaveTabs(tabs, slaveLists);
     if (!this.isRefreshGenerationCurrent(refreshGeneration)) return;
-    for (const tab of tabs) {
-      if (this.connections.has(tab.id)) continue;
-      // Same predicate as attach()'s own guard: internal pages (chrome://…)
-      // can never hold a DOM live-sync connection, so skip the no-op call
-      // instead of paying it on every refresh tick.
-      if (tab.url && !canDomLiveSyncTabUrl(tab.url)) continue;
-      await this.attach(tab);
-    }
+    // New-tab attaches are independent per tab; the old serial loop paid ~11
+    // chained CDP commands per tab and let one slow/stuck target stall this
+    // whole tick (refreshInFlight then blocks every later tick silently —
+    // no error is ever thrown). attach() has its own pendingAttachments /
+    // connections.has double guard plus failure self-cleanup, so concurrent
+    // calls are safe.
+    await Promise.allSettled(tabs
+      .filter((tab) => !this.connections.has(tab.id)
+        // Same predicate as attach()'s own guard: internal pages (chrome://…)
+        // can never hold a DOM live-sync connection, so skip the no-op call
+        // instead of paying it on every refresh tick.
+        && !(tab.url && !canDomLiveSyncTabUrl(tab.url)))
+      .map((tab) => this.attach(tab)));
     if (doHeavy && masterExtensionPages) await this.refreshExtensionConnections(masterExtensionPages, slaveExtensionLists);
     if (!this.isRefreshGenerationCurrent(refreshGeneration)) return;
     await Promise.all([...this.connections.entries()].map(async ([id, value]) => {

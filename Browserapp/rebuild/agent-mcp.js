@@ -71,9 +71,16 @@ class AgentMcp{
   for(const name of close)await this.close(name);return {code:0,data:{success:true}};
  }
  async definitions(run){
+  // Per-run memo: an agent turn calls this on EVERY model step (up to 24 per
+  // turn), and each call re-ran the connect queue, re-stringified every
+  // server config twice, and re-hashed every tool name. run.mcpTools already
+  // pins the snapshot, and call() independently re-verifies the server is
+  // still current before every tool invocation, so a cached array cannot go
+  // silently stale; a pool shutdown invalidates it.
+  if(run.__mcpDefinitions&&!this.pool.signal.aborted)return run.__mcpDefinitions;
   const stop=new AbortController(),signal=AbortSignal.any([this.pool.signal,stop.signal,...(run.abort?[run.abort.signal]:[])]);
   signal.throwIfAborted();const snapshot=new Map();run.mcpTools=snapshot;
-  if(run.allowedProfileIds){run.mcpTools=snapshot;return [];}
+  if(run.allowedProfileIds){run.__mcpDefinitions=[];return [];}
   await cancellable(this.queue,signal);signal.throwIfAborted();
   const rows=this.rows().filter(row=>row.enabled);let count=0;
   const pending=rows.map(async row=>{const record=await this.connect(row,signal);count+=record.tools.length;if(count>200)throw Error('启用的 MCP 工具合计不能超过 200 个');return record;});
@@ -85,7 +92,7 @@ class AgentMcp{
    if(!this.pool.isCurrent(row,false)||this.connections.get(row.name)!==record)throw Error('MCP 服务已修改或停用，请重新发起任务');
    for(const tool of record.tools){const name='mcp_'+crypto.createHash('sha256').update(row.name+'\0'+tool.name).digest('hex').slice(0,12)+'_'+tool.name.replace(/[^a-zA-Z0-9_-]/g,'_').slice(0,40);snapshot.set(name,{server:row.name,tool:tool.name,key:record.key,definition:{type:'function',function:{name,description:('MCP '+row.name+': '+(tool.description||tool.name)).slice(0,4000),parameters:tool.inputSchema}}});}
   }
-  run.mcpTools=snapshot;return [...snapshot.values()].map(tool=>tool.definition);
+  run.mcpTools=snapshot;run.__mcpDefinitions=[...snapshot.values()].map(tool=>tool.definition);return run.__mcpDefinitions;
  }
  async call(name,args,run){
   if(run.allowedProfileIds)throw Error('限定窗口范围的任务不能调用外部 MCP 工具；外部服务不能保证该范围');

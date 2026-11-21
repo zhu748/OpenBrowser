@@ -134,7 +134,11 @@ async function readText(res) {
 
 async function completion(service, config, messages, run, tools) {
   run.abort.signal.throwIfAborted();
-  messages = await service.files.context(messages, config.provider);
+  // Per-run image cache: files.context() runs on EVERY model step and used to
+  // re-read + AES-decrypt + re-encode every attached image each time. Files
+  // are immutable once written, so one decryption per run is enough.
+  run.imageCache ||= new Map();
+  messages = await service.files.context(messages, config.provider, run.imageCache);
   const ollama = config.provider === "ollama", base = config.baseUrl.replace(/\/$/, "");
   const url = ollama ? base.replace(/\/api$/, "") + "/api/chat" : base.replace(/\/chat\/completions$/, "") + "/chat/completions";
   const definitions = run.textOnly ? [] : [...tools, ...await service.mcp.definitions(run)];

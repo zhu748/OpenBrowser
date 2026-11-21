@@ -41,8 +41,11 @@ async function browserTool(engine, name, p, run) {
     // Closing this CDP client cancels its Playwright auto-waits without
     // closing the user's browser or page. Merely racing a promise would
     // leave a delayed click/fill alive after the task had reported cancelled.
-    if (browser && !closing) closing = browser.close();
-    closing?.catch(() => {});
+    // Store the ALREADY-HANDLED promise: `await closing` in the finally below
+    // must never reject — browser.close() frequently throws when the CDP
+    // target is already gone, and that rejection used to swallow a
+    // SUCCESSFUL tool result (or mask the original error).
+    if (browser && !closing) closing = browser.close().catch(() => {});
   };
   signal?.addEventListener("abort", disconnect, { once: true });
   try {

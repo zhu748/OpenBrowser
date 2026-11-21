@@ -3,7 +3,9 @@
 const { randomUUID: uid } = require("node:crypto");
 const { nextRecordId, rememberRecordIds } = require("../local-record-ids");
 const { profileRelations } = require("../profile-relations");
-const { toRoxy } = require("../profile-dto");
+// toRoxy is intentionally NOT imported here anymore: the label routes parse
+// profile.tag directly (labelIdsOf below) instead of building a full DTO per
+// window. See profile-dto.js for the canonical labelIds semantics.
 const object = (value) =>
   value && typeof value === "object" && !Array.isArray(value);
 
@@ -82,6 +84,15 @@ async function labelsList(service) {
   }));
 }
 
+// labelIds without building a full ~100-field toRoxy DTO per profile — the
+// same tag parsing toRoxy applies (profile-dto.js), used by the label routes
+// that only need the id list. A 5000-window label delete used to build up to
+// 3 full DTOs per window.
+const labelIdsOf = (profile) =>
+  /^\d+(,\d+)*$/.test(profile.tag || "")
+    ? profile.tag.split(",").map(Number)
+    : [];
+
 async function labelsSave(service, p) {
   const e = service.engine;
   if (!String(p.name || "").trim()) throw Error("请输入标签名称");
@@ -92,7 +103,7 @@ async function labelsSave(service, p) {
     ? Number(p.id)
     : nextRecordId(service.data, "labels", [
         ...service.data.filters.flatMap((row) => row.labelIds || []),
-        ...e.status().flatMap((profile) => toRoxy(profile).labelIds),
+        ...e.status().flatMap((profile) => labelIdsOf(profile)),
       ]);
   if (!Number.isSafeInteger(id) || id <= 0) throw Error("Invalid label ID");
   if (p.id && !service.data.labels.some((row) => row.id === id))
@@ -111,17 +122,15 @@ async function labelsDelete(service, p) {
   rememberRecordIds(service.data, "labels");
   const ids = p.ids.map(Number);
   const changes = [...e.profiles.values()]
-    .filter((profile) =>
-      toRoxy(profile).labelIds.some((id) => ids.includes(id)),
-    )
+    .filter((profile) => labelIdsOf(profile).some((id) => ids.includes(id)))
     .map((profile) => {
       const base = e.profileForEdit(profile.id);
       return {
         original: base.profile,
         baseRev: base.rev,
         patch: {
-          tag: toRoxy(base.profile)
-            .labelIds.filter((id) => !ids.includes(id))
+          tag: labelIdsOf(base.profile)
+            .filter((id) => !ids.includes(id))
             .join(","),
         },
       };
@@ -186,8 +195,12 @@ async function templatesSave(service, p) {
     (!Number.isSafeInteger(Number(p.id)) || Number(p.id) <= 0)
   )
     throw Error("Invalid template ID");
-  if (typeof p.content !== "string" || !object(JSON.parse(p.content)))
-    throw Error("Invalid template content");
+  // Validate the JSON first with a friendly message: JSON.parse used to leak
+  // a raw "Unexpected token ..." SyntaxError for a pasted invalid body.
+  let content;
+  if (typeof p.content !== "string") throw Error("Invalid template content");
+  try { content = JSON.parse(p.content); } catch { throw Error("模板内容必须是合法的 JSON 对象"); }
+  if (!object(content)) throw Error("Invalid template content");
   if (p.id && !service.data.templates.some((row) => row.id === Number(p.id)))
     throw Error("模板不存在");
   const row = {

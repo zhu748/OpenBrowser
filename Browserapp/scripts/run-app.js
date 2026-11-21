@@ -83,6 +83,15 @@ const child = spawn(hostBin, [appRoot], {
   cwd: appRoot,
 });
 
+// The existsSync probe above races the actual spawn: a binary deleted or
+// locked between the two surfaces as an unhandled 'error' event and a raw
+// stack trace instead of the friendly hint from resolveHostBinary().
+child.on('error', (error) => {
+  console.error('[run] 无法启动', hostBin, '-', error.message);
+  console.error('请在 Browserapp 目录执行 npm install --force --include=dev 后重试。');
+  process.exit(1);
+});
+
 child.on('exit', (code, signal) => {
   if (signal) process.kill(process.pid, signal);
   process.exit(code == null ? 1 : code);

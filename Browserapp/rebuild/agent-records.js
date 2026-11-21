@@ -193,6 +193,9 @@ function runTask(service, taskId) {
 }
 async function prepareTaskRun(service, task, scheduledAt = null) {
   if (!task) throw Error("任务不存在");
+  // Older store records predate windowIds normalization; a missing field
+  // used to blow up below as "Cannot read properties of undefined".
+  const windowIds = Array.isArray(task.windowIds) ? task.windowIds.map(String) : [];
   if (scheduledAt !== null && !task.enabled) throw Error("任务已停用");
   if (service.data.conversations.some(c => c.taskId === task.id && service.active.has(c.id))) {
     throw Object.assign(Error("任务正在运行"), { code: "TASK_ALREADY_RUNNING" });
@@ -207,7 +210,7 @@ async function prepareTaskRun(service, task, scheduledAt = null) {
     templateId: template.id,
     templateName: template.name,
     templateType: template.templateType,
-    windowDirIds: task.windowIds,
+    windowDirIds: windowIds,
     triggerType: scheduledAt ? task.planType : "manual",
     scheduledAt,
     occurrenceId: scheduledAt ? `${task.id}:${scheduledAt}` : null,
@@ -233,9 +236,9 @@ async function prepareTaskRun(service, task, scheduledAt = null) {
     prompt = String(prompt) + "\n参考 Skill：" + skill.content;
   }
   return {
-    message: String(prompt) + "\n任务选择的窗口 ID：" + task.windowIds.join(", "),
+    message: String(prompt) + "\n任务选择的窗口 ID：" + windowIds.join(", "),
     fullAccess: true,
-    allowedProfileIds: task.windowIds.length ? task.windowIds : undefined,
+    allowedProfileIds: windowIds.length ? windowIds : undefined,
     taskMeta,
   };
 }

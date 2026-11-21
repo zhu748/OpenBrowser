@@ -135,8 +135,15 @@ class AgentFiles {
     if (!toDelete.length) return { removed: 0, bytes: 0 };
     const next = {
       files: index.files.filter(file => !ids.has(file.fileId)),
-      grants: Object.fromEntries(Object.entries(index.grants).filter(([, files]) =>
-        Array.isArray(files) && !files.some(id => ids.has(id)))),
+      // Prune only the deleted ids from each grant's allow-list, keeping the
+      // rest: a grant containing ANY deleted file used to be removed whole,
+      // and re-attaching a still-authorized path from the same directory then
+      // failed with "附件路径没有原生选择授权".
+      grants: Object.fromEntries(Object.entries(index.grants).map(([grantPath, files]) => {
+        if (!Array.isArray(files)) return null;
+        const kept = files.filter(id => !ids.has(id));
+        return [grantPath, kept];
+      }).filter(([, files]) => files.length > 0)),
       pendingDeletes: [...new Set([...pending, ...ids])],
     };
     await this.saveIndex(next);
@@ -311,7 +318,17 @@ class AgentFiles {
       throw Error("附件校验失败");
     return { ...record, bytes };
   }
-  async context(messages, provider) {
+  /**
+   * @param {import("./agent-service").AgentMessage[]} messages
+   * @param {string} provider
+   * @param {Map<string, string>} [cache] Optional per-run cache of decrypted
+   *   image data URLs: an agent turn calls context() on EVERY model step (up
+   *   to 24 per turn), and each call used to re-read + AES-decrypt + base64
+   *   every image in the conversation — up to 20 MiB per step of pure
+   *   re-decryption. Entries are keyed by fileId, which is immutable once
+   *   written, and the cache dies with the run.
+   */
+  async context(messages, provider, cache = null) {
     await this.load();
     const ids = [
       ...new Set(
@@ -333,10 +350,12 @@ class AgentFiles {
       throw Error("当前上下文图片超过 8 张 / 20 MiB，请新建会话或减少附件");
     const data = new Map(
       await Promise.all(
-        images.map(async (file) => [
-          file.fileId,
-          (await this.get(file.fileId)).bytes.toString("base64"),
-        ]),
+        images.map(async (file) => {
+          if (cache?.has(file.fileId)) return [file.fileId, cache.get(file.fileId)];
+          const encoded = (await this.get(file.fileId)).bytes.toString("base64");
+          cache?.set(file.fileId, encoded);
+          return [file.fileId, encoded];
+        }),
       ),
     );
     return messages.map(({ attachments, ...message }) => {

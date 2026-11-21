@@ -13,6 +13,19 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpStream, UdpSocket};
 use tokio::time::timeout;
 
+/// Normalize an IP for source comparison: IPv4-mapped IPv6 (`::ffff:a.b.c.d`)
+/// collapses to its IPv4 form so dual-stack sockets compare equal against the
+/// plain IPv4 address of the same peer.
+fn normalize_ip(ip: IpAddr) -> IpAddr {
+    match ip {
+        IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
+            Some(v4) => IpAddr::V4(v4),
+            None => IpAddr::V6(v6),
+        },
+        v4 => v4,
+    }
+}
+
 /// SOCKS5 UDP request/response packet per RFC 1928 Section 7.
 ///
 /// ```text
@@ -426,11 +439,19 @@ impl Socks5UdpAssociate {
             // Some relays reply from a different ephemeral port on the same host, so the
             // port is NOT part of the check. (The previous condition let a spoofed packet
             // from any IP that merely matched the relay port bypass validation entirely.)
-            if from_addr.ip() != self.relay_addr.ip() {
-                return Err(CoreError::Socks5(format!(
-                    "Received UDP packet from unexpected address: expected {}, got {}",
-                    self.relay_addr, from_addr
-                )));
+            //
+            // A mismatching datagram is DROPPED, not fatal: UDP source addresses
+            // are trivially spoofable (off-path attacker or any local process
+            // spraying the ephemeral port), and a single forged packet used to
+            // kill the whole ASSOCIATE session (e.g. a live WebRTC call).
+            // Dual-stack sockets also present IPv4 peers as ::ffff:a.b.c.d, so
+            // both sides are normalized through to_ipv4_mapped before comparing.
+            if normalize_ip(from_addr.ip()) != normalize_ip(self.relay_addr.ip()) {
+                tracing::warn!(
+                    "dropping SOCKS5 UDP datagram from unexpected source {from_addr} (relay {})",
+                    self.relay_addr
+                );
+                continue;
             }
 
             // In-place header validation over buf[..n], the same rules
@@ -498,6 +519,25 @@ impl Socks5UdpAssociate {
 mod tests {
     use super::*;
     use std::net::{Ipv4Addr, Ipv6Addr};
+
+    #[test]
+    fn test_normalize_ip_ipv4_mapped_collapses_to_ipv4() {
+        assert_eq!(
+            normalize_ip(IpAddr::V6(Ipv6Addr::new(
+                0, 0, 0, 0, 0, 0xffff, 0x0a00, 0x0001
+            ))),
+            IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))
+        );
+        // Plain v6 and plain v4 pass through unchanged.
+        assert_eq!(
+            normalize_ip(IpAddr::V6(Ipv6Addr::LOCALHOST)),
+            IpAddr::V6(Ipv6Addr::LOCALHOST)
+        );
+        assert_eq!(
+            normalize_ip(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            IpAddr::V4(Ipv4Addr::LOCALHOST)
+        );
+    }
 
     #[test]
     fn test_udp_packet_encode_decode_ipv4() {

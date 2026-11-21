@@ -8,6 +8,7 @@ const {
   toast,
   tx,
   t,
+  tf,
   log,
   element,
   displayProfileNumber,
@@ -507,20 +508,20 @@ function renderRpaStore() {
   if (countEl) {
     const wrap = countEl.parentElement;
     if (wrap && wrap.classList.contains('rpa-toolbar-right')) {
-      const prefixNode = document.createTextNode(t('rpa.store.countPrefix') || '共 ');
+      const prefixNode = document.createTextNode(tf('rpa.store.countPrefix') || '共 ');
       let countB = wrap.querySelector('#rpa-store-count');
       if (!countB) {
         countB = document.createElement('b');
         countB.id = 'rpa-store-count';
       }
       countB.textContent = String(list.length);
-      const middleNode = document.createTextNode(t('rpa.store.countMiddle') || ' 个 · ');
+      const middleNode = document.createTextNode(tf('rpa.store.countMiddle') || ' 个 · ');
       let metaSpan = wrap.querySelector('#rpa-store-sync-meta');
       if (!metaSpan) {
         metaSpan = document.createElement('span');
         metaSpan.id = 'rpa-store-sync-meta';
       }
-      metaSpan.textContent = t('rpa.store.localMeta') || '';
+      metaSpan.textContent = tf('rpa.store.localMeta') || '';
       wrap.replaceChildren(prefixNode, countB, middleNode, metaSpan);
     } else {
       countEl.textContent = String(list.length);

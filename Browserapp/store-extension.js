@@ -18,16 +18,21 @@ function extractStoreId(value) {
   return match[1].toLowerCase();
 }
 
-function download(url, redirects = 0) {
+function download(url, redirects = 0, deadlineAt = Date.now() + 60_000) {
   if (redirects > 6) return Promise.reject(new Error('Chrome 商店下载重定向过多'));
+  if (Date.now() >= deadlineAt) return Promise.reject(new Error('Chrome 商店下载超时'));
   const parsed = new URL(url);
   const allowed = ['clients2.google.com', 'clients2.googleusercontent.com'];
   if (parsed.protocol !== 'https:' || !allowed.includes(parsed.hostname.toLowerCase())) return Promise.reject(new Error('Chrome 商店返回了不受信任的下载地址'));
   return new Promise((resolve, reject) => {
-    const request = https.get(parsed, { headers: { 'user-agent': 'Mozilla/5.0 OpenBrowserLocal/3.0' }, timeout: 25000 }, (response) => {
+    // The socket timeout only bounds IDLE time; a slow-drip server (a byte
+    // every 20s) used to keep this request alive for many minutes. The
+    // absolute deadline caps the whole redirect chain instead of resetting
+    // per hop.
+    const request = https.get(parsed, { headers: { 'user-agent': 'Mozilla/5.0 OpenBrowserLocal/3.0' }, timeout: Math.min(25_000, Math.max(1, deadlineAt - Date.now())) }, (response) => {
       if ([301, 302, 303, 307, 308].includes(response.statusCode) && response.headers.location) {
         response.resume();
-        return resolve(download(new URL(response.headers.location, parsed).toString(), redirects + 1));
+        return resolve(download(new URL(response.headers.location, parsed).toString(), redirects + 1, deadlineAt));
       }
       if (response.statusCode !== 200) { response.resume(); return reject(new Error(`Chrome 商店下载失败（HTTP ${response.statusCode}）`)); }
       const chunks = []; let size = 0;

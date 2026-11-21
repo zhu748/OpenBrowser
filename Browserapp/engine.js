@@ -607,11 +607,21 @@ class BrowserEngine {
     for (const id of this.assignments.get(profile.id) || []) {
       const extension = this.extensions.get(id);
       if (!extension || !['pin', 'unpin'].includes(extension.fixedPlugin)) continue;
-      const manifest = JSON.parse(await fsp.readFile(path.join(extension.path, 'manifest.json'), 'utf8'));
-      const runtimeId = manifest.key
-        ? require('./automation/crx-reader').extensionIdFromPublicKey(Buffer.from(manifest.key, 'base64'))
-        : require('./automation/extension-identity').extensionIdFromPath(extension.path);
-      if (extension.fixedPlugin === 'pin') pinned.add(runtimeId); else pinned.delete(runtimeId);
+      // Pinning is best-effort: an extension directory that was deleted or
+      // corrupted outside the app (antivirus quarantine, half-finished store
+      // update) must not abort the whole profile launch — it used to bubble a
+      // bare ENOENT out of prepareProfileFilesForStart with no hint which
+      // extension was at fault. Skip it and surface a warning instead,
+      // matching the per-extension isolation used by reloadAllExtensions.
+      try {
+        const manifest = JSON.parse(await fsp.readFile(path.join(extension.path, 'manifest.json'), 'utf8'));
+        const runtimeId = manifest.key
+          ? require('./automation/crx-reader').extensionIdFromPublicKey(Buffer.from(manifest.key, 'base64'))
+          : require('./automation/extension-identity').extensionIdFromPath(extension.path);
+        if (extension.fixedPlugin === 'pin') pinned.add(runtimeId); else pinned.delete(runtimeId);
+      } catch (error) {
+        this.emit({ type: 'extension-error', id, code: 'manifest-unreadable', message: `扩展 ${extension.name || id} 无法读取，已跳过置顶设置：${error.message}` });
+      }
     }
     prefs.extensions.pinned_extensions = [...pinned];
     prefs.profile ||= {}; prefs.profile.default_content_setting_values ||= {};

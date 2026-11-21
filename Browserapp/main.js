@@ -284,6 +284,7 @@ function unregisterTrackedShortcuts() {
   registeredShortcutAccelerators = [];
 }
 let shortcutActionInFlight = false;
+let syncActionInFlight = false;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -636,6 +637,21 @@ function handleLiveSyncEvent(value) {
 }
 
 async function beginSync(ids = syncSelection) {
+  // Re-entrancy guard: the shortcut path has always been serialized via
+  // shortcutActionInFlight, but the renderer's ops.startSync and the Local API
+  // can both reach this directly — two overlapping runs used to tile + sync
+  // tabs twice (a CDP fan-out storm) and raced each other's stop()/start()
+  // into misleading "窗口已关闭" errors.
+  if (syncActionInFlight) throw new Error('同步操作正在执行，请稍候');
+  syncActionInFlight = true;
+  try {
+    return await beginSyncInner(ids);
+  } finally {
+    syncActionInFlight = false;
+  }
+}
+
+async function beginSyncInner(ids = syncSelection) {
   let selected = sanitizeIds(ids);
   let expanded = false;
   if (selected.length < 2) {
@@ -664,7 +680,11 @@ async function beginSync(ids = syncSelection) {
 
 async function endSync() {
   liveSync?.stop();
-  await localUiSync?.request('sync:reset-color');
+  // The color reset is cosmetic: a renderer that is already gone (window
+  // closed) used to throw here and leave syncState.active = true forever —
+  // the UI kept showing "同步中" while the sync engine was already down.
+  try { await localUiSync?.request('sync:reset-color'); }
+  catch (error) { console.warn('[sync] reset-color failed:', error?.message || error); }
   syncState = { active: false, master: null, selected: [...syncSelection] };
   emit({ type: 'sync-state', ...syncSnapshot() });
   return { success: true, state: syncSnapshot() };
@@ -1319,29 +1339,43 @@ app.whenReady().then(async () => {
     if (action === 'list') return engine.sessions();
     // Roxy 统一标签页语义：closeOthers = 关闭除当前页外的全部标签页；closeBlank = 关闭空白标签页。
     const isBlankTab = (url) => /^(about:blank|chrome:\/\/(newtab|new-tab-page)\/?)/i.test(String(url || ''));
-    for (const { item } of entries) {
-      if (action === 'new') await cdp.newTab(item.port, String(value.url || 'about:blank'));
-      else if (action === 'navigate') {
-        const current = await cdp.activeTab(item.port);
-        if (current) await cdp.call(current.webSocketDebuggerUrl, 'Page.navigate', { url: String(value.url || 'about:blank') });
-        else await cdp.newTab(item.port, String(value.url || 'about:blank'));
-      }
-      else if (action === 'reload') await cdp.reload(item.port);
-      else if (action === 'close') { const tab = await cdp.activeTab(item.port); if (tab) await cdp.closeTab(item.port, tab.id); }
-      else if (action === 'closeOthers') {
-        const current = await cdp.activeTab(item.port);
-        for (const tab of await cdp.tabs(item.port)) {
-          if (current && tab.id === current.id) continue;
-          await cdp.closeTab(item.port, tab.id);
+    // Environments are independent (same rationale as syncTabsFromMaster and
+    // runTextAssignments): the old serial loop chained every CDP hop across
+    // all environments, so 10 environments x closeOthers was 60+ sequential
+    // round trips — seconds of visible UI stall.
+    const failures = [];
+    await Promise.all(entries.map(async ({ item }) => {
+      try {
+        if (action === 'new') await cdp.newTab(item.port, String(value.url || 'about:blank'));
+        else if (action === 'navigate') {
+          const current = await cdp.activeTab(item.port);
+          if (current) await cdp.call(current.webSocketDebuggerUrl, 'Page.navigate', { url: String(value.url || 'about:blank') });
+          else await cdp.newTab(item.port, String(value.url || 'about:blank'));
         }
-      }
-      else if (action === 'closeBlank') {
-        for (const tab of await cdp.tabs(item.port)) {
-          if (!isBlankTab(tab.url)) continue;
-          await cdp.closeTab(item.port, tab.id);
+        else if (action === 'reload') await cdp.reload(item.port);
+        else if (action === 'close') { const tab = await cdp.activeTab(item.port); if (tab) await cdp.closeTab(item.port, tab.id); }
+        else if (action === 'closeOthers') {
+          const current = await cdp.activeTab(item.port);
+          for (const tab of await cdp.tabs(item.port)) {
+            if (current && tab.id === current.id) continue;
+            await cdp.closeTab(item.port, tab.id);
+          }
         }
+        else if (action === 'closeBlank') {
+          for (const tab of await cdp.tabs(item.port)) {
+            if (!isBlankTab(tab.url)) continue;
+            await cdp.closeTab(item.port, tab.id);
+          }
+        }
+        else throw new Error('Unknown tab action');
+      } catch (error) {
+        failures.push({ id: item.id, message: String(error?.message || error) });
       }
-      else throw new Error('Unknown tab action');
+    }));
+    if (failures.length) {
+      const error = new Error(`部分环境标签页操作失败（${failures.length}/${entries.length}）：${failures.map((failure) => failure.message).join('; ')}`);
+      error.failures = failures;
+      throw error;
     }
     return { success: true, count: entries.length };
   }
@@ -1408,7 +1442,9 @@ app.whenReady().then(async () => {
   });
   registerTrustedIpc('proxy:check-many', async (_event, payload) => {
     const store = proxyStore();
-    const ids = Array.isArray(payload?.ids) ? payload.ids.map(String) : [];
+    // Dedup first: duplicate ids used to run checkAndRecord twice per id —
+    // two upstream probes and a same-record write race, for zero benefit.
+    const ids = [...new Set(Array.isArray(payload?.ids) ? payload.ids.map(String) : [])];
     if (!ids.length) throw new Error('ids required');
     if (ids.length > 100) throw new Error('ids cannot exceed 100 per check; split the selection into batches');
     // Serial execution made "check all" run minutes inside one invoke (100 ×

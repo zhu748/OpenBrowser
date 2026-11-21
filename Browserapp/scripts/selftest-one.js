@@ -96,6 +96,9 @@ function runOne(entry, extraArgs) {
     cwd: ROOT,
     timeout: flags?.timeoutMs || PER_SCRIPT_TIMEOUT_MS,
     encoding: 'utf8',
+    // spawnSync's default 1MB cap turns a chatty (but passing) test into
+    // res.error + FAILED; mirror the aggregator's 32MB ceiling.
+    maxBuffer: 32 * 1024 * 1024,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   if (res.stdout) process.stdout.write(res.stdout);

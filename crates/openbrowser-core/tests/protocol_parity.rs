@@ -891,8 +891,10 @@ async fn test_plain_http_origin_form_forwarding_over_socks5() -> Result<()> {
     let bridge_addr = bridge.start().await?;
 
     let mut client = TcpStream::connect(bridge_addr).await?;
-    // Client sends absoluteURI with Proxy headers
-    let client_req = "GET http://myorigin.example.com/api/test?query=1 HTTP/1.1\r\n                      Host: myorigin.example.com\r\n                      Proxy-Authorization: Basic dXNlcjpwYXNz\r\n                      Proxy-Connection: Keep-Alive\r\n                      User-Agent: OpenBrowser-Test\r\n\r\n";
+    // Client sends absoluteURI with Proxy headers. Header lines start at
+    // column 0: leading SP/HTAB would make them RFC 9112 §5.2 obs-fold
+    // continuations of the request line, which the origin-form rewrite drops.
+    let client_req = "GET http://myorigin.example.com/api/test?query=1 HTTP/1.1\r\nHost: myorigin.example.com\r\nProxy-Authorization: Basic dXNlcjpwYXNz\r\nProxy-Connection: Keep-Alive\r\nUser-Agent: OpenBrowser-Test\r\n\r\n";
 
     client.write_all(client_req.as_bytes()).await?;
 
