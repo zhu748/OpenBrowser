@@ -93,6 +93,24 @@ const repo = path.resolve(__dirname, "../..");
     await exportDialog.getByRole("button", { name: "取消", exact: true }).click();
     await exportDialog.waitFor({ state: "hidden" });
     result.checks.push("没有选中账号时仍能打开当前列表的导出弹窗");
+    const exportFile = path.join(data, "accounts.xlsx");
+    await app.evaluate(({ dialog }, filename) => {
+      dialog.showSaveDialog = async () => ({ canceled: false, filePath: filename });
+    }, exportFile);
+    const { readXlsxSheets } = require("./profile-import-xlsx");
+    for (const includeCredentials of [false, true]) {
+      await page.getByRole("button", { name: "导出数据", exact: true }).click();
+      const credentials = exportDialog.getByRole("checkbox", { name: "包含明文密码和 2FA 密钥" });
+      assert.equal(await credentials.isChecked(), false);
+      if (includeCredentials) await credentials.check();
+      await exportDialog.getByRole("button", { name: "导出数据", exact: true }).click();
+      await exportDialog.waitFor({ state: "hidden" });
+      let hasSecret = false;
+      for await (const rows of readXlsxSheets(await fs.readFile(exportFile), { maxRows: 2 }))
+        hasSecret ||= rows.some(row => row.cells.some(cell => cell.text === "account-secret"));
+      assert.equal(hasSecret, includeCredentials);
+    }
+    result.checks.push("真实保存 XLSX，默认摘要无密码，明确勾选才导出密码");
     await page
       .getByText("library@example.test", { exact: true })
       .first()
@@ -137,6 +155,34 @@ const repo = path.resolve(__dirname, "../..");
       .first()
       .waitFor();
     await page.getByText("OPE-1", { exact: true }).last().waitFor();
+    const accountRow = page.getByRole("row").filter({ hasText: "edited@example.test" });
+    await accountRow.hover();
+    await accountRow.locator("button.row-hover-action").click();
+    const picker = page.locator(".profile-select");
+    await picker.getByText("账号关联窗口", { exact: true }).first().waitFor();
+    const confirm = picker.getByRole("button", { name: "确认保存", exact: true });
+    await waitUntil(() => confirm.isEnabled());
+    await app.evaluate(({ ipcMain }) => {
+      const original = ipcMain._invokeHandlers.get("rebuild:request");
+      let failed = false;
+      ipcMain.removeHandler("rebuild:request");
+      ipcMain.handle("rebuild:request", (event, method, payload) => {
+        if (!failed && method === "accounts:bind") {
+          failed = true;
+          return { ipcResult: 1, ok: false, error: { message: "测试账号关联保存失败" } };
+        }
+        return original(event, method, payload);
+      });
+    });
+    await confirm.click();
+    const saveError = picker.getByRole("alert");
+    await saveError.waitFor();
+    assert.equal(await saveError.textContent(), "测试账号关联保存失败");
+    await confirm.click();
+    await picker.waitFor({ state: "hidden" });
+    const linked = await page.evaluate(() => globalThis.__localRequest("accounts:list"));
+    assert.deepEqual(linked.rows[0].boundProfileIds, [profile.id]);
+    result.checks.push("账号关联保存失败保留选择，重试后关联同一 UUID");
     await toggleTheme(page);
     await waitUntil(() =>
       page

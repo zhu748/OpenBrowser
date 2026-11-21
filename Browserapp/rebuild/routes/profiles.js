@@ -115,6 +115,41 @@ async function profilesList(service) {
     .map((v) => service.decorate(v));
 }
 
+function profilesSelectionStatus(service, p) {
+  if (!Array.isArray(p.ids) || p.ids.length > 5000) throw Error("无效的窗口选择");
+  const engine = service.engine;
+  const rows = [];
+  for (const id of new Set(p.ids.map(String))) {
+    const profile = engine.profiles.get(id);
+    if (!profile || profile.trashed) continue;
+    const openStatus = Boolean(engine.publicRunning(id).running);
+    rows.push({ id, sortNum: profile.number, openStatus,
+      statusInfo: openStatus ? [{ openUserId: "local", openUserName: "OpenBrowser" }] : [] });
+  }
+  return rows;
+}
+
+function profilesOpenRows(service, p) {
+  if (p.ids != null && (!Array.isArray(p.ids) || p.ids.length > 5000)) throw Error("无效的窗口选择");
+  const ids = p.ids == null ? null : new Set(p.ids.map(String));
+  return service.engine.status().filter(profile => !profile.trashed && (ids ? ids.has(profile.id) : profile.running))
+    .map(profile => service.decorate(profile));
+}
+
+function profilesLifecycleRows(service) {
+  return service.engine.status()
+    .filter(profile => !profile.trashed && (profile.running || profile.lifecycle?.pending || profile.lifecycle?.error))
+    .map(profile => ({ id: profile.id, openStatus: Boolean(profile.running), lifecycle: profile.lifecycle }));
+}
+
+function profilesPlatformOptions(service) {
+  return { rows: [...service.profileIndex().platformUrls].map(platformUrl => ({ platformUrl })) };
+}
+
+function profilesNextNumber(service) {
+  return { windowSortNum: maxProfileNumber(service.engine.profiles.values()) + 1 };
+}
+
 async function profilesRead(service, p) {
   const e = service.engine;
   const r = e.profileForEdit(String(p.id));
@@ -432,6 +467,11 @@ module.exports = [
   ["profiles:analyse-import", profilesAnalyseImport, "serial"],
   ["profiles:import", profilesAnalyseImport, "serial"],
   ["profiles:list", profilesList, "parallel"],
+  ["profiles:selection-status", profilesSelectionStatus, "parallel", false],
+  ["profiles:open-rows", profilesOpenRows, "parallel"],
+  ["profiles:lifecycle-rows", profilesLifecycleRows, "parallel", false],
+  ["profiles:platform-options", profilesPlatformOptions, "parallel"],
+  ["profiles:next-number", profilesNextNumber, "parallel", false],
   ["profiles:read", profilesRead, "parallel"],
   ["profiles:create", profilesCreate, "serial"],
   ["profiles:create-batch", profilesCreateBatch, "serial"],

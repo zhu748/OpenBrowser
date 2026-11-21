@@ -27,5 +27,9 @@ module.exports = [
   ["cookie-robot:", cookieRobot, "parallel"],
   ["api:", api, "serial"],
   ["extensions:", extensions, "serial"],
+  ["accounts:list", accounts, "parallel", false],
+  ["accounts:import-preview", accounts, "parallel", false],
+  ["accounts:export", accounts, "parallel", false],
+  ["accounts:export-template", accounts, "parallel", false],
   ["accounts:", accounts, "serial"],
 ];

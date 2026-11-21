@@ -38,6 +38,7 @@ try {
       if (rel.startsWith("rebuild/compiler/")) return compilerTools.has(path.basename(rel));
       const top = rel.split("/")[0];
       if (["roxy-ui", "kernels", "node_modules"].includes(top)) return false;
+      if (rel === "package-lock.json") return true;
       if (top === "frontend") return rel !== "frontend/dist" && !rel.startsWith("frontend/dist/");
       return isRuntimeResource(rel);
     } });
@@ -47,13 +48,30 @@ try {
     assert.ok(!fs.existsSync(built) && !fs.existsSync(path.join(app, "rebuild/compiler/vendor")));
     const env = { ...process.env,
       OPENBROWSER_EVIDENCE_DIR: path.join(temporary, "default-evidence") };
-    const build = () => spawnSync(process.execPath, [path.join(app, "frontend/build-workbench.cjs")],
+    const build = () => spawnSync(process.execPath, [path.join(app, "frontend/build-workbench.cjs"), "--if-needed"],
       { cwd: temporary, env, encoding: "utf8" });
     const isolated = build();
     assert.equal(isolated.status, 0, isolated.error?.message || isolated.stderr);
     const snapshot = filesUnder(built);
     assert.deepEqual(snapshot, filesUnder(path.join(current, "roxy-ui")));
     assert.equal(isRuntimeResource("frontend/workbench/index.html"), false);
+    const reused = build();
+    assert.equal(reused.status, 0, reused.stderr);
+    assert.match(reused.stdout, /Reusing existing workbench build/);
+    const live = built + ".build.lock-" + process.pid + "-fixture";
+    fs.mkdirSync(live);
+    const concurrent = build();
+    fs.rmdirSync(live);
+    assert.notEqual(concurrent.status, 0);
+    assert.match(concurrent.stderr, /Another workbench build is running/);
+    const interrupted = built + ".build.lock-" + isolated.pid + "-fixture";
+    fs.mkdirSync(interrupted);
+    fs.renameSync(built, path.join(interrupted, "previous"));
+    const recovered = build();
+    assert.equal(recovered.status, 0, recovered.stderr);
+    assert.match(recovered.stdout, /Reusing existing workbench build/);
+    assert.deepEqual(filesUnder(built), snapshot);
+    assert.ok(!fs.existsSync(interrupted));
 
     const unmanagedJs = path.join(app, "frontend/workbench/assets/unmanaged-fixture.js");
     const unmanagedCss = path.join(app, "frontend/workbench/assets/unmanaged-fixture.css");

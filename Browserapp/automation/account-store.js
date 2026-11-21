@@ -71,9 +71,17 @@ class AccountStore {
     return { ...account };
   }
 
-  mutate(change) {
+  runExclusive(change) {
     const operation = this.queue.then(async () => {
       if (this.loadError) throw this.loadError;
+      return change();
+    });
+    this.queue = operation.catch(() => {});
+    return operation;
+  }
+
+  mutate(change) {
+    return this.runExclusive(async () => {
       const next = new Map(this.accounts);
       const transaction = await change(next);
       try {
@@ -88,8 +96,6 @@ class AccountStore {
       this.accounts = next;
       return this.list();
     });
-    this.queue = operation.catch(() => {});
-    return operation;
   }
 
   import(values) {

@@ -19,7 +19,7 @@ export { showOnly as c, showOnly as l };
 
 function relatedWindows(row) {
   const workspace = workspaceTitle(useWorkspace().currentWorkspace?.workspaceName);
-  return (row.bindList ?? []).map(number => `${workspace}-${number}`);
+  return (row.bindList ?? []).map(window => `${workspace}-${window.windowSortNum ?? window}`);
 }
 function proxyColumns(options) {
   return configureColumns([
@@ -55,7 +55,7 @@ function rowOperations(selection) {
   const unavailable = rows.some(blocked);
   const gift = rows.some(row => !row.proxyProviderId && !row.renewalTime && row.proxyType === proxyType.buy);
   const direct = rows.some(row => row.isDirect);
-  const refresh = rows.every(row => Boolean(row.refreshUrl));
+  const refresh = rows.every(row => Boolean(row.hasRefreshUrl || row.refreshUrl));
   return [
     { name: 'edit', label: $t('编辑'), icon: 'base/rx_ic_edit', power: check('Proxy_List_edit'), tooltip: $t('编辑'), disabled: notLocal },
     { name: 'test', label: $t('测试代理 IP'), icon: 'base/rx_ic_speed_test', tooltip: $t('测试代理 IP'),
@@ -90,7 +90,7 @@ async function filters() {
     { type: 'text', label: $t('代理 IP 主机'), name: 'proxyHost' },
     { type: 'text', label: $t('备注'), name: 'proxyRemark' },
     { type: 'Checkbox', label: $t('服务商'), name: 'proxyProvider', getOptions: () =>
-      ['PrivateProxy', 'RoxyBrowser'].map(value => ({ parentName: 'proxyProvider', label: value, value })), formatValue: values },
+      (providers.data ?? []).map(value => ({ parentName: 'proxyProvider', label: value, value })), formatValue: values },
     { type: 'switchGroup', name: 'providerType', label: $t('供应商类型'),
       options: (providers.data ?? []).map(value => ({ label: value, value, text: value })) },
   ];

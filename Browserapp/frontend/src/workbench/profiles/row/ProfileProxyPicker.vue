@@ -14,7 +14,6 @@ import {
   useTemplateRef,
 } from './workbench-vue.js';
 import { n as useToast } from './agent-BmSFI9WH.js';
-import { i as proxyRequestType } from './permission-DOhNJfB3.js';
 import { m as proxyType, n as proxyUsage } from './proxy-D7e36h-l.js';
 import {
   r as RefreshButton,
@@ -160,7 +159,7 @@ async function loadRows(e3) {
     ((rows.value = n2.data.rows), !batch.value && selected.value?.id != null)
   ) {
     let e4 = n2.data.rows.find(
-      (e5) => Number(e5.id) === Number(selected.value?.id),
+      (e5) => String(e5.id) === String(selected.value.id),
     );
     e4 && (selected.value = e4);
   }
@@ -185,8 +184,10 @@ async function checkRows(e3) {
               ...toRaw(e4),
               apiCheck: e4.proxyType === proxyType.buy,
             });
-            Object.assign(e4, { ...result, _checkRes: toRaw(result) });
-            statuses.value[e4.id] = result.checkStatus;
+            if (!result.stale) {
+              Object.assign(e4, { ...result, _checkRes: toRaw(result) });
+              statuses.value[e4.id] = result.checkStatus;
+            }
             return { ...result, id: e4.id, proxyType: e4.proxyType };
           } finally {
             setRowLoading(e4, 'test', false);
@@ -195,15 +196,8 @@ async function checkRows(e3) {
       ),
     ),
     r3 = await runLimited(t3, 5);
-  return (
-    showTestResults(r3, { reCheck: () => checkRows(e3) }),
-    r3.filter((e4) => e4.proxyType === proxyType.resource).length &&
-      api.proxy.userMdfProxyModuleCreate({
-        proxyList: r3,
-        requestType: proxyRequestType.SpeedTest,
-      }),
-    r3
-  );
+  showTestResults(r3, { reCheck: () => checkRows(e3) });
+  return r3;
 }
 async function refreshDeployingProxy(e3) {
   if (!e3.id) return false;

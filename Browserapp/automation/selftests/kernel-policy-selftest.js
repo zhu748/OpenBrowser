@@ -102,6 +102,17 @@ async function main() {
     assert.strictEqual(path.resolve(stableOverrideManager.status().kernel.path), path.resolve(stableOverrideBinary));
     console.log('  PASS  user-downloaded Chrome Stable overrides a legacy bundled CFT kernel');
 
+    if (process.platform !== 'win32') {
+      const unversioned = path.join(root, 'unversioned-chrome');
+      const candidate = { path: unversioned, engine: 'chromium', version: 'bundled' };
+      await fsp.writeFile(unversioned, '#!/bin/sh\nprintf "Google Chrome 158.0.8127.36\\n"\n', { mode: 0o700 });
+      assert.deepStrictEqual(await Promise.all([manager.readInstalledVersion(candidate), manager.readInstalledVersion(candidate)]),
+        ['158.0.8127.36', '158.0.8127.36']);
+      await fsp.writeFile(unversioned, '#!/bin/sh\nprintf "Chromium 159.0.0.1\\n"\n');
+      assert.strictEqual(await manager.readInstalledVersion(candidate), '159.0.0.1');
+      console.log('  PASS  unversioned kernel uses binary version and updates after replacement');
+    }
+
     const downloadManager = new BrowserKernelManager(path.join(root, 'download-user-data'));
     let requestedRelease = null;
     downloadManager.fetchChromeStableRelease = async () => ({

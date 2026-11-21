@@ -39,4 +39,6 @@ Browserapp/core
 /work/
 /Browserapp/roxy-ui/
 /Browserapp/roxy-ui.build.lock
+/Browserapp/roxy-ui.build.lock-*/
+/Browserapp/roxy-ui.build-input.json
 /Browserapp/.workbench-build-*/

@@ -113,18 +113,25 @@ class LocalService {
       };
     }
     if (this.data.version !== 1) throw Error("Unsupported local store version");
+    if (Object.hasOwn(this.data, "pendingProfileRelations")) {
+      await require("./profile-relations").restoreProfileRelations(this.engine, this.data.pendingProfileRelations);
+      delete this.data.pendingProfileRelations;
+      migrated = true;
+    }
     // The old renderer kept group labels in its own origin's localStorage.
     // Recover groups still referenced by original backend profiles on first load.
-    for (const profile of this.engine.status()) {
+    const knownGroups = new Set(this.data.groups.map(group => group.id));
+    for (const profile of this.engine.profiles.values()) {
       if (
         profile.groupId &&
-        !this.data.groups.some((group) => group.id === profile.groupId)
+        !knownGroups.has(profile.groupId)
       ) {
         this.data.groups.push({
           id: profile.groupId,
           project_id: profile.groupId,
           projectName: profile.group_name || profile.groupId,
         });
+        knownGroups.add(profile.groupId);
         migrated = true;
       }
     }
@@ -154,6 +161,8 @@ class LocalService {
       proxyProfiles: new Map(),
       labelProfiles: new Map(),
       summaries: [],
+      summariesById: new Map(),
+      platformUrls: new Set(),
       activeCount: 0,
     };
     for (const profile of snapshot) {
@@ -182,7 +191,15 @@ class LocalService {
           index.labelProfiles.get(id).push(profile.id);
         }
       }
-      index.summaries.push({
+      const accounts = profile.platform?.accounts || (profile.platform ? [profile.platform] : []);
+      const windowPlatformList = accounts.map(account => ({
+        platformUrl: account.url || account.startUrl || profile.platform?.startUrl,
+      }));
+      if (!profile.trashed) {
+        for (const { platformUrl } of windowPlatformList) if (platformUrl) index.platformUrls.add(platformUrl);
+      }
+      const summary = {
+        position: index.summaries.length,
         source: profile,
         windowName: profile.name || "",
         windowRemark: profile.note || "",
@@ -197,17 +214,13 @@ class LocalService {
           .map((id) => index.labelById.get(id))
           .filter(Boolean)
           .map((label) => ({ labelName: label.name })),
-        windowPlatformList: (
-          profile.platform?.accounts ||
-          (profile.platform ? [profile.platform] : [])
-        ).map((account) => ({
-          platformUrl:
-            account.url || account.startUrl || profile.platform?.startUrl,
-        })),
+        windowPlatformList,
         createdAt: profile.createdAt,
         updatedAt: profile.updatedAt,
         openTime: profile.lastOpenedAt,
-      });
+      };
+      index.summaries.push(summary);
+      index.summariesById.set(String(profile.id), summary);
     }
     this.profileProjection = index;
     return index;
@@ -240,17 +253,23 @@ class LocalService {
     const invoke = () => route.handle(this, payload, method);
     if (route.execution === "parallel")
       return route.requiresLocalData ? this.load().then(invoke) : Promise.resolve().then(invoke);
+    return this.enqueueLocal(invoke, { rollback: route.execution !== "read" });
+  }
+  enqueueLocal(invoke, { rollback = true } = {}) {
     // Serializing local mutations prevents lost updates; failures never poison the queue.
     const run = this.queue.then(async () => {
       await this.load();
       // Ordered reads observe completed writes without allocating a rollback
       // copy of unrelated templates, filters and notifications.
-      if (route.execution === "read") return invoke();
+      if (!rollback) return invoke();
       const previous = clone(this.data);
       try {
         return await invoke();
       } catch (error) {
-        this.data = previous;
+        if (error.code === "PROFILE_RELATIONS_RECOVERY_PENDING") {
+          this.data = undefined;
+          this.loadPromise = null;
+        } else this.data = previous;
         throw error;
       }
     });

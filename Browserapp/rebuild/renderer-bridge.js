@@ -151,8 +151,8 @@ const proxyRow = (v) => ({
   ...v,
   proxyType: 0,
   ipType: String(v.host || "").includes(":") ? "IPV6" : "IPV4",
-  proxyUserName: v.username || "",
-  proxyPassword: v.password || "",
+  ...(Object.hasOwn(v, "username") && { proxyUserName: v.username }),
+  ...(Object.hasOwn(v, "password") && { proxyPassword: v.password }),
   proxyCategory: String(v.protocol || "http").toUpperCase(),
   proxyMethod: "choose",
   moduleId: v.id,
@@ -178,11 +178,8 @@ const proxyInput = (v) => {
   };
 };
 const proxyList = async (p) => {
-  let rows = (await request("proxies:list", p)).map(proxyRow);
-  const total = rows.length,
-    size = Number(p?.page_size || 200),
-    index = Number(p?.page_index || 1);
-  return { rows: rows.slice((index - 1) * size, index * size), total };
+  const { rows, total } = await request("proxies:query", p);
+  return { rows: rows.map(proxyRow), total };
 };
 globalThis.__localActionTrack = (action) =>
   request("activity:append", { action: String(action || "") });
@@ -213,10 +210,8 @@ const methods = {
       : request("profiles:patch", { ids: [p.id || p.windowId], patch: p }),
   userDelWindowInfoBatchCreate: (p) => request("profiles:delete", p),
   userMdfWindowSyncV2Create: async (p) => {
-    const running = (await request("profiles:list")).filter(
-      (v) => v.openStatus,
-    );
-    if (p.some((v) => running.some((row) => row.id === v.id)))
+    const rows = await request("profiles:selection-status", { ids: p.map(row => row.id) });
+    if (rows.some(row => row.openStatus))
       throw Error("请先关闭窗口");
     return true;
   },
@@ -230,14 +225,11 @@ const methods = {
     (await request("kernels:list"))
       .filter((v) => v.engine === "chromium")
       .map((v) => ({ browserVersion: v.version.split("-")[0] })),
-  userGetWindowStatusInfoCreate: async (p) =>
-    (await request("profiles:list")).filter((v) => p.ids.includes(v.id)),
+  userGetWindowStatusInfoCreate: (p) => request("profiles:selection-status", p),
   userRestoreWindowInfoCreate: (p) => request("profiles:restore", p),
   userCopyWindowInfoCreate: (p) => request("profiles:clone", p),
   userBatchWindowInfoV2Create: (p) => request("profiles:create-batch", p),
-  userGetWindowSortNumList: async () => ({
-    windowSortNum: (await request("profiles:list")).length + 1,
-  }),
+  userGetWindowSortNumList: () => request("profiles:next-number"),
   userGetWindowFilterNameListList: () => request("filters:list"),
   userUpdateWindowFilterNameCreate: (p) => request("filters:save", p),
   userAddWindowFilterNameCreate: (p) => request("filters:save", p),
@@ -278,20 +270,10 @@ const methods = {
   userMdfProjectSortCreate: (p) => request("groups:sort", p),
   userGetProxyListMergedList: proxyList,
   userGetProxyAllCountriesList: async () =>
-    [
-      ...new Set(
-        (await request("proxies:list"))
-          .map((v) => v.lastCountry)
-          .filter(Boolean),
-      ),
-    ].map((v) => ({ label: v, value: v })),
+    (await request("proxies:options")).countries.map((v) => ({ label: v, value: v })),
   userGetProxyProvidersTypeList: () => ["本地"],
   userGetProxyVendorListList: async () =>
-    [
-      ...new Set(
-        (await request("proxies:list")).map((v) => v.vendor || "本地"),
-      ),
-    ].map((v) => ({ id: v, name: v })),
+    (await request("proxies:options")).vendors.map((v) => ({ id: v, name: v })),
   userGetProxyTableSortOrderList: async () =>
     (await request("settings:get")).proxyTableSort || {},
   userSaveProxyTableSortOrderCreate: (p) =>
@@ -302,10 +284,8 @@ const methods = {
   userGetProxyDetailMergedList: async (p) =>
     proxyRow(await request("proxies:read", p)),
   userGetRandomAvailableProxyMergedList: async () => {
-    const rows = await request("proxies:list");
-    return rows.length
-      ? proxyRow(rows[Math.floor(Math.random() * rows.length)])
-      : null;
+    const row = await request("proxies:random");
+    return row ? proxyRow(row) : null;
   },
   userBatchCheckProxyImportCreate: (p) => request("proxies:duplicates", p),
   userMdfProxyBindWindowCreate: (p) => request("proxies:bind", p),
@@ -316,14 +296,9 @@ const methods = {
     request("proxies:create-many", { items: p.proxyList.map(proxyInput) }),
   userMdfProxyModuleCreate: (p) =>
     p.proxyList
-      ? Promise.all(
-          p.proxyList.map((v) =>
-            request("proxies:update", {
-              ...proxyInput(v),
-              id: v.id || v.moduleId,
-            }),
-          ),
-        )
+      ? (p.requestType === "speed_test"
+        ? request("proxies:save-results", p)
+        : request("proxies:update-many", { items: p.proxyList.map(v => ({ ...proxyInput(v), id: v.id || v.moduleId })) }))
       : request("proxies:update", { ...proxyInput(p), id: p.id || p.moduleId }),
   userDelProxyModuleV2Create: (p) =>
     request("proxies:delete", { ids: p.ids || p.proxyIds || [p.id] }),
@@ -341,19 +316,7 @@ const methods = {
   userAddLabelInfoCreate: (p) => request("labels:save", p),
   userMdfLabelInfoCreate: (p) => request("labels:save", p),
   userDelLabelInfoCreate: (p) => request("labels:delete", p),
-  userGetWindowPlatformAccountListList: async () => ({
-    rows: [
-      ...new Map(
-        (await request("profiles:list"))
-          .flatMap((row) => row.windowPlatformList)
-          .filter((account) => account.platformUrl)
-          .map((account) => [
-            account.platformUrl,
-            { platformUrl: account.platformUrl },
-          ]),
-      ).values(),
-    ],
-  }),
+  userGetWindowPlatformAccountListList: () => request("profiles:platform-options"),
   userGetPlatformInfoList: () => ({
     rows: [
       ["Google", "https://accounts.google.com"],
@@ -479,9 +442,7 @@ const sends = {
   },
   "syncControl:getSyncWindowCount": async () => {
     const ids = (await globalThis.ops.getSyncState()).selected || [];
-    return (await request("profiles:list")).filter(
-      (row) => ids.includes(row.id) && row.openStatus,
-    ).length;
+    return (await request("profiles:selection-status", { ids })).filter(row => row.openStatus).length;
   },
   "syncControl:showAll": async () =>
     globalThis.ops.windowAction(
@@ -534,8 +495,7 @@ const sends = {
   "syncControl:getAllSyncingWindows": async () => {
     const state = await globalThis.ops.getSyncState();
     const ids = state.selected || [];
-    return (await request("profiles:list"))
-      .filter((row) => ids.includes(row.id))
+    return (await request("profiles:open-rows", { ids }))
       .map((row) => ({
         ...row,
         $pId: row.pid,
@@ -547,6 +507,7 @@ const sends = {
   "proxy:detect": (p) => request("proxies:detect", p),
   "proxy:detectNetwork": () => request("host:network"),
   "proxy:refreshUrl": (url) => request("proxies:refresh", { url }),
+  "proxy:refreshSaved": (id) => request("proxies:refresh", { id }),
   "proxy:extract": (url) => request("proxies:extract", { url }),
   "proxy:export": (p) =>
     request("proxies:export", Array.isArray(p) ? { ids: p } : p),
@@ -594,15 +555,14 @@ const sends = {
   },
   "app:setSystemTheme": (p) => request("settings:set", { colorScheme: p }),
   "browser:getOpenedBrowser": async () =>
-    (await request("profiles:list"))
-      .filter((v) => v.openStatus)
+    (await request("profiles:open-rows"))
       .map((row) => ({
         ...row,
         platform: row.os,
         $canUseSyncControl: row.coreType === "Chrome",
       })),
   "browser:getOpenedBrowserMessage": async () =>
-    profileLifecycle.messages(await request("profiles:list")),
+    profileLifecycle.messages(await request("profiles:lifecycle-rows")),
   "browser:batchLaunch": (ids) => batch(ids),
   "browser:startCookieRobot": (payload) =>
     request("cookie-robot:start", payload),
@@ -630,8 +590,9 @@ const sends = {
   "browser:batchRelaunch": (ids) => batch(ids, true),
   "browser:batchClose": closeBatch,
   "browser:isProcessExists": async (ids) => {
-    const rows = await request("profiles:list");
-    return ids.map((id) => !!rows.find((v) => v.id === String(id))?.openStatus);
+    const rows = await request("profiles:selection-status", { ids });
+    const opened = new Set(rows.filter(row => row.openStatus).map(row => row.id));
+    return ids.map(id => opened.has(String(id)));
   },
   "browser:open": (p) =>
     request("profiles:start", { id: p.id || p.windowId || p.dirId || p }),

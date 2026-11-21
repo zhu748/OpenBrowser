@@ -47,11 +47,11 @@ class ProxyRoutes {
     if (!raw) return fail('proxy required', 400);
     const ipChannel = firstString(input, ['ip_channel', 'ipChannel'], 'ip-api');
     try {
-      const result = await this.engine.testProxy({ id: 'proxy-check', name: 'proxy-check', proxy: raw, proxyMeta: { ipChannel: item?.ipChannel || ipChannel } });
-      if (item) await this.proxyStore.markCheck(item.id, result);
+      const probe = () => this.engine.testProxy({ id: 'proxy-check', name: 'proxy-check', proxy: raw, proxyMeta: { ipChannel: item?.ipChannel || ipChannel } });
+      const { result } = item ? await this.proxyStore.checkAndRecord(item, probe) : { result: await probe() };
       return ok(result);
     } catch (err) {
-      return fail('proxy check failed: ' + (err?.message || err), 400);
+      return fail('proxy check failed: ' + (err?.message || err), err?.code === 'PROXY_CHECK_STALE' ? 409 : 400);
     }
   }
 

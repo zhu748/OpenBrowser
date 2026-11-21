@@ -146,6 +146,7 @@ const {
       "失败之后队列应继续服务",
     );
     const exchanged = path.join(root, "exchange.json");
+    await fs.writeFile(exchanged, "previous export", { mode: 0o644 });
     service.dialog = {
       showSaveDialog: async () => ({ canceled: false, filePath: exchanged }),
       showOpenDialog: async () => ({ canceled: false, filePaths: [exchanged] }),
@@ -156,8 +157,28 @@ const {
     );
     const exported = JSON.parse(await fs.readFile(exchanged, "utf8"));
     assert.ok(exported.profiles[0].cookies.includes("secret"));
+    if (process.platform !== "win32") assert.equal((await fs.stat(exchanged)).mode & 0o777, 0o600);
     assert.equal((await service.request("transfer:import")).count, 1);
     assert.equal(engine.status().length, 2);
+    assert.equal(new Set(engine.status().map(profile => profile.number)).size, 2);
+    const initialPicker = service.dialog.showOpenDialog;
+    let cancelPicker, pickerTimeout;
+    service.dialog.showOpenDialog = () => new Promise(resolve => { cancelPicker = resolve; });
+    const waiting = service.request("transfer:import");
+    try {
+      const groups = await Promise.race([
+        service.request("groups:list"),
+        new Promise((_, reject) => {
+          pickerTimeout = setTimeout(() => reject(Error("导入对话框阻塞了项目读取")), 1000);
+        }),
+      ]);
+      assert.ok(Array.isArray(groups));
+    } finally {
+      clearTimeout(pickerTimeout);
+      cancelPicker?.({ canceled: true });
+      service.dialog.showOpenDialog = initialPicker;
+    }
+    assert.deepEqual(await waiting, { canceled: true });
     const { AccountStore } = require("../automation/account-store");
     const accounts = new AccountStore(path.join(root, "accounts.enc"));
     await accounts.load();
@@ -259,6 +280,38 @@ const {
       username: "u@x",
       password: "p:c",
     });
+    const alternate = await proxyStore.create({ protocol: "socks5", host: "127.0.0.2", port: 1080 });
+    const query = await service.request("proxies:query", { page_size: 1, queryKey: "proxyHost", queryValue: "127.0.0.1", proxyProtocol: ["HTTP"] });
+    assert.deepEqual(query.rows.map(proxy => proxy.id), [library.id]);
+    assert.equal(query.total, 1);
+    assert.ok(!Object.hasOwn(query.rows[0], "password") && !Object.hasOwn(query.rows[0], "raw"));
+    assert.equal((await service.request("proxies:read", { id: library.id })).password, "p:c");
+    assert.deepEqual(await service.request("proxies:query", { queryValue: "no match" }), { rows: [], total: 0 });
+    assert.equal((await service.request("proxies:query", { proxyProtocol: "SOCKS5" })).rows[0].id, alternate.id);
+    await assert.rejects(service.request("proxies:update-many", { items: [
+      { id: library.id, remark: "must not save" },
+      { id: "missing", port: 1081 },
+    ] }), /代理不存在/);
+    assert.equal(proxyStore.get(library.id).remark, library.remark);
+    await proxyStore.markCheck(alternate.id, { ip: "203.0.113.41" });
+    const testProxy = engine.testProxy;
+    let began, finish;
+    const started = new Promise(resolve => { began = resolve; });
+    try {
+      engine.testProxy = () => new Promise(resolve => { finish = resolve; began(); });
+      const pending = assert.rejects(service.request("proxies:detect", { id: alternate.id }), { code: "PROXY_CHECK_STALE" });
+      await started;
+      try { await service.request("proxies:update", { id: alternate.id, port: 1081 }); }
+      finally { finish({ ip: "203.0.113.42" }); }
+      await pending;
+      assert.equal(proxyStore.get(alternate.id).lastIp, "");
+      assert.equal(proxyStore.get(alternate.id).lastCheckOk, null);
+      engine.testProxy = async () => { throw Object.assign(Error("check failed"), { errorClass: "timeout" }); };
+      await assert.rejects(service.request("proxies:detect", { id: alternate.id }), /check failed/);
+      assert.equal(proxyStore.get(alternate.id).lastErrorClass, "timeout");
+    } finally {
+      engine.testProxy = testProxy;
+    }
     const group = await service.request("groups:save", {
       projectName: "交换分组",
     });
@@ -313,6 +366,8 @@ const {
       patch: { projectId: null },
     });
     assert.equal(engine.profileForEdit(grouped.id).profile.groupId, "");
+    const defaultProject = { dirIds: [grouped.id], projectIds: [""] };
+    assert.equal((await service.request("profiles:query", defaultProject)).total, 1);
     await assert.rejects(
       service.request("profiles:patch", {
         ids: [grouped.id, "missing-profile"],
@@ -339,7 +394,19 @@ const {
         (row) => row.id === "legacy-group" && row.projectName === "原分组名",
       ),
     );
-    await restarted.request("groups:delete", { ids: ["legacy-group"] });
+    const priorRelation = { groupId: "legacy-group", group_name: "原分组名" };
+    const changedRelation = { groupId: "", group_name: "" };
+    const relationEdit = foreignEngine.profileForEdit(legacy.id);
+    restarted.data.pendingProfileRelations = [{ id: legacy.id, before: priorRelation, after: changedRelation }];
+    await restarted.save();
+    await foreignEngine.syncProfiles([{ ...relationEdit.profile, ...changedRelation, note: "保留其他修改", rev: relationEdit.rev }],
+      { checkRevisions: true, delta: true });
+    const recovered = new LocalService({ engine: foreignEngine, root: destination });
+    await recovered.load();
+    assert.ok(!Object.hasOwn(recovered.data, "pendingProfileRelations"));
+    assert.equal(foreignEngine.profileForEdit(legacy.id).profile.groupId, "legacy-group");
+    assert.equal(foreignEngine.profileForEdit(legacy.id).profile.note, "保留其他修改");
+    await recovered.request("groups:delete", { ids: ["legacy-group"] });
     assert.equal(
       foreignEngine.profileForEdit(legacy.id).profile.group_name,
       "",
@@ -413,11 +480,16 @@ const {
       mapped.platform.accounts.map((a) => a.url),
       ["https://example.test/one", "https://example.test/two"],
     );
+    await service.request("profiles:delete", { ids: [grouped.id] });
+    assert.equal((await service.request("profiles:query", { dirIds: [grouped.id], isDelete: "0" })).total, 0);
+    assert.equal((await service.request("profiles:query", { dirIds: [grouped.id], isDelete: "1" })).total, 1);
+    assert.ok((await service.request("profiles:next-number")).windowSortNum > grouped.windowSortNum);
     await service.request("proxies:bind", {
       proxyId: library.id,
       windowIds: [row.id],
     });
     assert.equal(engine.profileForEdit(row.id).profile.proxyId, library.id);
+    await assert.rejects(service.request("proxies:bind", { proxyId: library.id, windowIds: [grouped.id] }), /回收站/);
     await assert.rejects(
       service.request("proxies:delete", { ids: [library.id] }),
       /仍关联/,
@@ -454,6 +526,15 @@ const {
     });
     assert.equal(engine.profileForEdit(row.id).profile.networkMode, "direct");
     assert.equal(engine.profileForEdit(row.id).profile.proxyId, null);
+    assert.equal(engine.profileForEdit(grouped.id).profile.proxyId, library.id);
+    await service.request("profiles:restore", { ids: [grouped.id] });
+    assert.equal(engine.profileForEdit(grouped.id).profile.proxyId, library.id);
+    const { randomUUID } = require("node:crypto");
+    const linked = engine.profileForEdit(grouped.id).profile;
+    const many = Array.from({ length: 201 }, (_, index) => ({ ...linked, id: randomUUID(), number: 1000 + index }));
+    await engine.syncProfiles(many);
+    await service.request("proxies:bind", { proxyId: library.id, windowIds: [] });
+    assert.ok(many.every(profile => engine.profileForEdit(profile.id).profile.proxyId === null));
     await service.request("proxies:delete", { ids: [library.id] });
     assert.equal(proxyStore.get(library.id), null);
     const defaultPort = fromRoxy({

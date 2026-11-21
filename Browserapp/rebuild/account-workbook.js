@@ -4,6 +4,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { readXlsxSheets } = require("./profile-import-xlsx");
 const { buildZip } = require("../automation/zip-writer");
+const { writeRawAtomically } = require("../engine/state-storage");
 
 const fields = [
   ["平台", "platformUrl", "url"],
@@ -73,11 +74,12 @@ function xml(value) {
     .replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
-function buildWorkbook(accounts) {
+function buildWorkbook(accounts, includeBindings) {
   const spreadsheet = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
   const documentRels = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
   const packageRels = "http://schemas.openxmlformats.org/package/2006/relationships";
-  const rows = [fields.map(([label]) => label), ...accounts.map(account => fields.map(([, , key]) => account[key]))];
+  const columns = includeBindings ? [...fields, ["已关联窗口", null, "boundWindows"]] : fields;
+  const rows = [columns.map(([label]) => label), ...accounts.map(account => columns.map(([, , key]) => account[key]))];
   const content = rows.map((row, index) => {
     const id = index + 1;
     return '<row r="' + id + '">' + row.map((value, column) => '<c r="' + String.fromCharCode(65 + column) + id +
@@ -98,13 +100,23 @@ function buildWorkbook(accounts) {
   ]);
 }
 
-async function exportAccounts(service, accounts, template = false) {
+async function exportAccounts(service, accounts, { template = false, format = "xlsx", includeCredentials = false, includeBindings = false } = {}) {
+  if (format !== "xlsx" && format !== "txt") throw Error("请选择 XLSX 或 TXT");
+  let contents;
+  if (format === "txt") {
+    contents = accounts.map(account => {
+      const values = fields.map(([, , key]) => account[key] || "");
+      if (values.some(value => /[\t\r\n]/.test(value))) throw Error("账号字段含换行或制表符，请使用 XLSX 导出");
+      return values.join("\t");
+    }).join("\n");
+  } else contents = buildWorkbook(accounts, includeBindings);
   const selection = await service.dialog.showSaveDialog(service.window(), {
-    defaultPath: template ? "openbrowser-account-template.xlsx" : "openbrowser-accounts.xlsx",
-    filters: [{ name: "Excel", extensions: ["xlsx"] }],
+    title: includeCredentials ? "导出账号（文件含明文密码或 2FA 密钥）" : "导出账号",
+    defaultPath: template ? "openbrowser-account-template.xlsx" : "openbrowser-accounts." + format,
+    filters: [{ name: format === "txt" ? "TXT" : "Excel", extensions: [format] }],
   });
   if (selection.canceled || !selection.filePath) return { canceled: true };
-  await fs.writeFile(selection.filePath, buildWorkbook(accounts), { mode: 0o600 });
+  await writeRawAtomically(selection.filePath, contents);
   return { count: accounts.length };
 }
 

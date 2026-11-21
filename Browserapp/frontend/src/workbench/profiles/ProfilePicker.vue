@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onBeforeMount, ref, useTemplateRef } from './workbench-vue.js';
+import { computed, onBeforeMount, ref, useTemplateRef } from './workbench-vue.js';
 import { h as api, mt as useWorkspace, nn as usePermissions, o as unpackFilters, r as compact, v as configKey, xr as isEmpty } from './utils-BIWenCnY.js';
 import { a as useConfig } from './agent-BmSFI9WH.js';
 import { i as onWorkbenchEvent } from './rich-html-link-VdBpR3Cm.js';
@@ -19,8 +19,8 @@ import { t as IllustratedEmptyState } from './custom-new-empty-CLCRgYs2.js';
 import { a as sortColumns, n as searchOptions, o as profileColumns, r as loadFilterMenu, s as ProfileName, t as useQuickCreate } from './useQuickCreate-DgAf1jWE.js';
 import { n as ProjectTag, t as Tags } from './tags-icon-CZSs72B-.js';
 
-const props = defineProps({ linkedWindowSortNums: { default: () => [] }, cacheKey: { default: 'account-profile-select' }, emptyTitle: {}, emptyDesc: {} });
-const emit = defineEmits(['confirm', 'close']);
+const props = defineProps({ linkedProfileIds: Array, linkedWindowSortNums: { default: () => [] }, cacheKey: { default: 'account-profile-select' }, emptyTitle: {}, emptyDesc: {}, onConfirm: Function });
+const emit = defineEmits(['close']);
 const labels = useLabels();
 const { isEcommerce } = useRouteContext();
 const title = computed(() => props.emptyTitle ?? (isEcommerce.value ? $t('暂无账号') : $t('暂无窗口')));
@@ -39,8 +39,12 @@ const filters = ref([]);
 const search = ref({});
 const loading = ref(false);
 const filtered = ref(false);
-let userSelected = false;
 const omittedFilters = new Set(['isOften', 'openStatus', 'createTime', 'modfiyTime']);
+const linked = computed(() => new Set((props.linkedProfileIds ?? props.linkedWindowSortNums).map(String)));
+const selectionReady = ref(!linked.value.size);
+const saving = ref(false);
+const error = ref('');
+let loadingLinked = false;
 
 onBeforeMount(async () => {
   updateColumns(items => {
@@ -53,12 +57,31 @@ onBeforeMount(async () => {
     console.error('[Profile:select] load window filters failed', error);
   }
 });
-onBeforeMount(async () => {
-  if (!props.linkedWindowSortNums.length) return;
-  const { code, data } = await api.window.userGetWindowInfoListList({ page_index: 1, page_size: props.linkedWindowSortNums.length,
-    sortNums: props.linkedWindowSortNums.join(','), isDelete: 0 });
-  if (!userSelected && code === 0 && Array.isArray(data?.rows)) selection.value = data.rows;
-});
+async function loadLinked() {
+  if (selectionReady.value || loadingLinked) return;
+  loadingLinked = true;
+  try {
+    const field = props.linkedProfileIds ? 'dirIds' : 'sortNums';
+    const ids = [...linked.value];
+    const rows = [];
+    for (let offset = 0; offset < ids.length; offset += 500) {
+      const batch = ids.slice(offset, offset + 500);
+      const { code, data, msg } = await api.window.userGetWindowInfoListList({
+        page_index: 1, page_size: batch.length, [field]: batch, isDelete: 0,
+      });
+      if (code !== 0 || !Array.isArray(data?.rows)) throw Error(msg || $t('窗口加载失败'));
+      rows.push(...data.rows);
+    }
+    selection.value = rows;
+    selectionReady.value = true;
+    error.value = '';
+  } catch (cause) {
+    error.value = cause.message;
+  } finally {
+    loadingLinked = false;
+  }
+}
+onBeforeMount(loadLinked);
 function pruneFilters(menu) {
   const items = [];
   for (const item of menu) {
@@ -79,6 +102,7 @@ async function reload() {
   if (loading.value) return;
   loading.value = true;
   try {
+    await loadLinked();
     await refresh();
   } finally {
     loading.value = false;
@@ -87,30 +111,29 @@ async function reload() {
 onWorkbenchEvent('refreshProfileList', reload);
 function onSearch({ key, value } = {}) {
   search.value = value ? { queryKey: key || 'name_remark', queryValue: value } : {};
-  refresh({}, true);
+  return refresh({}, true);
 }
 function setSelection(rows) {
-  userSelected = true;
-  selection.value = rows;
+  if (selectionReady.value && !saving.value) selection.value = rows;
 }
-async function load(params) {
-  const response = await api.window.userGetWindowInfoListList({ ...params, isDelete: 0 });
-  if (response.code === 0 && !userSelected && props.linkedWindowSortNums.length) {
-    await nextTick();
-    const windowNumbers = new Set(props.linkedWindowSortNums);
-    const selected = new Set(selection.value.map(row => row.id));
-    const matching = response.data?.rows?.filter(row => windowNumbers.has(row.windowSortNum) && !selected.has(row.id));
-    if (!userSelected && matching?.length) selection.value = [...selection.value, ...matching];
-  }
-  return response;
+function load(params) {
+  return api.window.userGetWindowInfoListList({ ...params, isDelete: 0 });
 }
 function toggleRemark(cache) {
   cache.extend = !cache.extend;
   updateRemarkDisplayStatus(cache.extend);
 }
-function confirm() {
-  emit('confirm', selection.value);
-  emit('close');
+async function confirm() {
+  if (!selectionReady.value || saving.value) return;
+  saving.value = true;
+  error.value = '';
+  try {
+    if (await props.onConfirm?.(selection.value) !== false) emit('close');
+  } catch (cause) {
+    error.value = cause.message;
+  } finally {
+    saving.value = false;
+  }
 }
 </script>
 
@@ -162,9 +185,10 @@ function confirm() {
         </Table>
       </div>
     </div>
+    <div v-if="error" role="alert" class="px-4 pt-2">{{ error }}</div>
     <div class="profile-select__footer">
-      <Button size="md" severity="secondary" outlined :label="$t('取消')" @click.stop="emit('close')" />
-      <Button size="md" :label="$t('确认保存')" @click.stop="confirm" />
+      <Button size="md" severity="secondary" outlined :label="$t('取消')" :disabled="saving" @click.stop="emit('close')" />
+      <Button size="md" :label="$t('确认保存')" :loading="saving" :disabled="!selectionReady || saving" @click.stop="confirm" />
     </div>
   </div>
 </template>

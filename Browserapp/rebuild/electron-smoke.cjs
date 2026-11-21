@@ -108,26 +108,26 @@ const repo = path.resolve(__dirname, "../..");
     );
     phase = "create";
     await page.evaluate(() => globalThis.__router.push("/browser/create"));
-    await page.waitForTimeout(2500);
-    result.installedKernels = unwrapIpcResult(
+    const readKernels = async () => unwrapIpcResult(
       await page.evaluate(() => globalThis.rebuild.request("kernels:list")),
     );
+    result.installedKernels = await readKernels();
+    if (!result.installedKernels.length) {
+      // First-run installations are published only after validation. Reload
+      // the form once discovery can see the complete install.
+      result.installedKernels = await waitUntil(async () => {
+        const installed = await readKernels();
+        return installed.length ? installed : null;
+      }, { timeout: 120000, message: "等待独立内核安装完成超时" });
+      await page.evaluate(async () => {
+        await globalThis.__router.push("/browser/list");
+        await globalThis.__router.push("/browser/create");
+      });
+    }
+    const createButton = page.getByRole("button", { name: "创建窗口", exact: true }).last();
+    await waitUntil(() => createButton.isEnabled());
     await page.screenshot({ path: path.join(evidence, "create-light.png") });
     result.createText = await page.locator("body").innerText();
-    if (!result.installedKernels.length) {
-      assert.equal(
-        await page
-          .getByRole("button", { name: "创建窗口", exact: true })
-          .last()
-          .isDisabled(),
-        true,
-      );
-      result.checks.push("无内核时禁用创建按钮，保留失败门槛");
-    }
-    assert.ok(
-      result.installedKernels.length > 0,
-      "没有已安装内核，无法完成创建/启动的端到端验收",
-    );
     phase = "create-submit";
     await page.locator("input").first().fill("原表单创建验收");
     await page
@@ -136,10 +136,7 @@ const repo = path.resolve(__dirname, "../..");
       .fill(
         '[{"name":"fixture-cookie","value":"local-secret","domain":"example.test","path":"/"}]',
       );
-    await page
-      .getByRole("button", { name: "创建窗口", exact: true })
-      .last()
-      .click();
+    await createButton.click();
     await page.getByText("原表单创建验收", { exact: true }).first().waitFor();
     const createdRows = unwrapIpcResult(
       await page.evaluate(() => globalThis.rebuild.request("profiles:list")),

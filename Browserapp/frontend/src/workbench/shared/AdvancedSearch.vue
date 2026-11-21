@@ -118,7 +118,7 @@ function blur() {
     </Input>
     <div v-if="expanded && query" class="absolute z-50 min-w-100 w-full mt-2 overflow-hidden pa-1 dropdown">
       <div class="flex justify-between py-2 pl-2.5 pr-1.5 option" :class="{ hover: highlighted === 0 }"
-        @mousedown="choose()" @mouseenter="highlighted = 0">
+        @mousedown="choose()" @pointermove="highlighted = 0">
         <i18n-t tag="div" class="text select-none" scope="global" :keypath="$t('搜索 {value}', { value: '{value}' })">
           <template #value><span class="primary">'{{ displayedValue }}'</span></template>
         </i18n-t>
@@ -127,7 +127,7 @@ function blur() {
         <div class="py-2 px-2.5 header">{{ $t('高级搜索') }}</div>
         <div v-for="(option, index) in options" :key="option.key" class="flex justify-between py-2 pl-2.5 pr-1.5 option"
           :class="active?.key === option.key ? 'active' : highlighted === index + 1 ? 'hover' : ''"
-          @mousedown="choose(option)" @mouseenter="highlighted = index + 1">
+          @mousedown="choose(option)" @pointermove="highlighted = index + 1">
           <div class="flex items-center gap-2">
             <Icon :name="option.icon" color="var(--colors-icon-icon-inactive)" size="14" />
             <i18n-t tag="div" class="text select-none" scope="global" :keypath="option.text">

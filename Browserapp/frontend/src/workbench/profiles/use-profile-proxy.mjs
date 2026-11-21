@@ -146,15 +146,10 @@ async function refreshPending(profiles) {
 const pendingFailure = () => ({ loading: false, checkStatus: checkStatus.failure,
   error: $t('代理 IP 正在配置中，暂时无法使用。请选择其他代理 IP，或稍后重新测试。'), lastIp: '', lastCity: '', lastCountry: '', timezone: '' });
 async function persistChecks(results, notify) {
-  const modules = new Map();
   const profiles = [];
   for (const { item, checkRes } of results) {
-    if (item.moduleId && item.buyProxyType === proxyTypes.resource && !modules.has(item.moduleId)) {
-      modules.set(item.moduleId, { id: item.moduleId, ...checkRes });
-    }
     if (checkRes.checkStatus !== checkStatus.none) profiles.push({ id: item.id, dirId: item.dirId, ...checkRes });
   }
-  if (modules.size) await api.proxy.userMdfProxyModuleCreate({ proxyList: [...modules.values()], requestType: permissions.SpeedTest });
   if (profiles.length) {
     const { code, msg } = await api.window.userMdfWindowProxyCheckBatchCreate({ proxyList: profiles, requestType: permissions.SpeedTest });
     notify?.(code, msg);
@@ -178,6 +173,7 @@ function useProxySpeedTest() {
           if (isPending(row)) return { checkRes: pendingFailure(), skipPersist: true };
           if (pending.has(row) && !canTest(row)) return;
           const result = await testProxy(toRaw(row));
+          if (result.stale) return { checkRes: { error: result.error.message }, skipPersist: true };
           updateProxy(row, result, { replaceProxy: false });
           row._checkRes = toRaw(result);
           return { item: row, checkRes: result };

@@ -31,7 +31,10 @@ async function main() {
 
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ob-usage-'));
   let snapshot = Array.from({ length: 1000 }, (_, i) => ({ id: String(i), name: 'Window', trashed: i < 10 }));
-  const service = new LocalService({ root, engine: { status: () => snapshot, emit() {} } });
+  const service = new LocalService({
+    root,
+    engine: { profiles: new Map(snapshot.map(profile => [profile.id, profile])), status: () => snapshot, emit() {} },
+  });
   try {
     await service.load();
     service.decorate = () => { throw Error('count must not expand profile DTOs'); };

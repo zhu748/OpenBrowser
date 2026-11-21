@@ -48,7 +48,7 @@ import {
   automationGuide,
 } from './workbench-agent-route-intents.js';
 import { useTaskMonitor } from './workbench-agent-task-monitor.js';
-import { touchConversationCache } from './agent-conversation-cache.js';
+import { cacheConversationMessages, touchConversationCache } from './agent-conversation-cache.js';
 import {
   N as useAgentApi,
   gt as trace,
@@ -769,13 +769,13 @@ function useAgentConversation() {
           });
         }
       }
-      state.messagesByConversationId[id] = readConversationMessages(r4);
+      const messages = readConversationMessages(r4);
       historyPages[id] = {
         hasMore: r4.hasMore === true && r4.nextCursor !== null,
         loading: false,
         nextCursor: r4.nextCursor ?? null,
       };
-      cacheConversation(state, id);
+      cacheConversationMessages(state, id, messages, cacheConversation);
       for (let t3 of a3) (updateRunStatus(state, t3.runId, t3.status, t3.error), schedulePromptDrain(id));
     } catch (e3) {
       console.error(`[agent-console] Failed to load conversation detail ${id}:`, e3);

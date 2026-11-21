@@ -3,7 +3,6 @@ import { h, onBeforeMount, onBeforeUnmount, ref, toRaw, useTemplateRef, watch } 
 import { h as requests, mr as usePoller, nn as usePermission, o as cleanParams, r as mergeParams,
   sn as useLocale, v as useConfig, xr as isEmpty } from './utils-BIWenCnY.js';
 import { a as storeToRefs, n as useNotice } from './agent-BmSFI9WH.js';
-import { i as proxyRequest } from './permission-DOhNJfB3.js';
 import { m as proxyType, n as listMode, o as testStatus, s as expiration } from './proxy-D7e36h-l.js';
 import { b as useRouter, i as onWorkbenchEvent, y as useRoute } from './rich-html-link-VdBpR3Cm.js';
 import { c as runRowOperation, s as setRowOperation, t as Table } from './ry-table-do6kugym.js';
@@ -16,7 +15,6 @@ import { t as normalizeId } from './id-Bjy_bMW8.js';
 import { m as Outbound, n as useProxyExport, s as canTest, t as useTests } from './hooks-Jw3GridD.js';
 import { t as useSimplePopup } from './simplePopup-D6H7ykCr.js';
 import { a as Search, i as RelatedRows, o as useDrawer, t as useProxyEditor } from './useProxyFormDrawer-r-7UykRS.js';
-import { a as windowNumbers } from './quick-CZrtqSCy.js';
 import { a as requestRows, i as rowOperations, n as defaultQuery, o as relatedWindows, r as tableSort,
   s as useColumns, t as proxySearchOptions } from './operation-zwm3okqF.js';
 import { t as Empty } from './custom-new-empty-CLCRgYs2.js';
@@ -48,6 +46,7 @@ const table = useTemplateRef('shoptable');
 const searchOptions = proxySearchOptions();
 
 const query = ref();
+const searchQuery = ref({});
 const isFiltered = ref(false);
 const testableRows = ref([]);
 const highlightedOrder = ref();
@@ -65,12 +64,13 @@ const filter = useProxyFilter({
 const poller = usePoller({ intervalMs: 300000, checkOnce: async () => !userConfig.value.autoDetectProxy || (await testAll(true), false) });
 
 function refresh(params = {}, firstPage = false) {
-  const merged = { ...params, ...filter.getApiParams(), ...mergeParams(cleanParams(query.value)) };
+  const merged = { ...searchQuery.value, ...params, ...filter.getApiParams(), ...mergeParams(cleanParams(query.value)) };
   isFiltered.value = !isEmpty(merged);
-  table.value?.refresh(merged, firstPage);
+  return table.value?.refresh(merged, firstPage);
 }
 function search({ key, value } = {}) {
-  refresh({ queryKey: value && (key || 'fuzzy'), queryValue: value }, true);
+  searchQuery.value = value ? { queryKey: key || 'fuzzy', queryValue: value } : {};
+  return refresh({}, true);
 }
 
 function cachedPhones(id) {
@@ -112,14 +112,20 @@ function create() {
   config.mixpanelTrack('proxy_create_click');
   router.push({ name: 'agent-create' });
 }
-function edit(row) {
-  showProxyFormDrawer({
-    title: $t('编辑代理 IP'), data: row, showRemark: true, mode: 'proxy',
-    onConfirm: async values => {
-      if (!await updateProxyModules({ proxyList: [values] })) return false;
-      refresh();
-    },
-  });
+async function edit(row) {
+  try {
+    const { code, data, msg } = await requests.proxy.userGetProxyDetailMergedList({ id: row.id });
+    if (code !== 0) return showStatus(code, msg);
+    showProxyFormDrawer({
+      title: $t('编辑代理 IP'), data, showRemark: true, mode: 'proxy',
+      onConfirm: async values => {
+        if (!await updateProxyModules({ proxyList: [values] })) return false;
+        refresh();
+      },
+    });
+  } catch (error) {
+    showStatus(-1, error.message);
+  }
 }
 function remove(rows) {
   return new Promise(resolve => {
@@ -146,8 +152,8 @@ function refreshProxy(row) {
   const raw = toRaw(row);
   const count = context.isCloudPhone ? phoneCount(raw) ?? cachedPhones(raw.id).length : (raw.bindList ?? []).length;
   const accept = async () => {
-    const success = await runRowOperation(raw, 'refresh', () => globalThis.electronAPI.send('proxy:refreshUrl', raw.refreshUrl));
-    showMessage(success ? 0 : -1, raw.refreshUrl);
+    const success = await runRowOperation(raw, 'refresh', () => globalThis.electronAPI.send('proxy:refreshSaved', raw.id));
+    showMessage(success ? 0 : -1, $t('刷新动态 IP'));
   };
   if (!count) return accept();
   confirm.require({
@@ -212,8 +218,10 @@ function testOperations(rows, silent = false) {
     return async () => {
       try {
         const result = await testProxy({ ...toRaw(row), apiCheck: row.proxyType === proxyType.buy, id: row.id });
-        Object.assign(row, result);
-        checks.value[row.id] = result.checkStatus;
+        if (!result.stale) {
+          Object.assign(row, result);
+          checks.value[row.id] = result.checkStatus;
+        }
         return { ...result, id: row.id, proxyType: row.proxyType };
       } finally {
         setRowOperation(row, 'test', false);
@@ -226,12 +234,7 @@ function testOperations(rows, silent = false) {
       results.forEach((result, index) => { if (result === undefined) setRowOperation(rows[index], 'test', false); });
       const completed = results.filter(Boolean);
       if (!cancelled && !silent) batchTestShowToast(completed, { reCheck: () => concurrentProxyTest(testOperations(rows, silent)) });
-      if (context.isCloudPhone && !await savePhoneChecks(rows, completed) && !silent) showStatus(-1, $t('保存代理 IP 检测结果失败'));
-      const saved = completed.filter(row => row.proxyType === proxyType.resource);
-      if (saved.length) {
-        if (silent) void requests.proxy.userBatchMdfProxyModuleCheckCreate({ proxyList: saved });
-        else void updateProxyModules({ proxyList: saved, requestType: proxyRequest.SpeedTest });
-      }
+      if (context.isCloudPhone && !await savePhoneChecks(rows, completed.filter(row => !row.stale)) && !silent) showStatus(-1, $t('保存代理 IP 检测结果失败'));
     },
   };
 }
@@ -286,13 +289,14 @@ async function bind(row) {
   drawer.showDrawer({
     title: context.selectTitle,
     slots: { container: () => h(ProfileSelect, {
-      linkedWindowSortNums: windowNumbers(row.bindList), cacheKey: 'agent-profile-select',
+      linkedProfileIds: (row.bindList ?? []).map(window => window.id), cacheKey: 'agent-profile-select',
       onClose: () => drawer.hideDrawer(),
       onConfirm: async windows => {
-        if (!row.id) return;
+        if (!row.id) return false;
         const { code, msg } = await requests.proxy.userMdfProxyBindWindowCreate({ proxyId: row.id, windowIds: windows.map(window => window.id) });
         showStatus(code, msg);
         if (code === 0) refresh();
+        return code === 0;
       },
     }) },
   });

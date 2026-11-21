@@ -21,6 +21,7 @@ module.exports = [
       'frontend/workbench/**',
       'frontend/workbench-pages/**',
       '.workbench-build-*/**',
+      'roxy-ui.build.lock-*/**',
       'kernels/**',
       'rust-core/**',
       'assets/**',
@@ -371,6 +372,16 @@ module.exports = [
       'frontend/src/workbench/*.mjs',
       'rebuild/templates-route.js', 'rebuild/kernels-route.js', 'rebuild/source-page-route.js'],
     languageOptions: { sourceType: 'module' },
+  },
+  {
+    files: ['frontend/src/workbench/*/**/*.mjs'],
+    languageOptions: { globals: { ...globals.browser, $t: 'readonly' } },
+    rules: {
+      'no-undef': 'error',
+      'no-redeclare': 'error',
+      'no-dupe-keys': 'error',
+      'no-const-assign': 'error',
+    },
   },
   {
     // index.html loads this as a classic script. Its existing public function

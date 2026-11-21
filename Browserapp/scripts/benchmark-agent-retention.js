@@ -66,7 +66,7 @@ async function main() {
     const projection = [];
     for (const count of [100, 1000]) projection.push(await references(root, count));
     const report = { node: process.version, platform: process.platform,
-      scope: 'Actual generated conversation cache entry points with plain-state fixtures; original checkpoint scan versus indexed ID projection over identical real encrypted records',
+      scope: 'Conversation cache source modules with plain-state fixtures; original checkpoint scan versus indexed ID projection over identical real encrypted records',
       idleCache: { before, after }, templateIdProjection: projection,
       limitations: 'Serialized projection bytes are not heap usage. ID timings exclude index load and save. Existing V2 indexes without projected references require a one-time lazy fallback. Active/selected/approval state is protected; this is not an absolute total-memory cap.' };
     const text = JSON.stringify(report, null, 2) + '\n';

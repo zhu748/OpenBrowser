@@ -87,17 +87,14 @@ function useProxyTests() {
     disposed = true;
     active?.abort();
   });
-  async function testProxy({ isEncryptProxy, proxyEncryptInfo, apiCheck, id, ...configuration }) {
-    if (apiCheck && id) {
-      const result = await globalThis.__localRequest('proxies:detect', { id });
-      return { loading: false, lastIp: result.ip || '', lastCountry: result.country_code || '', lastCity: result.city || '',
-        timezone: result.timezone || '', checkStatus: result.ip ? Check.success : Check.failure };
-    }
+  async function testProxy({ isEncryptProxy, proxyEncryptInfo, apiCheck, id, persistProxyCheck = true, ...configuration }) {
     const options = clone(configuration);
+    if (!options.moduleId && apiCheck && id) options.moduleId = id;
+    if (!persistProxyCheck) options.persist = false;
     if (isEncryptProxy && proxyEncryptInfo) Object.assign(options, await decryptProxy(proxyEncryptInfo));
     const protocol = String(options.proxyCategory || options.protocol || '').trim().toLowerCase();
     const result = { loading: false, checkStatus: Check.failure, lastIp: '', lastCity: '', lastCountry: '', timezone: '' };
-    if (protocol && protocol !== 'noproxy' && !hasEndpoint(options)) {
+    if (!options.moduleId && protocol && protocol !== 'noproxy' && !hasEndpoint(options)) {
       return { ...result, error: translate('代理 IP 检测失败，请检查相关配置。'), checkTime: formatDate(new Date(), 'yyyy-MM-dd HH:mm:ss') };
     }
     options.dirId ||= Math.random().toString(36).slice(2);
@@ -108,6 +105,7 @@ function useProxyTests() {
     } catch (error) {
       const message = String(error?.message ?? error);
       result.error = error;
+      result.stale = error?.code === 'PROXY_CHECK_STALE';
       result.systemError = message.startsWith('[IPC]') || message.includes('Unknown message');
     }
     result.checkTime = formatDate(new Date(), 'yyyy-MM-dd HH:mm:ss');

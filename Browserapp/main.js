@@ -1391,28 +1391,19 @@ app.whenReady().then(async () => {
     const item = id ? store.get(id) : null;
     const raw = item?.raw || payload?.proxy || payload?.raw;
     if (!raw) throw new Error('proxy required');
-    try {
-      const result = await engine.testProxy({
-        id: 'proxy-check',
-        name: 'proxy-check',
-        proxy: raw,
-        proxyMeta: {
-          ipChannel: item?.ipChannel || payload?.ipChannel || 'ip-api',
-          apiExtractUrl: item?.refreshUrl || payload?.apiExtractUrl || '',
-          refreshUrl: item?.refreshUrl || payload?.refreshUrl || '',
-        },
-      });
-      if (item) await store.markCheck(item.id, result);
-      return { ...result, proxy: item ? store.get(item.id) : null };
-    } catch (error) {
-      if (item) {
-        await store.markCheckError(item.id, {
-          errorClass: error.errorClass || 'unknown',
-          latencyMs: error.latencyMs,
-        });
-      }
-      throw error;
-    }
+    const probe = () => engine.testProxy({
+      id: 'proxy-check',
+      name: 'proxy-check',
+      proxy: raw,
+      proxyMeta: {
+        ipChannel: item?.ipChannel || payload?.ipChannel || 'ip-api',
+        apiExtractUrl: item?.refreshUrl || payload?.apiExtractUrl || '',
+        refreshUrl: item?.refreshUrl || payload?.refreshUrl || '',
+      },
+    });
+    if (!item) return { ...await probe(), proxy: null };
+    const { record, result } = await store.checkAndRecord(item, probe);
+    return { ...result, proxy: record };
   });
   registerTrustedIpc('proxy:check-many', async (_event, payload) => {
     const store = proxyStore();
@@ -1435,24 +1426,19 @@ app.whenReady().then(async () => {
           continue;
         }
         try {
-          const result = await engine.testProxy({
+          const { result, record } = await store.checkAndRecord(item, () => engine.testProxy({
             id: 'proxy-check',
             name: item.name || 'proxy-check',
             proxy: item.raw,
             proxyMeta: { ipChannel: item.ipChannel || 'ip-api', refreshUrl: item.refreshUrl || '', apiExtractUrl: item.refreshUrl || '' },
-          });
-          await store.markCheck(item.id, result);
-          resultsById.set(id, { id, ok: true, ...result, proxy: store.get(item.id) });
+          }));
+          resultsById.set(id, { id, ok: true, ...result, proxy: record });
         } catch (error) {
-          await store.markCheckError(item.id, {
-            errorClass: error.errorClass || 'unknown',
-            latencyMs: error.latencyMs,
-          });
           resultsById.set(id, {
             id,
             ok: false,
             error: error.message || String(error),
-            errorClass: error.errorClass || 'unknown',
+            errorClass: error.errorClass || error.code || 'unknown',
             latencyMs: error.latencyMs || null,
             proxy: store.get(item.id),
           });

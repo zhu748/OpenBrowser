@@ -28,7 +28,7 @@ const useProxyPickerStore = defineStore('local-proxy-picker', () => {
   return { items, pickerItems: items, pickerLoading: loading, loading, total: computed(() => items.value.length), usableItems: items,
     fetchList, fetchPickerList: fetchList, findById, ensureById, pickRandom,
     remove: async ids => refreshAfter(await api.proxy.userDelProxyModuleV2Create({ ids })),
-    updateRemark: async (row, remark) => refreshAfter(await api.proxy.userMdfProxyModuleCreate({ ...row, remark })) };
+    updateRemark: async (row, remark) => refreshAfter(await api.proxy.userMdfProxyModuleCreate({ id: row.id, remark })) };
 });
 
 export { useProxyPickerStore as n };

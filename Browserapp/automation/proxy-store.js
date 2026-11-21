@@ -59,6 +59,12 @@ function proxyEndpointKey(proxy) {
   return [proxy.protocol, proxy.host, proxy.port].join('\u0000');
 }
 
+function sameProbeTarget(left, right) {
+  return left.chromeUrl === right.chromeUrl && left.username === right.username &&
+    left.password === right.password && left.refreshUrl === right.refreshUrl &&
+    left.ipChannel === right.ipChannel;
+}
+
 function isRedactedCredential(value) {
   const text = String(value ?? '');
   if (!text) return true;
@@ -181,6 +187,7 @@ function normalizeProxyRecord(input = {}, existing = null) {
   if (parsed.raw.length > MAX_PROXY_URL_LENGTH) throw new Error('代理 URL 过长');
 
   const now = new Date().toISOString();
+  const check = existing && (isMigration || sameProbeTarget(existing, { ...parsed, refreshUrl, ipChannel })) ? existing : null;
   return {
     id: existing?.id || String(input.id || uid()),
     name: requestedName || parsed.name,
@@ -196,17 +203,17 @@ function normalizeProxyRecord(input = {}, existing = null) {
     ipChannel,
     maxConcurrency,
     remark,
-    lastCheck: existing?.lastCheck || null,
-    lastIp: existing?.lastIp || '',
-    lastCountryCode: existing?.lastCountryCode || '',
-    lastCountry: existing?.lastCountry || '',
-    lastCity: existing?.lastCity || '',
-    lastTimezone: existing?.lastTimezone || '',
-    lastIsp: existing?.lastIsp || '',
-    lastLatencyMs: existing?.lastLatencyMs ?? null,
-    lastNetworkType: existing?.lastNetworkType || '',
-    lastErrorClass: existing?.lastErrorClass || '',
-    lastCheckOk: existing?.lastCheckOk ?? null,
+    lastCheck: check?.lastCheck || null,
+    lastIp: check?.lastIp || '',
+    lastCountryCode: check?.lastCountryCode || '',
+    lastCountry: check?.lastCountry || '',
+    lastCity: check?.lastCity || '',
+    lastTimezone: check?.lastTimezone || '',
+    lastIsp: check?.lastIsp || '',
+    lastLatencyMs: check?.lastLatencyMs ?? null,
+    lastNetworkType: check?.lastNetworkType || '',
+    lastErrorClass: check?.lastErrorClass || '',
+    lastCheckOk: check?.lastCheckOk ?? null,
     create_time: existing?.create_time || now,
     update_time: isMigration ? (existing?.update_time || now) : now,
   };
@@ -610,12 +617,26 @@ class ProxyStore {
   }
 
   async update(id, input) {
-    return this._commitMutation((draft) => {
-      const index = draft.items.findIndex((item) => item.id === id);
-      if (index < 0) throw new Error('代理不存在: ' + id);
-      const next = normalizeProxyRecord({ ...input, id }, draft.items[index]);
-      draft.items[index] = next;
-      return next;
+    const [record] = await this.updateMany([{ ...input, id }]);
+    return record;
+  }
+
+  async updateMany(inputs) {
+    if (!Array.isArray(inputs) || inputs.length > 500) throw Error('单次最多修改 500 条代理');
+    if (!inputs.length) return [];
+    const updates = structuredClone(inputs);
+    return this._commitMutation(draft => {
+      const positions = new Map();
+      for (const [index, item] of draft.items.entries()) if (!positions.has(item.id)) positions.set(item.id, index);
+      const seen = new Set();
+      return updates.map(input => {
+        const id = input?.id;
+        if (!positions.has(id)) throw Error('代理不存在: ' + id);
+        if (seen.has(id)) throw Error('批量修改代理 ID 重复: ' + id);
+        seen.add(id);
+        const index = positions.get(id);
+        return (draft.items[index] = normalizeProxyRecord(input, draft.items[index]));
+      });
     });
   }
 
@@ -674,6 +695,7 @@ class ProxyStore {
       return entries.map((pending) => {
         const item = byId.get(pending.id);
         if (!item) return { missing: pending.id };
+        if (pending.expected && !sameProbeTarget(item, pending.expected)) return { stale: true };
         item.lastCheck = new Date().toISOString();
         if (pending.kind === 'error') {
           item.lastLatencyMs = Number.isFinite(Number(pending.error?.latencyMs)) ? Number(pending.error.latencyMs) : null;
@@ -692,12 +714,13 @@ class ProxyStore {
           item.lastCheckOk = !pending.result?.errorClass && Boolean(pending.result?.ip);
         }
         item.update_time = item.lastCheck;
-        return { item };
+        return { item: { ...item } };
       });
     }).then((outcomes) => {
       entries.forEach((pending, index) => {
         const outcome = outcomes[index];
         if (Object.hasOwn(outcome, 'missing')) pending.reject(new Error('代理不存在: ' + outcome.missing));
+        else if (outcome.stale) pending.reject(Object.assign(Error('代理配置已变更，请重新检测'), { code: 'PROXY_CHECK_STALE' }));
         else pending.resolve(outcome.item);
       });
     }, (failure) => {
@@ -705,12 +728,23 @@ class ProxyStore {
     });
   }
 
-  markCheck(id, result = {}) {
-    return this._appendCheckEntry({ kind: 'check', id, result });
+  markCheck(id, result = {}, expected) {
+    return this._appendCheckEntry({ kind: 'check', id, result, expected });
   }
 
-  markCheckError(id, error = {}) {
-    return this._appendCheckEntry({ kind: 'error', id, error });
+  markCheckError(id, error = {}, expected) {
+    return this._appendCheckEntry({ kind: 'error', id, error, expected });
+  }
+
+  async checkAndRecord(item, probe) {
+    let result;
+    try {
+      result = await probe();
+    } catch (error) {
+      await this.markCheckError(item.id, error, item);
+      throw error;
+    }
+    return { result, record: await this.markCheck(item.id, result, item) };
   }
 
   toChromeString(id) {

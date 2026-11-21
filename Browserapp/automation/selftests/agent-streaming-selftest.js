@@ -33,23 +33,18 @@ function testEmitter() {
 }
 
 async function testEventRanges() {
-  const source = await fs.readFile(path.resolve(__dirname, '../../roxy-ui/assets/hook-CnJE4hRq.js'), 'utf8');
-  const functions = ['Hl', 'Ul', 'Wl', 'Gl', 'Kl', 'ql'].map(name => {
-    const match = source.match(new RegExp('^function ' + name + '\\([^]*?^}', 'm'));
-    assert.ok(match, 'generated event reducer boundary changed: ' + name); return match[0];
-  });
-  const { Gl, ql } = new Function(functions.join('\n') + ';return {Gl,ql};')();
+  const { acceptStreamEvent, mergeEventHistory } = await import('../../frontend/src/workbench/agent/conversation-stream.mjs');
   const event = (sequence, text) => ({ conversationId: 'c', runId: 'r', sequence, startSequence: sequence,
     event: { type: 'content_delta', data: { contentId: 'a', text } } });
   const first = event(1, '前🙂'), second = event(2, '后');
   const stream = { runId: 'r', lastSequence: 0, events: [] };
-  assert.equal(Gl(stream, first), 'accepted'); assert.equal(Gl(stream, second), 'accepted');
+  assert.equal(acceptStreamEvent(stream, first), 'accepted'); assert.equal(acceptStreamEvent(stream, second), 'accepted');
   assert.equal(stream.events.map(value => value.event.data.text).join(''), '前🙂后', 'atomic deltas append instead of replacing preceding text');
-  assert.equal(Gl(stream, second), 'duplicate');
-  const history = []; ql(history, [first]); ql(history, [second]);
+  assert.equal(acceptStreamEvent(stream, second), 'duplicate');
+  const history = []; mergeEventHistory(history, [first]); mergeEventHistory(history, [second]);
   assert.equal(history.map(value => value.event.data.text).join(''), '前🙂后');
   const replacement = { ...event(2, '前🙂后'), startSequence: 1 };
-  ql(history, [replacement]);
+  mergeEventHistory(history, [replacement]);
   assert.equal(history.length, 1, 'a genuine aggregated range still replaces its preceding fragments');
   assert.equal(history[0].event.data.text, '前🙂后');
 }

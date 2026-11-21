@@ -92,7 +92,7 @@ async function testTemplateReferences() {
   }
 }
 
-async function testCompiledCache() {
+async function testLateHistoryRetention() {
   const fixture = await require('../../rebuild/selftest-conversation-cache.cjs').conversationCacheFixture();
   const { state, touch } = fixture;
   for (let i = 0; i < 1000; i++) {
@@ -103,9 +103,9 @@ async function testCompiledCache() {
     state.streamsByRunId[runId] = { conversationId: id, events: ['raw event payload'] };
     touch(state, id);
   }
-  assert.equal(Object.keys(state.streamsByRunId).length, 3, 'compiled cache entry points must release raw history');
+  assert.equal(Object.keys(state.streamsByRunId).length, 3, 'cache entry points must release raw history');
   assert.equal(Object.keys(state.messagesByConversationId).length, 3);
-  assert.ok(state.messagesByConversationId.c0, 'compiled route binding pins the selected conversation');
+  assert.ok(state.messagesByConversationId.c0, 'the selected conversation stays pinned');
   state.conversationsById.late = { id: 'late', runningRunIds: [] };
   let release;
   const load = fixture.detailLoader(() => new Promise(resolve => { release = resolve; }));
@@ -124,7 +124,7 @@ async function testCompiledCache() {
 }
 
 async function main() {
-  await testCache(); await testCompiledCache(); await testTemplateReferences();
+  await testCache(); await testLateHistoryRetention(); await testTemplateReferences();
   console.log('AGENT_RETENTION OK (bounded idle messages and streams, selected/active/approval pinning, unsent work, indexed template IDs and lazy legacy fallback)');
 }
 if (require.main === module) main().catch(error => { console.error(error); process.exitCode = 1; });

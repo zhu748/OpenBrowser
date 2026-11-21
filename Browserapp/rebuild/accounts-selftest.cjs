@@ -19,7 +19,7 @@ const { BrowserEngine } = require("../engine"),
   try {
     await engine.init(null);
     await store.load();
-    service = new LocalService({ engine, root, accountStore: () => store });
+    service = new LocalService({ engine, root, window: () => null, accountStore: () => store });
     const [account] = await service.request("accounts:create", {
       values: [
         {
@@ -43,6 +43,19 @@ const { BrowserEngine } = require("../engine"),
     assert.ok(
       !(await fs.readFile(store.file)).includes(Buffer.from("library-secret")),
     );
+    const exportFile = path.join(root, "accounts.txt");
+    service.dialog = {
+      showSaveDialog: async () => ({ filePath: exportFile }),
+      showOpenDialog: async () => ({ filePaths: [exportFile] }),
+    };
+    await fs.writeFile(exportFile, "old", { mode: 0o644 });
+    await service.request("accounts:export", { ids: [account.id], format: "txt" });
+    assert.ok(!(await fs.readFile(exportFile, "utf8")).includes("library-secret"));
+    if (process.platform !== "win32") assert.equal((await fs.stat(exportFile)).mode & 0o777, 0o600);
+    await service.request("accounts:export", { ids: [account.id], format: "txt", includeCredentials: true });
+    const exported = await service.request("accounts:import-preview");
+    assert.equal(exported.values[0].platformPassword, "library-secret");
+    assert.equal(exported.values[0].platformEfa, "TOTP");
     const one = await service.request("profiles:create", {
       windowName: "manual and library",
       os: "Linux",
@@ -84,6 +97,15 @@ const { BrowserEngine } = require("../engine"),
       JSON.parse((await service.request("accounts:list")).rows[0].window_info),
       [two.windowSortNum],
     );
+    const archived = await service.request("profiles:create", {
+      windowName: "recycled account binding", platformUrlIds: [account.id],
+    });
+    await service.request("profiles:delete", { ids: [archived.id] });
+    const currentBinding = engine.profileForEdit(two.id);
+    await service.request("accounts:bind", { platformId: account.id, windowIds: [two.id] });
+    assert.deepEqual(engine.profileForEdit(two.id), currentBinding, "saving the same selection leaves the active window unchanged");
+    assert.equal(engine.profileForEdit(archived.id).profile.platform.accounts[0].accountId, account.id);
+    assert.equal((await service.request("accounts:list")).rows[0].boundProfileIds.includes(archived.id), false);
     await service.request("accounts:update", {
       platformList: [{ id: account.id, platformUserName: "updated" }],
     });
@@ -174,14 +196,14 @@ const { BrowserEngine } = require("../engine"),
       badFile = path.join(root, "unwritable-directory");
     await fs.mkdir(badFile);
     store.file = badFile;
-    const apply = engine.applyProfileCommands.bind(engine);
+    const sync = engine.syncProfiles.bind(engine);
     let inject = true;
-    engine.applyProfileCommands = async (commands, ...args) => {
-      const outcome = await apply(commands, ...args);
+    engine.syncProfiles = async (profiles, ...args) => {
+      const outcome = await sync(profiles, ...args);
       if (
         inject &&
-        commands.some((command) =>
-          command.profile?.platform.accounts.some(
+        profiles.some((profile) =>
+          profile.platform?.accounts.some(
             (row) =>
               row.accountId === account.id &&
               row.username === "rollback-target",
@@ -190,7 +212,7 @@ const { BrowserEngine } = require("../engine"),
       ) {
         inject = false;
         const current = engine.profileForEdit(two.id);
-        await apply([
+        await engine.applyProfileCommands([
           {
             kind: "patch",
             id: two.id,
@@ -219,7 +241,7 @@ const { BrowserEngine } = require("../engine"),
       "concurrent note survives",
     );
     store.file = originalFile;
-    engine.applyProfileCommands = apply;
+    engine.syncProfiles = sync;
     result.checks.push(
       "明确注入账号文件写失败，真实窗口关联补偿回滚；并发备注编辑保留，没有全行旧快照覆盖",
     );

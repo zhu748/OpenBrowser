@@ -22,20 +22,23 @@ async function fingerprintPreview(service, p) {
   if (!Number.isInteger(count) || count < 1 || count > 100)
     throw Error("Invalid fingerprint count");
   const edited = p.profileId ? e.profileForEdit(String(p.profileId)).profile : null;
-  return Array.from({ length: count }, () => {
-    // Existing editors keep their storage identity; new previews hand their
-    // UUID to create instead of hashing a second, unrelated UUID after save.
-    const profile = fromRoxy({ ...p, windowName: "Preview" }, edited
-      ? { id: edited.id } : {});
-    const browser = e.chooseBrowser(profile, profile.engine);
+  const input = { ...p, windowName: "Preview" };
+  const first = fromRoxy(input, edited ? { id: edited.id } : {});
+  const browser = e.chooseBrowser(first, first.engine);
+  const version = e.kernelManager?.readInstalledVersion
+    ? await e.kernelManager.readInstalledVersion(browser)
+    : browser.version;
+  return Array.from({ length: count }, (_, index) => {
+    // Each preview keeps the storage identity its eventual create will use.
+    const profile = index === 0 ? first : fromRoxy(input, edited ? { id: edited.id } : {});
     profile.fingerprintSeed = crypto.randomBytes(16).toString('hex');
     const firefox = profile.engine === 'firefox';
-    const fullVersion = firefox ? null : randomUaPatchVersion(browser.version, { previousUserAgent: p.previousUserAgent });
+    const fullVersion = firefox ? null : randomUaPatchVersion(version, { previousUserAgent: p.previousUserAgent });
     const options = { os: profile.os, osVersion: profile.osVersion,
-      chromeMajor: Number(browser.version.split('.')[0]), chromeFull: fullVersion };
+      chromeMajor: Number(version.split('.')[0]), chromeFull: fullVersion };
     const os = /mac/i.test(profile.os) ? 'mac' : /win/i.test(profile.os) ? 'win' : 'linux';
     const generated = firefox
-      ? buildUaProfile({ os: profile.os, userAgent: firefoxUserAgent(os, browser.version) })
+      ? buildUaProfile({ os: profile.os, userAgent: firefoxUserAgent(os, version) })
       : buildUaProfile({ ...options, reduced: false });
     // Mobile templates own the model and release; they are selected below.
     const mobile = /android|ios|iphone|ipad/i.test(profile.os);
@@ -47,9 +50,9 @@ async function fingerprintPreview(service, p) {
     // A draft describes the next saved configuration, even while the old
     // browser is running. fingerprintFor(id) deliberately returns that live
     // snapshot and must not be used to sample a proposed identity.
-    const configured = { ...profile, kernelVersion: browser.version };
+    const configured = { ...profile, kernelVersion: version };
     const f = profile.engine === 'firefox'
-      ? require('../../automation/firefox-fingerprint').buildFirefoxFingerprint(configured, browser.version)
+      ? require('../../automation/firefox-fingerprint').buildFirefoxFingerprint(configured, version)
       : buildFingerprint(configured);
     return {
       userAgent: f.userAgent,
@@ -143,7 +146,7 @@ async function kernelsList(service) {
 module.exports = [
   ["host:shortcut", hostShortcut, "serial"],
   ["host:default-browser", hostDefaultBrowser, "serial"],
-  ["fingerprint:preview", fingerprintPreview, "serial"],
+  ["fingerprint:preview", fingerprintPreview, "parallel", false],
   ['fingerprint:sample-fields', fingerprintFields, 'parallel'],
   ["host:dictionary", hostDictionary, "parallel"],
   ["host:network", hostNetwork, "parallel"],

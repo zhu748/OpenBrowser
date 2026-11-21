@@ -126,13 +126,13 @@ async function labelsDelete(service, p) {
         },
       };
     });
-  return profileRelations(e, changes, async () => {
+  const result = await profileRelations(service, changes, () => {
     service.data.labels = (service.data.labels || []).filter(
       (row) => !ids.includes(row.id),
     );
-    await service.save();
-    return true;
   });
+  e.emit?.({ type: "profiles", action: "label-metadata" });
+  return result;
 }
 
 async function groupsDelete(service, p) {
@@ -149,12 +149,10 @@ async function groupsDelete(service, p) {
         patch: { groupId: "", group_name: "" },
       };
     });
-  const result = await profileRelations(e, changes, async () => {
+  const result = await profileRelations(service, changes, () => {
     service.data.groups = service.data.groups.filter(
       (row) => !ids.includes(String(row.id)),
     );
-    await service.save();
-    return true;
   });
   e.emit?.({ type: "profiles", action: "group-metadata" });
   return result;

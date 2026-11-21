@@ -134,13 +134,25 @@ const repo = path.resolve(__dirname, "../..");
       remark: "代理编辑验收",
     });
     await page.evaluate(() => globalThis.__router.push("/agent"));
-    await page.getByText("127.0.0.1:9999", { exact: false }).first().waitFor();
+    const proxyHost = page.getByText("127.0.0.1:9999", { exact: false }).first();
+    await proxyHost.waitFor();
+    const proxySearch = page.getByPlaceholder("搜索 Ctrl + F", { exact: true });
+    await proxySearch.fill("no-proxy-matches-this");
+    await proxySearch.press("Enter");
+    await page.getByText("暂无查询结果", { exact: true }).waitFor();
+    assert.equal(await proxyHost.isVisible(), false);
+    await proxySearch.fill("127.0.0.1");
+    await proxySearch.press("Enter");
+    await proxyHost.waitFor();
+    assert.equal(await page.getByText("fixture-password", { exact: true }).count(), 0);
+    result.checks.push("原代理列表搜索通过本地筛选，普通列表不展示密码");
     await page.screenshot({
       path: path.join(evidence, "proxy-before-edit.png"),
     });
     const row = page.getByRole("row").filter({ hasText: "127.0.0.1" });
     await row.click({ button: "right" });
     await page.getByText("编辑", { exact: true }).last().click();
+    assert.equal(await page.locator('input[name="proxyPassword"]').inputValue(), "fixture-password");
     await page.locator('input[name="port"]').fill("9998");
     await page
       .getByRole("button", { name: "保存", exact: true })
@@ -156,6 +168,7 @@ const repo = path.resolve(__dirname, "../..");
         ),
       {},
     );
+    assert.equal((await call("proxies:read", { id: proxy.id })).password, "fixture-password");
     result.checks.push("原代理列表编辑入口保存到 OpenBrowser 原代理库");
     phase = "proxy-delete";
     console.log(phase);

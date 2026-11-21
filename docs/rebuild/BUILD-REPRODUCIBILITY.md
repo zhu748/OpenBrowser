@@ -14,7 +14,7 @@ node rebuild/compiler/source-selftest.cjs
 
 - `Browserapp/frontend/src/workbench/` 保存默认工作台的 Vue 组件、业务逻辑、样式、主题、语言包和 SVG 图标源码。
 - `Browserapp/frontend/workbench/` 保存入口 HTML、Vue、PrimeVue、CodeMirror 等第三方运行库及图片和字体。直接复制的脚本和样式须在 `workbench-vendor-modules.json` 中明确登记。
-- `Browserapp/frontend/workbench-entries.json` 记录源码到运行时路径的映射。兼容模块继续提供原有导出名。默认入口 `npm start` 先构建，再启动 Electron。
+- `Browserapp/frontend/workbench-entries.json` 记录源码到运行时路径的映射。兼容模块继续提供原有导出名。`npm start` 校验构建输入和产物，匹配时复用工作台，再启动 Electron。`npm run rebuild:ui` 始终重新构建，发布流水线使用该命令。
 
 默认构建在隔离目录运行模块链接、资源和 IPC 契约审计，通过后才替换运行目录。`node rebuild/compiler/source-selftest.cjs` 在临时目录移除原始归档、旧产物和补丁脚本后重新生成完整工作台，并逐文件比较 SHA256。发布流水线始终从这个入口构建，安装包只收录运行目录。
 

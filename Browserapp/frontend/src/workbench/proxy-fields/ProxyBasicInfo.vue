@@ -10,7 +10,7 @@ defineProps({ data: { type: Object, required: true } });
       <template v-if="data.isEncryptProxy"> -- </template>
       <template v-else>
         <span>{{ data.host }}</span><span>{{ joinWhenPresent(':', data.port) }}</span>
-        <span>{{ joinWhenPresent(':', data.proxyUserName) }}</span><span>{{ joinWhenPresent(':', data.proxyPassword) }}</span>
+        <span v-if="data.authenticated" class="ml-1" :aria-label="$t('需要身份验证')">•••</span>
       </template>
     </div>
     <div class="flex items-center gap-1.5 ip-type">

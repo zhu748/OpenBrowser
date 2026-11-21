@@ -1684,6 +1684,32 @@ class BrowserKernelManager {
     return { name: hit.name, version: hit.version, path: hit.path, ok: true };
   }
 
+  async readInstalledVersion(browser) {
+    const declared = String(browser.version || '');
+    if (/^\d+(?:\.\d+){1,3}(?:esr)?$/i.test(declared)) return declared;
+    const stat = await fsp.stat(browser.path);
+    const stamp = `${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
+    const cache = this.installedVersionProbes ||= new Map();
+    const previous = cache.get(browser.path);
+    if (previous?.stamp === stamp) return previous.pending;
+    const pending = (async () => {
+      if (browser.engine === 'firefox') return (await this.probeFirefoxBinary(browser.path)).version;
+      const { stdout, stderr } = await execFileAsync(browser.path, ['--version'], {
+        timeout: 8000, windowsHide: true, maxBuffer: 64 * 1024,
+      });
+      const version = `${stdout}\n${stderr}`.match(/\b(?:chrome|chromium|wayfern)\b[^\d\r\n]*(\d+(?:\.\d+){1,3})/i)?.[1];
+      if (!version) throw Error('无法读取浏览器内核版本，请在内核管理中重新检测或安装内核');
+      return version;
+    })();
+    cache.set(browser.path, { stamp, pending });
+    if (cache.size > 32) cache.delete(cache.keys().next().value);
+    try { return await pending; }
+    catch (error) {
+      if (cache.get(browser.path)?.pending === pending) cache.delete(browser.path);
+      throw error;
+    }
+  }
+
   /** Roxy: 已下载的内核在未使用时将会自动更新 (default on, persisted in meta). */
   async setAutoUpdateKernel(enabled) {
     await this.loadMeta();
@@ -1899,37 +1925,55 @@ class BrowserKernelManager {
     });
 
     this.onProgress({ phase: 'extract', message: '解压 Google Chrome Stable…', version: 'stable' });
-    await fsp.rm(work, { recursive: true, force: true });
-    await fsp.mkdir(work, { recursive: true });
+    const staging = await fsp.mkdtemp(path.join(this.kernelsRoot, '.chrome-stable-'));
+    const stagedRoot = path.join(staging, 'tree');
+    const previous = path.join(staging, 'previous');
+    let binary, version, preservePrevious = false;
     try {
-      if (kind === 'deb') await extractDeb(archivePath, work);
-      else if (kind === 'msi') await extractMsi(archivePath, work);
-      else if (kind === 'dmg') await extractDmg(archivePath, work);
-      else throw new Error(`不支持的 Chrome Stable 包格式：${kind}`);
-    } catch (error) {
-      throw new Error('解压 Google Chrome Stable 失败：' + (error.message || error));
-    }
+      await fsp.mkdir(stagedRoot);
+      try {
+        if (kind === 'deb') await extractDeb(archivePath, stagedRoot);
+        else if (kind === 'msi') await extractMsi(archivePath, stagedRoot);
+        else if (kind === 'dmg') await extractDmg(archivePath, stagedRoot);
+        else throw new Error(`不支持的 Chrome Stable 包格式：${kind}`);
+      } catch (error) {
+        throw new Error('解压 Google Chrome Stable 失败：' + (error.message || error));
+      }
 
-    let binary = path.join(work, chromeStableBinaryRelative());
-    if (!fs.existsSync(binary)) {
-      binary = await findExecutable(work, process.platform === 'win32' ? ['chrome.exe'] : ['Google Chrome', 'chrome']);
-    }
-    binary = this.safeCustomBinary(binary) || safeInstalledBinary(binary, work);
-    if (!binary) throw new Error('解压后未找到 Google Chrome Stable 可执行文件');
+      let stagedBinary = path.join(stagedRoot, chromeStableBinaryRelative());
+      if (!fs.existsSync(stagedBinary)) {
+        stagedBinary = await findExecutable(stagedRoot, process.platform === 'win32' ? ['chrome.exe'] : ['Google Chrome', 'chrome']);
+      }
+      stagedBinary = safeInstalledBinary(stagedBinary, stagedRoot);
+      if (!stagedBinary) throw new Error('解压后未找到 Google Chrome Stable 可执行文件');
+      if (process.platform !== 'win32') await fsp.chmod(stagedBinary, 0o755);
 
-    if (process.platform !== 'win32') {
-      try { await fsp.chmod(binary, 0o755); } catch (_) {}
-    }
+      this.onProgress({ phase: 'validate', message: '验证 Google Chrome Stable 兼容性…', version: 'stable', binary: stagedBinary });
+      const probe = await this.probeBrowserBinary(stagedBinary);
+      version = probe.version;
+      await writeFileAtomic(path.join(stagedRoot, 'kernel.json'), JSON.stringify({
+        version, source: SOURCE_CHROME_STABLE, platform: donutPlatformKey(), downloadUrl: url,
+      }, null, 2) + '\n');
 
-    this.onProgress({ phase: 'validate', message: '验证 Google Chrome Stable 兼容性…', version: 'stable', binary });
-    const probe = await this.probeBrowserBinary(binary);
-    const version = probe.version || 'stable';
-    await writeFileAtomic(path.join(work, 'kernel.json'), JSON.stringify({
-      version,
-      source: SOURCE_CHROME_STABLE,
-      platform: donutPlatformKey(),
-      downloadUrl: url,
-    }, null, 2) + '\n');
+      const relativeBinary = path.relative(stagedRoot, stagedBinary);
+      const hadPrevious = fs.existsSync(work);
+      if (hadPrevious) await fsp.rename(work, previous);
+      try { await fsp.rename(stagedRoot, work); }
+      catch (error) {
+        if (hadPrevious) {
+          try { await fsp.rename(previous, work); }
+          catch (restoreError) {
+            preservePrevious = true;
+            throw new AggregateError([error, restoreError], 'Chrome Stable 安装失败且无法恢复旧内核：' + previous);
+          }
+        }
+        throw error;
+      }
+      binary = path.join(work, relativeBinary);
+      this.installedListCache = null;
+    } finally {
+      if (!preservePrevious) await fsp.rm(staging, { recursive: true, force: true }).catch(() => {});
+    }
 
     this.meta.binary = binary;
     this.meta.version = version;

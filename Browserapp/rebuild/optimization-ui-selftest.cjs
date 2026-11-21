@@ -1,24 +1,8 @@
 "use strict";
 const { openWorkspacePage, waitUntil } = require("./selftest-helpers.cjs");
 const assert = require("node:assert/strict"), fs = require("node:fs/promises"),
-  path = require("node:path"), os = require("node:os"), vm = require("node:vm");
-const acorn = require("acorn"), walk = require("acorn-walk");
-async function checkSaveFailure() {
-  const source = await fs.readFile(path.join(__dirname, "../roxy-ui/assets/edit-IaDdchpD.js"), "utf8");
-  let handler;
-  walk.simple(acorn.parse(source, { ecmaVersion: "latest", sourceType: "module" }), {
-    FunctionDeclaration(node) { if (node.id?.name === "$" && node.async) handler = source.slice(node.start, node.end); },
-  });
-  assert(handler);
-  const context = { de() {}, X: { value: true }, W: { value: [[]] }, Y: { waitUntilReady: async () => {} }, n: () => ({}), ee: value => value,
-    K: { value: {} }, G: { value: {} }, E: async value => value, R: { value: {} }, O: value => value, J: { value: false },
-    t: { window: { userMdfWindowInfoSingleV2Create: async () => { throw Object.assign(Error("conflict"), { code: "PROFILE_STALE_REV" }); } } } };
-  await assert.rejects(vm.runInNewContext(handler + "; $()", context), { code: "PROFILE_STALE_REV" });
-  assert.equal(context.J.value, false, "a rejected save releases the loading state");
-}
+  path = require("node:path"), os = require("node:os");
 async function main() {
-  await checkSaveFailure();
-  if (process.argv.includes("--handler-only")) { console.log("EDIT_SAVE_LIFECYCLE OK"); return; }
   const { _electron: electron } = require("playwright");
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "ob-ui-optimization-"));
   let app;
@@ -59,6 +43,27 @@ async function main() {
     });
     const result = await page.evaluate(() => globalThis.__localApi.window.userGetWindowInfoListList({ page_index: 2, page_size: 5 }));
     assert.equal(result.data.total, 15); assert.equal(result.data.rows.length, 5);
+    const editId = result.data.rows[0].id;
+    await app.evaluate(({ ipcMain }) => {
+      const request = ipcMain._invokeHandlers.get("rebuild:request");
+      ipcMain.removeHandler("rebuild:request");
+      ipcMain.handle("rebuild:request", (event, method, payload) => {
+        if (method === "profiles:update") {
+          globalThis.__editSaveAttempts = (globalThis.__editSaveAttempts || 0) + 1;
+          return { ipcResult: 1, ok: false, error: { code: "PROFILE_STALE_REV", message: "测试：窗口配置已变更" } };
+        }
+        return request(event, method, payload);
+      });
+    });
+    await page.evaluate(id => globalThis.__router.push({ path: '/browser/edit', query: { id } }), editId);
+    const editSave = page.getByRole("button", { name: "保存", exact: true });
+    await waitUntil(() => editSave.isEnabled());
+    await editSave.click();
+    await waitUntil(async () => (await app.evaluate(() => globalThis.__editSaveAttempts)) === 1);
+    await page.getByText("测试：窗口配置已变更", { exact: true }).waitFor();
+    await waitUntil(() => editSave.isEnabled());
+    await editSave.click();
+    await waitUntil(async () => (await app.evaluate(() => globalThis.__editSaveAttempts)) === 2);
     await app.evaluate(({ ipcMain }) => {
       const original = ipcMain._invokeHandlers.get("rebuild:request");
       ipcMain.removeHandler("rebuild:request");

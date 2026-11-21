@@ -102,6 +102,14 @@ async function main() {
   engine.profiles.set('env-1', { id: 'env-1', name: 'cursor-change', cookies: 'private' });
   await cursorClient.refresh();
   assert.equal(current[0].name, 'cursor-change'); assert.equal(current[0].cookies, '');
+  const beforeAddition = requests.at(-1);
+  engine.profiles.set('env-3', { id: 'env-3', name: 'new profile', cookies: 'private' });
+  const added = engine.statusDelta(beforeAddition, { includeWatermark: false, includeCursor: true });
+  assert.equal(added.full, false);
+  assert.ok(added.rows.some(row => row.id === 'env-3'));
+  assert.ok(!added.rows.some(row => row.id === 'env-2'), 'unchanged rows stay out of an addition delta');
+  await cursorClient.refresh();
+  assert.equal(current.find(row => row.id === 'env-3').cookies, '');
   for (let i = 0; i < 10; i++) { engine.invalidateStatusCache(); engine.statusDelta(null, { includeCursor: true }); }
   assert.equal(engine._statusCursorHistory.size, 8);
   assert.equal(engine.statusDelta(cursor).full, true, 'expired history safely resynchronizes');

@@ -2,7 +2,6 @@
 import { computed, ref, toRaw, useTemplateRef } from './workbench-vue.js';
 import { ar as runLimited, h as api } from './utils-BIWenCnY.js';
 import { n as useFeedback } from './agent-BmSFI9WH.js';
-import { i as requestType } from './permission-DOhNJfB3.js';
 import { m as Proxy, n as Usage, o as Check } from './proxy-D7e36h-l.js';
 import { o as OperationButtons, r as ReloadButton, s as setLoading, t as Table } from './ry-table-do6kugym.js';
 import { t as Button } from './rx-button-DyzuUt-V.js';
@@ -92,17 +91,16 @@ async function checkRows(candidates, { apiCheck = true, retry = true } = {}) {
     const tests = items.map(row => async () => {
       let result;
       try {
-        result = await testProxy({ ...toRaw(row), apiCheck: apiCheck && row.proxyType === Proxy.buy });
+        result = await testProxy({ ...toRaw(row), apiCheck: apiCheck && row.proxyType === Proxy.buy,
+          persistProxyCheck: props.syncCheckToModule });
       } catch (error) {
         result = { checkStatus: Check.failure, error };
       }
-      Object.assign(row, result, { _checkRes: result });
+      if (!result.stale) Object.assign(row, result, { _checkRes: result });
       return { ...result, id: row.id, proxyType: row.proxyType };
     });
     const results = await runLimited(tests, 5);
     batchTestShowToast(results, { reCheck: retry ? () => checkRows(items, { apiCheck, retry }) : undefined });
-    const imported = results.filter(result => result.proxyType === Proxy.resource);
-    if (props.syncCheckToModule && imported.length) await api.proxy.userMdfProxyModuleCreate({ proxyList: imported, requestType: requestType.SpeedTest });
   } finally {
     for (const row of items) {
       pending.delete(row.id);

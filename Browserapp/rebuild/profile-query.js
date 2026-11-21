@@ -4,30 +4,27 @@ function queryProfiles(service, p = {}) {
   const index = Number(p.page_index ?? p.pageIndex ?? 1), size = Number(p.page_size ?? p.pageSize ?? 10);
   if (!Number.isSafeInteger(index) || index < 1 || !Number.isSafeInteger(size) || size < 1 || size > 5000)
     throw Error("分页参数无效，单页范围 1–5000");
-  let rows = service.profileIndex().summaries.filter(row => !!row.source.trashed === !!p.isDelete);
+  const { summaries, summariesById } = service.profileIndex();
+  const values = value => (Array.isArray(value) ? value : String(value ?? "").split(","))
+    .map(String).filter(Boolean);
+  const candidates = p.dirIds
+    ? [...new Set(values(p.dirIds))].map(id => summariesById.get(id)).filter(Boolean).sort((a, b) => a.position - b.position)
+    : summaries;
+  const trashed = p.isDelete === true || p.isDelete === 1 || p.isDelete === "1" || p.isDelete === "true";
+  let rows = candidates.filter(row => Boolean(row.source.trashed) === trashed);
   if (p?.windowName)
     rows = rows.filter((r) => r.windowName.includes(p.windowName));
   if (p?.openStatus) rows = rows.filter((r) => r.openStatus);
   if (p?.isOften) rows = rows.filter((r) => r.isOften);
   if (p?.projectId || p?.projectIds) {
-    const ids = String(p.projectId || p.projectIds).split(",").map(id=>id==='local-default'?'':id);
-    rows = rows.filter((r) => ids.includes(r.projectId));
+    const ids = new Set(String(p.projectId || p.projectIds).split(",").map(id => id === 'local-default' ? '' : id));
+    rows = rows.filter(r => ids.has(r.projectId));
   }
   if (p?.queryValue && (!p.queryKey || p.queryKey === "name_remark")) {
     const query = String(p.queryValue).toLowerCase();
     rows = rows.filter((r) =>
       (r.windowName + " " + r.windowRemark).toLowerCase().includes(query),
     );
-  }
-  const values = (v) =>
-    Array.isArray(v)
-      ? v.map(String)
-      : String(v ?? "")
-          .split(",")
-          .filter(Boolean);
-  if (p.dirIds) {
-    const selected = new Set(values(p.dirIds));
-    rows = rows.filter(row => selected.has(String(row.source.id)));
   }
   const query = String(p.queryValue || "").toLowerCase();
   if (query && p.queryKey) {
@@ -74,13 +71,15 @@ function queryProfiles(service, p = {}) {
   const ranges = Array.isArray(p.createTime)
     ? p.createTime
     : [p.startTime, p.endTime];
+  const start = ranges[0] && Date.parse(ranges[0]);
+  const end = ranges[1] && Date.parse(ranges[1]);
   if (ranges[0])
     rows = rows.filter(
-      (row) => Date.parse(row.createdAt) >= Date.parse(ranges[0]),
+      (row) => Date.parse(row.createdAt) >= start,
     );
   if (ranges[1])
     rows = rows.filter(
-      (row) => Date.parse(row.createdAt) <= Date.parse(ranges[1]),
+      (row) => Date.parse(row.createdAt) <= end,
     );
   if (p.orderName) {
     const key = {

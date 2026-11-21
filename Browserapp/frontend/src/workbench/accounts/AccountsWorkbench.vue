@@ -137,23 +137,35 @@ async function updateProfiles(accounts) {
   const requested = accounts.flatMap(account => {
     if (!account.id) return [];
     const number = firstWindow(account);
-    if (!number) {
+    const profileId = account.boundProfileIds?.[0];
+    if (!profileId && !number) {
       delete linkedProfiles[account.id];
       return [];
     }
-    const profile = linkedProfiles[account.id];
-    return profile?.windowSortNum === number && profile.dirId ? [] : [{ id: account.id, number }];
+    const cached = linkedProfiles[account.id];
+    const matches = profileId ? cached?.dirId === profileId : cached?.windowSortNum === number;
+    return matches ? [] : [{ id: account.id, profileId, number }];
   });
   if (!requested.length) return;
-  const numbers = [...new Set(requested.map(item => item.number))];
-  try {
-    const { code, data } = await requests.window.userGetWindowInfoListList({
-      page_index: 1, page_size: numbers.length, sortNums: numbers.join(','), isDelete: 0,
+  async function query(field, values) {
+    const ids = [...new Set(values)];
+    if (!ids.length) return [];
+    const { code, data, msg } = await requests.window.userGetWindowInfoListList({
+      page_index: 1, page_size: ids.length, [field]: ids, isDelete: 0,
     });
-    if (ticket !== profileRequest || code !== 0 || !data) return;
-    const byNumber = new Map(data.rows.map(profile => [profile.windowSortNum, profile]));
-    for (const { id, number } of requested) {
-      const profile = byNumber.get(number);
+    if (code !== 0) throw Error(msg);
+    return data.rows;
+  }
+  try {
+    const [identified, legacy] = await Promise.all([
+      query('dirIds', requested.flatMap(item => item.profileId ? [item.profileId] : [])),
+      query('sortNums', requested.flatMap(item => item.profileId ? [] : [item.number])),
+    ]);
+    if (ticket !== profileRequest) return;
+    const byId = new Map(identified.map(profile => [profile.dirId, profile]));
+    const byNumber = new Map(legacy.map(profile => [profile.windowSortNum, profile]));
+    for (const { id, profileId, number } of requested) {
+      const profile = profileId ? byId.get(profileId) : byNumber.get(number);
       if (profile?.dirId) linkedProfiles[id] = profile;
       else delete linkedProfiles[id];
     }
@@ -164,7 +176,8 @@ async function updateProfiles(accounts) {
 
 async function openWindow(account) {
   const number = firstWindow(account);
-  if (!number) {
+  const profileId = account.boundProfileIds?.[0];
+  if (!profileId && !number) {
     if (canEdit.value && check('Profiles_select_platform')) {
       bindWindows(account);
       await delay(200);
@@ -177,10 +190,10 @@ async function openWindow(account) {
   opening[id] = true;
   try {
     const { code, data, msg } = await requests.window.userGetWindowInfoListList({
-      page_index: 1, page_size: 1, sortNums: String(number), isDelete: 0,
+      page_index: 1, page_size: 1, ...(profileId ? { dirIds: [profileId] } : { sortNums: [number] }), isDelete: 0,
     });
     if (code !== 0) return showStatus(code, msg);
-    const profile = data.rows.find(row => row.windowSortNum === number);
+    const profile = data.rows.find(row => profileId ? row.dirId === profileId : row.windowSortNum === number);
     if (!profile?.dirId) {
       delete linkedProfiles[id];
       return showStatus(-1, $t('窗口/数据不存在，请刷新页面后重试'));
@@ -272,24 +285,25 @@ function bindWindows(account) {
   drawer.showDrawer({
     title: $t('选择窗口'),
     slots: { container: () => h(ProfileSelect, {
-      linkedWindowSortNums: windowNumbers(account.window_info),
+      linkedProfileIds: account.boundProfileIds, linkedWindowSortNums: windowNumbers(account.window_info),
       onClose: () => drawer.hideDrawer(),
       onConfirm: async windows => {
-        if (!account.id) return;
+        if (!account.id) return false;
         const { code, msg } = await requests.window.userMdfPlatformBindWindowCreate({
           platformId: account.id, windowIds: windows.map(window => window.id),
         });
         showStatus(code, msg);
         if (code === 0) { refresh(); invalidateWindows(); }
+        return code === 0;
       },
     }) },
   });
 }
-async function exportAccounts() {
+function exportAccounts() {
   const selected = selection.value?.length ? selection.value : rows.value;
-  const data = canViewPassword.value ? await Promise.all(selected.map(readAccount)) : selected;
+  if (!selected.length) return;
   dialog.open(ExportAccounts, { props: { showHeader: false, modal: true, blockScroll: true },
-    data: { props: { data, workspaceName: workspaceTitle(workspace.currentWorkspace?.workspaceName), canViewPassword: canViewPassword.value } } });
+    data: { props: { ids: selected.map(row => row.id), canViewPassword: canViewPassword.value } } });
 }
 function deleteAccounts(accounts) {
   const { promise, resolve } = Promise.withResolvers();

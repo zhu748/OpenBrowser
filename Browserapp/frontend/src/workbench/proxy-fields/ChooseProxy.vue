@@ -2,10 +2,8 @@
 import { cr as clone, h as api } from './utils-BIWenCnY.js';
 import { toRaw, ref, onMounted, computed, watch } from './workbench-vue.js';
 import { n as useToast } from './agent-BmSFI9WH.js';
-import { i as requestType } from './permission-DOhNJfB3.js';
-import { m as proxyTypes, n as proxyUsage } from './proxy-D7e36h-l.js';
+import { n as proxyUsage } from './proxy-D7e36h-l.js';
 import { o as isDeploying, t as useProxyTest } from './hooks-Jw3GridD.js';
-import { t as useProxyUpdate } from './useProxyModuleCreate-DnWsQ0mq.js';
 import { a as I18nText } from './locales-BfKu2SD4.js';
 import { Z as Icon } from './basecomponent-ClhuVxJN.js';
 import { t as vTooltip } from './tooltip-BYYKWrvu.js';
@@ -15,7 +13,6 @@ const model = defineModel({ default: null });
 
 let { testProxy: testProxy, batchTestShowToast: showTestResult } =
     useProxyTest(),
-  { updateProxyModules: updateProxyModules } = useProxyUpdate(),
   [notify] = useToast(),
   checking = ref(false),
   shuffling = ref(false),
@@ -306,13 +303,7 @@ async function checkProxy() {
     let a3 = await testProxy({ ...r3, apiCheck: false, proxyType: i3 });
     if (String(model.value?.id) === String(id)) {
       showTestResult({ ...a3, proxyType: i3 }, { reCheck: () => checkProxy() });
-      setTestResult(id, a3);
-    }
-    if (i3 === proxyTypes.resource) {
-      await updateProxyModules({
-        proxyList: [{ ...a3, id: r3.id, proxyType: i3 }],
-        requestType: requestType.SpeedTest,
-      });
+      if (!a3.stale) setTestResult(id, a3);
     }
   } catch (error) {
     notify(-1, error.message);

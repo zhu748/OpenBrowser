@@ -101,15 +101,13 @@ module.exports = {
     for (const id of Object.keys(caller)) {
       if (!Object.hasOwn(known, id)) removed.push(id);
     }
-    let unknown = 0;
     const rows = [];
     for (const row of snapshot) {
       const { id, statusRev } = row;
       const seen = Object.hasOwn(caller, id) ? caller[id] : undefined;
-      if (seen === undefined) { unknown += 1; continue; }
+      if (seen === undefined && typeof watermark !== 'string') return reply(true, snapshot, []);
       if (seen !== statusRev) rows.push(row);
     }
-    if (unknown > 0) return reply(true, snapshot, []);
     return reply(false, rows, removed);
   },
 };

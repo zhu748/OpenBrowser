@@ -32,3 +32,8 @@ export function touchConversationCache(state, id, options) {
     if (evictConversationCache(state, candidate, options)) recent.delete(candidate);
   }
 }
+
+export function cacheConversationMessages(state, id, messages, touch) {
+  state.messagesByConversationId[id] = messages;
+  touch(state, id);
+}
