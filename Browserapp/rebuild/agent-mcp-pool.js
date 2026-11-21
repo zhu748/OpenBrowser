@@ -43,9 +43,10 @@ class Slots {
 }
 
 class ConnectionPool {
-  constructor(current, { maximum = 4, ConnectionClass = Connection } = {}) {
+  constructor(current, { maximum = 4, ConnectionClass = Connection, shutdownGraceMs = 500 } = {}) {
     if (!Number.isSafeInteger(maximum) || maximum < 1 || maximum > 32) throw Error("Invalid MCP connection concurrency");
-    this.current = current; this.ConnectionClass = ConnectionClass;
+    if (!Number.isFinite(shutdownGraceMs) || shutdownGraceMs <= 0) throw Error("Invalid MCP shutdown grace period");
+    this.current = current; this.ConnectionClass = ConnectionClass; this.shutdownGraceMs = shutdownGraceMs;
     this.connections = new Map(); this.lanes = new Map(); this.epochs = new Map();
     this.operations = new Set(); this.transients = new Set(); this.slots = new Slots(maximum);
     this.controller = new AbortController();
@@ -128,11 +129,27 @@ class ConnectionPool {
   }
   async shutdown(queue) {
     this.beginShutdown();
-    await Promise.allSettled([queue, ...this.operations]);
-    const results = await Promise.allSettled([
-      ...[...this.connections.keys()].map(name => this.close(name)),
-      ...[...this.transients].map(connection => this.dispose(connection)),
-    ]);
+    // Bounded drain: beginShutdown() aborts every signal, but an operation
+    // that misses its abort (or a queue tail that never settles) must not pin
+    // shutdown — and with it agent tests and the CI step — forever at 0 CPU.
+    // Wait a short grace for cooperative unwinding, then force-close the
+    // connections themselves; the close paths are strictly time-bounded
+    // (killAfterMs / exitTimeoutMs / cleanupTimeoutMs), so this converts a
+    // permanent hang into a bounded, reported cleanup failure.
+    if (queue || this.operations.size) {
+      let graceTimer;
+      const drain = Promise.allSettled([queue, ...this.operations]);
+      const grace = new Promise((resolve) => { graceTimer = setTimeout(resolve, this.shutdownGraceMs); });
+      try { await Promise.race([drain, grace]); } finally { clearTimeout(graceTimer); }
+    }
+    const closing = [];
+    // Keep close() failure semantics from the lane-based path: a failed
+    // cleanup leaves the connection owned so a later shutdown retry can try
+    // again ("failed cleanup stays owned for retry").
+    for (const [name, record] of this.connections)
+      closing.push((async () => { await record.connection.close(); this.connections.delete(name); })());
+    for (const connection of [...this.transients]) closing.push(this.dispose(connection));
+    const results = await Promise.allSettled(closing);
     const errors = results.filter(value => value.status === "rejected").map(value => value.reason);
     if (errors.length) throw new AggregateError(errors, "MCP 连接清理失败");
     this.epochs.clear();

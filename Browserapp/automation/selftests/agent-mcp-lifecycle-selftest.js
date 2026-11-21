@@ -7,6 +7,7 @@ const path = require('node:path');
 const os = require('node:os');
 const crypto = require('node:crypto');
 const { AgentService } = require('../../rebuild/agent-service');
+const { ConnectionPool } = require('../../rebuild/agent-mcp-pool');
 const { AgentMcp, Connection } = require('../../rebuild/agent-mcp');
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -221,11 +222,28 @@ async function testInheritedPipes() {
   }
 }
 
+async function testBoundedShutdown() {
+  // Regression: an operation that misses its abort signal used to pin
+  // ConnectionPool.shutdown (and this whole selftest) forever at 0 CPU until
+  // the CI script budget SIGTERMed it. Shutdown must stay bounded: drain for
+  // a short grace, then force-close and report instead of hanging.
+  const pool = new ConnectionPool(() => null, { maximum: 1, shutdownGraceMs: 60 });
+  let release;
+  const stuck = new Promise(resolve => { release = resolve; });
+  pool.operations.add(stuck);
+  const start = performance.now();
+  try {
+    await pool.shutdown(Promise.resolve());
+    const elapsed = performance.now() - start;
+    assert.ok(elapsed < 2000, 'shutdown must stay bounded when an operation never settles (took ' + elapsed.toFixed(1) + 'ms)');
+  } finally { release(); }
+}
+
 async function main() {
   const previous = process.env.OPENBROWSER_MASTER_KEY; process.env.OPENBROWSER_MASTER_KEY = crypto.randomBytes(32).toString('hex');
   try {
     const stale = await staleCallScenario(); assert.equal(stale.staleRemoteCalls, 0); assert.equal(stale.rejected, true);
-    await testConcurrency(); await testShutdownAndBudget(); await testQueuedCancellation(); await testHttp(); await testStdio(); await testInheritedPipes();
+    await testConcurrency(); await testShutdownAndBudget(); await testQueuedCancellation(); await testHttp(); await testStdio(); await testInheritedPipes(); await testBoundedShutdown();
     console.log('AGENT_MCP_LIFECYCLE OK (bounded parallel discovery, no stale disabled calls, shutdown cancellation, HTTP release/correlation/SSE and stdio backpressure cleanup)');
   } finally { if (previous === undefined) delete process.env.OPENBROWSER_MASTER_KEY; else process.env.OPENBROWSER_MASTER_KEY = previous; }
 }
