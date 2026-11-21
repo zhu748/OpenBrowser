@@ -209,6 +209,32 @@ function documentScope() {
       assert.deepEqual(calls, ['https://one.test/', 'https://two.test/']);
     } finally { cdp.tabs = previousTabs; cdp.call = previousCall; }
   });
+  await test('startup website errors warn after verified navigation while CDP failures still reject', async () => {
+    const previous = { tabs: cdp.tabs, call: cdp.call, activateTab: cdp.activateTab };
+    const { keepDefaultTab } = require('../../engine/start-page');
+    const first = { id: 'first', url: 'about:blank', webSocketDebuggerUrl: 'ws://127.0.0.1:1234/first' };
+    const extra = { id: 'extra', url: 'about:blank', webSocketDebuggerUrl: 'ws://127.0.0.1:1234/extra' };
+    const item = { port: 1234, profile: { id: 'navigation-test' }, fpAppliedTargets: new Set(['extra']) };
+    let tabs = [first];
+    item.workerFingerprintConnection = { command: async () => { tabs = [first, extra]; return { targetId: extra.id }; } };
+    const events = [], navResults = ['net::ERR_EMPTY_RESPONSE', 'net::ERR_CONNECTION_REFUSED'];
+    const engine = { keepDefaultTab, isStartPageUrl: () => false, emit: event => events.push(event) };
+    cdp.tabs = async () => tabs;
+    cdp.activateTab = async () => {};
+    cdp.call = async (_socket, method) => method === 'Page.navigate' ? { errorText: navResults.shift() } : {};
+    // The tab helper's 400 ms settling timer is unref'ed in production.
+    const keepAlive = setTimeout(() => {}, 2000);
+    try {
+      await openVerifiedStartupTabs(engine, item, ['https://one.test', 'https://two.test']);
+      assert.deepEqual(events.map(event => [event.type, event.message]), [
+        ['profile-start-page-warning', '启动网址加载失败：net::ERR_EMPTY_RESPONSE'],
+        ['profile-start-page-warning', '启动网址加载失败：net::ERR_CONNECTION_REFUSED'],
+      ]);
+      tabs = [first];
+      cdp.call = async (_socket, method) => { if (method === 'Page.navigate') throw Error('CDP socket disconnected'); };
+      await assert.rejects(openVerifiedStartupTabs(engine, item, ['https://one.test']), /CDP socket disconnected/);
+    } finally { clearTimeout(keepAlive); Object.assign(cdp, previous); }
+  });
   const firefoxProfile = profile({ engine: 'firefox', privacy: { fontListMode: 'real', timezoneMode: 'custom', timezone: 'Asia/Shanghai' } });
   const firefox = buildFirefoxFingerprint(firefoxProfile, '145.0.1');
   await test('Firefox preserves Gecko UA and native absent APIs', () => {

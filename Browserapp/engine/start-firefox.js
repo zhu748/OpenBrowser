@@ -22,7 +22,7 @@ const { attachBrowserExitHandlers } = require('./browser-exit');
 const { normalizeNetworkConditions } = require('../shared/profile-values');
 const { spawn } = require('child_process');
 const path = require('path');
-const { readDeferredSessionUrls, preserveLegacySession } = require('./startup-session');
+const { readDeferredSessionUrls, preserveLegacySession, reportStartupNavigationError } = require('./startup-session');
 const { BidiConnection, waitForFirefoxEndpoint } = require('../network/bidi-connection');
 const { buildFirefoxFingerprint, initializeFirefoxFingerprint, navigateFirefoxStartup } = require('../automation/firefox-fingerprint');
 
@@ -389,6 +389,7 @@ module.exports = {
         browser,
         root,
         profile,
+        network: pageNetwork,
         launchBinary: browser.path,
         startUrl: startUrl === 'about:blank' ? null : startUrl,
         startedAt: new Date().toISOString(),
@@ -449,7 +450,13 @@ module.exports = {
       item.bidiContext = delivered.context;
       item.fingerprintWarnings = delivered.warnings;
       currentStage = 'verify'; this.emitStartProgress(profile.id, 'verify', 94, 'Firefox 页面指纹校验完成', lifecycleGeneration);
-      await navigateFirefoxStartup(connection, delivered.context, [startUrl, ...extraStartUrls]);
+      await navigateFirefoxStartup(connection, delivered.context, [startUrl, ...extraStartUrls], {
+        onNavigationError: error => reportStartupNavigationError(this, profile.id, error),
+      });
+      this.assertStartGenerationActive(profile.id, lifecycleGeneration);
+      if (this.running.get(profile.id) !== item || item.cleanedUp || item.stopping || item.childExitState?.exited || item.childExitState?.error) {
+        throw new Error(item.cdpError || 'Firefox 在启动过程中异常退出');
+      }
       currentStage = 'ready'; this.emitStartProgress(profile.id, 'ready', 100, 'Firefox 启动完成', lifecycleGeneration);
       this.startRunningWatch(item);
       // Report verified document delivery and the remaining worker/API limits.
@@ -491,7 +498,7 @@ module.exports = {
       if (liveItem) {
         liveItem.verificationBlocked = true;
         await this.handleBrowserGone(profile.id, liveItem, 'start-failed', {
-          expected: false,
+          expected: error?.code === 'BROWSER_START_CANCELLED',
           error: error?.message || String(error),
           kill: true,
           waitForExit: true,

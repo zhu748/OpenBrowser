@@ -331,6 +331,9 @@ check("start-page server refresh failure preserves profile timezone and never le
     assert.ok(resData.ok, "API network refresh must return ok: true");
     const net = resData.data;
     assert.ok(net, "Network payload must exist");
+    assert.strictEqual(net.ip, "");
+    assert.ok(net.probeError, 'the page marks the result as a probe failure');
+    assert.strictEqual(net.checkedAt, undefined, "A failed lookup has no successful check time");
     assert.strictEqual(net.timezone, distantTimezone, "Timezone on refresh failure must retain profile timezone");
     assert.notStrictEqual(net.timezone, "", "Timezone on refresh failure must NEVER be cleared to empty string");
     if (hostTimezone !== distantTimezone) {

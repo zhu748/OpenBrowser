@@ -69,7 +69,7 @@ function proxiesQuery(service, p) {
   const remark = String(p.proxyRemark ?? "").trim().toLowerCase();
   const query = String(p.queryValue ?? "").trim().toLowerCase();
   const usage = service.profileIndex().proxyProfiles;
-  const rows = service.proxyStore().list(p).filter(row => {
+  const matches = row => {
     const provider = String(row.vendor || "本地").toLowerCase();
     const country = [row.lastCountry, row.lastCountryCode].map(value => String(value ?? "").toLowerCase());
     if (protocols.length && !protocols.includes(row.protocol)) return false;
@@ -89,14 +89,15 @@ function proxiesQuery(service, p) {
       case "proxyProvider": return contains([provider], query);
       default: return contains([row.name, row.host, row.port, row.protocol, row.remark, row.lastIp, row.lastCity, ...country], query);
     }
-  });
+  };
   const sortFields = { lastCountry: "lastCountry", createTime: "create_time", proxyProviderName: "vendor" };
   const field = Object.hasOwn(sortFields, p.orderName) && sortFields[p.orderName];
-  if (field) {
-    const direction = /desc|^-1$/i.test(String(p.orderType)) ? -1 : 1;
-    rows.sort((a, b) => direction * String(a[field] ?? "").localeCompare(String(b[field] ?? "")) || a.id.localeCompare(b.id));
-  }
-  return { total: rows.length, rows: rows.slice((index - 1) * size, index * size).map(row => listRow(row, usage)) };
+  const direction = /desc|^-1$/i.test(String(p.orderType)) ? -1 : 1;
+  const compare = field
+    ? (a, b) => direction * String(a[field] ?? "").localeCompare(String(b[field] ?? "")) || a.id.localeCompare(b.id)
+    : undefined;
+  const page = service.proxyStore().page(p, { matches, compare, offset: (index - 1) * size, limit: size });
+  return { total: page.total, rows: page.rows.map(row => listRow(row, usage)) };
 }
 
 function proxiesOptions(service) {

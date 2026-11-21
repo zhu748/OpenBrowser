@@ -453,7 +453,7 @@ module.exports = {
     const markerProcess = this.startNativeProfileMarker(child.pid, envNumber);
     item = {
       child, cdpConnection: connection, proxyForwarder, markerProcess, profileLock,
-      pid: child.pid, browser, root, profile, port,
+      pid: child.pid, browser, root, profile, port, network: pageNetwork,
       launchBinary,
       startedAt: new Date().toISOString(),
       extensions: extensions.map((entry) => entry.id),
@@ -656,14 +656,14 @@ module.exports = {
       }
       throw error;
     }
-    this.assertStartGenerationActive(profile.id, lifecycleGeneration);
-    if (this.running.get(profile.id) !== item || item.cleanedUp || item.stopping) {
-      throw new Error(item.cdpError || '浏览器在启动过程中异常退出');
-    }
     // Detect user closing browser with X (process may stay alive; CDP/pages are source of truth)
     // A crash may have left the transient sync marker enabled in this profile.
     // Restore the captured native theme before publishing a new running window.
     await require('../automation/sync/master-window-color').restoreOwnedColor(item, { recoverOnRestart: recoverControlColor });
+    this.assertStartGenerationActive(profile.id, lifecycleGeneration);
+    if (this.running.get(profile.id) !== item || item.cleanedUp || item.stopping || item.childExitState?.exited || item.childExitState?.error) {
+      throw new Error(item.cdpError || '浏览器在启动过程中异常退出');
+    }
     this.startRunningWatch(item);
     currentStage = 'ready'; this.emitStartProgress(profile.id, 'ready', 100, '启动完成', lifecycleGeneration);
     this.emit({ type: 'status', id: profile.id, running: true, blocked: Boolean(item.verificationBlocked), ...this.publicRunning(profile.id) });
@@ -679,7 +679,7 @@ module.exports = {
         // exit events can clean it up. If either step fails, run the same guarded
         // cleanup path instead of leaving a live map entry and profile lock behind.
         cleanupResult = await this.handleBrowserGone(profile.id, liveItem, 'start-failed', {
-          expected: false,
+          expected: error?.code === 'BROWSER_START_CANCELLED',
           error: error?.message || String(error),
           kill: true,
           waitForExit: true,

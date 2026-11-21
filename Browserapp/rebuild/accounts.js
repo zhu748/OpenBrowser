@@ -70,29 +70,40 @@ function expectedAccountFields(profile) {
 }
 const sameAccountFields = (a, b) => a.startUrl === b.startUrl && isDeepStrictEqual(a.platform, b.platform);
 
-async function profileTransaction(engine, profiles) {
+async function restoreAccountProfiles(engine, journal) {
+  if (!Array.isArray(journal)) throw Error("账号窗口关联日志格式无效");
+  const restore = [], conflicts = [];
+  for (const { id, before, after } of journal) {
+    if (!before?.platform || !after?.platform) throw Error("账号窗口关联日志格式无效");
+    if (!engine.profiles.has(id)) continue;
+    const current = engine.profileForEdit(id);
+    if (sameAccountFields(current.profile, before)) continue;
+    if (!sameAccountFields(current.profile, after)) {
+      conflicts.push(id);
+      continue;
+    }
+    restore.push({ ...current.profile, startUrl: before.startUrl, platform: before.platform,
+      credentialsAction: "replace", rev: current.rev });
+  }
+  if (restore.length) await engine.syncProfiles(restore, { checkRevisions: true, delta: true });
+  return conflicts;
+}
+
+function profileTransaction(engine, profiles) {
   const changes = profiles.map(row => ({ ...row, expected: expectedAccountFields(row.profile) }))
     .filter(row => !sameAccountFields(row.original, row.expected));
   if (!changes.length) return;
-  await engine.syncProfiles(changes.map(row => ({ ...row.profile, credentialsAction: "replace", rev: row.baseRev })),
-    { checkRevisions: true, delta: true });
-  return { async rollback() {
-    const restore = [], conflicts = [];
-    for (const row of changes) {
-      const id = row.original.id;
-      if (!engine.profiles.has(id)) continue;
-      const current = engine.profileForEdit(id);
-      if (sameAccountFields(current.profile, row.original)) continue;
-      if (!sameAccountFields(current.profile, row.expected)) {
-        conflicts.push(id);
-        continue;
-      }
-      restore.push({ ...current.profile, credentialsAction: "replace", rev: current.rev,
-        startUrl: row.original.startUrl, platform: row.original.platform });
-    }
-    if (restore.length) await engine.syncProfiles(restore, { checkRevisions: true, delta: true });
-    if (conflicts.length) throw Object.assign(Error("关联回滚时窗口账号已被另一个编辑器修改"), { remainingIds: conflicts });
-  } };
+  const journal = changes.map(({ original, expected }) => ({
+    id: original.id,
+    before: { startUrl: original.startUrl, platform: original.platform },
+    after: expected,
+  }));
+  return {
+    journal,
+    apply: () => engine.syncProfiles(changes.map(row => ({ ...row.profile, credentialsAction: "replace", rev: row.baseRev })),
+      { checkRevisions: true, delta: true }),
+    rollback: () => restoreAccountProfiles(engine, journal),
+  };
 }
 function platform(profile, accounts) {
   const first = accounts[0];
@@ -133,7 +144,7 @@ async function requestAccounts(service, method, payload) {
     engine = service.engine;
   if (!store) throw Error("账号库尚未就绪");
   if (method === "import-preview") {
-    const selection = await require("./account-workbook").selectAccounts(service);
+    const selection = await require("./account-workbook").selectAccounts(service, payload);
     if (!selection.canceled) selection.values.forEach(value => input(value));
     return selection;
   }
@@ -166,10 +177,10 @@ async function requestAccounts(service, method, payload) {
   }
   if (method === "bind") {
     const id = String(payload.platformId);
-    if (!Array.isArray(payload.windowIds) || payload.windowIds.length > 200)
-      throw Error("请选择 0–200 个不同窗口");
+    if (!Array.isArray(payload.windowIds) || payload.windowIds.length > engine.profiles.size)
+      throw Error("窗口选择无效");
     const ids = new Set(payload.windowIds.map(String));
-    if (ids.size !== payload.windowIds.length) throw Error("请选择 0–200 个不同窗口");
+    if (ids.size !== payload.windowIds.length) throw Error("请选择不同的窗口");
     await store.runExclusive(async () => {
       const current = store.get(id);
       for (const id of ids) {
@@ -185,7 +196,7 @@ async function requestAccounts(service, method, payload) {
         if (accounts.length > 20) throw Error("窗口最多可绑定 20 个账号");
         changes.push({ original: original.profile, baseRev: original.rev, profile: withAccounts(original.profile, accounts) });
       }
-      await profileTransaction(engine, changes);
+      await profileTransaction(engine, changes)?.apply();
     });
     return { bound: [...ids] };
   }
@@ -241,4 +252,4 @@ async function requestAccounts(service, method, payload) {
   }
   throw Error("未知平台账号操作");
 }
-module.exports = { requestAccounts, input };
+module.exports = { requestAccounts, input, restoreAccountProfiles };

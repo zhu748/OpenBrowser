@@ -8,7 +8,7 @@ const dns = require('dns');
 const crypto = require('crypto');
 const { URL } = require('url');
 const { buildStartPageHtml } = require('./start-page-template');
-const { calculateIpHealthScore } = require('./ip-health-score');
+const { startPageNetwork, PROBE_ERROR } = require('./start-page-network');
 const { timezoneFromCountryCode, resolveProfileTimezone, isIanaTimezoneId } = require('./locale-from-country');
 const { lookupDirectCountry, parseProxy, startAuthenticatedProxy } = require('../proxy-forwarder');
 const { fpLog } = require('./fingerprint-debug-log');
@@ -22,7 +22,7 @@ const dnsPromises = dns.promises;
  *
  * 数据来源：
  *   1) 主进程启动环境时 registerSession 写入的 profile + network
- *   2) 同端口 /api/session · /api/network 只读本机会话（可选刷新走 engine.checkProxy）
+ *   2) 同端口 /api/session · /api/network 读取本机会话（可选刷新窗口实际出口）
  * 页面 JS 只请求 127.0.0.1，不直接请求第三方。
  */
 
@@ -107,8 +107,8 @@ function countryLabel(code, fallback = '') {
   return COUNTRY_NAMES[cc] ? `${COUNTRY_NAMES[cc]}（${cc}）` : cc;
 }
 
-async function lookupDirectNetwork() {
-  const network = await lookupDirectCountry();
+async function lookupDirectNetwork(options) {
+  const network = await lookupDirectCountry(options);
   const directNet = {
     ...network,
     protocol: 'direct',
@@ -120,12 +120,10 @@ async function lookupDirectNetwork() {
   return directNet;
 }
 
-function decorateNetwork(network) {
-  if (!network || typeof network !== 'object') return network;
-  return {
-    ...network,
-    healthScore: calculateIpHealthScore(network),
-  };
+function profileNetworkRoute(engine, profile) {
+  if (engine?.profileExitRoute) return engine.profileExitRoute(profile);
+  if (profile.networkMode === 'proxy') return 'proxy';
+  return profile.networkMode === 'direct' || !profile.proxy || /^(direct|offline|none)$/i.test(String(profile.proxy)) ? 'direct' : 'proxy';
 }
 
 function parseCfTrace(body = '') {
@@ -459,15 +457,21 @@ async function probeTarget(target, options = {}) {
   const timeout = Number(options.timeout) || 8000;
   const proxyRaw = options.proxy || '';
   const exitNetwork = options.exitNetwork || null;
-  const primary = await (proxyRaw
-    ? probeViaProxy(proxyRaw, target.url, timeout)
-    : probeDirect(target.url, timeout));
+  const probe = async url => {
+    if (proxyRaw) return probeViaProxy(proxyRaw, url, timeout);
+    if (!options.requestText) return probeDirect(url, timeout);
+    try {
+      const { body, status } = await options.requestText(url, { timeout, maxBytes: 65536 });
+      return { ok: status >= 200 && status < 500, status, body };
+    } catch (error) {
+      return { ok: false, status: 0, error: error.message, body: '' };
+    }
+  };
+  const primary = await probe(target.url);
 
   let unlockProbe = null;
   if (target.unlockUrl && primary.ok) {
-    unlockProbe = await (proxyRaw
-      ? probeViaProxy(proxyRaw, target.unlockUrl, timeout)
-      : probeDirect(target.unlockUrl, timeout));
+    unlockProbe = await probe(target.unlockUrl);
   }
 
   const bodyForClass = unlockProbe?.body || primary.body || '';
@@ -494,7 +498,7 @@ async function probeTarget(target, options = {}) {
     url: target.url,
     ok: Boolean(primary.ok || (primary.status >= 200 && primary.status < 500)),
     status: primary.status || 0,
-    error: primary.error || '',
+    error: primary.error ? '站点探测失败' : '',
     unlock,
     exitIp,
     exitCountryCode,
@@ -515,7 +519,7 @@ async function lookupReachability(options = {}) {
   const proxy = options.proxy || '';
   const exitNetwork = options.exitNetwork || null;
   const entries = await Promise.all(Object.entries(REACHABILITY_TARGETS).map(async ([id, meta]) => {
-    const result = await probeTarget({ id, ...meta }, { timeout, proxy, exitNetwork });
+    const result = await probeTarget({ id, ...meta }, { timeout, proxy, exitNetwork, requestText: options.requestText });
     return [id, result];
   }));
   return Object.fromEntries(entries);
@@ -672,6 +676,10 @@ function summarizeDnsLeak(rows = [], exitNetwork = null, options = {}) {
       `${unique.length} 个解析器`,
       unique.slice(0, 3).map((item) => item.ip).join(', '),
     ].filter(Boolean).join(' · ');
+  } else if (!dnsCountries.length || unique.some(row => !row.countryCode)) {
+    state = 'info';
+    label = '无法判断地区';
+    detail = '部分或全部 DNS 解析器缺少地区数据，无法确认与出口地区是否一致。';
   } else {
     state = 'good';
     label = sameAsExitIp ? 'DNS 与出口一致' : 'DNS 地区一致';
@@ -769,13 +777,19 @@ function proxyEndpoint(value) {
     const parsed = new URL(raw.includes('://') ? raw : `http://${raw}`);
     return `${parsed.hostname}${parsed.port ? `:${parsed.port}` : ''}`;
   } catch (_) {
-    return raw.replace(/^[^@]*@/, '').slice(0, 160);
+    return '';
   }
+}
+
+function proxyProtocol(proxy) {
+  try { return parseProxy(proxy)?.protocol || ''; }
+  catch (_) { return ''; }
 }
 
 class StartPageServer {
   /** @type {Map<string, object>} profileId -> session payload */
   sessions = new Map();
+  #sessionRoutes = new WeakMap();
   /** @type {Map<string, {at:number, data:object, meta:object}>} exit identity -> cached reachability verdict */
   #reachabilityCache = new Map();
 
@@ -828,7 +842,9 @@ class StartPageServer {
     if (!this.port) throw new Error('启动页服务未启动');
     const profileId = String(profile.id || '');
     const serial = String(profile.number || profile.serial || extras.serial || profileId);
-    const network = decorateNetwork(extras.network || profile.network || null);
+    const route = profileNetworkRoute(this.engine, profile);
+    const savedNetwork = extras.network || profile.network || null;
+    const network = (route === 'system') === (savedNetwork?.route === 'system') ? startPageNetwork(savedNetwork) : null;
     const timezone = (extras.timezone && isIanaTimezoneId(extras.timezone))
       ? String(extras.timezone).trim()
       : resolveProfileTimezone(profile, {
@@ -858,17 +874,18 @@ class StartPageServer {
       userAgent: String(profile.userAgent || extras.userAgent || ''),
       timezone,
       exitTimezone: timezone,
-      exitIp: network?.ip || profile.exitIp || '',
-      countryCode: network?.countryCode || profile.exitCountryCode || '',
-      network: network ? { ...network } : null,
+      exitIp: network?.ip || (route !== 'system' && profile.exitIp) || '',
+      countryCode: network?.countryCode || (route !== 'system' && profile.exitCountryCode) || '',
+      network,
       time: Number(extras.time) || Math.floor(Date.now() / 1000),
       startedAtLabel: formatTime(extras.time || Date.now() / 1000),
       browserName: extras.browserName || '',
       extensionCount: extras.extensionCount || 0,
-      networkMode: profile.networkMode === 'direct' || !profile.proxy || /^(direct|offline|none)$/i.test(String(profile.proxy)) ? 'direct' : 'proxy',
-      proxyProtocol: profile.networkMode === 'direct' || !profile.proxy || /^(direct|offline|none)$/i.test(String(profile.proxy))
-        ? 'direct'
-        : String(profile.proxy).split(':', 1)[0].toLowerCase(),
+      networkRoute: route,
+      networkMode: route === 'proxy' ? 'proxy' : 'direct',
+      proxyProtocol: route !== 'proxy'
+        ? route
+        : proxyProtocol(profile.proxy),
       expectedFingerprint: {
         ...(extras.expectedFingerprint && typeof extras.expectedFingerprint === 'object' ? extras.expectedFingerprint : {}),
         language: String(
@@ -941,6 +958,12 @@ class StartPageServer {
       token: crypto.randomBytes(24).toString('base64url'),
       at: Date.now(),
     };
+    this.#sessionRoutes.set(session, {
+      id: profileId,
+      name: session.name,
+      proxy: route === 'proxy' ? String(profile.proxy || '') : '',
+      proxyMeta: { ipChannel: profile.proxyMeta?.ipChannel },
+    });
 
     // Rotate-on-register: the previous token for this profile must die with
     // this launch. Without this, a re-launch left two valid URLs (old + new)
@@ -1018,7 +1041,8 @@ class StartPageServer {
   updateNetwork(pid, network) {
     const session = this.getSession(pid);
     if (!session || !network) return session;
-    const decoratedNetwork = decorateNetwork(network);
+    const decoratedNetwork = startPageNetwork(network);
+    if (!decoratedNetwork) return session;
 
     const netTz = isIanaTimezoneId(decoratedNetwork.timezone) ? String(decoratedNetwork.timezone).trim() : '';
     const sessTz = isIanaTimezoneId(session.timezone) ? String(session.timezone).trim() : '';
@@ -1037,7 +1061,6 @@ class StartPageServer {
 
     if (effectiveTz) {
       decoratedNetwork.timezone = effectiveTz;
-      if (typeof network === 'object' && network !== null) network.timezone = effectiveTz;
       session.timezone = effectiveTz;
       session.exitTimezone = effectiveTz;
     }
@@ -1136,122 +1159,53 @@ class StartPageServer {
     res.end(JSON.stringify(body));
   }
 
-  async #resolveNetwork(pid, refresh) {
-    let session = this.getSession(pid);
-    // hydrate from engine if possible
-    if (this.engine && pid) {
-      const profile = this.engine.profiles?.get?.(String(pid));
-      const runningNet = this.engine.networkInfo?.get?.(String(pid));
-      if (!session && profile) {
-        this.registerSession(profile, { network: runningNet || null });
-        session = this.getSession(pid);
-      }
-      if (refresh && profile) {
-        const isDirect = profile.networkMode === 'direct'
-          || !profile.proxy
-          || /^(direct|offline|none)$/i.test(String(profile.proxy));
-        try {
-          const network = isDirect
-            ? await this.lookupDirectNetwork()
-            : await this.engine.checkProxy(profile);
-          const updatedSession = this.updateNetwork(pid, network);
-          const activeNetwork = updatedSession?.network || network;
-          if (isDirect) this.engine.networkInfo?.set?.(String(pid), activeNetwork);
-          return decorateNetwork(activeNetwork);
-        } catch (error) {
-          if (session?.network?.ip) return session.network;
-          if (isDirect) {
-            // Direct mode is still valid local exit; geo is best-effort only.
-            const preservedTz = (session && session.timezone)
-              || (session && session.exitTimezone)
-              || profile.exitTimezone
-              || resolveProfileTimezone(profile, session?.network || {})
-              || timezoneFromCountryCode(session?.countryCode || profile.exitCountryCode)
-              || undefined;
-            const soft = {
-              ip: session?.exitIp || profile.exitIp || '',
-              country: '',
-              countryCode: session?.countryCode || profile.exitCountryCode || '',
-              region: '',
-              city: '',
-              timezone: preservedTz,
-              latitude: profile.exitLatitude ?? null,
-              longitude: profile.exitLongitude ?? null,
-              protocol: 'direct',
-              soft: true,
-              checkedAt: new Date().toISOString(),
-            };
-            this.updateNetwork(pid, soft);
-            return decorateNetwork(soft);
-          }
-          if (session?.network) return session.network;
-          const endpoint = proxyEndpoint(profile.proxy);
-          throw new Error(endpoint
-            ? `代理 ${endpoint} 出口检测失败：${error.message}`
-            : `出口检测失败：${error.message}`);
-        }
-      }
-      if (runningNet) {
-        this.updateNetwork(pid, runningNet);
-        return decorateNetwork(runningNet);
-      }
+  async #resolveNetwork(session, refresh) {
+    const route = session.networkRoute;
+    if (!refresh) {
+      if (session.network) return session.network;
+      if (!session.exitIp && route === 'proxy') return null;
+      return startPageNetwork({
+        ip: session.exitIp,
+        countryCode: session.countryCode,
+        timezone: session.timezone || timezoneFromCountryCode(session.countryCode),
+        protocol: route,
+        route,
+        soft: !session.exitIp,
+      });
     }
-    // 旧启动页链接可能在应用重启后失去会话。此时仍允许按当前机器直连检测，
-    // 但已知代理配置的失败必须在上面的代理分支中原样返回。
-    if (refresh && !session) {
-      try {
-        const directNet = await this.lookupDirectNetwork();
-        if (directNet && !directNet.timezone && directNet.countryCode) {
-          const derived = timezoneFromCountryCode(directNet.countryCode);
-          if (derived) directNet.timezone = derived;
-        }
-        return decorateNetwork(directNet);
-      } catch (_) {
-        let fallbackTz = undefined;
-        if (this.engine && pid) {
-          const prof = this.engine.profiles?.get?.(String(pid));
-          if (prof) {
-            const resolved = resolveProfileTimezone(prof, {});
-            if (resolved) fallbackTz = resolved;
-          }
-        }
-        return decorateNetwork({
-          ip: '',
-          country: '',
-          countryCode: '',
-          region: '',
-          city: '',
-          timezone: fallbackTz,
-          protocol: 'direct',
-          soft: true,
-          checkedAt: new Date().toISOString(),
+
+    const profile = this.#sessionRoutes.get(session);
+    const proxy = profile.proxy;
+    try {
+      if (route === 'proxy' && !proxy) throw new Error('Missing active proxy');
+      const network = await (route === 'proxy'
+        ? this.engine.testProxy(profile, { proxy, allowExtract: false })
+        : route === 'system' ? this.engine.lookupSystemNetwork()
+          : this.lookupDirectNetwork({ force: true }));
+      if (this.getSession(session.pid || session.serial) !== session) return null;
+      const stale = network?.stale === true || network?.probeUnavailable === true;
+      if (!network?.ip || (stale && session.network?.ip)) throw new Error(PROBE_ERROR);
+      return this.updateNetwork(session.pid || session.serial, {
+        ...network,
+        route,
+        ...(stale ? { checkedAt: undefined, probeError: PROBE_ERROR } : {}),
+      }).network;
+    } catch (_) {
+      if (session.network || route !== 'proxy' || session.exitIp) {
+        return startPageNetwork({
+          ip: session.exitIp,
+          countryCode: session.countryCode,
+          timezone: session.timezone || timezoneFromCountryCode(session.countryCode),
+          protocol: route,
+          ...session.network,
+          route,
+          soft: !session.exitIp,
+          probeError: PROBE_ERROR,
         });
       }
+      const endpoint = proxyEndpoint(proxy);
+      throw new Error(endpoint ? `代理 ${endpoint} 出口检测失败` : PROBE_ERROR);
     }
-    if (session?.network) return decorateNetwork(session.network);
-    if (session?.exitIp) {
-      const sessTz = session.timezone
-        || (session.countryCode ? timezoneFromCountryCode(session.countryCode) : undefined);
-      return decorateNetwork({
-        ip: session.exitIp,
-        countryCode: session.countryCode || '',
-        timezone: sessTz,
-        protocol: session.networkMode === 'direct' || session.proxyProtocol === 'direct' ? 'direct' : undefined,
-      });
-    }
-    if (session && (session.networkMode === 'direct' || session.proxyProtocol === 'direct')) {
-      const sessTz = session.timezone
-        || (session.countryCode ? timezoneFromCountryCode(session.countryCode) : undefined);
-      return decorateNetwork({
-        ip: '',
-        countryCode: session.countryCode || '',
-        timezone: sessTz,
-        protocol: 'direct',
-        soft: true,
-        checkedAt: new Date().toISOString(),
-      });
-    }
-    return null;
   }
 
   async #handle(req, res) {
@@ -1295,7 +1249,7 @@ class StartPageServer {
           const profile = item?.profile || { id: pid, name: pid, number: query.id || pid };
           const freshUrl = this.registerSession(profile, {
             restricted: true,
-            network: item?.network || this.engine.networkInfo?.get?.(pid) || null,
+            network: item?.network || null,
             browserName: item?.browser?.name || '',
             extensionCount: Array.isArray(item?.extensions) ? item.extensions.length : 0,
           });
@@ -1400,39 +1354,27 @@ h1{margin:0 0 12px;font-size:20px}p{margin:8px 0;color:#b7becc}code{color:#93c5f
     if (pathname === '/api/network') {
       const refresh = query.refresh === '1' || query.refresh === 'true';
       try {
-        const network = await this.#resolveNetwork(pid, refresh);
+        const network = await this.#resolveNetwork(session, refresh);
         if (!network) return this.#json(res, 404, { ok: false, msg: 'network not found', pid });
-        return this.#json(res, 200, { ok: true, data: decorateNetwork(network) });
+        return this.#json(res, 200, { ok: true, data: network });
       } catch (error) {
         return this.#json(res, 500, { ok: false, msg: error.message });
       }
     }
 
     if (pathname === '/api/reachability') {
-      let exitNetwork = session?.network || null;
-      let proxy = '';
-      const profile = this.engine?.profiles?.get?.(String(pid));
-      if (this.engine && pid) {
-        exitNetwork = this.engine.networkInfo?.get?.(String(pid)) || exitNetwork;
-        if (!exitNetwork) {
-          try { exitNetwork = await this.#resolveNetwork(pid, false); } catch (_) {}
-        }
-        if (profile) {
-          const isDirect = profile.networkMode === 'direct'
-            || !profile.proxy
-            || /^(direct|offline|none)$/i.test(String(profile.proxy));
-          if (!isDirect) proxy = String(profile.proxy || '');
-        } else if (session?.networkMode === 'proxy' && session?.proxyProtocol && session.proxyProtocol !== 'direct') {
-          // session alone may not hold full proxy URL; leave direct probe
-          proxy = '';
-        }
-      }
+      const exitNetwork = await this.#resolveNetwork(session, false);
+      const route = session.networkRoute;
+      const { proxy } = this.#sessionRoutes.get(session);
+      if (route === 'proxy' && !proxy) return this.#json(res, 409, { ok: false, msg: '无法读取当前窗口的代理配置' });
+      const requestText = route === 'system' ? this.engine?.requestSystemNetwork : undefined;
+      if (route === 'system' && !requestText) return this.#json(res, 409, { ok: false, msg: '无法读取系统代理设置' });
       const refresh = query.refresh === '1' || query.refresh === 'true';
       // TTL cache keyed by exit identity: every workbench load used to re-probe
       // google/youtube/wikipedia through the real proxy, so the check card sat
       // seconds on slow exits. The verdict cannot change within the TTL for the
       // same exit IP; ?refresh=1 (the card's re-check button) bypasses.
-      const cacheKey = JSON.stringify([proxy || 'direct', exitNetwork?.ip || session?.exitIp || '']);
+      const cacheKey = JSON.stringify([proxy || route || 'direct', exitNetwork?.ip || session?.exitIp || '']);
       const now = Date.now();
       const cached = !refresh && this.#reachabilityCache?.get(cacheKey);
       if (cached && now - cached.at <= REACHABILITY_CACHE_MS) {
@@ -1442,6 +1384,7 @@ h1{margin:0 0 12px;font-size:20px}p{margin:8px 0;color:#b7becc}code{color:#93c5f
       try {
         const data = await this.lookupReachability({
           proxy,
+          requestText,
           exitNetwork: exitNetwork || {
             ip: session?.exitIp || '',
             countryCode: session?.countryCode || '',
@@ -1461,19 +1404,13 @@ h1{margin:0 0 12px;font-size:20px}p{margin:8px 0;color:#b7becc}code{color:#93c5f
           if (oldest !== undefined) this.#reachabilityCache.delete(oldest);
         }
         return this.#json(res, 200, { ok: true, data, meta });
-      } catch (error) {
-        return this.#json(res, 500, { ok: false, msg: error.message });
+      } catch (_) {
+        return this.#json(res, 500, { ok: false, msg: '站点可达性检测失败' });
       }
     }
 
     if (pathname === '/api/dns-leak') {
-      let exitNetwork = session?.network || null;
-      if (this.engine && pid) {
-        exitNetwork = this.engine.networkInfo?.get?.(String(pid)) || exitNetwork;
-        if (!exitNetwork) {
-          try { exitNetwork = await this.#resolveNetwork(pid, false); } catch (_) {}
-        }
-      }
+      const exitNetwork = await this.#resolveNetwork(session, false);
       try {
         const data = await this.lookupDnsLeak({
           exitNetwork: exitNetwork || {

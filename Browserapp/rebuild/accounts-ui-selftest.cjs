@@ -196,6 +196,33 @@ const repo = path.resolve(__dirname, "../..");
     result.checks.push(
       "原编辑抽屉读取真实密码，修改用户名不清空密码；关联由真实 IPC 固定数据，原列表显示实际窗口编号；原暗色样式可见",
     );
+    const textExport = path.join(data, "roundtrip.txt");
+    await app.evaluate(({ dialog }, filePath) => {
+      dialog.showSaveDialog = async () => ({ canceled: false, filePath });
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [filePath] });
+    }, textExport);
+    await page.evaluate(id => globalThis.__localRequest("accounts:export", { ids: [id], format: "txt", includeCredentials: true }), id);
+    const text = await fs.readFile(textExport, "utf8");
+    await page.getByRole("button", { name: "添加账号", exact: true }).first().click();
+    await page.getByText("模板导入", { exact: true }).click();
+    await page.getByRole("button", { name: "上传文件", exact: true }).click();
+    await page.getByText("roundtrip.txt", { exact: true }).waitFor();
+    await page.locator(".upload-card").evaluate((element, contents) => {
+      const dataTransfer = new DataTransfer();
+      dataTransfer.items.add(new File([contents], "roundtrip-dropped.txt", { type: "text/plain" }));
+      element.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer }));
+    }, text);
+    await page.getByText("roundtrip-dropped.txt", { exact: true }).waitFor();
+    await page.locator(".template-import").locator("..").getByRole("button", { name: "保存", exact: true }).click();
+    await waitUntil(() => page.evaluate(() => globalThis.__localRequest("accounts:list").then(result => result.total === 2)));
+    const imported = await page.evaluate(async previousId => {
+      const { rows } = await globalThis.__localRequest("accounts:list");
+      return globalThis.ops.accountGet(rows.find(row => row.id !== previousId).id);
+    }, id);
+    assert.equal(imported.username, "edited@example.test");
+    assert.equal(imported.url, "https://accounts.example.test/");
+    assert.equal(imported.password, "account-secret");
+    result.checks.push("真实 TXT 导出经原生选择与拖放进入工作台，回导保留网址、用户名和密码");
     assert.deepEqual(result.errors, []);
     assert.deepEqual(result.externalRequests, []);
     result.passed = true;

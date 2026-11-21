@@ -18,9 +18,19 @@ const { profileWriteGuard } = require('./profile-write-guard');
 const { normalizeCoordinates } = require('../shared/profile-values');
 
 // Proxy support is a required engine capability; preserve dependency load errors.
-const { lookupDirectCountry } = require('../proxy-forwarder');
+const { lookupDirectCountry, lookupNetworkCountry } = require('../proxy-forwarder');
+
+function profileExitRoute(profile) {
+  const proxy = String(profile.proxy || '').trim();
+  if (profile.networkMode === 'proxy' ||
+      (profile.networkMode !== 'direct' && proxy && !/^(direct|offline|none)$/i.test(proxy))) return 'proxy';
+  // Match Chromium's implicit system routing and Firefox's current direct preferences.
+  return this.requestSystemNetwork && !this.profilePrefersFirefox(profile) && profile.proxyMeta?.systemProxy !== 'off'
+    ? 'system' : 'direct';
+}
 
 module.exports = {
+  profileExitRoute,
   async suppressStartupExtensionPages(connection, installed, durationMs = 7000) {
     const popupPaths = new Map();
     for (const extension of installed || []) {
@@ -103,20 +113,30 @@ module.exports = {
     const geoMode = privacy.geoMode || 'ip';
     return langMode === 'ip' || tzMode === 'ip' || geoMode === 'ip' || geoMode === 'allow';
   },
+  lookupSystemNetwork() {
+    if (!this.requestSystemNetwork) throw Error('当前环境无法读取系统网络');
+    this.systemNetworkProbe ||= lookupNetworkCountry(this.requestSystemNetwork)
+      .then(result => ({ ...result, protocol: 'system', route: 'system', checkedAt: new Date().toISOString() }))
+      .finally(() => { this.systemNetworkProbe = null; });
+    return this.systemNetworkProbe;
+  },
   async ensureExitNetworkForLocale(profile, options = {}) {
     // force: 「网络不通停止打开」守护需要一次真实检测并让失败向上抛出。
     if (!options.force && !this.needsExitNetworkForLocale(profile)) return null;
     const assertCurrent = profileWriteGuard(this, profile.id);
+    const route = profileExitRoute.call(this, profile);
     let network = options.network || this.networkInfo.get(profile.id);
+    if ((route === 'system') !== (network?.route === 'system') || (route === 'system' && !options.network)) network = null;
     if (!options.force && (network?.countryCode || network?.ip)) {
       options.onNetwork?.(network);
       return network;
     }
-    const proxyRaw = String(profile.proxy || '');
-    const isDirect = profile.networkMode === 'direct' || !proxyRaw || /^(direct|offline|none)$/i.test(proxyRaw);
+    const previousNetwork = network;
     try {
-      if (!isDirect) {
+      if (route === 'proxy') {
         network = await this.testProxy(profile, { allowExtract: false, force: Boolean(options.force) });
+      } else if (route === 'system') {
+        network = await this.lookupSystemNetwork();
       } else {
         // Local direct exit: geo lookup is best-effort for language/timezone only.
         network = await lookupDirectCountry({ force: Boolean(options.force) });
@@ -133,10 +153,10 @@ module.exports = {
     } catch (error) {
       // Direct start succeeded without proxy; geo API failure must not surface as proxy error.
       if (options.force || error.code === 'PROFILE_STALE_REV' || error.code === 'PROFILE_MAINTENANCE') throw error;
-      if (!isDirect) {
+      if (route === 'proxy') {
         this.emit({ type: 'proxy-error', id: profile.id, message: '出口信息检测失败（语言/时区可能回退）：' + error.message });
       }
-      return this.networkInfo.get(profile.id) || null;
+      return previousNetwork || null;
     }
   },
   applyResolvedLocale(profile, resolvedNetwork) {
@@ -234,16 +254,19 @@ module.exports = {
     if (expected && keep?.webSocketDebuggerUrl) {
       try {
         await cdp.call(keep.webSocketDebuggerUrl, 'Page.enable', {}).catch(() => {});
+        const navigate = async () => {
+          const result = await cdp.call(keep.webSocketDebuggerUrl, 'Page.navigate', { url: expected });
+          if (!result?.errorText) return;
+          if (options.onNavigationError) options.onNavigationError(result.errorText);
+          else if (options.strict) throw new Error(result.errorText);
+        };
         const href = String(keep.url || '');
         // about:blank launch or wrong page → navigate; already on start page → reload so
         // document-start fingerprint scripts registered after first paint still run.
         if (this.isStartPageUrl(href) && href.includes(expected.split('?')[0])) {
-          await cdp.call(keep.webSocketDebuggerUrl, 'Page.reload', { ignoreCache: true }).catch(async () => {
-            await cdp.call(keep.webSocketDebuggerUrl, 'Page.navigate', { url: expected });
-          });
+          await cdp.call(keep.webSocketDebuggerUrl, 'Page.reload', { ignoreCache: true }).catch(navigate);
         } else {
-          const navigation = await cdp.call(keep.webSocketDebuggerUrl, 'Page.navigate', { url: expected });
-          if (options.strict && navigation?.errorText) throw new Error(navigation.errorText);
+          await navigate();
         }
         await new Promise((resolve) => { const t = setTimeout(resolve, 400); t.unref?.(); });
       } catch (error) {
@@ -271,21 +294,19 @@ module.exports = {
    */
   async buildStartPageUrl(profile, root, browserName, extensionCount, fingerprintOverride = null) {
     let pageNetwork = this.networkInfo.get(profile.id) || null;
+    const route = profileExitRoute.call(this, profile);
+    if ((route === 'system') !== (pageNetwork?.route === 'system')) pageNetwork = null;
     // 启动前尽量补全出口信息，启动页打开即可显示 IP（直连/代理同理）
-    const hasProxy = profile.proxy && !/^(direct|offline|none)$/i.test(String(profile.proxy));
     if (!pageNetwork?.ip) {
       try {
-        if (hasProxy) {
-          pageNetwork = await this.checkProxy(profile);
+        if (route === 'proxy') {
+          pageNetwork = await this.testProxy(profile, { proxy: profile.proxy, allowExtract: false });
         } else {
-          pageNetwork = await lookupDirectCountry();
-          if (pageNetwork) {
-            pageNetwork = { ...pageNetwork, protocol: 'direct' };
-            this.networkInfo.set(profile.id, pageNetwork);
-          }
+          pageNetwork = route === 'system' ? await this.lookupSystemNetwork() : await lookupDirectCountry();
+          if (pageNetwork) this.networkInfo.set(profile.id, pageNetwork);
         }
-      } catch (_) {
-        pageNetwork = this.networkInfo.get(profile.id) || null;
+      } catch (error) {
+        pageNetwork = { ...pageNetwork, route, probeError: error.message };
       }
     }
     const timezone = fingerprintOverride
@@ -315,8 +336,8 @@ module.exports = {
       const url = server.registerSession({
         ...profile,
         exitTimezone: timezone,
-        exitIp: pageNetwork?.ip || profile.exitIp || '',
-        exitCountryCode: pageNetwork?.countryCode || profile.exitCountryCode || '',
+        exitIp: pageNetwork?.ip || (route !== 'system' && profile.exitIp) || '',
+        exitCountryCode: pageNetwork?.countryCode || (route !== 'system' && profile.exitCountryCode) || '',
         userAgent: uaFromFp || profile.userAgent,
         group_name: profile.group_name || profile.groupName || '',
         privacy: {
@@ -364,7 +385,7 @@ module.exports = {
       const escape = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
       const number = escape(profile.number || profile.name || profile.id);
       const name = escape(profile.name || number);
-      const ip = escape(pageNetwork?.ip || profile.exitIp || '未检测');
+      const ip = escape(pageNetwork?.ip || (route !== 'system' && profile.exitIp) || '未检测');
       const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="openbrowser-native" content="1"><title>环境 ${number}</title>
 <style>body{margin:0;font-family:system-ui,sans-serif;background:#12141a;color:#e8eaf0;display:grid;place-items:center;min-height:100vh}
 .card{width:min(720px,94vw);background:#1c1f28;border-radius:14px;overflow:hidden;border:1px solid #2a3040;box-shadow:0 20px 50px rgba(0,0,0,.35)}

@@ -569,18 +569,20 @@ class ProxyStore {
   }
 
   list(filter = {}) {
-    // Records are flat and read-only downstream; a per-record shallow copy is
-    // enough to protect the store without deep-cloning the whole library per call.
-    let items = this.data.items.map((item) => ({ ...item }));
+    return this.page(filter).rows;
+  }
+
+  page(filter, { matches, compare, offset = 0, limit = this.data.items.length } = {}) {
     const q = String(filter.q || filter.keyword || '').trim().toLowerCase();
-    if (q) {
-      items = items.filter((item) => [item.name, item.host, item.protocol, item.remark, item.lastIp, String(item.port)]
-        .join(' ').toLowerCase().includes(q));
-    }
-    if (filter.protocol) {
-      items = items.filter((item) => item.protocol === String(filter.protocol).toLowerCase());
-    }
-    return items.sort((a, b) => String(b.update_time || '').localeCompare(String(a.update_time || '')));
+    const protocol = filter.protocol ? String(filter.protocol).toLowerCase() : '';
+    const items = this.data.items.filter(item => {
+      if (protocol && item.protocol !== protocol) return false;
+      if (q && ![item.name, item.host, item.protocol, item.remark, item.lastIp, String(item.port)]
+        .join(' ').toLowerCase().includes(q)) return false;
+      return !matches || matches(item);
+    });
+    items.sort(compare || ((a, b) => String(b.update_time || '').localeCompare(String(a.update_time || ''))));
+    return { total: items.length, rows: items.slice(offset, offset + limit).map(item => ({ ...item })) };
   }
 
   get(id) {

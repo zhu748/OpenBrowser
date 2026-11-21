@@ -1,8 +1,8 @@
 "use strict";
 
-const fs = require("node:fs/promises");
 const path = require("node:path");
 const { readXlsxSheets } = require("./profile-import-xlsx");
+const { MAX_IMPORT_BYTES, readImportFile } = require("./import-file");
 const { buildZip } = require("../automation/zip-writer");
 const { writeRawAtomically } = require("../engine/state-storage");
 
@@ -17,6 +17,12 @@ const fields = [
 const headers = new Map(fields.flatMap(([label, field, alias]) => [[label, field], [field, field], [alias, field]]));
 headers.set("平台网址", "platformUrl");
 headers.set("用户名", "platformUserName");
+for (const titles of [
+  ["Platform", "Account", "Password", "2FA", "Notes", "Platform Name"],
+  ["Платформа", "Аккаунт", "Пароль", "2FA", "Заметки", "Название платформы"],
+]) {
+  titles.forEach((title, index) => headers.set(title, fields[index][1]));
+}
 
 function textAccounts(text) {
   return text.split(/\r?\n/).map((line, index) => {
@@ -50,19 +56,23 @@ async function workbookAccounts(bytes) {
   return [];
 }
 
-async function selectAccounts(service) {
-  const selection = await service.dialog.showOpenDialog(service.window(), {
-    properties: ["openFile"], filters: [{ name: "账号文件", extensions: ["xlsx", "txt"] }],
-  });
-  const filename = selection.filePaths?.[0];
-  if (selection.canceled || !filename) return { canceled: true };
+async function selectAccounts(service, payload) {
+  let filename, data;
+  if (payload.bytes !== undefined) {
+    if (typeof payload.filename !== "string" || !(payload.bytes instanceof ArrayBuffer)) throw Error("账号文件无效");
+    if (payload.bytes.byteLength > MAX_IMPORT_BYTES) throw Error("账号文件超过 5 MiB");
+    filename = payload.filename;
+    data = new Uint8Array(payload.bytes);
+  } else {
+    const selection = await service.dialog.showOpenDialog(service.window(), {
+      properties: ["openFile"], filters: [{ name: "账号文件", extensions: ["xlsx", "txt"] }],
+    });
+    filename = selection.filePaths?.[0];
+    if (selection.canceled || !filename) return { canceled: true };
+  }
   const extension = path.extname(filename).toLowerCase();
   if (![".xlsx", ".txt"].includes(extension)) throw Error("请选择 XLSX 或 UTF-8 TXT 文件");
-  const stat = await fs.lstat(filename);
-  const limit = 5 * 1024 * 1024;
-  if (!stat.isFile() || stat.size > limit) throw Error("请选择不超过 5 MiB 的普通文件");
-  const data = await fs.readFile(filename);
-  if (data.length > limit) throw Error("账号文件超过 5 MiB");
+  data ??= await readImportFile(filename);
   const values = extension === ".xlsx" ? await workbookAccounts(data) :
     textAccounts(new TextDecoder("utf-8", { fatal: true }).decode(data));
   if (!values.length || values.length > 500) throw Error("每次可导入 1–500 个账号");

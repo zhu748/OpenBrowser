@@ -194,12 +194,15 @@ jobs:
         env:
           GH_REPO: ${{ github.repository }}
           ARTIFACT: ${{ steps.verify.outputs.artifact }}
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
         run: |
           set -euo pipefail
           test "$(gh release view "$ASSET_TAG" --repo "$GH_REPO" --json isDraft --jq .isDraft)" = true
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          node scripts/release-artifact-manifest.js create "$(dirname "$ARTIFACT")" "$RELEASE_TAG" "$SOURCE_SHA" "$(basename "$ARTIFACT")"
           notes_file="$RUNNER_TEMP/openbrowser-online-notes.md"
           printf 'OpenBrowser %s online installers\n' "$RELEASE_TAG" > "$notes_file"
-          bash scripts/publish-release.sh "$ASSET_TAG" "$notes_file" "$ARTIFACT"
+          bash scripts/publish-release.sh "$ASSET_TAG" "$notes_file" "$ARTIFACT" "$ARTIFACT.build.json"
 
   finalize:
     name: Publish completed release
@@ -212,14 +215,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.prepare.outputs.source_sha }}
-          sparse-checkout: Browserapp/automation
+          sparse-checkout: |
+            Browserapp/automation
+            Browserapp/scripts
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
-      - name: Verify complete release and detached signature
+      - name: Verify installer checksums and source commit
         shell: bash
         env:
           GH_REPO: ${{ github.repository }}
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
         run: |
           set -euo pipefail
           assets=(
@@ -231,17 +237,22 @@ jobs:
           staging="$RUNNER_TEMP/openbrowser-online-assets"
           mkdir -p "$staging"
           for asset in "${assets[@]}"; do
-            gh release download "$ASSET_TAG" --repo "$GH_REPO" --pattern "$asset" --dir "$staging"
+            gh release download "$ASSET_TAG" --repo "$GH_REPO" --pattern "$asset" --pattern "$asset.build.json" --dir "$staging"
           done
-          (cd "$staging" && sha256sum --binary "${assets[@]}" > SHA256SUMS.txt)
+          node Browserapp/scripts/release-artifact-manifest.js verify "$staging" "$RELEASE_TAG" "$SOURCE_SHA" "${assets[@]}"
       - name: Sign checksum manifest and verify trust root
         shell: bash
         env:
           GH_REPO: ${{ github.repository }}
           OPENBROWSER_UPDATE_SIGNING_KEY: ${{ secrets.OPENBROWSER_UPDATE_SIGNING_KEY }}
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
         run: |
           set -euo pipefail
           staging="$RUNNER_TEMP/openbrowser-online-assets"
+          tag_ref="refs/tags/$ASSET_TAG"
+          tag_sha=$(git ls-remote origin "$tag_ref" "$tag_ref^{}" | awk '$2 ~ /\^\{\}$/ { peeled=$1; next } { raw=$1 } END { print peeled ? peeled : raw }')
+          test "$tag_sha" = "$SOURCE_SHA"
+          test "$(gh release view "$ASSET_TAG" --repo "$GH_REPO" --json isDraft --jq .isDraft)" = true
           if [[ -z "${OPENBROWSER_UPDATE_SIGNING_KEY:-}" ]]; then
             echo 'Release signing secret is not configured; refusing to publish.' >&2
             exit 1

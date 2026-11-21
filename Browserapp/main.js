@@ -1031,6 +1031,7 @@ app.whenReady().then(async () => {
   engine = new BrowserEngine(app, {
     profileDataRoot: localSettings.profileDataRoot,
     getHostScaleFactor: pickDisplayScaleFactor,
+    requestSystemNetwork: require('./main/system-network').createSystemNetworkRequester(session),
   });
   liveSync = new LiveSyncController(engine, handleLiveSyncEvent);
   await engine.init(path.join(__dirname, 'bundled-extension'));

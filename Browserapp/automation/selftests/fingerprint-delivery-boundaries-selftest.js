@@ -374,6 +374,33 @@ async function startupHarness(fault) {
     try { lifecycle.startRunningWatch.call(engine, item); await tick(); assert.equal(applies, 0); }
     finally { global.setTimeout = savedTimeout; }
   });
+  await test('Chromium watcher requires consecutive confirmed empty lists before closing', async () => {
+    const saved = { timeout: global.setTimeout, json: cdp.json, tabs: cdp.tabs };
+    let tick, listError = false, stops = 0, applies = 0;
+    global.setTimeout = (fn) => { tick = fn; return 1; };
+    cdp.json = async () => ({});
+    cdp.tabs = async () => {
+      if (listError) throw new Error('CDP tab list timeout');
+      return [];
+    };
+    const item = { profile, fingerprint: fp, engine: 'chromium', port: 12345 };
+    const engine = { running: new Map([[profile.id, item]]),
+      async stop() { stops += 1; }, async applyRuntimeSettings() { applies += 1; }, emit() {} };
+    try {
+      lifecycle.startRunningWatch.call(engine, item);
+      await tick();
+      assert.equal(item.watchEmptyTicks, 1);
+      listError = true;
+      await tick(); await tick(); await tick();
+      assert.equal(stops, 0);
+      assert.equal(applies, 0);
+      listError = false;
+      await tick();
+      assert.equal(stops, 0);
+      await tick();
+      assert.equal(stops, 1);
+    } finally { global.setTimeout = saved.timeout; cdp.json = saved.json; cdp.tabs = saved.tabs; }
+  });
   await test('BiDi repeated opens share one socket and constructor failures close transport state', async () => {
     let sockets = 0;
     class Socket extends EventTarget { constructor() { super(); queueMicrotask(() => this.dispatchEvent(new Event('open'))); } close() {} }

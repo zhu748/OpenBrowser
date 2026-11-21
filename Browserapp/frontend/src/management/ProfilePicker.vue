@@ -53,8 +53,7 @@ onBeforeUnmount(() => { revision++; });
     <p v-if="loading" role="status">正在加载窗口…</p>
     <p v-else-if="!rows.length">暂无匹配窗口</p>
     <label v-for="row in rows" :key="row.id">
-      <input v-model="selection" type="checkbox" :value="row.id"
-        :disabled="selection.length >= 200 && !selection.includes(row.id)">
+      <input v-model="selection" type="checkbox" :value="row.id">
       <span>{{ row.windowName }}<small v-if="row.windowSortNum"> · OPE-{{ row.windowSortNum }}</small></span>
     </label>
   </fieldset>

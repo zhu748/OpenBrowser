@@ -126,6 +126,7 @@ class BrowserEngine {
     // high-DPI (125%/150%/200%) displays. Supplied by main.js; optional so tests and
     // non-Windows hosts keep the previous default of 1.
     this.getHostScaleFactor = typeof options.getHostScaleFactor === 'function' ? options.getHostScaleFactor : null;
+    this.requestSystemNetwork = options.requestSystemNetwork;
     this.profiles = new TrackedProfileMap();
     this.running = new Map();
     // Per-profile lifecycle barriers. A browser must finish stopping (including
@@ -1335,6 +1336,7 @@ class BrowserEngine {
   }
 
   async _stop(safe, item) {
+    item.expectedExit = true;
     item.stopping = true;
     this.clearRunningWatch(item);
     item.workerFingerprintConnection?.close();

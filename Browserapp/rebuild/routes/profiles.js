@@ -1,8 +1,7 @@
 "use strict";
 const { maxProfileNumber } = require('../../shared/profile-values');
 
-const fs = require("node:fs/promises");
-const { O_RDONLY, O_NONBLOCK } = require("node:fs").constants;
+const { readImportFile } = require("../import-file");
 const path = require("node:path");
 const { randomUUID: uid } = require("node:crypto");
 const { sanitizeProfile } = require("../../engine/profile-sanitizer");
@@ -35,37 +34,13 @@ async function profilesChooseImport(service) {
     extension = path.extname(file).toLowerCase();
   if (![".xlsx", ".txt"].includes(extension))
     throw Error("仅支持 .xlsx 或 .txt 文件");
-  const limit = 5 * 1024 * 1024;
-  const handle = await fs.open(file, O_RDONLY | O_NONBLOCK);
-  try {
-    const stat = await handle.stat();
-    if (!stat.isFile()) throw Error("请选择普通文件");
-    if (stat.size > limit) throw Error("导入文件不能超过 5 MiB");
-    // Read a bounded snapshot from the same handle that was checked above.
-    const bytes = new Uint8Array(stat.size + 1);
-    let size = 0;
-    while (size < bytes.length) {
-      const { bytesRead } = await handle.read(bytes, size, bytes.length - size, size);
-      if (!bytesRead) break;
-      size += bytesRead;
-    }
-    if (size > limit) throw Error("导入文件不能超过 5 MiB");
-    const current = await handle.stat();
-    if (size !== stat.size || current.size !== stat.size || current.mtimeMs !== stat.mtimeMs) {
-      throw Error("导入文件已更改，请重新选择");
-    }
-    return {
-      name: path.basename(file),
-      size,
-      bytes: bytes.subarray(0, size),
-      type:
-        extension === ".txt"
-          ? "text/plain"
-          : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    };
-  } finally {
-    await handle.close();
-  }
+  const bytes = await readImportFile(file);
+  return {
+    name: path.basename(file),
+    size: bytes.byteLength,
+    bytes,
+    type: extension === ".txt" ? "text/plain" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  };
 }
 
 async function profilesAnalyseImport(service, p, method) {

@@ -33,8 +33,9 @@ function redactAccount({ password, totpSecret, ...metadata }) {
 }
 
 class AccountStore {
-  constructor(file) {
+  constructor(file, { recoverProfileChanges } = {}) {
     this.file = file;
+    this.recoverProfileChanges = recoverProfileChanges;
     this.accounts = new Map();
     this.queue = Promise.resolve();
     this.loadError = null;
@@ -58,7 +59,12 @@ class AccountStore {
     if (body.version !== 1 || !Array.isArray(body.accounts) || body.accounts.length > MAX_ACCOUNTS) throw new Error('账号库格式无效');
     const accounts = body.accounts.map(normalizeAccount);
     if (new Set(accounts.map((a) => a.id)).size !== accounts.length) throw new Error('账号 ID 重复');
-    if (!credentialCrypto.isEncrypted(raw)) await writeJsonAtomically(this.file, { version: 1, accounts });
+    const pending = Object.hasOwn(body, 'pendingProfileChanges');
+    if (pending) {
+      if (!this.recoverProfileChanges) throw new Error('账号库需要恢复窗口关联');
+      await this.recoverProfileChanges(body.pendingProfileChanges);
+    }
+    if (pending || !credentialCrypto.isEncrypted(raw)) await writeJsonAtomically(this.file, { version: 1, accounts });
     this.accounts = new Map(accounts.map((account) => [account.id, account]));
   }
 
@@ -84,13 +90,29 @@ class AccountStore {
     return this.runExclusive(async () => {
       const next = new Map(this.accounts);
       const transaction = await change(next);
+      if (next.size > MAX_ACCOUNTS) throw new Error('账号数量超过 5000 条');
+      const previous = { version: 1, accounts: [...this.accounts.values()] };
+      const journalFile = this.file;
+      if (transaction) {
+        // One atomic replacement later commits the new account rows and removes this journal.
+        await writeJsonAtomically(journalFile, { ...previous, pendingProfileChanges: transaction.journal });
+      }
       try {
-        if (next.size > MAX_ACCOUNTS) throw new Error('账号数量超过 5000 条');
+        await transaction?.apply();
         await writeJsonAtomically(this.file, { version: 1, accounts: [...next.values()] });
       }
       catch (error) {
-        try { await transaction?.rollback?.(); }
-        catch (rollbackError) { throw new AggregateError([error, rollbackError], '账号保存失败且窗口关联回滚失败，请检查关联状态'); }
+        if (!transaction) throw error;
+        let conflicts;
+        try {
+          conflicts = await transaction.rollback();
+          await writeJsonAtomically(journalFile, previous);
+        } catch (rollbackError) {
+          this.loadError = new AggregateError([error, rollbackError], '账号保存失败，重启后将尝试恢复窗口关联');
+          this.loadError.code = 'ACCOUNT_STORE_RECOVERY_PENDING';
+          throw this.loadError;
+        }
+        if (conflicts.length) throw Object.assign(new AggregateError([error], '账号保存失败，已保留其他编辑器的关联修改'), { remainingIds: conflicts });
         throw error;
       }
       this.accounts = next;

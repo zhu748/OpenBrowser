@@ -90,6 +90,15 @@ check('socks5: matching regions still report good', () => {
   assert.strictEqual(out.state, 'good');
 });
 
+check('missing resolver geography stays undetermined', () => {
+  const unknown = { type: 'dns', ip: '192.0.2.53' };
+  for (const rows of [[unknown], [...rowsMatch(), unknown]]) {
+    const result = summarizeDnsLeak(rows, EXIT_US);
+    assert.equal(result.state, 'info');
+    assert.equal(result.label, '无法判断地区');
+  }
+});
+
 // --- client-side resolution must keep the original, loud verdict ---------------------------
 
 for (const protocol of ['socks4', 'socks', undefined, null, '', 'direct']) {

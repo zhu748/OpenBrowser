@@ -4,6 +4,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
+const crypto = require('node:crypto');
 const { packageArtifactStem, shouldShipOpenBrowser148Kernel, pruneForeignKernelSeeds } = require('../../scripts/package-portable');
 const { isRuntimeResource } = require('../../scripts/runtime-manifest');
 const previous = process.env.OPENBROWSER_PACKAGE_VARIANT;
@@ -30,6 +32,23 @@ try {
   assert.equal(isRuntimeResource('assets/fonts/_preview/index.html'), false);
   assert.equal(isRuntimeResource('assets/fonts/_preview/fonts/cubic11.ttf'), false);
   assert.equal(isRuntimeResource('assets/font-subsets/index.json'), true);
+  const names = ['OpenBrowser-Windows-x86_64-without-kernel-setup.exe', 'OpenBrowser-Linux-x86_64-without-kernel.tar.gz'];
+  const source = 'a'.repeat(40), oldSource = 'b'.repeat(40);
+  const run = (command, sha, ...assets) => spawnSync(process.execPath, [
+    path.join(__dirname, '../../scripts/release-artifact-manifest.js'), command, fixture, 'v1.0.0', sha, ...assets,
+  ], { encoding: 'utf8' });
+  for (const name of names) fs.writeFileSync(path.join(fixture, name), `fixture for ${name}`);
+  assert.equal(run('create', source, names[0]).status, 0);
+  assert.equal(run('create', oldSource, names[1]).status, 0);
+  assert.match(run('verify', source, ...names).stderr, /does not match/);
+  assert.equal(fs.existsSync(path.join(fixture, 'SHA256SUMS.txt')), false);
+  assert.equal(run('create', source, names[1]).status, 0);
+  fs.appendFileSync(path.join(fixture, names[1]), 'changed bytes');
+  assert.match(run('verify', source, ...names).stderr, /does not match/);
+  assert.equal(run('create', source, names[1]).status, 0);
+  assert.equal(run('verify', source, ...names).status, 0);
+  const expected = names.map(name => `${crypto.hash('sha256', fs.readFileSync(path.join(fixture, name)))} *${name}\n`).join('');
+  assert.equal(fs.readFileSync(path.join(fixture, 'SHA256SUMS.txt'), 'utf8'), expected);
   console.log('ONLINE_PACKAGE_POLICY_SELFTEST OK (four online variants, default without kernel, no LFS resources, legacy bundled build rejected)');
 } finally {
   if (previous === undefined) delete process.env.OPENBROWSER_PACKAGE_VARIANT;

@@ -1,12 +1,24 @@
 "use strict";
 
+const { writeBrowserStartupDiagnostic } = require("./diagnostics");
+
 /** Attach cleanup after the running item is published; replay early process exit. */
 function attachBrowserExitHandlers(engine, profileId, item, child) {
   const handleChildExit = (code, signal) => {
-    const expected = item.stopping === true || code === 0;
+    const expected = item.expectedExit === true || code === 0;
     const error = expected
       ? null
       : `浏览器异常退出${signal ? ` (${signal})` : ` (code ${code})`}`;
+    if (!expected) {
+      try {
+        const userData = engine.app?.getPath?.("userData");
+        if (userData) void writeBrowserStartupDiagnostic(userData, {
+          type: "browser-process-exit", profileId, browser: item.browser?.name,
+          pid: child.pid, exitCode: code, signal, lifecycleGeneration: item.lifecycleGeneration,
+          cleanupReason: item.exitCleanupReason,
+        });
+      } catch (_) { /* Diagnostic collection must not interrupt cleanup. */ }
+    }
     engine
       .handleBrowserGone(profileId, item, "browser-exit", {
         expected,

@@ -31,6 +31,7 @@ function fixture(behavior = {}) {
     if (method === 'browsingContext.getTree') return { contexts: [{ context: 'initial', url: 'about:blank' }] };
     if (method === 'script.addPreloadScript') return { script: 'preload' };
     if (method === 'script.evaluate') return { type: 'success', result: params.expression.includes('webglVendor: webglVendor') ? remote(live) : { type: 'undefined' } };
+    if (method === 'browsingContext.navigate') return behavior.navigate?.(params) || {};
     if (method === 'browsingContext.create') {
       if (behavior.emitCreated !== false) {
         const task = connection.onEvent({ method: 'browsingContext.contextCreated', params: { context: 'second', parent: null } }, connection);
@@ -62,6 +63,21 @@ async function test(name, run) { await run();passed += 1;console.log('PASS ' + n
     await assert.rejects(navigateFirefoxStartup(h.connection, initialized.context, ['https://one.test']), /native permission unsupported/);
     assert.equal(h.calls.some(call => call.method === 'browsingContext.navigate'), false);
     await navigateFirefoxStartup(h.connection, initialized.context, ['https://one.test']);assert.equal(attempts, 2);
+  });
+  await test('Firefox startup allows website network errors and rejects transport errors', async () => {
+    const networkError = Object.assign(Error('Error: NS_ERROR_NET_RESET'), { code: 'unknown error' });
+    const h = fixture({ navigate: ({ url }) => {
+      if (url === 'https://one.test/') throw networkError;
+      if (url === 'https://three.test/') throw Error('Firefox BiDi connection closed');
+    } });
+    const initialized = await h.initialize();
+    const warnings = [];
+    const options = { onNavigationError: error => warnings.push(error) };
+    await navigateFirefoxStartup(h.connection, initialized.context, ['https://one.test', 'https://two.test'], options);
+    assert.deepEqual(warnings, ['NS_ERROR_NET_RESET']);
+    assert.ok(h.calls.some(call => call.method === 'browsingContext.navigate' && call.params.url === 'https://two.test/'));
+    await assert.rejects(navigateFirefoxStartup(h.connection, initialized.context, ['https://one.test']), networkError);
+    await assert.rejects(navigateFirefoxStartup(h.connection, initialized.context, ['https://three.test'], options), /BiDi connection closed/);
   });
   await test('startup waits for the shared native context setup before navigating the new tab', async () => {
     const gate = deferred();

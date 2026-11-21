@@ -1,6 +1,9 @@
 'use strict';
 const assert = require('assert');
 const net = require('net');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const { createRequire } = require('node:module');
 
 const {
   lookupProxyCountry,
@@ -24,6 +27,31 @@ function listen(server) {
 async function run() {
   console.log('Starting Proxy Multi-Source Probe Selftest...');
   clearProbeCache();
+
+  // The direct cache must store the resolved DTO, not the async risk lookup.
+  const proxyFile = require.resolve('../../proxy-forwarder');
+  const requireProxy = createRequire(proxyFile);
+  const isolated = { exports: {} };
+  let directRequests = 0;
+  vm.runInNewContext(fs.readFileSync(proxyFile, 'utf8'), {
+    module: isolated, process, console, Buffer, setTimeout, clearTimeout,
+    require: name => name === './network/outbound' ? {
+      ...requireProxy(name),
+      async fetchUrlText(url) {
+        directRequests++;
+        if (!url.startsWith('http://ip-api.com/')) throw Error('fixture unavailable');
+        return { status: 200, body: JSON.stringify({ status: 'success', query: '203.0.113.10', countryCode: 'CN' }) };
+      },
+    } : requireProxy(name),
+  }, { filename: proxyFile });
+  const fresh = await isolated.exports.lookupDirectCountry();
+  const requestCount = directRequests;
+  const cached = await isolated.exports.lookupDirectCountry();
+  assert.strictEqual(fresh.ip, '203.0.113.10');
+  assert.strictEqual(cached.ip, fresh.ip);
+  assert.strictEqual(cached.countryCode, fresh.countryCode);
+  assert.strictEqual(cached.cached, true);
+  assert.strictEqual(directRequests, requestCount);
 
   // =========================================================================
   // Test 1: Normalizer shapes and field validation

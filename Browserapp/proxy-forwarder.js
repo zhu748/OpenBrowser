@@ -989,8 +989,8 @@ async function requestProxyHttps(config, hostname, pathname) {
   }
 }
 
-async function lookupIpPureDirect() {
-  const { status, body } = await fetchUrlText('https://my.ippure.com/v1/info', { timeout: 12000 });
+async function lookupIpPureDirect(requestText) {
+  const { status, body } = await requestText('https://my.ippure.com/v1/info', { timeout: 12000 });
   if (status !== 200) throw new Error('risk intelligence lookup returned HTTP ' + status);
   return normalizeIpPureResult(JSON.parse(body));
 }
@@ -1490,17 +1490,17 @@ async function lookupProxyCountry(config, options = {}) {
 /** Field list shared by the direct and proxied ip-api.com lookups. */
 const IP_API_FIELDS = 'status,message,country,countryCode,regionName,city,zip,timezone,lat,lon,isp,org,as,asname,mobile,proxy,hosting,query';
 
-async function lookupDirectIpApi() {
-  const { status, body } = await fetchUrlText(`http://ip-api.com/json/?fields=${IP_API_FIELDS}`, { timeout: 10000 });
+async function lookupDirectIpApi(requestText) {
+  const { status, body } = await requestText(`http://ip-api.com/json/?fields=${IP_API_FIELDS}`, { timeout: 10000 });
   if (status !== 200) throw new Error('HTTP ' + status);
   return normalizeIpApiResult(JSON.parse(body));
 }
 
-async function lookupDirectIpWho() {
+async function lookupDirectIpWho(requestText) {
   const errors = [];
   for (const url of ['https://ipwho.is/', 'http://ipwho.is/']) {
     try {
-      const { status, body } = await fetchUrlText(url, { timeout: 10000 });
+      const { status, body } = await requestText(url, { timeout: 10000 });
       if (status !== 200) throw new Error('HTTP ' + status);
       return normalizeIpWhoResult(JSON.parse(body));
     } catch (error) {
@@ -1510,26 +1510,26 @@ async function lookupDirectIpWho() {
   throw new Error(errors[0] || 'ipwho lookup failed');
 }
 
-async function lookupDirectIpInfo() {
-  const { status, body } = await fetchUrlText('https://ipinfo.io/json', { timeout: 10000 });
+async function lookupDirectIpInfo(requestText) {
+  const { status, body } = await requestText('https://ipinfo.io/json', { timeout: 10000 });
   if (status !== 200) throw new Error('HTTP ' + status);
   return normalizeIpInfoResult(JSON.parse(body));
 }
 
-async function lookupDirectIpWhoisApp() {
-  const { status, body } = await fetchUrlText('https://ipwhois.app/json/', { timeout: 10000 });
+async function lookupDirectIpWhoisApp(requestText) {
+  const { status, body } = await requestText('https://ipwhois.app/json/', { timeout: 10000 });
   if (status !== 200) throw new Error('HTTP ' + status);
   return normalizeIpWhoisAppResult(JSON.parse(body));
 }
 
-async function lookupDirectFreeIpApi() {
-  const { status, body } = await fetchUrlText('https://freeipapi.com/api/json', { timeout: 10000 });
+async function lookupDirectFreeIpApi(requestText) {
+  const { status, body } = await requestText('https://freeipapi.com/api/json', { timeout: 10000 });
   if (status !== 200) throw new Error('HTTP ' + status);
   return normalizeFreeIpApiResult(JSON.parse(body));
 }
 
-async function lookupDirectCloudflareTrace() {
-  const { status, body } = await fetchUrlText('https://www.cloudflare.com/cdn-cgi/trace', { timeout: 10000 });
+async function lookupDirectCloudflareTrace(requestText) {
+  const { status, body } = await requestText('https://www.cloudflare.com/cdn-cgi/trace', { timeout: 10000 });
   if (status !== 200) throw new Error('HTTP ' + status);
   return parseCloudflareTrace(body);
 }
@@ -1547,24 +1547,28 @@ async function lookupDirectCountry(options = {}) {
   if (!force && directLookupCache && Date.now() - directLookupCache.at < DIRECT_LOOKUP_CACHE_TTL_MS) {
     return { ...directLookupCache.value, cached: true, fromCache: true };
   }
-  const parts = await raceSettledValues([
+  const result = await lookupNetworkCountry(fetchUrlText);
+  directLookupCache = { at: Date.now(), value: result };
+  return result;
+}
+
+async function lookupNetworkCountry(requestText) {
+  const parts = (await raceSettledValues([
     lookupDirectIpApi,
     lookupDirectIpWho,
     lookupDirectIpInfo,
     lookupDirectIpWhoisApp,
     lookupDirectFreeIpApi,
     lookupDirectCloudflareTrace,
-  ], { maxWaitMs: 11000 });
-  if (!parts.length) throw new Error('本地出口查询失败：所有公开源均不可用');
+  ].map(lookup => () => lookup(requestText)), { maxWaitMs: 11000 })).filter(part => net.isIP(part.ip));
+  if (!parts.length) throw new Error('出口 IP 查询失败：公开检测服务未返回可用地址');
   const merged = mergeNetworkLookups(parts);
-  const result = enrichWithIpPure({
+  return enrichWithIpPure({
     ...merged,
     latencyMs: null,
     networkType: networkTypeFromLookup(merged),
     protocol: 'direct',
-  }, lookupIpPureDirect);
-  directLookupCache = { at: Date.now(), value: result };
-  return result;
+  }, () => lookupIpPureDirect(requestText));
 }
 
 /**
@@ -1716,6 +1720,7 @@ module.exports = {
   retryableSocksError,
   lookupProxyCountry,
   lookupDirectCountry,
+  lookupNetworkCountry,
   mergeNetworkLookups,
   parseCloudflareTrace,
   normalizeIpInfoResult,

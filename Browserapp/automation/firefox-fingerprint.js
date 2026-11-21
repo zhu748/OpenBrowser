@@ -152,7 +152,7 @@ async function initializeFirefoxFingerprint(connection, fingerprint, profile, op
   };
 }
 
-async function navigateFirefoxStartup(connection, context, urls) {
+async function navigateFirefoxStartup(connection, context, urls, { onNavigationError } = {}) {
   const policy = contextEmulation.get(connection);
   if (!policy) throw new Error('Firefox fingerprint initialization is required before navigation');
   urls = [...new Set(urls.map(startupNavigationUrl).filter(Boolean))];
@@ -161,7 +161,14 @@ async function navigateFirefoxStartup(connection, context, urls) {
     if (!target) throw new Error('Firefox did not create a browsing context');
     await policy.ensureContext(target, 'startup');
     await policy.prepareNavigation(urls[index]);
-    await connection.command('browsingContext.navigate', { context: target, url: urls[index], wait: 'interactive' }, 15000);
+    try {
+      await connection.command('browsingContext.navigate', { context: target, url: urls[index], wait: 'interactive' }, 15000);
+    } catch (error) {
+      const failure = error.code === 'unknown error' &&
+        /\b(NS_ERROR_(?:NET_[A-Z0-9_]+|UNKNOWN_HOST|UNKNOWN_PROXY_HOST|PROXY_CONNECTION_REFUSED|CONNECTION_REFUSED|OFFLINE))\b/.exec(error.message);
+      if (!failure || !onNavigationError) throw error;
+      onNavigationError(failure[1]);
+    }
   }
 }
 

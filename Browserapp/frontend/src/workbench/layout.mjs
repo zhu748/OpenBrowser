@@ -183,7 +183,7 @@ const NetworkStatus = {
       ]) : network.value.ip ? withDirectives(h('div', { class: 'flex items-center gap-1' }, [
         h('div', { class: 'city' }, network.value.city),
         h('div', { class: 'ip' }, ' (' + network.value.ip + ') '),
-      ]), [[Tooltip, { value: $t('当前网络定位'), showDelay: 300 }, undefined, { bottom: true }]]) : comment(),
+      ]), [[Tooltip, { value: network.value.routeLabel || $t('当前网络定位'), showDelay: 300 }, undefined, { bottom: true }]]) : comment(),
     ]);
   },
 };

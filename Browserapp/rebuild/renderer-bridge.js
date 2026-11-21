@@ -11,6 +11,7 @@ const plain = (value, seen = new WeakSet()) => {
       throw Error("IPC 参数包含不可序列化的值");
     return value;
   }
+  if (value instanceof ArrayBuffer) return value;
   if (seen.has(value)) throw Error("IPC 参数不能包含循环引用");
   seen.add(value);
   const copy = Array.isArray(value)
@@ -111,6 +112,7 @@ const emit = (channel, value) => {
 const profileLifecycle = createProfileLifecycleBridge({ emit, notify: message => globalThis.__localUiError?.(message) });
 globalThis.rebuild?.onEvent?.((event) => {
   profileLifecycle.handle(event);
+  if (event.type === "profile-start-page-warning") globalThis.__localUiError?.(event.message);
   if (
     event.type === "profiles" ||
     (event.type === "status" && event.action === "profiles-update") ||
@@ -505,7 +507,7 @@ const sends = {
   },
   "app:getMacAddress": () => request("host:mac"),
   "proxy:detect": (p) => request("proxies:detect", p),
-  "proxy:detectNetwork": () => request("host:network"),
+  "proxy:detectNetwork": (mode) => request("host:network", { probe: true, mode }),
   "proxy:refreshUrl": (url) => request("proxies:refresh", { url }),
   "proxy:refreshSaved": (id) => request("proxies:refresh", { id }),
   "proxy:extract": (url) => request("proxies:extract", { url }),

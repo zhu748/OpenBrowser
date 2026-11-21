@@ -47,7 +47,13 @@ async function startAutomation(context = {}) {
   const proxyStore = new ProxyStore(path.join(userDataPath, 'proxy-library.json'));
   await proxyStore.load();
   await context.beforeApiStart?.(proxyStore);
-  const accountStore = new AccountStore(path.join(userDataPath, 'platform-accounts.enc'));
+  const accountStore = new AccountStore(path.join(userDataPath, 'platform-accounts.enc'), {
+    recoverProfileChanges: async journal => {
+      const conflicts = await require('../rebuild/accounts').restoreAccountProfiles(engine, journal);
+      if (conflicts.length) emit({ type: 'storage-error', feature: 'accounts',
+        message: `账号库恢复时保留了 ${conflicts.length} 个窗口的后续账号修改` });
+    },
+  });
   const transferStore = new TransferStore(path.join(userDataPath, 'window-transfers.enc'));
   // A damaged optional store locks that feature without preventing recovery,
   // the local API, or RPA from starting. Writes remain blocked in the store.

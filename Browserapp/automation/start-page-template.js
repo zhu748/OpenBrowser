@@ -1,5 +1,7 @@
 'use strict';
 
+const { startPageNetwork } = require('./start-page-network');
+
 function esc(value) {
   return String(value == null ? '' : value)
     .replace(/&/g, '&amp;')
@@ -63,14 +65,14 @@ function buildStartPageHtml(data = {}) {
   const id = data.serial || data.id || data.number || '';
   const name = data.name || '';
   const pid = data.pid || data.profileId || '';
-  const network = data.network || {};
+  const network = startPageNetwork(data.network) || {};
   const title = [id, name].filter(Boolean).join(' ') || 'OpenBrowser 环境检测';
   const boot = {
     pid: String(pid || ''),
     title,
     network,
     timezone: data.timezone || network.timezone || '',
-    networkMode: data.networkMode || (network.protocol === 'direct' ? 'direct' : 'proxy'),
+    networkRoute: data.networkRoute || network.route || (data.networkMode === 'direct' || network.protocol === 'direct' ? 'direct' : 'proxy'),
     proxyProtocol: data.proxyProtocol || network.protocol || '',
     expected: data.expectedFingerprint || {},
   };
@@ -238,8 +240,8 @@ function buildStartPageHtml(data = {}) {
       <div class="ip-head">
         <span class="flag-slot" id="flag-slot">${initialFlag}</span>
         <div class="ip-actions">
-          <button class="btn ghost" id="btn-refresh" type="button" aria-label="重新检测"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>测试代理 IP</button>
-          <button class="btn solid" id="btn-ip-query" type="button"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14L21 3"/></svg>代理 IP 查询</button>
+          <button class="btn ghost" id="btn-refresh" type="button" aria-label="重新检测"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>检测出口 IP</button>
+          <button class="btn solid" id="btn-ip-query" type="button"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14L21 3"/></svg>出口 IP 查询</button>
         </div>
       </div>
       <div class="ip-loc"><b id="country">${esc(network.country || network.countryCode || '-')}</b><i>/</i><b id="region">${esc(network.region || '-')}</b><i>/</i><b id="city">${esc(network.city || '-')}</b></div>
@@ -283,7 +285,7 @@ function buildStartPageHtml(data = {}) {
 
     <section class="card">
       <div class="sec-head"><h2>IP 网络身份</h2><span class="sec-note" id="checked-at">等待出口数据</span></div>
-      <div class="identity-head"><span class="mode-pill" id="network-mode">${esc(data.networkMode === 'direct' ? '直连模式' : (data.proxyProtocol || network.protocol || '代理模式').toUpperCase())}</span><span id="asn-line">${esc([network.asn, network.asName || network.isp].filter(Boolean).join(' · ') || '网络身份读取中')}</span></div>
+      <div class="identity-head"><span class="mode-pill" id="network-mode">${esc(boot.networkRoute === 'system' ? '跟随系统代理设置' : boot.networkRoute === 'direct' ? '直连模式' : (boot.proxyProtocol || '代理模式').toUpperCase())}</span><span id="asn-line">${esc([network.asn, network.asName || network.isp].filter(Boolean).join(' · ') || '网络身份读取中')}</span></div>
       <div class="summary">
         <div class="summary-item"><span>ASN</span><b id="net-asn">${esc(network.asn || '-')}</b></div>
         <div class="summary-item"><span>ISP</span><b id="net-isp">${esc(network.isp || '-')}</b></div>
@@ -305,7 +307,7 @@ function buildStartPageHtml(data = {}) {
         <article class="check na" id="check-language"><div class="check-title">语言与地区 <span class="status">检测中</span></div><p>正在比较首选语言与出口地区。</p></article>
         <article class="check na" id="check-automation"><div class="check-title">自动化标记 <span class="status">检测中</span></div><p>正在检查 webdriver 等可见标记。</p></article>
         <article class="check na" id="check-storage"><div class="check-title">本地存储能力 <span class="status">检测中</span></div><p>正在检查 Cookie、LocalStorage 与 IndexedDB。</p></article>
-        <article class="check na" id="check-dns"><div class="check-title">DNS 泄露 <span class="status">检测中</span></div><p>正在触发唯一探测域名并比对 DNS 解析器地区与出口地区。</p></article>
+        <article class="check na" id="check-dns"><div class="check-title">DNS 泄露 <span class="status">检测中</span></div><p>正在通过本机系统解析器探测 DNS 地区。</p></article>
       </div>
     </section>
 
@@ -374,7 +376,6 @@ function buildStartPageHtml(data = {}) {
     function renderHealthScore(score){var card=byId('health-score-card');if(!card)return;score=score||{};var known=Number.isFinite(Number(score.score));var level=String(score.level||'unknown');var confidence={high:'高',medium:'中',low:'低'}[String(score.confidence||'low')]||'低';card.className='health-score-card '+level;text('health-score-value',known?Number(score.score):'--');text('health-score-label',score.label||'待检测');text('health-score-confidence','置信度：'+confidence);var progress=byId('health-score-progress');if(progress)progress.style.width=(known?Math.max(0,Math.min(100,Number(score.score))):0)+'%';var factors=byId('health-score-factors');if(!factors)return;factors.textContent='';(Array.isArray(score.factors)&&score.factors.length?score.factors:[{state:'neutral',label:'等待出口数据',detail:'取得 IP 后显示评分因素。'}]).forEach(function(factor){var article=document.createElement('article');article.className='health-factor '+String(factor.state||'neutral');var title=document.createElement('b');title.textContent=String(factor.label||'未命名因素');var detail=document.createElement('p');detail.textContent=String(factor.detail||'');article.appendChild(title);article.appendChild(detail);factors.appendChild(article)})}
     function api(path){var target=new URL(path,location.origin);if(pid&&!target.searchParams.has('pid'))target.searchParams.set('pid',pid);return fetch(target.pathname+target.search,{cache:'no-store',headers:{'X-OpenBrowser-Start-Token':sessionToken}}).then(function(response){return response.json().catch(function(){return {}}).then(function(body){if(!response.ok||!body.ok)throw new Error(body.msg||('HTTP '+response.status));return body})})}
     function networkType(net){var values=[];if(net.hosting)values.push('托管/机房');if(net.mobile)values.push('移动网络');if(net.proxy)values.push('代理标记');if(net.geoConflict)values.push('地区冲突');return values.length?values.join(' · '):'常规网络'}
-    function isDirectMode(net){return BOOT.networkMode==='direct'||String((net&&net.protocol)||'').toLowerCase()==='direct'||String(BOOT.proxyProtocol||'').toLowerCase()==='direct'}
     function countryDisplay(net){var main=net.country||net.countryCode||'';if(net.geoConflict&&net.countryUsage&&net.countryRegistered&&net.countryUsage!==net.countryRegistered){return main+' · 使用 '+net.countryUsage+' / 注册 '+net.countryRegistered}if(net.geoConflict&&Array.isArray(net.countries)&&net.countries.length>1){return main+' · 多源 '+net.countries.join('/')}return main}
     function tzOffsetLabel(tz){if(!tz)return '';try{var parts=new Intl.DateTimeFormat('en-US',{timeZone:tz,timeZoneName:'longOffset'}).formatToParts(new Date());for(var i=0;i<parts.length;i++){if(parts[i].type==='timeZoneName'){var v=parts[i].value||'';if(v.indexOf('GMT')===0)return v}}}catch(_){}try{var parts2=new Intl.DateTimeFormat('en-US',{timeZone:tz,timeZoneName:'shortOffset'}).formatToParts(new Date());for(var j=0;j<parts2.length;j++){if(parts2[j].type==='timeZoneName'){var v2=parts2[j].value||'';if(v2.indexOf('GMT')===0)return v2}}}catch(_){}return ''}
     function pad2(n){return (n<10?'0':'')+n}
@@ -383,14 +384,46 @@ function buildStartPageHtml(data = {}) {
     function flagMarkup(cc){var code=String(cc||'').toUpperCase();var inner=(window.__OB_FLAGS__||{})[code];if(inner){return '<svg viewBox="0 0 32 32" role="img" aria-label="'+code+'"><g clip-path="url(#flag-clip)">'+inner+'</g></svg>'}if(/^[A-Z]{2}$/.test(code)){return '<svg viewBox="0 0 32 32" role="img" aria-label="'+code+'"><circle cx="16" cy="16" r="16" fill="#3b82f6"/><text x="16" y="20.5" text-anchor="middle" font-size="11" font-weight="700" fill="#ffffff" font-family="Arial,sans-serif">'+code+'</text></svg>'}return '<svg viewBox="0 0 32 32" role="img" aria-label="Globe"><circle cx="16" cy="16" r="16" fill="#dfe8f8"/><g fill="none" stroke="#9db4d8" stroke-width="1.2"><circle cx="16" cy="16" r="9"/><ellipse cx="16" cy="16" rx="4.5" ry="9"/><path d="M7 16h18M9 10.5h14M9 21.5h14"/></g></svg>'}
     function updateFlag(cc){var slot=byId('flag-slot');if(slot)slot.innerHTML=flagMarkup(cc)}
     function osKernel(){var ua=safeNav(function(){return navigator.userAgent},'')||'';var os='未知系统';if(/Windows/i.test(ua))os='Windows';else if(/Android/i.test(ua))os='Android';else if(/iPhone|iPad|iPod/i.test(ua))os='iOS';else if(/Mac OS X/i.test(ua))os='macOS';else if(/Linux/i.test(ua))os='Linux';var match=ua.match(/(Wayfern|Edg|Vivaldi|OPR|Chromium|Chrome|Firefox)[/]([0-9]+)/)||[];var names={Wayfern:'Wayfern',Edg:'Edge',Vivaldi:'Vivaldi',OPR:'Opera',Chromium:'Chromium',Chrome:'Chrome',Firefox:'Firefox'};var brand=match[1]?String(names[match[1]]||match[1]):'';var major=match[2]||'';if(brand&&major)return os+' / '+brand+' '+major;if(major)return os+' / '+major;return os}
-    function applyNetwork(net){if(!net)return;currentNetwork=net;updateFlag(net.countryCode||'');var ip=net.ip||net.query||'';var directMode=isDirectMode(net);text('ip-ip',ip||(directMode?'本地直连':'未检测'));var ipEl=byId('ip-ip');if(ipEl)ipEl.classList.toggle('small',String(ip||'本地直连').length>22);text('country',countryDisplay(net));text('region',net.region||net.regionName);text('city',net.city);text('timezone',net.timezone);text('network-type',networkType(net));text('net-asn',net.asn);text('net-isp',net.isp);text('net-org',net.organization||net.org);text('net-location',[net.latitude,net.longitude].filter(function(v){return v!=null}).join(', ')||net.zip);text('asn-line',[net.asn,net.asName||net.isp].filter(Boolean).join(' · ')||(directMode?'直连出口':'网络身份读取中'));text('checked-at',net.checkedAt?'检测时间 '+new Date(net.checkedAt).toLocaleString():(ip?'出口数据已更新':(directMode?'直连可用，出口详情稍后补充':'-')));text('network-mode',directMode?'直连模式':String(BOOT.proxyProtocol||net.protocol||'代理').toUpperCase()+' 代理');var error=byId('ip-error');if(error){error.textContent='';error.classList.remove('show')}var note=byId('country-note');if(note){if(net.countryNote){note.textContent=net.countryNote;note.classList.add('show');note.style.display='block'}else{note.textContent='';note.classList.remove('show');note.style.display='none'}}if(ip)addFinding('network','good',0);else if(directMode)addFinding('network','good',0);evaluateConsistency();try{document.title=(ip?ip+' · ':'')+BOOT.title}catch(_){}}
+    function applyNetwork(net){
+      if(!net)return;
+      currentNetwork=net;
+      updateFlag(net.countryCode||'');
+      var ip=net.ip||net.query||'';
+      var route=net.route||BOOT.networkRoute;
+      text('ip-ip',ip||(net.probeError?'未取得出口 IP':'待检测'));
+      var ipEl=byId('ip-ip');if(ipEl)ipEl.classList.toggle('small',ip.length>22);
+      text('country',countryDisplay(net));text('region',net.region||net.regionName);text('city',net.city);text('timezone',net.timezone);
+      text('network-type',ip?networkType(net):'未知');text('net-asn',net.asn);text('net-isp',net.isp);text('net-org',net.organization||net.org);
+      text('net-location',[net.latitude,net.longitude].filter(function(v){return v!=null}).join(', ')||net.zip);
+      text('asn-line',[net.asn,net.asName||net.isp].filter(Boolean).join(' · ')||(ip?'已取得出口 IP':'等待出口数据'));
+      text('network-mode',route==='system'?'跟随系统代理设置':route==='direct'?'直连模式':String(BOOT.proxyProtocol||net.protocol||'代理').toUpperCase()+' 代理');
+      text('checked-at',net.probeError?(ip?'本次检测失败 · 显示上次结果':'出口 IP 未获取'):
+        net.checkedAt?'检测时间 '+new Date(net.checkedAt).toLocaleString():(ip?'出口数据已更新':'等待出口数据'));
+      var error=byId('ip-error');
+      if(error){error.textContent=net.probeError?'检测失败：'+net.probeError:'';error.classList.toggle('show',Boolean(net.probeError))}
+      var note=byId('country-note');if(note){if(net.countryNote){note.textContent=net.countryNote;note.classList.add('show');note.style.display='block'}else{note.textContent='';note.classList.remove('show');note.style.display='none'}}
+      addFinding('network',ip&&!net.probeError?'good':'warn',ip&&!net.probeError?0:1);
+      evaluateConsistency();
+      try{document.title=(ip?ip+' · ':'')+BOOT.title}catch(_){}
+    }
     function errorMessageOf(error){return String(error&&error.message||error||'未知错误')}
-    function isSessionError(message){return /unauthorized|401|session/i.test(String(message||''))}
-    // Always surface a failure. Previously the direct-connection branch returned
-    // silently, so a failed "测试代理 IP" click looked like a dead button.
-    function showNetworkError(error){var message=errorMessageOf(error);var session=isSessionError(message);var label=session?'启动页会话已失效，请在本机重新打开该环境':message;var detail=byId('ip-error');if(detail){detail.textContent=(session?'会话校验未通过：':'检测失败：')+label;detail.classList.add('show')}var at=byId('checked-at');if(at&&session)at.textContent=label;if(session){addFinding('network','warn',1);toast(label);return}var directMode=isDirectMode(currentNetwork);if(directMode){applyNetwork(Object.assign({},currentNetwork,{protocol:'direct',soft:true,checkedAt:Date.now()}))}else{text('ip-ip','检测失败');var el=byId('ip-ip');if(el)el.classList.add('small');addFinding('network','bad',4)}toast('出口检测失败：'+label)}
     function setRefreshBusy(busy){var button=byId('btn-refresh');if(!button)return;if(busy){if(!button.dataset.idleHtml)button.dataset.idleHtml=button.innerHTML;button.disabled=true;button.classList.add('busy');button.textContent='检测中…'}else{button.disabled=false;button.classList.remove('busy');var idle=button.dataset.idleHtml;if(idle){button.innerHTML=idle;button.dataset.idleHtml=''}}}
-    function refreshNetwork(options){options=options||{};if(!pid){if(!options.silent)toast('无环境 ID');return Promise.resolve()}setRefreshBusy(true);return api('/api/network?pid='+encodeURIComponent(pid)+'&refresh=1').then(function(result){applyNetwork(result.data);if(!options.silent&&result.data&&result.data.ip)toast('检测已更新')}).catch(function(error){if(options.silent){if(isDirectMode(currentNetwork))applyNetwork(Object.assign({},currentNetwork,{protocol:'direct',soft:true}));if(isSessionError(errorMessageOf(error))){var at=byId('checked-at');if(at)at.textContent='启动页会话已失效，请在本机重新打开该环境'}return}showNetworkError(error)}).finally(function(){setRefreshBusy(false)})}
+    function refreshNetwork(options){
+      options=options||{};
+      if(!pid){if(!options.silent)toast('无环境 ID');return Promise.resolve()}
+      setRefreshBusy(true);
+      return api('/api/network?pid='+encodeURIComponent(pid)+'&refresh=1').then(function(result){
+        var next=result.data||{};
+        if(!next.ip&&!next.probeError)next.probeError='检测服务未返回出口 IP';
+        applyNetwork(next);
+        if(!options.silent)toast(next.probeError?'出口检测失败：'+next.probeError:'检测已更新');
+      }).catch(function(error){
+        var message=errorMessageOf(error);
+        if(/unauthorized|401|session/i.test(message))message='启动页会话已失效，请在本机重新打开该环境';
+        applyNetwork(Object.assign({},currentNetwork,{probeError:message}));
+        if(!options.silent)toast('出口检测失败：'+message);
+      }).finally(function(){setRefreshBusy(false)})
+    }
 
     var updateNetworkView=applyNetwork;
     applyNetwork=function(net){updateNetworkView(net);renderHealthScore(net&&net.healthScore)};
@@ -411,7 +444,7 @@ function buildStartPageHtml(data = {}) {
     function unlockState(item){var u=String(item&&item.unlock||'');if(u==='unlocked')return 'good';if(u==='blocked')return 'bad';if(u==='reachable')return 'good';if(u==='unreachable')return 'warn';return item&&item.ok?'good':'warn'}
     function formatAccessLine(item){var parts=[];var accessCountry=item.accessCountry||item.siteCountry||item.exitCountry||'';var accessIp=item.accessIp||item.siteIp||item.exitIp||'';var siteIp=item.siteIp||'';var siteCountry=item.siteCountry||'';var exitIp=item.exitIp||'';var exitCountry=item.exitCountry||'';if(accessIp||accessCountry){parts.push('访问身份 '+(accessCountry||'未知地区')+(accessIp?' · '+accessIp:''))}if(siteIp&&siteIp!==accessIp){parts.push('站点可见 IP '+siteIp+(siteCountry?'（'+siteCountry+'）':''))}if(exitIp&&exitIp!==accessIp&&exitIp!==siteIp){parts.push('环境出口 '+(exitCountry||'')+(exitIp?' · '+exitIp:''))}if(item.colo)parts.push('边缘 '+item.colo);if(item.status)parts.push('HTTP '+item.status);return parts.join('；')||'无访问身份数据'}
     function checkReachability(force){var map={google:'reach-google',youtube:'reach-youtube',tiktok:'reach-tiktok',x:'reach-x',chatgpt:'reach-chatgpt',wikipedia:'reach-wikipedia',facebook:'reach-facebook',instagram:'reach-instagram',reddit:'reach-reddit'};Object.keys(map).forEach(function(id){setCheck(map[id],'na','检测中','正在检测连通性、访问 IP 地区与可用性信号。')});api('/api/reachability'+(force?'?refresh=1':'')).then(function(result){var data=result.data||{};Object.keys(map).forEach(function(id){var item=data[id]||{};var host=String(item.url||id).replace('https://','').replace('http://','');var line=formatAccessLine(item);var note=item.unlock==='unlocked'?'best-effort 可用性信号通过':item.unlock==='blocked'?'站点返回拦截/不可用信号':item.unlock==='reachable'?'连通正常，无独立可用性信号':item.error?String(item.error):'';if(item.ok||item.unlock==='unlocked'||item.unlock==='reachable'){setCheck(map[id],unlockState(item),unlockLabel(item),host+' · '+line+(note?'。'+note+'。':'。'))}else{setCheck(map[id],unlockState(item),unlockLabel(item),host+' 检测失败：'+(item.error||('HTTP '+(item.status||0)))+(line?'；'+line:'')+'。')}})}).catch(function(error){Object.keys(map).forEach(function(id){setCheck(map[id],'warn','失败','本地连通性检测失败：'+String(error&&error.message||error))})})}
-    function checkDnsLeak(){setCheck('check-dns','na','检测中','正在触发唯一探测域名并比对 DNS 解析器与出口地区。');api('/api/dns-leak').then(function(result){var data=result.data||{};var servers=Array.isArray(data.servers)?data.servers:[];var serverText=servers.slice(0,4).map(function(item){return item.ip+(item.countryCode?('('+item.countryCode+')'):'')}).join(', ');var detail=data.detail||'';if(serverText&&detail.indexOf(serverText)<0)detail=(detail?detail+'。':'')+'DNS: '+serverText;var state=data.state==='bad'?'bad':data.state==='good'?'good':data.state==='warn'?'warn':'na';setCheck('check-dns',state,data.label||'已检测',detail||'DNS 检测完成。');addFinding('dns',state==='bad'?'bad':state==='warn'?'warn':'good',state==='bad'?4:state==='warn'?2:0);renderScore()}).catch(function(error){setCheck('check-dns','warn','检测失败','DNS 泄露检测失败：'+String(error&&error.message||error));addFinding('dns','warn',1);renderScore()})}
+    function checkDnsLeak(){setCheck('check-dns','na','检测中','正在通过本机系统解析器探测 DNS 地区。');api('/api/dns-leak').then(function(result){var data=result.data||{};var servers=Array.isArray(data.servers)?data.servers:[];var serverText=servers.slice(0,4).map(function(item){return item.ip+(item.countryCode?('('+item.countryCode+')'):'')}).join(', ');var detail='来源：应用进程的系统 DNS。'+(data.detail||'');if(serverText&&detail.indexOf(serverText)<0)detail=(detail?detail+'。':'')+'DNS: '+serverText;var state=data.state==='bad'?'bad':data.state==='good'?'good':data.state==='warn'?'warn':'na';setCheck('check-dns',state,data.label||'已检测',detail||'DNS 检测完成。');addFinding('dns',state,state==='bad'?4:state==='warn'?2:0);renderScore()}).catch(function(error){setCheck('check-dns','warn','检测失败','DNS 泄露检测失败：'+String(error&&error.message||error));addFinding('dns','warn',1);renderScore()})}
     function languageMatchesCountry(language,country){if(!language||!country)return true;var region=String(language).split('-')[1];return !region||region.toUpperCase()===String(country).toUpperCase()}
     function evaluateConsistency(){if(!fingerprint.timezone)return;var expected=BOOT.expected||{};var exitTz=currentNetwork.timezone||'';var tzMatch=!exitTz||fingerprint.timezone===exitTz;if(tzMatch){setCheck('check-timezone','good','一致',exitTz?'浏览器与出口均为 '+exitTz+'。':'出口未返回时区，浏览器时区为 '+fingerprint.timezone+'。')}else{setCheck('check-timezone','warn','不一致','浏览器为 '+fingerprint.timezone+'，出口为 '+exitTz+'。')}addFinding('timezone',tzMatch?'good':'warn',2);var language=fingerprint.languages[0]||'';var languageMatch=languageMatchesCountry(language,currentNetwork.countryCode);if(languageMatch){setCheck('check-language','good','合理',language+' 与出口地区 '+(currentNetwork.countryCode||'未知')+' 未发现明显冲突。')}else{setCheck('check-language','warn','需核对',language+' 与出口地区 '+currentNetwork.countryCode+' 不一致。')}addFinding('language',languageMatch?'good':'warn',1);var uaMatch=!expected.userAgent||expected.userAgent===fingerprint.userAgent;addFinding('ua',uaMatch?'good':'warn',2)}
 
@@ -432,9 +465,8 @@ function buildStartPageHtml(data = {}) {
     setTimeout(function(){collectFingerprint('t2500')},2500);
     setTimeout(function(){collectFingerprint('t4000')},4000);
     collectWebrtc();checkReachability();checkDnsLeak();renderScore();
-    if(currentNetwork&&currentNetwork.ip)applyNetwork(currentNetwork);
-    else if(isDirectMode(currentNetwork)){applyNetwork(Object.assign({protocol:'direct'},currentNetwork));refreshNetwork({silent:true})}
-    else refreshNetwork({silent:true});
+    applyNetwork(currentNetwork);
+    if(!currentNetwork.ip)refreshNetwork({silent:true});
   })();
   </script>
 </body>

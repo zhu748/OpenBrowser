@@ -9,7 +9,59 @@ const fs = require("node:fs/promises"),
 const { BrowserEngine } = require("../engine"),
   { AccountStore } = require("../automation/account-store"),
   { LocalService } = require("./local-service");
+const { spawnSync } = require("node:child_process");
+const { isEncrypted, decryptCredential } = require("../credential-crypto");
+const { restoreAccountProfiles } = require("./accounts");
+
+async function interruptAccountWrite(root, operation) {
+  const engine = new BrowserEngine({ getPath: () => root });
+  const store = new AccountStore(path.join(root, "platform-accounts.enc"));
+  await engine.init(null);
+  await store.load();
+  const service = new LocalService({ engine, root, window: () => null, accountStore: () => store });
+  const [account] = await service.request("accounts:create", {
+    values: [{ platformUserName: "before-interruption", platformPassword: "synthetic-before" }],
+  });
+  const profile = await service.request("profiles:create", { windowName: "crash test", platformUrlIds: [account.id] });
+  await fs.writeFile(path.join(root, "test-ids.json"), JSON.stringify({ accountId: account.id, profileId: profile.id }));
+  const commit = engine.syncProfiles.bind(engine);
+  engine.syncProfiles = async (...args) => {
+    await commit(...args);
+    process.exit(77);
+  };
+  const method = "accounts:" + operation;
+  await service.request(method, operation === "delete" ? { ids: [account.id] } : {
+    platformList: [{ id: account.id, platformUserName: "after-interruption", platformPassword: "synthetic-after" }],
+  });
+  assert.fail("The process should have stopped after the window write");
+}
+
+async function checkInterruptedAccountWrite(root, operation) {
+  const dir = path.join(root, "interrupted-" + operation);
+  await fs.mkdir(dir);
+  const child = spawnSync(process.execPath, [__filename, "--interrupt", dir, operation], { encoding: "utf8", timeout: 30000 });
+  assert.equal(child.status, 77, child.error?.message || child.stderr);
+  const { accountId, profileId } = JSON.parse(await fs.readFile(path.join(dir, "test-ids.json"), "utf8"));
+  const file = path.join(dir, "platform-accounts.enc");
+  const pending = await fs.readFile(file);
+  assert.ok(isEncrypted(pending));
+  assert.equal(JSON.parse(decryptCredential(pending)).pendingProfileChanges.length, 1);
+  const engine = new BrowserEngine({ getPath: () => dir });
+  await engine.init(null);
+  const before = engine.profileForEdit(profileId).profile.platform.accounts[0];
+  assert.equal(before?.username, operation === "delete" ? undefined : "after-interruption");
+  const store = new AccountStore(file, { recoverProfileChanges: journal => restoreAccountProfiles(engine, journal) });
+  await store.load();
+  assert.equal(store.get(accountId).username, "before-interruption");
+  const recovered = engine.profileForEdit(profileId).profile.platform.accounts[0];
+  assert.equal(recovered.username, "before-interruption");
+  assert.equal(recovered.password, "synthetic-before");
+  assert.equal(JSON.parse(decryptCredential(await fs.readFile(file))).pendingProfileChanges, undefined);
+  await engine.flushPersistence();
+}
+
 (async () => {
+  if (process.argv[2] === "--interrupt") return interruptAccountWrite(process.argv[3], process.argv[4]);
   process.env.OPENBROWSER_MASTER_KEY = crypto.randomBytes(32).toString("hex");
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "ob-accounts-")),
     result = { status: "FAIL", checks: [] };
@@ -195,7 +247,6 @@ const { BrowserEngine } = require("../engine"),
     const originalFile = store.file,
       badFile = path.join(root, "unwritable-directory");
     await fs.mkdir(badFile);
-    store.file = badFile;
     const sync = engine.syncProfiles.bind(engine);
     let inject = true;
     engine.syncProfiles = async (profiles, ...args) => {
@@ -220,6 +271,7 @@ const { BrowserEngine } = require("../engine"),
             patch: { note: "concurrent note survives" },
           },
         ]);
+        store.file = badFile;
       }
       return outcome;
     };
@@ -265,6 +317,21 @@ const { BrowserEngine } = require("../engine"),
     result.checks.push(
       "删除解绑活动配置与回收站，保留 Cookie/登录数据；重新读取原库结果一致",
     );
+    for (const operation of ["update", "delete"]) await checkInterruptedAccountWrite(root, operation);
+    result.checks.push("更新或删除时强制退出，重启通过加密日志恢复关联窗口");
+
+    const [largeBinding] = await service.request("accounts:create", { values: [{ platformUserName: "large-binding" }] });
+    for (const createCount of [100, 100, 2]) {
+      await service.request("profiles:create-batch", { createCount, platformBindType: 2, platformUrlIds: [largeBinding.id] });
+    }
+    const { rows: [detail] } = await service.request("accounts:list", { id: largeBinding.id });
+    assert.equal(detail.boundProfileIds.length, 202);
+    for (const windowIds of [detail.boundProfileIds, detail.boundProfileIds.slice(1)]) {
+      const saved = await service.request("accounts:bind", { platformId: largeBinding.id, windowIds });
+      assert.deepEqual(saved.bound, windowIds);
+      assert.deepEqual((await service.request("accounts:list", { id: largeBinding.id })).rows[0].boundProfileIds, windowIds);
+    }
+    result.checks.push("超过旧上限的账号关联可以原样保存和修改");
     result.status = "PASS";
   } finally {
     await service?.agent.shutdown();

@@ -57,6 +57,8 @@ module.exports = {
       item.cleanupState = 'cleaning';
       item.cleanupAttempts = (item.cleanupAttempts || 0) + 1;
       item.cleanedUp = false;
+      item.expectedExit ??= options.expected === true;
+      item.exitCleanupReason ??= reason;
       item.stopping = true;
       this.clearRunningWatch(item);
       if (ownsSharedResources()) await saveDeferredSession(item, (url) => this.isStartPageUrl?.(url)).catch(() => {});
@@ -309,9 +311,12 @@ module.exports = {
           // /json/version proves browser process still exposes CDP
           await cdp.json(`http://127.0.0.1:${item.port}/json/version`);
           cdpAlive = true;
-          const pages = await cdp.tabs(item.port).catch(() => []);
-          if (pages.length) item.sessionUrls = pages.map((page) => page.url);
-          pageCount = Array.isArray(pages) ? pages.length : 0;
+          // An unavailable list gives us no evidence that the last window closed.
+          const pages = await cdp.tabs(item.port).catch(() => null);
+          if (Array.isArray(pages)) {
+            pageCount = pages.length;
+            if (pageCount) item.sessionUrls = pages.map((page) => page.url);
+          }
         } catch (_) {
           cdpAlive = false;
         }
@@ -382,7 +387,7 @@ module.exports = {
           item.watchEmptyTicks = 0;
           // New tabs must receive the same fingerprint inject as the launch tab.
           // Observe failures inside the watch loop and stop an unmanaged live target.
-          if (cdpCapable && item.fingerprint && item.profile && !item.fpEnsureBusy) {
+          if (pageCount > 0 && item.fingerprint && item.profile && !item.fpEnsureBusy) {
             item.fpEnsureBusy = true;
             const reFp = item.nativeKernelFingerprint
               ? fingerprintForNativeKernelInject(item.fingerprint)

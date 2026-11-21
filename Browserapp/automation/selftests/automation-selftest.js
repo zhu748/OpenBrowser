@@ -458,34 +458,69 @@ async function main() {
   };
   let directLookups = 0;
   let proxyLookups = 0;
+  let systemLookups = 0;
+  let failSystemProbe = false;
+  const systemNetwork = { ...directNetwork, ip: '198.51.100.31', protocol: 'system', route: 'system' };
+  const requestSystemNetwork = () => { throw Error('reachability fixture must stay in injected transport'); };
   const startPageEngine = {
     profiles: new Map([
       ['direct', { id: 'direct', name: 'Direct', number: 1, proxy: 'direct' }],
       ['direct-with-stale-proxy', { id: 'direct-with-stale-proxy', name: 'Direct with stale proxy', number: 3, networkMode: 'direct', proxy: 'http://127.0.0.1:18080' }],
       ['proxy', { id: 'proxy', name: 'Proxy', number: 2, proxy: 'http://127.0.0.1:18080' }],
+      ['system', { id: 'system', name: 'System route', number: 4, networkMode: 'direct', exitIp: directNetwork.ip }],
     ]),
     networkInfo: new Map(),
-    async checkProxy(profile) {
+    async testProxy(profile, options) {
       proxyLookups += 1;
+      assert.equal(require('../../engine/profile-sanitizer').sanitizeProfile(profile).networkMode, 'proxy');
       assert.strictEqual(profile.proxy, 'http://127.0.0.1:18080');
-      this.networkInfo.set(profile.id, proxyNetwork);
-      return proxyNetwork;
+      assert.deepEqual(options, { proxy: profile.proxy, allowExtract: false });
+      return { ...proxyNetwork, proxyRaw: 'http://fixture-secret@127.0.0.1:18080',
+        profile: { cookies: 'fixture-cookie', platform: { password: 'fixture-password' } } };
+    },
+    profileExitRoute(profile) {
+      if (profile.id === 'system') return 'system';
+      return profile.id === 'proxy' ? 'proxy' : 'direct';
+    },
+    requestSystemNetwork,
+    async lookupSystemNetwork() {
+      systemLookups++;
+      if (failSystemProbe) throw Error('system proxy unreachable');
+      return systemNetwork;
     },
   };
   const startPage = new StartPageServer({
     port: 0,
     engine: startPageEngine,
     lookupDirectNetwork: async () => { directLookups += 1; return directNetwork; },
-    lookupReachability: async () => ({ google: { ok: true, status: 204, url: 'https://www.google.com/generate_204' } }),
+    lookupReachability: async options => {
+      if (options.exitNetwork?.route === 'system') assert.equal(options.requestText, requestSystemNetwork);
+      if (options.exitNetwork?.route === 'proxy') assert.equal(options.proxy, 'http://127.0.0.1:18080');
+      return { google: { ok: true, status: 204, url: 'https://www.google.com/generate_204' } };
+    },
   });
   await startPage.start();
   const directUrl = startPage.registerSession(startPageEngine.profiles.get('direct'));
   startPage.registerSession(startPageEngine.profiles.get('direct-with-stale-proxy'));
   startPage.registerSession(startPageEngine.profiles.get('proxy'));
+  startPage.registerSession(startPageEngine.profiles.get('system'), { network: directNetwork });
   const directToken = startPage.getSession('direct').token;
   const staleProxyToken = startPage.getSession('direct-with-stale-proxy').token;
   const proxyToken = startPage.getSession('proxy').token;
   const startHeaders = (token) => ({ 'X-OpenBrowser-Start-Token': token });
+  const systemSession = startPage.getSession('system');
+  assert.equal(systemSession.exitIp, '', 'legacy direct IP cannot seed a system-route session');
+  const systemHeaders = startHeaders(systemSession.token);
+  const systemResponse = await httpJson(startPage.port, 'GET', '/api/network?pid=system&refresh=1', undefined, systemHeaders);
+  assert.equal(systemResponse.body.data.ip, systemNetwork.ip);
+  const systemReachability = await httpJson(startPage.port, 'GET', '/api/reachability?pid=system', undefined, systemHeaders);
+  assert.equal(systemReachability.status, 200);
+  failSystemProbe = true;
+  const failedSystem = await httpJson(startPage.port, 'GET', '/api/network?pid=system&refresh=1', undefined, systemHeaders);
+  assert.equal(failedSystem.body.data.ip, systemNetwork.ip);
+  assert.ok(failedSystem.body.data.probeError);
+  assert.equal(systemLookups, 2);
+  assert.equal(directLookups, 0);
   const anonymousStartResponse = await httpJson(startPage.port, 'GET', '/api/network?pid=direct&refresh=1');
   assert.strictEqual(anonymousStartResponse.status, 401);
   const badStartOrigin = await httpJson(startPage.port, 'GET', '/api/network?pid=direct&refresh=1', undefined, {
@@ -500,18 +535,31 @@ async function main() {
   assert.strictEqual(directResponse.body.data.healthScore.confidence, 'low');
   // Missing risk intel no longer surfaces a provider/unavailable factor in UI.
   assert.ok(!directResponse.body.data.healthScore.factors.some((item) => /pure|unavailable|ip-api|ipwho|ipinfo/i.test(String(item.code || '') + String(item.label || ''))));
-  const proxyResponse = await httpJson(startPage.port, 'GET', '/api/network?pid=proxy&refresh=1', undefined, startHeaders(proxyToken));
+  startPageEngine.profiles.set('proxy', { id: 'proxy', proxy: 'http://127.0.0.1:18081' });
+  const changedProxyNetwork = { ...proxyNetwork, ip: '198.51.100.21' };
+  startPageEngine.networkInfo.set('proxy', changedProxyNetwork);
+  const proxyHeaders = startHeaders(proxyToken);
+  const proxyResponse = await httpJson(startPage.port, 'GET', '/api/network?pid=proxy&refresh=1', undefined, proxyHeaders);
   assert.strictEqual(proxyResponse.status, 200);
   assert.strictEqual(proxyResponse.body.data.healthScore.score, 25);
   assert.strictEqual(proxyResponse.body.data.healthScore.level, 'risky');
   assert.strictEqual(proxyResponse.body.data.healthScore.label, '高风险');
-  assert.deepStrictEqual({ ...proxyResponse.body.data, healthScore: undefined }, { ...proxyNetwork, healthScore: undefined });
+  assert.deepStrictEqual({ ...proxyResponse.body.data, healthScore: undefined }, { ...proxyNetwork, route: 'proxy', healthScore: undefined });
+  assert.equal(startPageEngine.networkInfo.get('proxy'), changedProxyNetwork, 'a launch-session refresh is read-only with respect to the saved proxy');
+  const proxyReachability = await httpJson(startPage.port, 'GET', '/api/reachability?pid=proxy&refresh=1', undefined, proxyHeaders);
+  assert.equal(proxyReachability.status, 200);
+  assert.equal(proxyReachability.body.meta.exitIp, proxyNetwork.ip);
+  const proxySessionResponse = await httpJson(startPage.port, 'GET', '/api/session?pid=proxy', undefined, proxyHeaders);
+  assert.deepEqual(proxySessionResponse.body.data.network, proxyResponse.body.data);
+  const rawStart = await httpText(startPage.port, 'GET', '/?pid=proxy', proxyHeaders);
+  assert.equal(rawStart.status, 200);
+  assert.doesNotMatch(rawStart.body, /fixture-secret|fixture-cookie|fixture-password/);
   assert.strictEqual(directLookups, 1, 'direct network lookup runs once');
   assert.strictEqual(proxyLookups, 1, 'proxy network lookup receives the real proxy config');
   const staleProxyResponse = await httpJson(startPage.port, 'GET', '/api/network?pid=direct-with-stale-proxy&refresh=1', undefined, startHeaders(staleProxyToken));
   assert.strictEqual(staleProxyResponse.status, 200);
   assert.strictEqual(staleProxyResponse.body.data.healthScore.score, 70);
-  assert.deepStrictEqual({ ...staleProxyResponse.body.data, healthScore: undefined }, { ...directNetwork, healthScore: undefined });
+  assert.deepStrictEqual({ ...staleProxyResponse.body.data, healthScore: undefined }, { ...directNetwork, route: 'direct', healthScore: undefined });
   assert.strictEqual(directLookups, 2, 'explicit direct mode ignores stale proxy fields');
   assert.strictEqual(proxyLookups, 1, 'explicit direct mode never checks the stale proxy');
   const staleSessionResponse = await httpJson(startPage.port, 'GET', '/api/session?pid=stale-link');
@@ -547,12 +595,19 @@ async function main() {
     assert.strictEqual(res.headers['x-content-type-options'], 'nosniff', '401 page sets nosniff');
     assert.strictEqual(res.headers['cache-control'], 'no-store', '401 page is not cacheable');
   }
-  startPageEngine.checkProxy = async () => { throw new Error('connection refused'); };
-  startPage.updateNetwork('proxy', null);
-  startPage.getSession('proxy').network = null;
-  const failedProxyResponse = await httpJson(startPage.port, 'GET', '/api/network?pid=proxy&refresh=1', undefined, startHeaders(proxyToken));
+  startPageEngine.testProxy = async () => ({ ...changedProxyNetwork, stale: true });
+  const staleProbe = await httpJson(startPage.port, 'GET', '/api/network?pid=proxy&refresh=1', undefined, proxyHeaders);
+  assert.equal(staleProbe.body.data.ip, proxyNetwork.ip);
+  assert.ok(staleProbe.body.data.probeError, 'a stale result does not count as a successful refresh');
+  startPageEngine.testProxy = async () => { throw new Error('connection refused fixture-secret'); };
+  const failedOverCachedProxy = await httpJson(startPage.port, 'GET', '/api/network?pid=proxy&refresh=1', undefined, proxyHeaders);
+  assert.equal(failedOverCachedProxy.body.data.ip, proxyNetwork.ip);
+  assert.doesNotMatch(failedOverCachedProxy.body.data.probeError, /fixture-secret/);
+  startPage.registerSession({ id: 'proxy', proxy: 'http://127.0.0.1:18080' });
+  const failedProxyResponse = await httpJson(startPage.port, 'GET', '/api/network?pid=proxy&refresh=1', undefined, startHeaders(startPage.getSession('proxy').token));
   assert.strictEqual(failedProxyResponse.status, 500);
   assert.ok(failedProxyResponse.body.msg.includes('代理 127.0.0.1:18080 出口检测失败'));
+  assert.doesNotMatch(failedProxyResponse.body.msg, /fixture-secret/);
   const reachabilityResponse = await httpJson(startPage.port, 'GET', '/api/reachability?pid=direct', undefined, startHeaders(directToken));
   assert.strictEqual(reachabilityResponse.status, 200);
   assert.strictEqual(reachabilityResponse.body.data.google.status, 204);
@@ -561,7 +616,7 @@ async function main() {
   assert.ok(startHtml.includes("'X-OpenBrowser-Start-Token':sessionToken"));
   assert.ok(startHtml.includes("query.delete('token')"));
   assert.ok(directUrl.includes('token='));
-  assert.ok(startHtml.includes("text('ip-ip','检测失败')"));
+  assert.ok(startHtml.includes('未取得出口 IP'));
   assert.ok(startHtml.includes('id="ip-error"'));
   assert.ok(startHtml.includes('本地一致性评估'));
   assert.ok(startHtml.includes('IP 健康评分'));
@@ -580,7 +635,7 @@ async function main() {
   assert.ok(startHtml.includes('浏览器指纹表面'));
   assert.ok(startHtml.includes('WebRTC 地址暴露'));
   assert.ok(startHtml.includes('DNS 泄露'));
-  assert.ok(startHtml.includes('正在触发唯一探测域名'));
+  assert.ok(startHtml.includes('正在通过本机系统解析器探测 DNS 地区'));
   assert.ok(startHtml.includes('/api/dns-leak'));
   assert.ok(!startHtml.includes('未配置 OpenBrowser 专用唯一 DNS 检测节点'));
   assert.ok(!startHtml.includes('DNS 安全'));

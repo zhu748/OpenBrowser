@@ -89,34 +89,43 @@ async function fingerprintFields(_service, p) {
 }
 
 async function hostNetwork(service, p) {
-  if (p.probe && !(p.cached && service.hostNetwork?.ip && Date.now() - service.hostNetworkTime < 60000)) {
-    if (!service.hostNetworkProbe)
-      service.hostNetworkProbe = require("../host-network")
-        .probeHostNetwork()
-        .finally(() => {
-          service.hostNetworkProbe = null;
-        });
-    const result = await service.hostNetworkProbe;
+  const mode = p.mode === "local" || p.mode === "system" ? p.mode : undefined;
+  let network = service.hostNetwork;
+  if (p.probe && (mode || !(p.cached && network?.ip && Date.now() - service.hostNetworkTime < 60000))) {
+    const key = mode || "auto";
+    const probes = service.hostNetworkProbes ||= new Map();
+    if (!probes.has(key)) {
+      const engine = service.engine;
+      const probe = require("../host-network").probeHostNetwork({
+        mode,
+        lookupSystemNetwork: engine.requestSystemNetwork ? () => engine.lookupSystemNetwork() : undefined,
+      }).finally(() => { probes.delete(key); });
+      probes.set(key, probe);
+    }
+    const result = await probes.get(key);
     if (!result.ip) throw Error("网络定位未返回 IP");
-    service.hostNetwork = {
+    network = {
       ...result,
       country_code: result.countryCode || "",
     };
-    service.hostNetworkTime = Date.now();
+    if (!mode) {
+      service.hostNetwork = network;
+      service.hostNetworkTime = Date.now();
+    }
   }
 
   const entries = Object.values(require("node:os").networkInterfaces())
     .flat()
     .filter((v) => v && !v.internal);
   return {
-    ...service.hostNetwork,
-    ip: service.hostNetwork?.ip || "",
+    ...network,
+    ip: network?.ip || "",
     localAddress: entries.find((v) => v.family === "IPv4")?.address || "",
     timezone:
-      service.hostNetwork?.timezone ||
+      network?.timezone ||
       Intl.DateTimeFormat().resolvedOptions().timeZone,
-    country_code: service.hostNetwork?.country_code || "",
-    city: service.hostNetwork?.city || "",
+    country_code: network?.country_code || "",
+    city: network?.city || "",
   };
 }
 
