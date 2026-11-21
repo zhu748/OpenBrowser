@@ -23,7 +23,13 @@ const repo=path.resolve(__dirname,'../..');
   phase='enable';await row.getByRole('switch').click();await waitUntil(()=>row.getByRole('switch').getAttribute('aria-checked').then(value=>value==='true'));assert.equal(connects,2);await page.screenshot({path:path.join(evidence,'mcp-client-list-light.png')});
   result.checks.push('设置入口打开原 AgentSettingsRoute，原 HTTP 表单连接真实服务并验证、保存、启用；测试连接已释放，保存未额外出网');
   phase='edit';await row.getByRole('button',{name:'更多操作',exact:true}).click();await row.getByRole('button',{name:'编辑',exact:true}).click();assert.equal(await page.getByPlaceholder('https://...',{exact:true}).inputValue(),'http://127.0.0.1:'+server.address().port+'/mcp');await page.getByPlaceholder('输入服务名称',{exact:true}).fill('界面 MCP 改名');await page.getByRole('button',{name:'保存',exact:true}).click();await page.getByText('界面 MCP 改名',{exact:true}).waitFor();
-  await page.reload();await page.getByRole('button',{name:'MCP 服务',exact:true}).click();await page.getByText('界面 MCP 改名',{exact:true}).waitFor();assert.equal(connects,2);await page.evaluate(async()=>{const module=await import('/assets/theme-mq6SsndU.js');module.n().setTheme('dark');});await page.waitForFunction(()=>document.documentElement.dataset.theme==='dark');await page.screenshot({path:path.join(evidence,'mcp-client-list-dark.png')});
+  await page.reload();
+  await page.getByRole('heading',{name:'MCP 服务',exact:true}).waitFor();
+  await page.getByText('界面 MCP 改名',{exact:true}).waitFor();
+  assert.equal(connects,2);
+  await page.evaluate(async()=>{const module=await import('/assets/theme-mq6SsndU.js');module.n().setTheme('dark');});
+  await page.waitForFunction(()=>document.documentElement.dataset.theme==='dark');
+  await page.screenshot({path:path.join(evidence,'mcp-client-list-dark.png')});
   phase='disable-delete';const renamed=page.locator('.mcp-server-row').filter({hasText:'界面 MCP 改名'});await renamed.getByRole('switch').click();await waitUntil(()=>renamed.getByRole('switch').getAttribute('aria-checked').then(value=>value==='false'));await renamed.getByRole('button',{name:'更多操作',exact:true}).click();await renamed.getByRole('button',{name:'删除',exact:true}).click();await page.getByText('暂无 MCP',{exact:true}).waitFor();assert.equal((await page.evaluate(()=>globalThis.__agentRequest('mcp:list'))).data.length,0);
   result.checks.push('原编辑/改名、重载保留且不自动重连、暗色样式、停用与删除都对应真实加密存储；renderer HTTP/WebSocket 请求为零');assert.deepEqual(result.errors,[]);assert.deepEqual(result.externalRequests,[]);result.passed=true;
  }catch(error){result.failure={phase,error:error.stack};if(page){result.body=await page.locator('body').innerText().catch(()=>null);await page.screenshot({path:path.join(evidence,'agent-mcp-ui-failure.png')}).catch(()=>{});}}

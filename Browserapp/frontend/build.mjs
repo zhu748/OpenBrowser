@@ -16,6 +16,8 @@ await build({
   base: './',
   configFile: false,
   publicDir: false,
+  // Keep dependency module IDs relative to this checkout when node_modules is a junction.
+  resolve: { preserveSymlinks: true },
   plugins: [vue({ features: { optionsAPI: false } })],
   define: {
     // Compile the npm runtime for the Electron renderer's browser globals.
