@@ -496,12 +496,9 @@ function decryptCredentialJson(bufferOrString, options = {}) {
 }
 
 module.exports = {
-  MAGIC_SAFESTORAGE_V1,
-  MAGIC_AES_GCM_V1,
   isSafeStorageAvailable,
   setSafeStorageMock,
   getLocalMasterKey,
-  getMasterKeyFilePath,
   resetLocalMasterKeyCache,
   isEncrypted,
   isUnifiedSaltEnvelope,
@@ -512,8 +509,6 @@ module.exports = {
   decryptCredential,
   encryptCredentialJson,
   decryptCredentialJson,
-  // P2-11 test surface: salt cost-tag constants + negative-cache hook.
-  SALT_COST_TAG_DEFAULT: SALT_COST_TAG_DEFAULT,
-  SALT_COST_TAG_CLOUD: SALT_COST_TAG_CLOUD,
+  // P2-11 test surface: negative-cache hook.
   clearNegativeDecryptCache: clearNegativeDecryptCache,
 };

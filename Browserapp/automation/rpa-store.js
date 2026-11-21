@@ -6,7 +6,13 @@ const path = require('path');
 const crypto = require('crypto');
 const credentialCrypto = require('../credential-crypto');
 const { cloneBuiltinTemplates } = require('./rpa-templates-builtin');
-const localCatalog = require('./data/catalog-templates.json');
+// The 4 MB catalog is the offline fallback for remote template sync; load it
+// lazily so main-process startup never pays the JSON.parse cost up front.
+let localCatalogCache = null;
+function loadLocalCatalog() {
+  if (!localCatalogCache) localCatalogCache = require('./data/catalog-templates.json');
+  return localCatalogCache;
+}
 const {
   syncRemoteTemplateStore,
   normalizeRemoteTemplate,
@@ -385,6 +391,7 @@ class RpaStore {
   }
 
   async ensureLocalCatalogTemplates() {
+    const localCatalog = loadLocalCatalog();
     const catalogTemplates = Array.isArray(localCatalog.templates) ? localCatalog.templates : [];
     // Collapse historical external/catalog id variants onto catalog-<id>.
     const byCanonical = new Map();

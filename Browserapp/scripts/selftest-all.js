@@ -112,8 +112,8 @@ const SUITE = [
   ['selftest:reviewupdate', 'automation/selftests/review-update-selftest.js'],
   ['selftest:reviewinputmetrics', 'automation/selftests/review-input-metrics-selftest.js'],
   ['selftest:cloudrecovery', 'automation/selftests/cloud-recovery-selftest.js'],
-  ['selftest:environment', 'environment-audit-selftest.js'],
-  ['selftest:hardening', 'security-hardening-selftest.js'],
+  ['selftest:environment', 'automation/selftests/environment-audit-selftest.js'],
+  ['selftest:hardening', 'automation/selftests/security-hardening-selftest.js'],
   ['selftest:addresspolicy', 'automation/selftests/address-policy-selftest.js'],
   ['selftest:profilecommands', 'automation/selftests/profile-command-client-selftest.js'],
   ['selftest:runtimemanifest', 'automation/selftests/runtime-manifest-selftest.js'],
@@ -158,9 +158,9 @@ const SUITE = [
   ['selftest:apikeyconcurrency', 'automation/selftests/api-key-concurrency-selftest.js'],
   ['selftest:isolation', 'automation/selftests/isolation-fingerprint-selftest.js'],
   ['selftest:isolationasync', 'automation/selftests/isolation-async-lock-selftest.js'],
-  ['selftest:i18n', 'i18n-selftest.js'],
+  ['selftest:i18n', 'automation/selftests/i18n-selftest.js'],
   ['selftest:typing', 'automation/selftests/human-typing-selftest.js'],
-  ['selftest:templates', 'rpa-template-audit-selftest.js'],
+  ['selftest:templates', 'automation/selftests/rpa-template-audit-selftest.js'],
   ['selftest:port', 'automation/selftests/local-api-port-selftest.js'],
   ['selftest:shellguard', 'automation/selftests/shell-guard-selftest.js'],
   ['selftest:portscan', 'automation/selftests/port-scan-protection-selftest.js'],
@@ -188,28 +188,28 @@ const SUITE = [
   ['selftest:nav', 'automation/selftests/navigation-policy-selftest.js'],
   ['selftest:crash', 'automation/selftests/crash-report-selftest.js'],
   ['selftest:machineid', 'automation/selftests/machine-id-selftest.js'],
-  ['selftest:proxyauth', 'proxy-forwarder-selftest.js'],
-  ['selftest:proxyfeature', 'proxy-feature-selftest.js'],
-  ['selftest:socks5complete', 'socks5-auth-complete-selftest.js'],
-  ['selftest:socks5reset', 'socks5-reset-selftest.js'],
-  ['selftest:socks5retry', 'socks5-retry-selftest.js'],
+  ['selftest:proxyauth', 'automation/selftests/proxy-forwarder-selftest.js'],
+  ['selftest:proxyfeature', 'automation/selftests/proxy-feature-selftest.js'],
+  ['selftest:socks5complete', 'automation/selftests/socks5-auth-complete-selftest.js'],
+  ['selftest:socks5reset', 'automation/selftests/socks5-reset-selftest.js'],
+  ['selftest:socks5retry', 'automation/selftests/socks5-retry-selftest.js'],
   ['selftest:dnsleakclassify', 'automation/selftests/dns-leak-classify-selftest.js'],
   ['selftest:proxyconcurrency', 'automation/selftests/proxy-concurrency-selftest.js'],
   ['selftest:localapi', 'automation/selftests/local-api-profile-selftest.js'],
   ['selftest:localapiws', 'automation/selftests/local-api-ws-selftest.js'],
   ['selftest:mcp', 'automation/selftests/mcp-control-selftest.js'],
-  ['selftest:profiles', 'profile-workflow-selftest.js'],
-  ['selftest:lifecycle', 'lifecycle-selftest.js'],
-  ['selftest:proxyformat', 'proxy-format-selftest.js'],
-  ['selftest:proxypersist', 'proxy-persistence-selftest.js'],
+  ['selftest:profiles', 'automation/selftests/profile-workflow-selftest.js'],
+  ['selftest:lifecycle', 'automation/selftests/lifecycle-selftest.js'],
+  ['selftest:proxyformat', 'automation/selftests/proxy-format-selftest.js'],
+  ['selftest:proxypersist', 'automation/selftests/proxy-persistence-selftest.js'],
   ['selftest:startupbarrier', 'automation/selftests/startup-consistency-and-barrier-selftest.js'],
   ['selftest:fpstability', 'automation/selftests/fingerprint-stability-selftest.js'],
   ['selftest:updatetrust', 'automation/update-trust-tool.js'],
   ['selftest:updatechecksum', 'automation/selftests/update-checksum-selftest.js'],
   ['selftest:automation', 'automation/selftests/automation-selftest.js'],
   ['selftest:tzfallback', 'automation/selftests/timezone-country-fallback-selftest.js'],
-  ['selftest:persona', 'device-persona-selftest.js'],
-  ['selftest:fontpersona', 'font-persona-selftest.js'],
+  ['selftest:persona', 'automation/selftests/device-persona-selftest.js'],
+  ['selftest:fontpersona', 'automation/selftests/font-persona-selftest.js'],
   ['selftest:fingerprintpool', 'automation/selftests/fingerprint-pool-selftest.js'],
   ['selftest:fingerprintcoverage', 'automation/selftests/fingerprint-coverage-selftest.js'],
   ['selftest:emittedscriptparse', 'automation/selftests/emitted-script-parse-matrix-selftest.js'],
@@ -217,7 +217,7 @@ const SUITE = [
   ['selftest:cssfontrewrite', 'automation/selftests/css-font-response-rewrite-e2e-selftest.js', { darwinOnly: true }],
   // Rescued from the orphan backlog (P1 audit): real tests of production
   // code that were never registered anywhere, so CI silently never ran them.
-  ['selftest:extstate', 'extension-state-unit-selftest.js'],
+  ['selftest:extstate', 'automation/selftests/extension-state-unit-selftest.js'],
   ['selftest:extensionsapi', 'automation/selftests/extensions-api-selftest.js'],
   ['selftest:extensionsipc', 'automation/selftests/extensions-ipc-selftest.js'],
   ['selftest:kernelipc', 'automation/selftests/kernel-ipc-selftest.js'],
@@ -228,11 +228,11 @@ const SUITE = [
   ['selftest:rpafiles', 'automation/selftests/rpa-file-steps-selftest.js'],
   ['selftest:rpabudget', 'automation/selftests/rpa-store-budget-selftest.js'],
   ['selftest:rpaopen', 'automation/selftests/rpa-open-queue-selftest.js'],
-  ['selftest:profile-list', 'profile-list-selftest.js'],
+  ['selftest:profile-list', 'automation/selftests/profile-list-selftest.js'],
   ['selftest:profilestate', 'automation/selftests/profile-state-selftest.js'],
   ['selftest:refreshscheduler', 'automation/selftests/refresh-scheduler-selftest.js'],
   ['selftest:crx', 'automation/selftests/crx-reader-selftest.js'],
-  ['selftest:ui-modules', 'ui-module-load-selftest.js'],
+  ['selftest:ui-modules', 'automation/selftests/ui-module-load-selftest.js'],
   ['selftest:groupsui', 'automation/selftests/groups-ui-selftest.js'],
   ['selftest:uabuilder', 'automation/selftests/ua-builder-selftest.js'],
   ['selftest:fpreliability', 'automation/selftests/fingerprint-reliability-selftest.js'],
@@ -242,15 +242,15 @@ const SUITE = [
   ['selftest:urlpolicy', 'automation/selftests/url-access-policy-selftest.js'],
   ['selftest:mobilepersonas', 'automation/selftests/mobile-personas-selftest.js'],
   ['selftest:fpdeliveryboundaries', 'automation/selftests/fingerprint-delivery-boundaries-selftest.js'],
-  ['selftest:profilebatch', 'profile-batch-unit-selftest.js'],
-  ['selftest:syncbackpressure', 'sync-backpressure-unit-selftest.js'],
-  ['selftest:syncsettings', 'sync-settings-unit-selftest.js'],
-  ['selftest:tabmapping', 'tab-mapping-unit-selftest.js'],
+  ['selftest:profilebatch', 'automation/selftests/profile-batch-unit-selftest.js'],
+  ['selftest:syncbackpressure', 'automation/selftests/sync-backpressure-unit-selftest.js'],
+  ['selftest:syncsettings', 'automation/selftests/sync-settings-unit-selftest.js'],
+  ['selftest:tabmapping', 'automation/selftests/tab-mapping-unit-selftest.js'],
   ['selftest:extensionsync', 'automation/selftests/extension-sync-boundaries-selftest.js'],
   ['selftest:extensionpipe', 'automation/selftests/extension-pipe-selftest.js'],
-  ['selftest:storeoffline', 'store-offline-selftest.js'],
+  ['selftest:storeoffline', 'automation/selftests/store-offline-selftest.js'],
   ['selftest:storeresponse', 'automation/selftests/store-response-selftest.js'],
-  ['selftest:cdpconnection', 'cdp-connection-selftest.js'],
+  ['selftest:cdpconnection', 'automation/selftests/cdp-connection-selftest.js'],
   ['selftest:hostruntime', 'scripts/ensure-host-runtime-selftest.js'],
   ['selftest:workerstorageparity', 'automation/selftests/worker-storage-estimate-parity-selftest.js'],
   ['selftest:iphealth', 'automation/selftests/ip-health-score-selftest.js'],
@@ -276,8 +276,8 @@ const SUITE = [
   // Repaired legacy failures (theme legacy-naming residue, fullscreen state
   // commit timing, fpalign CPU/memory options, probebudget keepalive): real
   // tests of production code that were failing or silently not asserting.
-  ['selftest:theme', 'theme-modern-selftest.js'],
-  ['selftest:fullscreen', 'fullscreen-window-sync-selftest.js'],
+  ['selftest:theme', 'automation/selftests/theme-modern-selftest.js'],
+  ['selftest:fullscreen', 'automation/selftests/fullscreen-window-sync-selftest.js'],
   ['selftest:fpalign', 'automation/selftests/fingerprint-alignment-selftest.js'],
   ['selftest:probebudget', 'automation/selftests/proxy-probe-budget-selftest.js'],
   // Native-browser gates (Chromium/Firefox fingerprints on real kernels). They need
@@ -306,11 +306,18 @@ const SUITE = [
   // Registry-consistency guard: with SUITE as the single registry this is
   // what stops package.json from silently re-accumulating duplicate
   // selftest:* entries (P2 single-registry consolidation).
+  // Offline selftests promoted from npm-only entries into the aggregate gate:
+  // each needs no kernel, display or network, so they were only ever run by
+  // hand before. This closes the "exists on disk but never runs in CI" gap.
+  ['selftest:colormode', 'automation/selftests/color-mode-selftest.js'],
+  ['selftest:waitforport', 'automation/selftests/waitforport-selftest.js'],
+  ['selftest:uidialogs', 'automation/selftests/ui-dialogs-selftest.js'],
+  ['selftest:devprofile', 'automation/selftests/device-profile-wiring-selftest.js'],
+  ['selftest:prepfiles', 'automation/selftests/prepare-profile-files-selftest.js'],
   ['selftest:registry', 'automation/selftests/selftest-registry-consistency-selftest.js'],
   // Out-of-gate scripts and their real prerequisites — they are NOT
   // registered here and keep their individual npm scripts:
-  // - selftest.js, live-sync-v4-selftest.js and
-  //   browser-startup-diagnostic-selftest.js need a real Chromium/display.
+  // - browser-startup-diagnostic-selftest.js needs a real Chromium/display.
   // - rust-core-*-selftest.js (parity/chaos) need NO Chromium: they use
   //   node builtins only (http/net/child_process + ps) against a built
   //   Rust core binary (npm run build:rustcore output under

@@ -102,7 +102,7 @@ component notices are included as `runtime/LICENSES.chromium.html`.
 | Installer paths | Evidence to record before redistribution |
 | --- | --- |
 | `roxy-ui/` | Supplier, revision and license for the retained precompiled scripts, styles, images and fonts. The build input hashes are recorded in `rebuild/compiler/source-manifest.json`. |
-| `assets/font-subsets/` and `assets/fonts/` | Upstream family, exact source and applicable redistribution terms for each shipped font. The development directory `assets/fonts/_preview/` is excluded. |
+| `assets/font-subsets/` and `assets/fonts/` | Upstream family, exact source and applicable redistribution terms for each shipped font. |
 | `native-*.cs` and Windows helper executables | Upstream revision, adapted files and applicable license per helper. Preserve the source corresponding to each Windows executable. |
 
 ## Acorn

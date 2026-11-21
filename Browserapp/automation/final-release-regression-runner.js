@@ -140,7 +140,7 @@ const COVERAGE_DOMAINS = [
     domain: "Platform CI Baseline & Surface Integrity",
     description: "Exact cross-platform workflow selftests that run before packaging and guard injection surface integrity",
     suites: [
-      { key: "selftest:environment", script: "node environment-audit-selftest.js", file: "environment-audit-selftest.js" },
+      { key: "selftest:environment", script: "node automation/selftests/environment-audit-selftest.js", file: "automation/selftests/environment-audit-selftest.js" },
       { key: "selftest:automation", script: "node automation/selftests/automation-selftest.js", file: "automation/selftests/automation-selftest.js" },
       { key: "selftest:protocol", script: "node automation/protocol/protocol-selftest.js", file: "automation/protocol/protocol-selftest.js" },
       { key: "selftest:isolation", script: "node automation/selftests/isolation-fingerprint-selftest.js", file: "automation/selftests/isolation-fingerprint-selftest.js" },
@@ -149,7 +149,7 @@ const COVERAGE_DOMAINS = [
       { key: "selftest:kernelinit", script: "node automation/selftests/kernel-init-sync-selftest.js", file: "automation/selftests/kernel-init-sync-selftest.js" },
       { key: "selftest:fpcoverage", script: "node automation/selftests/fingerprint-coverage-selftest.js", file: "automation/selftests/fingerprint-coverage-selftest.js" },
       { key: "selftest:fontnative", script: "node automation/selftests/font-native-layer-selftest.js", file: "automation/selftests/font-native-layer-selftest.js" },
-      { key: "selftest:stealth", script: "node fingerprint-stealth-selftest.js", file: "fingerprint-stealth-selftest.js" },
+      { key: "selftest:stealth", script: "node automation/selftests/fingerprint-stealth-selftest.js", file: "automation/selftests/fingerprint-stealth-selftest.js" },
       { key: "selftest:webglparams", script: "node automation/selftests/webgl-params-e2e-selftest.js", file: "automation/selftests/webgl-params-e2e-selftest.js" },
       { key: "selftest:surfacediff", script: "node automation/selftests/surface-integrity-e2e-selftest.js", file: "automation/selftests/surface-integrity-e2e-selftest.js" },
       { key: "selftest:mediae2e", script: "node automation/selftests/media-devices-e2e-selftest.js", file: "automation/selftests/media-devices-e2e-selftest.js" },
@@ -248,7 +248,7 @@ const COVERAGE_DOMAINS = [
     domain: "Window Management & UI Fixes (Issue #19)",
     description: "Action buttons geometry, DPI scaling flag, cascade bounds clamp, and internal page mirroring",
     suites: [
-      { key: "selftest:uiactions", script: "node profile-action-buttons-ui-selftest.js", file: "profile-action-buttons-ui-selftest.js" },
+      { key: "selftest:uiactions", script: "node automation/selftests/profile-action-buttons-ui-selftest.js", file: "automation/selftests/profile-action-buttons-ui-selftest.js" },
       { key: "selftest:windpi", script: "node automation/selftests/windows-dpi-scale-factor-selftest.js", file: "automation/selftests/windows-dpi-scale-factor-selftest.js" },
       { key: "selftest:wincascade", script: "node automation/selftests/window-sync-cascade-bounds-selftest.js", file: "automation/selftests/window-sync-cascade-bounds-selftest.js" },
       { key: "selftest:internalpagesync", script: "node automation/selftests/internal-pages-tab-sync-selftest.js", file: "automation/selftests/internal-pages-tab-sync-selftest.js" },
@@ -259,10 +259,10 @@ const COVERAGE_DOMAINS = [
     domain: "Proxy Authentication & Protocol Forwarding (Issue #22)",
     description: "SOCKS5 upstream dual-mode handshake, credential isolation with special characters, and authenticated HTTP CONNECT tunneling",
     suites: [
-      { key: "selftest:proxyauth", script: "node proxy-forwarder-selftest.js", file: "proxy-forwarder-selftest.js" },
-      { key: "selftest:socks5complete", script: "node socks5-auth-complete-selftest.js", file: "socks5-auth-complete-selftest.js" },
-      { key: "selftest:socks5reset", script: "node socks5-reset-selftest.js", file: "socks5-reset-selftest.js" },
-      { key: "selftest:socks5retry", script: "node socks5-retry-selftest.js", file: "socks5-retry-selftest.js" },
+      { key: "selftest:proxyauth", script: "node automation/selftests/proxy-forwarder-selftest.js", file: "automation/selftests/proxy-forwarder-selftest.js" },
+      { key: "selftest:socks5complete", script: "node automation/selftests/socks5-auth-complete-selftest.js", file: "automation/selftests/socks5-auth-complete-selftest.js" },
+      { key: "selftest:socks5reset", script: "node automation/selftests/socks5-reset-selftest.js", file: "automation/selftests/socks5-reset-selftest.js" },
+      { key: "selftest:socks5retry", script: "node automation/selftests/socks5-retry-selftest.js", file: "automation/selftests/socks5-retry-selftest.js" },
       { key: "selftest:proxyprobe", script: "node automation/selftests/proxy-probe-resilience-selftest.js", file: "automation/selftests/proxy-probe-resilience-selftest.js" },
     ]
   },

@@ -391,7 +391,7 @@ CDP 连接复用、RPA 文件操作、API 嵌套凭据和状态索引的本次�
 | Rust 核心 | `crates/openbrowser-core/src/{proxy,sync,process,tls}` | 可选代理桥、同步/进程/TLS 库；生产接线范围见 `rust-core-decision.md` |
 | 构建与开发工具 | `Browserapp/scripts/`、`.github/workflows/` | 启动、打包、获取内核、检查注册表、性能基准、CI |
 | 发布资源清单 | `Browserapp/scripts/runtime-manifest.js` | 显式列出顶层运行入口及资源领域，保留原生辅助程序和供应商树；排除开发、自测与审计工具，并检查复制后的目录 |
-| 自动检查 | `Browserapp/automation/selftests/`、各目录 `*-selftest.js` | Node 单元/集成检查、真实内核检查；是否进入聚合执行由 SUITE 注册表决定 |
+| 自动检查 | `Browserapp/automation/selftests/`（Node 自测统一位置）、`rebuild/*-selftest.cjs` | Node 单元/集成检查、真实内核检查；是否进入聚合执行由 SUITE 注册表决定；根目录不再存放自测脚本 |
 | 手动审计工具 | `Browserapp/automation/*audit*.js`、`final-release-regression-runner.js` | 对抗审计和发布验收；运行前确认内核、系统、网络及数据目录前提 |
 | 数据与资源 | `Browserapp/automation/data/`、`assets/`、`kernels/` | 生成语言数据、字体/图像、第三方内核；内核存在指针文件时仍需物化和校验 |
 

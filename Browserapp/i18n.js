@@ -458,7 +458,6 @@
     BROWSER_LOCALES,
     t,
     tf,
-    detectSystemLocale,
     getPreference: () => preference,
     getLocale: () => resolved,
     setPreference,
@@ -467,7 +466,6 @@
     onChange,
     fillLocaleSelect,
     fillBrowserLanguageSelect,
-    normalizeTag,
     translateChineseUiText,
   };
 

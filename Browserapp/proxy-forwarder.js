@@ -1201,13 +1201,6 @@ function clearProbeCache() {
   clearProviderCooldowns();
 }
 
-function getProbeCacheStats() {
-  return {
-    size: probeMemoryCache.size,
-    maxEntries: probeMemoryCache.maxEntries,
-  };
-}
-
 function resolveProbeCacheTtl(options = {}) {
   if (Number.isFinite(options.ttlMs) && options.ttlMs > 0) return options.ttlMs;
   if (Number.isFinite(options.cacheTtlMs) && options.cacheTtlMs > 0) return options.cacheTtlMs;
@@ -1679,34 +1672,6 @@ async function lookupProxyIfconfigMe(config) {
   });
 }
 
-async function probeProxyTunnel(config, hostname = 'www.google.com', port = 443) {
-  const bridge = await startAuthenticatedProxy(config); let socket;
-  try {
-    socket = await connectBridge(bridge, hostname, port);
-    return { hostname, port };
-  } finally {
-    socket?.destroy(); await bridge.close().catch(() => {});
-  }
-}
-
-async function probeProxyHttps(config, hostname = 'www.google.com', pathname = '/generate_204', options = {}) {
-  const bridge = await startAuthenticatedProxy(config); let socket; let secure;
-  try {
-    socket = await connectBridge(bridge, hostname, 443);
-    const tlsProfile = resolveTlsProfile(options.tlsProfile || config.tlsProfile || 'auto');
-    secure = tls.connect(tlsConnectOptionsFromProfile(tlsProfile, { socket, servername: hostname, rejectUnauthorized: true }));
-    await new Promise((resolve, reject) => { const timer = setTimeout(() => { secure.destroy(); reject(new Error('Google HTTPS handshake timed out')); }, 15000); secure.once('secureConnect', () => { clearTimeout(timer); resolve(); }); secure.once('error', (error) => { clearTimeout(timer); reject(error); }); });
-    const reader = new BufferedReader(secure);
-    secure.write('HEAD ' + pathname + ' HTTP/1.1\r\nHost: ' + hostname + '\r\nConnection: close\r\nUser-Agent: OpenBrowser/2.0\r\n\r\n');
-    const header = (await reader.readUntil('\r\n\r\n', 65536, 15000)).toString('latin1'); reader.release();
-    const status = Number(header.split('\r\n', 1)[0].match(/\s(\d{3})(?:\s|$)/)?.[1] || 0);
-    if (status < 200 || status >= 400) throw new Error('Google HTTPS probe returned HTTP ' + status);
-    return { hostname, status };
-  } finally {
-    secure?.destroy(); socket?.destroy(); await bridge.close().catch(() => {});
-  }
-}
-
 module.exports = {
   parseProxy,
   parseProxyInput,
@@ -1714,7 +1679,6 @@ module.exports = {
   displayProxy,
   normalizeIpLookupChannel,
   startAuthenticatedProxy,
-  startProxyBridge: startAuthenticatedProxy,
   needsProxyBridge,
   startSocks5Bridge,
   retryableSocksError,
@@ -1725,8 +1689,6 @@ module.exports = {
   parseCloudflareTrace,
   normalizeIpInfoResult,
   normalizeIfconfigMeResult,
-  probeProxyTunnel,
-  probeProxyHttps,
   classifyProxyError,
   networkTypeFromLookup,
   fetchUrlText,
@@ -1742,15 +1704,12 @@ module.exports = {
   tlsConnectOptionsFromProfile,
   TLS_PROFILE_PRESETS,
   connectSocket,
-  getProxyDohLookup,
   setProxyDohResolver,
   clearProbeCache,
-  getProbeCacheStats,
   getProbeCacheKey,
   isProxyLinkError,
   isProbeServiceError,
   ProbeMemoryCache,
-  DEFAULT_PROBE_CACHE_TTL_MS,
   normalizeIpWhoisAppResult,
   normalizeFreeIpApiResult,
   recordProviderRateLimit,

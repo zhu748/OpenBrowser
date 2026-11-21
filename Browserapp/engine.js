@@ -99,16 +99,7 @@ installCdpHardening(cdp);
  * 14. priority: HTTP/2 与 HTTP/3 流优先级控制头。
  */
 const {
-  CHROMIUM_CANONICAL_HEADER_ORDER,
-  CHROMIUM_CANONICAL_HEADER_INDEX,
   RequestHeaderRewriter,
-  createRequestHeaderRewriter,
-  normalizePlatformFamily,
-  detectUaPlatform,
-  extractChromeMajor,
-  extractGpuBrand,
-  normalizeTimezone,
-  extractPrimaryLanguage,
   backgroundNetworkFlagsForProfile,
   evaluateFingerprintDelivery,
 } = require('./automation/request-header-rewriter');
@@ -1534,15 +1525,6 @@ module.exports = {
   isValidIanaTimezone,
   extractTimezoneFromArgs,
   RequestHeaderRewriter,
-  createRequestHeaderRewriter,
-  CHROMIUM_CANONICAL_HEADER_ORDER,
-  CHROMIUM_CANONICAL_HEADER_INDEX,
   evaluateFingerprintDelivery,
-  normalizePlatformFamily,
-  detectUaPlatform,
-  extractChromeMajor,
-  extractGpuBrand,
-  normalizeTimezone,
-  extractPrimaryLanguage,
   backgroundNetworkFlagsForProfile,
 };

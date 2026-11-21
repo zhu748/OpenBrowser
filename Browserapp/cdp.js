@@ -587,4 +587,4 @@ async function setWindowBounds(port, bounds, options = {}) {
   return { windowId: value.windowId, bounds: next };
 }
 
-module.exports = { json, call, connect, PersistentConnection, closePooledSocket, closeAllPooledSockets, targets, tabs, browserSocket, newTab, closeTab, activateTab, firstTab, activeTab, focusedEditableTab, insertText, clearFocused, navigate, reload, windowForTarget, windowForPort, setWindowState, setWindowBounds, __test: { focusedEditableExpression, chooseFocusedEditable, textWasInserted, waitForWindowState, callDedicated, pool: { callPool, POOL_MAX, setIdleMs: (ms) => { POOL_IDLE_MS = Number(ms) || 30_000; }, get idleMs() { return POOL_IDLE_MS; } } } };
+module.exports = { json, call, connect, PersistentConnection, closePooledSocket, closeAllPooledSockets, targets, tabs, browserSocket, newTab, closeTab, activateTab, firstTab, activeTab, focusedEditableTab, insertText, clearFocused, navigate, reload, windowForPort, setWindowState, setWindowBounds, __test: { focusedEditableExpression, callDedicated, pool: { callPool, POOL_MAX, setIdleMs: (ms) => { POOL_IDLE_MS = Number(ms) || 30_000; }, get idleMs() { return POOL_IDLE_MS; } } } };

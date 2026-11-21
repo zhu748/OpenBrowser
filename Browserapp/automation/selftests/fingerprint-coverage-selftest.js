@@ -312,7 +312,7 @@ check('release gate and all core fingerprint suites are registered in package.js
     { key: 'selftest:mobilefp', file: 'automation/selftests/mobile-fingerprint-e2e-selftest.js' },
     { key: 'selftest:tzcountry', file: 'automation/selftests/timezone-country-fallback-selftest.js' },
     { key: 'selftest:wintzkernel', file: 'automation/selftests/windows-timezone-kernel-e2e-selftest.js' },
-    { key: 'selftest:uiactions', file: 'profile-action-buttons-ui-selftest.js' },
+    { key: 'selftest:uiactions', file: 'automation/selftests/profile-action-buttons-ui-selftest.js' },
     { key: 'selftest:internalpagesync', file: 'automation/selftests/internal-pages-tab-sync-selftest.js' },
     { key: 'selftest:windpi', file: 'automation/selftests/windows-dpi-scale-factor-selftest.js' },
     { key: 'selftest:wincascade', file: 'automation/selftests/window-sync-cascade-bounds-selftest.js' },

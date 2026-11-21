@@ -247,6 +247,14 @@ A normal `git clone` provides the build inputs, including source code, static as
 
 ## Documentation
 
+- [Code organization and maintenance guide](./docs/code-organization.md)
+- [Queue, status and interrupted-recovery optimization](./docs/dev-reports/2026-11-11-queue-status-recovery-optimization.md)
+- [Security, execution and recovery optimization](./docs/dev-reports/2026-11-11-security-runtime-optimization.md)
+- [Project review and optimization log](./docs/dev-reports/2026-11-10-project-review.md)
+- [Session query, transaction and hash optimization](./docs/dev-reports/2026-11-10-next-optimization.md)
+- [Performance and maintainability review](./docs/dev-reports/2026-11-10-performance-maintainability-review.md)
+- [Persistence and module optimization round two](./docs/dev-reports/2026-11-10-round2-persistence-and-modules.md)
+- [RPA lifecycle and capacity optimization round three](./docs/dev-reports/2026-11-10-round3-rpa-lifecycle-and-budget.md)
 - [Automation module](./Browserapp/automation/README.md)
 - [Disclaimer](./DISCLAIMER.md)
 - [Third-party notices](./Browserapp/THIRD-PARTY-NOTICES.md)

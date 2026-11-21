@@ -1071,7 +1071,7 @@ function syncSettingsFromForm() {
 async function applySyncSettings(value, announce = false) {
   syncSettings = normalizeSyncSettings(value); localStorage.setItem(SYNC_SETTINGS_KEY, JSON.stringify(syncSettings)); fillSyncSettingsForm();
   await window.ops.setSyncSettings(syncSettings);
-  if (announce) toast('\u540c\u6b65\u8bbe\u7f6e\u5df2\u4fdd\u5b58\uff0c\u9f20\u6807\u548c\u952e\u76d8\u5f00\u5173\u5df2\u7acb\u5373\u751f\u6548');
+  if (announce) toast('同步设置已保存，鼠标和键盘开关已立即生效');
 }
 // The themed select widget (renderer-select.js) and the theme/color-mode
 // system (renderer-theme.js) were extracted to sibling classic scripts that
@@ -1213,7 +1213,6 @@ function log(module, message) {
   if (document.querySelector('#view-logs.view.active')) renderLogs();
   else logsDirty = true;
 }
-function initials(name) { return name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase(); }
 function isDirectProxy(value) {
   return !value || /^(direct|offline|none)$/i.test(String(value).trim());
 }
@@ -1235,20 +1234,6 @@ function maskProxy(value) {
   return parts.length >= 4 ? 'SOCKS5 · ' + parts[0] + ':' + parts[1] + ' · ' + t('net.auth') : raw;
 }
 
-function networkModeBadge(proxy) {
-  const wrap = document.createElement('div');
-  wrap.className = 'network-mode-cell network-mode-cell-compact';
-  if (isDirectProxy(proxy)) {
-    const badge = element('span', 'net-badge net-badge-direct', t('net.direct'));
-    badge.title = t('net.localDirect');
-    wrap.append(badge);
-  } else {
-    const badge = element('span', 'net-badge net-badge-proxy', t('net.proxy'));
-    badge.title = maskProxy(proxy);
-    wrap.append(badge);
-  }
-  return wrap;
-}
 function countryFlag(code) { const value = String(code || '').toUpperCase(); return /^[A-Z]{2}$/.test(value) ? String.fromCodePoint(...[...value].map((char) => 127397 + char.charCodeAt(0))) : '🌐'; }
 // Intl.DisplayNames construction is not cheap and countryName runs per row and
 // per detection paste; cache one instance per resolved locale.

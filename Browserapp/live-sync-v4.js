@@ -78,7 +78,11 @@ const injection = String.raw`(() => {
   addEventListener('scroll', reportScroll, true); document.addEventListener('scroll', reportScroll, true);
 })();`;
 
-const ALLOWED_INTERNAL_PAGES = new RegExp("^" + "(chrome|edge)://(newtab|new-tab-page|extensions|settings|downloads|history|flags|version|bookmarks|about)", "i");
+// Single source of truth for mirror-safe internal pages lives in
+// automation/protocol/internal-pages.js (main.js and live-sync-v5 already
+// consume it); the private copy here had drifted to a stale 10-host subset
+// without the host-boundary check.
+const { ALLOWED_INTERNAL_PAGES } = require('./automation/protocol/internal-pages');
 function normalTabs(values) {
   return values.filter((tab) => {
     if (!tab || !tab.url) return false;

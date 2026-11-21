@@ -174,6 +174,77 @@ check('generic runner and aggregate entries are wired to the single registry', (
     'scripts/selftest-one.js must exist on disk');
 });
 
+// --------------------------------------------------- orphan reverse check ---
+// The checks above only look "down" (registry -> disk). Orphaned selftest
+// files on disk that NO registry, npm script, manifest or sibling module
+// mentions used to be invisible: three recovered-* scripts and a broken
+// audit tool accumulated that way. This check looks "up" instead: every
+// selftest-named file must be reachable from at least one real reference.
+check('no orphan selftest files on disk (registered, invoked or required)', () => {
+  const scanRoots = ['.', 'automation/selftests', 'automation/protocol', 'rebuild', 'scripts', 'ui'];
+  const skipDirs = new Set([
+    'node_modules', 'roxy-ui', 'kernels', 'rust-core', 'dist', 'frontend',
+    'assets', 'rpa-output', 'reports', 'target', '.workbench-build', '__pycache__',
+    '.git', '.kernel-release-cache',
+  ]);
+  const candidates = [];
+  const seen = new Set();
+  const walk = (dir) => {
+    const entries = fs.readdirSync(path.join(appRoot, dir), { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        if (!skipDirs.has(entry.name)) walk(path.join(dir, entry.name));
+      } else if (/\.(js|cjs|mjs)$/.test(entry.name) && /selftest/i.test(entry.name)) {
+        const rel = path.join(dir, entry.name);
+        if (!seen.has(rel)) { seen.add(rel); candidates.push(rel); }
+      }
+    }
+  };
+  for (const root of scanRoots) walk(root);
+
+  // Reference corpus: every remaining text file (excluding each candidate's
+  // own content, which self-references its name in output strings).
+  const corpusByFile = new Map();
+  const readInto = (dir) => {
+    const entries = fs.readdirSync(path.join(appRoot, dir), { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        if (!skipDirs.has(entry.name)) readInto(path.join(dir, entry.name));
+      } else if (/\.(js|cjs|mjs|json|md|yml|yaml|html)$/.test(entry.name)) {
+        const rel = path.join(dir, entry.name);
+        try {
+          corpusByFile.set(rel, fs.readFileSync(path.join(appRoot, rel), 'utf8'));
+        } catch (_) { /* unreadable files simply do not count as references */ }
+      }
+    }
+  };
+  readInto('.');
+  // Workflow files live outside the app root and are authoritative consumers.
+  for (const wf of fs.readdirSync(path.join(repoRoot, '.github', 'workflows'))) {
+    if (wf.endsWith('.yml') || wf.endsWith('.yaml')) {
+      corpusByFile.set('.github/workflows/' + wf, fs.readFileSync(path.join(repoRoot, '.github', 'workflows', wf), 'utf8'));
+    }
+  }
+  const manifest = fs.readFileSync(path.join(appRoot, 'rebuild', 'acceptance-manifest.json'), 'utf8');
+  const suiteText = JSON.stringify(SUITE);
+  const npmValues = Object.values(scripts).join('\n');
+
+  const orphans = [];
+  for (const candidate of candidates) {
+    const base = path.basename(candidate);
+    const baseNoExt = base.replace(/\.(js|cjs|mjs)$/, '');
+    if (suiteText.includes(base) || npmValues.includes(base) || manifest.includes(base)) continue;
+    let referenced = false;
+    for (const [rel, text] of corpusByFile) {
+      if (rel === candidate) continue;
+      if (text.includes(base) || text.includes(baseNoExt)) { referenced = true; break; }
+    }
+    if (!referenced) orphans.push(candidate);
+  }
+  assert.deepStrictEqual(orphans, [],
+    `selftest files with no registry, npm, manifest or sibling reference (delete or register them):\n  ${orphans.join('\n  ')}`);
+});
+
 const failed = results.filter((r) => !r.ok);
 if (!failed.length) {
   console.log(`selftest-registry-consistency-selftest: OK ${results.length}/${results.length}`);
