@@ -240,6 +240,7 @@ jobs:
           # A stalled service must not leave external browsers orphaned when
           # the fatal host deadline expires. Use the same independent kernel.
           node node_modules/electron/install.js
+          npm run rebuild:ui
           OPENBROWSER_TEST_KERNEL_BINARY="$CHROME_BIN" node rebuild/quit-failure-selftest.cjs --fatal-hang
           OPENBROWSER_TEST_KERNEL_BINARY="$CHROME_BIN" node rebuild/quit-failure-selftest.cjs --normal-hang
           OPENBROWSER_TEST_KERNEL_BINARY="$CHROME_BIN" node rebuild/import-ui-selftest.cjs

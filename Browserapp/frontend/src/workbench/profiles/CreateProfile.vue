@@ -1,5 +1,5 @@
 <script setup>
-import { Fragment, computed, h, onBeforeMount, reactive, ref, toRaw, watch, withModifiers } from 'vue';
+import { Fragment, computed, h, onBeforeMount, onBeforeUnmount, reactive, ref, toRaw, watch, withModifiers } from 'vue';
 import { cr as cloneField, h as requests, i as selectFields, sn as useLocale, s as readFields,
   u as writeField, vt as cache, wt as useReturnRoute, yt as useCache } from './utils-BIWenCnY.js';
 import { n as useNotice } from './agent-BmSFI9WH.js';
@@ -46,6 +46,8 @@ const oneClickSettings = ref();
 const rawMainSettings = ref([]);
 const metadata = ref({ projectName: $t('未指定项目'), projectId: undefined, labelIds: [], windowRemark: '' });
 const collapsed = ref(false);
+let disposed = false;
+onBeforeUnmount(() => { disposed = true; });
 
 provideProfileForm({
   isBatch, createCount, driverObj: driver, presetTemplate, oneClickSettings,
@@ -128,9 +130,15 @@ async function loadTemplates() {
   }));
 }
 async function loadRequestedTemplate() {
-  if (!route.query.templateId || selectedTemplate.id !== 'default') return;
-  const { data } = await globalThis.__localApi.window.userGetWindowTemplateListList();
-  const template = data.find(row => String(row.id) === String(route.query.templateId));
+  const id = route.query.templateId;
+  const isCurrent = () => !disposed && route.query.templateId === id && selectedTemplate.id === 'default';
+  if (!id || !isCurrent()) return;
+  const { data } = await globalThis.__localApi.window.userGetWindowTemplateListList().catch(error => {
+    if (isCurrent()) throw error;
+    return {};
+  });
+  if (!isCurrent()) return;
+  const template = data.find(row => String(row.id) === String(id));
   if (!template) throw Error('模板不存在');
   selectedTemplate.id = String(template.id);
   selectedTemplate.label = template.templateName;

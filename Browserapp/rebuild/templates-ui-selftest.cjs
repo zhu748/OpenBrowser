@@ -87,8 +87,37 @@ async function main() {
       return route.path === '/browser/create' && route.query.templateId === String(id);
     }, editable.id);
     await heading.waitFor({ state: 'detached' });
+    await button('用于编辑的模板').waitFor();
 
     await navigate('/templates');
+    await heading.waitFor();
+    await page.evaluate(() => {
+      const api = globalThis.__localApi;
+      const { promise, resolve } = Promise.withResolvers();
+      globalThis.__localApi = new Proxy(api, { get(target, name) {
+        if (name !== 'window') return target[name];
+        return new Proxy(target[name], { get(windowApi, method) {
+          if (method !== 'userGetWindowTemplateListList') return windowApi[method];
+          return async () => {
+            globalThis.templateLookupPending = true;
+            await promise;
+            const response = await windowApi[method]();
+            globalThis.templateLookupFinished = true;
+            return response;
+          };
+        } });
+      } });
+      globalThis.releaseTemplateLookup = () => {
+        globalThis.__localApi = api;
+        resolve();
+      };
+    });
+    await button('使用 / 修改').click();
+    await page.waitForFunction(() => globalThis.templateLookupPending);
+    await navigate('/templates');
+    await heading.waitFor();
+    await page.evaluate(() => globalThis.releaseTemplateLookup());
+    await page.waitForFunction(() => globalThis.templateLookupFinished);
     await app.evaluate((_, servicePath) => {
       const { LocalService } = process.mainModule.require(servicePath);
       const request = LocalService.prototype.request;
