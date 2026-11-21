@@ -26,8 +26,24 @@ function options(argv) {
   return result;
 }
 
-const paint = page => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+const paint = page => page.waitForFunction(() => new Promise(resolve => {
+  requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)));
+}), undefined, { timeout: 10000 }).then(frame => frame.dispose());
 const p95 = samples => [...samples].sort((a, b) => a - b)[Math.ceil(samples.length * .95) - 1];
+
+async function closeApp(app) {
+  let timeout;
+  try {
+    await Promise.race([app.close(), new Promise((_, reject) => {
+      timeout = setTimeout(() => {
+        app.process().kill('SIGKILL');
+        reject(Error('Electron did not exit within 30 seconds'));
+      }, 30000);
+    })]);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 async function observeQueries(app, page) {
   await page.evaluate(() => {
@@ -115,6 +131,14 @@ async function benchmark(args) {
         OPENBROWSER_MASTER_KEY_FILE: path.join(root, 'master.key') }, timeout: 30000 });
     page = await app.firstWindow();
     page.on('pageerror', error => errors.push(error.message));
+    // A hosted desktop runner can occlude Electron even when its page is loaded.
+    const window = await app.browserWindow(page);
+    await window.evaluate(window => {
+      window.webContents.setBackgroundThrottling(false);
+      window.show();
+      window.focus();
+    });
+    await window.dispose();
     await page.waitForFunction(() => !!globalThis.__localRequest && !!globalThis.__localApi?.window && !!globalThis.__router);
     await page.getByPlaceholder('搜索 Ctrl + F', { exact: true }).waitFor();
     assert.ok(page.url().startsWith('obui://app/'), 'benchmark must exercise the default workbench');
@@ -122,6 +146,7 @@ async function benchmark(args) {
     await observeQueries(app, page);
     let current = 0;
     for (const size of args.sizes) {
+      console.error(`Measuring workbench interactions at ${size} profiles`);
       while (current < size) {
         const batch = Math.min(100, size - current);
         await page.evaluate(({ batch, current }) => globalThis.__localRequest('profiles:create-batch', {
@@ -147,7 +172,13 @@ async function benchmark(args) {
       await page?.screenshot({ path: args.output + '.png' }).catch(() => {});
     }
     throw error;
-  } finally { await app?.close(); await fs.rm(root, { recursive: true, force: true, maxRetries: 3 }); }
+  } finally {
+    try {
+      if (app) await closeApp(app);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true, maxRetries: 3 });
+    }
+  }
 }
 
 async function main() {
