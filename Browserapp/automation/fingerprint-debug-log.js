@@ -180,7 +180,5 @@ module.exports = {
   summarizeFp,
   LIVE_PROBE_EXPRESSION,
   defaultLogPath,
-  FALLBACK_LOG,
   rotateIfOversized,
-  LOG_SIZE_LIMIT,
 };

@@ -234,7 +234,6 @@ function archiveKindFromUrl(url) {
 
 module.exports = {
   validateArchiveMemberName,
-  preflightArchiveMembers,
   assertSafeExtractedTree,
   isPathInsideRoot,
   safeInstalledBinary,

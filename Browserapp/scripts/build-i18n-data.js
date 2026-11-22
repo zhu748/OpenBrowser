@@ -73,4 +73,4 @@ if (require.main === module) {
   console.log('wrote ' + path.relative(APP_ROOT, out));
 }
 
-module.exports = { loadLocaleJsonData, buildI18nDataSource, isUpToDate, regenerate, OUTPUT_PATH, DATA_DIR };
+module.exports = { isUpToDate, regenerate };

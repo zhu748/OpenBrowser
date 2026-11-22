@@ -128,11 +128,4 @@ async function startAutomation(context = {}) {
 
 module.exports = {
   startAutomation,
-  LocalApiServer,
-  RpaEngine,
-  RpaStore,
-  WindowSyncBridge,
-  AppCenter,
-  ProxyStore,
-  ApiKeyStore,
 };

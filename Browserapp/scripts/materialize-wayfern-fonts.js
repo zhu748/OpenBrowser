@@ -254,4 +254,4 @@ if (require.main === module) {
   process.exitCode = main();
 }
 
-module.exports = { materializeWayfernFonts, DEFAULT_SRC, DEFAULT_DEST };
+module.exports = { materializeWayfernFonts };

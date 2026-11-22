@@ -934,35 +934,10 @@ async function prepareMacDockWrapper({
   return launcher;
 }
 
-/** Sync bundled-extension template icons to logo-native (no number; per-env copies get numbers). */
-function rebuildBundledExtensionIcons() {
-  const dir = path.join(APP_ROOT, 'bundled-extension');
-  if (!fs.existsSync(dir)) return;
-  const base = ensureBaseLogoPng('native', 256);
-  if (!base) return;
-  for (const size of [16, 32, 48, 128]) {
-    const out = path.join(dir, `icon-${size}.png`);
-    try {
-      execFileSync('sips', ['-z', String(size), String(size), base, '--out', out], { stdio: 'ignore' });
-    } catch (_) {
-      try { fs.copyFileSync(base, out); } catch (__) {}
-    }
-  }
-}
-
 module.exports = {
   normalizeEnvNumber,
   generateEnvIconPng,
-  generateAppIconPng,
   prepareMarkerExtension,
   prepareMacDockWrapper,
-  pngToIcns,
   rebuildAppShortcutIcons,
-  rebuildBundledExtensionIcons,
-  rasterizeSvg,
-  renderBrandIconPil,
-  renderBrandIconSet,
-  writeMultiSizeIco,
-  LOGO_PIXEL_SVG,
-  LOGO_NATIVE_SVG,
 };

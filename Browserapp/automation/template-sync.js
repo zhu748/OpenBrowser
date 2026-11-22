@@ -258,7 +258,7 @@ function normalizeRemoteTemplate(item = {}, detail = null, processContent = null
  */
 async function syncRemoteTemplateStore(config = {}, options = {}) {
   if (!String(config.base || '').trim()) {
-    throw new Error('未配置远程模版 API base：请显式传入 base，或使用本地离线包 loadBundledCatalogDump()');
+    throw new Error('未配置远程模版 API base：请显式传入 base');
   }
   const client = new TemplateClient(config);
   const pageSize = options.pageSize || 50;
@@ -324,27 +324,10 @@ async function syncRemoteTemplateStore(config = {}, options = {}) {
   };
 }
 
-/** Load bundled offline dump written by scrape script */
-function loadBundledCatalogDump() {
-  const fs = require('fs');
-  const path = require('path');
-  const p = path.join(__dirname, 'data', 'catalog-templates.json');
-  if (!fs.existsSync(p)) return null;
-  try {
-    return JSON.parse(fs.readFileSync(p, 'utf8'));
-  } catch (_) {
-    return null;
-  }
-}
-
 module.exports = {
-  TemplateClient,
   normalizeRemoteTemplate,
   syncRemoteTemplateStore,
   parseProcessContent,
   fetchProcessPack,
-  graphToProcessContent,
-  decryptProcessCipher,
-  loadBundledCatalogDump,
   assertSafeTemplateSyncUrl,
 };

@@ -62,7 +62,6 @@ async function writeBrowserStartupDiagnostic(userDataPath, record) {
 }
 
 module.exports = {
-  STARTUP_DIAGNOSTIC_LIMIT,
   appendDiagnosticOutput,
   formatBrowserStartupError,
   writeBrowserStartupDiagnostic,

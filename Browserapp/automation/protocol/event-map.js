@@ -198,23 +198,10 @@ function settingsToOperateList(settings = {}) {
   return list;
 }
 
-function operateListToSettings(operateList = []) {
-  const set = new Set(operateList);
-  return {
-    click: set.has('click'),
-    track: set.has('move') || set.has('track'),
-    scroll: set.has('scroll'),
-    keyboard: set.has('keyboard'),
-  };
-}
-
 module.exports = {
   EVENT_TYPE,
-  OPERATE_GATES,
   payloadToSyncEvent,
   operateAllows,
   syncEventToCommand,
   settingsToOperateList,
-  operateListToSettings,
-  modifiersFromPayload,
 };

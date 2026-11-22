@@ -105,12 +105,6 @@ const stabilitySquare = (stability) => Number(stability.square) || STABILITY_DEF
 
 module.exports = {
   DEVICE_MEMORY_STEPS,
-  STABILITY_DEFAULT_NOISE_AMPLITUDE,
-  STABILITY_DEFAULT_SAMPLE_STEP_DIVISOR,
-  STABILITY_DEFAULT_HAMMING,
-  STABILITY_DEFAULT_MAX_WIDTH,
-  STABILITY_DEFAULT_MAX_HEIGHT,
-  STABILITY_DEFAULT_SQUARE,
   resolveInjectionStability,
   injectionOs,
   injectionTimezone,

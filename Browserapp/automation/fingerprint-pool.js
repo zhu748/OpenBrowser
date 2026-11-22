@@ -880,7 +880,4 @@ function createFingerprintPool(options = {}) {
 module.exports = {
   createFingerprintPool,
   verifyPersonaConsistency,
-  FingerprintPool,
-  DEFAULT_OS_MIX,
-  hashSeedToInt,
 };

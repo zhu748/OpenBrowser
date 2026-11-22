@@ -171,14 +171,6 @@ function firefoxSumsUrl(versionFolder) {
   return `${FIREFOX_CDN_BASE}${encodeURIComponent(String(versionFolder || ''))}/SHA256SUMS`;
 }
 
-/** Release archive kind per platform (tar.xz / dmg / msi / exe). */
-function firefoxArchiveKindForPlatform(platformDir) {
-  const dir = String(platformDir || '');
-  if (dir === 'mac') return 'dmg';
-  if (dir === 'win64' || dir === 'win64-aarch64') return 'msi';
-  return 'tar.xz';
-}
-
 /**
  * firefox.json + firefox_versions.json → [{version, channel}] newest first.
  * For every major release the newest point release is offered; the current
@@ -349,23 +341,18 @@ module.exports = {
   CHROMIUM_CATALOG_MAJOR_LIMIT,
   FIREFOX_RELEASES_URL,
   FIREFOX_VERSIONS_URL,
-  FIREFOX_CDN_BASE,
   FIREFOX_LOCALE,
-  FIREFOX_CATALOG_MAJOR_LIMIT,
   FIREFOX_CATALOG_TTL_MS,
   chromiumCatalogPlatform,
   chromiumUrlForVersion,
   filterChromiumCatalog,
   firefoxPlatformDir,
-  firefoxArtifactCandidates,
   parseSha256Sums,
   firefoxArtifactFor,
   firefoxCdnUrl,
   firefoxSumsUrl,
-  firefoxArchiveKindForPlatform,
   filterFirefoxCatalog,
   firefoxBinaryRelative,
-  firefoxUaVersion,
   firefoxUserAgent,
   parseProxyEndpoint,
   buildFirefoxUserJs,

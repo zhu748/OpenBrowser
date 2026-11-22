@@ -69,7 +69,6 @@ module.exports = {
   hasExplicitScheme,
   sameProxyEndpoint,
   sameProxyIdentity,
-  ownAliasValue,
   profileProxyAssociation,
   normalizedProxyAssociationId,
 };

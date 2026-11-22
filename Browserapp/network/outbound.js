@@ -52,4 +52,4 @@ async function fetchUrlText(url, { timeout = 15000, method = 'GET', allowPrivate
   return { status, body, headers };
 }
 
-module.exports = { isBlockedOutboundHostname, resolveAllowPrivateOutbound, assertSafeOutboundUrl, fetchUrlText };
+module.exports = { isBlockedOutboundHostname, assertSafeOutboundUrl, fetchUrlText  };

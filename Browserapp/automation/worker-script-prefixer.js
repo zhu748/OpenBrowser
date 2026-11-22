@@ -136,4 +136,4 @@ class WorkerScriptPrefixer {
   }
 }
 
-module.exports = { WorkerScriptPrefixer, WORKER_SCRIPT_PATTERN, TRANSIENT_ERRORS };
+module.exports = { WorkerScriptPrefixer, TRANSIENT_ERRORS  };

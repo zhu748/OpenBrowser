@@ -292,6 +292,4 @@ module.exports = {
   TaskQueue,
   sameIdentity,
   DEFAULT_OPEN_CONCURRENCY,
-  MAX_BATCH_CONCURRENCY,
-  STATES: { QUEUED, OPENING, PAUSED, ACTIVE },
 };

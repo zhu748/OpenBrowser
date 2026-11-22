@@ -378,5 +378,4 @@ module.exports = {
   withTimeout,
   normalizeConcurrency,
   DEFAULT_CONCURRENCY,
-  DEFAULT_MAX_PENDING,
 };

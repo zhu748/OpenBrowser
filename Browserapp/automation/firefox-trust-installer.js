@@ -59,4 +59,4 @@ function installFirefoxCa(root, caPem) {
   }
 }
 
-module.exports = { installFirefoxCa, findCertutil };
+module.exports = { installFirefoxCa };

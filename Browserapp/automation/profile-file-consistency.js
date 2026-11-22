@@ -166,15 +166,11 @@ async function syncProfileLocalState(root, profile = {}) {
 }
 
 module.exports = {
-  MANAGED_PREFERENCE_KEYS,
-  MANAGED_LOCAL_STATE_KEYS,
   NATIVE_MANAGED_PREFERENCE_KEYS,
   languagePreferenceChain,
   primaryProfileLocale,
-  expectedLanguagePreferences,
   expectedLocalState,
   applyLanguagePreferences,
-  applyLocalStateLanguage,
   verifyLanguagePreferences,
   verifyLocalStateLanguage,
   syncProfileLanguagePreferences,

@@ -380,4 +380,4 @@ function certOverrideLine({ host, port, sha256Base64, leafDer }) {
   return `${host}:${port} OID.2.16.840.1.101.3.4.2.1 ${hex} M ${dbKey}`;
 }
 
-module.exports = { FirefoxWorkerMitmProxy, certOverrideLine, isFirefoxWorkerScript, WORKER_DESTS, assertSafeUpstreamHost };
+module.exports = { FirefoxWorkerMitmProxy, certOverrideLine };

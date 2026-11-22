@@ -224,7 +224,6 @@ function findDuplicates(args) {
 }
 
 module.exports = {
-  FLAG_PREFIX,
   escapeRegExp,
   normalizeName,
   parseFlag,

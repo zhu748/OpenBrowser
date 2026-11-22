@@ -437,9 +437,6 @@ async function runCloudProfilePullExclusive(payload = {}) {
 
 module.exports = {
   initCloudOps,
-  providerConfigFromCloud,
-  sanitizeCloudForBackup,
-  mergeCloudIntoSettings,
   runCloudBackup,
   createBackupPackage,
   recoverPendingRestore,

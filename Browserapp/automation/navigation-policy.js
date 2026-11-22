@@ -211,6 +211,4 @@ module.exports = {
   attachNavigationGuard,
   hostMatches,
   originOf,
-  DEFAULT_ALLOWED_PROTOCOLS,
-  DEFAULT_ALLOWED_URLS,
 };

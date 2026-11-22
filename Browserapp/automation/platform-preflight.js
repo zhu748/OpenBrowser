@@ -118,7 +118,4 @@ function platformPreflight(input = {}) {
 module.exports = {
   platformPreflight,
   WINDOWS_MAX_PATH,
-  CHROME_CACHE_TAIL_BUDGET,
-  DEFAULT_PROFILE_ID_LEN,
-  MAX_PROFILE_ID_LEN,
 };

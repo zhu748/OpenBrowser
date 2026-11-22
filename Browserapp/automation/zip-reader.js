@@ -192,9 +192,4 @@ module.exports = {
   readEntries,
   readEntry,
   findEndOfCentralDirectory,
-  METHOD_STORE,
-  METHOD_DEFLATE,
-  EOCD_SIGNATURE,
-  CD_SIGNATURE,
-  LFH_SIGNATURE,
 };

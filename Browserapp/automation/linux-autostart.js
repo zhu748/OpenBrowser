@@ -263,5 +263,4 @@ module.exports = {
   setLinuxAutostart,
   getLinuxAutostartState,
   DEFAULT_ENTRY_NAME,
-  RESERVED,
 };

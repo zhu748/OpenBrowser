@@ -1,4 +1,3 @@
-const { spawn } = require('child_process');
 const cdp = require('../cdp');
 const { extensionPathKey } = require('../automation/extension-identity');
 
@@ -86,31 +85,6 @@ class PipeConnection {
   }
 }
 
-async function launchPipeBrowser(browserPath, args, windowsHide = false) {
-  const options = {
-    windowsHide,
-    stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'],
-  };
-  // Detached process groups let non-Windows force-stop kill helper children cleanly.
-  if (process.platform !== 'win32') options.detached = true;
-  const child = spawn(browserPath, args, options);
-  const connection = new PipeConnection(child);
-  try {
-    await connection.command('Browser.getVersion', {}, 20000);
-  } catch (error) {
-    // A failed handshake (bad path, crash before answering) must not leave an
-    // off-screen Chrome running: the caller's finally never sees the assignment.
-    try { child.kill(); } catch (_) {}
-    throw error;
-  }
-  return { child, connection };
-}
-
-async function launchInstaller(browserPath, root, extraArgs = []) {
-  const args = [`--user-data-dir=${root}`, '--profile-directory=Default', '--no-first-run', '--no-default-browser-check', '--disable-sync', '--disable-background-mode', '--enable-unsafe-extension-debugging', '--remote-debugging-pipe', '--window-position=-32000,-32000', '--window-size=800,600', ...extraArgs, 'about:blank'];
-  return launchPipeBrowser(browserPath, args, true);
-}
-
 async function closeInstaller(value) {
   if (!value) return;
   const { child, connection } = value;
@@ -180,10 +154,4 @@ async function portConnection(port) {
   };
 }
 
-async function reconcileUnpackedExtensions(browserPath, root, desired, managedPaths = []) {
-  const installer = await launchInstaller(browserPath, root);
-  try { return await reconcileOnConnection(installer.connection, desired, managedPaths); }
-  finally { await closeInstaller(installer); }
-}
-
-module.exports = { PipeConnection, launchPipeBrowser, launchInstaller, closeInstaller, reconcileOnConnection, reconcileUnpackedExtensions, portConnection };
+module.exports = { PipeConnection, closeInstaller, reconcileOnConnection, portConnection };

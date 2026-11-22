@@ -211,9 +211,7 @@ function sanitizeLogArgs(args, options) {
 }
 
 module.exports = {
-  DEFAULT_SENSITIVE_KEYS,
   maskSecretString,
-  maskScalar,
   sanitizeForLog,
   sanitizeJsonForLog,
   sanitizeStringPayloadForLog,
@@ -221,5 +219,4 @@ module.exports = {
   sanitizeLogArg,
   sanitizeLogArgs,
   sanitizeUrlForLog,
-  SENSITIVE_QUERY_KEY,
 };

@@ -1425,6 +1425,4 @@ if (require.main === module) {
 module.exports = {
   COVERAGE_DOMAINS,
   DIAGNOSTIC_AUDITS,
-  getSelectedSuites,
-  getSelectedAudits,
 };

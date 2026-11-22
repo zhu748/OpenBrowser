@@ -47,4 +47,4 @@ class FirefoxImageFilter{
  }
  close(){if(this.closing)return this.closing;this.closed=true;this.stats={...this.stats,active:0,buffered:0};this.rejectReady(Error('Firefox 图片过滤器已停止'));this.closing=(async()=>{for(const socket of this.sockets)socket.destroy();this.sockets.clear();this.server?.closeAllConnections();if(this.server?.listening)await new Promise((resolve,reject)=>this.server.close(error=>error?reject(error):resolve()));})();return this.closing;}
 }
-module.exports={FirefoxImageFilter,backgroundSource,EXTENSION_ID,MAX_IMAGE_BYTES};
+module.exports = {FirefoxImageFilter,MAX_IMAGE_BYTES };

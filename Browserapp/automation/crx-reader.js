@@ -339,6 +339,4 @@ module.exports = {
   extensionIdFromBytes,
   extensionIdToBytes,
   decodeProtobuf,
-  readContainerVersion,
-  MAGIC,
 };

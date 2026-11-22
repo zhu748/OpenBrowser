@@ -152,7 +152,6 @@ function highestVersion(versions) {
 module.exports = {
   compareVersions,
   compareNumericStrings,
-  comparePrereleaseIdentifier,
   parseVersion,
   isComparable,
   isNewer,

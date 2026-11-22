@@ -61,15 +61,6 @@ function planFanoutFromPayload(payload, options = {}) {
   };
 }
 
-async function applyStandardCommands(sendCommand, commands, delayMs = 0) {
-  if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
-  for (const cmd of commands || []) {
-    await sendCommand(cmd.method, cmd.params || {});
-  }
-}
-
 module.exports = {
   planFanoutFromPayload,
-  applyStandardCommands,
-  resolveOperateList,
 };

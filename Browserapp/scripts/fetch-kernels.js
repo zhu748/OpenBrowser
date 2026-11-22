@@ -1404,22 +1404,6 @@ if (require.main === module) {
 }
 
 module.exports = {
-  KERNEL_PLATFORMS,
-  PLATFORM_SEED_FILES,
-  DEFAULT_CACHE_DIR,
-  DEFAULT_TAG,
-  assetMatchesPlatform,
-  downloadAsset,
   ensureKernelSeedForPackaging,
-  extractArchive,
-  extractTarJs,
-  extractZipJs,
-  fetchKernels,
-  groupPartAssets,
   isLfsPointerFile,
-  isSafeMemberName,
-  metaAssets,
-  parseSums,
-  platformReadiness,
-  resolveRelease,
 };

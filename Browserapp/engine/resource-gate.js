@@ -102,7 +102,5 @@ async function assertResourceGateForLaunch({ diskRoot } = {}) {
 }
 
 module.exports = {
-  evaluateResourceGate,
   assertResourceGateForLaunch,
-  memoryUsagePercent,
 };

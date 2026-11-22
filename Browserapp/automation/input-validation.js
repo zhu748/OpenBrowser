@@ -255,7 +255,4 @@ module.exports = {
   findIPs,
   MAX_LATITUDE,
   MAX_LONGITUDE,
-  MIN_PORT,
-  MAX_PORT,
-  PHONE_RULES,
 };

@@ -95,4 +95,4 @@ async function openVerifiedStartupTabs(engine, item, urls) {
   }
 }
 
-module.exports = { SESSION_FILE, sessionUrls, startupNavigationUrl, readDeferredSessionUrls, preserveLegacySession, saveDeferredSession, openVerifiedStartupTabs, reportStartupNavigationError };
+module.exports = { sessionUrls, startupNavigationUrl, readDeferredSessionUrls, preserveLegacySession, saveDeferredSession, openVerifiedStartupTabs, reportStartupNavigationError  };

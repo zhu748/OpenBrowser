@@ -146,4 +146,4 @@ function main() {
 
 if (require.main === module) process.exit(main());
 
-module.exports = { resolve, strippedName };
+module.exports = { resolve };

@@ -83,7 +83,6 @@ function assertProductionDependencies(root) {
       throw Error("[package] Dependency resolved outside the package: " + name);
 }
 module.exports = {
-  collectProductionDependencies,
   copyProductionDependencies,
   assertProductionDependencies,
 };

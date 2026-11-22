@@ -230,7 +230,6 @@ module.exports = {
   AspectManager,
   parseAllParams,
   parseFormData,
-  looksLikeFormBody,
   matchesPath,
   safeDecode,
 };

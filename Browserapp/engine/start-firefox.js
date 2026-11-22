@@ -50,7 +50,7 @@ function collectAcceptLanguages(fingerprint, profile) {
   return (fromFp || fromProfile || single || ['en-US']).join(',');
 }
 
-const { FIREFOX_COOKIES, FIREFOX_PASSWORDS, FIREFOX_LOCAL_STORAGE,
+const { FIREFOX_COOKIES, FIREFOX_PASSWORDS,
   removeBrowserFiles, clearFirefoxPlaces, clearFirefoxLocalStorage, clearBrowserCache } = require('../automation/browser-data');
 
 async function enforceDataRetentionFirefox(root, profile) {
@@ -61,8 +61,6 @@ async function enforceDataRetentionFirefox(root, profile) {
   if (a.saveLocalStorage === false) await clearFirefoxLocalStorage(root);
 }
 
-// Exposed for consumers inspecting launch cleanup capabilities.
-const FIREFOX_LAUNCH_DATA_TARGETS = { cookies: FIREFOX_COOKIES, localStorage: FIREFOX_LOCAL_STORAGE, history: [] };
 async function clearFirefoxProfileLaunchData(root, profile) {
   const a = profile?.advanced || {};
   const cleared = [];
@@ -198,7 +196,7 @@ module.exports = {
       await enforceDataRetentionFirefox(root, profile);
 
       // 启动前清理 Cookies / Local Storage / 历史（对齐 _start 的
-      // clearProfileLaunchData；Firefox 目标列表见 FIREFOX_LAUNCH_DATA_TARGETS）。
+      // clearProfileLaunchData；Firefox 目标列表见 clearFirefoxProfileLaunchData）。
       // 事件类型与负载结构与 start.js 完全一致（profile-launch-data-cleared）。
       const clearedLaunchData = await clearFirefoxProfileLaunchData(root, profile);
       if (clearedLaunchData.length) {
@@ -553,4 +551,4 @@ module.exports.enforceDataRetentionFirefox = enforceDataRetentionFirefox;
 module.exports.firefoxExtraUserPrefs = firefoxExtraUserPrefs;
 // Launch-data clearing (guard parity with start.js); exported for selftests.
 module.exports.clearFirefoxProfileLaunchData = clearFirefoxProfileLaunchData;
-module.exports.FIREFOX_LAUNCH_DATA_TARGETS = FIREFOX_LAUNCH_DATA_TARGETS;
+

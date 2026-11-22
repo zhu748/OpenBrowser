@@ -67,4 +67,4 @@ function assertRuntimeResourceTree(root) {
   }
 }
 
-module.exports = { isRuntimeResource, assertRuntimeResourceTree, RUNTIME_DIRECTORIES, RUNTIME_ROOT_FILES, DEVELOPMENT_MODULES };
+module.exports = { isRuntimeResource, assertRuntimeResourceTree, RUNTIME_ROOT_FILES, DEVELOPMENT_MODULES  };

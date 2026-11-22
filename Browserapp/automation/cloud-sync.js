@@ -609,43 +609,10 @@ function defaultCloudConfig() {
   };
 }
 
-/** One-click presets shown in 本地设置 → 云同步 */
-function cloudPresets() {
-  return {
-    onedrive: {
-      id: 'onedrive',
-      label: '微软云 OneDrive',
-      provider: 'onedrive',
-      dir: 'OpenBrowser',
-      urlPlaceholder: 'https://你的域名/dav/onedrive',
-      hint: '推荐用 Alist / OpenList 挂载 OneDrive，再填 WebDAV 地址。示例：https://alist.example.com/dav/onedrive 。用户名为 Alist 账号，密码为 Alist 密码或令牌。',
-    },
-    quark: {
-      id: 'quark',
-      label: '夸克云',
-      provider: 'quark',
-      dir: 'OpenBrowser',
-      urlPlaceholder: 'https://你的域名/dav/quark',
-      hint: '夸克无官方 WebDAV，请用 Alist / OpenList 挂载夸克网盘后填入桥接地址。Cookie 登录配置在 Alist 后台完成，此处只填 WebDAV 账号。',
-    },
-    baidu: {
-      id: 'baidu',
-      label: '百度云',
-      provider: 'baidu',
-      dir: 'OpenBrowser',
-      urlPlaceholder: 'https://你的域名/dav/baidu',
-      hint: '百度网盘请用 Alist / OpenList 挂载后使用 WebDAV。示例路径：/dav/baidu 或 /dav/百度网盘 。远程目录建议填 OpenBrowser。',
-    },
-  };
-}
-
 module.exports = {
-  BACKUP_VERSION,
   REMOTE_NAME,
   defaultCloudConfig,
-  cloudPresets,
   isWebDavBridgeProvider,
-  WEBDAV_BRIDGE_PROVIDERS,
   buildBackupPackage,
   parseBackupPackage,
   restoreProfileDataFiles,
@@ -654,7 +621,6 @@ module.exports = {
   mergeProxies,
   profileRemoteName,
   profileStamp,
-  withRemoteName,
   upload,
   download,
   encryptPayload,
@@ -663,6 +629,4 @@ module.exports = {
   safeLocalTarget,
   webDavTarget,
   validatedGitHubConfig,
-  cloudSettingsCarrySecrets,
-  rotateLocalTimestampBackups,
 };

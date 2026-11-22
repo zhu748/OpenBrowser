@@ -413,6 +413,4 @@ module.exports = {
   isNamedKey,
   PRINTABLE_CHARACTERS: Object.keys(PRINTABLE),
   NAMED_KEY_NAMES: Object.keys(NAMED_KEYS),
-  MODIFIER_SHIFT,
-  MODIFIER_CTRL,
 };

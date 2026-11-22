@@ -185,4 +185,4 @@ function extractFeedDigest(feed, platform) {
   return out;
 }
 
-module.exports = { ARCHIVE_DIGESTS_FILE, MAX_ARCHIVE_DIGEST_PINS, SHA256_HEX, archiveDigestsPath, writeFileAtomic, isVersionedArchiveUrl, buildVersionFromUrl, loadArchiveDigests, pinnedArchiveSha256, pinArchiveSha256, extractFeedDigest };
+module.exports = { SHA256_HEX, writeFileAtomic, isVersionedArchiveUrl, buildVersionFromUrl, pinnedArchiveSha256, pinArchiveSha256, extractFeedDigest  };

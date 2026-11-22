@@ -429,6 +429,4 @@ module.exports = {
   parseXdotoolGeometry,
   isValidHandle,
   BACKENDS,
-  SHOW,
-  SWP,
 };

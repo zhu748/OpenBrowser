@@ -403,10 +403,6 @@ class RequestHeaderRewriter {
   }
 }
 
-function createRequestHeaderRewriter(options = {}) {
-  return new RequestHeaderRewriter(options);
-}
-
 
 function normalizePlatformFamily(str) {
   if (!str || typeof str !== 'string') return null;
@@ -746,16 +742,10 @@ function evaluateFingerprintDelivery(profile = {}, fingerprint = {}, liveProbe =
 
 
 module.exports = {
-  CHROMIUM_CANONICAL_HEADER_ORDER,
-  CHROMIUM_CANONICAL_HEADER_INDEX,
   RequestHeaderRewriter,
-  createRequestHeaderRewriter,
   normalizePlatformFamily,
   detectUaPlatform,
-  extractChromeMajor,
-  extractGpuBrand,
   normalizeTimezone,
-  extractPrimaryLanguage,
   backgroundNetworkFlagsForProfile,
   evaluateFingerprintDelivery,
 };

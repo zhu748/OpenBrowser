@@ -683,7 +683,5 @@ module.exports = {
   buildFullPath,
   isAbsoluteUrl,
   combineUrls,
-  DEFAULT_ENDPOINTS,
   TYPE_BY_NAME,
-  NAME_BY_TYPE,
 };

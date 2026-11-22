@@ -18,13 +18,6 @@ function isWindows() { return process.platform === 'win32'; }
 function isMac() { return process.platform === 'darwin'; }
 function isLinux() { return process.platform === 'linux'; }
 
-/** Native input tool name (docs; openbrowser uses native-input-mirror on Win) */
-function nativeToolName() {
-  if (isWindows()) return 'native-input-mirror.exe';
-  if (isMac()) return 'CDP-only page sync';
-  return 'CDP-only';
-}
-
 /**
  * Window sync strategy:
  *  - Page content: both platforms use CDP (live-sync)
@@ -42,10 +35,6 @@ function syncCapabilities() {
     extensionLoadFlag: true,
     rpaPuppeteerConnect: true,
   };
-}
-
-function pathJoin(...parts) {
-  return path.join(...parts);
 }
 
 /**
@@ -281,37 +270,15 @@ function killProcessTree(pid, options = {}) {
 /** Default Local API port stack */
 const LOCAL_API_PORTS = Object.freeze([50325, 50725, 60725]);
 
-function defaultApiPort() {
-  const env = Number(process.env.OPENBROWSER_API_PORT || process.env.API_PORT || 0);
-  return env > 0 ? env : LOCAL_API_PORTS[0];
-}
-
-/** User-data roots for staging extensions (cross-platform) */
-function defaultStageRoots(userData) {
-  const base = path.join(userData, 'app-center-stage');
-  return {
-    extensionCenter: path.join(base, 'extensionCenter'),
-    cacheFolder: path.join(base, 'cache'),
-    globalExtensionRoot: path.join(base, 'extension'),
-  };
-}
-
 module.exports = {
   platform,
   isWindows,
   isMac,
   isLinux,
-  nativeToolName,
   syncCapabilities,
-  pathJoin,
   toFileUrl,
   killProcessTree,
-  processIdentity,
-  commandMatchesExecutable,
-  normalizeExpectedExecutables,
   extractUserDataDir,
   windowsExecutableMatches,
   LOCAL_API_PORTS,
-  defaultApiPort,
-  defaultStageRoots,
 };

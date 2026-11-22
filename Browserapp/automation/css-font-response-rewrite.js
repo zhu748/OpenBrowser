@@ -554,9 +554,6 @@ function createCssFontResponseRewriter(options = {}) {
 }
 
 module.exports = {
-  DEFAULT_BLOCKED_FONT,
-  DEFAULT_MAX_BODY_SIZE,
-  normalizePersonaFontSet,
   sanitizeCss,
   sanitizeHtml,
   updateCspHeaders,

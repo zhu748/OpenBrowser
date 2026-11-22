@@ -705,4 +705,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { TOOLS: toolsForMode().map(toTool), callTool, request, toolsMeta, LEVEL_ORDER, apiOrigin };
+module.exports = { TOOLS: toolsForMode().map(toTool), callTool, request, apiOrigin  };

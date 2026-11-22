@@ -344,10 +344,7 @@ function randomNum(min, max) {
 module.exports = {
   RPA_PLUS_ACTIONS,
   ACTION_PARAM_SCHEMA,
-  normalizeStep,
   isRegistered,
   parseProcessContent,
   randomNum,
-  findConvergence,
-  isContainerType,
 };

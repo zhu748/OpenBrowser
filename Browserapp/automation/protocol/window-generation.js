@@ -197,5 +197,4 @@ module.exports = {
   extractWindowGeneration,
   extractWindowIdentity,
   normalizeWindowKey,
-  toPositiveInteger,
 };

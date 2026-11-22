@@ -175,9 +175,6 @@ const MACOS_INTEL_PERSONAS = [
   },
 ];
 
-/** Legacy merged pool kept for external consumers; new code should pick by architecture. */
-const MACOS_PERSONAS = [...MACOS_APPLE_PERSONAS, ...MACOS_INTEL_PERSONAS];
-
 const LINUX_PERSONAS = [
   {
     os: "linux", cores: 8, memory: 8, colorDepth: 24, devicePixelRatio: 1,
@@ -627,13 +624,8 @@ function applyPersonaPerturbations(persona, seedInput) {
 
 module.exports = {
   WINDOWS_PERSONAS,
-  MACOS_PERSONAS,
   MACOS_APPLE_PERSONAS,
-  MACOS_INTEL_PERSONAS,
-  ANDROID_PERSONAS,
-  IOS_PERSONAS,
   PERSONAS_BY_OS,
-  DEVICE_PERSONAS: PERSONAS_BY_OS,
   OS_FONTS,
   HOST_WEBGL_LIMITS,
   getHostWebglLimits,
@@ -645,6 +637,5 @@ module.exports = {
   isCoherent,
   fontsForOs,
   exclusiveFontsForOtherOs,
-  APPLE_HOST_ONLY_FONTS,
   applyPersonaPerturbations,
 };

@@ -418,13 +418,8 @@ module.exports = {
   CUSTOM_BROWSER_METHODS,
   MOUSE_ACTION,
   parseOperateList,
-  shouldHandle,
   translateToStandardCdp,
   buildFanoutPlan,
   computeCascadeBounds,
   resolveWorkArea,
-  DEFAULT_MIN_WINDOW_WIDTH,
-  DEFAULT_MIN_WINDOW_HEIGHT,
-  DEFAULT_WINDOW_WIDTH,
-  DEFAULT_WINDOW_HEIGHT,
 };

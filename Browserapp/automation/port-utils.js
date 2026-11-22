@@ -103,6 +103,5 @@ module.exports = {
   findFreePort,
   resolveAvailablePort,
   resolveAvailablePorts,
-  DEFAULT_HOST,
   DEFAULT_TIMEOUT_MS,
 };

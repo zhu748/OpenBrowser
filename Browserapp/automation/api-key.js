@@ -126,4 +126,4 @@ function resolveApiKey({ configured = '', env = process.env, userDataPath = '', 
   return { key: '', filePath: null, source: 'none' };
 }
 
-module.exports = { cleanApiKey, isApiKeyPlaceholder, defaultUserDataPaths, apiKeyFileCandidates, resolveApiKey };
+module.exports = { cleanApiKey, isApiKeyPlaceholder, apiKeyFileCandidates, resolveApiKey  };

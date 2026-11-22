@@ -1515,5 +1515,4 @@ module.exports = {
   lookupReachability,
   lookupDnsLeak,
   summarizeDnsLeak,
-  DEFAULT_PORT,
 };

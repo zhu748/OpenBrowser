@@ -39,4 +39,4 @@ function runRegex(pattern, flags, text, { signal, timeoutMs = 1000 } = {}) {
   });
 }
 
-module.exports = { runRegex, MAX_PATTERN_CHARS, MAX_TEXT_CHARS };
+module.exports = { runRegex };

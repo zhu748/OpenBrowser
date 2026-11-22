@@ -468,7 +468,6 @@ module.exports = {
   attachIpPure,
   parseCloudflareTrace,
   normalizeIpInfoResult,
-  firstFilled,
   mergeNetworkLookups,
   isProxyLinkError,
   isProbeServiceError,

@@ -164,4 +164,4 @@ async function addChromeStoreExtension(input, root, readManifest, fetchPackage =
   }
 }
 
-module.exports = { extractStoreId, crxZip, crxDetails, extensionIdFromKey, addChromeStoreExtension };
+module.exports = { crxZip, addChromeStoreExtension  };

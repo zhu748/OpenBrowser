@@ -551,5 +551,4 @@ module.exports = {
   Downloader,
   STATUS,
   fileNameFromUrl,
-  openRequest,
 };

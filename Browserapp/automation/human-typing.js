@@ -382,8 +382,6 @@ module.exports = {
   ADJACENT_KEYS,
   DEFAULT_TYPO_CONFIG,
   DEFAULT_DELAY_RANGE,
-  DELAY_BOUND_MIN,
-  DELAY_BOUND_MAX,
   normalizeDelayRange,
   delayRangeFromSettings,
   parseTypoConfig,

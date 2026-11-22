@@ -208,4 +208,4 @@ function readProxyAssociation(input = {}) {
   return { present: false, value: '' };
 }
 
-module.exports = { booleanValue, firstDefined, firstArray, firstString, parseResolution, parseGeolocation, normalizeProfileInput, normalizeProxyInput, normalizeRpaInput, readProxyAssociation };
+module.exports = { booleanValue, firstDefined, firstArray, firstString, normalizeProfileInput, normalizeProxyInput, normalizeRpaInput, readProxyAssociation  };

@@ -127,4 +127,4 @@ function buildWorkerRuntimeFull(context) {
   return complete.replace(/\(\);\s*$/, '');
 }
 
-module.exports = { buildDocumentRuntime, buildWorkerRuntime, buildWorkerRuntimeFull };
+module.exports = { buildDocumentRuntime, buildWorkerRuntimeFull  };

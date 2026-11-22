@@ -74,4 +74,4 @@ async function readJsonRecords(filename, check = () => {}, options = {}) {
   return records;
 }
 
-module.exports = { readCsvRecords, readTextLines, readJsonRecords, INPUT_LIMITS };
+module.exports = { readCsvRecords, readTextLines, readJsonRecords };

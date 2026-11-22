@@ -999,7 +999,6 @@ module.exports = {
   shouldShipOpenBrowser148Kernel,
   pruneForeignKernelSeeds,
   appResourceExcludes,
-  ensurePackagingKernelSeeds,
   isPackagingExcluded,
   copyRecursive,
   copyRustCore,

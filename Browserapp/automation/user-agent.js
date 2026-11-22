@@ -546,15 +546,10 @@ function randomUaForSeed(seedU32, options = {}) {
 
 module.exports = {
   osChromeSupportViolation,
-  OS_CHROME_SUPPORT_FLOORS,
   OS_PRESETS,
-  GREASE_BRANDS,
-  detectHostOs,
   parseChromeVersion,
   normalizeUaOs,
   parseOsFromUa,
-  buildBrands,
-  buildFullVersionList,
   buildUserAgentString,
   buildUserAgentMetadata,
   buildUaProfile,

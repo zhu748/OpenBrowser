@@ -297,16 +297,12 @@ async function applyTrustedChange(call, payload = {}, options = {}) {
 }
 
 module.exports = {
-  buildBlurExpression,
   buildEditableProbeExpression,
   buildFocusAndSelectExpression,
   buildSelectKeyPlan,
   buildSelectProbeExpression,
-  buildSyntheticChangeExpression,
   applyTrustedChange,
   applyTrustedInput,
   backspaceSequence,
-  keyEventParams,
-  keySequence,
   tabSequence,
 };

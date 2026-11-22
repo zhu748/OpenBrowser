@@ -25,4 +25,4 @@ async function screenshotFirefox(item, format) {
   return result.data;
 }
 
-module.exports = { firefoxContext, navigateFirefox, screenshotFirefox };
+module.exports = { navigateFirefox, screenshotFirefox  };

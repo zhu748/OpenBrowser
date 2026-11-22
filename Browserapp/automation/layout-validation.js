@@ -160,8 +160,6 @@ module.exports = {
   describeArrangeConfigProblems,
   computeGrid,
   minHeightForPlatform,
-  INTEGER_KEYS,
-  DEFAULTS,
   LIMITS: {
     MIN_POSITION, MAX_POSITION, MIN_WIDTH, MAX_WIDTH,
     MIN_HEIGHT, MAC_MIN_HEIGHT, MAX_HEIGHT,

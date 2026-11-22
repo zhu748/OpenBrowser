@@ -966,22 +966,10 @@ function buildQueryLocalFontBlobGateSource(options = {}) {
 })();`;
 }
 
-/**
- * Clear memory caches.
- */
-function clearFontSubsetCaches() {
-  fontSubsetIndexCache = null;
-  fontAssetBufferCache.clear();
-  fontAssetBase64Cache.clear();
-}
-
 module.exports = {
   buildQueryLocalFontBlobGateSource,
   inspectGatePayload,
-  clearFontSubsetCaches,
-  resolvePreferredAssetFile,
   loadFontAsset,
-  isAuthenticFontBuffer,
   getPlatformFontPayload,
   getFontMetadataList,
   postscriptNameOf,

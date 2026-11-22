@@ -13,6 +13,7 @@ const root = path.join(__dirname, '..', '..');
 const index = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const expectedModules = [
   'ui/ui-proxy-wiring.js',
+  'ui/ui-sync-wiring.js',
   'ui/ui-dialogs.js',
   'ui/ui-rpa.js',
   'ui/ui-api-mcp.js',

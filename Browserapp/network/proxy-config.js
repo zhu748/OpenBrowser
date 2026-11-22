@@ -251,4 +251,4 @@ function displayProxy(value) {
   } catch (_) { return 'Invalid proxy'; }
 }
 
-module.exports = { IP_LOOKUP_CHANNELS, normalizeIpLookupChannel, decode, normalizeProxyProtocol, splitProxyRemark, normalizeProxyHost, proxyHostForUrl, buildProxyConfig, parseProxyString, parseProxyInput, parseProxy, chromeProxyEndpoint, displayProxy };
+module.exports = { normalizeIpLookupChannel, decode, normalizeProxyHost, parseProxyInput, parseProxy, chromeProxyEndpoint, displayProxy  };

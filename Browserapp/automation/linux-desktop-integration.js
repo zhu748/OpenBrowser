@@ -326,7 +326,6 @@ module.exports = {
   buildThumbnailPng,
   writeThumbnailCache,
   applicationsDirectory,
-  applicationEntryPath,
   installApplicationEntry,
   desktopFileArgv0,
   THUMBNAIL_SIZES,
