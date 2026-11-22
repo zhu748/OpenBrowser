@@ -1,3 +1,7 @@
+<script>
+// Dialogs may be mounted as separate roots in the same document.
+let nextSimpleDialogId = 0;
+</script>
 <script setup>
 import { onBeforeMount, ref } from './workbench-vue.js';
 import { t as vFocustrap } from './focustrap-DJJkEqE8.js';
@@ -11,7 +15,7 @@ const props = defineProps({
 });
 const emit = defineEmits(['close']);
 const loading = ref(false);
-const formId = 'simpleform';
+const formId = 'simpleform-' + ++nextSimpleDialogId;
 onBeforeMount(() => {
   if (props.inputs[0]) props.inputs[0].props = { ...props.inputs[0].props, autofocus: true };
 });

@@ -48,6 +48,7 @@ const SUITE = [
   ['selftest:workbenchusage', 'automation/selftests/workbench-usage-selftest.js'],
   ['selftest:workbenchtime', 'automation/selftests/workbench-time-selftest.js'],
   ['selftest:projectlistprojection', 'automation/selftests/project-list-projection-selftest.js'],
+  ['selftest:xlsxtemplateshape', 'automation/selftests/xlsx-template-shape-selftest.js'],
   ['selftest:metadatarecovery', 'automation/selftests/metadata-recovery-selftest.js'],
   ['selftest:agentcancelnative', 'automation/selftests/agent-browser-cancellation-native-selftest.js', { nativeOnly: true, runtimes: ['chromium'] }],
   ['selftest:fatalerror', 'automation/selftests/fatal-error-selftest.js'],

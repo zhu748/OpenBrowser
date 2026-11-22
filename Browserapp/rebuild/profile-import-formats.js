@@ -3,8 +3,8 @@
 const { TextDecoder } = require('node:util');
 
 const COLUMNS = {
-  windowName: ['窗口名称', 'Window Name'],
-  os: ['操作系统', 'Operating System'],
+  windowName: ['窗口名称', 'Window Name', 'Profile Name'],
+  os: ['操作系统', 'Operating System', 'System'],
   coreType: ['浏览器内核', 'Browser Core'],
   coreVersion: ['内核版本', 'Core Version'],
   osVersion: ['系统版本', 'OS Version'],
@@ -93,10 +93,12 @@ function sheetRows(sheet) {
   if (![...columns.values()].includes('windowName') || ![...columns.values()].includes('os')) {
     throw Error('XLSX 表头需要窗口名称和操作系统列');
   }
-  // Published templates reserve rows 2–4 for instructions. A plain sheet can start at row 2.
+  // Published templates place a labelled instruction in the leading name
+  // column. A casual mention of row 5 in a plain sheet is not a template.
   const hasInstructions = body.some(row => row.number === 4 && row.cells.length === 1
     && row.cells[0].column === header.cells[0].column
-    && /^(?:说明(?:\s*[：:]|\s*$)|instructions?\b)|(?:\brow\s*5\b|第\s*5\s*行)/i.test(row.cells[0].text.trim()));
+    && columns.get(row.cells[0].column) === 'windowName'
+    && /^(?:说明|instructions?)(?:\s*[：:]|$)/i.test(row.cells[0].text.trim()));
   const rows = [];
   for (const row of body) {
     if (hasInstructions && row.number < 5) continue;
