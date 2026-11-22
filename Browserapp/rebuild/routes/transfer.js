@@ -68,7 +68,8 @@ async function transferImport(service) {
     }
     if (offset !== stat.size || (await file.stat()).mtimeMs !== stat.mtimeMs)
       throw Error("导入文件已更改，请重新选择");
-    value = JSON.parse(buffer.toString("utf8", 0, offset));
+    // Some editors prepend a UTF-8 byte-order mark to otherwise valid JSON.
+    value = JSON.parse(buffer.toString("utf8", 0, offset).replace(/^\uFEFF/, ""));
   } finally {
     await file.close();
   }

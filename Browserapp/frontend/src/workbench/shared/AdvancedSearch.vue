@@ -24,12 +24,13 @@ const shortcut = mac ? '⌘ + F' : 'Ctrl + F';
 const displayedValue = computed(() => stripPrefix(query.value) || query.value);
 
 function stripPrefix(value) {
-  return value.match(/^\w+::(.*)$/)?.[1] ?? value;
+  const syntax = optionFrom(value)?.syntax;
+  return syntax ? value.slice(syntax.length) : value;
 }
 
 function optionFrom(value) {
   const prefix = value.match(/^\w+::/)?.[0];
-  return options.value.find(option => option.syntax === prefix);
+  return prefix ? options.value.find(option => option.syntax === prefix) : undefined;
 }
 
 watch(query, value => {

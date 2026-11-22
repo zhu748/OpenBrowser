@@ -1,6 +1,9 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const os = require('node:os');
+const path = require('node:path');
 const { LocalService } = require('../../rebuild/local-service');
 const { createLocalRouteRegistry, localRoutes } = require('../../rebuild/local-route-registry');
 
@@ -205,6 +208,28 @@ async function checkSettingsNoopWrites() {
   assert.deepEqual(await service.request('settings:get'), saved[0]);
 }
 
+async function checkExchangeFileBom() {
+  const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'ob-exchange-bom-'));
+  const file = path.join(temp, 'profiles.json');
+  const service = Object.create(LocalService.prototype);
+  service.queue = Promise.resolve();
+  service.load = async () => {};
+  service.data = { groups: [] };
+  service.window = () => null;
+  service.dialog = { showOpenDialog: async () => ({ filePaths: [file], canceled: false }) };
+  try {
+    const valid = { format: 'openbrowser-profiles', version: 1, profiles: [] };
+    for (const prefix of ['', '\uFEFF']) {
+      await fs.writeFile(file, prefix + JSON.stringify(valid), 'utf8');
+      assert.deepEqual(await service.request('transfer:import'), { count: 0 });
+    }
+    await fs.writeFile(file, '\uFEFF' + JSON.stringify({ ...valid, version: 2 }), 'utf8');
+    await assert.rejects(service.request('transfer:import'), /Invalid profile exchange file/);
+  } finally {
+    await fs.rm(temp, { recursive: true, force: true });
+  }
+}
+
 async function main() {
   // Use the real request/dispatch/handlers with controlled I/O and no desktop.
   const service = Object.create(LocalService.prototype);
@@ -282,6 +307,7 @@ async function main() {
   await checkBatchAssociations();
   await checkSavedFilterRename();
   await checkSettingsNoopWrites();
+  await checkExchangeFileBom();
 
   // A large existing library must not exceed the JS argument-count limit when
   // creating a profile or reserving a batch of sequential display numbers.
