@@ -61,12 +61,12 @@ async function closeApp(app) {
 }
 
 async function observeQueries(app, page) {
-  await page.evaluate(() => {
+  await bounded(page.evaluate(() => {
     globalThis.__workbenchBenchmark = { sequence: 0, rows: [] };
     globalThis.__workbenchBenchmarkDispose = globalThis.ops.onEvent(event => {
       if (event.type === 'benchmark:query') globalThis.__workbenchBenchmark = event.state;
     });
-  });
+  }), 60000, 'benchmark observer install');
   await bounded(app.evaluate(({ ipcMain }) => {
     const original = ipcMain._invokeHandlers.get('rebuild:request');
     const state = { sequence: 0, rows: [] };
@@ -134,7 +134,7 @@ async function measure(page, count, rounds) {
   const counter = await bounded(page.evaluate(() => globalThis.__localRequest('profiles:count')), 60000, 'profiles:count');
   assert.deepEqual(counter, { count });
   const fullListBytes = await bounded(page.evaluate(async () => new TextEncoder().encode(JSON.stringify(await globalThis.__localRequest('profiles:list'))).byteLength), 60000, 'profiles:list');
-  return { count, renderedRows: await page.locator('tbody tr').count(),
+  return { count, renderedRows: await bounded(page.locator('tbody tr').count(), 60000, 'renderedRows count'),
     searchP95Ms: +p95(searchMs).toFixed(1), paginationP95Ms: pageMs.length ? +p95(pageMs).toFixed(1) : null,
     selectionP95Ms: +p95(selectionMs).toFixed(1), countPayloadBytes: Buffer.byteLength(JSON.stringify(counter)), fullListPayloadBytes: fullListBytes };
 }
@@ -146,18 +146,30 @@ async function benchmark(args) {
   try {
     const start = performance.now();
     app = await electron.launch({ executablePath: require('electron'),
-      args: [...(process.platform === 'linux' ? ['--no-sandbox', '--ozone-platform=headless', '--disable-gpu'] : []), path.resolve(__dirname, '..')],
+      args: [
+        ...(process.platform === 'linux' ? ['--no-sandbox', '--ozone-platform=headless', '--disable-gpu'] : []),
+        // CI hosts have no real display: Chromium's native occlusion detection
+        // can flip the window to "occluded" mid-run and freeze the renderer /
+        // let macOS App Nap suspend the tree — the observed wedge (all rounds
+        // finish, then a protocol call never returns). Disable occlusion
+        // detection and every backgrounding heuristic outright.
+        '--disable-features=CalculateNativeWinOcclusion',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--disable-background-timer-throttling',
+        path.resolve(__dirname, '..'),
+      ],
       env: { ...process.env, OPENBROWSER_ROXY_UI: '1', OPENBROWSER_USER_DATA: root, OPENBROWSER_API_PORT: '0',
         OPENBROWSER_MASTER_KEY_FILE: path.join(root, 'master.key') }, timeout: 30000 });
     page = await app.firstWindow({ timeout: 30000 });
     page.on('pageerror', error => errors.push(error.message));
     // A hosted desktop runner can occlude Electron even when its page is loaded.
-    const window = await app.browserWindow(page);
-    await window.evaluate(window => {
+    const window = await bounded(app.browserWindow(page), 60000, 'browserWindow lookup');
+    await bounded(window.evaluate(window => {
       window.webContents.setBackgroundThrottling(false);
       window.show();
       window.focus();
-    });
+    }), 60000, 'window show/focus');
     await window.dispose();
     await page.waitForFunction(() => !!globalThis.__localRequest && !!globalThis.__localApi?.window && !!globalThis.__router, undefined, { timeout: 60000 });
     await page.getByPlaceholder(searchPlaceholder).waitFor();
@@ -191,7 +203,7 @@ async function benchmark(args) {
     if (args.output) {
       await fs.mkdir(path.dirname(args.output), { recursive: true });
       await fs.writeFile(args.output, JSON.stringify({ complete: false, reports, errors, error: error.stack }, null, 2));
-      await page?.screenshot({ path: args.output + '.png' }).catch(() => {});
+      await page?.screenshot({ path: args.output + '.png', timeout: 30000 }).catch(() => {});
     }
     throw error;
   } finally {
