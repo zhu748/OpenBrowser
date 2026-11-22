@@ -1,3 +1,14 @@
+<script>
+const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+function avatarInitials(name) {
+  if (name == null) return undefined;
+  const letters = graphemes.segment(name)[Symbol.iterator]();
+  const first = letters.next().value?.segment ?? '';
+  const second = letters.next().value?.segment ?? '';
+  return (first + second).toLocaleUpperCase();
+}
+</script>
+
 <script setup>
 import { computed } from './workbench-vue.js';
 import { s as useCssVars } from './runtime-dom.esm-bundler-_WxS4Zar.js';
@@ -10,7 +21,7 @@ const props = defineProps({
 });
 const avatars = computed(() => {
   const items = (props.list || [props]).filter(Boolean).map(item => ({
-    ...item, initials: item.name?.slice(0, 2).toLocaleUpperCase(),
+    ...item, initials: avatarInitials(item.name),
   }));
   if (!props.max || items.length <= props.max) return { displayed: items, hidden: [] };
   return {

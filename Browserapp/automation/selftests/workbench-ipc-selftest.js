@@ -184,6 +184,19 @@ async function compactTableChecks() {
 
 async function navigationChecks() {
   const { installWorkspaceNavigation } = await import('../../rebuild/workbench-navigation.mjs');
+  const mainRouter = { beforeEach() {} };
+  for (const [stored, expected] of [
+    ['/api-keys#local-api', '/browser/list'],
+    ['/skills#library', '/browser/list'],
+    ['/skills?from=legacy#library', '/browser/list'],
+    ['/browser/list?projectId=fixture#list', '/browser/list?projectId=fixture#list'],
+  ]) {
+    const { initialPath } = await installWorkspaceNavigation(mainRouter, {
+      url: 'obui://app/index.html#' + stored,
+      request() { assert.fail('main window does not request workspace setup'); },
+    });
+    assert.equal(initialPath, expected, 'restore main-window route: ' + stored);
+  }
   const pushed = [];
   let event;
   const navigation = await installWorkspaceNavigation({

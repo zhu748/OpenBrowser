@@ -43,5 +43,6 @@ export async function installWorkspaceNavigation(router, { url, dialogKind, requ
   }
   const initial = current.hash.slice(1) || '/browser/list';
   // Old builds could persist an Agent route as the main window's startup page.
-  return { initialPath: standalone(initial.split('?')[0]) ? '/browser/list' : initial, activate };
+  // Match only the route path: a stored hash-router route can have its own fragment.
+  return { initialPath: standalone(initial.split(/[?#]/, 1)[0]) ? '/browser/list' : initial, activate };
 }
