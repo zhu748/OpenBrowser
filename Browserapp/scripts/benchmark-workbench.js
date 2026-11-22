@@ -105,22 +105,27 @@ async function queryPaint(page, act, expected) {
 async function measure(page, count, rounds) {
   const search = page.getByPlaceholder(searchPlaceholder);
   const searchMs = [], pageMs = [], selectionMs = [];
+  const phase = (label) => { if (count >= 1000) console.error(`  ${count}-profile ${label}`); };
   // Ensure the warm-up itself is a real query even for a single-page fleet.
   const query = async value => { await search.fill(value); await search.press('Enter'); };
+  phase('search warmup');
   await queryPaint(page, () => query('warmup-no-match'), 'warmup-no-match');
   for (let i = 0; i < rounds; i++) {
     const value = i % 2 ? 'no-match-' + i : 'Workbench benchmark';
+    phase(`search round ${i + 1}/${rounds}`);
     searchMs.push(await queryPaint(page, () => query(value), value));
   }
   await queryPaint(page, () => query(''), '');
   if (count > 10) {
     for (let i = 0; i < rounds; i++) {
       const next = i % 2 === 0;
+      phase(`pagination round ${i + 1}/${rounds}`);
       pageMs.push(await queryPaint(page, () => page.getByRole('button', { name: next ? 'Next Page' : 'Previous Page', exact: true }).click(), null));
     }
   }
   for (let i = 0; i < rounds; i++) {
     const start = performance.now(), checked = i % 2 === 0;
+    phase(`selection round ${i + 1}/${rounds}`);
     await page.locator('thead input[type=checkbox]').setChecked(checked, { force: true });
     await page.waitForFunction(value => document.querySelector('thead input[type=checkbox]')?.checked === value, checked, { timeout: 60000 });
     await paint(page);
@@ -199,6 +204,15 @@ async function benchmark(args) {
 }
 
 async function main() {
+  // The 9a5f5a4/6620e24 wedges produced eleven silent minutes inside a step
+  // where every wait is bounded (Playwright's 30s action default plus the
+  // explicit deadlines above) - only a blocked event loop or a starved
+  // process can outrun all of them. The heartbeat makes the next wedge
+  // self-describing: if it stops, the Node loop is blocked; if it keeps
+  // beating, one of the bounds must eventually fire and name the wait.
+  const heartbeat = setInterval(() => console.error(
+    `benchmark heartbeat uptime=${Math.round(process.uptime())}s rss=${Math.round(process.memoryUsage().rss / 1048576)}MB`), 30000);
+  heartbeat.unref();
   const args = options(process.argv.slice(2)), report = await benchmark(args);
   const text = JSON.stringify(report, null, 2) + '\n';
   if (args.output) { await fs.mkdir(path.dirname(args.output), { recursive: true }); await fs.writeFile(args.output, text); }
