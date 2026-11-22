@@ -32,6 +32,20 @@ const paint = page => page.waitForFunction(() => new Promise(resolve => {
 }), undefined, { timeout: 10000 }).then(frame => frame.dispose());
 const p95 = samples => [...samples].sort((a, b) => a - b)[Math.ceil(samples.length * .95) - 1];
 
+// Hosted macOS runners intermittently wedge one of the waits Playwright does
+// not bound by default: f3f70f2, 33b19197 and three consecutive 9a5f5a4
+// attempts all burned the full step budget at the 1000-profile phase while
+// the same code passes in seconds on healthy runners (9f6da86: ~10s). Every
+// unbounded wait gets a generous deadline — 6-40x the observed healthy
+// timings — so a wedge fails fast into the step's retry instead of hanging
+// the whole job. A slow-but-alive runner never trips these bounds.
+function bounded(promise, ms, label) {
+  return Promise.race([promise, new Promise((_, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} did not settle within ${ms}ms (runner wedge?)`)), ms);
+    if (typeof timer.unref === 'function') timer.unref();
+  })]);
+}
+
 async function closeApp(app) {
   let timeout;
   try {
@@ -53,7 +67,7 @@ async function observeQueries(app, page) {
       if (event.type === 'benchmark:query') globalThis.__workbenchBenchmark = event.state;
     });
   });
-  await app.evaluate(({ ipcMain }) => {
+  await bounded(app.evaluate(({ ipcMain }) => {
     const original = ipcMain._invokeHandlers.get('rebuild:request');
     const state = { sequence: 0, rows: [] };
     ipcMain.removeHandler('rebuild:request');
@@ -68,22 +82,22 @@ async function observeQueries(app, page) {
       }
       return response;
     });
-  });
+  }), 60000, 'query-observer install');
 }
 
 async function queryPaint(page, act, expected) {
-  const sequence = await page.evaluate(() => globalThis.__workbenchBenchmark.sequence);
+  const sequence = await bounded(page.evaluate(() => globalThis.__workbenchBenchmark.sequence), 60000, 'benchmark state read');
   const start = performance.now();
   await act();
   await page.waitForFunction(({ sequence, expected }) => {
     const current = globalThis.__workbenchBenchmark;
     return current.sequence > sequence && (expected === null || String(current.params.queryValue || '') === expected);
-  }, { sequence, expected });
-  const rows = await page.evaluate(() => globalThis.__workbenchBenchmark.rows);
+  }, { sequence, expected }, { timeout: 60000 });
+  const rows = await bounded(page.evaluate(() => globalThis.__workbenchBenchmark.rows), 60000, 'benchmark rows read');
   await page.waitForFunction(rows => {
     const text = document.querySelector('table tbody')?.textContent || '';
     return rows.length ? rows.every(name => text.includes(name)) : text.includes('暂无查询结果');
-  }, rows);
+  }, rows, { timeout: 60000 });
   await paint(page);
   return performance.now() - start;
 }
@@ -108,13 +122,13 @@ async function measure(page, count, rounds) {
   for (let i = 0; i < rounds; i++) {
     const start = performance.now(), checked = i % 2 === 0;
     await page.locator('thead input[type=checkbox]').setChecked(checked, { force: true });
-    await page.waitForFunction(value => document.querySelector('thead input[type=checkbox]')?.checked === value, checked);
+    await page.waitForFunction(value => document.querySelector('thead input[type=checkbox]')?.checked === value, checked, { timeout: 60000 });
     await paint(page);
     selectionMs.push(performance.now() - start);
   }
-  const counter = await page.evaluate(() => globalThis.__localRequest('profiles:count'));
+  const counter = await bounded(page.evaluate(() => globalThis.__localRequest('profiles:count')), 60000, 'profiles:count');
   assert.deepEqual(counter, { count });
-  const fullListBytes = await page.evaluate(async () => new TextEncoder().encode(JSON.stringify(await globalThis.__localRequest('profiles:list'))).byteLength);
+  const fullListBytes = await bounded(page.evaluate(async () => new TextEncoder().encode(JSON.stringify(await globalThis.__localRequest('profiles:list'))).byteLength), 60000, 'profiles:list');
   return { count, renderedRows: await page.locator('tbody tr').count(),
     searchP95Ms: +p95(searchMs).toFixed(1), paginationP95Ms: pageMs.length ? +p95(pageMs).toFixed(1) : null,
     selectionP95Ms: +p95(selectionMs).toFixed(1), countPayloadBytes: Buffer.byteLength(JSON.stringify(counter)), fullListPayloadBytes: fullListBytes };
@@ -130,7 +144,7 @@ async function benchmark(args) {
       args: [...(process.platform === 'linux' ? ['--no-sandbox', '--ozone-platform=headless', '--disable-gpu'] : []), path.resolve(__dirname, '..')],
       env: { ...process.env, OPENBROWSER_ROXY_UI: '1', OPENBROWSER_USER_DATA: root, OPENBROWSER_API_PORT: '0',
         OPENBROWSER_MASTER_KEY_FILE: path.join(root, 'master.key') }, timeout: 30000 });
-    page = await app.firstWindow();
+    page = await app.firstWindow({ timeout: 30000 });
     page.on('pageerror', error => errors.push(error.message));
     // A hosted desktop runner can occlude Electron even when its page is loaded.
     const window = await app.browserWindow(page);
@@ -140,7 +154,7 @@ async function benchmark(args) {
       window.focus();
     });
     await window.dispose();
-    await page.waitForFunction(() => !!globalThis.__localRequest && !!globalThis.__localApi?.window && !!globalThis.__router);
+    await page.waitForFunction(() => !!globalThis.__localRequest && !!globalThis.__localApi?.window && !!globalThis.__router, undefined, { timeout: 60000 });
     await page.getByPlaceholder(searchPlaceholder).waitFor();
     assert.ok(page.url().startsWith('obui://app/'), 'benchmark must exercise the default workbench');
     const startupMs = Math.round(performance.now() - start);
@@ -150,12 +164,13 @@ async function benchmark(args) {
       console.error(`Measuring workbench interactions at ${size} profiles`);
       while (current < size) {
         const batch = Math.min(100, size - current);
-        await page.evaluate(({ batch, current }) => globalThis.__localRequest('profiles:create-batch', {
+        await bounded(page.evaluate(({ batch, current }) => globalThis.__localRequest('profiles:create-batch', {
           createCount: batch, os: 'Linux', coreType: 'Chrome', windowNamePrefix: 'Workbench benchmark ' + current,
-        }), { batch, current });
+        }), { batch, current }), 120000, `profiles:create-batch ${current}+${batch}`);
         current += batch;
       }
-      await page.waitForFunction(count => document.querySelector('[role=meter]')?.getAttribute('aria-valuenow') === String(count), size);
+      console.error(`Created ${current} profiles`);
+      await page.waitForFunction(count => document.querySelector('[role=meter]')?.getAttribute('aria-valuenow') === String(count), size, { timeout: 60000 });
       const report = await measure(page, size, args.rounds);
       for (const key of ['searchP95Ms', 'paginationP95Ms', 'selectionP95Ms'])
         if (report[key] !== null) assert.ok(report[key] <= args.budgetMs, `${key} exceeded ${args.budgetMs}ms at ${size} profiles: ${report[key]}ms`);
