@@ -277,19 +277,26 @@ export function useCompactTable(props, attrs, providedSelection, controlled, roo
   async function load() {
     if (disposed) return;
     const revision = ++loadRevision;
+    const current = () => !disposed && revision === loadRevision;
     loading.value = true;
     try {
       await initialization;
-      if (disposed || revision !== loadRevision) return;
+      if (!current()) return;
       const response = await props.tableRequest(getParams());
-      if (disposed || revision !== loadRevision) return;
+      if (!current()) return;
+      if (typeof response?.code === 'number' && response.code !== 0) {
+        throw new Error(response.msg || response.message || '列表读取失败');
+      }
       const data = response?.data ?? response;
       resultRows.value = data?.rows ?? [];
       page.total = data?.total ?? 0;
       if (!controlled) clearSelection();
-      if (props.dataList === undefined && (typeof response?.code !== 'number' || response.code === 0)) rememberResults();
+      if (props.dataList === undefined) rememberResults();
+      return true;
+    } catch (error) {
+      if (current()) globalThis.__localUiError?.(error?.message || String(error));
     } finally {
-      if (!disposed && revision === loadRevision) loading.value = false;
+      if (current()) loading.value = false;
     }
   }
   function onFilterChange() {
@@ -306,8 +313,7 @@ export function useCompactTable(props, attrs, providedSelection, controlled, roo
   async function reload(dropCache = false) {
     if (dropCache && props.remember) rememberedTables.delete(props.remember);
     await props.beforeRefresh?.();
-    await load();
-    await props.afterRefresh?.();
+    if (await load()) await props.afterRefresh?.();
   }
   function refresh(nextParams = {}, reset = true) {
     if (reset) page.first = 0;

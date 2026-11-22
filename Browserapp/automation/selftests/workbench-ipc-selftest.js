@@ -1,7 +1,11 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const os = require('node:os');
+const path = require('node:path');
 const { setImmediate: tick } = require('node:timers/promises');
+const { pathToFileURL } = require('node:url');
 const { captureIpcResult, unwrapIpcResult } = require('../../shared/ipc-result');
 
 async function tableChecks() {
@@ -103,6 +107,81 @@ async function apiChecks() {
   assert.deepEqual(errors, ['port in use']);
 }
 
+async function compactTableChecks() {
+  // Run the real compact table state module with small renderer dependency
+  // stand-ins; the build copies these aliased imports into the desktop bundle.
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ob-compact-table-'));
+  const appRoot = path.resolve(__dirname, '../..');
+  const previousStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const previousError = globalThis.__localUiError;
+  const errors = [];
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { getItem: () => null } });
+  globalThis.__localUiError = message => errors.push(message);
+  try {
+    const files = {
+      'package.json': '{"type":"module"}',
+      'workbench-vue.js': `export const ref = value => ({value}), reactive = value => value, toRaw = value => value,
+        computed = value => Object.defineProperty({}, 'value', typeof value === 'function' ? {get: value} : value),
+        nextTick = async () => {}, watch = () => {}, onMounted = () => {}, onBeforeMount = () => {}, onBeforeUnmount = () => {};`,
+      'utils-BIWenCnY.js': 'export const Dr = JSON.parse, o = () => ({});',
+      'rich-html-link-VdBpR3Cm.js': 'export const y = () => ({query:{page_index:3}});',
+      'usePreventMask-Cud6gNnu.js': 'export const t = () => ({});',
+    };
+    await Promise.all([
+      ...Object.entries(files).map(([name, content]) => fs.writeFile(path.join(root, name), content)),
+      fs.copyFile(path.join(appRoot, 'frontend/src/workbench/shared/tables/use-compact-table.mjs'), path.join(root, 'compact.js')),
+      fs.copyFile(path.join(appRoot, 'rebuild/workbench-table.mjs'), path.join(root, 'workbench-table.js')),
+    ]);
+    const { useCompactTable } = await import(pathToFileURL(path.join(root, 'compact.js')).href);
+    const row = { id: 'saved-row' };
+    let response = { code: 0, data: { rows: [row], total: '1' } }, refreshed = 0;
+    const queries = [];
+    const table = useCompactTable({
+      columns: [], pageSize: 10, dataKey: 'id', selectionMode: 'multiple',
+      tableRequest: async query => {
+        queries.push(query);
+        if (response instanceof Error) throw response;
+        return response;
+      },
+      afterRefresh: () => { refreshed += 1; },
+    }, {}, null, false, {}, {});
+    await table.reload();
+    table.selection.value = [row];
+
+    response = { code: 17, msg: 'list could not be read' };
+    await table.reload();
+    assert.deepEqual(table.rows.value, [row], 'compact table keeps rows on API failure');
+    assert.deepEqual(table.selection.value, [row], 'compact table keeps selection on API failure');
+    assert.equal(table.page.total, '1', 'the successful response total retains its type');
+    assert.equal(table.loading.value, false);
+    assert.equal(refreshed, 1, 'failed refresh is not presented as completed');
+
+    response = new Error('desktop disconnected');
+    await table.reload();
+    assert.deepEqual(errors, ['list could not be read', 'desktop disconnected']);
+    assert.deepEqual(table.rows.value, [row]);
+
+    let rejectStale;
+    response = new Promise((_resolve, reject) => { rejectStale = reject; });
+    const stale = table.load();
+    await tick();
+    response = { rows: [], total: 0 };
+    await table.reload();
+    rejectStale(new Error('obsolete failure'));
+    await stale;
+    assert.deepEqual(table.rows.value, [], 'a genuinely empty list is still applied');
+    assert.deepEqual(table.selection.value, []);
+    assert.equal(refreshed, 2);
+    assert.deepEqual(errors, ['list could not be read', 'desktop disconnected'], 'obsolete failures remain silent');
+    assert.deepEqual(queries.map(query => query.page_index), [3, 3, 3, 3, 3], 'compact tables do not retry a smaller page');
+  } finally {
+    if (previousStorage) Object.defineProperty(globalThis, 'localStorage', previousStorage);
+    else delete globalThis.localStorage;
+    globalThis.__localUiError = previousError;
+    await fs.rm(root, { recursive: true, force: true });
+  }
+}
+
 async function navigationChecks() {
   const { installWorkspaceNavigation } = await import('../../rebuild/workbench-navigation.mjs');
   const pushed = [];
@@ -143,6 +222,7 @@ async function profileBatchChecks() {
 
 async function main() {
   await tableChecks();
+  await compactTableChecks();
   await apiChecks();
   await navigationChecks();
   await profileBatchChecks();
@@ -151,6 +231,6 @@ async function main() {
   });
   assert.throws(() => unwrapIpcResult(result), error =>
     error.code === 'EIO' && error.completed === 200 && error.remainingIds[0] === 'a' && !('privateField' in error));
-  console.log('WORKBENCH_IPC_SELFTEST OK (table query, latest response, pagination recovery, settings queue, initial navigation and partial error DTO)');
+  console.log('WORKBENCH_IPC_SELFTEST OK (table query, latest response, pagination recovery, compact refresh failures, settings queue, initial navigation and partial error DTO)');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

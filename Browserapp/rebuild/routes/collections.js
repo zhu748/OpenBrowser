@@ -78,9 +78,12 @@ async function groupsSave(service, p) {
 }
 
 async function labelsList(service) {
-  return (service.data.labels || []).map((row) => ({
+  const labels = service.data.labels || [];
+  if (!labels.length) return [];
+  const { labelProfiles } = service.profileIndex();
+  return labels.map((row) => ({
     ...row,
-    bindWindowIds: service.profileIndex().labelProfiles.get(row.id) || [],
+    bindWindowIds: labelProfiles.get(row.id)?.slice() || [],
   }));
 }
 

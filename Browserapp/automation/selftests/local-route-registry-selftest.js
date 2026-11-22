@@ -60,6 +60,34 @@ async function checkNotificationWrites(service) {
   assert.ok(service.data.notifications.every(row => row.read));
 }
 
+async function checkLabelProjection() {
+  const service = Object.create(LocalService.prototype);
+  const snapshot = [
+    { id: 'first', tag: '1,2' },
+    { id: 'trashed', tag: '1', trashed: true },
+    { id: 'second', tag: '1' },
+  ];
+  let statusCalls = 0;
+  service.queue = Promise.resolve();
+  service.data = { labels: [], groups: [] };
+  service.load = async () => {};
+  service.engine = { status: () => { statusCalls++; return snapshot; } };
+  assert.deepEqual(await service.request('labels:list'), []);
+  assert.equal(statusCalls, 0, 'an empty label list needs no profile snapshot');
+
+  service.data.labels = Array.from({ length: 1000 }, (_, index) => ({ id: index + 1 }));
+  const rows = await service.request('labels:list');
+  assert.equal(rows.length, 1000);
+  assert.equal(statusCalls, 1, 'all labels must share one profile-index lookup');
+  assert.deepEqual(rows[0].bindWindowIds, ['first', 'second']);
+  assert.deepEqual(rows[1].bindWindowIds, ['first']);
+  assert.deepEqual(rows[2].bindWindowIds, []);
+  rows[0].bindWindowIds.push('not-a-profile');
+  const again = await service.request('labels:list');
+  assert.equal(statusCalls, 2);
+  assert.deepEqual(again[0].bindWindowIds, ['first', 'second'], 'returned lists must not edit the cached index');
+}
+
 async function main() {
   // Use the real request/dispatch/handlers with controlled I/O and no desktop.
   const service = Object.create(LocalService.prototype);
@@ -132,6 +160,7 @@ async function main() {
   await service.request('settings:set', { recovered: true });
   assert.equal(service.data.settings.recovered, true);
   await checkNotificationWrites(service);
+  await checkLabelProjection();
 
   // A large existing library must not exceed the JS argument-count limit when
   // creating a profile or reserving a batch of sequential display numbers.
@@ -147,6 +176,6 @@ async function main() {
   assert.equal(saved[0].number, 200001);
   const batch = await service.request('profiles:create-batch', { createCount: 3 });
   assert.deepEqual(batch.map(profile => profile.sortNum), [200001, 200002, 200003]);
-  console.log('PASS local routes: validation, dispatch, launch isolation, serialized rollback, notification write deduplication and recovery');
+  console.log('PASS local routes: validation, dispatch, launch isolation, rollback, notification write deduplication and label projection');
 }
 main().catch((error) => { console.error(error); process.exitCode = 1; });
