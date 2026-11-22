@@ -88,6 +88,46 @@ async function checkLabelProjection() {
   assert.deepEqual(again[0].bindWindowIds, ['first', 'second'], 'returned lists must not edit the cached index');
 }
 
+async function checkBatchAssociations() {
+  const service = Object.create(LocalService.prototype);
+  const first = { id: 'first', tag: '1,2,3,2', groupId: '7', group_name: 'Selected' };
+  const second = { id: 'second', tag: '1,3', groupId: '8', group_name: 'Keep' };
+  const profiles = new Map([[first.id, first], [second.id, second]]);
+  const writes = [];
+  let linearLookupWidth = 0;
+  class ObservedIds extends Array {
+    includes(value) { linearLookupWidth += this.length; return super.includes(value); }
+  }
+  service.queue = Promise.resolve();
+  service.data = { labels: [{ id: 1 }, { id: 2 }, { id: 3 }], groups: [{ id: 7 }, { id: '8' }] };
+  service.load = async () => {};
+  service.save = async () => {};
+  service.engine = {
+    profiles,
+    profileForEdit: id => ({ profile: profiles.get(id), rev: 4 }),
+    async syncProfiles(rows, options) {
+      writes.push({ ids: rows.map(row => row.id), options });
+      for (const row of rows) profiles.set(row.id, row);
+    },
+  };
+
+  const unrelated = Array.from({ length: 1000 }, (_, index) => index + 100);
+  await service.request('labels:delete', { ids: ObservedIds.from([...unrelated, '2', '02']) });
+  assert.deepEqual(service.data.labels, [{ id: 1 }, { id: 3 }]);
+  assert.equal(service.data.recordIds.labels, 3, 'deletion must preserve the ID high-water mark');
+  assert.equal(profiles.get('first').tag, '1,3');
+  await assert.rejects(service.request('groups:delete', { ids: ['local-default'] }), /默认项目不能删除/);
+  await service.request('groups:delete', { ids: ObservedIds.from([...unrelated, 7, '7']) });
+  assert.deepEqual(service.data.groups, [{ id: '8' }]);
+  assert.equal(profiles.get('first').groupId, '');
+  assert.equal(profiles.get('first').group_name, '');
+  assert.equal(profiles.get('second'), second);
+  assert.deepEqual(writes, Array.from({ length: 2 }, () => ({
+    ids: ['first'], options: { checkRevisions: true, delta: true },
+  })));
+  assert.equal(linearLookupWidth, 0, 'bulk relationship updates must not rescan the entire ID array per row');
+}
+
 async function main() {
   // Use the real request/dispatch/handlers with controlled I/O and no desktop.
   const service = Object.create(LocalService.prototype);
@@ -161,6 +201,7 @@ async function main() {
   assert.equal(service.data.settings.recovered, true);
   await checkNotificationWrites(service);
   await checkLabelProjection();
+  await checkBatchAssociations();
 
   // A large existing library must not exceed the JS argument-count limit when
   // creating a profile or reserving a batch of sequential display numbers.
@@ -176,6 +217,6 @@ async function main() {
   assert.equal(saved[0].number, 200001);
   const batch = await service.request('profiles:create-batch', { createCount: 3 });
   assert.deepEqual(batch.map(profile => profile.sortNum), [200001, 200002, 200003]);
-  console.log('PASS local routes: validation, dispatch, launch isolation, rollback, notification write deduplication and label projection');
+  console.log('PASS local routes: validation, dispatch, launch isolation, rollback, notification writes and collection projections');
 }
 main().catch((error) => { console.error(error); process.exitCode = 1; });

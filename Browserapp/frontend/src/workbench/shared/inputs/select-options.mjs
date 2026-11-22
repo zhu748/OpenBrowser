@@ -29,6 +29,12 @@ export function createSelectOptionModel(settings) {
     if (value == null || value === '') return null;
     return options.find(option => settings.optionValue ? valueOf(option) === value : valuesEqual(option, value)) ?? null;
   }
+  function findTypedOption(options, text) {
+    const match = options.find(option => labelOf(option) === text
+      || (settings.optionValue && String(valueOf(option)) === text));
+    // Zero and false are choices, while empty entries still fall back to the typed text.
+    return match || match === 0 || match === false ? match : undefined;
+  }
   function matchesQuery(option, fields, needle) {
     const labels = fields.map(field => String(typeof option !== 'object' || !option
       ? (option ?? '')
@@ -56,5 +62,5 @@ export function createSelectOptionModel(settings) {
       return matchesQuery(option, fields, needle);
     });
   }
-  return { labelOf, valueOf, optionDisabled, valuesEqual, findSelectedOption, filterOptions };
+  return { labelOf, valueOf, optionDisabled, valuesEqual, findSelectedOption, findTypedOption, filterOptions };
 }

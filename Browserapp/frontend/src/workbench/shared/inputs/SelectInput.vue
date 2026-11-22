@@ -74,7 +74,7 @@ const emit = defineEmits([
   "hide",
 ]);
 const baseOverlayZIndex = 1100;
-const { labelOf, valueOf, optionDisabled, valuesEqual, findSelectedOption, filterOptions } =
+const { labelOf, valueOf, optionDisabled, valuesEqual, findSelectedOption, findTypedOption, filterOptions } =
   createSelectOptionModel(props);
 
 let attrs = useAttrs(),
@@ -309,14 +309,8 @@ function commitInput(event) {
     hasValue.value && update(null, event);
     return;
   }
-  let matchedOption = choices.value.find(
-    (e3) =>
-      !!(
-        labelOf(e3) === text ||
-        (props.optionValue && String(valueOf(e3)) === text)
-      ),
-  );
-  matchedOption
+  const matchedOption = findTypedOption(choices.value, text);
+  matchedOption !== undefined
     ? (update(valueOf(matchedOption), event),
       (inputText.value = labelOf(matchedOption)))
     : update(text, event);

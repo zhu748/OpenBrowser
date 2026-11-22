@@ -46,6 +46,7 @@ const SUITE = [
   ['selftest:agentdurability', 'automation/selftests/agent-durability-selftest.js'],
   ['selftest:nativeplan', 'automation/selftests/native-test-plan-selftest.js'],
   ['selftest:workbenchusage', 'automation/selftests/workbench-usage-selftest.js'],
+  ['selftest:projectlistprojection', 'automation/selftests/project-list-projection-selftest.js'],
   ['selftest:metadatarecovery', 'automation/selftests/metadata-recovery-selftest.js'],
   ['selftest:agentcancelnative', 'automation/selftests/agent-browser-cancellation-native-selftest.js', { nativeOnly: true, runtimes: ['chromium'] }],
   ['selftest:fatalerror', 'automation/selftests/fatal-error-selftest.js'],

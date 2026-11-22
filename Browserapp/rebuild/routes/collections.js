@@ -10,13 +10,22 @@ const object = (value) =>
   value && typeof value === "object" && !Array.isArray(value);
 
 async function groupsList(service, p) {
-  const index = service.profileIndex();
-  const rows = service.data.groups.map((v) => ({
+  // The sidebar needs only pinned projects. Avoid cloning discarded rows
+  // or preparing the profile index when no project will be returned.
+  const groups = p.pinnedOnly
+    ? service.data.groups.filter((group) => group.pinStatus === 1)
+    : service.data.groups;
+  const defaultPin = p.default === 2 ? service.data.settings.defaultProjectPin || 0 : 0;
+  const includeDefault = p.default === 2 && (!p.pinnedOnly || defaultPin === 1);
+  if (!groups.length && !includeDefault) return [];
+
+  const { groupCounts } = service.profileIndex();
+  const rows = groups.map((v) => ({
     ...structuredClone(v),
     projectName: v.projectName,
     project_id: v.id,
     projectId: v.id,
-    windowCount: index.groupCounts.get(v.id) || 0,
+    windowCount: groupCounts.get(v.id) || 0,
     user_info: [
       {
         userId: "local",
@@ -25,24 +34,24 @@ async function groupsList(service, p) {
       },
     ],
   }));
-  if (p.default === 2)
+  if (includeDefault)
     rows.unshift({
       id: "local-default",
       project_id: "local-default",
       projectId: "local-default",
       projectDefault: 1,
       projectName: "默认项目",
-      pinStatus: service.data.settings.defaultProjectPin || 0,
-      windowCount: index.groupCounts.get("") || 0,
+      pinStatus: defaultPin,
+      windowCount: groupCounts.get("") || 0,
       user_info: [
         {
           userId: "local",
           userName: "OpenBrowser",
-          pinStatus: service.data.settings.defaultProjectPin || 0,
+          pinStatus: defaultPin,
         },
       ],
     });
-  return p.pinnedOnly ? rows.filter((row) => row.pinStatus === 1) : rows;
+  return rows;
 }
 
 async function groupsSave(service, p) {
@@ -123,9 +132,9 @@ async function labelsSave(service, p) {
 async function labelsDelete(service, p) {
   const e = service.engine;
   rememberRecordIds(service.data, "labels");
-  const ids = p.ids.map(Number);
+  const ids = new Set(p.ids.map(Number));
   const changes = [...e.profiles.values()]
-    .filter((profile) => labelIdsOf(profile).some((id) => ids.includes(id)))
+    .filter((profile) => labelIdsOf(profile).some((id) => ids.has(id)))
     .map((profile) => {
       const base = e.profileForEdit(profile.id);
       return {
@@ -133,14 +142,14 @@ async function labelsDelete(service, p) {
         baseRev: base.rev,
         patch: {
           tag: labelIdsOf(base.profile)
-            .filter((id) => !ids.includes(id))
+            .filter((id) => !ids.has(id))
             .join(","),
         },
       };
     });
   const result = await profileRelations(service, changes, () => {
     service.data.labels = (service.data.labels || []).filter(
-      (row) => !ids.includes(row.id),
+      (row) => !ids.has(row.id),
     );
   });
   e.emit?.({ type: "profiles", action: "label-metadata" });
@@ -149,10 +158,10 @@ async function labelsDelete(service, p) {
 
 async function groupsDelete(service, p) {
   const e = service.engine;
-  const ids = p.ids.map(String);
-  if (ids.includes("local-default")) throw Error("默认项目不能删除");
+  const ids = new Set(p.ids.map(String));
+  if (ids.has("local-default")) throw Error("默认项目不能删除");
   const changes = [...e.profiles.values()]
-    .filter((profile) => ids.includes(profile.groupId))
+    .filter((profile) => ids.has(profile.groupId))
     .map((profile) => {
       const base = e.profileForEdit(profile.id);
       return {
@@ -163,7 +172,7 @@ async function groupsDelete(service, p) {
     });
   const result = await profileRelations(service, changes, () => {
     service.data.groups = service.data.groups.filter(
-      (row) => !ids.includes(String(row.id)),
+      (row) => !ids.has(String(row.id)),
     );
   });
   e.emit?.({ type: "profiles", action: "group-metadata" });

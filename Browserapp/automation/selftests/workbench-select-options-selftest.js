@@ -24,12 +24,17 @@ async function main() {
   assert.equal(indexOfSelectedOption(choices, model.findSelectedOption(choices, false)), 4, 'opening focuses a selected false');
   assert.equal(indexOfSelectedOption([first, null], model.findSelectedOption(choices, null)), -1);
   assert.equal(indexOfSelectedOption([first], model.findSelectedOption(choices, false)), -1, 'filtered-out selections are not focused');
+  assert.equal(model.findTypedOption(choices, '0'), 0, 'matching an editable label keeps the numeric option');
+  assert.equal(model.findTypedOption(choices, 'false'), false, 'matching an editable label keeps the boolean option');
+  assert.equal(model.findTypedOption(choices, 'False'), undefined, 'free text still uses exact matching');
   assert.equal(model.filterOptions(choices, ''), choices, 'blank queries preserve the same list');
 
   Object.assign(settings, { optionValue: 'id', optionDisabled: 'omitted', filterLocale: 'tr', filterMatchMode: 'startsWith' });
   assert.equal(model.valuesEqual(first, duplicate), true);
   assert.equal(model.findSelectedOption(choices, 0), first, 'first matching row wins');
   assert.equal(model.findSelectedOption(choices, '0'), null, 'value matching is strict');
+  assert.equal(model.findTypedOption(choices, '0'), first, 'editable matching still accepts a stringified option value');
+  assert.equal(model.findTypedOption([null], 'null'), undefined, 'null matches still fall back to free text');
   assert.equal(model.optionDisabled(first), true);
   assert.equal(model.optionDisabled(null), false);
   assert.deepEqual(model.filterOptions(choices, 'ist'), [first], 'search is locale-aware even for a disabled option');
