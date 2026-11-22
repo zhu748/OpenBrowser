@@ -1,6 +1,7 @@
 "use strict";
 
 const { randomUUID: uid } = require("node:crypto");
+const { isDeepStrictEqual } = require("node:util");
 const object = (value) =>
   value && typeof value === "object" && !Array.isArray(value);
 
@@ -33,7 +34,11 @@ async function settingsGet(service) {
 
 async function settingsSet(service, p) {
   if (!object(p)) throw Error("Invalid settings");
-  service.data.settings = { ...service.data.settings, ...p };
+  const current = service.data.settings;
+  const next = { ...current, ...p };
+  // Identical saves from multiple windows do not need another whole-store write.
+  if (isDeepStrictEqual(current, next)) return true;
+  service.data.settings = next;
   await service.save();
   return true;
 }

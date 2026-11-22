@@ -180,6 +180,31 @@ async function checkSavedFilterRename() {
     [{ favorite: true }, { running: false }], 'an edit with the same name does not create a second record');
 }
 
+async function checkSettingsNoopWrites() {
+  const service = Object.create(LocalService.prototype);
+  service.queue = Promise.resolve();
+  service.load = async () => {};
+  const storedSort = [{ name: 'name', direction: 'asc' }, { name: 'createdAt', direction: 'desc' }];
+  service.data = { settings: { colorScheme: 'dark', tableSort: storedSort } };
+  const saved = [];
+  service.save = async () => { saved.push(structuredClone(service.data.settings)); };
+
+  await service.request('settings:set', {});
+  await Promise.all(Array.from({ length: 25 }, () => service.request('settings:set', {
+    tableSort: storedSort.map(({ direction, name }) => ({ direction, name })), colorScheme: 'dark',
+  })));
+  assert.equal(saved.length, 0, 'repeated equal patches must not rewrite the local store');
+
+  const reorderedSort = [...storedSort].reverse();
+  await Promise.all([
+    service.request('settings:set', { tableSort: reorderedSort }),
+    service.request('settings:set', { tableSort: structuredClone(reorderedSort) }),
+  ]);
+  assert.deepEqual(saved, [{ colorScheme: 'dark', tableSort: reorderedSort }],
+    'a real array reorder is persisted once and the unchanged duplicate is skipped');
+  assert.deepEqual(await service.request('settings:get'), saved[0]);
+}
+
 async function main() {
   // Use the real request/dispatch/handlers with controlled I/O and no desktop.
   const service = Object.create(LocalService.prototype);
@@ -256,6 +281,7 @@ async function main() {
   await checkLabelProjection();
   await checkBatchAssociations();
   await checkSavedFilterRename();
+  await checkSettingsNoopWrites();
 
   // A large existing library must not exceed the JS argument-count limit when
   // creating a profile or reserving a batch of sequential display numbers.
@@ -271,6 +297,6 @@ async function main() {
   assert.equal(saved[0].number, 200001);
   const batch = await service.request('profiles:create-batch', { createCount: 3 });
   assert.deepEqual(batch.map(profile => profile.sortNum), [200001, 200002, 200003]);
-  console.log('PASS local routes: validation, dispatch, launch isolation, rollback, notification writes, collection projections and filter identity');
+  console.log('PASS local routes: validation, dispatch, launch isolation, rollback, notification/settings writes, collection projections and filter identity');
 }
 main().catch((error) => { console.error(error); process.exitCode = 1; });

@@ -20,6 +20,13 @@ const COLUMNS = {
 const headers = new Map(Object.entries(COLUMNS).flatMap(([key, aliases]) =>
   [key, ...aliases].map(name => [name.trim().toLowerCase(), key])));
 
+// Match the instruction opening of current EN/CN templates and the short
+// legacy directives, not a heading or arbitrary reference to row 5.
+const templateInstructions = [
+  /^说明\s*[:：]\s*(?:1\.\s*数据请从第\s*5\s*行开始录入[,，]|从第\s*5\s*行导入[。.]?$)/,
+  /^instructions?\s*[:：]\s*(?:1\.\s*please start entering data from row\s+5\.\s|start entering data from row\s+5\.?$)/i,
+];
+
 function jsonArray(value, label) {
   if (!value) return [];
   let parsed;
@@ -93,12 +100,11 @@ function sheetRows(sheet) {
   if (![...columns.values()].includes('windowName') || ![...columns.values()].includes('os')) {
     throw Error('XLSX 表头需要窗口名称和操作系统列');
   }
-  // Published templates place a labelled instruction in the leading name
-  // column. A casual mention of row 5 in a plain sheet is not a template.
+  // Published templates put the instruction in the leading name column.
   const hasInstructions = body.some(row => row.number === 4 && row.cells.length === 1
     && row.cells[0].column === header.cells[0].column
     && columns.get(row.cells[0].column) === 'windowName'
-    && /^(?:说明|instructions?)(?:\s*[：:]|$)/i.test(row.cells[0].text.trim()));
+    && templateInstructions.some(pattern => pattern.test(row.cells[0].text.trim())));
   const rows = [];
   for (const row of body) {
     if (hasInstructions && row.number < 5) continue;

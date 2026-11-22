@@ -30,15 +30,20 @@ test('a note in an ignored first column cannot drop preceding records', async ()
   }
 });
 
-test('a window name mentioning row 5 remains data for ordinary validation', async () => {
-  const rows = await parse(
-    row(1, { A: 'windowName', B: 'os' }),
-    row(2, { A: 'First', B: 'Windows' }),
-    row(4, { A: 'Follow-up for row 5' }),
-    row(5, { A: 'Next', B: 'macOS' }),
-  );
-  assert.deepEqual(rows.map(({ rowNum, windowName }) => [rowNum, windowName]),
-    [[2, 'First'], [4, 'Follow-up for row 5'], [5, 'Next']]);
+test('a partial data row stays visible to ordinary validation', async () => {
+  for (const name of [
+    'Follow-up for row 5', 'Instructions: Follow-up', 'Instructions: Follow-up for row 5', '说明：第 5 行待跟进',
+  ]) {
+    const rows = await parse(
+      row(1, { A: 'windowName', B: 'os' }),
+      row(2, { A: 'First', B: 'Windows' }),
+      row(3, { A: 'Second', B: 'Linux' }),
+      row(4, { A: name }),
+      row(5, { A: 'Next', B: 'macOS' }),
+    );
+    assert.deepEqual(rows.map(({ rowNum, windowName }) => [rowNum, windowName]),
+      [[2, 'First'], [3, 'Second'], [4, name], [5, 'Next']], name);
+  }
 });
 
 test('explicit legacy template notes still skip the help and example rows', async () => {
@@ -50,6 +55,7 @@ test('explicit legacy template notes still skip the help and example rows', asyn
     { headers: { A: chinese['窗口名称'], B: chinese['操作系统'] }, note: chinese[instructionKey] },
     { headers: { A: 'Window Name', B: 'Operating System' }, note: english[instructionKey] },
     { headers: { A: 'windowName', B: 'os' }, note: '说明：从第 5 行导入' },
+    { headers: { A: 'Window Name', B: 'Operating System' }, note: 'Instructions: Start entering data from row 5.' },
     { headers: { A: english['窗口名称'], B: english['操作系统'] }, note: english[instructionKey] },
   ];
   for (const { headers, note } of templates) {

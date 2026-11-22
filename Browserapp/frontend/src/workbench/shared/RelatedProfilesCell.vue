@@ -17,6 +17,6 @@ const tooltip = computed(() => props.addTooltip ?? labels.value.selectEntityTool
       <template #empty><span class="row-hover-empty">--</span></template>
     </RelatedInfo>
     <Button v-if="showAdd" v-tooltip.top="{ value: tooltip, showDelay: 500 }" class="shrink-0 row-hover-action"
-      text severity="secondary" size="xxs" icon="base/rx_ic_plus" @click.stop="emit('add')" />
+      text severity="secondary" size="xxs" icon="base/rx_ic_plus" :aria-label="tooltip" @click.stop="emit('add')" />
   </div>
 </template>
