@@ -44,6 +44,7 @@ class TrackedProfileMap extends Map {
   constructor(entries) {
     super();
     this._revisions = new Map(); // id -> { rev, hash }
+    this._pendingWrites = new Set();
     this._sequence = 0;
     this._version = 0;
     if (entries != null) {
@@ -60,11 +61,15 @@ class TrackedProfileMap extends Map {
 
   /** {id: rev} snapshot for the given ids (all ids when omitted). */
   revisionState(ids) {
-    const out = {};
-    for (const id of ids == null ? this.keys() : ids) {
-      out[String(id)] = this.revisionOf(id);
-    }
-    return out;
+    return Object.fromEntries(Array.from(ids ?? this.keys(), id => [String(id), this.revisionOf(id)]));
+  }
+
+  pendingWrites() {
+    return [...this._pendingWrites].map(id => [id, this.revisionOf(id)]);
+  }
+
+  acknowledgeWrites(entries) {
+    for (const [id, revision] of entries) if (this.revisionOf(id) === revision) this._pendingWrites.delete(id);
   }
 
   set(id, profile) {
@@ -79,12 +84,14 @@ class TrackedProfileMap extends Map {
       if (hash) this._revisions.set(key, { rev: ++this._sequence, hash });
     }
     this._version += 1;
+    this._pendingWrites.add(key);
     return super.set(key, profile);
   }
 
   delete(id) {
     const key = String(id);
     this._revisions.delete(key);
+    this._pendingWrites.delete(key);
     const removed = super.delete(key);
     if (removed) this._version += 1;
     return removed;
@@ -92,6 +99,7 @@ class TrackedProfileMap extends Map {
 
   clear() {
     this._revisions.clear();
+    this._pendingWrites.clear();
     if (this.size) this._version += 1;
     super.clear();
   }

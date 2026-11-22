@@ -82,6 +82,7 @@ function copyId(id) {
             <Select v-bind="input.items[1]" v-model="input.items[1].value" class="min-w-0 flex-1"
               @change="input.items[1].change?.(input.items[1], input.items)" />
           </div>
+          <Message v-if="input.items[0].help" severity="secondary" size="small" variant="simple">{{ input.items[0].help }}</Message>
           <Message v-if="input.items[1].help" severity="error" size="small" variant="simple">{{ input.items[1].help }}</Message>
         </div>
       </div>

@@ -1,22 +1,9 @@
 'use strict';
 
 /**
- * Firefox Worker delivery gate (empirical capability documentation).
- *
- * Verifies on a real Firefox what the three worker scopes deliver on their
- * FIRST instruction:
- *   - persona via prefs (userAgent, platform, languages, timezone): DELIVERED
- *     (general.useragent.override / intl prefs apply to worker scopes).
- *   - JS-patch-only fields (hardwareConcurrency): NOT deliverable on Firefox
- *     160 — verified empirically against all three standard channels:
- *       1. script.addPreloadScript does not run in worker realms (marker: no);
- *       2. script.realmCreated worker realms are not evaluable ("Realm ...
- *          not found" — the realm is gone before evaluate can land);
- *       3. BiDi network interception (continueRequest/provideResponse) fails
- *          on worker script loads ("Blocked request ... not found").
- *     Per the acceptance rules this is a NARROWED capability declaration,
- *     not a relaxed assertion: the gate asserts the delivered fields strictly
- *     and records the cores gap explicitly.
+ * Native Firefox Worker delivery gate. The control isolates launch prefs.
+ * The local response filter and trusted forwarder phases check first-worker
+ * instructions, including module dependencies, nested and persisted Workers.
  *
  * Exit codes: 2 = OPENBROWSER_FIREFOX_BINARY missing, 1 = assertion failure.
  */
@@ -25,6 +12,7 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
+const { gzipSync } = require('node:zlib');
 const { spawn, execFileSync } = require('node:child_process');
 const { sanitizeProfile } = require('../../engine/profile-sanitizer');
 const { firefoxExtraUserPrefs } = require('../../engine/start-firefox');
@@ -39,6 +27,7 @@ const { installFirefoxCa } = require('../firefox-trust-installer');
 const { receiverShadowSnapshot } = require('./fingerprint-receiver-probes');
 const { matrixSources, probeFirefoxWorkerMatrix, probeCachedFirefoxServiceWorker } = require('./firefox-worker-matrix-probes');
 const { prepareFirefoxWorkerCache } = require('../firefox-worker-cache');
+const { installFirefoxLocalWorkerFilter, LOOPBACK_HOSTS } = require('../firefox-local-workers');
 
 async function closeFirefox(connection, child) {
   await connection.command('browser.close', {}, 5000).catch(() => {});
@@ -85,6 +74,7 @@ const dedicatedSrc = `"use strict";const first=${SNAP};(${receiverShadowSnapshot
 const sharedSrc = `"use strict";const first=${SNAP};self.onconnect=(e)=>{e.ports[0].onmessage=()=>e.ports[0].postMessage(JSON.stringify(first));};`;
 const serviceSrc = `"use strict";const first=${SNAP};self.addEventListener('install',e=>self.skipWaiting());self.addEventListener('activate',e=>self.clients.claim());self.addEventListener('message',e=>e.ports[0].postMessage(JSON.stringify(first)));`;
 const matrixScripts = matrixSources(SNAP);
+const localDedicatedSource = '#!local-network-worker\n' + dedicatedSrc;
 const evaluateMatrix = (connection, context) => evaluateBidi({
   command: (method, params) => connection.command(method, params, 120000),
 }, { context }, `(${probeFirefoxWorkerMatrix.toString()})(${JSON.stringify(SNAP)})`);
@@ -99,15 +89,24 @@ const evaluateMatrix = (connection, context) => evaluateBidi({
   const version = execFileSync(binary, ['--version'], { encoding: 'utf8', timeout: 10000 }).match(/Firefox\s+(\d+(?:\.\d+)+)/)?.[1];
   if (!version) throw new Error('Cannot determine the native Firefox version');
 
-  const server = http.createServer((req, res) => {
+  const serveLocal = (req, res) => {
     if (req.url === '/matrix/service.js') res.setHeader('Service-Worker-Allowed', '/');
     if (matrixScripts[req.url]) { res.setHeader('Content-Type', 'application/javascript');res.end(matrixScripts[req.url]); }
-    else if (req.url.startsWith('/dedicated.js')) { res.setHeader('Content-Type', 'application/javascript'); res.end(dedicatedSrc); }
+    else if (req.url.startsWith('/dedicated.js')) {
+      res.writeHead(200, { 'Content-Type': 'application/javascript', 'Content-Encoding': 'gzip', 'Cache-Control': 'max-age=600' });
+      res.end(gzipSync(localDedicatedSource));
+    }
     else if (req.url.startsWith('/shared.js')) { res.setHeader('Content-Type', 'application/javascript'); res.end(sharedSrc); }
     else if (req.url.startsWith('/service.js')) { res.setHeader('Content-Type', 'application/javascript'); res.end(serviceSrc); }
     else { res.setHeader('Content-Type', 'text/html'); res.end('<!doctype html><body></body>'); }
-  });
+  };
+  const server = http.createServer(serveLocal);
+  const ipv6 = http.createServer(serveLocal);
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  await new Promise((resolve, reject) => {
+    ipv6.once('error', error => ['EADDRNOTAVAIL', 'EAFNOSUPPORT'].includes(error.code) ? resolve() : reject(error));
+    ipv6.listen(0, '::1', resolve);
+  });
 
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ob-ff-worker-'));
   const profile = sanitizeProfile({ id: 'ff-worker-gate', name: 'ff-worker-gate', engine: 'firefox', os: 'Windows', width: 1440, height: 900,
@@ -115,8 +114,9 @@ const evaluateMatrix = (connection, context) => evaluateBidi({
   let fp = buildFirefoxFingerprint(profile, version);
   await fs.writeFile(path.join(root, 'user.js'), buildFirefoxUserJs({
     userAgent: fp.userAgent, acceptLanguages: fp.languages.join(','), locale: fp.languages[0],
-    proxyEndpoint: 'http://127.0.0.1:9', noProxyHosts: '127.0.0.1, localhost',
-    extraPrefs: [...firefoxExtraUserPrefs(profile, fp), ['network.dns.disablePrefetch', true], ['network.prefetch-next', false], ['network.captive-portal-service.enabled', false], ['network.connectivity-service.enabled', false]],
+    proxyEndpoint: 'http://127.0.0.1:9', noProxyHosts: LOOPBACK_HOSTS.join(', '),
+    extraPrefs: [...firefoxExtraUserPrefs(profile, fp).filter(([name]) => name !== 'dom.maxHardwareConcurrency'),
+      ['network.dns.disablePrefetch', true], ['network.prefetch-next', false], ['network.captive-portal-service.enabled', false], ['network.connectivity-service.enabled', false]],
   }), { mode: 0o600 });
   const child = spawn(binary, firefoxStartupArgs({ root, startUrl: 'about:blank', headless: true, remoteDebugging: true }), {
     stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, TZ: fp.timezone },
@@ -171,7 +171,7 @@ const evaluateMatrix = (connection, context) => evaluateBidi({
       // DELIVERED capability set, never relaxed to pretend coverage.
       if (w.cores !== fp.hardwareConcurrency) {
         console.log('NOTE ff-worker ' + kind + ' hardwareConcurrency is host value (' + w.cores + '), persona is ' + fp.hardwareConcurrency
-          + ' — expected for the DIRECT (non-proxied) phase; the proxy phase below delivers it');
+          + ' (prefs-only control)');
       } else {
         console.log('PASS ff-worker ' + kind + ' hardwareConcurrency matches persona');
       }
@@ -185,10 +185,63 @@ const evaluateMatrix = (connection, context) => evaluateBidi({
     }
     assert.notEqual(nativeMatrix.network.cores, fp.hardwareConcurrency, 'configured cores must differ from the native control');
 
-    // ---- PHASE 2: proxy-delivered JS-only fields over HTTPS ----
-    conn.close();
-    await stopChild(child);
+    await closeFirefox(conn, child);
+    const directProfile = sanitizeProfile({ ...profile, privacy: { ...profile.privacy, cores: nativeMatrix.network.cores === 24 ? 4 : 24 } });
+    const directFp = buildFirefoxFingerprint(directProfile, version);
+    const directSource = buildWorkerInjectionScript(directFp);
+    await prepareFirefoxWorkerCache(root, directSource, { localDelivery: true });
+    await fs.writeFile(path.join(root, 'user.js'), buildFirefoxUserJs({
+      userAgent: directFp.userAgent, acceptLanguages: directFp.languages.join(','), locale: directFp.languages[0],
+      proxyEndpoint: 'http://127.0.0.1:9', noProxyHosts: LOOPBACK_HOSTS.join(', '),
+      extraPrefs: [...firefoxExtraUserPrefs(directProfile, directFp), ['network.captive-portal-service.enabled', false], ['network.connectivity-service.enabled', false]],
+    }), { mode: 0o600 });
+    const localChild = spawn(binary, firefoxStartupArgs({ root, startUrl: 'about:blank', headless: true, remoteDebugging: true }), {
+      stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, TZ: directFp.timezone },
+    });
+    let localConnection;
+    try {
+      localConnection = new BidiConnection(await waitForFirefoxEndpoint(localChild, 30000), {});
+      await localConnection.open();
+      const local = await initializeFirefoxFingerprint(localConnection, directFp, directProfile, {
+        installLocalWorkerFilter: () => installFirefoxLocalWorkerFilter(localConnection, root, directSource),
+      });
+      await navigate(localConnection, local.context, 'http://127.0.0.1:' + server.address().port + '/');
+      const oldService = await evaluateBidi(localConnection, { context: local.context }, `(${probeCachedFirefoxServiceWorker.toString()})()`);
+      assert.equal(oldService.missing, true, 'older local registration is invalidated');
+      const localMatrix = await evaluateMatrix(localConnection, local.context);
+      for (const [kind, result] of Object.entries(localMatrix)) {
+        assert.equal(result.cores, directFp.hardwareConcurrency, kind + ' local first read: ' + JSON.stringify(result));
+      }
+      assert.equal(localMatrix.module.dependency.cores, directFp.hardwareConcurrency, 'local static module dependency first read');
+      assert.equal(localMatrix.network.strict, true, 'local filter preserves strict semantics');
+      const readGzipWorker = `new Promise(resolve => {
+        const worker = new Worker('/dedicated.js');
+        worker.onmessage = event => { worker.terminate(); resolve(JSON.parse(event.data)); };
+        worker.onerror = event => resolve({ error: event.message });
+      })`;
+      for (let count = 0; count < 2; count++) {
+        const gzipWorker = await evaluateBidi(localConnection, { context: local.context }, readGzipWorker);
+        assert.equal(gzipWorker.cores, directFp.hardwareConcurrency, 'local gzip Worker: ' + JSON.stringify(gzipWorker));
+        verifyReceivers(gzipWorker.receivers);
+      }
+      assert.equal(await evaluateBidi(localConnection, { context: local.context }, "fetch('/dedicated.js').then(response => response.text())"),
+        localDedicatedSource, 'ordinary fetch of the same URL preserves the original response');
+      const aliases = ['http://localhost:' + server.address().port + '/'];
+      if (ipv6.listening) aliases.push('http://[::1]:' + ipv6.address().port + '/');
+      for (const url of aliases) {
+        await navigate(localConnection, local.context, url);
+        const result = await evaluateBidi(localConnection, { context: local.context }, readGzipWorker);
+        assert.equal(result.cores, directFp.hardwareConcurrency, 'loopback alias first read: ' + url);
+      }
+      console.log('PASS ff-worker direct loopback first reads', nativeMatrix.network.cores + ' native cores → ' + directFp.hardwareConcurrency + ' configured');
+    } finally {
+      if (localConnection) await closeFirefox(localConnection, localChild);
+      await stopChild(localChild);
+    }
 
+    // ---- PHASE 2: proxy-delivered JS-only fields over HTTPS ----
+    // Isolate forwarder delivery from the native CPU cap in the remaining tests.
+    const proxyPrefs = firefoxExtraUserPrefs(profile, fp).filter(([name]) => name !== 'dom.maxHardwareConcurrency');
     const httpsTmp = await fs.mkdtemp(path.join(os.tmpdir(), 'ob-ff-mitm-leaf-'));
     const keyPath = path.join(httpsTmp, 'k.pem');
     const certPath = path.join(httpsTmp, 'c.pem');
@@ -237,7 +290,7 @@ const evaluateMatrix = (connection, context) => evaluateBidi({
       userAgent: fp.userAgent, acceptLanguages: fp.languages.join(','), locale: fp.languages[0],
       proxyEndpoint: proxy.url,
       noProxyHosts: '',
-      extraPrefs: [...firefoxExtraUserPrefs(profile, fp),
+      extraPrefs: [...proxyPrefs,
         ['network.proxy.allow_hijacking_localhost', true],
         ['network.captive-portal-service.enabled', false], ['network.connectivity-service.enabled', false]],
     }), { mode: 0o600 });
@@ -386,7 +439,7 @@ const evaluateMatrix = (connection, context) => evaluateBidi({
         userAgent: fp.userAgent, acceptLanguages: fp.languages.join(','), locale: fp.languages[0],
         proxyEndpoint: chained.url,
         noProxyHosts: '',
-        extraPrefs: [...firefoxExtraUserPrefs(profile, fp),
+        extraPrefs: [...proxyPrefs,
           ['network.proxy.allow_hijacking_localhost', true],
           ['network.captive-portal-service.enabled', false], ['network.connectivity-service.enabled', false]],
       }), { mode: 0o600 });
@@ -422,7 +475,7 @@ const evaluateMatrix = (connection, context) => evaluateBidi({
         authBridge.close();
         await fs.rm(chainRoot, { recursive: true, force: true }).catch(() => {});
       }
-      console.log('firefox-worker-delivery-selftest: OK (prefs fields + proxy-delivered JS-only fields [direct + chained-auth] verified on Firefox ' + version + ')');
+      console.log('firefox-worker-delivery-selftest: OK (loopback, trusted forwarder and chained proxy on Firefox ' + version + ')');
     } finally {
       await stopChild(child2);
       await proxy.close();
@@ -434,6 +487,8 @@ const evaluateMatrix = (connection, context) => evaluateBidi({
     await stopChild(child);
     server.closeAllConnections?.();
     server.close();
+    ipv6.closeAllConnections?.();
+    ipv6.close();
     await fs.rm(root, { recursive: true, force: true }).catch(() => {});
   }
 })().catch((error) => {

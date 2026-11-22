@@ -1,4 +1,9 @@
 const messages = {
+  "指纹预览未返回完整身份，请重试": "The fingerprint preview was incomplete. Please try again.",
+  "Firefox 当前支持桌面设备配置，请选择 Windows、macOS 或 Linux": "Firefox profiles require Windows, macOS, or Linux.",
+  "展开可调整分辨率、WebRTC、WebGL 等参数。电池、网络和蓝牙选项适用于 Chrome 移动设备配置。": "Expand to adjust resolution, WebRTC, WebGL, and other settings. Battery, network, and Bluetooth options apply to Chrome mobile profiles.",
+  "模拟不可用": "Simulate Unavailable",
+  "请输入有效的 MAC 地址，例如 {address}": "Enter a valid MAC address, for example {address}",
   "\"{name}\" 是必填项": "\"{name}\" is required",
   "( 每个 IP 仅可享 1 次 )": "(One offer per proxy IP)",
   "(剩余 {day} 天)": "(Remaining {day} days)",

@@ -78,7 +78,7 @@ function buildPersona(id, spec = {}) {
     fingerprintSeed: spec.seed || id,
     privacy: {
       deviceProfile: 'persona',
-      fontListMode: 'real',
+      fontListMode: spec.fontListMode || 'real',
       webrtc: spec.webrtc || 'disabled',
       stabilityMode: 'force',
       fingerprint: { devicePixelRatio: spec.dpr || 1 },

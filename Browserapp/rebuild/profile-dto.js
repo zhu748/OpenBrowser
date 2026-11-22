@@ -135,8 +135,8 @@ function fromRoxy(v, base = {}) {
     if (Object.hasOwn(v, source)) mapped.privacy[target] = v[source];
   if (Object.hasOwn(v, "isDisplayLanguageBaseIp"))
     mapped.privacy.languageMode = v.isDisplayLanguageBaseIp ? "ip" : "profile";
-  if (Object.hasOwn(v, "language"))
-    mapped.privacy.uiLanguage = v.isLanguageBaseIp ? "ip" : v.language;
+  if (v.isLanguageBaseIp === true) mapped.privacy.uiLanguage = "ip";
+  else if (Object.hasOwn(v, "language")) mapped.privacy.uiLanguage = v.language;
   if (Object.hasOwn(v, "positionSwitch"))
     mapped.privacy.fullscreen = !v.positionSwitch;
   if (Object.hasOwn(v, "windowRatioPosition"))
@@ -403,7 +403,9 @@ function toRoxy(p) {
     openTime: p.lastOpenedAt,
     createTime: p.createdAt,
     email: "本地",
-    updateTime: p.trashedAt?.replace("T", " ").slice(0, 19) || "",
+    updateTime: p.updatedAt || "",
+    trashedAt: p.trashedAt ?? null,
+    ...(p.trashed && Number.isSafeInteger(p.rev) && { rev: p.rev }),
     remaining: "永久保留",
     sortNum: p.number,
     name: p.name,

@@ -288,6 +288,7 @@ module.exports = {
       item.watchTimer = null;
       if (item.cleanedUp || item.stopping || !this.running.has(profileId)) return;
       let pageCount = -1;
+      let observedTabs = null;
       let cdpAlive = false;
       let processAlive = true;
       if (item.pid) {
@@ -308,17 +309,17 @@ module.exports = {
       const cdpCapable = Boolean(item.port) && item.engine !== 'firefox';
       if (cdpCapable) {
         try {
-          // /json/version proves browser process still exposes CDP
-          await cdp.json(`http://127.0.0.1:${item.port}/json/version`);
+          observedTabs = await cdp.tabs(item.port);
           cdpAlive = true;
-          // An unavailable list gives us no evidence that the last window closed.
-          const pages = await cdp.tabs(item.port).catch(() => null);
-          if (Array.isArray(pages)) {
-            pageCount = pages.length;
-            if (pageCount) item.sessionUrls = pages.map((page) => page.url);
-          }
+          pageCount = observedTabs.length;
+          if (pageCount) item.sessionUrls = observedTabs.map((page) => page.url);
         } catch (_) {
-          cdpAlive = false;
+          // A failed list leaves the window count unknown. Check connection
+          // liveness independently before scheduling browser cleanup.
+          try {
+            await cdp.json(`http://127.0.0.1:${item.port}/json/version`);
+            cdpAlive = true;
+          } catch (_) { cdpAlive = false; }
         }
       } else if (item.engine === 'firefox' && item.bidiConnection && !item.bidiConnection.closed) {
         try {
@@ -338,7 +339,7 @@ module.exports = {
         try { assertUrlAccessPolicySupported(runtimePolicyProfile(item.profile, this.profiles?.get?.(profileId)), 'firefox'); }
         catch (error) {
           item.cdpError = error.message;
-          this.invalidateStatusCache?.();
+          this.invalidateStatusCache?.(profileId);
           this.emit({ type: 'sync-error', action: 'url-access-policy', id: profileId, message: error.message });
           await this.handleBrowserGone(profileId, item, 'url-access-policy-unsupported', {
             expected: false, error: error.message, kill: true, waitForExit: true,
@@ -397,12 +398,14 @@ module.exports = {
               appliedFingerprintHash: item.fpAppliedHash,
               trackOn: item,
               phase: 'watch-ensure',
+              observedTabs,
             }).catch((error) => {
+              if (item.cleanedUp || item.stopping || this.running.get(profileId) !== item) return;
               item.cdpError = `fingerprint injection failed: ${error.message}`;
               // cdpError is part of the public status view (local API reads it
               // directly); this path emits no 'status' event, so invalidate
               // explicitly.
-              this.invalidateStatusCache?.();
+              this.invalidateStatusCache?.(profileId);
               this.emit({
                 type: 'fingerprint-injection-failed',
                 id: profileId,

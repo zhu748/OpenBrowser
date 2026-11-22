@@ -67,6 +67,39 @@ async function main() {
     await assert.rejects(fs.stat(engine.profileRoot('first')), { code: 'ENOENT' });
     assert.equal(engine.sqliteStore.hasProfile('first'), false);
 
+    await engine.trashProfiles(['second']);
+    const selection = { trashedAtById: { second: engine.profiles.get('second').trashedAt },
+      revisions: engine.profiles.revisionState(['second']) };
+    await engine.restoreProfiles(['second']);
+    assert.equal((await engine.purgeTrashedProfiles(['second'], true, selection)).deleted, 0);
+    await engine.trashProfiles(['second']);
+    assert.equal((await engine.purgeTrashedProfiles(['second'], true, selection)).deleted, 0, 're-trashed window requires a new selection');
+
+    const trash = Array.from({ length: 200 }, (_, i) => ({ id: `trash-${i}`, name: `Trash ${i}`, trashed: true }));
+    await engine.restoreProfiles(['second']);
+    await engine.syncProfiles(trash);
+    await addProfile(engine, 'last');
+    await engine.trashProfiles(['last']);
+    const purge = engine.purgeTrashedProfiles.bind(engine);
+    const { promise: firstBatchDeleted, resolve: signalFirstBatch } = Promise.withResolvers();
+    const { promise: resume, resolve: resumePurge } = Promise.withResolvers();
+    engine.purgeTrashedProfiles = async (...args) => {
+      const result = await purge(...args);
+      if (args[0].length === 200) {
+        signalFirstBatch();
+        await resume;
+      }
+      return result;
+    };
+    const clearing = engine.emptyTrash();
+    try {
+      await Promise.race([firstBatchDeleted, clearing]);
+      assert.equal((await engine.restoreProfiles(['last'])).restored, 1);
+    } finally { resumePurge(); }
+    assert.equal((await clearing).deleted, 200);
+    assert.equal(store.getProfile('last').trashed, false);
+    assert.equal(await fs.readFile(path.join(engine.profileRoot('last'), 'browser-data'), 'utf8'), 'last');
+
     const legacy = new BrowserEngine({ getPath: () => path.join(root, 'legacy') });
     await addProfile(legacy, 'legacy');
     fs.rename = async (source, destination) => {

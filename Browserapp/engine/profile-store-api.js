@@ -192,15 +192,29 @@ module.exports = {
     return this.deleteProfiles(ids, deleteData);
   },
 
+  purgeTrashedProfiles(ids, deleteData = true, { trashedAtById, revisions, beforeRemove } = {}) {
+    return withProfileLifecycleChange(this, ids, async (safeIds) => {
+      const selected = safeIds.filter((id) => {
+        const profile = this.profiles.get(id);
+        return profile?.trashed
+          && (!revisions || !Object.hasOwn(revisions, id) || this.profiles.revisionOf?.(id) === revisions[id])
+          && (!trashedAtById || !Object.hasOwn(trashedAtById, id) || (profile.trashedAt ?? null) === trashedAtById[id]);
+      });
+      if (!selected.length) return { success: true, deleted: 0, stopped: 0, dataDeleted: Boolean(deleteData), ids: [] };
+      await beforeRemove?.(selected);
+      return this._deleteProfiles(selected, deleteData);
+    });
+  },
+
   async emptyTrash(deleteData = true) {
-    this.invalidateStatusCache?.();
     const trashedIds = [...this.profiles.values()]
-      .filter((p) => Boolean(p.trashed))
-      .map((p) => p.id);
+      .filter((profile) => profile.trashed)
+      .map((profile) => profile.id);
+    const revisions = this.profiles.revisionState?.(trashedIds);
     const result = { success: true, deleted: 0, stopped: 0, dataDeleted: Boolean(deleteData), ids: [] };
     for (let offset = 0; offset < trashedIds.length; offset += 200) {
       try {
-        const batch = await this.purgeProfiles(trashedIds.slice(offset, offset + 200), deleteData);
+        const batch = await this.purgeTrashedProfiles(trashedIds.slice(offset, offset + 200), deleteData, { revisions });
         result.deleted += batch.deleted || 0;
         result.stopped += batch.stopped || 0;
         result.ids.push(...(batch.ids || []));

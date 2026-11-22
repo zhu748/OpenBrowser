@@ -9,9 +9,10 @@ import { i as suggestedWindowName } from './quick-kroUOSn_.js';
 import { o as hasWindowName } from './utils-CnUy4XUk.js';
 import { t as useAsyncGate } from './useAsyncGate-D7VA7DLY.js';
 import { t as validateProxy } from './api-extract-BlmYcIz7.js';
+import { invalidateFingerprintDraft } from './workbench-fingerprint-draft.js';
 import {
   toProxyFields, updateMobileFields, serializeProfileInput, initializeProfileInputs,
-  refreshProfileFingerprint,
+  refreshProfileFingerprint, showMobileProfileFields,
 } from './form-inputs-CnnG6T0O.js';
 
 function useWindowCreate(options = {}) {
@@ -30,38 +31,61 @@ function useWindowCreate(options = {}) {
     ?.some(option => option.value && option.value !== '__useLatestCore__');
   const canSubmit = computed(() => formGate.isReady.value && !loading.value && !!hasConcreteKernel());
   const state = { mainSetting, extraSettings, original, inputsGroup };
+  const activeFingerprintInputs = () => options.getFingerprintInputs?.(state) ?? inputsGroup.value;
+  let initialization = 0;
 
-  async function initialize(profile = {}, { refreshFingerprint = true } = {}) {
+  async function initialize(profile = {}, { refreshFingerprint = true, preserveSettings = false } = {}) {
+    const revision = ++initialization;
+    invalidateFingerprintDraft(activeFingerprintInputs());
     await formGate.run(async () => {
       const [[main, basic, fingerprint, preferences], saved] =
         await initializeProfileInputs(profile, notify, formGate);
+      if (revision !== initialization) return;
       mainSetting.value = main;
       extraSettings.value = [basic, fingerprint, preferences];
       original.value = saved;
       await options.onInputsInitialized?.(state);
+      if (revision !== initialization) return;
       syncMobileVisibility();
-      if (refreshFingerprint && hasConcreteKernel()) await updateFingerprint();
-      await options.onInitialized?.(state);
+      if (refreshFingerprint && hasConcreteKernel()) {
+        const preserve = preserveSettings
+          ? ['hardwareConcurrent', 'deviceMemory', 'deviceName'].filter(key => profile[key] != null && profile[key] !== '')
+          : [];
+        if (preserveSettings && profile._custom_ua === true) preserve.push('userAgent');
+        await updateFingerprint(undefined, { preserve });
+      }
     });
+  }
+
+  function dispose() {
+    initialization += 1;
+    invalidateFingerprintDraft(activeFingerprintInputs());
   }
 
   function syncMobileVisibility(visible) {
     const configured = visible ?? options.resolveMobileVisible?.(state);
     const os = findField(mainSetting.value, 'os')?.value?.value;
-    updateMobileFields(extraSettings.value, configured ?? ['Android', 'IOS'].includes(os));
+    const engine = findField(mainSetting.value, 'coreType')?.value?.value;
+    updateMobileFields(extraSettings.value, configured ?? showMobileProfileFields(os, engine));
   }
 
-  async function updateFingerprint(inputs) {
-    const fields = (Array.isArray(inputs) ? inputs : undefined)
-      ?? options.getFingerprintInputs?.(state)
-      ?? inputsGroup.value;
-    const [fingerprint] = await formGate.run(() => refreshProfileFingerprint(fields));
+  async function updateFingerprint(inputs, options) {
+    const revision = initialization;
+    const fields = Array.isArray(inputs) ? inputs : activeFingerprintInputs();
+    if (!fields[0]?.length) return false;
+    const [fingerprint] = await formGate.run(() => refreshProfileFingerprint(fields, options));
+    if (!fingerprint || revision !== initialization || fields[0] !== activeFingerprintInputs()[0]) return false;
     Object.assign(original.value, fingerprint);
+    return true;
   }
 
   async function shuffleFingerprint(inputs) {
-    await updateFingerprint(inputs);
-    notify(0, $t('指纹刷新成功'));
+    if (await updateFingerprint(inputs)) notify(0, $t('指纹刷新成功'));
+  }
+
+  function ensureFingerprintPreview() {
+    if (hasConcreteKernel() && !findField(mainSetting.value, 'userAgent')?.value)
+      return updateFingerprint();
   }
 
   function buildCreateParams({
@@ -113,7 +137,7 @@ function useWindowCreate(options = {}) {
   }
 
   return {
-    ...state, loading, formGate, canSubmit, initialize, syncMobileVisibility, updateFingerprint,
+    ...state, loading, formGate, canSubmit, initialize, dispose, syncMobileVisibility, ensureFingerprintPreview,
     shuffleFingerprint, buildCreateParams, prepareCreateParams, executeSingleCreate,
   };
 }

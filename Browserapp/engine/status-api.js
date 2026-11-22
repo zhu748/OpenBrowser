@@ -2,6 +2,70 @@
 
 const crypto = require('node:crypto');
 
+function buildStatusRow(engine, profile) {
+  const { id } = profile;
+  const runtime = engine.publicRunning(id);
+  const view = { ...profile, ...runtime, network: engine.networkInfo.get(id) || null,
+    assignedExtensions: [...(engine.assignments.get(id) || [])], rev: engine.profiles.revisionOf?.(id) || 0 };
+  if ('cookies' in view) view.cookies = '';
+  if (view.platform && typeof view.platform === 'object') {
+    view.platform = { ...view.platform };
+    if ('password' in view.platform) view.platform.password = '';
+    if ('totpSecret' in view.platform) view.platform.totpSecret = '';
+    if (Array.isArray(view.platform.accounts) && view.platform.accounts.length) {
+      view.platform.accounts = view.platform.accounts.map(account => ({ ...account, password: '', totpSecret: '' }));
+    }
+  }
+  const signature = JSON.stringify([view.rev, runtime, view.network, view.assignedExtensions]);
+  let stamp = engine._statusStamps.get(id);
+  if (!stamp || stamp.signature !== signature) {
+    engine._statusSequence = (engine._statusSequence || 0) + 1;
+    stamp = { signature, token: `${engine._statusInstance}:${engine._statusSequence}` };
+    engine._statusStamps.set(id, stamp);
+  }
+  view.statusRev = stamp.token;
+  return view;
+}
+
+// A cursor records the prior token of each changed row. Keep the transitions
+// so a client that missed several polls can combine them without a fleet scan.
+function recordStatusCursor(engine, snapshot) {
+  const previous = engine._statusWatermarkSnapshot;
+  const changed = new Map();
+  if (previous && engine._statusChangesSinceCursor) {
+    for (const id of engine._statusChangesSinceCursor) {
+      const index = engine._statusPositions.get(id);
+      changed.set(id, previous[index].statusRev);
+    }
+  } else if (previous) {
+    const prior = new Map(previous.map(row => [row.id, row.statusRev]));
+    for (const row of snapshot) {
+      if (prior.get(row.id) !== row.statusRev) changed.set(row.id, prior.get(row.id));
+      prior.delete(row.id);
+    }
+    for (const [id, token] of prior) changed.set(id, token);
+  }
+  engine._statusWatermarkSnapshot = snapshot;
+  engine._statusWatermark = null;
+  engine._statusChangesSinceCursor = new Set();
+  const sequence = engine._statusCursorSequence = (engine._statusCursorSequence || 0) + 1;
+  engine._statusCursor = `${engine._statusInstance}:snapshot:${sequence}`;
+  engine._statusCursorHistory ||= new Map();
+  engine._statusCursorHistory.set(engine._statusCursor, changed);
+  if (engine._statusCursorHistory.size > 8) engine._statusCursorHistory.delete(engine._statusCursorHistory.keys().next().value);
+}
+
+function changesAfterCursor(history, cursor) {
+  const prior = new Map();
+  let found = false;
+  for (const [key, changes] of history) {
+    if (found) {
+      for (const [id, token] of changes) if (!prior.has(id)) prior.set(id, token);
+    } else if (key === cursor) found = true;
+  }
+  return prior;
+}
+
 module.exports = {
   // Public status view. Cookie jars (up to 500 KB per profile) and platform
   // account secrets do not belong in a poll payload that the renderer requests
@@ -10,56 +74,43 @@ module.exports = {
   // Proxy strings keep their credentials — the renderer merges them back into
   // local state (mergeEngineExitState) and localStorage already strips them.
   status() {
-    // Snapshot cache: the renderer polls this constantly, and building the
-    // full view (spread + secret scrub per profile × N) is wasted when nothing
-    // changed. Profile Map versions catch content edits; runtime/extension/
-    // network writers still invalidate explicitly when their public view changes.
-    if (this._statusCache && this._statusProfileVersion === this.profiles.version) return this._statusCache;
+    if (this._statusCache && this._statusProfiles === this.profiles && this._statusProfileVersion === this.profiles.version) {
+      if (!this._dirtyStatusRows?.size) return this._statusCache;
+      const snapshot = this._statusCache.slice();
+      for (const id of this._dirtyStatusRows) {
+        const position = this._statusPositions.get(id);
+        if (position === undefined) continue;
+        const row = buildStatusRow(this, this.profiles.get(id));
+        if (row.statusRev !== snapshot[position].statusRev) this._statusChangesSinceCursor?.add(id);
+        snapshot[position] = row;
+      }
+      this._dirtyStatusRows.clear();
+      this._statusCache = snapshot;
+      return snapshot;
+    }
+    this._dirtyStatusRows?.clear();
+    this._statusChangesSinceCursor = null;
     for (const id of this.profileLifecycles?.keys() || []) if (!this.profiles.has(id)) this.profileLifecycles.delete(id);
+    this._statusProfiles = this.profiles;
     this._statusProfileVersion = this.profiles.version;
     this._statusStamps ||= new Map();
     this._statusInstance ||= crypto.randomBytes(8).toString('hex');
     for (const id of this._statusStamps.keys()) if (!this.profiles.has(id)) this._statusStamps.delete(id);
-    this._statusCache = [...this.profiles.values()].map((profile) => {
-      const runtime = this.publicRunning(profile.id);
-      const view = { ...profile, ...runtime, network: this.networkInfo.get(profile.id) || null, assignedExtensions: [...(this.assignments.get(profile.id) || [])] };
-      // Engine revision of this row: lets the renderer issue per-ID modify
-      // commands with a base revision (applyProfileCommands) instead of
-      // resending the whole fleet. Zero cost per poll: this runs only when
-      // the snapshot cache was invalidated.
-      view.rev = this.profiles.revisionOf?.(profile.id) || 0;
-      if ('cookies' in view) view.cookies = '';
-      if (view.platform && typeof view.platform === 'object') {
-        view.platform = { ...view.platform };
-        if ('password' in view.platform) view.platform.password = '';
-        if ('totpSecret' in view.platform) view.platform.totpSecret = '';
-        // 多账号行与主账号字段同源（profile-sanitizer 原样保留 password/totpSecret），
-        // 这里同样只留 username：轮询通道绝不携带任意一行的账号机密，
-        // 编辑器需要的完整行仍走一次性 'profile-closed' 事件（与 cookies 同一设计）。
-        if (Array.isArray(view.platform.accounts) && view.platform.accounts.length) {
-          view.platform.accounts = view.platform.accounts.map((account) => ({
-            ...account,
-            password: '',
-            totpSecret: '',
-          }));
-        }
-      }
-      const signature = JSON.stringify([view.rev, runtime, view.network, view.assignedExtensions]);
-      let stamp = this._statusStamps.get(profile.id);
-      if (!stamp || stamp.signature !== signature) {
-        this._statusSequence = (this._statusSequence || 0) + 1;
-        stamp = { signature, token: `${this._statusInstance}:${this._statusSequence}` };
-        this._statusStamps.set(profile.id, stamp);
-      }
-      view.statusRev = stamp.token;
-      return view;
-    });
+    this._statusPositions = new Map();
+    this._statusCache = [];
+    for (const [id, profile] of this.profiles) {
+      this._statusPositions.set(id, this._statusCache.length);
+      this._statusCache.push(buildStatusRow(this, profile));
+    }
     return this._statusCache;
   },
 
-  invalidateStatusCache() {
+  invalidateStatusCache(id) {
+    if (id && this._statusCache && this.profiles.version !== undefined) {
+      if (this._statusPositions.has(id)) (this._dirtyStatusRows ||= new Set()).add(id);
+      return;
+    }
     this._statusCache = null;
-    this._statusDeltaEpoch = (this._statusDeltaEpoch || 0) + 1;
   },
 
   /**
@@ -76,36 +127,36 @@ module.exports = {
    */
   statusDelta(watermark, { includeWatermark = true, includeCursor = false } = {}) {
     const snapshot = this.status();
-    if (this._statusWatermarkSnapshot !== snapshot) {
-      this._statusWatermarkSnapshot = snapshot;
-      // The snapshot is stable until invalidation. Reuse its immutable index
-      // across idle polls instead of allocating N entries on every request.
-      this._statusWatermark = Object.freeze(Object.fromEntries(snapshot.map((row) => [row.id, row.statusRev])));
-      this._statusCursor = `${this._statusInstance}:snapshot:${this._statusCursorSequence = (this._statusCursorSequence || 0) + 1}`;
-      this._statusCursorHistory ||= new Map();
-      this._statusCursorHistory.set(this._statusCursor, this._statusWatermark);
-      // A small bounded history supports independent clients and in-flight
-      // refreshes without retaining profile arrays or permanent tombstones.
-      while (this._statusCursorHistory.size > 8) this._statusCursorHistory.delete(this._statusCursorHistory.keys().next().value);
+    if (this._statusWatermarkSnapshot !== snapshot) recordStatusCursor(this, snapshot);
+    if (includeWatermark && !this._statusWatermark) {
+      this._statusWatermark = Object.freeze(Object.fromEntries(snapshot.map(row => [row.id, row.statusRev])));
     }
-    const known = this._statusWatermark;
-    // The trusted UI derives its watermark from its actual rows. Omitting the
-    // redundant response index keeps idle replies constant-sized at fleet scale.
     const reply = (full, rows, removed) => ({ full, rows, removed,
-      ...(includeWatermark ? { watermark: known } : {}), ...(includeCursor ? { cursor: this._statusCursor } : {}) });
-    const caller = typeof watermark === 'string' ? this._statusCursorHistory.get(watermark)
-      : (watermark && typeof watermark === 'object' && !Array.isArray(watermark)) ? watermark : null;
-    if (!caller) return reply(true, snapshot, []);
-    if (caller === known) return reply(false, [], []);
+      ...(includeWatermark ? { watermark: this._statusWatermark } : {}), ...(includeCursor ? { cursor: this._statusCursor } : {}) });
+    if (typeof watermark === 'string') {
+      if (watermark === this._statusCursor) return reply(false, [], []);
+      if (!this._statusCursorHistory.has(watermark)) return reply(true, snapshot, []);
+      const positions = [], removed = [];
+      for (const [id, before] of changesAfterCursor(this._statusCursorHistory, watermark)) {
+        const position = this._statusPositions.get(id);
+        if (position === undefined) {
+          if (before !== undefined) removed.push(id);
+        } else if (snapshot[position].statusRev !== before) positions.push(position);
+      }
+      positions.sort((a, b) => a - b);
+      return reply(false, positions.map(position => snapshot[position]), removed);
+    }
+    if (!watermark || typeof watermark !== 'object' || Array.isArray(watermark)) return reply(true, snapshot, []);
+    if (watermark === this._statusWatermark) return reply(false, [], []);
     const removed = [];
-    for (const id of Object.keys(caller)) {
-      if (!Object.hasOwn(known, id)) removed.push(id);
+    for (const id of Object.keys(watermark)) {
+      if (!this._statusPositions.has(id)) removed.push(id);
     }
     const rows = [];
     for (const row of snapshot) {
       const { id, statusRev } = row;
-      const seen = Object.hasOwn(caller, id) ? caller[id] : undefined;
-      if (seen === undefined && typeof watermark !== 'string') return reply(true, snapshot, []);
+      const seen = Object.hasOwn(watermark, id) ? watermark[id] : undefined;
+      if (seen === undefined) return reply(true, snapshot, []);
       if (seen !== statusRev) rows.push(row);
     }
     return reply(false, rows, removed);

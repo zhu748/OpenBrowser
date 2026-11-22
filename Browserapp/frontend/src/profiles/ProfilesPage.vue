@@ -73,10 +73,15 @@ async function act(action: Action, row: ProfileRow) {
   notice.value = '';
   try {
     const single = action === 'start' || action === 'stop';
-    const result = await request<{ warningMessages?: string[] }>(`profiles:${action}`, single ? { id: row.id } : { ids: [row.id] });
+    const result = await request<{ warningMessages?: string[], deleted?: number }>(
+      action === 'purge' ? 'profiles:purge-trash' : `profiles:${action}`,
+      single ? { id: row.id } : { ids: [row.id], ...(action === 'purge' && {
+        trashedAtById: { [row.id]: row.trashedAt ?? null }, revisions: row.rev === undefined ? undefined : { [row.id]: row.rev },
+      }) },
+    );
     if (!alive) return;
     confirmAction.value = null;
-    notice.value = result.warningMessages?.join('，') || feedback[action];
+    notice.value = action === 'purge' && result.deleted === 0 ? '窗口的回收站状态已变更' : result.warningMessages?.join('，') || feedback[action];
     await load();
   } catch (failure) {
     if (alive) actionError.value = message(failure);

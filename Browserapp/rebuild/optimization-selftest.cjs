@@ -39,6 +39,8 @@ async function main() {
     const created = await service.request("profiles:create", { windowName: "Clear secrets", cookie: '[{"name":"sid","value":"cookie-secret","domain":"example.test"}]',
       windowPlatformList: [{ platformUrl: "https://example.test", platformUserName: "alice", platformPassword: "account-secret", platformEfa: "TOTP" }],
       proxyInfoList: [{ host: "proxy.test", port: 8080, protocol: "http", username: "user", password: "proxy-secret" }] });
+    assert.ok(Number.isFinite(Date.parse(created.createTime)));
+    assert.equal(created.updateTime, created.createTime);
     let edit = await service.request("profiles:read", { id: created.id });
     await assert.rejects(service.request("profiles:update", { id: edit.id, windowRemark: "missing revision" }), /版本/);
     await service.request("profiles:update", { id: edit.id, rev: edit.rev, windowRemark: "unrelated edit" });
@@ -48,6 +50,9 @@ async function main() {
       windowPlatformList: [{ platformUrl: "https://example.test", platformUserName: "alice", platformPassword: "", platformEfa: "" }],
       proxyInfoList: [{ host: "proxy.test", port: 8080, protocol: "http", username: "", password: "" }] });
     const cleared = engine.profileForEdit(edit.id).profile;
+    assert.equal(cleared.createdAt, created.createTime);
+    assert.ok(cleared.updatedAt > created.updateTime);
+    assert.equal(engine.sqliteStore.getProfile(created.id).createdAt, created.createTime);
     assert.equal(cleared.cookies, ""); assert.equal(cleared.platform.password, "");
     assert.equal(cleared.platform.accounts[0].password, ""); assert.equal(cleared.platform.accounts[0].totpSecret, "");
     assert(!cleared.proxy.includes("proxy-secret"));
@@ -110,12 +115,49 @@ async function main() {
     assert.equal(service.profileIndex(), projection);
     assert.equal((await service.request("groups:list")).find(row => row.id === group.id).windowCount, 30);
     assert.equal((await service.request("labels:list"))[0].bindWindowIds.length, 30);
+    const runningId = page.rows[0].id;
+    const beforeProgress = engine.status();
+    engine.running.set(runningId, { port: 9222, browser: { name: "Fixture" }, extensions: [] });
+    try {
+      engine.emit({ type: "status", id: runningId });
+      const afterProgress = engine.status();
+      assert.equal(afterProgress.filter((row, i) => row !== beforeProgress[i]).length, 1, "a single runtime event reprojects only its row");
+      const opened = await service.request("profiles:query", { projectId: group.id, openStatus: true });
+      assert.deepEqual(opened.rows.map(row => row.id), [runningId]);
+      assert.equal(opened.rows[0].openStatus, true);
+      assert.equal(service.profileIndex(), projection, "list metadata is reused across runtime-only updates");
+    } finally {
+      engine.running.delete(runningId);
+      engine.emit({ type: "status", id: runningId });
+    }
     const filtered = await service.request("profiles:query", { osList: ["Linux"], queryKey: "tag", queryValue: "Query label", page_size: 50 });
     assert.equal(filtered.total, 15);
     await service.request("profiles:delete", { ids: [page.rows[0].id] });
     assert.notEqual(service.profileIndex(), projection);
     assert.equal((await service.request("profiles:query", { isDelete: true })).total, 1);
     await assert.rejects(service.request("profiles:query", { page_size: 0 }), /分页/);
+    const morning = new Date(2026, 2, 8, 0).toISOString();
+    const evening = new Date(2026, 2, 8, 23, 59, 59, 999).toISOString();
+    const nextDay = new Date(2026, 2, 9, 0).toISOString();
+    await engine.syncProfiles([
+      { id: "dates-first", name: "Date filters", createdAt: morning, updatedAt: evening },
+      { id: "dates-second", name: "Date filters", createdAt: evening, updatedAt: nextDay },
+      { id: "dates-third", name: "Date filters", createdAt: nextDay, updatedAt: nextDay },
+    ]);
+    const nodesCreatedOnDay = await service.request("profiles:query", { startDate: "2026-03-08", endDate: "2026-03-08" });
+    assert.deepEqual(nodesCreatedOnDay.rows.map(row => row.id), ["dates-first", "dates-second"]);
+    const nodesUpdatedOnDay = await service.request("profiles:query", { startUpdateDate: "2026-03-08", endUpdateDate: "2026-03-08" });
+    assert.deepEqual(nodesUpdatedOnDay.rows.map(row => row.id), ["dates-first"]);
+    const exact = await service.request("profiles:query", { startTime: evening, endTime: evening });
+    assert.deepEqual(exact.rows.map(row => row.id), ["dates-second"]);
+    const tied = { orderName: "windowName", orderType: "desc", queryValue: "Date filters" };
+    const insertionOrder = ["dates-first", "dates-second", "dates-third"];
+    const direct = await service.request("profiles:query", { ...tied, dirIds: ["dates-third", "dates-first", "dates-third", "dates-second"] });
+    assert.deepEqual(direct.rows.map(row => row.id), insertionOrder, "an ID subset keeps insertion order for sort ties");
+    assert.deepEqual((await service.request("profiles:query", tied)).rows.map(row => row.id), insertionOrder);
+    const second = await service.request("profiles:query", { ...tied, page_index: 2, page_size: 1 });
+    assert.equal(second.total, 3);
+    assert.deepEqual(second.rows.map(row => row.id), ["dates-second"]);
     console.log("OPTIMIZATION_SELFTEST OK (encrypted migration/retry/corruption, explicit credential clearing, checkpoint policy, bounded list DTO, cancellable MCP discovery, indexed server pagination)");
   } finally {
     await agent?.shutdown(); await engine.stopAll(); await engine.flushPersistence(); engine.sqliteStore?.close();

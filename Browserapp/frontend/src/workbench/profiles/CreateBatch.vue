@@ -47,6 +47,8 @@ async function create() {
       userAgent: params._custom_ua ? params.userAgent : row.userAgent,
       webGLManufacturer: params.webGLInfo === 2 ? params.webGLManufacturer : row.webGLManufacturer,
       webGLRender: params.webGLInfo === 2 ? params.webGLRender : row.webGLRender,
+      hardwareConcurrent: params.hardwareConcurrent || row.hardwareConcurrent,
+      deviceMemory: params.deviceMemory || row.deviceMemory,
     }));
     const { code, msg } = await requests.window.userBatchWindowInfoV2Create(params);
     showStatus(code, msg);
@@ -62,8 +64,8 @@ async function create() {
 
 <template>
   <div class="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-    <div class="px-16 flex flex-1 min-h-0 overflow-hidden overflow-x-auto">
-      <div class="w-full h-full flex min-h-0 gap-8 ma-auto" :class="collapsed ? 'min-w-192 max-w-192' : 'min-w-240 max-w-285'">
+    <div class="profile-editor-viewport flex flex-1 min-h-0 overflow-hidden">
+      <div class="profile-editor-layout w-full h-full flex min-h-0 ma-auto" :class="collapsed ? 'max-w-192' : 'max-w-285'">
         <div class="flex min-h-0 min-w-0 flex-1 flex-col">
           <div class="mx-4 py-4 multiple">
             <div class="flex items-start justify-between">

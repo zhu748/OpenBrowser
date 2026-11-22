@@ -70,7 +70,7 @@ module.exports = {
       for (const [profileId, ids] of assignments.entries()) {
         this.assignments.set(profileId, ids);
       }
-      const loadedProfiles = this.sqliteStore.getAllProfiles();
+      const loadedProfiles = this.sqliteStore.getAllProfiles({ withTimestamps: true });
       for (const raw of loadedProfiles) {
         try {
           const profile = this.sanitizeProfile(raw);

@@ -33,6 +33,18 @@ async function main() {
       await fs.rm(outside, { recursive: true, force: true });
     }
     console.log('  PASS  local backup symlink escape rejected');
+    const config = { dir: root };
+    await cloud.upload('local', config, Buffer.from('previous package'));
+    const canonical = path.join(root, cloud.REMOTE_NAME);
+    const rename = fs.rename;
+    fs.rename = async (from, to) => {
+      if (to === canonical) throw new Error('fixture rename failed');
+      return rename(from, to);
+    };
+    try { await assert.rejects(cloud.upload('local', config, Buffer.from('replacement')), /fixture rename failed/); }
+    finally { fs.rename = rename; }
+    assert.strictEqual(await fs.readFile(canonical, 'utf8'), 'previous package');
+    assert.ok(!(await fs.readdir(root)).some(name => name.startsWith(`${cloud.REMOTE_NAME}.tmp-`)));
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }
@@ -55,8 +67,11 @@ async function main() {
   const encrypted = await cloud.buildBackupPackage({ profiles: [optedIn({ id: 'env-1', platform: { password: 'hunter2' } })], passphrase: 'correct horse' });
   assert.strictEqual(encrypted.meta.encrypted, true);
   // Credential-free backups stay allowed without a passphrase.
-  const plain = await cloud.buildBackupPackage({ profiles: [optedIn({ id: 'env-3', platform: {} })], passphrase: '' });
+  const plain = await cloud.buildBackupPackage({ profiles: [optedIn({ id: 'env-3', name: '上海 🧪', platform: {} })], passphrase: '' });
   assert.strictEqual(plain.meta.encrypted, false);
+  assert.strictEqual((await cloud.parseBackupPackage(plain.buffer)).profiles[0].name, '上海 🧪');
+  const empty = await cloud.buildBackupPackage({ profiles: [optedIn({ id: 'env-4' })], profileIds: [] });
+  assert.strictEqual((await cloud.parseBackupPackage(empty.buffer)).profiles.length, 0);
   console.log('  PASS  unencrypted credential backup rejected (fail closed)');
 
   // RFC 4918 MOVE semantics: the request URI is the source (the partial

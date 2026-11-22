@@ -16,11 +16,12 @@ const { runtimePolicyProfile, applyTargetRuntimePolicy, pruneRuntimePolicyPages 
 const { evaluateFingerprintDelivery } = require('../automation/request-header-rewriter');
 const { fingerprintConfigHash, isEphemeralDocumentUrl } = require('./fingerprint-injection');
 const { pageFingerprintConnection, pageFingerprintRegistration, closePageFingerprintConnections } = require('./fingerprint-transport');
+const { isActiveFingerprintSession } = require('./fingerprint-session');
 
 module.exports = {
   async applyRuntimeSettings(port, profile, fingerprint = null, options = {}) {
     const phase = String(options.phase || 'applyRuntimeSettings');
-    const observedTabs = await cdp.tabs(port);
+    const observedTabs = options.observedTabs ?? await cdp.tabs(port);
     const isPendingTarget = targetId => phase === 'watch-ensure'
       && [...(options.trackOn?.fingerprintSessionStates?.values() || [])]
         .some(state => state.targetId === targetId && !state.ready && !state.reason);
@@ -46,6 +47,20 @@ module.exports = {
     const fpHash = () => (fpHashCached ?? (fpHashCached = fingerprintConfigHash(fp)));
     // Track which CDP page targets already received inject (new tabs must not skip FP)
     const applied = options.appliedTargetIds instanceof Set ? options.appliedTargetIds : new Set();
+    // A CDP tab listing can be older than a verified auto-attach event.
+    function liveTargetIds() {
+      const ids = new Set(observedTabs.map(tab => tab.id));
+      for (const state of options.trackOn?.fingerprintSessionStates?.values() || []) {
+        if (state.targetId && isActiveFingerprintSession(options.trackOn, state)) ids.add(state.targetId);
+      }
+      return ids;
+    }
+    function pruneAppliedTargets() {
+      const liveIds = liveTargetIds();
+      for (const id of applied) {
+        if (!liveIds.has(id)) applied.delete(id);
+      }
+    }
     // Only a recorded hash may invalidate the cache: callers that never tracked one keep the
     // previous behaviour, while a real config change forces every live tab to be re-applied.
     const configChanged = Boolean(options.appliedFingerprintHash)
@@ -61,7 +76,7 @@ module.exports = {
       throw new Error('网址访问规则拦截尚未就绪，已停止继续浏览');
     }
     const policyOwner = options.trackOn || applied;
-    closePageFingerprintConnections(policyOwner, new Set(tabs.map((tab) => tab.id)));
+    closePageFingerprintConnections(policyOwner, liveTargetIds());
     const sessions = options.trackOn?.fingerprintTargetSessions || new Map();
     const sessionTargets = new Map([...sessions].map(([sessionId, target]) => [target.targetId, { ...target, sessionId }]));
     const policyIds = new Set(tabs.map((tab) => tab.id));
@@ -98,10 +113,7 @@ module.exports = {
     // each time would burn disk and append tab URLs to the diagnostic log forever.
     // Prune closed targets, keep the tracked state fresh, and return quietly.
     if (!force && !options.verifyApplied && tabs.every((tab) => applied.has(tab.id))) {
-      const liveIds = new Set(tabs.map((tab) => tab.id));
-      for (const id of [...applied]) {
-        if (!liveIds.has(id)) applied.delete(id);
-      }
+      pruneAppliedTargets();
       if (options.trackOn) {
         options.trackOn.fpAppliedTargets = applied;
         options.trackOn.fpAppliedHash = fpHash();
@@ -190,10 +202,7 @@ module.exports = {
       // Only verified targets enter the applied set.
     }
     // Drop closed targets so Set does not grow forever
-    const liveIds = new Set(tabs.map((t) => t.id));
-    for (const id of [...applied]) {
-      if (!liveIds.has(id)) applied.delete(id);
-    }
+    pruneAppliedTargets();
     if (options.trackOn) {
       options.trackOn.fpAppliedTargets = applied;
       options.trackOn.fpAppliedHash = fpHash();

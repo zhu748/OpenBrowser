@@ -4,6 +4,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { writeJsonAtomically, readEngineStateCandidate } = require('../../engine/state-storage');
 const { assertProfileId, assertSafeProfileChild } = require('../isolation');
+const { MAX_BACKUP_PROFILES } = require('./limits');
 
 function journalPath(engine) {
   const root = engine.app?.getPath?.('userData') || engine.getProfileDataRoot();
@@ -11,10 +12,17 @@ function journalPath(engine) {
 }
 
 function captureRestoreState(engine, ids, proxyStore, settings, restoreProxies) {
+  const profiles = ids.map((id) => {
+    const profile = engine.profiles.get(id) || null;
+    if (!profile && engine.sqliteStore?.hasProfile?.(id)) throw Object.assign(
+      new Error(`环境 ${id} 的本地记录无法读取，已停止恢复以保留原始数据`),
+      { code: 'STORAGE_DECODE_FAILED', profileId: id },
+    );
+    return { id, profile, assignments: engine.assignments?.has(id) ? [...engine.assignments.get(id)] : null };
+  });
   return {
     version: 1, phase: 'prepare', records: [],
-    profiles: ids.map((id) => ({ id, profile: engine.profiles.get(id) || null,
-      assignments: engine.assignments?.has(id) ? [...engine.assignments.get(id)] : null })),
+    profiles,
     groups: settings.uiGroups || [],
     proxies: restoreProxies ? proxyStore?.list?.({}) || [] : null,
   };
@@ -34,7 +42,7 @@ async function readRestoreState(engine) {
   try {
     const { saved } = await readEngineStateCandidate(journalPath(engine));
     if (saved.version !== 1 || !['prepare', 'pending', 'committed'].includes(saved.phase)
-      || !Array.isArray(saved.profiles) || saved.profiles.length > 5000 || !Array.isArray(saved.records)) throw new Error('Invalid restore journal');
+      || !Array.isArray(saved.profiles) || saved.profiles.length > MAX_BACKUP_PROFILES || !Array.isArray(saved.records)) throw new Error('Invalid restore journal');
     for (const entry of saved.profiles) assertProfileId(entry.id);
     return saved;
   } catch (error) { if (error.code === 'ENOENT') return null; throw error; }

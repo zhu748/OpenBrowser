@@ -105,15 +105,20 @@ node scripts/benchmark-workbench.js --sizes 10,100,1000 --interaction-budget-ms 
 
 ## 当前模块边界与重构约束
 
-默认界面由 `rebuild/compiler/` 从锁定输入生成到 `roxy-ui/`；旧版
-`renderer.js` / `ui/` 仍由 `OPENBROWSER_ROXY_UI=0` 启用。生成产物、第三方
-输入和历史证据分别管理，不把它们作为手写业务代码批量格式化或删除。
+默认工作台的业务界面维护在 `frontend/src/workbench/`。构建入口
+`frontend/build-workbench.cjs` 编译界面，再由 `rebuild/compiler/` 审核
+`roxy-ui/` 产物。旧版兼容界面在 `renderer.js` 和 `ui/`，由
+`OPENBROWSER_ROXY_UI=0` 启用。`npm run inventory:modules` 按职责列出
+源码、测试、构建输入和发布资源，同时统计 Vue 与 TypeScript 源码行数。
 
 | 模块 | 职责与维护约束 |
 | --- | --- |
 | `rebuild/local-service.js` | 依赖接线、本地数据加载、原子保存、串行写入与失败回滚；不承载领域分发分支 |
 | `rebuild/profile-dto.js` | 工作台与引擎字段转换；高级选项和噪声字段双向共用映射；原 `local-service` 导出保持兼容 |
 | `rebuild/profile-fields.js` | 双向字段别名与窗口位置编码；不进行 I/O 或加载代理转发器 |
+| `rebuild/profile-index.js`、`rebuild/profile-query.js` | 环境列表索引负责窗口与分组、标签、代理的关联。查询模块负责筛选、稳定排序和分页，只为当前页转换完整 DTO。 |
+| `rebuild/extensions.js` | 扩展列表先筛选和分页，再读取当前页图标。图标缓存同时限制条数和占用空间，安装与分配沿用引擎的提交路径。 |
+| `rebuild/sync-service.js`、`rebuild/sync-batch-text.js` | 同步服务持有串行调度。批量文本模块负责输入校验、目标 PID 匹配、原生写入和同步开关恢复。 |
 | `rebuild/local-route-registry.js` | 从领域表注册处理器与执行策略，拒绝重名、缺失处理器及缺失策略 |
 | `rebuild/routes/` | `profiles`、`collections`、`preferences`、`host`、`proxies`、`transfer` 与现有服务委派；处理器显式接收 service，不反向导入宿主服务 |
 | `engine/launch-profile.js` | 启动结果的修订号校验与持久指纹身份迁移；Chromium/Firefox 共用，不依赖具体启动实现 |

@@ -77,6 +77,23 @@ async function main() {
   await draft.refreshFingerprintDraft(groups, { read: validatingRead, find, apply,
     request: async () => [{ userAgent: identity.userAgent, _fingerprintDraft: identity }] });
   assert.equal(read(groups).userAgent, identity.userAgent, 'a failed preview can recover after installing/selecting a kernel');
+  const firstDraft = { ...identity, profileId: 'preview-window', allocation: 'preview-proof' };
+  draft.restoreFingerprintDraft(groups, { _fingerprintDraft: firstDraft });
+  const uaOnly = { ...firstDraft, userAgent: 'Firefox/160' };
+  await draft.refreshFingerprintDraft(groups, { read, find, apply, keepSeed: true,
+    request: async payload => {
+      assert.equal(payload.reuseDraft.seed, firstDraft.seed);
+      assert.equal(payload.reuseDraft.profileId, firstDraft.profileId);
+      return [{ userAgent: uaOnly.userAgent, _fingerprintDraft: uaOnly }];
+    } });
+  assert.equal(read(groups).userAgent, uaOnly.userAgent);
+  assert.equal(read(groups)._fingerprintDraft.seed, firstDraft.seed);
+  assert.equal(read(groups)._fingerprintDraft.profileId, firstDraft.profileId);
+  assert.equal(read(groups)._fingerprintDraft.allocation, firstDraft.allocation);
+  await draft.refreshFingerprintDraft(groups, { read, find, apply, keepSeed: true,
+    request: async () => { throw Error('内核暂时不可用'); } });
+  assert.equal(read(groups).userAgent, uaOnly.userAgent);
+  assert.equal(read(groups)._fingerprintDraft.seed, firstDraft.seed);
   let releasePreviousEditor;
   const previousEditor = draft.refreshFingerprintDraft(groups, { read, find, apply,
     request: () => new Promise(resolve => { releasePreviousEditor = resolve; }) });

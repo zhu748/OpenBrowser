@@ -119,8 +119,11 @@ function main() {
   const extractPos = prepareBody.indexOf('if (extractUrl)');
   assert.ok(refreshPos >= 0 && extractPos >= 0 && refreshPos < extractPos, 'refresh must run before extract on start');
   assert.ok(profileProxySrc.includes("code: 'extract-error'"), 'extract failure must warn');
-  const persistenceSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'engine', 'persistence.js'), 'utf8');
-  assert.ok(persistenceSrc.includes("profiles: [...this.profiles.values()]"), 'engine must persist profiles with secrets');
+  const { BrowserEngine } = require('../../engine');
+  const engine = new BrowserEngine({ getPath: () => path.join(__dirname, 'unused') });
+  engine.profiles.set('saved', { id: 'saved', cookies: 'fixture-cookie', platform: { password: 'fixture-password' } });
+  assert.strictEqual(engine._engineStateSnapshot().profiles[0].cookies, 'fixture-cookie');
+  assert.strictEqual(engine.status()[0].platform.password, '', 'live status redacts credentials that persistence retains');
   assert.ok(!profileProxySrc.includes('const url = refreshUrl || extractUrl'), 'refresh must not fall back extractUrl as refresh target');
 
   // UI and Node use the exported redaction boundary, without source slicing.

@@ -3,7 +3,7 @@ import { computed, getCurrentInstance } from 'vue';
 import { Z as Icon } from './basecomponent-ClhuVxJN.js';
 import { ProfileInputItem, PasswordField } from './useAsyncGate-D7VA7DLY.js';
 const props = defineProps({ inputs: { type: Array, default: () => [] }, labelPosition: { type: String, default: 'top' } });
-const fields = computed(() => props.inputs.filter(field => field.visible !== false));
+const fields = computed(() => props.inputs.map((field, index) => ({ field, index })).filter(({ field }) => field.visible !== false));
 const formId = getCurrentInstance()?.uid;
 function change(field) {
   if (field.invalid) field.invalid = false;
@@ -13,7 +13,7 @@ function change(field) {
 
 <template>
   <form class="flex flex-col gap-4" @submit.prevent>
-    <slot v-for="(field, index) in fields" :key="[formId, field.name ?? '', index].join('_')" :name="field.slot"
+    <slot v-for="{ field, index } in fields" :key="[formId, field.name ?? '', index].join('_')" :name="field.slot"
       :input="field" :label-position="labelPosition">
       <div v-if="field.separator" class="w-full flex items-center gap-1.5">
         <Icon v-if="field.separatorIcon" v-bind="field.separatorIcon" class="shrink-0" size="16" />

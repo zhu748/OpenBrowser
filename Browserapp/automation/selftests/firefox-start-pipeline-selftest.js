@@ -126,6 +126,7 @@ function makeStubFirefox(tmp) {
       }
       let result = {};
       if (command.method === 'script.addPreloadScript') result = { script: 'firefox-preload' };
+      if (command.method === 'webExtension.install') result = { extension: 'local-workers@openbrowser.local' };
       if (command.method === 'browsingContext.getTree') result = { contexts: [{ context: 'initial', url: 'about:blank' }] };
       if (command.method === 'browsingContext.create') result = { context: 'extra' };
       if (command.method === 'script.evaluate') {
@@ -181,6 +182,7 @@ function makeStubFirefox(tmp) {
       assert.ok(item.bidiConnection);
       assert.strictEqual(started.capabilities.fingerprintDelivery, true);
       assert.strictEqual(started.capabilities.workerFingerprintDelivery, 'prefs-fields-plus-proxy');
+      assert.strictEqual(started.capabilities.localWorkerResponseFilter, true);
       assert.ok(item.workerMitmProxy);
       assert.match(item.fingerprint.userAgent, /Firefox\/141\.0$/);
     });
@@ -189,6 +191,7 @@ function makeStubFirefox(tmp) {
       const copied = fs.readFileSync(path.join(markerDir, 'user.js.copy'), 'utf8');
       assert.ok(copied.includes('user_pref("network.proxy.type", 1);'), 'manual proxy mode');
       assert.ok(copied.includes('user_pref("general.useragent.override",'), 'UA override');
+      assert.ok(copied.includes('user_pref("dom.maxHardwareConcurrency", ' + item.fingerprint.hardwareConcurrency + ');'), 'native CPU cap');
       assert.ok(copied.includes('user_pref("app.update.enabled", false);'), 'no self-update');
       assert.ok(copied.includes('user_pref("toolkit.telemetry.enabled", false);'), 'no telemetry');
     });
@@ -200,9 +203,10 @@ function makeStubFirefox(tmp) {
       assert.ok(!args.includes('https://'), 'startup URLs must not bypass preload');
     });
     await check('BiDi registers and verifies before both startup URLs navigate', () => {
+      const installed = commands.findIndex((command) => command.method === 'webExtension.install');
       const registered = commands.findIndex((command) => command.method === 'script.addPreloadScript');
       const navigated = commands.findIndex((command) => command.method === 'browsingContext.navigate');
-      assert.ok(registered >= 0 && navigated > registered);
+      assert.ok(installed >= 0 && registered > installed && navigated > registered);
       assert.equal(commands.filter((command) => command.method === 'browsingContext.navigate').length, 2);
     });
 

@@ -110,6 +110,22 @@ async function main() {
   assert.ok(!added.rows.some(row => row.id === 'env-2'), 'unchanged rows stay out of an addition delta');
   await cursorClient.refresh();
   assert.equal(current.find(row => row.id === 'env-3').cookies, '');
+  const compactOptions = { includeWatermark: false, includeCursor: true };
+  const beforeChurn = engine.statusDelta(null, compactOptions);
+  engine.profiles.set('transient', { id: 'transient' });
+  engine.statusDelta(beforeChurn.cursor, compactOptions);
+  engine.profiles.delete('transient');
+  engine.profiles.delete('env-3');
+  engine.statusDelta(beforeChurn.cursor, compactOptions);
+  runtime.port = 4444;
+  engine.invalidateStatusCache('env-1');
+  engine.status(); // An independent read consumes the dirty status row.
+  runtime.port = 5555;
+  engine.invalidateStatusCache('env-1');
+  const afterChurn = engine.statusDelta(beforeChurn.cursor, compactOptions);
+  assert.deepEqual(afterChurn.removed, ['env-3'], 'a transient row unseen by the client needs no tombstone');
+  assert.deepEqual(afterChurn.rows.map(row => [row.id, row.port]), [['env-1', 5555]]);
+  assert.equal(engine._statusWatermark, null, 'compact polling does not allocate a fleet watermark');
   for (let i = 0; i < 10; i++) { engine.invalidateStatusCache(); engine.statusDelta(null, { includeCursor: true }); }
   assert.equal(engine._statusCursorHistory.size, 8);
   assert.equal(engine.statusDelta(cursor).full, true, 'expired history safely resynchronizes');

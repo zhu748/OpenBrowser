@@ -2,6 +2,9 @@
 
 const assert = require('node:assert/strict');
 const { execFileSync } = require('node:child_process');
+const { randomBytes } = require('node:crypto');
+const fs = require('node:fs/promises');
+const os = require('node:os');
 const path = require('node:path');
 const { BrowserEngine } = require('../../engine');
 
@@ -11,6 +14,65 @@ function makeEngine() {
     _persistQueue: Promise.resolve(),
     preferIndependentKernel: true, allowSystemBrowserFallback: false, systemBrowserPath: null,
   });
+}
+
+async function testIncrementalSqliteWrites() {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ob-persist-incremental-'));
+  const engine = new BrowserEngine({ getPath: () => root });
+  const oldKey = process.env.OPENBROWSER_MASTER_KEY;
+  process.env.OPENBROWSER_MASTER_KEY = randomBytes(32).toString('hex');
+  try {
+    await engine.init(null);
+    const store = engine.sqliteStore;
+    await engine.syncProfiles(Array.from({ length: 100 }, (_, i) => ({ id: `p-${i}`, name: `Profile ${i}` })));
+    const diff = store.saveProfilesDiffed.bind(store);
+    const batches = [];
+    let fail = false;
+    store.saveProfilesDiffed = (profiles) => {
+      batches.push(profiles.map(profile => profile.id));
+      const changed = diff(profiles);
+      if (fail) throw new Error('injected transaction failure after upsert');
+      return changed;
+    };
+    const edit = (note) => engine.profiles.set('p-50', { ...engine.profiles.get('p-50'), note, cookies: 'fixture-cookie' });
+    edit('pending');
+    fail = true;
+    await assert.rejects(engine._persistNow(), /injected transaction failure/);
+    assert.notEqual(store.getProfile('p-50').note, 'pending');
+    fail = false;
+    await engine._persistNow();
+    assert.equal(store.getProfile('p-50').note, 'pending');
+    assert.equal(store.getProfile('p-50').cookies, 'fixture-cookie');
+    const raw = store.db.prepare('SELECT data FROM profiles WHERE id = ?').get('p-50').data;
+    assert.equal(Buffer.from(raw).includes(Buffer.from('fixture-cookie')), false);
+    await engine._persistNow();
+    assert.deepEqual(batches, [['p-50'], ['p-50'], []]);
+
+    const save = store.saveEngineState.bind(store);
+    const { promise: began, resolve: notifyBegan } = Promise.withResolvers();
+    const { promise: gate, resolve: release } = Promise.withResolvers();
+    store.saveEngineState = async (state) => {
+      const result = save(state);
+      notifyBegan();
+      await gate;
+      return result;
+    };
+    edit('first');
+    const writing = engine._persistNow();
+    await began;
+    edit('second');
+    release();
+    await writing;
+    store.saveEngineState = save;
+    await engine._persistNow();
+    assert.equal(store.getProfile('p-50').note, 'second');
+    assert.deepEqual(batches.slice(-2), [['p-50'], ['p-50']]);
+  } finally {
+    engine.sqliteStore?.close();
+    if (oldKey === undefined) delete process.env.OPENBROWSER_MASTER_KEY;
+    else process.env.OPENBROWSER_MASTER_KEY = oldKey;
+    await fs.rm(root, { recursive: true, force: true });
+  }
 }
 
 async function main() {
@@ -95,6 +157,7 @@ async function main() {
   fail = false;
   await direct._persistNow();
   await direct.flushPersistence();
+  await testIncrementalSqliteWrites();
   console.log('ENGINE_PERSISTENCE_SELFTEST OK (failure propagation, coalescing, late requests, CLI lifetime, exports)');
 }
 

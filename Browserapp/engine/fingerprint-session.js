@@ -36,4 +36,9 @@ class FingerprintSession {
   }
 }
 
-module.exports = { FingerprintSession };
+function isActiveFingerprintSession(item, state) {
+  return Boolean(state.connection && state.connection === item.workerFingerprintConnection
+    && !state.connection.closed && !state.reason);
+}
+
+module.exports = { FingerprintSession, isActiveFingerprintSession };

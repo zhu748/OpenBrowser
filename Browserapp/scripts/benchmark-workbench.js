@@ -62,10 +62,11 @@ function markProgress(label) {
 // timings — so a wedge fails fast into the step's retry instead of hanging
 // the whole job. A slow-but-alive runner never trips these bounds.
 function bounded(promise, ms, label) {
+  let timer;
   return Promise.race([promise, new Promise((_, reject) => {
-    const timer = setTimeout(() => reject(new Error(`${label} did not settle within ${ms}ms (runner wedge?)`)), ms);
+    timer = setTimeout(() => reject(new Error(`${label} did not settle within ${ms}ms (runner wedge?)`)), ms);
     if (typeof timer.unref === 'function') timer.unref();
-  })]).finally(() => markProgress(`after ${label}`));
+  })]).finally(() => { clearTimeout(timer); markProgress(`after ${label}`); });
 }
 
 async function closeApp(app) {
@@ -86,22 +87,35 @@ async function closeApp(app) {
 async function observeQueries(app, page) {
   markProgress('benchmark observer install');
   await bounded(page.evaluate(() => {
-    globalThis.__workbenchBenchmark = { sequence: 0, rows: [] };
+    globalThis.__workbenchBenchmark = { sequence: 0 };
+    function observePaint(state) {
+      if (globalThis.__workbenchBenchmark !== state) return;
+      const body = document.querySelector('table tbody');
+      const displayed = new Set([...body?.querySelectorAll('tr[data-row-id]') || []].map(row => row.dataset.rowId));
+      const matches = state.ids.length ? displayed.size === state.ids.length && state.ids.every(id => displayed.has(id))
+        : body?.textContent.includes('暂无查询结果');
+      if (!matches) { requestAnimationFrame(() => observePaint(state)); return; }
+      requestAnimationFrame(() => requestAnimationFrame(() => { state.paintedAt = performance.now(); }));
+    }
     globalThis.__workbenchBenchmarkDispose = globalThis.ops.onEvent(event => {
-      if (event.type === 'benchmark:query') globalThis.__workbenchBenchmark = event.state;
+      if (event.type !== 'benchmark:query') return;
+      const state = { ...event.state, observedAt: performance.now() };
+      globalThis.__workbenchBenchmark = state;
+      observePaint(state);
     });
   }), 60000, 'benchmark observer install');
   await bounded(app.evaluate(({ ipcMain }) => {
     const original = ipcMain._invokeHandlers.get('rebuild:request');
-    const state = { sequence: 0, rows: [] };
+    const state = { sequence: 0 };
     ipcMain.removeHandler('rebuild:request');
     ipcMain.handle('rebuild:request', async (event, method, params) => {
+      const start = performance.now();
       const response = await original(event, method, params);
       if (method === 'profiles:query' && response.ok) {
         state.sequence++;
         state.params = { ...params };
-        state.rows = response.value.rows.map(row => row.windowName);
-        state.total = response.value.total;
+        state.ids = response.value.rows.map(row => String(row.id));
+        state.handlerMs = performance.now() - start;
         event.sender.send('engine:event', { type: 'benchmark:query', state });
       }
       return response;
@@ -110,21 +124,26 @@ async function observeQueries(app, page) {
 }
 
 async function queryPaint(page, act, expected) {
-  markProgress(`query paint (${expected ?? 'pagination'})`);
+  markProgress(`query paint (${expected})`);
   const sequence = await bounded(page.evaluate(() => globalThis.__workbenchBenchmark.sequence), 60000, 'benchmark state read');
   const start = performance.now();
   await act();
-  await page.waitForFunction(({ sequence, expected }) => {
+  const actionMs = performance.now() - start;
+  const response = await page.waitForFunction(({ sequence, expected }) => {
     const current = globalThis.__workbenchBenchmark;
-    return current.sequence > sequence && (expected === null || String(current.params.queryValue || '') === expected);
+    const matches = typeof expected === 'number' ? Number(current.params?.page_index) === expected
+      : String(current.params?.queryValue || '') === expected;
+    return current.sequence > sequence && matches && current.paintedAt ? current : false;
   }, { sequence, expected }, { timeout: 60000 });
-  const rows = await bounded(page.evaluate(() => globalThis.__workbenchBenchmark.rows), 60000, 'benchmark rows read');
-  await page.waitForFunction(rows => {
-    const text = document.querySelector('table tbody')?.textContent || '';
-    return rows.length ? rows.every(name => text.includes(name)) : text.includes('暂无查询结果');
-  }, rows, { timeout: 60000 });
-  await paint(page);
-  return performance.now() - start;
+  const totalMs = performance.now() - start;
+  const { handlerMs, observedAt, paintedAt } = await bounded(response.jsonValue(), 60000, 'benchmark paint timing');
+  await bounded(response.dispose(), 60000, 'benchmark response dispose');
+  return { totalMs, actionMs, handlerMs, responseToPaintMs: paintedAt - observedAt };
+}
+
+function interactionP95(samples) {
+  if (!samples.length) return null;
+  return Object.fromEntries(Object.keys(samples[0]).map(key => [key, +p95(samples.map(sample => sample[key])).toFixed(1)]));
 }
 
 async function measure(page, count, rounds) {
@@ -148,7 +167,7 @@ async function measure(page, count, rounds) {
     for (let i = 0; i < rounds; i++) {
       const next = i % 2 === 0;
       phase(`pagination round ${i + 1}/${rounds}`);
-      pageMs.push(await queryPaint(page, () => page.getByRole('button', { name: next ? 'Next Page' : 'Previous Page', exact: true }).click(), null));
+      pageMs.push(await queryPaint(page, () => page.getByRole('button', { name: next ? 'Next Page' : 'Previous Page', exact: true }).click(), next ? 2 : 1));
     }
   }
   for (let i = 0; i < rounds; i++) {
@@ -164,8 +183,10 @@ async function measure(page, count, rounds) {
   assert.deepEqual(counter, { count });
   markProgress('profiles:list');
   const fullListBytes = await bounded(page.evaluate(async () => new TextEncoder().encode(JSON.stringify(await globalThis.__localRequest('profiles:list'))).byteLength), 60000, 'profiles:list');
+  const searchTimings = interactionP95(searchMs), pagination = interactionP95(pageMs);
   return { count, renderedRows: await bounded(page.locator('tbody tr').count(), 60000, 'renderedRows count'),
-    searchP95Ms: +p95(searchMs).toFixed(1), paginationP95Ms: pageMs.length ? +p95(pageMs).toFixed(1) : null,
+    searchP95Ms: searchTimings.totalMs, paginationP95Ms: pagination?.totalMs ?? null,
+    interactionP95: { search: searchTimings, pagination },
     selectionP95Ms: +p95(selectionMs).toFixed(1), countPayloadBytes: Buffer.byteLength(JSON.stringify(counter)), fullListPayloadBytes: fullListBytes };
 }
 

@@ -12,7 +12,7 @@ function settingsPanels(values, basic) {
     placement: 'accordion',
   }, {
     title: $t('高级指纹设置'),
-    tooltip: $t('系统已自动配置，一般无需修改；如需调整分辨率、WebRTC、WebGL、Canvas、设备等指纹参数，可展开修改。'),
+    tooltip: $t('展开可调整分辨率、WebRTC、WebGL 等参数。电池、网络和蓝牙选项适用于 Chrome 移动设备配置。'),
     value: values[1],
     groupIndex: 2,
     placement: 'accordion',

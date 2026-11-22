@@ -11,6 +11,11 @@ const { normalizeGeneratedFirefoxUa } = require('../automation/firefox-ua-policy
 
 const MAX_PROFILE_PROXY_LENGTH = 64 * 1024;
 
+function profileTimestamp(value) {
+  const milliseconds = typeof value === 'string' && value.length <= 40 ? Date.parse(value) : NaN;
+  return Number.isFinite(milliseconds) ? new Date(milliseconds).toISOString() : undefined;
+}
+
 function sanitizeProfile(value) {
   if (!value || typeof value !== "object" || typeof value.id !== "string" || typeof value.name !== "string") throw new Error("Invalid profile");
   const id = assertProfileId(value.id);
@@ -70,6 +75,8 @@ function sanitizeProfile(value) {
     number: Number.isInteger(number) && number > 0 ? number : null,
     trashed: Boolean(value.trashed),
     trashedAt: value.trashedAt ? String(value.trashedAt).slice(0, 40) : null,
+    createdAt: profileTimestamp(value.createdAt),
+    updatedAt: profileTimestamp(value.updatedAt),
     name: value.name.slice(0, 100),
     title: String(value.title || value.displayName || "").slice(0, 120),
     startUrl: effectiveStartUrl,

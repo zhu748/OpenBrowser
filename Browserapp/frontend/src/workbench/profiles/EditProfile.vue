@@ -70,6 +70,7 @@ onBeforeMount(async () => {
 async function refreshFingerprint() {
   try {
     const [updated] = await gate.run(() => shuffleFingerprint(inputs.value));
+    if (!updated) return;
     Object.assign(fingerprint.value, updated);
     showSuccess(0, $t('指纹刷新成功'));
   } catch (error) {
@@ -112,8 +113,8 @@ async function save() {
 <template>
   <div class="relative flex min-h-0 flex-col h-full">
     <Header show-back :title="$t('编辑窗口')" />
-    <div class="px-16 flex flex-1 min-h-0 overflow-hidden overflow-x-auto">
-      <div class="w-full h-full flex min-h-0 gap-8 ma-auto" :class="collapsed ? 'min-w-192 max-w-192' : 'min-w-240 max-w-285'">
+    <div class="profile-editor-viewport flex flex-1 min-h-0 overflow-hidden">
+      <div class="profile-editor-layout w-full h-full flex min-h-0 ma-auto" :class="collapsed ? 'max-w-192' : 'max-w-285'">
         <div class="flex min-h-0 min-w-0 flex-1 flex-col">
           <ProfileForm class="min-h-0 min-w-0 flex-1" :accordions="accordions" :inputs-group="inputs">
             <template #before><WindowInputs :window-inputs="basicInputs" /></template>

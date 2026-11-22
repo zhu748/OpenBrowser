@@ -9,12 +9,14 @@
  * scripts/benchmark-profile-sync.js --compare.
  */
 const { assertProfileNotMaintained } = require('./profile-maintenance');
+const { isDeepStrictEqual } = require('node:util');
 const { proxyHasCredentials, sameProxyEndpoint, sameProxyIdentity } = require('./index');
 
-function prepareProfileSync(engine, values, { maintenanceToken, checkRevisions = false } = {}) {
+function prepareProfileSync(engine, values, { maintenanceToken, checkRevisions = false, preserveTimestamps = false } = {}) {
   const profiles = new Map();
   const assignments = new Map();
   const networkInvalidations = new Set();
+  const now = new Date().toISOString();
   // Transport limits bound external requests; full trusted UI snapshots must
   // accept every loaded profile, including fleets larger than 5000 records.
   if (!Array.isArray(values)) throw new Error('Invalid profile list');
@@ -131,6 +133,11 @@ function prepareProfileSync(engine, values, { maintenanceToken, checkRevisions =
       }
     }
     if (previous && previous.proxy !== merged.proxy) networkInvalidations.add(profile.id);
+    const importedUpdate = merged.updatedAt;
+    merged.createdAt = previous?.createdAt || merged.createdAt || now;
+    merged.updatedAt = previous?.updatedAt || importedUpdate || merged.createdAt;
+    if (preserveTimestamps && importedUpdate) merged.updatedAt = importedUpdate;
+    else if (previous && !isDeepStrictEqual({ ...previous, lastOpenedAt: merged.lastOpenedAt }, merged)) merged.updatedAt = now;
     profiles.set(merged.id, merged);
     const hasSavedAssignment = (assignments.has(merged.id) || engine.assignments.has(merged.id));
     if (isNew || !hasSavedAssignment || previous.groupId !== merged.groupId) {

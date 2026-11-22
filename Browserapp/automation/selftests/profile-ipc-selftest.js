@@ -9,7 +9,7 @@ async function main() {
   const before = [];
   let removalBarrier = null;
   const engine = Object.fromEntries([
-    'syncProfiles', 'deleteProfiles', 'trashProfiles', 'restoreProfiles', 'purgeProfiles', 'emptyTrash',
+    'syncProfiles', 'deleteProfiles', 'trashProfiles', 'restoreProfiles', 'purgeProfiles', 'purgeTrashedProfiles', 'emptyTrash',
     'start', 'stop', 'clearProfileCacheAndCookies', 'status', 'testProxy', 'checkProxy',
     'applyProfileCommands', 'profileForEdit', 'statusDelta',
   ].map((method) => [method, (...args) => { calls.push([method, ...args]); return method; }]));
@@ -20,7 +20,7 @@ async function main() {
     async beforeRemove(ids) { before.push(ids); if (removalBarrier) await removalBarrier; },
   });
   const invoke = (action, value, options) => handlers.get(`profiles:${action}`)(null, value, options);
-  assert.equal(handlers.size, 15);
+  assert.equal(handlers.size, 16);
   assert.deepEqual(await invoke('apply-commands', [{ kind: 'modify', id: 'a', baseRev: 1 }]), { ipcResult: 1, ok: true, value: 'applyProfileCommands' });
   assert.deepEqual(calls.at(-1), ['applyProfileCommands', [{ kind: 'modify', id: 'a', baseRev: 1 }], undefined]);
   await invoke('apply-commands', [{ kind: 'patch', id: 'a', baseRev: 1, patch: { note: 'n' } }], { delta: true });
@@ -42,6 +42,10 @@ async function main() {
   assert.equal(before.length, count, 'input validation precedes host selection changes');
   invoke('restore', { ids: ['a', 'a'] }); assert.deepEqual(calls.at(-1), ['restoreProfiles', ['a']]);
   assert.equal(before.length, count, 'restore does not remove the sync selection');
+  invoke('purge-trash', { ids: ['a', 'a'], trashedAtById: { a: null } });
+  const [method, ids, deleteData, purgeOptions] = calls.at(-1);
+  assert.deepEqual([method, ids, deleteData, purgeOptions.trashedAtById], ['purgeTrashedProfiles', ['a'], true, { a: null }]);
+  assert.equal(typeof purgeOptions.beforeRemove, 'function', 'selection cleanup runs in the engine while the lifecycle lock is held');
   invoke('empty-trash'); assert.deepEqual(calls.at(-1), ['emptyTrash', true]);
   invoke('empty-trash', { deleteData: false }); assert.deepEqual(calls.at(-1), ['emptyTrash', false]);
   for (const [action, method] of [['start', 'start'], ['stop', 'stop'], ['clear-cache-cookies', 'clearProfileCacheAndCookies'], ['test-proxy', 'testProxy']]) {
@@ -55,7 +59,7 @@ async function main() {
   removalBarrier = Promise.reject(Error('native cleanup failed'));await assert.rejects(invoke('delete', { ids: ['failed'] }), /native cleanup failed/);assert.equal(calls.length, priorCalls + 1, 'failed cleanup cannot delete a live master profile');removalBarrier = null;
   engine.start = async () => { throw new Error('start failed'); };
   await assert.rejects(invoke('start'), /start failed/);
-  console.log('PROFILE_IPC_SELFTEST OK (trusted registration, 15 channels, validation, selection, errors)');
+  console.log('PROFILE_IPC_SELFTEST OK (trusted registration, 16 channels, validation, selection, errors)');
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1; });

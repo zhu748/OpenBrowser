@@ -20,6 +20,10 @@ async function main() {
     await fs.writeFile(registry, 'current worker registrations');
     assert.deepEqual(await prepareFirefoxWorkerCache(root, 'source A'), { reset: false });
     assert.equal(await fs.readFile(registry, 'utf8'), 'current worker registrations');
+    assert.deepEqual(await prepareFirefoxWorkerCache(root, 'source A', { localDelivery: true }), { reset: true });
+    await assert.rejects(fs.stat(registry), { code: 'ENOENT' });
+    await fs.writeFile(registry, 'registrations from the local filter and forwarder');
+    assert.deepEqual(await prepareFirefoxWorkerCache(root, 'source A', { localDelivery: true }), { reset: false });
     assert.deepEqual(await prepareFirefoxWorkerCache(root, 'source B'), { reset: true });
     await assert.rejects(fs.stat(registry), { code: 'ENOENT' });
     assert.equal(await fs.readFile(path.join(root, 'cookies.sqlite'), 'utf8'), 'cookies');

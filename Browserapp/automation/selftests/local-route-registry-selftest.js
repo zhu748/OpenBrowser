@@ -104,7 +104,11 @@ async function main() {
 
   // A large existing library must not exceed the JS argument-count limit when
   // creating a profile or reserving a batch of sequential display numbers.
-  service.engine.status = () => Array.from({ length: 200000 }, (_, index) => ({ number: index + 1 }));
+  service.engine.profiles = new Map();
+  for (let number = 1; number <= 200000; number++) {
+    service.engine.profiles.set(String(number), { number });
+  }
+  service.engine.status = () => { throw Error('Number allocation must not build a status snapshot'); };
   let saved;
   service.engine.syncProfiles = async profiles => { saved = profiles; };
   const created = await service.request('profiles:create', { windowName: 'large library' });

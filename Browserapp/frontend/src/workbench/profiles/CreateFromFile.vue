@@ -76,23 +76,34 @@ async function fingerprintRows(rows, params) {
   });
   const fingerprints = new Array(rows.length);
   await Promise.all(Array.from(groups.values(), async ({ engine, indices }) => {
-    const generated = await globalThis.electronAPI.send('util:genRandomFingerprint', {
-      fontType, canvas, webGL, audioContext, speechVoices, clientRects, macInfo, ...engine,
-    }, indices.length);
-    indices.forEach((index, position) => { fingerprints[index] = generated[position]; });
+    const selection = {
+      fontType, canvas, webGL, audioContext, speechVoices, clientRects, macInfo, macAddr: params.macAddr, ...engine,
+    };
+    // File import allows 200 rows, while a single preview request accepts 100.
+    const previewLimit = 100;
+    for (let offset = 0; offset < indices.length; offset += previewLimit) {
+      const batch = indices.slice(offset, offset + previewLimit);
+      const generated = await globalThis.electronAPI.send('util:genRandomFingerprint', selection, batch.length);
+      if (!Array.isArray(generated) || generated.length !== batch.length ||
+          generated.some(row => !row?.userAgent || !row._fingerprintDraft))
+        throw Error($t('指纹预览未返回完整身份，请重试'));
+      batch.forEach((index, position) => { fingerprints[index] = generated[position]; });
+    }
   }));
   return fingerprints.map(fingerprint => ({
     ...fingerprint,
     webGLManufacturer: params.webGLInfo === 2 ? params.webGLManufacturer : fingerprint.webGLManufacturer,
     webGLRender: params.webGLInfo === 2 ? params.webGLRender : fingerprint.webGLRender,
+    hardwareConcurrent: params.hardwareConcurrent || fingerprint.hardwareConcurrent,
+    deviceMemory: params.deviceMemory || fingerprint.deviceMemory,
   }));
 }
 </script>
 
 <template>
   <div class="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-    <div class="px-16 flex flex-1 min-h-0 overflow-hidden overflow-x-auto">
-      <div class="w-full h-full flex min-h-0 gap-8 ma-auto" :class="collapsed ? 'min-w-192 max-w-192' : 'min-w-240 max-w-285'">
+    <div class="profile-editor-viewport flex flex-1 min-h-0 overflow-hidden">
+      <div class="profile-editor-layout w-full h-full flex min-h-0 ma-auto" :class="collapsed ? 'max-w-192' : 'max-w-285'">
         <div class="flex min-h-0 min-w-0 flex-1 flex-col">
           <ProfileForm class="flex-1 min-h-0" :accordions="accordions" :inputs-group="inputsGroup">
             <template #before>

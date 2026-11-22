@@ -206,7 +206,7 @@ async function startupHarness(fault) {
     assert.equal(normalizeTimezone('Etc/UTC'), normalizeTimezone('UTC'));
   });
   await test('runtime bookkeeping requires a valid live probe and can recheck without reinjection', async () => {
-    const saved = { call: cdp.call, tabs: cdp.tabs };
+    const saved = { call: cdp.call, tabs: cdp.tabs, connect: cdp.connect };
     const tab = { id: 'probe-target', url: 'about:blank', webSocketDebuggerUrl: 'ws://127.0.0.1:12345/devtools/page/abcd1234' };
     let live = liveFor(); let registrations = 0; let probes = 0;
     cdp.tabs = async () => [tab];
@@ -229,6 +229,25 @@ async function startupHarness(fault) {
       cdp.tabs = async () => [];
       await assert.rejects(run({ phase: 'pre-startpage' }), /No page target/);
     } finally { Object.assign(cdp, saved); }
+  });
+  await test('the runtime watcher reuses its tab snapshot and retains newer attached targets', async () => {
+    const savedTabs = cdp.tabs;
+    const observedTabs = [{ id: 'existing', url: 'about:blank', webSocketDebuggerUrl: 'ws://localhost/page' }];
+    const connection = {};
+    const applied = new Set(['existing', 'just-attached', 'closed']);
+    const trackOn = {
+      workerFingerprintConnection: connection,
+      fingerprintSessionStates: new Map([['new-session', { targetId: 'just-attached', connection, ready: true }]]),
+    };
+    let lookups = 0;
+    cdp.tabs = async () => { lookups += 1; return observedTabs; };
+    try {
+      await runtime.applyRuntimeSettings.call({ networkInfo: new Map() }, 12345, profile, fp, {
+        phase: 'watch-ensure', trackOn, appliedTargetIds: applied, observedTabs,
+      });
+      assert.equal(lookups, 0);
+      assert.deepEqual([...applied], ['existing', 'just-attached']);
+    } finally { cdp.tabs = savedTabs; }
   });
   for (const type of ['worker', 'shared_worker', 'service_worker']) {
     await test(`${type} startup waits for network setup and evaluation before resume`, async () => {
@@ -376,9 +395,9 @@ async function startupHarness(fault) {
   });
   await test('Chromium watcher requires consecutive confirmed empty lists before closing', async () => {
     const saved = { timeout: global.setTimeout, json: cdp.json, tabs: cdp.tabs };
-    let tick, listError = false, stops = 0, applies = 0;
+    let tick, listError = false, stops = 0, applies = 0, versionLookups = 0;
     global.setTimeout = (fn) => { tick = fn; return 1; };
-    cdp.json = async () => ({});
+    cdp.json = async () => { versionLookups += 1; return {}; };
     cdp.tabs = async () => {
       if (listError) throw new Error('CDP tab list timeout');
       return [];
@@ -390,16 +409,44 @@ async function startupHarness(fault) {
       lifecycle.startRunningWatch.call(engine, item);
       await tick();
       assert.equal(item.watchEmptyTicks, 1);
+      assert.equal(versionLookups, 0);
       listError = true;
       await tick(); await tick(); await tick();
       assert.equal(stops, 0);
       assert.equal(applies, 0);
+      assert.equal(versionLookups, 3);
       listError = false;
       await tick();
       assert.equal(stops, 0);
       await tick();
       assert.equal(stops, 1);
     } finally { global.setTimeout = saved.timeout; cdp.json = saved.json; cdp.tabs = saved.tabs; }
+  });
+  await test('an obsolete watcher failure cannot report or stop a restarted profile', async () => {
+    const saved = { timeout: global.setTimeout, tabs: cdp.tabs };
+    let tick, reject, stops = 0;
+    const events = [];
+    const pending = new Promise((_resolve, fail) => { reject = fail; });
+    global.setTimeout = (fn) => { tick = fn; return 1; };
+    cdp.tabs = async () => [{ id: 'page', url: 'about:blank' }];
+    const item = { profile, fingerprint: fp, engine: 'chromium', port: 12345 };
+    const engine = {
+      running: new Map([[profile.id, item]]),
+      applyRuntimeSettings: () => pending,
+      async handleBrowserGone() { stops += 1; },
+      emit(event) { events.push(event); },
+    };
+    try {
+      lifecycle.startRunningWatch.call(engine, item);
+      await tick();
+      assert.equal(item.fpEnsureBusy, true);
+      engine.running.set(profile.id, { ...item, port: 12346 });
+      reject(new Error('old page connection closed'));
+      await turn();
+      assert.equal(stops, 0);
+      assert.deepEqual(events, []);
+      assert.equal(item.cdpError, undefined);
+    } finally { global.setTimeout = saved.timeout; cdp.tabs = saved.tabs; }
   });
   await test('BiDi repeated opens share one socket and constructor failures close transport state', async () => {
     let sockets = 0;

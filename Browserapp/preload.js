@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld('ops', Object.freeze({
   trashProfiles: (ids) => ipcRenderer.invoke('profiles:trash', { ids }),
   restoreProfiles: (ids) => ipcRenderer.invoke('profiles:restore', { ids }),
   purgeProfiles: (ids, deleteData) => ipcRenderer.invoke('profiles:purge', { ids, deleteData }),
+  purgeTrashedProfiles: (selection) => ipcRenderer.invoke('profiles:purge-trash', selection),
   emptyTrash: (deleteData) => ipcRenderer.invoke('profiles:empty-trash', { deleteData }),
   startProfile: (profile) => ipcRenderer.invoke('profiles:start', profile),
   stopProfile: (id) => ipcRenderer.invoke('profiles:stop', id),

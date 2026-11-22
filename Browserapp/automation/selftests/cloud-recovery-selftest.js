@@ -5,8 +5,12 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { randomBytes } = require('node:crypto');
 const { BrowserEngine } = require('../../engine');
 const { prepareFileRestore, inspectFileRestores, assertProfileRestoreReady } = require('../cloud/file-restore');
+const cloud = require('../cloud-sync');
+const { initCloudOps, runCloudBackup, createBackupPackage, applyBackupBody } = require('../cloud-ops');
+const { MAX_BACKUP_PROFILES } = require('../cloud/limits');
 const b64 = (value) => Buffer.from(value).toString('base64');
 
 const interruptedRestore = `
@@ -28,6 +32,61 @@ const interruptedRestore = `
     process.exit(71);
   })().catch((error) => { console.error(error); process.exit(1); });
 `;
+
+async function verifyBackupIntegrity(root) {
+  const app = { getPath: () => root };
+  let engine = new BrowserEngine(app);
+  let settings = { cloud: { provider: 'local', includeBrowserData: false, passphrase: 'fixture-only', local: { dir: path.join(root, 'backup') } } };
+  const oldKey = process.env.OPENBROWSER_MASTER_KEY;
+  process.env.OPENBROWSER_MASTER_KEY = randomBytes(32).toString('hex');
+  initCloudOps({ getEngine: () => engine, getSettings: () => settings, saveSettings: async value => { settings = value; } });
+  try {
+    await engine.init(null);
+    await engine.syncProfiles(['healthy', 'damaged'].map(id => ({ id, name: id, advanced: { cloudBackup: true } })));
+    const initial = await runCloudBackup();
+    assert.equal(initial.meta.profileCount, 2);
+    const original = await fs.readFile(initial.result.path);
+    engine.sqliteStore.db.prepare('UPDATE profiles SET data = ? WHERE id = ?').run('invalid fixture record', 'damaged');
+    engine.sqliteStore.close();
+    engine = new BrowserEngine(app);
+    await engine.init(null);
+    assert.equal(engine.sqliteStore.hasProfile('damaged'), true);
+    await assert.rejects(runCloudBackup(), { code: 'CLOUD_BACKUP_PROFILES_MISSING', count: 1 });
+    await assert.rejects(runCloudBackup({ profileIds: ['healthy', 'damaged'] }), { code: 'CLOUD_BACKUP_PROFILES_MISSING' });
+    assert.deepEqual(await fs.readFile(initial.result.path), original, 'the previous complete backup survives a failed backup');
+    assert.throws(() => engine.exportEngineState(), { code: 'STORAGE_DECODE_FAILED', count: 1 });
+    assert.equal((await runCloudBackup({ profileIds: ['healthy'], remoteName: 'healthy-only.obpack' })).meta.profileCount, 1);
+    await assert.rejects(applyBackupBody({ profiles: [{ id: 'damaged', name: 'Remote' }] }, { mode: 'overwrite' }),
+      { code: 'STORAGE_DECODE_FAILED', profileId: 'damaged' });
+    assert.equal(engine.sqliteStore.db.prepare('SELECT data FROM profiles WHERE id = ?').get('damaged').data,
+      'invalid fixture record', 'restore must preserve the undecodable original row');
+    assert.equal(engine.profileMaintenance.size, 0);
+
+    await engine.syncProfiles([{ id: 'manual', name: 'Explicit selection' }]);
+    engine.running.set('manual', { browser: { name: 'Fixture' }, extensions: [] });
+    try {
+      await assert.rejects(createBackupPackage({ profileIds: ['manual'], cloud: { includeBrowserData: true } }),
+        { code: 'PROFILE_BUSY', profileId: 'manual' });
+      assert.equal((await createBackupPackage({ profileIds: ['manual'] })).meta.profileCount, 1,
+        'a settings-only backup may include a running window');
+    } finally { engine.running.delete('manual'); }
+
+    const tooMany = Array.from({ length: MAX_BACKUP_PROFILES + 1 }, (_, i) => ({ id: `profile-${i}`, advanced: { cloudBackup: true } }));
+    await assert.rejects(cloud.buildBackupPackage({ profiles: tooMany }), /5000/);
+    await assert.rejects(applyBackupBody({ profiles: tooMany }), /5000/);
+
+    engine.sqliteStore.close();
+    engine = new BrowserEngine({ getPath: () => path.join(root, 'large-library') });
+    engine.persist = async () => {};
+    for (const { id } of tooMany) engine.profiles.set(id, { id, name: id });
+    await applyBackupBody({ profiles: [{ id: 'imported', name: 'One selected window' }] });
+    assert.equal(engine.profiles.size, MAX_BACKUP_PROFILES + 2, 'the per-package limit does not cap an existing library');
+  } finally {
+    engine.sqliteStore?.close();
+    if (oldKey === undefined) delete process.env.OPENBROWSER_MASTER_KEY;
+    else process.env.OPENBROWSER_MASTER_KEY = oldKey;
+  }
+}
 
 async function main() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ob-cloud-recovery-'));
@@ -121,6 +180,7 @@ async function main() {
     const alias = path.join(healthy.profileRoot, '.openbrowser-restore-alias');
     await fs.symlink(outside, alias, process.platform === 'win32' ? 'junction' : 'dir');
     await assert.rejects(assertProfileRestoreReady(healthy.profileRoot), { code: 'PROFILE_RECOVERY_REQUIRED' });
+    await verifyBackupIntegrity(path.join(root, 'integrity'));
     assert.equal(await fs.readFile(path.join(outside, 'settled.json'), 'utf8'), '{"version":1,"outcome":"committed"}');
     await fs.rm(alias);
     const readdir = fs.readdir;

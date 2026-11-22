@@ -1,7 +1,8 @@
 'use strict';
 
 const assert = require('assert');
-const { PersistentConnection } = require('../../cdp');
+const http = require('node:http');
+const { PersistentConnection, newTab, closeAllPooledSockets } = require('../../cdp');
 const { PersistentCdp } = require('../../live-sync-v4');
 
 class FakeWebSocket {
@@ -242,6 +243,55 @@ async function testSyncTransportCompatibility() {
   await rejectsFast(result, /connection closed/, 'sync handshake cancellation');
 }
 
+async function testNewTabNavigation() {
+  const requests = [];
+  let navigationResult = {};
+  let navigationError;
+  const sockets = [];
+  const original = global.WebSocket;
+  global.WebSocket = class extends FakeWebSocket {
+    constructor(url) {
+      super(url);
+      sockets.push(url);
+      queueMicrotask(() => this.open());
+    }
+
+    send(raw) {
+      super.send(raw);
+      const { id } = JSON.parse(raw);
+      const response = navigationError ? { error: { message: navigationError } } : { result: navigationResult };
+      queueMicrotask(() => this.emit('message', { data: JSON.stringify({ id, ...response }) }));
+    }
+  };
+  const server = http.createServer((request, response) => {
+    requests.push(request.url);
+    response.setHeader('Content-Type', 'application/json');
+    const tab = request.url.startsWith('/json/new') ? 'created' : 'existing';
+    const target = { id: tab, type: 'page', url: 'about:blank', webSocketDebuggerUrl: `ws://fake.test/devtools/page/${tab}` };
+    response.end(JSON.stringify(tab === 'created' ? target : [target]));
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const port = server.address().port;
+    navigationError = 'created target closed';
+    await assert.rejects(newTab(port, 'https://example.test/'), /created target closed/);
+    assert.deepStrictEqual(requests, ['/json/new?about:blank']);
+    assert.deepStrictEqual(sockets, ['ws://fake.test/devtools/page/created']);
+
+    navigationError = undefined;
+    navigationResult = { errorText: 'net::ERR_NAME_NOT_RESOLVED' };
+    await assert.rejects(newTab(port, 'https://example.test/'), /net::ERR_NAME_NOT_RESOLVED/);
+    navigationResult = { errorText: 'net::ERR_ABORTED', isDownload: true };
+    assert.strictEqual((await newTab(port, 'https://example.test/download')).id, 'created');
+    assert.ok(requests.every(url => url.startsWith('/json/new?')));
+    assert.ok(sockets.every(url => url.endsWith('/created')));
+  } finally {
+    closeAllPooledSockets();
+    global.WebSocket = original;
+    await new Promise(resolve => server.close(resolve));
+  }
+}
+
 async function main() {
   const originalWebSocket = global.WebSocket;
   global.WebSocket = FakeWebSocket;
@@ -258,6 +308,7 @@ async function main() {
     await testSharedHandshake();
     await testSendFailureClosesTransport();
     await testSyncTransportCompatibility();
+    await testNewTabNavigation();
     process.stdout.write([
       'CDP_CONNECTION_SELFTEST_OK',
       `preopen_error_ms=${errorElapsed}`,

@@ -2,8 +2,12 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const fsp = require('node:fs/promises');
+const os = require('node:os');
+const path = require('node:path');
 const vm = require('node:vm');
 const { createRequire } = require('node:module');
+const { BrowserEngine } = require('../../engine');
 const proxy = require('../../engine/profile-proxy');
 const locale = require('../../engine/start-page');
 const { sanitizeProfile } = require('../../engine/profile-sanitizer');
@@ -139,5 +143,36 @@ function fixture(extra = {}) {
       }
     }
   }
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'ob-launch-preflight-'));
+  try {
+    for (const family of ['chromium', 'firefox']) {
+      const engine = new BrowserEngine({ getPath: () => root });
+      engine.persist = async () => {};
+      const id = `preflight-${family}`;
+      await engine.syncProfiles([{ id, name: 'Original', engine: family }]);
+      const entered = deferred(), gate = deferred();
+      const readdir = fsp.readdir;
+      fsp.readdir = async (directory, ...options) => {
+        if (directory === engine.profileRoot(id)) { entered.resolve(); await gate.promise; }
+        return readdir(directory, ...options);
+      };
+      let launches = 0;
+      engine._start = engine._startFirefox = async () => { launches++; return {}; };
+      try {
+        const original = engine.profileForEdit(id);
+        const rejection = assert.rejects(engine.start(original.profile), { code: 'PROFILE_STALE_REV' });
+        await entered.promise;
+        await engine.applyProfileCommands([{ kind: 'patch', id, baseRev: original.rev, patch: { name: 'Saved during preflight' } }]);
+        gate.resolve();
+        await rejection;
+        assert.equal(launches, 0);
+        assert.equal(engine.profileForEdit(id).profile.name, 'Saved during preflight');
+        assert.equal(engine.starting.size, 0);
+        await engine.start(engine.profileForEdit(id).profile);
+        assert.equal(launches, 1, 'the updated configuration can start after the stale attempt');
+        checks++;
+      } finally { gate.resolve(); fsp.readdir = readdir; }
+    }
+  } finally { await fsp.rm(root, { recursive: true, force: true }); }
   console.log(`LAUNCH_PROFILE_WRITEBACK_SELFTEST OK ${checks}/${checks}`);
 })().catch((error) => { console.error(error); process.exitCode = 1; });

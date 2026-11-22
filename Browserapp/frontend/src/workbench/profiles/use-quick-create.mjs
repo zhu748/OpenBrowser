@@ -1,6 +1,6 @@
 import { h, toRaw } from './workbench-vue.js';
 import {
-  a as findInput, at as useWorkspaceRole, h as api, mt as useWorkspace, r as filterObject, s as buildInputValues,
+  a as findInput, at as useWorkspaceRole, h as api, r as filterObject, s as buildInputValues,
   v as useUser, xr as isEmpty,
 } from './utils-BIWenCnY.js';
 import { a as storeToRefs, n as useFeedback } from './agent-BmSFI9WH.js';
@@ -19,19 +19,17 @@ import QuickCreateEditor from './workbench-quick-create-editor.js';
 
 export function useQuickCreate() {
   const { isOwner } = storeToRefs(useWorkspaceRole());
-  const user = useUser();
-  const { userConfig } = storeToRefs(user);
-  const { getWorkspaceList } = useWorkspace();
+  const { userConfig } = storeToRefs(useUser());
   const { getProjects } = useProjectOptions();
   const { handleBusinessCode } = useBusinessCode();
   const { testProxy } = useNetworkChecks();
-  const [, showFeedback] = useFeedback();
+  const [showFeedback, showError] = useFeedback();
   const [openDialog] = useDialog();
   let creating = false;
 
   async function fetchQuickCreateTemplate() {
     const { code, data, msg } = await api.window.userGetQuickCreateTemplateList();
-    showFeedback(code, msg);
+    showError(code, msg);
     if (code !== 0 || !data) return null;
     return {
       id: data.id,
@@ -44,7 +42,7 @@ export function useQuickCreate() {
     const { code, msg } = id
       ? await api.window.userMdfQuickCreateTemplateCreate({ id, ...info })
       : await api.window.userAddQuickCreateTemplateCreate(info);
-    showFeedback(code, msg);
+    showError(code, msg);
     return code === 0;
   }
 
@@ -60,7 +58,7 @@ export function useQuickCreate() {
   async function canCreateWindow() {
     const { code, msg } = await api.window.userCheckWindowTotalCountList();
     if (code === 0) return true;
-    handleBusinessCode(code, () => showFeedback(code, msg));
+    handleBusinessCode(code, () => showError(code, msg));
     return false;
   }
 
@@ -70,8 +68,11 @@ export function useQuickCreate() {
     try {
       if (!await canCreateWindow()) return false;
       const [groups, baseValues] = await initializeForm(template);
-      const fingerprints = await readFingerprint(groups);
-      Object.assign(baseValues, fingerprints[0]);
+      const [fingerprint] = await readFingerprint(groups);
+      // The preview reports its own failure. Do not submit a form without
+      // a fingerprint or turn the same message into a second notification.
+      if (!fingerprint) return false;
+      Object.assign(baseValues, fingerprint);
       const project = filterObject(toRaw(await defaultProject()), value => !isEmpty(value));
       const inputValues = buildInputValues(groups, project);
       if (!hasProfileName(inputValues.windowName)) {
@@ -87,11 +88,12 @@ export function useQuickCreate() {
         checkChannel: userConfig.value.ipChecker, isDirect: false, testProxy,
       }));
       const { code, data, msg } = await api.window.userAddWindowInfoV2Create(payload);
-      showFeedback(code, msg);
-      if (code !== 0) return false;
-      getWorkspaceList();
-      user.fetchUserInfo();
+      if (code !== 0) {
+        showError(code, msg);
+        return false;
+      }
       eventBus.emit('refreshProfileList', openAfterCreate ? data?.windowId : undefined);
+      showFeedback(0, msg || $t('创建成功'));
       return true;
     } finally {
       creating = false;
@@ -121,7 +123,7 @@ export function useQuickCreate() {
     try {
       return await createAndOpenFromFormData((await fetchQuickCreateTemplate())?.templateInfo ?? {});
     } catch (error) {
-      showFeedback(-1, error.message);
+      showError(-1, error.message);
       return false;
     }
   }
@@ -129,7 +131,7 @@ export function useQuickCreate() {
     try {
       return await openQuickCreateEditor();
     } catch (error) {
-      showFeedback(-1, error.message);
+      showError(-1, error.message);
     }
   }
 

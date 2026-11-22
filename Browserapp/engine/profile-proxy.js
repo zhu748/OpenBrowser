@@ -65,9 +65,12 @@ module.exports = {
   },
   applyNetworkToProfile(profile, network, { persist = false, publish = true } = {}) {
     const patch = this.fingerprintPatchFromNetwork(network, profile);
+    const stored = this.profiles?.get(profile.id);
     const next = this.sanitizeProfile({
       ...profile,
       ...patch,
+      createdAt: stored?.createdAt ?? profile.createdAt,
+      updatedAt: stored?.updatedAt ?? profile.updatedAt,
       privacy: {
         ...(profile.privacy || {}),
         ...(patch.privacy || {}),
@@ -79,7 +82,7 @@ module.exports = {
     if (persist) this.persist().catch(() => {});
     // The status emit below also invalidates via the engine emit hook; kept
     // explicit here so the ordering is obvious even if emit changes.
-    this.invalidateStatusCache?.();
+    this.invalidateStatusCache?.(next.id);
     this.emit({ type: 'status', id: next.id, running: this.running.has(next.id), network, profile: next });
     return { profile: next, network, patch };
   },
@@ -223,13 +226,16 @@ module.exports = {
           + (extracted.username ? (encodeURIComponent(extracted.username) + ':' + encodeURIComponent(extracted.password) + '@') : '')
           + extracted.host + ':' + extracted.port
         );
-        nextProfile = this.sanitizeProfile({ ...profile, networkMode: 'proxy', proxy: rawProxy });
+        const stored = this.profiles.get(profile.id);
+        nextProfile = this.sanitizeProfile({ ...profile, networkMode: 'proxy', proxy: rawProxy,
+          createdAt: stored?.createdAt ?? profile.createdAt,
+          updatedAt: stored?.updatedAt ?? profile.updatedAt });
         if (!sameProxyIdentity(profile.proxy, nextProfile.proxy)) this.networkInfo?.delete(nextProfile.id);
         this.profiles.set(nextProfile.id, nextProfile);
         // If the subsequent probe fails, no 'status' emit happens on this
         // path; the local API reads status() directly and would keep serving
         // the pre-extraction proxy forever.
-        this.invalidateStatusCache?.();
+        this.invalidateStatusCache?.(nextProfile.id);
       }
     }
     const network = await this.checkProxy(nextProfile, { allowExtract: false, persist: true });

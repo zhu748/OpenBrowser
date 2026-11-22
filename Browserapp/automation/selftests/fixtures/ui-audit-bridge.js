@@ -72,9 +72,15 @@ const bridge = {
     window.__uiAuditSavedProfiles = (window.__uiAuditSavedProfiles || []).filter((x) => !ids.includes(x.id));
     return { success: true, purged: ids.length, ids };
   },
+  purgeTrashedProfiles: async ({ ids }) => {
+    const selected = (window.__uiAuditSavedProfiles || []).filter(x => x.trashed && ids.includes(x.id)).map(x => x.id);
+    await bridge.purgeProfiles(selected);
+    return { success: true, deleted: selected.length, ids: selected };
+  },
   emptyTrash: async () => {
+    const ids = (window.__uiAuditSavedProfiles || []).filter(x => x.trashed).map(x => x.id);
     window.__uiAuditSavedProfiles = (window.__uiAuditSavedProfiles || []).filter((x) => !x.trashed);
-    return { success: true };
+    return { success: true, ids };
   },
 };
 window.ops = new Proxy(bridge, {

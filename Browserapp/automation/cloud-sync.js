@@ -12,14 +12,16 @@ const path = require('path');
 const { request } = require('./cloud/transport');
 const crypto = require('crypto');
 const { URL } = require('url');
+const { Readable } = require('node:stream');
+const { pipeline } = require('node:stream/promises');
 const zlib = require('zlib');
-const gzipAsync = require('util').promisify(zlib.gzip);
 const gunzipAsync = require('util').promisify(zlib.gunzip);
 const { assertProfileId } = require('./isolation');
+const { writeRawAtomically } = require('../engine/state-storage');
 
 const BACKUP_VERSION = 1;
 const REMOTE_NAME = 'openbrowser-backup.obpack';
-const { MAX_BACKUP_PACKAGE_BYTES, MAX_BACKUP_JSON_BYTES, MAX_BROWSER_DATA_BYTES,
+const { MAX_BACKUP_PACKAGE_BYTES, MAX_BACKUP_JSON_BYTES, MAX_BACKUP_PROFILES, MAX_BROWSER_DATA_BYTES,
   MAX_REMOTE_ERROR_BYTES } = require('./cloud/limits');
 const SAFE_GITHUB_NAME = /^[A-Za-z0-9_.-]{1,100}$/;
 const SAFE_GITHUB_BRANCH = /^[A-Za-z0-9._\/-]{1,255}$/;
@@ -185,73 +187,70 @@ async function buildBackupPackage({
   profileIds = null,
 }) {
   let list = Array.isArray(profiles) ? profiles : [];
-  if (Array.isArray(profileIds) && profileIds.length) {
+  if (Array.isArray(profileIds)) {
     const allow = new Set(profileIds.map(String));
     list = list.filter((p) => allow.has(String(p.id)));
-  }
-  // default: only environments that explicitly enable cloudBackup (per-profile opt-in)
-  if (!Array.isArray(profileIds)) {
+  } else {
     list = list.filter((p) => Boolean(p?.advanced?.cloudBackup));
   }
-  const packedProfiles = [];
-  let browserDataBytes = 0;
-  let estimatedJsonBytes = 0;
+  if (list.length > MAX_BACKUP_PROFILES) throw new Error(`单个备份最多支持 ${MAX_BACKUP_PROFILES} 个环境，请缩小选择范围`);
+  const credentialsError = () => new Error('备份包含账号凭据（Cookie / 密码 / 2FA / 代理登录信息 / 云盘账号令牌或浏览器数据），必须先设置备份口令加密后再上传');
+  if (!passphrase && ((Array.isArray(proxies) && proxies.some(proxyRecordContainsSecrets)) || cloudSettingsCarrySecrets(settings))) {
+    throw credentialsError();
+  }
+  const packedIds = [];
   const skippedFiles = [];
-  for (const profile of list) {
-    assertProfileId(profile?.id);
-    const item = { ...profile, updatedAt: profile.updatedAt || nowIso() };
-    if (includeBrowserData && profileDataRoot && profile?.id) {
-      const root = path.join(profileDataRoot, profile.id);
-      item._dataFiles = await collectProfileDataFiles(root, profile, {
-        maxTotalBytes: Math.max(0, MAX_BROWSER_DATA_BYTES - browserDataBytes),
-        onSkipped: (entry) => skippedFiles.push({ profileId: profile.id, ...entry }),
-      });
-      for (const encoded of Object.values(item._dataFiles)) {
-        browserDataBytes += Buffer.byteLength(encoded, 'base64');
+  const createdAt = nowIso();
+  let jsonBytes = 0;
+  function boundedJson(chunk) {
+    jsonBytes += Buffer.byteLength(chunk);
+    if (jsonBytes > MAX_BACKUP_JSON_BYTES) throw new Error('备份内容超过 120 MB 安全限制');
+    return chunk;
+  }
+
+  async function* jsonChunks() {
+    const header = JSON.stringify({ version: BACKUP_VERSION, soft: 'OpenBrowser', createdAt });
+    yield boundedJson(header.slice(0, -1) + ',"profiles":[');
+    let browserDataBytes = 0;
+    for (const profile of list) {
+      assertProfileId(profile?.id);
+      const item = { ...profile, updatedAt: profile.updatedAt || createdAt };
+      if (includeBrowserData && profileDataRoot) {
+        const root = path.join(profileDataRoot, profile.id);
+        item._dataFiles = await collectProfileDataFiles(root, profile, {
+          maxTotalBytes: Math.max(0, MAX_BROWSER_DATA_BYTES - browserDataBytes),
+          onSkipped: (entry) => skippedFiles.push({ profileId: profile.id, ...entry }),
+        });
+        for (const encoded of Object.values(item._dataFiles)) browserDataBytes += Buffer.byteLength(encoded, 'base64');
       }
+      if (!passphrase && packedProfileContainsSecrets(item)) throw credentialsError();
+      if (packedIds.length) yield boundedJson(',');
+      yield boundedJson(JSON.stringify(item));
+      packedIds.push(profile.id);
     }
-    estimatedJsonBytes += Buffer.byteLength(JSON.stringify(item));
-    if (estimatedJsonBytes > MAX_BACKUP_JSON_BYTES) throw new Error('备份配置内容超过 120 MB 安全限制');
-    packedProfiles.push(item);
+    yield boundedJson('],' + JSON.stringify({ groups, proxies, settings, backupWarnings: skippedFiles }).slice(1));
   }
-  const body = {
-    version: BACKUP_VERSION,
-    soft: 'OpenBrowser',
-    createdAt: nowIso(),
-    profiles: packedProfiles,
-    groups,
-    proxies,
-    settings,
-    backupWarnings: skippedFiles,
-  };
-  const json = Buffer.from(JSON.stringify(body), 'utf8');
-  if (json.length > MAX_BACKUP_JSON_BYTES) throw new Error('备份内容超过 120 MB 安全限制');
-  // Security gate: refuse to ship an UNENCRYPTED backup that carries account
-  // credentials (cookies / passwords / TOTP / proxy logins / browser data).
-  // Cloud destinations (WebDAV / GitHub / netdisk) must never hold plaintext
-  // secrets — the user has to set a backup passphrase instead. The gate
-  // covers packed profiles, the proxy library snapshot AND settings.cloud:
-  // a WebDAV password or GitHub token in the cloud config is just as much
-  // a plaintext credential as a proxy login in a profile.
-  if (!passphrase) {
-    const carriesSecrets = packedProfiles.some(packedProfileContainsSecrets)
-      || (Array.isArray(proxies) && proxies.some(proxyRecordContainsSecrets))
-      || cloudSettingsCarrySecrets(settings);
-    if (carriesSecrets) {
-      throw new Error('备份包含账号凭据（Cookie / 密码 / 2FA / 代理登录信息 / 云盘账号令牌或浏览器数据），必须先设置备份口令加密后再上传');
+  // Feed each serialized row to gzip once, with backpressure. Retain only
+  // compressed chunks while the uncompressed byte limit is enforced above.
+  const compressed = [];
+  let compressedBytes = 0;
+  await pipeline(Readable.from(jsonChunks()), zlib.createGzip({ level: 9 }), async (source) => {
+    for await (const chunk of source) {
+      compressedBytes += chunk.length;
+      if (compressedBytes > MAX_BACKUP_PACKAGE_BYTES) throw new Error('备份包超过 100 MB 安全限制');
+      compressed.push(chunk);
     }
-  }
-  const gz = await gzipAsync(json, { level: 9 });
-  const { encrypted, data } = await encryptPayloadAsync(gz, passphrase);
+  });
+  const { encrypted, data } = await encryptPayloadAsync(Buffer.concat(compressed, compressedBytes), passphrase);
   if (data.length > MAX_BACKUP_PACKAGE_BYTES) throw new Error('备份包超过 100 MB 安全限制');
   return {
     buffer: data,
     meta: {
       version: BACKUP_VERSION,
       encrypted,
-      createdAt: body.createdAt,
-      profileCount: packedProfiles.length,
-      profileIds: packedProfiles.map((p) => p.id),
+      createdAt,
+      profileCount: packedIds.length,
+      profileIds: packedIds,
       bytes: data.length,
       sha256: sha256(data),
       complete: skippedFiles.length === 0,
@@ -499,14 +498,10 @@ async function uploadLocal(config, buffer, remoteName = REMOTE_NAME) {
   await assertSafeLocalTarget(base, file);
   await fsp.mkdir(path.dirname(file), { recursive: true });
   await assertSafeLocalTarget(base, file);
-  // Write the package via a temp file in the same directory + rename, so a
-  // crash mid-write cannot leave a truncated file at the canonical path.
-  const tmpFile = `${file}.tmp-${crypto.randomBytes(4).toString('hex')}`;
-  await fsp.writeFile(tmpFile, buffer, { mode: 0o600 });
-  await fsp.rename(tmpFile, file);
+  await writeRawAtomically(file, buffer);
   if (rel === REMOTE_NAME || !rel.includes('/')) {
     const stamp = nowIso().replace(/[:.]/g, '-');
-    await fsp.writeFile(path.join(base, `openbrowser-backup-${stamp}.obpack`), buffer, { mode: 0o600 }).catch(() => {});
+    await writeRawAtomically(path.join(base, `openbrowser-backup-${stamp}.obpack`), buffer).catch(() => {});
     await rotateLocalTimestampBackups(base).catch(() => {});
   }
   return { provider: 'local', path: file, bytes: buffer.length, remoteName: rel };

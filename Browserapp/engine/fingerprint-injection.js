@@ -23,9 +23,29 @@ const { RequestHeaderRewriter, evaluateFingerprintDelivery } = require('../autom
 const { WorkerScriptPrefixer, TRANSIENT_ERRORS: TRANSIENT_PREFIX_ERRORS } = require('../automation/worker-script-prefixer');
 const crypto = require('crypto');
 const { ServiceWorkerScriptGate } = require('../automation/service-worker-script-gate');
+const { OpenerlessPageGate } = require('../automation/openerless-page-gate');
 const { closePageFingerprintConnection } = require('./fingerprint-transport');
 const { FingerprintSession } = require('./fingerprint-session');
-const { applyNetworkConditions } = require('./network-conditions');
+const { applyNetworkConditions, applyNavigationNetworkConditions } = require('./network-conditions');
+
+// A paused page cannot settle promises from a native asynchronous API such
+// as getHighEntropyValues. Keep the handoff check entirely synchronous.
+const PAUSED_DOCUMENT_PROBE = `(() => {
+  const hints = navigator.userAgentData;
+  const connection = navigator.connection;
+  return {
+    userAgent: navigator.userAgent, platform: navigator.platform,
+    language: navigator.language, languages: Array.from(navigator.languages),
+    hardwareConcurrency: navigator.hardwareConcurrency, deviceMemory: navigator.deviceMemory,
+    deviceMemoryPresent: 'deviceMemory' in navigator, secureContext: globalThis.isSecureContext,
+    vendor: navigator.vendor, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    screenWidth: screen.width, screenHeight: screen.height, devicePixelRatio,
+    uaDataPresent: Boolean(hints), uaDataPlatform: hints?.platform,
+    uaDataBrands: hints?.brands, uaDataMobile: hints?.mobile,
+    connection: connection && Object.fromEntries(['type', 'effectiveType', 'downlink', 'rtt', 'saveData']
+      .filter(key => key in connection).map(key => [key, connection[key]])),
+  };
+})()`;
 
 // Stable identity of the document-start config. Two inject payloads built from the same
 // fingerprint serialise identically, so this is what decides whether a live tab still matches
@@ -100,6 +120,7 @@ module.exports = {
       getPolicyProfile: () => runtimePolicyProfile(item.profile, this.profiles?.get?.(item.profile.id)),
       isInternalRequest: (url) => Boolean(this.startPageServer?.server && this.startPageServer.isStartPageUrl?.(url)),
       onFatalError: (error) => {
+        if (!isActive(connection)) return;
         item.requestHeaderRewriteError = error.message;
         this.emit({ type: 'fingerprint-injection-failed', id: item.profile.id, stage: 'request-headers', message: error.message });
         this.handleBrowserGone(item.profile.id, item, 'request-header-rewrite-failed', {
@@ -117,6 +138,7 @@ module.exports = {
     const workerTypes = new Set(['worker', 'shared_worker', 'service_worker']);
     const targetSetup = new Map();
     const sessionStates = new Map();
+    const openerlessTargets = new Map();
     // The watch fallback must not compete with this paused-target owner.
     // This live map is cleared by cancellation/detach and never marks a
     // pending document as delivered.
@@ -146,6 +168,8 @@ module.exports = {
     item.fingerprintTargetSessions = policySessions;
     const pendingInitialTargets = new Set();
     const completedInitialTargets = new Set();
+    // A discovery reply can describe a target destroyed while the request was in flight.
+    let destroyedDuringDiscovery = new Set();
     let barrierResolve;
     let barrierReject;
     let barrierSettled = false;
@@ -174,13 +198,33 @@ module.exports = {
 
     const replacementFor = (state) => [...sessionStates.values()].some((other) =>
       other !== state && other.targetId === state.targetId && !other.reason);
-    const cancelAll = () => {
+    const ownsConnection = (connection) => item.workerFingerprintConnection === connection;
+    const isActive = (connection) => ownsConnection(connection)
+      && !connection.closed && !item.stopping && !item.cleanedUp;
+    const cancelAll = (connection) => {
       for (const state of sessionStates.values()) state.cancel('closed');
       sessionStates.clear();
       workerSessionToTargetId.clear();
       targetSetup.clear();
-      item.fpAppliedTargets?.clear();
-      item.attachedWorkerTargets?.clear();
+      if (ownsConnection(connection)) {
+        item.fpAppliedTargets?.clear();
+        item.attachedWorkerTargets?.clear();
+        item.networkConditionsSessions?.clear();
+      }
+    };
+    const releaseSession = (sessionId, reason) => {
+      const state = sessionStates.get(sessionId);
+      state?.cancel(reason);
+      sessionStates.delete(sessionId);
+      policySessions.delete(sessionId);
+      workerSessionToTargetId.delete(sessionId);
+      targetSetup.delete(sessionId);
+      item.networkConditionsSessions?.delete(sessionId);
+      requestHeaderRewriter.cleanupSession(sessionId);
+      workerScriptPrefixer.cleanupSession(sessionId);
+      fontResponseRewriter.cleanupSession?.(sessionId);
+      imageSizeFilter.cleanupSession(sessionId);
+      return state;
     };
     const targetStillExists = async (connection, targetId) => {
       try {
@@ -191,10 +235,10 @@ module.exports = {
     };
     const pendingDetachChecks = new Set();
     const confirmLostReadySession = async (state, connection) => {
-      if (item.stopping || item.cleanedUp || replacementFor(state)) return;
+      if (!isActive(connection) || replacementFor(state)) return;
       const check = { targetId: state.targetId, destroyed: false };
       pendingDetachChecks.add(check);
-      const obsolete = () => check.destroyed || item.stopping || item.cleanedUp || replacementFor(state);
+      const obsolete = () => check.destroyed || !isActive(connection) || replacementFor(state);
       try {
         const exists = await targetStillExists(connection, state.targetId);
         if (obsolete() || exists === false) return;
@@ -210,12 +254,17 @@ module.exports = {
     };
 
     const onAttached = (event, connection) => {
+      if (!isActive(connection)) return;
+      if (event?.method?.startsWith('Runtime.executionContext')) {
+        sessionStates.get(event.sessionId)?.openerlessPageGate?.observeContext(event);
+      }
       if (event?.method === 'Debugger.scriptParsed') {
         sessionStates.get(event.sessionId)?.serviceWorkerGate?.recordScript(event.params || {});
         return;
       }
       if (event?.method === 'Debugger.paused') {
-        const gate = sessionStates.get(event.sessionId)?.serviceWorkerGate;
+        const state = sessionStates.get(event.sessionId);
+        const gate = state?.serviceWorkerGate || state?.openerlessPageGate;
         if (gate) return gate.handlePaused(event.params || {});
       }
       // Font payload lazy-load host bridge (consumer side)
@@ -298,7 +347,10 @@ module.exports = {
           // "Other" responses (favicons, pings) are dropped there without a body read.
           try { workerScriptPrefixer.track(event); } catch (_) {}
         }
-        try { requestHeaderRewriter.handleEvent(event, connection); } catch (_) {}
+        const interceptResponse = !event.sessionId && openerlessTargets.has(event.params.frameId)
+          && ((fontResponseRewriter.enabled && ['Document', 'Stylesheet'].includes(event.params.resourceType))
+            || (imageSizeFilter.enabled && event.params.resourceType === 'Image'));
+        try { requestHeaderRewriter.handleEvent(event, connection, { interceptResponse }); } catch (_) {}
         return;
       }
 
@@ -307,6 +359,7 @@ module.exports = {
         && (event.params?.responseStatusCode != null || event.params?.responseErrorReason != null)
         && item.workerScriptPrefixDelivery && workerScriptPrefixer?.hasTracked(event)) {
         workerScriptPrefixer.handlePaused(event, connection).catch((error) => {
+          if (!isActive(connection)) return;
           if (!TRANSIENT_PREFIX_ERRORS.test(String(error?.message))) report(error, { type: 'page' });
           if (error.fatal) this.handleBrowserGone(item.profile.id, item, 'worker-response-failed', {
             expected: false, error: error.message, kill: true, waitForExit: true,
@@ -317,7 +370,7 @@ module.exports = {
 
       if(imageSizeFilter.matches(event)){
         imageSizeFilter.handlePaused(event,connection).catch(error=>{
-          if(item.stopping||item.cleanedUp)return;
+          if(!isActive(connection))return;
           imageError(error);if(error.released)return;
           report(error,{type:'page'});
           this.handleBrowserGone(item.profile.id,item,'image-filter-failed',{expected:false,error:error.message,kill:true,waitForExit:true}).catch(failure=>this.emit({type:'image-size-filter-error',id:item.profile?.id,message:failure.message}));
@@ -330,11 +383,8 @@ module.exports = {
       // Clean up in-flight requests when a target session detaches or closes
       if (event?.method === 'Target.detachedFromTarget') {
         const detachedSessionId = event.params?.sessionId;
-        item.networkConditionsSessions?.delete(detachedSessionId);
         const detachedTargetId = event.params?.targetId || (detachedSessionId ? workerSessionToTargetId.get(detachedSessionId) : null);
-        const detachedState = sessionStates.get(detachedSessionId);
-        detachedState?.cancel('detached');
-        sessionStates.delete(detachedSessionId);
+        const detachedState = detachedSessionId ? releaseSession(detachedSessionId, 'detached') : null;
         const hasReplacement = [...policySessions].some(([id, target]) =>
           id !== detachedSessionId && target.targetId === detachedTargetId);
         if (!hasReplacement && detachedTargetId && item.attachedWorkerTargets) {
@@ -345,15 +395,6 @@ module.exports = {
           if (!hasReplacement) item.fpAppliedTargets?.delete(detachedTargetId);
         }
         if (detachedTargetId) forgetTargetRuntimePolicy(item, detachedTargetId, connection, detachedSessionId);
-        if (detachedSessionId) {
-          policySessions.delete(detachedSessionId);
-          workerSessionToTargetId.delete(detachedSessionId);
-          targetSetup.delete(detachedSessionId);
-          try { requestHeaderRewriter.cleanupSession(detachedSessionId); } catch (_) {}
-          workerScriptPrefixer.cleanupSession(detachedSessionId);
-          try { fontResponseRewriter.cleanupSession?.(detachedSessionId); } catch (_) {}
-          imageSizeFilter.cleanupSession(detachedSessionId);
-        }
         if (detachedState?.ready) {
           confirmLostReadySession(detachedState, connection).catch((error) => report(error, { targetId: detachedTargetId }));
         }
@@ -363,6 +404,8 @@ module.exports = {
       // If an initial target closes before attaching, unblock barrier without hanging
       if (event?.method === 'Target.targetDestroyed') {
         const destroyedId = event.params?.targetId;
+        if (!destroyedId) return;
+        destroyedDuringDiscovery?.add(destroyedId);
         for (const check of pendingDetachChecks) if (check.targetId === destroyedId) check.destroyed = true;
         forgetTargetRuntimePolicy(item, destroyedId);
         forgetFingerprintTarget(connection, `target:${destroyedId}`);
@@ -372,15 +415,7 @@ module.exports = {
           item.attachedWorkerTargets.delete(destroyedId);
         }
         for (const [session, target] of workerSessionToTargetId) {
-          if (target !== destroyedId) continue;
-          sessionStates.get(session)?.cancel('destroyed');
-          sessionStates.delete(session);
-          workerSessionToTargetId.delete(session);
-          policySessions.delete(session);
-          targetSetup.delete(session);
-          requestHeaderRewriter.cleanupSession(session);
-          fontResponseRewriter.cleanupSession?.(session);
-          imageSizeFilter.cleanupSession(session);
+          if (target === destroyedId) releaseSession(session, 'destroyed');
         }
         if (destroyedId && pendingInitialTargets.has(destroyedId)) {
           pendingInitialTargets.delete(destroyedId);
@@ -411,7 +446,7 @@ module.exports = {
           await workerOwner.run(() => workerOwner.serviceWorkerGate.completion);
           await connection.command('Target.detachFromTarget', { sessionId }, { sessionId: event.sessionId, timeout: 3000 });
         })().catch(error => {
-          if (workerOwner.reason || item.stopping || item.cleanedUp || /No session with given id|Session closed|Target closed/i.test(error.message)) return;
+          if (workerOwner.reason || !isActive(connection) || /No session with given id|Session closed|Target closed/i.test(error.message)) return;
           report(error, targetInfo);
           return this.handleBrowserGone(item.profile.id, item, 'duplicate-worker-session', {
             expected: false, error: error.message, kill: true, waitForExit: true,
@@ -425,14 +460,10 @@ module.exports = {
       const scopedConnection = { command: (method, params, options) => state.command(method, params, options) };
 
       const setup = (async () => {
-        // A fresh tab (window.open with noopener, ctrl-click, or any target opened without an
-        // opener) can attach while its renderer still has no execution context. Every session
-        // command then waits out its full timeout, and because the target stays paused on
-        // waitForDebuggerOnStart until the end of the block, the user faces a blank tab for that
-        // whole time. Keep one resume latch so the pause is released as early as correctness
-        // allows and never released twice.
+        // Keep one resume latch per target. The openerless path below hands
+        // off from the browser's navigation pause to the renderer debugger.
         let pausedTargetNeedsResume = Boolean(waitingForDebugger);
-        const resumeTarget = async () => {
+        const resumeTarget = async (timeout = 3000) => {
           state.assertActive();
           if (!pausedTargetNeedsResume) return;
           pausedTargetNeedsResume = false;
@@ -440,7 +471,7 @@ module.exports = {
             await state.serviceWorkerGate.resume();
             this.emit({ type: 'service-worker-first-script-injected', id: item.profile?.id, targetId, sessionId });
           }
-          else await state.command('Runtime.runIfWaitingForDebugger', {}, { sessionId, timeout: 3000 });
+          else await state.command('Runtime.runIfWaitingForDebugger', {}, { sessionId, timeout });
           // Chrome 157: Network.enable on a PAUSED service worker times out; it works
           // right after the pause is released. Deferred SW network setup lands here.
           if (state.serviceWorkerNeedsNetwork) {
@@ -509,6 +540,29 @@ module.exports = {
               // Enable Fetch while this page/iframe is paused. The next navigation then receives
               // sanitized HTML/CSS bytes before the renderer tokenizes its static styles.
               await armResponseRewriting(8000);
+            } else if (item.workerScriptPrefixDelivery && waitingForDebugger && targetInfo.type === 'page'
+              && !targetInfo.url && !targetInfo.canAccessOpener) {
+              const networkConditions = item.profile.privacy?.networkConditions;
+              const simulatedLatency = networkConditions ? await applyNavigationNetworkConditions(
+                (method, params) => state.command(method, params, { timeout: 3000 }), networkConditions) : 0;
+              const navigationBudget = 30000 + simulatedLatency;
+              // Chromium may need to release the original navigation to
+              // create its renderer. Gate its first script until native
+              // overrides and the document preload are installed.
+              const gate = new OpenerlessPageGate(state);
+              state.openerlessPageGate = gate;
+              openerlessTargets.set(targetId, state);
+              try {
+                await gate.arm(resumeTarget, navigationBudget);
+                await state.run(() => this.applyFingerprintToSession(connection, sessionId, item, fingerprint, {
+                  ...targetInfo, waitingForDebugger: false, openerlessPageGate: gate, setupGuard: state,
+                }));
+                await armResponseRewriting(8000);
+                await gate.release();
+              } finally {
+                state.openerlessPageGate = null;
+                if (openerlessTargets.get(targetId) === state) openerlessTargets.delete(targetId);
+              }
             } else {
               // A timed-out target is closed rather than resumed without its identity.
               const injectBudget = targetInfo.type === 'iframe' ? 5000 : 8000;
@@ -608,12 +662,12 @@ module.exports = {
           pausedTargetNeedsResume = false;
           if (!state.reason) state.cancel('failed', error.message);
           if (sessionStates.get(sessionId) === state) sessionStates.delete(sessionId);
-          if (state.reason === 'closed' || item.stopping || item.cleanedUp || connection.closed) return;
+          if (state.reason === 'closed' || !isActive(connection)) return;
           if (state.reason === 'destroyed') return;
           if (state.reason === 'detached') {
             if (replacementFor(state)) return;
             const exists = await targetStillExists(connection, targetId);
-            if (replacementFor(state)) return;
+            if (!isActive(connection) || replacementFor(state)) return;
             if (exists === false) {
               pendingInitialTargets.delete(targetId);
               if (!pendingInitialTargets.size) settleBarrier();
@@ -626,7 +680,9 @@ module.exports = {
             const closed = targetId && await connection.command('Target.closeTarget', { targetId }, { timeout: 3000 });
             if (!closed?.success) throw new Error('Target closure was not confirmed');
           } catch (_) {
-            this.handleBrowserGone(item.profile.id, item, 'fingerprint-target-failed', { expected: false, error: error.message, kill: true, waitForExit: true }).catch(() => {});
+            if (isActive(connection)) {
+              this.handleBrowserGone(item.profile.id, item, 'fingerprint-target-failed', { expected: false, error: error.message, kill: true, waitForExit: true }).catch(() => {});
+            }
           }
           this.emit({
             type: 'fingerprint-injection-failed',
@@ -646,7 +702,7 @@ module.exports = {
     const connection = await cdp.connect(browserWs, {
       onEvent: onAttached,
       onDisconnect: (error, disconnected) => {
-        cancelAll();
+        cancelAll(disconnected);
         forgetFingerprintOwner(disconnected);
         policySessions.clear();
         try { requestHeaderRewriter.destroy(); } catch (_) {}
@@ -656,7 +712,7 @@ module.exports = {
         if (!barrierSettled) {
           settleBarrier(new Error(`CDP connection closed before initial target barrier resolved: ${error?.message || error}`));
         }
-        if (item.cleanedUp || item.stopping) return;
+        if (!ownsConnection(disconnected) || item.cleanedUp || item.stopping) return;
         this.handleBrowserGone(item.profile.id, item, 'worker-cdp-disconnect', {
           expected: false,
           error: error?.message || String(error),
@@ -674,7 +730,7 @@ module.exports = {
 
     const origClose = connection.close.bind(connection);
     connection.close = () => {
-      cancelAll();
+      cancelAll(connection);
       forgetFingerprintOwner(connection);
       policySessions.clear();
       try { requestHeaderRewriter.destroy(); } catch (_) {}
@@ -713,10 +769,12 @@ module.exports = {
         const ttype = t.type;
         const turl = String(t.url || '');
         const pageLikeTypes = new Set(['page', 'iframe', 'popup', 'webview']);
-        if ((pageLikeTypes.has(ttype) || workerTypes.has(ttype)) && !internalUrl.test(turl) && tid) {
+        if (tid && !destroyedDuringDiscovery.has(tid) && !internalUrl.test(turl)
+          && (pageLikeTypes.has(ttype) || workerTypes.has(ttype))) {
           pendingInitialTargets.add(tid);
         }
       }
+      destroyedDuringDiscovery = null;
 
       if (pendingInitialTargets.size === 0) {
         settleBarrier();
@@ -756,6 +814,7 @@ module.exports = {
 
       // Synchronize on the initial target barrier before returning to prevent navigation race
       await barrierPromise;
+      if (!isActive(connection)) throw new Error('Fingerprint connection closed during startup');
     } catch (error) {
       settleBarrier(error);
       connection.close();
@@ -764,7 +823,6 @@ module.exports = {
       }
       throw error;
     }
-    item.workerFingerprintConnection = connection;
     return connection;
   },
   async applyFingerprintToSession(connection, sessionId, item, fingerprint, targetInfo = {}) {
@@ -783,6 +841,7 @@ module.exports = {
     // session-scoped CDP calls for targets attached with flatten:true
     const isSubframe = targetInfo?.type === 'iframe';
     const isWaiting = Boolean(targetInfo?.waitingForDebugger || targetInfo?.isWaiting);
+    const openerlessPageGate = targetInfo?.openerlessPageGate;
     const setupGuard = targetInfo.setupGuard;
     setupGuard?.assertActive();
     if (item.fingerprintPageConnections?.has(targetInfo?.targetId)) {
@@ -805,6 +864,7 @@ module.exports = {
         if (isWaiting && method === 'Runtime.evaluate') {
           return {};
         }
+        if (openerlessPageGate && method === 'Runtime.evaluate') return await openerlessPageGate.evaluate(params, timeout);
         return setupGuard
           ? await setupGuard.command(method, params, { timeout })
           : await connection.command(method, params, { sessionId, timeout });
@@ -845,13 +905,22 @@ module.exports = {
       targetType: targetInfo?.type,
       isSubframe,
       isWaiting,
-      livePatchDocument: isEphemeralDocumentUrl(targetInfo?.url),
+      livePatchDocument: !openerlessPageGate && isEphemeralDocumentUrl(targetInfo?.url),
     });
     await applyTargetRuntimePolicy({ owner: item, targetId: targetInfo?.targetId || sessionId,
       registrationOwner: connection, registrationScope: sessionId,
       targetType: targetInfo?.type || 'page', waiting: isWaiting,
       profile: runtimePolicyProfile(profile, this.profiles?.get?.(profile.id)), invoke: sessionCall,
     });
+    if (openerlessPageGate) {
+      const result = await sessionCall('Runtime.evaluate', {
+        expression: PAUSED_DOCUMENT_PROBE, returnByValue: true,
+      }, 4000);
+      const verified = evaluateFingerprintDelivery(enriched, baseFp, result.result?.value, { strict: true, probeHighEntropy: false });
+      if (result.exceptionDetails || !verified.ok) {
+        throw new Error('Openerless tab fingerprint verification failed: ' + verified.mismatches.map(mismatch => mismatch.message).join(', '));
+      }
+    }
     setupGuard?.assertActive();
     item.fpAppliedHash = fingerprintConfigHash(injectFp);
     item.fingerprint = baseFp;

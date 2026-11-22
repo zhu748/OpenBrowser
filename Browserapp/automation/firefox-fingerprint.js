@@ -1,6 +1,5 @@
 'use strict';
 
-const crypto = require('node:crypto');
 const { buildFingerprint, buildInjectionScript, buildWorkerInjectionScript, assertFingerprintConsistency } = require('./fingerprint');
 const { firefoxUserAgent } = require('./kernel-versions');
 const { resolveUaPatchVersion } = require('./ua-version');
@@ -27,7 +26,6 @@ function buildFirefoxFingerprint(profile, version) {
     ...profile, osVersion: '', kernelVersion: version,
     userAgent: pinned || firefoxUserAgent(os, version, { shortVersion: profile.privacy?.fingerprint?.uaReduced === true,
       ...(productVersion ? { productVersion } : {}) }),
-    fingerprintLaunchSeed: profile.privacy?.refreshFingerprintOnStart ? crypto.randomBytes(16).toString('hex') : '',
   });
   fp.engine = 'firefox';
   fp.vendor = '';
@@ -44,6 +42,7 @@ function buildFirefoxFingerprint(profile, version) {
 async function initializeFirefoxFingerprint(connection, fingerprint, profile, options = {}) {
   const warnings = [];
   await connection.command('session.new', { capabilities: { alwaysMatch: { acceptInsecureCerts: Boolean(profile.advanced?.ignoreHttpsError) } } });
+  if (options.installLocalWorkerFilter) await options.installLocalWorkerFilter();
   // Apply native emulation to explicit top-level contexts, so the tree has to
   // be resolved BEFORE the emulation phase. The preload registration is order-independent:
   // it applies to every future document in every context, including tabs opened later.
@@ -143,9 +142,15 @@ async function initializeFirefoxFingerprint(connection, fingerprint, profile, op
       engine: 'firefox', cdp: false, bidi: true, fingerprintDelivery: true,
       fingerprintVerification: true, runtimeInjection: true, documentStartInjection: true,
       workerFingerprintDelivery: options.workerProxyReady === true ? 'prefs-fields-plus-proxy' : 'prefs-fields',
-      workerInjection: options.workerProxyReady === true
-        ? 'Prefs cover UA/platform/languages/timezone. The native gate verifies HTTP(S) classic/module workers and static dependencies, nested workers, document-created classic Blob/Data workers, Blob modules and shared Blob workers with the trusted forwarder and document installer. Startup invalidates persisted Service Worker registrations when the injection source changes, retaining origin storage. Restrictive CSP, unrelated cross-origin graphs and bypassed local network scripts remain outside this matrix.'
-        : 'Prefs cover UA/platform/languages/timezone; asynchronous realm injection does not guarantee JS-only fields before the first worker instruction.',
+      localWorkerResponseFilter: Boolean(options.installLocalWorkerFilter),
+      workerInjection: [
+        'Firefox prefs apply UA/platform/languages/timezone and cap the native CPU count.',
+        options.workerProxyReady && 'The trusted forwarder delivers the configured Worker identity to external HTTP(S) scripts.',
+        options.installLocalWorkerFilter && 'The local response filter covers HTTP(S) Worker scripts on localhost, 127.0.0.1 and ::1 before execution.',
+        (options.workerProxyReady || options.installLocalWorkerFilter)
+          ? 'Startup invalidates incompatible persisted Service Worker registrations and retains origin storage. Restrictive CSP and unrelated cross-origin module graphs remain outside the verified matrix.'
+          : 'Asynchronous realm injection cannot guarantee JS-only fields on the first Worker instruction.',
+      ].filter(Boolean).join(' '),
       deviceMemoryOverride: false, extensionHotLoad: false, zoomReconcile: false,
       retention: true, startUrls: true,
     },

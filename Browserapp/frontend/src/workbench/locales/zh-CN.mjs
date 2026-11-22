@@ -1,4 +1,9 @@
 const messages = {
+  "指纹预览未返回完整身份，请重试": "指纹预览未返回完整身份，请重试",
+  "Firefox 当前支持桌面设备配置，请选择 Windows、macOS 或 Linux": "Firefox 当前支持桌面设备配置，请选择 Windows、macOS 或 Linux",
+  "展开可调整分辨率、WebRTC、WebGL 等参数。电池、网络和蓝牙选项适用于 Chrome 移动设备配置。": "展开可调整分辨率、WebRTC、WebGL 等参数。电池、网络和蓝牙选项适用于 Chrome 移动设备配置。",
+  "模拟不可用": "模拟不可用",
+  "请输入有效的 MAC 地址，例如 {address}": "请输入有效的 MAC 地址，例如 {address}",
   "\"{name}\" 是必填项": "\"{name}\" 是必填项",
   "( 每个 IP 仅可享 1 次 )": "( 每个 IP 仅可享 1 次 )",
   "(剩余 {day} 天)": "(剩余 {day} 天)",

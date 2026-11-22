@@ -310,9 +310,8 @@ async function browserSocket(port, options = {}) {
 // injects while the blank document is paused — and navigate only afterwards.
 async function newTab(port, url = 'about:blank') {
   const target = await json(`http://127.0.0.1:${port}/json/new?about:blank`, 'PUT');
-  if (target && url && url !== 'about:blank' && target.webSocketDebuggerUrl) {
-    await call(target.webSocketDebuggerUrl, 'Page.navigate', { url }).catch(() => navigate(port, url));
-  }
+  if (!target?.id || !target.webSocketDebuggerUrl) throw new Error('Chromium did not return a new page target');
+  if (url && url !== 'about:blank') await navigateTarget(target, url);
   return target;
 }
 
@@ -435,10 +434,15 @@ async function clearFocused(port) {
   return { success: true, targetId: focused.tab.id, title: focused.tab.title };
 }
 
+async function navigateTarget(tab, url) {
+  const result = await call(tab.webSocketDebuggerUrl, 'Page.navigate', { url }, 20000);
+  if (result?.errorText && !result.isDownload) throw new Error(result.errorText);
+  return { targetId: tab.id };
+}
+
 async function navigate(port, url) {
   const tab = await firstTab(port) || await newTab(port, 'about:blank');
-  await call(tab.webSocketDebuggerUrl, 'Page.navigate', { url }, 20000);
-  return { targetId: tab.id };
+  return navigateTarget(tab, url);
 }
 
 async function reload(port) {

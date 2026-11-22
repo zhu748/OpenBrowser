@@ -251,12 +251,13 @@ class ProfileStoreSqlite {
           group_id = excluded.group_id,
           trashed = excluded.trashed,
           trashed_at = excluded.trashed_at,
-          created_at = excluded.created_at,
           updated_at = excluded.updated_at,
           data = excluded.data;
       `),
       getProfile: this.db.prepare('SELECT id, data FROM profiles WHERE id = ?'),
-      getAllProfiles: this.db.prepare('SELECT id, data FROM profiles ORDER BY number ASC, id ASC'),
+      hasProfile: this.db.prepare('SELECT 1 FROM profiles WHERE id = ?'),
+      getAllProfiles: this.db.prepare('SELECT id, data, created_at, updated_at FROM profiles ORDER BY number ASC, id ASC'),
+      getProfileIds: this.db.prepare('SELECT id FROM profiles'),
       getProfileCount: this.db.prepare('SELECT count(*) as count FROM profiles'),
       deleteProfile: this.db.prepare('DELETE FROM profiles WHERE id = ?'),
       updateProfileTrash: this.db.prepare(`
@@ -617,8 +618,10 @@ class ProfileStoreSqlite {
    * disappear from the UI without a trace.
    */
   _decodeProfileRow(row, context) {
-    const { profile, error } = tryDecodeProfileData(row?.data);
-    if (profile || !row) return profile;
+    if (!row) return null;
+    const { profile, error: decodeError } = tryDecodeProfileData(row.data);
+    if (profile && typeof profile === 'object' && !Array.isArray(profile) && String(profile.id) === row.id) return profile;
+    const error = decodeError || 'Invalid profile record or identity mismatch';
     const id = String(row.id || 'unknown');
     try {
       const raw = Buffer.isBuffer(row.data) || row.data instanceof Uint8Array
@@ -656,10 +659,14 @@ class ProfileStoreSqlite {
   }
 
   hasProfile(id) {
-    return Boolean(this._statements.getProfile.get(String(id)));
+    return Boolean(this._statements.hasProfile.get(String(id)));
   }
 
-  getAllProfiles() {
+  listProfileIds() {
+    return this._statements.getProfileIds.all().map(row => row.id);
+  }
+
+  getAllProfiles({ withTimestamps = false } = {}) {
     const rows = this._statements.getAllProfiles.all();
     const result = [];
     // Prime the row-hash map from the decoded state: saves through
@@ -669,7 +676,9 @@ class ProfileStoreSqlite {
     for (const row of rows) {
       const decoded = this._decodeProfileRow(row, 'getAllProfiles');
       if (decoded) {
-        result.push(decoded);
+        result.push(withTimestamps ? {
+          ...decoded, createdAt: decoded.createdAt || row.created_at, updatedAt: decoded.updatedAt || row.updated_at,
+        } : decoded);
         const raw = row.data instanceof Uint8Array ? Buffer.from(row.data) : row.data;
         // Legacy/plaintext fallback rows must be encrypted by the next save,
         // even when their decoded fields have not changed.
@@ -1065,7 +1074,12 @@ class ProfileStoreSqlite {
    * Compatible with cloud-sync.js and external tooling.
    */
   exportEngineState() {
-    const profiles = this.getAllProfiles();
+    const profiles = this.getAllProfiles({ withTimestamps: true });
+    const missingProfiles = Number(this._statements.getProfileCount.get().count) - profiles.length;
+    if (missingProfiles) throw Object.assign(
+      new Error('Cannot export incomplete storage: damaged profile records were preserved for recovery'),
+      { code: 'STORAGE_DECODE_FAILED', count: missingProfiles },
+    );
     const groups = this.listGroups();
     const extensions = this.listExtensions();
     const failures = this.recordDecodeFailureReport();

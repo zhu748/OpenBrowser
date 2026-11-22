@@ -20,6 +20,7 @@ function classify(file) {
   if (/^Browserapp\/(?:ui\/|renderer[^/]*\.js$|index\.html$|(?:modern|styles|themes|ui-shell)\.css$|i18n\.js$|environment-audit\.(?:js|css)$)/.test(file)) return ['legacy-ui', 'compatibility'];
   if (/^Browserapp\/(?:main\/|main\.js|preload\.js|host-bridge\.js)/.test(file)) return ['desktop-host', 'supported'];
   if (/^Browserapp\/engine(?:\/|\.js)/.test(file)) return ['browser-engine', 'supported'];
+  if (/^Browserapp\/rebuild\/sync(?:-service|-batch-text)\.js$/.test(file)) return ['window-sync', 'supported'];
   if (file.startsWith('Browserapp/rebuild/')) return ['workbench', 'supported'];
   if (/^Browserapp\/(?:network\/|proxy-forwarder\.js|cdp\.js)/.test(file)) return ['network-protocol', 'supported'];
   if (/^Browserapp\/live-sync-/.test(file) || file.startsWith('Browserapp/automation/sync/')) return ['window-sync', 'supported'];
@@ -45,7 +46,7 @@ function inventory() {
     if (!fs.existsSync(absolute)) continue;
     const [category, maintenance] = classify(file);
     const bytes = fs.statSync(absolute).size;
-    const source = /\.(?:js|mjs|cjs|rs|cs|css|html)$/.test(file);
+    const source = /\.(?:js|mjs|cjs|vue|ts|tsx|rs|cs|css|html)$/.test(file);
     rows.push({ file, category, maintenance, bytes,
       lines: source ? fs.readFileSync(absolute, 'utf8').split('\n').length : null,
       shipped: file.startsWith('Browserapp/') ? isRuntimeResource(file.slice(11)) : false });

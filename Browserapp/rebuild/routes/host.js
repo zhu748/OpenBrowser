@@ -5,8 +5,15 @@ const crypto = require('node:crypto');
 const { buildUaProfile } = require('../../automation/user-agent');
 const { firefoxUserAgent } = require('../../automation/kernel-versions');
 const { buildFingerprint } = require('../../automation/fingerprint');
+const { CURRENT_FINGERPRINT_VERSION } = require('../../automation/fingerprint/generation');
 const { randomUaPatchVersion } = require('../../automation/ua-version');
-const { previewIdentity } = require('../fingerprint-draft');
+const { previewIdentity, reusePreviewIdentity } = require('../fingerprint-draft');
+
+function randomMacAddress() {
+  const bytes = crypto.randomBytes(6);
+  bytes[0] = (bytes[0] & 0xfc) | 0x02;
+  return [...bytes].map(byte => byte.toString(16).padStart(2, '0')).join(':').toUpperCase();
+}
 
 async function hostShortcut(service, p) {
   return require("../host-actions").shortcut(service, p);
@@ -22,17 +29,25 @@ async function fingerprintPreview(service, p) {
   if (!Number.isInteger(count) || count < 1 || count > 100)
     throw Error("Invalid fingerprint count");
   const edited = p.profileId ? e.profileForEdit(String(p.profileId)).profile : null;
-  const input = { ...p, windowName: "Preview" };
-  const first = fromRoxy(input, edited ? { id: edited.id } : {});
+  if (p.reuseDraft && count !== 1) throw Error('复用指纹预览时只能生成一条');
+  const reused = p.reuseDraft ? reusePreviewIdentity(e, p.reuseDraft, edited) : null;
+  // Keep the settings that an edit would inherit while rerolling the old UA and seed.
+  const input = { ...p, userAgent: p.userAgent ?? '', windowName: "Preview" };
+  delete input._fingerprintDraft;
+  const base = { ...edited, id: reused?.id || edited?.id,
+    fingerprintVersion: reused?.version ?? CURRENT_FINGERPRINT_VERSION };
+  const first = fromRoxy(input, base);
   const browser = e.chooseBrowser(first, first.engine);
   const version = e.kernelManager?.readInstalledVersion
     ? await e.kernelManager.readInstalledVersion(browser)
     : browser.version;
   return Array.from({ length: count }, (_, index) => {
     // Each preview keeps the storage identity its eventual create will use.
-    const profile = index === 0 ? first : fromRoxy(input, edited ? { id: edited.id } : {});
-    profile.fingerprintSeed = crypto.randomBytes(16).toString('hex');
+    const profile = index === 0 ? first : fromRoxy(input, base);
+    profile.fingerprintSeed = reused?.seed ?? crypto.randomBytes(16).toString('hex');
     const firefox = profile.engine === 'firefox';
+    if (!firefox && profile.privacy.macMode === 'custom' && !profile.privacy.mac)
+      profile.privacy.mac = randomMacAddress();
     const fullVersion = firefox ? null : randomUaPatchVersion(version, { previousUserAgent: p.previousUserAgent });
     const options = { os: profile.os, osVersion: profile.osVersion,
       chromeMajor: Number(version.split('.')[0]), chromeFull: fullVersion };
@@ -59,7 +74,7 @@ async function fingerprintPreview(service, p) {
       webGLManufacturer: f.webgl.vendor,
       webGLRender: f.webgl.renderer,
       deviceName: f.deviceName,
-      macAddr: f.mac.value,
+      ...(f.mac.value ? { macAddr: f.mac.value } : {}),
       hardwareConcurrent: f.hardwareConcurrency == null ? undefined : String(f.hardwareConcurrency),
       deviceMemory: f.deviceMemory == null ? undefined : String(f.deviceMemory),
       _fingerprintDraft: { ...previewIdentity(e, profile), generated: true,
@@ -67,7 +82,7 @@ async function fingerprintPreview(service, p) {
       ...(p.fontType
         ? { font: f.fonts.list.join(";"), fontList: f.fonts.list }
         : {}),
-      _openbrowser: f,
+      ...(p.includeRuntime === false ? {} : { _openbrowser: f }),
     };
   });
 }
@@ -85,7 +100,7 @@ async function fingerprintFields(_service, p) {
   const f = buildFingerprint({ ...profile, fingerprintSeed: crypto.randomBytes(16).toString('hex') });
   return { getwebGLNoiseValue: f.webgl.mark, getCanvasContextNoiseValue: f.canvas.mark,
     getClientRectsValue: f.clientRects, getSpeechSynthesis: f.speech.voices, getAllowFontList: f.fonts.list,
-    deviceName: f.deviceName, macAddr: f.mac.value };
+    deviceName: f.deviceName, ...(p.macInfo === true ? { macAddr: randomMacAddress() } : {}) };
 }
 
 async function hostNetwork(service, p) {

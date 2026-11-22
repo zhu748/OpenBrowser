@@ -79,6 +79,12 @@ async function prepareFileRestore(selections) {
   let committed = false;
   let settled = false;
 
+  async function syncFileMoves() {
+    for (const directory of new Set([...directories, ...records.map(item => path.dirname(item.target))])) {
+      await syncDirectory(directory);
+    }
+  }
+
   async function cleanup() {
     const warnings = [];
     for (const dir of directories) {
@@ -91,7 +97,7 @@ async function prepareFileRestore(selections) {
   async function settleAndCleanup(outcome) {
     settled = true;
     const warnings = [];
-    for (const parent of new Set(records.map((item) => path.dirname(item.target)))) await syncDirectory(parent);
+    if (outcome === 'rolled-back') await syncFileMoves();
     for (const directory of directories) {
       try {
         await writeDurably(path.join(directory, SETTLED_MARKER), JSON.stringify({ version: 1, outcome }));
@@ -201,6 +207,8 @@ async function prepareFileRestore(selections) {
         await fs.rename(item.staged, item.target);
         item.installed = true;
       }
+      // The host records a committed restore only after the file moves settle.
+      await syncFileMoves();
     },
     rollback,
     async finish() {

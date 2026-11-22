@@ -509,19 +509,25 @@ let ui = { ...loadedUi, ...migratedUi, groups: migratedGroups };
 // Roxy 对齐：回收站保留 7 天，启动时自动清理过期项
 const TRASH_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 let profileSort = { key: '', dir: 1 };
+function captureTrashSelection(profiles) {
+  return {
+    ids: profiles.map((profile) => profile.id),
+    trashedAtById: Object.fromEntries(profiles.map((profile) => [profile.id, profile.trashedAt ?? null])),
+    revisions: Object.fromEntries(profiles.filter((profile) => Number.isSafeInteger(profile.rev)).map((profile) => [profile.id, profile.rev])),
+  };
+}
 async function purgeExpiredTrash() {
   const now = Date.now();
   const expired = ui.profiles.filter((p) => p.trashed && p.trashedAt && now - Date.parse(p.trashedAt) > TRASH_RETENTION_MS);
   if (!expired.length) return;
-  const ids = expired.map((p) => p.id);
   try {
-    await window.ops.purgeProfiles(ids, true);
-    ui.profiles = ui.profiles.filter((p) => !ids.includes(p.id));
-    for (const id of ids) { selectedProfiles.delete(id); selectedSessions.delete(id); }
+    const result = await window.ops.purgeTrashedProfiles(captureTrashSelection(expired));
+    ui.profiles = window.OpenBrowserProfileBatch.removeProfilesById(ui.profiles, result.ids);
+    for (const id of result.ids) { selectedProfiles.delete(id); selectedSessions.delete(id); }
     save();
     invalidateViewCache(['profiles', 'groups']);
     renderProfiles();
-    log('Trash', `已自动清理 ${ids.length} 个超过 7 天的回收站环境`);
+    log('Trash', `已自动清理 ${result.ids.length} 个超过 7 天的回收站环境`);
   } catch (_) {}
 }
 setTimeout(() => { purgeExpiredTrash(); }, 4000);
@@ -890,6 +896,7 @@ function normalizeSyncSettings(value = {}) {
 }
 let syncSettings = (() => { try { return normalizeSyncSettings(JSON.parse(localStorage.getItem(SYNC_SETTINGS_KEY) || '{}')); } catch (_) { return { ...DEFAULT_SYNC_SETTINGS }; } })();
 let pendingDeleteProfiles = [];
+let pendingTrashSelection = null;
 let editingProfileId = null;
 // Engine revision captured when the editor opened; the submit path sends it as
 // the command's baseRev (profiles:apply-commands) so the engine can reject a
@@ -2143,6 +2150,9 @@ async function cloneProfile(id) {
     number,
     name: String(number),
     title: target.title ? `${target.title} ${tx('(副本)')}` : '',
+    createdAt: new Date().toISOString(),
+    updatedAt: undefined,
+    lastOpenedAt: undefined,
     cookies: '',
     exitIp: '',
     exitCountryCode: '',
@@ -2189,6 +2199,8 @@ async function restoreProfile(id) {
 
 async function purgeProfile(id) {
   const target = ui.profiles.find((item) => item.id === id);
+  if (!target?.trashed) return;
+  const selection = captureTrashSelection([target]);
   if (!await confirmAction({
     title: t('trash.purge'),
     message: t('trash.confirmPurgeSingle'),
@@ -2196,7 +2208,8 @@ async function purgeProfile(id) {
     tone: 'danger',
   })) return;
   try {
-    await window.ops.purgeProfiles([id], true);
+    const result = await window.ops.purgeTrashedProfiles(selection);
+    if (!result.deleted) { await refreshStatus(); return; }
     ui.profiles = ui.profiles.filter((item) => item.id !== id);
     selectedProfiles.delete(id);
     selectedSessions.delete(id);
@@ -4213,9 +4226,11 @@ $('#batch-add-form').addEventListener('submit', async (event) => {
   } finally { if (submitter) submitter.disabled = false; }
 });
 $('#delete-selected').addEventListener('click', async () => {
-  pendingDeleteProfiles = ui.profiles.filter((item) => selectedProfiles.has(item.id)).map((item) => item.id);
+  const selected = ui.profiles.filter((item) => selectedProfiles.has(item.id));
+  pendingDeleteProfiles = selected.map((item) => item.id);
   if (!pendingDeleteProfiles.length) return toast(tx('请先勾选要删除的环境'));
   const inTrash = activeGroupFilter === 'trash';
+  pendingTrashSelection = inTrash ? captureTrashSelection(selected) : null;
   try {
     const status = await window.ops.profileStatus(); const pendingIds = new Set(pendingDeleteProfiles);
     const running = status.filter((item) => item.running && pendingIds.has(item.id)).length;
@@ -4237,25 +4252,25 @@ $('#delete-selected').addEventListener('click', async () => {
 });
 
 $('#batch-delete-form').addEventListener('submit', async (event) => {
-  event.preventDefault(); if (event.submitter?.value === 'cancel') { pendingDeleteProfiles = []; return $('#batch-delete-dialog').close(); }
+  event.preventDefault(); if (event.submitter?.value === 'cancel') { pendingDeleteProfiles = []; pendingTrashSelection = null; return $('#batch-delete-dialog').close(); }
   const ids = [...pendingDeleteProfiles]; if (!ids.length) return $('#batch-delete-dialog').close();
   const submitter = event.submitter; if (submitter) submitter.disabled = true;
-  const inTrash = activeGroupFilter === 'trash';
+  const inTrash = pendingTrashSelection !== null;
   try {
     const deleteData = inTrash ? true : $('#batch-delete-data').checked;
     const result = inTrash
-      ? await window.ops.purgeProfiles(ids, deleteData)
+      ? await window.ops.purgeTrashedProfiles(pendingTrashSelection)
       : (deleteData
           ? await window.ops.purgeProfiles(ids, true)
           : await window.ops.trashProfiles(ids));
     if (inTrash || deleteData) {
-      ui.profiles = window.OpenBrowserProfileBatch.removeProfilesById(ui.profiles, ids);
+      ui.profiles = window.OpenBrowserProfileBatch.removeProfilesById(ui.profiles, result.ids ?? ids);
     } else {
       window.OpenBrowserProfileBatch.setProfilesTrashed(ui.profiles, ids, true);
     }
     for (const id of ids) { selectedProfiles.delete(id); selectedSessions.delete(id); }
     if (!ui.profiles.length) ui.nextProfileNumber = 1;
-    pendingDeleteProfiles = []; save(); $('#select-all-profiles').checked = false; $('#batch-delete-dialog').close();
+    pendingDeleteProfiles = []; pendingTrashSelection = null; save(); $('#select-all-profiles').checked = false; $('#batch-delete-dialog').close();
     invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies']);
     await refreshStatus(); await refreshSessions(); await refreshExtensions();
     engineProfiles = await readUiProfiles();
@@ -4302,8 +4317,8 @@ $('#empty-trash-btn')?.addEventListener('click', async () => {
     tone: 'danger',
   })) return;
   try {
-    await window.ops.emptyTrash(true);
-    ui.profiles = ui.profiles.filter((p) => !p.trashed);
+    const result = await window.ops.emptyTrash(true);
+    ui.profiles = window.OpenBrowserProfileBatch.removeProfilesById(ui.profiles, result.ids);
     const remainingIds = new Set(ui.profiles.map((profile) => profile.id));
     for (const id of selectedProfiles) if (!remainingIds.has(id)) selectedProfiles.delete(id);
     save();

@@ -12,6 +12,7 @@
 
 const path = require('path');
 const cloudSync = require('./cloud-sync');
+const { MAX_BACKUP_PROFILES } = require('./cloud/limits');
 const { mergeProfileState } = require('./cloud/merge');
 const { prepareFileRestore, assertProfileRestoreReady } = require('./cloud/file-restore');
 const { captureRestoreState, saveRestoreState, readRestoreState, rollbackRestoreState, cleanupRestoreState, removeRestoreState } = require('./cloud/restore-state');
@@ -117,21 +118,38 @@ async function runCloudBackup(payload = {}) {
   return enqueueCloudOp(() => runCloudBackupExclusive(payload));
 }
 
+function assertBackupProfilesPresent(profileIds, profiles) {
+  const missing = [...new Set(profileIds)].filter((id) => !profiles.has(id));
+  if (missing.length) throw Object.assign(
+    new Error(`有 ${missing.length} 个环境无法读取，已停止备份：${missing.slice(0, 10).join('、')}`),
+    { code: 'CLOUD_BACKUP_PROFILES_MISSING', count: missing.length },
+  );
+}
+
 /** Resolve credentials in the host, and hold stopped profiles while reading files. */
 async function buildEngineBackup(payload = {}, { settings, includeProxies = true } = {}) {
   const { getEngine, getAutomation, getSettings } = requireDeps();
   const engine = getEngine();
   const local = getSettings();
   const cloud = { ...local.cloud, ...(payload.cloud || {}) };
-  const values = engine?.profiles?.values ? [...engine.profiles.values()] : (payload.profiles || []);
   const ids = Array.isArray(payload.profileIds) ? new Set(payload.profileIds.map(assertProfileId)) : null;
-  const selected = values.filter((profile) => ids ? ids.has(profile.id) : profile.advanced?.cloudBackup);
-  const fileIds = cloud.includeBrowserData !== false ? selected.filter((profile) => profile.advanced?.cloudBackup).map((profile) => profile.id) : [];
+  const fleet = engine?.profiles;
+  const selected = ids?.size === 1 && fleet?.get
+    ? [fleet.get(ids.values().next().value)].filter(Boolean)
+    : Array.from(fleet?.values?.() || payload.profiles || []).filter(profile => ids ? ids.has(profile.id) : profile.advanced?.cloudBackup);
+  if (ids && !engine?.profiles) assertBackupProfilesPresent(ids, new Set(selected.map((profile) => profile.id)));
+  const fileIds = cloud.includeBrowserData !== false ? selected.map((profile) => profile.id) : [];
   // Close-time automatic pushes can arrive just before the stop promise settles.
   for (const id of fileIds) if (engine?.stopping?.has(id)) await engine.stopping.get(id);
   const lease = acquireProfileMaintenance(engine, fileIds);
   try {
-    const profiles = structuredClone(selected.map((profile) => engine?.profiles?.get(profile.id) || profile));
+    let current = selected;
+    if (engine?.profiles) {
+      const required = ids ? [...ids] : (engine.sqliteStore?.listProfileIds?.() || []);
+      assertBackupProfilesPresent(required.concat(selected.map((profile) => profile.id)), engine.profiles);
+      current = selected.map((profile) => engine.profiles.get(profile.id));
+    }
+    const profiles = structuredClone(current);
     const proxies = includeProxies ? (getAutomation()?.proxyStore?.list?.({}) || []) : [];
     const result = await cloudSync.buildBackupPackage({
       profiles, groups: payload.groups || local.uiGroups || [], proxies,
@@ -191,7 +209,7 @@ async function applyBackupBodyExclusive(body, { mode = 'merge', localProfiles = 
   const localSettingsCache = getSettings();
   const profileRoot = engine?.getProfileDataRoot?.() || localSettingsCache.profileDataRoot;
   if (!['merge', 'local-wins', 'remote-wins', 'overwrite'].includes(mode)) throw new Error('恢复策略无效');
-  if (!Array.isArray(body.profiles) || body.profiles.length > 5000) throw new Error('备份环境列表无效或超过 5000 个');
+  if (!Array.isArray(body.profiles) || body.profiles.length > MAX_BACKUP_PROFILES) throw new Error(`备份环境列表无效或超过 ${MAX_BACKUP_PROFILES} 个`);
   if (body.groups != null && !Array.isArray(body.groups)) throw new Error('备份分组列表无效');
   if (body.proxies != null && !Array.isArray(body.proxies)) throw new Error('备份代理列表无效');
   const remoteProfiles = body.profiles.map((profile) => ({ ...profile }));
@@ -216,7 +234,6 @@ async function applyBackupBodyExclusive(body, { mode = 'merge', localProfiles = 
   const mergeMode = ['overwrite', 'remote-wins'].includes(mode) ? 'remote-preferred' : mode;
   const merged = mergeProfileState(localList, remoteProfiles, mergeMode);
   merged.stats.mode = mode;
-  if (merged.profiles.length > 5000) throw new Error('合并后环境数量超过 5000 个');
   const groups = cloudSync.mergeGroups(localGroupList, body.groups || [], mergeMode);
   const ids = [...merged.remoteProfileIds];
   const lease = acquireProfileMaintenance(engine, ids);
@@ -264,7 +281,7 @@ async function applyBackupBodyExclusive(body, { mode = 'merge', localProfiles = 
     const selectedProfiles = merged.profiles.filter((profile) => merged.remoteProfileIds.has(profile.id));
     if (engine && selectedProfiles.length) await engine.syncProfiles(selectedProfiles.map((profile) => ({
       ...profile, secretsAction: 'replace', proxyAuthAction: 'clear',
-    })), { maintenanceToken: lease.token });
+    })), { maintenanceToken: lease.token, preserveTimestamps: true });
     recovery.phase = 'committed';
     await saveRestoreState(engine, recovery);
     let cleanupWarnings = [];

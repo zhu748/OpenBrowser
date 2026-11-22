@@ -4,13 +4,14 @@
  * P1 gate: navigation and lifecycle delivery rules.
  *
  * Reload, cross-site navigation, back/forward (bfcache path), document.open on an
- * existing document, window reuse (one tab navigated repeatedly), Service Worker
+ * existing document, programmatically created tabs, window reuse, Service Worker
  * update (re-register a changed script), and a browser restart — every state the
  * page can land in must still serve the persona on first script read.
  *
  * Exit codes: 2 = native prerequisite missing, 1 = assertion failure.
  */
 const assert = require('node:assert/strict');
+const cdp = require('../../cdp');
 const {
   Unavailable, delay, entrySnapshotSource, chooseChromiumBinary, buildPersona,
   launchPersonaBrowser, openPage, evaluate, startDualOriginServers, verifyIdentity,
@@ -18,11 +19,16 @@ const {
 
 const PAGE = `<!doctype html><script>globalThis.first=${entrySnapshotSource};</script>`;
 const SNAP = 'globalThis.first';
+let servers;
 
 (async () => {
   const browser = chooseChromiumBinary();
+  const persona = buildPersona('native-nav', { os: 'Windows', fontListMode: 'noise' });
+  const fp = persona.fingerprint;
+  const unknownFont = 'OpenBrowser unavailable fixture font';
   let swVersion = 1;
-  const servers = await startDualOriginServers((request, response) => {
+  const initialRequests = new Map();
+  servers = await startDualOriginServers((request, response) => {
     const url = request.url;
     if (url.startsWith('/sw.js')) {
       response.setHeader('Content-Type', 'application/javascript');
@@ -31,18 +37,33 @@ const SNAP = 'globalThis.first';
     } else if (url.startsWith('/sw-page')) {
       response.setHeader('Content-Type', 'text/html');
       response.end(PAGE.replace('</head>', '<script>navigator.serviceWorker.register("/sw.js").catch(()=>{})</script></head>'));
+    } else if (url.startsWith('/openerless/')) {
+      const chunks = [];
+      request.on('data', chunk => chunks.push(chunk));
+      request.on('end', () => {
+        initialRequests.set(url, { method: request.method, headers: request.headers, body: Buffer.concat(chunks).toString() });
+        response.setHeader('Content-Type', 'text/html');
+        if (url.endsWith('/srcdoc')) {
+          response.end('<!doctype html><iframe srcdoc="' + PAGE.replace(/&/g, '&amp;').replace(/"/g, '&quot;') + '"></iframe>');
+          return;
+        }
+        const css = `<style>@font-face{font-family:fixture;src:local("${unknownFont}")}:root{--configured-dpr:no}
+          @media(resolution:${fp.screen.devicePixelRatio}dppx){:root{--configured-dpr:yes}}</style>`;
+        response.end(url.endsWith('/scriptless') ? '<!doctype html>' + css : PAGE.replace('<script>', css + '<script>').replace('</script>', `
+          globalThis.first.openerAbsent=opener===null;
+          globalThis.first.nativeDpr=getComputedStyle(document.documentElement).getPropertyValue('--configured-dpr');
+          globalThis.first.staticFont=document.styleSheets[0].cssRules[0].cssText;
+          </script>`));
+      });
     } else { response.setHeader('Content-Type', 'text/html'); response.end(PAGE); }
   });
   const originA = 'http://127.0.0.1:' + servers.a.address().port;
   const originB = 'http://127.0.0.1:' + servers.b.address().port;
 
-  const persona = buildPersona('native-nav', { os: 'Windows' });
-  const fp = persona.fingerprint;
-
-  const readFirst = async (page, timeoutMs = 9000) => {
+  const readFirst = async (page, timeoutMs = 9000, expression = SNAP) => {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
-      const v = await evaluate(page, `${SNAP} || null`, 4000).catch(() => null);
+      const v = await evaluate(page, `${expression} || null`, 4000).catch(() => null);
       if (v) return v;
       await delay(150);
     }
@@ -95,6 +116,73 @@ const SNAP = 'globalThis.first';
     assert.ok(first, 'document.open produced no first read');
     verifyIdentity(first, fp, 'docopen');
     console.log('PASS nav document.open keeps persona');
+
+    const tab = await cdp.newTab(session.port, originB + '/new-tab');
+    assert.ok(tab?.webSocketDebuggerUrl, 'programmatically created tab');
+    const newPage = await cdp.connect(tab.webSocketDebuggerUrl);
+    try {
+      const newFirst = await readFirst(newPage);
+      assert.ok(newFirst, 'new tab first read');
+      verifyIdentity(newFirst, fp, 'programmatically created tab');
+    } finally {
+      newPage.close();
+    }
+    const closed = await session.item.workerFingerprintConnection.command('Target.closeTarget', { targetId: tab.id });
+    assert.equal(closed.success, true);
+    verifyIdentity(await evaluate(page, SNAP), fp, 'original tab after new tab closes');
+    console.log('PASS nav new tab carries the profile on its first script read');
+
+    // Chrome can defer renderer creation for tabs without an accessible opener.
+    if (Number(browser.version.split('.')[0]) >= 143) {
+      for (const entry of ['window', 'link', 'form', 'scriptless', 'srcdoc']) {
+        const route = '/openerless/' + entry;
+        const url = originB + route;
+        const target = JSON.stringify(url);
+        const expression = entry === 'link'
+          ? `const a=document.createElement('a');a.href=${target};a.rel='noreferrer';a.target='_blank';document.body.append(a);a.click();a.remove();`
+          : entry === 'form'
+            ? `const form=document.createElement('form');form.action=${target};form.method='post';form.target='_blank';form.rel='noopener';
+              const input=document.createElement('input');input.name='value';input.value='kept';form.append(input);document.body.append(form);form.submit();form.remove();`
+            : `window.open(${target}, '_blank', 'noopener'); true`;
+        await page.command('Runtime.evaluate', { expression: '(() => {' + expression + '})()', userGesture: true });
+        let popup;
+        for (let attempt = 0; !popup && attempt < 60; attempt++) {
+          popup = (await cdp.tabs(session.port)).find(target => target.url === url);
+          if (!popup) await delay(150);
+        }
+        const error = session.events.find(event => event.type === 'fingerprint-injection-failed');
+        assert.ok(popup, `the ${entry} tab without an opener must navigate (${error?.message || 'no matching target'})`);
+        const popupPage = await cdp.connect(popup.webSocketDebuggerUrl);
+        try {
+          if (entry === 'scriptless') {
+            assert.equal(await evaluate(popupPage, 'navigator.platform'), fp.platform, 'scriptless tab reached ready');
+          } else if (entry === 'srcdoc') {
+            const frameFirst = await readFirst(popupPage, 9000, 'document.querySelector("iframe")?.contentWindow.first');
+            assert.ok(frameFirst, 'static child frame recorded its first read');
+            verifyIdentity(frameFirst, fp, 'first script in a static child frame');
+          } else {
+            const popupFirst = await readFirst(popupPage);
+            assert.ok(popupFirst, 'new tab without an opener first read');
+            verifyIdentity(popupFirst, fp, entry + ' tab without an opener');
+            assert.equal(popupFirst.openerAbsent, true);
+            assert.equal(popupFirst.nativeDpr, 'yes', 'native DPR is applied before the first page script');
+            assert.ok(popupFirst.staticFont.includes('local(') && !popupFirst.staticFont.includes(unknownFont),
+              'the first document response has its static font rule rewritten before parsing');
+          }
+          const initialRequest = initialRequests.get(route);
+          assert.equal(initialRequest.headers['user-agent'], fp.userAgent, 'first request uses configured UA');
+          if (entry === 'link') assert.equal(initialRequest.headers.referer, undefined, 'noreferrer is retained');
+          if (entry === 'form') {
+            assert.equal(initialRequest.method, 'POST');
+            assert.equal(initialRequest.body, 'value=kept', 'original form data is retained');
+          }
+        } finally {
+          popupPage.close();
+        }
+        await session.item.workerFingerprintConnection.command('Target.closeTarget', { targetId: popup.id });
+      }
+      console.log('PASS nav openerless windows, links, POST forms, static child frames and scriptless documents retain navigation and fingerprint');
+    }
 
     // ---- 5. Window reuse: same tab, multiple navigations ----
     for (const path of ['/w1', '/w2', '/w3']) {
@@ -161,9 +249,47 @@ const SNAP = 'globalThis.first';
     }
   }
 
+  if (Number(browser.version.split('.')[0]) >= 143) {
+    const latency = 1200;
+    for (const offline of [false, true]) {
+      const networkPersona = { fingerprint: fp, profile: { ...persona.profile, privacy: {
+        ...persona.profile.privacy, networkConditions: { offline, latency },
+      } } };
+      const networkSession = await launchPersonaBrowser(browser, networkPersona);
+      try {
+        const page = await openPage(networkSession.port);
+        const route = '/openerless/' + (offline ? 'offline' : 'latency');
+        const url = originB + route;
+        const start = Date.now();
+        await page.command('Runtime.evaluate', {
+          expression: `window.open(${JSON.stringify(url)}, '_blank', 'noopener'); true`,
+          userGesture: true,
+        });
+        let target;
+        for (let attempt = 0; !target && attempt < 100; attempt++) {
+          target = (await cdp.tabs(networkSession.port)).find(tab => tab.url === url
+            && networkSession.item.fpAppliedTargets?.has(tab.id));
+          if (!target) await delay(100);
+        }
+        assert.ok(target, 'new target reached ready with ' + (offline ? 'offline' : 'latency') + ' simulation');
+        if (offline) {
+          assert.equal(initialRequests.has(route), false, 'offline simulation prevents the first outgoing request');
+        } else {
+          assert.ok(initialRequests.has(route), 'throttled page made its original request');
+          assert.ok(Date.now() - start >= latency - 100, 'latency simulation delays the first response');
+          const page = await cdp.connect(target.webSocketDebuggerUrl);
+          try { verifyIdentity(await readFirst(page), fp, 'throttled openerless tab'); }
+          finally { page.close(); }
+        }
+      } finally {
+        await networkSession.close();
+      }
+    }
+    console.log('PASS nav openerless first navigation honors latency and offline simulation');
+  }
+
   console.log('fingerprint-navigation-lifecycle-selftest: OK');
-  await servers.close();
-})().catch((error) => {
+})().finally(() => servers?.close()).catch((error) => {
   console.error((error instanceof Unavailable ? 'SKIP ' : 'FAIL ') + error.message);
   process.exitCode = error instanceof Unavailable ? 2 : 1;
 });

@@ -23,7 +23,9 @@ const animation = {
 };
 const banners = Object.fromEntries(Object.entries({ macos: 'mac', ios: 'ios', android: 'android', windows: 'windows', linux: 'linux' })
   .map(([system, file]) => [system, image('systeam/' + file + '.webp')]));
-const previewFields = computed(() => props.inputsGroup.flat().flatMap(field => field.preview ? [field] : (field.items ?? []).filter(child => child.preview))
+const previewFields = computed(() => (props.isImport ? props.inputsGroup.slice(1) : props.inputsGroup).flat()
+  .filter(field => field.visible !== false)
+  .flatMap(field => field.preview ? [field] : (field.items ?? []).filter(child => child.preview && child.visible !== false))
   .map(({ options, value, preview }) => {
     const raw = value?.value ?? value;
     return { ...preview, value: options?.find(option => option.value === raw)?.label ?? raw };

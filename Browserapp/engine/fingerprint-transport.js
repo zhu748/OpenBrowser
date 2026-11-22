@@ -3,6 +3,7 @@
 const cdp = require('../cdp');
 const { forgetFingerprintOwner } = require('../automation/fingerprint');
 const { forgetTargetRuntimePolicy } = require('./runtime-policy');
+const { isActiveFingerprintSession } = require('./fingerprint-session');
 
 function pageFingerprintRegistration(item, tab) {
   const entries = item.fingerprintPageConnections ||= new Map();
@@ -39,9 +40,17 @@ async function pageFingerprintConnection(engine, item, tab) {
       async onDisconnect(error, connection) {
         forgetFingerprintOwner(connection);
         forgetTargetRuntimePolicy(item, tab.id, entry);
-        if (entries.get(tab.id) === entry) entries.delete(tab.id);
+        if (entries.get(tab.id) !== entry) return;
+        entries.delete(tab.id);
+        const hasFlatOwner = () => {
+          for (const state of item.fingerprintSessionStates?.values() || []) {
+            if (state.targetId === tab.id && isActiveFingerprintSession(item, state)) return true;
+          }
+          return false;
+        };
+        const obsolete = () => entry.closed || item.stopping || item.cleanedUp || hasFlatOwner();
+        if (obsolete()) return;
         item.fpAppliedTargets?.delete(tab.id);
-        if (entry.closed || item.stopping || item.cleanedUp) return;
         let timer;
         try {
           const tabs = await Promise.race([
@@ -52,7 +61,7 @@ async function pageFingerprintConnection(engine, item, tab) {
           // snapshot distinguishes it from losing injection on a live page.
           if (tabs && !tabs.some((current) => current.id === tab.id)) return;
         } finally { clearTimeout(timer); }
-        if (entry.closed || item.stopping || item.cleanedUp) return;
+        if (obsolete()) return;
         // Losing the owner also loses future-document injection. Stop the
         // browser rather than leave a navigation window before the next sweep.
         Promise.resolve(engine.handleBrowserGone?.(item.profile?.id, item, 'fingerprint-page-disconnect', {

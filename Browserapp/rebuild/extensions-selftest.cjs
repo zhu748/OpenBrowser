@@ -2,7 +2,9 @@
 const { evidencePath } = require("./compiler/evidence-path.cjs");
 
 const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),assert=require('node:assert/strict');
+const { pathToFileURL } = require('node:url');
 const {BrowserEngine}=require('../engine'),{LocalService}=require('./local-service');
+const { Extensions } = require('./extensions');
 (async()=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'ob-extensions-')),source=path.join(root,'fixture'),result={passed:false,checks:[]};
  const engine=new BrowserEngine({getPath:()=>root});let service,selection=source;
@@ -14,6 +16,22 @@ const {BrowserEngine}=require('../engine'),{LocalService}=require('./local-servi
   const {plugin_id:id}=await service.request('extensions:finish',{...picked.data,...stage,pluginName:'本地扩展',pluginDesc:'fixture'});
   const saved=engine.extensions.get(id);assert.ok(saved.path.startsWith(path.join(root,'local-extensions')+path.sep));assert.equal(saved.name,'本地扩展');assert.notEqual(saved.path,source);
   assert.equal((await service.request('extensions:read',{pluginId:id})).rows[0].pluginVersion,'1.0');
+  const iconPath = path.join(source, 'icon.svg');
+  await fs.writeFile(iconPath, '<svg xmlns="http://www.w3.org/2000/svg"/>');
+  const libraryRows = [
+    { ...saved, iconUrl: pathToFileURL(iconPath).href, path: source },
+    { ...saved, id: 'missing-icon', name: 'Missing icon', iconUrl: pathToFileURL(path.join(source, 'missing.png')).href, path: source },
+  ];
+  const library = new Extensions({ root, data: service.data, engine: { listExtensions: () => libraryRows, profiles: engine.profiles } });
+  const icon = library.icon.bind(library), iconReads = [];
+  library.icon = entry => { iconReads.push(entry.id); return icon(entry); };
+  const firstPage = await library.request('list', { page_size: 1 });
+  assert.equal(firstPage.total, 2);
+  assert.deepEqual(iconReads, [id], 'only the selected page reads icons');
+  assert.match(firstPage.rows[0].pluginIcon, /^data:image\/svg\+xml;base64,/);
+  const filteredPage = await library.request('list', { queryValue: 'missing icon' });
+  assert.equal(filteredPage.total, 1);
+  assert.equal(filteredPage.rows[0].pluginIcon, '/images/openbrowser.png', 'missing icons degrade without failing the page');
   await service.request('extensions:assign',{pluginId:id,projectId:['local-default',group.id],installStatus:[1,0]});
   assert.ok(engine.assignments.get(one.id).has(id));assert.ok(!engine.assignments.get(two.id).has(id));
   const future=await service.request('profiles:create',{windowName:'Future',os:'Linux'});assert.ok(engine.assignments.get(future.id).has(id));

@@ -15,10 +15,12 @@ function select(option) {
 
 <template>
   <div class="flex overflow-hidden rounded-1.5 switch-group">
-    <div v-for="option in options" :key="option.value" v-tooltip.top="{ value: tooltip(option), showDelay: 500 }"
+    <button v-for="option in options" :key="option.value" type="button"
+      v-tooltip.top="{ value: tooltip(option), showDelay: 500 }" :aria-label="option.label"
+      :aria-pressed="value?.value === option.value" :disabled="option.disabled || disabled"
       class="flex-1 min-w-0 flex items-center justify-center cursor-pointer select-none transition-all duration-200 switch-group-item"
-      :class="{ active: value === option, disabled: option.disabled || disabled }" @click="select(option)">
+      :class="{ active: value?.value === option.value, disabled: option.disabled || disabled }" @click="select(option)">
       <slot name="item" :item="option">{{ option.label }}</slot>
-    </div>
+    </button>
   </div>
 </template>

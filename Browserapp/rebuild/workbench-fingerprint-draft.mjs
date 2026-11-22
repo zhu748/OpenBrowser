@@ -40,11 +40,11 @@ export function invalidateFingerprintDraft(groups) {
   if (state) state.revision++;
 }
 
-export async function refreshFingerprintDraft(groups, { read, apply, find, request, count = 1, preview = true }) {
+export async function refreshFingerprintDraft(groups, { read, apply, find, request, count = 1, preview = true,
+  preserve = [], keepSeed = false }) {
   const state = stateFor(groups, true);
   const field = find(primary(groups), 'userAgent');
-  // A failed generated preview must remain retryable; the archived serializer
-  // rejects invalid fields before it can read the newly selected kernel.
+  // Clear a failed preview's validation message while retrying.
   if (preview && state.failed && field) {
     field.invalid = false;
     field.errorMsg = undefined;
@@ -52,35 +52,63 @@ export async function refreshFingerprintDraft(groups, { read, apply, find, reque
     state.failed = false;
   }
   const values = read(groups), selected = selection(values);
+  const retainedIdentity = keepSeed && state.identity?.seed ? state.identity : null;
   const revision = preview ? ++state.revision : state.revision;
-  const current = () => state.revision === revision && JSON.stringify(selection(read(groups))) === JSON.stringify(selected);
-  if (preview && field && values.userAgent &&
-      /Firefox\//i.test(values.userAgent) !== (selected.coreType === 'Firefox')) field.value = '';
+  const selectedKey = JSON.stringify(selected);
+  const current = () => {
+    if (state.revision !== revision) return null;
+    const active = read(groups);
+    return JSON.stringify(selection(active)) === selectedKey ? active : null;
+  };
+  const mismatchedEngine = values.userAgent &&
+    /Firefox\//i.test(values.userAgent) !== (selected.coreType === 'Firefox');
+  if (preview && field && mismatchedEngine) field.value = '';
   try {
     const rows = await request({ ...selected, count, fontType: values.fontType,
       profileId: state.profileId,
+      ...(retainedIdentity ? { reuseDraft: retainedIdentity } : {}),
       canvas: values.canvas, webGL: values.webGL, audioContext: values.audioContext,
+      webGLInfo: values.webGLInfo,
+      ...(preview && values.webGLInfo === 2 ? {
+        webGLManufacturer: values.webGLManufacturer, webGLRender: values.webGLRender,
+      } : {}),
       speechVoices: values.speechVoices, clientRects: values.clientRects, macInfo: values.macInfo,
+      macAddr: values.macAddr,
       previousUserAgent: values.userAgent || '' });
     if (!preview) return rows;
-    if (!current()) return [];
+    const active = current();
+    if (!active) return [];
     const row = rows[0];
     if (!row?.userAgent || !row._fingerprintDraft) throw Error('指纹预览未返回完整身份，请重试');
     const { _fingerprintDraft: identity, _openbrowser: _runtime, ...visible } = row;
-    if (values.webGLInfo === 2) { delete visible.webGLManufacturer; delete visible.webGLRender; }
+    if (retainedIdentity && identity.seed !== retainedIdentity.seed) throw Error('指纹预览已失效，请刷新后重试');
+    const keepCustomUa = preserve.includes('userAgent') && Boolean(active.userAgent) && !mismatchedEngine;
+    if (keepCustomUa) delete visible.userAgent;
+    if (active.webGLInfo === 2) { delete visible.webGLManufacturer; delete visible.webGLRender; }
+    if (active.macAddr) delete visible.macAddr;
+    for (const key of ['hardwareConcurrent', 'deviceMemory', 'deviceName']) {
+      if (preserve.includes(key) || active[key] !== values[key]) delete visible[key];
+    }
     state.identity = identity;
     apply(groups, visible);
-    if (field) { field._custom_ua = false; field.invalid = false; field.errorMsg = undefined; field.help = ''; }
+    if (field) {
+      field._custom_ua = keepCustomUa;
+      field.invalid = false;
+      field.errorMsg = undefined;
+      field.help = '';
+    }
     return rows;
   } catch (error) {
     if (!preview) throw error;
     if (current() && field) {
-      field.value = '';
-      field.invalid = true;
-      field.errorMsg = error.message;
       field.help = error.message;
-      state.identity = null;
-      state.failed = true;
+      if (!(retainedIdentity && values.userAgent && !mismatchedEngine)) {
+        field.value = '';
+        field.invalid = true;
+        field.errorMsg = error.message;
+        state.identity = null;
+        state.failed = true;
+      }
       globalThis.__localUiError?.(error.message);
     }
     return [];

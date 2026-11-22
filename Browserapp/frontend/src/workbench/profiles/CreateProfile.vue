@@ -16,6 +16,7 @@ import { i as defaultTemplate } from './utils-CnUy4XUk.js';
 import { t as Header } from './views-header-CcjwXPjG.js';
 import { a as provideProfileForm } from './useAsyncGate-D7VA7DLY.js';
 import { t as useWindowCreateCore } from './useWindowCreateCore-01alf0RN.js';
+import { invalidateFingerprintDraft } from './workbench-fingerprint-draft.js';
 import CreateSingle from './workbench-profile-create-single.js';
 import CreateBatch from './workbench-profile-create-batch.js';
 import CreateFromFile from './workbench-profile-create-file.js';
@@ -47,7 +48,6 @@ const rawMainSettings = ref([]);
 const metadata = ref({ projectName: $t('未指定项目'), projectId: undefined, labelIds: [], windowRemark: '' });
 const collapsed = ref(false);
 let disposed = false;
-onBeforeUnmount(() => { disposed = true; });
 
 provideProfileForm({
   isBatch, createCount, driverObj: driver, presetTemplate, oneClickSettings,
@@ -63,7 +63,6 @@ const core = useWindowCreateCore({
   getFingerprintInputs: state => tab.value === 'import' ? [rawMainSettings.value, ...state.extraSettings.value] : state.inputsGroup.value,
   resolveMobileVisible: () => tab.value === 'import' || undefined,
   onInputsInitialized: state => { rawMainSettings.value = state.mainSetting.value.map(field => cloneField(field)); },
-  onInitialized: loadRequestedTemplate,
 });
 const templateById = ref({});
 const templateMenu = ref([]);
@@ -73,17 +72,27 @@ const remembered = ref({});
 const fields = computed(() => [tab.value === 'import' ? [] : core.mainSetting.value, ...core.extraSettings.value]);
 const previewFields = computed(() => [tab.value === 'import' ? rawMainSettings.value : core.mainSetting.value, ...core.extraSettings.value]);
 
+onBeforeUnmount(() => {
+  disposed = true;
+  core.dispose();
+});
+
 watch(tab, (next, previous) => {
   isBatch.value = next === 'multiple';
+  const main = core.mainSetting.value;
+  if (!main.length) return;
+  if (previous === 'import' || next === 'import') {
+    invalidateFingerprintDraft(previous === 'import' ? rawMainSettings.value : main);
+  }
   if (previous !== 'import') {
-    remembered.value[previous] = selectFields(core.mainSetting.value, Object.keys(defaults)).map(field => [field.name, cloneField(field.value)]);
+    remembered.value[previous] = selectFields(main, Object.keys(defaults)).map(field => [field.name, cloneField(field.value)]);
   }
   if (next !== 'import') {
-    for (const [name, value] of remembered.value[next] ?? Object.entries(defaults)) writeField(fields.value[0], name, value);
+    for (const [name, value] of remembered.value[next] ?? Object.entries(defaults)) writeField(main, name, value);
   }
   core.syncMobileVisibility();
-  core.updateFingerprint();
-});
+  if (previous === 'import') void core.ensureFingerprintPreview();
+}, { flush: 'sync' });
 
 function clearGuide() {
   document.querySelectorAll('.guide1.guide1-pulse-active').forEach(element => element.classList.remove('guide1-pulse-active'));
@@ -95,18 +104,27 @@ function clearGuide() {
 
 function choosePreset(preset) {
   presetTemplate.value = preset;
-  core.initialize(preset.preset);
+  initialize(preset.preset);
 }
 
 function selectTemplate(option) {
   if (selectedTemplate.id === option.value) return;
   selectedTemplate.id = option.value;
   selectedTemplate.label = option.label;
-  core.initialize(toRaw(templateById.value[option.value] || templateById.value.default));
+  return initialize(toRaw(templateById.value[option.value] || templateById.value.default), {
+    preserveSettings: option.value !== 'default',
+  });
+}
+
+function initialize(profile, options) {
+  return core.initialize(profile, options).catch(error => {
+    if (!disposed) showStatus(-1, error.message);
+  });
 }
 
 async function loadTemplates() {
-  const { data: templates } = await requests.window.userGetWindowTemplateListList();
+  const { code, data: templates, msg } = await requests.window.userGetWindowTemplateListList();
+  if (code !== 0) throw Error(msg);
   const map = { default: await defaultTemplate() };
   const options = [{ label: $t('不使用模板'), value: 'default', action: false }];
   for (const template of templates) {
@@ -128,21 +146,6 @@ async function loadTemplates() {
       ]),
     }),
   }));
-}
-async function loadRequestedTemplate() {
-  const id = route.query.templateId;
-  const isCurrent = () => !disposed && route.query.templateId === id && selectedTemplate.id === 'default';
-  if (!id || !isCurrent()) return;
-  const { data } = await globalThis.__localApi.window.userGetWindowTemplateListList().catch(error => {
-    if (isCurrent()) throw error;
-    return {};
-  });
-  if (!isCurrent()) return;
-  const template = data.find(row => String(row.id) === String(id));
-  if (!template) throw Error('模板不存在');
-  selectedTemplate.id = String(template.id);
-  selectedTemplate.label = template.templateName;
-  await core.initialize(JSON.parse(template.content));
 }
 function showTemplates(event) {
   showMenu(event, { model: templateMenu.value });
@@ -199,8 +202,22 @@ function launchAssistant() {
   return openRoxyAIAgent(aiCreateSource);
 }
 onBeforeMount(() => {
-  void loadTemplates().catch(error => showStatus(-1, error.message));
-  void core.initialize();
+  const templatesReady = loadTemplates().then(() => true).catch(error => {
+    if (!disposed) showStatus(-1, error.message);
+    return false;
+  });
+  if (!route.query.templateId) {
+    void initialize();
+    return;
+  }
+  void templatesReady.then(loaded => {
+    if (disposed) return;
+    const id = route.query.templateId;
+    const template = id && templateMenu.value.find(item => item.action && item.value === String(id));
+    if (template) return selectTemplate(template);
+    if (id && loaded) showStatus(-1, $t('模板不存在'));
+    return initialize();
+  });
 });
 const shared = {
   ...core, collapsed, inputsGroup: fields, previewInputs: previewFields, isBatch, createCount,

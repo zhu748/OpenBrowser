@@ -34,15 +34,16 @@ function validateField(field) {
     throw Error(field.errorMsg || `Input '${field.name}' is invalid`);
   }
 }
-function readFields(fields, defaults = {}, { keyName = 'name', valueName = 'value' } = {}) {
+function readFields(fields, defaults = {}, options = {}) {
+  const { keyName = 'name', valueName = 'value', validate = true } = options;
   const data = { ...defaults };
   const names = new Set();
   for (const field of fields ?? []) {
     if (field.visible === false || field.separator) continue;
     if (names.has(field.name)) throw Error(`Duplicate input.name '${field.name}' found in inputs`);
-    validateField(field);
+    if (validate) validateField(field);
     const key = field[keyName];
-    if (field.items) Object.assign(data, readFields(field.items));
+    if (field.items) Object.assign(data, readFields(field.items, {}, options));
     else if (key?.trim()) {
       const value = field[valueName];
       data[key] = typeof field.formatValue === 'function' ? field.formatValue(field, fields, data) : value?.value ?? value ?? '';
@@ -71,8 +72,11 @@ function applyValues(fields, values) {
   for (const field of fields) {
     if (Array.isArray(field)) { applyValues(field, values); continue; }
     if (field.name && !missing(values[field.name])) {
-      if (field.type === 'select' && !field.optionValue) field.value = field.options.find(option => option.value === values[field.name]);
-      else { field.value = values[field.name]; field.invalid = false; }
+      const value = values[field.name];
+      if (field.type === 'select' && !field.optionValue) {
+        const option = field.options.find(option => option.value === value);
+        if (option) { field.value = option; field.invalid = false; }
+      } else { field.value = value; field.invalid = false; }
     }
     if (Array.isArray(field.items)) applyValues(field.items, values);
   }

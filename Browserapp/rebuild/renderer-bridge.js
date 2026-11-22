@@ -78,8 +78,8 @@ const dictionary = {
   timeZone: opts(["America/New_York", "Asia/Shanghai", "Europe/London", "UTC"]),
   resolution: opts(["1920 x 1080", "1366 x 768", "1280 x 720"]),
   mobileResolution: opts(["390 x 844", "412 x 915"]),
-  hardwareConcurrent: opts(["2", "4", "8", "12", "16"]),
-  deviceMemory: opts(["2", "4", "8"]),
+  hardwareConcurrent: opts(["0", "2", "4", "6", "8", "10", "12", "16", "20", "24"]),
+  deviceMemory: opts(["0", "2", "4", "8"]),
   webGLVendor: opts(["Google Inc. (Intel)"]),
   nettype: opts(["wifi", "ethernet"]),
   effectiveType: opts(["4g", "3g", "2g", "slow-2g"]),
@@ -219,10 +219,10 @@ const methods = {
   },
   userMdfWindowDataBatchCreate: (p) => request("profiles:edit-data", p),
   userDelWindowInfoCreate: (p) => request("profiles:purge", p),
-  userDelWindowInfoRecycleCreate: (p) => request("profiles:purge", p),
-  userGetUaWebglV2List: (p) => request("fingerprint:preview", p),
+  userDelWindowInfoRecycleCreate: (p) => request("profiles:purge-trash", p),
+  userGetUaWebglV2List: (p) => request("fingerprint:preview", { ...p, includeRuntime: false }),
   userGetDeviceNameV2List: async (p) => [await request("fingerprint:sample-fields", p)],
-  userGetMacAddrV2List: async (p) => [await request("fingerprint:sample-fields", p)],
+  userGetMacAddrV2List: async (p) => [await request("fingerprint:sample-fields", { ...p, macInfo: true })],
   userGetBrowserVersionInfoList: async () =>
     (await request("kernels:list"))
       .filter((v) => v.engine === "chromium")
@@ -522,7 +522,7 @@ const sends = {
   "browser:clearCache": (p) => request("profiles:clear-cache", p),
   "browser:exportProfiles": (payload) => request("transfer:export", payload),
   "util:genRandomFingerprint": (p, count) =>
-    request("fingerprint:preview", { ...p, count }),
+    request("fingerprint:preview", { ...p, count, includeRuntime: false }),
   "util:callRandomFingerprintFunc": async (functions) => {
     const os = functions.getSpeechSynthesis?.[0] || functions.getAllowFontList?.[0];
     const values = await request('fingerprint:sample-fields', { os });

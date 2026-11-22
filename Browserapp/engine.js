@@ -5,6 +5,7 @@ const os = require('os');
 const { spawn } = require('child_process');
 const cdp = require('./cdp');
 const { recordProfileLifecycle, profileLifecycle, beginProfileStop, observeProfileStop } = require('./engine/profile-lifecycle');
+const { profileWriteGuard } = require('./engine/profile-write-guard');
 const { allowGoogleLogin } = require('./automation/profile-defaults');
 const { compareKernelVersions } = require('./automation/kernel-versions');
 const { parseProxy, normalizeIpLookupChannel } = require('./network/proxy-config');
@@ -1057,6 +1058,9 @@ class BrowserEngine {
       raw,
     );
     const id = candidate.id;
+    const existing = this.profiles.get(id);
+    candidate.createdAt = existing?.createdAt || candidate.createdAt || new Date().toISOString();
+    candidate.updatedAt = existing?.updatedAt || candidate.updatedAt || candidate.createdAt;
     assertProfileNotMaintained(this, id);
     if (this.deletingProfiles?.has(id)) {
       throw Object.assign(new Error(`Profile ${id} is being deleted`), { code: 'PROFILE_DELETING' });
@@ -1092,6 +1096,7 @@ class BrowserEngine {
     if (current && !this.stopping.has(id) && !current.cleanupFailed && !current.cleanedUp && !current.stopping) {
       return { ...this.publicRunning(id), alreadyRunning: true };
     }
+    const assertProfileCurrent = profileWriteGuard(this, id);
     const generation = this.nextLifecycleGeneration(id);
     const task = (async () => {
       const pendingStop = this.stopping.get(id);
@@ -1174,6 +1179,7 @@ class BrowserEngine {
       await assertProfileRestoreReady(this.profileRoot(id));
       // stop/delete can invalidate this start while the filesystem check waits.
       this.assertStartGenerationActive(id, generation);
+      assertProfileCurrent();
       return run(generation);
     })();
     task.lifecycleGeneration = generation;
@@ -1191,7 +1197,7 @@ class BrowserEngine {
       throw error;
     } finally {
       if (this.starting.get(id) === task) this.starting.delete(id);
-      this.invalidateStatusCache?.();
+      this.invalidateStatusCache?.(id);
     }
   }
 
@@ -1350,10 +1356,9 @@ class BrowserEngine {
     if (wantCookieSnap && item.cdpConnection) {
       cookieExport = await this.exportProfileCookies(item.cdpConnection).catch(() => '');
       if (cookieExport) {
-        profile.cookies = cookieExport.slice(0, 500000);
-        profile.updatedAt = new Date().toISOString();
-        this.profiles.set(safe, profile);
-        this.invalidateStatusCache?.();
+        const latest = this.profiles.get(safe) || profile;
+        this.profiles.set(safe, { ...latest, cookies: cookieExport.slice(0, 500000), updatedAt: new Date().toISOString() });
+        this.invalidateStatusCache?.(safe);
         // Do not await the full-store persist on the stop critical path:
         // stopAll launches N concurrent stops and each awaiting persist()
         // turned batch exit into N full-profile serializations + writes. The
@@ -1474,7 +1479,7 @@ class BrowserEngine {
   emit(value) {
     if (!recordProfileLifecycle(this, value)) return;
     if (value?.type === 'status' || /^(profile-start|profile-stop|profile-sync)-progress$/.test(value?.type || '')) {
-      this._statusCache = null;
+      this.invalidateStatusCache(value.id);
       if (value.id) value = { ...value, lifecycle: profileLifecycle(this, value.id) };
     }
     // Listener isolation: a destroyed-window listener (or any single faulty

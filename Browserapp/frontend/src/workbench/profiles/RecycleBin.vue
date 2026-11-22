@@ -46,24 +46,28 @@ function search({ key, value } = {}) {
 }
 async function finish(operation) {
   try {
-    const { code, msg } = await operation();
-    showStatus(code, msg);
+    const { code, msg, data } = await operation();
+    if (code === 0 && data?.deleted === 0) showStatus(-1, $t('窗口的回收站状态已变更'));
+    else showStatus(code, msg);
     if (code === 0) await table.value?.refresh();
   } catch (error) {
     showStatus(-1, error.message);
   }
 }
 function operate(action, selection) {
-  const ids = [].concat(selection).map(row => row.id);
+  const rows = [].concat(selection);
+  const ids = rows.map(row => row.id);
   if (action.name === 'restore') {
     return finish(() => requests.window.userMdfWindowInfoBatchV2Create({ ids, isDelete: false }));
   }
   if (action.name === 'delete') {
+    const trashedAtById = Object.fromEntries(rows.map(row => [row.id, row.trashedAt ?? null]));
+    const revisions = Object.fromEntries(rows.filter(row => Number.isSafeInteger(row.rev)).map(row => [row.id, row.rev]));
     confirm.require({
       header: $t('彻底删除所选窗口'), message: $t('您确认要彻底删除所选窗口吗？'),
       rejectProps: { label: $t('取消'), severity: 'secondary', outlined: true },
       acceptProps: { label: $t('确认'), severity: 'danger' },
-      accept: () => finish(() => requests.window.userDelWindowInfoRecycleCreate({ ids })),
+      accept: () => finish(() => requests.window.userDelWindowInfoRecycleCreate({ ids, trashedAtById, revisions })),
     });
   }
 }
@@ -90,7 +94,7 @@ function remainingClass(days) {
         </div>
       </template>
       <template #tags="{ data }"><Tags :labels="data.labelInfo" :project-id="data.projectId" disabled /></template>
-      <template #log="{ data }"><div class="email">{{ data.email }}</div><div class="time">{{ data.updateTime }}</div></template>
+      <template #log="{ data }"><div class="email">{{ data.email }}</div><div class="time">{{ data.trashedAt ? new Date(data.trashedAt).toLocaleString() : '' }}</div></template>
       <template #remaining="{ data }"><div :class="remainingClass(data.remaining)">{{ data.remaining }}</div></template>
     </Table>
   </div>

@@ -18,6 +18,10 @@ function registerProfileIpc({ registerTrustedIpc, engine, sanitizeIds, beforeRem
   registerTrustedIpc('profiles:trash', async (_event, payload) => engine.trashProfiles(await removalIds(payload)));
   registerTrustedIpc('profiles:restore', (_event, payload) => engine.restoreProfiles(sanitizeIds(payload?.ids || [])));
   registerTrustedIpc('profiles:purge', async (_event, payload) => engine.purgeProfiles(await removalIds(payload), payload?.deleteData !== false));
+  registerTrustedIpc('profiles:purge-trash', (_event, payload) => engine.purgeTrashedProfiles(
+    sanitizeIds(payload?.ids || []), payload?.deleteData !== false, {
+      trashedAtById: payload?.trashedAtById, revisions: payload?.revisions, beforeRemove,
+    }));
   registerTrustedIpc('profiles:empty-trash', (_event, payload) => engine.emptyTrash(payload?.deleteData !== false));
   registerTrustedIpc('profiles:start', (_event, profile) => engine.start(profile));
   registerTrustedIpc('profiles:stop', (_event, id) => engine.stop(id));

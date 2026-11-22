@@ -35,4 +35,4 @@ function isJavaScriptMime(value) {
   return JAVASCRIPT_MIMES.has(String(value || '').split(';', 1)[0].trim().toLowerCase());
 }
 
-module.exports = { injectWorkerSource, injectionPosition, rewrittenScriptHeaders, isJavaScriptMime, MAX_WORKER_BYTES };
+module.exports = { injectWorkerSource, injectionPosition, rewrittenScriptHeaders, isJavaScriptMime, JAVASCRIPT_MIMES, MAX_WORKER_BYTES };

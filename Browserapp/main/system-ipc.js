@@ -11,6 +11,7 @@ const appUpdate = require('../automation/app-update');
 const cloudOps = require('../automation/cloud-ops');
 const settingsStore = require('../automation/local-settings');
 const { collectStorageDiagnostics } = require('../automation/storage-diagnostics');
+const { writeRawAtomically } = require('../engine/state-storage');
 
 function registerSystemIpc({
   registerTrustedIpc, shell, dialog, clipboard, BrowserWindow,
@@ -145,7 +146,7 @@ function registerSystemIpc({
       filters: [{ name: 'OpenBrowser Backup', extensions: ['obpack'] }],
     });
     if (result.canceled || !result.filePath) return { canceled: true };
-    await fsp.writeFile(result.filePath, buffer);
+    await writeRawAtomically(result.filePath, buffer);
     return { success: true, path: result.filePath, meta };
   });
   registerTrustedIpc('cloud:import-file', async (_event, payload) => {

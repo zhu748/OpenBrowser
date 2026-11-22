@@ -119,7 +119,15 @@ async function runBrowser(browser, server, id, hostDpr, dpr) {
       } };
     item = { port, profile, fingerprint: fp, kernelVersion: browser.version };
     await engine.startWorkerFingerprintInjection(item, fp);
-    const tab = (await cdp.tabs(port))[0];assert.ok(tab, 'initial page');
+    // CDP can publish the browser endpoint before its first tab exists.
+    const deadline = Date.now() + 8000;
+    let tab;
+    while (!tab && Date.now() < deadline) {
+      const tabs = await cdp.tabs(port, { timeoutMs: 1500 }).catch(() => []);
+      tab = tabs.find(candidate => item.fpAppliedTargets?.has(candidate.id));
+      if (!tab) await delay(50);
+    }
+    assert.ok(tab, 'initial page did not finish fingerprint setup');
     connection = await cdp.connect(tab.webSocketDebuggerUrl);
     const url = 'http://127.0.0.1:' + server.address().port;
     await connection.command('Page.navigate', { url });

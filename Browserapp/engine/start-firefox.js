@@ -1,5 +1,6 @@
 'use strict';
 
+const { randomBytes } = require('node:crypto');
 const { openWorkbench } = require('../automation/profile-defaults');
 
 const { assertUrlAccessPolicySupported } = require('../automation/url-access-policy');
@@ -90,6 +91,9 @@ function firefoxExtraUserPrefs(profile, fingerprint = null) {
       : /mac/i.test(fingerprint.platform) ? 'Intel Mac OS X 10.15' : 'Linux x86_64';
     prefs.push(['general.oscpu.override', oscpu]);
     prefs.push(['media.peerconnection.enabled', privacy.webrtc !== 'disabled' && !(privacy.webrtc === 'proxy' && !fingerprint.webrtcAddress)]);
+    if (Number.isSafeInteger(fingerprint.hardwareConcurrency) && fingerprint.hardwareConcurrency > 0) {
+      prefs.push(['dom.maxHardwareConcurrency', fingerprint.hardwareConcurrency]);
+    }
   }
   // --- advanced switches that DO have a Firefox pref ---
   if (advanced.blockImages) prefs.push(['permissions.default.image', 2]);
@@ -211,7 +215,10 @@ module.exports = {
       assertLaunchProfileCurrent = profileWriteGuard(this, profile.id);
       await seedEnsured;
       assertLaunchProfileCurrent();
-      const fingerprint = buildFirefoxFingerprint(profile, browser.version);
+      const fingerprint = buildFirefoxFingerprint({
+        ...profile,
+        fingerprintLaunchSeed: profile.privacy?.refreshFingerprintOnStart ? randomBytes(16).toString('hex') : '',
+      }, browser.version);
       let customStartUrls = this.resolveStartupUrls(profile);
       if (profile.advanced.tabMode === 'restore' || profile.advanced.restoreSession) {
         const restoredUrls = await readDeferredSessionUrls(root);
@@ -293,6 +300,7 @@ module.exports = {
       const acceptLanguages = collectAcceptLanguages(fingerprint, profile);
       const locale = String(profile.language || 'en-US');
       const workerMitmActive = Boolean(workerMitm);
+      const { installFirefoxLocalWorkerFilter, LOOPBACK_HOSTS } = require('../automation/firefox-local-workers');
       const userJs = buildFirefoxUserJs({
         userAgent: fingerprint.userAgent,
         acceptLanguages,
@@ -300,13 +308,13 @@ module.exports = {
         proxyEndpoint: proxy && proxy !== 'direct://' ? proxy : '',
         // The managed start page and other local services remain local. The
         // forwarder's external destination policy must not block the start page.
-        noProxyHosts: 'localhost, 127.0.0.1, ::1',
+        noProxyHosts: LOOPBACK_HOSTS.join(', '),
         extraPrefs: firefoxExtraUserPrefs(launchOptions.blockImages ? { ...profile, advanced: { ...profile.advanced, blockImages: true } } : profile, fingerprint),
       });
       // user.js wins over prefs.js at every startup, then Firefox copies it to
       // prefs.js. Writing it fresh each launch keeps the proxy/UA/prefs current.
       await fspWriteFile(path.join(root, 'user.js'), userJs, 'utf8');
-      await require('../automation/firefox-worker-cache').prepareFirefoxWorkerCache(root, workerSource);
+      await require('../automation/firefox-worker-cache').prepareFirefoxWorkerCache(root, workerSource, { localDelivery: true });
       currentStage = 'spawn'; this.emitStartProgress(profile.id, 'spawn', 62, '正在启动 Firefox…', lifecycleGeneration);
       this.assertStartGenerationActive(profile.id, lifecycleGeneration);
       const headless = launchOptions.headless === true || /^(1|true|new)$/i.test(String(process.env.OPENBROWSER_HEADLESS || '').trim());
@@ -427,6 +435,7 @@ module.exports = {
       await connection.open();
       const delivered = await initializeFirefoxFingerprint(connection, fingerprint, profile, {
         workerProxyReady: workerMitmActive,
+        installLocalWorkerFilter: () => installFirefoxLocalWorkerFilter(connection, root, workerSource),
         onWorkerError: (error) => {
           item.workerFingerprintError = error.message;
           this.emit({ type: 'worker-fingerprint-injection-failed', id: profile.id, message: error.message });

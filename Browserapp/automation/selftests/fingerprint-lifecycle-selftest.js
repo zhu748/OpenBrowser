@@ -109,6 +109,27 @@ const count = (owner, method) => owner.calls.filter((call) => call.method === me
       assert.equal(stops, 0);assert.equal(item.fingerprintPageConnections.size, 0);
     } finally { cdp.connect = original;cdp.tabs = originalTabs; }
   });
+  await test('a delayed fallback disconnect cannot close a page that acquired an auto-attach owner', async () => {
+    const saved = { connect: cdp.connect, tabs: cdp.tabs };
+    const probe = deferred(), fallback = transport(), browser = transport();
+    const item = { fpAppliedTargets: new Set(['page']), workerFingerprintConnection: browser, fingerprintSessionStates: new Map() };
+    let disconnect, stops = 0;
+    cdp.connect = async (_url, options) => { disconnect = options.onDisconnect; return fallback; };
+    cdp.tabs = () => probe.promise;
+    try {
+      await pageFingerprintConnection({ handleBrowserGone: async () => { stops += 1; } }, item,
+        { id: 'page', webSocketDebuggerUrl: 'ws://localhost/page' });
+      const check = disconnect(new Error('fallback socket lost'), fallback);
+      await turn();
+      item.fingerprintSessionStates.set('new-session', { targetId: 'page', connection: browser, ready: true });
+      item.fpAppliedTargets.add('page');
+      probe.resolve([{ id: 'page' }]);
+      await check;
+      assert.equal(stops, 0);
+      await disconnect(new Error('late disconnect event'), fallback);
+      assert.equal(item.fpAppliedTargets.has('page'), true);
+    } finally { probe.resolve([]); Object.assign(cdp, saved); closePageFingerprintConnections(item); }
+  });
   await test('policy registrations survive handover by remaining scoped to their actual session', async () => {
     const owner = {}, a = transport(), b = transport();
     const configured = { privacy: { portScanProtect: true, portScanAllow: '8080' }, advanced: { blockVideo: true } };

@@ -4,6 +4,7 @@ const { writeRawAtomically } = require("../engine/state-storage");
 const { readLocalStore, encodeLocalStore } = require("./local-store");
 const clone = (v) => structuredClone(v);
 const { fromRoxy, toRoxy } = require("./profile-dto");
+const { buildProfileIndex, decorateProfile } = require("./profile-index");
 const { resolveLocalRoute } = require("./local-route-registry");
 
 class LocalService {
@@ -65,9 +66,10 @@ class LocalService {
       const store = this.accountStore?.();
       if (!store) throw Error("账号库尚未就绪");
       // Resolve only explicitly selected IDs in the main process. List DTOs are redacted.
+      const selected = new Set(accountIds);
       p.windowPlatformList = [
         ...(p.windowPlatformList || []).filter(
-          (row) => !accountIds.includes(row.accountId || row.id),
+          (row) => !selected.has(row.accountId || row.id),
         ),
         ...accountIds.map((id) => {
           const account = store.get(String(id));
@@ -142,109 +144,23 @@ class LocalService {
   }
   profileIndex() {
     const snapshot = this.engine.status(),
+      profiles = this.engine.profiles,
+      version = profiles?.version,
       groups = this.data.groups,
       labels = this.data.labels;
     const cached = this.profileProjection;
     if (
-      cached?.snapshot === snapshot &&
-      cached.groups === groups &&
-      cached.labels === labels
-    )
+      cached && cached.groups === groups && cached.labels === labels &&
+      (cached.snapshot === snapshot || (version !== undefined && cached.profiles === profiles && cached.version === version))
+    ) {
+      cached.snapshot = snapshot;
       return cached;
-    const index = {
-      snapshot,
-      groups,
-      labels,
-      groupById: new Map(groups.map((row) => [row.id, row])),
-      labelById: new Map((labels || []).map((row) => [row.id, row])),
-      groupCounts: new Map(),
-      proxyProfiles: new Map(),
-      labelProfiles: new Map(),
-      summaries: [],
-      summariesById: new Map(),
-      platformUrls: new Set(),
-      activeCount: 0,
-    };
-    for (const profile of snapshot) {
-      const labelIds = /^\d+(,\d+)*$/.test(profile.tag || "")
-        ? profile.tag.split(",").map(Number)
-        : [];
-      if (!profile.trashed) {
-        index.activeCount++;
-        index.groupCounts.set(
-          profile.groupId || "",
-          (index.groupCounts.get(profile.groupId || "") || 0) + 1,
-        );
-        if (profile.proxyId) {
-          if (!index.proxyProfiles.has(profile.proxyId))
-            index.proxyProfiles.set(profile.proxyId, []);
-          index.proxyProfiles
-            .get(profile.proxyId)
-            .push({
-              id: profile.id,
-              windowName: profile.name,
-              windowSortNum: profile.number,
-            });
-        }
-        for (const id of labelIds) {
-          if (!index.labelProfiles.has(id)) index.labelProfiles.set(id, []);
-          index.labelProfiles.get(id).push(profile.id);
-        }
-      }
-      const accounts = profile.platform?.accounts || (profile.platform ? [profile.platform] : []);
-      const windowPlatformList = accounts.map(account => ({
-        platformUrl: account.url || account.startUrl || profile.platform?.startUrl,
-      }));
-      if (!profile.trashed) {
-        for (const { platformUrl } of windowPlatformList) if (platformUrl) index.platformUrls.add(platformUrl);
-      }
-      const summary = {
-        position: index.summaries.length,
-        source: profile,
-        windowName: profile.name || "",
-        windowRemark: profile.note || "",
-        windowSortNum: profile.number,
-        projectId: profile.groupId || "",
-        openStatus: !!profile.running,
-        isOften: !!profile.favorite,
-        os: profile.os,
-        coreType: profile.engine === "firefox" ? "Firefox" : "Chrome",
-        labelIds,
-        labelInfos: labelIds
-          .map((id) => index.labelById.get(id))
-          .filter(Boolean)
-          .map((label) => ({ labelName: label.name })),
-        windowPlatformList,
-        createdAt: profile.createdAt,
-        updatedAt: profile.updatedAt,
-        openTime: profile.lastOpenedAt,
-      };
-      index.summaries.push(summary);
-      index.summariesById.set(String(profile.id), summary);
     }
-    this.profileProjection = index;
-    return index;
+    this.profileProjection = buildProfileIndex({ snapshot, profiles, version, groups, labels });
+    return this.profileProjection;
   }
-  decorate(profile) {
-    const index = this.profileIndex();
-    const row = toRoxy(profile);
-    const labelInfo = row.labelIds
-      .map((id) => index.labelById.get(id))
-      .filter(Boolean)
-      .map((label) => ({
-        labelId: String(label.id),
-        labelName: label.name,
-        labelColor: label.color,
-      }));
-    return {
-      ...row,
-      projectName:
-        index.groupById.get(profile.groupId)?.projectName ||
-        profile.group_name ||
-        "",
-      labelInfo,
-      labelInfos: labelInfo,
-    };
+  decorate(profile, index = this.profileIndex()) {
+    return decorateProfile(profile, index);
   }
   request(method, payload = {}) {
     // The original engine owns process/proxy concurrency. Do not hold local JSON

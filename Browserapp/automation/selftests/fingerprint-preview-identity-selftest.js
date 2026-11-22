@@ -8,6 +8,7 @@ const { randomUUID } = require('node:crypto');
 const { BrowserEngine } = require('../../engine');
 const { LocalService } = require('../../rebuild/local-service');
 const { fromRoxy } = require('../../rebuild/profile-dto');
+const { buildFirefoxFingerprint } = require('../firefox-fingerprint');
 
 function identity(fp) {
   return { seed: fp.seed, canvas: fp.canvas, audio: fp.audio, clientRects: fp.clientRects,
@@ -23,6 +24,12 @@ async function main() {
     const service = new LocalService({ engine, root, dialog: {}, window: () => null });
     for (const coreType of ['Chrome', 'Firefox']) {
       const selected = { os: 'Windows', osVersion: 'Windows 11', coreType, coreVersion: '159' };
+      const [compact] = await service.request('fingerprint:preview', { ...selected, includeRuntime: false });
+      assert.equal(Object.hasOwn(compact, '_openbrowser'), false, 'the editor can omit the runtime payload');
+      const compactProfile = await service.request('profiles:create', { ...selected, ...compact });
+      assert.equal(compactProfile.id, compact._fingerprintDraft.profileId);
+      assert.equal(compactProfile.userAgent, compact.userAgent);
+      assert.equal(compactProfile.fingerprintSeed, compact._fingerprintDraft.seed);
       const [preview] = await service.request('fingerprint:preview', selected);
       const payload = { ...selected, ...preview, windowName: coreType + ' preview' };
       const row = await service.request('profiles:create', payload);
@@ -64,6 +71,46 @@ async function main() {
       for (const imported of imports)
         assert.equal(engine.fingerprintFor(imported._fingerprintDraft.profileId).seed, imported._openbrowser.seed);
     }
+    const configured = fromRoxy({
+      coreType: 'Firefox', coreVersion: '159', os: 'Linux', hardwareConcurrent: '20',
+      isTimeZone: false, timeZone: 'Asia/Shanghai', resolutionType: true, resolutionX: 1600, resolutionY: 1000,
+      isDisplayLanguageBaseIp: false, displayLanguage: 'fr-FR', randomFingerprint: true,
+    });
+    configured.privacy.fingerprint = {
+      ...configured.privacy.fingerprint, canvasId: 3456, userAgent: 'Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0',
+    };
+    await engine.syncProfiles([configured]);
+    const storedConfig = engine.profileForEdit(configured.id);
+    const [configuredPreview] = await service.request('fingerprint:preview', { profileId: configured.id });
+    assert.match(configuredPreview.userAgent, /Firefox\/159\.0$/);
+    assert.equal(configuredPreview._openbrowser.platform, 'Linux x86_64');
+    assert.equal(configuredPreview._openbrowser.timezone, 'Asia/Shanghai');
+    assert.equal(configuredPreview._openbrowser.languages[0], 'fr-FR');
+    assert.equal(configuredPreview._openbrowser.screen.width, 1600);
+    assert.equal(configuredPreview.hardwareConcurrent, '20');
+    assert.deepEqual(engine.profileForEdit(configured.id), storedConfig, 'sampling cannot mutate the saved configuration');
+    await service.request('profiles:update', { ...configuredPreview, id: configured.id, rev: storedConfig.rev });
+    const savedConfig = engine.profiles.get(configured.id);
+    const inspection = engine.fingerprintFor(savedConfig.id);
+    assert.deepEqual(identity(inspection), identity(configuredPreview._openbrowser));
+    assert.deepEqual(identity(engine.fingerprintFor(savedConfig.id)), identity(inspection),
+      'reading a stopped Firefox profile does not randomize it');
+    const launchA = buildFirefoxFingerprint({ ...savedConfig, fingerprintLaunchSeed: 'launch-a' }, '159.0');
+    const launchB = buildFirefoxFingerprint({ ...savedConfig, fingerprintLaunchSeed: 'launch-b' }, '159.0');
+    assert.notEqual(launchA.seed, launchB.seed, 'each supplied Firefox launch seed yields a separate identity');
+    assert.notEqual(launchA.seed, inspection.seed);
+    const mobile = { os: 'Android', osVersion: 'Android 13', coreType: 'Chrome', coreVersion: '159' };
+    const [mobilePreview] = await service.request('fingerprint:preview', mobile);
+    const [mobileUa] = await service.request('fingerprint:preview', {
+      ...mobile, reuseDraft: mobilePreview._fingerprintDraft, previousUserAgent: mobilePreview.userAgent,
+    });
+    assert.deepEqual(mobileUa._fingerprintDraft, mobilePreview._fingerprintDraft);
+    assert.deepEqual(mobileUa._openbrowser.mobileDevice, mobilePreview._openbrowser.mobileDevice);
+    assert.deepEqual(identity(mobileUa._openbrowser), identity(mobilePreview._openbrowser));
+    await assert.rejects(service.request('fingerprint:preview', {
+      ...mobile, reuseDraft: { ...mobilePreview._fingerprintDraft, seed: '0'.repeat(32) },
+    }), /指纹预览已失效/);
+
     await assert.rejects(service.request('fingerprint:preview', { profileId: 'missing' }), /not found/i);
     const invalid = await service.request('profiles:create', { windowName: 'invalid draft UUID', _fingerprintDraft: { profileId: '../escape' } });
     assert.notEqual(invalid.id, '../escape');

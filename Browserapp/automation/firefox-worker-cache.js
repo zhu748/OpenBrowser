@@ -8,10 +8,14 @@ const { writeRawAtomically } = require('../engine/state-storage');
 // Firefox persists prefixed Service Worker programs separately from the HTTP
 // cache. no-store and a new proxy source cannot update a program it never
 // fetches again. Run only while the profile lock is held and Firefox is stopped.
-async function prepareFirefoxWorkerCache(root, source) {
+async function prepareFirefoxWorkerCache(root, source, { localDelivery = false } = {}) {
   if (typeof source !== 'string' || !source) throw Error('Firefox worker source is required');
   const file = path.join(root, 'openbrowser-worker-cache.json');
-  const sourceHash = crypto.createHash('sha256').update(source).digest('hex');
+  // The first local-filter launch must also discard older, unprefixed local
+  // registrations, even if the configuration and forwarder source are unchanged.
+  const hash = crypto.createHash('sha256').update(source);
+  if (localDelivery) hash.update('\0firefox-local-worker-filter/v1');
+  const sourceHash = hash.digest('hex');
   let previous;
   try {
     const stat = await fs.lstat(file);

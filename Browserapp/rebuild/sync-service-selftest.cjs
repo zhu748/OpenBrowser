@@ -14,11 +14,15 @@ const cdp = require("../cdp");
     writes = [],
     activeKeys = new Map();
   let keyboard = true,
-    shouldFail = false;
+    shouldFail = false,
+    statusReads = 0;
   const service = new SyncService({
     engine: {
       runningWithCdp: (ids) => rows.filter((row) => ids.includes(row.id)),
-      status: () => rows.map((row) => ({ id: row.id, pid: row.item.pid })),
+      status: () => {
+        statusReads++;
+        return [{ id: "a", pid: 101 }, { id: "b", pid: 102 }];
+      },
     },
     controller: {
       getSettings: () => ({ keyboard }),
@@ -68,6 +72,14 @@ const cdp = require("../cdp");
   });
   assert.deepEqual(writes.at(-1).ids, ["b"]);
   assert.equal(writes.at(-1).texts[0], "only b");
+  assert.equal(statusReads, 0, "running entries provide their PIDs without a fleet snapshot");
+  delete rows[0].item.pid;
+  delete rows[1].item.pid;
+  await service.request("sync:batch-text", { mode: "diff", data: { 102: "second", 101: "first" }, append: true });
+  assert.equal(statusReads, 1, "missing PIDs share one status snapshot");
+  assert.deepEqual(writes.at(-1).texts, ["first", "second"]);
+  rows[0].item.pid = 101;
+  rows[1].item.pid = 102;
   const before = writes.length;
   await assert.rejects(
     service.request("sync:batch-text", {

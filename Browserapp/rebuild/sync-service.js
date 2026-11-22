@@ -1,5 +1,5 @@
 "use strict";
-const crypto = require("node:crypto");
+const { runSyncBatchText } = require("./sync-batch-text");
 const cdp = require("../cdp");
 const DEFAULT_SHORTCUTS = Object.freeze({
   stopSync: "Ctrl + Alt + D",
@@ -183,121 +183,7 @@ class SyncService {
         );
       return { success: true, count: entries.length };
     }
-    if (method === "sync:batch-text") {
-      let entries = this.selection();
-      const texts = new Map();
-      const text = (value) => {
-        if (typeof value !== "string" || value.length > 100000)
-          throw Error("文本必须少于 100000 字符");
-        return value;
-      };
-      if (p.mode === "same") {
-        const value = text(p.data);
-        if (!value.trim()) throw Error("请输入文本");
-        for (const entry of entries) texts.set(entry.id, value);
-      } else if (p.mode === "diff") {
-        if (!p.data || typeof p.data !== "object" || Array.isArray(p.data))
-          throw Error("无效差异文本");
-        const byPid = new Map(
-          entries.map((entry) => [
-            String(
-              entry.item.process?.pid ||
-                entry.item.pid ||
-                this.engine.status().find((row) => row.id === entry.id)?.pid,
-            ),
-            entry.id,
-          ]),
-        );
-        for (const [pid, value] of Object.entries(p.data)) {
-          if (!byPid.has(pid)) throw Error("差异文本引用了未选择的进程");
-          texts.set(byPid.get(pid), text(value));
-        }
-        entries = entries.filter((entry) => texts.has(entry.id));
-        if (!entries.length) throw Error("请输入差异文本");
-      } else if (p.mode === "random") {
-        const min = Number(p.data?.min),
-          max = Number(p.data?.max),
-          decimals = Number(p.data?.decimal_place_count ?? 1),
-          type = p.data?.data_type;
-        if (
-          ![min, max].every(Number.isFinite) ||
-          min >= max ||
-          min < -1e9 ||
-          max > 1e9 ||
-          !["int", "float"].includes(type) ||
-          !Number.isInteger(decimals) ||
-          decimals < 1 ||
-          decimals > 10 ||
-          (type === "int" && (!Number.isInteger(min) || !Number.isInteger(max)))
-        )
-          throw Error("无效随机数范围或精度");
-        for (const entry of entries)
-          texts.set(
-            entry.id,
-            type === "int"
-              ? String(crypto.randomInt(min, max + 1))
-              : (
-                  min +
-                  (crypto.randomBytes(6).readUIntBE(0, 6) / 2 ** 48) *
-                    (max - min)
-                ).toFixed(decimals),
-          );
-      } else throw Error("未知批量输入模式");
-      if (typeof p.append !== "boolean") throw Error("无效追加选项");
-      const ids = entries.map((entry) => entry.id),
-        previous = this.controller.getSettings();
-      // Native text input itself generates master input events. Gate mirroring
-      // until the native runner has filled every destination exactly once.
-      this.controller.updateSettings({ keyboard: false, click: false });
-      try {
-        const deadline = Date.now() + 12000;
-        while (this.controller.forwardQueueRunning) {
-          if (Date.now() > deadline)
-            throw Error("同步事件队列未能完成，请重试批量输入");
-          await new Promise((resolve) => setTimeout(resolve, 10));
-        }
-        const verify = (result) => {
-          if (!result.success)
-            throw Error(
-              "批量输入失败: " +
-                result.failures
-                  .map((row) => row.id + ": " + row.message)
-                  .join("; "),
-            );
-          return result;
-        };
-        if (!p.append)
-          verify(
-            await this.textAssignments({
-              ids,
-              allowClear: true,
-              clearAction: "clear",
-              resolveText: () => "",
-            }),
-          );
-        const result = verify(
-          await this.textAssignments({
-            ids,
-            resolveText: (id) => texts.get(id),
-          }),
-        );
-        // Drain bindings on the controller's own CDP streams before restoring
-        // input gates, including the native clear operation's change event.
-        await Promise.all(
-          [...(this.controller.connections?.values() || [])].map((value) =>
-            value.connection.command("Runtime.evaluate", {
-              expression: "void 0",
-            }),
-          ),
-        );
-        return result;
-      } finally {
-        this.controller.updateSettings({
-          keyboard: previous.keyboard,
-          click: previous.click,
-        });
-      }
-    }
+    if (method === "sync:batch-text") return runSyncBatchText(this, this.selection(), p);
     if (method === "sync:open-sites") {
       const entries = this.selection();
       if (

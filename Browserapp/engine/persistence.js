@@ -3,6 +3,8 @@
 /** Persistence coordination and state export for BrowserEngine. */
 const { createCoalescedWriter } = require('../automation/coalesced-writer');
 const { KERNEL_POLICY_VERSION, writeJsonAtomically } = require('./index');
+const { ProfileStoreSqlite } = require('../automation/profile-store-sqlite');
+const { TrackedProfileMap } = require('./profile-revisions');
 
 module.exports = {
   persist() {
@@ -18,6 +20,16 @@ module.exports = {
     let write;
     if (this.usingSqlite && this.sqliteStore) {
       write = async () => {
+        if (this.sqliteStore instanceof ProfileStoreSqlite && this.profiles instanceof TrackedProfileMap) {
+          const store = this.sqliteStore;
+          const profiles = this.profiles;
+          const pending = profiles.pendingWrites();
+          const changed = this._profilePersistenceStore === store ? pending.map(([id]) => profiles.get(id)) : [...profiles.values()];
+          const saved = await store.saveEngineState(this._engineStateSnapshot(changed));
+          profiles.acknowledgeWrites(pending);
+          this._profilePersistenceStore = store;
+          return saved;
+        }
         if (typeof this.sqliteStore.saveEngineState === 'function') {
           return this.sqliteStore.saveEngineState(this._engineStateSnapshot());
         }
@@ -63,7 +75,7 @@ module.exports = {
       const changed = new Map();
       for (const id of ids) {
         const profile = this.profiles.get(id);
-        if (profile) changed.set(id, { ...profile, trashed, trashedAt: trashed ? now : null });
+        if (profile) changed.set(id, { ...profile, trashed, trashedAt: trashed ? now : null, updatedAt: now });
       }
       if (!changed.size) return [];
       if (this.usingSqlite && this.sqliteStore) {
@@ -108,11 +120,11 @@ module.exports = {
     await (this._lastPersistWrite || this._persistQueue);
   },
 
-  _engineStateSnapshot() {
+  _engineStateSnapshot(profiles = [...this.profiles.values()]) {
     return {
       extensions: [...this.extensions.values()],
       assignments: Object.fromEntries([...this.assignments].map(([id, values]) => [id, [...values]])),
-      profiles: [...this.profiles.values()],
+      profiles,
       kernelPolicyVersion: KERNEL_POLICY_VERSION,
       preferIndependentKernel: this.preferIndependentKernel,
       allowSystemBrowserFallback: this.allowSystemBrowserFallback,

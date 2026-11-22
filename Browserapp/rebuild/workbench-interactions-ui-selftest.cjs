@@ -42,8 +42,29 @@ async function main() {
     const profileMenu = page.getByRole('button', { name: '本地工作区菜单', exact: true });
     const box = await profileMenu.boundingBox();
     assert.ok(box.width >= 80 && box.x + box.width <= (await page.evaluate(() => innerWidth)), 'workspace icon/text fit inside the client area');
-    const profile = await page.evaluate(() => globalThis.__localRequest('profiles:create', { windowName: '三点操作回归', coreType: 'Chrome', os: 'Windows' }));
-    const row = page.locator('tr').filter({ hasText: '三点操作回归' });
+    const profileName = '三点操作回归';
+    const quickCreate = page.getByRole('button', { name: '快速创建', exact: true });
+    const hasChrome = await page.evaluate(async () => (await globalThis.electronAPI.send('app:getCoreList'))
+      .some(kernel => kernel.coreType === 'Chrome'));
+    let profile;
+    if (hasChrome) {
+      await page.evaluate(windowName => globalThis.__localRequest('settings:set', { quickTemplate: { templateInfo: { windowName } } }), profileName);
+      await quickCreate.click();
+      await page.getByText('创建成功', { exact: true }).waitFor();
+      assert.equal(await page.getByText('操作失败', { exact: true }).count(), 0, 'a successful save must not be reported as a failure');
+      const profiles = await page.evaluate(() => globalThis.__localRequest('profiles:list'));
+      assert.equal(profiles.length, 1, 'one click creates one profile');
+      profile = profiles[0];
+      assert.equal(profile.windowName, profileName);
+    } else {
+      await quickCreate.click();
+      const missingKernel = page.getByText(/未找到可用的 Chrome 内核/);
+      await missingKernel.first().waitFor();
+      assert.equal(await missingKernel.count(), 1, 'a failed preview reports the missing kernel once');
+      assert.deepEqual(await page.evaluate(() => globalThis.__localRequest('profiles:list')), []);
+      profile = await page.evaluate(windowName => globalThis.__localRequest('profiles:create', { windowName, coreType: 'Chrome', os: 'Windows' }), profileName);
+    }
+    const row = page.locator('tr').filter({ hasText: profileName });
     await row.waitFor();
     await row.locator('.quick-item').last().click();
     await page.getByText('编辑窗口', { exact: true }).first().waitFor();
@@ -135,7 +156,7 @@ async function main() {
     await recycled.locator('.quick-item').last().click();
     await page.getByRole('button', { name: '确认', exact: true }).last().click();
     await recycled.waitFor({ state: 'detached' });
-    assert.equal(await page.evaluate(() => globalThis.__localRequests.filter(method => method === 'profiles:purge').length), 1);
+    assert.equal(await page.evaluate(() => globalThis.__localRequests.filter(method => method === 'profiles:purge-trash').length), 1);
     // The editor also has no tutorial banner when no kernel is installed.
     await page.evaluate(() => globalThis.__router.push('/browser/create'));
     await page.getByRole('button', { name: '一键随机指纹', exact: true }).waitFor();
@@ -151,7 +172,7 @@ async function main() {
     assert.equal(await row.count(), 0);
     await page.screenshot({ path: path.join(evidence, 'workbench-feedback-main.png') });
     assert.deepEqual(errors, []);
-    console.log('WORKBENCH_INTERACTIONS_UI_SELFTEST OK (legacy and current routes, native frame, final-page recovery, single recycle-bin purge and cache invalidation across routes)');
+    console.log('WORKBENCH_INTERACTIONS_UI_SELFTEST OK (quick creation, legacy and current routes, native frame, final-page recovery, single recycle-bin purge and cache invalidation across routes)');
   } catch (error) {
     for (const [index, page] of (app?.windows() || []).entries()) {
       await fs.writeFile(path.join(evidence, `workbench-interactions-failure-${index}.txt`), await page.locator('body').innerText());

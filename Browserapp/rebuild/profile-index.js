@@ -1,0 +1,74 @@
+"use strict";
+
+const { toRoxy } = require("./profile-dto");
+
+function append(map, key, value) {
+  let entries = map.get(key);
+  if (!entries) map.set(key, entries = []);
+  entries.push(value);
+}
+
+function buildProfileIndex({ snapshot, profiles, version, groups, labels }) {
+  const index = {
+    snapshot, profiles, version, groups, labels,
+    groupById: new Map(groups.map(row => [row.id, row])),
+    labelById: new Map((labels || []).map(row => [row.id, row])),
+    groupCounts: new Map(),
+    proxyProfiles: new Map(),
+    labelProfiles: new Map(),
+    activeRows: [],
+    deletedRows: [],
+    summariesById: new Map(),
+    platformUrls: new Set(),
+    sortOrders: new Map(),
+    activeCount: 0,
+  };
+  for (const [position, profile] of snapshot.entries()) {
+    const labelIds = /^\d+(,\d+)*$/.test(profile.tag || "") ? profile.tag.split(",").map(Number) : [];
+    const accounts = profile.platform?.accounts || (profile.platform ? [profile.platform] : []);
+    const windowPlatformList = accounts.map(account => ({
+      platformUrl: account.url || account.startUrl || profile.platform?.startUrl,
+    }));
+    const projectId = profile.groupId || "";
+    const windowName = profile.name || "";
+    const windowRemark = profile.note || "";
+    const summary = {
+      position, trashed: Boolean(profile.trashed), trashedAt: profile.trashedAt,
+      windowName, windowRemark, searchText: `${windowName} ${windowRemark}`.toLowerCase(),
+      windowSortNum: profile.number, projectId, isOften: Boolean(profile.favorite), os: profile.os,
+      coreType: profile.engine === "firefox" ? "Firefox" : "Chrome",
+      labelIds,
+      labelInfos: labelIds.map(id => index.labelById.get(id)).filter(Boolean).map(label => ({ labelName: label.name })),
+      windowPlatformList, createdAt: profile.createdAt, updatedAt: profile.updatedAt, openTime: profile.lastOpenedAt,
+    };
+    index.summariesById.set(String(profile.id), summary);
+    if (summary.trashed) {
+      index.deletedRows.push(summary);
+      continue;
+    }
+    index.activeRows.push(summary);
+    index.groupCounts.set(projectId, (index.groupCounts.get(projectId) || 0) + 1);
+    if (profile.proxyId) append(index.proxyProfiles, profile.proxyId, {
+      id: profile.id, windowName: profile.name, windowSortNum: profile.number,
+    });
+    for (const id of labelIds) append(index.labelProfiles, id, profile.id);
+    for (const { platformUrl } of windowPlatformList) if (platformUrl) index.platformUrls.add(platformUrl);
+  }
+  index.activeCount = index.activeRows.length;
+  return index;
+}
+
+function decorateProfile(profile, index) {
+  const row = toRoxy(profile);
+  const labelInfo = row.labelIds.map(id => index.labelById.get(id)).filter(Boolean).map(label => ({
+    labelId: String(label.id), labelName: label.name, labelColor: label.color,
+  }));
+  return {
+    ...row,
+    projectName: index.groupById.get(profile.groupId)?.projectName || profile.group_name || "",
+    labelInfo,
+    labelInfos: labelInfo,
+  };
+}
+
+module.exports = { buildProfileIndex, decorateProfile };

@@ -196,7 +196,7 @@ class RequestHeaderRewriter {
     this.inFlightBySession.clear();
   }
 
-  handleEvent(event, connection) {
+  handleEvent(event, connection, { interceptResponse = false } = {}) {
     if (this.destroyed || event?.method !== "Fetch.requestPaused" || !event.params) return;
     const { requestId, request, responseStatusCode, responseErrorReason } = event.params;
     const sessionId = event.sessionId;
@@ -242,7 +242,9 @@ class RequestHeaderRewriter {
           } else await send('Fetch.failRequest', { requestId, errorReason: 'BlockedByClient' });
         } else {
           const headers = this._rewriteHeaders(request);
-          await send('Fetch.continueRequest', { requestId, ...(headers ? { headers } : {}) });
+          await send('Fetch.continueRequest', {
+            requestId, ...(headers ? { headers } : {}), ...(interceptResponse ? { interceptResponse: true } : {}),
+          });
         }
       } catch (error) {
         if (operation.cancelled) return;
@@ -579,7 +581,7 @@ function evaluateFingerprintDelivery(profile = {}, fingerprint = {}, liveProbe =
     }
     if (liveProbe.uaDataError) addHintMismatch('probe', 'success', liveProbe.uaDataError);
     const entropy = liveProbe.uaDataHighEntropy;
-    if (liveProbe.secureContext === true && liveProbe.uaDataPresent === true && !entropy && !liveProbe.uaDataError) {
+    if (options.probeHighEntropy !== false && liveProbe.secureContext === true && liveProbe.uaDataPresent === true && !entropy && !liveProbe.uaDataError) {
       addHintMismatch('probe', 'high-entropy result', entropy);
     }
     if (entropy && liveProbe.secureContext === true) {

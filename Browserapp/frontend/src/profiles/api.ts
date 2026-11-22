@@ -8,7 +8,8 @@ export interface ProfileRow {
   os?: string;
   coreType?: string;
   openStatus?: boolean;
-  trashedAt?: string;
+  trashedAt?: string | null;
+  rev?: number;
 }
 
 export function queryProfiles(page: number, size: number, search: string, trash: boolean, projectId?: string) {

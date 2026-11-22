@@ -1,51 +1,87 @@
 "use strict";
-const fs = require("node:fs/promises"), path = require("node:path"), crypto = require("node:crypto"),
-  {fileURLToPath}=require("node:url"),{crxZip}=require("../engine/store-extension"),zipReader=require("../automation/zip-reader"),
-  {persistExtensionChanges,serializeExtensionMutation}=require("../engine/map-publication");
-const DEFAULT="local-default", MAX=256*1024*1024;
+const fs = require("node:fs/promises");
+const path = require("node:path");
+const crypto = require("node:crypto");
+const { fileURLToPath } = require("node:url");
+const { crxZip } = require("../engine/store-extension");
+const zipReader = require("../automation/zip-reader");
+const { persistExtensionChanges, serializeExtensionMutation } = require("../engine/map-publication");
+const { BoundedLru } = require("../automation/bounded-lru");
+const DEFAULT = "local-default";
+const MAX = 256 * 1024 * 1024;
+const MAX_ICON_BYTES = 2 * 1024 * 1024;
+const FALLBACK_ICON = "/images/openbrowser.png";
+const ICO_HEADER = Buffer.from([0, 0, 1, 0]);
 class Extensions {
-  constructor(service){this.service=service;this.engine=service.engine;this.root=path.join(service.root,"local-extensions");this.pending=new Map();this.cleanup=new Set();
-    // Icon data-URL cache keyed by (extension path, iconUrl, icon mtime, size):
-    // icons only change when the extension is (re)installed, but every
-    // extensions:list used to realpath the extension dir twice and re-read +
-    // base64 every icon for the whole list.
-    this.iconCache=new Map();}
-  async icon(extension){
-    if(extension.iconUrl?.startsWith("file:")){
-      const file=fileURLToPath(extension.iconUrl),stat=await fs.lstat(file);
-      const cacheKey=extension.path+"\0"+extension.iconUrl+"\0"+stat.mtimeMs+"\0"+stat.size;
-      const cached=this.iconCache.get(cacheKey);
-      if(cached!==undefined)return cached;
-      const real=await fs.realpath(file),base=await fs.realpath(extension.path);
-      let result="/images/openbrowser.png";
-      if(!stat.isSymbolicLink()&&stat.isFile()&&stat.size<=2*1024*1024&&real.startsWith(base+path.sep)){
-        const bytes=await fs.readFile(real);let mime;
-        if(bytes.subarray(0,4).equals(Buffer.from([0,0,1,0])))mime='image/x-icon';
-        else if(/^(?:\s*<\?xml[^>]*>\s*)?<svg\b/i.test(bytes.toString('utf8')))mime='image/svg+xml';
-        else {try{mime=require("./agent-files").mime(bytes);}catch{result='/images/openbrowser.png';}}
-        if(mime?.startsWith("image/"))result="data:"+mime+";base64,"+bytes.toString("base64");
-      }
-      if(this.iconCache.size>=200)this.iconCache.delete(this.iconCache.keys().next().value);
-      this.iconCache.set(cacheKey,result);
-      return result;
-    }
-    return "/images/openbrowser.png";
+  constructor(service) {
+    this.service = service;
+    this.engine = service.engine;
+    this.root = path.join(service.root, "local-extensions");
+    this.pending = new Map();
+    this.cleanup = new Set();
+    this.iconCache = new BoundedLru({ maxEntries: 200, maxBytes: 16 * 1024 * 1024, sizeOf: value => value.length * 2 });
   }
-  async dto(extension){
-    const profiles=(extension.assignedProfileIds||[]).map(id=>this.engine.profiles.get(id)).filter(Boolean),
-      known=new Set([DEFAULT,...this.service.data.groups.map(group=>group.id)]),
-      hasProjectAssignment=Array.isArray(extension.assignedGroupIds),
-      groups=hasProjectAssignment?extension.assignedGroupIds.filter(id=>known.has(id)):
-        [...new Set(profiles.map(profile=>profile.groupId||DEFAULT))],
-      allProjects=extension.enabledByDefault===true||(!hasProjectAssignment&&extension.enabledAll&&groups.length===known.size);
+  async icon(extension) {
+    if (!extension.iconUrl?.startsWith("file:")) return FALLBACK_ICON;
+    try {
+      const file = fileURLToPath(extension.iconUrl);
+      const stat = await fs.lstat(file);
+      if (!stat.isFile() || stat.size > MAX_ICON_BYTES) return FALLBACK_ICON;
+      const cacheKey = JSON.stringify([extension.path, extension.iconUrl, stat.ino, stat.ctimeMs, stat.mtimeMs, stat.size]);
+      const cached = this.iconCache.get(cacheKey);
+      if (cached !== undefined) return cached;
+      const real = await fs.realpath(file), base = await fs.realpath(extension.path);
+      if (!real.startsWith(base + path.sep)) return FALLBACK_ICON;
+      const bytes = await fs.readFile(real);
+      if (bytes.length > MAX_ICON_BYTES) return FALLBACK_ICON;
+      let mime;
+      if (bytes.subarray(0, 4).equals(ICO_HEADER)) mime = "image/x-icon";
+      else {
+        try { mime = require("./agent-files").mime(bytes); } catch { /* Unknown graphic format. */ }
+        if (mime === "text/plain" && /^(?:\s*<\?xml[^>]*>\s*)?<svg\b/i.test(bytes.toString("utf8"))) mime = "image/svg+xml";
+      }
+      const icon = mime?.startsWith("image/") ? "data:" + mime + ";base64," + bytes.toString("base64") : FALLBACK_ICON;
+      this.iconCache.set(cacheKey, icon);
+      return icon;
+    } catch (error) {
+      if (["ENOENT", "ENOTDIR", "EACCES", "EPERM"].includes(error.code)) return FALLBACK_ICON;
+      throw error;
+    }
+  }
+  groupsById() {
+    const groups = new Map([[DEFAULT, "默认项目"]]);
+    for (const group of this.service.data.groups) {
+      if (!groups.has(group.id)) groups.set(group.id, group.projectName);
+    }
+    return groups;
+  }
+  async dto(extension, knownGroups = this.groupsById()) {
+    const hasProjectAssignment = Array.isArray(extension.assignedGroupIds);
+    const groups = hasProjectAssignment
+      ? extension.assignedGroupIds.filter(id => knownGroups.has(id))
+      : [...new Set((extension.assignedProfileIds || []).map(id => this.engine.profiles.get(id))
+        .filter(Boolean).map(profile => profile.groupId || DEFAULT))];
+    const allProjects = extension.enabledByDefault === true
+      || (!hasProjectAssignment && extension.enabledAll && groups.length === knownGroups.size);
+    const projectNames = groups.map(id => knownGroups.get(id) || id);
     return {id:extension.id,pluginDir:extension.id,localKey:extension.id,pluginName:extension.name,
       pluginVersion:extension.version,pluginDescription:extension.description||"",pluginIcon:await this.icon(extension),
       pluginSwitchType:2,source:extension.builtIn?"sys":extension.storeId?"store":"local",canDelete:!extension.builtIn,
       fixedPlugin:extension.fixedPlugin||"customize",pluginUpdateState:2,bindPluginId:groups,
       projectIds:groups,installType:allProjects?1:2,
-      projectNames:groups.map(id=>id===DEFAULT?"默认项目":this.service.data.groups.find(group=>group.id===id)?.projectName||id),
-      bindPlugin:groups.map(id=>id===DEFAULT?'默认项目':this.service.data.groups.find(group=>group.id===id)?.projectName||id),
+      projectNames, bindPlugin: projectNames.slice(),
     };
+  }
+  async list(p) {
+    const query = p.queryValue ? String(p.queryValue).toLowerCase() : "";
+    const extensions = this.engine.listExtensions();
+    const matches = query ? extensions.filter(entry => (entry.name + " " + (entry.description || "")).toLowerCase().includes(query)) : extensions;
+    const size = Math.max(1, Math.min(200, Number(p.page_size) || 200));
+    const page = Math.max(1, Number(p.page_index) || 1);
+    const selected = matches.slice((page - 1) * size, page * size);
+    const knownGroups = this.groupsById();
+    const rows = await Promise.all(selected.map(extension => this.dto(extension, knownGroups)));
+    return { rows, total: matches.length };
   }
   existing(id){const extension=this.engine.listExtensions().find(row=>row.id===String(id));if(!extension)throw Error("扩展不存在");return extension;}
   async boundedTree(root){
@@ -92,9 +128,10 @@ class Extensions {
         }
       }
       await this.boundedTree(directory);const extension=await this.engine.readExtension(directory,false),token=crypto.randomUUID();
+      const icon = await this.icon(extension);
       if(this.pending.size>=16){const [old,grant]=this.pending.entries().next().value;if(grant.temporary)await fs.rm(grant.directory,{recursive:true,force:true});this.pending.delete(old);}
       this.pending.set(token,{directory,temporary,extension});
-      return {type:"success",data:{pluginPath:token,pluginDir:token,pluginName:extension.name,pluginVersion:extension.version,pluginDesc:extension.description,pluginIconPath:await this.icon(extension),pluginIcon:await this.icon(extension)}};
+      return {type:"success",data:{pluginPath:token,pluginDir:token,pluginName:extension.name,pluginVersion:extension.version,pluginDesc:extension.description,pluginIconPath:icon,pluginIcon:icon}};
     }catch(error){if(temporary)await fs.rm(directory,{recursive:true,force:true});throw error;}
   }
   stage(payload){
@@ -150,11 +187,7 @@ class Extensions {
     if(method==='verify-removed'){
       if(!Array.isArray(p.ids)||p.ids.some(id=>this.engine.extensions.has(id)))throw Error('扩展尚未移除');return true;
     }
-    if(method==="list"){
-      let rows=await Promise.all(this.engine.listExtensions().map(extension=>this.dto(extension)));
-      if(p.queryValue){const query=String(p.queryValue).toLowerCase();rows=rows.filter(row=>(row.pluginName+" "+row.pluginDescription).toLowerCase().includes(query));}
-      const size=Math.max(1,Math.min(200,Number(p.page_size)||200)),page=Math.max(1,Number(p.page_index)||1);return {rows:rows.slice((page-1)*size,page*size),total:rows.length};
-    }
+    if(method==="list")return this.list(p);
     if(method==="read")return {rows:[await this.dto(this.existing(p.pluginId||p.pluginDir))]};
     if(method==="select")return this.select(p.kind);
     if(method==="stage")return this.stage(p);

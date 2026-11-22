@@ -1,14 +1,11 @@
 'use strict';
 
 /**
- * P0 gate: every real page entry point observes the persona on first script read.
+ * P0 gate for first-script reads through iframe, popup and application tab entry points.
  *
- * Matrix: about:blank document.write, srcdoc iframe, nested iframe, same-site iframe,
- * cross-site iframe (separate loopback origin -> cross-origin), OOPIF-eligible
- * cross-site iframe with process isolation hints, new tab (Target.createTarget),
- * window.open, window.open with noopener, and a data:-URL child frame. Each entry
- * records its identity as the FIRST script action; the gate asserts the persona —
- * not a post-load patch.
+ * Matrix: about:blank document.write, srcdoc, nested and cross-origin iframes,
+ * an application-created tab, and window.open with an opener. The navigation
+ * gate covers new targets without an opener.
  *
  * Exit codes: 2 = native prerequisite missing, 1 = assertion failure.
  */
@@ -30,7 +27,6 @@ const PAGE = `<!doctype html><html><head><meta name="viewport" content="width=de
   const servers = await startDualOriginServers((request, response) => {
     response.setHeader('Content-Type', 'text/html');
     if (request.url.startsWith('/frame')) { response.end(framePage('__crossSite')); return; }
-    if (request.url.startsWith('/noopener')) { response.end(framePage('__noopener')); return; }
     response.end(PAGE);
   });
   const originA = 'http://127.0.0.1:' + servers.a.address().port;
@@ -114,32 +110,20 @@ const PAGE = `<!doctype html><html><head><meta name="viewport" content="width=de
         await new Promise((r2) => setTimeout(r2, 150));
       }
     }
-    // New tab through Target.createTarget (the "new tab page" entry).
+    // The application creates a blank tab before navigating it. The renderer
+    // path through window.open with noopener has a separate native test.
     const newTab = await cdp.newTab(session.port, originA + '/newtab');
-    assert.ok(newTab, 'Target.createTarget returned a tab');
+    assert.ok(newTab, 'the application returned a new tab');
     let newTabFirst = null;
     for (let i = 0; i < 60; i += 1) {
       const r = await cdp.call(newTab.webSocketDebuggerUrl, 'Runtime.evaluate', { expression: 'globalThis.first', returnByValue: true }).catch(() => ({ result: {} }));
       if (r.result?.value) { newTabFirst = r.result.value; break; }
       await new Promise((r2) => setTimeout(r2, 150));
     }
+    const openerState = await cdp.call(newTab.webSocketDebuggerUrl, 'Runtime.evaluate', { expression: 'window.opener === null', returnByValue: true });
     await cdp.closeTab(session.port, newTab.id).catch(() => {});
-    assert.ok(newTabFirst, 'new tab (Target.createTarget) inline first read missing');
-    // Opener-less window entry. Headless Chromium blocks every popup that would
-    // create a new window (window.open with 'noopener', target=_blank links),
-    // so the reachable opener-less entry is a fresh target without an openerId —
-    // verified window.opener === null on it. On a real desktop the popup path
-    // funnels into the same target-without-opener code path.
-    const noopenerTab = await cdp.newTab(session.port, originA + '/noopener');
-    let noopenerFirst = null;
-    for (let i = 0; i < 60; i += 1) {
-      const r = await cdp.call(noopenerTab.webSocketDebuggerUrl, 'Runtime.evaluate', { expression: 'globalThis.first', returnByValue: true }).catch(() => ({ result: {} }));
-      if (r.result?.value) { noopenerFirst = r.result.value; break; }
-      await new Promise((r2) => setTimeout(r2, 150));
-    }
-    const openerState = await cdp.call(noopenerTab.webSocketDebuggerUrl, 'Runtime.evaluate', { expression: 'window.opener === null', returnByValue: true }).catch(() => ({ result: {} }));
-    await cdp.closeTab(session.port, noopenerTab.id).catch(() => {});
-    assert.equal(openerState.result?.value, true, 'noopener entry must really be opener-less');
+    assert.ok(newTabFirst, 'application-created tab inline first read missing');
+    assert.equal(openerState.result?.value, true, 'application-created tabs have no opener');
 
     // ---- Assertions -------------------------------------------------------
     verifyIdentity(results.main, fp, 'main');
@@ -150,13 +134,10 @@ const PAGE = `<!doctype html><html><head><meta name="viewport" content="width=de
       console.log('PASS page-entry ' + name + ' first read is persona');
     }
     verifyIdentity(newTabFirst, fp, 'new-tab');
-    console.log('PASS page-entry new-tab (Target.createTarget) first read is persona');
+    console.log('PASS page-entry application-created tab first read is persona');
     assert.ok(windowOpenFirst, 'window.open first read missing');
     verifyIdentity(windowOpenFirst, fp, 'window-open');
     console.log('PASS page-entry window-open first read is persona');
-    assert.ok(noopenerFirst, 'noopener window first read missing');
-    verifyIdentity(noopenerFirst, fp, 'noopener');
-    console.log('PASS page-entry noopener window first read is persona');
 
     // No injection failures were emitted during the whole matrix.
     const failures = session.events.filter((event) => /injection-failed/.test(event.type));

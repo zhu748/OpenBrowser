@@ -89,6 +89,7 @@ async function main() {
     assert.equal(p1.name, 'Active Profile 1');
     assert.equal(p1.trashed, false);
     assert.equal(p1.cookies, 'test_token=abc123xyz');
+    assert.ok(Number.isFinite(Date.parse(p1.createdAt)), 'old payloads fall back to the SQLite creation column');
     assert.equal(p1.privacy.fingerprint.canvas.noise, 0.12345);
     assert.equal(p1.privacy.fingerprint.webgl.vendor, 'Apple');
 
@@ -113,6 +114,7 @@ async function main() {
     assert.equal(engine2.usingSqlite, true);
     assert.equal(engine2.profiles.size, 2);
     assert.equal(engine2.profiles.get('mig-p1').cookies, 'test_token=abc123xyz');
+    assert.equal(engine2.profiles.get('mig-p1').createdAt, p1.createdAt, 'legacy creation dates survive reopening');
     assert.equal(engine2.profiles.get('mig-p2').trashed, true);
 
     console.log('  PASS  Automatic lossless migration from legacy JSON to SQLite');

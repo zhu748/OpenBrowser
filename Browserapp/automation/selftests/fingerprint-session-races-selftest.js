@@ -20,7 +20,9 @@ async function harness(type, behavior = {}) {
   const connection = { closed: false, close() { this.closed = true; }, async command(method, params = {}, options = {}) {
     commands.push({ method, params, sessionId: options.sessionId });
     if (method === 'Target.getTargets') return behavior.targets?.(target) || { targetInfos: exists ? [target] : [] };
-    if (method === 'Target.setAutoAttach' && !options.sessionId && behavior.initial !== false) queueMicrotask(() => { onEvent(attach('old'), connection); });
+    if (method === 'Target.setAutoAttach' && !options.sessionId && behavior.initial !== false && exists) {
+      queueMicrotask(() => { onEvent(attach('old'), connection); });
+    }
     if (method === 'Runtime.evaluate') {
       evaluations.set(options.sessionId, (evaluations.get(options.sessionId) || 0) + 1);
       return behavior.evaluate?.(options.sessionId) || {};
@@ -116,6 +118,49 @@ async function harness(type, behavior = {}) {
       await turn();
       assert.equal(reads, 2);
       assert.equal(h.engine.stopped, undefined);
+    } finally { h.cleanup(); }
+  });
+  await test('a closed connection cannot invalidate a replacement after a delayed target check', async () => {
+    const behavior = {}, h = await harness('page', behavior);
+    const confirmation = deferred();
+    let reads = 0;
+    try {
+      await h.startup;
+      behavior.targets = (target) => ++reads === 1 ? { targetInfos: [target] } : confirmation.promise;
+      h.dispatch('Target.detachedFromTarget', { sessionId: 'old', targetId: 'target' });
+      await turn();
+      assert.equal(reads, 2);
+      h.connection.close();
+      h.item.workerFingerprintConnection = { close() {} };
+      confirmation.resolve({ targetInfos: [{ targetId: 'target', type: 'page' }] });
+      await turn();
+      assert.equal(h.engine.stopped, undefined);
+    } finally { h.cleanup(); }
+  });
+  await test('initial enumerations ignore a target destroyed before the snapshot returns', async () => {
+    const snapshot = deferred();
+    const h = await harness('page', { targets: () => snapshot.promise });
+    let timer;
+    try {
+      h.dispatch('Target.targetDestroyed', { targetId: 'target' });
+      snapshot.resolve({ targetInfos: [{ targetId: 'target', type: 'page' }] });
+      await Promise.race([h.startup, new Promise((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error('Startup still waits for the destroyed target')), 250);
+      })]);
+      assert.equal(h.commands.some((call) => call.method === 'Runtime.runIfWaitingForDebugger'), false);
+    } finally { clearTimeout(timer); h.cleanup(); }
+  });
+  await test('target destruction releases request and network state without a separate detach', async () => {
+    const h = await harness('page');
+    try {
+      await h.startup;
+      h.item.networkConditionsSessions = new Set(['old']);
+      const request = { sessionId: 'old', params: { requestId: 'request' } };
+      h.item.workerScriptPrefixer.track(request);
+      assert.equal(h.item.workerScriptPrefixer.hasTracked(request), true);
+      h.dispatch('Target.targetDestroyed', { targetId: 'target' });
+      assert.equal(h.item.networkConditionsSessions.size, 0);
+      assert.equal(h.item.workerScriptPrefixer.hasTracked(request), false);
     } finally { h.cleanup(); }
   });
   await test('detach during Fetch registration prevents resume and later interception commands', async () => {

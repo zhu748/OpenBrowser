@@ -51,12 +51,13 @@ async function profilesAnalyseImport(service, p, method) {
     (!Array.isArray(p.fingerDetail) || p.fingerDetail.length !== rows.length)
   )
     throw Error("指纹条数与导入窗口数不一致");
-  const start = maxProfileNumber(e.status());
+  const start = maxProfileNumber(e.profiles.values());
   const allocated = new Set();
+  const { excelData: _rows, fingerDetail, fileName: _name, ...defaults } = p;
+  const resolvedDefaults = service.resolveInputs(defaults);
   const profiles = rows.map((row, index) => {
-    const { excelData: _rows, fingerDetail, fileName: _name, ...defaults } = p;
     const profile = profileFromPreview(e, {
-      ...service.resolveInputs(defaults),
+      ...resolvedDefaults,
       ...fingerDetail?.[index],
       ...row,
       sortNum: start + index + 1,
@@ -134,10 +135,10 @@ async function profilesRead(service, p) {
 async function profilesCreate(service, p) {
   const e = service.engine;
   if (!object(p)) throw Error("Invalid create payload");
-  const n = maxProfileNumber(e.status()) + 1;
+  const n = maxProfileNumber(e.profiles.values()) + 1;
   const profile = profileFromPreview(e, { ...service.resolveInputs(p), sortNum: n });
-  await savePreviewProfiles(e, [profile]);
-  return { windowId: profile.id, ...toRoxy(profile) };
+  const [saved] = await savePreviewProfiles(e, [profile]);
+  return { windowId: saved.id, ...toRoxy(saved) };
 }
 
 async function profilesCreateBatch(service, p) {
@@ -155,7 +156,7 @@ async function profilesCreateBatch(service, p) {
     throw Error("批量代理或指纹数量与窗口数量不一致");
   if (p.platformBindType !== 2 && accounts.length > count)
     throw Error("账号数量不能大于窗口数量");
-  let number = maxProfileNumber(e.status());
+  let number = maxProfileNumber(e.profiles.values());
   const allocated = new Set();
   const profiles = Array.from({ length: count }, (_, i) => {
     const selected =
@@ -177,8 +178,8 @@ async function profilesCreateBatch(service, p) {
     return profileFromPreview(e, profileInput, allocated);
   });
   // Validate every row before the original engine commits the whole batch.
-  await savePreviewProfiles(e, profiles);
-  return profiles.map(toRoxy);
+  const saved = await savePreviewProfiles(e, profiles);
+  return saved.map(toRoxy);
 }
 
 async function profilesUpdate(service, p) {
@@ -243,20 +244,23 @@ async function profilesStart(service, p) {
 async function profilesClone(service, p) {
   const e = service.engine;
   const rows = p.ids.map((id) => e.profileForEdit(String(id)).profile);
-  let number = maxProfileNumber(e.status());
+  let number = maxProfileNumber(e.profiles.values());
   const copies = rows.map((v) =>
     sanitizeProfile({
       ...v,
       id: uid(),
       name: v.name + " 副本",
       number: ++number,
+      createdAt: undefined,
+      updatedAt: undefined,
+      lastOpenedAt: undefined,
     }),
   );
   await e.syncProfiles(copies);
   // One Map instead of a linear groups.find per cloned row.
   const groupById = new Map(service.data.groups.map((group) => [group.id, group]));
   return copies.map((v) => ({
-    ...toRoxy(v),
+    ...toRoxy(e.profiles.get(v.id) ?? v),
     projectName:
       groupById.get(v.groupId)?.projectName ||
       v.group_name ||
@@ -393,6 +397,12 @@ function profilesPurge(service, p) {
   }, { stopped: 0, dataDeleted: true });
 }
 
+function profilesPurgeTrash(service, p) {
+  return profileLifecycleBatch(p.ids, "deleted", ids => service.engine.purgeTrashedProfiles(ids, true, {
+    trashedAtById: p.trashedAtById, revisions: p.revisions, beforeRemove: service.beforeRemove,
+  }), { stopped: 0, dataDeleted: true });
+}
+
 async function profilesTrash(service) {
   const e = service.engine;
   // One Map for the whole trashed list instead of a per-row groups.find.
@@ -461,6 +471,7 @@ module.exports = [
   ["profiles:delete", profilesDelete, "serial"],
   ["profiles:restore", profilesRestore, "serial"],
   ["profiles:purge", profilesPurge, "serial"],
+  ["profiles:purge-trash", profilesPurgeTrash, "serial"],
   ["profiles:trash", profilesTrash, "parallel"],
   ["profiles:proxy-results", profilesProxyResults, "serial"],
 ];
