@@ -30,6 +30,27 @@ function deferred() {
   return { promise, resolve };
 }
 
+async function checkActivityRecords() {
+  const service = Object.create(LocalService.prototype);
+  service.queue = Promise.resolve();
+  service.data = { settings: {} };
+  service.load = async () => {};
+  const writes = [];
+  service.save = async () => { writes.push(JSON.parse(JSON.stringify(service.data))); };
+
+  for (const invalid of [{}, { action: null }, { action: ['open-settings'] }, { action: 'contains space' }]) {
+    await assert.rejects(service.request('activity:append', invalid), /Invalid action name/);
+  }
+  assert.deepEqual(writes, []);
+  assert.deepEqual(service.data, { settings: {} });
+
+  const action = 'open-settings:v2';
+  assert.equal(await service.request('activity:append', { action }), true);
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].activity[0].action, action);
+  assert.equal((await service.request('notifications:list'))[0].message, action);
+}
+
 async function checkNotificationWrites(service) {
   service.data.notifications = [
     { id: 'unread', read: false },
@@ -199,6 +220,7 @@ async function main() {
   await assert.rejects(service.request('missing:method'), { code: 'LOCAL_CHANNEL_UNIMPLEMENTED' });
   await service.request('settings:set', { recovered: true });
   assert.equal(service.data.settings.recovered, true);
+  await checkActivityRecords();
   await checkNotificationWrites(service);
   await checkLabelProjection();
   await checkBatchAssociations();

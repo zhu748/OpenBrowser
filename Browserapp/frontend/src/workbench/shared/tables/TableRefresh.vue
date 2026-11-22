@@ -9,7 +9,7 @@ const props = defineProps({ loading: Boolean, showLabel: Boolean });
 const time = ref('');
 let updated = Date.now();
 function refreshTime() {
-  time.value = formatTime(String(updated));
+  time.value = formatTime(updated);
 }
 watch(() => props.loading, loading => {
   if (!loading) {

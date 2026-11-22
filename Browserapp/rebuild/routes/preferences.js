@@ -5,11 +5,12 @@ const object = (value) =>
   value && typeof value === "object" && !Array.isArray(value);
 
 async function activityAppend(service, p) {
-  if (!/^[a-zA-Z][a-zA-Z0-9:_-]{0,80}$/.test(p.action))
+  const action = p?.action;
+  if (typeof action !== "string" || !/^[a-zA-Z][a-zA-Z0-9:_-]{0,80}$/.test(action))
     throw Error("Invalid action name");
   service.data.activity ??= [];
   service.data.activity.push({
-    action: p.action,
+    action,
     at: new Date().toISOString(),
   });
   service.data.activity = service.data.activity.slice(-500);
@@ -17,7 +18,7 @@ async function activityAppend(service, p) {
   service.data.notifications.push({
     id: uid(),
     title: "本地操作记录",
-    message: p.action,
+    message: action,
     at: new Date().toISOString(),
     read: false,
   });

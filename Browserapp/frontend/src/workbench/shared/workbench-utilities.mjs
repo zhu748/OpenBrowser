@@ -108,12 +108,20 @@ function parseJson(value, fallback) {
 const sortIcon = value => ({ 0: 'base/rx_ic_chevron_2', '-1': 'base/rx_ic_chevron_2_down', 1: 'base/rx_ic_chevron_2_up' })[String(value)];
 const image = name => images[name] ?? '';
 function relativeTime(value) {
-  if (!value) return '--';
-  const elapsed = (Date.now() - new Date(value).getTime()) / 1000;
+  if (!value || (typeof value !== 'string' && typeof value !== 'number' && !(value instanceof Date))) return '--';
+  // Long integer strings from older callers represent epoch milliseconds, not
+  // calendar dates. Short date strings still use normal Date parsing.
+  const date = new Date(typeof value === 'string' && /^[+-]?\d{11,}$/.test(value.trim()) ? Number(value) : value);
+  const timestamp = date.getTime();
+  if (!Number.isFinite(timestamp)) return '--';
+  const elapsed = (Date.now() - timestamp) / 1000;
   const day = Math.floor(elapsed / 86400);
   const hour = Math.floor(elapsed / 3600);
   const minute = Math.floor(elapsed / 60);
-  if (day > 7) return value.split(' ')[0].replace(/-/g, '/');
+  if (day > 7) {
+    const suppliedDay = typeof value === 'string' && /^(\d{4}-\d{2}-\d{2})(?:[T ]|$)/.exec(value.trim())?.[1];
+    return (suppliedDay || date.toISOString().split('T', 1)[0]).replaceAll('-', '/');
+  }
   if (day > 0) return $t('{day}天前', { day });
   if (hour > 0) return $t('{hour}小时前', { hour });
   if (minute > 0) return $t('{minute}分钟前', { minute });
