@@ -31,14 +31,14 @@ const fsp = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
-const cdp = require('../cdp');
-const { buildFingerprint } = require('./fingerprint');
-const { sanitizeProfile } = require('../engine/profile-sanitizer');
-const { buildBaseLaunchArguments } = require('../engine/launch-arguments');
-const injection = require('../engine/fingerprint-injection');
+const cdp = require('../../cdp');
+const { buildFingerprint } = require('../fingerprint');
+const { sanitizeProfile } = require('../../engine/profile-sanitizer');
+const { buildBaseLaunchArguments } = require('../../engine/launch-arguments');
+const injection = require('../../engine/fingerprint-injection');
 const {
   chooseChromiumBinary, Unavailable,
-} = require('./selftests/native-gate-harness');
+} = require('../selftests/native-gate-harness');
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 

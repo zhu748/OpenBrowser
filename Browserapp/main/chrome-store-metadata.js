@@ -8,10 +8,10 @@
  * fallback and the `automation:app-center-*` IPC handlers.
  */
 
-const { app, session } = require('./host-bridge');
+const { app, session } = require('../host-bridge');
 const path = require('path');
 const fsp = require('fs/promises');
-const { readResponseBuffer } = require('./automation/response-body');
+const { readResponseBuffer } = require('../automation/response-body');
 
 async function fetchStorePackage(url, proxyValue = null, { signal } = {}) {
   signal?.throwIfAborted();
@@ -215,7 +215,7 @@ async function fetchChromeStoreMetadata(storeId, { signal } = {}) {
     if (!skipPackage) {
       const query = new URLSearchParams({ response: 'redirect', prodversion: '150.0.0.0', acceptformat: 'crx2,crx3', x: `id=${safeId}&installsource=ondemand&uc` });
       const buffer = await fetchStorePackage(`https://clients2.google.com/service/update2/crx?${query}`, null, { signal });
-      const { parseCrx, readManifest, readFile } = require('./automation/crx-reader');
+      const { parseCrx, readManifest, readFile } = require('../automation/crx-reader');
       const parsed = parseCrx(buffer);
       // The signing key decides the extension id. A package whose signed id does
       // not match the entry we asked for must not supply this entry's metadata.

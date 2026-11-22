@@ -3,6 +3,7 @@
 // Allocation rules and usage projections have no persistence or credential I/O.
 const { profileProxyAssociation, normalizedProxyAssociationId, sameProxyEndpoint,
   parsedProxy, hasExplicitScheme } = require('../network/proxy-identity');
+const { isNoCredentialProxy } = require('../shared/proxy-redact');
 
 const MAX_PROXY_CONCURRENCY = 1000;
 
@@ -16,7 +17,7 @@ const MAX_PROXY_CONCURRENCY = 1000;
  */
 function profileMatchesProxy(profile, proxy) {
   if (!profile || typeof profile !== 'object' || !proxy) return false;
-  if (profile.networkMode === 'direct' || /^(direct|offline|none)$/i.test(String(profile.proxy || '').trim())) {
+  if (profile.networkMode === 'direct' || isNoCredentialProxy(profile.proxy)) {
     return false;
   }
   const proxyId = String(proxy.id || '').trim();
@@ -97,7 +98,7 @@ function boundProfilesByProxy(proxyList, profileList) {
   });
   for (const profile of profileList) {
     if (!profile || typeof profile !== 'object' || profile.networkMode === 'direct'
-      || /^(direct|offline|none)$/i.test(String(profile.proxy || '').trim())) continue;
+      || isNoCredentialProxy(profile.proxy)) continue;
     const linkedId = normalizedProxyAssociationId(profileProxyAssociation(profile)?.value);
     let matches;
     if (linkedId) matches = ids.get(linkedId) || [];

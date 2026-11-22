@@ -30,13 +30,13 @@
  */
 
 const http = require('node:http');
-const { buildPersona, launchPersonaBrowser, openPage, evaluate } = require('./selftests/native-gate-harness');
-const { chooseChromiumBinary, Unavailable } = require('./selftests/native-gate-harness');
+const { buildPersona, launchPersonaBrowser, openPage, evaluate } = require('../selftests/native-gate-harness');
+const { chooseChromiumBinary, Unavailable } = require('../selftests/native-gate-harness');
 const { spawn } = require('node:child_process');
 const fsp = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const cdp = require('../cdp');
+const cdp = require('../../cdp');
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const PROBE = `(() => {
@@ -116,8 +116,8 @@ async function launchStockChrome(binary) {
     const personaChrome = JSON.parse(await evaluate(pConn, PROBE));
 
     // C) stock firefox via the audit's own stock-launch pattern (no persona)
-    const { buildFirefoxUserJs, firefoxStartupArgs } = require('./kernel-versions');
-    const { BidiConnection, waitForFirefoxEndpoint, evaluateBidi } = require('../network/bidi-connection');
+    const { buildFirefoxUserJs, firefoxStartupArgs } = require('../kernel-versions');
+    const { BidiConnection, waitForFirefoxEndpoint, evaluateBidi } = require('../../network/bidi-connection');
     const ffRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'math-ff-'));
     await fsp.writeFile(path.join(ffRoot, 'user.js'), buildFirefoxUserJs({
       userAgent: '', acceptLanguages: 'en-US,en', locale: 'en-US', proxyEndpoint: '', noProxyHosts: '',

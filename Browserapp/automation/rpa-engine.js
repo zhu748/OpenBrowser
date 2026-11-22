@@ -35,7 +35,14 @@ const NAMED_KEY_VK = (name) => {
 const { resolveSafeRpaPath, resolveSpreadsheetPath } = require('./rpa/paths');
 const fileSteps = require('./rpa/file-steps');
 const { resolveStepHandler, findUnsupportedSteps, validateStepHandlers } = require('./rpa/step-registry');
-const { resolveStepParams, resolveStepChildren } = require('./rpa/step-shape');
+const { resolveStepParams, resolveStepChildren, truthyFlag } = require('./rpa/step-shape');
+// stepWait 默认值与上限：默认 1s；随机区间默认 300–800ms；单步硬上限
+// 120s；停止信号最长 250ms 内生效（见 stepWait 内注释）。
+const STEP_WAIT_DEFAULT_MS = 1000;
+const STEP_WAIT_RANDOM_MIN_MS = 300;
+const STEP_WAIT_RANDOM_MAX_MS = 800;
+const STEP_WAIT_CAP_MS = 120000;
+const STEP_WAIT_CANCEL_SLICE_MS = 250;
 // Launching a browser environment is heavy (disk, CPU, memory). A plan that
 // covers many profiles must not boot every kernel at the same instant, so the
 // launches go through a small queue. Steps themselves still interleave.
@@ -55,7 +62,7 @@ const CDP_AUTOMATION_BLOCKED = 'Browser automation requires a paid';
 function isOptionalElementStep(params = {}) {
   // Explicit optional only. Do NOT treat isShow=0 as optional: catalog often uses
   // isShow for visibility mode, not "skip if missing".
-  if (params.optional === true || params.optional === 1 || params.optional === '1' || params.optional === 'true') {
+  if (truthyFlag(params.optional)) {
     return true;
   }
   const selector = String(params.selector || '');
@@ -493,21 +500,17 @@ class RpaEngine {
       // Terminal write for a fully-successful run. A transient disk failure
       // here must not reclassify the task as "failed" via the generic catch
       // below (the steps all executed); retry the write once and keep success.
+      const persistTerminalSuccess = () => this.store.updateTask(taskId, {
+        status: 'success',
+        complete_time: new Date().toISOString(),
+        process_result: result,
+        process_logs: logs,
+      });
       try {
-        await this.store.updateTask(taskId, {
-          status: 'success',
-          complete_time: new Date().toISOString(),
-          process_result: result,
-          process_logs: logs,
-        });
+        await persistTerminalSuccess();
       } catch (persistError) {
         await log('terminal result write failed; retrying once: ' + formatRpaError(persistError), 'error').catch(() => {});
-        await this.store.updateTask(taskId, {
-          status: 'success',
-          complete_time: new Date().toISOString(),
-          process_result: result,
-          process_logs: logs,
-        });
+        await persistTerminalSuccess();
       }
       await this.writeDiagnostic({
         type: 'rpa-task-success',
@@ -656,17 +659,17 @@ class RpaEngine {
   }
 
   async stepWait({ params, ctx }) {
-    let ms = Number(params.ms ?? params.timeout ?? params.time ?? 1000);
+    let ms = Number(params.ms ?? params.timeout ?? params.time ?? STEP_WAIT_DEFAULT_MS);
     if (params.timeoutType === 'randomInterval' || params.timeoutType === 'random') {
-      ms = randomBetween(params.timeoutMin ?? params.minMs ?? 300, params.timeoutMax ?? params.maxMs ?? 800);
+      ms = randomBetween(params.timeoutMin ?? params.minMs ?? STEP_WAIT_RANDOM_MIN_MS, params.timeoutMax ?? params.maxMs ?? STEP_WAIT_RANDOM_MAX_MS);
     }
-    ms = Number.isFinite(ms) ? Math.max(0, Math.min(120000, ms)) : 1000;
+    ms = Number.isFinite(ms) ? Math.max(0, Math.min(STEP_WAIT_CAP_MS, ms)) : STEP_WAIT_DEFAULT_MS;
     // Slice the sleep so stop(taskId) takes effect within ~250ms instead of
     // after the full 120s cap.
     const deadline = Date.now() + ms;
     while (Date.now() < deadline) {
       this.assertTaskAlive(ctx);
-      await sleep(Math.min(250, Math.max(0, Math.min(deadline, ctx?.taskDeadline || deadline) - Date.now())));
+      await sleep(Math.min(STEP_WAIT_CANCEL_SLICE_MS, Math.max(0, Math.min(deadline, ctx?.taskDeadline || deadline) - Date.now())));
     }
     this.assertTaskAlive(ctx);
     return;
@@ -716,8 +719,7 @@ class RpaEngine {
     if (!inputText) {
       inputText = text(params.text ?? params.value ?? params.content ?? params.randomContent ?? '');
     }
-    const clear = params.clear === true || params.clear === 1 || params.clear === '1'
-      || params.isClear === true || params.isClear === 1 || params.isClear === '1';
+    const clear = truthyFlag(params.clear) || truthyFlag(params.isClear);
     const optional = isOptionalElementStep(params);
     const target = resolveElementTarget(params, variables);
     const selector = target.selector;
@@ -1402,7 +1404,7 @@ class RpaEngine {
         await this.executeStep(ctx.port, child, ctx);
       }
     } finally {
-      const shouldClose = params.autoClose === true || params.autoClose === 1 || params.autoClose === '1';
+      const shouldClose = truthyFlag(params.autoClose);
       if (shouldClose && typeof this.engine?.stop === 'function') {
         await this.engine.stop(profile.id).catch(() => {});
       }

@@ -3,7 +3,7 @@
 /**
  * Value-level fingerprint audit for the FIREFOX engine (Linux host).
  *
- * Mirrors automation/value-fingerprint-adversarial-audit.js (Chromium) over the
+ * Mirrors automation/audits/value-fingerprint-adversarial-audit.js (Chromium) over the
  * Firefox production path: stock launch vs persona launch through
  * engine/start-firefox.js — including the worker-script MITM forwarder that
  * delivers JS-only fields (hardwareConcurrency) below the browser. Two worker
@@ -28,13 +28,13 @@ const path = require('node:path');
 const fs = require('node:fs');
 const https = require('node:https');
 const { spawn, execFileSync } = require('node:child_process');
-const { sanitizeProfile } = require('../engine/profile-sanitizer');
-const { buildFirefoxUserJs, firefoxStartupArgs } = require('./kernel-versions');
-const { buildFirefoxFingerprint, initializeFirefoxFingerprint } = require('./firefox-fingerprint');
-const { buildWorkerInjectionScript } = require('./fingerprint');
-const { FirefoxWorkerMitmProxy } = require('./firefox-worker-mitm-proxy');
-const { installFirefoxCa } = require('./firefox-trust-installer');
-const { BidiConnection, waitForFirefoxEndpoint, evaluateBidi } = require('../network/bidi-connection');
+const { sanitizeProfile } = require('../../engine/profile-sanitizer');
+const { buildFirefoxUserJs, firefoxStartupArgs } = require('../kernel-versions');
+const { buildFirefoxFingerprint, initializeFirefoxFingerprint } = require('../firefox-fingerprint');
+const { buildWorkerInjectionScript } = require('../fingerprint');
+const { FirefoxWorkerMitmProxy } = require('../firefox-worker-mitm-proxy');
+const { installFirefoxCa } = require('../firefox-trust-installer');
+const { BidiConnection, waitForFirefoxEndpoint, evaluateBidi } = require('../../network/bidi-connection');
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const SNAP_WORKER = `(() => {

@@ -8,14 +8,14 @@ const { createRequire } = require('node:module');
 const { readResponseBuffer } = require('../response-body');
 
 async function fixture(root, fetch) {
-  const filename = path.resolve(__dirname, '../../chrome-store-metadata.js');
+  const filename = path.resolve(__dirname, '../../main/chrome-store-metadata.js');
   const localRequire = createRequire(filename);
   const timers = new Map();
   const loaded = { exports: {} };
   const storeSession = { fetch: (url, options) => fetch(url, options, timers), setProxy: async () => {} };
   const bridge = { app: { getPath: () => root }, session: { fromPartition: () => storeSession } };
   const run = new Function('require', 'module', 'exports', 'setTimeout', 'clearTimeout', await fs.readFile(filename, 'utf8'));
-  run((name) => name === './host-bridge' ? bridge : localRequire(name), loaded, loaded.exports,
+  run((name) => name === '../host-bridge' ? bridge : localRequire(name), loaded, loaded.exports,
     (fn) => { const id = Symbol(); timers.set(id, fn); return id; }, (id) => timers.delete(id));
   return { api: loaded.exports, timers };
 }

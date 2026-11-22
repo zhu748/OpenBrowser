@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const path = require('node:path');
-const { PipeConnection, closeInstaller, reconcileOnConnection } = require('../../extension-pipe');
+const { PipeConnection, closeInstaller, reconcileOnConnection } = require('../../engine/extension-pipe');
 const { extensionPathKey } = require('../extension-identity');
 
 function childProcess() {

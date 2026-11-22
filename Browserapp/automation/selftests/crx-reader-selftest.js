@@ -13,7 +13,7 @@ const crypto = require('crypto');
 const zipReader = require('../zip-reader');
 const {
    buildZip, pbLengthDelimited, buildCrx2, buildCrx3, expectedExtensionId,
-} = require('../crx-fixtures');
+} = require('./fixtures/crx-fixtures');
 const crxReader = require('../crx-reader');
 
 const results = [];

@@ -345,7 +345,6 @@ async function main() {
   const editorUi = fs.readFileSync(path.join(__dirname, '..', '..', 'ui', 'ui-editor.js'), 'utf8');
   const html = fs.readFileSync(path.join(__dirname, '..', '..', 'index.html'), 'utf8');
   const preload = fs.readFileSync(path.join(__dirname, '..', '..', 'preload.js'), 'utf8');
-  const main = fs.readFileSync(path.join(__dirname, '..', '..', 'main.js'), 'utf8');
   for (const id of [
     'editor-api-extract-url',
     'editor-backup-proxies',
@@ -381,9 +380,11 @@ async function main() {
   assert.ok(preload.includes("profiles:refresh-proxy"));
   assert.ok(preload.includes("profiles:apply-proxy-fingerprint"));
   assert.ok(preload.includes("proxy:check-many"));
-  assert.ok(main.includes("registerTrustedIpc('profiles:refresh-proxy'"));
-  assert.ok(main.includes("registerTrustedIpc('profiles:apply-proxy-fingerprint'"));
-  assert.ok(main.includes("registerTrustedIpc('proxy:check-many'"));
+  // proxy:* / profiles:*proxy* handlers moved to main/proxy-ipc.js
+  const proxyIpcSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'main', 'proxy-ipc.js'), 'utf8');
+  assert.ok(proxyIpcSrc.includes("registerTrustedIpc('profiles:refresh-proxy'"));
+  assert.ok(proxyIpcSrc.includes("registerTrustedIpc('profiles:apply-proxy-fingerprint'"));
+  assert.ok(proxyIpcSrc.includes("registerTrustedIpc('proxy:check-many'"));
   assert.ok(proxyUiSrc.includes('批量检测失败'), 'batch check should surface errors');
   assert.ok(renderer.includes('result.extractError'), 'refresh UI should surface extract warnings');
   assert.ok(renderer.includes('exitLatencyMs'), 'profile check should keep latency');

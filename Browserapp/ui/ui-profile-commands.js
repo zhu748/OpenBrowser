@@ -1,11 +1,12 @@
 (function (root, factory) {
   'use strict';
-  if (typeof module === 'object' && module.exports) module.exports = factory(require('../shared/ipc-result'));
-  else root.OpenBrowserProfileCommands = factory(root.OpenBrowserIpcResult);
-})(globalThis, (ipc) => {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('../shared/ipc-result'), require('../shared/proxy-redact'));
+  else root.OpenBrowserProfileCommands = factory(root.OpenBrowserIpcResult, root.OpenBrowserProxyRedact);
+})(globalThis, (ipc, proxyRedact) => {
   'use strict';
 
   const { unwrapIpcResult } = ipc;
+  const { isNoCredentialProxy } = proxyRedact;
   const MAX_IMPORT_BYTES = 16 * 1024 * 1024;
   const MAX_IMPORT_PROFILES = 5000;
 
@@ -45,7 +46,7 @@
     if (!row || typeof row !== 'object' || Array.isArray(row)) throw new Error('Invalid imported profile');
     const ownProxy = Object.hasOwn(row, 'proxy');
     const proxy = ownProxy ? String(row.proxy ?? '').trim() || 'Direct' : base.proxy;
-    const direct = /^(direct|offline|none)$/i.test(proxy || 'Direct');
+    const direct = isNoCredentialProxy(proxy || 'Direct');
     const startUrl = row.startUrl ?? base.startUrl ?? base.platform?.startUrl ?? '';
     return {
       ...base, id, number, name: String(number), title: row.title || `环境-${number}`,

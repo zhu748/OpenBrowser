@@ -7,6 +7,7 @@ const crypto = require('node:crypto');
 const { getVariableValue } = require('./variables');
 const { OUTPUT_DIRECTORY, resolveSafeRpaPath } = require('./paths');
 const { csvCell, csvChunks } = require('./csv');
+const { truthyFlag } = require('./step-shape');
 const { readCsvRecords, readTextLines, readJsonRecords } = require('./file-input');
 
 module.exports = {
@@ -48,15 +49,7 @@ module.exports = {
 
   async stepUseExcel({ ctx, params, variables, text }) {
     const targetVar = params.variable || 'data';
-    const skippable = (
-      params.isSkip === true
-      || params.isSkip === 1
-      || params.isSkip === '1'
-      || params.isSkip === 'true'
-      || params.optional === true
-      || params.optional === '1'
-      || params.optional === 'true'
-    );
+    const skippable = truthyFlag(params.isSkip) || truthyFlag(params.optional);
     let filePath = text(
       params.path
       ?? params.filePath

@@ -25,16 +25,16 @@ const {
   buildFingerprint,
   buildInjectionScript,
   buildWorkerInjectionScript
-} = require('./fingerprint');
-const {  } = require('./user-agent');
-const { buildCssFontLocalGateSource } = require('./css-font-local-gate');
-const { buildQueryLocalFontBlobGateSource } = require('./query-local-font-blob-gate');
-const { buildPortScanProtectionScript } = require('./port-scan-protection');
-const { buildWorkerFontPresenceSource } = require('./worker-font-presence-fallback');
-const { sanitizeHtml } = require('./css-font-response-rewrite');
-const { writeOpenBrowserKernelInit } = require('./kernel-init-sync');
+} = require('../fingerprint');
+const {  } = require('../user-agent');
+const { buildCssFontLocalGateSource } = require('../css-font-local-gate');
+const { buildQueryLocalFontBlobGateSource } = require('../query-local-font-blob-gate');
+const { buildPortScanProtectionScript } = require('../port-scan-protection');
+const { buildWorkerFontPresenceSource } = require('../worker-font-presence-fallback');
+const { sanitizeHtml } = require('../css-font-response-rewrite');
+const { writeOpenBrowserKernelInit } = require('../kernel-init-sync');
 
-const appRoot = path.join(__dirname, '..');
+const appRoot = path.join(__dirname, '..', '..');
 const kernelRoot = path.join(appRoot, 'kernels', 'macos-x64');
 const launcher = path.join(kernelRoot, 'launch_openbrowser.sh');
 const reportsDir = path.join(appRoot, '..', 'reports');

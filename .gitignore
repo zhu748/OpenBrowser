@@ -1,15 +1,12 @@
 # Dependencies
-node_modules
 node_modules/
 # Python bytecode and cache
-__pycache__
 __pycache__/
 *.pyc
 # Test reports and build output
 Browserapp/reports/
 Browserapp/rpa-output/
 /reports/
-dist
 dist/
 # OS generated files
 .DS_Store
@@ -21,14 +18,12 @@ CODE_OVERVIEW.md
 /Browserapp/rust-core/
 # Kernel release fetch cache (scripts/fetch-kernels.js) — never commit
 Browserapp/.kernel-release-cache/
-# Runtime-downloaded linux-x64 kernel (scripts/install-linux-stable.js) — never commit
-Browserapp/kernels/chrome-stable/
-# Runtime-downloaded Firefox stable kernel (automation/kernel-versions.js CDN fetch) — never commit
-Browserapp/kernels/firefox-stable/
 # Process crash dumps (ELF core files) — never commit
-Browserapp/core
+/Browserapp/core
 
-# Browser kernels are downloaded at runtime, never versioned or bundled.
+# Browser kernels are downloaded at runtime (linux-x64 stable via
+# scripts/install-linux-stable.js, Firefox stable via the
+# automation/kernel-versions.js CDN fetch), never versioned or bundled.
 /Browserapp/kernels/
 # Release-signing private keys and local credentials must never enter Git.
 .env

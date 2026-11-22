@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 
 const core = require('../rust-core-bridge');
-const { Reader, connect, listen, socksServer } = require('../rust-core-test-fixtures');
+const { Reader, connect, listen, socksServer } = require('./fixtures/rust-core-test-fixtures');
 
 function bounded(promise, ms, message) {
   let timer;

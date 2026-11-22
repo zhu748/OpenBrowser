@@ -4,7 +4,7 @@ const path = require('path');
 const crypto = require('crypto');
 const https = require('https');
 
-const zipReader = require('./automation/zip-reader');
+const zipReader = require('../automation/zip-reader');
 
 function extractStoreId(value) {
   const text = String(value || '').trim();

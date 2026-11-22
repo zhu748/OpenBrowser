@@ -78,24 +78,6 @@ const injection = String.raw`(() => {
   addEventListener('scroll', reportScroll, true); document.addEventListener('scroll', reportScroll, true);
 })();`;
 
-// Single source of truth for mirror-safe internal pages lives in
-// automation/protocol/internal-pages.js (main.js and live-sync-v5 already
-// consume it); the private copy here had drifted to a stale 10-host subset
-// without the host-boundary check.
-const { ALLOWED_INTERNAL_PAGES } = require('./automation/protocol/internal-pages');
-function normalTabs(values) {
-  return values.filter((tab) => {
-    if (!tab || !tab.url) return false;
-    if (/^(devtools|chrome-extension|edge-extension):/i.test(tab.url)) return false;
-    if (/^(chrome|edge):/i.test(tab.url)) {
-      // Only sync-friendly internal pages belong in the tab list; everything
-      // else under chrome:// (e.g. web store, component pages) is dropped.
-      if (!ALLOWED_INTERNAL_PAGES.test(tab.url)) return false;
-    }
-    return true;
-  });
-}
-
 class LiveSyncController {
   constructor(engine, emit) {
     this.engine = engine; this.emit = emit; this.master = null; this.slaves = []; this.connections = new Map(); this.masterTabs = []; this.masterTabsById = new Map(); this.timer = null;
@@ -187,36 +169,6 @@ class LiveSyncController {
     const previous = { master: this.master?.id || null, slaves: this.slaves.map((item) => item.id) };
     this.master = null; this.slaves = []; this.masterTabs = []; this.masterTabsById = new Map(); this.forwardQueue = []; this.forwardQueueKeyless = 0; this.forwardQueueKeylessHead = -1;
     this.emit({ type: 'live-sync', active: false, ...previous });
-  }
-
-  async refreshMasterTabs() {
-    if (!this.master) return;
-    const tabs = normalTabs(await cdp.tabs(this.master.item.port)); this.masterTabs = tabs; this.masterTabsById = new Map(tabs.map((tab) => [tab.id, tab]));
-    const live = new Set(tabs.map((tab) => tab.id));
-    for (const [id, value] of this.connections) if (!live.has(id)) { value.connection.close(); this.connections.delete(id); }
-    for (const tab of tabs) if (!this.connections.has(tab.id)) await this.attach(tab);
-    await Promise.all([...this.connections.values()].map((value) => this.pollScroll(value).catch(() => {})));
-  }
-
-  async attach(tab) {
-    const connection = new PersistentCdp(tab.webSocketDebuggerUrl, (event) => this.handle(tab.id, event));
-    await connection.open();
-    const value = { tab, connection, scroll: { x: 0, y: 0 } }; this.connections.set(tab.id, value);
-    try {
-      await connection.command('Runtime.addBinding', { name: 'openBrowserSync' });
-      await connection.command('Page.addScriptToEvaluateOnNewDocument', { source: injection });
-      await connection.command('Runtime.enable');
-      await connection.command('Runtime.evaluate', { expression: injection });
-      await connection.command('Page.enable');
-      const position = await connection.command('Runtime.evaluate', { expression: '({x:scrollX,y:scrollY})', returnByValue: true }).catch(() => null);
-      value.scroll = position?.result?.value || { x: 0, y: 0 };
-    } catch (error) { connection.close(); this.connections.delete(tab.id); throw error; }
-  }
-
-  async pollScroll(value) {
-    const result = await value.connection.command('Runtime.evaluate', { expression: '({x:scrollX,y:scrollY})', returnByValue: true });
-    const position = result.result?.value; if (!position) return;
-    if (position.x !== value.scroll.x || position.y !== value.scroll.y) { value.scroll = position; this.enqueueForward(value.tab.id, { type: 'scroll', x: position.x, y: position.y }); }
   }
 
   forwardKey(tabId, payload, action = 'forward') {
@@ -340,8 +292,6 @@ class LiveSyncController {
     }
   }
 
-  masterIndex(tabId) { const index = this.masterTabs.findIndex((tab) => tab.id === tabId); return Math.max(0, index); }
-
   // The refresh tick already fetched each slave's tab list; reusing it for the
   // ~1s window between ticks removes one HTTP /json/list round-trip per
   // forwarded event. Creation paths invalidate it explicitly.
@@ -352,19 +302,6 @@ class LiveSyncController {
     this.slaveTabLists.set(slave.id, { tabs, at: Date.now() });
     return tabs;
   }
-
-  async slaveTab(slave, tabId) {
-    const index = this.masterIndex(tabId); const masterTab = this.masterTabs[index]; let tabs = normalTabs(await this.slaveTabsFor(slave));
-    if (masterTab) { const sameUrl = tabs.find((tab) => tab.url === masterTab.url); if (sameUrl) return sameUrl; }
-    while (tabs.length <= index) {
-      await cdp.newTab(slave.port, masterTab?.url || 'about:blank');
-      this.slaveTabLists.delete(slave.id);
-      tabs = normalTabs(await cdp.tabs(slave.port));
-    }
-    return tabs[index] || tabs[0] || null;
-  }
-
-  async eachSlave(tabId, action) { await Promise.all(this.slaves.map(async (slave) => { const tab = await this.slaveTab(slave, tabId); if (tab) await action(tab, slave); })); }
 
   urlKey(url) {
     return String(url || '').replace(/\/$/, '').toLowerCase();

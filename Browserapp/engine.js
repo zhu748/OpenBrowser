@@ -8,6 +8,7 @@ const { recordProfileLifecycle, profileLifecycle, beginProfileStop, observeProfi
 const { allowGoogleLogin } = require('./automation/profile-defaults');
 const { compareKernelVersions } = require('./automation/kernel-versions');
 const { parseProxy, normalizeIpLookupChannel } = require('./network/proxy-config');
+const { isNoCredentialProxy } = require('./shared/proxy-redact');
 // Mirrors sanitizeProfile's guard (profile-sanitizer.js) so the direct field
 // rewrite in resolveStoredProxyProfile cannot smuggle a longer raw through.
 const MAX_PROFILE_PROXY_LENGTH = 64 * 1024;
@@ -253,7 +254,7 @@ class BrowserEngine {
     // the dominant cost of large-fleet syncs.
     const profile = incoming && typeof incoming === 'object' ? incoming : null;
     if (!profile) return profile;
-    const direct = profile.networkMode === 'direct' || /^(?:direct|offline|none)$/i.test(String(profile.proxy || '').trim());
+    const direct = profile.networkMode === 'direct' || isNoCredentialProxy(profile.proxy);
     const association = profileProxyAssociation(profile);
     const proxyId = direct ? null : normalizedProxyAssociationId(association.value);
     if (!proxyId) {

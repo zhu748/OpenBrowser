@@ -57,7 +57,8 @@ async function main() {
     const fingerprintTab = fs.readFileSync(path.join(__dirname, '..', '..', 'automation', 'fingerprint', 'tab-apply.js'), 'utf8');
     const liveSync = fs.readFileSync(path.join(__dirname, '..', '..', 'live-sync-v5.js'), 'utf8');
     const nativeMirror = fs.readFileSync(path.join(__dirname, '..', '..', 'native-input-mirror.cs'), 'utf8');
-    const main = fs.readFileSync(path.join(__dirname, '..', '..', 'main.js'), 'utf8');
+    // main.js IPC handlers moved to main/*-ipc.js; the proxy assertions scan the extracted module.
+    const proxyIpc = fs.readFileSync(path.join(__dirname, '..', '..', 'main', 'proxy-ipc.js'), 'utf8');
 
     assert.ok(html.includes('name="startUrl"'), 'create dialog must expose startup URL');
     assert.ok(html.includes('id="batch-add-template"'), 'batch create must expose preference template');
@@ -65,7 +66,7 @@ async function main() {
     assert.ok(renderer.includes('delete privacy.fingerprint'), 'copied preferences must create an independent fingerprint identity');
     assert.ok(renderer.includes('assignedExtensions || []'), 'copied profiles must inherit source extension assignments');
     assert.ok(renderer.includes("platform: { type: 'other', startUrl }"), 'create flow must persist startup URL');
-    assert.ok(main.includes("engine.checkProxy(profile, { persist: true })"), 'manual exit checks must persist in engine state');
+    assert.ok(proxyIpc.includes("engine.checkProxy(profile, { persist: true })"), 'manual exit checks must persist in engine state');
     // checkProxy moved to the engine/profile-proxy.js mixin; its persist gate reads the mixin.
     assert.ok(fs.readFileSync(path.join(__dirname, '..', '..', 'engine', 'profile-proxy.js'), 'utf8').includes('if (options.persist) await this.persist()'), 'manual exit check must await durable persistence');
     // Phones pin the viewport; desktop metrics use zero dimensions so window

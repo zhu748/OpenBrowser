@@ -141,6 +141,10 @@ jobs:
         with:
           toolchain: stable
           components: rustfmt, clippy
+      # Cache the cargo registry + target dir across runs (the Node jobs all
+      # use actions/setup-node's npm cache; the Rust graph was rebuilt cold
+      # on every push before this).
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       # The bridge selftests below run plain Node scripts; pin the same Node
       # the lint/smoke jobs use so runner image drift cannot change results.
       # No npm ci: their module tree (rust-core-bridge.js, the fixtures,
@@ -442,6 +446,10 @@ jobs:
         with:
           toolchain: stable
           components: clippy
+      # Cache the cargo registry + target dir across runs (the Node jobs all
+      # use actions/setup-node's npm cache; the Rust graph was rebuilt cold
+      # on every push before this).
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: cargo test

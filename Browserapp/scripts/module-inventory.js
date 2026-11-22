@@ -21,7 +21,7 @@ function classify(file) {
   if (/^Browserapp\/(?:main\/|main\.js|preload\.js|host-bridge\.js)/.test(file)) return ['desktop-host', 'supported'];
   if (/^Browserapp\/engine(?:\/|\.js)/.test(file)) return ['browser-engine', 'supported'];
   if (file.startsWith('Browserapp/rebuild/')) return ['workbench', 'supported'];
-  if (/^Browserapp\/(?:network\/|proxy-forwarder\.js|cdp\.js|extension-pipe\.js)/.test(file)) return ['network-protocol', 'supported'];
+  if (/^Browserapp\/(?:network\/|proxy-forwarder\.js|cdp\.js)/.test(file)) return ['network-protocol', 'supported'];
   if (/^Browserapp\/live-sync-/.test(file) || file.startsWith('Browserapp/automation/sync/')) return ['window-sync', 'supported'];
   if (/^Browserapp\/automation\/(?:kernel[/.-]|browser-kernel\.js$)/.test(file)) return ['browser-kernels', 'supported'];
   if (/^Browserapp\/automation\/(?:api\/|local-api-server\.js$|mcp-server\.js$|api-key-store\.js$)/.test(file)) return ['local-api', 'supported'];

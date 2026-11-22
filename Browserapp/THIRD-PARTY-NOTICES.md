@@ -115,3 +115,6 @@ The unmodified parser is bundled at `automation/vendor/acorn.js`. Private worker
 preparation embeds the compact `acorn-runtime.js`, generated reproducibly by
 `scripts/build-worker-parser.js` without changing token spelling or line breaks.
 The full MIT license is included in that runtime and in `automation/vendor/acorn.LICENSE`.
+The npm `acorn` entry is a devDependency only: rebuild/compiler and the
+workbench build consume it at build time; the shipped runtime always loads the
+pinned vendored copy above, never node_modules.

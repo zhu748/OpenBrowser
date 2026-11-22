@@ -1,6 +1,6 @@
 const { spawn } = require('child_process');
-const cdp = require('./cdp');
-const { extensionPathKey } = require('./automation/extension-identity');
+const cdp = require('../cdp');
+const { extensionPathKey } = require('../automation/extension-identity');
 
 // Rate-limited unparseable-frame warning: a corrupted frame used to surface
 // only as a mysterious per-command timeout later; a chatty broken installer

@@ -59,20 +59,12 @@ impl SyncCoordinator {
         self.slaves.insert(slave.id, slave);
     }
 
-    pub fn remove_slave(&mut self, id: u64) -> Option<WindowTarget> {
-        self.slaves.remove(&id)
-    }
-
     pub fn slave_count(&self) -> usize {
         self.slaves.len()
     }
 
     pub fn is_active(&self) -> bool {
         self.is_active
-    }
-
-    pub fn set_active(&mut self, active: bool) {
-        self.is_active = active;
     }
 
     /// Process a global hotkey action (Rust-side twin of C# native-sync-hotkeys;

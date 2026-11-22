@@ -5,7 +5,6 @@ const roxyPreview = sourceRenderer || process.env.OPENBROWSER_ROXY_UI !== '0';
 const rebuildProtocol = require('./rebuild/protocol');
 if (roxyPreview) rebuildProtocol.registerUiScheme(require('./host-bridge').protocol);
 const fs = require('fs');
-const fsp = require('fs/promises');
 const { pathToFileURL } = require('url');
 const { spawn } = require('child_process');
 const cdp = require('./cdp');
@@ -14,7 +13,8 @@ const { registerExtensionIpc } = require('./main/extensions-ipc');
 const { registerKernelIpc } = require('./main/kernel-ipc');
 const { registerProfileIpc } = require('./main/profile-ipc');
 const { registerAutomationControlIpc } = require('./main/automation-ipc');
-const { collectStorageDiagnostics } = require('./automation/storage-diagnostics');
+const { registerSystemIpc } = require('./main/system-ipc');
+const { registerProxyIpc } = require('./main/proxy-ipc');
 const { LiveSyncController } = require('./live-sync-v5');
 
 function workbenchRoot() {
@@ -46,9 +46,8 @@ try {
 const { planGridFor, minHeightFor } = require('./automation/window-arrangement');
 const { attachShellNavigationGuard, createShellNavigationPolicy } = require('./automation/shell-guard');
 const { fetchStoreEntries } = require('./automation/store-fetch');
-const { fetchStorePackage, fetchChromeStoreIcon, fetchChromeStoreMetadata, validChromeStoreId } = require('./chrome-store-metadata');
+const { fetchStorePackage, fetchChromeStoreIcon, fetchChromeStoreMetadata, validChromeStoreId } = require('./main/chrome-store-metadata');
 const { startAutomation } = require('./automation');
-const cloudSync = require('./automation/cloud-sync');
 
 const { ensureDataRootIsolationSecure, terminateProcessesUsingProfile, sanitizeIds } = require('./automation/isolation');
 const { createCrashHandler, buildHelperProcessGoneReport } = require('./automation/crash-report');
@@ -147,6 +146,12 @@ async function updateProfileDataRoot(value) {
 let engine;
 let liveSync;
 let automation = null;
+// Lazy accessor shared by the rebuild:request LocalService wiring below and
+// (via getters) the proxy IPC domain in main/proxy-ipc.js.
+const proxyStoreAccessor = () => {
+  if (!automation?.proxyStore) throw new Error('代理库未就绪');
+  return automation.proxyStore;
+};
 let resolveStartupReady;
 let rejectStartupReady;
 const startupReady = new Promise((resolve, reject) => { resolveStartupReady = resolve; rejectStartupReady = reject; });
@@ -1002,7 +1007,7 @@ app.whenReady().then(async () => {
         return localUiSync.request(method, payload);
       if (!localUiService) {
         const { LocalService } = require('./rebuild/local-service');
-        localUiService = new LocalService({ engine, root: app.getPath('userData'), dialog, window: () => BrowserWindow.getFocusedWindow() || mainWindow, proxyStore, accountStore: () => automation?.accountStore, automation: () => automation, beforeRemove: beforeProfileRemoval,
+        localUiService = new LocalService({ engine, root: app.getPath('userData'), dialog, window: () => BrowserWindow.getFocusedWindow() || mainWindow, proxyStore: proxyStoreAccessor, accountStore: () => automation?.accountStore, automation: () => automation, beforeRemove: beforeProfileRemoval,
           isSynchronizing: (id) => syncState.active && syncState.selected.includes(id) });
       }
       return localUiService.request(method, payload);
@@ -1121,148 +1126,10 @@ app.whenReady().then(async () => {
     console.error('Local API failed to start:', error.message);
   }
 
-  registerTrustedIpc('system:read-clipboard', () => {
-    try { return clipboard.readText(); } catch (_) { return ''; }
-  });
-  registerTrustedIpc('system:set-close-action', async (_event, mode) => {
-    const value = settingsStore.normalizeCloseAction(mode);
-    settingsStore.getLocalSettings().closeAction = value;
-    await settingsStore.saveLocalSettings(settingsStore.getLocalSettings());
-    // A remembered "exit" means the user no longer wants background running.
-    if (value === 'exit') destroyTray();
-    return { success: true, closeAction: value };
-  });
-  // 启动保护（Roxy 客户端设置对齐）：内存使用率上限 / 磁盘可用空间下限。
-  registerTrustedIpc('system:get-client-settings', () => settingsStore.getLocalSettings());
-  // 设置字段白名单 + 类型/范围校验：renderer 的 patch 不再整个浅合并进设置。
-  // 旧实现把任意键一并并入并持久化（cloud/uiGroups/profileDataRoot 可被一次
-  // IPC 覆盖，或注入任意未知键）；此处镜像 system:set-close-action 的做法——
-  // 归一化一律走 settingsStore 自身的 clamp（clampMemoryLimit 1-100、
-  // clampDiskLimit 0-1024、closeAction 枚举），非法值丢弃并只记一次日志，
-  // 绝不静默回退默认值（garbage patch 不得改写已存设置）。renderer 的
-  // input.value 是数字字符串，故先 Number() 再判有限。
-  let warnedClientSettingsDrops = false;
-  registerTrustedIpc('system:save-client-settings', async (_event, payload) => {
-    const patch = payload && typeof payload === 'object' ? payload : {};
-    const known = new Set(['memoryLimit', 'diskLimit', 'closeAction', 'defaultPreferences']);
-    const dropped = [];
-    const next = {};
-    if (patch.memoryLimit !== undefined) {
-      const num = Number(patch.memoryLimit);
-      if (!Number.isFinite(num)) dropped.push(`memoryLimit:${JSON.stringify(patch.memoryLimit)}`);
-      else next.memoryLimit = settingsStore.clampMemoryLimit(num);
-    }
-    if (patch.diskLimit !== undefined) {
-      const num = Number(patch.diskLimit);
-      if (!Number.isFinite(num)) dropped.push(`diskLimit:${JSON.stringify(patch.diskLimit)}`);
-      else next.diskLimit = settingsStore.clampDiskLimit(num);
-    }
-    if (patch.closeAction !== undefined) {
-      // 枚举精确匹配：normalizeCloseAction 会把非法值静默改成 'ask'，
-      // 一次垃圾提交就能覆盖用户已选的 'tray'/'exit'。
-      if (patch.closeAction === 'ask' || patch.closeAction === 'tray' || patch.closeAction === 'exit') next.closeAction = patch.closeAction;
-      else dropped.push(`closeAction:${JSON.stringify(patch.closeAction)}`);
-    }
-    if (patch.defaultPreferences && typeof patch.defaultPreferences === 'object') {
-      const { DEFAULT_PREFERENCES, normalizeDefaultPreferences } = require('./automation/profile-defaults');
-      const valid = Object.fromEntries(Object.entries(patch.defaultPreferences)
-        .filter(([key, value]) => Object.hasOwn(DEFAULT_PREFERENCES, key) && typeof value === 'boolean'));
-      next.defaultPreferences = normalizeDefaultPreferences(valid, settingsStore.getLocalSettings().defaultPreferences);
-    }
-    for (const key of Object.keys(patch)) if (!known.has(key)) dropped.push(`unknown:${key}`);
-    if (dropped.length && !warnedClientSettingsDrops) {
-      warnedClientSettingsDrops = true;
-      console.warn('[client-settings] dropped untrusted keys/values:', dropped.join(', '), '(further drops are silent for this process)');
-    }
-    const saved = await settingsStore.saveLocalSettings({ ...settingsStore.getLocalSettings(), ...next });
-    if (saved.closeAction === 'exit') destroyTray();
-    return saved;
-  });
-  registerTrustedIpc('app:update-check', async () => {
-    const payload = await appUpdate.pushAppUpdateStatus({ check: true });
-    if (payload?.error && !payload?.remoteVersion) throw new Error(payload.error);
-    // Return check fields (without event envelope noise for renderer helpers)
-    const {  light, checkedAt, error, ...rest } = payload || {};
-    if (error && !rest.supported) throw new Error(error);
-    return rest.currentVersion != null ? { ...rest, light, checkedAt } : await appUpdate.checkAppUpdate();
-  });
-  registerTrustedIpc('app:update-download', () => appUpdate.downloadAppUpdate());
-  registerTrustedIpc('app:open-github', async () => {
-    const url = `https://github.com/${appUpdate.UPDATE_REPOSITORY}`;
-    await shell.openExternal(url);
-    return { success: true, url };
-  });
-  registerTrustedIpc('system:set-ui-chrome', (_event, payload) => {
-    const win = BrowserWindow.fromWebContents(_event.sender) || mainWindow;
-    const themeId = typeof payload === 'string' ? payload : String(payload?.themeId || '');
-    const colorMode = typeof payload === 'object' && payload ? String(payload.colorMode || 'light') : 'light';
-    applyWindowChrome(win, themeId, colorMode);
-    return { success: true, theme: themeId, colorMode };
-  });
+  registerSystemIpc({ registerTrustedIpc, shell, dialog, clipboard, BrowserWindow,
+    getEngine: () => engine, getAutomation: () => automation, getMainWindow: () => mainWindow,
+    defaultProfileDataRoot, destroyTray, applyWindowChrome, updateProfileDataRoot });
   registerKernelIpc({ registerTrustedIpc, engine, dialog });
-  registerTrustedIpc('system:get-storage', () => ({ profileRoot: engine.getProfileDataRoot(), defaultProfileRoot: defaultProfileDataRoot,
-    running: engine.running.size, ...collectStorageDiagnostics({ engine, automation }) }));
-  registerTrustedIpc('system:choose-storage', async () => {
-    if (engine.running.size) throw new Error('\u8bf7\u5148\u505c\u6b62\u6240\u6709\u73af\u5883\uff0c\u518d\u4fee\u6539\u6570\u636e\u4fdd\u5b58\u4f4d\u7f6e');
-    const options = { title: '\u9009\u62e9\u73af\u5883\u6570\u636e\u4fdd\u5b58\u76ee\u5f55', defaultPath: engine.getProfileDataRoot(), properties: ['openDirectory', 'createDirectory', 'promptToCreate'] };
-    const result = mainWindow && !mainWindow.isDestroyed() ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
-    if (result.canceled || !result.filePaths[0]) return { canceled: true, profileRoot: engine.getProfileDataRoot(), defaultProfileRoot: defaultProfileDataRoot };
-    return { canceled: false, ...(await updateProfileDataRoot(result.filePaths[0])) };
-  });
-  registerTrustedIpc('system:reset-storage', () => updateProfileDataRoot(defaultProfileDataRoot));
-  registerTrustedIpc('system:open-storage', async () => {
-    const profileRoot = engine.getProfileDataRoot(); await fsp.mkdir(profileRoot, { recursive: true });
-    const message = await shell.openPath(profileRoot); if (message) throw new Error(message);
-    return { success: true, profileRoot };
-  });
-  registerTrustedIpc('cloud:get-config', async () => {
-    return settingsStore.getLocalSettings().cloud || cloudSync.defaultCloudConfig();
-  });
-  registerTrustedIpc('cloud:set-config', async (_event, cloud) => {
-    const next = { ...cloudSync.defaultCloudConfig(), ...(settingsStore.getLocalSettings().cloud || {}), ...(cloud || {}) };
-    await settingsStore.saveLocalSettings({ ...settingsStore.getLocalSettings(), cloud: next });
-    return next;
-  });
-  registerTrustedIpc('cloud:choose-dir', async () => {
-    const result = await dialog.showOpenDialog({
-      title: '选择云备份本地目录',
-      properties: ['openDirectory', 'createDirectory'],
-    });
-    if (result.canceled || !result.filePaths[0]) return { canceled: true };
-    return { canceled: false, dir: result.filePaths[0] };
-  });
-  registerTrustedIpc('cloud:backup', async (_event, payload) => cloudOps.runCloudBackup(payload || {}));
-  registerTrustedIpc('cloud:restore', async (_event, payload) => cloudOps.runCloudRestore(payload || {}));
-  registerTrustedIpc('cloud:profile-push', async (_event, payload) => cloudOps.runCloudProfilePush(payload || {}));
-  registerTrustedIpc('cloud:profile-pull', async (_event, payload) => cloudOps.runCloudProfilePull(payload || {}));
-  registerTrustedIpc('cloud:export-file', async (_event, payload) => {
-    const { buffer, meta } = await cloudOps.createBackupPackage(payload || {});
-    const result = await dialog.showSaveDialog({
-      title: '导出 OpenBrowser 备份',
-      defaultPath: `openbrowser-backup-${Date.now()}.obpack`,
-      filters: [{ name: 'OpenBrowser Backup', extensions: ['obpack'] }],
-    });
-    if (result.canceled || !result.filePath) return { canceled: true };
-    await fsp.writeFile(result.filePath, buffer);
-    return { success: true, path: result.filePath, meta };
-  });
-  registerTrustedIpc('cloud:import-file', async (_event, payload) => {
-    const result = await dialog.showOpenDialog({
-      title: '导入 OpenBrowser 备份',
-      properties: ['openFile'],
-      filters: [{ name: 'OpenBrowser Backup', extensions: ['obpack', 'json', 'gz'] }],
-    });
-    if (result.canceled || !result.filePaths[0]) return { canceled: true };
-    const buffer = await fsp.readFile(result.filePaths[0]);
-    const body = await cloudSync.parseBackupPackage(buffer, payload?.passphrase || settingsStore.getLocalSettings().cloud?.passphrase || '');
-    const mode = String(payload?.mode || settingsStore.getLocalSettings().cloud?.restoreMode || 'merge');
-    const applied = await cloudOps.applyBackupBody(body, {
-      mode,
-      localProfiles: payload?.localProfiles,
-      localGroups: payload?.localGroups,
-    });
-    return { success: true, mode, ...applied };
-  });
   registerProfileIpc({
     registerTrustedIpc, engine, sanitizeIds,
     beforeRemove: beforeProfileRemoval,
@@ -1407,93 +1274,7 @@ app.whenReady().then(async () => {
   registerTrustedIpc('automation:isolation-audit', () => engine.isolationAudit());
   registerTrustedIpc('automation:build-ua', (_event, payload = {}) => require('./automation/editor-ua').buildEditorUa(engine, payload));
 
-  const proxyStore = () => {
-    if (!automation?.proxyStore) throw new Error('代理库未就绪');
-    return automation.proxyStore;
-  };
-  registerTrustedIpc('proxy:list', (_event, filter) => proxyStore().list(filter || {}));
-  registerTrustedIpc('proxy:get', (_event, id) => proxyStore().get(String(id || '')));
-  registerTrustedIpc('proxy:create', (_event, payload) => proxyStore().create(payload || {}));
-  registerTrustedIpc('proxy:update', (_event, payload) => {
-    const id = String(payload?.id || payload?.proxy_id || '');
-    if (!id) throw new Error('id required');
-    return proxyStore().update(id, payload || {});
-  });
-  registerTrustedIpc('proxy:delete', (_event, ids) => proxyStore().remove(sanitizeIds(Array.isArray(ids) ? ids : [ids])));
-  registerTrustedIpc('proxy:check', async (_event, payload) => {
-    const store = proxyStore();
-    const id = String(payload?.id || payload?.proxy_id || '');
-    const item = id ? store.get(id) : null;
-    const raw = item?.raw || payload?.proxy || payload?.raw;
-    if (!raw) throw new Error('proxy required');
-    const probe = () => engine.testProxy({
-      id: 'proxy-check',
-      name: 'proxy-check',
-      proxy: raw,
-      proxyMeta: {
-        ipChannel: item?.ipChannel || payload?.ipChannel || 'ip-api',
-        apiExtractUrl: item?.refreshUrl || payload?.apiExtractUrl || '',
-        refreshUrl: item?.refreshUrl || payload?.refreshUrl || '',
-      },
-    });
-    if (!item) return { ...await probe(), proxy: null };
-    const { record, result } = await store.checkAndRecord(item, probe);
-    return { ...result, proxy: record };
-  });
-  registerTrustedIpc('proxy:check-many', async (_event, payload) => {
-    const store = proxyStore();
-    // Dedup first: duplicate ids used to run checkAndRecord twice per id —
-    // two upstream probes and a same-record write race, for zero benefit.
-    const ids = [...new Set(Array.isArray(payload?.ids) ? payload.ids.map(String) : [])];
-    if (!ids.length) throw new Error('ids required');
-    if (ids.length > 100) throw new Error('ids cannot exceed 100 per check; split the selection into batches');
-    // Serial execution made "check all" run minutes inside one invoke (100 ×
-    // 6.5s budget worst case). engine.testProxy already dedups identical
-    // in-flight probes, so a bounded pool is safe; same shape as
-    // the extension domain restart helper.
-    const queue = ids.slice(0, 100);
-    const results = [];
-    const resultsById = new Map();
-    await Promise.all(Array.from({ length: Math.min(8, queue.length) }, async () => {
-      while (queue.length) {
-        const id = queue.shift();
-        const item = store.get(id);
-        if (!item) {
-          resultsById.set(id, { id, ok: false, error: 'not found' });
-          continue;
-        }
-        try {
-          const { result, record } = await store.checkAndRecord(item, () => engine.testProxy({
-            id: 'proxy-check',
-            name: item.name || 'proxy-check',
-            proxy: item.raw,
-            proxyMeta: { ipChannel: item.ipChannel || 'ip-api', refreshUrl: item.refreshUrl || '', apiExtractUrl: item.refreshUrl || '' },
-          }));
-          resultsById.set(id, { id, ok: true, ...result, proxy: record });
-        } catch (error) {
-          resultsById.set(id, {
-            id,
-            ok: false,
-            error: error.message || String(error),
-            errorClass: error.errorClass || error.code || 'unknown',
-            latencyMs: error.latencyMs || null,
-            proxy: store.get(item.id),
-          });
-        }
-      }
-    }));
-    // Preserve the caller's id order; the pool completes them out of order.
-    for (const id of ids.slice(0, 100)) {
-      const entry = resultsById.get(id);
-      if (entry) results.push(entry);
-    }
-    return { results, ok: results.filter((r) => r.ok).length, fail: results.filter((r) => !r.ok).length };
-  });
-  registerTrustedIpc('profiles:refresh-proxy', (_event, profile) => engine.refreshProfileProxy(profile));
-  registerTrustedIpc('profiles:apply-proxy-fingerprint', async (_event, profile) => {
-    const network = await engine.checkProxy(profile, { persist: true });
-    return network;
-  });
+  registerProxyIpc({ registerTrustedIpc, getEngine: () => engine, getProxyStore: proxyStoreAccessor, sanitizeIds });
   registerAutomationControlIpc({ registerTrustedIpc, getAutomation: () => automation,
     getMainWindow: () => mainWindow, app, dialog });
   registerTrustedIpc('automation:app-center', (_event, filter) => {

@@ -2,6 +2,7 @@
 
 const { assertProfileId } = require("../automation/isolation");
 const { normalizeIpLookupChannel } = require('../network/proxy-config');
+const { isNoCredentialProxy } = require('../shared/proxy-redact');
 const { profileProxyAssociation, normalizedProxyAssociationId } = require("./proxy-helpers");
 const { normalizeCoordinates, normalizeBatterySnapshot, normalizeNetworkInformation, normalizeNetworkConditions, toFiniteNumber: finite } = require("../shared/profile-values");
 
@@ -57,7 +58,7 @@ function sanitizeProfile(value) {
   const rawProxy = String(value.proxy || "").trim();
   if (rawProxy.length > MAX_PROFILE_PROXY_LENGTH) throw new Error("Proxy URL is too long");
   const networkMode = value.networkMode === "proxy" ? "proxy"
-    : value.networkMode === "direct" || !rawProxy || /^(direct|offline|none)$/i.test(rawProxy) ? "direct" : "proxy";
+    : value.networkMode === "direct" || !rawProxy || isNoCredentialProxy(rawProxy) ? "direct" : "proxy";
   const effectiveStartUrl = String(value.startUrl || platformValue.startUrl || advancedValue.startUrls || "").split(/\r?\n/, 1)[0].trim().slice(0, 2000);
   const proxyAssociation = profileProxyAssociation(value);
   const proxyId = networkMode === "direct" ? null : normalizedProxyAssociationId(proxyAssociation.value);

@@ -1,6 +1,8 @@
 "use strict";
 
-const { parse } = require("acorn");
+// 运行时统一加载与本仓库指纹面绑定的 vendored 解析器（automation/vendor/acorn.js，
+// 8.19.0 未修改版）；npm 的 acorn 仅作为 devDependency 供构建/审计工具使用。
+const { parse } = require("../automation/vendor/acorn");
 const { createHash } = require("node:crypto");
 const { stripTypeScriptTypes } = require("node:module");
 

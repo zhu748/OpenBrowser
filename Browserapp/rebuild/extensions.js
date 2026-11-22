@@ -1,6 +1,6 @@
 "use strict";
 const fs = require("node:fs/promises"), path = require("node:path"), crypto = require("node:crypto"),
-  {fileURLToPath}=require("node:url"),{crxZip}=require("../store-extension"),zipReader=require("../automation/zip-reader"),
+  {fileURLToPath}=require("node:url"),{crxZip}=require("../engine/store-extension"),zipReader=require("../automation/zip-reader"),
   {persistExtensionChanges,serializeExtensionMutation}=require("../engine/map-publication");
 const DEFAULT="local-default", MAX=256*1024*1024;
 class Extensions {

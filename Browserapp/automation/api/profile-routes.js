@@ -6,6 +6,7 @@ const { CURRENT_FINGERPRINT_VERSION } = require('../fingerprint/generation');
 const { resolveWebSocketDebuggerUrl } = require('./devtools');
 const { booleanValue, firstDefined, firstArray, firstString, normalizeProfileInput, readProxyAssociation } = require('./input');
 const { ok, fail, redactProfileForApi, proxySummary } = require('./responses');
+const { isNoCredentialProxy } = require('../../shared/proxy-redact');
 
 /** HTTP-independent handlers with explicit domain dependencies. */
 class ProfileRoutes {
@@ -70,7 +71,7 @@ class ProfileRoutes {
       name: String(body.name || body.title || ('Environment ' + number)),
       title: String(body.title || body.name || ('Environment ' + number)),
       language: String(body.language || 'en-US'),
-      networkMode: body.networkMode || (/^(direct|offline|none)$/i.test(proxy) ? 'direct' : 'proxy'),
+      networkMode: body.networkMode || (isNoCredentialProxy(proxy) ? 'direct' : 'proxy'),
       proxy,
       privacy: {
         ...(body.privacy && typeof body.privacy === 'object' ? body.privacy : {}),
@@ -118,7 +119,7 @@ class ProfileRoutes {
     else if (hasManualProxyPatch) {
       const rawProxy = String(input?.proxy || '').trim();
       const directRequested = String(input?.network_mode ?? input?.networkMode ?? '').toLowerCase() === 'direct'
-        || /^(direct|offline|none)$/i.test(rawProxy);
+        || isNoCredentialProxy(rawProxy);
       body = {
         ...body,
         ...(directRequested && !rawProxy ? { proxy: 'Direct' } : {}),

@@ -26,17 +26,17 @@ const os = require('os');
 const path = require('path');
 const { spawn, execSync } = require('child_process');
 
-const cdp = require('../cdp');
+const cdp = require('../../cdp');
 const {
   buildFingerprint,
   buildInjectionScript,
   buildWorkerInjectionScript,
   chromeArgsForFingerprint
-} = require('./fingerprint');
-const { writeOpenBrowserKernelInit } = require('./kernel-init-sync');
-const { RequestHeaderRewriter } = require('../engine');
+} = require('../fingerprint');
+const { writeOpenBrowserKernelInit } = require('../kernel-init-sync');
+const { RequestHeaderRewriter } = require('../../engine');
 
-const appRoot = path.join(__dirname, '..');
+const appRoot = path.join(__dirname, '..', '..');
 const kernelRoot = path.join(appRoot, 'kernels', 'macos-x64');
 const launcher = path.join(kernelRoot, 'launch_openbrowser.sh');
 
@@ -1363,7 +1363,7 @@ function generateMarkdownReport(baseline, injected, auditResults) {
   md += `| ⚠️ **环境受限/未决项** | **4 项** | 客观边界明确 | 物理外设握手、双屏跨屏切换、公网打洞、非美式键盘物理扫码 |\n\n`;
 
   md += `### 审计复现命令\n\n`;
-  md += `\`\`\`bash\nnode Browserapp/automation/adversarial-detection-audit-round2.js\n\`\`\`\n\n`;
+  md += `\`\`\`bash\nnode Browserapp/automation/audits/adversarial-detection-audit-round2.js\n\`\`\`\n\n`;
 
   md += `---\n\n`;
   md += `## 二、P0 / P1 / P2 破绽详细清单\n\n`;

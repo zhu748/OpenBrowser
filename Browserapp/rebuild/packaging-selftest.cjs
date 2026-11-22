@@ -33,7 +33,10 @@ async function main() {
       "function",
     );
     assert.equal(typeof requirePackaged("yauzl").open, "function");
-    assert.equal(typeof requirePackaged("acorn").parse, "function");
+    // npm acorn became dev-only (build/audit tooling): the shipped runtime
+    // parses with the pinned vendored automation/vendor/acorn.js, which the
+    // runtime-manifest tree (asserted below) covers, so no dep-closure entry
+    // is needed here.
     assert.equal(typeof requirePackaged("quickjs-emscripten-core").newQuickJSWASMModuleFromVariant, "function");
     assert.equal(
       typeof requirePackaged("cron-parser").CronExpressionParser.parse,

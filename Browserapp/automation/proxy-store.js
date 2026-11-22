@@ -3,7 +3,7 @@
 const fsp = require('fs/promises');
 const path = require('path');
 const crypto = require('crypto');
-const credentialCrypto = require('./credential-crypto');
+const credentialCrypto = require('../credential-crypto');
 const {
   parseProxy,
   parseProxyInput,

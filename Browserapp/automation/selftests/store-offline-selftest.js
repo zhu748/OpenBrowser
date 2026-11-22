@@ -4,7 +4,7 @@ const fs = require('fs/promises');
 const path = require('path');
 const crypto = require('crypto');
 const zlib = require('zlib');
-const { addChromeStoreExtension } = require('../../store-extension');
+const { addChromeStoreExtension } = require('../../engine/store-extension');
 
 // Build the fixture zip with Node itself: tar.exe is Windows-only and GNU tar
 // cannot write zips, so the pack step must not depend on either.

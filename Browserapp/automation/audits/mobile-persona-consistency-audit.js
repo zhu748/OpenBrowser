@@ -25,25 +25,25 @@ const os = require('os');
 const path = require('path');
 const { spawn, execSync } = require('child_process');
 
-const cdp = require('../cdp');
+const cdp = require('../../cdp');
 const {
   buildFingerprint,
   buildWorkerInjectionScript,
   chromeArgsForFingerprint,
   applyFingerprintToTab,
-} = require('./fingerprint');
+} = require('../fingerprint');
 const {
   writeOpenBrowserKernelInit,
   mapFingerprintToInitFields,
   validateKernelInitInvariants,
   detectOs,
   detectInitOs,
-} = require('./kernel-init-sync');
-const { RequestHeaderRewriter } = require('../engine');
-const {  } = require('./mobile-personas');
-const {  } = require('./device-personas');
+} = require('../kernel-init-sync');
+const { RequestHeaderRewriter } = require('../../engine');
+const {  } = require('../mobile-personas');
+const {  } = require('../device-personas');
 
-const appRoot = path.join(__dirname, '..');
+const appRoot = path.join(__dirname, '..', '..');
 const kernelRoot = path.join(appRoot, 'kernels', 'macos-x64');
 const launcher = path.join(kernelRoot, 'launch_openbrowser.sh');
 const reportsDir = path.join(appRoot, '..', 'reports');

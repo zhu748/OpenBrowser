@@ -214,6 +214,13 @@ function kernelDisplayName(source) {
   return 'Independent Chromium';
 }
 
+// resolveInstalled() 的每个候选分支返回同一形状；集中在这一处构造，
+// 分支里只保留优先级注释与信任校验。extra 可覆盖默认 name（如 pin 分支
+// 用已安装列表里的名称）并附加 engine 字段。
+function kernelCandidate(source, candidatePath, version, extra = {}) {
+  return { name: kernelDisplayName(source), path: candidatePath, version, independent: true, source, ...extra };
+}
+
 function isWayfernKernel(candidate = {}, versionOutput = '') {
   const source = String(candidate.source || '').toLowerCase();
   const binaryPath = String(candidate.path || candidate.binary || candidate || '').toLowerCase().replace(/\\/g, '/');
@@ -752,14 +759,10 @@ class BrowserKernelManager {
       const fresh = list.find((k) => k.engine === pin.engine && k.version === pin.version) || null;
       const trusted = fresh ? fresh.path : safeInstalledBinary(pin.path, this.kernelsRoot);
       if (trusted && fs.existsSync(trusted)) {
-        return {
+        return kernelCandidate(pin.source || (pin.engine === 'firefox' ? SOURCE_MOZILLA : SOURCE_CFT), trusted, pin.version, {
           name: fresh ? fresh.name : (pin.engine === 'firefox' ? `Firefox ${pin.version}` : `Chrome for Testing ${pin.version}`),
-          path: trusted,
-          version: pin.version,
           engine: pin.engine,
-          independent: true,
-          source: pin.source || (pin.engine === 'firefox' ? SOURCE_MOZILLA : SOURCE_CFT),
-        };
+        });
       }
     }
 
@@ -767,33 +770,15 @@ class BrowserKernelManager {
     // older package. Otherwise the old CFT resource would win forever.
     if (this.meta.source === SOURCE_CHROME_STABLE && this.meta.binary) {
       const stable = safeInstalledBinary(this.meta.binary, this.kernelsRoot);
-      if (stable) {
-        return {
-          name: kernelDisplayName(SOURCE_CHROME_STABLE),
-          path: stable,
-          version: this.meta.version || 'stable',
-          independent: true,
-          source: SOURCE_CHROME_STABLE,
-        };
-      }
+      if (stable) return kernelCandidate(SOURCE_CHROME_STABLE, stable, this.meta.version || 'stable');
     }
 
     // macOS x64 default only: OpenBrowser 148 under kernels/macos-x64/ (wrapper binary).
     // Other hosts must never auto-select this kernel even if a stray tree exists.
     if (isOpenBrowser148SupportedHost()) {
       const openBrowserBin = findOpenBrowserKernelBinary(this.kernelsRoot, this.resourceRoots);
-      if (openBrowserBin) {
-        const trustedOb = this.safeCustomBinary(openBrowserBin);
-        if (trustedOb) {
-          return {
-            name: kernelDisplayName(SOURCE_OPENBROWSER),
-            path: trustedOb,
-            version: this.meta.version || OPENBROWSER_KERNEL_VERSION,
-            independent: true,
-            source: SOURCE_OPENBROWSER,
-          };
-        }
-      }
+      const trustedOb = openBrowserBin ? this.safeCustomBinary(openBrowserBin) : null;
+      if (trustedOb) return kernelCandidate(SOURCE_OPENBROWSER, trustedOb, this.meta.version || OPENBROWSER_KERNEL_VERSION);
     }
 
     // Prefer install-tree / resource integrated seeds that are CDP-ready.
@@ -802,25 +787,13 @@ class BrowserKernelManager {
     if (bundled) {
       const trustedBundled = safeInstalledBinary(bundled.binary, bundled.root);
       if (trustedBundled && isIntegratedKernelCdpReady({ path: trustedBundled, source: SOURCE_WAYFERN })) {
-        return {
-          name: kernelDisplayName(SOURCE_WAYFERN),
-          path: trustedBundled,
-          version: bundledKernelVersion(bundled.root),
-          independent: true,
-          source: SOURCE_WAYFERN,
-        };
+        return kernelCandidate(SOURCE_WAYFERN, trustedBundled, bundledKernelVersion(bundled.root));
       }
     }
 
     const bundledStable = findBundledChromeStable(this.resourceRoots);
     if (bundledStable) {
-      return {
-        name: kernelDisplayName(SOURCE_CHROME_STABLE),
-        path: bundledStable.binary,
-        version: this.meta.version || bundledKernelVersion(bundledStable.root),
-        independent: true,
-        source: SOURCE_CHROME_STABLE,
-      };
+      return kernelCandidate(SOURCE_CHROME_STABLE, bundledStable.binary, this.meta.version || bundledKernelVersion(bundledStable.root));
     }
 
     // Chrome for Testing is the integrated Ubuntu x86_64 kernel. Search
@@ -828,21 +801,13 @@ class BrowserKernelManager {
     // userData first.
     const bundledCft = findBundledChromeForTesting(this.resourceRoots);
     if (bundledCft) {
-      return {
-        name: kernelDisplayName(SOURCE_CFT),
-        path: bundledCft.binary,
-        version: bundledKernelVersion(bundledCft.root),
-        independent: true,
-        source: SOURCE_CFT,
-      };
+      return kernelCandidate(SOURCE_CFT, bundledCft.binary, bundledKernelVersion(bundledCft.root));
     }
 
     if (this.meta.binary && fs.existsSync(this.meta.binary)) {
       const src = this.meta.source || SOURCE_WAYFERN;
       // Refuse stale openbrowser-148 meta on non-mac-x64 hosts.
-      if (src === SOURCE_OPENBROWSER && !isOpenBrowser148SupportedHost()) {
-        // fall through
-      } else {
+      if (!(src === SOURCE_OPENBROWSER && !isOpenBrowser148SupportedHost())) {
         const trusted = (src === SOURCE_CUSTOM || src === SOURCE_OPENBROWSER)
           ? this.safeCustomBinary(this.meta.binary)
           : safeInstalledBinary(this.meta.binary, this.kernelsRoot);
@@ -850,13 +815,7 @@ class BrowserKernelManager {
           // Skip userData / meta binaries that fail CDP readiness when a better seed exists.
           const ready = isIntegratedKernelCdpReady({ path: trusted, source: src });
           if (ready || src === SOURCE_CUSTOM || src === SOURCE_CFT || src === SOURCE_CHROME_STABLE || src === SOURCE_OPENBROWSER) {
-            return {
-              name: kernelDisplayName(src),
-              path: trusted,
-              version: this.meta.version || 'unknown',
-              independent: true,
-              source: src,
-            };
+            return kernelCandidate(src, trusted, this.meta.version || 'unknown');
           }
         }
       }
@@ -866,13 +825,7 @@ class BrowserKernelManager {
     if (bundled) {
       const trustedBundled = safeInstalledBinary(bundled.binary, bundled.root);
       if (trustedBundled) {
-        return {
-          name: kernelDisplayName(SOURCE_WAYFERN),
-          path: trustedBundled,
-          version: bundledKernelVersion(bundled.root),
-          independent: true,
-          source: SOURCE_WAYFERN,
-        };
+        return kernelCandidate(SOURCE_WAYFERN, trustedBundled, bundledKernelVersion(bundled.root));
       }
     }
 
@@ -895,50 +848,23 @@ class BrowserKernelManager {
       }
       const trusted = safeInstalledBinary(found, foundRoot || this.kernelsRoot);
       if (trusted && isIntegratedKernelCdpReady({ path: trusted, source: SOURCE_WAYFERN })) {
-        return {
-          name: kernelDisplayName(SOURCE_WAYFERN),
-          path: trusted,
-          version: this.meta.version || bundledKernelVersion(foundRoot || this.kernelsRoot),
-          independent: true,
-          source: SOURCE_WAYFERN,
-        };
+        return kernelCandidate(SOURCE_WAYFERN, trusted, this.meta.version || bundledKernelVersion(foundRoot || this.kernelsRoot));
       }
     } catch (_) {}
 
     const localStable = findBundledChromeStable([this.userData, this.kernelsRoot]);
     if (localStable) {
-      return {
-        name: kernelDisplayName(SOURCE_CHROME_STABLE),
-        path: localStable.binary,
-        version: this.meta.version || bundledKernelVersion(localStable.root),
-        independent: true,
-        source: SOURCE_CHROME_STABLE,
-      };
+      return kernelCandidate(SOURCE_CHROME_STABLE, localStable.binary, this.meta.version || bundledKernelVersion(localStable.root));
     }
 
     // User-data Chrome for Testing path (legacy and explicit local installs).
     const localCft = findBundledChromeForTesting([this.userData, this.kernelsRoot]);
     if (localCft) {
-      return {
-        name: kernelDisplayName(SOURCE_CFT),
-        path: localCft.binary,
-        version: this.meta.version || bundledKernelVersion(localCft.root),
-        independent: true,
-        source: SOURCE_CFT,
-      };
+      return kernelCandidate(SOURCE_CFT, localCft.binary, this.meta.version || bundledKernelVersion(localCft.root));
     }
 
-    const custom = path.join(this.kernelsRoot, 'custom', 'chrome');
-    const trustedCustom = this.safeCustomBinary(custom);
-    if (trustedCustom) {
-      return {
-        name: kernelDisplayName(SOURCE_CUSTOM),
-        path: trustedCustom,
-        version: this.meta.version || 'custom',
-        independent: true,
-        source: SOURCE_CUSTOM,
-      };
-    }
+    const trustedCustom = this.safeCustomBinary(path.join(this.kernelsRoot, 'custom', 'chrome'));
+    if (trustedCustom) return kernelCandidate(SOURCE_CUSTOM, trustedCustom, this.meta.version || 'custom');
     return null;
   }
 

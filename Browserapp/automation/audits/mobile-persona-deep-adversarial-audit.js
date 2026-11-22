@@ -29,17 +29,17 @@ const os = require('os');
 const path = require('path');
 const { spawn, execSync } = require('child_process');
 
-const cdp = require('../cdp');
+const cdp = require('../../cdp');
 const {
   buildFingerprint,
   buildWorkerInjectionScript,
   chromeArgsForFingerprint,
   applyFingerprintToTab,
-} = require('./fingerprint');
-const { writeOpenBrowserKernelInit } = require('./kernel-init-sync');
-const { RequestHeaderRewriter } = require('../engine');
+} = require('../fingerprint');
+const { writeOpenBrowserKernelInit } = require('../kernel-init-sync');
+const { RequestHeaderRewriter } = require('../../engine');
 
-const appRoot = path.join(__dirname, '..');
+const appRoot = path.join(__dirname, '..', '..');
 const kernelRoot = path.join(appRoot, 'kernels', 'macos-x64');
 const launcher = path.join(kernelRoot, 'launch_openbrowser.sh');
 const reportsDir = path.join(appRoot, '..', 'reports');
@@ -1085,7 +1085,7 @@ async function runSession(profileConfig, isInject, server) {
 
   // Reap any leftover kernels
   try {
-    execSync('node ' + path.join(__dirname, 'reap-orphan-kernels.js'), { stdio: 'inherit' });
+    execSync('node ' + path.join(__dirname, '..', 'reap-orphan-kernels.js'), { stdio: 'inherit' });
   } catch (_) {}
 
   console.log('\nAudit data collection completed successfully.');

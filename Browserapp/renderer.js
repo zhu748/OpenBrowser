@@ -4664,15 +4664,13 @@ $('#choose-profile-storage').addEventListener('click', chooseProfileStorage);
 $('#reset-profile-storage').addEventListener('click', resetProfileStorage);
 $('#open-profile-storage').addEventListener('click', async () => { try { await window.ops.openProfileStorage(); } catch (error) { toast(error.message); log('Error', error.message); } });
 
-window.ops.onEvent(async (value) => {
-  if (value?.type === 'app-update-progress') {
-    appUpdateState.progress = value;
-    renderAppUpdateState();
-  }
-  if (value?.type === 'app-update-status') {
-    applyVersionTrafficLight(value);
-  }
-  if (value?.type === 'profile-start-progress' && value.id) {
+// IPC 事件分发表：每种事件类型一个条目，替代原来 130 行的 if 链。
+// 每个分支只匹配自己的 type，互不依赖；新增事件类型 = 加一个条目。
+const ipcEventHandlers = {
+  'app-update-progress': (value) => { appUpdateState.progress = value; renderAppUpdateState(); },
+  'app-update-status': (value) => { applyVersionTrafficLight(value); },
+  'profile-start-progress': (value) => {
+    if (!value.id) return;
     if (value.error || value.starting === false) {
       clearStartingProgress(value.id);
     } else {
@@ -4689,8 +4687,8 @@ window.ops.onEvent(async (value) => {
       return;
     }
     scheduleRenderProfiles();
-  }
-  if (value.type === 'status') {
+  },
+  'status': (value) => {
     // Only terminal status clears the start bar. Intermediate emits (e.g. extensions-reconcile-skipped)
     // also set running:true and must not wipe progress mid-launch.
     if (value.id && value.running === false) clearStartingProgress(value.id);
@@ -4711,8 +4709,9 @@ window.ops.onEvent(async (value) => {
     } else if (value.message && value.action) {
       log('Browser', value.message);
     }
-  }
-  if (value.type === 'profile-closed' && value.profile?.id) {
+  },
+  'profile-closed': (value) => {
+    if (!value.profile?.id) return;
     // Keep renderer UI state aligned with engine cookie snapshot after close
     const idx = ui.profiles.findIndex((p) => p.id === value.profile.id);
     if (idx >= 0) {
@@ -4728,8 +4727,9 @@ window.ops.onEvent(async (value) => {
         })());
       }
     }
-  }
-  if (value.type === 'profiles' && value.action === 'delete' && Array.isArray(value.ids) && value.ids.length) {
+  },
+  'profiles': (value) => {
+    if (value.action !== 'delete' || !Array.isArray(value.ids) || !value.ids.length) return;
     const deletedSet = new Set(value.ids);
     const prevLen = ui.profiles.length;
     ui.profiles = ui.profiles.filter((item) => !deletedSet.has(item.id));
@@ -4745,37 +4745,39 @@ window.ops.onEvent(async (value) => {
       scheduleSessionRefresh();
       scheduleRenderProfiles();
     }
-  }
-  if (value.type === 'extensions') {
+  },
+  'extensions': async () => {
     try { await refreshExtensions(); }
     catch (error) { console.error('refreshExtensions failed for extensions event:', error); }
-  }
-  if (value.type === 'platform-preflight' && Array.isArray(value.warnings)) {
+  },
+  'platform-preflight': (value) => {
+    if (!Array.isArray(value.warnings)) return;
     for (const w of value.warnings) {
       log(w.level === 'error' ? 'Error' : 'Platform', `${w.message}${w.hint ? ' — ' + w.hint : ''}`);
     }
     const blocker = value.warnings.find((w) => w.level === 'error');
     if (blocker) toast(blocker.message);
-  }
-  if (value.type === 'storage-settings') updateProfileStorageDisplay(value.profileRoot);
-  if (value.type === 'sync-settings' && value.settings) { syncSettings = normalizeSyncSettings(value.settings); fillSyncSettingsForm(); }
-  if (value.type === 'text-shortcut') {
+  },
+  'storage-settings': (value) => updateProfileStorageDisplay(value.profileRoot),
+  'sync-settings': (value) => { if (value.settings) { syncSettings = normalizeSyncSettings(value.settings); fillSyncSettingsForm(); } },
+  'text-shortcut': (value) => {
     if (value.action === 'random-number') sendRandomNumbers();
     else if (value.action === 'same-text') sendSameText();
     else if (value.action === 'specified-text' && specifiedTextGroups[0]) sendSpecifiedTextGroup(specifiedTextGroups[0].id);
-  }
-  if (value.type === 'sync-state') {
+  },
+  'sync-state': (value) => {
     syncState = { active: value.active, master: value.master, selected: value.selected || [] };
     if (value.active) { preferredMasterId = value.master; selectedSessions = new Set(value.selected || []); syncHealth.recovering = false; }
     else syncHealth = { queueDepth: 0, coalesced: 0, dropped: 0, lastLatencyMs: 0, recovering: false };
     renderSessions(); log('Sync', value.active ? '同步已启动' : '同步已停止');
-  }
-  if (value.type === 'sync-notice' && value.message) {
+  },
+  'sync-notice': (value) => {
+    if (!value.message) return;
     // Sync with fewer than 2 selected environments silently expanded to ALL
     // running ones; the user must see which environments just joined the group.
     log('Sync', value.message); toast(value.message);
-  }
-  if (value.type === 'sync-health') {
+  },
+  'sync-health': (value) => {
     syncHealth = { ...syncHealth, ...value, recovering: false };
     // Throttle status paints — health events can fire ~1Hz while syncing.
     if (!window.__syncHealthPaintTimer) {
@@ -4784,17 +4786,21 @@ window.ops.onEvent(async (value) => {
         renderSyncState();
       }, 400);
     }
-  }
-  if (value.type === 'sync-recovering') { syncHealth.recovering = true; renderSyncState(); log('Sync', `输入桥自动恢复，第 ${value.attempt} 次`); }
-  if (value.type === 'native-input' && value.active) { syncHealth.recovering = false; renderSyncState(); }
+  },
+  'sync-recovering': (value) => { syncHealth.recovering = true; renderSyncState(); log('Sync', `输入桥自动恢复，第 ${value.attempt} 次`); },
+  'native-input': (value) => { if (value.active) { syncHealth.recovering = false; renderSyncState(); } },
   // Skipped-segment events from live-sync: the mirror was dropped, so the
   // next event forces a full sync. Surfacing them here keeps the Sync log
   // honest about silent degradations instead of a no-op in the UI.
-  if (value.type === 'sync-input-skipped') { log('Sync', `输入段跳过（${value.reason || 'native-input-failed'}），镜像已丢弃，下段将全量同步`); }
-  if (value.type === 'sync-change-skipped') { log('Sync', `变更段跳过（${value.reason || 'native-change-failed'}）`); }
-  if (value.type === 'sync-change-fallback') { log('Sync', `变更段以合成回退完成（${value.reason || 'native-change-failed'}）`); }
-  if (value.type === 'sync-error') { toast(value.message); log('Error', value.message); }
-  if (value.type === 'sync-disconnected') { toast(value.message); log('Sync', value.message); }
+  'sync-input-skipped': (value) => { log('Sync', `输入段跳过（${value.reason || 'native-input-failed'}），镜像已丢弃，下段将全量同步`); },
+  'sync-change-skipped': (value) => { log('Sync', `变更段跳过（${value.reason || 'native-change-failed'}）`); },
+  'sync-change-fallback': (value) => { log('Sync', `变更段以合成回退完成（${value.reason || 'native-change-failed'}）`); },
+  'sync-error': (value) => { toast(value.message); log('Error', value.message); },
+  'sync-disconnected': (value) => { toast(value.message); log('Sync', value.message); },
+};
+window.ops.onEvent((value) => {
+  const handler = ipcEventHandlers[value?.type];
+  if (handler) return handler(value);
 });
 
 window.ops.onEvent((value) => {
@@ -4954,14 +4960,10 @@ const appInitialization = initialize().then(() => true).catch((error) => {
 });
 
 
-function parseCsvLine(line) {
-  const values = []; let current = ''; let quoted = false;
-  for (let index = 0; index < line.length; index += 1) { const char = line[index]; if (char === '"' && line[index + 1] === '"') { current += '"'; index += 1; } else if (char === '"') quoted = !quoted; else if (char === ',' && !quoted) { values.push(current.trim()); current = ''; } else current += char; }
-  values.push(current.trim()); return values;
-}
-
-// 导入行数上限：此前一百万行的文件会被完整 parse、逐行构造成环境对象、
-// 再整份发往 IPC，配额兜底在那之后才裁剪。10,000 行在解析边界就截断——
+// 共享 CSV 解析器（shared/csv.js，支持带引号字段、嵌入逗号/换行与 BOM）
+// 替换了本文件旧的手写 parseCsvLine——旧实现对带引号换行字段会静默截断行。
+// scripts 顺序上 shared/csv.js 晚于本文件加载，但解析发生在文件选择事件时。
+// 导入行数上限：10,000 行在解析边界就截断（多取一行仅用于截断判定），
 // 整数好记，且比任何真实环境清单大一个量级以上。
 const IMPORT_ROW_CAP = 10000;
 function parseImportedProfiles(text, extension) {
@@ -4969,11 +4971,11 @@ function parseImportedProfiles(text, extension) {
     const values = JSON.parse(text); if (!Array.isArray(values)) throw new Error('\u5bfc\u5165 JSON \u5fc5\u987b\u662f\u6570\u7ec4');
     return { rows: values.slice(0, IMPORT_ROW_CAP), truncated: values.length > IMPORT_ROW_CAP };
   }
-  const lines = text.split(/\r?\n/).filter((line) => line.trim()); if (lines.length < 2) return { rows: [], truncated: false };
-  const headers = parseCsvLine(lines[0]).map((item) => item.toLowerCase());
-  // 截断发生在逐行构造对象之前：数据行 = lines[1..]，含表头共取 CAP+1 行。
-  const body = lines.slice(1, IMPORT_ROW_CAP + 1);
-  return { rows: body.map((line, row) => { const values = parseCsvLine(line); const item = Object.fromEntries(headers.map((key, index) => [key, values[index] || ''])); return { id: item.id || 'env-import-' + Date.now().toString(36) + '-' + row, name: item.name || item.id || 'Imported ' + (row + 1), browser: item.browser || 'Google Chrome', language: item.language || 'en-US', proxy: item.proxy || item.ip || 'Direct', proxyType: item.proxytype || '', exitIp: item.ip || '', exitCountryCode: item.countrycode || '', tag: item.tag || item.group || 'Imported', os: 'Windows', location: item.location || 'Local' }; }), truncated: lines.length - 1 > IMPORT_ROW_CAP };
+  const parser = window.OpenBrowserCsv.createCsvRecordParser({ maxRows: IMPORT_ROW_CAP + 1 });
+  parser.write(text); parser.end();
+  const records = parser.records.map((record) => Object.fromEntries(
+    Object.entries(record).map(([key, value]) => [key.toLowerCase(), value])));
+  return { rows: records.slice(0, IMPORT_ROW_CAP), truncated: records.length > IMPORT_ROW_CAP };
 }
 
 $('#batch-import').addEventListener('click', () => $('#batch-import-file').click());

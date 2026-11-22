@@ -10,7 +10,7 @@ const crypto = require('crypto');
 
 // ---------- builders ----------
 
-const {crc32,buildZip}=require('./zip-writer');
+const {crc32,buildZip}=require('../../zip-writer');
 
 function writeVarint(value) {
   const out = [];

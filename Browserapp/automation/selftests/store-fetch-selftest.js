@@ -122,7 +122,9 @@ function trackingFetcher(state, delayMs = 5) {
       assert.ok(/fetchStoreEntries\(ids, \(id, \{ signal \}\) => fetchChromeStoreMetadata\(id, \{ signal \}\)\)/.test(source), 'metadata is not queued');
     });
     check('the unbounded fan-out is gone', () => {
-      assert.ok(!/Promise\.all\(ids\.map/.test(source), 'a Promise.all over ids is still present');
+      // Scoped to store lookups: sync:text's Promise.all(ids.map(async ...)) is a
+      // deliberate bounded-concurrency fan-out and must not trip this check.
+      assert.ok(!/Promise\.all\(ids\.map\([\s\S]{0,160}?fetchChromeStore/.test(source), 'a Promise.all over store ids is still present');
       assert.ok(!/entries\.filter\(\(\[, (iconUrl|metadata)\]\)/.test(source), 'the old fan-out shape is still present');
     });
     check('the store id filter still applies', () => {

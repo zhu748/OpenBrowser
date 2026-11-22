@@ -235,7 +235,7 @@ function appResourceExcludes() {
 }
 
 /**
- * Kernel source transition (docs/kernel-externalization.md): make sure the
+ * Kernel source transition (docs/archive/kernel-externalization.md): make sure the
  * integrated seed for this package's platform is material before anything
  * copies it. Local (git-LFS) content wins; a checkout that only has LFS
  * pointers auto-fetches from the kernel release
@@ -244,12 +244,12 @@ function appResourceExcludes() {
  * prepare:linux-kernel and are not release-managed.
  */
 /**
- * wayfern_fonts 去重（docs/wayfern-fonts-dedup-plan.md 阶段 1）：打包 Windows 包前把
+ * wayfern_fonts 去重（docs/archive/wayfern-fonts-dedup-plan.md 阶段 1）：打包 Windows 包前把
  * 共享正本 kernels/wayfern-fonts 物化进 kernels/windows-x64/wayfern_fonts。独立步骤而
  * 非挂进 ensureKernelSeedForPackaging：该钩子在种子已物化时 no-op 返回，而字体物化在
  * 任何种子状态下都必须检查；失败必须阻断打包（缺字体的发行包是静默降级缺陷）。
  * macOS 侧不物化：其字体嵌在已签名 .app 内，改动会破坏签名。
- * 内核外置翻转后（docs/kernel-externalization.md §5）正本缺席：Release 归档自带的
+ * 内核外置翻转后（docs/archive/kernel-externalization.md §5）正本缺席：Release 归档自带的
  * kernels/windows-x64/wayfern_fonts 已就绪时按 upToDate 返回，不再硬失败。
  */
 async function materializeWayfernFontsForPackaging() {

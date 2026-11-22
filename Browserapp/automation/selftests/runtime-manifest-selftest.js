@@ -14,7 +14,7 @@ for (const name of RUNTIME_ROOT_FILES) {
 for (const name of ['main.js', 'environment-audit.js', 'native-input-mirror.exe', 'automation/mcp-server.js', 'automation/kernel/archive.js', 'shared/ipc-result.js']) {
   assert.equal(isRuntimeResource(name), true, name);
 }
-for (const name of ['surprise.js', 'eslint.config.js', 'zoom-inspect.js', 'package-lock.json', 'scripts/publish-release.sh', 'automation/selftests/fake.js', 'automation/adversarial-detection-audit-round2.js', 'automation/final-release-regression-runner.js', 'profile-list-selftest.js', '../main.js']) {
+for (const name of ['surprise.js', 'eslint.config.js', 'zoom-inspect.js', 'package-lock.json', 'scripts/publish-release.sh', 'automation/selftests/fake.js', 'automation/audits/adversarial-detection-audit-round2.js', 'automation/final-release-regression-runner.js', 'profile-list-selftest.js', '../main.js']) {
   assert.equal(isRuntimeResource(name), false, name);
 }
 assert.equal(isRuntimeResource('kernels/vendor/scripts/resource.js'), true, 'vendor bundles retain their original tree');

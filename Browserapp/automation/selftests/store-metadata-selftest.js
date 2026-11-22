@@ -16,7 +16,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const { buildZip, buildCrx3, expectedExtensionId } = require('../crx-fixtures');
+const { buildZip, buildCrx3, expectedExtensionId } = require('./fixtures/crx-fixtures');
 const { parseCrx, readManifest, readFile } = require('../crx-reader');
 
 const results = [];
@@ -95,15 +95,15 @@ function makePackage({ withIcon = true } = {}) {
   // The metadata pipeline was extracted from main.js into
   // chrome-store-metadata.js: the behaviour assertions scan the module, and
   // one wiring assertion keeps main.js tied to it.
-  const source = fs.readFileSync(path.join(__dirname, '..', '../chrome-store-metadata.js'), 'utf8');
+  const source = fs.readFileSync(path.join(__dirname, '..', '../main/chrome-store-metadata.js'), 'utf8');
 
   check('the host loads the extracted store-metadata module', () => {
     const hostSource = fs.readFileSync(path.join(__dirname, '..', '../main.js'), 'utf8');
-    assert.ok(/require\('\.\/chrome-store-metadata'\)/.test(hostSource), 'main.js does not load the module');
+    assert.ok(/require\('\.\/main\/chrome-store-metadata'\)/.test(hostSource), 'main.js does not load the module');
   });
 
   check('the host reads the package with the in-memory reader', () => {
-    assert.ok(/require\('\.\/automation\/crx-reader'\)/.test(source), 'reader is not required');
+    assert.ok(/require\('\.\.\/automation\/crx-reader'\)/.test(source), 'reader is not required');
     assert.ok(/const parsed = parseCrx\(buffer\)/.test(source), 'package is not parsed');
     assert.ok(/readManifest\(parsed\.zipBuffer\)/.test(source), 'manifest is not read from the payload');
     assert.ok(/readFile\(parsed\.zipBuffer, iconPath\)/.test(source), 'icon is not read from the payload');

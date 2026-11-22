@@ -20,8 +20,8 @@ const RUNTIME_DIRECTORIES = new Set([
 const RUNTIME_ROOT_FILES = new Set([
   'package.json', 'index.html', 'main.js', 'preload.js', 'host-bridge.js',
   'cdp.js', 'engine.js', 'proxy-forwarder.js', 'live-sync-v4.js', 'live-sync-v5.js',
-  'chrome-store-metadata.js', 'credential-crypto.js', 'environment-audit.js',
-  'extension-pipe.js', 'i18n.js', 'store-extension.js', 'renderer.js',
+  'credential-crypto.js', 'environment-audit.js',
+  'i18n.js', 'renderer.js',
   'renderer-platform-install.js', 'renderer-select.js', 'renderer-theme.js',
   'environment-audit.css', 'modern.css', 'styles.css', 'themes.css', 'ui-shell.css',
   'native-extension-popup-driver.cs', 'native-input-mirror.cs', 'native-omnibox-driver.cs',

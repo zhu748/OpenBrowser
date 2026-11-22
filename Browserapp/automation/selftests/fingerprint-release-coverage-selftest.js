@@ -49,13 +49,13 @@ const scripts = {
   "selftest:round3": "node automation/selftests/fingerprint-adversarial-round3-selftest.js",
   "selftest:enginecdp": "node automation/selftests/engine-cdp-hardening-selftest.js",
   "selftest:iframeorigin": "node automation/selftests/cross-origin-iframe-fingerprint-e2e-selftest.js",
-  "audit:desktoppersona": "node automation/desktop-persona-consistency-audit.js",
-  "audit:navigatordevice": "node automation/navigator-device-adversarial-audit.js",
-  "audit:rendermedia": "node automation/render-media-worker-adversarial-audit.js",
-  "audit:networksidechannel": "node automation/network-storage-sidechannel-adversarial-audit.js",
-  "audit:prototypeshape": "node automation/prototype-shape-toString-audit.js",
-  "audit:mobiledeep": "node automation/mobile-persona-deep-adversarial-audit.js",
-  "audit:crossrealm": "node automation/cross-realm-detection-adversarial-audit.js",
+  "audit:desktoppersona": "node automation/audits/desktop-persona-consistency-audit.js",
+  "audit:navigatordevice": "node automation/audits/navigator-device-adversarial-audit.js",
+  "audit:rendermedia": "node automation/audits/render-media-worker-adversarial-audit.js",
+  "audit:networksidechannel": "node automation/audits/network-storage-sidechannel-adversarial-audit.js",
+  "audit:prototypeshape": "node automation/audits/prototype-shape-toString-audit.js",
+  "audit:mobiledeep": "node automation/audits/mobile-persona-deep-adversarial-audit.js",
+  "audit:crossrealm": "node automation/audits/cross-realm-detection-adversarial-audit.js",
 };
 
 const results = [];
@@ -243,20 +243,20 @@ const COVERAGE_DOMAINS = [
 const DIAGNOSTIC_AUDITS = [
   {
     key: "audit:valuefingerprint",
-    script: "node automation/value-fingerprint-adversarial-audit.js",
-    file: "automation/value-fingerprint-adversarial-audit.js",
+    script: "node automation/audits/value-fingerprint-adversarial-audit.js",
+    file: "automation/audits/value-fingerprint-adversarial-audit.js",
     rationale: "Adversarial value-level fingerprint audit across surfaces"
   },
   {
     key: "audit:valuefirefox",
-    script: "node automation/value-fingerprint-firefox-audit.js",
-    file: "automation/value-fingerprint-firefox-audit.js",
+    script: "node automation/audits/value-fingerprint-firefox-audit.js",
+    file: "automation/audits/value-fingerprint-firefox-audit.js",
     rationale: "Firefox value-level fingerprint parity audit"
   },
   {
     key: "audit:mathparity",
-    script: "node automation/math-value-parity-audit.js",
-    file: "automation/math-value-parity-audit.js",
+    script: "node automation/audits/math-value-parity-audit.js",
+    file: "automation/audits/math-value-parity-audit.js",
     rationale: "Math value parity audit across engines"
   },
   {
@@ -267,68 +267,68 @@ const DIAGNOSTIC_AUDITS = [
   },
   {
     key: "audit:adversarial",
-    script: "node automation/adversarial-detection-audit.js",
-    file: "automation/adversarial-detection-audit.js",
+    script: "node automation/audits/adversarial-detection-audit.js",
+    file: "automation/audits/adversarial-detection-audit.js",
     rationale: "Round 1 live-kernel A/B adversarial detector: prototype descriptors, cross-context leaks, stack exposure"
   },
   {
     key: "audit:adversarial2",
-    script: "node automation/adversarial-detection-audit-round2.js",
-    file: "automation/adversarial-detection-audit-round2.js",
+    script: "node automation/audits/adversarial-detection-audit-round2.js",
+    file: "automation/audits/adversarial-detection-audit-round2.js",
     rationale: "Round 2 live-kernel A/B adversarial detector: capability APIs, wire headers, worker contexts, media queries"
   },
   {
     key: "audit:brandtrace",
-    script: "node automation/page-visible-brand-trace-audit.js",
-    file: "automation/page-visible-brand-trace-audit.js",
+    script: "node automation/audits/page-visible-brand-trace-audit.js",
+    file: "automation/audits/page-visible-brand-trace-audit.js",
     rationale: "Page-visible self-exposure audit: product markers, srcdoc leakage, DOM/CSS artifacts vs native baseline"
   },
   {
     key: "audit:mobilepersona",
-    script: "node automation/mobile-persona-consistency-audit.js",
-    file: "automation/mobile-persona-consistency-audit.js",
+    script: "node automation/audits/mobile-persona-consistency-audit.js",
+    file: "automation/audits/mobile-persona-consistency-audit.js",
     rationale: "Android/iOS persona end-to-end consistency audit (identity, touch, client hints, GPU, fonts, kernel init)"
   },
   {
     key: "audit:desktoppersona",
-    script: "node automation/desktop-persona-consistency-audit.js",
-    file: "automation/desktop-persona-consistency-audit.js",
+    script: "node automation/audits/desktop-persona-consistency-audit.js",
+    file: "automation/audits/desktop-persona-consistency-audit.js",
     rationale: "Linux/Windows desktop persona end-to-end consistency audit (identity, screen, client hints, GPU, fonts, kernel init)"
   },
   {
     key: "audit:navigatordevice",
-    script: "node automation/navigator-device-adversarial-audit.js",
-    file: "automation/navigator-device-adversarial-audit.js",
+    script: "node automation/audits/navigator-device-adversarial-audit.js",
+    file: "automation/audits/navigator-device-adversarial-audit.js",
     rationale: "Goodall navigator & device persona consistency adversarial audit"
   },
   {
     key: "audit:rendermedia",
-    script: "node automation/render-media-worker-adversarial-audit.js",
-    file: "automation/render-media-worker-adversarial-audit.js",
+    script: "node automation/audits/render-media-worker-adversarial-audit.js",
+    file: "automation/audits/render-media-worker-adversarial-audit.js",
     rationale: "Hubble rendering & media worker adversarial audit"
   },
   {
     key: "audit:networksidechannel",
-    script: "node automation/network-storage-sidechannel-adversarial-audit.js",
-    file: "automation/network-storage-sidechannel-adversarial-audit.js",
+    script: "node automation/audits/network-storage-sidechannel-adversarial-audit.js",
+    file: "automation/audits/network-storage-sidechannel-adversarial-audit.js",
     rationale: "Planck network wire headers, ServiceWorker, and storage quota side-channel audit"
   },
   {
     key: "audit:prototypeshape",
-    script: "node automation/prototype-shape-toString-audit.js",
-    file: "automation/prototype-shape-toString-audit.js",
+    script: "node automation/audits/prototype-shape-toString-audit.js",
+    file: "automation/audits/prototype-shape-toString-audit.js",
     rationale: "Dalton prototype shape, toString integrity, and hidden Symbol leakage audit"
   },
   {
     key: "audit:mobiledeep",
-    script: "node automation/mobile-persona-deep-adversarial-audit.js",
-    file: "automation/mobile-persona-deep-adversarial-audit.js",
+    script: "node automation/audits/mobile-persona-deep-adversarial-audit.js",
+    file: "automation/audits/mobile-persona-deep-adversarial-audit.js",
     rationale: "Deep mobile persona adversarial audit"
   },
   {
     key: "audit:crossrealm",
-    script: "node automation/cross-realm-detection-adversarial-audit.js",
-    file: "automation/cross-realm-detection-adversarial-audit.js",
+    script: "node automation/audits/cross-realm-detection-adversarial-audit.js",
+    file: "automation/audits/cross-realm-detection-adversarial-audit.js",
     optional: true,
     rationale: "Cross-realm iframe/worker prototype identity leak adversarial audit (in progress by sub-agent)"
   }

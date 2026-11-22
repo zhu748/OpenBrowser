@@ -311,99 +311,99 @@ const DIAGNOSTIC_AUDITS = [
   },
   {
     key: "audit:adversarial",
-    script: "node automation/adversarial-detection-audit.js",
-    file: "automation/adversarial-detection-audit.js",
+    script: "node automation/audits/adversarial-detection-audit.js",
+    file: "automation/audits/adversarial-detection-audit.js",
     category: "DIAGNOSTIC_AUDIT",
     rationale: "Round 1 live-kernel A/B adversarial detector (prototype descriptors, cross-context leaks, stack exposure)"
   },
   {
     key: "audit:adversarial2",
-    script: "node automation/adversarial-detection-audit-round2.js",
-    file: "automation/adversarial-detection-audit-round2.js",
+    script: "node automation/audits/adversarial-detection-audit-round2.js",
+    file: "automation/audits/adversarial-detection-audit-round2.js",
     category: "DIAGNOSTIC_AUDIT",
     rationale: "Round 2 live-kernel A/B adversarial detector (capability APIs, wire headers, worker contexts, media queries)"
   },
   {
     key: "audit:valuefingerprint",
-    script: "node automation/value-fingerprint-adversarial-audit.js",
-    file: "automation/value-fingerprint-adversarial-audit.js",
+    script: "node automation/audits/value-fingerprint-adversarial-audit.js",
+    file: "automation/audits/value-fingerprint-adversarial-audit.js",
     category: "DIAGNOSTIC_AUDIT",
     rationale: "Round 5 value-level Chromium A/B audit (canvas/WebGL/audio rendered values, Math quirks, SVG values, driver marks, worker identity)"
   },
   {
     key: "audit:valuefirefox",
-    script: "node automation/value-fingerprint-firefox-audit.js",
-    file: "automation/value-fingerprint-firefox-audit.js",
+    script: "node automation/audits/value-fingerprint-firefox-audit.js",
+    file: "automation/audits/value-fingerprint-firefox-audit.js",
     category: "DIAGNOSTIC_AUDIT",
     rationale: "Round 5 value-level Firefox A/B audit through the full production path (document preload + worker MITM, both worker delivery paths)"
   },
   {
     key: "audit:mathparity",
-    script: "node automation/math-value-parity-audit.js",
-    file: "automation/math-value-parity-audit.js",
+    script: "node automation/audits/math-value-parity-audit.js",
+    file: "automation/audits/math-value-parity-audit.js",
     category: "DIAGNOSTIC_AUDIT",
     rationale: "Math/ECMAScript cross-engine value parity (archived: fdlibm-derived engines are bit-identical; host-libm inheritance is not a persona contradiction)"
   },
   {
     key: "audit:brandtrace",
-    script: "node automation/page-visible-brand-trace-audit.js",
-    file: "automation/page-visible-brand-trace-audit.js",
+    script: "node automation/audits/page-visible-brand-trace-audit.js",
+    file: "automation/audits/page-visible-brand-trace-audit.js",
     category: "DIAGNOSTIC_AUDIT",
     rationale: "Page-visible self-exposure audit (product markers, srcdoc leakage, DOM/CSS artifacts) vs native baseline"
   },
   {
     key: "audit:mobilepersona",
-    script: "node automation/mobile-persona-consistency-audit.js",
-    file: "automation/mobile-persona-consistency-audit.js",
+    script: "node automation/audits/mobile-persona-consistency-audit.js",
+    file: "automation/audits/mobile-persona-consistency-audit.js",
     category: "DIAGNOSTIC_AUDIT",
     rationale: "Android/iOS persona end-to-end consistency audit (identity, touch, client hints, GPU, fonts, kernel init)"
   },
   {
     key: "audit:desktoppersona",
-    script: "node automation/desktop-persona-consistency-audit.js",
-    file: "automation/desktop-persona-consistency-audit.js",
+    script: "node automation/audits/desktop-persona-consistency-audit.js",
+    file: "automation/audits/desktop-persona-consistency-audit.js",
     category: "DIAGNOSTIC_AUDIT",
     rationale: "Linux/Windows desktop persona end-to-end consistency audit (identity, screen, client hints, GPU, fonts, kernel init)"
   },
   {
     key: "audit:navigatordevice",
-    script: "node automation/navigator-device-adversarial-audit.js",
-    file: "automation/navigator-device-adversarial-audit.js",
+    script: "node automation/audits/navigator-device-adversarial-audit.js",
+    file: "automation/audits/navigator-device-adversarial-audit.js",
     category: "DIAGNOSTIC_AUDIT",
     rationale: "Goodall navigator & device persona consistency adversarial audit (getters, prototype isolation, illegal invocation, platform consistency)"
   },
   {
     key: "audit:rendermedia",
-    script: "node automation/render-media-worker-adversarial-audit.js",
-    file: "automation/render-media-worker-adversarial-audit.js",
+    script: "node automation/audits/render-media-worker-adversarial-audit.js",
+    file: "automation/audits/render-media-worker-adversarial-audit.js",
     category: "DIAGNOSTIC_AUDIT",
     rationale: "Hubble rendering & media adversarial audit (SVG text length, Canvas triple-hash, WebGL noise, audio hardware consistency)"
   },
   {
     key: "audit:networksidechannel",
-    script: "node automation/network-storage-sidechannel-adversarial-audit.js",
-    file: "automation/network-storage-sidechannel-adversarial-audit.js",
+    script: "node automation/audits/network-storage-sidechannel-adversarial-audit.js",
+    file: "automation/audits/network-storage-sidechannel-adversarial-audit.js",
     category: "DIAGNOSTIC_AUDIT",
     rationale: "Planck network wire headers, ServiceWorker postMessage leaks, and storage quota side-channel audit"
   },
   {
     key: "audit:prototypeshape",
-    script: "node automation/prototype-shape-toString-audit.js",
-    file: "automation/prototype-shape-toString-audit.js",
+    script: "node automation/audits/prototype-shape-toString-audit.js",
+    file: "automation/audits/prototype-shape-toString-audit.js",
     category: "DIAGNOSTIC_AUDIT",
     rationale: "Dalton prototype shape, toString integrity, native getter descriptor reflection, and hidden Symbol leakage audit"
   },
   {
     key: "audit:mobiledeep",
-    script: "node automation/mobile-persona-deep-adversarial-audit.js",
-    file: "automation/mobile-persona-deep-adversarial-audit.js",
+    script: "node automation/audits/mobile-persona-deep-adversarial-audit.js",
+    file: "automation/audits/mobile-persona-deep-adversarial-audit.js",
     category: "DIAGNOSTIC_AUDIT",
     rationale: "Deep mobile persona adversarial audit (touch events, orientation lock, Apple WebKit CSS/capabilities)"
   },
   {
     key: "audit:crossrealm",
-    script: "node automation/cross-realm-detection-adversarial-audit.js",
-    file: "automation/cross-realm-detection-adversarial-audit.js",
+    script: "node automation/audits/cross-realm-detection-adversarial-audit.js",
+    file: "automation/audits/cross-realm-detection-adversarial-audit.js",
     category: "DIAGNOSTIC_AUDIT",
     optional: true,
     rationale: "Cross-realm iframe/worker prototype and constructor identity leak adversarial audit (in progress by sub-agent)"

@@ -122,7 +122,7 @@ function inspectKernel(platform, base) {
   // pointer-only 检出（未 git lfs pull）里 natives 是“无法判定”而非“为 0”：这种平台行
   // 的配对断言保持 inconclusive（见 check 3）；真实检出（二进制为真内容）守卫强度不变。
   const pointerOnly = nativeCandidates > 0 && pointerCandidates === nativeCandidates;
-  // 阶段 1 布局（docs/wayfern-fonts-dedup-plan.md）：windows-x64 的字体正本在共享目录
+  // 阶段 1 布局（docs/archive/wayfern-fonts-dedup-plan.md）：windows-x64 的字体正本在共享目录
   // kernels/wayfern-fonts（未物化的开发机平台目录内没有副本）。配对断言按“平台目录或
   // 共享正本”计数，门禁强度不降级；其它平台不加正本，避免误报 dead font packs。
   const extraFontRoots = platform === 'windows-x64' ? [path.join(kernelsRoot, 'wayfern-fonts')] : [];

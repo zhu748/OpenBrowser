@@ -134,7 +134,7 @@ function defaultRepo() {
 }
 
 /*
- * wayfern_fonts 布局（docs/wayfern-fonts-dedup-plan.md 阶段 1）：字体正本在共享目录
+ * wayfern_fonts 布局（docs/archive/wayfern-fonts-dedup-plan.md 阶段 1）：字体正本在共享目录
  * kernels/wayfern-fonts；windows-x64 种子内的 wayfern_fonts 由
  * scripts/materialize-wayfern-fonts.js 物化（package-portable / prepare-bundled-kernel /
  * CI 均已接入）。kernel-release.yml 打 windows-x64 归档前已物化字体，归档布局与历史

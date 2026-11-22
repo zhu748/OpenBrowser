@@ -55,6 +55,13 @@ Module._load = function(req, _isMain) {
       globalShortcut: {},
       ipcMain: { handle: () => {}, on: () => {} },
       nativeImage: {},
+      protocol: {
+        registerSchemesAsPrivileged: () => {},
+        registerFileProtocol: () => {},
+        registerStringProtocol: () => {},
+        handle: () => {},
+        unhandle: () => {},
+      },
       screen: {},
       session: {},
       shell: {},

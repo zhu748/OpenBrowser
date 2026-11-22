@@ -16,6 +16,7 @@
 const { parseProxy, lookupProxyCountry, extractProxyFromApi, invokeProxyRefresh, classifyProxyError } = require('../proxy-forwarder');
 const { sameProxyIdentity } = require('./proxy-helpers');
 const { profileWriteGuard } = require('./profile-write-guard');
+const { isNoCredentialProxy } = require('../shared/proxy-redact');
 
 module.exports = {
   async resolveProfileProxyConfig(profile, { allowExtract = true } = {}) {
@@ -24,7 +25,7 @@ module.exports = {
     const candidates = [];
     const pushCandidate = (value, source) => {
       const raw = String(value || '').trim();
-      if (!raw || /^(direct|offline|none)$/i.test(raw)) return;
+      if (!raw || isNoCredentialProxy(raw)) return;
       if (candidates.some((item) => item.raw === raw)) return;
       candidates.push({ raw, source });
     };
@@ -119,7 +120,7 @@ module.exports = {
     const profile = this.sanitizeProfile(raw);
     const forcedRaw = String(options.proxy || options.forcedProxy || '').trim();
     let resolved;
-    if (forcedRaw && !/^(direct|offline|none)$/i.test(forcedRaw)) {
+    if (forcedRaw && !isNoCredentialProxy(forcedRaw)) {
       const config = parseProxy(forcedRaw);
       if (!config) throw new Error('代理配置无效');
       resolved = { profile, config, raw: forcedRaw, source: options.proxySource || 'forced' };
@@ -211,7 +212,7 @@ module.exports = {
         extracted = await extractProxyFromApi(extractUrl);
       } catch (error) {
         extractError = error;
-        if (!profile.proxy || /^(direct|offline|none)$/i.test(String(profile.proxy))) {
+        if (!profile.proxy || isNoCredentialProxy(profile.proxy)) {
           throw new Error('动态代理提取失败：' + (error.message || error));
         }
       }
@@ -244,14 +245,14 @@ module.exports = {
     let working = this.resolveStoredProxyProfile(this.sanitizeProfile(profile));
     const meta = working.proxyMeta || {};
     if (working.networkMode === 'direct') return working;
-    if (!working.proxy || /^(direct|offline|none)$/i.test(String(working.proxy))) {
-      const backup = (meta.backupProxies || []).find((value) => value && !/^(direct|offline|none)$/i.test(String(value)));
+    if (!working.proxy || isNoCredentialProxy(working.proxy)) {
+      const backup = (meta.backupProxies || []).find((value) => value && !isNoCredentialProxy(value));
       if (backup) working = this.sanitizeProfile({ ...working, proxy: backup, networkMode: 'proxy' });
     }
-    if ((!working.proxy || /^(direct|offline|none)$/i.test(String(working.proxy))) && !meta.apiExtractUrl) {
+    if ((!working.proxy || isNoCredentialProxy(working.proxy)) && !meta.apiExtractUrl) {
       throw Object.assign(new Error('代理模式缺少有效节点，请配置代理或明确选择本地直连'), { code: 'proxy-required' });
     }
-    const hasProxy = working.proxy && !/^(direct|offline|none)$/i.test(String(working.proxy));
+    const hasProxy = working.proxy && !isNoCredentialProxy(working.proxy);
     const extractUrl = String(meta.apiExtractUrl || '').trim();
     // Align with refreshProfileProxy: refresh first (rotate IP), then extract current endpoint.
     if (meta.refreshOnStart && String(meta.refreshUrl || '').trim()) {
@@ -283,11 +284,11 @@ module.exports = {
       }
     }
     const shouldCheck = working.networkMode === 'proxy';
-    if (shouldCheck && working.proxy && !/^(direct|offline|none)$/i.test(String(working.proxy))) {
+    if (shouldCheck && working.proxy && !isNoCredentialProxy(working.proxy)) {
       const candidates = [];
       const push = (value) => {
         const raw = String(value || '').trim();
-        if (!raw || /^(direct|offline|none)$/i.test(raw)) return;
+        if (!raw || isNoCredentialProxy(raw)) return;
         if (!candidates.includes(raw)) candidates.push(raw);
       };
       push(working.proxy);

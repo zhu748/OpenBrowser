@@ -8,6 +8,7 @@ const dns = require('dns');
 const crypto = require('crypto');
 const { URL } = require('url');
 const { buildStartPageHtml } = require('./start-page-template');
+const { isNoCredentialProxy } = require('../shared/proxy-redact');
 const { startPageNetwork, PROBE_ERROR } = require('./start-page-network');
 const { timezoneFromCountryCode, resolveProfileTimezone, isIanaTimezoneId } = require('./locale-from-country');
 const { lookupDirectCountry, parseProxy, startAuthenticatedProxy } = require('../proxy-forwarder');
@@ -123,7 +124,7 @@ async function lookupDirectNetwork(options) {
 function profileNetworkRoute(engine, profile) {
   if (engine?.profileExitRoute) return engine.profileExitRoute(profile);
   if (profile.networkMode === 'proxy') return 'proxy';
-  return profile.networkMode === 'direct' || !profile.proxy || /^(direct|offline|none)$/i.test(String(profile.proxy)) ? 'direct' : 'proxy';
+  return profile.networkMode === 'direct' || !profile.proxy || isNoCredentialProxy(profile.proxy) ? 'direct' : 'proxy';
 }
 
 function parseCfTrace(body = '') {

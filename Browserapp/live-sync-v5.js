@@ -617,8 +617,6 @@ function isEnvironmentStartUrl(value, engine) {
 
 // --- Internal Browser Page Synchronization Rules ---
 const {
-  BLOCKED_INTERNAL_SCHEMES,
-  BLOCKED_INTERNAL_HOSTS,
   ALLOWED_INTERNAL_HOSTS,
   ALLOWED_INTERNAL_PAGES,
   isNavigableInternalUrl,
@@ -2321,7 +2319,5 @@ module.exports = {
   canDomLiveSyncTabUrl,
   ALLOWED_INTERNAL_PAGES,
   ALLOWED_INTERNAL_HOSTS,
-  BLOCKED_INTERNAL_HOSTS,
-  BLOCKED_INTERNAL_SCHEMES,
   __test: { fullscreenInjection, fullscreenExpression },
 };

@@ -8,6 +8,7 @@
  */
 
 const cdp = require('../cdp');
+const { isNoCredentialProxy } = require('../shared/proxy-redact');
 const { buildFingerprint } = require('../automation/fingerprint');
 const { resolveProfileLanguage, resolveProfileTimezone } = require('../automation/locale-from-country');
 const { toFileUrl } = require('../automation/protocol/cross-platform');
@@ -23,7 +24,7 @@ const { lookupDirectCountry, lookupNetworkCountry } = require('../proxy-forwarde
 function profileExitRoute(profile) {
   const proxy = String(profile.proxy || '').trim();
   if (profile.networkMode === 'proxy' ||
-      (profile.networkMode !== 'direct' && proxy && !/^(direct|offline|none)$/i.test(proxy))) return 'proxy';
+      (profile.networkMode !== 'direct' && proxy && !isNoCredentialProxy(proxy))) return 'proxy';
   // Match Chromium's implicit system routing and Firefox's current direct preferences.
   return this.requestSystemNetwork && !this.profilePrefersFirefox(profile) && profile.proxyMeta?.systemProxy !== 'off'
     ? 'system' : 'direct';

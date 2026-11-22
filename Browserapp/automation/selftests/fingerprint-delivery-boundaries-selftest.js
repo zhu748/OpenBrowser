@@ -84,7 +84,7 @@ async function startupHarness(fault) {
     '../automation/browser-kernel': { ensureKernelReadyForLaunch: async () => {} },
     '../automation/env-icon': { normalizeEnvNumber: () => '1', prepareMarkerExtension: async () => null },
     '../automation/isolation': { validateProfileRootSecure: async () => ({ ok: true }), acquireProfileLock: async () => ({}), updateProfileLock: async () => ({}) },
-    '../extension-pipe': { portConnection: async () => connection, reconcileOnConnection: async () => ({ installed: [], extensions: [] }) },
+    './extension-pipe': { portConnection: async () => connection, reconcileOnConnection: async () => ({ installed: [], extensions: [] }) },
     './resource-gate': { assertResourceGateForLaunch: async () => {} },
     './startup-session': { openVerifiedStartupTabs: async (engine) => { engine.navigations += 1; } },
   };

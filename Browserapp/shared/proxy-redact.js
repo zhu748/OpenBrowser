@@ -7,6 +7,13 @@
 
   const PROXY_NO_CREDENTIAL_RE = /^(direct|offline|none)$/i;
 
+  // Single source of truth for the "no-credential proxy" predicate
+  // (direct / offline / none). Previously copy-pasted as an inline regex
+  // across engine/, network/, automation/ and ui/ modules.
+  function isNoCredentialProxy(value) {
+    return PROXY_NO_CREDENTIAL_RE.test(String(value ?? '').trim());
+  }
+
   function redactProxyCredentials(proxy) {
     const raw = String(proxy ?? '').trim();
     if (!raw) return 'Direct';
@@ -25,5 +32,5 @@
     return raw;
   }
 
-  return Object.freeze({ redactProxyCredentials });
+  return Object.freeze({ redactProxyCredentials, isNoCredentialProxy });
 });

@@ -2,6 +2,7 @@
 
 // Proxy input normalization and display; no sockets, probes or engine state.
 const net = require('node:net');
+const { isNoCredentialProxy } = require('../shared/proxy-redact');
 
 const IP_LOOKUP_CHANNELS = Object.freeze(['ip-api', 'ip2location', 'ifconfig-me']);
 
@@ -114,11 +115,11 @@ function buildProxyConfig(input = {}) {
 
 function parseProxyString(value) {
   let { source, remark } = splitProxyRemark(value);
-  if (!source || /^(direct|offline|none)$/i.test(source)) return null;
+  if (!source || isNoCredentialProxy(source)) return null;
 
   source = source.replace(/^["'`(]+|["'`)]+$/g, '').trim();
   if (source.endsWith('/')) source = source.slice(0, -1).trim();
-  if (!source || /^(direct|offline|none)$/i.test(source)) return null;
+  if (!source || isNoCredentialProxy(source)) return null;
 
   let protocol = 'http';
   let body = source;

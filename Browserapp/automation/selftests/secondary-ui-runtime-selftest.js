@@ -24,7 +24,7 @@ function check(name, fn) {
 }
 const measurements = [];
 try {
-  cli('--allow-file-access', '--init-script', path.join(__dirname, '../ui-audit-bridge.js'), 'open', pathToFileURL(path.join(root, 'index.html')).href);
+  cli('--allow-file-access', '--init-script', path.join(__dirname, 'fixtures/ui-audit-bridge.js'), 'open', pathToFileURL(path.join(root, 'index.html')).href);
   cli('wait', '#profile-table');
   run(() => {
     ui.profiles = [normalizeProfileSettings({ id: 'audit-profile', number: 1, os: 'Windows', language: 'en-US', networkMode: 'direct', proxy: 'Direct' })];
