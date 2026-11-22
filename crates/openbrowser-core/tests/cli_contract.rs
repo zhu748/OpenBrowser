@@ -117,3 +117,25 @@ fn layout_preserves_zero_and_rejects_invalid_arguments() {
         assert!(!invoke(&args, b"").0);
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn layout_rejects_non_unicode_arguments_without_panicking() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    let result = Command::new(env!("CARGO_BIN_EXE_openbrowser-core"))
+        .args(["layout", "--count"])
+        .arg(OsStr::from_bytes(b"\xff"))
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&result.stderr);
+
+    assert!(!result.status.success());
+    assert!(result.stdout.is_empty());
+    assert!(
+        stderr.contains("Arguments must be valid Unicode"),
+        "{stderr}"
+    );
+    assert!(!stderr.contains("panicked"), "{stderr}");
+}

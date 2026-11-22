@@ -230,6 +230,31 @@ async function checkExchangeFileBom() {
   }
 }
 
+async function checkProjectSortWrites() {
+  const service = Object.create(LocalService.prototype);
+  const groups = ['a', 'b', 'c', 'd'].map(id => ({ id }));
+  service.queue = Promise.resolve();
+  service.load = async () => {};
+  service.data = { groups };
+  const writes = [], events = [];
+  service.save = async () => { writes.push(service.data.groups.map(row => row.id)); };
+  service.engine = { emit: event => events.push(event) };
+  const reorder = projectIds => service.request('groups:sort', { projectIds });
+
+  await reorder(['local-default']);
+  await Promise.all(Array.from({ length: 10 }, () => reorder(['b', 'd'])));
+  assert.equal(writes.length, 0, 'unchanged project ordering must not rewrite the workspace store');
+  assert.equal(events.length, 0, 'unchanged project ordering must not trigger list refreshes');
+  assert.equal(service.data.groups, groups);
+
+  await Promise.all([reorder(['d', 'b']), reorder(['d', 'b'])]);
+  assert.deepEqual(writes, [['a', 'd', 'c', 'b']], 'only the chosen positions change, once');
+  assert.deepEqual(events, [{ type: 'profiles', action: 'group-metadata' }]);
+  await assert.rejects(reorder(['b', 'b']), /项目排序不能重复/);
+  await assert.rejects(reorder(['unknown']), /排序中的项目不存在/);
+  assert.equal(writes.length, 1, 'validation still applies to every reorder request');
+}
+
 async function main() {
   // Use the real request/dispatch/handlers with controlled I/O and no desktop.
   const service = Object.create(LocalService.prototype);
@@ -308,6 +333,7 @@ async function main() {
   await checkSavedFilterRename();
   await checkSettingsNoopWrites();
   await checkExchangeFileBom();
+  await checkProjectSortWrites();
 
   // A large existing library must not exceed the JS argument-count limit when
   // creating a profile or reserving a batch of sequential display numbers.

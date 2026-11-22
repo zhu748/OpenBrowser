@@ -68,6 +68,7 @@ const SUITE = [
   ['selftest:workbenchavatar', 'automation/selftests/workbench-avatar-selftest.js'],
   ['selftest:workbenchrelatedprofiles', 'automation/selftests/workbench-related-profiles-selftest.js'],
   ['selftest:workbenchtabs', 'automation/selftests/workbench-tabs-selftest.js'],
+  ['selftest:workbenchviewheader', 'automation/selftests/workbench-view-header-selftest.js'],
   ['selftest:fpreview', 'automation/selftests/fingerprint-review-selftest.js'],
   ['selftest:fpreviewidentity', 'automation/selftests/fingerprint-preview-identity-selftest.js'],
   ['selftest:profilestatus', 'automation/selftests/profile-lifecycle-selftest.js'],

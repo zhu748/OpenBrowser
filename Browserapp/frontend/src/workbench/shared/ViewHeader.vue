@@ -15,7 +15,9 @@ function back() {
 <template>
   <div class="flex views-header" :class="{ divider }">
     <div class="flex items-center flex-1 gap-2.5">
-      <Icon v-if="showBack" class="cursor-pointer" name="base/rx_ic_chevron_left" :size="24" @click="back" />
+      <button v-if="showBack" type="button" class="views-header-back" :aria-label="$t('返回')" @click="back">
+        <Icon name="base/rx_ic_chevron_left" :size="24" aria-hidden="true" />
+      </button>
       <slot name="title"><i18n-t :keypath="title || $route.meta.title" scope="global" /></slot>
       <slot name="title-after" />
     </div>

@@ -184,13 +184,20 @@ async function groupsSort(service, p) {
   if (new Set(requested).size !== requested.length)
     throw Error("项目排序不能重复");
   const order = requested.filter((id) => id !== "local-default");
+  if (!order.length) return true;
   const byId = new Map(service.data.groups.map((row) => [row.id, row]));
   if (order.some((id) => !byId.has(id))) throw Error("排序中的项目不存在");
   const selected = new Set(order);
   let index = 0;
-  service.data.groups = service.data.groups.map((row) =>
-    selected.has(row.id) ? byId.get(order[index++]) : row,
-  );
+  let changed = false;
+  const sorted = service.data.groups.map((row) => {
+    if (!selected.has(row.id)) return row;
+    const next = byId.get(order[index++]);
+    changed ||= next !== row;
+    return next;
+  });
+  if (!changed) return true;
+  service.data.groups = sorted;
   await service.save();
   service.engine.emit?.({ type: "profiles", action: "group-metadata" });
   return true;

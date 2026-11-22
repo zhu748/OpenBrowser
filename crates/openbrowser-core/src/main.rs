@@ -28,7 +28,13 @@ async fn main() -> Result<()> {
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .init();
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let args = std::env::args_os()
+        .skip(1)
+        .map(|arg| {
+            arg.into_string()
+                .map_err(|_| invalid("Arguments must be valid Unicode"))
+        })
+        .collect::<Result<Vec<_>>>()?;
     let (command, options) = args
         .split_first()
         .ok_or_else(|| invalid("Expected bridge, tls, lock, layout or version"))?;

@@ -9,3 +9,17 @@
 .divider[data-v-f2b7568e] {
   border-bottom: 0.5px solid var(--colors-border-divider);
 }
+.views-header-back[data-v-f2b7568e] {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.views-header-back[data-v-f2b7568e]:focus-visible {
+  outline: 2px solid var(--colors-icon-icon-brand, currentColor);
+  outline-offset: 2px;
+}
