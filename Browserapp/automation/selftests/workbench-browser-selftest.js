@@ -20,7 +20,7 @@ async function main() {
   const workbench = await fs.readFile(path.join(appRoot, 'ui/ui-workbench.js'), 'utf8');
   const methods = new Set([...preload.matchAll(/^  (\w+):/gm)].map((match) => match[1]));
   for (const match of workbench.matchAll(/window\.ops\??\.(\w+)/g)) assert.ok(methods.has(match[1]), 'workbench calls missing preload method: ' + match[1]);
-  const fixture = await fs.readFile(path.join(appRoot, 'automation/ui-audit-bridge.js'), 'utf8');
+  const fixture = await fs.readFile(path.join(appRoot, 'automation/selftests/fixtures/ui-audit-bridge.js'), 'utf8');
   const script = fixture + `
     window.__reviewToasts=[];window.__accounts=new Map();window.__proxies=[];
     window.__kernels=[
