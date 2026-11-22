@@ -149,6 +149,37 @@ async function checkBatchAssociations() {
   assert.equal(linearLookupWidth, 0, 'bulk relationship updates must not rescan the entire ID array per row');
 }
 
+async function checkSavedFilterRename() {
+  const service = Object.create(LocalService.prototype);
+  const first = { filter_name: 'Active', filter_condition: { running: true } };
+  const second = { filter_name: 'Favorite', filter_condition: { favorite: true } };
+  const filterSort = [{ name: 'Favorite', sort: 1 }, { name: 'Active', sort: 2 }];
+  service.queue = Promise.resolve();
+  service.data = { settings: { filterSort }, filters: [first, second] };
+  service.load = async () => {};
+  let saves = 0;
+  service.save = async () => { saves++; };
+  const rename = name => service.request('filters:save', {
+    ...first, old_filter_name: 'Active', new_filter_name: name,
+  });
+
+  await assert.rejects(rename('Favorite'), /筛选器名称已存在/);
+  assert.deepEqual(service.data.filters, [first, second]);
+  assert.deepEqual(service.data.settings.filterSort, filterSort);
+  assert.equal(saves, 0, 'rejected rename cannot mutate persisted filters or ordering');
+
+  await rename('Running');
+  assert.equal(saves, 1);
+  assert.deepEqual(service.data.settings.filterSort, [{ name: 'Favorite', sort: 1 }, { name: 'Running', sort: 2 }]);
+  assert.deepEqual((await service.request('filters:list')).map(row => row.filter_name), ['Favorite', 'Running']);
+  await service.request('filters:save', {
+    old_filter_name: 'Running', new_filter_name: 'Running', filter_condition: { running: false },
+  });
+  assert.equal(saves, 2);
+  assert.deepEqual((await service.request('filters:list')).map(row => row.filter_condition),
+    [{ favorite: true }, { running: false }], 'an edit with the same name does not create a second record');
+}
+
 async function main() {
   // Use the real request/dispatch/handlers with controlled I/O and no desktop.
   const service = Object.create(LocalService.prototype);
@@ -224,6 +255,7 @@ async function main() {
   await checkNotificationWrites(service);
   await checkLabelProjection();
   await checkBatchAssociations();
+  await checkSavedFilterRename();
 
   // A large existing library must not exceed the JS argument-count limit when
   // creating a profile or reserving a batch of sequential display numbers.
@@ -239,6 +271,6 @@ async function main() {
   assert.equal(saved[0].number, 200001);
   const batch = await service.request('profiles:create-batch', { createCount: 3 });
   assert.deepEqual(batch.map(profile => profile.sortNum), [200001, 200002, 200003]);
-  console.log('PASS local routes: validation, dispatch, launch isolation, rollback, notification writes and collection projections');
+  console.log('PASS local routes: validation, dispatch, launch isolation, rollback, notification writes, collection projections and filter identity');
 }
 main().catch((error) => { console.error(error); process.exitCode = 1; });

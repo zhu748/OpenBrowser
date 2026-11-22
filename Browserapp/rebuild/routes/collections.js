@@ -256,16 +256,20 @@ async function filtersList(service) {
 async function filtersSave(service, p) {
   const row = { ...p, filter_name: p.new_filter_name || p.filter_name };
   if (!String(row.filter_name || "").trim()) throw Error("请输入筛选器名称");
-  if (p.old_filter_name && p.old_filter_name !== row.filter_name)
+  const oldName = p.old_filter_name || row.filter_name;
+  if (oldName !== row.filter_name) {
+    if (service.data.filters.some((v) => v.filter_name === row.filter_name))
+      throw Error("筛选器名称已存在");
     service.data.settings.filterSort = (
       service.data.settings.filterSort || []
     ).map((item) =>
-      item.name === p.old_filter_name
+      item.name === oldName
         ? { ...item, name: row.filter_name }
         : item,
     );
+  }
   service.data.filters = service.data.filters
-    .filter((v) => v.filter_name !== (p.old_filter_name || row.filter_name))
+    .filter((v) => v.filter_name !== oldName)
     .concat(row);
   await service.save();
   return true;

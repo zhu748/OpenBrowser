@@ -9,6 +9,7 @@ function usePopupMenu() {
   const menu = ref();
   let host;
   let revision = 0;
+  let disposed = false;
 
   function destroy() {
     revision++;
@@ -19,7 +20,9 @@ function usePopupMenu() {
   }
 
   async function showMenu(event, { slots, ...options }) {
+    if (disposed) return;
     const anchor = event.currentTarget ?? event.target;
+    if (anchor?.isConnected === false) return;
     destroy();
     const request = revision;
     try {
@@ -31,6 +34,7 @@ function usePopupMenu() {
       await nextTick();
 
       if (request !== revision) return;
+      if (anchor?.isConnected === false) return destroy();
       if (!menu.value) throw Error('Menu component reference is not available');
       const trigger = new Proxy(event, {
         get(source, key) {
@@ -46,7 +50,10 @@ function usePopupMenu() {
     }
   }
 
-  onUnmounted(destroy);
+  onUnmounted(() => {
+    disposed = true;
+    destroy();
+  });
   return { showMenu, destroy };
 }
 

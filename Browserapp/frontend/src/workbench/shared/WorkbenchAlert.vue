@@ -39,9 +39,9 @@ function close() {
         <div v-if="title || $slots.title" class="rx-alert__title"><slot name="title">{{ title }}</slot></div>
         <div v-if="content || $slots.content" class="rx-alert__content"><slot name="content">{{ content }}</slot></div>
       </div>
-      <div v-if="closable" class="rx-alert-close" @click="close">
-        <slot name="close-icon"><Icon name="base/rx_ic_delete" /></slot>
-      </div>
+      <button v-if="closable" type="button" class="rx-alert-close" :aria-label="$t('关闭')" @click="close">
+        <slot name="close-icon"><Icon name="base/rx_ic_delete" aria-hidden="true" /></slot>
+      </button>
       <template v-if="breathing">
         <span class="rx-alert__breath rx-alert__breath-ring" aria-hidden="true"></span>
         <span class="rx-alert__breath rx-alert__breath-glow" aria-hidden="true"></span>
