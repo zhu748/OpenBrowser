@@ -32,6 +32,28 @@ const paint = page => page.waitForFunction(() => new Promise(resolve => {
 }), undefined, { timeout: 10000 }).then(frame => frame.dispose());
 const p95 = samples => [...samples].sort((a, b) => a - b)[Math.ceil(samples.length * .95) - 1];
 
+// Progress watchdog state, marked at every benchmark stage. Two hosted-runner
+// failure layers motivated it (see the wedge history in ci.yml):
+// 1. A protocol wedge where every armed Playwright timeout refuses to fire
+//    while the Node loop keeps beating (f3f70f2..5861594c macOS logs: heartbeats
+//    for minutes, no bound message, no catch output, no artifact written).
+// 2. Even a clean failure hung afterwards: SIGKILLing the wedged Electron
+//    leaves its forked helpers holding the stdio pipes, Playwright's transport
+//    never sees EOF, the loop never drains and the process never exits -
+//    reproduced locally with a STOPped Electron tree (every bound fired, the
+//    error printed, the process still sat there until killed).
+// So: every stage marks progress, the heartbeat - the one timer proven to fire
+// in every observed wedge - force-exits (code 2) once nothing progressed for
+// 2.5 minutes, and main() hard-exits on success and failure. Every legitimate
+// inter-mark gap stays far below the limit (the widest is one 120s create
+// batch, which is marked per batch inside the creation loop).
+const STALL_LIMIT_MS = 150000;
+let progressAt = performance.now(), progressLabel = 'startup';
+function markProgress(label) {
+  progressAt = performance.now();
+  if (label) progressLabel = label;
+}
+
 // Hosted macOS runners intermittently wedge one of the waits Playwright does
 // not bound by default: f3f70f2, 33b19197 and three consecutive 9a5f5a4
 // attempts all burned the full step budget at the 1000-profile phase while
@@ -43,10 +65,11 @@ function bounded(promise, ms, label) {
   return Promise.race([promise, new Promise((_, reject) => {
     const timer = setTimeout(() => reject(new Error(`${label} did not settle within ${ms}ms (runner wedge?)`)), ms);
     if (typeof timer.unref === 'function') timer.unref();
-  })]);
+  })]).finally(() => markProgress(`after ${label}`));
 }
 
 async function closeApp(app) {
+  markProgress('close Electron app');
   let timeout;
   try {
     await Promise.race([app.close(), new Promise((_, reject) => {
@@ -61,6 +84,7 @@ async function closeApp(app) {
 }
 
 async function observeQueries(app, page) {
+  markProgress('benchmark observer install');
   await bounded(page.evaluate(() => {
     globalThis.__workbenchBenchmark = { sequence: 0, rows: [] };
     globalThis.__workbenchBenchmarkDispose = globalThis.ops.onEvent(event => {
@@ -86,6 +110,7 @@ async function observeQueries(app, page) {
 }
 
 async function queryPaint(page, act, expected) {
+  markProgress(`query paint (${expected ?? 'pagination'})`);
   const sequence = await bounded(page.evaluate(() => globalThis.__workbenchBenchmark.sequence), 60000, 'benchmark state read');
   const start = performance.now();
   await act();
@@ -105,7 +130,10 @@ async function queryPaint(page, act, expected) {
 async function measure(page, count, rounds) {
   const search = page.getByPlaceholder(searchPlaceholder);
   const searchMs = [], pageMs = [], selectionMs = [];
-  const phase = (label) => { if (count >= 1000) console.error(`  ${count}-profile ${label}`); };
+  const phase = (label) => {
+    markProgress(`${count}-profile ${label}`);
+    if (count >= 1000) console.error(`  ${count}-profile ${label}`);
+  };
   // Ensure the warm-up itself is a real query even for a single-page fleet.
   const query = async value => { await search.fill(value); await search.press('Enter'); };
   phase('search warmup');
@@ -131,8 +159,10 @@ async function measure(page, count, rounds) {
     await paint(page);
     selectionMs.push(performance.now() - start);
   }
+  markProgress('profiles:count');
   const counter = await bounded(page.evaluate(() => globalThis.__localRequest('profiles:count')), 60000, 'profiles:count');
   assert.deepEqual(counter, { count });
+  markProgress('profiles:list');
   const fullListBytes = await bounded(page.evaluate(async () => new TextEncoder().encode(JSON.stringify(await globalThis.__localRequest('profiles:list'))).byteLength), 60000, 'profiles:list');
   return { count, renderedRows: await bounded(page.locator('tbody tr').count(), 60000, 'renderedRows count'),
     searchP95Ms: +p95(searchMs).toFixed(1), paginationP95Ms: pageMs.length ? +p95(pageMs).toFixed(1) : null,
@@ -143,8 +173,23 @@ async function benchmark(args) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ob-workbench-benchmark-'));
   const errors = [], reports = [];
   let app, page;
+  // Heartbeat plus progress watchdog: the heartbeat is the one timer that kept
+  // firing in every observed hosted-runner wedge, so it also owns the hard
+  // exit. A wedged attempt force-exits with code 2 (fail-fast, so the CI step's
+  // retry gets its turns) instead of silently burning the whole step budget.
+  const heartbeat = setInterval(() => {
+    const idleMs = performance.now() - progressAt;
+    console.error(`benchmark heartbeat uptime=${Math.round(process.uptime())}s rss=${Math.round(process.memoryUsage().rss / 1048576)}MB idle=${Math.round(idleMs / 1000)}s`);
+    if (idleMs > STALL_LIMIT_MS) {
+      console.error(`benchmark stalled for ${Math.round(idleMs / 1000)}s after "${progressLabel}" (runner wedge); exiting code 2 so the CI retry takes over`);
+      try { app?.process().kill('SIGKILL'); } catch { /* already gone */ }
+      process.exit(2);
+    }
+  }, 30000);
+  heartbeat.unref();
   try {
     const start = performance.now();
+    markProgress('launch Electron');
     app = await electron.launch({ executablePath: require('electron'),
       args: [
         ...(process.platform === 'linux' ? ['--no-sandbox', '--ozone-platform=headless', '--disable-gpu'] : []),
@@ -161,9 +206,11 @@ async function benchmark(args) {
       ],
       env: { ...process.env, OPENBROWSER_ROXY_UI: '1', OPENBROWSER_USER_DATA: root, OPENBROWSER_API_PORT: '0',
         OPENBROWSER_MASTER_KEY_FILE: path.join(root, 'master.key') }, timeout: 30000 });
+    markProgress('first window');
     page = await app.firstWindow({ timeout: 30000 });
     page.on('pageerror', error => errors.push(error.message));
     // A hosted desktop runner can occlude Electron even when its page is loaded.
+    markProgress('browserWindow lookup');
     const window = await bounded(app.browserWindow(page), 60000, 'browserWindow lookup');
     await bounded(window.evaluate(window => {
       window.webContents.setBackgroundThrottling(false);
@@ -171,6 +218,7 @@ async function benchmark(args) {
       window.focus();
     }), 60000, 'window show/focus');
     await window.dispose();
+    markProgress('workbench router ready');
     await page.waitForFunction(() => !!globalThis.__localRequest && !!globalThis.__localApi?.window && !!globalThis.__router, undefined, { timeout: 60000 });
     await page.getByPlaceholder(searchPlaceholder).waitFor();
     assert.ok(page.url().startsWith('obui://app/'), 'benchmark must exercise the default workbench');
@@ -181,14 +229,17 @@ async function benchmark(args) {
       console.error(`Measuring workbench interactions at ${size} profiles`);
       while (current < size) {
         const batch = Math.min(100, size - current);
+        markProgress(`create profiles ${current}/${size}`);
         await bounded(page.evaluate(({ batch, current }) => globalThis.__localRequest('profiles:create-batch', {
           createCount: batch, os: 'Linux', coreType: 'Chrome', windowNamePrefix: 'Workbench benchmark ' + current,
         }), { batch, current }), 120000, `profiles:create-batch ${current}+${batch}`);
         current += batch;
       }
       console.error(`Created ${current} profiles`);
+      markProgress(`fleet meter at ${size} profiles`);
       await page.waitForFunction(count => document.querySelector('[role=meter]')?.getAttribute('aria-valuenow') === String(count), size, { timeout: 60000 });
       const report = await measure(page, size, args.rounds);
+      markProgress(`verify budgets at ${size} profiles`);
       for (const key of ['searchP95Ms', 'paginationP95Ms', 'selectionP95Ms'])
         if (report[key] !== null) assert.ok(report[key] <= args.budgetMs, `${key} exceeded ${args.budgetMs}ms at ${size} profiles: ${report[key]}ms`);
       assert.ok(report.renderedRows <= 10, 'pagination must keep rendered rows bounded');
@@ -199,6 +250,7 @@ async function benchmark(args) {
       node: process.version, platform: process.platform, startupMs, rounds: args.rounds,
       interactionBudgetMs: args.budgetMs, reports };
   } catch (error) {
+    markProgress('failure evidence');
     console.error(error.message);
     if (args.output) {
       await fs.mkdir(path.dirname(args.output), { recursive: true });
@@ -207,29 +259,39 @@ async function benchmark(args) {
     }
     throw error;
   } finally {
+    clearInterval(heartbeat);
     try {
       if (app) await closeApp(app);
     } finally {
+      markProgress('temp dir cleanup');
       await fs.rm(root, { recursive: true, force: true, maxRetries: 3 });
     }
   }
 }
 
 async function main() {
-  // The 9a5f5a4/6620e24 wedges produced eleven silent minutes inside a step
-  // where every wait is bounded (Playwright's 30s action default plus the
-  // explicit deadlines above) - only a blocked event loop or a starved
-  // process can outrun all of them. The heartbeat makes the next wedge
-  // self-describing: if it stops, the Node loop is blocked; if it keeps
-  // beating, one of the bounds must eventually fire and name the wait.
-  const heartbeat = setInterval(() => console.error(
-    `benchmark heartbeat uptime=${Math.round(process.uptime())}s rss=${Math.round(process.memoryUsage().rss / 1048576)}MB`), 30000);
-  heartbeat.unref();
   const args = options(process.argv.slice(2)), report = await benchmark(args);
   const text = JSON.stringify(report, null, 2) + '\n';
   if (args.output) { await fs.mkdir(path.dirname(args.output), { recursive: true }); await fs.writeFile(args.output, text); }
-  process.stdout.write(text);
+  // Drain stdout, then hard-exit: a wedged, SIGKILLed Electron leaves its
+  // forked helpers holding the stdio pipes, Playwright's transport never sees
+  // EOF and the event loop never drains - relying on natural exit hung fully
+  // completed runs for minutes (reproduced locally). The unref'd fallback
+  // covers a write callback that never fires.
+  await new Promise(resolve => {
+    const fallback = setTimeout(resolve, 250);
+    process.stdout.write(text, () => { clearTimeout(fallback); resolve(); });
+  });
+  process.exit(0);
 }
 
 module.exports = { options };
-if (require.main === module) main().catch(error => { console.error(error); process.exitCode = 1; });
+if (require.main === module) main().catch(error => {
+  let exited = false;
+  const exit = () => { if (!exited) { exited = true; process.exit(1); } };
+  // Same hard-exit rationale as the success path: the failure is already fully
+  // reported by the time this runs, but lingering transport handles would keep
+  // the process alive forever and starve the CI step's retry loop.
+  process.stderr.write(`${(error && error.stack) || error}\n`, exit);
+  setTimeout(exit, 250).unref();
+});

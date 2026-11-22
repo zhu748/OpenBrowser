@@ -404,17 +404,30 @@ jobs:
         # Same macOS retry rationale: the 5fdeea2/f3f70f2 runs missed the
         # interaction budget by ~3% (search p95 1550ms vs 1500ms) while the
         # same code passes with headroom on Linux/Windows — hosted-runner
-        # jitter, not a regression. f3f70f2, 33b19197 and three consecutive
-        # 9a5f5a4 attempts additionally WEDGED at the 1000-profile phase
-        # (same code, healthy runners finish in ~10s); the benchmark now
-        # bounds every wait so a wedge fails fast instead of burning the
-        # step budget, and macOS gets two retries: fast-fail attempts keep
-        # the worst case inside the same 12 minutes. Linux/Windows stay
-        # single-shot.
+        # jitter, not a regression. f3f70f2..5861594c additionally WEDGED at
+        # the 1000-profile phase (same code, healthy runners finish in ~10s)
+        # in two layers: some wedges defeat every armed Playwright timeout,
+        # and even a cleanly-failing attempt hung after its error printed —
+        # SIGKILLing the wedged Electron leaves its forked helpers holding
+        # the stdio pipes, so the Node process never drains and never exits
+        # (reproduced locally with a stopped Electron tree). The benchmark
+        # now hard-exits on success/failure and force-exits (code 2) after
+        # 150s without progress; the shell below kills it outright at 240s
+        # as the blocked-loop backstop. A wedged macOS attempt therefore
+        # fails into these retries within ~3 minutes instead of burning the
+        # whole step budget. Linux/Windows stay single-shot.
         run: |
           bench() (
-            set -e
-            node scripts/benchmark-workbench.js --sizes 10,100,1000 --interaction-budget-ms 1500 --output ../work/workbench-performance/report.json
+            set +e
+            node scripts/benchmark-workbench.js --sizes 10,100,1000 --interaction-budget-ms 1500 --output ../work/workbench-performance/report.json &
+            bench_pid=$!
+            ( sleep 240 && kill -9 "$bench_pid" 2>/dev/null ) &
+            watchdog_pid=$!
+            wait "$bench_pid"
+            code=$?
+            kill "$watchdog_pid" 2>/dev/null
+            wait "$watchdog_pid" 2>/dev/null
+            exit "$code"
           )
           if bench; then exit 0; fi
           if [[ "$RUNNER_OS" != "macOS" ]]; then exit 1; fi
