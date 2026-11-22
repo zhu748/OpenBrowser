@@ -1,9 +1,9 @@
 import { computed, nextTick, onBeforeMount, onBeforeUnmount, onMounted, reactive, ref, toRaw, watch } from './workbench-vue.js';
 import {
-  bt as useListCache, cr as clone, jr as sortDirection, mt as useWorkspace, o as readFilters,
+  bt as useListCache, cr as clone, mt as useWorkspace, o as readFilters,
 } from './utils-BIWenCnY.js';
 import { y as useRoute } from './rich-html-link-VdBpR3Cm.js';
-import { createTableLoader, isProfileTable } from './workbench-table.js';
+import { buildTableQuery, createTableLoader, isProfileTable } from './workbench-table.js';
 import { permittedActions } from './workbench-table-actions.js';
 import { useTableContextMenu } from './workbench-table-context.js';
 
@@ -150,19 +150,11 @@ export function useBrowserTable(props, columns, attrs, root, dataTable) {
   }
 
   function getParams() {
-    const query = {
-      page_index: Math.ceil(page.first / page.rows) + 1,
-      page_size: page.rows,
-      ...readFilters(filters.value),
-      ...props.tableParams,
-      ...outerParams.value,
-    };
-    if (sort.sortField && sort.sortOrder) {
-      query.orderName = sort.sortField;
-      const direction = sortDirection(sort.sortOrder);
-      if (direction) query.orderType = direction;
-    }
-    return query;
+    return buildTableQuery({
+      first: page.first, pageSize: page.rows, filters: readFilters(filters.value),
+      tableParams: props.tableParams, runtimeParams: outerParams.value,
+      sortField: sort.sortOrder && sort.sortField, sortOrder: sort.sortOrder,
+    });
   }
 
   const loader = createTableLoader({

@@ -6,9 +6,9 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const http = require('node:http');
-const { spawn } = require('node:child_process');
 const cdp = require('../../cdp');
 const { chooseChromiumBinary, Unavailable } = require('./native-gate-harness');
+const { closeFixtureServer, listenFixtureServer, startFixtureProcess } = require('./fixtures/browser-test-resources');
 const appRoot = path.resolve(__dirname, '../..');
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -106,20 +106,26 @@ async function main() {
     catch (_) { res.writeHead(404); res.end(); }
   });
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ob-workbench-ui-'));
-  let connection, child;
+  let connection, browserProcess, failure;
   try {
-    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-    child = spawn(browser.binary, ['--headless=new', '--no-sandbox', '--disable-dev-shm-usage', '--no-first-run', '--remote-debugging-port=0', '--user-data-dir=' + root, 'about:blank'], { stdio: 'ignore' });
-    let port, tab;
-    for (let i = 0; i < 100; i++) {
+    await listenFixtureServer(server);
+    const args = ['--headless=new', '--disable-dev-shm-usage', '--no-first-run', '--remote-debugging-port=0', '--user-data-dir=' + root];
+    if (process.env.OPENBROWSER_NATIVE_NO_SANDBOX === '1') args.push('--no-sandbox');
+    browserProcess = startFixtureProcess(browser.binary, [...args, 'about:blank']);
+    let tab;
+    const readinessDeadline = performance.now() + 8000;
+    while (performance.now() < readinessDeadline) {
+      browserProcess.assertRunning();
       try {
-        port = Number((await fs.readFile(path.join(root, 'DevToolsActivePort'), 'utf8')).split('\n')[0]);
-        tab = (await cdp.tabs(port)).find((value) => value.type === 'page');
+        const port = Number((await fs.readFile(path.join(root, 'DevToolsActivePort'), 'utf8')).split('\n')[0]);
+        tab = (await cdp.tabs(port, { timeoutMs: 250 })).find((value) => value.type === 'page');
         if (tab) break;
       } catch (_) { /* browser starting */ }
       await delay(50);
     }
-    assert.ok(tab, 'Chromium did not expose a page');
+    browserProcess.assertRunning();
+    const diagnostics = browserProcess.diagnostics();
+    assert.ok(tab, 'Chromium did not expose a page' + (diagnostics ? ':\n' + diagnostics : ''));
     connection = await cdp.connect(tab.webSocketDebuggerUrl);
     await connection.command('Page.enable', {});
     await connection.command('Page.addScriptToEvaluateOnNewDocument', { source: script });
@@ -601,12 +607,24 @@ async function main() {
     assert.deepEqual(rpaRaces, { dirtyPreserved: true, latestSelection: true, saveDoesNotSwitch: true, selectionRetained: true,
       serialized: true, localFilters: true, failureRetains: true, storeLatest: true, storeFailureRetains: true }, 'RPA progress, selection, filters and late replies preserve current user state');
     assert.deepEqual(await evaluate(()=>window.__uiAuditErrors),[]);
-    console.log('WORKBENCH_BROWSER_SELFTEST OK (RPA draft/save/selection races, serialized task snapshots and filters, API snapshot races, cloud form races, editor network/UA races, snapshot cache, unsaved proxy choices, installed kernel selection/reopen/refresh, strict preload, migration, batch, proxy persistence, failure rollback, text escaping, selected export, CSV, real task submission, honest cloud errors)');
+  } catch (error) {
+    failure = error;
+    throw error;
   } finally {
-    connection?.close();
-    if (child && child.exitCode === null) { child.kill('SIGKILL'); await new Promise((resolve) => child.once('close', resolve)); }
-    await new Promise((resolve) => server.close(resolve));
-    await fs.rm(root, { recursive: true, force: true, maxRetries: 3 });
+    const errors = [];
+    for (const close of [
+      () => connection?.close(),
+      () => browserProcess?.close(),
+      () => closeFixtureServer(server),
+      () => fs.rm(root, { recursive: true, force: true, maxRetries: 3 }),
+    ]) {
+      try { await close(); } catch (error) { errors.push(error); }
+    }
+    if (errors.length) {
+      throw new AggregateError(failure ? [failure, ...errors] : errors,
+        failure ? `${failure.message} (fixture cleanup also failed)` : 'Workbench fixture cleanup failed');
+    }
   }
+  console.log('WORKBENCH_BROWSER_SELFTEST OK (RPA draft/save/selection races, serialized task snapshots and filters, API snapshot races, cloud form races, editor network/UA races, snapshot cache, unsaved proxy choices, installed kernel selection/reopen/refresh, strict preload, migration, batch, proxy persistence, failure rollback, text escaping, selected export, CSV, real task submission, honest cloud errors)');
 }
 main().catch((error) => { console.error(error); process.exitCode = 1; });

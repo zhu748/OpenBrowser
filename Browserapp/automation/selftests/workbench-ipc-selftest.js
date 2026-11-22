@@ -5,10 +5,27 @@ const { setImmediate: tick } = require('node:timers/promises');
 const { captureIpcResult, unwrapIpcResult } = require('../../shared/ipc-result');
 
 async function tableChecks() {
-  const { createTableLoader, isProfileTable } = await import('../../rebuild/workbench-table.mjs');
+  const { buildTableQuery, createTableLoader, isProfileTable } = await import('../../rebuild/workbench-table.mjs');
   assert.equal(isProfileTable('browser-list'), true);
   assert.equal(isProfileTable('browser-recycle-list'), true);
   assert.equal(isProfileTable('account-list'), false);
+  const page = { first: 11, pageSize: 10 };
+  assert.deepEqual(buildTableQuery(page), { page_index: 3, page_size: 10 }, 'preserve legacy page rounding');
+  const layers = {
+    ...page, filters: { page_index: 5, search: 'filter', tag: 'kept' },
+    tableParams: { page_size: 15, search: 'table' },
+    runtimeParams: { page_size: 20, search: 'runtime', orderName: 'default', orderType: 'asc' },
+  };
+  const merged = { page_index: 5, page_size: 20, search: 'runtime', tag: 'kept', orderName: 'default', orderType: 'asc' };
+  assert.deepEqual(buildTableQuery(layers), merged, 'explicit params override table params, filters and pagination');
+  assert.deepEqual(buildTableQuery({ ...layers, sortField: 'title', sortOrder: -1 }),
+    { ...merged, orderName: 'title', orderType: 'desc' });
+  assert.deepEqual(buildTableQuery({ ...layers, sortField: 'title', sortOrder: 0 }),
+    { ...merged, orderName: 'title' }, 'compact table keeps the field and explicit direction when the sort order is zero');
+  assert.deepEqual(buildTableQuery({ ...layers, sortField: false, sortOrder: 0 }),
+    merged, 'browser table does not override explicit sort params when sort order is zero');
+  assert.deepEqual(buildTableQuery({ ...page, sortField: 'title', sortOrder: 'desc' }),
+    { page_index: 3, page_size: 10, orderName: 'title', orderType: -1 }, 'preserve string-to-number sort conversion');
   const reads = [], applied = [], errors = [], loading = [];
   let query = { page_index: 1, page_size: 5, queryValue: 'old' };
   const table = createTableLoader({
@@ -134,6 +151,6 @@ async function main() {
   });
   assert.throws(() => unwrapIpcResult(result), error =>
     error.code === 'EIO' && error.completed === 200 && error.remainingIds[0] === 'a' && !('privateField' in error));
-  console.log('WORKBENCH_IPC_SELFTEST OK (latest response, pagination recovery, settings queue, initial navigation and partial error DTO)');
+  console.log('WORKBENCH_IPC_SELFTEST OK (table query, latest response, pagination recovery, settings queue, initial navigation and partial error DTO)');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

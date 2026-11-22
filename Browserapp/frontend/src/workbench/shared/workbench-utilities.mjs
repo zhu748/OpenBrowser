@@ -1,5 +1,6 @@
 import { driver, deepEqual } from './workbench-vendor-utilities.js';
 import { images } from './workbench-image-assets.js';
+export { sortDirection as jr } from './workbench-table.js';
 
 const type = value => Object.prototype.toString.call(value).slice(8, -1).toLowerCase();
 const isObject = value => type(value) === 'object';
@@ -104,7 +105,6 @@ function parseJson(value, fallback) {
   try { return JSON.parse(value); }
   catch { return fallback === null ? null : fallback ?? value; }
 }
-const sortDirection = value => value ? { 1: 'asc', '-1': 'desc', asc: 1, desc: -1 }[String(value)] : undefined;
 const sortIcon = value => ({ 0: 'base/rx_ic_chevron_2', '-1': 'base/rx_ic_chevron_2_down', 1: 'base/rx_ic_chevron_2_up' })[String(value)];
 const image = name => images[name] ?? '';
 function relativeTime(value) {
@@ -129,6 +129,6 @@ function saveGuideStatus(name, value) {
 }
 
 export { suffix as Ar, isFunction as Cr, parseJson as Dr, isHttpUrl as Pr, isSyncFunction as Sr,
-  runLimited as ar, clone as cr, relativeTime as fr, image as gr, debounce as hn, fileSuffix as hr, sortDirection as jr,
+  runLimited as ar, clone as cr, relativeTime as fr, image as gr, debounce as hn, fileSuffix as hr,
   delay as kr, deepEqual as mn, createPoller as mr, copyText as or, createGuide as pr, fillFields as sr,
   isObject as wr, isEmpty as xr, sortIcon as yr, saveGuideStatus as Or };

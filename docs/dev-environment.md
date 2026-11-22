@@ -15,7 +15,27 @@ npm run check:environment -- --probe-native
 
 `toolsReady` 表示工具和基本 I/O 条件可用，`headlessEnvironmentReady` 还要求 Chromium 实际启动成功。`desktopPrerequisitesReady` 单独检查桌面基础条件；这些字段不代替项目原生门禁或完整桌面验收。
 
-## 本次工作区的已安装工具
+## 工具配置示例
+
+使用 Node 22.13+（22.x）或 24+。其余工具按平台和测试范围配置；以下路径
+只是示例，替换成当前机器上已安装的文件和可写目录：
+
+```sh
+# 从仓库根目录执行
+export OPENBROWSER_TOOLCHAIN_ROOT="$HOME/openbrowser-toolchains"
+export CARGO_TARGET_DIR="$PWD/target"
+# 仅在需要原生浏览器测试、且二进制已安装时设置：
+export OPENBROWSER_FIREFOX_BINARY="$OPENBROWSER_TOOLCHAIN_ROOT/firefox/firefox"
+export OPENBROWSER_CHROMIUM_BINARY="$OPENBROWSER_TOOLCHAIN_ROOT/chrome-linux64/chrome"
+cd Browserapp
+npm run check:environment -- --toolchain-root "$OPENBROWSER_TOOLCHAIN_ROOT"
+```
+
+`--toolchain-root` 只影响检查进程。如果已通过正常方式安装 Rust，且不使用
+单独的工具目录，可以省略该参数。使用临时目录变量前，先确认目录存在且可写。
+普通桌面配置保留浏览器自己的 sandbox。
+
+## 历史参考：2026-11-12 验证环境
 
 2026-11-12 补齐的工具放在仓库外的工作区目录，未修改系统安装或用户启动配置：
 
@@ -30,7 +50,7 @@ npm run check:environment -- --probe-native
 | 系统 Chromium | 156.0.8078.79，`/usr/bin/chromium`；可用于独立原生门禁，应用的自定义内核入口按产品策略拒绝系统浏览器路径 |
 | Xvfb | 21.1.16，工作区 `toolchains/display/usr/bin/Xvfb`；Debian 官方包在用户目录解包 |
 
-本工作区可通过下面的 shell 配置复用这些工具；换机器后应将 `OPENBROWSER_TOOLCHAIN_ROOT` 改成实际安装位置：
+以下是当时验证使用的配置记录，不表示当前环境有这些目录、工具或密钥文件：
 
 ```sh
 export OPENBROWSER_TOOLCHAIN_ROOT=/workspace/work/openbrowser-opt/toolchains
@@ -65,7 +85,7 @@ Firefox 使用 [Mozilla 下载入口](https://download.mozilla.org/?product=fire
 
 Chrome for Testing 来自 [官方 JSON 清单](https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json) 中 Stable / linux64 的 `chrome` 项。下载清单与压缩包保留在工作区 `toolchains/`。Electron 使用锁定 npm 包内的安装脚本及校验和下载；需要代理的 Node 下载可单次设置 `NODE_USE_ENV_PROXY=1`，保留宿主代理与 CA 配置。
 
-虚拟显示可使用系统 `xvfb-run -a`，或运行用户目录中的 Xvfb（当前会话已运行 `:99`）：
+Linux 虚拟显示可使用系统 `xvfb-run -a`，或运行工具目录中的 Xvfb（历史验证使用 `:99`）：
 
 ```sh
 LD_LIBRARY_PATH="$OPENBROWSER_TOOLCHAIN_ROOT/display/usr/lib/x86_64-linux-gnu" \

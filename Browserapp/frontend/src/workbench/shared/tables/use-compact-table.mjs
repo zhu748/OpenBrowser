@@ -1,7 +1,8 @@
 import { computed, nextTick, onBeforeMount, onBeforeUnmount, onMounted, reactive, ref, toRaw, watch } from './workbench-vue.js';
-import { Dr as parseJson, jr as sortDirection, o as readFilters } from './utils-BIWenCnY.js';
+import { Dr as parseJson, o as readFilters } from './utils-BIWenCnY.js';
 import { y as useRoute } from './rich-html-link-VdBpR3Cm.js';
 import { t as usePreventMask } from './usePreventMask-Cud6gNnu.js';
+import { buildTableQuery } from './workbench-table.js';
 
 const rememberedTables = new Map();
 const maxRememberedTables = 24;
@@ -221,16 +222,11 @@ export function useCompactTable(props, attrs, providedSelection, controlled, roo
   let scrollRevision = 0;
   let disposed = false;
   function getParams() {
-    const query = {
-      page_index: Math.ceil(page.first / page.size) + 1, page_size: page.size,
-      ...readFilters(filters.value), ...props.tableParams, ...params.value,
-    };
-    if (sort.enabled && sort.field) {
-      query.orderName = sort.field;
-      const direction = sortDirection(sort.order);
-      if (direction) query.orderType = direction;
-    }
-    return query;
+    return buildTableQuery({
+      first: page.first, pageSize: page.size, filters: readFilters(filters.value),
+      tableParams: props.tableParams, runtimeParams: params.value,
+      sortField: sort.enabled && sort.field, sortOrder: sort.order,
+    });
   }
   function rememberResults() {
     if (!props.remember) return;

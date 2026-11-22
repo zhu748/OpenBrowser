@@ -69,9 +69,13 @@ async function notificationsRead(service, p) {
   )
     throw Error("无效通知 ID");
   const ids = p.ids === undefined ? null : new Set(p.ids);
-  for (const notice of service.data.notifications || [])
-    if (!ids || ids.has(notice.id)) notice.read = true;
-  await service.save();
+  let changed = false;
+  for (const notice of service.data.notifications || []) {
+    if (notice.read === true || (ids && !ids.has(notice.id))) continue;
+    notice.read = true;
+    changed = true;
+  }
+  if (changed) await service.save();
   return true;
 }
 

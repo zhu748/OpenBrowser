@@ -15,6 +15,8 @@ const { registerProfileIpc } = require('./main/profile-ipc');
 const { registerAutomationControlIpc } = require('./main/automation-ipc');
 const { registerSystemIpc } = require('./main/system-ipc');
 const { registerProxyIpc } = require('./main/proxy-ipc');
+const { applyDockIcon, applyWindowChrome, trayIconImage, windowBackground, windowIconPath } = require('./main/desktop-chrome');
+const { createWindowCloseHandler } = require('./main/window-close');
 const { LiveSyncController } = require('./live-sync-v5');
 
 function workbenchRoot() {
@@ -335,7 +337,6 @@ function pickDisplayScaleFactor() {
 }
 
 let tray = null;
-const forceCloseWindowIds = new Set();
 
 function closeActionStrings() {
   const zh = /^zh/i.test(String(app.getLocale?.() || ''));
@@ -361,20 +362,10 @@ function closeActionStrings() {
   };
 }
 
-function trayIconImage() {
-  const pixelPng = path.join(__dirname, 'assets', 'logo-pixel.png');
-  const png = path.join(__dirname, 'assets', 'logo.png');
-  const ico = path.join(__dirname, 'assets', 'logo.ico');
-  const source = fs.existsSync(pixelPng) ? pixelPng : (fs.existsSync(png) ? png : ico);
-  let image = nativeImage.createFromPath(source);
-  if (process.platform === 'win32' && !image.isEmpty()) image = image.resize({ width: 16, height: 16 });
-  return image;
-}
-
 function ensureTray() {
   if (tray || process.platform === 'darwin') return;
   const strings = closeActionStrings();
-  tray = new Tray(trayIconImage());
+  tray = new Tray(trayIconImage(nativeImage));
   tray.setToolTip(strings.trayTooltip);
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: strings.trayShow, click: () => showMainWindow() },
@@ -818,43 +809,7 @@ function stopShortcutBridge() {
   shortcutFallbackRegistered = false;
 }
 
-/** Theme chrome colors for fused title bar (shipping-app look). */
-const THEME_CHROME = {
-  'modern': { bg: '#ffffff', overlay: '#f5fbff', symbol: '#111213' },
-  default: { bg: '#ffffff', overlay: '#f5fbff', symbol: '#111213' },
-};
-
-const THEME_CHROME_DARK = {
-  'modern': { bg: '#0c111b', overlay: '#111827', symbol: '#eef2f7' },
-  default: { bg: '#0c111b', overlay: '#111827', symbol: '#eef2f7' },
-};
-
-function chromeForTheme(themeId, colorMode) {
-  if (colorMode === 'dark') {
-    return THEME_CHROME_DARK[themeId] || THEME_CHROME_DARK.default;
-  }
-  return THEME_CHROME[themeId] || THEME_CHROME.default;
-}
-
-function applyWindowChrome(win, themeId, colorMode) {
-  if (!win || win.isDestroyed()) return;
-  const chrome = chromeForTheme(themeId, colorMode);
-  // The default UI is opaque; no vibrancy / Mica backdrop.
-  const macVibrant = false;
-  const winMica = false;
-  try { win.setBackgroundColor((macVibrant || winMica) ? '#00000000' : chrome.bg); } catch (_) {}
-  if (process.platform === 'darwin' && typeof win.setVibrancy === 'function') {
-    try { win.setVibrancy(macVibrant ? 'sidebar' : null); } catch (_) {}
-  }
-  if (process.platform === 'win32' && typeof win.setBackgroundMaterial === 'function') {
-    try { win.setBackgroundMaterial(winMica ? 'mica' : 'none'); } catch (_) {}
-  }
-}
-
 async function createWindow() {
-  const isMac = process.platform === 'darwin';
-  const chrome = chromeForTheme('modern');
-
   /** @type {Record<string, any>} */
   const options = {
     width: 1280,
@@ -862,18 +817,8 @@ async function createWindow() {
     minWidth: 960,
     minHeight: 680,
     title: 'OpenBrowser',
-    icon: (() => {
-      // Window / taskbar: software pixel logo
-      const pixelPng = path.join(__dirname, 'assets', 'logo-pixel.png');
-      const icns = path.join(__dirname, 'assets', 'logo.icns');
-      const png = path.join(__dirname, 'assets', 'logo.png');
-      const ico = path.join(__dirname, 'assets', 'logo.ico');
-      if (isMac && fs.existsSync(icns)) return icns;
-      if (fs.existsSync(pixelPng)) return pixelPng;
-      if (fs.existsSync(png)) return png;
-      return ico;
-    })(),
-    backgroundColor: chrome.bg,
+    icon: windowIconPath(),
+    backgroundColor: windowBackground(),
     show: false,
     autoHideMenuBar: true,
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: true, spellcheck: false },
@@ -888,29 +833,17 @@ async function createWindow() {
   mainWindow = win;
   windows.add(win);
   win.on('closed', () => { windows.delete(win); if (mainWindow === win) { localUiDialogs?.closeAll(); localUiWorkspaces?.closeAll(); mainWindow = null; } });
-  win.on('close', (event) => {
-    // macOS keeps the standard close-to-Dock convention; quitting paths bypass this.
-    if (quitting || process.platform === 'darwin') return;
-    if (forceCloseWindowIds.has(win.id)) { forceCloseWindowIds.delete(win.id); return; }
-    const pref = settingsStore.normalizeCloseAction(settingsStore.getLocalSettings().closeAction);
-    if (pref === 'exit') return;
-    event.preventDefault();
-    if (pref === 'tray') {
-      hideMainWindowToTray(win);
-      return;
-    }
-    askCloseAction(win)
-      .then(({ mode, remember }) => {
-        if (remember) {
-          settingsStore.getLocalSettings().closeAction = mode;
-          settingsStore.saveLocalSettings(settingsStore.getLocalSettings()).catch(() => {});
-        }
-        if (win.isDestroyed()) return;
-        if (mode === 'tray') hideMainWindowToTray(win);
-        else { forceCloseWindowIds.add(win.id); win.close(); }
-      })
-      .catch(() => { try { if (!win.isDestroyed()) hideMainWindowToTray(win); } catch (_) {} });
-  });
+  win.on('close', createWindowCloseHandler(win, {
+    isQuitting: () => quitting,
+    readPreference: () => settingsStore.normalizeCloseAction(settingsStore.getLocalSettings().closeAction),
+    ask: askCloseAction,
+    hide: hideMainWindowToTray,
+    remember(mode) {
+      const settings = settingsStore.getLocalSettings();
+      settings.closeAction = mode;
+      settingsStore.saveLocalSettings(settings).catch(() => {});
+    },
+  }));
   win.once('ready-to-show', () => {
     if (win.isDestroyed()) return;
     win.show();
@@ -942,21 +875,7 @@ app.whenReady().then(async () => {
     } catch (error) {
       console.warn('OpenBrowser app icons rebuild skipped:', error.message);
     }
-    const dockCandidates = [
-      path.join(__dirname, 'assets', 'logo-pixel.png'),
-      path.join(__dirname, 'assets', 'logo.png'),
-      path.join(__dirname, 'assets', 'logo.icns'),
-    ];
-    for (const dockIcon of dockCandidates) {
-      try {
-        if (fs.existsSync(dockIcon)) {
-          app.dock.setIcon(dockIcon);
-          break;
-        }
-      } catch (error) {
-        console.warn('OpenBrowser Dock icon could not be applied:', error.message);
-      }
-    }
+    applyDockIcon(app.dock);
   }
   if (roxyPreview) {
     const host = require('./host-bridge');

@@ -5,6 +5,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { windowBackground } = require('../../main/desktop-chrome');
 const root = path.join(__dirname, '..', '..');
 const read = (name) => fs.readFileSync(path.join(root, name), 'utf8');
 
@@ -33,7 +34,8 @@ for (const stale of ['oceanic-fingerprint.css', 'pixel-workstation.css', 'nes-li
 ok(!index.includes('theme-picker') && !index.includes('theme-trigger') && !index.includes('theme-popover'), 'theme picker removed from header');
 ok(!/data-ui-theme-option/.test(index) && !/data-ui-theme-option/.test(renderer), 'no theme option buttons left');
 ok(/const UI_THEMES = Object\.freeze\(\{\s*'modern':/.test(rendererTheme) && !/['"](?:oceanic-fingerprint|merge-gateway|retro-desktop|pixel-workstation|nes-light|element-admin|roxy-modern)['"]\s*:/.test(rendererTheme.match(/const UI_THEMES = Object\.freeze\(\{[\s\S]*?\}\);/)?.[0] || ''), 'UI_THEMES registers only modern');
-ok(main.includes("'modern': { bg: '#ffffff', overlay: '#f5fbff', symbol: '#111213' }"), 'main THEME_CHROME has modern chrome');
+ok(/backgroundColor:\s*windowBackground\(\)/.test(main), 'initial window uses the desktop chrome policy');
+ok(windowBackground() === '#ffffff' && windowBackground('dark') === '#0c111b', 'desktop chrome has the default light and dark backgrounds');
 for (const legacy of ['oceanic-fingerprint', 'pixel-workstation', 'nes-light', 'element-admin', 'merge-gateway', 'retro-desktop', 'roxy-modern']) {
   ok(!main.includes(`'${legacy}'`), `main.js has no ${legacy} chrome entry`);
 }

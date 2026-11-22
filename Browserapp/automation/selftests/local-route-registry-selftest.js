@@ -30,6 +30,36 @@ function deferred() {
   return { promise, resolve };
 }
 
+async function checkNotificationWrites(service) {
+  service.data.notifications = [
+    { id: 'unread', read: false },
+    { id: 'already-read', read: true },
+    { id: 'other-unread', read: false },
+  ];
+  let writes = 0;
+  service.save = async () => { writes++; };
+  for (const ids of [[], ['missing'], ['already-read']]) {
+    assert.equal(await service.request('notifications:read', { ids }), true);
+  }
+  assert.equal(writes, 0, 'no-op reads must not write the store');
+  await assert.rejects(service.request('notifications:read', { ids: [null] }), /通知 ID/);
+  assert.equal(writes, 0);
+
+  const markUnread = () => service.request('notifications:read', { ids: ['unread', 'unread'] });
+  await Promise.all([markUnread(), markUnread()]);
+  assert.equal(writes, 1, 'concurrent duplicate requests save only the first change');
+  assert.deepEqual(service.data.notifications.map(row => row.read), [true, true, false]);
+
+  service.save = async () => { throw Error('notice disk fixture'); };
+  await assert.rejects(service.request('notifications:read'), /notice disk fixture/);
+  assert.equal(service.data.notifications[2].read, false, 'failed writes roll back read flags');
+  service.save = async () => { writes++; };
+  await service.request('notifications:read');
+  await service.request('notifications:read');
+  assert.equal(writes, 2, 'mark all saves only when something changes');
+  assert.ok(service.data.notifications.every(row => row.read));
+}
+
 async function main() {
   // Use the real request/dispatch/handlers with controlled I/O and no desktop.
   const service = Object.create(LocalService.prototype);
@@ -101,6 +131,7 @@ async function main() {
   await assert.rejects(service.request('missing:method'), { code: 'LOCAL_CHANNEL_UNIMPLEMENTED' });
   await service.request('settings:set', { recovered: true });
   assert.equal(service.data.settings.recovered, true);
+  await checkNotificationWrites(service);
 
   // A large existing library must not exceed the JS argument-count limit when
   // creating a profile or reserving a batch of sequential display numbers.
@@ -116,6 +147,6 @@ async function main() {
   assert.equal(saved[0].number, 200001);
   const batch = await service.request('profiles:create-batch', { createCount: 3 });
   assert.deepEqual(batch.map(profile => profile.sortNum), [200001, 200002, 200003]);
-  console.log('PASS local routes: validation, dispatch, launch isolation, serialized rollback and recovery');
+  console.log('PASS local routes: validation, dispatch, launch isolation, serialized rollback, notification write deduplication and recovery');
 }
 main().catch((error) => { console.error(error); process.exitCode = 1; });

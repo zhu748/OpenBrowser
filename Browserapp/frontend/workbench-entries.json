@@ -935,6 +935,7 @@
   "assets/workbench-fuse.js": "node_modules/fuse.js/dist/fuse.mjs",
   "assets/form-C9FJViln.css": "frontend/src/workbench/shared/inputs/WorkbenchForm.css",
   "assets/m-input-select-C8pih1gY.js": "frontend/src/workbench/shared/inputs/select-entry.mjs",
+  "assets/workbench-select-options.js": "frontend/src/workbench/shared/inputs/select-options.mjs",
   "assets/workbench-select-input.js": {
     "source": "frontend/src/workbench/shared/inputs/SelectInput.vue",
     "scopeId": "b5fc224b"

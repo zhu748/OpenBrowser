@@ -1,5 +1,53 @@
 # 代码分类与维护入口
 
+## 维护者导航：先找到源码，再决定改动范围
+
+| 要改什么 | 首选入口 | 不要直接改 |
+| --- | --- | --- |
+| 默认工作台的页面、业务组件和表格 | `Browserapp/frontend/src/workbench/`；跨组件的表格请求规则见 `Browserapp/rebuild/workbench-table.mjs` | `Browserapp/frontend/workbench/` 的固定构建输入、`Browserapp/roxy-ui/` 的生成结果 |
+| 桌面宿主窗口和原生界面资源 | `Browserapp/main.js` 负责 Electron 接线；窗口、托盘和 Dock 的图标及配色见 `Browserapp/main/desktop-chrome.js` | 不把界面策略混进 IPC 处理器，也不要在结构重构中顺便改变权限或启动顺序 |
+| 旧版兼容界面 | `Browserapp/renderer.js` 与 `Browserapp/ui/` | 不把兼容层改动误当成默认工作台修复 |
+| Rust 命令和私有进程 I/O | `crates/openbrowser-core/src/main.rs` 负责命令分发，`cli_io.rs` 负责进程输入和输出 | 不在结构重构中改变控制协议、消息格式或退出行为 |
+| 代码分类及发布资源核对 | `Browserapp/scripts/module-inventory.js` 按路径分类，`runtime-manifest.js` 独立定义安装包资源资格 | `docs/rebuild/evidence/` 是历史验证记录，不是现行源码 |
+
+先运行 `npm run inventory:modules` 查看维护分类和体积；固定构建输入、生成产物、
+历史证据和手写代码应分开比较。`shipped` 表示安装包资源清单是否允许该路径，
+不表示该文件一定打包，也不能据此判断运行时可达性。精简代码时优先合并契约
+相同的纯逻辑；接口权限、默认值或失败处理不同的路径，先用测试记录差异再决定
+是否合并。
+
+### 本轮审查和下一步
+
+- **工作台**：两套表格共用分页、查询参数覆盖和排序格式化；普通表和紧凑表
+  对零排序的处理仍不同。不要用共同的请求构造函数推导出共同的行操作权限、
+  响应解包或缓存策略。下拉组件的选项匹配和过滤在 `select-options.mjs`；
+  键盘交互、焦点和弹层定位仍由 `SelectInput.vue` 管理，拆分这些交互前应先补桌面验收。
+  展开时，`0` 和 `false` 是合法选中值；`null` 和已被过滤掉的选项不参与初始聚焦。
+- **桌面宿主**：图标优先级和配色已从 `main.js` 拆出。剩余可独立处理的是应用中心
+  只读 IPC（先把依赖源码文本的检查改成行为测试）。`main/window-close.js`
+  集中管理关闭询问：同一个窗口同时只有一个对话框，应用退出和窗口销毁后丢弃迟到的回答。
+- **本地通知**：标记已读仍由本地写队列串行处理，实际状态变化才保存。重复点击、
+  未知 ID 和空选择不再重复写盘；保存失败仍回滚。
+- **Rust**：I/O 与命令分发分开，新增输入帧的换行、EOF 和 64 KiB 上限检查。
+  下一步先跑 Cargo 门禁，再考虑消除进程锁的重复状态；锁实现需要 Linux、Windows
+  分别验收，不能根据其中一个平台的表现推断另一个。
+- **构建与测试**：盘点报告的前端固定输入和历史证据已分开。单项／聚合测试仍有
+  重复的子进程参数；若后续合并，保留现有输出与超时策略，并单独测试 PASS、SKIP、
+  部分通过和无标记退出的区别，不顺便改 CI 矩阵。旧工作台 Chromium 夹具在启动时
+  监听退出并保留错误日志，提前结束和清理超时不会被误报为应用的界面断言失败。
+
+本轮新增的独立 Node 回归（在 `Browserapp/` 下运行）：
+
+```sh
+npm run selftest -- desktopchrome
+npm run selftest -- windowclose
+npm run selftest -- browserfixture
+npm run selftest -- localroutes
+npm run selftest -- workbenchipc
+npm run selftest -- workbenchselect
+node --test scripts/module-inventory.test.js
+```
+
 ## 第五轮：MCP 连接并发、停用边界与资源释放（2026-11-16）
 
 前四轮已完成执行/恢复边界、分记录加密与按需读取、流式事件合并、闲置会话回收及模板引用索引。进入本轮前，第四轮记录的 16 个文件哈希均与工作区一致；其最后一次完整回归为 266 通过、1 部分执行、6 跳过、0 失败。源码与生成资产仍是本地修改，未提交或推送。
@@ -464,7 +512,8 @@ CDP 连接复用、RPA 文件操作、API 嵌套凭据和状态索引的本次�
 
 ## 本地检查
 
-在 `Browserapp/` 执行，使用 Node 22.12 或更新版本；`TMPDIR` 需指向真实存在、可写的目录。
+在 `Browserapp/` 执行，使用 Node 22.13+（22.x）或 24+，与 `package.json` 一致；
+`TMPDIR` 需指向真实存在、可写的目录。
 
 ```bash
 npm ci --include=dev --ignore-scripts

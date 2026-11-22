@@ -20,6 +20,7 @@ import {
   FormFieldIsolate,
   nextEnabledIndex,
 } from "./workbench-form-providers.js";
+import { createSelectOptionModel, indexOfSelectedOption } from "./workbench-select-options.js";
 
 defineOptions({ inheritAttrs: false });
 const props = defineProps({
@@ -73,6 +74,8 @@ const emit = defineEmits([
   "hide",
 ]);
 const baseOverlayZIndex = 1100;
+const { labelOf, valueOf, optionDisabled, valuesEqual, findSelectedOption, filterOptions } =
+  createSelectOptionModel(props);
 
 let attrs = useAttrs(),
   root = useTemplateRef("root"),
@@ -140,49 +143,7 @@ let attrs = useAttrs(),
     ...(zIndex.value == null ? {} : { zIndex: zIndex.value }),
     ...(props.overlayStyle ?? props.panelStyle ?? {}),
   }));
-function readOption(option, property, fallback = option) {
-  return option == null || !property
-    ? fallback
-    : typeof property == "function"
-      ? property(option)
-      : option?.[property];
-}
-function labelOf(option) {
-  return option == null
-    ? ""
-    : String(
-        typeof option == "object"
-          ? readOption(option, props.optionLabel, option?.label ?? option)
-          : option,
-      );
-}
-function valueOf(option) {
-  return option == null
-    ? option
-    : readOption(option, props.optionValue, option);
-}
-function optionDisabled(option) {
-  return !!readOption(option, props.optionDisabled, false);
-}
-function valuesEqual(left, right) {
-  return left === right
-    ? true
-    : left &&
-        right &&
-        typeof left == "object" &&
-        typeof right == "object" &&
-        props.optionValue
-      ? valueOf(left) === valueOf(right)
-      : false;
-}
-let selectedOption = computed(() => {
-    let e2 = value.value;
-    return e2 == null || e2 === ""
-      ? null
-      : (choices.value.find((t2) =>
-          props.optionValue ? valueOf(t2) === e2 : valuesEqual(t2, e2),
-        ) ?? null);
-  }),
+let selectedOption = computed(() => findSelectedOption(choices.value, value.value)),
   displayLabel = computed(() =>
     selectedOption.value
       ? labelOf(selectedOption.value)
@@ -202,36 +163,7 @@ let selectedOption = computed(() => {
       };
     let t2 = e2.icon || props.icon;
     return t2 ? { type: "icon", name: t2 } : null;
-  }),
-  searchFields = computed(() =>
-    props.filterFields?.length
-      ? props.filterFields
-      : typeof props.optionLabel == "string"
-        ? [props.optionLabel]
-        : ["label"],
-  );
-function matchesQuery(option, query) {
-  let needle = query.toLocaleLowerCase(props.filterLocale);
-  return searchFields.value
-    .map((t3) =>
-      String(
-        typeof option != "object" || !option
-          ? (option ?? "")
-          : (option?.[t3] ?? labelOf(option)),
-      ),
-    )
-    .some((e3) => {
-      let t3 = e3.toLocaleLowerCase(props.filterLocale);
-      switch (props.filterMatchMode) {
-        case "startsWith":
-          return t3.startsWith(needle);
-        case "endsWith":
-          return t3.endsWith(needle);
-        default:
-          return t3.includes(needle);
-      }
-    });
-}
+  });
 let filterText = computed(() =>
     separateFilter.value
       ? query.value.trim()
@@ -239,11 +171,7 @@ let filterText = computed(() =>
         ? inputText.value.trim()
         : "",
   ),
-  filteredOptions = computed(() => {
-    let e2 = choices.value,
-      t2 = filterText.value;
-    return t2 ? e2.filter((e3) => matchesQuery(e3, t2)) : e2;
-  });
+  filteredOptions = computed(() => filterOptions(choices.value, filterText.value));
 (watch(choices, () => {
   opened.value &&
     props.overlayAutoWidth &&
@@ -326,7 +254,7 @@ function open(request) {
         (opened.value = true),
         (scrollLocked.value = true),
         (query.value = ""),
-        (focusedIndex.value = selectedIndex()),
+        (focusedIndex.value = indexOfSelectedOption(filteredOptions.value, selectedOption.value)),
         nextTick(() => {
           emit("show");
         })));
@@ -353,11 +281,6 @@ function toggle(event, showAll = false) {
     : opened.value && showAll
       ? open({ showAll: true, event: event })
       : open({ showAll: showAll, event: event });
-}
-function selectedIndex() {
-  return selectedOption.value
-    ? filteredOptions.value.findIndex((e2) => e2 === selectedOption.value)
-    : -1;
 }
 function choose(option, event) {
   if (optionDisabled(option)) return;

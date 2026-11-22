@@ -7,13 +7,23 @@ const { isRuntimeResource, DEVELOPMENT_MODULES } = require('./runtime-manifest')
 const repo = path.resolve(__dirname, '../..');
 
 function classify(file) {
-  if (file.includes('/vendor/')) return ['third-party', 'locked-input'];
-  if (file.startsWith('Browserapp/roxy-ui/')) return ['generated-ui', 'generated'];
-  if (file.startsWith('Browserapp/frontend/')) return ['workbench', 'supported'];
-  if (file.startsWith('docs/')) return ['documentation-evidence', 'reference'];
-  if (/\/assets\/|\/data\//.test(file)) return ['resources-data', 'supported'];
-  if (/selftest|\/tests\/|adversarial|benchmark|regression-runner|test-fixtures/.test(file)) return ['tests-tools', 'development'];
+  if (file.startsWith('docs/rebuild/evidence/') || file.startsWith('docs/archive/')) return ['documentation-evidence', 'reference'];
+  if (file.startsWith('docs/') || (!file.includes('/') && file.endsWith('.md'))) return ['documentation', 'reference'];
   const relative = file.replace(/^Browserapp\//, '');
+  if (/^(?:roxy-ui|frontend\/dist)\//.test(relative)) return ['generated-ui', 'generated'];
+  // This tree is copied into the generated workbench, not maintained as source.
+  if (relative.startsWith('frontend/workbench/')) return ['frontend-build-inputs', 'locked-input'];
+  if (file.includes('/vendor/')) return ['third-party', 'locked-input'];
+  if (/\/(?:selftests|tests?|test-fixtures|audits)\/|selftest|adversarial|benchmark|regression-runner|\.test\.[^/]+$/.test(file)
+    || /^rebuild\/(?:acceptance-(?:manifest\.json|runner\.cjs)|verify-evidence\.cjs|visual-pixel-diff\.py)$/.test(relative)) {
+    return ['tests-tools', 'development'];
+  }
+  if (/^(?:assets\/|frontend\/src\/workbench\/icons\/.*\.svg$)/.test(relative)
+    || /\/(?:assets|data)\//.test(relative)) return ['resources-data', 'supported'];
+  if (/^frontend\/(?:build(?:-workbench)?\.[cm]js|compile-workbench-component\.cjs|tsconfig\.json|workbench-(?:entries|vendor-modules)\.json)$/.test(relative)) {
+    return ['build-tools', 'development'];
+  }
+  if (relative.startsWith('frontend/')) return ['workbench', 'supported'];
   if (DEVELOPMENT_MODULES.has(relative)) return ['experimental', 'development'];
   if (file.startsWith('crates/')) return ['rust-core', 'gated'];
   if (/^Browserapp\/(?:rebuild\/compiler\/|scripts\/)/.test(file)) return ['build-tools', 'development'];
@@ -56,7 +66,11 @@ function inventory() {
     const total = totals[row.category] ||= { files: 0, bytes: 0, sourceLines: 0 };
     total.files++; total.bytes += row.bytes; total.sourceLines += row.lines || 0;
   }
-  return { scope: 'Path-based maintenance inventory; shipped denotes the app resource manifest, not dependency reachability.', totals, files: rows };
+  return {
+    scope: 'Path-based maintenance inventory; sourceLines counts text lines by category. Shipped denotes the app resource manifest, not dependency reachability or derived build output.',
+    totals,
+    files: rows,
+  };
 }
 
 if (require.main === module) {

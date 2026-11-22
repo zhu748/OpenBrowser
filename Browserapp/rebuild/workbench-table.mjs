@@ -6,6 +6,23 @@ let profileCacheVersion = 0;
 export function invalidateProfileTableCache() { profileCacheVersion += 1; }
 export function listCacheVersion(key) { return isProfileTable(key) ? profileCacheVersion : undefined; }
 
+export function sortDirection(value) {
+  return value ? { 1: 'asc', '-1': 'desc', asc: 1, desc: -1 }[String(value)] : undefined;
+}
+
+export function buildTableQuery({ first, pageSize, filters, tableParams, runtimeParams, sortField, sortOrder }) {
+  const query = {
+    page_index: Math.ceil(first / pageSize) + 1, page_size: pageSize,
+    ...filters, ...tableParams, ...runtimeParams,
+  };
+  if (sortField) {
+    query.orderName = sortField;
+    const direction = sortDirection(sortOrder);
+    if (direction) query.orderType = direction;
+  }
+  return query;
+}
+
 function pageData(response) {
   if (response?.code != null && response.code !== 0) {
     throw Object.assign(Error(response.msg || response.message || "列表读取失败"), { code: response.code });
