@@ -3,7 +3,9 @@
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const { readFileSync } = require('node:fs');
+const fsp = require('node:fs/promises');
 const { createRequire } = require('node:module');
+const os = require('node:os');
 const path = require('node:path');
 const { test } = require('node:test');
 const { runInNewContext } = require('node:vm');
@@ -256,6 +258,233 @@ test('clean quit drains accepted settings writes but rejects new work after the 
   assert.equal(readableWhileQuitting.memoryLimit, 71, 'the settings read still works at quit');
   assert.equal(settings.persisted().memoryLimit, 71);
   assert.equal(settings.persisted().closeAction, 'ask');
+});
+
+async function profileStorageFixture(t) {
+  const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), 'ob-profile-root-'));
+  t.after(() => fsp.rm(scratch, { recursive: true, force: true }));
+  const [oldRoot, nextRoot, otherRoot] = ['old', 'next', 'other'].map(name => path.join(scratch, name));
+  const file = path.join(scratch, 'settings.json');
+  const { BrowserEngine } = require('../../engine');
+  const { ensureDataRootIsolationSecure } = require('../isolation');
+  const cc = require('../../credential-crypto');
+  const options = { passphrase: 'synthetic-settings-profile-root-key', mode: 'fallback' };
+  const crypto = {
+    ...cc,
+    encryptCredential: value => cc.encryptCredential(value, options),
+    decryptCredential: value => cc.decryptCredential(value, options),
+  };
+  function moduleFrom(relative, overrides) {
+    const target = path.resolve(__dirname, relative);
+    const module = { exports: {} };
+    const localRequire = createRequire(target);
+    runInNewContext('(function(require, module) {\n' + readFileSync(target, 'utf8') + '\n})',
+      { structuredClone, console }, { filename: target })(name => overrides[name] || localRequire(name), module);
+    return module.exports;
+  }
+  function makeStore(fsApi) {
+    const settings = moduleFrom('../local-settings.js', { 'fs/promises': fsApi, '../credential-crypto': crypto });
+    settings.initLocalSettings({ file, defaultProfileDataRoot: oldRoot });
+    return settings;
+  }
+  const storageFs = Object.create(fsp);
+  const settingsStore = makeStore(storageFs);
+  await fsp.mkdir(oldRoot);
+  await fsp.writeFile(path.join(oldRoot, 'synthetic.txt'), 'no migration expected');
+  await settingsStore.loadLocalSettings();
+  await settingsStore.saveLocalSettings({ memoryLimit: 64 });
+  await settingsStore.saveLocalSettings({ memoryLimit: 65 });
+  const buildEngine = profileDataRootPath => Object.assign(Object.create(BrowserEngine.prototype), {
+    profileDataRootPath, running: new Map(), starting: new Map(), stopping: new Map(),
+    deletingProfiles: new Set(), profileMaintenance: new Map(), profiles: new Map(),
+  });
+  const engine = buildEngine(oldRoot);
+  const events = [], exits = [], dialogs = [], handlers = new Map();
+  const context = {
+    engine, settingsStore, defaultProfileDataRoot: oldRoot, ensureDataRootIsolationSecure,
+    quitting: false, quitCleanupPromise: null, quitCleanupSettled: false, fatalFailure: false,
+    localUiSync: null, localUiService: null, liveSync: null, automation: null,
+    async drainBrowsersForQuit() { return { stopped: true, remaining: [] }; },
+    destroyTray() {}, stopShortcutBridge() {}, app: { exit: code => exits.push(code) },
+    lifecycleTimeout: pending => pending, console,
+    emit: value => events.push([value.type, value.profileRoot, engine.getProfileDataRoot(), settingsStore.getLocalSettings().profileDataRoot]),
+  };
+  const update = mainFunction('updateProfileDataRoot', context);
+  const quit = mainFunction('beginQuitCleanup', context);
+  moduleFrom('../../main/system-ipc.js', { '../automation/local-settings': settingsStore }).registerSystemIpc({
+    registerTrustedIpc: (channel, handler) => handlers.set(channel, handler), updateProfileDataRoot: update,
+    isQuitting: () => context.quitting, getEngine: () => engine, defaultProfileDataRoot: oldRoot,
+    getMainWindow: () => null, dialog: { showOpenDialog() {
+      const selection = Promise.withResolvers(); dialogs.push(selection.resolve); return selection.promise;
+    } },
+  });
+  const read = async () => JSON.parse(crypto.decryptCredential(await fsp.readFile(file)));
+  const choose = () => handlers.get('system:choose-storage')();
+  const reset = () => handlers.get('system:reset-storage')();
+  async function assertRoot(expected) {
+    const loaded = await makeStore(fsp).loadLocalSettings();
+    assert.deepEqual([engine.getProfileDataRoot(), settingsStore.getLocalSettings().profileDataRoot,
+      (await read()).profileDataRoot, buildEngine(loaded.profileDataRoot).getProfileDataRoot()], Array(4).fill(expected));
+  }
+  return { oldRoot, nextRoot, otherRoot, file, choose, reset, update, quit, settingsStore, storageFs,
+    engine, events, exits, dialogs, read, assertRoot };
+}
+
+test('storage root ENOSPC leaves live/disk/backup unchanged even after the real quit flush', async t => {
+  const { file, storageFs, nextRoot, oldRoot, quit, update, events, exits, assertRoot } = await profileStorageFixture(t);
+  const primary = await fsp.readFile(file);
+  const backup = await fsp.readFile(file + '.bak');
+  let attempts = 0;
+  storageFs.rename = (from, to) => {
+    if (to === file && from.startsWith(file + '.tmp-root-')) {
+      attempts++;
+      throw Object.assign(new Error('synthetic ENOSPC'), { code: 'ENOSPC' });
+    }
+    return fsp.rename(from, to);
+  };
+  await assert.rejects(update(nextRoot), { code: 'ENOSPC' });
+  storageFs.rename = fsp.rename;
+  assert.equal(attempts, 1);
+  await quit();
+  await assertRoot(oldRoot);
+  assert.deepEqual(await fsp.readFile(file), primary);
+  assert.deepEqual(await fsp.readFile(file + '.bak'), backup);
+  assert.equal((await fsp.readdir(path.dirname(file))).some(name => name.includes('.tmp-root-')), false);
+  assert.deepEqual(events, []);
+  assert.deepEqual(exits, [0]);
+  assert.equal(await fsp.readFile(path.join(oldRoot, 'synthetic.txt'), 'utf8'), 'no migration expected');
+  assert.deepEqual(await fsp.readdir(nextRoot), []);
+});
+
+test('storage chooser cancels, ignores inverted stale selections and rejects a late choice after quit', async t => {
+  const { file, choose, reset, dialogs, quit, oldRoot, nextRoot, otherRoot, events, assertRoot,
+    settingsStore, read } = await profileStorageFixture(t);
+  const stale = { ...settingsStore.getLocalSettings() };
+  const primary = await fsp.readFile(file);
+  const cancel = choose();
+  dialogs.shift()({ canceled: true });
+  assert.equal((await cancel).canceled, true);
+  const same = choose();
+  dialogs.shift()({ canceled: false, filePaths: [oldRoot] });
+  assert.equal((await same).changed, false);
+  assert.deepEqual(events, []);
+
+  const older = choose(), newer = choose();
+  dialogs.pop()({ canceled: false, filePaths: [nextRoot] });
+  assert.equal((await newer).profileRoot, nextRoot);
+  dialogs.shift()({ canceled: false, filePaths: [otherRoot] });
+  assert.equal((await older).canceled, true);
+  await assertRoot(nextRoot);
+  assert.deepEqual(events, [['storage-settings', nextRoot, nextRoot, nextRoot]]);
+  assert.deepEqual(await fsp.readFile(file + '.bak'), primary, 'the committed root keeps the authenticated previous settings as backup');
+  assert.equal((await settingsStore.saveLocalSettings({ ...stale, diskLimit: 15 })).profileDataRoot, nextRoot);
+  await assertRoot(nextRoot);
+  assert.equal((await read()).diskLimit, 15, 'stale root input cannot discard an unrelated preference');
+
+  const delayed = choose();
+  assert.equal((await reset()).changed, true);
+  dialogs.shift()({ canceled: false, filePaths: [nextRoot] });
+  assert.equal((await delayed).canceled, true, 'a programmatic reset supersedes an older dialog');
+  const late = choose();
+  await quit();
+  dialogs.shift()({ canceled: false, filePaths: [otherRoot] });
+  await assert.rejects(late, { code: 'APP_SHUTTING_DOWN' });
+  await assertRoot(oldRoot);
+  assert.deepEqual(events.map(event => event[1]), [nextRoot, oldRoot]);
+});
+
+test('a preference admitted during a failed root rename still persists with the old root', async t => {
+  const { file, storageFs, oldRoot, nextRoot, update, quit, events, assertRoot,
+    settingsStore, read } = await profileStorageFixture(t);
+  const renameEntered = Promise.withResolvers(), release = Promise.withResolvers();
+  storageFs.rename = async (from, to) => {
+    if (to === file && from.startsWith(file + '.tmp-root-')) {
+      renameEntered.resolve();
+      await release.promise;
+      throw Object.assign(new Error('synthetic ENOSPC'), { code: 'ENOSPC' });
+    }
+    return fsp.rename(from, to);
+  };
+  const rejected = assert.rejects(update(nextRoot), { code: 'ENOSPC' });
+  await renameEntered.promise;
+  const prefs = settingsStore.saveLocalSettings({ diskLimit: 13 });
+  release.resolve();
+  await rejected;
+  assert.equal((await prefs).diskLimit, 13);
+  await quit();
+  await assertRoot(oldRoot);
+  assert.equal((await read()).diskLimit, 13);
+  assert.deepEqual(events, []);
+});
+
+test('storage commit isolates lifecycle and old-root input, then quit drains an accepted rename and preferences', async t => {
+  const { file, storageFs, engine, settingsStore, oldRoot, nextRoot, otherRoot,
+    update, quit, events, exits, read, assertRoot } = await profileStorageFixture(t);
+  const { acquireProfileMaintenance } = require('../../engine/profile-maintenance');
+  for (const [collection, add] of [['running', 'set'], ['starting', 'set'], ['stopping', 'set'],
+    ['deletingProfiles', 'add'], ['profileMaintenance', 'set']]) {
+    engine[collection][add]('synthetic', true);
+    await assert.rejects(update(nextRoot), /Stop all browser environments/);
+    engine[collection].delete('synthetic');
+  }
+  const renameEntered = Promise.withResolvers(), release = Promise.withResolvers();
+  storageFs.rename = async (from, to) => {
+    if (to === file && from.startsWith(file + '.tmp-root-')) {
+      renameEntered.resolve();
+      await release.promise;
+    }
+    return fsp.rename(from, to);
+  };
+  const stale = { ...settingsStore.getLocalSettings() };
+  const request = update(nextRoot);
+  await renameEntered.promise;
+  try {
+    assert.equal(engine.getProfileDataRoot(), oldRoot);
+    assert.equal(settingsStore.getLocalSettings().profileDataRoot, oldRoot);
+    assert.equal((await read()).profileDataRoot, oldRoot);
+    assert.deepEqual(events, []);
+    await assert.rejects(update(otherRoot), { code: 'PROFILE_DATA_ROOT_BUSY' });
+    await assert.rejects(engine.startManaged('synthetic', {}, () => assert.fail('must not launch')),
+      { code: 'PROFILE_DATA_ROOT_BUSY' });
+    await assert.rejects(engine.deleteProfiles(['synthetic'], true), { code: 'PROFILE_DATA_ROOT_BUSY' });
+    assert.throws(() => acquireProfileMaintenance(engine, ['synthetic']), { code: 'PROFILE_DATA_ROOT_BUSY' });
+
+    const prefs = settingsStore.saveLocalSettings({ ...stale, memoryLimit: 72 });
+    const cleanup = quit();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(exits, [], 'quit waits for the already-dispatched rename');
+    release.resolve();
+    assert.equal((await request).changed, true);
+    assert.equal((await prefs).memoryLimit, 72);
+    await cleanup;
+  } finally { release.resolve(); }
+  await assertRoot(nextRoot);
+  assert.equal((await read()).memoryLimit, 72);
+  assert.deepEqual(events, [['storage-settings', nextRoot, nextRoot, nextRoot]]);
+  assert.deepEqual(exits, [0]);
+  assert.equal(engine.profileDataRootChange, null);
+});
+
+test('quit before the root rename discards staging rather than committing the cancelled request', async t => {
+  const { file, storageFs, oldRoot, nextRoot, update, quit, events, assertRoot } = await profileStorageFixture(t);
+  const syncEntered = Promise.withResolvers(), release = Promise.withResolvers();
+  storageFs.open = async (...args) => {
+    const handle = await fsp.open(...args);
+    if (args[0].startsWith(file + '.tmp-root-')) {
+      const sync = handle.sync.bind(handle);
+      handle.sync = async () => { syncEntered.resolve(); await release.promise; await sync(); };
+    }
+    return handle;
+  };
+  const rejected = assert.rejects(update(nextRoot), { code: 'APP_SHUTTING_DOWN' });
+  await syncEntered.promise;
+  const cleanup = quit();
+  release.resolve();
+  await rejected;
+  await cleanup;
+  await assertRoot(oldRoot);
+  assert.deepEqual(events, []);
+  assert.equal((await fsp.readdir(path.dirname(file))).some(name => name.includes('.tmp-root-')), false);
 });
 
 test('an early close waits for the saved exit preference and repeated requests share one close', async () => {

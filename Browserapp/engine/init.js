@@ -18,6 +18,22 @@ const { recoverProfileDeletions } = require('./profile-deletion');
 // the next save will persist. Both backends already decode the full snapshot.
 const snapshotProfileIds = saved => new Set((saved.profiles || []).map(profile => profile?.id));
 
+function prepareLegacyProfiles(engine, state, collect = false) {
+  const prepared = collect ? [] : null;
+  for (const [index, raw] of (state.saved.profiles || []).entries()) {
+    try {
+      const profile = engine.sanitizeProfile(raw);
+      prepared?.push(profile);
+    } catch (_) {
+      // Never make a partial legacy snapshot authoritative or disclose raw
+      // profile fields in a startup message. Do not try an older snapshot.
+      throw new EngineStateUnavailableError(new Error(`Invalid profile record at row ${index + 1}`),
+        state.recovered ? 'committed engine backup' : 'primary engine state');
+    }
+  }
+  return prepared;
+}
+
 module.exports = {
   async init(bundledExtensionPath) {
     await this.kernelManager.loadMeta();
@@ -38,6 +54,7 @@ module.exports = {
       });
       try {
         const initRes = await sqlite.init({
+          validateLegacySnapshot: state => prepareLegacyProfiles(this, state),
           // Refuse ambiguous deletion journals before backup data can become
           // the durable database consulted on any subsequent startup.
           beforeBackupMigration: saved => recoverProfileDeletions(this, {
@@ -102,6 +119,8 @@ module.exports = {
     } else {
       const state = await loadEngineStartupState(this.stateFile);
       if (state) {
+        // Validate every row before archiving files or publishing even one row.
+        const profiles = prepareLegacyProfiles(this, state, true);
         const saved = state.saved;
         storedIds = snapshotProfileIds(saved);
         recoveredState = state.recovered;
@@ -123,14 +142,7 @@ module.exports = {
         for (const [profileId, ids] of Object.entries(saved.assignments || {})) this.assignments.set(profileId, new Set(ids));
         // Profiles (incl. cookies / proxy auth / platform secrets) live in main-process state,
         // not renderer localStorage, so XSS cannot dump them from the UI store.
-        if (Array.isArray(saved.profiles)) {
-          for (const raw of saved.profiles) {
-            try {
-              const profile = this.sanitizeProfile(raw);
-              this.profiles.set(profile.id, profile);
-            } catch (_) {}
-          }
-        }
+        for (const profile of profiles) this.profiles.set(profile.id, profile);
         if (typeof saved.preferIndependentKernel === 'boolean') this.preferIndependentKernel = saved.preferIndependentKernel;
         if (saved.kernelPolicyVersion !== KERNEL_POLICY_VERSION) {
           // Prior releases could select a system browser implicitly. Migrate to

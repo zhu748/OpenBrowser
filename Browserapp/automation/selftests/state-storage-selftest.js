@@ -300,6 +300,66 @@ async function checkExistingDatabaseAuthority(zeroBytes) {
   }
 }
 
+async function checkBundledProfileRecovery(sqlite, source) {
+  const { BrowserEngine } = require('../../engine');
+  const { ProfileStoreSqlite } = require('../profile-store-sqlite');
+  const { collectStorageDiagnostics } = require('../storage-diagnostics');
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'state-bundled-profiles-'));
+  const bundled = path.join(root, 'local-marker');
+  const make = () => new BrowserEngine({ getPath: () => root });
+  let engine = make();
+  const backup = engine.stateFile + '.bak';
+  const supported = ProfileStoreSqlite.isSupported;
+  const state = profiles => JSON.stringify({ kernelPolicyVersion: KERNEL_POLICY_VERSION, profiles });
+  const complete = { id: 'complete', name: 'Complete' };
+  const incomplete = { id: 'incomplete', note: 'Original legacy metadata' };
+  const valid = state([complete, { id: 'second', name: 'Second' }]);
+  const invalid = state([complete, incomplete]);
+  try {
+    if (!sqlite) ProfileStoreSqlite.isSupported = () => false;
+    await fsp.mkdir(bundled);
+    await fsp.writeFile(path.join(bundled, 'manifest.json'), JSON.stringify({
+      manifest_version: 3, name: 'Local recovery fixture', version: '1.0',
+    }));
+    const backupBytes = source === 'backup' || source === 'backup-after-corruption' ? invalid : valid;
+    await fsp.writeFile(backup, backupBytes);
+    const primary = source === 'primary' ? invalid : source === 'backup-after-corruption' ? '{invalid' : null;
+    if (primary !== null) await fsp.writeFile(engine.stateFile, primary);
+    const filesBefore = (await fsp.readdir(root)).sort();
+    for (let attempt = 0; attempt < 2; attempt++) {
+      engine = make();
+      let writes = 0;
+      const persist = engine.persist.bind(engine);
+      engine.persist = (...args) => { writes++; return persist(...args); };
+      let failure;
+      try { await engine.init(bundled); }
+      catch (error) { failure = error; }
+      if (source === 'valid') {
+        assert.ifError(failure);
+        assert.deepStrictEqual([...engine.profiles.keys()], ['complete', 'second']);
+        assert.ok(writes > 0, 'an ordinary bundled manifest still persists');
+        if (!sqlite && !attempt) assert.strictEqual(writes, 2, 'the actual JSON recovery ran both persistence calls');
+        assert.strictEqual(Boolean(engine.storageRecovery), !attempt);
+        engine.sqliteStore?.close();
+        continue;
+      }
+      assert.ok((await fsp.readFile(backup)).equals(Buffer.from(backupBytes)), 'bundled startup must not overwrite the sole legacy backup');
+      assert.strictEqual(failure?.code, 'ENGINE_STATE_UNAVAILABLE');
+      assert.strictEqual(writes, 0);
+      assert.strictEqual(engine.profiles.size, 0);
+      assert.strictEqual(engine.extensions.size, 0);
+      assert.strictEqual(collectStorageDiagnostics({ engine }).warnings.some(w => w.code === 'ENGINE_RECOVERED'), false);
+      assert.strictEqual(fs.existsSync(engine.dbFile), false);
+      assert.deepStrictEqual((await fsp.readdir(root)).sort(), filesBefore);
+      if (primary !== null) assert.strictEqual(await fsp.readFile(engine.stateFile, 'utf8'), primary);
+    }
+  } finally {
+    ProfileStoreSqlite.isSupported = supported;
+    engine.sqliteStore?.close();
+    await fsp.rm(root, { recursive: true, force: true });
+  }
+}
+
 (async () => {
   for (const sqlite of [false, true]) {
     const mode = sqlite ? 'SQLite migration' : 'JSON startup';
@@ -310,6 +370,9 @@ async function checkExistingDatabaseAuthority(zeroBytes) {
     await check(`${mode} still accepts a fresh workspace`, () => checkStartupRecovery(sqlite, false));
     for (const fixture of ['backup-only', 'invalid-shape', 'staging-only', 'backup-staging-only', 'backup-eio', 'invalid-backup', 'explicit-empty', 'legacy-omission']) {
       await check(`${mode} recovery authority: ${fixture}`, () => checkRecoverySource(sqlite, fixture));
+    }
+    for (const source of ['backup', 'primary', 'backup-after-corruption', 'valid']) {
+      await check(`${mode} bundled profile recovery: ${source}`, () => checkBundledProfileRecovery(sqlite, source));
     }
   }
   await check('JSON preserves a good backup if the primary archive fails', () => checkRecoverySource(false, 'archive-eio'));

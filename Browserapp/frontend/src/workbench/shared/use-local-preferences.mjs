@@ -42,12 +42,12 @@ function useLocalPreferences() {
   }
   async function saveUserConfig(field) {
     if (field.vaildator && !field.vaildator(field)) return;
-    const value = field.formatValue?.(field) ?? field.value;
-    const { code, msg } = await api.base.userSetUserConfigCreate({ [field.name]: value });
-    onlyErrorToast(code, msg);
-    if (code === 0) {
-      await saveSettings({ [field.name]: unwrap(value) });
-      userStore.updateUserConfig();
+    try {
+      const value = field.formatValue?.(field) ?? field.value;
+      const { code, msg } = await api.base.userSetUserConfigCreate({ [field.name]: value });
+      onlyErrorToast(code, msg);
+    } catch (error) {
+      if (!error?.localUiNotified) onlyErrorToast(-1, error?.message || translate('设置保存失败'));
     }
   }
   async function saveLocalConfig(field) {

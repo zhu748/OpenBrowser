@@ -39,12 +39,22 @@ const request = async (method, payload = {}) => {
   });
 };
 const ok = (data) => ({ code: 0, data, msg: "" });
-const readLocalUserConfig=async()=>{
-  const saved=await request('settings:get');
-  globalThis.__localSettings=saved;
+let settingsReadRevision = 0;
+let appliedSettingsReadRevision = 0;
+async function readLocalUserConfig() {
+  // The local service queues reads with writes, but IPC replies can arrive late.
+  // Order the reads, not save intents: a newer failed edit has no snapshot and
+  // must not discard a previous successful edit that has not reached the UI.
+  const revision = ++settingsReadRevision;
+  const saved = await request("settings:get");
+  if (!saved || typeof saved !== "object" || Array.isArray(saved))
+    throw Object.assign(Error("本地设置读取结果无效"), { code: "LOCAL_SETTINGS_INVALID_SNAPSHOT" });
+  if (revision < appliedSettingsReadRevision) return globalThis.__localSettings;
+  appliedSettingsReadRevision = revision;
+  globalThis.__localSettings = saved;
   globalThis.__applyLocalUserConfig?.(saved);
   return saved;
-};
+}
 const unavailable = (name) => {
   globalThis.__localUiError?.("此功能尚未完成本地接线，操作未执行。");
   throw Object.assign(Error("尚未接线: " + name), {
@@ -260,7 +270,10 @@ const methods = {
   userDeleteWindowTemplateInfoCreate: (p) =>
     request("templates:delete", { ids: [p.id] }),
   userGetUserConfigList: readLocalUserConfig,
-  userSetUserConfigCreate: async(p) => {await request("settings:set", p);return readLocalUserConfig();},
+  userSetUserConfigCreate: async (p) => {
+    await request("settings:set", p);
+    return readLocalUserConfig();
+  },
   userGetUserApiList: () => request('api:get'),
   userSetUserApiCreate: p => request('api:set',p),
   userChangeUsernameCreate: p => {

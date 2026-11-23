@@ -37,6 +37,7 @@ const crypto = require('../../credential-crypto');
       assert.ok(unreadable.cause instanceof Error);
       await assert.rejects(settings.saveLocalSettings({ diskLimit: 64 }), error => error === unreadable);
       await assert.rejects(settings.writeLocalSettingsFile(), error => error === unreadable);
+      await assert.rejects(settings.commitProfileDataRoot(path.join(root, 'refused')), error => error === unreadable);
       await assert.rejects(settings.flushSettingsWriter(), error => error === unreadable);
       assert.deepEqual(await fs.readFile(file), originalPrimary);
       assert.deepEqual(await fs.readFile(file + '.bak'), originalBackup);
@@ -46,6 +47,18 @@ const crypto = require('../../credential-crypto');
       crypto.resetLocalMasterKeyCache();
     }
     assert.equal((await settings.loadLocalSettings()).memoryLimit, 80, 'restoring key A reads the newest settings');
+
+    try {
+      process.env.OPENBROWSER_MASTER_KEY = 'temporary-synthetic-wrong-settings-key';
+      await assert.rejects(settings.commitProfileDataRoot(path.join(root, 'refused')), { code: 'LOCAL_SETTINGS_DECRYPT_FAILED' });
+      assert.equal(settings.getLocalSettings().profileDataRoot, path.join(root, 'profiles'));
+      assert.deepEqual(await fs.readFile(file), originalPrimary);
+      assert.deepEqual(await fs.readFile(file + '.bak'), originalBackup);
+    } finally {
+      delete process.env.OPENBROWSER_MASTER_KEY;
+      crypto.resetLocalMasterKeyCache();
+    }
+    assert.equal((await settings.loadLocalSettings()).memoryLimit, 80);
 
     // A setter queued before reloading cannot authenticate the existing
     // ciphertext under key B. Reload must not drain it into a new primary.
@@ -171,7 +184,8 @@ const crypto = require('../../credential-crypto');
     const customRoot = path.join(root, 'custom-profiles');
     const movedRoot = path.join(root, 'moved-profiles');
     await fs.mkdir(customRoot);
-    await settings.saveLocalSettings({ profileDataRoot: customRoot, memoryLimit: 84, uiGroups: [{ id: 'kept', name: 'Kept' }] });
+    await settings.saveLocalSettings({ memoryLimit: 84, uiGroups: [{ id: 'kept', name: 'Kept' }] });
+    await settings.commitProfileDataRoot(customRoot);
     const beforeRootProblem = await fs.readFile(file);
     await fs.rename(customRoot, movedRoot);
     await fs.symlink(movedRoot, customRoot, process.platform === 'win32' ? 'junction' : 'dir');

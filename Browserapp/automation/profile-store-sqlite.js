@@ -88,7 +88,7 @@ class ProfileStoreSqlite {
    * Initialize the SQLite store, performing migration from legacy JSON if needed.
    * Returns an object { migrated: boolean, error?: Error }.
    */
-  async init({ beforeBackupMigration } = {}) {
+  async init({ beforeBackupMigration, validateLegacySnapshot } = {}) {
     if (this.isOpen && this.db) return { migrated: false };
 
     let migrated = false;
@@ -102,6 +102,9 @@ class ProfileStoreSqlite {
     // Never import over an existing SQLite database, even an intentionally empty store.
     const source = !current && this.legacyJsonPath ? await loadEngineStartupState(this.legacyJsonPath) : null;
     if (source) {
+      // The desktop has an additional runtime shape contract. Standalone
+      // archival callers can still retain historical records as-is.
+      validateLegacySnapshot?.(source);
       if (source.recovered) {
         try { await beforeBackupMigration?.(source.saved); }
         catch (error) { throw new EngineStateUnavailableError(error, 'committed engine backup'); }

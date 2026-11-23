@@ -108,7 +108,7 @@ const {
 
 const { isValidIanaTimezone, extractTimezoneFromArgs } = require('./engine/launch-display');
 const { TrackedProfileMap } = require('./engine/profile-revisions');
-const { assertProfileNotMaintained } = require('./engine/profile-maintenance');
+const { assertProfileDataRootSettled, assertProfileNotMaintained } = require('./engine/profile-maintenance');
 const { assertProfileRestoreReady } = require('./automation/cloud/file-restore');
 
 class BrowserEngine {
@@ -424,6 +424,16 @@ class BrowserEngine {
   }
 
   setProfileDataRoot(value) {
+    const lease = this.reserveProfileDataRootChange(value);
+    try { return lease.publish(); }
+    finally { lease.release(); }
+  }
+
+  reserveProfileDataRootChange(value) {
+    assertProfileDataRootSettled(this);
+    if (this.shuttingDown || this.stopAllInProgress) {
+      throw Object.assign(new Error('Browser engine is stopping'), { code: 'ENGINE_SHUTTING_DOWN' });
+    }
     const raw = String(value || '').trim();
     if (!raw) throw new Error('Environment data directory is required');
     if (this.running.size || this.starting.size || this.stopping.size || this.profileMaintenance?.size || this.deletingProfiles.size) {
@@ -431,8 +441,27 @@ class BrowserEngine {
     }
     const check = validateDataRootIsolationSecure(raw);
     if (!check.ok) throw new Error(check.message);
-    this.profileDataRootPath = check.root;
-    return this.profileDataRootPath;
+    const root = check.root;
+    const token = Symbol('profile-data-root-change');
+    this.profileDataRootChange = token;
+    return {
+      root,
+      assertUsable: () => {
+        const current = validateDataRootIsolationSecure(root);
+        if (!current.ok) throw new Error(current.message);
+        try {
+          if (!fs.lstatSync(root).isDirectory()) throw new Error('Not a directory');
+        } catch (cause) {
+          throw Object.assign(new Error('环境数据目录不可用，设置未更改', { cause }), { code: cause.code || 'PROFILE_DATA_ROOT_UNAVAILABLE' });
+        }
+      },
+      // The caller holds this lease through the file commit. Publishing
+      // must be synchronous and infallible after the rename.
+      publish: () => { this.profileDataRootPath = root; return root; },
+      release: () => {
+        if (this.profileDataRootChange === token) this.profileDataRootChange = null;
+      },
+    };
   }
 
   profileRoot(id) { return path.join(this.profileDataRootPath, assertProfileId(id)); }

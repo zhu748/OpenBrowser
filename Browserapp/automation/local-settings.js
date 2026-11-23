@@ -220,53 +220,94 @@ let persistedSettingsSnapshot = null;
 async function writeLoadedSettingsFile() {
   ensureInitialized();
   return serializeSettingsFile(async () => {
-    if (settingsLoadFailure) throw settingsLoadFailure;
     // Capture exactly the state being written. Edits can replace the live cache
     // while filesystem operations yield; marking that newer cache as persisted
     // would make the next coalesced run skip an edit that never reached disk.
     const snapshot = JSON.parse(JSON.stringify(localSettingsCache));
-    await fsp.mkdir(path.dirname(settingsFile), { recursive: true });
-    let existing;
-    try { existing = await fsp.readFile(settingsFile); }
-    catch (error) {
-      if (error.code !== 'ENOENT') {
-        throw settingsError(error.code || 'LOCAL_SETTINGS_READ_FAILED', 'Could not read local settings before saving. Settings were not changed.', error);
-      }
-    }
-    const encrypted = credentialCrypto.isEncrypted(existing);
-    // A write admitted before a reload may drain first. Authenticate the
-    // current envelope under the available key before backing it up or
-    // replacing it. JSON parsing remains the reader's responsibility.
-    if (encrypted) {
-      try { decryptSettingsEnvelope(existing); }
-      catch (error) {
-        settingsLoadFailure = error;
-        throw error;
-      }
-    }
-    const temporary = settingsFile + '.tmp';
-    const serialized = JSON.stringify({ version: 2, ...snapshot }, null, 2);
-    const payload = credentialCrypto.encryptCredential(serialized);
+    await persistSettingsSnapshot(snapshot);
+  });
+}
 
-    // Preserve backup of existing file before atomic rewrite. Only encrypted
-    // content may land in the .bak: a legacy plaintext file must not gain a
-    // long-lived plaintext twin. All artifacts stay owner-only (0600).
-    if (encrypted) {
-      try { await fsp.writeFile(settingsFile + '.bak', existing, { mode: 0o600 }); }
-      catch (_) {}
-    }
-
+async function writeSyncedStage(temporary, payload) {
+  const handle = await fsp.open(temporary, 'wx', 0o600);
+  try {
     try {
-      await fsp.writeFile(temporary, payload, { mode: 0o600 });
-      await fsp.rename(temporary, settingsFile);
-    } catch (error) {
-      // Cleanup stays inside the serialized writer so it cannot remove the
-      // next attempt's staging file. Report the original write failure.
-      try { await fsp.unlink(temporary); } catch (_) {}
+      await handle.writeFile(payload);
+      await handle.sync();
+    } finally { await handle.close(); }
+  } catch (error) {
+    await fsp.unlink(temporary).catch(() => {});
+    throw error;
+  }
+}
+
+async function persistSettingsSnapshot(snapshot, rootChange) {
+  if (settingsLoadFailure) throw settingsLoadFailure;
+  const directory = path.dirname(settingsFile);
+  await fsp.mkdir(directory, { recursive: true });
+  let existing;
+  try { existing = await fsp.readFile(settingsFile); }
+  catch (error) {
+    if (error.code !== 'ENOENT') {
+      throw settingsError(error.code || 'LOCAL_SETTINGS_READ_FAILED', 'Could not read local settings before saving. Settings were not changed.', error);
+    }
+    if (rootChange) await requireNoBackup();
+  }
+  const encrypted = credentialCrypto.isEncrypted(existing);
+  // A write admitted before a reload may drain first. Authenticate the
+  // current envelope under the available key before backing it up or
+  // replacing it. JSON parsing remains the reader's responsibility.
+  if (encrypted) {
+    try { decryptSettingsEnvelope(existing); }
+    catch (error) {
+      settingsLoadFailure = error;
       throw error;
     }
-    persistedSettingsSnapshot = snapshot;
-  });
+  }
+  const temporary = settingsFile + (rootChange ? '.tmp-root-' + randomUUID() : '.tmp');
+  const serialized = JSON.stringify({ version: 2, ...snapshot }, null, 2);
+  const payload = credentialCrypto.encryptCredential(serialized);
+  if (!rootChange && encrypted) {
+    // Only encrypted content may land in .bak; older plaintext settings
+    // must not gain a long-lived readable twin.
+    try { await fsp.writeFile(settingsFile + '.bak', existing, { mode: 0o600 }); }
+    catch (_) {}
+  }
+
+  let staged = false;
+  try {
+    if (rootChange) {
+      await writeSyncedStage(temporary, payload);
+      staged = true;
+      rootChange.beforeReplace?.();
+    } else await fsp.writeFile(temporary, payload, { mode: 0o600 });
+    await fsp.rename(temporary, settingsFile);
+  } catch (error) {
+    // A refused root was never in the ordinary writer's cache or retry
+    // queue. The exclusive staging file may be removed without touching .bak.
+    if (!rootChange || staged) await fsp.unlink(temporary).catch(() => {});
+    throw error;
+  }
+
+  persistedSettingsSnapshot = snapshot;
+  if (!rootChange) return;
+  // The primary has committed. Merge only the root into live settings so
+  // unrelated edits admitted during this write remain queued and intact.
+  localSettingsCache = { ...localSettingsCache, profileDataRoot: snapshot.profileDataRoot };
+  rootChange.publish?.();
+  if (encrypted) {
+    const backup = settingsFile + '.bak';
+    const backupStage = backup + '.tmp-root-' + randomUUID();
+    try {
+      await writeSyncedStage(backupStage, existing);
+      try { await fsp.rename(backupStage, backup); }
+      finally { await fsp.unlink(backupStage).catch(() => {}); }
+    } catch (_) { /* A committed primary is authoritative; keep any older backup. */ }
+  }
+  try {
+    const handle = await fsp.open(directory, 'r');
+    try { await handle.sync(); } finally { await handle.close(); }
+  } catch (_) { /* Directory fsync is not available on all target filesystems. */ }
 }
 
 // The cache holds the whole settings object, so a burst of changes only needs
@@ -296,11 +337,22 @@ async function writeLocalSettingsFile() {
   return writeLoadedSettingsFile();
 }
 
+async function commitProfileDataRoot(value, rootChange = {}) {
+  ensureInitialized();
+  for (let pending; (pending = pendingSettingsRead());) await pending;
+  const root = normalizeProfileDataRoot(value);
+  return serializeSettingsFile(async () => {
+    const snapshot = structuredClone({ ...localSettingsCache, profileDataRoot: root });
+    await persistSettingsSnapshot(snapshot, rootChange);
+    return root;
+  });
+}
+
 async function saveLocalSettings(value) {
   ensureInitialized();
   for (let pending; (pending = pendingSettingsRead());) await pending;
   localSettingsCache = structuredClone({
-    profileDataRoot: normalizeProfileDataRoot(value.profileDataRoot || localSettingsCache.profileDataRoot),
+    profileDataRoot: localSettingsCache.profileDataRoot,
     cloud: value.cloud || localSettingsCache.cloud || cloudSync.defaultCloudConfig(),
     uiGroups: Array.isArray(value.uiGroups) ? value.uiGroups : (localSettingsCache.uiGroups || []),
     closeAction: normalizeCloseAction(value.closeAction || localSettingsCache.closeAction),
@@ -319,6 +371,7 @@ async function flushSettingsWriter() {
   while (settingsLoad) await settingsLoad;
   if (settingsLoadFailure) throw settingsLoadFailure;
   await drainSettingsWriter();
+  await settingsFileQueue;
 }
 
 async function drainSettingsWriter() {
@@ -331,6 +384,7 @@ module.exports = {
   getLocalSettings,
   loadLocalSettings,
   saveLocalSettings,
+  commitProfileDataRoot,
   writeLocalSettingsFile,
   normalizeProfileDataRoot,
   normalizeCloseAction,

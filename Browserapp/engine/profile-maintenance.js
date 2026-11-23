@@ -2,7 +2,14 @@
 
 const { assertProfileId } = require('../automation/isolation');
 
+function assertProfileDataRootSettled(engine) {
+  if (engine?.profileDataRootChange) {
+    throw Object.assign(new Error('环境数据目录正在更改，请稍后重试'), { code: 'PROFILE_DATA_ROOT_BUSY' });
+  }
+}
+
 function assertProfileNotMaintained(engine, id, token) {
+  assertProfileDataRootSettled(engine);
   const owner = engine.profileMaintenance?.get(id);
   if (owner && owner !== token) throw Object.assign(new Error(`环境 ${id} 正在恢复或维护，请稍后重试`), {
     code: 'PROFILE_MAINTENANCE', profileId: id,
@@ -15,6 +22,7 @@ function assertProfileNotMaintained(engine, id, token) {
 function acquireProfileMaintenance(engine, ids) {
   const selected = [...new Set(ids.map(assertProfileId))];
   if (!engine) return { token: undefined, release() {} };
+  assertProfileDataRootSettled(engine);
   for (const id of selected) {
     assertProfileNotMaintained(engine, id);
     if (engine.running?.has(id) || engine.starting?.has(id) || engine.stopping?.has(id) || engine.deletingProfiles?.has(id)) {
@@ -29,4 +37,4 @@ function acquireProfileMaintenance(engine, ids) {
   } };
 }
 
-module.exports = { assertProfileNotMaintained, acquireProfileMaintenance };
+module.exports = { assertProfileDataRootSettled, assertProfileNotMaintained, acquireProfileMaintenance };

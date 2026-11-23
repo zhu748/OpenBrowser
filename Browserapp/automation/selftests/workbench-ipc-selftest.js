@@ -933,6 +933,135 @@ async function startupSettingsChecks() {
   }
 }
 
+async function localPreferenceChecks() {
+  const { LocalService } = require('../../rebuild/local-service');
+  const vue = require('vue');
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ob-workbench-prefs-'));
+  const originalKey = process.env.OPENBROWSER_MASTER_KEY;
+  process.env.OPENBROWSER_MASTER_KEY = 'synthetic-workbench-preferences-fixture-key';
+  try {
+    const file = path.join(root, 'rebuild-local.json');
+    const createService = () => Object.assign(Object.create(LocalService.prototype), {
+      file, queue: Promise.resolve(), engine: { profiles: new Map() },
+    });
+    const service = createService();
+    const initial = { batchOpenLayout: 'stack', language: 'en', unknownPreference: { keep: true } };
+    await service.request('settings:set', initial);
+    const reopened = () => createService().request('settings:get');
+    const calls = [], applied = [], errors = [];
+    const persist = service.save.bind(service);
+    let hold, invalidRead, rejectWrite, writes = 0, repeatWrites = 0;
+    service.save = async () => {
+      if (rejectWrite) {
+        const error = rejectWrite;
+        rejectWrite = undefined;
+        throw error;
+      }
+      writes++;
+      await persist();
+    };
+    const renderer = vm.createContext({
+      createProfileLifecycleBridge: () => ({}),
+      __applyLocalUserConfig: saved => applied.push(structuredClone(saved)),
+      rebuild: { async request(method, payload) {
+        const plain = structuredClone(payload);
+        calls.push([method, plain]);
+        const gate = method === 'settings:get' && hold;
+        if (gate) hold = undefined;
+        const result = await captureIpcResult(() => service.request(method, plain));
+        if (gate) {
+          gate.captured.resolve();
+          await gate.reply.promise;
+        }
+        if (method === 'settings:get' && invalidRead) {
+          invalidRead = false;
+          return captureIpcResult(() => []);
+        }
+        return result;
+      } },
+    });
+    const bridgeFile = path.resolve(__dirname, '../../rebuild/renderer-bridge.js');
+    vm.runInContext((await fs.readFile(bridgeFile, 'utf8')).replace(/^import\s+[\s\S]*?;$/gm, ''), renderer, { filename: bridgeFile });
+    const api = renderer.__localApi.base;
+    const usePreferences = await rendererFixture('frontend/src/workbench/shared/use-local-preferences.mjs', {
+      './workbench-vue.js': { ...vue, inject: () => undefined },
+      './utils-BIWenCnY.js': { h: renderer.__localApi, sn: () => null, v: () => ({
+        updateUserConfig(patch) { repeatWrites++; return api.userSetUserConfigCreate(patch); },
+      }) },
+      './runtime-core.esm-bundler-CBj16o9G.js': { ht: vue.isReactive },
+      './locales-BfKu2SD4.js': { t: message => message },
+      './agent-BmSFI9WH.js': { n: () => [null, (code, message) => { if (code !== 0) errors.push([code, message]); }] },
+      './useFormDialog-ChvKgFzE.js': { t: () => [] },
+      './hooks-Jw3GridD.js': { t: () => ({}) },
+    }, { electronAPI: renderer.electronAPI }, 'useLocalPreferences');
+    const { saveUserConfig } = usePreferences();
+    const edit = (name, value) => saveUserConfig({ name, value });
+    const setCalls = () => calls.filter(([method]) => method === 'settings:set').map(([, patch]) => patch);
+    function holdRead() {
+      const gate = { captured: Promise.withResolvers(), reply: Promise.withResolvers() };
+      hold = gate;
+      return gate;
+    }
+    const waitForRead = (gate, save) => Promise.race([
+      gate.captured.promise,
+      save.then(() => assert.fail('the save finished without requesting its settings snapshot')),
+    ]);
+
+    const old = holdRead();
+    const grid = edit('batchOpenLayout', 'grid');
+    await waitForRead(old, grid);
+    await edit('batchOpenLayout', 'cascade');
+    assert.equal((await reopened()).batchOpenLayout, 'cascade');
+    old.reply.resolve();
+    await grid;
+    assert.equal((await reopened()).batchOpenLayout, 'cascade', 'the old readback must not replay the old write after the newer acknowledgement');
+    assert.deepEqual(applied, [{ ...initial, batchOpenLayout: 'cascade' }]);
+    assert.deepEqual(setCalls(), [{ batchOpenLayout: 'grid' }, { batchOpenLayout: 'cascade' }]);
+    assert.equal(writes, 2);
+    assert.equal(repeatWrites, 0, 'the hook must not write via a second settings updater');
+
+    const oldSnapshot = holdRead();
+    const first = api.userSetUserConfigCreate({ remarkDisplayStatus: true });
+    await waitForRead(oldSnapshot, first);
+    await edit('language', 'ru');
+    oldSnapshot.reply.resolve();
+    const both = { ...initial, batchOpenLayout: 'cascade', remarkDisplayStatus: true, language: 'ru' };
+    assert.deepEqual(structuredClone(await first), { code: 0, data: both, msg: '' }, 'callers of the compatibility getter/setter must not receive stale snapshots');
+    assert.deepEqual(applied.at(-1), both);
+    assert.deepEqual(structuredClone(renderer.__localSettings), both);
+    assert.deepEqual(await reopened(), both);
+    assert.equal(applied.length, 2);
+    assert.equal(writes, 4);
+
+    const lastGood = holdRead();
+    const stack = edit('batchOpenLayout', 'stack');
+    await waitForRead(lastGood, stack);
+    rejectWrite = Object.assign(Error('simulated preference write failure'), { code: 'EIO' });
+    await edit('batchOpenLayout', 'grid');
+    assert.deepEqual(errors, [[-1, 'simulated preference write failure']], 'a rejected latest save is visible even if an older successful read is pending');
+    assert.deepEqual(applied.at(-1), both, 'a rejected value must not be applied');
+    lastGood.reply.resolve();
+    await stack;
+    const expected = { ...both, batchOpenLayout: 'stack' };
+    assert.deepEqual(applied.at(-1), expected, 'the older successful snapshot is still current when the latest save failed');
+    assert.deepEqual(await reopened(), expected);
+    assert.equal(writes, 5);
+    assert.deepEqual(setCalls().slice(-4), [{ remarkDisplayStatus: true }, { language: 'ru' }, { batchOpenLayout: 'stack' }, { batchOpenLayout: 'grid' }]);
+    assert.equal(errors.length, 1);
+    assert.equal(calls.filter(([method]) => method === 'settings:get').length, 5, 'only successful saves request a snapshot, once per intent');
+
+    invalidRead = true;
+    await assert.rejects(api.userGetUserConfigList(), { code: 'LOCAL_SETTINGS_INVALID_SNAPSHOT' });
+    assert.deepEqual(applied.at(-1), expected, 'an invalid readback is not published');
+    const result = await api.userGetUserConfigList();
+    assert.deepEqual(structuredClone(result), { code: 0, data: expected, msg: '' });
+  } finally {
+    if (originalKey === undefined) delete process.env.OPENBROWSER_MASTER_KEY;
+    else process.env.OPENBROWSER_MASTER_KEY = originalKey;
+    await fs.rm(root, { recursive: true, force: true });
+  }
+}
+
 async function navigationChecks() {
   const { installWorkspaceNavigation } = await import('../../rebuild/workbench-navigation.mjs');
   const mainRouter = { beforeEach() {} };
@@ -993,6 +1122,7 @@ async function main() {
   await inlineRenameChecks();
   await apiChecks();
   await startupSettingsChecks();
+  await localPreferenceChecks();
   await navigationChecks();
   await profileBatchChecks();
   const result = await captureIpcResult(() => {
@@ -1000,6 +1130,6 @@ async function main() {
   });
   assert.throws(() => unwrapIpcResult(result), error =>
     error.code === 'EIO' && error.completed === 200 && error.remainingIds[0] === 'a' && !('privateField' in error));
-  console.log('WORKBENCH_IPC_SELFTEST OK (table queries, retry, sort preferences, inline rename revisions, settings queue, initial navigation and partial error DTO)');
+  console.log('WORKBENCH_IPC_SELFTEST OK (table queries, retry, sort preferences, inline rename revisions, local preference snapshots, startup settings, navigation and partial error DTO)');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

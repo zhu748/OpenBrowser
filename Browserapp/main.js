@@ -136,14 +136,29 @@ cloudOps.initCloudOps({
 
 async function updateProfileDataRoot(value) {
   if (!engine) throw new Error('Browser engine is not ready');
-  if (engine.running.size) throw new Error('\u8bf7\u5148\u505c\u6b62\u6240\u6709\u73af\u5883\uff0c\u518d\u4fee\u6539\u6570\u636e\u4fdd\u5b58\u4f4d\u7f6e');
-  const profileDataRoot = settingsStore.normalizeProfileDataRoot(value);
-  const secureCheck = await ensureDataRootIsolationSecure(profileDataRoot);
-  if (!secureCheck.ok) throw new Error(secureCheck.message);
-  engine.setProfileDataRoot(profileDataRoot);
-  await settingsStore.saveLocalSettings({ ...settingsStore.getLocalSettings(), profileDataRoot });
-  emit({ type: 'storage-settings', profileRoot: profileDataRoot });
-  return { success: true, profileRoot: profileDataRoot, defaultProfileRoot: defaultProfileDataRoot };
+  const assertWritable = () => {
+    if (quitting || engine.shuttingDown) {
+      throw Object.assign(new Error('应用正在退出，无法更改环境数据目录'), { code: 'APP_SHUTTING_DOWN' });
+    }
+  };
+  assertWritable();
+  const lease = engine.reserveProfileDataRootChange(settingsStore.normalizeProfileDataRoot(value));
+  const profileRoot = lease.root;
+  try {
+    const result = { success: true, profileRoot, defaultProfileRoot: defaultProfileDataRoot };
+    if (profileRoot === engine.getProfileDataRoot()) return { ...result, changed: false };
+    const secureCheck = await ensureDataRootIsolationSecure(profileRoot);
+    if (!secureCheck.ok) throw new Error(secureCheck.message);
+    assertWritable();
+    await settingsStore.commitProfileDataRoot(profileRoot, {
+      beforeReplace() { assertWritable(); lease.assertUsable(); },
+      publish: lease.publish,
+    });
+    emit({ type: 'storage-settings', profileRoot });
+    return { ...result, changed: true };
+  } finally {
+    lease.release();
+  }
 }
 let engine;
 let liveSync;

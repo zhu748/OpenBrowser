@@ -110,16 +110,26 @@ function registerSystemIpc({
     return { profileRoot: engine.getProfileDataRoot(), defaultProfileRoot: defaultProfileDataRoot,
       running: engine.running.size, ...collectStorageDiagnostics({ engine, automation: getAutomation() }) };
   });
+  let storageRequestGeneration = 0;
   registerTrustedIpc('system:choose-storage', async () => {
+    assertSettingsWritable();
     const engine = getEngine();
     const mainWindow = getMainWindow();
     if (engine.running.size) throw new Error('\u8bf7\u5148\u505c\u6b62\u6240\u6709\u73af\u5883\uff0c\u518d\u4fee\u6539\u6570\u636e\u4fdd\u5b58\u4f4d\u7f6e');
     const options = { title: '\u9009\u62e9\u73af\u5883\u6570\u636e\u4fdd\u5b58\u76ee\u5f55', defaultPath: engine.getProfileDataRoot(), properties: ['openDirectory', 'createDirectory', 'promptToCreate'] };
+    const generation = ++storageRequestGeneration;
     const result = mainWindow && !mainWindow.isDestroyed() ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
-    if (result.canceled || !result.filePaths[0]) return { canceled: true, profileRoot: engine.getProfileDataRoot(), defaultProfileRoot: defaultProfileDataRoot };
+    if (result.canceled || !result.filePaths?.[0] || generation !== storageRequestGeneration) {
+      return { canceled: true, profileRoot: engine.getProfileDataRoot(), defaultProfileRoot: defaultProfileDataRoot };
+    }
+    assertSettingsWritable();
     return { canceled: false, ...(await updateProfileDataRoot(result.filePaths[0])) };
   });
-  registerTrustedIpc('system:reset-storage', () => updateProfileDataRoot(defaultProfileDataRoot));
+  registerTrustedIpc('system:reset-storage', () => {
+    assertSettingsWritable();
+    storageRequestGeneration++;
+    return updateProfileDataRoot(defaultProfileDataRoot);
+  });
   registerTrustedIpc('system:open-storage', async () => {
     const profileRoot = getEngine().getProfileDataRoot(); await fsp.mkdir(profileRoot, { recursive: true });
     const message = await shell.openPath(profileRoot); if (message) throw new Error(message);
