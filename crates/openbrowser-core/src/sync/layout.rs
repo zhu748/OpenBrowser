@@ -60,9 +60,19 @@ impl TileGridLayout {
             ));
         }
 
-        // Determine optimal columns and rows
-        let cols = (window_count as f64).sqrt().ceil().max(1.0) as usize;
-        let rows = (window_count as f64 / cols as f64).ceil().max(1.0) as usize;
+        let mut cols = (window_count as f64).sqrt().ceil() as usize;
+
+        // Each axis fits one cell, then one extra cell per gap + 1 pixel.
+        // Keep the preferred grid when it fits and the existing validation
+        // errors when no grid can fit.
+        let max_slots =
+            |available: u32| 1 + (u64::from(available - 1) / (u64::from(gap) + 1)) as usize;
+        let min_cols = window_count.div_ceil(max_slots(usable_height));
+        let max_cols = max_slots(usable_width);
+        if min_cols <= max_cols {
+            cols = cols.clamp(min_cols, max_cols);
+        }
+        let rows = window_count.div_ceil(cols);
 
         let total_gap_w = (cols.saturating_sub(1) as u32).saturating_mul(gap);
         let total_gap_h = (rows.saturating_sub(1) as u32).saturating_mul(gap);

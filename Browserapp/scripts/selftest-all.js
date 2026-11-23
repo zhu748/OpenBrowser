@@ -61,6 +61,7 @@ const SUITE = [
   ['selftest:workbenchfeedback', 'automation/selftests/workbench-feedback-selftest.js'],
   ['selftest:workbenchipc', 'automation/selftests/workbench-ipc-selftest.js'],
   ['selftest:workbenchselect', 'automation/selftests/workbench-select-options-selftest.js'],
+  ['selftest:workbenchselectkeyboard', 'automation/selftests/workbench-select-keyboard-selftest.js'],
   ['selftest:workbenchsearch', 'automation/selftests/workbench-advanced-search-selftest.js'],
   ['selftest:workbenchpopupmenu', 'automation/selftests/workbench-popup-menu-selftest.js'],
   ['selftest:workbenchradio', 'automation/selftests/workbench-radio-group-selftest.js'],

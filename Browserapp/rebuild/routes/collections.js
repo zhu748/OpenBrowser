@@ -185,13 +185,19 @@ async function groupsSort(service, p) {
     throw Error("项目排序不能重复");
   const order = requested.filter((id) => id !== "local-default");
   if (!order.length) return true;
-  const byId = new Map(service.data.groups.map((row) => [row.id, row]));
-  if (order.some((id) => !byId.has(id))) throw Error("排序中的项目不存在");
   const selected = new Set(order);
+  const byId = new Map();
+  for (const row of service.data.groups) {
+    const id = String(row.id);
+    if (!selected.has(id)) continue;
+    if (byId.has(id)) throw Error("排序中的项目 ID 重复");
+    byId.set(id, row);
+  }
+  if (byId.size !== order.length) throw Error("排序中的项目不存在");
   let index = 0;
   let changed = false;
   const sorted = service.data.groups.map((row) => {
-    if (!selected.has(row.id)) return row;
+    if (!selected.has(String(row.id))) return row;
     const next = byId.get(order[index++]);
     changed ||= next !== row;
     return next;

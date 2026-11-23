@@ -367,6 +367,7 @@ function scrollToFocused() {
       ?.scrollIntoView({ block: "nearest" });
 }
 function handleKey(event) {
+  if (event.isComposing || event.keyCode === 229) return;
   if (!props.disabled)
     switch (event.key) {
       case "ArrowDown":

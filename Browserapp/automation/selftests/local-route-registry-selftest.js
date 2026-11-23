@@ -278,6 +278,17 @@ async function checkProjectSortWrites() {
   await assert.rejects(reorder(['b', 'b']), /项目排序不能重复/);
   await assert.rejects(reorder(['unknown']), /排序中的项目不存在/);
   assert.equal(writes.length, 1, 'validation still applies to every reorder request');
+
+  service.data.groups = [{ id: 7 }, { id: 'untouched' }, { id: 'current-id' }];
+  await reorder(['current-id', 7]);
+  assert.deepEqual(writes.at(-1), ['current-id', 'untouched', 7],
+    'legacy numeric IDs from the project list reorder without changing persisted IDs');
+  await reorder(['current-id', '7']);
+  assert.equal(writes.length, 2, 'the equivalent string ID does not cause another write');
+  service.data.groups.push({ id: '7' });
+  await assert.rejects(reorder(['7']), /项目 ID 重复/);
+  assert.equal(service.data.groups.length, 4, 'ambiguous IDs must not drop a persisted project');
+  assert.equal(writes.length, 2);
 }
 
 async function checkProjectNameSearch() {
