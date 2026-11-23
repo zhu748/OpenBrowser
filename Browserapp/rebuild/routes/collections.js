@@ -25,7 +25,7 @@ async function groupsList(service, p) {
     projectName: v.projectName,
     project_id: v.id,
     projectId: v.id,
-    windowCount: groupCounts.get(v.id) || 0,
+    windowCount: groupCounts.get(String(v.id)) || 0,
     user_info: [
       {
         userId: "local",

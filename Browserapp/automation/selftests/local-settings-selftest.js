@@ -42,6 +42,20 @@ const crypto = require('../../credential-crypto');
       assert.equal(reads, 1, 'concurrent reloads share one read/decrypt operation');
     } finally { fs.readFile = originalRead; }
 
+    const originalBytes = await originalRead(file);
+    const readFailure = Object.assign(new Error('simulated settings read I/O failure'), { code: 'EIO' });
+    fs.readFile = async (...args) => {
+      if (args[0] === file) throw readFailure;
+      return originalRead(...args);
+    };
+    try {
+      await assert.rejects(settings.loadLocalSettings(), error => error === readFailure);
+      assert.equal(settings.getLocalSettings().memoryLimit, 80, 'an unreadable file must not reset the live cache');
+      assert.deepEqual(await originalRead(file), originalBytes, 'an unreadable file must not be quarantined as corrupt');
+      assert.equal((await fs.readdir(root)).some(name => name.includes('.corrupt-')), false);
+    } finally { fs.readFile = originalRead; }
+    assert.equal((await settings.loadLocalSettings()).memoryLimit, 80, 'reload can retry after the read failure clears');
+
     let finishRead, enteredRead;
     const readGate = new Promise((resolve) => { finishRead = resolve; });
     const readStarted = new Promise((resolve) => { enteredRead = resolve; });

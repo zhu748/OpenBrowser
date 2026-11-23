@@ -23,13 +23,19 @@ function buildProfileIndex({ snapshot, profiles, version, groups, labels }) {
     sortOrders: new Map(),
     activeCount: 0,
   };
+  // Alias legacy numeric IDs, but preserve exact matches if both forms exist.
+  for (const group of groups) {
+    if (typeof group.id !== "number") continue;
+    const id = String(group.id);
+    if (!index.groupById.has(id)) index.groupById.set(id, group);
+  }
   for (const [position, profile] of snapshot.entries()) {
     const labelIds = /^\d+(,\d+)*$/.test(profile.tag || "") ? profile.tag.split(",").map(Number) : [];
     const accounts = profile.platform?.accounts || (profile.platform ? [profile.platform] : []);
     const windowPlatformList = accounts.map(account => ({
       platformUrl: account.url || account.startUrl || profile.platform?.startUrl,
     }));
-    const projectId = profile.groupId || "";
+    const projectId = String(profile.groupId ?? "");
     const windowName = profile.name || "";
     const windowRemark = profile.note || "";
     const summary = {
@@ -59,7 +65,10 @@ function buildProfileIndex({ snapshot, profiles, version, groups, labels }) {
 }
 
 function projectNameFor(profile, index) {
-  return index.groupById.get(profile.groupId)?.projectName || profile.group_name || "";
+  const id = profile.groupId;
+  const group = index.groupById.get(id)
+    ?? (typeof id === "number" ? index.groupById.get(String(id)) : undefined);
+  return group?.projectName || profile.group_name || "";
 }
 
 function decorateProfile(profile, index) {

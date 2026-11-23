@@ -113,3 +113,28 @@ test('tray and second-launch restore requests do not revive the shell during qui
     assert.deepEqual(calls, state === 'minimized' ? ['restore', 'show', 'focus'] : ['create']);
   }
 });
+
+test('a failed tray setup leaves a restorable minimized window and allows tray retry', () => {
+  let fail = true;
+  const calls = [];
+  class Tray extends EventEmitter {
+    setToolTip() {}
+    setContextMenu() { if (fail) throw Error('tray unavailable'); }
+    destroy() { calls.push('destroy'); }
+  }
+  const context = {
+    Tray, tray: null, nativeImage: {}, process: { platform: 'win32' },
+    Menu: { buildFromTemplate: items => items }, trayIconImage() {}, closeActionStrings: () => ({}),
+    console: { warn() {} },
+  };
+  context.ensureTray = mainFunction('ensureTray', context);
+  const hide = mainFunction('hideMainWindowToTray', context);
+  const win = { hide: () => calls.push('hide'), minimize: () => calls.push('minimize') };
+  hide(win);
+  assert.deepEqual(calls, ['destroy', 'minimize']);
+  assert.equal(context.tray, null);
+  fail = false;
+  hide(win);
+  assert.ok(context.tray instanceof Tray);
+  assert.deepEqual(calls, ['destroy', 'minimize', 'hide']);
+});

@@ -101,8 +101,10 @@ async function readLocalSettings(revision) {
   // Disk must include edits already queued before a reload. A later edit is
   // guarded by the revision check below, including on the error/reset path.
   await flushSettingsWriter();
+  let readComplete = false;
   try {
     const raw = await fsp.readFile(settingsFile);
+    readComplete = true;
     let jsonStr;
     let needsMigration = false;
     if (credentialCrypto.isEncrypted(raw)) {
@@ -133,10 +135,13 @@ async function readLocalSettings(revision) {
     return localSettingsCache;
   } catch (error) {
     if (settingsRevision !== revision) return getLocalSettings();
+    // A filesystem read failure does not establish that the file is corrupt.
+    // Surface it without renaming the file or discarding the live settings.
+    if (!readComplete && error.code !== 'ENOENT') throw error;
     // A torn settings file used to be silently reset to factory defaults and
     // then overwritten by the next write. Keep the corrupt copy aside so it
     // can still be recovered by hand; booting on defaults is unchanged.
-    if (error.code !== 'ENOENT') {
+    if (readComplete && error.code !== 'ENOENT') {
       await serializeSettingsFile(async () => {
         if (settingsRevision !== revision) return;
         persistedSettingsSnapshot = null;

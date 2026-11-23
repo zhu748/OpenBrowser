@@ -365,15 +365,21 @@ function closeActionStrings() {
 function ensureTray() {
   if (tray || process.platform === 'darwin') return;
   const strings = closeActionStrings();
-  tray = new Tray(trayIconImage(nativeImage));
-  tray.setToolTip(strings.trayTooltip);
-  tray.setContextMenu(Menu.buildFromTemplate([
-    { label: strings.trayShow, click: () => showMainWindow() },
-    { type: 'separator' },
-    { label: strings.trayQuit, click: () => app.quit() },
-  ]));
-  // Windows: left click restores the window, right click opens the menu.
-  tray.on('click', () => showMainWindow());
+  const candidate = new Tray(trayIconImage(nativeImage));
+  try {
+    candidate.setToolTip(strings.trayTooltip);
+    candidate.setContextMenu(Menu.buildFromTemplate([
+      { label: strings.trayShow, click: () => showMainWindow() },
+      { type: 'separator' },
+      { label: strings.trayQuit, click: () => app.quit() },
+    ]));
+    // Windows: left click restores the window, right click opens the menu.
+    candidate.on('click', () => showMainWindow());
+    tray = candidate;
+  } catch (error) {
+    try { candidate.destroy(); } catch (_) {}
+    throw error;
+  }
 }
 
 function destroyTray() {
@@ -382,7 +388,12 @@ function destroyTray() {
 }
 
 function hideMainWindowToTray(win) {
-  ensureTray();
+  try { ensureTray(); }
+  catch (error) {
+    console.warn('[OpenBrowser] tray setup failed; minimizing the window:', error?.message || error);
+    win.minimize();
+    return;
+  }
   win.hide();
 }
 

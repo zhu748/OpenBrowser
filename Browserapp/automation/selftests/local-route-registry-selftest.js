@@ -294,10 +294,11 @@ async function checkProjectSortWrites() {
 
 async function checkProjectNameSearch() {
   const service = Object.create(LocalService.prototype);
-  const groups = [{ id: 'group-a', projectName: 'Renamed project' }, { id: 'group-b', projectName: 'Other project' }];
+  const groups = [{ id: 'group-a', projectName: 'Renamed project' }, { id: 7, projectName: 'Other project' }];
   const profiles = [
     { id: 'profile-a', groupId: 'group-a', group_name: 'Stale name' },
-    { id: 'profile-b', groupId: 'group-b', group_name: 'Renamed somewhere else' },
+    { id: 'profile-b', groupId: '7', group_name: 'Renamed somewhere else' },
+    { id: 'profile-numeric', groupId: 7 },
     { id: 'profile-legacy', group_name: 'Legacy project' },
   ];
   service.queue = Promise.resolve();
@@ -315,7 +316,20 @@ async function checkProjectNameSearch() {
   assert.equal(renamed.rows[0].projectName, 'Renamed project');
   assert.equal(decorated, 1, 'non-matching rows are not decorated');
   assert.deepEqual((await search('Stale')).rows, [], 'renamed project no longer matches its old name');
+  const current = await search('Other project');
+  assert.deepEqual(current.rows.map(row => row.id), ['profile-b', 'profile-numeric'],
+    'legacy numeric project keys resolve to their current name, not the stale profile label');
+  assert.ok(current.rows.every(row => row.projectName === 'Other project'));
+  assert.deepEqual((await service.request('profiles:query', { projectId: '7' })).rows.map(row => row.id),
+    ['profile-b', 'profile-numeric'], 'project membership filter uses the same key');
+  const projects = await service.request('groups:list');
+  assert.equal(projects.find(project => project.id === 7)?.windowCount, 2,
+    'project count includes both numeric and string profile references without changing the stored id');
   assert.deepEqual((await search('Legacy')).rows.map(row => row.id), ['profile-legacy'], 'legacy unindexed names still work');
+  service.data.groups = [...groups, { id: '7', projectName: 'Separate stored label' }];
+  assert.deepEqual((await search('Other project')).rows.map(row => row.id), ['profile-numeric']);
+  assert.deepEqual((await search('Separate stored label')).rows.map(row => row.id), ['profile-b'],
+    'ambiguous stored IDs still prefer the exact key for displayed names');
 }
 
 async function checkTextImportEncoding() {
