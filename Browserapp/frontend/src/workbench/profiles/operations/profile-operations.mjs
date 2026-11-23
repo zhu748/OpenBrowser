@@ -40,6 +40,7 @@ import { t as Alert } from './rx-alert-A_y5uvgP.js';
 import { t as useDialog } from './useDialog-BC-nc8J-.js';
 import { o as useDrawer } from './useProxyFormDrawer-r-7UykRS.js';
 import { a as readTags } from './use-tag-menu-DZnIrtE9.js';
+import { canRestoreProjectProfileCache, profileRowsInProject, profileTableParams, projectDetailId } from './workbench-table.js';
 
 function useOpenButton(e2) {
   let { isEcommerce: c2 } = useRouteContext(),
@@ -244,11 +245,11 @@ function useProfileTableRows(e2) {
     },
   );
   function m2(t3 = {}, n3 = false) {
-    let r3 = {
+    const r3 = profileTableParams({
       ...e2.getCurrentFilterParams(),
       ...t3,
       ...filterParams(readFilters(e2.filtersMenu.value)),
-    };
+    }, projectDetailId(t2));
     ((i2.value = !isEmpty(r3)), e2.tableRef.value?.refresh(r3, n3));
   }
   function g2() {
@@ -259,28 +260,28 @@ function useProfileTableRows(e2) {
       i3 && (u2(i3.dirId), e2.openBrowserBefore(i3)));
   }
   async function _2(e3, current = () => true) {
-    const projectId = t2.params.id;
-    let n3 = await api.window.userGetWindowInfoListList({
-      projectIds: projectId,
-      ...e3,
+    const projectId = projectDetailId(t2);
+    if (projectId === '') throw Error($t('项目不存在'));
+    const n3 = await api.window.userGetWindowInfoListList({
+      ...profileTableParams(e3, projectId),
+      ...(projectId === undefined ? {} : { scopeProjectId: projectId }),
       isDelete: 0,
     });
     // This adapter also publishes profile state, before the table applies rows.
-    if (!current() || projectId !== t2.params.id) return n3;
-    if (n3.code === 0) {
-      let e4 = n3.data.rows.map((e5) => ({
-        ...e5,
-        projectName:
-          e5.projectName === '无项目' ? $t('默认项目') : e5.projectName,
-      }));
-      ((s2.value = e4),
-        (n3.data.rows = e4),
-        (o2.value = e4.some((e5) => e5.isTemporary)),
-        e4.length > 0 && g2());
-    }
-    return (events.emit('updateProfileList', n3.data.rows), n3);
+    if (!current() || projectId !== projectDetailId(t2) || n3.code !== 0) return n3;
+    if (projectId !== undefined && !profileRowsInProject(n3.data?.rows, projectId)) throw Error($t('列表读取失败'));
+    const rows = n3.data.rows.map(row => ({
+      ...row, projectName: row.projectName === '无项目' ? $t('默认项目') : row.projectName,
+    }));
+    s2.value = n3.data.rows = rows;
+    o2.value = rows.some(row => row.isTemporary);
+    if (rows.length) g2();
+    events.emit('updateProfileList', rows);
+    return n3;
   }
   function v2(t3) {
+    const projectId = projectDetailId(t2);
+    if (projectId !== undefined && !canRestoreProjectProfileCache(t3, projectId)) return;
     let n3 = t3.rows;
     ((s2.value = n3),
       (o2.value = n3.some((e3) => e3.isTemporary)),

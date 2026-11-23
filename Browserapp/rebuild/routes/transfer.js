@@ -3,47 +3,74 @@
 const fs = require("node:fs/promises");
 const { O_NONBLOCK, O_RDONLY } = require("node:fs").constants;
 const { randomUUID: uid } = require("node:crypto");
+const { assertProfileId } = require("../../automation/isolation");
 const { sanitizeProfile } = require("../../engine/profile-sanitizer");
 const { writeRawAtomically } = require("../../engine/state-storage");
 const { maxProfileNumber } = require("../../shared/profile-values");
 const { buildProjectLookup, projectNameFor } = require("../profile-index");
 const limit = 20 * 1024 * 1024;
 
+function activeExportProfile(engine, id) {
+  const profile = engine.profiles.get(id);
+  if (!profile)
+    throw Object.assign(Error(`Profile not found: ${id}`), { code: "PROFILE_NOT_FOUND" });
+  if (profile.trashed || engine.deletingProfiles?.has(id) || engine.profileMaintenance?.has(id))
+    throw Object.assign(Error("所选窗口当前不可导出，请刷新后重试"), { code: "PROFILE_INACTIVE" });
+  return profile;
+}
+
+function exportMetadata(service, profile, groupById) {
+  const linked = profile.proxyId ? service.proxyStore?.()?.get(profile.proxyId) : null;
+  if (profile.proxyId && !linked)
+    throw Error("绑定的代理不存在，无法导出完整配置");
+  return {
+    proxy: String(linked?.raw || profile.proxy || "").trim(),
+    group_name: String(projectNameFor(profile, groupById)).slice(0, 40),
+  };
+}
+
 async function transferExport(service, p) {
   const e = service.engine;
-  if (!Array.isArray(p.ids) || !p.ids.length || p.ids.length > 200)
+  if (!Array.isArray(p?.ids) || !p.ids.length || p.ids.length > 200)
     throw Error("一次只能导出 1–200 个窗口");
-  // Match displayed project names without constructing a full profile projection.
-  const groupById = buildProjectLookup(service.data.groups);
-  const profiles = p.ids.map((id) => {
-    const profile = e.profileForEdit(String(id)).profile;
-    const selected = profile.proxyId
-      ? service.proxyStore?.().get(profile.proxyId)
-      : null;
-    if (profile.proxyId && !selected)
-      throw Error("绑定的代理不存在，无法导出完整配置");
-    return sanitizeProfile({
-      ...profile,
-      proxy: selected?.raw || profile.proxy,
-      proxyId: null,
-      group_name: projectNameFor(profile, groupById),
-    });
-  });
-  const content = JSON.stringify(
-    { format: "openbrowser-profiles", version: 1, profiles },
-    null,
-    2,
-  );
-  if (Buffer.byteLength(content) > limit)
-    throw Error("导出内容超过 20 MiB，请减少窗口数量");
+  const ids = Array.from(p.ids, assertProfileId);
+  if (new Set(ids).size !== ids.length) throw Error("请选择不同的窗口");
+  for (const id of ids) activeExportProfile(e, id);
   const picked = await service.dialog.showSaveDialog(service.window(), {
     title: "导出窗口配置（文件可能含密码和 Cookie）",
     defaultPath: "openbrowser-profiles.json",
     filters: [{ name: "JSON", extensions: ["json"] }],
   });
   if (picked.canceled) return { canceled: true };
-  await writeRawAtomically(picked.filePath, content);
-  return { count: profiles.length };
+
+  // Order only this snapshot with LocalService mutations, so a save awaiting
+  // persistence cannot supply a draft that may roll back. Neither the picker
+  // nor filesystem work holds the queue. Direct engine writes use another lane.
+  const rows = await service.enqueueLocal(() => {
+    const groupById = buildProjectLookup(service.data.groups);
+    return ids.map(id => {
+      activeExportProfile(e, id);
+      const { profile, rev } = e.profileForEdit(id);
+      const metadata = exportMetadata(service, profile, groupById);
+      return { id, rev, metadata, exported: sanitizeProfile({ ...profile, ...metadata, proxyId: null }) };
+    });
+  }, { rollback: false });
+  const content = JSON.stringify(
+    { format: "openbrowser-profiles", version: 1, profiles: rows.map(row => row.exported) }, null, 2,
+  );
+  if (Buffer.byteLength(content) > limit)
+    throw Error("导出内容超过 20 MiB，请减少窗口数量");
+
+  await writeRawAtomically(picked.filePath, content, undefined, { beforeReplace() {
+    const groupById = buildProjectLookup(service.data.groups);
+    for (const { id, rev, metadata } of rows) {
+      const profile = activeExportProfile(e, id);
+      const current = exportMetadata(service, profile, groupById);
+      if (e.profiles.revisionOf(id) !== rev || current.group_name !== metadata.group_name || current.proxy !== metadata.proxy)
+        throw Object.assign(Error("导出期间窗口配置已变更，请重新导出"), { code: "TRANSFER_SELECTION_CHANGED" });
+    }
+  } });
+  return { count: rows.length };
 }
 
 async function transferImport(service) {

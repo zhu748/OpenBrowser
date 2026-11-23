@@ -1,4 +1,5 @@
 import { profileTableRuntime } from "./profile-table-compat.js";
+import { canRestoreProjectProfileCache, detailProfileFilters, projectDetailId } from "./workbench-table.js";
 
 export function useProfileTable(props, emit) {
   const { ke, De, Ie, Le, vt, bt, me, ee, We, at, Lt, tt, he, It, Ae, pt, _e, ge, ut, Wt, xt, d, Ue, h, u, r, te, yt, jt, b, Ce, Pt, E, w, S, At, cn, Ht, Kt, _, Mt, e, Xt, En, ue, y, l, Oe, ae, x, st, dt, Te, ct, ot, lt, Be, Jt, o, Zt, f, ie, i, I, W, z, Ft, H, B, ht, Ut, ye, V, xe, Ze, Ct, St, we, qt, Gt } = profileTableRuntime;
@@ -9,7 +10,7 @@ export function useProfileTable(props, emit) {
   b(Ce, localProxyEditor);
   let { canQuickCreate: bn2, onQuickCreateMainClick: quickCreate, onQuickCreateSettingsClick: configureQuickCreate } = Pt(), canQuickCreate = E(() => bn2() && check("Profiles_add")), tableRef = w("windowTable"), tagsRef = w("tagsIcon"), selection = E(() => tableRef.value?.selectionData ?? []), automationLabel = E(() => selection.value.length ? $t("AI 自动化 ({count})", { count: selection.value.length }) : $t("AI 自动化")), filters = S(), Vn2 = S(!1), searchOptions = At(), Un = S(!1), { driverObj: guideDriver, driverNext: advanceGuide } = cn({ tableRef: tableRef, enabled: () => R2.value.onboardingTaskStatus?.firstRegisterGuideStatus === !1 }), { openMessage: openState, workspaceName: workspaceName, listenOpenMessage: qn, listenCloseMessage: Jn, listenCloseSyncingDataMessage: Yn, listenWebWindowManager: Xn, openBrowserBefore: openProfile, getNotUsedProfiles: Qn, syncOpenedBrowserState: $n, sendFirstOpenRecord: recordFirstOpen } = Ht(), { dataList: tr, hasFiltered: filtered, hasTempProfile: showTemporaryColumn, clearPendingAutoOpen: ir, syncOpenedProxyToRow: ar, onRefreshTable: refresh, tableRequest: loadRows, syncFromCacheEntry: sr } = Kt({ tableRef: tableRef, filtersMenu: filters, getCurrentFilterParams: () => props.currentFilter?._params, openBrowserBefore: openProfile });
   function cacheScope() {
-    return props.isProjectProfile ? { projectId: String(g2.params.id ?? "") } : { projectId: "" };
+    return { projectId: props.isProjectProfile ? projectDetailId(g2) ?? "" : "" };
   }
   let profileActivation = 0;
   function lr(e2) {
@@ -31,7 +32,12 @@ export function useProfileTable(props, emit) {
   function restoreCache() {
     let e2 = pr();
     if (!e2) return !1;
-    if (props.isProjectProfile) return !0;
+    if (props.isProjectProfile) {
+      const projectId = projectDetailId(g2);
+      if (canRestoreProjectProfileCache(e2, projectId)) return true;
+      if (projectId) ur();
+      return false;
+    }
     let t3 = e2.meta?.activeTabId, n2 = props.currentFilter?.id ?? "rx_1000";
     return !!t3 && t3 === n2;
   }
@@ -41,14 +47,17 @@ export function useProfileTable(props, emit) {
     return e2 ? e2 !== (props.currentFilter?.id ?? "rx_1000") : !1;
   }
   function cacheMetadata() {
-    let e2 = {};
-    return props.isProjectProfile || (e2.activeTabId = props.currentFilter?.id ?? "rx_1000"), filters.value && (e2.filtersMenu = filters.value), e2;
+    const e2 = props.isProjectProfile
+      ? { scopeProjectId: projectDetailId(g2) }
+      : { activeTabId: props.currentFilter?.id ?? "rx_1000" };
+    if (filters.value) e2.filtersMenu = filters.value;
+    return e2;
   }
   async function vr() {
     const activation = profileActivation;
     const next = await Mt(props.currentFilter?.filter_condition || {});
     if (activation !== profileActivation) return false;
-    filters.value = next;
+    filters.value = props.isProjectProfile ? detailProfileFilters(next) : next;
     return true;
   }
   async function $() {

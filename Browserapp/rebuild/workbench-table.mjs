@@ -6,6 +6,41 @@ let profileCacheVersion = 0;
 export function invalidateProfileTableCache() { profileCacheVersion += 1; }
 export function listCacheVersion(key) { return isProfileTable(key) ? profileCacheVersion : undefined; }
 
+const projectFields = ['scopeProjectId', 'projectId', 'projectIds'];
+
+export function projectDetailId(route) {
+  if (route.name !== 'project-item') return undefined;
+  const value = route.params?.id;
+  const id = Array.isArray(value) ? value[0] : value;
+  return typeof id === 'string' || Number.isFinite(id) ? String(id) : '';
+}
+
+export function profileTableParams(values, projectId) {
+  const query = { ...values };
+  for (const key of projectId === undefined ? ['scopeProjectId'] : projectFields) delete query[key];
+  return query;
+}
+
+export function detailProfileFilters(filters) {
+  return filters.filter(field => !projectFields.includes(field.name));
+}
+
+export function profileRowsInProject(rows, projectId) {
+  const expected = projectId === 'local-default' ? '' : projectId;
+  return Boolean(projectId) && Array.isArray(rows) && rows.every(row => {
+    const id = row?.projectId;
+    return (typeof id === 'string' || Number.isFinite(id)) && String(id) === expected;
+  });
+}
+
+export function canRestoreProjectProfileCache(entry, projectId) {
+  // Older or foreign entries (including empty ones) are not proof of an exact read.
+  if (entry?.meta?.scopeProjectId !== projectId || !profileRowsInProject(entry?.rows, projectId)) return false;
+  const fields = entry.meta.filtersMenu ?? [];
+  return Array.isArray(fields) && fields.every(field => field && !projectFields.includes(field.name))
+    && !projectFields.some(key => Object.hasOwn(entry.outerParams ?? {}, key));
+}
+
 export function sortDirection(value) {
   return value ? { 1: 'asc', '-1': 'desc', asc: 1, desc: -1 }[String(value)] : undefined;
 }

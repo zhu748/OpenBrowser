@@ -878,12 +878,15 @@ async function createWindow() {
     isQuitting: () => quitting,
     settingsReady: loadSettingsForStartup(),
     readPreference: () => settingsStore.normalizeCloseAction(settingsStore.getLocalSettings().closeAction),
+    getPreferenceGeneration: () => settingsStore.getCloseActionGeneration(),
     ask: askCloseAction,
     hide: hideMainWindowToTray,
-    remember(mode) {
-      const settings = settingsStore.getLocalSettings();
-      if (settingsStore.normalizeCloseAction(settings.closeAction) !== 'ask') return;
-      settingsStore.saveLocalSettings({ ...settings, closeAction: mode }).catch(() => {});
+    remember(mode, expectedGeneration) {
+      return settingsStore.commitCloseSettings({ closeAction: mode }, {
+        expectedGeneration, isQuitting: () => quitting,
+        isOwner: () => mainWindow === win && !win.isDestroyed(),
+        onExit() { destroyTray(); },
+      });
     },
   }));
   let presented = false;

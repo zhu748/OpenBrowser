@@ -16,7 +16,7 @@ const path = require('path');
 const cloudSync = require('./cloud-sync');
 const credentialCrypto = require('../credential-crypto');
 const { createCoalescedWriter } = require('./coalesced-writer');
-const { normalizeDefaultPreferences } = require('../shared/default-preferences');
+const { DEFAULT_PREFERENCES, normalizeDefaultPreferences } = require('../shared/default-preferences');
 const { deepEqual } = require('./object-utils');
 const { validateDataRootIsolationSecure } = require('./isolation');
 
@@ -77,6 +77,14 @@ let settingsLoad = null;
 let settingsLoadFailure = null;
 let settingsLoaded = false;
 let settingsFileQueue = Promise.resolve();
+let committedCloseAction = 'ask';
+let closeActionGeneration = 0;
+let exitEffectPending = false;
+const clientPreferenceSlots = ['memoryLimit', 'diskLimit', ...Object.keys(DEFAULT_PREFERENCES)];
+const preferenceGenerations = new Map();
+const isDefaultPreference = field => Object.hasOwn(DEFAULT_PREFERENCES, field);
+const preferenceValue = (settings, field) => isDefaultPreference(field) ? settings.defaultPreferences?.[field] : settings[field];
+const hasPreference = (patch, field) => Object.hasOwn(isDefaultPreference(field) ? (patch.defaultPreferences || {}) : patch, field);
 
 function serializeSettingsFile(operation) {
   const pending = settingsFileQueue.then(operation, operation);
@@ -198,6 +206,7 @@ async function readLocalSettings() {
   settingsLoadFailure = null;
   settingsLoaded = true;
   localSettingsCache = normalized;
+  committedCloseAction = normalized.closeAction;
   persistedSettingsSnapshot = (saved || blocked) && !needsMigration ? structuredClone(normalized) : null;
   if (blocked && !saved) {
     // Consume any refused retry marker without auto-writing fresh defaults.
@@ -225,7 +234,7 @@ async function writeLoadedSettingsFile() {
     // Capture exactly the state being written. Edits can replace the live cache
     // while filesystem operations yield; marking that newer cache as persisted
     // would make the next coalesced run skip an edit that never reached disk.
-    const snapshot = JSON.parse(JSON.stringify(localSettingsCache));
+    const snapshot = JSON.parse(JSON.stringify({ ...localSettingsCache, closeAction: committedCloseAction }));
     await persistSettingsSnapshot(snapshot);
   });
 }
@@ -261,7 +270,7 @@ async function refreshSettingsBackup(existing) {
   }
 }
 
-async function persistSettingsSnapshot(snapshot, rootChange) {
+async function persistSettingsSnapshot(snapshot, commit) {
   if (settingsLoadFailure) throw settingsLoadFailure;
   const directory = path.dirname(settingsFile);
   await fsp.mkdir(directory, { recursive: true });
@@ -292,39 +301,34 @@ async function persistSettingsSnapshot(snapshot, rootChange) {
       throw error;
     }
   }
-  const temporary = settingsFile + (rootChange ? '.tmp-root-' + randomUUID() : '.tmp');
+  const temporary = settingsFile + (commit ? `.tmp-${commit.stageName}-${randomUUID()}` : '.tmp');
   const serialized = JSON.stringify({ version: 2, ...snapshot }, null, 2);
   const payload = credentialCrypto.encryptCredential(serialized);
 
   let staged = false;
   try {
-    if (rootChange) {
+    if (commit) {
       await writeSyncedStage(temporary, payload);
       staged = true;
-      if (rootChange.verifyBeforeReplace) await rootChange.verifyBeforeReplace();
+      if (commit.verifyBeforeReplace) await commit.verifyBeforeReplace();
       // Shutdown and reservation/path checks are synchronous at the rename
       // boundary, after the final potentially slow recovery probe.
-      rootChange.beforeReplace?.();
+      commit.beforeReplace?.();
     } else await fsp.writeFile(temporary, payload, { mode: 0o600 });
     await fsp.rename(temporary, settingsFile);
   } catch (error) {
-    // A refused root was never in the ordinary writer's cache or retry
+    // A refused staged preference was never in the ordinary cache or retry
     // queue. The exclusive staging file may be removed without touching .bak.
-    if (!rootChange || staged) await fsp.unlink(temporary).catch(() => {});
+    if (!commit || staged) await fsp.unlink(temporary).catch(() => {});
     throw error;
   }
 
   persistedSettingsSnapshot = snapshot;
-  if (rootChange) {
-    // Merge only the committed root into current settings so unrelated edits
-    // admitted during this write remain queued and intact.
-    localSettingsCache = { ...localSettingsCache, profileDataRoot: snapshot.profileDataRoot };
-    rootChange.publish?.();
-  }
+  commit?.publish?.();
   // Only an encrypted, structurally usable prior primary is eligible.
   // Leave the older known-good .bak untouched until the new primary commits.
   if (encrypted) await refreshSettingsBackup(existing);
-  if (!rootChange) return;
+  if (!commit) return;
   try {
     const handle = await fsp.open(directory, 'r');
     try { await handle.sync(); } finally { await handle.close(); }
@@ -363,24 +367,107 @@ async function commitProfileDataRoot(value, rootChange = {}) {
   for (let pending; (pending = pendingSettingsRead());) await pending;
   const root = normalizeProfileDataRoot(value);
   return serializeSettingsFile(async () => {
-    const snapshot = structuredClone({ ...localSettingsCache, profileDataRoot: root });
-    await persistSettingsSnapshot(snapshot, rootChange);
+    const snapshot = structuredClone({ ...localSettingsCache, profileDataRoot: root, closeAction: committedCloseAction });
+    await persistSettingsSnapshot(snapshot, {
+      ...rootChange, stageName: 'root',
+      publish() {
+        // Merge only the committed root; other approved settings can have
+        // changed in the cache while this transaction was staging.
+        localSettingsCache = { ...localSettingsCache, profileDataRoot: root, closeAction: committedCloseAction };
+        rootChange.publish?.();
+      },
+    });
     return root;
   });
 }
 
-async function saveLocalSettings(value) {
+function getCloseActionGeneration() { return closeActionGeneration; }
+
+/** Commit close behavior (and any accompanying validated client patch) once. */
+async function commitCloseSettings(value, { expectedGeneration, isQuitting = () => false, isOwner = () => true, onExit } = {}) {
+  ensureInitialized();
+  const patch = structuredClone(value);
+  const mode = patch?.closeAction;
+  if (!CLOSE_ACTION_VALUES.includes(mode)) throw settingsError('CLIENT_SETTINGS_INVALID', '无效的客户端设置：关闭窗口行为。');
+  const superseded = () => settingsError('CLOSE_SETTINGS_SUPERSEDED', '设置已被更新的操作替代，未保存这次更改。');
+  const assertActive = () => {
+    if (isQuitting()) throw settingsError('APP_SHUTTING_DOWN', '应用正在退出，无法保存设置。');
+    if (!isOwner()) throw superseded();
+  };
+  assertActive();
+  if (expectedGeneration !== undefined && (expectedGeneration !== closeActionGeneration || committedCloseAction !== 'ask')) throw superseded();
+  // Even a same-value explicit choice revokes an earlier dialog's authority.
+  const generation = ++closeActionGeneration;
+  const fields = clientPreferenceSlots.filter(field => hasPreference(patch, field));
+  const versions = fields.map(field => preferenceGenerations.get(field));
+  const isUnchanged = (field, i) => preferenceGenerations.get(field) === versions[i];
+  const assertCurrent = () => {
+    assertActive();
+    if (generation !== closeActionGeneration || !fields.every(isUnchanged)) throw superseded();
+  };
+  const applyExitEffect = () => {
+    // Nothing after a successful replacement is allowed to misreport it as
+    // rejected. In particular, a superseded receipt must not touch the tray.
+    try {
+      if (!exitEffectPending || !onExit || mode !== 'exit' || generation !== closeActionGeneration || isQuitting() || !isOwner()) return;
+      exitEffectPending = false;
+      onExit();
+    } catch (_) { /* The preference has already been saved. */ }
+  };
+  for (let pending; (pending = pendingSettingsRead());) await pending;
+  return serializeSettingsFile(async () => {
+    assertCurrent();
+    const snapshot = structuredClone({ ...localSettingsCache, closeAction: mode });
+    if (Object.hasOwn(patch, 'memoryLimit')) snapshot.memoryLimit = clampMemoryLimit(patch.memoryLimit);
+    if (Object.hasOwn(patch, 'diskLimit')) snapshot.diskLimit = clampDiskLimit(patch.diskLimit);
+    if (Object.hasOwn(patch, 'defaultPreferences')) snapshot.defaultPreferences = normalizeDefaultPreferences(patch.defaultPreferences, snapshot.defaultPreferences);
+    if (persistedSettingsSnapshot?.closeAction === mode
+      && fields.every(field => preferenceValue(persistedSettingsSnapshot, field) === preferenceValue(snapshot, field)
+        && preferenceValue(localSettingsCache, field) === preferenceValue(snapshot, field))) {
+      applyExitEffect();
+      return structuredClone(persistedSettingsSnapshot);
+    }
+    await persistSettingsSnapshot(snapshot, {
+      stageName: 'close', beforeReplace: assertCurrent,
+      publish() {
+        if (committedCloseAction !== mode) exitEffectPending = mode === 'exit';
+        committedCloseAction = mode;
+        const next = { ...localSettingsCache, closeAction: mode, defaultPreferences: { ...localSettingsCache.defaultPreferences } };
+        // A newer ordinary preference may have arrived after rename was
+        // dispatched. Retain its live value for the next ordinary write.
+        fields.forEach((field, index) => {
+          if (!isUnchanged(field, index)) return;
+          const target = isDefaultPreference(field) ? next.defaultPreferences : next;
+          target[field] = preferenceValue(snapshot, field);
+        });
+        localSettingsCache = next;
+        applyExitEffect();
+      },
+    });
+    return structuredClone(snapshot);
+  });
+}
+
+async function saveLocalSettings(value, { clientIntent = false } = {}) {
   ensureInitialized();
   for (let pending; (pending = pendingSettingsRead());) await pending;
-  localSettingsCache = structuredClone({
+  const next = structuredClone({
     profileDataRoot: localSettingsCache.profileDataRoot,
     cloud: value.cloud || localSettingsCache.cloud || cloudSync.defaultCloudConfig(),
     uiGroups: Array.isArray(value.uiGroups) ? value.uiGroups : (localSettingsCache.uiGroups || []),
-    closeAction: normalizeCloseAction(value.closeAction || localSettingsCache.closeAction),
+    // Whole-store callers carry stale copies; only commitCloseSettings owns
+    // this field, and a failed close change was never in this cache.
+    closeAction: committedCloseAction,
     memoryLimit: clampMemoryLimit(value.memoryLimit !== undefined ? value.memoryLimit : localSettingsCache.memoryLimit),
     diskLimit: clampDiskLimit(value.diskLimit !== undefined ? value.diskLimit : localSettingsCache.diskLimit),
     defaultPreferences: normalizeDefaultPreferences(value.defaultPreferences, localSettingsCache.defaultPreferences),
   });
+  for (const field of clientPreferenceSlots) {
+    if (preferenceValue(localSettingsCache, field) !== preferenceValue(next, field) || (clientIntent && hasPreference(value, field))) {
+      preferenceGenerations.set(field, (preferenceGenerations.get(field) || 0) + 1);
+    }
+  }
+  localSettingsCache = next;
   await localSettingsWriter.request();
   // A newer cache value may still be waiting for its own write. Acknowledge
   // only a snapshot which has passed the disk barrier.
@@ -405,6 +492,8 @@ module.exports = {
   getLocalSettings,
   loadLocalSettings,
   saveLocalSettings,
+  commitCloseSettings,
+  getCloseActionGeneration,
   commitProfileDataRoot,
   writeLocalSettingsFile,
   normalizeProfileDataRoot,

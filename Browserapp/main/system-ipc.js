@@ -27,6 +27,8 @@ const saveErrors = Object.freeze({
   LOCAL_SETTINGS_DECRYPT_FAILED: '无法解密本地设置。请检查加密密钥后重试。',
   LOCAL_SETTINGS_INVALID: '本地设置格式无效。请先处理恢复记录。',
   LOCAL_SETTINGS_RECOVERY_REQUIRED: '本地设置需要恢复。请先处理恢复记录。',
+  APP_SHUTTING_DOWN: '应用正在退出，无法保存设置。',
+  CLOSE_SETTINGS_SUPERSEDED: '设置已被更新的操作替代，未保存这次更改。',
   CLIENT_SETTINGS_SAVE_FAILED: '未能确认客户端设置保存。请检查本地存储后重试。',
 });
 
@@ -99,18 +101,27 @@ function registerSystemIpc({
     // renderer edit that can outlive the last settings flush.
     if (isQuitting()) throw Object.assign(new Error('应用正在退出，无法保存设置。'), { code: 'APP_SHUTTING_DOWN' });
   };
+  const saveClientPatch = async (patch) => {
+    try {
+      return await (Object.hasOwn(patch, 'closeAction')
+        ? settingsStore.commitCloseSettings(patch, { isQuitting, onExit: destroyTray })
+        : settingsStore.saveLocalSettings(patch, { clientIntent: true }));
+    } catch (error) {
+      // Ordinary preference writes can retry. Close-bearing patches do not.
+      // Neither kind returns a path or a raw filesystem error to the client.
+      const code = Object.hasOwn(saveErrors, error?.code) ? error.code : 'CLIENT_SETTINGS_SAVE_FAILED';
+      throw Object.assign(new Error(saveErrors[code]), { code });
+    }
+  };
 
   registerTrustedIpc('system:read-clipboard', () => {
     try { return clipboard.readText(); } catch (_) { return ''; }
   });
   registerTrustedIpc('system:set-close-action', async (_event, mode) => {
     assertSettingsWritable();
-    const value = settingsStore.normalizeCloseAction(mode);
-    settingsStore.getLocalSettings().closeAction = value;
-    await settingsStore.saveLocalSettings(settingsStore.getLocalSettings());
-    // A remembered "exit" means the user no longer wants background running.
-    if (value === 'exit') destroyTray();
-    return { success: true, closeAction: value };
+    if (!CLOSE_ACTIONS.has(mode)) throw invalidClientSettings('closeAction');
+    const saved = await saveClientPatch({ closeAction: mode });
+    return { success: true, closeAction: saved.closeAction };
   });
   // Ordinary preferences never include the cloud, group or storage data
   // maintained by their separate host operations.
@@ -118,17 +129,7 @@ function registerSystemIpc({
   registerTrustedIpc('system:save-client-settings', async (_event, payload) => {
     assertSettingsWritable();
     const next = clientSettingsPatch(payload); // validate the entire patch before any write
-    let saved;
-    try { saved = await settingsStore.saveLocalSettings(next); }
-    catch (error) {
-      // A write may be retried by the ordinary settings writer. Report no
-      // durable acknowledgement rather than claiming rollback or forwarding a
-      // raw filesystem message/path to the renderer.
-      const code = Object.hasOwn(saveErrors, error?.code) ? error.code : 'CLIENT_SETTINGS_SAVE_FAILED';
-      throw Object.assign(new Error(saveErrors[code]), { code });
-    }
-    if (saved.closeAction === 'exit') destroyTray();
-    return clientSettingsDto(saved);
+    return clientSettingsDto(await saveClientPatch(next));
   });
   registerTrustedIpc('app:update-check', async () => {
     const payload = await appUpdate.pushAppUpdateStatus({ check: true });

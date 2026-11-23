@@ -62,6 +62,13 @@ function compileFilters(p, index) {
   if (p.windowName) filters.push(row => row.windowName.includes(p.windowName));
   if (p.openStatus) filters.push(row => snapshot[row.position].running);
   if (p.isOften) filters.push(row => row.isOften);
+  if (Object.hasOwn(p, "scopeProjectId")) {
+    const scope = p.scopeProjectId;
+    if (typeof scope !== "string" || !scope.length) throw Error("项目范围无效");
+    // A detail route owns one opaque ID, not the legacy comma-delimited list.
+    const exact = scope === "local-default" ? "" : scope;
+    filters.push(row => row.projectId === exact);
+  }
   if (p.projectId || p.projectIds) {
     const ids = new Set(String(p.projectId || p.projectIds).split(",").map(id => id === "local-default" ? "" : id));
     filters.push(row => ids.has(row.projectId));

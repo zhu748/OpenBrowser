@@ -57,6 +57,7 @@ function fixture({ settingsStore, loadSettingsForStartup = () => Promise.resolve
     windowIconPath() {}, windowBackground() {},
     settingsStore, loadSettingsForStartup,
     askCloseAction: () => { calls.ask++; return ask(); },
+    destroyTray() {},
     hideMainWindowToTray: win => { calls.hide++; win.hide(); },
     createWindowCloseHandler: (win, options) => createWindowCloseHandler(win, { ...options, platform: 'linux' }),
     attachShellNavigationGuard() {}, createShellNavigationPolicy() {},
@@ -74,6 +75,7 @@ function startupSettings(closeAction) {
   const saved = { version: 2, profileDataRoot: path.resolve('synthetic/existing'), memoryLimit: 62, uiGroups: [{ id: 'retained' }], closeAction };
   const files = new Map([[file, Buffer.from(JSON.stringify(saved))]]);
   let first = true;
+  let beforeRename, beforeSync;
   const storePath = path.resolve(__dirname, '../local-settings.js');
   const storeRequire = createRequire(storePath);
   const overrides = {
@@ -86,7 +88,12 @@ function startupSettings(closeAction) {
       },
       async mkdir() {},
       async writeFile(name, value) { files.set(name, Buffer.from(value)); },
-      async rename(from, to) { files.set(to, files.get(from)); files.delete(from); },
+      async open(name, flags) {
+        if (flags === 'wx') files.set(name, Buffer.alloc(0));
+        return { async writeFile(value) { files.set(name, Buffer.from(value)); }, async sync() { await beforeSync?.(name); }, async close() {} };
+      },
+      async unlink(name) { files.delete(name); },
+      async rename(from, to) { await beforeRename?.(from, to); files.set(to, files.get(from)); files.delete(from); },
     },
     // The fixture exercises store/close sequencing, not storage encoding.
     '../credential-crypto': { isEncrypted: () => true, decryptCredential: raw => raw.toString(), encryptCredential: text => text },
@@ -103,6 +110,8 @@ function startupSettings(closeAction) {
   return {
     settingsStore, loadSettingsForStartup: () => load, started: started.promise, load,
     finish: () => read.resolve(files.get(file)), fail: () => read.reject(new Error('synthetic read failure')),
+    setBeforeRename: handler => { beforeRename = handler; },
+    setBeforeSync: handler => { beforeSync = handler; },
     saved, persisted: () => JSON.parse(files.get(file).toString()),
   };
 }
@@ -702,6 +711,62 @@ test('remembering an early close choice preserves saved and newer unrelated sett
   assert.deepEqual({ profileDataRoot, uiGroups, memoryLimit, closeAction }, {
     profileDataRoot: settings.saved.profileDataRoot, uiGroups: settings.saved.uiGroups, memoryLimit: 71, closeAction: 'tray',
   });
+});
+
+test('an older close dialog cannot save after an ABA or explicit same-value ask, but its one-time choice still acts', async () => {
+  for (const modes of [['tray', 'ask'], ['ask']]) {
+    const settings = startupSettings('ask');
+    await settings.started; settings.finish(); await settings.load;
+    const asked = Promise.withResolvers(), choice = Promise.withResolvers();
+    const { window, loading, creation, calls } = fixture({ ...settings, ask() { asked.resolve(); return choice.promise; } });
+    loading.resolve(); await creation;
+    const closing = window.requestClose().pending;
+    await asked.promise;
+    for (const closeAction of modes) await settings.settingsStore.commitCloseSettings({ closeAction });
+    choice.resolve({ mode: 'tray', remember: true });
+    await closing; await settings.settingsStore.flushSettingsWriter();
+    assert.deepEqual(calls, { ask: 1, hide: 1, close: 0 });
+    assert.equal(settings.persisted().closeAction, 'ask');
+  }
+});
+
+test('a remembered exit gets a chance to commit before one-time close and can still close if rejected', async () => {
+  for (const failure of [false, true]) {
+    const settings = startupSettings('ask');
+    await settings.started; settings.finish(); await settings.load;
+    settings.setBeforeRename(async from => {
+      if (failure && from.includes('.tmp-close-')) throw Object.assign(new Error('synthetic rename failed'), { code: 'ENOSPC' });
+    });
+    const { window, loading, creation, calls } = fixture({ ...settings, ask: async () => ({ mode: 'exit', remember: true }) });
+    loading.resolve(); await creation;
+    await window.requestClose().pending;
+    assert.deepEqual(calls, { ask: 1, hide: 0, close: 1 });
+    assert.equal(settings.persisted().closeAction, failure ? 'ask' : 'exit');
+    await settings.settingsStore.flushSettingsWriter();
+    assert.equal(settings.persisted().closeAction, failure ? 'ask' : 'exit');
+  }
+});
+
+test('one-time exit is not trapped by a stalled remember, and an undispatched save cannot follow the closed window', async t => {
+  const settings = startupSettings('ask');
+  await settings.started; settings.finish(); await settings.load;
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const staged = Promise.withResolvers(), release = Promise.withResolvers();
+  settings.setBeforeSync(async name => {
+    if (name.includes('.tmp-close-')) { staged.resolve(); await release.promise; }
+  });
+  const { window, loading, creation, calls } = fixture({ ...settings, ask: async () => ({ mode: 'exit', remember: true }) });
+  loading.resolve(); await creation;
+  const closing = window.requestClose().pending;
+  try {
+    await staged.promise;
+    t.mock.timers.tick(2_000);
+    await closing;
+    assert.deepEqual(calls, { ask: 1, hide: 0, close: 1 });
+    assert.equal(settings.persisted().closeAction, 'ask');
+  } finally { release.resolve(); }
+  await settings.settingsStore.flushSettingsWriter();
+  assert.equal(settings.persisted().closeAction, 'ask');
 });
 
 test('early close uses saved tray behavior, but ignores it after quit or destruction', async () => {

@@ -1,13 +1,13 @@
 'use strict';
 
-const INITIAL_SETTINGS_TIMEOUT_MS = 2_000;
+const SETTINGS_WAIT_MS = 2_000;
 
-async function settingsLoadedInTime(load) {
+async function settingsSettledInTime(load) {
   let timer;
   try {
     return await Promise.race([
       load.then(() => true, () => false),
-      new Promise(resolve => { timer = setTimeout(resolve, INITIAL_SETTINGS_TIMEOUT_MS, false); }),
+      new Promise(resolve => { timer = setTimeout(resolve, SETTINGS_WAIT_MS, false); }),
     ]);
   } finally {
     clearTimeout(timer);
@@ -15,7 +15,7 @@ async function settingsLoadedInTime(load) {
 }
 
 function createWindowCloseHandler(win, {
-  isQuitting, readPreference, ask, hide, remember, settingsReady, platform = process.platform,
+  isQuitting, readPreference, ask, hide, remember, getPreferenceGeneration, settingsReady, platform = process.platform,
 }) {
   let pending = null;
   let allowNextClose = false;
@@ -42,7 +42,7 @@ function createWindowCloseHandler(win, {
       .then(async () => {
         if (!windowIsActive()) return;
         if (settingsLoad) {
-          const loaded = await settingsLoadedInTime(settingsLoad);
+          const loaded = await settingsSettledInTime(settingsLoad);
           if (!windowIsActive()) return;
           // Never offer to remember a choice against factory defaults if the
           // saved settings are unreadable or still taking too long to load.
@@ -50,9 +50,18 @@ function createWindowCloseHandler(win, {
           if (savedPreference === 'exit') { closeAgain(); return; }
           if (savedPreference === 'tray') { hide(win); return; }
         }
+        const generation = getPreferenceGeneration?.();
         const decision = await ask(win);
         if (!windowIsActive()) return;
-        if (decision.remember) remember(decision.mode);
+        if (decision.remember) {
+          const saving = Promise.resolve().then(() => remember(decision.mode, generation));
+          if (decision.mode === 'exit') {
+            // The one-time exit can itself start shutdown. Give the optional
+            // save a bounded chance first, without making exit depend on it.
+            await settingsSettledInTime(saving);
+            if (!windowIsActive()) return;
+          } else saving.catch(() => {});
+        }
         if (decision.mode === 'tray') {
           hide(win);
           return;

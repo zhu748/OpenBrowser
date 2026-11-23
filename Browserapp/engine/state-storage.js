@@ -27,27 +27,56 @@ async function syncDirectory(directory) {
   } catch (_) {}
 }
 
-async function writeRawAtomically(filePath, value, mode = 0o600) {
+async function openedStageIdentity(handle) {
+  try {
+    const stat = await handle.stat({ bigint: true });
+    const { dev, ino } = stat;
+    if (stat.isFile() && typeof dev === "bigint" && dev >= 0n && typeof ino === "bigint" && ino > 0n)
+      return { dev, ino };
+  } catch (_) { /* Some filesystems cannot report a stable identity. */ }
+  return null;
+}
+
+async function matchesStageIdentity(file, identity) {
+  const stat = await fsp.lstat(file, { bigint: true });
+  return stat.isFile() && stat.dev === identity.dev && stat.ino === identity.ino;
+}
+
+// An optional synchronous check authorizes this replacement immediately
+// before dispatching rename. It must run again if a filesystem retry occurs.
+async function writeRawAtomically(filePath, value, mode = 0o600, { beforeReplace } = {}) {
   const directory = path.dirname(filePath);
   let lastError = null;
   for (let attempt = 0; attempt < 4; attempt += 1) {
     await fsp.mkdir(directory, { recursive: true });
     const temporary = `${filePath}.tmp-${process.pid}-${crypto.randomBytes(8).toString("hex")}`;
-    let handle = null;
+    let handle = null, stageIdentity = null, authorizing = false;
     try {
       handle = await fsp.open(temporary, "wx", mode);
+      stageIdentity = await openedStageIdentity(handle);
       await handle.writeFile(value, "utf8");
       await handle.sync();
       await handle.close();
       handle = null;
+      authorizing = true;
+      if (stageIdentity && !await matchesStageIdentity(temporary, stageIdentity))
+        throw Object.assign(Error("Atomic staging file changed before replacement"), { code: "ATOMIC_STAGE_CHANGED" });
+      beforeReplace?.();
+      authorizing = false;
       await fsp.rename(temporary, filePath);
+      stageIdentity = null;
       await syncDirectory(directory);
       return;
     } catch (error) {
       lastError = error;
       if (handle) await handle.close().catch(() => {});
-      await fsp.rm(temporary, { force: true }).catch(() => {});
-      if (!TRANSIENT_WRITE_ERRORS.has(error?.code) || attempt === 3) throw error;
+      // A path can change even after a successful exclusive open. Never
+      // clean up without evidence that it still names the file we opened.
+      if (stageIdentity) {
+        try { if (await matchesStageIdentity(temporary, stageIdentity)) await fsp.unlink(temporary); }
+        catch (_) { /* best effort: do not hide the original write failure */ }
+      }
+      if (authorizing || !TRANSIENT_WRITE_ERRORS.has(error?.code) || attempt === 3) throw error;
       await sleep(5 * (attempt + 1));
     }
   }

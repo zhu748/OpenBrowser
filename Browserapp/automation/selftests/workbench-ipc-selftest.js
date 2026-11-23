@@ -129,7 +129,7 @@ async function projectTableScopeChecks() {
     './workbench-vue.js': vue, './agent-BmSFI9WH.js': { i: (_name, setup) => setup },
     './workbench-local-workspace.js': { useWorkspace: () => workspace }, './workbench-table.js': tableModule,
   }, {}, 'useListCache');
-  const cache = useCache(), route = vue.reactive({ params: { id: 'A' }, query: {} });
+  const cache = useCache(), route = vue.reactive({ name: 'project-item', params: { id: 'A' }, query: {} });
   const entries = [
     { id: 'a1', name: 'A1', number: 2, groupId: 'A' }, { id: 'a2', name: 'A2', number: 1, groupId: 'A' },
     { id: 'b1', name: 'B1', number: 4, groupId: 'B' }, { id: 'b2', name: 'B2', number: 3, groupId: 'B' },
@@ -147,6 +147,7 @@ async function projectTableScopeChecks() {
     .find(node => node.type === 'FunctionDeclaration' && node.id.name === 'useProfileTableRows');
   assert.ok(rowsFunction);
   const profileRows = vm.runInNewContext(rowsSource.slice(rowsFunction.start, rowsFunction.end) + '\nuseProfileTableRows', {
+    ...tableModule,
     ref: vue.ref, watch: vue.watch, useRoute: () => route, useRouter: () => ({}), useWorkspace: () => workspace,
     useAutoOpen: () => ({}), parseAutoOpen: () => null, filterParams: () => ({}), readFilters: () => ({}),
     isEmpty: value => !Object.keys(value).length,
@@ -170,6 +171,7 @@ async function projectTableScopeChecks() {
   const attrs = vue.reactive({ selection: undefined, 'onUpdate:selection': value => controlled.push(value) });
   const state = useBrowserTable({
     cacheKey: 'browser-list', listCacheKey: 'browser-list', listCacheScope: () => ({ projectId: route.params.id }),
+    listCacheMeta: () => ({ scopeProjectId: route.params.id }),
     dataKey: 'id', pageRows: 1, clearSelectionOnRequest: true, selectionMode: 'multiple',
     tableSort: () => ({ data: { sortField: 'windowSortNum', sortOrder: 1 } }), tableFilters: () => [],
     operationHandler: (_action, row) => actions.push(row),
@@ -206,7 +208,7 @@ async function projectTableScopeChecks() {
   await aPage.done;
   assert.deepEqual(visible(), ['a1']);
   assert.deepEqual(structuredClone(aPage.params), {
-    page_index: 2, page_size: 1, orderName: 'windowSortNum', orderType: 'asc', projectIds: 'A', isDelete: 0,
+    page_index: 2, page_size: 1, orderName: 'windowSortNum', orderType: 'asc', scopeProjectId: 'A', isDelete: 0,
   });
 
   move('B');
