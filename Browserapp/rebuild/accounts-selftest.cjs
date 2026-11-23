@@ -24,8 +24,8 @@ async function interruptAccountWrite(root, operation) {
   });
   const profile = await service.request("profiles:create", { windowName: "crash test", platformUrlIds: [account.id] });
   await fs.writeFile(path.join(root, "test-ids.json"), JSON.stringify({ accountId: account.id, profileId: profile.id }));
-  const commit = engine.syncProfiles.bind(engine);
-  engine.syncProfiles = async (...args) => {
+  const commit = engine.commitProfiles.bind(engine);
+  engine.commitProfiles = async (...args) => {
     await commit(...args);
     process.exit(77);
   };
@@ -247,10 +247,10 @@ async function checkInterruptedAccountWrite(root, operation) {
     const originalFile = store.file,
       badFile = path.join(root, "unwritable-directory");
     await fs.mkdir(badFile);
-    const sync = engine.syncProfiles.bind(engine);
+    const commit = engine.commitProfiles.bind(engine);
     let inject = true;
-    engine.syncProfiles = async (profiles, ...args) => {
-      const outcome = await sync(profiles, ...args);
+    engine.commitProfiles = async (profiles, ...args) => {
+      const outcome = await commit(profiles, ...args);
       if (
         inject &&
         profiles.some((profile) =>
@@ -293,7 +293,7 @@ async function checkInterruptedAccountWrite(root, operation) {
       "concurrent note survives",
     );
     store.file = originalFile;
-    engine.syncProfiles = sync;
+    engine.commitProfiles = commit;
     result.checks.push(
       "明确注入账号文件写失败，真实窗口关联补偿回滚；并发备注编辑保留，没有全行旧快照覆盖",
     );

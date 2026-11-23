@@ -1,6 +1,7 @@
 "use strict";
 const { isDeepStrictEqual } = require("node:util");
 const { normalizeAccount } = require("../automation/account-store");
+const { assertProfileId } = require("../automation/isolation");
 const { sanitizeProfile } = require("../engine/profile-sanitizer");
 const fields = {
   platformUrl: "url",
@@ -70,13 +71,39 @@ function expectedAccountFields(profile) {
 }
 const sameAccountFields = (a, b) => a.startUrl === b.startUrl && isDeepStrictEqual(a.platform, b.platform);
 
+function accountProfileUnavailable(cause) {
+  return Object.assign(Error("无法确认窗口账号关联，已保留原数据，请修复存储后重试", { cause }), {
+    code: "ACCOUNT_PROFILE_TARGET_UNAVAILABLE",
+  });
+}
+
+function accountProfileExists(engine, id) {
+  try {
+    const loaded = engine.profiles.has(id);
+    const confirmed = engine.usingSqlite === true
+      ? engine.sqliteStore?.hasProfile?.(id) === loaded
+      : engine.usingSqlite === false && !engine.sqliteStore && typeof engine.storageRecovery === "boolean";
+    // An omitted row may still exist in SQLite, or may be missing only from
+    // the backup selected for this boot. Neither case proves a deletion.
+    if (confirmed && (loaded || engine.storageRecovery !== true)) return loaded;
+  } catch (cause) {
+    throw accountProfileUnavailable(cause);
+  }
+  throw accountProfileUnavailable();
+}
+
 async function restoreAccountProfiles(engine, journal) {
   if (!Array.isArray(journal)) throw Error("账号窗口关联日志格式无效");
-  const restore = [], conflicts = [];
-  for (const { id, before, after } of journal) {
-    if (!before?.platform || !after?.platform) throw Error("账号窗口关联日志格式无效");
-    if (!engine.profiles.has(id)) continue;
+  const restore = [], conflicts = [], seen = new Set();
+  for (const entry of journal) {
+    const { before, after } = entry || {};
+    const id = assertProfileId(entry?.id);
+    if (!before?.platform || !after?.platform || seen.has(id)) throw Error("账号窗口关联日志格式无效");
+    seen.add(id);
+    if (!accountProfileExists(engine, id)) continue;
     const current = engine.profileForEdit(id);
+    if (current?.profile?.id !== id || !Number.isSafeInteger(current.rev) || current.rev <= 0)
+      throw accountProfileUnavailable();
     if (sameAccountFields(current.profile, before)) continue;
     if (!sameAccountFields(current.profile, after)) {
       conflicts.push(id);
@@ -85,7 +112,7 @@ async function restoreAccountProfiles(engine, journal) {
     restore.push({ ...current.profile, startUrl: before.startUrl, platform: before.platform,
       credentialsAction: "replace", rev: current.rev });
   }
-  if (restore.length) await engine.syncProfiles(restore, { checkRevisions: true, delta: true });
+  if (restore.length) await engine.commitProfiles(restore, { checkRevisions: true });
   return conflicts;
 }
 
@@ -100,8 +127,17 @@ function profileTransaction(engine, profiles) {
   }));
   return {
     journal,
-    apply: () => engine.syncProfiles(changes.map(row => ({ ...row.profile, credentialsAction: "replace", rev: row.baseRev })),
-      { checkRevisions: true, delta: true }),
+    apply: () => {
+      // The journal write yields to other editors. Check every target is
+      // still existing, then stage its revision in the same synchronous turn.
+      // Ordinary profile sync also accepts new rows; this transaction does not.
+      for (const { original: { id } } of changes) {
+        if (!accountProfileExists(engine, id))
+          throw Object.assign(Error(`Profile not found: ${id}`), { code: "PROFILE_NOT_FOUND" });
+      }
+      return engine.commitProfiles(changes.map(row => ({ ...row.profile, credentialsAction: "replace", rev: row.baseRev })),
+        { checkRevisions: true });
+    },
     rollback: () => restoreAccountProfiles(engine, journal),
   };
 }

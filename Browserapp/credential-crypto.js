@@ -89,17 +89,21 @@ function getMasterKeyFilePath() {
  * - Mode 0600 restricts access to the current OS user.
  * - Provides guaranteed offline/headless availability when OS Keyring/DPAPI is unavailable.
  */
-function getLocalMasterKey() {
+function getLocalMasterKey({ existingOnly = false } = {}) {
   if (process.env.OPENBROWSER_MASTER_KEY) {
-    return String(process.env.OPENBROWSER_MASTER_KEY).trim();
+    const configured = String(process.env.OPENBROWSER_MASTER_KEY).trim();
+    if (existingOnly && !configured) throw new Error('Configured local master key is invalid');
+    return configured;
   }
-  if (_cachedMasterKey) {
+  // A recovery check must not use a cached key to mask later loss of access.
+  if (!existingOnly && _cachedMasterKey) {
     return _cachedMasterKey;
   }
 
   const keyPath = getMasterKeyFilePath();
   const readKey = () => {
-    for (let attempt = 0; attempt < 10; attempt += 1) {
+    const attempts = existingOnly ? 1 : 10;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
       const content = fs.readFileSync(keyPath, 'utf8').trim();
       if (content.length >= 32) return content;
       // The exclusive creator may not have completed its first write yet.
@@ -108,10 +112,11 @@ function getLocalMasterKey() {
       // wasted spin) because its promise cannot be awaited here. The block is
       // bounded at 10 x 10ms and only occurs in the rare concurrent
       // first-creation race.
-      if (attempt < 9) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+      if (attempt + 1 < attempts) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
     }
     throw new Error('Local master key is invalid; preserve the key file for recovery');
   };
+  if (existingOnly) return readKey();
   try { _cachedMasterKey = readKey(); return _cachedMasterKey; }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
 
@@ -437,6 +442,7 @@ function encryptCredential(plaintext, options = {}) {
  * Unified credential decrypt function.
  * If data starts with OBS1: decrypts via safeStorage.
  * If data starts with OBE1: decrypts via AES-256-GCM with passphrase or local master key.
+ * existingKeyOnly prevents creating or using a stale cached fallback key for OBE1.
  * If data is unencrypted plaintext: returns the string as-is (for transparent legacy reading).
  */
 function decryptCredential(bufferOrString, options = {}) {
@@ -459,7 +465,7 @@ function decryptCredential(bufferOrString, options = {}) {
   }
 
   if (header === MAGIC_AES_GCM_V1) {
-    const passphrase = options.passphrase || getLocalMasterKey();
+    const passphrase = options.passphrase || (options.existingKeyOnly ? getLocalMasterKey({ existingOnly: true }) : getLocalMasterKey());
     const plainBuf = decryptAesGcm(buf, passphrase);
     return plainBuf.toString('utf8');
   }

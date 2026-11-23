@@ -98,7 +98,8 @@ async function inspectJournal(file, stage = null) {
 async function readJournalDocument(file) {
   const bytes = await fs.readFile(file);
   const encrypted = isEncrypted(bytes);
-  const saved = JSON.parse(encrypted ? decryptCredential(bytes) : bytes.toString('utf8'));
+  // Inspect existing evidence without provisioning a replacement fallback key.
+  const saved = JSON.parse(encrypted ? decryptCredential(bytes, { existingKeyOnly: true }) : bytes.toString('utf8'));
   if (!saved || typeof saved !== 'object' || Array.isArray(saved)
     || (saved.claimId !== undefined && (!encrypted || typeof saved.claimId !== 'string' || !/^[0-9a-f]{32}$/.test(saved.claimId)))) {
     throw new Error('Invalid restore journal document');

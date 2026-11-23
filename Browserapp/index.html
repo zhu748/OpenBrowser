@@ -2051,13 +2051,14 @@
     <span id="launch-gate-badge">—</span>
   </div>
   <div class="launch-gate-fields" style="margin-top:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px">
-    <label><span data-i18n="system.launchgate.memory">内存使用率上限（%）</span><input id="launch-memory-limit" type="number" min="1" max="100" step="1" placeholder="95"></label>
-    <label><span data-i18n="system.launchgate.disk">磁盘可用空间下限（GB）</span><input id="launch-disk-limit" type="number" min="0" max="1024" step="1" placeholder="8"></label>
+    <label><span data-i18n="system.launchgate.memory">内存使用率上限（%）</span><input id="launch-memory-limit" type="number" disabled min="1" max="100" step="1" placeholder="95"></label>
+    <label><span data-i18n="system.launchgate.disk">磁盘可用空间下限（GB）</span><input id="launch-disk-limit" type="number" disabled min="0" max="1024" step="1" placeholder="8"></label>
   </div>
   <div class="storage-actions" style="margin-top:12px">
-    <button class="primary" type="button" id="launch-gate-save"><i data-lucide="save" aria-hidden="true"></i><span data-i18n="system.launchgate.save">保存设置</span></button>
+    <button class="primary" type="button" id="launch-gate-save" aria-describedby="launch-gate-status" disabled><i data-lucide="save" aria-hidden="true"></i><span data-i18n="system.launchgate.save">保存设置</span></button>
+    <button class="outline" type="button" id="launch-gate-retry" data-i18n="system.launchgate.retry" aria-describedby="launch-gate-status" hidden>重试</button>
   </div>
-  <p class="storage-warning" id="launch-gate-status" role="status" data-i18n="system.launchgate.idle">尚未保存。</p>
+  <p class="storage-warning" id="launch-gate-status" role="status" data-i18n="system.launchgate.loading" data-i18n-dynamic>正在读取启动保护设置…</p>
 </article>
 <article class="storage-settings-card" id="cloud-backup-card" data-sys-group="cloud">
   <div class="storage-settings-head">

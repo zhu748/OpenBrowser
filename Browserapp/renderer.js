@@ -1113,34 +1113,6 @@ try {
     window.OpenBrowserI18n?.setPreference?.(event.target.value);
   });
 } catch (_) {}
-// 启动保护（Roxy 客户端设置对齐）：内存使用率上限 / 磁盘可用空间下限 / 关闭软件行为。
-try {
-  const memoryInput = document.getElementById('launch-memory-limit');
-  const diskInput = document.getElementById('launch-disk-limit');
-  const badge = document.getElementById('launch-gate-badge');
-  const statusEl = document.getElementById('launch-gate-status');
-  const saveBtn = document.getElementById('launch-gate-save');
-  const fillLaunchGate = (settings) => {
-    if (!settings || !memoryInput || !diskInput) return;
-    memoryInput.value = settings.memoryLimit ?? 95;
-    diskInput.value = settings.diskLimit ?? 8;
-    if (badge) badge.textContent = `${memoryInput.value}% / ${diskInput.value}GB`;
-  };
-  window.ops?.getClientSettings?.().then(fillLaunchGate).catch(() => {});
-  saveBtn?.addEventListener('click', async () => {
-    if (!memoryInput || !diskInput) return;
-    try {
-      const saved = await window.ops.saveClientSettings({
-        memoryLimit: memoryInput.value,
-        diskLimit: diskInput.value,
-      });
-      fillLaunchGate(saved);
-      if (statusEl) statusEl.textContent = tx('已保存启动保护设置。');
-    } catch (error) {
-      if (statusEl) statusEl.textContent = tx('保存失败：') + error.message;
-    }
-  });
-} catch (_) {}
 // seed group selects
 try {
   fillGroupSelect($('#batch-assign-group'), UNGROUPED_ID, { includeUngrouped: true });
@@ -4907,6 +4879,126 @@ function updateEngineBadge(info) {
 async function initialize() {
   refreshLocaleChrome();
   const info = await window.ops.getInfo();
+  // Keep the optional launch-protection card behind the shell's existing IPC readiness.
+  // A slow or failed card read must not block the rest of initialize().
+  (() => {
+    const fields = [
+      { key: 'memoryLimit', input: document.getElementById('launch-memory-limit'), min: 1, max: 100 },
+      { key: 'diskLimit', input: document.getElementById('launch-disk-limit'), min: 0, max: 1024 },
+    ].map(field => ({ ...field, baseline: null, edit: 0, unconfirmed: false }));
+    const badge = document.getElementById('launch-gate-badge');
+    const status = document.getElementById('launch-gate-status');
+    const save = document.getElementById('launch-gate-save');
+    const retry = document.getElementById('launch-gate-retry');
+    if (!badge || !status || !save || !retry || fields.some(field => !field.input)) return;
+
+    let loaded = false, loading = false, loadFailed = false, saving = false, editClock = 0;
+    const isValid = (field, value) => Number.isSafeInteger(value) && value >= field.min && value <= field.max;
+    const draft = field => {
+      const value = field.input.valueAsNumber;
+      return isValid(field, value) ? value : null;
+    };
+    const isDirty = field => field.edit > 0 && (field.unconfirmed || draft(field) !== field.baseline);
+    const visibleEditState = () => fields.some(isDirty) ? 'dirty' : 'ready';
+    const show = state => {
+      const key = `system.launchgate.${state}`;
+      status.setAttribute('data-i18n', key);
+      status.textContent = t(key);
+    };
+    const updateControls = () => {
+      for (const { input } of fields) input.disabled = !loaded;
+      save.disabled = !loaded || saving || !fields.some(isDirty);
+      retry.hidden = !loadFailed;
+      retry.disabled = loading;
+    };
+    const updateBadge = () => {
+      if (loaded) badge.textContent = `${fields[0].baseline}% / ${fields[1].baseline}GB`;
+    };
+
+    async function load() {
+      if (loading || loaded) return;
+      loading = true;
+      show('loading');
+      updateControls();
+      try {
+        const settings = await window.ops.getClientSettings();
+        if (!fields.every(field => isValid(field, settings?.[field.key]))) throw Error('Invalid launch protection settings');
+        for (const field of fields) {
+          field.baseline = settings[field.key];
+          if (!field.edit) field.input.value = String(field.baseline);
+        }
+        loaded = true;
+        loadFailed = false;
+        updateBadge();
+        show(visibleEditState());
+      } catch (_) {
+        loadFailed = true;
+        show('loadFailed');
+      } finally {
+        loading = false;
+        updateControls();
+      }
+    }
+
+    async function saveDraft() {
+      if (!loaded || saving) return;
+      const edits = fields.filter(isDirty).map(field => ({ field, value: draft(field), revision: field.edit }));
+      if (!edits.length) return;
+      const invalid = edits.find(edit => edit.value === null);
+      if (invalid) {
+        show('invalid');
+        invalid.field.input.focus();
+        return;
+      }
+      const submittedAt = editClock;
+      saving = true;
+      show('saving');
+      updateControls();
+      let feedback = 'saved';
+      try {
+        const saved = await window.ops.saveClientSettings(Object.fromEntries(edits.map(({ field, value }) => [field.key, value])));
+        if (!edits.every(({ field }) => isValid(field, saved?.[field.key]))) throw Error('Invalid launch protection receipt');
+        for (const { field, value, revision } of edits) {
+          const actual = saved[field.key];
+          field.baseline = actual;
+          field.unconfirmed = false;
+          // A coalesced write can confirm a different value. Keep the draft
+          // available for an explicit retry; never claim that its value won.
+          if (actual !== value) feedback = 'superseded';
+          else if (field.edit === revision) field.input.value = String(actual);
+        }
+        // Refresh unsubmitted fields only when they stayed clean. A whole
+        // durable snapshot is useful, but never replaces a newer local draft.
+        for (const field of fields) {
+          if (edits.some(edit => edit.field === field) || field.edit > submittedAt
+            || !isValid(field, saved[field.key])) continue;
+          field.baseline = saved[field.key];
+          field.input.value = String(field.baseline);
+        }
+        updateBadge();
+      } catch (_) {
+        // Ordinary failed writes can still affect the live cache or be retried
+        // by the host. Even editing back to the old baseline can require saving.
+        for (const { field } of edits) field.unconfirmed = true;
+        feedback = 'unconfirmed';
+      } finally {
+        saving = false;
+        show(submittedAt === editClock ? feedback : visibleEditState());
+        updateControls();
+      }
+    }
+
+    for (const field of fields) {
+      field.input.addEventListener('input', () => {
+        field.edit = ++editClock;
+        if (loaded) show(visibleEditState());
+        updateControls();
+      });
+    }
+    save.addEventListener('click', saveDraft);
+    retry.addEventListener('click', load);
+    void load();
+  })();
   const appVersion = document.getElementById('app-version');
   if (appVersion && info?.appVersion) appVersion.textContent = `v${info.appVersion}`;
   applyVersionTrafficLight({ light: 'checking', currentVersion: info?.appVersion });

@@ -129,15 +129,21 @@ class AccountStore {
         // One atomic replacement later commits the new account rows and removes this journal.
         await writeJsonAtomically(journalFile, { ...previous, pendingProfileChanges: transaction.journal });
       }
+      let applied = false;
       try {
-        await transaction?.apply();
+        if (transaction) {
+          await transaction.apply();
+          applied = true;
+        }
         await writeJsonAtomically(this.file, { version: 1, accounts: [...next.values()] });
       }
       catch (error) {
         if (!transaction) throw error;
         let conflicts;
         try {
-          conflicts = await transaction.rollback();
+          // Only undo a profile change this transaction durably committed.
+          // A rejected apply may have raced another editor with matching data.
+          conflicts = applied ? await transaction.rollback() : [];
           await writeJsonAtomically(journalFile, previous);
         } catch (rollbackError) {
           this.loadError = new AggregateError([error, rollbackError], '账号保存失败，重启后将尝试恢复窗口关联');
