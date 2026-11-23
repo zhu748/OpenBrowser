@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { randomBytes } = require('node:crypto');
 const { BrowserEngine } = require('../../engine');
+const { LocalService } = require('../../rebuild/local-service');
 
 async function addProfile(engine, id) {
   await engine.syncProfiles([{ id, name: id }]);
@@ -20,6 +21,52 @@ async function interrupted(engine, id) {
   return stage;
 }
 
+async function checkRepeatedTrashTransitions(root) {
+  const create = () => new BrowserEngine({ getPath: () => root });
+  let engine = create();
+  const originalDate = '2026-01-02T00:00:00.000Z';
+  try {
+    await engine.init(null);
+    await engine.syncProfiles([
+      { id: 'old-trash', name: 'Earlier deletion', trashed: true, trashedAt: originalDate, updatedAt: originalDate },
+      { id: 'new-trash', name: 'Mixed transition' },
+      { id: 'active', name: 'Already active', updatedAt: originalDate },
+    ]);
+    const oldTrash = engine.profileForEdit('old-trash'), originalActive = engine.profileForEdit('active');
+    const service = new LocalService({ engine, root });
+    const store = engine.sqliteStore, save = store.saveProfilesDiffed;
+    const written = [];
+    store.saveProfilesDiffed = function (rows) {
+      written.push(rows.map(row => row.id));
+      return save.call(this, rows);
+    };
+    const ids = ['old-trash', 'new-trash'];
+    const trashed = await service.request('profiles:delete', { ids });
+    assert.deepEqual(engine.profileForEdit('old-trash'), oldTrash,
+      'repeating trash must preserve the original deletion time, modification time and selection revision');
+    assert.deepEqual(trashed.ids, ['new-trash']);
+    assert.equal(trashed.trashed, 1);
+    assert.equal((await service.request('profiles:delete', { ids })).trashed, 0);
+    const restored = await service.request('profiles:restore', { ids: ['active', 'new-trash'] });
+    assert.deepEqual(restored.ids, ['new-trash']);
+    assert.equal(restored.restored, 1);
+    assert.equal((await service.request('profiles:restore', { ids: ['active', 'new-trash'] })).restored, 0);
+    assert.deepEqual(engine.profileForEdit('active'), originalActive, 'retrying restore must not change an active edit revision');
+    assert.deepEqual(written, [['new-trash'], ['new-trash']], 'only actual transitions may write to SQLite');
+
+    store.close();
+    engine = create();
+    await engine.init(null);
+    const reopened = new LocalService({ engine, root });
+    assert.equal(engine.profileForEdit('old-trash').profile.trashedAt, originalDate);
+    assert.equal(engine.profileForEdit('old-trash').profile.updatedAt, originalDate);
+    assert.equal(engine.profileForEdit('active').profile.updatedAt, originalDate);
+    assert.deepEqual((await reopened.request('profiles:query', { isDelete: 1 })).rows.map(row => row.id), ['old-trash']);
+  } finally {
+    engine.sqliteStore?.close();
+  }
+}
+
 async function main() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ob-profile-deletion-'));
   const create = () => new BrowserEngine({ getPath: () => root });
@@ -27,6 +74,7 @@ async function main() {
   process.env.OPENBROWSER_MASTER_KEY = randomBytes(32).toString('hex');
   let engine = create();
   try {
+    await checkRepeatedTrashTransitions(path.join(root, 'retry'));
     await engine.init(null);
     for (const id of ['first', 'second', 'committed']) await addProfile(engine, id);
     const original = engine.sqliteStore.deleteProfiles;

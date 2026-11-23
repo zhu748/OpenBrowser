@@ -9,7 +9,6 @@
 .menu-item-content.collapsed .menu-item[data-v-10078f4d] {
   justify-content: center;
 }
-.menu-item-content.collapsed .menu-icon.plus[data-v-10078f4d],
 .menu-item-content.collapsed .menu-icon.external[data-v-10078f4d],
 .menu-item-content.collapsed .menu-title[data-v-10078f4d] {
   display: none;
@@ -35,6 +34,33 @@
 .menu-item[data-v-10078f4d]:hover {
   color: var(--colors-text-text-primary-hover, #fff);
   background: var(--pattern-sidenav-bg-hover, #ffffff0d);
+}
+.has-menu-toggle[data-v-10078f4d] {
+  position: relative;
+}
+.has-menu-toggle[data-v-10078f4d] .menu-item[data-v-10078f4d] {
+  padding-inline-end: 38px;
+}
+.menu-toggle[data-v-10078f4d] {
+  position: absolute;
+  inset-inline-end: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  color: var(--colors-text-text-primary, #fafafa);
+  cursor: pointer;
+}
+.menu-toggle[data-v-10078f4d]:hover {
+  background: var(--pattern-sidenav-bg-hover, #ffffff0d);
+}
+.menu-item[data-v-10078f4d]:focus-visible,
+.menu-toggle[data-v-10078f4d]:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: -2px;
 }
 .menu-item.active[data-v-10078f4d] {
   color: var(--pattern-sidenav-text-active, #3fb6fd);

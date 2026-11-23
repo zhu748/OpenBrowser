@@ -102,37 +102,20 @@ async function readLocalSettings(revision) {
   // guarded by the revision check below, including on the error/reset path.
   await flushSettingsWriter();
   let readComplete = false;
+  let saved;
+  let needsMigration = false;
   try {
     const raw = await fsp.readFile(settingsFile);
     readComplete = true;
     let jsonStr;
-    let needsMigration = false;
     if (credentialCrypto.isEncrypted(raw)) {
       jsonStr = credentialCrypto.decryptCredential(raw);
     } else {
       jsonStr = raw.toString('utf8');
       needsMigration = true;
     }
-    const saved = JSON.parse(jsonStr);
-    if (settingsRevision !== revision) return getLocalSettings();
-    localSettingsCache = {
-      profileDataRoot: normalizeProfileDataRoot(saved.profileDataRoot),
-      cloud: { ...cloudSync.defaultCloudConfig(), ...(saved.cloud || {}) },
-      uiGroups: Array.isArray(saved.uiGroups) ? saved.uiGroups : [],
-      closeAction: normalizeCloseAction(saved.closeAction),
-      memoryLimit: clampMemoryLimit(saved.memoryLimit),
-      diskLimit: clampDiskLimit(saved.diskLimit),
-      defaultPreferences: normalizeDefaultPreferences(saved.defaultPreferences),
-    };
-    if (needsMigration) {
-      persistedSettingsSnapshot = null;
-      try {
-        await localSettingsWriter.request();
-      } catch (migrateError) {
-        console.warn('OpenBrowser settings encryption migration warning:', migrateError.message);
-      }
-    } else persistedSettingsSnapshot = JSON.parse(JSON.stringify(localSettingsCache));
-    return localSettingsCache;
+    saved = JSON.parse(jsonStr);
+    if (saved === null) throw new TypeError('Invalid local settings document');
   } catch (error) {
     if (settingsRevision !== revision) return getLocalSettings();
     // A filesystem read failure does not establish that the file is corrupt.
@@ -157,6 +140,29 @@ async function readLocalSettings(revision) {
     localSettingsCache = defaultCache();
     return localSettingsCache;
   }
+
+  if (settingsRevision !== revision) return getLocalSettings();
+  // A saved directory can become unusable without changing the settings
+  // bytes. Report validation errors rather than quarantining the file and
+  // silently switching to another data directory.
+  localSettingsCache = {
+    profileDataRoot: normalizeProfileDataRoot(saved.profileDataRoot),
+    cloud: { ...cloudSync.defaultCloudConfig(), ...(saved.cloud || {}) },
+    uiGroups: Array.isArray(saved.uiGroups) ? saved.uiGroups : [],
+    closeAction: normalizeCloseAction(saved.closeAction),
+    memoryLimit: clampMemoryLimit(saved.memoryLimit),
+    diskLimit: clampDiskLimit(saved.diskLimit),
+    defaultPreferences: normalizeDefaultPreferences(saved.defaultPreferences),
+  };
+  if (needsMigration) {
+    persistedSettingsSnapshot = null;
+    try {
+      await localSettingsWriter.request();
+    } catch (migrateError) {
+      console.warn('OpenBrowser settings encryption migration warning:', migrateError.message);
+    }
+  } else persistedSettingsSnapshot = JSON.parse(JSON.stringify(localSettingsCache));
+  return localSettingsCache;
 }
 
 // Snapshot of what the file currently holds, so an unchanged cache does not

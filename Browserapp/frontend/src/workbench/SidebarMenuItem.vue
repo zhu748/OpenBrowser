@@ -8,7 +8,7 @@ import { t as vTooltip } from './tooltip-BYYKWrvu.js';
 import { m as menuCommands } from './hook-CnJE4hRq.js';
 import { n as useRoxyClaw } from './roxy-claw-1j3mqM_d.js';
 
-const props = defineProps({ item: { type: Object, required: true }, collapsed: Boolean });
+const props = defineProps({ item: { type: Object, required: true }, collapsed: Boolean, submenuId: String });
 const folded = defineModel('open', { type: Boolean, default: false });
 const badgeMap = defineModel('badgeMap', { default: () => ({}) });
 const route = useRoute();
@@ -17,17 +17,17 @@ const meta = computed(() => props.item.meta ?? {});
 const hasChildren = computed(() => props.item.children?.some(child => !child.meta?.hideInMenu));
 const parentActive = computed(() => !!meta.value.activeWithChildren && props.item.name != null
   && route.matched.some(record => record.name === props.item.name));
-if (hasChildren.value) {
-  folded.value = true;
-  watchEffect(() => {
-    if (route.matched.some(record => record.name === props.item.name)) folded.value = false;
-    if (props.collapsed) folded.value = true;
-  });
-}
+if (hasChildren.value) folded.value = true;
+watchEffect(() => {
+  // Pins can arrive after the sidebar has mounted.
+  if (!hasChildren.value) return;
+  if (route.matched.some(record => record.name === props.item.name)) folded.value = false;
+  if (props.collapsed) folded.value = true;
+});
 function select(event, navigate) {
   if (meta.value.type === 'button') {
     (menuCommands[meta.value.menuAction] ?? meta.value.onClick)?.(event);
-  } else if (!hasChildren.value || props.item.redirect) navigate();
+  } else navigate();
   if (badgeMap.value?.[props.item.name]) {
     badgeMap.value[props.item.name] = false;
     localStorage.setItem('badgeMapCache', JSON.stringify(badgeMap.value));
@@ -36,11 +36,12 @@ function select(event, navigate) {
 </script>
 
 <template>
-  <div class="menu-item-content" :class="{ collapsed }">
+  <div class="menu-item-content" :class="{ collapsed, 'has-menu-toggle': hasChildren && !collapsed }">
     <RouterLink v-slot="{ navigate, href, isActive }" :to="{ name: item.name, params: meta.params, query: { title: meta.title } }" custom>
       <a v-ripple v-tooltip="{ value: meta.title, disabled: !collapsed }" class="menu-item"
         :class="{ active: isActive || parentActive, 'roxy-agent': meta.isRoxyAgent, 'roxy-claw': meta.isRoxyClaw }"
-        :href="hasChildren || meta.type === 'button' ? undefined : href" @click.prevent="select($event, navigate)">
+        :href="meta.type === 'button' ? undefined : href" :aria-label="collapsed ? meta.title : undefined"
+        @click.prevent="select($event, navigate)">
         <template v-if="meta.isRoxyClaw">
           <Icon v-if="meta.icon" :name="meta.icon" class="menu-icon" :size="18" />
           <div class="flex items-center justify-between w-full menu-title">
@@ -66,8 +67,12 @@ function select(event, navigate) {
           </div>
           <Icon v-if="meta.external && !collapsed" name="base/rx_ic_arrow_top_right" class="menu-icon external" :size="12" />
         </template>
-        <Icon v-if="hasChildren" :name="folded ? 'base/rx_ic_plus' : 'base/rx_ic_minus'" class="menu-icon plus" @click.stop="folded = !folded" />
       </a>
     </RouterLink>
+    <button v-if="hasChildren && !collapsed" type="button" class="menu-toggle"
+      :aria-label="(folded ? $t('展开') : $t('收起')) + ' ' + meta.title" :aria-controls="submenuId"
+      :aria-expanded="!folded" @click.stop="folded = !folded">
+      <Icon :name="folded ? 'base/rx_ic_plus' : 'base/rx_ic_minus'" aria-hidden="true" :size="16" />
+    </button>
   </div>
 </template>

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from './workbench-vue.js';
+import { computed, ref, useId, watch } from './workbench-vue.js';
 import { s as useCssVars } from './runtime-dom.esm-bundler-_WxS4Zar.js';
 import { gi as supportsVersion } from './utils-BIWenCnY.js';
 import { y as useRoute } from './rich-html-link-VdBpR3Cm.js';
@@ -14,6 +14,8 @@ const props = defineProps({
 const badgeMap = defineModel('badgeMap');
 const route = useRoute();
 const collapsedItems = ref({});
+const branchPrefix = 'sidebar-branch-' + useId();
+const branchId = index => branchPrefix + '-' + index;
 const collapsible = computed(() => props.collapsedChildren != null);
 const isGroup = item => item.meta?.type === 'group';
 const isFlat = item => item.meta?.type === 'flat';
@@ -40,7 +42,7 @@ useCssVars(() => ({ v44afe9a0: props.level }));
     :style="{ '--child-count': items.length }" :inert="collapsedChildren || undefined">
     <div class="sub-menu-clip">
       <div class="sub-menu">
-        <template v-for="item in items" :key="item.name">
+        <template v-for="(item, index) in items" :key="item.name">
           <template v-if="isGroup(item)">
             <div v-if="collapsed" class="line"></div>
             <button v-else type="button" class="group-title" @click="toggleGroup(item)">
@@ -50,9 +52,9 @@ useCssVars(() => ({ v44afe9a0: props.level }));
           </template>
           <MenuItem v-else-if="!isFlat(item) && (!item.meta?.version || supportsVersion($appVersion, ...item.meta.version))"
             v-model:open="collapsedItems[item.name]" v-model:badge-map="badgeMap" :class="'menu_' + item.name?.toString()"
-            :item="item" :collapsed="collapsed" />
+            :item="item" :collapsed="collapsed" :submenu-id="item.children?.length ? branchId(index) : undefined" />
           <SidebarLinks v-if="item.children?.length" v-model:badge-map="badgeMap" :items="item.children" :level="nestedLevel(item)"
-            :collapsed="collapsed" :collapsed-children="isFolded(item)" />
+            :id="branchId(index)" :collapsed="collapsed" :collapsed-children="isFolded(item)" />
         </template>
       </div>
     </div>

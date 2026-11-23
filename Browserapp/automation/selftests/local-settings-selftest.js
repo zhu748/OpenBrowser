@@ -85,6 +85,28 @@ const crypto = require('../../credential-crypto');
     assert.equal(JSON.parse(crypto.decryptCredential(await fs.readFile(file))).memoryLimit, 84,
       'saving an earlier value after reload must not be skipped');
 
+    // A real, previously valid storage folder can be replaced by a link
+    // between launches. Refuse to use that root without treating its healthy
+    // settings file as corruption or silently starting on another folder.
+    const customRoot = path.join(root, 'custom-profiles');
+    const movedRoot = path.join(root, 'moved-profiles');
+    await fs.mkdir(customRoot);
+    await settings.saveLocalSettings({ profileDataRoot: customRoot, memoryLimit: 84, uiGroups: [{ id: 'kept', name: 'Kept' }] });
+    const beforeRootProblem = await fs.readFile(file);
+    await fs.rename(customRoot, movedRoot);
+    await fs.symlink(movedRoot, customRoot, process.platform === 'win32' ? 'junction' : 'dir');
+    await assert.rejects(settings.loadLocalSettings(), /must not be a symlink or junction/);
+    assert.deepEqual(await fs.readFile(file), beforeRootProblem, 'a path validation failure must not replace the settings file');
+    assert.equal((await fs.readdir(root)).some(name => name.includes('.corrupt-')), false);
+    assert.equal(settings.getLocalSettings().memoryLimit, 84);
+    await fs.rm(customRoot, { recursive: true });
+    await fs.rename(movedRoot, customRoot);
+    const recovered = await settings.loadLocalSettings();
+    assert.equal(recovered.profileDataRoot, customRoot);
+    assert.equal(recovered.memoryLimit, 84);
+    assert.deepEqual(recovered.uiGroups, [{ id: 'kept', name: 'Kept' }]);
+    assert.deepEqual(await fs.readFile(file), beforeRootProblem, 'retry after repairing the folder should not rewrite settings');
+
     await fs.writeFile(file, '{broken settings');
     let quarantineEntered, finishQuarantine;
     const quarantineStarted = new Promise((resolve) => { quarantineEntered = resolve; });
@@ -109,6 +131,9 @@ const crypto = require('../../credential-crypto');
       assert.equal(order, 'quarantine released', 'new writes must wait for an active quarantine');
       assert.equal(settings.getLocalSettings().memoryLimit, 86, 'a late corrupt-read reset cannot replace an edit');
       assert.equal(JSON.parse(crypto.decryptCredential(await fs.readFile(file))).memoryLimit, 86);
+      const quarantined = (await fs.readdir(root)).filter(name => name.includes('.corrupt-'));
+      assert.equal(quarantined.length, 1, 'malformed JSON must still be quarantined');
+      assert.equal(await fs.readFile(path.join(root, quarantined[0]), 'utf8'), '{broken settings');
     } finally {
       clearTimeout(releaseTimer); finishQuarantine(); await duringQuarantine;
       fs.rename = originalRename;

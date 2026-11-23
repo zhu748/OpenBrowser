@@ -75,7 +75,11 @@ module.exports = {
       const changed = new Map();
       for (const id of ids) {
         const profile = this.profiles.get(id);
-        if (profile) changed.set(id, { ...profile, trashed, trashedAt: trashed ? now : null, updatedAt: now });
+        // Only a transition starts a new deletion or modification timestamp.
+        // Check after the previously published writes have settled.
+        if (profile && Boolean(profile.trashed) !== trashed) {
+          changed.set(id, { ...profile, trashed, trashedAt: trashed ? now : null, updatedAt: now });
+        }
       }
       if (!changed.size) return [];
       if (this.usingSqlite && this.sqliteStore) {
