@@ -10,9 +10,12 @@ const { parse } = require('acorn');
 
 const filename = path.resolve(__dirname, '../../main.js');
 const source = readFileSync(filename, 'utf8');
-const declaration = parse(source, { ecmaVersion: 'latest', sourceType: 'commonjs' }).body
-  .find(node => node.type === 'FunctionDeclaration' && node.id.name === 'createWindow');
-assert.ok(declaration);
+const declarations = parse(source, { ecmaVersion: 'latest', sourceType: 'commonjs' }).body;
+function mainFunction(name, context) {
+  const declaration = declarations.find(node => node.type === 'FunctionDeclaration' && node.id.name === name);
+  assert.ok(declaration);
+  return runInNewContext(source.slice(declaration.start, declaration.end) + '\n' + name, context, { filename });
+}
 
 function fixture() {
   const loading = Promise.withResolvers();
@@ -45,7 +48,7 @@ function fixture() {
     attachShellNavigationGuard() {}, createShellNavigationPolicy() {},
     rebuildProtocol: { DOCUMENT: 'local-workbench-fixture' },
   };
-  const createWindow = runInNewContext(source.slice(declaration.start, declaration.end) + '\ncreateWindow', context, { filename });
+  const createWindow = mainFunction('createWindow', context);
   const creation = createWindow();
   return { window, loading, creation, startQuit() { context.quitting = true; } };
 }
@@ -89,4 +92,24 @@ test('startup presentation does not bring the window forward during quit', async
   await creation;
   assert.equal(window.shows, 0);
   assert.equal(window.focuses, 0);
+});
+
+test('tray and second-launch restore requests do not revive the shell during quit', () => {
+  for (const state of ['minimized', 'destroyed', 'absent']) {
+    const calls = [];
+    const context = {
+      quitting: true,
+      mainWindow: state === 'absent' ? null : {
+        isDestroyed: () => state === 'destroyed', isMinimized: () => true,
+        restore: () => calls.push('restore'), show: () => calls.push('show'), focus: () => calls.push('focus'),
+      },
+      createWindow: async () => { calls.push('create'); },
+    };
+    const restore = mainFunction('showMainWindow', context);
+    restore();
+    assert.deepEqual(calls, [], state);
+    context.quitting = false;
+    restore();
+    assert.deepEqual(calls, state === 'minimized' ? ['restore', 'show', 'focus'] : ['create']);
+  }
 });

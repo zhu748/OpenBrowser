@@ -122,20 +122,17 @@ class LocalService {
     }
     // The old renderer kept group labels in its own origin's localStorage.
     // Recover groups still referenced by original backend profiles on first load.
-    const knownGroups = new Set(this.data.groups.map(group => group.id));
+    const knownGroups = new Set(this.data.groups.map(group => String(group.id)));
     for (const profile of this.engine.profiles.values()) {
-      if (
-        profile.groupId &&
-        !knownGroups.has(profile.groupId)
-      ) {
-        this.data.groups.push({
-          id: profile.groupId,
-          project_id: profile.groupId,
-          projectName: profile.group_name || profile.groupId,
-        });
-        knownGroups.add(profile.groupId);
-        migrated = true;
-      }
+      const groupId = String(profile.groupId || "");
+      if (!groupId || knownGroups.has(groupId)) continue;
+      this.data.groups.push({
+        id: groupId,
+        project_id: groupId,
+        projectName: profile.group_name || groupId,
+      });
+      knownGroups.add(groupId);
+      migrated = true;
     }
     if (migrated) await this.save();
   }

@@ -22,13 +22,24 @@ function dateBoundary(value, end, calendar) {
   return date.getTime();
 }
 
-function dateFilter(key, start, end, calendar) {
+const timestampsByProjection = new WeakMap();
+
+function dateFilter(index, key, start, end, calendar) {
   const first = dateBoundary(start, false, calendar);
   const last = dateBoundary(end, true, calendar);
   if (first === null && last === null) return null;
   const exclusive = calendar || (typeof end === "string" && DATE_ONLY.test(end));
+  let byField = timestampsByProjection.get(index);
+  if (!byField) timestampsByProjection.set(index, byField = {});
+  // Allocate only for an enabled date field; replacing the projection drops
+  // these arrays. NaN means unparsed, while Infinity means parsed but invalid.
+  const timestamps = byField[key] ??= new Float64Array(index.snapshot.length).fill(NaN);
   return row => {
-    const time = Date.parse(row[key]);
+    let time = timestamps[row.position];
+    if (Number.isNaN(time)) {
+      const parsed = Date.parse(row[key]);
+      time = timestamps[row.position] = Number.isNaN(parsed) ? Infinity : parsed;
+    }
     return Number.isFinite(time) && (first === null || time >= first)
       && (last === null || (exclusive ? time < last : time <= last));
   };
@@ -80,11 +91,11 @@ function compileFilters(p, index) {
   const created = Array.isArray(p.createTime) ? p.createTime : null;
   const byCalendarDay = Boolean(created || p.startDate || p.endDate);
   const createdFilter = byCalendarDay
-    ? dateFilter("createdAt", p.startDate ?? created?.[0], p.endDate ?? created?.[1], true)
-    : dateFilter("createdAt", p.startTime, p.endTime, false);
+    ? dateFilter(index, "createdAt", p.startDate ?? created?.[0], p.endDate ?? created?.[1], true)
+    : dateFilter(index, "createdAt", p.startTime, p.endTime, false);
   const modifyTime = p.modfiyTime ?? p.modifyTime;
   const updated = Array.isArray(modifyTime) ? modifyTime : [];
-  const updatedFilter = dateFilter("updatedAt", p.startUpdateDate ?? updated[0], p.endUpdateDate ?? updated[1], true);
+  const updatedFilter = dateFilter(index, "updatedAt", p.startUpdateDate ?? updated[0], p.endUpdateDate ?? updated[1], true);
   if (createdFilter) filters.push(createdFilter);
   if (updatedFilter) filters.push(updatedFilter);
   return filters;

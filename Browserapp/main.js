@@ -387,6 +387,7 @@ function hideMainWindowToTray(win) {
 }
 
 function showMainWindow() {
+  if (quitting) return;
   const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
   if (!win) {
     createWindow().catch((error) => console.error('[OpenBrowser] window restore failed:', error?.message || error));

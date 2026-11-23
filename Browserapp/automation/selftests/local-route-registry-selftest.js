@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const { randomBytes } = require('node:crypto');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
@@ -333,6 +334,63 @@ async function checkTextImportEncoding() {
   await assert.rejects(parse(Buffer.from([0xff, 0xfe, 0x61])), { code: 'ERR_ENCODING_INVALID_ENCODED_DATA' });
 }
 
+async function checkStartupProjectRecovery() {
+  const { readLocalStore } = require('../../rebuild/local-store');
+  const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'ob-project-recovery-'));
+  const file = path.join(temp, 'rebuild-local.json');
+  const previousKey = process.env.OPENBROWSER_MASTER_KEY;
+  const originalRename = fs.rename;
+  process.env.OPENBROWSER_MASTER_KEY = randomBytes(32).toString('hex');
+  const existing = { id: 7, project_id: 7, projectName: 'Current legacy label' };
+  const recovered = { id: 'missing', project_id: 'missing', projectName: 'Recovered label' };
+  const initial = JSON.stringify({
+    version: 1, groups: [existing], templates: [], filters: [], settings: { view: 'fixture' },
+    skills: [], tasks: [],
+  });
+  const open = () => Object.assign(Object.create(LocalService.prototype), {
+    file, queue: Promise.resolve(),
+    engine: { profiles: new Map([
+      ['one', { groupId: '7', group_name: 'Stale duplicate label' }],
+      ['two', { groupId: 'missing', group_name: 'Recovered label' }],
+      ['three', { groupId: 'missing', group_name: 'Do not add twice' }],
+    ]) },
+  });
+  let replacements = 0, fail = true;
+  try {
+    await fs.writeFile(file, initial);
+    fs.rename = async (source, target) => {
+      if (target === file) {
+        replacements++;
+        if (fail) throw Object.assign(Error('project recovery disk fixture'), { code: 'EIO' });
+      }
+      return originalRename(source, target);
+    };
+    const first = open();
+    const failed = await Promise.allSettled([first.load(), first.load()]);
+    assert.equal(replacements, 1, 'concurrent startup readers share one recovery attempt');
+    assert.ok(failed.every(result => result.status === 'rejected' && result.reason.code === 'EIO'));
+    assert.equal(await fs.readFile(file, 'utf8'), initial, 'failed recovery leaves the prior file intact');
+    assert.equal(first.data, undefined, 'failed recovery is not published');
+
+    fail = false;
+    await Promise.all([first.load(), first.load()]);
+    assert.equal(replacements, 2, 'retry persists exactly one recovered snapshot');
+    assert.deepEqual(first.data.groups, [existing, recovered],
+      'legacy numeric ID and normalized profile group ID refer to the same project');
+    assert.deepEqual((await readLocalStore(file)).data.groups, [existing, recovered]);
+    const reopened = open();
+    await reopened.load();
+    assert.deepEqual(reopened.data.groups, [existing, recovered], 'recovery is idempotent across fresh instances');
+    assert.deepEqual(await reopened.request('settings:get'), { view: 'fixture' });
+    assert.equal(replacements, 2, 'another startup does not rewrite the recovered file');
+  } finally {
+    fs.rename = originalRename;
+    if (previousKey === undefined) delete process.env.OPENBROWSER_MASTER_KEY;
+    else process.env.OPENBROWSER_MASTER_KEY = previousKey;
+    await fs.rm(temp, { recursive: true, force: true });
+  }
+}
+
 async function main() {
   // Use the real request/dispatch/handlers with controlled I/O and no desktop.
   const service = Object.create(LocalService.prototype);
@@ -415,6 +473,7 @@ async function main() {
   await checkProjectSortWrites();
   await checkProjectNameSearch();
   await checkTextImportEncoding();
+  await checkStartupProjectRecovery();
 
   // A large existing library must not exceed the JS argument-count limit when
   // creating a profile or reserving a batch of sequential display numbers.

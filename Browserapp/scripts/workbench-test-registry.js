@@ -72,6 +72,12 @@ for (const file of Object.keys(nodeAliases)) {
 const workbenchTests = Object.freeze(manifest.map(describe));
 const nodeWorkbenchTests = Object.freeze([
   Object.freeze({
+    name: "selftest:rebuild:profilequery",
+    script: "rebuild/profile-query-selftest.cjs",
+    runtime: "node",
+    timeoutMs: 30 * 1000,
+  }),
+  Object.freeze({
     name: "selftest:rebuild:optimization",
     script: "rebuild/optimization-selftest.cjs",
     runtime: "node",
