@@ -2,6 +2,7 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const { randomBytes } = require('node:crypto');
 
 const path = require('node:path');
 const os = require('node:os');
@@ -9,10 +10,89 @@ const cp = require('node:child_process');
 
 const { BrowserEngine } = require('../../engine');
 const { ProfileStoreSqlite } = require('../profile-store-sqlite');
+const { registerProfileIpc } = require('../../main/profile-ipc');
+const { LocalService } = require('../../rebuild/local-service');
 const cloudSync = require('../cloud-sync');
+
+async function checkLegacySyncPreservesUnreadableRows() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ob-sync-durable-id-'));
+  const initialKey = process.env.OPENBROWSER_MASTER_KEY;
+  const originalKey = randomBytes(32).toString('hex');
+  const temporaryKey = randomBytes(32).toString('hex');
+  let engine;
+  async function reopen(key) {
+    engine?.sqliteStore?.close();
+    process.env.OPENBROWSER_MASTER_KEY = key;
+    engine = new BrowserEngine({ getPath: () => root });
+    await engine.init(null);
+    assert.equal(engine.usingSqlite, true);
+  }
+  function legacySync(values) {
+    const handlers = new Map();
+    registerProfileIpc({ engine, registerTrustedIpc: (name, handle) => handlers.set(name, handle) });
+    return handlers.get('profiles:sync')({}, values, { delta: true });
+  }
+  const raw = id => Buffer.from(engine.sqliteStore.db.prepare('SELECT data FROM profiles WHERE id=?').get(id).data);
+  try {
+    await reopen(originalKey);
+    await legacySync([{ id: 'protected', name: 'Original profile' }]);
+    const originalBytes = raw('protected');
+    await reopen(temporaryKey);
+    assert.equal(engine.profiles.has('protected'), false);
+    assert.equal(engine.sqliteStore.hasProfile('protected'), true);
+    assert.ok(engine.sqliteStore.decodeFailureReport().count > 0);
+    await legacySync([{ id: 'readable', name: 'Created with temporary key' }]);
+    const readable = engine.profileForEdit('readable');
+    const readableBytes = raw('readable');
+
+    let failure;
+    try {
+      await legacySync([
+        { ...readable.profile, rev: readable.rev, name: 'Must not partially save' },
+        { id: 'new-in-mixed-batch', name: 'Must not partially insert' },
+        { id: 'protected', name: 'Stale renderer snapshot' },
+      ]);
+    } catch (error) { failure = error; }
+    assert.ok(raw('protected').equals(originalBytes), 'legacy sync replaced unreadable active ciphertext');
+    assert.equal(failure?.code, 'STORAGE_DECODE_FAILED');
+    assert.deepEqual(engine.profileForEdit('readable'), readable);
+    assert.ok(raw('readable').equals(readableBytes), 'a forbidden collision must stop the whole batch');
+    assert.equal(engine.sqliteStore.hasProfile('new-in-mixed-batch'), false);
+    assert.equal(engine.profiles.has('new-in-mixed-batch'), false);
+
+    const results = await legacySync([
+      { ...readable.profile, rev: readable.rev, name: 'Allowed legacy edit' },
+      { id: 'truly-new', name: 'Allowed new ID' },
+    ]);
+    assert.deepEqual(results.map(row => row.name), ['Allowed legacy edit', 'Allowed new ID']);
+    const local = new LocalService({ engine, root });
+    const updated = await local.request('profiles:update', {
+      id: 'readable', rev: engine.profileForEdit('readable').rev, windowName: 'Allowed modern edit',
+    });
+    assert.equal(updated.windowName, 'Allowed modern edit');
+    assert.ok(raw('protected').equals(originalBytes), 'normal sync must not drop or rewrite an omitted durable row');
+
+    await reopen(originalKey);
+    assert.equal(engine.profileForEdit('protected').profile.name, 'Original profile');
+    assert.ok(raw('protected').equals(originalBytes));
+    assert.ok(engine.sqliteStore.decodeFailureReport().samples.some(row => row.id === 'protected'),
+      'historical diagnostic records should not block a now readable row');
+    const recovered = engine.profileForEdit('protected');
+    await legacySync([{ ...recovered.profile, rev: recovered.rev, name: 'Recovered and editable' }]);
+    await reopen(originalKey);
+    assert.equal(engine.profileForEdit('protected').profile.name, 'Recovered and editable');
+    console.log('  PASS  unreadable durable profile IDs survive legacy sync, while readable and new IDs still work');
+  } finally {
+    engine?.sqliteStore?.close();
+    if (initialKey === undefined) delete process.env.OPENBROWSER_MASTER_KEY;
+    else process.env.OPENBROWSER_MASTER_KEY = initialKey;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
 
 async function main() {
   console.log('Running SQLite Modernization & Reliability Test Suite...');
+  await checkLegacySyncPreservesUnreadableRows();
 
   // ==========================================
   // Test 1: Migration & Idempotence

@@ -506,9 +506,8 @@ if (loadedUi.degraded) {
 const migratedUi = migrateProfileNumbers(loadedUi.degraded ? [] : loadedUi.profiles, loadedUi.nextProfileNumber);
 const migratedGroups = migrateGroups(loadedUi.groups, migratedUi.profiles);
 let ui = { ...loadedUi, ...migratedUi, groups: migratedGroups };
-// Roxy 对齐：回收站保留 7 天，启动时自动清理过期项
-const TRASH_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 let profileSort = { key: '', dir: 1 };
+// Like the workbench, the legacy UI retains trash until explicitly deleted.
 function captureTrashSelection(profiles) {
   return {
     ids: profiles.map((profile) => profile.id),
@@ -516,22 +515,6 @@ function captureTrashSelection(profiles) {
     revisions: Object.fromEntries(profiles.filter((profile) => Number.isSafeInteger(profile.rev)).map((profile) => [profile.id, profile.rev])),
   };
 }
-async function purgeExpiredTrash() {
-  const now = Date.now();
-  const expired = ui.profiles.filter((p) => p.trashed && p.trashedAt && now - Date.parse(p.trashedAt) > TRASH_RETENTION_MS);
-  if (!expired.length) return;
-  try {
-    const result = await window.ops.purgeTrashedProfiles(captureTrashSelection(expired));
-    ui.profiles = window.OpenBrowserProfileBatch.removeProfilesById(ui.profiles, result.ids);
-    for (const id of result.ids) { selectedProfiles.delete(id); selectedSessions.delete(id); }
-    save();
-    invalidateViewCache(['profiles', 'groups']);
-    renderProfiles();
-    log('Trash', `已自动清理 ${result.ids.length} 个超过 7 天的回收站环境`);
-  } catch (_) {}
-}
-setTimeout(() => { purgeExpiredTrash(); }, 4000);
-
 let activeGroupFilter = 'all'; // 'all' | 'ungrouped' | groupId
 
 let __groupListCache = null; // [groupsRef, sortedArray]
@@ -2936,6 +2919,11 @@ function buildProfileRow(profile) {
   const createdCell = element('td', 'col-created', profile.createdAt ? new Date(profile.createdAt).toLocaleString() : '—');
   const updatedCell = element('td', 'col-updated', profile.updatedAt ? new Date(profile.updatedAt).toLocaleString() : '—');
   const remainCell = element('td', 'col-remaining', trashRemainingText(profile));
+  if (profile.trashed) {
+    const retention = t('trash.emptyHint');
+    remainCell.title = retention;
+    remainCell.setAttribute('aria-label', retention);
+  }
   const extensionCell = element('td', 'col-ext', String(info.assignedExtensions?.length || 0));
   const statusCell = document.createElement('td');
   statusCell.className = 'col-status';
@@ -2963,11 +2951,7 @@ function buildProfileRow(profile) {
 }
 
 function trashRemainingText(profile) {
-  if (!profile.trashedAt) return '—';
-  const left = TRASH_RETENTION_MS - (Date.now() - Date.parse(profile.trashedAt));
-  if (!Number.isFinite(left) || left <= 0) return '0';
-  const hours = Math.floor(left / 3600000);
-  return hours >= 24 ? `${Math.floor(hours / 24)}d` : `${hours}h`;
+  return profile.trashed ? '∞' : '—';
 }
 
 function renderProfiles() {

@@ -160,6 +160,16 @@ async function groupsDelete(service, p) {
   const e = service.engine;
   const ids = new Set(p.ids.map(String));
   if (ids.has("local-default")) throw Error("默认项目不能删除");
+  // A legacy numeric ID and a separate string ID can share a lookup key.
+  // Reject the entire batch before staging any project or membership changes.
+  const matched = new Set();
+  for (const row of service.data.groups) {
+    const id = String(row.id);
+    if (!ids.has(id)) continue;
+    if (matched.has(id))
+      throw Object.assign(Error("项目 ID 冲突，未删除任何项目。请先检查重复项目。"), { code: "PROJECT_ID_AMBIGUOUS" });
+    matched.add(id);
+  }
   const changes = [...e.profiles.values()]
     .filter((profile) => ids.has(profile.groupId))
     .map((profile) => {

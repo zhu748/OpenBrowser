@@ -38,6 +38,13 @@ function prepareProfileSync(engine, values, { maintenanceToken, checkRevisions =
     assertProfileNotMaintained(engine, sanitized.id, maintenanceToken);
     if (engine.deletingProfiles?.has(sanitized.id)) throw Object.assign(new Error('Profile is being deleted: ' + sanitized.id), { code: 'PROFILE_DELETING' });
     const previous = (profiles.get(sanitized.id) || engine.profiles.get(sanitized.id));
+    // A row excluded during startup decode is absent from memory, not from
+    // storage. Do not let a stale renderer snapshot recreate it under this key.
+    if (!previous && engine.sqliteStore?.hasProfile?.(sanitized.id)) {
+      throw Object.assign(new Error('已保留未能加载的窗口记录。请恢复数据访问后重试。'), {
+        code: 'STORAGE_DECODE_FAILED',
+      });
+    }
     if (checkRevisions && previous && Number(value.rev) !== engine.profiles.revisionOf(sanitized.id)) {
       throw Object.assign(new Error('环境配置已变更，请刷新后重试：' + sanitized.id), { code: 'PROFILE_STALE_REV' });
     }

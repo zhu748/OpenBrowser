@@ -393,6 +393,98 @@ async function checkProjectSortWrites() {
   assert.equal(writes.length, 2);
 }
 
+async function checkProjectDeleteAmbiguity() {
+  const { BrowserEngine } = require('../../engine');
+  const { encodeLocalStore } = require('../../rebuild/local-store');
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ob-delete-ambiguous-projects-'));
+  const previousKey = process.env.OPENBROWSER_MASTER_KEY;
+  process.env.OPENBROWSER_MASTER_KEY = randomBytes(32).toString('hex');
+  const groups = [
+    { id: 7, projectName: 'Legacy numeric project' },
+    { id: '7', projectName: 'Separate string project' },
+    { id: 8, projectName: 'Unambiguous numeric project' },
+    { id: '9', projectName: 'Unambiguous string project' },
+    { id: 'keep', projectName: 'Keep project' },
+  ];
+  const members = [
+    { id: 'ambiguous-member', groupId: '7', group_name: 'Separate string project' },
+    { id: 'numeric-member', groupId: '8', group_name: 'Unambiguous numeric project' },
+    { id: 'string-member', groupId: '9', group_name: 'Unambiguous string project' },
+    { id: 'keep-member', groupId: 'keep', group_name: 'Keep project' },
+  ].map(row => ({ ...row, name: row.id }));
+  let engine, service;
+  const open = async () => {
+    engine = new BrowserEngine({ getPath: () => root });
+    await engine.init(null);
+    assert.ok(engine.sqliteStore, 'fixture must exercise real SQLite persistence');
+    service = new LocalService({ engine, root });
+  };
+  const membership = () => members.map(({ id }) => {
+    const { rev, profile: { groupId, group_name } } = engine.profileForEdit(id);
+    return { id, rev, groupId, group_name };
+  });
+  const links = rows => rows.map(({ id, groupId, group_name }) => [id, groupId, group_name]);
+  try {
+    await open();
+    await engine.syncProfiles(members);
+    await fs.writeFile(service.file, encodeLocalStore({
+      version: 1, groups, templates: [], filters: [], settings: {}, skills: [], tasks: [],
+    }));
+    await service.load();
+    const original = await fs.readFile(service.file);
+    const originalMembers = membership();
+    const events = [], sqliteWrites = [];
+    let workspaceWrites = 0;
+    const save = service.save.bind(service);
+    service.save = () => { workspaceWrites++; return save(); };
+    const sqliteSave = engine.sqliteStore.saveProfilesDiffed.bind(engine.sqliteStore);
+    engine.sqliteStore.saveProfilesDiffed = rows => {
+      sqliteWrites.push(rows.map(row => row.id));
+      return sqliteSave(rows);
+    };
+    engine.on(event => events.push(event));
+
+    const remove = ids => service.request('groups:delete', { ids });
+    for (const ambiguous of [7, '7']) {
+      await assert.rejects(remove(['8', ambiguous, 9]), {
+        code: 'PROJECT_ID_AMBIGUOUS', message: /项目 ID 冲突，未删除任何项目/,
+      });
+    }
+    assert.equal(workspaceWrites, 0, 'a rejected mixed batch must not stage or commit metadata');
+    assert.deepEqual(sqliteWrites, [], 'ambiguous selection must not touch SQLite memberships');
+    assert.deepEqual(events, [], 'a rejected delete must not publish a change');
+    assert.deepEqual(service.data.groups, groups);
+    assert.deepEqual(membership(), originalMembers, 'all member links and revisions must survive the whole rejected batch');
+    assert.deepEqual(await fs.readFile(service.file), original, 'encrypted workspace bytes must remain identical');
+
+    engine.sqliteStore.close();
+    await open();
+    await service.load();
+    assert.deepEqual(service.data.groups, groups);
+    const reopenedMembers = membership();
+    assert.deepEqual(links(reopenedMembers), links(originalMembers), 'SQLite membership links survive reopening');
+    assert.equal(await remove(['8', 9]), true, 'unambiguous aliases remain valid in a batch even when unselected IDs collide');
+    const surviving = [groups[0], groups[1], groups[4]];
+    assert.deepEqual(service.data.groups, surviving);
+    const afterDelete = membership();
+    assert.deepEqual(afterDelete.map(row => [row.groupId, row.group_name]), [
+      ['7', 'Separate string project'], ['', ''], ['', ''], ['keep', 'Keep project'],
+    ]);
+    assert.deepEqual([afterDelete[0], afterDelete[3]], [reopenedMembers[0], reopenedMembers[3]]);
+
+    engine.sqliteStore.close();
+    await open();
+    await service.load();
+    assert.deepEqual(service.data.groups, surviving);
+    assert.deepEqual(links(membership()), links(afterDelete), 'the valid batch persists through reopening');
+  } finally {
+    engine?.sqliteStore?.close();
+    if (previousKey === undefined) delete process.env.OPENBROWSER_MASTER_KEY;
+    else process.env.OPENBROWSER_MASTER_KEY = previousKey;
+    await fs.rm(root, { recursive: true, force: true });
+  }
+}
+
 async function checkProjectNameSearch() {
   const service = Object.create(LocalService.prototype);
   const groups = [{ id: 'group-a', projectName: 'Renamed project' }, { id: 7, projectName: 'Other project' }];
@@ -589,6 +681,7 @@ async function main() {
   await checkFullProfileListSingleSnapshot();
   await checkTemplateDeleteWrites();
   await checkProjectSortWrites();
+  await checkProjectDeleteAmbiguity();
   await checkProjectNameSearch();
   await checkTextImportEncoding();
   await checkStartupProjectRecovery();

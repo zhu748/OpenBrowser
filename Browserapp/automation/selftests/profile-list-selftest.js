@@ -4,6 +4,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { test } = require('node:test');
 
 const source = fs.readFileSync(path.join(__dirname, '..', '..', 'ui', 'ui-profile-list.js'), 'utf8');
 const context = vm.createContext({ window: {} });
@@ -104,3 +105,104 @@ assert.equal(read().length, 0, 'trash mutations invalidate membership');
 assert.equal(viewCache.summarize(profiles, running, runtime).trash, 1);
 profiles[1].exitIp = '203.0.113.1'; viewCache.invalidate();
 assert.equal(viewCache.firstExit(profiles), profiles[1], 'saved exit changes invalidate the header projection');
+
+test('legacy startup retains trash at every age; only confirmed permanent deletion sends a snapshot', async () => {
+  const filename = path.join(__dirname, '../../renderer.js');
+  const renderer = fs.readFileSync(filename, 'utf8');
+  const section = (start, end) => {
+    const first = renderer.indexOf(start), last = renderer.indexOf(end, first + 1);
+    assert.ok(first !== -1 && last > first, 'renderer section must be present: ' + start);
+    return renderer.slice(first, last);
+  };
+  const now = Date.parse('2026-11-23T00:00:00Z');
+  const week = 7 * 24 * 60 * 60 * 1000;
+  const at = age => new Date(now - age).toISOString();
+  const rows = [
+    { id: 'older', trashed: true, trashedAt: at(week + 1), rev: 8 },
+    { id: 'boundary', trashed: true, trashedAt: at(week), rev: 9 },
+    { id: 'newer', trashed: true, trashedAt: at(week - 1), rev: 10 },
+    { id: 'undated', trashed: true, trashedAt: null, rev: 11 },
+    { id: 'invalid-date', trashed: true, trashedAt: 'not-a-date', rev: 12 },
+    { id: 'active', trashed: false, trashedAt: at(week * 2), rev: 13 },
+  ];
+  const original = structuredClone(rows), timers = [], calls = [], confirmations = [], handlers = new Map();
+  const inputs = new Map();
+  let answer, reportedSave = 0;
+  const mock = vm.createContext({
+    Date: { now: () => now, parse: Date.parse },
+    loadedUi: {}, migratedUi: { profiles: rows }, migratedGroups: [],
+    setTimeout: (callback, delay) => timers.push({ callback, delay }),
+    window: {
+      ops: {
+        profileStatus: async () => rows,
+        async purgeTrashedProfiles(selection) {
+          calls.push(structuredClone(selection));
+          return { deleted: 0, ids: [] };
+        },
+      },
+      OpenBrowserProfileBatch: { removeProfilesById: (profiles, ids) => profiles.filter(row => !ids.includes(row.id)) },
+    },
+    $(selector) {
+      if (!inputs.has(selector)) inputs.set(selector, {
+        addEventListener: (event, callback) => { handlers.set(selector + ':' + event, callback); },
+        showModal() {}, close() {},
+      });
+      return inputs.get(selector);
+    },
+    selectedProfiles: new Set(), selectedSessions: new Set(),
+    setConfirmation(answerPromise) { answer = answerPromise; },
+    confirmAction: options => { confirmations.push(options); return answer; },
+    save() { reportedSave++; }, invalidateViewCache() {}, renderProfiles() {}, log() {}, toast() {},
+    refreshStatus: async () => {}, refreshSessions: async () => {}, refreshExtensions: async () => {}, readUiProfiles: async () => rows,
+    t: key => key,
+  });
+  const read = code => vm.runInContext(code, mock, { filename });
+  read(section('let ui = { ...loadedUi', '\nlet activeGroupFilter'));
+  for (const { callback } of timers) await callback();
+  assert.deepStrictEqual(calls, [], 'opening the legacy renderer does not request permanent deletion, even past seven days');
+  assert.deepStrictEqual(read('ui.profiles'), original);
+  assert.strictEqual(reportedSave, 0, 'opening the legacy renderer does not rewrite trash state');
+  read(section('function trashRemainingText(', '\nfunction renderProfiles('));
+  for (const name of ['older', 'boundary', 'newer', 'undated', 'invalid-date']) {
+    assert.strictEqual(read(`trashRemainingText(ui.profiles.find(row => row.id === '${name}'))`), '∞');
+  }
+  assert.strictEqual(read("trashRemainingText(ui.profiles.find(row => row.id === 'active'))"), '—');
+
+  read(section('async function purgeProfile(', '\nfunction filteredProfilesForCurrentView('));
+  mock.setConfirmation(Promise.resolve(false));
+  await read("purgeProfile('older')");
+  assert.deepStrictEqual(calls, [], 'cancelled permanent deletion sends no IPC');
+
+  let confirm;
+  mock.setConfirmation(new Promise(resolve => { confirm = resolve; }));
+  const requested = read("purgeProfile('older')");
+  assert.strictEqual(confirmations.length, 2);
+  assert.deepStrictEqual(calls, [], 'nothing is sent while the confirmation is pending');
+  // A different operation can update the row while the dialog is open.
+  rows[0].rev++;
+  rows[0].trashedAt = at(5);
+  confirm(true);
+  await requested;
+  assert.deepStrictEqual(calls, [{
+    ids: ['older'], trashedAtById: { older: original[0].trashedAt }, revisions: { older: original[0].rev },
+  }], 'the explicit action retains only its original ID, deletion time and revision');
+  assert.strictEqual(read('ui.profiles.length'), original.length, 'a stale acknowledgement must not remove any rows');
+
+  read("let activeGroupFilter = 'trash', pendingDeleteProfiles = [], pendingTrashSelection = null, engineProfiles;");
+  read(section("$('#delete-selected').addEventListener(", "\n$('#restore-selected')"));
+  mock.selectedProfiles.add('boundary').add('newer');
+  await handlers.get('#delete-selected:click')();
+  assert.strictEqual(calls.length, 1, 'opening the batch confirmation sends no purge');
+  await handlers.get('#batch-delete-form:submit')({ preventDefault() {}, submitter: { value: 'cancel' } });
+  assert.strictEqual(calls.length, 1, 'cancelling the batch sends no purge');
+
+  await handlers.get('#delete-selected:click')();
+  rows[1].rev++;
+  rows[1].trashedAt = at(6);
+  await handlers.get('#batch-delete-form:submit')({ preventDefault() {}, submitter: { value: 'confirm' } });
+  assert.deepStrictEqual(calls[1], {
+    ids: ['boundary', 'newer'],
+    trashedAtById: { boundary: original[1].trashedAt, newer: original[2].trashedAt },
+    revisions: { boundary: original[1].rev, newer: original[2].rev },
+  }, 'confirmed batch sends only selected IDs with the snapshots captured before confirmation');
+});
