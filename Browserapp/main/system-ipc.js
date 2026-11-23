@@ -12,6 +12,81 @@ const cloudOps = require('../automation/cloud-ops');
 const settingsStore = require('../automation/local-settings');
 const { collectStorageDiagnostics } = require('../automation/storage-diagnostics');
 const { writeRawAtomically } = require('../engine/state-storage');
+const DECIMAL = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+const CLOSE_ACTIONS = new Set(['ask', 'tray', 'exit']);
+// New fields in the persistence schema must not expand this IPC implicitly.
+const CLIENT_DEFAULT_PREFERENCES = Object.freeze({ openWorkbench: true, ipChangeRemind: true, googleLogin: false });
+const settingLabels = Object.freeze({
+  memoryLimit: '内存使用率上限', diskLimit: '磁盘可用空间下限',
+  closeAction: '关闭窗口行为', defaultPreferences: '默认环境偏好',
+});
+const saveErrors = Object.freeze({
+  ENOSPC: '磁盘空间不足，未能确认设置保存。',
+  EACCES: '没有足够的文件访问权限，未能确认设置保存。',
+  EPERM: '没有足够的文件访问权限，未能确认设置保存。',
+  LOCAL_SETTINGS_DECRYPT_FAILED: '无法解密本地设置。请检查加密密钥后重试。',
+  LOCAL_SETTINGS_INVALID: '本地设置格式无效。请先处理恢复记录。',
+  LOCAL_SETTINGS_RECOVERY_REQUIRED: '本地设置需要恢复。请先处理恢复记录。',
+  CLIENT_SETTINGS_SAVE_FAILED: '未能确认客户端设置保存。请检查本地存储后重试。',
+});
+
+function clientSettingsDto(saved) {
+  return {
+    memoryLimit: Number.isFinite(saved.memoryLimit) ? saved.memoryLimit : 95,
+    diskLimit: Number.isFinite(saved.diskLimit) ? saved.diskLimit : 8,
+    closeAction: CLOSE_ACTIONS.has(saved.closeAction) ? saved.closeAction : 'ask',
+    defaultPreferences: Object.fromEntries(Object.entries(CLIENT_DEFAULT_PREFERENCES).map(([key, fallback]) => {
+      const value = saved.defaultPreferences?.[key];
+      return [key, typeof value === 'boolean' ? value : fallback];
+    })),
+  };
+}
+
+function invalidClientSettings(field) {
+  const label = settingLabels[field];
+  return Object.assign(new Error(label ? `无效的客户端设置：${label}。` : '没有可保存的客户端设置。'),
+    { code: 'CLIENT_SETTINGS_INVALID' });
+}
+
+const record = value => value !== null && typeof value === 'object'
+  && Object.prototype.toString.call(value) === '[object Object]';
+
+function finiteSetting(value, field) {
+  const number = typeof value === 'number' ? value
+    : typeof value === 'string' && DECIMAL.test(value.trim()) ? Number(value) : NaN;
+  if (!Number.isFinite(number)) throw invalidClientSettings(field);
+  return number;
+}
+
+function clientSettingsPatch(payload) {
+  if (!record(payload)) throw invalidClientSettings();
+  const next = {};
+  if (Object.hasOwn(payload, 'memoryLimit')) {
+    next.memoryLimit = settingsStore.clampMemoryLimit(finiteSetting(payload.memoryLimit, 'memoryLimit'));
+  }
+  if (Object.hasOwn(payload, 'diskLimit')) {
+    next.diskLimit = settingsStore.clampDiskLimit(finiteSetting(payload.diskLimit, 'diskLimit'));
+  }
+  if (Object.hasOwn(payload, 'closeAction')) {
+    if (!CLOSE_ACTIONS.has(payload.closeAction)) throw invalidClientSettings('closeAction');
+    next.closeAction = payload.closeAction;
+  }
+  if (Object.hasOwn(payload, 'defaultPreferences')) {
+    if (!record(payload.defaultPreferences)) throw invalidClientSettings('defaultPreferences');
+    const preferences = {};
+    for (const key of Object.keys(CLIENT_DEFAULT_PREFERENCES)) {
+      if (!Object.hasOwn(payload.defaultPreferences, key)) continue;
+      const value = payload.defaultPreferences[key];
+      if (typeof value !== 'boolean') throw invalidClientSettings('defaultPreferences');
+      preferences[key] = value;
+    }
+    if (Object.keys(preferences).length) next.defaultPreferences = preferences;
+  }
+  // Unknown keys have no authority and are never copied or logged. Without
+  // any supported field there is nothing to report as a successful save.
+  if (!Object.keys(next).length) throw invalidClientSettings();
+  return next;
+}
 
 function registerSystemIpc({
   registerTrustedIpc, shell, dialog, clipboard, BrowserWindow,
@@ -37,52 +112,23 @@ function registerSystemIpc({
     if (value === 'exit') destroyTray();
     return { success: true, closeAction: value };
   });
-  // 启动保护（Roxy 客户端设置对齐）：内存使用率上限 / 磁盘可用空间下限。
-  registerTrustedIpc('system:get-client-settings', () => settingsStore.getLocalSettings());
-  // 设置字段白名单 + 类型/范围校验：renderer 的 patch 不再整个浅合并进设置。
-  // 旧实现把任意键一并并入并持久化（cloud/uiGroups/profileDataRoot 可被一次
-  // IPC 覆盖，或注入任意未知键）；此处镜像 system:set-close-action 的做法——
-  // 归一化一律走 settingsStore 自身的 clamp（clampMemoryLimit 1-100、
-  // clampDiskLimit 0-1024、closeAction 枚举），非法值丢弃并只记一次日志，
-  // 绝不静默回退默认值（garbage patch 不得改写已存设置）。renderer 的
-  // input.value 是数字字符串，故先 Number() 再判有限。
-  let warnedClientSettingsDrops = false;
+  // Ordinary preferences never include the cloud, group or storage data
+  // maintained by their separate host operations.
+  registerTrustedIpc('system:get-client-settings', () => clientSettingsDto(settingsStore.getLocalSettings()));
   registerTrustedIpc('system:save-client-settings', async (_event, payload) => {
     assertSettingsWritable();
-    const patch = payload && typeof payload === 'object' ? payload : {};
-    const known = new Set(['memoryLimit', 'diskLimit', 'closeAction', 'defaultPreferences']);
-    const dropped = [];
-    const next = {};
-    if (patch.memoryLimit !== undefined) {
-      const num = Number(patch.memoryLimit);
-      if (!Number.isFinite(num)) dropped.push(`memoryLimit:${JSON.stringify(patch.memoryLimit)}`);
-      else next.memoryLimit = settingsStore.clampMemoryLimit(num);
+    const next = clientSettingsPatch(payload); // validate the entire patch before any write
+    let saved;
+    try { saved = await settingsStore.saveLocalSettings(next); }
+    catch (error) {
+      // A write may be retried by the ordinary settings writer. Report no
+      // durable acknowledgement rather than claiming rollback or forwarding a
+      // raw filesystem message/path to the renderer.
+      const code = Object.hasOwn(saveErrors, error?.code) ? error.code : 'CLIENT_SETTINGS_SAVE_FAILED';
+      throw Object.assign(new Error(saveErrors[code]), { code });
     }
-    if (patch.diskLimit !== undefined) {
-      const num = Number(patch.diskLimit);
-      if (!Number.isFinite(num)) dropped.push(`diskLimit:${JSON.stringify(patch.diskLimit)}`);
-      else next.diskLimit = settingsStore.clampDiskLimit(num);
-    }
-    if (patch.closeAction !== undefined) {
-      // 枚举精确匹配：normalizeCloseAction 会把非法值静默改成 'ask'，
-      // 一次垃圾提交就能覆盖用户已选的 'tray'/'exit'。
-      if (patch.closeAction === 'ask' || patch.closeAction === 'tray' || patch.closeAction === 'exit') next.closeAction = patch.closeAction;
-      else dropped.push(`closeAction:${JSON.stringify(patch.closeAction)}`);
-    }
-    if (patch.defaultPreferences && typeof patch.defaultPreferences === 'object') {
-      const { DEFAULT_PREFERENCES, normalizeDefaultPreferences } = require('../automation/profile-defaults');
-      const valid = Object.fromEntries(Object.entries(patch.defaultPreferences)
-        .filter(([key, value]) => Object.hasOwn(DEFAULT_PREFERENCES, key) && typeof value === 'boolean'));
-      next.defaultPreferences = normalizeDefaultPreferences(valid, settingsStore.getLocalSettings().defaultPreferences);
-    }
-    for (const key of Object.keys(patch)) if (!known.has(key)) dropped.push(`unknown:${key}`);
-    if (dropped.length && !warnedClientSettingsDrops) {
-      warnedClientSettingsDrops = true;
-      console.warn('[client-settings] dropped untrusted keys/values:', dropped.join(', '), '(further drops are silent for this process)');
-    }
-    const saved = await settingsStore.saveLocalSettings({ ...settingsStore.getLocalSettings(), ...next });
     if (saved.closeAction === 'exit') destroyTray();
-    return saved;
+    return clientSettingsDto(saved);
   });
   registerTrustedIpc('app:update-check', async () => {
     const payload = await appUpdate.pushAppUpdateStatus({ check: true });

@@ -655,19 +655,21 @@ async function inlineRenameChecks() {
   const service = Object.create(LocalService.prototype);
   Object.assign(service, {
     queue: Promise.resolve(),
-    data: {},
+    data: { groups: [], labels: [] },
     load: async () => {},
     resolveInputs: data => data,
     decorate: ({ name }) => ({ windowName: name }),
     engine: {
       profileForEdit: () => ({ profile: { ...profile }, rev }),
-      async applyProfileCommands([command]) {
+      async commitProfileCommand(command, prepareReply) {
         writes.push(command.baseRev);
         if (command.baseRev !== rev) {
           throw Object.assign(Error('stale fixture'), { code: 'PROFILE_STALE_REV' });
         }
+        const reply = prepareReply(structuredClone(command.profile));
         profile = command.profile;
         rev += 1;
+        return { ...reply, rev };
       },
     },
   });

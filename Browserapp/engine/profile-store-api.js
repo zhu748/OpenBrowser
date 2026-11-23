@@ -23,6 +23,62 @@ async function commitProfileSync(engine, values, options) {
   return staged;
 }
 
+function notifyProfileCommit(engine) {
+  try { engine.emit({ type: 'status', action: 'profiles-update' }); }
+  catch (_) {
+    try { console.warn('[BrowserEngine] Profile update notification failed after commit'); }
+    catch (_) { /* diagnostics must not change the commit result */ }
+  }
+}
+
+function stageProfileCommands(engine, commands) {
+  if (!Array.isArray(commands) || commands.length > 200 || commands.length === 0) {
+    throw new Error('Invalid profile commands');
+  }
+  const seen = new Set();
+  const modify = [];
+  for (const command of commands) {
+    if (!command || typeof command !== 'object' || !['modify', 'patch'].includes(command.kind)) {
+      throw new Error('Unknown profile command');
+    }
+    const id = assertProfileId(command.id);
+    if (command.kind === 'modify' && (!command.profile || command.profile.id !== id)) {
+      throw Object.assign(new Error('Profile command ID does not match payload'), { code: 'PROFILE_COMMAND_ID_MISMATCH' });
+    }
+    if (!engine.profiles.has(id)) {
+      throw Object.assign(new Error(`Profile not found: ${id}`), { code: 'PROFILE_NOT_FOUND' });
+    }
+    if (seen.has(id)) throw Object.assign(new Error(`Duplicate command for profile ${id}`), { code: 'PROFILE_COMMAND_DUPLICATE' });
+    seen.add(id);
+    const baseRev = Number(command.baseRev);
+    if (!Number.isInteger(baseRev) || baseRev < 0) throw new Error('Invalid base revision');
+    let profile = command.profile;
+    if (command.kind === 'patch') {
+      const patch = command.patch;
+      const fields = new Set(['name', 'title', 'number', 'groupId', 'tag', 'note']);
+      if (!patch || typeof patch !== 'object' || Array.isArray(patch)
+        || !Object.keys(patch).length || Object.keys(patch).some((key) => !fields.has(key))) {
+        throw new Error('Invalid profile metadata patch');
+      }
+      // Resolve untouched fields from authoritative state, never the UI's
+      // redacted or stale full profile. Identity and credentials cannot be patched.
+      profile = { ...engine.profiles.get(id), ...patch };
+    }
+    modify.push({ id, baseRev, profile });
+  }
+  const stale = modify.filter((entry) => engine.profiles.revisionOf?.(entry.id) !== entry.baseRev);
+  if (stale.length) {
+    // Reject the whole batch: half-applied commands would strand the caller
+    // between two revisions. The error carries both sides so the renderer
+    // can refresh exactly the affected rows.
+    throw Object.assign(new Error(`Profile revision conflict for: ${stale.map((entry) => entry.id).join(', ')}`), {
+      code: 'PROFILE_STALE_REV',
+      stale: stale.map((entry) => ({ id: entry.id, baseRev: entry.baseRev, rev: engine.profiles.revisionOf?.(entry.id) || 0 })),
+    });
+  }
+  return { seen, staged: prepareProfileSync(engine, modify.map((entry) => entry.profile)) };
+}
+
 async function withProfileLifecycleChange(engine, ids, change) {
   if (!Array.isArray(ids) || ids.length > 200) throw new Error('Invalid profile selection');
   const safeIds = [...new Set(ids.map(assertProfileId))];
@@ -60,11 +116,21 @@ module.exports = {
   // them to compensate or retry an already persisted profile change.
   async commitProfiles(values, options = {}) {
     await commitProfileSync(this, values, options);
-    try { this.emit({ type: 'status', action: 'profiles-update' }); }
-    catch (_) {
-      try { console.warn('[BrowserEngine] Profile update notification failed after commit'); }
-      catch (_) { /* diagnostics must not change the commit result */ }
-    }
+    notifyProfileCommit(this);
+  },
+
+  // The editor needs its own detached DTO and revision, not a fresh read
+  // that can fail or pick up a different write after this commit.
+  async commitProfileCommand(command, prepareReply) {
+    const { staged } = stageProfileCommands(this, [command]);
+    const reply = prepareReply(structuredClone(staged.profiles.get(command.id)));
+    const writing = persistProfileSync(this, staged);
+    // Publication is synchronous up to the persistence barrier. Capture
+    // the revision of these staged fields before awaiting the disk write.
+    const rev = this.profiles.revisionOf(command.id);
+    await writing;
+    notifyProfileCommit(this);
+    return { ...reply, rev };
   },
 
   /**
@@ -83,51 +149,7 @@ module.exports = {
    * a newer revision or use a full sync to bypass the conflict gate.
    */
   async applyProfileCommands(commands, options = {}) {
-    if (!Array.isArray(commands) || commands.length > 200 || commands.length === 0) {
-      throw new Error('Invalid profile commands');
-    }
-    const seen = new Set();
-    const modify = [];
-    for (const command of commands) {
-      if (!command || typeof command !== 'object' || !['modify', 'patch'].includes(command.kind)) {
-        throw new Error('Unknown profile command');
-      }
-      const id = assertProfileId(command.id);
-      if (command.kind === 'modify' && (!command.profile || command.profile.id !== id)) {
-        throw Object.assign(new Error('Profile command ID does not match payload'), { code: 'PROFILE_COMMAND_ID_MISMATCH' });
-      }
-      if (!this.profiles.has(id)) {
-        throw Object.assign(new Error(`Profile not found: ${id}`), { code: 'PROFILE_NOT_FOUND' });
-      }
-      if (seen.has(id)) throw Object.assign(new Error(`Duplicate command for profile ${id}`), { code: 'PROFILE_COMMAND_DUPLICATE' });
-      seen.add(id);
-      const baseRev = Number(command.baseRev);
-      if (!Number.isInteger(baseRev) || baseRev < 0) throw new Error('Invalid base revision');
-      let profile = command.profile;
-      if (command.kind === 'patch') {
-        const patch = command.patch;
-        const fields = new Set(['name', 'title', 'number', 'groupId', 'tag', 'note']);
-        if (!patch || typeof patch !== 'object' || Array.isArray(patch)
-          || !Object.keys(patch).length || Object.keys(patch).some((key) => !fields.has(key))) {
-          throw new Error('Invalid profile metadata patch');
-        }
-        // Resolve untouched fields from authoritative state, never the UI's
-        // redacted or stale full profile. Identity and credentials cannot be patched.
-        profile = { ...this.profiles.get(id), ...patch };
-      }
-      modify.push({ id, baseRev, profile });
-    }
-    const stale = modify.filter((entry) => this.profiles.revisionOf?.(entry.id) !== entry.baseRev);
-    if (stale.length) {
-      // Reject the whole batch: half-applied commands would strand the caller
-      // between two revisions. The error carries both sides so the renderer
-      // can refresh exactly the affected rows.
-      throw Object.assign(new Error(`Profile revision conflict for: ${stale.map((entry) => entry.id).join(', ')}`), {
-        code: 'PROFILE_STALE_REV',
-        stale: stale.map((entry) => ({ id: entry.id, baseRev: entry.baseRev, rev: this.profiles.revisionOf?.(entry.id) || 0 })),
-      });
-    }
-    const staged = prepareProfileSync(this, modify.map((entry) => entry.profile));
+    const { seen, staged } = stageProfileCommands(this, commands);
     await persistProfileSync(this, staged);
     this.emit({ type: 'status', action: 'profiles-update' });
     const rows = this.status();

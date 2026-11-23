@@ -3,6 +3,7 @@
 // Moving existing names preserves the shared-script contract without adding
 // runtime globals; eslint.config.js records the cross-file dependencies.
 /* exported renderGroupsPage, openGroupDialog, saveGroupFromDialog, deleteGroup, assignSelectedToGroup */
+/* global localUiWriteProblem, localUiText */
 
 // ========== 分组管理 ==========
 function renderGroupsPage() {
@@ -65,6 +66,8 @@ function renderGroupsPage() {
 }
 
 function openGroupDialog(group = null) {
+  const blocked = localUiWriteProblem();
+  if (blocked) return toast(blocked, { tone: 'error' });
   $('#group-edit-id').value = group?.id || '';
   $('#group-dialog-title').textContent = group ? tx('编辑分组') : tx('新建分组');
   $('#group-name').value = group?.name || '';
@@ -89,21 +92,34 @@ function openGroupDialog(group = null) {
   $('#group-dialog').showModal();
 }
 
+function saveLocalGroups(groups) {
+  const previous = ui.groups;
+  ui.groups = groups;
+  const failure = localUiWriteProblem(save());
+  if (failure) {
+    ui.groups = previous;
+    throw new Error(failure);
+  }
+}
+
 function saveGroupFromDialog() {
+  const blocked = localUiWriteProblem();
+  if (blocked) throw new Error(blocked);
   const id = $('#group-edit-id').value.trim();
   const name = $('#group-name').value.trim();
   if (!name) throw new Error(tx('请输入分组名称'));
   const color = $('#group-color').value.trim();
   if (!/^#[0-9a-fA-F]{6}$/.test(color)) throw new Error(tx('颜色必须是 #RRGGBB 格式'));
   const note = $('#group-note').value.trim();
+  const groups = ui.groups.slice();
   if (id) {
-    const idx = ui.groups.findIndex((g) => g.id === id);
+    const idx = groups.findIndex((g) => g.id === id);
     if (idx < 0) throw new Error(tx('分组不存在'));
-    if (ui.groups.some((g) => g.id !== id && g.name === name)) throw new Error(tx('已有同名分组'));
-    ui.groups[idx] = normalizeGroup({ ...ui.groups[idx], name, color, note }, idx);
+    if (groups.some((g) => g.id !== id && g.name === name)) throw new Error(tx('已有同名分组'));
+    groups[idx] = normalizeGroup({ ...groups[idx], name, color, note }, idx);
   } else {
-    if (ui.groups.some((g) => g.name === name)) throw new Error(tx('已有同名分组'));
-    ui.groups.push(normalizeGroup({
+    if (groups.some((g) => g.name === name)) throw new Error(tx('已有同名分组'));
+    groups.push(normalizeGroup({
       id: createGroupId(),
       name,
       color,
@@ -111,7 +127,7 @@ function saveGroupFromDialog() {
       sort: listGroups().length,
     }, listGroups().length));
   }
-  save();
+  saveLocalGroups(groups);
   invalidateViewCache(['groups', 'profiles']);
   renderGroupsPage();
   renderProfiles();
@@ -124,6 +140,8 @@ function saveGroupFromDialog() {
 async function deleteGroup(id) {
   const g = findGroup(id);
   if (!g) return;
+  const blocked = localUiWriteProblem();
+  if (blocked) return toast(blocked, { tone: 'error' });
   const n = countProfilesInGroup(id);
   if (!await confirmAction({
     title: tx('删除分组'),
@@ -131,9 +149,12 @@ async function deleteGroup(id) {
     confirmLabel: tx('删除分组'),
     tone: 'danger',
   })) return;
+  const stillBlocked = localUiWriteProblem();
+  if (stillBlocked) return toast(stillBlocked, { tone: 'error' });
+  const patches = ui.profiles.filter((profile) => profile.groupId === id)
+    .map((profile) => ({ id: profile.id, patch: { groupId: UNGROUPED_ID } }));
   try {
-    await commitProfilePatches(ui.profiles.filter((profile) => profile.groupId === id)
-      .map((profile) => ({ id: profile.id, patch: { groupId: UNGROUPED_ID } })));
+    await commitProfilePatches(patches);
   } catch (error) {
     renderGroupsPage();
     renderProfiles();
@@ -141,9 +162,17 @@ async function deleteGroup(id) {
     log('Error', error.message);
     return;
   }
-  ui.groups = ui.groups.filter((item) => item.id !== id);
+  try {
+    saveLocalGroups(ui.groups.filter((item) => item.id !== id));
+  } catch (error) {
+    renderGroupsPage();
+    renderProfiles();
+    const detail = patches.length
+      ? localUiText('分组未删除。已移出的环境不会自动移回。', 'The group was not deleted. Moved profiles were not moved back.')
+      : localUiText('分组未删除。', 'The group was not deleted.');
+    return toast(detail + ' ' + error.message, { tone: 'error' });
+  }
   if (activeGroupFilter === id) activeGroupFilter = 'all';
-  save();
   invalidateViewCache(['groups', 'profiles']);
   renderGroupsPage();
   renderProfiles();

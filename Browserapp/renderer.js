@@ -303,9 +303,7 @@ function defaultGroups() {
   ];
 }
 
-const defaultProfiles = () => [
-  { id: 'env-001', number: 1, name: '1', browser: 'Google Chrome', language: 'zh-CN', networkMode: 'direct', proxy: 'Direct', tag: '', groupId: 'grp-default', os: 'Windows', location: 'Local' },
-];
+const defaultProfiles = () => [];
 
 function positiveProfileNumber(value) {
   const number = Number.parseInt(value, 10);
@@ -429,11 +427,15 @@ const uiStateStore = window.OpenBrowserUiState.createUiStateStore({
   getState: () => ui,
   normalizeProfile: (profile) => normalizeProfileSettings(profile),
   fallback: () => ({ profiles: defaultProfiles(), groups: defaultGroups(), logs: [] }),
+  canWrite: () => profileCacheWritable,
   onQuota: (error) => notifyStorageQuotaExceeded(error),
   onFailure: (error) => console.warn('[OpenBrowser Storage] Unable to persist UI state:', error?.message || error),
 });
 
-function loadUi() { return uiStateStore.load(); }
+let profileCacheWritable = false;
+let profileAuthorityReady = false;
+let profileReadFailed = false;
+function loadUi() { return uiStateStore.loadWithSource(); }
 
 function normalizeGroup(raw, index = 0) {
   const value = raw && typeof raw === 'object' ? raw : {};
@@ -497,13 +499,13 @@ function migrateProfileNumbers(profiles, savedNextNumber) {
   return { profiles: migrated, nextProfileNumber: profiles.length ? Math.max(positiveProfileNumber(savedNextNumber), maximum + 1, 1) : 1 };
 }
 
-const loadedUi = loadUi();
+const { source: loadedUiSource, state: loadedUi } = loadUi();
 // A degraded snapshot (quota fallback) only preserved display fields; its
 // profiles must never be merged back over the engine's authoritative state.
 if (loadedUi.degraded) {
   console.warn('[OpenBrowser Storage] Degraded UI snapshot detected after a quota incident; restoring profiles from engine state.');
 }
-const migratedUi = migrateProfileNumbers(loadedUi.degraded ? [] : loadedUi.profiles, loadedUi.nextProfileNumber);
+const migratedUi = migrateProfileNumbers([], loadedUi.nextProfileNumber);
 const migratedGroups = migrateGroups(loadedUi.groups, migratedUi.profiles);
 let ui = { ...loadedUi, ...migratedUi, groups: migratedGroups };
 let profileSort = { key: '', dir: 1 };
@@ -1040,9 +1042,18 @@ function save() {
   profileListCache.invalidate();
   return uiStateStore.save();
 }
-// All state/cache bindings are initialized before the first migration write.
-// This removes credentials from legacy localStorage immediately after load.
-save();
+function localUiText(zh, en) {
+  const locale = window.OpenBrowserI18n?.getLocale?.();
+  return !locale || locale === 'zh-CN' ? zh : en;
+}
+function localUiWriteProblem(result) {
+  if (!profileCacheWritable || result?.preserved) {
+    return localUiText('本地缓存受保护，暂时无法保存此更改。', 'This change cannot be saved while the local cache is protected.');
+  }
+  if (result && !result.ok) return localUiText('未能保存本地更改。', 'Could not save local changes.');
+  return '';
+}
+// Profile cache writes stay gated until the host and stored source are verified.
 window.addEventListener?.('beforeunload', () => uiStateStore.flush());
 window.addEventListener?.('pagehide', () => uiStateStore.flush());
 
@@ -2755,13 +2766,21 @@ function makeEditorReadonly() {
   for (const id of ['#editor-back', '#editor-cancel']) { const btn = $(id); if (btn) btn.disabled = false; }
 }
 async function toggleProfileFavorite(id) {
-  const profile = ui.profiles.find((item) => item.id === id);
-  if (!profile) return;
-  profile.favorite = !profile.favorite;
-  save();
+  const index = ui.profiles.findIndex((item) => item.id === id);
+  if (index < 0) return;
+  const blocked = localUiWriteProblem();
+  if (blocked) return toast(blocked, { tone: 'error' });
+  const previous = ui.profiles[index];
+  const updated = { ...previous, favorite: !previous.favorite };
+  ui.profiles[index] = updated;
+  const failure = localUiWriteProblem(save());
+  if (failure) {
+    ui.profiles[index] = previous;
+    return toast(failure, { tone: 'error' });
+  }
   invalidateViewCache('profiles');
   renderProfiles();
-  toast(profile.favorite ? tx('已收藏') : tx('已取消收藏'));
+  toast(updated.favorite ? tx('已收藏') : tx('已取消收藏'));
 }
 function exportProfile(id) {
   const profile = ui.profiles.find((item) => item.id === id);
@@ -2988,7 +3007,7 @@ function renderProfiles() {
   }
   const empty = $('#profile-empty');
   const hasProfiles = ui.profiles.length > 0;
-  empty.hidden = filtered.length !== 0;
+  empty.hidden = !profileAuthorityReady || filtered.length !== 0;
   table.closest('table').hidden = filtered.length === 0;
   if (filtered.length === 0) table.closest('.table-card').scrollLeft = 0;
   if (inTrash) {
@@ -3002,6 +3021,7 @@ function renderProfiles() {
     $('#profile-clear-filters').hidden = !hasProfiles;
     $('#profile-empty-create').hidden = hasProfiles;
   }
+  renderLegacyProfileCacheStatus();
   $('#profile-total').textContent = String(filtered.length);
   const totalLabel = document.querySelector('#profile-pagination .profile-total');
   if (totalLabel) {
@@ -3108,11 +3128,91 @@ function scheduleProxySearchRender() {
 // The controller owns IPC serialization and derives watermarks from actual rows.
 const statusController = window.OpenBrowserStatusController.createStatusController({
   getRows: () => engineProfiles,
-  setRows: (rows) => { engineProfiles = rows; mergeEngineExitState(rows); },
-  fetchDelta: (watermark) => window.ops.profileStatusDelta(watermark),
+  setRows: (rows) => {
+    if (!profileAuthorityReady) return acceptInitialProfileRows(rows);
+    engineProfiles = rows;
+    mergeEngineExitState(rows);
+  },
+  fetchDelta: async (watermark) => profileAuthorityReady ? window.ops.profileStatusDelta(watermark)
+    : { full: true, rows: await window.ops.profileStatus() },
   fetchFull: () => window.ops.profileStatus(),
 
 });
+function acceptInitialProfileRows(rows) {
+  // Re-read after the host response; an unavailable first read isn't evidence
+  // that there was no history. Never turn cache-only rows into active rows.
+  const { source, state } = loadUi();
+  const cached = source === 'healthy' ? state.profiles : [];
+  const ids = new Set(rows.map(row => row.id));
+  const matched = cached.filter(row => ids.has(row.id));
+  const migrated = migrateProfileNumbers(matched, state.nextProfileNumber);
+  const profiles = window.OpenBrowserProfileState.reconcileProfiles({
+    localProfiles: migrated.profiles,
+    engineProfiles: rows,
+    normalizeProfile: normalizeProfileSettings,
+    mergeProxy: mergeRemoteProxy,
+    restoreProxy(proxy, proxyId) {
+      if (!proxyId || proxyHasCredentials(proxy)) return proxy;
+      const item = proxyLibraryItem(proxyId);
+      const fullProxy = item && parseProxyInputForUi(item, item.protocol || 'socks5')?.raw;
+      return fullProxy && proxyHasCredentials(fullProxy) ? fullProxy : proxy;
+    },
+  });
+  if (source === 'healthy' && loadedUiSource !== 'healthy') {
+    // The earlier fallback had no saved groups or logs. Rehydrate them before
+    // an authorized save can replace the snapshot with those fallback values.
+    ui.groups = migrateGroups(state.groups, []);
+    ui.logs = [...ui.logs, ...state.logs].slice(0, 200);
+    invalidateViewCache('groups');
+  }
+  profileCacheWritable = source === 'missing' || (source === 'healthy' && matched.length === cached.length);
+  profileAuthorityReady = true;
+  profileReadFailed = false;
+  ui.profiles = profiles;
+  ui.nextProfileNumber = migrated.nextProfileNumber;
+  engineProfiles = rows;
+  save();
+}
+
+async function readInitialProfileRows() {
+  try { await statusController.refresh(); }
+  catch (_) { if (!profileAuthorityReady) profileReadFailed = true; }
+}
+
+function renderLegacyProfileCacheStatus() {
+  const table = $('#profile-table')?.closest('table');
+  if (!table) return;
+  let notice = $('#legacy-profile-cache-status');
+  const hidden = profileAuthorityReady && profileCacheWritable;
+  if (!notice && hidden) return;
+  if (!notice) {
+    notice = document.createElement('div');
+    notice.id = 'legacy-profile-cache-status';
+    const detail = document.createElement('p');
+    detail.className = 'storage-warning';
+    detail.setAttribute('role', 'status');
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'outline';
+    retry.addEventListener('click', async () => {
+      retry.disabled = true;
+      try { await readInitialProfileRows(); renderProfiles(); }
+      finally { retry.disabled = false; }
+    });
+    notice.append(detail, retry);
+    table.before(notice);
+  }
+  notice.hidden = hidden;
+  const [detail, retry] = notice.children;
+  detail.textContent = profileAuthorityReady
+    ? localUiText('本地环境缓存保持原样，未将未确认的记录写入当前工作区。',
+      'The local profile cache has been kept unchanged. Unverified records were not added to this workspace.')
+    : localUiText('尚未确认环境列表。旧环境缓存不会被覆盖或同步。',
+      'The profile list could not yet be verified. The existing cache will not be overwritten or synced.');
+  retry.textContent = localUiText('重试', 'Retry');
+  retry.hidden = profileAuthorityReady || !profileReadFailed;
+}
+
 const __statusRefresher = window.OpenBrowserRefreshScheduler.createRefreshScheduler({
   isPaused: () => document.hidden,
   refresh: async () => {
@@ -3729,7 +3829,7 @@ document.getElementById('group-form')?.addEventListener('submit', (event) => {
     $('#group-dialog').close();
     toast(tx('分组已保存'));
     log('Group', tx('保存分组'));
-  } catch (error) { toast(error.message); }
+  } catch (error) { toast(error.message, { tone: 'error' }); }
 });
 document.getElementById('batch-assign-group-btn')?.addEventListener('click', async () => {
   try {
@@ -4585,7 +4685,18 @@ $('#assign-extension').addEventListener('click', (event) => { event.preventDefau
 // Ctrl+Alt 快捷键）已整体移至 ui/ui-sync-wiring.js（在 renderer.js 之后
 // 加载）；sendSameText / sendRandomNumbers 也定义在那里，本文件的 IPC
 // 分发表在事件到来时经共享全局作用域引用它们。
-$('#clear-logs').addEventListener('click', () => { ui.logs = []; save(); renderLogs(); });
+$('#clear-logs').addEventListener('click', () => {
+  const blocked = localUiWriteProblem();
+  if (blocked) return toast(blocked, { tone: 'error' });
+  const previous = ui.logs;
+  ui.logs = [];
+  const failure = localUiWriteProblem(save());
+  if (failure) {
+    ui.logs = previous;
+    return toast(failure, { tone: 'error' });
+  }
+  renderLogs();
+});
 $('#choose-profile-storage').addEventListener('click', chooseProfileStorage);
 $('#reset-profile-storage').addEventListener('click', resetProfileStorage);
 $('#open-profile-storage').addEventListener('click', async () => { try { await window.ops.openProfileStorage(); } catch (error) { toast(error.message); log('Error', error.message); } });
@@ -4823,39 +4934,9 @@ async function initialize() {
   }
   syncState = await window.ops.getSyncState(); preferredMasterId = syncState.master || null; if (syncState.active) selectedSessions = new Set(syncState.selected || []);
   await applySyncSettings(syncSettings); fillSyncSettingsForm();
-  ui.profiles = ui.profiles.map((item) => ({ ...item, browser: 'Google Chrome' }));
   await refreshProxies().catch(() => {});
-  // Merge secrets already loaded in main process (not stored in localStorage).
-  let initialEngineRows = null;
-  try {
-    const engineStatus = await window.ops.profileStatus();
-    if (Array.isArray(engineStatus)) {
-      initialEngineRows = engineStatus;
-      ui.profiles = window.OpenBrowserProfileState.reconcileProfiles({
-        localProfiles: ui.profiles,
-        engineProfiles: engineStatus,
-        normalizeProfile: normalizeProfileSettings,
-        mergeProxy: mergeRemoteProxy,
-        restoreProxy(proxy, proxyId) {
-          if (!proxyId || proxyHasCredentials(proxy)) return proxy;
-          const item = proxyLibraryItem(proxyId);
-          const fullProxy = item && parseProxyInputForUi(item, item.protocol || 'socks5')?.raw;
-          return fullProxy && proxyHasCredentials(fullProxy) ? fullProxy : proxy;
-        },
-      });
-    }
-  } catch (_) {}
-  save();
-  try {
-    // Only an empty engine needs the one-time migration of legacy UI data.
-    // Reposting a hydrated fleet would overwrite newer API/cloud edits.
-    if (initialEngineRows?.length) engineProfiles = initialEngineRows;
-    else if (initialEngineRows) engineProfiles = await syncUiProfiles(ui.profiles);
-  } catch (err) {
-    // A failed first sync must not abort the rest of UI init: the engine
-    // store keeps whatever init loaded; later syncs retry the reconcile.
-    console.error('[renderer] initial profile sync failed:', err?.message || err);
-  }
+  // An empty status is not permission to recreate old cache rows.
+  await readInitialProfileRows();
   await refreshExtensions(); await refreshSessions(); renderProfiles(); renderLogs();
   log('System', readyBrowserLog(info));
   try {

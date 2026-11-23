@@ -7,6 +7,7 @@ const { randomUUID: uid } = require("node:crypto");
 const { sanitizeProfile } = require("../../engine/profile-sanitizer");
 const { assertProfileId } = require("../../automation/isolation");
 const { fromRoxy, toRoxy } = require("../profile-dto");
+const { buildProjectLookup, decorateProfile } = require("../profile-index");
 const { profileFromPreview, savePreviewProfiles } = require('../fingerprint-draft');
 const object = (value) =>
   value && typeof value === "object" && !Array.isArray(value);
@@ -193,24 +194,15 @@ async function profilesUpdate(service, p) {
   const rev = p.rev;
   if (!Number.isInteger(rev)) throw Error("请重新打开编辑表单以读取版本");
   const profile = fromRoxy(service.resolveInputs(p), base.profile);
-  await e.applyProfileCommands(
-    [
-      {
-        kind: "modify",
-        id,
-        baseRev: rev,
-        profile: {
-          ...profile,
-          credentialsAction: "replace",
-          proxyAuthAction: "clear",
-        },
-      },
-    ],
-    {
-      delta: true,
-    },
-  );
-  return profilesRead(service, { id });
+  // Prepare the editor DTO after revision validation, but before writing.
+  // It only needs project/label metadata, not a status list.
+  return e.commitProfileCommand({
+    kind: "modify", id, baseRev: rev,
+    profile: { ...profile, credentialsAction: "replace", proxyAuthAction: "clear" },
+  }, updated => decorateProfile(updated, {
+    groupById: buildProjectLookup(service.data.groups),
+    labelById: new Map((service.data.labels || []).map(row => [row.id, row])),
+  }));
 }
 
 async function profilesStart(service, p) {
@@ -260,16 +252,11 @@ async function profilesClone(service, p) {
       lastOpenedAt: undefined,
     }),
   );
-  await e.syncProfiles(copies);
-  // One Map instead of a linear groups.find per cloned row.
-  const groupById = new Map(service.data.groups.map((group) => [group.id, group]));
-  return copies.map((v) => ({
-    ...toRoxy(e.profiles.get(v.id) ?? v),
-    projectName:
-      groupById.get(v.groupId)?.projectName ||
-      v.group_name ||
-      "",
-  }));
+  // A receipt identifies the copies. The trusted editor is the separate
+  // path for reading a full profile, including any saved credentials.
+  const receipt = copies.map(({ id }) => ({ id, windowId: id, dirId: id }));
+  await e.commitProfiles(copies);
+  return receipt;
 }
 
 async function profilesPatch(service, p) {

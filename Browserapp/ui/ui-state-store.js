@@ -37,7 +37,7 @@
    * handled, and the state is read when writing, never at timer creation.
    */
   function createUiStateStore({ read, write, getState, normalizeProfile, fallback,
-    onQuota = () => {}, onFailure = () => {}, delayMs = 500,
+    canWrite = () => true, onQuota = () => {}, onFailure = () => {}, delayMs = 500,
     maxWaitMs = Math.max(delayMs, 2000), now = () => globalThis.performance?.now?.() ?? Date.now(),
     setTimer = setTimeout, clearTimer = clearTimeout }) {
     let timer = null;
@@ -45,9 +45,13 @@
     let disposed = false;
     const notify = (observer, error) => { try { observer(error); } catch (_) { /* observer */ } };
     const cancel = () => { if (timer !== null) { clearTimer(timer); timer = null; } requestedAt = null; };
-    function load() {
+    function loadWithSource() {
+      let raw;
+      const fallbackSource = source => ({ source, state: fallback() });
+      try { raw = read(); } catch (_) { return fallbackSource('unavailable'); }
+      if (raw == null) return fallbackSource('missing');
       try {
-        const value = JSON.parse(read());
+        const value = JSON.parse(raw);
         if (value && Array.isArray(value.profiles)) {
           // Quota-incident guard: a trimmed snapshot only preserves display
           // fields. Merging it over the engine's authoritative state would
@@ -56,16 +60,23 @@
           if (value.degraded) {
             const base = fallback();
             const { profiles: _profiles, logs: _logs, ...metadata } = value;
-            return { ...base, ...metadata, profiles: base.profiles, logs: [], degraded: true };
+            return { source: 'degraded', state: { ...base, ...metadata, profiles: base.profiles, logs: [], degraded: true } };
           }
-          return { ...value, logs: Array.isArray(value.logs) ? value.logs : [] };
+          const ids = new Set();
+          for (const row of value.profiles) {
+            if (!row || typeof row.id !== 'string' || !row.id.trim() || ids.has(row.id)) return fallbackSource('malformed');
+            ids.add(row.id);
+          }
+          return { source: 'healthy', state: { ...value, logs: Array.isArray(value.logs) ? value.logs : [] } };
         }
-      } catch (_) { /* Missing, corrupt or blocked storage starts with defaults. */ }
-      return fallback();
+      } catch (_) { /* Keep malformed storage distinct from a missing key. */ }
+      return fallbackSource('malformed');
     }
+    function load() { return loadWithSource().state; }
     function save() {
       cancel();
       if (disposed) return { ok: false, disposed: true };
+      if (!canWrite()) return { ok: false, preserved: true };
       let safe;
       try {
         const state = getState();
@@ -90,7 +101,7 @@
       }
     }
     function request() {
-      if (disposed) return;
+      if (disposed || !canWrite()) return;
       const timestamp = now();
       if (requestedAt === null) requestedAt = timestamp;
       if (timer !== null) clearTimer(timer);
@@ -101,7 +112,7 @@
     }
     function flush() { return timer !== null ? save() : { ok: true, skipped: true }; }
     function dispose() { const result = flush(); disposed = true; cancel(); return result; }
-    return Object.freeze({ load, save, request, flush, dispose });
+    return Object.freeze({ load, loadWithSource, save, request, flush, dispose });
   }
 
   return Object.freeze({ createUiStateStore, redactProfileForStorage, trimRedactedProfile });
