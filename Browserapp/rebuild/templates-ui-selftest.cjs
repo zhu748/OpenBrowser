@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { _electron: electron } = require('playwright');
-const { createTestDirectory } = require('./selftest-helpers.cjs');
+const { createTestDirectory, waitUntil } = require('./selftest-helpers.cjs');
 const { evidencePath } = require('./compiler/evidence-path.cjs');
 
 async function main() {
@@ -91,33 +91,36 @@ async function main() {
 
     await navigate('/templates');
     await heading.waitFor();
-    await page.evaluate(() => {
-      const api = globalThis.__localApi;
+    const editableRow = page.getByRole('listitem').filter({ hasText: '用于编辑的模板' });
+    await editableRow.waitFor();
+    // The editor retains its imported API object. Hold just its next IPC read,
+    // not the new templates page's list read when we navigate back.
+    await app.evaluate((_, servicePath) => {
+      const { LocalService } = process.mainModule.require(servicePath);
+      const request = LocalService.prototype.request;
       const { promise, resolve } = Promise.withResolvers();
-      globalThis.__localApi = new Proxy(api, { get(target, name) {
-        if (name !== 'window') return target[name];
-        return new Proxy(target[name], { get(windowApi, method) {
-          if (method !== 'userGetWindowTemplateListList') return windowApi[method];
-          return async () => {
-            globalThis.templateLookupPending = true;
-            await promise;
-            const response = await windowApi[method]();
-            globalThis.templateLookupFinished = true;
-            return response;
-          };
-        } });
-      } });
-      globalThis.releaseTemplateLookup = () => {
-        globalThis.__localApi = api;
-        resolve();
+      const lookup = globalThis.templateLookup = { pending: false, finished: false };
+      LocalService.prototype.request = async function (method, payload) {
+        if (method !== 'templates:list' || lookup.pending) return request.call(this, method, payload);
+        lookup.pending = true;
+        await promise;
+        const response = await request.call(this, method, payload);
+        lookup.finished = true;
+        return response;
       };
-    });
-    await button('使用 / 修改').click();
-    await page.waitForFunction(() => globalThis.templateLookupPending);
-    await navigate('/templates');
-    await heading.waitFor();
-    await page.evaluate(() => globalThis.releaseTemplateLookup());
-    await page.waitForFunction(() => globalThis.templateLookupFinished);
+      lookup.release = () => { LocalService.prototype.request = request; resolve(); };
+    }, path.join(__dirname, 'local-service.js'));
+    try {
+      await editableRow.getByRole('button', { name: '使用 / 修改', exact: true }).click();
+      await waitUntil(() => app.evaluate(() => globalThis.templateLookup.pending), { message: '编辑器未请求模板列表' });
+      await navigate('/templates');
+      await heading.waitFor();
+      await editableRow.waitFor();
+    } finally {
+      await app.evaluate(() => globalThis.templateLookup.release());
+    }
+    await waitUntil(() => app.evaluate(() => globalThis.templateLookup.finished), { message: '已离开的编辑器未收到模板列表响应' });
+    assert.equal(await page.evaluate(() => globalThis.__router.currentRoute.value.path), '/templates');
     await app.evaluate((_, servicePath) => {
       const { LocalService } = process.mainModule.require(servicePath);
       const request = LocalService.prototype.request;

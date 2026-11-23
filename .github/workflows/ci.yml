@@ -397,7 +397,13 @@ jobs:
             set +e
             node scripts/benchmark-workbench.js --sizes 10,100,1000 --interaction-budget-ms 1500 --output ../work/workbench-performance/report.json &
             bench_pid=$!
-            ( sleep 240 && kill -9 "$bench_pid" 2>/dev/null ) &
+            (
+              # TERM interrupts this wait so the timer is killed and reaped.
+              # Until sleep starts, $! still names the parent's benchmark.
+              trap 'if [[ -n "$!" && "$!" != "$bench_pid" ]]; then kill "$!"; wait "$!"; fi; exit 0' TERM
+              sleep 240 &
+              wait "$!" && kill -9 "$bench_pid"
+            ) </dev/null >/dev/null 2>&1 &
             watchdog_pid=$!
             wait "$bench_pid"
             code=$?

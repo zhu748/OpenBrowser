@@ -8,11 +8,12 @@ const path = require('node:path');
 const test = require('node:test');
 
 const app = path.join(__dirname, '..');
-function configuredGateStep() {
+function configuredStep(name) {
   const workflow = fs.readFileSync(path.join(app, '../.github/workflows/ci.yml'), 'utf8');
-  return workflow.split('      - name: Real DOM, preload, IPC, SQLite and editor conflict gates\n')[1]
+  return workflow.split('      - name: ' + name + '\n')[1]
     ?.split('\n      - name:')[0];
 }
+const configuredGateStep = () => configuredStep('Real DOM, preload, IPC, SQLite and editor conflict gates');
 function configuredGateScript() {
   const gateStep = configuredGateStep();
   const script = gateStep?.match(/^ {10}bash (scripts\/desktop-ci-gates\.sh)$/m)?.[1];
@@ -131,4 +132,88 @@ test('the Linux workflow annotates a failing wrapper self-test before running ga
   if (result.error) throw result.error;
   assert.equal(result.status, 37, result.stderr);
   assert.equal(result.stdout.trim(), '::error::Desktop gate failed: Wrapper self-test (exit 37)');
+});
+
+function workbenchAttempt(runtime, mode, attemptOnly = false) {
+  const step = configuredStep('Measure default workbench responsiveness')?.split('        run: |\n')[1];
+  assert.ok(step, 'the workbench benchmark must remain wired into desktop CI');
+  const body = step.replace(/^ {10}/gm, '');
+  const end = body.indexOf('\nif bench;');
+  assert.ok(end > 0, 'the retry policy must use the tested benchmark attempt');
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'workbench-watchdog-test-'));
+  const timerTrace = path.join(temp, 'timers');
+  const benchTrace = path.join(temp, 'benchmarks');
+  fs.writeFileSync(timerTrace, '');
+  try {
+    fs.writeFileSync(path.join(temp, 'sleep'), [
+      '#!/bin/bash',
+      '[[ "$1" == 240 ]] || exit 97',
+      'printf "%s\\n" "$$" >> "$TIMER_TRACE"',
+      'if [[ "$MODE" == stalled ]]; then exec /bin/sleep .2; fi',
+      'exec /bin/sleep 10',
+      '',
+    ].join('\n'), { mode: 0o700 });
+    fs.writeFileSync(path.join(temp, 'node'), [
+      '#!/bin/bash',
+      'printf "%s\\n" "$*" >> "$BENCH_TRACE"',
+      'if [[ "$MODE" == stalled ]]; then exec /bin/sleep 10; fi',
+      'attempt=0',
+      'while IFS= read -r line; do ((attempt+=1)); done < "$BENCH_TRACE"',
+      'for ((p=0; p<100; p++)); do',
+      '  timers=0',
+      '  while IFS= read -r line; do ((timers+=1)); done < "$TIMER_TRACE"',
+      '  ((timers >= attempt)) && break',
+      '  /bin/sleep .01',
+      'done',
+      '((timers >= attempt)) || exit 98',
+      'if [[ "$MODE" == failure ]]; then exit 23; fi',
+      '',
+    ].join('\n'), { mode: 0o700 });
+    const result = spawnSync('/bin/bash', ['--noprofile', '--norc', '-e', '-o', 'pipefail', '-c',
+      attemptOnly ? body.slice(0, end) + '\nbench' : body], {
+      cwd: app,
+      env: { PATH: temp, RUNNER_OS: runtime, MODE: mode, TIMER_TRACE: timerTrace, BENCH_TRACE: benchTrace },
+      encoding: 'utf8',
+      // A healthy attempt closes captured pipes before the inert 10s timer
+      // could expire. This is a generous bound, not a performance threshold.
+      timeout: 2500,
+    });
+    if (result.error) throw result.error;
+    const calls = fs.readFileSync(benchTrace, 'utf8').trim().split('\n');
+    const timers = fs.readFileSync(timerTrace, 'utf8').trim().split('\n').map(Number);
+    assert.equal(timers.length, calls.length, 'a watchdog must be started per attempt');
+    for (const pid of timers) {
+      assert.ok(pid > 0);
+      assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' }, 'the attempt must reap its own timer');
+    }
+    const benchmark = 'scripts/benchmark-workbench.js --sizes 10,100,1000 --interaction-budget-ms 1500 --output ../work/workbench-performance/report.json';
+    assert.ok(calls.every(call => call === benchmark), 'benchmark command and settings must stay unchanged');
+    return { status: result.status, calls: calls.length, output: result.stdout + result.stderr };
+  } finally {
+    // Reclaim any owned stub timers if an assertion catches a regression.
+    for (const pid of fs.readFileSync(timerTrace, 'utf8').split('\n').map(Number)) {
+      if (pid > 0) try { process.kill(pid, 'SIGTERM'); } catch (_) {}
+    }
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+}
+
+test('a completed workbench benchmark closes captured CI pipes and reaps the watchdog timer', () => {
+  const result = workbenchAttempt('Linux', 'success');
+  assert.equal(result.status, 0, result.output);
+  assert.equal(result.calls, 1);
+});
+
+test('workbench attempts preserve ordinary failure and watchdog timeout statuses', () => {
+  assert.equal(workbenchAttempt('Linux', 'failure', true).status, 23);
+  assert.equal(workbenchAttempt('Linux', 'stalled', true).status, 137);
+});
+
+test('workbench CI retries two times on macOS and only runs once on Linux and Windows', () => {
+  for (const [os, runs] of [['Linux', 1], ['Windows', 1], ['macOS', 3]]) {
+    const result = workbenchAttempt(os, 'failure');
+    assert.equal(result.status, 1, result.output);
+    assert.equal(result.calls, runs, os);
+    assert.equal(result.output.match(/::warning::workbench benchmark failed/g)?.length ?? 0, runs - 1, os);
+  }
 });
