@@ -1,7 +1,10 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const test = require('node:test');
+const vm = require('node:vm');
 const { formatOrdinarySmokeFailure } = require('./selftest-all');
 const { classifySelftestResult } = require('./selftest-status');
 
@@ -45,4 +48,80 @@ test('failure classes are fixed and never echo child data or invalid status valu
     assert.equal(format({ ...result, stdout: privateText, stderr: privateText }),
       `::error::Smoke selftest failed: Local settings (${suffix})`);
   }
+});
+
+function runInertAggregate(cases, env = { GITHUB_ACTIONS: 'true' }) {
+  const filename = path.join(__dirname, 'selftest-all.js');
+  const source = fs.readFileSync(filename, 'utf8');
+  const start = source.indexOf('const SUITE = [');
+  const end = source.indexOf('\n];', start);
+  assert.ok(start >= 0 && end > start);
+  const fixtures = cases.map(({ alternate }, i) => [
+    `inert-child-${i}`, `inert-fixture-${i}.js`, { nativeOnly: Boolean(alternate) },
+  ]);
+  const isolated = source.slice(0, start) + `const SUITE = ${JSON.stringify(fixtures)};` + source.slice(end + 3);
+  const notices = [], exits = [], spawned = [];
+  const mod = { exports: {} };
+  function stubRequire(name) {
+    if (name === 'path') return path;
+    if (name === './workbench-test-registry') return { nodeWorkbenchTests: [] };
+    if (name === './selftest-status') return { classifySelftestResult };
+    if (name === 'child_process') return { spawnSync: (_exec, [file]) => {
+      const index = spawned.length;
+      assert.equal(path.basename(file), fixtures[index]?.[1]);
+      spawned.push(index);
+      if (cases[index].throws) throw Error('inert runner error');
+      return cases[index].result;
+    } };
+    throw Error('Unexpected dependency in inert fixture: ' + name);
+  }
+  stubRequire.main = mod;
+  let error;
+  try {
+    vm.runInNewContext(isolated, {
+      __dirname, module: mod, require: stubRequire,
+      process: { env, argv: ['node', filename], execPath: 'inert', platform: 'linux', stdout: { write() {} },
+        exit: code => exits.push(code) },
+      console: { log(line) { if (line.startsWith('::notice::')) notices.push(line); } },
+    }, { filename, timeout: 1000 });
+  } catch (failure) {
+    error = failure;
+  }
+  return { notices, exits, spawned, error };
+}
+
+test('a completed aggregate failure exposes counts for the two routes, without child details', () => {
+  const run = runInertAggregate([
+    { result: { status: 1, stdout: 'private/fixture\n::notice::untrusted' } },
+    { alternate: true, result: { status: null, error: { code: 'ENOBUFS', message: 'private error' } } },
+    { alternate: true, result: { status: 2 } },
+    { result: { status: 0 } },
+  ]);
+  assert.equal(run.error, undefined);
+  assert.deepEqual(run.spawned, [0, 1, 2, 3]);
+  assert.deepEqual(run.exits, [1]);
+  assert.deepEqual(run.notices, ['::notice::Smoke aggregate decision: child-failure ordinaryFailed=1 alternateFailed=1']);
+});
+
+test('strict incomplete, non-CI, and pre-decision interruption remain distinct', () => {
+  const fixtures = [
+    { result: { status: 0, stdout: 'PASS inert\nSKIP inert' } },
+    { alternate: true, result: { status: 2 } },
+  ];
+  const strict = runInertAggregate(fixtures, { GITHUB_ACTIONS: 'true', OPENBROWSER_REQUIRE_COMPLETE_TESTS: '1' });
+  assert.equal(strict.error, undefined);
+  assert.deepEqual(strict.exits, [1]);
+  assert.deepEqual(strict.notices, ['::notice::Smoke aggregate decision: strict-incomplete skipped=1 partial=1']);
+  const normal = runInertAggregate(fixtures);
+  assert.equal(normal.error, undefined);
+  assert.deepEqual(normal.exits, [0]);
+  assert.deepEqual(normal.notices, []);
+  const local = runInertAggregate([{ result: { status: 1 } }], {});
+  assert.equal(local.error, undefined);
+  assert.deepEqual(local.exits, [1]);
+  assert.deepEqual(local.notices, []);
+  const interrupted = runInertAggregate([{ throws: true }]);
+  assert.equal(interrupted.error?.message, 'inert runner error');
+  assert.deepEqual(interrupted.exits, []);
+  assert.deepEqual(interrupted.notices, []);
 });

@@ -403,6 +403,7 @@ function main() {
   const width = Math.max(...SUITE.map(([name]) => name.length));
   const results = [];
   let failed = 0;
+  let alternateFailed = 0;
   let skipped = 0;
   let partial = 0;
   for (const [name, script, flags] of SUITE) {
@@ -436,7 +437,10 @@ function main() {
       const status0 = classifySelftestResult(probe);
       results.push({ name, script, pass: status0 === 'failed' ? false : (status0 === 'passed' ? true : null),
         outcome: status0, seconds: seconds0, status: probe.status, signal: probe.signal });
-      if (status0 === 'failed') failed += 1;
+      if (status0 === 'failed') {
+        failed += 1;
+        alternateFailed += 1;
+      }
       else if (status0 === 'partial') partial += 1;
       else if (status0 === 'skipped') skipped += 1;
       console.log(status0 === 'passed' ? `ok (${seconds0}s)` : `${status0.toUpperCase()} (exit=${probe.status})`);
@@ -474,7 +478,14 @@ function main() {
     console.log('failed scripts:');
     for (const r of results.filter((x) => x.pass === false)) console.log(`  ${r.name}  ${r.script}`);
   }
-  return failed || (process.env.OPENBROWSER_REQUIRE_COMPLETE_TESTS === '1' && (partial || skipped)) ? 1 : 0;
+  const strictIncomplete = process.env.OPENBROWSER_REQUIRE_COMPLETE_TESTS === '1' && (partial || skipped);
+  // Public attribution uses only counts from the existing decisions. The
+  // ordinary spawn branch can contain unlabelled or mixed child suites.
+  if (process.env.GITHUB_ACTIONS === 'true') {
+    if (failed) console.log(`::notice::Smoke aggregate decision: child-failure ordinaryFailed=${failed - alternateFailed} alternateFailed=${alternateFailed}`);
+    else if (strictIncomplete) console.log(`::notice::Smoke aggregate decision: strict-incomplete skipped=${skipped} partial=${partial}`);
+  }
+  return failed || strictIncomplete ? 1 : 0;
 }
 
 // The SUITE registry is require()-able without side effects so that
