@@ -8,6 +8,7 @@ const ORDER_FIELDS = {
   windowName: "windowName", openTime: "openTime", createTime: "createdAt", updateTime: "updatedAt",
 };
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+const DATE_ORDER_FIELDS = new Set(["createdAt", "updatedAt", "openTime", "trashedAt"]);
 const MAX_SORT_ORDERS = 4;
 const values = value => (Array.isArray(value) ? value : String(value ?? "").split(",")).map(String).filter(Boolean);
 
@@ -24,22 +25,32 @@ function dateBoundary(value, end, calendar) {
 
 const timestampsByProjection = new WeakMap();
 
+function timestampsFor(index, key) {
+  let byField = timestampsByProjection.get(index);
+  if (!byField) timestampsByProjection.set(index, byField = {});
+  // Allocate per used field. NaN is unparsed; missing and invalid dates sort
+  // before known dates in ascending order and are excluded from date filters.
+  return byField[key] ??= new Float64Array(index.snapshot.length).fill(NaN);
+}
+
+function timestampAt(timestamps, row, key) {
+  let time = timestamps[row.position];
+  if (Number.isNaN(time)) {
+    const raw = row[key];
+    const parsed = raw == null || raw === "" ? NaN : Date.parse(raw);
+    time = timestamps[row.position] = Number.isNaN(parsed) ? -Infinity : parsed;
+  }
+  return time;
+}
+
 function dateFilter(index, key, start, end, calendar) {
   const first = dateBoundary(start, false, calendar);
   const last = dateBoundary(end, true, calendar);
   if (first === null && last === null) return null;
   const exclusive = calendar || (typeof end === "string" && DATE_ONLY.test(end));
-  let byField = timestampsByProjection.get(index);
-  if (!byField) timestampsByProjection.set(index, byField = {});
-  // Allocate only for an enabled date field; replacing the projection drops
-  // these arrays. NaN means unparsed, while Infinity means parsed but invalid.
-  const timestamps = byField[key] ??= new Float64Array(index.snapshot.length).fill(NaN);
+  const timestamps = timestampsFor(index, key);
   return row => {
-    let time = timestamps[row.position];
-    if (Number.isNaN(time)) {
-      const parsed = Date.parse(row[key]);
-      time = timestamps[row.position] = Number.isNaN(parsed) ? Infinity : parsed;
-    }
+    const time = timestampAt(timestamps, row, key);
     return Number.isFinite(time) && (first === null || time >= first)
       && (last === null || (exclusive ? time < last : time <= last));
   };
@@ -101,13 +112,22 @@ function compileFilters(p, index) {
   return filters;
 }
 
-function compareBy(field, direction) {
-  return (a, b) => {
+function sortBy(rows, index, field, direction) {
+  if (rows.length < 2) return rows;
+  if (DATE_ORDER_FIELDS.has(field)) {
+    // Parse once per row, even if the persisted timestamps have differing UTC
+    // offsets or the user re-sorts. Keep parsing out of the comparator.
+    const timestamps = timestampsFor(index, field);
+    for (const row of rows) timestampAt(timestamps, row, field);
+    return rows.sort((a, b) => direction * (timestamps[a.position] - timestamps[b.position])
+      || a.position - b.position);
+  }
+  return rows.sort((a, b) => {
     const left = a[field] ?? "", right = b[field] ?? "";
     const result = typeof left === "number" && typeof right === "number"
       ? left - right : String(left).localeCompare(String(right));
     return direction * result || a.position - b.position;
-  };
+  });
 }
 
 function orderedCandidates(index, p, trashed, filters) {
@@ -118,7 +138,7 @@ function orderedCandidates(index, p, trashed, filters) {
     const selected = [...new Set(values(p.dirIds))]
       .map(id => index.summariesById.get(id))
       .filter(row => row?.trashed === trashed && filters.every(matches => matches(row)));
-    return [selected.sort(field ? compareBy(field, direction) : (a, b) => a.position - b.position), []];
+    return [field ? sortBy(selected, index, field, direction) : selected.sort((a, b) => a.position - b.position), []];
   }
   const rows = trashed ? index.deletedRows : index.activeRows;
   if (!field) return [rows, filters];
@@ -129,9 +149,9 @@ function orderedCandidates(index, p, trashed, filters) {
     // A selective cold search should only sort its matches. An unfiltered
     // request can populate the reusable order for later pages and filters.
     const selected = rows.filter(row => filters.every(matches => matches(row)));
-    return [selected.sort(compareBy(field, direction)), []];
+    return [sortBy(selected, index, field, direction), []];
   }
-  const order = cached || rows.slice().sort(compareBy(field, direction));
+  const order = cached || sortBy(rows.slice(), index, field, direction);
   orders.delete(key);
   orders.set(key, order);
   if (orders.size > MAX_SORT_ORDERS) orders.delete(orders.keys().next().value);

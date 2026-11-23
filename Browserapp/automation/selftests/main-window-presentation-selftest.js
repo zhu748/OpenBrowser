@@ -192,6 +192,72 @@ test('normal startup keeps engine and window work parallel without opening IPC e
   assert.equal(host.calls.watcher, 1);
 });
 
+test('clean quit drains accepted settings writes but rejects new work after the flush', async () => {
+  const settings = startupSettings('ask');
+  await settings.started;
+  settings.finish();
+  await settings.load;
+  const exitAllowed = Promise.withResolvers();
+  const afterFlush = Promise.withResolvers();
+  const sender = { getURL: () => 'obui://app/index.html' };
+  const handlers = new Map();
+  const exits = [];
+  const context = {
+    mainWindow: { isDestroyed: () => false, webContents: sender },
+    localUiDialogs: null, localUiWorkspaces: null, localUiSync: null, localUiService: null,
+    fatalFailure: false, quitting: false, quitCleanupPromise: null, quitCleanupSettled: false,
+    isTrustedAppIndexUrl: value => value === sender.getURL(),
+    ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
+    engine: null, liveSync: null, destroyTray() {}, stopShortcutBridge() {},
+    settingsStore: settings.settingsStore,
+    async drainBrowsersForQuit() { return { stopped: true, remaining: [] }; },
+    lifecycleTimeout: pending => pending,
+    automation: { stop() { afterFlush.resolve(); return exitAllowed.promise; } },
+    app: { exit: code => exits.push({ code, settings: settings.persisted() }) },
+  };
+  context.assertTrustedIpcSender = mainFunction('assertTrustedIpcSender', context);
+  const registerTrustedIpc = mainFunction('registerTrustedIpc', context);
+  const beginQuitCleanup = mainFunction('beginQuitCleanup', context);
+  const systemIpcPath = path.resolve(__dirname, '../../main/system-ipc.js');
+  const module = { exports: {} };
+  runInNewContext(readFileSync(systemIpcPath, 'utf8'), {
+    module,
+    require: name => name === '../automation/local-settings' ? settings.settingsStore : {},
+  }, { filename: systemIpcPath });
+  module.exports.registerSystemIpc({
+    registerTrustedIpc, isQuitting: () => context.quitting, destroyTray: context.destroyTray,
+  });
+  const bridge = {};
+  const preloadPath = path.resolve(__dirname, '../../preload.js');
+  runInNewContext(readFileSync(preloadPath, 'utf8'), {
+    require: () => ({
+      contextBridge: { exposeInMainWorld: (name, api) => { bridge[name] = api; } },
+      ipcRenderer: { invoke: async (channel, ...args) => handlers.get(channel)({ sender }, ...args) },
+    }),
+  }, { filename: preloadPath });
+
+  const accepted = bridge.ops.saveClientSettings({ memoryLimit: 71 });
+  const cleanup = beginQuitCleanup();
+  await afterFlush.promise;
+  assert.equal((await accepted).memoryLimit, 71);
+  const observe = operation => operation.then(value => ({ value }), error => ({ error }));
+  const late = [observe(bridge.ops.saveClientSettings({ memoryLimit: 83 })), observe(bridge.ops.setCloseAction('exit'))];
+  const readableWhileQuitting = await bridge.ops.getClientSettings();
+  exitAllowed.resolve();
+  await cleanup;
+  // The old IPC guard let this write run only after the mocked process exit.
+  // Settle it here so the deliberately red fixture leaves no timers behind.
+  const outcomes = await Promise.all(late);
+  assert.equal(exits.length, 1);
+  assert.equal(exits[0].code, 0);
+  assert.equal(exits[0].settings.memoryLimit, 71);
+  assert.equal(exits[0].settings.closeAction, 'ask');
+  for (const { error } of outcomes) assert.match(error?.message || '', /应用正在退出/);
+  assert.equal(readableWhileQuitting.memoryLimit, 71, 'the settings read still works at quit');
+  assert.equal(settings.persisted().memoryLimit, 71);
+  assert.equal(settings.persisted().closeAction, 'ask');
+});
+
 test('an early close waits for the saved exit preference and repeated requests share one close', async () => {
   const settings = startupSettings('exit');
   await settings.started;

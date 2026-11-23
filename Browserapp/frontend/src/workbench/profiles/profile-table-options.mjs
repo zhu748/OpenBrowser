@@ -314,13 +314,11 @@ export async function profileSortOptions() {
         : undefined,
       sortOrder: orderDirection(current?.orderType ?? "desc"),
     },
-    onChange: (t3) => {
-      let n2 = {};
-      (t3.sortField &&
-        columns.data.some((e3) => e3.key === t3.sortField && e3.sortable) &&
-        ((n2.orderName = t3.sortField),
-        (n2.orderType = orderDirection(t3.sortOrder))),
-        api.window.userSaveWindowTableSortOrderCreate(n2));
+    onChange({ sortField, sortOrder }) {
+      const preference = sortField && columns.data.some(column => column.key === sortField && column.sortable)
+        ? { orderName: sortField, orderType: orderDirection(sortOrder) }
+        : {};
+      return api.window.userSaveWindowTableSortOrderCreate(preference);
     },
   };
 }

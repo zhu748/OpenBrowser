@@ -36,4 +36,50 @@ try {
 } finally {
   Date.parse = parse;
 }
+
+const earlier = "2026-06-01T12:00:00+08:00"; // 04:00Z, despite sorting later as text.
+const later = "2026-06-01T06:00:00.000Z";
+const sameAsLater = "2026-06-01T08:00:00+02:00";
+const active = [
+  { id: "later", lastOpenedAt: later, createdAt: later, updatedAt: later, os: "Linux" },
+  { id: "same", lastOpenedAt: sameAsLater, createdAt: sameAsLater, updatedAt: sameAsLater, os: "Linux" },
+  { id: "earlier", lastOpenedAt: earlier, createdAt: earlier, updatedAt: earlier, os: "Linux" },
+  { id: "missing", os: "Linux" },
+  { id: "invalid", lastOpenedAt: "invalid", createdAt: "invalid", updatedAt: "invalid", os: "Linux" },
+];
+snapshot = active.concat(active.map(row => ({
+  ...row, id: "trash-" + row.id, trashed: true, trashedAt: row.lastOpenedAt,
+})));
+projection = rebuild();
+const query = params => queryProfiles(service, params);
+const ascending = ["missing", "invalid", "earlier", "later", "same"];
+const descending = ["later", "same", "earlier", "missing", "invalid"];
+assert.deepEqual(query({ orderName: "openTime" }), { rows: ascending, total: 5 },
+  "last opened uses chronological order across UTC offsets, with stable ties");
+assert.deepEqual(query({ orderName: "openTime", orderType: "desc" }).rows, descending);
+assert.deepEqual(query({ orderName: "createTime", osList: ["Linux"] }).rows, ascending,
+  "a cold filtered sort must use the same chronology");
+assert.deepEqual(query({ orderName: "updateTime", dirIds: ["earlier", "same", "missing", "later"] }).rows,
+  ["missing", "earlier", "later", "same"], "sorting selected IDs must use chronology and preserve snapshot ties");
+assert.deepEqual(query({ orderName: "updateTime", orderType: "desc", isDelete: 1 }).rows,
+  descending.map(id => "trash-" + id), "recycle rows are ordered by deletion time rather than edit time");
+
+projection = rebuild();
+calls = 0;
+Date.parse = value => { calls++; return parse(value); };
+try {
+  assert.deepEqual(query({ orderName: "createTime", pageSize: 2 }).rows, ascending.slice(0, 2));
+  assert.equal(calls, 4, "sorting parses each present timestamp only once");
+  assert.deepEqual(query({ orderName: "createTime", pageSize: 2, pageIndex: 2 }).rows, ascending.slice(2, 4));
+  assert.deepEqual(query({ orderName: "createTime", orderType: "desc" }).rows, descending);
+  assert.deepEqual(query({ startTime: later, endTime: later }), { rows: ["later", "same"], total: 2 });
+  assert.equal(calls, 4, "paging, reverse sorts and date filters share the per-field parse cache");
+  snapshot = [{ ...snapshot[0], createdAt: "2026-06-01T00:00:00.000Z" }, ...snapshot.slice(1)];
+  projection = rebuild();
+  assert.deepEqual(query({ orderName: "createTime", orderType: "desc" }).rows,
+    ["same", "earlier", "later", "missing", "invalid"], "a new projection must sort the edited timestamp");
+  assert.equal(calls, 8);
+} finally {
+  Date.parse = parse;
+}
 console.log("PROFILE_QUERY_SELFTEST OK");

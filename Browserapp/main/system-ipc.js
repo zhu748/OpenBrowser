@@ -16,14 +16,20 @@ const { writeRawAtomically } = require('../engine/state-storage');
 function registerSystemIpc({
   registerTrustedIpc, shell, dialog, clipboard, BrowserWindow,
   getEngine, getAutomation, getMainWindow, defaultProfileDataRoot,
-  destroyTray, applyWindowChrome, updateProfileDataRoot,
+  isQuitting, destroyTray, applyWindowChrome, updateProfileDataRoot,
 }) {
   const fsp = require('node:fs/promises');
+  const assertSettingsWritable = () => {
+    // Accepted writes are drained by quit cleanup. Do not queue a later
+    // renderer edit that can outlive the last settings flush.
+    if (isQuitting()) throw Object.assign(new Error('应用正在退出，无法保存设置。'), { code: 'APP_SHUTTING_DOWN' });
+  };
 
   registerTrustedIpc('system:read-clipboard', () => {
     try { return clipboard.readText(); } catch (_) { return ''; }
   });
   registerTrustedIpc('system:set-close-action', async (_event, mode) => {
+    assertSettingsWritable();
     const value = settingsStore.normalizeCloseAction(mode);
     settingsStore.getLocalSettings().closeAction = value;
     await settingsStore.saveLocalSettings(settingsStore.getLocalSettings());
@@ -42,6 +48,7 @@ function registerSystemIpc({
   // input.value 是数字字符串，故先 Number() 再判有限。
   let warnedClientSettingsDrops = false;
   registerTrustedIpc('system:save-client-settings', async (_event, payload) => {
+    assertSettingsWritable();
     const patch = payload && typeof payload === 'object' ? payload : {};
     const known = new Set(['memoryLimit', 'diskLimit', 'closeAction', 'defaultPreferences']);
     const dropped = [];

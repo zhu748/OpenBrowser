@@ -1080,7 +1080,7 @@ app.whenReady().then(async () => {
 
   registerSystemIpc({ registerTrustedIpc, shell, dialog, clipboard, BrowserWindow,
     getEngine: () => engine, getAutomation: () => automation, getMainWindow: () => mainWindow,
-    defaultProfileDataRoot, destroyTray, applyWindowChrome, updateProfileDataRoot });
+    defaultProfileDataRoot, isQuitting: () => quitting, destroyTray, applyWindowChrome, updateProfileDataRoot });
   registerKernelIpc({ registerTrustedIpc, engine, dialog });
   registerProfileIpc({
     registerTrustedIpc, engine, sanitizeIds,

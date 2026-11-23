@@ -57,7 +57,7 @@ export function useBrowserTable(props, columns, attrs, root, dataTable) {
   });
   const pageLabel = computed(() => $t('总计 {total} 个', { total: page.total }));
   const cellParts = { headercell: columnClasses.headercell, bodycell: columnClasses.bodycell };
-  let initialization;
+  let initialization, sortRevision = 0;
 
   function clearSelection() {
     selection.value = undefined;
@@ -217,6 +217,7 @@ export function useBrowserTable(props, columns, attrs, root, dataTable) {
   onBeforeUnmount(() => {
     saveScroll();
     loader.dispose();
+    sortRevision += 1;
     if (typeof disposeChanges === 'function') disposeChanges();
   });
 
@@ -228,8 +229,16 @@ export function useBrowserTable(props, columns, attrs, root, dataTable) {
     sort.sortOrder = event.sortOrder ?? 0;
     sort.sortField = sort.sortOrder ? String(event.sortField ?? '') : '';
     page.first = 0;
-    await sort.onChange?.({ sortField: sort.sortField, sortOrder: sort.sortOrder });
-    return loader.load();
+    const revision = ++sortRevision;
+    // Applying a sort is independent of remembering it for the next visit.
+    const refreshed = loader.load();
+    try {
+      const saved = await sort.onChange?.({ sortField: sort.sortField, sortOrder: sort.sortOrder });
+      if (saved?.code != null && saved.code !== 0) throw Error(saved.msg || saved.message || $t('保存失败'));
+    } catch (error) {
+      if (revision === sortRevision) globalThis.__localUiError?.(error?.message || String(error));
+    }
+    return refreshed;
   }
   function onPageSize(event) {
     if (props.cacheKey && event.value) localStorage.setItem('table:' + props.cacheKey, event.value);

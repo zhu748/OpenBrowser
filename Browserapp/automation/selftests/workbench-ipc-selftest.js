@@ -21,7 +21,7 @@ async function rendererFixture(relative, modules, globals = {}, exportName) {
       ? 'const { ' + entry.specifiers.map(({ imported, local }) => `${imported?.name ?? 'default'}: ${local.name}`).join(', ') +
         ' } = modules[' + JSON.stringify(entry.source.value) + '];'
       : entry.type === 'ExportDefaultDeclaration' ? '__workbenchComponent;'
-      : exportName && entry.type === 'ExportNamedDeclaration' && entry.declaration?.id?.name === exportName
+      : exportName && entry.type === 'ExportNamedDeclaration' && entry.declaration
         ? code.slice(entry.declaration.start, entry.end) : null;
     if (replacement !== null) program = program.slice(0, entry.start) + replacement + program.slice(entry.end);
   }
@@ -152,13 +152,13 @@ async function profileTableErrorChecks() {
     if (Array.isArray(node)) return node.map(child => findNode(child, matches)).find(Boolean);
     return node && (matches(node) ? node : Array.isArray(node.children) && findNode(node.children, matches));
   }
-  async function openTable(cacheKey) {
+  async function openTable(cacheKey, overrides) {
     const props = { cacheKey, dataKey: 'id', pageRows: 10, immediate: true, tableSort: () => ({}), tableFilters: () => [],
-      tableRequest: async query => {
+      async tableRequest(query) {
         queries.push({ ...query });
         if (response instanceof Error) throw response;
         return response;
-      } };
+      }, ...overrides };
     const render = component.setup(props, { expose: noop });
     await mount();
     return () => findNode(render({ $slots: slot, $t: message => message }, []), node => node.type === dataTable);
@@ -211,6 +211,104 @@ async function profileTableErrorChecks() {
   const otherTable = await openTable('unrelated-list');
   assert.ok(findNode(otherTable().children.empty(), node => node.props?.id === 'ordinary-empty'),
     'unrelated list behavior is unchanged');
+  await profileSortPreferenceChecks(openTable, () => state, errors);
+}
+
+async function profileSortPreferenceChecks(openTable, getState, errors) {
+  const { LocalService } = require('../../rebuild/local-service');
+  const service = Object.create(LocalService.prototype);
+  const writes = [];
+  let nextSave, persisted;
+  Object.assign(service, {
+    queue: Promise.resolve(), data: { settings: { tableSort: { orderName: 'name', orderType: 'asc' } } }, load: async () => {},
+    async save() {
+      if (nextSave) {
+        const hold = nextSave;
+        nextSave = undefined;
+        await hold;
+      }
+      persisted = structuredClone(service.data.settings.tableSort);
+      writes.push(persisted);
+    },
+  });
+  const bridgeFile = path.resolve(__dirname, '../../rebuild/renderer-bridge.js');
+  const code = (await fs.readFile(bridgeFile, 'utf8')).replace(/^import\s+[\s\S]*?;$/gm, '');
+  const renderer = vm.createContext({
+    createProfileLifecycleBridge: () => ({}),
+    rebuild: { request: (name, payload) => captureIpcResult(() => service.request(name, structuredClone(payload))) },
+  });
+  vm.runInContext(code, renderer, { filename: bridgeFile });
+  const api = { window: {
+    userGetWindowTableSortOrderList: renderer.__localApi.window.userGetWindowTableSortOrderList,
+    userSaveWindowTableSortOrderCreate(payload) {
+      const saving = renderer.__localApi.window.userSaveWindowTableSortOrderCreate(payload);
+      // Suppress the old detached rejection at the fixture boundary so it can assert the missing notice.
+      saving.catch(() => {});
+      return saving;
+    },
+  } };
+  const { sortDirection } = await import('../../rebuild/workbench-table.mjs');
+  const profileSortOptions = await rendererFixture('frontend/src/workbench/profiles/profile-table-options.mjs', {
+    './utils-BIWenCnY.js': { h: api, jr: sortDirection, nn: () => ({}) },
+    './proxy-D7e36h-l.js': {}, './format-_cvrr_iF.js': {},
+  }, {}, 'profileSortOptions');
+  const queries = [];
+  const table = await openTable('browser-list', {
+    tableSort: profileSortOptions,
+    tableRequest: async query => {
+      queries.push({ ...query });
+      return { total: 20, rows: [{ id: query.orderType + ':' + query.page_index }] };
+    },
+  });
+  const state = getState();
+  assert.deepEqual(state.rows.value, [{ id: 'asc:1' }]);
+  state.page.first = 10;
+  await state.load();
+  assert.deepEqual(state.rows.value, [{ id: 'asc:2' }]);
+
+  let failWrite;
+  nextSave = new Promise((_resolve, reject) => { failWrite = reject; });
+  const failingSort = table().props.onSort({ sortField: 'name', sortOrder: -1 });
+  await tick();
+  assert.deepEqual(state.rows.value, [{ id: 'desc:1' }], 'visible sorting does not wait for preference persistence');
+  const fault = 'sort preference file could not be saved';
+  failWrite(Object.assign(Error(fault), { code: 'EIO' }));
+  await failingSort;
+  await tick();
+  assert.equal(errors.at(-1), fault, 'a failed preference save is visible instead of a detached rejection');
+  assert.equal(service.data.settings.tableSort.orderType, 'asc', 'the real local settings route rolls back a failed write');
+  assert.deepEqual(state.rows.value, [{ id: 'desc:1' }]);
+
+  let releaseWrite;
+  nextSave = new Promise(resolve => { releaseWrite = resolve; });
+  const older = table().props.onSort({ sortField: 'name', sortOrder: -1 });
+  const newer = table().props.onSort({ sortField: 'windowSortNum', sortOrder: 1 });
+  await tick();
+  assert.deepEqual(state.rows.value, [{ id: 'asc:1' }]);
+  assert.equal(queries.at(-1).orderName, 'windowSortNum');
+  assert.deepEqual(writes, [], 'the older in-flight preference does not block the newer visible sort');
+  releaseWrite();
+  await Promise.all([older, newer]);
+  assert.deepEqual(persisted, { orderName: 'windowSortNum', orderType: 'asc' });
+  assert.equal(service.data.settings.tableSort.orderName, 'windowSortNum');
+  assert.equal(state.sort.sortOrder, 1);
+  state.page.first = 10;
+  await state.load();
+  assert.deepEqual(state.rows.value, [{ id: 'asc:2' }]);
+  assert.deepEqual(queries.at(-1), { page_index: 2, page_size: 10, orderName: 'windowSortNum', orderType: 'asc' });
+  assert.deepEqual(writes, [{ orderName: 'name', orderType: 'desc' }, { orderName: 'windowSortNum', orderType: 'asc' }],
+    'the real settings queue preserves the order of rapid writes');
+
+  const previousErrors = errors.length;
+  nextSave = new Promise((_resolve, reject) => { failWrite = reject; });
+  const obsolete = table().props.onSort({ sortField: 'name', sortOrder: 1 });
+  await tick();
+  const clear = table().props.onSort({ sortField: 'name', sortOrder: 0 });
+  failWrite(Error('obsolete sort preference failure'));
+  await Promise.all([obsolete, clear]);
+  assert.equal(errors.length, previousErrors, 'obsolete sort failures do not confuse the currently selected sort');
+  assert.deepEqual(persisted, {}, 'clearing a sort clears the remembered preference');
+  assert.deepEqual(queries.at(-1), { page_index: 1, page_size: 10 }, 'clearing sort resets pagination and omits the explicit order');
 }
 
 async function apiChecks() {
@@ -568,6 +666,6 @@ async function main() {
   });
   assert.throws(() => unwrapIpcResult(result), error =>
     error.code === 'EIO' && error.completed === 200 && error.remainingIds[0] === 'a' && !('privateField' in error));
-  console.log('WORKBENCH_IPC_SELFTEST OK (table queries, refresh failure and retry, inline rename revisions, settings queue, initial navigation and partial error DTO)');
+  console.log('WORKBENCH_IPC_SELFTEST OK (table queries, retry, sort preferences, inline rename revisions, settings queue, initial navigation and partial error DTO)');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });
