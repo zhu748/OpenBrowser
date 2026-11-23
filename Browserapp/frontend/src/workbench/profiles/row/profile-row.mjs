@@ -115,25 +115,23 @@ function useAccountMenu(e2) {
                   onClose: () => {
                     r2.hideDrawer();
                   },
-                  onConfirm: async (t3) => {
-                    let { id: n3, dirId: r3, windowPlatformList: i3 } = e3,
-                      a2 = i3.concat({
-                        ...t3,
-                        _tempId: Date.now().toString(32),
-                      });
-                    await s2(
-                      {
-                        id: n3,
-                        dirId: r3,
-                        windowPlatformList: a2,
-                        requestType: requestType.AddPlatform,
-                      },
-                      {
-                        success: () => {
-                          (updateAccountRow(e3, a2), u2());
-                        },
-                      },
-                    );
+                  onConfirm: async ({ platformUrl, platformUserName, platformPassword, platformEfa }) => {
+                    // The shared row is redacted. Let the host append only the new
+                    // inline entry to its authoritative account list.
+                    const { code, data, msg } = await api.window.userMdfWindowDataBatchCreate({
+                      type: editKind.PlatformAdd,
+                      requestType: requestType.AddPlatform,
+                      ids: [e3.id],
+                      paramList: { windowPlatformList: [{ platformUrl, platformUserName, platformPassword, platformEfa }] },
+                    });
+                    if (code !== 0 || data !== true) {
+                      i2(code || -1, msg || $t('保存失败'));
+                      return false;
+                    }
+                    // The ordinary profile update event refreshes the table from
+                    // its redacted query; do not copy form fields into the shared row.
+                    u2();
+                    return true;
                   },
                 }),
             },

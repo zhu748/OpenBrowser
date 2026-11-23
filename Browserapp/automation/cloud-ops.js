@@ -15,7 +15,7 @@ const cloudSync = require('./cloud-sync');
 const { MAX_BACKUP_PROFILES } = require('./cloud/limits');
 const { mergeProfileState } = require('./cloud/merge');
 const { prepareFileRestore, assertProfileRestoreReady } = require('./cloud/file-restore');
-const { captureRestoreState, saveRestoreState, readRestoreState, rollbackRestoreState, cleanupRestoreState, removeRestoreState } = require('./cloud/restore-state');
+const { captureRestoreState, claimRestoreState, readRestoreState, rollbackRestoreState, cleanupRestoreState } = require('./cloud/restore-state');
 const { acquireProfileMaintenance } = require('../engine/profile-maintenance');
 const { assertProfileId, sanitizeIds, assertSafeProfileChild } = require('./isolation');
 
@@ -240,18 +240,25 @@ async function applyBackupBodyExclusive(body, { mode = 'merge', localProfiles = 
   const proxyStore = automation?.proxyStore;
   let proxyLease;
   let recovery;
+  let journalClaim;
   let proxiesChanged = false;
   let groupsChanged = false;
   let profilesChanged = false;
   let transaction;
   let phase = 'prepare';
   let rollbackFailed = false;
-  try {
+  const requireClearJournal = async () => {
     if (await readRestoreState(engine)) throw Object.assign(new Error('请先恢复上次未完成的云恢复操作'), { code: 'CLOUD_RECOVERY_REQUIRED' });
+  };
+  try {
+    await requireClearJournal();
     if (body.proxies?.length) proxyLease = await proxyStore?.acquireMaintenance?.();
     for (const id of ids) await assertProfileRestoreReady(path.join(profileRoot, id));
+    // Preflight can yield. Recheck under the same operation/lease before
+    // taking ownership; otherwise the catch path could clean up old evidence.
+    await requireClearJournal();
     recovery = structuredClone(captureRestoreState(engine, ids, proxyStore, getSettings(), Boolean(body.proxies?.length)));
-    await saveRestoreState(engine, recovery);
+    journalClaim = await claimRestoreState(engine, recovery);
     const selections = [];
     for (const id of ids.filter((id) => dataById.has(id))) {
       const root = path.join(profileRoot, id);
@@ -261,7 +268,8 @@ async function applyBackupBodyExclusive(body, { mode = 'merge', localProfiles = 
     transaction = await prepareFileRestore(selections);
     recovery.records = transaction.recoveryRecords;
     recovery.phase = 'pending';
-    await saveRestoreState(engine, recovery);
+    await journalClaim.save(recovery);
+    await journalClaim.verify();
     phase = 'files';
     await transaction.commit();
     phase = 'proxies';
@@ -283,13 +291,14 @@ async function applyBackupBodyExclusive(body, { mode = 'merge', localProfiles = 
       ...profile, secretsAction: 'replace', proxyAuthAction: 'clear',
     })), { maintenanceToken: lease.token, preserveTimestamps: true });
     recovery.phase = 'committed';
-    await saveRestoreState(engine, recovery);
+    await journalClaim.save(recovery);
     let cleanupWarnings = [];
     // The durable decision is final. Cleanup failure must not roll back
     // metadata after backups have already been deleted by finish().
     try {
+      await journalClaim.verify();
       cleanupWarnings = await transaction.finish();
-      await removeRestoreState(engine);
+      await journalClaim.remove();
     } catch (cleanupError) { cleanupWarnings.push({ message: cleanupError.message }); }
     return {
       profiles: engine?.profiles?.values ? [...engine.profiles.values()] : merged.profiles,
@@ -299,12 +308,13 @@ async function applyBackupBodyExclusive(body, { mode = 'merge', localProfiles = 
     };
   } catch (error) {
     error.restorePhase = phase;
-    if (recovery) {
+    if (journalClaim) {
       try {
+        await journalClaim.verify();
         await rollbackRestoreState({ engine, proxyStore, getSettings, saveSettings, state: recovery,
           maintenanceToken: proxyLease?.token, restoreProxies: proxiesChanged, restoreGroups: groupsChanged, restoreProfiles: profilesChanged });
         await transaction?.rollback();
-        await cleanupRestoreState(engine, recovery);
+        await cleanupRestoreState(engine, recovery, journalClaim);
       }
       catch (rollbackError) {
         rollbackFailed = true;

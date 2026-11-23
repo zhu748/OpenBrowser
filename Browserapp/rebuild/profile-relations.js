@@ -3,6 +3,37 @@
 const { assertProfileId } = require("../automation/isolation");
 const associationFields = new Set(["groupId", "group_name", "tag"]);
 
+function pendingRecovery(cause) {
+  return Object.assign(new Error("无法确认窗口关联恢复目标；已保留恢复记录，请在存储可用后重试", { cause }), {
+    code: "PROFILE_RELATIONS_RECOVERY_PENDING",
+  });
+}
+
+function readRecoveryTarget(engine, id) {
+  try {
+    const loaded = engine.profiles.has(id);
+    let confirmed;
+    if (engine.usingSqlite === true) {
+      // SQLite may retain a row that could not be loaded. Conversely, a
+      // live row missing from SQLite is not a confirmed committed target.
+      confirmed = engine.sqliteStore?.hasProfile?.(id) === loaded;
+    } else {
+      // Successful JSON initialization loads the entire selected snapshot.
+      confirmed = engine.usingSqlite === false && !engine.sqliteStore && typeof engine.storageRecovery === "boolean";
+    }
+    // During this recovery boot, absence from the selected backup cannot
+    // tell us whether a journal target was actually deleted.
+    if (confirmed && (loaded || engine.storageRecovery !== true)) {
+      if (!loaded) return null;
+      const snapshot = engine.profileForEdit(id);
+      if (snapshot?.profile?.id === id && Number.isSafeInteger(snapshot.rev) && snapshot.rev > 0) return snapshot;
+    }
+  } catch (cause) {
+    throw pendingRecovery(cause);
+  }
+  throw pendingRecovery();
+}
+
 // The journal lives in the same encrypted document as the metadata. Replacing
 // that document commits the metadata and clears its journal in one operation.
 async function restoreProfileRelations(engine, journal) {
@@ -15,8 +46,8 @@ async function restoreProfileRelations(engine, journal) {
         keys.some(key => !associationFields.has(key) || typeof after[key] !== "string" || typeof before[key] !== "string"))
       throw Error("窗口关联恢复记录无效");
     const profileId = assertProfileId(id);
-    if (!engine.profiles.has(profileId)) continue;
-    const current = engine.profileForEdit(profileId);
+    const current = readRecoveryTarget(engine, profileId);
+    if (!current) continue;
     // Another edit may have changed these relationships. Restore only the
     // exact changes written by the interrupted operation.
     if (keys.every(key => current.profile[key] === before[key])) continue;
