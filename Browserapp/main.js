@@ -132,6 +132,7 @@ cloudOps.initCloudOps({
   getAutomation: () => automation,
   emit,
   getSettings: settingsStore.getLocalSettings,
+  getQuitBackupSettings: settingsStore.getQuitBackupSettings,
   saveSettings: settingsStore.saveLocalSettings,
 });
 
@@ -1347,7 +1348,6 @@ function beginQuitCleanup() {
   quitting = true;
   engine?.beginShutdown?.();
   destroyTray();
-  const cloud = settingsStore.getLocalSettings()?.cloud || {};
   let stopResult = { stopped: false, remaining: [], errors: [] };
   let persistenceFailed = false;
   const stageTimeoutMs = 15_000;
@@ -1409,31 +1409,23 @@ function beginQuitCleanup() {
       if (!stopResult.stopped) return;
       if (stopResult.remaining.length) return;
       if (persistenceFailed) return;
-      if (fatalFailure || !cloud.enabled || !cloud.autoSyncOnQuit || !engineInitComplete) return;
+      if (fatalFailure || !engine || !engineInitComplete) return;
       try {
         // The quit chain is the only path that actually exits the app, so a
         // hung backup (network mount, huge browser-data archive) must not
         // keep the windowless process alive indefinitely.
         await lifecycleTimeout(
-          cloudOps.runQuitCloudBackup({
-            profiles: [...(engine?.profiles?.values?.() || [])],
-            groups: settingsStore.getLocalSettings().uiGroups || [],
-            cloud,
-          }),
+          cloudOps.runQuitCloudBackup(),
           90_000,
           'Quit auto-backup timed out after 90s; exiting anyway'
         );
       } catch (error) {
-        if (error.code === 'CLOUD_QUIT_BACKUP_BLOCKED') {
+        if (error?.code === 'CLOUD_QUIT_BACKUP_BLOCKED') {
           console.warn('OpenBrowser quit auto-backup skipped:', error.message);
           return; // A safety veto must not rewrite settings during recovery.
         }
-        console.warn('OpenBrowser quit auto-backup failed:', error.message);
-        try {
-          const failedSettings = settingsStore.getLocalSettings();
-          failedSettings.cloud = { ...cloud, lastError: error.message };
-          await runStage('backup diagnostic', () => settingsStore.saveLocalSettings(failedSettings), 2_000);
-        } catch (_) {}
+        // Never replay the configuration a failed or timed-out upload used.
+        console.warn('OpenBrowser quit auto-backup failed.');
       }
     })
     .finally(() => {

@@ -2,6 +2,7 @@
 
 const fs = require('node:fs/promises');
 const crypto = require('node:crypto');
+const path = require('node:path');
 const credentialCrypto = require('../credential-crypto');
 const { writeJsonAtomically } = require('../engine/state-storage');
 
@@ -32,6 +33,24 @@ function redactAccount({ password, totpSecret, ...metadata }) {
   return { ...metadata, hasPassword: Boolean(password), hasTotpSecret: Boolean(totpSecret) };
 }
 
+function unavailable(cause) {
+  return Object.assign(new Error('账号库无法读取，原文件已保留，请修复后重启', { cause }), { code: 'ACCOUNT_STORE_UNAVAILABLE' });
+}
+
+async function confirmAbsentAccountStore(file) {
+  const name = path.basename(file);
+  const backup = name + '.bak';
+  const entries = await fs.readdir(path.dirname(file)).catch(error => {
+    if (error.code === 'ENOENT') return [];
+    throw error;
+  });
+  // Existing recovery evidence is not authoritative data to replay, but it
+  // does rule out a new empty library. Inspect names, not their contents.
+  if (entries.some(entry => entry === name || entry === backup ||
+    entry.startsWith(name + '.tmp-') || entry.startsWith(backup + '.tmp-')))
+    throw new Error('发现账号库文件、备份或暂存，无法确认是空库');
+}
+
 class AccountStore {
   constructor(file, { recoverProfileChanges } = {}) {
     this.file = file;
@@ -39,12 +58,13 @@ class AccountStore {
     this.accounts = new Map();
     this.queue = Promise.resolve();
     this.loadError = null;
+    this.checkFirstWrite = false;
   }
 
   async load() {
     try { await this.read(); this.loadError = null; }
     catch (cause) {
-      this.loadError = Object.assign(new Error('账号库无法读取，原文件已保留，请修复后重启', { cause }), { code: 'ACCOUNT_STORE_UNAVAILABLE' });
+      this.loadError = unavailable(cause);
       throw this.loadError;
     }
   }
@@ -52,7 +72,12 @@ class AccountStore {
   async read() {
     let raw;
     try { raw = await fs.readFile(this.file); }
-    catch (error) { if (error.code === 'ENOENT') return; throw error; }
+    catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      await confirmAbsentAccountStore(this.file);
+      this.checkFirstWrite = true;
+      return;
+    }
     // Never overwrite an unreadable credential file with an empty account list.
     const text = credentialCrypto.isEncrypted(raw) ? credentialCrypto.decryptCredential(raw) : raw.toString('utf8');
     const body = JSON.parse(text);
@@ -66,6 +91,7 @@ class AccountStore {
     }
     if (pending || !credentialCrypto.isEncrypted(raw)) await writeJsonAtomically(this.file, { version: 1, accounts });
     this.accounts = new Map(accounts.map((account) => [account.id, account]));
+    this.checkFirstWrite = false;
   }
 
   list() { if (this.loadError) throw this.loadError; return [...this.accounts.values()].map(redactAccount); }
@@ -93,6 +119,12 @@ class AccountStore {
       if (next.size > MAX_ACCOUNTS) throw new Error('账号数量超过 5000 条');
       const previous = { version: 1, accounts: [...this.accounts.values()] };
       const journalFile = this.file;
+      if (this.checkFirstWrite) {
+        // Load may have admitted a virgin library well before the first save.
+        // Recheck inside this store's queue, without claiming cross-process CAS.
+        try { await confirmAbsentAccountStore(journalFile); }
+        catch (cause) { this.loadError = unavailable(cause); throw this.loadError; }
+      }
       if (transaction) {
         // One atomic replacement later commits the new account rows and removes this journal.
         await writeJsonAtomically(journalFile, { ...previous, pendingProfileChanges: transaction.journal });
@@ -116,6 +148,7 @@ class AccountStore {
         throw error;
       }
       this.accounts = next;
+      this.checkFirstWrite = false;
       return this.list();
     });
   }

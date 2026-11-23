@@ -27,7 +27,7 @@ const shell = (title, children) =>
     },
     [h("h2", { class: "text-5 font-600 m-0" }, title), ...children],
   );
-const table = (head, rows) =>
+const table = (head, rows, keyBy = (_cells, index) => index) =>
   h(
     "div",
     {
@@ -50,7 +50,7 @@ const table = (head, rows) =>
             h(
               "tr",
               {
-                key: i,
+                key: keyBy(cells, i),
                 class:
                   "border-t border-solid border-[var(--colors-border-border-subtle)]",
               },
@@ -703,67 +703,154 @@ export const Skills = {
 };
 export const Transfers = {
   setup() {
-    const rows = ref([]),
-      selected = ref([]),
-      error = ref(""),
-      status = ref("");
-    const load = async () => (rows.value = await ipc("profiles:list"));
-    const run = async (fn) => {
-      error.value = "";
-      status.value = "";
+    const limit = 200;
+    const rows = ref(null);
+    const selected = ref(new Set());
+    const loading = ref(false);
+    const listFailed = ref(false);
+    const pending = ref("");
+    const receipt = ref(null);
+    const actionError = ref("");
+    let activeIds = new Set(), listRequest = 0, disposed = false, unsubscribe, importInvalidated = false;
+    const tr = (key, values) => globalThis.$t(key, values);
+
+    async function refresh() {
+      if (disposed) return;
+      const request = ++listRequest;
+      loading.value = true;
       try {
-        const result = await fn();
-        if (result && !result.canceled)
-          status.value = `已处理 ${result.count} 个窗口`;
-        await load();
-      } catch (e) {
-        error.value = e.message;
+        const next = await ipc("profiles:list");
+        if (disposed || request !== listRequest) return;
+        if (!Array.isArray(next)) throw Error("Invalid profile list");
+        const ids = new Set();
+        for (const row of next) {
+          if (typeof row?.id !== "string" || !row.id || ids.has(row.id)) throw Error("Invalid profile list");
+          ids.add(row.id);
+        }
+        // This route returns the complete active roster, not one filtered page.
+        // Only a current, successful read can revoke an invisible selection.
+        activeIds = ids;
+        selected.value = new Set([...selected.value].filter(id => ids.has(id)));
+        rows.value = next;
+        listFailed.value = false;
+      } catch (_) {
+        if (!disposed && request === listRequest) listFailed.value = true;
+      } finally {
+        if (!disposed && request === listRequest) loading.value = false;
       }
-    };
-    onMounted(() => run(load));
-    return () =>
-      shell("窗口文件交换", [
-        error.value
-          ? h(Alert, {
-              type: "error",
-              content: error.value,
-              closable: false,
-              role: "alert",
-            })
-          : null,
-        status.value
-          ? h(Alert, {
-              type: "success",
-              content: status.value,
-              closable: false,
-              role: "status",
-            })
-          : null,
-        h("div", { class: "flex gap-2" }, [
-          btn("导入窗口文件", () => run(() => ipc("transfer:import"))),
-          btn(
-            "导出所选窗口",
-            () => run(() => ipc("transfer:export", { ids: selected.value })),
-            { disabled: !selected.value.length },
-          ),
+    }
+
+    function onProfileChange(event) {
+      if (event?.type !== "profiles" && !(event?.type === "status" && event.action === "profiles-update")) return;
+      // Import emits the same profile notification as another client. Fold any
+      // notifications received during its chooser/commit into one post-receipt
+      // read, even if a different client's update arrived and this import cancels.
+      if (pending.value === "import") importInvalidated = true;
+      else return refresh();
+    }
+
+    function canExport() {
+      return !pending.value && !loading.value && !listFailed.value
+        && selected.value.size > 0 && selected.value.size <= limit;
+    }
+    const canRefresh = () => !pending.value && !loading.value;
+
+    async function run(kind) {
+      if (disposed || pending.value || (kind === "export" && !canExport())) return;
+      const ids = kind === "export" ? [...selected.value] : undefined;
+      pending.value = kind;
+      receipt.value = null;
+      actionError.value = "";
+      let refreshAfter = false;
+      try {
+        const result = kind === "import"
+          ? await ipc("transfer:import")
+          : await ipc("transfer:export", { ids });
+        if (disposed || result?.canceled === true) return;
+        const count = result?.count;
+        if (!Number.isSafeInteger(count) || count < 0 || count > limit || (ids && count !== ids.length))
+          throw Error("Invalid transfer receipt");
+        receipt.value = { kind, count };
+        refreshAfter = kind === "import" && count > 0;
+      } catch (error) {
+        if (disposed) return;
+        actionError.value = kind === "import"
+          ? "未能确认导入，请检查文件后重试。"
+          : ["PROFILE_INACTIVE", "PROFILE_NOT_FOUND", "TRANSFER_SELECTION_CHANGED"].includes(error?.code)
+            ? "所选窗口已变更，请刷新列表后重试。"
+            : "未能确认导出，请检查目标位置后重试。";
+      } finally {
+        if (!disposed) {
+          pending.value = "";
+          if (refreshAfter || importInvalidated) {
+            importInvalidated = false;
+            await refresh();
+          }
+        }
+      }
+    }
+
+    onMounted(() => {
+      unsubscribe = globalThis.electronAPI.on("local:profiles-change", onProfileChange);
+      return refresh();
+    });
+    onBeforeUnmount(() => {
+      disposed = true;
+      listRequest++;
+      unsubscribe?.();
+    });
+
+    return () => {
+      const roster = rows.value;
+      const count = selected.value.size;
+      return shell(tr("窗口文件交换"), [
+        actionError.value ? h(Alert, { type: "error", content: tr(actionError.value), closable: false, role: "alert" }) : null,
+        receipt.value ? h(Alert, {
+          type: "success",
+          content: tr(receipt.value.kind === "import" ? "已导入 {count} 个窗口。" : "已导出 {count} 个窗口。", receipt.value),
+          closable: false,
+          role: "status",
+        }) : null,
+        listFailed.value ? h(Alert, {
+          type: "error",
+          content: tr(roster === null ? "未能加载窗口列表，请重试。" : "未能刷新窗口列表，仍显示上次加载的结果。"),
+          closable: false,
+          role: "alert",
+        }) : null,
+        h("div", { class: "flex flex-wrap gap-2" }, [
+          btn(tr("导入窗口文件"), () => run("import"), { disabled: Boolean(pending.value) }),
+          btn(tr("导出所选窗口"), () => run("export"), { disabled: !canExport() }),
+          btn(tr(listFailed.value ? "重试" : "刷新窗口列表"), () => {
+            if (canRefresh()) return refresh();
+          }, { disabled: !canRefresh() }),
         ]),
-        table(
-          ["选择", "窗口名称", "项目"],
-          rows.value.map((row) => [
+        h("p", { role: "status", class: "m-0" }, tr("已选择 {count} / {limit} 个窗口", { count, limit })),
+        count > limit ? h("p", { role: "alert", class: "m-0" }, tr("一次最多导出 {limit} 个窗口，请取消部分选择。", { limit })) : null,
+        pending.value ? h("p", { role: "status", class: "m-0" }, tr("正在等待文件操作完成…")) : null,
+        loading.value ? h("p", { role: "status", class: "m-0" }, tr("加载中")) : null,
+        !loading.value && !listFailed.value && roster?.length === 0
+          ? h("p", { role: "status", class: "m-0" }, tr("暂无窗口"))
+          : null,
+        roster?.length ? table(
+          [tr("选择"), tr("窗口名称"), tr("项目")],
+          roster.map(row => [
             h("input", {
               type: "checkbox",
-              "aria-label": "选择 " + row.windowName,
-              checked: selected.value.includes(row.id),
-              onChange: (e) => {
-                selected.value = e.target.checked
-                  ? [...selected.value, row.id]
-                  : selected.value.filter((id) => id !== row.id);
+              "aria-label": tr("选择窗口：{name}", { name: row.windowName }),
+              checked: selected.value.has(row.id),
+              disabled: Boolean(pending.value),
+              onChange: event => {
+                if (pending.value || !activeIds.has(row.id)) return;
+                if (event.target.checked) selected.value.add(row.id);
+                else selected.value.delete(row.id);
               },
             }),
             row.windowName,
-            row.projectName || "未指定项目",
+            row.projectName || tr("未指定项目"),
           ]),
-        ),
+          (_cells, index) => roster[index].id,
+        ) : null,
       ]);
+    };
   },
 };

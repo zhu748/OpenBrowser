@@ -207,11 +207,11 @@ async function readLocalSettings() {
   settingsLoaded = true;
   localSettingsCache = normalized;
   committedCloseAction = normalized.closeAction;
-  persistedSettingsSnapshot = (saved || blocked) && !needsMigration ? structuredClone(normalized) : null;
+  recordPersistedSettings((saved || blocked) && !needsMigration ? structuredClone(normalized) : null);
   if (blocked && !saved) {
     // Consume any refused retry marker without auto-writing fresh defaults.
     await drainSettingsWriter();
-    persistedSettingsSnapshot = null;
+    recordPersistedSettings(null);
   }
   if (needsMigration) {
     try {
@@ -226,6 +226,30 @@ async function readLocalSettings() {
 // Snapshot of what the file currently holds, so an unchanged cache does not
 // rewrite it. Cloned rather than referenced: later edits mutate nested objects.
 let persistedSettingsSnapshot = null;
+let quitBackupSettingsGeneration = 0;
+
+function quitBackupAuthority(settings) {
+  if (!settings) return null;
+  // Result status is not authorization to build or send a backup.
+  const { lastSyncAt: _lastSyncAt, lastError: _lastError, ...cloud } = settings.cloud || {};
+  return { cloud, uiGroups: settings.uiGroups };
+}
+
+function recordPersistedSettings(snapshot) {
+  if (!deepEqual(quitBackupAuthority(persistedSettingsSnapshot), quitBackupAuthority(snapshot))) quitBackupSettingsGeneration++;
+  persistedSettingsSnapshot = snapshot;
+}
+
+function getQuitBackupSettings() {
+  if (!settingsLoaded || settingsLoad || settingsLoadFailure) return null;
+  if (!persistedSettingsSnapshot) {
+    // A fresh workspace has no opt-in. A live draft cannot authorize one.
+    return localSettingsCache?.cloud?.enabled === false ? { cloud: { enabled: false } } : null;
+  }
+  if (!deepEqual(quitBackupAuthority(persistedSettingsSnapshot), quitBackupAuthority(localSettingsCache))) return null;
+  const { cloud, uiGroups } = persistedSettingsSnapshot;
+  return structuredClone({ generation: quitBackupSettingsGeneration, cloud, uiGroups });
+}
 
 /** Write the settings file from the in-memory cache. */
 async function writeLoadedSettingsFile() {
@@ -323,7 +347,7 @@ async function persistSettingsSnapshot(snapshot, commit) {
     throw error;
   }
 
-  persistedSettingsSnapshot = snapshot;
+  recordPersistedSettings(snapshot);
   commit?.publish?.();
   // Only an encrypted, structurally usable prior primary is eligible.
   // Leave the older known-good .bak untouched until the new primary commits.
@@ -490,6 +514,7 @@ async function drainSettingsWriter() {
 module.exports = {
   initLocalSettings,
   getLocalSettings,
+  getQuitBackupSettings,
   loadLocalSettings,
   saveLocalSettings,
   commitCloseSettings,

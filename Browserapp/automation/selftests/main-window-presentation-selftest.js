@@ -312,6 +312,7 @@ async function profileStorageFixture(t) {
   const events = [], exits = [], dialogs = [], handlers = new Map();
   const context = {
     engine, settingsStore, defaultProfileDataRoot: oldRoot, ensureDataRootIsolationSecure,
+    engineInitComplete: true, cloudOps: { runQuitCloudBackup: async () => ({ skipped: true }) },
     createProfileRootRecoveryProbe,
     quitting: false, quitCleanupPromise: null, quitCleanupSettled: false, fatalFailure: false,
     localUiSync: null, localUiService: null, liveSync: null, automation: null,

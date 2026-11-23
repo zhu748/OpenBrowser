@@ -53,7 +53,11 @@ async function fixture(t) {
   let saves = 0, flushes = 0, backupBuilds = 0;
   const build = cloudSync.buildBackupPackage;
   const save = async value => { settings = value; saves++; };
-  cloudOps.initCloudOps({ getEngine: () => currentEngine, getSettings: () => settings, saveSettings: save, emit: event => events.push(event) });
+  cloudOps.initCloudOps({
+    getEngine: () => currentEngine, getSettings: () => settings,
+    getQuitBackupSettings: () => structuredClone({ generation: 1, cloud: settings.cloud, uiGroups: settings.uiGroups }),
+    saveSettings: save, emit: event => events.push(event),
+  });
   const { result } = await cloudOps.runCloudBackup();
   const previous = await fs.readFile(result.path);
   const files = (await fs.readdir(dir)).sort();

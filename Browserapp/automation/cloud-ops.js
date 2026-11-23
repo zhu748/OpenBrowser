@@ -59,12 +59,13 @@ function mergeCloudCompletion(currentSettings, cloud) {
   });
 }
 
-function initCloudOps({ getEngine, getAutomation, emit, getSettings, saveSettings }) {
+function initCloudOps({ getEngine, getAutomation, emit, getSettings, getQuitBackupSettings, saveSettings }) {
   deps = {
     getEngine: getEngine || (() => null),
     getAutomation: getAutomation || (() => null),
     emit: emit || (() => {}),
     getSettings,
+    getQuitBackupSettings,
     saveSettings,
   };
 }
@@ -120,18 +121,39 @@ async function runCloudBackup(payload = {}) {
 }
 
 function quitBackupBlocked(cause) {
-  return Object.assign(new Error('无法确认本地恢复状态，已跳过退出时备份，未发送新备份。', { cause }),
+  return Object.assign(new Error('无法确认当前备份授权或恢复状态，已跳过退出时备份，未发送新备份。', { cause }),
     { code: 'CLOUD_QUIT_BACKUP_BLOCKED' });
 }
 
 /** Quit is automatic; it must not replace a good package with unsettled data. */
-function runQuitCloudBackup(payload = {}) {
+function runQuitCloudBackup() {
   return enqueueCloudOp(() => {
+    const { getEngine, getQuitBackupSettings } = requireDeps();
+    let snapshot;
     let verify;
-    try { verify = createQuitBackupGuard(requireDeps().getEngine); }
+    try {
+      snapshot = getQuitBackupSettings?.();
+      if (!snapshot) throw new Error('Committed backup settings are unavailable');
+      if (snapshot.cloud?.enabled === false || snapshot.cloud?.autoSyncOnQuit === false) return { skipped: true };
+      const provider = typeof snapshot.cloud?.provider === 'string' && snapshot.cloud.provider.toLowerCase();
+      if (snapshot.cloud?.enabled !== true || snapshot.cloud.autoSyncOnQuit !== true
+        || !Number.isSafeInteger(snapshot.generation) || !Array.isArray(snapshot.uiGroups)
+        || (!['local', 'webdav', 'github'].includes(provider) && !cloudSync.isWebDavBridgeProvider(provider))) {
+        throw new Error('Automatic backup policy is invalid');
+      }
+      verify = createQuitBackupGuard(getEngine);
+    }
     catch (cause) { throw quitBackupBlocked(cause); }
-    return runCloudBackupExclusive(payload, verify);
+    const settingsCurrent = () => getQuitBackupSettings()?.generation === snapshot.generation;
+    return runCloudBackupExclusive({}, { snapshot, verify, settingsCurrent });
   });
+}
+
+function assertQuitBackupSettings(quit) {
+  if (!quit) return;
+  try {
+    if (!quit.settingsCurrent()) throw new Error('Backup settings changed during quit');
+  } catch (cause) { throw quitBackupBlocked(cause); }
 }
 
 function createQuitBackupGuard(getEngine) {
@@ -180,11 +202,11 @@ function assertBackupProfilesPresent(profileIds, profiles) {
 }
 
 /** Resolve credentials in the host, and hold stopped profiles while reading files. */
-async function buildEngineBackup(payload = {}, { settings, includeProxies = true, verifyBeforeBuild } = {}) {
+async function buildEngineBackup(payload = {}, { settings, includeProxies = true, quit } = {}) {
   const { getEngine, getAutomation, getSettings } = requireDeps();
   const engine = getEngine();
-  const local = getSettings();
-  const cloud = { ...local.cloud, ...(payload.cloud || {}) };
+  const local = quit?.snapshot || getSettings();
+  const cloud = { ...local.cloud, ...(quit ? {} : payload.cloud || {}) };
   const ids = Array.isArray(payload.profileIds) ? new Set(payload.profileIds.map(assertProfileId)) : null;
   const fleet = engine?.profiles;
   const selected = ids?.size === 1 && fleet?.get
@@ -194,7 +216,8 @@ async function buildEngineBackup(payload = {}, { settings, includeProxies = true
   const fileIds = cloud.includeBrowserData !== false ? selected.map((profile) => profile.id) : [];
   // Close-time automatic pushes can arrive just before the stop promise settles.
   for (const id of fileIds) if (engine?.stopping?.has(id)) await engine.stopping.get(id);
-  if (verifyBeforeBuild) await verifyBeforeBuild(engine);
+  if (quit) await quit.verify(engine);
+  assertQuitBackupSettings(quit);
   const lease = acquireProfileMaintenance(engine, fileIds);
   try {
     let current = selected;
@@ -206,7 +229,7 @@ async function buildEngineBackup(payload = {}, { settings, includeProxies = true
     const profiles = structuredClone(current);
     const proxies = includeProxies ? (getAutomation()?.proxyStore?.list?.({}) || []) : [];
     const result = await cloudSync.buildBackupPackage({
-      profiles, groups: payload.groups || local.uiGroups || [], proxies,
+      profiles, groups: quit ? local.uiGroups : (payload.groups || local.uiGroups || []), proxies,
       settings: settings || { cloud: sanitizeCloudForBackup(cloud) },
       profileDataRoot: engine?.getProfileDataRoot?.() || local.profileDataRoot,
       includeBrowserData: cloud.includeBrowserData !== false,
@@ -240,14 +263,18 @@ async function recoverPendingRestore({ proxyStore } = {}) {
   }
 }
 
-async function runCloudBackupExclusive(payload = {}, verify) {
+async function runCloudBackupExclusive(payload = {}, quit) {
   const { emit, getSettings, saveSettings } = requireDeps();
-  const { buffer, meta, cloud } = await buildEngineBackup(payload, { verifyBeforeBuild: verify });
+  const { buffer, meta, cloud } = await buildEngineBackup(payload, { quit });
   const remoteName = payload.remoteName || cloudSync.REMOTE_NAME;
   // Last check while this operation still owns the cloud queue. Once the
   // provider is called, that provider owns its own staging/replace protocol.
-  if (verify) await verify();
+  if (quit) await quit.verify();
+  assertQuitBackupSettings(quit);
   const result = await cloudSync.upload(cloud.provider, providerConfigFromCloud(cloud), buffer, remoteName);
+  // A dispatched provider owns its write. Report the actual receipt, but
+  // don't stamp an upload to a previous target onto a newer configuration.
+  if (quit && !quit.settingsCurrent()) return { success: true, meta, result };
   cloud.lastSyncAt = new Date().toISOString();
   cloud.lastError = '';
   await saveSettings(mergeCloudCompletion(getSettings(), cloud));
