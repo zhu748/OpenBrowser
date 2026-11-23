@@ -54,6 +54,28 @@ function markProgress(label) {
   if (label) progressLabel = label;
 }
 
+// All call sites pass fixed phase names. Keep fixture values, paths and errors
+// out of these annotations, and reserve stdout for the JSON report.
+function enterPhase(lifecycle, phase) {
+  lifecycle.phase = phase;
+  markProgress(phase);
+  console.error(`::notice::Workbench benchmark phase=${phase}`);
+}
+
+function startProgressWatchdog(lifecycle) {
+  markProgress('initialization');
+  return setInterval(() => {
+    const idleMs = performance.now() - progressAt;
+    console.error(`benchmark heartbeat uptime=${Math.round(process.uptime())}s rss=${Math.round(process.memoryUsage().rss / 1048576)}MB idle=${Math.round(idleMs / 1000)}s`);
+    if (idleMs > STALL_LIMIT_MS) {
+      console.error(`::notice::Workbench benchmark idle limit exceeded: phase=${lifecycle.phase}`);
+      console.error(`benchmark made no progress for ${Math.round(idleMs / 1000)}s after "${progressLabel}"; exiting code 2`);
+      try { lifecycle.app?.process().kill('SIGKILL'); } catch { /* already gone */ }
+      process.exit(2);
+    }
+  }, 30000);
+}
+
 // Hosted macOS runners intermittently wedge one of the waits Playwright does
 // not bound by default: f3f70f2, 33b19197 and three consecutive 9a5f5a4
 // attempts all burned the full step budget at the 1000-profile phase while
@@ -190,25 +212,13 @@ async function measure(page, count, rounds) {
     selectionP95Ms: +p95(selectionMs).toFixed(1), countPayloadBytes: Buffer.byteLength(JSON.stringify(counter)), fullListPayloadBytes: fullListBytes };
 }
 
-async function benchmark(args) {
+async function benchmark(args, lifecycle) {
+  enterPhase(lifecycle, 'temp-create');
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ob-workbench-benchmark-'));
   const errors = [], reports = [];
   let app, page;
-  // Heartbeat plus progress watchdog: the heartbeat is the one timer that kept
-  // firing in every observed hosted-runner wedge, so it also owns the hard
-  // exit. A wedged attempt force-exits with code 2 (fail-fast, so the CI step's
-  // retry gets its turns) instead of silently burning the whole step budget.
-  const heartbeat = setInterval(() => {
-    const idleMs = performance.now() - progressAt;
-    console.error(`benchmark heartbeat uptime=${Math.round(process.uptime())}s rss=${Math.round(process.memoryUsage().rss / 1048576)}MB idle=${Math.round(idleMs / 1000)}s`);
-    if (idleMs > STALL_LIMIT_MS) {
-      console.error(`benchmark stalled for ${Math.round(idleMs / 1000)}s after "${progressLabel}" (runner wedge); exiting code 2 so the CI retry takes over`);
-      try { app?.process().kill('SIGKILL'); } catch { /* already gone */ }
-      process.exit(2);
-    }
-  }, 30000);
-  heartbeat.unref();
   try {
+    enterPhase(lifecycle, 'desktop-startup');
     const start = performance.now();
     markProgress('launch Electron');
     app = await electron.launch({ executablePath: require('electron'),
@@ -227,6 +237,7 @@ async function benchmark(args) {
       ],
       env: { ...process.env, OPENBROWSER_ROXY_UI: '1', OPENBROWSER_USER_DATA: root, OPENBROWSER_API_PORT: '0',
         OPENBROWSER_MASTER_KEY_FILE: path.join(root, 'master.key') }, timeout: 30000 });
+    lifecycle.app = app;
     markProgress('first window');
     page = await app.firstWindow({ timeout: 30000 });
     page.on('pageerror', error => errors.push(error.message));
@@ -244,6 +255,7 @@ async function benchmark(args) {
     await page.getByPlaceholder(searchPlaceholder).waitFor();
     assert.ok(page.url().startsWith('obui://app/'), 'benchmark must exercise the default workbench');
     const startupMs = Math.round(performance.now() - start);
+    enterPhase(lifecycle, 'measurement');
     await observeQueries(app, page);
     let current = 0;
     for (const size of args.sizes) {
@@ -271,7 +283,7 @@ async function benchmark(args) {
       node: process.version, platform: process.platform, startupMs, rounds: args.rounds,
       interactionBudgetMs: args.budgetMs, reports };
   } catch (error) {
-    markProgress('failure evidence');
+    enterPhase(lifecycle, 'failure-evidence');
     console.error(error.message);
     if (args.output) {
       await fs.mkdir(path.dirname(args.output), { recursive: true });
@@ -280,39 +292,54 @@ async function benchmark(args) {
     }
     throw error;
   } finally {
-    clearInterval(heartbeat);
     try {
-      if (app) await closeApp(app);
+      if (app) {
+        enterPhase(lifecycle, 'desktop-close');
+        await closeApp(app);
+        lifecycle.app = undefined;
+      }
     } finally {
-      markProgress('temp dir cleanup');
+      enterPhase(lifecycle, 'temp-cleanup');
       await fs.rm(root, { recursive: true, force: true, maxRetries: 3 });
     }
   }
 }
 
-async function main() {
-  const args = options(process.argv.slice(2)), report = await benchmark(args);
-  const text = JSON.stringify(report, null, 2) + '\n';
-  if (args.output) { await fs.mkdir(path.dirname(args.output), { recursive: true }); await fs.writeFile(args.output, text); }
-  // Drain stdout, then hard-exit: a wedged, SIGKILLed Electron leaves its
+function drainOutput(stream, text) {
+  // Drain output, then hard-exit: a wedged, SIGKILLed Electron leaves its
   // forked helpers holding the stdio pipes, Playwright's transport never sees
-  // EOF and the event loop never drains - relying on natural exit hung fully
-  // completed runs for minutes (reproduced locally). The unref'd fallback
-  // covers a write callback that never fires.
-  await new Promise(resolve => {
+  // EOF and the event loop never drains. Keep the existing fallback in case
+  // a write callback never fires.
+  return new Promise(resolve => {
     const fallback = setTimeout(resolve, 250);
-    process.stdout.write(text, () => { clearTimeout(fallback); resolve(); });
+    stream.write(text, () => { clearTimeout(fallback); resolve(); });
   });
-  process.exit(0);
+}
+
+async function main() {
+  const lifecycle = { phase: 'initialization', app: undefined };
+  // Keep the guard alive until output and teardown finish, even if a pending
+  // promise is the only remaining work apart from the guard itself.
+  const heartbeat = startProgressWatchdog(lifecycle);
+  let code = 0;
+  try {
+    const args = options(process.argv.slice(2)), report = await benchmark(args, lifecycle);
+    const text = JSON.stringify(report, null, 2) + '\n';
+    if (args.output) {
+      enterPhase(lifecycle, 'report-write');
+      await fs.mkdir(path.dirname(args.output), { recursive: true });
+      await fs.writeFile(args.output, text);
+    }
+    await drainOutput(process.stdout, text);
+  } catch (error) {
+    code = 1;
+    process.exitCode = code;
+    await drainOutput(process.stderr, `${(error && error.stack) || error}\n`);
+  } finally {
+    clearInterval(heartbeat);
+  }
+  process.exit(code);
 }
 
 module.exports = { options };
-if (require.main === module) main().catch(error => {
-  let exited = false;
-  const exit = () => { if (!exited) { exited = true; process.exit(1); } };
-  // Same hard-exit rationale as the success path: the failure is already fully
-  // reported by the time this runs, but lingering transport handles would keep
-  // the process alive forever and starve the CI step's retry loop.
-  process.stderr.write(`${(error && error.stack) || error}\n`, exit);
-  setTimeout(exit, 250).unref();
-});
+if (require.main === module) void main();
