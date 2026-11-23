@@ -37,7 +37,7 @@ useCssVars(() => ({ v44afe9a0: props.level }));
 
 <template>
   <div v-if="items.length" v-bind="$attrs" class="sub-menu-wrap" :class="['level-' + level, { collapsed, collapsible, folded: !!collapsedChildren }]"
-    :style="{ '--child-count': items.length }">
+    :style="{ '--child-count': items.length }" :inert="collapsedChildren || undefined">
     <div class="sub-menu-clip">
       <div class="sub-menu">
         <template v-for="item in items" :key="item.name">

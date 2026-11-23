@@ -844,12 +844,15 @@ async function createWindow() {
       settingsStore.saveLocalSettings(settings).catch(() => {});
     },
   }));
-  win.once('ready-to-show', () => {
-    if (win.isDestroyed()) return;
-    win.show();
+  let presented = false;
+  const present = () => {
+    if (presented || quitting || win.isDestroyed()) return;
+    presented = true;
+    if (!win.isVisible()) win.show();
     if (win.isMinimized()) win.restore();
     win.focus();
-  });
+  };
+  win.once('ready-to-show', present);
   win.setMenu(null);
   // The shell renders local files only: block navigation away from them and
   // keep child windows denied (a child would inherit this window's preload).
@@ -859,9 +862,8 @@ async function createWindow() {
   });
   if (roxyPreview) await win.loadURL(rebuildProtocol.DOCUMENT);
   else await win.loadFile('index.html');
-  if (!win.isVisible()) win.show();
-  if (win.isMinimized()) win.restore();
-  win.focus();
+  // A paint event and a successful load are alternatives, not two restores.
+  present();
 }
 
 app.whenReady().then(async () => {

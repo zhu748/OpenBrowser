@@ -185,6 +185,22 @@ const proxyList = async (p) => {
 };
 globalThis.__localActionTrack = (action) =>
   request("activity:append", { action: String(action || "") });
+function saveWindowFilter(payload) {
+  const condition = payload?.filter_condition;
+  if (!condition || typeof condition !== "object" || Array.isArray(condition))
+    return request("filters:save", payload);
+  // Saved calendar selections must survive the bridge's plain-object copy.
+  const filter_condition = { ...condition };
+  for (const field of ["createTime", "modfiyTime"]) {
+    if (!Array.isArray(condition[field])) continue;
+    filter_condition[field] = condition[field].map(value => {
+      if (!(value instanceof Date)) return value;
+      if (!Number.isFinite(value.getTime())) throw Error("筛选器日期无效");
+      return value.toISOString();
+    });
+  }
+  return request("filters:save", { ...payload, filter_condition });
+}
 const methods = {
   userAnalysisWindowInfoCreate: (p) => request("profiles:analyse-import", p),
   userImportWindowInfoV2Create: (p) => request("profiles:import", p),
@@ -233,8 +249,8 @@ const methods = {
   userBatchWindowInfoV2Create: (p) => request("profiles:create-batch", p),
   userGetWindowSortNumList: () => request("profiles:next-number"),
   userGetWindowFilterNameListList: () => request("filters:list"),
-  userUpdateWindowFilterNameCreate: (p) => request("filters:save", p),
-  userAddWindowFilterNameCreate: (p) => request("filters:save", p),
+  userUpdateWindowFilterNameCreate: saveWindowFilter,
+  userAddWindowFilterNameCreate: saveWindowFilter,
   userDeleteWindowFilterNameCreate: (p) => request("filters:delete", p),
   userUpdateWindowFilterSortCreate: (p) =>
     request("settings:set", { filterSort: p.sort_data }),

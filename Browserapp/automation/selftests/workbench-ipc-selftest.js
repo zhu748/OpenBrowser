@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { setImmediate: tick } = require('node:timers/promises');
 const { pathToFileURL } = require('node:url');
+const vm = require('node:vm');
 const { captureIpcResult, unwrapIpcResult } = require('../../shared/ipc-result');
 
 async function tableChecks() {
@@ -203,6 +204,48 @@ async function compactTableChecks() {
   }
 }
 
+async function savedViewDateChecks() {
+  const { LocalService } = require('../../rebuild/local-service');
+  const file = path.resolve(__dirname, '../../rebuild/renderer-bridge.js');
+  const program = (await fs.readFile(file, 'utf8')).replace(/^import\s+[\s\S]*?;$/gm, '');
+  const service = Object.create(LocalService.prototype);
+  service.queue = Promise.resolve();
+  service.data = { settings: {}, filters: [] };
+  service.load = async () => {};
+  let persisted;
+  service.save = async () => { persisted = JSON.stringify(service.data); };
+  const renderer = vm.createContext({
+    Date,
+    createProfileLifecycleBridge: () => ({}),
+    rebuild: { request: (name, payload) => service.request(name, structuredClone(payload)) },
+  });
+  vm.runInContext(program, renderer, { filename: file });
+  const from = new Date(2026, 10, 5), to = new Date(2026, 10, 7);
+  await renderer.__localApi.window.userAddWindowFilterNameCreate({
+    filter_name: 'Date fixture',
+    filter_condition: { createTime: [from, to], modfiyTime: [from, to], openStatus: true },
+  });
+  service.data = JSON.parse(persisted);
+  const reopened = await renderer.__localApi.window.userGetWindowFilterNameListList();
+  const condition = reopened.data[0].filter_condition;
+  assert.deepEqual(condition, {
+    createTime: [from.toISOString(), to.toISOString()],
+    modfiyTime: [from.toISOString(), to.toISOString()], openStatus: true,
+  }, 'calendar selections survive renderer IPC and saved-view reload');
+  assert.equal(new Date(condition.createTime[0]).getTime(), from.getTime());
+  const strings = ['2026-11-01', '2026-11-07'];
+  const update = createTime => renderer.__localApi.window.userUpdateWindowFilterNameCreate({
+    old_filter_name: 'Date fixture', new_filter_name: 'Date fixture',
+    filter_condition: { createTime },
+  });
+  await update(strings);
+  assert.deepEqual(JSON.parse(persisted).filters[0].filter_condition.createTime, strings,
+    'serialized date strings are preserved by the update alias');
+  const beforeInvalid = persisted;
+  await assert.rejects(update([new Date(NaN)]), /筛选器日期无效/);
+  assert.equal(persisted, beforeInvalid, 'invalid Date input is not saved');
+}
+
 async function navigationChecks() {
   const { installWorkspaceNavigation } = await import('../../rebuild/workbench-navigation.mjs');
   const mainRouter = { beforeEach() {} };
@@ -257,6 +300,7 @@ async function profileBatchChecks() {
 async function main() {
   await tableChecks();
   await compactTableChecks();
+  await savedViewDateChecks();
   await apiChecks();
   await navigationChecks();
   await profileBatchChecks();
