@@ -68,10 +68,10 @@ async function writeJsonAtomically(filePath, value, mode = 0o600) {
     try {
       // Preserve encrypted bytes as-is; encrypt legacy plaintext before it
       // becomes a long-lived recovery copy containing cookies or credentials.
-      const raw = await fsp.readFile(filePath);
-      previous = raw;
+      previous = await fsp.readFile(filePath);
     } catch (error) {
-      if (error.code === "ENOENT") previous = null;
+      // Only a missing primary permits the write without a recovery copy.
+      if (error.code !== "ENOENT") throw error;
     }
     if (previous != null) {
       const backup = credentialCrypto.isEncrypted(previous) ? previous : credentialCrypto.encryptCredential(previous);

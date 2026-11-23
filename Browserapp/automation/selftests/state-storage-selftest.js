@@ -121,6 +121,32 @@ async function withPatchedRename(failures, fn) {
     }
   });
 
+  await check('backup read I/O failure preserves the primary and can be retried', async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'state-backup-'));
+    const file = path.join(root, 'state.json');
+    const read = fsp.readFile;
+    const failure = Object.assign(Error('unreadable backup source'), { code: 'EIO' });
+    try {
+      await writeJsonAtomically(file, { version: 1 });
+      const before = await read(file);
+      fsp.readFile = async (...args) => {
+        if (args[0] === file) throw failure;
+        return read(...args);
+      };
+      let rejected;
+      try { await writeJsonAtomically(file, { version: 2 }); }
+      catch (error) { rejected = error; }
+      finally { fsp.readFile = read; }
+      assert.ok(before.equals(await read(file)), 'last-good primary was overwritten without a recovery copy');
+      assert.strictEqual(rejected, failure, 'the caller must receive the original read error');
+      assert.deepStrictEqual(await fsp.readdir(root), ['state.json']);
+
+      await writeJsonAtomically(file, { version: 2 });
+      assert.deepStrictEqual(await read(file + '.bak'), before, 'retry must back up the original state');
+      assert.strictEqual((await readEngineStateCandidate(file)).saved.version, 2);
+    } finally { await fsp.rm(root, { recursive: true, force: true }); }
+  });
+
   await check('writeJsonAtomically encrypts at rest, backs up raw previous bytes and round-trips', async () => {
     const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'state-storage-'));
     const file = path.join(root, 'state.json');

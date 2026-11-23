@@ -1,4 +1,5 @@
 const messages = {
+  "窗口已在别处更新，请重新编辑名称。": "窗口已在别处更新，请重新编辑名称。",
   "指纹预览未返回完整身份，请重试": "指纹预览未返回完整身份，请重试",
   "Firefox 当前支持桌面设备配置，请选择 Windows、macOS 或 Linux": "Firefox 当前支持桌面设备配置，请选择 Windows、macOS 或 Linux",
   "展开可调整分辨率、WebRTC、WebGL 等参数。电池、网络和蓝牙选项适用于 Chrome 移动设备配置。": "展开可调整分辨率、WebRTC、WebGL 等参数。电池、网络和蓝牙选项适用于 Chrome 移动设备配置。",

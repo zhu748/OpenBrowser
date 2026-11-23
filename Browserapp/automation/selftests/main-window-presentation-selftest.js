@@ -3,10 +3,12 @@
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const { readFileSync } = require('node:fs');
+const { createRequire } = require('node:module');
 const path = require('node:path');
 const { test } = require('node:test');
 const { runInNewContext } = require('node:vm');
 const { parse } = require('acorn');
+const { createWindowCloseHandler } = require('../../main/window-close');
 
 const filename = path.resolve(__dirname, '../../main.js');
 const source = readFileSync(filename, 'utf8');
@@ -17,8 +19,9 @@ function mainFunction(name, context) {
   return runInNewContext(source.slice(declaration.start, declaration.end) + '\n' + name, context, { filename });
 }
 
-function fixture() {
+function fixture({ settingsStore, loadSettingsForStartup = () => Promise.resolve(), ask = async () => ({ mode: 'tray', remember: true }) } = {}) {
   const loading = Promise.withResolvers();
+  const calls = { ask: 0, hide: 0, close: 0 };
   let window;
   class BrowserWindow extends EventEmitter {
     constructor() {
@@ -36,6 +39,13 @@ function fixture() {
     focus() { assert.equal(this.destroyed, false); this.focuses++; }
     isMinimized() { return false; }
     hide() { this.visible = false; }
+    requestClose() {
+      let prevented = false;
+      const pending = this.listeners('close')[0]({ preventDefault: () => { prevented = true; } });
+      if (!prevented) { calls.close++; this.destroyed = true; }
+      return { pending, prevented };
+    }
+    close() { this.requestClose(); }
     setMenu() {}
     loadURL() { return loading.promise; }
   }
@@ -43,15 +53,139 @@ function fixture() {
     BrowserWindow, mainWindow: null, windows: new Set(), path, __dirname: path.dirname(filename),
     quitting: false, app: { getVersion: () => 'fixture' }, roxyPreview: true,
     windowIconPath() {}, windowBackground() {},
-    askCloseAction() {}, hideMainWindowToTray() {},
-    createWindowCloseHandler: () => () => {},
+    settingsStore, loadSettingsForStartup,
+    askCloseAction: () => { calls.ask++; return ask(); },
+    hideMainWindowToTray: win => { calls.hide++; win.hide(); },
+    createWindowCloseHandler: (win, options) => createWindowCloseHandler(win, { ...options, platform: 'linux' }),
     attachShellNavigationGuard() {}, createShellNavigationPolicy() {},
     rebuildProtocol: { DOCUMENT: 'local-workbench-fixture' },
   };
   const createWindow = mainFunction('createWindow', context);
   const creation = createWindow();
-  return { window, loading, creation, startQuit() { context.quitting = true; } };
+  return { window, loading, creation, calls, startQuit() { context.quitting = true; } };
 }
+
+function startupSettings(closeAction) {
+  const started = Promise.withResolvers();
+  const read = Promise.withResolvers();
+  const file = path.resolve('synthetic/settings.json');
+  const saved = { version: 2, profileDataRoot: path.resolve('synthetic/existing'), memoryLimit: 62, uiGroups: [{ id: 'retained' }], closeAction };
+  const files = new Map([[file, Buffer.from(JSON.stringify(saved))]]);
+  let first = true;
+  const storePath = path.resolve(__dirname, '../local-settings.js');
+  const storeRequire = createRequire(storePath);
+  const overrides = {
+    'fs/promises': {
+      readFile(name) {
+        if (!first) return Promise.resolve(files.get(name));
+        first = false;
+        started.resolve();
+        return read.promise;
+      },
+      async mkdir() {},
+      async writeFile(name, value) { files.set(name, Buffer.from(value)); },
+      async rename(from, to) { files.set(to, files.get(from)); files.delete(from); },
+    },
+    // The fixture exercises store/close sequencing, not storage encoding.
+    '../credential-crypto': { isEncrypted: () => true, decryptCredential: raw => raw.toString(), encryptCredential: text => text },
+    './cloud-sync': { defaultCloudConfig: () => ({}) },
+    './isolation': { validateDataRootIsolationSecure: root => ({ ok: true, root }) },
+  };
+  const module = { exports: {} };
+  runInNewContext('(function(require, module) {\n' + readFileSync(storePath, 'utf8') + '\n})',
+    { structuredClone, console }, { filename: storePath })(name => overrides[name] || storeRequire(name), module);
+  const settingsStore = module.exports;
+  settingsStore.initLocalSettings({ file, defaultProfileDataRoot: path.resolve('synthetic/default') });
+  const load = settingsStore.loadLocalSettings();
+  load.catch(() => {});
+  return {
+    settingsStore, loadSettingsForStartup: () => load, started: started.promise, load,
+    finish: () => read.resolve(files.get(file)), fail: () => read.reject(new Error('synthetic read failure')),
+    saved, persisted: () => JSON.parse(files.get(file).toString()),
+  };
+}
+
+test('an early close waits for the saved exit preference and repeated requests share one close', async () => {
+  const settings = startupSettings('exit');
+  await settings.started;
+  const { window, loading, creation, calls } = fixture(settings);
+  loading.resolve();
+  await creation;
+  assert.ok(window.visible, 'first window is still presented while settings load');
+  const first = window.requestClose();
+  const next = window.requestClose();
+  assert.ok(first.prevented && next.prevented);
+  assert.equal(first.pending, next.pending);
+  await Promise.resolve();
+  assert.deepEqual(calls, { ask: 0, hide: 0, close: 0 });
+  settings.finish();
+  await first.pending;
+  await settings.settingsStore.flushSettingsWriter();
+  assert.deepEqual(calls, { ask: 0, hide: 0, close: 1 });
+  assert.deepEqual(settings.persisted(), settings.saved);
+});
+
+test('remembering an early close choice preserves saved and newer unrelated settings', async () => {
+  const settings = startupSettings('ask');
+  await settings.started;
+  const asked = Promise.withResolvers();
+  const choice = Promise.withResolvers();
+  const { window, loading, creation, calls } = fixture({ ...settings, ask() { asked.resolve(); return choice.promise; } });
+  loading.resolve();
+  await creation;
+  const closing = window.requestClose().pending;
+  await Promise.resolve();
+  assert.equal(calls.ask, 0, 'the prompt must not run against factory settings');
+  settings.finish();
+  await asked.promise;
+  await settings.settingsStore.saveLocalSettings({ memoryLimit: 71 });
+  choice.resolve({ mode: 'tray', remember: true });
+  await closing;
+  await settings.settingsStore.flushSettingsWriter();
+  assert.deepEqual(calls, { ask: 1, hide: 1, close: 0 });
+  const { profileDataRoot, uiGroups, memoryLimit, closeAction } = settings.persisted();
+  assert.deepEqual({ profileDataRoot, uiGroups, memoryLimit, closeAction }, {
+    profileDataRoot: settings.saved.profileDataRoot, uiGroups: settings.saved.uiGroups, memoryLimit: 71, closeAction: 'tray',
+  });
+});
+
+test('early close uses saved tray behavior, but ignores it after quit or destruction', async () => {
+  for (const end of ['normal', 'quitting', 'destroyed']) {
+    const settings = startupSettings('tray');
+    await settings.started;
+    const { window, loading, creation, calls, startQuit } = fixture(settings);
+    loading.resolve();
+    await creation;
+    const closing = window.requestClose().pending;
+    await Promise.resolve();
+    if (end === 'quitting') startQuit();
+    if (end === 'destroyed') window.destroyed = true;
+    settings.finish();
+    await closing;
+    assert.deepEqual(calls, { ask: 0, hide: end === 'normal' ? 1 : 0, close: 0 }, end);
+    assert.deepEqual(settings.persisted(), settings.saved);
+  }
+});
+
+test('settings read failure or a stalled read cannot trap close or remember factory settings', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  for (const failure of ['rejected', 'stalled']) {
+    const settings = startupSettings('tray');
+    await settings.started;
+    const { window, loading, creation, calls } = fixture(settings);
+    loading.resolve();
+    await creation;
+    const closing = window.requestClose().pending;
+    await Promise.resolve();
+    if (failure === 'rejected') settings.fail();
+    else t.mock.timers.tick(2_000);
+    await closing;
+    if (failure === 'stalled') settings.finish();
+    await settings.load.catch(() => {});
+    assert.deepEqual(calls, { ask: 0, hide: 0, close: 1 }, failure);
+    assert.deepEqual(settings.persisted(), settings.saved);
+  }
+});
 
 test('the startup fallback and ready-to-show cannot both present the main window', async () => {
   for (const readyFirst of [true, false]) {

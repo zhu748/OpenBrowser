@@ -821,6 +821,12 @@ function stopShortcutBridge() {
   shortcutFallbackRegistered = false;
 }
 
+let initialSettingsLoad;
+function loadSettingsForStartup() {
+  initialSettingsLoad ||= settingsStore.loadLocalSettings();
+  return initialSettingsLoad;
+}
+
 async function createWindow() {
   /** @type {Record<string, any>} */
   const options = {
@@ -847,13 +853,14 @@ async function createWindow() {
   win.on('closed', () => { windows.delete(win); if (mainWindow === win) { localUiDialogs?.closeAll(); localUiWorkspaces?.closeAll(); mainWindow = null; } });
   win.on('close', createWindowCloseHandler(win, {
     isQuitting: () => quitting,
+    settingsReady: loadSettingsForStartup(),
     readPreference: () => settingsStore.normalizeCloseAction(settingsStore.getLocalSettings().closeAction),
     ask: askCloseAction,
     hide: hideMainWindowToTray,
     remember(mode) {
       const settings = settingsStore.getLocalSettings();
-      settings.closeAction = mode;
-      settingsStore.saveLocalSettings(settings).catch(() => {});
+      if (settingsStore.normalizeCloseAction(settings.closeAction) !== 'ask') return;
+      settingsStore.saveLocalSettings({ ...settings, closeAction: mode }).catch(() => {});
     },
   }));
   let presented = false;
@@ -973,7 +980,7 @@ app.whenReady().then(async () => {
   // same early-registration requirement, or the bare await in initialize()
   // rejects and the profile list never renders (verified in round 2).
   registerTrustedIpc('sync:state', () => syncSnapshot());
-  const localSettingsPromise = settingsStore.loadLocalSettings();
+  const localSettingsPromise = loadSettingsForStartup();
   const windowPromise = createWindow().catch((error) => {
     console.error('OpenBrowser window creation failed:', error.message);
     throw error;
@@ -984,6 +991,7 @@ app.whenReady().then(async () => {
   // unhandledRejection handler.
   windowPromise.catch(() => {});
   const localSettings = await localSettingsPromise;
+  if (quitting) return;
   const initialRootCheck = await ensureDataRootIsolationSecure(localSettings.profileDataRoot);
   if (!initialRootCheck.ok) throw new Error(initialRootCheck.message);
   engine = new BrowserEngine(app, {

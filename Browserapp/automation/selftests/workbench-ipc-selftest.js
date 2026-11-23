@@ -246,6 +246,163 @@ async function savedViewDateChecks() {
   assert.equal(persisted, beforeInvalid, 'invalid Date input is not saved');
 }
 
+async function inlineRenameChecks() {
+  const { parse } = require('acorn');
+  const vue = require('vue');
+  const { compileWorkbenchComponent } = require('../../frontend/compile-workbench-component.cjs');
+  const { LocalService } = require('../../rebuild/local-service');
+  const appRoot = path.resolve(__dirname, '../..');
+  const id = 'rename-fixture';
+  let profile = { id, name: 'Original name' }, rev = 1;
+  const writes = [];
+  const service = Object.create(LocalService.prototype);
+  Object.assign(service, {
+    queue: Promise.resolve(),
+    data: {},
+    load: async () => {},
+    resolveInputs: data => data,
+    decorate: ({ name }) => ({ windowName: name }),
+    engine: {
+      profileForEdit: () => ({ profile: { ...profile }, rev }),
+      async applyProfileCommands([command]) {
+        writes.push(command.baseRev);
+        if (command.baseRev !== rev) {
+          throw Object.assign(Error('stale fixture'), { code: 'PROFILE_STALE_REV' });
+        }
+        profile = command.profile;
+        rev += 1;
+      },
+    },
+  });
+  const bridgeFile = path.join(appRoot, 'rebuild/renderer-bridge.js');
+  const bridge = (await fs.readFile(bridgeFile, 'utf8')).replace(/^import\s+[\s\S]*?;$/gm, '');
+  let pendingRead;
+  const methods = [];
+  const renderer = vm.createContext({
+    createProfileLifecycleBridge: () => ({}),
+    rebuild: {
+      async request(method, payload) {
+        methods.push(method);
+        if (method === 'profiles:read' && pendingRead) return pendingRead;
+        return captureIpcResult(() => service.request(method, structuredClone(payload)));
+      },
+    },
+  });
+  vm.runInContext(bridge, renderer, { filename: bridgeFile });
+
+  const filename = path.join(appRoot, 'frontend/src/workbench/profiles/EditableProfileName.vue');
+  const { code } = compileWorkbenchComponent({ filename, source: await fs.readFile(filename, 'utf8') });
+  const notices = [], emissions = [];
+  // Render the actual SFC's slots and event bindings without mounting Electron.
+  const modules = {
+    './workbench-vue.js': { ...vue, withDirectives: node => node },
+    './utils-BIWenCnY.js': { h: renderer.__localApi },
+    './agent-BmSFI9WH.js': { n: () => [null, (...args) => notices.push(args)] },
+    './utils-CnUy4XUk.js': { a: () => 'Auto ' },
+    './inplace-DdcGL3G8.js': { t: {} },
+    './inputtext-Crzvb5jQ.js': { t: {} },
+    './tooltip-BYYKWrvu.js': { t: {} },
+    './focustrap-DJJkEqE8.js': { t: {} },
+  };
+  let program = code;
+  for (const entry of parse(code, { sourceType: 'module', ecmaVersion: 'latest' }).body.reverse()) {
+    const replacement = entry.type === 'ImportDeclaration'
+      ? 'const { ' + entry.specifiers.map(({ imported, local }) => `${imported.name}: ${local.name}`).join(', ') +
+        ' } = modules[' + JSON.stringify(entry.source.value) + '];'
+      : entry.type === 'ExportDefaultDeclaration' ? '__workbenchComponent;' : null;
+    if (replacement !== null) program = program.slice(0, entry.start) + replacement + program.slice(entry.end);
+  }
+  const instance = vm.runInNewContext(program, { modules, $t: message => message }, { filename });
+  // Like the active-list DTO, the visible row intentionally has no revision.
+  const props = vue.reactive({ data: { id, windowName: profile.name } });
+  const render = instance.setup(props, { emit: name => emissions.push(name), expose() {} });
+  const inplace = () => render({}, []).children[0];
+  let closed = 0;
+  const close = () => { closed += 1; inplace().props.onClose?.(); };
+  const input = () => inplace().children.content({ closeCallback: close })[0].props;
+  const open = () => { inplace().props.onOpen?.(); input().onFocus?.(); };
+  const draft = text => input()['onUpdate:modelValue'](text);
+  const submit = () => input().onKeydown({ key: 'Enter' });
+
+  open();
+  draft('Old editor draft');
+  await tick();
+  await service.request('profiles:update', { id, rev: 1, windowName: 'Other saved name' });
+  // Hold back profile-change notifications: the visible row still shows rev 1's name.
+  await submit();
+  assert.equal(profile.name, 'Other saved name', 'an old inline draft must not overwrite a newer saved name');
+  assert.equal(rev, 2);
+  assert.deepEqual(writes, [1, 1], 'inline save carries the revision read at activation');
+  assert.equal(notices.length, 1);
+  assert.equal(notices[0][0], -1, 'the conflict is shown rather than reported as success');
+  assert.match(notices[0][1], /窗口已在别处更新/);
+  assert.deepEqual(emissions, ['refresh']);
+
+  // A refresh and deliberate second edit apply normally; Enter also closes the
+  // editor, so a following blur must not send a second write.
+  props.data = { id, windowName: profile.name };
+  open();
+  draft('  Deliberate retry  ');
+  const submitHandlers = input();
+  const retry = submitHandlers.onKeydown({ key: 'Enter' });
+  await submitHandlers.onBlur();
+  await retry;
+  assert.equal(profile.name, 'Deliberate retry');
+  assert.equal(rev, 3);
+  assert.deepEqual(writes, [1, 1, 2]);
+  assert.deepEqual(notices.at(-1), [0, '']);
+  assert.equal(props.data.windowName, profile.name);
+  assert.equal(closed, 2);
+  assert.deepEqual(methods, ['profiles:read', 'profiles:update', 'profiles:read', 'profiles:update']);
+
+  function deferRead() {
+    let release;
+    pendingRead = new Promise(resolve => { release = resolve; });
+    return release;
+  }
+  const read = () => captureIpcResult(() => service.request('profiles:read', { id }));
+  const oldBaseline = await read();
+  const releaseCancelled = deferRead();
+  open();
+  draft('Cancelled draft');
+  close();
+  pendingRead = undefined;
+  await service.request('profiles:update', { id, rev: 3, windowName: 'Unrelated rename' });
+  props.data = { id, windowName: profile.name };
+  open();
+  draft('New activation draft');
+  await tick();
+  releaseCancelled(oldBaseline);
+  await tick();
+  await submit();
+  assert.equal(profile.name, 'New activation draft', 'late cancelled reads cannot supply the next activation’s revision');
+  assert.equal(rev, 5);
+  assert.deepEqual(writes, [1, 1, 2, 3, 4]);
+
+  const releaseLate = deferRead();
+  open();
+  draft('Draft based on a stale table row');
+  await service.request('profiles:update', { id, rev: 5, windowName: 'Newly saved name' });
+  const delayedSubmit = submit();
+  releaseLate(await read());
+  pendingRead = undefined;
+  await delayedSubmit;
+  assert.equal(profile.name, 'Newly saved name', 'an activation read must still match the name shown to the editor');
+  assert.equal(rev, 6);
+  assert.deepEqual(writes, [1, 1, 2, 3, 4, 5], 'do not write when the delayed read already proves a conflict');
+  assert.equal(notices.at(-1)[0], -1);
+  assert.deepEqual(emissions, ['refresh', 'refresh']);
+
+  props.data = { id, windowName: profile.name };
+  pendingRead = captureIpcResult(() => ({ windowName: profile.name }));
+  open();
+  draft('Draft without a revision');
+  await submit();
+  assert.equal(rev, 6, 'missing revision must never fall back to an unversioned patch');
+  assert.equal(notices.at(-1)[0], -1);
+  assert.equal(methods.includes('profiles:patch'), false);
+}
+
 async function navigationChecks() {
   const { installWorkspaceNavigation } = await import('../../rebuild/workbench-navigation.mjs');
   const mainRouter = { beforeEach() {} };
@@ -301,6 +458,7 @@ async function main() {
   await tableChecks();
   await compactTableChecks();
   await savedViewDateChecks();
+  await inlineRenameChecks();
   await apiChecks();
   await navigationChecks();
   await profileBatchChecks();
@@ -309,6 +467,6 @@ async function main() {
   });
   assert.throws(() => unwrapIpcResult(result), error =>
     error.code === 'EIO' && error.completed === 200 && error.remainingIds[0] === 'a' && !('privateField' in error));
-  console.log('WORKBENCH_IPC_SELFTEST OK (table query, latest response, pagination recovery, compact refresh failures, settings queue, initial navigation and partial error DTO)');
+  console.log('WORKBENCH_IPC_SELFTEST OK (table queries, refresh failures, inline rename revisions, settings queue, initial navigation and partial error DTO)');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });
