@@ -365,40 +365,10 @@ jobs:
         env:
           OPENBROWSER_MASTER_KEY_FILE: ${{ runner.temp }}/openbrowser-desktop.key
         run: |
-          # Hosted macOS runners intermittently trip this gate on transient
-          # conditions the same code clears on a retry — a one-off render-budget
-          # spike (p95 211ms vs sub-2ms on the retry, run a0733af) and EBUSY on
-          # kernel DMG-mount cleanup (same run). Retry once on macOS only;
-          # Linux/Windows stay single-shot.
-          gates() (
-            set -e
-            if [[ "$RUNNER_OS" == "Linux" ]]; then
-              xvfb-run -a node node_modules/electron/cli.js --no-sandbox scripts/benchmark-real-render.js --sizes 10,100,1000 --skip-kernel --render-budget-ms 50 --json
-              xvfb-run -a node automation/selftests/app-startup-e2e-selftest.js
-              node rebuild/optimization-ui-selftest.cjs
-            else
-              node node_modules/electron/cli.js scripts/benchmark-real-render.js --sizes 10,100,1000 --skip-kernel --render-budget-ms 50 --json
-              node rebuild/optimization-ui-selftest.cjs
-            fi
-            node rebuild/maintenance-ui-selftest.cjs
-            node rebuild/templates-ui-selftest.cjs
-            node rebuild/source-workbench-ui-selftest.cjs
-            node rebuild/workbench-interactions-ui-selftest.cjs
-            if [[ "$RUNNER_OS" == "Linux" ]]; then
-              node rebuild/local-api-ui-selftest.cjs
-              node rebuild/packaging-selftest.cjs
-            fi
-            node rebuild/agent-tasks-ui-selftest.cjs
-            node rebuild/agent-history-ui-selftest.cjs
-            node rebuild/agent-streaming-ui-selftest.cjs
-            node rebuild/agent-conversation-cache-ui-selftest.cjs
-            node rebuild/agent-mcp-ui-selftest.cjs
-            node rebuild/agent-approval-ui-selftest.cjs
-          )
-          if gates; then exit 0; fi
-          if [[ "$RUNNER_OS" != "macOS" ]]; then exit 1; fi
-          echo "::warning::desktop gates failed on macOS; retrying once (transient hosted-runner noise class)"
-          gates
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            node scripts/desktop-ci-gates.test.js
+          fi
+          bash scripts/desktop-ci-gates.sh
       - name: Measure default workbench responsiveness
         timeout-minutes: 12
         # Same macOS retry rationale: the 5fdeea2/f3f70f2 runs missed the

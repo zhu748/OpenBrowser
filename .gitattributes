@@ -5,6 +5,7 @@
 /Browserapp/frontend/** text=auto eol=lf
 /Browserapp/frontend/workbench/** -text
 /Browserapp/roxy-ui/** -text
+/Browserapp/scripts/desktop-ci-gates.sh text eol=lf
 
 # Keep generated resources and vendor inputs out of hand-written code reviews.
 /Browserapp/roxy-ui/** linguist-generated=true
