@@ -86,12 +86,27 @@ async function observeFsWait(lifecycle, operation) {
   }).enable();
   lifecycle.fsWait = wait;
   try {
-    return await scope.run(wait, operation);
+    const value = await scope.run(wait, operation);
+    if (lifecycle.macCi && lifecycle.phase === 'temp-cleanup') {
+      lifecycle.completedCleanup = {
+        elapsedMs: Math.round(performance.now() - wait.startedAt),
+        requests: wait.requests,
+        callbacks: wait.callbacks,
+      };
+    }
+    return value;
   } finally {
     lifecycle.fsWait = undefined;
     hook.disable();
     scope.disable();
   }
+}
+
+function formatCleanupSuccess(sample) {
+  if (!sample) return null;
+  const { elapsedMs, requests, callbacks } = sample;
+  if (![elapsedMs, requests, callbacks].every(n => Number.isSafeInteger(n) && n >= 0) || callbacks > requests) return null;
+  return `::notice::Workbench benchmark temp-cleanup completed: fsWaitMs=${elapsedMs} fsRequests=${requests} fsCallbacks=${callbacks}`;
 }
 
 function startProgressWatchdog(lifecycle) {
@@ -353,7 +368,8 @@ function drainOutput(stream, text) {
 }
 
 async function main() {
-  const lifecycle = { phase: 'initialization', app: undefined };
+  const lifecycle = { phase: 'initialization', app: undefined,
+    macCi: process.platform === 'darwin' && process.env.GITHUB_ACTIONS === 'true' };
   // Keep the guard alive until output and teardown finish, even if a pending
   // promise is the only remaining work apart from the guard itself.
   const heartbeat = startProgressWatchdog(lifecycle);
@@ -374,6 +390,8 @@ async function main() {
   } finally {
     clearInterval(heartbeat);
   }
+  const cleanupNotice = code === 0 && formatCleanupSuccess(lifecycle.completedCleanup);
+  if (cleanupNotice) console.error(cleanupNotice);
   process.exit(code);
 }
 

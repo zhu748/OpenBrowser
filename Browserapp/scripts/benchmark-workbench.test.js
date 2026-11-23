@@ -12,7 +12,7 @@ const script = new vm.Script(fs.readFileSync(filename, 'utf8'), { filename });
 const pending = () => new Promise(() => {});
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
-function fixture(stall) {
+function fixture(stall, { platform = 'darwin', githubActions } = {}) {
   const trace = [], logs = [], notices = [], stdoutText = [], stderrText = [], reports = [], terminal = [], timers = new Set();
   const hooks = new Set(), pendingResources = new Set();
   let now = 0;
@@ -74,6 +74,7 @@ function fixture(stall) {
       fsRequest('UNRELATED', true);
       if (stall === 'temp-cleanup') return pending();
       if (stall === 'cleanup-error') throw Error('synthetic cleanup failure');
+      if (stall === 'cleanup-success-delayed') await new Promise(resolve => timer(resolve, 37, false));
     },
     writeFile: async (_path, text) => {
       const report = JSON.parse(text);
@@ -107,7 +108,7 @@ function fixture(stall) {
     require: stubRequire, module: mod, __dirname, Buffer, performance: { now: () => now },
     process: {
       argv: ['node', filename, '--sizes', '1', '--rounds', '1', '--output', '/synthetic/report.json'],
-      platform: 'darwin', env: {}, version: 'inert', uptime: () => now / 1000, memoryUsage: () => ({ rss: 0 }),
+      platform, env: { GITHUB_ACTIONS: githubActions }, version: 'inert', uptime: () => now / 1000, memoryUsage: () => ({ rss: 0 }),
       stdout, stderr, exit(code) {
         terminal.push(code);
         for (const hook of hooks) hook.disable();
@@ -191,4 +192,31 @@ test('a rejected cleanup still fails the CLI without publishing a successful rep
   assert.deepEqual(run.reports, []);
   assert.match(run.stderrText.join('\n'), /synthetic cleanup failure/);
   assert.deepEqual(run.notices, []);
+});
+
+test('macOS GitHub Actions success reports only scoped cleanup duration and counts', async () => {
+  const run = fixture('cleanup-success-delayed', { githubActions: 'true' });
+  await run.advance(36);
+  assert.deepEqual(run.terminal, []);
+  assert.deepEqual(run.notices, []);
+  await run.advance(37);
+  assert.deepEqual(run.terminal, [0]);
+  assert.deepEqual(run.stdoutText.map(text => JSON.parse(text)), run.reports);
+  assert.deepEqual(run.notices, [
+    '::notice::Workbench benchmark temp-cleanup completed: fsWaitMs=37 fsRequests=2 fsCallbacks=2',
+  ]);
+});
+
+test('cleanup success telemetry is absent off macOS CI or when the benchmark later fails', async () => {
+  for (const options of [{ platform: 'linux', githubActions: 'true' }, { githubActions: 'false' },
+    { githubActions: 'true\n::notice::private' }]) {
+    const run = fixture('none', options);
+    await run.advance(240000);
+    assert.deepEqual(run.terminal, [0]);
+    assert.deepEqual(run.notices, []);
+  }
+  const fail = fixture('report-write', { githubActions: 'true' });
+  await fail.advance(180000);
+  assert.deepEqual(fail.terminal, [2]);
+  assert.deepEqual(fail.notices, ['::notice::Workbench benchmark idle limit exceeded: phase=report-write']);
 });
