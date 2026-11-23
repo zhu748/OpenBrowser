@@ -167,6 +167,10 @@ async function runCase(root, sqlite, operation, phase) {
     assert.equal(durable.length, cloneId ? 2 : 1);
     assert.equal(durable.find(row => row.id === original.id).note,
       failedBeforeWrite || clone ? original.note : phase === "overlap" ? "Later edit" : "First edit");
+    // A failed save leaves a coalescer retry queued on this engine. Settle
+    // it after checking the failed write, before a second engine takes over
+    // the same directory. Otherwise the old retry can replace its JSON.
+    if (phase === "write") await engine.flushPersistence();
     engine.sqliteStore?.close();
     engine = await open();
     assert.deepEqual((await readDurable()).map(row => [row.id, row.note]), durable.map(row => [row.id, row.note]));
@@ -175,7 +179,7 @@ async function runCase(root, sqlite, operation, phase) {
     if (clone) {
       const secondId = checkCloneReceipt(await reopened.request("profiles:clone", payload));
       assert.notEqual(secondId, cloneId, "a deliberate new clone is not deduplicated");
-      assert.equal((await readDurable()).length, cloneId ? 3 : 2);
+      assert.equal((await readDurable()).length, cloneId ? 3 : 2, "the deliberate clone remains durable after reopening");
     } else if (phase === "write") {
       const fresh = await reopened.request("profiles:read", { id: original.id });
       assert.equal((await reopened.request("profiles:update", { ...payload, rev: fresh.rev })).windowRemark, "First edit");
