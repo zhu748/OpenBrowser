@@ -112,6 +112,13 @@ function decryptSettingsEnvelope(raw) {
   }
 }
 
+function parseSettingsObject(json) {
+  try {
+    const saved = JSON.parse(json);
+    return saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : null;
+  } catch (_) { return null; }
+}
+
 async function requireNoBackup() {
   try {
     // A backup is a recovery candidate, not proof that its older values are
@@ -137,13 +144,8 @@ async function readSettingsDocument() {
   }
 
   const encrypted = credentialCrypto.isEncrypted(raw);
-  const json = encrypted ? decryptSettingsEnvelope(raw) : raw.toString('utf8');
-  let saved;
-  try { saved = JSON.parse(json); }
-  catch (_) { /* Only decoded JSON syntax or shape reaches quarantine. */ }
-  if (saved && typeof saved === 'object' && !Array.isArray(saved)) {
-    return { saved, needsMigration: !encrypted };
-  }
+  const saved = parseSettingsObject(encrypted ? decryptSettingsEnvelope(raw) : raw.toString('utf8'));
+  if (saved) return { saved, needsMigration: !encrypted };
   await serializeSettingsFile(async () => {
     try { await fsp.rename(settingsFile, `${settingsFile}.corrupt-${Date.now()}-${randomUUID()}`); }
     catch (error) {
@@ -241,6 +243,24 @@ async function writeSyncedStage(temporary, payload) {
   }
 }
 
+async function refreshSettingsBackup(existing) {
+  let temporary;
+  let staged = false;
+  try {
+    const backup = settingsFile + '.bak';
+    temporary = backup + '.tmp-' + randomUUID();
+    await writeSyncedStage(temporary, existing);
+    staged = true;
+    await fsp.rename(temporary, backup);
+  } catch (_) {
+    if (staged) await fsp.unlink(temporary).catch(() => {});
+    // The primary has already committed. Never turn a backup-side fault
+    // into a rejected save or expose the original filesystem error/path.
+    try { console.warn('OpenBrowser: settings were saved, but the recovery copy could not be refreshed. Any previous backup was left in place.'); }
+    catch (_) {}
+  }
+}
+
 async function persistSettingsSnapshot(snapshot, rootChange) {
   if (settingsLoadFailure) throw settingsLoadFailure;
   const directory = path.dirname(settingsFile);
@@ -251,15 +271,23 @@ async function persistSettingsSnapshot(snapshot, rootChange) {
     if (error.code !== 'ENOENT') {
       throw settingsError(error.code || 'LOCAL_SETTINGS_READ_FAILED', 'Could not read local settings before saving. Settings were not changed.', error);
     }
-    if (rootChange) await requireNoBackup();
+    try { await requireNoBackup(); }
+    catch (backupError) {
+      if (backupError.code === 'LOCAL_SETTINGS_RECOVERY_REQUIRED') settingsLoadFailure = backupError;
+      throw backupError;
+    }
   }
-  const encrypted = credentialCrypto.isEncrypted(existing);
-  // A write admitted before a reload may drain first. Authenticate the
-  // current envelope under the available key before backing it up or
-  // replacing it. JSON parsing remains the reader's responsibility.
-  if (encrypted) {
-    try { decryptSettingsEnvelope(existing); }
-    catch (error) {
+  const encrypted = existing !== undefined && credentialCrypto.isEncrypted(existing);
+  // A queued save can drain before an explicit reload. Validate the same
+  // bytes we might back up: authentication alone doesn't prove that the
+  // previous primary is a settings object or useful for recovery.
+  if (existing !== undefined) {
+    try {
+      const decoded = encrypted ? decryptSettingsEnvelope(existing) : existing.toString('utf8');
+      if (!parseSettingsObject(decoded)) {
+        throw settingsError('LOCAL_SETTINGS_INVALID', 'Local settings are malformed. Both settings and backup were left in place; check recovery before retrying.');
+      }
+    } catch (error) {
       settingsLoadFailure = error;
       throw error;
     }
@@ -267,12 +295,6 @@ async function persistSettingsSnapshot(snapshot, rootChange) {
   const temporary = settingsFile + (rootChange ? '.tmp-root-' + randomUUID() : '.tmp');
   const serialized = JSON.stringify({ version: 2, ...snapshot }, null, 2);
   const payload = credentialCrypto.encryptCredential(serialized);
-  if (!rootChange && encrypted) {
-    // Only encrypted content may land in .bak; older plaintext settings
-    // must not gain a long-lived readable twin.
-    try { await fsp.writeFile(settingsFile + '.bak', existing, { mode: 0o600 }); }
-    catch (_) {}
-  }
 
   let staged = false;
   try {
@@ -290,20 +312,16 @@ async function persistSettingsSnapshot(snapshot, rootChange) {
   }
 
   persistedSettingsSnapshot = snapshot;
-  if (!rootChange) return;
-  // The primary has committed. Merge only the root into live settings so
-  // unrelated edits admitted during this write remain queued and intact.
-  localSettingsCache = { ...localSettingsCache, profileDataRoot: snapshot.profileDataRoot };
-  rootChange.publish?.();
-  if (encrypted) {
-    const backup = settingsFile + '.bak';
-    const backupStage = backup + '.tmp-root-' + randomUUID();
-    try {
-      await writeSyncedStage(backupStage, existing);
-      try { await fsp.rename(backupStage, backup); }
-      finally { await fsp.unlink(backupStage).catch(() => {}); }
-    } catch (_) { /* A committed primary is authoritative; keep any older backup. */ }
+  if (rootChange) {
+    // Merge only the committed root into current settings so unrelated edits
+    // admitted during this write remain queued and intact.
+    localSettingsCache = { ...localSettingsCache, profileDataRoot: snapshot.profileDataRoot };
+    rootChange.publish?.();
   }
+  // Only an encrypted, structurally usable prior primary is eligible.
+  // Leave the older known-good .bak untouched until the new primary commits.
+  if (encrypted) await refreshSettingsBackup(existing);
+  if (!rootChange) return;
   try {
     const handle = await fsp.open(directory, 'r');
     try { await handle.sync(); } finally { await handle.close(); }

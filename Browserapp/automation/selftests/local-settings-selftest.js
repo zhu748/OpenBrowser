@@ -321,6 +321,7 @@ const crypto = require('../../credential-crypto');
     assert.equal(settings.getLocalSettings().uiGroups[0].name, 'Original', 'caller objects and acknowledgements do not alias the settings cache');
 
     // A failed replacement must leave the last good settings readable.
+    const backupBeforePrimaryFault = await fs.readFile(file + '.bak');
     fs.rename = async (...args) => {
       if (args[0] === file + '.tmp') throw new Error('simulated rename failure');
       return originalRename(...args);
@@ -328,6 +329,8 @@ const crypto = require('../../credential-crypto');
     await assert.rejects(settings.saveLocalSettings({ memoryLimit: 83 }), /rename failure/);
     const retained = JSON.parse(crypto.decryptCredential(await fs.readFile(file)));
     assert.equal(retained.memoryLimit, 82, 'failed replacement must preserve the old file');
+    assert.deepEqual(await fs.readFile(file + '.bak'), backupBeforePrimaryFault,
+      'a failed primary replacement does not rotate the previous backup');
     assert.equal((await fs.readdir(root)).includes(path.basename(file + '.tmp')), false,
       'failed replacement must not leave an abandoned settings staging file');
     fs.rename = originalRename;
@@ -344,13 +347,124 @@ const crypto = require('../../credential-crypto');
     try {
       await assert.rejects(settings.saveLocalSettings({ memoryLimit: 84 }), error =>
         error.code === 'EIO' && error.cause === readFailure && !error.message.includes(file));
+      await assert.rejects(settings.commitProfileDataRoot(path.join(root, 'unavailable')), error =>
+        error.code === 'EIO' && error.cause === readFailure && !error.message.includes(file));
       assert.deepEqual(await originalRead(file), beforeReadFailure);
       assert.deepEqual(await originalRead(file + '.bak'), backupBeforeReadFailure);
     } finally { fs.readFile = originalRead; }
     await settings.flushSettingsWriter();
     assert.equal(JSON.parse(crypto.decryptCredential(await fs.readFile(file))).memoryLimit, 84,
       'an ordinary pre-write read error preserves the files and can retry once readable');
-    console.log('LOCAL_SETTINGS_SELFTEST OK (key/backup preservation, quarantine, reload/write races, quit drain, atomic replacement, retry)');
+
+    const backupPath = file + '.bak';
+    const currentRoot = settings.getLocalSettings().profileDataRoot;
+    const requestedRoot = path.join(root, 'another-profile-root');
+    const lastPrimary = await fs.readFile(file);
+    const lastBackup = await fs.readFile(backupPath);
+    for (const [label, invalidContents, write] of [
+      ['ordinary write', '["private test marker"]', () => settings.saveLocalSettings({ diskLimit: 23 })],
+      ['dedicated root', '{ "broken private test marker":', () => settings.commitProfileDataRoot(requestedRoot)],
+    ]) {
+      const invalid = crypto.encryptCredential(invalidContents);
+      await fs.writeFile(file, invalid);
+      let attempted = 0;
+      fs.rename = async (...args) => {
+        if (args[1] === file) {
+          attempted++;
+          throw Object.assign(new Error('injected primary update ENOSPC'), { code: 'ENOSPC' });
+        }
+        return originalRename(...args);
+      };
+      try {
+        const refused = await write().catch(error => error);
+        assert.equal(refused.code, 'LOCAL_SETTINGS_INVALID', label + ' must reject the authenticated malformed source');
+        assert.ok(!refused.message.includes('private test marker') && !refused.message.includes(file));
+        await assert.rejects(settings.flushSettingsWriter(), error => error === refused);
+        assert.equal(attempted, 0, label + ' must reject before primary replacement or retry');
+        assert.deepEqual(await fs.readFile(file), invalid);
+        assert.deepEqual(await fs.readFile(backupPath), lastBackup);
+        assert.equal(settings.getLocalSettings().profileDataRoot, currentRoot);
+      } finally { fs.rename = originalRename; }
+      await fs.writeFile(file, lastPrimary);
+      await settings.loadLocalSettings();
+      await settings.flushSettingsWriter();
+      assert.deepEqual(await fs.readFile(file), lastPrimary, label + ' must not replay a refused edit');
+      assert.deepEqual(await fs.readFile(backupPath), lastBackup);
+    }
+
+    await fs.rename(file, file + '.held');
+    const recovery = await settings.saveLocalSettings({ memoryLimit: 77 }).catch(error => error);
+    assert.equal(recovery.code, 'LOCAL_SETTINGS_RECOVERY_REQUIRED');
+    await assert.rejects(settings.flushSettingsWriter(), error => error === recovery);
+    await assert.rejects(fs.access(file), { code: 'ENOENT' });
+    assert.deepEqual(await fs.readFile(file + '.held'), lastPrimary);
+    assert.deepEqual(await fs.readFile(backupPath), lastBackup);
+    await fs.rename(file + '.held', file);
+    assert.equal((await settings.loadLocalSettings()).memoryLimit, 84);
+
+    // Emulate a filesystem short write without filling or truncating any real
+    // user disk. The guard must use an exclusive stage, not write to .bak.
+    const originalOpen = fs.open;
+    const originalWrite = fs.writeFile;
+    let shortWrites = 0;
+    const short = async (write, data, ...args) => {
+      shortWrites++;
+      await write(data.subarray(0, 12), ...args);
+      throw Object.assign(new Error('synthetic backup staging failure ' + backupPath), { code: 'ENOSPC' });
+    };
+    fs.open = async (...args) => {
+      const handle = await originalOpen(...args);
+      if (args[0].startsWith(backupPath + '.tmp-')) {
+        assert.equal(args[1], 'wx');
+        assert.equal(args[2], 0o600);
+        const write = handle.writeFile.bind(handle);
+        handle.writeFile = (data, ...extra) => short(write, data, ...extra);
+      }
+      return handle;
+    };
+    fs.writeFile = (name, data, ...args) => name === backupPath
+      ? short((piece, ...extra) => originalWrite(name, piece, ...extra), data, ...args)
+      : originalWrite(name, data, ...args);
+    const backupWarnings = [];
+    console.warn = (...args) => backupWarnings.push(args.join(' '));
+    try {
+      const saved = await settings.saveLocalSettings({ diskLimit: 18 });
+      assert.equal(saved.diskLimit, 18, 'backup advisory cannot invalidate a committed primary');
+      assert.equal(JSON.parse(crypto.decryptCredential(await fs.readFile(file))).diskLimit, 18);
+      assert.equal(shortWrites, 1);
+      assert.deepEqual(await fs.readFile(backupPath), lastBackup, 'a partial backup stage cannot touch the previous backup');
+      assert.equal(backupWarnings.length, 1);
+      assert.match(backupWarnings[0], /settings were saved/);
+      assert.ok(!backupWarnings[0].includes(backupPath) && !backupWarnings[0].includes('synthetic backup staging failure'));
+    } finally { fs.open = originalOpen; fs.writeFile = originalWrite; console.warn = originalWarn; }
+    assert.equal((await fs.readdir(root)).some(name => name.startsWith(path.basename(backupPath) + '.tmp-')), false);
+
+    let backupRenames = 0;
+    fs.rename = async (...args) => {
+      if (args[1] === backupPath) {
+        backupRenames++;
+        throw Object.assign(new Error('synthetic backup rename failure'), { code: 'EPERM' });
+      }
+      return originalRename(...args);
+    };
+    const published = [];
+    try {
+      assert.equal(await settings.commitProfileDataRoot(requestedRoot, { publish: () => published.push(requestedRoot) }), requestedRoot);
+      assert.equal(backupRenames, 1);
+      assert.deepEqual(published, [requestedRoot], 'backup refresh failure does not roll back a committed root');
+      assert.equal((await settings.loadLocalSettings()).profileDataRoot, requestedRoot);
+      assert.deepEqual(await fs.readFile(backupPath), lastBackup);
+    } finally { fs.rename = originalRename; }
+    assert.equal((await fs.readdir(root)).some(name => name.startsWith(path.basename(backupPath) + '.tmp-')), false);
+    const previous = await fs.readFile(file);
+    await settings.saveLocalSettings({ memoryLimit: 85 });
+    assert.deepEqual(await fs.readFile(backupPath), previous, 'a later successful save rotates the prior authenticated object');
+    const emptyObject = crypto.encryptCredential('{}');
+    await fs.writeFile(file, emptyObject);
+    await settings.loadLocalSettings();
+    await settings.saveLocalSettings({ memoryLimit: 86 });
+    assert.deepEqual(await fs.readFile(backupPath), emptyObject, 'an encrypted empty object remains recoverable');
+    console.log('LOCAL_SETTINGS_SELFTEST OK (key/last-good backup preservation, quarantine, reload/write races, quit drain, atomic replacement, retry)');
   } finally {
     fs.rename = originalRename;
     if (originalKey === undefined) delete process.env.OPENBROWSER_MASTER_KEY;

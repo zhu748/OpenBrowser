@@ -300,7 +300,7 @@ async function checkExistingDatabaseAuthority(zeroBytes) {
   }
 }
 
-async function checkBundledProfileRecovery(sqlite, source) {
+async function checkBundledProfileRecovery(sqlite, source, { duplicate = false } = {}) {
   const { BrowserEngine } = require('../../engine');
   const { ProfileStoreSqlite } = require('../profile-store-sqlite');
   const { collectStorageDiagnostics } = require('../storage-diagnostics');
@@ -310,13 +310,20 @@ async function checkBundledProfileRecovery(sqlite, source) {
   let engine = make();
   const backup = engine.stateFile + '.bak';
   const supported = ProfileStoreSqlite.isSupported;
+  const openDatabase = ProfileStoreSqlite.prototype._openDatabase;
+  let dbOpens = 0;
   const state = profiles => JSON.stringify({ kernelPolicyVersion: KERNEL_POLICY_VERSION, profiles });
   const complete = { id: 'complete', name: 'Complete' };
   const incomplete = { id: 'incomplete', note: 'Original legacy metadata' };
-  const valid = state([complete, { id: 'second', name: 'Second' }]);
-  const invalid = state([complete, incomplete]);
+  const second = { id: 'second', name: 'Second' };
+  const valid = state([complete, second]);
+  const invalid = state([complete, duplicate ? { ...second, id: complete.id } : incomplete]);
   try {
     if (!sqlite) ProfileStoreSqlite.isSupported = () => false;
+    ProfileStoreSqlite.prototype._openDatabase = function () {
+      dbOpens++;
+      return openDatabase.call(this);
+    };
     await fsp.mkdir(bundled);
     await fsp.writeFile(path.join(bundled, 'manifest.json'), JSON.stringify({
       manifest_version: 3, name: 'Local recovery fixture', version: '1.0',
@@ -336,6 +343,7 @@ async function checkBundledProfileRecovery(sqlite, source) {
       catch (error) { failure = error; }
       if (source === 'valid') {
         assert.ifError(failure);
+        assert.strictEqual(engine.usingSqlite, sqlite);
         assert.deepStrictEqual([...engine.profiles.keys()], ['complete', 'second']);
         assert.ok(writes > 0, 'an ordinary bundled manifest still persists');
         if (!sqlite && !attempt) assert.strictEqual(writes, 2, 'the actual JSON recovery ran both persistence calls');
@@ -345,7 +353,9 @@ async function checkBundledProfileRecovery(sqlite, source) {
       }
       assert.ok((await fsp.readFile(backup)).equals(Buffer.from(backupBytes)), 'bundled startup must not overwrite the sole legacy backup');
       assert.strictEqual(failure?.code, 'ENGINE_STATE_UNAVAILABLE');
+      if (duplicate) assert.match(failure.message, /Duplicate profile ID at row 2/);
       assert.strictEqual(writes, 0);
+      assert.strictEqual(dbOpens, 0, 'invalid selected data must be rejected before attempting a migration');
       assert.strictEqual(engine.profiles.size, 0);
       assert.strictEqual(engine.extensions.size, 0);
       assert.strictEqual(collectStorageDiagnostics({ engine }).warnings.some(w => w.code === 'ENGINE_RECOVERED'), false);
@@ -355,6 +365,7 @@ async function checkBundledProfileRecovery(sqlite, source) {
     }
   } finally {
     ProfileStoreSqlite.isSupported = supported;
+    ProfileStoreSqlite.prototype._openDatabase = openDatabase;
     engine.sqliteStore?.close();
     await fsp.rm(root, { recursive: true, force: true });
   }
@@ -373,6 +384,9 @@ async function checkBundledProfileRecovery(sqlite, source) {
     }
     for (const source of ['backup', 'primary', 'backup-after-corruption', 'valid']) {
       await check(`${mode} bundled profile recovery: ${source}`, () => checkBundledProfileRecovery(sqlite, source));
+    }
+    for (const source of ['backup', 'primary', 'backup-after-corruption']) {
+      await check(`${mode} bundled profile recovery refuses duplicate IDs: ${source}`, () => checkBundledProfileRecovery(sqlite, source, { duplicate: true }));
     }
   }
   await check('JSON preserves a good backup if the primary archive fails', () => checkRecoverySource(false, 'archive-eio'));

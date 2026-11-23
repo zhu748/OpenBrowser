@@ -3678,12 +3678,17 @@ $('#create-profile').addEventListener('click', () => {
 $('#quick-create').addEventListener('click', openCreateProfileDialog);
 
 // group filter chips
+let profileGroupFilterRevision = 0;
+function setProfileGroupFilter(groupId) {
+  profileGroupFilterRevision++;
+  activeGroupFilter = groupId || 'all';
+  selectedProfiles.clear();
+  profilePage = 1;
+}
 document.getElementById('profile-group-chips')?.addEventListener('click', (event) => {
   const btn = event.target.closest('[data-group-filter]');
   if (!btn) return;
-  activeGroupFilter = btn.dataset.groupFilter || 'all';
-  selectedProfiles.clear();
-  profilePage = 1;
+  setProfileGroupFilter(btn.dataset.groupFilter);
   renderProfiles();
 });
 
@@ -3697,7 +3702,7 @@ document.getElementById('group-table')?.addEventListener('click', (event) => {
   if (editId) openGroupDialog(findGroup(editId));
   if (delId) deleteGroup(delId);
   if (viewId) {
-    activeGroupFilter = viewId;
+    if (viewId !== activeGroupFilter) setProfileGroupFilter(viewId);
     switchView('profiles');
     renderProfiles();
   }
@@ -4210,29 +4215,38 @@ $('#batch-add-form').addEventListener('submit', async (event) => {
   } finally { if (submitter) submitter.disabled = false; }
 });
 $('#delete-selected').addEventListener('click', async () => {
+  const revision = profileGroupFilterRevision;
   const selected = ui.profiles.filter((item) => selectedProfiles.has(item.id));
-  pendingDeleteProfiles = selected.map((item) => item.id);
-  if (!pendingDeleteProfiles.length) return toast(tx('请先勾选要删除的环境'));
+  const ids = selected.map((item) => item.id);
+  if (!ids.length) {
+    pendingDeleteProfiles = [];
+    return toast(tx('请先勾选要删除的环境'));
+  }
   const inTrash = activeGroupFilter === 'trash';
-  pendingTrashSelection = inTrash ? captureTrashSelection(selected) : null;
+  const trashSelection = inTrash ? captureTrashSelection(selected) : null;
   try {
-    const status = await window.ops.profileStatus(); const pendingIds = new Set(pendingDeleteProfiles);
+    const status = await window.ops.profileStatus();
+    // Until the dialog opens, navigation can invalidate this pending selection.
+    if (revision !== profileGroupFilterRevision) return;
+    const pendingIds = new Set(ids);
     const running = status.filter((item) => item.running && pendingIds.has(item.id)).length;
     if (inTrash) {
       $('#batch-delete-title').textContent = t('trash.purge');
-      $('#batch-delete-summary').textContent = t('trash.purgeSummary', { count: pendingDeleteProfiles.length });
+      $('#batch-delete-summary').textContent = t('trash.purgeSummary', { count: ids.length });
       $('#batch-delete-warning').textContent = t('trash.purgeWarning');
       $('#batch-delete-data-label').hidden = true;
       $('#batch-delete-confirm').textContent = t('trash.purge');
     } else {
       $('#batch-delete-title').textContent = t('profiles.batchDeleteTitle');
-      $('#batch-delete-summary').textContent = tx('已选择 ') + pendingDeleteProfiles.length + ' 个环境，其中 ' + running + ' 个正在运行。';
+      $('#batch-delete-summary').textContent = tx('已选择 ') + ids.length + ' 个环境，其中 ' + running + ' 个正在运行。';
       $('#batch-delete-warning').textContent = t('trash.trashWarning');
       $('#batch-delete-data-label').hidden = false;
       $('#batch-delete-confirm').textContent = t('profiles.batchDelete');
     }
+    pendingDeleteProfiles = ids;
+    pendingTrashSelection = trashSelection;
     $('#batch-delete-dialog').showModal();
-  } catch (error) { toast(error.message); }
+  } catch (error) { if (revision === profileGroupFilterRevision) toast(error.message); }
 });
 
 $('#batch-delete-form').addEventListener('submit', async (event) => {

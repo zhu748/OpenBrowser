@@ -188,7 +188,7 @@ test('legacy startup retains trash at every age; only confirmed permanent deleti
   }], 'the explicit action retains only its original ID, deletion time and revision');
   assert.strictEqual(read('ui.profiles.length'), original.length, 'a stale acknowledgement must not remove any rows');
 
-  read("let activeGroupFilter = 'trash', pendingDeleteProfiles = [], pendingTrashSelection = null, engineProfiles;");
+  read("let activeGroupFilter = 'trash', profileGroupFilterRevision = 0, pendingDeleteProfiles = [], pendingTrashSelection = null, engineProfiles;");
   read(section("$('#delete-selected').addEventListener(", "\n$('#restore-selected')"));
   mock.selectedProfiles.add('boundary').add('newer');
   await handlers.get('#delete-selected:click')();
@@ -205,4 +205,162 @@ test('legacy startup retains trash at every age; only confirmed permanent deleti
     trashedAtById: { boundary: original[1].trashedAt, newer: original[2].trashedAt },
     revisions: { boundary: original[1].rev, newer: original[2].rev },
   }, 'confirmed batch sends only selected IDs with the snapshots captured before confirmation');
+});
+
+test('using a different legacy group clears hidden selection before batch confirmation', async () => {
+  const filename = path.join(__dirname, '../../renderer.js');
+  const renderer = fs.readFileSync(filename, 'utf8');
+  const section = (start, end) => {
+    const first = renderer.indexOf(start), last = renderer.indexOf(end, first + 1);
+    assert.ok(first !== -1 && last > first, 'renderer section must be present: ' + start);
+    return renderer.slice(first, last);
+  };
+  const events = new vm.Script([
+    section("$('#select-all-profiles').addEventListener(", "\n$('#select-all-sessions')"),
+    section("$('#profile-next').addEventListener(", "\n$('#profile-page')"),
+    section('// group filter chips', "\ndocument.getElementById('group-color-chips')"),
+    section("$('#delete-selected').addEventListener(", "\n$('#restore-selected')"),
+  ].join('\n'), { filename });
+  const rows = [
+    { id: 'a1', groupId: 'A' }, { id: 'a2', groupId: 'A' },
+    { id: 'b1', groupId: 'B' }, { id: 'b2', groupId: 'B' },
+  ];
+  function setup(deleteData) {
+    const controls = new Map(), handlers = new Map(), requests = [], navigation = [], dialogs = [], notices = [];
+    let heldStatus;
+    function control(id) {
+      if (!controls.has(id)) controls.set(id, {
+        checked: false, addEventListener: (event, fn) => handlers.set(id + ':' + event, fn),
+        showModal() { dialogs.push('open'); }, close() {},
+      });
+      return controls.get(id);
+    }
+    function inertDelete(mode, ids, ...options) {
+      requests.push([mode, Array.from(ids), ...options]);
+      throw Error('inert fixture: do not perform deletion');
+    }
+    control('#batch-delete-data').checked = deleteData;
+    const mock = vm.createContext({
+      $: control, document: { getElementById: control },
+      activeGroupFilter: 'A', profilePage: 1, ui: { profiles: rows }, selectedProfiles: new Set(),
+      pendingDeleteProfiles: [], pendingTrashSelection: null,
+      switchView(view) { navigation.push([view, mock.activeGroupFilter, mock.profilePage, [...mock.selectedProfiles]]); },
+      renderProfiles() {}, toast: message => notices.push(message), t: key => key, tx: key => key,
+      visibleProfilePageIds: () => paginate(filterProfiles({ profiles: rows, activeGroupFilter: mock.activeGroupFilter }),
+        mock.profilePage, 1).items.map(row => row.id),
+      window: { ops: {
+        profileStatus() {
+          const result = heldStatus ?? Promise.resolve(rows);
+          heldStatus = undefined;
+          return result;
+        },
+        trashProfiles: ids => inertDelete('recycle', ids),
+        purgeProfiles: (ids, flag) => inertDelete('permanent', ids, flag),
+      } },
+    });
+    events.runInContext(mock);
+    const click = (control, event) => handlers.get(control + ':click')(event);
+    return {
+      mock, requests, navigation, dialogs, notices,
+      next: () => click('#profile-next'),
+      selectPage: () => handlers.get('#select-all-profiles:change')({ target: { checked: true } }),
+      useGroup: groupView => click('group-table', { target: { closest: selector => selector === '[data-group-view]'
+        ? { dataset: { groupView } } : null } }),
+      filterGroup: groupFilter => click('profile-group-chips', { target: { closest: selector => selector === '[data-group-filter]'
+        ? { dataset: { groupFilter } } : null } }),
+      deferStatus() {
+        const gate = Promise.withResolvers();
+        heldStatus = gate.promise;
+        return error => error ? gate.reject(error) : gate.resolve(rows);
+      },
+      open: () => click('#delete-selected'),
+      submit: value => handlers.get('#batch-delete-form:submit')({ preventDefault() {}, submitter: { value } }),
+    };
+  }
+
+  const scenarios = [setup(false), setup(true)];
+  for (const view of scenarios) {
+    view.selectPage();
+    view.next();
+    assert.deepStrictEqual([...view.mock.selectedProfiles], ['a1'], 'paging in A retains the deliberate selection');
+    view.useGroup('B');
+    await view.open();
+    await view.submit('confirm');
+  }
+  assert.deepStrictEqual(scenarios.map(view => view.requests), [[], []],
+    'neither recycle nor permanent confirmation in B may send A’s hidden ID');
+  for (const [index, view] of scenarios.entries()) {
+    assert.deepStrictEqual(view.navigation, [['profiles', 'B', 1, []]], 'selection and page reset before the new view renders');
+    assert.deepStrictEqual(view.dialogs, [], 'an empty selection cannot open confirmation');
+    view.selectPage();
+    view.next();
+    view.selectPage();
+    view.useGroup('B');
+    assert.deepStrictEqual(view.navigation.at(-1), ['profiles', 'B', 2, ['b1', 'b2']],
+      'using the same group does not change its page or accumulated selection');
+    await view.open();
+    assert.deepStrictEqual(view.dialogs, ['open']);
+    assert.deepStrictEqual(view.requests, [], 'nothing is sent before confirmation');
+    await view.submit('cancel');
+    assert.deepStrictEqual(view.requests, [], 'cancel does not send selected B rows');
+    await view.open();
+    await view.submit('confirm');
+    assert.deepStrictEqual(view.requests, [index ? ['permanent', ['b1', 'b2'], true] : ['recycle', ['b1', 'b2']]]);
+
+    view.filterGroup('A');
+    assert.deepStrictEqual([view.mock.activeGroupFilter, view.mock.profilePage, [...view.mock.selectedProfiles]], ['A', 1, []],
+      'group filter chips continue to reset page and selection');
+  }
+
+  for (const deleteData of [false, true]) {
+    const delayed = setup(deleteData);
+    delayed.selectPage();
+    const release = delayed.deferStatus();
+    const openingA = delayed.open();
+    assert.deepStrictEqual(delayed.dialogs, [], 'navigation is not blocked before the dialog opens');
+    delayed.useGroup('B');
+    release();
+    await openingA;
+    await delayed.submit('confirm');
+    assert.deepStrictEqual([delayed.dialogs, delayed.requests], [[], []], 'late status cannot open or leave a confirmation for the old group');
+  }
+
+  const roundTrip = setup(false);
+  roundTrip.selectPage();
+  const releaseOld = roundTrip.deferStatus();
+  const oldA = roundTrip.open();
+  roundTrip.useGroup('B');
+  roundTrip.useGroup('A');
+  releaseOld();
+  await oldA;
+  assert.deepStrictEqual(roundTrip.dialogs, [], 'returning to A does not make the old A request current again');
+
+  const current = setup(false);
+  current.selectPage();
+  const releaseStale = current.deferStatus();
+  const staleA = current.open();
+  current.useGroup('B');
+  current.selectPage();
+  await current.open();
+  releaseStale();
+  await staleA;
+  assert.deepStrictEqual(current.dialogs, ['open'], 'the newer B confirmation opens once');
+  await current.submit('confirm');
+  assert.deepStrictEqual(current.requests, [['recycle', ['b1']]], 'the late A result cannot replace the newer confirmation');
+
+  const rejected = setup(false);
+  rejected.selectPage();
+  const rejectOld = rejected.deferStatus();
+  const failedA = rejected.open();
+  rejected.filterGroup('B');
+  rejectOld(Error('stale A status failure'));
+  await failedA;
+  assert.deepStrictEqual(rejected.notices, []);
+  rejected.selectPage();
+  const rejectCurrent = rejected.deferStatus();
+  const failedB = rejected.open();
+  rejectCurrent(Error('current B status failure'));
+  await failedB;
+  assert.deepStrictEqual(rejected.notices, ['current B status failure']);
+  assert.deepStrictEqual([rejected.dialogs, rejected.requests], [[], []]);
 });

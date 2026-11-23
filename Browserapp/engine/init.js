@@ -20,16 +20,24 @@ const snapshotProfileIds = saved => new Set((saved.profiles || []).map(profile =
 
 function prepareLegacyProfiles(engine, state, collect = false) {
   const prepared = collect ? [] : null;
+  const ids = new Set();
+  const source = state.recovered ? 'committed engine backup' : 'primary engine state';
   for (const [index, raw] of (state.saved.profiles || []).entries()) {
+    let profile;
     try {
-      const profile = engine.sanitizeProfile(raw);
-      prepared?.push(profile);
+      profile = engine.sanitizeProfile(raw);
     } catch (_) {
       // Never make a partial legacy snapshot authoritative or disclose raw
       // profile fields in a startup message. Do not try an older snapshot.
-      throw new EngineStateUnavailableError(new Error(`Invalid profile record at row ${index + 1}`),
-        state.recovered ? 'committed engine backup' : 'primary engine state');
+      throw new EngineStateUnavailableError(new Error(`Invalid profile record at row ${index + 1}`), source);
     }
+    // Both stores key profiles by ID. Repeated IDs would silently discard a
+    // row in JSON, including after a failed migration falls back to JSON.
+    if (ids.has(profile.id)) {
+      throw new EngineStateUnavailableError(new Error(`Duplicate profile ID at row ${index + 1}`), source);
+    }
+    ids.add(profile.id);
+    prepared?.push(profile);
   }
   return prepared;
 }
