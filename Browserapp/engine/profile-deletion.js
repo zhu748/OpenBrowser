@@ -125,7 +125,9 @@ async function deleteProfileDirectories(engine, ids, commit) {
   }
 }
 
-async function recoverProfileDeletions(engine, { recoveredState = false, storedIds } = {}) {
+async function recoverProfileDeletions(engine, { recoveredState = false, storedIds, validateOnly = false } = {}) {
+  // Backup migration preflights the same journals before the new database is
+  // authoritative. The actual handling is deferred until startup loads it.
   const root = engine.profileDataRootPath;
   const entries = await fs.readdir(root, { withFileTypes: true }).catch(error => {
     if (error.code === 'ENOENT') return [];
@@ -144,7 +146,7 @@ async function recoverProfileDeletions(engine, { recoveredState = false, storedI
         if (contents.some(file => !file.isFile() || !(file.name === COMMITTED || file.name.startsWith(JOURNAL + '.tmp-')))) {
           throw new Error('Deletion journal is missing');
         }
-        await fs.rm(stage, { recursive: true, force: true });
+        if (!validateOnly) await fs.rm(stage, { recursive: true, force: true });
         continue;
       }
       if (!stat.isFile() || stat.size > 16_384) throw new Error('Invalid deletion journal');
@@ -165,7 +167,7 @@ async function recoverProfileDeletions(engine, { recoveredState = false, storedI
       if (!marker && recoveredState && ids.some(id => !keep(id))) {
         throw new Error('Cannot determine deletion outcome from a recovered state snapshot');
       }
-      await settle(root, stage, ids, keep);
+      if (!validateOnly) await settle(root, stage, ids, keep);
     } catch (error) {
       throw recoveryError(stage, error);
     }

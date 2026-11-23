@@ -1,6 +1,7 @@
 "use strict";
 
 const fsp = require("fs/promises");
+const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 // 引擎状态文件含代理凭据/Cookies，落盘一律走 credential-crypto 加密（读路径兼容明文旧档并自动迁移）
@@ -88,19 +89,39 @@ async function writeJsonAtomically(filePath, value, mode = 0o600) {
 }
 
 class EngineStateUnavailableError extends Error {
-  constructor(cause) {
-    super(`Cannot read the primary engine state; existing files were preserved: ${cause.message}`, { cause });
+  constructor(cause, source = "primary engine state") {
+    super(`Cannot use the ${source}; existing files were preserved: ${cause.message}`, { cause });
     this.code = cause.code || "ENGINE_STATE_UNAVAILABLE";
     if (cause.errno !== undefined) this.errno = cause.errno;
   }
 }
 
-async function readEngineStateCandidate(filePath, { primary = false } = {}) {
+function inspectSQLiteDatabase(filePath) {
+  try {
+    return fs.statSync(filePath);
+  } catch (error) {
+    if (error.code !== "ENOENT") throw new EngineStateUnavailableError(error, "SQLite database");
+  }
+  // Only a matching main database authorizes SQLite to open/replay these
+  // files. A fresh open may overwrite the last surviving recovery evidence.
+  for (const suffix of ["-wal", "-shm"]) {
+    try {
+      fs.lstatSync(filePath + suffix);
+    } catch (error) {
+      if (error.code === "ENOENT") continue;
+      throw new EngineStateUnavailableError(error, "SQLite sidecar");
+    }
+    throw new EngineStateUnavailableError(new Error("SQLite sidecar exists without its database file"), "SQLite storage");
+  }
+  return null;
+}
+
+async function readEngineStateCandidate(filePath, { source } = {}) {
   let raw;
   try {
     raw = await fsp.readFile(filePath);
   } catch (error) {
-    if (primary && error.code !== "ENOENT") throw new EngineStateUnavailableError(error);
+    if (source && error.code !== "ENOENT") throw new EngineStateUnavailableError(error, source);
     throw error;
   }
   let jsonText;
@@ -109,7 +130,7 @@ async function readEngineStateCandidate(filePath, { primary = false } = {}) {
       ? credentialCrypto.decryptCredential(raw)
       : raw.toString("utf8");
   } catch (error) {
-    if (primary) throw new EngineStateUnavailableError(error);
+    if (source) throw new EngineStateUnavailableError(error, source);
     throw error;
   }
   // Only content we could read and decode has evidence of a bad JSON format.
@@ -120,51 +141,70 @@ async function readEngineStateCandidate(filePath, { primary = false } = {}) {
   return { path: filePath, saved };
 }
 
-async function engineStateRecoveryCandidates(filePath) {
-  const directory = path.dirname(filePath);
-  const base = path.basename(filePath);
-  let names = [];
+async function readWorkspaceSnapshot(filePath, source) {
+  const state = await readEngineStateCandidate(filePath, { source });
+  // Older snapshots may omit this collection. An explicit wrong shape is
+  // corrupt, not an empty workspace. Other users of the JSON reader (such as
+  // the restore journal) keep their separate schema.
+  if (Object.hasOwn(state.saved, "profiles") && !Array.isArray(state.saved.profiles)) {
+    throw new Error("引擎状态文件的 profiles 字段必须为数组");
+  }
+  return state;
+}
+
+async function loadEngineStartupState(filePath) {
+  let primaryError;
   try {
-    names = await fsp.readdir(directory);
+    return { ...await readWorkspaceSnapshot(filePath, "primary engine state"), recovered: false };
   } catch (error) {
-    if (error.code !== "ENOENT") throw error;
+    if (error instanceof EngineStateUnavailableError) throw error;
+    primaryError = error;
   }
-  // Only .bak and .tmp-<pid>-<hex> can ever exist: writeRawAtomically builds
-  // temporary files as `${filePath}.tmp-<pid>-<hex>` (renamed away on success),
-  // so a bare `${filePath}.tmp` was listed here but never produced by any code
-  // path — a dead candidate. The .tmp-* sweep below covers every real temp file.
-  const candidates = [
-    `${filePath}.bak`,
-    ...names.filter((name) => name.startsWith(base + ".tmp-")).map((name) => path.join(directory, name)),
-  ];
-  const valid = [];
-  for (const candidate of [...new Set(candidates)]) {
-    try {
-      const state = await readEngineStateCandidate(candidate);
-      const stat = await fsp.stat(candidate);
-      valid.push({ ...state, mtimeMs: stat.mtimeMs });
-    } catch (_) {}
+
+  try {
+    const backup = await readWorkspaceSnapshot(filePath + ".bak", "committed engine backup");
+    return { ...backup, recovered: true, corruptPrimary: primaryError.code !== "ENOENT" };
+  } catch (error) {
+    if (error instanceof EngineStateUnavailableError) throw error;
+    if (error.code !== "ENOENT") throw new EngineStateUnavailableError(error, "committed engine backup");
   }
-  return valid.sort((left, right) => right.mtimeMs - left.mtimeMs);
+  if (primaryError.code !== "ENOENT") throw new EngineStateUnavailableError(primaryError);
+
+  // A staging file has not passed the atomic rename. Never promote it, or
+  // assume this is a fresh workspace when only an interrupted write remains.
+  const base = path.basename(filePath);
+  let names;
+  try {
+    names = await fsp.readdir(path.dirname(filePath));
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw new EngineStateUnavailableError(error, "engine state directory");
+  }
+  if (names.some(name => name.startsWith(base + ".tmp-") || name.startsWith(base + ".bak.tmp-"))) {
+    throw new EngineStateUnavailableError(new Error("Only uncommitted staging files are available"), "committed engine state");
+  }
+  return null;
 }
 
 async function preserveCorruptEngineState(filePath) {
   const target = `${filePath}.corrupt-${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
   try {
     await fsp.rename(filePath, target);
-    return target;
-  } catch (_) {
-    return null;
+  } catch (error) {
+    // Otherwise the subsequent persist could replace the remaining good backup
+    // with the malformed primary before the recovered state has been written.
+    throw new EngineStateUnavailableError(error, "primary engine state archive");
   }
 }
 
 module.exports = {
   KERNEL_POLICY_VERSION,
   EngineStateUnavailableError,
+  inspectSQLiteDatabase,
   writeRawAtomically,
   syncDirectory,
   writeJsonAtomically,
   readEngineStateCandidate,
-  engineStateRecoveryCandidates,
+  loadEngineStartupState,
   preserveCorruptEngineState,
 };

@@ -258,12 +258,15 @@ function useProfileTableRows(e2) {
     (n2.replace({ name: t2.name }),
       i3 && (u2(i3.dirId), e2.openBrowserBefore(i3)));
   }
-  async function _2(e3) {
+  async function _2(e3, current = () => true) {
+    const projectId = t2.params.id;
     let n3 = await api.window.userGetWindowInfoListList({
-      projectIds: t2.params.id,
+      projectIds: projectId,
       ...e3,
       isDelete: 0,
     });
+    // This adapter also publishes profile state, before the table applies rows.
+    if (!current() || projectId !== t2.params.id) return n3;
     if (n3.code === 0) {
       let e4 = n3.data.rows.map((e5) => ({
         ...e5,

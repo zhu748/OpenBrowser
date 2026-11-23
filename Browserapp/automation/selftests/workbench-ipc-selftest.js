@@ -21,8 +21,8 @@ async function rendererFixture(relative, modules, globals = {}, exportName) {
       ? 'const { ' + entry.specifiers.map(({ imported, local }) => `${imported?.name ?? 'default'}: ${local.name}`).join(', ') +
         ' } = modules[' + JSON.stringify(entry.source.value) + '];'
       : entry.type === 'ExportDefaultDeclaration' ? '__workbenchComponent;'
-      : exportName && entry.type === 'ExportNamedDeclaration' && entry.declaration
-        ? code.slice(entry.declaration.start, entry.end) : null;
+      : exportName && entry.type === 'ExportNamedDeclaration'
+        ? entry.declaration ? code.slice(entry.declaration.start, entry.end) : '' : null;
     if (replacement !== null) program = program.slice(0, entry.start) + replacement + program.slice(entry.end);
   }
   if (exportName) program += '\n' + exportName;
@@ -118,6 +118,194 @@ async function tableChecks() {
   reads.at(-1).reject(Error('closed view'));
   await closing;
   assert.deepEqual(errors, ['current failure']);
+}
+
+async function projectTableScopeChecks() {
+  const vue = require('vue');
+  const { LocalService } = require('../../rebuild/local-service');
+  const tableModule = await import('../../rebuild/workbench-table.mjs');
+  const workspace = { currentWorkspace: { id: 'local' } };
+  const useCache = await rendererFixture('frontend/src/workbench/shared/workbench-list-cache.mjs', {
+    './workbench-vue.js': vue, './agent-BmSFI9WH.js': { i: (_name, setup) => setup },
+    './workbench-local-workspace.js': { useWorkspace: () => workspace }, './workbench-table.js': tableModule,
+  }, {}, 'useListCache');
+  const cache = useCache(), route = vue.reactive({ params: { id: 'A' }, query: {} });
+  const entries = [
+    { id: 'a1', name: 'A1', number: 2, groupId: 'A' }, { id: 'a2', name: 'A2', number: 1, groupId: 'A' },
+    { id: 'b1', name: 'B1', number: 4, groupId: 'B' }, { id: 'b2', name: 'B2', number: 3, groupId: 'B' },
+  ];
+  const service = Object.create(LocalService.prototype);
+  Object.assign(service, {
+    queue: Promise.resolve(), data: { groups: [], labels: [] }, load: async () => {},
+    engine: { status: () => entries, profiles: new Map(entries.map(row => [row.id, row])) },
+  });
+  const requests = [], errors = [], controlled = [], publications = [], actions = [];
+  const rowsFilename = path.resolve(__dirname, '../../frontend/src/workbench/profiles/operations/profile-operations.mjs');
+  const rowsSource = await fs.readFile(rowsFilename, 'utf8');
+  const { parse } = require('acorn');
+  const rowsFunction = parse(rowsSource, { sourceType: 'module', ecmaVersion: 'latest' }).body
+    .find(node => node.type === 'FunctionDeclaration' && node.id.name === 'useProfileTableRows');
+  assert.ok(rowsFunction);
+  const profileRows = vm.runInNewContext(rowsSource.slice(rowsFunction.start, rowsFunction.end) + '\nuseProfileTableRows', {
+    ref: vue.ref, watch: vue.watch, useRoute: () => route, useRouter: () => ({}), useWorkspace: () => workspace,
+    useAutoOpen: () => ({}), parseAutoOpen: () => null, filterParams: () => ({}), readFilters: () => ({}),
+    isEmpty: value => !Object.keys(value).length,
+    events: { emit: (_event, rows) => publications.push(rows) }, $t: key => key,
+    api: { window: { userGetWindowInfoListList(params) {
+      const result = service.request('profiles:query', params).then(data => ({ code: 0, data }));
+      return new Promise((resolve, reject) => requests.push({ params, resolve: () => resolve(result), reject }));
+    } } },
+  }, { filename: rowsFilename })({ filtersMenu: vue.ref([]) });
+  let init, notifyProfilesChanged, openedMenu;
+  const useBrowserTable = await rendererFixture('frontend/src/workbench/shared/tables/use-browser-table.mjs', {
+    './workbench-vue.js': { ...vue, onMounted() {}, onBeforeMount: hook => { init = hook; }, onBeforeUnmount() {} },
+    './utils-BIWenCnY.js': { bt: () => cache, mt: () => workspace, o: () => ({}) },
+    './rich-html-link-VdBpR3Cm.js': { y: () => route },
+    './workbench-table.js': tableModule, './workbench-table-actions.js': { permittedActions: value => value },
+    './workbench-table-context.js': { useTableContextMenu: () => [(_event, options) => { openedMenu = options; }] },
+  }, {
+    localStorage: { getItem: () => null }, __localUiError: message => errors.push(message),
+    electronAPI: { on(_name, listener) { notifyProfilesChanged = listener; } },
+  }, 'useBrowserTable');
+  const attrs = vue.reactive({ selection: undefined, 'onUpdate:selection': value => controlled.push(value) });
+  const state = useBrowserTable({
+    cacheKey: 'browser-list', listCacheKey: 'browser-list', listCacheScope: () => ({ projectId: route.params.id }),
+    dataKey: 'id', pageRows: 1, clearSelectionOnRequest: true, selectionMode: 'multiple',
+    tableSort: () => ({ data: { sortField: 'windowSortNum', sortOrder: 1 } }), tableFilters: () => [],
+    operationHandler: (_action, row) => actions.push(row),
+    tableRequest(query, current = () => true) {
+      const result = profileRows.tableRequest(query, current);
+      requests.at(-1).current = current;
+      return result;
+    },
+  }, vue.ref([]), attrs, vue.ref(), vue.ref());
+  const ids = rows => Array.from(rows ?? [], row => row.id);
+  const visible = () => ids(state.rows.value);
+  const cached = projectId => cache.get('browser-list', 'local', { projectId });
+  const move = projectId => { route.params.id = projectId; };
+  function restore() {
+    const saved = state.restoreFromCache();
+    if (saved) profileRows.syncFromCacheEntry(saved);
+    return saved;
+  }
+  async function read(load = state.load) {
+    const before = requests.length;
+    const done = load();
+    await tick();
+    assert.equal(requests.length, before + 1);
+    return { ...requests.at(-1), done };
+  }
+  await init();
+  const a = await read();
+  a.resolve();
+  await a.done;
+  assert.deepEqual(visible(), ['a2']);
+  state.page.first = 1;
+  const aPage = await read();
+  aPage.resolve();
+  await aPage.done;
+  assert.deepEqual(visible(), ['a1']);
+  assert.deepEqual(structuredClone(aPage.params), {
+    page_index: 2, page_size: 1, orderName: 'windowSortNum', orderType: 'asc', projectIds: 'A', isDelete: 0,
+  });
+
+  move('B');
+  const staleB = await read();
+  assert.equal(state.loaded.value, false, 'a cold project cannot show a successful empty state while its read is pending');
+  move('A');
+  const beforeRestore = requests.length;
+  assert.deepEqual(ids(restore().rows), ['a1']);
+  assert.equal(state.loaded.value, true);
+  await tick();
+  assert.equal(requests.length, beforeRestore, 'a valid cached page needs no network read');
+  const beforeLate = publications.length;
+  staleB.resolve();
+  await staleB.done;
+  assert.deepEqual(visible(), ['a1'], 'cached A activation must outrank a late read from B');
+  assert.equal(publications.length, beforeLate, 'obsolete rows must not publish via the profile table adapter');
+  assert.deepEqual(ids(profileRows.dataList.value), ['a1']);
+  assert.deepEqual(ids(cached('A').rows), ['a1'], 'stale B never writes A cache');
+  assert.equal(cached('B'), null, 'discarded view work does not populate a different cache');
+  assert.equal(state.page.first, 1, 'A resumes its cached page');
+  assert.equal(state.loading.value, false);
+
+  move('B');
+  const b = await read();
+  assert.equal(b.params.page_index, 1, 'cold B starts on its first page');
+  b.resolve();
+  await b.done;
+  assert.deepEqual(visible(), ['b2']);
+  assert.deepEqual(ids(publications.at(-1)), ['b2'], 'legitimate new activation can publish results');
+  attrs.selection = state.rows.value;
+  state.contextSelection.value = state.rows.value[0];
+  state.showMenu({ event: {}, operation: [{ name: 'fixture' }] }, state.rows.value[0], 'single');
+  move('A');
+  restore();
+  assert.deepEqual(visible(), ['a1']);
+  assert.equal(state.selectionData.value, undefined, 'cross-project selection is ineffective even before the controller clears its old value');
+  assert.equal(state.contextSelection.value, undefined);
+  assert.equal(controlled.at(-1), undefined);
+  await openedMenu.operationHandler({ name: 'fixture' });
+  await state.batchOperation({ name: 'fixture' });
+  assert.deepEqual(actions, [], 'a delayed scope-B menu or selection action cannot target B rows while A is active');
+  attrs.selection = undefined; // Parent acknowledgement.
+  attrs.selection = state.rows.value; // Deliberate current-project selection.
+  assert.deepEqual(ids(state.selectionData.value), ['a1']);
+
+  const obsoleteA = await read();
+  restore();
+  assert.equal(state.loading.value, false, 'same-key cache reactivation ends the previous load');
+  assert.equal(obsoleteA.current(), false, 'page adapters cannot publish a reactivated request');
+  const currentA = await read();
+  obsoleteA.reject(Error('old A request'));
+  await obsoleteA.done;
+  assert.equal(state.loading.value, true, 'obsolete failure cannot clear a newer load');
+  assert.deepEqual(errors, []);
+  currentA.resolve();
+  await currentA.done;
+  assert.deepEqual(visible(), ['a1']);
+
+  const oldestA = await read();
+  move('B');
+  const middleB = await read();
+  move('A');
+  const newestA = await read();
+  newestA.resolve();
+  await newestA.done;
+  const savedPublicationCount = publications.length;
+  middleB.resolve();
+  oldestA.resolve();
+  await Promise.all([middleB.done, oldestA.done]);
+  assert.equal(publications.length, savedPublicationCount, 'a round trip does not reactivate an older request for the same key');
+  assert.deepEqual(visible(), ['a2']);
+  assert.deepEqual(ids(cached('B').rows), ['b2']);
+
+  move('B');
+  const failedB = await read();
+  move('A');
+  restore();
+  failedB.reject(Error('late B request'));
+  await failedB.done;
+  assert.deepEqual(errors, []);
+  assert.equal(state.loading.value, false);
+
+  attrs.selection = undefined;
+  attrs.selection = state.rows.value;
+  const retainedA = await read(() => { notifyProfilesChanged(); });
+  retainedA.resolve();
+  await tick();
+  assert.deepEqual(ids(controlled.at(-1)), ['a2'], 'a valid background refresh preserves active-scope selection');
+  assert.deepEqual(retainedA.params.orderName, 'windowSortNum');
+
+  const backgroundA = await read(() => { notifyProfilesChanged(); });
+  move('B');
+  const backgroundB = await read(() => { notifyProfilesChanged(); });
+  backgroundB.resolve();
+  await tick();
+  backgroundA.resolve();
+  await tick();
+  assert.deepEqual(visible(), ['b2'], 'an old stalled background request does not block the active scope refresh');
+  assert.deepEqual(ids(cached('B').rows), ['b2']);
 }
 
 async function profileTableErrorChecks() {
@@ -798,6 +986,7 @@ async function profileBatchChecks() {
 
 async function main() {
   await tableChecks();
+  await projectTableScopeChecks();
   await profileTableErrorChecks();
   await compactTableChecks();
   await savedViewDateChecks();

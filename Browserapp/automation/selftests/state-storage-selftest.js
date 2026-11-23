@@ -149,6 +149,157 @@ async function checkStartupRecovery(sqlite, corrupt) {
   }
 }
 
+async function checkRecoverySource(sqlite, fixture) {
+  const { BrowserEngine } = require('../../engine');
+  const { ProfileStoreSqlite } = require('../profile-store-sqlite');
+  const { collectStorageDiagnostics } = require('../storage-diagnostics');
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'state-source-'));
+  const make = () => new BrowserEngine({ getPath: () => root });
+  let engine = make();
+  const primary = engine.stateFile, backup = primary + '.bak';
+  const staged = (fixture === 'backup-staging-only' ? backup : primary) + '.tmp-123-1234567890abcdef';
+  const isSupported = ProfileStoreSqlite.isSupported, read = fsp.readFile, rename = fsp.rename;
+  const snapshot = id => JSON.stringify({ kernelPolicyVersion: KERNEL_POLICY_VERSION, profiles: [{ id, name: id }] });
+  const committed = snapshot('committed'), pending = snapshot('not-committed');
+  try {
+    if (!sqlite) ProfileStoreSqlite.isSupported = () => false;
+    const stagingOnly = fixture.endsWith('staging-only');
+    if (!stagingOnly) await fsp.writeFile(backup, fixture === 'invalid-backup' ? '{invalid' : committed);
+    if (stagingOnly || fixture === 'invalid-shape') {
+      await fsp.writeFile(staged, pending);
+      await fsp.utimes(staged, new Date(2_000_000), new Date(2_000_000));
+    }
+    if (fixture === 'invalid-shape') {
+      await fsp.writeFile(primary, JSON.stringify({ kernelPolicyVersion: KERNEL_POLICY_VERSION, profiles: {} }));
+      await fsp.utimes(backup, new Date(1_000_000), new Date(1_000_000));
+    }
+    if (fixture === 'archive-eio') await fsp.writeFile(primary, '{invalid');
+    if (fixture === 'explicit-empty' || fixture === 'legacy-omission') {
+      await fsp.writeFile(primary, JSON.stringify({
+        kernelPolicyVersion: KERNEL_POLICY_VERSION, ...(fixture === 'explicit-empty' ? { profiles: [] } : {}),
+      }));
+    }
+    const filesBefore = await Promise.all((await fsp.readdir(root)).sort().map(async name => [name, await read(path.join(root, name))]));
+    if (fixture === 'backup-eio') {
+      fsp.readFile = async (...args) => {
+        if (args[0] === backup) throw Object.assign(Error('injected backup read failure'), { code: 'EIO' });
+        return read(...args);
+      };
+    }
+    if (fixture === 'archive-eio') {
+      fsp.rename = async (...args) => {
+        if (args[0] === primary) throw Object.assign(Error('injected primary archive failure'), { code: 'EIO' });
+        return rename(...args);
+      };
+    }
+    const retry = fixture.endsWith('-eio');
+    if (stagingOnly || retry || fixture === 'invalid-backup') {
+      try {
+        await assert.rejects(engine.init(null), { code: retry ? 'EIO' : 'ENGINE_STATE_UNAVAILABLE' });
+      } finally { fsp.readFile = read; fsp.rename = rename; }
+      assert.strictEqual(fs.existsSync(engine.dbFile), false, 'uncertain state must not create an empty database');
+      assert.deepStrictEqual((await fsp.readdir(root)).sort(), filesBefore.map(([name]) => name));
+      for (const [name, bytes] of filesBefore) assert.deepStrictEqual(await read(path.join(root, name)), bytes);
+      if (!retry) return;
+      engine = make();
+    }
+
+    await engine.init(null);
+    const expected = ['explicit-empty', 'legacy-omission'].includes(fixture) ? [] : ['committed'];
+    assert.deepStrictEqual([...engine.profiles.keys()], expected, 'the committed snapshot is authoritative over staging');
+    assert.strictEqual(collectStorageDiagnostics({ engine }).warnings.some(row => row.code === 'ENGINE_RECOVERED'), Boolean(expected.length));
+    if (sqlite && expected.length) assert.strictEqual(engine.sqliteStore.getMeta('migrated_from'), backup);
+    assert.strictEqual(await read(backup, 'utf8'), committed);
+    if (fixture === 'invalid-shape') assert.strictEqual(await read(staged, 'utf8'), pending, 'staging is not consumed');
+    engine.sqliteStore?.close();
+    engine = make();
+    await engine.init(null);
+    assert.deepStrictEqual([...engine.profiles.keys()], expected);
+    assert.strictEqual(await read(backup, 'utf8'), committed);
+  } finally {
+    fsp.readFile = read;
+    fsp.rename = rename;
+    ProfileStoreSqlite.isSupported = isSupported;
+    engine.sqliteStore?.close();
+    await fsp.rm(root, { recursive: true, force: true });
+  }
+}
+
+async function checkRecoveredDeletionPreflight() {
+  const { BrowserEngine } = require('../../engine');
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'state-recovered-deletion-'));
+  const make = () => new BrowserEngine({ getPath: () => root });
+  let engine = make();
+  const backup = engine.stateFile + '.bak';
+  const snapshot = JSON.stringify({ kernelPolicyVersion: KERNEL_POLICY_VERSION, profiles: [{ id: 'kept', name: 'Kept' }] });
+  const stage = path.join(engine.profileDataRootPath, '.openbrowser-delete-fixture');
+  const journalPath = path.join(stage, 'journal.json');
+  const content = path.join(stage, 'absent-from-backup', 'fixture.txt');
+  const journal = JSON.stringify({ version: 1, ids: ['absent-from-backup'] });
+  try {
+    await fsp.writeFile(backup, snapshot);
+    await fsp.mkdir(path.dirname(content), { recursive: true });
+    await fsp.writeFile(journalPath, journal);
+    await fsp.writeFile(content, 'staged user data');
+    for (let attempt = 0; attempt < 2; attempt++) {
+      engine = make();
+      await assert.rejects(engine.init(null), { code: 'PROFILE_DELETE_RECOVERY_REQUIRED' });
+      assert.strictEqual(fs.existsSync(engine.dbFile), false);
+      assert.strictEqual(fs.existsSync(engine.stateFile), false);
+      assert.strictEqual(await fsp.readFile(backup, 'utf8'), snapshot);
+      assert.strictEqual(await fsp.readFile(journalPath, 'utf8'), journal);
+      assert.strictEqual(await fsp.readFile(content, 'utf8'), 'staged user data');
+    }
+
+    // A completed deletion with a durable marker has no such ambiguity.
+    await fsp.writeFile(path.join(stage, '.committed'), '1');
+    engine = make();
+    await engine.init(null);
+    assert.deepStrictEqual([...engine.profiles.keys()], ['kept']);
+    assert.strictEqual(Boolean(engine.storageRecovery), true);
+    assert.strictEqual(fs.existsSync(stage), false);
+    engine.sqliteStore.close();
+    engine = make();
+    await engine.init(null);
+    assert.deepStrictEqual([...engine.profiles.keys()], ['kept']);
+    assert.strictEqual(Boolean(engine.storageRecovery), false, 'a later boot uses the new authority, not a stale recovery flag');
+  } finally {
+    engine.sqliteStore?.close();
+    await fsp.rm(root, { recursive: true, force: true });
+  }
+}
+
+async function checkExistingDatabaseAuthority(zeroBytes) {
+  const { BrowserEngine } = require('../../engine');
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'state-existing-db-'));
+  const make = () => new BrowserEngine({ getPath: () => root });
+  let engine = make();
+  try {
+    if (zeroBytes) await fsp.writeFile(engine.dbFile, '');
+    else {
+      await engine.init(null);
+      engine.sqliteStore.close();
+    }
+    const dbBefore = await fsp.readFile(engine.dbFile);
+    const backup = engine.stateFile + '.bak';
+    const bytes = JSON.stringify({ kernelPolicyVersion: KERNEL_POLICY_VERSION, profiles: [{ id: 'deleted', name: 'Deleted' }] });
+    await fsp.writeFile(backup, bytes);
+    engine = make();
+    if (zeroBytes) await assert.rejects(engine.init(null), { code: 'ENGINE_STATE_UNAVAILABLE' });
+    else {
+      await engine.init(null);
+      assert.deepStrictEqual([...engine.profiles.keys()], []);
+      assert.strictEqual(Boolean(engine.storageRecovery), false);
+      engine.sqliteStore.close();
+    }
+    assert.deepStrictEqual(await fsp.readFile(engine.dbFile), dbBefore);
+    assert.strictEqual(await fsp.readFile(backup, 'utf8'), bytes);
+  } finally {
+    engine.sqliteStore?.close();
+    await fsp.rm(root, { recursive: true, force: true });
+  }
+}
+
 (async () => {
   for (const sqlite of [false, true]) {
     const mode = sqlite ? 'SQLite migration' : 'JSON startup';
@@ -157,7 +308,14 @@ async function checkStartupRecovery(sqlite, corrupt) {
     }
     await check(`${mode} still recovers a malformed decoded primary`, () => checkStartupRecovery(sqlite, true));
     await check(`${mode} still accepts a fresh workspace`, () => checkStartupRecovery(sqlite, false));
+    for (const fixture of ['backup-only', 'invalid-shape', 'staging-only', 'backup-staging-only', 'backup-eio', 'invalid-backup', 'explicit-empty', 'legacy-omission']) {
+      await check(`${mode} recovery authority: ${fixture}`, () => checkRecoverySource(sqlite, fixture));
+    }
   }
+  await check('JSON preserves a good backup if the primary archive fails', () => checkRecoverySource(false, 'archive-eio'));
+  await check('an existing empty SQLite database remains authoritative over legacy files', () => checkExistingDatabaseAuthority(false));
+  await check('a zero-byte SQLite file is indeterminate and is not filled from a legacy backup', () => checkExistingDatabaseAuthority(true));
+  await check('ambiguous backup deletion journals refuse two boots before migrating; a durable marker still settles', checkRecoveredDeletionPreflight);
 
   await check('legacy engine-state migration encrypts the recovery backup', async () => {
     const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'state-backup-'));

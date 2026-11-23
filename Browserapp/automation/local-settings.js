@@ -10,6 +10,7 @@
  * selftests can exercise the store directly.
  */
 
+const { randomUUID } = require('node:crypto');
 const fsp = require('fs/promises');
 const path = require('path');
 const cloudSync = require('./cloud-sync');
@@ -72,8 +73,9 @@ function defaultCache() {
 }
 
 let localSettingsCache = null;
-let settingsRevision = 0;
 let settingsLoad = null;
+let settingsLoadFailure = null;
+let settingsLoaded = false;
 let settingsFileQueue = Promise.resolve();
 
 function serializeSettingsFile(operation) {
@@ -91,61 +93,75 @@ function getLocalSettings() {
 async function loadLocalSettings() {
   ensureInitialized();
   if (settingsLoad) return settingsLoad;
-  const pending = readLocalSettings(settingsRevision);
+  const pending = readLocalSettings();
   settingsLoad = pending;
   try { return await pending; }
   finally { if (settingsLoad === pending) settingsLoad = null; }
 }
 
-async function readLocalSettings(revision) {
-  // Disk must include edits already queued before a reload. A later edit is
-  // guarded by the revision check below, including on the error/reset path.
-  await flushSettingsWriter();
-  let readComplete = false;
-  let saved;
-  let needsMigration = false;
+function settingsError(code, message, cause) {
+  return Object.assign(new Error(message, { cause }), { code });
+}
+
+function decryptSettingsEnvelope(raw) {
+  try { return credentialCrypto.decryptCredential(raw); }
+  catch (error) {
+    // A wrong key or unavailable keyring is indistinguishable from damaged
+    // ciphertext here. Do not rename, fall back, or write either copy.
+    throw settingsError('LOCAL_SETTINGS_DECRYPT_FAILED', 'Could not decrypt local settings. Settings were preserved; check the encryption key before retrying.', error);
+  }
+}
+
+async function requireNoBackup() {
   try {
-    const raw = await fsp.readFile(settingsFile);
-    readComplete = true;
-    let jsonStr;
-    if (credentialCrypto.isEncrypted(raw)) {
-      jsonStr = credentialCrypto.decryptCredential(raw);
-    } else {
-      jsonStr = raw.toString('utf8');
-      needsMigration = true;
-    }
-    saved = JSON.parse(jsonStr);
-    if (saved === null) throw new TypeError('Invalid local settings document');
+    // A backup is a recovery candidate, not proof that its older values are
+    // appropriate now. Never replace it or restore it implicitly.
+    await fsp.lstat(settingsFile + '.bak');
   } catch (error) {
-    if (settingsRevision !== revision) return getLocalSettings();
-    // A filesystem read failure does not establish that the file is corrupt.
-    // Surface it without renaming the file or discarding the live settings.
-    if (!readComplete && error.code !== 'ENOENT') throw error;
-    // A torn settings file used to be silently reset to factory defaults and
-    // then overwritten by the next write. Keep the corrupt copy aside so it
-    // can still be recovered by hand; booting on defaults is unchanged.
-    if (readComplete && error.code !== 'ENOENT') {
-      await serializeSettingsFile(async () => {
-        if (settingsRevision !== revision) return;
-        persistedSettingsSnapshot = null;
-        try {
-          const aside = `${settingsFile}.corrupt-${Date.now()}`;
-          await fsp.rename(settingsFile, aside);
-          console.warn(`OpenBrowser: local settings corrupt (${error.message}); original kept at ${aside}`);
-        } catch (_) {}
-      });
+    if (error.code === 'ENOENT') return;
+    throw settingsError(error.code || 'LOCAL_SETTINGS_READ_FAILED', 'Could not inspect the local settings backup. Settings were not changed.', error);
+  }
+  throw settingsError('LOCAL_SETTINGS_RECOVERY_REQUIRED', 'A local settings backup was preserved. Check and restore the appropriate settings before continuing.');
+}
+
+async function readSettingsDocument() {
+  let raw;
+  try {
+    raw = await fsp.readFile(settingsFile);
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      throw settingsError(error.code || 'LOCAL_SETTINGS_READ_FAILED', 'Could not read local settings. Settings were not changed.', error);
     }
-    if (settingsRevision !== revision) return getLocalSettings();
-    persistedSettingsSnapshot = null;
-    localSettingsCache = defaultCache();
-    return localSettingsCache;
+    await requireNoBackup();
+    return {};
   }
 
-  if (settingsRevision !== revision) return getLocalSettings();
+  const encrypted = credentialCrypto.isEncrypted(raw);
+  const json = encrypted ? decryptSettingsEnvelope(raw) : raw.toString('utf8');
+  let saved;
+  try { saved = JSON.parse(json); }
+  catch (_) { /* Only decoded JSON syntax or shape reaches quarantine. */ }
+  if (saved && typeof saved === 'object' && !Array.isArray(saved)) {
+    return { saved, needsMigration: !encrypted };
+  }
+  await serializeSettingsFile(async () => {
+    try { await fsp.rename(settingsFile, `${settingsFile}.corrupt-${Date.now()}-${randomUUID()}`); }
+    catch (error) {
+      throw settingsError(error.code || 'LOCAL_SETTINGS_QUARANTINE_FAILED',
+        'Could not preserve the malformed local settings file. Settings were not changed.', error);
+    }
+    console.warn('OpenBrowser: malformed local settings were preserved for recovery.');
+  });
+  await requireNoBackup();
+  return {};
+}
+
+function normalizedSettings(saved) {
   // A saved directory can become unusable without changing the settings
   // bytes. Report validation errors rather than quarantining the file and
   // silently switching to another data directory.
-  localSettingsCache = {
+  if (!saved) return defaultCache();
+  return {
     profileDataRoot: normalizeProfileDataRoot(saved.profileDataRoot),
     cloud: { ...cloudSync.defaultCloudConfig(), ...(saved.cloud || {}) },
     uiGroups: Array.isArray(saved.uiGroups) ? saved.uiGroups : [],
@@ -154,14 +170,45 @@ async function readLocalSettings(revision) {
     diskLimit: clampDiskLimit(saved.diskLimit),
     defaultPreferences: normalizeDefaultPreferences(saved.defaultPreferences),
   };
-  if (needsMigration) {
+}
+
+async function readLocalSettings() {
+  // Finish writes accepted before this load. New edits wait for validation so
+  // a failed read cannot queue a rewrite from an older or default cache.
+  const blocked = settingsLoadFailure;
+  if (!blocked) await drainSettingsWriter();
+  else {
+    // Refuse acknowledgements admitted during the failed physical write,
+    // before a successful retry can change the cache they would acknowledge.
+    await localSettingsWriter.flushNow().catch(error => {
+      if (error !== blocked) throw error;
+    });
+  }
+  await settingsFileQueue;
+  let saved, needsMigration, normalized;
+  try {
+    ({ saved, needsMigration } = await readSettingsDocument());
+    normalized = normalizedSettings(saved);
+  } catch (error) {
+    settingsLoadFailure = error;
+    throw error;
+  }
+  settingsLoadFailure = null;
+  settingsLoaded = true;
+  localSettingsCache = normalized;
+  persistedSettingsSnapshot = (saved || blocked) && !needsMigration ? structuredClone(normalized) : null;
+  if (blocked && !saved) {
+    // Consume any refused retry marker without auto-writing fresh defaults.
+    await drainSettingsWriter();
     persistedSettingsSnapshot = null;
+  }
+  if (needsMigration) {
     try {
       await localSettingsWriter.request();
     } catch (migrateError) {
       console.warn('OpenBrowser settings encryption migration warning:', migrateError.message);
     }
-  } else persistedSettingsSnapshot = JSON.parse(JSON.stringify(localSettingsCache));
+  }
   return localSettingsCache;
 }
 
@@ -170,14 +217,33 @@ async function readLocalSettings(revision) {
 let persistedSettingsSnapshot = null;
 
 /** Write the settings file from the in-memory cache. */
-async function writeLocalSettingsFile() {
+async function writeLoadedSettingsFile() {
   ensureInitialized();
   return serializeSettingsFile(async () => {
+    if (settingsLoadFailure) throw settingsLoadFailure;
     // Capture exactly the state being written. Edits can replace the live cache
     // while filesystem operations yield; marking that newer cache as persisted
     // would make the next coalesced run skip an edit that never reached disk.
     const snapshot = JSON.parse(JSON.stringify(localSettingsCache));
     await fsp.mkdir(path.dirname(settingsFile), { recursive: true });
+    let existing;
+    try { existing = await fsp.readFile(settingsFile); }
+    catch (error) {
+      if (error.code !== 'ENOENT') {
+        throw settingsError(error.code || 'LOCAL_SETTINGS_READ_FAILED', 'Could not read local settings before saving. Settings were not changed.', error);
+      }
+    }
+    const encrypted = credentialCrypto.isEncrypted(existing);
+    // A write admitted before a reload may drain first. Authenticate the
+    // current envelope under the available key before backing it up or
+    // replacing it. JSON parsing remains the reader's responsibility.
+    if (encrypted) {
+      try { decryptSettingsEnvelope(existing); }
+      catch (error) {
+        settingsLoadFailure = error;
+        throw error;
+      }
+    }
     const temporary = settingsFile + '.tmp';
     const serialized = JSON.stringify({ version: 2, ...snapshot }, null, 2);
     const payload = credentialCrypto.encryptCredential(serialized);
@@ -185,12 +251,10 @@ async function writeLocalSettingsFile() {
     // Preserve backup of existing file before atomic rewrite. Only encrypted
     // content may land in the .bak: a legacy plaintext file must not gain a
     // long-lived plaintext twin. All artifacts stay owner-only (0600).
-    try {
-      const existing = await fsp.readFile(settingsFile);
-      if (credentialCrypto.isEncrypted(existing)) {
-        await fsp.writeFile(settingsFile + '.bak', existing, { mode: 0o600 });
-      }
-    } catch (_) {}
+    if (encrypted) {
+      try { await fsp.writeFile(settingsFile + '.bak', existing, { mode: 0o600 }); }
+      catch (_) {}
+    }
 
     try {
       await fsp.writeFile(temporary, payload, { mode: 0o600 });
@@ -210,16 +274,31 @@ async function writeLocalSettingsFile() {
 // from racing on the same temporary file.
 const localSettingsWriter = createCoalescedWriter({
   keepAlive: true,
-  write: writeLocalSettingsFile,
+  write: writeLoadedSettingsFile,
   // Saving the same settings twice is common (panel switches, repeated toggles)
   // and the disk already holds that state, so skip the write entirely.
-  shouldWrite: () => persistedSettingsSnapshot === null
+  shouldWrite: () => Boolean(settingsLoadFailure) || persistedSettingsSnapshot === null
     || !deepEqual(localSettingsCache, persistedSettingsSnapshot),
-  onError: (error) => console.warn('OpenBrowser settings write failed:', error.message),
+  onError: (error) => {
+    if (error !== settingsLoadFailure) console.warn('OpenBrowser settings write failed:', error.message);
+  },
 });
+
+function pendingSettingsRead() {
+  if (settingsLoad) return settingsLoad;
+  if (settingsLoadFailure) throw settingsLoadFailure;
+  return settingsLoaded ? null : loadLocalSettings();
+}
+
+async function writeLocalSettingsFile() {
+  ensureInitialized();
+  for (let pending; (pending = pendingSettingsRead());) await pending;
+  return writeLoadedSettingsFile();
+}
 
 async function saveLocalSettings(value) {
   ensureInitialized();
+  for (let pending; (pending = pendingSettingsRead());) await pending;
   localSettingsCache = structuredClone({
     profileDataRoot: normalizeProfileDataRoot(value.profileDataRoot || localSettingsCache.profileDataRoot),
     cloud: value.cloud || localSettingsCache.cloud || cloudSync.defaultCloudConfig(),
@@ -229,7 +308,6 @@ async function saveLocalSettings(value) {
     diskLimit: clampDiskLimit(value.diskLimit !== undefined ? value.diskLimit : localSettingsCache.diskLimit),
     defaultPreferences: normalizeDefaultPreferences(value.defaultPreferences, localSettingsCache.defaultPreferences),
   });
-  settingsRevision += 1;
   await localSettingsWriter.request();
   // A newer cache value may still be waiting for its own write. Acknowledge
   // only a snapshot which has passed the disk barrier.
@@ -238,6 +316,12 @@ async function saveLocalSettings(value) {
 
 /** Flush a pending quiet-period write; called from the quit chain. */
 async function flushSettingsWriter() {
+  while (settingsLoad) await settingsLoad;
+  if (settingsLoadFailure) throw settingsLoadFailure;
+  await drainSettingsWriter();
+}
+
+async function drainSettingsWriter() {
   await localSettingsWriter.flushNow();
   await localSettingsWriter.idle();
 }

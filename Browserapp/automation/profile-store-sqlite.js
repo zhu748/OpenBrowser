@@ -5,8 +5,8 @@ const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 const {
   EngineStateUnavailableError,
-  readEngineStateCandidate,
-  engineStateRecoveryCandidates,
+  inspectSQLiteDatabase,
+  loadEngineStartupState,
   writeRawAtomically,
 } = require('../engine/state-storage');
 // profiles.data 含代理凭据/Cookies，落库前整体加密（与 state-storage 同一套 credential-crypto），读路径兼容明文
@@ -85,38 +85,34 @@ class ProfileStoreSqlite {
   }
 
   /**
-   * Check whether migration is needed.
-   * Migration is needed if:
-   * 1. dbPath does not exist (or has 0 bytes), AND
-   * 2. legacyJsonPath exists and is readable.
-   */
-  needsMigration() {
-    if (!this.legacyJsonPath) return false;
-    const dbExists = fs.existsSync(this.dbPath) && fs.statSync(this.dbPath).size > 0;
-    if (dbExists) return false;
-    try {
-      fs.statSync(this.legacyJsonPath);
-      return true;
-    } catch (error) {
-      if (error.code === 'ENOENT') return false;
-      throw new EngineStateUnavailableError(error);
-    }
-  }
-
-  /**
    * Initialize the SQLite store, performing migration from legacy JSON if needed.
    * Returns an object { migrated: boolean, error?: Error }.
    */
-  async init() {
+  async init({ beforeBackupMigration } = {}) {
     if (this.isOpen && this.db) return { migrated: false };
 
     let migrated = false;
     const dbDir = path.dirname(this.dbPath);
     fs.mkdirSync(dbDir, { recursive: true });
 
-    if (this.needsMigration()) {
+    const current = inspectSQLiteDatabase(this.dbPath);
+    if (this.legacyJsonPath && current?.size === 0) {
+      throw new EngineStateUnavailableError(new Error('Existing SQLite file is zero bytes'), 'SQLite database');
+    }
+    // Never import over an existing SQLite database, even an intentionally empty store.
+    const source = !current && this.legacyJsonPath ? await loadEngineStartupState(this.legacyJsonPath) : null;
+    if (source) {
+      if (source.recovered) {
+        try { await beforeBackupMigration?.(source.saved); }
+        catch (error) { throw new EngineStateUnavailableError(error, 'committed engine backup'); }
+      }
+      // Initial parsing and preflight yield. Do not adopt old state over a
+      // database that appeared while checking the recovery source.
+      if (inspectSQLiteDatabase(this.dbPath)) {
+        throw new EngineStateUnavailableError(new Error('SQLite database appeared during the legacy import'), 'SQLite database');
+      }
       try {
-        await this._performMigration();
+        await this._performMigration(source);
         migrated = true;
       } catch (err) {
         // The authoritative source could not be read, before any DB was opened.
@@ -129,6 +125,7 @@ class ProfileStoreSqlite {
     }
 
     if (!this.isOpen) {
+      if (!current) inspectSQLiteDatabase(this.dbPath);
       try {
         this._openDatabase();
         this._createSchema();
@@ -145,7 +142,7 @@ class ProfileStoreSqlite {
       this.close();
       throw new Error('Cannot secure legacy migration backups; existing data was preserved', { cause: error });
     }
-    return { migrated };
+    return source?.recovered ? { migrated, recovered: true } : { migrated };
   }
 
   async _encryptLegacyMigrationBackups() {
@@ -354,31 +351,7 @@ class ProfileStoreSqlite {
     };
   }
 
-  async _performMigration() {
-    let state = null;
-    let readError = null;
-    try {
-      state = await readEngineStateCandidate(this.legacyJsonPath, { primary: true });
-    } catch (err) {
-      if (err instanceof EngineStateUnavailableError) throw err;
-      readError = err;
-    }
-
-    if (!state) {
-      const candidates = await engineStateRecoveryCandidates(this.legacyJsonPath);
-      if (candidates.length) {
-        state = candidates[0];
-      }
-    }
-
-    if (!state) {
-      if (readError && readError.code !== 'ENOENT') {
-        throw new Error(`Failed to read legacy state during migration: ${readError.message}`);
-      }
-      return;
-    }
-
-    const saved = state.saved || {};
+  async _performMigration({ saved, path: sourcePath }) {
     this._openDatabase();
     this._createSchema();
     this._prepareStatements();
@@ -464,7 +437,7 @@ class ProfileStoreSqlite {
         this._statements.setMeta.run('systemBrowserPath', JSON.stringify(saved.systemBrowserPath));
       }
       this._statements.setMeta.run('migrated_at', JSON.stringify(new Date().toISOString()));
-      this._statements.setMeta.run('migrated_from', JSON.stringify(this.legacyJsonPath));
+      this._statements.setMeta.run('migrated_from', JSON.stringify(sourcePath));
 
     });
 

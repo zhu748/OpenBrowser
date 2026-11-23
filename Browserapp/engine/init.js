@@ -8,7 +8,7 @@
  */
 
 const { KERNEL_POLICY_VERSION, EngineStateUnavailableError,
-  engineStateRecoveryCandidates, preserveCorruptEngineState, readEngineStateCandidate } = require('./index');
+  inspectSQLiteDatabase, loadEngineStartupState, preserveCorruptEngineState } = require('./index');
 const fs = require('fs');
 const path = require('path');
 const { ProfileStoreSqlite } = require('../automation/profile-store-sqlite');
@@ -16,6 +16,7 @@ const { recoverProfileDeletions } = require('./profile-deletion');
 
 // Storage is authoritative: UI pagination must never truncate the state that
 // the next save will persist. Both backends already decode the full snapshot.
+const snapshotProfileIds = saved => new Set((saved.profiles || []).map(profile => profile?.id));
 
 module.exports = {
   async init(bundledExtensionPath) {
@@ -23,9 +24,7 @@ module.exports = {
     let migrateKernelPolicy = false;
     let recoveredState = false;
     let storedIds;
-    let existingDatabase = false;
-    try { existingDatabase = fs.statSync(this.dbFile).size > 0; }
-    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    const existingDatabase = Boolean(inspectSQLiteDatabase(this.dbFile));
 
     const storageUnavailable = (cause) => Object.assign(new Error(
       'Existing SQLite storage is unavailable; data was preserved. Repair or restore the database before continuing.',
@@ -38,9 +37,16 @@ module.exports = {
         dbPath: this.dbFile, legacyJsonPath: this.stateFile, wal: true, backupOldJson: true,
       });
       try {
-        const initRes = await sqlite.init();
+        const initRes = await sqlite.init({
+          // Refuse ambiguous deletion journals before backup data can become
+          // the durable database consulted on any subsequent startup.
+          beforeBackupMigration: saved => recoverProfileDeletions(this, {
+            recoveredState: true, storedIds: snapshotProfileIds(saved), validateOnly: true,
+          }),
+        });
         this.sqliteStore = sqlite;
         this.usingSqlite = true;
+        recoveredState = Boolean(initRes.recovered);
         if (initRes.migrated) {
           this.emit({ type: 'storage-migrated', engine: 'sqlite' });
         }
@@ -94,30 +100,15 @@ module.exports = {
         }
       }
     } else {
-      let state = null;
-      let primaryStateError = null;
-      try {
-        state = await readEngineStateCandidate(this.stateFile, { primary: true });
-      } catch (error) {
-        if (error instanceof EngineStateUnavailableError) throw error;
-        primaryStateError = error;
-      }
-      if (!state) {
-        const recovery = await engineStateRecoveryCandidates(this.stateFile);
-        if (recovery.length) {
-          state = recovery[0];
-          recoveredState = true;
-          if (primaryStateError && primaryStateError.code !== 'ENOENT') {
-            await preserveCorruptEngineState(this.stateFile);
-          }
-        }
-      }
-      if (!state && primaryStateError && primaryStateError.code !== 'ENOENT') {
-        throw new Error(`引擎状态文件损坏且没有可用备份: ${primaryStateError.message || primaryStateError}`);
-      }
+      const state = await loadEngineStartupState(this.stateFile);
       if (state) {
         const saved = state.saved;
-        storedIds = new Set(Array.isArray(saved.profiles) ? saved.profiles.map(profile => profile?.id) : []);
+        storedIds = snapshotProfileIds(saved);
+        recoveredState = state.recovered;
+        if (state.corruptPrimary) {
+          await recoverProfileDeletions(this, { recoveredState, storedIds, validateOnly: true });
+          await preserveCorruptEngineState(this.stateFile);
+        }
         for (const extension of saved.extensions || []) {
           if (fs.existsSync(extension.path)) {
             try {
@@ -172,6 +163,6 @@ module.exports = {
       await this.persist();
     }
     this.storageRecovery = recoveredState;
-    if (migrateKernelPolicy || recoveredState) await this.persist();
+    if (migrateKernelPolicy || (recoveredState && !this.usingSqlite)) await this.persist();
   },
 };

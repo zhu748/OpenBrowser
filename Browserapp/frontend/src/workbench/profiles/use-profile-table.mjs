@@ -11,6 +11,7 @@ export function useProfileTable(props, emit) {
   function cacheScope() {
     return props.isProjectProfile ? { projectId: String(g2.params.id ?? "") } : { projectId: "" };
   }
+  let profileActivation = 0;
   function lr(e2) {
     on2(_.BROWSER_LIST, { projectId: String(e2) });
   }
@@ -43,32 +44,45 @@ export function useProfileTable(props, emit) {
     let e2 = {};
     return props.isProjectProfile || (e2.activeTabId = props.currentFilter?.id ?? "rx_1000"), filters.value && (e2.filtersMenu = filters.value), e2;
   }
-  function _r() {
-    if (!restoreCache()) return !1;
-    let e2 = pr();
-    return e2 ? (sr(e2), !0) : !1;
-  }
   async function vr() {
-    filters.value = await Mt(props.currentFilter?.filter_condition || {});
+    const activation = profileActivation;
+    const next = await Mt(props.currentFilter?.filter_condition || {});
+    if (activation !== profileActivation) return false;
+    filters.value = next;
+    return true;
   }
   async function $() {
     if (Vn2.value || hr()) return;
-    if (Vn2.value = !0, await vr(), restoreCache()) {
-      tableRef.value?.restoreFromCache(), _r();
+    const activation = profileActivation;
+    Vn2.value = true;
+    if (!await vr() || activation !== profileActivation) return;
+    const saved = restoreCache() && tableRef.value?.restoreFromCache();
+    if (saved) {
+      sr(saved);
       return;
     }
     let t3 = e(g2.query.customFilterParams, {});
     refresh({ ...t3, ...props.currentFilter?._params ?? {} }, !1);
   }
   async function yr() {
-    props.currentFilter && (Vn2.value ? (await vr(), refresh(props.currentFilter._params ?? {}, !1)) : await $());
+    if (!props.currentFilter) return;
+    if (!Vn2.value) return $();
+    const activation = profileActivation;
+    if (await vr() && activation === profileActivation) refresh(props.currentFilter._params ?? {}, !1);
   }
   let { singleModifyWindow: br2, batchModifyWindow: xr, updateProfileMeta: updateLabels } = Xt({ onlyErrorToast: K2, onRefreshTable: refresh, invalidateListCache: ur }), { onUpgradeCore: Cr } = En({ batchModifyWindow: xr, onlyErrorToast: K2, showToast: G2, getWorkspaceName: () => workspaceName.value });
   ue(() => props.currentFilter?.id, () => {
     yr();
   }), ue(() => g2.params.id, async () => {
-    g2.params.id && (Vn2.value = !1, await y(), await $());
-  });
+    if (!props.isProjectProfile) return;
+    const activation = ++profileActivation;
+    Vn2.value = false;
+    tr.value = [];
+    filtered.value = false;
+    showTemporaryColumn.value = false;
+    await y();
+    if (g2.params.id && activation === profileActivation) await $();
+  }, { flush: "sync" });
   let wr, Tr, Er, Dr, Or = l({ intervalMs: 3e5, checkOnce: async () => !Ee2.value.autoDetectProxy || (await testAllProxies(!0), !1) });
   Oe("refreshProfileList", async (e2) => {
     e2 && v2.replace({ name: g2.name, query: { browser: JSON.stringify({ openBrowser: !0, windowId: e2 }) } }), refreshRow();
@@ -80,6 +94,7 @@ export function useProfileTable(props, emit) {
       t3 && Reflect.set(t3._cache, "extend", Ee2.value.remarkDisplayStatus);
     }), $n(), y(() => $());
   }), x(() => {
+    profileActivation++;
     Or.stop(), wr?.(), Tr?.(), Er?.(), Dr?.();
   });
   async function testAllProxies(e2 = !1) {

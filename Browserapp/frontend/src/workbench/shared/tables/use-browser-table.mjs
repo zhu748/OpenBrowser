@@ -22,7 +22,7 @@ export function useBrowserTable(props, columns, attrs, root, dataTable) {
   const route = useRoute();
   const workspace = useWorkspace();
   const cache = useListCache();
-  const [openContextMenu] = useTableContextMenu();
+  const [openContextMenu, closeContextMenu] = useTableContextMenu();
   const loaded = ref(false);
   const loading = ref(false);
   const loadFailed = ref(false);
@@ -33,12 +33,18 @@ export function useBrowserTable(props, columns, attrs, root, dataTable) {
   const sort = reactive({ sortField: '', sortOrder: 0, onChange: undefined });
   const contextSelection = ref();
   const localSelection = ref();
+  const waitingForSelectionReset = ref(false);
   const visibleColumns = computed(() => columns.value.filter(column => column._visible ?? true));
   const rows = computed(() => Array.isArray(props.dataList) ? props.dataList : results.value);
   const showLoadError = computed(() => isProfileTable(props.cacheKey) && loadFailed.value && !rows.value?.length);
   const selection = computed({
-    get() { return attrs['onUpdate:selection'] ? attrs.selection : localSelection.value; },
+    get() {
+      return attrs['onUpdate:selection']
+        ? waitingForSelectionReset.value ? undefined : attrs.selection
+        : localSelection.value;
+    },
     set(value) {
+      if (value != null) waitingForSelectionReset.value = false;
       const callback = attrs['onUpdate:selection'];
       if (Array.isArray(callback)) callback.forEach(listener => listener(value));
       else if (typeof callback === 'function') callback(value);
@@ -57,14 +63,19 @@ export function useBrowserTable(props, columns, attrs, root, dataTable) {
   });
   const pageLabel = computed(() => $t('总计 {total} 个', { total: page.total }));
   const cellParts = { headercell: columnClasses.headercell, bodycell: columnClasses.bodycell };
-  let initialization, sortRevision = 0;
+  let initialization, sortRevision = 0, activation = 0;
+  watch(() => attrs.selection, value => {
+    if (value == null || Array.isArray(value) && !value.length) waitingForSelectionReset.value = false;
+  }, { flush: 'sync' });
 
   function clearSelection() {
     selection.value = undefined;
     disabledIds.value = [];
   }
   async function excludeDisabledRows() {
+    const scope = activation;
     await nextTick();
+    if (scope !== activation) return;
     disabledIds.value = [...root.value?.querySelectorAll('.p-datatable-selectable-row.row-disabled') ?? []].map(row => {
       const checkbox = row.querySelector('.p-checkbox-checked');
       checkbox?.classList.remove('p-checkbox-checked');
@@ -97,15 +108,17 @@ export function useBrowserTable(props, columns, attrs, root, dataTable) {
   }
   function saveScroll() {
     const key = cacheRef();
-    if (key) cache.setScrollOffset(...key, scroller()?.scrollTop ?? 0);
+    if (key && results.value !== undefined) cache.setScrollOffset(...key, scroller()?.scrollTop ?? 0);
   }
   async function restoreScroll() {
+    const scope = activation;
     const key = cacheRef();
     if (!key) return;
     const top = cache.peekScrollOffset(...key);
     if (!top) return;
     for (let attempt = 0; attempt < 16; attempt++) {
       await nextTick();
+      if (scope !== activation) return;
       const element = scroller();
       if (!element || element.scrollHeight - element.clientHeight < top) continue;
       dataTable.value?.getVirtualScrollerRef?.()?.scrollTo?.({ top });
@@ -124,12 +137,14 @@ export function useBrowserTable(props, columns, attrs, root, dataTable) {
     const key = cacheRef();
     const saved = getCachedEntry();
     if (!key || !saved) return null;
+    invalidateViewReads();
     cache.touch(...key);
     outerParams.value = { ...saved.outerParams };
     page.first = saved.paginator.first;
     page.rows = saved.paginator.rows;
     page.total = saved.total;
     results.value = saved.rows;
+    loaded.value = true;
     loadFailed.value = false;
     return saved;
   }
@@ -163,10 +178,11 @@ export function useBrowserTable(props, columns, attrs, root, dataTable) {
   const loader = createTableLoader({
     wait: () => initialization,
     params: getParams,
-    read: query => props.tableRequest(query),
+    read: (query, current) => props.tableRequest(query, current),
     paginate: () => isProfileTable(props.cacheKey),
     busy: value => { loading.value = value; },
     failed(error) {
+      loaded.value = true;
       loadFailed.value = true;
       globalThis.__localUiError?.(error.message);
     },
@@ -174,6 +190,7 @@ export function useBrowserTable(props, columns, attrs, root, dataTable) {
       if (first !== undefined) page.first = first;
       page.total = total;
       results.value = items;
+      loaded.value = true;
       loadFailed.value = false;
       if (props.listCacheKey) saveResults();
       if (!props.clearSelectionOnRequest) return;
@@ -184,6 +201,32 @@ export function useBrowserTable(props, columns, attrs, root, dataTable) {
       disabledIds.value = [];
     },
   });
+
+  function invalidateViewReads() {
+    activation++;
+    sortRevision++;
+    loader.invalidate();
+  }
+  // A synchronous boundary catches A → B → A, even before either new view
+  // reaches an awaited filter setup or uses a cache-only activation.
+  watch(() => {
+    const key = cacheRef();
+    return key && JSON.stringify([key[0], key[1], cache.buildScopeKey(key[2])]);
+  }, () => {
+    invalidateViewReads();
+    closeContextMenu?.();
+    contextSelection.value = undefined;
+    const selected = attrs.selection;
+    waitingForSelectionReset.value = !!attrs['onUpdate:selection'] && selected != null
+      && (!Array.isArray(selected) || selected.length > 0);
+    clearSelection();
+    outerParams.value = undefined;
+    results.value = undefined;
+    page.first = 0;
+    page.total = 0;
+    loaded.value = false;
+    loadFailed.value = false;
+  }, { flush: 'sync' });
 
   function retry() {
     // A foreground load sets loading synchronously, including before it awaits IPC.
@@ -197,6 +240,7 @@ export function useBrowserTable(props, columns, attrs, root, dataTable) {
   });
 
   onBeforeMount(async () => {
+    const scope = activation;
     initialization = Promise.all([props.tableSort(), props.tableFilters()]).then(([initialSort, initialFilters]) => {
       filters.value = initialFilters;
       sort.sortField = initialSort.data?.sortField ?? '';
@@ -205,11 +249,12 @@ export function useBrowserTable(props, columns, attrs, root, dataTable) {
     });
     try {
       await initialization;
+      if (scope !== activation) return;
       const restored = props.listCacheKey && (!props.listCacheShouldRestore || props.listCacheShouldRestore())
         && restoreFromCache();
       if (!restored && props.immediate) await loader.load();
     } finally {
-      loaded.value = true;
+      if (scope === activation) loaded.value = true;
     }
   });
   onMounted(restoreScroll);
@@ -217,6 +262,7 @@ export function useBrowserTable(props, columns, attrs, root, dataTable) {
   onBeforeUnmount(() => {
     saveScroll();
     loader.dispose();
+    activation++;
     sortRevision += 1;
     if (typeof disposeChanges === 'function') disposeChanges();
   });
@@ -247,10 +293,12 @@ export function useBrowserTable(props, columns, attrs, root, dataTable) {
   }
 
   async function reload(invalidate = false) {
+    const scope = activation;
     if (invalidate && props.listCacheKey) invalidateCache(true);
     await props.beforeRefresh?.();
+    if (scope !== activation) return;
     await loader.load();
-    await props.afterRefresh?.();
+    if (scope === activation) await props.afterRefresh?.();
   }
   async function refresh(params = {}, reset = true) {
     outerParams.value = params;
@@ -266,20 +314,23 @@ export function useBrowserTable(props, columns, attrs, root, dataTable) {
   }
 
   function showMenu({ event, operation }, record, mode, onHide) {
+    const scope = activation;
     openContextMenu(event, {
       operation: typeof props.operationHandler === 'function'
         ? operation.map(({ command, ...item }) => item) : operation,
       operationHandler: async item => {
+        if (scope !== activation) return;
         try {
           await props.operationHandler?.({ ...clone(toRaw(item)), _event: event }, record, mode);
         } catch (error) {
           console.log(error);
         }
       },
-      onHide,
+      onHide: (...args) => { if (scope === activation) onHide?.(...args); },
     });
   }
   async function onContextMenu({ data, originalEvent }) {
+    const scope = activation;
     if (!bindings.value.contextMenu) {
       contextSelection.value = undefined;
       return;
@@ -287,8 +338,9 @@ export function useBrowserTable(props, columns, attrs, root, dataTable) {
     try {
       await props.prepareRowMenu?.(data);
     } catch (error) {
-      console.error('[Table] prepare row menu failed', error);
+      if (scope === activation) console.error('[Table] prepare row menu failed', error);
     }
+    if (scope !== activation) return;
     const operation = operations(data);
     if (!operation.some(item => item.visible !== false)) {
       contextSelection.value = undefined;
@@ -298,9 +350,11 @@ export function useBrowserTable(props, columns, attrs, root, dataTable) {
     showMenu({ event: originalEvent, operation }, data, 'single', () => { contextSelection.value = undefined; });
   }
   async function batchOperation(item) {
+    const scope = activation, selected = selectionData.value;
+    if (!selected?.length) return;
     try {
-      await props.operationHandler?.(item, selectionData.value, 'batch');
-      clearSelection();
+      await props.operationHandler?.(item, selected, 'batch');
+      if (scope === activation) clearSelection();
     } catch (error) {
       console.log(error);
     }

@@ -7,8 +7,10 @@ const { randomBytes } = require('node:crypto');
 const path = require('node:path');
 const os = require('node:os');
 const cp = require('node:child_process');
+const { DatabaseSync } = require('node:sqlite');
 
 const { BrowserEngine } = require('../../engine');
+const { KERNEL_POLICY_VERSION } = require('../../engine/state-storage');
 const { ProfileStoreSqlite } = require('../profile-store-sqlite');
 const { registerProfileIpc } = require('../../main/profile-ipc');
 const { LocalService } = require('../../rebuild/local-service');
@@ -218,6 +220,7 @@ async function main() {
       const store = new ProfileStoreSqlite({ dbPath: ${JSON.stringify(dbPath)}, wal: true });
       (async () => {
         await store.init();
+        store.db.exec('PRAGMA wal_autocheckpoint = 0; PRAGMA wal_checkpoint(TRUNCATE);');
         // Insert 100 committed profiles
         const list = [];
         for (let i = 0; i < 100; i++) {
@@ -246,21 +249,71 @@ async function main() {
     child.kill('SIGKILL');
     await new Promise((resolve) => child.on('exit', resolve));
 
-    // Now reopen the SQLite database in WAL mode from parent process
-    const store = new ProfileStoreSqlite({ dbPath, wal: true });
-    await store.init();
+    const wal = fs.readFileSync(dbPath + '-wal'), shm = fs.readFileSync(dbPath + '-shm');
+    assert.ok(wal.length > 0 && shm.length > 0);
+    const checkpointedFile = path.join(tempDir2, 'checkpoint-only.db');
+    fs.copyFileSync(dbPath, checkpointedFile);
+    const withoutWal = new DatabaseSync(checkpointedFile, { readOnly: true });
+    try { assert.equal(withoutWal.prepare('SELECT COUNT(*) AS count FROM profiles').get().count, 0); }
+    finally { withoutWal.close(); }
 
-    // Verify SQLite WAL recovered all 100 profiles cleanly without corruption
-    const recoveredProfiles = store.getAllProfiles();
-    assert.equal(recoveredProfiles.length, 100, 'All 100 committed profiles must survive kill -9');
+    // A stale JSON backup must never override committed pages in a matching WAL.
+    const backupBytes = JSON.stringify({ kernelPolicyVersion: KERNEL_POLICY_VERSION, profiles: [{ id: 'stale', name: 'Stale' }] });
+    const engine = new BrowserEngine({ getPath: () => tempDir2 });
+    fs.writeFileSync(engine.stateFile + '.bak', backupBytes);
+    try {
+      await engine.init(null);
+      assert.equal(engine.profiles.size, 100, 'All 100 WAL-only profiles must survive kill -9');
+      assert.equal(engine.profiles.has('stale'), false);
+      assert.equal(Boolean(engine.storageRecovery), false);
+      assert.equal(engine.sqliteStore.db.prepare('PRAGMA integrity_check;').get().integrity_check, 'ok');
+      assert.equal(fs.readFileSync(engine.stateFile + '.bak', 'utf8'), backupBytes);
+    } finally { engine.sqliteStore?.close(); }
 
-    // Run SQLite PRAGMA integrity_check
-    const integrityRow = store.db.prepare('PRAGMA integrity_check;').get();
-    assert.equal(integrityRow.integrity_check, 'ok', 'Database integrity check must be ok');
-    store.close();
+    // When the primary is missing, neither sidecar can establish authority.
+    for (const [name, sidecars, hasBackup, sqlite] of [
+      ['both-with-backup', [['-wal', wal], ['-shm', shm]], true, true],
+      ['wal-alone', [['-wal', wal]], false, true],
+      ['shm-alone', [['-shm', shm]], false, true],
+      ['json-fallback', [['-wal', wal], ['-shm', shm]], true, false],
+    ]) {
+      const orphanRoot = path.join(tempDir2, name);
+      fs.mkdirSync(orphanRoot);
+      const make = () => new BrowserEngine({ getPath: () => orphanRoot });
+      const fixture = make();
+      for (const [suffix, bytes] of sidecars) fs.writeFileSync(fixture.dbFile + suffix, bytes);
+      if (hasBackup) fs.writeFileSync(fixture.stateFile + '.bak', backupBytes);
+      const originalFiles = fs.readdirSync(orphanRoot).sort();
+      const isSupported = ProfileStoreSqlite.isSupported;
+      try {
+        if (!sqlite) ProfileStoreSqlite.isSupported = () => false;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const restarted = make();
+          try { await assert.rejects(restarted.init(null), { code: 'ENGINE_STATE_UNAVAILABLE' }); }
+          finally { restarted.sqliteStore?.close(); }
+          assert.deepEqual(fs.readdirSync(orphanRoot).sort(), originalFiles, 'no new database, state, or archive');
+          assert.equal(restarted.profiles.size, 0);
+          for (const [suffix, bytes] of sidecars) assert.ok(fs.readFileSync(fixture.dbFile + suffix).equals(bytes));
+          if (hasBackup) assert.equal(fs.readFileSync(fixture.stateFile + '.bak', 'utf8'), backupBytes);
+        }
+      } finally { ProfileStoreSqlite.isSupported = isSupported; }
+    }
+    const deniedRoot = path.join(tempDir2, 'denied-sidecar');
+    fs.mkdirSync(deniedRoot);
+    const denied = new BrowserEngine({ getPath: () => deniedRoot });
+    const lstat = fs.lstatSync;
+    fs.lstatSync = (target, ...args) => {
+      if (target === denied.dbFile + '-wal') throw Object.assign(Error('sidecar access denied'), { code: 'EACCES', errno: -13 });
+      return lstat(target, ...args);
+    };
+    try {
+      await assert.rejects(denied.init(null), { code: 'EACCES', errno: -13 });
+      assert.deepEqual(fs.readdirSync(deniedRoot), []);
+    } finally { fs.lstatSync = lstat; denied.sqliteStore?.close(); }
 
     console.log('  PASS  Child process killed with SIGKILL (kill -9)');
     console.log('  PASS  WAL auto-recovery preserved 100/100 committed profiles');
+    console.log('  PASS  Orphan SQLite sidecars block fresh startup without changing stored bytes');
     console.log('  PASS  PRAGMA integrity_check = ok');
   } finally {
     fs.rmSync(tempDir2, { recursive: true, force: true });

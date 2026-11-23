@@ -32,7 +32,7 @@ function pageData(response) {
 }
 
 export function createTableLoader({ wait, params, read, apply, busy, failed, paginate }) {
-  let revision = 0, disposed = false, pending, dirty = false;
+  let revision = 0, activation = 0, disposed = false, pending, dirty = false;
   let foregroundPending = false;
   async function load(background = false) {
     if (disposed) return;
@@ -47,13 +47,13 @@ export function createTableLoader({ wait, params, read, apply, busy, failed, pag
       if (!current()) return;
       const query = params();
       let page = query.page_index;
-      let result = pageData(await read(query));
+      let result = pageData(await read(query, current));
       if (!current()) return;
       if (paginate() && result.rows.length === 0 && page > 1) {
         const lastPage = Math.max(1, Math.ceil(result.total / query.page_size));
         if (lastPage < page) {
           page = lastPage;
-          result = pageData(await read({ ...query, page_index: page }));
+          result = pageData(await read({ ...query, page_index: page }, current));
           if (!current()) return;
         }
       }
@@ -73,17 +73,30 @@ export function createTableLoader({ wait, params, read, apply, busy, failed, pag
   }
   function refresh() {
     if (disposed) return;
+    const active = activation;
     dirty = true;
     pending ||= Promise.resolve().then(async () => {
-      while (dirty && !disposed) {
+      while (active === activation && dirty && !disposed) {
         dirty = false;
         await load(true);
       }
     }).finally(() => {
+      if (active !== activation) return;
       pending = null;
       if (dirty && !disposed) return refresh();
     });
     return pending;
   }
-  return { load, refresh, dispose() { disposed = true; } };
+  function invalidate() {
+    if (disposed) return;
+    // Cache-only navigation supersedes reads just as a new request would.
+    // Give a new scope its own background lane, even if the old IPC stalls.
+    revision++;
+    activation++;
+    pending = null;
+    dirty = false;
+    foregroundPending = false;
+    busy(false);
+  }
+  return { load, refresh, invalidate, dispose() { disposed = true; } };
 }
