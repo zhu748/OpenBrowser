@@ -64,7 +64,11 @@ function formatRow(values, rowNum) {
 }
 
 function textRows(bytes) {
-  const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  // Windows editors can export .txt as BOM-marked UTF-16. Do not guess the
+  // encoding of unmarked files or replace malformed characters silently.
+  const encoding = bytes[0] === 0xff && bytes[1] === 0xfe ? 'utf-16le'
+    : bytes[0] === 0xfe && bytes[1] === 0xff ? 'utf-16be' : 'utf-8';
+  const text = new TextDecoder(encoding, { fatal: true }).decode(bytes);
   let values = {}, first = 0;
   const rows = [];
   function finish() {

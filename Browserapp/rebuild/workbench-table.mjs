@@ -33,10 +33,14 @@ function pageData(response) {
 
 export function createTableLoader({ wait, params, read, apply, busy, failed, paginate }) {
   let revision = 0, disposed = false, pending, dirty = false;
+  let foregroundPending = false;
   async function load(background = false) {
     if (disposed) return;
     const ticket = ++revision;
-    if (!background) busy(true);
+    if (!background) {
+      foregroundPending = true;
+      busy(true);
+    }
     const current = () => !disposed && revision === ticket;
     try {
       await wait();
@@ -53,11 +57,18 @@ export function createTableLoader({ wait, params, read, apply, busy, failed, pag
           if (!current()) return;
         }
       }
-      apply(result, { background, first: page !== query.page_index ? (page - 1) * query.page_size : undefined });
+      // A profile-change read can replace a manual read, but must still apply it as a manual refresh.
+      apply(result, {
+        background: !foregroundPending,
+        first: page !== query.page_index ? (page - 1) * query.page_size : undefined,
+      });
     } catch (error) {
       if (current()) failed(error);
     } finally {
-      if (current()) busy(false);
+      if (current()) {
+        foregroundPending = false;
+        busy(false);
+      }
     }
   }
   function refresh() {

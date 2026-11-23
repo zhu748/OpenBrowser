@@ -306,6 +306,22 @@ async function checkProjectNameSearch() {
   assert.deepEqual((await search('Legacy')).rows.map(row => row.id), ['profile-legacy'], 'legacy unindexed names still work');
 }
 
+async function checkTextImportEncoding() {
+  const { parseProfileImport } = require('../../rebuild/profile-import-formats');
+  const parse = bytes => parseProfileImport({ type: 'text/plain', bytes });
+  const text = 'windowName=工作台例子😀\r\nos=Linux\r\nwindowRemark=a=b';
+  const le = Buffer.from(text, 'utf16le');
+  const utf16LE = Buffer.concat([Buffer.from([0xff, 0xfe]), le]);
+  const utf16BE = Buffer.concat([Buffer.from([0xfe, 0xff]), Buffer.from(le).swap16()]);
+  const expected = [{ rowNum: 1, windowName: '工作台例子😀', os: 'Linux', windowRemark: 'a=b' }];
+  assert.deepEqual(await parse(Buffer.from(text, 'utf8')), expected);
+  assert.deepEqual(await parse(Buffer.from('\uFEFF' + text, 'utf8')), expected);
+  assert.deepEqual(await parse(utf16LE), expected, 'preserve UTF-16LE BOM-marked text files');
+  assert.deepEqual(await parse(utf16BE), expected, 'preserve UTF-16BE BOM-marked text files');
+  await assert.rejects(parse(Buffer.from([0xf0, 0x28, 0x8c, 0x28])), { code: 'ERR_ENCODING_INVALID_ENCODED_DATA' });
+  await assert.rejects(parse(Buffer.from([0xff, 0xfe, 0x61])), { code: 'ERR_ENCODING_INVALID_ENCODED_DATA' });
+}
+
 async function main() {
   // Use the real request/dispatch/handlers with controlled I/O and no desktop.
   const service = Object.create(LocalService.prototype);
@@ -387,6 +403,7 @@ async function main() {
   await checkExchangeFileBom();
   await checkProjectSortWrites();
   await checkProjectNameSearch();
+  await checkTextImportEncoding();
 
   // A large existing library must not exceed the JS argument-count limit when
   // creating a profile or reserving a batch of sequential display numbers.

@@ -70,10 +70,31 @@ async function tableChecks() {
   assert.deepEqual(applied[1].options, { background: true, first: 5 });
   assert.equal(reads.length, 5);
 
+  query = { page_index: 1, page_size: 5, queryValue: 'manual filter' };
+  const foreground = table.load();
+  await tick();
+  const changeRefresh = table.refresh();
+  await tick();
+  const [foregroundRead, changeRead] = reads.slice(-2);
+  assert.deepEqual(changeRead.params, query);
+  changeRead.resolve({ total: 1, rows: [{ id: 'manual-filter-match' }] });
+  await changeRefresh;
+  foregroundRead.resolve({ total: 1, rows: [{ id: 'late-foreground' }] });
+  await foreground;
+  assert.equal(applied.at(-1).data.rows[0].id, 'manual-filter-match');
+  assert.equal(applied.at(-1).options.background, false,
+    'a profile-change refresh must not change a pending filter load into selection-preserving background work');
+
+  const background = table.refresh();
+  await tick();
+  reads.at(-1).resolve({ total: 1, rows: [{ id: 'ordinary-background' }] });
+  await background;
+  assert.equal(applied.at(-1).options.background, true, 'unrelated background refreshes still retain selection');
+
   const closing = table.load();
   await tick();
   table.dispose();
-  reads[5].reject(Error('closed view'));
+  reads.at(-1).reject(Error('closed view'));
   await closing;
   assert.deepEqual(errors, ['current failure']);
 }

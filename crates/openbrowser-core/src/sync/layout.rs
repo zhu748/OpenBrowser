@@ -117,7 +117,7 @@ pub struct CascadeLayout;
 
 impl CascadeLayout {
     /// Calculate cascading arrangement for windows with offset step.
-    /// Wraps around to origin when window would exceed screen bounds.
+    /// Clamps the starting origin to the screen and returns to it after crossing an edge.
     #[allow(clippy::too_many_arguments)] // compat: existing public API
     pub fn calculate(
         screen: ScreenBounds,
@@ -136,10 +136,7 @@ impl CascadeLayout {
         let count = window_count.min(10_000);
         let mut rects = Vec::with_capacity(count);
 
-        // i32::try_from(...).unwrap_or(i32::MAX): saturating rather than
-        // wrapping keeps an oversized window from producing a wrapped negative
-        // max bound (which would compare as smaller than any start and disable
-        // the wrap-around reset entirely).
+        // Screen dimensions can exceed the signed coordinate range of WindowRect.
         let max_x = i32::try_from(screen.width.saturating_sub(window_width)).unwrap_or(i32::MAX);
         let max_y = i32::try_from(
             screen
@@ -149,13 +146,13 @@ impl CascadeLayout {
         )
         .unwrap_or(i32::MAX);
 
-        let mut current_x = start_x;
-        let mut current_y = start_y;
+        let origin_x = start_x.clamp(0, max_x);
+        let origin_y = start_y.clamp(0, max_y);
+        let (mut current_x, mut current_y) = (origin_x, origin_y);
 
         for _ in 0..count {
             if !(0..=max_x).contains(&current_x) || !(0..=max_y).contains(&current_y) {
-                current_x = start_x;
-                current_y = start_y;
+                (current_x, current_y) = (origin_x, origin_y);
             }
 
             rects.push(WindowRect {
