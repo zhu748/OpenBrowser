@@ -8,10 +8,13 @@ const path = require('node:path');
 const test = require('node:test');
 
 const app = path.join(__dirname, '..');
-function configuredGateScript() {
+function configuredGateStep() {
   const workflow = fs.readFileSync(path.join(app, '../.github/workflows/ci.yml'), 'utf8');
-  const gateStep = workflow.split('      - name: Real DOM, preload, IPC, SQLite and editor conflict gates\n')[1]
+  return workflow.split('      - name: Real DOM, preload, IPC, SQLite and editor conflict gates\n')[1]
     ?.split('\n      - name:')[0];
+}
+function configuredGateScript() {
+  const gateStep = configuredGateStep();
   const script = gateStep?.match(/^ {10}bash (scripts\/desktop-ci-gates\.sh)$/m)?.[1];
   assert.ok(script, 'the Electron desktop CI step must invoke the tested wrapper');
   return path.join(app, script);
@@ -85,6 +88,9 @@ test('Linux and Windows stop on the first failing command with its exit status',
     assert.equal(result.code, 23, runtime);
     assert.deepEqual(result.calls, upToFailure(runtime), runtime);
     assert.match(result.output, /\[desktop gate\] FAIL Maintenance \(exit 23\)/);
+    assert.deepEqual(result.output.match(/^::(?:error|warning)::Desktop gate failed: .*$/gm), [
+      '::error::Desktop gate failed: Maintenance (exit 23)',
+    ]);
     assert.doesNotMatch(result.output, /START Templates|retrying once/);
   }
 });
@@ -95,8 +101,13 @@ test('macOS retries exactly once and propagates any retry failure', () => {
   assert.equal(blocked.code, 23);
   assert.deepEqual(blocked.calls, [...firstRun, ...firstRun]);
   assert.equal(blocked.output.match(/retrying once/g)?.length, 1);
+  assert.deepEqual(blocked.output.match(/^::(?:error|warning)::Desktop gate failed: .*$/gm), [
+    '::warning::Desktop gate failed: Maintenance (exit 23)',
+    '::error::Desktop gate failed: Maintenance (exit 23)',
+  ]);
   const recovered = run('macOS', 'once');
   assert.equal(recovered.code, 0);
+  assert.doesNotMatch(recovered.output, /^::error::/m);
   assert.deepEqual(recovered.calls, [...firstRun, ...expected('macOS')]);
 });
 
@@ -105,5 +116,19 @@ test('an all-pass workflow keeps the original command order and platform branche
     const result = run(runtime);
     assert.equal(result.code, 0, runtime);
     assert.deepEqual(result.calls, expected(runtime), runtime);
+    assert.doesNotMatch(result.output, /^::(?:error|warning)::/m);
   }
+});
+
+
+test('the Linux workflow annotates a failing wrapper self-test before running gates', () => {
+  const body = configuredGateStep()?.split('          if [[ "$RUNNER_OS"')[1];
+  assert.ok(body);
+  const command = 'if [[ "$RUNNER_OS"' + body.replace(/^ {10}/gm, '');
+  const result = spawnSync('/bin/bash', ['--noprofile', '--norc', '-e', '-o', 'pipefail', '-c',
+    'node() { return 37; }; bash() { echo unexpected-wrapper; };\n' + command],
+  { env: { RUNNER_OS: 'Linux' }, encoding: 'utf8', timeout: 5000 });
+  if (result.error) throw result.error;
+  assert.equal(result.status, 37, result.stderr);
+  assert.equal(result.stdout.trim(), '::error::Desktop gate failed: Wrapper self-test (exit 37)');
 });

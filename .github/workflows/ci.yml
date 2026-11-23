@@ -366,7 +366,13 @@ jobs:
           OPENBROWSER_MASTER_KEY_FILE: ${{ runner.temp }}/openbrowser-desktop.key
         run: |
           if [[ "$RUNNER_OS" == "Linux" ]]; then
-            node scripts/desktop-ci-gates.test.js
+            if node scripts/desktop-ci-gates.test.js; then
+              :
+            else
+              status=$?
+              printf '::error::Desktop gate failed: Wrapper self-test (exit %d)\n' "$status"
+              exit "$status"
+            fi
           fi
           bash scripts/desktop-ci-gates.sh
       - name: Measure default workbench responsiveness

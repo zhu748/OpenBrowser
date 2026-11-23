@@ -10,6 +10,8 @@ gate() {
   else
     status=$?
     printf '[desktop gate] FAIL %s (exit %s)\n' "$label" "$status" >&2
+    # Keep public annotations to the static label and numeric exit status.
+    printf '::%s::Desktop gate failed: %s (exit %d)\n' "$severity" "$label" "$status"
     # gates runs in a subshell. The outer if disables its errexit, so
     # explicitly end this attempt rather than returning to the next test.
     exit "$status"
@@ -17,6 +19,7 @@ gate() {
 }
 
 gates() (
+  severity=$1
   if [[ "$RUNNER_OS" == "Linux" ]]; then
     gate 'Real render benchmark' xvfb-run -a node node_modules/electron/cli.js --no-sandbox scripts/benchmark-real-render.js --sizes 10,100,1000 --skip-kernel --render-budget-ms 50 --json
     gate 'Desktop startup' xvfb-run -a node automation/selftests/app-startup-e2e-selftest.js
@@ -40,11 +43,13 @@ gates() (
   gate 'Agent approval UI' node rebuild/agent-approval-ui-selftest.cjs
 )
 
-if gates; then
+first_failure_severity=error
+if [[ "$RUNNER_OS" == "macOS" ]]; then first_failure_severity=warning; fi
+if gates "$first_failure_severity"; then
   exit 0
 else
   status=$?
 fi
 if [[ "$RUNNER_OS" != "macOS" ]]; then exit "$status"; fi
 echo '::warning::desktop gates failed on macOS; retrying once'
-gates
+gates error
