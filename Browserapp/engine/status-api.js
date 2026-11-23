@@ -2,7 +2,7 @@
 
 const crypto = require('node:crypto');
 
-function buildStatusRow(engine, profile) {
+function buildStatusRow(engine, profile, revisionState = engine, previousStamps = revisionState._statusStamps) {
   const { id } = profile;
   const runtime = engine.publicRunning(id);
   const view = { ...profile, ...runtime, network: engine.networkInfo.get(id) || null,
@@ -17,12 +17,13 @@ function buildStatusRow(engine, profile) {
     }
   }
   const signature = JSON.stringify([view.rev, runtime, view.network, view.assignedExtensions]);
-  let stamp = engine._statusStamps.get(id);
+  const previous = previousStamps?.get(id);
+  let stamp = previous;
   if (!stamp || stamp.signature !== signature) {
-    engine._statusSequence = (engine._statusSequence || 0) + 1;
-    stamp = { signature, token: `${engine._statusInstance}:${engine._statusSequence}` };
-    engine._statusStamps.set(id, stamp);
+    revisionState._statusSequence = (revisionState._statusSequence || 0) + 1;
+    stamp = { signature, token: `${revisionState._statusInstance}:${revisionState._statusSequence}` };
   }
+  if (stamp !== previous || revisionState._statusStamps !== previousStamps) revisionState._statusStamps.set(id, stamp);
   view.statusRev = stamp.token;
   return view;
 }
@@ -88,21 +89,30 @@ module.exports = {
       this._statusCache = snapshot;
       return snapshot;
     }
+    const profiles = this.profiles;
+    const version = profiles.version;
+    const snapshot = [], positions = new Map();
+    const revisions = {
+      _statusStamps: new Map(),
+      _statusSequence: this._statusSequence,
+      _statusInstance: this._statusInstance || crypto.randomBytes(8).toString('hex'),
+    };
+    // Do not make a failed rebuild look current for this profile version.
+    for (const [id, profile] of profiles) {
+      positions.set(id, snapshot.length);
+      snapshot.push(buildStatusRow(this, profile, revisions, this._statusStamps));
+    }
     this._dirtyStatusRows?.clear();
     this._statusChangesSinceCursor = null;
-    for (const id of this.profileLifecycles?.keys() || []) if (!this.profiles.has(id)) this.profileLifecycles.delete(id);
-    this._statusProfiles = this.profiles;
-    this._statusProfileVersion = this.profiles.version;
-    this._statusStamps ||= new Map();
-    this._statusInstance ||= crypto.randomBytes(8).toString('hex');
-    for (const id of this._statusStamps.keys()) if (!this.profiles.has(id)) this._statusStamps.delete(id);
-    this._statusPositions = new Map();
-    this._statusCache = [];
-    for (const [id, profile] of this.profiles) {
-      this._statusPositions.set(id, this._statusCache.length);
-      this._statusCache.push(buildStatusRow(this, profile));
-    }
-    return this._statusCache;
+    for (const id of this.profileLifecycles?.keys() || []) if (!profiles.has(id)) this.profileLifecycles.delete(id);
+    this._statusProfiles = profiles;
+    this._statusProfileVersion = version;
+    this._statusStamps = revisions._statusStamps;
+    this._statusSequence = revisions._statusSequence;
+    this._statusInstance = revisions._statusInstance;
+    this._statusPositions = positions;
+    this._statusCache = snapshot;
+    return snapshot;
   },
 
   invalidateStatusCache(id) {

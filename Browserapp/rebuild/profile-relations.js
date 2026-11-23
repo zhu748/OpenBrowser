@@ -24,7 +24,7 @@ async function restoreProfileRelations(engine, journal) {
       changes.push({ ...current.profile, ...before, rev: current.rev });
     else conflicts.push(profileId);
   }
-  if (changes.length) await engine.syncProfiles(changes, { checkRevisions: true, delta: true });
+  if (changes.length) await engine.commitProfiles(changes, { checkRevisions: true });
   return conflicts;
 }
 
@@ -44,9 +44,9 @@ async function profileRelations(service, changes, updateMetadata) {
   await service.save();
   let applied = false;
   try {
-    await service.engine.syncProfiles(changes.map(({ original, patch, baseRev }) => ({
+    await service.engine.commitProfiles(changes.map(({ original, patch, baseRev }) => ({
       ...original, ...patch, rev: baseRev,
-    })), { checkRevisions: true, delta: true });
+    })), { checkRevisions: true });
     applied = true;
     updateMetadata();
     delete service.data.pendingProfileRelations;

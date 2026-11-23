@@ -130,7 +130,7 @@ async function checkBatchAssociations() {
   service.engine = {
     profiles,
     profileForEdit: id => ({ profile: profiles.get(id), rev: 4 }),
-    async syncProfiles(rows, options) {
+    async commitProfiles(rows, options) {
       writes.push({ ids: rows.map(row => row.id), options });
       for (const row of rows) profiles.set(row.id, row);
     },
@@ -148,7 +148,7 @@ async function checkBatchAssociations() {
   assert.equal(profiles.get('first').group_name, '');
   assert.equal(profiles.get('second'), second);
   assert.deepEqual(writes, Array.from({ length: 2 }, () => ({
-    ids: ['first'], options: { checkRevisions: true, delta: true },
+    ids: ['first'], options: { checkRevisions: true },
   })));
   assert.equal(linearLookupWidth, 0, 'bulk relationship updates must not rescan the entire ID array per row');
 }
@@ -307,6 +307,143 @@ async function checkExchangeProjectAliases() {
   } finally {
     sourceEngine.sqliteStore?.close();
     destinationEngine.sqliteStore?.close();
+    if (previousKey === undefined) delete process.env.OPENBROWSER_MASTER_KEY;
+    else process.env.OPENBROWSER_MASTER_KEY = previousKey;
+    await fs.rm(temp, { recursive: true, force: true });
+  }
+}
+
+async function checkProfileCommitReceipts() {
+  const { BrowserEngine } = require('../../engine');
+  const { ProfileStoreSqlite } = require('../profile-store-sqlite');
+  const { readEngineStateCandidate } = require('../../engine/state-storage');
+  const { readLocalStore } = require('../../rebuild/local-store');
+  const previousKey = process.env.OPENBROWSER_MASTER_KEY;
+  const supported = ProfileStoreSqlite.isSupported;
+  const rename = fs.rename;
+  const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'ob-profile-receipts-'));
+  const failures = [];
+  process.env.OPENBROWSER_MASTER_KEY = randomBytes(32).toString('hex');
+  try {
+    assert.ok(supported(), 'receipt fixture requires real SQLite and forced JSON');
+    for (const sqlite of [true, false]) {
+      ProfileStoreSqlite.isSupported = sqlite ? supported : () => false;
+      for (const [route, phases] of [
+        ['transfer:import', ['projection', 'notification', 'profile-write']],
+        ['groups:delete', ['projection', 'notification', 'metadata-write']],
+      ]) {
+        for (const phase of phases) {
+          const root = await fs.mkdtemp(path.join(temp, 'workspace-'));
+          const picker = path.join(root, 'exchange.json');
+          const open = async () => {
+            const engine = new BrowserEngine({ getPath: () => root });
+            await engine.init(null);
+            assert.equal(engine.usingSqlite, sqlite);
+            return engine;
+          };
+          const serviceFor = engine => new LocalService({
+            engine, root, window: () => null,
+            dialog: { showOpenDialog: async () => ({ canceled: false, filePaths: [picker] }) },
+          });
+          const readProfiles = async engine => sqlite ? engine.sqliteStore.getAllProfiles()
+            : (await readEngineStateCandidate(engine.stateFile)).saved.profiles;
+          const enospc = Object.assign(Error('fixture persistent write failed'), { code: 'ENOSPC', errno: -28 });
+          const projection = Object.assign(Error('fixture status projection failed'), { code: 'EIO' });
+          const transferring = route === 'transfer:import';
+          let engine;
+          try {
+            engine = await open();
+            const service = serviceFor(engine);
+            let group;
+            if (transferring) {
+              await engine.persist();
+              await fs.writeFile(picker, JSON.stringify({
+                format: 'openbrowser-profiles', version: 1,
+                profiles: [{ id: 'source-profile', name: 'Imported profile', group_name: 'Imported project' }],
+              }));
+            } else {
+              group = await service.request('groups:save', { projectName: 'Existing project' });
+              const rows = await engine.syncProfiles([
+                { id: 'member', name: 'Existing member', groupId: group.id, group_name: group.projectName },
+              ], { delta: true });
+              assert.deepEqual(rows.map(row => row.id), ['member'], 'ordinary sync still returns projected rows');
+            }
+            let profileUpdates = 0, writes = 0, projectionCalls = 0;
+            const originalStatus = engine.status, emit = engine.emit;
+            if (phase === 'projection') {
+              // A real listener failure must not stop another listener from observing the update.
+              engine.on(event => { if (event.action === 'profiles-update') throw Error('fixture late listener'); });
+              engine.on(event => { if (event.action === 'profiles-update') profileUpdates++; });
+            }
+            engine.status = function () {
+              projectionCalls++;
+              if (phase === 'projection' || (phase === 'metadata-write' && writes >= 2)) throw projection;
+              return originalStatus.call(this);
+            };
+            if (phase === 'notification') {
+              engine.emit = function (event) {
+                if (event.action === 'profiles-update') throw Error('fixture update notification preparation failed');
+                return emit.call(this, event);
+              };
+            }
+            if (phase === 'metadata-write' || (phase === 'profile-write' && !sqlite)) {
+              fs.rename = async (source, target) => {
+                if ((phase === 'metadata-write' && target === service.file && ++writes === 2) ||
+                    (phase === 'profile-write' && target === engine.stateFile)) throw enospc;
+                return rename(source, target);
+              };
+            }
+            const saveProfiles = engine.sqliteStore?.saveProfilesDiffed;
+            if (phase === 'profile-write' && sqlite) {
+              engine.sqliteStore.saveProfilesDiffed = function (rows) {
+                saveProfiles.call(this, rows);
+                throw enospc; // Exercise rollback after the upsert, before SQLite commits.
+              };
+            }
+            const invoke = () => service.request(route, group ? { ids: [group.id] } : {});
+            try {
+              if (phase.endsWith('-write')) await assert.rejects(invoke, error => error === enospc);
+              else assert.deepEqual(await invoke(), transferring ? { count: 1 } : true);
+              assert.equal(projectionCalls, 0);
+              if (phase === 'projection') assert.equal(profileUpdates, 1);
+            } finally {
+              engine.status = originalStatus;
+              engine.emit = emit;
+              fs.rename = rename;
+              if (sqlite) engine.sqliteStore.saveProfilesDiffed = saveProfiles;
+            }
+            const groups = (await readLocalStore(service.file)).data;
+            const count = phase === 'profile-write' ? 0 : 1;
+            const keptProject = phase !== 'profile-write' && (transferring || phase === 'metadata-write');
+            assert.equal(Object.hasOwn(groups, 'pendingProfileRelations'), false);
+            assert.equal(groups.groups.length, Number(keptProject));
+            assert.deepEqual(service.data.groups, groups.groups);
+            const durable = await readProfiles(engine);
+            assert.equal(durable.length, count);
+            if (count) assert.equal(durable[0].groupId, groups.groups[0]?.id || '');
+            engine.sqliteStore?.close();
+            engine = await open();
+            const reopened = serviceFor(engine);
+            assert.deepEqual((await readProfiles(engine)).map(row => [row.id, row.groupId]),
+              durable.map(row => [row.id, row.groupId]));
+            const reopenedGroups = await reopened.request('groups:list');
+            assert.deepEqual(reopenedGroups.map(row => [row.id, row.windowCount]),
+              groups.groups.map(row => [row.id, 1]));
+            if (transferring) {
+              assert.deepEqual(await reopened.request(route), { count: 1 });
+              const ids = (await readProfiles(engine)).map(row => row.id);
+              assert.equal(ids.length, count + 1);
+              assert.equal(new Set(ids).size, ids.length, 'a new import of the same file still creates a different profile');
+            }
+          } catch (error) {
+            failures.push(new Error(`${sqlite ? 'SQLite' : 'JSON'} ${route} ${phase}: ${error.message}`, { cause: error }));
+          } finally { fs.rename = rename; engine?.sqliteStore?.close(); }
+        }
+      }
+    }
+    if (failures.length) throw new AggregateError(failures, `${failures.length} profile commit receipt cases failed`);
+  } finally {
+    ProfileStoreSqlite.isSupported = supported;
     if (previousKey === undefined) delete process.env.OPENBROWSER_MASTER_KEY;
     else process.env.OPENBROWSER_MASTER_KEY = previousKey;
     await fs.rm(temp, { recursive: true, force: true });
@@ -599,6 +736,11 @@ async function checkStartupProjectRecovery() {
 }
 
 async function main() {
+  if (process.argv.includes('--profile-receipts-only')) {
+    await checkProfileCommitReceipts();
+    console.log('PASS profile commit receipts: transfer and project membership, SQLite and JSON, reopen');
+    return;
+  }
   // Use the real request/dispatch/handlers with controlled I/O and no desktop.
   const service = Object.create(LocalService.prototype);
   service.queue = Promise.resolve();
@@ -678,6 +820,7 @@ async function main() {
   await checkSettingsNoopWrites();
   await checkExchangeFileBom();
   await checkExchangeProjectAliases();
+  await checkProfileCommitReceipts();
   await checkFullProfileListSingleSnapshot();
   await checkTemplateDeleteWrites();
   await checkProjectSortWrites();

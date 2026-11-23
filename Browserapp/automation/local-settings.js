@@ -301,6 +301,9 @@ async function persistSettingsSnapshot(snapshot, rootChange) {
     if (rootChange) {
       await writeSyncedStage(temporary, payload);
       staged = true;
+      if (rootChange.verifyBeforeReplace) await rootChange.verifyBeforeReplace();
+      // Shutdown and reservation/path checks are synchronous at the rename
+      // boundary, after the final potentially slow recovery probe.
       rootChange.beforeReplace?.();
     } else await fsp.writeFile(temporary, payload, { mode: 0o600 });
     await fsp.rename(temporary, settingsFile);

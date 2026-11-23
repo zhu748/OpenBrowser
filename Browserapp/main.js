@@ -14,6 +14,7 @@ const { registerKernelIpc } = require('./main/kernel-ipc');
 const { registerProfileIpc } = require('./main/profile-ipc');
 const { registerAutomationControlIpc } = require('./main/automation-ipc');
 const { registerSystemIpc } = require('./main/system-ipc');
+const { createProfileRootRecoveryProbe } = require('./main/profile-root-recovery');
 const { registerProxyIpc } = require('./main/proxy-ipc');
 const { applyDockIcon, applyWindowChrome, trayIconImage, windowBackground, windowIconPath } = require('./main/desktop-chrome');
 const { createWindowCloseHandler } = require('./main/window-close');
@@ -146,11 +147,16 @@ async function updateProfileDataRoot(value) {
   const profileRoot = lease.root;
   try {
     const result = { success: true, profileRoot, defaultProfileRoot: defaultProfileDataRoot };
-    if (profileRoot === engine.getProfileDataRoot()) return { ...result, changed: false };
+    const current = engine.getProfileDataRoot();
+    if (profileRoot === current) return { ...result, changed: false };
+    const verifyRecoveryClear = createProfileRootRecoveryProbe({ userData: app.getPath('userData'), current, candidate: profileRoot });
+    await verifyRecoveryClear({ allowMissingCandidate: true });
+    assertWritable();
     const secureCheck = await ensureDataRootIsolationSecure(profileRoot);
     if (!secureCheck.ok) throw new Error(secureCheck.message);
     assertWritable();
     await settingsStore.commitProfileDataRoot(profileRoot, {
+      verifyBeforeReplace: verifyRecoveryClear,
       beforeReplace() { assertWritable(); lease.assertUsable(); },
       publish: lease.publish,
     });

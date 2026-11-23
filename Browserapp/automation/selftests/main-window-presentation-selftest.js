@@ -261,12 +261,13 @@ test('clean quit drains accepted settings writes but rejects new work after the 
 });
 
 async function profileStorageFixture(t) {
-  const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), 'ob-profile-root-'));
+  const scratch = await fsp.realpath(await fsp.mkdtemp(path.join(os.tmpdir(), 'ob-profile-root-')));
   t.after(() => fsp.rm(scratch, { recursive: true, force: true }));
   const [oldRoot, nextRoot, otherRoot] = ['old', 'next', 'other'].map(name => path.join(scratch, name));
   const file = path.join(scratch, 'settings.json');
   const { BrowserEngine } = require('../../engine');
   const { ensureDataRootIsolationSecure } = require('../isolation');
+  const { createProfileRootRecoveryProbe } = require('../../main/profile-root-recovery');
   const cc = require('../../credential-crypto');
   const options = { passphrase: 'synthetic-settings-profile-root-key', mode: 'fallback' };
   const crypto = {
@@ -302,10 +303,13 @@ async function profileStorageFixture(t) {
   const events = [], exits = [], dialogs = [], handlers = new Map();
   const context = {
     engine, settingsStore, defaultProfileDataRoot: oldRoot, ensureDataRootIsolationSecure,
+    createProfileRootRecoveryProbe,
     quitting: false, quitCleanupPromise: null, quitCleanupSettled: false, fatalFailure: false,
     localUiSync: null, localUiService: null, liveSync: null, automation: null,
     async drainBrowsersForQuit() { return { stopped: true, remaining: [] }; },
-    destroyTray() {}, stopShortcutBridge() {}, app: { exit: code => exits.push(code) },
+    destroyTray() {}, stopShortcutBridge() {}, app: { getPath: name => {
+      assert.equal(name, 'userData'); return scratch;
+    }, exit: code => exits.push(code) },
     lifecycleTimeout: pending => pending, console,
     emit: value => events.push([value.type, value.profileRoot, engine.getProfileDataRoot(), settingsStore.getLocalSettings().profileDataRoot]),
   };
@@ -354,6 +358,175 @@ test('storage root ENOSPC leaves live/disk/backup unchanged even after the real 
   assert.deepEqual(exits, [0]);
   assert.equal(await fsp.readFile(path.join(oldRoot, 'synthetic.txt'), 'utf8'), 'no migration expected');
   assert.deepEqual(await fsp.readdir(nextRoot), []);
+});
+
+test('a pending cloud recovery copy prevents a new directory and preserves original bytes', async t => {
+  const { file, nextRoot, oldRoot, update, choose, dialogs, quit, events, exits, assertRoot, engine } = await profileStorageFixture(t);
+  const journal = path.join(path.dirname(file), 'cloud-restore-pending.obstate.bak');
+  const originalJournal = Buffer.from('unreadable synthetic backup');
+  await fsp.writeFile(journal, originalJournal);
+  const before = [await fsp.readFile(file), await fsp.readFile(file + '.bak')];
+  const canceled = choose();
+  dialogs.shift()({ canceled: true });
+  assert.equal((await canceled).canceled, true);
+  assert.equal((await update(oldRoot)).changed, false);
+  const select = choose();
+  dialogs.shift()({ filePaths: [nextRoot] });
+  await assert.rejects(select, error => error.code === 'PROFILE_ROOT_RECOVERY_PENDING'
+    && !error.message.includes(journal) && !error.message.includes('synthetic'));
+  assert.equal(engine.profileDataRootChange, null);
+  await assert.rejects(fsp.access(nextRoot), { code: 'ENOENT' });
+  await quit();
+  await assertRoot(oldRoot);
+  assert.deepEqual([await fsp.readFile(file), await fsp.readFile(file + '.bak')], before);
+  assert.deepEqual(await fsp.readFile(journal), originalJournal);
+  assert.deepEqual(events, []);
+  assert.deepEqual(exits, [0]);
+});
+
+test('only app-owned global and immediate root recovery markers veto storage changes', async t => {
+  const { file, nextRoot, oldRoot, update, assertRoot, events } = await profileStorageFixture(t);
+  const cloud = path.join(path.dirname(file), 'cloud-restore-pending.obstate');
+  const markers = [cloud, cloud + '.tmp-123-0123456789abcdef', cloud + '.bak.tmp-123-0123456789abcdef',
+    path.join(oldRoot, '.openbrowser-delete-current'), path.join(nextRoot, '.openbrowser-delete-destination')];
+  await fsp.mkdir(nextRoot);
+  const raw = Buffer.from('malformed recovery data is never interpreted');
+  for (const marker of markers) {
+    await fsp.writeFile(marker, raw);
+    const originalRead = fsp.readFile;
+    fsp.readFile = async (name, ...args) => {
+      if (String(name) === marker) throw Object.assign(new Error('sentinel unreadable'), { code: 'EIO' });
+      return originalRead(name, ...args);
+    };
+    try { await assert.rejects(update(nextRoot), { code: 'PROFILE_ROOT_RECOVERY_PENDING' }); }
+    finally { fsp.readFile = originalRead; }
+    assert.deepEqual(await fsp.readFile(marker), raw);
+    await fsp.unlink(marker); // user-side fixture repair between attempts
+    await assertRoot(oldRoot);
+    assert.deepEqual(events, []);
+  }
+  await fsp.writeFile(cloud + '.tmp-report', 'not a real stage');
+  const unrelated = path.join(nextRoot, 'ordinary-folder');
+  await fsp.mkdir(unrelated);
+  await fsp.writeFile(path.join(unrelated, '.openbrowser-delete-unrelated'), 'do not traverse');
+  assert.equal((await update(nextRoot)).changed, true, 'ordinary and nested names are outside this check');
+  await assertRoot(nextRoot);
+  assert.equal(events.length, 1);
+  assert.equal(await fsp.readFile(path.join(unrelated, '.openbrowser-delete-unrelated'), 'utf8'), 'do not traverse');
+});
+
+test('uncertain recovery directory scans and a redirected candidate parent fail closed and release the lease', async t => {
+  const { file, nextRoot, otherRoot, oldRoot, engine, update, events, assertRoot } = await profileStorageFixture(t);
+  await fsp.mkdir(nextRoot);
+  const readdir = fsp.readdir;
+  for (const directory of [path.dirname(file), oldRoot, nextRoot]) {
+    fsp.readdir = async (name, ...args) => {
+      if (String(name) === directory) throw Object.assign(new Error('cannot inspect ' + directory), { code: 'EIO' });
+      return readdir(name, ...args);
+    };
+    try {
+      await assert.rejects(update(nextRoot), error => error.code === 'PROFILE_ROOT_RECOVERY_UNAVAILABLE'
+        && error.cause.code === 'EIO' && !error.message.includes(directory));
+      assert.equal(engine.profileDataRootChange, null);
+    } finally { fsp.readdir = readdir; }
+  }
+  await fsp.symlink(nextRoot, otherRoot, process.platform === 'win32' ? 'junction' : 'dir');
+  await assert.rejects(update(path.join(otherRoot, 'missing-child')), { code: 'PROFILE_ROOT_RECOVERY_UNAVAILABLE' });
+  await assert.rejects(fsp.access(path.join(nextRoot, 'missing-child')), { code: 'ENOENT' });
+  await assertRoot(oldRoot);
+  assert.deepEqual(events, []);
+  assert.equal((await update(nextRoot)).changed, true, 'a genuinely accessible candidate can retry');
+  await assertRoot(nextRoot);
+});
+
+test('late deletion marker vetoes after staging while accepted preferences and quit keep the old root', async t => {
+  const { file, storageFs, oldRoot, nextRoot, engine, update, quit, events, exits, assertRoot,
+    settingsStore, read } = await profileStorageFixture(t);
+  const syncEntered = Promise.withResolvers(), release = Promise.withResolvers();
+  const originalOpen = fsp.open;
+  storageFs.open = async (...args) => {
+    const handle = await originalOpen(...args);
+    if (args[0].startsWith(file + '.tmp-root-')) {
+      const sync = handle.sync.bind(handle);
+      handle.sync = async () => { await sync(); syncEntered.resolve(); await release.promise; };
+    }
+    return handle;
+  };
+  const rejected = assert.rejects(update(nextRoot), { code: 'PROFILE_ROOT_RECOVERY_PENDING' });
+  await syncEntered.promise;
+  const stage = path.join(oldRoot, '.openbrowser-delete-late');
+  const journal = path.join(stage, 'journal.json');
+  const raw = Buffer.from('{"version":1,"ids":["retained-fixture"]}');
+  const before = [await fsp.readFile(file), await fsp.readFile(file + '.bak')];
+  try {
+    assert.notEqual(engine.profileDataRootChange, null);
+    await fsp.mkdir(stage);
+    await fsp.writeFile(journal, raw);
+    release.resolve();
+    await rejected;
+  } finally { release.resolve(); }
+  assert.equal(engine.profileDataRootChange, null);
+  await assertRoot(oldRoot);
+  assert.deepEqual([await fsp.readFile(file), await fsp.readFile(file + '.bak')], before);
+  await settingsStore.saveLocalSettings({ diskLimit: 17 });
+  await quit();
+  await assertRoot(oldRoot);
+  assert.equal((await read()).diskLimit, 17);
+  assert.deepEqual(await fsp.readFile(journal), raw);
+  assert.equal((await fsp.readdir(path.dirname(file))).some(name => name.includes('.tmp-root-')), false);
+  assert.deepEqual(events, []);
+  assert.deepEqual(exits, [0]);
+});
+
+test('replacing a directory at its original spelling before the final scan vetoes the root change', async t => {
+  const { file, storageFs, engine, oldRoot, nextRoot, otherRoot, update, events, assertRoot } = await profileStorageFixture(t);
+  const originalOpen = fsp.open;
+  storageFs.open = async (...args) => {
+    const handle = await originalOpen(...args);
+    if (args[0].startsWith(file + '.tmp-root-')) {
+      const sync = handle.sync.bind(handle);
+      handle.sync = async () => {
+        await sync();
+        await fsp.rename(oldRoot, otherRoot);
+        await fsp.mkdir(oldRoot);
+      };
+    }
+    return handle;
+  };
+  await assert.rejects(update(nextRoot), { code: 'PROFILE_ROOT_RECOVERY_UNAVAILABLE' });
+  assert.equal(engine.profileDataRootChange, null);
+  assert.equal(await fsp.readFile(path.join(otherRoot, 'synthetic.txt'), 'utf8'), 'no migration expected');
+  await assertRoot(oldRoot);
+  assert.deepEqual(events, []);
+});
+
+test('quit during the awaited final recovery probe is rechecked before replacing settings', async t => {
+  const { file, oldRoot, nextRoot, engine, update, quit, events, exits, assertRoot } = await profileStorageFixture(t);
+  const waiting = Promise.withResolvers(), release = Promise.withResolvers();
+  const readdir = fsp.readdir;
+  let probes = 0;
+  fsp.readdir = async (directory, ...args) => {
+    if (String(directory) === path.dirname(file) && ++probes === 2) {
+      waiting.resolve();
+      await release.promise;
+    }
+    return readdir(directory, ...args);
+  };
+  try {
+    const before = [await fsp.readFile(file), await fsp.readFile(file + '.bak')];
+    const rejected = assert.rejects(update(nextRoot), { code: 'APP_SHUTTING_DOWN' });
+    await waiting.promise;
+    assert.notEqual(engine.profileDataRootChange, null);
+    const cleanup = quit();
+    release.resolve();
+    await rejected;
+    await cleanup;
+    assert.equal(engine.profileDataRootChange, null);
+    assert.deepEqual(await Promise.all([fsp.readFile(file), fsp.readFile(file + '.bak')]), before);
+  } finally { release.resolve(); fsp.readdir = readdir; }
+  await assertRoot(oldRoot);
+  assert.deepEqual(events, []);
+  assert.deepEqual(exits, [0]);
 });
 
 test('storage chooser cancels, ignores inverted stale selections and rejects a late choice after quit', async t => {

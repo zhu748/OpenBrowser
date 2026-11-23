@@ -113,8 +113,8 @@ async function commitImport(service, rows) {
       },
     });
   });
-  // Persist group labels before engine mutation; request rollback handles a
-  // failed write. Engine failure removes new metadata before surfacing it.
+  // Persist group labels before engine mutation. A failure before the
+  // profile commit removes new metadata, not a later status update failure.
   const originalGroups = service.data.groups;
   if (additions.length) {
     service.data.groups = [...originalGroups, ...additions];
@@ -123,7 +123,7 @@ async function commitImport(service, rows) {
   try {
     let number = maxProfileNumber(e.profiles.values());
     if (!Number.isSafeInteger(number + profiles.length)) throw Error("无法分配新的窗口编号");
-    await e.syncProfiles(profiles.map(profile => ({ ...profile, number: ++number })));
+    await e.commitProfiles(profiles.map(profile => ({ ...profile, number: ++number })));
   } catch (error) {
     if (additions.length) {
       service.data.groups = originalGroups;

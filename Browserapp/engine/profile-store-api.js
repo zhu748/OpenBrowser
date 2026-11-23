@@ -15,6 +15,14 @@ const { assertProfileRestoreReady } = require('../automation/cloud/file-restore'
 const { FIREFOX_COOKIES, isFirefoxProfile, removeBrowserFiles, clearBrowserCache } = require('../automation/browser-data');
 const { deleteProfileDirectories } = require('./profile-deletion');
 
+async function commitProfileSync(engine, values, options) {
+  const staged = prepareProfileSync(engine, values, options);
+  // Do not drop unknown profiles here: deletion has its own explicit path.
+  // persist() coalesces the write and propagates persistence failures.
+  await persistProfileSync(engine, staged);
+  return staged;
+}
+
 async function withProfileLifecycleChange(engine, ids, change) {
   if (!Array.isArray(ids) || ids.length > 200) throw new Error('Invalid profile selection');
   const safeIds = [...new Set(ids.map(assertProfileId))];
@@ -41,14 +49,22 @@ module.exports = {
   },
 
   async syncProfiles(values, options = {}) {
-    const staged = prepareProfileSync(this, values, options);
-    // Do not drop unknown engine profiles here — deleteProfiles is the explicit path.
-    // persist() coalesces the burst, checks row differences and propagates write
-    // failures. Saving here as well hashed the same credential payload twice.
-    await persistProfileSync(this, staged);
+    const staged = await commitProfileSync(this, values, options);
     this.emit({ type: 'status', action: 'profiles-update' });
     const rows = this.status();
     return options.delta === true ? rows.filter((row) => staged.profiles.has(row.id)) : rows;
+  },
+
+  // Internal callers coordinating persisted metadata need confirmation of
+  // the write, not a status projection. Nothing after commit should tell
+  // them to compensate or retry an already persisted profile change.
+  async commitProfiles(values, options = {}) {
+    await commitProfileSync(this, values, options);
+    try { this.emit({ type: 'status', action: 'profiles-update' }); }
+    catch (_) {
+      try { console.warn('[BrowserEngine] Profile update notification failed after commit'); }
+      catch (_) { /* diagnostics must not change the commit result */ }
+    }
   },
 
   /**

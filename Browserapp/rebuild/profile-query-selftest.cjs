@@ -82,4 +82,127 @@ try {
 } finally {
   Date.parse = parse;
 }
-console.log("PROFILE_QUERY_SELFTEST OK");
+
+async function checkStatusSnapshot(sqlite) {
+  const fs = require("node:fs/promises");
+  const os = require("node:os");
+  const path = require("node:path");
+  const { BrowserEngine } = require("../engine");
+  const { ProfileStoreSqlite } = require("../automation/profile-store-sqlite");
+  const { encryptCredentialJson } = require("../credential-crypto");
+  const { KERNEL_POLICY_VERSION } = require("../engine/state-storage");
+  const { LocalService } = require("./local-service");
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "ob-status-query-"));
+  const savedKey = process.env.OPENBROWSER_MASTER_KEY;
+  const isSupported = ProfileStoreSqlite.isSupported;
+  let engine, seed;
+  try {
+    process.env.OPENBROWSER_MASTER_KEY = "synthetic-test-status-query-key";
+    engine = new BrowserEngine({ getPath: () => root });
+    engine.kernelManager = { loadMeta: async () => {} };
+    engine.sanitizeProfile = row => structuredClone(row);
+    const records = [
+      { id: "status-a", number: 1, name: "Bravo" },
+      { id: "status-b", number: 2, name: "Alpha" },
+      { id: "status-c", number: 3, name: "Charlie" },
+    ];
+    if (sqlite) {
+      seed = new ProfileStoreSqlite({ dbPath: engine.dbFile, wal: true });
+      await seed.init();
+      seed.setMeta("kernelPolicyVersion", KERNEL_POLICY_VERSION);
+      seed.saveProfiles(records);
+      seed.close();
+      seed = undefined;
+    } else {
+      ProfileStoreSqlite.isSupported = () => false;
+      await fs.writeFile(engine.stateFile, encryptCredentialJson({ kernelPolicyVersion: KERNEL_POLICY_VERSION, profiles: records }));
+    }
+    await engine.init(null);
+    assert.equal(engine.usingSqlite, sqlite);
+    assert.deepEqual(Array.from(engine.profiles.values(), ({ id, number, name }) => ({ id, number, name })), records);
+    const files = sqlite ? [engine.dbFile, engine.dbFile + "-wal"] : [engine.stateFile];
+    const readFiles = () => Promise.all(files.map(file => fs.readFile(file).catch(error => {
+      if (error.code !== "ENOENT") throw error;
+      return null;
+    })));
+    const disk = await readFiles();
+    const profiles = engine.profiles;
+    const version = profiles.version;
+    const live = Array.from(profiles.values());
+    const contents = structuredClone(live);
+    const service = Object.assign(Object.create(LocalService.prototype), {
+      file: path.join(root, "rebuild-local.json"), queue: Promise.resolve(), engine,
+    });
+    const backend = sqlite ? "sqlite" : "json";
+    const attempted = [];
+    const realPublicRunning = engine.publicRunning.bind(engine);
+    const fault = Error("fixture status row 2 failed");
+    let fail = true, temporaryRuntime = false;
+    engine.publicRunning = id => {
+      attempted.push(id);
+      if (fail && id === "status-b") { fail = false; throw fault; }
+      return temporaryRuntime && id === "status-a"
+        ? { ...realPublicRunning(id), starting: true } : realPublicRunning(id);
+    };
+    const readPage = options => service.request("profiles:query", options);
+    const statusState = () => [engine._statusCache, engine._statusPositions, engine._statusProfiles,
+      engine._statusProfileVersion, engine._statusStamps, engine._statusInstance, engine._statusSequence];
+    const beforeCold = statusState();
+    await assert.rejects(readPage({}), error => error === fault);
+    const afterColdFailure = statusState();
+    assert.equal(service.profileProjection, undefined, "a failed cold query must not build a search index");
+    assert.deepEqual(attempted, ["status-a", "status-b"]);
+    const retry = await readPage({ orderName: "windowName", orderType: "asc", pageSize: 2 });
+    assert.equal(retry.total, 3, backend + ": a healthy retry must return the entire fleet, not the first partial row");
+    assert.deepEqual(afterColdFailure, beforeCold, "a failed first read must not publish any status cache state");
+    assert.deepEqual(retry.rows.map(row => row.id), ["status-b", "status-a"]);
+    const nextPage = await readPage({ orderName: "windowName", orderType: "asc", pageSize: 2, pageIndex: 2 });
+    assert.deepEqual(nextPage.rows.map(row => row.id), ["status-c"]);
+    assert.equal(nextPage.total, 3);
+    const warm = engine.status();
+    const index = service.profileProjection;
+    assert.equal(engine.status(), warm, "subsequent status reads reuse the completed snapshot");
+    assert.equal(service.profileIndex(), index, "ordered pages preserve the existing search projection");
+    assert.deepEqual(attempted, ["status-a", "status-b", "status-a", "status-b", "status-c"]);
+
+    // A rebuild after invalidation may also fail. An unpublished row with a
+    // transient runtime value must not affect the last accepted cursor.
+    const cursor = engine.statusDelta(null, { includeCursor: true }).cursor;
+    const positions = engine._statusPositions;
+    engine.invalidateStatusCache();
+    fail = temporaryRuntime = true;
+    await assert.rejects(readPage({}), error => error === fault);
+    assert.equal(engine._statusCache, null);
+    assert.equal(engine._statusPositions, positions, "a failed rebuild must not replace the accepted position index");
+    assert.equal(index.snapshot, warm);
+    temporaryRuntime = false;
+    assert.equal((await readPage({})).total, 3);
+    const delta = engine.statusDelta(cursor, { includeCursor: true, includeWatermark: false });
+    assert.deepEqual({ full: delta.full, rows: delta.rows, removed: delta.removed }, { full: false, rows: [], removed: [] });
+    assert.deepEqual(attempted.slice(5), ["status-a", "status-b", "status-a", "status-b", "status-c"]);
+    assert.equal(service.profileProjection, index, "a same-version status rebuild does not rebuild membership and ordering");
+    assert.equal(engine.profiles, profiles);
+    assert.equal(profiles.version, version);
+    assert.deepEqual(Array.from(profiles.values()), contents);
+    assert.ok(Array.from(profiles.values()).every((row, index) => row === live[index]), "reads must not replace profile objects");
+    assert.deepEqual(await readFiles(), disk, "projection and retry must not touch the durable store");
+  } finally {
+    seed?.close();
+    engine?.sqliteStore?.close();
+    ProfileStoreSqlite.isSupported = isSupported;
+    if (savedKey === undefined) delete process.env.OPENBROWSER_MASTER_KEY;
+    else process.env.OPENBROWSER_MASTER_KEY = savedKey;
+    await fs.rm(root, { recursive: true, force: true });
+  }
+}
+
+async function main() {
+  const { ProfileStoreSqlite } = require("../automation/profile-store-sqlite");
+  const errors = [];
+  for (const sqlite of ProfileStoreSqlite.isSupported() ? [true, false] : [false]) {
+    try { await checkStatusSnapshot(sqlite); } catch (error) { errors.push(error); }
+  }
+  if (errors.length) throw new AggregateError(errors, "status query recovery failed");
+  console.log("PROFILE_QUERY_SELFTEST OK (ordered dates, paging and status snapshot recovery)");
+}
+main().catch(error => { console.error(error); process.exitCode = 1; });
