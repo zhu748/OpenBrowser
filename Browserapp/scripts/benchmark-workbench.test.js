@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const asyncHooks = require('node:async_hooks');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
@@ -12,7 +13,8 @@ const pending = () => new Promise(() => {});
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
 function fixture(stall) {
-  const trace = [], notices = [], stdoutText = [], reports = [], terminal = [], timers = new Set();
+  const trace = [], logs = [], notices = [], stdoutText = [], stderrText = [], reports = [], terminal = [], timers = new Set();
+  const hooks = new Set(), pendingResources = new Set();
   let now = 0;
   const timer = (fn, delay, repeat) => {
     const task = { fn, delay, at: now + delay, repeat, unref() {} };
@@ -20,7 +22,7 @@ function fixture(stall) {
     return task;
   };
   const stdout = { write: (text, callback) => { stdoutText.push(text); if (stall !== 'stdout') callback?.(); } };
-  const stderr = { write: (_text, callback) => { if (stall !== 'stderr') callback?.(); } };
+  const stderr = { write: (text, callback) => { stderrText.push(text); if (stall !== 'stderr') callback?.(); } };
   let context;
   const locator = { waitFor: async () => {}, count: async () => 1, fill: async () => {}, press: async () => {}, setChecked: async () => {} };
   const page = {
@@ -48,16 +50,30 @@ function fixture(stall) {
     close: async () => { trace.push('close'); },
     process: () => ({ kill: () => trace.push('kill') }),
   };
+  function fsRequest(type, completes) {
+    const resource = new asyncHooks.AsyncResource(type, { requireManualDestroy: true });
+    if (completes) {
+      resource.runInAsyncScope(() => {});
+      resource.emitDestroy();
+    } else {
+      pendingResources.add(resource);
+    }
+  }
   const files = {
     mkdtemp: async () => {
       trace.push('temp-create');
+      fsRequest('FSREQPROMISE', stall !== 'temp-create');
       if (stall === 'temp-create') return pending();
       return '/synthetic';
     },
     mkdir: async () => {},
     rm: async () => {
       trace.push('temp-cleanup');
+      fsRequest('FSREQCALLBACK', true);
+      fsRequest('FSREQCALLBACK', stall !== 'temp-cleanup');
+      fsRequest('UNRELATED', true);
       if (stall === 'temp-cleanup') return pending();
+      if (stall === 'cleanup-error') throw Error('synthetic cleanup failure');
     },
     writeFile: async (_path, text) => {
       const report = JSON.parse(text);
@@ -70,6 +86,14 @@ function fixture(stall) {
   function stubRequire(name) {
     switch (name) {
       case 'node:assert/strict': return assert;
+      case 'node:async_hooks': return {
+        ...asyncHooks,
+        createHook(callbacks) {
+          const hook = asyncHooks.createHook(callbacks);
+          hooks.add(hook);
+          return hook;
+        },
+      };
       case 'node:fs/promises': return files;
       case 'node:path': return path;
       case 'node:os': return { tmpdir: () => '/synthetic' };
@@ -84,9 +108,13 @@ function fixture(stall) {
     process: {
       argv: ['node', filename, '--sizes', '1', '--rounds', '1', '--output', '/synthetic/report.json'],
       platform: 'darwin', env: {}, version: 'inert', uptime: () => now / 1000, memoryUsage: () => ({ rss: 0 }),
-      stdout, stderr, exit: code => terminal.push(code),
+      stdout, stderr, exit(code) {
+        terminal.push(code);
+        for (const hook of hooks) hook.disable();
+        for (const resource of pendingResources) resource.emitDestroy();
+      },
     },
-    console: { error: text => { if (text.startsWith('::notice::')) notices.push(text); } },
+    console: { error(text) { logs.push(text); if (text.startsWith('::notice::')) notices.push(text); } },
     setInterval: (fn, ms) => timer(fn, ms, true), setTimeout: (fn, ms) => timer(fn, ms, false),
     clearTimeout: event => timers.delete(event), clearInterval: event => timers.delete(event),
   });
@@ -105,7 +133,7 @@ function fixture(stall) {
     }
     now = to;
   }
-  return { trace, notices, stdoutText, reports, terminal, advance };
+  return { trace, logs, notices, stdoutText, stderrText, reports, terminal, advance, unrelatedFs: () => fsRequest('FSREQCALLBACK', true) };
 }
 
 for (const phase of ['temp-create', 'temp-cleanup', 'report-write']) {
@@ -114,10 +142,13 @@ for (const phase of ['temp-create', 'temp-cleanup', 'report-write']) {
     await run.advance(150000);
     assert.equal(run.trace.at(-1), phase, phase);
     assert.deepEqual(run.terminal, [], 'must retain the 150s idle threshold');
+    run.unrelatedFs();
     await run.advance(180000);
     assert.deepEqual(run.terminal, [2], phase);
-    assert.ok(run.notices.includes(`::notice::Workbench benchmark phase=${phase}`), phase);
-    assert.ok(run.notices.includes(`::notice::Workbench benchmark idle limit exceeded: phase=${phase}`), phase);
+    assert.ok(run.logs.includes(`Workbench benchmark phase=${phase}`), phase);
+    const expected = phase === 'temp-create' ? ' fsWaitMs=180000 fsRequests=1 fsCallbacks=0 fsLastCallbackAgoMs=none'
+      : phase === 'temp-cleanup' ? ' fsWaitMs=180000 fsRequests=2 fsCallbacks=1 fsLastCallbackAgoMs=180000' : '';
+    assert.deepEqual(run.notices, [`::notice::Workbench benchmark idle limit exceeded: phase=${phase}${expected}`]);
     assert.equal(run.reports.some(report => report.complete), false, phase);
   });
 }
@@ -132,13 +163,14 @@ test('healthy and thrown renderer paths retain complete vs failure report and ex
   assert.equal(healthy.reports[0].rounds, 1);
   assert.equal(healthy.reports[0].interactionBudgetMs, 1500);
   assert.deepEqual(healthy.stdoutText.map(text => JSON.parse(text)), healthy.reports, 'stdout must remain JSON-only');
+  assert.deepEqual(healthy.notices, [], 'phase transitions must not spend public notice slots');
   const failed = fixture('throw');
   await failed.advance(240000);
   assert.deepEqual(failed.terminal, [1]);
   assert.deepEqual(failed.trace, ['temp-create', 'report-write', 'close', 'temp-cleanup']);
   assert.equal(failed.reports[0].complete, false);
   assert.match(failed.reports[0].error, /synthetic renderer error/);
-  assert.doesNotMatch(failed.notices.join('\n'), /synthetic|report\.json/);
+  assert.deepEqual(failed.notices, []);
 });
 
 test('a missing output callback retains the 250ms drain fallback and correct process status', async () => {
@@ -149,4 +181,14 @@ test('a missing output callback retains the 250ms drain fallback and correct pro
     await run.advance(250);
     assert.deepEqual(run.terminal, [code]);
   }
+});
+
+test('a rejected cleanup still fails the CLI without publishing a successful report', async () => {
+  const run = fixture('cleanup-error');
+  await run.advance(240000);
+  assert.deepEqual(run.terminal, [1]);
+  assert.deepEqual(run.trace, ['temp-create', 'close', 'temp-cleanup']);
+  assert.deepEqual(run.reports, []);
+  assert.match(run.stderrText.join('\n'), /synthetic cleanup failure/);
+  assert.deepEqual(run.notices, []);
 });

@@ -4,6 +4,7 @@
 // Exercise the default obui:// workbench through its real controls, preload,
 // IPC, BrowserEngine and SQLite. Timings include UI debounce and paint frames.
 const assert = require('node:assert/strict');
+const { AsyncLocalStorage, createHook } = require('node:async_hooks');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
@@ -54,21 +55,56 @@ function markProgress(label) {
   if (label) progressLabel = label;
 }
 
-// All call sites pass fixed phase names. Keep fixture values, paths and errors
-// out of these annotations, and reserve stdout for the JSON report.
+// Leave public notice slots for attempt outcomes and the idle watchdog.
+// Fixed phase names remain in the ordinary logs; stdout stays JSON-only.
 function enterPhase(lifecycle, phase) {
   lifecycle.phase = phase;
   markProgress(phase);
-  console.error(`::notice::Workbench benchmark phase=${phase}`);
+  console.error(`Workbench benchmark phase=${phase}`);
+}
+
+async function observeFsWait(lifecycle, operation) {
+  const scope = new AsyncLocalStorage(), tracked = new Set();
+  const wait = { startedAt: performance.now(), requests: 0, callbacks: 0, lastCallbackAt: null };
+  // Node can use different resource types across versions. These are observed
+  // callbacks of known FS request types only, not proof of deletion or that
+  // work is blocked in the kernel. Never inspect resource objects or paths.
+  const hook = createHook({
+    init(id, type) {
+      if ((type === 'FSREQPROMISE' || type === 'FSREQCALLBACK') && scope.getStore() === wait) {
+        tracked.add(id);
+        wait.requests++;
+      }
+    },
+    after(id) {
+      if (tracked.delete(id)) {
+        wait.callbacks++;
+        wait.lastCallbackAt = performance.now();
+      }
+    },
+    destroy(id) { tracked.delete(id); },
+  }).enable();
+  lifecycle.fsWait = wait;
+  try {
+    return await scope.run(wait, operation);
+  } finally {
+    lifecycle.fsWait = undefined;
+    hook.disable();
+    scope.disable();
+  }
 }
 
 function startProgressWatchdog(lifecycle) {
   markProgress('initialization');
   return setInterval(() => {
-    const idleMs = performance.now() - progressAt;
+    const now = performance.now(), idleMs = now - progressAt;
     console.error(`benchmark heartbeat uptime=${Math.round(process.uptime())}s rss=${Math.round(process.memoryUsage().rss / 1048576)}MB idle=${Math.round(idleMs / 1000)}s`);
     if (idleMs > STALL_LIMIT_MS) {
-      console.error(`::notice::Workbench benchmark idle limit exceeded: phase=${lifecycle.phase}`);
+      const fsWait = lifecycle.fsWait;
+      const fsFacts = fsWait
+        ? ` fsWaitMs=${Math.round(now - fsWait.startedAt)} fsRequests=${fsWait.requests} fsCallbacks=${fsWait.callbacks} fsLastCallbackAgoMs=${fsWait.lastCallbackAt === null ? 'none' : Math.round(now - fsWait.lastCallbackAt)}`
+        : '';
+      console.error(`::notice::Workbench benchmark idle limit exceeded: phase=${lifecycle.phase}${fsFacts}`);
       console.error(`benchmark made no progress for ${Math.round(idleMs / 1000)}s after "${progressLabel}"; exiting code 2`);
       try { lifecycle.app?.process().kill('SIGKILL'); } catch { /* already gone */ }
       process.exit(2);
@@ -214,7 +250,7 @@ async function measure(page, count, rounds) {
 
 async function benchmark(args, lifecycle) {
   enterPhase(lifecycle, 'temp-create');
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ob-workbench-benchmark-'));
+  const root = await observeFsWait(lifecycle, () => fs.mkdtemp(path.join(os.tmpdir(), 'ob-workbench-benchmark-')));
   const errors = [], reports = [];
   let app, page;
   try {
@@ -300,7 +336,7 @@ async function benchmark(args, lifecycle) {
       }
     } finally {
       enterPhase(lifecycle, 'temp-cleanup');
-      await fs.rm(root, { recursive: true, force: true, maxRetries: 3 });
+      await observeFsWait(lifecycle, () => fs.rm(root, { recursive: true, force: true, maxRetries: 3 }));
     }
   }
 }
