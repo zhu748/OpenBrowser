@@ -138,7 +138,7 @@ function workbenchAttempt(runtime, mode, attemptOnly = false) {
   const step = configuredStep('Measure default workbench responsiveness')?.split('        run: |\n')[1];
   assert.ok(step, 'the workbench benchmark must remain wired into desktop CI');
   const body = step.replace(/^ {10}/gm, '');
-  const end = body.indexOf('\nif bench;');
+  const end = body.indexOf('\nif bench');
   assert.ok(end > 0, 'the retry policy must use the tested benchmark attempt');
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'workbench-watchdog-test-'));
   const timerTrace = path.join(temp, 'timers');
@@ -149,7 +149,7 @@ function workbenchAttempt(runtime, mode, attemptOnly = false) {
       '#!/bin/bash',
       '[[ "$1" == 240 ]] || exit 97',
       'printf "%s\\n" "$$" >> "$TIMER_TRACE"',
-      'if [[ "$MODE" == stalled ]]; then exec /bin/sleep .2; fi',
+      'if [[ "$MODE" == stalled ]]; then exec /bin/sleep 1.05; fi',
       'exec /bin/sleep 10',
       '',
     ].join('\n'), { mode: 0o700 });
@@ -166,11 +166,12 @@ function workbenchAttempt(runtime, mode, attemptOnly = false) {
       '  /bin/sleep .01',
       'done',
       '((timers >= attempt)) || exit 98',
-      'if [[ "$MODE" == failure ]]; then exit 23; fi',
+      'if [[ "$MODE" == failure || ( "$MODE" == recover && "$attempt" == 1 ) ]]; then exit 23; fi',
+      'if [[ "$MODE" == exit137 ]]; then exit 137; fi',
       '',
     ].join('\n'), { mode: 0o700 });
     const result = spawnSync('/bin/bash', ['--noprofile', '--norc', '-e', '-o', 'pipefail', '-c',
-      attemptOnly ? body.slice(0, end) + '\nbench' : body], {
+      attemptOnly ? body.slice(0, end) + '\nbench 1' : body], {
       cwd: app,
       env: { PATH: temp, RUNNER_OS: runtime, MODE: mode, TIMER_TRACE: timerTrace, BENCH_TRACE: benchTrace },
       encoding: 'utf8',
@@ -198,15 +199,38 @@ function workbenchAttempt(runtime, mode, attemptOnly = false) {
   }
 }
 
+function assertAttemptLog(result, expected) {
+  const events = result.output
+    .split('\n')
+    .filter(line => line.startsWith('::notice::Workbench benchmark attempt '));
+  assert.equal(events.length, expected.length * 2, result.output);
+  for (const [i, [outcome, code, minSeconds = 0]] of expected.entries()) {
+    assert.equal(events[i * 2], `::notice::Workbench benchmark attempt ${i + 1} started`);
+    const finish = events[i * 2 + 1].match(new RegExp(
+      `^::notice::Workbench benchmark attempt ${i + 1} finished: outcome=${outcome} exit=${code} elapsed=([0-9]+)s$`));
+    assert.ok(finish, events[i * 2 + 1]);
+    assert.ok(Number(finish[1]) >= minSeconds, events[i * 2 + 1]);
+  }
+  assert.doesNotMatch(result.output, /hosted-runner jitter|wedge class/);
+}
+
 test('a completed workbench benchmark closes captured CI pipes and reaps the watchdog timer', () => {
   const result = workbenchAttempt('Linux', 'success');
   assert.equal(result.status, 0, result.output);
   assert.equal(result.calls, 1);
+  assertAttemptLog(result, [['child-exit', 0]]);
 });
 
 test('workbench attempts preserve ordinary failure and watchdog timeout statuses', () => {
-  assert.equal(workbenchAttempt('Linux', 'failure', true).status, 23);
-  assert.equal(workbenchAttempt('Linux', 'stalled', true).status, 137);
+  for (const [mode, outcome, code, minSeconds] of [
+    ['failure', 'child-exit', 23],
+    ['exit137', 'child-exit', 137],
+    ['stalled', 'watchdog-signal-sent', 137, 1],
+  ]) {
+    const result = workbenchAttempt('Linux', mode, true);
+    assert.equal(result.status, code, result.output);
+    assertAttemptLog(result, [[outcome, code, minSeconds]]);
+  }
 });
 
 test('workbench CI retries two times on macOS and only runs once on Linux and Windows', () => {
@@ -215,5 +239,13 @@ test('workbench CI retries two times on macOS and only runs once on Linux and Wi
     assert.equal(result.status, 1, result.output);
     assert.equal(result.calls, runs, os);
     assert.equal(result.output.match(/::warning::workbench benchmark failed/g)?.length ?? 0, runs - 1, os);
+    assertAttemptLog(result, Array.from({ length: runs }, () => ['child-exit', 23]));
   }
+});
+
+test('a successful macOS retry reports both attempts and does not start a third', () => {
+  const result = workbenchAttempt('macOS', 'recover');
+  assert.equal(result.status, 0, result.output);
+  assert.equal(result.calls, 2);
+  assertAttemptLog(result, [['child-exit', 23], ['child-exit', 0]]);
 });
