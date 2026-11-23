@@ -14,6 +14,74 @@ import { d as router, f as installRouter } from './hook-CnJE4hRq.js';
 import { Ct as registerRouter, ci as finishLoading } from './utils-BIWenCnY.js';
 import { syncDialogKinds } from './routes.js';
 
+const retryableSettingsReads = new Set(['EIO', 'EAGAIN', 'EBUSY', 'EMFILE', 'ENFILE']);
+// Startup may fail before the saved locale or the i18n runtime can be loaded.
+const startupMessages = {
+  'zh-CN': ['工作台无法启动', '暂时无法读取已保存的设置。', '重试', '正在重试…', '请重新打开此窗口。'],
+  en: ['Could not start the workbench', 'Could not read saved settings.', 'Retry', 'Trying again…', 'Close and reopen this window.'],
+  ru: ['Не удалось запустить рабочую область', 'Не удалось прочитать сохранённые настройки.', 'Повторить', 'Повторная попытка…',
+    'Закройте и снова откройте это окно.'],
+};
+
+function startupLanguage() {
+  try {
+    const cached = JSON.parse(localStorage.getItem('locale'))?.currentLocale;
+    if (Object.hasOwn(startupMessages, cached)) return cached;
+  } catch { /* A missing or invalid local cache must not block recovery. */ }
+  const language = navigator.language.toLowerCase().split('-')[0];
+  return language === 'en' || language === 'ru' ? language : 'zh-CN';
+}
+
+function showStartupProblem(retryable = false) {
+  finishLoading();
+  const language = startupLanguage();
+  const [title, unreadable, retry, retrying, reopen] = startupMessages[language];
+  const panel = document.createElement('section');
+  panel.className = 'ob-startup-status';
+  panel.lang = language;
+  const heading = document.createElement('h1');
+  heading.id = 'ob-startup-heading';
+  heading.textContent = title;
+  panel.setAttribute('aria-labelledby', heading.id);
+  const status = document.createElement('p');
+  status.id = 'ob-startup-detail';
+  status.setAttribute('role', 'status');
+  status.textContent = retryable ? unreadable : reopen;
+  panel.append(heading, status);
+  (document.querySelector('#app') ?? document.body).replaceChildren(panel);
+  if (!retryable) {
+    panel.tabIndex = -1;
+    panel.focus();
+    return;
+  }
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = retry;
+  button.setAttribute('aria-describedby', status.id);
+  panel.append(button);
+  return new Promise(resolve => {
+    button.addEventListener('click', () => {
+      button.disabled = true;
+      status.textContent = retrying;
+      resolve();
+    }, { once: true });
+    button.focus();
+  });
+}
+
+async function readStartupSettings() {
+  // Retry only this read and only on request; do not replay app initialization.
+  for (;;) {
+    try {
+      return await globalThis.__localRequest('settings:get');
+    } catch (error) {
+      if (!retryableSettingsReads.has(error?.code)) throw error;
+      console.error('[OpenBrowser] Workbench settings read failed:', error.code);
+      await showStartupProblem(true);
+    }
+  }
+}
+
 function setupWorkbenchRoot() {
   useAppearance();
   const notifications = useNotifications();
@@ -62,9 +130,10 @@ async function startWorkbench() {
   globalThis.$appVersion = (await globalThis.ops.getInfo()).appVersion;
   globalThis.$rendererAbiVersion = '4.1.0';
   globalThis.mixpanel = { track() {} };
+  // Both calls depend on the same local store. Put the settings read and its
+  // recovery before dictionary loading, locale setup and all mount side effects.
+  const settings = await readStartupSettings();
   await globalThis.__loadLocalDictionary();
-
-  const settings = await globalThis.__localRequest('settings:get');
   globalThis.__localSettings = settings;
   await loadLocale({ defaultLocale: settings.language || 'zh-CN' });
   const app = createApp({ setup: setupWorkbenchRoot });
@@ -102,8 +171,7 @@ async function startWorkbench() {
 }
 
 // Document loading must finish before native requests can finish starting up.
-startWorkbench().catch(error => {
-  finishLoading();
-  console.error(error);
-  document.body.textContent = error.message;
+startWorkbench().catch(() => {
+  console.error('[OpenBrowser] Workbench initialization failed.');
+  showStartupProblem();
 });

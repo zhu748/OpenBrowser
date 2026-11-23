@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 const {
+  EngineStateUnavailableError,
   readEngineStateCandidate,
   engineStateRecoveryCandidates,
   writeRawAtomically,
@@ -93,7 +94,13 @@ class ProfileStoreSqlite {
     if (!this.legacyJsonPath) return false;
     const dbExists = fs.existsSync(this.dbPath) && fs.statSync(this.dbPath).size > 0;
     if (dbExists) return false;
-    return fs.existsSync(this.legacyJsonPath);
+    try {
+      fs.statSync(this.legacyJsonPath);
+      return true;
+    } catch (error) {
+      if (error.code === 'ENOENT') return false;
+      throw new EngineStateUnavailableError(error);
+    }
   }
 
   /**
@@ -112,6 +119,8 @@ class ProfileStoreSqlite {
         await this._performMigration();
         migrated = true;
       } catch (err) {
+        // The authoritative source could not be read, before any DB was opened.
+        if (err instanceof EngineStateUnavailableError) throw err;
         // Safe rollback: clean up partial db files and re-throw so engine falls back to JSON
         this.close();
         this._removeDbFiles();
@@ -349,8 +358,9 @@ class ProfileStoreSqlite {
     let state = null;
     let readError = null;
     try {
-      state = await readEngineStateCandidate(this.legacyJsonPath);
+      state = await readEngineStateCandidate(this.legacyJsonPath, { primary: true });
     } catch (err) {
+      if (err instanceof EngineStateUnavailableError) throw err;
       readError = err;
     }
 

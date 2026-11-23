@@ -601,6 +601,150 @@ async function inlineRenameChecks() {
   assert.equal(methods.includes('profiles:patch'), false);
 }
 
+async function startupSettingsChecks() {
+  const { LocalService } = require('../../rebuild/local-service');
+  const bridgeFile = path.resolve(__dirname, '../../rebuild/renderer-bridge.js');
+  const bootstrapFile = path.resolve(__dirname, '../../frontend/src/workbench/bootstrap.mjs');
+  const withoutImports = code => code.replace(/^import\s+[\s\S]*?;$/gm, '');
+  const bridge = withoutImports(await fs.readFile(bridgeFile, 'utf8'));
+  const bootstrap = withoutImports(await fs.readFile(bootstrapFile, 'utf8'));
+  const privatePath = '/fixture/private-account/settings.enc';
+  function readError(code) { return Object.assign(Error('reading ' + privatePath), { code }); }
+  const noop = () => {};
+  function setup(loadOnce, { language = 'en-US', cachedLocale, infoError, dictionaryError, routeError } = {}) {
+    const calls = [], locales = [], logged = [];
+    const counts = { info: 0, reads: 0, apps: 0, installs: 0, routeHooks: 0, navigation: 0, listeners: 0, mounts: 0 };
+    const service = Object.create(LocalService.prototype);
+    Object.assign(service, {
+      queue: Promise.resolve(),
+      async loadOnce() {
+        if (this.data) return;
+        await loadOnce(++counts.reads);
+        this.data = { settings: { language: 'ru' } };
+      },
+    });
+    const active = { element: undefined };
+    const element = (tag, text = '') => ({
+      tag, textContent: text, children: [], attributes: {}, listeners: new Map(),
+      append(...nodes) { this.children.push(...nodes); },
+      replaceChildren(...nodes) { this.children = nodes; },
+      setAttribute(key, value) { this.attributes[key] = value; },
+      toggleAttribute: noop,
+      focus() { active.element = this; },
+      addEventListener(type, callback, options) { this.listeners.set(type, { callback, options }); },
+      click() {
+        const listener = this.listeners.get('click');
+        if (this.disabled || !listener) return;
+        if (listener.options?.once) this.listeners.delete('click');
+        listener.callback();
+      },
+    });
+    const root = element('app'), body = element('body');
+    body.append(root);
+    const context = vm.createContext({
+      URL, location: { href: 'obui://app/index.html#/browser/list' },
+      navigator: { language }, localStorage: { getItem: () => cachedLocale && JSON.stringify({ currentLocale: cachedLocale }) },
+      document: { body, documentElement: element('html'), createElement: element, querySelector: query => query === '#app' ? root : undefined },
+      console: { error: (...args) => logged.push(args) },
+      ops: { async getInfo() { counts.info++; if (infoError) throw infoError; return { appVersion: 'fixture' }; } },
+      createProfileLifecycleBridge: () => ({}),
+      rebuild: {
+        request(method, payload) {
+          calls.push(method);
+          return captureIpcResult(() => {
+            if (method === 'host:dictionary' && dictionaryError) throw dictionaryError;
+            return service.request(method, structuredClone(payload));
+          });
+        },
+        onEvent() { counts.listeners++; return noop; },
+      },
+      i18n: {}, loadLocale: async ({ defaultLocale }) => { locales.push(defaultLocale); },
+      createApp() {
+        counts.apps++;
+        return { use: noop, config: {}, mount() { counts.mounts++; root.replaceChildren(); } };
+      },
+      installPrimeVue: noop, installGlobalComponents: noop, registerRouter: noop, finishLoading: noop,
+      installRouter: async () => { counts.installs++; if (routeError) throw routeError; },
+      router: { afterEach() { counts.routeHooks++; }, replace: async () => {},
+        resolve: () => ({ matched: ['fixture'] }), currentRoute: { value: { matched: ['fixture'] } } },
+      installWorkspaceNavigation: async (_router, { events }) => {
+        counts.navigation++;
+        events(noop);
+        return { initialPath: '/browser/list', activate: async () => {} };
+      },
+    });
+    vm.runInContext(bridge, context, { filename: bridgeFile });
+    vm.runInContext(bootstrap, context, { filename: bootstrapFile });
+    const all = node => [node, ...node.children.flatMap(all)];
+    return { counts, calls, locales, logged, active, button: () => all(body).find(node => node.tag === 'button'),
+      visibleText: () => all(body).map(node => node.textContent).join(' '), root };
+  }
+
+  let releaseRetry;
+  const secondRead = new Promise(resolve => { releaseRetry = resolve; });
+  const recovery = setup(async attempt => {
+    if (attempt === 1) throw readError('EIO');
+    if (attempt === 2) await secondRead;
+  });
+  await tick();
+  const retry = recovery.button();
+  assert.ok(retry, 'an actual cold settings load failure offers a retry instead of replacing the body with an error');
+  assert.equal(retry.type, 'button');
+  assert.equal(retry.textContent, 'Retry');
+  assert.equal(retry.attributes['aria-describedby'], 'ob-startup-detail');
+  assert.equal(recovery.active.element, retry);
+  assert.doesNotMatch(recovery.visibleText(), /private-account|settings\.enc/);
+  assert.doesNotMatch(JSON.stringify(recovery.logged), /private-account|settings\.enc/);
+  assert.deepEqual(recovery.calls, ['settings:get']);
+  assert.equal(recovery.counts.reads, 1);
+  assert.deepEqual(recovery.locales, []);
+  assert.equal(recovery.counts.mounts, 0);
+  retry.click();
+  retry.click();
+  await tick();
+  assert.equal(retry.disabled, true);
+  assert.match(recovery.visibleText(), /Trying again/);
+  assert.deepEqual(recovery.calls, ['settings:get', 'settings:get'], 'one pending retry and no automatic replay');
+  assert.equal(recovery.counts.mounts, 0);
+  releaseRetry();
+  await tick();
+  assert.deepEqual(recovery.calls, ['settings:get', 'settings:get', 'host:dictionary']);
+  assert.deepEqual(recovery.locales, ['ru'], 'chosen app locale is installed only after settings can be read');
+  assert.deepEqual(recovery.counts, { info: 1, reads: 2, apps: 1, installs: 1, routeHooks: 1, navigation: 1, listeners: 2, mounts: 1 });
+  assert.equal(recovery.button(), undefined);
+
+  const healthy = setup(async () => {});
+  await tick();
+  assert.deepEqual(healthy.calls, ['settings:get', 'host:dictionary']);
+  assert.deepEqual(healthy.locales, ['ru']);
+  assert.deepEqual(healthy.counts, { ...recovery.counts, reads: 1 });
+  assert.equal(healthy.button(), undefined);
+
+  const repeated = setup(async attempt => { if (attempt < 3) throw readError('EBUSY'); }, { cachedLocale: 'ru' });
+  await tick();
+  assert.equal(repeated.button().textContent, 'Повторить');
+  repeated.button().click();
+  await tick();
+  assert.equal(repeated.button().disabled, undefined);
+  assert.equal(repeated.active.element, repeated.button());
+  assert.equal(repeated.counts.reads, 2);
+  repeated.button().click();
+  await tick();
+  assert.equal(repeated.counts.mounts, 1);
+
+  for (const failure of [setup(async () => { throw readError('EACCES'); }),
+    setup(async () => {}, { infoError: readError('EIO') }),
+    setup(async () => {}, { dictionaryError: readError('EIO') }),
+    setup(async () => {}, { routeError: readError('EIO') })]) {
+    await tick();
+    assert.equal(failure.button(), undefined, 'non-retryable or later failures do not replay startup');
+    assert.equal(failure.counts.mounts, 0);
+    assert.doesNotMatch(failure.visibleText(), /private-account|settings\.enc/);
+    assert.match(failure.visibleText(), /Could not start the workbench/);
+    assert.doesNotMatch(JSON.stringify(failure.logged), /private-account|settings\.enc/);
+  }
+}
+
 async function navigationChecks() {
   const { installWorkspaceNavigation } = await import('../../rebuild/workbench-navigation.mjs');
   const mainRouter = { beforeEach() {} };
@@ -659,6 +803,7 @@ async function main() {
   await savedViewDateChecks();
   await inlineRenameChecks();
   await apiChecks();
+  await startupSettingsChecks();
   await navigationChecks();
   await profileBatchChecks();
   const result = await captureIpcResult(() => {

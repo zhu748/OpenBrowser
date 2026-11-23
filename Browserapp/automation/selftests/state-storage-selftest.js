@@ -8,6 +8,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const {
+  KERNEL_POLICY_VERSION,
   writeJsonAtomically,
   writeRawAtomically,
   readEngineStateCandidate,
@@ -50,7 +51,114 @@ async function withPatchedRename(failures, fn) {
   try { return await fn(); } finally { fsp.rename = original; }
 }
 
+async function checkStartupReadFailure(sqlite, code, errno) {
+  const { BrowserEngine } = require('../../engine');
+  const { ProfileStoreSqlite } = require('../profile-store-sqlite');
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'state-startup-read-'));
+  const create = () => new BrowserEngine({ getPath: () => root });
+  const engine = create();
+  let retried;
+  const read = fsp.readFile;
+  const isSupported = ProfileStoreSqlite.isSupported;
+  const openDatabase = ProfileStoreSqlite.prototype._openDatabase;
+  try {
+    if (!sqlite) ProfileStoreSqlite.isSupported = () => false;
+    const state = id => JSON.stringify({ kernelPolicyVersion: KERNEL_POLICY_VERSION, profiles: [{ id, name: id }] });
+    const primary = Buffer.from(state('newest'));
+    const backup = Buffer.from(state('older'));
+    const backupPath = engine.stateFile + '.bak';
+    await fsp.writeFile(engine.stateFile, primary);
+    await fsp.writeFile(backupPath, backup);
+    const filesBefore = (await fsp.readdir(root)).sort();
+    const failure = Object.assign(Error('injected primary workspace read failure'), { code, errno });
+    let primaryAttempts = 0, backupReads = 0, dbOpens = 0;
+    ProfileStoreSqlite.prototype._openDatabase = function () {
+      dbOpens++;
+      return openDatabase.call(this);
+    };
+    fsp.readFile = async (...args) => {
+      if (args[0] === engine.stateFile && ++primaryAttempts === 1) throw failure;
+      if (args[0] === backupPath) backupReads++;
+      return read(...args);
+    };
+    let rejected;
+    try { await engine.init(null); }
+    catch (error) { rejected = error; }
+    finally {
+      fsp.readFile = read;
+      ProfileStoreSqlite.prototype._openDatabase = openDatabase;
+    }
+    assert.deepStrictEqual([...engine.profiles.keys()], [], 'an unreadable primary must not select the older backup');
+    assert.strictEqual(rejected?.code, code, 'startup must surface the original error code');
+    assert.strictEqual(rejected?.errno, errno, 'startup must preserve errno');
+    assert.strictEqual(primaryAttempts, 1, 'the same startup must not silently fall back to another path');
+    assert.strictEqual(backupReads, 0, 'only corruption or missing primary may select recovery candidates');
+    assert.strictEqual(dbOpens, 0, 'an unreadable primary must not even open a database for migration');
+    assert.strictEqual(fs.existsSync(engine.dbFile), false, 'failure must not initialize SQLite');
+    assert.deepStrictEqual((await fsp.readdir(root)).sort(), filesBefore, 'failure must not archive or replace files');
+    assert.deepStrictEqual(await read(engine.stateFile), primary);
+    assert.deepStrictEqual(await read(backupPath), backup);
+
+    retried = create();
+    await retried.init(null);
+    assert.strictEqual(retried.usingSqlite, sqlite);
+    assert.deepStrictEqual([...retried.profiles.keys()], ['newest']);
+  } finally {
+    fsp.readFile = read;
+    ProfileStoreSqlite.isSupported = isSupported;
+    engine.sqliteStore?.close();
+    retried?.sqliteStore?.close();
+    await fsp.rm(root, { recursive: true, force: true });
+  }
+}
+
+async function checkStartupRecovery(sqlite, corrupt) {
+  const { BrowserEngine } = require('../../engine');
+  const { ProfileStoreSqlite } = require('../profile-store-sqlite');
+  const { encryptCredential } = require('../../credential-crypto');
+  const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'state-startup-recovery-'));
+  const engine = new BrowserEngine({ getPath: () => root });
+  const isSupported = ProfileStoreSqlite.isSupported;
+  try {
+    if (!sqlite) ProfileStoreSqlite.isSupported = () => false;
+    if (corrupt) {
+      // The primary decrypts successfully, but the decoded JSON is malformed.
+      const primary = encryptCredential('{malformed');
+      const backup = encryptCredential(JSON.stringify({
+        kernelPolicyVersion: KERNEL_POLICY_VERSION, profiles: [{ id: 'recovered', name: 'Recovered' }],
+      }));
+      await fsp.writeFile(engine.stateFile, primary);
+      await fsp.writeFile(engine.stateFile + '.bak', backup);
+      await engine.init(null);
+      assert.deepStrictEqual([...engine.profiles.keys()], ['recovered']);
+      const stateName = path.basename(engine.stateFile);
+      const prefix = sqlite ? stateName + '.migrated-' : stateName + '.corrupt-';
+      const archive = (await fsp.readdir(root)).find(name => name.startsWith(prefix));
+      assert.ok(archive, 'the malformed original is archived for recovery');
+      assert.deepStrictEqual(await fsp.readFile(path.join(root, archive)), primary);
+      assert.deepStrictEqual(await fsp.readFile(engine.stateFile + '.bak'), backup);
+    } else {
+      await engine.init(null);
+      assert.deepStrictEqual([...engine.profiles.keys()], [], 'a truly fresh workspace still starts empty');
+    }
+    assert.strictEqual(engine.usingSqlite, sqlite);
+  } finally {
+    ProfileStoreSqlite.isSupported = isSupported;
+    engine.sqliteStore?.close();
+    await fsp.rm(root, { recursive: true, force: true });
+  }
+}
+
 (async () => {
+  for (const sqlite of [false, true]) {
+    const mode = sqlite ? 'SQLite migration' : 'JSON startup';
+    for (const [code, errno] of [['EIO', -5], ['EACCES', -13]]) {
+      await check(`${mode} preserves active state on ${code}`, () => checkStartupReadFailure(sqlite, code, errno));
+    }
+    await check(`${mode} still recovers a malformed decoded primary`, () => checkStartupRecovery(sqlite, true));
+    await check(`${mode} still accepts a fresh workspace`, () => checkStartupRecovery(sqlite, false));
+  }
+
   await check('legacy engine-state migration encrypts the recovery backup', async () => {
     const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'state-backup-'));
     const file = path.join(root, 'state.json');

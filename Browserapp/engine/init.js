@@ -7,7 +7,8 @@
  * startup routine that drives these.
  */
 
-const { KERNEL_POLICY_VERSION, engineStateRecoveryCandidates, preserveCorruptEngineState, readEngineStateCandidate } = require('./index');
+const { KERNEL_POLICY_VERSION, EngineStateUnavailableError,
+  engineStateRecoveryCandidates, preserveCorruptEngineState, readEngineStateCandidate } = require('./index');
 const fs = require('fs');
 const path = require('path');
 const { ProfileStoreSqlite } = require('../automation/profile-store-sqlite');
@@ -45,6 +46,7 @@ module.exports = {
         }
       } catch (err) {
         sqlite.close();
+        if (err instanceof EngineStateUnavailableError) throw err;
         if (existingDatabase || fs.existsSync(this.dbFile)) throw storageUnavailable(err);
         console.warn(`[BrowserEngine] SQLite initialization failed, falling back to legacy JSON: ${err.message}`);
         this.sqliteStore = null;
@@ -95,8 +97,9 @@ module.exports = {
       let state = null;
       let primaryStateError = null;
       try {
-        state = await readEngineStateCandidate(this.stateFile);
+        state = await readEngineStateCandidate(this.stateFile, { primary: true });
       } catch (error) {
+        if (error instanceof EngineStateUnavailableError) throw error;
         primaryStateError = error;
       }
       if (!state) {

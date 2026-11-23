@@ -87,11 +87,32 @@ async function writeJsonAtomically(filePath, value, mode = 0o600) {
   await writeRawAtomically(filePath, payload, mode);
 }
 
-async function readEngineStateCandidate(filePath) {
-  const raw = await fsp.readFile(filePath);
-  const jsonText = credentialCrypto.isEncrypted(raw)
-    ? credentialCrypto.decryptCredential(raw)
-    : raw.toString("utf8");
+class EngineStateUnavailableError extends Error {
+  constructor(cause) {
+    super(`Cannot read the primary engine state; existing files were preserved: ${cause.message}`, { cause });
+    this.code = cause.code || "ENGINE_STATE_UNAVAILABLE";
+    if (cause.errno !== undefined) this.errno = cause.errno;
+  }
+}
+
+async function readEngineStateCandidate(filePath, { primary = false } = {}) {
+  let raw;
+  try {
+    raw = await fsp.readFile(filePath);
+  } catch (error) {
+    if (primary && error.code !== "ENOENT") throw new EngineStateUnavailableError(error);
+    throw error;
+  }
+  let jsonText;
+  try {
+    jsonText = credentialCrypto.isEncrypted(raw)
+      ? credentialCrypto.decryptCredential(raw)
+      : raw.toString("utf8");
+  } catch (error) {
+    if (primary) throw new EngineStateUnavailableError(error);
+    throw error;
+  }
+  // Only content we could read and decode has evidence of a bad JSON format.
   const saved = JSON.parse(jsonText);
   if (!saved || typeof saved !== "object" || Array.isArray(saved)) {
     throw new Error("引擎状态文件格式无效");
@@ -139,6 +160,7 @@ async function preserveCorruptEngineState(filePath) {
 
 module.exports = {
   KERNEL_POLICY_VERSION,
+  EngineStateUnavailableError,
   writeRawAtomically,
   syncDirectory,
   writeJsonAtomically,

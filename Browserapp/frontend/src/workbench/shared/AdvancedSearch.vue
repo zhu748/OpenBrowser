@@ -84,6 +84,8 @@ function choose(option) {
 }
 
 function onKeydown(event) {
+  // Let the input method confirm, cancel or navigate its own candidates.
+  if (event.isComposing || event.keyCode === 229) return;
   if (event.key === 'Escape') {
     expanded.value = false;
     return;
