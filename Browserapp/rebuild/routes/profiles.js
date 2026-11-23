@@ -307,7 +307,10 @@ async function profilesStop(service, p) {
 
 async function profilesEditData(service, p) {
   const e = service.engine;
-  const ids = p.ids.map(String);
+  const append = p.type === "platform_add";
+  if (append && (!Array.isArray(p.ids) || p.ids.length === 0 || p.ids.length > 200))
+    throw Error("窗口选择数量无效");
+  const ids = append ? p.ids.map(assertProfileId) : p.ids.map(String);
   if (p.proxyList && p.proxyList.length !== ids.length)
     throw Error("代理数量与窗口数量不一致");
   const commands = ids.map((id, index) => {
@@ -344,7 +347,8 @@ async function profilesEditData(service, p) {
       },
     };
   });
-  await e.applyProfileCommands(commands, { delta: true });
+  if (append) await e.commitActiveProfileCommands(commands);
+  else await e.applyProfileCommands(commands, { delta: true });
   return true;
 }
 

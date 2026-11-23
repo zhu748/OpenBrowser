@@ -9,6 +9,7 @@
 //   editorDraft / renderEditorSummary — draft collection and summary rendering
 //   openProfileEditor / refreshUaMetaPreview — editor dialog + UA meta preview
 //   openCreateProfileDialog / setupPlatformPresets — create flow + platform presets
+/* global localUiText */
 function editorRequestInputs(ids) {
   return JSON.stringify(ids.map((id) => {
     const field = document.getElementById('editor-' + id);
@@ -287,6 +288,86 @@ function normalizeProfileSettings(profile) {
   };
 }
 
+let editorGroupEdit = null;
+const observedEditorGroupSelects = new WeakSet();
+
+function currentEditorGroupEdit() {
+  return editorGroupEdit?.profileId === editingProfileId ? editorGroupEdit : null;
+}
+
+function unlistedEditorGroupLabel(name) {
+  const hint = localUiText('当前分组不在本地列表', 'Current group is not in the local list');
+  return name ? `${name} (${hint})` : hint;
+}
+
+function refreshEditorGroupSelectors() {
+  const edit = currentEditorGroupEdit();
+  const main = $('#editor-group');
+  const selected = edit ? edit.choice ?? edit.original.groupId : main?.value || UNGROUPED_ID;
+  for (const select of [main, $('#editor-footer-group')]) {
+    if (!select) continue;
+    fillGroupSelect(select, selected);
+    const original = edit?.original;
+    if (original?.groupId && !findGroup(original.groupId)) {
+      const option = document.createElement('option');
+      option.value = original.groupId;
+      option.textContent = unlistedEditorGroupLabel(original.group_name);
+      select.append(option);
+    }
+    if (edit?.choice && edit.choice !== original.groupId && !findGroup(edit.choice)) {
+      const option = document.createElement('option');
+      option.value = edit.choice;
+      option.textContent = localUiText('所选分组已不在本地列表', 'The selected group is no longer in the local list');
+      option.disabled = true;
+      select.append(option);
+    }
+    select.value = selected;
+    syncThemedSelect(select);
+  }
+}
+
+function beginEditorGroupEdit(profile) {
+  // This pair comes from the same trusted snapshot as editingProfileBaseRev,
+  // not the mutable list or a label which happens to look the same.
+  editorGroupEdit = { profileId: profile.id, original: {
+    groupId: profile.groupId || UNGROUPED_ID,
+    group_name: String(profile.group_name || ''),
+  } };
+  const main = $('#editor-group');
+  if (main && !observedEditorGroupSelects.has(main)) {
+    observedEditorGroupSelects.add(main);
+    main.addEventListener('change', () => {
+      const edit = currentEditorGroupEdit();
+      if (!edit || main.selectedIndex < 0) return;
+      const id = main.value;
+      // The themed select and footer forward deliberate choices via this
+      // event. Rebuilding options or assigning a value does not emit it.
+      edit.choice = id && id === edit.original.groupId && !findGroup(id) ? undefined : id;
+      const footer = $('#editor-footer-group');
+      if (footer && footer.value !== id) {
+        footer.value = id;
+        syncThemedSelect(footer);
+      }
+    });
+  }
+  refreshEditorGroupSelectors();
+}
+
+function readEditorGroupFields(strict) {
+  const edit = currentEditorGroupEdit();
+  if (!edit) return { groupId: $('#editor-group')?.value || UNGROUPED_ID };
+  if (edit.choice === undefined) return edit.original;
+  if (edit.choice === UNGROUPED_ID) return { groupId: UNGROUPED_ID, group_name: '' };
+  const group = findGroup(edit.choice);
+  if (group) return { groupId: group.id, group_name: group.name };
+  if (strict) throw new Error(localUiText('所选分组已不可用，请重新选择。', 'The selected group is no longer available. Choose another group.'));
+  return edit.original;
+}
+
+function editorGroupSummaryLabel(draft) {
+  return draft.groupId && !findGroup(draft.groupId) ? unlistedEditorGroupLabel(draft.group_name) : groupNameOf(draft);
+}
+
 function editorDraft(strict = true) {
   const current = ui.profiles.find((item) => item.id === editingProfileId) || {};
   const editorForm = $('#profile-editor-form');
@@ -555,7 +636,7 @@ function editorDraft(strict = true) {
       privacy: { languageMode: $('#editor-language-mode')?.value || 'ip' },
     }, editorNetworkResult || {}),
     tag: ($('#editor-tag')?.value || '').trim(),
-    groupId: $('#editor-group')?.value || UNGROUPED_ID,
+    ...readEditorGroupFields(strict),
     note: ($('#editor-note')?.value || '').trim(),
     networkMode: selectedNetwork === 'direct' ? 'direct' : 'proxy',
     proxy,
@@ -719,7 +800,7 @@ function renderEditorSummary() {
     [tx('硬件加速'), privacy.hardwareAcceleration === 'off' ? t('editor.summary.off') : t('editor.summary.on')],
     [tx('禁用沙盒'), privacy.noSandbox ? t('editor.summary.on') : t('editor.summary.off')],
     // —— 本项目自有扩展行（保留） ——
-    [tx('浏览器'), draft.engine === 'firefox' ? 'Firefox' : 'Google Chrome'], [tx('分组'), groupNameOf(draft)], [tx('网络'), maskProxy(draft.proxy)],
+    [tx('浏览器'), draft.engine === 'firefox' ? 'Firefox' : 'Google Chrome'], [tx('分组'), editorGroupSummaryLabel(draft)], [tx('网络'), maskProxy(draft.proxy)],
     ['WebGPU', privacy.webgpu === 'blocked' ? t('editor.summary.disabled') : (privacy.webgpu === 'webgl' ? t('editor.summary.basedOnWebgl') : t('editor.summary.real'))],
     [tx('电池'), privacy.battery === 'blocked' ? t('editor.summary.off') : (privacy.battery === 'real' ? t('editor.summary.real') : t('editor.summary.random'))],
     [tx('蓝牙'), labels.bluetooth[privacy.bluetooth || 'real']],
@@ -1107,7 +1188,7 @@ function showProfileEditor(value, revision) {
   editorSet('#editor-platform-pass', profile.platform?.password || '');
   editorSet('#editor-platform-2fa', profile.platform?.totpSecret || '');
   renderExtraAccounts(profile.platform?.accounts);
-  fillGroupSelect($('#editor-group'), profile.groupId || UNGROUPED_ID, { includeUngrouped: true });
+  beginEditorGroupEdit(profile);
   const linkedProxyId = profileProxyId(profile);
   renderProxyLibrarySelect($('#editor-proxy-library'), linkedProxyId);
   const linkedProxy = proxyLibraryItem(linkedProxyId);

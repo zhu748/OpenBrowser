@@ -167,6 +167,7 @@ async function updateProfileDataRoot(value) {
   }
 }
 let engine;
+let engineInitComplete = false;
 let liveSync;
 let automation = null;
 // Lazy accessor shared by the rebuild:request LocalService wiring below and
@@ -1033,6 +1034,7 @@ app.whenReady().then(async () => {
   });
   liveSync = new LiveSyncController(engine, handleLiveSyncEvent);
   await engine.init(path.join(__dirname, 'bundled-extension'));
+  engineInitComplete = true;
   try {
     const startPage = await engine.ensureStartPage();
     startPage.setEngine?.(engine);
@@ -1404,13 +1406,13 @@ function beginQuitCleanup() {
       if (!stopResult.stopped) return;
       if (stopResult.remaining.length) return;
       if (persistenceFailed) return;
-      if (fatalFailure || !cloud.enabled || !cloud.autoSyncOnQuit) return;
+      if (fatalFailure || !cloud.enabled || !cloud.autoSyncOnQuit || !engineInitComplete) return;
       try {
         // The quit chain is the only path that actually exits the app, so a
         // hung backup (network mount, huge browser-data archive) must not
         // keep the windowless process alive indefinitely.
         await lifecycleTimeout(
-          cloudOps.runCloudBackup({
+          cloudOps.runQuitCloudBackup({
             profiles: [...(engine?.profiles?.values?.() || [])],
             groups: settingsStore.getLocalSettings().uiGroups || [],
             cloud,
@@ -1419,6 +1421,10 @@ function beginQuitCleanup() {
           'Quit auto-backup timed out after 90s; exiting anyway'
         );
       } catch (error) {
+        if (error.code === 'CLOUD_QUIT_BACKUP_BLOCKED') {
+          console.warn('OpenBrowser quit auto-backup skipped:', error.message);
+          return; // A safety veto must not rewrite settings during recovery.
+        }
         console.warn('OpenBrowser quit auto-backup failed:', error.message);
         try {
           const failedSettings = settingsStore.getLocalSettings();

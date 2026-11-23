@@ -11,6 +11,7 @@
  */
 
 const path = require('path');
+const fs = require('node:fs/promises');
 const cloudSync = require('./cloud-sync');
 const { MAX_BACKUP_PROFILES } = require('./cloud/limits');
 const { mergeProfileState } = require('./cloud/merge');
@@ -118,6 +119,58 @@ async function runCloudBackup(payload = {}) {
   return enqueueCloudOp(() => runCloudBackupExclusive(payload));
 }
 
+function quitBackupBlocked(cause) {
+  return Object.assign(new Error('无法确认本地恢复状态，已跳过退出时备份，未发送新备份。', { cause }),
+    { code: 'CLOUD_QUIT_BACKUP_BLOCKED' });
+}
+
+/** Quit is automatic; it must not replace a good package with unsettled data. */
+function runQuitCloudBackup(payload = {}) {
+  return enqueueCloudOp(() => {
+    let verify;
+    try { verify = createQuitBackupGuard(requireDeps().getEngine); }
+    catch (cause) { throw quitBackupBlocked(cause); }
+    return runCloudBackupExclusive(payload, verify);
+  });
+}
+
+function createQuitBackupGuard(getEngine) {
+  const engine = getEngine();
+  const paths = () => [engine?.app?.getPath?.('userData'), engine?.getProfileDataRoot?.()];
+  const [userData, profileRoot] = paths();
+  const profiles = engine?.profiles;
+  const version = profiles?.version;
+  if (!Number.isSafeInteger(version) || ![userData, profileRoot].every(value => typeof value === 'string' && path.isAbsolute(value))) {
+    throw new Error('Backup source is unavailable');
+  }
+  const directories = [...new Set([userData, profileRoot])];
+  const identities = () => Promise.all(directories.map(async directory => {
+    const stat = await fs.lstat(directory, { bigint: true });
+    if (!stat.isDirectory()) throw new Error('Backup source is not a directory');
+    return stat;
+  }));
+  const assertCurrent = source => {
+    const [currentData, currentRoot] = paths();
+    if (source !== engine || getEngine() !== engine || currentData !== userData || currentRoot !== profileRoot
+      || engine.profileDataRootChange || engine.profiles !== profiles || profiles.version !== version) {
+      throw new Error('Backup source changed during quit');
+    }
+  };
+  let expected;
+  return async (source = engine) => {
+    try {
+      assertCurrent(source);
+      const current = await identities();
+      expected ??= current;
+      if (current.some(({ dev, ino }, index) => dev !== expected[index].dev || ino !== expected[index].ino)) {
+        throw new Error('Backup source directory changed during quit');
+      }
+      if (await readRestoreState(engine)) throw new Error('Cloud restore journal has not been settled');
+      assertCurrent(source);
+    } catch (cause) { throw quitBackupBlocked(cause); }
+  };
+}
+
 function assertBackupProfilesPresent(profileIds, profiles) {
   const missing = [...new Set(profileIds)].filter((id) => !profiles.has(id));
   if (missing.length) throw Object.assign(
@@ -127,7 +180,7 @@ function assertBackupProfilesPresent(profileIds, profiles) {
 }
 
 /** Resolve credentials in the host, and hold stopped profiles while reading files. */
-async function buildEngineBackup(payload = {}, { settings, includeProxies = true } = {}) {
+async function buildEngineBackup(payload = {}, { settings, includeProxies = true, verifyBeforeBuild } = {}) {
   const { getEngine, getAutomation, getSettings } = requireDeps();
   const engine = getEngine();
   const local = getSettings();
@@ -141,6 +194,7 @@ async function buildEngineBackup(payload = {}, { settings, includeProxies = true
   const fileIds = cloud.includeBrowserData !== false ? selected.map((profile) => profile.id) : [];
   // Close-time automatic pushes can arrive just before the stop promise settles.
   for (const id of fileIds) if (engine?.stopping?.has(id)) await engine.stopping.get(id);
+  if (verifyBeforeBuild) await verifyBeforeBuild(engine);
   const lease = acquireProfileMaintenance(engine, fileIds);
   try {
     let current = selected;
@@ -186,10 +240,13 @@ async function recoverPendingRestore({ proxyStore } = {}) {
   }
 }
 
-async function runCloudBackupExclusive(payload = {}) {
+async function runCloudBackupExclusive(payload = {}, verify) {
   const { emit, getSettings, saveSettings } = requireDeps();
-  const { buffer, meta, cloud } = await buildEngineBackup(payload);
+  const { buffer, meta, cloud } = await buildEngineBackup(payload, { verifyBeforeBuild: verify });
   const remoteName = payload.remoteName || cloudSync.REMOTE_NAME;
+  // Last check while this operation still owns the cloud queue. Once the
+  // provider is called, that provider owns its own staging/replace protocol.
+  if (verify) await verify();
   const result = await cloudSync.upload(cloud.provider, providerConfigFromCloud(cloud), buffer, remoteName);
   cloud.lastSyncAt = new Date().toISOString();
   cloud.lastError = '';
@@ -465,6 +522,7 @@ async function runCloudProfilePullExclusive(payload = {}) {
 module.exports = {
   initCloudOps,
   runCloudBackup,
+  runQuitCloudBackup,
   createBackupPackage,
   recoverPendingRestore,
   applyBackupBody,

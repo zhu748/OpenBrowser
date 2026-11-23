@@ -3,7 +3,7 @@
 // Moving existing names preserves the shared-script contract without adding
 // runtime globals; eslint.config.js records the cross-file dependencies.
 /* exported renderGroupsPage, openGroupDialog, saveGroupFromDialog, deleteGroup, assignSelectedToGroup */
-/* global localUiWriteProblem, localUiText */
+/* global localUiWriteProblem, localUiText, refreshEditorGroupSelectors */
 
 // ========== 分组管理 ==========
 function renderGroupsPage() {
@@ -131,7 +131,7 @@ function saveGroupFromDialog() {
   invalidateViewCache(['groups', 'profiles']);
   renderGroupsPage();
   renderProfiles();
-  fillGroupSelect($('#editor-group'), $('#editor-group')?.value || UNGROUPED_ID);
+  if ($('#editor-group')) refreshEditorGroupSelectors();
   fillGroupSelect($('#batch-add-group'), $('#batch-add-group')?.value || UNGROUPED_ID);
   fillGroupSelect($('#profile-create-group'), $('#profile-create-group')?.value || UNGROUPED_ID);
   fillGroupSelect($('#batch-assign-group'), '', { includeUngrouped: true });

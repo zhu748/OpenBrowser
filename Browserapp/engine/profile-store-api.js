@@ -31,7 +31,7 @@ function notifyProfileCommit(engine) {
   }
 }
 
-function stageProfileCommands(engine, commands) {
+function stageProfileCommands(engine, commands, { activeOnly = false } = {}) {
   if (!Array.isArray(commands) || commands.length > 200 || commands.length === 0) {
     throw new Error('Invalid profile commands');
   }
@@ -45,8 +45,12 @@ function stageProfileCommands(engine, commands) {
     if (command.kind === 'modify' && (!command.profile || command.profile.id !== id)) {
       throw Object.assign(new Error('Profile command ID does not match payload'), { code: 'PROFILE_COMMAND_ID_MISMATCH' });
     }
-    if (!engine.profiles.has(id)) {
+    const current = engine.profiles.get(id);
+    if (!current) {
       throw Object.assign(new Error(`Profile not found: ${id}`), { code: 'PROFILE_NOT_FOUND' });
+    }
+    if (activeOnly && current.trashed) {
+      throw Object.assign(new Error('所选窗口已移入回收站，请刷新后重试'), { code: 'PROFILE_INACTIVE' });
     }
     if (seen.has(id)) throw Object.assign(new Error(`Duplicate command for profile ${id}`), { code: 'PROFILE_COMMAND_DUPLICATE' });
     seen.add(id);
@@ -62,7 +66,7 @@ function stageProfileCommands(engine, commands) {
       }
       // Resolve untouched fields from authoritative state, never the UI's
       // redacted or stale full profile. Identity and credentials cannot be patched.
-      profile = { ...engine.profiles.get(id), ...patch };
+      profile = { ...current, ...patch };
     }
     modify.push({ id, baseRev, profile });
   }
@@ -116,6 +120,15 @@ module.exports = {
   // them to compensate or retry an already persisted profile change.
   async commitProfiles(values, options = {}) {
     await commitProfileSync(this, values, options);
+    notifyProfileCommit(this);
+  },
+
+  // Additive commands drawn from the active roster must reject the whole
+  // selection if a target was recycled. Validate them in the same synchronous
+  // staging pass as revisions, before publishing or persisting any row.
+  async commitActiveProfileCommands(commands) {
+    const { staged } = stageProfileCommands(this, commands, { activeOnly: true });
+    await persistProfileSync(this, staged);
     notifyProfileCommit(this);
   },
 

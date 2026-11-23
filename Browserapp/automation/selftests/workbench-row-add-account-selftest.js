@@ -37,6 +37,16 @@ function decl(source, name) {
   return source.slice(node.start, node.end);
 }
 
+function tableDeclarations(source, ...names) {
+  const hook = parse(source, { ecmaVersion: 'latest', sourceType: 'module' }).body.find(item =>
+    item.declaration?.id?.name === 'useProfileTable').declaration;
+  return names.map(name => {
+    const node = hook.body.body.find(item => item.type === 'FunctionDeclaration' && item.id.name === name);
+    assert.ok(node, name);
+    return source.slice(node.start, node.end);
+  });
+}
+
 async function loadExact(name, overrides) {
   const filename = path.join(app, name);
   const localRequire = createRequire(filename);
@@ -118,7 +128,9 @@ async function fixture(t, sqlite) {
   });
   vm.runInContext(bridgeCode, bridge);
   bridge.electronAPI.on('local:profiles-change', () => activity.push('table refresh event'));
-  const first = (await bridge.__localApi.window.userGetWindowInfoListList({})).data.rows.find(row => row.id === sourceId);
+  const { data: { rows } } = await bridge.__localApi.window.userGetWindowInfoListList({});
+  const first = rows.find(row => row.id === sourceId);
+  const other = structuredClone(rows.find(row => row.id === otherId));
   assert.equal(first.windowPlatformList.length, 1);
   assert.ok(!first.windowPlatformList[0].platformPassword && !first.windowPlatformList[0].platformEfa);
   // Even if legacy display ID diverges, backend selection must use the row key.
@@ -132,10 +144,10 @@ async function fixture(t, sqlite) {
     useListCache: () => ({ invalidateCache: key => cache.push(key) }), cacheKeys: { ACCOUNT_LIST: 'accounts' },
     useProxyForm: () => ({}), requestType: { AddPlatform: 'add_platform' }, editKind: { PlatformAdd: 'platform_add' },
     h: (_component, props) => props, NewAccount: {}, $t: key => key };
-  const { useAccountMenu, useProfileProxyOperations } = vm.runInNewContext(
+  const { useAccountMenu, useProfileProxyOperations, updateAccountRow } = vm.runInNewContext(
     [decl(proxyModel, 'accountFields'), decl(proxyModel, 'pick'), decl(proxyModel, 'updateAccounts'),
       'const updateAccountRow = updateAccounts;', decl(profileRow, 'useProfileProxyOperations'),
-      decl(profileRow, 'useAccountMenu'), '({useProfileProxyOperations,useAccountMenu})'].join('\n'), bindings);
+      decl(profileRow, 'useAccountMenu'), '({useProfileProxyOperations,useAccountMenu,updateAccountRow})'].join('\n'), bindings);
   const drawerInstance = { showDrawer: async options => { drawer = options; }, hideDrawer: () => { dismissed++; } };
   const onlyErrorToast = (code, message) => { if (code !== 0) errors.push(message); };
   const common = { data: row, drawerInstance, onlyErrorToast, workspaceName: 'Fixture', emit: noop };
@@ -152,16 +164,47 @@ async function fixture(t, sqlite) {
       pending: { value: false }, addAnother: { value: false }, clone: structuredClone, props: { ...formProps, data: {} },
       form: { value: { reset: () => { resets++; }, setInputsProps: noop } },
       icons: { value: {} }, originalIcons: () => ({}), iconRevision: 0, syncLabels: noop,
-      emit: name => { assert.equal(name, 'close'); formProps.onClose(); }, report: onlyErrorToast,
+      emit: name => { assert.equal(name, 'close'); formProps.onClose?.(); }, report: onlyErrorToast,
     });
     return save;
   }
+  const tableSource = await read(frontend + 'use-profile-table.mjs');
+  const operations = await read(frontend + 'operations/profile-operations.mjs');
+  const handlerSource = decl(operations, 'handlers');
+  const addAction = parse(handlerSource, { ecmaVersion: 'latest' }).body[0].declarations[0].init.properties
+    .find(node => node.key.name === 'addPlatformAccount');
+  assert.ok(addAction);
+  let menu;
+  const tableDrawer = {
+    showDrawer: options => { drawer = options; },
+    hideDrawer() { dismissed++; drawer.onHide(); },
+  };
+  const toolbar = vm.runInNewContext([
+    ...tableDeclarations(tableSource, 'ti', 'openActions'),
+    `const handlers = {${handlerSource.slice(addAction.start, addAction.end)}};`, decl(operations, 'useProfileOperations'),
+    'const runOperation = useProfileOperations({ multipleAccountChange: ti, saveLocalTrack: () => {} });',
+    '({ openActions, runOperation });',
+  ].join('\n'), {
+    o: bridge.__localApi, V: bindings.editKind, z: bindings.requestType, $t: bindings.$t,
+    we: updateAccountRow, I: (_component, props) => props, St: {}, toRaw: value => value,
+    T2: tableDrawer, K2: onlyErrorToast, dr: () => cache.push('accounts'), i: value => value, ie: value => value,
+    Ke2: (_event, options) => { menu = options; },
+  });
   return {
-    calls, cache, activity, errors, row, rowBefore,
+    calls, cache, activity, errors, row, rowBefore, other,
     engine: () => engine,
     dismissed: () => dismissed,
     resets: () => resets,
     failReceipt: () => { falseReceipt = true; },
+    request: (name, payload) => service.request(name, payload),
+    toolbar(operationType, rows = operationType === 'batch' ? [row, other] : row) {
+      const action = { name: 'addPlatformAccount' };
+      if (operationType === 'single') toolbar.openActions({ event: {}, operation: [action] }, rows);
+      const finished = operationType === 'single' ? menu.operationHandler(action)
+        : toolbar.runOperation(action, rows, operationType);
+      const formProps = drawer.slots.container();
+      return { save: form(formProps), close: () => tableDrawer.hideDrawer(), finished };
+    },
     async show() {
       await options.command();
       const props = drawer.slots.container();
@@ -259,4 +302,164 @@ test('cancel, persistence rejection, and an unconfirmed boolean never update the
   durable = await f.reopen();
   assert.equal(durable.platform.accounts.length, 1);
   assert.ok(containsFields(durable.platform.accounts[0], oldCredentials));
+});
+
+const addPayload = ids => ({ ids, type: 'platform_add', paramList: { windowPlatformList: [entry] } });
+const newCredentials = { password: entry.platformPassword, totpSecret: entry.platformEfa };
+const capturedAccount = { url: 'https://ordinary.invalid', username: 'Existing entry', ...oldCredentials };
+
+for (const sqlite of [true, false]) {
+  const backend = sqlite ? 'SQLite' : 'encrypted JSON';
+  const cases = { skip: sqlite && !ProfileStoreSqlite.isSupported(), timeout: 10000 };
+
+  for (const mode of ['single', 'batch']) test(`${backend}: ${mode} toolbar Add sends only an inline draft and keeps the roster redacted`, cases, async t => {
+    const f = await fixture(t, sqlite);
+    const first = f.toolbar(mode);
+    first.close();
+    await first.finished;
+    assert.deepEqual([f.calls, f.cache, f.activity, f.errors], [[], [], [], []]);
+    const form = f.toolbar(mode);
+    const ids = mode === 'single' ? [sourceId] : [sourceId, otherId];
+    const otherBefore = structuredClone(f.other);
+    const before = new Map([sourceId, otherId].map(id => [id, f.engine().profileForEdit(id).rev]));
+    const version = f.engine().profiles.version;
+    await form.save({ ...entry, id: 'not-a-link', accountId: 'not-a-link', _tempId: 'not-a-persisted-field' });
+    assert.deepEqual(f.calls, [['profiles:edit-data', { ...addPayload(ids), requestType: 'add_platform' }]]);
+    assert.deepEqual([f.dismissed(), f.resets(), f.errors.length, f.cache.length], [2, 1, 0, 1]);
+    await form.finished;
+    assert.deepEqual(f.activity, ['invalidated', 'table refresh event']);
+    assert.deepEqual(f.row, f.rowBefore, 'the form must not patch roster data in place');
+    assert.deepEqual(f.other, otherBefore);
+    assert.equal(f.engine().profiles.version, version + ids.length);
+    for (const [id, rev] of before) {
+      const next = f.engine().profileForEdit(id).rev;
+      assert.ok(ids.includes(id) ? next > rev : next === rev);
+    }
+    const durable = await f.reopen();
+    assert.equal(durable.platform.accounts.length, 2);
+    assert.ok(containsFields(durable.platform, oldCredentials));
+    assert.ok(containsFields(durable.platform.accounts[0], oldCredentials));
+    assert.ok(containsFields(durable.platform.accounts[1], newCredentials));
+    assert.equal(durable.platform.accounts[1].accountId, undefined);
+    assert.equal(f.engine().profileForEdit(otherId).profile.platform.accounts.length, mode === 'batch' ? 1 : 0);
+    assert.ok((await f.visible()).windowPlatformList.every(account => !account.platformPassword && !account.platformEfa));
+  });
+
+  test(`${backend}: retired, absent, retiring and duplicate targets abort the entire append`, cases, async t => {
+    const f = await fixture(t, sqlite);
+    const openForm = f.toolbar('batch');
+    await f.engine().trashProfiles([otherId]);
+    const healthy = f.engine().profileForEdit(sourceId);
+    const archived = f.engine().profileForEdit(otherId);
+    const reject = (ids, code) => assert.rejects(f.request('profiles:edit-data', addPayload(ids)), { code });
+    await reject([sourceId, otherId], 'PROFILE_INACTIVE');
+    await reject([sourceId, 'absent-profile'], 'PROFILE_NOT_FOUND');
+    await reject([sourceId, sourceId], 'PROFILE_COMMAND_DUPLICATE');
+    f.engine().deletingProfiles.add(sourceId);
+    try { await reject([sourceId], 'PROFILE_DELETING'); }
+    finally { f.engine().deletingProfiles.delete(sourceId); }
+    await openForm.save(entry);
+    assert.deepEqual([f.dismissed(), f.resets(), f.errors.length, f.cache.length], [0, 0, 1, 0]);
+    openForm.close();
+    await openForm.finished;
+    assert.deepEqual(f.engine().profileForEdit(sourceId), healthy);
+    assert.deepEqual(f.engine().profileForEdit(otherId), archived);
+    assert.deepEqual(await f.reopen(), healthy.profile);
+    assert.deepEqual(f.engine().profileForEdit(otherId).profile, archived.profile);
+  });
+
+  test(`${backend}: a missing ID cannot be coerced into a different real active ID`, cases, async t => {
+    const f = await fixture(t, sqlite);
+    const id = 'null';
+    await f.engine().commitProfiles([{ id, name: 'Exact string key', platform: { accounts: [] } }]);
+    const before = f.engine().profileForEdit(sourceId);
+    await assert.rejects(f.request('profiles:edit-data', addPayload([sourceId, null])), /Invalid profile id/);
+    await assert.rejects(f.request('profiles:edit-data', addPayload([])), /窗口选择数量无效/);
+    await assert.rejects(f.request('profiles:edit-data', addPayload(Array(201).fill(sourceId))), /窗口选择数量无效/);
+    assert.deepEqual(f.engine().profileForEdit(sourceId), before);
+    assert.equal(f.engine().profileForEdit(id).profile.platform.accounts.length, 0);
+    assert.equal(await f.request('profiles:edit-data', addPayload([id])), true);
+    await f.reopen();
+    assert.equal(f.engine().profileForEdit(id).profile.platform.accounts.length, 1);
+  });
+
+  test(`${backend}: 19 to 20 commits; a later target already at 20 rejects the batch`, cases, async t => {
+    const f = await fixture(t, sqlite);
+    const many = (id, count) => {
+      const { profile } = f.engine().profileForEdit(id);
+      return { ...profile, platform: { ...profile.platform, ...capturedAccount,
+        accounts: Array.from({ length: count }, () => ({ ...capturedAccount })) } };
+    };
+    await f.engine().commitProfiles([many(sourceId, 19), many(otherId, 19)]);
+    assert.equal(await f.request('profiles:edit-data', addPayload([otherId])), true);
+    const first = f.engine().profileForEdit(sourceId);
+    const second = f.engine().profileForEdit(otherId);
+    assert.equal(second.profile.platform.accounts.length, 20);
+    await assert.rejects(f.request('profiles:edit-data', addPayload([sourceId, otherId])), /最多 20/);
+    assert.deepEqual(f.engine().profileForEdit(sourceId), first);
+    assert.deepEqual(f.engine().profileForEdit(otherId), second);
+    assert.equal((await f.reopen()).platform.accounts.length, 19);
+    const saved = f.engine().profileForEdit(otherId).profile.platform.accounts;
+    assert.equal(saved.length, 20);
+    assert.ok(containsFields(saved.at(-1), newCredentials));
+  });
+
+  for (const fail of ['projection', 'notification']) test(`${backend}: ${fail} failure after append does not invite a retry`, cases, async t => {
+    const f = await fixture(t, sqlite);
+    const engine = f.engine(), { status, emit } = engine;
+    const form = await f.show();
+    const code = Object.assign(Error('Fixture late failure'), { code: 'EIO' });
+    if (fail === 'projection') engine.status = () => { throw code; };
+    else engine.emit = function (event) {
+      if (event.action === 'profiles-update') throw code;
+      return emit.call(this, event);
+    };
+    try { await form.save(entry); }
+    finally { Object.assign(engine, { status, emit }); }
+    const saved = (await f.reopen()).platform.accounts;
+    assert.equal(saved.length, 2);
+    assert.ok(containsFields(saved[0], oldCredentials));
+    assert.ok(containsFields(saved[1], newCredentials));
+    assert.deepEqual([f.calls.length, f.dismissed(), f.resets(), f.errors.length], [1, 1, 1, 0]);
+  });
+
+  test(`${backend}: real write boundary ENOSPC rejects and retains every prior target`, cases, async t => {
+    const f = await fixture(t, sqlite);
+    const engine = f.engine(), { rename } = fs;
+    const store = engine.sqliteStore, save = store?.saveProfilesDiffed;
+    const error = Object.assign(Error('Fixture write boundary failed'), { code: 'ENOSPC' });
+    const first = engine.profileForEdit(sourceId).profile, other = engine.profileForEdit(otherId).profile;
+    let reached = 0;
+    if (sqlite) store.saveProfilesDiffed = function (profiles) {
+      save.call(this, profiles); // The outer real transaction must roll back both rows.
+      reached++;
+      throw error;
+    };
+    else fs.rename = async (source, destination) => {
+      if (destination !== engine.stateFile) return rename(source, destination);
+      reached++;
+      throw error;
+    };
+    try { await assert.rejects(f.request('profiles:edit-data', addPayload([sourceId, otherId])), e => e === error); }
+    finally { if (sqlite) store.saveProfilesDiffed = save; else fs.rename = rename; }
+    assert.equal(reached, 1);
+    assert.deepEqual(f.engine().profileForEdit(sourceId).profile, first);
+    assert.deepEqual(f.engine().profileForEdit(otherId).profile, other);
+    assert.deepEqual(await f.reopen(), first);
+    assert.deepEqual(f.engine().profileForEdit(otherId).profile, other);
+  });
+}
+
+test('batch toolbar stays open for an unconfirmed response and ignores duplicate submits while pending', { timeout: 10000 }, async t => {
+  const f = await fixture(t, false);
+  const form = f.toolbar('batch');
+  f.failReceipt();
+  const saving = form.save(entry);
+  await form.save(entry);
+  await saving;
+  assert.deepEqual([f.calls.length, f.dismissed(), f.resets(), f.errors.length, f.cache.length], [1, 0, 0, 1, 0]);
+  assert.deepEqual(f.row, f.rowBefore);
+  assert.equal((await f.reopen()).platform.accounts.length, 1);
+  form.close();
+  await form.finished;
 });

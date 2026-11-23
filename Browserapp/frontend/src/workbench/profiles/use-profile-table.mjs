@@ -282,25 +282,41 @@ export function useProfileTable(props, emit) {
     return $e2(t3);
   }
   function ti(e2, { operationType: t3, isChoose: n2 = !1 }) {
-    let { promise: r2, resolve: i2 } = Promise.withResolvers(), a3 = [].concat(e2), s3 = t3 === "batch", c3 = n2 ? $t("选择平台账号") : $t("添加平台账号"), l2 = n2 ? () => I("div", { class: "h-full flex flex-col" }, [s3 && I("div", { class: "px-4 pt-4" }, [I(Ze, { class: "min-w-full", type: "warn", closable: !1, title: $t("此操作将清空所选窗口中的平台账号，并将新选择的平台账号绑定至窗口，请谨慎操作。") }, null)]), I(Ct, { class: "flex-1 overflow-hidden", data: s3 ? void 0 : a3[0], onConfirm: u2 }, null)]) : () => I(St, { showRemark: !1, showCreateMore: !1, onConfirm: u2 }, null);
+    let { promise: r2, resolve: i2 } = Promise.withResolvers(), a3 = [].concat(e2), s3 = t3 === "batch", c3 = n2 ? $t("选择平台账号") : $t("添加平台账号"), l2 = n2 ? () => I("div", { class: "h-full flex flex-col" }, [s3 && I("div", { class: "px-4 pt-4" }, [I(Ze, { class: "min-w-full", type: "warn", closable: !1, title: $t("此操作将清空所选窗口中的平台账号，并将新选择的平台账号绑定至窗口，请谨慎操作。") }, null)]), I(Ct, { class: "flex-1 overflow-hidden", data: s3 ? void 0 : a3[0], onConfirm: u2 }, null)]) : () => I(St, { showRemark: !1, showCreateMore: !1, onConfirm: appendAccount, onClose: () => T2.hideDrawer() }, null);
+    const addIds = n2 ? null : a3.map(row => row.id);
     T2.showDrawer({ title: c3, slots: { container: l2 }, onHide: i2 });
+    async function appendAccount({ platformUrl, platformUserName, platformPassword, platformEfa }) {
+      // The roster is redacted. Send only the new account and let the host
+      // append it to the latest stored accounts, in single and batch mode.
+      const { code, data, msg } = await o.window.userMdfWindowDataBatchCreate({
+        type: V.PlatformAdd, requestType: z.AddPlatform, ids: addIds,
+        paramList: { windowPlatformList: [{ platformUrl, platformUserName, platformPassword, platformEfa }] },
+      });
+      if (code !== 0 || data !== true) {
+        K2(code || -1, msg || $t("保存失败"));
+        return false;
+      }
+      // The normal profile event refreshes the redacted roster. Never copy
+      // the private editor draft into a table row.
+      try { dr(); } catch (_) { /* Cache invalidation must not change a durable receipt. */ }
+      return true;
+    }
     async function u2(e3) {
       let { code: t4, msg: n3 } = s3 ? await d2(e3) : await f2(e3);
       T2.hideDrawer(), K2(t4, n3);
     }
     async function d2(e3) {
-      let t4 = [].concat(e3).map((e4) => e4.id), r3 = n2 ? { platformUrlIds: t4 } : { windowPlatformList: [e3] }, i3 = n2 ? V.PlatformSelect : V.PlatformAdd, s4 = n2 ? z.SelectPlatform : z.AddPlatform, c4 = a3.map((e4) => e4.id), { code: l3, msg: u3 } = await o.window.userMdfWindowDataBatchCreate({ paramList: r3, type: i3, requestType: s4, ids: c4 });
+      let t4 = [].concat(e3).map((e4) => e4.id), c4 = a3.map((e4) => e4.id), { code: l3, msg: u3 } = await o.window.userMdfWindowDataBatchCreate({ paramList: { platformUrlIds: t4 }, type: V.PlatformSelect, requestType: z.SelectPlatform, ids: c4 });
       return l3 === 0 && (a3.forEach((t5, r4) => {
-        let i4 = n2 && Array.isArray(e3) ? e3 : t5.windowPlatformList.concat({ ...e3, _tempId: (Date.now() + r4 ** 2).toString(32) });
+        let i4 = Array.isArray(e3) ? e3 : t5.windowPlatformList.concat({ ...e3, _tempId: (Date.now() + r4 ** 2).toString(32) });
         we(t5, i4);
       }), dr()), { code: l3, msg: u3 };
     }
     async function f2(e3) {
-      let { id: t4, dirId: r3, windowPlatformList: i3 } = a3[0], s4 = { id: t4, dirId: r3 };
-      n2 ? (s4.platformUrlIds = e3.filter((e4) => e4.id).map((e4) => e4.id), s4.requestType = z.SelectPlatform) : (s4.windowPlatformList = i3.concat({ ...e3, _tempId: Date.now().toString(32) }), s4.requestType = z.AddPlatform);
+      let { id: t4, dirId: r3, windowPlatformList: i3 } = a3[0], s4 = { id: t4, dirId: r3, platformUrlIds: e3.filter((e4) => e4.id).map((e4) => e4.id), requestType: z.SelectPlatform };
       let { code: c4, msg: l3 } = await o.window.userMdfWindowInfoSingleV2Create(s4);
       if (c4 === 0) {
-        let t5 = s4.windowPlatformList || i3.filter((e4) => !e4.id).concat(e3);
+        let t5 = i3.filter((e4) => !e4.id).concat(e3);
         we(a3[0], t5), dr();
       }
       return { code: c4, msg: l3 };
