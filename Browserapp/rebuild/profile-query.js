@@ -1,5 +1,7 @@
 "use strict";
 
+const { projectNameFor } = require("./profile-index");
+
 const QUERY_FIELDS = { name: "windowName", remark: "windowRemark", note: "windowRemark", sortNum: "windowSortNum", id: "windowSortNum" };
 const ORDER_FIELDS = {
   profile: "windowSortNum", profileName: "windowSortNum", windowSortNum: "windowSortNum",
@@ -32,7 +34,8 @@ function dateFilter(key, start, end, calendar) {
   };
 }
 
-function compileFilters(p, snapshot) {
+function compileFilters(p, index) {
+  const { snapshot } = index;
   const filters = [];
   if (p.windowName) filters.push(row => row.windowName.includes(p.windowName));
   if (p.openStatus) filters.push(row => snapshot[row.position].running);
@@ -49,6 +52,8 @@ function compileFilters(p, snapshot) {
       filters.push(row => String(row[field]).toLowerCase().includes(query));
     } else if (p.queryKey === "tag") {
       filters.push(row => row.labelInfos.some(label => label.labelName.toLowerCase().includes(query)));
+    } else if (p.queryKey === "project_name") {
+      filters.push(row => String(projectNameFor(snapshot[row.position], index)).toLowerCase().includes(query));
     }
   }
   if (p.sortNums) {
@@ -143,7 +148,7 @@ function queryProfiles(service, p = {}) {
   const projection = service.profileIndex();
   const snapshot = projection.snapshot;
   const trashed = p.isDelete === true || p.isDelete === 1 || p.isDelete === "1" || p.isDelete === "true";
-  const [candidates, filters] = orderedCandidates(projection, p, trashed, compileFilters(p, snapshot));
+  const [candidates, filters] = orderedCandidates(projection, p, trashed, compileFilters(p, projection));
   const { total, page } = selectPage(candidates, filters, (index - 1) * size, index * size);
   return { rows: page.map(row => service.decorate(snapshot[row.position], projection)), total };
 }

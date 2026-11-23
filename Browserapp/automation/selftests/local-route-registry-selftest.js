@@ -255,6 +255,32 @@ async function checkProjectSortWrites() {
   assert.equal(writes.length, 1, 'validation still applies to every reorder request');
 }
 
+async function checkProjectNameSearch() {
+  const service = Object.create(LocalService.prototype);
+  const groups = [{ id: 'group-a', projectName: 'Renamed project' }, { id: 'group-b', projectName: 'Other project' }];
+  const profiles = [
+    { id: 'profile-a', groupId: 'group-a', group_name: 'Stale name' },
+    { id: 'profile-b', groupId: 'group-b', group_name: 'Renamed somewhere else' },
+    { id: 'profile-legacy', group_name: 'Legacy project' },
+  ];
+  service.queue = Promise.resolve();
+  service.load = async () => {};
+  service.data = { groups, labels: [] };
+  service.engine = { status: () => profiles };
+  const decorate = service.decorate.bind(service);
+  let decorated = 0;
+  service.decorate = (...args) => { decorated++; return decorate(...args); };
+  const search = queryValue => service.request('profiles:query', { queryKey: 'project_name', queryValue });
+
+  const renamed = await search('rEnAmEd');
+  assert.deepEqual(renamed.rows.map(row => row.id), ['profile-a'], 'search uses the current displayed project name');
+  assert.equal(renamed.total, 1);
+  assert.equal(renamed.rows[0].projectName, 'Renamed project');
+  assert.equal(decorated, 1, 'non-matching rows are not decorated');
+  assert.deepEqual((await search('Stale')).rows, [], 'renamed project no longer matches its old name');
+  assert.deepEqual((await search('Legacy')).rows.map(row => row.id), ['profile-legacy'], 'legacy unindexed names still work');
+}
+
 async function main() {
   // Use the real request/dispatch/handlers with controlled I/O and no desktop.
   const service = Object.create(LocalService.prototype);
@@ -334,6 +360,7 @@ async function main() {
   await checkSettingsNoopWrites();
   await checkExchangeFileBom();
   await checkProjectSortWrites();
+  await checkProjectNameSearch();
 
   // A large existing library must not exceed the JS argument-count limit when
   // creating a profile or reserving a batch of sequential display numbers.

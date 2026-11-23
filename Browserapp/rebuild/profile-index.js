@@ -58,6 +58,10 @@ function buildProfileIndex({ snapshot, profiles, version, groups, labels }) {
   return index;
 }
 
+function projectNameFor(profile, index) {
+  return index.groupById.get(profile.groupId)?.projectName || profile.group_name || "";
+}
+
 function decorateProfile(profile, index) {
   const row = toRoxy(profile);
   const labelInfo = row.labelIds.map(id => index.labelById.get(id)).filter(Boolean).map(label => ({
@@ -65,10 +69,10 @@ function decorateProfile(profile, index) {
   }));
   return {
     ...row,
-    projectName: index.groupById.get(profile.groupId)?.projectName || profile.group_name || "",
+    projectName: projectNameFor(profile, index),
     labelInfo,
     labelInfos: labelInfo,
   };
 }
 
-module.exports = { buildProfileIndex, decorateProfile };
+module.exports = { buildProfileIndex, decorateProfile, projectNameFor };
