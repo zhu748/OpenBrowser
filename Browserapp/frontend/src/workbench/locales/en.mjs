@@ -1,4 +1,5 @@
 const messages = {
+  "列表读取失败": "Could not load the list",
   "窗口已在别处更新，请重新编辑名称。": "This profile was updated elsewhere. Reopen the name editor and try again.",
   "指纹预览未返回完整身份，请重试": "The fingerprint preview was incomplete. Please try again.",
   "Firefox 当前支持桌面设备配置，请选择 Windows、macOS 或 Linux": "Firefox profiles require Windows, macOS, or Linux.",

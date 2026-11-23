@@ -8,10 +8,21 @@ function append(map, key, value) {
   entries.push(value);
 }
 
+function buildProjectLookup(groups) {
+  const groupById = new Map(groups.map(row => [row.id, row]));
+  // Alias legacy numeric IDs, but preserve exact matches if both forms exist.
+  for (const group of groups) {
+    if (typeof group.id !== "number") continue;
+    const id = String(group.id);
+    if (!groupById.has(id)) groupById.set(id, group);
+  }
+  return groupById;
+}
+
 function buildProfileIndex({ snapshot, profiles, version, groups, labels }) {
   const index = {
     snapshot, profiles, version, groups, labels,
-    groupById: new Map(groups.map(row => [row.id, row])),
+    groupById: buildProjectLookup(groups),
     labelById: new Map((labels || []).map(row => [row.id, row])),
     groupCounts: new Map(),
     proxyProfiles: new Map(),
@@ -23,12 +34,6 @@ function buildProfileIndex({ snapshot, profiles, version, groups, labels }) {
     sortOrders: new Map(),
     activeCount: 0,
   };
-  // Alias legacy numeric IDs, but preserve exact matches if both forms exist.
-  for (const group of groups) {
-    if (typeof group.id !== "number") continue;
-    const id = String(group.id);
-    if (!index.groupById.has(id)) index.groupById.set(id, group);
-  }
   for (const [position, profile] of snapshot.entries()) {
     const labelIds = /^\d+(,\d+)*$/.test(profile.tag || "") ? profile.tag.split(",").map(Number) : [];
     const accounts = profile.platform?.accounts || (profile.platform ? [profile.platform] : []);
@@ -64,10 +69,10 @@ function buildProfileIndex({ snapshot, profiles, version, groups, labels }) {
   return index;
 }
 
-function projectNameFor(profile, index) {
+function projectNameFor(profile, groupById) {
   const id = profile.groupId;
-  const group = index.groupById.get(id)
-    ?? (typeof id === "number" ? index.groupById.get(String(id)) : undefined);
+  const group = groupById.get(id)
+    ?? (typeof id === "number" ? groupById.get(String(id)) : undefined);
   return group?.projectName || profile.group_name || "";
 }
 
@@ -78,10 +83,10 @@ function decorateProfile(profile, index) {
   }));
   return {
     ...row,
-    projectName: projectNameFor(profile, index),
+    projectName: projectNameFor(profile, index.groupById),
     labelInfo,
     labelInfos: labelInfo,
   };
 }
 
-module.exports = { buildProfileIndex, decorateProfile, projectNameFor };
+module.exports = { buildProfileIndex, buildProjectLookup, decorateProfile, projectNameFor };

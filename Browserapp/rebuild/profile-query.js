@@ -64,7 +64,7 @@ function compileFilters(p, index) {
     } else if (p.queryKey === "tag") {
       filters.push(row => row.labelInfos.some(label => label.labelName.toLowerCase().includes(query)));
     } else if (p.queryKey === "project_name") {
-      filters.push(row => String(projectNameFor(snapshot[row.position], index)).toLowerCase().includes(query));
+      filters.push(row => String(projectNameFor(snapshot[row.position], index.groupById)).toLowerCase().includes(query));
     }
   }
   if (p.sortNums) {

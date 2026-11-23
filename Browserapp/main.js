@@ -158,6 +158,7 @@ let resolveStartupReady;
 let rejectStartupReady;
 const startupReady = new Promise((resolve, reject) => { resolveStartupReady = resolve; rejectStartupReady = reject; });
 startupReady.catch(() => {});
+let startupFailed = false;
 let quitting = false;
 let quitCleanupPromise = null;
 let quitBrowserDrain = null;
@@ -885,6 +886,16 @@ async function createWindow() {
   present();
 }
 
+function reportStartupFailure(error) {
+  if (startupFailed || quitting) return;
+  startupFailed = true;
+  rejectStartupReady(error);
+  const message = error?.message || String(error);
+  console.error('OpenBrowser startup failed:', message);
+  try { dialog.showErrorBox('OpenBrowser', `启动失败：${message}\n\n程序即将退出。`); } catch (_) {}
+  app.exit(1);
+}
+
 app.whenReady().then(async () => {
   try { app.setName('OpenBrowser'); } catch (_) { /* ignore */ }
   try { process.title = 'OpenBrowser'; } catch (_) { /* ignore */ }
@@ -982,17 +993,17 @@ app.whenReady().then(async () => {
   registerTrustedIpc('sync:state', () => syncSnapshot());
   const localSettingsPromise = loadSettingsForStartup();
   const windowPromise = createWindow().catch((error) => {
-    console.error('OpenBrowser window creation failed:', error.message);
-    throw error;
+    // An aborted navigation can be superseded by a healthy load. Keep the
+    // window's ready-to-show listener and allow the engine to become ready.
+    if (error?.code === 'ERR_ABORTED' || error?.errno === -3) return;
+    // A hard document failure cannot be recovered by the unrelated storage
+    // startup path. Surface it without waiting for disk or engine readiness.
+    reportStartupFailure(error);
   });
-  // Attach a no-op handler immediately: a creation failure that happens before
-  // the `await windowPromise` below would otherwise sit unhandled across the
-  // intermediate awaits and be logged a second time by the global
-  // unhandledRejection handler.
-  windowPromise.catch(() => {});
   const localSettings = await localSettingsPromise;
-  if (quitting) return;
+  if (startupFailed || quitting) return;
   const initialRootCheck = await ensureDataRootIsolationSecure(localSettings.profileDataRoot);
+  if (startupFailed || quitting) return;
   if (!initialRootCheck.ok) throw new Error(initialRootCheck.message);
   engine = new BrowserEngine(app, {
     profileDataRoot: localSettings.profileDataRoot,
@@ -1241,22 +1252,14 @@ app.whenReady().then(async () => {
 
 
 
-  // The window was created in parallel with settings loading above; by this point
-  // createWindow() has either resolved or thrown, and awaiting it again is free.
+  // Window creation and engine initialization run in parallel, but ordinary
+  // renderer IPC opens only when both startup branches are done.
   await windowPromise;
+  if (startupFailed || quitting) return;
   resolveStartupReady();
   handleProfileLaunch(process.argv);
   appUpdate.startAppUpdateWatcher();
-})
-  .catch((error) => {
-    rejectStartupReady(error);
-    // A failed init (data-root isolation, engine/SQLite construction) used to
-    // be swallowed by the global rejection logger: the window stayed up while
-    // every engine-backed IPC handler threw. Fail loudly instead.
-    console.error('OpenBrowser startup failed:', error?.message || error);
-    try { dialog.showErrorBox('OpenBrowser', `启动失败：${error?.message || error}\n\n程序即将退出。`); } catch (_) {}
-    app.exit(1);
-  });
+}).catch(reportStartupFailure);
 
 async function stopAllForQuit() {
   if (!engine) return { stopped: true, remaining: [], errors: [] };

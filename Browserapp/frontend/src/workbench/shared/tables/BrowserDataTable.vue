@@ -36,7 +36,7 @@ const root = useTemplateRef('rootEl');
 const table = useTemplateRef('dataTable');
 const attrs = useAttrs();
 const {
-  loaded, loading, rows, visibleColumns, filters, sort, selection, selectionData, contextSelection, page, pageSizeOptions,
+  loaded, loading, showLoadError, retry, rows, visibleColumns, filters, sort, selection, selectionData, contextSelection, page, pageSizeOptions,
   pageLabel, bindings, tableParts, cellParts, columnClasses, columnProps, columnDetails, onFilterChange, onSort, onPageSize,
   load, reload, refresh, clearSelection, updateDataList, getParams, restoreFromCache, getCachedEntry, operations, showMenu,
   onContextMenu, batchOperation,
@@ -123,7 +123,13 @@ defineExpose({
           </Column>
         </template>
         <template v-for="(_, name) in $slots" #[name]="scope"><slot :name="name" v-bind="scope ?? {}" /></template>
-        <template #empty><slot v-if="loaded" name="table-empty" /></template>
+        <template #empty>
+          <div v-if="showLoadError" class="flex flex-col items-center justify-center gap-3 py-6">
+            <div role="status">{{ $t('列表读取失败') }}</div>
+            <button type="button" class="table-retry" :aria-disabled="loading" @click="retry">{{ $t('重试') }}</button>
+          </div>
+          <slot v-else-if="loaded" name="table-empty" />
+        </template>
       </DataTable>
       <LoadingCover v-if="!skeleton" v-model="loading" :opacity="0.9" />
     </div>
@@ -151,3 +157,22 @@ defineExpose({
     </AnimatePresence>
   </div>
 </template>
+
+<style scoped>
+.table-retry {
+  padding: 4px 12px;
+  border: 1px solid var(--colors-border-border-action, currentColor);
+  border-radius: 6px;
+  background: var(--colors-background-bg-action, transparent);
+  color: var(--colors-text-text-primary, inherit);
+  cursor: pointer;
+}
+.table-retry:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+.table-retry[aria-disabled="true"] {
+  cursor: wait;
+  opacity: 0.7;
+}
+</style>

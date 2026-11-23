@@ -6,14 +6,15 @@ const { randomUUID: uid } = require("node:crypto");
 const { sanitizeProfile } = require("../../engine/profile-sanitizer");
 const { writeRawAtomically } = require("../../engine/state-storage");
 const { maxProfileNumber } = require("../../shared/profile-values");
+const { buildProjectLookup, projectNameFor } = require("../profile-index");
 const limit = 20 * 1024 * 1024;
 
 async function transferExport(service, p) {
   const e = service.engine;
   if (!Array.isArray(p.ids) || !p.ids.length || p.ids.length > 200)
     throw Error("一次只能导出 1–200 个窗口");
-  // One Map for all exported rows instead of a linear groups.find per profile.
-  const groupById = new Map(service.data.groups.map((group) => [group.id, group]));
+  // Match displayed project names without constructing a full profile projection.
+  const groupById = buildProjectLookup(service.data.groups);
   const profiles = p.ids.map((id) => {
     const profile = e.profileForEdit(String(id)).profile;
     const selected = profile.proxyId
@@ -25,10 +26,7 @@ async function transferExport(service, p) {
       ...profile,
       proxy: selected?.raw || profile.proxy,
       proxyId: null,
-      group_name:
-        groupById.get(profile.groupId)?.projectName ||
-        profile.group_name ||
-        "",
+      group_name: projectNameFor(profile, groupById),
     });
   });
   const content = JSON.stringify(

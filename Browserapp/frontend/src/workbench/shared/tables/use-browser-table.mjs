@@ -25,6 +25,7 @@ export function useBrowserTable(props, columns, attrs, root, dataTable) {
   const [openContextMenu] = useTableContextMenu();
   const loaded = ref(false);
   const loading = ref(false);
+  const loadFailed = ref(false);
   const results = ref();
   const filters = ref();
   const outerParams = ref();
@@ -34,6 +35,7 @@ export function useBrowserTable(props, columns, attrs, root, dataTable) {
   const localSelection = ref();
   const visibleColumns = computed(() => columns.value.filter(column => column._visible ?? true));
   const rows = computed(() => Array.isArray(props.dataList) ? props.dataList : results.value);
+  const showLoadError = computed(() => isProfileTable(props.cacheKey) && loadFailed.value && !rows.value?.length);
   const selection = computed({
     get() { return attrs['onUpdate:selection'] ? attrs.selection : localSelection.value; },
     set(value) {
@@ -128,6 +130,7 @@ export function useBrowserTable(props, columns, attrs, root, dataTable) {
     page.rows = saved.paginator.rows;
     page.total = saved.total;
     results.value = saved.rows;
+    loadFailed.value = false;
     return saved;
   }
   function saveResults() {
@@ -163,11 +166,15 @@ export function useBrowserTable(props, columns, attrs, root, dataTable) {
     read: query => props.tableRequest(query),
     paginate: () => isProfileTable(props.cacheKey),
     busy: value => { loading.value = value; },
-    failed: error => globalThis.__localUiError?.(error.message),
+    failed(error) {
+      loadFailed.value = true;
+      globalThis.__localUiError?.(error.message);
+    },
     apply({ rows: items, total }, { background, first }) {
       if (first !== undefined) page.first = first;
       page.total = total;
       results.value = items;
+      loadFailed.value = false;
       if (props.listCacheKey) saveResults();
       if (!props.clearSelectionOnRequest) return;
       if (!background) return clearSelection();
@@ -177,6 +184,11 @@ export function useBrowserTable(props, columns, attrs, root, dataTable) {
       disabledIds.value = [];
     },
   });
+
+  function retry() {
+    // A foreground load sets loading synchronously, including before it awaits IPC.
+    if (showLoadError.value && !loading.value) return loader.load();
+  }
 
   const disposeChanges = globalThis.electronAPI?.on('local:profiles-change', () => {
     if (!initialization || !isProfileTable(props.cacheKey)) return;
@@ -304,7 +316,7 @@ export function useBrowserTable(props, columns, attrs, root, dataTable) {
   }));
 
   return {
-    loaded, loading, rows, visibleColumns, filters, sort, selection, selectionData, contextSelection,
+    loaded, loading, showLoadError, retry, rows, visibleColumns, filters, sort, selection, selectionData, contextSelection,
     page, pageSizeOptions, pageLabel, bindings, tableParts, cellParts, columnClasses, columnProps, columnDetails,
     onFilterChange, onSort, onPageSize, load: loader.load, reload, refresh, clearSelection, updateDataList,
     getParams, restoreFromCache, getCachedEntry, operations, showMenu, onContextMenu, batchOperation,

@@ -105,6 +105,93 @@ function startupSettings(closeAction) {
   };
 }
 
+function hostStartupFixture() {
+  const settings = Promise.withResolvers();
+  const document = Promise.withResolvers();
+  const documentStarted = Promise.withResolvers();
+  const engineStarted = Promise.withResolvers();
+  const engine = Promise.withResolvers();
+  const calls = { exits: [], dialogs: [], rejected: [], ready: 0, watcher: 0 };
+  const context = {
+    app: { whenReady: async () => {}, setName() {}, exit: code => calls.exits.push(code) },
+    process: { platform: 'linux', argv: [] },
+    quitting: false, startupFailed: false, roxyPreview: false,
+    session: { defaultSession: { webRequest: { onBeforeRequest() {} }, setPermissionRequestHandler() {}, setPermissionCheckHandler() {} } },
+    registerTrustedIpc() {}, loadSettingsForStartup: () => settings.promise,
+    createWindow() { documentStarted.resolve(); return document.promise; },
+    async ensureDataRootIsolationSecure() { return { ok: true }; },
+    runEngineFixture() { engineStarted.resolve(); return engine.promise; },
+    resolveStartupReady() { calls.ready++; }, rejectStartupReady: error => calls.rejected.push(error),
+    dialog: { showErrorBox: (_title, message) => calls.dialogs.push(message) },
+    console: { error() {} }, handleProfileLaunch() {},
+    appUpdate: { startAppUpdateWatcher() { calls.watcher++; } },
+  };
+  // Run the actual readiness callback and error handler, replacing only the
+  // unrelated engine/domain setup with an inert readiness promise.
+  const startup = declarations.find(node => source.startsWith('app.whenReady().then(', node.start));
+  assert.ok(startup, 'main must register its initial readiness callback');
+  const body = source.slice(startup.start, startup.end);
+  const begin = body.indexOf('  engine = new BrowserEngine(');
+  const end = body.indexOf('  await windowPromise;');
+  assert.ok(begin > 0 && end > begin);
+  if (declarations.some(node => node.id?.name === 'reportStartupFailure'))
+    context.reportStartupFailure = mainFunction('reportStartupFailure', context);
+  const startupComplete = runInNewContext(body.slice(0, begin) + '  await runEngineFixture();\n' + body.slice(end), context, { filename });
+  return { settings, document, documentStarted: documentStarted.promise, engine, engineStarted: engineStarted.promise,
+    calls, startupComplete, startQuit() { context.quitting = true; } };
+}
+
+test('a hard initial document failure is reported even while settings are stalled', async () => {
+  const host = hostStartupFixture();
+  await host.documentStarted;
+  const failure = Object.assign(new Error('inert local document load failure'), { code: 'ERR_FILE_NOT_FOUND', errno: -6 });
+  host.document.reject(failure);
+  await new Promise(setImmediate);
+  assert.deepEqual(host.calls.exits, [1]);
+  assert.deepEqual(host.calls.rejected, [failure]);
+  assert.match(host.calls.dialogs[0], /inert local document load failure/);
+  host.settings.reject(new Error('later settings failure'));
+  await host.startupComplete;
+  assert.deepEqual(host.calls.exits, [1], 'a later rejection must not report startup twice');
+  assert.equal(host.calls.watcher, 0);
+});
+
+test('initial document cancellation and clean quit do not raise startup failure', async () => {
+  for (const errorCode of [{ code: 'ERR_ABORTED' }, { errno: -3 }, null]) {
+    const host = hostStartupFixture();
+    await host.documentStarted;
+    if (!errorCode) host.startQuit();
+    host.document.reject(errorCode ? Object.assign(new Error('superseded navigation'), errorCode) : new Error('window closed during quit'));
+    await new Promise(setImmediate);
+    assert.deepEqual(host.calls.exits, []);
+    assert.deepEqual(host.calls.dialogs, []);
+    host.settings.resolve({ profileDataRoot: '/synthetic' });
+    if (errorCode) {
+      await host.engineStarted;
+      host.engine.resolve();
+    }
+    await host.startupComplete;
+    assert.deepEqual(host.calls.exits, []);
+    assert.equal(host.calls.ready, errorCode ? 1 : 0);
+    assert.equal(host.calls.watcher, errorCode ? 1 : 0);
+  }
+});
+
+test('normal startup keeps engine and window work parallel without opening IPC early', async () => {
+  const host = hostStartupFixture();
+  await host.documentStarted;
+  host.settings.resolve({ profileDataRoot: '/synthetic' });
+  await host.engineStarted;
+  host.engine.resolve();
+  await new Promise(setImmediate);
+  assert.equal(host.calls.ready, 0, 'a pending document must still hold readiness');
+  host.document.resolve();
+  await host.startupComplete;
+  assert.deepEqual(host.calls.exits, []);
+  assert.equal(host.calls.ready, 1);
+  assert.equal(host.calls.watcher, 1);
+});
+
 test('an early close waits for the saved exit preference and repeated requests share one close', async () => {
   const settings = startupSettings('exit');
   await settings.started;
@@ -216,6 +303,15 @@ test('startup presentation ignores an already destroyed main window', async () =
   await creation;
   assert.equal(window.shows, 0);
   assert.equal(window.focuses, 0);
+});
+
+test('a replacement navigation can present the window after the initial load is cancelled', async () => {
+  const { window, loading, creation } = fixture();
+  const cancelled = Object.assign(new Error('superseded navigation'), { code: 'ERR_ABORTED' });
+  loading.reject(cancelled);
+  await assert.rejects(creation, error => error === cancelled);
+  window.emit('ready-to-show');
+  assert.equal(window.shows, 1);
 });
 
 test('startup presentation does not bring the window forward during quit', async () => {

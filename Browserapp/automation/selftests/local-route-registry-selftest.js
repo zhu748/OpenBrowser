@@ -256,6 +256,63 @@ async function checkExchangeFileBom() {
   }
 }
 
+async function checkExchangeProjectAliases() {
+  const { BrowserEngine } = require('../../engine');
+  const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'ob-exchange-projects-'));
+  const sourceRoot = path.join(temp, 'source'), destinationRoot = path.join(temp, 'destination');
+  const file = path.join(temp, 'profiles.json');
+  const previousKey = process.env.OPENBROWSER_MASTER_KEY;
+  const sourceEngine = new BrowserEngine({ getPath: () => sourceRoot });
+  const openDestinationEngine = () => new BrowserEngine({ getPath: () => destinationRoot });
+  let destinationEngine = openDestinationEngine();
+  process.env.OPENBROWSER_MASTER_KEY = randomBytes(32).toString('hex');
+  try {
+    await sourceEngine.init(null);
+    const first = { id: 'legacy-project-profile', name: 'Legacy member', groupId: '7', group_name: 'Old project name' };
+    const second = { id: 'exact-project-profile', name: 'Exact member', groupId: '8', group_name: 'Another old name' };
+    await sourceEngine.syncProfiles([first, second]);
+    const source = new LocalService({
+      engine: sourceEngine, root: sourceRoot, window: () => null,
+      dialog: { showSaveDialog: async () => ({ canceled: false, filePath: file }) },
+    });
+    const groups = [
+      { id: 7, projectName: 'Renamed legacy project' },
+      { id: '8', projectName: 'Exact string project' },
+      { id: 8, projectName: 'Separate numeric project' },
+    ];
+    await fs.writeFile(source.file, JSON.stringify({
+      version: 1, groups, templates: [], filters: [], settings: {}, skills: [], tasks: [],
+    }));
+    const names = ['Renamed legacy project', 'Exact string project'];
+    assert.deepEqual((await source.request('profiles:list')).map(row => row.projectName), names);
+    const sourceBytes = await fs.readFile(source.file);
+    assert.deepEqual(await source.request('transfer:export', { ids: [first.id, second.id] }), { count: 2 });
+    const exchange = JSON.parse(await fs.readFile(file, 'utf8'));
+    assert.deepEqual(exchange.profiles.map(row => row.group_name), names,
+      'exchange must export current project names, including legacy numeric aliases');
+    assert.deepEqual(await fs.readFile(source.file), sourceBytes, 'export must not rewrite the project store');
+
+    await destinationEngine.init(null);
+    const destination = new LocalService({
+      engine: destinationEngine, root: destinationRoot, window: () => null,
+      dialog: { showOpenDialog: async () => ({ canceled: false, filePaths: [file] }) },
+    });
+    assert.deepEqual(await destination.request('transfer:import'), { count: 2 });
+    destinationEngine.sqliteStore?.close();
+    destinationEngine = openDestinationEngine();
+    await destinationEngine.init(null);
+    const reopened = new LocalService({ engine: destinationEngine, root: destinationRoot });
+    assert.deepEqual((await reopened.request('groups:list')).map(row => [row.projectName, row.windowCount]),
+      names.map(name => [name, 1]), 'import must recreate the current projects and memberships');
+  } finally {
+    sourceEngine.sqliteStore?.close();
+    destinationEngine.sqliteStore?.close();
+    if (previousKey === undefined) delete process.env.OPENBROWSER_MASTER_KEY;
+    else process.env.OPENBROWSER_MASTER_KEY = previousKey;
+    await fs.rm(temp, { recursive: true, force: true });
+  }
+}
+
 async function checkFullProfileListSingleSnapshot() {
   const service = Object.create(LocalService.prototype);
   service.queue = Promise.resolve();
@@ -528,6 +585,7 @@ async function main() {
   await checkSavedFilterDeleteSort();
   await checkSettingsNoopWrites();
   await checkExchangeFileBom();
+  await checkExchangeProjectAliases();
   await checkFullProfileListSingleSnapshot();
   await checkTemplateDeleteWrites();
   await checkProjectSortWrites();

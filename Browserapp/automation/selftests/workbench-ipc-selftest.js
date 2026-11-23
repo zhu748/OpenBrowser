@@ -9,6 +9,26 @@ const { pathToFileURL } = require('node:url');
 const vm = require('node:vm');
 const { captureIpcResult, unwrapIpcResult } = require('../../shared/ipc-result');
 
+async function rendererFixture(relative, modules, globals = {}, exportName) {
+  const { parse } = require('acorn');
+  const filename = path.resolve(__dirname, '../../', relative);
+  const source = await fs.readFile(filename, 'utf8');
+  const { compileWorkbenchComponent } = require('../../frontend/compile-workbench-component.cjs');
+  const code = filename.endsWith('.vue') ? compileWorkbenchComponent({ filename, source }).code : source;
+  let program = code;
+  for (const entry of parse(code, { sourceType: 'module', ecmaVersion: 'latest' }).body.reverse()) {
+    const replacement = entry.type === 'ImportDeclaration'
+      ? 'const { ' + entry.specifiers.map(({ imported, local }) => `${imported?.name ?? 'default'}: ${local.name}`).join(', ') +
+        ' } = modules[' + JSON.stringify(entry.source.value) + '];'
+      : entry.type === 'ExportDefaultDeclaration' ? '__workbenchComponent;'
+      : exportName && entry.type === 'ExportNamedDeclaration' && entry.declaration?.id?.name === exportName
+        ? code.slice(entry.declaration.start, entry.end) : null;
+    if (replacement !== null) program = program.slice(0, entry.start) + replacement + program.slice(entry.end);
+  }
+  if (exportName) program += '\n' + exportName;
+  return vm.runInNewContext(program, { modules, $t: message => message, ...globals }, { filename });
+}
+
 async function tableChecks() {
   const { buildTableQuery, createTableLoader, isProfileTable } = await import('../../rebuild/workbench-table.mjs');
   assert.equal(isProfileTable('browser-list'), true);
@@ -98,6 +118,99 @@ async function tableChecks() {
   reads.at(-1).reject(Error('closed view'));
   await closing;
   assert.deepEqual(errors, ['current failure']);
+}
+
+async function profileTableErrorChecks() {
+  const vue = require('vue');
+  const tableModule = await import('../../rebuild/workbench-table.mjs');
+  const noop = () => {};
+  const errors = [];
+  let mount, state, response;
+  const queries = [];
+  const dataTable = {}, slot = { 'table-empty': () => vue.h('div', { id: 'ordinary-empty' }) };
+  const vueStub = { ...vue, useAttrs: () => ({}), useModel: () => vue.ref([]), useTemplateRef: () => vue.ref(),
+    onBeforeMount: hook => { mount = hook; }, onBeforeUnmount: noop, onMounted: noop, withDirectives: node => node,
+    renderSlot: (slots, name) => slots[name]?.() ?? vue.createCommentVNode() };
+  const utils = { bt: () => ({}), mt: () => ({ currentWorkspace: {} }), o: () => ({}), yr: noop };
+  const useBrowserTable = await rendererFixture('frontend/src/workbench/shared/tables/use-browser-table.mjs', {
+    './workbench-vue.js': vueStub, './utils-BIWenCnY.js': utils,
+    './rich-html-link-VdBpR3Cm.js': { y: () => ({ query: {} }) },
+    './workbench-table.js': tableModule, './workbench-table-actions.js': { permittedActions: value => value },
+    './workbench-table-context.js': { useTableContextMenu: () => [noop] },
+  }, { localStorage: { getItem: () => null }, __localUiError: error => errors.push(error) }, 'useBrowserTable');
+  const component = await rendererFixture('frontend/src/workbench/shared/tables/BrowserDataTable.vue', {
+    './workbench-vue.js': vueStub, './utils-BIWenCnY.js': utils,
+    './contextmenu-BBjizTDn.js': { a: {}, i: {}, o: dataTable }, './paginator-vnwyVxKC.js': { t: {} },
+    './skeleton-CcmFVUhV.js': { t: {} }, './divider-BXJIHZjP.js': { t: {} }, './m-input-select-C8pih1gY.js': { n: {} },
+    './AnimatePresence-d-29l3Fb.js': { t: {} }, './basecomponent-ClhuVxJN.js': { Z: {} },
+    './workbench-row-actions.js': { default: {} }, './workbench-column-settings.js': { default: {} },
+    './workbench-table-filters.js': { default: {} }, './workbench-table-refresh.js': { default: {} },
+    './workbench-selection-toolbar.js': { default: {} },
+    './workbench-browser-table-state.js': { useBrowserTable(...args) { return (state = useBrowserTable(...args)); } },
+  });
+  function findNode(node, matches) {
+    if (Array.isArray(node)) return node.map(child => findNode(child, matches)).find(Boolean);
+    return node && (matches(node) ? node : Array.isArray(node.children) && findNode(node.children, matches));
+  }
+  async function openTable(cacheKey) {
+    const props = { cacheKey, dataKey: 'id', pageRows: 10, immediate: true, tableSort: () => ({}), tableFilters: () => [],
+      tableRequest: async query => {
+        queries.push({ ...query });
+        if (response instanceof Error) throw response;
+        return response;
+      } };
+    const render = component.setup(props, { expose: noop });
+    await mount();
+    return () => findNode(render({ $slots: slot, $t: message => message }, []), node => node.type === dataTable);
+  }
+  response = new Error('temporary local read failure');
+  const table = await openTable('browser-list');
+  const empty = () => table().children.empty();
+  const emptyMessage = () => findNode(empty(), node => node.props?.id === 'ordinary-empty');
+  const retryButton = () => findNode(empty(), node => node.type === 'button');
+  assert.ok(!emptyMessage(), 'an unreadable store must not claim there are no profiles');
+  assert.deepEqual(errors, ['temporary local read failure']);
+  assert.equal(findNode(empty(), node => node.props?.role === 'status').children, '列表读取失败');
+  assert.equal(retryButton().props.type, 'button');
+  assert.equal(retryButton().children, '重试');
+
+  let finishRetry;
+  response = new Promise(resolve => { finishRetry = resolve; });
+  const firstRetry = retryButton().props.onClick();
+  assert.equal(retryButton().props['aria-disabled'], true, 'the button stays focusable but cannot repeat while loading');
+  assert.equal(retryButton().props.disabled, undefined);
+  await retryButton().props.onClick();
+  await tick();
+  assert.equal(queries.length, 2, 'the retry issues one read even on repeated activation');
+  assert.deepEqual(queries[1], queries[0], 'retry requests the same list');
+  finishRetry({ rows: [], total: 0 });
+  await firstRetry;
+  assert.ok(emptyMessage(), 'a successful empty result still uses the ordinary empty slot');
+  assert.ok(!retryButton());
+  assert.deepEqual(table().props.value, []);
+
+  response = new Error('second local read failure');
+  await state.refresh({ queryValue: 'fixture' });
+  assert.ok(!emptyMessage());
+  response = { rows: [{ id: 'fixture' }], total: 1 };
+  await retryButton().props.onClick();
+  assert.equal(queries.at(-1).queryValue, 'fixture');
+  assert.deepEqual(table().props.value, [{ id: 'fixture' }]);
+  assert.ok(!retryButton());
+  state.selection.value = [{ id: 'fixture' }];
+  response = new Error('refresh failure with data');
+  await state.load();
+  assert.deepEqual(table().props.value, [{ id: 'fixture' }], 'a failed refresh retains the last good nonempty result');
+  assert.deepEqual(state.selection.value, [{ id: 'fixture' }]);
+  assert.equal(state.page.total, 1);
+  assert.ok(!retryButton());
+
+  const recycle = await openTable('browser-recycle-list');
+  assert.ok(findNode(recycle().children.empty(), node => node.type === 'button'), 'failed recycle reads offer the same retry');
+
+  const otherTable = await openTable('unrelated-list');
+  assert.ok(findNode(otherTable().children.empty(), node => node.props?.id === 'ordinary-empty'),
+    'unrelated list behavior is unchanged');
 }
 
 async function apiChecks() {
@@ -247,9 +360,7 @@ async function savedViewDateChecks() {
 }
 
 async function inlineRenameChecks() {
-  const { parse } = require('acorn');
   const vue = require('vue');
-  const { compileWorkbenchComponent } = require('../../frontend/compile-workbench-component.cjs');
   const { LocalService } = require('../../rebuild/local-service');
   const appRoot = path.resolve(__dirname, '../..');
   const id = 'rename-fixture';
@@ -290,11 +401,9 @@ async function inlineRenameChecks() {
   });
   vm.runInContext(bridge, renderer, { filename: bridgeFile });
 
-  const filename = path.join(appRoot, 'frontend/src/workbench/profiles/EditableProfileName.vue');
-  const { code } = compileWorkbenchComponent({ filename, source: await fs.readFile(filename, 'utf8') });
   const notices = [], emissions = [];
   // Render the actual SFC's slots and event bindings without mounting Electron.
-  const modules = {
+  const instance = await rendererFixture('frontend/src/workbench/profiles/EditableProfileName.vue', {
     './workbench-vue.js': { ...vue, withDirectives: node => node },
     './utils-BIWenCnY.js': { h: renderer.__localApi },
     './agent-BmSFI9WH.js': { n: () => [null, (...args) => notices.push(args)] },
@@ -303,16 +412,7 @@ async function inlineRenameChecks() {
     './inputtext-Crzvb5jQ.js': { t: {} },
     './tooltip-BYYKWrvu.js': { t: {} },
     './focustrap-DJJkEqE8.js': { t: {} },
-  };
-  let program = code;
-  for (const entry of parse(code, { sourceType: 'module', ecmaVersion: 'latest' }).body.reverse()) {
-    const replacement = entry.type === 'ImportDeclaration'
-      ? 'const { ' + entry.specifiers.map(({ imported, local }) => `${imported.name}: ${local.name}`).join(', ') +
-        ' } = modules[' + JSON.stringify(entry.source.value) + '];'
-      : entry.type === 'ExportDefaultDeclaration' ? '__workbenchComponent;' : null;
-    if (replacement !== null) program = program.slice(0, entry.start) + replacement + program.slice(entry.end);
-  }
-  const instance = vm.runInNewContext(program, { modules, $t: message => message }, { filename });
+  });
   // Like the active-list DTO, the visible row intentionally has no revision.
   const props = vue.reactive({ data: { id, windowName: profile.name } });
   const render = instance.setup(props, { emit: name => emissions.push(name), expose() {} });
@@ -456,6 +556,7 @@ async function profileBatchChecks() {
 
 async function main() {
   await tableChecks();
+  await profileTableErrorChecks();
   await compactTableChecks();
   await savedViewDateChecks();
   await inlineRenameChecks();
@@ -467,6 +568,6 @@ async function main() {
   });
   assert.throws(() => unwrapIpcResult(result), error =>
     error.code === 'EIO' && error.completed === 200 && error.remainingIds[0] === 'a' && !('privateField' in error));
-  console.log('WORKBENCH_IPC_SELFTEST OK (table queries, refresh failures, inline rename revisions, settings queue, initial navigation and partial error DTO)');
+  console.log('WORKBENCH_IPC_SELFTEST OK (table queries, refresh failure and retry, inline rename revisions, settings queue, initial navigation and partial error DTO)');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });
