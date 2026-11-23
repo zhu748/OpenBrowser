@@ -159,6 +159,8 @@ const crypto = require('../../credential-crypto');
     await assert.rejects(settings.saveLocalSettings({ memoryLimit: 83 }), /rename failure/);
     const retained = JSON.parse(crypto.decryptCredential(await fs.readFile(file)));
     assert.equal(retained.memoryLimit, 82, 'failed replacement must preserve the old file');
+    assert.equal((await fs.readdir(root)).includes(path.basename(file + '.tmp')), false,
+      'failed replacement must not leave an abandoned settings staging file');
     fs.rename = originalRename;
     await settings.flushSettingsWriter();
     const retried = JSON.parse(crypto.decryptCredential(await fs.readFile(file)));

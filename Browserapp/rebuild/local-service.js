@@ -139,9 +139,8 @@ class LocalService {
   async save() {
     await writeRawAtomically(this.file, encodeLocalStore(this.data));
   }
-  profileIndex() {
-    const snapshot = this.engine.status(),
-      profiles = this.engine.profiles,
+  profileIndex(snapshot = this.engine.status()) {
+    const profiles = this.engine.profiles,
       version = profiles?.version,
       groups = this.data.groups,
       labels = this.data.labels;

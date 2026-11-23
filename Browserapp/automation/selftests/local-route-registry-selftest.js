@@ -256,6 +256,50 @@ async function checkExchangeFileBom() {
   }
 }
 
+async function checkFullProfileListSingleSnapshot() {
+  const service = Object.create(LocalService.prototype);
+  service.queue = Promise.resolve();
+  service.load = async () => {};
+  service.data = { groups: [{ id: 'group', projectName: 'Current name' }], labels: [] };
+  const snapshot = [
+    { id: 'first', groupId: 'group' },
+    { id: 'trashed', trashed: true },
+    { id: 'second', groupId: 'group', running: true },
+  ];
+  let statusCalls = 0;
+  service.engine = { status: () => { statusCalls++; return snapshot; } };
+  const rows = await service.request('profiles:list');
+  assert.deepEqual(rows.map(row => [row.id, row.projectName]), [
+    ['first', 'Current name'], ['second', 'Current name'],
+  ]);
+  assert.equal(statusCalls, 1, 'full list should reuse the same projection for every DTO');
+  service.engine.status = () => [{ id: 'trashed', trashed: true }];
+  service.profileIndex = () => { throw Error('Trash-only library should not build a projection'); };
+  assert.deepEqual(await service.request('profiles:list'), []);
+}
+
+async function checkTemplateDeleteWrites() {
+  const service = Object.create(LocalService.prototype);
+  service.queue = Promise.resolve();
+  service.load = async () => {};
+  const template = id => ({ id, templateName: String(id), content: "{}" });
+  const templates = [template(1), template(2), template(4)];
+  service.data = { templates, settings: {} };
+  const writes = [];
+  service.save = async () => { writes.push(structuredClone(service.data)); };
+  const remove = ids => service.request('templates:delete', { ids });
+
+  await Promise.all(Array.from({ length: 10 }, () => remove([99, 99])));
+  assert.equal(writes.length, 0, 'stale template delete batches must not rewrite the workspace');
+  assert.equal(service.data.templates, templates, 'no-op deletion retains existing metadata');
+  await Promise.all([remove([2, 4, 2, 99]), remove([2, 4])]);
+  assert.equal(writes.length, 1, 'only the batch that actually removes templates writes');
+  assert.deepEqual(writes[0].templates, [template(1)]);
+  assert.equal(writes[0].recordIds.templates, 4, 'high-water mark retains the highest removed ID');
+  const added = await service.request('templates:save', { templateName: 'new', content: '{}' });
+  assert.equal(added.id, 5);
+}
+
 async function checkProjectSortWrites() {
   const service = Object.create(LocalService.prototype);
   const groups = ['a', 'b', 'c', 'd'].map(id => ({ id }));
@@ -484,6 +528,8 @@ async function main() {
   await checkSavedFilterDeleteSort();
   await checkSettingsNoopWrites();
   await checkExchangeFileBom();
+  await checkFullProfileListSingleSnapshot();
+  await checkTemplateDeleteWrites();
   await checkProjectSortWrites();
   await checkProjectNameSearch();
   await checkTextImportEncoding();

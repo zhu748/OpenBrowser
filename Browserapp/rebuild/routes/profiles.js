@@ -84,11 +84,15 @@ async function profilesReadImport(service) {
 }
 
 async function profilesList(service) {
-  const e = service.engine;
-  return e
-    .status()
-    .filter((v) => !v.trashed)
-    .map((v) => service.decorate(v));
+  const snapshot = service.engine.status();
+  let projection;
+  const rows = [];
+  for (const profile of snapshot) {
+    if (profile.trashed) continue;
+    projection ??= service.profileIndex(snapshot);
+    rows.push(service.decorate(profile, projection));
+  }
+  return rows;
 }
 
 function profilesSelectionStatus(service, p) {

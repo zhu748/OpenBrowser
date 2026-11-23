@@ -186,8 +186,15 @@ async function writeLocalSettingsFile() {
       }
     } catch (_) {}
 
-    await fsp.writeFile(temporary, payload, { mode: 0o600 });
-    await fsp.rename(temporary, settingsFile);
+    try {
+      await fsp.writeFile(temporary, payload, { mode: 0o600 });
+      await fsp.rename(temporary, settingsFile);
+    } catch (error) {
+      // Cleanup stays inside the serialized writer so it cannot remove the
+      // next attempt's staging file. Report the original write failure.
+      try { await fsp.unlink(temporary); } catch (_) {}
+      throw error;
+    }
     persistedSettingsSnapshot = snapshot;
   });
 }

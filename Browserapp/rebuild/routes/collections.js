@@ -244,10 +244,14 @@ async function templatesSave(service, p) {
 }
 
 async function templatesDelete(service, p) {
+  if (!Array.isArray(p.ids)) throw Error("模板 ID 必须是数组");
+  const templates = service.data.templates;
+  const ids = new Set(p.ids);
+  const remaining = templates.filter((row) => !ids.has(row.id));
+  if (remaining.length === templates.length) return true;
+  // Record the highest old ID before replacing the list.
   rememberRecordIds(service.data, "templates");
-  service.data.templates = service.data.templates.filter(
-    (v) => !p.ids.includes(v.id),
-  );
+  service.data.templates = remaining;
   await service.save();
   return true;
 }
