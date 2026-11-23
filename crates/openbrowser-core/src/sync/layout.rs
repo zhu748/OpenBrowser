@@ -153,7 +153,7 @@ impl CascadeLayout {
         let mut current_y = start_y;
 
         for _ in 0..count {
-            if current_x > max_x || current_y > max_y {
+            if !(0..=max_x).contains(&current_x) || !(0..=max_y).contains(&current_y) {
                 current_x = start_x;
                 current_y = start_y;
             }

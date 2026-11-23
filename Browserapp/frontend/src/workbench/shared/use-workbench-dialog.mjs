@@ -19,7 +19,8 @@ function useWorkbenchDialog() {
     let saving = false;
     function hide() {
       visible.value = false;
-      if (key) dialogs.delete(key);
+      // A cancelled dialog's save can finish after another dialog claims its key.
+      if (key && dialogs.get(key) === controls) dialogs.delete(key);
       events.off('kickedOut', kickedOut);
     }
     async function requestClose(after) {

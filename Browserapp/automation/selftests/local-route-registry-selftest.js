@@ -183,6 +183,31 @@ async function checkSavedFilterRename() {
     [{ favorite: true }, { running: false }], 'an edit with the same name does not create a second record');
 }
 
+async function checkSavedFilterDeleteSort() {
+  const service = Object.create(LocalService.prototype);
+  const filters = [{ filter_name: 'First' }, { filter_name: 'Keep' }];
+  const filterSort = [{ name: 'First', sort: 0 }, { name: 'Keep', sort: 1 }];
+  service.queue = Promise.resolve();
+  service.data = { settings: { filterSort }, filters };
+  service.load = async () => {};
+  const remove = () => service.request('filters:delete', { filter_name: 'First' });
+
+  service.save = async () => { throw Error('filter disk fixture'); };
+  await assert.rejects(remove(), /filter disk fixture/);
+  assert.deepEqual(service.data, { settings: { filterSort }, filters }, 'failed deletion retains both view and order');
+
+  const writes = [];
+  service.save = async () => { writes.push(structuredClone(service.data)); };
+  await remove();
+  assert.deepEqual(writes, [{ settings: { filterSort: [{ name: 'Keep', sort: 1 }] }, filters: [{ filter_name: 'Keep' }] }],
+    'deleting a saved view removes its sort entry in the same write');
+  await remove();
+  assert.equal(writes.length, 1, 'missing views do not cause a redundant write');
+  await service.request('filters:save', { filter_name: 'First' });
+  assert.deepEqual((await service.request('filters:list')).map(row => row.filter_name), ['Keep', 'First'],
+    'a newly created view does not inherit a removed view’s position');
+}
+
 async function checkSettingsNoopWrites() {
   const service = Object.create(LocalService.prototype);
   service.queue = Promise.resolve();
@@ -357,6 +382,7 @@ async function main() {
   await checkLabelProjection();
   await checkBatchAssociations();
   await checkSavedFilterRename();
+  await checkSavedFilterDeleteSort();
   await checkSettingsNoopWrites();
   await checkExchangeFileBom();
   await checkProjectSortWrites();

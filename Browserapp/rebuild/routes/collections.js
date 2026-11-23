@@ -283,9 +283,15 @@ async function filtersSave(service, p) {
 }
 
 async function filtersDelete(service, p) {
-  service.data.filters = service.data.filters.filter(
+  const filters = service.data.filters;
+  const remaining = filters.filter(
     (v) => v.filter_name !== p.filter_name,
   );
+  if (remaining.length === filters.length) return true;
+  service.data.filters = remaining;
+  const settings = service.data.settings;
+  if (Array.isArray(settings?.filterSort))
+    settings.filterSort = settings.filterSort.filter((item) => item?.name !== p.filter_name);
   await service.save();
   return true;
 }
