@@ -354,6 +354,32 @@ const argv = process.argv.slice(2);
 const LIST_ONLY = argv.includes('--list');
 const PER_SCRIPT_TIMEOUT_MS = 5 * 60 * 1000;
 
+// Keep CI annotations constrained to ordinary settings/storage/workbench
+// fixtures. New registry entries don't automatically become public labels.
+const ORDINARY_SMOKE_LABELS = new Map([
+  ['selftest:settings', 'Local settings'],
+  ['selftest:statestorage', 'State storage'],
+  ['selftest:reviewstorage', 'Storage boundaries'],
+  ['selftest:workbenchipc', 'Workbench IPC'],
+  ['selftest:workbenchlistcache', 'Workbench list cache'],
+  ['selftest:workbenchtime', 'Workbench time formatting'],
+  ['selftest:projectlistprojection', 'Project list projection'],
+]);
+
+function formatOrdinarySmokeFailure(name, outcome, result, githubActions) {
+  if (githubActions !== 'true' || outcome !== 'failed') return null;
+  const label = ORDINARY_SMOKE_LABELS.get(name);
+  if (!label) return null;
+
+  let reason = 'no numeric exit code';
+  if (result.error?.code === 'ETIMEDOUT') reason = 'timed out';
+  else if (result.error?.code === 'ENOBUFS') reason = 'output limit';
+  else if (result.error) reason = 'child process error';
+  else if (result.signal) reason = 'terminated by signal';
+  else if (Number.isInteger(result.status) && result.status > 0 && result.status <= 255) reason = `exit ${result.status}`;
+  return `::error::Smoke selftest failed: ${label} (${reason})`;
+}
+
 function printDiagnosticTail(result) {
   for (const output of [result.stdout, result.stderr]) {
     const raw = String(output || '').trim();
@@ -439,6 +465,8 @@ function main() {
     results.push({ name, script, pass: status === 'failed' ? false : (pass ? true : null),
       outcome: status, seconds, status: res.status, signal: res.signal });
     console.log(pass ? `ok (${seconds}s)` : `${status.toUpperCase()} (exit=${res.status}${res.signal ? ' signal=' + res.signal : ''})`);
+    const annotation = formatOrdinarySmokeFailure(name, status, res, process.env.GITHUB_ACTIONS);
+    if (annotation) console.log(annotation);
     if (!pass) printDiagnosticTail(res);
   }
   console.log(`\n${SUITE.length - failed - skipped - partial} passed, ${partial} partial, ${skipped} skipped, ${failed} failed`);
@@ -453,6 +481,6 @@ function main() {
 // scripts/selftest-one.js (single-test runner) and
 // automation/selftests/selftest-registry-consistency-selftest.js (drift guard)
 // share this exact list instead of re-declaring it.
-module.exports = { SUITE, PER_SCRIPT_TIMEOUT_MS };
+module.exports = { SUITE, PER_SCRIPT_TIMEOUT_MS, formatOrdinarySmokeFailure };
 
 if (require.main === module) process.exit(main());
