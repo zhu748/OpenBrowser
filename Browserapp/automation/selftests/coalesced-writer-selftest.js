@@ -11,10 +11,16 @@
 
 const assert = require('assert');
 const fs = require('fs');
+const fsp = require('node:fs/promises');
+const { createRequire } = require('node:module');
+const os = require('node:os');
 const path = require('path');
+const { Script, runInNewContext } = require('node:vm');
+const { parse } = require('acorn');
 
 const { createCoalescedWriter, DEFAULT_DELAY_MS } = require('../coalesced-writer');
 const { deepEqual } = require('../object-utils');
+const credentials = require('../../credential-crypto');
 
 const results = [];
 function check(name, fn) {
@@ -37,6 +43,100 @@ function trackingWriter(state, delayMs = 0, failTimes = 0) {
     if (call <= failTimes) throw new Error('write failed #' + call);
     state.persisted += 1;
   };
+}
+
+const fixturePassphrase = 'synthetic coalesced writer fixture key';
+function decodeSettings(bytes) {
+  assert.ok(credentials.isEncrypted(bytes), 'settings must be encrypted on disk');
+  return JSON.parse(credentials.decryptCredential(bytes, { passphrase: fixturePassphrase }));
+}
+
+async function withinFixture(promise, label) {
+  let timer;
+  try {
+    return await Promise.race([promise, new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error('Fixture timed out: ' + label)), 5000);
+    })]);
+  } finally { clearTimeout(timer); }
+}
+
+async function withSettings(run) {
+  const root = await fsp.realpath(await fsp.mkdtemp(path.join(os.tmpdir(), 'ob-coalesced-settings-')));
+  const file = path.join(root, 'settings.json');
+  const fixture = { root, file, writes: [], replacements: [], beforeRename: null };
+  const storePath = require.resolve('../local-settings');
+  const requireFromStore = createRequire(storePath);
+  const instance = { exports: {} };
+  const overrides = {
+    'fs/promises': {
+      ...fsp,
+      async mkdir(target, ...args) {
+        fixture.writes.push(target);
+        return fsp.mkdir(target, ...args);
+      },
+      async writeFile(target, ...args) {
+        fixture.writes.push(target);
+        return fsp.writeFile(target, ...args);
+      },
+      async rename(from, to) {
+        if (to !== file) return fsp.rename(from, to);
+        const staged = decodeSettings(await fsp.readFile(from));
+        await fixture.beforeRename?.(from, staged);
+        await fsp.rename(from, to);
+        fixture.replacements.push(staged.memoryLimit);
+      },
+    },
+    '../credential-crypto': {
+      ...credentials,
+      encryptCredential: value => credentials.encryptCredential(value, { passphrase: fixturePassphrase }),
+      decryptCredential: value => credentials.decryptCredential(value, { passphrase: fixturePassphrase }),
+    },
+    './coalesced-writer': {
+      // Keep the real writer. Only stretch the quiet period so queued writes
+      // cannot race the explicit flush or run because of a slow CI machine.
+      createCoalescedWriter: options => createCoalescedWriter({ ...options, delayMs: 60_000, keepAlive: false }),
+    },
+  };
+  runInNewContext(fs.readFileSync(storePath, 'utf8'), {
+    module: instance, require: name => Object.hasOwn(overrides, name) ? overrides[name] : requireFromStore(name),
+    structuredClone, console: { warn() {} },
+  }, { filename: storePath });
+  const store = instance.exports;
+  fixture.store = store;
+  fixture.bytes = () => fsp.readFile(file);
+  fixture.save = patch => {
+    const accepted = store.saveLocalSettings(patch);
+    accepted.catch(() => {}); // assertions inspect the original promise
+    return accepted;
+  };
+  fixture.saveAndFlush = patch => withinFixture(Promise.all([fixture.save(patch), store.flushSettingsWriter()]), 'settings save and flush');
+  try {
+    store.initLocalSettings({ file, defaultProfileDataRoot: path.join(root, 'profiles') });
+    await store.loadLocalSettings();
+    await run(fixture);
+  } finally {
+    fixture.beforeRename = null;
+    try { await withinFixture(store.flushSettingsWriter(), 'fixture cleanup'); }
+    finally { await fsp.rm(root, { recursive: true, force: true }); }
+  }
+}
+
+function quitWithSettings(fixture) {
+  const filename = path.join(__dirname, '../../main.js');
+  const source = fs.readFileSync(filename, 'utf8');
+  const declaration = parse(source, { ecmaVersion: 'latest', sourceType: 'commonjs' }).body
+    .find(node => node.type === 'FunctionDeclaration' && node.id.name === 'beginQuitCleanup');
+  assert.ok(declaration, 'cannot find the main-process quit flow');
+  const exits = [];
+  const quit = new Script(source.slice(declaration.start, declaration.end) + '\nbeginQuitCleanup();', { filename });
+  return quit.runInNewContext({
+    settingsStore: fixture.store,
+    app: { exit: code => exits.push({ code, memoryLimit: decodeSettings(fs.readFileSync(fixture.file)).memoryLimit }) },
+    quitting: false, fatalFailure: false, quitCleanupPromise: null, quitCleanupSettled: false,
+    engine: null, automation: null, liveSync: null, localUiSync: null, localUiService: null,
+    destroyTray() {}, stopShortcutBridge() {}, lifecycleTimeout: pending => pending,
+    async drainBrowsersForQuit() { return { stopped: true, remaining: [], errors: [] }; },
+  }).then(() => exits);
 }
 
 // The queue's timer is deliberately unref'd so deferred work never keeps the
@@ -320,43 +420,90 @@ const keepAlive = setInterval(() => {}, 250);
     assert.strictEqual(writer.stats().delayMs, DEFAULT_DELAY_MS);
   });
 
-  // ---- host wiring ----
-  // The settings store moved from main.js into automation/local-settings.js:
-  // the writer wiring is asserted there, the quit-chain flush in main.js.
-  {
-    const source = fs.readFileSync(path.join(__dirname, '..', 'local-settings.js'), 'utf8');
-    const mainSource = fs.readFileSync(path.join(__dirname, '..', '../main.js'), 'utf8');
-    check('settings go through the coalescing writer', () => {
-      assert.ok(/require\('\.\/coalesced-writer'\)/.test(source), 'writer is not required');
-      assert.ok(/const localSettingsWriter = createCoalescedWriter\(/.test(source), 'writer is not created');
-      assert.ok(/(?:return|await) localSettingsWriter\.request\(\);/.test(source), 'saveLocalSettings does not use it');
-    });
-    check('the previous ad-hoc write body is gone from saveLocalSettings', () => {
-      const body = source.match(/async function saveLocalSettings\(value\) \{[\s\S]*?\n\}/);
-      assert.ok(body, 'saveLocalSettings not found');
-      assert.ok(!/\.tmp/.test(body[0]), 'the write body is still inlined');
-      assert.ok(!/fsp\.writeFile/.test(body[0]), 'the write body is still inlined');
-    });
-    check('quitting flushes any pending settings write', () => {
-      assert.ok(/settingsStore\.flushSettingsWriter\(\)/.test(mainSource), 'the quit chain does not flush');
-      assert.ok(/function flushSettingsWriter\(\) \{[\s\S]{0,120}localSettingsWriter\.flushNow\(\)/.test(source),
-        'the flush is not wired to the writer');
-    });
-    check('an unchanged cache is not rewritten', () => {
-      assert.ok(/require\('\.\/object-utils'\)/.test(source), 'deepEqual is not imported');
-      assert.ok(/shouldWrite: \(\) => persistedSettingsSnapshot === null/.test(source), 'the skip predicate is missing');
-      assert.ok(/deepEqual\(localSettingsCache, persistedSettingsSnapshot\)/.test(source), 'the predicate does not compare the cache');
-      assert.ok(source.includes('persistedSettingsSnapshot = snapshot;'),
-        'the persisted marker must use the captured write snapshot');
-      const body = source.match(/async function writeLocalSettingsFile\(\) \{[\s\S]*?\n\}/);
-      assert.ok(body && body[0].includes('persistedSettingsSnapshot ='), 'the snapshot must be set only by the writer');
-    });
+  // ---- host wiring through the real settings store and temporary files ----
+  await checkAsync('settings go through the coalescing writer', () => withSettings(async f => {
+    const changes = [61, 62, 63].map(memoryLimit => f.save({ memoryLimit }));
+    await withinFixture(f.store.flushSettingsWriter(), 'coalesced settings burst');
+    const receipts = await withinFixture(Promise.all(changes), 'all settings receipts');
+    assert.deepStrictEqual(receipts.map(receipt => receipt.memoryLimit), [63, 63, 63]);
+    assert.deepStrictEqual(f.replacements, [63]);
+    assert.strictEqual(decodeSettings(await f.bytes()).memoryLimit, 63);
+  }));
 
-    check('the file write itself is unchanged in substance', () => {
-      assert.ok(/const temporary = settingsFile \+ '\.tmp';/.test(source), 'temp-file write is gone');
-      assert.ok(/await fsp\.rename\(temporary, settingsFile\);/.test(source), 'atomic rename is gone');
-    });
-  }
+  await checkAsync('ordinary settings saves do not bypass the queued write or acknowledge early', () => withSettings(async f => {
+    let acknowledged = false;
+    const save = f.save({ diskLimit: 37 });
+    save.then(() => { acknowledged = true; }, () => {});
+    assert.deepStrictEqual(await fsp.readdir(f.root), [], 'unexpected disk work before the queue was flushed');
+    assert.deepStrictEqual(f.writes, [], 'save wrote outside the coalescer');
+    assert.strictEqual(acknowledged, false, 'save acknowledged a value still queued');
+    await withinFixture(f.store.flushSettingsWriter(), 'deferred settings write');
+    assert.strictEqual((await withinFixture(save, 'settings receipt')).diskLimit, 37);
+    assert.strictEqual(decodeSettings(await f.bytes()).diskLimit, 37);
+  }));
+
+  await checkAsync('quitting flushes any pending settings write', () => withSettings(async f => {
+    await f.saveAndFlush({ memoryLimit: 62 });
+    const pending = f.save({ memoryLimit: 71 });
+    assert.strictEqual(decodeSettings(await f.bytes()).memoryLimit, 62);
+    assert.deepStrictEqual(await withinFixture(quitWithSettings(f), 'main quit flush'), [{ code: 0, memoryLimit: 71 }]);
+    assert.strictEqual((await withinFixture(pending, 'settings receipt on quit')).memoryLimit, 71);
+  }));
+
+  await checkAsync('an unchanged cache is not rewritten; the commit records the captured snapshot', () => withSettings(async f => {
+    const groups = [{ id: 'fixture', name: 'Kept group' }];
+    await f.saveAndFlush({ memoryLimit: 61, uiGroups: groups });
+    const prior = await f.bytes();
+    await f.saveAndFlush({ memoryLimit: 61, uiGroups: structuredClone(groups) });
+    assert.ok((await f.bytes()).equals(prior), 'equivalent settings rewrote the encrypted file');
+    assert.deepStrictEqual(f.replacements, [61]);
+
+    const staged = Promise.withResolvers(), release = Promise.withResolvers();
+    f.beforeRename = async (_from, snapshot) => {
+      if (snapshot.memoryLimit === 62) { staged.resolve(); await release.promise; }
+    };
+    const first = f.save({ memoryLimit: 62 });
+    const draining = f.store.flushSettingsWriter();
+    draining.catch(() => {});
+    let later;
+    try {
+      await withinFixture(staged.promise, 'settings snapshot staged');
+      later = f.save({ memoryLimit: 63 });
+      assert.ok((await f.bytes()).equals(prior), 'first snapshot committed before release');
+    } finally { release.resolve(); }
+    const [firstReceipt, laterReceipt] = await withinFixture(Promise.all([first, later, draining]), 'successive settings snapshots');
+    assert.strictEqual(firstReceipt.memoryLimit, 62);
+    assert.strictEqual(laterReceipt.memoryLimit, 63);
+    assert.deepStrictEqual(f.replacements, [61, 62, 63], 'the first commit must not mark the queued edit as already saved');
+    assert.strictEqual(decodeSettings(await f.bytes()).memoryLimit, 63);
+  }));
+
+  await checkAsync('settings stage an atomic replacement and preserve the primary on failure', () => withSettings(async f => {
+    await f.saveAndFlush({ memoryLimit: 61 });
+    const prior = await f.bytes();
+    let checkedStage = false;
+    f.beforeRename = async (from, staged) => {
+      assert.notStrictEqual(from, f.file, 'replacement must come from a separate staged file');
+      assert.strictEqual(path.dirname(from), f.root, 'the stage must share the destination directory');
+      assert.strictEqual(staged.memoryLimit, 62);
+      assert.ok((await f.bytes()).equals(prior), 'primary changed before the atomic replacement');
+      checkedStage = true;
+      throw Object.assign(new Error('synthetic settings rename failure'), { code: 'ENOSPC' });
+    };
+    const refused = assert.rejects(f.save({ memoryLimit: 62 }), { code: 'ENOSPC' });
+    refused.catch(() => {});
+    await withinFixture(assert.rejects(f.store.flushSettingsWriter(), { code: 'ENOSPC' }), 'failed settings replacement');
+    await withinFixture(refused, 'failed settings receipt');
+    assert.strictEqual(checkedStage, true);
+    assert.ok((await f.bytes()).equals(prior), 'failed replacement did not preserve the primary');
+    assert.deepStrictEqual(await fsp.readdir(f.root), ['settings.json'], 'failed replacement left staging artifacts');
+
+    f.beforeRename = null;
+    await withinFixture(f.store.flushSettingsWriter(), 'ordinary settings retry');
+    assert.deepStrictEqual(f.replacements, [61, 62]);
+    assert.strictEqual(decodeSettings(await f.bytes()).memoryLimit, 62);
+    assert.ok((await fsp.readFile(f.file + '.bak')).equals(prior), 'successful retry must preserve the old primary as backup');
+  }));
 
   // ================= report =================
   for (const r of results) {

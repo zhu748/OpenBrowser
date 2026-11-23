@@ -624,6 +624,7 @@ async function testQuitFlushFailureStillCleansUp() {
     destroyTray: () => {},
     drainBrowsersForQuit: async () => ({ stopped: true, remaining: [], errors: [] }),
     engine: { flushPersistence: failedWrite('engine') },
+    engineInitComplete: true,
     settingsStore: {
       getLocalSettings: () => ({ cloud: { enabled: true, autoSyncOnQuit: true } }),
       flushSettingsWriter: failedWrite('settings'),
@@ -633,7 +634,7 @@ async function testQuitFlushFailureStillCleansUp() {
       stop: async () => { calls.push('automation-stop'); },
     },
     liveSync: { stop: () => { calls.push('sync-stop'); } },
-    cloudOps: { runCloudBackup: async () => { calls.push('backup'); } },
+    cloudOps: { runQuitCloudBackup: async () => { calls.push('backup'); } },
     lifecycleTimeout: (promise) => promise,
     stopShortcutBridge: () => { calls.push('shortcut-stop'); },
     app: { exit: () => { calls.push('exit'); } },
