@@ -4,7 +4,7 @@ const { buildFingerprint, buildInjectionScript, buildWorkerInjectionScript, asse
 const { firefoxUserAgent } = require('./kernel-versions');
 const { resolveUaPatchVersion } = require('./ua-version');
 const { evaluateFingerprintDelivery } = require('./request-header-rewriter');
-const { LIVE_PROBE_EXPRESSION } = require('./fingerprint-debug-log');
+const { LIVE_PROBE_EXPRESSION } = require('./fingerprint/delivery-probe');
 const { evaluateBidi } = require('../network/bidi-connection');
 const { startupNavigationUrl } = require('../engine/startup-session');
 const { assertUrlAccessPolicySupported } = require('./url-access-policy');
@@ -41,6 +41,7 @@ function buildFirefoxFingerprint(profile, version) {
 
 async function initializeFirefoxFingerprint(connection, fingerprint, profile, options = {}) {
   const warnings = [];
+  const reportWarning = (message) => { if (!warnings.includes(message)) warnings.push(message); };
   await connection.command('session.new', { capabilities: { alwaysMatch: { acceptInsecureCerts: Boolean(profile.advanced?.ignoreHttpsError) } } });
   if (options.installLocalWorkerFilter) await options.installLocalWorkerFilter();
   // Apply native emulation to explicit top-level contexts, so the tree has to
@@ -67,10 +68,10 @@ async function initializeFirefoxFingerprint(connection, fingerprint, profile, op
       }
     };
     try { await scoped('emulation.setUserAgentOverride', { userAgent: fingerprint.userAgent }); }
-    catch (error) { warnings.push(`emulation.setUserAgentOverride(${label}): ${error.message}`); }
+    catch (error) { reportWarning(`emulation.setUserAgentOverride(${label}): ${error.message}`); }
     if (fingerprint.timezone) {
       try { await scoped('emulation.setTimezoneOverride', { timezone: fingerprint.timezone }); }
-      catch (error) { warnings.push(`emulation.setTimezoneOverride(${label}): ${error.message}`); }
+      catch (error) { reportWarning(`emulation.setTimezoneOverride(${label}): ${error.message}`); }
     }
     // No emulation.setLocaleOverride: on Firefox 160 the BiDi locale override rewrites the
     // Accept-Language HTTP header to the bare single locale ("de-DE"), destroying the
@@ -124,6 +125,7 @@ async function initializeFirefoxFingerprint(connection, fingerprint, profile, op
     const live = await evaluateBidi(connection, { context: context.context }, LIVE_PROBE_EXPRESSION);
     const verified = evaluateFingerprintDelivery(profile, fingerprint, live, { strict: true });
     if (!verified.ok) throw new Error('Firefox 指纹交付校验失败：' + verified.mismatches.map((m) => m.message).join('; '));
+    for (const warning of verified.warnings) reportWarning(warning);
   }
   const permissionOrigins = new Set();
   const prepareNavigation = async (url) => {

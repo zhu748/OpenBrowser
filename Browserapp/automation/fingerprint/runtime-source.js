@@ -31,31 +31,26 @@ const audioWriteTracker = require('./runtime/audio-write-tracker').runtimeSource
 const videoFrameReadback = require('./runtime/video-frame-readback').runtimeSource;
 const { runtimeSource: nativeArguments } = require('./native-arguments');
 const { runtimeSource: webglCapabilities } = require('./webgl-capabilities');
-
-// Parse the assembled CFG once (it is a JSON literal produced by
-// injection-script.js), then decide fragment inclusion against it.
-function parseCfg(context) {
-  try { return JSON.parse(context.json); } catch (_) { return null; }
-}
+const { contextKindSource, contextBlockingSource } = require('./webgl-context-policy');
 
 // webrtc fragment: only executes for 'disabled' or ('proxy' + address).
 // 'real' (or an absent value) makes every top-level branch dead.
 function webrtcFragmentActive(cfg) {
-  return cfg ? (cfg.webrtc === 'disabled' || (cfg.webrtc === 'proxy' && cfg.webrtcAddress)) : true;
+  return cfg.webrtc === 'disabled' || (cfg.webrtc === 'proxy' && cfg.webrtcAddress);
 }
 
 // fonts fragment: requires a declared font persona (list or foreign families).
 function fontsFragmentActive(cfg) {
-  return cfg ? Boolean(
+  return Boolean(
     (cfg.fonts && Array.isArray(cfg.fonts.list) && cfg.fonts.list.length)
     || (cfg.fonts && Array.isArray(cfg.fonts.foreign) && cfg.fonts.foreign.length)
-  ) : true;
+  );
 }
 
 // This fragment also owns speech, battery and Bluetooth. It can
 // only be dropped when every independent branch is inactive.
 function mediaFragmentActive(cfg) {
-  return cfg ? Boolean(
+  return Boolean(
     (cfg.mediaDevices && cfg.mediaDevices.mode && cfg.mediaDevices.mode !== 'real' && Array.isArray(cfg.mediaDevices.devices))
     || cfg.mediaDevices?.blockCapture
     || cfg.speech?.mode === 'blocked'
@@ -63,35 +58,30 @@ function mediaFragmentActive(cfg) {
     || cfg.battery?.mode === 'blocked'
     || (cfg.battery?.mode === 'noise' && cfg.battery.value && !cfg.battery.value.blocked)
     || cfg.bluetooth?.mode === 'blocked'
-  ) : true;
+  );
 }
 
-function buildDocumentRuntime(context) {
-  const cfg = parseCfg(context);
-  const keepWebrtc = webrtcFragmentActive(cfg);
-  const keepFonts = fontsFragmentActive(cfg);
-  const keepMedia = mediaFragmentActive(cfg);
-  // When the CFG could not be parsed, keep everything: pruning is an
-  // optimization and must never change behavior on unexpected input.
-  // gpu-storage is NOT prunable: its StorageManager.estimate quota block
-  // runs unconditionally, independent of CFG.webgpu.
-  const drop = (keep) => (keep === false ? '' : undefined);
+function buildDocumentRuntime({ config, ...context }) {
+  const blockWebgl = config.webgl?.mode === 'blocked';
+  // The pruning checks and the emitted script read the same configuration.
   return [
-    documentBootstrap(context),
+    documentBootstrap({ ...context, json: JSON.stringify(config) }),
     nativeArguments,
     documentNavigator,
     networkFragment,
     audioWriteTracker,
     documentTimezoneAudio,
-    drop(keepFonts) ?? documentFonts,
+    fontsFragmentActive(config) ? documentFonts : '',
     documentScreen,
     webglCapabilities,
+    blockWebgl || config.canvas?.mode === 'noise' ? contextKindSource : '',
+    blockWebgl ? contextBlockingSource : '',
     canvasReadback,
     textMetricsCache,
     videoFrameReadback,
     documentGraphics,
-    drop(keepWebrtc) ?? documentWebrtc,
-    drop(keepMedia) ?? documentMedia,
+    webrtcFragmentActive(config) ? documentWebrtc : '',
+    mediaFragmentActive(config) ? documentMedia : '',
     // Install inside the document helper closure, before its IIFE closes.
     context.workerSource ? workerConstructorPatch({ workerSource: context.workerSource }) : '',
     documentGpuStorage,
@@ -110,6 +100,7 @@ function buildWorkerRuntime(context) {
     textMetricsCache,
     videoFrameReadback,
     webglCapabilities,
+    context.blockWebgl ? contextKindSource + contextBlockingSource : '',
     workerGraphics,
     workerGpuStorage,
   ].join('');

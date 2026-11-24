@@ -180,11 +180,7 @@ module.exports = `  const canvasMark = Number(CFG.canvas?.mark) || 1;
     });
   }
   if (CFG.webgl?.mode === 'blocked') {
-    replace(globalThis.OffscreenCanvas?.prototype, 'getContext', (original) => function(type, ...rest) {
-      const value = String(type || '');
-      if (value.includes('webgl') || value === 'experimental-webgl') return null;
-      return original.call(this, type, ...rest);
-    });
+    blockWebglContext(globalThis.OffscreenCanvas?.prototype, replace, false);
   } else if (CFG.webgl && (CFG.webgl.mode === 'noise' || (CFG.webgl.metaMode && CFG.webgl.metaMode !== 'real'))) {
     const mark = Number(CFG.webgl?.mark) || 1;
     const metaMode = String(CFG.webgl?.metaMode || 'noise');

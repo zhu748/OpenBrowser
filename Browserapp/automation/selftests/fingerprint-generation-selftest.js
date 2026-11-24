@@ -62,6 +62,25 @@ async function main() {
     }
   });
 
+  for (const fingerprintVersion of [1, 2]) {
+    const input = { id: 'optional-marks', name: 'Optional marks', os: 'Linux', fingerprintSeed: 'fixed-fixture', fingerprintVersion };
+    const original = buildFingerprint(input);
+    for (const missing of [null, '', '  ', false, true, 0, '0']) {
+      const profile = { ...input, privacy: {
+        fingerprint: { canvasId: missing, webglId: missing, audioId: missing, clientRectsId: missing },
+      } };
+      const candidate = buildFingerprint(profile);
+      for (const field of ['canvas', 'webgl', 'audio', 'clientRects']) assert.equal(candidate[field].mark, original[field].mark);
+      const saved = sanitizeProfile(profile).privacy.fingerprint;
+      for (const field of ['canvasId', 'webglId', 'audioId', 'clientRectsId']) assert.equal(saved[field], undefined);
+    }
+    const explicit = buildFingerprint({ ...input, privacy: { fingerprint: { canvasId: '-2', audioId: 1.5 } } });
+    assert.equal(explicit.canvas.mark, -2);
+    assert.equal(explicit.audio.mark, 1.5);
+    assert.equal(explicit.staticConfig.canvasMark, explicit.canvas.mark);
+    assert.equal(explicit.staticConfig.audioFp, explicit.audio.mark);
+  }
+
   const contrastDpr = new Set();
   let total = 0;
   for (const os of ['Windows', 'macos', 'macos_arm', 'Linux', 'Android', 'iOS']) {

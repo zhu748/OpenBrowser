@@ -3,7 +3,9 @@
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const h = require('./native-gate-harness');
-const { buildFingerprint } = require('../fingerprint');
+const { buildFingerprint, buildInjectionScript } = require('../fingerprint');
+const { LIVE_PROBE_EXPRESSION } = require('../fingerprint/delivery-probe');
+const { evaluateFingerprintDelivery } = require('../request-header-rewriter');
 const { sanitizeProfile } = require('../../engine/profile-sanitizer');
 
 // A one-row texture tests advertised width without a large GPU allocation.
@@ -49,6 +51,106 @@ async function load(session, url, fp, nativeMetrics = false) {
   }
   conn.close();
   throw new Error('Test page did not load');
+}
+function contextCalls(makeCanvas, prototype) {
+  function outcome(call) {
+    try {
+      const context = call();
+      return context === null ? 'null' : typeof context;
+    } catch (error) {
+      return error.name;
+    }
+  }
+  let contextReads = 0;
+  const context2d = outcome(() => makeCanvas().getContext({ toString() { contextReads++; return '2d'; } }));
+  let webglReads = 0;
+  const webglObject = outcome(() => makeCanvas().getContext({ toString() { webglReads++; return 'webgl'; } }));
+  let invalidReceiverReads = 0;
+  const invalidReceiver = outcome(() => prototype.getContext.call({}, {
+    toString() { invalidReceiverReads++; return 'webgl'; },
+  }));
+  return {
+    context2d, contextReads, webglObject, webglReads, invalidReceiver, invalidReceiverReads,
+    webgl: outcome(() => makeCanvas().getContext('webgl')),
+    webgl2: outcome(() => makeCanvas().getContext('webgl2')),
+    experimental: outcome(() => makeCanvas().getContext('experimental-webgl')),
+    unsupported: outcome(() => makeCanvas().getContext('webgl-unknown')),
+    missing: outcome(() => makeCanvas().getContext()),
+    symbol: outcome(() => makeCanvas().getContext(Symbol())),
+  };
+}
+
+async function contextPolicySnapshot(read) {
+  const frame = document.createElement('iframe');
+  document.body.append(frame);
+  const child = frame.contentWindow;
+  const result = {
+    main: read(() => document.createElement('canvas'), HTMLCanvasElement.prototype),
+    iframe: read(() => child.document.createElement('canvas'), child.HTMLCanvasElement.prototype),
+    offscreen: read(() => new OffscreenCanvas(4, 4), OffscreenCanvas.prototype),
+  };
+  frame.remove();
+
+  const transferred = document.createElement('canvas');
+  transferred.transferControlToOffscreen();
+  try { transferred.getContext('webgl'); result.transferred = 'returned'; }
+  catch (error) { result.transferred = error.name; }
+
+  const url = URL.createObjectURL(new Blob([
+    `postMessage((${read})(() => new OffscreenCanvas(4, 4), OffscreenCanvas.prototype));`,
+  ], { type: 'text/javascript' }));
+  const worker = new Worker(url);
+  try {
+    result.worker = await new Promise((resolve, reject) => {
+      worker.onmessage = event => resolve(event.data);
+      worker.onerror = () => reject(Error('OffscreenCanvas Worker failed'));
+    });
+  } finally {
+    worker.terminate();
+    URL.revokeObjectURL(url);
+  }
+  return result;
+}
+
+async function checkContextPolicy(conn, url, fingerprint) {
+  const expression = `(${contextPolicySnapshot})(${contextCalls})`;
+  const native = await h.evaluate(conn, expression);
+  for (const realm of ['main', 'iframe', 'offscreen', 'worker']) {
+    assert.equal(native[realm].webgl, 'object', realm + ' baseline requires WebGL');
+    assert.equal(native[realm].webgl2, 'object', realm + ' baseline requires WebGL2');
+  }
+
+  await conn.command('Page.enable');
+  for (const [canvasMode, webglMode] of [['noise', 'real'], ['noise', 'blocked'], ['blocked', 'blocked']]) {
+    const source = buildInjectionScript({
+      ...fingerprint,
+      canvas: { ...fingerprint.canvas, mode: canvasMode },
+      webgl: { ...fingerprint.webgl, mode: webglMode, metaMode: 'real' },
+    });
+    const { identifier } = await conn.command('Page.addScriptToEvaluateOnNewDocument', { source });
+    try {
+      // Use the same unblocked kernel and test the document-start layer alone.
+      const target = new URL(`/?canvas=${canvasMode}&webgl=${webglMode}`, url).href;
+      await conn.command('Page.navigate', { url: target });
+      for (let i = 0; i < 100; i++) {
+        if (await h.evaluate(conn, `location.href === ${JSON.stringify(target)} && !!document.body`)) break;
+        await h.delay(30);
+      }
+      assert.equal(await h.evaluate(conn, 'location.href'), target);
+      const actual = await h.evaluate(conn, expression);
+      const expected = structuredClone(native);
+      if (webglMode === 'blocked') {
+        for (const realm of ['main', 'iframe', 'offscreen', 'worker']) {
+          Object.assign(expected[realm], { webgl: 'null', webgl2: 'null', webglObject: 'null' });
+        }
+        expected.main.experimental = expected.iframe.experimental = 'null';
+      }
+      assert.deepEqual(actual, expected, `Canvas ${canvasMode} / WebGL ${webglMode}`);
+    } finally {
+      await conn.command('Page.removeScriptToEvaluateOnNewDocument', { identifier });
+    }
+  }
+  console.log('PASS no launch flags: WebGL policy and native context arguments in documents, iframes and OffscreenCanvas Workers');
 }
 function check(actual, baseline, label) {
   assert.equal(actual.length, 2);
@@ -123,7 +225,28 @@ async function main() {
             } finally { rawConn?.close(); await raw.close(); }
           }
         }
+        if (!spec.injected) await checkContextPolicy(conn, url, fp);
         console.log(`OK ${spec.os} v${spec.version} ${spec.deviceProfile || 'auto'} injected=${spec.injected}`);
+      } finally { conn?.close(); await session.close(); }
+    }
+    for (const [webgl, webglMeta] of [['blocked', 'real'], ['real', 'blocked']]) {
+      const profile = sanitizeProfile({ id: 'gl-policy', name: 'GL policy', os: 'Windows',
+        fingerprintVersion: 2, privacy: {
+          fontListMode: 'real', fingerprint: { webgl, webglMeta },
+          customArgs: '--use-gl=angle;--use-angle=swiftshader;--enable-unsafe-swiftshader',
+        } });
+      const fp = buildFingerprint({ ...profile, kernelVersion: browser.version });
+      const session = await h.launchPersonaBrowser(browser, { profile, fingerprint: fp });
+      let conn;
+      try {
+        conn = await load(session, url, fp);
+        const live = await h.evaluate(conn, LIVE_PROBE_EXPRESSION);
+        assert.equal(live.probeError, undefined);
+        assert.equal(live.webglContextPresent, webgl !== 'blocked');
+        assert.equal(live.webglUnmasked, false);
+        const verified = evaluateFingerprintDelivery(profile, fp, live, { strict: true });
+        assert.equal(verified.ok, true, JSON.stringify(verified.mismatches));
+        console.log(`PASS live probe distinguishes WebGL mode=${webgl} and metadata=${webglMeta}`);
       } finally { conn?.close(); await session.close(); }
     }
   } finally { await new Promise((resolve) => server.close(resolve)); }

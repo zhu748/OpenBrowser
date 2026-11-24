@@ -81,13 +81,12 @@ function buildFingerprint(profile = {}) {
   // macOS never offers — while Windows drew 2x. macOS defaults to 2x Retina, Windows laptops
   // cluster at 100/125/150%, Linux mostly 1x.
 
-  // Numeric noise marks (canvas/webgl ±10000; audio/clientRects from seed formulas unless overridden)
-  const canvasId = (draw('canvas.mark', 28) % 20000) - 10000 || 1;
-  const webglId = (draw('webgl.mark', 32) % 20000) - 10000 || 1;
-  const audioIdDefault = audioMarkFromSeed(seed.toString('hex'));
-  const clientRectsIdDefault = clientRectMarkFromSeed(seed);
-  const audioId = Number.isFinite(Number(fpIn.audioId)) ? Number(fpIn.audioId) : audioIdDefault;
-  const clientRectsId = Number.isFinite(Number(fpIn.clientRectsId)) ? Number(fpIn.clientRectsId) : clientRectsIdDefault;
+  // Use one resolved mark for the document, worker and native configuration.
+  // Zero and invalid overrides follow the seed, matching persisted profile validation.
+  const canvasId = toFiniteNumber(fpIn.canvasId) || (draw('canvas.mark', 28) % 20000) - 10000 || 1;
+  const webglId = toFiniteNumber(fpIn.webglId) || (draw('webgl.mark', 32) % 20000) - 10000 || 1;
+  const audioId = toFiniteNumber(fpIn.audioId) || audioMarkFromSeed(seed.toString('hex'));
+  const clientRectsId = toFiniteNumber(fpIn.clientRectsId) || clientRectMarkFromSeed(seed);
 
   const mode = (name, allowed, fallback) => {
     const value = fpIn[name] ?? privacy[name];
@@ -510,7 +509,7 @@ function buildFingerprint(profile = {}) {
     metaMode: webglMetaMode,
     vendor: webglVendor,
     renderer: webglRenderer,
-    mark: Number.isFinite(Number(fpIn.webglId)) ? Number(fpIn.webglId) : webglId,
+    mark: webglId,
     gpu: webglMetaMode === 'real' ? null : webglGpu,
     reconcileHost: Boolean(webglReconcileHost),
     stability,
@@ -556,16 +555,16 @@ function buildFingerprint(profile = {}) {
     webgl,
     canvas: {
       mode: canvasMode,
-      mark: Number.isFinite(Number(fpIn.canvasId)) ? Number(fpIn.canvasId) : canvasId,
+      mark: canvasId,
       stability,
     },
     audio: {
       mode: audioMode,
-      mark: Number.isFinite(Number(fpIn.audioId)) ? Number(fpIn.audioId) : audioId,
+      mark: audioId,
     },
     clientRects: {
       mode: clientRectsMode,
-      mark: Number.isFinite(Number(fpIn.clientRectsId)) ? Number(fpIn.clientRectsId) : clientRectsId,
+      mark: clientRectsId,
     },
     webrtc: webrtcMode,
     webrtcPolicy,
@@ -661,10 +660,10 @@ function buildFingerprint(profile = {}) {
       deviceMemory: useRealMemory ? null : (Number(fpIn.deviceMemory) > 0 ? Number(fpIn.deviceMemory) : memory),
       platform: fpIn.platform || uaProfile.platform || OS_PRESETS[uaOs].platformNav,
       langs: languages,
-      canvasMark: Number.isFinite(Number(fpIn.canvasId)) ? Number(fpIn.canvasId) : canvasId,
-      webglMark: Number.isFinite(Number(fpIn.webglId)) ? Number(fpIn.webglId) : webglId,
-      audioFp: Number.isFinite(Number(fpIn.audioId)) ? Number(fpIn.audioId) : audioId,
-      clientRectFp: Number.isFinite(Number(fpIn.clientRectsId)) ? Number(fpIn.clientRectsId) : clientRectsId,
+      canvasMark: canvasId,
+      webglMark: webglId,
+      audioFp: audioId,
+      clientRectFp: clientRectsId,
       maxTouchPoints: mobileDevice
         ? mobileDevice.maxTouchPoints
         : (Number(fpIn.maxTouchPoints) >= 0 ? Number(fpIn.maxTouchPoints) : 0),

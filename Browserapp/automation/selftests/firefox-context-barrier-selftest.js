@@ -1,5 +1,6 @@
 'use strict';
 
+const { LIVE_PROBE_EXPRESSION } = require('../fingerprint/delivery-probe');
 const assert = require('node:assert/strict');
 const { buildFirefoxFingerprint, initializeFirefoxFingerprint, navigateFirefoxStartup } = require('../firefox-fingerprint');
 const { BidiConnection } = require('../../network/bidi-connection');
@@ -30,7 +31,7 @@ function fixture(behavior = {}) {
     if (method === 'permissions.setPermission') return behavior.permission?.(params) || {};
     if (method === 'browsingContext.getTree') return { contexts: [{ context: 'initial', url: 'about:blank' }] };
     if (method === 'script.addPreloadScript') return { script: 'preload' };
-    if (method === 'script.evaluate') return { type: 'success', result: params.expression.includes('webglVendor: webglVendor') ? remote(live) : { type: 'undefined' } };
+    if (method === 'script.evaluate') return { type: 'success', result: params.expression === LIVE_PROBE_EXPRESSION ? remote(live) : { type: 'undefined' } };
     if (method === 'browsingContext.navigate') return behavior.navigate?.(params) || {};
     if (method === 'browsingContext.create') {
       if (behavior.emitCreated !== false) {

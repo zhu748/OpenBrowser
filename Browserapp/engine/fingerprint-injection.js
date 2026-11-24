@@ -13,7 +13,8 @@ const cdp = require('../cdp');
 const { createCssFontResponseRewriter } = require('../automation/css-font-response-rewrite');
 const { ImageSizeFilter } = require('../automation/image-size-filter');
 const { applyFingerprintToTab, buildFingerprint, buildWorkerInjectionScript, forgetFingerprintOwner, forgetFingerprintTarget } = require('../automation/fingerprint');
-const { LIVE_PROBE_EXPRESSION, fpLog } = require('../automation/fingerprint-debug-log');
+const { fpLog } = require('../automation/fingerprint-debug-log');
+const { LIVE_PROBE_EXPRESSION, PAUSED_DOCUMENT_PROBE } = require('../automation/fingerprint/delivery-probe');
 const { deriveFontPlaceholder } = require('../automation/font-placeholder');
 const { fingerprintForNativeKernelInject } = require('../automation/kernel-init-sync');
 const { resolveProfileLanguage, resolveProfileTimezone } = require('../automation/locale-from-country');
@@ -27,25 +28,6 @@ const { OpenerlessPageGate } = require('../automation/openerless-page-gate');
 const { closePageFingerprintConnection } = require('./fingerprint-transport');
 const { FingerprintSession } = require('./fingerprint-session');
 const { applyNetworkConditions, applyNavigationNetworkConditions } = require('./network-conditions');
-
-// A paused page cannot settle promises from a native asynchronous API such
-// as getHighEntropyValues. Keep the handoff check entirely synchronous.
-const PAUSED_DOCUMENT_PROBE = `(() => {
-  const hints = navigator.userAgentData;
-  const connection = navigator.connection;
-  return {
-    userAgent: navigator.userAgent, platform: navigator.platform,
-    language: navigator.language, languages: Array.from(navigator.languages),
-    hardwareConcurrency: navigator.hardwareConcurrency, deviceMemory: navigator.deviceMemory,
-    deviceMemoryPresent: 'deviceMemory' in navigator, secureContext: globalThis.isSecureContext,
-    vendor: navigator.vendor, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    screenWidth: screen.width, screenHeight: screen.height, devicePixelRatio,
-    uaDataPresent: Boolean(hints), uaDataPlatform: hints?.platform,
-    uaDataBrands: hints?.brands, uaDataMobile: hints?.mobile,
-    connection: connection && Object.fromEntries(['type', 'effectiveType', 'downlink', 'rtt', 'saveData']
-      .filter(key => key in connection).map(key => [key, connection[key]])),
-  };
-})()`;
 
 // Stable identity of the document-start config. Two inject payloads built from the same
 // fingerprint serialise identically, so this is what decides whether a live tab still matches
@@ -998,7 +980,9 @@ module.exports = {
             returnByValue: true,
             awaitPromise: true,
           }, timeout);
-          liveProbe = probeRes?.result?.value || probeRes?.value || null;
+          const exception = probeRes?.exceptionDetails || probeRes?.result?.exceptionDetails;
+          liveProbe = exception ? { probeError: exception.text || 'Probe script failed' }
+            : (probeRes?.result?.value ?? probeRes?.value ?? null);
         }
       } catch (err) {
         probeWarning = "CDP 探针执行异常: " + (err?.message || String(err));

@@ -1,5 +1,6 @@
 'use strict';
 
+const { LIVE_PROBE_EXPRESSION } = require('../fingerprint/delivery-probe');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
@@ -255,7 +256,7 @@ function documentScope() {
       calls.push({ method, params });
       if (method === 'script.addPreloadScript') return { script: 'preload' };
       if (method === 'browsingContext.getTree') return { contexts: [{ context: 'initial', url: 'about:blank' }] };
-      if (method === 'script.evaluate') return { type: 'success', result: params.expression.includes('webglVendor: webglVendor')
+      if (method === 'script.evaluate') return { type: 'success', result: params.expression === LIVE_PROBE_EXPRESSION
         ? remote({ platform: firefox.platform, userAgent: firefox.userAgent, hardwareConcurrency: firefox.hardwareConcurrency, languages: firefox.languages, timezone: firefox.timezone, vendor: '', screenWidth: firefox.screen.width, screenHeight: firefox.screen.height, devicePixelRatio: firefox.screen.devicePixelRatio }) : { type: 'undefined' } };
       if (method === 'browsingContext.create') return { context: 'second' };
       return {};

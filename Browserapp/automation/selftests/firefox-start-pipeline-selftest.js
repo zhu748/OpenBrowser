@@ -16,6 +16,7 @@
  * startup diagnostics are written on failure.
  */
 
+const { LIVE_PROBE_EXPRESSION } = require('../fingerprint/delivery-probe');
 const assert = require('assert');
 const fs = require('fs');
 const fsp = require('fs/promises');
@@ -131,7 +132,7 @@ function makeStubFirefox(tmp) {
       if (command.method === 'browsingContext.create') result = { context: 'extra' };
       if (command.method === 'script.evaluate') {
         const fp = engine.running.get('env-900').fingerprint;
-        result = { type: 'success', result: command.params.expression.includes('webglVendor: webglVendor')
+        result = { type: 'success', result: command.params.expression === LIVE_PROBE_EXPRESSION
           ? remote({ platform: fp.platform, userAgent: fp.userAgent, hardwareConcurrency: fp.hardwareConcurrency, languages: fp.languages, timezone: fp.timezone, vendor: '', screenWidth: fp.screen.width, screenHeight: fp.screen.height, devicePixelRatio: fp.screen.devicePixelRatio })
           : { type: 'undefined' } };
       }

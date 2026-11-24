@@ -279,21 +279,17 @@ module.exports = `  // --- canvas ---
           });
         }
 
-        const wrapCtx = (proto) => {
-          if (!proto || !proto.getContext) return;
-          replaceMethod(proto, 'getContext', (original) => function getContext(...args) {
-            const ctx = original.apply(this, args);
-            try {
-              const type = String(args[0] || '').toLowerCase();
-              if (type.includes('webgl') || type.includes('experimental-webgl')) {
-                webglCanvases.add(this);
-              }
-            } catch (_) {}
-            return ctx;
+        // A blocked profile installs the context policy below. There are no
+        // WebGL canvases to track for Canvas readback in that mode.
+        if (CFG.webgl?.mode !== 'blocked') {
+          const trackContext = (proto, htmlCanvas) => replaceMethod(proto, 'getContext', (original) => function getContext(...args) {
+            const { value, text } = invokeNativeText(original, this, args);
+            if (value && isWebglContext(text, htmlCanvas)) webglCanvases.add(this);
+            return value;
           });
-        };
-        wrapCtx(targetWin.HTMLCanvasElement && targetWin.HTMLCanvasElement.prototype);
-        wrapCtx(targetWin.OffscreenCanvas && targetWin.OffscreenCanvas.prototype);
+          trackContext(targetWin.HTMLCanvasElement?.prototype, true);
+          trackContext(targetWin.OffscreenCanvas?.prototype, false);
+        }
       } catch (_) {}
     };
 
@@ -303,15 +299,12 @@ module.exports = `  // --- canvas ---
 
   // --- webgl ---
   if (CFG.webgl && CFG.webgl.mode === 'blocked') {
-    try {
-      const blockContext = (proto) => replaceMethod(proto, 'getContext', (target) => function(...argArray) {
-          const type = String(argArray[0] || '');
-          if (type.includes('webgl') || type === 'experimental-webgl') return null;
-          return Reflect.apply(target, this, argArray);
-      });
-      blockContext(globalThis.HTMLCanvasElement?.prototype);
-      blockContext(globalThis.OffscreenCanvas?.prototype);
-    } catch (_) {}
+    const patchWebglBlocked = (target) => {
+      blockWebglContext(target.HTMLCanvasElement?.prototype, replaceMethod, true);
+      blockWebglContext(target.OffscreenCanvas?.prototype, replaceMethod, false);
+    };
+    patchWebglBlocked(globalThis);
+    subWindowSyncHooks.push(patchWebglBlocked);
   } else if (CFG.webgl && (CFG.webgl.mode === 'noise' || (CFG.webgl.metaMode && CFG.webgl.metaMode !== 'real'))) {
     try {
       const mark = Number(CFG.webgl.mark) || 1;

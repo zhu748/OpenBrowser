@@ -62,5 +62,24 @@ async function storageCase(result, expectedQuota) {
   assert.equal(fp.geoPermission, 'granted');
   assert.equal(new Map(firefoxExtraUserPrefs(allowed, fp)).get('geo.enabled'), true);
   assert.equal(new Map(firefoxExtraUserPrefs({ privacy: { geoMode: 'prompt' } })).get('geo.enabled'), true);
+  const { buildFirefoxFingerprint } = require('../firefox-fingerprint');
+  const { buildInjectionScript } = require('../fingerprint');
+  for (const [privacy, mode, enabled] of [
+    [{}, 'proxy', false],
+    [{ webrtc: 'real', fingerprint: { webrtc: 'disabled' } }, 'disabled', false],
+    [{ webrtc: 'disabled', fingerprint: { webrtc: 'real' } }, 'real', true],
+    [{ webrtc: 'real', fingerprint: { webrtc: 'proxy', webrtcAddress: '192.0.2.10' } }, 'proxy', true],
+  ]) {
+    const profile = { id: 'rtc-policy', os: 'Windows', engine: 'firefox', privacy: { ...privacy, fontListMode: 'real' } };
+    const expected = buildFirefoxFingerprint(profile, '159.0');
+    assert.equal(expected.webrtc, mode);
+    assert.equal(new Map(firefoxExtraUserPrefs(profile, expected)).get('media.peerconnection.enabled'), enabled);
+    assert.equal(buildInjectionScript(expected, { livePatch: true }).includes('const hasLocal'), enabled && mode === 'proxy');
+  }
+  for (const [webgl, enabled] of [['blocked', false], ['noise', true], ['real', true]]) {
+    const profile = { id: 'webgl-pref', engine: 'firefox', os: 'Linux', privacy: { webgl: 'noise', fingerprint: { webgl } } };
+    const fingerprint = buildFirefoxFingerprint(profile, '159.0');
+    assert.equal(new Map(firefoxExtraUserPrefs(profile, fingerprint)).get('webgl.disabled'), !enabled);
+  }
   console.log('PASS native storage bounds/shape/brand/realm, zero/absent/frozen fields, effective geolocation denial and mandatory native permission setup');
 })().catch(error => { console.error(error);process.exitCode = 1; });

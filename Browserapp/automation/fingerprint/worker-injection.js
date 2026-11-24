@@ -88,7 +88,10 @@ function buildWorkerInjectionScript(fp, options = {}) {
   });
   // The private Function bridge in worker-bootstrap owns idempotency.
   // The entire prefix returns before any fragment can be installed twice.
-  const core = buildWorkerRuntimeFull({ json, bridgeToken, fontPresenceSource: buildWorkerFontPresenceSource(fp) });
+  const core = buildWorkerRuntimeFull({
+    json, bridgeToken, blockWebgl: fp.webgl?.mode === 'blocked',
+    fontPresenceSource: buildWorkerFontPresenceSource(fp),
+  });
   if (options.coreOnly) return rememberWorkerScript(cacheKey, core);
   const { installerSource } = require('./runtime/worker-constructor-patch');
   return rememberWorkerScript(cacheKey, core + '(undefined, (' + installerSource + '));');

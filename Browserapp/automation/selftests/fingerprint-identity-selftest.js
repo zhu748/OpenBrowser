@@ -195,6 +195,10 @@ function scopeFor(fp) {
       const result = evaluateFingerprintDelivery({}, fp, { ...live, uaDataHighEntropy: { ...live.uaDataHighEntropy, ...patch } }, { strict: true });
       assert.equal(result.ok, false, JSON.stringify(patch));
     }
+    for (const patch of [{ uaDataPlatform: 'Win32' }, { uaDataMobile: undefined }, { uaDataBrands: null }]) {
+      assert.equal(evaluateFingerprintDelivery({}, fp, { ...live, ...patch }, { strict: true }).ok, false,
+        'an incomplete or incorrectly shaped low-entropy result cannot verify');
+    }
     assert.equal(evaluateFingerprintDelivery({}, fp, { ...live, uaDataError: 'timeout' }, { strict: true }).ok, false);
     assert.equal(evaluateFingerprintDelivery({}, fp, { ...live, uaDataPresent: false }, { strict: true }).ok, false);
     assert.equal(evaluateFingerprintDelivery({}, fp, { ...live, uaDataHighEntropy: null }, { strict: true }).ok, false);

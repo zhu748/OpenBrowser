@@ -194,10 +194,26 @@ async function startupHarness(fault) {
   });
   await test('strict delivery rejects missing timezone/languages and same-brand GPU mismatches', () => {
     assert.equal(evaluateFingerprintDelivery(profile, fp, liveFor(), { strict: true }).ok, true);
-    for (const patch of [{ timezone: '' }, { languages: [] }, { platform: 'Win64' }, { webglRenderer: fp.webgl.renderer + ' WRONG' }]) {
+    assert.equal(evaluateFingerprintDelivery({ ...profile, os: 'Linux' }, fp, liveFor(), { strict: true }).ok, true,
+      'effective OS takes precedence over the raw profile field');
+    for (const patch of [{ timezone: '' }, { languages: [] }, { language: 'ja-JP' }, { platform: 'Win64' }, { webglRenderer: fp.webgl.renderer + ' WRONG' }]) {
       assert.equal(evaluateFingerprintDelivery(profile, fp, { ...liveFor(), ...patch }, { strict: true }).ok, false);
     }
     assert.equal(evaluateFingerprintDelivery(profile, fp, { ...liveFor(), webglUnmasked: false, webglRenderer: 'WebKit WebGL', webglVendor: 'WebKit' }, { strict: true }).ok, true);
+  });
+  await test('strict probe checks configured blocking independently of WebGL pixel noise and raw profile settings', () => {
+    const current = { ...fp, webgl: { ...fp.webgl, mode: 'blocked', metaMode: 'real' } };
+    const verify = (expected, patch) => evaluateFingerprintDelivery(profile, expected, { ...liveFor(), ...patch }, { strict: true });
+    assert.equal(verify(current, { webglContextPresent: true }).ok, false);
+    assert.equal(verify(current, { webglContextPresent: false }).ok, true);
+    const hideMetadata = { ...fp, webgl: { ...fp.webgl, mode: 'real', metaMode: 'blocked' } };
+    assert.equal(verify(hideMetadata, { webglContextPresent: true }).ok, false);
+    assert.equal(verify(hideMetadata, { webglContextPresent: true, webglUnmasked: false }).ok, true);
+    const retainNoise = { ...fp, webgl: { ...fp.webgl, mode: 'real', metaMode: 'noise' } };
+    assert.equal(verify(retainNoise, { webglRenderer: fp.webgl.renderer + ' WRONG', webglContextPresent: true }).ok, false);
+    const unavailable = verify(retainNoise, { webglContextPresent: false, webglUnmasked: false, webglVendor: null, webglRenderer: null });
+    assert.equal(unavailable.ok, true);
+    assert.ok(unavailable.warnings.some(warning => warning.includes('WebGL')));
   });
   await test('platform classification and timezone aliases avoid false delivery failures', () => {
     assert.equal(normalizePlatformFamily('Darwin'), 'macos');

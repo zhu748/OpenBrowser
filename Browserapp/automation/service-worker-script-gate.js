@@ -3,6 +3,7 @@
 const { buildWorkerInjectionScript } = require('./fingerprint');
 const { buildWorkerDeliveryProbe } = require('./fingerprint/worker-injection');
 const { canonicalBridgeToken } = require('./fingerprint/shared');
+const { NETWORK_INFO_FIELDS } = require('./fingerprint/delivery-probe');
 const { WORKER_RUNTIME_REVISION } = require('./fingerprint/runtime-revision');
 const { MAX_WORKER_BYTES, injectionPosition } = require('./worker-source');
 const syntax = require('./vendor/acorn-runtime');
@@ -110,13 +111,14 @@ class ServiceWorkerScriptGate {
         if (navigator.userAgent !== expected.ua || navigator.platform !== expected.platform) return false;
         if (expected.timezone && Intl.DateTimeFormat().resolvedOptions().timeZone !== expected.timezone) return false;
         if (expected.connection && navigator.connection) {
-          for (const key of ['rtt', 'downlink', 'effectiveType', 'saveData']) {
+          for (const key of expected.networkFields) {
             if (key in expected.connection && key in navigator.connection && navigator.connection[key] !== expected.connection[key]) return false;
           }
         }
         return true;
       }.toString()})(${JSON.stringify({ cores: this.fingerprint.hardwareConcurrency, ua: this.fingerprint.userAgent,
-        platform: this.fingerprint.platform, timezone: this.fingerprint.timezone, connection: normalizeNetworkInformation(this.fingerprint.connection) })})`,
+        platform: this.fingerprint.platform, timezone: this.fingerprint.timezone, connection: normalizeNetworkInformation(this.fingerprint.connection),
+        networkFields: NETWORK_INFO_FIELDS })})`,
       returnByValue: true, disableBreaks: true,
     }, { timeout: 3000 });
     if (probe.result?.value !== true) throw new Error('Service Worker fingerprint installation was not confirmed');

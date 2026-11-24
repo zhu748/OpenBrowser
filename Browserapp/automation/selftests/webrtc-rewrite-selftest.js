@@ -343,15 +343,19 @@ function runBlock(fingerprint) {
   const script = buildInjectionScript(fingerprint);
   const start = script.indexOf('// --- webrtc ---');
   const end = script.indexOf('// --- mediaDevices ---');
-  if (start < 0 || end <= start) throw new Error('webrtc block not found in the generated script');
-  const block = script.slice(start, end);
+  if (fingerprint.webrtc === 'real') {
+    assert.equal(start, -1, 'real mode must omit the WebRTC override');
+    assert.ok(!script.includes('const hasLocal'), 'real mode must omit the synthetic fallback');
+  } else if (start < 0 || end <= start) {
+    throw new Error('webrtc block not found in the generated script');
+  }
   const context = vm.createContext({ console });
   vm.runInContext(STUBS, context);
   context.CFG = {
     webrtc: fingerprint.webrtc,
     webrtcAddress: fingerprint.webrtcAddress || null,
   };
-  vm.runInContext(block, context);
+  if (start !== -1) vm.runInContext(script.slice(start, end), context);
   return context;
 }
 

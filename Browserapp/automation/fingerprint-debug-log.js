@@ -111,68 +111,7 @@ async function fpLog(event, payload = {}) {
   }
 }
 
-/** CDP expression: read live surfaces after inject (must run in page main world). */
-const LIVE_PROBE_EXPRESSION = `(async () => {
-  try {
-    const canvas = document.createElement('canvas');
-    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-    let webglVendor = null, webglRenderer = null, webglUnmasked = false;
-    if (gl) {
-      const ext = gl.getExtension('WEBGL_debug_renderer_info');
-      webglUnmasked = Boolean(ext);
-      webglVendor = ext ? gl.getParameter(ext.UNMASKED_VENDOR_WEBGL) : gl.getParameter(gl.VENDOR);
-      webglRenderer = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
-    }
-    const uaData = navigator.userAgentData;
-    let uaDataHighEntropy = null, uaDataError = null, entropyTimer;
-    if (uaData && globalThis.isSecureContext === true) {
-      try {
-        uaDataHighEntropy = await Promise.race([
-          uaData.getHighEntropyValues(['architecture', 'bitness', 'model', 'platformVersion', 'uaFullVersion', 'fullVersionList', 'wow64']),
-          new Promise((resolve, reject) => { entropyTimer = setTimeout(() => reject(new Error('Client Hints probe timeout')), 1500); }),
-        ]);
-      } catch (error) { uaDataError = String(error && error.message || error); }
-      finally { clearTimeout(entropyTimer); }
-    }
-    return {
-      href: String(location.href || ''),
-      userAgent: String(navigator.userAgent || ''),
-      platform: String(navigator.platform || ''),
-      language: String(navigator.language || ''),
-      languages: Array.from(navigator.languages || []),
-      hardwareConcurrency: navigator.hardwareConcurrency,
-      deviceMemory: navigator.deviceMemory,
-      deviceMemoryPresent: 'deviceMemory' in navigator,
-      secureContext: globalThis.isSecureContext === true,
-      vendor: navigator.vendor,
-      screenWidth: screen.width,
-      screenHeight: screen.height,
-      devicePixelRatio: window.devicePixelRatio,
-      connection: (() => {
-        const network = navigator.connection;
-        if (!network) return null;
-        const values = {};
-        for (const key of ['type', 'effectiveType', 'downlink', 'rtt', 'saveData']) {
-          if (key in network) values[key] = network[key];
-        }
-        return values;
-      })(),
-      webglVendor: webglVendor,
-      webglRenderer: webglRenderer,
-      webglUnmasked,
-      webdriver: navigator.webdriver === true,
-      timezone: (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (_) { return ''; } })(),
-      uaDataPresent: Boolean(uaData),
-      uaDataPlatform: uaData && uaData.platform || null,
-      uaDataBrands: uaData ? Array.from(uaData.brands || [], (brand) => ({ brand: brand.brand, version: brand.version })) : null,
-      uaDataMobile: uaData ? uaData.mobile : null,
-      uaDataHighEntropy,
-      uaDataError,
-    };
-  } catch (error) {
-    return { probeError: String(error && error.message || error) };
-  }
-})()`;
+const { LIVE_PROBE_EXPRESSION } = require('./fingerprint/delivery-probe');
 
 module.exports = {
   fpLog,

@@ -12,6 +12,7 @@
 
 const { buildUaProfile, cdpUserAgentOverride, buildAcceptLanguageHeader } = require('./user-agent');
 const { compileUrlAccessPolicy, blockedPageHtml } = require('./url-access-policy');
+const { NETWORK_INFO_FIELDS } = require('./fingerprint/delivery-probe');
 const { normalizeNetworkInformation } = require('../shared/profile-values');
 
 const CHROMIUM_CANONICAL_HEADER_ORDER = Object.freeze([
@@ -502,7 +503,9 @@ function evaluateFingerprintDelivery(profile = {}, fingerprint = {}, liveProbe =
 
   // 2. Platform / OS verification
   const expectedPlatform = fingerprint?.platform || profile?.platform || '';
-  const expectedOs = profile?.os || fingerprint?.uaProfile?.os || '';
+  const expectedOs = (options.strict
+    ? fingerprint.os || fingerprint.uaProfile?.os || profile?.os
+    : profile?.os || fingerprint.uaProfile?.os) || '';
   const expectedFamily = normalizePlatformFamily(expectedOs) || normalizePlatformFamily(expectedPlatform);
 
   if (expectedFamily && liveProbe.platform) {
@@ -565,19 +568,22 @@ function evaluateFingerprintDelivery(profile = {}, fingerprint = {}, liveProbe =
     }
   }
 
-  if (options.strict && fingerprint.userAgentMetadata && /(?:Chrome|Chromium)\//i.test(expectedUa)) {
-    const metadata = fingerprint.userAgentMetadata;
+  const metadata = fingerprint.userAgentMetadata || fingerprint.uaProfile?.metadata;
+  if (options.strict && metadata && /(?:Chrome|Chromium|Edg)\//i.test(expectedUa)) {
     const addHintMismatch = (field, expected, actual) => mismatches.push({
       field: `userAgentData.${field}`, expected, actual, message: `Client Hints ${field} 未按配置交付`,
     });
-    if (liveProbe.secureContext === true && liveProbe.uaDataPresent === false) {
-      addHintMismatch('present', true, false);
+    if (liveProbe.secureContext === true && liveProbe.uaDataPresent !== true) {
+      addHintMismatch('present', true, liveProbe.uaDataPresent);
     }
-    if (Array.isArray(liveProbe.uaDataBrands) && JSON.stringify(liveProbe.uaDataBrands) !== JSON.stringify(metadata.brands)) {
-      addHintMismatch('brands', metadata.brands, liveProbe.uaDataBrands);
-    }
-    if (typeof liveProbe.uaDataMobile === 'boolean' && liveProbe.uaDataMobile !== metadata.mobile) {
-      addHintMismatch('mobile', metadata.mobile, liveProbe.uaDataMobile);
+    if (liveProbe.uaDataPresent === true) {
+      if (liveProbe.uaDataPlatform !== metadata.platform && !mismatches.some(m => m.field === 'userAgentData.platform')) {
+        addHintMismatch('platform', metadata.platform, liveProbe.uaDataPlatform);
+      }
+      if (JSON.stringify(liveProbe.uaDataBrands) !== JSON.stringify(metadata.brands)) {
+        addHintMismatch('brands', metadata.brands, liveProbe.uaDataBrands);
+      }
+      if (liveProbe.uaDataMobile !== metadata.mobile) addHintMismatch('mobile', metadata.mobile, liveProbe.uaDataMobile);
     }
     if (liveProbe.uaDataError) addHintMismatch('probe', 'success', liveProbe.uaDataError);
     const entropy = liveProbe.uaDataHighEntropy;
@@ -611,11 +617,21 @@ function evaluateFingerprintDelivery(profile = {}, fingerprint = {}, liveProbe =
   }
 
   // 6. WebGL Vendor & Renderer
-  const webglMode = String(privacy.webgl || fingerprint?.webgl?.mode || '').toLowerCase();
-  const webglMetaMode = String(privacy.webglMeta || fingerprint?.webgl?.metaMode || '').toLowerCase();
-  const isRealWebgl = webglMode === 'real' || webglMode === 'off' || webglMetaMode === 'real' || webglMetaMode === 'off';
+  const webglMode = String((options.strict ? fingerprint.webgl?.mode : privacy.webgl || fingerprint.webgl?.mode) || '').toLowerCase();
+  const webglMetaMode = String((options.strict ? fingerprint.webgl?.metaMode : privacy.webglMeta || fingerprint.webgl?.metaMode) || '').toLowerCase();
+  const checkWebglMetadata = options.strict
+    ? !['real', 'off'].includes(webglMetaMode)
+    : !['real', 'off'].includes(webglMode) && !['real', 'off'].includes(webglMetaMode);
 
-  if (!isRealWebgl) {
+  if (options.strict && webglMode === 'blocked') {
+    if (liveProbe.webglContextPresent === true) mismatches.push({
+      field: 'webglContext', expected: false, actual: true, message: '配置已禁用 WebGL，但页面仍可创建上下文',
+    });
+  } else if (options.strict && webglMetaMode === 'blocked') {
+    if (liveProbe.webglUnmasked === true) mismatches.push({
+      field: 'webglUnmasked', expected: false, actual: true, message: '配置已隐藏 WebGL 调试信息，但页面仍可读取',
+    });
+  } else if (checkWebglMetadata) {
     const liveRenderer = liveProbe.webglRenderer;
     const liveVendor = liveProbe.webglVendor;
 
@@ -626,7 +642,10 @@ function evaluateFingerprintDelivery(profile = {}, fingerprint = {}, liveProbe =
       const expectedRenderer = String(fingerprint?.webgl?.renderer || profile?.webglRenderer || '').trim();
       const expectedVendor = String(fingerprint?.webgl?.vendor || profile?.webglVendor || '').trim();
 
-      if (expectedRenderer || expectedVendor) {
+      if (options.strict && liveProbe.webglUnmasked === false && (expectedRenderer || expectedVendor)) {
+        warnings.push('WebGL 调试扩展不可用，无法验证厂商和渲染器');
+      }
+      if ((expectedRenderer || expectedVendor) && !(options.strict && liveProbe.webglUnmasked === false)) {
         const expBrand = extractGpuBrand(expectedRenderer) || extractGpuBrand(expectedVendor);
         const liveBrand = extractGpuBrand(liveRenderer) || extractGpuBrand(liveVendor);
 
@@ -710,16 +729,20 @@ function evaluateFingerprintDelivery(profile = {}, fingerprint = {}, liveProbe =
   if (options.strict) {
     if (fingerprint.connection && liveProbe.connection) {
       const connection = normalizeNetworkInformation(fingerprint.connection);
-      for (const key of ['type', 'effectiveType', 'downlink', 'rtt', 'saveData']) {
+      for (const key of NETWORK_INFO_FIELDS) {
         // Keep the native API shape: some platforms omit individual members.
-        if (!Object.prototype.hasOwnProperty.call(fingerprint.connection, key)
-          || !Object.prototype.hasOwnProperty.call(liveProbe.connection, key)) continue;
+        if (!Object.hasOwn(connection, key)
+          || !Object.hasOwn(liveProbe.connection, key)) continue;
         const expected = connection[key], actual = liveProbe.connection[key];
         if (expected !== actual) mismatches.push({ field: 'connection.' + key, expected, actual,
           message: `navigator.connection.${key} 未按配置交付` });
       }
     }
     if (!isSystemLanguage && Array.isArray(fingerprint.languages) && fingerprint.languages.length) {
+      const primary = extractPrimaryLanguage(fingerprint.languages);
+      if (Object.hasOwn(liveProbe, 'language') && extractPrimaryLanguage(liveProbe.language) !== primary) {
+        mismatches.push({ field: 'language', expected: primary, actual: liveProbe.language, message: 'navigator.language 未按配置交付' });
+      }
       const expected = fingerprint.languages.map((entry) => String(entry).toLowerCase());
       const actual = Array.isArray(liveProbe.languages) ? liveProbe.languages.map((entry) => String(entry).toLowerCase()) : [];
       if (JSON.stringify(expected) !== JSON.stringify(actual) && !mismatches.some((m) => m.field === 'languages')) {

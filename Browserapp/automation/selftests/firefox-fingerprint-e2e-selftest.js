@@ -30,7 +30,7 @@ async function run(generation, shortVersion = false) {
   if (!version) throw new Error('Cannot determine the native Firefox version');
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ob-firefox-fingerprint-'));
   const requests = [];
-  const probe = `({ua:navigator.userAgent,platform:navigator.platform,vendor:navigator.vendor,cores:navigator.hardwareConcurrency,memoryPresent:'deviceMemory' in navigator,chromePresent:'chrome' in window,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,width:screen.width,height:screen.height})`;
+  const probe = `({ua:navigator.userAgent,platform:navigator.platform,vendor:navigator.vendor,cores:navigator.hardwareConcurrency,memoryPresent:'deviceMemory' in navigator,chromePresent:'chrome' in window,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,width:screen.width,height:screen.height,rtc:typeof RTCPeerConnection,webgl:Boolean(document.createElement('canvas').getContext('webgl'))})`;
   const server = http.createServer((request, response) => {
     requests.push({ path: request.url, ua: request.headers['user-agent'] });
     response.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -41,7 +41,15 @@ async function run(generation, shortVersion = false) {
   try {
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
     const profile = sanitizeProfile({ id: 'firefox-native', fingerprintVersion: generation, name: 'Firefox native', engine: 'firefox', os: 'Windows', width: 1440, height: 900, privacy: { cores: 4, memory: 0, webrtc: 'disabled', fontListMode: 'real', timezoneMode: 'custom', timezone: 'America/New_York' }, advanced: { showInfoPage: false } });
-    if (shortVersion === true) profile.privacy.fingerprint = { ...profile.privacy.fingerprint, uaGenerated: true, uaReduced: true };
+    // Exercise the default proxy policy without an address, and a nested
+    // real override that must restore the native preference.
+    if (generation === 1) {
+      profile.privacy.webrtc = 'proxy';
+      profile.privacy.webgl = 'blocked';
+    }
+    if (shortVersion === true) profile.privacy.fingerprint = {
+      ...profile.privacy.fingerprint, uaGenerated: true, uaReduced: true, webrtc: 'real',
+    };
     if (shortVersion === 'random') {
       const generated = buildEditorUa({ profiles: new Map(), chooseBrowser: () => ({ version }) }, { engine: 'firefox', os: 'Windows', random: true });
       profile.userAgent = generated.userAgent;
@@ -72,6 +80,8 @@ async function run(generation, shortVersion = false) {
       assert.equal(realm.cores, 4);
       assert.equal(realm.memoryPresent, false);
       assert.equal(realm.chromePresent, false);
+      assert.equal(realm.rtc, shortVersion === true ? 'function' : 'undefined');
+      if (generation === 1) assert.equal(realm.webgl, false);
       assert.equal(realm.timezone, fp.timezone);
       assert.equal(realm.width, fp.screen.width);
       assert.equal(realm.height, fp.screen.height);

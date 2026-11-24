@@ -90,7 +90,9 @@ function firefoxExtraUserPrefs(profile, fingerprint = null) {
     const oscpu = /win/i.test(fingerprint.platform) ? 'Windows NT 10.0; Win64; x64'
       : /mac/i.test(fingerprint.platform) ? 'Intel Mac OS X 10.15' : 'Linux x86_64';
     prefs.push(['general.oscpu.override', oscpu]);
-    prefs.push(['media.peerconnection.enabled', privacy.webrtc !== 'disabled' && !(privacy.webrtc === 'proxy' && !fingerprint.webrtcAddress)]);
+    prefs.push(['webgl.disabled', fingerprint.webgl?.mode === 'blocked']);
+    const { webrtc, webrtcAddress } = fingerprint;
+    prefs.push(['media.peerconnection.enabled', webrtc === 'real' || (webrtc === 'proxy' && Boolean(webrtcAddress))]);
     if (Number.isSafeInteger(fingerprint.hardwareConcurrency) && fingerprint.hardwareConcurrency > 0) {
       prefs.push(['dom.maxHardwareConcurrency', fingerprint.hardwareConcurrency]);
     }

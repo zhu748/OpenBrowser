@@ -45,7 +45,7 @@ function buildInjectionScript(fp, options = {}) {
     }
   }
   const stability = resolveInjectionStability(fp);
-  const json = JSON.stringify({
+  const config = {
     engine: fp.engine || fp.uaProfile?.engine || 'chromium',
     kernelVersion: fp.kernelVersion || '',
     // R-3: opt-in runtime telemetry for debugging builds (default off): the
@@ -102,7 +102,7 @@ function buildInjectionScript(fp, options = {}) {
       hosts: Array.isArray(stability.hosts) ? stability.hosts.slice(0, 800) : [],
       skipHosts: Array.isArray(stability.skipHosts) ? stability.skipHosts.slice(0, 200) : [],
     },
-  });
+  };
 
   // UA + Client Hints (userAgentData) injected first
   const uaScript = fp.uaProfile
@@ -114,7 +114,7 @@ function buildInjectionScript(fp, options = {}) {
   // prefixer only intercepts network-loaded scripts). buildWorkerInjectionScript
   // is required lazily to avoid a require cycle with worker-injection.js.
   const { buildWorkerInjectionScript } = require('./worker-injection');
-  const mainScript = buildDocumentRuntime({ uaScript, json, bridgeToken, workerSource: buildWorkerInjectionScript(fp, { coreOnly: true }) });
+  const mainScript = buildDocumentRuntime({ uaScript, config, bridgeToken, workerSource: buildWorkerInjectionScript(fp, { coreOnly: true }) });
 
   let fontMetricsScript = '';
   let cssFontLocalGateScript = '';
@@ -206,7 +206,9 @@ function buildInjectionScript(fp, options = {}) {
   }
 
   let webrtcFallbackScript = '';
-  if (fp && fp.webrtc !== 'disabled') {
+  // Real mode delegates to the browser. With no proxy address Firefox
+  // disables the native API, so avoid installing a synthetic replacement.
+  if (fp.webrtc === 'proxy' && (config.engine !== 'firefox' || fp.webrtcAddress)) {
     try {
       // Per-profile values only, no shared-constant fallback: the host candidate carries the
       // persona's seeded webrtcLocalIp, and the srflx side only appears when an exit address is

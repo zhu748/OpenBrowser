@@ -201,6 +201,28 @@ Native automatic restore can execute old tabs before the injection barrier. It i
 
 On the first restore-mode launch without a managed snapshot, existing native session files are copied once to `OpenBrowserLegacySessions/<engine>/` before the browser starts. They are preserved for recovery; they are not parsed into the managed URL snapshot. That first launch uses the configured startup URLs. The archive is not overwritten on later launches.
 
+## Generation and delivery review (2026-11-23)
+
+| Area | Behavior and verification scope |
+| --- | --- |
+| Generated identity | Canvas, WebGL, Audio and ClientRects resolve their marks once for document, worker and native configuration. Blank, boolean and zero overrides fall back to the seed. A valid explicit audio mark retains fractional precision. The 240 legacy fixtures and 2,000 V2 profiles still exercise replay and cross-host generation. |
+| Startup document | Chromium and Firefox read the same synchronous snapshot for UA, platform, primary language, language list, screen geometry and exposed network fields. Chromium's paused-page handoff uses that snapshot without awaiting promises. The full probe checks low-entropy Client Hints exactly and checks the high-entropy values in eligible secure documents. |
+| WebGL | Verification distinguishes a missing context, a context with hidden debug metadata and an available unmasked renderer. Blocking all contexts and hiding debug metadata are independent policies. When the runtime cannot observe a configured renderer, verification records a warning. |
+| Firefox WebRTC | The startup preference follows the resolved policy, including nested profile overrides. Disabled WebRTC and proxy mode without a resolved address disable the native API. Real mode leaves the native API and its error behavior in place. The document fallback runs only for proxy mode and respects Firefox's native disable policy. JavaScript SDP observations alone do not verify network routing. |
+| Worker delivery | Chromium tests cover dedicated, Shared and Service Worker entry, plus cached Service Worker restart. Firefox tests cover HTTP(S) through the production forwarder, loopback scripts and cached registration behavior. Optional network members are checked when exposed. Unrelated module graphs and independently opened Firefox popup timing remain separate compatibility cases. |
+
+Document assembly uses the same configuration for fragment selection and serialization. With a fixed Linux profile and system fonts, the uncompressed script drops from 599,411 to 565,181 bytes for Chromium real WebRTC, from 624,108 to 599,412 bytes for Chromium proxy mode without an address, and from 622,257 to 563,331 bytes for the equivalent Firefox proxy configuration. These figures measure document source size.
+
+Linux verification used Chromium 156.0.8078.79 and Firefox 159.0 with local fixtures. It passed the 294-script parse matrix, both native WebGL policy cases, document and Worker delivery, cached Service Worker restarts and native geolocation permission checks. Firefox tests hit BiDi session creation timeouts while native suites ran concurrently. Document, Worker and geolocation checks all passed when rerun serially.
+
+## WebGL blocking and Canvas compatibility
+
+With Canvas noise and WebGL blocking both enabled, the document runtime reserves `getContext` for the blocking policy. The same policy runs when an immediate same-origin iframe is accessed and on `OffscreenCanvas` in workers. Firefox also sets the kernel's `webgl.disabled` preference from the resolved mode at launch. Switching to real rendering or noise permits native WebGL initialization again.
+
+The context policy preserves native receiver checks, converts nonprimitive context identifiers once and delegates unsupported identifiers to the browser. Canvas noise uses the context identifier from native conversion when tracking a successfully created WebGL context. HTML canvas keeps its native transferred-canvas error. A blocked OffscreenCanvas WebGL request returns null without attempting GPU creation.
+
+The Chromium capability suite runs the JavaScript policy on the same WebGL-enabled browser used for its unmodified baseline. This exercises blocking independently of the production launch flags. It compares WebGL1, WebGL2, 2D rendering, invalid receivers and argument conversion in the main document, an immediate same-origin iframe, document OffscreenCanvas and a dedicated Worker. The suite also combines WebGL blocking with both Canvas noise and Canvas readback blocking.
+
 ## Validation
 
 From `Browserapp/`:

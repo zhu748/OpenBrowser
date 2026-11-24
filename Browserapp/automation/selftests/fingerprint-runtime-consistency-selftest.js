@@ -52,7 +52,7 @@ function networkRealm(fp, worker, expose = true) {
     const location={hostname:'example.test',href:'https://example.test/'};
     class NetworkInformation {}
     const connection=new NetworkInformation();
-    for (const [key,value] of Object.entries({rtt:0,downlink:10,effectiveType:'4g',saveData:false})) {
+    for (const [key,value] of Object.entries({rtt:0,downlink:10,downlinkMax:200,effectiveType:'4g',saveData:false})) {
       Object.defineProperty(NetworkInformation.prototype,key,{configurable:true,enumerable:true,get(){
         if(this!==connection)throw new TypeError('Illegal invocation');return value;
       }});
@@ -123,15 +123,17 @@ function networkRealm(fp, worker, expose = true) {
     }
   });
   await test('the production live probe reads network state and strict delivery rejects drift', async () => {
-    const p = profile('probe-network'), fp = buildFingerprint(p);
+    const p = profile('probe-network', { network: { downlinkMax: 75 } }), fp = buildFingerprint(p);
     const { scope } = networkRealm(fp, false);
     const live = await vm.runInContext(LIVE_PROBE_EXPRESSION, scope);
     assert.equal(live.probeError, undefined);
     assert.equal(live.connection.rtt, fp.connection.rtt);
+    assert.equal(live.connection.downlinkMax, 75);
     const healthy = evaluateFingerprintDelivery(p, fp, live, { strict: true });
     assert.ok(!healthy.mismatches.some((m) => m.field.startsWith('connection.')));
-    const drifted = evaluateFingerprintDelivery(p, fp, { ...live, connection: { ...live.connection, rtt: -1 } }, { strict: true });
+    const drifted = evaluateFingerprintDelivery(p, fp, { ...live, connection: { ...live.connection, rtt: -1, downlinkMax: 200 } }, { strict: true });
     assert.ok(drifted.mismatches.some((m) => m.field === 'connection.rtt'));
+    assert.ok(drifted.mismatches.some((m) => m.field === 'connection.downlinkMax'));
   });
   await test('desktop metrics explicitly apply DPR=1/1.5/2 with live viewport dimensions', async () => {
     for (const dpr of [1, 1.5, 2]) {

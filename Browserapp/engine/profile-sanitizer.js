@@ -355,10 +355,11 @@ function sanitizeFingerprintConfig(fp, privacyCores, privacyMemory) {
       .slice(0, capEntries).map((s) => s.slice(0, capEach));
     return out.length ? out : undefined;
   };
-  const intSeed = (v, round = true) => {
-    const n = Number(v);
-    if (!Number.isFinite(n) || n === 0) return undefined;
-    return round ? Math.round(n) : n;
+  const intSeed = (value, round = true) => {
+    const number = finite(value);
+    if (number === null) return undefined;
+    const mark = round ? Math.round(number) : number;
+    return mark === 0 ? undefined : mark;
   };
   const snapDeviceMemory = (v) => {
     const steps = [0.25, 0.5, 1, 2, 4, 8];
