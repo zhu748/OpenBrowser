@@ -109,19 +109,19 @@ const evaluateMatrix = (connection, context) => evaluateBidi({
   });
 
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ob-ff-worker-'));
-  const profile = sanitizeProfile({ id: 'ff-worker-gate', name: 'ff-worker-gate', engine: 'firefox', os: 'Windows', width: 1440, height: 900,
+  const controlProfile = sanitizeProfile({ id: 'ff-worker-gate', name: 'ff-worker-gate', engine: 'firefox', os: 'Windows', width: 1440, height: 900,
     privacy: { cores: 4, memory: 0, webrtc: 'disabled', fontListMode: 'real', timezoneMode: 'custom', timezone: 'America/New_York',
       fingerprint: { languages: ['fr_ca', 'en-US;q=0.9', 'FR-CA'] } }, advanced: { showInfoPage: false } });
-  let fp = buildFirefoxFingerprint(profile, version);
-  assert.deepEqual(fp.languages, ['fr-CA', 'en-US']);
+  const controlFp = buildFirefoxFingerprint(controlProfile, version);
+  assert.deepEqual(controlFp.languages, ['fr-CA', 'en-US']);
   await fs.writeFile(path.join(root, 'user.js'), buildFirefoxUserJs({
-    userAgent: fp.userAgent, acceptLanguages: fp.languages.join(','), locale: fp.languages[0],
+    userAgent: controlFp.userAgent, acceptLanguages: controlFp.languages.join(','), locale: controlFp.languages[0],
     proxyEndpoint: 'http://127.0.0.1:9', noProxyHosts: LOOPBACK_HOSTS.join(', '),
-    extraPrefs: [...firefoxExtraUserPrefs(profile, fp).filter(([name]) => name !== 'dom.maxHardwareConcurrency'),
+    extraPrefs: [...firefoxExtraUserPrefs(controlProfile, controlFp).filter(([name]) => name !== 'dom.maxHardwareConcurrency'),
       ['network.dns.disablePrefetch', true], ['network.prefetch-next', false], ['network.captive-portal-service.enabled', false], ['network.connectivity-service.enabled', false]],
   }), { mode: 0o600 });
   const child = spawn(binary, firefoxStartupArgs({ root, startUrl: 'about:blank', headless: true, remoteDebugging: true }), {
-    stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, TZ: fp.timezone },
+    stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, TZ: controlFp.timezone },
   });
   try {
     const wsUrl = await waitForFirefoxEndpoint(child, 30000);
@@ -162,17 +162,17 @@ const evaluateMatrix = (connection, context) => evaluateBidi({
       const w = workers[kind];
       assert.ok(w, kind + ' worker produced no first read');
       // Delivered-by-prefs fields: strict persona assertions.
-      assert.equal(w.ua, fp.userAgent, kind + ' worker UA (via prefs)');
-      assert.equal(w.platform, fp.platform, kind + ' worker platform (via prefs)');
-      assert.equal(w.languages, fp.languages.join(','), kind + ' worker languages');
-      assert.equal(w.tz, fp.timezone, kind + ' worker timezone');
+      assert.equal(w.ua, controlFp.userAgent, kind + ' worker UA (via prefs)');
+      assert.equal(w.platform, controlFp.platform, kind + ' worker platform (via prefs)');
+      assert.equal(w.languages, controlFp.languages.join(','), kind + ' worker languages');
+      assert.equal(w.tz, controlFp.timezone, kind + ' worker timezone');
       assert.equal(w.strict, true, kind + ' worker strict semantics');
       if (kind === 'dedicated') verifyReceivers(w.receivers);
       console.log('PASS ff-worker ' + kind + ' first read: UA/platform/languages/timezone are persona');
       // JS-patch-only field: record the documented gap. The assertion is on the
       // DELIVERED capability set, never relaxed to pretend coverage.
-      if (w.cores !== fp.hardwareConcurrency) {
-        console.log('NOTE ff-worker ' + kind + ' hardwareConcurrency is host value (' + w.cores + '), persona is ' + fp.hardwareConcurrency
+      if (w.cores !== controlFp.hardwareConcurrency) {
+        console.log('NOTE ff-worker ' + kind + ' hardwareConcurrency is host value (' + w.cores + '), persona is ' + controlFp.hardwareConcurrency
           + ' (prefs-only control)');
       } else {
         console.log('PASS ff-worker ' + kind + ' hardwareConcurrency matches persona');
@@ -181,15 +181,12 @@ const evaluateMatrix = (connection, context) => evaluateBidi({
     console.log('firefox-worker-delivery-selftest: prefs phase OK');
     const nativeMatrix = await evaluateMatrix(conn, ctx.context);
     console.log('NATIVE_WORKER_MATRIX', JSON.stringify(nativeMatrix));
-    if (nativeMatrix.network.cores === fp.hardwareConcurrency) {
-      profile.privacy.cores = 6;
-      fp = buildFirefoxFingerprint(profile, version);
-    }
-    assert.notEqual(nativeMatrix.network.cores, fp.hardwareConcurrency, 'configured cores must differ from the native control');
+    const nativeCores = nativeMatrix.network.cores;
 
     await closeFirefox(conn, child);
-    const directProfile = sanitizeProfile({ ...profile, privacy: { ...profile.privacy, cores: nativeMatrix.network.cores === 24 ? 4 : 24 } });
+    const directProfile = sanitizeProfile({ ...controlProfile, privacy: { ...controlProfile.privacy, cores: nativeCores === 24 ? 4 : 24 } });
     const directFp = buildFirefoxFingerprint(directProfile, version);
+    assert.notEqual(directFp.hardwareConcurrency, nativeCores, 'configured loopback cores must differ from the native control');
     const directSource = buildWorkerInjectionScript(directFp);
     await prepareFirefoxWorkerCache(root, directSource, { localDelivery: true });
     await fs.writeFile(path.join(root, 'user.js'), buildFirefoxUserJs({
@@ -235,13 +232,17 @@ const evaluateMatrix = (connection, context) => evaluateBidi({
         const result = await evaluateBidi(localConnection, { context: local.context }, readGzipWorker);
         assert.equal(result.cores, directFp.hardwareConcurrency, 'loopback alias first read: ' + url);
       }
-      console.log('PASS ff-worker direct loopback first reads', nativeMatrix.network.cores + ' native cores → ' + directFp.hardwareConcurrency + ' configured');
+      console.log('PASS ff-worker direct loopback first reads', nativeCores + ' native cores → ' + directFp.hardwareConcurrency + ' configured');
     } finally {
       if (localConnection) await closeFirefox(localConnection, localChild);
       await stopChild(localChild);
     }
 
     // ---- PHASE 2: proxy-delivered JS-only fields over HTTPS ----
+    // Normalize the new core count in both the privacy and fingerprint settings.
+    const profile = sanitizeProfile({ ...controlProfile, privacy: { ...controlProfile.privacy, cores: nativeCores === 4 ? 6 : 4 } });
+    const fp = buildFirefoxFingerprint(profile, version);
+    assert.notEqual(fp.hardwareConcurrency, nativeCores, 'configured HTTPS cores must differ from the native control');
     // Isolate forwarder delivery from the native CPU cap in the remaining tests.
     const proxyPrefs = firefoxExtraUserPrefs(profile, fp).filter(([name]) => name !== 'dom.maxHardwareConcurrency');
     const httpsTmp = await fs.mkdtemp(path.join(os.tmpdir(), 'ob-ff-mitm-leaf-'));
@@ -346,7 +347,8 @@ const evaluateMatrix = (connection, context) => evaluateBidi({
         await new Promise(resolve => setTimeout(resolve, 50));
       }
       await closeFirefox(conn2, child2);
-      const changedProfile = sanitizeProfile({ ...profile, privacy: { ...profile.privacy, cores: fp.hardwareConcurrency === 6 ? 8 : 6 } });
+      const changedCores = [6, 8, 12].find(cores => cores !== nativeCores && cores !== fp.hardwareConcurrency);
+      const changedProfile = sanitizeProfile({ ...profile, privacy: { ...profile.privacy, cores: changedCores } });
       const changed = buildFirefoxFingerprint(changedProfile, version);
       for (const current of [fp, changed]) {
         proxy.setWorkerSource(buildWorkerInjectionScript(current));
