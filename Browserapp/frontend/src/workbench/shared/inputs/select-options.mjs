@@ -35,32 +35,22 @@ export function createSelectOptionModel(settings) {
     // Zero and false are choices, while empty entries still fall back to the typed text.
     return match || match === 0 || match === false ? match : undefined;
   }
-  function matchesQuery(option, fields, needle) {
-    const labels = fields.map(field => String(typeof option !== 'object' || !option
-      ? (option ?? '')
-      : (option[field] ?? labelOf(option))));
-    return labels.some(label => {
-      const text = label.toLocaleLowerCase(settings.filterLocale);
-      switch (settings.filterMatchMode) {
-        case 'startsWith': return text.startsWith(needle);
-        case 'endsWith': return text.endsWith(needle);
-        default: return text.includes(needle);
-      }
-    });
-  }
   function filterOptions(options, query) {
     if (!query) return options;
-    let fields, needle;
-    return options.filter(option => {
-      if (!fields) {
-        // Resolve search settings only when an option is actually visited.
-        needle = query.toLocaleLowerCase(settings.filterLocale);
-        fields = settings.filterFields?.length
-          ? settings.filterFields
-          : [typeof settings.optionLabel === 'string' ? settings.optionLabel : 'label'];
-      }
-      return matchesQuery(option, fields, needle);
-    });
+    if (!options.length) return [];
+    const locale = settings.filterLocale;
+    const needle = query.toLocaleLowerCase(locale);
+    const fields = settings.filterFields?.length
+      ? settings.filterFields
+      : [typeof settings.optionLabel === 'string' ? settings.optionLabel : 'label'];
+    const mode = settings.filterMatchMode;
+    return options.filter(option => fields.some(field => {
+      const value = option && typeof option === 'object' ? option[field] ?? labelOf(option) : option ?? '';
+      const text = String(value).toLocaleLowerCase(locale);
+      if (mode === 'startsWith') return text.startsWith(needle);
+      if (mode === 'endsWith') return text.endsWith(needle);
+      return text.includes(needle);
+    }));
   }
   return { labelOf, valueOf, optionDisabled, valuesEqual, findSelectedOption, findTypedOption, filterOptions };
 }

@@ -28,21 +28,12 @@
  * names and exits non-zero.
  */
 
-const { spawnSync } = require('child_process');
 const path = require('path');
 
-const { SUITE, PER_SCRIPT_TIMEOUT_MS } = require('./selftest-all.js');
-
-// Browserapp root (this runner lives in scripts/); all script paths are
-// relative to the app root, not to this file.
-const ROOT = path.join(__dirname, '..');
+const { SUITE, runSelftest } = require('./selftest-all.js');
 
 function strippedName(name) {
   return name.replace(/^selftest:?/, '');
-}
-
-function matches(entries, predicate) {
-  return SUITE.filter((entry) => predicate(entry));
 }
 
 /**
@@ -54,20 +45,20 @@ function resolve(query) {
   if (!q) return null;
 
   // 1. exact registry name (selftest:port)
-  let hit = matches(SUITE, ([name]) => name === q);
+  let hit = SUITE.filter(([name]) => name === q);
   if (hit.length === 1) return hit[0];
   // 2. exact name without the "selftest:" prefix (port)
-  hit = matches(SUITE, ([name]) => strippedName(name) === q);
+  hit = SUITE.filter(([name]) => strippedName(name) === q);
   if (hit.length === 1) return hit[0];
   // 3. unique prefix of the registry name, then of the stripped name
-  hit = matches(SUITE, ([name]) => name.startsWith(q));
+  hit = SUITE.filter(([name]) => name.startsWith(q));
   if (hit.length === 1) return hit[0];
   if (hit.length > 1) return { ambiguous: hit };
-  hit = matches(SUITE, ([name]) => strippedName(name).startsWith(q));
+  hit = SUITE.filter(([name]) => strippedName(name).startsWith(q));
   if (hit.length === 1) return hit[0];
   if (hit.length > 1) return { ambiguous: hit };
   // 4. unique prefix of the registered file path or its basename
-  hit = matches(SUITE, ([, file]) => file.startsWith(q) || path.basename(file).startsWith(q));
+  hit = SUITE.filter(([, file]) => file.startsWith(q) || path.basename(file).startsWith(q));
   if (hit.length === 1) return hit[0];
   if (hit.length > 1) return { ambiguous: hit };
   return null;
@@ -89,18 +80,9 @@ function runOne(entry, extraArgs) {
     console.log('     (darwin-only: macOS kernel launcher required)');
     return process.env.OPENBROWSER_REQUIRE_COMPLETE_TESTS === '1' ? 2 : 0;
   }
-  const scriptPath = path.join(ROOT, script);
   const started = Date.now();
   process.stdout.write(`run   ${name}  ${script} ... `);
-  const res = spawnSync(process.execPath, [scriptPath, 'selftest', ...extraArgs], {
-    cwd: ROOT,
-    timeout: flags?.timeoutMs || PER_SCRIPT_TIMEOUT_MS,
-    encoding: 'utf8',
-    // spawnSync's default 1MB cap turns a chatty (but passing) test into
-    // res.error + FAILED; mirror the aggregator's 32MB ceiling.
-    maxBuffer: 32 * 1024 * 1024,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  const res = runSelftest(script, flags?.timeoutMs, extraArgs);
   if (res.stdout) process.stdout.write(res.stdout);
   if (res.stderr) process.stderr.write(res.stderr);
   const seconds = ((Date.now() - started) / 1000).toFixed(1);

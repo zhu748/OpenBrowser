@@ -411,6 +411,14 @@ function printDiagnosticTail(result) {
   if (result.error) console.log('     ' + result.error.message);
 }
 
+function runSelftest(script, timeoutMs, args = []) {
+  // The default 1 MiB spawnSync buffer truncates verbose test diagnostics.
+  return spawnSync(process.execPath, [path.join(ROOT, script), 'selftest', ...args], {
+    cwd: ROOT, encoding: 'utf8', timeout: timeoutMs || PER_SCRIPT_TIMEOUT_MS, maxBuffer: 32 * 1024 * 1024,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+}
+
 function main() {
   if (LIST_ONLY) {
     for (const [name, script, flags] of SUITE) {
@@ -427,75 +435,37 @@ function main() {
   let skipped = 0;
   let partial = 0;
   for (const [name, script, flags] of SUITE) {
-    const scriptPath = path.join(ROOT, script);
-    if (flags && flags.darwinOnly && process.platform !== 'darwin') {
-      skipped += 1;
-      results.push({ name, script, pass: null });
-      process.stdout.write(`run  ${name.padEnd(width)}  ${script} ... `);
-      console.log('skip (darwin-only: macOS kernel launcher required)');
+    const skipReason = flags?.darwinOnly && process.platform !== 'darwin'
+      ? 'darwin-only: macOS kernel launcher required'
+      : (SKIP_NATIVE && flags?.nativeOnly ? 'native checks run in the browser/desktop CI jobs' : null);
+    if (skipReason) {
+      skipped++;
+      console.log(`run  ${name.padEnd(width)}  ${script} ... skip (${skipReason})`);
       continue;
     }
-    if (flags && flags.nativeOnly) {
-      if (SKIP_NATIVE) {
-        skipped += 1;
-        results.push({ name, script, pass: null, outcome: 'skipped' });
-        console.log(`run  ${name.padEnd(width)}  ${script} ... skip (native checks run in the browser/desktop CI jobs)`);
-        continue;
-      }
-      // Native-browser gates exit 2 when the browser binary env var is unset.
-      // Probe availability first so an absent browser is a visible skip, never a pass.
-      process.stdout.write(`run  ${name.padEnd(width)}  ${script} ... `);
-      const startedNative = Date.now();
-      // Native gates launch real browsers and routinely run for minutes; the
-      // 60s availability probe must not become the de-facto execution timeout
-      // (a SIGTERM here turns a green gate into FAILED).
-      const probe = spawnSync(process.execPath, [scriptPath, 'selftest'], {
-        cwd: ROOT, encoding: 'utf8', timeout: flags?.timeoutMs || PER_SCRIPT_TIMEOUT_MS, maxBuffer: 32 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
-      });
-      if (probe.status === 2) {
-        skipped += 1;
-        results.push({ name, script, pass: null, outcome: 'skipped' });
-        console.log('skip (native prerequisite unavailable)');
-        printDiagnosticTail(probe);
-        continue;
-      }
-      const seconds0 = ((Date.now() - startedNative) / 1000).toFixed(1);
-      const status0 = classifySelftestResult(probe);
-      results.push({ name, script, pass: status0 === 'failed' ? false : (status0 === 'passed' ? true : null),
-        outcome: status0, seconds: seconds0, status: probe.status, signal: probe.signal });
-      if (status0 === 'failed') {
-        failed += 1;
-        alternateFailed += 1;
-      }
-      else if (status0 === 'partial') partial += 1;
-      else if (status0 === 'skipped') skipped += 1;
-      console.log(status0 === 'passed' ? `ok (${seconds0}s)` : `${status0.toUpperCase()} (exit=${probe.status})`);
-      if (status0 !== 'passed') printDiagnosticTail(probe);
-      continue;
-    }
-    const started = Date.now();
     process.stdout.write(`run  ${name.padEnd(width)}  ${script} ... `);
-    const res = spawnSync(process.execPath, [scriptPath, 'selftest'], {
-      cwd: ROOT,
-      encoding: 'utf8',
-      timeout: flags?.timeoutMs || PER_SCRIPT_TIMEOUT_MS,
-      // spawnSync's default 1MB cap kills any test that prints more than
-      // 1MB (failure diagnostics, chatty suites) with res.error set, which
-      // classifySelftestResult reports as FAILED — a false gate failure for
-      // a test that may have passed. Same ceiling as the nativeOnly branch.
-      maxBuffer: 32 * 1024 * 1024,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    const started = Date.now();
+    const res = runSelftest(script, flags?.timeoutMs);
+    // Native fixtures reserve exit 2 for a missing browser prerequisite.
+    if (flags?.nativeOnly && res.status === 2 && !res.error && !res.signal) {
+      skipped++;
+      results.push({ name, script, pass: null, outcome: 'skipped' });
+      console.log('skip (native prerequisite unavailable)');
+      printDiagnosticTail(res);
+      continue;
+    }
     const seconds = ((Date.now() - started) / 1000).toFixed(1);
     const status = classifySelftestResult(res);
     const pass = status === 'passed';
-    if (status === 'failed') failed += 1;
-    else if (status === 'partial') partial += 1;
+    if (status === 'failed') {
+      failed++;
+      if (flags?.nativeOnly) alternateFailed++;
+    } else if (status === 'partial') partial += 1;
     else if (status === 'skipped') skipped += 1;
     results.push({ name, script, pass: status === 'failed' ? false : (pass ? true : null),
       outcome: status, seconds, status: res.status, signal: res.signal });
     console.log(pass ? `ok (${seconds}s)` : `${status.toUpperCase()} (exit=${res.status}${res.signal ? ' signal=' + res.signal : ''})`);
-    const annotation = formatOrdinarySmokeFailure(name, status, res, process.env.GITHUB_ACTIONS);
+    const annotation = !flags?.nativeOnly && formatOrdinarySmokeFailure(name, status, res, process.env.GITHUB_ACTIONS);
     if (annotation) console.log(annotation);
     if (!pass) printDiagnosticTail(res);
   }
@@ -518,6 +488,6 @@ function main() {
 // scripts/selftest-one.js (single-test runner) and
 // automation/selftests/selftest-registry-consistency-selftest.js (drift guard)
 // share this exact list instead of re-declaring it.
-module.exports = { SUITE, PER_SCRIPT_TIMEOUT_MS, formatOrdinarySmokeFailure };
+module.exports = { SUITE, PER_SCRIPT_TIMEOUT_MS, runSelftest, formatOrdinarySmokeFailure };
 
 if (require.main === module) process.exit(main());

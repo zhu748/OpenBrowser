@@ -1,5 +1,6 @@
 "use strict";
 
+const { labelIdsOf } = require("./profile-fields");
 const { toRoxy } = require("./profile-dto");
 
 function append(map, key, value) {
@@ -24,7 +25,8 @@ function buildProfileIndex({ snapshot, profiles, version, groups, labels }) {
     snapshot, profiles, version, groups, labels,
     groupById: buildProjectLookup(groups),
     labelById: new Map((labels || []).map(row => [row.id, row])),
-    groupCounts: new Map(),
+    activeByProject: new Map(),
+    deletedByProject: new Map(),
     proxyProfiles: new Map(),
     labelProfiles: new Map(),
     activeRows: [],
@@ -35,11 +37,9 @@ function buildProfileIndex({ snapshot, profiles, version, groups, labels }) {
     activeCount: 0,
   };
   for (const [position, profile] of snapshot.entries()) {
-    const labelIds = /^\d+(,\d+)*$/.test(profile.tag || "") ? profile.tag.split(",").map(Number) : [];
+    const labelIds = labelIdsOf(profile);
     const accounts = profile.platform?.accounts || (profile.platform ? [profile.platform] : []);
-    const windowPlatformList = accounts.map(account => ({
-      platformUrl: account.url || account.startUrl || profile.platform?.startUrl,
-    }));
+    const platformUrls = accounts.map(account => account.url || account.startUrl || profile.platform?.startUrl);
     const projectId = String(profile.groupId ?? "");
     const windowName = profile.name || "";
     const windowRemark = profile.note || "";
@@ -49,21 +49,21 @@ function buildProfileIndex({ snapshot, profiles, version, groups, labels }) {
       windowSortNum: profile.number, projectId, isOften: Boolean(profile.favorite), os: profile.os,
       coreType: profile.engine === "firefox" ? "Firefox" : "Chrome",
       labelIds,
-      labelInfos: labelIds.map(id => index.labelById.get(id)).filter(Boolean).map(label => ({ labelName: label.name })),
-      windowPlatformList, createdAt: profile.createdAt, updatedAt: profile.updatedAt, openTime: profile.lastOpenedAt,
+      platformUrls, createdAt: profile.createdAt, updatedAt: profile.updatedAt, openTime: profile.lastOpenedAt,
     };
     index.summariesById.set(String(profile.id), summary);
     if (summary.trashed) {
       index.deletedRows.push(summary);
+      append(index.deletedByProject, projectId, summary);
       continue;
     }
     index.activeRows.push(summary);
-    index.groupCounts.set(projectId, (index.groupCounts.get(projectId) || 0) + 1);
+    append(index.activeByProject, projectId, summary);
     if (profile.proxyId) append(index.proxyProfiles, profile.proxyId, {
       id: profile.id, windowName: profile.name, windowSortNum: profile.number,
     });
     for (const id of labelIds) append(index.labelProfiles, id, profile.id);
-    for (const { platformUrl } of windowPlatformList) if (platformUrl) index.platformUrls.add(platformUrl);
+    for (const platformUrl of platformUrls) if (platformUrl) index.platformUrls.add(platformUrl);
   }
   index.activeCount = index.activeRows.length;
   return index;

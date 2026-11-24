@@ -3,9 +3,7 @@
 const { randomUUID: uid } = require("node:crypto");
 const { nextRecordId, rememberRecordIds } = require("../local-record-ids");
 const { profileRelations } = require("../profile-relations");
-// toRoxy is intentionally NOT imported here anymore: the label routes parse
-// profile.tag directly (labelIdsOf below) instead of building a full DTO per
-// window. See profile-dto.js for the canonical labelIds semantics.
+const { labelIdsOf } = require("../profile-fields");
 const object = (value) =>
   value && typeof value === "object" && !Array.isArray(value);
 
@@ -19,13 +17,13 @@ async function groupsList(service, p) {
   const includeDefault = p.default === 2 && (!p.pinnedOnly || defaultPin === 1);
   if (!groups.length && !includeDefault) return [];
 
-  const { groupCounts } = service.profileIndex();
+  const { activeByProject } = service.profileIndex();
   const rows = groups.map((v) => ({
     ...structuredClone(v),
     projectName: v.projectName,
     project_id: v.id,
     projectId: v.id,
-    windowCount: groupCounts.get(String(v.id)) || 0,
+    windowCount: activeByProject.get(String(v.id))?.length || 0,
     user_info: [
       {
         userId: "local",
@@ -42,7 +40,7 @@ async function groupsList(service, p) {
       projectDefault: 1,
       projectName: "默认项目",
       pinStatus: defaultPin,
-      windowCount: groupCounts.get("") || 0,
+      windowCount: activeByProject.get("")?.length || 0,
       user_info: [
         {
           userId: "local",
@@ -95,15 +93,6 @@ async function labelsList(service) {
     bindWindowIds: labelProfiles.get(row.id)?.slice() || [],
   }));
 }
-
-// labelIds without building a full ~100-field toRoxy DTO per profile — the
-// same tag parsing toRoxy applies (profile-dto.js), used by the label routes
-// that only need the id list. A 5000-window label delete used to build up to
-// 3 full DTOs per window.
-const labelIdsOf = (profile) =>
-  /^\d+(,\d+)*$/.test(profile.tag || "")
-    ? profile.tag.split(",").map(Number)
-    : [];
 
 async function labelsSave(service, p) {
   const e = service.engine;

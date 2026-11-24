@@ -1,5 +1,6 @@
 "use strict";
 
+const { pageBounds } = require("../page-bounds");
 const { fromRoxy } = require("../profile-dto");
 const { writeRawAtomically } = require("../../engine/state-storage");
 
@@ -52,9 +53,7 @@ function proxiesList(service, p) {
 }
 
 function proxiesQuery(service, p) {
-  const index = Number(p.page_index ?? 1), size = Number(p.page_size ?? 200);
-  if (!Number.isSafeInteger(index) || index < 1 || !Number.isSafeInteger(size) || size < 1 || size > 5000)
-    throw Error("分页参数无效，单页范围 1–5000");
+  const bounds = pageBounds(p.page_index ?? 1, p.page_size ?? 200);
 
   const values = value => (Array.isArray(value) ? value : String(value ?? "").split(","))
     .map(value => String(value).trim().toLowerCase()).filter(Boolean);
@@ -96,7 +95,7 @@ function proxiesQuery(service, p) {
   const compare = field
     ? (a, b) => direction * String(a[field] ?? "").localeCompare(String(b[field] ?? "")) || a.id.localeCompare(b.id)
     : undefined;
-  const page = service.proxyStore().page(p, { matches, compare, offset: (index - 1) * size, limit: size });
+  const page = service.proxyStore().page(p, { matches, compare, ...bounds });
   return { total: page.total, rows: page.rows.map(row => listRow(row, usage)) };
 }
 

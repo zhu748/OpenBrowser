@@ -24,17 +24,17 @@ function fixture(pinAt, defaultProjectPin = 0, size = 1000) {
     }),
     settings: { defaultProjectPin },
   };
-  const groupCounts = new Map([['', 7], ['group-50', 4]]);
+  const activeByProject = new Map([['', Array(7)], ['group-50', Array(4)]]);
   return {
     data,
     work,
     profileIndex() {
       work.indexCalls++;
       return {
-        groupCounts: {
+        activeByProject: {
           get(id) {
             work.countLookups.push(id);
-            return groupCounts.get(id);
+            return activeByProject.get(id);
           },
         },
       };

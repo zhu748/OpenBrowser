@@ -7,6 +7,7 @@ const credentialCrypto = require('../credential-crypto');
 const { writeJsonAtomically } = require('../engine/state-storage');
 
 const MAX_ACCOUNTS = 5000;
+const SEARCH_FIELDS = { platform: 'url', account: 'username', remark: 'remark' };
 const FIELDS = ['platform', 'url', 'name', 'username', 'password', 'totpSecret', 'remark', 'createdAt'];
 
 function normalizeAccount(value) {
@@ -95,6 +96,25 @@ class AccountStore {
   }
 
   list() { if (this.loadError) throw this.loadError; return [...this.accounts.values()].map(redactAccount); }
+
+  page({ offset, limit, platformUrl, queryKey, queryValue }) {
+    if (this.loadError) throw this.loadError;
+    const query = String(queryValue || '').toLowerCase();
+    const field = Object.hasOwn(SEARCH_FIELDS, queryKey) ? SEARCH_FIELDS[queryKey] : null;
+    const rows = [];
+    let total = 0;
+    for (const account of this.accounts.values()) {
+      if (platformUrl && account.url !== platformUrl) continue;
+      if (query) {
+        const text = field ? account[field] : [account.url, account.username, account.remark].join(' ');
+        if (!text.toLowerCase().includes(query)) continue;
+      }
+      if (total >= offset && rows.length < limit) rows.push(redactAccount(account));
+      total++;
+      if (!query && !platformUrl && rows.length === limit) return { rows, total: this.accounts.size };
+    }
+    return { rows, total };
+  }
 
   get(id) {
     if (this.loadError) throw this.loadError;

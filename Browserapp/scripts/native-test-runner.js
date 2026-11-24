@@ -3,9 +3,8 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
 const { createHash } = require('node:crypto');
-const { SUITE, PER_SCRIPT_TIMEOUT_MS } = require('./selftest-all');
+const { SUITE, PER_SCRIPT_TIMEOUT_MS, runSelftest } = require('./selftest-all');
 const { classifySelftestResult } = require('./selftest-status');
 const ROOT = path.resolve(__dirname, '..');
 const RUNTIMES = ['chromium', 'firefox', 'electron'];
@@ -61,10 +60,7 @@ function main(argv = process.argv.slice(2)) {
   const results = runPlan(plan, {
     execute: test => {
       process.stdout.write('run ' + test.name + ' ... ');
-      return spawnSync(process.execPath, [path.join(ROOT, test.script), 'selftest', ...test.args], {
-        cwd: ROOT, env: process.env, timeout: test.timeoutMs, maxBuffer: 32 * 1024 * 1024,
-        encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
-      });
+      return runSelftest(test.script, test.timeoutMs, test.args);
     },
     saveLog: (test, result) => {
       const log = path.join(path.dirname(file), test.name.replace(/[^a-z0-9_-]/gi, '_') + '.log');

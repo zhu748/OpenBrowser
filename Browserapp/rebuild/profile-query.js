@@ -1,5 +1,6 @@
 "use strict";
 
+const { pageBounds } = require("./page-bounds");
 const { projectNameFor } = require("./profile-index");
 
 const QUERY_FIELDS = { name: "windowName", remark: "windowRemark", note: "windowRemark", sortNum: "windowSortNum", id: "windowSortNum" };
@@ -62,13 +63,6 @@ function compileFilters(p, index) {
   if (p.windowName) filters.push(row => row.windowName.includes(p.windowName));
   if (p.openStatus) filters.push(row => snapshot[row.position].running);
   if (p.isOften) filters.push(row => row.isOften);
-  if (Object.hasOwn(p, "scopeProjectId")) {
-    const scope = p.scopeProjectId;
-    if (typeof scope !== "string" || !scope.length) throw Error("项目范围无效");
-    // A detail route owns one opaque ID, not the legacy comma-delimited list.
-    const exact = scope === "local-default" ? "" : scope;
-    filters.push(row => row.projectId === exact);
-  }
   if (p.projectId || p.projectIds) {
     const ids = new Set(String(p.projectId || p.projectIds).split(",").map(id => id === "local-default" ? "" : id));
     filters.push(row => ids.has(row.projectId));
@@ -80,7 +74,11 @@ function compileFilters(p, index) {
       const field = QUERY_FIELDS[p.queryKey];
       filters.push(row => String(row[field]).toLowerCase().includes(query));
     } else if (p.queryKey === "tag") {
-      filters.push(row => row.labelInfos.some(label => label.labelName.toLowerCase().includes(query)));
+      const matching = new Set();
+      for (const [id, label] of index.labelById) {
+        if (String(label.name ?? "").toLowerCase().includes(query)) matching.add(id);
+      }
+      filters.push(row => row.labelIds.some(id => matching.has(id)));
     } else if (p.queryKey === "project_name") {
       filters.push(row => String(projectNameFor(snapshot[row.position], index.groupById)).toLowerCase().includes(query));
     }
@@ -104,7 +102,7 @@ function compileFilters(p, index) {
   if (p.windowRemark) filters.push(row => row.windowRemark.includes(p.windowRemark));
   if (p.platformUrls?.length) {
     const urls = values(p.platformUrls);
-    filters.push(row => row.windowPlatformList.some(account => urls.some(value => String(account.platformUrl).includes(value))));
+    filters.push(row => row.platformUrls.some(url => urls.some(value => String(url).includes(value))));
   }
   const created = Array.isArray(p.createTime) ? p.createTime : null;
   const byCalendarDay = Boolean(created || p.startDate || p.endDate);
@@ -141,15 +139,23 @@ function orderedCandidates(index, p, trashed, filters) {
   const field = p.orderName === "updateTime" && trashed ? "trashedAt"
     : Object.hasOwn(ORDER_FIELDS, p.orderName) ? ORDER_FIELDS[p.orderName] : null;
   const direction = /desc|^-1$/i.test(String(p.orderType)) ? -1 : 1;
+  // A detail route scopes to one opaque project ID, including IDs containing commas.
+  let project = null;
+  if (Object.hasOwn(p, "scopeProjectId")) {
+    if (typeof p.scopeProjectId !== "string" || !p.scopeProjectId.length) throw Error("项目范围无效");
+    project = p.scopeProjectId === "local-default" ? "" : p.scopeProjectId;
+  }
   if (p.dirIds) {
     const selected = [...new Set(values(p.dirIds))]
       .map(id => index.summariesById.get(id))
-      .filter(row => row?.trashed === trashed && filters.every(matches => matches(row)));
+      .filter(row => row?.trashed === trashed && (project === null || row.projectId === project) && filters.every(matches => matches(row)));
     return [field ? sortBy(selected, index, field, direction) : selected.sort((a, b) => a.position - b.position), []];
   }
-  const rows = trashed ? index.deletedRows : index.activeRows;
+  const all = trashed ? index.deletedRows : index.activeRows;
+  const byProject = trashed ? index.deletedByProject : index.activeByProject;
+  const rows = project === null ? all : byProject.get(project) ?? [];
   if (!field) return [rows, filters];
-  const key = `${trashed}:${field}:${direction}`;
+  const key = JSON.stringify([trashed, field, direction, project]);
   const orders = index.sortOrders;
   const cached = orders.get(key);
   if (!cached && filters.length) {
@@ -180,14 +186,12 @@ function selectPage(rows, filters, start, end) {
 // The ordering cache belongs to the profile projection. Runtime-only changes
 // retain the order and use the current snapshot for open-state filters.
 function queryProfiles(service, p = {}) {
-  const index = Number(p.page_index ?? p.pageIndex ?? 1), size = Number(p.page_size ?? p.pageSize ?? 10);
-  if (!Number.isSafeInteger(index) || index < 1 || !Number.isSafeInteger(size) || size < 1 || size > 5000)
-    throw Error("分页参数无效，单页范围 1–5000");
+  const { offset, limit } = pageBounds(p.page_index ?? p.pageIndex ?? 1, p.page_size ?? p.pageSize ?? 10);
   const projection = service.profileIndex();
   const snapshot = projection.snapshot;
   const trashed = p.isDelete === true || p.isDelete === 1 || p.isDelete === "1" || p.isDelete === "true";
   const [candidates, filters] = orderedCandidates(projection, p, trashed, compileFilters(p, projection));
-  const { total, page } = selectPage(candidates, filters, (index - 1) * size, index * size);
+  const { total, page } = selectPage(candidates, filters, offset, offset + limit);
   return { rows: page.map(row => service.decorate(snapshot[row.position], projection)), total };
 }
 module.exports = { queryProfiles };

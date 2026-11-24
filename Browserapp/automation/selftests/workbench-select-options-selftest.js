@@ -49,6 +49,9 @@ async function main() {
   assert.deepEqual(model.filterOptions(choices, 'alse'), [false]);
   settings.filterMatchMode = 'other';
   assert.deepEqual(model.filterOptions(choices, 'stan'), [first], 'unknown match modes retain contains behavior');
+  settings.filterFields = ['label', 'note'];
+  const earlyMatch = { label: 'Match', get note() { assert.fail('search read a field after a match'); } };
+  assert.deepEqual(model.filterOptions([earlyMatch], 'match'), [earlyMatch]);
   settings.filterLocale = 'invalid_locale';
   assert.deepEqual(model.filterOptions([], 'query'), [], 'an empty list need not resolve the search locale');
   console.log('WORKBENCH_SELECT_OPTIONS_SELFTEST OK');

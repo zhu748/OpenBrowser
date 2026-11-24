@@ -5,12 +5,28 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
-const { formatOrdinarySmokeFailure } = require('./selftest-all');
+const { formatOrdinarySmokeFailure, runSelftest } = require('./selftest-all');
 const { classifySelftestResult } = require('./selftest-status');
 
 const label = 'selftest:settings';
 const format = (result, name = label, githubActions = 'true') =>
   formatOrdinarySmokeFailure(name, classifySelftestResult(result), result, githubActions);
+
+test('the shared runner forwards arguments, uses the app cwd, and enforces the caller timeout', t => {
+  const work = path.resolve(__dirname, '../../work');
+  fs.mkdirSync(work, { recursive: true });
+  const temp = fs.mkdtempSync(path.join(work, 'runner-test-'));
+  t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
+  const file = path.join(temp, 'fixture.js');
+  const root = path.resolve(__dirname, '..');
+  const script = path.relative(root, file);
+  fs.writeFileSync(file, 'console.log(JSON.stringify([process.cwd(), ...process.argv.slice(2)]))');
+  const result = runSelftest(script, undefined, ['two words']);
+  assert.equal(result.status, 0);
+  assert.deepEqual(JSON.parse(result.stdout), [root, 'selftest', 'two words']);
+  fs.writeFileSync(file, 'setInterval(() => {}, 1000)');
+  assert.equal(runSelftest(script, 100).error?.code, 'ETIMEDOUT');
+});
 
 test('an ordinary child failure emits one static GitHub annotation', () => {
   assert.equal(format({ status: 23, stdout: 'fixture stdout', stderr: 'fixture stderr' }),
@@ -126,7 +142,8 @@ test('strict incomplete, non-CI, and pre-decision interruption remain distinct',
   assert.deepEqual(interrupted.notices, []);
 });
 
-test('kernel-free CI bypasses native fixtures and reports them as skipped', () => {
+
+test('kernel-free CI bypasses spawned native fixtures and reports them as skipped', () => {
   const run = runInertAggregate([
     { result: { status: 0 } },
     { alternate: true, throws: true },

@@ -4,6 +4,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { isRuntimeResource, DEVELOPMENT_MODULES } = require('./runtime-manifest');
+const workbenchEntries = require('../frontend/workbench-entries.json');
+const rendererSources = new Set(Object.values(workbenchEntries).map(entry =>
+  typeof entry === 'string' ? entry : entry.source));
 const repo = path.resolve(__dirname, '../..');
 
 function classify(file) {
@@ -23,6 +26,9 @@ function classify(file) {
   if (/^frontend\/(?:build(?:-workbench)?\.[cm]js|compile-workbench-component\.cjs|tsconfig\.json|workbench-(?:entries|vendor-modules)\.json)$/.test(relative)) {
     return ['build-tools', 'development'];
   }
+  if (relative.startsWith('bundled-extension/')) return ['bundled-extension', 'supported'];
+  if (relative.startsWith('rebuild/skills/')) return ['skill-packages', 'supported'];
+  if (relative === 'automation/README.md' || relative === 'THIRD-PARTY-NOTICES.md') return ['documentation', 'reference'];
   if (relative.startsWith('frontend/')) return ['workbench', 'supported'];
   if (DEVELOPMENT_MODULES.has(relative)) return ['experimental', 'development'];
   if (file.startsWith('crates/')) return ['rust-core', 'gated'];
@@ -31,7 +37,8 @@ function classify(file) {
   if (/^Browserapp\/(?:main\/|main\.js|preload\.js|host-bridge\.js)/.test(file)) return ['desktop-host', 'supported'];
   if (/^Browserapp\/engine(?:\/|\.js)/.test(file)) return ['browser-engine', 'supported'];
   if (/^Browserapp\/rebuild\/sync(?:-service|-batch-text)\.js$/.test(file)) return ['window-sync', 'supported'];
-  if (file.startsWith('Browserapp/rebuild/')) return ['workbench', 'supported'];
+  if (rendererSources.has(relative) || relative === 'rebuild/workbench-chrome.css') return ['workbench', 'supported'];
+  if (file.startsWith('Browserapp/rebuild/')) return ['workbench-services', 'supported'];
   if (/^Browserapp\/(?:network\/|proxy-forwarder\.js|cdp\.js)/.test(file)) return ['network-protocol', 'supported'];
   if (/^Browserapp\/live-sync-/.test(file) || file.startsWith('Browserapp/automation/sync/')) return ['window-sync', 'supported'];
   if (/^Browserapp\/automation\/(?:kernel[/.-]|browser-kernel\.js$)/.test(file)) return ['browser-kernels', 'supported'];
@@ -41,8 +48,18 @@ function classify(file) {
   if (/^Browserapp\/automation\/cloud/.test(file)) return ['cloud-backup', 'supported'];
   if (/^Browserapp\/automation\/(?:[\w-]+-store(?:-sqlite)?\.js$|local-settings\.js$|coalesced-writer\.js$|storage-diagnostics\.js$)/.test(file)) return ['storage', 'supported'];
   if (/^Browserapp\/(?:native-[^/]+\.cs$|automation\/native-[^/]+\.js$)/.test(file)) return ['native-integration', 'supported'];
+  if (relative === 'credential-crypto.js') return ['storage', 'supported'];
+  if (relative.startsWith('automation/protocol/')) return ['protocol-contracts', 'supported'];
+  if (relative.startsWith('automation/')) return ['automation-runtime', 'supported'];
   if (file.startsWith('Browserapp/shared/')) return ['shared-contracts', 'supported'];
   return ['infrastructure-config', 'supported'];
+}
+
+function sourceLines(file) {
+  const text = fs.readFileSync(file, 'utf8');
+  let lines = 1;
+  for (let i = text.indexOf('\n'); i !== -1; i = text.indexOf('\n', i + 1)) lines++;
+  return lines;
 }
 
 function inventory() {
@@ -53,12 +70,13 @@ function inventory() {
   const rows = [];
   for (const file of new Set(files)) {
     const absolute = path.join(repo, file);
-    if (!fs.existsSync(absolute)) continue;
+    const stat = fs.statSync(absolute, { throwIfNoEntry: false });
+    if (!stat) continue;
     const [category, maintenance] = classify(file);
-    const bytes = fs.statSync(absolute).size;
+    const bytes = stat.size;
     const source = /\.(?:js|mjs|cjs|vue|ts|tsx|rs|cs|css|html)$/.test(file);
     rows.push({ file, category, maintenance, bytes,
-      lines: source ? fs.readFileSync(absolute, 'utf8').split('\n').length : null,
+      lines: source ? sourceLines(absolute) : null,
       shipped: file.startsWith('Browserapp/') ? isRuntimeResource(file.slice(11)) : false });
   }
   const totals = {};

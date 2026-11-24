@@ -184,6 +184,13 @@ test('exact scope matches opaque/default IDs and intersects non-project filters 
   assert.deepEqual(ids((await query({ scopeProjectId: 'local-default' })).rows), ['default']);
   assert.deepEqual(ids((await query({ scopeProjectId: '7' })).rows), ['legacy-numeric']);
   assert.deepEqual(ids((await query({ scopeProjectId: 'A', projectIds: 'B' })).rows), [], 'scope can only narrow a direct query');
+  for (const scope of ['A', 'B', 'local-default']) {
+    const all = (await query({ scopeProjectId: scope })).rows;
+    const sorted = await query({ scopeProjectId: scope, orderName: 'windowSortNum', orderType: 'desc' });
+    assert.deepEqual(ids(sorted.rows), ids(all).reverse(), 'cached sort is specific to the project');
+  }
+  assert.deepEqual(ids((await query({ scopeProjectId: 'A', isDelete: 1 })).rows), ['archived-a']);
+  assert.deepEqual(ids((await query({ scopeProjectId: 'A', dirIds: ['b-1', 'a-2'] })).rows), ['a-2']);
   for (const scope of ['', null, ['A'], 7]) {
     await assert.rejects(query({ scopeProjectId: scope }), /项目范围|project scope/i);
   }

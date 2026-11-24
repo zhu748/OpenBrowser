@@ -31,6 +31,14 @@ test('distinguishes tests, fixtures, resources, and historical evidence', () => 
   assert.deepEqual(classify('docs/rebuild/evidence/acceptance/run.log'), ['documentation-evidence', 'reference']);
 });
 
+test('classifies local services separately from assembled renderer modules and packaged skills', () => {
+  assert.deepEqual(classify('Browserapp/rebuild/routes/collections.js'), ['workbench-services', 'supported']);
+  assert.deepEqual(classify('Browserapp/rebuild/workbench-table.mjs'), ['workbench', 'supported']);
+  assert.deepEqual(classify('Browserapp/rebuild/skills/automation-script-writing/SKILL.md'), ['skill-packages', 'supported']);
+  assert.deepEqual(classify('Browserapp/automation/protocol/event-map.js'), ['protocol-contracts', 'supported']);
+  assert.deepEqual(classify('Browserapp/bundled-extension/manifest.json'), ['bundled-extension', 'supported']);
+});
+
 test('inventory CLI writes a categorized report without reinterpreting shipping rules', (t) => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'openbrowser-inventory-'));
   t.after(() => fs.rmSync(temp, { recursive: true, force: true }));

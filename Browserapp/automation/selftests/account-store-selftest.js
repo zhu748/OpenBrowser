@@ -38,6 +38,18 @@ async function main() {
     assert.equal(reloaded.get('a').remark, account.remark);
     await Promise.all([reloaded.import([{ id: 'b', username: 'b' }]), reloaded.import([{ id: 'c', username: 'c' }])]);
     assert.equal(reloaded.list().length, 3, 'overlapping imports cannot overwrite one another');
+    const page = params => reloaded.page({ offset: 0, limit: 1, ...params });
+    const first = reloaded.list()[0];
+    assert.deepEqual(page({ queryKey: 'account', queryValue: 'TEST@', platformUrl: first.url }), { rows: [first], total: 1 });
+    assert.deepEqual(page({ offset: 1 }).rows.map(row => row.id), ['b']);
+    assert.deepEqual(page({ offset: 10 }), { rows: [], total: 3 });
+    assert.deepEqual(page({ queryValue: 'test', offset: 1 }), { rows: [], total: 1 });
+    assert.deepEqual(page({ queryKey: 'password', queryValue: account.password }), { rows: [], total: 0 });
+    const { requestAccounts } = require('../../rebuild/accounts');
+    const linked = { id: 'p', number: 4, platform: { accounts: [{ accountId: 'a' }, { accountId: 'b' }, { accountId: 'a' }] } };
+    const engine = { profiles: new Map([[linked.id, linked]]) };
+    const bound = await requestAccounts({ accountStore: () => reloaded, engine }, 'list', { page_size: 2 });
+    assert.deepEqual(bound.rows.map(row => row.boundProfileIds), [['p'], ['p']]);
     await reloaded.remove('b');
     assert.equal(reloaded.list().length, 2);
     const transferFile = path.join(root, 'transfers.enc');

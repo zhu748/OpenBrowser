@@ -4,7 +4,7 @@
 const { randomUUID: uid } = require("node:crypto");
 const { sanitizeProfile } = require("../engine/profile-sanitizer");
 
-const { ADVANCED_FIELDS, NOISE_FIELDS, parseWindowPosition, formatWindowPosition } = require('./profile-fields');
+const { labelIdsOf, ADVANCED_FIELDS, NOISE_FIELDS, parseWindowPosition, formatWindowPosition } = require('./profile-fields');
 
 function fromRoxy(v, base = {}) {
   const first = v.windowPlatformList?.[0];
@@ -367,9 +367,7 @@ function toRoxy(p) {
     remark: p.note,
     projectId: p.groupId,
     projectName: p.group_name || "",
-    labelIds: /^\d+(,\d+)*$/.test(p.tag || "")
-      ? p.tag.split(",").map(Number)
-      : [],
+    labelIds: labelIdsOf(p),
     labelInfos: [],
     openStatus: !!p.running,
     openLimitStatus: !p.trashed,

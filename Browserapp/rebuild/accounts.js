@@ -1,5 +1,6 @@
 "use strict";
 const { isDeepStrictEqual } = require("node:util");
+const { pageBounds } = require("./page-bounds");
 const { normalizeAccount } = require("../automation/account-store");
 const { assertProfileId } = require("../automation/isolation");
 const { sanitizeProfile } = require("../engine/profile-sanitizer");
@@ -30,16 +31,14 @@ function linked(profile, id) {
   );
 }
 function accountBindings(engine, ids) {
-  const remaining = new Set(ids);
   const bindings = new Map(ids.map(id => [id, []]));
-  if (!remaining.size) return bindings;
+  if (!bindings.size) return bindings;
   for (const profile of engine.profiles.values()) {
     if (profile.trashed) continue;
-    const matched = new Set();
     for (const { accountId } of profile.platform?.accounts || []) {
-      if (!remaining.has(accountId) || matched.has(accountId)) continue;
-      bindings.get(accountId).push({ id: profile.id, number: profile.number });
-      matched.add(accountId);
+      const profiles = bindings.get(accountId);
+      // All links for this profile are visited together, including legacy duplicates.
+      if (profiles && profiles.at(-1)?.id !== profile.id) profiles.push({ id: profile.id, number: profile.number });
     }
   }
   return bindings;
@@ -162,18 +161,11 @@ function listAccounts(engine, store, payload) {
     const bindings = accountBindings(engine, [account.id]);
     return { rows: [dto(account, bindings.get(account.id))], total: 1 };
   }
-  const size = Number(payload.page_size ?? 200), page = Number(payload.page_index ?? 1);
-  if (!Number.isSafeInteger(size) || size < 1 || size > 5000 || !Number.isSafeInteger(page) || page < 1)
-    throw Error("分页参数无效，单页范围 1–5000");
-  const query = String(payload.queryValue || "").toLowerCase();
-  const fields = { platform: "url", account: "username", remark: "remark" };
-  const field = Object.hasOwn(fields, payload.queryKey) ? fields[payload.queryKey] : null;
-  const rows = store.list().filter(row =>
-    (!payload.platformUrl || row.url === payload.platformUrl) &&
-    (!query || String(field ? row[field] || "" : [row.url, row.username, row.remark].join(" ")).toLowerCase().includes(query)));
-  const selected = rows.slice((page - 1) * size, page * size);
-  const bindings = accountBindings(engine, selected.map(row => row.id));
-  return { rows: selected.map(row => dto(row, bindings.get(row.id))), total: rows.length };
+  const bounds = pageBounds(payload.page_index ?? 1, payload.page_size ?? 200);
+  const { rows, total } = store.page({ ...bounds, platformUrl: payload.platformUrl,
+    queryKey: payload.queryKey, queryValue: payload.queryValue });
+  const bindings = accountBindings(engine, rows.map(row => row.id));
+  return { rows: rows.map(row => dto(row, bindings.get(row.id))), total };
 }
 async function requestAccounts(service, method, payload) {
   const store = service.accountStore?.(),

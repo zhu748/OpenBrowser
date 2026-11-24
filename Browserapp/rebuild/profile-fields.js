@@ -46,5 +46,9 @@ function parseWindowPosition(value) {
   if (!position) throw Error("无效的窗口位置");
   return position;
 }
+function labelIdsOf(profile) {
+  const tag = profile.tag;
+  return typeof tag === "string" && /^\d+(,\d+)*$/.test(tag) ? tag.split(",").map(Number) : [];
+}
 function formatWindowPosition(value) { return WINDOW_POSITIONS[value] || WINDOW_POSITIONS.tl; }
-module.exports = { ADVANCED_FIELDS, NOISE_FIELDS, parseWindowPosition, formatWindowPosition };
+module.exports = { labelIdsOf, ADVANCED_FIELDS, NOISE_FIELDS, parseWindowPosition, formatWindowPosition };
