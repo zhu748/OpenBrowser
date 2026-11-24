@@ -1,8 +1,8 @@
 name: CI
 
 # Continuous integration gate for every push and pull request:
-# - lint: ESLint correctness rules (zero-error baseline, see eslint.config.js)
-# - smoke: dependency-free Node selftests (no Electron binary, no kernels)
+# - lint: ESLint and renderer type checking
+# - smoke: Node selftests with locked dependencies (no Electron binary, no kernels)
 # - rust: fmt + clippy + tests + JS<->Rust bridge selftests (parity + chaos)
 # Full installer builds remain in build-installers.yml (manual dispatch).
 
@@ -41,6 +41,8 @@ jobs:
       # Selftests run under plain Node — skip the Electron binary download.
       - run: npm ci --include=dev --ignore-scripts
       - run: npm run lint
+      - name: Renderer type check
+        run: npm run typecheck:renderer
 
   smoke:
     name: Node selftests (smoke)
@@ -81,17 +83,14 @@ jobs:
       # macOS kernel launcher) and never count as passes.
       - name: Build the default workbench from source
         run: |
-          npm run typecheck:renderer
           npm run rebuild:ui
           node rebuild/compiler/source-selftest.cjs
           test -z "$(git ls-files -- roxy-ui)"
       - name: Full selftest aggregate (kernel-free suite)
-        run: npm run selftest:all
+        run: npm run selftest:all -- --skip-native
         env:
-          # The aggregate suite's native-only availability probe must SKIP when
-          # this job provides no browser: without the guard the gates pick up
-          # the runner's unusable google-chrome from PATH, fail to launch it
-          # (exit 1) or hang to the per-script timeout.
+          # Mixed Node/browser suites can still check for a browser. Do not
+          # let them launch whatever Chromium happens to be on PATH.
           OPENBROWSER_REQUIRE_EXPLICIT_BINARY: '1'
 
   smoke-windows:
@@ -188,9 +187,8 @@ jobs:
           OPENBROWSER_RUST_CORE_BINARY: ${{ github.workspace }}/Browserapp/rust-core/openbrowser-core
         run: npm run selftest:rustchaos
 
-  # Native fingerprint gates on real browser kernels. Browsers come from the
-  # playwright-managed cache (pinned, no apt flakiness); the gates exit 2 when a
-  # browser is missing, which the runner reports as a skip, never a false pass.
+  # Native gates use the stable browser builds installed below. The native
+  # runner requires each configured browser and every registered assertion.
   native-gates:
     name: Native browser gates (${{ matrix.browser }})
     # Match the Linux release host; the production custom-kernel probe uses
@@ -336,6 +334,8 @@ jobs:
 
   desktop-gates:
     name: Electron desktop behavior (${{ matrix.os }})
+    env:
+      OPENBROWSER_DEFER_KERNEL_BOOTSTRAP: '1'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
     strategy:
@@ -362,6 +362,7 @@ jobs:
       - run: node node_modules/electron/install.js
       - run: npm run rebuild:ui
       - name: Real DOM, preload, IPC, SQLite and editor conflict gates
+        timeout-minutes: 12
         env:
           OPENBROWSER_MASTER_KEY_FILE: ${{ runner.temp }}/openbrowser-desktop.key
         run: |
@@ -376,17 +377,16 @@ jobs:
           fi
           bash scripts/desktop-ci-gates.sh
       - name: Measure default workbench responsiveness
-        timeout-minutes: 12
-        # macOS runs have previously exceeded the interaction budget or
-        # stopped making progress. The benchmark exits with code 2 after
-        # 150s without progress; the shell deadline at 240s is a backstop
-        # for a blocked event loop. Linux/Windows stay single-shot.
+        timeout-minutes: 9
+        # The benchmark detects lost progress within 150–180 seconds.
+        # The shell kills an unresponsive process after 240 seconds.
+        # Each macOS attempt retains its own report.
         run: |
           bench() (
             set +e
             SECONDS=0
             printf '::notice::Workbench benchmark attempt %d started\n' "$1"
-            node scripts/benchmark-workbench.js --sizes 10,100,1000 --interaction-budget-ms 1500 --output ../work/workbench-performance/report.json &
+            node scripts/benchmark-workbench.js --sizes 10,100,1000 --interaction-budget-ms 1500 --runner-temp --output "../work/workbench-performance/attempt-$1/report.json" &
             bench_pid=$!
             watchdog_sent=42
             (
@@ -413,13 +413,10 @@ jobs:
             printf '::notice::Workbench benchmark attempt %d finished: outcome=%s exit=%d elapsed=%ds\n' "$1" "$outcome" "$code" "$SECONDS"
             exit "$code"
           )
-          if bench 1; then exit 0; fi
-          if [[ "$RUNNER_OS" != "macOS" ]]; then exit 1; fi
-          for attempt in 2 3; do
-            echo "::warning::workbench benchmark failed on macOS (attempt $((attempt - 1))); retrying"
-            if bench "$attempt"; then exit 0; fi
-          done
-          exit 1
+          if bench 1; then exit 0; else status=$?; fi
+          if [[ "$RUNNER_OS" != "macOS" ]]; then exit "$status"; fi
+          echo '::warning::workbench benchmark failed on macOS (attempt 1); retrying'
+          bench 2
       - name: Preserve default workbench performance evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

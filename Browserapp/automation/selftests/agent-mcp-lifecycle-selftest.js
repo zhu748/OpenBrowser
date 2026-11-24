@@ -17,7 +17,7 @@ async function until(predicate, timeout = 5000) {
 }
 
 async function fixture() {
-  const state = { calls: 0, initialized: [], active: 0, peak: 0, closed: new Set(), pings: 0, releases: new Map(), delayMs: 0 };
+  const state = { calls: 0, initialized: [], active: 0, peak: 0, closed: new Set(), pings: 0, cancellations: 0, releases: new Map(), delayMs: 0 };
   const server = http.createServer(async (req, res) => {
     res.on('close', () => state.closed.add(req.url));
     if (req.method === 'DELETE') { res.writeHead(204); res.end(); return; }
@@ -26,7 +26,14 @@ async function fixture() {
     if (message.id !== undefined && message.method === undefined) {
       state.pings++; if (req.url !== '/pingstorm') { res.writeHead(202); res.end(); } return;
     }
-    if (message.method.startsWith('notifications/')) { res.writeHead(202); res.end(); return; }
+    if (message.method.startsWith('notifications/')) {
+      if (req.url === '/drip' && message.method === 'notifications/cancelled') {
+        await delay(250);
+        if (res.destroyed) return;
+        state.cancellations++;
+      }
+      res.writeHead(202); res.end(); return;
+    }
     const result = value => { if (!res.destroyed) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: value })); } };
     if (req.url === '/wrong') { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ jsonrpc: '2.0', id: message.id + 1, result: {} })); return; }
     if (req.url === '/case') { res.writeHead(200, { 'content-type': 'Application/JSON' }); res.end(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { ok: true } })); return; }
@@ -177,8 +184,10 @@ async function testHttp() {
     await assert.rejects(flood.request('fixture', {}), /Too many pending MCP server requests/);
     await until(() => flood.replying === 0);
     assert.equal(flood.closed, true); assert.equal(flood.pending.size, 0); await flood.close();
-    const drip = new Connection({ type: 'http', url: remote.baseUrl + '/drip', headers: {} }, { requestTimeoutMs: 60 });
+    const drip = new Connection({ type: 'http', url: remote.baseUrl + '/drip', headers: {} },
+      { requestTimeoutMs: 150, cleanupTimeoutMs: 2000 });
     await assert.rejects(drip.request('fixture', {}), /timed out|timeout/i);
+    assert.equal(remote.state.cancellations, 1, 'cancellation uses its cleanup deadline even when it exceeds the request deadline');
     await until(() => remote.state.closed.has('/drip')); assert.equal(drip.pending.size, 0); await drip.close();
   } finally { await remote.close(); }
 }

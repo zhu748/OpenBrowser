@@ -369,6 +369,7 @@ const SUITE = [
 
 const argv = process.argv.slice(2);
 const LIST_ONLY = argv.includes('--list');
+const SKIP_NATIVE = argv.includes('--skip-native');
 const PER_SCRIPT_TIMEOUT_MS = 5 * 60 * 1000;
 
 // Keep CI annotations constrained to ordinary settings/storage/workbench
@@ -381,6 +382,8 @@ const ORDINARY_SMOKE_LABELS = new Map([
   ['selftest:workbenchlistcache', 'Workbench list cache'],
   ['selftest:workbenchtime', 'Workbench time formatting'],
   ['selftest:projectlistprojection', 'Project list projection'],
+  ['selftest:agentmcplifecycle', 'MCP lifecycle'],
+  ['selftest:rebuild:profilereceipt', 'Profile write receipt'],
 ]);
 
 function formatOrdinarySmokeFailure(name, outcome, result, githubActions) {
@@ -433,6 +436,12 @@ function main() {
       continue;
     }
     if (flags && flags.nativeOnly) {
+      if (SKIP_NATIVE) {
+        skipped += 1;
+        results.push({ name, script, pass: null, outcome: 'skipped' });
+        console.log(`run  ${name.padEnd(width)}  ${script} ... skip (native checks run in the browser/desktop CI jobs)`);
+        continue;
+      }
       // Native-browser gates exit 2 when the browser binary env var is unset.
       // Probe availability first so an absent browser is a visible skip, never a pass.
       process.stdout.write(`run  ${name.padEnd(width)}  ${script} ... `);

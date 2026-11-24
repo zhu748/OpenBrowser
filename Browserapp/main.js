@@ -1061,7 +1061,11 @@ app.whenReady().then(async () => {
       });
     }
   });
-  engine.ensureKernelBootstrap().catch((error) => console.error('OpenBrowser kernel bootstrap failed:', error.message));
+  // Desktop fixtures can defer the first-run download. Explicit browser
+  // launches and kernel operations still request the kernel themselves.
+  if (process.env.OPENBROWSER_DEFER_KERNEL_BOOTSTRAP !== '1') {
+    engine.ensureKernelBootstrap().catch((error) => console.error('OpenBrowser kernel bootstrap failed:', error.message));
+  }
   // Background: a kernel tree that no longer matches its install record is
   // reported through kernel-progress instead of failing later without a cause.
   engine.kernelIntegrityCheck?.().then((summary) => {

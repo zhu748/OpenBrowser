@@ -50,7 +50,7 @@ test('failure classes are fixed and never echo child data or invalid status valu
   }
 });
 
-function runInertAggregate(cases, env = { GITHUB_ACTIONS: 'true' }) {
+function runInertAggregate(cases, env = { GITHUB_ACTIONS: 'true' }, args = []) {
   const filename = path.join(__dirname, 'selftest-all.js');
   const source = fs.readFileSync(filename, 'utf8');
   const start = source.indexOf('const SUITE = [');
@@ -67,8 +67,8 @@ function runInertAggregate(cases, env = { GITHUB_ACTIONS: 'true' }) {
     if (name === './workbench-test-registry') return { nodeWorkbenchTests: [] };
     if (name === './selftest-status') return { classifySelftestResult };
     if (name === 'child_process') return { spawnSync: (_exec, [file]) => {
-      const index = spawned.length;
-      assert.equal(path.basename(file), fixtures[index]?.[1]);
+      const index = fixtures.findIndex(([, name]) => name === path.basename(file));
+      assert.ok(index >= 0, 'invoked only registered fixtures');
       spawned.push(index);
       if (cases[index].throws) throw Error('inert runner error');
       return cases[index].result;
@@ -80,7 +80,7 @@ function runInertAggregate(cases, env = { GITHUB_ACTIONS: 'true' }) {
   try {
     vm.runInNewContext(isolated, {
       __dirname, module: mod, require: stubRequire,
-      process: { env, argv: ['node', filename], execPath: 'inert', platform: 'linux', stdout: { write() {} },
+      process: { env, argv: ['node', filename, ...args], execPath: 'inert', platform: 'linux', stdout: { write() {} },
         exit: code => exits.push(code) },
       console: { log(line) { if (line.startsWith('::notice::')) notices.push(line); } },
     }, { filename, timeout: 1000 });
@@ -124,4 +124,16 @@ test('strict incomplete, non-CI, and pre-decision interruption remain distinct',
   assert.equal(interrupted.error?.message, 'inert runner error');
   assert.deepEqual(interrupted.exits, []);
   assert.deepEqual(interrupted.notices, []);
+});
+
+test('kernel-free CI bypasses native fixtures and reports them as skipped', () => {
+  const run = runInertAggregate([
+    { result: { status: 0 } },
+    { alternate: true, throws: true },
+    { result: { status: 0 } },
+  ], { GITHUB_ACTIONS: 'true', OPENBROWSER_REQUIRE_COMPLETE_TESTS: '1' }, ['--skip-native']);
+  assert.equal(run.error, undefined);
+  assert.deepEqual(run.spawned, [0, 2]);
+  assert.deepEqual(run.exits, [1]);
+  assert.deepEqual(run.notices, ['::notice::Smoke aggregate decision: strict-incomplete skipped=1 partial=0']);
 });

@@ -151,6 +151,12 @@ OPENBROWSER_FIREFOX_BINARY=/absolute/path/to/firefox node scripts/native-test-ru
 node scripts/benchmark-workbench.js --sizes 10,100,1000 --interaction-budget-ms 1500 --output ../work/workbench-performance/report.json
 ```
 
+## 桌面 CI 耗时与失败诊断
+
+- CI #187 的 macOS 工作台基准三次在清理临时目录时超时，总计 10 分 32 秒。桌面基准现在在 GitHub Actions 的 `RUNNER_TEMP` 中为每次尝试创建独立的合成数据目录，先关闭 Electron 并提交报告，目录由 runner 随任务回收。普通本地运行仍主动清理。每次尝试的报告可在 `work/workbench-performance/attempt-*/` 找到。 [GitHub Actions #187](https://github.com/zhu748/OpenBrowser/actions/runs/45189370444/job/137743343251)
+- CI #188 的 macOS 桌面套件首次报出 Agent tasks UI 失败，重跑期间整项任务达到 25 分钟上限。套件现在只有一个重试名额，macOS 仅重试失败的检查。12 分钟桌面检查和 9 分钟基准分别设限。桌面 CI 与基准推迟自动内核下载，显式启动、安装和原生浏览器门禁继续走已有路径。 [GitHub Actions #188](https://github.com/zhu748/OpenBrowser/actions/runs/45194005201/job/137759489923)
+- Smoke 使用 `--skip-native` 显式跳过已有独立门禁的原生条目，继续运行同一注册表中的 Node 自测。渲染器类型检查移至并行的 lint 任务。MCP 请求超时后的取消通知使用独立清理期限，回归通过较慢的本地 HTTP 确认响应验证。
+
 ## 当前模块边界与重构约束
 
 默认工作台的业务界面维护在 `frontend/src/workbench/`。构建入口

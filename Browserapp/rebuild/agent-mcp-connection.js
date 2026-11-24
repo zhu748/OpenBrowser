@@ -66,7 +66,7 @@ class Connection {
         }
         const response = message.method === "ping" ? { result: {} } : { error: { code: -32601, message: "Client capability not supported" } };
         this.replying++;
-        void this.write({ jsonrpc: "2.0", id: message.id, ...response }, deadlineSignal(this.requestTimeoutMs, "MCP reply timeout"))
+        void this.write({ jsonrpc: "2.0", id: message.id, ...response }, undefined, { timeoutMessage: "MCP reply timeout" })
           .catch(error => this.fail(error)).finally(() => { this.replying--; });
       }
       return;
@@ -78,22 +78,23 @@ class Connection {
     else pending.reject(Error("Invalid MCP result"));
   }
 
-  async write(message, signal) {
+  async write(message, signal, { timeoutMs = this.requestTimeoutMs, timeoutMessage } = {}) {
     signal?.throwIfAborted();
     if (this.closed) throw Error("MCP connection closed");
     const text = JSON.stringify(message);
     if (Buffer.byteLength(text) > LIMIT) throw Error("MCP request exceeds 2 MiB");
-    if (this.config.type === "stdio") return this.writeProcess(text, signal);
-    return this.writeHttp(message, text, signal);
+    const stdio = this.config.type === "stdio";
+    const deadline = deadlineSignal(timeoutMs, timeoutMessage || (stdio ? "MCP request write timeout" : "MCP request timeout"));
+    const combined = AbortSignal.any([this.controller.signal, ...(signal ? [signal] : []), deadline]);
+    return stdio ? this.writeProcess(text, combined) : this.writeHttp(message, text, combined);
   }
 
   writeProcess(text, signal) {
-    const combined = AbortSignal.any([this.controller.signal, ...(signal ? [signal] : []), deadlineSignal(this.requestTimeoutMs, "MCP request write timeout")]);
     return new Promise((resolve, reject) => {
-      const finish = error => { combined.removeEventListener("abort", abort); error ? reject(error) : resolve(); };
-      const abort = () => finish(combined.reason || Error("MCP request cancelled"));
-      combined.addEventListener("abort", abort, { once: true });
-      if (combined.aborted) { abort(); return; }
+      const finish = error => { signal.removeEventListener("abort", abort); error ? reject(error) : resolve(); };
+      const abort = () => finish(signal.reason || Error("MCP request cancelled"));
+      signal.addEventListener("abort", abort, { once: true });
+      if (signal.aborted) { abort(); return; }
       try { this.child.stdin.write(text + "\n", error => finish(error)); }
       catch (error) { finish(error); }
     });
@@ -103,8 +104,7 @@ class Connection {
     const request = message.id !== undefined && typeof message.method === "string";
     const headers = { ...this.config.headers, "Content-Type": "application/json", Accept: "application/json, text/event-stream",
       ...(this.session ? { "Mcp-Session-Id": this.session } : {}), ...(this.version ? { "MCP-Protocol-Version": this.version } : {}) };
-    const response = await fetch(this.config.url, { method: "POST", headers, body: text, redirect: "error",
-      signal: AbortSignal.any([this.controller.signal, ...(signal ? [signal] : []), deadlineSignal(this.requestTimeoutMs, "MCP request timeout")]) });
+    const response = await fetch(this.config.url, { method: "POST", headers, body: text, redirect: "error", signal });
     try {
       if (!response.ok) throw Error("MCP HTTP " + response.status);
       const session = response.headers.get("mcp-session-id");
@@ -173,7 +173,7 @@ class Connection {
       if (combined.aborted && !this.closed) {
         try { await this.write({ jsonrpc: "2.0", method: "notifications/cancelled", params: {
           requestId: id, reason: "OpenBrowser request cancelled",
-        } }, deadlineSignal(this.cleanupTimeoutMs, "MCP cleanup timeout")); }
+        } }, undefined, { timeoutMs: this.cleanupTimeoutMs, timeoutMessage: "MCP cleanup timeout" }); }
         catch (error) { throw new AggregateError([combined.reason, error], "MCP 已取消，但远端取消通知失败"); }
       }
     }

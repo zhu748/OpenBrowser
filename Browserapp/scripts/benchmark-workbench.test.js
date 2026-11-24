@@ -12,7 +12,7 @@ const script = new vm.Script(fs.readFileSync(filename, 'utf8'), { filename });
 const pending = () => new Promise(() => {});
 const flush = () => new Promise(resolve => setImmediate(resolve));
 
-function fixture(stall, { platform = 'darwin', githubActions } = {}) {
+function fixture(stall, { platform = 'darwin', githubActions, runnerTemp, runnerTempFlag = false } = {}) {
   const trace = [], logs = [], notices = [], stdoutText = [], stderrText = [], reports = [], terminal = [], timers = new Set();
   const hooks = new Set(), pendingResources = new Set();
   let now = 0;
@@ -60,7 +60,8 @@ function fixture(stall, { platform = 'darwin', githubActions } = {}) {
     }
   }
   const files = {
-    mkdtemp: async () => {
+    mkdtemp: async prefix => {
+      assert.equal(prefix, path.join(runnerTempFlag ? runnerTemp : '/synthetic', 'ob-workbench-benchmark-'));
       trace.push('temp-create');
       fsRequest('FSREQPROMISE', stall !== 'temp-create');
       if (stall === 'temp-create') return pending();
@@ -98,7 +99,10 @@ function fixture(stall, { platform = 'darwin', githubActions } = {}) {
       case 'node:fs/promises': return files;
       case 'node:path': return path;
       case 'node:os': return { tmpdir: () => '/synthetic' };
-      case 'playwright': return { _electron: { launch: async () => app } };
+      case 'playwright': return { _electron: { launch: async ({ env }) => {
+        assert.equal(env.OPENBROWSER_DEFER_KERNEL_BOOTSTRAP, '1');
+        return app;
+      } } };
       case 'electron': return '/synthetic/electron-not-executed';
       default: throw Error('Unexpected module in inert fixture: ' + name);
     }
@@ -107,8 +111,8 @@ function fixture(stall, { platform = 'darwin', githubActions } = {}) {
   context = vm.createContext({
     require: stubRequire, module: mod, __dirname, Buffer, performance: { now: () => now },
     process: {
-      argv: ['node', filename, '--sizes', '1', '--rounds', '1', '--output', '/synthetic/report.json'],
-      platform, env: { GITHUB_ACTIONS: githubActions }, version: 'inert', uptime: () => now / 1000, memoryUsage: () => ({ rss: 0 }),
+      argv: ['node', filename, '--sizes', '1', '--rounds', '1', '--output', '/synthetic/report.json', ...(runnerTempFlag ? ['--runner-temp'] : [])],
+      platform, env: { GITHUB_ACTIONS: githubActions, RUNNER_TEMP: runnerTemp }, version: 'inert', uptime: () => now / 1000, memoryUsage: () => ({ rss: 0 }),
       stdout, stderr, exit(code) {
         terminal.push(code);
         for (const hook of hooks) hook.disable();
@@ -219,4 +223,24 @@ test('cleanup success telemetry is absent off macOS CI or when the benchmark lat
   await fail.advance(180000);
   assert.deepEqual(fail.terminal, [2]);
   assert.deepEqual(fail.notices, ['::notice::Workbench benchmark idle limit exceeded: phase=report-write']);
+});
+
+
+test('runner-owned temp bypasses a wedged cleanup after closing Electron and publishes a complete report', async () => {
+  const run = fixture('temp-cleanup', { githubActions: 'true', runnerTemp: '/runner-temp', runnerTempFlag: true });
+  await run.advance(240000);
+  assert.deepEqual(run.terminal, [0]);
+  assert.deepEqual(run.trace, ['temp-create', 'close', 'report-write']);
+  assert.equal(run.reports[0].complete, true);
+});
+
+test('the runner temp option refuses non-CI paths and missing or relative runner directories', async () => {
+  for (const options of [{ runnerTemp: '/runner-temp' }, { githubActions: 'true' },
+    { githubActions: 'true', runnerTemp: 'relative' }]) {
+    const run = fixture('none', { ...options, runnerTempFlag: true });
+    await run.advance(240000);
+    assert.deepEqual(run.trace, []);
+    assert.deepEqual(run.terminal, [1]);
+    assert.match(run.stderrText.join(''), /requires an absolute GitHub Actions RUNNER_TEMP/);
+  }
 });

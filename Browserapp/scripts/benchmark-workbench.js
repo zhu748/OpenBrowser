@@ -14,12 +14,17 @@ const searchPlaceholder = /^搜索 (?:Ctrl|⌘) \+ F$/;
 function options(argv) {
   const result = { sizes: [10, 100, 1000], rounds: 7, budgetMs: 1500 };
   for (let i = 0; i < argv.length; i++) {
-    const flag = argv[i], value = argv[++i];
+    const flag = argv[i];
+    if (flag === '--runner-temp') {
+      result.runnerTemp = true;
+      continue;
+    }
+    const value = argv[++i];
     if (flag === '--sizes' && value) result.sizes = value.split(',').map(Number);
     else if (flag === '--rounds') result.rounds = Number(value);
     else if (flag === '--interaction-budget-ms') result.budgetMs = Number(value);
     else if (flag === '--output' && value) result.output = path.resolve(value);
-    else throw Error('Usage: benchmark-workbench.js [--sizes 10,100,1000] [--rounds 7] [--interaction-budget-ms 1500] [--output file]');
+    else throw Error('Usage: benchmark-workbench.js [--sizes 10,100,1000] [--rounds 7] [--interaction-budget-ms 1500] [--output file] [--runner-temp]');
   }
   if (!result.sizes.length || result.sizes.some(n => !Number.isSafeInteger(n) || n < 1 || n > 5000) ||
       !Number.isSafeInteger(result.rounds) || result.rounds < 1 || result.rounds > 100 ||
@@ -264,8 +269,12 @@ async function measure(page, count, rounds) {
 }
 
 async function benchmark(args, lifecycle) {
+  const tempBase = args.runnerTemp ? process.env.RUNNER_TEMP : os.tmpdir();
+  if (args.runnerTemp && (process.env.GITHUB_ACTIONS !== 'true' || !tempBase || !path.isAbsolute(tempBase))) {
+    throw Error('--runner-temp requires an absolute GitHub Actions RUNNER_TEMP directory');
+  }
   enterPhase(lifecycle, 'temp-create');
-  const root = await observeFsWait(lifecycle, () => fs.mkdtemp(path.join(os.tmpdir(), 'ob-workbench-benchmark-')));
+  const root = await observeFsWait(lifecycle, () => fs.mkdtemp(path.join(tempBase, 'ob-workbench-benchmark-')));
   const errors = [], reports = [];
   let app, page;
   try {
@@ -287,7 +296,8 @@ async function benchmark(args, lifecycle) {
         path.resolve(__dirname, '..'),
       ],
       env: { ...process.env, OPENBROWSER_ROXY_UI: '1', OPENBROWSER_USER_DATA: root, OPENBROWSER_API_PORT: '0',
-        OPENBROWSER_MASTER_KEY_FILE: path.join(root, 'master.key') }, timeout: 30000 });
+        OPENBROWSER_MASTER_KEY_FILE: path.join(root, 'master.key'),
+        OPENBROWSER_DEFER_KERNEL_BOOTSTRAP: '1' }, timeout: 30000 });
     lifecycle.app = app;
     markProgress('first window');
     page = await app.firstWindow({ timeout: 30000 });
@@ -350,8 +360,12 @@ async function benchmark(args, lifecycle) {
         lifecycle.app = undefined;
       }
     } finally {
-      enterPhase(lifecycle, 'temp-cleanup');
-      await observeFsWait(lifecycle, () => fs.rm(root, { recursive: true, force: true, maxRetries: 3 }));
+      // GitHub Actions owns cleanup of RUNNER_TEMP. The fixture holds only
+      // synthetic data and each attempt gets a fresh directory.
+      if (!args.runnerTemp) {
+        enterPhase(lifecycle, 'temp-cleanup');
+        await observeFsWait(lifecycle, () => fs.rm(root, { recursive: true, force: true, maxRetries: 3 }));
+      }
     }
   }
 }

@@ -100,8 +100,8 @@ test('macOS retries exactly once and propagates any retry failure', () => {
   const blocked = run('macOS', 'always');
   const firstRun = upToFailure('macOS');
   assert.equal(blocked.code, 23);
-  assert.deepEqual(blocked.calls, [...firstRun, ...firstRun]);
-  assert.equal(blocked.output.match(/retrying once/g)?.length, 1);
+  assert.deepEqual(blocked.calls, [...firstRun, shared[0]]);
+  assert.equal(blocked.output.match(/RETRY Maintenance/g)?.length, 1);
   assert.deepEqual(blocked.output.match(/^::(?:error|warning)::Desktop gate failed: .*$/gm), [
     '::warning::Desktop gate failed: Maintenance (exit 23)',
     '::error::Desktop gate failed: Maintenance (exit 23)',
@@ -109,7 +109,7 @@ test('macOS retries exactly once and propagates any retry failure', () => {
   const recovered = run('macOS', 'once');
   assert.equal(recovered.code, 0);
   assert.doesNotMatch(recovered.output, /^::error::/m);
-  assert.deepEqual(recovered.calls, [...firstRun, ...expected('macOS')]);
+  assert.deepEqual(recovered.calls, [...firstRun, ...expected('macOS').slice(firstRun.length - 1)]);
 });
 
 test('an all-pass workflow keeps the original command order and platform branches', () => {
@@ -187,8 +187,9 @@ function workbenchAttempt(runtime, mode, attemptOnly = false) {
       assert.ok(pid > 0);
       assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' }, 'the attempt must reap its own timer');
     }
-    const benchmark = 'scripts/benchmark-workbench.js --sizes 10,100,1000 --interaction-budget-ms 1500 --output ../work/workbench-performance/report.json';
-    assert.ok(calls.every(call => call === benchmark), 'benchmark command and settings must stay unchanged');
+    const benchmark = 'scripts/benchmark-workbench.js --sizes 10,100,1000 --interaction-budget-ms 1500 --runner-temp';
+    assert.deepEqual(calls, calls.map((_, i) => benchmark + ` --output ../work/workbench-performance/attempt-${i + 1}/report.json`),
+      'each attempt keeps its own report and uses the runner temp directory');
     return { status: result.status, calls: calls.length, output: result.stdout + result.stderr };
   } finally {
     // Reclaim any owned stub timers if an assertion catches a regression.
@@ -233,10 +234,10 @@ test('workbench attempts preserve ordinary failure and watchdog timeout statuses
   }
 });
 
-test('workbench CI retries two times on macOS and only runs once on Linux and Windows', () => {
-  for (const [os, runs] of [['Linux', 1], ['Windows', 1], ['macOS', 3]]) {
+test('workbench CI retries once on macOS and preserves the failure code', () => {
+  for (const [os, runs] of [['Linux', 1], ['Windows', 1], ['macOS', 2]]) {
     const result = workbenchAttempt(os, 'failure');
-    assert.equal(result.status, 1, result.output);
+    assert.equal(result.status, 23, result.output);
     assert.equal(result.calls, runs, os);
     assert.equal(result.output.match(/::warning::workbench benchmark failed/g)?.length ?? 0, runs - 1, os);
     assertAttemptLog(result, Array.from({ length: runs }, () => ['child-exit', 23]));
