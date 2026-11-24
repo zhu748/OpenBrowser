@@ -880,8 +880,8 @@ function normalizeSyncSettings(value = {}) {
   return result;
 }
 let syncSettings = (() => { try { return normalizeSyncSettings(JSON.parse(localStorage.getItem(SYNC_SETTINGS_KEY) || '{}')); } catch (_) { return { ...DEFAULT_SYNC_SETTINGS }; } })();
-let pendingDeleteProfiles = [];
-let pendingTrashSelection = null;
+let pendingProfileDelete = null;
+let profileDeleteRevision = 0;
 let editingProfileId = null;
 // Engine revision captured when the editor opened; the submit path sends it as
 // the command's baseRev (profiles:apply-commands) so the engine can reject a
@@ -1843,6 +1843,7 @@ function switchView(view) {
   if (view !== 'profile-editor') { openProfileEditor.cancel?.(); resetEditorAsyncRequests(); }
   try {
     const currentActive = document.querySelector('.view.active')?.id?.replace(/^view-/, '');
+    if (currentActive === 'profiles' && view !== 'profiles') cancelPendingProfileDelete();
     if (currentActive) {
       viewScrollPositions.set(currentActive, window.scrollY || document.documentElement.scrollTop || 0);
     }
@@ -1975,8 +1976,12 @@ function renderGroupFilterChips(summary = rebuildGroupCounts()) {
 
 function updateProfileSelectionUi() {
   if (selectedProfiles.size) {
-    const currentIds = profileListCache.ids(ui.profiles);
+    // A favorite or running row can leave the scope without a navigation.
+    // Filter the whole view here, not just the visible page.
+    const currentIds = profileListCache.ids(filteredProfilesForCurrentView());
+    const previous = selectedProfiles.size;
     for (const id of selectedProfiles) if (!currentIds.has(id)) selectedProfiles.delete(id);
+    if (selectedProfiles.size !== previous) cancelPendingProfileDelete();
   }
   const count = selectedProfiles.size;
   const bar = $('#profile-selection-bar');
@@ -2218,9 +2223,10 @@ function renderListTabs(counts = rebuildGroupCounts()) {
   });
 }
 function switchListTab(tab) {
+  const group = tab === 'trash' ? 'trash' : activeGroupFilter === 'trash' ? 'all' : activeGroupFilter;
+  if (tab !== activeListTab || group !== activeGroupFilter) invalidateProfileSelectionScope();
   activeListTab = tab;
-  if (tab === 'trash') { if (activeGroupFilter !== 'trash') { activeGroupFilter = 'trash'; } }
-  else if (activeGroupFilter === 'trash') { activeGroupFilter = 'all'; }
+  activeGroupFilter = group;
   const trfPanel = document.getElementById('profile-transfer-panel');
   const mainTableCard = document.querySelector('#view-profiles > .table-card');
   const mainPagination = document.getElementById('profile-pagination');
@@ -2665,7 +2671,9 @@ function advancedFilterIsEmpty(state) {
   return !state || (!ADV_FIELDS.some((field) => String(state[field] || '').trim()) && !state.status && !state.fav);
 }
 function applyAdvancedFilter(state) {
-  advancedFilterState = advancedFilterIsEmpty(state) ? null : state;
+  const filter = advancedFilterIsEmpty(state) ? null : state;
+  if (JSON.stringify(filter) !== JSON.stringify(advancedFilterState)) invalidateProfileSelectionScope();
+  advancedFilterState = filter;
   $('#adv-filter-btn')?.classList.toggle('active', Boolean(advancedFilterState));
   profilePage = 1;
   renderProfiles();
@@ -2870,6 +2878,10 @@ function buildProfileRow(profile) {
       openBtn.disabled = true;
       openBtn.classList.add('is-starting');
       openBtn.title = startProgressLabel(startingProfiles.get(profile.id));
+    } else if (info.running) {
+      const { detail } = window.OpenBrowserProfileRows.profileLaunchDetails(info, tx);
+      openBtn.title = detail;
+      openBtn.setAttribute('aria-description', detail);
     }
     actions.append(openBtn);
   }
@@ -2975,7 +2987,7 @@ function renderProfiles() {
   const toolbarLeftButtons = ['#create-profile', '#batch-add', '#batch-import', '#renumber-profiles', '#batch-export', '#test-all-proxies'];
   for (const sel of toolbarLeftButtons) {
     const el = $(sel);
-    if (el) el.hidden = inTrash;
+    if (el) el.hidden = inTrash || (sel === '#batch-export' && activeListTab === 'transfer');
   }
   const empty = $('#profile-empty');
   const hasProfiles = ui.profiles.length > 0;
@@ -3074,6 +3086,8 @@ function scheduleRenderProfiles() {
 }
 let __profileSearchTimer = 0;
 function scheduleProfileSearchRender() {
+  // Invalidate the old scope now, before the debounced paint.
+  invalidateProfileSelectionScope();
   clearTimeout(__profileSearchTimer);
   __profileSearchTimer = setTimeout(() => {
     __profileSearchTimer = 0;
@@ -3230,11 +3244,13 @@ async function startProfile(id) {
   scheduleRenderProfiles();
   try {
     const result = await window.ops.startProfile(payload);
+    if (!result?.running) throw new Error(tx('未确认窗口已打开'));
     profile.lastOpenedAt = new Date().toISOString();
     save();
     setStartingProgress(id, { phase: 'ready', percent: 100, message: t('status.startPhase.ready') });
-    log('Browser', `${displayProfileNumber(profile)} 已启动 · ${result.browser} · CDP ${result.port || 'pending'}`);
-    toast(tx(`${displayProfileNumber(profile)} 已启动`));
+    const { summary, detail } = window.OpenBrowserProfileRows.profileLaunchDetails(result, tx);
+    log('Browser', `${displayProfileNumber(profile)} · ${result.browser}\n${detail}`);
+    toast(`${displayProfileNumber(profile)} · ${summary}`);
     invalidateViewCache(['sync', 'profiles']);
     scheduleStatusRefresh();
     scheduleSessionRefresh();
@@ -3716,6 +3732,7 @@ $('#profile-search').addEventListener('input', scheduleProfileSearchRender);
 $('#profile-search').addEventListener('keydown', (event) => {
   if (event.key !== 'Escape' || !event.target.value) return;
   event.preventDefault();
+  invalidateProfileSelectionScope();
   clearTimeout(__profileSearchTimer);
   event.target.value = '';
   profilePage = 1;
@@ -3723,6 +3740,7 @@ $('#profile-search').addEventListener('keydown', (event) => {
 });
 $('#profile-clear-filters').addEventListener('click', () => {
   clearTimeout(__profileSearchTimer);
+  if ($('#profile-search').value || activeGroupFilter !== 'all') invalidateProfileSelectionScope();
   $('#profile-search').value = '';
   activeGroupFilter = 'all';
   profilePage = 1;
@@ -3750,12 +3768,30 @@ $('#create-profile').addEventListener('click', () => {
 $('#quick-create').addEventListener('click', openCreateProfileDialog);
 
 // group filter chips
-let profileGroupFilterRevision = 0;
-function setProfileGroupFilter(groupId) {
-  profileGroupFilterRevision++;
-  activeGroupFilter = groupId || 'all';
+function cancelPendingProfileDelete() {
+  profileDeleteRevision++;
+  pendingProfileDelete = null;
+  const dialog = $('#batch-delete-dialog');
+  if (dialog?.open) dialog.close();
+}
+function invalidateProfileSelectionScope() {
+  cancelPendingProfileDelete();
   selectedProfiles.clear();
+}
+function profileDeleteTargetsCurrent(ids) {
+  const inScope = profileListCache.ids(filteredProfilesForCurrentView());
+  return ids.every(id => selectedProfiles.has(id) && inScope.has(id));
+}
+function setProfileGroupFilter(groupId) {
+  const group = groupId || 'all';
+  if (group !== activeGroupFilter) invalidateProfileSelectionScope();
+  activeGroupFilter = group;
   profilePage = 1;
+}
+function showGroupProfiles(groupId) {
+  if (groupId !== activeGroupFilter) setProfileGroupFilter(groupId);
+  switchView('profiles');
+  renderProfiles();
 }
 document.getElementById('profile-group-chips')?.addEventListener('click', (event) => {
   const btn = event.target.closest('[data-group-filter]');
@@ -3773,11 +3809,7 @@ document.getElementById('group-table')?.addEventListener('click', (event) => {
   const viewId = event.target.closest('[data-group-view]')?.dataset.groupView;
   if (editId) openGroupDialog(findGroup(editId));
   if (delId) deleteGroup(delId);
-  if (viewId) {
-    if (viewId !== activeGroupFilter) setProfileGroupFilter(viewId);
-    switchView('profiles');
-    renderProfiles();
-  }
+  if (viewId) showGroupProfiles(viewId);
 });
 document.getElementById('group-color-chips')?.addEventListener('click', (event) => {
   const btn = event.target.closest('[data-color]');
@@ -4287,11 +4319,11 @@ $('#batch-add-form').addEventListener('submit', async (event) => {
   } finally { if (submitter) submitter.disabled = false; }
 });
 $('#delete-selected').addEventListener('click', async () => {
-  const revision = profileGroupFilterRevision;
-  const selected = ui.profiles.filter((item) => selectedProfiles.has(item.id));
+  const revision = ++profileDeleteRevision;
+  pendingProfileDelete = null;
+  const selected = filteredProfilesForCurrentView().filter((item) => selectedProfiles.has(item.id));
   const ids = selected.map((item) => item.id);
   if (!ids.length) {
-    pendingDeleteProfiles = [];
     return toast(tx('请先勾选要删除的环境'));
   }
   const inTrash = activeGroupFilter === 'trash';
@@ -4299,7 +4331,7 @@ $('#delete-selected').addEventListener('click', async () => {
   try {
     const status = await window.ops.profileStatus();
     // Until the dialog opens, navigation can invalidate this pending selection.
-    if (revision !== profileGroupFilterRevision) return;
+    if (revision !== profileDeleteRevision || !profileDeleteTargetsCurrent(ids)) return;
     const pendingIds = new Set(ids);
     const running = status.filter((item) => item.running && pendingIds.has(item.id)).length;
     if (inTrash) {
@@ -4315,21 +4347,25 @@ $('#delete-selected').addEventListener('click', async () => {
       $('#batch-delete-data-label').hidden = false;
       $('#batch-delete-confirm').textContent = t('profiles.batchDelete');
     }
-    pendingDeleteProfiles = ids;
-    pendingTrashSelection = trashSelection;
+    pendingProfileDelete = { ids, trashSelection };
     $('#batch-delete-dialog').showModal();
-  } catch (error) { if (revision === profileGroupFilterRevision) toast(error.message); }
+  } catch (error) { if (revision === profileDeleteRevision) toast(error.message); }
 });
 
+$('#batch-delete-dialog').addEventListener('cancel', cancelPendingProfileDelete);
 $('#batch-delete-form').addEventListener('submit', async (event) => {
-  event.preventDefault(); if (event.submitter?.value === 'cancel') { pendingDeleteProfiles = []; pendingTrashSelection = null; return $('#batch-delete-dialog').close(); }
-  const ids = [...pendingDeleteProfiles]; if (!ids.length) return $('#batch-delete-dialog').close();
+  event.preventDefault();
+  if (event.submitter?.value === 'cancel') return cancelPendingProfileDelete();
+  const pending = pendingProfileDelete;
+  if (!pending) return $('#batch-delete-dialog').close();
+  const { ids, trashSelection } = pending;
+  if (!profileDeleteTargetsCurrent(ids)) return cancelPendingProfileDelete();
   const submitter = event.submitter; if (submitter) submitter.disabled = true;
-  const inTrash = pendingTrashSelection !== null;
+  const inTrash = trashSelection !== null;
   try {
     const deleteData = inTrash ? true : $('#batch-delete-data').checked;
     const result = inTrash
-      ? await window.ops.purgeTrashedProfiles(pendingTrashSelection)
+      ? await window.ops.purgeTrashedProfiles(trashSelection)
       : (deleteData
           ? await window.ops.purgeProfiles(ids, true)
           : await window.ops.trashProfiles(ids));
@@ -4340,7 +4376,8 @@ $('#batch-delete-form').addEventListener('submit', async (event) => {
     }
     for (const id of ids) { selectedProfiles.delete(id); selectedSessions.delete(id); }
     if (!ui.profiles.length) ui.nextProfileNumber = 1;
-    pendingDeleteProfiles = []; pendingTrashSelection = null; save(); $('#select-all-profiles').checked = false; $('#batch-delete-dialog').close();
+    if (pending === pendingProfileDelete) cancelPendingProfileDelete();
+    save(); $('#select-all-profiles').checked = false;
     invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies']);
     await refreshStatus(); await refreshSessions(); await refreshExtensions();
     engineProfiles = await readUiProfiles();
@@ -5110,7 +5147,10 @@ function sanitizeProfileForExport(profile) {
   };
 }
 $('#batch-export')?.addEventListener('click', () => {
-  const source = selectedProfiles.size ? ui.profiles.filter((p) => selectedProfiles.has(p.id)) : ui.profiles.filter((p) => !p.trashed);
+  // Export the entire filtered list (not just its current page). An empty
+  // result or an entirely stale selection must not widen the export scope.
+  const filtered = activeListTab === 'transfer' ? [] : filteredProfilesForCurrentView();
+  const source = selectedProfiles.size ? filtered.filter((profile) => selectedProfiles.has(profile.id)) : filtered;
   const items = source.map(sanitizeProfileForExport);
   if (!items.length) return toast(t('profiles.exportNone'));
   const blob = new Blob([JSON.stringify(items, null, 2)], { type: 'application/json' });

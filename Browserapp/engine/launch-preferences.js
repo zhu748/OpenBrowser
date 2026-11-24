@@ -3,8 +3,47 @@
 // Profile-file preparation. Browser process and lock ownership stay in the launch pipeline.
 const fsp = require("node:fs/promises");
 const path = require("node:path");
+const { assertSafeProfileChild } = require("../automation/isolation");
 const { writeRawAtomically } = require("./state-storage");
 const { buildFirefoxUserJs } = require("../automation/kernel-versions");
+
+// A missing file is normal on first launch. A locked or malformed existing
+// file is not an empty profile: never replace it with generated defaults.
+function chromiumPreferencesPath(root) {
+  return assertSafeProfileChild(root, path.join(root, "Default", "Preferences"));
+}
+
+async function readChromiumLaunchPreferences(root, { allowMissing = true } = {}) {
+  // Validation errors must never be handled as an absent Preferences file.
+  const file = await chromiumPreferencesPath(root);
+  let raw;
+  try {
+    raw = await fsp.readFile(file);
+  } catch (error) {
+    if (allowMissing && error.code === "ENOENT") return {};
+    throw error;
+  }
+  let prefs;
+  try { prefs = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(raw)); } catch {
+    throw Object.assign(new Error("Preferences 不是有效的 UTF-8 JSON，原文件已保留。"), {
+      code: "PROFILE_PREFERENCES_INVALID",
+    });
+  }
+  if (!prefs || typeof prefs !== "object" || Array.isArray(prefs)) {
+    throw Object.assign(new Error("Preferences 必须是 JSON 对象，原文件已保留。"), {
+      code: "PROFILE_PREFERENCES_INVALID",
+    });
+  }
+  return prefs;
+}
+
+function reportPreferencesReadError(engine, profileId, error) {
+  engine.emit?.({
+    type: "profile-file-sync-error", id: profileId, key: "preferences",
+    code: error.code || "PROFILE_PREFERENCES_UNREADABLE", message: error.message,
+    issues: [{ key: "profile.preferences", expected: "readable JSON object", actual: error.code || error.message }],
+  });
+}
 
 async function writeFirefoxLaunchPreferences(root, config, options) {
   const extraPrefs = new Map(config.extraPrefs || []);
@@ -66,15 +105,9 @@ const SEARCH_ENGINE_TEMPLATES = {
 };
 
 async function applyDefaultSearchEngine(root, engine) {
-  const template = SEARCH_ENGINE_TEMPLATES[String(engine || "")];
-  if (!template) return false;
-  const prefsPath = path.join(root, "Default", "Preferences");
-  let prefs = {};
-  try {
-    prefs = JSON.parse(await fsp.readFile(prefsPath, "utf8"));
-  } catch (_) {
-    prefs = {};
-  }
+  if (!Object.hasOwn(SEARCH_ENGINE_TEMPLATES, engine)) return false;
+  const template = SEARCH_ENGINE_TEMPLATES[engine];
+  const prefs = await readChromiumLaunchPreferences(root);
   prefs.default_search_provider_data =
     prefs.default_search_provider_data &&
     typeof prefs.default_search_provider_data === "object"
@@ -94,8 +127,8 @@ async function applyDefaultSearchEngine(root, engine) {
     sync_guid: "openbrowser-" + String(engine),
     alternate_urls: [],
   };
+  const prefsPath = await chromiumPreferencesPath(root);
   try {
-    await fsp.mkdir(path.dirname(prefsPath), { recursive: true });
     // Atomic write (temp + rename): a partial Preferences file would be read by
     // the kernel as a corrupt profile on the very next launch.
     await writeRawAtomically(prefsPath, JSON.stringify(prefs));
@@ -112,14 +145,12 @@ const CHROMIUM_LAUNCH_DATA_TARGETS = {
     "Default/Cookies",
     "Default/Cookies-journal",
   ],
-  localStorage: [
-    "Default/Local Storage/leveldb",
-    "Default/Session Storage",
-    "Default/IndexedDB",
-  ],
+  localStorage: ["Default/Local Storage"],
   history: [
     "Default/History",
     "Default/History-journal",
+    "Default/History-wal",
+    "Default/History-shm",
     "Default/History Provider Cache",
     "Default/Visited Links",
   ],
@@ -136,11 +167,13 @@ function clearProfileLaunchData(root, profile) {
 async function clearLaunchDataTargets(root, advanced, targets) {
   const switches = advanced && typeof advanced === "object" ? advanced : {};
   const rm = async (relative) => {
+    const target = await assertSafeProfileChild(root, path.join(root, relative));
     try {
-      await fsp.rm(path.join(root, relative), { recursive: true, force: true });
+      await fsp.rm(target, { recursive: true });
       return true;
-    } catch (_) {
-      return false;
+    } catch (error) {
+      if (error.code === "ENOENT") return false;
+      throw error;
     }
   };
   const removed = [];
@@ -163,6 +196,9 @@ async function clearLaunchDataTargets(root, advanced, targets) {
 }
 
 module.exports = {
+  chromiumPreferencesPath,
+  readChromiumLaunchPreferences,
+  reportPreferencesReadError,
   writeFirefoxLaunchPreferences,
   applyDefaultSearchEngine,
   clearProfileLaunchData,

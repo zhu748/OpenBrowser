@@ -21,6 +21,7 @@ const { prepareLaunchProfile, createStartupResources, reportPlatformPreflight } 
 const { writeFirefoxLaunchPreferences } = require('./launch-preferences');
 const { ensureLegacyFingerprintSeed } = require('./launch-profile');
 const { profileWriteGuard } = require('./profile-write-guard');
+const { captureProfileLaunchRevision } = require('./profile-lifecycle');
 const { attachBrowserExitHandlers } = require('./browser-exit');
 const { normalizeNetworkConditions, resolveDoNotTrackMode } = require('../shared/profile-values');
 const { resolveFingerprintGeolocation } = require('../automation/fingerprint/geolocation-policy');
@@ -47,22 +48,14 @@ function collectAcceptLanguages(fingerprint, profile) {
     || formatAcceptLanguage(profile?.language) || 'en-US';
 }
 
-const { FIREFOX_COOKIES, FIREFOX_PASSWORDS,
-  removeBrowserFiles, clearFirefoxPlaces, clearFirefoxLocalStorage, clearBrowserCache } = require('../automation/browser-data');
-
-async function enforceDataRetentionFirefox(root, profile) {
-  const a = profile?.advanced || {};
-  if (a.saveCookies === false) await removeBrowserFiles(root, FIREFOX_COOKIES);
-  if (a.savePasswords === false) await removeBrowserFiles(root, FIREFOX_PASSWORDS);
-  await clearFirefoxPlaces(root, { history: a.saveHistory === false, bookmarks: a.saveBookmarks === false });
-  if (a.saveLocalStorage === false) await clearFirefoxLocalStorage(root);
-}
+const { FIREFOX_COOKIES, enforceDataRetentionFirefox,
+  removeBrowserFiles, clearFirefoxPlaces, clearFirefoxSiteStorage, clearBrowserCache } = require('../automation/browser-data');
 
 async function clearFirefoxProfileLaunchData(root, profile) {
   const a = profile?.advanced || {};
   const cleared = [];
   if (a.clearCookiesOnStart) { await removeBrowserFiles(root, FIREFOX_COOKIES); cleared.push('cookies'); }
-  if (a.clearLocalStorageOnStart) { await clearFirefoxLocalStorage(root); cleared.push('localStorage'); }
+  if (a.clearLocalStorageOnStart) { await clearFirefoxSiteStorage(root, { localStorage: true }); cleared.push('localStorage'); }
   if (a.clearHistoryOnStart) { await clearFirefoxPlaces(root, { history: true }); cleared.push('history'); }
   if (a.clearCacheOnStart) await clearBrowserCache(root, { engine: 'firefox' });
   return cleared;
@@ -172,7 +165,7 @@ module.exports = {
       // The global bootstrap downloads Chrome. Firefox must use a downloaded
       // Firefox tree and report a missing selection directly.
       this.assertStartGenerationActive(profile.id, lifecycleGeneration);
-      browser = this.chooseBrowser(profile, 'firefox');
+      browser = this.chooseBrowser(profile, 'firefox', lifecycleGeneration);
       root = this.profileRoot(profile.id);
       startupResources.root = root;
       const rootCheck = await validateProfileRootSecure(this.profileDataRootPath, root, profile.id, { create: true });
@@ -318,6 +311,7 @@ module.exports = {
       const spawnEnv = { ...process.env };
       if (fingerprint.timezone && process.platform !== 'win32') spawnEnv.TZ = fingerprint.timezone;
       assertLaunchProfileCurrent();
+      const launchProfileSnapshot = captureProfileLaunchRevision(this, profile);
       const child = spawn(browser.path, args, {
         detached: process.platform !== 'win32',
         windowsHide: headless,
@@ -403,6 +397,7 @@ module.exports = {
         nativeKernelFingerprint: false,
         childExitState,
         lifecycleGeneration,
+        launchProfileSnapshot,
         cleanupState: 'active',
         cleanupAttempts: 0,
         cleanedUp: false,
@@ -454,7 +449,7 @@ module.exports = {
       item.fingerprintWarnings = delivered.warnings;
       currentStage = 'verify'; this.emitStartProgress(profile.id, 'verify', 94, 'Firefox 页面指纹校验完成', lifecycleGeneration);
       await navigateFirefoxStartup(connection, delivered.context, [startUrl, ...extraStartUrls], {
-        onNavigationError: error => reportStartupNavigationError(this, profile.id, error),
+        onNavigationError: error => reportStartupNavigationError(this, profile.id, error, lifecycleGeneration),
       });
       this.assertStartGenerationActive(profile.id, lifecycleGeneration);
       if (this.running.get(profile.id) !== item || item.cleanedUp || item.stopping || item.childExitState?.exited || item.childExitState?.error) {

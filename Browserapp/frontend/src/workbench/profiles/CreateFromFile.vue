@@ -10,6 +10,7 @@ import { n as ProfileForm } from './useAsyncGate-D7VA7DLY.js';
 import { r as Fingerprint, t as createAccordions } from './createDefaultAccordions-CO1KkbkO.js';
 import { t as ProfileMetadata } from './mate-group-CBm6kY0g.js';
 import ProfileImportFile from './workbench-profile-import-file.js';
+import { requireFingerprintPreviewRows } from './workbench-fingerprint-draft.js';
 
 const props = defineProps({ shared: { type: Object, required: true } });
 const { collapsed, inputsGroup, previewInputs, isBatch, createCount, shuffleFingerprint, choosePreset, metaData,
@@ -84,10 +85,8 @@ async function fingerprintRows(rows, params) {
     for (let offset = 0; offset < indices.length; offset += previewLimit) {
       const batch = indices.slice(offset, offset + previewLimit);
       const generated = await globalThis.electronAPI.send('util:genRandomFingerprint', selection, batch.length);
-      if (!Array.isArray(generated) || generated.length !== batch.length ||
-          generated.some(row => !row?.userAgent || !row._fingerprintDraft))
-        throw Error($t('指纹预览未返回完整身份，请重试'));
-      batch.forEach((index, position) => { fingerprints[index] = generated[position]; });
+      const previews = requireFingerprintPreviewRows(generated, batch.length);
+      batch.forEach((index, position) => { fingerprints[index] = previews[position]; });
     }
   }));
   return fingerprints.map(fingerprint => ({

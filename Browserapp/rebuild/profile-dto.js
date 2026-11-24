@@ -263,13 +263,14 @@ function fromRoxy(v, base = {}) {
   for (const [source, target] of Object.entries({
     blockDomainList: "blockUrls",
     allowDomainList: "allowUrls",
-    sessionStorages: "sessionStorages",
     syncBookmark: "uploadBookmarks",
   }))
     if (Object.hasOwn(v, source))
       mapped.advanced[target] = Array.isArray(v[source])
         ? v[source].join("\n")
         : v[source];
+  // Session filters are JSON, not newline-joined domain strings.
+  if (Object.hasOwn(v, 'sessionStorages')) mapped.advanced.sessionStorages = v.sessionStorages;
   if (v.timeZone)
     mapped.privacy.timezone = String(v.timeZone).trim().split(/\s+/).at(-1);
   if (Array.isArray(v.defaultOpenUrl)) {
@@ -383,6 +384,7 @@ function toRoxy(p) {
       : [],
     coreType: p.engine === "firefox" ? "Firefox" : "Chrome",
     coreVersion: p.engineVersion || "",
+    useLatestCore: p.engineVersion === "latest",
     disableSsl: !!p.privacy?.fingerprint?.sslBlacklist,
     disableSslList: (p.privacy?.fingerprint?.sslBlacklist || "")
       .split(",")

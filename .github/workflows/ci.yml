@@ -72,7 +72,11 @@ jobs:
       - name: Install Linux desktop validation tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y desktop-file-utils
+          sudo apt-get install -y desktop-file-utils nsis p7zip-full
+      - name: Desktop host and installer payload regressions (inspect inert fixtures; never run one)
+        env:
+          OPENBROWSER_TEST_MAKENSIS: '1'
+        run: node --test scripts/installer-verification.test.js scripts/host-packaging.test.js
       - name: Kernel fetch tooling selftest
         run: node scripts/fetch-kernels.js --selftest
       # Aggregate gate: scripts/selftest-all.js runs every dependency-free
@@ -116,7 +120,10 @@ jobs:
       # Windows-only code paths (path handling, drive letters, updater) get a
       # small per-push signal; the full smoke matrix stays on ubuntu for cost.
       - name: Windows-relevant selftests
+        shell: bash
         run: |
+          set -euo pipefail
+          node --test scripts/installer-verification.test.js scripts/host-packaging.test.js
           npm run selftest:hardening
           npm run selftest:port
           npm run selftest:version
@@ -309,7 +316,11 @@ jobs:
       # Agent scheduling uses cron-parser. Install runtime dependencies without
       # Electron or browser binaries; desktop/browser E2E has a separate gate.
       - name: Storage, runtime, update and input regressions
+        # Git Bash is available on Windows. Do not allow a later native
+        # command's success to mask an earlier failure under PowerShell.
+        shell: bash
         run: |
+          set -euo pipefail
           node scripts/selftest-one.js reviewstorage
           node scripts/selftest-one.js reviewruntime
           node scripts/selftest-one.js reviewupdate

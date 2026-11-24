@@ -39,7 +39,7 @@ function registerAutomationControlIpc({ registerTrustedIpc, getAutomation, getMa
   });
   register('automation:rpa-delete-plan', ({ automation }, _event, id) => {
     if (!automation) throw new Error('Automation stack is not ready');
-    return automation.rpaStore.deletePlan(String(id || ''));
+    return automation.rpaStore.deletePlan(String(id || ''), (taskId) => automation.rpaEngine?.isTaskActive?.(taskId));
   });
   register('automation:rpa-run', async ({ automation }, _event, payload) => {
     if (!automation) throw new Error('Automation stack is not ready');
@@ -50,12 +50,12 @@ function registerAutomationControlIpc({ registerTrustedIpc, getAutomation, getMa
       if (unsupported.length) {
         throw new Error('Invalid RPA steps: ' + unsupported.slice(0, 4).map((item) => `${item.path.join('.')}: ${item.type}`).join(', '));
       }
-      const task = await automation.rpaStore.createTask({
+      const { completion } = await automation.rpaEngine.submitTask({
         profile_id: String(payload.profile_id || ''),
         process_name: String(payload.name || 'ipc-rpa'),
         steps: payload.steps,
-      });
-      return automation.rpaEngine.runTask(task.id, payload);
+      }, payload);
+      return completion;
     }
     throw new Error('plan_id, task_id or steps required');
   });

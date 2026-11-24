@@ -15,10 +15,26 @@ const $$ = window.$$ || ((s, root = document) => [...root.querySelectorAll(s)]);
 const app = window.OpenBrowserApp || window;
 const ui = app.ui || { profiles: [] };
 
+function reportDataWarnings(skippedFileCount, skippedFiles, title) {
+  if (!skippedFileCount) return;
+  const reasons = new Set(Array.isArray(skippedFiles) ? skippedFiles.map((item) => item?.reason) : []);
+  let hint = '';
+  if (['firefox-places-history-only-unsupported', 'firefox-places-bookmarks-only-unsupported', 'firefox-places-not-selected'].some((reason) => reasons.has(reason)))
+    hint = tx('Firefox 的历史记录与书签必须一起同步');
+  else if (reasons.has('empty-history-database') || reasons.has('invalid-history-database'))
+    hint = tx('Chromium 历史记录数据库为空或不完整');
+  else if (reasons.has('session-storage-domain-key-filter-unsupported') || reasons.has('session-storage-tab-restore-unsupported'))
+    hint = tx('磁盘备份无法恢复标签页的 Session Storage');
+  toast([tx(title), skippedFileCount, hint].filter(Boolean).join(' · '));
+  log('Cloud', JSON.stringify({ skippedFileCount, skippedFiles }));
+}
+
 function reportBackupWarnings(meta) {
-  if (!meta?.skippedFileCount) return;
-  toast(tx('部分文件未备份') + ' · ' + meta.skippedFileCount);
-  log('Cloud', JSON.stringify({ skippedFileCount: meta.skippedFileCount, skippedFiles: meta.skippedFiles }));
+  reportDataWarnings(meta?.skippedFileCount, meta?.skippedFiles, '部分数据未备份');
+}
+
+function reportRestoreWarnings(result) {
+  reportDataWarnings(result?.skippedFileCount, result?.backupWarnings, '部分数据未恢复');
 }
 
 // ---------- Cloud backup UI (本地设置) ----------
@@ -293,6 +309,7 @@ async function pullProfilesFromCloud(ids) {
   request.publish(result.cloud || cloud);
   const detail = formatMergeStats(result.mergeStats);
   toast(tx('拉取完成') + (detail ? tx(' · ') + detail : ''));
+  reportRestoreWarnings(result);
   log('Cloud', '单环境拉取 · ' + list.join(',') + (detail ? ' · ' + detail : ''));
   return result;
 }
@@ -380,6 +397,7 @@ $('#cloud-restore-now')?.addEventListener('click', (event) => withCloudGuard(eve
     await refreshCloudPanel(request);
     const detail = formatMergeStats(result.mergeStats);
     toast(tx('恢复完成 · ') + (result.profiles?.length || 0) + tx(' 个环境') + (detail ? tx(' · ') + detail : ''));
+    reportRestoreWarnings(result);
     log('Cloud', '恢复 · ' + mode + ' · ' + (result.profiles?.length || 0) + (detail ? ' · ' + detail : ''));
   } catch (error) { toast('恢复失败：' + error.message); }
 }));
@@ -416,6 +434,7 @@ $('#cloud-import-file')?.addEventListener('click', (event) => withCloudGuard(eve
     applyRestoredProfiles(result);
     const detail = formatMergeStats(result.mergeStats);
     toast(tx('导入完成 · ') + (result.profiles?.length || 0) + tx(' 个环境') + (detail ? tx(' · ') + detail : ''));
+    reportRestoreWarnings(result);
   } catch (error) { toast('导入失败：' + error.message); }
 }));
 document.getElementById('editor-cloud-push-one')?.addEventListener('click', (event) => withCloudGuard(event.currentTarget, async () => {
@@ -460,6 +479,7 @@ $('#cloud-pull-selected')?.addEventListener('click', (event) => withCloudGuard(e
     applyRestoredProfiles(result);
     await refreshCloudPanel(request);
     toast(tx('恢复完成 · ') + formatMergeStats(result.mergeStats));
+    reportRestoreWarnings(result);
   } catch (error) { toast(error.message); }
 }));
 

@@ -1053,7 +1053,7 @@ app.whenReady().then(async () => {
       const cloud = settingsStore.getLocalSettings()?.cloud || {};
       require('./automation/close-profile-sync').syncClosedProfile(engine, value, {
         cloud, groups: settingsStore.getLocalSettings().uiGroups || [],
-        push: payload => cloudOps.runCloudProfilePush(payload),
+        push: payload => cloudOps.runCloudProfilePush(payload, { automatic: true }),
         onError: error => {
           console.warn('OpenBrowser auto cloud push failed:', error.message);
           emit({ type: 'cloud-sync', action: 'profile-push-error', id: value.profile.id, message: error.message });
@@ -1424,7 +1424,7 @@ function beginQuitCleanup() {
           'Quit auto-backup timed out after 90s; exiting anyway'
         );
       } catch (error) {
-        if (error?.code === 'CLOUD_QUIT_BACKUP_BLOCKED') {
+        if (error?.code === 'CLOUD_QUIT_BACKUP_BLOCKED' || error?.code === 'CLOUD_AUTO_BACKUP_INCOMPLETE') {
           console.warn('OpenBrowser quit auto-backup skipped:', error.message);
           return; // A safety veto must not rewrite settings during recovery.
         }

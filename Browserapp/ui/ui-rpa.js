@@ -289,6 +289,17 @@ async function refreshRpaStatusBadge() {
   } catch (_) {}
 }
 
+function rpaTaskStatusCell(task) {
+  const status = task.status || '—';
+  const warning = task.persistence?.message || (status === 'interrupted' ? task.error : '');
+  const cell = element('td', '', warning ? status + ' ⚠' : status);
+  if (warning) {
+    cell.title = warning;
+    cell.setAttribute('aria-label', status + ' · ' + warning);
+  }
+  return cell;
+}
+
 // preloaded: share one rpaTasks IPC fetch between both tables (the rpa-task
 // event handler used to issue two identical calls per progress event).
 function renderRpaTasks(tasks) {
@@ -370,7 +381,7 @@ function renderRpaTasks(tasks) {
       element('td', '', t.process_name || '—'),
       element('td', '', t.type || '普通'),
       element('td', '', String(t.start_time || t.create_time || '—').replace('T', ' ').slice(0, 19)),
-      element('td', '', t.status || '—'),
+      rpaTaskStatusCell(t),
       tdOp
     );
     table.append(row);
@@ -403,7 +414,7 @@ function renderRpaRuns(tasks) {
       element('td', '', t.process_name || t.id),
       element('td', '', t.process_name || '—'),
       element('td', '', t.profile_id || '—'),
-      element('td', '', t.status || '—'),
+      rpaTaskStatusCell(t),
       element('td', '', String(t.start_time || t.create_time || '—').replace('T', ' ').slice(0, 19)),
       element('td', '', String(t.complete_time || '—').replace('T', ' ').slice(0, 19)),
       element('td', '', '')
@@ -1002,7 +1013,10 @@ document.getElementById('rpa-run')?.addEventListener('click', async () => {
     toast(tx('自动脚本运行中…'));
     const result = await window.ops.rpaRun({ plan_id: plan.id, profile_ids: profileIds });
     appendRpaLog('完成：' + JSON.stringify(result));
-    toast(result.success === false ? tx('自动脚本有失败任务') : tx('自动脚本完成'));
+    const warning = result.results?.find((task) => task.persistence?.message)?.persistence.message;
+    toast(result.success === false
+      ? [tx('自动脚本有失败任务'), warning].filter(Boolean).join(' · ')
+      : warning || tx('自动脚本完成'));
     await refreshRpaStatusBadge();
     await refreshRpaTables();
     log('自动脚本', '运行 ' + plan.plan_name);

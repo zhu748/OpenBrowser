@@ -75,6 +75,14 @@ const SOURCE_CHROME_STABLE = 'chrome-stable';
 const SOURCE_CUSTOM = 'custom';
 /** Mozilla release archive (per-version Firefox kernels). */
 const SOURCE_MOZILLA = 'mozilla';
+const FIREFOX_ESR_VERSION = /^\d+(?:\.\d+){0,3}esr$/;
+const FIREFOX_NUMERIC_VERSION = /^\d+(?:\.\d+){0,3}$/;
+
+function isLegacyFirefoxEsrLabel(esrVersion, label) {
+  return FIREFOX_ESR_VERSION.test(esrVersion) && FIREFOX_NUMERIC_VERSION.test(label)
+    && compareVersions(esrVersion.slice(0, -3), label) === 0;
+}
+
 /** Bundled / userData OpenBrowser 148 independent kernel. Default on macOS x64. */
 const { SOURCE_OPENBROWSER, OPENBROWSER_KERNEL_VERSION } = require('./versions');
 const WAYFERN_ACCEPT_TERMS_ARG = '--accept-terms-and-conditions';
@@ -756,12 +764,26 @@ class BrowserKernelManager {
     if (this.meta.pin && this.meta.pin.path) {
       const pin = this.meta.pin;
       const list = this.listInstalledKernels();
-      const fresh = list.find((k) => k.engine === pin.engine && k.version === pin.version) || null;
-      const trusted = fresh ? fresh.path : safeInstalledBinary(pin.path, this.kernelsRoot);
+      const firefoxRoot = path.join(this.kernelsRoot, 'firefox');
+      const firefoxFolder = pin.engine === 'firefox' && isPathInsideRoot(pin.path, firefoxRoot)
+        ? path.relative(firefoxRoot, pin.path).split(path.sep)[0] : '';
+      // Older pins could save a plain reported version for an ESR download.
+      // Anchor migration to the persisted archive path even if it was removed;
+      // the same-numbered normal release must not take over an old ESR pin.
+      const wanted = isLegacyFirefoxEsrLabel(firefoxFolder, pin.version) ? firefoxFolder : pin.version;
+      const trustedPin = safeInstalledBinary(pin.path, this.kernelsRoot);
+      const recordedFirefox = trustedPin && pin.engine === 'firefox'
+        ? list.find((k) => k.engine === 'firefox' && (process.platform === 'win32'
+          ? k.path.toLowerCase() === trustedPin.toLowerCase() : k.path === trustedPin)) : null;
+      const fresh = recordedFirefox?.version === wanted ? recordedFirefox
+        : list.find((k) => k.engine === pin.engine && k.version === wanted);
+      const trusted = fresh?.path || (recordedFirefox || FIREFOX_ESR_VERSION.test(firefoxFolder) ? null : trustedPin);
       if (trusted && fs.existsSync(trusted)) {
-        return kernelCandidate(pin.source || (pin.engine === 'firefox' ? SOURCE_MOZILLA : SOURCE_CFT), trusted, pin.version, {
-          name: fresh ? fresh.name : (pin.engine === 'firefox' ? `Firefox ${pin.version}` : `Chrome for Testing ${pin.version}`),
+        const version = fresh?.version || wanted;
+        return kernelCandidate(pin.source || (pin.engine === 'firefox' ? SOURCE_MOZILLA : SOURCE_CFT), trusted, version, {
+          name: fresh ? fresh.name : (pin.engine === 'firefox' ? `Firefox ${version}` : `Chrome for Testing ${version}`),
           engine: pin.engine,
+          ...(fresh?.reportedVersion ? { reportedVersion: fresh.reportedVersion } : {}),
         });
       }
     }
@@ -1322,12 +1344,16 @@ class BrowserKernelManager {
 
     this.onProgress({ phase: 'validate', message: `验证 Firefox ${wanted} 兼容性…`, version: wanted, binary });
     const probe = await this.probeFirefoxBinary(binary);
+    const reportedVersion = probe.version || null;
 
     // writeFileAtomic: same torn-write invariant as the Chromium kernel.json.
+    // The checksummed archive's requested release is the selectable identity;
+    // some builds (e.g. via application.ini) report a version without the channel.
     await writeFileAtomic(path.join(work, 'kernel.json'), JSON.stringify({
       engine: 'firefox',
       source: SOURCE_MOZILLA,
-      version: probe.version || wanted,
+      version: wanted,
+      reportedVersion,
       platform: platformDir,
       downloadUrl: url,
       installedAt: new Date().toISOString(),
@@ -1339,11 +1365,13 @@ class BrowserKernelManager {
     }
     await fsp.rm(archivePath, { force: true }).catch(() => {});
 
+    this.installedListCache = null;
     this.onProgress({ phase: 'done', message: `Firefox ${wanted} 已就绪`, version: wanted, binary });
     return {
       name: `Firefox ${wanted}`,
       path: binary,
-      version: probe.version || wanted,
+      version: wanted,
+      reportedVersion,
       engine: 'firefox',
       independent: true,
       source: SOURCE_MOZILLA,
@@ -1483,7 +1511,12 @@ class BrowserKernelManager {
         const tree = path.join(base, ent.name);
         let meta = {};
         try { meta = JSON.parse(fs.readFileSync(path.join(tree, 'kernel.json'), 'utf8')); } catch (_) {}
-        const version = String(meta.version || ent.name);
+        const declared = String(meta.version || ent.name);
+        const legacyEsr = engine === 'firefox' && (isLegacyFirefoxEsrLabel(ent.name, declared)
+          || (declared === 'unknown' && FIREFOX_ESR_VERSION.test(ent.name)));
+        const version = legacyEsr ? ent.name : declared;
+        const reported = typeof meta.reportedVersion === 'string' ? meta.reportedVersion : '';
+        const reportedVersion = engine === 'firefox' ? reported || (legacyEsr ? declared : null) : null;
         let binary = null;
         if (engine === 'firefox') {
           binary = safeInstalledBinary(path.join(tree, firefoxBinaryRelative(firefoxPlatformDir())), tree)
@@ -1498,6 +1531,7 @@ class BrowserKernelManager {
           id: `${engine}:${ent.name}`,
           engine,
           version,
+          ...(reportedVersion ? { reportedVersion } : {}),
           source,
           path: binary,
           tree,
@@ -1604,7 +1638,7 @@ class BrowserKernelManager {
     this.onProgress({ phase: 'check', message: `正在检测 ${hit.name}…`, engine: wantedEngine, version: hit.version });
     if (wantedEngine === 'firefox') {
       const probe = await this.probeFirefoxBinary(hit.path);
-      return { name: hit.name, version: probe.version || hit.version, path: hit.path, ok: true };
+      return { name: hit.name, version: hit.version, reportedVersion: probe.version || hit.reportedVersion || null, path: hit.path, ok: true };
     }
     await this.probeBrowserBinary(hit.path);
     return { name: hit.name, version: hit.version, path: hit.path, ok: true };

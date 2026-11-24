@@ -12,8 +12,6 @@
  */
 
 const assert = require('assert');
-const fs = require('fs');
-const path = require('path');
 
 const { RpaEngine, resolveOpenConcurrency, DEFAULT_OPEN_CONCURRENCY } = require('../rpa-engine');
 
@@ -50,6 +48,43 @@ function makeEngine(profileIds, { delayMs = 12, failFor = null } = {}) {
 
 function makeRpa(engine, options = {}) {
   return new RpaEngine({ engine, store: null, emit: () => {}, ...options });
+}
+
+async function cancelBeforeLaunch(keepNestedCaller) {
+  const held = Promise.withResolvers();
+  const engine = makeEngine(['target', 'home']);
+  engine.profiles.get('target').number = 1;
+  engine.running.set('home', { port: 9000 });
+  const records = new Map([
+    ['direct', { id: 'direct', profile_id: 'target', status: 'pending', steps: [] }],
+    ['nested', { id: 'nested', profile_id: 'home', status: 'pending', steps: [{ type: 'openNewBrowser', accounts: '1' }] }],
+  ]);
+  const rpa = makeRpa(engine, { openConcurrency: 1, store: {
+    getTask: (id) => records.get(id),
+    updateTask: async (id, patch) => Object.assign(records.get(id), patch),
+  } });
+  rpa.writeDiagnostic = async () => {};
+  const blocker = rpa.openScheduler.schedule(() => held.promise);
+  const direct = rpa.runTask('direct');
+  const nested = rpa.runTask('nested');
+  let statusWhileHeld, queuedWhileHeld;
+  try {
+    await new Promise(setImmediate);
+    assert.equal(rpa.openScheduler.size, 1, 'both callers are waiting for one profile launch');
+    await rpa.stop('direct');
+    if (!keepNestedCaller) await rpa.stop('nested');
+    await new Promise(setImmediate);
+    statusWhileHeld = records.get('direct').status;
+    queuedWhileHeld = rpa.openScheduler.size;
+  } finally {
+    held.resolve();
+    await Promise.all([blocker, direct, nested]);
+  }
+  assert.deepEqual(engine.state.starts, keepNestedCaller ? ['target'] : []);
+  assert.equal(statusWhileHeld, 'cancelled', 'stop settles before an unrelated slot is released');
+  assert.equal(queuedWhileHeld, keepNestedCaller ? 1 : 0);
+  assert.equal(records.get('nested').status, keepNestedCaller ? 'success' : 'cancelled');
+  assert.equal(rpa.profileStarts.size, 0);
 }
 
 (async () => {
@@ -135,13 +170,31 @@ function makeRpa(engine, options = {}) {
     assert.strictEqual(resolveOpenConcurrency(999), 16);
   });
 
-  check('the engine goes through the queue instead of calling start directly', () => {
-    const source = fs.readFileSync(path.join(__dirname, '../rpa-engine.js'), 'utf8');
-    assert.ok(/this\.openScheduler\s*\n?\s*\.schedule\(\(\) => this\.engine\.start\(profile(?:,\s*launchOptions)?\)/.test(source),
-      'the launch does not go through the scheduler');
-    assert.ok(!/\.then\(\(\) => this\.engine\.start\(profile(?:,\s*launchOptions)?\)\)/.test(source),
-      'an unbounded launch path is still present');
-    assert.ok(/new TaskScheduler\(\{[\s\S]{0,120}name: 'rpa-open'/.test(source), 'the named scheduler is missing');
+  await checkAsync('a scheduler refusing a launch cannot be bypassed', async () => {
+    const engine = makeEngine(['p']);
+    const rpa = makeRpa(engine);
+    rpa.openScheduler.destroy();
+    await assert.rejects(rpa.ensureProfileRunning('p'), /destroyed/);
+    assert.deepEqual(engine.state.starts, []);
+  });
+  await checkAsync('cancelled callers cannot start a browser when a slot opens', () => cancelBeforeLaunch(false));
+  await checkAsync('cancelling one shared waiter preserves the other caller', () => cancelBeforeLaunch(true));
+  await checkAsync('cancellation during an already dispatched launch does not admit a duplicate', async () => {
+    const held = Promise.withResolvers();
+    const engine = makeEngine(['p']);
+    let launches = 0;
+    engine.start = async () => { launches += 1; await held.promise; return { port: 1 }; };
+    const rpa = makeRpa(engine);
+    const controller = new AbortController();
+    const first = rpa.ensureProfileRunning('p', { execution: { signal: controller.signal } });
+    await new Promise(setImmediate);
+    controller.abort(new Error('cancelled'));
+    await new Promise(setImmediate);
+    const second = rpa.ensureProfileRunning('p');
+    held.resolve();
+    await Promise.all([first, second]);
+    assert.equal(launches, 1, 'a started browser remains owned until the engine returns');
+    assert.equal(rpa.profileStarts.size, 0);
   });
 
   // ================= report =================

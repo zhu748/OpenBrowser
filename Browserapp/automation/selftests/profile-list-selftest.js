@@ -145,11 +145,11 @@ test('legacy startup retains trash at every age; only confirmed permanent deleti
     $(selector) {
       if (!inputs.has(selector)) inputs.set(selector, {
         addEventListener: (event, callback) => { handlers.set(selector + ':' + event, callback); },
-        showModal() {}, close() {},
+        showModal() { this.open = true; }, close() { this.open = false; },
       });
       return inputs.get(selector);
     },
-    selectedProfiles: new Set(), selectedSessions: new Set(),
+    selectedProfiles: new Set(), selectedSessions: new Set(), profileListCache: context.window.OpenBrowserProfileList.createProfileListCache(),
     setConfirmation(answerPromise) { answer = answerPromise; },
     confirmAction: options => { confirmations.push(options); return answer; },
     save() { reportedSave++; }, invalidateViewCache() {}, renderProfiles() {}, log() {}, toast() {},
@@ -188,7 +188,9 @@ test('legacy startup retains trash at every age; only confirmed permanent deleti
   }], 'the explicit action retains only its original ID, deletion time and revision');
   assert.strictEqual(read('ui.profiles.length'), original.length, 'a stale acknowledgement must not remove any rows');
 
-  read("let activeGroupFilter = 'trash', profileGroupFilterRevision = 0, pendingDeleteProfiles = [], pendingTrashSelection = null, engineProfiles;");
+  read("let activeGroupFilter = 'trash', profileDeleteRevision = 0, pendingProfileDelete = null, engineProfiles;");
+  read('function filteredProfilesForCurrentView() { return ui.profiles.filter(row => row.trashed); }');
+  read(section('// group filter chips', 'function setProfileGroupFilter('));
   read(section("$('#delete-selected').addEventListener(", "\n$('#restore-selected')"));
   mock.selectedProfiles.add('boundary').add('newer');
   await handlers.get('#delete-selected:click')();
@@ -207,7 +209,7 @@ test('legacy startup retains trash at every age; only confirmed permanent deleti
   }, 'confirmed batch sends only selected IDs with the snapshots captured before confirmation');
 });
 
-test('using a different legacy group clears hidden selection before batch confirmation', async () => {
+test('legacy tab and group changes invalidate batch confirmations without losing same-scope pagination selections', async () => {
   const filename = path.join(__dirname, '../../renderer.js');
   const renderer = fs.readFileSync(filename, 'utf8');
   const section = (start, end) => {
@@ -215,15 +217,22 @@ test('using a different legacy group clears hidden selection before batch confir
     assert.ok(first !== -1 && last > first, 'renderer section must be present: ' + start);
     return renderer.slice(first, last);
   };
+  const workbench = fs.readFileSync(path.join(__dirname, '../../ui/ui-workbench.js'), 'utf8');
+  const cardStart = workbench.indexOf("document.getElementById('groups-card-grid')?.addEventListener('click'");
+  const cardEnd = workbench.indexOf('// 2. Templates Card Grid', cardStart);
+  assert.ok(cardStart !== -1 && cardEnd > cardStart);
   const events = new vm.Script([
+    workbench.slice(cardStart, cardEnd),
+    section('function switchListTab(', '// Row "⋮" menu'),
+    section("document.querySelectorAll('#profile-list-tabs .list-tab').forEach(", '// 全局 Ctrl+F'),
     section("$('#select-all-profiles').addEventListener(", "\n$('#select-all-sessions')"),
     section("$('#profile-next').addEventListener(", "\n$('#profile-page')"),
     section('// group filter chips', "\ndocument.getElementById('group-color-chips')"),
     section("$('#delete-selected').addEventListener(", "\n$('#restore-selected')"),
   ].join('\n'), { filename });
   const rows = [
-    { id: 'a1', groupId: 'A' }, { id: 'a2', groupId: 'A' },
-    { id: 'b1', groupId: 'B' }, { id: 'b2', groupId: 'B' },
+    { id: 'a1', groupId: 'A' }, { id: 'a2', groupId: 'A', favorite: true },
+    { id: 'b1', groupId: 'B' }, { id: 'b2', groupId: 'B', favorite: true },
   ];
   function setup(deleteData) {
     const controls = new Map(), handlers = new Map(), requests = [], navigation = [], dialogs = [], notices = [];
@@ -231,7 +240,7 @@ test('using a different legacy group clears hidden selection before batch confir
     function control(id) {
       if (!controls.has(id)) controls.set(id, {
         checked: false, addEventListener: (event, fn) => handlers.set(id + ':' + event, fn),
-        showModal() { dialogs.push('open'); }, close() {},
+        showModal() { this.open = true; dialogs.push('open'); }, close() { this.open = false; },
       });
       return controls.get(id);
     }
@@ -240,14 +249,17 @@ test('using a different legacy group clears hidden selection before batch confir
       throw Error('inert fixture: do not perform deletion');
     }
     control('#batch-delete-data').checked = deleteData;
+    const scopeRows = () => filterProfiles({ profiles: rows, activeGroupFilter: mock.activeGroupFilter, activeListTab: mock.activeListTab });
     const mock = vm.createContext({
-      $: control, document: { getElementById: control },
-      activeGroupFilter: 'A', profilePage: 1, ui: { profiles: rows }, selectedProfiles: new Set(),
-      pendingDeleteProfiles: [], pendingTrashSelection: null,
+      $: control, document: { getElementById: control, querySelector: () => null,
+        querySelectorAll: () => ['all', 'fav', 'open', 'trash', 'transfer'].map(listTab =>
+          Object.assign(control('tab-' + listTab), { dataset: { listTab } })) },
+      activeGroupFilter: 'A', activeListTab: 'all', profilePage: 1, ui: { profiles: rows }, selectedProfiles: new Set(),
+      profileDeleteRevision: 0, pendingProfileDelete: null, filteredProfilesForCurrentView: scopeRows,
+      profileListCache: context.window.OpenBrowserProfileList.createProfileListCache(),
       switchView(view) { navigation.push([view, mock.activeGroupFilter, mock.profilePage, [...mock.selectedProfiles]]); },
       renderProfiles() {}, toast: message => notices.push(message), t: key => key, tx: key => key,
-      visibleProfilePageIds: () => paginate(filterProfiles({ profiles: rows, activeGroupFilter: mock.activeGroupFilter }),
-        mock.profilePage, 1).items.map(row => row.id),
+      visibleProfilePageIds: () => paginate(scopeRows(), mock.profilePage, 1).items.map(row => row.id),
       window: { ops: {
         profileStatus() {
           const result = heldStatus ?? Promise.resolve(rows);
@@ -262,10 +274,13 @@ test('using a different legacy group clears hidden selection before batch confir
     const click = (control, event) => handlers.get(control + ':click')(event);
     return {
       mock, requests, navigation, dialogs, notices,
+      useTab: tab => click('tab-' + tab), isDialogOpen: () => !!control('#batch-delete-dialog').open,
       next: () => click('#profile-next'),
-      selectPage: () => handlers.get('#select-all-profiles:change')({ target: { checked: true } }),
+      selectPage: (checked = true) => handlers.get('#select-all-profiles:change')({ target: { checked } }),
       useGroup: groupView => click('group-table', { target: { closest: selector => selector === '[data-group-view]'
         ? { dataset: { groupView } } : null } }),
+      useCard: rpcView => click('groups-card-grid', { target: { closest: selector => selector === '[data-rpc-view]'
+        ? { dataset: { rpcView } } : null } }),
       filterGroup: groupFilter => click('profile-group-chips', { target: { closest: selector => selector === '[data-group-filter]'
         ? { dataset: { groupFilter } } : null } }),
       deferStatus() {
@@ -335,6 +350,50 @@ test('using a different legacy group clears hidden selection before batch confir
   await oldA;
   assert.deepStrictEqual(roundTrip.dialogs, [], 'returning to A does not make the old A request current again');
 
+  const card = setup(false);
+  card.selectPage();
+  await card.open();
+  card.useCard('B');
+  assert.deepStrictEqual(card.navigation, [['profiles', 'B', 1, []]], 'card and table navigation use the same actual group and scope boundary');
+  await card.submit('confirm');
+  assert.deepStrictEqual(card.requests, []);
+
+  const deselected = setup(false);
+  deselected.selectPage();
+  const finishStatus = deselected.deferStatus();
+  const loadingCount = deselected.open();
+  deselected.selectPage(false);
+  finishStatus();
+  await loadingCount;
+  await deselected.submit('confirm');
+  assert.deepStrictEqual([deselected.dialogs, deselected.requests], [[], []], 'a removed selection cannot become a delete target later');
+
+  for (const permanent of [false, true]) {
+    const list = setup(permanent);
+    list.selectPage();
+    const release = list.deferStatus();
+    const previous = list.open();
+    list.useTab('fav');
+    assert.deepStrictEqual([...list.mock.selectedProfiles], []);
+    list.selectPage();
+    await list.open();
+    release();
+    await previous;
+    assert.deepStrictEqual(list.dialogs, ['open'], 'All cannot replace the newer Favorites confirmation');
+    await list.submit('confirm');
+    assert.deepStrictEqual(list.requests, [permanent ? ['permanent', ['a2'], true] : ['recycle', ['a2']]]);
+
+    const opened = setup(permanent);
+    opened.selectPage();
+    await opened.open();
+    assert.equal(opened.isDialogOpen(), true);
+    opened.useTab('fav');
+    assert.equal(opened.isDialogOpen(), false, 'navigation also closes a dialog that was already open');
+    opened.useTab('all');
+    await opened.submit('confirm');
+    assert.deepStrictEqual(opened.requests, [], 'a previous dialog cannot regain its IDs on returning to All');
+  }
+
   const current = setup(false);
   current.selectPage();
   const releaseStale = current.deferStatus();
@@ -363,4 +422,55 @@ test('using a different legacy group clears hidden selection before batch confir
   await failedB;
   assert.deepStrictEqual(rejected.notices, ['current B status failure']);
   assert.deepStrictEqual([rejected.dialogs, rejected.requests], [[], []]);
+});
+
+test('classic batch export respects the filtered list and never widens empty results', async () => {
+  const renderer = fs.readFileSync(path.join(__dirname, '..', '..', 'renderer.js'), 'utf8');
+  const view = renderer.slice(renderer.indexOf('function filteredProfilesForCurrentView()'), renderer.indexOf('// ===== Roxy 对齐：列表标签条'));
+  const exportClick = renderer.slice(renderer.indexOf('function sanitizeProfileForExport('), renderer.indexOf("$('#test-all-proxies')?.addEventListener"));
+  const fleet = [
+    { id: 'a1', number: 1, groupId: 'A', favorite: true, platform: {
+      password: 'fixture-only', totpSecret: 'fixture-only', accounts: [{ password: 'fixture-only', totpSecret: 'fixture-only' }],
+    } },
+    { id: 'a2', number: 2, groupId: 'A' }, { id: 'b1', number: 3, groupId: 'B', favorite: true },
+    { id: 'trash', number: 4, groupId: 'A', trashed: true },
+  ];
+  const notices = [], downloads = [], search = { value: '' };
+  let click;
+  const env = {
+    ui: { profiles: fleet, groups: [] }, engineProfiles: {}, profileListCache: context.window.OpenBrowserProfileList.createProfileListCache(),
+    window: {}, activeGroupFilter: 'A', activeListTab: 'all', advancedFilterState: null, profileSort: { key: 'number', dir: -1 },
+    selectedProfiles: new Set(), profilePage: 2, profilePageSize: 1, displayProfileNumber: row => row.number,
+    groupNameOf: row => row.groupId, isProfileRunning: id => id === 'a2', Blob,
+    $: key => key === '#profile-search' ? search : { addEventListener: (_, handler) => { click = handler; } },
+    t: key => key, toast: key => notices.push(key), setTimeout: () => {},
+    URL: { createObjectURL: blob => { downloads.push(blob); return 'blob:fixture'; } },
+    document: { createElement: () => ({ click() {}, remove() {} }), body: { append() {} } },
+  };
+  vm.runInNewContext(view + exportClick, env);
+  const read = async () => JSON.parse(await downloads.at(-1).text());
+  click();
+  const first = await read();
+  assert.deepStrictEqual(first.map(row => row.id), ['a2', 'a1'], 'filtered result covers all pages, excluding B and trash');
+  assert.equal(first[1].platform.password, '');
+  assert.equal(first[1].platform.totpSecret, '');
+  assert.deepStrictEqual(first[1].platform.accounts, [{ password: '', totpSecret: '' }]);
+  assert.equal(fleet[0].platform.password, 'fixture-only', 'export must not edit the original row');
+  env.selectedProfiles = new Set(['b1', 'a1']);
+  click();
+  assert.deepStrictEqual((await read()).map(row => row.id), ['a1'], 'an explicit selection is intersected with the filter');
+  env.selectedProfiles = new Set(['b1']);
+  click();
+  env.selectedProfiles.clear();
+  search.value = 'no match';
+  click();
+  search.value = '';
+  env.activeListTab = 'fav';
+  env.advancedFilterState = { status: 'running' };
+  click();
+  env.activeListTab = 'transfer';
+  env.advancedFilterState = null;
+  click();
+  assert.equal(downloads.length, 2, 'no inactive, stale, or empty scope authorizes a download');
+  assert.deepStrictEqual(notices.slice(-4), Array(4).fill('profiles.exportNone'));
 });

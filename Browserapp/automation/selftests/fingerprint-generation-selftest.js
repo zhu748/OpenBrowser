@@ -175,7 +175,12 @@ async function main() {
 
   const profiles = new Map();
   const routes = new ProfileRoutes({ engine: { profiles, sanitizeProfile,
-    async syncProfiles(values) { for (const p of values) profiles.set(p.id, p); } } });
+    async commitProfiles(values, { prepareReply }) {
+      const reply = prepareReply(values);
+      for (const p of values) profiles.set(p.id, p);
+      return reply;
+    },
+  } });
   for (const [id, extra, expected] of [['new', {}, 2], ['old', { fingerprint_version: 1 }, 1]]) {
     const response = await routes.routeProfileCreate({ input: { id, name: id, ...extra } });
     assert.ok(profiles.has(id), JSON.stringify(response));

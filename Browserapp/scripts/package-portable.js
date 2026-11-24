@@ -4,14 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { isRuntimeResource, assertRuntimeResourceTree } = require('./runtime-manifest');
-const {
-  resolveHostDist,
-  findHostAppBundle,
-  findHostWindowsExe,
-  findHostLinuxBinary,
-  findMacBinary,
-} = require('./resolve-host-dist');
-const { ensureHostRuntime } = require('./ensure-host-runtime');
+const { ensureLockedElectronRuntime } = require('./ensure-host-runtime');
 const { ensureKernelSeedForPackaging } = require('./fetch-kernels');
 const {
   findBundledWayfernKernel,
@@ -22,13 +15,6 @@ const {
 
 const appRoot = path.resolve(__dirname, '..');
 const packageArch = resolvePackageArch();
-let hostDist = (() => {
-  try {
-    return resolveHostDist(appRoot);
-  } catch (_) {
-    return null;
-  }
-})();
 const distRoot = path.join(appRoot, 'dist');
 
 /**
@@ -598,97 +584,39 @@ function copyAppResources(resourceApp) {
   assertKernelPackagePolicy(resourceApp);
 }
 
-function nsisPath(value) {
-  return String(value).replace(/"/g, '$\\"');
-}
-
-function nsisGlob(value) {
-  return nsisPath(path.join(value, '*'));
-}
-
 function packageWindowsInstaller(packageRoot) {
-  const appVersion = require('../package.json').version || '1.0.0';
+  const { renderWindowsInstaller } = require('./windows-installer');
   const output = path.join(distRoot, `${packageArtifactStem()}-setup.exe`);
   const script = path.join(distRoot, 'OpenBrowser-Windows-installer.nsi');
-  const installSource = nsisGlob(packageRoot);
-  const installDir = '$LOCALAPPDATA\\OpenBrowser';
-  // Integrated kernels make the payload multi-hundred-MB. SOLID lzma often hits
-  // NSIS "error mmapping datablock" on CI runners; zlib is larger but reliable.
-  writeText(script, [
-    '!include "MUI2.nsh"',
-    'Name "OpenBrowser"',
-    `OutFile "${nsisPath(output)}"`,
-    `InstallDir "${installDir}"`,
-    'RequestExecutionLevel user',
-    'Unicode true',
-    'SetCompressor /FINAL zlib',
-    'SetDatablockOptimize off',
-    '!define MUI_ABORTWARNING',
-    '!insertmacro MUI_PAGE_WELCOME',
-    '!insertmacro MUI_PAGE_DIRECTORY',
-    '!insertmacro MUI_PAGE_INSTFILES',
-    '!insertmacro MUI_PAGE_FINISH',
-    '!insertmacro MUI_LANGUAGE "English"',
-    'Section "OpenBrowser" SEC_MAIN',
-    '  SetOutPath "$INSTDIR"',
-    `  File /r "${installSource}"`,
-    '  CreateDirectory "$SMPROGRAMS\\OpenBrowser"',
-    '  CreateShortCut "$SMPROGRAMS\\OpenBrowser\\OpenBrowser.lnk" "$INSTDIR\\runtime\\OpenBrowser.exe" "" "$INSTDIR\\runtime\\OpenBrowser.exe" 0',
-    '  CreateShortCut "$DESKTOP\\OpenBrowser.lnk" "$INSTDIR\\runtime\\OpenBrowser.exe" "" "$INSTDIR\\runtime\\OpenBrowser.exe" 0',
-    '  WriteUninstaller "$INSTDIR\\Uninstall.exe"',
-    '  WriteRegStr HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\OpenBrowser" "DisplayName" "OpenBrowser"',
-    '  WriteRegStr HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\OpenBrowser" "UninstallString" \'"$INSTDIR\\Uninstall.exe"\'',
-    '  WriteRegStr HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\OpenBrowser" "QuietUninstallString" \'"$INSTDIR\\Uninstall.exe" /S\'',
-    '  WriteRegStr HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\OpenBrowser" "InstallLocation" "$INSTDIR"',
-    '  WriteRegStr HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\OpenBrowser" "DisplayIcon" "$INSTDIR\\runtime\\OpenBrowser.exe,0"',
-    '  WriteRegStr HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\OpenBrowser" "Publisher" "OpenBrowser"',
-    `  WriteRegStr HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\OpenBrowser" "DisplayVersion" "${appVersion}"`,
-    '  WriteRegDWORD HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\OpenBrowser" "NoModify" 1',
-    '  WriteRegDWORD HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\OpenBrowser" "NoRepair" 1',
-    'SectionEnd',
-    'Section "Uninstall"',
-    '  DeleteRegKey HKCU "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\OpenBrowser"',
-    '  Delete "$SMPROGRAMS\\OpenBrowser\\OpenBrowser.lnk"',
-    '  RMDir "$SMPROGRAMS\\OpenBrowser"',
-    '  Delete "$DESKTOP\\OpenBrowser.lnk"',
-    '  RMDir /r "$INSTDIR"',
-    'SectionEnd',
-    '',
-  ].join('\r\n'));
+  writeText(script, renderWindowsInstaller(packageRoot, output, readProductVersion()));
   try {
+    fs.rmSync(output, { force: true });
     run('makensis', ['/V2', script]);
   } catch (error) {
-    removeIfExists(script);
     throw new Error(`NSIS installer generation failed (makensis): ${error.message}`);
+  } finally {
+    fs.rmSync(script, { force: true });
   }
-  removeIfExists(script);
   if (!fs.existsSync(output)) throw new Error('NSIS did not produce Windows installer: ' + output);
   console.log('Windows installer: ' + output);
 }
 
-function ensureResolvedHostDist() {
-  if (!hostDist) {
-    ensureHostRuntime(appRoot);
-    hostDist = resolveHostDist(appRoot);
-  }
-  return hostDist;
-}
-
 function packageWindows() {
-  const resolvedHostDist = ensureResolvedHostDist();
-  const hostExe = findHostWindowsExe(resolvedHostDist);
+  const { dist: hostDist, entry } = ensureLockedElectronRuntime(appRoot, packageArch);
 
   run(process.execPath, [path.join(__dirname, 'build-native.js'), appRoot]);
 
   const packageRoot = path.join(distRoot, packageArtifactStem());
   const runtimeRoot = path.join(packageRoot, 'runtime');
   const resourceApp = path.join(runtimeRoot, 'resources', 'app');
-  removeIfExists(packageRoot);
+  // A locked survivor from an earlier build must not become an owned
+  // payload entry in this installer's embedded uninstall manifest.
+  fs.rmSync(packageRoot, { recursive: true, force: true });
   fs.mkdirSync(runtimeRoot, { recursive: true });
-  copyRecursive(resolvedHostDist, runtimeRoot);
+  copyRecursive(hostDist, runtimeRoot);
 
   const mainExe = path.join(runtimeRoot, 'OpenBrowser.exe');
-  const copiedHostExe = path.join(runtimeRoot, path.basename(hostExe));
+  const copiedHostExe = path.join(runtimeRoot, path.basename(entry));
   fs.renameSync(copiedHostExe, mainExe);
   run(process.execPath, [path.join(__dirname, 'brand-exe.mjs'), mainExe, path.join(appRoot, 'assets', 'logo.ico')]);
 
@@ -706,13 +634,9 @@ function packageWindows() {
     '@echo off',
     'setlocal',
     'chcp 65001 >nul',
-    // Prefer the branded host; fall back only if rename failed in packaging.
+    // Never run another helper when the desktop application is missing.
     'if exist "%~dp0runtime\\OpenBrowser.exe" (',
     '  start "" "%~dp0runtime\\OpenBrowser.exe"',
-    '  exit /b 0',
-    ')',
-    'for %%F in ("%~dp0runtime\\*.exe") do (',
-    '  start "" "%%~fF"',
     '  exit /b 0',
     ')',
     'echo Runtime executable was not found.',
@@ -788,18 +712,16 @@ function packageLinux() {
     run(process.execPath, [path.join(__dirname, 'prepare-bundled-kernel.js')]);
   }
 
-  const resolvedHostDist = ensureResolvedHostDist();
-  const hostBinary = findHostLinuxBinary(resolvedHostDist);
+  const { dist: hostDist, entry } = ensureLockedElectronRuntime(appRoot, packageArch);
   const packageRoot = path.join(distRoot, packageArtifactStem());
   const runtimeRoot = path.join(packageRoot, 'runtime');
   const resourceApp = path.join(runtimeRoot, 'resources', 'app');
   removeIfExists(packageRoot);
   fs.mkdirSync(runtimeRoot, { recursive: true });
-  copyRecursive(resolvedHostDist, runtimeRoot);
+  copyRecursive(hostDist, runtimeRoot);
 
   const mainBinary = path.join(runtimeRoot, 'OpenBrowser');
-  const copiedHostBinary = path.join(runtimeRoot, path.basename(hostBinary));
-  if (path.resolve(copiedHostBinary) !== path.resolve(mainBinary)) fs.renameSync(copiedHostBinary, mainBinary);
+  fs.renameSync(path.join(runtimeRoot, path.basename(entry)), mainBinary);
   fs.chmodSync(mainBinary, 0o755);
   copyAppResources(resourceApp);
 
@@ -843,8 +765,8 @@ function packageLinux() {
 }
 
 function packageMac() {
-  const resolvedHostDist = ensureResolvedHostDist();
-  const hostApp = findHostAppBundle(resolvedHostDist);
+  const { entry } = ensureLockedElectronRuntime(appRoot, packageArch);
+  const hostApp = path.dirname(path.dirname(path.dirname(entry)));
 
   run(process.execPath, [path.join(__dirname, 'build-native.js'), appRoot]);
 
@@ -859,11 +781,8 @@ function packageMac() {
   fs.mkdirSync(packageRoot, { recursive: true });
   copyRecursive(hostApp, appBundle);
 
-  const hostBinary = findMacBinary(macosDir);
   const appBinary = path.join(macosDir, 'OpenBrowser');
-  if (path.basename(hostBinary) !== 'OpenBrowser' && fs.existsSync(hostBinary)) {
-    fs.renameSync(hostBinary, appBinary);
-  }
+  fs.renameSync(path.join(macosDir, path.basename(entry)), appBinary);
 
   const productVersion = readProductVersion();
   const infoPlist = path.join(contents, 'Info.plist');
@@ -968,7 +887,7 @@ function packageMac() {
     } catch (error) {
       if (attempts >= 4) throw error;
       console.warn(`[package] hdiutil create failed (attempt ${attempts}), retrying in 5s:`, error.message);
-      try { run('hdiutil', ['detach', '/Volumes/OpenBrowser', '-force'], { stdio: 'ignore' }); } catch (_) {}
+      // Creation does not own any /Volumes/OpenBrowser mount. Never detach someone else's disk.
       const waitEnd = Date.now() + 5000;
       while (Date.now() < waitEnd) {}
     }
@@ -995,6 +914,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  packageArch,
   packageArtifactStem,
   shouldShipOpenBrowser148Kernel,
   pruneForeignKernelSeeds,

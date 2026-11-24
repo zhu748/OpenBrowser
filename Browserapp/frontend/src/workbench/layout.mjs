@@ -111,16 +111,11 @@ const Sidebar = {
     }
     eventBus.on('badgeMap', addBadge);
     eventBus.on('asideMenuGuide', showAsideGuide);
-    let projectRefresh;
     const stopProjects = globalThis.rebuild.onEvent(event => {
       if (event.type !== 'profiles' || event.action !== 'group-metadata') return;
-      clearTimeout(projectRefresh);
-      projectRefresh = setTimeout(() => {
-        Promise.resolve(projectStore.getProjects()).catch(error => globalThis.__localUiError?.(error.message));
-      }, 60);
+      projectStore.getProjects({ afterChange: true }).catch(error => globalThis.__localUiError?.(error.message));
     });
     onBeforeUnmount(() => {
-      clearTimeout(projectRefresh);
       stopProjects();
       eventBus.off('badgeMap', addBadge);
       eventBus.off('asideMenuGuide', showAsideGuide);

@@ -3,7 +3,7 @@ import {
   bt as useListCache, cr as clone, mt as useWorkspace, o as readFilters,
 } from './utils-BIWenCnY.js';
 import { y as useRoute } from './rich-html-link-VdBpR3Cm.js';
-import { buildTableQuery, createTableLoader, isProfileTable } from './workbench-table.js';
+import { buildTableQuery, createTableLoader, isProfileTable, listCacheVersion } from './workbench-table.js';
 import { permittedActions } from './workbench-table-actions.js';
 import { useTableContextMenu } from './workbench-table-context.js';
 
@@ -179,7 +179,8 @@ export function useBrowserTable(props, columns, attrs, root, dataTable) {
     wait: () => initialization,
     params: getParams,
     read: (query, current) => props.tableRequest(query, current),
-    paginate: () => isProfileTable(props.cacheKey),
+    paginate: () => isProfileTable(props.cacheKey) || props.cacheKey === 'project-list',
+    version: () => props.cacheKey === 'project-list' ? listCacheVersion(props.cacheKey) : undefined,
     busy: value => { loading.value = value; },
     failed(error) {
       loaded.value = true;
@@ -238,6 +239,9 @@ export function useBrowserTable(props, columns, attrs, root, dataTable) {
     if (props.listCacheKey) invalidateCache();
     loader.refresh();
   });
+  const disposeProjectChanges = props.cacheKey === 'project-list' && globalThis.electronAPI?.on('local:projects-change', () => {
+    if (initialization) loader.refresh();
+  });
 
   onBeforeMount(async () => {
     const scope = activation;
@@ -265,6 +269,7 @@ export function useBrowserTable(props, columns, attrs, root, dataTable) {
     activation++;
     sortRevision += 1;
     if (typeof disposeChanges === 'function') disposeChanges();
+    if (typeof disposeProjectChanges === 'function') disposeProjectChanges();
   });
 
   function onFilterChange() {
@@ -353,8 +358,8 @@ export function useBrowserTable(props, columns, attrs, root, dataTable) {
     const scope = activation, selected = selectionData.value;
     if (!selected?.length) return;
     try {
-      await props.operationHandler?.(item, selected, 'batch');
-      if (scope === activation) clearSelection();
+      const completed = await props.operationHandler?.(item, selected, 'batch');
+      if (completed !== false && scope === activation) clearSelection();
     } catch (error) {
       console.log(error);
     }

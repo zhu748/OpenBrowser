@@ -458,7 +458,7 @@ var handlers = {
   clearCache: async (e2) => e2.onClearCache(e2.datas),
   upgradeCore: async (e2) => e2.onUpgradeCore?.(e2.datas),
   exportProfile: async (e2) => e2.exportProfile(e2.datas),
-  delete: async (e2) => e2.deleteProfile(e2.datas, e2.ids),
+  delete: async (e2) => e2.deleteProfile(e2.datas, e2.operationType),
 };
 function useProfileOperations(e2) {
   return async function (t2, n2, r2 = 'single') {
@@ -466,15 +466,14 @@ function useProfileOperations(e2) {
       a2 = i2.map((e3) => e3.id);
     e2.saveLocalTrack(t2.name);
     let o2 = handlers[t2.name];
-    o2 &&
-      (await o2({
+    return o2?.({
         ...e2,
         operate: t2,
         datas: i2,
         ids: a2,
         data: n2,
         operationType: r2,
-      }));
+      });
   };
 }
 

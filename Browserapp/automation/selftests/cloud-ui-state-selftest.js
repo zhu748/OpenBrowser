@@ -14,7 +14,7 @@ async function main() {
   const elements = new Map();
   for (const id of ['enabled', 'auto-quit', 'include-data', 'provider', 'restore-mode', 'passphrase', 'local-dir',
     'webdav-url', 'webdav-user', 'webdav-pass', 'webdav-dir', 'gh-owner', 'sync-badge', 'sync-status',
-    'save-cfg', 'backup-now', 'restore-now']) {
+    'save-cfg', 'backup-now', 'restore-now', 'import-file']) {
     elements.set('cloud-' + id, { value: '', textContent: '', checked: true, disabled: false, listeners: {},
       addEventListener(type, handler) { this.listeners[type] = handler; } });
   }
@@ -22,11 +22,11 @@ async function main() {
   const document = { getElementById: (id) => elements.get(id) || null,
     querySelector: (selector) => elements.get(selector.slice(1)) || null, querySelectorAll: () => [] };
   const ui = { profiles: [{ id: 'one', advanced: { cloudBackup: true } }], groups: [] };
-  const toasts = [], queues = new Map();
+  const toasts = [], logs = [], queues = new Map();
   let server = { enabled: true, provider: 'local', local: { dir: 'initial' } };
   const plan = (method) => { const next = deferred(); const queue = queues.get(method) || []; queue.push(next); queues.set(method, queue); return next; };
   const ops = {};
-  for (const method of ['cloudGetConfig', 'cloudSetConfig', 'cloudBackup', 'cloudRestore', 'cloudProfilePush', 'cloudProfilePull']) {
+  for (const method of ['cloudGetConfig', 'cloudSetConfig', 'cloudBackup', 'cloudRestore', 'cloudProfilePush', 'cloudProfilePull', 'cloudImportFile']) {
     ops[method] = async (value) => {
       const next = queues.get(method)?.shift();
       if (next) { next.called = true; return next.promise; }
@@ -34,7 +34,7 @@ async function main() {
     };
   }
   const window = { ops, $: document.querySelector, OpenBrowserApp: { ui, toast: (message) => toasts.push(message),
-    tx: (value) => value, log() {}, afterUiRender() {}, renderProfiles() {}, confirmAction: async () => true } };
+    tx: (value) => value, log: (_channel, message) => logs.push(message), afterUiRender() {}, renderProfiles() {}, confirmAction: async () => true } };
   vm.runInNewContext(fs.readFileSync(require.resolve('../../ui/ui-cloud'), 'utf8'), {
     window, document, save() {}, normalizeProfileSettings: (value) => value, refreshProxies: async () => {},
   });
@@ -82,10 +82,26 @@ async function main() {
   assert.equal(restore.called, true);
   element('webdav-user').value = 'typed-during-restore';
   server = { ...server, lastSyncAt: 'restore-completed', webdav: { username: 'old-user' } };
-  restore.resolve({ profiles: [{ id: 'one', title: 'restored', advanced: { cloudBackup: true } }], groups: [] }); await restoring;
+  const profileResult = { profiles: [{ id: 'one', title: 'restored', advanced: { cloudBackup: true } }], groups: [] };
+  const warning = { profileId: 'one', path: 'Session Storage', reason: 'session-storage-tab-restore-unsupported' };
+  const partial = { ...profileResult, complete: false, skippedFileCount: 1, backupWarnings: [warning] };
+  restore.resolve(partial); await restoring;
   assert.equal(element('webdav-user').value, 'typed-during-restore', 'the post-restore read retains the original operation snapshot');
   assert.equal(ui.profiles[0].title, 'restored');
   assert.match(element('sync-status').textContent, /restore-completed/);
+  assert.match(toasts.at(-1), /部分数据未恢复 · 1 · .*Session Storage/);
+  assert.ok(logs.some(message => message.includes(warning.reason)));
+
+  const pull = plan('cloudProfilePull'), pulling = window.pullProfilesFromCloud(['one']); await drain();
+  assert.equal(pull.called, true);
+  pull.resolve(partial); await pulling;
+  assert.match(toasts.at(-1), /部分数据未恢复 · 1/);
+
+  const importing = plan('cloudImportFile'), importWork = click('import-file'); await drain();
+  assert.equal(importing.called, true);
+  const places = { profileId: 'one', path: '@firefox/places.sqlite', reason: 'firefox-places-history-only-unsupported' };
+  importing.resolve({ ...partial, backupWarnings: [places] }); await importWork;
+  assert.match(toasts.at(-1), /部分数据未恢复 · 1 · Firefox/);
 
   const push = plan('cloudProfilePush'), pushing = window.pushProfilesToCloud(['one']); await drain();
   assert.equal(push.called, true);

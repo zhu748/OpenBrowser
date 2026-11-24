@@ -91,16 +91,16 @@ async function saveDeferredSession(item, isInternalUrl = () => false) {
   await writeRawAtomically(path.join(item.root, SESSION_FILE), JSON.stringify({ version: 1, urls: sessionUrls(urls).filter((url) => !isInternalUrl(url)) }), 0o600);
 }
 
-function reportStartupNavigationError(engine, profileId, error) {
+function reportStartupNavigationError(engine, profileId, error, lifecycleGeneration) {
   engine.emit?.({ type: 'profile-start-page-warning', id: profileId,
-    message: `启动网址加载失败：${error}` });
+    lifecycleGeneration, message: `启动网址加载失败：${error}` });
 }
 
 async function openVerifiedStartupTabs(engine, item, urls) {
   const targets = [...new Set(urls.map(startupNavigationUrl).filter(Boolean))];
   if (!targets.length) return;
   // A successful CDP command can still return a network error for the page.
-  const warn = error => reportStartupNavigationError(engine, item.profile?.id, error);
+  const warn = error => reportStartupNavigationError(engine, item.profile?.id, error, item.lifecycleGeneration);
   await engine.keepDefaultTab(item.port, targets[0], { strict: true, onNavigationError: warn });
   for (const url of targets.slice(1)) {
     const target = await item.workerFingerprintConnection.command('Target.createTarget', { url: 'about:blank' });

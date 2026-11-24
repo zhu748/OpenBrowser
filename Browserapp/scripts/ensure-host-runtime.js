@@ -4,23 +4,27 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { installedHostEntry, lockedElectronPackage, inspectLockedElectronRuntime } = require('./resolve-host-dist');
 
 function packageRoot(appRoot) {
+  let found = null;
   for (const name of ['desktop-shell', 'electron']) {
     const candidate = path.join(appRoot, 'node_modules', name);
-    if (fs.existsSync(path.join(candidate, 'package.json'))) return candidate;
+    if (!fs.existsSync(path.join(candidate, 'package.json'))) continue;
+    if (hasRuntime(candidate)) return candidate;
+    found ||= candidate;
   }
-  return null;
+  return found;
 }
 
-function hasRuntime(root) {
+function hasRuntime(root, platform = process.platform, arch = process.arch) {
   if (!root) return false;
-  const dist = path.join(root, 'dist');
-  if (!fs.existsSync(dist)) return false;
-  const entries = fs.readdirSync(dist);
-  if (process.platform === 'darwin') return entries.some((entry) => entry.endsWith('.app'));
-  if (process.platform === 'win32') return entries.some((entry) => /\.exe$/i.test(entry));
-  return entries.length > 0;
+  try {
+    installedHostEntry(root, platform, arch);
+    return true;
+  } catch (_) {
+    return false;
+  }
 }
 
 function run(command, args, cwd) {
@@ -66,6 +70,23 @@ function ensureHostRuntime(appRoot) {
   return root;
 }
 
+function ensureLockedElectronRuntime(appRoot, arch, { platform = process.platform, invoke = run } = {}) {
+  try {
+    const { root, dist } = lockedElectronPackage(appRoot);
+    // Retain the local download if npm is installed but there is no runtime
+    // yet. Do not merge a download into a partial, mixed or wrong-arch dist.
+    if (!fs.lstatSync(dist, { throwIfNoEntry: false })) {
+      const installer = path.join(root, 'install.js');
+      if (!fs.lstatSync(installer, { throwIfNoEntry: false })?.isFile()) throw Error('Missing Electron installer');
+      console.log('[runtime] downloading locked Electron runtime');
+      invoke(process.execPath, [installer], appRoot);
+    }
+    return inspectLockedElectronRuntime(appRoot, platform, arch);
+  } catch (error) {
+    throw new Error('Cannot package Electron. Run npm ci --include=dev with a clean dependency tree. ' + error.message, { cause: error });
+  }
+}
+
 if (require.main === module) ensureHostRuntime(path.resolve(__dirname, '..'));
 
-module.exports = { ensureHostRuntime, hasRuntime, resolveNpmCommand };
+module.exports = { ensureHostRuntime, ensureLockedElectronRuntime, hasRuntime, resolveNpmCommand };

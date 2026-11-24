@@ -98,6 +98,25 @@ check('filterFirefoxCatalog: newest point release per major + ESR entry', () => 
   ]);
 });
 
+check('filterFirefoxCatalog: cap by release majors, retain ESR and ignore feed order and duplicates', () => {
+  const rows = [
+    { category: 'major', version: '99.0' }, { category: 'major', version: '128.0' },
+    { category: 'stability', version: '128.9.0' }, { category: 'stability', version: '128.10.0' },
+    { category: 'stability', version: '128.10.0' }, { category: 'dev', version: '129.0' },
+    { category: 'major', version: '0' }, { category: 'major', version: 'bad' }, null,
+  ];
+  for (const entries of [rows, rows.slice().reverse()]) {
+    const feed = { releases: Object.fromEntries(entries.map((entry, index) => [index, entry])) };
+    const current = { FIREFOX_ESR: '128.9.0esr' };
+    assert.deepStrictEqual(kv.filterFirefoxCatalog(feed, current, 1), [
+      { version: '128.10.0', channel: 'release' }, { version: '128.9.0esr', channel: 'esr' },
+    ]);
+    assert.deepStrictEqual(kv.filterFirefoxCatalog(feed.releases, { FIREFOX_ESR: 'invalid' }, 2), [
+      { version: '128.10.0', channel: 'release' }, { version: '99.0', channel: 'release' },
+    ]);
+  }
+});
+
 const sumsText = [
   '7a6bbb01b346c6cd60e9647e85590752d918b961190cb3a9ba075d5a71d1ab9c  linux-aarch64/ach/firefox-141.0.tar.xz',
   '3186b125016ab2ca008df77a4bf29e55edadb55b0a1b8c9de6c9ed48bf0afec6  win64/en-US/Firefox Setup 141.0.msi',
@@ -205,6 +224,9 @@ check('compareKernelVersions orders Firefox versions incl. glued esr suffixes', 
   // numeric regex); compareKernelVersions must not.
   assert.ok(kv.compareKernelVersions('153.6.0esr', '148.0') > 0);
   assert.ok(kv.compareKernelVersions('153.6.0esr', '153.6.0') > 0);
+  assert.ok(kv.compareKernelVersions('128.9.0esr', '128.10.0esr') < 0);
+  assert.ok(kv.compareKernelVersions('128.10.0esr', '128.9.0esr') > 0);
+  assert.ok(kv.compareKernelVersions('100.0esr', '99.0') > 0);
   assert.strictEqual(kv.compareKernelVersions('141.0', '141.0'), 0);
 });
 

@@ -3,7 +3,7 @@
 // Moving existing names preserves the shared-script contract without adding
 // runtime globals; eslint.config.js records the cross-file dependencies.
 /* exported renderGroupsPage, openGroupDialog, saveGroupFromDialog, deleteGroup, assignSelectedToGroup */
-/* global localUiWriteProblem, localUiText, refreshEditorGroupSelectors */
+/* global localUiWriteProblem, localUiText, refreshEditorGroupSelectors, setProfileGroupFilter */
 
 // ========== 分组管理 ==========
 function renderGroupsPage() {
@@ -172,7 +172,7 @@ async function deleteGroup(id) {
       : localUiText('分组未删除。', 'The group was not deleted.');
     return toast(detail + ' ' + error.message, { tone: 'error' });
   }
-  if (activeGroupFilter === id) activeGroupFilter = 'all';
+  if (activeGroupFilter === id) setProfileGroupFilter('all');
   invalidateViewCache(['groups', 'profiles']);
   renderGroupsPage();
   renderProfiles();

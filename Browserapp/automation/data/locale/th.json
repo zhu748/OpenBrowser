@@ -224,7 +224,7 @@
   "editor.googleLogin": "Enable Google Sign-in",
   "editor.followSoftware": "Follow software settings",
   "editor.sessionStorageSync": "Sync Session Storage",
-  "editor.sessionStorageRisk": "Enabling Session Storage sync may pose risks, please proceed with caution!",
+  "editor.sessionStorageRisk": "Disk backups cannot restore tab-bound Session Storage. When enabled, this item is skipped and the backup is marked incomplete.",
   "editor.urlRules": "URL Access Rules",
   "editor.blockDomainList": "URL Blocklist",
   "editor.allowDomainList": "URL Allowlist",

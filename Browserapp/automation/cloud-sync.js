@@ -22,7 +22,7 @@ const { writeRawAtomically } = require('../engine/state-storage');
 const BACKUP_VERSION = 1;
 const REMOTE_NAME = 'openbrowser-backup.obpack';
 const { MAX_BACKUP_PACKAGE_BYTES, MAX_BACKUP_JSON_BYTES, MAX_BACKUP_PROFILES, MAX_BROWSER_DATA_BYTES,
-  MAX_REMOTE_ERROR_BYTES } = require('./cloud/limits');
+  MAX_REMOTE_ERROR_BYTES, MAX_BACKUP_WARNING_DETAILS } = require('./cloud/limits');
 const SAFE_GITHUB_NAME = /^[A-Za-z0-9_.-]{1,100}$/;
 const SAFE_GITHUB_BRANCH = /^[A-Za-z0-9._\/-]{1,255}$/;
 
@@ -255,7 +255,7 @@ async function buildBackupPackage({
       sha256: sha256(data),
       complete: skippedFiles.length === 0,
       skippedFileCount: skippedFiles.length,
-      skippedFiles: skippedFiles.slice(0, 100),
+      skippedFiles: skippedFiles.slice(0, MAX_BACKUP_WARNING_DETAILS),
     },
   };
 }

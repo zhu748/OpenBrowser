@@ -82,6 +82,12 @@ class MockElement {
     }
   }
 
+  prepend(node) {
+    node.parentElement = this;
+    this.childNodes.unshift(node);
+    this.children.unshift(node);
+  }
+
   replaceChildren(...nodes) {
     this.childNodes = [];
     this.children = [];
@@ -161,7 +167,7 @@ const _rpaTaskTable = getOrCreate('rpa-task-table', 'tbody');
 const _rpaRunTable = getOrCreate('rpa-run-table', 'tbody');
 const _rpaLogList = getOrCreate('rpa-log-list');
 const _rpaView = getOrCreate('view-rpa');
-for (const id of ['rpa-plan-name', 'rpa-steps-json', 'rpa-profile-ids', 'rpa-editor-title', 'rpa-save',
+for (const id of ['rpa-plan-name', 'rpa-steps-json', 'rpa-profile-ids', 'rpa-editor-title', 'rpa-save', 'rpa-run',
   'rpa-run-filter', 'rpa-task-select-all', 'rpa-task-delete-checked']) getOrCreate(id);
 
 const _localRenderRoots = [];
@@ -201,6 +207,7 @@ context.window = context;
 new vm.Script(`
   let confirmCalls = [];
   function tx(str) { return str; }
+  function tf() { return ''; }
   function t(key, vars) {
     if (key === 'action.use') return '使用';
     if (key === 'action.preview') return '预览';
@@ -230,7 +237,7 @@ new vm.Script(`
   window.OpenBrowserApp = {
     ui: { profiles: [] },
     engineProfiles: [],
-    toast, tx, t, log, element, buildSquareMark, displayProfileNumber,
+    toast, tx, t, tf, log, element, buildSquareMark, displayProfileNumber,
     updateEngineBadge, afterUiRender, syncThemedSelects,
     confirmAction: async (opts) => {
       confirmCalls.push(opts);
@@ -340,6 +347,24 @@ assert.strictEqual(typeof context.window.confirmRpaAction, 'function', 'confirmR
   const oldBadge = context.window.refreshRpaStatusBadge(), newBadge = context.window.refreshRpaStatusBadge();
   badges[1]({ count: 3 }); await newBadge; badges[0]({ count: 1 }); await oldBadge;
   assert.equal(badge.textContent, '运行中 3', 'an old status response cannot roll back the badge');
+
+  const warning = 'Saving the task outcome could not be confirmed';
+  const uncertainty = 'Check the previous task outcome before repeating';
+  getOrCreate('rpa-run-filter').value = 'all';
+  await context.window.refreshRpaRuns([
+    { id: 'result-warning', status: 'success', persistence: { message: warning } },
+    { id: 'interrupted', status: 'interrupted', error: uncertainty },
+  ]);
+  const statusCells = _rpaRunTable.children.map((row) => row.children[3]);
+  assert.equal(statusCells[0].textContent, 'success ⚠');
+  assert.match(statusCells[0].getAttribute('aria-label'), /Saving the task outcome/);
+  assert.equal(statusCells[1].title, uncertainty);
+  context.ops.rpaStatus = async () => ({ count: 0 });
+  context.ops.rpaSavePlan = async () => plans[0];
+  context.ops.rpaRun = async () => ({ success: true, results: [{ success: true, persistence: { message: warning } }] });
+  assert.ok(getOrCreate('rpa-profile-ids').selectedOptions.length > 0);
+  await getOrCreate('rpa-run').listeners.click();
+  assert.equal(context.window.__rpaToasts.at(-1), warning, 'the completion toast cannot hide a persistence warning');
 
   console.log('ui-rpa-selftest: OK (DOM safety, serialized tasks, snapshot filters, retained selection/failures, dirty drafts, save/selection races, linear profile indexing)');
 })().catch((err) => {

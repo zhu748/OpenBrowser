@@ -1,9 +1,9 @@
 import { profileTableRuntime } from "./profile-table-compat.js";
-import { canRestoreProjectProfileCache, detailProfileFilters, projectDetailId } from "./workbench-table.js";
+import { canRestoreProjectProfileCache, detailProfileFilters, profileTableParams, projectDetailId } from "./workbench-table.js";
 
 export function useProfileTable(props, emit) {
-  const { ke, De, Ie, Le, vt, bt, me, ee, We, at, Lt, tt, he, It, Ae, pt, _e, ge, ut, Wt, xt, d, Ue, h, u, r, te, yt, jt, b, Ce, Pt, E, w, S, At, cn, Ht, Kt, _, Mt, e, Xt, En, ue, y, l, Oe, ae, x, st, dt, Te, ct, ot, lt, Be, Jt, o, Zt, f, ie, i, I, W, z, Ft, H, B, ht, Ut, ye, V, xe, Ze, Ct, St, we, qt, Gt } = profileTableRuntime;
-  const g2 = ke(), v2 = De(), re2 = Ie(), oe2 = Le(), T2 = vt(), { showProxyFormDrawer: fe2 } = bt(T2), { userInfo: R2, userConfig: Ee2 } = me(ee()), { handleBusinessCode: Ne2 } = We(), { updateOnboardingTaskStatus: Fe2 } = at(), { getProjects: ze2 } = Lt(), [He2] = tt(), [G2, K2] = he(), [Ge2] = It(), [Ke2] = Ae(), { showSimpleDialog: qe2 } = pt(), { buildProxyData: Xe2, confirmDeleteProxy: $e2 } = _e(), { runProxySpeedTestForRows: ft2 } = ge(), { batchTestShowToast: mt2 } = ut(), { editCookieByProfile: wt2, startCookieRobot: Vt2 } = Wt(), { saveLocalTrack: Qt2 } = xt(), { check: check } = d(), { opening: automationBusy, openRoxyAIAgent: tn } = Ue(), { getVideoSource: nn } = h(), rn = u(), an = r(), { invalidateCache: on2 } = te(), { columns: columns, updateColumns: un2, updateRemarkDisplayStatus: dn2 } = yt(jt(), props.isProjectProfile ? ["project"] : void 0);
+  const { ke, De, Le, vt, bt, me, ee, We, at, Lt, tt, he, It, Ae, pt, _e, ge, ut, Wt, xt, d, Ue, h, u, r, te, yt, jt, b, Ce, Pt, E, w, S, At, cn, Ht, Kt, _, Mt, e, Xt, En, ue, y, l, Oe, ae, x, st, dt, Te, ct, ot, lt, Be, Jt, o, Zt, f, ie, i, I, W, z, Ft, H, B, ht, Ut, ye, V, xe, Ze, Ct, St, we, qt, Gt } = profileTableRuntime;
+  const g2 = ke(), v2 = De(), oe2 = Le(), T2 = vt(), { showProxyFormDrawer: fe2 } = bt(T2), { userInfo: R2, userConfig: Ee2 } = me(ee()), { handleBusinessCode: Ne2 } = We(), { updateOnboardingTaskStatus: Fe2 } = at(), { getProjects: ze2 } = Lt(), [He2] = tt(), [G2, K2] = he(), [Ge2] = It(), [Ke2] = Ae(), { showSimpleDialog: qe2 } = pt(), { buildProxyData: Xe2, confirmDeleteProxy: $e2 } = _e(), { runProxySpeedTestForRows: ft2 } = ge(), { batchTestShowToast: mt2 } = ut(), { editCookieByProfile: wt2, startCookieRobot: Vt2 } = Wt(), { saveLocalTrack: Qt2 } = xt(), { check: check } = d(), { opening: automationBusy, openRoxyAIAgent: tn } = Ue(), { getVideoSource: nn } = h(), rn = u(), an = r(), { invalidateCache: on2 } = te(), { columns: columns, updateColumns: un2, updateRemarkDisplayStatus: dn2 } = yt(jt(), props.isProjectProfile ? ["project"] : void 0);
   const localProxyEditor = {
     openProxyBuyAddDrawer: ({ onAddConfirm }) => fe2({ title: $t("添加代理 IP"), mode: "proxy", onConfirm: onAddConfirm })
   };
@@ -80,6 +80,31 @@ export function useProfileTable(props, emit) {
     if (await vr() && activation === profileActivation) refresh(props.currentFilter._params ?? {}, !1);
   }
   let { singleModifyWindow: br2, batchModifyWindow: xr, updateProfileMeta: updateLabels } = Xt({ onlyErrorToast: K2, onRefreshTable: refresh, invalidateListCache: ur }), { onUpgradeCore: Cr } = En({ batchModifyWindow: xr, onlyErrorToast: K2, showToast: G2, getWorkspaceName: () => workspaceName.value });
+  const { confirmation: deleteConfirmation, request: requestProfileDelete } = useProfileDelete({
+    ref: S, watch: ue, onBeforeUnmount: x,
+    scope: () => JSON.stringify([rn.currentWorkspace?.id, g2.name, projectDetailId(g2),
+      props.currentFilter?.id, props.inactive, tableRef.value?.getParams()]),
+    inactive: () => props.inactive,
+    rows: () => tableRef.value?.getDataList() ?? [],
+    selection: () => selection.value,
+    checkClosed: Qn,
+    read: ids => {
+      const project = projectDetailId(g2);
+      return o.window.userGetWindowInfoListList({
+        ...profileTableParams(tableRef.value.getParams(), project),
+        ...(project !== undefined && { scopeProjectId: project }),
+        page_index: 1, page_size: ids.length, dirIds: ids, isDelete: 0,
+      });
+    },
+    remove: async (ids, permanent) => {
+      if (!permanent) return xr({ ids, isDelete: true, requestType: z.Delete }, true);
+      const { code, msg } = await o.window.userDelWindowInfoCreate({ ids });
+      K2(code, msg);
+      return code === 0;
+    },
+    canPurge: () => check("Profiles_permanent_delete"),
+    warn: message => K2(-1, message),
+  });
   ue(() => props.currentFilter?.id, () => {
     yr();
   }), ue(() => g2.params.id, async () => {
@@ -153,7 +178,7 @@ export function useProfileTable(props, emit) {
     let { key: t3, value: n2 } = e2 || {};
     refresh({ queryKey: n2 && (t3 || "name_remark"), queryValue: n2 }, !0);
   }
-  let runOperation = Zt({ saveLocalTrack: Qt2, tableRef: tableRef, filtersMenu: filters, router: v2, route: g2, getCurrentFilter: () => props.currentFilter, copyTextFn: f, showToast: G2, onTransfer: Br, onMoveToProject: Hr, openBrowserBefore: openProfile, setAsDefaultBrowser: Lr, createDesktopShortcut: Rr, multipleProxyChange: Wr, editProfileProxy: Ur, multipleProxyDelete: $r, multipleAccountChange: ti, tagsIconRef: tagsRef, addTag: Ge2, updateProfileMeta: updateLabels, singleModifyWindow: br2, onRemark: ii, onEditCookies: ni, openCookieRobot: ri, onClearCache: oi, onUpgradeCore: Cr, exportProfile: si, deleteProfile: ci, onTestProxy: Mr, createAutomation: createAutomation });
+  let runOperation = Zt({ saveLocalTrack: Qt2, tableRef: tableRef, filtersMenu: filters, router: v2, route: g2, getCurrentFilter: () => props.currentFilter, copyTextFn: f, showToast: G2, onTransfer: Br, onMoveToProject: Hr, openBrowserBefore: openProfile, setAsDefaultBrowser: Lr, createDesktopShortcut: Rr, multipleProxyChange: Wr, editProfileProxy: Ur, multipleProxyDelete: $r, multipleAccountChange: ti, tagsIconRef: tagsRef, addTag: Ge2, updateProfileMeta: updateLabels, singleModifyWindow: br2, onRemark: ii, onEditCookies: ni, openCookieRobot: ri, onClearCache: oi, onUpgradeCore: Cr, exportProfile: si, deleteProfile: requestProfileDelete, onTestProxy: Mr, createAutomation: createAutomation });
   async function Lr(e2) {
     let t3 = `${e2.windowSortNum}`.padStart(`${e2.maxWindowSort || 0}`.length, "0");
     const result = await globalThis.electronAPI.send("browser:setAsDefaultBrowser", { ...ie(e2), __orderName: `${workspaceName.value}-${t3}` });
@@ -371,30 +396,6 @@ export function useProfileTable(props, emit) {
   async function si(e2) {
     oe2.open(Gt, { props: { showHeader: !1, modal: !0, blockScroll: !0 }, data: { props: { data: e2, workspaceName: workspaceName.value } } });
   }
-  async function ci(e2, t3) {
-    if ((await Qn(e2)).length !== e2.length) {
-      K2(-1, $t("请先关闭窗口"));
-      return;
-    }
-    let n2 = t3.map((e3) => ({ id: e3, openStatus: !1 }));
-    if (await o.window.userMdfWindowSyncV2Create(n2), e2.some((e3) => e3.statusInfo.some((e4) => e4.openUserId !== R2.value.id))) {
-      K2(-1, $t("无法删除正在被其他成员使用的窗口"));
-      return;
-    }
-    let { promise: r2, resolve: i2, reject: a3 } = Promise.withResolvers();
-    return re2.require({ group: "deleteConfirmDialog", header: $t("删除窗口"), message: $t("您确认要将所选窗口移至回收站吗？"), rejectProps: { label: $t("取消"), severity: "secondary", outlined: !0 }, acceptProps: { label: $t("确认"), severity: "danger" }, checkboxProps: check("Profiles_permanent_delete") && { label: $t("彻底删除"), value: !1 }, async accept() {
-      try {
-        if (this.checkboxProps.value) {
-          const { code, msg } = await o.window.userDelWindowInfoCreate({ ids: t3 });
-          if (K2(code, msg), code !== 0) return a3(msg);
-          refreshRow();
-        } else await xr({ ids: t3, isDelete: !0, requestType: z.Delete });
-        i2();
-      } catch (error) {
-        K2(-1, error.message), a3(error);
-      }
-    }, reject: a3, onHide: a3 }), r2;
-  }
   async function createProfile() {
     let { code: e2, msg: t3 } = await o.window.userCheckWindowTotalCountList();
     e2 === 0 ? v2.push({ name: "browser-create", query: { projectId: g2.params.id } }) : Ne2(e2, () => {
@@ -438,6 +439,104 @@ export function useProfileTable(props, emit) {
     updateLabels,
     openActions,
     showTemporaryColumn,
+    deleteConfirmation,
     videoUrl: nn,
   };
+}
+
+function useProfileDelete({ ref, watch, onBeforeUnmount, scope, inactive, rows, selection,
+  checkClosed, read, remove, canPurge, warn }) {
+  let pending, generation = 0;
+  const confirmation = ref(null);
+  const idsKey = list => JSON.stringify(list.map(row => row.id).sort());
+  const projectOf = row => String(row.projectId ?? "");
+
+  function finish(intent, completed = false) {
+    if (!intent || pending !== intent) return false;
+    pending = undefined;
+    confirmation.value = null;
+    intent.resolve(completed);
+    return completed;
+  }
+  function invalidate() {
+    generation++;
+    finish(pending);
+  }
+  function matchingRows(intent, source) {
+    const byId = new Map(source.map(row => [row.id, row]));
+    return intent.ids.map(id => byId.get(id))
+      .filter((row, index) => row && projectOf(row) === intent.projects[index]);
+  }
+  function isCurrent(intent) {
+    return pending === intent && generation === intent.generation && !inactive() &&
+      matchingRows(intent, rows()).length === intent.ids.length &&
+      (!intent.batch || idsKey(selection()) === intent.selectionKey);
+  }
+  watch(scope, invalidate, { flush: "sync" });
+  watch(() => idsKey(selection()), () => {
+    if (pending?.batch) invalidate();
+  }, { flush: "sync" });
+  watch(rows, () => {
+    if (pending && !isCurrent(pending)) invalidate();
+  }, { flush: "sync" });
+  onBeforeUnmount(invalidate);
+
+  async function verify(intent) {
+    try {
+      if (!isCurrent(intent)) return false;
+      const closed = await checkClosed(matchingRows(intent, rows()));
+      if (!isCurrent(intent)) return false;
+      if (closed.length !== intent.ids.length) {
+        warn($t("请先关闭窗口"));
+        return false;
+      }
+      // Re-read precisely these IDs in the active server scope. A still
+      // visible but stale row cannot authorize removal of a moved profile.
+      const { code, data, msg } = await read(intent.ids);
+      if (!isCurrent(intent)) return false;
+      if (code !== 0) throw Error(msg || $t("列表读取失败"));
+      const live = matchingRows(intent, data?.rows ?? []);
+      if (live.length !== intent.ids.length) {
+        warn($t("窗口/数据不存在，请刷新页面后重试"));
+        return false;
+      }
+      if (live.some(row => row.openStatus)) {
+        warn($t("请先关闭窗口"));
+        return false;
+      }
+      return true;
+    } catch (error) {
+      if (isCurrent(intent)) warn(error?.message || String(error));
+      return false;
+    }
+  }
+  async function accept(intent) {
+    const dialog = confirmation.value;
+    if (dialog?.key !== intent.generation || dialog.busy) return false;
+    const permanent = dialog.permanent;
+    dialog.busy = true;
+    if (!await verify(intent) || !isCurrent(intent) || (permanent && !canPurge())) return finish(intent);
+    try {
+      const completed = await remove(intent.ids, permanent);
+      return finish(intent, completed !== false);
+    } catch (error) {
+      if (isCurrent(intent)) warn(error?.message || String(error));
+      return finish(intent);
+    }
+  }
+  function request(targets, mode) {
+    invalidate();
+    const ids = targets.map(row => row.id);
+    if (!ids.length || ids.some(id => !id) || new Set(ids).size !== ids.length) return false;
+    const { promise, resolve } = Promise.withResolvers();
+    const intent = pending = { generation, ids, projects: targets.map(projectOf), batch: mode === "batch",
+      selectionKey: idsKey(targets), resolve };
+    void verify(intent).then(valid => {
+      if (!valid || !isCurrent(intent)) return finish(intent);
+      confirmation.value = { key: intent.generation, allowPermanent: canPurge(), permanent: false, busy: false,
+        accept: () => accept(intent), cancel: () => finish(intent) };
+    });
+    return promise;
+  }
+  return { confirmation, request };
 }

@@ -120,7 +120,8 @@ function profilesOpenRows(service, p) {
 function profilesLifecycleRows(service) {
   return service.engine.status()
     .filter(profile => !profile.trashed && (profile.running || profile.lifecycle?.pending || profile.lifecycle?.error))
-    .map(profile => ({ id: profile.id, openStatus: Boolean(profile.running), lifecycle: profile.lifecycle }));
+    .map(profile => ({ id: profile.id, openStatus: Boolean(profile.running), lifecycle: profile.lifecycle,
+      ...(profile.running && profile.launchStatus ? { launchStatus: profile.launchStatus } : {}) }));
 }
 
 function profilesPlatformOptions(service) {
@@ -142,8 +143,7 @@ async function profilesCreate(service, p) {
   if (!object(p)) throw Error("Invalid create payload");
   const n = maxProfileNumber(e.profiles.values()) + 1;
   const profile = profileFromPreview(e, { ...service.resolveInputs(p), sortNum: n });
-  const [saved] = await savePreviewProfiles(e, [profile]);
-  return { windowId: saved.id, ...toRoxy(saved) };
+  return savePreviewProfiles(e, [profile], ([saved]) => toRoxy(saved));
 }
 
 async function profilesCreateBatch(service, p) {
@@ -157,7 +157,8 @@ async function profilesCreateBatch(service, p) {
     ...(p.windowPlatformList || []),
     ...(p.platformUrlIds || []).map((id) => ({ accountId: id })),
   ];
-  if (proxies.length > count || (fingers.length && fingers.length !== count))
+  if (proxies.length > count ||
+    (Object.hasOwn(p, "fingerDetail") && (!Array.isArray(p.fingerDetail) || fingers.length !== count)))
     throw Error("批量代理或指纹数量与窗口数量不一致");
   if (p.platformBindType !== 2 && accounts.length > count)
     throw Error("账号数量不能大于窗口数量");
@@ -183,8 +184,7 @@ async function profilesCreateBatch(service, p) {
     return profileFromPreview(e, profileInput, allocated);
   });
   // Validate every row before the original engine commits the whole batch.
-  const saved = await savePreviewProfiles(e, profiles);
-  return saved.map(toRoxy);
+  return savePreviewProfiles(e, profiles, saved => saved.map(toRoxy));
 }
 
 async function profilesUpdate(service, p) {
@@ -210,6 +210,13 @@ async function profilesStart(service, p) {
   const id = String(p.id),
     result = await e.start(e.profileForEdit(id).profile);
   if (result.alreadyRunning) return result;
+  const lifecycleGeneration = result.lifecycle?.generation;
+  const refreshed = () => {
+    if (!result.launchStatus || lifecycleGeneration == null) return result;
+    const current = e.publicRunning(id);
+    return current.running && current.lifecycle?.generation === lifecycleGeneration && current.launchStatus
+      ? { ...result, launchStatus: current.launchStatus } : result;
+  };
   try {
     const current = e.profileForEdit(id);
     await e.applyProfileCommands(
@@ -228,13 +235,13 @@ async function profilesStart(service, p) {
     );
   } catch (error) {
     const warning = "窗口已启动，但最后打开时间保存失败：" + error.message;
-    e.emit({ type: "profile-metadata-error", id, message: warning });
+    e.emit({ type: "profile-metadata-error", id, lifecycleGeneration, message: warning });
     return {
-      ...result,
+      ...refreshed(),
       warningMessages: [...(result.warningMessages || []), warning],
     };
   }
-  return result;
+  return refreshed();
 }
 
 async function profilesClone(service, p) {

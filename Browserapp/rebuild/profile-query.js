@@ -6,7 +6,7 @@ const { projectNameFor } = require("./profile-index");
 const QUERY_FIELDS = { name: "windowName", remark: "windowRemark", note: "windowRemark", sortNum: "windowSortNum", id: "windowSortNum" };
 const ORDER_FIELDS = {
   profile: "windowSortNum", profileName: "windowSortNum", windowSortNum: "windowSortNum",
-  windowName: "windowName", openTime: "openTime", createTime: "createdAt", updateTime: "updatedAt",
+  name: "windowName", windowName: "windowName", openTime: "openTime", createTime: "createdAt", updateTime: "updatedAt",
 };
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 const DATE_ORDER_FIELDS = new Set(["createdAt", "updatedAt", "openTime", "trashedAt"]);

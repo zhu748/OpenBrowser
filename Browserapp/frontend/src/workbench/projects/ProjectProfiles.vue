@@ -1,7 +1,7 @@
 <script setup>
 import { onMounted, ref, useTemplateRef, watch } from 'vue';
 import { nn as usePermission, vt as cache, yt as useCache } from './utils-BIWenCnY.js';
-import { n as pinStatus, t as useProjects } from './project-zUGx3yhI.js';
+import { n as pinStatus } from './project-zUGx3yhI.js';
 import { b as useRouter, i as onWorkbenchEvent, y as useRoute } from './rich-html-link-VdBpR3Cm.js';
 import { Z as Icon } from './basecomponent-ClhuVxJN.js';
 import { t as Header } from './views-header-CcjwXPjG.js';
@@ -11,7 +11,6 @@ import { n as ProfileTable, t as ProfileDialogs } from './renewal-reminder-drawe
 const route = useRoute();
 const router = useRouter();
 const [openEditor] = useProjectEditor();
-const { getProjects } = useProjects();
 const { check } = usePermission();
 const { invalidateCache } = useCache();
 const profiles = useTemplateRef('project');
@@ -38,11 +37,11 @@ async function loadProject() {
 }
 
 function editProject() {
+  const id = projectId.value;
   openEditor({
-    pinStatus: pinStatus.pinned, projectName: title.value, project_id: projectId.value,
-    confirmNext: async ({ params }) => {
-      await getProjects();
-      title.value = params.projectName;
+    pinStatus: pinStatus.pinned, projectName: title.value, project_id: id,
+    confirmNext: ({ params }) => {
+      if (projectId.value === id) title.value = params.projectName;
     },
   });
 }

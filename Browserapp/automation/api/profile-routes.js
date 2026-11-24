@@ -79,24 +79,24 @@ class ProfileRoutes {
     };
     // The engine's sanitizer may still reject structurally odd profiles (e.g. a
     // non-string name slipped past String() coercion). Surface that as a 400
-    // request error rather than an internal 500 from syncProfiles' throw.
-    let created;
+    // request error rather than an internal 500 from the write's rejection.
     try {
-      created = this.engine.sanitizeProfile(profile);
-      created = this.normalizeProxyAssociationState(created, association.present
+      const sanitized = this.engine.sanitizeProfile(profile);
+      const created = this.normalizeProxyAssociationState(sanitized, association.present
         ? association
         : (hasManualProxyConfiguration ? { present: true, value: '' } : association));
       // existingIds was snapshotted before the awaits above, so two concurrent
       // creates carrying the same client id could both pass the 409 check and
-      // the later syncProfiles write would win silently. Re-check membership
+      // the later profile write would win silently. Re-check membership
       // synchronously here (single-threaded between the check and the write).
       if (this.engine.profiles?.has(id)) return fail('profile already exists', 409);
-      await this.engine.syncProfiles([created]);
+      return await this.engine.commitProfiles([created], {
+        prepareReply: ([saved]) => ok({ user_id: id, profile_id: id, id,
+          ...proxySummary(saved, this.proxyStore), profile: redactProfileForApi(saved) }),
+      });
     } catch (error) {
       return fail(`invalid profile: ${error.message}`, 400);
     }
-    created = this.engine.profiles.get(id) || created;
-    return ok({ user_id: id, profile_id: id, id, ...proxySummary(created, this.proxyStore), profile: redactProfileForApi(created) });
   }
 
   async routeProfileUpdate({ input }) {

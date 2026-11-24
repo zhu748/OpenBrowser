@@ -13,7 +13,7 @@
 const path = require('path');
 const fs = require('node:fs/promises');
 const cloudSync = require('./cloud-sync');
-const { MAX_BACKUP_PROFILES } = require('./cloud/limits');
+const { MAX_BACKUP_PROFILES, MAX_BACKUP_WARNING_DETAILS } = require('./cloud/limits');
 const { mergeProfileState } = require('./cloud/merge');
 const { prepareFileRestore, assertProfileRestoreReady } = require('./cloud/file-restore');
 const { captureRestoreState, claimRestoreState, readRestoreState, rollbackRestoreState, cleanupRestoreState } = require('./cloud/restore-state');
@@ -123,6 +123,12 @@ async function runCloudBackup(payload = {}) {
 function quitBackupBlocked(cause) {
   return Object.assign(new Error('无法确认当前备份授权或恢复状态，已跳过退出时备份，未发送新备份。', { cause }),
     { code: 'CLOUD_QUIT_BACKUP_BLOCKED' });
+}
+
+function assertCompleteAutomaticBackup(meta) {
+  if (meta?.complete === true) return;
+  const reason = meta?.skippedFileCount ? `自动备份跳过了 ${meta.skippedFileCount} 项数据` : '无法确认自动备份完整';
+  throw Object.assign(new Error(`${reason}，未替换已有备份。`), { code: 'CLOUD_AUTO_BACKUP_INCOMPLETE', meta });
 }
 
 /** Quit is automatic; it must not replace a good package with unsettled data. */
@@ -271,6 +277,9 @@ async function runCloudBackupExclusive(payload = {}, quit) {
   // provider is called, that provider owns its own staging/replace protocol.
   if (quit) await quit.verify();
   assertQuitBackupSettings(quit);
+  // Manual exports may intentionally salvage available data. An automatic
+  // operation must not overwrite the normal restore point with an omission.
+  if (quit) assertCompleteAutomaticBackup(meta);
   const result = await cloudSync.upload(cloud.provider, providerConfigFromCloud(cloud), buffer, remoteName);
   // A dispatched provider owns its write. Report the actual receipt, but
   // don't stamp an upload to a previous target onto a newer configuration.
@@ -284,6 +293,25 @@ async function runCloudBackupExclusive(payload = {}, quit) {
 
 async function applyBackupBody(body, options = {}) {
   return enqueueCloudOp(() => applyBackupBodyExclusive(body, options));
+}
+
+function restoreWarningSummary(selectedIds, ...sources) {
+  const backupWarnings = [];
+  const seen = new Set();
+  for (const source of sources) {
+    if (!Array.isArray(source)) continue; // Packages written before warnings existed.
+    for (const entry of source) {
+      const { profileId, path: file, reason } = entry || {};
+      if (!selectedIds.has(profileId) || typeof file !== 'string' || !file || typeof reason !== 'string' || !reason) continue;
+      const key = JSON.stringify([profileId, file, reason]);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (backupWarnings.length < MAX_BACKUP_WARNING_DETAILS) {
+        backupWarnings.push({ profileId, path: file.slice(0, 4096), reason: reason.slice(0, 128) });
+      }
+    }
+  }
+  return { complete: seen.size === 0, skippedFileCount: seen.size, backupWarnings };
 }
 
 async function applyBackupBodyExclusive(body, { mode = 'merge', localProfiles = null, localGroups = null } = {}) {
@@ -305,7 +333,7 @@ async function applyBackupBodyExclusive(body, { mode = 'merge', localProfiles = 
     remoteIds.add(profile.id);
     engine?.sanitizeProfile?.(profile);
     if (profile._dataFiles && profile.id) {
-      dataById.set(profile.id, profile._dataFiles);
+      dataById.set(profile.id, { files: profile._dataFiles, profile });
       delete profile._dataFiles;
     }
   }
@@ -329,6 +357,7 @@ async function applyBackupBodyExclusive(body, { mode = 'merge', localProfiles = 
   let groupsChanged = false;
   let profilesChanged = false;
   let transaction;
+  let warnings;
   let phase = 'prepare';
   let rollbackFailed = false;
   const requireClearJournal = async () => {
@@ -347,9 +376,10 @@ async function applyBackupBodyExclusive(body, { mode = 'merge', localProfiles = 
     for (const id of ids.filter((id) => dataById.has(id))) {
       const root = path.join(profileRoot, id);
       await assertSafeProfileChild(profileRoot, root);
-      selections.push({ root, files: dataById.get(id) });
+      selections.push({ root, ...dataById.get(id) });
     }
     transaction = await prepareFileRestore(selections);
+    warnings = restoreWarningSummary(merged.remoteProfileIds, body.backupWarnings, transaction.backupWarnings);
     recovery.records = transaction.recoveryRecords;
     recovery.phase = 'pending';
     await journalClaim.save(recovery);
@@ -388,6 +418,7 @@ async function applyBackupBodyExclusive(body, { mode = 'merge', localProfiles = 
       profiles: engine?.profiles?.values ? [...engine.profiles.values()] : merged.profiles,
       groups, proxies, restoredFiles: transaction.count,
       mergeStats: merged.stats, createdAt: body.createdAt,
+      ...warnings,
       ...(cleanupWarnings.length ? { cleanupWarnings } : {}),
     };
   } catch (error) {
@@ -448,16 +479,19 @@ async function runCloudRestoreExclusive(payload = {}) {
     profileCount: applied.profiles.length,
     restoredFiles: applied.restoredFiles,
     mergeStats: applied.mergeStats,
+    complete: applied.complete,
+    skippedFileCount: applied.skippedFileCount,
+    backupWarnings: applied.backupWarnings,
   });
   return { success: true, mode, ...applied, cloud: getSettings().cloud };
 }
 
 /** Push one or more environments as individual remote packs + refresh full pack optional */
-async function runCloudProfilePush(payload = {}) {
-  return enqueueCloudOp(() => runCloudProfilePushExclusive(payload));
+async function runCloudProfilePush(payload = {}, { automatic = false } = {}) {
+  return enqueueCloudOp(() => runCloudProfilePushExclusive(payload, automatic));
 }
 
-async function runCloudProfilePushExclusive(payload = {}) {
+async function runCloudProfilePushExclusive(payload, automatic) {
   const { getEngine, emit, getSettings, saveSettings } = requireDeps();
   const engine = getEngine();
   const localSettingsCache = getSettings();
@@ -484,6 +518,7 @@ async function runCloudProfilePushExclusive(payload = {}) {
       const { buffer, meta } = await buildEngineBackup({ ...payload, profiles: [profile], profileIds: [id] }, {
         settings: { kind: 'profile', profileId: id }, includeProxies: false,
       });
+      if (automatic) assertCompleteAutomaticBackup(meta);
       const remoteName = cloudSync.profileRemoteName(id);
       const result = await cloudSync.upload(cloud.provider, providerConfigFromCloud(cloud), buffer, remoteName);
       results.push({ id, meta, result, remoteName });
@@ -491,13 +526,16 @@ async function runCloudProfilePushExclusive(payload = {}) {
       failures.push({ id, error });
     }
   }
-  cloud.lastSyncAt = new Date().toISOString();
+  cloud.lastSyncAt = results.length ? new Date().toISOString() : getSettings().cloud?.lastSyncAt || '';
   if (failures.length) {
     const summary = failures.map(({ id, error }) => `${id}: ${error.message}`).join('；');
     cloud.lastError = summary;
     await saveSettings(mergeCloudCompletion(getSettings(), cloud));
     emit({ type: 'cloud-sync', action: 'profile-push', count: results.length, ids, failedIds: failures.map((f) => f.id) });
-    if (!results.length) throw new Error('云推送全部失败：' + summary);
+    if (!results.length) {
+      if (automatic && failures.length === 1 && failures[0].error.code === 'CLOUD_AUTO_BACKUP_INCOMPLETE') throw failures[0].error;
+      throw new Error('云推送全部失败：' + summary);
+    }
     const error = new Error(`云推送部分失败（成功 ${results.length}/${ids.length}）：${summary}`);
     error.code = 'CLOUD_PUSH_PARTIAL';
     error.partialResults = results;
@@ -527,22 +565,28 @@ async function runCloudProfilePullExclusive(payload = {}) {
   let combinedRemote = [];
   let restoredFiles = 0;
   const per = [];
+  const backupWarnings = [];
   for (const id of ids) {
     const remoteName = cloudSync.profileRemoteName(id);
     const buffer = await cloudSync.download(cloud.provider, providerConfigFromCloud(cloud), remoteName);
     const body = await cloudSync.parseBackupPackage(buffer, cloud.passphrase || payload.passphrase || '');
-    combinedRemote = combinedRemote.concat(body.profiles || []);
-    per.push({ id, remoteName, count: (body.profiles || []).length, createdAt: body.createdAt });
+    combinedRemote = combinedRemote.concat(body.profiles);
+    if (Array.isArray(body.backupWarnings)) {
+      const inPack = new Set(body.profiles.map(profile => profile?.id));
+      for (const warning of body.backupWarnings) if (inPack.has(warning?.profileId)) backupWarnings.push(warning);
+    }
+    per.push({ id, remoteName, count: body.profiles.length, createdAt: body.createdAt });
   }
   const applied = await applyBackupBodyExclusive(
-    { profiles: combinedRemote, groups: payload.groups || localSettingsCache.uiGroups || [], proxies: [] },
+    { profiles: combinedRemote, groups: payload.groups || localSettingsCache.uiGroups || [], proxies: [], backupWarnings },
     { mode, localProfiles, localGroups: payload.localGroups }
   );
   restoredFiles = applied.restoredFiles;
   cloud.lastSyncAt = new Date().toISOString();
   cloud.lastError = '';
   await saveSettings(mergeCloudCompletion(getSettings(), cloud));
-  emit({ type: 'cloud-sync', action: 'profile-pull', count: ids.length, mode, mergeStats: applied.mergeStats });
+  emit({ type: 'cloud-sync', action: 'profile-pull', count: ids.length, mode, mergeStats: applied.mergeStats,
+    complete: applied.complete, skippedFileCount: applied.skippedFileCount, backupWarnings: applied.backupWarnings });
   return { success: true, mode, ...applied, per, restoredFiles, cloud: getSettings().cloud };
 }
 

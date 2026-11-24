@@ -1,3 +1,4 @@
+/* global showGroupProfiles */
 // OpenBrowser 1:1 Modern Workbench & Feature Extensions
 // Implements:
 // 1. Full-page Create/Edit Window with 4 modes (Single / Batch / Window Import-Upload / AI Batch)
@@ -2657,11 +2658,7 @@
       const viewId = e.target.closest('[data-rpc-view]')?.dataset.rpcView;
       const newWinId = e.target.closest('[data-rpc-new-win]')?.dataset.rpcNewWin;
       const editId = e.target.closest('[data-rpc-edit]')?.dataset.rpcEdit;
-      if (viewId) {
-        if (typeof activeGroupFilter !== 'undefined') window.activeGroupFilter = viewId;
-        if (typeof switchView === 'function') switchView('profiles');
-        if (typeof renderProfiles === 'function') renderProfiles();
-      }
+      if (viewId) showGroupProfiles(viewId);
       if (newWinId) {
         editingProfileId = null;
         openWorkbenchEditorMode('single');

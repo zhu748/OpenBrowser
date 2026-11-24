@@ -29,6 +29,230 @@ async function rendererFixture(relative, modules, globals = {}, exportName) {
   return vm.runInNewContext(program, { modules, $t: message => message, ...globals }, { filename });
 }
 
+// Render the actual workbench page and exercise its table/toolbar callbacks.
+// The host, network and other UI widgets stay inert.
+async function listPageFixture(relative, tableRef, overrides, globals = {}) {
+  const vue = require('vue'), noop = () => {}, widget = {}, cleanup = [];
+  const modules = {
+    './workbench-vue.js': { ...vue, useTemplateRef: () => tableRef, resolveComponent: () => widget,
+      onBeforeMount: noop, onMounted: noop, onBeforeUnmount: fn => cleanup.push(fn) },
+    './agent-BmSFI9WH.js': { a: value => value, n: () => [noop, noop] },
+    './ry-table-do6kugym.js': { t: widget }, './views-header-CcjwXPjG.js': { t: widget },
+    './rx-button-DyzuUt-V.js': { t: widget }, './useconfirm-CV4GTWBW.js': { n: () => ({}) },
+    ...overrides,
+  };
+  const component = await rendererFixture(relative, new Proxy(modules, { get: (all, key) => all[key] ?? {} }), globals);
+  const render = component.setup({}, { expose: noop }), cache = [];
+  return {
+    table: () => render({ $t: value => value, $route: { meta: {} } }, cache).children[1].children[0],
+    unmount: () => cleanup.forEach(fn => fn()),
+  };
+}
+
+async function accountPageChecks() {
+  const vue = require('vue');
+  const { createTableLoader } = await import('../../rebuild/workbench-table.mjs');
+  const displayed = vue.ref([]), table = vue.shallowRef({ getDataList: () => displayed.value });
+  const reads = [], lookups = [], exports = [], credential = Promise.withResolvers();
+  const defer = (queue, params) => {
+    const hold = Promise.withResolvers();
+    queue.push({ params, finish: rows => hold.resolve({ code: 0, data: { rows, total: rows.length } }) });
+    return hold.promise;
+  };
+  const page = await listPageFixture('frontend/src/workbench/accounts/AccountsWorkbench.vue', table, {
+    './utils-BIWenCnY.js': { h: { platform: { userGetPlatformInfoV2List: p => defer(reads, p) },
+      window: { userGetWindowInfoListList: p => defer(lookups, p) } }, nn: () => ({ check: () => true }),
+      qt: { Firefox: 'Firefox' }, rn: {}, at: () => ({ isViewer: vue.ref(false) }), v: () => ({}), mt: () => ({}), yt: () => ({}) },
+    './rich-html-link-VdBpR3Cm.js': { b: () => ({}) }, './simplePopup-D6H7ykCr.js': { t: () => ({}) },
+    './useProxyFormDrawer-r-7UykRS.js': { o: () => ({}) }, './quick-CZrtqSCy.js': { a: () => [], s: {}, r: () => ({ columns: vue.ref([]) }) },
+    './useProfileEntityLabels-BfqbVpel.js': { n: () => vue.ref({}) }, './useProfileOpenState-GCrr7PDa.js': { i: () => ({}) },
+    './usedialog-Dh0xp3r7.js': { n: () => ({ open: (_component, dialog) => exports.push(Array.from(dialog.data.props.ids)) }) },
+  }, { __localRequest: () => credential.promise });
+  let search = 'old';
+  const loader = createTableLoader({ params: () => ({ page_index: 1, page_size: 10, queryValue: search }), wait() {},
+    read: (params, current) => page.table().props['table-request'](params, current),
+    apply: ({ rows }) => { displayed.value = rows; }, busy() {}, failed: error => { throw error; }, paginate: () => false });
+  const clickExport = () => page.table().children['display-before']()[0].props.onClick({ stopPropagation() {} });
+  const select = rows => page.table().props['onUpdate:selection'](rows);
+  const account = (id, profile) => ({ id, boundProfileIds: profile ? [profile] : [] });
+  const start = loader.load();
+  await tick();
+  search = 'current';
+  const latest = loader.load();
+  await tick();
+  reads[1].finish([account('b', 'b-profile'), account('c')]);
+  await latest;
+  clickExport();
+  reads[0].finish([account('a', 'a-profile')]);
+  await start;
+  clickExport();
+  assert.deepEqual(exports, [['b', 'c'], ['b', 'c']], 'a late list response cannot change the export dialog IDs');
+  assert.deepEqual(lookups.map(({ params }) => Array.from(params.dirIds)), [['b-profile']],
+    'a dropped list response must not even start loading related windows');
+  select([account('a'), account('c')]);
+  clickExport();
+  assert.deepEqual(exports.at(-1), ['c'], 'explicit selection is intersected with the displayed rows');
+  select([account('a')]);
+  clickExport();
+  assert.equal(exports.length, 3, 'only stale IDs selected must not fall back to exporting the whole page');
+  select([]);
+
+  const oldRow = displayed.value[0], column = { visible: {} };
+  const reveal = page.table().children.password({ data: oldRow, column: { _cache: column } })[0].props.onToggleMasked();
+  // A cache restore can change the accepted rows without another account request.
+  loader.invalidate();
+  displayed.value = [account('b', 'new-binding')];
+  lookups[1].finish([{ dirId: 'new-binding', coreType: 'Firefox' }]);
+  await tick();
+  lookups[0].finish([{ dirId: 'b-profile', coreType: 'Chrome' }]);
+  credential.resolve({ rows: [{ platformPassword: 'fixture-only' }] });
+  await reveal;
+  await tick();
+  const actions = page.table().props['table-operation'](displayed.value[0]);
+  assert.equal(actions[0].icon, 'base/rx_ic_firefox', 'an older binding lookup cannot replace the displayed association');
+  assert.equal(column.visible.b, undefined, 'a late credential read cannot reveal the newly displayed row');
+  assert.equal(oldRow.platformPassword, undefined, 'a stale read must not merge into a prior cached page either');
+  clickExport();
+  assert.deepEqual(exports.at(-1), ['b']);
+  page.unmount();
+  loader.dispose();
+}
+
+async function projectListPageChecks() {
+  const vue = require('vue');
+  const { LocalService } = require('../../rebuild/local-service');
+  const tableModule = await import('../../rebuild/workbench-table.mjs');
+  const workspace = { currentWorkspace: { id: 'local' } }, route = { query: {} };
+  const useCache = await rendererFixture('frontend/src/workbench/shared/workbench-list-cache.mjs', {
+    './workbench-vue.js': vue, './agent-BmSFI9WH.js': { i: (_name, setup) => setup },
+    './workbench-local-workspace.js': { useWorkspace: () => workspace }, './workbench-table.js': tableModule,
+  }, {}, 'useListCache');
+  const cache = useCache(), engine = {};
+  const groups = ['A', 'B', 'C', 'D'].map(id => ({ id, projectName: id, pinStatus: id === 'B' ? 1 : 0 }));
+  const activeByProject = new Map([['', [1]], ['C', [1, 2]]]);
+  const service = Object.assign(Object.create(LocalService.prototype), {
+    data: { groups, settings: {} }, queue: Promise.resolve(), load: async () => {}, save: async () => {}, engine,
+    profileIndex: () => ({ activeByProject }),
+  });
+  const bridgeFile = path.resolve(__dirname, '../../rebuild/renderer-bridge.js');
+  const code = (await fs.readFile(bridgeFile, 'utf8')).replace(/^import\s+[\s\S]*?;$/gm, '');
+  let delaySort, delayRead;
+  const reads = [];
+  const renderer = vm.createContext({
+    ...tableModule, currentScope: () => null, createProfileLifecycleBridge: () => ({ handle() {} }),
+    rebuild: {
+      onEvent: listener => { engine.emit = listener; },
+      request: async (method, p) => {
+        const result = await captureIpcResult(() => service.request(method, structuredClone(p)));
+        if (method === 'groups:sort' && delaySort) await delaySort.promise;
+        if (method === 'groups:query') {
+          reads.push(p.page_index);
+          const held = delayRead;
+          delayRead = null;
+          await held?.promise;
+        }
+        return result;
+      },
+    },
+  });
+  vm.runInContext(code, renderer, { filename: bridgeFile });
+  const api = renderer.__localApi, table = vue.shallowRef(), ids = rows => Array.from(rows, row => row.project_id);
+  const page = await listPageFixture('frontend/src/workbench/projects/ProjectsWorkbench.vue', table, {
+    './utils-BIWenCnY.js': { h: api, nn: () => ({}), mt: () => ({}), v: () => ({}),
+      vt: { PROJECT_LIST: 'project-list' }, yt: () => ({ invalidateCache() {} }) },
+    './project-zUGx3yhI.js': {},
+    './useProject-BHb2F7tC.js': { t: () => [] }, './useDialog-BC-nc8J-.js': { t: () => [] },
+    './usePopupMenu-BRw1zJ0m.js': { t: () => ({}) },
+  });
+  let beforeMount, beforeUnmount;
+  const useTable = await rendererFixture('frontend/src/workbench/shared/tables/use-browser-table.mjs', {
+    './workbench-vue.js': { ...vue, onMounted() {}, onBeforeMount: fn => { beforeMount = fn; },
+      onBeforeUnmount: fn => { beforeUnmount = fn; } },
+    './utils-BIWenCnY.js': { bt: () => cache, mt: () => workspace, o: () => ({}) },
+    './rich-html-link-VdBpR3Cm.js': { y: () => route }, './workbench-table.js': tableModule,
+    './workbench-table-actions.js': {}, './workbench-table-context.js': { useTableContextMenu: () => [] },
+  }, { localStorage: { getItem: () => null }, HTMLElement: class {}, electronAPI: renderer.electronAPI }, 'useBrowserTable');
+  const published = [];
+  async function mount() {
+    const effects = vue.effectScope();
+    const view = effects.run(() => useTable({
+      dataKey: 'project_id', cacheKey: 'project-list', listCacheKey: 'project-list', clearSelectionOnRequest: true,
+      immediate: true, pageRows: 2, tableSort: () => ({}), tableFilters: () => [],
+      tableRequest: params => page.table().props['table-request'](params),
+    }, vue.ref([]), {}, vue.ref(), vue.ref()));
+    table.value = { getParams: view.getParams, refresh: view.refresh };
+    effects.run(() => vue.watch(view.rows, rows => published.push(Array.from(rows ?? [], row => row.projectName)), { flush: 'sync' }));
+    await beforeMount();
+    return { view, unmount() { beforeUnmount(); effects.stop(); } };
+  }
+  let mounted = await mount();
+  const visible = () => mounted.view.rows.value;
+  const load = async number => {
+    mounted.view.page.first = (number - 1) * 2;
+    await mounted.view.load();
+    assert.equal(mounted.view.page.total, 5, 'total includes the default exactly once regardless of page');
+    return ids(visible());
+  };
+  const reorder = () => page.table().props.onRowReorder({ value: visible().slice().reverse() });
+  assert.deepEqual(ids(visible()), ['local-default', 'A']);
+  assert.equal(visible()[0].windowCount, 1);
+  await reorder();
+  assert.equal(reads.length, 1, 'dragging only the built-in row is a no-op');
+  assert.deepEqual(ids(visible()), ['local-default', 'A'], 'the fixed default project cannot move in the displayed first page');
+  assert.deepEqual(await load(2), ['B', 'C']);
+  assert.equal(visible()[1].windowCount, 2);
+  delaySort = Promise.withResolvers();
+  const saving = reorder();
+  await tick();
+  assert.deepEqual(ids(visible()), ['C', 'B'], 'the committed event refreshes before a delayed write acknowledgement');
+  assert.deepEqual(await load(3), ['D']);
+  const readsBeforeAck = reads.length;
+  delaySort.resolve();
+  await saving;
+  assert.equal(reads.length, readsBeforeAck, 'the same commit must not reload the table twice');
+  assert.deepEqual(ids(visible()), ['D'], 'reorder acknowledgement must not overwrite a newly displayed page');
+  assert.deepEqual(await load(4), ['D'], 'the displayed page clamps after a shrink or invalid page request');
+  assert.deepEqual(ids((await api.limit.userGetProjectInfoByWorkspaceList({ default: 2, page_index: 4, page_size: 2 })).data.rows), []);
+  assert.deepEqual(ids((await api.limit.userGetProjectInfoByWorkspaceList({ default: 2 })).data.rows),
+    ['local-default', 'A', 'C', 'B', 'D'], 'selection widgets get every project; only slots from the reordered page moved');
+  assert.deepEqual(ids((await api.limit.userGetTopProjectInfoList()).data.rows), ['B'], 'pinned sidebar remains unpaginated');
+  await assert.rejects(api.limit.userGetProjectInfoByWorkspaceList({ page_size: -1 }), /分页/);
+
+  const afterPage = reads.length;
+  for (const event of [{ type: 'profiles', action: 'label-metadata' }, { type: 'profiles', action: 'trash', ids: [] },
+    { type: 'profile-start-progress', lifecycle: { pending: false } }, { type: 'status', action: 'not-a-persisted-write' }]) engine.emit(event);
+  await tick();
+  assert.equal(reads.length, afterPage, 'labels, empty removals, and lifecycle status do not affect the project list');
+  const heldRead = delayRead = Promise.withResolvers();
+  await service.request('groups:save', { id: 'D', projectName: 'Snapshot to discard' });
+  await tick();
+  assert.equal(reads.length, afterPage + 1);
+  assert.equal(cache.get('project-list', 'local', {}), null);
+  await service.request('groups:save', { id: 'D', projectName: 'Authoritative name' });
+  activeByProject.set('D', [1, 2, 3]);
+  engine.emit({ type: 'status', action: 'profiles-update' });
+  engine.emit({ type: 'profiles', action: 'restore', ids: ['restored'] });
+  assert.equal(reads.length, afterPage + 1, 'events received during an old read request only one follow-up');
+  heldRead.resolve();
+  await tick();
+  assert.equal(reads.length, afterPage + 2);
+  assert.equal(mounted.view.page.first, 4, 'background project changes do not reset the displayed page');
+  assert.deepEqual([visible()[0].projectName, visible()[0].windowCount], ['Authoritative name', 3]);
+  assert.equal(published.flat().includes('Snapshot to discard'), false, 'a superseded response never displays or enters the cache');
+
+  mounted.unmount();
+  const beforeRemount = reads.length;
+  await service.request('groups:save', { id: 'A', projectName: 'Changed while away' });
+  activeByProject.set('A', [1, 2]);
+  engine.emit({ type: 'profiles', action: 'restore', ids: ['restored-while-away'] });
+  assert.equal(cache.get('project-list', 'local', {}), null);
+  mounted = await mount();
+  assert.equal(reads.length, beforeRemount + 1, 'a project event invalidates even inactive cached views');
+  assert.deepEqual([visible()[1].projectName, visible()[1].windowCount], ['Changed while away', 2]);
+  mounted.unmount();
+  page.unmount();
+}
+
 async function tableChecks() {
   const { buildTableQuery, createTableLoader, isProfileTable } = await import('../../rebuild/workbench-table.mjs');
   assert.equal(isProfileTable('browser-list'), true);
@@ -401,6 +625,16 @@ async function profileTableErrorChecks() {
   const otherTable = await openTable('unrelated-list');
   assert.ok(findNode(otherTable().children.empty(), node => node.props?.id === 'ordinary-empty'),
     'unrelated list behavior is unchanged');
+  const projectPages = [];
+  await openTable('project-list', { tableRequest: async params => {
+    projectPages.push(params.page_index);
+    return { total: 11, rows: params.page_index <= 2 ? [{ id: params.page_index }] : [] };
+  } });
+  state.page.first = 40;
+  await state.load();
+  assert.deepEqual(projectPages, [1, 5, 2], 'an emptied project page retries the last available page');
+  assert.equal(state.page.first, 10);
+  assert.deepEqual(state.rows.value, [{ id: 2 }]);
   await profileSortPreferenceChecks(openTable, () => state, errors);
 }
 
@@ -410,7 +644,7 @@ async function profileSortPreferenceChecks(openTable, getState, errors) {
   const writes = [];
   let nextSave, persisted;
   Object.assign(service, {
-    queue: Promise.resolve(), data: { settings: { tableSort: { orderName: 'name', orderType: 'asc' } } }, load: async () => {},
+    queue: Promise.resolve(), data: { settings: { tableSort: { orderName: 'windowName', orderType: 'asc' } } }, load: async () => {},
     async save() {
       if (nextSave) {
         const hold = nextSave;
@@ -452,6 +686,7 @@ async function profileSortPreferenceChecks(openTable, getState, errors) {
   });
   const state = getState();
   assert.deepEqual(state.rows.value, [{ id: 'asc:1' }]);
+  assert.equal(queries[0].orderName, 'name', 'a remembered DTO field selects the actual name column');
   state.page.first = 10;
   await state.load();
   assert.deepEqual(state.rows.value, [{ id: 'asc:2' }]);
@@ -499,6 +734,22 @@ async function profileSortPreferenceChecks(openTable, getState, errors) {
   assert.equal(errors.length, previousErrors, 'obsolete sort failures do not confuse the currently selected sort');
   assert.deepEqual(persisted, {}, 'clearing a sort clears the remembered preference');
   assert.deepEqual(queries.at(-1), { page_index: 1, page_size: 10 }, 'clearing sort resets pagination and omits the explicit order');
+
+  const snapshot = [
+    { id: 'first', number: 1, name: 'Zulu' }, { id: 'second', number: 2, name: 'Alpha' },
+    { id: 'third', number: 3, name: 'Alpha' },
+  ];
+  const projection = require('../../rebuild/profile-index').buildProfileIndex({ snapshot, groups: [], labels: [] });
+  service.profileIndex = () => projection;
+  service.decorate = row => ({ id: row.id, projectId: 'demo' });
+  const real = await openTable('browser-list', { tableSort: profileSortOptions, tableRequest: renderer.__localApi.window.userGetWindowInfoListList });
+  await real().props.onSort({ sortField: 'name', sortOrder: 1 });
+  assert.deepEqual(Array.from(getState().rows.value, row => row.id), ['second', 'third', 'first'],
+    'clicking the actual name column sorts by names, not profile numbers, with stable ties');
+  await real().props.onSort({ sortField: 'name', sortOrder: -1 });
+  assert.deepEqual(Array.from(getState().rows.value, row => row.id), ['first', 'second', 'third']);
+  const aliases = await renderer.__localApi.window.userGetWindowInfoListList({ orderName: 'windowName', orderType: 'asc', page_size: 1, page_index: 2 });
+  assert.deepEqual(Array.from(aliases.data.rows, row => row.id), ['third']);
 }
 
 async function apiChecks() {
@@ -1117,8 +1368,155 @@ async function profileBatchChecks() {
   assert.equal(batches.length, 2, 'validation must precede every mutation');
 }
 
+async function profilePreviewValidationChecks() {
+  const vue = require('vue'), noop = () => {}, workbench = 'frontend/src/workbench/';
+  const incomplete = '指纹预览未返回完整身份，请重试';
+  const previewErrors = [], statuses = [], submitted = [], imported = [], requestedCounts = [];
+  const draft = await rendererFixture('rebuild/workbench-fingerprint-draft.mjs', {}, {
+    __localUiError: message => previewErrors.push(message),
+  }, '({ requireFingerprintPreviewRows, refreshFingerprintDraft, serializeFingerprintDraft })');
+  const fields = await rendererFixture(workbench + 'shared/workbench-fields.mjs', {
+    './workbench-fingerprint-draft.js': draft,
+  }, {}, '({ findField, selectFields, readFields, applyValues })');
+  const fixtureRow = id => {
+    const text = 'Preview display text ' + id;
+    return { userAgent: text, _fingerprintDraft: {
+      profileId: 'record-' + id, allocation: 'receipt-' + id, seed: 'fixture-' + id, version: 2, userAgent: text,
+    } };
+  };
+  const [first, second] = ['a', 'b'].map(fixtureRow);
+  const malformed = { ...second, _fingerprintDraft: {} };
+  const userAgent = { name: 'userAgent', value: '' };
+  const groups = [[userAgent, { name: 'coreType', value: 'Chrome' }]];
+  let reply;
+  const electronAPI = { send(channel, payload, count) {
+    assert.equal(channel, 'util:genRandomFingerprint');
+    if (payload.count !== undefined) assert.equal(payload.count, count);
+    requestedCounts.push(count);
+    return Promise.resolve(typeof reply === 'function' ? reply(count) : reply);
+  } };
+  const button = {}, profileForm = {}, uploadInput = {};
+  const modules = {
+    './workbench-fingerprint-draft.js': draft,
+    './workbench-vue.js': { ...vue, withDirectives: node => node },
+    './utils-BIWenCnY.js': { a: fields.findField, i: fields.selectFields, o: fields.readFields, d: fields.applyValues,
+      v: () => ({}), s: () => ({}), mt: () => ({}), m: async () => ({}), qt: { Chrome: 'Chrome' },
+      h: { window: {
+        userBatchWindowInfoV2Create: async params => {
+          submitted.push(structuredClone(params)); return { code: 0, msg: '' };
+        },
+        userImportWindowInfoV2Create: async params => {
+          imported.push(JSON.parse(JSON.stringify(params))); return { code: 0, msg: '' };
+        },
+      } } },
+    './agent-BmSFI9WH.js': { n: () => [noop, (...args) => statuses.push(args)] },
+    './utils-CnUy4XUk.js': { o: value => Boolean(value) },
+    './quick-kroUOSn_.js': { i: () => '' },
+    './account-2bDq0W_G.js': { t: { Order: 1 } },
+    './createDefaultAccordions-CO1KkbkO.js': { r: {}, t: () => [] },
+    './hook-CnJE4hRq.js': { o: {} },
+    './rx-input-number-EcSY6ALQ.js': { t: {} },
+    './useAsyncGate-D7VA7DLY.js': { n: profileForm },
+    './mate-group-CBm6kY0g.js': { t: {} },
+    './rx-button-DyzuUt-V.js': { t: button },
+    './workbench-profile-import-file.js': { default: uploadInput },
+  };
+  const stubs = new Proxy(modules, { get: (all, key) => all[key] ?? {} });
+  const generate = await rendererFixture(workbench + 'profiles/profile-inputs.mjs', stubs,
+    { electronAPI }, 'refreshProfileFingerprint');
+  modules['./form-inputs-CnnG6T0O.js'] = { t: generate };
+  const component = await rendererFixture(workbench + 'profiles/CreateBatch.vue', stubs);
+  const loading = vue.ref(false);
+  const shared = {
+    collapsed: vue.ref(false), loading, inputsGroup: vue.ref(groups), previewInputs: vue.ref(groups),
+    canSubmit: vue.ref(true), createCount: vue.ref(2), profileTemplate: vue.ref({}), metaData: vue.ref({}),
+    formGate: { waitUntilReady: async () => {} }, clearGuide: noop, onBack: noop,
+    prepareCreateParams: async () => ({ createCount: 2, windowName: 'Fixture' }),
+  };
+  const mount = target => {
+    const render = target.setup({ shared }, { expose: noop });
+    return () => render({ $t: value => value }, []);
+  };
+  function findNode(node, match) {
+    if (match(node)) return node;
+    const children = Array.isArray(node) ? node : (Array.isArray(node?.children) ? node.children : []);
+    for (const child of children) {
+      const found = findNode(child, match);
+      if (found) return found;
+    }
+  }
+  const clickCreate = render => findNode(render(), node => node?.type === button && node.props?.label === '创建窗口')
+    .props.onClick({ stopPropagation: noop });
+  const mountBatch = mount(component);
+  const create = () => clickCreate(mountBatch);
+
+  for (const candidate of [
+    malformed,
+    { ...second, _fingerprintDraft: { ...second._fingerprintDraft, allocation: ' ' } },
+    { ...second, _fingerprintDraft: { ...second._fingerprintDraft, version: undefined } },
+    { ...second, _fingerprintDraft: { ...second._fingerprintDraft, userAgent: 'different display text' } },
+  ]) {
+    reply = [candidate];
+    assert.equal((await generate(groups)).length, 0);
+    assert.equal(userAgent.invalid, true);
+    assert.equal(userAgent.errorMsg, incomplete);
+    assert.equal(draft.serializeFingerprintDraft(groups, {})._fingerprintDraft, undefined);
+  }
+  assert.deepEqual(previewErrors, Array(4).fill(incomplete));
+  const old = Promise.withResolvers();
+  reply = old.promise;
+  const superseded = generate(groups);
+  reply = [first];
+  assert.equal((await generate(groups)).length, 1, 'a complete retry must succeed');
+  old.resolve([malformed]);
+  assert.equal((await superseded).length, 0);
+  assert.equal(userAgent.invalid, false);
+  assert.equal(userAgent.value, first.userAgent);
+  assert.equal(draft.serializeFingerprintDraft(groups, {})._fingerprintDraft.profileId, first._fingerprintDraft.profileId);
+  assert.equal(previewErrors.length, 4, 'an obsolete bad response must not report an error');
+
+  requestedCounts.length = 0;
+  const sparse = [first]; sparse.length = 2;
+  for (const candidate of [null, [], [first], [first, second, first], sparse, [first, malformed]]) {
+    reply = candidate;
+    await create();
+    assert.deepEqual(statuses.at(-1), [-1, incomplete]);
+    assert.equal(submitted.length, 0, 'the actual batch create callback must not submit invalid previews');
+    assert.equal(loading.value, false);
+  }
+  reply = [first, second];
+  await create();
+  assert.equal(submitted.length, 1, 'valid previews must allow a retry after failures');
+  assert.deepEqual(submitted[0].fingerDetail.map(row => row._fingerprintDraft), [first._fingerprintDraft, second._fingerprintDraft]);
+  assert.deepEqual(requestedCounts, Array(7).fill(2));
+
+  let closedProgress = 0;
+  modules['./agent-BmSFI9WH.js'].a = () => ({ currentWorkspace: vue.ref({ id: 'local' }) });
+  modules['./useDialog-BC-nc8J-.js'] = { t: () => [() => ({ hideModal: () => closedProgress++ })] };
+  const mountImport = mount(await rendererFixture(workbench + 'profiles/CreateFromFile.vue', stubs, { electronAPI }));
+  const form = findNode(mountImport(), node => node?.type === profileForm);
+  const input = findNode(form.children.before(), node => node?.type === uploadInput);
+  input.props.onImportSuccess({ excelData: Array.from({ length: 101 }, () => ({})) });
+  requestedCounts.length = 0;
+  const rowsForCount = count => Array.from({ length: count }, (_, index) => fixtureRow(`${count}-${index}`));
+  reply = count => count === 1 ? [malformed] : rowsForCount(count);
+  await clickCreate(mountImport);
+  assert.deepEqual(requestedCounts, [100, 1], 'test an incomplete reply after a successful import chunk');
+  assert.deepEqual(statuses.at(-1), [-1, incomplete]);
+  assert.equal(imported.length, 0, 'the actual import callback must not submit partial previews');
+  assert.equal(closedProgress, 1);
+  assert.equal(loading.value, false);
+  reply = rowsForCount;
+  await clickCreate(mountImport);
+  assert.equal(imported.length, 1, 'valid import previews must allow a retry after failures');
+  assert.equal(imported[0].fingerDetail.length, 101);
+  assert.equal(closedProgress, 2);
+}
+
 async function main() {
   await tableChecks();
+  await accountPageChecks();
+  await projectListPageChecks();
   await projectTableScopeChecks();
   await profileTableErrorChecks();
   await compactTableChecks();
@@ -1129,11 +1527,12 @@ async function main() {
   await localPreferenceChecks();
   await navigationChecks();
   await profileBatchChecks();
+  await profilePreviewValidationChecks();
   const result = await captureIpcResult(() => {
     throw Object.assign(Error('partial delete'), { code: 'EIO', completed: 200, remainingIds: ['a'], privateField: 'fixture' });
   });
   assert.throws(() => unwrapIpcResult(result), error =>
     error.code === 'EIO' && error.completed === 200 && error.remainingIds[0] === 'a' && !('privateField' in error));
-  console.log('WORKBENCH_IPC_SELFTEST OK (table queries, retry, sort preferences, inline rename revisions, local preference snapshots, startup settings, navigation and partial error DTO)');
+  console.log('WORKBENCH_IPC_SELFTEST OK (table queries, retry, sort preferences, inline rename revisions, local preference snapshots, startup settings, navigation, preview validation and partial error DTO)');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

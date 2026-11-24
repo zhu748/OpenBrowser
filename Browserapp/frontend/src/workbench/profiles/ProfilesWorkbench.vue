@@ -168,7 +168,7 @@ onBeforeMount(() => {
     <div class="flex flex-1 overflow-hidden">
       <component :is="extraPage" v-if="extraPage" />
       <div v-show="!extraPage" class="flex-1 overflow-hidden">
-        <ProfileTable :current-filter="activeFilter" @update-filter-tabs="reloadTabs" @switch-tab="activeId = $event" />
+        <ProfileTable :current-filter="activeFilter" :inactive="!!extraPage" @update-filter-tabs="reloadTabs" @switch-tab="activeId = $event" />
       </div>
     </div>
     <ProfileDialogs />

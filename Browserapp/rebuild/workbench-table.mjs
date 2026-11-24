@@ -3,8 +3,24 @@ const profileTables = new Set(["browser-list", "browser-recycle-list"]);
 export function isProfileTable(key) { return profileTables.has(key); }
 
 let profileCacheVersion = 0;
+let projectCacheVersion = 0;
 export function invalidateProfileTableCache() { profileCacheVersion += 1; }
-export function listCacheVersion(key) { return isProfileTable(key) ? profileCacheVersion : undefined; }
+export function invalidateProjectListCache() { projectCacheVersion += 1; }
+export function listCacheVersion(key) {
+  if (isProfileTable(key)) return profileCacheVersion;
+  if (key === 'project-list') return projectCacheVersion;
+}
+
+const membershipActions = new Set(['delete', 'trash', 'restore']);
+export function isProjectListChange(event) {
+  // Generic committed profile writes can create profiles or move them between
+  // projects. The event has no finer field-level information.
+  if (event?.type === 'status') return event.action === 'profiles-update';
+  return event?.type === 'profiles' && (
+    event.action === 'group-metadata' ||
+    (membershipActions.has(event.action) && (!Array.isArray(event.ids) || event.ids.length > 0))
+  );
+}
 
 const projectFields = ['scopeProjectId', 'projectId', 'projectIds'];
 
@@ -66,7 +82,7 @@ function pageData(response) {
   return { total: Number(data?.total) || 0, rows: Array.isArray(data?.rows) ? data.rows : [] };
 }
 
-export function createTableLoader({ wait, params, read, apply, busy, failed, paginate }) {
+export function createTableLoader({ wait, params, read, apply, busy, failed, paginate, version }) {
   let revision = 0, activation = 0, disposed = false, pending, dirty = false;
   let foregroundPending = false;
   async function load(background = false) {
@@ -76,10 +92,15 @@ export function createTableLoader({ wait, params, read, apply, busy, failed, pag
       foregroundPending = true;
       busy(true);
     }
-    const current = () => !disposed && revision === ticket;
+    const latest = () => !disposed && revision === ticket;
+    let readVersion = version?.();
+    const current = () => latest() && readVersion === version?.();
     try {
       await wait();
-      if (!current()) return;
+      if (!latest()) return;
+      // A notification during IPC invalidates the response even if the
+      // coalesced follow-up hasn't started yet. Never cache it as current.
+      readVersion = version?.();
       const query = params();
       let page = query.page_index;
       let result = pageData(await read(query, current));
@@ -100,7 +121,7 @@ export function createTableLoader({ wait, params, read, apply, busy, failed, pag
     } catch (error) {
       if (current()) failed(error);
     } finally {
-      if (current()) {
+      if (latest()) {
         foregroundPending = false;
         busy(false);
       }

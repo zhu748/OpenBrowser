@@ -50,13 +50,13 @@ function profileFromPreview(engine, input, allocated = new Set()) {
   return profile;
 }
 
-async function savePreviewProfiles(engine, profiles) {
-  await engine.syncProfiles(profiles);
+async function savePreviewProfiles(engine, profiles, prepareReply) {
+  const reply = await engine.commitProfiles(profiles, { prepareReply });
   // Consume only after durable success. A failed save can retry the same
   // preview; purging a saved window must never make its old proof reusable.
   const state = allocations.get(engine);
   if (state) for (const profile of profiles) state.consumed.add(profile.id);
-  return profiles.map(profile => engine.profiles?.get(profile.id) ?? profile);
+  return reply;
 }
 
 module.exports = { profileFromPreview, previewIdentity, reusePreviewIdentity, savePreviewProfiles };

@@ -3,7 +3,9 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { assertSafeProfileChild, validateProfileRootSecure } = require('../isolation');
-const { FIREFOX_PREFIX, isFirefoxBackupPath } = require('../browser-data');
+const { FIREFOX_PREFIX, FIREFOX_PLACES_BACKUP, isFirefoxProfile, isFirefoxBackupPath, isFirefoxPlacesBackupPath,
+  firefoxPlacesBackupPolicy, assertChromiumHistoryQuiescent } = require('../browser-data');
+const { assertChromiumHistorySnapshot, invalidHistoryBackup } = require('./chromium-history');
 const { MAX_BROWSER_DATA_BYTES, MAX_BROWSER_FILE_BYTES, MAX_BROWSER_DATA_FILES } = require('./limits');
 const { syncDirectory } = require('../../engine/state-storage');
 const RESTORE_PREFIX = '.openbrowser-restore-';
@@ -76,6 +78,7 @@ function destination(profileRoot, relative) {
 async function prepareFileRestore(selections) {
   const records = [];
   const directories = [];
+  const backupWarnings = [];
   let committed = false;
   let settled = false;
 
@@ -125,14 +128,31 @@ async function prepareFileRestore(selections) {
 
   try {
     const seen = new Set();
-    for (const { root, files } of selections) {
+    for (const { root, files, profile } of selections) {
       if (!files || typeof files !== 'object' || Array.isArray(files)) throw new Error('备份文件列表无效');
       const entries = Object.entries(files);
       if (entries.length > MAX_BROWSER_DATA_FILES) throw new Error('备份文件数量超过安全限制');
+      const places = profile && firefoxPlacesBackupPolicy(profile);
+      // An old bookmarks-only pack also omitted Places without warning.
+      // A browser-data section and an opted-in Firefox profile distinguish
+      // that omission from an intentional metadata-only export.
+      let skippedPlaces = Boolean(places?.warning && profile.advanced?.cloudBackup && isFirefoxProfile(profile));
       let total = 0;
       // All destinations are validated before even staging the first file.
       for (const [relative, encoded] of entries) {
+        // Older writers copied Places whenever history alone was selected.
+        // Decide using the archived preferences, not the destination's flags.
+        if (places && !places.include && isFirefoxPlacesBackupPath(relative)) {
+          skippedPlaces = true;
+          continue;
+        }
         const target = destination(root, relative);
+        const chromiumHistory = relative === 'History';
+        // Reject aliases (including Windows trailing dots/spaces) and
+        // recovery sidecars. This writer emits only the canonical filename.
+        if (!chromiumHistory && /^History(?:-(?:wal|shm|journal))?[ .]*$/i.test(relative))
+          throw new Error('历史记录备份必须为独立的 History 数据库，不含事务文件');
+        if (chromiumHistory) await assertChromiumHistoryQuiescent(root, true);
         const key = process.platform === 'win32' ? target.toLowerCase() : target;
         if (seen.has(key)) throw new Error('备份包含重复文件路径');
         seen.add(key);
@@ -148,8 +168,11 @@ async function prepareFileRestore(selections) {
           if (!stat.isFile()) throw new Error('备份文件目标不是普通文件');
           hadOriginal = true;
         } catch (error) { if (error.code !== 'ENOENT') throw error; }
-        records.push({ root, target, encoded, hadOriginal, installed: false, moved: false });
+        records.push({ root, target, encoded, hadOriginal, chromiumHistory, installed: false, moved: false });
       }
+      if (skippedPlaces) backupWarnings.push({ profileId: profile.id, ...(places.warning || {
+        path: FIREFOX_PLACES_BACKUP, reason: 'firefox-places-not-selected',
+      }) });
     }
     // Refuse a file that is also another file's parent (including normalized aliases).
     for (const key of seen) {
@@ -175,7 +198,10 @@ async function prepareFileRestore(selections) {
       const dir = stages.get(item.root);
       item.staged = path.join(dir, `${index}.new`);
       item.backup = path.join(dir, `${index}.previous`);
-      await writeDurably(item.staged, Buffer.from(item.encoded, 'base64'));
+      const data = Buffer.from(item.encoded, 'base64');
+      if (item.chromiumHistory && data.toString('base64') !== item.encoded) throw invalidHistoryBackup();
+      await writeDurably(item.staged, data);
+      if (item.chromiumHistory) await assertChromiumHistorySnapshot(data, item.staged);
       delete item.encoded;
       manifests.get(item.root).push({ target: path.relative(item.root, item.target),
         staged: path.basename(item.staged), backup: path.basename(item.backup) });
@@ -194,11 +220,13 @@ async function prepareFileRestore(selections) {
 
   return {
     count: records.length,
+    backupWarnings,
     recoveryRecords: records.map(({ root, target, staged, backup, hadOriginal }) => ({ root, target, staged, backup, hadOriginal })),
     async commit() {
       if (committed || settled) throw new Error('Restore transaction is no longer pending');
       committed = true;
       for (const item of records) {
+        if (item.chromiumHistory) await assertChromiumHistoryQuiescent(item.root, true);
         await assertSafeProfileChild(item.root, item.target);
         await fs.mkdir(path.dirname(item.target), { recursive: true });
         await assertSafeProfileChild(item.root, item.target);

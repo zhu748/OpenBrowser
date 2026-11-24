@@ -1,0 +1,195 @@
+!include "MUI2.nsh"
+!include "LogicLib.nsh"
+!define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\OpenBrowser"
+
+Unicode true
+Name "OpenBrowser"
+OutFile "@OUTPUT@"
+InstallDir "$LOCALAPPDATA\OpenBrowser"
+InstallDirRegKey HKCU "${UNINSTALL_KEY}" "InstallLocation"
+RequestExecutionLevel user
+CRCCheck force
+SetCompressor /FINAL zlib
+SetDatablockOptimize off
+!define MUI_ABORTWARNING
+!insertmacro MUI_PAGE_WELCOME
+!insertmacro MUI_PAGE_DIRECTORY
+!insertmacro MUI_PAGE_INSTFILES
+!insertmacro MUI_PAGE_FINISH
+!insertmacro MUI_LANGUAGE "English"
+
+; Check parents before children. A manifest name alone cannot prevent a
+; junction or symlink added between install and uninstall redirecting Delete.
+!macro CheckPath FN_PREFIX TARGET EXPECTED
+  StrCpy $0 "${TARGET}"
+  StrCpy $1 ${EXPECTED}
+  Call ${FN_PREFIX}CheckEntry
+!macroend
+
+!macro PathFunctions PREFIX
+Function ${PREFIX}CheckEntry
+  System::Call 'kernel32::GetFileAttributesW(w r0) i .r2 ?e'
+  Pop $3
+  StrCmp $2 "error" unsafe
+  ${If} $2 == -1
+    ; Only a missing file/parent is safe, not access denied or an invalid path.
+    StrCmp $3 2 done
+    StrCmp $3 3 done unsafe
+  ${EndIf}
+  IntOp $2 $2 & 0x410 ; FILE_ATTRIBUTE_REPARSE_POINT | DIRECTORY
+  StrCmp $2 $1 done
+  unsafe:
+    MessageBox MB_OK|MB_ICONSTOP "Not a safe OpenBrowser installation path: $0" /SD IDOK
+    SetErrorLevel 2
+    Abort
+  done:
+FunctionEnd
+
+Function ${PREFIX}CheckPaths
+  ; Do not let a drive root, namespace/UNC path, wildcard, ADS, path alias
+  ; or a truncated manifest path turn into a write/delete destination.
+  StrLen $0 $INSTDIR
+  ${If} $0 < 4
+  ${OrIf} $0 > @MAX_ROOT@
+    Goto invalid
+  ${EndIf}
+  StrCpy $0 $INSTDIR 2 1
+  StrCmp $0 ":\" 0 invalid
+  StrCpy $0 $INSTDIR
+  System::Call 'kernel32::GetFullPathNameW(w r0, i ${NSIS_MAX_STRLEN}, w .r2, p 0) i .r3'
+  StrCmp $2 $INSTDIR 0 invalid
+  StrCpy $4 3
+  StrCpy $5 ""
+  next_char:
+    StrCpy $6 $INSTDIR 1 $4
+    StrCmp $6 "" component_end
+    StrCmp $6 "\" component_end
+    StrCmp $6 "*" invalid
+    StrCmp $6 "?" invalid
+    StrCmp $6 ":" invalid
+    StrCpy $5 $6
+    Goto advance
+  component_end:
+    StrCmp $5 "" invalid
+    StrCmp $5 "." invalid
+    StrCmp $5 " " invalid
+    StrCpy $0 $INSTDIR $4
+    StrCpy $1 16
+    Call ${PREFIX}CheckEntry
+    StrCmp $6 "" root_checked
+    StrCpy $5 ""
+  advance:
+    IntOp $4 $4 + 1
+    Goto next_char
+  invalid:
+    MessageBox MB_OK|MB_ICONSTOP "Choose a dedicated, local OpenBrowser directory with a shorter, ordinary path." /SD IDOK
+    SetErrorLevel 2
+    Abort
+  root_checked:
+@CHECK_PATHS@
+  !insertmacro CheckPath "${PREFIX}" "$INSTDIR\Uninstall.exe" 0
+  !insertmacro CheckPath "${PREFIX}" "$SMPROGRAMS\OpenBrowser" 16
+  !insertmacro CheckPath "${PREFIX}" "$SMPROGRAMS\OpenBrowser\OpenBrowser.lnk" 0
+  !insertmacro CheckPath "${PREFIX}" "$DESKTOP\OpenBrowser.lnk" 0
+FunctionEnd
+!macroend
+!insertmacro PathFunctions ""
+!insertmacro PathFunctions "un."
+
+; Remove an existing directory entry before writing a replacement. Writing
+; through a regular-file hard link would modify all the other links too.
+!macro InstallFile SOURCE TARGET
+  Delete "${TARGET}"
+  IfErrors install_failed
+  File "${SOURCE}"
+  IfErrors install_failed
+!macroend
+
+Section "OpenBrowser" SEC_MAIN
+  Call CheckPaths
+  ReadRegStr $0 HKCU "${UNINSTALL_KEY}" "InstallLocation"
+  StrCmp $0 $INSTDIR 0 fresh
+  ; Recognize the previous installer as an in-place upgrade. Never invoke
+  ; its old uninstaller, which may recursively remove a user-chosen folder.
+  IfFileExists "$INSTDIR\Uninstall.exe" 0 fresh
+  ReadRegDWORD $0 HKCU "${UNINSTALL_KEY}" "ManifestInstaller"
+  StrCmp $0 1 ready ; includes a repair after an interrupted install
+  IfFileExists "$INSTDIR\runtime\OpenBrowser.exe" ready fresh
+  fresh:
+    !insertmacro CheckPath "" "$INSTDIR" 16
+    StrCmp $2 -1 ready
+    System::Call 'shlwapi::PathIsDirectoryEmptyW(w r0) i .r1'
+    StrCmp $1 1 ready
+    MessageBox MB_OK|MB_ICONSTOP "Choose an empty directory or the registered OpenBrowser installation." /SD IDOK
+    SetErrorLevel 2
+    Abort
+  ready:
+  ClearErrors
+  SetOutPath "$INSTDIR"
+  IfErrors install_failed
+  ; Write the safe uninstaller first. Atomically replace even the legacy
+  ; recursive uninstaller, without opening an existing hard link for writing.
+  GetTempFileName $8 "$INSTDIR"
+  IfErrors install_failed
+  WriteUninstaller "$8"
+  IfErrors replace_failed
+  StrCpy $9 "$INSTDIR\Uninstall.exe"
+  System::Call 'kernel32::MoveFileExW(w r8, w r9, i 9) i .r0'
+  StrCmp $0 1 0 replace_failed
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "InstallLocation" "$INSTDIR"
+  WriteRegDWORD HKCU "${UNINSTALL_KEY}" "ManifestInstaller" 1
+  IfErrors install_failed
+@INSTALL@
+  CreateDirectory "$SMPROGRAMS\OpenBrowser"
+  CreateShortCut "$SMPROGRAMS\OpenBrowser\OpenBrowser.lnk" "$INSTDIR\runtime\OpenBrowser.exe" "" "$INSTDIR\runtime\OpenBrowser.exe" 0
+  CreateShortCut "$DESKTOP\OpenBrowser.lnk" "$INSTDIR\runtime\OpenBrowser.exe" "" "$INSTDIR\runtime\OpenBrowser.exe" 0
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayName" "OpenBrowser"
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "UninstallString" '"$INSTDIR\Uninstall.exe"'
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "QuietUninstallString" '"$INSTDIR\Uninstall.exe" /S'
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayIcon" "$INSTDIR\runtime\OpenBrowser.exe,0"
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "Publisher" "OpenBrowser"
+  WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayVersion" "@VERSION@"
+  WriteRegDWORD HKCU "${UNINSTALL_KEY}" "NoModify" 1
+  WriteRegDWORD HKCU "${UNINSTALL_KEY}" "NoRepair" 1
+  IfErrors install_failed
+  Goto done
+  replace_failed:
+    Delete "$8" ; our private temporary file from GetTempFileName
+  install_failed:
+    MessageBox MB_OK|MB_ICONSTOP "Installation did not finish. Check available space and close any running copy of OpenBrowser." /SD IDOK
+    SetErrorLevel 2
+    Abort
+  done:
+SectionEnd
+
+Section "Uninstall"
+  ; A copied uninstaller (or a stale registration after a move) may not
+  ; delete the manifest's names from an unrelated directory.
+  ReadRegStr $0 HKCU "${UNINSTALL_KEY}" "InstallLocation"
+  StrCmp $0 $INSTDIR registered
+  MessageBox MB_OK|MB_ICONSTOP "Not the registered OpenBrowser installation. No files were removed." /SD IDOK
+  SetErrorLevel 2
+  Abort
+  registered:
+  Call un.CheckPaths
+  SetOutPath "$TEMP"
+  ClearErrors
+@DELETE_FILES@
+  IfErrors uninstall_failed
+  Delete "$SMPROGRAMS\OpenBrowser\OpenBrowser.lnk"
+  Delete "$DESKTOP\OpenBrowser.lnk"
+  IfErrors uninstall_failed
+  Delete "$INSTDIR\Uninstall.exe"
+  IfErrors uninstall_failed
+  ; Nonempty directories belong to the user. It is fine for RMDir to leave them.
+@REMOVE_DIRS@
+  RMDir "$INSTDIR"
+  RMDir "$SMPROGRAMS\OpenBrowser"
+  DeleteRegKey HKCU "${UNINSTALL_KEY}"
+  Goto done
+  uninstall_failed:
+    MessageBox MB_OK|MB_ICONSTOP "Some installed files could not be removed. Close OpenBrowser and try again." /SD IDOK
+    SetErrorLevel 2
+    Abort
+  done:
+SectionEnd

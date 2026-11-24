@@ -5,6 +5,7 @@ const test = require('node:test');
 const routes = require('../../rebuild/routes/collections');
 
 const [, groupsList] = routes.find(([name]) => name === 'groups:list');
+const [, groupsQuery] = routes.find(([name]) => name === 'groups:query');
 
 function fixture(pinAt, defaultProjectPin = 0, size = 1000) {
   const work = { indexCalls: 0, countLookups: [], clones: [] };
@@ -78,4 +79,15 @@ test('unfiltered lists keep every real project and include default only for nume
   assert.deepEqual((await groupsList(service, { pinnedOnly: true })).map((row) => row.id), ['group-1']);
   const defaultOnly = await groupsList(fixture(new Map(), 1, 0), { default: 2, pinnedOnly: true });
   assert.deepEqual(defaultOnly.map((row) => [row.id, row.windowCount]), [['local-default', 7]]);
+});
+
+test('management pages return the global total but project and count only their own rows', async () => {
+  const service = fixture(new Map());
+  const page = page_index => groupsQuery(service, { default: 2, page_size: 3, page_index });
+  assert.deepEqual((await page(18)).rows.map(row => row.id), ['group-50', 'group-51', 'group-52']);
+  assert.deepEqual(service.work, {
+    indexCalls: 1, countLookups: ['group-50', 'group-51', 'group-52'], clones: ['group-50', 'group-51', 'group-52'],
+  });
+  assert.deepEqual(await page(400), { total: 1001, rows: [] });
+  assert.equal(service.work.indexCalls, 1, 'out-of-range pages do not access the profile index or prepare other rows');
 });

@@ -119,10 +119,11 @@ async function main() {
       _fingerprintDraft: { profileId: forgedId, seed: 'guessed', allocation: '0'.repeat(64) } });
     assert.notEqual(forged.id, forgedId, 'unissued UUIDs cannot adopt an orphaned storage directory');
     const [retryPreview] = await service.request('fingerprint:preview', { os: 'Windows' });
-    const sync = engine.syncProfiles;
-    engine.syncProfiles = async () => { throw Error('simulated failed persistence'); };
-    await assert.rejects(service.request('profiles:create', retryPreview), /failed persistence/);
-    engine.syncProfiles = sync;
+    const persist = engine.persist;
+    try {
+      engine.persist = async () => { throw Error('simulated failed persistence'); };
+      await assert.rejects(service.request('profiles:create', retryPreview), /failed persistence/);
+    } finally { engine.persist = persist; }
     const retried = await service.request('profiles:create', retryPreview);
     assert.equal(retried.id, retryPreview._fingerprintDraft.profileId, 'failed persistence does not consume the allocation');
     await service.request('profiles:delete', { ids: [retried.id] });

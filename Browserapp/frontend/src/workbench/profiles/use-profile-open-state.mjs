@@ -74,7 +74,7 @@ export function useProfileOpenState() {
       openMessage[String(id)] = message;
       if (message.code !== 0) {
         callbacks?.onOpenFailed?.(id);
-      } else if (typeof data === 'object' && data.percent === 100 && !message.uploading) {
+      } else if (typeof data === 'object' && data.percent === 100 && !message.uploading && !data.statusUpdate) {
         sendFirstOpenRecord();
         callbacks?.onOpenSuccess?.(id);
         const warnings = data.warningMessages?.filter(Boolean) ?? [];

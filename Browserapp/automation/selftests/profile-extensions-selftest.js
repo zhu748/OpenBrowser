@@ -81,7 +81,7 @@ check('A1. no arg/user.js builder mentions an extension-blocking switch', () => 
 // ---------- B. Chromium: profile prep keeps store-install state intact ----------
 const proto = BrowserEngine.prototype;
 // Methods under test use no `this` state besides an optional emit().
-const stub = { emit() {} };
+const stub = { assignments: new Map(), extensions: new Map(), emit() {} };
 
 const STORE_ID = 'abcdefghijklmnopabcdefghijklmnop'; // 32 a-p chars, like a webstore id
 const seededSettings = {

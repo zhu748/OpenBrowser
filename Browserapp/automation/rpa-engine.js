@@ -6,6 +6,7 @@ const { applyTrustedChange } = require('./trusted-input');
 const humanInput = require('./human-input');
 const { TypingAbortedError } = require('./human-typing');
 const { TaskScheduler } = require('./task-scheduler');
+const { resolvePlanProfileIds, taskRetryBlock, RESULT_NOT_CONFIRMED } = require('./rpa/task-records');
 const { runRegex } = require('./rpa/regex');
 const {
   getDownloadFileName,
@@ -227,7 +228,6 @@ class RpaEngine {
     this.cancelled = new Set();
     this.queued = new Set();
     this.queuedControllers = new Map();
-    this.stopGeneration = 0;
     // Serializes writeDiagnostic's append/truncate pairs (see writeDiagnostic).
     this._diagnosticQueue = Promise.resolve();
   }
@@ -282,7 +282,6 @@ class RpaEngine {
       }
       return { success: true, taskId, state: active ? 'cancelling' : 'not-running' };
     }
-    this.stopGeneration += 1;
     const ids = new Set([...this.running.keys(), ...this.queued]);
     for (const id of ids) {
       this.cancelled.add(id);
@@ -313,12 +312,14 @@ class RpaEngine {
   }
 
   async runPlan(planId, options = {}) {
-    const generation = this.stopGeneration;
+    const { completion } = await this.submitPlan(planId, options);
+    return completion;
+  }
+
+  async submitPlan(planId, options = {}) {
     const plan = this.store.getPlan(planId);
     if (!plan) throw new Error('RPA plan not found: ' + planId);
-    const profileIds = Array.isArray(options.profile_ids) && options.profile_ids.length
-      ? options.profile_ids.map(String)
-      : (plan.profile_ids || []);
+    const profileIds = resolvePlanProfileIds(plan, options);
     if (!profileIds.length) throw new Error('No profile_ids on plan');
 
     const planVariables = plan.variables && typeof plan.variables === 'object' && !Array.isArray(plan.variables)
@@ -329,70 +330,133 @@ class RpaEngine {
       for (const [key, value] of Object.entries(planVariables)) copy[key] = cloneVariableValue(value ?? '');
       return copy;
     };
-    const tasks = typeof this.store.createTasks === 'function'
-      ? await this.store.createTasks(profileIds.map((profileId) => ({
-        plan_id: plan.id,
-        profile_id: profileId,
-        process_name: plan.process_name || plan.plan_name,
-        steps: plan.steps,
-        process_content: plan.process_content || null,
-        variables: clonePlanVariables(),
-      })))
-      : await Promise.all(profileIds.map((profileId) => this.store.createTask({
-        plan_id: plan.id,
-        profile_id: profileId,
-        process_name: plan.process_name || plan.plan_name,
-        steps: plan.steps,
-        process_content: plan.process_content || null,
-        variables: clonePlanVariables(),
-      })));
-    // Cap concurrent task bodies (profile start already goes through
-    // openScheduler, but the step loops themselves used to run all at once,
-    // overflowing the CDP pool on multi-profile plans).
-    const results = await Promise.all(tasks.map((task) => this._scheduleTask(task.id, options, generation)
-      .catch((error) => ({ success: false, taskId: task.id, error: error.message }))));
-    return { success: results.every((item) => item.success), results };
+    const tasks = await this._admitTasks(profileIds.map((profileId) => ({
+      plan_id: plan.id,
+      profile_id: profileId,
+      process_name: plan.process_name || plan.plan_name,
+      steps: plan.steps,
+      process_content: plan.process_content || null,
+      variables: clonePlanVariables(),
+    })));
+    const completion = Promise.all(tasks.map(({ task, controller }) => this._runQueuedTask(task, options, controller)
+      .catch((error) => ({ success: false, taskId: task.id, error: error.message }))))
+      .then((results) => ({ success: results.every((item) => item.success), results }));
+    return { completion };
   }
 
   async runTask(taskId, options = {}) {
-    return this._scheduleTask(taskId, options, this.stopGeneration);
-  }
-
-  async _scheduleTask(taskId, options, generation) {
     const task = this.store.getTask(taskId);
     if (!task) throw new Error('RPA task not found: ' + taskId);
+    const blocked = taskRetryBlock(task);
+    if (blocked) throw Object.assign(new Error(blocked.message), { code: blocked.code, statusCode: 409 });
+    return this._runQueuedTask(task, options, this._reserveTask(taskId));
+  }
+
+  async submitTask(input, options = {}) {
+    const [{ task, controller }] = await this._admitTasks([input]);
+    return { task, completion: this._runQueuedTask(task, options, controller) };
+  }
+
+  /**
+   * Own a task ID before making the pending record visible. Task or plan
+   * acceptance waits for the initial save; Stop can cancel it in that gap.
+   */
+  async _admitTasks(inputs) {
+    const requests = inputs.map((input) => {
+      const id = nodeCrypto.randomUUID();
+      return { input: { ...input, id }, controller: this._reserveTask(id) };
+    });
+    try {
+      const values = requests.map(({ input }) => input);
+      let tasks;
+      if (values.length === 1 && typeof this.store.createTask === 'function') {
+        tasks = [await this.store.createTask(values[0])];
+      } else if (typeof this.store.createTasks === 'function') {
+        tasks = await this.store.createTasks(values);
+      } else {
+        // Allow the store's individual-create interface too. Settle every
+        // insert before releasing ownership on an admission failure.
+        const writes = await Promise.allSettled(values.map(async (input) => this.store.createTask(input)));
+        const rejected = writes.find((item) => item.status === 'rejected');
+        if (rejected) throw rejected.reason;
+        tasks = writes.map((item) => item.value);
+      }
+      if (tasks.length !== requests.length || tasks.some((task, index) => task?.id !== values[index].id)) {
+        throw new Error('RPA store did not accept the reserved task IDs');
+      }
+      return requests.map(({ controller }, index) => ({ task: tasks[index], controller }));
+    } catch (error) {
+      // A failed save can still leave in-memory records. Terminalize them
+      // so a background write retry cannot publish permanently pending work.
+      await Promise.all(requests.map(async ({ input: { id }, controller }) => {
+        try {
+          const record = this.store.getTask(id);
+          if (record) await this._handleQueuedError(record, error).catch(() => {});
+        } finally {
+          this._releaseQueuedTask(id, controller);
+        }
+      }));
+      throw error;
+    }
+  }
+
+  _reserveTask(taskId) {
     if (this.isTaskActive(taskId)) throw new Error('Task already running or queued: ' + taskId);
     this.queued.add(taskId);
     const controller = new AbortController();
     this.queuedControllers.set(taskId, controller);
-    if (generation !== this.stopGeneration) {
-      this.cancelled.add(taskId);
-      controller.abort(new Error('cancelled'));
-    }
+    return controller;
+  }
+
+  _releaseQueuedTask(taskId, controller) {
+    // A later, intentional retry may acquire the ID just after a previous
+    // execution released its running state.
+    const current = this.queuedControllers.get(taskId);
+    if (current && current !== controller) return;
+    this.queuedControllers.delete(taskId);
+    this.queued.delete(taskId);
+    if (!this.running.has(taskId)) this.cancelled.delete(taskId);
+  }
+
+  async _runQueuedTask(task, options, controller) {
+    const taskId = task.id;
     try {
+      // A retry reuses the task ID. Publish the new attempt before waiting
+      // for capacity, so polling, retention and deletion see pending work,
+      // not the previous attempt's result or timestamps.
+      if (task.status !== 'pending') {
+        await this.store.updateTask(taskId, {
+          status: 'pending', start_time: null, complete_time: null, process_result: null, process_logs: [],
+          ...(task.error != null ? { error: null } : {}), ...(task.finishedAt != null ? { finishedAt: null } : {}),
+        });
+        if (!controller.signal.aborted) this.emit({ type: 'rpa-task', taskId, status: 'pending', profileId: task.profile_id });
+      }
       return await this.taskBodyScheduler.schedule(async () => {
         this.queuedControllers.delete(taskId);
         return this._runTask(taskId, options);
       }, null, { key: String(task.profile_id || ''), signal: controller.signal });
     } catch (error) {
-      if (this.cancelled.has(taskId)) {
-        const message = formatRpaError(error);
-        const result = { ok: false, error: message };
-        await this.store.updateTask(taskId, { status: 'cancelled', start_time: null, complete_time: new Date().toISOString(),
-          process_result: result, process_logs: [] });
-        this.emit({ type: 'rpa-task', taskId, status: 'cancelled', profileId: task.profile_id, message });
-        await this.writeDiagnostic({ type: 'rpa-task-cancelled', taskId, profileId: task.profile_id, error: message });
-        return { success: false, taskId, error: message, status: 'cancelled', result };
-      }
-      if (task.status === 'pending') await this.store.updateTask(taskId, {
-        status: 'failed', complete_time: new Date().toISOString(), error: error.message,
-      });
-      throw error;
+      return await this._handleQueuedError(task, error);
     } finally {
-      this.queuedControllers.delete(taskId);
-      this.queued.delete(taskId);
-      if (!this.running.has(taskId)) this.cancelled.delete(taskId);
+      this._releaseQueuedTask(taskId, controller);
     }
+  }
+
+  async _handleQueuedError(task, error) {
+    const taskId = task.id;
+    if (this.cancelled.has(taskId)) {
+      const message = formatRpaError(this.queuedControllers.get(taskId)?.signal.reason || error);
+      const result = { ok: false, error: message };
+      await this.store.updateTask(taskId, { status: 'cancelled', start_time: null, complete_time: new Date().toISOString(),
+        process_result: result, process_logs: [] });
+      this.emit({ type: 'rpa-task', taskId, status: 'cancelled', profileId: task.profile_id, message });
+      await this.writeDiagnostic({ type: 'rpa-task-cancelled', taskId, profileId: task.profile_id, error: message });
+      return { success: false, taskId, error: message, status: 'cancelled', result };
+    }
+    if (this.store.getTask(taskId)?.status === 'pending') await this.store.updateTask(taskId, {
+      status: 'failed', complete_time: new Date().toISOString(), error: error.message,
+    });
+    throw error;
   }
 
   async _runTask(taskId, options = {}) {
@@ -419,9 +483,14 @@ class RpaEngine {
     };
 
     let context = null;
+    let mayHaveActed = false;
     try {
       this.assertTaskAlive(execution);
-      await this.store.updateTask(taskId, { status: 'running', start_time: new Date().toISOString(), process_logs: [] }, { save: false });
+      // Record entry to execution before opening a profile or running steps.
+      // If terminal persistence fails and the app exits, recovery can then
+      // distinguish work that may have acted from work that never ran.
+      await this.store.updateTask(taskId, { status: 'running', start_time: new Date().toISOString(), process_logs: [] });
+      this.assertTaskAlive(execution);
       this.emit({ type: 'rpa-task', taskId, status: 'running', profileId: task.profile_id });
       await this.writeDiagnostic({
         type: 'rpa-task-start', taskId, planId: task.plan_id || null,
@@ -455,7 +524,9 @@ class RpaEngine {
         const issue = unsupported[0];
         throw Object.assign(new Error('Invalid RPA steps: ' + (issue.reason || issue.type)), { code: 'RPA_INVALID_STEPS' });
       }
-      const entry = await this.ensureProfileRunning(task.profile_id, { log,
+      this.assertTaskAlive(execution);
+      mayHaveActed = true;
+      const entry = await this.ensureProfileRunning(task.profile_id, { log, execution,
         launchOptions: options.warmup ? { headless: options.warmup.headless, blockImages: options.warmup.blockImages } : undefined });
       const port = entry.port;
       context.port = port;
@@ -497,30 +568,8 @@ class RpaEngine {
       if (Object.prototype.hasOwnProperty.call(snapshot, '__exported')) {
         result.exports = snapshot.__exported;
       }
-      // Terminal write for a fully-successful run. A transient disk failure
-      // here must not reclassify the task as "failed" via the generic catch
-      // below (the steps all executed); retry the write once and keep success.
-      const persistTerminalSuccess = () => this.store.updateTask(taskId, {
-        status: 'success',
-        complete_time: new Date().toISOString(),
-        process_result: result,
-        process_logs: logs,
-      });
-      try {
-        await persistTerminalSuccess();
-      } catch (persistError) {
-        await log('terminal result write failed; retrying once: ' + formatRpaError(persistError), 'error').catch(() => {});
-        await persistTerminalSuccess();
-      }
-      await this.writeDiagnostic({
-        type: 'rpa-task-success',
-        taskId,
-        planId: task.plan_id || null,
-        profileId: task.profile_id,
-        steps: steps.length,
-      });
-      this.emit({ type: 'rpa-task', taskId, status: 'success', profileId: task.profile_id });
-      return { success: true, taskId, result };
+      const persistence = await this._recordOutcome(task, 'success', result, logs, log, true);
+      return { success: true, taskId, result, ...(persistence && { persistence }) };
     } catch (error) {
       const status = this.cancelled.has(taskId) ? 'cancelled' : 'failed';
       const message = formatRpaError(error);
@@ -541,20 +590,58 @@ class RpaEngine {
         failureResult.remarks = context.remarks.map((remark) => capResultString(String(remark)));
         failureResult.variables = snapshotVariables(context.variables);
       }
-      await this.store.updateTask(taskId, {
-        status,
-        complete_time: new Date().toISOString(),
-        process_result: failureResult,
-        process_logs: logs,
-      });
-      this.emit({ type: 'rpa-task', taskId, status, profileId: task.profile_id, message });
-      return { success: false, taskId, error: message, status, result: failureResult };
+      const persistence = await this._recordOutcome(task, status, failureResult, logs, log, mayHaveActed);
+      return { success: false, taskId, error: message, status, result: failureResult, ...(persistence && { persistence }) };
     } finally {
       try { await this.finishTaskResources(context); }
       catch (error) { this.emit({ type: 'sync-error', action: 'cookie-warmup-cleanup', id: task.profile_id, message: error.message }); }
       this.running.delete(taskId);
       this.cancelled.delete(taskId);
     }
+  }
+
+  async _recordOutcome(task, status, result, logs, log, mayHaveActed) {
+    const taskId = task.id;
+    const patch = {
+      status,
+      complete_time: new Date().toISOString(),
+      // The store can trim old results under its byte budget; a waiting
+      // client must still receive the result of this execution.
+      process_result: { ...result },
+      process_logs: logs,
+    };
+    let persistence;
+    let persistError;
+    try {
+      await this.store.updateTask(taskId, patch);
+    } catch (error) {
+      if (!mayHaveActed) throw error;
+      await log('terminal result write failed; retrying once: ' + formatRpaError(error), 'error').catch(() => {});
+      try { await this.store.updateTask(taskId, patch); }
+      catch (retryError) {
+        persistError = retryError;
+        persistence = RESULT_NOT_CONFIRMED;
+        // The existing writer may retry in the background. Keep the
+        // warning as historical evidence even if such a retry later works:
+        // resubmitting this ID must not repeat completed steps.
+        await this.store.updateTask(taskId, { ...patch, persistence }, { save: false }).catch(() => {});
+      }
+    }
+    if (persistence || status === 'success') {
+      await this.writeDiagnostic({
+        type: persistence ? 'rpa-task-result-not-saved' : 'rpa-task-success',
+        taskId,
+        planId: task.plan_id || null,
+        profileId: task.profile_id,
+        steps: result.steps,
+        ...(persistence && { error: persistence.message, rawError: compactError(persistError) }),
+      }).catch(() => {});
+    }
+    try {
+      this.emit({ type: 'rpa-task', taskId, status, profileId: task.profile_id, message: result.error,
+        ...(persistence && { persistence, message: persistence.message }) });
+    } catch (_) { /* A notification failure cannot change the execution outcome. */ }
+    return persistence;
   }
 
   async finishTaskResources(ctx) {
@@ -566,7 +653,8 @@ class RpaEngine {
     ctx.warmupCleaned = true;
   }
 
-  async ensureProfileRunning(profileId, { log, launchOptions } = {}) {
+  async ensureProfileRunning(profileId, { log, launchOptions, execution } = {}) {
+    this.assertTaskAlive(execution);
     const id = String(profileId || '').trim();
     if (!id) throw new Error('RPA task missing profile_id');
     const current = this.engine?.running?.get?.(id);
@@ -588,24 +676,60 @@ class RpaEngine {
       throw new Error('Profile is not running and engine.start is unavailable: ' + id);
     }
 
-    let startPromise = this.profileStarts.get(id);
-    if (!startPromise) {
+    let start = this.profileStarts.get(id);
+    const joined = start && !start.controller.signal.aborted;
+    if (!joined) {
       // Publish the barrier before logging can yield or re-enter this method.
-      startPromise = Promise.resolve().then(async () => {
-        if (log) await log('profile is not running; starting before RPA: ' + id);
-        return this.openScheduler.schedule(() => this.engine.start(profile, launchOptions), undefined, { stepName: 'open' });
+      start = { controller: new AbortController(), waiters: new Set(), launched: false };
+      start.promise = Promise.resolve().then(async () => {
+        if (log && !execution?.signal?.aborted) await log('profile is not running; starting before RPA: ' + id);
+        return this.openScheduler.schedule(() => {
+          // Check at dispatch, not just at enqueue. One cancelled waiter
+          // cannot start a browser, nor cancel another waiter's valid launch.
+          let error;
+          for (const waiter of start.waiters) {
+            try { this.assertTaskAlive(waiter.execution); } catch (cause) { error = cause; continue; }
+            start.launched = true;
+            return this.engine.start(profile, waiter.launchOptions);
+          }
+          throw error || new Error('cancelled');
+        }, undefined, { stepName: 'open', signal: start.controller.signal });
       }).finally(() => {
-        if (this.profileStarts.get(id) === startPromise) this.profileStarts.delete(id);
+        if (this.profileStarts.get(id) === start) this.profileStarts.delete(id);
       });
-      this.profileStarts.set(id, startPromise);
-    } else if (log) {
-      await log('profile start already in progress; waiting before RPA: ' + id);
+      this.profileStarts.set(id, start);
     }
 
-    const started = await startPromise;
-    const entry = this.engine.running?.get?.(id) || started;
-    if (!entry?.port) throw new Error('Profile started but has no CDP port: ' + id);
-    return entry;
+    const waiter = { execution, launchOptions };
+    start.waiters.add(waiter);
+    const signal = execution?.signal;
+    const withdraw = () => {
+      if (start.waiters.delete(waiter) && !start.waiters.size && !start.launched) {
+        start.controller.abort(new Error('cancelled'));
+      }
+    };
+    let cancel;
+    const waiting = new Promise((resolve, reject) => {
+      cancel = () => {
+        // Once dispatched, keep tracking the actual launch through cleanup.
+        if (start.launched) return;
+        withdraw();
+        reject(signal.reason || new Error('cancelled'));
+      };
+      signal?.addEventListener('abort', cancel, { once: true });
+      if (signal?.aborted) cancel();
+      start.promise.then(resolve, reject);
+    });
+    try {
+      const joiningLog = joined && log && Promise.resolve().then(() => log('profile start already in progress; waiting before RPA: ' + id));
+      const [started] = await Promise.all([waiting, joiningLog]);
+      const entry = this.engine.running?.get?.(id) || started;
+      if (!entry?.port) throw new Error('Profile started but has no CDP port: ' + id);
+      return entry;
+    } finally {
+      signal?.removeEventListener('abort', cancel);
+      withdraw();
+    }
   }
 
   assertTaskAlive(ctx) {
@@ -1387,7 +1511,7 @@ class RpaEngine {
     // openScheduler and the per-profile start dedup instead of bypassing both
     // (a forLists flow opening 20 environments used to fire 20 concurrent
     // engine.start calls in a single tick).
-    const entry = await this.ensureProfileRunning(profile.id, { log: ctx.log });
+    const entry = await this.ensureProfileRunning(profile.id, { log: ctx.log, execution: ctx });
     const started = entry?.port ? entry : null;
     if (!started?.port) throw new Error('openNewBrowser did not return a CDP port');
     const prevPort = ctx.port;

@@ -21,9 +21,17 @@ async function main() {
   await assert.rejects(call('automation:rpa-run', { steps: [{ type: 'wait' }] }), /not ready/);
   automation = { apiKey: '', info: { port: 1234 }, rpaEngine: {
     getStatus: () => ({ running: ['active'], count: 1 }),
-    async runTask(id) { runs += 1; return { taskId: id, success: true }; },
+    async submitTask(input) {
+      created += 1;
+      assert.equal(input.profile_id, 'p');
+      const task = { id: 'task' };
+      const completion = Promise.resolve().then(() => {
+        runs += 1;
+        return { taskId: task.id, success: true };
+      });
+      return { task, completion };
+    },
   }, rpaStore: {
-    async createTask() { created += 1; return { id: 'task' }; },
     async deleteTask() { return { deleted: true }; },
   }, async rotateApiKey() { return 'rotated-test-key'; } };
   assert.equal(call('automation:rpa-status').count, 1, 'handlers read the current stack after registration');
@@ -32,6 +40,7 @@ async function main() {
   assert.equal(runs, 0);
   assert.equal((await call('automation:rpa-run', { profile_id: 'p', steps: [{ type: 'wait', ms: 1 }] })).success, true);
   assert.equal(created, 1);
+  assert.equal(runs, 1);
   assert.deepEqual(await call('automation:rpa-task-delete', ['active', 'done', 'done']), { deleted: ['done'], skipped: ['active'] });
   const startedDuringSave = new Set();
   automation.rpaEngine.getStatus = () => ({ running: [], queued: [...startedDuringSave] });

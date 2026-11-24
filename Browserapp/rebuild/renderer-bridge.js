@@ -3,7 +3,7 @@ import {
   yt as onScopeDispose,
 } from "./runtime-core.esm-bundler-CBj16o9G.js";
 import { createProfileLifecycleBridge } from './workbench-profile-lifecycle.js';
-import { invalidateProfileTableCache } from './workbench-table.js';
+import { invalidateProfileTableCache, invalidateProjectListCache, isProjectListChange } from './workbench-table.js';
 // Vue reactive proxies cannot cross Electron structured-clone IPC. Copy the DTO explicitly.
 const plain = (value, seen = new WeakSet()) => {
   if (value === null || typeof value !== "object") {
@@ -120,9 +120,27 @@ const emit = (channel, value) => {
   }
 };
 const profileLifecycle = createProfileLifecycleBridge({ emit, notify: message => globalThis.__localUiError?.(message) });
+let receiptRefresh = null, receiptRefreshNeeded = false;
+function refreshLaunchReceipts() {
+  receiptRefreshNeeded = true;
+  if (receiptRefresh) return;
+  receiptRefresh = Promise.resolve().then(async () => {
+    while (receiptRefreshNeeded) {
+      receiptRefreshNeeded = false;
+      const cursor = profileLifecycle.snapshotCursor();
+      try { profileLifecycle.refreshReceipts(await request("profiles:lifecycle-rows"), cursor); }
+      catch (error) { console.error("[OpenBrowser] could not refresh launch status:", error); }
+    }
+  }).finally(() => {
+    receiptRefresh = null;
+    if (receiptRefreshNeeded) refreshLaunchReceipts();
+  });
+}
 globalThis.rebuild?.onEvent?.((event) => {
   profileLifecycle.handle(event);
   if (event.type === "profile-start-page-warning") globalThis.__localUiError?.(event.message);
+  if (event.type === "status" && event.action === "profiles-update" && listeners.get("browser:launch-process-message")?.size)
+    refreshLaunchReceipts();
   if (
     event.type === "profiles" ||
     (event.type === "status" && event.action === "profiles-update") ||
@@ -130,6 +148,10 @@ globalThis.rebuild?.onEvent?.((event) => {
   ) {
     invalidateProfileTableCache();
     emit("local:profiles-change", event);
+  }
+  if (isProjectListChange(event)) {
+    invalidateProjectListCache();
+    emit("local:projects-change", event);
   }
   if (event.channel) emit(event.channel, event.payload);
   if (event.channel === "local:navigate")
@@ -144,8 +166,11 @@ const batch = async (ids, restart = false) =>
       try {
         if (restart) await request("profiles:stop", { id });
         const result = await request("profiles:start", { id });
+        if (result?.running !== true) throw Object.assign(new Error(typeof globalThis.$t === "function"
+          ? globalThis.$t("未确认窗口已打开") : "未确认窗口已打开"), { code: "PROFILE_WINDOW_NOT_CONFIRMED" });
         profileLifecycle.finishStart(operation, result);
-        return { id, ok: true };
+        return { id, ok: true, alreadyRunning: Boolean(result?.alreadyRunning),
+          ...(result?.launchStatus ? { launchStatus: result.launchStatus } : {}) };
       } catch (error) {
         profileLifecycle.finishStart(operation, null, error);
         return { id, ok: false, error: error.message, code: error.code };
@@ -281,7 +306,9 @@ const methods = {
     return request('settings:set',{localUserName:p.userName.trim()});
   },
   userGetProjectInfoByWorkspaceList: async (p = {}) => {
-    const rows = await request("groups:list",p);
+    if (p.page_index != null || p.page_size != null || p.pageIndex != null || p.pageSize != null)
+      return request("groups:query", p);
+    const rows = await request("groups:list", p);
     return { rows, total: rows.length };
   },
   userGetPluginListList: p => request('extensions:list',p),
@@ -596,8 +623,10 @@ const sends = {
         platform: row.os,
         $canUseSyncControl: row.coreType === "Chrome",
       })),
-  "browser:getOpenedBrowserMessage": async () =>
-    profileLifecycle.messages(await request("profiles:lifecycle-rows")),
+  "browser:getOpenedBrowserMessage": async () => {
+    const cursor = profileLifecycle.snapshotCursor();
+    return profileLifecycle.messages(await request("profiles:lifecycle-rows"), cursor);
+  },
   "browser:batchLaunch": (ids) => batch(ids),
   "browser:startCookieRobot": (payload) =>
     request("cookie-robot:start", payload),

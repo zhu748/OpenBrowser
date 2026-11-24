@@ -42,8 +42,9 @@ module.exports = {
     const ownsSharedResources = () => {
       const current = this.running.get(profileId);
       if (current && current !== item) return false;
-      const latest = Math.max(Number(this.lifecycleGenerations?.get(profileId)) || 0,
-        Number(this.starting.get(profileId)?.lifecycleGeneration) || 0);
+      // A queued restart still waits for this item's cleanup. Only an active
+      // generation, not a reservation in `starting`, can supersede ownership.
+      const latest = Number(this.lifecycleGenerations?.get(profileId)) || 0;
       if (Number(item.lifecycleGeneration) > 0 && latest > Number(item.lifecycleGeneration)) return false;
       return isProfileLockOwner(item.root, item.profileLock);
     };
@@ -102,6 +103,7 @@ module.exports = {
       // The tracked browser process can exit before Chromium's renderer/GPU
       // helpers. Re-scan the exact user-data-dir and terminate only those
       // helpers before releasing the profile lock.
+      let browserDrained = false;
       if (item.root && isChildExited(item.child) && ownsSharedResources()) {
         // drainProfileHelpers already performs bounded kill/re-scan attempts.
         // An unavailable process list is not proof that the directory is idle.
@@ -116,6 +118,7 @@ module.exports = {
           item.cleanupError = failure;
           throw failure;
         }
+        browserDrained = true;
         if (ownsSharedResources()) await removeSingletonFiles(item.root, { attempts: 6, delayMs: 40 });
       }
 
@@ -127,7 +130,21 @@ module.exports = {
       await item.workerMitmProxy?.close().catch(() => {});
       await item.firefoxImageFilter?.close();
       if (ownsSharedResources()) await stopIpcStubForWindow(item.kernelWindowName).catch(() => {});
-      if (ownsSharedResources() && options.markCleanExit !== false) await this.markProfileCleanExit(item.root).catch(() => {});
+      if (item.engine !== 'firefox' && ownsSharedResources() && options.markCleanExit !== false) await this.markProfileCleanExit(item.root).catch(() => {});
+      // Use the engine that just stopped, even if the pending configuration
+      // switched kernels. A stale callback must never clean its replacement.
+      const retentionProfile = this.profiles.get(profileId) || item.profile;
+      if (browserDrained && ownsSharedResources() && retentionProfile?.advanced
+          && item.exitCleanupReason !== 'start-failed' && !item.retentionApplied) {
+        if (this.profileDataRootPath) {
+          const check = await isolation.validateProfileRootSecure(this.profileDataRootPath, item.root, profileId);
+          if (!check.ok) throw new Error('Isolation error: ' + check.message);
+        }
+        if (ownsSharedResources()) {
+          await this.enforceDataRetention(item.root, retentionProfile, item.engine || 'chromium');
+          item.retentionApplied = true;
+        }
+      }
       const lockReleased = ownsSharedResources()
         ? await releaseProfileLock(item.root, item.profileLock).catch(() => false) : false;
       if (!lockReleased && item.profileLock && fs.existsSync(lockPath(item.root))) {
@@ -205,7 +222,6 @@ module.exports = {
     const current = this.running.get(profileId);
     const latestGeneration = Math.max(
       Number(this.lifecycleGenerations?.get(profileId)) || 0,
-      Number(this.starting.get(profileId)?.lifecycleGeneration) || 0,
       Number(current?.lifecycleGeneration) || 0,
       Number(activePending?.lifecycleGeneration) || 0,
     );
@@ -456,10 +472,13 @@ module.exports = {
     }
   },
 
-  nextLifecycleGeneration(id) {
-    if (!this.lifecycleGenerations) this.lifecycleGenerations = new Map();
-    const next = (Number(this.lifecycleGenerations.get(id)) || 0) + 1;
-    this.lifecycleGenerations.set(id, next);
+  reserveLifecycleGeneration(id) {
+    this.lifecycleGenerations ||= new Map();
+    this.lifecycleGenerationRequests ||= new Map();
+    const next = Math.max(Number(this.lifecycleGenerations.get(id)) || 0,
+      Number(this.lifecycleGenerationRequests.get(id)) || 0) + 1;
+    // Canceled or failed reservations must not recycle the stop request ID.
+    this.lifecycleGenerationRequests.set(id, next);
     return next;
   },
 

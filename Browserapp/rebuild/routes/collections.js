@@ -4,10 +4,11 @@ const { randomUUID: uid } = require("node:crypto");
 const { nextRecordId, rememberRecordIds } = require("../local-record-ids");
 const { profileRelations } = require("../profile-relations");
 const { labelIdsOf } = require("../profile-fields");
+const { pageBounds } = require("../page-bounds");
 const object = (value) =>
   value && typeof value === "object" && !Array.isArray(value);
 
-async function groupsList(service, p) {
+function projectRows(service, p, bounds) {
   // The sidebar needs only pinned projects. Avoid cloning discarded rows
   // or preparing the profile index when no project will be returned.
   const groups = p.pinnedOnly
@@ -15,10 +16,15 @@ async function groupsList(service, p) {
     : service.data.groups;
   const defaultPin = p.default === 2 ? service.data.settings.defaultProjectPin || 0 : 0;
   const includeDefault = p.default === 2 && (!p.pinnedOnly || defaultPin === 1);
-  if (!groups.length && !includeDefault) return [];
+  const firstGroup = includeDefault ? 1 : 0;
+  const total = groups.length + firstGroup;
+  const offset = bounds?.offset ?? 0;
+  if (offset >= total) return { rows: [], total };
 
   const { activeByProject } = service.profileIndex();
-  const rows = groups.map((v) => ({
+  // The built-in project occupies slot zero on the first page, not every page.
+  const page = bounds ? groups.slice(Math.max(0, offset - firstGroup), offset + bounds.limit - firstGroup) : groups;
+  const rows = page.map((v) => ({
     ...structuredClone(v),
     projectName: v.projectName,
     project_id: v.id,
@@ -32,7 +38,7 @@ async function groupsList(service, p) {
       },
     ],
   }));
-  if (includeDefault)
+  if (includeDefault && offset === 0)
     rows.unshift({
       id: "local-default",
       project_id: "local-default",
@@ -49,7 +55,16 @@ async function groupsList(service, p) {
         },
       ],
     });
-  return rows;
+  return { rows, total };
+}
+
+function groupsList(service, p) {
+  return projectRows(service, p).rows;
+}
+
+function groupsQuery(service, p) {
+  const bounds = pageBounds(p.page_index ?? p.pageIndex ?? 1, p.page_size ?? p.pageSize ?? 10);
+  return projectRows(service, p, bounds);
 }
 
 async function groupsSave(service, p) {
@@ -307,6 +322,7 @@ async function filtersDelete(service, p) {
 
 module.exports = [
   ["groups:list", groupsList, "read"],
+  ["groups:query", groupsQuery, "read"],
   ["groups:save", groupsSave, "serial"],
   ["labels:list", labelsList, "read"],
   ["labels:save", labelsSave, "serial"],

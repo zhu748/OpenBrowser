@@ -1,10 +1,10 @@
 const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
-const os = require('os');
 const { spawn } = require('child_process');
 const cdp = require('./cdp');
-const { recordProfileLifecycle, profileLifecycle, beginProfileStop, observeProfileStop } = require('./engine/profile-lifecycle');
+const { recordProfileLifecycle, profileLifecycle, recordProfileLaunchWarning, profileLaunchStatus,
+  beginProfileStop, observeProfileStop } = require('./engine/profile-lifecycle');
 const { profileWriteGuard } = require('./engine/profile-write-guard');
 const { allowGoogleLogin } = require('./automation/profile-defaults');
 const { compareKernelVersions } = require('./automation/kernel-versions');
@@ -27,12 +27,19 @@ function withAssociation(profile, proxyId, patch = {}) {
   };
 }
 const { applyLanguagePreferences, applyDoNotTrackPreference, verifyLanguagePreferences, syncProfileLocalState } = require('./automation/profile-file-consistency');
+const { chromiumPreferencesPath, readChromiumLaunchPreferences, reportPreferencesReadError } = require('./engine/launch-preferences');
+function loadPreferencesForUpdate(engine, root, id) {
+  return readChromiumLaunchPreferences(root).catch((error) => {
+    reportPreferencesReadError(engine, id, error);
+    throw error;
+  });
+}
 const { preserveLegacySession } = require('./engine/startup-session');
 const { platformPreflight } = require('./automation/platform-preflight');
 const { ensureStartPageServer } = require('./automation/start-page-server');
 const { killProcessTree } = require('./automation/protocol/cross-platform');
 const isolation = require('./automation/isolation');
-const { lockPath, isProfileLockOwner, releaseProfileLock, scanProcessesUsingProfileAsync, isPidAlive, auditIsolation, isSystemBrowserExecutable, validateDataRootIsolationSecure, assertProfileId, assertSafeProfileChild } = isolation;
+const { lockPath, isProfileLockOwner, releaseProfileLock, isPidAlive, auditIsolation, isSystemBrowserExecutable, validateDataRootIsolationSecure, assertProfileId, assertSafeProfileChild } = isolation;
 const { BrowserKernelManager } = require('./automation/browser-kernel');
 const STOP_ALL_ITEM_TIMEOUT_MS = process.platform === 'win32' ? 22000 : 12000;
 
@@ -130,7 +137,7 @@ class BrowserEngine {
     this.stopping = new Map();
     this.deletingProfiles = new Set();
     this.profileMaintenance = new Map();
-    this.lifecycleGenerations = new Map();
+    this.lifecycleGenerations = new Map(); // Active ownership, not queued start requests.
     this.lifecycleStopRequests = new Map();
     this.stopAllPromise = null;
     this.stopAllInProgress = false;
@@ -510,7 +517,7 @@ class BrowserEngine {
     return { mode: browser.independent ? 'independent' : 'system-manual', browser };
   }
 
-  chooseBrowser(profile = null, preferredEngine = null) {
+  chooseBrowser(profile = null, preferredEngine = null, lifecycleGeneration = null) {
     const engine = preferredEngine === 'firefox' || preferredEngine === 'chromium'
       ? preferredEngine
       : (profile ? this.profileEngine(profile) : null);
@@ -520,7 +527,8 @@ class BrowserEngine {
         throw new Error('已阻止使用本机浏览器。请安装或选择独立 Chromium 内核。');
       }
       if (selection.mode === 'system-manual') {
-        this.emit({ type: 'kernel-fallback', message: '用户已手动选择本机浏览器回退。', browser: selection.browser.path });
+        this.emit({ type: 'kernel-fallback', message: '用户已手动选择本机浏览器回退。', browser: selection.browser.path,
+          ...(lifecycleGeneration != null ? { id: profile?.id, lifecycleGeneration } : {}) });
       }
       return selection.browser;
     }
@@ -595,11 +603,6 @@ class BrowserEngine {
     throw error;
   }
 
-  async resetZoom(root) {
-    const file = path.join(root, 'Default', 'Preferences');
-    try { const prefs = JSON.parse(await fsp.readFile(file, 'utf8')); if (prefs.partition) prefs.partition.per_host_zoom_levels = {}; if (prefs.browser && 'default_zoom_level' in prefs.browser) prefs.browser.default_zoom_level = 0; await writeRawAtomically(file, JSON.stringify(prefs), 0o600); } catch (_) {}
-  }
-
   async resetTabs(root) {
     const profile = path.join(root, 'Default');
     for (const name of ['Sessions', 'Current Session', 'Current Tabs', 'Last Session', 'Last Tabs']) {
@@ -608,21 +611,26 @@ class BrowserEngine {
     }
   }
 
-  async enforceDataRetention(root, profile) {
-    const base = path.join(root, 'Default'); const targets = [];
-    const add = (...names) => targets.push(...names.map((name) => path.join(base, name)));
-    if (!profile.advanced.saveCookies) add(path.join('Network', 'Cookies'), path.join('Network', 'Cookies-journal'), 'Cookies', 'Cookies-journal');
-    if (!profile.advanced.savePasswords) add('Login Data', 'Login Data-journal', 'Login Data For Account', 'Login Data For Account-journal');
-    if (!profile.advanced.saveBookmarks) add('Bookmarks', 'Bookmarks.bak');
-    if (!profile.advanced.saveLocalStorage) add('Local Storage');
-    if (!profile.advanced.saveIndexedDB) add('IndexedDB');
-    if (!profile.advanced.saveHistory) add('History', 'History-journal', 'Visited Links', 'Top Sites', 'Top Sites-journal');
-    for (const target of targets) await fsp.rm(target, { recursive: true, force: true }).catch(() => {});
+  async enforceDataRetention(root, profile, engine = 'chromium') {
+    const { enforceDataRetentionFirefox, removeBrowserFiles } = require('./automation/browser-data');
+    if (engine === 'firefox') return enforceDataRetentionFirefox(root, profile);
+    const a = profile?.advanced || {};
+    const targets = [];
+    if (a.saveCookies === false) targets.push('Network/Cookies', 'Network/Cookies-journal', 'Cookies', 'Cookies-journal');
+    if (a.savePasswords === false) targets.push('Login Data', 'Login Data-journal', 'Login Data For Account', 'Login Data For Account-journal');
+    if (a.saveBookmarks === false) targets.push('Bookmarks', 'Bookmarks.bak');
+    if (a.saveLocalStorage === false) targets.push('Local Storage');
+    if (a.saveIndexedDB === false) targets.push('IndexedDB');
+    if (a.saveHistory === false) targets.push('History', 'History-journal', 'History-wal', 'History-shm', 'Visited Links', 'Top Sites', 'Top Sites-journal');
+    await removeBrowserFiles(root, targets.map((name) => path.join('Default', name)));
   }
 
-  async applyProfilePreferences(root, profile) {
-    const defaultRoot = path.join(root, 'Default'); const file = path.join(defaultRoot, 'Preferences'); await fsp.mkdir(defaultRoot, { recursive: true });
-    let prefs = {}; try { prefs = JSON.parse(await fsp.readFile(file, 'utf8')); } catch (_) {}
+  async applyProfilePreferences(root, profile, existing) {
+    const prefs = existing ?? await loadPreferencesForUpdate(this, root, profile.id);
+    // Reset zoom in this same read/modify/write. An earlier independent
+    // reset could already have replaced the file when the main read fails.
+    if (prefs.partition && typeof prefs.partition === 'object') prefs.partition.per_host_zoom_levels = {};
+    if (prefs.browser && typeof prefs.browser === 'object' && 'default_zoom_level' in prefs.browser) prefs.browser.default_zoom_level = 0;
     // Native extension identity follows Chromium's manifest key/path rules.
     // Save pins before process launch so Chrome does not overwrite live prefs.
     prefs.extensions ||= {};
@@ -692,9 +700,9 @@ class BrowserEngine {
     // Native auto-restore can execute pages before the injection barrier.
     prefs.session ||= {};
     prefs.session.restore_on_startup = 5;
-    await writeRawAtomically(file, JSON.stringify(prefs), 0o600);
+    await writeRawAtomically(await chromiumPreferencesPath(root), JSON.stringify(prefs), 0o600);
     try {
-      const persisted = JSON.parse(await fsp.readFile(file, 'utf8'));
+      const persisted = await readChromiumLaunchPreferences(root, { allowMissing: false });
       const issues = verifyLanguagePreferences(persisted, profile);
       const dntMismatch = persisted.enable_do_not_track !== expectedDnt;
       if (dntMismatch) issues.push({ key: 'enable_do_not_track', expected: expectedDnt ?? null, actual: persisted.enable_do_not_track ?? null });
@@ -711,33 +719,20 @@ class BrowserEngine {
   }
 
   /**
-   * Pre-spawn profile file prep, parallelized. resetZoom + applyProfilePreferences both
-   * read-modify-write Default/Preferences, so they MUST stay serialized relative to each
-   * other (else the later write clobbers the earlier one — lost update). Everything else
+   * Pre-spawn profile file prep, parallelized. Zoom and managed settings share
+   * one read-modify-write of Default/Preferences. Everything else
    * only rm's disjoint paths (Sessions / cache dirs / retained data files) and can overlap,
    * shortening the launch critical path (scales with disk latency and profile size).
    */
   async prepareProfileFilesForStart(root, profile, restoreSession) {
+    // Under the launch lock, validate the primary before clearing tabs, cache
+    // or other retained data. An unreadable profile must be safe to retry.
+    const prefs = await loadPreferencesForUpdate(this, root, profile.id);
     await removeSingletonFiles(root, { attempts: 6, delayMs: 40 });
-    const lockF = path.join(root, '.openbrowser-instance.lock');
-    if (fs.existsSync(lockF)) {
-      try {
-        const content = JSON.parse(await fsp.readFile(lockF, 'utf8'));
-        const stat = await fsp.stat(lockF).catch(() => null);
-        const uptimeMs = os.uptime() * 1000;
-        const systemBootTimeMs = Date.now() - uptimeMs;
-        const lockTimeMs = Date.parse(content?.createdAt || '') || stat?.mtimeMs || 0;
-        const isFromPriorBoot = lockTimeMs > 0 && lockTimeMs < (systemBootTimeMs - 5000);
-        if (isFromPriorBoot || !content?.pid || !isPidAlive(content.pid)) {
-          await fsp.rm(lockF, { force: true }).catch(() => {});
-        }
-      } catch (_) {
-        await fsp.rm(lockF, { force: true }).catch(() => {});
-      }
-    }
+    // The startup pipeline owns the application lock. Stale-lock recovery is
+    // exclusively an acquisition concern, not part of profile-file preparation.
     const jobs = [
-      // Shared-file chain: resetZoom then applyProfilePreferences, ordered.
-      (async () => { await this.resetZoom(root); await this.applyProfilePreferences(root, profile); })(),
+      this.applyProfilePreferences(root, profile, prefs),
       this.enforceDataRetention(root, profile),
       (async () => {
         try {
@@ -1064,6 +1059,7 @@ class BrowserEngine {
       browser: resources.browser || null,
       root: resources.root || null,
       profile,
+      engine: resources.browser?.engine || profile.engine || 'chromium',
       port: null,
       launchBinary: resources.launchBinary || null,
       kernelWindowName: resources.kernelWindowName || null,
@@ -1076,6 +1072,7 @@ class BrowserEngine {
       lifecycleGeneration: generation,
       cleanupState: 'blocked',
       cleanupAttempts: 1,
+      exitCleanupReason: 'start-failed',
       cleanedUp: false,
       cleanupFailed: true,
       cleanupError: error,
@@ -1139,78 +1136,35 @@ class BrowserEngine {
       return { ...this.publicRunning(id), alreadyRunning: true };
     }
     const assertProfileCurrent = profileWriteGuard(this, id);
-    const generation = this.nextLifecycleGeneration(id);
-    const task = (async () => {
+    const generation = this.reserveLifecycleGeneration(id);
+    let active = false;
+    // Publish the queue entry before cleanup or synchronous progress listeners
+    // can reenter start() or stop(). A reservation is not yet a new owner.
+    const task = Promise.resolve().then(async () => {
       const pendingStop = this.stopping.get(id);
       if (pendingStop) await pendingStop.catch(() => {});
       this.assertStartGenerationActive(id, generation);
 
       let afterStop = this.running.get(id);
       if (afterStop && (afterStop.cleanupFailed || afterStop.cleanedUp || afterStop.stopping)) {
-        if (!afterStop.cleanupFailed) {
-          await this.stopRunningItem(id, afterStop).catch(() => {});
-          afterStop = this.running.get(id);
-        }
-      }
-      if (afterStop && (afterStop.cleanupFailed || afterStop.cleanedUp || afterStop.stopping)) {
-        let numericPid = Number(afterStop.pid);
-        let childDead = afterStop.child
-          ? isChildExited(afterStop.child)
-          : (numericPid > 0 ? !isPidAlive(numericPid) : true);
-        // Async scan: the sync variant shells out to PowerShell/ps on the main
-        // thread (up to 8s each) and this recovery path used to run it three
-        // times in a row, freezing every window and IPC handler.
-        let helpers = (await scanProcessesUsingProfileAsync(afterStop.root || '')).pids;
-        if (!childDead || helpers.length) {
-          if (!childDead && numericPid > 0) {
-            await killProcessTree(numericPid, managedBrowserKillOptions(afterStop, afterStop.root)).catch(() => {});
-          }
-          for (const helperPid of helpers) {
-            if (helperPid && helperPid !== process.pid) {
-              await killProcessTree(helperPid, { force: true }).catch(() => {});
-            }
-          }
-          childDead = afterStop.child
-            ? isChildExited(afterStop.child)
-            : (numericPid > 0 ? !isPidAlive(numericPid) : true);
-          helpers = (await scanProcessesUsingProfileAsync(afterStop.root || '')).pids;
-          if (!childDead || helpers.length) {
-            if (numericPid > 0 && isPidAlive(numericPid)) {
-              try { process.kill(numericPid, 'SIGKILL'); } catch (_) {}
-            }
-            for (const helperPid of helpers) {
-              try { if (helperPid !== process.pid) process.kill(helperPid, 'SIGKILL'); } catch (_) {}
-            }
-          }
-        }
-        childDead = afterStop.child
-          ? isChildExited(afterStop.child)
-          : (numericPid > 0 ? !isPidAlive(numericPid) : true);
-        const finalScan = await scanProcessesUsingProfileAsync(afterStop.root || '');
-        helpers = finalScan.pids;
-        if (!childDead) {
+        const childExited = afterStop.child ? isChildExited(afterStop.child) : !isPidAlive(afterStop.pid);
+        if (afterStop.cleanupFailed && !childExited) {
+          // A replacement request must not run a second kill path for a still
+          // live browser. The owner remains visible for an explicit stop retry.
           throw afterStop.cleanupError || Object.assign(
             new Error(`Browser environment ${id} is still stopping; child exit has not been confirmed`),
             { code: 'BROWSER_EXIT_UNCONFIRMED' },
           );
         }
-        if (!finalScan.known || helpers.length) {
-          throw Object.assign(new Error(`Browser helper exit is unconfirmed for profile ${id}`), {
-            code: 'BROWSER_HELPERS_EXIT_UNCONFIRMED', pids: helpers,
+        // Use normal cleanup for a stopped child whose prior cleanup did not
+        // finish. Never drop the lock or running item around failed retention.
+        await this.stopRunningItem(id, afterStop);
+        afterStop = this.running.get(id);
+        if (afterStop && (afterStop.cleanupFailed || afterStop.cleanedUp || afterStop.stopping)) {
+          throw afterStop.cleanupError || Object.assign(new Error(`Browser cleanup is incomplete for profile ${id}`), {
+            code: 'PROFILE_CLEANUP_INCOMPLETE',
           });
         }
-        if (afterStop.root) {
-          await removeSingletonFiles(afterStop.root, { attempts: 8, delayMs: 40 });
-        }
-        try { afterStop.cdpConnection?.close?.(); } catch (_) {}
-        if (afterStop.proxyForwarder) {
-          try { await afterStop.proxyForwarder.close?.(); } catch (_) {}
-        }
-        if (afterStop.profileLock && afterStop.root) {
-          await releaseProfileLock(afterStop.root, afterStop.profileLock).catch(() => {});
-        }
-        this.running.delete(id);
-        afterStop = null;
       }
       if (afterStop) {
         // Healthy instance already running: mark it so callers can tell a
@@ -1218,23 +1172,26 @@ class BrowserEngine {
         return { ...this.publicRunning(id), alreadyRunning: true };
       }
       this.assertStartGenerationActive(id, generation);
+      this.lifecycleGenerations.set(id, generation);
+      active = true;
+      this.emitStartProgress?.(id, 'prepare', 1, '启动中…', generation);
+      this.assertStartGenerationActive(id, generation);
       await assertProfileRestoreReady(this.profileRoot(id));
       // stop/delete can invalidate this start while the filesystem check waits.
       this.assertStartGenerationActive(id, generation);
       assertProfileCurrent();
       return run(generation);
-    })();
+    });
     task.lifecycleGeneration = generation;
     this.starting.set(id, task);
-    this.emitStartProgress?.(id, 'prepare', 1, '启动中…', generation);
+    this.invalidateStatusCache?.(id);
     try {
-      const result = await task;
-      if (result?.alreadyRunning) this.emitStartProgress?.(id, 'ready', 100, '窗口已打开', generation);
-      return result;
+      return await task;
     } catch (error) {
-      if (profileLifecycle(this, id)?.operation === 'start' && profileLifecycle(this, id)?.pending) {
+      const lifecycle = profileLifecycle(this, id);
+      if (active && lifecycle?.operation === 'start' && lifecycle.pending) {
         this.emit({ type: 'profile-start-progress', id, phase: 'error', percent: 0,
-          message: error.message || String(error), error: true, lifecycleGeneration: generation });
+          message: error.message || String(error), error: true, errorCode: error?.code, lifecycleGeneration: generation });
       }
       throw error;
     } finally {
@@ -1292,6 +1249,7 @@ class BrowserEngine {
       : null;
     return {
       id, running: !starting, starting, stopping: false, ...(lifecycle ? { lifecycle } : {}), pid: item.pid, port: item.port,
+      ...(!starting ? { launchStatus: profileLaunchStatus(this, id, item) } : {}),
       engine: item.engine || 'chromium',
       browser: item.browser.name, executable: item.browser.path,
       profileDirectory: item.root,
@@ -1355,9 +1313,9 @@ class BrowserEngine {
     this.resetFingerprintVerificationFailures(safe);
     const pendingStop = this.stopping.get(safe);
     if (pendingStop?.lifecycleSettled && this.stopping.get(safe) === pendingStop) this.stopping.delete(safe);
-    if (this.stopping.has(safe)) return this.stopping.get(safe);
-
     const pendingStart = this.starting.get(safe);
+    if (!pendingStart && this.stopping.has(safe)) return this.stopping.get(safe);
+    // A second stop can cancel a replacement already queued behind the first.
     const requestedGeneration = pendingStart?.lifecycleGeneration;
     if (pendingStart) {
       this.requestLifecycleStop(safe, requestedGeneration);
@@ -1440,7 +1398,6 @@ class BrowserEngine {
       exitTimeout: 6500,
       emitProfileClosed: false,
     });
-    await this.enforceDataRetention(item.root, this.profiles.get(safe) || item.profile).catch(() => {});
     if (profile.advanced?.cloudBackup) {
       item.profileClosedEmitted = true;
       this.emit({
@@ -1520,9 +1477,16 @@ class BrowserEngine {
   // itself as a status change.
   emit(value) {
     if (!recordProfileLifecycle(this, value)) return;
-    if (value?.type === 'status' || /^(profile-start|profile-stop|profile-sync)-progress$/.test(value?.type || '')) {
+    const launchWarning = recordProfileLaunchWarning(this, value);
+    if (launchWarning === false) return;
+    const ready = value?.type === 'profile-start-progress' && value.phase === 'ready';
+    if (launchWarning || value?.type === 'status' || /^(profile-start|profile-stop|profile-sync)-progress$/.test(value?.type || '')) {
       this.invalidateStatusCache(value.id);
       if (value.id) value = { ...value, lifecycle: profileLifecycle(this, value.id) };
+    }
+    if ((ready || launchWarning) && value.id && this.running.has(value.id)) {
+      const runtime = this.publicRunning(value.id);
+      if (runtime.running && runtime.launchStatus) value = { ...value, running: true, launchStatus: runtime.launchStatus };
     }
     // Listener isolation: a destroyed-window listener (or any single faulty
     // consumer) must not break the fan-out — the remaining listeners still

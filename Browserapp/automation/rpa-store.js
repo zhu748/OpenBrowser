@@ -19,7 +19,7 @@ const {
   parseProcessContent,
 } = require('./template-sync');
 const { analyzeStepGraph, assertStepGraph } = require('./rpa/step-registry');
-const { createTaskRecord, pruneTaskHistory } = require('./rpa/task-records');
+const { createTaskRecord, pruneTaskHistory, EXECUTION_INTERRUPTED } = require('./rpa/task-records');
 const { resolveStepChildren } = require('./rpa/step-shape');
 const { createCoalescedWriter } = require('./coalesced-writer');
 const { enforceStoreBudget } = require('./rpa-store-budget');
@@ -37,10 +37,32 @@ function parseStoreSizeLimit() {
   const value = Number.isFinite(mb) && mb > 0 ? mb : 50;
   return Math.floor(value * 1024 * 1024);
 }
+
+function emptyStoreData() {
+  return { version: 4, plans: [], tasks: [], templates: [], config: {} };
+}
+
+function parseStoreData(text) {
+  const parsed = JSON.parse(text);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) ||
+      ['plans', 'tasks', 'templates'].some((key) => Object.hasOwn(parsed, key) && !Array.isArray(parsed[key])) ||
+      (parsed.config != null && (typeof parsed.config !== 'object' || Array.isArray(parsed.config)))) {
+    throw new Error('Invalid RPA store format');
+  }
+  return {
+    version: Number(parsed.version) || 3,
+    plans: parsed.plans || [],
+    tasks: parsed.tasks || [],
+    templates: parsed.templates || [],
+    config: parsed.config || {},
+  };
+}
+
 class RpaStore {
   constructor(filePath) {
     this.filePath = filePath;
-    this.data = { version: 4, plans: [], tasks: [], templates: [], config: {} };
+    this.data = emptyStoreData();
+    this.loadError = null;
     this.sizeLimitBytes = parseStoreSizeLimit();
     // Set by load() when the on-disk store had to be quarantined, so callers
     // (UI, diagnostics) can tell the user instead of plans silently vanishing.
@@ -58,54 +80,29 @@ class RpaStore {
 
   async load() {
     this.loadReport = { quarantined: false, quarantineFile: '', error: '' };
-    let encrypted = false;
     try {
-      const raw = await fsp.readFile(this.filePath);
-      encrypted = credentialCrypto.isEncrypted(raw);
-      const parsed = JSON.parse(encrypted ? credentialCrypto.decryptCredential(raw) : raw.toString('utf8'));
-      this.data = {
-        version: Number(parsed.version) || 3,
-        plans: Array.isArray(parsed.plans) ? parsed.plans : [],
-        tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
-        templates: Array.isArray(parsed.templates) ? parsed.templates : [],
-        config: parsed.config && typeof parsed.config === 'object' ? parsed.config : {},
-      };
+      this.data = await this.readData();
+      this.loadError = null;
     } catch (error) {
-      // A temporarily unavailable keyring is not an empty/corrupt store.
-      // Refuse startup rather than overwriting encrypted plans and secrets.
-      if (encrypted) throw new Error('Cannot decrypt RPA store; existing data was preserved', { cause: error });
-      // A corrupt store resets to empty; keep the broken file aside so plans and
-      // task history can be recovered by hand instead of vanishing silently.
-      if (error && error.code !== 'ENOENT') {
-        const quarantineFile = this.filePath + '.corrupt-' + Date.now();
-        this.loadReport = { quarantined: true, quarantineFile, error: String(error?.message || error) };
-        try {
-          await fsp.rename(this.filePath, quarantineFile);
-        } catch (renameError) {
-          if (renameError && renameError.code !== 'ENOENT') {
-            console.warn('[rpa-store] corrupt store could not be quarantined:', renameError.message);
-          }
-        }
-        console.warn('[rpa-store] corrupt store quarantined to', quarantineFile,
-          '— plans and task history were reset and need manual recovery');
-      }
-      this.data = { version: 4, plans: [], tasks: [], templates: [], config: {} };
+      this.loadError = error;
+      throw error;
     }
     this.migrateLegacyTemplates();
     // A crash or force-quit leaves tasks stuck at 'running'/'pending': those
     // count as ACTIVE for pruneTasks/enforceStoreBudget, so they never rotate
-    // out and the UI keeps showing a phantom running state. Mark them failed.
+    // out. A pending task never entered execution; for a running task, the
+    // durable execution marker tells us its outcome may be unknown.
     const interruptedAt = new Date().toISOString();
-    let interrupted = 0;
     for (const task of this.data.tasks) {
       if (task && (task.status === 'running' || task.status === 'pending')) {
-        task.status = 'failed';
-        task.error = task.error || 'interrupted by app restart';
+        const running = task.status === 'running';
+        task.status = running ? 'interrupted' : 'failed';
+        task.error = running ? EXECUTION_INTERRUPTED.message : 'interrupted by app restart before execution';
+        task.complete_time = task.complete_time || interruptedAt;
         task.finishedAt = task.finishedAt || interruptedAt;
-        interrupted += 1;
+        task.update_time = interruptedAt;
       }
     }
-    if (interrupted) await this.save();
     this.pruneTasks();
     await this.ensureBuiltinTemplates();
     await this.ensureLocalCatalogTemplates();
@@ -115,6 +112,35 @@ class RpaStore {
     this.data.version = 4;
     await this.save();
     return this.data;
+  }
+
+  async readData() {
+    let raw;
+    try {
+      raw = await fsp.readFile(this.filePath);
+    } catch (error) {
+      if (error?.code === 'ENOENT') return emptyStoreData();
+      // Permissions and disk errors give no evidence that the bytes are
+      // corrupt. Do not rename a potentially valid store or write over it.
+      throw new Error('Cannot read RPA store; no replacement was written', { cause: error });
+    }
+    const encrypted = credentialCrypto.isEncrypted(raw);
+    try {
+      return parseStoreData(encrypted ? credentialCrypto.decryptCredential(raw) : raw.toString('utf8'));
+    } catch (error) {
+      // A temporarily unavailable keyring is not a corrupt or empty store.
+      if (encrypted) throw new Error('Cannot decrypt RPA store; existing data was preserved', { cause: error });
+      const quarantineFile = this.filePath + '.corrupt-' + Date.now() + '-' + crypto.randomUUID();
+      try {
+        await fsp.rename(this.filePath, quarantineFile);
+      } catch (cause) {
+        throw new Error('Cannot quarantine the damaged RPA store; no replacement was written', { cause });
+      }
+      this.loadReport = { quarantined: true, quarantineFile, error: String(error?.message || error) };
+      console.warn('[rpa-store] damaged store moved to', quarantineFile,
+        'for manual recovery of plans and task history');
+      return emptyStoreData();
+    }
   }
 
   async ensureBuiltinTemplates() {
@@ -451,6 +477,7 @@ class RpaStore {
 
   /** The atomic-write body shared by save() and the coalesced writer. */
   async _writeAtomic() {
+    if (this.loadError) throw this.loadError;
     await fsp.mkdir(path.dirname(this.filePath), { recursive: true });
     // One serialization serves both the budget check and the write: the old
     // path stringified the full store 2-3 times per save (budget total, then
@@ -498,7 +525,7 @@ class RpaStore {
    * state is on disk (or rejects with the write error, which is also logged).
    */
   save() {
-    return this._writer.request();
+    return this.loadError ? Promise.reject(this.loadError) : this._writer.request();
   }
 
   /** Flush a pending quiet-period write; called from the quit chain. */
@@ -558,13 +585,13 @@ class RpaStore {
     return next;
   }
 
-  async deletePlan(id) {
-    // Same guard as deleteTask: yanking a running plan's task records makes
-    // the in-flight task's terminal updateTask throw and the run surfaces a
-    // misleading failure instead of "plan deleted".
-    const activeTask = this.data.tasks.find((item) => item.plan_id === id && (item.status === 'pending' || item.status === 'running'));
+  async deletePlan(id, isTaskActive) {
+    // A terminal write can still be in flight even though its status has
+    // already changed in memory. Both the stored and live states must agree.
+    const activeTask = this.data.tasks.find((item) => item.plan_id === id &&
+      (item.status === 'pending' || item.status === 'running' || isTaskActive?.(item.id)));
     if (activeTask) {
-      throw Object.assign(new Error('计划下仍有正在执行或排队中的任务，请先停止或等待任务完成'), { code: 'RPA_PLAN_HAS_ACTIVE_TASKS' });
+      throw Object.assign(new Error('计划下仍有正在执行或排队中的任务，请先停止或等待任务完成'), { code: 'RPA_PLAN_HAS_ACTIVE_TASKS', statusCode: 409 });
     }
     this.data.plans = this.data.plans.filter((item) => item.id !== id);
     this.data.tasks = this.data.tasks.filter((item) => item.plan_id !== id);

@@ -178,19 +178,26 @@ jobs:
           npm run selftest:proxyconcurrency
           npm run selftest:dnsleakclassify
       - name: Rebuild and verify the workbench included in the installer
+        id: workbench
         run: |
+          set -euo pipefail
           npm run rebuild:ui
           node rebuild/compiler/source-selftest.cjs
           test -z "$(git ls-files -- roxy-ui)"
+          workbench_sha="$(node scripts/package-digests.js roxy-ui)"
+          printf 'sha=%s\n' "$workbench_sha" >> "$GITHUB_OUTPUT"
       - name: Install NSIS
         if: runner.os == 'Windows'
         shell: pwsh
         run: choco install nsis --no-progress --yes
       - name: Package installer
-        run: npm run package:portable
-      - name: Verify installer payload
+        # npm's local prepackage hook would rebuild the workbench we just verified.
+        run: node scripts/package-portable.js
+      - name: Verify staged application and inspect final installer artifact
         id: verify
-        run: node scripts/verify-online-package.js --github-output "$GITHUB_OUTPUT"
+        env:
+          WORKBENCH_SHA: ${{ steps.workbench.outputs.sha }}
+        run: node scripts/verify-online-package.js --workbench-sha "$WORKBENCH_SHA" --github-output "$GITHUB_OUTPUT"
       - name: Upload verified installer to draft
         env:
           GH_REPO: ${{ github.repository }}
@@ -295,7 +302,7 @@ jobs:
 
           ### 安装与验证
 
-          所有安装包均验证应用与 Rust 核心版本、确认不含内核占位文件，并提供 SHA256SUMS.txt 及其 Ed25519 签名。
+          所有平台均检查暂存应用与 Rust 核心版本、更新信任配置及无内置内核策略；Linux 逐项比对最终 tar.gz，macOS 只读挂载 DMG 比对并验签应用，Windows 检查 NSIS 归档及关键文件字节（不运行安装或卸载）。提供 SHA256SUMS.txt 及其 Ed25519 签名。
           本次为同版本重新发布，请手动下载安装新的安装包；旧构建将被替换。
           EOF
           gh release edit "$RELEASE_TAG" --repo "$GH_REPO" --draft=false --title "OpenBrowser $RELEASE_TAG" --notes-file "$notes"

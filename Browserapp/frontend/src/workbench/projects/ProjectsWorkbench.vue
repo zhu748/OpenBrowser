@@ -3,7 +3,7 @@ import { h, ref, resolveComponent, useTemplateRef } from 'vue';
 import { h as requests, mt as useWorkspace, nn as usePermission, v as useConfig, vt as cache, yt as useCache } from './utils-BIWenCnY.js';
 import { a as storeToRefs, n as useNotice } from './agent-BmSFI9WH.js';
 import { r as projectRequest } from './permission-DOhNJfB3.js';
-import { n as pinStatus, t as useProjects } from './project-zUGx3yhI.js';
+import { n as pinStatus } from './project-zUGx3yhI.js';
 import { o as RowActions, t as Table } from './ry-table-do6kugym.js';
 import { Z as Icon } from './basecomponent-ClhuVxJN.js';
 import { n as useConfirm } from './useconfirm-CV4GTWBW.js';
@@ -23,7 +23,6 @@ const confirm = useConfirm();
 const [, showStatus] = useNotice();
 const [openEditor] = useProjectEditor({ toast: false });
 const [openDialog] = useDialog();
-const { getProjects } = useProjects();
 const { currentWorkspace } = useWorkspace();
 const { userInfo } = storeToRefs(useConfig());
 const { showMenu } = usePopupMenu();
@@ -38,13 +37,13 @@ const columns = ref([
 ]);
 
 function loadProjects(params) {
-  getProjects();
   return requests.limit.userGetProjectInfoByWorkspaceList({ ...params, default: 2 });
 }
 
 function refresh() {
+  // Keep the current page; the table clamps it if the total has shrunk.
   invalidateCache(cache.PROJECT_LIST);
-  table.value?.refresh();
+  table.value?.refresh({}, false);
 }
 
 function isPinned(project) {
@@ -67,7 +66,7 @@ function rowOperations(project) {
 function dispatch(operation, project) {
   switch (operation.name) {
     case 'pin': return togglePin(project);
-    case 'edit': return openEditor({ ...project, confirmNext: refresh });
+    case 'edit': return openEditor(project);
     case 'delete': return deleteProject(project);
   }
 }
@@ -76,7 +75,7 @@ function createProject() {
   openDialog({
     showHeader: false, modal: true, blockScroll: true,
     slots: { container: ({ hideModal }) => h(CreateProject, {
-      onSuccess: () => { hideModal(); refresh(); },
+      onSuccess: hideModal,
       onClose: hideModal,
     }) },
   });
@@ -91,11 +90,8 @@ async function reorder({ value }) {
     page_size: params?.page_size ?? 10,
   });
   showStatus(code, msg);
-  if (code === 0) {
-    table.value?.updateDataList(value);
-    getProjects();
-    invalidateCache(cache.PROJECT_LIST);
-  }
+  // A successful change emits group-metadata. Reload only that way so a late
+  // acknowledgment never overwrites the page or moves the built-in project.
 }
 
 async function togglePin(project) {
@@ -103,8 +99,7 @@ async function togglePin(project) {
     id: project.project_id, pinStatus: isPinned(project) ? pinStatus.none : pinStatus.pinned,
     requestType: projectRequest.PinProject,
   });
-  if (code === 0) refresh();
-  else showStatus(code, msg);
+  if (code !== 0) showStatus(code, msg);
 }
 
 function deleteProject(project) {
@@ -116,12 +111,7 @@ function deleteProject(project) {
     accept: async () => {
       await globalThis.electronAPI.send('util:removeProject', { workspaceId: currentWorkspace?.id, projectId: project.project_id });
       const { code, msg } = await requests.limit.userDelProjectInfoCreate({ projectId: project.project_id });
-      showStatus(code, msg || $t('删除失败'));
-      if (code === 0) {
-        invalidateCache(cache.BROWSER_LIST, { projectId: String(project.project_id) });
-        invalidateCache(cache.BROWSER_LIST, { projectId: '' });
-        refresh();
-      }
+      showStatus(code, msg || (code === 0 ? '' : $t('删除失败')));
     },
   });
 }

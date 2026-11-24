@@ -2,6 +2,7 @@
 
 const { firstDefined, firstArray, firstString, normalizeRpaInput } = require('./input');
 const { ok, fail, decodePathId } = require('./responses');
+const { resolvePlanProfileIds, taskRetryBlock } = require('../rpa/task-records');
 
 /** HTTP-independent handlers with explicit domain dependencies. */
 class RpaRoutes {
@@ -24,7 +25,7 @@ class RpaRoutes {
 
   async routeRpaPlanDelete({ pathname }) {
     const id = decodePathId(pathname.slice('/api/rpa/plans/'.length), 'RPA plan');
-    return ok(await this.rpaStore.deletePlan(id));
+    return ok(await this.rpaStore.deletePlan(id, (taskId) => this.isTaskActive(taskId)));
   }
 
   async routeRpaTasksList({ input }) {
@@ -77,24 +78,33 @@ class RpaRoutes {
       // catch, so no task was ever created, no diagnostic was written, and
       // the client still got {async:true}. Validate everything runPlan would
       // throw on UP FRONT so both modes fail identically.
-      if (!this.rpaStore.getPlan(String(rpaInput.plan_id))) {
+      const plan = this.rpaStore.getPlan(String(rpaInput.plan_id));
+      if (!plan) {
         return fail('RPA plan not found: ' + rpaInput.plan_id, 404);
       }
+      if (!resolvePlanProfileIds(plan, rpaInput).length) return fail('No profile_ids on plan', 400);
       if (!wait) {
-        this.fireAndForget(() => this.rpaEngine.runPlan(String(rpaInput.plan_id), rpaInput), { kind: 'run-plan', plan_id: String(rpaInput.plan_id) });
+        const { completion } = await this.rpaEngine.submitPlan(String(rpaInput.plan_id), rpaInput);
+        this.fireAndForget(() => completion, { kind: 'run-plan', plan_id: String(rpaInput.plan_id) });
         return ok({ async: true, plan_id: String(rpaInput.plan_id) });
       }
       return ok(await this.rpaEngine.runPlan(String(rpaInput.plan_id), rpaInput));
     }
     if (rpaInput.task_id) {
-      if (!this.rpaStore.getTask(String(rpaInput.task_id))) {
+      const taskId = String(rpaInput.task_id);
+      const task = this.rpaStore.getTask(taskId);
+      if (!task) {
         return fail('task not found: ' + rpaInput.task_id, 404);
       }
+      if (this.isTaskActive(taskId)) return fail('task is running or queued: ' + taskId, 409);
+      const blocked = taskRetryBlock(task);
+      if (blocked) return fail(blocked.message, 409, { code: blocked.code });
       if (!wait) {
-        this.fireAndForget(() => this.rpaEngine.runTask(String(rpaInput.task_id), rpaInput), { kind: 'run-task', task_id: String(rpaInput.task_id) });
-        return ok({ async: true, task_id: String(rpaInput.task_id) });
+        const completion = this.rpaEngine.runTask(taskId, rpaInput);
+        this.fireAndForget(() => completion, { kind: 'run-task', task_id: taskId });
+        return ok({ async: true, task_id: taskId });
       }
-      return ok(await this.rpaEngine.runTask(String(rpaInput.task_id), rpaInput));
+      return ok(await this.rpaEngine.runTask(taskId, rpaInput));
     }
     if (Array.isArray(rpaInput.steps)) {
       // Ad-hoc steps skip template import's validation, so a typo'd or newer-
@@ -107,16 +117,16 @@ class RpaRoutes {
         const summary = unsupported.slice(0, 4).map((item) => `${item.path.join('.')}: ${item.type}`).join(', ');
         return fail(`steps contain unsupported RPA step types: ${summary}`, 400);
       }
-      const task = await this.rpaStore.createTask({
+      const { task, completion } = await this.rpaEngine.submitTask({
         profile_id: firstString(rpaInput, ['profile_id', 'user_id']),
         process_name: String(rpaInput.process_name || rpaInput.name || 'adhoc'),
         steps: rpaInput.steps,
-      });
+      }, rpaInput);
       if (!wait) {
-        this.fireAndForget(() => this.rpaEngine.runTask(task.id, rpaInput), { kind: 'run-task', task_id: task.id });
+        this.fireAndForget(() => completion, { kind: 'run-task', task_id: task.id });
         return ok({ async: true, task_id: task.id, task });
       }
-      return ok(await this.rpaEngine.runTask(task.id, rpaInput));
+      return ok(await completion);
     }
     return fail('plan_id, task_id or steps required', 400);
   }
@@ -151,7 +161,7 @@ class RpaRoutes {
   async routeRpaStop({ input }) {
     const rpaInput = normalizeRpaInput(input);
     if (!this.rpaEngine) return fail('rpa engine unavailable', 503);
-    const taskId = rpaInput.task_id || null;
+    const taskId = rpaInput.task_id ? String(rpaInput.task_id) : null;
     // An EMPTY body must not mean "stop everything": any local script that
     // sends {} (or typos the field name) used to abort every running task —
     // including tasks other callers started — and get a success response.
@@ -164,7 +174,7 @@ class RpaRoutes {
     }
     if (this.rpaStore) {
       const task = this.rpaStore.getTask(taskId);
-      if (!task && !this.rpaEngine.running?.has(taskId)) {
+      if (!task && !this.isTaskActive(taskId)) {
         return fail('task not found: ' + taskId, 404);
       }
     }

@@ -18,6 +18,7 @@ const { normalizeEnvNumber, prepareMacDockWrapper, prepareMarkerExtension } = re
 const { buildFingerprint, assertFingerprintConsistency } = require('../automation/fingerprint');
 const { assertUrlAccessPolicySupported } = require('../automation/url-access-policy');
 const { profileWriteGuard } = require('./profile-write-guard');
+const { captureProfileLaunchRevision } = require('./profile-lifecycle');
 const { attachBrowserExitHandlers } = require('./browser-exit');
 const { fpLog, summarizeFp, logPath: fingerprintLogPath } = require('../automation/fingerprint-debug-log');
 const { acquireProfileLock, updateProfileLock, validateProfileRootSecure } = require('../automation/isolation');
@@ -43,7 +44,7 @@ const APP_ROOT = path.join(__dirname, '..');
 const { startAuthenticatedProxy, needsProxyBridge, chromeProxyEndpoint } = require('../proxy-forwarder');
 
 const { mergeLaunchProfileUpdate, ensureLegacyFingerprintSeed } = require('./launch-profile');
-const { applyDefaultSearchEngine, clearProfileLaunchData, clearLaunchDataTargets } = require('./launch-preferences');
+const { applyDefaultSearchEngine, reportPreferencesReadError, clearProfileLaunchData, clearLaunchDataTargets } = require('./launch-preferences');
 const { isValidIanaTimezone, extractTimezoneFromArgs, hostScreenSummary, windowPositionArg } = require('./launch-display');
 
 module.exports = {
@@ -100,7 +101,7 @@ module.exports = {
     let recoverControlColor = false;
     // Explicit 'chromium': this profile must not silently fall into a Firefox
     // kernel even when a Firefox pin exists.
-    browser = this.chooseBrowser(profile, 'chromium');
+    browser = this.chooseBrowser(profile, 'chromium', lifecycleGeneration);
     root = this.profileRoot(profile.id);
     startupResources.root = root;
     const rootCheck = await validateProfileRootSecure(this.profileDataRootPath, root, profile.id, { create: true });
@@ -119,26 +120,37 @@ module.exports = {
     await this.prepareProfileFilesForStart(root, profile, restoreSession);
     // F-7: the post-prep chain used to run four independent async steps
     // strictly in sequence (~4 round trips of fs IO). clearProfileLaunchData
-    // (Cookies/LS/IDB removal), applyDefaultSearchEngine (Preferences write)
+    // (optional cookie/local-storage/history removal), applyDefaultSearchEngine (Preferences write)
     // and ensureLegacyFingerprintSeed (one-time seed migration) touch
     // disjoint files, so they overlap; removeSingletonFiles already ran
     // inside prepareProfileFilesForStart and ran again here only as an
     // afterguard, so it joins the same batch. The clearedLaunchData event
     // still fires before spawn, and buildFingerprint below waits on the
     // batch before reading anything these writers own.
-    const launchDataCleared = clearProfileLaunchData(root, profile);
-    const searchEngineApplied = profile.privacy?.searchEngine
-      ? applyDefaultSearchEngine(root, profile.privacy.searchEngine)
-      : null;
     assertLaunchProfileCurrent();
-    const seedEnsured = ensureLegacyFingerprintSeed(this, profile);
-    assertLaunchProfileCurrent = profileWriteGuard(this, profile.id);
-    await Promise.all([
-      launchDataCleared,
-      searchEngineApplied,
-      seedEnsured,
-      removeSingletonFiles(root, { attempts: 6, delayMs: 40 }),
-    ]);
+    const postPrepJobs = [];
+    let launchDataCleared;
+    try {
+      postPrepJobs.push(ensureLegacyFingerprintSeed(this, profile));
+      assertLaunchProfileCurrent = profileWriteGuard(this, profile.id);
+      launchDataCleared = clearProfileLaunchData(root, profile);
+      postPrepJobs.push(launchDataCleared);
+      if (profile.privacy?.searchEngine) {
+        postPrepJobs.push(applyDefaultSearchEngine(root, profile.privacy.searchEngine).catch((error) => {
+          reportPreferencesReadError(this, profile.id, error);
+          throw error;
+        }));
+      }
+      postPrepJobs.push(removeSingletonFiles(root, { attempts: 6, delayMs: 40 }));
+    } catch (error) {
+      // A synchronous ownership check can fail after a job has begun.
+      await Promise.allSettled(postPrepJobs);
+      throw error;
+    }
+    // Do not release the profile lock while another file job is still running.
+    const postPrep = await Promise.allSettled(postPrepJobs);
+    const postPrepFailure = postPrep.find(({ status }) => status === 'rejected');
+    if (postPrepFailure) throw postPrepFailure.reason;
     assertLaunchProfileCurrent();
     const clearedLaunchData = await launchDataCleared;
     if (clearedLaunchData.length) {
@@ -298,6 +310,7 @@ module.exports = {
 
     let child;
     let childExitState;
+    let launchProfileSnapshot;
     let connection;
     let port;
     try {
@@ -322,6 +335,7 @@ module.exports = {
         spawnEnv.TZ = effectiveTimezone;
       }
       assertLaunchProfileCurrent();
+      launchProfileSnapshot = captureProfileLaunchRevision(this, profile);
       child = spawn(launchBinary, finalArgs, {
         detached: process.platform !== 'win32',
         windowsHide: headless,
@@ -438,6 +452,7 @@ module.exports = {
       nativeKernelFingerprint: isOpenBrowser148(browser),
       childExitState: childExitState || { exited: isChildExited(child), code: child.exitCode, signal: child.signalCode, error: null },
       lifecycleGeneration,
+      launchProfileSnapshot,
       cleanupState: 'active',
       cleanupAttempts: 0,
       cleanedUp: false,

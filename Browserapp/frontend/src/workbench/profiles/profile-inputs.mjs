@@ -4,7 +4,6 @@ import {
   invalidateFingerprintDraft,
 } from './workbench-fingerprint-draft.js';
 import {
-  Dr as parseJson,
   En as isOsBlockedForKernel,
   a as findField,
   br as detectDesktopOs,
@@ -192,7 +191,8 @@ function readKernelSelection(field) {
 }
 
 function savedKernelOption(options, profile) {
-  const saved = profile.useLatestCore === true
+  const tracksLatest = profile.useLatestCore === true || profile.coreVersion === 'latest';
+  const saved = tracksLatest
     ? options.find(isLatestKernel)
     : profile.coreVersion && options.find(option => option.value === profile.coreVersion);
   return saved || defaultKernelOption(options);
@@ -908,7 +908,7 @@ Name=Value 未写 domain 时，将按行从平台账号的网址自动填充`),
         name: 'searchEngine',
         type: 'select',
         value:
-          searchEngines.find((e2) => e2.value === searchEngine) ??
+          searchEngines.find(({ value }) => String(value).toLowerCase() === String(searchEngine ?? '').toLowerCase()) ??
           searchEngines[0],
         options: searchEngines,
         filter: false,
@@ -1604,21 +1604,21 @@ Name=Value 未写 domain 时，将按行从平台账号的网址自动填充`),
       label: ' ',
       name: 'sessionStorages',
       placeholder: $t(
-        `请务必按以下格式填写，不输入则全部开启
+        `域名和键筛选示例
 {example}`,
         {
           example: `[
-	{"domain": "www.example1.com", "key": ["key1", "key2"]}
+	{"domain": "www.example1.com", "key": ["key1", "key2"]},
 	{"domain": "www.example2.com", "key": ["key1", "key2"]}
 ]`,
         },
       ),
-      value: isEmpty(profile?.sessionStorages)
-        ? ''
-        : JSON.stringify(profile.sessionStorages, null, 2),
+      value: typeof profile?.sessionStorages === 'string' ? profile.sessionStorages
+        : profile?.sessionStorages == null ? '' : JSON.stringify(profile.sessionStorages, null, 2),
       rows: 5,
-      formatValue: (t2) => parseJson(t2.value, []),
-      help: $t('开启同步 Session Storage 可能存在风险，请谨慎操作!'),
+      // Keep invalid/nonempty input distinct from an unrestricted blank.
+      formatValue: (t2) => String(t2.value ?? '').trim(),
+      help: $t('磁盘备份无法恢复标签页的 Session Storage。开启后会跳过这一项，并把备份标记为不完整。'),
       visible: equalsOrDefault(profile.syncSessionStorage, true, false),
     },
     {

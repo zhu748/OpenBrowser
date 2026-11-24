@@ -224,7 +224,7 @@
   "editor.googleLogin": "是否开启谷歌登录",
   "editor.followSoftware": "跟随软件设置",
   "editor.sessionStorageSync": "同步 Session Storage",
-  "editor.sessionStorageRisk": "开启同步 Session Storage 可能存在风险，请谨慎操作！",
+  "editor.sessionStorageRisk": "磁盘备份无法恢复标签页的 Session Storage。开启后会跳过这一项，并把备份标记为不完整。",
   "editor.urlRules": "网址访问规则",
   "editor.blockDomainList": "网址访问黑名单",
   "editor.allowDomainList": "网址访问白名单",

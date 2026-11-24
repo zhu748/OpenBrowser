@@ -9,6 +9,7 @@ const {
   acquireProfileLock,
   updateProfileLock,
   releaseProfileLock,
+  isProfileLockOwner,
   isPidAlive,
   lockPath,
 } = require('../../automation/isolation');
@@ -391,6 +392,140 @@ async function testLateExitWhileReplacementStarts() {
   assert.strictEqual(cleanupOptions.emitStatus, false, 'old exit must stay silent while replacement starts');
 }
 
+async function withRestartFixture(run) {
+  const data = await fs.mkdtemp(path.join(fixtureDataRoot, 'restart-'));
+  try {
+    const engine = new BrowserEngine({ getPath: () => data });
+    const id = 'restart';
+    const profile = engine.sanitizeProfile({ id, name: id, engine: 'firefox', advanced: { saveIndexedDB: false } });
+    const candidate = { ...profile, engine: 'chromium' };
+    engine.profiles.set(id, candidate);
+    engine.lifecycleGenerations.set(id, 1);
+    const root = engine.profileRoot(id);
+    const profileLock = await acquireProfileLock(root, { profileId: id, lifecycleGeneration: 1 });
+    const item = { root, profileLock, profile, engine: 'firefox', lifecycleGeneration: 1, child: { exitCode: 0 } };
+    engine.running.set(id, item);
+    const firefoxData = path.join(root, 'storage', 'default', 'https+++fixture.invalid', 'idb', 'record');
+    const chromiumData = path.join(root, 'Default', 'IndexedDB', 'record');
+    for (const file of [firefoxData, chromiumData]) {
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, 'fixture');
+    }
+    engine.drainProfileHelpers = async () => ({ known: true, pids: [] });
+    await run({ engine, id, item, candidate, root, profileLock, firefoxData, chromiumData });
+  } finally {
+    await fs.rm(data, { recursive: true, force: true });
+  }
+}
+
+async function testQueuedRestartWaitsForRetention(cancelQueued) {
+  await withRestartFixture(async ({ engine, id, item, candidate, root, profileLock, firefoxData, chromiumData }) => {
+    const entered = Promise.withResolvers();
+    const release = Promise.withResolvers();
+    const trace = [];
+    engine.on(event => {
+      if (event.type === 'profile-stop-progress' && event.phase === 'done') trace.push('stop-complete');
+      if (event.type === 'profile-start-progress' && event.phase === 'prepare') trace.push('launch-active');
+    });
+    engine.drainProfileHelpers = async () => {
+      trace.push('drain');
+      entered.resolve();
+      await release.promise;
+      return { known: true, pids: [] };
+    };
+    const retain = engine.enforceDataRetention.bind(engine);
+    engine.enforceDataRetention = async (...args) => {
+      assert.equal(args[2], 'firefox', 'old engine owns the on-disk retention rules');
+      assert.ok(isProfileLockOwner(root, profileLock), 'retention runs under the old token');
+      trace.push('retain');
+      return retain(...args);
+    };
+    item.proxyForwarder = { close: async () => { trace.push('close'); } };
+    engine._start = async (_raw, generation) => {
+      trace.push('replacement');
+      assert.equal(generation, 2);
+      assert.equal(engine.lifecycleGenerations.get(id), 2);
+      assert.ok(item.cleanedUp);
+      await assert.rejects(fs.access(lockPath(root)), { code: 'ENOENT' });
+      await assert.rejects(fs.access(firefoxData), { code: 'ENOENT' });
+      assert.equal(await fs.readFile(chromiumData, 'utf8'), 'fixture');
+      return { running: true };
+    };
+
+    const stop = engine.stop(id);
+    void stop.catch(() => {});
+    await entered.promise;
+    const restart = engine.start(candidate);
+    void restart.catch(() => {});
+    const cancel = cancelQueued ? engine.stop(id) : null;
+    void cancel?.catch(() => {});
+    try {
+      assert.equal(engine.lifecycleGenerations.get(id), 1, 'queued start must not take ownership');
+      assert.ok(isProfileLockOwner(root, profileLock));
+      assert.equal(await fs.readFile(firefoxData, 'utf8'), 'fixture');
+      assert.deepEqual(trace, ['drain']);
+      release.resolve();
+      assert.equal((await stop).running, false);
+      if (cancelQueued) {
+        await assert.rejects(restart, { code: 'BROWSER_START_CANCELLED' });
+        assert.equal((await cancel).running, false);
+        assert.equal(engine.lifecycleGenerations.get(id), 1, 'a canceled reservation is never an owner');
+        assert.deepEqual(trace, ['drain', 'close', 'retain', 'stop-complete']);
+      } else {
+        assert.equal((await restart).running, true);
+        assert.deepEqual(trace, ['drain', 'close', 'retain', 'stop-complete', 'launch-active', 'replacement']);
+      }
+      assert.ok(item.cleanedUp);
+      await assert.rejects(fs.access(lockPath(root)), { code: 'ENOENT' });
+      assert.equal(engine.lifecycleStopRequests.size, 0);
+    } finally {
+      release.resolve();
+      await Promise.allSettled([stop, restart, cancel]);
+    }
+  });
+}
+
+async function testRestartCannotBypassFailedRetention() {
+  await withRestartFixture(async ({ engine, id, item, candidate, root, profileLock, firefoxData, chromiumData }) => {
+    const retain = engine.enforceDataRetention.bind(engine);
+    const failure = Object.assign(new Error('temporary retention failure'), { code: 'EBUSY' });
+    let blocked = true;
+    let attempts = 0;
+    engine.enforceDataRetention = async (...args) => { attempts++; if (blocked) throw failure; return retain(...args); };
+    let launched = 0;
+    engine._start = async () => { launched++; return { running: true }; };
+    await assert.rejects(engine.stop(id), error => error === failure);
+    await assert.rejects(engine.start(candidate), error => error === failure);
+    assert.equal(launched, 0);
+    assert.equal(attempts, 2);
+    assert.equal(engine.running.get(id), item);
+    assert.equal(engine.lifecycleGenerations.get(id), 1);
+    assert.ok(isProfileLockOwner(root, profileLock));
+    assert.equal(await fs.readFile(firefoxData, 'utf8'), 'fixture');
+
+    blocked = false;
+    const rm = fs.rm, lockFile = lockPath(root);
+    fs.rm = async (...args) => {
+      if (args[0] === lockFile) throw Object.assign(new Error('temporary lock release failure'), { code: 'EBUSY' });
+      return rm(...args);
+    };
+    try {
+      await assert.rejects(engine.start(candidate), { code: 'PROFILE_LOCK_RELEASE_FAILED' });
+      assert.equal(launched, 0);
+      assert.equal(attempts, 3);
+      assert.ok(isProfileLockOwner(root, profileLock));
+      await assert.rejects(fs.access(firefoxData), { code: 'ENOENT' });
+    } finally { fs.rm = rm; }
+    assert.equal((await engine.start(candidate)).running, true);
+    assert.equal(launched, 1);
+    assert.equal(attempts, 3, 'a lock release retry does not repeat successful retention');
+    assert.ok(item.cleanedUp);
+    await assert.rejects(fs.access(lockPath(root)), { code: 'ENOENT' });
+    await assert.rejects(fs.access(firefoxData), { code: 'ENOENT' });
+    assert.equal(await fs.readFile(chromiumData, 'utf8'), 'fixture');
+  });
+}
+
 async function testStopAllBoundsHungEnvironment() {
   const engine = makeEngine();
   engine.stopAllItemTimeoutMs = 35;
@@ -444,6 +579,9 @@ async function main() {
   await testStopCancelsInFlightStart();
   await testLateOldGenerationExitIsolation();
   await testLateExitWhileReplacementStarts();
+  await testQueuedRestartWaitsForRetention(false);
+  await testQueuedRestartWaitsForRetention(true);
+  await testRestartCannotBypassFailedRetention();
   await testStopAllBoundsHungEnvironment();
   await testAppQuitCleanupContract();
   await testShutdownRejectsNewAndPendingStarts();
@@ -517,7 +655,7 @@ async function main() {
   assert.strictEqual(engine.starting.size, 0);
   assert.strictEqual(engine.stopping.size, 0);
 
-  process.stdout.write(`LIFECYCLE_SELFTEST_OK concurrent_start=1 start_waits_stop=1 concurrent_stop=1 restart_cycles=5 failed_start_recovery=1 starts=${startCount} stops=${stopCount}\n`);
+  process.stdout.write(`LIFECYCLE_SELFTEST_OK concurrent_start=1 start_waits_stop=1 restart_retention=1 cancel_queued_start=1 concurrent_stop=1 restart_cycles=5 failed_start_recovery=1 starts=${startCount} stops=${stopCount}\n`);
 }
 
 async function runWithDataRoot() {
@@ -595,17 +733,13 @@ async function testRestartRetainsLockWhenProcessScanUnknown() {
   engine.running.set(profile.id, previous);
   let launches = 0;
   engine._start = async () => { launches += 1; return { running: true }; };
-  const originalPath = process.env.PATH;
-  // Force real process-inspection failure on every host, rather than relying
-  // on the sandbox's missing /proc or on whether a browser happens to run.
-  process.env.PATH = path.join(root, 'no-programs');
+  engine.drainProfileHelpers = async () => ({ known: false, pids: [] });
   try {
     await assert.rejects(engine.start(profile), (error) => error.code === 'BROWSER_HELPERS_EXIT_UNCONFIRMED');
     assert.strictEqual(launches, 0);
     assert.strictEqual(engine.running.get(profile.id), previous);
     assert.strictEqual(await fs.stat(lockPath(profileRoot)).then(() => true, () => false), true);
   } finally {
-    process.env.PATH = originalPath;
     await fs.rm(root, { recursive: true, force: true });
   }
 }

@@ -28,6 +28,9 @@ function sanitizeProfile(value) {
   const stability = normalizeStabilitySettings({ hamming: privacyValue.stabilityHamming,
     maxWidth: privacyValue.stabilityMaxWidth, maxHeight: privacyValue.stabilityMaxHeight, square: privacyValue.stabilitySquare });
   const advancedValue = value.advanced && typeof value.advanced === "object" ? value.advanced : {};
+  const rawSessionFilters = advancedValue.sessionStorages ?? '';
+  const sessionFilters = typeof rawSessionFilters === 'string' ? rawSessionFilters.trim() : JSON.stringify(rawSessionFilters);
+  if (typeof sessionFilters !== 'string' || sessionFilters.length > 200000) throw new Error('Session Storage 筛选配置无效或过长');
   const legacyImageKB=value.prefs?.roxy?.forbidImage===false?Number(value.prefs.roxy.forbiddenPictureSize)||0:0;
   const imageMaxBytes=Math.min(8*1024*1024,Math.max(0,Math.floor(Number(advancedValue.imageMaxBytes??(legacyImageKB*1024))||0)));
   const proxyMetaValue = value.proxyMeta && typeof value.proxyMeta === "object" ? value.proxyMeta : {};
@@ -283,8 +286,8 @@ function sanitizeProfile(value) {
       syncIndexedDB: Boolean(advancedValue.syncIndexedDB),
       syncLocalStorage: Boolean(advancedValue.syncLocalStorage),
       // Roxy 对齐：Session Storage 同步 + 数据
-      syncSessionStorage: Boolean(advancedValue.syncSessionStorage),
-      sessionStorages: String(advancedValue.sessionStorages || "").slice(0, 200000),
+      syncSessionStorage: advancedValue.syncSessionStorage === true,
+      sessionStorages: sessionFilters,
       syncPasswords: Boolean(advancedValue.syncPasswords),
       syncExtensionData: Boolean(advancedValue.syncExtensionData),
       syncTab: advancedValue.syncTab !== false,

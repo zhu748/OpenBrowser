@@ -2,8 +2,9 @@
 
 const fsp = require('node:fs/promises');
 const path = require('node:path');
-const { assertSafeProfileChild } = require('../isolation');
-const { browserBackupCandidates } = require('../browser-data');
+const { assertSafeProfileChild, validateProfileRootSecure } = require('../isolation');
+const { browserBackupCandidates, assertChromiumHistoryQuiescent } = require('../browser-data');
+const { assertChromiumHistorySnapshot } = require('./chromium-history');
 const { MAX_BROWSER_DATA_BYTES, MAX_BROWSER_FILE_BYTES, MAX_BROWSER_DATA_FILES } = require('./limits');
 
 async function collectProfileDataFiles(profileRoot, profile, limits = {}) {
@@ -12,7 +13,19 @@ async function collectProfileDataFiles(profileRoot, profile, limits = {}) {
   if (!profileRoot) return files;
   // Only pack browser data when this environment opts into cloud backup
   if (!advanced.cloudBackup) return files;
-  const candidates = await browserBackupCandidates(profileRoot, profile);
+  const rootCheck = await validateProfileRootSecure(path.dirname(profileRoot), profileRoot, path.basename(profileRoot));
+  if (!rootCheck.ok) throw new Error('Isolation error: ' + rootCheck.message);
+  if (advanced.syncSessionStorage) {
+    // Session storage is scoped to a tab/namespace. Restoring loose LevelDB
+    // files cannot recreate that binding, and a raw copy would also include
+    // unselected origins and keys. Never substitute an unfiltered export.
+    const filter = advanced.sessionStorages;
+    const filtered = filter != null && !(typeof filter === 'string' && filter.trim() === '');
+    const reason = filtered ? 'session-storage-domain-key-filter-unsupported' : 'session-storage-tab-restore-unsupported';
+    if (!limits.onSkipped) throw Object.assign(new Error(reason), { code: 'SESSION_STORAGE_BACKUP_UNSUPPORTED' });
+    limits.onSkipped({ path: 'Session Storage', reason });
+  }
+  const candidates = await browserBackupCandidates(profileRoot, profile, { onSkipped: limits.onSkipped });
   const maxFile = limits.maxFileBytes ?? MAX_BROWSER_FILE_BYTES;
   const maxTotal = limits.maxTotalBytes ?? MAX_BROWSER_DATA_BYTES;
   // Match the restore limit so every newly produced package is restorable.
@@ -27,6 +40,7 @@ async function collectProfileDataFiles(profileRoot, profile, limits = {}) {
     let st;
     try { st = await fsp.lstat(abs); } catch (error) { if (error.code !== 'ENOENT') skip(rel, error.code || 'unreadable'); return; }
     if (st.isSymbolicLink()) { skip(rel, 'symbolic-link'); return; }
+    if (rel === 'History' && !st.isFile()) { skip(rel, 'not-a-database-file'); return; }
     if (st.isFile()) {
       if (st.size > maxFile || total + st.size > maxTotal) { skip(rel, 'size-limit'); return; }
       if (['Network/Cookies', 'Login Data'].includes(rel.replace(/\\/g, '/')) || /\.sqlite$|\.db$/.test(rel)) {
@@ -53,6 +67,18 @@ async function collectProfileDataFiles(profileRoot, profile, limits = {}) {
         }
         buf = Buffer.concat(chunks, size);
       } finally { await handle.close(); }
+      if (rel === 'History') {
+        await assertChromiumHistoryQuiescent(profileRoot);
+        const after = await fsp.lstat(abs);
+        if (st.dev !== after.dev || st.ino !== after.ino || st.size !== after.size || st.ctimeMs !== after.ctimeMs || st.mtimeMs !== after.mtimeMs)
+          throw Object.assign(new Error('读取时历史记录已更改，请关闭环境后重新备份。'), { code: 'PROFILE_BACKUP_BUSY' });
+        try { await assertChromiumHistorySnapshot(buf); }
+        catch (error) {
+          if (error.code !== 'INVALID_HISTORY_BACKUP') throw error;
+          skip(rel, buf.length === 0 ? 'empty-history-database' : 'invalid-history-database');
+          return;
+        }
+      }
       files[rel.replace(/\\/g, '/')] = buf.toString('base64');
       total += buf.length;
       count += 1;

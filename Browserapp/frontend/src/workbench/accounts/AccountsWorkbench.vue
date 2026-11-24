@@ -1,5 +1,5 @@
 <script setup>
-import { computed, h, nextTick, onBeforeMount, onBeforeUnmount, onMounted, reactive, ref, useTemplateRef, watch } from 'vue';
+import { computed, h, onBeforeMount, onBeforeUnmount, reactive, ref, useTemplateRef, watch } from 'vue';
 import { En as unsupportedKernel, at as useRole, h as requests, kr as delay, ln as hostOS, mt as useWorkspace,
   nn as usePermission, or as copyText, qt as browserFamily, rn as permission, v as useConfig, vt as cache, yt as useCache } from './utils-BIWenCnY.js';
 import { a as storeToRefs, n as useNotice } from './agent-BmSFI9WH.js';
@@ -54,7 +54,10 @@ let unsubscribers = [];
 const catalog = ref([]);
 const table = useTemplateRef('account');
 const selection = ref([]);
-const rows = ref([]);
+// The table owns request ordering, cache restores and scope resets. Derive all
+// page-specific actions from the rows it actually committed, not from IPC arrivals.
+const rows = computed(() => table.value?.getDataList() ?? []);
+watch(rows, updateProfiles, { flush: 'sync' });
 
 const searchOptions = [
   { key: 'platform', label: $t('平台名称'), icon: 'base/rx_ic_keys', syntax: 'platform::' },
@@ -104,13 +107,8 @@ function dispatch(action, row) {
 function search({ key, value } = {}) {
   table.value?.refresh({ queryKey: value && (key || 'name_remark'), queryValue: value }, true);
 }
-async function loadAccounts(params) {
-  const result = await requests.platform.userGetPlatformInfoV2List(params);
-  if (result.code === 0) {
-    rows.value = result.data.rows;
-    void updateProfiles(result.data.rows);
-  }
-  return result;
+function loadAccounts(params) {
+  return requests.platform.userGetPlatformInfoV2List(params);
 }
 function firstWindow(account) {
   return windowNumbers(account.window_info)[0];
@@ -128,12 +126,17 @@ function openStatus(account) {
     percent: data?.percent || 0, completed, uploading: Boolean(status?.uploading),
     disabled: Boolean(status && (status.pending || status.uploading || !(failed || completed))),
     failed,
-    notice: [failed ? status?.message || status?.error?.message : undefined, data?.warningMessages?.filter(Boolean).join('\n')].filter(Boolean).join('\n'),
+    notice: data?.launchStatus ? data.detail
+      : [failed ? status?.message || status?.error?.message : undefined, data?.warningMessages?.filter(Boolean).join('\n')].filter(Boolean).join('\n'),
   };
 }
 
 async function updateProfiles(accounts) {
   const ticket = ++profileRequest;
+  const visible = new Set(accounts.map(account => String(account.id)));
+  for (const id of Object.keys(linkedProfiles)) {
+    if (!visible.has(id)) delete linkedProfiles[id];
+  }
   const requested = accounts.flatMap(account => {
     if (!account.id) return [];
     const number = firstWindow(account);
@@ -144,7 +147,9 @@ async function updateProfiles(accounts) {
     }
     const cached = linkedProfiles[account.id];
     const matches = profileId ? cached?.dirId === profileId : cached?.windowSortNum === number;
-    return matches ? [] : [{ id: account.id, profileId, number }];
+    if (matches) return [];
+    delete linkedProfiles[account.id];
+    return [{ id: account.id, profileId, number }];
   });
   if (!requested.length) return;
   async function query(field, values) {
@@ -170,7 +175,7 @@ async function updateProfiles(accounts) {
       else delete linkedProfiles[id];
     }
   } catch (error) {
-    console.error('[account-list] failed to load related windows', error);
+    if (ticket === profileRequest) console.error('[account-list] failed to load related windows', error);
   }
 }
 
@@ -187,6 +192,7 @@ async function openWindow(account) {
   }
   const id = account.id;
   if (!id || openStatus(account).disabled) return;
+  const ticket = profileRequest;
   opening[id] = true;
   try {
     const { code, data, msg } = await requests.window.userGetWindowInfoListList({
@@ -195,10 +201,10 @@ async function openWindow(account) {
     if (code !== 0) return showStatus(code, msg);
     const profile = data.rows.find(row => profileId ? row.dirId === profileId : row.windowSortNum === number);
     if (!profile?.dirId) {
-      delete linkedProfiles[id];
+      if (ticket === profileRequest) delete linkedProfiles[id];
       return showStatus(-1, $t('窗口/数据不存在，请刷新页面后重试'));
     }
-    linkedProfiles[id] = profile;
+    if (ticket === profileRequest) linkedProfiles[id] = profile;
     const { osVersion, 'R-OS': os } = await hostOS();
     if (unsupportedKernel(os, osVersion, profile.coreType, profile.coreVersion)) {
       return showStatus(-1, $t('当前系统不支持使用{version}内核', { version: profile.coreVersion }));
@@ -276,7 +282,11 @@ function toggleRemarks(column) {
 async function togglePassword(id, column) {
   if (!column.visible[id]) {
     const row = rows.value.find(account => String(account.id) === String(id));
-    if (row) Object.assign(row, await readAccount(row));
+    if (!row) return;
+    const ticket = profileRequest;
+    const account = await readAccount(row);
+    if (ticket !== profileRequest) return;
+    Object.assign(row, account);
   }
   if (Object.hasOwn(column.visible, id)) delete column.visible[id];
   else column.visible[id] = true;
@@ -300,10 +310,11 @@ function bindWindows(account) {
   });
 }
 function exportAccounts() {
-  const selected = selection.value?.length ? selection.value : rows.value;
-  if (!selected.length) return;
+  const selected = selection.value?.length ? new Set(selection.value.map(row => row.id)) : null;
+  const ids = rows.value.filter(row => !selected || selected.has(row.id)).map(row => row.id);
+  if (!ids.length) return;
   dialog.open(ExportAccounts, { props: { showHeader: false, modal: true, blockScroll: true },
-    data: { props: { ids: selected.map(row => row.id), canViewPassword: canViewPassword.value } } });
+    data: { props: { ids, canViewPassword: canViewPassword.value } } });
 }
 function deleteAccounts(accounts) {
   const { promise, resolve } = Promise.withResolvers();
@@ -327,13 +338,6 @@ onBeforeMount(() => {
   unsubscribers = [listenOpenMessage(), listenCloseMessage(), listenCloseSyncingDataMessage()];
   syncOpenedBrowserState();
 });
-onMounted(() => nextTick(() => {
-  const entry = table.value?.getCachedEntry?.();
-  if (entry?.rows) {
-    rows.value = entry.rows;
-    void updateProfiles(entry.rows);
-  }
-}));
 onBeforeUnmount(() => {
   profileRequest++;
   unsubscribers.forEach(stop => stop?.());

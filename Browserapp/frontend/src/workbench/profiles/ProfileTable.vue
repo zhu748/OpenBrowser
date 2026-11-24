@@ -1,8 +1,10 @@
 <script setup>
 import { profileTableRuntime } from './profile-table-compat.js';
 import { useProfileTable } from './workbench-profile-table-state.js';
+import { t as Dialog } from './dialog-CrBr3eoy.js';
+import { t as Checkbox } from './rx-checkbox-BrC0MzoD.js';
 
-const props = defineProps({ currentFilter: null, isProjectProfile: Boolean });
+const props = defineProps({ currentFilter: null, isProjectProfile: Boolean, inactive: Boolean });
 const emit = defineEmits(['updateFilterTabs', 'switchTab']);
 const { Button, Divider, FilterEmpty, ProfileEmpty, Icon, Popover, Column, Skeleton, RowActions, Table, vTooltip, Search,
   Filter, Tutorial, ProfileInfo, EditableName, OpenButton, ProjectCell, Tags, rowOptions, sort, cache,
@@ -10,7 +12,7 @@ const { Button, Divider, FilterEmpty, ProfileEmpty, Icon, Popover, Column, Skele
 const { tableRef, tagsRef, columns, cacheScope, cacheMetadata, restoreCache, loadRows, runOperation, canQuickCreate, quickCreate,
   configureQuickCreate, searchOptions, search, filters, saveFilters, refresh, check, selection, automationLabel, automationBusy,
   createAutomation, testAllProxies, filtered, createProfile, workspaceName, openState, refreshRow, guideDriver, advanceGuide,
-  recordFirstOpen, openProfile, toggleNotes, updateLabels, openActions, showTemporaryColumn, videoUrl } = useProfileTable(props, emit);
+  recordFirstOpen, openProfile, toggleNotes, updateLabels, openActions, showTemporaryColumn, deleteConfirmation, videoUrl } = useProfileTable(props, emit);
 
 defineExpose({ tableRef });
 </script>
@@ -120,5 +122,20 @@ defineExpose({ tableRef });
       </Column>
     </template>
   </Table>
+  <Dialog :visible="!!deleteConfirmation" :header="$t('删除窗口')" modal :closable="false" :draggable="false"
+    :pt="{ root: { class: '_dialog_rcwb2_2', role: 'alertdialog' } }" @update:visible="deleteConfirmation?.cancel()">
+    <span class="p-confirmdialog-message">{{ deleteConfirmation?.permanent
+      ? $t('您确认要彻底删除所选窗口吗？') : $t('您确认要将所选窗口移至回收站吗？') }}</span>
+    <template #footer>
+      <div v-if="deleteConfirmation?.allowPermanent" class="flex flex-1 items-center">
+        <Checkbox v-model="deleteConfirmation.permanent" :disabled="deleteConfirmation.busy"
+          :pt="{ root: 'items-center', box: '!w-4 !h-4' }" input-id="profile-delete-permanent" binary />
+        <label for="profile-delete-permanent" class="text-3 select-none ma-1.5 cursor-pointer">{{ $t('彻底删除') }}</label>
+      </div>
+      <Button outlined severity="secondary" autofocus :label="$t('取消')" @click="deleteConfirmation?.cancel()" />
+      <Button severity="danger" :label="$t('确认')" :loading="deleteConfirmation?.busy"
+        :disabled="deleteConfirmation?.busy" @click="deleteConfirmation?.accept()" />
+    </template>
+  </Dialog>
   <Tags ref="tagsRef" :labels="[]" :show-create-tag="false" @update="updateLabels($event, tableRef?.selectionData)" />
 </template>

@@ -1,6 +1,106 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+
+async function verifyLaunchReceipts(createBridge) {
+  // Real state/IPC projections with an inert owner; no browser is launched.
+  const { BrowserEngine } = require('../../engine');
+  const { TrackedProfileMap } = require('../../engine/profile-revisions');
+  const { captureProfileLaunchRevision } = require('../../engine/profile-lifecycle');
+  const routes = new Map(require('../../rebuild/routes/profiles').map(([name, handler]) => [name, handler]));
+  const id = 'launch-receipt', profile = { id, name: 'Mock window', option: 'original', lastOpenedAt: null };
+  const engine = Object.assign(Object.create(BrowserEngine.prototype), {
+    profiles: new TrackedProfileMap([[id, profile]]), starting: new Map(), stopping: new Map(),
+    running: new Map(), networkInfo: new Map(), assignments: new Map(), listeners: new Set(),
+    lifecycleGenerations: new Map([[id, 1]]), allowSystemBrowserFallback: true,
+  });
+  const emitted = [];
+  const bridge = createBridge({ emit: (_channel, value) => emitted.push(value) });
+  engine.on(event => bridge.handle(event));
+  const service = { engine };
+  const snapshot = () => routes.get('profiles:lifecycle-rows')(service);
+  const mockOwner = { browser: { name: 'Fixture Browser', path: '/mock/browser' }, extensions: [] };
+  const initialRevision = engine.profiles.revisionOf(id);
+  const warn = (message, lifecycleGeneration = 1) => engine.emit({ type: 'profile-start-page-warning', id, lifecycleGeneration, message });
+  engine.browserSelection = () => ({ mode: 'system-manual', browser: mockOwner.browser });
+  engine.start = async requested => {
+    const launchProfileSnapshot = captureProfileLaunchRevision(engine, requested);
+    engine.emitStartProgress(id, 'prepare', 1, '', 1);
+    engine.chooseBrowser(requested, 'chromium', 1);
+    engine.running.set(id, { ...mockOwner, verificationBlocked: true, lifecycleGeneration: 1, launchProfileSnapshot });
+    warn('Mock start page could not load');
+    assert.equal(engine.publicRunning(id).running, false, 'a staged process is not an open window');
+    engine.emitStartProgress(id, 'ready', 100, '', 1);
+    return engine.publicRunning(id);
+  };
+  engine.applyProfileCommands = async () => { throw new Error('Mock metadata write failed'); };
+  const operation = bridge.beginStart(id);
+  const result = await routes.get('profiles:start')(service, { id });
+  bridge.finishStart(operation, result);
+  const evidence = emitted.at(-1).data;
+  assert.equal(result.running, true);
+  assert.equal(evidence.message, '窗口已打开，配置验证受阻');
+  assert.equal(evidence.launchStatus.capturedRevision, initialRevision);
+  assert.deepEqual(evidence.warningMessages.slice(0, 2), ['用户已手动选择本机浏览器回退。', 'Mock start page could not load']);
+  assert.match(evidence.warningMessages[2], /Mock metadata write failed/);
+  assert.equal(emitted.filter(event => event.data?.percent === 100 && !event.data.statusUpdate).length, 1,
+    'late metadata must not retrigger the window-open callback');
+
+  const [reloaded] = createBridge({ emit() {} }).messages(snapshot());
+  assert.equal(reloaded.detail, evidence.detail, 'a fresh renderer restores the same evidence');
+  assert.deepEqual(reloaded.warningMessages, evidence.warningMessages);
+  const staleRows = snapshot(), cursor = bridge.snapshotCursor();
+  warn('Late live warning');
+  assert.deepEqual(bridge.messages(staleRows, cursor), [], 'a delayed snapshot cannot erase live evidence');
+
+  engine.profiles.set(id, { ...profile, lastOpenedAt: 'bookkeeping only' });
+  assert.notEqual(engine.publicRunning(id).launchStatus.savedRevision, initialRevision);
+  assert.equal(engine.publicRunning(id).launchStatus.savedRelation, 'matches', 'an open-time write is not a settings edit');
+  engine.profiles.set(id, { ...engine.profiles.get(id), option: 'edited after launch' });
+  const currentRevision = engine.profiles.revisionOf(id);
+  bridge.refreshReceipts(snapshot(), bridge.snapshotCursor());
+  assert.equal(emitted.at(-1).data.launchStatus.savedRelation, 'differs');
+
+  const reuse = bridge.beginStart(id);
+  const reused = await BrowserEngine.prototype.startManaged.call(engine, id, engine.profiles.get(id),
+    () => assert.fail('reuse must not launch another window'));
+  bridge.finishStart(reuse, reused);
+  const reuseData = emitted.at(-1).data;
+  assert.equal(reused.alreadyRunning, true);
+  assert.equal(reuseData.launchStatus.reused, true);
+  assert.equal(reuseData.launchStatus.capturedRevision, initialRevision);
+  assert.equal(reuseData.launchStatus.savedRevision, currentRevision);
+  assert.match(reuseData.detail, /未重新启动/);
+  assert.match(reuseData.detail, /保存配置与启动记录不同/);
+
+  // An unverified owner without a capture must not inherit the previous
+  // blocked result or obtain its own launch revision from the saved row.
+  engine.running.delete(id);
+  engine.emit({ type: 'profile-stop-progress', id, phase: 'done', lifecycleGeneration: 1 });
+  engine.lifecycleGenerations.set(id, 2);
+  engine.emitStartProgress(id, 'prepare', 1, '', 2);
+  assert.equal(captureProfileLaunchRevision(engine, { ...profile, option: 'not the saved row' }), null);
+  engine.running.set(id, { ...mockOwner, engine: 'firefox', lifecycleGeneration: 2 });
+  warn('Old owner must not send warnings');
+  engine.emitStartProgress(id, 'ready', 100, '', 2);
+  const [nextOwner] = bridge.messages(snapshot());
+  assert.deepEqual(nextOwner.launchStatus, {
+    configurationState: 'unverified', savedRevision: currentRevision, capturedRevision: null, savedRelation: 'unknown', reused: false,
+  });
+  assert.match(nextOwner.detail, /启动时的配置版本未知/);
+  assert.deepEqual(nextOwner.warningMessages, []);
+
+  const hardId = 'reject-fixture';
+  engine.profiles.set(hardId, { id: hardId, name: 'Rejected' });
+  engine.lifecycleGenerations.set(hardId, 1);
+  engine.emit({ type: 'profile-start-progress', id: hardId, phase: 'error', lifecycleGeneration: 1,
+    errorCode: 'FIXTURE_UNSUPPORTED', message: 'Fixture option is unsupported' });
+  const rejected = bridge.messages(snapshot()).find(row => row.dirId === hardId);
+  assert.equal(rejected.code, 1);
+  assert.equal(rejected.errorCode, 'FIXTURE_UNSUPPORTED');
+  assert.equal(rejected.errorMessage, 'Fixture option is unsupported');
+}
+
 async function main() {
   const { createProfileLifecycleBridge } = await import('../../rebuild/workbench-profile-lifecycle.mjs');
   const events = [], errors = [], id = 'profile';
@@ -46,6 +146,11 @@ async function main() {
   assert.equal(events.at(-1).channel, 'browser:launch-process-message');
   assert.equal(events.at(-1).value.data.percent, 100);
   assert.match(errors.at(-1), /still running/);
-  console.log('PROFILE_LIFECYCLE_BRIDGE_SELFTEST OK (real stage labels, deduplicated completion, resync, sync/error and stale RPC handling)');
+  const unconfirmed = bridge.beginStart('no-window');
+  bridge.finishStart(unconfirmed, {});
+  assert.equal(events.at(-1).value.errorCode, 'PROFILE_WINDOW_NOT_CONFIRMED',
+    'an empty result is not proof that a window opened');
+  await verifyLaunchReceipts(createProfileLifecycleBridge);
+  console.log('PROFILE_LIFECYCLE_BRIDGE_SELFTEST OK (lifecycle, blocked/unverified receipts, refresh, saved revisions and reuse)');
 }
 main().catch(error => { console.error(error);process.exitCode = 1; });

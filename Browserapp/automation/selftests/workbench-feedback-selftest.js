@@ -50,7 +50,8 @@ async function main() {
   let releaseOld;
   const old = draft.refreshFingerprintDraft(groups, { read, find, apply, request: () => new Promise(resolve => { releaseOld = resolve; }) });
   find(groups[0], 'coreType').value = 'Firefox';
-  const identity = { seed: 'new-seed', version: 2, userAgent: 'Firefox/159', uaReduced: true };
+  const identity = { profileId: 'fixture-window', seed: 'new-seed', version: 2, allocation: 'fixture-allocation',
+    userAgent: 'Firefox/159', uaReduced: true };
   const current = await draft.refreshFingerprintDraft(groups, { read, find, apply,
     request: async () => [{ userAgent: identity.userAgent, _fingerprintDraft: identity }] });
   assert.equal(current.length, 1);

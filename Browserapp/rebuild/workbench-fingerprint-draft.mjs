@@ -5,6 +5,28 @@ const primary = groups => Array.isArray(groups?.[0]) ? groups[0] : groups;
 const selection = value => ({ os: value.os, osVersion: value.osVersion,
   coreType: value.coreType, coreVersion: value.coreVersion, useLatestCore: value.useLatestCore });
 
+const previewIncomplete = '指纹预览未返回完整身份，请重试';
+const nonBlank = value => typeof value === 'string' && value.trim() !== '';
+const record = value => value && typeof value === 'object' && !Array.isArray(value);
+
+function completePreview(row) {
+  if (!record(row) || !nonBlank(row.userAgent)) return false;
+  const draft = row._fingerprintDraft;
+  return record(draft) && nonBlank(draft.profileId) && nonBlank(draft.seed)
+    && Number.isSafeInteger(draft.version) && draft.version > 0
+    && nonBlank(draft.allocation) && draft.userAgent === row.userAgent;
+}
+
+export function requireFingerprintPreviewRows(rows, count) {
+  const incomplete = () => Error(globalThis.$t?.(previewIncomplete) ?? previewIncomplete);
+  const expected = Number(count);
+  if (!Array.isArray(rows) || expected < 1 || rows.length !== expected) throw incomplete();
+  for (const row of rows) {
+    if (!completePreview(row)) throw incomplete();
+  }
+  return rows;
+}
+
 function stateFor(groups, create = false) {
   const group = primary(groups);
   if (!Array.isArray(group)) return null;
@@ -75,11 +97,10 @@ export async function refreshFingerprintDraft(groups, { read, apply, find, reque
       speechVoices: values.speechVoices, clientRects: values.clientRects, macInfo: values.macInfo,
       macAddr: values.macAddr,
       previousUserAgent: values.userAgent || '' });
-    if (!preview) return rows;
+    if (!preview) return requireFingerprintPreviewRows(rows, count);
     const active = current();
     if (!active) return [];
-    const row = rows[0];
-    if (!row?.userAgent || !row._fingerprintDraft) throw Error('指纹预览未返回完整身份，请重试');
+    const [row] = requireFingerprintPreviewRows(rows, count);
     const { _fingerprintDraft: identity, _openbrowser: _runtime, ...visible } = row;
     if (retainedIdentity && identity.seed !== retainedIdentity.seed) throw Error('指纹预览已失效，请刷新后重试');
     const keepCustomUa = preserve.includes('userAgent') && Boolean(active.userAgent) && !mismatchedEngine;

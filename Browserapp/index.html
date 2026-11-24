@@ -1346,7 +1346,7 @@
                   <label class="check-row"><input id="editor-restore-session" type="checkbox"> 恢复会话（与标签管理联动）</label>
                   <label class="check-row"><input id="editor-clear-cache" type="checkbox"> 启动时清除缓存</label>
                   <label class="check-row"><input id="editor-clear-cookies" type="checkbox"> 启动时清除 Cookies</label>
-                  <label class="check-row"><input id="editor-clear-localstorage" type="checkbox"> 启动时清除 Local Storage / IndexedDB</label>
+                  <label class="check-row"><input id="editor-clear-localstorage" type="checkbox"> 启动时清除 Local Storage</label>
                   <label class="check-row"><input id="editor-clear-history" type="checkbox"> 启动时清除历史记录（启动浏览器前清空浏览历史）</label>
                 </div>
                 <div class="advanced-card">
@@ -1385,7 +1385,7 @@
                 </div>
                 <div class="advanced-card">
                   <strong data-i18n="editor.sessionStorageSync">同步 Session Storage</strong>
-                  <label class="check-row"><input id="editor-sync-session-storage" type="checkbox"> <span data-i18n="editor.open">开启</span>（<span data-i18n="editor.sessionStorageRisk">开启同步 Session Storage 可能存在风险，请谨慎操作！</span>）</label>
+                  <label class="check-row"><input id="editor-sync-session-storage" type="checkbox"> <span data-i18n="editor.open">开启</span>（<span data-i18n="editor.sessionStorageRisk">磁盘备份无法恢复标签页的 Session Storage。开启后会跳过这一项，并把备份标记为不完整。</span>）</label>
                   <label><span data-i18n="editor.sessionStorageData">Session Storage 数据</span>
                     <textarea id="editor-session-storage-data" rows="3" placeholder='[{"domain": "www.example1.com", "key": ["key1","key2"]}]'></textarea>
                   </label>

@@ -305,13 +305,10 @@ export async function advancedProfileFilters(saved = {}) {
 export async function profileSortOptions() {
   let columns = profileColumnLayout(),
     { data: current } = await api.window.userGetWindowTableSortOrderList();
+  const field = current?.orderName === "windowName" ? "name" : current?.orderName;
   return {
     data: {
-      sortField: columns.data.find(
-        (e3) => e3.key === current?.orderName && e3.sortable,
-      )
-        ? current?.orderName
-        : undefined,
+      sortField: columns.data.find(column => column.key === field && column.sortable)?.key,
       sortOrder: orderDirection(current?.orderType ?? "desc"),
     },
     onChange({ sortField, sortOrder }) {

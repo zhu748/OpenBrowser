@@ -837,7 +837,10 @@ async function main() {
   }
   service.engine.status = () => { throw Error('Number allocation must not build a status snapshot'); };
   let saved;
-  service.engine.syncProfiles = async profiles => { saved = profiles; };
+  service.engine.commitProfiles = async (profiles, { prepareReply }) => {
+    saved = profiles;
+    return prepareReply(profiles);
+  };
   const created = await service.request('profiles:create', { windowName: 'large library' });
   assert.equal(created.sortNum, 200001);
   assert.equal(saved[0].number, 200001);

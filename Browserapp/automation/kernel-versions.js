@@ -17,20 +17,19 @@
 
 const { compareVersions } = require('./version-compare');
 
+const kernelVersionBase = value => value.endsWith('esr')
+  ? value.replace(/^(\d+(?:\.\d+)*)esr$/, '$1') : value;
+
 /**
- * compareVersions knows semver prereleases ("-esr") but not Mozilla's glued
- * "esr" suffix ("153.6.0esr" fails its numeric-part regex and compares as 0).
- * Ordering inside this module always goes through here so catalog sorting
- * stays correct for both forms.
+ * ESR is a release channel, not an extra numeric segment. Compare Mozilla's
+ * glued ESR versions by their base before using the original labels to break
+ * ties (same-version ESR still sorts ahead of the plain release).
  */
 function compareKernelVersions(left, right) {
-  const l = compareVersions(String(left || ''), String(right || ''));
-  if (l !== 0) return l;
-  // Same numbers; fall back to a plain string compare so a glued esr/beta
-  // suffix still orders deterministically instead of collapsing to a tie.
   const a = String(left || '');
   const b = String(right || '');
-  return a === b ? 0 : (a > b ? 1 : -1);
+  if (a === b) return 0;
+  return compareVersions(kernelVersionBase(a), kernelVersionBase(b)) || (a > b ? 1 : -1);
 }
 
 /** CfT feed with per-version download URLs (~5.3 MiB as of 2026-11). */
@@ -178,36 +177,25 @@ function firefoxSumsUrl(versionFolder) {
  */
 function filterFirefoxCatalog(releases, currentVersions, limit = FIREFOX_CATALOG_MAJOR_LIMIT) {
   const entries = releases && typeof releases === 'object' ? Object.values(releases.releases || releases) : [];
-  const pool = [];
+  const byMajor = new Map();
   for (const entry of entries) {
     const version = String(entry?.version || '').trim();
     if (!/^\d+(?:\.\d+){0,3}$/.test(version)) continue;
     const category = String(entry?.category || '');
     if (category !== 'major' && category !== 'stability') continue;
-    if (pool.some((item) => item === version)) continue;
-    pool.push(version);
-  }
-  const majors = [];
-  for (const version of pool) {
     const major = Number(version.split('.')[0]);
     if (!Number.isInteger(major) || major <= 0) continue;
-    if (!majors.some((item) => item.major === major)) majors.push({ major, version });
+    const previous = byMajor.get(major);
+    if (!previous || compareKernelVersions(version, previous) > 0) byMajor.set(major, version);
   }
-  majors.sort((a, b) => b.major - a.major);
-  const recentMajors = majors.slice(0, Math.max(1, Number(limit) || FIREFOX_CATALOG_MAJOR_LIMIT));
-  const out = [];
-  for (const item of recentMajors) {
-    // newest point release for this major (159.0 → 159.0.1)
-    const best = pool
-      .filter((version) => Number(version.split('.')[0]) === item.major)
-      .sort((a, b) => compareKernelVersions(b, a))[0];
-    if (best && !out.some((entry) => entry.version === best)) out.push({ version: best, channel: 'release' });
-  }
+  const out = [...byMajor.keys()].sort((a, b) => b - a)
+    .slice(0, Math.max(1, Number(limit) || FIREFOX_CATALOG_MAJOR_LIMIT))
+    .map((major) => ({ version: byMajor.get(major), channel: 'release' }));
   const esr = String(currentVersions?.FIREFOX_ESR || '').trim();
-  if (/^\d+(?:\.\d+){0,3}esr$/.test(esr) && !out.some((entry) => entry.version === esr)) {
+  if (/^\d+(?:\.\d+){0,3}esr$/.test(esr)) {
     out.push({ version: esr, channel: 'esr' });
+    out.sort((a, b) => compareKernelVersions(b.version, a.version));
   }
-  out.sort((a, b) => compareKernelVersions(b.version, a.version));
   return out;
 }
 

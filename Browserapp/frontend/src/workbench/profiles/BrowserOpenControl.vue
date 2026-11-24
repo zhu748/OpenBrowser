@@ -34,6 +34,13 @@ const { openProxyDrawer } = useProxyEditor({
 });
 const labels = useProfileLabels();
 const label = computed(() => props.text ?? labels.value.open);
+const launchData = computed(() => props.openMessage[props.data.dirId]?.data);
+const launchNotice = computed(() => launchData.value?.launchStatus ? launchData.value.detail : '');
+const launchWarning = computed(() => {
+  const data = launchData.value;
+  return data?.launchStatus?.configurationState === 'blocked' || data?.launchStatus?.savedRelation === 'differs'
+    || Boolean(data?.warningMessages?.length);
+});
 const { browser, coreInfo, isOpenLimitReached, isButtonDisabled, usePeoples, showErrorTooltip, openBrowser } = useBrowserOpen({
   data: props.data, openMessage: props.openMessage, text: label, driverObj: props.driverObj,
   driverNext: () => props.driverNext?.(), sendFirstOpenRecord: () => props.sendFirstOpenRecord?.(),
@@ -72,7 +79,13 @@ async function replaceProxy(close) {
         </Button>
       </div>
     </Tooltip>
-    <Tooltip v-if="showErrorTooltip">
+    <Tooltip v-if="launchNotice">
+      <span tabindex="0" :aria-label="launchNotice">
+        <Icon name="base/rx_ic_info_fill" :class="launchWarning ? 'text-orange' : undefined" />
+      </span>
+      <template #content><div class="whitespace-pre-line">{{ launchNotice }}</div></template>
+    </Tooltip>
+    <Tooltip v-else-if="showErrorTooltip">
       <Icon name="base/rx_ic_info_fill" :class="browser.error ? 'text-red' : 'text-orange'" />
       <template #content="{ hide }">
         <i18n-t class="error" tag="div" :keypath="browser.error || browser.warning" scope="global">
