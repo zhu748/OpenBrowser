@@ -3,6 +3,7 @@
 // Workbench DTO translation belongs here, independently of routing and persistence.
 const { randomUUID: uid } = require("node:crypto");
 const { sanitizeProfile } = require("../engine/profile-sanitizer");
+const { resolveDoNotTrackMode } = require('../shared/profile-values');
 
 const { labelIdsOf, ADVANCED_FIELDS, NOISE_FIELDS, parseWindowPosition, formatWindowPosition } = require('./profile-fields');
 
@@ -175,7 +176,13 @@ function fromRoxy(v, base = {}) {
     ];
   if (Object.hasOwn(v, "webGpu"))
     mapped.privacy.webgpu = v.webGpu === "block" ? "blocked" : v.webGpu;
-  if (Object.hasOwn(v, "doNotTrack")) mapped.privacy.dnt = v.doNotTrack;
+  if (Object.hasOwn(v, "doNotTrack")) {
+    const enabled = resolveDoNotTrackMode({ dnt: v.doNotTrack }) === 'on';
+    // The Workbench boolean represents both inactive modes as false.
+    const keepsDefault = base.privacy && resolveDoNotTrackMode(base.privacy) === 'default';
+    mapped.privacy.dnt = enabled;
+    mapped.privacy.dntMode = enabled ? 'on' : keepsDefault ? 'default' : 'off';
+  }
   if (Object.hasOwn(v, "position"))
     mapped.privacy.geoPermission = { 0: "prompt", 1: "allow", 2: "deny" }[
       v.position
@@ -444,7 +451,7 @@ function toRoxy(p) {
     webGLManufacturer: p.privacy?.fingerprint?.webglVendor,
     webGLRender: p.privacy?.fingerprint?.webglRenderer,
     webGpu: p.privacy?.webgpu === "blocked" ? "block" : p.privacy?.webgpu,
-    doNotTrack: p.privacy?.dnt,
+    doNotTrack: resolveDoNotTrackMode(p.privacy) === 'on',
     deviceInfo: p.privacy?.mediaDevices !== "real",
     deviceNameSwitch: p.privacy?.deviceNameMode !== "real",
     deviceName: p.privacy?.deviceName,

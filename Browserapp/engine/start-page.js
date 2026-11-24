@@ -182,7 +182,7 @@ module.exports = {
       },
       exitIp: network.ip || profile.exitIp || '',
       exitCountryCode: network.countryCode || profile.exitCountryCode || '',
-      exitTimezone: tzMode === 'real' ? '' : (resolvedTimezone || network.timezone || profile.exitTimezone || ''),
+      exitTimezone: resolvedTimezone,
       exitLatitude: network.latitude ?? profile.exitLatitude,
       exitLongitude: network.longitude ?? profile.exitLongitude,
       exitCheckedAt: network.checkedAt || profile.exitCheckedAt,

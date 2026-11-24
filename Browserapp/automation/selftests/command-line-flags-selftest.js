@@ -253,6 +253,15 @@ check('repeated feature extension never produces a duplicate flag', () => {
 
 // ---- integration: browser launch argument assembly ----
 
+check('Do Not Track is delivered through preferences without an unsupported launch flag', () => {
+  const { buildFingerprint, chromeArgsForFingerprint } = require('../fingerprint');
+  for (const dntMode of ['on', 'off', 'default']) {
+    const profile = { id: 'dnt-launch-flags', privacy: { dntMode, dnt: true } };
+    const args = chromeArgsForFingerprint(buildFingerprint(profile), profile);
+    assert.strictEqual(f.hasFlag(args, '--do-not-track'), false, dntMode);
+  }
+});
+
 check('fingerprint flags merge into a browser base list without losing either side', () => {
   const { chromeArgsForFingerprint } = require('../fingerprint');
   const base = [

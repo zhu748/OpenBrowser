@@ -9,6 +9,7 @@
 
 const cdp = require('../cdp');
 const { applyFingerprintToTab, buildFingerprint } = require('../automation/fingerprint');
+const { resolveProfileTimezone } = require('../automation/locale-from-country');
 const { LIVE_PROBE_EXPRESSION, fpLog, summarizeFp, logPath: fingerprintLogPath } = require('../automation/fingerprint-debug-log');
 const { sanitizeUrlForLog } = require('../automation/log-sanitizer');
 const { compileUrlAccessPolicy } = require('../automation/url-access-policy');
@@ -22,23 +23,36 @@ module.exports = {
   async applyRuntimeSettings(port, profile, fingerprint = null, options = {}) {
     const phase = String(options.phase || 'applyRuntimeSettings');
     const observedTabs = options.observedTabs ?? await cdp.tabs(port);
-    const isPendingTarget = targetId => phase === 'watch-ensure'
-      && [...(options.trackOn?.fingerprintSessionStates?.values() || [])]
-        .some(state => state.targetId === targetId && !state.ready && !state.reason);
-    // Auto-attach owns these paused documents until verified and resumed.
-    // Check the live map again after awaits: an attach owner can appear after
-    // the HTTP target snapshot, before policy or fingerprint commands run.
-    const tabs = observedTabs.filter(tab => !isPendingTarget(tab.id));
+    const watch = phase === 'watch-ensure';
+    const trackOn = options.trackOn;
+    const pending = new Set();
+    if (watch) for (const state of trackOn?.fingerprintSessionStates?.values() || []) {
+      if (!state.ready && isActiveFingerprintSession(trackOn, state)) pending.add(state.targetId);
+    }
+    const tabs = observedTabs.filter(tab => !pending.has(tab.id));
+    // A session can finish attaching while the sweep awaits a page socket.
+    // Recheck the live owner only on the direct fallback path.
+    function hasAttachedOwner(targetId) {
+      if (!watch) return false;
+      for (const state of trackOn?.fingerprintSessionStates?.values() || []) {
+        if (state.targetId === targetId && isActiveFingerprintSession(trackOn, state)) return true;
+      }
+      return false;
+    }
+    function assertFallbackOwner(targetId) {
+      if (hasAttachedOwner(targetId)) {
+        throw Object.assign(new Error('Fingerprint fallback has been superseded by auto-attach'), { code: 'FINGERPRINT_FALLBACK_RETIRED' });
+      }
+    }
     if (phase === 'pre-startpage' && !tabs.length) throw new Error('No page target available for fingerprint delivery');
     const network = this.networkInfo.get(profile.id) || {};
     // merge IP-detected geo/tz into profile for fingerprint apply
     const enriched = {
       ...profile,
-      exitTimezone: profile.exitTimezone || network.timezone || '',
       exitLatitude: profile.exitLatitude ?? network.latitude,
       exitLongitude: profile.exitLongitude ?? network.longitude,
     };
-    const fp = fingerprint || buildFingerprint(enriched);
+    const fp = fingerprint || buildFingerprint(enriched, { timezone: resolveProfileTimezone(profile, network) || null });
     const policyProfile = runtimePolicyProfile(profile, this.profiles?.get?.(profile.id));
     // Lazy hash: the watch loop reaches the all-applied early exit below every
     // ~2.4s per profile with no config change; serializing the whole
@@ -76,6 +90,12 @@ module.exports = {
       throw new Error('网址访问规则拦截尚未就绪，已停止继续浏览');
     }
     const policyOwner = options.trackOn || applied;
+    const openFallback = async (tab) => {
+      assertFallbackOwner(tab.id);
+      const connection = await pageFingerprintConnection(this, policyOwner, tab);
+      assertFallbackOwner(tab.id);
+      return connection;
+    };
     closePageFingerprintConnections(policyOwner, liveTargetIds());
     const sessions = options.trackOn?.fingerprintTargetSessions || new Map();
     const sessionTargets = new Map([...sessions].map(([sessionId, target]) => [target.targetId, { ...target, sessionId }]));
@@ -83,19 +103,19 @@ module.exports = {
     for (const id of sessionTargets.keys()) policyIds.add(id);
     pruneRuntimePolicyPages(policyOwner, policyIds);
     const policyTargets = new Map(tabs.map((tab) => [tab.id, { targetType: 'page', tab }]));
-    for (const [id, target] of sessionTargets) if (!isPendingTarget(id)) policyTargets.set(id, { targetType: target.type, sessionId: target.sessionId });
+    for (const [id, target] of sessionTargets) policyTargets.set(id, { targetType: target.type, sessionId: target.sessionId });
     for (const [targetId, target] of policyTargets) {
-      if (isPendingTarget(targetId)) continue;
+      if (!target.sessionId && hasAttachedOwner(targetId)) continue;
       try {
         await applyTargetRuntimePolicy({ owner: policyOwner, targetId, profile: policyProfile, targetType: target.targetType,
           registrationOwner: target.sessionId ? options.trackOn.workerFingerprintConnection : pageFingerprintRegistration(policyOwner, target.tab),
           registrationScope: target.sessionId || '',
           invoke: target.sessionId
             ? (method, params) => options.trackOn.workerFingerprintConnection.command(method, params, { sessionId: target.sessionId, timeout: 5000 })
-            : async (method, params) => (await pageFingerprintConnection(this, policyOwner, target.tab)).command(method, params),
+            : async (method, params) => (await openFallback(target.tab)).command(method, params),
         });
       } catch (error) {
-        if (isPendingTarget(targetId)) continue;
+        if (!target.sessionId && (error?.code === 'FINGERPRINT_FALLBACK_RETIRED' || hasAttachedOwner(targetId))) continue;
         if (target.sessionId && !sessions.has(target.sessionId)) continue;
         const current = target.tab ? await cdp.tabs(port).catch(() => null) : null;
         if (current && !current.some((tab) => tab.id === targetId)) continue;
@@ -133,18 +153,19 @@ module.exports = {
     });
 
     for (const tab of tabs) {
-      if (isPendingTarget(tab.id)) continue;
+      const flat = sessionTargets.get(tab.id);
+      if (!flat && hasAttachedOwner(tab.id)) continue;
       if (!force && !options.verifyApplied && applied.has(tab.id)) {
         await fpLog('inject.skip-tab', { phase, profileId: profile.id, tabId: tab.id, url: tab.url, reason: 'already-applied' });
         continue;
       }
       try {
-        const flat = sessionTargets.get(tab.id);
         const connection = flat ? options.trackOn.workerFingerprintConnection
-          : await pageFingerprintConnection(this, policyOwner, tab);
-        const invoke = (method, params, timeout = 8000) => connection.command(method, params, {
-          ...(flat ? { sessionId: flat.sessionId } : {}), timeout,
-        });
+          : await openFallback(tab);
+        const invoke = (method, params, timeout = 8000) => {
+          if (!flat) assertFallbackOwner(tab.id);
+          return connection.command(method, params, { ...(flat ? { sessionId: flat.sessionId } : {}), timeout });
+        };
         const fontBlobBridge = fp?.fontBlobBridge || options?.trackOn?.fontBlobBridge || options?.trackOn?.fingerprint?.fontBlobBridge;
         if (fontBlobBridge?.channelName && tab.webSocketDebuggerUrl) {
           if (options?.trackOn) { options.trackOn.fontBlobBridge = fontBlobBridge; options.trackOn.fingerprint = fp; }
@@ -178,10 +199,10 @@ module.exports = {
           phase, profileId: profile.id, tabId: tab.id,
           url: sanitizeUrlForLog(tab.url).slice(0, 240), intended: summarizeFp(fp), live,
         });
+        if (!flat) assertFallbackOwner(tab.id);
         applied.add(tab.id);
       } catch (error) {
-        if (isPendingTarget(tab.id)) {
-          applied.delete(tab.id);
+        if (!flat && (error?.code === 'FINGERPRINT_FALLBACK_RETIRED' || hasAttachedOwner(tab.id))) {
           await fpLog('inject.defer-tab', { phase, profileId: profile.id, tabId: tab.id, reason: 'auto-attach-owner' });
           continue;
         }

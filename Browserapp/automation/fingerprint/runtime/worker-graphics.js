@@ -12,31 +12,15 @@ module.exports = `  const canvasMark = Number(CFG.canvas?.mark) || 1;
     const readback = createCanvasReadbackCache();
     replace(globalThis.OffscreenCanvasRenderingContext2D?.prototype, 'getImageData', (original) => function(...args) {
       const image = original.apply(this, args);
-      return readback.tag(readback.matches(this, image, args) ? image : applyNoise(image, canvasMark));
+      return readback.tag(readback.matches(this, image, args) ? image : applyCanvasNoise(image, canvasMark));
     });
     replace(globalThis.OffscreenCanvasRenderingContext2D?.prototype, 'putImageData', (original) => function(...args) {
       const result = original.apply(this, args);
       try { readback.wrote(this, args); } catch (_) {}
       return result;
     });
-    replace(globalThis.OffscreenCanvas?.prototype, 'convertToBlob', (original) => async function convertToBlob(options) {
-      const captured = captureImageEncodeOptions(options);
-      const blob = await original.call(this, captured.options);
-      let bitmap;
-      try {
-        bitmap = await createImageBitmap(blob);
-        const w = bitmap.width, h = bitmap.height;
-        const copy = new OffscreenCanvas(w, h);
-        const context = copy.getContext('2d');
-        if (!context) return blob;
-        context.drawImage(bitmap, 0, 0);
-        const image = context.getImageData(0, 0, copy.width, copy.height);
-        context.putImageData(image, 0, 0);
-        return original.call(copy, captured.replay);
-      } catch (_) { return blob; }
-      finally { try { bitmap?.close(); } catch (_) {} }
-    });
-    installVideoFrameCopy(globalThis.VideoFrame?.prototype, replace, (image) => applyNoise(image, canvasMark));
+    installOffscreenCanvasEncoding(globalThis, replace);
+    installVideoFrameCopy(globalThis.VideoFrame?.prototype, replace, (data, width, height) => canvasPixelNoise(data, width, height, canvasMark));
   }
   // Worker measureText parity: the main thread jitters TextMetrics by a
   // (origin, seed, font, text) hash (document-graphics F-5); without the same

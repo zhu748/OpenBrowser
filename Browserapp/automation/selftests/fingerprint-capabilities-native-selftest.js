@@ -1,7 +1,6 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const http = require('node:http');
 const h = require('./native-gate-harness');
 const { buildFingerprint, buildInjectionScript } = require('../fingerprint');
 const { LIVE_PROBE_EXPRESSION } = require('../fingerprint/delivery-probe');
@@ -112,16 +111,66 @@ async function contextPolicySnapshot(read) {
   return result;
 }
 
-async function checkContextPolicy(conn, url, fingerprint) {
+async function webglEncodingSnapshot() {
+  const results = [];
+  for (const method of ['toDataURL', 'toBlob', 'convertToBlob']) {
+    const canvas = method === 'convertToBlob' ? new OffscreenCanvas(16, 16) : document.createElement('canvas');
+    canvas.width = canvas.height = 16;
+    const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true });
+    gl.clearColor(0.2, 0.4, 0.6, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+    const framebuffer = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+    const color = gl.createRenderbuffer();
+    gl.bindRenderbuffer(gl.RENDERBUFFER, color);
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGBA8, 16, 16);
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, color);
+    gl.clearColor(1, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+    const blob = method === 'toDataURL' ? await fetch(canvas.toDataURL()).then((response) => response.blob())
+      : method === 'toBlob' ? await new Promise((resolve) => canvas.toBlob(resolve)) : await canvas.convertToBlob();
+    const bitmap = await createImageBitmap(blob);
+    const copy = new OffscreenCanvas(16, 16), ctx = copy.getContext('2d');
+    ctx.drawImage(bitmap, 0, 0); bitmap.close();
+    const pixel = [...ctx.getImageData(1, 1, 1, 1).data];
+    results.push({ method, pixel, error: gl.getError(), bound: gl.getParameter(gl.FRAMEBUFFER_BINDING) === framebuffer });
+  }
+  return results;
+}
+
+async function canvasTaintSnapshot(imageUrl) {
+  const image = new Image();
+  image.src = imageUrl;
+  await image.decode();
+  const html = document.createElement('canvas'), offscreen = new OffscreenCanvas(2, 2);
+  for (const canvas of [html, offscreen]) canvas.getContext('2d').drawImage(image, 0, 0);
+  const outcomes = [];
+  for (const encode of [() => html.toDataURL(), () => new Promise((resolve) => html.toBlob(resolve)),
+    () => offscreen.convertToBlob()]) {
+    try { await encode(); outcomes.push('returned'); }
+    catch (error) { outcomes.push(error.name); }
+  }
+  return outcomes;
+}
+
+async function checkContextPolicy(conn, url, fingerprint, imageUrl) {
   const expression = `(${contextPolicySnapshot})(${contextCalls})`;
   const native = await h.evaluate(conn, expression);
+  const encoding = `(${webglEncodingSnapshot})()`;
+  const taint = `(${canvasTaintSnapshot})(${JSON.stringify(imageUrl)})`;
+  const nativeTaint = await h.evaluate(conn, taint);
+  assert.deepEqual(nativeTaint, ['SecurityError', 'SecurityError', 'SecurityError']);
+  const nativeEncoding = await h.evaluate(conn, encoding);
+  for (const result of nativeEncoding) {
+    assert.deepEqual(result.pixel, [51, 102, 153, 255]);
+    assert.equal(result.error, 0);
+    assert.equal(result.bound, true);
+  }
   for (const realm of ['main', 'iframe', 'offscreen', 'worker']) {
     assert.equal(native[realm].webgl, 'object', realm + ' baseline requires WebGL');
     assert.equal(native[realm].webgl2, 'object', realm + ' baseline requires WebGL2');
   }
 
   await conn.command('Page.enable');
-  for (const [canvasMode, webglMode] of [['noise', 'real'], ['noise', 'blocked'], ['blocked', 'blocked']]) {
+  for (const [canvasMode, webglMode] of [['noise', 'real'], ['real', 'noise'], ['noise', 'blocked'], ['blocked', 'blocked']]) {
     const source = buildInjectionScript({
       ...fingerprint,
       canvas: { ...fingerprint.canvas, mode: canvasMode },
@@ -146,6 +195,14 @@ async function checkContextPolicy(conn, url, fingerprint) {
         expected.main.experimental = expected.iframe.experimental = 'null';
       }
       assert.deepEqual(actual, expected, `Canvas ${canvasMode} / WebGL ${webglMode}`);
+      if (webglMode === 'real') {
+        const actualEncoding = await h.evaluate(conn, encoding);
+        assert.deepEqual(actualEncoding.map(({ pixel, ...result }) => ({ ...result, pixel: pixel.slice(1) })),
+          nativeEncoding.map(({ pixel, ...result }) => ({ ...result, pixel: pixel.slice(1) })),
+          'canvas encoding reads the presented image and leaves WebGL state intact');
+        for (const result of actualEncoding) assert.ok(Math.abs(result.pixel[0] - 51) <= 1, result.method);
+        assert.deepEqual(await h.evaluate(conn, taint), nativeTaint, 'cross-origin exports retain native SecurityError');
+      }
     } finally {
       await conn.command('Page.removeScriptToEvaluateOnNewDocument', { identifier });
     }
@@ -173,12 +230,17 @@ function check(actual, baseline, label) {
 }
 async function main() {
   const browser = h.chooseChromiumBinary();
-  const server = http.createServer((req, res) => {
+  const { a: server, b: imageServer, close } = await h.startDualOriginServers((req, res) => {
+    if (req.url === '/canvas-image') {
+      res.setHeader('Content-Type', 'image/png');
+      res.end(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64'));
+      return;
+    }
     res.setHeader('Content-Type', 'text/html');
     res.end(`<!doctype html><head>${req.url === '/viewport' ? '<meta name="viewport" content="width=device-width,initial-scale=1">' : ''}<script>globalThis.ready=true</script></head><body>capability gate</body>`);
   });
-  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const url = `http://127.0.0.1:${server.address().port}`;
+  const imageUrl = `http://127.0.0.1:${imageServer.address().port}/canvas-image`;
   let baseline;
   const specs = [
     { os: 'Windows', version: 1, deviceProfile: 'default', injected: false },
@@ -225,7 +287,7 @@ async function main() {
             } finally { rawConn?.close(); await raw.close(); }
           }
         }
-        if (!spec.injected) await checkContextPolicy(conn, url, fp);
+        if (!spec.injected) await checkContextPolicy(conn, url, fp, imageUrl);
         console.log(`OK ${spec.os} v${spec.version} ${spec.deviceProfile || 'auto'} injected=${spec.injected}`);
       } finally { conn?.close(); await session.close(); }
     }
@@ -249,7 +311,7 @@ async function main() {
         console.log(`PASS live probe distinguishes WebGL mode=${webgl} and metadata=${webglMeta}`);
       } finally { conn?.close(); await session.close(); }
     }
-  } finally { await new Promise((resolve) => server.close(resolve)); }
+  } finally { await close(); }
   console.log('fingerprint-capabilities-native: OK (native driver bounds, WebGL1/2, workers, mobile viewport meta)');
 }
 main().catch((error) => { console.error(error); process.exitCode = error instanceof h.Unavailable ? 2 : 1; });

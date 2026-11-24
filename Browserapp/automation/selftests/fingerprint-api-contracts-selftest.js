@@ -81,5 +81,14 @@ async function storageCase(result, expectedQuota) {
     const fingerprint = buildFirefoxFingerprint(profile, '159.0');
     assert.equal(new Map(firefoxExtraUserPrefs(profile, fingerprint)).get('webgl.disabled'), !enabled);
   }
+  for (const [audio, saved, blockSound, expected] of [
+    ['muted', 'real', false, '0.0'], ['real', 'muted', false, '1.0'],
+    ['noise', 'muted', false, '1.0'], ['real', 'real', true, '0.0'],
+  ]) {
+    const profile = { id: 'audio-pref', os: 'Linux', engine: 'firefox',
+      privacy: { audio: saved, fingerprint: { audio } }, advanced: { blockSound } };
+    const fingerprint = buildFirefoxFingerprint(profile, '159.0');
+    assert.equal(new Map(firefoxExtraUserPrefs(profile, fingerprint)).get('media.volume_scale'), expected);
+  }
   console.log('PASS native storage bounds/shape/brand/realm, zero/absent/frozen fields, effective geolocation denial and mandatory native permission setup');
 })().catch(error => { console.error(error);process.exitCode = 1; });

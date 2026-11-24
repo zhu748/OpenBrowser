@@ -1,7 +1,7 @@
 'use strict';
 
 // Validate an assembled fingerprint without constructing or mutating its identity.
-const { normalizeNetworkInformation } = require('../../shared/profile-values');
+const { normalizeNetworkInformation, DEVICE_MEMORY_TIERS } = require('../../shared/profile-values');
 const { parseOsFromUa, parseChromeVersion, osChromeSupportViolation } = require('../user-agent');
 const { desktopOs, OS_PRESETS, expectedClientHintPlatform, webglParameterOverrides } = require('./shared');
 
@@ -123,10 +123,10 @@ function fingerprintConsistencyIssues(fp) {
   if (!(Number(screen.devicePixelRatio) > 0 && Number(screen.devicePixelRatio) <= 4)) {
     add('device-pixel-ratio-invalid', 'devicePixelRatio must be within the supported desktop range.', 'error');
   }
-  if (fp?.hardwareConcurrency != null && !(Number(fp.hardwareConcurrency) >= 1 && Number(fp.hardwareConcurrency) <= 64)) {
-    add('cores-invalid', 'hardwareConcurrency must be between 1 and 64 when overridden.', 'error');
+  if (fp?.hardwareConcurrency != null && (!Number.isInteger(fp.hardwareConcurrency) || fp.hardwareConcurrency < 1 || fp.hardwareConcurrency > 64)) {
+    add('cores-invalid', 'hardwareConcurrency must be an integer between 1 and 64 when overridden.', 'error');
   }
-  if (fp?.deviceMemory != null && ![0.25, 0.5, 1, 2, 4, 8].includes(Number(fp.deviceMemory))) {
+  if (fp?.deviceMemory != null && !DEVICE_MEMORY_TIERS.includes(fp.deviceMemory)) {
     add('memory-invalid', 'deviceMemory must use a supported quantized tier.', 'error');
   }
   // Hardware-class coherence (the isCoherent rules from device-personas.js applied to the

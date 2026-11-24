@@ -74,7 +74,7 @@ async function probe() {
 }
 const locationProbe = `(async()=>({state:(await navigator.permissions.query({name:'geolocation'})).state,
   position:await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('geolocation timeout')),5000);
-    navigator.geolocation.getCurrentPosition(p=>{clearTimeout(timer);resolve({lat:p.coords.latitude,lon:p.coords.longitude})},
+    navigator.geolocation.getCurrentPosition(p=>{clearTimeout(timer);resolve({lat:p.coords.latitude,lon:p.coords.longitude,accuracy:p.coords.accuracy})},
       e=>{clearTimeout(timer);resolve({code:e.code})});})}))()`;
 
 async function main() {
@@ -141,12 +141,12 @@ async function main() {
       } finally { page?.close();await session.close(); }
     }
     const profile = sanitizeProfile({ id: 'native-geo-policy', name: 'Geo policy', os: 'Windows',
-      privacy: { geoMode: 'custom', geoPermission: 'allow', latitude: 0, longitude: 0, fontListMode: 'real' } });
+      privacy: { geoMode: 'custom', geoPermission: 'allow', latitude: 0, longitude: 0, accuracy: 275, fontListMode: 'real' } });
     const fingerprint = buildFingerprint({ ...profile, kernelVersion: browser.version });
     const session = await h.launchPersonaBrowser(browser, { profile, fingerprint });let page;
     try {
       page = await h.openPage(session.port);await navigate(page, origin);
-      assert.deepEqual(await h.evaluate(page, locationProbe), { state: 'granted', position: { lat: 0, lon: 0 } });
+      assert.deepEqual(await h.evaluate(page, locationProbe), { state: 'granted', position: { lat: 0, lon: 0, accuracy: 275 } });
       await navigate(page, origin + '/policy');
       const tree = await page.command('Page.getFrameTree');
       const world = await page.command('Page.createIsolatedWorld', { frameId: tree.frameTree.frame.id, worldName: 'native-permission-reference' });

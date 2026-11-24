@@ -5,12 +5,7 @@
  * resumed. Extracted verbatim from the former automation/fingerprint.js.
  */
 
-// Shared CFG layer: the os/timezone/deviceMemory/webgl/stability computations the
-// main-world builder (injection-script.js) also embeds live in injection-config.js so
-// the two emitted CFGs cannot drift independently. Key order, key set and the
-// intentionally divergent leaves (vendor, webgpu, stability caps)
-// stay in this file's literal — see the drift list in injection-config.js.
-const { resolveInjectionStability, injectionOs, injectionTimezone, injectionDeviceMemory, injectionWebgl, stabilityNoiseAmplitude, stabilitySampleStepDivisor, stabilityMaxWidth, stabilityMaxHeight, stabilitySquare } = require('./injection-config');
+const { injectionOs, injectionTimezone, injectionDeviceMemory, injectionWebgl, injectionCanvas, injectionStability } = require('./injection-config');
 const { normalizeNetworkInformation } = require('../../shared/profile-values');
 const { canonicalBridgeToken } = require('./shared');
 const { WORKER_RUNTIME_REVISION } = require('./runtime-revision');
@@ -36,7 +31,7 @@ function buildWorkerInjectionScript(fp, options = {}) {
   if (cached) {
     return cached;
   }
-  const stability = resolveInjectionStability(fp);
+  const timezone = injectionTimezone(fp);
   const json = JSON.stringify({
     engine: fp.engine || fp.uaProfile?.engine || 'chromium',
     kernelVersion: fp.kernelVersion || '',
@@ -54,7 +49,7 @@ function buildWorkerInjectionScript(fp, options = {}) {
     // Keep the same metadata fallback as the document builder.
     userAgentMetadata: fp.userAgentMetadata || fp.uaProfile?.metadata || null,
     languages: fp.languages,
-    timezone: injectionTimezone(fp),
+    timezone,
     hardwareConcurrency: fp.hardwareConcurrency,
     connection: normalizeNetworkInformation(fp.connection),
     ...(options.retiredWorkerIdentities?.length ? { retiredWorkerIdentities: options.retiredWorkerIdentities } : {}),
@@ -64,7 +59,7 @@ function buildWorkerInjectionScript(fp, options = {}) {
     webgl: injectionWebgl(fp),
     // Intentionally divergent from the main-world CFG (main passes fp.webgpu || null
     // through unchanged; this side restructures to {mode, gpu} and synthesises a
-    // webgl-gpu fallback) — preserved as-is, see injection-config.js.
+    // webgl-gpu fallback).
     webgpu: fp.webgpu ? {
       mode: String(fp.webgpu.mode || 'real'),
       gpu: fp.webgpu.gpu || fp.webgl?.gpu || null,
@@ -72,24 +67,15 @@ function buildWorkerInjectionScript(fp, options = {}) {
       mode: 'webgl',
       gpu: fp.webgl.gpu,
     } : null),
-    canvas: fp.canvas,
+    canvas: injectionCanvas(fp),
     seed: fp.seed,
-    stability: {
-      active: Boolean(stability.active),
-      mode: String(stability.mode || 'auto'),
-      hosts: Array.isArray(stability.hosts) ? stability.hosts : [],
-      skipHosts: Array.isArray(stability.skipHosts) ? stability.skipHosts : [],
-      noiseAmplitude: stabilityNoiseAmplitude(stability),
-      sampleStepDivisor: stabilitySampleStepDivisor(stability),
-      maxWidth: stabilityMaxWidth(stability),
-      maxHeight: stabilityMaxHeight(stability),
-      square: stabilitySquare(stability),
-    },
+    stability: injectionStability(fp),
   });
   // The private Function bridge in worker-bootstrap owns idempotency.
   // The entire prefix returns before any fragment can be installed twice.
   const core = buildWorkerRuntimeFull({
-    json, bridgeToken, blockWebgl: fp.webgl?.mode === 'blocked',
+    json, bridgeToken, timezone, blockWebgl: fp.webgl?.mode === 'blocked',
+    canvasNoise: fp.canvas?.mode === 'noise',
     fontPresenceSource: buildWorkerFontPresenceSource(fp),
   });
   if (options.coreOnly) return rememberWorkerScript(cacheKey, core);

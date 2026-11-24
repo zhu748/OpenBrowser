@@ -13,11 +13,8 @@ const storageEstimate = require('./storage-estimate-fragment');
 //     the instance itself
 // Storage estimate behavior is a separate shared fragment; it registers its
 // same-origin sub-window hook only when the realm exposes that hook registry.
-// Semantics unified on the more correct variant of each pair: the blocked
-// requestAdapter re-raises TypeError (a genuine user error must not be
-// swallowed into "no adapter"), and adapter-info prototype resolution falls
-// back to the live instance's prototype when the global constructor is not
-// exposed in the realm.
+// Adapter-info prototype resolution falls back to the live instance when
+// the constructor is absent from the realm.
 function gpuStorageFragment({ realm, replaceHelper, guardedNavigator, iifeCloser }) {
   const replace = replaceHelper;
   const navigatorGuard = guardedNavigator
@@ -49,21 +46,16 @@ ${requestTargetDecl}
 
       if (gpuMode === 'blocked' && requestTarget) {
         ${replace}(requestTarget, 'requestAdapter', (origReq) => async function requestAdapter(...args) {
-          if (typeof origReq === 'function') {
-            try {
-              await origReq.apply(this, args);
-            } catch (err) {
-              // A malformed request (TypeError) is a caller error, not "no adapter":
-              // rethrow so parity with the native contract survives the spoof.
-              if (err instanceof TypeError) throw err;
-            }
-          }
+          // Keep native validation and promise rejections in every realm.
+          await Reflect.apply(origReq, this, args);
           return null;
         });
       } else if (gpuMode === 'webgl' && gpuInfo && requestTarget) {
         const infoOverrides = new WeakMap();
         const adapterInfos = new WeakMap();
         const featuresMap = new WeakMap();
+        const featureIterators = new WeakMap();
+        const patchedIteratorPrototypes = new WeakSet();
         const limitsMap = new WeakMap();
         const patchedInfoKeys = new Set();
         let patchedFeaturesProto = false;
@@ -83,6 +75,42 @@ ${requestTargetDecl}
         } else if (targetVendor === 'qualcomm' || targetVendor === 'arm' || targetVendor === 'samsung') {
           disallowedFeatures.add('texture-compression-bc');
         }
+
+        const rememberFeatures = (features) => {
+          if (!features || !disallowedFeatures.size || featuresMap.has(features)) return;
+          try {
+            const allowed = new Set();
+            let removed = false;
+            for (const value of features) {
+              if (disallowedFeatures.has(value)) removed = true;
+              else allowed.add(value);
+            }
+            featuresMap.set(features, removed ? allowed : null);
+          } catch (_) {}
+        };
+
+        const filterIterator = (iterator, allowed, entries) => {
+          const proto = Object.getPrototypeOf(iterator);
+          if (!patchedIteratorPrototypes.has(proto)) {
+            const descriptor = Object.getOwnPropertyDescriptor(proto, 'next');
+            const next = descriptor?.value;
+            if (typeof next !== 'function') return iterator;
+            Object.defineProperty(proto, 'next', {
+              ...descriptor,
+              value: nativeLike(function nextFeature(...args) {
+                let item = Reflect.apply(next, this, args);
+                const filter = featureIterators.get(this);
+                while (filter && !item.done && !filter.allowed.has(filter.entries ? item.value[0] : item.value)) {
+                  item = Reflect.apply(next, this, args);
+                }
+                return item;
+              }, next),
+            });
+            patchedIteratorPrototypes.add(proto);
+          }
+          featureIterators.set(iterator, { allowed, entries });
+          return iterator;
+        };
 
         const getFamilyLimits = (vendor, arch) => {
           const v = String(vendor || '').toLowerCase().trim();
@@ -195,86 +223,52 @@ ${requestTargetDecl}
               configurable: sizeDesc.configurable,
               enumerable: sizeDesc.enumerable,
               get: nativeLike(function size() {
-                natSizeGet.call(this);
-                const filtered = featuresMap.get(this);
-                return filtered ? filtered.size : natSizeGet.call(this);
+                const size = natSizeGet.call(this);
+                return featuresMap.get(this)?.size ?? size;
               }, natSizeGet, 'get size', 0),
               set: sizeDesc.set,
             });
           }
-          if (typeof fProto.has === 'function') {
-            const natHas = fProto.has;
-            const hasMethod = nativeLike(function has(key) {
-              natHas.call(this, key);
+          const hasDesc = Object.getOwnPropertyDescriptor(fProto, 'has');
+          if (typeof hasDesc?.value === 'function') {
+            const natHas = hasDesc.value;
+            const hasMethod = nativeLike(function has() {
               const filtered = featuresMap.get(this);
-              if (filtered) return filtered.has(String(key));
-              return natHas.call(this, key);
+              if (!filtered) return Reflect.apply(natHas, this, arguments);
+              const call = invokeNativeText(natHas, this, arguments);
+              return call.value && filtered.has(call.text);
             }, natHas, 'has', 1);
-            Object.defineProperty(fProto, 'has', {
-              configurable: true,
-              enumerable: true,
-              writable: true,
-              value: hasMethod,
-            });
+            Object.defineProperty(fProto, 'has', { ...hasDesc, value: hasMethod });
           }
-          const wrapIter = (key, makeIter) => {
-            if (typeof fProto[key] === 'function') {
-              const natFn = fProto[key];
-              const method = nativeLike(function (...args) {
-                natFn.apply(this, args);
-                const filtered = featuresMap.get(this);
-                if (filtered) return makeIter(filtered);
-                return natFn.apply(this, args);
-              }, natFn, key, natFn.length);
-              Object.defineProperty(fProto, key, {
-                configurable: true,
-                enumerable: true,
-                writable: true,
-                value: method,
-              });
+          // Reuse one wrapper when the binding aliases values, keys or @@iterator.
+          const iteratorMethods = new Map();
+          for (const key of ['entries', 'keys', 'values', Symbol.iterator]) {
+            const desc = Object.getOwnPropertyDescriptor(fProto, key);
+            const original = desc?.value;
+            if (typeof original !== 'function') continue;
+            let patched = iteratorMethods.get(original);
+            if (!patched) {
+              patched = nativeLike(function (...args) {
+                const iterator = Reflect.apply(original, this, args);
+                const allowed = featuresMap.get(this);
+                return allowed ? filterIterator(iterator, allowed, key === 'entries') : iterator;
+              }, original);
+              iteratorMethods.set(original, patched);
             }
-          };
-          wrapIter('entries', (f) => f.entries());
-          wrapIter('keys', (f) => f.keys());
-          wrapIter('values', (f) => f.values());
-          if (typeof Symbol !== 'undefined' && Symbol.iterator && typeof fProto[Symbol.iterator] === 'function') {
-            const natSym = fProto[Symbol.iterator];
-            const symMethod = nativeLike(function () {
-              natSym.call(this);
-              const filtered = featuresMap.get(this);
-              if (filtered) return filtered[Symbol.iterator]();
-              return natSym.call(this);
-              // Do NOT rename or re-arity this wrapper: a Blink setlike prototype exposes
-              // Symbol.iterator as the very same values function object, so the native
-              // name/length are part of the observable surface. Overriding them would make the
-              // prototype signature differ from an un-injected build.
-            }, natSym);
-            Object.defineProperty(fProto, Symbol.iterator, {
-              configurable: true,
-              enumerable: false,
-              writable: true,
-              value: symMethod,
-            });
+            Object.defineProperty(fProto, key, { ...desc, value: patched });
           }
-          if (typeof fProto.forEach === 'function') {
-            const natForEach = fProto.forEach;
+          const forEachDesc = Object.getOwnPropertyDescriptor(fProto, 'forEach');
+          if (typeof forEachDesc?.value === 'function') {
+            const natForEach = forEachDesc.value;
             const forEachMethod = nativeLike(function forEach(callback, thisArg) {
-              natForEach.call(this, () => {});
               const filtered = featuresMap.get(this);
-              if (filtered) {
-                for (const val of filtered) {
-                  callback.call(thisArg, val, val, this);
-                }
-                return;
-              }
-              return natForEach.apply(this, arguments);
+              if (!filtered || typeof callback !== 'function') return Reflect.apply(natForEach, this, arguments);
+              return natForEach.call(this, function visit(value, key, owner) {
+                'use strict';
+                if (filtered.has(value)) Reflect.apply(callback, this, [value, key, owner]);
+              }, thisArg);
             }, natForEach, 'forEach', 1);
-            Object.defineProperty(fProto, 'forEach', {
-              configurable: true,
-              enumerable: true,
-              writable: true,
-              value: forEachMethod,
-            });
+            Object.defineProperty(fProto, 'forEach', { ...forEachDesc, value: forEachMethod });
           }
         };
 
@@ -291,12 +285,12 @@ ${requestTargetDecl}
               configurable: desc.configurable,
               enumerable: desc.enumerable,
               get: nativeLike(function () {
-                natGet.call(this);
+                const value = natGet.call(this);
                 const custom = limitsMap.get(this);
                 if (custom && Object.prototype.hasOwnProperty.call(custom, key)) {
                   return custom[key];
                 }
-                return natGet.call(this);
+                return value;
               }, natGet, 'get ' + key, 0),
               set: desc.set,
             });
@@ -329,15 +323,7 @@ ${requestTargetDecl}
               enumerable: featuresDesc.enumerable,
               get: nativeLike(function features() {
                 const f = natFeaturesGet.call(this);
-                if (f && !featuresMap.has(f)) {
-                  const allowed = new Set();
-                  try {
-                    for (const item of f) {
-                      if (!disallowedFeatures.has(item)) allowed.add(item);
-                    }
-                  } catch (_) {}
-                  featuresMap.set(f, allowed);
-                }
+                rememberFeatures(f);
                 return f;
               }, natFeaturesGet, 'get features', 0),
               set: featuresDesc.set,
@@ -407,15 +393,7 @@ ${requestTargetDecl}
           if (features && typeof features === 'object') {
             const fProto = (typeof GPUSupportedFeatures !== 'undefined' && GPUSupportedFeatures.prototype) || Object.getPrototypeOf(features);
             patchFeaturesAccessors(fProto);
-            if (!featuresMap.has(features)) {
-              const allowed = new Set();
-              try {
-                for (const item of features) {
-                  if (!disallowedFeatures.has(item)) allowed.add(item);
-                }
-              } catch (_) {}
-              featuresMap.set(features, allowed);
-            }
+            rememberFeatures(features);
           }
 
           let limits = null;

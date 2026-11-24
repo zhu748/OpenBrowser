@@ -77,10 +77,9 @@ function buildBaseLaunchArguments({ root, fingerprint, profile, hostScaleFactor 
 }
 
 /** Complete policy flags and report rejected overrides to the caller. */
-function completeLaunchArguments(initialArgs, { profile, proxyConfig, proxyEndpoint, windowPosition = null }) {
+function completeLaunchArguments(initialArgs, { profile, fingerprint, proxyConfig, proxyEndpoint, windowPosition = null }) {
   let args = initialArgs.slice();
   if (!allowGoogleLogin(profile)) args.push('--disable-sync');
-  if (profile.privacy.webgpu === 'blocked') args.push('--disable-features=WebGPU');
   if (profile.advanced.blockImages) args.push('--blink-settings=imagesEnabled=false');
   // Roxy 对齐：「声音 = 关闭」→ 内核真静音（disablePlaySound）；视频关闭仅能落到 autoplay 闸（内核级
   // disablePlayVideo 是 Roxy 自研内核能力，Chromium 无等价开关，见对齐矩阵）。
@@ -99,7 +98,7 @@ function completeLaunchArguments(initialArgs, { profile, proxyConfig, proxyEndpo
   // null = no cap), so the Number() fallback only guards direct callers.
   const jsHeapCap = profile.advanced.jsHeapMax;
   if (jsHeapCap) args.push(`--js-flags=--max-old-space-size=${Math.max(256, Math.min(16384, Number(jsHeapCap) || 4096))}`);
-  const disabledFeatures = [];
+  const disabledFeatures = (fingerprint?.webgpu?.mode ?? profile.privacy.webgpu) === 'blocked' ? ['WebGPU'] : [];
   // Authenticated proxies are exposed to Chrome through the local bridge. Everything else takes
   // the canonical endpoint from the parser, never from a pattern match on the raw string:
   // `socks5h://`, a `#remark` suffix or a trailing slash used to miss every branch and emit no

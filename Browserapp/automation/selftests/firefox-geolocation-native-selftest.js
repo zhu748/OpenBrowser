@@ -8,13 +8,18 @@ const http = require('node:http');
 const { spawn, execFileSync } = require('node:child_process');
 const { sanitizeProfile } = require('../../engine/profile-sanitizer');
 const { firefoxExtraUserPrefs } = require('../../engine/start-firefox');
-const { buildFirefoxUserJs, firefoxStartupArgs } = require('../kernel-versions');
+const { writeFirefoxLaunchPreferences } = require('../../engine/launch-preferences');
+const { firefoxStartupArgs } = require('../kernel-versions');
 const { buildFirefoxFingerprint, initializeFirefoxFingerprint, navigateFirefoxStartup } = require('../firefox-fingerprint');
 const { BidiConnection, waitForFirefoxEndpoint, evaluateBidi } = require('../../network/bidi-connection');
 
 const permissionRead = `(async()=>{let reads=0;const p=await navigator.permissions.query({get name(){reads++;return 'geolocation'}});return {reads,state:p.state}})()`;
 const first = `(async()=>{const geo='geolocation'in navigator;const permission=await ${permissionRead};
   const estimate=await navigator.storage.estimate();return {geo,permission,storage:{quota:estimate.quota,keys:Object.keys(estimate).sort(),realm:Object.getPrototypeOf(estimate)===Object.prototype}}})()`;
+const nativePreferences = `(async()=>({notification:Notification.permission, cores:navigator.hardwareConcurrency,
+  microphone:(await navigator.permissions.query({name:'microphone'})).state,
+  camera:(await navigator.permissions.query({name:'camera'})).state,
+  width:document.querySelector('span').getBoundingClientRect().width}))()`;
 async function main() {
   const binary = process.env.OPENBROWSER_FIREFOX_BINARY;
   if (!binary) { console.error('SKIP set OPENBROWSER_FIREFOX_BINARY');process.exitCode = 2;return; }
@@ -23,21 +28,26 @@ async function main() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ob-firefox-native-geo-'));
   const makeServer = async () => {
     const server = http.createServer((_request, response) => {
-      response.setHeader('Content-Type', 'text/html');response.end('<!doctype html><script>globalThis.first=' + first + '</script><body>native policy');
+      response.setHeader('Content-Type', 'text/html');response.end('<!doctype html><html lang="en"><body><span style="font:5px monospace">0123456789</span><script>globalThis.first=' + first + '</script></body>');
     });
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));return server;
   };
   const a = await makeServer(), b = await makeServer();
   const origin = 'http://127.0.0.1:' + a.address().port, otherOrigin = 'http://127.0.0.1:' + b.address().port;
+  let minimumFontWidth;
   try {
     for (const mode of ['deny', 'allow']) {
+      const blocked = mode === 'deny';
       const profile = sanitizeProfile({ id: 'firefox-native-geo', name: 'Geolocation', os: 'Windows', engine: 'firefox',
-        privacy: { geoMode: mode === 'deny' ? 'disabled' : 'custom', geoPermission: mode === 'deny' ? 'prompt' : 'allow',
-          latitude: 0, longitude: 0, fontListMode: 'real', webrtc: 'disabled' } });
+        privacy: { geoMode: 'custom', geoPermission: mode, latitude: 0, longitude: 0, accuracy: 275,
+          fontListMode: 'real', webrtc: 'disabled', cores: blocked ? 2 : 0,
+          media: blocked ? 'blocked' : 'real', fontMode: blocked ? 'custom' : 'default', fontSize: 30 },
+        advanced: { blockNotifications: blocked, blockVideo: blocked } });
       const fingerprint = buildFirefoxFingerprint(profile, version);
-      await fs.writeFile(path.join(root, 'user.js'), buildFirefoxUserJs({ userAgent: fingerprint.userAgent,
+      if (mode === 'deny') assert.equal(fingerprint.dynamicConfig.geoposition, null);
+      await writeFirefoxLaunchPreferences(root, { userAgent: fingerprint.userAgent,
         acceptLanguages: fingerprint.languages.join(','), locale: fingerprint.languages[0], proxyEndpoint: 'http://127.0.0.1:9',
-        noProxyHosts: '127.0.0.1, localhost', extraPrefs: firefoxExtraUserPrefs(profile, fingerprint) }));
+        noProxyHosts: '127.0.0.1, localhost', extraPrefs: firefoxExtraUserPrefs(profile, fingerprint) });
       let child, connection;
       try {
         child = spawn(binary, firefoxStartupArgs({ root, startUrl: 'about:blank', headless: true, remoteDebugging: true }), { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -48,6 +58,14 @@ async function main() {
         // Existing site grants must not bypass this profile's native denial.
         await connection.command('permissions.setPermission', { descriptor: { name: 'geolocation' }, state: mode === 'deny' ? 'granted' : 'denied', origin });
         await navigateFirefoxStartup(connection, initialized.context, [origin]);
+        const { width, cores, ...permissions } = await evaluateBidi(connection, { context: initialized.context, sandbox: 'native-preference-reference' }, nativePreferences);
+        assert.deepEqual(permissions, blocked ? { notification: 'denied', microphone: 'denied', camera: 'denied' }
+          : { notification: 'default', microphone: 'prompt', camera: 'prompt' }, 'reused profile applies its current permission defaults');
+        if (blocked) {
+          assert.ok(cores > 0 && cores <= 2, 'active CPU preference caps native core count');
+          minimumFontWidth = width;
+        }
+        else assert.ok(width > 0 && width < minimumFontWidth, 'reused profile restores the native minimum font size');
         const actual = await evaluateBidi(connection, { context: initialized.context }, 'globalThis.first');
         const native = await evaluateBidi(connection, { context: initialized.context, sandbox: 'native-api-reference' }, first);
         assert.equal(actual.permission.reads, native.permission.reads, 'preserve Gecko dictionary conversion count');
@@ -67,10 +85,10 @@ async function main() {
           assert.equal(unknown.geo, false);assert.equal(unknown.permission.state, 'granted', 'retain genuine permission-store semantics while the feature is off');
         } else {
           const position = await evaluateBidi(connection, { context: initialized.context }, `new Promise((resolve,reject)=>navigator.geolocation.getCurrentPosition(
-            p=>resolve([p.coords.latitude,p.coords.longitude]),e=>reject(new Error('native position failure '+e.code)),{timeout:5000}))`);
-          assert.deepEqual(position, [0, 0], 'the same profile restores native geolocation and delivers configured zero coordinates');
+            p=>resolve([p.coords.latitude,p.coords.longitude,p.coords.accuracy]),e=>reject(new Error('native position failure '+e.code)),{timeout:5000}))`);
+          assert.deepEqual(position, [0, 0, 275], 'the same profile restores geolocation with the configured coordinates and accuracy');
         }
-        console.log('PASS Firefox ' + version + ' ' + mode + ': native first-script permission, stored-grant protection/restoration, storage shape/bounds and foreign receivers');
+        console.log('PASS Firefox ' + version + ' ' + mode + ': native permissions, stored-grant protection/restoration, profile preferences and storage APIs');
       } finally {
         if (connection) await connection.command('browser.close', {}).catch(() => {});
         connection?.close();

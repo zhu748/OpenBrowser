@@ -43,6 +43,10 @@ async function main() {
   const ordinary = resolveStabilityPolicy({ stabilityMode: 'auto' }, { host: 'example.com' });
   assert.strictEqual(ordinary.active, false);
   assert.strictEqual(ordinary.noiseAmplitude, 3);
+  const rounded = resolveStabilityPolicy({ stabilitySquare: 2.6, stabilityMaxWidth: '744.4', stabilityMaxHeight: 511.6 });
+  assert.deepStrictEqual([rounded.square, rounded.maxWidth, rounded.maxHeight], [3, 744, 512]);
+  assert.ok(matchStabilityHost('https://www.amazon.com.:443/', { stabilityMode: 'auto' }));
+  assert.ok(!matchStabilityHost('www.sephora.com.', { stabilityMode: 'force' }));
 
   const force = resolveStabilityPolicy({ stabilityMode: 'force' }, { host: 'example.com' });
   assert.strictEqual(force.active, true);
@@ -122,7 +126,8 @@ async function main() {
   assert.ok(script.includes('noiseAmplitudeNow'));
   assert.ok(script.includes('accounts.google.com') || script.includes('"active":true'));
   assert.ok(script.includes('getBattery') || script.includes('battery'));
-  assert.ok(script.includes('hamming'));
+  const documentConfig = JSON.parse(script.match(/^  const CFG = (.+);$/m)[1]);
+  assert.strictEqual(documentConfig.stability.square, fp.stability.square);
 
   const worker = buildWorkerInjectionScript(fp);
   assert.ok(worker.includes('noiseAmplitude'));
@@ -168,13 +173,8 @@ async function main() {
   const blocksC = sampleCanvasBlocks(imgC.data, width, height, { square: 8 });
   assert.ok(hammingDistance(blocksA, blocksC) > 0, 'different marks must produce different samples');
   assert.ok(hammingDistance(blocksA, sampleCanvasBlocks(makeImg().data, width, height, { square: 8 })) > 0, 'stable mode must perturb the source');
-  const forceScript = buildInjectionScript(buildFingerprint({
-    id: 'prof_hamming_1',
-    name: 'hamming',
-    privacy: { stabilityMode: 'force', stabilityHamming: 12 },
-  }));
-  assert.ok(forceScript.includes('canvasNoiseLocks'), 'injection must lock deltas on stable hosts');
-  assert.ok(forceScript.includes('locked.push'));
+  // The emitted document and worker runtimes are exercised on actual pixel
+  // buffers by fingerprint-runtime-consistency-selftest.js.
 
   // --- TLS profile hooks ---
   assert.ok(TLS_PROFILE_PRESETS.chrome);

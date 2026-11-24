@@ -6,9 +6,11 @@ const { buildFingerprint, assertFingerprintConsistency } = require('../fingerpri
 const { sanitizeProfile } = require('../../engine/profile-sanitizer');
 const { fingerprintVersion, createFingerprintDraw } = require('../fingerprint/generation');
 const { ProfileRoutes } = require('../api/profile-routes');
+const { normalizeProfileInput } = require('../api/input');
 const { WINDOWS_PERSONAS } = require('../device-personas');
 const { canonicalBridgeToken } = require('../fingerprint/shared');
 const { deriveBridgeToken } = require('../font-placeholder');
+const { fromRoxy, toRoxy } = require('../../rebuild/profile-dto');
 const legacy = require('./fixtures/fingerprint-v1-linux.json');
 
 function onHost(platform, run) {
@@ -18,6 +20,35 @@ function onHost(platform, run) {
 }
 
 async function main() {
+  for (const [privacy, mode, value] of [
+    [{ dntMode: 'on', dnt: false }, 'on', '1'],
+    [{ dntMode: 'off', dnt: true }, 'off', null],
+    [{ dntMode: 'default', dnt: true }, 'default', null],
+    [{ dnt: '1' }, 'on', '1'],
+    [{ dnt: '0' }, 'off', null],
+    [{ dnt: 'false' }, 'off', null],
+    [{}, 'default', null],
+  ]) {
+    const raw = { id: 'dnt-settings', name: 'DNT', privacy };
+    const saved = sanitizeProfile(raw);
+    assert.deepEqual([saved.privacy.dntMode, saved.privacy.dnt], [mode, mode === 'on']);
+    assert.equal(buildFingerprint(raw).doNotTrack, value);
+    assert.equal(buildFingerprint(saved).doNotTrack, value);
+  }
+  const dntDefault = sanitizeProfile({ id: 'dnt-workbench', name: 'DNT', privacy: { dntMode: 'default' } });
+  assert.equal(fromRoxy({ doNotTrack: false }, dntDefault).privacy.dntMode, 'default', 'an unchanged boolean round-trip preserves default');
+  const dntOn = fromRoxy({ doNotTrack: true }, dntDefault);
+  assert.equal(dntOn.privacy.dntMode, 'on');
+  const dntOff = fromRoxy({ doNotTrack: false }, dntOn);
+  assert.equal(dntOff.privacy.dntMode, 'off');
+  assert.equal(toRoxy(dntOff).doNotTrack, false);
+  const apiDisable = normalizeProfileInput({ do_not_track: 'false', privacy: dntOn.privacy });
+  assert.equal(apiDisable.privacy.dntMode, 'off');
+  assert.equal(apiDisable.privacy.dnt, false);
+  const apiEnable = normalizeProfileInput({ doNotTrack: 'true', privacy: dntOff.privacy });
+  assert.equal(apiEnable.privacy.dntMode, 'on');
+  assert.equal(apiEnable.privacy.dnt, true);
+
   for (const [os, osVersion, kernelVersion] of [
     ['Windows', '7', '157.0.8103.78'], ['Windows', '8', '157.0.8103.78'],
     ['Windows', '8.1', '157.0.8103.78'], ['macos', '10.15', '157.0.8103.78'],
@@ -79,6 +110,26 @@ async function main() {
     assert.equal(explicit.audio.mark, 1.5);
     assert.equal(explicit.staticConfig.canvasMark, explicit.canvas.mark);
     assert.equal(explicit.staticConfig.audioFp, explicit.audio.mark);
+
+    for (const value of [null, '', '  ', false, true, [], {}]) {
+      const config = { ...input, privacy: { cores: value, memory: value,
+        fingerprint: { hardwareConcurrency: value, deviceMemory: value } } };
+      for (const fp of [buildFingerprint(config), buildFingerprint(sanitizeProfile(config))]) {
+        assert.equal(fp.hardwareConcurrency, original.hardwareConcurrency);
+        assert.equal(fp.deviceMemory, original.deviceMemory);
+      }
+    }
+    const aliases = { ...input, privacy: { fingerprint: { hardwareConcurrency: '4.5', deviceMemory: '6' } } };
+    for (const fp of [buildFingerprint(aliases), buildFingerprint(sanitizeProfile(aliases))]) {
+      assert.equal(fp.hardwareConcurrency, 5);
+      assert.equal(fp.deviceMemory, 8);
+      assert.equal(fp.staticConfig.hardwareConcurrency, 5);
+      assert.equal(fp.staticConfig.deviceMemory, 8);
+      assertFingerprintConsistency(fp);
+    }
+    const native = buildFingerprint({ ...aliases, privacy: { ...aliases.privacy, cores: '0', memory: 0 } });
+    assert.equal(native.hardwareConcurrency, null);
+    assert.equal(native.deviceMemory, null);
   }
 
   const contrastDpr = new Set();

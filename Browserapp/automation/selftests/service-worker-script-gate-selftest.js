@@ -42,9 +42,18 @@ vm.runInContext(legacySource, upgraded);
 assert.equal(vm.runInContext(`Function.prototype.toString.call(Function.prototype.toString, ${JSON.stringify(canonicalBridgeToken(current))}, 'workerInstalled')`, upgraded), WORKER_RUNTIME_REVISION);
 assert.equal(vm.runInContext('navigator.hardwareConcurrency', upgraded), current.hardwareConcurrency);
 
-async function scenario({ fail = false, cancel = false } = {}) {
+async function scenario({ fail = false, cancel = false, drift = '' } = {}) {
+  const expected = buildFingerprint({ id: 'gate-probe', privacy: { timezoneMode: 'custom', timezone: 'Etc/UTC',
+    fingerprint: { languages: ['fr-CA', 'en-US'], deviceMemory: 4 } } });
+  const worker = vm.createContext({ URL, DOMException });
+  vm.runInContext(`class WorkerNavigator {
+    get userAgent(){return 'host UA'} get platform(){return 'host platform'}
+    get hardwareConcurrency(){return 48} get deviceMemory(){return 8}
+    get language(){return 'ja'} get languages(){return ['ja']}
+  }
+  globalThis.WorkerNavigator=WorkerNavigator;globalThis.navigator=new WorkerNavigator();globalThis.self=globalThis;`, worker);
   const calls = [];let releaseEnable, releaseArm, gate;
-  const connection = { async command(method, _params) {
+  const connection = { async command(method, params) {
     calls.push(method);
     if (method === 'Debugger.enable') return new Promise(resolve => { releaseEnable = resolve; });
     if (method === 'Debugger.setInstrumentationBreakpoint') return new Promise(resolve => { releaseArm = resolve; });
@@ -56,13 +65,25 @@ async function scenario({ fail = false, cancel = false } = {}) {
       if (cancel) state.cancel('detached');
       return { scriptSource: cachedSource };
     }
-    if (method === 'Runtime.evaluate') return fail ? { exceptionDetails: { text: 'injection rejected' } } : { result: { value: true } };
+    if (method === 'Runtime.evaluate') {
+      if (fail) return { exceptionDetails: { text: 'injection rejected' } };
+      const value = vm.runInContext(params.expression, worker);
+      if (!params.returnByValue && drift) {
+        if (drift === 'timezone') {
+          vm.runInContext("Intl.DateTimeFormat = () => ({ resolvedOptions: () => ({timeZone:'Asia/Tokyo'}) });", worker);
+        } else {
+          const value = drift === 'deviceMemory' ? 2 : ['ja'];
+          Object.defineProperty(worker.navigator, drift, { value });
+        }
+      }
+      return { result: { value } };
+    }
     return {};
   } };
   const state = new FingerprintSession({ sessionId: 's', targetId: 't', item: {}, connection });
-  gate = new ServiceWorkerScriptGate(state, current);
-  if (fail || cancel) {
-    await assert.rejects(gate.resume(), fail ? /injection rejected/ : /detached/);
+  gate = new ServiceWorkerScriptGate(state, expected);
+  if (fail || cancel || drift) {
+    await assert.rejects(gate.resume(), fail ? /injection rejected/ : (cancel ? /detached/ : /installation was not confirmed/));
     assert.equal(calls.includes('Debugger.resume'), false, 'a failed or detached target never resumes application code');
     assert.equal(gate.verified, false);
   } else {
@@ -74,5 +95,6 @@ async function scenario({ fail = false, cancel = false } = {}) {
 }
 (async () => {
   await scenario();await scenario({ fail: true });await scenario({ cancel: true });
-  console.log('PASS cached-prefix retirement, ordered startup debugger commands, pre-script delivery, failure/detach non-resume and debugger cleanup');
+  for (const drift of ['languages', 'deviceMemory', 'timezone']) await scenario({ drift });
+  console.log('PASS cached-prefix retirement, ordered debugger startup, equivalent timezones, worker field verification and debugger cleanup');
 })().catch(error => { console.error(error);process.exitCode = 1; });

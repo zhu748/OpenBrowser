@@ -12,12 +12,7 @@ const { BoundedLru } = require('../bounded-lru');
 const { normalizeNetworkInformation } = require('../../shared/profile-values');
 const { buildDocumentRuntime } = require('./runtime-source');
 const { createWebRtcFallbackSource, buildCssFontLocalGateSource, deriveFontPlaceholder, buildQueryLocalFontBlobGateSource, buildUaProfile, buildUaInjectionScript, canonicalBridgeToken, mapPlatformToSubsetKey, loadFontSubsetPayload, buildFontMetricsScript } = require('./shared');
-// Shared CFG layer: the os/timezone/deviceMemory/webgl/stability computations the
-// worker builder (worker-injection.js) also embeds live in injection-config.js so
-// the two emitted CFGs cannot drift independently. Key order, key set and the
-// intentionally divergent leaves (vendor, webgpu, stability
-// caps) stay in this file's literal — see the drift list in injection-config.js.
-const { resolveInjectionStability, injectionOs, injectionTimezone, injectionDeviceMemory, injectionWebgl, stabilityNoiseAmplitude, stabilitySampleStepDivisor, stabilityHamming, stabilityMaxWidth, stabilityMaxHeight, stabilitySquare } = require('./injection-config');
+const { injectionOs, injectionTimezone, injectionDeviceMemory, injectionWebgl, injectionCanvas, injectionStability } = require('./injection-config');
 
 /**
  * Document-start injection implementing noise/block modes.
@@ -44,7 +39,6 @@ function buildInjectionScript(fp, options = {}) {
       return cached.source;
     }
   }
-  const stability = resolveInjectionStability(fp);
   const config = {
     engine: fp.engine || fp.uaProfile?.engine || 'chromium',
     kernelVersion: fp.kernelVersion || '',
@@ -58,14 +52,11 @@ function buildInjectionScript(fp, options = {}) {
     languages: fp.languages,
     timezone: injectionTimezone(fp),
     hardwareConcurrency: fp.hardwareConcurrency,
-    // persona.js quantises to DEVICE_MEMORY_STEPS (0.25/0.5/1/2/4/8); Math.max(1, ...) rewrote
-    // the legal 0.25/0.5 tiers to 1, contradicting the CDP/main record. Legal values pass
-    // through; anything illegal snaps to the nearest step (capped at 8, as the spec does).
-    // Shared computation with the worker CFG — see injection-config.js.
+    // Preserve the browser memory tiers in both document and worker scripts.
     deviceMemory: injectionDeviceMemory(fp),
     screen: fp.screen,
     webgl: injectionWebgl(fp),
-    canvas: fp.canvas,
+    canvas: injectionCanvas(fp),
     audio: fp.audio,
     clientRects: fp.clientRects,
     webrtc: fp.webrtc,
@@ -88,26 +79,13 @@ function buildInjectionScript(fp, options = {}) {
     userAgentMetadata: fp.userAgentMetadata || fp.uaProfile?.metadata || null,
     // A document can infer iOS from the platform even without an explicit UA profile.
     vendor: fp.vendor ?? ((fp.mobileDevice?.os === 'ios' || fp.uaProfile?.os === 'ios' || (fp.platform && /iphone|ipad|ipod/i.test(fp.platform))) ? 'Apple Computer, Inc.' : (fp.uaProfile?.vendor ?? 'Google Inc.')),
-    doNotTrack: fp.doNotTrack,
     seed: fp.seed,
-    stability: {
-      mode: stability.mode,
-      active: Boolean(stability.active),
-      noiseAmplitude: stabilityNoiseAmplitude(stability),
-      sampleStepDivisor: stabilitySampleStepDivisor(stability),
-      hamming: stabilityHamming(stability),
-      maxWidth: stabilityMaxWidth(stability),
-      maxHeight: stabilityMaxHeight(stability),
-      square: stabilitySquare(stability),
-      hosts: Array.isArray(stability.hosts) ? stability.hosts.slice(0, 800) : [],
-      skipHosts: Array.isArray(stability.skipHosts) ? stability.skipHosts.slice(0, 200) : [],
-    },
+    stability: injectionStability(fp),
   };
 
   // UA + Client Hints (userAgentData) injected first
-  const uaScript = fp.uaProfile
-    ? buildUaInjectionScript(fp.uaProfile)
-    : (fp.userAgent ? buildUaInjectionScript(buildUaProfile({ userAgent: fp.userAgent, platform: fp.platform })) : '');
+  const uaProfile = fp.uaProfile || (fp.userAgent ? buildUaProfile({ userAgent: fp.userAgent, platform: fp.platform }) : null);
+  const uaScript = uaProfile ? buildUaInjectionScript(uaProfile, bridgeToken) : '';
 
   // The document script also carries the worker injection source so the
   // Worker-constructor patch can prefix blob:/data: workers (the Fetch

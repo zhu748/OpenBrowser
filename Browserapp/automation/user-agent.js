@@ -15,6 +15,7 @@
  */
 
 const { OPENBROWSER_KERNEL_VERSION, DEFAULT_UA_CHROME_MAJOR, RANDOM_UA_CHROME_MAJORS } = require('./versions');
+const { normalizeLanguageTags } = require('./locale-from-country');
 
 const crypto = require('node:crypto');
 const UA_BRIDGE_KEY = crypto.randomBytes(32);
@@ -430,29 +431,14 @@ function chromeArgsForUa(uaProfile) {
  * Removes premature q-values to prevent double-weighting by the browser network stack.
  */
 function formatAcceptLanguage(languages) {
-  if (!languages) return "";
-  const list = Array.isArray(languages)
-    ? languages
-    : String(languages).split(",");
-  const cleaned = list
-    .map((tag) => String(tag || "").trim().split(";")[0].trim())
-    .filter(Boolean);
-  return Array.from(new Set(cleaned)).join(",");
+  return normalizeLanguageTags(languages).join(",");
 }
 
 /**
  * Build RFC-compliant Accept-Language header with descending quality values.
  */
 function buildAcceptLanguageHeader(languages) {
-  if (!languages) return "";
-  const list = Array.isArray(languages)
-    ? languages
-    : String(languages).split(",");
-  const cleaned = list
-    .map((tag) => String(tag || "").trim().split(";")[0].trim())
-    .filter(Boolean);
-  if (!cleaned.length) return "";
-  return cleaned.map((lang, idx) => {
+  return normalizeLanguageTags(languages).map((lang, idx) => {
     if (idx === 0) return lang;
     const q = Math.max(0.1, 1.0 - idx * 0.1).toFixed(1).replace(/\.0$/, "");
     return `${lang};q=${q}`;
@@ -489,7 +475,7 @@ function cdpUserAgentOverride(uaProfile, acceptLanguage = "") {
  * Document-start patch: navigator.userAgent / appVersion / platform / userAgentData.
  * Supports both Window (Navigator) and DedicatedWorker (WorkerNavigator) contexts.
  */
-function buildUaInjectionScript(uaProfile) {
+function buildUaInjectionScript(uaProfile, documentBridgeToken = null) {
   const bridgeToken = crypto.createHmac('sha256', UA_BRIDGE_KEY).update(JSON.stringify(uaProfile)).digest('hex');
   const payload = {
     userAgent: uaProfile.userAgent,
@@ -508,7 +494,7 @@ function buildUaInjectionScript(uaProfile) {
     wow64: Boolean(uaProfile.metadata?.wow64),
     formFactors: uaProfile.metadata?.formFactors || (uaProfile.metadata?.mobile ? ["Mobile"] : ["Desktop"]),
   };
-  return `(${uaRuntimeSource})(${JSON.stringify(payload)}, ${JSON.stringify(bridgeToken)});`;
+  return `(${uaRuntimeSource})(${JSON.stringify(payload)}, ${JSON.stringify(bridgeToken)}, ${JSON.stringify(documentBridgeToken)});`;
 }
 
 function randomUaForSeed(seedU32, options = {}) {

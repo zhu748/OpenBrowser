@@ -1,7 +1,8 @@
 'use strict';
 
-const { noiseDelta } = require('./fingerprint/noise-policy');
-const { normalizeBatterySnapshot } = require('../shared/profile-values');
+const { noiseDelta, normalizeHost, normalizeSiteHost, hostMatchesPattern, listIncludesHost } = require('./fingerprint/noise-policy');
+const { formatGeopositionValue } = require('./fingerprint/geolocation-policy');
+const { normalizeBatterySnapshot, normalizeStabilitySettings } = require('../shared/profile-values');
 
 /**
  * Seed-derived fingerprint generators and persona data tables.
@@ -327,33 +328,6 @@ const DEFAULT_STABILITY_SKIP_HOSTS = [
   'sephora.com', 'whatsapp.com', 'web.whatsapp.com', 'dhgate.com', 'cdn.', 'static.',
 ];
 
-function normalizeHost(value) {
-  return String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/^https?:\/\//, '')
-    .replace(/\/.*$/, '')
-    .replace(/:\d+$/, '')
-    .replace(/^\*\./, '')
-    .replace(/^\.+/, '');
-}
-
-function hostMatchesPattern(host, pattern) {
-  const h = normalizeHost(host);
-  const p = normalizeHost(pattern);
-  if (!h || !p) return false;
-  if (p.endsWith('.')) return h === p.slice(0, -1) || h.endsWith('.' + p.slice(0, -1)) || h.startsWith(p);
-  if (h === p) return true;
-  return h.endsWith('.' + p);
-}
-
-function listIncludesHost(list, host) {
-  if (!Array.isArray(list) || !list.length) return false;
-  const h = normalizeHost(host);
-  if (!h) return false;
-  return list.some((item) => hostMatchesPattern(h, item));
-}
-
 /**
  * Resolve site-aware canvas/webgl stability.
  * mode: off | auto | force
@@ -376,11 +350,13 @@ function resolveStabilityPolicy(privacy = {}, options = {}) {
     .map(normalizeHost).filter(Boolean).slice(0, 800);
   const skipHosts = (customSkip && customSkip.length ? customSkip : DEFAULT_STABILITY_SKIP_HOSTS)
     .map(normalizeHost).filter(Boolean).slice(0, 200);
-  const hamming = Math.min(64, Math.max(1, Number(fpIn.stabilityHamming ?? privacy.stabilityHamming) || 12));
-  const maxWidth = Math.min(4096, Math.max(64, Number(fpIn.stabilityMaxWidth ?? privacy.stabilityMaxWidth) || 600));
-  const maxHeight = Math.min(4096, Math.max(64, Number(fpIn.stabilityMaxHeight ?? privacy.stabilityMaxHeight) || 600));
-  const square = Math.min(64, Math.max(2, Number(fpIn.stabilitySquare ?? privacy.stabilitySquare) || 8));
-  const host = normalizeHost(options.host || options.hostname || '');
+  const sampling = normalizeStabilitySettings({
+    hamming: fpIn.stabilityHamming ?? privacy.stabilityHamming,
+    maxWidth: fpIn.stabilityMaxWidth ?? privacy.stabilityMaxWidth,
+    maxHeight: fpIn.stabilityMaxHeight ?? privacy.stabilityMaxHeight,
+    square: fpIn.stabilitySquare ?? privacy.stabilitySquare,
+  });
+  const host = normalizeSiteHost(options.host || options.hostname || '');
   const skipped = host ? listIncludesHost(skipHosts, host) : false;
   const matched = host ? listIncludesHost(hosts, host) : false;
   let active = false;
@@ -397,10 +373,7 @@ function resolveStabilityPolicy(privacy = {}, options = {}) {
     host: host || null,
     hosts,
     skipHosts,
-    hamming,
-    maxWidth,
-    maxHeight,
-    square,
+    ...sampling,
     noiseAmplitude,
     sampleStepDivisor,
   };
@@ -728,15 +701,6 @@ function createLocalMdnsFromSeed(seedInput) {
   const hex = seed.toString('hex'); // 64 hex chars
   const p = (index, count) => hex.slice(index * 2, index * 2 + count * 2);
   return `${p(0, 4)}-${p(4, 2)}-4${hex.slice(10, 13)}-${((parseInt(hex.slice(13, 14), 16) & 0x3) | 0x8).toString(16)}${hex.slice(14, 17)}-${p(8, 6)}.local`;
-}
-
-function formatGeopositionValue(geo) {
-  if (!geo || typeof geo !== 'object') return null;
-  const lat = Number(geo.latitude);
-  const lon = Number(geo.longitude);
-  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
-  const accuracy = Number.isFinite(Number(geo.accuracy)) ? Number(geo.accuracy) : 1000;
-  return `${lat},${lon},${accuracy}`;
 }
 
 /** Audio noise mark: sum(charCode) % 2000 - 1000 */

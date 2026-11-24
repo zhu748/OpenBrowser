@@ -40,7 +40,6 @@ module.exports = `  // --- hide automation (navigator.webdriver / AutomationCont
   };
   if (CFG.hardwareConcurrency != null) navPatch.hardwareConcurrency = { get: () => CFG.hardwareConcurrency };
   if (CFG.deviceMemory != null && !isIosPersona) navPatch.deviceMemory = { get: () => Math.min(8, CFG.deviceMemory) };
-  if (CFG.doNotTrack != null) navPatch.doNotTrack = { get: () => CFG.doNotTrack };
 
   try {
     const navProto = typeof Navigator !== "undefined" ? Navigator.prototype : null;

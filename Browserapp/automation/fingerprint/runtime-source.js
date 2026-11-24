@@ -11,7 +11,7 @@
 // a fragment whose top-level condition could still be true at runtime.
 const documentBootstrap = require('./runtime/document-bootstrap');
 const documentNavigator = require('./runtime/document-navigator');
-const documentTimezoneAudio = require('./runtime/document-timezone-audio');
+const { documentTimezone, documentAudio } = require('./runtime/document-timezone-audio');
 const documentFonts = require('./runtime/document-fonts');
 const documentScreen = require('./runtime/document-screen');
 const documentGraphics = require('./runtime/document-graphics');
@@ -29,6 +29,8 @@ const canvasReadback = require('./runtime/canvas-readback');
 const textMetricsCache = require('./runtime/text-metrics-cache').runtimeSource;
 const audioWriteTracker = require('./runtime/audio-write-tracker').runtimeSource;
 const videoFrameReadback = require('./runtime/video-frame-readback').runtimeSource;
+const canvasEncoding = require('./runtime/canvas-encoding');
+const canvasHelpers = canvasReadback + textMetricsCache + videoFrameReadback + canvasEncoding.offscreenRuntimeSource;
 const { runtimeSource: nativeArguments } = require('./native-arguments');
 const { runtimeSource: webglCapabilities } = require('./webgl-capabilities');
 const { contextKindSource, contextBlockingSource } = require('./webgl-context-policy');
@@ -63,22 +65,21 @@ function mediaFragmentActive(cfg) {
 
 function buildDocumentRuntime({ config, ...context }) {
   const blockWebgl = config.webgl?.mode === 'blocked';
+  const canvasNoise = config.canvas?.mode === 'noise';
   // The pruning checks and the emitted script read the same configuration.
   return [
-    documentBootstrap({ ...context, json: JSON.stringify(config) }),
+    documentBootstrap({ ...context, canvasNoise, json: JSON.stringify(config) }),
     nativeArguments,
     documentNavigator,
     networkFragment,
-    audioWriteTracker,
-    documentTimezoneAudio,
+    config.timezone ? documentTimezone : '',
+    config.audio?.mode === 'noise' ? audioWriteTracker + documentAudio : '',
     fontsFragmentActive(config) ? documentFonts : '',
     documentScreen,
     webglCapabilities,
-    blockWebgl || config.canvas?.mode === 'noise' ? contextKindSource : '',
+    blockWebgl || canvasNoise ? contextKindSource : '',
     blockWebgl ? contextBlockingSource : '',
-    canvasReadback,
-    textMetricsCache,
-    videoFrameReadback,
+    canvasNoise ? canvasHelpers + canvasEncoding.htmlRuntimeSource : '',
     documentGraphics,
     webrtcFragmentActive(config) ? documentWebrtc : '',
     mediaFragmentActive(config) ? documentMedia : '',
@@ -95,10 +96,8 @@ function buildWorkerRuntime(context) {
     workerBootstrap(context),
     nativeArguments,
     networkFragment,
-    workerTimezone,
-    canvasReadback,
-    textMetricsCache,
-    videoFrameReadback,
+    context.timezone ? workerTimezone : '',
+    context.canvasNoise ? canvasHelpers : '',
     webglCapabilities,
     context.blockWebgl ? contextKindSource + contextBlockingSource : '',
     workerGraphics,

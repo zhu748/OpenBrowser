@@ -2,26 +2,13 @@
 
 // Timezone arguments and optional desktop display queries; no launch or profile state.
 
-function isValidIanaTimezone(tz) {
-  if (!tz || typeof tz !== "string") return false;
-  const trimmed = tz.trim();
-  if (!trimmed) return false;
-  try {
-    Intl.DateTimeFormat(undefined, { timeZone: trimmed });
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
+const { isIanaTimezoneId: isValidIanaTimezone } = require('../automation/locale-from-country');
 
 function extractTimezoneFromArgs(args) {
   if (!Array.isArray(args)) return null;
   for (let i = args.length - 1; i >= 0; i -= 1) {
-    const item = String(args[i] || "");
-    if (item.startsWith("--time-zone-for-testing=")) {
-      const val = item.slice("--time-zone-for-testing=".length).trim();
-      return val || null;
-    }
+    const match = String(args[i] || "").match(/^--time-zone-for-testing(?:=(.*))?$/i);
+    if (match) return match[1]?.trim() || null;
   }
   return null;
 }

@@ -231,11 +231,19 @@ module.exports = `  // --- screen ---
       }
     } catch (_) {}
 
-    const patchedSubWindows = new WeakSet();
+    const patchedSubDocuments = new WeakSet();
     const patchSubWindow = (subWin) => {
-      if (!subWin || subWin === window || patchedSubWindows.has(subWin)) return;
-      patchedSubWindows.add(subWin);
+      if (!subWin || subWin === window) return;
       try {
+        // A WindowProxy survives navigation. Record the document that received
+        // the fallback, and keep an already completed document-start install.
+        const subDocument = subWin.document;
+        if (!subDocument || patchedSubDocuments.has(subDocument)) return;
+        patchedSubDocuments.add(subDocument);
+        try {
+          const subToString = subWin.Function?.prototype?.toString;
+          if (subToString?.call(subToString, BRIDGE_TOKEN, 'documentInstalled') === true) return;
+        } catch (_) {}
         // Register the sub-window's GENUINE instances before this realm's getters are
         // installed into the child: the getters close over this closure's predicates, and
         // only the registered real navigator/screen may read through them — synthetic

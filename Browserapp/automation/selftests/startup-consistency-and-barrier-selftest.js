@@ -177,7 +177,7 @@ async function check(name, fn) {
   // -------------------------------------------------------------------------
   // D. Local State Pre-Spawn Sync
   // -------------------------------------------------------------------------
-  await check('D.1: prepareProfileFilesForStart atomically writes Local State before spawn', async () => {
+  await check('D.1: prepareProfileFilesForStart writes the effective language list before spawn', async () => {
     const proto = BrowserEngine.prototype;
     const eng = {
       assignments: new Map(),
@@ -202,10 +202,11 @@ async function check(name, fn) {
 
       const testProfile = {
         id: 'test_prof_ls',
-        language: 'ko-KR,ko',
+        language: 'en-US',
         advanced: { clearCacheOnStart: false, saveCookies: true, savePasswords: true, saveBookmarks: true,
           saveLocalStorage: true, saveIndexedDB: true, saveHistory: true, allowSignin: true, showBookmarkBar: true },
-        privacy: { media: 'allow', geoMode: 'allow', fontMode: 'default' },
+        privacy: { media: 'allow', geoMode: 'allow', fontMode: 'default',
+          fingerprint: { languages: ['ko_kr', 'ja-JP;q=0.8', 'KO-KR'] } },
       };
 
       await eng.prepareProfileFilesForStart(root, testProfile, false);
@@ -218,7 +219,30 @@ async function check(name, fn) {
 
       // Verify Preferences is also populated (dual write)
       const prefs = JSON.parse(await fsp.readFile(path.join(root, 'Default', 'Preferences'), 'utf8'));
-      assert.strictEqual(prefs.intl?.accept_languages, 'ko-KR,ko');
+      assert.strictEqual(prefs.intl?.accept_languages, 'ko-KR,ja-JP');
+      assert.strictEqual(prefs.intl?.selected_languages, 'ko-KR,ja-JP');
+      const native = path.join(root, 'Default/Sessions/Tabs_1');
+      await fsp.mkdir(path.dirname(native), { recursive: true });
+      await fsp.writeFile(native, 'recoverable native tabs');
+      const managed = path.join(root, 'OpenBrowserSession.json');
+      await fsp.writeFile(managed, '{"version":1,"urls":["https://example.test/"]}');
+      await eng.prepareProfileFilesForStart(root, testProfile, true);
+      await assert.rejects(fsp.access(native), { code: 'ENOENT' });
+      const archive = path.join(root, 'OpenBrowserLegacySessions/chromium');
+      assert.strictEqual(await fsp.readFile(path.join(archive, 'Default/Sessions/Tabs_1'), 'utf8'), 'recoverable native tabs');
+      assert.deepStrictEqual(JSON.parse(await fsp.readFile(managed, 'utf8')).urls, ['https://example.test/']);
+
+      await fsp.mkdir(path.dirname(native), { recursive: true });
+      await fsp.writeFile(native, 'unarchived tab data');
+      const manifest = path.join(archive, 'manifest.json');
+      const savedManifest = await fsp.readFile(manifest, 'utf8');
+      await fsp.writeFile(manifest, '{}');
+      await assert.rejects(eng.prepareProfileFilesForStart(root, testProfile, true), /Invalid legacy session archive/);
+      assert.strictEqual(await fsp.readFile(native, 'utf8'), 'unarchived tab data');
+      await fsp.writeFile(manifest, savedManifest);
+      await fsp.rm(path.join(archive, 'Default/Sessions'), { recursive: true, force: true });
+      await assert.rejects(eng.prepareProfileFilesForStart(root, testProfile, true), { code: 'ENOENT' });
+      assert.strictEqual(await fsp.readFile(native, 'utf8'), 'unarchived tab data');
     } finally {
       await fsp.rm(root, { recursive: true, force: true }).catch(() => {});
     }

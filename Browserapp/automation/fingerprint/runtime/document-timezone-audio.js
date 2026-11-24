@@ -9,7 +9,7 @@
 // (screen/graphics/webrtc/media/gpu-storage), so no IIFE closer here.
 const { timezoneFragment, audioFragment } = require('./timezone-fragment');
 
-module.exports = timezoneFragment({
+const documentTimezone = timezoneFragment({
   replaceHelper: 'replaceMethod',
   headerComment: `  // --- timezone spoofing (Intl.DateTimeFormat & Date) ---
   // The engine can already be in the target zone on its own (the CDP timezone override does exactly
@@ -19,4 +19,8 @@ module.exports = timezoneFragment({
   // while nothing is hidden. So the script layer stays out of the way unless the engine is still
   // reporting some other zone.
 `,
-}) + audioFragment({ replaceHelper: 'replaceMethod' });
+});
+
+const documentAudio = audioFragment({ replaceHelper: 'replaceMethod' });
+
+module.exports = { documentTimezone, documentAudio };

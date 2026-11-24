@@ -270,9 +270,9 @@ function userPref(key, value) {
  * Manual-empty proxy (type 1, no hosts) is used for Direct so Firefox can
  * never fall back to the host's system proxy (type 0 would).
  *
- * extraPrefs: optional ordered [key, value] pairs appended verbatim by the
- * launch pipeline (retention/advanced mapping). Later pairs win over earlier
- * ones and over any pref set above.
+ * extraPrefs: optional ordered [key, value] pairs appended by the launch
+ * pipeline. Defined values override the base preferences. Undefined values
+ * are handled by the profile-file writer when restoring native defaults.
  */
 function buildFirefoxUserJs({ userAgent, acceptLanguages, locale, proxyEndpoint, noProxyHosts, extraPrefs }) {
   const lines = [];
@@ -313,7 +313,7 @@ function buildFirefoxUserJs({ userAgent, acceptLanguages, locale, proxyEndpoint,
   lines.push(userPref('datareporting.policy.dataSubmissionEnabled', false));
   lines.push(userPref('toolkit.telemetry.enabled', false));
   for (const [key, value] of Array.isArray(extraPrefs) ? extraPrefs : []) {
-    if (!key) continue;
+    if (!key || value === undefined) continue;
     lines.push(userPref(key, value));
   }
   return lines.join('\n') + '\n';

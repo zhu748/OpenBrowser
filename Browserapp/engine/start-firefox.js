@@ -13,14 +13,17 @@ const { assertUrlAccessPolicySupported } = require('../automation/url-access-pol
  * separately and closed with the browser's profile lock/proxy resources.
  */
 
-const { buildFirefoxUserJs, firefoxStartupArgs, firefoxPlatformDir } = require('../automation/kernel-versions');
+const { firefoxStartupArgs, firefoxPlatformDir } = require('../automation/kernel-versions');
+const { formatAcceptLanguage } = require('../automation/user-agent');
 const { acquireProfileLock, updateProfileLock, validateProfileRootSecure } = require('../automation/isolation');
 const { removeSingletonFiles, writeBrowserStartupDiagnostic, formatBrowserStartupError, isChildExited } = require('./index');
 const { prepareLaunchProfile, createStartupResources, reportPlatformPreflight } = require('./launch-preparation');
+const { writeFirefoxLaunchPreferences } = require('./launch-preferences');
 const { ensureLegacyFingerprintSeed } = require('./launch-profile');
 const { profileWriteGuard } = require('./profile-write-guard');
 const { attachBrowserExitHandlers } = require('./browser-exit');
-const { normalizeNetworkConditions } = require('../shared/profile-values');
+const { normalizeNetworkConditions, resolveDoNotTrackMode } = require('../shared/profile-values');
+const { resolveFingerprintGeolocation } = require('../automation/fingerprint/geolocation-policy');
 const { spawn } = require('child_process');
 const path = require('path');
 const { readDeferredSessionUrls, preserveLegacySession, reportStartupNavigationError } = require('./startup-session');
@@ -40,15 +43,8 @@ function firefoxOsName(profile) {
 }
 
 function collectAcceptLanguages(fingerprint, profile) {
-  // Firefox derives BOTH the Accept-Language header and navigator.languages (including in
-  // workers, where the best-effort injection cannot reach) from this one pref, and Firefox
-  // 160 exposes the pref verbatim — quality values set here leak into navigator.languages as
-  // literal "en;q=0.9" tags. A plain list keeps every surface self-consistent; the q-less
-  // header is a real shape too (Firefox sends exactly what the user types in preferences).
-  const fromFp = Array.isArray(fingerprint?.languages) && fingerprint.languages.length ? fingerprint.languages : null;
-  const fromProfile = Array.isArray(profile?.languages) && profile.languages.length ? profile.languages : null;
-  const single = profile?.language ? [profile.language] : null;
-  return (fromFp || fromProfile || single || ['en-US']).join(',');
+  return formatAcceptLanguage(fingerprint?.languages) || formatAcceptLanguage(profile?.languages)
+    || formatAcceptLanguage(profile?.language) || 'en-US';
 }
 
 const { FIREFOX_COOKIES, FIREFOX_PASSWORDS,
@@ -93,27 +89,27 @@ function firefoxExtraUserPrefs(profile, fingerprint = null) {
     prefs.push(['webgl.disabled', fingerprint.webgl?.mode === 'blocked']);
     const { webrtc, webrtcAddress } = fingerprint;
     prefs.push(['media.peerconnection.enabled', webrtc === 'real' || (webrtc === 'proxy' && Boolean(webrtcAddress))]);
-    if (Number.isSafeInteger(fingerprint.hardwareConcurrency) && fingerprint.hardwareConcurrency > 0) {
-      prefs.push(['dom.maxHardwareConcurrency', fingerprint.hardwareConcurrency]);
-    }
   }
+  const cores = fingerprint?.hardwareConcurrency;
+  prefs.push(['dom.maxHardwareConcurrency', Number.isSafeInteger(cores) && cores > 0 ? cores : undefined]);
   // --- advanced switches that DO have a Firefox pref ---
   if (advanced.blockImages) prefs.push(['permissions.default.image', 2]);
   else prefs.push(['permissions.default.image', 1]);
   // Keep mute independent of the autoplay gate; otherwise muting also blocks video.
-  if (advanced.blockVideo) prefs.push(['media.block-autoplay-until-user-interaction', true]);
-  if (advanced.blockSound) prefs.push(['media.volume_scale', '0.0']);
-  if (advanced.blockNotifications) prefs.push(['permissions.default.desktop-notification', 2]);
-  if (privacy.media === 'blocked') {
-    prefs.push(['permissions.default.microphone', 2]);
-    prefs.push(['permissions.default.camera', 2]);
-  }
-  const denyLocation = fingerprint ? fingerprint.geoPermission === 'denied'
-    : privacy.geoMode === 'disabled' || privacy.geoPermission === 'deny';
+  prefs.push(['media.block-autoplay-until-user-interaction', advanced.blockVideo ? true : undefined]);
+  const audioMode = fingerprint?.audio?.mode ?? privacy.fingerprint?.audio ?? privacy.audio;
+  // Explicitly clear a previous instance's persisted mute preference.
+  prefs.push(['media.volume_scale', advanced.blockSound || audioMode === 'muted' ? '0.0' : '1.0']);
+  prefs.push(['permissions.default.desktop-notification', advanced.blockNotifications ? 2 : undefined]);
+  const mediaPermission = privacy.media === 'blocked' ? 2 : undefined;
+  prefs.push(['permissions.default.microphone', mediaPermission], ['permissions.default.camera', mediaPermission]);
+  const denyLocation = resolveFingerprintGeolocation(fingerprint || {}, profile).permission === 'denied';
   // Default permissions do not revoke existing site grants. A native feature
   // switch protects every realm, including previously authorized origins.
   // Write both states so changing a profile back to prompt/allow restores it.
   prefs.push(['geo.enabled', !denyLocation], ['permissions.default.geo', denyLocation ? 2 : 0]);
+  // Write false for default/off to clear a prior launch's persisted setting.
+  prefs.push(['privacy.donottrackheader.enabled', resolveDoNotTrackMode(privacy) === 'on']);
   // Popups: Firefox blocks by default; "完全禁用弹窗拦截" opens them.
   if (advanced.blockPopups) prefs.push(['dom.disable_open_during_load', false]);
   else prefs.push(['dom.disable_open_during_load', true]);
@@ -127,9 +123,8 @@ function firefoxExtraUserPrefs(profile, fingerprint = null) {
   prefs.push(['browser.newtabpage.activity-stream.feeds.telemetry', false]);
   prefs.push(['browser.newtabpage.activity-stream.telemetry', false]);
   // Custom font size maps onto the minimum font size pref.
-  if (privacy.fontMode === 'custom' && Number(privacy.fontSize) > 0) {
-    prefs.push(['font.minimum-size.x-western', Math.min(32, Math.round(Number(privacy.fontSize)))]);
-  }
+  const fontSize = Number(privacy.fontSize);
+  prefs.push(['font.minimum-size.x-western', privacy.fontMode === 'custom' && fontSize > 0 ? Math.min(32, Math.round(fontSize)) : undefined]);
   return prefs;
 }
 
@@ -299,23 +294,22 @@ module.exports = {
       // --proxy-bypass-list does; loopback is always excluded via prefs below.
 
       currentStage = 'configure'; this.emitStartProgress(profile.id, 'configure', 48, '正在写入 Firefox 配置…', lifecycleGeneration);
-      const acceptLanguages = collectAcceptLanguages(fingerprint, profile);
-      const locale = String(profile.language || 'en-US');
       const workerMitmActive = Boolean(workerMitm);
       const { installFirefoxLocalWorkerFilter, LOOPBACK_HOSTS } = require('../automation/firefox-local-workers');
-      const userJs = buildFirefoxUserJs({
+      await writeFirefoxLaunchPreferences(root, {
         userAgent: fingerprint.userAgent,
-        acceptLanguages,
-        locale,
+        // Firefox uses the unweighted list for native navigator.languages as well as HTTP.
+        acceptLanguages: collectAcceptLanguages(fingerprint, profile),
+        locale: fingerprint.languages[0],
         proxyEndpoint: proxy && proxy !== 'direct://' ? proxy : '',
         // The managed start page and other local services remain local. The
         // forwarder's external destination policy must not block the start page.
         noProxyHosts: LOOPBACK_HOSTS.join(', '),
         extraPrefs: firefoxExtraUserPrefs(launchOptions.blockImages ? { ...profile, advanced: { ...profile.advanced, blockImages: true } } : profile, fingerprint),
-      });
-      // user.js wins over prefs.js at every startup, then Firefox copies it to
-      // prefs.js. Writing it fresh each launch keeps the proxy/UA/prefs current.
-      await fspWriteFile(path.join(root, 'user.js'), userJs, 'utf8');
+      }, { beforeReplace: () => {
+        this.assertStartGenerationActive(profile.id, lifecycleGeneration);
+        assertLaunchProfileCurrent();
+      } });
       await require('../automation/firefox-worker-cache').prepareFirefoxWorkerCache(root, workerSource, { localDelivery: true });
       currentStage = 'spawn'; this.emitStartProgress(profile.id, 'spawn', 62, '正在启动 Firefox…', lifecycleGeneration);
       this.assertStartGenerationActive(profile.id, lifecycleGeneration);
@@ -549,7 +543,6 @@ module.exports = {
 
 // Small local helpers bound late to keep the mixin's require surface small.
 const fspMkdir = (...args) => require('fs/promises').mkdir(...args);
-const fspWriteFile = (...args) => require('fs/promises').writeFile(...args);
 
 // isChildExited is re-exported for tests that assert on the mixin surface.
 module.exports.isChildExited = isChildExited;

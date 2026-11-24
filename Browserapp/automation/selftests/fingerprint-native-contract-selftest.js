@@ -79,6 +79,43 @@ function probe() {
   return out;
 }
 const expression = `(${probe.toString()})()`;
+async function probeWebGpu() {
+  const adapter = await navigator.gpu?.requestAdapter();
+  if (!adapter) return null;
+  const features = adapter.features;
+  const values = [...features];
+  const iterator = features.values();
+  let conversions = 0, invalidCallback, invalidIteratorReceiver;
+  const found = features.has({ toString() { conversions++; return values[0] ?? 'texture-compression-bc'; } });
+  try { features.forEach(null); } catch (error) { invalidCallback = [error.name, error.message]; }
+  try { iterator.next.call({}); } catch (error) { invalidIteratorReceiver = [error.name, error.message]; }
+  const visited = [], receiver = {};
+  features.forEach(function (value, key, owner) {
+    if (this !== receiver || value !== key || owner !== features) throw Error('Invalid WebGPU callback arguments');
+    visited.push(value);
+  }, receiver);
+  return {
+    values, visited, conversions, found, invalidCallback, invalidIteratorReceiver, size: features.size,
+    iteratorTag: Object.prototype.toString.call(iterator),
+    iteratorAlias: features[Symbol.iterator] === features.values,
+    entries: [...features.entries()],
+  };
+}
+
+function checkWebGpu(actual, stock) {
+  if (!stock) return;
+  assert.ok(actual, 'the browser provided a WebGPU adapter in the baseline');
+  assert.equal(actual.conversions, 1, 'WebGPU converts a feature name once');
+  assert.equal(actual.found, actual.values.length !== 0);
+  assert.deepEqual(actual.invalidCallback, stock.invalidCallback);
+  assert.deepEqual(actual.invalidIteratorReceiver, stock.invalidIteratorReceiver);
+  assert.equal(actual.iteratorTag, stock.iteratorTag);
+  assert.equal(actual.iteratorAlias, stock.iteratorAlias);
+  assert.equal(actual.size, actual.values.length);
+  assert.deepEqual(actual.visited, actual.values);
+  assert.deepEqual(actual.entries, actual.values.map((key) => [key, key]));
+}
+
 function checkCommon(actual, expected, native, label) {
   assert.deepEqual(actual.toString, { calls: 0, reads: 0 }, label + ' Function.toString must not invoke user properties');
   assert.deepEqual(actual.markers, [], label + ' no public installation markers');
@@ -101,7 +138,7 @@ async function run() {
     res.end('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><body><script>globalThis.ready=true</script>');
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-  let native;
+  let native, stockGpu;
   try {
     for (const spec of [
       { os: 'Windows', version: 2, inject: false }, { os: 'Windows', version: 1, inject: true },
@@ -110,7 +147,7 @@ async function run() {
       const profile = sanitizeProfile({ id: 'native-contract', name: 'Native contract', os: spec.os,
         fingerprintVersion: spec.version, fingerprintSeed: 'native-contract-seed', privacy: {
           deviceProfile: 'persona', fontListMode: spec.os === 'Windows' && spec.version === 2 && spec.inject ? 'noise' : 'real',
-          customArgs: '--use-gl=angle;--use-angle=swiftshader;--enable-unsafe-swiftshader',
+          customArgs: '--use-gl=angle;--use-angle=swiftshader;--enable-unsafe-swiftshader;--enable-unsafe-webgpu',
         } });
       const fp = buildFingerprint({ ...profile, kernelVersion: browser.version });
       const session = await h.launchPersonaBrowser(browser, { profile, fingerprint: fp }, { injectFingerprint: spec.inject, headless });
@@ -127,6 +164,28 @@ async function run() {
         assert.equal(doc.css.js, doc.css.declaration, 'CSS query must match the declaration parser');
         assert.equal(doc.css.js, doc.css.sheet, 'CSS query must match stylesheet @supports');
         assert.match(doc.crossRealmSource, /\[native code\]/, 'foreign realm must not expose getter implementation');
+        if (spec.os === 'Windows' && spec.version === 2) {
+          const read = '(' + probeWebGpu.toString() + ')()';
+          const page = await h.evaluate(conn, read);
+          const worker = await h.evaluate(conn, `new Promise((resolve, reject) => {
+            const url = URL.createObjectURL(new Blob([${JSON.stringify(read + '.then(postMessage, error => { throw error })')}],
+              { type: 'application/javascript' }));
+            const w = new Worker(url);
+            const finish = () => { w.terminate(); URL.revokeObjectURL(url); };
+            w.onmessage = event => { finish(); resolve(event.data); };
+            w.onerror = event => { finish(); reject(new Error(event.message)); };
+          })`);
+          if (!spec.inject) stockGpu = { page, worker };
+          checkWebGpu(page, stockGpu.page);
+          checkWebGpu(worker, stockGpu.worker);
+          if (spec.inject && ['intel', 'nvidia', 'amd'].includes(fp.webgpu.gpu?.vendor)) {
+            for (const result of [page, worker]) {
+              assert.ok(!result?.values.includes('texture-compression-astc'));
+              assert.ok(!result?.values.includes('texture-compression-etc2'));
+            }
+          }
+          if (page || worker) console.log('PASS WebGPU native feature collection contract (' + (spec.inject ? 'injected' : 'stock') + ')');
+        }
         for (const type of ['classic', 'module']) {
           const worker = await h.evaluate(conn, `new Promise((resolve,reject)=>{
             const url=URL.createObjectURL(new Blob([${JSON.stringify(`postMessage(${expression});`)}],{type:'application/javascript'}));

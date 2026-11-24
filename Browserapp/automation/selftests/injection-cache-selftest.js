@@ -3,10 +3,11 @@
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const { BoundedLru } = require('../bounded-lru');
-const { buildFingerprint, buildInjectionScript } = require('../fingerprint');
+const { buildFingerprint, buildInjectionScript, buildWorkerInjectionScript } = require('../fingerprint');
 const { injectSourceKeyCached, injectionCacheKeyFor } = require('../fingerprint/injection-script');
 const { createTextMetricJitterCache } = require('../fingerprint/runtime/text-metrics-cache');
 const { createAudioWriteTracker } = require('../fingerprint/runtime/audio-write-tracker');
+const { createCanvasPixelNoise } = require('../fingerprint/runtime/canvas-noise');
 const { captureImageEncodeOptions } = require('../fingerprint/native-arguments');
 
 const audioWrites = createAudioWriteTracker(), audioBuffer = {};
@@ -22,6 +23,20 @@ for (let i = 0; i < 100000; i++) audioWrites.record(audioBuffer, 0, 0, 64, 64);
 assert.equal(audioWrites.spansFor(audioBuffer, 0), null, 'processed channels never retain later writes');
 assert.equal(audioWrites.isProcessed(audioBuffer, 0), true);
 assert.deepEqual(audioWrites.spansFor(audioBuffer, 1), [[0, 8]], 'channels have independent lifetimes');
+
+let noiseCalls = 0;
+const paint = createCanvasPixelNoise({ square: 2 }, () => true, () => 1, () => { noiseCalls++; return 0; }, () => -1);
+const small = new Uint8ClampedArray(32 * 32 * 4).fill(100);
+paint(small, 32, 32, 1);
+paint(small, 32, 32, 1);
+assert.equal(noiseCalls, 16 * 16, 'small stable grids reuse their plan');
+assert.equal(small[0], 98);
+const large = new Uint8ClampedArray(512 * 512 * 4).fill(100);
+const beforeLarge = noiseCalls;
+paint(large, 512, 512, 1);
+paint(large, 512, 512, 1);
+assert.equal(noiseCalls - beforeLarge, 2 * 256 * 256, 'oversized plans are computed without retention');
+assert.equal(large[0], 98, 'the cache ceiling never changes pixels');
 
 const accesses = [];
 const encodeOptions = Object.freeze({
@@ -90,6 +105,39 @@ for (let i = 0; i < 2; i++) {
   assert.equal(nonLazy.fontBlobBridge, null, 'both cold and warm opt-outs disable the bridge');
 }
 const original = process.env.OPENBROWSER_FP_TELEMETRY;
+const stability = {
+  mode: 'FORCE', active: true, square: 2.6, maxWidth: '744.4', maxHeight: 511.6, hamming: 21,
+  hosts: Array.from({ length: 801 }, (_, i) => `site${i}.example.test`),
+  skipHosts: Array.from({ length: 201 }, (_, i) => `skip${i}.example.test`),
+};
+const legacy = make({ stability: null, canvas: { mode: 'noise', mark: 77, stability } });
+const stabilityConfigs = [buildInjectionScript(legacy), buildWorkerInjectionScript(legacy)].map((source) =>
+  JSON.parse(source.match(/^  const CFG = (.+);$/m)[1]));
+for (const config of stabilityConfigs) {
+  assert.deepEqual(config.canvas, { mode: 'noise', mark: 77 }, 'canvas embeds only the fields its wrappers read');
+  assert.deepEqual(config.stability, { mode: 'force', active: true, square: 3, maxWidth: 744, maxHeight: 512,
+    hosts: stability.hosts.slice(0, 800), skipHosts: stability.skipHosts.slice(0, 200) });
+}
+for (const canvas of ['real', 'noise', 'blocked']) {
+  const fp = buildFingerprint({ id: 'optional-canvas', privacy: { canvas, fontListMode: 'real' } });
+  for (const source of [buildInjectionScript(fp), buildWorkerInjectionScript(fp)]) {
+    assert.equal(source.includes('const canvasPixelNoise ='), canvas === 'noise');
+    assert.equal(source.includes('const createCanvasReadbackCache ='), canvas === 'noise');
+    assert.equal(source.includes('function installOffscreenCanvasEncoding'), canvas === 'noise');
+  }
+}
+for (const audio of ['real', 'noise', 'muted']) {
+  for (const timezoneMode of ['real', 'custom']) {
+    const fp = buildFingerprint({ id: 'optional-fragments', os: 'Windows', privacy: {
+      fontListMode: 'real', audio, timezoneMode, timezone: 'America/New_York',
+    } });
+    const document = buildInjectionScript(fp);
+    const worker = buildWorkerInjectionScript(fp);
+    assert.equal(document.includes('function createAudioWriteTracker'), audio === 'noise');
+    assert.equal(document.includes('const engineReportsTargetZone'), timezoneMode === 'custom');
+    assert.equal(worker.includes('const engineReportsTargetZone'), timezoneMode === 'custom');
+  }
+}
 try {
   process.env.OPENBROWSER_FP_TELEMETRY = '0';
   const fp = make({ fonts: null });

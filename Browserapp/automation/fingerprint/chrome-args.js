@@ -46,8 +46,7 @@ function chromeArgsForFingerprint(fp, profile = {}, options = {}) {
       );
     }
   }
-  if (fp.audio?.mode === 'muted' || profile.privacy?.audio === 'muted') args.push('--mute-audio');
-  if (fp.doNotTrack === '1' || profile.privacy?.dnt || profile.privacy?.dntMode === 'on') args.push('--do-not-track');
+  if ((fp.audio?.mode ?? profile.privacy?.audio) === 'muted') args.push('--mute-audio');
   // 硬件加速模式：关闭时整体走软件渲染。WebGL 仍需可用（blocked 时上面已单独禁掉），
   // 所以补上 SwiftShader 组合，避免「关硬件加速」把 WebGL 一起弄挂。
   if (profile.privacy?.hardwareAcceleration === 'off' && fp.webgl?.mode !== 'blocked') {

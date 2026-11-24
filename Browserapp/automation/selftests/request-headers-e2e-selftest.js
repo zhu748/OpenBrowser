@@ -211,6 +211,7 @@ function normalizeHeaders(headers) {
     assert.strictEqual(formatAcceptLanguage(["ja-JP", "ja", "en-US"]), "ja-JP,ja,en-US");
     assert.strictEqual(formatAcceptLanguage("ja-JP;q=0.9,ja,en-US;q=0.8"), "ja-JP,ja,en-US");
     assert.strictEqual(buildAcceptLanguageHeader(["ja-JP", "ja", "en-US"]), "ja-JP,ja;q=0.9,en-US;q=0.8");
+    assert.strictEqual(buildAcceptLanguageHeader(["fr_ca", "FR-CA", "*", "en-US;q=0.8"]), "fr-CA,en-US;q=0.9");
   });
 
   await check("RequestHeaderRewriter routes request stage and ignores response stage (prevents double continue)", async () => {
@@ -268,7 +269,7 @@ function normalizeHeaders(headers) {
             "accept-language": "zh-TW",
             "SEC-CH-UA": '"Chromium";v="147"',
             "Sec-CH-UA-Platform": '"macOS"',
-            "sec-ch-ua-form-factors": '"Desktop"',
+            "sec-ch-ua-form-factors": '"Mobile"',
             "X-Custom-Header": "value1",
             "x-custom-header": "value2",
           },
@@ -291,7 +292,8 @@ function normalizeHeaders(headers) {
     assert.strictEqual(headerMap["accept-language"].length, 1, "Must have exactly 1 accept-language");
     assert.strictEqual(headerMap["accept-language"][0], "ja-JP");
     assert.strictEqual(headerMap["sec-ch-ua-platform"][0], '"Windows"');
-    assert.strictEqual(headerMap["sec-ch-ua-form-factors"], undefined, "sec-ch-ua-form-factors must be stripped if not requested");
+    assert.deepStrictEqual(headerMap["sec-ch-ua-form-factors"], ['"Desktop"'], "replace a hint emitted by the browser");
+    assert.strictEqual(headerMap["sec-ch-ua-full-version-list"], undefined, "leave absent high-entropy hints absent");
     assert.strictEqual(headerMap["x-custom-header"].length, 1, "Custom header must be deduplicated");
   });
 

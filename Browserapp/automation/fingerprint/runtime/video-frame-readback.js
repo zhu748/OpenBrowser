@@ -96,7 +96,7 @@ function installVideoFrameCopy(proto, replace, applyNoise) {
             return true;
           },
         });
-        applyNoise({ data: pixels, width, height });
+        applyNoise(pixels, width, height);
       } catch (_) { /* Detached destinations and unsupported layouts keep native results. */ }
       return layouts;
     });

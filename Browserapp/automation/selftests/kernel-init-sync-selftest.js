@@ -10,6 +10,7 @@ const {
   writeOpenBrowserKernelInit,
   fingerprintForNativeKernelInject,
   loadInitObject,
+  encodeInitObject,
   stableBrowserWindowName,
   isOpenBrowser148,
   canvasSkipHostsFromFp,
@@ -228,6 +229,17 @@ async function main() {
       templatePath: fs.existsSync(template) ? template : null,
     });
     assert.strictEqual(written2.windowName, written.windowName);
+
+    const denied = { ...profile, privacy: { ...profile.privacy, geoPermission: 'deny' } };
+    const deniedOptions = { fingerprint: buildFingerprint(denied), profile: denied };
+    const cleared = await writeOpenBrowserKernelInit(tmp, deniedOptions);
+    assert.ok(!Object.hasOwn(loadInitObject(await fsp.readFile(cleared.path)), 'geoposition'), 'the native file drops the old position');
+    assert.strictEqual(cleared.windowName, written.windowName);
+    await assert.rejects(writeOpenBrowserKernelInit(tmp, { ...deniedOptions, async _beforeReadback(file) {
+      const altered = loadInitObject(await fsp.readFile(file));
+      altered.geoposition = init.geoposition;
+      await fsp.writeFile(file, encodeInitObject(altered), 'utf8');
+    } }), /readback verification failed: geoposition/);
   } finally {
     await fsp.rm(tmp, { recursive: true, force: true });
   }

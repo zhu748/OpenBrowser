@@ -79,8 +79,9 @@ async function startupHarness(fault) {
   const connection = { close() {} };
   let spawns = 0, persistCalls = 0;
   const actualRequire = Module.createRequire(require.resolve('../../engine/start'));
+  let spawnConfig, deliveredFingerprint;
   const replacements = {
-    child_process: { spawn: () => { spawns += 1; return child; } },
+    child_process: { spawn: (_binary, args, options) => { spawns += 1; spawnConfig = { args, options }; return child; } },
     '../automation/browser-kernel': { ensureKernelReadyForLaunch: async () => {} },
     '../automation/env-icon': { normalizeEnvNumber: () => '1', prepareMarkerExtension: async () => null },
     '../automation/isolation': { validateProfileRootSecure: async () => ({ ok: true }), acquireProfileLock: async () => ({}), updateProfileLock: async () => ({}) },
@@ -94,6 +95,7 @@ async function startupHarness(fault) {
   compiled.require = (name) => replacements[name] || actualRequire(name);
   compiled._compile(fs.readFileSync(filename, 'utf8'), filename);
   const p = sanitizeProfile({ ...profile, advanced: { showInfoPage: false } });
+  if (!fault) p.privacy.customArgs = '--time-zone-for-testing=Asia/Tokyo --time-zone-for-testing=Europe/Paris';
   if (fault === 'config') { p.os = 'Linux'; p.userAgent = fp.userAgent; }
   if (fault === 'url-config') p.advanced.allowUrls = '*';
   const engine = {
@@ -108,7 +110,12 @@ async function startupHarness(fault) {
     kernelStatus: () => ({ installed: true }), chooseBrowser: () => ({ name: 'fixture', path: '/fixture/chromium', version: '149.0.0.0' }),
     prepareProfileFilesForStart: async () => {}, resolveStartupUrls: () => ['https://example.test/'], proxyConfig: () => null,
     waitForPort: async () => 12345, startNativeProfileMarker: () => null, suppressStartupExtensionPages: async () => {},
-    applyRuntimeSettings: async () => { engine.attempts += 1; if (fault === 'inject') throw new Error('fixture inject failed'); return fp; },
+    applyRuntimeSettings: async (_port, _profile, candidate) => {
+      engine.attempts += 1;
+      if (fault === 'inject') throw new Error('fixture inject failed');
+      deliveredFingerprint = candidate;
+      return candidate;
+    },
     startWorkerFingerprintInjection: async () => {},
     verifyStartupFingerprintDelivery: async () => { if (fault === 'probe') throw new Error('fixture probe failed'); return fault === 'verify' ? { ok: false, mismatches: [{ message: 'fixture mismatch' }] } : { ok: true }; },
     ensureStartPageFingerprint: async () => {}, applyEnvWindowTitle: async () => {},
@@ -132,6 +139,10 @@ async function startupHarness(fault) {
     } else {
       assert.equal((await compiled.exports._start.call(engine, p)).running, true);
       assert.equal(engine.navigations, 1); assert.equal(engine.watches, 1);
+      assert.deepEqual(spawnConfig.args.filter(arg => arg.startsWith('--time-zone-for-testing=')), ['--time-zone-for-testing=Europe/Paris']);
+      if (process.platform !== 'win32') assert.equal(spawnConfig.options.env.TZ, 'Europe/Paris');
+      assert.equal(deliveredFingerprint.timezone, 'Europe/Paris');
+      assert.equal(deliveredFingerprint.dynamicConfig.timezone, 'Europe/Paris');
     }
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 }
@@ -221,6 +232,20 @@ async function startupHarness(fault) {
     assert.equal(normalizeTimezone('US/Pacific'), normalizeTimezone('America/Los_Angeles'));
     assert.equal(normalizeTimezone('Etc/UTC'), normalizeTimezone('UTC'));
   });
+  await test('timezone delivery verifies the effective launch value and ignores invalid stored values', () => {
+    const invalid = { ...profile, exitTimezone: 'Not/AZone', privacy: {
+      ...profile.privacy, timezone: 'Invalid/Zone',
+    } };
+    const invalidFp = buildFingerprint(invalid);
+    assert.equal(invalidFp.timezone, null);
+    assert.equal(evaluateFingerprintDelivery(invalid, invalidFp, liveFor(), { strict: true }).ok, true);
+    assert.equal(buildFingerprint({ ...invalid, exitTimezone: 'Europe/Paris' }).timezone, 'Europe/Paris');
+    const real = { ...profile, privacy: { ...profile.privacy, timezoneMode: 'real' } };
+    const explicit = buildFingerprint(real, { timezone: 'Europe/Paris' });
+    assert.ok(evaluateFingerprintDelivery(real, explicit, liveFor(), { strict: true }).mismatches
+      .some(({ field }) => field === 'timezone'));
+    assert.equal(evaluateFingerprintDelivery(real, explicit, { ...liveFor(), timezone: explicit.timezone }, { strict: true }).ok, true);
+  });
   await test('runtime bookkeeping requires a valid live probe and can recheck without reinjection', async () => {
     const saved = { call: cdp.call, tabs: cdp.tabs, connect: cdp.connect };
     const tab = { id: 'probe-target', url: 'about:blank', webSocketDebuggerUrl: 'ws://127.0.0.1:12345/devtools/page/abcd1234' };
@@ -264,6 +289,37 @@ async function startupHarness(fault) {
       assert.equal(lookups, 0);
       assert.deepEqual([...applied], ['existing', 'just-attached']);
     } finally { cdp.tabs = savedTabs; }
+  });
+  await test('the runtime watcher defers to a flat owner that finishes attaching while a direct connection opens', async () => {
+    const saved = { tabs: cdp.tabs, connect: cdp.connect };
+    const tab = { id: 'handover', url: 'about:blank', webSocketDebuggerUrl: 'ws://localhost/page' };
+    for (const blockVideo of [true, false]) {
+      const applied = new Set();
+      const flat = {};
+      const trackOn = {
+        workerFingerprintConnection: flat,
+        fingerprintSessionStates: new Map(),
+        fingerprintTargetSessions: new Map(),
+      };
+      let directOpens = 0, lookups = 0;
+      cdp.tabs = async () => { lookups += 1; return [tab]; };
+      cdp.connect = async () => {
+        directOpens += 1;
+        trackOn.fingerprintSessionStates.set('new', { targetId: tab.id, connection: flat, ready: true });
+        trackOn.fingerprintTargetSessions.set('new', { targetId: tab.id, type: 'page' });
+        applied.add(tab.id);
+        throw new Error('Direct page connection retired by flat owner');
+      };
+      try {
+        const activeProfile = { ...profile, advanced: { ...profile.advanced, blockVideo } };
+        await runtime.applyRuntimeSettings.call({ networkInfo: new Map() }, 12345, activeProfile, fp, {
+          phase: 'watch-ensure', trackOn, appliedTargetIds: applied, observedTabs: [tab],
+        });
+        assert.equal(directOpens, 1);
+        assert.equal(lookups, 0, 'handover is confirmed by the live owner');
+        assert.ok(applied.has(tab.id), 'the sweep must preserve the new owner’s verification');
+      } finally { Object.assign(cdp, saved); }
+    }
   });
   for (const type of ['worker', 'shared_worker', 'service_worker']) {
     await test(`${type} startup waits for network setup and evaluation before resume`, async () => {

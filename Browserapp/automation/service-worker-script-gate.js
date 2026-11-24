@@ -8,6 +8,7 @@ const { WORKER_RUNTIME_REVISION } = require('./fingerprint/runtime-revision');
 const { MAX_WORKER_BYTES, injectionPosition } = require('./worker-source');
 const syntax = require('./vendor/acorn-runtime');
 const { normalizeNetworkInformation } = require('../shared/profile-values');
+const { normalizeTimezone } = require('./request-header-rewriter');
 
 // Older releases persisted their injected prefix inside Chromium's SW script
 // cache. Let only those exact token/revision checks return early after the new
@@ -105,23 +106,38 @@ class ServiceWorkerScriptGate {
     const source = buildWorkerInjectionScript(this.fingerprint, { retiredWorkerIdentities });
     const result = await state.command('Runtime.evaluate', { expression: source, disableBreaks: true }, { timeout: 5000 });
     if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text || 'Service Worker fingerprint execution failed');
+    const expected = {
+      cores: this.fingerprint.hardwareConcurrency,
+      memory: this.fingerprint.deviceMemory,
+      ua: this.fingerprint.userAgent,
+      platform: this.fingerprint.platform,
+      languages: this.fingerprint.languages,
+      timezone: this.fingerprint.timezone,
+      connection: normalizeNetworkInformation(this.fingerprint.connection),
+      networkFields: NETWORK_INFO_FIELDS,
+    };
     const probe = await state.command('Runtime.evaluate', {
       expression: `(${buildWorkerDeliveryProbe(this.fingerprint)}) && (${function (expected) {
         if (expected.cores != null && navigator.hardwareConcurrency !== expected.cores) return false;
+        if (expected.memory != null && 'deviceMemory' in navigator && navigator.deviceMemory !== expected.memory) return false;
         if (navigator.userAgent !== expected.ua || navigator.platform !== expected.platform) return false;
-        if (expected.timezone && Intl.DateTimeFormat().resolvedOptions().timeZone !== expected.timezone) return false;
+        if (expected.languages?.length && (navigator.language !== expected.languages[0]
+          || navigator.languages?.length !== expected.languages.length
+          || expected.languages.some((language, index) => navigator.languages[index] !== language))) return false;
         if (expected.connection && navigator.connection) {
           for (const key of expected.networkFields) {
             if (key in expected.connection && key in navigator.connection && navigator.connection[key] !== expected.connection[key]) return false;
           }
         }
-        return true;
-      }.toString()})(${JSON.stringify({ cores: this.fingerprint.hardwareConcurrency, ua: this.fingerprint.userAgent,
-        platform: this.fingerprint.platform, timezone: this.fingerprint.timezone, connection: normalizeNetworkInformation(this.fingerprint.connection),
-        networkFields: NETWORK_INFO_FIELDS })})`,
+        return { timezone: expected.timezone ? Intl.DateTimeFormat().resolvedOptions().timeZone : '' };
+      }.toString()})(${JSON.stringify(expected)})`,
       returnByValue: true, disableBreaks: true,
     }, { timeout: 3000 });
-    if (probe.result?.value !== true) throw new Error('Service Worker fingerprint installation was not confirmed');
+    const observedTimezone = probe.result?.value?.timezone;
+    if (probe.exceptionDetails || typeof observedTimezone !== 'string' || (expected.timezone
+      && observedTimezone !== expected.timezone && normalizeTimezone(observedTimezone) !== normalizeTimezone(expected.timezone))) {
+      throw new Error('Service Worker fingerprint installation was not confirmed');
+    }
     await state.command('Debugger.setSkipAllPauses', { skip: true }, { timeout: 3000 });
     await state.command('Debugger.resume', {}, { timeout: 3000 });
     await state.command('Debugger.disable', {}, { timeout: 3000 });

@@ -12,6 +12,8 @@ const path = require('path');
 const crypto = require('crypto');
 
 const { fontsForOs } = require('./device-personas');
+const { normalizeStabilitySettings } = require('../shared/profile-values');
+const { resolveFingerprintGeolocation, formatGeopositionValue } = require('./fingerprint/geolocation-policy');
 
 const { SOURCE_OPENBROWSER } = require('./versions');
 
@@ -271,8 +273,9 @@ function mediaLabelsFromFp(fp = {}, profile = {}, isEnumerateDevices = true) {
 
 function consistencyFromFp(fp, kind) {
   const stability = fp.stability || fp.canvas?.stability || {};
-  const square = Math.min(64, Math.max(2, Number(stability.square) || 8));
-  const hamming = Math.min(64, Math.max(1, Number(stability.hammingThreshold) || 12));
+  const { square, hamming, maxWidth, maxHeight } = normalizeStabilitySettings({
+    ...stability, hamming: stability.hamming ?? stability.hammingThreshold,
+  });
   const noiseOn = kind === 'canvas'
     ? fp.canvas?.mode === 'noise'
     : fp.webgl?.mode === 'noise';
@@ -282,8 +285,8 @@ function consistencyFromFp(fp, kind) {
   return {
     enable: Boolean(enable),
     hanming_distance: hamming,
-    max_height: 600,
-    max_width: 600,
+    max_height: maxHeight,
+    max_width: maxWidth,
     square_side_length: square,
   };
 }
@@ -433,26 +436,8 @@ function mapFingerprintToInitFields(fp = {}, profile = {}) {
     }
   }
 
-  // Geo as "lat,lon,accuracy" string accepted by Framework geoposition parser.
-  const geoObj = fp.dynamicConfig?.geoposition || fp.geoposition || null;
-  let geoText = String(fp.dynamicConfig?.geopositionText || '').trim();
-  if (!geoText && geoObj && typeof geoObj === 'object') {
-    const lat = Number(geoObj.latitude);
-    const lon = Number(geoObj.longitude);
-    if (Number.isFinite(lat) && Number.isFinite(lon)) {
-      const accuracy = Number.isFinite(Number(geoObj.accuracy)) ? Number(geoObj.accuracy) : 1000;
-      geoText = `${lat},${lon},${accuracy}`;
-    }
-  }
-  if (!geoText) {
-    const lat = Number(privacy.latitude ?? profile.exitLatitude);
-    const lon = Number(privacy.longitude ?? profile.exitLongitude);
-    if (Number.isFinite(lat) && Number.isFinite(lon) && privacy.geoMode !== 'disabled' && privacy.geoMode !== 'prompt') {
-      const accuracy = Number.isFinite(Number(privacy.accuracy)) ? Number(privacy.accuracy) : 1000;
-      geoText = `${lat},${lon},${accuracy}`;
-    }
-  }
-  if (geoText) fields.geoposition = geoText;
+  // Null clears the previous value when reusing an existing init file.
+  fields.geoposition = formatGeopositionValue(resolveFingerprintGeolocation(fp, profile).position);
 
   // Preserve existing check_url lists when merging; only patch enable/metrics.
   fields._canvasConsistencyPatch = consistencyFromFp(fp, 'canvas');
@@ -644,7 +629,8 @@ function applyFingerprintFields(init, fields) {
   ]);
   for (const [k, v] of Object.entries(fields)) {
     if (skip.has(k) || v === undefined) continue;
-    init[k] = v;
+    if (k === 'geoposition' && v === null) delete init[k];
+    else init[k] = v;
   }
   if (fields._canvasConsistencyPatch) {
     init.canvas_fingerprint_keep_consistent_setting = mergeConsistency(
@@ -865,6 +851,7 @@ function verifyKernelInitReadback(written, readback, initPath) {
       mismatches.push(`${f} (expected ${JSON.stringify(wVal)}, read back ${JSON.stringify(rVal)})`);
     }
   }
+  if (written.geoposition !== readback.geoposition) mismatches.push('geoposition');
 
   const wCmd = written.cmd_line || {};
   const rCmd = readback.cmd_line || {};

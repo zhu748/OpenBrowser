@@ -114,9 +114,7 @@ class RequestHeaderRewriter {
           ? [prof.language]
           : [];
 
-    const acceptLanguageHeader = langs.length
-      ? buildAcceptLanguageHeader(langs)
-      : (uaProfile.language || "en-US,en;q=0.9");
+    const acceptLanguageHeader = buildAcceptLanguageHeader(langs) || uaProfile.language || "en-US,en;q=0.9";
 
     const override = cdpUserAgentOverride(uaProfile, acceptLanguageHeader);
 
@@ -601,19 +599,19 @@ function evaluateFingerprintDelivery(profile = {}, fingerprint = {}, liveProbe =
 
   // 5. Timezone verification
   const isRealTimezone = privacy.timezoneMode === 'real' || profile?.timezoneMode === 'real';
-  if (!isRealTimezone) {
-    const expectedTz = String(fingerprint?.timezone || profile?.exitTimezone || privacy.timezone || '').trim();
-    const liveTz = String(liveProbe.timezone || '').trim();
-    if (expectedTz && (liveTz || options.strict) && expectedTz.toLowerCase() !== 'real') {
-      if (normalizeTimezone(expectedTz) !== normalizeTimezone(liveTz)) {
-        mismatches.push({
-          field: 'timezone',
-          expected: expectedTz,
-          actual: liveTz,
-          message: "时区不符：期望 " + expectedTz + "，实际交付 " + liveTz,
-        });
-      }
-    }
+  const expectedTz = String(options.strict && Object.hasOwn(fingerprint, 'timezone')
+    ? (fingerprint.timezone || '')
+    : (isRealTimezone ? '' : fingerprint?.timezone || profile?.exitTimezone || privacy.timezone || '')).trim();
+  const liveTz = String(liveProbe.timezone || '').trim();
+  if (expectedTz && (liveTz || options.strict) && expectedTz.toLowerCase() !== 'real'
+      && expectedTz !== liveTz
+      && normalizeTimezone(expectedTz) !== normalizeTimezone(liveTz)) {
+    mismatches.push({
+      field: 'timezone',
+      expected: expectedTz,
+      actual: liveTz,
+      message: "时区不符：期望 " + expectedTz + "，实际交付 " + liveTz,
+    });
   }
 
   // 6. WebGL Vendor & Renderer

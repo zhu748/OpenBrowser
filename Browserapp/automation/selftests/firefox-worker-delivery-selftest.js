@@ -110,8 +110,10 @@ const evaluateMatrix = (connection, context) => evaluateBidi({
 
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ob-ff-worker-'));
   const profile = sanitizeProfile({ id: 'ff-worker-gate', name: 'ff-worker-gate', engine: 'firefox', os: 'Windows', width: 1440, height: 900,
-    privacy: { cores: 4, memory: 0, webrtc: 'disabled', fontListMode: 'real', timezoneMode: 'custom', timezone: 'America/New_York' }, advanced: { showInfoPage: false } });
+    privacy: { cores: 4, memory: 0, webrtc: 'disabled', fontListMode: 'real', timezoneMode: 'custom', timezone: 'America/New_York',
+      fingerprint: { languages: ['fr_ca', 'en-US;q=0.9', 'FR-CA'] } }, advanced: { showInfoPage: false } });
   let fp = buildFirefoxFingerprint(profile, version);
+  assert.deepEqual(fp.languages, ['fr-CA', 'en-US']);
   await fs.writeFile(path.join(root, 'user.js'), buildFirefoxUserJs({
     userAgent: fp.userAgent, acceptLanguages: fp.languages.join(','), locale: fp.languages[0],
     proxyEndpoint: 'http://127.0.0.1:9', noProxyHosts: LOOPBACK_HOSTS.join(', '),

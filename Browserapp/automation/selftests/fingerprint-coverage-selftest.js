@@ -29,6 +29,7 @@ const {
   WEBGL_PARAM_IDS,
 } = require('../fingerprint');
 const { mapFingerprintToInitFields } = require('../kernel-init-sync');
+const { applyDoNotTrackPreference } = require('../profile-file-consistency');
 
 
 const root = path.join(__dirname, '..', '..');
@@ -115,7 +116,7 @@ const DIMENSIONS = [
   { name: 'battery', switchId: 'editor-battery', path: 'battery.mode', cfg: 'CFG.battery', native: 'battery', suite: 'selftest:stealth' },
   { name: 'bluetooth', switchId: 'editor-bluetooth', path: 'bluetooth.mode', cfg: 'CFG.bluetooth', native: null, suite: 'selftest:bluetooth' },
   { name: 'fonts', switchId: 'editor-font-mode', path: 'fonts.list', cfg: 'CFG.fonts', native: 'is_font_finger_printing_enable', suite: 'selftest:fonts' },
-  { name: 'do not track', switchId: 'editor-dnt', path: 'doNotTrack', cfg: 'CFG.doNotTrack', native: null, suite: 'selftest:flags' },
+  { name: 'do not track', switchId: 'editor-dnt-mode', path: 'doNotTrack', cfg: null, native: null, suite: 'selftest:flags' },
   { name: 'max touch points', switchId: null, path: 'maxTouchPoints', cfg: 'CFG.maxTouchPoints', native: null, suite: 'selftest:mobilepersona' },
   { name: 'stability', switchId: 'editor-stability-mode', path: 'stability.mode', cfg: 'CFG.stability', native: null, suite: 'selftest:stabilitye2e' },
   { name: 'site exemptions', switchId: 'editor-stability-skip-hosts', path: 'stability.skipHosts', cfg: 'CFG.stability', native: '_canvasSkipHosts', suite: 'selftest:stabilitye2e' },
@@ -137,17 +138,23 @@ check('every dimension carries a payload from the build', () => {
 });
 
 check('every dimension is consumed by the document-start script', () => {
-  // Word boundary on the identifier, not a substring test: a renamed reference such as
-  // CFG.doNotTrackX must not satisfy a table entry that claims CFG.doNotTrack.
+  // Match the whole identifier so CFG.platformFallback cannot satisfy CFG.platform.
   const reads = (needle) => {
     const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     return new RegExp(`(^|[^A-Za-z0-9_$])${escaped}(?![A-Za-z0-9_$])`).test(script);
   };
   const missing = [];
   for (const dimension of DIMENSIONS) {
-    if (!reads(dimension.cfg)) missing.push(`${dimension.name} (${dimension.cfg})`);
+    if (dimension.cfg && !reads(dimension.cfg)) missing.push(`${dimension.name} (${dimension.cfg})`);
   }
   assert.deepStrictEqual(missing, [], `dimensions not read by the injected script: ${missing.join(', ')}`);
+});
+
+check('Do Not Track uses the native preference for both document and network delivery', () => {
+  const prefs = {};
+  applyDoNotTrackPreference(prefs, PROFILE);
+  assert.strictEqual(prefs.enable_do_not_track, true);
+  assert.ok(!script.includes('CFG.doNotTrack'));
 });
 
 check('every dimension with a native switch ships its init key', () => {

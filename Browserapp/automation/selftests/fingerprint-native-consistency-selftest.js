@@ -1,5 +1,6 @@
 'use strict';
 const { normalizeNetworkInformation } = require('../../shared/profile-values');
+const { formatAcceptLanguage } = require('../user-agent');
 
 // Portable Chromium gate. It exercises production target setup, HTTP headers,
 // inline first-script reads, CSS metrics and first-instruction worker identity.
@@ -12,6 +13,7 @@ const http = require('node:http');
 const { spawn, spawnSync } = require('node:child_process');
 const cdp = require('../../cdp');
 const { buildFingerprint } = require('../fingerprint');
+const { BrowserEngine } = require('../../engine');
 const { sanitizeProfile } = require('../../engine/profile-sanitizer');
 const { buildBaseLaunchArguments } = require('../../engine/launch-arguments');
 const injection = require('../../engine/fingerprint-injection');
@@ -21,6 +23,7 @@ class Unavailable extends Error {}
 
 function snapshot() {
   return { ua: navigator.userAgent, platform: navigator.platform, cores: navigator.hardwareConcurrency,
+    language: navigator.language, languages: Array.from(navigator.languages), dnt: navigator.doNotTrack ?? null,
     memory: navigator.deviceMemory, connection: navigator.connection ? {
       rtt: navigator.connection.rtt, downlink: navigator.connection.downlink,
       effectiveType: navigator.connection.effectiveType, saveData: navigator.connection.saveData,
@@ -74,22 +77,33 @@ function verifyIdentity(actual, fp) {
   assert.equal(actual.platform, fp.platform);
   assert.equal(actual.cores, fp.hardwareConcurrency);
   assert.equal(actual.memory, fp.deviceMemory);
+  assert.equal(actual.language, fp.languages[0]);
+  assert.deepEqual(actual.languages, fp.languages);
   for (const key of ['rtt', 'downlink', 'effectiveType', 'saveData']) assert.equal(actual.connection?.[key], normalizeNetworkInformation(fp.connection)[key], key);
 }
 function verifyHeaders(headers, fp) {
   assert.equal(headers['user-agent'], fp.userAgent);
-  assert.equal(String(headers['accept-language'] || '').split(',')[0], fp.languages[0]);
+  assert.equal(formatAcceptLanguage(headers['accept-language']), fp.languages.join(','));
+  assert.equal(headers.dnt ?? null, fp.doNotTrack, 'native DNT request header');
   // Worker fetches on Chromium >= 143 never carry sec-ch-ua* headers natively
   // (workers do not emit Client Hints); absent is the native-consistent value.
   // The main document request must still carry the full platform hint.
 }
 
-async function runBrowser(browser, server, id, hostDpr, dpr) {
+async function runBrowser(browser, server, id, hostDpr, dpr, dntMode) {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'openbrowser-native-gate-'));
   const profile = sanitizeProfile({ id, name: id, os: 'Windows', fingerprintSeed: id,
-    privacy: { deviceProfile: 'persona', fontListMode: 'real', webrtc: 'disabled', stabilityMode: 'force',
-      network: { rtt: 250, downlink: 2.3, effectiveType: '3g' }, fingerprint: { devicePixelRatio: dpr } } });
+    privacy: { deviceProfile: 'persona', fontListMode: 'real', webrtc: 'disabled', stabilityMode: 'auto', stabilityHosts: ['127.0.0.1'], dntMode,
+      network: { rtt: 250, downlink: 2.3, effectiveType: '3g' },
+      fingerprint: { devicePixelRatio: dpr, languages: ['fr_ca', 'en-US;q=0.9', 'FR-CA'], hardwareConcurrency: '4.5', deviceMemory: '6' } } });
   const fp = buildFingerprint({ ...profile, kernelVersion: browser.version });
+  assert.deepEqual(fp.languages, ['fr-CA', 'en-US']);
+  assert.equal(fp.hardwareConcurrency, 5);
+  assert.equal(fp.deviceMemory, 8);
+  await fsp.mkdir(path.join(root, 'Default'));
+  await fsp.writeFile(path.join(root, 'Default', 'Preferences'), JSON.stringify({ enable_do_not_track: true }));
+  const prepared = await BrowserEngine.prototype.applyProfilePreferences.call({ assignments: new Map(), extensions: new Map() }, root, profile);
+  assert.deepEqual(prepared.issues, []);
   const args = buildBaseLaunchArguments({ root, fingerprint: fp, profile, hostScaleFactor: hostDpr });
   // Route non-test destinations to a closed proxy; tests only need loopback.
   args.push('--headless=new', '--disable-dev-shm-usage', '--disable-background-networking',
@@ -149,19 +163,42 @@ async function runBrowser(browser, server, id, hostDpr, dpr) {
       if(active.state!=='activated')await new Promise(resolve=>active.addEventListener('statechange',()=>{if(active.state==='activated')resolve()}));
       workers.service=await new Promise(resolve=>{const channel=new MessageChannel();channel.port1.onmessage=e=>resolve(e.data);registration.active.postMessage('probe',[channel.port2]);});
       await registration.unregister();
-      const canvas=document.createElement('canvas');canvas.width=128;canvas.height=96;
-      const ctx=canvas.getContext('2d');ctx.fillStyle='rgb(100,100,100)';ctx.fillRect(0,0,128,96);
-      const bytes=ctx.getImageData(0,0,128,96).data;
+      const sample=(canvas)=>{
+        canvas.width=128;canvas.height=96;
+        const ctx=canvas.getContext('2d');ctx.fillStyle='rgb(100,100,100)';ctx.fillRect(0,0,128,96);
+        return Array.from(ctx.getImageData(0,0,128,96).data);
+      };
+      const canvas=document.createElement('canvas');
+      const pixels=sample(canvas);
+      const blobUrl=URL.createObjectURL(new Blob(['postMessage(('+sample+')(new OffscreenCanvas(128,96)))'],{type:'text/javascript'}));
+      const blobPixels=await new Promise((resolve,reject)=>{
+        const worker=new Worker(blobUrl);
+        const finish=(done,value)=>{worker.terminate();URL.revokeObjectURL(blobUrl);done(value);};
+        worker.onmessage=event=>finish(resolve,event.data);
+        worker.onerror=event=>finish(reject,new Error(event.message));
+      });
+      const matches=(other)=>other.length===pixels.length&&other.every((value,index)=>value===pixels[index]);
+      const frameMatches=['contentDocument','contentWindow'].map((key)=>{
+        const frame=document.createElement('iframe');document.body.append(frame);
+        try {
+          const childDocument=key==='contentDocument'?frame.contentDocument:frame.contentWindow.document;
+          return matches(sample(childDocument.createElement('canvas')));
+        } finally { frame.remove(); }
+      });
       return {first:globalThis.first,headers:globalThis.navigationHeaders,workers,dpr:devicePixelRatio,
         cssDpr:getComputedStyle(el).getPropertyValue('--dpi'),cssScreen:getComputedStyle(el).getPropertyValue('--screen'),
-        canvas:Array.from(bytes),repeat:Array.from(ctx.getImageData(0,0,128,96).data)};
+        canvas:pixels,blobMatches:matches(blobPixels),frameMatches,
+        repeat:Array.from(canvas.getContext('2d').getImageData(0,0,128,96).data)};
     })()`, returnByValue: true, awaitPromise: true }, { timeout: 30000 });
     assert.equal(result.exceptionDetails, undefined, JSON.stringify(result.exceptionDetails));
     const live = result.result.value;
     verifyIdentity(live.first, fp);verifyHeaders(live.headers, fp);
+    assert.equal(live.first.dnt, dntMode === 'on' ? '1' : null, 'first script reads the native DNT setting');
     for (const [kind, worker] of Object.entries(live.workers)) { verifyIdentity(worker.first, fp);verifyHeaders(worker.headers, fp);console.log('PASS ' + id + ' ' + kind + ' first instruction and headers'); }
     assert.equal(live.dpr, dpr);assert.equal(live.cssDpr.trim(), '1');assert.equal(live.cssScreen.trim(), '1');
     assert.deepEqual(live.canvas, live.repeat);
+    assert.equal(live.blobMatches, true, 'Blob Worker uses the owning origin stability policy');
+    assert.deepEqual(live.frameMatches, [true, true], 'both about:blank iframe accessors preserve the inherited policy and a single noise layer');
     assert.ok(live.canvas.some((value, index) => index % 4 === 0 && value !== 100), 'stable Canvas must retain noise');
     assert.ok(!events.some((event) => /injection-failed/.test(event.type)), JSON.stringify(events));
     console.log('PASS ' + id + ' inline identity, CSS resolution/screen, stable Canvas');
@@ -181,9 +218,9 @@ async function runBrowser(browser, server, id, hostDpr, dpr) {
 (async () => {
   const browser = chooseBinary(), server = await startServer();
   try {
-    const a = await runBrowser(browser, server, 'native-stable-a', 2, 1);
-    const repeated = await runBrowser(browser, server, 'native-stable-a', 2, 1);
-    const b = await runBrowser(browser, server, 'native-stable-b', 1, 2);
+    const a = await runBrowser(browser, server, 'native-stable-a', 2, 1, 'on');
+    const repeated = await runBrowser(browser, server, 'native-stable-a', 2, 1, 'off');
+    const b = await runBrowser(browser, server, 'native-stable-b', 1, 2, 'default');
     assert.deepEqual(a, repeated, 'identity must survive browser restart');
     assert.notDeepEqual(a, b, 'different identities must retain different Canvas samples');
     console.log('PASS Canvas restart stability and cross-profile separation');

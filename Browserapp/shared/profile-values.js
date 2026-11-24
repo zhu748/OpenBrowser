@@ -7,6 +7,7 @@
 
   const MAX_LATITUDE = 90;
   const MAX_LONGITUDE = 180;
+  const DEVICE_MEMORY_TIERS = Object.freeze([0.25, 0.5, 1, 2, 4, 8]);
 
   /** Scan without spreading rows into arguments or allocating a second array. */
   function maxProfileNumber(profiles) {
@@ -30,6 +31,30 @@
     return n !== null && Number.isInteger(n) && n >= min && n <= max ? n : null;
   }
 
+  function normalizeHardwareConcurrency(value) {
+    const cores = toFiniteNumber(value);
+    return cores !== null && cores >= 1 && cores <= 64 ? Math.round(cores) : null;
+  }
+
+  function normalizeDeviceMemory(value) {
+    const memory = toFiniteNumber(value);
+    if (memory === null || memory <= 0) return null;
+    if (DEVICE_MEMORY_TIERS.includes(memory)) return memory;
+    const bounded = Math.max(0.25, Math.min(8, memory));
+    return DEVICE_MEMORY_TIERS.reduceRight((best, tier) =>
+      Math.abs(tier - bounded) < Math.abs(best - bounded) ? tier : best);
+  }
+
+  function normalizeStabilitySettings({ hamming, maxWidth, maxHeight, square } = {}) {
+    const bounded = (value, fallback, min, max) => Math.min(max, Math.max(min, Math.round(toFiniteNumber(value) || fallback)));
+    return {
+      hamming: bounded(hamming, 12, 1, 64),
+      maxWidth: bounded(maxWidth, 600, 64, 4096),
+      maxHeight: bounded(maxHeight, 600, 64, 4096),
+      square: bounded(square, 8, 2, 64),
+    };
+  }
+
   function normalizeLatitude(value) {
     const n = toFiniteNumber(value);
     return n !== null && Math.abs(n) <= MAX_LATITUDE ? n : null;
@@ -50,6 +75,19 @@
     return lat === null || lon === null
       ? { latitude: null, longitude: null, valid: false }
       : { latitude: lat, longitude: lon, valid: true };
+  }
+
+  function normalizeGeolocationAccuracy(value, fallback = 1000) {
+    return Math.min(5000, Math.max(10, toFiniteNumber(value) || fallback));
+  }
+
+  function resolveDoNotTrackMode(privacy) {
+    const mode = privacy?.dntMode;
+    if (mode === 'default' || mode === 'on' || mode === 'off') return mode;
+    const legacy = privacy?.dnt;
+    if ([true, 1, '1', 'true', 'on'].includes(legacy)) return 'on';
+    if ([false, 0, '0', 'false', 'off'].includes(legacy)) return 'off';
+    return 'default';
   }
 
   // null transports Infinity through JSON. It must never pass through Number(null).
@@ -96,5 +134,7 @@
   }
 
   return Object.freeze({ maxProfileNumber, toFiniteNumber, toBoundedInteger, normalizeLatitude, normalizeLongitude, normalizeBatterySnapshot, normalizeNetworkInformation, normalizeNetworkConditions,
-    isValidLatitude, isValidLongitude, normalizeCoordinates, MAX_LATITUDE, MAX_LONGITUDE });
+    isValidLatitude, isValidLongitude, normalizeCoordinates, normalizeGeolocationAccuracy, resolveDoNotTrackMode,
+    normalizeHardwareConcurrency, normalizeDeviceMemory, normalizeStabilitySettings,
+    MAX_LATITUDE, MAX_LONGITUDE, DEVICE_MEMORY_TIERS });
 });

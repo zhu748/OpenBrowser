@@ -4,7 +4,9 @@ const { assertProfileId } = require("../automation/isolation");
 const { normalizeIpLookupChannel } = require('../network/proxy-config');
 const { isNoCredentialProxy } = require('../shared/proxy-redact');
 const { profileProxyAssociation, normalizedProxyAssociationId } = require("./proxy-helpers");
-const { normalizeCoordinates, normalizeBatterySnapshot, normalizeNetworkInformation, normalizeNetworkConditions, toFiniteNumber: finite } = require("../shared/profile-values");
+const { normalizeCoordinates, normalizeGeolocationAccuracy, resolveDoNotTrackMode, normalizeBatterySnapshot, normalizeNetworkInformation, normalizeNetworkConditions,
+  normalizeHardwareConcurrency, normalizeDeviceMemory, normalizeStabilitySettings, toFiniteNumber: finite } = require("../shared/profile-values");
+const { normalizeLanguageTags } = require('../automation/locale-from-country');
 
 const { fingerprintVersion } = require("../automation/fingerprint/generation");
 const { normalizeGeneratedFirefoxUa } = require('../automation/firefox-ua-policy');
@@ -22,6 +24,9 @@ function sanitizeProfile(value) {
   const cookies = String(value.cookies || "");
   if (cookies.length > 500000) throw Object.assign(new Error("Cookie 内容超过 500000 字符，本次未写入"), { code: "PROFILE_COOKIES_TOO_LARGE" });
   const privacyValue = value.privacy && typeof value.privacy === "object" ? value.privacy : {};
+  const dntMode = resolveDoNotTrackMode(privacyValue);
+  const stability = normalizeStabilitySettings({ hamming: privacyValue.stabilityHamming,
+    maxWidth: privacyValue.stabilityMaxWidth, maxHeight: privacyValue.stabilityMaxHeight, square: privacyValue.stabilitySquare });
   const advancedValue = value.advanced && typeof value.advanced === "object" ? value.advanced : {};
   const legacyImageKB=value.prefs?.roxy?.forbidImage===false?Number(value.prefs.roxy.forbiddenPictureSize)||0:0;
   const imageMaxBytes=Math.min(8*1024*1024,Math.max(0,Math.floor(Number(advancedValue.imageMaxBytes??(legacyImageKB*1024))||0)));
@@ -35,8 +40,7 @@ function sanitizeProfile(value) {
   const height = Math.min(4320, Math.max(480, Number(value.height) || 820));
   const number = Number.parseInt(value.number, 10);
   const parseLimitedOption = (candidate, values) => {
-    if (candidate === "" || candidate === null || candidate === undefined) return null;
-    const val = Number(candidate);
+    const val = finite(candidate);
     return values.includes(val) ? val : null;
   };
   const cpuCandidate = privacyValue.cores === "" || privacyValue.cores === null || privacyValue.cores === undefined
@@ -50,12 +54,13 @@ function sanitizeProfile(value) {
   // 16 was briefly accepted during the RoxyBrowser parity sweep but no real Chrome
   // reports it — a single read identifies the profile as spoofed. Keep the cap at 8.
   const memory = parseLimitedOption(memoryCandidate, [0, 2, 4, 6, 8]);
-  // Custom launch args: each token must look like a Chromium switch (--flag or --flag=value).
-  // Values may not contain whitespace/semicolons (split first), keeping the surface injectable-free.
+  // Accept the same switch list after a save/load round trip.
   const customArgs = String(privacyValue.customArgs || "")
     .split(/[;\r\n]+/)
-    .map((token) => token.trim())
-    .filter((token) => /^--[a-z0-9][a-z0-9._-]*(=[^\s;'"]{0,500})?$/i.test(token))
+    .flatMap((entry) => {
+      const tokens = entry.trim().split(/\s+/);
+      return tokens.every((token) => /^--[a-z0-9][a-z0-9._-]*(=[^\s;'"]{0,500})?$/i.test(token)) ? tokens : [];
+    })
     .join(" ")
     .slice(0, 2000);
   const macRaw = String(privacyValue.mac || "").trim().toUpperCase().replace(/-/g, ":");
@@ -176,14 +181,14 @@ function sanitizeProfile(value) {
       // 旧 profile 的 geoMode=disabled/prompt 折算进 geoPermission，geoMode 继续供引擎读取。
       geoPermission: (() => {
         const explicit = allowed(privacyValue.geoPermission, ["prompt", "allow", "deny"], "");
-        if (explicit) return explicit;
         if (privacyValue.geoMode === "disabled") return "deny";
+        if (explicit) return explicit;
         if (privacyValue.geoMode === "prompt") return "prompt";
         return "allow";
       })(),
       latitude: location.latitude,
       longitude: location.longitude,
-      accuracy: Math.min(5000, Math.max(10, Number(privacyValue.accuracy) || 1000)),
+      accuracy: normalizeGeolocationAccuracy(privacyValue.accuracy),
       uiLanguage: String(privacyValue.uiLanguage || "profile").slice(0, 20),
       langFromIp: privacyValue.langFromIp !== false,
       languageMode: String(privacyValue.languageMode || (privacyValue.langFromIp !== false ? "ip" : (privacyValue.uiLanguage || "profile"))).slice(0, 20),
@@ -208,10 +213,10 @@ function sanitizeProfile(value) {
       batterySnapshot: normalizeBatterySnapshot(privacyValue.batterySnapshot),
       webrtcPolicy: privacyValue.webrtc === "disabled" ? 0 : (privacyValue.webrtc === "real" ? 1 : 3),
       stabilityMode: allowed(privacyValue.stabilityMode, ["off", "auto", "force"], "auto"),
-      stabilityHamming: Math.min(64, Math.max(1, Number(privacyValue.stabilityHamming) || 12)),
-      stabilityMaxWidth: Math.min(4096, Math.max(64, Number(privacyValue.stabilityMaxWidth) || 600)),
-      stabilityMaxHeight: Math.min(4096, Math.max(64, Number(privacyValue.stabilityMaxHeight) || 600)),
-      stabilitySquare: Math.min(64, Math.max(2, Number(privacyValue.stabilitySquare) || 8)),
+      stabilityHamming: stability.hamming,
+      stabilityMaxWidth: stability.maxWidth,
+      stabilityMaxHeight: stability.maxHeight,
+      stabilitySquare: stability.square,
       stabilityHosts: Array.isArray(privacyValue.stabilityHosts)
         ? privacyValue.stabilityHosts.map((item) => String(item || "").trim().toLowerCase()).filter(Boolean).slice(0, 800)
         : (typeof privacyValue.stabilityHosts === "string"
@@ -226,8 +231,8 @@ function sanitizeProfile(value) {
       speech: allowed(privacyValue.speech, ["real", "blocked", "noise"], "noise"),
       deviceNameMode: allowed(privacyValue.deviceNameMode, ["noise", "custom", "real"], "noise"),
       deviceName: String(privacyValue.deviceName || "").slice(0, 120),
-      dnt: privacyValue.dnt === true || privacyValue.dnt === "on" ? true : (privacyValue.dnt === false || privacyValue.dnt === "off" ? false : Boolean(privacyValue.dnt)),
-      dntMode: allowed(privacyValue.dntMode, ["default", "on", "off"], privacyValue.dnt === true ? "on" : (privacyValue.dnt === false ? "off" : "default")),
+      dnt: dntMode === 'on',
+      dntMode,
       networkConditions: normalizeNetworkConditions(privacyValue.networkConditions),
       portScanProtect: Boolean(privacyValue.portScanProtect),
       portScanAllow: String(privacyValue.portScanAllow || "").slice(0, 500),
@@ -361,16 +366,6 @@ function sanitizeFingerprintConfig(fp, privacyCores, privacyMemory) {
     const mark = round ? Math.round(number) : number;
     return mark === 0 ? undefined : mark;
   };
-  const snapDeviceMemory = (v) => {
-    const steps = [0.25, 0.5, 1, 2, 4, 8];
-    const n = Number(v);
-    if (!Number.isFinite(n) || n <= 0) return undefined;
-    const c = Math.min(8, Math.max(0.25, n));
-    // Seed 8 with strict < (identical to persona.js): exact ties break toward
-    // the HIGHER step. Seeding 0.25 sent 6GB to 4 while persona sent it to 8
-    // (round-4 review D2).
-    return steps.reduce((best, step) => (Math.abs(step - c) < Math.abs(best - c) ? step : best), 8);
-  };
   const batteryObject = (v) => {
     if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
     if (finite(v.level) === null) return undefined;
@@ -454,19 +449,17 @@ function sanitizeFingerprintConfig(fp, privacyCores, privacyMemory) {
   set("uaGenerated", bool(fp.uaGenerated));
   set("uaReduced", bool(fp.uaReduced));
   set("uaPatchRandomized", bool(fp.uaPatchRandomized));
-  set("languages", strList(fp.languages, 400, 40));
+  const rawLanguages = typeof fp.languages === 'string' ? fp.languages.split(/[,，；\r\n]+|;(?! *q *=)/i) : fp.languages;
+  const languages = normalizeLanguageTags(rawLanguages).filter(tag => tag.length <= 40).slice(0, 400);
+  if (languages.length) set("languages", languages);
   set("vendor", str(fp.vendor, 80));
   set("deviceProfile", oneOf(fp.deviceProfile, ["default", "persona"]));
 
   // --- Hardware / screen group ---
-  set("cores", privacyCores === null || privacyCores === undefined
-    ? (fp.cores === 0 || fp.cores === "0" ? 0 : (fp.cores ?? null))
-    : privacyCores);
-  set("memory", privacyMemory === null || privacyMemory === undefined
-    ? (fp.memory === 0 || fp.memory === "0" ? 0 : (fp.memory ?? null))
-    : privacyMemory);
-  set("hardwareConcurrency", intInRange(fp.hardwareConcurrency, 1, 64));
-  set("deviceMemory", snapDeviceMemory(fp.deviceMemory));
+  set("cores", privacyCores ?? finite(fp.cores));
+  set("memory", privacyMemory ?? finite(fp.memory));
+  set("hardwareConcurrency", normalizeHardwareConcurrency(fp.hardwareConcurrency) ?? undefined);
+  set("deviceMemory", normalizeDeviceMemory(fp.deviceMemory) ?? undefined);
   set("maxTouchPoints", intInRange(fp.maxTouchPoints, 0, 64));
   // Mobile-aware floors (round-4 review D1): the phone panel pool
   // (data/mobile-devices.json) emits CSS widths 290-500 and heights down to

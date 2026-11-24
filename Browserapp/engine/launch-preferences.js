@@ -1,9 +1,29 @@
 "use strict";
 
-// Chromium profile-file preparation. Browser process and lock ownership stay in the launch pipeline.
+// Profile-file preparation. Browser process and lock ownership stay in the launch pipeline.
 const fsp = require("node:fs/promises");
 const path = require("node:path");
 const { writeRawAtomically } = require("./state-storage");
+const { buildFirefoxUserJs } = require("../automation/kernel-versions");
+
+async function writeFirefoxLaunchPreferences(root, config, options) {
+  const extraPrefs = new Map(config.extraPrefs || []);
+  const resetKeys = new Set([...extraPrefs].filter(([, value]) => value === undefined).map(([key]) => key));
+  if (resetKeys.size) {
+    const persistedPath = path.join(root, "prefs.js");
+    const persisted = await fsp.readFile(persistedPath, "utf8").catch(error => {
+      if (error.code !== "ENOENT") throw error;
+      return "";
+    });
+    // Firefox writes each managed integer or boolean as one user_pref line.
+    // Remove only requested keys and keep other lines byte for byte.
+    const updated = persisted.replace(/^[ \t]*user_pref\([ \t]*"([^"\r\n]+)"[ \t]*,[ \t]*(?:true|false|-?\d+)[ \t]*\)[ \t]*;[ \t]*(?:\r?\n|$)/gm,
+      (line, key) => resetKeys.has(key) ? "" : line);
+    if (updated !== persisted) await writeRawAtomically(persistedPath, updated, 0o600, options);
+  }
+  const userJs = buildFirefoxUserJs({ ...config, extraPrefs: [...extraPrefs] });
+  await writeRawAtomically(path.join(root, "user.js"), userJs, 0o600, options);
+}
 
 const SEARCH_ENGINE_TEMPLATES = {
   google: {
@@ -143,6 +163,7 @@ async function clearLaunchDataTargets(root, advanced, targets) {
 }
 
 module.exports = {
+  writeFirefoxLaunchPreferences,
   applyDefaultSearchEngine,
   clearProfileLaunchData,
   clearLaunchDataTargets,

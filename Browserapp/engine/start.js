@@ -31,7 +31,7 @@ const { spawn } = require('child_process');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const { readDeferredSessionUrls, preserveLegacySession, openVerifiedStartupTabs } = require('./startup-session');
+const { readDeferredSessionUrls, openVerifiedStartupTabs } = require('./startup-session');
 
 // Browserapp/ app root (this file lives in Browserapp/engine/). Resource
 // bundles such as kernels/ and bundled-extension/ sit next to main.js, one
@@ -145,23 +145,24 @@ module.exports = {
       this.emit({ type: 'profile-launch-data-cleared', id: profile.id, removed: clearedLaunchData });
     }
     const pageNetwork = this.networkInfo.get(profile.id) || {};
+    const explicitTimezone = extractTimezoneFromArgs(profile.privacy.customArgs?.split(/\s+/));
+    const effectiveTimezone = isValidIanaTimezone(explicitTimezone)
+      ? explicitTimezone : resolveProfileTimezone(profile, pageNetwork);
     // Explicit identity refresh is independent of per-site sampling stability.
     const allowSeedRefresh = profile.privacy.refreshFingerprintOnStart;
     const fingerprint = buildFingerprint({
       ...profile,
       fingerprintLaunchSeed: allowSeedRefresh ? crypto.randomBytes(16).toString('hex') : '',
       kernelVersion: browser.version,
-      exitTimezone: profile.exitTimezone || pageNetwork.timezone || '',
       exitLatitude: profile.exitLatitude ?? pageNetwork.latitude,
       exitLongitude: profile.exitLongitude ?? pageNetwork.longitude,
       hostScreen: hostScreenSummary(),
-    });
+    }, { timezone: effectiveTimezone || null });
     assertFingerprintConsistency(fingerprint);
     let customStartUrls = this.resolveStartupUrls(profile);
     if (restoreSession) {
       const restoredUrls = await readDeferredSessionUrls(root);
       if (restoredUrls.length) customStartUrls = restoredUrls;
-      else await preserveLegacySession(root, 'chromium');
     }
     const infoStartUrl = openWorkbench(profile)
       ? await this.buildStartPageUrl(
@@ -231,7 +232,7 @@ module.exports = {
         throw error;
       }
     }
-    const configuredArgs = completeLaunchArguments(args, { profile, proxyConfig, restoreSession, startUrl,
+    const configuredArgs = completeLaunchArguments(args, { profile, fingerprint, proxyConfig, restoreSession, startUrl,
       customStartUrls, windowPosition: windowPositionArg(profile),
       proxyEndpoint: proxyForwarder ? proxyForwarder.url : chromeProxyEndpoint(profile.proxy) });
     args = configuredArgs.args;
@@ -263,7 +264,9 @@ module.exports = {
     if (markerExtensionPath && fs.existsSync(markerExtensionPath) && !loadPaths.includes(markerExtensionPath)) {
       loadPaths.push(markerExtensionPath);
     }
-    const finalArgs = loadPaths.length ? mergeLoadExtensionArgs(args, loadPaths) : args;
+    const finalArgs = (loadPaths.length ? mergeLoadExtensionArgs(args, loadPaths) : args)
+      .filter((arg) => !/^--time-zone-for-testing(?:=|$)/i.test(arg));
+    if (effectiveTimezone) finalArgs.push('--time-zone-for-testing=' + effectiveTimezone);
     // Never put --accept-terms-and-conditions on the long-lived browser spawn.
     // Wayfern treats that flag as a one-shot accept-and-exit command; pre-accept via
     // ensureKernelReadyForLaunch() below, then launch without it so CDP can come up.
@@ -310,40 +313,12 @@ module.exports = {
         finalArgs.push('--headless=new');
         if (!finalArgs.some((arg) => String(arg).split('=')[0] === '--disable-gpu')) finalArgs.push('--disable-gpu');
       }
-      const isRealTimezone = profile.privacy?.timezoneMode === 'real';
-      const userExplicitTz = extractTimezoneFromArgs(finalArgs);
-      const hasExplicitTzFlag = Boolean(userExplicitTz || finalArgs.some((arg) => /^--time-zone-for-testing(?:=|$)/i.test(String(arg))));
-
-      let effectiveTimezone = '';
-      if (hasExplicitTzFlag) {
-        // User explicitly specified --time-zone-for-testing; honor explicit flag priority and avoid duplicates.
-        if (isValidIanaTimezone(userExplicitTz)) {
-          effectiveTimezone = userExplicitTz;
-        }
-      } else if (!isRealTimezone) {
-        const resolvedTz = resolveProfileTimezone(profile, pageNetwork);
-        const candidateTz = String(
-          resolvedTz
-          || profile.exitTimezone
-          || pageNetwork?.timezone
-          || (profile.privacy?.timezoneMode === 'custom' ? profile.privacy.timezone : '')
-          || profile.privacy?.timezone
-          || fingerprint?.timezone
-          || ''
-        ).trim();
-
-        if (isValidIanaTimezone(candidateTz)) {
-          effectiveTimezone = candidateTz;
-          finalArgs.push(`--time-zone-for-testing=${effectiveTimezone}`);
-        }
-      }
-
       // Synchronize process-level timezone for POSIX kernels and C++ ICU subsystems.
       // On Windows, ICU reads the system registry rather than TZ, so passing
       // --time-zone-for-testing on the command line ensures the Chromium C++ core boots in
       // the persona timezone.
       const spawnEnv = { ...process.env };
-      if (effectiveTimezone && !isRealTimezone && process.platform !== 'win32') {
+      if (effectiveTimezone && process.platform !== 'win32') {
         spawnEnv.TZ = effectiveTimezone;
       }
       assertLaunchProfileCurrent();

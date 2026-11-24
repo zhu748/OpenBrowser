@@ -56,6 +56,7 @@ function fpSeedText(value) {
 function normalizeProfileSettings(profile) {
   const value = profile && typeof profile === 'object' ? profile : {};
   const privacy = value.privacy && typeof value.privacy === 'object' ? value.privacy : {};
+  const dntMode = window.OpenBrowserProfileValues.resolveDoNotTrackMode(privacy);
   const advanced = value.advanced && typeof value.advanced === 'object' ? value.advanced : {};
   const proxyMeta = value.proxyMeta && typeof value.proxyMeta === 'object' ? value.proxyMeta : {};
   const platform = value.platform && typeof value.platform === 'object' ? value.platform : {};
@@ -175,8 +176,8 @@ function normalizeProfileSettings(profile) {
       speech: String(privacy.speech || 'noise'),
       deviceNameMode: String(privacy.deviceNameMode || 'noise'),
       deviceName: String(privacy.deviceName || ''),
-      dnt: Boolean(privacy.dnt),
-      dntMode: String(privacy.dntMode || (privacy.dnt ? 'on' : 'default')),
+      dnt: dntMode === 'on',
+      dntMode,
       portScanProtect: Boolean(privacy.portScanProtect),
       portScanAllow: String(privacy.portScanAllow || ''),
       cfOptimize: privacy.cfOptimize !== false,
@@ -384,7 +385,7 @@ function editorDraft(strict = true) {
     resolution = { width: values[0], height: values[1] };
   }
   const tabMode = document.querySelector('input[name="editor-tab-mode"]:checked')?.value || 'fixed';
-  const dntMode = $('#editor-dnt-mode')?.value || 'default';
+  const dntMode = $('#editor-dnt-mode')?.value || ($('#editor-dnt')?.checked ? 'on' : 'default');
   // Roxy 对齐：三段开关（开启/关闭）与隐藏 checkbox 双向同步后的最终值
   const segClose = (name) => document.querySelector(`input[name="${name}"]:checked`)?.value === 'close';
   const promptSavePassword = $('#editor-prompt-save-password')?.checked !== false;
@@ -441,7 +442,7 @@ function editorDraft(strict = true) {
     speech: $('#editor-speech')?.value || 'noise',
     deviceNameMode: $('#editor-device-name-mode')?.value || 'noise',
     deviceName: ($('#editor-device-name')?.value || '').trim(),
-    dnt: dntMode === 'on' || ($('#editor-dnt')?.checked === true),
+    dnt: dntMode === 'on',
     dntMode,
     portScanProtect: Boolean($('#editor-port-scan')?.checked),
     portScanAllow: ($('#editor-port-scan-allow')?.value || '').trim(),

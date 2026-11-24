@@ -52,7 +52,7 @@ Inline-worker preparation reads immutable local Blob bytes and uses a private Ac
 
 Child-worker installation is reconstructed from a private named function, including the font-presence layer. Installation checks and runtime revision checks use the private function bridge rather than public WorkerGlobalScope flags or source-passing hooks. Replaying the complete document source checks completion before its UA layer runs; installation-status messages pass through the UA, font and WebRTC layers. This prevents repeated wrapping when the complete source is executed again.
 
-Chromium 143+ Service Workers additionally use a first-script execution gate, including scripts restored from the persistent script cache. Startup queues Debugger.enable, the beforeScriptExecution breakpoint and Runtime.runIfWaitingForDebugger in protocol order; awaiting Debugger.enable before releasing startup deadlocks on Chrome 157. At the actual script breakpoint, the gate installs and verifies the current UA/platform, core count, timezone and exposed network values before resuming application code, then disables Debugger. The old 400 ms post-resume injection is removed.
+Chromium 143+ Service Workers additionally use a first-script execution gate, including scripts restored from the persistent script cache. Startup queues Debugger.enable, the beforeScriptExecution breakpoint and Runtime.runIfWaitingForDebugger in protocol order. Awaiting Debugger.enable before releasing startup deadlocks on Chrome 157. At the script breakpoint, the gate verifies UA, platform, core count, language order, exposed device memory and network values, and timezone equivalence before resuming application code and disabling Debugger. An IANA alias such as `Etc/UTC` can match the browser's `UTC` reading.
 
 Only one session owns this gate per Service Worker target. Browser-level auto-attach owns Service Workers; page/iframe auto-attach filters exclude them before creation. If an extra session is nevertheless announced, it releases its startup latch only after the owner's breakpoint commands have been queued, then detaches through its actual parent after verification. Detaching it earlier can release the worker before the owner's breakpoint exists. The gate recognizes complete historical injection-prefix expressions in cached scripts, including parsed static module dependencies, and retires their exact token/revision checks through the private bridge so an old prefix cannot reinstall the previous persona. It does not clear registrations, cookies, application caches or browsing data. An unrecognized cached prefix, incompatible same-token revision, failed probe or timeout rejects delivery and follows target/browser shutdown. Already-running workers whose first execution cannot be verified are rejected rather than labelled protected. The gate bounds individual source at 16 MiB and a parsed graph at 512 scripts/32 MiB.
 
@@ -94,6 +94,8 @@ Target setup also has a session cancellation guard around native overrides, Fetc
 
 The initial page path uses a managed persistent WebSocket rather than the idle-evicted command pool or one-command sockets. A blank or debugger-paused target can transfer ownership to the persistent browser flat session: the old page connection is retired before the new native overrides are applied. An active, unpaused document cannot silently transfer ownership. Normal page closure is confirmed against current targets so closing one tab does not stop the other windows; unexpected owner loss on a still-live target stops its browser. Browser cleanup closes both active and still-opening fallback connections.
 
+The periodic sweep snapshots pending targets once. It rechecks the live flat-session owner around direct socket operations so a completed handover cannot trigger a competing fallback or erase the new owner's verified state.
+
 Fingerprint and port-policy replacement invalidate the previous registration before removing it. If installing the replacement fails, a later request for the original configuration reinstalls its removed script. Policy registrations also follow connection/session ownership, so retiring the initial page session cannot remove the only future-document port guard or cause a flat session to remove another session's identifier.
 
 Chromium implementation reference: [InspectorPageAgent registration state and session disposal](https://chromium.googlesource.com/chromium/src/+/49651c0b5af34684bc1ecd8f0a347187796da1d9/third_party/blink/renderer/core/inspector/inspector_page_agent.cc). The lifecycle guarantees above have fault-injected protocol coverage; native browser handover/navigation tests are still required on supported platforms.
@@ -127,6 +129,8 @@ Protocol reference: [Chromium Fetch definitions](https://github.com/ChromeDevToo
 ## API contracts and media permissions
 
 Permissions and geolocation now retain their native methods and PermissionStatus objects. The former query wrapper re-read `descriptor.name` after native conversion, so a valid getter could be called twice or turn a successful query into a rejection. The former synthetic deny callbacks also skipped receiver/callback/options validation, returned watch ID zero, did not honor native watch cancellation, and fabricated error dictionaries. Those wrappers are removed; permissions queries, coercion counts, callbacks, watch IDs, error objects and native Permissions-Policy behavior are delegated to the browser. Native permission status and access-policy decisions are compared with an untouched realm rather than assumed to always be the same state.
+
+Generation and native delivery share coordinate validation and accuracy limits. Chromium applies live coordinate edits through CDP without resending the document script. A grant requires a valid emulated position. On transition to denial or prompt, Chromium updates permission before clearing the previous override. A failed revocation preserves the existing override for retry. Native kernel initialization removes the prior `geoposition` when the current profile resolves no position and verifies the field on readback.
 
 `geoMode: disabled` implies effective denial even when `geoPermission` is absent or prompt. Allow without valid configured coordinates also remains denied. Chromium must successfully apply Browser.setPermission for both grants and denials before document registration; an unsupported denial command stops setup instead of relying on a JavaScript callback facade.
 
@@ -199,7 +203,9 @@ Official protocol references:
 
 Native automatic restore can execute old tabs before the injection barrier. It is disabled. Managed sessions save up to 100 URLs in `OpenBrowserSession.json` and reopen them after verification. Back/forward history, scroll position and unsaved page state are not restored by this URL snapshot.
 
-On the first restore-mode launch without a managed snapshot, existing native session files are copied once to `OpenBrowserLegacySessions/<engine>/` before the browser starts. They are preserved for recovery; they are not parsed into the managed URL snapshot. That first launch uses the configured startup URLs. The archive is not overwritten on later launches.
+At the first Chromium restore-mode launch with native session files, the launcher archives them to `OpenBrowserLegacySessions/chromium/`, then clears Chromium's active session files before spawning. Later launches reuse the archive and clear newly generated native session files. The managed URL snapshot remains the source for opening tabs after verification. Without that snapshot, the launcher uses the configured startup URLs. A failed archive or removal stops startup.
+
+Firefox archives existing native session files once to `OpenBrowserLegacySessions/firefox/` when there is no managed snapshot. Both archives retain the original files for manual recovery.
 
 ## Generation and delivery review (2026-11-23)
 
@@ -222,6 +228,42 @@ With Canvas noise and WebGL blocking both enabled, the document runtime reserves
 The context policy preserves native receiver checks, converts nonprimitive context identifiers once and delegates unsupported identifiers to the browser. Canvas noise uses the context identifier from native conversion when tracking a successfully created WebGL context. HTML canvas keeps its native transferred-canvas error. A blocked OffscreenCanvas WebGL request returns null without attempting GPU creation.
 
 The Chromium capability suite runs the JavaScript policy on the same WebGL-enabled browser used for its unmodified baseline. This exercises blocking independently of the production launch flags. It compares WebGL1, WebGL2, 2D rendering, invalid receivers and argument conversion in the main document, an immediate same-origin iframe, document OffscreenCanvas and a dedicated Worker. The suite also combines WebGL blocking with both Canvas noise and Canvas readback blocking.
+
+## Canvas sampling and readback
+
+Generation, profile save, and delivery normalize the sample width, height, and spacing to integers within the declared limits. Native kernel initialization copies the generated sample dimensions, spacing and Hamming threshold into both Canvas and WebGL settings. Document and Worker scripts embed one copy of the host policy per runtime. Blob Workers and inherited documents use their origin when their URL has no hostname, and hostname matching handles the DNS root dot on visited sites.
+
+The UA and document iframe fallbacks check the child document's completed installation before patching it. The fallback tracks the current document across iframe navigations. Reading `contentWindow` or `contentDocument` after a completed document-start injection applies no additional pixel transform.
+
+Documents, Workers and packed VideoFrame readback use the same byte-pixel sampling policy. Stable plans depend on dimensions and the configured mark. Alpha is checked on each read, so an initially transparent canvas can still receive noise after a later draw. The cache retains at most 64 plans for grids of up to 16,384 candidate pixels. Larger grids compute the same deltas on demand.
+
+Float16 Canvas readback keeps its native sample values. Writeback snapshots use the browser's ImageData accessors and retain the color space, so shadowed JavaScript properties cannot alter the cache or run during a native write. Real and blocked Canvas modes omit the noise, readback, and text-metric helper code from the document and Worker payloads.
+
+HTML canvas encoding coerces MIME values before taking the pixel snapshot and invokes the native encoder once. Native dimension accessors keep invalid receivers and shadowed properties out of the copy path. WebGL export reads the canvas's presented bitmap independently of the application's framebuffer binding. Document and Worker OffscreenCanvas exports share the native-first encoding path, release the decoded bitmap after the copy, and use the original blob if applying the noise policy or re-encoding fails.
+
+## Language, hardware and timezone delivery
+
+The persona resolves a single ordered language list for Chromium profile preferences, launch arguments, document and worker reads, and HTTP headers. Firefox writes the same list to its native language preferences and selects its first tag as the requested locale. Legacy underscore syntax and case differences are canonicalized. Import weights are stripped before delivery, malformed tags are ignored, and duplicates keep their first position. HTTP weighting is generated separately from that list.
+
+Hardware overrides use the same numeric rules during save, generation and injection. Explicit zero on the profile's CPU or memory selector retains the native reading. Invalid inputs fall back to the generated value. The numeric API fields project valid core counts to integers and memory to browser tiers, with six GB resolving to eight GB.
+
+Chromium resolves timezone before building the launch persona. A valid final `--time-zone-for-testing` switch takes precedence over the resolved profile timezone. The resulting value feeds the command line, POSIX process environment, injection and strict verification. An invalid setting falls back to a valid profile or exit timezone when available.
+
+## Do Not Track
+
+An explicit Do Not Track mode takes precedence over the legacy boolean. Chromium writes `enable_do_not_track` before launch and clears the previous preference in default mode. Firefox writes `privacy.donottrackheader.enabled` on every launch to reset a stored setting. Both engines use the native preference to expose `navigator.doNotTrack` and send `DNT: 1` when enabled. Off and default omit the HTTP signal and use the engine's native inactive DOM value. The Workbench boolean preserves a saved default when an unchanged inactive value is resubmitted.
+
+## Firefox preference restoration
+
+Firefox persists launch overrides from `user.js` in `prefs.js`. Startup now clears the stored override when the profile releases its CPU cap, minimum font size, autoplay option, or default permissions for notifications, microphones and cameras. The engine holds the profile lock while updating the preference files atomically. Firefox supplies the defaults for the installed version. Other preferences and per-site permissions are preserved.
+
+## WebGPU and optional runtime code
+
+WebGPU feature filtering keeps the browser's collection and iterator objects. Feature-name conversion, invalid callbacks and invalid receivers follow the native bindings. Size, membership, entries and callbacks observe the same filtered set. Blocking adapter requests preserves the browser's promise rejections. Native capability and device allocation remain under the browser's control.
+
+Chromium's audio mute and WebGPU launch settings follow the resolved fingerprint. Firefox writes the volume scale at launch so turning mute off also resets a previously saved mute preference.
+
+The document includes audio wrappers only in noise mode. Both the document and Worker omit timezone fallback code when the profile follows the native timezone. With the same Windows sample, system fonts, and native audio and timezone settings, uncompressed source measured 566,643 → 511,099 bytes for the document and 299,387 → 278,880 bytes for the Worker. These measurements describe script size.
 
 ## Validation
 

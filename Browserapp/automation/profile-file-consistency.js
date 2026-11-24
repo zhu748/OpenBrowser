@@ -1,17 +1,18 @@
 'use strict';
 
 /**
- * Keep the profile language surface aligned across the file layer.
+ * Keep managed native preferences aligned across the file layer.
  *
  * The browser owns several preference groups and rewrites them asynchronously
- * (for example spellcheck dictionaries). Only the language chain is written
- * here; every other group is preserved verbatim so a native preference and
- * a CDP/JS override cannot drift apart.
+ * (for example spellcheck dictionaries). Write only the app's explicit
+ * settings so unrelated browser preferences survive profile preparation.
  */
 
 const fsp = require('fs/promises');
 const path = require('path');
 const { writeRawAtomically } = require('../engine/state-storage');
+const { resolvePersonaLanguages } = require('./fingerprint/persona-locale');
+const { resolveDoNotTrackMode } = require('../shared/profile-values');
 
 const MANAGED_PREFERENCE_KEYS = Object.freeze([
   'intl.accept_languages',
@@ -38,29 +39,15 @@ const NATIVE_MANAGED_PREFERENCE_KEYS = Object.freeze([
 ]);
 
 function languagePreferenceChain(language) {
-  const parts = String(language || 'en-US')
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
-  const primary = parts[0] || 'en-US';
-  const base = primary.split('-')[0];
-  const chain = [primary];
-  if (base && base.toLowerCase() !== primary.toLowerCase()) chain.push(base);
-  for (const item of parts.slice(1)) {
-    if (!chain.some((value) => value.toLowerCase() === item.toLowerCase())) chain.push(item);
-  }
-  return chain.join(',');
+  return resolvePersonaLanguages({ language }).join(',');
 }
 
 function primaryProfileLocale(language) {
-  const primary = String(language || 'en-US')
-    .split(',')[0]
-    .trim();
-  return primary || 'en-US';
+  return resolvePersonaLanguages({ language })[0];
 }
 
 function expectedLanguagePreferences(profile = {}) {
-  const acceptLanguages = languagePreferenceChain(profile.language);
+  const acceptLanguages = resolvePersonaLanguages(profile).join(',');
   return {
     intl: {
       accept_languages: acceptLanguages,
@@ -70,7 +57,7 @@ function expectedLanguagePreferences(profile = {}) {
 }
 
 function expectedLocalState(profile = {}) {
-  const appLocale = primaryProfileLocale(profile.language);
+  const [appLocale] = resolvePersonaLanguages(profile);
   return {
     intl: {
       app_locale: appLocale,
@@ -84,6 +71,17 @@ function applyLanguagePreferences(prefs, profile = {}) {
   prefs.intl.accept_languages = expected.intl.accept_languages;
   prefs.intl.selected_languages = expected.intl.selected_languages;
   return expected;
+}
+
+function applyDoNotTrackPreference(prefs, profile = {}) {
+  const mode = resolveDoNotTrackMode(profile.privacy);
+  if (mode === 'default') {
+    delete prefs.enable_do_not_track;
+    return undefined;
+  }
+  const enabled = mode === 'on';
+  prefs.enable_do_not_track = enabled;
+  return enabled;
 }
 
 function applyLocalStateLanguage(state, profile = {}) {
@@ -171,6 +169,7 @@ module.exports = {
   primaryProfileLocale,
   expectedLocalState,
   applyLanguagePreferences,
+  applyDoNotTrackPreference,
   verifyLanguagePreferences,
   verifyLocalStateLanguage,
   syncProfileLanguagePreferences,

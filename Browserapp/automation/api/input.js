@@ -1,7 +1,7 @@
 'use strict';
 
 // External API aliases and field adaptation; no transport or engine state.
-const { normalizeCoordinates } = require('../../shared/profile-values');
+const { normalizeCoordinates, resolveDoNotTrackMode } = require('../../shared/profile-values');
 
 function booleanValue(value, fallback = false) {
   if (value === undefined || value === null || value === '') return fallback;
@@ -142,7 +142,7 @@ function normalizeProfileInput(input = {}) {
   }
   const doNotTrack = firstDefined(out, ['do_not_track', 'doNotTrack']);
   if (doNotTrack !== undefined) {
-    const enabled = doNotTrack === true || doNotTrack === 'on' || doNotTrack === '1';
+    const enabled = resolveDoNotTrackMode({ dnt: doNotTrack }) === 'on';
     privacy.dnt = enabled;
     privacy.dntMode = enabled ? 'on' : 'off';
   }

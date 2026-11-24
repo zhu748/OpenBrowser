@@ -2,7 +2,6 @@
 
 // Ordered fragment of one emitted IIFE; runtime-source.js owns assembly.
 module.exports = `  // --- canvas ---
-  const webglCanvases = new WeakSet();
   if (CFG.canvas && CFG.canvas.mode === 'blocked') {
     const patchedCanvasBlockedWindows = new WeakSet();
     const patchCanvasBlocked = (targetWin) => {
@@ -29,8 +28,8 @@ module.exports = `  // --- canvas ---
     subWindowSyncHooks.push((subWin) => { patchCanvasBlocked(subWin); });
   } else if (CFG.canvas && CFG.canvas.mode === 'noise') {
     const mark = Number(CFG.canvas.mark) || 1;
-    const rawGetMap = new WeakMap();
     const readback = createCanvasReadbackCache();
+    const webglCanvases = new WeakSet();
 
     const patchedCanvasWindows = new WeakSet();
     const patchCanvasForWindow = (targetWin) => {
@@ -46,18 +45,15 @@ module.exports = `  // --- canvas ---
           String(CFG.seed || CFG.canvas?.mark || '1'));
         const hookGetAndPut = (proto) => {
           if (!proto) return;
-          if (proto.getImageData) {
-            const originalGet = replaceMethod(proto, 'getImageData', (original) => function getImageData(...args) {
-              const result = original.apply(this, args);
-              try {
-                if (readback.matches(this, result, args)) return readback.tag(result);
-              } catch (_) {}
-              const noised = applyCanvasNoise(result, mark);
-              try { readback.tag(noised); } catch (_) {}
-              return noised;
-            });
-            if (originalGet) rawGetMap.set(proto, originalGet);
-          }
+          const originalGet = replaceMethod(proto, 'getImageData', (original) => function getImageData(...args) {
+            const result = original.apply(this, args);
+            try {
+              if (readback.matches(this, result, args)) return readback.tag(result);
+            } catch (_) {}
+            const noised = applyCanvasNoise(result, mark);
+            try { readback.tag(noised); } catch (_) {}
+            return noised;
+          });
           if (proto.putImageData) {
             replaceMethod(proto, 'putImageData', (origPut) => function putImageData(...args) {
               const result = origPut.apply(this, args);
@@ -122,120 +118,20 @@ module.exports = `  // --- canvas ---
               }
             });
           }
+          return originalGet;
         };
 
-        const ctxProto = targetWin.CanvasRenderingContext2D && targetWin.CanvasRenderingContext2D.prototype;
-        hookGetAndPut(ctxProto);
-        const offscreenCtxProto = targetWin.OffscreenCanvasRenderingContext2D?.prototype;
-        hookGetAndPut(offscreenCtxProto);
+        const rawGet = hookGetAndPut(targetWin.CanvasRenderingContext2D?.prototype);
+        hookGetAndPut(targetWin.OffscreenCanvasRenderingContext2D?.prototype);
 
-        const noiseCanvas = (source) => {
-          const w = source.width | 0;
-          const h = source.height | 0;
-          if (!w || !h) return null;
-          const doc = (source && source.ownerDocument) || (targetWin && targetWin.document) || document;
-          const copy = doc.createElement('canvas');
-          copy.width = w;
-          copy.height = h;
-          const c2 = copy.getContext('2d');
-          if (!c2) return null;
-          try {
-            if (webglCanvases.has(source)) {
-              try {
-                const gl = source.getContext('webgl2') || source.getContext('webgl') || source.getContext('experimental-webgl');
-                if (gl && typeof gl.readPixels === 'function') {
-                  const pixels = new Uint8Array(w * h * 4);
-                  gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-                  const imgData = c2.createImageData(w, h);
-                  const rowBytes = w * 4;
-                  for (let y = 0; y < h; y++) {
-                    const srcY = (h - 1 - y) * rowBytes;
-                    const dstY = y * rowBytes;
-                    imgData.data.set(pixels.subarray(srcY, srcY + rowBytes), dstY);
-                  }
-                  c2.putImageData(imgData, 0, 0);
-                  return copy;
-                }
-              } catch (_) {}
-            }
-            c2.drawImage(source, 0, 0);
-            const rawGet = ctxProto ? rawGetMap.get(ctxProto) : null;
-            const image = applyCanvasNoise(rawGet ? rawGet.call(c2, 0, 0, w, h) : c2.getImageData(0, 0, w, h), mark);
-            c2.putImageData(image, 0, 0);
-            return copy;
-          } catch (_) { return null; }
+        const readCanvasPixels = (context, width, height) => {
+          return rawGet ? applyCanvasNoise(rawGet.call(context, 0, 0, width, height), mark)
+            : context.getImageData(0, 0, width, height);
         };
+        installHtmlCanvasEncoding(targetWin, replaceMethod, readCanvasPixels);
+        installOffscreenCanvasEncoding(targetWin, replaceMethod);
 
-        const canvasProto = targetWin.HTMLCanvasElement && targetWin.HTMLCanvasElement.prototype;
-        if (canvasProto && canvasProto.toDataURL) {
-          replaceMethod(canvasProto, 'toDataURL', (original) => function toDataURL(...args) {
-            try {
-              const copy = noiseCanvas(this);
-              if (copy) return original.apply(copy, args);
-            } catch (_) {}
-            return original.apply(this, args);
-          });
-        }
-
-        if (canvasProto && canvasProto.toBlob) {
-          replaceMethod(canvasProto, 'toBlob', (originalBlob) => function toBlob(cb, ...rest) {
-            if (typeof cb !== 'function') return originalBlob.apply(this, arguments);
-            try {
-              const copy = noiseCanvas(this);
-              if (copy) return originalBlob.call(copy, cb, ...rest);
-            } catch (_) {}
-            return originalBlob.call(this, cb, ...rest);
-          });
-        }
-
-        const offscreenProto = targetWin.OffscreenCanvas?.prototype;
-        if (offscreenProto?.convertToBlob) {
-          replaceMethod(offscreenProto, 'convertToBlob', (original) => async function convertToBlob(options) {
-            try {
-              const w = Number(this.width) || 0;
-              const h = Number(this.height) || 0;
-              if (w > 0 && h > 0 && webglCanvases.has(this)) {
-                const gl = this.getContext('webgl2') || this.getContext('webgl') || this.getContext('experimental-webgl');
-                if (gl && typeof gl.readPixels === 'function') {
-                  const pixels = new Uint8Array(w * h * 4);
-                  gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-                  const TargetOffscreen = targetWin.OffscreenCanvas || OffscreenCanvas;
-                  const copy = new TargetOffscreen(w, h);
-                  const context = copy.getContext('2d');
-                  if (context) {
-                    const imgData = context.createImageData(w, h);
-                    const rowBytes = w * 4;
-                    for (let y = 0; y < h; y++) {
-                      const srcY = (h - 1 - y) * rowBytes;
-                      const dstY = y * rowBytes;
-                      imgData.data.set(pixels.subarray(srcY, srcY + rowBytes), dstY);
-                    }
-                    context.putImageData(imgData, 0, 0);
-                    return original.call(copy, options);
-                  }
-                }
-              }
-            } catch (_) {}
-            const captured = captureImageEncodeOptions(options);
-            const blob = await original.call(this, captured.options);
-            let bitmap;
-            try {
-              bitmap = await createImageBitmap(blob);
-              const w = bitmap.width, h = bitmap.height;
-              const TargetOffscreen = targetWin.OffscreenCanvas || OffscreenCanvas;
-              const copy = new TargetOffscreen(w, h);
-              const context = copy.getContext('2d');
-              if (!context) return blob;
-              context.drawImage(bitmap, 0, 0);
-              const image = context.getImageData(0, 0, w, h);
-              context.putImageData(image, 0, 0);
-              return original.call(copy, captured.replay);
-            } catch (_) { return blob; }
-            finally { try { bitmap?.close(); } catch (_) {} }
-          });
-        }
-
-        installVideoFrameCopy(targetWin.VideoFrame?.prototype, replaceMethod, (image) => applyCanvasNoise(image, mark));
+        installVideoFrameCopy(targetWin.VideoFrame?.prototype, replaceMethod, (data, width, height) => canvasPixelNoise(data, width, height, mark));
 
         const gpuQueueProto = targetWin.GPUQueue ? targetWin.GPUQueue.prototype : null;
         if (gpuQueueProto && typeof gpuQueueProto.copyExternalImageToTexture === 'function') {
@@ -257,9 +153,7 @@ module.exports = `  // --- canvas ---
               const surface = copy.getContext('2d');
               if (!surface) return null;
               surface.drawImage(value, 0, 0, size.width, size.height);
-              const rawGet = ctxProto ? rawGetMap.get(ctxProto) : null;
-              const image = applyCanvasNoise(rawGet ? rawGet.call(surface, 0, 0, size.width, size.height) : surface.getImageData(0, 0, size.width, size.height), mark);
-              surface.putImageData(image, 0, 0);
+              surface.putImageData(readCanvasPixels(surface, size.width, size.height), 0, 0);
               return copy;
             } catch (_) { return null; }
           };
@@ -279,8 +173,8 @@ module.exports = `  // --- canvas ---
           });
         }
 
-        // A blocked profile installs the context policy below. There are no
-        // WebGL canvases to track for Canvas readback in that mode.
+        // Track WebGL canvases for the GPUQueue source policy. A blocked
+        // profile installs its own context wrapper below.
         if (CFG.webgl?.mode !== 'blocked') {
           const trackContext = (proto, htmlCanvas) => replaceMethod(proto, 'getContext', (original) => function getContext(...args) {
             const { value, text } = invokeNativeText(original, this, args);
@@ -532,25 +426,6 @@ module.exports = `  // --- canvas ---
           patchGetSupportedExtensions(subWin.WebGL2RenderingContext.prototype);
         }
       });
-
-      // Track WebGL canvases so 2D toDataURL does not attempt to draw them
-      try {
-        const wrapCtx = (proto) => {
-          if (!proto || !proto.getContext) return;
-          replaceMethod(proto, 'getContext', (original) => function(...args) {
-            const ctx = original.apply(this, args);
-            try {
-              const type = String(args[0] || '').toLowerCase();
-              if (type.includes('webgl') || type.includes('experimental-webgl')) {
-                webglCanvases.add(this);
-              }
-            } catch (_) {}
-            return ctx;
-          });
-        };
-        wrapCtx(globalThis.HTMLCanvasElement && HTMLCanvasElement.prototype);
-        wrapCtx(globalThis.OffscreenCanvas && OffscreenCanvas.prototype);
-      } catch (_) {}
     } catch (_) {}
   }
 

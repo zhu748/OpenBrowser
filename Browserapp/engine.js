@@ -26,7 +26,8 @@ function withAssociation(profile, proxyId, patch = {}) {
     proxyMeta: { ...(profile.proxyMeta || {}), ...(patchMeta || {}), proxyId },
   };
 }
-const { applyLanguagePreferences, verifyLanguagePreferences, syncProfileLocalState } = require('./automation/profile-file-consistency');
+const { applyLanguagePreferences, applyDoNotTrackPreference, verifyLanguagePreferences, syncProfileLocalState } = require('./automation/profile-file-consistency');
+const { preserveLegacySession } = require('./engine/startup-session');
 const { platformPreflight } = require('./automation/platform-preflight');
 const { ensureStartPageServer } = require('./automation/start-page-server');
 const { killProcessTree } = require('./automation/protocol/cross-platform');
@@ -603,7 +604,7 @@ class BrowserEngine {
     const profile = path.join(root, 'Default');
     for (const name of ['Sessions', 'Current Session', 'Current Tabs', 'Last Session', 'Last Tabs']) {
       const target = await assertSafeProfileChild(root, path.join(profile, name));
-      await fsp.rm(target, { recursive: true, force: true }).catch(() => {});
+      await fsp.rm(target, { recursive: true, force: true });
     }
   }
 
@@ -682,6 +683,7 @@ class BrowserEngine {
     prefs.profile.password_manager_enabled = allowPasswords;
     prefs.signin ||= {}; prefs.signin.allowed = allowGoogleLogin(profile);
     applyLanguagePreferences(prefs, profile);
+    const expectedDnt = applyDoNotTrackPreference(prefs, profile);
     prefs.webkit ||= {}; prefs.webkit.webprefs ||= {};
     if (profile.privacy.fontMode === 'custom') prefs.webkit.webprefs.default_font_size = profile.privacy.fontSize;
     else delete prefs.webkit.webprefs.default_font_size;
@@ -694,8 +696,10 @@ class BrowserEngine {
     try {
       const persisted = JSON.parse(await fsp.readFile(file, 'utf8'));
       const issues = verifyLanguagePreferences(persisted, profile);
+      const dntMismatch = persisted.enable_do_not_track !== expectedDnt;
+      if (dntMismatch) issues.push({ key: 'enable_do_not_track', expected: expectedDnt ?? null, actual: persisted.enable_do_not_track ?? null });
       if (issues.length && typeof this.emit === 'function') {
-        this.emit({ type: 'profile-file-sync-error', id: profile.id, key: 'language', issues });
+        this.emit({ type: 'profile-file-sync-error', id: profile.id, key: dntMismatch ? 'preferences' : 'language', issues });
       }
       return { issues };
     } catch (error) {
@@ -753,9 +757,18 @@ class BrowserEngine {
         }
       })(),
     ];
-    if (!restoreSession) jobs.push(this.resetTabs(root));
+    jobs.push((async () => {
+      // Chromium may restore saved tabs even when launched with about:blank.
+      // Preserve the original files before removing them from the native path.
+      if (restoreSession) await preserveLegacySession(root, 'chromium');
+      await this.resetTabs(root);
+    })());
     if (profile.advanced.clearCacheOnStart) jobs.push(this.clearProfileCache(root));
-    await Promise.all(jobs);
+    // Keep the startup lock until every file writer has settled, including
+    // when archiving or one of the independent preparation steps fails.
+    const results = await Promise.allSettled(jobs);
+    const failed = results.find((result) => result.status === 'rejected');
+    if (failed) throw failed.reason;
   }
 
   resolveStartupUrls(profile) {

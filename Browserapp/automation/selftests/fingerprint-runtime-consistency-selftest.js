@@ -16,23 +16,23 @@ const profile = (id, privacy = {}) => ({ id, name: id, os: 'Windows',
 
 // Execute the production bootstrap up to its native-wrapper setup. This exposes
 // the actual pixel transform without implementing a second canvas algorithm.
-function noiseRealm(fp, worker, hostname) {
-  const context = { json: JSON.stringify({ seed: fp.seed, canvas: fp.canvas, stability: fp.stability }), bridgeToken: 'test', uaScript: '' };
+function noiseRealm(fp, worker, hostname, origin) {
+  const context = { json: JSON.stringify({ seed: fp.seed, canvas: fp.canvas, stability: fp.stability }),
+    bridgeToken: 'test', uaScript: '', canvasNoise: true };
   const source = worker ? workerBootstrap(context) : documentBootstrap(context);
   const boundary = worker ? '  const sources = ' : '  const originalToString';
   const offset = source.indexOf(boundary);
   assert.ok(offset > 0, 'production noise bootstrap boundary exists');
-  const scope = vm.createContext({});
-  vm.runInContext(`globalThis.location={hostname:${JSON.stringify(hostname)}};`, scope);
+  const scope = vm.createContext({ URL, origin, location: { hostname } });
   vm.runInContext(source.slice(0, offset) + `
-    globalThis.sample=()=>{
-      const image={width:128,height:96,data:new Uint8ClampedArray(128*96*4).fill(100)};
-      ${worker ? 'applyNoise' : 'applyCanvasNoise'}(image,CFG.canvas.mark);
+    globalThis.sample=(data=new Uint8ClampedArray(128*96*4).fill(100))=>{
+      const image={width:128,height:96,data};
+      applyCanvasNoise(image,CFG.canvas.mark);
       return {pixels:Array.from(image.data),active:stabilityActiveNow(),amp:noiseAmplitudeNow(),step:sampleStepDivisorNow()};
     };
     globalThis.transparent=()=>{
-      const image={width:16,height:16,data:new Uint8ClampedArray(16*16*4)};
-      ${worker ? 'applyNoise' : 'applyCanvasNoise'}(image,CFG.canvas.mark);
+      const image={width:128,height:96,data:new Uint8ClampedArray(128*96*4)};
+      applyCanvasNoise(image,CFG.canvas.mark);
       return Array.from(image.data);
     };
     ${worker ? '' : '} catch(error) {throw error;}'}
@@ -82,6 +82,17 @@ function networkRealm(fp, worker, expose = true) {
       assert.deepEqual(Array.from(results[0].pixels), Array.from(results[1].pixels), 'realm pixel parity');
     }
   });
+  await test('inherited origins use the same allowlist and exceptions as direct URLs', () => {
+    const fp = buildFingerprint(profile('inherited-origin', { stabilityHosts: ['example.test'], stabilitySkipHosts: ['cdn.'] }));
+    for (const worker of [false, true]) {
+      for (const [hostname, origin, active] of [
+        ['', 'https://a.example.test:8443', true],
+        ['', 'https://cdn.example.test', false],
+        ['a.example.test.', 'https://other.test', true],
+        ['', 'null', false],
+      ]) assert.equal(vm.runInContext('sample().active', noiseRealm(fp, worker, hostname, origin)), active);
+    }
+  });
   await test('stable samples repeat exactly, remain seed-specific, and preserve transparent pixels', () => {
     for (const worker of [false, true]) {
       const a = noiseRealm(buildFingerprint(profile('seed-a', { stabilityMode: 'force' })), worker, 'example.test');
@@ -90,6 +101,13 @@ function networkRealm(fp, worker, expose = true) {
       assert.deepEqual(pixels, Array.from(vm.runInContext('sample().pixels', a)));
       assert.notDeepEqual(pixels, Array.from(vm.runInContext('sample().pixels', b)));
       assert.ok(vm.runInContext('transparent().every(v=>v===0)', a));
+      const blankFirst = noiseRealm(buildFingerprint(profile('seed-a', { stabilityMode: 'force' })), worker, 'example.test');
+      vm.runInContext('transparent()', blankFirst);
+      assert.deepEqual(Array.from(vm.runInContext('sample().pixels', blankFirst)), pixels,
+        'a transparent first read cannot suppress noise on later opaque draws of the same size');
+      blankFirst.foreignPixels = new Uint8ClampedArray(128 * 96 * 4).fill(100);
+      assert.deepEqual(Array.from(vm.runInContext('sample(foreignPixels).pixels', blankFirst)), pixels,
+        'byte pixels from a different realm use the same sampling plan');
     }
   });
   await test('document and worker network accessors use one persona and preserve native contracts', () => {
@@ -191,6 +209,43 @@ function networkRealm(fp, worker, expose = true) {
     assert.equal(calls.find((c) => c.method === 'Emulation.setTimezoneOverride').params.timezoneId, '');
     assert.ok(calls.some((c) => c.method === 'Emulation.clearGeolocationOverride'));
     assert.equal(calls.find((c) => c.method === 'Browser.setPermission').params.setting, 'prompt');
+  });
+  await test('losing configured coordinates revokes the live grant before clearing native emulation', async () => {
+    const p = { ...profile('location-permission-reset', { geoMode: 'ip', geoPermission: 'allow' }), exitLatitude: 0, exitLongitude: 0 };
+    const fp = buildFingerprint(p), calls = [];
+    let failDenial = false;
+    const invoke = async (method, params) => {
+      calls.push({ method, params });
+      if (failDenial && method === 'Browser.setPermission' && params.setting === 'denied') throw new Error('permission update failed');
+      return method === 'Page.addScriptToEvaluateOnNewDocument' ? { identifier: 'location-source' } : {};
+    };
+    const options = { applyKey: 'location-policy' };
+    await applyFingerprintToTab(invoke, null, fp, p, options);
+    const override = calls.findIndex(({ method }) => method === 'Emulation.setGeolocationOverride');
+    const grant = calls.findIndex(({ method }) => method === 'Browser.setPermission');
+    assert.deepEqual(calls[override].params, fp.dynamicConfig.geoposition, 'CDP uses the same IP accuracy as generation');
+    assert.ok(override < grant && calls[grant].params.setting === 'granted', 'coordinates precede the grant');
+    const missing = { ...p, exitLatitude: null };
+    calls.length = 0;
+    failDenial = true;
+    await assert.rejects(applyFingerprintToTab(invoke, null, fp, missing, options), /permission update failed/);
+    assert.deepEqual(calls.map(({ method }) => method), ['Browser.setPermission'], 'a failed revocation keeps the existing override');
+    failDenial = false;
+    calls.length = 0;
+    await applyFingerprintToTab(invoke, null, fp, missing, options);
+    assert.deepEqual(calls, [
+      { method: 'Browser.setPermission', params: { permission: { name: 'geolocation' }, setting: 'denied' } },
+      { method: 'Emulation.clearGeolocationOverride', params: {} },
+    ]);
+    calls.length = 0;
+    await applyFingerprintToTab(invoke, null, fp, p, options);
+    assert.deepEqual(calls.map(({ method, params }) => [method, params.setting]),
+      [['Emulation.setGeolocationOverride', undefined], ['Browser.setPermission', 'granted']]);
+    calls.length = 0;
+    const legacyPrompt = { ...p, privacy: { ...p.privacy, geoMode: 'prompt', geoPermission: undefined } };
+    await applyFingerprintToTab(invoke, null, fp, legacyPrompt, options);
+    assert.deepEqual(calls.map(({ method, params }) => [method, params.setting]),
+      [['Browser.setPermission', 'prompt'], ['Emulation.clearGeolocationOverride', undefined]]);
   });
   await test('desktop profiles clear touch emulation left by a mobile identity', async () => {
     const calls = [], invoke = async (method, params) => {

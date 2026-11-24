@@ -320,8 +320,9 @@ async function main() {
 
   const scriptA = buildInjectionScript(a1);
   const scriptB = buildInjectionScript(b1);
-  assert.ok(scriptA.includes('\"canvas\":' + JSON.stringify(a1.canvas)));
-  assert.ok(!scriptA.includes('\"canvas\":' + JSON.stringify(b1.canvas)) || a1.canvas.mark === b1.canvas.mark);
+  const canvasConfig = (script) => JSON.parse(script.match(/^  const CFG = (.+);$/m)[1]).canvas;
+  assert.deepStrictEqual(canvasConfig(scriptA), { mode: a1.canvas.mode, mark: a1.canvas.mark });
+  assert.deepStrictEqual(canvasConfig(scriptB), { mode: b1.canvas.mode, mark: b1.canvas.mark });
   assert.ok(scriptA.length > 500);
   assert.notStrictEqual(scriptA, scriptB);
   assert.ok(scriptA.includes('enumerateDevices') || scriptA.includes('mediaDevices'));

@@ -16,6 +16,7 @@ const { ProfileRoutes } = require('../api/profile-routes');
 const { clearFirefoxPlaces } = require('../browser-data');
 const { DatabaseSync } = require('node:sqlite');
 const { buildEditorUa } = require('../editor-ua');
+const { formatAcceptLanguage } = require('../user-agent');
 const { receiverShadowSnapshot } = require('./fingerprint-receiver-probes');
 const { BidiConnection, waitForFirefoxEndpoint, evaluateBidi } = require('../../network/bidi-connection');
 
@@ -30,9 +31,9 @@ async function run(generation, shortVersion = false) {
   if (!version) throw new Error('Cannot determine the native Firefox version');
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ob-firefox-fingerprint-'));
   const requests = [];
-  const probe = `({ua:navigator.userAgent,platform:navigator.platform,vendor:navigator.vendor,cores:navigator.hardwareConcurrency,memoryPresent:'deviceMemory' in navigator,chromePresent:'chrome' in window,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,width:screen.width,height:screen.height,rtc:typeof RTCPeerConnection,webgl:Boolean(document.createElement('canvas').getContext('webgl'))})`;
+  const probe = `({ua:navigator.userAgent,platform:navigator.platform,vendor:navigator.vendor,cores:navigator.hardwareConcurrency,memoryPresent:'deviceMemory' in navigator,chromePresent:'chrome' in window,language:navigator.language,languages:Array.from(navigator.languages),timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,width:screen.width,height:screen.height,rtc:typeof RTCPeerConnection,webgl:Boolean(document.createElement('canvas').getContext('webgl')),dnt:navigator.doNotTrack??null})`;
   const server = http.createServer((request, response) => {
-    requests.push({ path: request.url, ua: request.headers['user-agent'] });
+    requests.push({ path: request.url, ua: request.headers['user-agent'], languages: request.headers['accept-language'], dnt: request.headers.dnt });
     response.setHeader('Content-Type', 'text/html; charset=utf-8');
     response.end(`<!doctype html><script>window.firstFingerprint=${probe};</script>${request.url === '/doc' ? '<iframe src="/frame"></iframe>' : ''}`);
   });
@@ -40,12 +41,14 @@ async function run(generation, shortVersion = false) {
   let connection;
   try {
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-    const profile = sanitizeProfile({ id: 'firefox-native', fingerprintVersion: generation, name: 'Firefox native', engine: 'firefox', os: 'Windows', width: 1440, height: 900, privacy: { cores: 4, memory: 0, webrtc: 'disabled', fontListMode: 'real', timezoneMode: 'custom', timezone: 'America/New_York' }, advanced: { showInfoPage: false } });
+    const dntMode = generation === 1 ? 'on' : shortVersion === true ? 'off' : 'default';
+    const profile = sanitizeProfile({ id: 'firefox-native', fingerprintVersion: generation, name: 'Firefox native', engine: 'firefox', os: 'Windows', width: 1440, height: 900, privacy: { cores: 4, memory: 0, webrtc: 'disabled', fontListMode: 'real', timezoneMode: 'custom', timezone: 'America/New_York', dntMode }, advanced: { showInfoPage: false } });
     // Exercise the default proxy policy without an address, and a nested
     // real override that must restore the native preference.
     if (generation === 1) {
       profile.privacy.webrtc = 'proxy';
       profile.privacy.webgl = 'blocked';
+      profile.privacy.fingerprint = { ...profile.privacy.fingerprint, languages: ['fr_ca', 'en-US;q=0.9', 'FR-CA'] };
     }
     if (shortVersion === true) profile.privacy.fingerprint = {
       ...profile.privacy.fingerprint, uaGenerated: true, uaReduced: true, webrtc: 'real',
@@ -57,8 +60,10 @@ async function run(generation, shortVersion = false) {
         uaPatchRandomized: generated.uaPatchRandomized };
     }
     const fp = buildFirefoxFingerprint(profile, version);
+    if (generation === 1) assert.deepEqual(fp.languages, ['fr-CA', 'en-US']);
     if (shortVersion === true) assert.match(fp.userAgent, new RegExp('Firefox/' + version.split('.')[0] + '$'));
     if (shortVersion === 'random') assert.equal(fp.userAgent, profile.userAgent);
+    await fs.writeFile(path.join(root, 'prefs.js'), 'user_pref("privacy.donottrackheader.enabled", true);\n');
     await fs.writeFile(path.join(root, 'user.js'), buildFirefoxUserJs({
       userAgent: fp.userAgent, acceptLanguages: fp.languages.join(','), locale: fp.languages[0],
       proxyEndpoint: 'http://127.0.0.1:9', noProxyHosts: '127.0.0.1, localhost',
@@ -72,6 +77,8 @@ async function run(generation, shortVersion = false) {
     connection = await new BidiConnection(await waitForFirefoxEndpoint(child)).open();
     const initialized = await initializeFirefoxFingerprint(connection, fp, profile);
     await navigateFirefoxStartup(connection, initialized.context, [`http://127.0.0.1:${server.address().port}/doc`]);
+    const nativeDnt = await evaluateBidi(connection, { context: initialized.context, sandbox: 'native-dnt-reference' }, 'navigator.doNotTrack ?? null');
+    assert.equal(nativeDnt === '1', dntMode === 'on');
     const delivered = await evaluateBidi(connection, { context: initialized.context }, `new Promise((resolve,reject)=>{const deadline=Date.now()+5000;const poll=()=>{const frame=document.querySelector('iframe');if(frame?.contentWindow?.firstFingerprint)resolve({main:window.firstFingerprint,frame:frame.contentWindow.firstFingerprint});else if(Date.now()>deadline)reject(new Error('iframe did not load'));else setTimeout(poll,25)};poll()})`);
     for (const realm of [delivered.main, delivered.frame]) {
       assert.equal(realm.ua, fp.userAgent);
@@ -80,11 +87,14 @@ async function run(generation, shortVersion = false) {
       assert.equal(realm.cores, 4);
       assert.equal(realm.memoryPresent, false);
       assert.equal(realm.chromePresent, false);
+      assert.equal(realm.language, fp.languages[0]);
+      assert.deepEqual(realm.languages, fp.languages);
       assert.equal(realm.rtc, shortVersion === true ? 'function' : 'undefined');
       if (generation === 1) assert.equal(realm.webgl, false);
       assert.equal(realm.timezone, fp.timezone);
       assert.equal(realm.width, fp.screen.width);
       assert.equal(realm.height, fp.screen.height);
+      assert.equal(realm.dnt, nativeDnt, 'first script reads the native DNT setting');
     }
     const receivers = await evaluateBidi(connection, { context: initialized.context }, '(' + receiverShadowSnapshot.toString() + ')()');
     for (const [name, value] of Object.entries(receivers)) {
@@ -95,6 +105,11 @@ async function run(generation, shortVersion = false) {
     }
     assert.ok(requests.some((request) => request.path === '/doc' && request.ua === fp.userAgent));
     assert.ok(requests.some((request) => request.path === '/frame' && request.ua === fp.userAgent));
+    for (const path of ['/doc', '/frame']) {
+      const request = requests.find((request) => request.path === path);
+      assert.equal(formatAcceptLanguage(request?.languages), fp.languages.join(','), path + ' language list');
+      assert.equal(request?.dnt ?? null, fp.doNotTrack, path + ' native DNT request header');
+    }
     const routes = new ProfileRoutes({ engine: {
       profiles: new Map([[profile.id, profile]]),
       running: new Map([[profile.id, { engine: 'firefox', bidiConnection: connection, bidiContext: initialized.context }]]),

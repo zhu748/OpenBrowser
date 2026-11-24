@@ -19,6 +19,24 @@ const { buildFingerprint } = require('../fingerprint');
 async function main() {
   console.log('=== Running kernel-init-contract-selftest ===');
 
+  const locationProfile = { id: 'location-transition', privacy: { geoMode: 'custom', geoPermission: 'allow',
+    latitude: 0, longitude: 0, accuracy: 275 }, exitLatitude: 20, exitLongitude: 30 };
+  const locationFp = buildFingerprint(locationProfile);
+  const locationInit = { ipc: { browser_window_name: 'location-transition' } };
+  applyFingerprintFields(locationInit, mapFingerprintToInitFields(locationFp, locationProfile));
+  assert.strictEqual(locationInit.geoposition, '0,0,275');
+  for (const patch of [{ geoPermission: 'deny' }, { geoMode: 'disabled' }, { geoMode: 'prompt', geoPermission: 'prompt' }, { latitude: null }]) {
+    const next = { ...locationProfile, privacy: { ...locationProfile.privacy, ...patch } };
+    const fp = buildFingerprint(next);
+    assert.strictEqual(fp.dynamicConfig.geoposition, null, 'the generated identity has no deliverable position');
+    const updated = { ...locationInit };
+    applyFingerprintFields(updated, mapFingerprintToInitFields(fp, next));
+    assert.ok(!Object.hasOwn(updated, 'geoposition'), 'previous native coordinates are removed');
+    assert.deepStrictEqual(updated.ipc, locationInit.ipc);
+  }
+  assert.strictEqual(mapFingerprintToInitFields({ dynamicConfig: { geopositionText: '0,0,275' } }).geoposition, '0,0,275');
+  assert.strictEqual(mapFingerprintToInitFields({ dynamicConfig: { geopositionText: ',0,275' } }).geoposition, null);
+
   // =========================================================================
   // Section A: Font fingerprint switch and list paired invariant
   // =========================================================================
@@ -127,6 +145,15 @@ async function main() {
   // Section B: canvas / webgl exemption list co-source invariant
   // =========================================================================
   console.log('Testing Section B: canvas / webgl exemption list co-source invariant...');
+
+  const customProfile = { id: 'custom-stability', privacy: { stabilityHamming: 21,
+    stabilityMaxWidth: 744, stabilityMaxHeight: 512, stabilitySquare: 7 } };
+  const customFields = mapFingerprintToInitFields(buildFingerprint(customProfile), customProfile);
+  const expectedGeometry = { enable: true, hanming_distance: 21, max_height: 512, max_width: 744, square_side_length: 7 };
+  assert.deepStrictEqual(customFields._canvasConsistencyPatch, expectedGeometry);
+  assert.deepStrictEqual(customFields._webglConsistencyPatch, expectedGeometry);
+  const legacyFields = mapFingerprintToInitFields({ ...buildFingerprint(customProfile), stability: { hammingThreshold: 19 } });
+  assert.strictEqual(legacyFields._canvasConsistencyPatch.hanming_distance, 19);
 
   // 1. Normal mapping: _canvasSkipHosts and _webglSkipHosts must be identical
   const fpWithSkip = {

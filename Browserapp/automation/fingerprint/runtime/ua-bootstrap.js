@@ -5,7 +5,7 @@
  * host state in the builder; this closure receives only JSON data and its token.
  * The authored function is linted before the emitted script is parsed/tested.
  */
-module.exports = (U, UA_BRIDGE_TOKEN) => {
+module.exports = (U, UA_BRIDGE_TOKEN, documentBridgeToken) => {
   const nativeSource = new WeakMap();
   const originalToString = Function.prototype.toString;
   // Native errors belong to the getter/method's realm. Never inspect a
@@ -17,8 +17,16 @@ module.exports = (U, UA_BRIDGE_TOKEN) => {
 
   const patchSubWindow = (subWin) => {
     try {
-      if (!subWin || patchedSubWindows.has(subWin)) return;
-      patchedSubWindows.add(subWin);
+      const doc = subWin?.document;
+      if (!doc || patchedSubDocuments.has(doc)) return;
+      patchedSubDocuments.add(doc);
+      // Check before replacing any function or accessor in the child realm.
+      if (documentBridgeToken) {
+        try {
+          const toString = subWin.Function?.prototype?.toString;
+          if (toString?.call(toString, documentBridgeToken, 'documentInstalled') === true) return;
+        } catch (_) {}
+      }
       if (subWin.Function && subWin.Function.prototype) {
         const origSubToString = subWin.Function.prototype.toString;
         if (!nativeSource.has(origSubToString)) {
@@ -77,7 +85,7 @@ module.exports = (U, UA_BRIDGE_TOKEN) => {
     } catch (_) {}
   };
 
-  const patchedSubWindows = new WeakSet();
+  const patchedSubDocuments = new WeakSet();
   const hookIframeAccess = (targetWin) => {
     try {
       const win = targetWin || (typeof window !== "undefined" ? window : null);

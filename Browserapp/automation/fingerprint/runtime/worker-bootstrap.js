@@ -1,10 +1,11 @@
 'use strict';
 
 const { runtimeSource: stabilityRuntime } = require('../noise-policy');
+const { runtimeSource: canvasNoiseRuntime } = require('./canvas-noise');
 const { WORKER_RUNTIME_REVISION } = require('../runtime-revision');
 
 // Ordered fragment of one emitted IIFE; runtime-source.js owns assembly.
-module.exports = function bootstrap({ json, bridgeToken }) {
+module.exports = function bootstrap({ json, bridgeToken, canvasNoise }) {
   return `(function installWorkerIdentity(originalWorkerUrl, constructorInstaller) {
   const CFG = ${json};
   const nativeTypeError = TypeError;
@@ -22,72 +23,8 @@ module.exports = function bootstrap({ json, bridgeToken }) {
 
   const seedNum = parseInt(String(CFG.seed || '1').slice(0, 8), 16) || 1;
   const noise = (n) => { const x = Math.sin((n + 1) * seedNum) * 10000; return x - Math.floor(x); };
-  const square = Math.max(2, Number(CFG.stability?.square) || 8);
-  const workerLocks = new Map();
-  // Bounded like the main thread's canvasNoiseLocks: video/frame-processing
-  // workers allocate many distinct canvas sizes and the map must not grow for
-  // the worker's whole lifetime.
-  const WORKER_LOCK_LIMIT = 64;
-  const rememberWorkerLock = (key, locked) => {
-    if (workerLocks.size >= WORKER_LOCK_LIMIT) {
-      const oldest = workerLocks.keys().next().value;
-      if (oldest !== undefined) workerLocks.delete(oldest);
-    }
-    workerLocks.set(key, locked);
-  };
 ${stabilityRuntime}
-  const applyNoise = (imageData, mark) => {
-    try {
-      const data = imageData.data;
-      const width = imageData.width || 0;
-      const height = imageData.height || 0;
-      const maxW = Number(CFG.stability?.maxWidth) || 600;
-      const maxH = Number(CFG.stability?.maxHeight) || 600;
-      const limitW = width > 0 ? Math.min(width, maxW) : width;
-      const limitH = height > 0 ? Math.min(height, maxH) : height;
-      const amp = noiseAmplitudeNow();
-      const stableWorker = stabilityActiveNow();
-      if (width > 0 && height > 0) {
-        if (stableWorker) {
-          const key = width + 'x' + height + ':' + mark + ':' + square + ':' + amp;
-          let locked = workerLocks.get(key);
-          if (!locked) {
-            locked = [];
-            for (let y = 0; y < limitH; y += square) {
-              for (let x = 0; x < limitW; x += square) {
-                const px = ((y * width) + x) * 4;
-                if (px + 3 >= data.length) continue;
-                if (data[px + 3] === 0) continue;
-                locked.push({ px: px, delta: noiseDelta(noise(px + mark), amp) });
-              }
-            }
-            rememberWorkerLock(key, locked);
-          }
-          for (let i = 0; i < locked.length; i += 1) {            const item = locked[i];
-            if (item.px + 3 >= data.length) continue;
-            if (data[item.px + 3] === 0) continue;
-            data[item.px] = Math.max(0, Math.min(255, data[item.px] + item.delta));
-          }
-          return imageData;
-        }
-        for (let y = 0; y < limitH; y += square) {
-          for (let x = 0; x < limitW; x += square) {
-            const px = ((y * width) + x) * 4;
-            if (px + 3 >= data.length) continue;
-            if (data[px + 3] === 0) continue;
-            const n = noiseDelta(noise(px + mark), amp);
-            data[px] = Math.max(0, Math.min(255, data[px] + n));
-          }
-        }
-      } else {
-        for (let i = 0; i < data.length; i += 4) {
-          const n = noiseDelta(noise(i + mark), amp);
-          data[i] = Math.max(0, Math.min(255, data[i] + n));
-        }
-      }
-    } catch (_) {}
-    return imageData;
-  };
+${canvasNoise ? canvasNoiseRuntime : ''}
   const sources = new WeakMap();
   const originalToString = Function.prototype.toString;
   const BRIDGE_TOKEN = ${JSON.stringify(bridgeToken)};

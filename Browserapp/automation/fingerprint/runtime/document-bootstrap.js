@@ -1,9 +1,10 @@
 'use strict';
 
 const { runtimeSource: stabilityRuntime } = require('../noise-policy');
+const { runtimeSource: canvasNoiseRuntime } = require('./canvas-noise');
 
 // Ordered fragment of one emitted IIFE; runtime-source.js owns assembly.
-module.exports = function bootstrap({ uaScript, json, bridgeToken }) {
+module.exports = function bootstrap({ uaScript, json, bridgeToken, canvasNoise }) {
   return `${uaScript}
 (() => {
   try {
@@ -23,70 +24,7 @@ module.exports = function bootstrap({ uaScript, json, bridgeToken }) {
     return x - Math.floor(x);
   };
 ${stabilityRuntime}
-  const canvasNoiseLocks = new Map();
-  // Lock entries are keyed by canvas size × call site; a page that allocates
-  // many distinct sizes (video frames, chart libraries) used to grow the map
-  // without bound for the document's lifetime. 64 keys × a few hundred deltas
-  // each covers real usage; the oldest entry is evicted first.
-  const CANVAS_NOISE_LOCK_LIMIT = 64;
-  const rememberCanvasNoiseLock = (key, locked) => {
-    if (canvasNoiseLocks.size >= CANVAS_NOISE_LOCK_LIMIT) {
-      const oldest = canvasNoiseLocks.keys().next().value;
-      if (oldest !== undefined) canvasNoiseLocks.delete(oldest);
-    }
-    canvasNoiseLocks.set(key, locked);
-  };
-  const applyCanvasNoise = (imageData, mark) => {
-    try {
-      if (!imageData || !imageData.data) return imageData;
-      const data = imageData.data;
-      if (!(data instanceof Uint8ClampedArray) && !(data instanceof Uint8Array)) return imageData;
-      const amp = noiseAmplitudeNow();
-      const maxW = Number(CFG.stability?.maxWidth) || 600;
-      const maxH = Number(CFG.stability?.maxHeight) || 600;
-      const width = imageData.width || 0;
-      const height = imageData.height || 0;
-      const limitW = width > 0 ? Math.min(width, maxW) : width;
-      const limitH = height > 0 ? Math.min(height, maxH) : height;
-      const square = Math.max(2, Number(CFG.stability?.square) || 8);
-      const stable = stabilityActiveNow();
-      // On high-risk hosts, lock first-read deltas so repeated samples stay within hamming threshold.
-      if (stable) {
-        const key = width + 'x' + height + ':' + mark + ':' + square + ':' + amp;
-        let locked = canvasNoiseLocks.get(key);
-        if (!locked) {
-          locked = [];
-          for (let y = 0; y < (limitH || height); y += square) {
-            for (let x = 0; x < (limitW || width); x += square) {
-              const px = ((y * width) + x) * 4;
-              if (px + 3 >= data.length) continue;
-              if (data[px + 3] === 0) continue;
-              const delta = noiseDelta(noise(px + mark), amp);
-              locked.push({ px: px, delta: delta });
-            }
-          }
-          rememberCanvasNoiseLock(key, locked);
-        }
-        for (let i = 0; i < locked.length; i += 1) {
-          const item = locked[i];
-          if (item.px + 3 >= data.length) continue;
-          if (data[item.px + 3] === 0) continue;
-          data[item.px] = Math.max(0, Math.min(255, data[item.px] + item.delta));
-        }
-        return imageData;
-      }
-      for (let y = 0; y < (limitH || height); y += square) {
-        for (let x = 0; x < (limitW || width); x += square) {
-          const px = ((y * width) + x) * 4;
-          if (px + 3 >= data.length) continue;
-          if (data[px + 3] === 0) continue;
-          const n = noiseDelta(noise(px + mark), amp);
-          data[px] = Math.max(0, Math.min(255, data[px] + n));
-        }
-      }
-    } catch (_) {}
-    return imageData;
-  };
+${canvasNoise ? canvasNoiseRuntime : ''}
   const originalToString = Function.prototype.toString;
   const BRIDGE_TOKEN = ${JSON.stringify(bridgeToken)};
   const nativeSource = new WeakMap();

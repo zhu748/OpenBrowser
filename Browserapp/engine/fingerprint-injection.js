@@ -812,11 +812,11 @@ module.exports = {
     const network = this.networkInfo.get(profile.id) || {};
     const enriched = {
       ...profile,
-      exitTimezone: profile.exitTimezone || network.timezone || '',
       exitLatitude: profile.exitLatitude ?? network.latitude,
       exitLongitude: profile.exitLongitude ?? network.longitude,
     };
-    const baseFp = fingerprint || item.fingerprint || buildFingerprint(enriched);
+    const baseFp = fingerprint || item.fingerprint
+      || buildFingerprint(enriched, { timezone: resolveProfileTimezone(profile, network) || null });
     const injectFp = item.nativeKernelFingerprint
       ? fingerprintForNativeKernelInject(baseFp)
       : baseFp;
@@ -1082,7 +1082,7 @@ module.exports = {
     const patch = {
       exitIp: network.ip || '',
       exitCountryCode: network.countryCode || '',
-      exitTimezone: tzMode === 'real' ? '' : (timezone || network.timezone || ''),
+      exitTimezone: timezone,
       exitLatitude: network.latitude ?? null,
       exitLongitude: network.longitude ?? null,
       exitCheckedAt: network.checkedAt || new Date().toISOString(),

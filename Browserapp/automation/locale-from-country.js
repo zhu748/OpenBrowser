@@ -245,6 +245,20 @@ function timezoneFromCountryCode(countryCode, fallback = '') {
   return COUNTRY_TO_TIMEZONE[code] || fallback;
 }
 
+function normalizeLanguageTags(value) {
+  const entries = Array.isArray(value) ? value : (typeof value === 'string' ? value.split(',') : []);
+  const tags = new Set();
+  for (const entry of entries) {
+    if (typeof entry !== 'string') continue;
+    // Legacy imports may contain underscores or an Accept-Language weight.
+    const tag = entry.trim().match(/^([a-z0-9_-]+)(?: *; *q *= *[0-9.]+)?$/i)?.[1];
+    if (!tag || /^(ip|system|real|profile)$/i.test(tag)) continue;
+    try { tags.add(Intl.getCanonicalLocales(tag.replace(/_/g, '-'))[0]); }
+    catch (_) { /* Ill-formed tags cannot be delivered to the browser. */ }
+  }
+  return [...tags];
+}
+
 /**
  * Resolve effective IANA timezone for a profile.
  * - 'real' mode: returns '' (explicitly indicates using host system timezone, no spoofing).
@@ -254,8 +268,7 @@ function timezoneFromCountryCode(countryCode, fallback = '') {
  *   2. If network lacks a valid timezone, preserves existing valid profile timezone
  *      (as long as the exit country has not changed).
  *   3. Stably derives a conservative IANA timezone from the exit ISO country code.
- *   4. If country derivation is not possible, preserves any known profile timezone.
- *      Never clears to '' when a profile timezone is known.
+ *   4. If country derivation is not possible, preserves a known valid profile timezone.
  */
 function resolveProfileTimezone(profile = {}, network = {}) {
   const privacy = (profile && profile.privacy) || {};
@@ -274,18 +287,8 @@ function resolveProfileTimezone(profile = {}, network = {}) {
     return '';
   };
 
-  const pickFirstNonEmpty = (...candidates) => {
-    for (const c of candidates) {
-      if (typeof c === 'string' && c.trim()) {
-        return c.trim();
-      }
-    }
-    return '';
-  };
-
   if (mode === 'custom') {
-    return pickValid(privacy.timezone, profile?.exitTimezone, network?.timezone)
-      || pickFirstNonEmpty(privacy.timezone, profile?.exitTimezone, network?.timezone);
+    return pickValid(privacy.timezone, profile?.exitTimezone, network?.timezone);
   }
 
   // mode === 'ip' (default)
@@ -319,11 +322,6 @@ function resolveProfileTimezone(profile = {}, network = {}) {
     return profTz;
   }
 
-  const fallbackKnown = pickFirstNonEmpty(profile?.exitTimezone, privacy.timezone, profile?.timezone);
-  if (fallbackKnown) {
-    return fallbackKnown;
-  }
-
   return '';
 }
 
@@ -345,7 +343,7 @@ function resolveProfileLanguage(profile = {}, network = {}) {
     }
   }
 
-  if (mode === 'system') {
+  if (/^(system|real)$/i.test(mode)) {
     try {
       return Intl.DateTimeFormat().resolvedOptions().locale || 'en-US';
     } catch (_) {
@@ -353,18 +351,12 @@ function resolveProfileLanguage(profile = {}, network = {}) {
     }
   }
 
-  if (mode === 'ip') {
+  if (mode.toLowerCase() === 'ip') {
     const cc = (network && network.countryCode) || (profile && profile.exitCountryCode) || '';
     return localeFromCountryCode(cc, (profile && profile.language) || 'en-US');
   }
 
-  // explicit locale
-  if (/^[a-z]{2}(-[A-Za-z]{2})?$/.test(mode)) {
-    const [lang, region] = mode.split('-');
-    return region ? `${lang.toLowerCase()}-${region.toUpperCase()}` : lang.toLowerCase();
-  }
-
-  return (profile && profile.language) || 'en-US';
+  return normalizeLanguageTags([mode])[0] || (profile && profile.language) || 'en-US';
 }
 
 const api = {
@@ -375,6 +367,7 @@ const api = {
   isIanaTimezoneId,
   resolveProfileTimezone,
   resolveProfileLanguage,
+  normalizeLanguageTags,
 };
 
 if (typeof module === 'object' && module.exports) module.exports = api;

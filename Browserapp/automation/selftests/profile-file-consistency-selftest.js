@@ -8,9 +8,12 @@ const {
   NATIVE_MANAGED_PREFERENCE_KEYS,
   languagePreferenceChain,
   applyLanguagePreferences,
+  expectedLocalState,
   verifyLanguagePreferences,
   syncProfileLanguagePreferences,
 } = require('../profile-file-consistency');
+const { buildFingerprint } = require('../fingerprint');
+const { sanitizeProfile } = require('../../engine/profile-sanitizer');
 
 const results = [];
 async function check(name, fn) {
@@ -24,6 +27,25 @@ async function check(name, fn) {
     assert.strictEqual(languagePreferenceChain('en-US'), 'en-US,en');
     assert.strictEqual(languagePreferenceChain('ja-JP,ja'), 'ja-JP,ja');
     assert.strictEqual(languagePreferenceChain('zh-Hans-CN'), 'zh-Hans-CN,zh');
+  });
+
+  await check('saved locale overrides match browser preferences, document identity and HTTP weights', () => {
+    const profile = sanitizeProfile({
+      id: 'locale-alignment', name: 'Locale alignment', language: 'en-US',
+      privacy: { fingerprint: { languages: ['zh_hant_hk', 'ja-JP;q=0.8', 'ZH-Hant-HK', '*', 'de-DE\ninvalid'] } },
+    });
+    const fp = buildFingerprint(profile);
+    assert.deepStrictEqual(fp.languages, ['zh-Hant-HK', 'ja-JP']);
+    assert.strictEqual(fp.acceptLanguage, 'zh-Hant-HK,ja-JP;q=0.9');
+    const prefs = {};
+    applyLanguagePreferences(prefs, profile);
+    assert.strictEqual(prefs.intl.accept_languages, fp.languages.join(','));
+    assert.strictEqual(prefs.intl.selected_languages, fp.languages.join(','));
+    assert.strictEqual(expectedLocalState(profile).intl.app_locale, fp.languages[0]);
+    assert.deepStrictEqual(buildFingerprint({ language: 'de-DE', privacy: {
+      languages: ['*', false], fingerprint: { languages: ['FR_fr'] },
+    } }).languages, ['fr-FR', 'fr']);
+    assert.deepStrictEqual(buildFingerprint({ privacy: { languageMode: 'sr-Latn-RS' } }).languages, ['sr-Latn-RS', 'sr']);
   });
 
   await check('language sync preserves native-managed preference groups', async () => {

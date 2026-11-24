@@ -138,7 +138,7 @@ async function launchPersonaBrowser(browser, persona, options = {}) {
   try {
     if (options.profileRoot) await fsp.rm(path.join(root, 'DevToolsActivePort'), { force: true });
     const initialArgs = buildBaseLaunchArguments({ root, fingerprint, profile, hostScaleFactor: options.hostDpr || 1 });
-    const args = completeLaunchArguments(initialArgs, { profile, proxyConfig: null,
+    const args = completeLaunchArguments(initialArgs, { profile, fingerprint, proxyConfig: null,
       proxyEndpoint: 'http://127.0.0.1:9' }).args.filter((arg) => arg !== 'about:blank');
     // Only loopback test pages may bypass the unavailable outbound proxy.
     args.push(...(options.headless === false ? [] : ['--headless=new']), '--disable-dev-shm-usage', '--disable-background-networking',

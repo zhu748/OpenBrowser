@@ -15,11 +15,18 @@ function exerciseCanvas() {
   const pixel = () => [...ctx.getImageData(0, 0, 4, 4).data.slice(0, 4)];
   ctx.fillStyle = 'red'; ctx.fillRect(0, 0, 4, 4);
   const image = ctx.getImageData(0, 0, 4, 4);
-  const before = [...image.data];
+  const view = image.data, before = [...view];
+  let inputReads = 0;
+  Object.defineProperties(image, {
+    data: { get() { inputReads++; return view; } },
+    width: { get() { inputReads++; return 4; } },
+    height: { get() { inputReads++; return 4; } },
+  });
+  Object.defineProperty(view, 'constructor', { get() { inputReads++; return Uint8ClampedArray; } });
   ctx.putImageData(image, 0, 0);
   const roundtrip = [...ctx.getImageData(0, 0, 4, 4).data];
   // Mutating the caller's ImageData does not modify the canvas or its hint.
-  image.data.fill(0);
+  view.fill(0);
   const afterCallerMutation = pixel();
   ctx.fillStyle = 'blue'; ctx.fillRect(0, 0, 4, 4);
   const afterDraw = pixel();
@@ -34,7 +41,18 @@ function exerciseCanvas() {
   const afterResize = pixel();
   let invalidWriteThrew = false;
   try { ctx.putImageData(null, 0, 0); } catch (_) { invalidWriteThrew = true; }
-  return { before, roundtrip, afterCallerMutation, afterDraw, afterClear, outsideDirty, afterResize, invalidWriteThrew };
+  const wide = typeof document === 'object' ? document.createElement('canvas') : new OffscreenCanvas(64, 32);
+  wide.width = 64; wide.height = 32;
+  const color = wide.getContext('2d'); color.fillStyle = 'rgb(132, 60, 18)'; color.fillRect(0, 0, 64, 32);
+  let floatPixels = null;
+  try {
+    const floats = color.getImageData(0, 0, 64, 32, { pixelFormat: 'rgba-float16' }).data;
+    if (Object.prototype.toString.call(floats) === '[object Float16Array]') {
+      floatPixels = [];
+      for (let y = 0; y < 32; y += 8) for (let x = 0; x < 64; x += 8) floatPixels.push(floats[(y * 64 + x) * 4]);
+    }
+  } catch (_) { /* Float16 readback is optional on older kernels. */ }
+  return { before, roundtrip, afterCallerMutation, afterDraw, afterClear, outsideDirty, afterResize, invalidWriteThrew, inputReads, floatPixels };
 }
 
 function verify(result) {
@@ -44,6 +62,7 @@ function verify(result) {
   assert.deepEqual(result.afterClear, [0, 0, 0, 0]);
   assert.deepEqual(result.afterResize, [0, 0, 0, 0]);
   assert.equal(result.invalidWriteThrew, true, 'native argument errors remain intact');
+  assert.equal(result.inputReads, 0, 'putImageData keeps native access to its pixels and ignores shadowed accessors');
 }
 
 // The same WebIDL and identity checks run in Window and WorkerGlobalScope.
@@ -79,6 +98,56 @@ function verifyTextMetrics(result) {
   assert.equal(result.fontChangeMatches, true, 'coercion-time font changes affect the measured metrics');
   assert.equal(result.fontSwapChangeMatches, true, 'font sanitization cannot revert coercion-time font edits');
   assert.equal(result.constructorMatches, true);
+}
+
+async function exerciseHtmlEncoding() {
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  const thrown = new Error('mime conversion');
+  let getterReads = 0, invalidReceiverReads = 0;
+  const width = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, 'width').get;
+  Object.defineProperty(canvas, 'width', { get() { getterReads++; return width.call(this); } });
+  const invalidReceiver = { get width() { invalidReceiverReads++; return 2; } };
+  const result = {};
+  for (const method of ['toDataURL', 'toBlob']) {
+    const encode = (type) => method === 'toDataURL'
+      ? fetch(canvas.toDataURL(type)).then((response) => response.blob())
+      : new Promise((resolve) => canvas.toBlob(resolve, type));
+    let reads = 0, keptError = false;
+    try { await encode({ toString() { if (++reads === 1) throw thrown; return 'image/png'; } }); }
+    catch (error) { keptError = error === thrown; }
+    let invalidError = '';
+    try {
+      HTMLCanvasElement.prototype[method].apply(invalidReceiver, method === 'toBlob' ? [() => {}] : []);
+    } catch (error) { invalidError = error.name; }
+    canvas.height = 2;
+    context.fillStyle = 'red'; context.fillRect(0, 0, 8, 2);
+    const blob = await encode({
+      toString() {
+        canvas.height = 5;
+        context.fillStyle = 'blue'; context.fillRect(0, 0, 8, 5);
+        return 'image/png';
+      },
+    });
+    const bitmap = await createImageBitmap(blob);
+    const copy = new OffscreenCanvas(bitmap.width, bitmap.height), copied = copy.getContext('2d');
+    copied.drawImage(bitmap, 0, 0); bitmap.close();
+    result[method] = { reads, keptError, invalidError, height: copy.height, pixel: [...copied.getImageData(0, 0, 1, 1).data] };
+  }
+  return { ...result, getterReads, invalidReceiverReads };
+}
+
+function verifyHtmlEncoding(result) {
+  for (const method of ['toDataURL', 'toBlob']) {
+    const row = result[method];
+    assert.equal(row.reads, 1, method + ' converts a throwing MIME value once');
+    assert.equal(row.keptError, true, method + ' preserves the original conversion exception');
+    assert.equal(row.invalidError, 'TypeError');
+    assert.equal(row.height, 5, method + ' captures the canvas after MIME conversion');
+    assert.ok(row.pixel[2] > 245 && row.pixel[0] < 10, method + ' retains conversion-time drawing');
+  }
+  assert.equal(result.getterReads, 0, 'encoding uses the native canvas dimensions');
+  assert.equal(result.invalidReceiverReads, 0, 'invalid receivers do not expose their properties');
 }
 
 async function exerciseOffscreenEncoding() {
@@ -264,6 +333,7 @@ async function main() {
     timers.add(timer);
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  let nativeFloatPixels, nativeWorkerFloatPixels;
   try {
     for (const mode of ['real', 'noise']) {
       const profile = sanitizeProfile({ id: 'semantics-' + mode, name: 'Semantics', os: 'Windows',
@@ -278,7 +348,10 @@ async function main() {
         const style = await h.evaluate(connection, 'document.querySelector("style").textContent');
         if (mode === 'real') assert.equal(style, css, 'follow-system mode preserves original CSS');
         else assert.ok(!style.includes('Review Forbidden Font') && style.includes('SysFallback'), style);
-        verify(await h.evaluate(connection, '(' + exerciseCanvas.toString() + ')()'));
+        const canvas = await h.evaluate(connection, '(' + exerciseCanvas.toString() + ')()');
+        verify(canvas);
+        if (mode === 'real') nativeFloatPixels = canvas.floatPixels;
+        assert.deepEqual(canvas.floatPixels, nativeFloatPixels, 'document Float16 pixels retain native values');
         verifyAudio(await h.evaluate(connection, '(' + exerciseAudio.toString() + ')()'));
         const text = await h.evaluate(connection, '(' + exerciseTextMetrics.toString() + ')()');
         verifyTextMetrics(text);
@@ -291,7 +364,10 @@ async function main() {
           worker.onmessage=e=>{clearTimeout(timer);worker.terminate();URL.revokeObjectURL(url);resolve(e.data);};
           worker.onerror=e=>{clearTimeout(timer);worker.terminate();URL.revokeObjectURL(url);reject(Error(e.message));};
         })`;
-        verify(await h.evaluate(connection, worker));
+        const workerCanvas = await h.evaluate(connection, worker);
+        verify(workerCanvas);
+        if (mode === 'real') nativeWorkerFloatPixels = workerCanvas.floatPixels;
+        assert.deepEqual(workerCanvas.floatPixels, nativeWorkerFloatPixels, 'Worker Float16 pixels retain native values');
         const textWorker = worker.replace(JSON.stringify('postMessage((' + exerciseCanvas.toString() + ')())'),
           JSON.stringify('postMessage((' + exerciseTextMetrics.toString() + ')())'));
         const workerText = await h.evaluate(connection, textWorker);
@@ -305,6 +381,7 @@ async function main() {
         const workerVideo = await h.evaluate(connection, videoWorker);
         verifyVideoFrame(workerVideo);
         assert.deepEqual(workerVideo.cases.map((row) => row.output), video.cases.map((row) => row.output), 'VideoFrame policy agrees across document and worker');
+        verifyHtmlEncoding(await h.evaluate(connection, `(${exerciseHtmlEncoding})()`));
         await connection.command('Page.navigate', { url: 'http://127.0.0.1:' + server.address().port + '/markup' });
         await h.delay(600);
         const markup = await h.evaluate(connection, '({title:document.title,template:globalThis.template,text:document.querySelector("textarea").value,color:getComputedStyle(document.body).color})');

@@ -32,13 +32,14 @@ class Frame {
 
 async function main() {
   let calls = 0, largestLogicalBytes = 0;
-  installVideoFrameCopy(Frame.prototype, (proto, key, factory) => { proto[key] = factory(proto[key]); }, (image) => {
+  installVideoFrameCopy(Frame.prototype, (proto, key, factory) => { proto[key] = factory(proto[key]); }, (pixels, width, height) => {
     calls++;
-    assert.ok(image.data instanceof Uint8ClampedArray);
-    assert.equal(image.data.buffer.byteLength, 0, 'logical frame access needs no full-frame scratch allocation');
-    largestLogicalBytes = Math.max(largestLogicalBytes, image.data.length);
-    image.data[0] += 1;
-    image.data[image.data.length - 4] += 1;
+    assert.ok(pixels instanceof Uint8ClampedArray);
+    assert.equal(pixels.buffer.byteLength, 0, 'logical frame access needs no full-frame scratch allocation');
+    assert.equal(pixels.length, width * height * 4, 'the noise policy sees only the copied rectangle');
+    largestLogicalBytes = Math.max(largestLogicalBytes, pixels.length);
+    pixels[0] += 1;
+    pixels[pixels.length - 4] += 1;
   });
   for (const format of ['RGBA', 'BGRA', 'RGBX', 'BGRX']) {
     const storage = new Uint8Array(80).fill(9), destination = new DataView(storage.buffer, 5, 64);

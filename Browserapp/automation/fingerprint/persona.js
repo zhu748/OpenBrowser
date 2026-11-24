@@ -4,9 +4,12 @@ const { fingerprintVersion, createFingerprintDraw } = require('./generation');
 const { resolvePersonaLanguages } = require('./persona-locale');
 const { inferGpuFromRenderer, resolvePersonaScreen } = require('./persona-display');
 const { fingerprintConsistencyIssues, assertFingerprintConsistency } = require('./consistency');
+const { resolveProfileGeolocation } = require('./geolocation-policy');
 
-const { normalizeCoordinates, normalizeNetworkInformation, toFiniteNumber } = require('../../shared/profile-values');
+const { normalizeNetworkInformation, normalizeHardwareConcurrency, normalizeDeviceMemory,
+  resolveDoNotTrackMode, toFiniteNumber } = require('../../shared/profile-values');
 const { normalizeUaOs } = require('../user-agent');
+const { resolveProfileTimezone } = require('../locale-from-country');
 const { OPENBROWSER_KERNEL_VERSION } = require('../versions');
 const { resolvePersonaUa } = require('./persona-ua');
 
@@ -22,7 +25,7 @@ const { pickPersona, fontsForOs, exclusiveFontsForOtherOs, isPersonaWebglCompati
 /**
  * Build fingerprint config from profile + optional privacy.fingerprint overrides.
  */
-function buildFingerprint(profile = {}) {
+function buildFingerprint(profile = {}, { timezone: timezoneDynamic = resolveProfileTimezone(profile) || null } = {}) {
   const stableIdentity = profile.id || profile.name || 'default';
   const launchSeed = String(profile.fingerprintLaunchSeed || '').trim();
   // No machine-id salt here: profiles sync across machines (cloud-sync), and an unseeded
@@ -37,10 +40,8 @@ function buildFingerprint(profile = {}) {
   const privacy = profile.privacy || {};
   const fpIn = (privacy.fingerprint && typeof privacy.fingerprint === 'object' ? privacy.fingerprint : null) || (profile.fingerprint && typeof profile.fingerprint === 'object' ? profile.fingerprint : {});
 
-  const rawCoresOverride = fpIn.cores ?? privacy.cores;
-  const rawMemoryOverride = fpIn.memory ?? privacy.memory;
-  const coresOverride = rawCoresOverride === '' || rawCoresOverride === null || rawCoresOverride === undefined ? NaN : Number(rawCoresOverride);
-  const memoryOverride = rawMemoryOverride === '' || rawMemoryOverride === null || rawMemoryOverride === undefined ? NaN : Number(rawMemoryOverride);
+  const coresOverride = toFiniteNumber(fpIn.cores) ?? toFiniteNumber(privacy.cores);
+  const memoryOverride = toFiniteNumber(fpIn.memory) ?? toFiniteNumber(privacy.memory);
   const useRealCores = coresOverride === 0;
   const useRealMemory = memoryOverride === 0;
   // These are reassigned below when a coherent device persona is selected (opt-in), so the
@@ -55,12 +56,9 @@ function buildFingerprint(profile = {}) {
   // browser as spoofed. Desktop Chrome effectively only ever reports 4 or 8. Correcting this
   // re-rolls the value on existing profiles; a profile that must keep its old reading can pin
   // it explicitly through privacy.fingerprint.memory.
-  const DEVICE_MEMORY_STEPS = [0.25, 0.5, 1, 2, 4, 8];
   const memoryPool = [4, 8];
   let memory = hasMemoryOverride
-    ? DEVICE_MEMORY_STEPS.reduce((best, step) => (
-      Math.abs(step - memoryOverride) < Math.abs(best - memoryOverride) ? step : best
-    ), 8)
+    ? normalizeDeviceMemory(memoryOverride)
     : memoryPool[draw('hardware.memory', 16) % memoryPool.length];
   // Non-persona default panel: 1280x820 is not a physical panel any monitor ships, and
   // "default" profiles clustering on one impossible size is a fleet-level signal. The
@@ -243,7 +241,7 @@ function buildFingerprint(profile = {}) {
     }
     : (inferredGpu || webglPreset.gpu || null);
 
-  const languages = resolvePersonaLanguages(profile, privacy, fpIn);
+  const languages = resolvePersonaLanguages(profile);
 
   const { screenWidth, screenHeight, availWidth, availHeight, availLeft, availTop, screenX, screenY } = resolvePersonaScreen({
     profile, privacy, fpIn, mobileDevice, devicePersona, width, height, uaOs,
@@ -407,35 +405,7 @@ function buildFingerprint(profile = {}) {
     || profile.exitIP
     || ''
   ).trim() || null;
-  const timezoneDynamic = privacy.timezoneMode === 'real'
-    ? null
-    : (String(
-        (privacy.timezoneMode === 'custom' ? privacy.timezone : '')
-        || profile.exitTimezone
-        || privacy.timezone
-        || ''
-      ).trim() || null);
-  let geoposition = null;
-  const customLocation = normalizeCoordinates(privacy.latitude, privacy.longitude);
-  const exitLocation = normalizeCoordinates(profile.exitLatitude, profile.exitLongitude);
-  if (privacy.geoMode === 'custom' && customLocation.valid) {
-    geoposition = {
-      latitude: customLocation.latitude,
-      longitude: customLocation.longitude,
-      accuracy: Number(privacy.accuracy) || 100,
-    };
-  } else if (privacy.geoMode !== 'custom' && privacy.geoMode !== 'disabled' && privacy.geoMode !== 'prompt' && exitLocation.valid) {
-    geoposition = { latitude: exitLocation.latitude, longitude: exitLocation.longitude, accuracy: Number(privacy.accuracy) || 1000 };
-  }
-  // Geolocation permission policy (Roxy geoLocation mode 0/1/2 对齐): 'deny' blocks the API
-  // outright, 'allow' reports the permission as granted alongside the overridden coordinates,
-  // and everything else leaves the native prompt flow. The editor derives geoMode from this
-  // switch (deny→disabled / prompt→prompt), so the two stay consistent by construction.
-  const requestedGeoPermission = privacy.geoMode === 'disabled' || String(privacy.geoPermission || '') === 'deny'
-    ? 'denied'
-    : (String(privacy.geoPermission || '') === 'allow' ? 'granted' : 'prompt');
-  // An allowed permission without deliverable coordinates would expose the host location.
-  const geoPermission = requestedGeoPermission === 'granted' && !geoposition ? 'denied' : requestedGeoPermission;
+  const { permission: geoPermission, position: geoposition } = resolveProfileGeolocation(profile);
 
   let webglRenderer = (webglMetaMode === 'real')
     ? null
@@ -520,6 +490,8 @@ function buildFingerprint(profile = {}) {
   });
   webgl.fpPayload = buildWebglFpPayload(webgl);
 
+  const hardwareConcurrency = useRealCores ? null : (normalizeHardwareConcurrency(fpIn.hardwareConcurrency) ?? cores);
+  const deviceMemory = useRealMemory ? null : (normalizeDeviceMemory(fpIn.deviceMemory) ?? memory);
   const fingerprint = {
     ...(version >= 2 ? { generationVersion: version } : {}),
     ...(!uaOverrideStr && String(profile.osVersion || '').trim()
@@ -534,11 +506,9 @@ function buildFingerprint(profile = {}) {
     kernelVersion: profile.kernelVersion || '',
     clientHints: uaProfile.clientHints,
     userAgentMetadata: uaProfile.metadata,
-    // Single chain: fpIn.languages only participates upstream in candidateLangs, so all three
-    // surfaces (JS navigator.languages, Emulation locale, Accept-Language) read one value.
     languages,
-    hardwareConcurrency: useRealCores ? null : (Number(fpIn.hardwareConcurrency) > 0 ? Number(fpIn.hardwareConcurrency) : cores),
-    deviceMemory: useRealMemory ? null : (Number(fpIn.deviceMemory) > 0 ? Number(fpIn.deviceMemory) : memory),
+    hardwareConcurrency,
+    deviceMemory,
     screen: {
       width: screenWidth,
       height: screenHeight,
@@ -653,11 +623,11 @@ function buildFingerprint(profile = {}) {
       : null,
     vendor: fpIn.vendor ?? ((mobileDevice?.os === 'ios' || uaOs === 'ios' || (fpIn.platform && /iphone|ipad|ipod/i.test(fpIn.platform))) ? 'Apple Computer, Inc.' : (mobileDevice?.vendor ?? uaProfile?.vendor ?? 'Google Inc.')),
     acceptLanguage: buildAcceptLanguageHeader(languages),
-    doNotTrack: privacy.dnt ? '1' : null,
+    doNotTrack: resolveDoNotTrackMode(privacy) === 'on' ? '1' : null,
     // Static noise identity vs dynamic exit-IP layer
     staticConfig: {
-      hardwareConcurrency: useRealCores ? null : (Number(fpIn.hardwareConcurrency) > 0 ? Number(fpIn.hardwareConcurrency) : cores),
-      deviceMemory: useRealMemory ? null : (Number(fpIn.deviceMemory) > 0 ? Number(fpIn.deviceMemory) : memory),
+      hardwareConcurrency,
+      deviceMemory,
       platform: fpIn.platform || uaProfile.platform || OS_PRESETS[uaOs].platformNav,
       langs: languages,
       canvasMark: canvasId,

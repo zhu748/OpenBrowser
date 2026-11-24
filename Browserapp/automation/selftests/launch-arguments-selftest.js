@@ -43,4 +43,18 @@ assert.ok(!bridged.args.some((flag) => flag.endsWith('=unsafe')));
 assert.ok(base.includes('--test-type=gpu'), 'test-type=gpu suppresses the Chrome-for-Testing and bad-flags infobars');
 assert.ok(!base.includes('--extensions-on-chrome-urls'), 'extensions-on-chrome-urls is a kBadFlag and must stay out of the launch line');
 assert.ok(!base.includes('--enable-automation'), 'enable-automation would flip navigator.webdriver and show the automation infobar');
+for (const [savedGpu, savedAudio, resolvedGpu, resolvedAudio] of [
+  ['blocked', 'muted', 'real', 'real'],
+  ['real', 'real', 'blocked', 'muted'],
+]) {
+  const p = sanitizeProfile({ id: 'native-launch-modes', name: 'Native launch modes', privacy: {
+    webgpu: savedGpu, audio: savedAudio, fingerprint: { webgpu: resolvedGpu, audio: resolvedAudio },
+  } });
+  const fp = buildFingerprint(p);
+  const args = buildBaseLaunchArguments({ root, profile: p, fingerprint: fp });
+  const completed = completeLaunchArguments(args, { profile: p, fingerprint: fp });
+  assert.equal(completed.args.includes('--mute-audio'), resolvedAudio === 'muted');
+  assert.equal(completed.args.some((arg) => arg.startsWith('--disable-features=') && arg.split(/[=,]/).includes('WebGPU')),
+    resolvedGpu === 'blocked');
+}
 console.log('LAUNCH_ARGUMENTS_SELFTEST OK (routing, CDP isolation, startup barrier, custom overrides, feature merging, infobar hardening and immutability)');

@@ -5,6 +5,7 @@ const { firefoxUserAgent } = require('./kernel-versions');
 const { resolveUaPatchVersion } = require('./ua-version');
 const { evaluateFingerprintDelivery } = require('./request-header-rewriter');
 const { LIVE_PROBE_EXPRESSION } = require('./fingerprint/delivery-probe');
+const { resolveFingerprintGeolocation } = require('./fingerprint/geolocation-policy');
 const { evaluateBidi } = require('../network/bidi-connection');
 const { startupNavigationUrl } = require('../engine/startup-session');
 const { assertUrlAccessPolicySupported } = require('./url-access-policy');
@@ -41,6 +42,7 @@ function buildFirefoxFingerprint(profile, version) {
 
 async function initializeFirefoxFingerprint(connection, fingerprint, profile, options = {}) {
   const warnings = [];
+  const { position, permission } = resolveFingerprintGeolocation(fingerprint, profile);
   const reportWarning = (message) => { if (!warnings.includes(message)) warnings.push(message); };
   await connection.command('session.new', { capabilities: { alwaysMatch: { acceptInsecureCerts: Boolean(profile.advanced?.ignoreHttpsError) } } });
   if (options.installLocalWorkerFilter) await options.installLocalWorkerFilter();
@@ -79,10 +81,9 @@ async function initializeFirefoxFingerprint(connection, fingerprint, profile, op
     // pref "de-DE,de" alone produces header "de-DE,de;q=0.9" with a clean JS surface). The
     // Intl runtime surfaces are owned by the document injection and the TZ environment, and
     // navigator.language(s) by the injection (plus the pref in worker scopes).
-    const location = fingerprint.dynamicConfig?.geoposition;
-    if (location) {
+    if (position) {
       // There is no safe host-location fallback when the configured position cannot be delivered.
-      await scoped('emulation.setGeolocationOverride', { coordinates: location });
+      await scoped('emulation.setGeolocationOverride', { coordinates: position });
     }
   };
   const pendingContexts = new Map();
@@ -129,11 +130,11 @@ async function initializeFirefoxFingerprint(connection, fingerprint, profile, op
   }
   const permissionOrigins = new Set();
   const prepareNavigation = async (url) => {
-    if (!['granted', 'denied'].includes(fingerprint.geoPermission)) return;
+    if (permission === 'prompt') return;
     const parsed = new URL(url);
     if (!['http:', 'https:'].includes(parsed.protocol) || permissionOrigins.has(parsed.origin)) return;
     await connection.command('permissions.setPermission', {
-      descriptor: { name: 'geolocation' }, state: fingerprint.geoPermission, origin: parsed.origin,
+      descriptor: { name: 'geolocation' }, state: permission, origin: parsed.origin,
     });
     permissionOrigins.add(parsed.origin);
   };

@@ -53,4 +53,4 @@ function captureImageEncodeOptions(options) {
 }
 
 module.exports = { invokeNativeUnsigned, invokeNativeText, captureImageEncodeOptions,
-  runtimeSource: `${invokeNativeUnsigned.toString()}\n${invokeNativeText.toString()}\n${captureImageEncodeOptions.toString()}\n` };
+  runtimeSource: `${invokeNativeUnsigned.toString()}\n${invokeNativeText.toString()}\n` };

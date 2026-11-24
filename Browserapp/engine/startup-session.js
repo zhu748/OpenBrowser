@@ -4,6 +4,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const cdp = require('../cdp');
 const { writeRawAtomically } = require('./state-storage');
+const { assertSafeProfileChild } = require('../automation/isolation');
 const SESSION_FILE = 'OpenBrowserSession.json';
 
 function startupNavigationUrl(value) {
@@ -36,23 +37,43 @@ async function preserveLegacySession(root, engine = 'chromium') {
   const candidates = engine === 'firefox'
     ? ['sessionstore.jsonlz4', 'sessionstore.json', 'sessionstore-backups']
     : ['Default/Sessions', 'Default/Current Session', 'Default/Current Tabs', 'Default/Last Session', 'Default/Last Tabs'];
-  const available = [];
-  for (const name of candidates) {
-    try { const stat = await fs.lstat(path.join(root, name)); if (!stat.isSymbolicLink()) available.push(name); } catch (_) {}
-  }
-  if (!available.length) return null;
   const parent = path.join(root, 'OpenBrowserLegacySessions');
   const backup = path.join(parent, engine);
-  try { await fs.access(path.join(backup, 'manifest.json')); return null; } catch (_) {}
+  const manifest = await assertSafeProfileChild(root, path.join(backup, 'manifest.json'));
+  let saved;
+  try {
+    saved = await fs.readFile(manifest, 'utf8');
+  } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  if (saved !== undefined) {
+    const archive = JSON.parse(saved);
+    if (archive?.version !== 1 || archive.engine !== engine || !Array.isArray(archive.files)
+        || !archive.files.length || archive.files.some((name) => !candidates.includes(name))) {
+      throw new Error('Invalid legacy session archive');
+    }
+    for (const name of archive.files) {
+      await assertSafeProfileChild(root, path.join(backup, name), { allowMissing: false });
+    }
+    return null;
+  }
+  const available = [];
+  for (const name of candidates) {
+    try {
+      const source = await assertSafeProfileChild(root, path.join(root, name), { allowMissing: false });
+      available.push({ name, source });
+    } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  }
+  if (!available.length) return null;
   await fs.mkdir(parent, { recursive: true, mode: 0o700 });
   const temporary = await fs.mkdtemp(path.join(parent, `.${engine}-`));
   try {
-    for (const name of available) {
+    for (const { name, source } of available) {
       const destination = path.join(temporary, name);
       await fs.mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
-      await fs.cp(path.join(root, name), destination, { recursive: true, dereference: false });
+      await fs.cp(source, destination, { recursive: true, dereference: false });
     }
-    await fs.writeFile(path.join(temporary, 'manifest.json'), JSON.stringify({ version: 1, engine, files: available }), { mode: 0o600 });
+    await fs.writeFile(path.join(temporary, 'manifest.json'), JSON.stringify({
+      version: 1, engine, files: available.map(({ name }) => name),
+    }), { mode: 0o600 });
     await fs.rename(temporary, backup);
     return backup;
   } finally { await fs.rm(temporary, { recursive: true, force: true }); }

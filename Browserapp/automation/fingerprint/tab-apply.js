@@ -8,7 +8,8 @@
 
 const { buildUaProfile, cdpUserAgentOverride, buildAcceptLanguageHeader, formatAcceptLanguage } = require('./shared');
 const { buildInjectionScript, injectSourceKeyCached, injectionCacheKeyFor } = require('./injection-script');
-const { normalizeCoordinates } = require('../../shared/profile-values');
+const { resolveProfileGeolocation } = require('./geolocation-policy');
+const { resolveProfileTimezone } = require('../locale-from-country');
 const { assertFingerprintConsistency } = require('./persona');
 
 // Registrations belong to a CDP connection/session, not just a target ID.
@@ -71,23 +72,8 @@ async function applyFingerprintToTab(cdpCall, webSocketDebuggerUrl, fp, profile 
 
 async function applyToTarget(cdpCall, webSocketDebuggerUrl, fp, profile, options, state) {
   assertFingerprintConsistency(fp);
-  const privacy = profile.privacy || {};
-  const timezone = privacy.timezoneMode === 'real'
-    ? ''
-    : String(fp.timezone || (privacy.timezoneMode === 'custom' ? privacy.timezone : profile.exitTimezone) || '').trim();
-  // geoMode: custom coords | disabled/prompt (no override) | ip/allow (from exit IP)
-  let latitude = null;
-  let longitude = null;
-  if (privacy.geoMode === 'custom') {
-    const location = normalizeCoordinates(privacy.latitude, privacy.longitude);
-    if (location.valid) ({ latitude, longitude } = location);
-  } else if (privacy.geoMode === 'disabled' || privacy.geoMode === 'prompt') {
-    latitude = null;
-    longitude = null;
-  } else {
-    const location = normalizeCoordinates(profile.exitLatitude, profile.exitLongitude);
-    if (location.valid) ({ latitude, longitude } = location);
-  }
+  const timezone = Object.hasOwn(fp, 'timezone') ? (fp.timezone || '') : resolveProfileTimezone(profile);
+  const { position, permission } = resolveProfileGeolocation(profile, fp.geoPermission);
 
   // cdpCall may be:
   //  1) (wsUrl, method, params) — classic page WebSocket path
@@ -111,7 +97,7 @@ async function applyToTarget(cdpCall, webSocketDebuggerUrl, fp, profile, options
   // CDP overrides also depend on profile-only fields absent from the JS
   // payload, notably custom coordinates and whether the real timezone wins.
   const roleKey = JSON.stringify([Boolean(options.isSubframe), options.targetType || '']);
-  const nativeKey = JSON.stringify([timezone, latitude, longitude, privacy.accuracy || 100, fp.geoPermission, roleKey]);
+  const nativeKey = JSON.stringify([timezone, position, permission, roleKey]);
   const native = state.native || (state.native = {});
   const forceInject = options.force === true;
   const injectState = state.applied;
@@ -225,30 +211,30 @@ async function applyToTarget(cdpCall, webSocketDebuggerUrl, fp, profile, options
     await softOverride('Emulation.setTimezoneOverride', { timezoneId: timezone });
     native.timezone = timezone;
   }
-  if (latitude !== null && longitude !== null && Number.isFinite(latitude) && Number.isFinite(longitude)) {
-    await invoke('Emulation.setGeolocationOverride', {
-      latitude,
-      longitude,
-      accuracy: privacy.accuracy || 100,
-    });
-    native.geolocation = true;
-  } else if (native.geolocation) {
-    await invoke('Emulation.clearGeolocationOverride', {});
-    native.geolocation = false;
-  }
-  // Roxy geoLocation mode: 'allow' auto-grants the permission (coordinates above provide the
-  // position), 'deny' blocks it at the browser level so no native prompt can leak host coords.
-  // Required native policy owns callbacks, validation, cancellation and error objects.
-  if ((fp.geoPermission === 'granted' || fp.geoPermission === 'denied'
-    || (fp.geoPermission === 'prompt' && native.permissionOverride))
-    && (refreshDocument || fp.geoPermission !== native.permission)) {
+  const syncGeoPermission = async () => {
+    if (permission === 'prompt' && !native.permissionOverride) return;
+    if (!refreshDocument && permission === native.permission) return;
     await invoke('Browser.setPermission', {
       permission: { name: 'geolocation' },
-      setting: fp.geoPermission,
+      setting: permission,
     });
     native.permissionOverride = true;
-    native.permission = fp.geoPermission;
+    native.permission = permission;
+  };
+  // Revoke permission before removing emulated coordinates, and install the
+  // replacement coordinates before granting access.
+  if (permission !== 'granted') await syncGeoPermission();
+  if (position) {
+    const positionKey = JSON.stringify(position);
+    if (refreshDocument || native.geolocation !== positionKey) {
+      await invoke('Emulation.setGeolocationOverride', position);
+      native.geolocation = positionKey;
+    }
+  } else if (native.geolocation) {
+    await invoke('Emulation.clearGeolocationOverride', {});
+    native.geolocation = null;
   }
+  if (permission === 'granted') await syncGeoPermission();
   if (refreshDocument && fp.languages?.[0]) {
     await softOverride('Emulation.setLocaleOverride', { locale: fp.languages[0] });
   }

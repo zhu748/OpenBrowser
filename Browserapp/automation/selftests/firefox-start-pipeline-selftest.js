@@ -63,6 +63,8 @@ proxyModule.startAuthenticatedProxy = async (config) => { bridgeConfigs.push(con
 mitmModule.FirefoxWorkerMitmProxy = ProxyFixture;
 trustModule.installFirefoxCa = () => ({ ok: !rejectTrust, reason: rejectTrust ? 'fixture-import-failed' : undefined });
 const { BrowserEngine } = require('../../engine');
+const { writeFirefoxLaunchPreferences } = require('../../engine/launch-preferences');
+const { firefoxExtraUserPrefs } = require('../../engine/start-firefox');
 
 async function makeEngine(tmp) {
   fs.mkdirSync(path.join(tmp, 'userData'), { recursive: true });
@@ -158,7 +160,7 @@ function makeStubFirefox(tmp) {
     networkMode: 'direct',
     proxy: 'Direct',
     advanced: { showInfoPage: false, multiOpen: false, startUrls: 'https://first.test\nhttps://second.test' },
-    privacy: {},
+    privacy: { fingerprint: { languages: ['de-DE', 'en-US'] } },
   };
   engine.profiles.set('env-900', profile);
 
@@ -166,6 +168,25 @@ function makeStubFirefox(tmp) {
   const unsubscribe = engine.on((event) => events.push(event));
 
   try {
+    await check('restoring Firefox defaults clears only the released preferences', async () => {
+      const root = path.join(tmp, 'firefox-prefs-restore');
+      await fsp.mkdir(root);
+      const filename = path.join(root, 'prefs.js');
+      const unchanged = '// native preferences\r\nuser_pref("permissions.default.camera.example", 1);\r\n'
+        + 'user_pref("browser.startup.custom", "a; b");\r\nuser_pref("media.block-autoplay-until-user-interaction", true);\r\n';
+      await fsp.writeFile(filename, unchanged + '  user_pref("dom.maxHardwareConcurrency", 2);\r\n'
+        + 'user_pref("permissions.default.desktop-notification", 2);\r\nuser_pref("permissions.default.camera", 2);\r\n'
+        + 'user_pref("permissions.default.microphone", 2);\r\nuser_pref("font.minimum-size.x-western", 30);');
+      const next = { privacy: { media: 'real', fontMode: 'default' }, advanced: { blockVideo: true, blockNotifications: false } };
+      const native = { platform: 'Linux x86_64', webrtc: 'real', hardwareConcurrency: null };
+      await writeFirefoxLaunchPreferences(root, { extraPrefs: firefoxExtraUserPrefs(next, native) });
+      assert.strictEqual(await fsp.readFile(filename, 'utf8'), unchanged);
+      const startup = await fsp.readFile(path.join(root, 'user.js'), 'utf8');
+      assert.match(startup, /user_pref\("media\.block-autoplay-until-user-interaction", true\);/);
+      assert.ok(!startup.includes('undefined'));
+      await writeFirefoxLaunchPreferences(root, { extraPrefs: firefoxExtraUserPrefs({ ...next, advanced: {} }, native) });
+      assert.strictEqual(await fsp.readFile(filename, 'utf8'), unchanged.replace(/user_pref\("media\..*\);\r\n/, ''));
+    });
     const started = await engine.start(profile);
     await check('start() launches via the firefox pipeline', () => {
       assert.strictEqual(started.running, true);
@@ -192,6 +213,8 @@ function makeStubFirefox(tmp) {
       const copied = fs.readFileSync(path.join(markerDir, 'user.js.copy'), 'utf8');
       assert.ok(copied.includes('user_pref("network.proxy.type", 1);'), 'manual proxy mode');
       assert.ok(copied.includes('user_pref("general.useragent.override",'), 'UA override');
+      assert.ok(copied.includes('user_pref("intl.accept_languages", "de-DE,en-US");'), 'native language list');
+      assert.ok(copied.includes('user_pref("intl.locale.requested", "de-DE");'), 'native locale follows the resolved list');
       assert.ok(copied.includes('user_pref("dom.maxHardwareConcurrency", ' + item.fingerprint.hardwareConcurrency + ');'), 'native CPU cap');
       assert.ok(copied.includes('user_pref("app.update.enabled", false);'), 'no self-update');
       assert.ok(copied.includes('user_pref("toolkit.telemetry.enabled", false);'), 'no telemetry');
