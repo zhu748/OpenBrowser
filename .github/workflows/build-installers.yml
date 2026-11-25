@@ -161,6 +161,9 @@ jobs:
           toolchain: stable
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - name: Configure loopback alias for Rust UDP tests
+        if: runner.os == 'macOS'
+        run: sudo -n ifconfig lo0 alias 127.0.0.2 netmask 255.255.255.255
       - name: Build and validate Rust core
         run: |
           set -euo pipefail
